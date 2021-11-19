@@ -36,7 +36,7 @@
     "@dashevo/dashcore-lib": "~0.19.26",
     "@dashevo/dashd-rpc": "^2.3.1",
     "@dashevo/dpp": "workspace:*",
-    "@dashevo/grpc-common": "0.5.4",
+    "@dashevo/grpc-common": "workspace:*",
     "@grpc/grpc-js": "^1.3.7",
     "ajv": "^8.6.0",
     "bs58": "^4.0.1",

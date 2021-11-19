@@ -68,7 +68,7 @@
     "@dashevo/dashd-rpc": "^2.3.1",
     "@dashevo/dpp": "workspace:*",
     "@dashevo/feature-flags-contract": "workspace:*",
-    "@dashevo/grpc-common": "0.5.4",
+    "@dashevo/grpc-common": "workspace:*",
     "@dashevo/merk": "github:dashevo/node-merk",
     "ajv": "^8.6.0",
     "ajv-keywords": "^5.0.0",
