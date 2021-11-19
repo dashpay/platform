@@ -22,6 +22,7 @@ jobs:
         uses: actions/setup-node@v2
         with:
           node-version: '16'
+          registry-url: 'https://registry.npmjs.org'
 
       - name: Enable NPM cache
         uses: actions/cache@v2
@@ -47,8 +48,10 @@ jobs:
             const [, major, minor] = tag.match(/^v([0-9]+)\.([0-9]+)/);
             return (tag.includes('dev') ? `${major}.${minor}-dev` : 'latest');
 
-      - name: Publish NPM package
-        run: npm publish --workspaces --tag ${{ steps.tag.outputs.result }}
+      - name: Publish NPM packages
+        run: npm publish --workspaces --access public --tag ${{ steps.tag.outputs.result }}
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
   release-drive-docker-image:
     name: Release Drive to Docker Hub
