@@ -20,7 +20,6 @@
   },
   "homepage": "https://github.com/dashevo/platform-test-suite#readme",
   "dependencies": {
-    "browserify-zlib": "^0.2.0",
     "@dashevo/dashcore-lib": "~0.19.26",
     "@dashevo/dpns-contract": "workspace:*",
     "@dashevo/dpp": "workspace:*",
@@ -30,6 +29,7 @@
     "@dashevo/wallet-lib": "workspace:*",
     "assert-browserify": "^2.0.0",
     "blake3": "^2.1.4",
+    "browserify-zlib": "^0.2.0",
     "buffer": "^6.0.3",
     "chai": "^4.3.4",
     "chai-as-promised": "^7.1.1",

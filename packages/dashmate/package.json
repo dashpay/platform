@@ -14,9 +14,7 @@
     "type": "git",
     "url": "git+https://github.com/dashevo/dashmate.git"
   },
-  "bin": {
-    "dashmate": "bin/dashmate"
-  },
+  "bin": "bin/dashmate",
   "contributors": [
     {
       "name": "Ivan Shumkov",
