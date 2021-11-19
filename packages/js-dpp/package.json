@@ -43,8 +43,8 @@
   "devDependencies": {
     "@babel/core": "^7.15.5",
     "@babel/preset-env": "^7.15.4",
-    "@dashevo/dashpay-contract": "0.4.1",
-    "@dashevo/dpns-contract": "0.4.0",
+    "@dashevo/dashpay-contract": "workspace:*",
+    "@dashevo/dpns-contract": "workspace:*",
     "acorn": "^8.5.0",
     "assert": "^2.0.0",
     "babel-loader": "^8.2.2",
@@ -84,7 +84,7 @@
   "dependencies": {
     "@apidevtools/json-schema-ref-parser": "^8.0.0",
     "@dashevo/dashcore-lib": "~0.19.26",
-    "@dashevo/feature-flags-contract": "0.2.1",
+    "@dashevo/feature-flags-contract": "workspace:*",
     "@dashevo/re2-wasm": "~1.0.4",
     "ajv": "^8.6.0",
     "ajv-formats": "^2.1.1",
