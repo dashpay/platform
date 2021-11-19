@@ -1,5 +1,6 @@
 {
-  "name": "js-dash-platform",
+  "name": "@dashevo/platform",
+  "version": "0.21.0",
   "private": true,
   "scripts": {
     "setup": "npm install && npm run build && npm run configure",

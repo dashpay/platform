@@ -1,8 +1,8 @@
 {
   "name": "@dashevo/platform-test-suite",
+  "private": true,
   "version": "0.21.0",
   "description": "Dash Network end-to-end tests",
-  "private": true,
   "scripts": {
     "test": "mocha './test/**/*.spec.js'",
     "lint": "eslint .",
