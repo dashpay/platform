@@ -47,6 +47,7 @@
     "core-js": "^3.17.2",
     "crypto-browserify": "^3.12.0",
     "dirty-chai": "^2.0.1",
+    "comment-parser": "^0.7.6",
     "eslint": "^7.32.0",
     "eslint-config-airbnb-base": "^14.2.1",
     "eslint-plugin-import": "^2.24.2",
