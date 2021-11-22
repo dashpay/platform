@@ -50,7 +50,7 @@ client.getWalletAccount().then(async (account) => {
 
 ## Read a document
 
-At the time of writing, you will need to have registered a data contract yourself. See [publishing a new contract](/examples/publishing-a-new-contract.md).
+At the time of writing, you will need to have registered a data contract yourself. See [publishing a new contract](../examples/publishing-a-new-contract.md).
 
 ```js
 

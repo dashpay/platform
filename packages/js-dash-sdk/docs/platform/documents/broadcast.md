@@ -6,10 +6,10 @@ Parameters:
 | parameters                 | type       | required | Description                                                                 |  
 |----------------------------|------------|----------| ----------------------------------------------------------------------------|
 | **documents**              | Object     | yes      |                                                                             |
-| **documents.create**       | Document[] | no       | array of valid [created document](/platform/documents/create.md) to create  |
-| **documents.replace**      | Document[] | no       | array of valid [created document](/platform/documents/create.md) to replace |
-| **documents.delete**       | Document[] | no       | array of valid [created document](/platform/documents/create.md) to delete  |
-| **identity**               | Identity   | yes      | A valid [registered identity](/platform/identities/register.md)             |
+| **documents.create**       | Document[] | no       | array of valid [created document](../documents/create.md) to create  |
+| **documents.replace**      | Document[] | no       | array of valid [created document](../documents/create.md) to replace |
+| **documents.delete**       | Document[] | no       | array of valid [created document](../documents/create.md) to delete  |
+| **identity**               | Identity   | yes      | A valid [registered identity](../identities/register.md)             |
 
 
 **Example**:
