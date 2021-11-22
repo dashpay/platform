@@ -61,7 +61,7 @@ jobs:
         run: npm run lint
 
       - name: Build packages
-        run: node_modules/.bin/ultra -r --build
+        run: npm run build
 
       - name: Setup local network
         run: npm run configure
@@ -71,4 +71,8 @@ jobs:
 
       - name: Run tests
         run: npm run test
+
+      - name: Show Docker logs
+        if: ${{ failure() }}
+        uses: jwalton/gh-docker-logs@v2
 

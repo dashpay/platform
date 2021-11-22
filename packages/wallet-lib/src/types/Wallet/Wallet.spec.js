@@ -170,7 +170,7 @@ describe('Wallet - class', function suite() {
   });
 });
 describe('Wallet - Get/Create Account',  function suite() {
-  this.timeout(10000);
+  this.timeout(15000);
   const wallet1 = new Wallet({ mnemonic: fluidMnemonic.mnemonic, ...mocks });
 
   it('should be able to create/get a wallet', async () => {

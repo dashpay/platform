@@ -115,7 +115,7 @@ jobs:
         run: npm ci --no-audit
 
       - name: Build packages
-        run: node_modules/.bin/ultra -r --build
+        run: npm run build
 
       - name: Setup local network
         run: npm run configure
@@ -125,3 +125,7 @@ jobs:
 
       - name: Run test suite
         run: npm run test:suite
+
+      - name: Show Docker logs
+        if: ${{ failure() }}
+        uses: jwalton/gh-docker-logs@v2
