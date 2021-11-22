@@ -11,7 +11,7 @@
 | **assetLockProof**           | InstantAssetLockProof  | yes       |                                                  |
 | **publicKeys**               | PublicKey[]            | yes       |                                                  |
 
-Returns : {[Identity](/primitives/Identity)}
+Returns : {[Identity](../primitives/Identity.md)}
 
 ## dpp.identity.createFromObject(rawIdentity, options)
 
@@ -25,7 +25,7 @@ Returns : {[Identity](/primitives/Identity)}
 | **options**                  | Object          | no       |                                                         |
 | **options.skipValidation**   | boolean[=false] | no       |                                                         |
 
-Returns : {[Identity](/primitives/Identity)}
+Returns : {[Identity](../primitives/Identity.md)}
 
 ## dpp.identity.createFromBuffer(buffer, options)
 
@@ -39,7 +39,7 @@ Returns : {[Identity](/primitives/Identity)}
 | **options**                  | Object          | no       |                                                         |
 | **options.skipValidation**   | boolean[=false] | no       |                                                         |
 
-Returns : {[Identity](/primitives/Identity)}
+Returns : {[Identity](../primitives/Identity.md)}
 
 ## dpp.identity.validate(identity)
 

@@ -16,7 +16,7 @@ Parameters:
 
 
 Returns : [Transaction](https://dashevo.github.io/DashJS/#/usage/dashcorelib-primitives?id=transaction)   
-Notes: This transaction will be need to be signed [`account.sign(transaction)`](/account/sign) and then, if wanted, broadcasted to the network for execution `account.broadcastTransaction()`.
+Notes: This transaction will be need to be signed [`account.sign(transaction)`](../account/sign.md) and then, if wanted, broadcasted to the network for execution `account.broadcastTransaction()`.
 
 Example : 
 ```js
@@ -54,7 +54,7 @@ const tx1 = account.createTransaction(txOpts1);
 const tx2 = account.createTransaction(txOpts2);
 ```
 
-See more information about [coinSelection](/usage/coinSelection).
+See more information about [coinSelection](../usage/coinSelection.md).
 
 ## Deduct Fee 
 

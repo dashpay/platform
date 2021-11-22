@@ -1,6 +1,6 @@
 ## DPNS
 
-DPNS is handled in the Dash SDK Client under the namespace `client.platform.names.*'`. [Read more here](/platform/names)
+DPNS is handled in the Dash SDK Client under the namespace `client.platform.names.*'`. [Read more here](../platform/names/about-dpns.md)
 
 ## DashPay
 
