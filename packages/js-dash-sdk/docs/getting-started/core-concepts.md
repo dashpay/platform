@@ -16,7 +16,7 @@ Since the introduction of deterministic wallets ([BIP44](https://github.com/bitc
 
 It is the instance you will use most of the time for receiving or broadcasting payments.
 
-You can access your account with `client.getWalletAccount()` and see [how to use a different account](/examples/use-different-account) if you need to get a specific account index.
+You can access your account with `client.getWalletAccount()` and see [how to use a different account](../examples/use-different-account.md) if you need to get a specific account index.
 
 ## App Schema and Contracts
 
@@ -25,4 +25,4 @@ The Dash Platform Chain, provides to developers the ability to create applicatio
 When registered, those applications schemas are called contracts and contains a contractId (namespace : `client.platform.contracts`).  
 By default, this library supports Dash Platform Name Service (DPNS) (to attach a name to an identity), under the namespace `client.platform.names` for testnet.  
 
-You can read more on [how to use DPNS on a local Evonet devnet](/examples/use-local-evonet.md) or [how to use multiple apps](/getting-started/multiple-apps.md).
+You can read more on [how to use DPNS on a local Evonet devnet](../examples/use-local-evonet.md) or [how to use multiple apps](../getting-started/multiple-apps.md).

@@ -5,7 +5,7 @@ Parameters:
 
 | parameters                                | type            | required           | Description                                                                                                                                                                    |  
 |-------------------------------------------|-----------------|--------------------| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| **wallet**                                | Wallet          | yes                | A valid [wallet](/wallet/Wallet) instance                                                                                                                                      |
+| **wallet**                                | Wallet          | yes                | A valid [wallet](../wallet/Wallet.md) instance                                                                                                                                      |
 
 Returns : Identities instance.
 
