@@ -5,7 +5,7 @@ Parameters:
 
 | parameters        | type    | required         | Description                                                                             |  
 |-------------------|---------|------------------| ----------------------------------------------------------------------------------------|
-| **identity**      | Identity| yes              | A valid [registered identity](/platform/identities/register.md)                         |
+| **identity**      | Identity| yes              | A valid [registered identity](../identities/register.md)                         |
 | **amount**        | number  | yes              | A duffs (satoshis) value corresponding to the amount you want to top up to the identity.|
 
 **Example**: 
