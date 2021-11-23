@@ -10,31 +10,20 @@ jobs:
     name: Release NPM packages
     runs-on: ubuntu-20.04
     steps:
-      # TODO: We need to make sure that other tests are passed
-
-      #  Can we just use?
-      #
-      #     on:
-      #        workflow_run:
-      #          workflows: [ 'Test' ]
-      #          types:
-      #            - completed
-
-      - name: Wait for tests to succeed
-        uses: lewagon/wait-on-check-action@v1.1.1
-        with:
-          ref: ${{ github.ref }}
-          check-name: 'Run Platform Test Suite'
-          repo-token: ${{ secrets.GITHUB_TOKEN }}
-          wait-interval: 60
-
       - name: Check out repo
         uses: actions/checkout@v2
+
+      - name: Check package version matches tag
+        uses: geritol/match-tag-to-package-version@0.2.0
+        env:
+          TAG_PREFIX: v
 
       - name: Setup Node.JS
         uses: actions/setup-node@v2
         with:
           node-version: '16'
+          always-auth: true
+          token: ${{ secrets.NPM_TOKEN }}
 
       - name: Enable NPM cache
         uses: actions/cache@v2
@@ -60,8 +49,8 @@ jobs:
             const [, major, minor] = tag.match(/^v([0-9]+)\.([0-9]+)/);
             return (tag.includes('dev') ? `${major}.${minor}-dev` : 'latest');
 
-      - name: Publish NPM package
-        run: npm publish --workspaces --tag ${{ steps.tag.outputs.result }}
+      - name: Publish NPM packages
+        run: npm publish --workspaces --access public --tag ${{ steps.tag.outputs.result }}
 
   release-drive-docker-image:
     name: Release Drive to Docker Hub
@@ -90,8 +79,8 @@ jobs:
       - name: Build packages
         run: npm run build --filter="+@dashevo/drive"
 
-      - name: Set up QEMU to run multi-arch builds
-        uses: docker/setup-qemu-action@v1
+#      - name: Set up QEMU to run multi-arch builds
+#        uses: docker/setup-qemu-action@v1
 
       - name: Set up Docker BuildX
         id: buildx
@@ -152,7 +141,7 @@ jobs:
           push: true
           tags: ${{ steps.docker_meta.outputs.tags }}
           labels: ${{ steps.docker_meta.outputs.labels }}
-          platforms: linux/amd64,linux/arm64
+#          platforms: linux/amd64,linux/arm64
 
   release-dapi-docker-image:
     name: Release DAPI to Docker Hub
@@ -181,8 +170,8 @@ jobs:
       - name: Build packages
         run: npm run build --filter="+@dashevo/dapi"
 
-      - name: Set up QEMU to run multi-arch builds
-        uses: docker/setup-qemu-action@v1
+#      - name: Set up QEMU to run multi-arch builds
+#        uses: docker/setup-qemu-action@v1
 
       - name: Set up Docker BuildX
         id: buildx
@@ -243,6 +232,95 @@ jobs:
           push: true
           tags: ${{ steps.dapi_docker_meta.outputs.tags }}
           labels: ${{ steps.dapi_docker_meta.outputs.labels }}
-          platforms: linux/amd64,linux/arm64
+#          platforms: linux/amd64,linux/arm64
 
-# TOOD: release test suite docker image
+  release-test-suite-docker-image:
+    name: Release Test Suite to Docker Hub
+    runs-on: ubuntu-20.04
+    needs: release-npm
+    steps:
+      - name: Check out repo
+        uses: actions/checkout@v2
+
+      - name: Setup Node.JS
+        uses: actions/setup-node@v2
+        with:
+          node-version: '16'
+
+      - name: Enable NPM cache
+        uses: actions/cache@v2
+        with:
+          path: '~/.npm'
+          key: ${{ runner.os }}-node-${{ hashFiles('package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-node-
+
+      - name: Install NPM dependencies
+        run: npm ci --no-audit
+
+      - name: Build packages
+        run: npm run build --filter="+@dashevo/platform-test-suite"
+
+#      - name: Set up QEMU to run multi-arch builds
+#        uses: docker/setup-qemu-action@v1
+
+      - name: Set up Docker BuildX
+        id: buildx
+        uses: docker/setup-buildx-action@v1
+        with:
+          version: v0.6.3
+          install: true
+          driver-opts: image=moby/buildkit:buildx-stable-1
+
+      - name: Enable buildkit cache
+        uses: actions/cache@v2
+        with:
+          path: /tmp/buildkit-cache/buildkit-state.tar
+          key: ${{ runner.os }}-buildkit-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-buildkit-
+
+      - name: Load buildkit state from cache
+        uses: dashevo/gh-action-cache-buildkit-state@v1
+        with:
+          builder: buildx_buildkit_${{ steps.buildx.outputs.name }}0
+          cache-path: /tmp/buildkit-cache
+          cache-max-size: 3g
+
+      - name: Login to DockerHub
+        uses: docker/login-action@v1
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Set suffix to Docker tags
+        uses: actions/github-script@v5
+        id: suffix
+        with:
+          result-encoding: string
+          script: "return (context.payload.release.tag_name.includes('-dev') ? '-dev' : '');"
+
+      - name: Set Docker tags and labels
+        id: docker_meta
+        uses: docker/metadata-action@v3
+        with:
+          images: dashpay/platform-test-suite
+          tags: |
+            type=match,pattern=v(\d+),group=1
+            type=match,pattern=v(\d+.\d+),group=1
+            type=match,pattern=v(\d+.\d+.\d+),group=1
+            type=match,pattern=v(.*),group=1,suffix=,enable=${{ contains(github.event.release.tag_name, '-dev') }}
+          flavor: |
+            latest=${{ !contains(github.event.release.tag_name, '-dev') }}
+            suffix=${{ steps.suffix.outputs.result }}
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v2
+        with:
+          context: .
+          builder: ${{ steps.buildx.outputs.name }}
+          file: ./packages/dapi/Dockerfile
+          push: true
+          tags: ${{ steps.dapi_docker_meta.outputs.tags }}
+          labels: ${{ steps.dapi_docker_meta.outputs.labels }}
+#          platforms: linux/amd64,linux/arm64
