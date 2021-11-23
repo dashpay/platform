@@ -260,6 +260,7 @@ AbstractStateTransition.identityTransitionTypes = [
 ];
 AbstractStateTransition.dataContractTransitionTypes = [
   stateTransitionTypes.DATA_CONTRACT_CREATE,
+  stateTransitionTypes.DATA_CONTRACT_UPDATE,
 ];
 
 module.exports = AbstractStateTransition;
