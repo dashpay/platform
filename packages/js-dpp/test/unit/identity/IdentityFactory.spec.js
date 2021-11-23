@@ -1,5 +1,3 @@
-const { PublicKey } = require('@dashevo/dashcore-lib');
-
 const Identity = require('../../../lib/identity/Identity');
 const IdentityCreateTransition = require('../../../lib/identity/stateTransition/IdentityCreateTransition/IdentityCreateTransition');
 const IdentityTopUpTransition = require('../../../lib/identity/stateTransition/IdentityTopUpTransition/IdentityTopUpTransition');
@@ -57,7 +55,9 @@ describe('IdentityFactory', () => {
 
   describe('#create', () => {
     it('should create Identity from asset lock transaction, output index, proof and public keys', () => {
-      const publicKeys = identity.getPublicKeys().map((identityPublicKey) => identityPublicKey.toObject());
+      const publicKeys = identity
+        .getPublicKeys()
+        .map((identityPublicKey) => identityPublicKey.toObject());
 
       const result = factory.create(
         instantAssetLockProof,

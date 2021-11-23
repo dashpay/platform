@@ -1,6 +1,5 @@
 const Identity = require('./Identity');
 
-const IdentityPublicKey = require('./IdentityPublicKey');
 const IdentityCreateTransition = require('./stateTransition/IdentityCreateTransition/IdentityCreateTransition');
 const IdentityTopUpTransition = require('./stateTransition/IdentityTopUpTransition/IdentityTopUpTransition');
 

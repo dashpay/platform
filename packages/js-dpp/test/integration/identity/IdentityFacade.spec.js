@@ -1,5 +1,3 @@
-const { PublicKey } = require('@dashevo/dashcore-lib');
-
 const DashPlatformProtocol = require('../../../lib/DashPlatformProtocol');
 
 const Identity = require('../../../lib/identity/Identity');

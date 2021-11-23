@@ -26,8 +26,6 @@ describe('IdentityCreateTransition', () => {
         rawStateTransition.assetLockProof,
       );
 
-      console.dir(stateTransition);
-
       expect(stateTransition.publicKeys).to.deep.equal([
         new IdentityPublicKey(rawStateTransition.publicKeys[0]),
       ]);
