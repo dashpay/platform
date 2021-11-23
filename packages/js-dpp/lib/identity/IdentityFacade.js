@@ -45,7 +45,7 @@ class IdentityFacade {
    * Create Identity
    *
    * @param {InstantAssetLockProof|ChainAssetLockProof} assetLockProof
-   * @param {PublicKey[]} publicKeys
+   * @param {RawIdentityPublicKey[]} publicKeys
    * @return {Identity}
    */
   create(assetLockProof, publicKeys) {

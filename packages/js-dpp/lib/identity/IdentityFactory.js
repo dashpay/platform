@@ -1,4 +1,5 @@
 const Identity = require('./Identity');
+const IdentityPublicKey = require('./IdentityPublicKey');
 
 const IdentityCreateTransition = require('./stateTransition/IdentityCreateTransition/IdentityCreateTransition');
 const IdentityTopUpTransition = require('./stateTransition/IdentityTopUpTransition/IdentityTopUpTransition');
@@ -36,13 +37,13 @@ class IdentityFactory {
       protocolVersion: this.dpp.getProtocolVersion(),
       id: assetLockProof.createIdentifier(),
       balance: 0,
-      publicKeys: publicKeys.map((publicKey) => ({
-        id: publicKey.id,
-        type: publicKey.type,
-        purpose: publicKey.purpose,
-        securityLevel: publicKey.securityLevel,
+      publicKeys: publicKeys.map((publicKey, i) => ({
+        id: publicKey.id || i,
+        type: publicKey.type || IdentityPublicKey.TYPES.ECDSA_SECP256K1,
+        purpose: publicKey.purpose || IdentityPublicKey.PURPOSES.AUTHENTICATION,
+        securityLevel: publicKey.securityLevel || IdentityPublicKey.SECURITY_LEVELS.CRITICAL,
         // Copy data buffer
-        data: Buffer.from(publicKey.data),
+        data: publicKey.data.toBuffer(),
       })),
       revision: 0,
     });
