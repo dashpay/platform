@@ -70,4 +70,18 @@
 * supports only new DashCore InstantLock format https://github.com/dashpay/dips/blob/master/dip-0022.md
 
 
+# Previous versions
 
+Before 0.21.x, packages were located in separate repositories and have own changelogs:
+
+* [DAPI Client](https://github.com/dashevo/js-dapi-client/blob/master/CHANGELOG.md)
+* [DAPI gRPC](https://github.com/dashevo/dapi-grpc/blob/master/CHANGELOG.md)
+* [DAPI](https://github.com/dashevo/dapi/blob/master/CHANGELOG.md)
+* [Dashmate](https://github.com/dashevo/dashmate/blob/master/CHANGELOG.md)
+* [DashPay contract](https://github.com/dashevo/dashpay-contract/blob/master/CHANGELOG.md)
+* [Feature Flags Contract](https://github.com/dashevo/feature-flags-contract/blob/master/CHANGELOG.md)
+* [Dash SDK](https://github.com/dashevo/js-dash-sdk/blob/master/CHANGELOG.md)
+* [Dash Platform Protocol JS](https://github.com/dashevo/js-dpp/blob/master/CHANGELOG.md)
+* [Drive](https://github.com/dashevo/js-drive/blob/master/CHANGELOG.md)
+* [Dash Platform Test Suite](https://github.com/dashevo/platform-test-suite/blob/master/CHANGELOG.md)
+* [Wallet Library](https://github.com/dashevo/wallet-lib/blob/master/CHANGELOG.md)
