@@ -10,7 +10,7 @@ module.exports = {
   group: null,
   core: {
     docker: {
-      image: 'dashpay/dashd:0.17',
+      image: 'dashpay/dashd:0.18.0.0-beta1',
     },
     p2p: {
       port: 20001,
