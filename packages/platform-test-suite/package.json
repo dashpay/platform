@@ -21,7 +21,6 @@
   "homepage": "https://github.com/dashevo/platform-test-suite#readme",
   "dependencies": {
     "@dashevo/dapi-client": "~0.21.4",
-    "@dashevo/dapi-grpc": "~0.21.4",
     "@dashevo/dashcore-lib": "~0.19.27",
     "@dashevo/dpns-contract": "~0.21.4",
     "@dashevo/dpp": "~0.21.4",
