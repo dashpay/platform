@@ -38,7 +38,7 @@ describe('Platform', () => {
 
       dataContractFixture = getDataContractFixture(identity.getId());
 
-      await client.platform.contracts.broadcast(dataContractFixture, identity);
+      await client.platform.contracts.publish(dataContractFixture, identity);
 
       // Additional wait time to mitigate testnet latency
       if (process.env.NETWORK === 'testnet') {

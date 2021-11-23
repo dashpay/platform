@@ -37,7 +37,7 @@ describe('Platform', () => {
       let broadcastError;
 
       try {
-        await client.platform.contracts.broadcast(dataContractFixture, identity);
+        await client.platform.contracts.publish(dataContractFixture, identity);
       } catch (e) {
         broadcastError = e;
       }
@@ -49,7 +49,7 @@ describe('Platform', () => {
     it('should create new data contract with previously created identity as an owner', async () => {
       dataContractFixture = getDataContractFixture(identity.getId());
 
-      await client.platform.contracts.broadcast(dataContractFixture, identity);
+      await client.platform.contracts.publish(dataContractFixture, identity);
     });
 
     it('should be able to get newly created data contract', async () => {
