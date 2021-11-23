@@ -7,7 +7,7 @@ Parameters:
 
 | parameters                                | type            | required           | Description                                                                                                                                                                    |  
 |-------------------------------------------|-----------------|--------------------| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| **wallet**                                | Wallet          | yes                | A valid [wallet](/wallet/Wallet) instance                                                                                                                                      |
+| **wallet**                                | Wallet          | yes                | A valid [wallet](../wallet/Wallet.md) instance                                                                                                                                      |
 | **accountOpts.index**                     | number          | no                 | The BIP44 account index; by default use the next one (n+1) of the biggest account index already created in wallet                                                              |
 | **accountOpts.strategy**                  | string/function | no                 | A valid strategy string identifier (amongst "simpleAscendingAccumulator", "simpleDescendingAccumulator", simpleTransactionOptimizedAccumulator") or your own strategy function |
 | **accountOpts.label**                     | string          | no (def: null)     | If you want to be able to reference to an account per label |
@@ -30,4 +30,4 @@ await account.init();
 
 **Reminder**: Because many parameters are inherited from the wallet object (network, plugins, transporter, storage, keychain...), initializing an Account without a Wallet will require mocking all those properties.  
 
-**Identities**: Identities are accessible from an account via the identities interface : `account.identities`. See [Identities](/identities/Identities)
+**Identities**: Identities are accessible from an account via the identities interface : `account.identities`. See [Identities](../identities/Identities.md)

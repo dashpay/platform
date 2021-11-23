@@ -1,12 +1,12 @@
 **Usage**: `account.broadcastTransaction(transaction)`      
 **Description**: Allow to broadcast a valid **signed** transaction to the network.  
-**Notes**: Requires a signed transaction, use [`account.sign(transaction)`](/account/sign) for that.  
+**Notes**: Requires a signed transaction, use [`account.sign(transaction)`](../account/sign.md) for that.  
 
 Parameters: 
 
 | parameters                        | type               | required       | Description                                                                                      |  
 |-----------------------------------|--------------------|----------------| ------------------------------------------------------------------------------------------------ |
-| **transaction**                   | Transaction/String | yes            | A valid [created transaction](/account/createTransaction) or it's hexadecimal raw representation |
+| **transaction**                   | Transaction/String | yes            | A valid [created transaction](../account/createTransaction.md) or it's hexadecimal raw representation |
 | **options**                       | Object             | no             | |
 | **options.skipFeeValidation**     | Boolean            | no             | When set to true, and min relay fee is not met, will still try to broadcast a transaction        |
 
