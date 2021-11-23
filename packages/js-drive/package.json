@@ -64,7 +64,7 @@
   "dependencies": {
     "@dashevo/abci": "~0.21.0",
     "@dashevo/dapi-grpc": "~0.21.0",
-    "@dashevo/dashcore-lib": "~0.19.26",
+    "@dashevo/dashcore-lib": "~0.19.27",
     "@dashevo/dashd-rpc": "^2.3.1",
     "@dashevo/dpp": "0.21.0",
     "@dashevo/feature-flags-contract": "0.2.1",
