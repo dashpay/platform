@@ -44,7 +44,9 @@ describe('StateTransitionFacade', () => {
 
     const dataContractFactory = new DataContractFactory(createDPPMock(), undefined);
 
-    dataContractCreateTransition = dataContractFactory.createStateTransition(dataContract);
+    dataContractCreateTransition = dataContractFactory.createDataContractCreateTransition(
+      dataContract,
+    );
     dataContractCreateTransition.sign(identityPublicKey, privateKey);
 
     const documentFactory = new DocumentFactory(createDPPMock(), undefined, undefined);

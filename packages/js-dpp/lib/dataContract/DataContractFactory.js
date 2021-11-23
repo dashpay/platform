@@ -7,6 +7,7 @@ const DataContractCreateTransition = require('./stateTransition/DataContractCrea
 
 const entropyGenerator = require('../util/entropyGenerator');
 const AbstractConsensusError = require('../errors/consensus/AbstractConsensusError');
+const DataContractUpdateTransition = require('./stateTransition/DataContractUpdateTransition/DataContractUpdateTransition');
 
 class DataContractFactory {
   /**
@@ -100,16 +101,29 @@ class DataContractFactory {
   }
 
   /**
-   * Create Data Contract State Transition
+   * Create Data Contract Create State Transition
    *
    * @param {DataContract} dataContract
    * @return {DataContractCreateTransition}
    */
-  createStateTransition(dataContract) {
+  createDataContractCreateTransition(dataContract) {
     return new DataContractCreateTransition({
       protocolVersion: this.dpp.getProtocolVersion(),
       dataContract: dataContract.toObject(),
       entropy: dataContract.getEntropy(),
+    });
+  }
+
+  /**
+   * Create Data Contract Update State Transition
+   *
+   * @param {DataContract} dataContract
+   * @return {DataContractUpdateTransition}
+   */
+  createDataContractUpdateTransition(dataContract) {
+    return new DataContractUpdateTransition({
+      protocolVersion: this.dpp.getProtocolVersion(),
+      dataContract: dataContract.toObject(),
     });
   }
 }
