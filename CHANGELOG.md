@@ -8,6 +8,9 @@
 * **dapi:** Identifier expects Buffer ([#28](https://github.com/dashevo/platform/issues/28))
 * **dashmate:** ajv schema errors ([#14](https://github.com/dashevo/platform/issues/14))
 * **dashmate:** reset command doesn't work if setup failed ([#23](https://github.com/dashevo/platform/issues/23))
+* **dashmate:** cannot read properties error on group:reset ([#47](https://github.com/dashevo/platform/issues/47))
+* **dashmate:** json output for status commands ([#31](https://github.com/dashevo/platform/issues/31))
+* **dashmate:** enable mainnet for dashmate ([#2](https://github.com/dashevo/platform/issues/2))
 * **dpp:** rename generateEntropy to entropyGenerator ([#13](https://github.com/dashevo/platform/issues/13))
 * **sdk:** dpp hash function import ([#15](https://github.com/dashevo/platform/issues/15))
 * **sdk:** override ts-node target for unit tests ([#21](https://github.com/dashevo/platform/issues/21))
@@ -19,7 +22,8 @@
 * **dashmate:** force option for `group:stop` command ([#36](https://github.com/dashevo/platform/issues/36))
 * **dashmate:** provide docker build logs for verbose mode ([#19](https://github.com/dashevo/platform/issues/19))
 * migrate to DashCore 0.18.0.0-beta1 ([#51](https://github.com/dashevo/platform/issues/51))
-* **wallet-lib:** do not sync transactions if mnemonic is absent
+* **wallet-lib:** dump wallet storage ([#8](https://github.com/dashevo/platform/issues/8))
+* **wallet-lib:** do not sync transactions if mnemonic is absent ([#7](https://github.com/dashevo/platform/issues/7))
 
 
 ### Performance Improvements
@@ -29,6 +33,36 @@
 
 ### Build System
 * build only necessary packages ([#27](https://github.com/dashevo/platform/issues/27))
+* run npm scripts in parallel ([#33](https://github.com/dashevo/platform/issues/33))
+* cache native npm modules during docker build ([#20](https://github.com/dashevo/platform/issues/20))
+* setup semantic pull requests ([#11](https://github.com/dashevo/platform/issues/11))
+* **sdk:** upgrade to webpack 5 ([#6](https://github.com/dashevo/platform/issues/6))
+
+
+### Continuous Integration
+* simplify release workflow ([#48](https://github.com/dashevo/platform/issues/48))
+* show docker logs on failure ([#43](https://github.com/dashevo/platform/issues/43))
+* check mismatch dependencies ([#26](https://github.com/dashevo/platform/issues/26))
+* run package tests in parallel ([#25](https://github.com/dashevo/platform/issues/25))
+
+
+### Tests
+* adjust timeouts ([#45](https://github.com/dashevo/platform/issues/45))
+* **test-suite:** skipSynchronizationBeforeHeight option with new wallet ([#34](https://github.com/dashevo/platform/issues/34))
+* **dpp:** fix invalid network floating error ([#32](https://github.com/dashevo/platform/issues/32))
+* **dpp:** grpc common bootstrap not working ([#16](https://github.com/dashevo/platform/issues/16))
+
+
+### Documentation
+* markdown link fixes ([#49](https://github.com/dashevo/platform/issues/49))
+* add README.md for the whole platform as a project ([#38](https://github.com/dashevo/platform/issues/38))
+* add contributing.md ([#37](https://github.com/dashevo/platform/issues/37))
+* **sdk:** provide getTransactionHistory ([#5](https://github.com/dashevo/platform/issues/5))
+* improved sidebar and usage in DAPI client ([#3](https://github.com/dashevo/platform/issues/3))
+
+
+### Styles
+* fix ES linter errors ([#24](https://github.com/dashevo/platform/issues/24))
 
 
 ### BREAKING CHANGES
