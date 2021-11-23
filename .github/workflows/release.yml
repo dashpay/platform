@@ -51,6 +51,8 @@ jobs:
 
       - name: Publish NPM packages
         run: npm publish --workspaces --access public --tag ${{ steps.tag.outputs.result }}
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
   release-drive-docker-image:
     name: Release Drive to Docker Hub
