@@ -1,5 +1,6 @@
 {
-  "name": "js-dash-platform",
+  "name": "@dashevo/platform",
+  "version": "0.21.3",
   "private": true,
   "scripts": {
     "setup": "npm install && npm run build && npm run configure",
@@ -28,7 +29,8 @@
     "clean:data": "npm run dashmate group:reset -- --group=local --hard",
     "clean": "npm run clean:data && npm run build",
     "reset": "npm run clean:data -- --force && npm run setup",
-    "dashmate": "./packages/dashmate/bin/dashmate"
+    "dashmate": "./packages/dashmate/bin/dashmate",
+    "bump": "packster bump"
   },
   "ultra": {
     "concurrent": [
@@ -36,7 +38,7 @@
     ]
   },
   "devDependencies": {
-    "packster": "~0.3.0",
+    "packster": "^0.4.0",
     "syncpack": "^5.8.15",
     "ultra-runner": "^3.10.5"
   },
