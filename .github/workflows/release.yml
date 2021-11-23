@@ -231,8 +231,8 @@ jobs:
           builder: ${{ steps.buildx.outputs.name }}
           file: ./packages/dapi/Dockerfile
           push: true
-          tags: ${{ steps.dapi_docker_meta.outputs.tags }}
-          labels: ${{ steps.dapi_docker_meta.outputs.labels }}
+          tags: ${{ steps.docker_meta.outputs.tags }}
+          labels: ${{ steps.docker_meta.outputs.labels }}
 #          platforms: linux/amd64,linux/arm64
 
   release-test-suite-docker-image:
@@ -322,6 +322,6 @@ jobs:
           builder: ${{ steps.buildx.outputs.name }}
           file: ./packages/dapi/Dockerfile
           push: true
-          tags: ${{ steps.dapi_docker_meta.outputs.tags }}
-          labels: ${{ steps.dapi_docker_meta.outputs.labels }}
+          tags: ${{ steps.docker_meta.outputs.tags }}
+          labels: ${{ steps.docker_meta.outputs.labels }}
 #          platforms: linux/amd64,linux/arm64
