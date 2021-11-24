@@ -30,13 +30,21 @@ jobs:
         uses: actions/setup-node@v2
         with:
           node-version: '16'
-          cache: yarn
+#          cache: yarn
 
       - name: Enable corepack
         run: corepack enable
 
       - name: Disable NPM audit
         run: npm config set audit false
+
+      - name: Setup Yarn cache
+        uses: actions/cache@v2
+        with:
+          path: .yarn/cache
+          key: ${{ runner.os }}-yarn-${{ hashFiles('yarn.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-yarn-
 
       - name: Install dependencies
         run: yarn install
