@@ -30,7 +30,7 @@ jobs:
         uses: actions/setup-node@v2
         with:
           node-version: '16'
-#          cache: yarn
+          cache: yarn
 
       - name: Enable corepack
         run: corepack enable
@@ -46,8 +46,8 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-yarn-
 
-      - name: Install dependencies
-        run: yarn install
+      - name: Install package dependencies
+        run: yarn workspaces focus "${{ inputs.package }}"
 
       - name: Run ESLinter
         run: yarn lint --filter "${{ inputs.package }}"
