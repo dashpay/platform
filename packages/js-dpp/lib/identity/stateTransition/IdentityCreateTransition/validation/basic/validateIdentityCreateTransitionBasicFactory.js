@@ -5,7 +5,9 @@ const convertBuffersToArrays = require('../../../../../util/convertBuffersToArra
 /**
  * @param {JsonSchemaValidator} jsonSchemaValidator
  * @param {validatePublicKeys} validatePublicKeys
- * @param {validatePublicKeysInIdentityCreateTransition} validatePublicKeysInIdentityCreateTransition
+ * @param {
+ *  validatePublicKeysInIdentityCreateTransition
+ * } validatePublicKeysInIdentityCreateTransition
  * @param {Object.<number, Function>} proofValidationFunctionsByType
  * @param {validateProtocolVersion} validateProtocolVersion
  *
@@ -44,6 +46,10 @@ function validateIdentityCreateTransitionBasicFactory(
 
     result.merge(
       validatePublicKeys(rawStateTransition.publicKeys),
+    );
+
+    result.merge(
+      validatePublicKeysInIdentityCreateTransition(rawStateTransition.publicKeys),
     );
 
     if (!result.isValid()) {
