@@ -48,7 +48,7 @@ jobs:
             return (tag.includes('dev') ? `${major}.${minor}-dev` : 'latest');
 
       - name: Publish NPM packages
-        run: yarn npm publish --access public --tag ${{ steps.tag.outputs.result }}
+        run: yarn workspaces foreach --all --no-private --parallel npm publish --tag ${{ steps.tag.outputs.result }}
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
