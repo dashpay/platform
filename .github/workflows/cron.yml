@@ -50,8 +50,8 @@ jobs:
           cache-path: /tmp/buildkit-cache
           cache-max-size: 3g
 
-      - name: Install NPM dependencies
-        run: yarn install --immutable
+      - name: Install dependencies
+        run: yarn install
 
       - name: Run ESLinter
         run: yarn lint

@@ -25,7 +25,7 @@ jobs:
         run: corepack enable
 
       - name: Install dependencies
-        run: yarn install --immutable
+        run: yarn install
 
       - name: Check dependencies
         run: node_modules/.bin/syncpack-list-mismatches
@@ -75,7 +75,7 @@ jobs:
           cache-max-size: 3g
 
       - name: Install dependencies
-        run: yarn install --immutable
+        run: yarn install
 
       - name: Build packages
         run: yarn build

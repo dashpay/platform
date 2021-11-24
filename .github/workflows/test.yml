@@ -35,8 +35,11 @@ jobs:
       - name: Enable corepack
         run: corepack enable
 
+      - name: Disable NPM audit
+        run: npm config set audit false
+
       - name: Install dependencies
-        run: yarn install --immutable --no-audit
+        run: yarn install
 
       - name: Run ESLinter
         run: yarn lint --filter "${{ inputs.package }}"
