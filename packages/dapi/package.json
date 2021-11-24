@@ -67,7 +67,8 @@
     "semver": "^7.3.2",
     "sinon": "^11.1.2",
     "sinon-chai": "^3.7.0",
-    "swagger-jsdoc": "^3.5.0"
+    "swagger-jsdoc": "^3.5.0",
+    "ultra-runner": "^3.10.5"
   },
   "repository": {
     "type": "git",

@@ -66,6 +66,7 @@
     "sinon": "^11.1.2",
     "sinon-chai": "^3.7.0",
     "stream-browserify": "^3.0.0",
+    "ultra-runner": "^3.10.5",
     "url": "^0.11.0",
     "webpack": "^5.59.1",
     "webpack-cli": "^4.9.1"
