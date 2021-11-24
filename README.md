@@ -52,8 +52,8 @@ located in the [packages](./packages) directory.
 - `yarn stop` will stop the local dev environment. Running a dev environment requires a non-trivial amount of system resources,
  so it is best to stop the local node when not in use
 - Run `yarn build` to rebuild the project after changes. If you have a local node
- running, you may need to restart it by running `npm run stop && npm run start`
-- To completely reset all local data and builds, run `npm run reset`
+ running, you may need to restart it by running `yarn restart`
+- To completely reset all local data and builds, run `yarn reset`
 
 ### Looking for support?
 
