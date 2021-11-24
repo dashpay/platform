@@ -26,6 +26,7 @@ class GetIdentityIdsByPublicKeyHashesResponse extends AbstractResponse {
   static createFromProto(proto) {
     const { metadata, proof } = AbstractResponse.createMetadataAndProofFromProto(proto);
 
+    console.log('AAAAAAAA');
     console.dir(proto.getIdentityIdsList());
 
     return new GetIdentityIdsByPublicKeyHashesResponse(
