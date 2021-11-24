@@ -23,6 +23,7 @@ jobs:
         with:
           node-version: '16'
           registry-url: 'https://registry.npmjs.org'
+          cache: yarn
 
       - name: Enable corepack
         run: corepack enable
@@ -60,6 +61,7 @@ jobs:
         uses: actions/setup-node@v2
         with:
           node-version: '16'
+          cache: yarn
 
       - name: Enable corepack
         run: corepack enable
@@ -146,6 +148,7 @@ jobs:
         uses: actions/setup-node@v2
         with:
           node-version: '16'
+          cache: yarn
 
       - name: Enable corepack
         run: corepack enable
@@ -232,6 +235,7 @@ jobs:
         uses: actions/setup-node@v2
         with:
           node-version: '16'
+          cache: yarn
 
       - name: Enable corepack
         run: corepack enable
