@@ -58,5 +58,8 @@
     "packages/js-drive",
     "packages/dashmate",
     "packages/platform-test-suite"
-  ]
+  ],
+  "resolutions": {
+    "protobufjs": "github:jawid-h/protobuf.js#fix/buffer-conversion"
+  }
 }
