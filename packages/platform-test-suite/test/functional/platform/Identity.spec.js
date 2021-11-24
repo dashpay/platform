@@ -156,7 +156,7 @@ describe('Platform', () => {
 
       const duplicateIdentity = dpp.identity.create(
         assetLockProof,
-        [walletPublicKey],
+        [{ key: walletPublicKey }],
       );
 
       const duplicateIdentityCreateTransition = dpp.identity.createIdentityCreateTransition(

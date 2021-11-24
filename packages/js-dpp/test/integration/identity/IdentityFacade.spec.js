@@ -1,3 +1,4 @@
+const { PublicKey } = require('@dashevo/dashcore-lib');
 const DashPlatformProtocol = require('../../../lib/DashPlatformProtocol');
 
 const Identity = require('../../../lib/identity/Identity');
@@ -42,9 +43,11 @@ describe('IdentityFacade', () => {
 
   describe('#create', () => {
     it('should create Identity', () => {
-      const publicKeys = identity.getPublicKeys().map(
-        (identityPublicKey) => identityPublicKey.toObject(),
-      );
+      const publicKeys = identity.getPublicKeys()
+        .map((identityPublicKey) => ({
+          ...identityPublicKey.toObject(),
+          key: new PublicKey(identityPublicKey.getData()),
+        }));
 
       const result = dpp.identity.create(
         instantAssetLockProof,

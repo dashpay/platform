@@ -29,21 +29,23 @@ class IdentityFactory {
    * Create Identity
    *
    * @param {InstantAssetLockProof} assetLockProof
-   * @param {RawIdentityPublicKey[]} publicKeys
+   * @param {PublicKeyOptions[]} publicKeyOptions
    * @return {Identity}
    */
-  create(assetLockProof, publicKeys) {
+  create(assetLockProof, publicKeyOptions) {
     const identity = new Identity({
       protocolVersion: this.dpp.getProtocolVersion(),
       id: assetLockProof.createIdentifier(),
       balance: 0,
-      publicKeys: publicKeys.map((publicKey, i) => ({
-        id: publicKey.id || i,
-        type: publicKey.type || IdentityPublicKey.TYPES.ECDSA_SECP256K1,
-        purpose: publicKey.purpose || IdentityPublicKey.PURPOSES.AUTHENTICATION,
-        securityLevel: publicKey.securityLevel || IdentityPublicKey.SECURITY_LEVELS.CRITICAL,
+      publicKeys: publicKeyOptions.map((publicKey, i) => ({
+        id: publicKey.id == null ? i : publicKey.id,
+        type: publicKey.type == null ? IdentityPublicKey.TYPES.ECDSA_SECP256K1 : publicKey.type,
+        purpose: publicKey.purpose == null ? IdentityPublicKey.PURPOSES.AUTHENTICATION
+          : publicKey.purpose,
+        securityLevel: publicKey.securityLevel == null ? IdentityPublicKey.SECURITY_LEVELS.CRITICAL
+          : publicKey.securityLevel,
         // Copy data buffer
-        data: publicKey.data.toBuffer(),
+        data: publicKey.key.toBuffer(),
       })),
       revision: 0,
     });
@@ -166,5 +168,14 @@ class IdentityFactory {
     });
   }
 }
+
+/**
+ * @typedef {Object} PublicKeyOptions
+ * @property {number|undefined} id
+ * @property {number|undefined} type
+ * @property {number|undefined} purpose
+ * @property {number|undefined} securityLevel
+ * @property {PublicKey} key
+ */
 
 module.exports = IdentityFactory;
