@@ -26,7 +26,7 @@ export default async function createIdentityCreateTransition(platform : Platform
     // @ts-ignore
     const identity = dpp.identity.create(
         assetLockProof, [{
-          data: identityPublicKey,
+          key: identityPublicKey,
           purpose: IdentityPublicKey.PURPOSES.AUTHENTICATION,
           securityLevel: IdentityPublicKey.SECURITY_LEVELS.MASTER
         }]
