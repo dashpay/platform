@@ -45,13 +45,13 @@ located in the [packages](./packages) directory.
 - Run `yarn setup` to install dependencies and configure and build all packages
 - Run `yarn start` to start the local dev environment built from the sources
 - Run `yarn test` to run the whole test suite (note that running tests requires a running node, 
- so be sure to call `npm start` first). Alternatively, you can run tests for a specific 
- package by running `npm test -w <package_name>`, for example running 
- `npm test -w @dashevo/dapi-client` will run tests for the JS DAPI client. To see 
+ so be sure to call `yarn start` first). Alternatively, you can run tests for a specific 
+ package by running `yarn workspace <package_name> test`, for example running 
+ `yarn workspace @dashevo/dapi-client test` will run tests for the JS DAPI client. To see 
  all available packages, please see the [packages readme](./packages/README.md)
-- `npm run stop` will stop the local dev environment. Running a dev environment requires a non-trivial amount of system resources,
+- `yarn stop` will stop the local dev environment. Running a dev environment requires a non-trivial amount of system resources,
  so it is best to stop the local node when not in use
-- Run `npm run build` to rebuild the project after changes. If you have a local node
+- Run `yarn build` to rebuild the project after changes. If you have a local node
  running, you may need to restart it by running `npm run stop && npm run start`
 - To completely reset all local data and builds, run `npm run reset`
 
