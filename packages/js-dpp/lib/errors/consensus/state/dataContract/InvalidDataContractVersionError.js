@@ -1,6 +1,6 @@
-const AbstractBasicError = require('../AbstractBasicError');
+const AbstractStateError = require('../AbstractStateError');
 
-class InvalidDataContractVersionError extends AbstractBasicError {
+class InvalidDataContractVersionError extends AbstractStateError {
   /**
    * @param {number} expectedVersion
    * @param {number} version

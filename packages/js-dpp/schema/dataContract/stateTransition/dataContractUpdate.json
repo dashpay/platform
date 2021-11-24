@@ -8,16 +8,10 @@
     },
     "type": {
       "type": "integer",
-      "const": 0
+      "const": 4
     },
     "dataContract": {
       "type": "object"
-    },
-    "entropy": {
-      "type": "array",
-      "byteArray": true,
-      "minItems": 32,
-      "maxItems": 32
     },
     "signaturePublicKeyId": {
       "type": "integer",
@@ -35,7 +29,6 @@
     "protocolVersion",
     "type",
     "dataContract",
-    "entropy",
     "signaturePublicKeyId",
     "signature"
   ]

@@ -2,10 +2,10 @@ const serializer = require('../../../../../util/serializer');
 
 const ValidationResult = require('../../../../../validation/ValidationResult');
 
-const InvalidDataContractVersionError = require('../../../../../errors/consensus/basic/dataContract/InvalidDataContractVersionError');
-const DataContractNotPresentError = require('../../../../../errors/consensus/basic/document/DataContractNotPresentError');
 const IncompatibleDataContractSchemaError = require('../../../../../errors/consensus/state/dataContract/IncompatibleDataContractSchemaError');
 const InvalidDataContractBaseDataError = require('../../../../../errors/consensus/state/dataContract/InvalidDataContractBaseDataError');
+const InvalidDataContractVersionError = require('../../../../../errors/consensus/state/dataContract/InvalidDataContractVersionError');
+const DataContractNotPresentError = require('../../../../../errors/consensus/basic/document/DataContractNotPresentError');
 
 /**
  *
@@ -54,8 +54,8 @@ function validateDataContractUpdateTransitionStateFactory(
     }
 
     // Schema should be backward compatible
-    const oldSchema = existingDataContract.getDocumentSchema();
-    const newSchema = stateTransition.getDataContract().getDocumentSchema();
+    const oldSchema = existingDataContract.getDocuments();
+    const newSchema = stateTransition.getDataContract().getDocuments();
 
     try {
       diffValidator.validateSchemaCompatibility(oldSchema, newSchema);

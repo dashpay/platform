@@ -80,6 +80,7 @@ const protocolVersion = require('../version/protocolVersion');
 const validateProtocolVersionFactory = require('../version/validateProtocolVersionFactory');
 const validateDataContractUpdateTransitionBasicFactory = require('../dataContract/stateTransition/DataContractUpdateTransition/validation/basic/validateDataContractUpdateTransitionBasicFactory');
 const validateDataContractUpdateTransitionStateFactory = require('../dataContract/stateTransition/DataContractUpdateTransition/validation/state/validateDataContractUpdateTransitionStateFactory');
+const validateIndicesAreNotChanged = require('../dataContract/stateTransition/DataContractUpdateTransition/validation/state/validateIndicesAreNotChanged');
 
 class StateTransitionFacade {
   /**
@@ -218,6 +219,7 @@ class StateTransitionFacade {
       validateDataContractUpdateTransitionStateFactory(
         this.stateRepository,
         jsonSchemaDiffValidator,
+        validateIndicesAreNotChanged,
       )
     );
 
