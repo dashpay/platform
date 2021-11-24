@@ -25,12 +25,16 @@ describe('validateIdentityCreateTransitionBasicFactory', () => {
   let rawStateTransition;
   let stateTransition;
   let validatePublicKeysMock;
+  let validatePublicKeysInIdentityCreateTransitionFactory;
   let assetLockPublicKeyHash;
   let proofValidationFunctionsByTypeMock;
   let validateProtocolVersionMock;
 
   beforeEach(async function beforeEach() {
     validatePublicKeysMock = this.sinonSandbox.stub()
+      .returns(new ValidationResult());
+
+    validatePublicKeysInIdentityCreateTransitionFactory = this.sinonSandbox.stub()
       .returns(new ValidationResult());
 
     assetLockPublicKeyHash = Buffer.alloc(20, 1);
@@ -57,6 +61,7 @@ describe('validateIdentityCreateTransitionBasicFactory', () => {
     validateIdentityCreateTransitionBasic = validateIdentityCreateTransitionBasicFactory(
       jsonSchemaValidator,
       validatePublicKeysMock,
+      validatePublicKeysInIdentityCreateTransitionFactory,
       proofValidationFunctionsByTypeMock,
       validateProtocolVersionMock,
     );
