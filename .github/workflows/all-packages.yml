@@ -8,8 +8,8 @@ on:
       - v[0-9]+\.[0-9]+-dev
 
 jobs:
-  dependencies:
-    name: Check mismatched dependencies
+  workspaces:
+    name: Validate project workspaces
     runs-on: ubuntu-20.04
     steps:
       - name: Check out repo
@@ -24,11 +24,8 @@ jobs:
       - name: Enable corepack
         run: corepack enable
 
-      - name: Install dependencies
-        run: yarn install
-
-      - name: Check dependencies
-        run: node_modules/.bin/syncpack-list-mismatches
+      - name: Validate workspaces
+        run: yarn constraints
 
   test-suite:
     name: Run Platform Test Suite

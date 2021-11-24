@@ -40,7 +40,6 @@
   },
   "devDependencies": {
     "packster": "^0.4.0",
-    "syncpack": "^5.8.15",
     "ultra-runner": "^3.10.5"
   },
   "workspaces": [
