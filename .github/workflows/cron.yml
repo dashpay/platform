@@ -8,7 +8,7 @@ jobs:
   test:
     name: Test all packages
     runs-on: ubuntu-20.04
-    timeout-minutes: 45
+    timeout-minutes: 35
     steps:
       - name: Cancel previous runs
         uses: styfle/cancel-workflow-action@0.9.1
