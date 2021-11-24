@@ -31,10 +31,12 @@ COPY packages/wallet-lib packages/wallet-lib
 COPY packages/js-grpc-common packages/js-grpc-common
 COPY packages/feature-flags-contract packages/feature-flags-contract
 
-# Install DAPI-specific dependencies
-RUN --mount=type=bind,from=dashpay/dapi,source=/platform/node_modules,target=/tmp/node_modules,rw \
-    cp -R /tmp/node_modules node_modules && \
-    yarn workspaces focus --production @dashevo/platform-test-suite
+# Install Test Suite specific dependencies using previous
+# node_modules directory to reuse built binaries
+RUN --mount=type=cache,target=/tmp/node_modules \
+    cp -R /tmp/node_modules /platform/ && \
+    yarn workspaces focus --production @dashevo/platform-test-suite && \
+    cp -R node_modules /tmp/
 
 FROM node:16-alpine
 

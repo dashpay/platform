@@ -30,10 +30,12 @@ COPY packages/feature-flags-contract packages/feature-flags-contract
 COPY packages/js-dpp packages/js-dpp
 COPY packages/js-grpc-common packages/js-grpc-common
 
-# Install Drive-specific dependencies
-RUN --mount=type=bind,from=dashpay/drive,source=/platform/node_modules,target=/tmp/node_modules,rw \
-    cp -R /tmp/node_modules node_modules && \
-    yarn workspaces focus --production @dashevo/drive
+# Install Drive-specific dependencies using previous
+# node_modules directory to reuse built binaries
+RUN --mount=type=cache,target=/tmp/node_modules \
+    cp -R /tmp/node_modules /platform/ && \
+    yarn workspaces focus --production @dashevo/drive && \
+    cp -R node_modules /tmp/
 
 FROM node:16-alpine
 
