@@ -1,4 +1,3 @@
-CONFIG_NAME="local"
 MINING_INTERVAL_IN_SECONDS=30
 MASTERNODES_COUNT=3
 
@@ -7,6 +6,11 @@ DIR_PATH=$(dirname $FULL_PATH)
 ROOT_PATH=$(dirname $DIR_PATH)
 PACKAGES_PATH="$ROOT_PATH/packages"
 
-"${PACKAGES_PATH}"/dashmate/bin/dashmate update -v
+DASHMATE_BIN="${PACKAGES_PATH}/dashmate/bin/dashmate"
 
-"${PACKAGES_PATH}"/dashmate/bin/dashmate setup ${CONFIG_NAME} --verbose --debug-logs --miner-interval="${MINING_INTERVAL_IN_SECONDS}s" --node-count=${MASTERNODES_COUNT} | tee "${ROOT_PATH}"/logs/setup.log
+"${DASHMATE_BIN}" update -v
+
+"${DASHMATE_BIN}" setup local --verbose \
+                              --debug-logs \
+                              --miner-interval="${MINING_INTERVAL_IN_SECONDS}s" \
+                              --node-count=${MASTERNODES_COUNT} | tee "${ROOT_PATH}"/logs/setup.log

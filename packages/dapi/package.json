@@ -6,7 +6,7 @@
   "scripts": {
     "api": "node scripts/api.js",
     "tx-filter-stream": "node scripts/tx-filter-stream.js",
-    "test": "npm run test:coverage && npm run test:functional",
+    "test": "yarn run test:coverage && yarn run test:functional",
     "test:coverage": "nyc --check-coverage --lines=50 --branches=50 --functions=50 mocha --recursive test/unit test/integration",
     "test:unit": "mocha --recursive test/unit",
     "test:integration": "mocha --recursive test/integration",
@@ -14,7 +14,7 @@
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "oas:setversion": "jq -r .version package.json | xargs -I{} sed -i \"s/version:.*/version: '{}',/\" doc/swaggerDef.js",
-    "oas:generate": "npm run oas:setversion && swagger-jsdoc -d doc/swaggerDef.js lib/rpcServer/**/*.js -o doc/swagger.json"
+    "oas:generate": "yarn run oas:setversion && swagger-jsdoc -d doc/swaggerDef.js lib/rpcServer/**/*.js -o doc/swagger.json"
   },
   "ultra": {
     "concurrent": [

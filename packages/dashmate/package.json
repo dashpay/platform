@@ -7,7 +7,6 @@
   "scripts": {
     "lint": "eslint .",
     "postpack": "rm -f oclif.manifest.json",
-    "posttest": "eslint .",
     "prepack": "oclif-dev manifest && oclif-dev readme",
     "version": "oclif-dev readme && git add README.md"
   },
@@ -15,9 +14,7 @@
     "type": "git",
     "url": "git+https://github.com/dashevo/dashmate.git"
   },
-  "bin": {
-    "dashmate": "bin/dashmate"
-  },
+  "bin": "bin/dashmate",
   "contributors": [
     {
       "name": "Ivan Shumkov",

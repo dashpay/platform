@@ -8,33 +8,7 @@ on:
       - v[0-9]+\.[0-9]+-dev
 
 jobs:
-  local-deps:
-    name: Check local dependency references
-    runs-on: ubuntu-20.04
-    steps:
-      - name: Check out repo
-        uses: actions/checkout@v2
-
-      - name: Setup Node.JS
-        uses: actions/setup-node@v2
-        with:
-          node-version: '16'
-
-      - name: Enable NPM cache
-        uses: actions/cache@v2
-        with:
-          path: '~/.npm'
-          key: ${{ runner.os }}-node-${{ hashFiles('package-lock.json') }}
-          restore-keys: |
-            ${{ runner.os }}-node-
-
-      - name: Install NPM dependencies
-        run: npm ci --no-audit
-
-      - name: Check dependencies
-        run: node_modules/.bin/packster check --all --error
-
-  remote-deps:
+  dependencies:
     name: Check mismatched dependencies
     runs-on: ubuntu-20.04
     steps:
@@ -46,16 +20,11 @@ jobs:
         with:
           node-version: '16'
 
-      - name: Enable NPM cache
-        uses: actions/cache@v2
-        with:
-          path: '~/.npm'
-          key: ${{ runner.os }}-node-${{ hashFiles('package-lock.json') }}
-          restore-keys: |
-            ${{ runner.os }}-node-
+      - name: Enable corepack
+        run: corepack enable
 
-      - name: Install NPM dependencies
-        run: npm ci --no-audit
+      - name: Install dependencies
+        run: yarn install --immutable
 
       - name: Check dependencies
         run: node_modules/.bin/syncpack-list-mismatches
@@ -77,13 +46,8 @@ jobs:
         with:
           node-version: '16'
 
-      - name: Enable NPM cache
-        uses: actions/cache@v2
-        with:
-          path: '~/.npm'
-          key: ${{ runner.os }}-node-${{ hashFiles('package-lock.json') }}
-          restore-keys: |
-            ${{ runner.os }}-node-
+      - name: Enable corepack
+        run: corepack enable
 
       - name: Set up Docker BuildX
         id: buildx
@@ -108,20 +72,20 @@ jobs:
           cache-path: /tmp/buildkit-cache
           cache-max-size: 3g
 
-      - name: Install NPM dependencies
-        run: npm ci --no-audit
+      - name: Install dependencies
+        run: yarn install --immutable
 
       - name: Build packages
-        run: npm run build
+        run: yarn build
 
       - name: Setup local network
-        run: npm run configure
+        run: yarn configure
 
       - name: Start local network
-        run: npm run start
+        run: yarn start
 
       - name: Run test suite
-        run: npm run test:suite
+        run: yarn test:suite
 
       - name: Show Docker logs
         if: ${{ failure() }}

@@ -31,7 +31,7 @@
   "scripts": {
     "abci": "node scripts/abci",
     "lint": "eslint .",
-    "test": "npm run test:coverage",
+    "test": "yarn run test:coverage",
     "test:coverage": "nyc --check-coverage --stmts=93 --branch=85 --funcs=90 --lines=92 mocha './test/unit/**/*.spec.js' './test/integration/**/*.spec.js'",
     "test:unit": "mocha './test/unit/**/*.spec.js'",
     "test:integration": "mocha './test/integration/**/*.spec.js'"
@@ -65,7 +65,7 @@
   "dependencies": {
     "@dashevo/abci": "~0.21.0",
     "@dashevo/dapi-grpc": "workspace:~",
-    "@dashevo/dashcore-lib": "~0.19.26",
+    "@dashevo/dashcore-lib": "~0.19.27",
     "@dashevo/dashd-rpc": "^2.3.1",
     "@dashevo/dpp": "workspace:~",
     "@dashevo/feature-flags-contract": "workspace:~",

@@ -31,25 +31,20 @@ jobs:
         with:
           node-version: '16'
 
-      - name: Enable NPM cache
-        uses: actions/cache@v2
-        with:
-          path: '~/.npm'
-          key: ${{ runner.os }}-node-${{ hashFiles('package-lock.json') }}
-          restore-keys: |
-            ${{ runner.os }}-node-
+      - name: Enable corepack
+        run: corepack enable
 
       - name: Install NPM dependencies
-        run: npm ci --no-audit
+        run: yarn install --immutable
 
       - name: Run ESLinter
-        run: npm run lint --filter="${{ inputs.package }}"
+        run: yarn lint --filter "${{ inputs.package }}"
 
       - name: Build package and dependencies
-        run: npm run build --filter="+${{ inputs.package }}"
+        run: yarn build --filter "+${{ inputs.package }}"
 
       - name: Setup dotenv files
-        run: npm run configure:dotenv
+        run: yarn configure:dotenv
         if: ${{ !inputs.start-local-network }}
 
       - name: Set up Docker BuildX
@@ -79,15 +74,15 @@ jobs:
         if: ${{ inputs.start-local-network }}
 
       - name: Setup local network
-        run: npm run configure
+        run: yarn configure
         if: ${{ inputs.start-local-network }}
 
       - name: Start local network
-        run: npm run start
+        run: yarn start
         if: ${{ inputs.start-local-network }}
 
       - name: Run tests
-        run: npm run test --filter="${{ inputs.package }}"
+        run: yarn test --filter "${{ inputs.package }}"
 
       - name: Show Docker logs
         if: ${{ failure() }}

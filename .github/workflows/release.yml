@@ -24,19 +24,14 @@ jobs:
           node-version: '16'
           registry-url: 'https://registry.npmjs.org'
 
-      - name: Enable NPM cache
-        uses: actions/cache@v2
-        with:
-          path: '~/.npm'
-          key: ${{ runner.os }}-node-${{ hashFiles('package-lock.json') }}
-          restore-keys: |
-            ${{ runner.os }}-node-
+      - name: Enable corepack
+        run: corepack enable
 
-      - name: Install NPM dependencies
-        run: npm ci --no-audit
+      - name: Install dependencies
+        run: yarn install --immutable
 
       - name: Build packages
-        run: npm run build
+        run: yarn build
 
       - name: Set NPM release tag
         uses: actions/github-script@v5
@@ -49,7 +44,7 @@ jobs:
             return (tag.includes('dev') ? `${major}.${minor}-dev` : 'latest');
 
       - name: Publish NPM packages
-        run: npm publish --workspaces --access public --tag ${{ steps.tag.outputs.result }}
+        run: yarn npm publish --access public --tag ${{ steps.tag.outputs.result }}
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
@@ -66,19 +61,14 @@ jobs:
         with:
           node-version: '16'
 
-      - name: Enable NPM cache
-        uses: actions/cache@v2
-        with:
-          path: '~/.npm'
-          key: ${{ runner.os }}-node-${{ hashFiles('package-lock.json') }}
-          restore-keys: |
-            ${{ runner.os }}-node-
+      - name: Enable corepack
+        run: corepack enable
 
       - name: Install NPM dependencies
-        run: npm ci --no-audit
+        run: yarn install --immutable
 
       - name: Build packages
-        run: npm run build --filter="+@dashevo/drive"
+        run: yarn build --filter "+@dashevo/drive"
 
 #      - name: Set up QEMU to run multi-arch builds
 #        uses: docker/setup-qemu-action@v1
@@ -157,19 +147,14 @@ jobs:
         with:
           node-version: '16'
 
-      - name: Enable NPM cache
-        uses: actions/cache@v2
-        with:
-          path: '~/.npm'
-          key: ${{ runner.os }}-node-${{ hashFiles('package-lock.json') }}
-          restore-keys: |
-            ${{ runner.os }}-node-
+      - name: Enable corepack
+        run: corepack enable
 
       - name: Install NPM dependencies
-        run: npm ci --no-audit
+        run: yarn install --immutable
 
       - name: Build packages
-        run: npm run build --filter="+@dashevo/dapi"
+        run: yarn build --filter "+@dashevo/dapi"
 
 #      - name: Set up QEMU to run multi-arch builds
 #        uses: docker/setup-qemu-action@v1
@@ -248,19 +233,14 @@ jobs:
         with:
           node-version: '16'
 
-      - name: Enable NPM cache
-        uses: actions/cache@v2
-        with:
-          path: '~/.npm'
-          key: ${{ runner.os }}-node-${{ hashFiles('package-lock.json') }}
-          restore-keys: |
-            ${{ runner.os }}-node-
+      - name: Enable corepack
+        run: corepack enable
 
       - name: Install NPM dependencies
-        run: npm ci --no-audit
+        run: yarn install --immutable
 
       - name: Build packages
-        run: npm run build --filter="+@dashevo/platform-test-suite"
+        run: yarn build --filter "+@dashevo/platform-test-suite"
 
 #      - name: Set up QEMU to run multi-arch builds
 #        uses: docker/setup-qemu-action@v1
@@ -320,7 +300,7 @@ jobs:
         with:
           context: .
           builder: ${{ steps.buildx.outputs.name }}
-          file: ./packages/dapi/Dockerfile
+          file: ./packages/platform-test-suite/Dockerfile
           push: true
           tags: ${{ steps.docker_meta.outputs.tags }}
           labels: ${{ steps.docker_meta.outputs.labels }}

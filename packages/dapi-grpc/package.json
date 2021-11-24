@@ -5,10 +5,10 @@
   "browser": "browser.js",
   "main": "node.js",
   "scripts": {
-    "build": "scripts/build.sh",
+    "build": "yarn exec scripts/build.sh",
     "lint": "eslint .",
-    "prepublishOnly": "npm run build",
-    "test": "npm run test:unit",
+    "prepublishOnly": "yarn run build",
+    "test": "yarn run test:unit",
     "test:unit": "mocha './test/unit/**/*.spec.js'"
   },
   "contributors": [

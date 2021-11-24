@@ -15,6 +15,6 @@ on:
 jobs:
   dapi-tests:
     name: Run DAPI gRPC tests
-    uses: dashevo/platform/.github/workflows/test.yml@master
+    uses: dashevo/platform/.github/workflows/test.yml@feat-yarn2
     with:
       package: '@dashevo/dapi-grpc'

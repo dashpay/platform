@@ -23,13 +23,8 @@ jobs:
         with:
           node-version: '16'
 
-      - name: Enable NPM cache
-        uses: actions/cache@v2
-        with:
-          path: '~/.npm'
-          key: ${{ runner.os }}-node-${{ hashFiles('package-lock.json') }}
-          restore-keys: |
-            ${{ runner.os }}-node-
+      - name: Enable corepack
+        run: corepack enable
 
       - name: Set up Docker BuildX
         id: buildx
@@ -55,22 +50,22 @@ jobs:
           cache-max-size: 3g
 
       - name: Install NPM dependencies
-        run: npm ci --no-audit
+        run: yarn install --immutable
 
       - name: Run ESLinter
-        run: npm run lint
+        run: yarn lint
 
       - name: Build packages
-        run: npm run build
+        run: yarn build
 
       - name: Setup local network
-        run: npm run configure
+        run: yarn configure
 
       - name: Start local network
-        run: npm run start
+        run: yarn start
 
       - name: Run tests
-        run: npm run test
+        run: yarn test
 
       - name: Show Docker logs
         if: ${{ failure() }}

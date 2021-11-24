@@ -5,7 +5,7 @@
   "scripts": {
     "build": "",
     "lint": "eslint .",
-    "test": "npm run test:unit",
+    "test": "yarn run test:unit",
     "test:unit": "mocha 'test/unit/**/*.spec.js'"
   },
   "contributors": [
