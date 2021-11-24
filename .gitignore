@@ -23,7 +23,7 @@ node_modules
 # Yarn
 .pnp.*
 .yarn/*
-!.yarn/cache
+#!.yarn/cache TODO commit cache (1500 files) or not?
 !.yarn/patches
 !.yarn/plugins
 !.yarn/releases
