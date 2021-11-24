@@ -66,7 +66,7 @@ jobs:
       - name: Enable corepack
         run: corepack enable
 
-      - name: Install NPM dependencies
+      - name: Install dependencies
         run: yarn install --immutable
 
       - name: Build packages
@@ -153,7 +153,7 @@ jobs:
       - name: Enable corepack
         run: corepack enable
 
-      - name: Install NPM dependencies
+      - name: Install dependencies
         run: yarn install --immutable
 
       - name: Build packages
@@ -240,7 +240,7 @@ jobs:
       - name: Enable corepack
         run: corepack enable
 
-      - name: Install NPM dependencies
+      - name: Install dependencies
         run: yarn install --immutable
 
       - name: Build packages
