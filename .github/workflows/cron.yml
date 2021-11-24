@@ -27,6 +27,18 @@ jobs:
       - name: Enable corepack
         run: corepack enable
 
+      - name: Disable NPM audit
+        run: npm config set audit false
+
+      - name: Install dependencies
+        run: yarn install
+
+      - name: Run ESLinter
+        run: yarn lint
+
+      - name: Build packages
+        run: yarn build
+
       - name: Set up Docker BuildX
         id: buildx
         uses: docker/setup-buildx-action@v1
@@ -50,15 +62,6 @@ jobs:
           cache-path: /tmp/buildkit-cache
           cache-max-size: 3g
 
-      - name: Install dependencies
-        run: yarn install
-
-      - name: Run ESLinter
-        run: yarn lint
-
-      - name: Build packages
-        run: yarn build
-
       - name: Setup local network
         run: yarn configure
 
@@ -71,4 +74,3 @@ jobs:
       - name: Show Docker logs
         if: ${{ failure() }}
         uses: jwalton/gh-docker-logs@v2
-

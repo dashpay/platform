@@ -28,6 +28,9 @@ jobs:
       - name: Enable corepack
         run: corepack enable
 
+      - name: Disable NPM audit
+        run: npm config set audit false
+
       - name: Install dependencies
         run: yarn install
 
@@ -65,6 +68,9 @@ jobs:
 
       - name: Enable corepack
         run: corepack enable
+
+      - name: Disable NPM audit
+        run: npm config set audit false
 
       - name: Install dependencies
         run: yarn install
@@ -153,6 +159,9 @@ jobs:
       - name: Enable corepack
         run: corepack enable
 
+      - name: Disable NPM audit
+        run: npm config set audit false
+
       - name: Install dependencies
         run: yarn install
 
@@ -239,6 +248,9 @@ jobs:
 
       - name: Enable corepack
         run: corepack enable
+
+      - name: Disable NPM audit
+        run: npm config set audit false
 
       - name: Install dependencies
         run: yarn install
