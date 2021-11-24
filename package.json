@@ -5,6 +5,9 @@
   "scripts": {
     "setup": "yarn install && yarn run build && yarn run configure",
     "start": "yarn run dashmate group:start --verbose -w",
+    "restart": "yarn run dashmate group:restart --verbose -w",
+    "stop": "yarn run dashmate group:stop --verbose",
+    "reset": "yarn run clean:data --force && yarn run setup",
     "test": "ultra -r $* test",
     "test:dapi": "ultra -r --filter \"packages/@(dapi|platform-test-suite)\" test",
     "test:dapi-grpc": "ultra -r --filter \"packages/@(dapi|js-dapi-client|dapi-grpc|js-dash-sdk|js-drive|wallet-lib|platform-test-suite)\" test",
@@ -18,7 +21,6 @@
     "test:grpc-common": "ultra -r --filter \"packages/@(js-grpc-common|dapi-grpc|dapi|js-dapi-client|js-dash-sdk|js-drive|wallet-lib|platform-test-suite)\" test",
     "test:suite": "ultra -r --filter '@dashevo/platform-test-suite' test",
     "test:wallet-lib": "ultra -r --filter \"packages/@(wallet-lib|js-dash-sdk|platform-test-suite)\" test",
-    "stop": "yarn run dashmate group:stop --verbose",
     "build": "ultra --recursive $* --build",
     "lint": "ultra --recursive $* lint",
     "configure:dashmate": "yarn exec ./scripts/configure_dashmate.sh",
@@ -28,7 +30,6 @@
     "configure": "yarn run configure:dashmate && yarn run configure:network && yarn run configure:tests && yarn run configure:dotenv",
     "clean:data": "yarn run dashmate group:reset --verbose --group=local --hard",
     "clean": "yarn run clean:data && yarn run build",
-    "reset": "yarn run clean:data --force && yarn run setup",
     "dashmate": "./packages/dashmate/bin/dashmate",
     "bump": "packster bump"
   },
