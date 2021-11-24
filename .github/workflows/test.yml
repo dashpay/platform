@@ -38,9 +38,6 @@ jobs:
       - name: Disable NPM audit
         run: npm config set audit false
 
-      - name: Show yarn version
-        run: yarn --version
-
       - name: Install dependencies
         run: yarn install
 

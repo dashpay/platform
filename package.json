@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "setup": "yarn install && yarn run build && yarn run configure",
-    "start": "yarn run dashmate group:start --wait-for-readines --verbose",
+    "start": "yarn run dashmate group:start --verbose -w",
     "test": "ultra -r $* test",
     "test:dapi": "ultra -r --filter \"packages/@(dapi|platform-test-suite)\" test",
     "test:dapi-grpc": "ultra -r --filter \"packages/@(dapi|js-dapi-client|dapi-grpc|js-dash-sdk|js-drive|wallet-lib|platform-test-suite)\" test",
@@ -60,6 +60,7 @@
     "packages/platform-test-suite"
   ],
   "resolutions": {
-    "protobufjs": "github:jawid-h/protobuf.js#fix/buffer-conversion"
+    "protobufjs": "github:jawid-h/protobuf.js#fix/buffer-conversion",
+    "elliptic": "6.5.3"
   }
 }
