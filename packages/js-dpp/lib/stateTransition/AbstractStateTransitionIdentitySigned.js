@@ -9,6 +9,7 @@ const IdentityPublicKey = require('../identity/IdentityPublicKey');
 const InvalidSignaturePublicKeyError = require('./errors/InvalidSignaturePublicKeyError');
 const StateTransitionIsNotSignedError = require('./errors/StateTransitionIsNotSignedError');
 const PublicKeyMismatchError = require('./errors/PublicKeyMismatchError');
+const PublicKeySecurityLevelNotMetError = require('./errors/PublicKeySecurityLevelNotMetError');
 const InvalidIdentityPublicKeyTypeError = require('./errors/InvalidIdentityPublicKeyTypeError');
 
 /**
@@ -85,6 +86,10 @@ class AbstractStateTransitionIdentitySigned extends AbstractStateTransition {
    * @return {boolean}
    */
   verifySignature(publicKey) {
+    if (this.getRequiredKeySecurityLevel() > publicKey.getSecurityLevel()) {
+      throw new PublicKeySecurityLevelNotMetError(publicKey, this.getRequiredKeySecurityLevel());
+    }
+
     const signature = this.getSignature();
     if (!signature) {
       throw new StateTransitionIsNotSignedError(this);
@@ -129,6 +134,16 @@ class AbstractStateTransitionIdentitySigned extends AbstractStateTransition {
     }
 
     return rawStateTransition;
+  }
+
+  /**
+   * Returns minimal key security level that can be used to sign this ST.
+   * Overload this method if the ST requires different security level.
+   *
+   * @return {number}
+   */
+  getRequiredKeySecurityLevel() {
+    return IdentityPublicKey.SECURITY_LEVELS.MASTER;
   }
 }
 

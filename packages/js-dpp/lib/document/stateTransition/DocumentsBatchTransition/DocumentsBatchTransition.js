@@ -6,6 +6,8 @@ const DocumentCreateTransition = require('./documentTransition/DocumentCreateTra
 const DocumentReplaceTransition = require('./documentTransition/DocumentReplaceTransition');
 const DocumentDeleteTransition = require('./documentTransition/DocumentDeleteTransition');
 
+const IdentityPublicKey = require('../../../identity/IdentityPublicKey');
+
 const actionsToClasses = {
   [AbstractDocumentTransition.ACTIONS.CREATE]: DocumentCreateTransition,
   [AbstractDocumentTransition.ACTIONS.REPLACE]: DocumentReplaceTransition,
@@ -123,6 +125,16 @@ class DocumentsBatchTransition extends AbstractStateTransitionIdentitySigned {
    */
   getModifiedDataIds() {
     return this.getTransitions().map((documentTransition) => documentTransition.getId());
+  }
+
+  /**
+   * Returns minimal key security level that can be used to sign this ST
+   */
+  getRequiredKeySecurityLevel() {
+    const defaultSecurityLevel = IdentityPublicKey.SECURITY_LEVELS.HIGH;
+    // Step 1: Get all document types for the ST
+    // Step 2: Get document schema for every type
+    // If schema has security level, use that, if not, use default level
   }
 }
 
