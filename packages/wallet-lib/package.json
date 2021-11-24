@@ -82,7 +82,6 @@
     "sinon": "^11.1.2",
     "stream-browserify": "^3.0.0",
     "stream-http": "^3.2.0",
-    "ultra-runner": "^3.10.5",
     "url": "^0.11.0",
     "util": "^0.12.4",
     "webpack": "^5.59.1",
