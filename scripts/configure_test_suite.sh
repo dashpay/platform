@@ -1,3 +1,7 @@
+#!/usr/bin/env bash
+
+set -e
+
 PATH_TO_SCRIPT=$(realpath $0)
 PATH_TO_SCRIPTS_DIRECTORY=$(dirname $PATH_TO_SCRIPT)
 PATH_TO_PROJECT_ROOT=$(dirname $PATH_TO_SCRIPTS_DIRECTORY)
