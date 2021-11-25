@@ -18,7 +18,7 @@ services:
       - drive_mongodb
       - core
     volumes:
-      - drive_abci_data:/usr/src/app/db
+      - drive_abci_data:/platform/packages/js-drive/db
       - ${PLATFORM_DRIVE_ABCI_LOG_PRETTY_FILE_PATH:?err}:/var/log/drive-pretty.log
       - ${PLATFORM_DRIVE_ABCI_LOG_JSON_FILE_PATH:?err}:/var/log/drive-json.log
     environment:

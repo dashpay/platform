@@ -17,26 +17,30 @@ const TxStreamDataResponseMock = require('@dashevo/wallet-lib/src/test/mocks/TxS
 const TransportMock = require('@dashevo/wallet-lib/src/test/mocks/TransportMock');
 
 function makeTxStreamEmitISLocksForTransactions(transportMock, txStreamMock) {
-    transportMock.sendTransaction.callsFake((txString) => {
-        const transaction = new Transaction(txString);
-        const isLock = createFakeInstantLock(transaction.hash);
+  transportMock.sendTransaction.callsFake((txString) => {
+    const transaction = new Transaction(txString);
+    const isLock = createFakeInstantLock(transaction.hash);
 
-        // Emit IS lock for the transaction
-        txStreamMock.emit(
-            TxStreamMock.EVENTS.data,
-            new TxStreamDataResponseMock(
-                { instantSendLockMessages: [isLock.toBuffer()] }
-            )
-        );
+    setImmediate(() => {
+      // Emit IS lock for the transaction
+      txStreamMock.emit(
+        TxStreamMock.EVENTS.data,
+        new TxStreamDataResponseMock(
+          { instantSendLockMessages: [isLock.toBuffer()] }
+        )
+      );
+    })
 
-        // Emit the same transaction back to the client so it will know about the change transaction
-        txStreamMock.emit(
-            TxStreamMock.EVENTS.data,
-            new TxStreamDataResponseMock(
-                { rawTransactions: [transaction.toBuffer()] }
-            )
-        );
-    });
+    // Emit the same transaction back to the client so it will know about the change transaction
+    txStreamMock.emit(
+      TxStreamMock.EVENTS.data,
+      new TxStreamDataResponseMock(
+        { rawTransactions: [transaction.toBuffer()] }
+      )
+    );
+
+    return transaction.hash;
+  });
 }
 
 /**
