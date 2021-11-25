@@ -1,3 +1,7 @@
+#!/usr/bin/env bash
+
+set -e
+
 MINING_INTERVAL_IN_SECONDS=30
 MASTERNODES_COUNT=3
 
