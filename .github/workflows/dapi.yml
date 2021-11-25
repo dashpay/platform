@@ -21,6 +21,6 @@ on:
 jobs:
   dapi-tests:
     name: Run DAPI tests
-    uses: dashevo/platform/.github/workflows/test.yml@feat-yarn2
+    uses: dashevo/platform/.github/workflows/test.yml@master
     with:
       package: '@dashevo/dapi'

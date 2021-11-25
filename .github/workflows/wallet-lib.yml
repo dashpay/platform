@@ -21,7 +21,7 @@ on:
 jobs:
   js-wallet-lib-tests:
     name: Run Wallet lib tests
-    uses: dashevo/platform/.github/workflows/test.yml@feat-yarn2
+    uses: dashevo/platform/.github/workflows/test.yml@master
     with:
       package: '@dashevo/wallet-lib'
       start-local-network: true

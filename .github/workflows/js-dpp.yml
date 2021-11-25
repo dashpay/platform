@@ -17,6 +17,6 @@ on:
 jobs:
   js-dpp-tests:
     name: Run DPP tests
-    uses: dashevo/platform/.github/workflows/test.yml@feat-yarn2
+    uses: dashevo/platform/.github/workflows/test.yml@master
     with:
       package: '@dashevo/dpp'
