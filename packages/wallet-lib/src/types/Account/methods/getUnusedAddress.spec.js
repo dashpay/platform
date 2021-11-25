@@ -17,6 +17,7 @@ describe('Account - getUnusedAddress', function suite() {
       storage: {
         getStore: () => mockedStore,
         importAddresses: (_) => (_),
+        mappedAddress: {}
       },
       emit: (_) => (_),
       keyChain: new KeyChain({
