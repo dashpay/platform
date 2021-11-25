@@ -4,6 +4,7 @@
 ### Bug Fixes
 
 * new instant lock is not compatible with DashCore 0.17 ([#57](https://github.com/dashevo/platform/issues/57))
+* **wallet-lib:** eventemitter memory leak ([#56](https://github.com/dashevo/platform/issues/56))
 
 
 ### Continuous Integration
