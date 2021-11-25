@@ -10,6 +10,7 @@ const InvalidSignaturePublicKeyError = require('./errors/InvalidSignaturePublicK
 const StateTransitionIsNotSignedError = require('./errors/StateTransitionIsNotSignedError');
 const PublicKeyMismatchError = require('./errors/PublicKeyMismatchError');
 const PublicKeySecurityLevelNotMetError = require('./errors/PublicKeySecurityLevelNotMetError');
+const WrongPublicKeyPurposeError = require('./errors/WrongPublicKeyPurposeError');
 const InvalidIdentityPublicKeyTypeError = require('./errors/InvalidIdentityPublicKeyTypeError');
 
 /**
@@ -50,6 +51,8 @@ class AbstractStateTransitionIdentitySigned extends AbstractStateTransition {
     let privateKeyModel;
     let pubKeyBase;
 
+    this.verifyKeyLevelAndPurpose(identityPublicKey);
+
     switch (identityPublicKey.getType()) {
       case IdentityPublicKey.TYPES.ECDSA_SECP256K1:
         privateKeyModel = new PrivateKey(privateKey);
@@ -80,15 +83,35 @@ class AbstractStateTransitionIdentitySigned extends AbstractStateTransition {
   }
 
   /**
+   * @private
+   *
+   * Verifies that the supplied public key has the correct security level
+   * and purpose to sign this state transition
+   */
+  verifyKeyLevelAndPurpose(publicKey) {
+    if (this.getKeySecurityLevelRequirement() < publicKey.getSecurityLevel()) {
+      throw new PublicKeySecurityLevelNotMetError(
+        publicKey,
+        this.getKeySecurityLevelRequirement(),
+      );
+    }
+
+    if (publicKey.getPurpose() !== IdentityPublicKey.PURPOSES.AUTHENTICATION) {
+      throw new WrongPublicKeyPurposeError(
+        publicKey,
+        IdentityPublicKey.PURPOSES.AUTHENTICATION,
+      );
+    }
+  }
+
+  /**
    * Verify signature
    *
    * @param {IdentityPublicKey} publicKey
    * @return {boolean}
    */
   verifySignature(publicKey) {
-    if (this.getRequiredKeySecurityLevel() > publicKey.getSecurityLevel()) {
-      throw new PublicKeySecurityLevelNotMetError(publicKey, this.getRequiredKeySecurityLevel());
-    }
+    this.verifyKeyLevelAndPurpose(publicKey);
 
     const signature = this.getSignature();
     if (!signature) {
@@ -138,11 +161,11 @@ class AbstractStateTransitionIdentitySigned extends AbstractStateTransition {
 
   /**
    * Returns minimal key security level that can be used to sign this ST.
-   * Overload this method if the ST requires different security level.
+   * Override this method if the ST requires a different security level.
    *
    * @return {number}
    */
-  getRequiredKeySecurityLevel() {
+  getKeySecurityLevelRequirement() {
     return IdentityPublicKey.SECURITY_LEVELS.MASTER;
   }
 }

@@ -129,12 +129,37 @@ class DocumentsBatchTransition extends AbstractStateTransitionIdentitySigned {
 
   /**
    * Returns minimal key security level that can be used to sign this ST
+   *
+   * @override
+   * @return {number}
    */
-  getRequiredKeySecurityLevel() {
+  getKeySecurityLevelRequirement() {
     const defaultSecurityLevel = IdentityPublicKey.SECURITY_LEVELS.HIGH;
+
     // Step 1: Get all document types for the ST
     // Step 2: Get document schema for every type
     // If schema has security level, use that, if not, use default level
+    // Find the lowest value of all documents
+    // Return that
+    const documentTransitions = this.getTransitions();
+    let lowestSecurityLevel;
+    documentTransitions.forEach((documentTransition) => {
+      const documentType = documentTransition.getType();
+      const dataContract = documentTransition.getDataContract();
+      const documentSchema = dataContract.getDocumentSchema(documentType);
+
+      const documentKeySecurityLevelRequirement = documentSchema.keySecurityLevelRequirement == null
+        ? defaultSecurityLevel
+        : documentSchema.keySecurityLevelRequirement;
+
+      if (
+        lowestSecurityLevel == null || lowestSecurityLevel > documentKeySecurityLevelRequirement
+      ) {
+        lowestSecurityLevel = documentKeySecurityLevelRequirement;
+      }
+    });
+
+    return lowestSecurityLevel;
   }
 }
 

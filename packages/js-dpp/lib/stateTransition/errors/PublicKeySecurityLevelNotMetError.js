@@ -27,7 +27,7 @@ class PublicKeySecurityLevelNotMetError extends DPPError {
    *
    * @returns {number}
    */
-  getSecurityLevel() {
+  getKeySecurityLevelRequirement() {
     return this.requiredSecurityLevel;
   }
 }
