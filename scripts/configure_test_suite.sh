@@ -20,7 +20,7 @@ FEATURE_FLAGS_CONTRACT_ID=$($DASHMATE_BIN config:get --config="${CONFIG}_1" plat
 
 echo "Mint 100 Dash to faucet address"
 
-$DASHMATE_BIN group:stop
+$DASHMATE_BIN group:stop --verbose
 
 MINT_FILE_PATH=${PATH_TO_PROJECT_ROOT}/logs/mint.log
 

@@ -6,17 +6,17 @@
   "unpkg": "dist/dash.min.js",
   "types": "dist/src/index.d.ts",
   "scripts": {
-    "start:dev": "nodemon --exec 'npm run build && npm run test:unit'",
-    "build": "npm run build:ts",
-    "build:web": "npm run build:ts && webpack --stats-error-details",
+    "start:dev": "nodemon --exec 'yarn run build && yarn run test:unit'",
+    "build": "yarn run build:ts",
+    "build:web": "yarn run build:ts && webpack --stats-error-details",
     "build:ts": "tsc",
     "lint": "",
-    "test": "npm run test:unit && npm run test:functional && npm run test:browsers",
+    "test": "yarn run test:unit && yarn run test:functional && yarn run test:browsers",
     "test:browsers": "karma start ./karma.conf.js --single-run",
     "test:unit": "TS_NODE_COMPILER_OPTIONS={\"target\":\"es6\"} mocha -r ts-node/register/transpile-only \"src/**/*.spec.ts\"",
-    "test:functional": "npm run build && mocha --recursive tests/functional/**/*.js",
-    "prepublishOnly": "npm run build:web",
-    "prepare": "npm run build"
+    "test:functional": "yarn run build && mocha --recursive tests/functional/**/*.js",
+    "prepublishOnly": "yarn run build:web",
+    "prepare": "yarn run build"
   },
   "ultra": {
     "concurrent": [
@@ -34,11 +34,11 @@
   },
   "homepage": "https://github.com/dashevo/DashJS#readme",
   "dependencies": {
-    "@dashevo/dapi-client": "~0.21.5",
+    "@dashevo/dapi-client": "workspace:~",
     "@dashevo/dashcore-lib": "~0.19.28",
-    "@dashevo/dpp": "~0.21.5",
-    "@dashevo/grpc-common": "~0.21.5",
-    "@dashevo/wallet-lib": "~7.21.5",
+    "@dashevo/dpp": "workspace:~",
+    "@dashevo/grpc-common": "workspace:~",
+    "@dashevo/wallet-lib": "workspace:~",
     "bs58": "^4.0.1",
     "node-inspect-extracted": "^1.0.8"
   },

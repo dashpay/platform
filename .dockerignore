@@ -3,13 +3,20 @@
 .vscode
 .nyc_output
 
+logs
 node_modules
 scripts
 
+packages/*/.nyc_output
+packages/*/.ultra.cache.json
 packages/*/test
 packages/*/tests
 packages/*/doc
 packages/*/docs
 packages/*/dist
-packages/*/build
 packages/*/node_modules
+
+# Yarn
+.yarn/build-state.yml
+.yarn/install-state.gz
+.yarn/unplugged
