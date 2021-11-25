@@ -1,3 +1,5 @@
+#!/usr/bin/env bash
+
 CONFIG_NAME="local"
 
 full_path=$(realpath "$0")

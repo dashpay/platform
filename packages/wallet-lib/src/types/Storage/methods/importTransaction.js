@@ -102,6 +102,10 @@ const importTransaction = function importTransaction(transaction, transactionMet
             addressObject.utxos[utxoKey] = vout;
             addressObject.balanceSat += vout.satoshis;
             hasUpdateStorage = true;
+          } else if (addressObject.unconfirmedBalanceSat >= vout.satoshis) {
+            addressObject.unconfirmedBalanceSat -= vout.satoshis;
+            addressObject.balanceSat += vout.satoshis;
+            hasUpdateStorage = true;
           }
         }
       }
