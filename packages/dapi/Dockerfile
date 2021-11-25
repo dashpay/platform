@@ -15,6 +15,9 @@ RUN apk update && \
 # Enable corepack https://github.com/nodejs/corepack
 RUN corepack enable
 
+# Show yarn native module build logs
+RUN yarn config set enableInlineBuilds true
+
 WORKDIR /platform
 
 # Copy yarn files
