@@ -40,6 +40,11 @@ function getUnusedAddress(type = 'external', skip = 0) {
   if (unused.address === '') {
     return this.getAddress(accountIndex, type);
   }
+
+  if (!this.storage.mappedAddress[unused.address]) {
+    this.storage.mappedAddress[unused.address] = { walletId, type, path: unused.path };
+  }
+
   return unused;
 }
 

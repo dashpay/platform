@@ -20,7 +20,7 @@
   },
   "homepage": "https://github.com/dashevo/platform-test-suite#readme",
   "dependencies": {
-    "@dashevo/dashcore-lib": "~0.19.27",
+    "@dashevo/dashcore-lib": "~0.19.28",
     "@dashevo/dpns-contract": "workspace:~",
     "@dashevo/dpp": "workspace:~",
     "@dashevo/feature-flags-contract": "workspace:~",
