@@ -6,6 +6,9 @@
 * new instant lock is not compatible with DashCore 0.17 ([#57](https://github.com/dashevo/platform/issues/57))
 
 
+### Continuous Integration
+* use correct Dockerfile in test suite release ([#58](https://github.com/dashevo/platform/issues/58))
+
 
 ## [0.21.4](https://github.com/dashevo/platform/compare/v0.21.0...v0.21.4) (2021-11-23)
 
