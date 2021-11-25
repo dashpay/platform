@@ -1,7 +1,7 @@
 {
   "name": "@dashevo/drive",
   "private": true,
-  "version": "0.21.4",
+  "version": "0.21.5",
   "description": "Replicated state machine for Dash Platform",
   "engines": {
     "node": ">=12"
@@ -64,12 +64,12 @@
   },
   "dependencies": {
     "@dashevo/abci": "~0.21.0",
-    "@dashevo/dapi-grpc": "~0.21.4",
+    "@dashevo/dapi-grpc": "~0.21.5",
     "@dashevo/dashcore-lib": "~0.19.28",
     "@dashevo/dashd-rpc": "^2.3.1",
-    "@dashevo/dpp": "~0.21.4",
-    "@dashevo/feature-flags-contract": "~0.21.4",
-    "@dashevo/grpc-common": "~0.21.4",
+    "@dashevo/dpp": "~0.21.5",
+    "@dashevo/feature-flags-contract": "~0.21.5",
+    "@dashevo/grpc-common": "~0.21.5",
     "@dashevo/merk": "github:dashevo/node-merk",
     "ajv": "^8.6.0",
     "ajv-keywords": "^5.0.0",
