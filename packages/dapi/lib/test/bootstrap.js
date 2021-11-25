@@ -24,8 +24,8 @@ const rootPath = process.cwd();
 
 const dapiContainerOptions = {
   volumes: [
-    `${rootPath}/lib:/usr/src/app/lib`,
-    `${rootPath}/scripts:/usr/src/app/scripts`,
+    `${rootPath}/lib:/platform/packages/dapi/lib`,
+    `${rootPath}/scripts:/platform/packages/dapi/scripts`,
   ],
 };
 
