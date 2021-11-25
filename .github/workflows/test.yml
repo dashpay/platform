@@ -16,7 +16,7 @@ jobs:
   test:
     name: Test package
     runs-on: ubuntu-20.04
-    timeout-minutes: 30
+    timeout-minutes: 60
     steps:
       - name: Cancel previous runs
         uses: styfle/cancel-workflow-action@0.9.1
@@ -30,26 +30,38 @@ jobs:
         uses: actions/setup-node@v2
         with:
           node-version: '16'
+          cache: yarn
 
-      - name: Enable NPM cache
+      - name: Enable corepack
+        run: corepack enable
+
+      - name: Disable NPM audit
+        run: npm config set audit false
+
+      - name: Setup Yarn cache
         uses: actions/cache@v2
         with:
-          path: '~/.npm'
-          key: ${{ runner.os }}-node-${{ hashFiles('package-lock.json') }}
+          path: .yarn/cache
+          key: ${{ runner.os }}-yarn-${{ hashFiles('yarn.lock') }}
           restore-keys: |
-            ${{ runner.os }}-node-
+            ${{ runner.os }}-yarn-
 
-      - name: Install NPM dependencies
-        run: npm ci --no-audit
+      - name: Install dependencies
+        run: yarn install
 
       - name: Run ESLinter
-        run: npm run lint --filter="${{ inputs.package }}"
+        run: yarn lint --filter "${{ inputs.package }}"
 
       - name: Build package and dependencies
-        run: npm run build --filter="+${{ inputs.package }}"
+        run: yarn build --filter "+${{ inputs.package }}"
+        if: ${{ !inputs.start-local-network }}
+
+      - name: Build all packages
+        run: yarn build
+        if: ${{ inputs.start-local-network }}
 
       - name: Setup dotenv files
-        run: npm run configure:dotenv
+        run: yarn configure:dotenv
         if: ${{ !inputs.start-local-network }}
 
       - name: Set up Docker BuildX
@@ -79,15 +91,15 @@ jobs:
         if: ${{ inputs.start-local-network }}
 
       - name: Setup local network
-        run: npm run configure
+        run: yarn configure
         if: ${{ inputs.start-local-network }}
 
       - name: Start local network
-        run: npm run start
+        run: yarn start
         if: ${{ inputs.start-local-network }}
 
       - name: Run tests
-        run: npm run test --filter="${{ inputs.package }}"
+        run: yarn test --filter "${{ inputs.package }}"
 
       - name: Show Docker logs
         if: ${{ failure() }}

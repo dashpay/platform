@@ -4,7 +4,7 @@
   "description": "A contract and helper scripts for DPNS DApp",
   "scripts": {
     "lint": "eslint .",
-    "test": "npm run test:unit",
+    "test": "yarn run test:unit",
     "test:unit": "mocha 'test/unit/**/*.spec.js'"
   },
   "contributors": [
@@ -31,7 +31,7 @@
   ],
   "license": "MIT",
   "devDependencies": {
-    "@dashevo/dpp": "~0.21.5",
+    "@dashevo/dpp": "workspace:~",
     "chai": "^4.3.4",
     "dirty-chai": "^2.0.1",
     "eslint": "^7.32.0",

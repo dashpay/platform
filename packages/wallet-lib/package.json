@@ -12,8 +12,8 @@
     "test:functional": "nyc mocha 'tests/functional/*.js'",
     "test:integration": "nyc mocha 'tests/integration/**/*.spec.js'",
     "test:browsers": "karma start ./karma.conf.js --single-run",
-    "test": "npm run test:unit && npm run test:integration && npm run test:functional && npm run test:browsers",
-    "prepublishOnly": "npm run build:web"
+    "test": "yarn run test:unit && yarn run test:integration && yarn run test:functional && yarn run test:browsers",
+    "prepublishOnly": "yarn run build:web"
   },
   "ultra": {
     "concurrent": [
@@ -42,10 +42,10 @@
   },
   "homepage": "https://github.com/dashevo/wallet-lib#readme",
   "dependencies": {
-    "@dashevo/dapi-client": "~0.21.5",
+    "@dashevo/dapi-client": "workspace:~",
     "@dashevo/dashcore-lib": "~0.19.28",
-    "@dashevo/dpp": "~0.21.5",
-    "@dashevo/grpc-common": "~0.21.5",
+    "@dashevo/dpp": "workspace:~",
+    "@dashevo/grpc-common": "workspace:~",
     "cbor": "^8.0.0",
     "crypto-js": "^4.0.0",
     "lodash": "^4.17.19",
