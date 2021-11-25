@@ -1,3 +1,18 @@
+## [0.21.5](https://github.com/dashevo/platform/compare/v0.21.4...v0.21.5) (2021-11-25)
+
+
+### Bug Fixes
+
+* new instant lock is not compatible with DashCore 0.17 ([#57](https://github.com/dashevo/platform/issues/57))
+* **wallet-lib:** tx chaining mempool conflict errors ([#57](https://github.com/dashevo/platform/issues/44))
+
+
+### Continuous Integration
+* use correct Dockerfile in test suite release ([#58](https://github.com/dashevo/platform/issues/58))
+* set correct docker tag outputs in release workflow ([#55](https://github.com/dashevo/platform/issues/55))
+* enable NPM login on for release workflow ([#54](https://github.com/dashevo/platform/issues/54))
+
+
 ## [0.21.4](https://github.com/dashevo/platform/compare/v0.21.0...v0.21.4) (2021-11-23)
 
 

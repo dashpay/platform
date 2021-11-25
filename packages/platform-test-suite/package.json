@@ -1,7 +1,7 @@
 {
   "name": "@dashevo/platform-test-suite",
   "private": true,
-  "version": "0.21.4",
+  "version": "0.21.5",
   "description": "Dash Network end-to-end tests",
   "scripts": {
     "test": "mocha './test/**/*.spec.js'",
@@ -20,6 +20,7 @@
   },
   "homepage": "https://github.com/dashevo/platform-test-suite#readme",
   "dependencies": {
+    "@dashevo/dapi-client": "workspace:~",
     "@dashevo/dashcore-lib": "~0.19.28",
     "@dashevo/dpns-contract": "workspace:~",
     "@dashevo/dpp": "workspace:~",
