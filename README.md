@@ -79,7 +79,7 @@ Check out:
 - Our [Developers Discord](https://chat.dashdevs.org/)
 - Our [CONTRIBUTING.md](CONTRIBUTING.md) to get started with setting up the
   repo.
-- Our [blog](https://www.dash.org/blog/) which contains release posts and
+- Our [news](https://www.dash.org/news/) and [blog](https://www.dash.org/blog/) which contains release posts and
   explanations.
 
 ## License
