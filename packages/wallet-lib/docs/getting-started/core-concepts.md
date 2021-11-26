@@ -14,7 +14,7 @@ In order to access your UTXO, you will have to provide a valid mnemonic that wil
 
 Since the introduction of [deterministic wallet](https://github.com/bitcoin/bips/blob/master/bip-0044.mediawiki), a Wallet is actually composed of multiple account. 
 
-For manipulating multiple accounts, `Wallet.getAccount()` takes optional [options](/wallet/getAccount.md) where index allows either accessing or creating a specific account index. 
+For manipulating multiple accounts, `Wallet.getAccount()` takes optional [options](../wallet/getAccount.md) where index allows either accessing or creating a specific account index. 
 
 ## Instantiation types
 
@@ -25,4 +25,4 @@ In some other cases, you might want to instantiate Wallet from another input suc
 - `privateKey`: This allows managing a single privateKey/publicKey set. Therefore, you will only have a single unique address to receive money. 
 - `HDPublicKey`: This allows a "watch-only" mode. You won't be able to spend anything, but this will allow you to track and monitor in real-time the address set of this public key. This allows you to derive unique unused addresses from a single key (shared by another user, third-party merchant).
 
-[Learn more about instantiation documentation](/wallet/Wallet.md)
+[Learn more about instantiation documentation](../wallet/Wallet.md)

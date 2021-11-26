@@ -1,6 +1,6 @@
 ## Paying to another address
 
-In order to pay, you need to have an [existing balance](/examples/receive-money-and-check-balance.md).   
+In order to pay, you need to have an [existing balance](../examples/receive-money-and-check-balance.md).   
 The below code will allow you to pay to a single address a specific amount of satoshis.
 
 ```js

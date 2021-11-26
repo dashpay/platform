@@ -15,7 +15,7 @@ There are multiples strategy algorithms provided with Wallet-lib, that you can c
 
 By default, the algorithm that is being used is `simpleDescendingAccumulator`. 
 
-See [Account.createTransaction()](/account/createTransaction) for more information about how to select one during transaction creation.  
+See [Account.createTransaction()](../account/createTransaction.md) for more information about how to select one during transaction creation.  
 
 Additionally, you can also require the utility function `const coinSelection = require('@dashevo/wallet-lib/src/utils/coinSelection.js')` for your own usage.  
 

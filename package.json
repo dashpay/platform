@@ -1,10 +1,14 @@
 {
-  "name": "js-dash-platform",
+  "name": "@dashevo/platform",
+  "version": "0.21.5",
   "private": true,
   "scripts": {
-    "setup": "npm install && npm run build && npm run configure",
-    "start": "./packages/dashmate/bin/dashmate group:start --wait-for-readiness --verbose",
-    "test": "ultra -r --filter \"$npm_config_filter\" test",
+    "setup": "yarn install && yarn run build && yarn run configure",
+    "start": "yarn run dashmate group:start --verbose -w",
+    "restart": "yarn run dashmate group:restart --verbose -w",
+    "stop": "yarn run dashmate group:stop --verbose",
+    "reset": "yarn run clean:data --force && yarn run setup",
+    "test": "ultra -r $* test",
     "test:dapi": "ultra -r --filter \"packages/@(dapi|platform-test-suite)\" test",
     "test:dapi-grpc": "ultra -r --filter \"packages/@(dapi|js-dapi-client|dapi-grpc|js-dash-sdk|js-drive|wallet-lib|platform-test-suite)\" test",
     "test:dashpay-contract": "ultra -r --filter \"packages/@(dashpay-contract|js-dash-sdk|js-drive|js-dapi-client|js-dpp|wallet-lib|dapi|platform-test-suite)\" test",
@@ -13,32 +17,30 @@
     "test:dapi-client": "ultra -r --filter \"packages/@(js-dapi-client|wallet-lib|js-dash-sdk|platform-test-suite)\" test",
     "test:sdk": "ultra -r --filter \"packages/@(js-dash-sdk|platform-test-suite)\" test",
     "test:dpp": "ultra -r test",
-    "test:drive": "ultra -r --filter \"packages/@(js-drive|platform-test-suite)\" test",
+    "test:drive": "yarn node ultra -r --filter \"packages/@(js-drive|platform-test-suite)\" test",
     "test:grpc-common": "ultra -r --filter \"packages/@(js-grpc-common|dapi-grpc|dapi|js-dapi-client|js-dash-sdk|js-drive|wallet-lib|platform-test-suite)\" test",
     "test:suite": "ultra -r --filter '@dashevo/platform-test-suite' test",
     "test:wallet-lib": "ultra -r --filter \"packages/@(wallet-lib|js-dash-sdk|platform-test-suite)\" test",
-    "stop": "./packages/dashmate/bin/dashmate group:stop --verbose",
-    "build": "ultra --recursive --filter \"${npm_config_filter}\" --build",
-    "lint": "ultra --recursive --filter \"${npm_config_filter}\" lint",
-    "configure:dashmate": "./scripts/configure_dashmate.sh",
-    "configure:network": "./scripts/setup_local_network.sh",
-    "configure:tests": "./scripts/configure_test_suite.sh",
-    "configure:dotenv": "./scripts/configure_dotenv.sh",
-    "configure": "npm run configure:dashmate && npm run configure:network && npm run configure:tests && npm run configure:dotenv",
-    "clean:data": "npm run dashmate group:reset -- --group=local --hard",
-    "clean": "npm run clean:data && npm run build",
-    "reset": "npm run clean:data -- --force && npm run setup",
-    "reconfigure": "npm stop && npm run clean && npm run configure",
-    "dashmate": "./packages/dashmate/bin/dashmate"
+    "build": "ultra --recursive $* --build",
+    "lint": "ultra --recursive $* lint",
+    "configure:dashmate": "yarn exec ./scripts/configure_dashmate.sh",
+    "configure:network": "yarn exec ./scripts/setup_local_network.sh",
+    "configure:tests": "yarn exec ./scripts/configure_test_suite.sh",
+    "configure:dotenv": "yarn exec ./scripts/configure_dotenv.sh",
+    "configure": "yarn run configure:dashmate && yarn run configure:network && yarn run configure:tests && yarn run configure:dotenv",
+    "clean:data": "yarn run dashmate group:reset --verbose --group=local --hard",
+    "clean": "yarn run clean:data && yarn run build",
+    "dashmate": "./packages/dashmate/bin/dashmate",
+    "bump": "packster bump"
   },
+  "packageManager": "yarn@3.1.0",
   "ultra": {
     "concurrent": [
       "clean"
     ]
   },
   "devDependencies": {
-    "packster": "~0.3.0",
-    "syncpack": "^5.8.15",
+    "packster": "^0.4.0",
     "ultra-runner": "^3.10.5"
   },
   "workspaces": [
@@ -56,5 +58,10 @@
     "packages/js-drive",
     "packages/dashmate",
     "packages/platform-test-suite"
-  ]
+  ],
+  "resolutions": {
+    "protobufjs": "github:jawid-h/protobuf.js#fix/buffer-conversion",
+    "elliptic": "6.5.3",
+    "bn.js": "4.12.0"
+  }
 }

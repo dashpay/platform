@@ -2,9 +2,6 @@ name: DashPay Contract
 
 on:
   workflow_dispatch:
-  release:
-    types:
-      - published
   pull_request:
     branches:
       - master

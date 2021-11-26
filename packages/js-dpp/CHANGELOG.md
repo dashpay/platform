@@ -16,7 +16,7 @@
 
 ### BREAKING CHANGES
 
-* `stateTransition.validateStructure` renamed to `stateTransition.validateBasic` and doesn't perfom signature validation
+* `stateTransition.validateStructure` renamed to `stateTransition.validateBasic` and doesn't perform signature validation
 * `stateTransition.validateData` renamed to `stateTransition.validateState`
 * validation errors are changed
 * removed old data triggers
