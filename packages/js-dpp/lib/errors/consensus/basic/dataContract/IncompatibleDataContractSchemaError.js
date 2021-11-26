@@ -3,21 +3,23 @@ const Identifier = require('../../../../identifier/Identifier');
 
 class IncompatibleDataContractSchemaError extends AbstractBasicError {
   /**
-   * @param {Object} oldSchema
-   * @param {Object} newSchema
-   * @param {Error} validationError
    * @param {Buffer|Identifier} dataContractId
    */
-  constructor(oldSchema, newSchema, validationError, dataContractId) {
+  constructor(dataContractId) {
     super(`Data Contract updated schema is not backward compatible with one defined in Data Contract with id ${Identifier.from(dataContractId)}`);
 
-    this.oldSchema = oldSchema;
-    this.newSchema = newSchema;
-    this.validationError = validationError;
     this.dataContractId = dataContractId;
 
     // eslint-disable-next-line prefer-rest-params
     this.setConstructorArguments(arguments);
+  }
+
+  /**
+   * Set old data contract schema
+   * @param {Object} oldSchema
+   */
+  setOldSchema(oldSchema) {
+    this.oldSchema = oldSchema;
   }
 
   /**
@@ -29,11 +31,27 @@ class IncompatibleDataContractSchemaError extends AbstractBasicError {
   }
 
   /**
+   * Set new schema
+   * @param {Object} newSchema
+   */
+  setNewSchema(newSchema) {
+    this.newSchema = newSchema;
+  }
+
+  /**
    * Get new schema
    * @returns {Object}
    */
   getNewSchema() {
     return this.newSchema;
+  }
+
+  /**
+   * Set original validation error
+   * @param {Error} validationError
+   */
+  setValidationError(validationError) {
+    this.validationError = validationError;
   }
 
   /**

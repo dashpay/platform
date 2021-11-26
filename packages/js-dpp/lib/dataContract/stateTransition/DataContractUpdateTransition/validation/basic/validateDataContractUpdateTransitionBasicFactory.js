@@ -7,7 +7,7 @@ const convertBuffersToArrays = require('../../../../../util/convertBuffersToArra
 const dataContractUpdateTransitionSchema = require('../../../../../../schema/dataContract/stateTransition/dataContractUpdate.json');
 
 const IncompatibleDataContractSchemaError = require('../../../../../errors/consensus/basic/dataContract/IncompatibleDataContractSchemaError');
-const InvalidDataContractBaseDataError = require('../../../../../errors/consensus/basic/dataContract/InvalidDataContractBaseDataError');
+const DataContractImmutablePropertiesUpdateError = require('../../../../../errors/consensus/basic/dataContract/DataContractImmutablePropertiesUpdateError');
 const InvalidDataContractVersionError = require('../../../../../errors/consensus/basic/dataContract/InvalidDataContractVersionError');
 const DataContractNotPresentError = require('../../../../../errors/consensus/basic/document/DataContractNotPresentError');
 
@@ -99,12 +99,12 @@ function validateDataContractUpdateTransitionBasicFactory(
     try {
       diffValidator.validateSchemaCompatibility(oldSchema, newSchema);
     } catch (e) {
-      result.addError(new IncompatibleDataContractSchemaError(
-        oldSchema,
-        newSchema,
-        e,
-        existingDataContract.getId(),
-      ));
+      const error = new IncompatibleDataContractSchemaError(existingDataContract.getId());
+      error.setOldSchema(oldSchema);
+      error.setNewSchema(newSchema);
+      error.setValidationError(e);
+
+      result.addError(error);
 
       return result;
     }
@@ -122,7 +122,7 @@ function validateDataContractUpdateTransitionBasicFactory(
 
     if (!serializer.encode(oldBaseDataContract).equals(serializer.encode(newBaseDataContract))) {
       result.addError(
-        new InvalidDataContractBaseDataError(oldBaseDataContract, newBaseDataContract),
+        new DataContractImmutablePropertiesUpdateError(),
       );
 
       return result;
