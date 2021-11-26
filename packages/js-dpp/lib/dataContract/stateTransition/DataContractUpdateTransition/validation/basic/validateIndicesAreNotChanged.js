@@ -16,6 +16,7 @@ const ValidationResult = require('../../../../../validation/ValidationResult');
 async function validateIndicesAreNotChanged(oldDocuments, newDocuments) {
   const result = new ValidationResult();
 
+  // Check that old index dinfitions are intact
   const hasChangedArray = await Promise.all(
     Object.entries(oldDocuments)
       .filter(([, schema]) => schema.indices !== undefined)
@@ -35,7 +36,17 @@ async function validateIndicesAreNotChanged(oldDocuments, newDocuments) {
     false,
   );
 
-  if (hasChanged) {
+  // check there are no document definition with indices were added
+  const oldDocumentDefinitionNames = Object.keys(oldDocuments);
+  const addedDocumentDefinitions = Object.entries(newDocuments).filter(
+    ([documentName]) => !oldDocumentDefinitionNames.includes(documentName),
+  );
+
+  const thereAreNewIndexDefinitions = addedDocumentDefinitions
+    .filter(([, schema]) => schema.indices !== undefined)
+    .length > 0;
+
+  if (hasChanged || thereAreNewIndexDefinitions) {
     result.addError(new DataContractIndicesChangedError());
   }
 
