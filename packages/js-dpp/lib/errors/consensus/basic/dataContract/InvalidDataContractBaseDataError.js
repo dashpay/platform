@@ -1,12 +1,12 @@
-const AbstractStateError = require('../AbstractStateError');
+const AbstractBasicError = require('../AbstractBasicError');
 
-class InvalidDataContractBaseDataError extends AbstractStateError {
+class InvalidDataContractBaseDataError extends AbstractBasicError {
   /**
    * @param {Object} oldBaseDataContract
    * @param {Object} newBaseDataContract
    */
   constructor(oldBaseDataContract, newBaseDataContract) {
-    super('Only $defs, $version and documents fields are allowed to be updated');
+    super('Only $defs, version and documents fields are allowed to be updated');
 
     this.oldBaseDataContract = oldBaseDataContract;
     this.newBaseDataContract = newBaseDataContract;

@@ -1,5 +1,5 @@
 const lodashGet = require('lodash.get');
-const DataContractIndicesChangedError = require('../../../../../errors/consensus/state/dataContract/DataContractIndicesChangedError');
+const DataContractIndicesChangedError = require('../../../../../errors/consensus/basic/dataContract/DataContractIndicesChangedError');
 
 const serializer = require('../../../../../util/serializer');
 

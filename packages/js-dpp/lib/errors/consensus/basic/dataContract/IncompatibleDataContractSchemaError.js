@@ -1,7 +1,7 @@
-const AbstractStateError = require('../AbstractStateError');
+const AbstractBasicError = require('../AbstractBasicError');
 const Identifier = require('../../../../identifier/Identifier');
 
-class IncompatibleDataContractSchemaError extends AbstractStateError {
+class IncompatibleDataContractSchemaError extends AbstractBasicError {
   /**
    * @param {Object} oldSchema
    * @param {Object} newSchema

@@ -4,6 +4,7 @@ const stateTransitionTypes = require('./stateTransitionTypes');
  * Update state by applying transition (factory)
  *
  * @param {applyDataContractCreateTransition} applyDataContractCreateTransition
+ * @param {applyDataContractUpdateTransition} applyDataContractUpdateTransition
  * @param {applyDocumentsBatchTransition} applyDocumentsBatchTransition
  * @param {applyIdentityCreateTransition} applyIdentityCreateTransition
  * @param {applyIdentityTopUpTransition} applyIdentityTopUpTransition

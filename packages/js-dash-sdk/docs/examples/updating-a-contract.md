@@ -41,4 +41,4 @@ existingDataContract.setVersion(existingDataContract.getVersion() + 1);
 await client.platform.contracts.update(existingDataContract, yourExistingIdentity);
 ```
 
-**Note, that update will be only allowed if schema is backward compatible. Also, version incremented by 1 and only one of following fields updated: `$defs`, `documents` or `$version`**
+**Note, that update will be only allowed if schema is backward compatible. Also, version incremented by 1 and only one of following fields updated: `$defs`, `documents` or `version`**

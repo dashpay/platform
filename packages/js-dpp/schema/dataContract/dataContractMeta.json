@@ -350,7 +350,7 @@
       "maxItems": 32,
       "contentMediaType": "application/x.dash.dpp.identifier"
     },
-    "$version": {
+    "version": {
       "type": "integer",
       "minimum": 1
     },
@@ -425,7 +425,7 @@
     "protocolVersion",
     "$schema",
     "$id",
-    "$version",
+    "version",
     "ownerId",
     "documents"
   ],

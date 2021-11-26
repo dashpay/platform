@@ -5,8 +5,8 @@ const getDataContractFixture = require(
 const IdentityNotFoundError = require('@dashevo/dpp/lib/errors/consensus/signature/IdentityNotFoundError');
 const { StateTransitionBroadcastError } = require('dash/build/src/errors/StateTransitionBroadcastError');
 
-const InvalidDataContractVersionError = require('@dashevo/dpp/lib/errors/consensus/state/dataContract/InvalidDataContractVersionError');
-const IncompatibleDataContractSchemaError = require('@dashevo/dpp/lib/errors/consensus/state/dataContract/IncompatibleDataContractSchemaError');
+const InvalidDataContractVersionError = require('@dashevo/dpp/lib/errors/consensus/basic/dataContract/InvalidDataContractVersionError');
+const IncompatibleDataContractSchemaError = require('@dashevo/dpp/lib/errors/consensus/basic/dataContract/IncompatibleDataContractSchemaError');
 
 const wait = require('../../../lib/wait');
 

@@ -59,7 +59,7 @@ describe('DataContract', () => {
     dataContract = new DataContract({
       $schema: DataContract.DEFAULTS.SCHEMA,
       $id: contractId,
-      $version: 1,
+      version: 1,
       ownerId,
       documents,
       $defs: {},
@@ -259,7 +259,7 @@ describe('DataContract', () => {
         protocolVersion: dataContract.getProtocolVersion(),
         $id: bs58.encode(contractId),
         $schema: DataContract.DEFAULTS.SCHEMA,
-        $version: 1,
+        version: 1,
         ownerId: bs58.encode(ownerId),
         documents,
       });
@@ -278,7 +278,7 @@ describe('DataContract', () => {
         protocolVersion: dataContract.getProtocolVersion(),
         $schema: DataContract.DEFAULTS.SCHEMA,
         $id: bs58.encode(contractId),
-        $version: 1,
+        version: 1,
         ownerId: bs58.encode(ownerId),
         documents,
         $defs,

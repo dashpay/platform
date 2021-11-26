@@ -74,10 +74,13 @@ function commitHandlerFactory(
 
     consensusLogger.debug('Commit ABCI method requested');
 
+    const newlyCreatedDataContracts = blockExecutionContext.getDataContracts()
+      .filter((dataContract) => dataContract.getVersion() === 1);
+
     let nextPreviousBlockExecutionStoreTransactions;
     try {
       // Create document databases for dataContracts created in the current block
-      for (const dataContract of blockExecutionContext.getDataContracts()) {
+      for (const dataContract of newlyCreatedDataContracts) {
         await documentDatabaseManager.create(dataContract);
       }
 
@@ -132,7 +135,7 @@ function commitHandlerFactory(
         await blockExecutionStoreTransactions.abort();
       }
 
-      for (const dataContract of blockExecutionContext.getDataContracts()) {
+      for (const dataContract of newlyCreatedDataContracts) {
         await documentDatabaseManager.drop(dataContract);
       }
 
@@ -161,7 +164,9 @@ function commitHandlerFactory(
             },
           );
 
-          await previousDocumentDatabaseManager.create(dataContract);
+          if (dataContract.getVersion() === 1) {
+            await previousDocumentDatabaseManager.create(dataContract);
+          }
         });
 
       await Promise.all(createDatabasePromises);

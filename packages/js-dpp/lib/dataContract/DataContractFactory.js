@@ -38,7 +38,7 @@ class DataContractFactory {
       protocolVersion: this.dpp.getProtocolVersion(),
       $schema: DataContract.DEFAULTS.SCHEMA,
       $id: dataContractId,
-      $version: 1,
+      version: 1,
       ownerId,
       documents,
       $defs: {},

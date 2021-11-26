@@ -16,7 +16,7 @@ class JsonSchemaValidator {
       'documents',
       'protocolVersion',
       'indices',
-      '$version',
+      'version',
     ]);
   }
 

@@ -65,10 +65,10 @@ const InvalidAssetLockTransactionOutputReturnSize = require('./basic/identity/In
 const InvalidInstantAssetLockProofError = require('./basic/identity/InvalidInstantAssetLockProofError');
 const InvalidInstantAssetLockProofSignatureError = require('./basic/identity/InvalidInstantAssetLockProofSignatureError');
 const IncompatibleRe2PatternError = require('./basic/dataContract/IncompatibleRe2PatternError');
-const InvalidDataContractVersionError = require('./state/dataContract/InvalidDataContractVersionError');
-const IncompatibleDataContractSchemaError = require('./state/dataContract/IncompatibleDataContractSchemaError');
-const InvalidDataContractBaseDataError = require('./state/dataContract/InvalidDataContractBaseDataError');
-const DataContractIndicesChangedError = require('./state/dataContract/DataContractIndicesChangedError');
+const InvalidDataContractVersionError = require('./basic/dataContract/InvalidDataContractVersionError');
+const IncompatibleDataContractSchemaError = require('./basic/dataContract/IncompatibleDataContractSchemaError');
+const InvalidDataContractBaseDataError = require('./basic/dataContract/InvalidDataContractBaseDataError');
+const DataContractIndicesChangedError = require('./basic/dataContract/DataContractIndicesChangedError');
 
 const codes = {
   /**

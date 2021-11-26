@@ -1,6 +1,6 @@
-const AbstractStateError = require('../AbstractStateError');
+const AbstractBasicError = require('../AbstractBasicError');
 
-class DataContractIndicesChangedError extends AbstractStateError {
+class DataContractIndicesChangedError extends AbstractBasicError {
   constructor() {
     super('Change of indices during Data Contract update is not allowed');
 
