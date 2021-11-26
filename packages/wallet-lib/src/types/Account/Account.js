@@ -175,6 +175,10 @@ class Account extends EventEmitter {
      * @type {Promise<void>}
      */
     this.txISLockListener = null;
+
+    // Increases a limit of max listeners for transactions related events
+    // 25 - mempool limit
+    this.setMaxListeners(25);
   }
 
   static getInstantLockTopicName(transactionHash) {
