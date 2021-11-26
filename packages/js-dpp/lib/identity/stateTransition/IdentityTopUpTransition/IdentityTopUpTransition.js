@@ -14,7 +14,6 @@ class IdentityTopUpTransition extends AbstractStateTransition {
       this.setIdentityId(rawStateTransition.identityId);
     }
 
-
     if (Object.prototype.hasOwnProperty.call(rawStateTransition, 'assetLockProof')) {
       this.setAssetLockProof(createAssetLockProofInstance(rawStateTransition.assetLockProof));
     }
