@@ -18,9 +18,9 @@ describe('DocumentBatchTransition', () => {
     dataContractFixture = getDataContractFixture();
 
     dataContractFixture.documents.niceDocument
-      .keySecurityLevelRequirement = IdentityPublicKey.SECURITY_LEVELS.MEDIUM;
+      .signatureSecurityLevelRequirement = IdentityPublicKey.SECURITY_LEVELS.MEDIUM;
     dataContractFixture.documents.prettyDocument
-      .keySecurityLevelRequirement = IdentityPublicKey.SECURITY_LEVELS.MASTER;
+      .signatureSecurityLevelRequirement = IdentityPublicKey.SECURITY_LEVELS.MASTER;
 
     // 0 is niceDocument,
     // 1 and 2 are pretty documents,

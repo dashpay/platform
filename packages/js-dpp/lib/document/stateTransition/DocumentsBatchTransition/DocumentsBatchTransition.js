@@ -148,9 +148,10 @@ class DocumentsBatchTransition extends AbstractStateTransitionIdentitySigned {
       const dataContract = documentTransition.getDataContract();
       const documentSchema = dataContract.getDocumentSchema(documentType);
 
-      const documentKeySecurityLevelRequirement = documentSchema.keySecurityLevelRequirement == null
+      const documentKeySecurityLevelRequirement = documentSchema
+        .signatureSecurityLevelRequirement == null
         ? defaultSecurityLevel
-        : documentSchema.keySecurityLevelRequirement;
+        : documentSchema.signatureSecurityLevelRequirement;
 
       if (
         highestSecurityLevel == null || highestSecurityLevel > documentKeySecurityLevelRequirement

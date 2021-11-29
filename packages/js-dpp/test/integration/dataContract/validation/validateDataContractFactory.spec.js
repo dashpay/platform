@@ -1734,9 +1734,9 @@ describe('validateDataContractFactory', function main() {
     });
   });
 
-  describe('keySecurityLevelRequirement', () => {
+  describe('signatureSecurityLevelRequirement', () => {
     it('should be a number', async () => {
-      rawDataContract.documents.indexedDocument.keySecurityLevelRequirement = 'definitely not a number';
+      rawDataContract.documents.indexedDocument.signatureSecurityLevelRequirement = 'definitely not a number';
 
       const result = await validateDataContract(rawDataContract);
 
@@ -1744,12 +1744,12 @@ describe('validateDataContractFactory', function main() {
 
       const [error] = result.getErrors();
 
-      expect(error.instancePath).to.equal('/documents/indexedDocument/keySecurityLevelRequirement');
+      expect(error.instancePath).to.equal('/documents/indexedDocument/signatureSecurityLevelRequirement');
       expect(error.getKeyword()).to.equal('type');
     });
 
     it('should be one of the available values', async () => {
-      rawDataContract.documents.indexedDocument.keySecurityLevelRequirement = 199;
+      rawDataContract.documents.indexedDocument.signatureSecurityLevelRequirement = 199;
 
       const result = await validateDataContract(rawDataContract);
 
@@ -1757,7 +1757,7 @@ describe('validateDataContractFactory', function main() {
 
       const [error] = result.getErrors();
 
-      expect(error.instancePath).to.equal('/documents/indexedDocument/keySecurityLevelRequirement');
+      expect(error.instancePath).to.equal('/documents/indexedDocument/signatureSecurityLevelRequirement');
       expect(error.getKeyword()).to.equal('enum');
     });
   });

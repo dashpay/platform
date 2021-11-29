@@ -402,7 +402,7 @@
               "type": {
                 "const": "object"
               },
-              "keySecurityLevelRequirement": {
+              "signatureSecurityLevelRequirement": {
                 "type": "integer",
                 "enum": [
                   0,
