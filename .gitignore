@@ -10,7 +10,7 @@
 # Env file
 .env
 
-# NodeJs dependencies
+# NodeJS dependencies
 node_modules
 
 .nyc_output
@@ -19,3 +19,14 @@ node_modules
 
 # Ultra runner build cache
 .ultra.cache.json
+
+# Yarn
+.pnp.*
+.yarn/*
+#!.yarn/cache TODO commit cache (1500 files) or not?
+!.yarn/constraints.pro
+!.yarn/patches
+!.yarn/plugins
+!.yarn/releases
+!.yarn/sdks
+!.yarn/versions

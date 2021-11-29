@@ -1,12 +1,12 @@
 {
   "name": "@dashevo/grpc-common",
-  "version": "0.21.4",
+  "version": "0.21.5",
   "description": "Common GRPC library",
   "main": "index.js",
   "scripts": {
     "build": "",
     "lint": "eslint .",
-    "test": "npm run test:coverage",
+    "test": "yarn run test:coverage",
     "test:coverage": "nyc --check-coverage --stmts=95 --branch=95 --funcs=95 --lines=95 mocha 'test/unit/**/*.spec.js' 'test/integration/**/*.spec.js'",
     "test:unit": "mocha './test/unit/**/*.spec.js'",
     "test:integration": "mocha './test/integration/**/*.spec.js'"

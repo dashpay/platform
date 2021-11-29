@@ -46,8 +46,8 @@ describe.skip('subscribeToTransactionsWithProofsHandlerFactory', function main()
         localAppPath: process.cwd(),
         container: {
           volumes: [
-            `${process.cwd()}/lib:/usr/src/app/lib`,
-            `${process.cwd()}/scripts:/usr/src/app/scripts`,
+            `${process.cwd()}/lib:/platform/packages/dapi/lib`,
+            `${process.cwd()}/scripts:/platform/packages/dapi/scripts`,
           ],
         },
       },

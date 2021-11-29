@@ -1,3 +1,7 @@
+#!/usr/bin/env bash
+
+set -e
+
 SCRIPT_PATH=$(realpath "$0")
 SCRIPT_DIRECTORY_PATH=$(dirname "$SCRIPT_PATH")
 PROJECT_ROOT_PATH=$(dirname "$SCRIPT_DIRECTORY_PATH")
@@ -9,8 +13,6 @@ DAPI_PATH="${PACKAGES_PATH}"/dapi
 DRIVE_PATH="${PACKAGES_PATH}"/js-drive
 SDK_PATH="${PACKAGES_PATH}"/js-dash-sdk
 WALLET_LIB_PATH="${PACKAGES_PATH}"/wallet-lib
-DASHMATE_PATH="${PACKAGES_PATH}"/dashmate
-DASHMATE_BIN=${DASHMATE_PATH}/bin/dashmate
 
 # DAPI:
 cp "${DAPI_PATH}"/.env.example "${DAPI_PATH}"/.env
@@ -18,7 +20,7 @@ cp "${DAPI_PATH}"/.env.example "${DAPI_PATH}"/.env
 # JS-SDK:
 FAUCET_ADDRESS=$(grep -m 1 "Address:" "${LOGS_PATH}"/mint.log | awk '{printf $3}')
 FAUCET_PRIVATE_KEY=$(grep -m 1 "Private key:" "${LOGS_PATH}"/mint.log | awk '{printf $4}')
-DPNS_CONTRACT_ID=$($DASHMATE_BIN config:get --config="${CONFIG}_1" platform.dpns.contract.id)
+DPNS_CONTRACT_ID=$(yarn dashmate config:get --config="${CONFIG}_1" platform.dpns.contract.id)
 
 SDK_ENV_FILE_PATH=${SDK_PATH}/.env
 rm -f "${SDK_ENV_FILE_PATH}"

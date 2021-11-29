@@ -5,6 +5,7 @@ const { Listr } = require('listr2');
  * @param {waitForNodeToBeReadyTask} waitForNodeToBeReadyTask
  * @param {DockerCompose} dockerCompose
  * @param {startGroupNodesTask} startGroupNodesTask
+ * @param {stopNodeTask} stopNodeTask
  * @return {initializePlatformTask}
  */
 function initializePlatformTaskFactory(
@@ -12,6 +13,7 @@ function initializePlatformTaskFactory(
   waitForNodeToBeReadyTask,
   dockerCompose,
   startGroupNodesTask,
+  stopNodeTask,
 ) {
   /**
    * @typedef initializePlatformTask
@@ -66,16 +68,13 @@ function initializePlatformTaskFactory(
       },
       {
         title: 'Stopping nodes',
-        task: async () => {
+        task: () => (
           // So we stop the miner first, as there's a chance that MNs will get banned
           // if the miner is still running when stopping them
-          const stopNodeTasks = configGroup.reverse().map((config) => ({
-            title: `Stop ${config.getName()} node`,
-            task: () => dockerCompose.stop(config.toEnvs()),
-          }));
-
-          return new Listr(stopNodeTasks);
-        },
+          new Listr(configGroup.reverse().map((config) => ({
+            task: () => stopNodeTask(config),
+          })))
+        ),
       },
     ]);
   }

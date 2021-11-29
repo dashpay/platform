@@ -1,7 +1,7 @@
 {
   "name": "@dashevo/drive",
   "private": true,
-  "version": "0.21.4",
+  "version": "0.21.5",
   "description": "Replicated state machine for Dash Platform",
   "engines": {
     "node": ">=12"
@@ -31,7 +31,7 @@
   "scripts": {
     "abci": "node scripts/abci",
     "lint": "eslint .",
-    "test": "npm run test:coverage",
+    "test": "yarn run test:coverage",
     "test:coverage": "nyc --check-coverage --stmts=93 --branch=85 --funcs=90 --lines=92 mocha './test/unit/**/*.spec.js' './test/integration/**/*.spec.js'",
     "test:unit": "mocha './test/unit/**/*.spec.js'",
     "test:integration": "mocha './test/integration/**/*.spec.js'"
@@ -64,12 +64,12 @@
   },
   "dependencies": {
     "@dashevo/abci": "~0.21.0",
-    "@dashevo/dapi-grpc": "~0.21.4",
+    "@dashevo/dapi-grpc": "workspace:~",
     "@dashevo/dashcore-lib": "~0.19.28",
     "@dashevo/dashd-rpc": "^2.3.1",
-    "@dashevo/dpp": "~0.21.4",
-    "@dashevo/feature-flags-contract": "~0.21.4",
-    "@dashevo/grpc-common": "~0.21.4",
+    "@dashevo/dpp": "workspace:~",
+    "@dashevo/feature-flags-contract": "workspace:~",
+    "@dashevo/grpc-common": "workspace:~",
     "@dashevo/merk": "github:dashevo/node-merk",
     "ajv": "^8.6.0",
     "ajv-keywords": "^5.0.0",
