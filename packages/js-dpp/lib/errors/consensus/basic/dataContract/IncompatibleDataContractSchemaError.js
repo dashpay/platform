@@ -3,7 +3,7 @@ const Identifier = require('../../../../identifier/Identifier');
 
 class IncompatibleDataContractSchemaError extends AbstractBasicError {
   /**
-   * @param {Buffer|Identifier} dataContractId
+   * @param {Buffer} dataContractId
    */
   constructor(dataContractId) {
     super(`Data Contract updated schema is not backward compatible with one defined in Data Contract with id ${Identifier.from(dataContractId)}`);
@@ -65,7 +65,7 @@ class IncompatibleDataContractSchemaError extends AbstractBasicError {
   /**
    * Get Data Contract ID
    *
-   * @return {Buffer|Identifier}
+   * @return {Buffer}
    */
   getDataContractId() {
     return this.dataContractId;

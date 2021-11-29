@@ -99,7 +99,9 @@ function validateDataContractUpdateTransitionBasicFactory(
     try {
       diffValidator.validateSchemaCompatibility(oldSchema, newSchema);
     } catch (e) {
-      const error = new IncompatibleDataContractSchemaError(existingDataContract.getId());
+      const error = new IncompatibleDataContractSchemaError(
+        existingDataContract.getId().toBuffer(),
+      );
       error.setOldSchema(oldSchema);
       error.setNewSchema(newSchema);
       error.setValidationError(e);

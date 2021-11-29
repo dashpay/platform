@@ -2,7 +2,7 @@ const AbstractBasicError = require('../AbstractBasicError');
 
 class DataContractImmutablePropertiesUpdateError extends AbstractBasicError {
   /**
-   * @param {BaseOperation[]} diff
+   * @param {{ op: string, path: string }[]} diff
    */
   constructor(diff) {
     let message = 'Only $defs, version and documents fields are allowed to be updated.';
@@ -29,7 +29,7 @@ class DataContractImmutablePropertiesUpdateError extends AbstractBasicError {
   /**
    * Get diff
    *
-   * @returns {BaseOperation[]}
+   * @returns {{ op: string, path: string }[]}
    */
   getDiff() {
     return this.diff;
