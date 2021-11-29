@@ -92,25 +92,6 @@ function validateDataContractUpdateTransitionBasicFactory(
       );
     }
 
-    // Schema should be backward compatible
-    const oldSchema = existingDataContract.getDocuments();
-    const newSchema = rawDataContract.documents;
-
-    try {
-      diffValidator.validateSchemaCompatibility(oldSchema, newSchema);
-    } catch (e) {
-      const error = new IncompatibleDataContractSchemaError(
-        existingDataContract.getId().toBuffer(),
-      );
-      error.setOldSchema(oldSchema);
-      error.setNewSchema(newSchema);
-      error.setValidationError(e);
-
-      result.addError(error);
-
-      return result;
-    }
-
     // check that only $defs, version and documents are changed
     const oldBaseDataContract = lodashClone(existingDataContract.toObject());
     delete oldBaseDataContract.$defs;
@@ -137,6 +118,25 @@ function validateDataContractUpdateTransitionBasicFactory(
       result.addError(
         new DataContractImmutablePropertiesUpdateError(baseDataContractDiff),
       );
+
+      return result;
+    }
+
+    // Schema should be backward compatible
+    const oldSchema = existingDataContract.getDocuments();
+    const newSchema = rawDataContract.documents;
+
+    try {
+      diffValidator.validateSchemaCompatibility(oldSchema, newSchema);
+    } catch (e) {
+      const error = new IncompatibleDataContractSchemaError(
+        existingDataContract.getId().toBuffer(),
+      );
+      error.setOldSchema(oldSchema);
+      error.setNewSchema(newSchema);
+      error.setValidationError(e);
+
+      result.addError(error);
 
       return result;
     }
