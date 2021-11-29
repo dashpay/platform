@@ -1463,6 +1463,7 @@ __metadata:
     rimraf: ^3.0.2
     rxjs: ^6.6.7
     semver: ^7.3.2
+    strip-ansi: ^6.0.1
     table: ^5.4.6
   bin:
     dashmate: bin/dashmate
@@ -1546,6 +1547,7 @@ __metadata:
     eslint-config-airbnb-base: ^14.2.1
     eslint-plugin-import: ^2.24.2
     https-browserify: ^1.0.0
+    json-schema-diff-validator: ^0.4.1
     json-schema-traverse: ^1.0.0
     karma: ^6.3.4
     karma-chai: ^0.1.0
@@ -5944,6 +5946,13 @@ __metadata:
   languageName: node
   linkType: hard
 
+"fast-deep-equal@npm:^2.0.1":
+  version: 2.0.1
+  resolution: "fast-deep-equal@npm:2.0.1"
+  checksum: b701835a87985e0ec4925bdf1f0c1e7eb56309b5d12d534d5b4b69d95a54d65bb16861c081781ead55f73f12d6c60ba668713391ee7fbf6b0567026f579b7b0b
+  languageName: node
+  linkType: hard
+
 "fast-deep-equal@npm:^3.1.1, fast-deep-equal@npm:^3.1.3":
   version: 3.1.3
   resolution: "fast-deep-equal@npm:3.1.3"
@@ -5961,6 +5970,15 @@ __metadata:
     merge2: ^1.3.0
     micromatch: ^4.0.4
   checksum: 2f4708ff112d2b451888129fdd9a0938db88b105b0ddfd043c064e3c4d3e20eed8d7c7615f7565fee660db34ddcf08a2db1bf0ab3c00b87608e4719694642d78
+  languageName: node
+  linkType: hard
+
+"fast-json-patch@npm:^2.0.5":
+  version: 2.2.1
+  resolution: "fast-json-patch@npm:2.2.1"
+  dependencies:
+    fast-deep-equal: ^2.0.1
+  checksum: 955aebb3f873d1fb0452a5d8c34865ce4c3c6cdafeb7d3ad98d43b467de9a5a0d304132f8595fd2b373f8f4d200605947e865286b180f3a55e8377a634893164
   languageName: node
   linkType: hard
 
@@ -6188,7 +6206,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"foreach@npm:^2.0.5":
+"foreach@npm:^2.0.4, foreach@npm:^2.0.5":
   version: 2.0.5
   resolution: "foreach@npm:2.0.5"
   checksum: dab4fbfef0b40b69ee5eab81bcb9626b8fa8b3469c8cfa26480f3e5e1ee08c40eae07048c9a967c65aeda26e774511ccc70b3f10a604c01753c6ef24361f0fc8
@@ -7824,6 +7842,27 @@ fsevents@~2.3.2:
   version: 2.3.1
   resolution: "json-parse-even-better-errors@npm:2.3.1"
   checksum: 798ed4cf3354a2d9ccd78e86d2169515a0097a5c133337807cdf7f1fc32e1391d207ccfc276518cc1d7d8d4db93288b8a50ba4293d212ad1336e52a8ec0a941f
+  languageName: node
+  linkType: hard
+
+"json-pointer@npm:^0.6.0":
+  version: 0.6.1
+  resolution: "json-pointer@npm:0.6.1"
+  dependencies:
+    foreach: ^2.0.4
+  checksum: 882b4b24b515fd866f8c228ed1381c129a40bdbfec578b73882be86a52bbcac15aaa87579c548167d4d8d9e3fc60e35aefead473df95c463553bede2b957f79c
+  languageName: node
+  linkType: hard
+
+"json-schema-diff-validator@npm:^0.4.1":
+  version: 0.4.1
+  resolution: "json-schema-diff-validator@npm:0.4.1"
+  dependencies:
+    fast-json-patch: ^2.0.5
+    json-pointer: ^0.6.0
+  bin:
+    json-schema-diff-validator: ./dist/bin/cli.js
+  checksum: d75b7f55409afd581dbfba5b8f8c936669fa2b0dcd857ec7b563f2f2f50ae90c88b5f8cca65d41a66c591f62c9a71a449fc8fc4d8b94fe4d7490e1bb9e59b429
   languageName: node
   linkType: hard
 
