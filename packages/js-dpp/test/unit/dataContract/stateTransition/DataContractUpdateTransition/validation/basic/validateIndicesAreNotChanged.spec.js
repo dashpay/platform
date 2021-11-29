@@ -38,7 +38,7 @@ describe('validateIndicesAreNotChanged', () => {
 
     const error = result.getErrors()[0];
 
-    expect(error).to.be.an.instanceOf(DataContractIndicesChangedError)
+    expect(error).to.be.an.instanceOf(DataContractIndicesChangedError);
   });
 
   it('should return valid result if indicies are not changed', async () => {
