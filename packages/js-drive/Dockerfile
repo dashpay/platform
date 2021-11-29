@@ -17,14 +17,11 @@ RUN apk update && \
 # Enable corepack https://github.com/nodejs/corepack
 RUN corepack enable
 
-# Show yarn native module build logs
-RUN yarn config set enableInlineBuilds true
-
 WORKDIR /platform
 
 # Copy yarn files
 COPY .yarn /platform/.yarn
-COPY package.json yarn.lock .yarnrc.yml /platform/
+COPY package.json yarn.lock .yarnrc.yml .pnp.* ./
 
 # Copy only necessary packages from monorepo
 COPY packages/js-drive packages/js-drive
@@ -35,10 +32,10 @@ COPY packages/js-grpc-common packages/js-grpc-common
 
 # Install Drive-specific dependencies using previous
 # node_modules directory to reuse built binaries
-RUN --mount=type=cache,target=/tmp/node_modules \
-    cp -R /tmp/node_modules /platform/ && \
+RUN --mount=type=cache,target=/tmp/unplugged \
+    cp -R /tmp/unplugged /platform/.yarn/ && \
     yarn workspaces focus --production @dashevo/drive && \
-    cp -R node_modules /tmp/
+    cp -R /platform/.yarn/unplugged /tmp/
 
 FROM node:16-alpine
 
@@ -50,15 +47,15 @@ LABEL description="Drive Node.JS"
 
 RUN apk update && apk add --no-cache zeromq-dev
 
+# Install latest yarn
+RUN yarn set version 3.1.0
+
 ENV PATH /platform/node_modules/.bin:$PATH
 
-# Set Drive package as a current workdir
-WORKDIR /platform/packages/js-drive
+WORKDIR /platform
 
-# Copy packages dir to create symlinks to modules available locally
-COPY --from=node_modules /platform/packages /platform/packages
-COPY --from=node_modules /platform/node_modules /platform/node_modules
+COPY --from=node_modules /platform /platform
 
-RUN cp .env.example .env
+RUN cp /platform/packages/js-drive/.env.example /platform/packages/js-drive/.env
 
 EXPOSE 26658

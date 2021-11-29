@@ -21,9 +21,8 @@ node_modules
 .ultra.cache.json
 
 # Yarn
-.pnp.*
 .yarn/*
-#!.yarn/cache TODO commit cache (1500 files) or not?
+!.yarn/cache
 !.yarn/constraints.pro
 !.yarn/patches
 !.yarn/plugins

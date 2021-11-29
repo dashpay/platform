@@ -4,7 +4,6 @@
 .nyc_output
 
 logs
-node_modules
 scripts
 
 packages/*/.nyc_output
@@ -14,7 +13,6 @@ packages/*/tests
 packages/*/doc
 packages/*/docs
 packages/*/dist
-packages/*/node_modules
 
 # Yarn
 .yarn/build-state.yml

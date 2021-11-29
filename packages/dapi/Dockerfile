@@ -15,14 +15,11 @@ RUN apk update && \
 # Enable corepack https://github.com/nodejs/corepack
 RUN corepack enable
 
-# Show yarn native module build logs
-RUN yarn config set enableInlineBuilds true
-
 WORKDIR /platform
 
 # Copy yarn files
 COPY .yarn ./.yarn
-COPY package.json yarn.lock .yarnrc.yml ./
+COPY package.json yarn.lock .yarnrc.yml .pnp.* ./
 
 # Copy only necessary packages from monorepo
 COPY packages/dapi packages/dapi
@@ -33,10 +30,10 @@ COPY packages/feature-flags-contract packages/feature-flags-contract
 
 # Install DAPI-specific dependencies using previous
 # node_modules directory to reuse built binaries
-RUN --mount=type=cache,target=/tmp/node_modules \
-    cp -R /tmp/node_modules /platform/ && \
+RUN --mount=type=cache,target=/tmp/unplugged \
+    cp -R /tmp/unplugged /platform/.yarn/ && \
     yarn workspaces focus --production @dashevo/dapi && \
-    cp -R node_modules /tmp/
+    cp -R /platform/.yarn/unplugged /tmp/
 
 
 FROM node:16-alpine
@@ -50,15 +47,15 @@ LABEL description="DAPI Node.JS"
 # Install ZMQ shared library
 RUN apk update && apk add --no-cache zeromq-dev
 
+# Install latest yarn
+RUN yarn set version 3.1.0
+
 ENV PATH /platform/node_modules/.bin:$PATH
 
-# Set DAPI package as a current workdir
-WORKDIR /platform/packages/dapi
+WORKDIR /platform
 
-# Copy linkedd packages and npm modules
-COPY --from=node_modules /platform/packages /platform/packages
-COPY --from=node_modules /platform/node_modules /platform/node_modules
+COPY --from=node_modules /platform /platform
 
-RUN cp .env.example .env
+RUN cp /platform/packages/dapi/.env.example /platform/packages/dapi/.env
 
 EXPOSE 2500 2501 2510
