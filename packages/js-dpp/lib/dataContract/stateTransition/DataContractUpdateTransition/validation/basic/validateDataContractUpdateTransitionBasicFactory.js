@@ -112,19 +112,25 @@ function validateDataContractUpdateTransitionBasicFactory(
     }
 
     // check that only $defs, version and documents are changed
-    const oldBaseDataContract = existingDataContract.toObject();
+    const oldBaseDataContract = lodashClone(existingDataContract.toObject());
     delete oldBaseDataContract.$defs;
     delete oldBaseDataContract.documents;
     delete oldBaseDataContract.version;
+
+    oldBaseDataContract.$id = oldBaseDataContract.$id.toString('hex');
+    oldBaseDataContract.ownerId = oldBaseDataContract.ownerId.toString('hex');
 
     const newBaseDataContract = lodashClone(rawDataContract);
     delete newBaseDataContract.$defs;
     delete newBaseDataContract.documents;
     delete newBaseDataContract.version;
 
+    newBaseDataContract.$id = newBaseDataContract.$id.toString('hex');
+    newBaseDataContract.ownerId = newBaseDataContract.ownerId.toString('hex');
+
     const baseDataContractDiff = jsonPatch.compare(
-      JSON.stringify(oldBaseDataContract),
-      JSON.stringify(newBaseDataContract),
+      oldBaseDataContract,
+      newBaseDataContract,
     );
 
     if (baseDataContractDiff.length > 0) {
