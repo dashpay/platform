@@ -122,9 +122,12 @@ function validateDataContractUpdateTransitionBasicFactory(
     delete newBaseDataContract.documents;
     delete newBaseDataContract.version;
 
-    const baseDataContractDiff = jsonPatch.compare(oldBaseDataContract, newBaseDataContract);
+    const baseDataContractDiff = jsonPatch.compare(
+      JSON.stringify(oldBaseDataContract),
+      JSON.stringify(newBaseDataContract),
+    );
 
-    if (!baseDataContractDiff.length > 0) {
+    if (baseDataContractDiff.length > 0) {
       result.addError(
         new DataContractImmutablePropertiesUpdateError(baseDataContractDiff),
       );

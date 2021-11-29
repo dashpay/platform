@@ -12,6 +12,7 @@ const DataContractImmutablePropertiesUpdateError = require('@dashevo/dpp/lib/err
 const wait = require('../../../lib/wait');
 
 const createClientWithFundedWallet = require('../../../lib/test/createClientWithFundedWallet');
+const Identifier = require('@dashevo/dpp/lib/identifier/Identifier');
 
 describe('Platform', () => {
   describe('Data Contract', function main() {
@@ -117,32 +118,6 @@ describe('Platform', () => {
 
       expect(broadcastError).to.be.an.instanceOf(StateTransitionBroadcastError);
       expect(broadcastError.getCause()).to.be.an.instanceOf(IncompatibleDataContractSchemaError);
-    });
-
-    it('should not be able to update an existing data contract if immutable properties have been changed', async () => {
-      // Additional wait time to mitigate testnet latency
-      if (process.env.NETWORK === 'testnet') {
-        await wait(5000);
-      }
-
-      const fetchedDataContract = await client.platform.contracts.get(
-        dataContractFixture.getId(),
-      );
-
-      fetchedDataContract.$schema = undefined;
-
-      let broadcastError;
-
-      try {
-        await client.platform.contracts.update(fetchedDataContract, identity);
-      } catch (e) {
-        broadcastError = e;
-      }
-
-      expect(broadcastError).to.be.an.instanceOf(StateTransitionBroadcastError);
-      expect(broadcastError.getCause()).to.be.an.instanceOf(
-        DataContractImmutablePropertiesUpdateError,
-      );
     });
 
     it('should be able to update an existing data contract', async () => {
