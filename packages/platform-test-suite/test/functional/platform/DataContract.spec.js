@@ -7,12 +7,10 @@ const { StateTransitionBroadcastError } = require('dash/build/src/errors/StateTr
 
 const InvalidDataContractVersionError = require('@dashevo/dpp/lib/errors/consensus/basic/dataContract/InvalidDataContractVersionError');
 const IncompatibleDataContractSchemaError = require('@dashevo/dpp/lib/errors/consensus/basic/dataContract/IncompatibleDataContractSchemaError');
-const DataContractImmutablePropertiesUpdateError = require('@dashevo/dpp/lib/errors/consensus/basic/dataContract/DataContractImmutablePropertiesUpdateError');
 
 const wait = require('../../../lib/wait');
 
 const createClientWithFundedWallet = require('../../../lib/test/createClientWithFundedWallet');
-const Identifier = require('@dashevo/dpp/lib/identifier/Identifier');
 
 describe('Platform', () => {
   describe('Data Contract', function main() {
