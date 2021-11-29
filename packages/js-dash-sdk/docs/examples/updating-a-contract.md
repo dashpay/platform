@@ -20,6 +20,7 @@ const existingDataContract = await client.platform.contracts.get(exisingContract
 ### Update document definitions
 
 ```js
+// Update an existing document
 const documentDefinition = existingDataContract.getDocumentDefinition('myDocumentType');
 
 // adding optional field
@@ -27,6 +28,22 @@ documentDefinition.properties.newField = {
   type: 'integer',
   minimum: 1,
 };
+
+existingDataContract.setDocumentDefinition('myDocumentType', documentDefinition);
+
+// ... or, add a new one
+const newDocumentDefinition = {
+  type: 'object',
+  properties: {
+    someField: {
+      type: 'integer',
+      minimum: 42,
+    },
+  },
+  required: ['someField'],
+};
+
+existingDataContract.setDocumentDefinition('myNewDocument', newDocumentDefinition);
 ```
 
 ### Broadcast your changes
