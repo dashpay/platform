@@ -106,8 +106,6 @@ describe('Platform', () => {
       const documentSchema = fetchedDataContract.getDocumentSchema('withByteArrays');
       delete documentSchema.properties.identifierField;
 
-      fetchedDataContract.setVersion(fetchedDataContract.getVersion() + 1);
-
       let broadcastError;
 
       try {
@@ -135,8 +133,6 @@ describe('Platform', () => {
         type: 'integer',
         minimum: 1,
       };
-
-      fetchedDataContract.setVersion(fetchedDataContract.getVersion() + 1);
 
       await client.platform.contracts.update(fetchedDataContract, identity);
 

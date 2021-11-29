@@ -29,12 +29,6 @@ documentDefinition.properties.newField = {
 };
 ```
 
-### Update contract version
-
-```js
-existingDataContract.setVersion(existingDataContract.getVersion() + 1);
-```
-
 ### Broadcast your changes
 
 ```js

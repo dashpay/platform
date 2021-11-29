@@ -68,6 +68,13 @@ class DataContract {
   }
 
   /**
+   * Increment version by 1
+   */
+  incrementVersion() {
+    this.version += 1;
+  }
+
+  /**
    * Get JSON Schema ID
    *
    * @return {string}

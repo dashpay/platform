@@ -15,6 +15,8 @@ export default async function update(this: Platform, dataContract: any, identity
 
     const { dpp } = this;
 
+    dataContract.incrementVersion();
+
     const dataContractUpdateTransition = dpp.dataContract.createDataContractUpdateTransition(dataContract);
 
     await signStateTransition(this, dataContractUpdateTransition, identity);
