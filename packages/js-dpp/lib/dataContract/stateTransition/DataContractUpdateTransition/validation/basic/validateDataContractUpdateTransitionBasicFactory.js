@@ -149,9 +149,9 @@ function validateDataContractUpdateTransitionBasicFactory(
       error.setNewSchema(newSchema);
 
       result.addError(error);
-
-      return result;
     }
+
+    return result;
   }
 
   return validateDataContractUpdateTransitionBasic;
