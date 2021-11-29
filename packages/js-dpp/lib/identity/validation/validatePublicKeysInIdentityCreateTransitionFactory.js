@@ -1,6 +1,6 @@
 const ValidationResult = require('../../validation/ValidationResult');
 
-const MissingMasterKeyError = require('../../errors/consensus/basic/identity/MissingMasterKeyError');
+const MissingMasterPublicKeyError = require('../../errors/consensus/basic/identity/MissingMasterPublicKeyError');
 
 const IdentityPublicKey = require('../IdentityPublicKey');
 
@@ -39,7 +39,7 @@ function validatePublicKeysInIdentityCreateTransitionFactory() {
     });
 
     if (keyPurposesAndLevelsCount[MASTER_PURPOSE][MASTER_SECURITY_LEVEL] === 0) {
-      result.addError(new MissingMasterKeyError());
+      result.addError(new MissingMasterPublicKeyError());
     }
 
     return result;

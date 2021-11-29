@@ -138,11 +138,11 @@ class DocumentsBatchTransition extends AbstractStateTransitionIdentitySigned {
 
     // Step 1: Get all document types for the ST
     // Step 2: Get document schema for every type
-    // If schema has security level, use that, if not, use default level
-    // Find the lowest value of all documents
-    // Return that
+    // If schema has security level, use that, if not, use the default security level
+    // Find the highest level (lowest int value) of all documents - the ST's signature
+    // requirement is the highest level across all documents affected by the ST.
     const documentTransitions = this.getTransitions();
-    let lowestSecurityLevel;
+    let highestSecurityLevel;
     documentTransitions.forEach((documentTransition) => {
       const documentType = documentTransition.getType();
       const dataContract = documentTransition.getDataContract();
@@ -153,13 +153,13 @@ class DocumentsBatchTransition extends AbstractStateTransitionIdentitySigned {
         : documentSchema.keySecurityLevelRequirement;
 
       if (
-        lowestSecurityLevel == null || lowestSecurityLevel > documentKeySecurityLevelRequirement
+        highestSecurityLevel == null || highestSecurityLevel > documentKeySecurityLevelRequirement
       ) {
-        lowestSecurityLevel = documentKeySecurityLevelRequirement;
+        highestSecurityLevel = documentKeySecurityLevelRequirement;
       }
     });
 
-    return lowestSecurityLevel;
+    return highestSecurityLevel;
   }
 }
 

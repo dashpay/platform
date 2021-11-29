@@ -51,7 +51,7 @@ class AbstractStateTransitionIdentitySigned extends AbstractStateTransition {
     let privateKeyModel;
     let pubKeyBase;
 
-    this.verifyKeyLevelAndPurpose(identityPublicKey);
+    this.verifyPublicKeyLevelAndPurpose(identityPublicKey);
 
     switch (identityPublicKey.getType()) {
       case IdentityPublicKey.TYPES.ECDSA_SECP256K1:
@@ -88,7 +88,7 @@ class AbstractStateTransitionIdentitySigned extends AbstractStateTransition {
    * Verifies that the supplied public key has the correct security level
    * and purpose to sign this state transition
    */
-  verifyKeyLevelAndPurpose(publicKey) {
+  verifyPublicKeyLevelAndPurpose(publicKey) {
     if (this.getKeySecurityLevelRequirement() < publicKey.getSecurityLevel()) {
       throw new PublicKeySecurityLevelNotMetError(
         publicKey,
@@ -111,7 +111,7 @@ class AbstractStateTransitionIdentitySigned extends AbstractStateTransition {
    * @return {boolean}
    */
   verifySignature(publicKey) {
-    this.verifyKeyLevelAndPurpose(publicKey);
+    this.verifyPublicKeyLevelAndPurpose(publicKey);
 
     const signature = this.getSignature();
     if (!signature) {

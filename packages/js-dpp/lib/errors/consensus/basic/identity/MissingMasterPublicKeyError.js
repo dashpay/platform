@@ -1,6 +1,6 @@
 const AbstractBasicError = require('../AbstractBasicError');
 
-class MissingMasterKeyError extends AbstractBasicError {
+class MissingMasterPublicKeyError extends AbstractBasicError {
   constructor() {
     super('Identity doesn\'t contain any master key, thus can not be updated. Please add a master key');
 
@@ -9,4 +9,4 @@ class MissingMasterKeyError extends AbstractBasicError {
   }
 }
 
-module.exports = MissingMasterKeyError;
+module.exports = MissingMasterPublicKeyError;

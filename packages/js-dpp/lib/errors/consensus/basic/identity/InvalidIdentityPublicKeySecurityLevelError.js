@@ -1,6 +1,6 @@
 const AbstractBasicError = require('../AbstractBasicError');
 
-class InvalidIdentityPublicKeyDataError extends AbstractBasicError {
+class InvalidIdentityPublicKeySecurityLevelError extends AbstractBasicError {
   /**
    * @param {number} publicKeyId
    * @param {number} purpose
@@ -60,4 +60,4 @@ class InvalidIdentityPublicKeyDataError extends AbstractBasicError {
   }
 }
 
-module.exports = InvalidIdentityPublicKeyDataError;
+module.exports = InvalidIdentityPublicKeySecurityLevelError;

@@ -6,7 +6,7 @@ const { expectValidationError } = require('../../../../lib/test/expect/expectErr
 
 const ValidationResult = require('../../../../lib/validation/ValidationResult');
 
-const MissingMasterKeyError = require('../../../../lib/errors/consensus/basic/identity/MissingMasterKeyError');
+const MissingMasterKeyError = require('../../../../lib/errors/consensus/basic/identity/MissingMasterPublicKeyError');
 
 describe('validateIdentityExistence', () => {
   let validatePublicKeysInIdentityCreateTransition;

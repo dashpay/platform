@@ -24,7 +24,7 @@ const MissingDocumentTransitionTypeError = require('./basic/document/MissingDocu
 const MissingDocumentTypeError = require('./basic/document/MissingDocumentTypeError');
 const DuplicatedIdentityPublicKeyError = require('./basic/identity/DuplicatedIdentityPublicKeyError');
 const DuplicatedIdentityPublicKeyIdError = require('./basic/identity/DuplicatedIdentityPublicKeyIdError');
-const MissingMasterKeyError = require('./basic/identity/MissingMasterKeyError');
+const MissingMasterPublicKeyError = require('./basic/identity/MissingMasterPublicKeyError');
 const IdentityAssetLockProofLockedTransactionMismatchError = require('./basic/identity/IdentityAssetLockProofLockedTransactionMismatchError');
 const IdentityAssetLockTransactionIsNotFoundError = require('./basic/identity/IdentityAssetLockTransactionIsNotFoundError');
 const IdentityAssetLockTransactionOutPointAlreadyExistsError = require('./basic/identity/IdentityAssetLockTransactionOutPointAlreadyExistsError');
@@ -124,7 +124,7 @@ const codes = {
   1040: InvalidIdentityPublicKeyDataError,
   1041: InvalidInstantAssetLockProofError,
   1042: InvalidInstantAssetLockProofSignatureError,
-  1046: MissingMasterKeyError,
+  1046: MissingMasterPublicKeyError,
 
   // State Transition
   1043: InvalidStateTransitionTypeError,
