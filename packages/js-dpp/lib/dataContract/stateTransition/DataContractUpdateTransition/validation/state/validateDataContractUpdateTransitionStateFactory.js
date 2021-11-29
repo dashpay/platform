@@ -53,9 +53,4 @@ function validateDataContractUpdateTransitionStateFactory(
   return validateDataContractUpdateTransitionState;
 }
 
-/**
- * @typedef {Object} DiffValidator
- * @property {function(Object, Object)} validateSchemaCompatibility
- */
-
 module.exports = validateDataContractUpdateTransitionStateFactory;

@@ -1,4 +1,5 @@
 const $RefParser = require('@apidevtools/json-schema-ref-parser');
+const jsonPatch = require('fast-json-patch');
 const jsonSchemaDiffValidator = require('json-schema-diff-validator');
 const { Signer: { verifyHashSignature } } = require('@dashevo/dashcore-lib');
 
@@ -143,6 +144,7 @@ class StateTransitionFacade {
       this.stateRepository,
       jsonSchemaDiffValidator,
       validateIndicesAreNotChanged,
+      jsonPatch,
     );
 
     this.createStateTransition = createStateTransitionFactory(this.stateRepository);

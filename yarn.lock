@@ -1546,6 +1546,7 @@ __metadata:
     eslint: ^7.32.0
     eslint-config-airbnb-base: ^14.2.1
     eslint-plugin-import: ^2.24.2
+    fast-json-patch: ^3.1.0
     https-browserify: ^1.0.0
     json-schema-diff-validator: ^0.4.1
     json-schema-traverse: ^1.0.0
@@ -5979,6 +5980,13 @@ __metadata:
   dependencies:
     fast-deep-equal: ^2.0.1
   checksum: 955aebb3f873d1fb0452a5d8c34865ce4c3c6cdafeb7d3ad98d43b467de9a5a0d304132f8595fd2b373f8f4d200605947e865286b180f3a55e8377a634893164
+  languageName: node
+  linkType: hard
+
+"fast-json-patch@npm:^3.1.0":
+  version: 3.1.0
+  resolution: "fast-json-patch@npm:3.1.0"
+  checksum: bad25a6121650d5e138fba787f8e8c6c738779a9a84a978513261110632b1450d96b92a7fedd17188ae847cd5a2b0560725b400a0214aefd3c6506e1be36c66e
   languageName: node
   linkType: hard
 

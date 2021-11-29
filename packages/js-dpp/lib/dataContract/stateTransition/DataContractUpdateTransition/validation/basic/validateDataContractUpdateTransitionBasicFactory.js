@@ -1,7 +1,5 @@
 const lodashClone = require('lodash.clonedeep');
 
-const serializer = require('../../../../../util/serializer');
-
 const convertBuffersToArrays = require('../../../../../util/convertBuffersToArrays');
 
 const dataContractUpdateTransitionSchema = require('../../../../../../schema/dataContract/stateTransition/dataContractUpdate.json');
@@ -20,6 +18,7 @@ const Identifier = require('../../../../../identifier/Identifier');
  * @param {StateRepository} stateRepository
  * @param {DiffValidator} diffValidator
  * @param {validateIndicesAreNotChanged} validateIndicesAreNotChanged
+ * @param {JsonPatch} jsonPatch
  *
  * @return {validateDataContractUpdateTransitionBasic}
  */
@@ -30,6 +29,7 @@ function validateDataContractUpdateTransitionBasicFactory(
   stateRepository,
   diffValidator,
   validateIndicesAreNotChanged,
+  jsonPatch,
 ) {
   /**
    * @typedef validateDataContractUpdateTransitionBasic
@@ -120,9 +120,11 @@ function validateDataContractUpdateTransitionBasicFactory(
     delete newBaseDataContract.documents;
     delete newBaseDataContract.version;
 
-    if (!serializer.encode(oldBaseDataContract).equals(serializer.encode(newBaseDataContract))) {
+    const baseDataContractDiff = jsonPatch.compare(oldBaseDataContract, newBaseDataContract);
+
+    if (!baseDataContractDiff.length > 0) {
       result.addError(
-        new DataContractImmutablePropertiesUpdateError(),
+        new DataContractImmutablePropertiesUpdateError(baseDataContractDiff),
       );
 
       return result;
@@ -141,5 +143,15 @@ function validateDataContractUpdateTransitionBasicFactory(
 
   return validateDataContractUpdateTransitionBasic;
 }
+
+/**
+ * @typedef {Object} DiffValidator
+ * @property {function(Object, Object)} validateSchemaCompatibility
+ */
+
+/**
+ * @typedef {Object} JsonPatch
+ * @property {function(Object, Object)} compare
+ */
 
 module.exports = validateDataContractUpdateTransitionBasicFactory;
