@@ -53,7 +53,7 @@ describe('deliverTxHandlerFactory', () => {
     });
 
     dataContractCreateTransitionFixture = dpp
-      .dataContract.createStateTransition(dataContractFixture);
+      .dataContract.createDataContractCreateTransition(dataContractFixture);
 
     documentRequest = {
       tx: documentsBatchTransitionFixture.toBuffer(),

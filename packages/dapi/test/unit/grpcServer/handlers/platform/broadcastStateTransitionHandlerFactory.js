@@ -40,7 +40,9 @@ describe('broadcastStateTransitionHandlerFactory', () => {
     await dpp.initialize();
 
     const dataContractFixture = getDataContractFixture();
-    stateTransitionFixture = dpp.dataContract.createStateTransition(dataContractFixture);
+    stateTransitionFixture = dpp.dataContract.createDataContractCreateTransition(
+      dataContractFixture,
+    );
 
     call = new GrpcCallMock(this.sinon, {
       getStateTransition: this.sinon.stub().returns(stateTransitionFixture.toBuffer()),
