@@ -158,5 +158,23 @@ describe('Wallet-lib - functional', function suite() {
       expect(addresses).to.be.deep.equal(expectedAddresses);
       expect(Object.keys(transactions)).to.be.deep.equal(Object.keys(expectedTransactions));
     });
+
+    it('should broadcast a chain of transactions from a single UTXO', async () => {
+      const txAmount = 5;
+      const satoshis = 1000;
+      let balance = account.getTotalBalance();
+
+      for (let i = 0; i < txAmount; i++) {
+        const tx = account
+          .createTransaction({ satoshis, recipient: "ydvgJ2eVSmdKt78ZSVBJ7zarVVtdHGj3yR" });
+
+        await account.broadcastTransaction(tx);
+        const newBalance = account.getTotalBalance();
+
+        const fee = tx.getFee();
+        expect(newBalance).to.equal(balance - satoshis - fee);
+        balance = newBalance
+      }
+    })
   });
 });

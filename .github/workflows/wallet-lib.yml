@@ -2,9 +2,6 @@ name: Wallet Lib
 
 on:
   workflow_dispatch:
-  release:
-    types:
-      - published
   pull_request:
     branches:
       - master

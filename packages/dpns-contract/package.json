@@ -1,10 +1,10 @@
 {
   "name": "@dashevo/dpns-contract",
-  "version": "0.4.0",
+  "version": "0.21.5",
   "description": "A contract and helper scripts for DPNS DApp",
   "scripts": {
     "lint": "eslint .",
-    "test": "npm run test:unit",
+    "test": "yarn run test:unit",
     "test:unit": "mocha 'test/unit/**/*.spec.js'"
   },
   "contributors": [
@@ -31,7 +31,7 @@
   ],
   "license": "MIT",
   "devDependencies": {
-    "@dashevo/dpp": "0.21.0",
+    "@dashevo/dpp": "workspace:~",
     "chai": "^4.3.4",
     "dirty-chai": "^2.0.1",
     "eslint": "^7.32.0",
