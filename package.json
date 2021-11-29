@@ -30,7 +30,8 @@
     "clean": "npm run clean:data && npm run build",
     "reset": "npm run clean:data -- --force && npm run setup",
     "dashmate": "./packages/dashmate/bin/dashmate",
-    "bump": "packster bump"
+    "bump": "packster bump",
+    "changelog": "./scripts/generate_changelog.sh"
   },
   "ultra": {
     "concurrent": [
@@ -38,8 +39,12 @@
     ]
   },
   "devDependencies": {
+    "add-stream": "^1.0.0",
+    "conventional-changelog": "^3.1.24",
+    "conventional-changelog-dash": "github:dashevo/conventional-changelog-dash",
     "packster": "^0.4.0",
     "syncpack": "^5.8.15",
+    "tempfile": "^3.0.0",
     "ultra-runner": "^3.10.5"
   },
   "workspaces": [
