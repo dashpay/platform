@@ -29,15 +29,15 @@ class IdentityFactory {
    * Create Identity
    *
    * @param {InstantAssetLockProof} assetLockProof
-   * @param {PublicKeyOptions[]} publicKeyOptions
+   * @param {PublicKeyConfig[]} publicKeyConfigs
    * @return {Identity}
    */
-  create(assetLockProof, publicKeyOptions) {
+  create(assetLockProof, publicKeyConfigs) {
     const identity = new Identity({
       protocolVersion: this.dpp.getProtocolVersion(),
       id: assetLockProof.createIdentifier(),
       balance: 0,
-      publicKeys: publicKeyOptions.map((publicKey, i) => ({
+      publicKeys: publicKeyConfigs.map((publicKey, i) => ({
         id: publicKey.id == null ? i : publicKey.id,
         type: publicKey.type == null ? IdentityPublicKey.TYPES.ECDSA_SECP256K1 : publicKey.type,
         purpose: publicKey.purpose == null ? IdentityPublicKey.PURPOSES.AUTHENTICATION
@@ -170,11 +170,11 @@ class IdentityFactory {
 }
 
 /**
- * @typedef {Object} PublicKeyOptions
- * @property {number|undefined} id
- * @property {number|undefined} type
- * @property {number|undefined} purpose
- * @property {number|undefined} securityLevel
+ * @typedef {Object} PublicKeyConfig
+ * @property [number|undefined] id
+ * @property [number|undefined] type
+ * @property [number|undefined] purpose
+ * @property [number|undefined] securityLevel
  * @property {PublicKey} key
  */
 

@@ -45,13 +45,13 @@ class IdentityFacade {
    * Create Identity
    *
    * @param {InstantAssetLockProof|ChainAssetLockProof} assetLockProof
-   * @param {RawIdentityPublicKey[]} publicKeys
+   * @param {PublicKeyConfig[]} publicKeyConfigs
    * @return {Identity}
    */
-  create(assetLockProof, publicKeys) {
+  create(assetLockProof, publicKeyConfigs) {
     return this.factory.create(
       assetLockProof,
-      publicKeys,
+      publicKeyConfigs,
     );
   }
 
