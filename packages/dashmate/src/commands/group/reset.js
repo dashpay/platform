@@ -138,7 +138,7 @@ GroupResetCommand.flags = {
   }),
   force: flagTypes.boolean({
     char: 'f',
-    description: 'reset config as well as data',
+    description: 'reset even running node',
     default: false,
   }),
   'platform-only': flagTypes.boolean({
