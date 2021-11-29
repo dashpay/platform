@@ -9,11 +9,11 @@ const Identifier = require('../../../../identifier/Identifier');
  * @returns {{ op: string, path: string }[]}
  */
 function parseSchemaValidationError(schemaValidationError) {
-  const regexp = /change =(.*)$/g;
+  const regexp = /change = (.*?)$/;
 
   const match = schemaValidationError.message.match(regexp);
 
-  return JSON.parse(match[0]);
+  return JSON.parse(match[1]);
 }
 
 class IncompatibleDataContractSchemaError extends AbstractBasicError {
