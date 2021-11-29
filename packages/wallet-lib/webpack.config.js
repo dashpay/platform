@@ -1,4 +1,5 @@
 const path = require('path');
+const webpack = require('webpack');
 
 const webConfig = {
   entry: './src/index.js',
@@ -28,5 +29,11 @@ const webConfig = {
     },
     extensions: ['.ts', '.js', '.json'],
   },
+  plugins: [
+    new webpack.ProvidePlugin({
+      Buffer: ['buffer', 'Buffer'],
+      process: 'process/browser',
+    }),
+  ],
 };
 module.exports = webConfig;
