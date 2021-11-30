@@ -31,7 +31,8 @@
     "clean:data": "yarn run dashmate group:reset --verbose --group=local --hard",
     "clean": "yarn run clean:data && yarn run build",
     "dashmate": "yarn pnpify packages/dashmate/bin/dashmate",
-    "bump": "packster bump"
+    "bump": "packster bump",
+    "changelog": "./scripts/generate_changelog.sh"
   },
   "packageManager": "yarn@3.1.0",
   "ultra": {
@@ -40,7 +41,12 @@
     ]
   },
   "devDependencies": {
+    "@yarnpkg/pnpify": "^3.1.1-rc.6",
+    "add-stream": "^1.0.0",
+    "conventional-changelog": "^3.1.24",
+    "conventional-changelog-dash": "github:dashevo/conventional-changelog-dash",
     "packster": "^0.4.0",
+    "tempfile": "^3.0.0",
     "ultra-runner": "^3.10.5"
   },
   "workspaces": [
@@ -63,8 +69,5 @@
     "protobufjs": "github:jawid-h/protobuf.js#fix/buffer-conversion",
     "elliptic": "6.5.3",
     "bn.js": "4.12.0"
-  },
-  "dependencies": {
-    "@yarnpkg/pnpify": "^3.1.1-rc.6"
   }
 }
