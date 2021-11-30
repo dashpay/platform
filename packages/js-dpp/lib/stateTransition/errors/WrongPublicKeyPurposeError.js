@@ -3,23 +3,23 @@ const DPPError = require('../../errors/DPPError');
 class WrongPublicKeyPurposeError extends DPPError {
   /**
    *
-   * @param {IdentityPublicKey} publicKey
+   * @param {number} publicKeyPurpose
    * @param {number} keyPurposeRequirement
    */
-  constructor(publicKey, keyPurposeRequirement) {
-    super(`State transition must be signed with a key that has purpose ${keyPurposeRequirement}, but got ${publicKey.getPurpose()}`);
+  constructor(publicKeyPurpose, keyPurposeRequirement) {
+    super(`State transition must be signed with a key that has purpose ${keyPurposeRequirement}, but got ${publicKeyPurpose}`);
 
-    this.publicKey = publicKey;
+    this.publicKeyPurpose = publicKeyPurpose;
     this.keyPurposeRequirement = keyPurposeRequirement;
   }
 
   /**
    * Get mismatched public key
    *
-   * @return {IdentityPublicKey}
+   * @return {number}
    */
-  getPublicKey() {
-    return this.publicKey;
+  getPublicKeyPurpose() {
+    return this.publicKeyPurpose;
   }
 
   /**

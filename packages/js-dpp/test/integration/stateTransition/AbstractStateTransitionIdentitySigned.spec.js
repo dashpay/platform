@@ -170,7 +170,8 @@ describe('AbstractStateTransitionIdentitySigned', () => {
         expect.fail('Should throw PublicKeySecurityLevelNotMetError');
       } catch (e) {
         expect(e).to.be.instanceOf(PublicKeySecurityLevelNotMetError);
-        expect(e.getPublicKey()).to.be.deep.equal(identityPublicKey);
+        expect(e.getPublicKeySecurityLevel())
+          .to.be.deep.equal(identityPublicKey.getSecurityLevel());
         expect(e.getKeySecurityLevelRequirement())
           .to.be.deep.equal(IdentityPublicKey.SECURITY_LEVELS.MASTER);
       }
@@ -185,7 +186,7 @@ describe('AbstractStateTransitionIdentitySigned', () => {
         expect.fail('Should throw WrongPublicKeyPurposeError');
       } catch (e) {
         expect(e).to.be.instanceOf(WrongPublicKeyPurposeError);
-        expect(e.getPublicKey()).to.be.deep.equal(identityPublicKey);
+        expect(e.getPublicKeyPurpose()).to.be.deep.equal(identityPublicKey.getPurpose());
         expect(e.getKeyPurposeRequirement())
           .to.be.deep.equal(IdentityPublicKey.PURPOSES.AUTHENTICATION);
       }
@@ -264,7 +265,8 @@ describe('AbstractStateTransitionIdentitySigned', () => {
         expect.fail('Should throw PublicKeySecurityLevelNotMetError');
       } catch (e) {
         expect(e).to.be.instanceOf(PublicKeySecurityLevelNotMetError);
-        expect(e.getPublicKey()).to.be.deep.equal(identityPublicKey);
+        expect(e.getPublicKeySecurityLevel())
+          .to.be.deep.equal(identityPublicKey.getSecurityLevel());
         expect(e.getKeySecurityLevelRequirement())
           .to.be.deep.equal(IdentityPublicKey.SECURITY_LEVELS.MASTER);
       }
@@ -282,7 +284,7 @@ describe('AbstractStateTransitionIdentitySigned', () => {
         expect.fail('Should throw WrongPublicKeyPurposeError');
       } catch (e) {
         expect(e).to.be.instanceOf(WrongPublicKeyPurposeError);
-        expect(e.getPublicKey()).to.be.deep.equal(identityPublicKey);
+        expect(e.getPublicKeyPurpose()).to.be.deep.equal(identityPublicKey.getPurpose());
         expect(e.getKeyPurposeRequirement())
           .to.be.deep.equal(IdentityPublicKey.PURPOSES.AUTHENTICATION);
       }

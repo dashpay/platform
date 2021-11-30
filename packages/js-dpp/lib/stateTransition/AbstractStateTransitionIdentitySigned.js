@@ -91,14 +91,14 @@ class AbstractStateTransitionIdentitySigned extends AbstractStateTransition {
   verifyPublicKeyLevelAndPurpose(publicKey) {
     if (this.getKeySecurityLevelRequirement() < publicKey.getSecurityLevel()) {
       throw new PublicKeySecurityLevelNotMetError(
-        publicKey,
+        publicKey.getSecurityLevel(),
         this.getKeySecurityLevelRequirement(),
       );
     }
 
     if (publicKey.getPurpose() !== IdentityPublicKey.PURPOSES.AUTHENTICATION) {
       throw new WrongPublicKeyPurposeError(
-        publicKey,
+        publicKey.getPurpose(),
         IdentityPublicKey.PURPOSES.AUTHENTICATION,
       );
     }
