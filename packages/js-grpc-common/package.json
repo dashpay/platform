@@ -30,6 +30,7 @@
     "@grpc/proto-loader": "^0.5.2",
     "cbor": "^8.0.0",
     "lodash.get": "^4.4.2",
+    "long": "^5.2.0",
     "protobufjs": "github:jawid-h/protobuf.js#fix/buffer-conversion",
     "semver": "^7.3.2"
   }
