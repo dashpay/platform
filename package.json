@@ -31,7 +31,8 @@
     "clean:data": "yarn run dashmate group:reset --verbose --group=local --hard",
     "clean": "yarn run clean:data && yarn run build",
     "dashmate": "./packages/dashmate/bin/dashmate",
-    "bump": "packster bump"
+    "bump": "packster bump",
+    "changelog": "./scripts/generate_changelog.sh"
   },
   "packageManager": "yarn@3.1.0",
   "ultra": {
@@ -40,7 +41,11 @@
     ]
   },
   "devDependencies": {
+    "add-stream": "^1.0.0",
+    "conventional-changelog": "^3.1.24",
+    "conventional-changelog-dash": "github:dashevo/conventional-changelog-dash",
     "packster": "^0.4.0",
+    "tempfile": "^3.0.0",
     "ultra-runner": "^3.10.5"
   },
   "workspaces": [
