@@ -21,9 +21,8 @@ const contractDocuments = contract.getDocuments();
 
 // Make necessary changes to contract document definitions
 ...
-// And increment contract version by 1
-contract.setVersion(contract.getVersion() + 1);
 
+// and broadcast an update
 await platform.contracts.update(contract, identity);
 ```
 
