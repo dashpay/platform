@@ -115,9 +115,15 @@ function validateDataContractUpdateTransitionBasicFactory(
     );
 
     if (baseDataContractDiff.length > 0) {
-      result.addError(
-        new DataContractImmutablePropertiesUpdateError(baseDataContractDiff),
+      const removedField = baseDataContractDiff.filter(({ op }) => op === 'remove')[0];
+      const replacedField = baseDataContractDiff.filter(({ op }) => op === 'replace')[0];
+
+      const error = new DataContractImmutablePropertiesUpdateError(
+        removedField, replacedField,
       );
+      error.setDiff(baseDataContractDiff);
+
+      result.addError(error);
 
       return result;
     }
