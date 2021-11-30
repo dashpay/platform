@@ -23,6 +23,6 @@ on:
 jobs:
   js-dpp-tests:
     name: Run Drive tests
-    uses: dashevo/platform/.github/workflows/test.yml@master
+    uses: dashevo/platform/.github/workflows/test.yml@use-pnp
     with:
       package: '@dashevo/drive'
