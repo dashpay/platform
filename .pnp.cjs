@@ -2039,10 +2039,6 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
         "npm:0.1.4"
       ],
       [
-        "duplexify",
-        "npm:4.1.2"
-      ],
-      [
         "ecc-jsbn",
         "npm:0.1.2"
       ],
@@ -3012,7 +3008,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
       ],
       [
         "joycon",
-        "npm:3.1.0"
+        "npm:2.2.5"
       ],
       [
         "js-base64",
@@ -3851,10 +3847,6 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
         "npm:6.13.3"
       ],
       [
-        "pino-abstract-transport",
-        "npm:0.5.0"
-      ],
-      [
         "pino-multi-stream",
         "npm:5.3.0"
       ],
@@ -4052,7 +4044,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
       ],
       [
         "readable-stream",
-        "npm:3.6.0"
+        "npm:2.3.7"
       ],
       [
         "readdirp",
@@ -4241,10 +4233,6 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
       [
         "schema-utils",
         "npm:3.1.1"
-      ],
-      [
-        "secure-json-parse",
-        "npm:2.4.0"
       ],
       [
         "semver",
@@ -12719,19 +12707,6 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           "linkType": "HARD",
         }]
       ]],
-      ["duplexify", [
-        ["npm:4.1.2", {
-          "packageLocation": "./.yarn/cache/duplexify-npm-4.1.2-7f2140a477-964376c61c.zip/node_modules/duplexify/",
-          "packageDependencies": [
-            ["duplexify", "npm:4.1.2"],
-            ["end-of-stream", "npm:1.4.4"],
-            ["inherits", "npm:2.0.4"],
-            ["readable-stream", "npm:3.6.0"],
-            ["stream-shift", "npm:1.0.1"]
-          ],
-          "linkType": "HARD",
-        }]
-      ]],
       ["ecc-jsbn", [
         ["npm:0.1.2", {
           "packageLocation": "./.yarn/cache/ecc-jsbn-npm-0.1.2-85b7a7be89-22fef4b620.zip/node_modules/ecc-jsbn/",
@@ -15724,13 +15699,6 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["joycon", "npm:2.2.5"]
           ],
           "linkType": "HARD",
-        }],
-        ["npm:3.1.0", {
-          "packageLocation": "./.yarn/cache/joycon-npm-3.1.0-551f6974eb-f21f17b461.zip/node_modules/joycon/",
-          "packageDependencies": [
-            ["joycon", "npm:3.1.0"]
-          ],
-          "linkType": "HARD",
         }]
       ]],
       ["js-base64", [
@@ -18507,21 +18475,10 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["fast-safe-stringify", "npm:2.1.1"],
             ["fastify-warning", "npm:0.2.0"],
             ["flatstr", "npm:1.0.12"],
-            ["pino-pretty", "npm:7.2.0"],
+            ["pino-pretty", "npm:4.8.0"],
             ["pino-std-serializers", "npm:3.2.0"],
             ["quick-format-unescaped", "npm:4.0.4"],
             ["sonic-boom", "npm:1.4.1"]
-          ],
-          "linkType": "HARD",
-        }]
-      ]],
-      ["pino-abstract-transport", [
-        ["npm:0.5.0", {
-          "packageLocation": "./.yarn/cache/pino-abstract-transport-npm-0.5.0-2cfa907a2a-c503f867de.zip/node_modules/pino-abstract-transport/",
-          "packageDependencies": [
-            ["pino-abstract-transport", "npm:0.5.0"],
-            ["duplexify", "npm:4.1.2"],
-            ["split2", "npm:4.1.0"]
           ],
           "linkType": "HARD",
         }]
@@ -18552,25 +18509,6 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["readable-stream", "npm:3.6.0"],
             ["rfdc", "npm:1.3.0"],
             ["split2", "npm:3.2.2"],
-            ["strip-json-comments", "npm:3.1.1"]
-          ],
-          "linkType": "HARD",
-        }],
-        ["npm:7.2.0", {
-          "packageLocation": "./.yarn/cache/pino-pretty-npm-7.2.0-7c09610ec4-dafe8a3368.zip/node_modules/pino-pretty/",
-          "packageDependencies": [
-            ["pino-pretty", "npm:7.2.0"],
-            ["args", "npm:5.0.1"],
-            ["colorette", "npm:2.0.16"],
-            ["dateformat", "npm:4.6.3"],
-            ["fast-safe-stringify", "npm:2.1.1"],
-            ["joycon", "npm:3.1.0"],
-            ["pino-abstract-transport", "npm:0.5.0"],
-            ["pump", "npm:3.0.0"],
-            ["readable-stream", "npm:3.6.0"],
-            ["rfdc", "npm:1.3.0"],
-            ["secure-json-parse", "npm:2.4.0"],
-            ["sonic-boom", "npm:2.3.2"],
             ["strip-json-comments", "npm:3.1.1"]
           ],
           "linkType": "HARD",
@@ -19752,15 +19690,6 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           "linkType": "HARD",
         }]
       ]],
-      ["secure-json-parse", [
-        ["npm:2.4.0", {
-          "packageLocation": "./.yarn/cache/secure-json-parse-npm-2.4.0-161f104c50-efaafcaa08.zip/node_modules/secure-json-parse/",
-          "packageDependencies": [
-            ["secure-json-parse", "npm:2.4.0"]
-          ],
-          "linkType": "HARD",
-        }]
-      ]],
       ["semver", [
         ["npm:5.4.1", {
           "packageLocation": "./.yarn/cache/semver-npm-5.4.1-4833dde62a-d4bf8cc6a9.zip/node_modules/semver/",
@@ -20195,14 +20124,6 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["atomic-sleep", "npm:1.0.0"]
           ],
           "linkType": "HARD",
-        }],
-        ["npm:2.3.2", {
-          "packageLocation": "./.yarn/cache/sonic-boom-npm-2.3.2-666574a8c8-498fa9034e.zip/node_modules/sonic-boom/",
-          "packageDependencies": [
-            ["sonic-boom", "npm:2.3.2"],
-            ["atomic-sleep", "npm:1.0.0"]
-          ],
-          "linkType": "HARD",
         }]
       ]],
       ["sort-keys", [
@@ -20339,13 +20260,6 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           "packageDependencies": [
             ["split2", "npm:3.2.2"],
             ["readable-stream", "npm:3.6.0"]
-          ],
-          "linkType": "HARD",
-        }],
-        ["npm:4.1.0", {
-          "packageLocation": "./.yarn/cache/split2-npm-4.1.0-1c1a4bd984-ec581597cb.zip/node_modules/split2/",
-          "packageDependencies": [
-            ["split2", "npm:4.1.0"]
           ],
           "linkType": "HARD",
         }]
