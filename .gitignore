@@ -10,9 +10,7 @@
 # Env file
 .env
 
-# NodeJS dependencies
-node_modules
-
+# NYC test runnner
 .nyc_output
 
 *.log
