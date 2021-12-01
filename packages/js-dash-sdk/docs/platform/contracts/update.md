@@ -9,21 +9,6 @@ Parameters:
 | **identity**              | Identity  | yes            | A valid [registered `application` identity](/platform/identities/register.md) |
 
 **Example**:
-```js
-const identityId = '';// Your identity identifier.
-const dataContractId = ''; // Your existing contract id
-
-// Retrieve existing data
-const identity = await client.platform.identities.get(identityId);
-const contract = await client.platform.contracts.get(dataContractId);
-
-const contractDocuments = contract.getDocuments();
-
-// Make necessary changes to contract document definitions
-...
-
-// and broadcast an update
-await platform.contracts.update(contract, identity);
-```
+You may check [following document](/examples/updating-a-contract.md) for an example on how to update a contract.
 
 Returns : DataContractUpdateTransition.
