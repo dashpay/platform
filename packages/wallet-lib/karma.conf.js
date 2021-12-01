@@ -8,7 +8,7 @@ if (dotenvResult.error) {
 
 module.exports = (config) => {
   config.set({
-    frameworks: ['mocha', 'chai'],
+    frameworks: ['mocha', 'chai', 'webpack'],
     files: [
       'src/test/karma/loader.js',
       'tests/functional/wallet.js',
@@ -56,12 +56,12 @@ module.exports = (config) => {
     concurrency: Infinity,
     browserNoActivityTimeout: 10 * 60 * 1000,
     plugins: [
-      'karma-mocha',
-      'karma-mocha-reporter',
-      'karma-chai',
-      'karma-chrome-launcher',
-      'karma-webpack',
-      'karma-sourcemap-loader',
+      require('karma-mocha'),
+      require('karma-mocha-reporter'),
+      require('karma-chai'),
+      require('karma-chrome-launcher'),
+      require('karma-webpack'),
+      require('karma-sourcemap-loader'),
     ],
   });
 };

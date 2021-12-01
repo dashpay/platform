@@ -10,7 +10,7 @@ if (dotenvResult.error) {
 
 module.exports = (config) => {
   config.set({
-    frameworks: ['mocha', 'chai'],
+    frameworks: ['mocha', 'chai', 'webpack'],
     files: [
       'src/**/*.spec.ts',
       'src/test/karma/bootstrap.ts',
@@ -43,12 +43,12 @@ module.exports = (config) => {
     browserDisconnectTimeout: 3 * 2000, // 2000 default
     pingTimeout: 3 * 5000, // 5000 default
     plugins: [
-      'karma-mocha',
-      'karma-mocha-reporter',
-      'karma-chai',
-      'karma-chrome-launcher',
-      'karma-firefox-launcher',
-      'karma-webpack',
+      require('karma-mocha'),
+      require('karma-mocha-reporter'),
+      require('karma-chai'),
+      require('karma-chrome-launcher'),
+      require('karma-firefox-launcher'),
+      require('karma-webpack'),
     ],
     customLaunchers: {
       FirefoxHeadless: {

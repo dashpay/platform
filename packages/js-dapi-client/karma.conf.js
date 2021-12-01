@@ -2,7 +2,7 @@ const webpack = require('webpack');
 
 module.exports = (config) => {
   config.set({
-    frameworks: ['mocha', 'chai'],
+    frameworks: ['mocha', 'chai', 'webpack'],
     files: [
       'lib/test/karma/loader.js',
     ],
@@ -40,12 +40,12 @@ module.exports = (config) => {
     singleRun: false,
     concurrency: Infinity,
     plugins: [
-      'karma-mocha',
-      'karma-mocha-reporter',
-      'karma-chai',
-      'karma-chrome-launcher',
-      'karma-firefox-launcher',
-      'karma-webpack',
+      require('karma-mocha'),
+      require('karma-mocha-reporter'),
+      require('karma-chai'),
+      require('karma-chrome-launcher'),
+      require('karma-firefox-launcher'),
+      require('karma-webpack'),
     ],
     customLaunchers: {
       FirefoxHeadless: {
