@@ -17,37 +17,26 @@ async function validateIndicesAreNotChanged(oldDocuments, newDocuments) {
   const result = new ValidationResult();
 
   // Check that old index dinfitions are intact
-  const hasChangedArray = await Promise.all(
-    Object.entries(oldDocuments)
-      .filter(([, schema]) => schema.indices !== undefined)
-      .map(
-        async ([property, oldSchema]) => {
-          const path = `${property}.indices`;
+  const changedDocumentEntry = Object.entries(oldDocuments)
+    .find(([documentType, oldSchema]) => {
+      const path = `${documentType}.indices`;
 
-          const newSchemaIndices = lodashGet(newDocuments, path);
+      const newSchemaIndices = lodashGet(newDocuments, path);
 
-          return !serializer.encode(oldSchema.indices).equals(serializer.encode(newSchemaIndices));
-        },
-      ),
-  );
-
-  const hasChanged = hasChangedArray.reduce(
-    (nextItem, accumulator) => accumulator || nextItem,
-    false,
-  );
+      return !serializer.encode(oldSchema.indices).equals(serializer.encode(newSchemaIndices));
+    });
 
   // check there are no document definition with indices were added
-  const oldDocumentDefinitionNames = Object.keys(oldDocuments);
-  const addedDocumentDefinitions = Object.entries(newDocuments).filter(
-    ([documentName]) => !oldDocumentDefinitionNames.includes(documentName),
-  );
+  const oldDocumentDefinitionTypes = Object.keys(oldDocuments);
+  const newDocumentWithIndicesEntry = Object.entries(newDocuments)
+    .find(([documentType, schema]) => (
+      !oldDocumentDefinitionTypes.includes(documentType) && schema.indices !== undefined
+    ));
 
-  const thereAreNewIndexDefinitions = addedDocumentDefinitions
-    .filter(([, schema]) => schema.indices !== undefined)
-    .length > 0;
+  const [documentType] = (changedDocumentEntry || newDocumentWithIndicesEntry) || [];
 
-  if (hasChanged || thereAreNewIndexDefinitions) {
-    result.addError(new DataContractIndicesChangedError());
+  if (documentType) {
+    result.addError(new DataContractIndicesChangedError(documentType));
   }
 
   return result;
