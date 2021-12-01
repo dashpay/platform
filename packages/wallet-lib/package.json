@@ -8,7 +8,7 @@
     "build:web": "webpack --stats-error-details",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
-    "test:unit": "nyc mocha 'src/**/*.spec.js'",
+    "test:unit": "nyc yarn mocha 'src/**/*.spec.js'",
     "test:functional": "nyc yarn run mocha 'tests/functional/*.js'",
     "test:integration": "nyc yarn run mocha 'tests/integration/**/*.spec.js'",
     "test:browsers": "karma start ./karma.conf.js --single-run",
