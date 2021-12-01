@@ -409,7 +409,8 @@
                   1,
                   2,
                   3
-                ]
+                ],
+                "description": "Public key security level. 0 - Master, 1 - Critical, 2 - High, 3 - Medium."
               }
             }
           },
