@@ -115,11 +115,10 @@ function validateDataContractUpdateTransitionBasicFactory(
     );
 
     if (baseDataContractDiff.length > 0) {
-      const removedField = baseDataContractDiff.filter(({ op }) => op === 'remove')[0];
-      const replacedField = baseDataContractDiff.filter(({ op }) => op === 'replace')[0];
+      const { op: operation, path: fieldPath } = baseDataContractDiff[0];
 
       const error = new DataContractImmutablePropertiesUpdateError(
-        removedField, replacedField,
+        operation, fieldPath,
       );
       error.setDiff(baseDataContractDiff);
 
@@ -147,12 +146,22 @@ function validateDataContractUpdateTransitionBasicFactory(
     try {
       diffValidator.validateSchemaCompatibility(oldSchema, newSchema);
     } catch (schemaValidationError) {
+      const regexp = /change = (.*?)$/;
+
+      const match = schemaValidationError.message.match(regexp);
+
+      const validationErrorOperations = JSON.parse(match[1]);
+
+      const { op: operation, path: fieldPath } = validationErrorOperations[0];
+
       const error = new IncompatibleDataContractSchemaError(
         existingDataContract.getId().toBuffer(),
-        schemaValidationError,
+        operation,
+        fieldPath,
       );
       error.setOldSchema(oldSchema);
       error.setNewSchema(newSchema);
+      error.setValidationError(schemaValidationError);
 
       result.addError(error);
     }

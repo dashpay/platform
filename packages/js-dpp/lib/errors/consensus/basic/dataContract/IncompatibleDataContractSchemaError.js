@@ -1,49 +1,47 @@
 const AbstractBasicError = require('../AbstractBasicError');
 const Identifier = require('../../../../identifier/Identifier');
 
-/**
- * Parse schema validation error message
- *
- * @param {Error} schemaValidationError
- *
- * @returns {{ op: string, path: string }[]}
- */
-function parseSchemaValidationError(schemaValidationError) {
-  const regexp = /change = (.*?)$/;
-
-  const match = schemaValidationError.message.match(regexp);
-
-  return JSON.parse(match[1]);
-}
-
 class IncompatibleDataContractSchemaError extends AbstractBasicError {
   /**
    * @param {Buffer} dataContractId
-   * @param {Error} schemaValidationError
+   * @param {string} operation
+   * @param {string} fieldPath
    */
-  constructor(dataContractId, schemaValidationError) {
-    const validationErrors = parseSchemaValidationError(schemaValidationError);
-
+  constructor(dataContractId, operation, fieldPath) {
     let message = `Data Contract updated schema is not backward compatible with one defined in Data Contract with id ${Identifier.from(dataContractId)}.`;
 
-    const removedField = validationErrors.filter(({ op }) => op === 'remove')[0];
-    const replacedField = validationErrors.filter(({ op }) => op === 'replace')[0];
-
-    if (removedField) {
-      message = `${message} Field '${removedField.path}' has been removed.`;
+    if (operation === 'remove') {
+      message = `${message} Field '${fieldPath}' has been removed.`;
     }
 
-    if (replacedField) {
-      message = `${message} Field '${replacedField.path}' has been changed.`;
+    if (operation === 'replace') {
+      message = `${message} Field '${fieldPath}' has been changed.`;
     }
 
     super(message);
 
     this.dataContractId = dataContractId;
-    this.validationError = schemaValidationError;
+    this.operation = operation;
+    this.fieldPath = fieldPath;
 
     // eslint-disable-next-line prefer-rest-params
     this.setConstructorArguments(arguments);
+  }
+
+  /**
+   * Get operation
+   * @returns {string}
+   */
+  getOperation() {
+    return this.operation;
+  }
+
+  /**
+   * Get updated field path
+   * @returns {string}
+   */
+  getFieldPath() {
+    return this.fieldPath;
   }
 
   /**

@@ -2,24 +2,43 @@ const AbstractBasicError = require('../AbstractBasicError');
 
 class DataContractImmutablePropertiesUpdateError extends AbstractBasicError {
   /**
-   * @param {{ op: string, path: string }} removedField
-   * @param {{ op: string, path: string }} replacedField
+   * @param {string} operation
+   * @param {string} fieldPath
    */
-  constructor(removedField, replacedField) {
+  constructor(operation, fieldPath) {
     let message = 'Only $defs, version and documents fields are allowed to be updated.';
 
-    if (removedField) {
-      message = `${message} Immutable field '${removedField.path}' has been removed.`;
+    if (operation === 'remove') {
+      message = `${message} Immutable field '${fieldPath}' has been removed.`;
     }
 
-    if (replacedField) {
-      message = `${message} Immutable field '${replacedField.path}' has been changed.`;
+    if (operation === 'replace') {
+      message = `${message} Immutable field '${fieldPath}' has been changed.`;
     }
 
     super(message);
 
+    this.operation = operation;
+    this.fieldPath = fieldPath;
+
     // eslint-disable-next-line prefer-rest-params
     this.setConstructorArguments(arguments);
+  }
+
+  /**
+   * Get operation
+   * @returns {string}
+   */
+  getOperation() {
+    return this.operation;
+  }
+
+  /**
+   * Get updated field path
+   * @returns {string}
+   */
+  getFieldPath() {
+    return this.fieldPath;
   }
 
   /**

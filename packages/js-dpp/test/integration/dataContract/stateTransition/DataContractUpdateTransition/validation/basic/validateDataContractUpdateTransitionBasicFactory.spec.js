@@ -189,6 +189,8 @@ describe('validateDataContractUpdateTransitionBasicFactory', () => {
       const [error] = result.getErrors();
 
       expect(error).to.be.an.instanceOf(IncompatibleDataContractSchemaError);
+      expect(error.getOperation()).to.equal('remove');
+      expect(error.getFieldPath()).to.equal('/indexedDocument');
     });
 
     it('should not have immutable fields changed', async () => {
@@ -201,6 +203,8 @@ describe('validateDataContractUpdateTransitionBasicFactory', () => {
       const [error] = result.getErrors();
 
       expect(error).to.be.an.instanceOf(DataContractImmutablePropertiesUpdateError);
+      expect(error.getOperation()).to.equal('remove');
+      expect(error.getFieldPath()).to.equal('/$schema');
     });
 
     it('should be valid', async () => {
