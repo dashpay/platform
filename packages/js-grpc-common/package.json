@@ -7,7 +7,7 @@
     "build": "",
     "lint": "eslint .",
     "test": "yarn run test:coverage",
-    "test:coverage": "nyc --check-coverage --stmts=95 --branch=95 --funcs=95 --lines=95 mocha 'test/unit/**/*.spec.js' 'test/integration/**/*.spec.js'",
+    "test:coverage": "nyc --check-coverage --stmts=95 --branch=95 --funcs=95 --lines=95 yarn run mocha 'test/unit/**/*.spec.js' 'test/integration/**/*.spec.js'",
     "test:unit": "mocha './test/unit/**/*.spec.js'",
     "test:integration": "mocha './test/integration/**/*.spec.js'"
   },

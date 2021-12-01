@@ -9,8 +9,8 @@
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "test:unit": "nyc mocha 'src/**/*.spec.js'",
-    "test:functional": "nyc mocha 'tests/functional/*.js'",
-    "test:integration": "nyc mocha 'tests/integration/**/*.spec.js'",
+    "test:functional": "nyc yarn run mocha 'tests/functional/*.js'",
+    "test:integration": "nyc yarn run mocha 'tests/integration/**/*.spec.js'",
     "test:browsers": "karma start ./karma.conf.js --single-run",
     "test": "yarn run test:unit && yarn run test:integration && yarn run test:functional && yarn run test:browsers",
     "prepublishOnly": "yarn run build:web"
