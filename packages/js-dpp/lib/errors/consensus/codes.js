@@ -34,6 +34,7 @@ const InvalidAssetLockProofTransactionHeightError = require('./basic/identity/In
 const InvalidIdentityAssetLockTransactionError = require('./basic/identity/InvalidIdentityAssetLockTransactionError');
 const InvalidIdentityAssetLockTransactionOutputError = require('./basic/identity/InvalidIdentityAssetLockTransactionOutputError');
 const InvalidIdentityPublicKeyDataError = require('./basic/identity/InvalidIdentityPublicKeyDataError');
+const InvalidIdentityPublicKeySecurityLevelError = require('./basic/identity/InvalidIdentityPublicKeySecurityLevelError');
 const InvalidStateTransitionTypeError = require('./basic/stateTransition/InvalidStateTransitionTypeError');
 const MissingStateTransitionTypeError = require('./basic/stateTransition/MissingStateTransitionTypeError');
 const StateTransitionMaxSizeExceededError = require('./basic/stateTransition/StateTransitionMaxSizeExceededError');
@@ -125,6 +126,7 @@ const codes = {
   1041: InvalidInstantAssetLockProofError,
   1042: InvalidInstantAssetLockProofSignatureError,
   1046: MissingMasterPublicKeyError,
+  1047: InvalidIdentityPublicKeySecurityLevelError,
 
   // State Transition
   1043: InvalidStateTransitionTypeError,

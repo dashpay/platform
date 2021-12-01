@@ -6,7 +6,7 @@ const { expectValidationError } = require('../../../../lib/test/expect/expectErr
 
 const ValidationResult = require('../../../../lib/validation/ValidationResult');
 
-const MissingMasterKeyError = require('../../../../lib/errors/consensus/basic/identity/MissingMasterPublicKeyError');
+const MissingMasterPublicKeyError = require('../../../../lib/errors/consensus/basic/identity/MissingMasterPublicKeyError');
 
 describe('validateIdentityExistence', () => {
   let validatePublicKeysInIdentityCreateTransition;
@@ -17,13 +17,13 @@ describe('validateIdentityExistence', () => {
     );
   });
 
-  it('should return invalid result if identity is not found', async () => {
+  it('should return invalid result if the state transition does not contain master key', async () => {
     const result = await validatePublicKeysInIdentityCreateTransition([{
       purpose: IdentityPublicKey.PURPOSES.AUTHENTICATION,
       securityLevel: IdentityPublicKey.SECURITY_LEVELS.CRITICAL,
     }]);
 
-    expectValidationError(result, MissingMasterKeyError);
+    expectValidationError(result, MissingMasterPublicKeyError);
 
     const [error] = result.getErrors();
 
