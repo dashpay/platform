@@ -40,6 +40,9 @@ jobs:
       - name: Install dependencies
         run: yarn install
 
+      - name: Show version
+        run: yarn --version
+
       - name: Run ESLinter
         run: yarn lint --filter "${{ inputs.package }}"
 
