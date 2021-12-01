@@ -51,8 +51,10 @@ jobs:
         run: yarn build
         if: ${{ inputs.start-local-network }}
 
-      - name: Setup dotenv files
-        run: yarn configure:dotenv
+      - name: Create necessary dotenv files
+        run: |
+          cp packages/dapi/.env.example packages/dapi/.env
+          cp packages/js-drive/.env.example packages/js-drive/.env
         if: ${{ !inputs.start-local-network }}
 
       - name: Set up Docker BuildX

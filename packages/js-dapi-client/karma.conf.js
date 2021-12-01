@@ -1,4 +1,10 @@
 const webpack = require('webpack');
+const karmaMocha = require('karma-mocha');
+const karmaMochaReporter = require('karma-mocha-reporter');
+const karmaChai = require('karma-chai');
+const karmaChromeLauncher = require('karma-chrome-launcher');
+const karmaFirefoxLauncher = require('karma-firefox-launcher');
+const karmaWebpack = require('karma-webpack');
 
 module.exports = (config) => {
   config.set({
@@ -40,12 +46,12 @@ module.exports = (config) => {
     singleRun: false,
     concurrency: Infinity,
     plugins: [
-      require('karma-mocha'),
-      require('karma-mocha-reporter'),
-      require('karma-chai'),
-      require('karma-chrome-launcher'),
-      require('karma-firefox-launcher'),
-      require('karma-webpack'),
+      karmaMocha,
+      karmaMochaReporter,
+      karmaChai,
+      karmaChromeLauncher,
+      karmaFirefoxLauncher,
+      karmaWebpack,
     ],
     customLaunchers: {
       FirefoxHeadless: {

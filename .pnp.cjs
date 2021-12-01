@@ -4593,6 +4593,19 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             "acorn"
           ],
           "linkType": "HARD",
+        }],
+        ["virtual:fd2253859039a15030fecf2d1545fcad47d7bd43468b9166c71fdd4e35b538414e653775f5401c948ed8db3eb1925f84c66c161d39a27b19ee73fef5e721329e#npm:5.3.2", {
+          "packageLocation": "./.yarn/__virtual__/acorn-jsx-virtual-0c3ff7dbc9/0/cache/acorn-jsx-npm-5.3.2-d7594599ea-c3d3b2a89c.zip/node_modules/acorn-jsx/",
+          "packageDependencies": [
+            ["acorn-jsx", "virtual:fd2253859039a15030fecf2d1545fcad47d7bd43468b9166c71fdd4e35b538414e653775f5401c948ed8db3eb1925f84c66c161d39a27b19ee73fef5e721329e#npm:5.3.2"],
+            ["@types/acorn", null],
+            ["acorn", "npm:8.6.0"]
+          ],
+          "packagePeers": [
+            "@types/acorn",
+            "acorn"
+          ],
+          "linkType": "HARD",
         }]
       ]],
       ["acorn-node", [
@@ -8177,6 +8190,20 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           "linkType": "HARD",
         }]
       ]],
+      ["escodegen", [
+        ["npm:2.0.0", {
+          "packageLocation": "./.yarn/cache/escodegen-npm-2.0.0-6450b02925-5aa6b2966f.zip/node_modules/escodegen/",
+          "packageDependencies": [
+            ["escodegen", "npm:2.0.0"],
+            ["esprima", "npm:4.0.1"],
+            ["estraverse", "npm:5.3.0"],
+            ["esutils", "npm:2.0.3"],
+            ["optionator", "npm:0.8.3"],
+            ["source-map", "npm:0.6.1"]
+          ],
+          "linkType": "HARD",
+        }]
+      ]],
       ["eslint", [
         ["npm:7.32.0", {
           "packageLocation": "./.yarn/cache/eslint-npm-7.32.0-e15cc6682f-cc85af9985.zip/node_modules/eslint/",
@@ -8400,6 +8427,13 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["eslint-visitor-keys", "npm:2.1.0"]
           ],
           "linkType": "HARD",
+        }],
+        ["npm:3.1.0", {
+          "packageLocation": "./.yarn/cache/eslint-visitor-keys-npm-3.1.0-9a6ffc9175-fd2d613bb3.zip/node_modules/eslint-visitor-keys/",
+          "packageDependencies": [
+            ["eslint-visitor-keys", "npm:3.1.0"]
+          ],
+          "linkType": "HARD",
         }]
       ]],
       ["espree", [
@@ -8410,6 +8444,16 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["acorn", "npm:7.4.1"],
             ["acorn-jsx", "virtual:8d8ea5d1e3376905d0290522290f47c29213c64d936d96293d758a315829a3cf4c6a5b8ffc1cfee36c3db08f700ad3aaf0711cc5d406a7218c275de6d74effa9#npm:5.3.2"],
             ["eslint-visitor-keys", "npm:1.3.0"]
+          ],
+          "linkType": "HARD",
+        }],
+        ["npm:9.1.0", {
+          "packageLocation": "./.yarn/cache/espree-npm-9.1.0-fd22538590-ba9b0f759c.zip/node_modules/espree/",
+          "packageDependencies": [
+            ["espree", "npm:9.1.0"],
+            ["acorn", "npm:8.6.0"],
+            ["acorn-jsx", "virtual:fd2253859039a15030fecf2d1545fcad47d7bd43468b9166c71fdd4e35b538414e653775f5401c948ed8db3eb1925f84c66c161d39a27b19ee73fef5e721329e#npm:5.3.2"],
+            ["eslint-visitor-keys", "npm:3.1.0"]
           ],
           "linkType": "HARD",
         }]
@@ -11508,6 +11552,15 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
         }]
       ]],
       ["levn", [
+        ["npm:0.3.0", {
+          "packageLocation": "./.yarn/cache/levn-npm-0.3.0-48d774b1c2-0d084a5242.zip/node_modules/levn/",
+          "packageDependencies": [
+            ["levn", "npm:0.3.0"],
+            ["prelude-ls", "npm:1.1.2"],
+            ["type-check", "npm:0.3.2"]
+          ],
+          "linkType": "HARD",
+        }],
         ["npm:0.4.1", {
           "packageLocation": "./.yarn/cache/levn-npm-0.4.1-d183b2d7bb-12c5021c85.zip/node_modules/levn/",
           "packageDependencies": [
@@ -13080,6 +13133,19 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
         }]
       ]],
       ["optionator", [
+        ["npm:0.8.3", {
+          "packageLocation": "./.yarn/cache/optionator-npm-0.8.3-bc555bc5b7-b8695ddf3d.zip/node_modules/optionator/",
+          "packageDependencies": [
+            ["optionator", "npm:0.8.3"],
+            ["deep-is", "npm:0.1.4"],
+            ["fast-levenshtein", "npm:2.0.6"],
+            ["levn", "npm:0.3.0"],
+            ["prelude-ls", "npm:1.1.2"],
+            ["type-check", "npm:0.3.2"],
+            ["word-wrap", "npm:1.2.3"]
+          ],
+          "linkType": "HARD",
+        }],
         ["npm:0.9.1", {
           "packageLocation": "./.yarn/cache/optionator-npm-0.9.1-577e397aae-dbc6fa0656.zip/node_modules/optionator/",
           "packageDependencies": [
@@ -13664,6 +13730,13 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
         }]
       ]],
       ["prelude-ls", [
+        ["npm:1.1.2", {
+          "packageLocation": "./.yarn/cache/prelude-ls-npm-1.1.2-a0daac0886-c4867c8748.zip/node_modules/prelude-ls/",
+          "packageDependencies": [
+            ["prelude-ls", "npm:1.1.2"]
+          ],
+          "linkType": "HARD",
+        }],
         ["npm:1.2.1", {
           "packageLocation": "./.yarn/cache/prelude-ls-npm-1.2.1-3e4d272a55-cd192ec0d0.zip/node_modules/prelude-ls/",
           "packageDependencies": [
@@ -13831,7 +13904,15 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["@protobufjs/utf8", "npm:1.1.0"],
             ["@types/long", "npm:4.0.1"],
             ["@types/node", "npm:13.13.52"],
-            ["long", "npm:4.0.0"]
+            ["chalk", "npm:3.0.0"],
+            ["escodegen", "npm:2.0.0"],
+            ["espree", "npm:9.1.0"],
+            ["estraverse", "npm:5.3.0"],
+            ["glob", "npm:7.2.0"],
+            ["long", "npm:4.0.0"],
+            ["minimist", "npm:1.2.5"],
+            ["semver", "npm:7.3.5"],
+            ["uglify-js", "npm:3.14.4"]
           ],
           "linkType": "HARD",
         }]
@@ -16566,6 +16647,14 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
         }]
       ]],
       ["type-check", [
+        ["npm:0.3.2", {
+          "packageLocation": "./.yarn/cache/type-check-npm-0.3.2-a4a38bb0b6-dd3b149564.zip/node_modules/type-check/",
+          "packageDependencies": [
+            ["type-check", "npm:0.3.2"],
+            ["prelude-ls", "npm:1.1.2"]
+          ],
+          "linkType": "HARD",
+        }],
         ["npm:0.4.0", {
           "packageLocation": "./.yarn/cache/type-check-npm-0.4.0-60565800ce-ec688ebfc9.zip/node_modules/type-check/",
           "packageDependencies": [
@@ -16674,6 +16763,13 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           "packageLocation": "./.yarn/cache/uglify-js-npm-3.14.3-a1c4d9b4ec-eef57b4fec.zip/node_modules/uglify-js/",
           "packageDependencies": [
             ["uglify-js", "npm:3.14.3"]
+          ],
+          "linkType": "HARD",
+        }],
+        ["npm:3.14.4", {
+          "packageLocation": "./.yarn/cache/uglify-js-npm-3.14.4-690963fdb4-13217db521.zip/node_modules/uglify-js/",
+          "packageDependencies": [
+            ["uglify-js", "npm:3.14.4"]
           ],
           "linkType": "HARD",
         }]

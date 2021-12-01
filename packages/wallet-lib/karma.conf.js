@@ -2,6 +2,13 @@
 const webpack = require('webpack');
 const dotenvResult = require('dotenv-safe').config();
 
+const karmaMocha = require('karma-mocha');
+const karmaMochaReporter = require('karma-mocha-reporter');
+const karmaChai = require('karma-chai');
+const karmaChromeLauncher = require('karma-chrome-launcher');
+const karmaSourcemapLoader = require('karma-sourcemap-loader');
+const karmaWebpack = require('karma-webpack');
+
 if (dotenvResult.error) {
   throw dotenvResult.error;
 }
@@ -56,12 +63,12 @@ module.exports = (config) => {
     concurrency: Infinity,
     browserNoActivityTimeout: 10 * 60 * 1000,
     plugins: [
-      require('karma-mocha'),
-      require('karma-mocha-reporter'),
-      require('karma-chai'),
-      require('karma-chrome-launcher'),
-      require('karma-webpack'),
-      require('karma-sourcemap-loader'),
+      karmaMocha,
+      karmaMochaReporter,
+      karmaChai,
+      karmaChromeLauncher,
+      karmaSourcemapLoader,
+      karmaWebpack,
     ],
   });
 };
