@@ -24,6 +24,7 @@ const MissingDocumentTransitionTypeError = require('./basic/document/MissingDocu
 const MissingDocumentTypeError = require('./basic/document/MissingDocumentTypeError');
 const DuplicatedIdentityPublicKeyError = require('./basic/identity/DuplicatedIdentityPublicKeyError');
 const DuplicatedIdentityPublicKeyIdError = require('./basic/identity/DuplicatedIdentityPublicKeyIdError');
+const MissingMasterPublicKeyError = require('./basic/identity/MissingMasterPublicKeyError');
 const IdentityAssetLockProofLockedTransactionMismatchError = require('./basic/identity/IdentityAssetLockProofLockedTransactionMismatchError');
 const IdentityAssetLockTransactionIsNotFoundError = require('./basic/identity/IdentityAssetLockTransactionIsNotFoundError');
 const IdentityAssetLockTransactionOutPointAlreadyExistsError = require('./basic/identity/IdentityAssetLockTransactionOutPointAlreadyExistsError');
@@ -33,6 +34,7 @@ const InvalidAssetLockProofTransactionHeightError = require('./basic/identity/In
 const InvalidIdentityAssetLockTransactionError = require('./basic/identity/InvalidIdentityAssetLockTransactionError');
 const InvalidIdentityAssetLockTransactionOutputError = require('./basic/identity/InvalidIdentityAssetLockTransactionOutputError');
 const InvalidIdentityPublicKeyDataError = require('./basic/identity/InvalidIdentityPublicKeyDataError');
+const InvalidIdentityPublicKeySecurityLevelError = require('./basic/identity/InvalidIdentityPublicKeySecurityLevelError');
 const InvalidStateTransitionTypeError = require('./basic/stateTransition/InvalidStateTransitionTypeError');
 const MissingStateTransitionTypeError = require('./basic/stateTransition/MissingStateTransitionTypeError');
 const StateTransitionMaxSizeExceededError = require('./basic/stateTransition/StateTransitionMaxSizeExceededError');
@@ -123,6 +125,8 @@ const codes = {
   1040: InvalidIdentityPublicKeyDataError,
   1041: InvalidInstantAssetLockProofError,
   1042: InvalidInstantAssetLockProofSignatureError,
+  1046: MissingMasterPublicKeyError,
+  1047: InvalidIdentityPublicKeySecurityLevelError,
 
   // State Transition
   1043: InvalidStateTransitionTypeError,

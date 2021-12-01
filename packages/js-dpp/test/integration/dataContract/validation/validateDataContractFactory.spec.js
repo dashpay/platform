@@ -1734,6 +1734,34 @@ describe('validateDataContractFactory', function main() {
     });
   });
 
+  describe('signatureSecurityLevelRequirement', () => {
+    it('should be a number', async () => {
+      rawDataContract.documents.indexedDocument.signatureSecurityLevelRequirement = 'definitely not a number';
+
+      const result = await validateDataContract(rawDataContract);
+
+      expectJsonSchemaError(result);
+
+      const [error] = result.getErrors();
+
+      expect(error.instancePath).to.equal('/documents/indexedDocument/signatureSecurityLevelRequirement');
+      expect(error.getKeyword()).to.equal('type');
+    });
+
+    it('should be one of the available values', async () => {
+      rawDataContract.documents.indexedDocument.signatureSecurityLevelRequirement = 199;
+
+      const result = await validateDataContract(rawDataContract);
+
+      expectJsonSchemaError(result);
+
+      const [error] = result.getErrors();
+
+      expect(error.instancePath).to.equal('/documents/indexedDocument/signatureSecurityLevelRequirement');
+      expect(error.getKeyword()).to.equal('enum');
+    });
+  });
+
   describe('dependentSchemas', () => {
     it('should be an object', async () => {
       rawDataContract.documents.niceDocument = {
