@@ -65,7 +65,7 @@ describe('validateDataContractUpdateTransitionBasicFactory', () => {
     const jsonSchemaValidator = new JsonSchemaValidator(ajv);
 
     validateIndicesAreNotChangedMock = this.sinonSandbox.stub();
-    validateIndicesAreNotChangedMock.resolves(new ValidationResult());
+    validateIndicesAreNotChangedMock.returns(new ValidationResult());
 
     stateRepositoryMock = createStateRepositoryMock(this.sinonSandbox);
     stateRepositoryMock.fetchDataContract.resolves(dataContract);

@@ -11,9 +11,9 @@ const ValidationResult = require('../../../../../validation/ValidationResult');
  * @param {Object} oldDocuments
  * @param {Object} newDocuments
  *
- * @returns {Promise<ValidationResult>}
+ * @returns {ValidationResult}
  */
-async function validateIndicesAreNotChanged(oldDocuments, newDocuments) {
+function validateIndicesAreNotChanged(oldDocuments, newDocuments) {
   const result = new ValidationResult();
 
   // Check that old index dinfitions are intact

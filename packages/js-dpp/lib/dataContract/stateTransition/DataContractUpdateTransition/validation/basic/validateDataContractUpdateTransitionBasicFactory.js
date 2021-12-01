@@ -129,7 +129,7 @@ function validateDataContractUpdateTransitionBasicFactory(
 
     // check indices are not changed
     result.merge(
-      await validateIndicesAreNotChanged(
+      validateIndicesAreNotChanged(
         existingDataContract.getDocuments(),
         rawDataContract.documents,
       ),

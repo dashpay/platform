@@ -17,7 +17,7 @@ describe('validateIndicesAreNotChanged', () => {
   it('should return invalid result if some index have changed', async () => {
     newDocumentsSchema.indexedDocument.indices[0].properties[0].$ownerId = 'desc';
 
-    const result = await validateIndicesAreNotChanged(oldDocumentsSchema, newDocumentsSchema);
+    const result = validateIndicesAreNotChanged(oldDocumentsSchema, newDocumentsSchema);
 
     expect(result.isValid()).to.be.false();
 
@@ -32,7 +32,7 @@ describe('validateIndicesAreNotChanged', () => {
       indices: {},
     };
 
-    const result = await validateIndicesAreNotChanged(oldDocumentsSchema, newDocumentsSchema);
+    const result = validateIndicesAreNotChanged(oldDocumentsSchema, newDocumentsSchema);
 
     expect(result.isValid()).to.be.false();
 
@@ -42,7 +42,7 @@ describe('validateIndicesAreNotChanged', () => {
   });
 
   it('should return valid result if indicies are not changed', async () => {
-    const result = await validateIndicesAreNotChanged(oldDocumentsSchema, newDocumentsSchema);
+    const result = validateIndicesAreNotChanged(oldDocumentsSchema, newDocumentsSchema);
 
     expect(result.isValid()).to.be.true();
   });
