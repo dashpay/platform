@@ -20,18 +20,21 @@ const baseConfig = {
       crypto: require.resolve('crypto-browserify'),
       http: require.resolve('stream-http'),
       https: require.resolve('https-browserify'),
+      buffer: require.resolve('buffer/'),
       url: require.resolve('url/'),
       assert: require.resolve('assert/'),
       stream: require.resolve('stream-browserify'),
       path: require.resolve('path-browserify'),
       os: require.resolve('os-browserify/browser'),
       zlib: require.resolve('browserify-zlib'),
+      events: require.resolve('events/'),
+      string_decoder: require.resolve('string_decoder/'),
     },
   },
   plugins: [
     new webpack.ProvidePlugin({
-      Buffer: ['buffer', 'Buffer'],
-      process: 'process/browser',
+      Buffer: [require.resolve('buffer/'), 'Buffer'],
+      process: require.resolve('process/browser'),
     }),
   ],
   output: {
