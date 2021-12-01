@@ -8,7 +8,7 @@ const ValidationResult = require('../../../../lib/validation/ValidationResult');
 
 const MissingMasterPublicKeyError = require('../../../../lib/errors/consensus/basic/identity/MissingMasterPublicKeyError');
 
-describe('validateIdentityExistence', () => {
+describe('validatePublicKeysInIdentityCreateTransitionFactory', () => {
   let validatePublicKeysInIdentityCreateTransition;
 
   beforeEach(() => {
