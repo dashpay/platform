@@ -30,6 +30,14 @@ jobs:
       - name: Disable NPM audit
         run: npm config set audit false
 
+      - name: Enable Yarn unplugged modules cache
+        uses: actions/cache@v2
+        with:
+          path: '.yarn/unplugged'
+          key: ${{ runner.os }}-yarn-unplugged-${{ hashFiles('yarn.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-yarn-unplugged-
+
       - name: Install dependencies
         run: yarn install
 
@@ -69,6 +77,14 @@ jobs:
 
       - name: Disable NPM audit
         run: npm config set audit false
+
+      - name: Enable Yarn unplugged modules cache
+        uses: actions/cache@v2
+        with:
+          path: '.yarn/unplugged'
+          key: ${{ runner.os }}-yarn-unplugged-${{ hashFiles('yarn.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-yarn-unplugged-
 
       - name: Install dependencies
         run: yarn install
@@ -159,6 +175,14 @@ jobs:
       - name: Disable NPM audit
         run: npm config set audit false
 
+      - name: Enable Yarn unplugged modules cache
+        uses: actions/cache@v2
+        with:
+          path: '.yarn/unplugged'
+          key: ${{ runner.os }}-yarn-unplugged-${{ hashFiles('yarn.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-yarn-unplugged-
+
       - name: Install dependencies
         run: yarn install
 
@@ -247,6 +271,14 @@ jobs:
 
       - name: Disable NPM audit
         run: npm config set audit false
+
+      - name: Enable Yarn unplugged modules cache
+        uses: actions/cache@v2
+        with:
+          path: '.yarn/unplugged'
+          key: ${{ runner.os }}-yarn-unplugged-${{ hashFiles('yarn.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-yarn-unplugged-
 
       - name: Install dependencies
         run: yarn install
