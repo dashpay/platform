@@ -28,6 +28,14 @@ const InvalidIdentityPublicKeyDataError = require(
   '../../../../lib/errors/consensus/basic/identity/InvalidIdentityPublicKeyDataError',
 );
 
+const InvalidIdentityPublicKeySecurityLevelError = require(
+  '../../../../lib/errors/consensus/basic/identity/InvalidIdentityPublicKeySecurityLevelError',
+);
+
+const IdentityPublicKey = require(
+  '../../../../lib/identity/IdentityPublicKey',
+);
+
 describe('validatePublicKeysFactory', () => {
   let rawPublicKeys;
   let validatePublicKeys;
@@ -256,6 +264,22 @@ describe('validatePublicKeysFactory', () => {
     expect(error.getPublicKeyId()).to.deep.equal(rawPublicKeys[1].id);
     expect(error.getValidationError()).to.be.instanceOf(TypeError);
     expect(error.getValidationError().message).to.equal('Invalid DER format public key');
+  });
+
+  it('should return invalid result if key has an invalid combination of purpose and security level', () => {
+    rawPublicKeys[1].purpose = IdentityPublicKey.PURPOSES.ENCRYPTION;
+    rawPublicKeys[1].securityLevel = IdentityPublicKey.SECURITY_LEVELS.MASTER;
+
+    const result = validatePublicKeys(rawPublicKeys);
+
+    expectValidationError(result, InvalidIdentityPublicKeySecurityLevelError);
+
+    const [error] = result.getErrors();
+
+    expect(error.getCode()).to.equal(1047);
+    expect(error.getPublicKeyId()).to.deep.equal(rawPublicKeys[1].id);
+    expect(error.getPublicKeySecurityLevel()).to.be.equal(rawPublicKeys[1].securityLevel);
+    expect(error.getPublicKeyPurpose()).to.equal(rawPublicKeys[1].purpose);
   });
 
   it('should pass valid public keys', () => {

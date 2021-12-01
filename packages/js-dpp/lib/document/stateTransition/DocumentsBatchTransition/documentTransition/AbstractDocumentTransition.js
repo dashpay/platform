@@ -46,6 +46,15 @@ class AbstractDocumentTransition {
   }
 
   /**
+   * Get data contract associated with this transition
+   *
+   * @return {DataContract}
+   */
+  getDataContract() {
+    return this.dataContract;
+  }
+
+  /**
    * Get Data Contract ID
    *
    * @return {Identifier}

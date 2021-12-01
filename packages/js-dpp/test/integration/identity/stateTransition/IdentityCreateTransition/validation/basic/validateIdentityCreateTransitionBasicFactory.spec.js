@@ -25,12 +25,16 @@ describe('validateIdentityCreateTransitionBasicFactory', () => {
   let rawStateTransition;
   let stateTransition;
   let validatePublicKeysMock;
+  let validatePublicKeysInIdentityCreateTransition;
   let assetLockPublicKeyHash;
   let proofValidationFunctionsByTypeMock;
   let validateProtocolVersionMock;
 
   beforeEach(async function beforeEach() {
     validatePublicKeysMock = this.sinonSandbox.stub()
+      .returns(new ValidationResult());
+
+    validatePublicKeysInIdentityCreateTransition = this.sinonSandbox.stub()
       .returns(new ValidationResult());
 
     assetLockPublicKeyHash = Buffer.alloc(20, 1);
@@ -57,6 +61,7 @@ describe('validateIdentityCreateTransitionBasicFactory', () => {
     validateIdentityCreateTransitionBasic = validateIdentityCreateTransitionBasicFactory(
       jsonSchemaValidator,
       validatePublicKeysMock,
+      validatePublicKeysInIdentityCreateTransition,
       proofValidationFunctionsByTypeMock,
       validateProtocolVersionMock,
     );
@@ -292,6 +297,28 @@ describe('validateIdentityCreateTransitionBasicFactory', () => {
       expect(error).to.equal(publicKeysError);
 
       expect(validatePublicKeysMock).to.be.calledOnceWithExactly(rawStateTransition.publicKeys);
+    });
+
+    it('should have at least 1 master key', async () => {
+      const publicKeysError = new SomeConsensusError('test');
+      const publicKeysResult = new ValidationResult([
+        publicKeysError,
+      ]);
+
+      validatePublicKeysInIdentityCreateTransition.returns(publicKeysResult);
+
+      const result = await validateIdentityCreateTransitionBasic(
+        rawStateTransition,
+      );
+
+      expectValidationError(result);
+
+      const [error] = result.getErrors();
+
+      expect(error).to.equal(publicKeysError);
+
+      expect(validatePublicKeysInIdentityCreateTransition)
+        .to.be.calledOnceWithExactly(rawStateTransition.publicKeys);
     });
   });
 

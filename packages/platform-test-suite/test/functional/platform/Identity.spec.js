@@ -12,6 +12,7 @@ const InvalidInstantAssetLockProofSignatureError = require('@dashevo/dpp/lib/err
 const IdentityAssetLockTransactionOutPointAlreadyExistsError = require('@dashevo/dpp/lib/errors/consensus/basic/identity/IdentityAssetLockTransactionOutPointAlreadyExistsError');
 const BalanceIsNotEnoughError = require('@dashevo/dpp/lib/errors/consensus/fee/BalanceIsNotEnoughError');
 const IdentityPublicKeyAlreadyExistsError = require('@dashevo/dpp/lib/errors/consensus/state/identity/IdentityPublicKeyAlreadyExistsError');
+const IdentityPublicKey = require('@dashevo/dpp/lib/identity/IdentityPublicKey');
 
 const createClientWithFundedWallet = require('../../../lib/test/createClientWithFundedWallet');
 const wait = require('../../../lib/wait');
@@ -156,7 +157,11 @@ describe('Platform', () => {
 
       const duplicateIdentity = dpp.identity.create(
         assetLockProof,
-        [walletPublicKey],
+        [{
+          purpose: IdentityPublicKey.PURPOSES.AUTHENTICATION,
+          securityLevel: IdentityPublicKey.SECURITY_LEVELS.MASTER,
+          key: walletPublicKey,
+        }],
       );
 
       const duplicateIdentityCreateTransition = dpp.identity.createIdentityCreateTransition(

@@ -15,6 +15,14 @@ class IdentityPublicKey {
       this.setType(rawIdentityPublicKey.type);
     }
 
+    if (Object.prototype.hasOwnProperty.call(rawIdentityPublicKey, 'purpose')) {
+      this.setPurpose(rawIdentityPublicKey.purpose);
+    }
+
+    if (Object.prototype.hasOwnProperty.call(rawIdentityPublicKey, 'securityLevel')) {
+      this.setSecurityLevel(rawIdentityPublicKey.securityLevel);
+    }
+
     if (Object.prototype.hasOwnProperty.call(rawIdentityPublicKey, 'data')) {
       this.setData(rawIdentityPublicKey.data);
     }
@@ -84,7 +92,49 @@ class IdentityPublicKey {
   }
 
   /**
-   * Get original public key hash
+   * Set the raw purpose value. A uint8 number
+   *
+   * @param {number} purpose
+   * @return {IdentityPublicKey}
+   */
+  setPurpose(purpose) {
+    this.purpose = purpose;
+
+    return this;
+  }
+
+  /**
+   * Get the raw purpose value. A uint8 number
+   *
+   * @return number
+   */
+  getPurpose() {
+    return this.purpose;
+  }
+
+  /**
+   * Set the raw security level. A uint8 number
+   *
+   * @param {number} securityLevel
+   * @return {IdentityPublicKey}
+   */
+  setSecurityLevel(securityLevel) {
+    this.securityLevel = securityLevel;
+
+    return this;
+  }
+
+  /**
+   * Get the raw security level value. A uint8 number
+   *
+   * @return number
+   */
+  getSecurityLevel() {
+    return this.securityLevel;
+  }
+
+  /**
+   * Get the original public key hash
    *
    * @returns {Buffer}
    */
@@ -101,7 +151,7 @@ class IdentityPublicKey {
   }
 
   /**
-   * Get plain object representation
+   * Get a plain object representation
    *
    * @return {RawIdentityPublicKey}
    */
@@ -109,12 +159,14 @@ class IdentityPublicKey {
     return {
       id: this.getId(),
       type: this.getType(),
+      purpose: this.getPurpose(),
+      securityLevel: this.getSecurityLevel(),
       data: this.getData(),
     };
   }
 
   /**
-   * Get JSON representation
+   * Get a JSON representation
    *
    * @return {JsonIdentityPublicKey}
    */
@@ -130,12 +182,16 @@ class IdentityPublicKey {
  * @typedef {Object} RawIdentityPublicKey
  * @property {number} id
  * @property {number} type
+ * @property {number} purpose
+ * @property {number} securityLevel
  * @property {Buffer} data
  */
 
 /**
  * @typedef {Object} JsonIdentityPublicKey
  * @property {number} id
+ * @property {number} purpose
+ * @property {number} securityLevel
  * @property {number} type
  * @property {string} data
  */
@@ -144,5 +200,32 @@ IdentityPublicKey.TYPES = {
   ECDSA_SECP256K1: 0,
   BLS12_381: 1,
 };
+
+IdentityPublicKey.PURPOSES = {
+  AUTHENTICATION: 0,
+  ENCRYPTION: 1,
+  DECRYPTION: 2,
+};
+
+IdentityPublicKey.SECURITY_LEVELS = {
+  MASTER: 0,
+  CRITICAL: 1,
+  HIGH: 2,
+  MEDIUM: 3,
+};
+
+IdentityPublicKey.ALLOWED_SECURITY_LEVELS = {};
+IdentityPublicKey.ALLOWED_SECURITY_LEVELS[IdentityPublicKey.PURPOSES.AUTHENTICATION] = [
+  IdentityPublicKey.SECURITY_LEVELS.MASTER,
+  IdentityPublicKey.SECURITY_LEVELS.CRITICAL,
+  IdentityPublicKey.SECURITY_LEVELS.HIGH,
+  IdentityPublicKey.SECURITY_LEVELS.MEDIUM,
+];
+IdentityPublicKey.ALLOWED_SECURITY_LEVELS[IdentityPublicKey.PURPOSES.ENCRYPTION] = [
+  IdentityPublicKey.SECURITY_LEVELS.MEDIUM,
+];
+IdentityPublicKey.ALLOWED_SECURITY_LEVELS[IdentityPublicKey.PURPOSES.DECRYPTION] = [
+  IdentityPublicKey.SECURITY_LEVELS.MEDIUM,
+];
 
 module.exports = IdentityPublicKey;

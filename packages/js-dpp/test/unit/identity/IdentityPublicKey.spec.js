@@ -10,6 +10,8 @@ describe('IdentityPublicKey', () => {
       id: 0,
       type: IdentityPublicKey.TYPES.ECDSA_SECP256K1,
       data: Buffer.from('AkVuTKyF3YgKLAQlLEtaUL2HTditwGILfWUVqjzYnIgH', 'base64'),
+      purpose: IdentityPublicKey.PURPOSES.AUTHENTICATION,
+      securityLevel: IdentityPublicKey.SECURITY_LEVELS.MASTER,
     };
 
     publicKey = new IdentityPublicKey(rawPublicKey);
@@ -79,6 +81,34 @@ describe('IdentityPublicKey', () => {
     });
   });
 
+  describe('#getPurpose', () => {
+    it('should return set data', () => {
+      expect(publicKey.getPurpose()).to.equal(rawPublicKey.purpose);
+    });
+  });
+
+  describe('#setPurpose', () => {
+    it('should set data', () => {
+      publicKey.setPurpose(IdentityPublicKey.PURPOSES.DECRYPTION);
+
+      expect(publicKey.purpose).to.equal(IdentityPublicKey.PURPOSES.DECRYPTION);
+    });
+  });
+
+  describe('#getSecurityLevel', () => {
+    it('should return set data', () => {
+      expect(publicKey.getSecurityLevel()).to.equal(rawPublicKey.securityLevel);
+    });
+  });
+
+  describe('#setSecurityLevel', () => {
+    it('should set data', () => {
+      publicKey.setSecurityLevel(IdentityPublicKey.SECURITY_LEVELS.MEDIUM);
+
+      expect(publicKey.securityLevel).to.equal(IdentityPublicKey.SECURITY_LEVELS.MEDIUM);
+    });
+  });
+
   describe('#hash', () => {
     it('should return original public key hash', () => {
       const result = publicKey.hash();
@@ -114,6 +144,8 @@ describe('IdentityPublicKey', () => {
         id: 0,
         type: IdentityPublicKey.TYPES.ECDSA_SECP256K1,
         data: 'AkVuTKyF3YgKLAQlLEtaUL2HTditwGILfWUVqjzYnIgH',
+        purpose: IdentityPublicKey.PURPOSES.AUTHENTICATION,
+        securityLevel: IdentityPublicKey.SECURITY_LEVELS.MASTER,
       });
     });
   });
