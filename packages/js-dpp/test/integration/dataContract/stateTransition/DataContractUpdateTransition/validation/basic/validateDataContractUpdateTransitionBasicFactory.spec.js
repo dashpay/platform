@@ -179,7 +179,7 @@ describe('validateDataContractUpdateTransitionBasicFactory', () => {
       expect(error.getParams().missingProperty).to.equal('dataContract');
     });
 
-    it('should have backward compatible schema', async () => {
+    it('should have no existing documents removed', async () => {
       rawStateTransition.dataContract.documents.indexedDocument = undefined;
 
       const result = await validateDataContractUpdateTransitionBasic(rawStateTransition);
@@ -190,10 +190,52 @@ describe('validateDataContractUpdateTransitionBasicFactory', () => {
 
       expect(error).to.be.an.instanceOf(IncompatibleDataContractSchemaError);
       expect(error.getOperation()).to.equal('remove');
-      expect(error.getFieldPath()).to.equal('/indexedDocument');
+      expect(error.getFieldPath()).to.equal('/additionalProperties');
+      expect(error.getNewSchema()).to.equal(undefined);
     });
 
-    it('should not have immutable fields changed', async () => {
+    it('should allow making backward compatible changes to existing documents', async () => {
+      rawStateTransition.dataContract.documents.indexedDocument.properties.newProp = {
+        type: 'integer',
+        minimum: 0,
+      };
+
+      const result = await validateDataContractUpdateTransitionBasic(rawStateTransition);
+
+      expect(result.isValid()).to.be.true();
+    });
+
+    it('should have existing documents schema backward compatible', async () => {
+      rawStateTransition.dataContract.documents.indexedDocument.properties.firstName = undefined;
+
+      const result = await validateDataContractUpdateTransitionBasic(rawStateTransition);
+
+      expectValidationError(result);
+
+      const [error] = result.getErrors();
+
+      expect(error).to.be.an.instanceOf(IncompatibleDataContractSchemaError);
+      expect(error.getOperation()).to.equal('remove');
+      expect(error.getFieldPath()).to.equal('/properties/firstName');
+    });
+
+    it('should allow defining new document', async () => {
+      rawStateTransition.dataContract.documents.myNewAwesomeDoc = {
+        type: 'object',
+        properties: {
+          name: {
+            type: 'string',
+          },
+        },
+        required: ['name'],
+      };
+
+      const result = await validateDataContractUpdateTransitionBasic(rawStateTransition);
+
+      expect(result.isValid()).to.be.true();
+    });
+
+    it('should not have root immutable properties changed', async () => {
       rawStateTransition.dataContract.$schema = undefined;
 
       const result = await validateDataContractUpdateTransitionBasic(rawStateTransition);

@@ -26,13 +26,6 @@ function validateIndicesAreNotChanged(oldDocuments, newDocuments) {
       return !serializer.encode(oldSchema.indices).equals(serializer.encode(newSchemaIndices));
     });
 
-  // check there are no document definition with indices were added
-  // const oldDocumentDefinitionTypes = Object.keys(oldDocuments);
-  // const newDocumentWithIndicesEntry = Object.entries(newDocuments)
-  //   .find(([documentType, schema]) => (
-  //     !oldDocumentDefinitionTypes.includes(documentType) && schema.indices !== undefined
-  //   ));
-
   const [documentType] = changedDocumentEntry || [];
 
   if (documentType) {

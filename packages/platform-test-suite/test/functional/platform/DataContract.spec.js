@@ -124,7 +124,7 @@ describe('Platform', () => {
         await wait(5000);
       }
 
-      let fetchedDataContract = await client.platform.contracts.get(
+      const fetchedDataContract = await client.platform.contracts.get(
         dataContractFixture.getId(),
       );
 

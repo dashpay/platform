@@ -143,28 +143,34 @@ function validateDataContractUpdateTransitionBasicFactory(
     const oldSchema = existingDataContract.getDocuments();
     const newSchema = rawDataContract.documents;
 
-    try {
-      diffValidator.validateSchemaCompatibility(oldSchema, newSchema);
-    } catch (schemaValidationError) {
-      const regexp = /change = (.*?)$/;
+    Object.entries(oldSchema)
+      .forEach(([documentType, documentSchema]) => {
+        try {
+          diffValidator.validateSchemaCompatibility(
+            documentSchema,
+            newSchema[documentType] || {},
+          );
+        } catch (schemaValidationError) {
+          const regexp = /change = (.*?)$/;
 
-      const match = schemaValidationError.message.match(regexp);
+          const match = schemaValidationError.message.match(regexp);
 
-      const validationErrorOperations = JSON.parse(match[1]);
+          const validationErrorOperations = JSON.parse(match[1]);
 
-      const { op: operation, path: fieldPath } = validationErrorOperations[0];
+          const { op: operation, path: fieldPath } = validationErrorOperations[0];
 
-      const error = new IncompatibleDataContractSchemaError(
-        existingDataContract.getId().toBuffer(),
-        operation,
-        fieldPath,
-      );
-      error.setOldSchema(oldSchema);
-      error.setNewSchema(newSchema);
-      error.setValidationError(schemaValidationError);
+          const error = new IncompatibleDataContractSchemaError(
+            existingDataContract.getId().toBuffer(),
+            operation,
+            fieldPath,
+          );
+          error.setOldSchema(documentSchema);
+          error.setNewSchema(newSchema[documentType]);
+          error.setValidationError(schemaValidationError);
 
-      result.addError(error);
-    }
+          result.addError(error);
+        }
+      });
 
     return result;
   }
