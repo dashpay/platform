@@ -17,6 +17,6 @@ on:
 jobs:
   dapi-tests:
     name: Run DAPI gRPC tests
-    uses: dashevo/platform/.github/workflows/test.yml@use-pnp
+    uses: dashevo/platform/.github/workflows/test.yml@master
     with:
       package: '@dashevo/dashpay-contract'
