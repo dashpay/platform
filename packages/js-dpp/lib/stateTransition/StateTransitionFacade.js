@@ -40,6 +40,7 @@ const getDataTriggersFactory = require('../dataTrigger/getDataTriggersFactory');
 const executeDataTriggersFactory = require('../document/stateTransition/DocumentsBatchTransition/validation/state/executeDataTriggersFactory');
 const validateIdentityExistenceFactory = require('../identity/validation/validateIdentityExistenceFactory');
 const validatePublicKeysFactory = require('../identity/validation/validatePublicKeysFactory');
+const validatePublicKeysInIdentityCreateTransitionFactory = require('../identity/validation/validatePublicKeysInIdentityCreateTransitionFactory');
 const validateDataContractMaxDepthFactory = require('../dataContract/validation/validateDataContractMaxDepthFactory');
 
 const applyStateTransitionFactory = require('./applyStateTransitionFactory');
@@ -184,10 +185,15 @@ class StateTransitionFacade {
       validator,
     );
 
+    const validatePublicKeysInIdentityCreateTransition = (
+      validatePublicKeysInIdentityCreateTransitionFactory()
+    );
+
     const validateIdentityCreateTransitionBasic = (
       validateIdentityCreateTransitionBasicFactory(
         validator,
         validatePublicKeys,
+        validatePublicKeysInIdentityCreateTransition,
         proofValidationFunctionsByType,
         validateProtocolVersion,
       )

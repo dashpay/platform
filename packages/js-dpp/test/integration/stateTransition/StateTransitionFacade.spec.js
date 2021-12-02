@@ -38,7 +38,9 @@ describe('StateTransitionFacade', () => {
     identityPublicKey = new IdentityPublicKey()
       .setId(publicKeyId)
       .setType(IdentityPublicKey.TYPES.ECDSA_SECP256K1)
-      .setData(publicKey);
+      .setData(publicKey)
+      .setPurpose(IdentityPublicKey.PURPOSES.AUTHENTICATION)
+      .setSecurityLevel(IdentityPublicKey.PURPOSES.MASTER);
 
     dataContract = getDataContractFixture();
 

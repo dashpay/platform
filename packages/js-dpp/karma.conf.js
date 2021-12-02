@@ -1,8 +1,15 @@
-const webpack = require('webpack');
+const karmaMocha = require('karma-mocha');
+const karmaMochaReporter = require('karma-mocha-reporter');
+const karmaChai = require('karma-chai');
+const karmaChromeLauncher = require('karma-chrome-launcher');
+const karmaFirefoxLauncher = require('karma-firefox-launcher');
+const karmaWebpack = require('karma-webpack');
+
+const webpackConfig = require('./webpack.config');
 
 module.exports = (config) => {
   config.set({
-    frameworks: ['mocha', 'chai'],
+    frameworks: ['mocha', 'chai', 'webpack'],
     files: [
       'lib/test/karma/loader.js',
     ],
@@ -17,26 +24,8 @@ module.exports = (config) => {
         minimize: false,
         moduleIds: 'named',
       },
-      plugins: [
-        new webpack.ProvidePlugin({
-          Buffer: ['buffer', 'Buffer'],
-          process: 'process/browser',
-        }),
-        new webpack.HotModuleReplacementPlugin(),
-      ],
-      resolve: {
-        fallback: {
-          fs: false,
-          crypto: require.resolve('crypto-browserify'),
-          http: require.resolve('stream-http'),
-          https: require.resolve('https-browserify'),
-          stream: require.resolve('stream-browserify'),
-          path: require.resolve('path-browserify'),
-          url: require.resolve('url/'),
-          util: require.resolve('util/'),
-          assert: require.resolve('assert/'),
-        },
-      },
+      plugins: webpackConfig[0].plugins,
+      resolve: webpackConfig[0].resolve,
     },
     reporters: ['mocha'],
     port: 9876,
@@ -47,12 +36,12 @@ module.exports = (config) => {
     singleRun: false,
     concurrency: Infinity,
     plugins: [
-      'karma-mocha',
-      'karma-mocha-reporter',
-      'karma-chai',
-      'karma-chrome-launcher',
-      'karma-firefox-launcher',
-      'karma-webpack',
+      karmaMocha,
+      karmaMochaReporter,
+      karmaChai,
+      karmaChromeLauncher,
+      karmaFirefoxLauncher,
+      karmaWebpack,
     ],
     customLaunchers: {
       FirefoxHeadless: {

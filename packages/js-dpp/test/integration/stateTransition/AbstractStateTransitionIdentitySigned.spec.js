@@ -6,6 +6,8 @@ const StateTransitionMock = require('../../../lib/test/mocks/StateTransitionMock
 const IdentityPublicKey = require('../../../lib/identity/IdentityPublicKey');
 const InvalidSignatureTypeError = require('../../../lib/stateTransition/errors/InvalidIdentityPublicKeyTypeError');
 const InvalidSignaturePublicKeyError = require('../../../lib/stateTransition/errors/InvalidSignaturePublicKeyError');
+const PublicKeySecurityLevelNotMetError = require('../../../lib/stateTransition/errors/PublicKeySecurityLevelNotMetError');
+const WrongPublicKeyPurposeError = require('../../../lib/stateTransition/errors/WrongPublicKeyPurposeError');
 const StateTransitionIsNotSignedError = require('../../../lib/stateTransition/errors/StateTransitionIsNotSignedError');
 const PublicKeyMismatchError = require('../../../lib/stateTransition/errors/PublicKeyMismatchError');
 
@@ -33,7 +35,9 @@ describe('AbstractStateTransitionIdentitySigned', () => {
     identityPublicKey = new IdentityPublicKey()
       .setId(publicKeyId)
       .setType(IdentityPublicKey.TYPES.ECDSA_SECP256K1)
-      .setData(publicKey);
+      .setData(publicKey)
+      .setSecurityLevel(IdentityPublicKey.SECURITY_LEVELS.MASTER)
+      .setPurpose(IdentityPublicKey.PURPOSES.AUTHENTICATION);
   });
 
   describe('#toObject', () => {
@@ -152,6 +156,41 @@ describe('AbstractStateTransitionIdentitySigned', () => {
         expect(e.getPublicKeyType()).to.be.equal(identityPublicKey.getType());
       }
     });
+
+    it('should throw an error if the key security level is not met', function () {
+      stateTransition.getRequiredKeySecurityLevel = this.sinonSandbox
+        .stub()
+        .returns(IdentityPublicKey.SECURITY_LEVELS.MASTER);
+
+      identityPublicKey.setSecurityLevel(IdentityPublicKey.SECURITY_LEVELS.MEDIUM);
+
+      try {
+        stateTransition.sign(identityPublicKey, privateKeyHex);
+
+        expect.fail('Should throw PublicKeySecurityLevelNotMetError');
+      } catch (e) {
+        expect(e).to.be.instanceOf(PublicKeySecurityLevelNotMetError);
+        expect(e.getPublicKeySecurityLevel())
+          .to.be.deep.equal(identityPublicKey.getSecurityLevel());
+        expect(e.getKeySecurityLevelRequirement())
+          .to.be.deep.equal(IdentityPublicKey.SECURITY_LEVELS.MASTER);
+      }
+    });
+
+    it('should throw an error if the key purpose is not authentication', () => {
+      identityPublicKey.setPurpose(IdentityPublicKey.PURPOSES.ENCRYPTION);
+
+      try {
+        stateTransition.sign(identityPublicKey, privateKeyHex);
+
+        expect.fail('Should throw WrongPublicKeyPurposeError');
+      } catch (e) {
+        expect(e).to.be.instanceOf(WrongPublicKeyPurposeError);
+        expect(e.getPublicKeyPurpose()).to.be.deep.equal(identityPublicKey.getPurpose());
+        expect(e.getKeyPurposeRequirement())
+          .to.be.deep.equal(IdentityPublicKey.PURPOSES.AUTHENTICATION);
+      }
+    });
   });
 
   describe('#signByPrivateKey', () => {
@@ -212,6 +251,43 @@ describe('AbstractStateTransitionIdentitySigned', () => {
       const isValid = stateTransition.verifySignature(identityPublicKey);
 
       expect(isValid).to.be.false();
+    });
+
+    it('should throw an error if the key security level is not met', () => {
+      stateTransition.sign(identityPublicKey, privateKeyHex);
+
+      // Set key security level after the signing, since otherwise .sign method won't work
+      identityPublicKey.setSecurityLevel(IdentityPublicKey.SECURITY_LEVELS.MEDIUM);
+
+      try {
+        stateTransition.verifySignature(identityPublicKey);
+
+        expect.fail('Should throw PublicKeySecurityLevelNotMetError');
+      } catch (e) {
+        expect(e).to.be.instanceOf(PublicKeySecurityLevelNotMetError);
+        expect(e.getPublicKeySecurityLevel())
+          .to.be.deep.equal(identityPublicKey.getSecurityLevel());
+        expect(e.getKeySecurityLevelRequirement())
+          .to.be.deep.equal(IdentityPublicKey.SECURITY_LEVELS.MASTER);
+      }
+    });
+
+    it('should throw an error if the key purpose is not equal to authentication', () => {
+      stateTransition.sign(identityPublicKey, privateKeyHex);
+
+      // Set key security level after the signing, since otherwise .sign method won't work
+      identityPublicKey.setPurpose(IdentityPublicKey.PURPOSES.ENCRYPTION);
+
+      try {
+        stateTransition.verifySignature(identityPublicKey);
+
+        expect.fail('Should throw WrongPublicKeyPurposeError');
+      } catch (e) {
+        expect(e).to.be.instanceOf(WrongPublicKeyPurposeError);
+        expect(e.getPublicKeyPurpose()).to.be.deep.equal(identityPublicKey.getPurpose());
+        expect(e.getKeyPurposeRequirement())
+          .to.be.deep.equal(IdentityPublicKey.PURPOSES.AUTHENTICATION);
+      }
     });
   });
 
