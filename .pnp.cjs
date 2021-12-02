@@ -6785,7 +6785,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
       ]],
       ["conventional-changelog-dash", [
         ["https://github.com/dashevo/conventional-changelog-dash.git#commit=dfcd273bf13f7421700612b5ebd0e6af49699c54", {
-          "packageLocation": "./.yarn/cache/conventional-changelog-dash-https-bfb5529794-32f2fcf4bc.zip/node_modules/conventional-changelog-dash/",
+          "packageLocation": "./.yarn/cache/conventional-changelog-dash-https-bfb5529794-ff30eefddf.zip/node_modules/conventional-changelog-dash/",
           "packageDependencies": [
             ["conventional-changelog-dash", "https://github.com/dashevo/conventional-changelog-dash.git#commit=dfcd273bf13f7421700612b5ebd0e6af49699c54"],
             ["compare-func", "npm:2.0.0"],
