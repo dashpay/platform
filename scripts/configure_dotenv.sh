@@ -14,6 +14,8 @@ DRIVE_PATH="${PACKAGES_PATH}"/js-drive
 SDK_PATH="${PACKAGES_PATH}"/js-dash-sdk
 WALLET_LIB_PATH="${PACKAGES_PATH}"/wallet-lib
 
+touch "${LOGS_PATH}"/mint.log
+
 # DAPI:
 cp "${DAPI_PATH}"/.env.example "${DAPI_PATH}"/.env
 

@@ -7,7 +7,7 @@
     "build": "",
     "lint": "eslint .",
     "test": "yarn run test:coverage",
-    "test:coverage": "nyc --check-coverage --stmts=95 --branch=95 --funcs=95 --lines=95 mocha 'test/unit/**/*.spec.js' 'test/integration/**/*.spec.js'",
+    "test:coverage": "nyc --check-coverage --stmts=95 --branch=95 --funcs=95 --lines=95 yarn run mocha 'test/unit/**/*.spec.js' 'test/integration/**/*.spec.js'",
     "test:unit": "mocha './test/unit/**/*.spec.js'",
     "test:integration": "mocha './test/integration/**/*.spec.js'"
   },
@@ -30,6 +30,7 @@
     "@grpc/proto-loader": "^0.5.2",
     "cbor": "^8.0.0",
     "lodash.get": "^4.4.2",
+    "long": "^5.2.0",
     "protobufjs": "github:jawid-h/protobuf.js#fix/buffer-conversion",
     "semver": "^7.3.2"
   }
