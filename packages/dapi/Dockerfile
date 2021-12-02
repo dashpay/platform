@@ -1,5 +1,5 @@
 # syntax = docker/dockerfile:1.3
-FROM node:16-alpine as node_modules
+FROM node:16-alpine as builder
 
 ARG NODE_ENV=production
 ENV NODE_ENV ${NODE_ENV}
@@ -28,6 +28,9 @@ COPY packages/js-dpp packages/js-dpp
 COPY packages/js-grpc-common packages/js-grpc-common
 COPY packages/feature-flags-contract packages/feature-flags-contract
 
+# Print build output
+RUN yarn config set enableInlineBuilds true
+
 # Install DAPI-specific dependencies using previous
 # node_modules directory to reuse built binaries
 RUN --mount=type=cache,target=/tmp/unplugged \
@@ -50,11 +53,9 @@ RUN apk update && apk add --no-cache zeromq-dev
 # Install latest yarn
 RUN yarn set version 3.1.0
 
-ENV PATH /platform/node_modules/.bin:$PATH
-
 WORKDIR /platform
 
-COPY --from=node_modules /platform /platform
+COPY --from=builder /platform /platform
 
 RUN cp /platform/packages/dapi/.env.example /platform/packages/dapi/.env
 
