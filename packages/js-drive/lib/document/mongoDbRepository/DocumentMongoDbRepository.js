@@ -39,10 +39,15 @@ class DocumentMongoDbRepository {
    * @returns {Promise<void>}
    */
   async createCollection(indices = undefined) {
-    await this.mongoDatabase.createCollection(this.getCollectionName());
+    const existingCollectionNames = (await this.mongoDatabase.collections())
+      .map((c) => c.collectionName);
 
-    if (indices) {
-      await this.createIndices(indices);
+    if (!existingCollectionNames.includes(this.getCollectionName())) {
+      await this.mongoDatabase.createCollection(this.getCollectionName());
+
+      if (indices) {
+        await this.createIndices(indices);
+      }
     }
   }
 

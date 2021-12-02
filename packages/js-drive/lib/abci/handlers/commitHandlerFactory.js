@@ -80,7 +80,7 @@ function commitHandlerFactory(
     let nextPreviousBlockExecutionStoreTransactions;
     try {
       // Create document databases for dataContracts created in the current block
-      for (const dataContract of newlyCreatedDataContracts) {
+      for (const dataContract of blockExecutionContext.getDataContracts()) {
         await documentDatabaseManager.create(dataContract);
       }
 
@@ -135,6 +135,8 @@ function commitHandlerFactory(
         await blockExecutionStoreTransactions.abort();
       }
 
+      // NOTE: we're calling drop only on the newly created data contracts
+      // in case of contract update we keep any created data for now
       for (const dataContract of newlyCreatedDataContracts) {
         await documentDatabaseManager.drop(dataContract);
       }

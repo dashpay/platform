@@ -128,11 +128,32 @@ describe('Platform', () => {
         dataContractFixture.getId(),
       );
 
-      const documentSchema = fetchedDataContract.getDocumentSchema('withByteArrays');
-      documentSchema.properties.anotherOptionalField = {
-        type: 'integer',
-        minimum: 1,
-      };
+      const newDocumentType = 'myAwesomeDocument';
+
+      fetchedDataContract.setDocumentSchema(newDocumentType, {
+        type: 'object',
+        indices: [
+          {
+            properties: [
+              { firstName: 'asc' },
+              { lastName: 'asc' },
+            ],
+            unique: true,
+          },
+        ],
+        properties: {
+          firstName: {
+            type: 'string',
+            maxLength: 256,
+          },
+          lastName: {
+            type: 'string',
+            maxLength: 256,
+          },
+        },
+        required: ['firstName', '$createdAt', '$updatedAt', 'lastName'],
+        additionalProperties: false,
+      });
 
       await client.platform.contracts.update(fetchedDataContract, identity);
 
@@ -141,14 +162,38 @@ describe('Platform', () => {
         await wait(5000);
       }
 
-      fetchedDataContract = await client.platform.contracts.get(
-        dataContractFixture.getId(),
+      client.getApps().set('customContract', {
+        contractId: fetchedDataContract.getId(),
+        contract: fetchedDataContract,
+      });
+
+      const document = await client.platform.documents.create(
+        `customContract.${newDocumentType}`,
+        identity,
+        {
+          firstName: 'myName',
+          lastName: 'myLastName',
+        },
       );
 
-      expect(fetchedDataContract.getDocumentSchema('withByteArrays').properties.anotherOptionalField).to.deep.equal(
+      await client.platform.documents.broadcast({
+        create: [document],
+      }, identity);
+
+      // Additional wait time to mitigate testnet latency
+      if (process.env.NETWORK === 'testnet') {
+        await wait(5000);
+      }
+
+      const [fetchedDocument] = await client.platform.documents.get(
+        `customContract.${newDocumentType}`,
+        { where: [['firstName', '==', 'myName']] },
+      );
+
+      expect(fetchedDocument.getData()).to.deep.equal(
         {
-          type: 'integer',
-          minimum: 1,
+          firstName: 'myName',
+          lastName: 'myLastName',
         },
       );
     });

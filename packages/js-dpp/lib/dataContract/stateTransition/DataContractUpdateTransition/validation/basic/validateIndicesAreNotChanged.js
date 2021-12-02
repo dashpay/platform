@@ -27,13 +27,13 @@ function validateIndicesAreNotChanged(oldDocuments, newDocuments) {
     });
 
   // check there are no document definition with indices were added
-  const oldDocumentDefinitionTypes = Object.keys(oldDocuments);
-  const newDocumentWithIndicesEntry = Object.entries(newDocuments)
-    .find(([documentType, schema]) => (
-      !oldDocumentDefinitionTypes.includes(documentType) && schema.indices !== undefined
-    ));
+  // const oldDocumentDefinitionTypes = Object.keys(oldDocuments);
+  // const newDocumentWithIndicesEntry = Object.entries(newDocuments)
+  //   .find(([documentType, schema]) => (
+  //     !oldDocumentDefinitionTypes.includes(documentType) && schema.indices !== undefined
+  //   ));
 
-  const [documentType] = (changedDocumentEntry || newDocumentWithIndicesEntry) || [];
+  const [documentType] = changedDocumentEntry || [];
 
   if (documentType) {
     result.addError(new DataContractIndicesChangedError(documentType));
