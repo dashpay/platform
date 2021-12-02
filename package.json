@@ -1,6 +1,6 @@
 {
   "name": "@dashevo/platform",
-  "version": "0.21.5",
+  "version": "0.33.0-dev.1",
   "private": true,
   "scripts": {
     "setup": "yarn install && yarn run build && yarn run configure",
@@ -31,7 +31,7 @@
     "clean:data": "yarn run dashmate group:reset --verbose --group=local --hard",
     "clean": "yarn run clean:data && yarn run build",
     "dashmate": "./packages/dashmate/bin/dashmate",
-    "bump": "packster bump",
+    "bump": "./scripts/bump_version.sh",
     "changelog": "./scripts/generate_changelog.sh"
   },
   "packageManager": "yarn@3.1.0",

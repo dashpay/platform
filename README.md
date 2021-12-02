@@ -42,6 +42,7 @@ located in the [packages](./packages) directory.
   - [docker](https://docs.docker.com/get-docker/) v20.10+
   - [docker-compose](https://docs.docker.com/compose/install/) v1.29.2+
 - Run `corepack enable` to enable [corepack](https://nodejs.org/dist/latest/docs/api/corepack.html) and install yarn
+- Run yarn plugin import version ???
 - Run `yarn setup` to install dependencies and configure and build all packages
 - Run `yarn start` to start the local dev environment built from the sources
 - Run `yarn test` to run the whole test suite (note that running tests requires a running node, 

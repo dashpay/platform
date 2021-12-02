@@ -22,7 +22,7 @@ node_modules
 
 # Yarn
 .pnp.*
-.yarn/*
+.yarn
 #!.yarn/cache TODO commit cache (1500 files) or not?
 !.yarn/constraints.pro
 !.yarn/patches
