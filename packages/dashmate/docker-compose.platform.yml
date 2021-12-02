@@ -46,7 +46,7 @@ services:
       - INITIAL_CORE_CHAINLOCKED_HEIGHT=${PLATFORM_DRIVE_TENDERDASH_GENESIS_INITIAL_CORE_CHAIN_LOCKED_HEIGHT:-1}
       - VALIDATOR_SET_LLMQ_TYPE=${PLATFORM_DRIVE_ABCI_VALIDATOR_SET_LLMQ_TYPE:?err}
       - NETWORK=${NETWORK}
-    command: npm run abci
+    command: yarn workspace @dashevo/drive abci
 
   drive_tenderdash:
     image: ${PLATFORM_DRIVE_TENDERDASH_DOCKER_IMAGE:?err}
@@ -82,7 +82,7 @@ services:
       - TENDERMINT_RPC_HOST=drive_tenderdash
       - TENDERMINT_RPC_PORT=26657
       - NODE_ENV=${ENVIRONMENT:?err}
-    command: npm run api
+    command: yarn workspace @dashevo/dapi api
 
   dapi_tx_filter_stream:
     image: ${PLATFORM_DAPI_API_DOCKER_IMAGE:?err}
@@ -103,7 +103,7 @@ services:
       - NETWORK=devnet
       - TENDERMINT_RPC_HOST=drive_tenderdash
       - TENDERMINT_RPC_PORT=26657
-    command: npm run tx-filter-stream
+    command: yarn workspace @dashevo/dapi tx-filter-stream
 
   dapi_envoy:
     image: ${PLATFORM_DAPI_ENVOY_DOCKER_IMAGE:?err}

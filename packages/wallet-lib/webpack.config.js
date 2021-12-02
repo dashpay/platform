@@ -1,4 +1,5 @@
 const path = require('path');
+const webpack = require('webpack');
 
 const webConfig = {
   entry: './src/index.js',
@@ -25,8 +26,16 @@ const webConfig = {
       util: require.resolve('util/'),
       os: require.resolve('os-browserify/browser'),
       zlib: require.resolve('browserify-zlib'),
+      events: require.resolve('events/'),
+      string_decoder: require.resolve('string_decoder/'),
     },
     extensions: ['.ts', '.js', '.json'],
   },
+  plugins: [
+    new webpack.ProvidePlugin({
+      Buffer: [require.resolve('buffer/'), 'Buffer'],
+      process: require.resolve('process/browser'),
+    }),
+  ],
 };
 module.exports = webConfig;

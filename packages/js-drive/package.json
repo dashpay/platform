@@ -32,7 +32,7 @@
     "abci": "node scripts/abci",
     "lint": "eslint .",
     "test": "yarn run test:coverage",
-    "test:coverage": "nyc --check-coverage --stmts=93 --branch=85 --funcs=90 --lines=92 mocha './test/unit/**/*.spec.js' './test/integration/**/*.spec.js'",
+    "test:coverage": "nyc --check-coverage --stmts=93 --branch=85 --funcs=90 --lines=92 yarn run mocha './test/unit/**/*.spec.js' './test/integration/**/*.spec.js'",
     "test:unit": "mocha './test/unit/**/*.spec.js'",
     "test:integration": "mocha './test/integration/**/*.spec.js'"
   },
@@ -88,7 +88,7 @@
     "lodash.escaperegexp": "^4.1.2",
     "lodash.get": "^4.4.2",
     "lodash.set": "^4.3.2",
-    "long": "^4.0.0",
+    "long": "^5.2.0",
     "lru-cache": "^5.1.1",
     "mongodb": "^3.5.5",
     "node-graceful": "^3.0.1",
