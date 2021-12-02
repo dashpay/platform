@@ -4,13 +4,20 @@ const dotenvResult = require('dotenv-safe').config();
 
 const webpackBaseConfig = require("./webpack.base.config");
 
+const karmaMocha = require('karma-mocha');
+const karmaMochaReporter = require('karma-mocha-reporter');
+const karmaChai = require('karma-chai');
+const karmaChromeLauncher = require('karma-chrome-launcher');
+const karmaFirefoxLauncher = require('karma-firefox-launcher');
+const karmaWebpack = require('karma-webpack');
+
 if (dotenvResult.error) {
   throw dotenvResult.error;
 }
 
 module.exports = (config) => {
   config.set({
-    frameworks: ['mocha', 'chai'],
+    frameworks: ['mocha', 'chai', 'webpack'],
     files: [
       'src/**/*.spec.ts',
       'src/test/karma/bootstrap.ts',
@@ -43,12 +50,12 @@ module.exports = (config) => {
     browserDisconnectTimeout: 3 * 2000, // 2000 default
     pingTimeout: 3 * 5000, // 5000 default
     plugins: [
-      'karma-mocha',
-      'karma-mocha-reporter',
-      'karma-chai',
-      'karma-chrome-launcher',
-      'karma-firefox-launcher',
-      'karma-webpack',
+      karmaMocha,
+      karmaMochaReporter,
+      karmaChai,
+      karmaChromeLauncher,
+      karmaFirefoxLauncher,
+      karmaWebpack,
     ],
     customLaunchers: {
       FirefoxHeadless: {

@@ -20,12 +20,16 @@ const commonJSConfig = {
       path: require.resolve('path-browserify'),
       url: require.resolve('url/'),
       util: require.resolve('util/'),
+      buffer: require.resolve('buffer/'),
+      events: require.resolve('events/'),
+      assert: require.resolve('assert/'),
+      string_decoder: require.resolve('string_decoder/'),
     },
   },
   plugins: [
     new webpack.ProvidePlugin({
-      Buffer: ['buffer', 'Buffer'],
-      process: 'process/browser',
+      Buffer: [require.resolve('buffer/'), 'Buffer'],
+      process: require.resolve('process/browser'),
     }),
   ],
   module: {
