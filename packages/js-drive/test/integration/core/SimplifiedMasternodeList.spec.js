@@ -1,11 +1,13 @@
 const getSmlFixture = require('../../../lib/test/fixtures/getSmlFixture');
 const SimplifiedMasternodeList = require('../../../lib/core/SimplifiedMasternodeList');
 
-describe('SimplifiedMasternodeList', () => {
+describe('SimplifiedMasternodeList', function SimplifiedMasternodeListTest() {
   let simplifiedMasternodeList;
   let smlMaxListsLimit;
   let initialSmlDiffs;
   let updatedSmlDiffs;
+
+  this.timeout(10000);
 
   beforeEach(() => {
     simplifiedMasternodeList = new SimplifiedMasternodeList({

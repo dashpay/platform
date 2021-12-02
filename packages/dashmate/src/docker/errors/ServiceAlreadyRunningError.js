@@ -5,7 +5,7 @@ class ServiceAlreadyRunningError extends AbstractError {
    * @param {string} serviceName
    */
   constructor(serviceName) {
-    super(`Service ${serviceName} is already running. Please stop Docker Compose before`);
+    super(`Service ${serviceName} is already running. Please stop it before`);
 
     this.serviceName = serviceName;
   }

@@ -30,7 +30,7 @@
     "configure": "yarn run configure:dashmate && yarn run configure:network && yarn run configure:tests && yarn run configure:dotenv",
     "clean:data": "yarn run dashmate group:reset --verbose --group=local --hard",
     "clean": "yarn run clean:data && yarn run build",
-    "dashmate": "./packages/dashmate/bin/dashmate",
+    "dashmate": "yarn pnpify packages/dashmate/bin/dashmate",
     "bump": "./scripts/bump_version.sh",
     "changelog": "./scripts/generate_changelog.sh",
     "release": "./scripts/release.sh"
@@ -42,6 +42,7 @@
     ]
   },
   "devDependencies": {
+    "@yarnpkg/pnpify": "^3.1.1-rc.6",
     "add-stream": "^1.0.0",
     "conventional-changelog": "^3.1.24",
     "conventional-changelog-dash": "github:dashevo/conventional-changelog-dash",
