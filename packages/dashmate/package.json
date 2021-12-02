@@ -108,11 +108,14 @@
       "@oclif/plugin-help"
     ],
     "topics": {
+      "group": {
+        "description": "Orchestrate group of nodes"
+      },
       "wallet": {
         "description": "Wallet related commands"
       },
       "status": {
-        "description": "Show status details"
+        "description": "Show node status details"
       }
     }
   }

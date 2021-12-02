@@ -4,8 +4,8 @@
 .nyc_output
 
 logs
-node_modules
 scripts
+node_modules
 
 packages/*/.nyc_output
 packages/*/.ultra.cache.json

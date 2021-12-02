@@ -27,14 +27,25 @@ async function handleTransactionFromStream(transaction) {
     // at this point, transaction is not yet mined, therefore we gonna retry on next block to
     // fetch this tx and subsequently its blockhash for blockheader fetching.
     logger.silly(`TransactionSyncStreamWorker - Unconfirmed transaction ${transactionHash}: delayed.`);
-    this.delayedRequests[transactionHash] = { isDelayed: true, type: 'transaction' };
+    const existingListener = this.delayedRequests[transactionHash]
+      && this.delayedRequests[transactionHash].blockHeightChangeListener;
+
+    if (existingListener) {
+      self.parentEvents.removeListener(EVENTS.BLOCKHEIGHT_CHANGED, existingListener);
+    }
+
+    this.delayedRequests[transactionHash] = { isDelayed: true, type: 'transaction', blockHeightChangeListener: null };
 
     return new Promise((resolve) => {
+      const blockHeightChangeListener = () => {
+        resolve(self.handleTransactionFromStream(transaction));
+      };
+
+      this.delayedRequests[transactionHash].blockHeightChangeListener = blockHeightChangeListener;
+
       self.parentEvents.once(
         EVENTS.BLOCKHEIGHT_CHANGED,
-        () => {
-          resolve(self.handleTransactionFromStream(transaction));
-        },
+        blockHeightChangeListener,
       );
     });
   }
@@ -42,6 +53,10 @@ async function handleTransactionFromStream(transaction) {
   const executor = async () => {
     if (self.delayedRequests[transactionHash]) {
       logger.silly(`TransactionSyncStreamWorker - Processing previously delayed transaction ${transactionHash} from stream`);
+      const { blockHeightChangeListener } = self.delayedRequests[transactionHash];
+      if (blockHeightChangeListener) {
+        self.parentEvents.removeListener(EVENTS.BLOCKHEIGHT_CHANGED, blockHeightChangeListener);
+      }
       delete self.delayedRequests[transactionHash];
     } else {
       logger.silly(`TransactionSyncStreamWorker - Processing transaction ${transactionHash} from stream`);
