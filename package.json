@@ -32,7 +32,8 @@
     "clean": "yarn run clean:data && yarn run build",
     "dashmate": "./packages/dashmate/bin/dashmate",
     "bump": "./scripts/bump_version.sh",
-    "changelog": "./scripts/generate_changelog.sh"
+    "changelog": "./scripts/generate_changelog.sh",
+    "release": "./scripts/release.sh"
   },
   "packageManager": "yarn@3.1.0",
   "ultra": {
