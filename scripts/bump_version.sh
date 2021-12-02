@@ -36,12 +36,12 @@ const convertReleaseToPrerelease = (version) => {
       const { version } = json;
       json.version = convertReleaseToPrerelease(version);
 
-      fs.writeFileSync(filename, JSON.stringify(json, null, 2));
+      fs.writeFileSync(filename, `${JSON.stringify(rootPackageJson, null, 2)}\n`);
     }
 
     // root version
     rootPackageJson.version = convertReleaseToPrerelease(rootPackageJson.version);
-    fs.writeFileSync(path.join(__dirname, '..', 'package.json'), JSON.stringify(rootPackageJson, null, 2));
+    fs.writeFileSync(path.join(__dirname, '..', 'package.json'), `${JSON.stringify(rootPackageJson, null, 2)}\n`);
   } else if (rootVersionType === 'prerelease' && releaseType === 'release') {
     // prerelease to release
 
@@ -54,11 +54,11 @@ const convertReleaseToPrerelease = (version) => {
       const { version } = json;
       json.version = semver.inc(version, 'prerelease');
 
-      fs.writeFileSync(filename, JSON.stringify(json, null, 2));
+      fs.writeFileSync(filename, `${JSON.stringify(rootPackageJson, null, 2)}\n`);
     }
 
     // root version
     rootPackageJson.version = semver.inc(rootPackageJson.version, 'prerelease');
-    fs.writeFileSync(path.join(__dirname, '..', 'package.json'), JSON.stringify(rootPackageJson, null, 2));
+    fs.writeFileSync(path.join(__dirname, '..', 'package.json'), `${JSON.stringify(rootPackageJson, null, 2)}\n`);
   }
 })();
