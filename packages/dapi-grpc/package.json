@@ -1,55 +1,73 @@
 {
-  "name": "@dashevo/dapi-grpc",
+  "name": "@dashevo/platform",
   "version": "0.21.5",
-  "description": "DAPI GRPC definition file and generated clients",
-  "browser": "browser.js",
-  "main": "node.js",
+  "private": true,
   "scripts": {
-    "build": "yarn exec scripts/build.sh",
-    "lint": "eslint .",
-    "prepublishOnly": "yarn run build",
-    "test": "yarn run test:unit",
-    "test:unit": "mocha './test/unit/**/*.spec.js'"
+    "setup": "yarn install && yarn run build && yarn run configure",
+    "start": "yarn run dashmate group:start --verbose -w",
+    "restart": "yarn run dashmate group:restart --verbose -w",
+    "stop": "yarn run dashmate group:stop --verbose",
+    "reset": "yarn run clean:data --force && yarn run setup",
+    "test": "ultra -r $* test",
+    "test:dapi": "ultra -r --filter \"packages/@(dapi|platform-test-suite)\" test",
+    "test:dapi-grpc": "ultra -r --filter \"packages/@(dapi|js-dapi-client|dapi-grpc|js-dash-sdk|js-drive|wallet-lib|platform-test-suite)\" test",
+    "test:dashpay-contract": "ultra -r --filter \"packages/@(dashpay-contract|js-dash-sdk|js-drive|js-dapi-client|js-dpp|wallet-lib|dapi|platform-test-suite)\" test",
+    "test:dpns-contract": "ultra -r --filter \"packages/@(dpns-contract|js-dash-sdk|js-drive|js-dapi-client|js-dpp|wallet-lib|dapi|platform-test-suite)\" test",
+    "test:feature-flags-contract": "ultra -r --filter \"packages/@(feature-flags-contract|js-dash-sdk|js-drive|js-dapi-client|js-dpp|wallet-lib|dapi|platform-test-suite)\" test",
+    "test:dapi-client": "ultra -r --filter \"packages/@(js-dapi-client|wallet-lib|js-dash-sdk|platform-test-suite)\" test",
+    "test:sdk": "ultra -r --filter \"packages/@(js-dash-sdk|platform-test-suite)\" test",
+    "test:dpp": "ultra -r test",
+    "test:drive": "yarn node ultra -r --filter \"packages/@(js-drive|platform-test-suite)\" test",
+    "test:grpc-common": "ultra -r --filter \"packages/@(js-grpc-common|dapi-grpc|dapi|js-dapi-client|js-dash-sdk|js-drive|wallet-lib|platform-test-suite)\" test",
+    "test:suite": "ultra -r --filter '@dashevo/platform-test-suite' test",
+    "test:wallet-lib": "ultra -r --filter \"packages/@(wallet-lib|js-dash-sdk|platform-test-suite)\" test",
+    "build": "ultra --recursive $* --build",
+    "lint": "ultra --recursive $* lint",
+    "configure:dashmate": "yarn exec ./scripts/configure_dashmate.sh",
+    "configure:network": "yarn exec ./scripts/setup_local_network.sh",
+    "configure:tests": "yarn exec ./scripts/configure_test_suite.sh",
+    "configure:dotenv": "yarn exec ./scripts/configure_dotenv.sh",
+    "configure": "yarn run configure:dashmate && yarn run configure:network && yarn run configure:tests && yarn run configure:dotenv",
+    "clean:data": "yarn run dashmate group:reset --verbose --group=local --hard",
+    "clean": "yarn run clean:data && yarn run build",
+    "dashmate": "yarn pnpify packages/dashmate/bin/dashmate",
+    "release": "./scripts/release.sh"
   },
-  "contributors": [
-    {
-      "name": "Ivan Shumkov",
-      "email": "shumkov@dash.org",
-      "url": "https://github.com/shumkov"
-    },
-    {
-      "name": "Anton Suprunchuk",
-      "email": "anton.suprunchuk@dash.org",
-      "url": "https://github.com/antouhou"
-    }
-  ],
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/dashevo/dapi-grpc.git"
-  },
-  "license": "MIT",
-  "bugs": {
-    "url": "https://github.com/dashevo/dapi-grpc/issues"
-  },
-  "homepage": "https://github.com/dashevo/dapi-grpc#readme",
-  "dependencies": {
-    "@dashevo/grpc-common": "workspace:~",
-    "@grpc/grpc-js": "^1.3.7",
-    "google-protobuf": "^3.12.2",
-    "grpc-web": "1.2.1",
-    "long": "^5.2.0",
-    "protobufjs": "github:jawid-h/protobuf.js#fix/buffer-conversion"
+  "packageManager": "yarn@3.1.0",
+  "ultra": {
+    "concurrent": [
+      "clean"
+    ]
   },
   "devDependencies": {
-    "chai": "^4.3.4",
-    "chai-as-promised": "^7.1.1",
-    "dirty-chai": "^2.0.1",
-    "eslint": "^7.32.0",
-    "eslint-config-airbnb-base": "^14.2.1",
-    "eslint-plugin-import": "^2.24.2",
-    "mocha": "^9.1.2",
-    "mocha-sinon": "^2.1.2",
-    "sinon": "^11.1.2",
-    "sinon-chai": "^3.7.0"
+    "@yarnpkg/pnpify": "^3.1.1-rc.6",
+    "add-stream": "^1.0.0",
+    "conventional-changelog": "^3.1.24",
+    "conventional-changelog-dash": "github:dashevo/conventional-changelog-dash",
+    "packster": "^0.4.0",
+    "semver": "^7.3.5",
+    "tempfile": "^3.0.0",
+    "ultra-runner": "^3.10.5"
+  },
+  "workspaces": [
+    "packages/js-grpc-common",
+    "packages/dapi-grpc",
+    "packages/js-abci",
+    "packages/js-dpp",
+    "packages/dashpay-contract",
+    "packages/dpns-contract",
+    "packages/feature-flags-contract",
+    "packages/js-dapi-client",
+    "packages/wallet-lib",
+    "packages/js-dash-sdk",
+    "packages/dapi",
+    "packages/js-drive",
+    "packages/dashmate",
+    "packages/platform-test-suite"
+  ],
+  "resolutions": {
+    "protobufjs": "github:jawid-h/protobuf.js#fix/buffer-conversion",
+    "elliptic": "6.5.3",
+    "bn.js": "4.12.0"
   }
 }

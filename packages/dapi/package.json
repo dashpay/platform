@@ -1,82 +1,73 @@
 {
-  "name": "@dashevo/dapi",
-  "private": true,
+  "name": "@dashevo/platform",
   "version": "0.21.5",
-  "description": "A decentralized API for the Dash network",
+  "private": true,
   "scripts": {
-    "api": "node scripts/api.js",
-    "tx-filter-stream": "node scripts/tx-filter-stream.js",
-    "test": "yarn run test:coverage && yarn run test:functional",
-    "test:coverage": "nyc --check-coverage --lines=50 --branches=50 --functions=50 yarn run mocha --recursive test/unit test/integration",
-    "test:unit": "mocha --recursive test/unit",
-    "test:integration": "mocha --recursive test/integration",
-    "test:functional": "mocha --recursive test/functional",
-    "lint": "eslint .",
-    "lint:fix": "eslint . --fix",
-    "oas:setversion": "jq -r .version package.json | xargs -I{} sed -i \"s/version:.*/version: '{}',/\" doc/swaggerDef.js",
-    "oas:generate": "yarn run oas:setversion && swagger-jsdoc -d doc/swaggerDef.js lib/rpcServer/**/*.js -o doc/swagger.json"
+    "setup": "yarn install && yarn run build && yarn run configure",
+    "start": "yarn run dashmate group:start --verbose -w",
+    "restart": "yarn run dashmate group:restart --verbose -w",
+    "stop": "yarn run dashmate group:stop --verbose",
+    "reset": "yarn run clean:data --force && yarn run setup",
+    "test": "ultra -r $* test",
+    "test:dapi": "ultra -r --filter \"packages/@(dapi|platform-test-suite)\" test",
+    "test:dapi-grpc": "ultra -r --filter \"packages/@(dapi|js-dapi-client|dapi-grpc|js-dash-sdk|js-drive|wallet-lib|platform-test-suite)\" test",
+    "test:dashpay-contract": "ultra -r --filter \"packages/@(dashpay-contract|js-dash-sdk|js-drive|js-dapi-client|js-dpp|wallet-lib|dapi|platform-test-suite)\" test",
+    "test:dpns-contract": "ultra -r --filter \"packages/@(dpns-contract|js-dash-sdk|js-drive|js-dapi-client|js-dpp|wallet-lib|dapi|platform-test-suite)\" test",
+    "test:feature-flags-contract": "ultra -r --filter \"packages/@(feature-flags-contract|js-dash-sdk|js-drive|js-dapi-client|js-dpp|wallet-lib|dapi|platform-test-suite)\" test",
+    "test:dapi-client": "ultra -r --filter \"packages/@(js-dapi-client|wallet-lib|js-dash-sdk|platform-test-suite)\" test",
+    "test:sdk": "ultra -r --filter \"packages/@(js-dash-sdk|platform-test-suite)\" test",
+    "test:dpp": "ultra -r test",
+    "test:drive": "yarn node ultra -r --filter \"packages/@(js-drive|platform-test-suite)\" test",
+    "test:grpc-common": "ultra -r --filter \"packages/@(js-grpc-common|dapi-grpc|dapi|js-dapi-client|js-dash-sdk|js-drive|wallet-lib|platform-test-suite)\" test",
+    "test:suite": "ultra -r --filter '@dashevo/platform-test-suite' test",
+    "test:wallet-lib": "ultra -r --filter \"packages/@(wallet-lib|js-dash-sdk|platform-test-suite)\" test",
+    "build": "ultra --recursive $* --build",
+    "lint": "ultra --recursive $* lint",
+    "configure:dashmate": "yarn exec ./scripts/configure_dashmate.sh",
+    "configure:network": "yarn exec ./scripts/setup_local_network.sh",
+    "configure:tests": "yarn exec ./scripts/configure_test_suite.sh",
+    "configure:dotenv": "yarn exec ./scripts/configure_dotenv.sh",
+    "configure": "yarn run configure:dashmate && yarn run configure:network && yarn run configure:tests && yarn run configure:dotenv",
+    "clean:data": "yarn run dashmate group:reset --verbose --group=local --hard",
+    "clean": "yarn run clean:data && yarn run build",
+    "dashmate": "yarn pnpify packages/dashmate/bin/dashmate",
+    "release": "./scripts/release.sh"
   },
+  "packageManager": "yarn@3.1.0",
   "ultra": {
     "concurrent": [
-      "test"
+      "clean"
     ]
   },
-  "nyc": {
-    "include": [
-      "lib/**/*.js"
-    ],
-    "exclude": [
-      "**/node_modules/**",
-      "**/test/**",
-      "**/coverage/**"
-    ],
-    "all": true
-  },
-  "dependencies": {
-    "@dashevo/dapi-grpc": "workspace:~",
-    "@dashevo/dashcore-lib": "~0.19.28",
-    "@dashevo/dashd-rpc": "^2.3.1",
-    "@dashevo/dpp": "workspace:~",
-    "@dashevo/grpc-common": "workspace:~",
-    "@grpc/grpc-js": "^1.3.7",
-    "ajv": "^8.6.0",
-    "bs58": "^4.0.1",
-    "cbor": "^8.0.0",
-    "dotenv": "^8.6.0",
-    "dotenv-expand": "^5.1.0",
-    "dotenv-safe": "^8.2.0",
-    "jayson": "^3.3.4",
-    "lodash": "^4.17.19",
-    "request": "^2.87.0",
-    "request-promise-native": "^1.0.5",
-    "ws": "^7.5.3",
-    "zeromq": "5.2.0"
-  },
   "devDependencies": {
-    "@dashevo/dapi-client": "workspace:~",
-    "@dashevo/dp-services-ctl": "github:dashevo/js-dp-services-ctl#v0.19-dev",
-    "chai": "^4.3.4",
-    "chai-as-promised": "^7.1.1",
-    "dirty-chai": "^2.0.1",
-    "eslint": "^7.32.0",
-    "eslint-config-airbnb-base": "^14.2.1",
-    "eslint-plugin-import": "^2.24.2",
-    "mocha": "^9.1.2",
-    "mocha-sinon": "^2.1.2",
-    "nyc": "^15.1.0",
-    "semver": "^7.3.2",
-    "sinon": "^11.1.2",
-    "sinon-chai": "^3.7.0",
-    "swagger-jsdoc": "^3.5.0"
+    "@yarnpkg/pnpify": "^3.1.1-rc.6",
+    "add-stream": "^1.0.0",
+    "conventional-changelog": "^3.1.24",
+    "conventional-changelog-dash": "github:dashevo/conventional-changelog-dash",
+    "packster": "^0.4.0",
+    "semver": "^7.3.5",
+    "tempfile": "^3.0.0",
+    "ultra-runner": "^3.10.5"
   },
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/dashevo/dapi.git"
-  },
-  "author": "",
-  "license": "MIT",
-  "bugs": {
-    "url": "https://github.com/dashevo/dapi/issues"
-  },
-  "homepage": "https://github.com/dashevo/dapi#readme"
+  "workspaces": [
+    "packages/js-grpc-common",
+    "packages/dapi-grpc",
+    "packages/js-abci",
+    "packages/js-dpp",
+    "packages/dashpay-contract",
+    "packages/dpns-contract",
+    "packages/feature-flags-contract",
+    "packages/js-dapi-client",
+    "packages/wallet-lib",
+    "packages/js-dash-sdk",
+    "packages/dapi",
+    "packages/js-drive",
+    "packages/dashmate",
+    "packages/platform-test-suite"
+  ],
+  "resolutions": {
+    "protobufjs": "github:jawid-h/protobuf.js#fix/buffer-conversion",
+    "elliptic": "6.5.3",
+    "bn.js": "4.12.0"
+  }
 }

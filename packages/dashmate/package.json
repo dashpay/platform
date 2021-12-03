@@ -1,121 +1,73 @@
 {
-  "name": "@dashevo/dashmate",
-  "private": true,
+  "name": "@dashevo/platform",
   "version": "0.21.5",
-  "description": "Distribution package for Dash Masternode installation",
-  "main": "src/index.js",
+  "private": true,
   "scripts": {
-    "lint": "eslint .",
-    "postpack": "rm -f oclif.manifest.json",
-    "prepack": "oclif-dev manifest && oclif-dev readme",
-    "version": "oclif-dev readme && git add README.md"
+    "setup": "yarn install && yarn run build && yarn run configure",
+    "start": "yarn run dashmate group:start --verbose -w",
+    "restart": "yarn run dashmate group:restart --verbose -w",
+    "stop": "yarn run dashmate group:stop --verbose",
+    "reset": "yarn run clean:data --force && yarn run setup",
+    "test": "ultra -r $* test",
+    "test:dapi": "ultra -r --filter \"packages/@(dapi|platform-test-suite)\" test",
+    "test:dapi-grpc": "ultra -r --filter \"packages/@(dapi|js-dapi-client|dapi-grpc|js-dash-sdk|js-drive|wallet-lib|platform-test-suite)\" test",
+    "test:dashpay-contract": "ultra -r --filter \"packages/@(dashpay-contract|js-dash-sdk|js-drive|js-dapi-client|js-dpp|wallet-lib|dapi|platform-test-suite)\" test",
+    "test:dpns-contract": "ultra -r --filter \"packages/@(dpns-contract|js-dash-sdk|js-drive|js-dapi-client|js-dpp|wallet-lib|dapi|platform-test-suite)\" test",
+    "test:feature-flags-contract": "ultra -r --filter \"packages/@(feature-flags-contract|js-dash-sdk|js-drive|js-dapi-client|js-dpp|wallet-lib|dapi|platform-test-suite)\" test",
+    "test:dapi-client": "ultra -r --filter \"packages/@(js-dapi-client|wallet-lib|js-dash-sdk|platform-test-suite)\" test",
+    "test:sdk": "ultra -r --filter \"packages/@(js-dash-sdk|platform-test-suite)\" test",
+    "test:dpp": "ultra -r test",
+    "test:drive": "yarn node ultra -r --filter \"packages/@(js-drive|platform-test-suite)\" test",
+    "test:grpc-common": "ultra -r --filter \"packages/@(js-grpc-common|dapi-grpc|dapi|js-dapi-client|js-dash-sdk|js-drive|wallet-lib|platform-test-suite)\" test",
+    "test:suite": "ultra -r --filter '@dashevo/platform-test-suite' test",
+    "test:wallet-lib": "ultra -r --filter \"packages/@(wallet-lib|js-dash-sdk|platform-test-suite)\" test",
+    "build": "ultra --recursive $* --build",
+    "lint": "ultra --recursive $* lint",
+    "configure:dashmate": "yarn exec ./scripts/configure_dashmate.sh",
+    "configure:network": "yarn exec ./scripts/setup_local_network.sh",
+    "configure:tests": "yarn exec ./scripts/configure_test_suite.sh",
+    "configure:dotenv": "yarn exec ./scripts/configure_dotenv.sh",
+    "configure": "yarn run configure:dashmate && yarn run configure:network && yarn run configure:tests && yarn run configure:dotenv",
+    "clean:data": "yarn run dashmate group:reset --verbose --group=local --hard",
+    "clean": "yarn run clean:data && yarn run build",
+    "dashmate": "yarn pnpify packages/dashmate/bin/dashmate",
+    "release": "./scripts/release.sh"
   },
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/dashevo/dashmate.git"
-  },
-  "bin": "bin/dashmate",
-  "contributors": [
-    {
-      "name": "Ivan Shumkov",
-      "email": "ivan@shumkov.ru",
-      "url": "https://github.com/shumkov"
-    },
-    {
-      "name": "Djavid Gabibiyan",
-      "email": "djavid@dash.org",
-      "url": "https://github.com/jawid-h"
-    },
-    {
-      "name": "Anton Suprunchuk",
-      "email": "anton.suprunchuk@dash.org",
-      "url": "https://github.com/antouhou"
-    },
-    {
-      "name": "Konstantin Shuplenkov",
-      "email": "konstantin.shuplenkov@dash.org",
-      "url": "https://github.com/shuplenkov"
-    }
-  ],
-  "engines": {
-    "node": ">=12"
-  },
-  "license": "MIT",
-  "bugs": {
-    "url": "https://github.com/dashevo/dashmate/issues"
-  },
-  "homepage": "https://github.com/dashevo/dashmate#readme",
-  "dependencies": {
-    "@dashevo/dashcore-lib": "~0.19.28",
-    "@dashevo/dashd-rpc": "^2.3.1",
-    "@dashevo/dashpay-contract": "workspace:~",
-    "@dashevo/dpns-contract": "workspace:~",
-    "@dashevo/dpp": "workspace:~",
-    "@dashevo/feature-flags-contract": "workspace:~",
-    "@dashevo/wallet-lib": "workspace:~",
-    "@oclif/command": "^1.8.0",
-    "@oclif/config": "^1.17.0",
-    "@oclif/errors": "^1.3.4",
-    "@oclif/plugin-help": "^3.2.2",
-    "ajv": "^8.6.0",
-    "ajv-formats": "^2.1.1",
-    "awilix": "^4.2.6",
-    "bls-signatures": "^0.2.5",
-    "chalk": "^4.1.0",
-    "dash": "workspace:~",
-    "docker-compose": "0.23.3",
-    "dockerode": "^3.2.0",
-    "dot": "^1.1.3",
-    "dotenv": "^8.6.0",
-    "enquirer": "^2.3.6",
-    "glob": "^7.1.6",
-    "hasbin": "^1.2.3",
-    "jayson": "^3.3.4",
-    "listr2": "3.5.0",
-    "lodash.clonedeep": "^4.5.0",
-    "lodash.get": "^4.4.2",
-    "lodash.isequal": "^4.5.0",
-    "lodash.merge": "^4.6.2",
-    "lodash.set": "^4.3.2",
-    "memory-streams": "^0.1.3",
-    "node-fetch": "^2.6.1",
-    "node-graceful": "^3.0.1",
-    "pretty-bytes": "^5.3.0",
-    "pretty-ms": "^7.0.0",
-    "public-ip": "^4.0.1",
-    "rimraf": "^3.0.2",
-    "rxjs": "^6.6.7",
-    "semver": "^7.3.2",
-    "table": "^5.4.6"
+  "packageManager": "yarn@3.1.0",
+  "ultra": {
+    "concurrent": [
+      "clean"
+    ]
   },
   "devDependencies": {
-    "@oclif/dev-cli": "^1.22.2",
-    "eslint": "^7.32.0",
-    "eslint-config-airbnb-base": "^14.2.1",
-    "eslint-plugin-import": "^2.24.2",
-    "globby": "^10.0.2"
+    "@yarnpkg/pnpify": "^3.1.1-rc.6",
+    "add-stream": "^1.0.0",
+    "conventional-changelog": "^3.1.24",
+    "conventional-changelog-dash": "github:dashevo/conventional-changelog-dash",
+    "packster": "^0.4.0",
+    "semver": "^7.3.5",
+    "tempfile": "^3.0.0",
+    "ultra-runner": "^3.10.5"
   },
-  "files": [
-    "bin",
-    "oclif.manifest.json",
-    "src"
+  "workspaces": [
+    "packages/js-grpc-common",
+    "packages/dapi-grpc",
+    "packages/js-abci",
+    "packages/js-dpp",
+    "packages/dashpay-contract",
+    "packages/dpns-contract",
+    "packages/feature-flags-contract",
+    "packages/js-dapi-client",
+    "packages/wallet-lib",
+    "packages/js-dash-sdk",
+    "packages/dapi",
+    "packages/js-drive",
+    "packages/dashmate",
+    "packages/platform-test-suite"
   ],
-  "oclif": {
-    "commands": "./src/commands",
-    "bin": "dashmate",
-    "plugins": [
-      "@oclif/plugin-help"
-    ],
-    "topics": {
-      "group": {
-        "description": "Orchestrate group of nodes"
-      },
-      "wallet": {
-        "description": "Wallet related commands"
-      },
-      "status": {
-        "description": "Show node status details"
-      }
-    }
+  "resolutions": {
+    "protobufjs": "github:jawid-h/protobuf.js#fix/buffer-conversion",
+    "elliptic": "6.5.3",
+    "bn.js": "4.12.0"
   }
 }
