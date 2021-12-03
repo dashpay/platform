@@ -8,7 +8,7 @@ then
  RELEASE_TYPE="release"
 fi
 
-if [[ $RELEASE_TYPE != "release" ]] && [[ $RELEASE_TYPE != "release" ]]
+if [[ $RELEASE_TYPE != "release" ]] && [[ $RELEASE_TYPE != "prerelease" ]]
 then
   echo "release or prerelease are the only acceptable options"
   exit 1
