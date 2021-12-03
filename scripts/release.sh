@@ -43,7 +43,7 @@ fi
 # git
 git branch release_"$PACKAGE_VERSION"
 git checkout release_"$PACKAGE_VERSION"
-git commit -m "chore(release): update changelog and bump version to $PACKAGE_VERSION"
+git commit -am "chore(release): update changelog and bump version to $PACKAGE_VERSION"
 
 # push
 git push -u origin release_"$PACKAGE_VERSION"
