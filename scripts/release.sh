@@ -35,6 +35,9 @@ PACKAGE_VERSION=$(cat $DIR/../package.json|grep version|head -1|awk -F: '{ print
 
 echo "New version is $PACKAGE_VERSION"
 
+VERSION_WITHOUT_PRERELEASE=${PACKAGE_VERSION%-*}
+MILESTONE="v${VERSION_WITHOUT_PRERELEASE%.*}.x"
+
 if [[ $RELEASE_TYPE == "release" ]]
 then
  BRANCH="master"
@@ -50,4 +53,4 @@ git commit -am "chore(release): update changelog and bump version to $PACKAGE_VE
 # push
 git push -u origin release_"$PACKAGE_VERSION"
 # create PR
-gh pr create --base $BRANCH --fill --title "chore(release): update changelog and bump version to $PACKAGE_VERSION" --body-file $DIR/utils/release.md
+gh pr create --base $BRANCH --fill --title "chore(release): update changelog and bump version to $PACKAGE_VERSION" --body-file $DIR/utils/release.md --milestone $MILESTONE
