@@ -14,15 +14,12 @@ module.exports = function execute(command, options) {
       if (err) {
         return reject(err);
       }
-      // eslint-disable-next-line @typescript-eslint/ban-ts-comment
-      // @ts-ignore
+
       return resolve(result);
     });
 
     if (options && options.forwardStdout && childProcess.stdout) {
       childProcess.stdout.on('data', (data) => {
-        // eslint-disable-next-line no-console
-        // console.log(`${data}`);
         process.stdout.write(data);
       });
     }
