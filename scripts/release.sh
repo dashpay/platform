@@ -2,10 +2,23 @@
 
 set -e
 
+# get current dir
+DIR="$( cd -P "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
+
+# get current version
+PACKAGE_VERSION=$(cat $DIR/../package.json|grep version|head -1|awk -F: '{ print $2 }'|sed 's/[", ]//g')
+
 RELEASE_TYPE="$1"
+
+# if   parameter is empty, get release type from current version
 if [ -z "$RELEASE_TYPE" ]
 then
- RELEASE_TYPE="release"
+ if [[ $PACKAGE_VERSION == *-* ]]
+ then
+    RELEASE_TYPE="prerelease"
+  else
+    RELEASE_TYPE="release"
+ fi
 fi
 
 if [[ $RELEASE_TYPE != "release" ]] && [[ $RELEASE_TYPE != "prerelease" ]]
@@ -19,8 +32,6 @@ if ! gh auth status&> /dev/null; then
     gh auth login
 fi
 
-DIR="$( cd -P "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
-
 # call bumper
 $DIR/bump_version.sh "$RELEASE_TYPE"
 
@@ -29,9 +40,6 @@ LAST_TAG=$(git describe --tags --abbrev=0)
 
 # generate changelog
 $DIR/generate_changelog.sh $LAST_TAG
-
-# get current version
-PACKAGE_VERSION=$(cat $DIR/../package.json|grep version|head -1|awk -F: '{ print $2 }'|sed 's/[", ]//g')
 
 echo "New version is $PACKAGE_VERSION"
 
