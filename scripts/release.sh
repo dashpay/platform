@@ -33,6 +33,8 @@ $DIR/generate_changelog.sh $LAST_TAG
 # get current version
 PACKAGE_VERSION=$(cat $DIR/../package.json|grep version|head -1|awk -F: '{ print $2 }'|sed 's/[", ]//g')
 
+echo "New version is $PACKAGE_VERSION"
+
 if [[ $RELEASE_TYPE == "release" ]]
 then
  BRANCH="master"
