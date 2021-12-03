@@ -1,3 +1,17 @@
+## [0.22.0](https://github.com/dashevo/platform/compare/v0.21.5...v0.22.0) (2021-12-03)
+
+
+### Bug Fixes
+
+* **dashmate:** RPC error on stopping node ([#61](https://github.com/dashevo/platform/issues/61))
+* **wallet-lib:** "Failure: Type not convertible to Uint8Array" ([#60](https://github.com/dashevo/platform/issues/60))
+* **wallet-lib:** eventemitter memory leak ([#56](https://github.com/dashevo/platform/issues/56))
+
+
+### Documentation
+
+* publish consolidated docs using mkdocs ([#42](https://github.com/dashevo/platform/issues/42))
+
 ## [0.22.0-dev.1](https://github.com/dashevo/platform/compare/v0.21.5...v0.22.0-dev.1) (2021-12-03)
 
 
