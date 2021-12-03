@@ -105,6 +105,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["conventional-changelog", "npm:3.1.24"],
             ["conventional-changelog-dash", "https://github.com/dashevo/conventional-changelog-dash.git#commit=dfcd273bf13f7421700612b5ebd0e6af49699c54"],
             ["packster", "npm:0.4.0"],
+            ["semver", "npm:7.3.5"],
             ["tempfile", "npm:3.0.0"],
             ["ultra-runner", "npm:3.10.5"]
           ],
@@ -2722,6 +2723,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["conventional-changelog", "npm:3.1.24"],
             ["conventional-changelog-dash", "https://github.com/dashevo/conventional-changelog-dash.git#commit=dfcd273bf13f7421700612b5ebd0e6af49699c54"],
             ["packster", "npm:0.4.0"],
+            ["semver", "npm:7.3.5"],
             ["tempfile", "npm:3.0.0"],
             ["ultra-runner", "npm:3.10.5"]
           ],
