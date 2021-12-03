@@ -36,7 +36,7 @@ const convertReleaseToPrerelease = (version) => {
       const { version } = json;
       json.version = convertReleaseToPrerelease(version);
 
-      fs.writeFileSync(filename, `${JSON.stringify(rootPackageJson, null, 2)}\n`);
+      fs.writeFileSync(filename, `${JSON.stringify(json, null, 2)}\n`);
     }
 
     // root version
@@ -54,7 +54,7 @@ const convertReleaseToPrerelease = (version) => {
       const { version } = json;
       json.version = semver.inc(version, 'prerelease');
 
-      fs.writeFileSync(filename, `${JSON.stringify(rootPackageJson, null, 2)}\n`);
+      fs.writeFileSync(filename, `${JSON.stringify(json, null, 2)}\n`);
     }
 
     // root version
