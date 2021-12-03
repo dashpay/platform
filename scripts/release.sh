@@ -22,13 +22,13 @@ fi
 DIR="$( cd -P "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
 
 # call bumper
-yarn run bump "$RELEASE_TYPE"
+bump_version.sh "$RELEASE_TYPE"
 
 # get last tag
 LAST_TAG=$(git describe --tags --abbrev=0)
 
 # generate changelog
-yarn run changelog $LAST_TAG
+generate_changelog.sh $LAST_TAG
 
 # get current version
 PACKAGE_VERSION=$(cat $DIR/../package.json|grep version|head -1|awk -F: '{ print $2 }'|sed 's/[", ]//g')
