@@ -5006,12 +5006,12 @@ __metadata:
 
 "conventional-changelog-dash@github:dashevo/conventional-changelog-dash":
   version: 1.0.0
-  resolution: "conventional-changelog-dash@https://github.com/dashevo/conventional-changelog-dash.git#commit=dfcd273bf13f7421700612b5ebd0e6af49699c54"
+  resolution: "conventional-changelog-dash@https://github.com/dashevo/conventional-changelog-dash.git#commit=3d4d77e2cea876a27b92641c28b15aedf13eb788"
   dependencies:
     compare-func: ^2.0.0
     lodash: ^4.17.15
     q: ^1.5.1
-  checksum: ff30eefddfc7f5271b4e58f2c04aca63cbcdaaac914faef12908ea066b4a484b8468b4c746613fe8c8968075be446bdd7d8c6161fa1f157cbfc22bc8141456a7
+  checksum: 98199fb767b8ac013d3907b7dd6a05a626a03764ec91c971978486f77b0a4acab3a32957ff1f2d80d2d5e023a7d58ada3945061077e9ec41cf4c95d73ebbfefa
   languageName: node
   linkType: hard
 

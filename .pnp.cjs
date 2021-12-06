@@ -103,7 +103,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["@yarnpkg/pnpify", "npm:3.1.1-rc.6"],
             ["add-stream", "npm:1.0.0"],
             ["conventional-changelog", "npm:3.1.24"],
-            ["conventional-changelog-dash", "https://github.com/dashevo/conventional-changelog-dash.git#commit=dfcd273bf13f7421700612b5ebd0e6af49699c54"],
+            ["conventional-changelog-dash", "https://github.com/dashevo/conventional-changelog-dash.git#commit=3d4d77e2cea876a27b92641c28b15aedf13eb788"],
             ["semver", "npm:7.3.5"],
             ["tempfile", "npm:3.0.0"],
             ["ultra-runner", "npm:3.10.5"]
@@ -2720,7 +2720,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["@yarnpkg/pnpify", "npm:3.1.1-rc.6"],
             ["add-stream", "npm:1.0.0"],
             ["conventional-changelog", "npm:3.1.24"],
-            ["conventional-changelog-dash", "https://github.com/dashevo/conventional-changelog-dash.git#commit=dfcd273bf13f7421700612b5ebd0e6af49699c54"],
+            ["conventional-changelog-dash", "https://github.com/dashevo/conventional-changelog-dash.git#commit=3d4d77e2cea876a27b92641c28b15aedf13eb788"],
             ["semver", "npm:7.3.5"],
             ["tempfile", "npm:3.0.0"],
             ["ultra-runner", "npm:3.10.5"]
@@ -6776,10 +6776,10 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
         }]
       ]],
       ["conventional-changelog-dash", [
-        ["https://github.com/dashevo/conventional-changelog-dash.git#commit=dfcd273bf13f7421700612b5ebd0e6af49699c54", {
-          "packageLocation": "./.yarn/cache/conventional-changelog-dash-https-bfb5529794-ff30eefddf.zip/node_modules/conventional-changelog-dash/",
+        ["https://github.com/dashevo/conventional-changelog-dash.git#commit=3d4d77e2cea876a27b92641c28b15aedf13eb788", {
+          "packageLocation": "./.yarn/cache/conventional-changelog-dash-https-4455a1a41e-98199fb767.zip/node_modules/conventional-changelog-dash/",
           "packageDependencies": [
-            ["conventional-changelog-dash", "https://github.com/dashevo/conventional-changelog-dash.git#commit=dfcd273bf13f7421700612b5ebd0e6af49699c54"],
+            ["conventional-changelog-dash", "https://github.com/dashevo/conventional-changelog-dash.git#commit=3d4d77e2cea876a27b92641c28b15aedf13eb788"],
             ["compare-func", "npm:2.0.0"],
             ["lodash", "npm:4.17.21"],
             ["q", "npm:1.5.1"]

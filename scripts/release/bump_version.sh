@@ -3,7 +3,7 @@
 const fs = require('fs');
 const path = require('path');
 const semver = require('semver');
-const exec = require('./utils/exec');
+const execute = require('./utils/execute');
 const packagesIterator = require('./utils/packagesIterator');
 const rootPackageJson = require('../package.json');
 
@@ -28,7 +28,7 @@ const convertReleaseToPrerelease = (version) => {
   if (rootVersionType === releaseType && releaseType === 'release') {
     // release to release
 
-    await exec('yarn workspaces foreach version patch');
+    await execute('yarn workspaces foreach version patch');
   } else if (rootVersionType === 'release' && releaseType === 'prerelease') {
     // release to prerelease
 
@@ -45,12 +45,10 @@ const convertReleaseToPrerelease = (version) => {
   } else if (rootVersionType === 'prerelease' && releaseType === 'release') {
     // prerelease to release
 
-    await exec('yarn workspaces foreach version minor');
+    await execute('yarn workspaces foreach version minor');
   } else {
     // prerelease to prerelease
     for (const { filename, json } of packagesIterator(packagesDir)) {
-      // const isPackageVersionPrerelease = semver.prerelease(version) !== null;
-
       const { version } = json;
       json.version = semver.inc(version, 'prerelease');
 
