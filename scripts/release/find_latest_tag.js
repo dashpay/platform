@@ -1,3 +1,5 @@
+#!/usr/bin/env node
+
 const semver = require('semver');
 const execute = require('./execute');
 

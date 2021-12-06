@@ -45,7 +45,7 @@ $DIR/bump_version.sh "$RELEASE_TYPE"
 PACKAGE_VERSION=$(cat $DIR/../../package.json|grep version|head -1|awk -F: '{ print $2 }'|sed 's/[", ]//g')
 
 # get last tag for changelog
-LATEST_TAG=$(yarn node $DIR/utils/changelogTag.js $PACKAGE_VERSION)
+LATEST_TAG=$(yarn exec $DIR/utils/find_base_tag.js $PACKAGE_VERSION)
 
 # generate changelog
 $DIR/generate_changelog.sh $LATEST_TAG
