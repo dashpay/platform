@@ -73,7 +73,7 @@ fi
 
 # git
 git checkout -b release_"$PACKAGE_VERSION"
-git commit -am "chore(release): update changelog and bump version to $PACKAGE_VERSION"
+git commit -am "chore(release): update changelog and version to $PACKAGE_VERSION"
 
 MILESTONE="v${VERSION_WITHOUT_PRERELEASE%.*}.x"
 
