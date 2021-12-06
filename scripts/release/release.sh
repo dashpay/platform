@@ -71,7 +71,8 @@ fi
 
 # git
 git checkout -b release_"$PACKAGE_VERSION"
-git commit -am "chore(release): update changelog and version to $PACKAGE_VERSION"
+git add **/package.json CHANGELOG.md
+git commit -m "chore(release): update changelog and version to $PACKAGE_VERSION"
 
 MILESTONE="v${VERSION_WITHOUT_PRERELEASE%.*}.x"
 
