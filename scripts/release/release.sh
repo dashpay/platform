@@ -42,16 +42,14 @@ fi
 # call bumper
 $DIR/bump_version.sh "$RELEASE_TYPE"
 
-# get last tag for changelog
-LATEST_TAG=$(yarn node $DIR/utils/changelogTag.js)
+PACKAGE_VERSION=$(cat $DIR/../../package.json|grep version|head -1|awk -F: '{ print $2 }'|sed 's/[", ]//g')
 
-echo "${LATEST_TAG}"
-exit 1
+# get last tag for changelog
+LATEST_TAG=$(yarn node $DIR/utils/changelogTag.js $PACKAGE_VERSION)
 
 # generate changelog
 $DIR/generate_changelog.sh $LATEST_TAG
 
-PACKAGE_VERSION=$(cat $DIR/../../package.json|grep version|head -1|awk -F: '{ print $2 }'|sed 's/[", ]//g')
 echo "New version is $PACKAGE_VERSION"
 
 VERSION_WITHOUT_PRERELEASE=${PACKAGE_VERSION%-*}

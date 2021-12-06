@@ -29,7 +29,16 @@ const convertReleaseToPrerelease = (version) => {
   if (rootVersionType === releaseType && releaseType === 'release') {
     // release to release
 
-    await execute('yarn workspaces foreach version patch');
+    for (const { filename, json } of packagesIterator(packagesDir)) {
+          const { version } = json;
+          json.version = semver.inc(version, 'patch');
+
+          fs.writeFileSync(filename, `${JSON.stringify(json, null, 2)}\n`);
+        }
+
+        // root version
+        rootPackageJson.version = semver.inc(rootPackageJson.version, 'patch');
+        fs.writeFileSync(path.join(__dirname, '..', '..', 'package.json'), `${JSON.stringify(rootPackageJson, null, 2)}\n`);
   } else if (rootVersionType === 'release' && releaseType === 'prerelease') {
     // release to prerelease
 
@@ -48,7 +57,16 @@ const convertReleaseToPrerelease = (version) => {
   } else if (rootVersionType === 'prerelease' && releaseType === 'release') {
     // prerelease to release
 
-    await execute('yarn workspaces foreach version minor');
+    for (const { filename, json } of packagesIterator(packagesDir)) {
+          const { version } = json;
+          json.version = semver.inc(version, 'minor');
+
+          fs.writeFileSync(filename, `${JSON.stringify(json, null, 2)}\n`);
+        }
+
+        // root version
+        rootPackageJson.version = semver.inc(rootPackageJson.version, 'minor');
+        fs.writeFileSync(path.join(__dirname, '..', '..', 'package.json'), `${JSON.stringify(rootPackageJson, null, 2)}\n`);
   } else {
     // prerelease to prerelease
     for (const { filename, json } of packagesIterator(packagesDir)) {
@@ -62,4 +80,6 @@ const convertReleaseToPrerelease = (version) => {
     rootPackageJson.version = semver.inc(rootPackageJson.version, 'prerelease');
     fs.writeFileSync(path.join(__dirname, '..', '..', 'package.json'), `${JSON.stringify(rootPackageJson, null, 2)}\n`);
   }
+
+  await execute('yarn');
 })();
