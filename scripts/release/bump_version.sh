@@ -5,7 +5,7 @@ const path = require('path');
 const semver = require('semver');
 const execute = require('./utils/execute');
 const packagesIterator = require('./utils/packagesIterator');
-const rootPackageJson = require('../package.json');
+const rootPackageJson = require('../../package.json');
 
 const convertReleaseToPrerelease = (version) => {
   const bumpedVersion = semver.inc(version, 'minor');
