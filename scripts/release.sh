@@ -10,7 +10,7 @@ PACKAGE_VERSION=$(cat $DIR/../package.json|grep version|head -1|awk -F: '{ print
 
 RELEASE_TYPE="$1"
 
-# if   parameter is empty, get release type from current version
+# if parameter is empty, get release type from current version
 if [ -z "$RELEASE_TYPE" ]
 then
  if [[ $PACKAGE_VERSION == *-* ]]
@@ -56,9 +56,9 @@ fi
 # git
 git branch release_"$PACKAGE_VERSION"
 git checkout release_"$PACKAGE_VERSION"
-git commit -am "chore(release): update changelog and bump version to $PACKAGE_VERSION"
+git commit -am "chore(release): update changelog and version to $PACKAGE_VERSION"
 
 # push
 git push -u origin release_"$PACKAGE_VERSION"
 # create PR
-gh pr create --base $BRANCH --fill --title "chore(release): update changelog and bump version to $PACKAGE_VERSION" --body-file $DIR/utils/release.md --milestone $MILESTONE
+gh pr create --base $BRANCH --fill --title "chore(release): update changelog and version to $PACKAGE_VERSION" --body-file $DIR/utils/release.md --milestone $MILESTONE

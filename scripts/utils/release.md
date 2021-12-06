@@ -4,12 +4,12 @@
 ## Issue being fixed or feature implemented
 <!--- Why is this change required? What problem does it solve? -->
 <!--- If it fixes an open issue, please link to the issue here. -->
-Release new version
+Release new Dash Platform version
 
 ## What was done?
 <!--- Describe your changes in detail -->
-- Update changelog
-- Bump version
+- Updated changelog
+- Bumped packages version
 
 ## How Has This Been Tested?
 <!--- Please describe in detail how you tested your changes. -->

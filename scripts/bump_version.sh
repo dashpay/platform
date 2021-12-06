@@ -20,9 +20,10 @@ const convertReleaseToPrerelease = (version) => {
   const { version: rootVersion } = rootPackageJson;
   const rootVersionType = semver.prerelease(rootVersion) !== null ? 'prerelease' : 'release';
 
+  // Figure out release type using current version
   if (releaseType === undefined) {
     // get releaseType from root package.json
-    releaseType = semver.prerelease(rootVersion) !== null ? 'prerelease' : 'release';
+    releaseType = rootVersionType;
   }
 
   if (rootVersionType === releaseType && releaseType === 'release') {
@@ -32,6 +33,8 @@ const convertReleaseToPrerelease = (version) => {
   } else if (rootVersionType === 'release' && releaseType === 'prerelease') {
     // release to prerelease
 
+    // Since `preid` option was removed in yarn 2, we have to do update prerelease
+    // version manually 
     for (const { filename, json } of packagesIterator(packagesDir)) {
       const { version } = json;
       json.version = convertReleaseToPrerelease(version);
