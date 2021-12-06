@@ -16,7 +16,7 @@ const convertReleaseToPrerelease = (version) => {
 (async () => {
   let [ releaseType ] = process.argv.slice(2);
 
-  const packagesDir = path.join(__dirname, '..', 'packages');
+  const packagesDir = path.join(__dirname, '..', '..', 'packages');
   const { version: rootVersion } = rootPackageJson;
   const rootVersionType = semver.prerelease(rootVersion) !== null ? 'prerelease' : 'release';
 
@@ -34,7 +34,7 @@ const convertReleaseToPrerelease = (version) => {
     // release to prerelease
 
     // Since `preid` option was removed in yarn 2, we have to do update prerelease
-    // version manually 
+    // version manually
     for (const { filename, json } of packagesIterator(packagesDir)) {
       const { version } = json;
       json.version = convertReleaseToPrerelease(version);
@@ -44,7 +44,7 @@ const convertReleaseToPrerelease = (version) => {
 
     // root version
     rootPackageJson.version = convertReleaseToPrerelease(rootPackageJson.version);
-    fs.writeFileSync(path.join(__dirname, '..', 'package.json'), `${JSON.stringify(rootPackageJson, null, 2)}\n`);
+    fs.writeFileSync(path.join(__dirname, '..', '..', 'package.json'), `${JSON.stringify(rootPackageJson, null, 2)}\n`);
   } else if (rootVersionType === 'prerelease' && releaseType === 'release') {
     // prerelease to release
 
@@ -60,6 +60,6 @@ const convertReleaseToPrerelease = (version) => {
 
     // root version
     rootPackageJson.version = semver.inc(rootPackageJson.version, 'prerelease');
-    fs.writeFileSync(path.join(__dirname, '..', 'package.json'), `${JSON.stringify(rootPackageJson, null, 2)}\n`);
+    fs.writeFileSync(path.join(__dirname, '..', '..', 'package.json'), `${JSON.stringify(rootPackageJson, null, 2)}\n`);
   }
 })();
