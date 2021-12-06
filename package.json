@@ -44,7 +44,6 @@
     "add-stream": "^1.0.0",
     "conventional-changelog": "^3.1.24",
     "conventional-changelog-dash": "github:dashevo/conventional-changelog-dash",
-    "packster": "^0.4.0",
     "semver": "^7.3.2",
     "tempfile": "^3.0.0",
     "ultra-runner": "^3.10.5"

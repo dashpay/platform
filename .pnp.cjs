@@ -104,7 +104,6 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["add-stream", "npm:1.0.0"],
             ["conventional-changelog", "npm:3.1.24"],
             ["conventional-changelog-dash", "https://github.com/dashevo/conventional-changelog-dash.git#commit=dfcd273bf13f7421700612b5ebd0e6af49699c54"],
-            ["packster", "npm:0.4.0"],
             ["semver", "npm:7.3.5"],
             ["tempfile", "npm:3.0.0"],
             ["ultra-runner", "npm:3.10.5"]
@@ -2722,7 +2721,6 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["add-stream", "npm:1.0.0"],
             ["conventional-changelog", "npm:3.1.24"],
             ["conventional-changelog-dash", "https://github.com/dashevo/conventional-changelog-dash.git#commit=dfcd273bf13f7421700612b5ebd0e6af49699c54"],
-            ["packster", "npm:0.4.0"],
             ["semver", "npm:7.3.5"],
             ["tempfile", "npm:3.0.0"],
             ["ultra-runner", "npm:3.10.5"]
@@ -3862,14 +3860,6 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           "packageLocation": "./.yarn/cache/@types-yargs-npm-16.0.4-7aaef7d6c8-caa21d2c95.zip/node_modules/@types/yargs/",
           "packageDependencies": [
             ["@types/yargs", "npm:16.0.4"],
-            ["@types/yargs-parser", "npm:20.2.1"]
-          ],
-          "linkType": "HARD",
-        }],
-        ["npm:17.0.7", {
-          "packageLocation": "./.yarn/cache/@types-yargs-npm-17.0.7-2715398006-520e803720.zip/node_modules/@types/yargs/",
-          "packageDependencies": [
-            ["@types/yargs", "npm:17.0.7"],
             ["@types/yargs-parser", "npm:20.2.1"]
           ],
           "linkType": "HARD",
@@ -13338,18 +13328,6 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           "linkType": "HARD",
         }]
       ]],
-      ["packster", [
-        ["npm:0.4.0", {
-          "packageLocation": "./.yarn/cache/packster-npm-0.4.0-96a802e700-a14e472c4d.zip/node_modules/packster/",
-          "packageDependencies": [
-            ["packster", "npm:0.4.0"],
-            ["@types/yargs", "npm:17.0.7"],
-            ["semver", "npm:7.3.5"],
-            ["yargs", "npm:17.2.1"]
-          ],
-          "linkType": "HARD",
-        }]
-      ]],
       ["pako", [
         ["npm:1.0.11", {
           "packageLocation": "./.yarn/cache/pako-npm-1.0.11-b8f1b69d3e-1be2bfa1f8.zip/node_modules/pako/",
@@ -17937,20 +17915,6 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           "packageLocation": "./.yarn/cache/yargs-npm-16.2.0-547873d425-b14afbb51e.zip/node_modules/yargs/",
           "packageDependencies": [
             ["yargs", "npm:16.2.0"],
-            ["cliui", "npm:7.0.4"],
-            ["escalade", "npm:3.1.1"],
-            ["get-caller-file", "npm:2.0.5"],
-            ["require-directory", "npm:2.1.1"],
-            ["string-width", "npm:4.2.3"],
-            ["y18n", "npm:5.0.8"],
-            ["yargs-parser", "npm:20.2.9"]
-          ],
-          "linkType": "HARD",
-        }],
-        ["npm:17.2.1", {
-          "packageLocation": "./.yarn/cache/yargs-npm-17.2.1-592dabfd58-451aac46f8.zip/node_modules/yargs/",
-          "packageDependencies": [
-            ["yargs", "npm:17.2.1"],
             ["cliui", "npm:7.0.4"],
             ["escalade", "npm:3.1.1"],
             ["get-caller-file", "npm:2.0.5"],
