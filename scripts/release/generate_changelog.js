@@ -1,5 +1,3 @@
-#!/usr/bin/env node
-
 const fs = require('fs');
 const tempfile = require('tempfile')
 const addStream = require('add-stream');
@@ -8,7 +6,7 @@ const conventionalChangelog = require('conventional-changelog');
 const [ from ] = process.argv.slice(2);
 
 if (!from) {
-  console.error('usage: npm run changelog v0.22.0');
+  console.error('usage: generate_changelog.js v0.22.0');
   process.exit(1);
 }
 
