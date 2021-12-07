@@ -30,29 +30,29 @@ fi
 UNCOMMITTED_FILES="$(git status -su)"
 if [ -n "$UNCOMMITTED_FILES" ]
 then
-  echo "commit all your changes before running this script"
+  echo "commit or stash your changes before running this script"
   exit 1
 fi
 
-# check gh auth
+# ensure github authentication
 if ! gh auth status&> /dev/null; then
-    gh auth login
+  gh auth login
 fi
 
-# call bumper
-$DIR/bump_version.sh "$RELEASE_TYPE"
+# bump version
+yarn node $DIR/bump_version.js "$RELEASE_TYPE"
 
-PACKAGE_VERSION=$(cat $DIR/../../package.json|grep version|head -1|awk -F: '{ print $2 }'|sed 's/[", ]//g')
+NEW_PACKAGE_VERSION=$(cat $DIR/../../package.json|grep version|head -1|awk -F: '{ print $2 }'|sed 's/[", ]//g')
 
 # get last tag for changelog
-LATEST_TAG=$(yarn exec $DIR/utils/find_base_tag.js $PACKAGE_VERSION)
+LATEST_TAG=$(yarn node $DIR/find_latest_tag.js $NEW_PACKAGE_VERSION)
 
 # generate changelog
-$DIR/generate_changelog.sh $LATEST_TAG
+yarn node $DIR/generate_changelog.js $LATEST_TAG
 
-echo "New version is $PACKAGE_VERSION"
+echo "New version is $NEW_PACKAGE_VERSION"
 
-VERSION_WITHOUT_PRERELEASE=${PACKAGE_VERSION%-*}
+VERSION_WITHOUT_PRERELEASE=${NEW_PACKAGE_VERSION%-*}
 CURRENT_BRANCH=$(git branch --show-current)
 
 if [[ $RELEASE_TYPE == "release" ]]
@@ -62,21 +62,32 @@ else
  BRANCH="v${VERSION_WITHOUT_PRERELEASE%.*}-dev"
 fi
 
- if [[ $CURRENT_BRANCH != BRANCH ]]
- then
-   echo "you must run this script either from the master of from the dev branch"
-   git checkout .
-   exit 1
- fi
+if [[ $CURRENT_BRANCH != BRANCH ]]
+then
+ echo "you must run this script either from the master of from the dev branch"
+ git checkout .
+ exit 1
+fi
 
-# git
-git checkout -b release_"$PACKAGE_VERSION"
-git add **/package.json CHANGELOG.md
-git commit -m "chore(release): update changelog and version to $PACKAGE_VERSION"
+# create branch
+git checkout -b release_"$NEW_PACKAGE_VERSION"
 
-MILESTONE="v${VERSION_WITHOUT_PRERELEASE%.*}.x"
+# commit changes
+git commit -am "chore(release): update changelog and version to $NEW_PACKAGE_VERSION"
 
-# push
-git push -u origin release_"$PACKAGE_VERSION"
+# push changes
+git push -u origin release_"$NEW_PACKAGE_VERSION"
+
 # create PR
-gh pr create --base $BRANCH --fill --title "chore(release): update changelog and bump version to $PACKAGE_VERSION" --body-file $DIR/release.md --milestone $MILESTONE
+if [[ $RELEASE_TYPE == "release" ]]
+then
+  MILESTONE="v${VERSION_WITHOUT_PRERELEASE%.*}.x"
+else
+  MILESTONE="v${VERSION_WITHOUT_PRERELEASE%.*}.0"
+fi
+
+gh pr create --base $BRANCH \
+             --fill \
+             --title "chore(release): update changelog and bump version to $PACKAGE_VERSION" \
+             --body-file $DIR/pr_description.md \
+             --milestone $MILESTONE

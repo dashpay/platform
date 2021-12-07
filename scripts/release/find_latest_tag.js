@@ -1,7 +1,5 @@
-#!/usr/bin/env node
-
 const semver = require('semver');
-const execute = require('./execute');
+const execute = require('../utils/execute');
 
 const [ version ] = process.argv.slice(2);
 

@@ -1,5 +1,3 @@
-#!/usr/bin/env node
-
 const fs = require('fs');
 const tempfile = require('tempfile')
 const addStream = require('add-stream');

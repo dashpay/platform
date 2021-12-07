@@ -1,5 +1,3 @@
-#!/usr/bin/env node
-
 const fs = require('fs');
 const path = require('path');
 const semver = require('semver');
@@ -80,6 +78,4 @@ const convertReleaseToPrerelease = (version) => {
     rootPackageJson.version = semver.inc(rootPackageJson.version, 'prerelease');
     fs.writeFileSync(path.join(__dirname, '..', '..', 'package.json'), `${JSON.stringify(rootPackageJson, null, 2)}\n`);
   }
-
-  await execute('yarn');
 })();
