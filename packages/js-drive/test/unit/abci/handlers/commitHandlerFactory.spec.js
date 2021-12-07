@@ -48,6 +48,7 @@ describe('commitHandlerFactory', () => {
   let previousBlockExecutionContextMock;
   let blockExecutionContextRepositoryMock;
   let previousRootTreeMock;
+  let dataContractCacheMock;
 
   beforeEach(function beforeEach() {
     nextPreviousBlockExecutionStoreTransactionsMock = 'nextPreviousBlockExecutionStoreTransactionsMock';
@@ -143,6 +144,12 @@ describe('commitHandlerFactory', () => {
       get: () => true,
     });
 
+    dataContractCacheMock = {
+      set: this.sinon.stub(),
+      get: this.sinon.stub(),
+      has: this.sinon.stub(),
+    };
+
     commitHandler = commitHandlerFactory(
       creditsDistributionPoolMock,
       creditsDistributionPoolRepositoryMock,
@@ -161,6 +168,7 @@ describe('commitHandlerFactory', () => {
       cloneToPreviousStoreTransactionsMock,
       getLatestFeatureFlagMock,
       previousRootTreeMock,
+      dataContractCacheMock,
     );
   });
 
@@ -204,7 +212,7 @@ describe('commitHandlerFactory', () => {
 
     expect(blockExecutionContextMock.getHeader).to.be.calledOnce();
 
-    expect(blockExecutionContextMock.getDataContracts).to.be.calledOnce();
+    expect(blockExecutionContextMock.getDataContracts).to.be.calledTwice();
 
     expect(documentsDatabaseManagerMock.create).to.be.calledOnceWith(dataContract);
 
@@ -263,7 +271,7 @@ describe('commitHandlerFactory', () => {
 
     expect(blockExecutionContextMock.getHeader).to.be.calledOnce();
 
-    expect(blockExecutionContextMock.getDataContracts).to.be.calledOnce();
+    expect(blockExecutionContextMock.getDataContracts).to.be.calledTwice();
     expect(documentsDatabaseManagerMock.create).to.be.calledOnceWithExactly(dataContract);
     expect(creditsDistributionPoolMock.incrementAmount).to.be.calledOnceWith(accumulativeFees);
     expect(blockExecutionContextMock.getCumulativeFees).to.be.calledOnce();
