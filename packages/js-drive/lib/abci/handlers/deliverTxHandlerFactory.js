@@ -21,6 +21,11 @@ const DOCUMENT_ACTION_DESCRIPTONS = {
   [AbstractDocumentTransition.ACTIONS.DELETE]: 'deleted',
 };
 
+const DATA_CONTRACT_ACTION_DESCRIPTIONS = {
+  [stateTransitionTypes.DATA_CONTRACT_CREATE]: 'created',
+  [stateTransitionTypes.DATA_CONTRACT_UPDATE]: 'updated',
+};
+
 /**
  * @param {unserializeStateTransition} transactionalUnserializeStateTransition
  * @param {DashPlatformProtocol} transactionalDpp
@@ -114,17 +119,20 @@ function deliverTxHandlerFactory(
 
     // Logging
     switch (stateTransition.getType()) {
+      case stateTransitionTypes.DATA_CONTRACT_UPDATE:
       case stateTransitionTypes.DATA_CONTRACT_CREATE: {
         const dataContract = stateTransition.getDataContract();
 
         // Save data contracts in order to create databases for documents on block commit
         blockExecutionContext.addDataContract(dataContract);
 
+        const description = DATA_CONTRACT_ACTION_DESCRIPTIONS[stateTransition.getType()];
+
         consensusLogger.info(
           {
             dataContractId: dataContract.getId().toString(),
           },
-          `Data contract created with id: ${dataContract.getId()}`,
+          `Data contract ${description} with id: ${dataContract.getId()}`,
         );
 
         break;

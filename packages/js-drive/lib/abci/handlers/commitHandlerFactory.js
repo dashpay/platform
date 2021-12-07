@@ -33,6 +33,7 @@ const BlockExecutionContextRepository = require('../../blockExecution/BlockExecu
  * @param {cloneToPreviousStoreTransactions} cloneToPreviousStoreTransactions
  * @param {getLatestFeatureFlag} getLatestFeatureFlag
  * @param {RootTree} previousRootTree
+ * @param {LRUCache} dataContractCache
  *
  * @return {commitHandler}
  */
@@ -54,6 +55,7 @@ function commitHandlerFactory(
   cloneToPreviousStoreTransactions,
   getLatestFeatureFlag,
   previousRootTree,
+  dataContractCache,
 ) {
   /**
    * Commit ABCI Handler
@@ -79,9 +81,17 @@ function commitHandlerFactory(
 
     let nextPreviousBlockExecutionStoreTransactions;
     try {
-      // Create document databases for dataContracts created in the current block
       for (const dataContract of blockExecutionContext.getDataContracts()) {
+        // Create document databases for dataContracts created in the current block
         await documentDatabaseManager.create(dataContract);
+
+        // Update data contract cache with new version of
+        // commited data contract
+        const idString = dataContract.getId().toString();
+
+        if (dataContractCache.has(idString)) {
+          dataContractCache.set(idString, dataContract);
+        }
       }
 
       const documentsTransaction = blockExecutionStoreTransactions.getTransaction('documents');
@@ -166,9 +176,7 @@ function commitHandlerFactory(
             },
           );
 
-          if (dataContract.getVersion() === 1) {
-            await previousDocumentDatabaseManager.create(dataContract);
-          }
+          await previousDocumentDatabaseManager.create(dataContract);
         });
 
       await Promise.all(createDatabasePromises);

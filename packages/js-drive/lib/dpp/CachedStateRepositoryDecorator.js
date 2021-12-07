@@ -109,12 +109,6 @@ class CachedStateRepositoryDecorator {
    * @returns {Promise<void>}
    */
   async storeDataContract(dataContract) {
-    const idString = dataContract.getId().toString();
-
-    if (this.contractCache.has(idString)) {
-      this.contractCache.set(idString, dataContract);
-    }
-
     return this.stateRepository.storeDataContract(dataContract);
   }
 
