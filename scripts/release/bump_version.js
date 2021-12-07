@@ -1,7 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const semver = require('semver');
-const execute = require('./utils/execute');
+// const execute = require('./utils/execute');
 const packagesIterator = require('./utils/packagesIterator');
 const rootPackageJson = require('../../package.json');
 
