@@ -91,3 +91,6 @@ gh pr create --base $BRANCH \
              --title "chore(release): update changelog and bump version to $PACKAGE_VERSION" \
              --body-file $DIR/pr_description.md \
              --milestone $MILESTONE
+
+# switch back to base branch
+git checkout -

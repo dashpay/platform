@@ -17,7 +17,7 @@ const convertReleaseToPrerelease = (version) => {
   const { version: rootVersion } = rootPackageJson;
   const rootVersionType = semver.prerelease(rootVersion) !== null ? 'prerelease' : 'release';
 
-  // Figure out release type using current version
+  // Figure out release type using current version if not set
   if (releaseType === undefined) {
     // get releaseType from root package.json
     releaseType = rootVersionType;
@@ -25,22 +25,18 @@ const convertReleaseToPrerelease = (version) => {
 
   if (rootVersionType === releaseType && releaseType === 'release') {
     // release to release
-
     for (const { filename, json } of packagesIterator(packagesDir)) {
-          const { version } = json;
-          json.version = semver.inc(version, 'patch');
+      const { version } = json;
+      json.version = semver.inc(version, 'patch');
 
-          fs.writeFileSync(filename, `${JSON.stringify(json, null, 2)}\n`);
-        }
+      fs.writeFileSync(filename, `${JSON.stringify(json, null, 2)}\n`);
+    }
 
-        // root version
-        rootPackageJson.version = semver.inc(rootPackageJson.version, 'patch');
-        fs.writeFileSync(path.join(__dirname, '..', '..', 'package.json'), `${JSON.stringify(rootPackageJson, null, 2)}\n`);
+    // root version
+    rootPackageJson.version = semver.inc(rootPackageJson.version, 'patch');
+    fs.writeFileSync(path.join(__dirname, '..', '..', 'package.json'), `${JSON.stringify(rootPackageJson, null, 2)}\n`);
   } else if (rootVersionType === 'release' && releaseType === 'prerelease') {
     // release to prerelease
-
-    // Since `preid` option was removed in yarn 2, we have to do update prerelease
-    // version manually
     for (const { filename, json } of packagesIterator(packagesDir)) {
       const { version } = json;
       json.version = convertReleaseToPrerelease(version);
@@ -53,17 +49,16 @@ const convertReleaseToPrerelease = (version) => {
     fs.writeFileSync(path.join(__dirname, '..', '..', 'package.json'), `${JSON.stringify(rootPackageJson, null, 2)}\n`);
   } else if (rootVersionType === 'prerelease' && releaseType === 'release') {
     // prerelease to release
-
     for (const { filename, json } of packagesIterator(packagesDir)) {
-          const { version } = json;
-          json.version = semver.inc(version, 'minor');
+      const { version } = json;
+      json.version = semver.inc(version, 'minor');
 
-          fs.writeFileSync(filename, `${JSON.stringify(json, null, 2)}\n`);
-        }
+      fs.writeFileSync(filename, `${JSON.stringify(json, null, 2)}\n`);
+    }
 
-        // root version
-        rootPackageJson.version = semver.inc(rootPackageJson.version, 'minor');
-        fs.writeFileSync(path.join(__dirname, '..', '..', 'package.json'), `${JSON.stringify(rootPackageJson, null, 2)}\n`);
+    // root version
+    rootPackageJson.version = semver.inc(rootPackageJson.version, 'minor');
+    fs.writeFileSync(path.join(__dirname, '..', '..', 'package.json'), `${JSON.stringify(rootPackageJson, null, 2)}\n`);
   } else {
     // prerelease to prerelease
     for (const { filename, json } of packagesIterator(packagesDir)) {
