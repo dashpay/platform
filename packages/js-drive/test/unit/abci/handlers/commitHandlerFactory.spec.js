@@ -212,7 +212,7 @@ describe('commitHandlerFactory', () => {
 
     expect(blockExecutionContextMock.getHeader).to.be.calledOnce();
 
-    expect(blockExecutionContextMock.getDataContracts).to.be.calledTwice();
+    expect(blockExecutionContextMock.getDataContracts).to.be.calledOnce();
 
     expect(documentsDatabaseManagerMock.create).to.be.calledOnceWith(dataContract);
 
@@ -271,7 +271,7 @@ describe('commitHandlerFactory', () => {
 
     expect(blockExecutionContextMock.getHeader).to.be.calledOnce();
 
-    expect(blockExecutionContextMock.getDataContracts).to.be.calledTwice();
+    expect(blockExecutionContextMock.getDataContracts).to.be.calledOnce();
     expect(documentsDatabaseManagerMock.create).to.be.calledOnceWithExactly(dataContract);
     expect(creditsDistributionPoolMock.incrementAmount).to.be.calledOnceWith(accumulativeFees);
     expect(blockExecutionContextMock.getCumulativeFees).to.be.calledOnce();
