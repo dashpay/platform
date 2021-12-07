@@ -1,4 +1,6 @@
 const $RefParser = require('@apidevtools/json-schema-ref-parser');
+const jsonPatch = require('fast-json-patch');
+const jsonSchemaDiffValidator = require('json-schema-diff-validator');
 const { Signer: { verifyHashSignature } } = require('@dashevo/dashcore-lib');
 
 const MissingOptionError = require('../errors/MissingOptionError');
@@ -46,6 +48,9 @@ const applyStateTransitionFactory = require('./applyStateTransitionFactory');
 const applyDataContractCreateTransitionFactory = require(
   '../dataContract/stateTransition/DataContractCreateTransition/applyDataContractCreateTransitionFactory',
 );
+const applyDataContractUpdateTransitionFactory = require(
+  '../dataContract/stateTransition/DataContractUpdateTransition/applyDataContractUpdateTransitionFactory',
+);
 
 const applyDocumentsBatchTransitionFactory = require(
   '../document/stateTransition/DocumentsBatchTransition/applyDocumentsBatchTransitionFactory',
@@ -75,6 +80,9 @@ const fetchAssetLockPublicKeyHashFactory = require('../identity/stateTransition/
 const decodeProtocolEntityFactory = require('../decodeProtocolEntityFactory');
 const protocolVersion = require('../version/protocolVersion');
 const validateProtocolVersionFactory = require('../version/validateProtocolVersionFactory');
+const validateDataContractUpdateTransitionBasicFactory = require('../dataContract/stateTransition/DataContractUpdateTransition/validation/basic/validateDataContractUpdateTransitionBasicFactory');
+const validateDataContractUpdateTransitionStateFactory = require('../dataContract/stateTransition/DataContractUpdateTransition/validation/state/validateDataContractUpdateTransitionStateFactory');
+const validateIndicesAreNotChanged = require('../dataContract/stateTransition/DataContractUpdateTransition/validation/basic/validateIndicesAreNotChanged');
 
 class StateTransitionFacade {
   /**
@@ -127,6 +135,17 @@ class StateTransitionFacade {
       validator,
       validateDataContract,
       validateProtocolVersion,
+    );
+
+    // eslint-disable-next-line max-len
+    const validateDataContractUpdateTransitionBasic = validateDataContractUpdateTransitionBasicFactory(
+      validator,
+      validateDataContract,
+      validateProtocolVersion,
+      this.stateRepository,
+      jsonSchemaDiffValidator,
+      validateIndicesAreNotChanged,
+      jsonPatch,
     );
 
     this.createStateTransition = createStateTransitionFactory(this.stateRepository);
@@ -190,6 +209,7 @@ class StateTransitionFacade {
 
     const validationFunctionsByType = {
       [stateTransitionTypes.DATA_CONTRACT_CREATE]: validateDataContractCreateTransitionBasic,
+      [stateTransitionTypes.DATA_CONTRACT_UPDATE]: validateDataContractUpdateTransitionBasic,
       [stateTransitionTypes.DOCUMENTS_BATCH]: validateDocumentsBatchTransitionBasic,
       [stateTransitionTypes.IDENTITY_CREATE]: validateIdentityCreateTransitionBasic,
       [stateTransitionTypes.IDENTITY_TOP_UP]: validateIdentityTopUpTransitionBasic,
@@ -202,6 +222,12 @@ class StateTransitionFacade {
 
     const validateDataContractCreateTransitionState = (
       validateDataContractCreateTransitionStateFactory(
+        this.stateRepository,
+      )
+    );
+
+    const validateDataContractUpdateTransitionState = (
+      validateDataContractUpdateTransitionStateFactory(
         this.stateRepository,
       )
     );
@@ -240,6 +266,7 @@ class StateTransitionFacade {
 
     this.validateStateTransitionState = validateStateTransitionStateFactory({
       [stateTransitionTypes.DATA_CONTRACT_CREATE]: validateDataContractCreateTransitionState,
+      [stateTransitionTypes.DATA_CONTRACT_UPDATE]: validateDataContractUpdateTransitionState,
       [stateTransitionTypes.DOCUMENTS_BATCH]: validateDocumentsBatchTransitionState,
       [stateTransitionTypes.IDENTITY_CREATE]: validateIdentityCreateTransitionState,
       [stateTransitionTypes.IDENTITY_TOP_UP]: validateIdentityTopUpTransitionState,
@@ -264,6 +291,10 @@ class StateTransitionFacade {
       this.stateRepository,
     );
 
+    const applyDataContractUpdateTransition = applyDataContractUpdateTransitionFactory(
+      this.stateRepository,
+    );
+
     const applyDocumentsBatchTransition = applyDocumentsBatchTransitionFactory(
       this.stateRepository,
       fetchDocuments,
@@ -281,6 +312,7 @@ class StateTransitionFacade {
 
     this.applyStateTransition = applyStateTransitionFactory(
       applyDataContractCreateTransition,
+      applyDataContractUpdateTransition,
       applyDocumentsBatchTransition,
       applyIdentityCreateTransition,
       applyIdentityTopUpTransition,

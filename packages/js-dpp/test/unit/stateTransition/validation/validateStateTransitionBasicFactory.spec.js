@@ -41,7 +41,7 @@ describe('validateStateTransitionBasicFactory', () => {
 
     dataContractFactory = new DataContractFactory(createDPPMock(), undefined);
 
-    stateTransition = dataContractFactory.createStateTransition(dataContract);
+    stateTransition = dataContractFactory.createDataContractCreateTransition(dataContract);
     stateTransition.signByPrivateKey(privateKey);
 
     rawStateTransition = stateTransition.toObject();

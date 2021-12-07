@@ -30,7 +30,9 @@ describe('broadcastStateTransitionFactory', () => {
     const dpp = new DashPlatformProtocol();
     await dpp.initialize();
 
-    stateTransitionFixture = dpp.dataContract.createStateTransition(dataContractFixture);
+    stateTransitionFixture = dpp.dataContract.createDataContractCreateTransition(
+      dataContractFixture,
+    );
 
     options = {
       timeout: 1000,

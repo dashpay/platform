@@ -97,7 +97,7 @@ describe('e2e', () => {
           dataContractDocumentSchemas, bobIdentity,
         );
 
-        await bobClient.platform.contracts.broadcast(dataContract, bobIdentity);
+        await bobClient.platform.contracts.publish(dataContract, bobIdentity);
 
         // Additional wait time to mitigate testnet latency
         if (process.env.NETWORK === 'testnet') {

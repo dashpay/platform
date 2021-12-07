@@ -67,6 +67,10 @@ const InvalidAssetLockTransactionOutputReturnSize = require('./basic/identity/In
 const InvalidInstantAssetLockProofError = require('./basic/identity/InvalidInstantAssetLockProofError');
 const InvalidInstantAssetLockProofSignatureError = require('./basic/identity/InvalidInstantAssetLockProofSignatureError');
 const IncompatibleRe2PatternError = require('./basic/dataContract/IncompatibleRe2PatternError');
+const InvalidDataContractVersionError = require('./basic/dataContract/InvalidDataContractVersionError');
+const IncompatibleDataContractSchemaError = require('./basic/dataContract/IncompatibleDataContractSchemaError');
+const DataContractImmutablePropertiesUpdateError = require('./basic/dataContract/DataContractImmutablePropertiesUpdateError');
+const DataContractIndicesChangedError = require('./basic/dataContract/DataContractIndicesChangedError');
 
 const codes = {
   /**
@@ -157,6 +161,10 @@ const codes = {
   4001: DataTriggerConditionError,
   4002: DataTriggerExecutionError,
   4003: DataTriggerInvalidResultError,
+  4013: InvalidDataContractVersionError,
+  4014: IncompatibleDataContractSchemaError,
+  4015: DataContractImmutablePropertiesUpdateError,
+  4016: DataContractIndicesChangedError,
 
   // Document
   4004: DocumentAlreadyPresentError,

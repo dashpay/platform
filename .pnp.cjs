@@ -2477,6 +2477,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["rimraf", "npm:3.0.2"],
             ["rxjs", "npm:6.6.7"],
             ["semver", "npm:7.3.5"],
+            ["strip-ansi", "npm:6.0.1"],
             ["table", "npm:5.4.6"]
           ],
           "linkType": "SOFT",
@@ -2565,7 +2566,9 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["eslint-config-airbnb-base", "virtual:595d7482cc8ddf98ee6aef33fc48b46393554ab5f17f851ef62e6e39315e53666c3e66226b978689aa0bc7f1e83a03081511a21db1c381362fe67614887077f9#npm:14.2.1"],
             ["eslint-plugin-import", "virtual:595d7482cc8ddf98ee6aef33fc48b46393554ab5f17f851ef62e6e39315e53666c3e66226b978689aa0bc7f1e83a03081511a21db1c381362fe67614887077f9#npm:2.25.3"],
             ["events", "npm:3.3.0"],
+            ["fast-json-patch", "npm:3.1.0"],
             ["https-browserify", "npm:1.0.0"],
+            ["json-schema-diff-validator", "npm:0.4.1"],
             ["json-schema-traverse", "npm:1.0.0"],
             ["karma", "npm:6.3.9"],
             ["karma-chai", "virtual:58fb68f2aed20e5e0f2e48520ab903ae9bb3440369bfd5e912034003cf27c5aae368649fc5620dd2acbed578131f3a0975e75b838d77d12335fb0412e24026c6#npm:0.1.0"],
@@ -8659,6 +8662,13 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
         }]
       ]],
       ["fast-deep-equal", [
+        ["npm:2.0.1", {
+          "packageLocation": "./.yarn/cache/fast-deep-equal-npm-2.0.1-9c01e08a62-b701835a87.zip/node_modules/fast-deep-equal/",
+          "packageDependencies": [
+            ["fast-deep-equal", "npm:2.0.1"]
+          ],
+          "linkType": "HARD",
+        }],
         ["npm:3.1.3", {
           "packageLocation": "./.yarn/cache/fast-deep-equal-npm-3.1.3-790edcfcf5-e21a9d8d84.zip/node_modules/fast-deep-equal/",
           "packageDependencies": [
@@ -8677,6 +8687,23 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["glob-parent", "npm:5.1.2"],
             ["merge2", "npm:1.4.1"],
             ["micromatch", "npm:4.0.4"]
+          ],
+          "linkType": "HARD",
+        }]
+      ]],
+      ["fast-json-patch", [
+        ["npm:2.2.1", {
+          "packageLocation": "./.yarn/cache/fast-json-patch-npm-2.2.1-63b021bb37-955aebb3f8.zip/node_modules/fast-json-patch/",
+          "packageDependencies": [
+            ["fast-json-patch", "npm:2.2.1"],
+            ["fast-deep-equal", "npm:2.0.1"]
+          ],
+          "linkType": "HARD",
+        }],
+        ["npm:3.1.0", {
+          "packageLocation": "./.yarn/cache/fast-json-patch-npm-3.1.0-f4bd467b5f-bad25a6121.zip/node_modules/fast-json-patch/",
+          "packageDependencies": [
+            ["fast-json-patch", "npm:3.1.0"]
           ],
           "linkType": "HARD",
         }]
@@ -10971,11 +10998,32 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           "linkType": "HARD",
         }]
       ]],
+      ["json-pointer", [
+        ["npm:0.6.1", {
+          "packageLocation": "./.yarn/cache/json-pointer-npm-0.6.1-d72965882f-882b4b24b5.zip/node_modules/json-pointer/",
+          "packageDependencies": [
+            ["json-pointer", "npm:0.6.1"],
+            ["foreach", "npm:2.0.5"]
+          ],
+          "linkType": "HARD",
+        }]
+      ]],
       ["json-schema", [
         ["npm:0.2.3", {
           "packageLocation": "./.yarn/cache/json-schema-npm-0.2.3-018ee3dfc9-bbc2070988.zip/node_modules/json-schema/",
           "packageDependencies": [
             ["json-schema", "npm:0.2.3"]
+          ],
+          "linkType": "HARD",
+        }]
+      ]],
+      ["json-schema-diff-validator", [
+        ["npm:0.4.1", {
+          "packageLocation": "./.yarn/cache/json-schema-diff-validator-npm-0.4.1-a98b53360c-d75b7f5540.zip/node_modules/json-schema-diff-validator/",
+          "packageDependencies": [
+            ["json-schema-diff-validator", "npm:0.4.1"],
+            ["fast-json-patch", "npm:2.2.1"],
+            ["json-pointer", "npm:0.6.1"]
           ],
           "linkType": "HARD",
         }]
