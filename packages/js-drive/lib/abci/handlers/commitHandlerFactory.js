@@ -76,9 +76,6 @@ function commitHandlerFactory(
 
     consensusLogger.debug('Commit ABCI method requested');
 
-    const newlyCreatedDataContracts = blockExecutionContext.getDataContracts()
-      .filter((dataContract) => dataContract.getVersion() === 1);
-
     let nextPreviousBlockExecutionStoreTransactions;
     try {
       for (const dataContract of blockExecutionContext.getDataContracts()) {
@@ -147,6 +144,9 @@ function commitHandlerFactory(
 
       // NOTE: we're calling drop only on the newly created data contracts
       // in case of contract update we keep any created data for now
+      const newlyCreatedDataContracts = blockExecutionContext.getDataContracts()
+        .filter((dataContract) => dataContract.getVersion() === 1);
+
       for (const dataContract of newlyCreatedDataContracts) {
         await documentDatabaseManager.drop(dataContract);
       }
