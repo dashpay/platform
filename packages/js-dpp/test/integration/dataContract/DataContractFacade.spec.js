@@ -62,11 +62,11 @@ describe('DataContractFacade', () => {
     });
   });
 
-  describe('createStateTransition', () => {
+  describe('createDataContractCreateTransition', () => {
     it('should create DataContractCreateTransition from DataContract', () => {
-      const stateTransition = dataContractFactory.createStateTransition(dataContract);
+      const stateTransition = dataContractFactory.createDataContractCreateTransition(dataContract);
 
-      const result = dpp.dataContract.createStateTransition(dataContract);
+      const result = dpp.dataContract.createDataContractCreateTransition(dataContract);
 
       expect(result).to.be.an.instanceOf(DataContractCreateTransition);
 

@@ -28,7 +28,7 @@ const registerContract = async function () {
 
   const contract = await platform.contracts.create(contractDocuments, identity);
   await platform.dpp.dataContract.validate(contract)
-  await platform.contracts.broadcast(contract, identity);
+  await platform.contracts.publish(contract, identity);
 };
 
 registerContract();

@@ -48,6 +48,7 @@ describe('commitHandlerFactory', () => {
   let previousBlockExecutionContextMock;
   let blockExecutionContextRepositoryMock;
   let previousRootTreeMock;
+  let dataContractCacheMock;
 
   beforeEach(function beforeEach() {
     nextPreviousBlockExecutionStoreTransactionsMock = 'nextPreviousBlockExecutionStoreTransactionsMock';
@@ -143,6 +144,12 @@ describe('commitHandlerFactory', () => {
       get: () => true,
     });
 
+    dataContractCacheMock = {
+      set: this.sinon.stub(),
+      get: this.sinon.stub(),
+      has: this.sinon.stub(),
+    };
+
     commitHandler = commitHandlerFactory(
       creditsDistributionPoolMock,
       creditsDistributionPoolRepositoryMock,
@@ -161,6 +168,7 @@ describe('commitHandlerFactory', () => {
       cloneToPreviousStoreTransactionsMock,
       getLatestFeatureFlagMock,
       previousRootTreeMock,
+      dataContractCacheMock,
     );
   });
 

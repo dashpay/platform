@@ -33,6 +33,7 @@ const BlockExecutionContextRepository = require('../../blockExecution/BlockExecu
  * @param {cloneToPreviousStoreTransactions} cloneToPreviousStoreTransactions
  * @param {getLatestFeatureFlag} getLatestFeatureFlag
  * @param {RootTree} previousRootTree
+ * @param {LRUCache} dataContractCache
  *
  * @return {commitHandler}
  */
@@ -54,6 +55,7 @@ function commitHandlerFactory(
   cloneToPreviousStoreTransactions,
   getLatestFeatureFlag,
   previousRootTree,
+  dataContractCache,
 ) {
   /**
    * Commit ABCI Handler
@@ -76,9 +78,17 @@ function commitHandlerFactory(
 
     let nextPreviousBlockExecutionStoreTransactions;
     try {
-      // Create document databases for dataContracts created in the current block
       for (const dataContract of blockExecutionContext.getDataContracts()) {
+        // Create document databases for dataContracts created in the current block
         await documentDatabaseManager.create(dataContract);
+
+        // Update data contract cache with new version of
+        // commited data contract
+        const idString = dataContract.getId().toString();
+
+        if (dataContractCache.has(idString)) {
+          dataContractCache.set(idString, dataContract);
+        }
       }
 
       const documentsTransaction = blockExecutionStoreTransactions.getTransaction('documents');
@@ -132,7 +142,12 @@ function commitHandlerFactory(
         await blockExecutionStoreTransactions.abort();
       }
 
-      for (const dataContract of blockExecutionContext.getDataContracts()) {
+      // NOTE: we're calling drop only on the newly created data contracts
+      // in case of contract update we keep any created data for now
+      const newlyCreatedDataContracts = blockExecutionContext.getDataContracts()
+        .filter((dataContract) => dataContract.getVersion() === 1);
+
+      for (const dataContract of newlyCreatedDataContracts) {
         await documentDatabaseManager.drop(dataContract);
       }
 

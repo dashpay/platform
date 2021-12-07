@@ -16,6 +16,7 @@ class DataContract {
     this.id = Identifier.from(rawDataContract.$id);
     this.ownerId = Identifier.from(rawDataContract.ownerId);
 
+    this.setVersion(rawDataContract.version);
     this.setJsonMetaSchema(rawDataContract.$schema);
     this.setDocuments(rawDataContract.documents);
     this.setDefinitions(rawDataContract.$defs);
@@ -48,6 +49,29 @@ class DataContract {
    */
   getOwnerId() {
     return this.ownerId;
+  }
+
+  /**
+   * Get version
+   * @returns {number}
+   */
+  getVersion() {
+    return this.version;
+  }
+
+  /**
+   * Set version
+   * @param {number} version
+   */
+  setVersion(version) {
+    this.version = version;
+  }
+
+  /**
+   * Increment version by 1
+   */
+  incrementVersion() {
+    this.version += 1;
   }
 
   /**
@@ -243,6 +267,7 @@ class DataContract {
       protocolVersion: this.getProtocolVersion(),
       $id: this.getId(),
       $schema: this.getJsonMetaSchema(),
+      version: this.getVersion(),
       ownerId: this.getOwnerId(),
       documents: this.getDocuments(),
     };
@@ -306,6 +331,7 @@ class DataContract {
  * @property {number} protocolVersion
  * @property {Buffer} $id
  * @property {string} $schema
+ * @property {number} version
  * @property {Buffer} ownerId
  * @property {Object<string, Object>} documents
  * @property {Object<string, Object>} [$defs]
@@ -316,6 +342,7 @@ class DataContract {
  * @property {number} protocolVersion
  * @property {string} $id
  * @property {string} $schema
+ * @property {number} version
  * @property {string} ownerId
  * @property {Object<string, Object>} documents
  * @property {Object<string, Object>} [$defs]

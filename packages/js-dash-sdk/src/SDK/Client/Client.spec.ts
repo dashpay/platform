@@ -278,7 +278,7 @@ describe('Dash - Client', function suite() {
     });
   });
 
-  describe('#platform.contracts.broadcast', () => {
+  describe('#platform.contracts.publish', () => {
     it('should throw TransitionBroadcastError when transport resolves error', async () => {
       const errorResponse = {
         error: {
@@ -292,7 +292,7 @@ describe('Dash - Client', function suite() {
 
       let error;
       try {
-        await client.platform.contracts.broadcast(dataContractFixture, identityFixture);
+        await client.platform.contracts.publish(dataContractFixture, identityFixture);
       } catch (e) {
         error = e;
       }
@@ -307,7 +307,7 @@ describe('Dash - Client', function suite() {
         proof: {  }
       });
 
-      await client.platform.contracts.broadcast(dataContractFixture, identityFixture);
+      await client.platform.contracts.publish(dataContractFixture, identityFixture);
 
       const serializedSt = dapiClientMock.platform.broadcastStateTransition.getCall(0).args[0];
       const interceptedSt = await client.platform.dpp.stateTransition.createFromBuffer(serializedSt);

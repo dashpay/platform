@@ -24,6 +24,7 @@
         "additionalProperties": false
       }
     },
-    "protocolVersion": 0
+    "protocolVersion": 0,
+    "version": 1
   }
 }

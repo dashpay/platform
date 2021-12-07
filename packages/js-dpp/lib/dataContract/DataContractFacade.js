@@ -80,13 +80,23 @@ class DataContractFacade {
   }
 
   /**
-   * Create Data Contract State Transition
+   * Create Data Contract Create State Transition
    *
    * @param {DataContract} dataContract
    * @return {DataContractCreateTransition}
    */
-  createStateTransition(dataContract) {
-    return this.factory.createStateTransition(dataContract);
+  createDataContractCreateTransition(dataContract) {
+    return this.factory.createDataContractCreateTransition(dataContract);
+  }
+
+  /**
+   * Create Data Contract Update State Transition
+   *
+   * @param {DataContract} dataContract
+   * @return {DataContractUpdateTransition}
+   */
+  createDataContractUpdateTransition(dataContract) {
+    return this.factory.createDataContractUpdateTransition(dataContract);
   }
 
   /**

@@ -96,7 +96,7 @@ function initTaskFactory(
             dpnsDocumentSchema, ctx.identity,
           );
 
-          ctx.dataContractStateTransition = await ctx.client.platform.contracts.broadcast(
+          ctx.dataContractStateTransition = await ctx.client.platform.contracts.publish(
             ctx.dataContract,
             ctx.identity,
           );
@@ -172,7 +172,7 @@ function initTaskFactory(
             dashpayDocumentSchema, ctx.identity,
           );
 
-          ctx.dashpayStateTransition = await ctx.client.platform.contracts.broadcast(
+          ctx.dashpayStateTransition = await ctx.client.platform.contracts.publish(
             ctx.dataContract,
             ctx.identity,
           );
@@ -242,7 +242,7 @@ function initTaskFactory(
             contract: ctx.featureFlagsDataContract,
           });
 
-          ctx.dataContractStateTransition = await ctx.client.platform.contracts.broadcast(
+          ctx.dataContractStateTransition = await ctx.client.platform.contracts.publish(
             ctx.featureFlagsDataContract,
             ctx.featureFlagsIdentity,
           );

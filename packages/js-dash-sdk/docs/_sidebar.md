@@ -5,32 +5,33 @@
     - [Dash Platform Applications](getting-started/dash-platform-applications.md)
     - [About Schemas](getting-started/about-schemas.md)
     - [With TypeScript](getting-started/with-typescript.md)
-    
-- Examples 
-    - [Generate a mnemonic](examples/generate-a-new-mnemonic.md) 
-    - [Receive money and display balance](examples/receive-money-and-check-balance.md) 
-    - [Pay to another address](examples/pay-to-another-address.md) 
-    - [Use a local evonet](examples/use-local-evonet.md) 
-    - [Fetch an identity from its name](examples/fetch-an-identity-from-its-name.md) 
-    - [Publishing a new contract](examples/publishing-a-new-contract.md) 
-    - [Use another BIP44 account](examples/use-different-account.md) 
-    - [Sign and verify messages](examples/sign-and-verify-messages.md) 
-    
+
+- Examples
+    - [Generate a mnemonic](/examples/generate-a-new-mnemonic.md)
+    - [Receive money and display balance](/examples/receive-money-and-check-balance.md)
+    - [Pay to another address](/examples/pay-to-another-address.md)
+    - [Use a local evonet](/examples/use-local-evonet.md)
+    - [Fetch an identity from its name](/examples/fetch-an-identity-from-its-name.md)
+    - [Publishing new contract](/examples/publishing-a-new-contract.md)
+    - [Updating an existing contract](/examples/updating-a-contract.md)
+    - [Use another BIP44 account](/examples/use-different-account.md)
+    - [Sign and verify messages](/examples/sign-and-verify-messages.md)
+
 - Tutorial
     - [Register an identity](https://dashplatform.readme.io/docs/tutorial-register-an-identity)
     - [Register a Name for an Identity](https://dashplatform.readme.io/docs/tutorial-register-a-name-for-an-identity)
 
-- Snippets 
+- Snippets
     - [Create and fund wallet](https://github.com/dashevo/DashJS/tree/master/examples/node/create-and-fund-wallet.js)
     - [Register identity](https://github.com/dashevo/DashJS/tree/master/examples/node/register-identity.js)
     - [Register name](https://github.com/dashevo/DashJS/tree/master/examples/node/register-name.js)
     - [Retrieve Contract](https://github.com/dashevo/DashJS/tree/master/examples/node/retrieve-contract.js)
     - [Retrieve Documents](https://github.com/dashevo/DashJS/tree/master/examples/node/retrieve-documents.js)
     - [Retrieve Identity](https://github.com/dashevo/DashJS/tree/master/examples/node/retrieve-identity.js)
-    - [Retrieve Name](https://github.com/dashevo/DashJS/tree/master/examples/node/retrieve-name.js)    
-    
-- Usage 
-    - [DAPI](usage/dapi.md)    
+    - [Retrieve Name](https://github.com/dashevo/DashJS/tree/master/examples/node/retrieve-name.js)
+
+- Usage
+    - [DAPI](usage/dapi.md)
     - [Platform](platform/about-platform.md)
         - [About platform](platform/about-platform.md)
         - **Identities**
@@ -42,7 +43,8 @@
             - [About contracts](platform/contracts/about-contracts.md)
             - [`.get()`](platform/contracts/get.md)
             - [`.create()`](platform/contracts/create.md)
-            - [`.broadcast()`](platform/contracts/broadcast.md)
+            - [`.publish()`](platform/contracts/publish.md)
+            - [`.update()`](platform/contracts/update.md)
         - **Documents**
             - [About documents](platform/documents/about-documents.md)
             - [`.get()`](platform/documents/get.md)
