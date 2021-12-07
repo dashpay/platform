@@ -62,12 +62,12 @@ else
  BRANCH="v${VERSION_WITHOUT_PRERELEASE%.*}-dev"
 fi
 
-if [[ $CURRENT_BRANCH != BRANCH ]]
-then
- echo "you must run this script either from the master of from the dev branch"
- git checkout .
- exit 1
-fi
+#if [[ $CURRENT_BRANCH != BRANCH ]]
+#then
+# echo "you must run this script either from the master of from the dev branch"
+# git checkout .
+# exit 1
+#fi
 
 # create branch
 git checkout -b release_"$NEW_PACKAGE_VERSION"
