@@ -40,7 +40,7 @@ if ! gh auth status&> /dev/null; then
 fi
 
 # bump version
-yran node $DIR/bump_version.js "$RELEASE_TYPE"
+yarn node $DIR/bump_version.js "$RELEASE_TYPE"
 
 NEW_PACKAGE_VERSION=$(cat $DIR/../../package.json|grep version|head -1|awk -F: '{ print $2 }'|sed 's/[", ]//g')
 
