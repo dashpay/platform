@@ -4,7 +4,7 @@ const execute = require('../utils/execute');
 const [ version ] = process.argv.slice(2);
 
 if (!version) {
-  console.log('example: yarn node changelogTag v0.21.0');
+  console.log('example: yarn node find_latest_tag.js v0.21.0');
   process.exit(1);
 }
 
