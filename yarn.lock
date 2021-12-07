@@ -1769,7 +1769,7 @@ __metadata:
     add-stream: ^1.0.0
     conventional-changelog: ^3.1.24
     conventional-changelog-dash: "github:dashevo/conventional-changelog-dash"
-    packster: ^0.4.0
+    semver: ^7.3.2
     tempfile: ^3.0.0
     ultra-runner: ^3.10.5
   languageName: unknown
@@ -2714,15 +2714,6 @@ __metadata:
   dependencies:
     "@types/yargs-parser": "*"
   checksum: caa21d2c957592fe2184a8368c8cbe5a82a6c2e2f2893722e489f842dc5963293d2f3120bc06fe3933d60a3a0d1e2eb269649fd6b1947fe1820f8841ba611dd9
-  languageName: node
-  linkType: hard
-
-"@types/yargs@npm:^17.0.3":
-  version: 17.0.7
-  resolution: "@types/yargs@npm:17.0.7"
-  dependencies:
-    "@types/yargs-parser": "*"
-  checksum: 520e803720b2a626338c0e2b61825dd1b956910fec4d855018c17e62cf9fb41eb67bcf122ba5c6fb569b1bfac73520d5d73e8be502b87f9a551619df441b1875
   languageName: node
   linkType: hard
 
@@ -5015,12 +5006,12 @@ __metadata:
 
 "conventional-changelog-dash@github:dashevo/conventional-changelog-dash":
   version: 1.0.0
-  resolution: "conventional-changelog-dash@https://github.com/dashevo/conventional-changelog-dash.git#commit=dfcd273bf13f7421700612b5ebd0e6af49699c54"
+  resolution: "conventional-changelog-dash@https://github.com/dashevo/conventional-changelog-dash.git#commit=3d4d77e2cea876a27b92641c28b15aedf13eb788"
   dependencies:
     compare-func: ^2.0.0
     lodash: ^4.17.15
     q: ^1.5.1
-  checksum: 32f2fcf4bc0f92e5fe29ec2b2ea0c8c7a5f06d34ad7cdb10d2249962f8e23852f76234e237a1e9f85166487981ac9fba444633b84ff551fab84fa2001bb83370
+  checksum: 98199fb767b8ac013d3907b7dd6a05a626a03764ec91c971978486f77b0a4acab3a32957ff1f2d80d2d5e023a7d58ada3945061077e9ec41cf4c95d73ebbfefa
   languageName: node
   linkType: hard
 
@@ -10683,19 +10674,6 @@ fsevents@~2.3.2:
   languageName: node
   linkType: hard
 
-"packster@npm:^0.4.0":
-  version: 0.4.0
-  resolution: "packster@npm:0.4.0"
-  dependencies:
-    "@types/yargs": ^17.0.3
-    semver: ^7.3.5
-    yargs: ^17.2.1
-  bin:
-    packster: bin/packster
-  checksum: a14e472c4dddebac2f04a1cc31a681b4968f6a6d4733e00216898ddd8362c3895e06c747bcd1f2d4d6f1ec4edcf98a396a92fc25d70fa0af336f177325eddee2
-  languageName: node
-  linkType: hard
-
 "pako@npm:~1.0.5":
   version: 1.0.11
   resolution: "pako@npm:1.0.11"
@@ -14421,21 +14399,6 @@ typescript@^3.9.5:
     y18n: ^4.0.0
     yargs-parser: ^18.1.2
   checksum: 40b974f508d8aed28598087720e086ecd32a5fd3e945e95ea4457da04ee9bdb8bdd17fd91acff36dc5b7f0595a735929c514c40c402416bbb87c03f6fb782373
-  languageName: node
-  linkType: hard
-
-"yargs@npm:^17.2.1":
-  version: 17.2.1
-  resolution: "yargs@npm:17.2.1"
-  dependencies:
-    cliui: ^7.0.2
-    escalade: ^3.1.1
-    get-caller-file: ^2.0.5
-    require-directory: ^2.1.1
-    string-width: ^4.2.0
-    y18n: ^5.0.5
-    yargs-parser: ^20.2.2
-  checksum: 451aac46f82da776f436018feed0244bc0e7b4355f7e397bcb53d34c691b177c0d71db3dda9653760e1bc240254d8b763a252ff918ef9e235a8d202e2909c4eb
   languageName: node
   linkType: hard
 
