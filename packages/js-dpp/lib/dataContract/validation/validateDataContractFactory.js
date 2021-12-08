@@ -118,9 +118,11 @@ module.exports = function validateDataContractFactory(
         let uniqueIndexCount = 0;
         let isUniqueIndexLimitReached = false;
 
-        //Ensure index names are unique
+        // Ensure index names are unique
         const indexNames = documentSchema.indices.map((indexDefinition) => indexDefinition.name);
-        const [nonUniqueIndexName] = indexNames.filter((indexName, i) => indexNames.indexOf(indexName) !== i);
+        const [nonUniqueIndexName] = indexNames.filter(
+          (indexName, i) => indexNames.indexOf(indexName) !== i,
+        );
 
         if (nonUniqueIndexName !== undefined) {
           result.addError(new DuplicateIndexNameError(
