@@ -376,6 +376,10 @@
                 "items": {
                   "type": "object",
                   "properties": {
+                    "name": {
+                      "type": "string",
+                      "minLength": 3
+                    },
                     "properties": {
                       "type": "array",
                       "items": {
@@ -397,7 +401,7 @@
                       "type": "boolean"
                     }
                   },
-                  "required": ["properties"],
+                  "required": ["properties", "name"],
                   "additionalProperties": false
                 },
                 "minItems": 1,

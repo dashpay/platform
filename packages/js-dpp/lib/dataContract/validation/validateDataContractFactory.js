@@ -16,6 +16,7 @@ const InvalidCompoundIndexError = require('../../errors/consensus/basic/dataCont
 const getPropertyDefinitionByPathFactory = require('../getPropertyDefinitionByPathFactory');
 
 const convertBuffersToArrays = require('../../util/convertBuffersToArrays');
+const DuplicateIndexNameError = require('../../errors/consensus/basic/dataContract/DuplicateIndexNameError');
 
 const allowedSystemProperties = ['$id', '$ownerId', '$createdAt', '$updatedAt'];
 const prebuiltIndices = ['$id'];
@@ -116,6 +117,17 @@ module.exports = function validateDataContractFactory(
         const indicesFingerprints = [];
         let uniqueIndexCount = 0;
         let isUniqueIndexLimitReached = false;
+
+        //Ensure index names are unique
+        const indexNames = documentSchema.indices.map((indexDefinition) => indexDefinition.name);
+        const [nonUniqueIndexName] = indexNames.filter((indexName, i) => indexNames.indexOf(indexName) !== i);
+
+        if (nonUniqueIndexName !== undefined) {
+          result.addError(new DuplicateIndexNameError(
+            documentType,
+            nonUniqueIndexName,
+          ));
+        }
 
         documentSchema.indices.forEach((indexDefinition) => {
           const indexPropertyNames = indexDefinition.properties

@@ -38,6 +38,7 @@ module.exports = function getDataContractFixture(ownerId = randomOwnerId) {
       type: 'object',
       indices: [
         {
+          name: 'index1',
           properties: [
             { $ownerId: 'asc' },
             { firstName: 'desc' },
@@ -45,6 +46,7 @@ module.exports = function getDataContractFixture(ownerId = randomOwnerId) {
           unique: true,
         },
         {
+          name: 'index2',
           properties: [
             { $ownerId: 'asc' },
             { lastName: 'desc' },
@@ -52,18 +54,21 @@ module.exports = function getDataContractFixture(ownerId = randomOwnerId) {
           unique: true,
         },
         {
+          name: 'index3',
           properties: [
             { $id: 'asc' },
             { lastName: 'asc' },
           ],
         },
         {
+          name: 'index4',
           properties: [
             { $createdAt: 'asc' },
             { $updatedAt: 'asc' },
           ],
         },
         {
+          name: 'index5',
           properties: [
             { $updatedAt: 'asc' },
           ],
@@ -86,6 +91,7 @@ module.exports = function getDataContractFixture(ownerId = randomOwnerId) {
       type: 'object',
       indices: [
         {
+          name: 'index1',
           properties: [
             { mentions: 'asc' },
           ],
@@ -119,6 +125,7 @@ module.exports = function getDataContractFixture(ownerId = randomOwnerId) {
       type: 'object',
       indices: [
         {
+          name: 'index1',
           properties: [
             { $createdAt: 'asc' },
             { $updatedAt: 'asc' },
@@ -126,6 +133,7 @@ module.exports = function getDataContractFixture(ownerId = randomOwnerId) {
           unique: true,
         },
         {
+          name: 'index2',
           properties: [
             { $updatedAt: 'asc' },
           ],
@@ -146,6 +154,7 @@ module.exports = function getDataContractFixture(ownerId = randomOwnerId) {
       type: 'object',
       indices: [
         {
+          name: 'index1',
           properties: [
             { byteArrayField: 'asc' },
           ],
@@ -190,12 +199,14 @@ module.exports = function getDataContractFixture(ownerId = randomOwnerId) {
       },
       indices: [
         {
+          name: 'index1',
           properties: [
             { firstName: 'desc' },
           ],
           unique: true,
         },
         {
+          name: 'index2',
           properties: [
             { $id: 'asc' },
             { $ownerId: 'asc' },
@@ -205,6 +216,7 @@ module.exports = function getDataContractFixture(ownerId = randomOwnerId) {
           unique: true,
         },
         {
+          name: 'index3',
           properties: [
             { country: 'asc' },
             { city: 'asc' },
