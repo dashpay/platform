@@ -4,95 +4,90 @@ const { hasMethod } = require('../../../utils');
 
 const mergeHelper = (initial = {}, additional = {}) => merge(initial, additional);
 const { REHYDRATE_STATE_FAILED, REHYDRATE_STATE_SUCCESS } = require('../../../EVENTS');
-const logger = require("../../../logger");
+const logger = require('../../../logger');
 
 const storeTypesSchema = {
-  "transactions": {
-    "*": Transaction
+  transactions: {
+    '*': Transaction,
   },
-  "instantLocks": {
-    "*": InstantLock
+  instantLocks: {
+    '*': InstantLock,
   },
-  "wallets": {
-    "*": {
-      "addresses": {
-        "external": {
-          "*": {
-            "utxos": {
-              "*": function (item) {
+  wallets: {
+    '*': {
+      addresses: {
+        external: {
+          '*': {
+            utxos: {
+              // eslint-disable-next-line func-names
+              '*': function (item) {
                 // TODO: resolve type inconsistency for address utxos
                 try {
                   return new Transaction.UnspentOutput(item);
                 } catch (e) {
                   return new Transaction.Output(item);
                 }
-              }
-            }
-          }
+              },
+            },
+          },
         },
-        "internal": {
-          "*": {
-            "utxos": {
-              "*": function (item) {
+        internal: {
+          '*': {
+            utxos: {
+              // eslint-disable-next-line func-names
+              '*': function (item) {
                 // TODO: resolve type inconsistency for address utxos
                 try {
                   return new Transaction.UnspentOutput(item);
                 } catch (e) {
                   return new Transaction.Output(item);
                 }
-              }
-            }
-          }
-        }
-      }
-    }
+              },
+            },
+          },
+        },
+      },
+    },
   },
-  "chains": {
-    "*": {
-      "blockHeaders": {
-        "*": BlockHeader
-      }
-    }
-  }
-}
+  chains: {
+    '*': {
+      blockHeaders: {
+        '*': BlockHeader,
+      },
+    },
+  },
+};
 
-const rehydrateItem = (item, name) => {
-  if (!item) {
-    return null;
-  }
+const castItemTypes = (item, schema) => {
+  Object.entries(schema).forEach(([schemaKey, schemaValue]) => {
+    if (schemaValue.constructor.name !== 'Object') {
+      const Clazz = schemaValue;
+      if (schemaKey === '*') {
+        Object.keys(item).forEach((itemKey) => {
+          if (!item[itemKey]) {
+            throw new Error(`No item key "${itemKey}" found for item ${JSON.stringify(item)}`);
+          }
 
-  const itemSchema = storeTypesSchema[name];
-
-  if (!itemSchema) {
-    logger.silly(`Storage.rehydrateState(): no types schema defined for item "${name}"`);
-    return item;
-  }
-
-  const ensureTypes = (schema, item) => {
-    Object.entries(schema).forEach(([schemaKey, schemaValue]) => {
-      if (schemaValue.constructor.name !== "Object") {
-        const clazz = schemaValue;
-        if (schemaKey === "*") {
-          Object.keys(item).forEach((itemKey) => {
-            item[itemKey] = new clazz(item[itemKey])
-          })
-        } else {
-          item[schemaKey] = new clazz(item[schemaKey])
-        }
+          // eslint-disable-next-line no-param-reassign
+          item[itemKey] = new Clazz(item[itemKey]);
+        });
       } else {
-        if (schemaKey === "*") {
-          Object.values(item).forEach((itemValue) => ensureTypes(schemaValue, itemValue))
-        } else {
-          ensureTypes(schemaValue,  item[schemaKey])
+        if (!item[schemaKey]) {
+          throw new Error(`No item key "${schemaKey}" found for item ${JSON.stringify(item)}`);
         }
+
+        // eslint-disable-next-line no-param-reassign
+        item[schemaKey] = new Clazz(item[schemaKey]);
       }
-    })
-  }
+    } else if (schemaKey === '*') {
+      Object.values(item).forEach((itemValue) => castItemTypes(itemValue, schemaValue));
+    } else {
+      castItemTypes(item[schemaKey], schemaValue);
+    }
+  });
 
-  ensureTypes(itemSchema, item)
-
-  return item
-}
+  return item;
+};
 
 /**
  * Fetch the state from the persistence adapter
@@ -101,23 +96,35 @@ const rehydrateItem = (item, name) => {
 const rehydrateState = async function rehydrateState() {
   if (this.rehydrate && this.lastRehydrate === null) {
     try {
-      const transactions = (this.adapter && hasMethod(this.adapter, 'getItem'))
-        ? (rehydrateItem(await this.adapter.getItem('transactions'), 'transactions') || this.store.transactions)
-        : this.store.transactions;
-      const wallets = (this.adapter && hasMethod(this.adapter, 'getItem'))
-        ? (rehydrateItem(await this.adapter.getItem('wallets'), 'wallets') || this.store.wallets)
-        : this.store.wallets;
-      const chains = (this.adapter && hasMethod(this.adapter, 'getItem'))
-        ? (rehydrateItem(await this.adapter.getItem('chains'), 'chains') || this.store.chains)
-        : this.store.chains;
-      const instantLocks = (this.adapter && hasMethod(this.adapter, 'getItem'))
-        ? (rehydrateItem(await this.adapter.getItem('instantLocks'), 'instantLocks') || this.store.instantLocks)
-        : this.store.instantLocks;
+      const storeItemsKeys = ['transactions', 'wallets', 'chains', 'instantLocks'];
+      const storeItems = {};
 
-      this.store.transactions = mergeHelper(this.store.transactions, transactions);
-      this.store.wallets = mergeHelper(this.store.wallets, wallets);
-      this.store.chains = mergeHelper(this.store.chains, chains);
-      this.store.instantLocks = mergeHelper(this.store.instantLocks, instantLocks);
+      // Obtain items from storage adapter
+      for (let i = 0; i < storeItemsKeys.length; i += 1) {
+        const itemKey = storeItemsKeys[i];
+
+        let item;
+        if (this.adapter && hasMethod(this.adapter, 'getItem')) {
+          // eslint-disable-next-line no-await-in-loop
+          item = await this.adapter.getItem(itemKey);
+        }
+
+        storeItems[itemKey] = item || this.store[itemKey];
+      }
+
+      // Cast store items to correct data types
+      try {
+        castItemTypes(storeItems, storeTypesSchema);
+      } catch (e) {
+        logger.error('Error casting storage items types: possibly data schema mismatch');
+        throw e;
+      }
+
+      // Merge with the current items in store
+      Object.keys(storeItems).forEach((itemKey) => {
+        this.store[itemKey] = mergeHelper(this.store[itemKey], storeItems[itemKey]);
+      });
+
       this.lastRehydrate = +new Date();
       this.emit(REHYDRATE_STATE_SUCCESS, { type: REHYDRATE_STATE_SUCCESS, payload: null });
     } catch (e) {
