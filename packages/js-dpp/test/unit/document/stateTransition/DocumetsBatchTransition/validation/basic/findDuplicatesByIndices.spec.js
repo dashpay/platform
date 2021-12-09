@@ -18,6 +18,7 @@ describe('findDuplicatesByIndices', () => {
     contract.setDocumentSchema('nonUniqueIndexDocument', {
       indices: [
         {
+          name: "ownerIdLastName",
           properties: {
             $ownerId: 'asc',
             lastName: 'asc',
@@ -40,6 +41,7 @@ describe('findDuplicatesByIndices', () => {
     contract.setDocumentSchema('singleDocument', {
       indices: [
         {
+          name: "onwerIdLastName",
           properties: {
             $ownerId: 'asc',
             lastName: 'asc',

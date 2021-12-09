@@ -7,11 +7,13 @@ describe('getIndexedFieldsFromDocumentSchema', () => {
     documentSchema = {
       indices: [
         {
+          name: "middleName",
           properties: [
             { middleName: 'asc' },
           ],
         },
         {
+          name: "onwerIdFirstName",
           properties: [
             { $ownerId: 'asc' },
             { firstName: 'desc' },
@@ -19,6 +21,7 @@ describe('getIndexedFieldsFromDocumentSchema', () => {
           unique: true,
         },
         {
+          name: "onwerIdLastName",
           properties: [
             { $ownerId: 'asc' },
             { lastName: 'desc' },
