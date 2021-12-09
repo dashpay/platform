@@ -96,12 +96,16 @@ const castItemTypes = (item, schema) => {
 const rehydrateState = async function rehydrateState() {
   if (this.rehydrate && this.lastRehydrate === null) {
     try {
-      const storeItemsKeys = ['transactions', 'wallets', 'chains', 'instantLocks'];
-      const storeItems = {};
-
+      const storeItems = {
+        transactions: null,
+        wallets: null,
+        chains: null,
+        instantLocks: null
+      };
+      const keys = Object.keys(storeItems)
       // Obtain items from storage adapter
-      for (let i = 0; i < storeItemsKeys.length; i += 1) {
-        const itemKey = storeItemsKeys[i];
+      for (let i = 0; i < keys.length; i += 1) {
+        const itemKey = keys[i];
 
         let item;
         if (this.adapter && hasMethod(this.adapter, 'getItem')) {
