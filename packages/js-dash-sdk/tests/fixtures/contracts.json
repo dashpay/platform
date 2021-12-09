@@ -14,7 +14,7 @@
         },
         "indices": [
           {
-            "name": "ratingIndex",
+            "name": "rating",
             "properties": [
               {
                 "rating": "desc"

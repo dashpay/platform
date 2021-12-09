@@ -3,7 +3,7 @@
     "type": "object",
     "indices": [
       {
-        "name": "parentNameAndLabelIndex",
+        "name": "parentNameAndLabel",
         "properties": [
           {
             "normalizedParentDomainName": "asc"
@@ -15,7 +15,7 @@
         "unique": true
       },
       {
-        "name": "dashIdentityIdIndex",
+        "name": "dashIdentityId",
         "properties": [
           {
             "records.dashUniqueIdentityId": "asc"
@@ -24,7 +24,7 @@
         "unique": true
       },
       {
-        "name": "dashAliasIndex",
+        "name": "dashAlias",
         "properties": [
           {
             "records.dashAliasIdentityId": "asc"
@@ -118,7 +118,7 @@
     "type": "object",
     "indices": [
       {
-        "name": "saltedHashIndex",
+        "name": "saltedHash",
         "properties": [
           {
             "saltedDomainHash": "asc"

@@ -2,7 +2,7 @@
   "contact": {
     "indices": [
       {
-        "name": "userIdToUserIdIndex",
+        "name": "userIdToUserId",
         "unique": true,
         "properties": [
           {
@@ -31,7 +31,7 @@
   "profile": {
     "indices": [
       {
-        "name": "userIdIndex",
+        "name": "userId",
         "unique": true,
         "properties": [
           {

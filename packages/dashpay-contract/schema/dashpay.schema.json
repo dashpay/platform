@@ -3,7 +3,7 @@
     "type": "object",
     "indices": [
       {
-        "name": "ownerIdIndex",
+        "name": "ownerId",
         "properties": [
           {
             "$ownerId": "asc"
@@ -12,7 +12,7 @@
         "unique": true
       },
       {
-        "name": "ownerIdAndUpdatedAtIndex",
+        "name": "ownerIdAndUpdatedAt",
         "properties": [
           {
             "$ownerId": "asc"
@@ -62,7 +62,7 @@
     "type": "object",
     "indices": [
       {
-        "name": "ownerIdAndKeysIndex",
+        "name": "ownerIdAndKeys",
         "properties": [
           {
             "$ownerId": "asc"
@@ -77,7 +77,7 @@
         "unique": true
       },
       {
-        "name": "ownerIdAndUpdatedAtIndex",
+        "name": "ownerIdAndUpdatedAt",
         "properties": [
           {
             "$ownerId": "asc"
@@ -125,7 +125,7 @@
     "type": "object",
     "indices": [
       {
-        "name": "ownerIdUserIdAndAccountRefIndex",
+        "name": "ownerIdUserIdAndAccountRef",
         "properties": [
           {
             "$ownerId": "asc"
@@ -140,7 +140,7 @@
         "unique": true
       },
       {
-        "name": "ownerIdUserIdIndex",
+        "name": "ownerIdUserId",
         "properties": [
           {
             "$ownerId": "asc"
@@ -151,7 +151,7 @@
         ]
       },
       {
-        "name": "userIdCreatedAtIndex",
+        "name": "userIdCreatedAt",
         "properties": [
           {
             "toUserId": "asc"
@@ -162,7 +162,7 @@
         ]
       },
       {
-        "name": "ownerIdCreatedAtIndex",
+        "name": "ownerIdCreatedAt",
         "properties": [
           {
             "$ownerId": "asc"

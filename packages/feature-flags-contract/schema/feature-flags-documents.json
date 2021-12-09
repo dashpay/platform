@@ -4,7 +4,7 @@
     "type": "object",
     "indices": [
       {
-        "name": "enableAtHeightIndex",
+        "name": "enableAtHeight",
         "properties": [
           {
             "enableAtHeight": "desc"
@@ -93,7 +93,7 @@
     "type": "object",
     "indices": [
       {
-        "name": "enableAtHeightIndex",
+        "name": "enableAtHeight",
         "properties": [
           {
             "enableAtHeight": "desc"
