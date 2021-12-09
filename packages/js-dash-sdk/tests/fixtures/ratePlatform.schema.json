@@ -8,6 +8,7 @@
       }
     },
     "indices": [{
+      "name": "ratingIndex",
       "properties": [
         {
           "rating": "desc"
