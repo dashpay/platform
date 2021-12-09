@@ -100,9 +100,9 @@ const rehydrateState = async function rehydrateState() {
         transactions: null,
         wallets: null,
         chains: null,
-        instantLocks: null
+        instantLocks: null,
       };
-      const keys = Object.keys(storeItems)
+      const keys = Object.keys(storeItems);
       // Obtain items from storage adapter
       for (let i = 0; i < keys.length; i += 1) {
         const itemKey = keys[i];
