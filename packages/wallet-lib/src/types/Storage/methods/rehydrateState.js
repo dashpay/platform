@@ -16,22 +16,7 @@ const storeTypesSchema = {
   wallets: {
     '*': {
       addresses: {
-        external: {
-          '*': {
-            utxos: {
-              // eslint-disable-next-line func-names
-              '*': function (item) {
-                // TODO: resolve type inconsistency for address utxos
-                try {
-                  return new Transaction.UnspentOutput(item);
-                } catch (e) {
-                  return new Transaction.Output(item);
-                }
-              },
-            },
-          },
-        },
-        internal: {
+        '*': {
           '*': {
             utxos: {
               // eslint-disable-next-line func-names
@@ -64,16 +49,12 @@ const castItemTypes = (item, schema) => {
       const Clazz = schemaValue;
       if (schemaKey === '*') {
         Object.keys(item).forEach((itemKey) => {
-          if (!item[itemKey]) {
-            throw new Error(`No item key "${itemKey}" found for item ${JSON.stringify(item)}`);
-          }
-
           // eslint-disable-next-line no-param-reassign
           item[itemKey] = new Clazz(item[itemKey]);
         });
       } else {
         if (!item[schemaKey]) {
-          throw new Error(`No item key "${schemaKey}" found for item ${JSON.stringify(item)}`);
+          throw new Error(`No schema key "${schemaKey}" found for item ${JSON.stringify(item)}`);
         }
 
         // eslint-disable-next-line no-param-reassign
