@@ -62,7 +62,7 @@ else
  BRANCH="v${VERSION_WITHOUT_PRERELEASE%.*}-dev"
 fi
 
-if [[ $CURRENT_BRANCH != BRANCH ]]
+if [[ "$CURRENT_BRANCH" != "$BRANCH" ]]
 then
  echo "you must run this script either from the master of from the dev branch"
  git checkout .
