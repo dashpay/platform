@@ -12,6 +12,7 @@ describe('findNotIndexedFields', () => {
       [{ 'arrayWithObjects.item': 'desc' }],
       [{ 'arrayWithObjects.flag': 'desc' }],
       [{ address: 'asc' }, { 'arrayWithObjects.flag': 'desc' }],
+      [{ city: 'asc' }],
       [{ 'arrayWithObjects.flag': 'desc' }, { street: 'asc' }],
       [{ 'arrayWithObjects.country': 'desc' }, { 'arrayWithObjects.language': 'asc' }],
     ];
@@ -175,5 +176,14 @@ describe('findNotIndexedFields', () => {
     expect(result).to.be.an('array');
     expect(result).to.have.lengthOf(1);
     expect(result).to.have.members(['arrayWithObjects.language']);
+  });
+
+  it('should fail when query contains fields from multiple indices', () => {
+    const condition = [['address', '==', 'USA'], ['city', '==', 'NY']];
+    const result = findNotIndexedFields(indexedFields, condition);
+
+    expect(result).to.be.an('array');
+    expect(result).to.have.lengthOf(1);
+    expect(result).to.have.members(['city']);
   });
 });

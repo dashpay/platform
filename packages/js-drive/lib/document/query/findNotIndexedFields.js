@@ -21,21 +21,30 @@ function findNotIndexedFields(dataContractIndexFields, conditions) {
       return fields.concat(fieldsToAdd);
     }, []);
 
+  let indexToUse;
+
   // validate fields
   return queryFields
     .filter((field) => {
       const fieldHasIndex = dataContractIndexFields
       // find our field in indices
-        .find((index) => index
+        .find((index, i) => index
           // search through compound index
-          .find((element, i) => {
+          .find((element, k) => {
             const [indexField] = Object.keys(element);
             if (indexField !== field) {
               return false;
             }
 
+            if (indexToUse === undefined) {
+              indexToUse = i;
+            } else if (indexToUse !== i) {
+              // another index has already been used
+              return false;
+            }
+
             // get previous fields from compound index
-            const compoundFields = index.slice(0, i);
+            const compoundFields = index.slice(0, k);
 
             // check that we have each previous compound index field in our condition
             return compoundFields.every((item) => {

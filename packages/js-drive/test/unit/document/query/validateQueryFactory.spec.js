@@ -1369,7 +1369,8 @@ describe('validateQueryFactory', () => {
     it('should return invalid result if "startAfter" less than 1', () => {
       const result = validateQuery({
         startAfter: 0,
-      });
+      },
+      documentSchema);
 
       expect(result).to.be.instanceOf(ValidationResult);
       expect(result.isValid()).to.be.false();
