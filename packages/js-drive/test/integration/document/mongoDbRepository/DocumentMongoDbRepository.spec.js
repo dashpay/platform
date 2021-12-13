@@ -474,7 +474,6 @@ describe('DocumentMongoDbRepository', function main() {
       it('should return Document ids by several conditions', async () => {
         const query = {
           where: [
-            ['name', '==', 'Cutie'],
             ['arrayWithObjects', 'elementMatch', [
               ['item', '==', 1],
               ['flag', '==', true],
