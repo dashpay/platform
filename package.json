@@ -17,7 +17,7 @@
     "test:dapi-client": "ultra -r --filter \"packages/@(js-dapi-client|wallet-lib|js-dash-sdk|platform-test-suite)\" test",
     "test:sdk": "ultra -r --filter \"packages/@(js-dash-sdk|platform-test-suite)\" test",
     "test:dpp": "ultra -r test",
-    "test:drive": "yarn node ultra -r --filter \"packages/@(js-drive|platform-test-suite)\" test",
+    "test:drive": "ultra -r --filter \"packages/@(js-drive|platform-test-suite)\" test",
     "test:grpc-common": "ultra -r --filter \"packages/@(js-grpc-common|dapi-grpc|dapi|js-dapi-client|js-dash-sdk|js-drive|wallet-lib|platform-test-suite)\" test",
     "test:suite": "ultra -r --filter '@dashevo/platform-test-suite' test",
     "test:wallet-lib": "ultra -r --filter \"packages/@(wallet-lib|js-dash-sdk|platform-test-suite)\" test",
