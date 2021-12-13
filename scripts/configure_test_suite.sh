@@ -27,6 +27,20 @@ yarn dashmate wallet:mint --verbose --config=local_seed 100 | tee "${MINT_FILE_P
 FAUCET_ADDRESS=$(grep -m 1 "Address:" "${MINT_FILE_PATH}" | awk '{printf $3}')
 FAUCET_PRIVATE_KEY=$(grep -m 1 "Private key:" "${MINT_FILE_PATH}" | awk '{printf $4}')
 
+# check variables are not empty
+if [ -z "$FAUCET_ADDRESS" ] || \
+    [ -z "$FAUCET_PRIVATE_KEY" ] || \
+    [ -z "$DPNS_CONTRACT_ID" ] || \
+    [ -z "$DPNS_CONTRACT_BLOCK_HEIGHT" ] || \
+    [ -z "$DPNS_TOP_LEVEL_IDENTITY_ID" ] || \
+    [ -z "$DPNS_TOP_LEVEL_IDENTITY_PRIVATE_KEY" ] || \
+    [ -z "$FEATURE_FLAGS_IDENTITY_ID" ] || \
+    [ -z "$FEATURE_FLAGS_CONTRACT_ID" ]
+then
+  echo "Internal error. Some of the env variables are empty. Please check logs above."
+  exit 1
+fi
+
 TEST_ENV_FILE_PATH=${TEST_SUITE_PATH}/.env
 rm -f ${TEST_ENV_FILE_PATH}
 touch ${TEST_ENV_FILE_PATH}
