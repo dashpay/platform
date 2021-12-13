@@ -71,6 +71,7 @@ const InvalidDataContractVersionError = require('./basic/dataContract/InvalidDat
 const IncompatibleDataContractSchemaError = require('./basic/dataContract/IncompatibleDataContractSchemaError');
 const DataContractImmutablePropertiesUpdateError = require('./basic/dataContract/DataContractImmutablePropertiesUpdateError');
 const DataContractIndicesChangedError = require('./basic/dataContract/DataContractIndicesChangedError');
+const DuplicateIndexNameError = require('./basic/dataContract/DuplicateIndexNameError');
 
 const codes = {
   /**
@@ -100,6 +101,7 @@ const codes = {
   1015: SystemPropertyIndexAlreadyPresentError,
   1016: UndefinedIndexPropertyError,
   1017: UniqueIndicesLimitReachedError,
+  1048: DuplicateIndexNameError,
 
   // Document
   1018: DataContractNotPresentError,

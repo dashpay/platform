@@ -1224,7 +1224,10 @@ describe('validateDataContractFactory', function main() {
     });
 
     it('should return invalid result if there are duplicated indices', async () => {
-      const indexDefinition = { ...rawDataContract.documents.indexedDocument.indices[0] };
+      const indexDefinition = {
+        ...rawDataContract.documents.indexedDocument.indices[0],
+        name: 'otherIndexName',
+      };
 
       rawDataContract.documents.indexedDocument.indices.push(indexDefinition);
 
@@ -1237,6 +1240,24 @@ describe('validateDataContractFactory', function main() {
       expect(error.getCode()).to.equal(1008);
       expect(error.getIndexDefinition()).to.deep.equal(indexDefinition);
       expect(error.getDocumentType()).to.deep.equal('indexedDocument');
+    });
+
+    it('should return invalid result if there are duplicated index names', async () => {
+      const indexDefinition = {
+        ...rawDataContract.documents.indexedDocument.indices[0],
+      };
+
+      rawDataContract.documents.indexedDocument.indices.push(indexDefinition);
+
+      const result = await validateDataContract(rawDataContract);
+
+      expect(result.isValid()).to.be.false();
+
+      const [error] = result.getErrors();
+
+      expect(error.getCode()).to.equal(1048);
+      expect(error.getDocumentType()).to.deep.equal('indexedDocument');
+      expect(error.getDuplicateIndexName()).to.deep.equal('index1');
     });
 
     describe('index', () => {
@@ -1433,6 +1454,7 @@ describe('validateDataContractFactory', function main() {
           };
 
           rawDataContract.documents.indexedDocument.indices.push({
+            name: `index_${i}`,
             properties: [{ [propertyName]: 'asc' }],
             unique: true,
           });
@@ -1450,6 +1472,7 @@ describe('validateDataContractFactory', function main() {
 
       it('should return invalid result if index is prebuilt', async () => {
         const indexDefinition = {
+          name: 'index_1',
           properties: [
             { $id: 'asc' },
           ],
