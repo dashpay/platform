@@ -110,10 +110,7 @@ describe('DocumentMongoDbRepository', function main() {
         properties: [{ arrayWithObjects: 'asc' }],
       },
       {
-        properties: [{ 'arrayWithObjects.item': 'asc' }],
-      },
-      {
-        properties: [{ 'arrayWithObjects.flag': 'asc' }],
+        properties: [{ 'arrayWithObjects.item': 'asc' }, { 'arrayWithObjects.flag': 'asc' }],
       },
       {
         properties: [{ primaryOrder: 'asc' }, { order: 'desc' }],
