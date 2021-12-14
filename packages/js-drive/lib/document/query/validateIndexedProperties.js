@@ -1,14 +1,25 @@
+const ValidationResult = require('./ValidationResult');
+const NotIndexedFieldError = require('./errors/NotIndexedFieldError');
+const FieldsFromMultipleIndicesError = require('./errors/FieldsFromMultipleIndicesError');
+
 /**
  * Validate query to search by only indexed fields
  *
- * @typedef findNotIndexedFields
+ * @typedef validateIndexedProperties
  * @param {{field, direction}[][]} dataContractIndexFields
- * @param {[string, string, string][]} conditions
- * @returns {Array}
+ * @param {indexStructure[]} sortingFields
+ * @param {[string, string, string][]} whereConditions
+ * @returns {ValidationResult}
  */
-function findNotIndexedFields(dataContractIndexFields, conditions) {
+function validateIndexedProperties(
+  dataContractIndexFields,
+  sortingFields = [],
+  whereConditions = [],
+) {
+  const result = new ValidationResult();
+
   // convert conditions to better format
-  const queryFields = conditions
+  const queryFields = whereConditions
     .reduce((fields, [field, operator, elementMatchValue]) => {
       let fieldsToAdd;
 
@@ -24,7 +35,7 @@ function findNotIndexedFields(dataContractIndexFields, conditions) {
   let indexToUse;
 
   // validate fields
-  return queryFields
+  const notIndexedFields = queryFields
     .filter((field) => {
       const fieldHasIndex = dataContractIndexFields
       // find our field in indices
@@ -40,7 +51,7 @@ function findNotIndexedFields(dataContractIndexFields, conditions) {
               indexToUse = index;
             } else if (indexToUse !== index) {
               // another index has already been used
-              return false;
+              result.addError(new FieldsFromMultipleIndicesError(field));
             }
 
             // get previous fields from compound index
@@ -56,6 +67,30 @@ function findNotIndexedFields(dataContractIndexFields, conditions) {
 
       return !fieldHasIndex;
     });
+
+  notIndexedFields.forEach((field) => result.addError(new NotIndexedFieldError(field)));
+
+  sortingFields
+    .forEach(([sortingField]) => {
+      dataContractIndexFields
+        // find our field in indices
+        .forEach((index) => index
+          .forEach((element) => {
+            const [indexField] = Object.keys(element);
+            if (indexField !== sortingField) {
+              return;
+            }
+
+            if (indexToUse === undefined) {
+              indexToUse = index;
+            } else if (indexToUse !== index) {
+              // another index has already been used
+              result.addError(new FieldsFromMultipleIndicesError(sortingField));
+            }
+          }));
+    });
+
+  return result;
 }
 
-module.exports = findNotIndexedFields;
+module.exports = validateIndexedProperties;

@@ -8,7 +8,6 @@ const ConflictingConditionsError = require('./errors/ConflictingConditionsError'
 const DuplicateSortingFieldError = require('./errors/DuplicateSortingFieldError');
 const NestedSystemFieldError = require('./errors/NestedSystemFieldError');
 const NestedElementMatchError = require('./errors/NestedElementMatchError');
-const NotIndexedFieldError = require('./errors/NotIndexedFieldError');
 const NotIndexedOrderByError = require('./errors/NotIndexedOrderByError');
 
 const jsonSchema = require('./jsonSchema');
@@ -16,7 +15,7 @@ const jsonSchema = require('./jsonSchema');
 /**
  * @param {findConflictingConditions} findConflictingConditions
  * @param {getIndexedFieldsFromDocumentSchema} getIndexedFieldsFromDocumentSchema
- * @param {findNotIndexedFields} findNotIndexedFields
+ * @param {validateIndexedProperties} validateIndexedProperties
  * @param {findNotIndexedOrderByFields} findNotIndexedOrderByFields
  *
  * @return {validateQuery}
@@ -24,7 +23,7 @@ const jsonSchema = require('./jsonSchema');
 function validateQueryFactory(
   findConflictingConditions,
   getIndexedFieldsFromDocumentSchema,
-  findNotIndexedFields,
+  validateIndexedProperties,
   findNotIndexedOrderByFields,
 ) {
   const ajv = defineAjvKeywords(new Ajv({
@@ -64,12 +63,6 @@ function validateQueryFactory(
       result.addError(
         ...findConflictingConditions(query.where)
           .map(([field, operators]) => new ConflictingConditionsError(field, operators)),
-      );
-
-      // Check all fields having index
-      result.addError(
-        ...findNotIndexedFields(dataContractIndexFields, query.where)
-          .map((field) => new NotIndexedFieldError(field)),
       );
 
       // Check nested elementMatch
@@ -126,6 +119,9 @@ function validateQueryFactory(
           .map((field) => new NotIndexedOrderByError(field)),
       );
     }
+
+    // Check all fields having proper index
+    result.merge(validateIndexedProperties(dataContractIndexFields, query.orderBy, query.where));
 
     return result;
   }

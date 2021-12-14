@@ -117,7 +117,7 @@ function findNotIndexedOrderByFields(
         )),
   );
 
-  // leave only only fields that not pass out validation
+  // leave only fields that not pass out validation
   return sortingFields
     .filter(([sortingField], i) => (
       !indexedSortingFields
