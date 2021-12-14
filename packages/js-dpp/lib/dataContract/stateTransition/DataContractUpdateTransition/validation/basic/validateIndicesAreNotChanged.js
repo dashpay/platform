@@ -28,19 +28,21 @@ function validateIndicesAreNotChanged(oldDocuments, newDocuments) {
         [indexDefinition.name]: indexDefinition,
       }), {});
 
-      const changedIndices = (oldSchema.indices || []).find((indexDefinition) => {
-        return !serializer.encode(indexDefinition).equals(
-          serializer.encode(nameIndexMap[indexDefinition.name]),
-        );
-      });
+      const changedIndices = (oldSchema.indices || []).find(
+        (indexDefinition) => (
+          !serializer.encode(indexDefinition).equals(
+            serializer.encode(nameIndexMap[indexDefinition.name]),
+          )
+        ),
+      );
 
       return changedIndices !== undefined;
     });
 
-  let [documentType] = changedDocumentEntry || [];
+  let [invalidDocumentType] = changedDocumentEntry || [];
 
-  if (documentType) {
-    result.addError(new DataContractIndicesChangedError(documentType));
+  if (invalidDocumentType) {
+    result.addError(new DataContractIndicesChangedError(invalidDocumentType));
 
     return result;
   }
@@ -50,7 +52,9 @@ function validateIndicesAreNotChanged(oldDocuments, newDocuments) {
     .find(([documentType, oldSchema]) => {
       const newSchemaIndices = lodashGet(newDocuments, `${documentType}.indices`);
 
-      const oldIndexNames = (oldSchema.indices || []).map((indexDefinition) => indexDefinition.name);
+      const oldIndexNames = (oldSchema.indices || []).map(
+        (indexDefinition) => indexDefinition.name,
+      );
       const oldPropertyNames = Object.keys(oldSchema.properties);
 
       const newIndices = (newSchemaIndices || []).filter(
@@ -76,10 +80,10 @@ function validateIndicesAreNotChanged(oldDocuments, newDocuments) {
       return indexContainingOldPropertiesOrUnique !== undefined;
     });
 
-  ([documentType] = changedDocumentEntry || []);
+  ([invalidDocumentType] = changedDocumentEntry || []);
 
-  if (documentType) {
-    result.addError(new DataContractIndicesChangedError(documentType));
+  if (invalidDocumentType) {
+    result.addError(new DataContractIndicesChangedError(invalidDocumentType));
   }
 
   return result;
