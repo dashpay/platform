@@ -17,16 +17,66 @@ function validateIndicesAreNotChanged(oldDocuments, newDocuments) {
   const result = new ValidationResult();
 
   // Check that old index dinfitions are intact
-  const changedDocumentEntry = Object.entries(oldDocuments)
+  let changedDocumentEntry = Object.entries(oldDocuments)
     .find(([documentType, oldSchema]) => {
       const path = `${documentType}.indices`;
 
       const newSchemaIndices = lodashGet(newDocuments, path);
 
-      return !serializer.encode(oldSchema.indices).equals(serializer.encode(newSchemaIndices));
+      const nameIndexMap = (newSchemaIndices || []).reduce((map, indexDefinition) => ({
+        ...map,
+        [indexDefinition.name]: indexDefinition,
+      }), {});
+
+      const changedIndices = (oldSchema.indices || []).find((indexDefinition) => {
+        return !serializer.encode(indexDefinition).equals(
+          serializer.encode(nameIndexMap[indexDefinition.name]),
+        );
+      });
+
+      return changedIndices !== undefined;
     });
 
-  const [documentType] = changedDocumentEntry || [];
+  let [documentType] = changedDocumentEntry || [];
+
+  if (documentType) {
+    result.addError(new DataContractIndicesChangedError(documentType));
+
+    return result;
+  }
+
+  // Check that new indices are about new properties only
+  changedDocumentEntry = Object.entries(oldDocuments)
+    .find(([documentType, oldSchema]) => {
+      const newSchemaIndices = lodashGet(newDocuments, `${documentType}.indices`);
+
+      const oldIndexNames = (oldSchema.indices || []).map((indexDefinition) => indexDefinition.name);
+      const oldPropertyNames = Object.keys(oldSchema.properties);
+
+      const newIndices = (newSchemaIndices || []).filter(
+        (indexDefinition) => !oldIndexNames.includes(indexDefinition.name),
+      );
+
+      const indexContainingOldPropertiesOrUnique = (newIndices || []).find((indexDefinition) => {
+        if (indexDefinition.unique === true) {
+          return true;
+        }
+
+        const propertyNames = indexDefinition.properties.reduce((list, propertyObj) => {
+          const keys = Object.keys(propertyObj).filter((n) => !n.startsWith('$'));
+          return [
+            ...list,
+            ...keys,
+          ];
+        }, []);
+
+        return propertyNames.find((n) => oldPropertyNames.includes(n)) !== undefined;
+      });
+
+      return indexContainingOldPropertiesOrUnique !== undefined;
+    });
+
+  ([documentType] = changedDocumentEntry || []);
 
   if (documentType) {
     result.addError(new DataContractIndicesChangedError(documentType));
