@@ -5,7 +5,7 @@
   "scripts": {
     "setup": "yarn install && yarn run build && yarn run configure",
     "start": "yarn run dashmate group:start --verbose -w",
-    "restart": "yarn run dashmate group:restart --verbose -w",
+    "restart": "yarn run dashmate group:restart --verbose",
     "stop": "yarn run dashmate group:stop --verbose",
     "reset": "yarn run clean:data --force && yarn run setup",
     "test": "ultra -r $* test",
