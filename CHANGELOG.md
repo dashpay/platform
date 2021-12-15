@@ -1,3 +1,35 @@
+### [0.21.6](https://github.com/dashevo/platform/compare/v0.21.5...v0.21.6) (2021-12-13)
+
+
+### Bug Fixes
+
+* **dashmate:** RPC error on stopping node ([#61](https://github.com/dashevo/platform/issues/61))
+* **wallet-lib:** "Failure: Type not convertible to Uint8Array" ([#60](https://github.com/dashevo/platform/issues/60))
+* **wallet-lib:** eventemitter memory leak ([#56](https://github.com/dashevo/platform/issues/56))
+* **wallet-lib:** invalid deserialization of persistent storage ([#76](https://github.com/dashevo/platform/issues/76))
+
+
+### Documentation
+
+* publish consolidated docs using mkdocs ([#42](https://github.com/dashevo/platform/issues/42))
+
+
+### Miscellaneous Chores
+
+* changelogs generation script ([#62](https://github.com/dashevo/platform/issues/62))
+* enable yarn PnP to achieve zero installs ([#63](https://github.com/dashevo/platform/issues/63))
+* exit if some env variables are empty during setup ([#75](https://github.com/dashevo/platform/issues/75))
+* fix `test:drive` script ([#78](https://github.com/dashevo/platform/issues/78))
+* migrate from NPM to Yarn 3 ([#50](https://github.com/dashevo/platform/issues/50))
+* remove temporary reset script ([#64](https://github.com/dashevo/platform/issues/64))
+* update oclif and remove pnpify ([#73](https://github.com/dashevo/platform/issues/73))
+
+
+### Build System
+
+* fix bash syntax issue in release script ([#79](https://github.com/dashevo/platform/issues/79))
+* release process automation ([#67](https://github.com/dashevo/platform/issues/67))
+
 ## [0.21.5](https://github.com/dashevo/platform/compare/v0.21.4...v0.21.5) (2021-11-25)
 
 
