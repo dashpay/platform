@@ -1,4 +1,6 @@
 const validateIndicesAreNotChanged = require('../../../../../../../lib/dataContract/stateTransition/DataContractUpdateTransition/validation/basic/validateIndicesAreNotChanged');
+const DataContractHaveNewIndexWithOldPropertiesError = require('../../../../../../../lib/errors/consensus/basic/dataContract/DataContractHaveNewIndexWithOldPropertiesError');
+const DataContractHaveNewUniqueIndexError = require('../../../../../../../lib/errors/consensus/basic/dataContract/DataContractHaveNewUniqueIndexError');
 const DataContractIndicesChangedError = require('../../../../../../../lib/errors/consensus/basic/dataContract/DataContractIndicesChangedError');
 const getDataContractFixture = require('../../../../../../../lib/test/fixtures/getDataContractFixture');
 
@@ -51,7 +53,7 @@ describe('validateIndicesAreNotChanged', () => {
 
     const error = result.getErrors()[0];
 
-    expect(error).to.be.an.instanceOf(DataContractIndicesChangedError);
+    expect(error).to.be.an.instanceOf(DataContractHaveNewIndexWithOldPropertiesError);
   });
 
   it('should return invalid result if one of new indices is unique', async () => {
@@ -69,7 +71,7 @@ describe('validateIndicesAreNotChanged', () => {
 
     const error = result.getErrors()[0];
 
-    expect(error).to.be.an.instanceOf(DataContractIndicesChangedError);
+    expect(error).to.be.an.instanceOf(DataContractHaveNewUniqueIndexError);
   });
 
   it('should return valid result if indicies are not changed', async () => {
