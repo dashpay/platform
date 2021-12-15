@@ -10,9 +10,10 @@ services:
     volumes:
       - core_data:/dash
       - ${DASHMATE_HOME_DIR:?err}/${CONFIG_NAME:?err}/core/dash.conf:/dash/.dashcore/dash.conf
+    environment:
+      - CORE_MASTERNODE_OPERATOR_PRIVATE_KEY=${CORE_MASTERNODE_OPERATOR_PRIVATE_KEY}
     command:
       - dashd
-      - -masternodeblsprivkey=${CORE_MASTERNODE_OPERATOR_PRIVATE_KEY}
 
 volumes:
   core_data:
