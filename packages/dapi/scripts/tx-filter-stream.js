@@ -20,9 +20,12 @@ const {
 const {
   v0: {
     TransactionsWithProofsRequest,
+    BlockHeadersWithChainLocksRequest,
     pbjs: {
       TransactionsWithProofsRequest: PBJSTransactionsWithProofsRequest,
       TransactionsWithProofsResponse: PBJSTransactionsWithProofsResponse,
+      BlockHeadersWithChainLocksRequest: PBJSBlockHeadersWithChainLocksRequest,
+      BlockHeadersWithChainLocksResponse: PBJSBlockHeadersWithChainLocksResponse,
     },
   },
   getCoreDefinition,
@@ -45,6 +48,7 @@ const emitBlockEventToFilterCollectionFactory = require('../lib/transactionsFilt
 const testTransactionsAgainstFilter = require('../lib/transactionsFilter/testTransactionAgainstFilter');
 const emitInstantLockToFilterCollectionFactory = require('../lib/transactionsFilter/emitInstantLockToFilterCollectionFactory');
 const subscribeToTransactionsWithProofsHandlerFactory = require('../lib/grpcServer/handlers/tx-filter-stream/subscribeToTransactionsWithProofsHandlerFactory');
+const subscribeToBlockHeadersWithChainLocksHandlerFactory = require('../lib/grpcServer/handlers/blockheaders-stream/subscribeToBlockHeadersWithChainLocksHandlerFactory');
 
 const subscribeToNewTransactions = require('../lib/transactionsFilter/subscribeToNewTransactions');
 const getHistoricalTransactionsIteratorFactory = require('../lib/transactionsFilter/getHistoricalTransactionsIteratorFactory');
@@ -143,10 +147,28 @@ async function main() {
     wrapInErrorHandler(subscribeToTransactionsWithProofsHandler),
   );
 
+  // eslint-disable-next-line operator-linebreak
+  const subscribeToBlockHeadersWithChainLocksHandler =
+    subscribeToBlockHeadersWithChainLocksHandlerFactory();
+
+  const wrappedSubscribeToBlockHeadersWithChainLocks = jsonToProtobufHandlerWrapper(
+    jsonToProtobufFactory(
+      BlockHeadersWithChainLocksRequest,
+      PBJSBlockHeadersWithChainLocksRequest,
+    ),
+    protobufToJsonFactory(
+      PBJSBlockHeadersWithChainLocksResponse,
+    ),
+    wrapInErrorHandler(subscribeToBlockHeadersWithChainLocksHandler),
+  );
+
   const grpcServer = createServer(
     getCoreDefinition(0),
     {
       subscribeToTransactionsWithProofs: wrappedSubscribeToTransactionsWithProofs,
+      // TODO: should we rename tx-filter-stream.js to something different,
+      // having in mind that it now holds subscribeToBlockHeadersWithChainLocks?
+      subscribeToBlockHeadersWithChainLocks: wrappedSubscribeToBlockHeadersWithChainLocks,
     },
   );
 
