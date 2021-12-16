@@ -37,6 +37,7 @@ describe('validateIndicesAreBackwardCompatible', () => {
     const error = result.getErrors()[0];
 
     expect(error).to.be.an.instanceOf(DataContractIndicesChangedError);
+    expect(error.getIndexName()).to.equal(newDocumentsSchema.indexedDocument.indices[0].name);
   });
 
   it('should return invalid result if one of new indices contains old properties', async () => {
@@ -54,6 +55,7 @@ describe('validateIndicesAreBackwardCompatible', () => {
     const error = result.getErrors()[0];
 
     expect(error).to.be.an.instanceOf(DataContractHaveNewIndexWithOldPropertiesError);
+    expect(error.getIndexName()).to.equal('index_other');
   });
 
   it('should return invalid result if one of new indices is unique', async () => {
@@ -72,6 +74,7 @@ describe('validateIndicesAreBackwardCompatible', () => {
     const error = result.getErrors()[0];
 
     expect(error).to.be.an.instanceOf(DataContractHaveNewUniqueIndexError);
+    expect(error.getIndexName()).to.equal('index_other');
   });
 
   it('should return valid result if indicies are not changed', async () => {

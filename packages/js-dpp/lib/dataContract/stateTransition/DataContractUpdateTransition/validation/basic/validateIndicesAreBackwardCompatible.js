@@ -14,7 +14,7 @@ const ValidationResult = require('../../../../../validation/ValidationResult');
  * @param {object} oldSchema
  * @param {object[]} newDocuments
  *
- * @returns {boolean}
+ * @returns {object}
  */
 function checkOldIndicesChanged(documentType, oldSchema, newDocuments) {
   const path = `${documentType}.indices`;
@@ -29,7 +29,7 @@ function checkOldIndicesChanged(documentType, oldSchema, newDocuments) {
 
   // Checking every old and it's respective new index
   // if they are have the same definition
-  const changedIndices = (oldSchema.indices || []).find(
+  const changedIndex = (oldSchema.indices || []).find(
     (indexDefinition) => (
       !serializer.encode(indexDefinition).equals(
         serializer.encode(nameIndexMap[indexDefinition.name]),
@@ -37,7 +37,7 @@ function checkOldIndicesChanged(documentType, oldSchema, newDocuments) {
     ),
   );
 
-  return changedIndices !== undefined;
+  return changedIndex;
 }
 
 /**
@@ -47,7 +47,7 @@ function checkOldIndicesChanged(documentType, oldSchema, newDocuments) {
  * @param {object} oldSchema
  * @param {object[]} newDocuments
  *
- * @returns {boolean}
+ * @returns {object}
  */
 function checkNewIndicesAreUnique(documentType, oldSchema, newDocuments) {
   const newSchemaIndices = lodashGet(newDocuments, `${documentType}.indices`);
@@ -63,7 +63,7 @@ function checkNewIndicesAreUnique(documentType, oldSchema, newDocuments) {
 
   const indexUnique = (newIndices || []).find((indexDefinition) => indexDefinition.unique === true);
 
-  return indexUnique !== undefined;
+  return indexUnique;
 }
 
 /**
@@ -73,7 +73,7 @@ function checkNewIndicesAreUnique(documentType, oldSchema, newDocuments) {
  * @param {object} oldSchema
  * @param {object[]} newDocuments
  *
- * @returns {boolean}
+ * @returns {object}
  */
 function checkNewIndicesHaveOldProperties(documentType, oldSchema, newDocuments) {
   const newSchemaIndices = lodashGet(newDocuments, `${documentType}.indices`);
@@ -100,7 +100,7 @@ function checkNewIndicesHaveOldProperties(documentType, oldSchema, newDocuments)
     return propertyNames.find((n) => oldPropertyNames.includes(n)) !== undefined;
   });
 
-  return indexHaveOldProperties !== undefined;
+  return indexHaveOldProperties;
 }
 
 /**
@@ -116,32 +116,44 @@ function validateIndicesAreBackwardCompatible(oldDocuments, newDocuments) {
 
   Object.entries(oldDocuments)
     .find(([documentType, oldSchema]) => {
-      const oldIndicesChanged = checkOldIndicesChanged(
+      const changedIndex = checkOldIndicesChanged(
         documentType, oldSchema, newDocuments,
       );
 
-      if (oldIndicesChanged) {
-        result.addError(new DataContractIndicesChangedError(documentType));
+      if (changedIndex !== undefined) {
+        result.addError(
+          new DataContractIndicesChangedError(
+            documentType, changedIndex.name,
+          ),
+        );
 
         return true;
       }
 
-      const newIndicesHaveUnique = checkNewIndicesAreUnique(
+      const newUniqueIndex = checkNewIndicesAreUnique(
         documentType, oldSchema, newDocuments,
       );
 
-      if (newIndicesHaveUnique) {
-        result.addError(new DataContractHaveNewUniqueIndexError(documentType));
+      if (newUniqueIndex !== undefined) {
+        result.addError(
+          new DataContractHaveNewUniqueIndexError(
+            documentType, newUniqueIndex.name,
+          ),
+        );
 
         return true;
       }
 
-      const newIndicesHaveOldProperties = checkNewIndicesHaveOldProperties(
+      const newIndexWithOldProperties = checkNewIndicesHaveOldProperties(
         documentType, oldSchema, newDocuments,
       );
 
-      if (newIndicesHaveOldProperties) {
-        result.addError(new DataContractHaveNewIndexWithOldPropertiesError(documentType));
+      if (newIndexWithOldProperties !== undefined) {
+        result.addError(
+          new DataContractHaveNewIndexWithOldPropertiesError(
+            documentType, newIndexWithOldProperties.name,
+          ),
+        );
 
         return true;
       }

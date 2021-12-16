@@ -3,11 +3,13 @@ const AbstractBasicError = require('../AbstractBasicError');
 class DataContractHaveNewUniqueIndexError extends AbstractBasicError {
   /**
    * @param {string} documentType
+   * @param {string} indexName
    */
-  constructor(documentType) {
-    super(`Adding unique indices during Data Contract update is not allowed. Document with type ${documentType} has new unique indices.`);
+  constructor(documentType, indexName) {
+    super(`Adding unique indices during Data Contract update is not allowed. Document with type ${documentType} has new unique index named "${indexName}".`);
 
     this.documentType = documentType;
+    this.indexName = indexName;
 
     // eslint-disable-next-line prefer-rest-params
     this.setConstructorArguments(arguments);
@@ -20,6 +22,15 @@ class DataContractHaveNewUniqueIndexError extends AbstractBasicError {
    */
   getDocumentType() {
     return this.documentType;
+  }
+
+  /**
+   * Get unique index name
+   *
+   * @returns {string}
+   */
+  getIndexName() {
+    return this.indexName;
   }
 }
 
