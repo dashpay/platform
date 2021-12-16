@@ -1,10 +1,10 @@
-const validateIndicesAreNotChanged = require('../../../../../../../lib/dataContract/stateTransition/DataContractUpdateTransition/validation/basic/validateIndicesAreNotChanged');
+const validateIndicesAreBackwardCompatible = require('../../../../../../../lib/dataContract/stateTransition/DataContractUpdateTransition/validation/basic/validateIndicesAreBackwardCompatible');
 const DataContractHaveNewIndexWithOldPropertiesError = require('../../../../../../../lib/errors/consensus/basic/dataContract/DataContractHaveNewIndexWithOldPropertiesError');
 const DataContractHaveNewUniqueIndexError = require('../../../../../../../lib/errors/consensus/basic/dataContract/DataContractHaveNewUniqueIndexError');
 const DataContractIndicesChangedError = require('../../../../../../../lib/errors/consensus/basic/dataContract/DataContractIndicesChangedError');
 const getDataContractFixture = require('../../../../../../../lib/test/fixtures/getDataContractFixture');
 
-describe('validateIndicesAreNotChanged', () => {
+describe('validateIndicesAreBackwardCompatible', () => {
   let oldDocumentsSchema;
   let newDocumentsSchema;
 
@@ -30,7 +30,7 @@ describe('validateIndicesAreNotChanged', () => {
   it('should return invalid result if some index have changed', async () => {
     newDocumentsSchema.indexedDocument.indices[0].properties[0].$ownerId = 'desc';
 
-    const result = validateIndicesAreNotChanged(oldDocumentsSchema, newDocumentsSchema);
+    const result = validateIndicesAreBackwardCompatible(oldDocumentsSchema, newDocumentsSchema);
 
     expect(result.isValid()).to.be.false();
 
@@ -47,7 +47,7 @@ describe('validateIndicesAreNotChanged', () => {
       ],
     });
 
-    const result = validateIndicesAreNotChanged(oldDocumentsSchema, newDocumentsSchema);
+    const result = validateIndicesAreBackwardCompatible(oldDocumentsSchema, newDocumentsSchema);
 
     expect(result.isValid()).to.be.false();
 
@@ -65,7 +65,7 @@ describe('validateIndicesAreNotChanged', () => {
       unique: true,
     });
 
-    const result = validateIndicesAreNotChanged(oldDocumentsSchema, newDocumentsSchema);
+    const result = validateIndicesAreBackwardCompatible(oldDocumentsSchema, newDocumentsSchema);
 
     expect(result.isValid()).to.be.false();
 
@@ -75,7 +75,7 @@ describe('validateIndicesAreNotChanged', () => {
   });
 
   it('should return valid result if indicies are not changed', async () => {
-    const result = validateIndicesAreNotChanged(oldDocumentsSchema, newDocumentsSchema);
+    const result = validateIndicesAreBackwardCompatible(oldDocumentsSchema, newDocumentsSchema);
 
     expect(result.isValid()).to.be.true();
   });

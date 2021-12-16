@@ -111,7 +111,7 @@ function checkNewIndicesHaveOldProperties(documentType, oldSchema, newDocuments)
  *
  * @returns {ValidationResult}
  */
-function validateIndicesAreNotChanged(oldDocuments, newDocuments) {
+function validateIndicesAreBackwardCompatible(oldDocuments, newDocuments) {
   const result = new ValidationResult();
 
   Object.entries(oldDocuments)
@@ -152,4 +152,4 @@ function validateIndicesAreNotChanged(oldDocuments, newDocuments) {
   return result;
 }
 
-module.exports = validateIndicesAreNotChanged;
+module.exports = validateIndicesAreBackwardCompatible;
