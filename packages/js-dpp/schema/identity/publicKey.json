@@ -38,7 +38,12 @@
       "description": "Public key security level. 0 - Master, 1 - Critical, 2 - High, 3 - Medium",
       "$comment": "It can't be changed after adding a key"
     },
-    "data": true
+    "data": true,
+    "readOnly": {
+      "type": "boolean",
+      "description": "Read only flag",
+      "$comment": "It can't be changed after adding a key"
+    }
   },
   "allOf": [
     {
