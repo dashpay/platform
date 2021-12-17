@@ -12,6 +12,7 @@ describe('IdentityPublicKey', () => {
       data: Buffer.from('AkVuTKyF3YgKLAQlLEtaUL2HTditwGILfWUVqjzYnIgH', 'base64'),
       purpose: IdentityPublicKey.PURPOSES.AUTHENTICATION,
       securityLevel: IdentityPublicKey.SECURITY_LEVELS.MASTER,
+      readOnly: false,
     };
 
     publicKey = new IdentityPublicKey(rawPublicKey);
@@ -106,6 +107,20 @@ describe('IdentityPublicKey', () => {
       publicKey.setSecurityLevel(IdentityPublicKey.SECURITY_LEVELS.MEDIUM);
 
       expect(publicKey.securityLevel).to.equal(IdentityPublicKey.SECURITY_LEVELS.MEDIUM);
+    });
+  });
+
+  describe('#getReadOnly', () => {
+    it('should return readOnly', () => {
+      expect(publicKey.getReadOnly()).to.equal(rawPublicKey.readOnly);
+    });
+  });
+
+  describe('#setReadOnly', () => {
+    it('should set readOnly', () => {
+      publicKey.setReadOnly(true);
+
+      expect(publicKey.readOnly).to.equal(true);
     });
   });
 
