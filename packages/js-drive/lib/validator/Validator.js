@@ -8,6 +8,7 @@ class Validator {
   constructor(proTxHash, pubKeyShare = undefined) {
     this.proTxHash = proTxHash;
     this.pubKeyShare = pubKeyShare;
+    this.networkInfo = null;
   }
 
   /**
@@ -37,11 +38,30 @@ class Validator {
   }
 
   /**
+   * Get network info
+   *
+   * @returns {ValidatorNetworkInfo}
+   */
+  getNetworkInfo() {
+    return this.networkInfo;
+  }
+
+  /**
+   * Set network info
+   *
+   * @param {ValidatorNetworkInfo} networkInfo
+   */
+  setNetworkInfo(networkInfo) {
+    this.networkInfo = networkInfo;
+  }
+
+  /**
    * @param {Object} member
+   * @param {ValidatorNetworkInfo} networkInfo
    * @param {boolean} [pubKeyShareRequired=false]
    * @return {Validator}
    */
-  static createFromQuorumMember(member, pubKeyShareRequired = false) {
+  static createFromQuorumMember(member, networkInfo, pubKeyShareRequired = false) {
     const proTxHash = Buffer.from(member.proTxHash, 'hex');
 
     let pubKeyShare;
@@ -51,7 +71,11 @@ class Validator {
       throw new PublicKeyShareIsNotPresentError(member);
     }
 
-    return new Validator(proTxHash, pubKeyShare);
+    const validator = new Validator(proTxHash, pubKeyShare);
+
+    validator.setNetworkInfo(networkInfo);
+
+    return validator;
   }
 }
 

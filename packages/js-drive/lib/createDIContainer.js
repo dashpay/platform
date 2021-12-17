@@ -129,6 +129,8 @@ const fetchQuorumMembersFactory = require('./core/fetchQuorumMembersFactory');
 const getRandomQuorum = require('./core/getRandomQuorum');
 const createQueryResponseFactory = require('./abci/handlers/query/response/createQueryResponseFactory');
 const BlockExecutionContextRepository = require('./blockExecution/BlockExecutionContextRepository');
+const fetchProTxInfoFactory = require('./core/fetchProTxInfoFactory');
+const fetchNetworkInfoFactory = require('./validator/fetchNetworkInfoFactory');
 
 /**
  *
@@ -306,6 +308,7 @@ function createDIContainer(options) {
     decodeChainLock: asValue(decodeChainLock),
     fetchQuorumMembers: asFunction(fetchQuorumMembersFactory),
     getRandomQuorum: asValue(getRandomQuorum),
+    fetchProTxInfo: asFunction(fetchProTxInfoFactory),
   });
 
   /**
@@ -1006,6 +1009,7 @@ function createDIContainer(options) {
    * Register validator quorums
    */
   container.register({
+    fetchNetworkInfo: asFunction(fetchNetworkInfoFactory),
     validatorSet: asClass(ValidatorSet),
   });
 

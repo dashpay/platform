@@ -8,6 +8,7 @@ class ValidatorSet {
    * @param {fetchQuorumMembers} fetchQuorumMembers
    * @param {number} validatorSetLLMQType
    * @param {RpcClient} coreRpcClient
+   * @param {fetchNetworkInfo} fetchNetworkInfo
    */
   constructor(
     simplifiedMasternodeList,
@@ -15,12 +16,14 @@ class ValidatorSet {
     fetchQuorumMembers,
     validatorSetLLMQType,
     coreRpcClient,
+    fetchNetworkInfo,
   ) {
     this.simplifiedMasternodeList = simplifiedMasternodeList;
     this.getRandomQuorum = getRandomQuorum;
     this.fetchQuorumMembers = fetchQuorumMembers;
     this.validatorSetLLMQType = validatorSetLLMQType;
     this.coreRpcClient = coreRpcClient;
+    this.fetchNetworkInfo = fetchNetworkInfo;
 
     this.quorum = null;
     this.validators = [];
@@ -133,9 +136,13 @@ class ValidatorSet {
     const isThisNodeMember = !!quorumMembers
       .find((member) => member.valid && member.proTxHash === proTxHash);
 
-    this.validators = quorumMembers
+    this.validators = await Promise.all(quorumMembers
       .filter((member) => member.valid)
-      .map((member) => Validator.createFromQuorumMember(member, isThisNodeMember));
+      .map(async (member) => {
+        const networkInfo = await this.fetchNetworkInfo(member);
+
+        return Validator.createFromQuorumMember(member, networkInfo, isThisNodeMember);
+      }));
   }
 }
 
