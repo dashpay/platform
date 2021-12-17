@@ -143,6 +143,10 @@ class IdentityPublicKey {
       throw new EmptyPublicKeyDataError();
     }
 
+    if (this.getType() === IdentityPublicKey.TYPES.ECDSA_HASH160) {
+      return this.getData();
+    }
+
     const originalPublicKey = new PublicKey(
       this.getData(),
     );
@@ -199,6 +203,7 @@ class IdentityPublicKey {
 IdentityPublicKey.TYPES = {
   ECDSA_SECP256K1: 0,
   BLS12_381: 1,
+  ECDSA_HASH160: 2,
 };
 
 IdentityPublicKey.PURPOSES = {

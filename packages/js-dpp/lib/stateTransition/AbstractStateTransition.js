@@ -1,7 +1,7 @@
 const {
   PublicKey,
   PrivateKey,
-  Signer: { sign, verifySignature },
+  Signer: { sign, verifySignature, verifyHashSignature },
 } = require('@dashevo/dashcore-lib');
 
 const StateTransitionIsNotSignedError = require(
@@ -157,12 +157,36 @@ class AbstractStateTransition {
    * @return {AbstractStateTransition}
    */
   signByPrivateKey(privateKey) {
+    console.log('pk', privateKey.toString('hex'));
     const data = this.toBuffer({ skipSignature: true });
     const privateKeyModel = new PrivateKey(privateKey);
 
     this.setSignature(sign(data, privateKeyModel));
 
     return this;
+  }
+
+  /**
+   *
+   * @param {Buffer} publicKeyHash
+   * @return {boolean}
+   */
+  verifySignatureByPublicKeyHash(publicKeyHash) {
+    const signature = this.getSignature();
+    if (!signature) {
+      throw new StateTransitionIsNotSignedError(this);
+    }
+
+    const hash = this.hash({ skipSignature: true });
+
+    let isSignatureVerified;
+    try {
+      isSignatureVerified = verifyHashSignature(hash, signature, publicKeyHash);
+    } catch (e) {
+      isSignatureVerified = false;
+    }
+
+    return isSignatureVerified;
   }
 
   /**
