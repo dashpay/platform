@@ -52,6 +52,7 @@ const subscribeToBlockHeadersWithChainLocksHandlerFactory = require('../lib/grpc
 
 const subscribeToNewTransactions = require('../lib/transactionsFilter/subscribeToNewTransactions');
 const getHistoricalTransactionsIteratorFactory = require('../lib/transactionsFilter/getHistoricalTransactionsIteratorFactory');
+const getHistoricalBlockHeadersIteratorFactory = require('../lib/transactionsFilter/getHistoricalBlockHeadersIteratorFactory');
 const getMemPoolTransactionsFactory = require('../lib/transactionsFilter/getMemPoolTransactionsFactory');
 
 async function main() {
@@ -122,6 +123,10 @@ async function main() {
     dashCoreRpcClient,
   );
 
+  const getHistoricalBlockHeadersIterator = getHistoricalBlockHeadersIteratorFactory(
+    dashCoreRpcClient,
+  );
+
   const getMemPoolTransactions = getMemPoolTransactionsFactory(
     dashCoreRpcClient,
     testTransactionsAgainstFilter,
@@ -149,7 +154,10 @@ async function main() {
 
   // eslint-disable-next-line operator-linebreak
   const subscribeToBlockHeadersWithChainLocksHandler =
-    subscribeToBlockHeadersWithChainLocksHandlerFactory();
+    subscribeToBlockHeadersWithChainLocksHandlerFactory(
+      getHistoricalBlockHeadersIterator,
+      dashCoreRpcClient,
+    );
 
   const wrappedSubscribeToBlockHeadersWithChainLocks = jsonToProtobufHandlerWrapper(
     jsonToProtobufFactory(
