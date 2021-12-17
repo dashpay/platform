@@ -130,7 +130,7 @@ describe('validateStateTransitionIdentitySignatureFactory', () => {
     expect(result.isValid()).to.be.false();
     expect(validateIdentityExistenceMock).to.be.calledOnceWithExactly(ownerId);
     expect(identity.getPublicKeyById).to.be.calledOnceWithExactly(publicKeyId);
-    expect(identityPublicKey.getType).to.be.calledTwice();
+    expect(identityPublicKey.getType).to.be.calledThrice();
     expect(stateTransition.getSignaturePublicKeyId).to.be.calledOnce();
     expect(stateTransition.verifySignature).to.not.be.called();
 
