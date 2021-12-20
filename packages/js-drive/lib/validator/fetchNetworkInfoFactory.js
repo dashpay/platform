@@ -2,10 +2,11 @@ const ValidatorNetworkInfo = require('./ValidatorNetworkInfo');
 
 /**
  * @param {fetchProTxInfo} fetchProTxInfo
+ * @param {number} p2pPort
  *
  * @return {fetchNetworkInfo}
  */
-function fetchNetworkInfoFactory(fetchProTxInfo) {
+function fetchNetworkInfoFactory(fetchProTxInfo, p2pPort) {
   /**
    * @typedef fetchNetworkInfo
    *
@@ -15,7 +16,7 @@ function fetchNetworkInfoFactory(fetchProTxInfo) {
     const quorumMemberProTxInfo = await fetchProTxInfo(quorumMember.proTxHash);
     const quorumHost = quorumMemberProTxInfo.state.service.split(':')[0];
 
-    return new ValidatorNetworkInfo(quorumHost, 26656);
+    return new ValidatorNetworkInfo(quorumHost, p2pPort);
   }
 
   return fetchNetworkInfo;
