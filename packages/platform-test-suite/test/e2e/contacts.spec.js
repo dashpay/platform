@@ -26,10 +26,10 @@ describe('e2e', () => {
           type: 'object',
           indices: [
             {
-              name: "ownerId",
+              name: 'ownerId',
               properties: [{ $ownerId: 'asc' }],
               unique: true,
-           },
+            },
           ],
           properties: {
             avatarUrl: {
@@ -49,12 +49,12 @@ describe('e2e', () => {
           type: 'object',
           indices: [
             {
-              name: "onwerIdToUserId",
+              name: 'onwerIdToUserId',
               properties: [
                 { $ownerId: 'asc' },
-                { toUserId: 'asc' }
+                { toUserId: 'asc' },
               ],
-              unique: true
+              unique: true,
             },
           ],
           properties: {
