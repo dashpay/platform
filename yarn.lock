@@ -1593,7 +1593,7 @@ __metadata:
     "@dashevo/dpp": "workspace:~"
     "@dashevo/feature-flags-contract": "workspace:~"
     "@dashevo/grpc-common": "workspace:~"
-    "@dashevo/merk": "github:dashevo/node-merk"
+    "@dashevo/merk": "github:dashevo/node-merk#045949a9e3928e24ead9f09a6f5802062a64e7b8"
     "@types/pino": ^6.3.0
     ajv: ^8.6.0
     ajv-keywords: ^5.0.0
@@ -1614,7 +1614,7 @@ __metadata:
     eslint-plugin-import: ^2.24.2
     find-my-way: ^2.2.2
     js-merkle: ^0.1.5
-    level-rocksdb: 4.0.0
+    level-rocksdb: ^5.0.0
     level-transactions: ^2.1.4
     levelup: ^4.4.0
     lodash.escaperegexp: ^4.1.2
@@ -1680,12 +1680,12 @@ __metadata:
   languageName: unknown
   linkType: soft
 
-"@dashevo/merk@github:dashevo/node-merk":
+"@dashevo/merk@github:dashevo/node-merk#045949a9e3928e24ead9f09a6f5802062a64e7b8":
   version: 2.1.3
-  resolution: "@dashevo/merk@https://github.com/dashevo/node-merk.git#commit=db502681c0711fb3c2ad8ca8512e9c8f444a21e2"
+  resolution: "@dashevo/merk@https://github.com/dashevo/node-merk.git#commit=045949a9e3928e24ead9f09a6f5802062a64e7b8"
   dependencies:
     neon-load-or-build: ^2.2.2
-  checksum: 020dc9cb226fa54c598189d9e52c9dbc43f3be6c827bae634318fdf4b721c34323f9f734a42147007322dde7f2505fc38a69eebb33fa04c20b306118c317e058
+  checksum: 7934293342643d2d56d2752091c8cdda9c13151281630cdb8113a97546cb94461b5be9d3bb83caac79d2e08c125e43fd99ebeeabcd4c2dc1e51145c89572990f
   languageName: node
   linkType: hard
 
@@ -1699,7 +1699,7 @@ __metadata:
     "@dashevo/dpp": "workspace:~"
     "@dashevo/feature-flags-contract": "workspace:~"
     "@dashevo/grpc-common": "workspace:~"
-    "@dashevo/merk": "github:dashevo/node-merk"
+    "@dashevo/merk": "github:dashevo/node-merk#045949a9e3928e24ead9f09a6f5802062a64e7b8"
     "@dashevo/wallet-lib": "workspace:~"
     assert-browserify: ^2.0.0
     blake3: ^2.1.4
@@ -2918,16 +2918,17 @@ __metadata:
   languageName: node
   linkType: hard
 
-"abstract-leveldown@npm:^6.2.1":
-  version: 6.3.0
-  resolution: "abstract-leveldown@npm:6.3.0"
+"abstract-leveldown@npm:^7.2.0":
+  version: 7.2.0
+  resolution: "abstract-leveldown@npm:7.2.0"
   dependencies:
-    buffer: ^5.5.0
-    immediate: ^3.2.3
-    level-concat-iterator: ~2.0.0
-    level-supports: ~1.0.0
-    xtend: ~4.0.0
-  checksum: 121a8509d8c6a540e656c2a69e5b8d853d4df71072011afefc868b98076991bb00120550e90643de9dc18889c675f62413409eeb4c8c204663124c7d215e4ec3
+    buffer: ^6.0.3
+    catering: ^2.0.0
+    is-buffer: ^2.0.5
+    level-concat-iterator: ^3.0.0
+    level-supports: ^2.0.1
+    queue-microtask: ^1.2.3
+  checksum: d558111f2d123da95ac80b8ba3b9b0a5bc8cd87296e64b05dca693f5f4839aa0e2fc97bad56a101766f499824e2962611750f8a76bbac4a5db35801968fbbe02
   languageName: node
   linkType: hard
 
@@ -2937,16 +2938,6 @@ __metadata:
   dependencies:
     xtend: ~4.0.0
   checksum: 87b18580467c303c34c305620e2c3227010f64187d6b1cd60c2d1b9adc058b0c4de716e111e9493aaad0080cb7836601032c5084990cd713f86b6a78f1fab791
-  languageName: node
-  linkType: hard
-
-"abstract-leveldown@npm:~6.1.1":
-  version: 6.1.1
-  resolution: "abstract-leveldown@npm:6.1.1"
-  dependencies:
-    level-concat-iterator: ~2.0.0
-    xtend: ~4.0.0
-  checksum: dcaa912f2ed414cf442487e67185aa704d74526af4fb600862564ac25eb460cd98ddf46880d09857bbd66e1bc96a183bff3da465556ab6dce522afd8a716baac
   languageName: node
   linkType: hard
 
@@ -3972,7 +3963,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"buffer@npm:^5.5.0, buffer@npm:^5.6.0":
+"buffer@npm:^5.5.0":
   version: 5.7.1
   resolution: "buffer@npm:5.7.1"
   dependencies:
@@ -4165,6 +4156,15 @@ __metadata:
   version: 0.12.0
   resolution: "caseless@npm:0.12.0"
   checksum: b43bd4c440aa1e8ee6baefee8063b4850fd0d7b378f6aabc796c9ec8cb26d27fb30b46885350777d9bd079c5256c0e1329ad0dc7c2817e0bb466810ebb353751
+  languageName: node
+  linkType: hard
+
+"catering@npm:^2.0.0, catering@npm:^2.1.0":
+  version: 2.1.0
+  resolution: "catering@npm:2.1.0"
+  dependencies:
+    queue-tick: ^1.0.0
+  checksum: dd221facf8559ec12aeb9a6bb819a0cdc5db90eb99859aa36ca52470842444b941ac218b8ef68fe8529c5fafcc1954438c013be1d691a3c655bfdb45a6395c05
   languageName: node
   linkType: hard
 
@@ -5279,6 +5279,16 @@ __metadata:
   languageName: node
   linkType: hard
 
+"deferred-leveldown@npm:^7.0.0":
+  version: 7.0.0
+  resolution: "deferred-leveldown@npm:7.0.0"
+  dependencies:
+    abstract-leveldown: ^7.2.0
+    inherits: ^2.0.3
+  checksum: 1ed5eb73e381aeb36d7153bf94dd957060b0294903660c1c8123a375e2b5cd5b3865428d7490aa1561c6ea08a5559563751e59e468d5786c99c765d2a868c658
+  languageName: node
+  linkType: hard
+
 "deferred-leveldown@npm:~1.2.1":
   version: 1.2.2
   resolution: "deferred-leveldown@npm:1.2.2"
@@ -5681,15 +5691,15 @@ __metadata:
   languageName: node
   linkType: hard
 
-"encoding-down@npm:^6.3.0":
-  version: 6.3.0
-  resolution: "encoding-down@npm:6.3.0"
+"encoding-down@npm:^7.1.0":
+  version: 7.1.0
+  resolution: "encoding-down@npm:7.1.0"
   dependencies:
-    abstract-leveldown: ^6.2.1
+    abstract-leveldown: ^7.2.0
     inherits: ^2.0.3
-    level-codec: ^9.0.0
-    level-errors: ^2.0.0
-  checksum: 74043e6d9061a470614ff61d708c849259ab32932a428fd5ddfb0878719804f56a52f59b31cccd95fddc2e636c0fd22dc3e02481fb98d5bf1bdbbbc44ca09bdc
+    level-codec: ^10.0.0
+    level-errors: ^3.0.0
+  checksum: 5de91a003c1ed9f0ec6d3843d1424ace3f4eea28f7459650d3613a41b4062311d53de14aa6bef6136cf8330b70b2f9d5d61c91cac0a28540f5129fa6e57f3471
   languageName: node
   linkType: hard
 
@@ -7640,6 +7650,13 @@ fsevents@~2.3.2:
   languageName: node
   linkType: hard
 
+"is-buffer@npm:^2.0.5":
+  version: 2.0.5
+  resolution: "is-buffer@npm:2.0.5"
+  checksum: 764c9ad8b523a9f5a32af29bdf772b08eb48c04d2ad0a7240916ac2688c983bf5f8504bf25b35e66240edeb9d9085461f9b5dae1f3d2861c6b06a65fe983de42
+  languageName: node
+  linkType: hard
+
 "is-callable@npm:^1.1.4, is-callable@npm:^1.2.4":
   version: 1.2.4
   resolution: "is-callable@npm:1.2.4"
@@ -8590,12 +8607,12 @@ fsevents@~2.3.2:
   languageName: node
   linkType: hard
 
-"level-codec@npm:^9.0.0":
-  version: 9.0.2
-  resolution: "level-codec@npm:9.0.2"
+"level-codec@npm:^10.0.0":
+  version: 10.0.0
+  resolution: "level-codec@npm:10.0.0"
   dependencies:
-    buffer: ^5.6.0
-  checksum: 289003d51b8afcdd24c4d318606abf2bae81975e4b527d7349abfdbacc8fef26711f2f24e2d20da0e1dce0bb216a856c9433ccb9ca25fa78a96aed9f51e506ed
+    buffer: ^6.0.3
+  checksum: 7b3edbe0af0462886814e391d1006acea4806b2b873bb192244a872b1a496043c7a4c73b7e66f76c21a5590c8d6c2729816ab0ab27958391024eb60e5b6d9bb0
   languageName: node
   linkType: hard
 
@@ -8603,6 +8620,15 @@ fsevents@~2.3.2:
   version: 7.0.1
   resolution: "level-codec@npm:7.0.1"
   checksum: 2565c131d93aea0786af5eda9bb907e3f5152fade03fd7a7751e2f95301fc5241063eb927c2f7df086fac33592523aab8df86bcf7ecc46ed53de11453b600329
+  languageName: node
+  linkType: hard
+
+"level-concat-iterator@npm:^3.0.0":
+  version: 3.1.0
+  resolution: "level-concat-iterator@npm:3.1.0"
+  dependencies:
+    catering: ^2.1.0
+  checksum: a15bc4c5fbbb30c1efa7fad06b72feaac84d90990b356b461593c198a833336f31f6daff8f40c3908fabd14cfd8856d1c5ecae9e1cb0575037b65fa607e760e9
   languageName: node
   linkType: hard
 
@@ -8622,12 +8648,10 @@ fsevents@~2.3.2:
   languageName: node
   linkType: hard
 
-"level-errors@npm:^2.0.0, level-errors@npm:~2.0.0":
-  version: 2.0.1
-  resolution: "level-errors@npm:2.0.1"
-  dependencies:
-    errno: ~0.1.1
-  checksum: aca5d7670e2a40609db8d7743fce289bb5202c0bc13e4a78f81f36a6642e9abc0110f48087d3d3c2c04f023d70d4ee6f2db0e20c63d29b3fda323a67bfff6526
+"level-errors@npm:^3.0.0, level-errors@npm:^3.0.1":
+  version: 3.0.1
+  resolution: "level-errors@npm:3.0.1"
+  checksum: fe4486c423e78ab509a8f7908b89a1692cc810dd47e02d9ceca50543b5be0ce3a4d555fb8f4d3c82122f56bd48c27e6175ca06da359b8e359ea2c7848209d8e7
   languageName: node
   linkType: hard
 
@@ -8637,6 +8661,25 @@ fsevents@~2.3.2:
   dependencies:
     errno: ~0.1.1
   checksum: a62df2a24987c0100855ec03f03655ddc6170b33a83987a53858ba0a7dbe125b4b5382e01068a1dc899ccf7f9d12b824702da15488bd06b4b3ee7a1e4232cb0a
+  languageName: node
+  linkType: hard
+
+"level-errors@npm:~2.0.0":
+  version: 2.0.1
+  resolution: "level-errors@npm:2.0.1"
+  dependencies:
+    errno: ~0.1.1
+  checksum: aca5d7670e2a40609db8d7743fce289bb5202c0bc13e4a78f81f36a6642e9abc0110f48087d3d3c2c04f023d70d4ee6f2db0e20c63d29b3fda323a67bfff6526
+  languageName: node
+  linkType: hard
+
+"level-iterator-stream@npm:^5.0.0":
+  version: 5.0.0
+  resolution: "level-iterator-stream@npm:5.0.0"
+  dependencies:
+    inherits: ^2.0.4
+    readable-stream: ^3.4.0
+  checksum: 3f5bbb9caf6cf6d6c4735219194b85f903377d9da76d37db0691b836c8ea3a78e5233fb18c91f0ef8ca8faaa19bd59e46572ebe27ad2039c51cf83e6c974b9f1
   languageName: node
   linkType: hard
 
@@ -8663,23 +8706,30 @@ fsevents@~2.3.2:
   languageName: node
   linkType: hard
 
-"level-packager@npm:^5.0.1":
-  version: 5.1.1
-  resolution: "level-packager@npm:5.1.1"
+"level-packager@npm:^6.0.0":
+  version: 6.0.1
+  resolution: "level-packager@npm:6.0.1"
   dependencies:
-    encoding-down: ^6.3.0
-    levelup: ^4.3.2
-  checksum: befe2aa54f2010a6ecf7ddce392c8dee225e1839205080a2704d75e560e28b01191b345494696196777b70d376e3eaae4c9e7c330cc70d3000839f5b18dd78f2
+    encoding-down: ^7.1.0
+    levelup: ^5.1.1
+  checksum: 41c4abe677752a0140cdbf1e37c37ebb979025447c695750d0433462f9308d5cda02cf94bbae112d47727d81c9221f7ec23444c754e72d408944ed8e4426f0f1
   languageName: node
   linkType: hard
 
-"level-rocksdb@npm:4.0.0":
-  version: 4.0.0
-  resolution: "level-rocksdb@npm:4.0.0"
+"level-rocksdb@npm:^5.0.0":
+  version: 5.0.0
+  resolution: "level-rocksdb@npm:5.0.0"
   dependencies:
-    level-packager: ^5.0.1
-    rocksdb: ^4.0.0
-  checksum: 40eb6a3bc195dcbec3983316ee3f5353c24b0897fbe138c57606c3e13cc83e08b45cdb4d63ab88a43024a2980190bf89aaf3fe39575ae935203e653b201df72b
+    level-packager: ^6.0.0
+    rocksdb: ^5.1.0
+  checksum: 1be9fe89e370a55744db2221932ec3f8e749682ab43934b9f50f687f7ce75c3fbdb389d76f8d09c108c7b4589261304f3615d9264f7ad11ce14bd283187a3be5
+  languageName: node
+  linkType: hard
+
+"level-supports@npm:^2.0.1":
+  version: 2.1.0
+  resolution: "level-supports@npm:2.1.0"
+  checksum: f7b16aea7ddd13326ee4fbc2c1099bcaf8a74dc95346af9ebedea4e02518c6f7a438e829b79b7890d67489b59f615a9428369a0a065021797aa7cb6b6bd84d75
   languageName: node
   linkType: hard
 
@@ -8722,7 +8772,7 @@ fsevents@~2.3.2:
   languageName: node
   linkType: hard
 
-"levelup@npm:^4.3.2, levelup@npm:^4.4.0":
+"levelup@npm:^4.4.0":
   version: 4.4.0
   resolution: "levelup@npm:4.4.0"
   dependencies:
@@ -8732,6 +8782,20 @@ fsevents@~2.3.2:
     level-supports: ~1.0.0
     xtend: ~4.0.0
   checksum: 5a09e34c78cd7c23f9f6cb73563f1ebe8121ffc5f9f5f232242529d4fbdd40e8d1ffb337d2defa0b842334e0dbd4028fbfe7a072eebfe2c4d07174f0aa4aabca
+  languageName: node
+  linkType: hard
+
+"levelup@npm:^5.1.1":
+  version: 5.1.1
+  resolution: "levelup@npm:5.1.1"
+  dependencies:
+    catering: ^2.0.0
+    deferred-leveldown: ^7.0.0
+    level-errors: ^3.0.1
+    level-iterator-stream: ^5.0.0
+    level-supports: ^2.0.1
+    queue-microtask: ^1.2.3
+  checksum: 3053cd3495f615874f1695a47bc7c1eaf432f4c1323b41d58770230b39f2b845100c6e6e912bcffdc504051a8540a39b5d05f3b54f65cfdcb43ce613f6182dd6
   languageName: node
   linkType: hard
 
@@ -9636,7 +9700,7 @@ fsevents@~2.3.2:
   languageName: node
   linkType: hard
 
-"napi-macros@npm:~2.0.0":
+"napi-macros@npm:^2.0.0":
   version: 2.0.0
   resolution: "napi-macros@npm:2.0.0"
   checksum: 30384819386977c1f82034757014163fa60ab3c5a538094f778d38788bebb52534966279956f796a92ea771c7f8ae072b975df65de910d051ffbdc927f62320c
@@ -9737,14 +9801,14 @@ fsevents@~2.3.2:
   languageName: node
   linkType: hard
 
-"node-gyp-build@npm:~4.1.0":
-  version: 4.1.1
-  resolution: "node-gyp-build@npm:4.1.1"
+"node-gyp-build@npm:^4.3.0":
+  version: 4.3.0
+  resolution: "node-gyp-build@npm:4.3.0"
   bin:
-    node-gyp-build: ./bin.js
-    node-gyp-build-optional: ./optional.js
-    node-gyp-build-test: ./build-test.js
-  checksum: 959d42221cc44b92700003efae741652bc4e379e4cf375830ddde03ba43c89f99694bf0883078ed0d4e03ffe2f85decab0572e04068d3900b8538d165dbc17df
+    node-gyp-build: bin.js
+    node-gyp-build-optional: optional.js
+    node-gyp-build-test: build-test.js
+  checksum: 1ecab16d9f275174d516e223f60f65ebe07540347d5c04a6a7d6921060b7f2e3af4f19463d9d1dcedc452e275c2ae71354a99405e55ebd5b655bb2f38025c728
   languageName: node
   linkType: hard
 
@@ -10891,10 +10955,17 @@ fsevents@~2.3.2:
   languageName: node
   linkType: hard
 
-"queue-microtask@npm:^1.2.2":
+"queue-microtask@npm:^1.2.2, queue-microtask@npm:^1.2.3":
   version: 1.2.3
   resolution: "queue-microtask@npm:1.2.3"
   checksum: b676f8c040cdc5b12723ad2f91414d267605b26419d5c821ff03befa817ddd10e238d22b25d604920340fd73efd8ba795465a0377c4adf45a4a41e4234e42dc4
+  languageName: node
+  linkType: hard
+
+"queue-tick@npm:^1.0.0":
+  version: 1.0.0
+  resolution: "queue-tick@npm:1.0.0"
+  checksum: 2310194a79e5e51ce2be71242e09edc0e0aebc7746a9c0714921c0360319258560fe7db48d9d095e56aa3dfc9a76b740c120f5d265f5543bb08f52e2e4dfe47c
   languageName: node
   linkType: hard
 
@@ -11425,15 +11496,15 @@ fsevents@~2.3.2:
   languageName: node
   linkType: hard
 
-"rocksdb@npm:^4.0.0":
-  version: 4.1.0
-  resolution: "rocksdb@npm:4.1.0"
+"rocksdb@npm:^5.1.0":
+  version: 5.2.0
+  resolution: "rocksdb@npm:5.2.0"
   dependencies:
-    abstract-leveldown: ~6.1.1
-    napi-macros: ~2.0.0
+    abstract-leveldown: ^7.2.0
+    napi-macros: ^2.0.0
     node-gyp: latest
-    node-gyp-build: ~4.1.0
-  checksum: d0c11c072ef068fd90fcb31302bf89e986ab2926ac0d1636ae7a1c37b0ba788ccc7de6dd5691ac7208fb31df50f2fb2ac7e84f5361b10c3213fe2ed01c61858c
+    node-gyp-build: ^4.3.0
+  checksum: b9e138200d65ac8ccb029340ca404efb30a79d0ff993f920412ed00982ae440dc5b011c36e378022da852daf91bd08151f8f5c344e6190a657329a86627f38da
   languageName: node
   linkType: hard
 
