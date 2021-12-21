@@ -3,12 +3,13 @@ const PublicKeyShareIsNotPresentError = require('./errors/PublicKeyShareIsNotPre
 class Validator {
   /**
    * @param {Buffer} proTxHash
+   * @param {ValidatorNetworkInfo} networkInfo
    * @param {Buffer} [pubKeyShare]
    */
-  constructor(proTxHash, pubKeyShare = undefined) {
+  constructor(proTxHash, networkInfo, pubKeyShare = undefined) {
     this.proTxHash = proTxHash;
+    this.networkInfo = networkInfo;
     this.pubKeyShare = pubKeyShare;
-    this.networkInfo = null;
   }
 
   /**
@@ -47,15 +48,6 @@ class Validator {
   }
 
   /**
-   * Set network info
-   *
-   * @param {ValidatorNetworkInfo} networkInfo
-   */
-  setNetworkInfo(networkInfo) {
-    this.networkInfo = networkInfo;
-  }
-
-  /**
    * @param {Object} member
    * @param {ValidatorNetworkInfo} networkInfo
    * @param {boolean} [pubKeyShareRequired=false]
@@ -71,11 +63,7 @@ class Validator {
       throw new PublicKeyShareIsNotPresentError(member);
     }
 
-    const validator = new Validator(proTxHash, pubKeyShare);
-
-    validator.setNetworkInfo(networkInfo);
-
-    return validator;
+    return new Validator(proTxHash, networkInfo, pubKeyShare);
   }
 }
 
