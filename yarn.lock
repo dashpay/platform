@@ -1593,7 +1593,7 @@ __metadata:
     "@dashevo/dpp": "workspace:~"
     "@dashevo/feature-flags-contract": "workspace:~"
     "@dashevo/grpc-common": "workspace:~"
-    "@dashevo/merk": "github:dashevo/node-merk#045949a9e3928e24ead9f09a6f5802062a64e7b8"
+    "@dashevo/merk": "github:dashevo/node-merk#eb37003300d22c6c04604463bcd7e861dd07000f"
     "@types/pino": ^6.3.0
     ajv: ^8.6.0
     ajv-keywords: ^5.0.0
@@ -1680,12 +1680,12 @@ __metadata:
   languageName: unknown
   linkType: soft
 
-"@dashevo/merk@github:dashevo/node-merk#045949a9e3928e24ead9f09a6f5802062a64e7b8":
+"@dashevo/merk@github:dashevo/node-merk#eb37003300d22c6c04604463bcd7e861dd07000f":
   version: 2.1.3
-  resolution: "@dashevo/merk@https://github.com/dashevo/node-merk.git#commit=045949a9e3928e24ead9f09a6f5802062a64e7b8"
+  resolution: "@dashevo/merk@https://github.com/dashevo/node-merk.git#commit=eb37003300d22c6c04604463bcd7e861dd07000f"
   dependencies:
     neon-load-or-build: ^2.2.2
-  checksum: 7934293342643d2d56d2752091c8cdda9c13151281630cdb8113a97546cb94461b5be9d3bb83caac79d2e08c125e43fd99ebeeabcd4c2dc1e51145c89572990f
+  checksum: 1e056bbd02fc3fc459efd85169bb35b4e33435137c0f4eb2e1fa993a1e913d83d662f133884889cd1cd2ab410009c9359429df769f4f2f3caa4e5f22fb8c1a04
   languageName: node
   linkType: hard
 
@@ -1699,7 +1699,7 @@ __metadata:
     "@dashevo/dpp": "workspace:~"
     "@dashevo/feature-flags-contract": "workspace:~"
     "@dashevo/grpc-common": "workspace:~"
-    "@dashevo/merk": "github:dashevo/node-merk#045949a9e3928e24ead9f09a6f5802062a64e7b8"
+    "@dashevo/merk": "github:dashevo/node-merk#eb37003300d22c6c04604463bcd7e861dd07000f"
     "@dashevo/wallet-lib": "workspace:~"
     assert-browserify: ^2.0.0
     blake3: ^2.1.4
