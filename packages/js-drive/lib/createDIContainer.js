@@ -130,7 +130,6 @@ const getRandomQuorum = require('./core/getRandomQuorum');
 const createQueryResponseFactory = require('./abci/handlers/query/response/createQueryResponseFactory');
 const BlockExecutionContextRepository = require('./blockExecution/BlockExecutionContextRepository');
 const fetchProTxInfoFactory = require('./core/fetchProTxInfoFactory');
-const fetchNetworkInfoFactory = require('./validator/fetchNetworkInfoFactory');
 
 /**
  *
@@ -290,7 +289,7 @@ function createDIContainer(options) {
 
       return Long.fromString(options.FEATURE_FLAGS_CONTRACT_BLOCK_HEIGHT);
     }),
-    p2pPort: asValue(options.TENDERDASH_P2P_PORT),
+    tenderdashP2pPort: asValue(options.TENDERDASH_P2P_PORT),
   });
 
   /**
@@ -1010,7 +1009,6 @@ function createDIContainer(options) {
    * Register validator quorums
    */
   container.register({
-    fetchNetworkInfo: asFunction(fetchNetworkInfoFactory),
     validatorSet: asClass(ValidatorSet),
   });
 
