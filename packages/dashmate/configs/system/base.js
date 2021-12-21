@@ -151,6 +151,7 @@ module.exports = {
       },
       ownerId: null,
     },
+    sourcePath: null,
   },
   externalIp: null,
   network: NETWORK_TESTNET,
