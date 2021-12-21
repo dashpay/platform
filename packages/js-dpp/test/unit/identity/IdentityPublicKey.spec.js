@@ -12,6 +12,7 @@ describe('IdentityPublicKey', () => {
       data: Buffer.from('AkVuTKyF3YgKLAQlLEtaUL2HTditwGILfWUVqjzYnIgH', 'base64'),
       purpose: IdentityPublicKey.PURPOSES.AUTHENTICATION,
       securityLevel: IdentityPublicKey.SECURITY_LEVELS.MASTER,
+      readOnly: false,
     };
 
     publicKey = new IdentityPublicKey(rawPublicKey);
@@ -109,6 +110,20 @@ describe('IdentityPublicKey', () => {
     });
   });
 
+  describe('#getReadOnly', () => {
+    it('should return readOnly', () => {
+      expect(publicKey.getReadOnly()).to.equal(rawPublicKey.readOnly);
+    });
+  });
+
+  describe('#setReadOnly', () => {
+    it('should set readOnly', () => {
+      publicKey.setReadOnly(true);
+
+      expect(publicKey.readOnly).to.equal(true);
+    });
+  });
+
   describe('#hash', () => {
     it('should return original public key hash', () => {
       const result = publicKey.hash();
@@ -146,6 +161,7 @@ describe('IdentityPublicKey', () => {
         data: 'AkVuTKyF3YgKLAQlLEtaUL2HTditwGILfWUVqjzYnIgH',
         purpose: IdentityPublicKey.PURPOSES.AUTHENTICATION,
         securityLevel: IdentityPublicKey.SECURITY_LEVELS.MASTER,
+        readOnly: false,
       });
     });
   });
