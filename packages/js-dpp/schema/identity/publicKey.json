@@ -42,7 +42,7 @@
     "readOnly": {
       "type": "boolean",
       "description": "Read only",
-      "$comment": "Identity public key can't be modified with readOnly set to true. It can't be changed."
+      "$comment": "Identity public key can't be modified with readOnly set to true. It can’t be changed after adding a key"
     }
   },
   "allOf": [
