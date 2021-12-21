@@ -157,7 +157,6 @@ class AbstractStateTransition {
    * @return {AbstractStateTransition}
    */
   signByPrivateKey(privateKey) {
-    console.log('pk', privateKey.toString('hex'));
     const data = this.toBuffer({ skipSignature: true });
     const privateKeyModel = new PrivateKey(privateKey);
 
