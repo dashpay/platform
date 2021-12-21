@@ -1,6 +1,6 @@
 {
   "name": "@dashevo/feature-flags-contract",
-  "version": "0.21.6",
+  "version": "0.22.0-dev.1",
   "description": "Data Contract to store Dash Platform feature flags",
   "scripts": {
     "build": "",
