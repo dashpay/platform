@@ -2581,7 +2581,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["@dashevo/dpp", "workspace:packages/js-dpp"],
             ["@dashevo/feature-flags-contract", "workspace:packages/feature-flags-contract"],
             ["@dashevo/grpc-common", "workspace:packages/js-grpc-common"],
-            ["@dashevo/merk", "https://github.com/dashevo/node-merk.git#commit=045949a9e3928e24ead9f09a6f5802062a64e7b8"],
+            ["@dashevo/merk", "https://github.com/dashevo/node-merk.git#commit=eb37003300d22c6c04604463bcd7e861dd07000f"],
             ["@types/pino", "npm:6.3.12"],
             ["ajv", "npm:8.8.1"],
             ["ajv-keywords", "virtual:34fbe5a7dba3086dcbcce8a7faed986b10f7a208f11db70499feb2c1afd76e24089e5b95f9e3b937e89512de1cf4937177cc2000303a1e908baefc73362a7d48#npm:5.0.0"],
@@ -2674,10 +2674,10 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
         }]
       ]],
       ["@dashevo/merk", [
-        ["https://github.com/dashevo/node-merk.git#commit=045949a9e3928e24ead9f09a6f5802062a64e7b8", {
-          "packageLocation": "./.yarn/unplugged/@dashevo-merk-https-355cb45070/node_modules/@dashevo/merk/",
+        ["https://github.com/dashevo/node-merk.git#commit=eb37003300d22c6c04604463bcd7e861dd07000f", {
+          "packageLocation": "./.yarn/unplugged/@dashevo-merk-https-e3939f6b2b/node_modules/@dashevo/merk/",
           "packageDependencies": [
-            ["@dashevo/merk", "https://github.com/dashevo/node-merk.git#commit=045949a9e3928e24ead9f09a6f5802062a64e7b8"],
+            ["@dashevo/merk", "https://github.com/dashevo/node-merk.git#commit=eb37003300d22c6c04604463bcd7e861dd07000f"],
             ["neon-load-or-build", "npm:2.2.2"]
           ],
           "linkType": "HARD",
@@ -2709,7 +2709,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["@dashevo/dpp", "workspace:packages/js-dpp"],
             ["@dashevo/feature-flags-contract", "workspace:packages/feature-flags-contract"],
             ["@dashevo/grpc-common", "workspace:packages/js-grpc-common"],
-            ["@dashevo/merk", "https://github.com/dashevo/node-merk.git#commit=045949a9e3928e24ead9f09a6f5802062a64e7b8"],
+            ["@dashevo/merk", "https://github.com/dashevo/node-merk.git#commit=eb37003300d22c6c04604463bcd7e861dd07000f"],
             ["@dashevo/wallet-lib", "workspace:packages/wallet-lib"],
             ["assert-browserify", "npm:2.0.0"],
             ["blake3", "npm:2.1.7"],
