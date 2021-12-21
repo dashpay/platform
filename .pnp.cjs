@@ -2581,7 +2581,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["@dashevo/dpp", "workspace:packages/js-dpp"],
             ["@dashevo/feature-flags-contract", "workspace:packages/feature-flags-contract"],
             ["@dashevo/grpc-common", "workspace:packages/js-grpc-common"],
-            ["@dashevo/merk", "https://github.com/dashevo/node-merk.git#commit=db502681c0711fb3c2ad8ca8512e9c8f444a21e2"],
+            ["@dashevo/merk", "https://github.com/dashevo/node-merk.git#commit=045949a9e3928e24ead9f09a6f5802062a64e7b8"],
             ["@types/pino", "npm:6.3.12"],
             ["ajv", "npm:8.8.1"],
             ["ajv-keywords", "virtual:34fbe5a7dba3086dcbcce8a7faed986b10f7a208f11db70499feb2c1afd76e24089e5b95f9e3b937e89512de1cf4937177cc2000303a1e908baefc73362a7d48#npm:5.0.0"],
@@ -2602,7 +2602,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["eslint-plugin-import", "virtual:595d7482cc8ddf98ee6aef33fc48b46393554ab5f17f851ef62e6e39315e53666c3e66226b978689aa0bc7f1e83a03081511a21db1c381362fe67614887077f9#npm:2.25.3"],
             ["find-my-way", "npm:2.2.5"],
             ["js-merkle", "npm:0.1.5"],
-            ["level-rocksdb", "npm:4.0.0"],
+            ["level-rocksdb", "npm:5.0.0"],
             ["level-transactions", "npm:2.1.4"],
             ["levelup", "npm:4.4.0"],
             ["lodash.escaperegexp", "npm:4.1.2"],
@@ -2674,10 +2674,10 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
         }]
       ]],
       ["@dashevo/merk", [
-        ["https://github.com/dashevo/node-merk.git#commit=db502681c0711fb3c2ad8ca8512e9c8f444a21e2", {
-          "packageLocation": "./.yarn/unplugged/@dashevo-merk-https-4c60d9c863/node_modules/@dashevo/merk/",
+        ["https://github.com/dashevo/node-merk.git#commit=045949a9e3928e24ead9f09a6f5802062a64e7b8", {
+          "packageLocation": "./.yarn/unplugged/@dashevo-merk-https-355cb45070/node_modules/@dashevo/merk/",
           "packageDependencies": [
-            ["@dashevo/merk", "https://github.com/dashevo/node-merk.git#commit=db502681c0711fb3c2ad8ca8512e9c8f444a21e2"],
+            ["@dashevo/merk", "https://github.com/dashevo/node-merk.git#commit=045949a9e3928e24ead9f09a6f5802062a64e7b8"],
             ["neon-load-or-build", "npm:2.2.2"]
           ],
           "linkType": "HARD",
@@ -2709,7 +2709,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["@dashevo/dpp", "workspace:packages/js-dpp"],
             ["@dashevo/feature-flags-contract", "workspace:packages/feature-flags-contract"],
             ["@dashevo/grpc-common", "workspace:packages/js-grpc-common"],
-            ["@dashevo/merk", "https://github.com/dashevo/node-merk.git#commit=db502681c0711fb3c2ad8ca8512e9c8f444a21e2"],
+            ["@dashevo/merk", "https://github.com/dashevo/node-merk.git#commit=045949a9e3928e24ead9f09a6f5802062a64e7b8"],
             ["@dashevo/wallet-lib", "workspace:packages/wallet-lib"],
             ["assert-browserify", "npm:2.0.0"],
             ["blake3", "npm:2.1.7"],
@@ -4289,15 +4289,6 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           ],
           "linkType": "HARD",
         }],
-        ["npm:6.1.1", {
-          "packageLocation": "./.yarn/cache/abstract-leveldown-npm-6.1.1-ee6d555495-dcaa912f2e.zip/node_modules/abstract-leveldown/",
-          "packageDependencies": [
-            ["abstract-leveldown", "npm:6.1.1"],
-            ["level-concat-iterator", "npm:2.0.1"],
-            ["xtend", "npm:4.0.2"]
-          ],
-          "linkType": "HARD",
-        }],
         ["npm:6.2.3", {
           "packageLocation": "./.yarn/cache/abstract-leveldown-npm-6.2.3-73e4ffefa5-00202b2eb7.zip/node_modules/abstract-leveldown/",
           "packageDependencies": [
@@ -4310,15 +4301,16 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           ],
           "linkType": "HARD",
         }],
-        ["npm:6.3.0", {
-          "packageLocation": "./.yarn/cache/abstract-leveldown-npm-6.3.0-4f3be79649-121a8509d8.zip/node_modules/abstract-leveldown/",
+        ["npm:7.2.0", {
+          "packageLocation": "./.yarn/cache/abstract-leveldown-npm-7.2.0-9da02e441b-d558111f2d.zip/node_modules/abstract-leveldown/",
           "packageDependencies": [
-            ["abstract-leveldown", "npm:6.3.0"],
-            ["buffer", "npm:5.7.1"],
-            ["immediate", "npm:3.3.0"],
-            ["level-concat-iterator", "npm:2.0.1"],
-            ["level-supports", "npm:1.0.1"],
-            ["xtend", "npm:4.0.2"]
+            ["abstract-leveldown", "npm:7.2.0"],
+            ["buffer", "npm:6.0.3"],
+            ["catering", "npm:2.1.0"],
+            ["is-buffer", "npm:2.0.5"],
+            ["level-concat-iterator", "npm:3.1.0"],
+            ["level-supports", "npm:2.1.0"],
+            ["queue-microtask", "npm:1.2.3"]
           ],
           "linkType": "HARD",
         }]
@@ -5795,6 +5787,16 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           "linkType": "HARD",
         }]
       ]],
+      ["catering", [
+        ["npm:2.1.0", {
+          "packageLocation": "./.yarn/cache/catering-npm-2.1.0-4621f16ed8-dd221facf8.zip/node_modules/catering/",
+          "packageDependencies": [
+            ["catering", "npm:2.1.0"],
+            ["queue-tick", "npm:1.0.0"]
+          ],
+          "linkType": "HARD",
+        }]
+      ]],
       ["cbor", [
         ["npm:8.1.0", {
           "packageLocation": "./.yarn/cache/cbor-npm-8.1.0-c1a4d6266a-a90338435d.zip/node_modules/cbor/",
@@ -7136,6 +7138,15 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["inherits", "npm:2.0.4"]
           ],
           "linkType": "HARD",
+        }],
+        ["npm:7.0.0", {
+          "packageLocation": "./.yarn/cache/deferred-leveldown-npm-7.0.0-b22b14d332-1ed5eb73e3.zip/node_modules/deferred-leveldown/",
+          "packageDependencies": [
+            ["deferred-leveldown", "npm:7.0.0"],
+            ["abstract-leveldown", "npm:7.2.0"],
+            ["inherits", "npm:2.0.4"]
+          ],
+          "linkType": "HARD",
         }]
       ]],
       ["define-properties", [
@@ -7612,14 +7623,14 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
         }]
       ]],
       ["encoding-down", [
-        ["npm:6.3.0", {
-          "packageLocation": "./.yarn/cache/encoding-down-npm-6.3.0-507c54a059-74043e6d90.zip/node_modules/encoding-down/",
+        ["npm:7.1.0", {
+          "packageLocation": "./.yarn/cache/encoding-down-npm-7.1.0-22d87d2bff-5de91a003c.zip/node_modules/encoding-down/",
           "packageDependencies": [
-            ["encoding-down", "npm:6.3.0"],
-            ["abstract-leveldown", "npm:6.3.0"],
+            ["encoding-down", "npm:7.1.0"],
+            ["abstract-leveldown", "npm:7.2.0"],
             ["inherits", "npm:2.0.4"],
-            ["level-codec", "npm:9.0.2"],
-            ["level-errors", "npm:2.0.1"]
+            ["level-codec", "npm:10.0.0"],
+            ["level-errors", "npm:3.0.1"]
           ],
           "linkType": "HARD",
         }]
@@ -9825,6 +9836,13 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["is-buffer", "npm:1.1.6"]
           ],
           "linkType": "HARD",
+        }],
+        ["npm:2.0.5", {
+          "packageLocation": "./.yarn/cache/is-buffer-npm-2.0.5-17e563f277-764c9ad8b5.zip/node_modules/is-buffer/",
+          "packageDependencies": [
+            ["is-buffer", "npm:2.0.5"]
+          ],
+          "linkType": "HARD",
         }]
       ]],
       ["is-callable", [
@@ -11013,18 +11031,18 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
         }]
       ]],
       ["level-codec", [
+        ["npm:10.0.0", {
+          "packageLocation": "./.yarn/cache/level-codec-npm-10.0.0-9bd0451f26-7b3edbe0af.zip/node_modules/level-codec/",
+          "packageDependencies": [
+            ["level-codec", "npm:10.0.0"],
+            ["buffer", "npm:6.0.3"]
+          ],
+          "linkType": "HARD",
+        }],
         ["npm:7.0.1", {
           "packageLocation": "./.yarn/cache/level-codec-npm-7.0.1-08af01f50c-2565c131d9.zip/node_modules/level-codec/",
           "packageDependencies": [
             ["level-codec", "npm:7.0.1"]
-          ],
-          "linkType": "HARD",
-        }],
-        ["npm:9.0.2", {
-          "packageLocation": "./.yarn/cache/level-codec-npm-9.0.2-e778987eb6-289003d51b.zip/node_modules/level-codec/",
-          "packageDependencies": [
-            ["level-codec", "npm:9.0.2"],
-            ["buffer", "npm:5.7.1"]
           ],
           "linkType": "HARD",
         }]
@@ -11034,6 +11052,14 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           "packageLocation": "./.yarn/cache/level-concat-iterator-npm-2.0.1-5179af5bd2-562583ef12.zip/node_modules/level-concat-iterator/",
           "packageDependencies": [
             ["level-concat-iterator", "npm:2.0.1"]
+          ],
+          "linkType": "HARD",
+        }],
+        ["npm:3.1.0", {
+          "packageLocation": "./.yarn/cache/level-concat-iterator-npm-3.1.0-5b0693a58a-a15bc4c5fb.zip/node_modules/level-concat-iterator/",
+          "packageDependencies": [
+            ["level-concat-iterator", "npm:3.1.0"],
+            ["catering", "npm:2.1.0"]
           ],
           "linkType": "HARD",
         }]
@@ -11062,6 +11088,13 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["errno", "npm:0.1.8"]
           ],
           "linkType": "HARD",
+        }],
+        ["npm:3.0.1", {
+          "packageLocation": "./.yarn/cache/level-errors-npm-3.0.1-8ef4cc828f-fe4486c423.zip/node_modules/level-errors/",
+          "packageDependencies": [
+            ["level-errors", "npm:3.0.1"]
+          ],
+          "linkType": "HARD",
         }]
       ]],
       ["level-iterator-stream", [
@@ -11085,26 +11118,35 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["xtend", "npm:4.0.2"]
           ],
           "linkType": "HARD",
+        }],
+        ["npm:5.0.0", {
+          "packageLocation": "./.yarn/cache/level-iterator-stream-npm-5.0.0-29efe6efcb-3f5bbb9caf.zip/node_modules/level-iterator-stream/",
+          "packageDependencies": [
+            ["level-iterator-stream", "npm:5.0.0"],
+            ["inherits", "npm:2.0.4"],
+            ["readable-stream", "npm:3.6.0"]
+          ],
+          "linkType": "HARD",
         }]
       ]],
       ["level-packager", [
-        ["npm:5.1.1", {
-          "packageLocation": "./.yarn/cache/level-packager-npm-5.1.1-94af8082f4-befe2aa54f.zip/node_modules/level-packager/",
+        ["npm:6.0.1", {
+          "packageLocation": "./.yarn/cache/level-packager-npm-6.0.1-cffdf36c73-41c4abe677.zip/node_modules/level-packager/",
           "packageDependencies": [
-            ["level-packager", "npm:5.1.1"],
-            ["encoding-down", "npm:6.3.0"],
-            ["levelup", "npm:4.4.0"]
+            ["level-packager", "npm:6.0.1"],
+            ["encoding-down", "npm:7.1.0"],
+            ["levelup", "npm:5.1.1"]
           ],
           "linkType": "HARD",
         }]
       ]],
       ["level-rocksdb", [
-        ["npm:4.0.0", {
-          "packageLocation": "./.yarn/cache/level-rocksdb-npm-4.0.0-d881932f1a-40eb6a3bc1.zip/node_modules/level-rocksdb/",
+        ["npm:5.0.0", {
+          "packageLocation": "./.yarn/cache/level-rocksdb-npm-5.0.0-19a0f32292-1be9fe89e3.zip/node_modules/level-rocksdb/",
           "packageDependencies": [
-            ["level-rocksdb", "npm:4.0.0"],
-            ["level-packager", "npm:5.1.1"],
-            ["rocksdb", "npm:4.1.0"]
+            ["level-rocksdb", "npm:5.0.0"],
+            ["level-packager", "npm:6.0.1"],
+            ["rocksdb", "npm:5.2.0"]
           ],
           "linkType": "HARD",
         }]
@@ -11115,6 +11157,13 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           "packageDependencies": [
             ["level-supports", "npm:1.0.1"],
             ["xtend", "npm:4.0.2"]
+          ],
+          "linkType": "HARD",
+        }],
+        ["npm:2.1.0", {
+          "packageLocation": "./.yarn/cache/level-supports-npm-2.1.0-4f5c2d5fc4-f7b16aea7d.zip/node_modules/level-supports/",
+          "packageDependencies": [
+            ["level-supports", "npm:2.1.0"]
           ],
           "linkType": "HARD",
         }]
@@ -11159,6 +11208,19 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["level-iterator-stream", "npm:4.0.2"],
             ["level-supports", "npm:1.0.1"],
             ["xtend", "npm:4.0.2"]
+          ],
+          "linkType": "HARD",
+        }],
+        ["npm:5.1.1", {
+          "packageLocation": "./.yarn/cache/levelup-npm-5.1.1-42d16f81c1-3053cd3495.zip/node_modules/levelup/",
+          "packageDependencies": [
+            ["levelup", "npm:5.1.1"],
+            ["catering", "npm:2.1.0"],
+            ["deferred-leveldown", "npm:7.0.0"],
+            ["level-errors", "npm:3.0.1"],
+            ["level-iterator-stream", "npm:5.0.0"],
+            ["level-supports", "npm:2.1.0"],
+            ["queue-microtask", "npm:1.2.3"]
           ],
           "linkType": "HARD",
         }]
@@ -12341,10 +12403,10 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
         }]
       ]],
       ["node-gyp-build", [
-        ["npm:4.1.1", {
-          "packageLocation": "./.yarn/cache/node-gyp-build-npm-4.1.1-4743409fa0-959d42221c.zip/node_modules/node-gyp-build/",
+        ["npm:4.3.0", {
+          "packageLocation": "./.yarn/cache/node-gyp-build-npm-4.3.0-87bdf5216f-1ecab16d9f.zip/node_modules/node-gyp-build/",
           "packageDependencies": [
-            ["node-gyp-build", "npm:4.1.1"]
+            ["node-gyp-build", "npm:4.3.0"]
           ],
           "linkType": "HARD",
         }]
@@ -13626,6 +13688,15 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           "linkType": "HARD",
         }]
       ]],
+      ["queue-tick", [
+        ["npm:1.0.0", {
+          "packageLocation": "./.yarn/cache/queue-tick-npm-1.0.0-1b0b4bbd21-2310194a79.zip/node_modules/queue-tick/",
+          "packageDependencies": [
+            ["queue-tick", "npm:1.0.0"]
+          ],
+          "linkType": "HARD",
+        }]
+      ]],
       ["quick-format-unescaped", [
         ["npm:4.0.4", {
           "packageLocation": "./.yarn/cache/quick-format-unescaped-npm-4.0.4-7e22c9b7dc-7bc32b9935.zip/node_modules/quick-format-unescaped/",
@@ -14218,14 +14289,14 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
         }]
       ]],
       ["rocksdb", [
-        ["npm:4.1.0", {
-          "packageLocation": "./.yarn/unplugged/rocksdb-npm-4.1.0-2208fbd298/node_modules/rocksdb/",
+        ["npm:5.2.0", {
+          "packageLocation": "./.yarn/unplugged/rocksdb-npm-5.2.0-a607ebef5b/node_modules/rocksdb/",
           "packageDependencies": [
-            ["rocksdb", "npm:4.1.0"],
-            ["abstract-leveldown", "npm:6.1.1"],
+            ["rocksdb", "npm:5.2.0"],
+            ["abstract-leveldown", "npm:7.2.0"],
             ["napi-macros", "npm:2.0.0"],
             ["node-gyp", "npm:8.4.0"],
-            ["node-gyp-build", "npm:4.1.1"]
+            ["node-gyp-build", "npm:4.3.0"]
           ],
           "linkType": "HARD",
         }]
