@@ -26,6 +26,10 @@ class IdentityPublicKey {
     if (Object.prototype.hasOwnProperty.call(rawIdentityPublicKey, 'data')) {
       this.setData(rawIdentityPublicKey.data);
     }
+
+    if (Object.prototype.hasOwnProperty.call(rawIdentityPublicKey, 'readOnly')) {
+      this.setReadOnly(rawIdentityPublicKey.readOnly);
+    }
   }
 
   /**
@@ -134,6 +138,27 @@ class IdentityPublicKey {
   }
 
   /**
+   * Set readOnly flag
+   *
+   * @param {boolean} readOnly
+   * @return {IdentityPublicKey}
+   */
+  setReadOnly(readOnly) {
+    this.readOnly = readOnly;
+
+    return this;
+  }
+
+  /**
+   * Get readOnly flag
+   *
+   * @return boolean
+   */
+  getReadOnly() {
+    return this.readOnly;
+  }
+
+  /**
    * Get the original public key hash
    *
    * @returns {Buffer}
@@ -162,6 +187,7 @@ class IdentityPublicKey {
       purpose: this.getPurpose(),
       securityLevel: this.getSecurityLevel(),
       data: this.getData(),
+      readOnly: this.getReadOnly(),
     };
   }
 
@@ -185,6 +211,7 @@ class IdentityPublicKey {
  * @property {number} purpose
  * @property {number} securityLevel
  * @property {Buffer} data
+ * @property {boolean} readOnly
  */
 
 /**
@@ -194,6 +221,7 @@ class IdentityPublicKey {
  * @property {number} securityLevel
  * @property {number} type
  * @property {string} data
+ * @property {boolean} readOnly
  */
 
 IdentityPublicKey.TYPES = {
