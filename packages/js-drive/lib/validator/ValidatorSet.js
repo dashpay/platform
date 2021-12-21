@@ -1,5 +1,6 @@
 const Validator = require('./Validator');
 const ValidatorSetIsNotInitializedError = require('./errors/ValidatorSetIsNotInitializedError');
+const ValidatorNetworkInfo = require('./ValidatorNetworkInfo');
 
 class ValidatorSet {
   /**
@@ -8,6 +9,7 @@ class ValidatorSet {
    * @param {fetchQuorumMembers} fetchQuorumMembers
    * @param {number} validatorSetLLMQType
    * @param {RpcClient} coreRpcClient
+   * @param {number} tenderdashP2pPort
    */
   constructor(
     simplifiedMasternodeList,
@@ -15,12 +17,14 @@ class ValidatorSet {
     fetchQuorumMembers,
     validatorSetLLMQType,
     coreRpcClient,
+    tenderdashP2pPort,
   ) {
     this.simplifiedMasternodeList = simplifiedMasternodeList;
     this.getRandomQuorum = getRandomQuorum;
     this.fetchQuorumMembers = fetchQuorumMembers;
     this.validatorSetLLMQType = validatorSetLLMQType;
     this.coreRpcClient = coreRpcClient;
+    this.tenderdashP2pPort = tenderdashP2pPort;
 
     this.quorum = null;
     this.validators = [];
@@ -133,9 +137,21 @@ class ValidatorSet {
     const isThisNodeMember = !!quorumMembers
       .find((member) => member.valid && member.proTxHash === proTxHash);
 
-    this.validators = quorumMembers
+    const validMasternodesList = this.simplifiedMasternodeList
+      .getStore()
+      .getCurrentSML()
+      .getValidMasternodesList();
+
+    this.validators = await Promise.all(quorumMembers
       .filter((member) => member.valid)
-      .map((member) => Validator.createFromQuorumMember(member, isThisNodeMember));
+      .map(async (member) => {
+        const masternode = validMasternodesList
+          .find((mnEntry) => mnEntry.proRegTxHash === member.proTxHash);
+
+        const networkInfo = new ValidatorNetworkInfo(masternode.getIp(), this.tenderdashP2pPort);
+
+        return Validator.createFromQuorumMember(member, networkInfo, isThisNodeMember);
+      }));
   }
 }
 
