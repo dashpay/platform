@@ -2008,23 +2008,53 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@oclif/command@npm:^1.8.14, @oclif/command@npm:^1.8.15, @oclif/command@npm:^1.8.9":
-  version: 1.8.16
-  resolution: "@oclif/command@npm:1.8.16"
+"@oclif/command@npm:^1.6.0, @oclif/command@npm:^1.8.0, @oclif/command@npm:^1.8.3":
+  version: 1.8.3
+  resolution: "@oclif/command@npm:1.8.3"
   dependencies:
-    "@oclif/config": ^1.18.2
+    "@oclif/config": ^1.15.1
     "@oclif/errors": ^1.3.5
-    "@oclif/help": ^1.0.1
-    "@oclif/parser": ^3.8.6
+    "@oclif/parser": ^3.8.5
+    "@oclif/plugin-help": ^3.2.4
     debug: ^4.1.1
     semver: ^7.3.2
   peerDependencies:
     "@oclif/config": ^1
-  checksum: c7cac8e1f9a7e5d9d88a316becc6f7f3bc72fce1a2d583d39b0b08cd98c13f0fe71e256f90ac586d7bd21054c8e76c0fef0b823bb7d108977d777e10c2678e7d
+  checksum: 8abe84ee0898ba0d3790049fa55110454bc81bff9cbb5a07e4eeb626ca1d05cdc113c0a5ef7d6f45ee615f9255b44c458b02410c68fe1a3045372927f8599e90
   languageName: node
   linkType: hard
 
-"@oclif/config@npm:1.18.2, @oclif/config@npm:^1.18.2":
+"@oclif/command@npm:^1.8.9":
+  version: 1.8.9
+  resolution: "@oclif/command@npm:1.8.9"
+  dependencies:
+    "@oclif/config": ^1.18.2
+    "@oclif/errors": ^1.3.5
+    "@oclif/parser": ^3.8.6
+    "@oclif/plugin-help": ^3.2.13
+    debug: ^4.1.1
+    semver: ^7.3.2
+  peerDependencies:
+    "@oclif/config": ^1
+  checksum: a70e58278d7437005321cf3c76307a759525c5e824e1db23f1c304d79ae22adf3997bbf8e6f950a92c59236dbe96ac52a7527d3f8e2249ffaca8072f3c3f572e
+  languageName: node
+  linkType: hard
+
+"@oclif/config@npm:^1.15.1, @oclif/config@npm:^1.17.0, @oclif/config@npm:^1.17.1":
+  version: 1.17.1
+  resolution: "@oclif/config@npm:1.17.1"
+  dependencies:
+    "@oclif/errors": ^1.3.3
+    "@oclif/parser": ^3.8.6
+    debug: ^4.1.1
+    globby: ^11.0.1
+    is-wsl: ^2.1.1
+    tslib: ^2.0.0
+  checksum: 8a73562df0dc674e4fc52bed9c8b734f203e2aaf7b9b50b8b0c9f60afaf84cfacd6c66399e9abe8a562d8b55aba7337db727cf56e44bfa4cb70407b837afe18a
+  languageName: node
+  linkType: hard
+
+"@oclif/config@npm:^1.18.2":
   version: 1.18.2
   resolution: "@oclif/config@npm:1.18.2"
   dependencies:
@@ -2039,14 +2069,14 @@ __metadata:
   linkType: hard
 
 "@oclif/dev-cli@npm:^1.22.2":
-  version: 1.26.10
-  resolution: "@oclif/dev-cli@npm:1.26.10"
+  version: 1.26.0
+  resolution: "@oclif/dev-cli@npm:1.26.0"
   dependencies:
-    "@oclif/command": ^1.8.15
-    "@oclif/config": ^1.18.2
-    "@oclif/errors": ^1.3.5
-    "@oclif/plugin-help": 3.2.18
-    cli-ux: 5.6.7
+    "@oclif/command": ^1.8.0
+    "@oclif/config": ^1.17.0
+    "@oclif/errors": ^1.3.3
+    "@oclif/plugin-help": ^3.2.0
+    cli-ux: ^5.2.1
     debug: ^4.1.1
     find-yarn-workspace-root: ^2.0.0
     fs-extra: ^8.1
@@ -2056,12 +2086,12 @@ __metadata:
     qqjs: ^0.3.10
     tslib: ^2.0.3
   bin:
-    oclif-dev: bin/run
-  checksum: 9f708ae66e424c4b3789088767c5277f1cdbe508fde973bfbe44f9be23824c1e629ef78c2cfc2485d2c2a1200b50dbc3f04ba0a33dadc4b7726e29fe497ef761
+    oclif-dev: ./bin/run
+  checksum: 9fd94d4fc992b2f908a0d4122e36c369860da491445249650cada2d4ac2ab82ef96f502f58f29bf3e26e0bbc4fdac7fcee818e192ba9ca9771df7f1b3d2b938b
   languageName: node
   linkType: hard
 
-"@oclif/errors@npm:1.3.5, @oclif/errors@npm:^1.2.2, @oclif/errors@npm:^1.3.3, @oclif/errors@npm:^1.3.5":
+"@oclif/errors@npm:^1.2.1, @oclif/errors@npm:^1.2.2, @oclif/errors@npm:^1.3.3, @oclif/errors@npm:^1.3.5":
   version: 1.3.5
   resolution: "@oclif/errors@npm:1.3.5"
   dependencies:
@@ -2074,23 +2104,6 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@oclif/help@npm:^1.0.0, @oclif/help@npm:^1.0.1":
-  version: 1.0.1
-  resolution: "@oclif/help@npm:1.0.1"
-  dependencies:
-    "@oclif/config": 1.18.2
-    "@oclif/errors": 1.3.5
-    chalk: ^4.1.2
-    indent-string: ^4.0.0
-    lodash: ^4.17.21
-    string-width: ^4.2.0
-    strip-ansi: ^6.0.0
-    widest-line: ^3.1.0
-    wrap-ansi: ^6.2.0
-  checksum: 26cdde82ca98f34bc57f7c7513b151f5fc2a6332f37b2f1186fe6d946011b7a4cc11e91053c569ebd28ad2b2ea90fd4a0851a21167e7780041a0caf369a8b277
-  languageName: node
-  linkType: hard
-
 "@oclif/linewrap@npm:^1.0.0":
   version: 1.0.0
   resolution: "@oclif/linewrap@npm:1.0.0"
@@ -2098,7 +2111,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@oclif/parser@npm:^3.8.0, @oclif/parser@npm:^3.8.6":
+"@oclif/parser@npm:^3.8.0, @oclif/parser@npm:^3.8.5, @oclif/parser@npm:^3.8.6":
   version: 3.8.6
   resolution: "@oclif/parser@npm:3.8.6"
   dependencies:
@@ -2110,14 +2123,31 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@oclif/plugin-help@npm:3.2.18":
-  version: 3.2.18
-  resolution: "@oclif/plugin-help@npm:3.2.18"
+"@oclif/plugin-help@npm:^3.2.0, @oclif/plugin-help@npm:^3.2.4":
+  version: 3.2.5
+  resolution: "@oclif/plugin-help@npm:3.2.5"
   dependencies:
-    "@oclif/command": ^1.8.14
-    "@oclif/config": 1.18.2
-    "@oclif/errors": 1.3.5
-    "@oclif/help": ^1.0.0
+    "@oclif/command": ^1.8.3
+    "@oclif/config": ^1.17.1
+    "@oclif/errors": ^1.3.5
+    chalk: ^4.1.0
+    indent-string: ^4.0.0
+    lodash: ^4.17.21
+    string-width: ^4.2.0
+    strip-ansi: ^6.0.0
+    widest-line: ^3.1.0
+    wrap-ansi: ^4.0.0
+  checksum: f6dcdc112fb3f671a687bc756ef6abc5a50299538ef3390ede635f6e802118971cd089b56a356abb0b7285a6dd0c391ccf5f56440e8641947b1c593075184fa9
+  languageName: node
+  linkType: hard
+
+"@oclif/plugin-help@npm:^3.2.13, @oclif/plugin-help@npm:^3.2.14":
+  version: 3.2.14
+  resolution: "@oclif/plugin-help@npm:3.2.14"
+  dependencies:
+    "@oclif/command": ^1.8.9
+    "@oclif/config": ^1.18.2
+    "@oclif/errors": ^1.3.5
     chalk: ^4.1.2
     indent-string: ^4.0.0
     lodash: ^4.17.21
@@ -2125,30 +2155,11 @@ __metadata:
     strip-ansi: ^6.0.0
     widest-line: ^3.1.0
     wrap-ansi: ^6.2.0
-  checksum: b0146e57d8dec1f0e1a4c1605f7b25ab77c3dc75afe7051db021b843d896dbfb409a544c71d34bd199dd6addba77fe3e3ee213e43dbf9272daf909bb8f3e5154
+  checksum: 5dbb0265b9edb88d35b948e8795b5aeed8370dff0bc6c4053fb5191983f2cdc3b9345ecc7f8a9415821c25fea9668ef9e6894dfae8e160606931364bcc6549b6
   languageName: node
   linkType: hard
 
-"@oclif/plugin-help@npm:^3.2.14":
-  version: 3.3.1
-  resolution: "@oclif/plugin-help@npm:3.3.1"
-  dependencies:
-    "@oclif/command": ^1.8.15
-    "@oclif/config": 1.18.2
-    "@oclif/errors": 1.3.5
-    "@oclif/help": ^1.0.1
-    chalk: ^4.1.2
-    indent-string: ^4.0.0
-    lodash: ^4.17.21
-    string-width: ^4.2.0
-    strip-ansi: ^6.0.0
-    widest-line: ^3.1.0
-    wrap-ansi: ^6.2.0
-  checksum: 07c67a9ed32ea05a6407823325fac7379fdea2cd0b688ef927d6265f695c1e3707d13de6a706e2af5b1949ea4beb5720d11feb87e1f4323bfe5948846766d9e2
-  languageName: node
-  linkType: hard
-
-"@oclif/screen@npm:^1.0.4":
+"@oclif/screen@npm:^1.0.3":
   version: 1.0.4
   resolution: "@oclif/screen@npm:1.0.4"
   checksum: 13e64efb1a6b4cf89989dd3e96cc78751193257694f9f104d3d41f7f8d12e217297d3c2983ed972d84d43ff3b50ceff50529996ee6bc6764f01ed90aa39a83cb
@@ -4365,14 +4376,14 @@ __metadata:
   languageName: node
   linkType: hard
 
-"cli-ux@npm:5.6.7":
-  version: 5.6.7
-  resolution: "cli-ux@npm:5.6.7"
+"cli-ux@npm:^5.2.1":
+  version: 5.6.3
+  resolution: "cli-ux@npm:5.6.3"
   dependencies:
-    "@oclif/command": ^1.8.15
-    "@oclif/errors": ^1.3.5
+    "@oclif/command": ^1.6.0
+    "@oclif/errors": ^1.2.1
     "@oclif/linewrap": ^1.0.0
-    "@oclif/screen": ^1.0.4
+    "@oclif/screen": ^1.0.3
     ansi-escapes: ^4.3.0
     ansi-styles: ^4.2.0
     cardinal: ^2.1.1
@@ -4385,7 +4396,7 @@ __metadata:
     indent-string: ^4.0.0
     is-wsl: ^2.2.0
     js-yaml: ^3.13.1
-    lodash: ^4.17.21
+    lodash: ^4.17.11
     natural-orderby: ^2.0.1
     object-treeify: ^1.1.4
     password-prompt: ^1.1.2
@@ -4395,7 +4406,7 @@ __metadata:
     supports-color: ^8.1.0
     supports-hyperlinks: ^2.1.0
     tslib: ^2.0.0
-  checksum: a7371fff872603d763ec7dd56a572ce2cace52fcd30de92bcf69b69ec87b76e5618cff82fa8645598e55f1e4fb4cf19696c1f377c9a40dcfeb5245d1aa6df20c
+  checksum: 793238fcc864e77660072db798d1527a8f4a3c0322e3d171c0d824e60ff855a9edaf515ec82b00c954f317195a3fca540b289c541fc829fdc56ec3934175b787
   languageName: node
   linkType: hard
 
@@ -12267,6 +12278,16 @@ fsevents@~2.3.2:
   languageName: node
   linkType: hard
 
+"string-width@npm:^2.1.1":
+  version: 2.1.1
+  resolution: "string-width@npm:2.1.1"
+  dependencies:
+    is-fullwidth-code-point: ^2.0.0
+    strip-ansi: ^4.0.0
+  checksum: d6173abe088c615c8dffaf3861dc5d5906ed3dc2d6fd67ff2bd2e2b5dce7fd683c5240699cf0b1b8aa679a3b3bd6b28b5053c824cb89b813d7f6541d8f89064a
+  languageName: node
+  linkType: hard
+
 "string-width@npm:^3.0.0":
   version: 3.1.0
   resolution: "string-width@npm:3.1.0"
@@ -13688,6 +13709,17 @@ typescript@^3.9.5:
   version: 6.1.5
   resolution: "workerpool@npm:6.1.5"
   checksum: 5defea1fd3e36b4f83c2bb184cade4a71e27030d46ee5efe704e90e19baf3a5c7146fddef010cbd0b7df3edbfca1e9e851bd35d8da8c99ec6d8bbfe121d8c0b0
+  languageName: node
+  linkType: hard
+
+"wrap-ansi@npm:^4.0.0":
+  version: 4.0.0
+  resolution: "wrap-ansi@npm:4.0.0"
+  dependencies:
+    ansi-styles: ^3.2.0
+    string-width: ^2.1.1
+    strip-ansi: ^4.0.0
+  checksum: 3eb33040a331278a7cb2c141562da0a4df0a2be54af23e67ed5ed9a26c5ddddb908324ef37dec5440b5ce6e79008f611471d6efc70c7ea2bf0234b210e3a90cc
   languageName: node
   linkType: hard
 

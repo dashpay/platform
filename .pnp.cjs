@@ -2410,11 +2410,11 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["@dashevo/dpp", "workspace:packages/js-dpp"],
             ["@dashevo/feature-flags-contract", "workspace:packages/feature-flags-contract"],
             ["@dashevo/wallet-lib", "workspace:packages/wallet-lib"],
-            ["@oclif/command", "virtual:b1862be0733d748bb4eee8ce40ca5a6f5d57a75db0426f4b3c8d029e97393bcc2c8d9b20864e94318edbbcc92187f82ab040216470165b9aeb49039f6a2f64b6#npm:1.8.16"],
+            ["@oclif/command", "virtual:f7d571e0d77017e1d29b1e07a522ecaa92b0544f222388541809a9c07f96976aeb3437afcfac1ce21bfe1d1a4fa7793cd36e5b24db59e3adef0819d088b77e0f#npm:1.8.9"],
             ["@oclif/config", "npm:1.18.2"],
-            ["@oclif/dev-cli", "npm:1.26.10"],
+            ["@oclif/dev-cli", "npm:1.26.0"],
             ["@oclif/errors", "npm:1.3.5"],
-            ["@oclif/plugin-help", "npm:3.3.1"],
+            ["@oclif/plugin-help", "npm:3.2.14"],
             ["ajv", "npm:8.8.1"],
             ["ajv-formats", "virtual:58fb68f2aed20e5e0f2e48520ab903ae9bb3440369bfd5e912034003cf27c5aae368649fc5620dd2acbed578131f3a0975e75b838d77d12335fb0412e24026c6#npm:2.1.1"],
             ["awilix", "npm:4.3.4"],
@@ -3038,21 +3038,46 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
         }]
       ]],
       ["@oclif/command", [
-        ["npm:1.8.16", {
-          "packageLocation": "./.yarn/cache/@oclif-command-npm-1.8.16-9d2766598f-c7cac8e1f9.zip/node_modules/@oclif/command/",
+        ["npm:1.8.3", {
+          "packageLocation": "./.yarn/cache/@oclif-command-npm-1.8.3-4779690ec5-8abe84ee08.zip/node_modules/@oclif/command/",
           "packageDependencies": [
-            ["@oclif/command", "npm:1.8.16"]
+            ["@oclif/command", "npm:1.8.3"]
           ],
           "linkType": "SOFT",
         }],
-        ["virtual:b1862be0733d748bb4eee8ce40ca5a6f5d57a75db0426f4b3c8d029e97393bcc2c8d9b20864e94318edbbcc92187f82ab040216470165b9aeb49039f6a2f64b6#npm:1.8.16", {
-          "packageLocation": "./.yarn/__virtual__/@oclif-command-virtual-8f138792ab/0/cache/@oclif-command-npm-1.8.16-9d2766598f-c7cac8e1f9.zip/node_modules/@oclif/command/",
+        ["npm:1.8.9", {
+          "packageLocation": "./.yarn/cache/@oclif-command-npm-1.8.9-9faf5ad28b-a70e58278d.zip/node_modules/@oclif/command/",
           "packageDependencies": [
-            ["@oclif/command", "virtual:b1862be0733d748bb4eee8ce40ca5a6f5d57a75db0426f4b3c8d029e97393bcc2c8d9b20864e94318edbbcc92187f82ab040216470165b9aeb49039f6a2f64b6#npm:1.8.16"],
+            ["@oclif/command", "npm:1.8.9"]
+          ],
+          "linkType": "SOFT",
+        }],
+        ["virtual:f7d571e0d77017e1d29b1e07a522ecaa92b0544f222388541809a9c07f96976aeb3437afcfac1ce21bfe1d1a4fa7793cd36e5b24db59e3adef0819d088b77e0f#npm:1.8.9", {
+          "packageLocation": "./.yarn/__virtual__/@oclif-command-virtual-43271321a8/0/cache/@oclif-command-npm-1.8.9-9faf5ad28b-a70e58278d.zip/node_modules/@oclif/command/",
+          "packageDependencies": [
+            ["@oclif/command", "virtual:f7d571e0d77017e1d29b1e07a522ecaa92b0544f222388541809a9c07f96976aeb3437afcfac1ce21bfe1d1a4fa7793cd36e5b24db59e3adef0819d088b77e0f#npm:1.8.9"],
             ["@oclif/config", "npm:1.18.2"],
             ["@oclif/errors", "npm:1.3.5"],
-            ["@oclif/help", "npm:1.0.1"],
             ["@oclif/parser", "npm:3.8.6"],
+            ["@oclif/plugin-help", "npm:3.2.14"],
+            ["@types/oclif__config", null],
+            ["debug", "virtual:40c87ada7f2f684a486a15e9daad470176b55201376bfdeb15dad896f5233b78f99666966eda31038040b4d17aa8b8f8bf53fddc6773a558064319b9a0677061#npm:4.3.2"],
+            ["semver", "npm:7.3.5"]
+          ],
+          "packagePeers": [
+            "@oclif/config",
+            "@types/oclif__config"
+          ],
+          "linkType": "HARD",
+        }],
+        ["virtual:faa73a2de901dcdfe34cae3ad6699d8859a42ca45ab61fa8d5fff447af72b108b21f40c0f1026fb70251f4038206126276646919ae01f18197b795b1f32e646c#npm:1.8.3", {
+          "packageLocation": "./.yarn/__virtual__/@oclif-command-virtual-722096479e/0/cache/@oclif-command-npm-1.8.3-4779690ec5-8abe84ee08.zip/node_modules/@oclif/command/",
+          "packageDependencies": [
+            ["@oclif/command", "virtual:faa73a2de901dcdfe34cae3ad6699d8859a42ca45ab61fa8d5fff447af72b108b21f40c0f1026fb70251f4038206126276646919ae01f18197b795b1f32e646c#npm:1.8.3"],
+            ["@oclif/config", "npm:1.17.1"],
+            ["@oclif/errors", "npm:1.3.5"],
+            ["@oclif/parser", "npm:3.8.6"],
+            ["@oclif/plugin-help", "npm:3.2.5"],
             ["@types/oclif__config", null],
             ["debug", "virtual:40c87ada7f2f684a486a15e9daad470176b55201376bfdeb15dad896f5233b78f99666966eda31038040b4d17aa8b8f8bf53fddc6773a558064319b9a0677061#npm:4.3.2"],
             ["semver", "npm:7.3.5"]
@@ -3065,6 +3090,19 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
         }]
       ]],
       ["@oclif/config", [
+        ["npm:1.17.1", {
+          "packageLocation": "./.yarn/cache/@oclif-config-npm-1.17.1-351515cce6-8a73562df0.zip/node_modules/@oclif/config/",
+          "packageDependencies": [
+            ["@oclif/config", "npm:1.17.1"],
+            ["@oclif/errors", "npm:1.3.5"],
+            ["@oclif/parser", "npm:3.8.6"],
+            ["debug", "virtual:40c87ada7f2f684a486a15e9daad470176b55201376bfdeb15dad896f5233b78f99666966eda31038040b4d17aa8b8f8bf53fddc6773a558064319b9a0677061#npm:4.3.2"],
+            ["globby", "npm:11.0.4"],
+            ["is-wsl", "npm:2.2.0"],
+            ["tslib", "npm:2.3.1"]
+          ],
+          "linkType": "HARD",
+        }],
         ["npm:1.18.2", {
           "packageLocation": "./.yarn/cache/@oclif-config-npm-1.18.2-f93d475df5-edb82ae885.zip/node_modules/@oclif/config/",
           "packageDependencies": [
@@ -3080,15 +3118,15 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
         }]
       ]],
       ["@oclif/dev-cli", [
-        ["npm:1.26.10", {
-          "packageLocation": "./.yarn/cache/@oclif-dev-cli-npm-1.26.10-d15c33e672-9f708ae66e.zip/node_modules/@oclif/dev-cli/",
+        ["npm:1.26.0", {
+          "packageLocation": "./.yarn/cache/@oclif-dev-cli-npm-1.26.0-09cf7ddcab-9fd94d4fc9.zip/node_modules/@oclif/dev-cli/",
           "packageDependencies": [
-            ["@oclif/dev-cli", "npm:1.26.10"],
-            ["@oclif/command", "virtual:b1862be0733d748bb4eee8ce40ca5a6f5d57a75db0426f4b3c8d029e97393bcc2c8d9b20864e94318edbbcc92187f82ab040216470165b9aeb49039f6a2f64b6#npm:1.8.16"],
-            ["@oclif/config", "npm:1.18.2"],
+            ["@oclif/dev-cli", "npm:1.26.0"],
+            ["@oclif/command", "virtual:faa73a2de901dcdfe34cae3ad6699d8859a42ca45ab61fa8d5fff447af72b108b21f40c0f1026fb70251f4038206126276646919ae01f18197b795b1f32e646c#npm:1.8.3"],
+            ["@oclif/config", "npm:1.17.1"],
             ["@oclif/errors", "npm:1.3.5"],
-            ["@oclif/plugin-help", "npm:3.2.18"],
-            ["cli-ux", "npm:5.6.7"],
+            ["@oclif/plugin-help", "npm:3.2.5"],
+            ["cli-ux", "npm:5.6.3"],
             ["debug", "virtual:40c87ada7f2f684a486a15e9daad470176b55201376bfdeb15dad896f5233b78f99666966eda31038040b4d17aa8b8f8bf53fddc6773a558064319b9a0677061#npm:4.3.2"],
             ["find-yarn-workspace-root", "npm:2.0.0"],
             ["fs-extra", "npm:8.1.0"],
@@ -3111,24 +3149,6 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["indent-string", "npm:4.0.0"],
             ["strip-ansi", "npm:6.0.1"],
             ["wrap-ansi", "npm:7.0.0"]
-          ],
-          "linkType": "HARD",
-        }]
-      ]],
-      ["@oclif/help", [
-        ["npm:1.0.1", {
-          "packageLocation": "./.yarn/cache/@oclif-help-npm-1.0.1-cb20191ebb-26cdde82ca.zip/node_modules/@oclif/help/",
-          "packageDependencies": [
-            ["@oclif/help", "npm:1.0.1"],
-            ["@oclif/config", "npm:1.18.2"],
-            ["@oclif/errors", "npm:1.3.5"],
-            ["chalk", "npm:4.1.2"],
-            ["indent-string", "npm:4.0.0"],
-            ["lodash", "npm:4.17.21"],
-            ["string-width", "npm:4.2.3"],
-            ["strip-ansi", "npm:6.0.1"],
-            ["widest-line", "npm:3.1.0"],
-            ["wrap-ansi", "npm:6.2.0"]
           ],
           "linkType": "HARD",
         }]
@@ -3156,14 +3176,13 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
         }]
       ]],
       ["@oclif/plugin-help", [
-        ["npm:3.2.18", {
-          "packageLocation": "./.yarn/cache/@oclif-plugin-help-npm-3.2.18-b1862be073-b0146e57d8.zip/node_modules/@oclif/plugin-help/",
+        ["npm:3.2.14", {
+          "packageLocation": "./.yarn/cache/@oclif-plugin-help-npm-3.2.14-f7d571e0d7-5dbb0265b9.zip/node_modules/@oclif/plugin-help/",
           "packageDependencies": [
-            ["@oclif/plugin-help", "npm:3.2.18"],
-            ["@oclif/command", "virtual:b1862be0733d748bb4eee8ce40ca5a6f5d57a75db0426f4b3c8d029e97393bcc2c8d9b20864e94318edbbcc92187f82ab040216470165b9aeb49039f6a2f64b6#npm:1.8.16"],
+            ["@oclif/plugin-help", "npm:3.2.14"],
+            ["@oclif/command", "virtual:f7d571e0d77017e1d29b1e07a522ecaa92b0544f222388541809a9c07f96976aeb3437afcfac1ce21bfe1d1a4fa7793cd36e5b24db59e3adef0819d088b77e0f#npm:1.8.9"],
             ["@oclif/config", "npm:1.18.2"],
             ["@oclif/errors", "npm:1.3.5"],
-            ["@oclif/help", "npm:1.0.1"],
             ["chalk", "npm:4.1.2"],
             ["indent-string", "npm:4.0.0"],
             ["lodash", "npm:4.17.21"],
@@ -3174,21 +3193,20 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           ],
           "linkType": "HARD",
         }],
-        ["npm:3.3.1", {
-          "packageLocation": "./.yarn/cache/@oclif-plugin-help-npm-3.3.1-58a3d9c8f4-07c67a9ed3.zip/node_modules/@oclif/plugin-help/",
+        ["npm:3.2.5", {
+          "packageLocation": "./.yarn/cache/@oclif-plugin-help-npm-3.2.5-faa73a2de9-f6dcdc112f.zip/node_modules/@oclif/plugin-help/",
           "packageDependencies": [
-            ["@oclif/plugin-help", "npm:3.3.1"],
-            ["@oclif/command", "virtual:b1862be0733d748bb4eee8ce40ca5a6f5d57a75db0426f4b3c8d029e97393bcc2c8d9b20864e94318edbbcc92187f82ab040216470165b9aeb49039f6a2f64b6#npm:1.8.16"],
-            ["@oclif/config", "npm:1.18.2"],
+            ["@oclif/plugin-help", "npm:3.2.5"],
+            ["@oclif/command", "virtual:faa73a2de901dcdfe34cae3ad6699d8859a42ca45ab61fa8d5fff447af72b108b21f40c0f1026fb70251f4038206126276646919ae01f18197b795b1f32e646c#npm:1.8.3"],
+            ["@oclif/config", "npm:1.17.1"],
             ["@oclif/errors", "npm:1.3.5"],
-            ["@oclif/help", "npm:1.0.1"],
             ["chalk", "npm:4.1.2"],
             ["indent-string", "npm:4.0.0"],
             ["lodash", "npm:4.17.21"],
             ["string-width", "npm:4.2.3"],
             ["strip-ansi", "npm:6.0.1"],
             ["widest-line", "npm:3.1.0"],
-            ["wrap-ansi", "npm:6.2.0"]
+            ["wrap-ansi", "npm:4.0.0"]
           ],
           "linkType": "HARD",
         }]
@@ -6041,11 +6059,11 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
         }]
       ]],
       ["cli-ux", [
-        ["npm:5.6.7", {
-          "packageLocation": "./.yarn/cache/cli-ux-npm-5.6.7-df36121af9-a7371fff87.zip/node_modules/cli-ux/",
+        ["npm:5.6.3", {
+          "packageLocation": "./.yarn/cache/cli-ux-npm-5.6.3-a1116a61d6-793238fcc8.zip/node_modules/cli-ux/",
           "packageDependencies": [
-            ["cli-ux", "npm:5.6.7"],
-            ["@oclif/command", "virtual:b1862be0733d748bb4eee8ce40ca5a6f5d57a75db0426f4b3c8d029e97393bcc2c8d9b20864e94318edbbcc92187f82ab040216470165b9aeb49039f6a2f64b6#npm:1.8.16"],
+            ["cli-ux", "npm:5.6.3"],
+            ["@oclif/command", "virtual:faa73a2de901dcdfe34cae3ad6699d8859a42ca45ab61fa8d5fff447af72b108b21f40c0f1026fb70251f4038206126276646919ae01f18197b795b1f32e646c#npm:1.8.3"],
             ["@oclif/errors", "npm:1.3.5"],
             ["@oclif/linewrap", "npm:1.0.0"],
             ["@oclif/screen", "npm:1.0.4"],
@@ -15138,6 +15156,15 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           ],
           "linkType": "HARD",
         }],
+        ["npm:2.1.1", {
+          "packageLocation": "./.yarn/cache/string-width-npm-2.1.1-0c2c6ae53f-d6173abe08.zip/node_modules/string-width/",
+          "packageDependencies": [
+            ["string-width", "npm:2.1.1"],
+            ["is-fullwidth-code-point", "npm:2.0.0"],
+            ["strip-ansi", "npm:4.0.0"]
+          ],
+          "linkType": "HARD",
+        }],
         ["npm:3.1.0", {
           "packageLocation": "./.yarn/cache/string-width-npm-3.1.0-e031bfa4e0-57f7ca73d2.zip/node_modules/string-width/",
           "packageDependencies": [
@@ -17166,6 +17193,16 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
         }]
       ]],
       ["wrap-ansi", [
+        ["npm:4.0.0", {
+          "packageLocation": "./.yarn/cache/wrap-ansi-npm-4.0.0-eb119d517f-3eb33040a3.zip/node_modules/wrap-ansi/",
+          "packageDependencies": [
+            ["wrap-ansi", "npm:4.0.0"],
+            ["ansi-styles", "npm:3.2.1"],
+            ["string-width", "npm:2.1.1"],
+            ["strip-ansi", "npm:4.0.0"]
+          ],
+          "linkType": "HARD",
+        }],
         ["npm:6.2.0", {
           "packageLocation": "./.yarn/cache/wrap-ansi-npm-6.2.0-439a7246d8-6cd96a4101.zip/node_modules/wrap-ansi/",
           "packageDependencies": [
