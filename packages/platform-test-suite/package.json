@@ -26,7 +26,7 @@
     "@dashevo/dpp": "workspace:~",
     "@dashevo/feature-flags-contract": "workspace:~",
     "@dashevo/grpc-common": "workspace:~",
-    "@dashevo/merk": "github:dashevo/node-merk",
+    "@dashevo/merk": "github:dashevo/node-merk#045949a9e3928e24ead9f09a6f5802062a64e7b8",
     "@dashevo/wallet-lib": "workspace:~",
     "assert-browserify": "^2.0.0",
     "blake3": "^2.1.4",
