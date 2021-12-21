@@ -1,7 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 
-const { flags: flagTypes } = require('@oclif/command');
+const { Flags: flagTypes } = require('@oclif/core');
 
 const { HOME_DIR_PATH } = require('../../constants');
 

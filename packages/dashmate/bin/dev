@@ -1,0 +1,9 @@
+#!/usr/bin/env node
+
+const oclif = require('@oclif/core')
+
+// In dev mode, always show stack traces
+oclif.settings.debug = true;
+
+// Start the CLI
+oclif.run().then(oclif.flush).catch(oclif.Errors.handle)

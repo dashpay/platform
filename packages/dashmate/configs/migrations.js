@@ -281,4 +281,19 @@ module.exports = {
 
     return configFile;
   },
+  '0.21.7': (configFile) => {
+    Object.entries(configFile.configs)
+      .forEach(([, config]) => {
+        if (config.platform) {
+          // Remove build setting
+          delete config.platform.drive.abci.docker.build;
+
+          delete config.platform.dapi.api.docker.build;
+
+          config.platform.sourcePath = null;
+        }
+      });
+
+    return configFile;
+  },
 };

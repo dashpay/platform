@@ -1,6 +1,6 @@
 const { Listr } = require('listr2');
 
-const { flags: flagTypes } = require('@oclif/command');
+const { Flags: flagTypes } = require('@oclif/core');
 
 const ConfigBaseCommand = require('../oclif/command/ConfigBaseCommand');
 

@@ -1,4 +1,4 @@
-const { Command, flags: flagTypes } = require('@oclif/command');
+const { Command, Flags: flagTypes } = require('@oclif/core');
 
 const { asValue } = require('awilix');
 
