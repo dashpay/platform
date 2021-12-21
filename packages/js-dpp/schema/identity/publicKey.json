@@ -83,6 +83,27 @@
           }
         }
       }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": 2
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "data": {
+            "type": "array",
+            "byteArray": true,
+            "minItems": 20,
+            "maxItems": 20,
+            "description": "BLS public key Hash160",
+            "$comment": "It must be a valid key hash of the specified type and unique for the identity. It can’t be changed after adding a key"
+          }
+        }
+      }
     }
   ],
   "required": [
