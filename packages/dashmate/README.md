@@ -373,7 +373,7 @@ To start the group of nodes, ports and other required options need to be updated
 
 To start a local dash network, the `setup` command with the `local` preset can be used to generate configs, mine some dash, register masternodes and populate the nodes with the data required for local development.
 
-To allow developers quickly test changes to DAPI and Drive, a local path for DAPI or Drive may be specified via the `platform.drive.abci.docker.build.path` and `platform.dapi.api.docker.build.path` config options. A Docker image will be built from the provided path and then used by Dashmate.
+To allow developers quickly test changes to DAPI and Drive, a local path for this repository may be specified via the `platform.sourcePath` config options. A Docker image will be built from the provided path and then used by Dashmate.
 
 ### Docker Compose
 
