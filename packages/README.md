@@ -11,7 +11,7 @@
 
 | Package | Version | Description |
 |---------|---------|-------------|
-| [`@dashevo/dashmate`](/packages/dashmate) | [![npm](https://img.shields.io/npm/v/@dashevo/dashmate.svg?maxAge=3600)](https://www.npmjs.com/package/@dashevo/dashmate) | A tool for managing full nodes and masternodes |
+| [`dashmate`](/packages/dashmate) | [![npm](https://img.shields.io/npm/v/dashmate.svg?maxAge=3600)](https://www.npmjs.com/package/dashmate) | A tool for managing full nodes and masternodes |
 
 ### Platform Client Packages
 
