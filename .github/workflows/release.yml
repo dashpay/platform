@@ -22,6 +22,7 @@ jobs:
         uses: actions/setup-node@v2
         with:
           node-version: '16'
+          token: ${{ secrets.NPM_TOKEN }}
 
       - name: Enable corepack
         run: corepack enable
@@ -54,7 +55,7 @@ jobs:
             return (tag.includes('dev') ? `${major}.${minor}-dev` : 'latest');
 
       - name: Configure NPM auth token
-        run: yarn config set npmAuthToken "${{ secrets.NPM_TOKEN }}"
+        run: yarn config set npmAuthToken ${{ secrets.NPM_TOKEN }}
 
       - name: Publish NPM packages
         run: yarn workspaces foreach --all --no-private --parallel npm publish --access public --tag ${{ steps.tag.outputs.result }}
