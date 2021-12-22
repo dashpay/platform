@@ -1,4 +1,4 @@
-## [0.22.0-dev.1](https://github.com/dashevo/platform/compare/v0.21.6...v0.22.0-dev.1) (2021-12-21)
+## [0.22.0-dev.3](https://github.com/dashevo/platform/compare/v0.21.6...v0.22.0-dev.3) (2021-12-21)
 
 
 ### ⚠ BREAKING CHANGES
