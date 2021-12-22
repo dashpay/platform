@@ -18,6 +18,7 @@ const {
 } = require('@dashevo/dapi-grpc');
 const ProcessMediator = require('../../../transactionsFilter/ProcessMediator');
 const wait = require('../../../utils/wait');
+const subscribeToNewBlockHeaders = require('./subscribeToNewBlockHeaders');
 
 /**
  * Prepare and send block headers response
@@ -41,11 +42,13 @@ async function sendBlockHeadersResponse(call, blockHeaders) {
 /**
  * @param {getHistoricalBlockHeadersIterator} getHistoricalBlockHeadersIterator
  * @param {CoreRpcClient} coreAPI
+ * @param {ZmqClient} zmqClient
  * @return {subscribeToBlockHeadersWithChainLocksHandler}
  */
 function subscribeToBlockHeadersWithChainLocksHandlerFactory(
   getHistoricalBlockHeadersIterator,
   coreAPI,
+  zmqClient,
 ) {
   /**
    * @typedef subscribeToBlockHeadersWithChainLocksHandler
@@ -58,11 +61,22 @@ function subscribeToBlockHeadersWithChainLocksHandlerFactory(
     const fromBlockHeight = request.getFromBlockHeight();
     const count = request.getCount();
 
-    // const isNewTransactionsRequested = count === 0;
+    const newHeadersRequested = count === 0;
 
     const acknowledgingCall = new AcknowledgingWritable(call);
 
     const mediator = new ProcessMediator();
+
+    mediator.on(
+      ProcessMediator.EVENTS.BLOCK_HEADERS,
+      async (blockHeaders) => {
+        await sendBlockHeadersResponse(acknowledgingCall, blockHeaders);
+      },
+    );
+
+    if (newHeadersRequested) {
+      subscribeToNewBlockHeaders(mediator, zmqClient, coreAPI);
+    }
 
     // If block height is specified instead of block hash, we obtain block hash by block height
     if (fromBlockHash === '') {
@@ -130,17 +144,22 @@ function subscribeToBlockHeadersWithChainLocksHandlerFactory(
       await wait(50);
 
       await sendBlockHeadersResponse(acknowledgingCall, blockHeaders);
-      //
-      // if (isNewTransactionsRequested) {
-      //   removing sent transactions and blocks from cache
-      // mediator.emit(ProcessMediator.EVENTS.HISTORICAL_BLOCK_SENT, merkleBlock.header.hash);
-      // }
+
+      if (newHeadersRequested) {
+        // removing sent headers from cache
+        mediator.emit(
+          ProcessMediator.EVENTS.HISTORICAL_BLOCK_HEADERS_SENT,
+          blockHeaders.map((header) => header.hash),
+        );
+      }
     }
 
     // notify new txs listener that we've sent historical data
     mediator.emit(ProcessMediator.EVENTS.HISTORICAL_DATA_SENT);
 
-    call.end();
+    if (!newHeadersRequested) {
+      call.end();
+    }
 
     call.on('cancelled', () => {
       call.end();

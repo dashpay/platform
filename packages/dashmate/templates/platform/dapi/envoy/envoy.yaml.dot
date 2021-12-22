@@ -58,6 +58,7 @@ static_resources:
                               regex: "GET|POST|OPTIONS"
                       route:
                         cluster: tx_filter_stream
+                        timeout: 0s
                     # block headers subscription endpoint configuration
                     - match:
                         prefix: "/org.dash.platform.dapi.v0.Core/subscribeToBlockHeadersWithChainLocks"
@@ -68,6 +69,7 @@ static_resources:
                               regex: "GET|POST|OPTIONS"
                       route:
                         cluster: tx_filter_stream
+                        timeout: 0s
                     # core endpoint configutration
                     - match:
                         prefix: "/org.dash.platform.dapi.v0.Core"
@@ -225,11 +227,13 @@ static_resources:
                             prefix: "/org.dash.platform.dapi.v0.Core/subscribeToTransactionsWithProofs"
                           route:
                             cluster: tx_filter_stream
+                            timeout: 0s
                         # block headers subscription endpoint configuration
                         - match:
                             prefix: "/org.dash.platform.dapi.v0.Core/subscribeToBlockHeadersWithChainLocks"
                           route:
                             cluster: tx_filter_stream
+                            timeout: 0s
                         - match:
                             prefix: "/org.dash.platform.dapi.v0.Core"
                           route:

@@ -157,6 +157,7 @@ async function main() {
     subscribeToBlockHeadersWithChainLocksHandlerFactory(
       getHistoricalBlockHeadersIterator,
       dashCoreRpcClient,
+      dashCoreZmqClient,
     );
 
   const wrappedSubscribeToBlockHeadersWithChainLocks = jsonToProtobufHandlerWrapper(
