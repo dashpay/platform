@@ -49,7 +49,9 @@ function getHistoricalBlockHeadersIteratorFactory(coreRpcApi) {
         blockHash, blocksToScan,
       ));
 
-      blockHeaders = blockHeaders.map((blockHeader) => BlockHeader.fromRawBlock(blockHeader));
+      // TODO: figure out whether it's possible to omit BlockHeader.fromBuffer conversion
+      // and directly send bytes to the client
+      blockHeaders = blockHeaders.map((blockHeader) => BlockHeader.fromBuffer(blockHeader));
 
       yield blockHeaders;
     }
