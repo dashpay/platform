@@ -1,6 +1,5 @@
 {
-  "name": "@dashevo/dashmate",
-  "private": true,
+  "name": "dashmate",
   "version": "0.21.6",
   "description": "Distribution package for Dash Masternode installation",
   "main": "src/index.js",
@@ -97,8 +96,13 @@
   },
   "files": [
     "bin",
+    "configs",
+    "docker",
+    "src",
+    "templates",
+    "docker-compose.*",
     "oclif.manifest.json",
-    "src"
+    "npm-shrinkwrap.json"
   ],
   "oclif": {
     "commands": "./src/commands",
