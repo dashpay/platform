@@ -151,12 +151,8 @@ class Config {
     if (this.has('platform')) {
       dockerComposeFiles.push('docker-compose.platform.yml');
 
-      if (this.get('platform.drive.abci.docker.build.path') !== null) {
-        dockerComposeFiles.push('docker-compose.platform.build-drive.yml');
-      }
-
-      if (this.get('platform.dapi.api.docker.build.path') !== null) {
-        dockerComposeFiles.push('docker-compose.platform.build-dapi.yml');
+      if (this.get('platform.sourcePath') !== null) {
+        dockerComposeFiles.push('docker-compose.platform.build.yml');
       }
     }
 
