@@ -4,17 +4,17 @@ services:
   drive_abci:
     build:
       context: ${PLATFORM_SOURCE_PATH:?err}
-      dockerfile: ${PLATFORM_SOURCE_PATH:?err}/js-drive/Dockerfile
+      dockerfile: ${PLATFORM_SOURCE_PATH:?err}/packages/js-drive/Dockerfile
     image: drive:local
 
   dapi_api:
     build:
       context: ${PLATFORM_SOURCE_PATH:?err}
-      dockerfile: ${PLATFORM_SOURCE_PATH:?err}/dapi/Dockerfile
+      dockerfile: ${PLATFORM_SOURCE_PATH:?err}/packages/dapi/Dockerfile
     image: dapi:local
 
   dapi_tx_filter_stream:
     build:
       context: ${PLATFORM_SOURCE_PATH:?err}
-      dockerfile: ${PLATFORM_SOURCE_PATH:?err}/dapi/Dockerfile
+      dockerfile: ${PLATFORM_SOURCE_PATH:?err}/packages/dapi/Dockerfile
     image: dapi:local
