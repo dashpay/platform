@@ -1,4 +1,4 @@
-const { PrivateKey } = require('@dashevo/dashcore-lib');
+const { PrivateKey, crypto: { Hash } } = require('@dashevo/dashcore-lib');
 
 const calculateStateTransitionFee = require('../../../lib/stateTransition/calculateStateTransitionFee');
 
@@ -119,6 +119,21 @@ describe('AbstractStateTransitionIdentitySigned', () => {
 
     it('should sign data and validate signature with private key in buffer format', () => {
       stateTransition.sign(identityPublicKey, privateKeyWIF);
+
+      expect(stateTransition.signature).to.be.an.instanceOf(Buffer);
+
+      const isValid = stateTransition.verifySignature(identityPublicKey);
+
+      expect(isValid).to.be.true();
+    });
+
+    it('should sign data and validate signature with ECDSA_HASH160 identityPublicKey', () => {
+      identityPublicKey.setType(IdentityPublicKey.TYPES.ECDSA_HASH160);
+      identityPublicKey.setData(
+        Hash.sha256ripemd160(identityPublicKey.getData()),
+      );
+
+      stateTransition.sign(identityPublicKey, privateKeyHex);
 
       expect(stateTransition.signature).to.be.an.instanceOf(Buffer);
 
@@ -287,6 +302,31 @@ describe('AbstractStateTransitionIdentitySigned', () => {
         expect(e.getPublicKeyPurpose()).to.be.deep.equal(identityPublicKey.getPurpose());
         expect(e.getKeyPurposeRequirement())
           .to.be.deep.equal(IdentityPublicKey.PURPOSES.AUTHENTICATION);
+      }
+    });
+  });
+
+  describe('#verifySignatureByPublicKeyHash', () => {
+    it('should validate sign by public key hash', () => {
+      privateKeyHex = 'fdfa0d878967ac17ca3e6fa6ca7f647fea51cffac85e41424c6954fcbe97721c';
+      const publicKey = 'dLfavDCp+ARA3O0AXsOFJ0W//mg=';
+
+      stateTransition.signByPrivateKey(privateKeyHex);
+
+      const isValid = stateTransition.verifySignatureByPublicKeyHash(Buffer.from(publicKey, 'base64'));
+
+      expect(isValid).to.be.true();
+    });
+
+    it('should throw an StateTransitionIsNotSignedError error if transition is not signed', () => {
+      const publicKey = 'dLfavDCp+ARA3O0AXsOFJ0W//mg=';
+      try {
+        stateTransition.verifySignatureByPublicKeyHash(Buffer.from(publicKey, 'base64'));
+
+        expect.fail('should throw StateTransitionIsNotSignedError');
+      } catch (e) {
+        expect(e).to.be.instanceOf(StateTransitionIsNotSignedError);
+        expect(e.getStateTransition()).to.equal(stateTransition);
       }
     });
   });

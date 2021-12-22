@@ -1,6 +1,7 @@
 const {
   PublicKey,
   PrivateKey,
+  crypto: { Hash },
 } = require('@dashevo/dashcore-lib');
 
 const AbstractStateTransition = require('./AbstractStateTransition');
@@ -72,6 +73,23 @@ class AbstractStateTransitionIdentitySigned extends AbstractStateTransition {
 
         this.signByPrivateKey(privateKeyModel);
         break;
+      case IdentityPublicKey.TYPES.ECDSA_HASH160: {
+        privateKeyModel = new PrivateKey(privateKey);
+        pubKeyBase = new PublicKey({
+          ...privateKeyModel.toPublicKey().toObject(),
+          compressed: true,
+        })
+          .toBuffer();
+
+        pubKeyBase = Hash.sha256ripemd160(pubKeyBase);
+
+        if (!pubKeyBase.equals(identityPublicKey.getData())) {
+          throw new InvalidSignaturePublicKeyError(identityPublicKey.getData());
+        }
+
+        this.signByPrivateKey(privateKeyModel);
+        break;
+      }
       case IdentityPublicKey.TYPES.BLS12_381:
       default:
         throw new InvalidIdentityPublicKeyTypeError(identityPublicKey.getType());
@@ -123,6 +141,11 @@ class AbstractStateTransitionIdentitySigned extends AbstractStateTransition {
     }
 
     const publicKeyBuffer = publicKey.getData();
+
+    if (publicKey.getType() === IdentityPublicKey.TYPES.ECDSA_HASH160) {
+      return this.verifySignatureByPublicKeyHash(publicKeyBuffer);
+    }
+
     const publicKeyModel = PublicKey.fromBuffer(publicKeyBuffer);
 
     return this.verifySignatureByPublicKey(publicKeyModel);
