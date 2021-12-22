@@ -40,19 +40,16 @@ For Linux installations you may optionally wish to follow the [post-installation
 
 ### Distribution package
 
+Use NPM to install dashmate globally in your system:
 ```bash
-$ git clone -b master https://github.com/dashevo/dashmate.git
-$ cd dashmate
-$ npm install # optional: install CLI dependencies
-$ sudo npm link # optional: link CLI for system-wide execution
+$ npm install -g dashmate
 ```
 
 ## Update
 
 ```bash
 $ dashmate stop
-$ git checkout master
-$ git pull
+$ npm update -g dashmate
 $ dashmate update
 $ dashmate start
 ```
@@ -61,8 +58,7 @@ If the platform layer has been wiped, you must additionally reset platform data:
 
 ```bash
 $ dashmate stop
-$ git checkout master
-$ git pull
+$ npm update -g dashmate
 $ dashmate reset --platform-only --hard
 $ dashmate update
 $ dashmate setup -k <bls-key>
