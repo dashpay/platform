@@ -1,7 +1,5 @@
 const { BlockHeader } = require('@dashevo/dashcore-lib');
 
-const log = require('../log');
-
 const MAX_HEADERS_PER_REQUEST = 500;
 
 /**
