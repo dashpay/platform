@@ -77,6 +77,7 @@ describe('subscribeToBlockHeadersWithChainLocksHandlerFactory', () => {
 
     expect(streamEnded).to.be.true();
 
+    // TODO: fetching blocks one by one takes too long. Implement getBlockHeaders in dapi-client
     const fetchedBlocks = await Promise.all(
       Array.from({ length: headersAmount })
         .map(async (_, index) => new Block(await dapiClient.core.getBlockByHeight(index + 1))),
@@ -87,9 +88,10 @@ describe('subscribeToBlockHeadersWithChainLocksHandlerFactory', () => {
     expect(bestChainLockSignature).to.exist();
   });
 
-  it('should respond with only new data', async () => {
+  it('should respond with both new and historical data', async () => {
     const blocksToGenerate = 5;
     const clSigsToAcquire = 1;
+    const numHistoricalBlocks = 10;
     const blockHeadersHashesFromStream = [];
     const blockHeadersHashesGenerated = [];
 
@@ -99,7 +101,7 @@ describe('subscribeToBlockHeadersWithChainLocksHandlerFactory', () => {
     // Connect to the stream
     const stream = await dapiClient.core.subscribeToBlockHeadersWithChainLocks(
       {
-        fromBlockHeight: bestBlockHeight,
+        fromBlockHeight: bestBlockHeight - numHistoricalBlocks + 1,
       },
     );
 
@@ -109,8 +111,9 @@ describe('subscribeToBlockHeadersWithChainLocksHandlerFactory', () => {
 
       if (blockHeaders) {
         const list = blockHeaders.getHeadersList();
-        list.forEach((header) => {
-          blockHeadersHashesFromStream.push(new BlockHeader(Buffer.from(header)).hash);
+        list.forEach((headerBytes) => {
+          const header = new BlockHeader(Buffer.from(headerBytes));
+          blockHeadersHashesFromStream.push(header.hash);
         });
 
         allHeadersSettled = blockHeadersHashesGenerated.length >= blocksToGenerate
@@ -157,7 +160,20 @@ describe('subscribeToBlockHeadersWithChainLocksHandlerFactory', () => {
       await wait(1000);
     }
 
+    // TODO: fetching blocks one by one takes too long. Implement getBlockHeaders in dapi-client
+    const fetchedHistoricalBlocks = await Promise.all(
+      Array.from({ length: numHistoricalBlocks })
+        .map(async (_, index) => {
+          const height = bestBlockHeight - numHistoricalBlocks + index + 1;
+          return new Block(await dapiClient.core.getBlockByHeight(height));
+        }),
+    );
+
+    for (let i = 0; i < numHistoricalBlocks; i++) {
+      expect(fetchedHistoricalBlocks[i].header.hash).to.equal(blockHeadersHashesFromStream[i]);
+    }
+
     expect(allHeadersSettled).to.be.true();
-    expect(numClSigsAcquired).to.be.equal(clSigsToAcquire);
+    expect(numClSigsAcquired).to.equal(clSigsToAcquire);
   });
 });
