@@ -35,7 +35,6 @@ function getHistoricalBlockHeadersIteratorFactory(coreRpcApi) {
     const fromBlock = await coreRpcApi.getBlock(fromBlockHash);
     const fromHeight = fromBlock.height;
     const numberOfBatches = Math.ceil(count / MAX_HEADERS_PER_REQUEST);
-    log.info(`getHistoricalBlockHeaders(): ${count}, ${fromHeight}`);
 
     for (let batchIndex = 0; batchIndex < numberOfBatches; batchIndex++) {
       const currentHeight = fromHeight + batchIndex * MAX_HEADERS_PER_REQUEST;
@@ -43,15 +42,11 @@ function getHistoricalBlockHeadersIteratorFactory(coreRpcApi) {
 
       const blockHash = await coreRpcApi.getBlockHash(currentHeight);
 
-      log.info(`Iter(${batchIndex}): ${blockHash}, ${blocksToScan}`);
-
-      let blockHeaders = (await coreRpcApi.getBlockHeaders(
-        blockHash, blocksToScan,
-      ));
-
       // TODO: figure out whether it's possible to omit BlockHeader.fromBuffer conversion
       // and directly send bytes to the client
-      blockHeaders = blockHeaders.map((blockHeader) => BlockHeader.fromBuffer(blockHeader));
+      const blockHeaders = (await coreRpcApi.getBlockHeaders(
+        blockHash, blocksToScan,
+      )).map((blockHeader) => BlockHeader.fromBuffer(blockHeader));
 
       yield blockHeaders;
     }
