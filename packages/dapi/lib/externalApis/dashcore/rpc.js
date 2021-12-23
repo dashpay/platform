@@ -45,6 +45,16 @@ const getBestBlockHeight = () => new Promise((resolve, reject) => {
   });
 });
 
+const getBestChainLock = () => new Promise((resolve, reject) => {
+  client.getbestchainlock((err, r) => {
+    if (err) {
+      reject(new DashCoreRpcError(err.message, null, err.code));
+    } else {
+      resolve(r.result);
+    }
+  });
+});
+
 const getBlock = (hash, isParsed = 1) => new Promise((resolve, reject) => {
   client.getblock(hash, isParsed, (err, r) => {
     if (err) {
@@ -298,6 +308,7 @@ const getBlockchainInfo = () => new Promise((resolve, reject) => {
  * getUTXO: (function(*=): Promise<any>),
  * getBlockHash: (function(*=): Promise<any>),
  * getBestBlockHash: (function(): Promise<any>),
+ * getBestChainLock: (function(): Promise<any>),
  * getMnListDiff: (function(*=, *=): Promise<any>),
  * getMnSync: (function(*=, *=): Promise<any>),
  * getMasternode: (function(*=, *=): Promise<any>),
@@ -321,6 +332,7 @@ module.exports = {
   generateToAddress,
   getBestBlockHash,
   getBestBlockHeight,
+  getBestChainLock,
   getBlockHash,
   getBlock,
   getBlockHeader,

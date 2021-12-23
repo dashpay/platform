@@ -5,6 +5,7 @@ class ProcessMediator extends EventEmitter {}
 ProcessMediator.EVENTS = {
   HISTORICAL_DATA_SENT: 'historicalDataSent',
   BLOCK_HEADERS: 'blockHeaders',
+  CHAIN_LOCK_SIGNATURE: 'chainLockSignature',
   TRANSACTION: 'transaction',
   MERKLE_BLOCK: 'merkleBlock',
   CLIENT_DISCONNECTED: 'clientDisconnected',

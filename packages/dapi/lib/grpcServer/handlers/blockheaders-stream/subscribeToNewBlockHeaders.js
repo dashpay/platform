@@ -1,4 +1,5 @@
 const { BlockHeader } = require('@dashevo/dashcore-lib');
+const ChainLockSigMessage = require('@dashevo/dashcore-lib/lib/zmqMessages/ChainLockSigMessage');
 const ProcessMediator = require('../../../transactionsFilter/ProcessMediator');
 const wait = require('../../../utils/wait');
 
@@ -17,6 +18,7 @@ function subscribeToNewBlockHeaders(
   coreAPI,
 ) {
   const cachedHeadersHashes = new Set();
+  let latestClSig = null;
 
   let isClientConnected = true;
   let blocksFromZmq = 0;
@@ -31,9 +33,23 @@ function subscribeToNewBlockHeaders(
     console.log(`Obtained ${blocksFromZmq} block from ZMQ`);
   };
 
+  /**
+   * @param {Buffer} rawClSigMessage
+   */
+  const rawClSigHandler = (rawClSigMessage) => {
+    const { chainLock } = new ChainLockSigMessage(rawClSigMessage);
+    console.log('Acquired new clsig from ZMQ at height', chainLock.height);
+    latestClSig = chainLock.signature;
+  };
+
   zmqClient.on(
     zmqClient.topics.hashblock,
     blockHashHandler,
+  );
+
+  zmqClient.on(
+    zmqClient.topics.rawchainlocksig,
+    rawClSigHandler,
   );
 
   let totalHistoricalHeadersSent = 0;
@@ -66,6 +82,11 @@ function subscribeToNewBlockHeaders(
         cachedHeadersHashes.clear();
       }
 
+      if (latestClSig) {
+        mediator.emit(ProcessMediator.EVENTS.CHAIN_LOCK_SIGNATURE, latestClSig);
+        latestClSig = null;
+      }
+
       // TODO: pick a right time interval having in mind that issuance of the block headers
       // is not frequent
       await wait(5000);
@@ -77,6 +98,7 @@ function subscribeToNewBlockHeaders(
     isClientConnected = false;
     mediator.removeAllListeners();
     zmqClient.removeListener(zmqClient.topics.hashblock, blockHashHandler);
+    zmqClient.removeListener(zmqClient.topics.rawchainlocksig, rawClSigHandler);
   });
 }
 

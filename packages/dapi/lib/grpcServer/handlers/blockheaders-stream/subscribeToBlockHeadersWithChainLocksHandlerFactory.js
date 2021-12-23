@@ -14,6 +14,7 @@ const {
   v0: {
     BlockHeadersWithChainLocksResponse,
     BlockHeaders,
+    ChainLockSignatureMessages,
   },
 } = require('@dashevo/dapi-grpc');
 const ProcessMediator = require('../../../transactionsFilter/ProcessMediator');
@@ -35,6 +36,23 @@ async function sendBlockHeadersResponse(call, blockHeaders) {
 
   const response = new BlockHeadersWithChainLocksResponse();
   response.setBlockHeaders(blockHeadersProto);
+
+  await call.write(response);
+}
+
+/**
+ * Prepare and send clSig response
+ *
+ * @param {AcknowledgingWritable} call
+ * @param {Buffer} clSig
+ * @returns {Promise<void>}
+ */
+async function sendClSigResponse(call, clSig) {
+  const clSigMessages = new ChainLockSignatureMessages();
+  clSigMessages.setMessagesList([clSig]);
+
+  const response = new BlockHeadersWithChainLocksResponse();
+  response.setChainLockSignatureMessages(clSigMessages);
 
   await call.write(response);
 }
@@ -71,6 +89,13 @@ function subscribeToBlockHeadersWithChainLocksHandlerFactory(
       ProcessMediator.EVENTS.BLOCK_HEADERS,
       async (blockHeaders) => {
         await sendBlockHeadersResponse(acknowledgingCall, blockHeaders);
+      },
+    );
+
+    mediator.on(
+      ProcessMediator.EVENTS.CHAIN_LOCK_SIGNATURE,
+      async (clSig) => {
+        await sendClSigResponse(acknowledgingCall, clSig);
       },
     );
 
@@ -117,22 +142,15 @@ function subscribeToBlockHeadersWithChainLocksHandlerFactory(
 
     const bestBlockHeight = await coreAPI.getBestBlockHeight();
 
-    let historicalCount = count;
+    const historicalCount = count === 0 ? bestBlockHeight - fromBlock.height + 1 : count;
 
-    // if block 'count' is 0 (new block headers are requested)
-    // or 'count' is bigger than chain tip we need to read all blocks
-    // from specified block hash including the most recent one
-    //
-    // Theoretically, if count is bigger than chain tips,
-    // we should throw an error 'count is too big',
-    // however at the time of writing this logic, height chain sync isn't yet implemented,
-    // so the client library doesn't know the exact height and
-    // may pass count number larger than expected.
-    // This condition should be converted to throwing an error once
-    // the header stream is implemented
-    if (count === 0 || fromBlock.height + count > bestBlockHeight + 1) {
-      historicalCount = bestBlockHeight - fromBlock.height + 1;
+    if (fromBlock.height + historicalCount > bestBlockHeight + 1) {
+      throw new InvalidArgumentGrpcError('`count` value exceeds the chain tip');
     }
+
+    const bestChainLock = await coreAPI.getBestChainLock();
+    console.log('Acquired best chain lock', bestChainLock);
+    await sendClSigResponse(acknowledgingCall, Buffer.from(bestChainLock.signature, 'hex'));
 
     const historicalDataIterator = getHistoricalBlockHeadersIterator(
       fromBlockHash,
