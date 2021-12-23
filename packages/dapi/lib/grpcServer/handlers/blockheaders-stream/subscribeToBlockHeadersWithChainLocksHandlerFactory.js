@@ -149,7 +149,6 @@ function subscribeToBlockHeadersWithChainLocksHandlerFactory(
     }
 
     const bestChainLock = await coreAPI.getBestChainLock();
-    console.log('Acquired best chain lock', bestChainLock);
     await sendClSigResponse(acknowledgingCall, Buffer.from(bestChainLock.signature, 'hex'));
 
     const historicalDataIterator = getHistoricalBlockHeadersIterator(
