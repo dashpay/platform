@@ -34,7 +34,7 @@ describe('subscribeToBlockHeadersWithChainLocksHandlerFactory', () => {
   it('should respond with only historical data', async () => {
     const headersAmount = 10;
     const historicalBlockHeaders = [];
-    let bestChainLockSignature = null;
+    let bestClSig = null;
 
     const stream = await dapiClient.core.subscribeToBlockHeadersWithChainLocks({
       fromBlockHeight: 1,
@@ -53,7 +53,7 @@ describe('subscribeToBlockHeadersWithChainLocksHandlerFactory', () => {
       const clsSigMessages = data.getChainLockSignatureMessages();
 
       if (clsSigMessages) {
-        [bestChainLockSignature] = clsSigMessages.getMessagesList();
+        [bestClSig] = clsSigMessages.getMessagesList();
       }
     });
 
@@ -85,17 +85,17 @@ describe('subscribeToBlockHeadersWithChainLocksHandlerFactory', () => {
 
     expect(historicalBlockHeaders.map((header) => header.hash))
       .to.deep.equal(fetchedBlocks.map((block) => block.header.hash));
-    expect(bestChainLockSignature).to.exist();
+    expect(bestClSig).to.exist();
   });
 
   it('should respond with both new and historical data', async () => {
     const blocksToGenerate = 5;
-    const clSigsToAcquire = 1;
+    let clSig = null;
+
     const numHistoricalBlocks = 10;
     const blockHeadersHashesFromStream = [];
     const blockHeadersHashesGenerated = [];
 
-    let numClSigsAcquired = 0;
     let allHeadersSettled = false;
 
     // Connect to the stream
@@ -121,15 +121,13 @@ describe('subscribeToBlockHeadersWithChainLocksHandlerFactory', () => {
             .every((hash) => blockHeadersHashesFromStream.includes(hash));
       }
 
-      const clsSigMessages = data.getChainLockSignatureMessages();
-
-      if (clsSigMessages && clsSigMessages.getMessagesList().length > 0) {
-        numClSigsAcquired++;
-      }
-
-      if (allHeadersSettled && numClSigsAcquired === clSigsToAcquire) {
-        stream.destroy();
-        streamEnded = true;
+      if (allHeadersSettled) {
+        const clsSigMessages = data.getChainLockSignatureMessages();
+        if (clsSigMessages) {
+          [clSig] = clsSigMessages.getMessagesList();
+          stream.destroy();
+          streamEnded = true;
+        }
       }
     });
 
@@ -174,6 +172,6 @@ describe('subscribeToBlockHeadersWithChainLocksHandlerFactory', () => {
     }
 
     expect(allHeadersSettled).to.be.true();
-    expect(numClSigsAcquired).to.equal(clSigsToAcquire);
+    expect(clSig).to.exist();
   });
 });
