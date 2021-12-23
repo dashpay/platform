@@ -1,4 +1,4 @@
-const { Command, flags: flagTypes } = require('@oclif/command');
+const { Command, Flags } = require('@oclif/core');
 
 const { asValue } = require('awilix');
 
@@ -124,7 +124,7 @@ class BaseCommand extends Command {
 }
 
 BaseCommand.flags = {
-  verbose: flagTypes.boolean({
+  verbose: Flags.boolean({
     char: 'v',
     description: 'use verbose mode for output',
     default: false,

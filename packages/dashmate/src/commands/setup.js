@@ -1,6 +1,6 @@
 const { Listr } = require('listr2');
 
-const { flags: flagTypes } = require('@oclif/command');
+const { Flags } = require('@oclif/core');
 
 const BaseCommand = require('../oclif/command/BaseCommand');
 
@@ -129,15 +129,15 @@ SetupCommand.args = [{
 }];
 
 SetupCommand.flags = {
-  'debug-logs': flagTypes.boolean({
+  'debug-logs': Flags.boolean({
     char: 'd', description: 'enable debug logs', allowNo: true, default: null,
   }),
-  'external-ip': flagTypes.string({ char: 'i', description: 'external ip' }),
-  'operator-bls-private-key': flagTypes.string({ char: 'k', description: 'operator bls private key' }),
-  'funding-private-key': flagTypes.string({ char: 'p', description: `private key with more than ${MASTERNODE_DASH_AMOUNT} dash for funding collateral` }),
-  'node-count': flagTypes.integer({ description: 'number of nodes to setup', default: null }),
-  'miner-interval': flagTypes.string({ char: 'm', description: 'interval between blocks', default: null }),
-  verbose: flagTypes.boolean({ char: 'v', description: 'use verbose mode for output', default: false }),
+  'external-ip': Flags.string({ char: 'i', description: 'external ip' }),
+  'operator-bls-private-key': Flags.string({ char: 'k', description: 'operator bls private key' }),
+  'funding-private-key': Flags.string({ char: 'p', description: `private key with more than ${MASTERNODE_DASH_AMOUNT} dash for funding collateral` }),
+  'node-count': Flags.integer({ description: 'number of nodes to setup', default: null }),
+  'miner-interval': Flags.string({ char: 'm', description: 'interval between blocks', default: null }),
+  verbose: Flags.boolean({ char: 'v', description: 'use verbose mode for output', default: false }),
 };
 
 module.exports = SetupCommand;

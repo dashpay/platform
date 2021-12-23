@@ -1429,11 +1429,10 @@ __metadata:
     "@dashevo/dpp": "workspace:~"
     "@dashevo/feature-flags-contract": "workspace:~"
     "@dashevo/wallet-lib": "workspace:~"
-    "@oclif/command": ^1.8.9
-    "@oclif/config": ^1.18.2
+    "@oclif/core": ^1.0.11
     "@oclif/dev-cli": ^1.22.2
-    "@oclif/errors": ^1.3.5
     "@oclif/plugin-help": ^3.2.14
+    "@oclif/plugin-version": ^1
     ajv: ^8.6.0
     ajv-formats: ^2.1.1
     awilix: ^4.2.6
@@ -2071,6 +2070,56 @@ __metadata:
   languageName: node
   linkType: hard
 
+"@oclif/core@npm:1.0.10":
+  version: 1.0.10
+  resolution: "@oclif/core@npm:1.0.10"
+  dependencies:
+    "@oclif/linewrap": ^1.0.0
+    chalk: ^4.1.2
+    clean-stack: ^3.0.1
+    cli-ux: 6.0.5
+    debug: ^4.3.3
+    fs-extra: ^9.1.0
+    get-package-type: ^0.1.0
+    globby: ^11.0.4
+    indent-string: ^4.0.0
+    is-wsl: ^2.2.0
+    lodash: ^4.17.21
+    semver: ^7.3.5
+    string-width: ^4.2.3
+    strip-ansi: ^6.0.1
+    tslib: ^2.3.1
+    widest-line: ^3.1.0
+    wrap-ansi: ^7.0.0
+  checksum: f875b4eda3cd051c76dc46f5ec1bbc67f15349ec3c4cbd975cdbec1a76d1916c679449ce774de0620583000ce41ee8fb7645faf153d55c19e07bf80153f35adc
+  languageName: node
+  linkType: hard
+
+"@oclif/core@npm:^1.0.11, @oclif/core@npm:^1.0.8":
+  version: 1.0.11
+  resolution: "@oclif/core@npm:1.0.11"
+  dependencies:
+    "@oclif/linewrap": ^1.0.0
+    chalk: ^4.1.2
+    clean-stack: ^3.0.1
+    cli-ux: 6.0.5
+    debug: ^4.3.3
+    fs-extra: ^9.1.0
+    get-package-type: ^0.1.0
+    globby: ^11.0.4
+    indent-string: ^4.0.0
+    is-wsl: ^2.2.0
+    lodash: ^4.17.21
+    semver: ^7.3.5
+    string-width: ^4.2.3
+    strip-ansi: ^6.0.1
+    tslib: ^2.3.1
+    widest-line: ^3.1.0
+    wrap-ansi: ^7.0.0
+  checksum: 41f40849739a659c68cefbd57627d3aea1f59e1db7e2a2b71817c58075770bdc1535fb0b95a9540c62740f45d542db0c029b3d87ea50a555bda09f7e8dd88e2f
+  languageName: node
+  linkType: hard
+
 "@oclif/dev-cli@npm:^1.22.2":
   version: 1.26.0
   resolution: "@oclif/dev-cli@npm:1.26.0"
@@ -2162,7 +2211,16 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@oclif/screen@npm:^1.0.3":
+"@oclif/plugin-version@npm:^1":
+  version: 1.0.3
+  resolution: "@oclif/plugin-version@npm:1.0.3"
+  dependencies:
+    "@oclif/core": 1.0.10
+  checksum: e50d800deac10b226b14c8fb8fa9268d93674a4451ceab54b5b147c8038b8852ee116e41035c17ab01506e1b12b50b1c48a7cc13541d2fc41587aecfdb3d617f
+  languageName: node
+  linkType: hard
+
+"@oclif/screen@npm:^1.0.3, @oclif/screen@npm:^1.0.4 ":
   version: 1.0.4
   resolution: "@oclif/screen@npm:1.0.4"
   checksum: 13e64efb1a6b4cf89989dd3e96cc78751193257694f9f104d3d41f7f8d12e217297d3c2983ed972d84d43ff3b50ceff50529996ee6bc6764f01ed90aa39a83cb
@@ -3458,6 +3516,13 @@ __metadata:
   languageName: node
   linkType: hard
 
+"at-least-node@npm:^1.0.0":
+  version: 1.0.0
+  resolution: "at-least-node@npm:1.0.0"
+  checksum: 463e2f8e43384f1afb54bc68485c436d7622acec08b6fad269b421cb1d29cebb5af751426793d0961ed243146fe4dc983402f6d5a51b720b277818dbf6f2e49e
+  languageName: node
+  linkType: hard
+
 "atomic-sleep@npm:^1.0.0":
   version: 1.0.0
   resolution: "atomic-sleep@npm:1.0.0"
@@ -4334,7 +4399,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"clean-stack@npm:^3.0.0":
+"clean-stack@npm:^3.0.0, clean-stack@npm:^3.0.1":
   version: 3.0.1
   resolution: "clean-stack@npm:3.0.1"
   dependencies:
@@ -4359,7 +4424,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"cli-progress@npm:^3.4.0":
+"cli-progress@npm:^3.4.0, cli-progress@npm:^3.9.1":
   version: 3.9.1
   resolution: "cli-progress@npm:3.9.1"
   dependencies:
@@ -4376,6 +4441,39 @@ __metadata:
     slice-ansi: ^3.0.0
     string-width: ^4.2.0
   checksum: bf1e4e6195392dc718bf9cd71f317b6300dc4a9191d052f31046b8773230ece4fa09458813bf0e3455a5e68c0690d2ea2c197d14a8b85a7b5e01c97f4b5feb5d
+  languageName: node
+  linkType: hard
+
+"cli-ux@npm:6.0.5":
+  version: 6.0.5
+  resolution: "cli-ux@npm:6.0.5"
+  dependencies:
+    "@oclif/core": ^1.0.8
+    "@oclif/linewrap": ^1.0.0
+    "@oclif/screen": "^1.0.4 "
+    ansi-escapes: ^4.3.0
+    ansi-styles: ^4.2.0
+    cardinal: ^2.1.1
+    chalk: ^4.1.0
+    clean-stack: ^3.0.0
+    cli-progress: ^3.9.1
+    extract-stack: ^2.0.0
+    fs-extra: ^8.1
+    hyperlinker: ^1.0.0
+    indent-string: ^4.0.0
+    is-wsl: ^2.2.0
+    js-yaml: ^3.13.1
+    lodash: ^4.17.21
+    natural-orderby: ^2.0.1
+    object-treeify: ^1.1.4
+    password-prompt: ^1.1.2
+    semver: ^7.3.2
+    string-width: ^4.2.0
+    strip-ansi: ^6.0.0
+    supports-color: ^8.1.0
+    supports-hyperlinks: ^2.1.0
+    tslib: ^2.0.0
+  checksum: 422e09b5e41bc876ebf5a50fe960dfac47239e4e2009ed802c10cdcf6c61f8c79445d0ed050023503e55fc59f0d5a24a7214d497016bb8c76aa0e0686f4fd31b
   languageName: node
   linkType: hard
 
@@ -5198,6 +5296,18 @@ __metadata:
   dependencies:
     ms: ^2.1.1
   checksum: b3d8c5940799914d30314b7c3304a43305fd0715581a919dacb8b3176d024a782062368405b47491516d2091d6462d4d11f2f4974a405048094f8bfebfa3071c
+  languageName: node
+  linkType: hard
+
+"debug@npm:^4.3.3":
+  version: 4.3.3
+  resolution: "debug@npm:4.3.3"
+  dependencies:
+    ms: 2.1.2
+  peerDependenciesMeta:
+    supports-color:
+      optional: true
+  checksum: 14472d56fe4a94dbcfaa6dbed2dd3849f1d72ba78104a1a328047bb564643ca49df0224c3a17fa63533fd11dd3d4c8636cd861191232a2c6735af00cc2d4de16
   languageName: node
   linkType: hard
 
@@ -6680,6 +6790,18 @@ __metadata:
   languageName: node
   linkType: hard
 
+"fs-extra@npm:^9.1.0":
+  version: 9.1.0
+  resolution: "fs-extra@npm:9.1.0"
+  dependencies:
+    at-least-node: ^1.0.0
+    graceful-fs: ^4.2.0
+    jsonfile: ^6.0.1
+    universalify: ^2.0.0
+  checksum: ba71ba32e0faa74ab931b7a0031d1523c66a73e225de7426e275e238e312d07313d2da2d33e34a52aa406c8763ade5712eb3ec9ba4d9edce652bcacdc29e6b20
+  languageName: node
+  linkType: hard
+
 "fs-minipass@npm:^2.0.0":
   version: 2.1.0
   resolution: "fs-minipass@npm:2.1.0"
@@ -7027,7 +7149,7 @@ fsevents@~2.3.2:
   languageName: node
   linkType: hard
 
-"globby@npm:^11.0.1":
+"globby@npm:^11.0.1, globby@npm:^11.0.4":
   version: 11.0.4
   resolution: "globby@npm:11.0.4"
   dependencies:
@@ -8470,6 +8592,19 @@ fsevents@~2.3.2:
     graceful-fs:
       optional: true
   checksum: 6447d6224f0d31623eef9b51185af03ac328a7553efcee30fa423d98a9e276ca08db87d71e17f2310b0263fd3ffa6c2a90a6308367f661dc21580f9469897c9e
+  languageName: node
+  linkType: hard
+
+"jsonfile@npm:^6.0.1":
+  version: 6.1.0
+  resolution: "jsonfile@npm:6.1.0"
+  dependencies:
+    graceful-fs: ^4.1.6
+    universalify: ^2.0.0
+  dependenciesMeta:
+    graceful-fs:
+      optional: true
+  checksum: 7af3b8e1ac8fe7f1eccc6263c6ca14e1966fcbc74b618d3c78a0a2075579487547b94f72b7a1114e844a1e15bb00d440e5d1720bfc4612d790a6f285d5ea8354
   languageName: node
   linkType: hard
 
@@ -13007,7 +13142,7 @@ fsevents@~2.3.2:
   languageName: node
   linkType: hard
 
-"tslib@npm:^2.0.0, tslib@npm:^2.0.3":
+"tslib@npm:^2.0.0, tslib@npm:^2.0.3, tslib@npm:^2.3.1":
   version: 2.3.1
   resolution: "tslib@npm:2.3.1"
   checksum: de17a98d4614481f7fcb5cd53ffc1aaf8654313be0291e1bfaee4b4bb31a20494b7d218ff2e15017883e8ea9626599b3b0e0229c18383ba9dce89da2adf15cb9
@@ -13301,6 +13436,13 @@ typescript@^3.9.5:
   version: 0.1.2
   resolution: "universalify@npm:0.1.2"
   checksum: 40cdc60f6e61070fe658ca36016a8f4ec216b29bf04a55dce14e3710cc84c7448538ef4dad3728d0bfe29975ccd7bfb5f414c45e7b78883567fb31b246f02dff
+  languageName: node
+  linkType: hard
+
+"universalify@npm:^2.0.0":
+  version: 2.0.0
+  resolution: "universalify@npm:2.0.0"
+  checksum: 2406a4edf4a8830aa6813278bab1f953a8e40f2f63a37873ffa9a3bc8f9745d06cc8e88f3572cb899b7e509013f7f6fcc3e37e8a6d914167a5381d8440518c44
   languageName: node
   linkType: hard
 

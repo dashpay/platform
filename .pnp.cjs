@@ -2410,11 +2410,10 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["@dashevo/dpp", "workspace:packages/js-dpp"],
             ["@dashevo/feature-flags-contract", "workspace:packages/feature-flags-contract"],
             ["@dashevo/wallet-lib", "workspace:packages/wallet-lib"],
-            ["@oclif/command", "virtual:f7d571e0d77017e1d29b1e07a522ecaa92b0544f222388541809a9c07f96976aeb3437afcfac1ce21bfe1d1a4fa7793cd36e5b24db59e3adef0819d088b77e0f#npm:1.8.9"],
-            ["@oclif/config", "npm:1.18.2"],
+            ["@oclif/core", "npm:1.0.11"],
             ["@oclif/dev-cli", "npm:1.26.0"],
-            ["@oclif/errors", "npm:1.3.5"],
             ["@oclif/plugin-help", "npm:3.2.14"],
+            ["@oclif/plugin-version", "npm:1.0.3"],
             ["ajv", "npm:8.8.1"],
             ["ajv-formats", "virtual:58fb68f2aed20e5e0f2e48520ab903ae9bb3440369bfd5e912034003cf27c5aae368649fc5620dd2acbed578131f3a0975e75b838d77d12335fb0412e24026c6#npm:2.1.1"],
             ["awilix", "npm:4.3.4"],
@@ -3120,6 +3119,56 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           "linkType": "HARD",
         }]
       ]],
+      ["@oclif/core", [
+        ["npm:1.0.10", {
+          "packageLocation": "./.yarn/cache/@oclif-core-npm-1.0.10-acc3d0bbfd-f875b4eda3.zip/node_modules/@oclif/core/",
+          "packageDependencies": [
+            ["@oclif/core", "npm:1.0.10"],
+            ["@oclif/linewrap", "npm:1.0.0"],
+            ["chalk", "npm:4.1.2"],
+            ["clean-stack", "npm:3.0.1"],
+            ["cli-ux", "npm:6.0.5"],
+            ["debug", "virtual:d8bd8b9bfc2c766b589b8065894849f439bc7678d7a4a8e7d7de4cc8f1ac1481e65997667622651b7ad54331c130c4aa95efb29b4a35484a68552d8e36370739#npm:4.3.3"],
+            ["fs-extra", "npm:9.1.0"],
+            ["get-package-type", "npm:0.1.0"],
+            ["globby", "npm:11.0.4"],
+            ["indent-string", "npm:4.0.0"],
+            ["is-wsl", "npm:2.2.0"],
+            ["lodash", "npm:4.17.21"],
+            ["semver", "npm:7.3.5"],
+            ["string-width", "npm:4.2.3"],
+            ["strip-ansi", "npm:6.0.1"],
+            ["tslib", "npm:2.3.1"],
+            ["widest-line", "npm:3.1.0"],
+            ["wrap-ansi", "npm:7.0.0"]
+          ],
+          "linkType": "HARD",
+        }],
+        ["npm:1.0.11", {
+          "packageLocation": "./.yarn/cache/@oclif-core-npm-1.0.11-d8bd8b9bfc-41f4084973.zip/node_modules/@oclif/core/",
+          "packageDependencies": [
+            ["@oclif/core", "npm:1.0.11"],
+            ["@oclif/linewrap", "npm:1.0.0"],
+            ["chalk", "npm:4.1.2"],
+            ["clean-stack", "npm:3.0.1"],
+            ["cli-ux", "npm:6.0.5"],
+            ["debug", "virtual:d8bd8b9bfc2c766b589b8065894849f439bc7678d7a4a8e7d7de4cc8f1ac1481e65997667622651b7ad54331c130c4aa95efb29b4a35484a68552d8e36370739#npm:4.3.3"],
+            ["fs-extra", "npm:9.1.0"],
+            ["get-package-type", "npm:0.1.0"],
+            ["globby", "npm:11.0.4"],
+            ["indent-string", "npm:4.0.0"],
+            ["is-wsl", "npm:2.2.0"],
+            ["lodash", "npm:4.17.21"],
+            ["semver", "npm:7.3.5"],
+            ["string-width", "npm:4.2.3"],
+            ["strip-ansi", "npm:6.0.1"],
+            ["tslib", "npm:2.3.1"],
+            ["widest-line", "npm:3.1.0"],
+            ["wrap-ansi", "npm:7.0.0"]
+          ],
+          "linkType": "HARD",
+        }]
+      ]],
       ["@oclif/dev-cli", [
         ["npm:1.26.0", {
           "packageLocation": "./.yarn/cache/@oclif-dev-cli-npm-1.26.0-09cf7ddcab-9fd94d4fc9.zip/node_modules/@oclif/dev-cli/",
@@ -3210,6 +3259,16 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["strip-ansi", "npm:6.0.1"],
             ["widest-line", "npm:3.1.0"],
             ["wrap-ansi", "npm:4.0.0"]
+          ],
+          "linkType": "HARD",
+        }]
+      ]],
+      ["@oclif/plugin-version", [
+        ["npm:1.0.3", {
+          "packageLocation": "./.yarn/cache/@oclif-plugin-version-npm-1.0.3-791293b313-e50d800dea.zip/node_modules/@oclif/plugin-version/",
+          "packageDependencies": [
+            ["@oclif/plugin-version", "npm:1.0.3"],
+            ["@oclif/core", "npm:1.0.10"]
           ],
           "linkType": "HARD",
         }]
@@ -4939,6 +4998,15 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           "linkType": "HARD",
         }]
       ]],
+      ["at-least-node", [
+        ["npm:1.0.0", {
+          "packageLocation": "./.yarn/cache/at-least-node-npm-1.0.0-2b36e661fa-463e2f8e43.zip/node_modules/at-least-node/",
+          "packageDependencies": [
+            ["at-least-node", "npm:1.0.0"]
+          ],
+          "linkType": "HARD",
+        }]
+      ]],
       ["atomic-sleep", [
         ["npm:1.0.0", {
           "packageLocation": "./.yarn/cache/atomic-sleep-npm-1.0.0-17d8a762a3-b95275afb2.zip/node_modules/atomic-sleep/",
@@ -6094,6 +6162,38 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["tslib", "npm:2.3.1"]
           ],
           "linkType": "HARD",
+        }],
+        ["npm:6.0.5", {
+          "packageLocation": "./.yarn/cache/cli-ux-npm-6.0.5-708574e19a-422e09b5e4.zip/node_modules/cli-ux/",
+          "packageDependencies": [
+            ["cli-ux", "npm:6.0.5"],
+            ["@oclif/core", "npm:1.0.11"],
+            ["@oclif/linewrap", "npm:1.0.0"],
+            ["@oclif/screen", "npm:1.0.4"],
+            ["ansi-escapes", "npm:4.3.2"],
+            ["ansi-styles", "npm:4.3.0"],
+            ["cardinal", "npm:2.1.1"],
+            ["chalk", "npm:4.1.2"],
+            ["clean-stack", "npm:3.0.1"],
+            ["cli-progress", "npm:3.9.1"],
+            ["extract-stack", "npm:2.0.0"],
+            ["fs-extra", "npm:8.1.0"],
+            ["hyperlinker", "npm:1.0.0"],
+            ["indent-string", "npm:4.0.0"],
+            ["is-wsl", "npm:2.2.0"],
+            ["js-yaml", "npm:3.14.1"],
+            ["lodash", "npm:4.17.21"],
+            ["natural-orderby", "npm:2.0.3"],
+            ["object-treeify", "npm:1.1.33"],
+            ["password-prompt", "npm:1.1.2"],
+            ["semver", "npm:7.3.5"],
+            ["string-width", "npm:4.2.3"],
+            ["strip-ansi", "npm:6.0.1"],
+            ["supports-color", "npm:8.1.1"],
+            ["supports-hyperlinks", "npm:2.2.0"],
+            ["tslib", "npm:2.3.1"]
+          ],
+          "linkType": "HARD",
         }]
       ]],
       ["cliui", [
@@ -6961,6 +7061,13 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           ],
           "linkType": "SOFT",
         }],
+        ["npm:4.3.3", {
+          "packageLocation": "./.yarn/cache/debug-npm-4.3.3-710fd4cc7f-14472d56fe.zip/node_modules/debug/",
+          "packageDependencies": [
+            ["debug", "npm:4.3.3"]
+          ],
+          "linkType": "SOFT",
+        }],
         ["virtual:40c87ada7f2f684a486a15e9daad470176b55201376bfdeb15dad896f5233b78f99666966eda31038040b4d17aa8b8f8bf53fddc6773a558064319b9a0677061#npm:4.3.2", {
           "packageLocation": "./.yarn/__virtual__/debug-virtual-30dad7c6f1/0/cache/debug-npm-4.3.2-f0148b6afe-820ea160e2.zip/node_modules/debug/",
           "packageDependencies": [
@@ -7010,6 +7117,20 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["@types/supports-color", null],
             ["ms", "npm:2.1.2"],
             ["supports-color", "npm:8.1.1"]
+          ],
+          "packagePeers": [
+            "@types/supports-color",
+            "supports-color"
+          ],
+          "linkType": "HARD",
+        }],
+        ["virtual:d8bd8b9bfc2c766b589b8065894849f439bc7678d7a4a8e7d7de4cc8f1ac1481e65997667622651b7ad54331c130c4aa95efb29b4a35484a68552d8e36370739#npm:4.3.3", {
+          "packageLocation": "./.yarn/__virtual__/debug-virtual-f73065700a/0/cache/debug-npm-4.3.3-710fd4cc7f-14472d56fe.zip/node_modules/debug/",
+          "packageDependencies": [
+            ["debug", "virtual:d8bd8b9bfc2c766b589b8065894849f439bc7678d7a4a8e7d7de4cc8f1ac1481e65997667622651b7ad54331c130c4aa95efb29b4a35484a68552d8e36370739#npm:4.3.3"],
+            ["@types/supports-color", null],
+            ["ms", "npm:2.1.2"],
+            ["supports-color", null]
           ],
           "packagePeers": [
             "@types/supports-color",
@@ -8758,6 +8879,17 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["graceful-fs", "npm:4.2.8"],
             ["jsonfile", "npm:4.0.0"],
             ["universalify", "npm:0.1.2"]
+          ],
+          "linkType": "HARD",
+        }],
+        ["npm:9.1.0", {
+          "packageLocation": "./.yarn/cache/fs-extra-npm-9.1.0-983c2ddb4c-ba71ba32e0.zip/node_modules/fs-extra/",
+          "packageDependencies": [
+            ["fs-extra", "npm:9.1.0"],
+            ["at-least-node", "npm:1.0.0"],
+            ["graceful-fs", "npm:4.2.8"],
+            ["jsonfile", "npm:6.1.0"],
+            ["universalify", "npm:2.0.0"]
           ],
           "linkType": "HARD",
         }]
@@ -10754,6 +10886,15 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           "packageDependencies": [
             ["jsonfile", "npm:4.0.0"],
             ["graceful-fs", "npm:4.2.8"]
+          ],
+          "linkType": "HARD",
+        }],
+        ["npm:6.1.0", {
+          "packageLocation": "./.yarn/cache/jsonfile-npm-6.1.0-20a4796cee-7af3b8e1ac.zip/node_modules/jsonfile/",
+          "packageDependencies": [
+            ["jsonfile", "npm:6.1.0"],
+            ["graceful-fs", "npm:4.2.8"],
+            ["universalify", "npm:2.0.0"]
           ],
           "linkType": "HARD",
         }]
@@ -16436,6 +16577,13 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           "packageLocation": "./.yarn/cache/universalify-npm-0.1.2-9b22d31d2d-40cdc60f6e.zip/node_modules/universalify/",
           "packageDependencies": [
             ["universalify", "npm:0.1.2"]
+          ],
+          "linkType": "HARD",
+        }],
+        ["npm:2.0.0", {
+          "packageLocation": "./.yarn/cache/universalify-npm-2.0.0-03b8b418a8-2406a4edf4.zip/node_modules/universalify/",
+          "packageDependencies": [
+            ["universalify", "npm:2.0.0"]
           ],
           "linkType": "HARD",
         }]
