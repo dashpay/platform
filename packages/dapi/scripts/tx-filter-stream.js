@@ -49,10 +49,11 @@ const testTransactionsAgainstFilter = require('../lib/transactionsFilter/testTra
 const emitInstantLockToFilterCollectionFactory = require('../lib/transactionsFilter/emitInstantLockToFilterCollectionFactory');
 const subscribeToTransactionsWithProofsHandlerFactory = require('../lib/grpcServer/handlers/tx-filter-stream/subscribeToTransactionsWithProofsHandlerFactory');
 const subscribeToBlockHeadersWithChainLocksHandlerFactory = require('../lib/grpcServer/handlers/blockheaders-stream/subscribeToBlockHeadersWithChainLocksHandlerFactory');
+const getHistoricalBlockHeadersIteratorFactory = require('../lib/grpcServer/handlers/blockheaders-stream/getHistoricalBlockHeadersIteratorFactory');
+const subscribeToNewBlockHeaders = require('../lib/grpcServer/handlers/blockheaders-stream/subscribeToNewBlockHeaders');
 
 const subscribeToNewTransactions = require('../lib/transactionsFilter/subscribeToNewTransactions');
 const getHistoricalTransactionsIteratorFactory = require('../lib/transactionsFilter/getHistoricalTransactionsIteratorFactory');
-const getHistoricalBlockHeadersIteratorFactory = require('../lib/transactionsFilter/getHistoricalBlockHeadersIteratorFactory');
 const getMemPoolTransactionsFactory = require('../lib/transactionsFilter/getMemPoolTransactionsFactory');
 
 async function main() {
@@ -158,6 +159,7 @@ async function main() {
       getHistoricalBlockHeadersIterator,
       dashCoreRpcClient,
       dashCoreZmqClient,
+      subscribeToNewBlockHeaders,
     );
 
   const wrappedSubscribeToBlockHeadersWithChainLocks = jsonToProtobufHandlerWrapper(

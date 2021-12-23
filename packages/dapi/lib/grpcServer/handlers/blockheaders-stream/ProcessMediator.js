@@ -4,12 +4,10 @@ class ProcessMediator extends EventEmitter {}
 
 ProcessMediator.EVENTS = {
   HISTORICAL_DATA_SENT: 'historicalDataSent',
-  TRANSACTION: 'transaction',
-  MERKLE_BLOCK: 'merkleBlock',
+  BLOCK_HEADERS: 'blockHeaders',
+  CHAIN_LOCK_SIGNATURE: 'chainLockSignature',
+  HISTORICAL_BLOCK_HEADERS_SENT: 'historicalBlockHeadersSent',
   CLIENT_DISCONNECTED: 'clientDisconnected',
-  HISTORICAL_BLOCK_SENT: 'historicalBlockSent',
-  INSTANT_LOCK: 'instantLock',
-  MEMPOOL_DATA_SENT: 'memPoolDataSent',
 };
 
 module.exports = ProcessMediator;

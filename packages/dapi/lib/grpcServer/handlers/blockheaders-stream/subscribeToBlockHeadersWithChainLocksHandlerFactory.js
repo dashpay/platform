@@ -17,9 +17,8 @@ const {
     ChainLockSignatureMessages,
   },
 } = require('@dashevo/dapi-grpc');
-const ProcessMediator = require('../../../transactionsFilter/ProcessMediator');
+const ProcessMediator = require('./ProcessMediator');
 const wait = require('../../../utils/wait');
-const subscribeToNewBlockHeaders = require('./subscribeToNewBlockHeaders');
 
 /**
  * Prepare and send block headers response
@@ -61,12 +60,14 @@ async function sendClSigResponse(call, clSig) {
  * @param {getHistoricalBlockHeadersIterator} getHistoricalBlockHeadersIterator
  * @param {CoreRpcClient} coreAPI
  * @param {ZmqClient} zmqClient
+ * @param {subscribeToNewBlockHeaders} subscribeToNewBlockHeaders
  * @return {subscribeToBlockHeadersWithChainLocksHandler}
  */
 function subscribeToBlockHeadersWithChainLocksHandlerFactory(
   getHistoricalBlockHeadersIterator,
   coreAPI,
   zmqClient,
+  subscribeToNewBlockHeaders,
 ) {
   /**
    * @typedef subscribeToBlockHeadersWithChainLocksHandler

@@ -1,10 +1,10 @@
 const { BlockHeader } = require('@dashevo/dashcore-lib');
 const ChainLockSigMessage = require('@dashevo/dashcore-lib/lib/zmqMessages/ChainLockSigMessage');
-const ProcessMediator = require('../../../transactionsFilter/ProcessMediator');
+const ProcessMediator = require('./ProcessMediator');
 const wait = require('../../../utils/wait');
 
 /**
- * @typedef subscribeToNewTransactions
+ * @typedef subscribeToNewBlockHeaders
  * @param {ProcessMediator} mediator
  * @param {CoreRpcClient} coreAPI
  * @param {ZmqClient} zmqClient
