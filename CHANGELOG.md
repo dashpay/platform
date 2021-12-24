@@ -4,11 +4,7 @@
 ### Bug Fixes
 
 * **drive:** `ValidatorSetUpdate` doesn't contain `nodeAddress` ([#155](https://github.com/dashevo/platform/issues/155))
-
-
-### Miscellaneous Chores
-
-* yarn abci cache ([#156](https://github.com/dashevo/platform/issues/156))
+* **drive:** missed JS ABCI yarn cache ([#156](https://github.com/dashevo/platform/issues/156))
 
 ## [0.22.0-dev.3](https://github.com/dashevo/platform/compare/v0.21.6...v0.22.0-dev.3) (2021-12-21)
 
