@@ -63,7 +63,7 @@
     "sinon-chai": "^3.7.0"
   },
   "dependencies": {
-    "@dashevo/abci": "github:dashevo/js-abci#v0.22-dev",
+    "@dashevo/abci": "github:dashevo/js-abci#5f18c2cd23ade43878a02ef25dff996a1d9c6537",
     "@dashevo/dapi-grpc": "workspace:~",
     "@dashevo/dashcore-lib": "~0.19.28",
     "@dashevo/dashd-rpc": "^2.3.1",
