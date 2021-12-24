@@ -1,3 +1,48 @@
+## [0.22.0-dev.3](https://github.com/dashevo/platform/compare/v0.21.6...v0.22.0-dev.3) (2021-12-21)
+
+
+### ⚠ BREAKING CHANGES
+
+* add required `name` property to index definition (#74)
+* add an ability to update data contract (#52)
+* Identity public key now has two more fields, purpose and securityLevel, and keys without those fields won't be valid anymore
+
+### Features
+
+* add an ability to update data contract ([#52](https://github.com/dashevo/platform/issues/52))
+* add required `name` property to index definition ([#74](https://github.com/dashevo/platform/issues/74))
+* **dashmate:** json output for status commands ([#31](https://github.com/dashevo/platform/issues/31))
+* **dpp:** add `readOnly` flag to `IdentityPublicKey` ([#142](https://github.com/dashevo/platform/issues/142))
+* **drive:** network address in `ValidatorUpdate` ABCI ([#140](https://github.com/dashevo/platform/issues/140))
+* enable mainnet for dashmate ([#2](https://github.com/dashevo/platform/issues/2))
+* identity public key purpose and security levels ([#46](https://github.com/dashevo/platform/issues/46))
+* support Apple Silicone ([#143](https://github.com/dashevo/platform/issues/143))
+* **wallet-lib:** do not sync transactions if mnemonic is absent
+* **wallet-lib:** dump wallet storage ([#8](https://github.com/dashevo/platform/issues/8))
+
+
+### Bug Fixes
+
+* **dashmate:** `cannot read properties of undefined (reading 'dpns')` on reset ([#47](https://github.com/dashevo/platform/issues/47))
+
+
+### Documentation
+
+* improved sidebar and usage in DAPI client ([#3](https://github.com/dashevo/platform/issues/3))
+* provide getTransactionHistory ([#5](https://github.com/dashevo/platform/issues/5))
+
+
+### Tests
+
+* **wallet-lib:** enable skipped test after the fix for grpc-js lib ([#71](https://github.com/dashevo/platform/issues/71))
+
+
+### Miscellaneous Chores
+
+* fix wrong version in a release PR title ([#82](https://github.com/dashevo/platform/issues/82))
+* missed merk darwin x64 pre-build binary ([#144](https://github.com/dashevo/platform/issues/144))
+* undefined "-w" argument in restart script ([#85](https://github.com/dashevo/platform/issues/85))
+
 ### [0.21.6](https://github.com/dashevo/platform/compare/v0.21.5...v0.21.6) (2021-12-13)
 
 

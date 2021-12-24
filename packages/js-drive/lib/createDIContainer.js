@@ -288,6 +288,7 @@ function createDIContainer(options) {
 
       return Long.fromString(options.FEATURE_FLAGS_CONTRACT_BLOCK_HEIGHT);
     }),
+    tenderdashP2pPort: asValue(options.TENDERDASH_P2P_PORT),
   });
 
   /**
