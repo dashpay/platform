@@ -46,6 +46,7 @@ function subscribeToBlockHeadersWithChainLocksFactory(grpcTransport) {
     }
 
     request.setCount(options.count);
+
     return grpcTransport.request(
       CorePromiseClient,
       'subscribeToBlockHeadersWithChainLocks',
