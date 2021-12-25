@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::path::Path;
 use grovedb::{Element, Error, GroveDb};
 
 pub struct Drive {
