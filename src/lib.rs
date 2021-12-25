@@ -1,5 +1,3 @@
-use std::path::Path;
-
 mod drive;
 
 #[cfg(test)]

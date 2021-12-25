@@ -1,17 +1,44 @@
 use std::collections::HashMap;
-use std::path::Path;
 use grovedb::{Element, Error, GroveDb};
-use minicbor::decode::{Token, Tokenizer};
 
 pub struct Drive {
     grove: GroveDb,
+}
+
+pub enum RootTree {
+    // Input data errors
+    Identities,
+    ContractDocuments,
+    PublicKeyHashesToIdentities,
+}
+
+impl From<RootTree> for &'static [u8]{
+    fn from(root_tree: RootTree) -> Self {
+        match root_tree {
+            RootTree::Identities => {
+                b"0"
+            }
+            RootTree::ContractDocuments => {
+                b"1"
+            }
+            RootTree::PublicKeyHashesToIdentities => {
+                b"2"
+            }
+        }
+    }
 }
 
 // split_contract_indices will take an array of indices and construct an array of group indices
 // grouped indices will group on identical first indices then on identical second indices
 // if the first index is common and so forth
 pub fn split_contract_indices(contract_indices : Vec<Vec<Vec<u8>>>) -> HashMap<&[u8], V> {
-
+//    [firstName, lastName]
+//    [firstName]
+//    [firstName, lastName, age]
+//    [age]
+//    =>
+//    [firstName : [b"0", {lastName : [b"0", {age : b"0" }]}], age: b"0"],
+//
 }
 
 impl Drive {
@@ -24,23 +51,18 @@ impl Drive {
         }
     }
 
+    fn create_root_tree(&mut self) -> Result<(), Error> {
+        self.grove.insert(&[], RootTree::Identities.into(), Element::empty_tree())?;
+        self.grove.insert(&[], RootTree::ContractDocuments.into(), Element::empty_tree())?;
+        self.grove.insert(&[], RootTree::PublicKeyHashesToIdentities.into(), Element::empty_tree())?;
+        Ok(())
+    }
+
     fn store(&mut self, document_cbor: &[u8], contract_indices_cbor: &[u8]) -> Result<(), Error> {
         // first we need to deserialize the document and contract indices
-        let document : HashMap<str, V> = minicbor::decode(document_cbor.as_ref())?;
-        let mut contract_id: &[u8] = &[];
-        let mut document_id: &[u8] = &[];
-        match document.get("contractID") {
-            Some(recovered_contract_id) => {
-                contract_id = recovered_contract_id;
-            },
-            None() => Err(())
-        }
-        match document.get("documentID") {
-            Some(recovered_document_id) => {
-                document_id = recovered_document_id;
-            },
-            None() => Err(())
-        }
+        let document : HashMap<str, Vec<u8>> = minicbor::decode(document_cbor.as_ref())?;
+        let document_id : &[u8] = document.get("documentID")?;
+        let contract_id : &[u8] = document.get("contractID")?;
 
         let contract_indices : Vec<Vec<Vec<u8>>> = minicbor::decode(contract_indices_cbor.as_ref())?;
 
@@ -49,24 +71,38 @@ impl Drive {
         //  * Document and Contract root tree
         //  * Contract ID recovered from document
         //  * 0 to signify Documents and not Contract
-        let mut contract_path = &[b"5", contract_id, b"0"];
+        let contract_path = vec![RootTree::ContractDocuments.into(), contract_id, b"0"];
 
         // third we need to store the document for it's primary key
-        let primary_key_path = contract_path.clone().append(document_id);
+        let mut primary_key_path = contract_path.clone();
+        primary_key_path.push(document_id);
         let document_element = Element::Item(Vec::from(document_cbor));
-        self.grove.insert(primary_key_path, Vec::from(document_id), document_element)?;
+        self.grove.insert(&primary_key_path, Vec::from(document_id), document_element)?;
 
         // fourth we need to store a reference to the document for each index
         for (grouped_contract_index_key, grouped) in split_contract_indices(contract_indices) {
 
             // if there is a grouping on the contract index then we need to insert a tree
-            let index_path = contract_path.clone().append(grouped_contract_index_key);
-            let document_index = Element::Tree();
-            self.grove.insert(index_path, Vec::from(document_id), document_index)?;
+            let mut index_path = contract_path.clone();
+            index_path.push(grouped_contract_index_key);
+            let document_index = Element::empty_tree();
+            self.grove.insert(&index_path, Vec::from(document_id), document_index)?;
 
-            let index_path = contract_path.clone().append(contract_index);
-            let document_index = Element::Reference(primary_key_path);
-            self.grove.insert(index_path, Vec::from(document_id), document_index)?;
+            let mut index_path = contract_path.clone();
+            index_path.push(contract_index);
+            let document_index = Element::Reference(primary_key_path.iter().map(|x| x.to_vec()).collect());
+            self.grove.insert(&index_path, Vec::from(document_id), document_index)?;
         };
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::drive::Drive;
+
+    #[test]
+    fn store_document_1() {
+        let tmp_dir = TempDir::new("db").unwrap();
+        drive = Drive::open(tmp_dir);
     }
 }
