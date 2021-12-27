@@ -19,6 +19,9 @@ DPNS_TOP_LEVEL_IDENTITY_PRIVATE_KEY=$(grep -m 1 "HD private key:" ${PATH_TO_PROJ
 FEATURE_FLAGS_IDENTITY_ID=$(yarn dashmate config:get --config="${CONFIG}_1" platform.featureFlags.ownerId)
 FEATURE_FLAGS_CONTRACT_ID=$(yarn dashmate config:get --config="${CONFIG}_1" platform.featureFlags.contract.id)
 
+REWARD_SHARE_IDENTITY_ID=$(yarn dashmate config:get --config="${CONFIG}_1" platform.rewardShare.ownerId)
+REWARD_SHARE_CONTRACT_ID=$(yarn dashmate config:get --config="${CONFIG}_1" platform.rewardShare.contract.id)
+
 echo "Mint 100 Dash to faucet address"
 
 MINT_FILE_PATH=${PATH_TO_PROJECT_ROOT}/logs/mint.log
@@ -35,7 +38,9 @@ if [ -z "$FAUCET_ADDRESS" ] || \
     [ -z "$DPNS_TOP_LEVEL_IDENTITY_ID" ] || \
     [ -z "$DPNS_TOP_LEVEL_IDENTITY_PRIVATE_KEY" ] || \
     [ -z "$FEATURE_FLAGS_IDENTITY_ID" ] || \
-    [ -z "$FEATURE_FLAGS_CONTRACT_ID" ]
+    [ -z "$FEATURE_FLAGS_CONTRACT_ID" ] || \
+    [ -z "$REWARD_SHARE_IDENTITY_ID" ] || \
+    [ -z "$REWARD_SHARE_CONTRACT_ID" ]
 then
   echo "Internal error. Some of the env variables are empty. Please check logs above."
   exit 1
@@ -55,6 +60,8 @@ DPNS_TOP_LEVEL_IDENTITY_ID=${DPNS_TOP_LEVEL_IDENTITY_ID}
 DPNS_TOP_LEVEL_IDENTITY_PRIVATE_KEY=${DPNS_TOP_LEVEL_IDENTITY_PRIVATE_KEY}
 FEATURE_FLAGS_IDENTITY_ID=${FEATURE_FLAGS_IDENTITY_ID}
 FEATURE_FLAGS_CONTRACT_ID=${FEATURE_FLAGS_CONTRACT_ID}
+REWARD_SHARE_IDENTITY_ID=${REWARD_SHARE_IDENTITY_ID}
+REWARD_SHARE_CONTRACT_ID=${REWARD_SHARE_CONTRACT_ID}
 NETWORK=regtest" >> ${TEST_ENV_FILE_PATH}
 #EOF
 
