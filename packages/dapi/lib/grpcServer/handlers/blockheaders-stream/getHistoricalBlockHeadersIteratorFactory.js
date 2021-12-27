@@ -30,6 +30,7 @@ function getHistoricalBlockHeadersIteratorFactory(coreRpcApi) {
     fromBlockHash,
     count,
   ) {
+    // TODO: implement `getblockstats` in dashd-rpc and use instead of getBlock
     const fromBlock = await coreRpcApi.getBlock(fromBlockHash);
     const fromHeight = fromBlock.height;
     const numberOfBatches = Math.ceil(count / MAX_HEADERS_PER_REQUEST);
