@@ -39,6 +39,13 @@ module.exports = lodashMerge({}, baseConfig, {
       },
       ownerId: 'CQSDSPkdCXRQWX74SQHddWfBEQbKPW3XhqkeEoa7jZXn',
     },
+    rewardShare: {
+      contract: {
+        id: null,
+        blockHeight: null,
+      },
+      ownerId: null,
+    },
     drive: {
       abci: {
         log: {
