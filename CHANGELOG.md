@@ -1,3 +1,88 @@
+## [0.22.0-dev.4](https://github.com/dashevo/platform/compare/v0.22.0-dev.3...v0.22.0-dev.4) (2021-12-24)
+
+
+### Bug Fixes
+
+* **drive:** `ValidatorSetUpdate` doesn't contain `nodeAddress` ([#155](https://github.com/dashevo/platform/issues/155))
+* **drive:** missed JS ABCI yarn cache ([#156](https://github.com/dashevo/platform/issues/156))
+
+## [0.22.0-dev.3](https://github.com/dashevo/platform/compare/v0.21.6...v0.22.0-dev.3) (2021-12-21)
+
+
+### ⚠ BREAKING CHANGES
+
+* add required `name` property to index definition (#74)
+* add an ability to update data contract (#52)
+* Identity public key now has two more fields, purpose and securityLevel, and keys without those fields won't be valid anymore
+
+### Features
+
+* add an ability to update data contract ([#52](https://github.com/dashevo/platform/issues/52))
+* add required `name` property to index definition ([#74](https://github.com/dashevo/platform/issues/74))
+* **dashmate:** json output for status commands ([#31](https://github.com/dashevo/platform/issues/31))
+* **dpp:** add `readOnly` flag to `IdentityPublicKey` ([#142](https://github.com/dashevo/platform/issues/142))
+* **drive:** network address in `ValidatorUpdate` ABCI ([#140](https://github.com/dashevo/platform/issues/140))
+* enable mainnet for dashmate ([#2](https://github.com/dashevo/platform/issues/2))
+* identity public key purpose and security levels ([#46](https://github.com/dashevo/platform/issues/46))
+* support Apple Silicone ([#143](https://github.com/dashevo/platform/issues/143))
+* **wallet-lib:** do not sync transactions if mnemonic is absent
+* **wallet-lib:** dump wallet storage ([#8](https://github.com/dashevo/platform/issues/8))
+
+
+### Bug Fixes
+
+* **dashmate:** `cannot read properties of undefined (reading 'dpns')` on reset ([#47](https://github.com/dashevo/platform/issues/47))
+
+
+### Documentation
+
+* improved sidebar and usage in DAPI client ([#3](https://github.com/dashevo/platform/issues/3))
+* provide getTransactionHistory ([#5](https://github.com/dashevo/platform/issues/5))
+
+
+### Tests
+
+* **wallet-lib:** enable skipped test after the fix for grpc-js lib ([#71](https://github.com/dashevo/platform/issues/71))
+
+
+### Miscellaneous Chores
+
+* fix wrong version in a release PR title ([#82](https://github.com/dashevo/platform/issues/82))
+* missed merk darwin x64 pre-build binary ([#144](https://github.com/dashevo/platform/issues/144))
+* undefined "-w" argument in restart script ([#85](https://github.com/dashevo/platform/issues/85))
+
+### [0.21.6](https://github.com/dashevo/platform/compare/v0.21.5...v0.21.6) (2021-12-13)
+
+
+### Bug Fixes
+
+* **dashmate:** RPC error on stopping node ([#61](https://github.com/dashevo/platform/issues/61))
+* **wallet-lib:** "Failure: Type not convertible to Uint8Array" ([#60](https://github.com/dashevo/platform/issues/60))
+* **wallet-lib:** eventemitter memory leak ([#56](https://github.com/dashevo/platform/issues/56))
+* **wallet-lib:** invalid deserialization of persistent storage ([#76](https://github.com/dashevo/platform/issues/76))
+
+
+### Documentation
+
+* publish consolidated docs using mkdocs ([#42](https://github.com/dashevo/platform/issues/42))
+
+
+### Miscellaneous Chores
+
+* changelogs generation script ([#62](https://github.com/dashevo/platform/issues/62))
+* enable yarn PnP to achieve zero installs ([#63](https://github.com/dashevo/platform/issues/63))
+* exit if some env variables are empty during setup ([#75](https://github.com/dashevo/platform/issues/75))
+* fix `test:drive` script ([#78](https://github.com/dashevo/platform/issues/78))
+* migrate from NPM to Yarn 3 ([#50](https://github.com/dashevo/platform/issues/50))
+* remove temporary reset script ([#64](https://github.com/dashevo/platform/issues/64))
+* update oclif and remove pnpify ([#73](https://github.com/dashevo/platform/issues/73))
+
+
+### Build System
+
+* fix bash syntax issue in release script ([#79](https://github.com/dashevo/platform/issues/79))
+* release process automation ([#67](https://github.com/dashevo/platform/issues/67))
+
 ## [0.21.5](https://github.com/dashevo/platform/compare/v0.21.4...v0.21.5) (2021-11-25)
 
 

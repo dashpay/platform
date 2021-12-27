@@ -41,7 +41,10 @@ function validateStateTransitionIdentitySignatureFactory(
       return result;
     }
 
-    if (publicKey.getType() !== IdentityPublicKey.TYPES.ECDSA_SECP256K1) {
+    if (
+      publicKey.getType() !== IdentityPublicKey.TYPES.ECDSA_SECP256K1
+      && publicKey.getType() !== IdentityPublicKey.TYPES.ECDSA_HASH160
+    ) {
       result.addError(
         new InvalidIdentityPublicKeyTypeError(publicKey.getType()),
       );

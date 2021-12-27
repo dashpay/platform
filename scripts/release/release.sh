@@ -88,7 +88,7 @@ fi
 
 gh pr create --base $BRANCH \
              --fill \
-             --title "chore(release): update changelog and bump version to $PACKAGE_VERSION" \
+             --title "chore(release): update changelog and bump version to $NEW_PACKAGE_VERSION" \
              --body-file $DIR/pr_description.md \
              --milestone $MILESTONE
 

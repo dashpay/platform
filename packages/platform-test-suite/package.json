@@ -1,7 +1,7 @@
 {
   "name": "@dashevo/platform-test-suite",
   "private": true,
-  "version": "0.21.5",
+  "version": "0.22.0-dev.4",
   "description": "Dash Network end-to-end tests",
   "scripts": {
     "test": "mocha './test/**/*.spec.js'",
@@ -26,7 +26,7 @@
     "@dashevo/dpp": "workspace:~",
     "@dashevo/feature-flags-contract": "workspace:~",
     "@dashevo/grpc-common": "workspace:~",
-    "@dashevo/merk": "github:dashevo/node-merk",
+    "@dashevo/merk": "github:dashevo/node-merk#eb37003300d22c6c04604463bcd7e861dd07000f",
     "@dashevo/wallet-lib": "workspace:~",
     "assert-browserify": "^2.0.0",
     "blake3": "^2.1.4",

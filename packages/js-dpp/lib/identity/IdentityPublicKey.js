@@ -26,6 +26,10 @@ class IdentityPublicKey {
     if (Object.prototype.hasOwnProperty.call(rawIdentityPublicKey, 'data')) {
       this.setData(rawIdentityPublicKey.data);
     }
+
+    if (Object.prototype.hasOwnProperty.call(rawIdentityPublicKey, 'readOnly')) {
+      this.setReadOnly(rawIdentityPublicKey.readOnly);
+    }
   }
 
   /**
@@ -134,6 +138,27 @@ class IdentityPublicKey {
   }
 
   /**
+   * Set readOnly flag
+   *
+   * @param {boolean} readOnly
+   * @return {IdentityPublicKey}
+   */
+  setReadOnly(readOnly) {
+    this.readOnly = readOnly;
+
+    return this;
+  }
+
+  /**
+   * Get readOnly flag
+   *
+   * @return boolean
+   */
+  getReadOnly() {
+    return this.readOnly;
+  }
+
+  /**
    * Get the original public key hash
    *
    * @returns {Buffer}
@@ -141,6 +166,10 @@ class IdentityPublicKey {
   hash() {
     if (!this.getData()) {
       throw new EmptyPublicKeyDataError();
+    }
+
+    if (this.getType() === IdentityPublicKey.TYPES.ECDSA_HASH160) {
+      return this.getData();
     }
 
     const originalPublicKey = new PublicKey(
@@ -162,6 +191,7 @@ class IdentityPublicKey {
       purpose: this.getPurpose(),
       securityLevel: this.getSecurityLevel(),
       data: this.getData(),
+      readOnly: this.getReadOnly(),
     };
   }
 
@@ -185,6 +215,7 @@ class IdentityPublicKey {
  * @property {number} purpose
  * @property {number} securityLevel
  * @property {Buffer} data
+ * @property {boolean} readOnly
  */
 
 /**
@@ -194,11 +225,13 @@ class IdentityPublicKey {
  * @property {number} securityLevel
  * @property {number} type
  * @property {string} data
+ * @property {boolean} readOnly
  */
 
 IdentityPublicKey.TYPES = {
   ECDSA_SECP256K1: 0,
   BLS12_381: 1,
+  ECDSA_HASH160: 2,
 };
 
 IdentityPublicKey.PURPOSES = {
