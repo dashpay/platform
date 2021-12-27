@@ -157,6 +157,13 @@ module.exports = {
       },
       ownerId: null,
     },
+    rewardShare: {
+      contract: {
+        id: null,
+        blockHeight: null,
+      },
+      ownerId: null,
+    },
   },
   externalIp: null,
   network: NETWORK_TESTNET,
