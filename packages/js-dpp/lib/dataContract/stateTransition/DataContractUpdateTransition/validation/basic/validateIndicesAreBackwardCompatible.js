@@ -2,13 +2,14 @@ const lodashGet = require('lodash.get');
 const DataContractHaveNewIndexWithOldPropertiesError = require('../../../../../errors/consensus/basic/dataContract/DataContractHaveNewIndexWithOldPropertiesError');
 const DataContractHaveNewUniqueIndexError = require('../../../../../errors/consensus/basic/dataContract/DataContractHaveNewUniqueIndexError');
 const DataContractIndicesChangedError = require('../../../../../errors/consensus/basic/dataContract/DataContractIndicesChangedError');
+const DataContractNonUniqueIndexUpdateError = require('../../../../../errors/consensus/basic/dataContract/DataContractNonUniqueIndexUpdateError');
 
 const serializer = require('../../../../../util/serializer');
 
 const ValidationResult = require('../../../../../validation/ValidationResult');
 
 /**
- * Check one of old indices have been changed
+ * Check one of old unique indices have been changed
  *
  * @param {string} documentType
  * @param {object} oldSchema
@@ -27,14 +28,79 @@ function checkOldIndicesChanged(documentType, oldSchema, newDocuments) {
     [indexDefinition.name]: indexDefinition,
   }), {});
 
-  // Checking every old and it's respective new index
+  // Checking every unique old and it's respective new index
   // if they are have the same definition
   const changedIndex = (oldSchema.indices || []).find(
     (indexDefinition) => (
       !serializer.encode(indexDefinition).equals(
         serializer.encode(nameIndexMap[indexDefinition.name]),
-      )
+      ) && indexDefinition.unique === true
     ),
+  );
+
+  return changedIndex;
+}
+
+/**
+ * Check if some of the old non-unique indices have chaned per spec
+ *
+ * @param {string} documentType
+ * @param {object} oldSchema
+ * @param {object[]} newDocuments
+ *
+ * @returns {object}
+ */
+function checkNonUniqueIndicesChangedPerSpec(documentType, oldSchema, newDocuments) {
+  const path = `${documentType}.indices`;
+
+  const newSchemaIndices = lodashGet(newDocuments, path);
+
+  const oldPropertyNames = Object.keys(oldSchema.properties);
+
+  // Building name - index map for easier search
+  const nameIndexMap = (newSchemaIndices || []).reduce((map, indexDefinition) => ({
+    ...map,
+    [indexDefinition.name]: indexDefinition,
+  }), {});
+
+  // Checking every old non-unique index and it's respective new index
+  // if they are have changes per spec
+  const changedIndex = (oldSchema.indices || []).find(
+    (indexDefinition) => {
+      if (indexDefinition.unique === true) {
+        return false;
+      }
+
+      const newIndexDefinition = nameIndexMap[indexDefinition.name];
+
+      // creating new index definition snapshot
+      // with the same amount of properties as old one
+      // if they are the same and in the same order
+      // later check will return nothing
+      const newIndexSnapshot = {
+        name: indexDefinition.name,
+        properties: newIndexDefinition.properties.slice(
+          0, indexDefinition.properties.length,
+        ),
+      };
+
+      if (!serializer.encode(indexDefinition).equals(
+        serializer.encode(newIndexSnapshot),
+      )) {
+        return true;
+      }
+
+      // check that rest of the properties are newly defined ones
+      const notNewProperty = newIndexDefinition.properties.slice(
+        indexDefinition.properties.length,
+      ).find((item) => oldPropertyNames.includes(Object.keys(item)[0]));
+
+      if (notNewProperty !== undefined) {
+        return true;
+      }
+
+      return false;
+    },
   );
 
   return changedIndex;
@@ -124,6 +190,20 @@ function validateIndicesAreBackwardCompatible(oldDocuments, newDocuments) {
         result.addError(
           new DataContractIndicesChangedError(
             documentType, changedIndex.name,
+          ),
+        );
+
+        return true;
+      }
+
+      const nonSpecNonUniqueIndex = checkNonUniqueIndicesChangedPerSpec(
+        documentType, oldSchema, newDocuments,
+      );
+
+      if (nonSpecNonUniqueIndex !== undefined) {
+        result.addError(
+          new DataContractNonUniqueIndexUpdateError(
+            documentType, nonSpecNonUniqueIndex.name,
           ),
         );
 

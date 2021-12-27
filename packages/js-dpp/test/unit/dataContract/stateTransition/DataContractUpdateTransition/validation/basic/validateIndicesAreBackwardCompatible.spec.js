@@ -2,6 +2,7 @@ const validateIndicesAreBackwardCompatible = require('../../../../../../../lib/d
 const DataContractHaveNewIndexWithOldPropertiesError = require('../../../../../../../lib/errors/consensus/basic/dataContract/DataContractHaveNewIndexWithOldPropertiesError');
 const DataContractHaveNewUniqueIndexError = require('../../../../../../../lib/errors/consensus/basic/dataContract/DataContractHaveNewUniqueIndexError');
 const DataContractIndicesChangedError = require('../../../../../../../lib/errors/consensus/basic/dataContract/DataContractIndicesChangedError');
+const DataContractNonUniqueIndexUpdateError = require('../../../../../../../lib/errors/consensus/basic/dataContract/DataContractNonUniqueIndexUpdateError');
 const getDataContractFixture = require('../../../../../../../lib/test/fixtures/getDataContractFixture');
 
 describe('validateIndicesAreBackwardCompatible', () => {
@@ -38,6 +39,19 @@ describe('validateIndicesAreBackwardCompatible', () => {
 
     expect(error).to.be.an.instanceOf(DataContractIndicesChangedError);
     expect(error.getIndexName()).to.equal(newDocumentsSchema.indexedDocument.indices[0].name);
+  });
+
+  it('should return invalid result if non-unique index update failed due to changed old properties', async () => {
+    newDocumentsSchema.indexedDocument.indices[2].properties[0].$id = 'desc';
+
+    const result = validateIndicesAreBackwardCompatible(oldDocumentsSchema, newDocumentsSchema);
+
+    expect(result.isValid()).to.be.false();
+
+    const error = result.getErrors()[0];
+
+    expect(error).to.be.an.instanceOf(DataContractNonUniqueIndexUpdateError);
+    expect(error.getIndexName()).to.equal(newDocumentsSchema.indexedDocument.indices[2].name);
   });
 
   it('should return invalid result if one of new indices contains old properties', async () => {
