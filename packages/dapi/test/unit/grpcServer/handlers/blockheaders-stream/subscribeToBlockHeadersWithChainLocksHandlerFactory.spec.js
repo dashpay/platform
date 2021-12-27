@@ -39,8 +39,8 @@ use(chaiAsPromised);
 use(dirtyChai);
 
 describe('subscribeToTransactionsWithProofsHandlerFactory', () => {
-  afterEach(function afterEach() {
-    this.sinon.restore();
+  afterEach(() => {
+    sinon.restore();
   });
 
   let call;
