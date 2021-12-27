@@ -172,7 +172,7 @@ function subscribeToBlockHeadersWithChainLocksHandlerFactory(
       }
     }
 
-    // notify new txs listener that we've sent historical data
+    // notify new block headers listener that we've sent historical data
     mediator.emit(ProcessMediator.EVENTS.HISTORICAL_DATA_SENT);
 
     if (!newHeadersRequested) {
@@ -181,8 +181,6 @@ function subscribeToBlockHeadersWithChainLocksHandlerFactory(
 
     call.on('cancelled', () => {
       call.end();
-
-      // remove bloom filter emitter
       mediator.emit(ProcessMediator.EVENTS.CLIENT_DISCONNECTED);
     });
   }
