@@ -11,6 +11,7 @@ on:
       - .github/workflows/test.yml
       - packages/js-dpp/**
       - packages/feature-flags-contract/**
+      - packages/reward-share-contract/**
       - packages/dpns-contract/**
       - packages/dashpay-contract/**
 

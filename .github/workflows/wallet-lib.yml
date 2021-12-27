@@ -17,6 +17,7 @@ on:
       - packages/dashpay-contract/**
       - packages/feature-flags-contract/**
       - packages/dpns-contract/**
+      - packages/reward-share-contract/**
 
 jobs:
   js-wallet-lib-tests:
