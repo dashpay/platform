@@ -1428,6 +1428,7 @@ __metadata:
     "@dashevo/dpns-contract": "workspace:~"
     "@dashevo/dpp": "workspace:~"
     "@dashevo/feature-flags-contract": "workspace:~"
+    "@dashevo/reward-share-contract": "workspace:~"
     "@dashevo/wallet-lib": "workspace:~"
     "@oclif/command": ^1.8.9
     "@oclif/config": ^1.18.2
@@ -1531,6 +1532,7 @@ __metadata:
     "@dashevo/dpns-contract": "workspace:~"
     "@dashevo/feature-flags-contract": "workspace:~"
     "@dashevo/re2-wasm": ~1.0.4
+    "@dashevo/reward-share-contract": "workspace:~"
     acorn: ^8.5.0
     ajv: ^8.6.0
     ajv-formats: ^2.1.1
@@ -1760,6 +1762,22 @@ __metadata:
   checksum: 4f1fca10c5190387e5652a7f900de52b15e68c66ca81ac0db4f368f2cfc95335eb2c4c6ee74c7204869ad937da4a84565411fdf33d308af89eaf41fda766e7be
   languageName: node
   linkType: hard
+
+"@dashevo/reward-share-contract@workspace:packages/reward-share-contract, @dashevo/reward-share-contract@workspace:~":
+  version: 0.0.0-use.local
+  resolution: "@dashevo/reward-share-contract@workspace:packages/reward-share-contract"
+  dependencies:
+    "@dashevo/dpp": "workspace:~"
+    chai: ^4.3.4
+    dirty-chai: ^2.0.1
+    eslint: ^7.32.0
+    eslint-config-airbnb-base: ^14.2.1
+    eslint-plugin-import: ^2.24.2
+    mocha: ^9.1.2
+    sinon: ^11.1.2
+    sinon-chai: ^3.7.0
+  languageName: unknown
+  linkType: soft
 
 "@dashevo/wallet-lib@workspace:packages/wallet-lib, @dashevo/wallet-lib@workspace:~":
   version: 0.0.0-use.local

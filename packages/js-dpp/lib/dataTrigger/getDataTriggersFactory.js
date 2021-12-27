@@ -1,4 +1,5 @@
 const featureFlagTypes = require('@dashevo/feature-flags-contract/lib/featureFlagTypes');
+const rewardShareTypes = require('@dashevo/reward-share-contract/lib/rewardShareTypes');
 
 const Identifier = require('../identifier/Identifier');
 
@@ -10,6 +11,7 @@ const rejectDataTrigger = require('./rejectDataTrigger');
 const createDomainDataTrigger = require('./dpnsTriggers/createDomainDataTrigger');
 const createContactRequestDataTrigger = require('./dashpayDataTriggers/createContactRequestDataTrigger');
 const createFeatureFlagDataTrigger = require('./featureFlagsDataTriggers/createFeatureFlagDataTrigger');
+const createRewardShareDataTrigger = require('./rewardShareDataTriggers/createRewardShareDataTrigger');
 
 /**
  * Get respective data triggers (factory)
@@ -41,6 +43,18 @@ function getDataTriggersFactory() {
   if (process.env.FEATURE_FLAGS_TOP_LEVEL_IDENTITY) {
     featureFlagsTopLevelIdentityId = Identifier.from(
       process.env.FEATURE_FLAGS_TOP_LEVEL_IDENTITY,
+    );
+  }
+
+  let rewardShareContractId = Buffer.alloc(0);
+  if (process.env.REWARD_SHARE_CONTRACT_ID) {
+    rewardShareContractId = Identifier.from(process.env.REWARD_SHARE_CONTRACT_ID);
+  }
+
+  let rewardShareTopLevelIdentityId = Buffer.alloc(0);
+  if (process.env.REWARD_SHARE_TOP_LEVEL_IDENTITY) {
+    rewardShareTopLevelIdentityId = Identifier.from(
+      process.env.REWARD_SHARE_TOP_LEVEL_IDENTITY,
     );
   }
 
@@ -129,6 +143,25 @@ function getDataTriggersFactory() {
     new DataTrigger(
       featureFlagsDataContractId,
       featureFlagTypes.FIX_CUMULATIVE_FEES,
+      AbstractDocumentTransition.ACTIONS.DELETE,
+      rejectDataTrigger,
+    ),
+    new DataTrigger(
+      rewardShareContractId,
+      rewardShareTypes.REWARD_SHARE,
+      AbstractDocumentTransition.ACTIONS.CREATE,
+      createRewardShareDataTrigger,
+      rewardShareTopLevelIdentityId,
+    ),
+    new DataTrigger(
+      rewardShareContractId,
+      rewardShareTypes.REWARD_SHARE,
+      AbstractDocumentTransition.ACTIONS.REPLACE,
+      rejectDataTrigger,
+    ),
+    new DataTrigger(
+      rewardShareContractId,
+      rewardShareTypes.REWARD_SHARE,
       AbstractDocumentTransition.ACTIONS.DELETE,
       rejectDataTrigger,
     ),

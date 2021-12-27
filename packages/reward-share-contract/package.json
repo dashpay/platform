@@ -1,0 +1,44 @@
+{
+  "name": "@dashevo/reward-share-contract",
+  "version": "0.22.0-dev.4",
+  "description": "A contract and helper scripts for reward sharing",
+  "scripts": {
+    "lint": "eslint .",
+    "test": "yarn run test:unit",
+    "test:unit": "mocha 'test/unit/**/*.spec.js'"
+  },
+  "contributors": [
+    {
+      "name": "Ivan Shumkov",
+      "email": "ivan@shumkov.ru",
+      "url": "https://github.com/shumkov"
+    },
+    {
+      "name": "Djavid Gabibiyan",
+      "email": "djavid@dash.org",
+      "url": "https://github.com/jawid-h"
+    },
+    {
+      "name": "Anton Suprunchuk",
+      "email": "anton.suprunchuk@dash.org",
+      "url": "https://github.com/antouhou"
+    },
+    {
+      "name": "Konstantin Shuplenkov",
+      "email": "konstantin.shuplenkov@dash.org",
+      "url": "https://github.com/shuplenkov"
+    }
+  ],
+  "license": "MIT",
+  "devDependencies": {
+    "@dashevo/dpp": "workspace:~",
+    "chai": "^4.3.4",
+    "dirty-chai": "^2.0.1",
+    "eslint": "^7.32.0",
+    "eslint-config-airbnb-base": "^14.2.1",
+    "eslint-plugin-import": "^2.24.2",
+    "mocha": "^9.1.2",
+    "sinon": "^11.1.2",
+    "sinon-chai": "^3.7.0"
+  }
+}

@@ -534,8 +534,34 @@ module.exports = {
           required: ['contract', 'ownerId'],
           additionalProperties: false,
         },
+        rewardShare: {
+          type: 'object',
+          properties: {
+            contract: {
+              type: 'object',
+              properties: {
+                id: {
+                  type: ['string', 'null'],
+                  minLength: 1,
+                },
+                blockHeight: {
+                  type: ['integer', 'null'],
+                  minimum: 1,
+                },
+              },
+              required: ['id', 'blockHeight'],
+              additionalProperties: false,
+            },
+            ownerId: {
+              type: ['string', 'null'],
+              minLength: 1,
+            },
+          },
+          required: ['contract', 'ownerId'],
+          additionalProperties: false,
+        },
       },
-      required: ['dapi', 'drive', 'dpns', 'dashpay', 'featureFlags'],
+      required: ['dapi', 'drive', 'dpns', 'dashpay', 'featureFlags', 'rewardShare'],
       additionalProperties: false,
     },
     externalIp: {

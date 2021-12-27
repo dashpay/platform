@@ -61,7 +61,8 @@
     "packages/dapi",
     "packages/js-drive",
     "packages/dashmate",
-    "packages/platform-test-suite"
+    "packages/platform-test-suite",
+    "packages/reward-share-contract"
   ],
   "resolutions": {
     "protobufjs": "github:jawid-h/protobuf.js#fix/buffer-conversion",
