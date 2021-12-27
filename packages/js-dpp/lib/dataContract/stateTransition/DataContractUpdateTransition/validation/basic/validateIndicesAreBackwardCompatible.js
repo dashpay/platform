@@ -9,15 +9,15 @@ const serializer = require('../../../../../util/serializer');
 const ValidationResult = require('../../../../../validation/ValidationResult');
 
 /**
- * Check one of old unique indices have been changed
+ * Get one of old unique indices that have been changed
  *
  * @param {string} documentType
  * @param {object} oldSchema
  * @param {object[]} newDocuments
  *
- * @returns {object}
+ * @returns {object|undefined}
  */
-function checkOldIndicesChanged(documentType, oldSchema, newDocuments) {
+function getChangedOldUniqueIndex(documentType, oldSchema, newDocuments) {
   const path = `${documentType}.indices`;
 
   const newSchemaIndices = lodashGet(newDocuments, path);
@@ -42,7 +42,7 @@ function checkOldIndicesChanged(documentType, oldSchema, newDocuments) {
 }
 
 /**
- * Check if some of the old non-unique indices have chaned per spec
+ * Get one of the old non-unique indices that have been wrongly changed
  *
  * @param {string} documentType
  * @param {object} oldSchema
@@ -50,7 +50,7 @@ function checkOldIndicesChanged(documentType, oldSchema, newDocuments) {
  *
  * @returns {object}
  */
-function checkNonUniqueIndicesChangedPerSpec(documentType, oldSchema, newDocuments) {
+function getWronglyUpdatedNonUniqueIndex(documentType, oldSchema, newDocuments) {
   const path = `${documentType}.indices`;
 
   const newSchemaIndices = lodashGet(newDocuments, path);
@@ -107,7 +107,7 @@ function checkNonUniqueIndicesChangedPerSpec(documentType, oldSchema, newDocumen
 }
 
 /**
- * Check if some of the new indices have unique flag
+ * Get one of the new indices that have unique flag
  *
  * @param {string} documentType
  * @param {object} oldSchema
@@ -115,7 +115,7 @@ function checkNonUniqueIndicesChangedPerSpec(documentType, oldSchema, newDocumen
  *
  * @returns {object}
  */
-function checkNewIndicesAreUnique(documentType, oldSchema, newDocuments) {
+function getNewUniqueIndex(documentType, oldSchema, newDocuments) {
   const newSchemaIndices = lodashGet(newDocuments, `${documentType}.indices`);
 
   const oldIndexNames = (oldSchema.indices || []).map(
@@ -133,7 +133,7 @@ function checkNewIndicesAreUnique(documentType, oldSchema, newDocuments) {
 }
 
 /**
- * Check if some of the new indices have old properties
+ * Get one of the new indices that have old properties in them in the wrong order
  *
  * @param {string} documentType
  * @param {object} oldSchema
@@ -141,32 +141,59 @@ function checkNewIndicesAreUnique(documentType, oldSchema, newDocuments) {
  *
  * @returns {object}
  */
-function checkNewIndicesHaveOldProperties(documentType, oldSchema, newDocuments) {
+function getWronglyConstructedNewIndex(documentType, oldSchema, newDocuments) {
   const newSchemaIndices = lodashGet(newDocuments, `${documentType}.indices`);
 
   const oldIndexNames = (oldSchema.indices || []).map(
     (indexDefinition) => indexDefinition.name,
   );
-  const oldPropertyNames = Object.keys(oldSchema.properties);
+
+  const oldIndexedProperties = new Set((oldSchema.indices || []).reduce(
+    (properties, indexDefinition) => [
+      ...properties,
+      ...indexDefinition.properties.map((definition) => Object.keys(definition)[0]),
+    ], [],
+  ));
+
+  // Build an index of all possible allowed combinations
+  // of old indices to check later
+  const oldIndexSnapshots = (oldSchema.indices || []).reduce(
+    (snapshots, indexDefinition) => [
+      ...snapshots,
+      ...indexDefinition.properties.map((_, index) => (
+        serializer.encode(indexDefinition.properties.slice(0, index + 1)).toString('hex')
+      )),
+    ], [],
+  );
 
   // Gather only newly defined indices
   const newIndices = (newSchemaIndices || []).filter(
     (indexDefinition) => !oldIndexNames.includes(indexDefinition.name),
   );
 
-  const indexHaveOldProperties = (newIndices || []).find((indexDefinition) => {
-    const propertyNames = indexDefinition.properties.reduce((list, propertyObj) => {
-      const keys = Object.keys(propertyObj).filter((n) => !n.startsWith('$'));
-      return [
-        ...list,
-        ...keys,
-      ];
-    }, []);
+  const wronglyContstructedIndex = (newIndices || []).find((indexDefinition) => {
+    const oldProperties = indexDefinition.properties.filter(
+      (prop) => oldIndexedProperties.has(Object.keys(prop)[0]),
+    );
 
-    return propertyNames.find((n) => oldPropertyNames.includes(n)) !== undefined;
+    // if no old properties being used - skip
+    if (oldProperties.length === 0) {
+      return false;
+    }
+
+    // build a partial snapshot of the new index
+    // containing only first part of it with a
+    // length equal to number of old properties used
+    // sine they should be in the beginning of the
+    // index we can check it with previously built snapshot combinations
+    const partialNewIndexSnapshot = serializer.encode(
+      indexDefinition.properties.slice(0, oldProperties.length),
+    ).toString('hex');
+
+    return !oldIndexSnapshots.includes(partialNewIndexSnapshot);
   });
 
-  return indexHaveOldProperties;
+  return wronglyContstructedIndex;
 }
 
 /**
@@ -182,35 +209,35 @@ function validateIndicesAreBackwardCompatible(oldDocuments, newDocuments) {
 
   Object.entries(oldDocuments)
     .find(([documentType, oldSchema]) => {
-      const changedIndex = checkOldIndicesChanged(
+      const changedOldIndex = getChangedOldUniqueIndex(
         documentType, oldSchema, newDocuments,
       );
 
-      if (changedIndex !== undefined) {
+      if (changedOldIndex !== undefined) {
         result.addError(
           new DataContractIndicesChangedError(
-            documentType, changedIndex.name,
+            documentType, changedOldIndex.name,
           ),
         );
 
         return true;
       }
 
-      const nonSpecNonUniqueIndex = checkNonUniqueIndicesChangedPerSpec(
+      const wronglyUpdatedIndex = getWronglyUpdatedNonUniqueIndex(
         documentType, oldSchema, newDocuments,
       );
 
-      if (nonSpecNonUniqueIndex !== undefined) {
+      if (wronglyUpdatedIndex !== undefined) {
         result.addError(
           new DataContractNonUniqueIndexUpdateError(
-            documentType, nonSpecNonUniqueIndex.name,
+            documentType, wronglyUpdatedIndex.name,
           ),
         );
 
         return true;
       }
 
-      const newUniqueIndex = checkNewIndicesAreUnique(
+      const newUniqueIndex = getNewUniqueIndex(
         documentType, oldSchema, newDocuments,
       );
 
@@ -224,14 +251,14 @@ function validateIndicesAreBackwardCompatible(oldDocuments, newDocuments) {
         return true;
       }
 
-      const newIndexWithOldProperties = checkNewIndicesHaveOldProperties(
+      const wronglyConstructedNewIndex = getWronglyConstructedNewIndex(
         documentType, oldSchema, newDocuments,
       );
 
-      if (newIndexWithOldProperties !== undefined) {
+      if (wronglyConstructedNewIndex !== undefined) {
         result.addError(
           new DataContractHaveNewIndexWithOldPropertiesError(
-            documentType, newIndexWithOldProperties.name,
+            documentType, wronglyConstructedNewIndex.name,
           ),
         );
 

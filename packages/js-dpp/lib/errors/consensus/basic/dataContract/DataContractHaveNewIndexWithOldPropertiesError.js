@@ -6,7 +6,7 @@ class DataContractHaveNewIndexWithOldPropertiesError extends AbstractBasicError 
    * @param {string} indexName
    */
   constructor(documentType, indexName) {
-    super(`Adding new indices with old properties during Data Contract update is not allowed. Document with type ${documentType} has new index with old properties named "${indexName}".`);
+    super(`Old properties in the new indices should be defined in the beginning of it. Document with type ${documentType} has new index "${indexName}" with old properties in the wrong order.`);
 
     this.documentType = documentType;
     this.indexName = indexName;
