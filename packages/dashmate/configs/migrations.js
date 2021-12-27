@@ -284,7 +284,7 @@ module.exports = {
   '0.22.0': (configFile) => {
     Object.entries(configFile.configs)
       .forEach(([, config]) => {
-        if (!config.platform.featureFlags) {
+        if (!config.platform.rewardShare) {
           config.platform.rewardShare = systemConfigs.base.platform.rewardShare;
         }
       });
