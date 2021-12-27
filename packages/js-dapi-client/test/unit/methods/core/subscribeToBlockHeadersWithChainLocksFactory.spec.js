@@ -4,7 +4,7 @@ const {
     BlockHeadersWithChainLocksRequest,
   },
 } = require('@dashevo/dapi-grpc');
-const {EventEmitter} = require('events');
+const { EventEmitter } = require('events');
 
 const subscribeToBlockHeadersWithChainLocksFactory = require('../../../../lib/methods/core/subscribeToBlockHeadersWithChainLocksFactory');
 
@@ -28,20 +28,23 @@ describe('subscribeToBlockHeadersWithChainLocks', () => {
     grpcTransportMock = {
       request: this.sinon.stub().resolves(stream),
     };
-    subscribeToBlockHeadersWithChainLocks = subscribeToBlockHeadersWithChainLocksFactory(grpcTransportMock);
+
+    // eslint-disable-next-line operator-linebreak
+    subscribeToBlockHeadersWithChainLocks =
+      subscribeToBlockHeadersWithChainLocksFactory(grpcTransportMock);
   });
 
   it('should return a stream', async () => {
     try {
       await subscribeToBlockHeadersWithChainLocks(
-        {...options, fromBlockHeight: 0},
+        { ...options, fromBlockHeight: 0 },
       );
     } catch (e) {
       expect(e).to.be.an.instanceOf(DAPIClientError);
     }
 
     const actualStream = await subscribeToBlockHeadersWithChainLocks(
-      {...options, fromBlockHeight: 1},
+      { ...options, fromBlockHeight: 1 },
     );
 
     const request = new BlockHeadersWithChainLocksRequest();
@@ -59,4 +62,4 @@ describe('subscribeToBlockHeadersWithChainLocks', () => {
 
     expect(actualStream).to.be.equal(stream);
   });
-})
+});

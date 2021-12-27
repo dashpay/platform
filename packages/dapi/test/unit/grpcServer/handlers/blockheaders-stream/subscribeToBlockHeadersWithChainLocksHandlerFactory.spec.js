@@ -1,4 +1,5 @@
-const {expect, use} = require('chai');
+const { expect, use } = require('chai');
+// eslint-disable-next-line no-underscore-dangle
 const _sinon = require('sinon');
 const sinonChai = require('sinon-chai');
 const dirtyChai = require('dirty-chai');
@@ -7,7 +8,7 @@ const {
   server: {
     error: {
       NotFoundGrpcError,
-      InvalidArgumentGrpcError
+      InvalidArgumentGrpcError,
     },
     stream: {
       AcknowledgingWritable,
@@ -20,19 +21,18 @@ const {
     BlockHeadersWithChainLocksRequest,
     BlockHeadersWithChainLocksResponse,
     BlockHeaders,
-    ChainLockSignatureMessages
+    ChainLockSignatureMessages,
   },
 } = require('@dashevo/dapi-grpc');
-
 
 const GrpcCallMock = require('../../../../../lib/test/mock/GrpcCallMock');
 const subscribeToBlockHeadersWithChainLocksHandlerFactory = require(
   '../../../../../lib/grpcServer/handlers/blockheaders-stream/subscribeToBlockHeadersWithChainLocksHandlerFactory',
 );
 
-let sinon
-let coreAPIMock
-let zmqClientMock
+let sinon;
+let coreAPIMock;
+let zmqClientMock;
 
 use(sinonChai);
 use(chaiAsPromised);
@@ -48,7 +48,7 @@ describe('subscribeToTransactionsWithProofsHandlerFactory', () => {
   let getHistoricalBlockHeadersIteratorMock;
   let subscribeToNewBlockHeadersMock;
 
-  beforeEach(function beforeEach() {
+  beforeEach(() => {
     if (!sinon) {
       sinon = _sinon.createSandbox();
     } else {
@@ -59,25 +59,26 @@ describe('subscribeToTransactionsWithProofsHandlerFactory', () => {
       getBlock: sinon.stub(),
       getBestBlockHeight: sinon.stub(),
       getBlockHash: sinon.stub(),
-      getBestChainLock: sinon.stub()
+      getBestChainLock: sinon.stub(),
     };
-    subscribeToNewBlockHeadersMock = sinon.stub()
+    subscribeToNewBlockHeadersMock = sinon.stub();
 
     async function* asyncGenerator() {
-      yield [{toBuffer: () => Buffer.from('fake', 'utf-8')}]
+      yield [{ toBuffer: () => Buffer.from('fake', 'utf-8') }];
     }
 
-    getHistoricalBlockHeadersIteratorMock = () => asyncGenerator()
-    zmqClientMock = {on: sinon.stub(), topics: {hashblock: 'fake'}}
+    getHistoricalBlockHeadersIteratorMock = () => asyncGenerator();
+    zmqClientMock = { on: sinon.stub(), topics: { hashblock: 'fake' } };
 
-    subscribeToBlockHeadersWithChainLocksHandler = subscribeToBlockHeadersWithChainLocksHandlerFactory(
-      getHistoricalBlockHeadersIteratorMock,
-      coreAPIMock,
-      zmqClientMock,
-      subscribeToNewBlockHeadersMock
-    );
+    // eslint-disable-next-line operator-linebreak
+    subscribeToBlockHeadersWithChainLocksHandler =
+      subscribeToBlockHeadersWithChainLocksHandlerFactory(
+        getHistoricalBlockHeadersIteratorMock,
+        coreAPIMock,
+        zmqClientMock,
+        subscribeToNewBlockHeadersMock,
+      );
   });
-
 
   it('should subscribe to newBlockHeaders', async () => {
     sinon.stub(AcknowledgingWritable.prototype, 'write');
@@ -88,13 +89,12 @@ describe('subscribeToTransactionsWithProofsHandlerFactory', () => {
     call.request.setFromBlockHash('fakehash');
     call.request.setCount(0);
 
-    coreAPIMock.getBestChainLock.resolves({signature: 'fakesig'});
-    coreAPIMock.getBlock.resolves({height: 1});
+    coreAPIMock.getBestChainLock.resolves({ signature: 'fakesig' });
+    coreAPIMock.getBlock.resolves({ height: 1 });
 
     await subscribeToBlockHeadersWithChainLocksHandler(call);
     expect(subscribeToNewBlockHeadersMock).to.have.been.called();
   });
-
 
   it('should subscribe from block hash', async () => {
     const writableStub = sinon.stub(AcknowledgingWritable.prototype, 'write');
@@ -105,10 +105,10 @@ describe('subscribeToTransactionsWithProofsHandlerFactory', () => {
     call.request.setFromBlockHash('someBlockHash');
     call.request.setCount(0);
 
-    coreAPIMock.getBestChainLock.resolves({signature: 'fakesig'});
+    coreAPIMock.getBestChainLock.resolves({ signature: 'fakesig' });
 
     try {
-      coreAPIMock.getBlock.resolves({height: -1});
+      coreAPIMock.getBlock.resolves({ height: -1 });
       await subscribeToBlockHeadersWithChainLocksHandler(call);
     } catch (e) {
       expect(e).to.be.instanceOf(NotFoundGrpcError);
@@ -116,17 +116,15 @@ describe('subscribeToTransactionsWithProofsHandlerFactory', () => {
     }
 
     try {
-      coreAPIMock.getBlock.resolves({height: 1, confirmations: -1});
+      coreAPIMock.getBlock.resolves({ height: 1, confirmations: -1 });
       await subscribeToBlockHeadersWithChainLocksHandler(call);
     } catch (e) {
-      console.log('1')
       expect(e).to.be.instanceOf(NotFoundGrpcError);
-      console.log('2')
-      expect(e.message.includes('is not part of the best block chain')).to.be.true;
+      expect(e.message.includes('is not part of the best block chain')).to.be.true();
     }
 
     try {
-      coreAPIMock.getBlock.resolves({height: 10});
+      coreAPIMock.getBlock.resolves({ height: 10 });
       coreAPIMock.getBestBlockHeight.resolves(11);
       await subscribeToBlockHeadersWithChainLocksHandler(call);
     } catch (e) {
@@ -154,7 +152,7 @@ describe('subscribeToTransactionsWithProofsHandlerFactory', () => {
     expect(writableStub.getCall(1).args).to.deep.equal(
       [iteratorResponse],
     );
-  })
+  });
 
   it('should subscribe from block height', async () => {
     sinon.stub(AcknowledgingWritable.prototype, 'write');
@@ -165,10 +163,10 @@ describe('subscribeToTransactionsWithProofsHandlerFactory', () => {
     call.request.setFromBlockHeight(1);
     call.request.setCount(5);
 
-    coreAPIMock.getBestChainLock.resolves({signature: 'fakesig'});
-    coreAPIMock.getBlock.resolves({height: 1});
+    coreAPIMock.getBestChainLock.resolves({ signature: 'fakesig' });
+    coreAPIMock.getBlock.resolves({ height: 1 });
 
     await subscribeToBlockHeadersWithChainLocksHandler(call);
     expect(subscribeToNewBlockHeadersMock).to.not.have.been.called();
-  })
+  });
 });
