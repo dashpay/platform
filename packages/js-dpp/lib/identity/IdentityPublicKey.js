@@ -238,6 +238,7 @@ IdentityPublicKey.PURPOSES = {
   AUTHENTICATION: 0,
   ENCRYPTION: 1,
   DECRYPTION: 2,
+  WITHDRAW: 3,
 };
 
 IdentityPublicKey.SECURITY_LEVELS = {
@@ -258,6 +259,9 @@ IdentityPublicKey.ALLOWED_SECURITY_LEVELS[IdentityPublicKey.PURPOSES.ENCRYPTION]
   IdentityPublicKey.SECURITY_LEVELS.MEDIUM,
 ];
 IdentityPublicKey.ALLOWED_SECURITY_LEVELS[IdentityPublicKey.PURPOSES.DECRYPTION] = [
+  IdentityPublicKey.SECURITY_LEVELS.MEDIUM,
+];
+IdentityPublicKey.ALLOWED_SECURITY_LEVELS[IdentityPublicKey.PURPOSES.WITHDRAW] = [
   IdentityPublicKey.SECURITY_LEVELS.MEDIUM,
 ];
 
