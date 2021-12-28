@@ -534,7 +534,7 @@ module.exports = {
           required: ['contract', 'ownerId'],
           additionalProperties: false,
         },
-        rewardShare: {
+        masternodeRewardShares: {
           type: 'object',
           properties: {
             contract: {
@@ -561,7 +561,7 @@ module.exports = {
           additionalProperties: false,
         },
       },
-      required: ['dapi', 'drive', 'dpns', 'dashpay', 'featureFlags', 'rewardShare'],
+      required: ['dapi', 'drive', 'dpns', 'dashpay', 'featureFlags', 'masternodeRewardShares'],
       additionalProperties: false,
     },
     externalIp: {

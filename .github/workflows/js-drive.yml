@@ -14,7 +14,7 @@ on:
       - packages/dpns-contract/**
       - packages/dashpay-contract/**
       - packages/js-dpp/**
-      - packages/reward-share-contract/**
+      - packages/masternode-reward-shares-contract/**
       - packages/dapi-grpc/**
       - packages/js-grpc-common/**
 

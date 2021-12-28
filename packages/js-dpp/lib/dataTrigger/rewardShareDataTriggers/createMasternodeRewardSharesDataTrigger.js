@@ -9,7 +9,7 @@ const MAX_PERCENTAGE = 10000;
  * @param {Identifier} topLevelIdentityId
  * @return {Promise<DataTriggerExecutionResult>}
  */
-async function createRewardShareDataTrigger(
+async function createMasternodeRewardSharesDataTrigger(
   documentTransition,
   context,
   topLevelIdentityId,
@@ -83,4 +83,4 @@ async function createRewardShareDataTrigger(
   return result;
 }
 
-module.exports = createRewardShareDataTrigger;
+module.exports = createMasternodeRewardSharesDataTrigger;

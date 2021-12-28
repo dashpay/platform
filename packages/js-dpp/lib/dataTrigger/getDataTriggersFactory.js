@@ -1,5 +1,5 @@
 const featureFlagTypes = require('@dashevo/feature-flags-contract/lib/featureFlagTypes');
-const rewardShareTypes = require('@dashevo/reward-share-contract/lib/rewardShareTypes');
+const masternodeRewardSharesTypes = require('@dashevo/masternode-reward-shares-contract/lib/rewardShareTypes');
 
 const Identifier = require('../identifier/Identifier');
 
@@ -11,7 +11,7 @@ const rejectDataTrigger = require('./rejectDataTrigger');
 const createDomainDataTrigger = require('./dpnsTriggers/createDomainDataTrigger');
 const createContactRequestDataTrigger = require('./dashpayDataTriggers/createContactRequestDataTrigger');
 const createFeatureFlagDataTrigger = require('./featureFlagsDataTriggers/createFeatureFlagDataTrigger');
-const createRewardShareDataTrigger = require('./rewardShareDataTriggers/createRewardShareDataTrigger');
+const createMasternodeRewardSharesDataTrigger = require('./rewardShareDataTriggers/createMasternodeRewardSharesDataTrigger');
 
 /**
  * Get respective data triggers (factory)
@@ -46,14 +46,14 @@ function getDataTriggersFactory() {
     );
   }
 
-  let rewardShareContractId = Buffer.alloc(0);
+  let masternodeRewardSharesContractId = Buffer.alloc(0);
   if (process.env.REWARD_SHARE_CONTRACT_ID) {
-    rewardShareContractId = Identifier.from(process.env.REWARD_SHARE_CONTRACT_ID);
+    masternodeRewardSharesContractId = Identifier.from(process.env.REWARD_SHARE_CONTRACT_ID);
   }
 
-  let rewardShareTopLevelIdentityId = Buffer.alloc(0);
+  let masternodeRewardSharesTopLevelIdentityId = Buffer.alloc(0);
   if (process.env.REWARD_SHARE_TOP_LEVEL_IDENTITY) {
-    rewardShareTopLevelIdentityId = Identifier.from(
+    masternodeRewardSharesTopLevelIdentityId = Identifier.from(
       process.env.REWARD_SHARE_TOP_LEVEL_IDENTITY,
     );
   }
@@ -147,21 +147,21 @@ function getDataTriggersFactory() {
       rejectDataTrigger,
     ),
     new DataTrigger(
-      rewardShareContractId,
-      rewardShareTypes.REWARD_SHARE,
+      masternodeRewardSharesContractId,
+      masternodeRewardSharesTypes.MASTERNODE_REWARD_SHARES,
       AbstractDocumentTransition.ACTIONS.CREATE,
-      createRewardShareDataTrigger,
-      rewardShareTopLevelIdentityId,
+      createMasternodeRewardSharesDataTrigger,
+      masternodeRewardSharesTopLevelIdentityId,
     ),
     new DataTrigger(
-      rewardShareContractId,
-      rewardShareTypes.REWARD_SHARE,
+      masternodeRewardSharesContractId,
+      masternodeRewardSharesTypes.MASTERNODE_REWARD_SHARES,
       AbstractDocumentTransition.ACTIONS.REPLACE,
       rejectDataTrigger,
     ),
     new DataTrigger(
-      rewardShareContractId,
-      rewardShareTypes.REWARD_SHARE,
+      masternodeRewardSharesContractId,
+      masternodeRewardSharesTypes.MASTERNODE_REWARD_SHARES,
       AbstractDocumentTransition.ACTIONS.DELETE,
       rejectDataTrigger,
     ),

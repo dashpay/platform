@@ -284,8 +284,9 @@ module.exports = {
   '0.22.0': (configFile) => {
     Object.entries(configFile.configs)
       .forEach(([, config]) => {
-        if (!config.platform.rewardShare) {
-          config.platform.rewardShare = systemConfigs.base.platform.rewardShare;
+        if (!config.platform.masternodeRewardShares) {
+          config.platform.masternodeRewardShares = systemConfigs.base.platform
+            .masternodeRewardShares;
         }
       });
 
@@ -296,6 +297,7 @@ module.exports = {
     configFile.configs.testnet.platform.dashpay = systemConfigs.testnet.platform.dashpay;
     configFile.configs.testnet.platform.featureFlags = systemConfigs.testnet.platform.featureFlags;
 
-    configFile.configs.testnet.platform.rewardShare = systemConfigs.testnet.platform.rewardShare;
+    configFile.configs.testnet.platform.masternodeRewardShares = systemConfigs.testnet.platform
+      .masternodeRewardShares;
   },
 };

@@ -39,7 +39,7 @@ module.exports = lodashMerge({}, baseConfig, {
       },
       ownerId: 'CQSDSPkdCXRQWX74SQHddWfBEQbKPW3XhqkeEoa7jZXn',
     },
-    rewardShare: {
+    masternodeRewardShares: {
       contract: {
         id: null,
         blockHeight: null,

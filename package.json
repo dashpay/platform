@@ -62,7 +62,7 @@
     "packages/js-drive",
     "packages/dashmate",
     "packages/platform-test-suite",
-    "packages/reward-share-contract"
+    "packages/masternode-reward-shares-contract"
   ],
   "resolutions": {
     "protobufjs": "github:jawid-h/protobuf.js#fix/buffer-conversion",

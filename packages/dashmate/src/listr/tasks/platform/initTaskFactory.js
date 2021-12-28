@@ -9,7 +9,7 @@ const fundWallet = require('@dashevo/wallet-lib/src/utils/fundWallet');
 const dpnsDocumentSchema = require('@dashevo/dpns-contract/schema/dpns-contract-documents.json');
 const dashpayDocumentSchema = require('@dashevo/dashpay-contract/schema/dashpay.schema.json');
 const featureFlagsDocumentSchema = require('@dashevo/feature-flags-contract/schema/feature-flags-documents.json');
-const rewardShareSchema = require('@dashevo/reward-share-contract/schema/reward-share-documents.json');
+const masternodeRewardSharesSchema = require('@dashevo/masternode-reward-shares-contract/schema/reward-share-documents.json');
 
 const { NETWORK_LOCAL } = require('../../../constants');
 
@@ -294,12 +294,12 @@ function initTaskFactory(
       {
         title: 'Register Reward Share identity',
         task: async (ctx, task) => {
-          ctx.rewardShareIdentity = await ctx.client.platform.identities.register(5000);
+          ctx.masternodeRewardSharesIdentity = await ctx.client.platform.identities.register(5000);
 
-          config.set('platform.rewardShare.ownerId', ctx.rewardShareIdentity.getId().toString());
+          config.set('platform.masternodeRewardShares.ownerId', ctx.masternodeRewardSharesIdentity.getId().toString());
 
           // eslint-disable-next-line no-param-reassign
-          task.output = `Reward Share identity: ${ctx.rewardShareIdentity.getId().toString()}`;
+          task.output = `Reward Share identity: ${ctx.masternodeRewardSharesIdentity.getId().toString()}`;
         },
         options: { persistentOutput: true },
       },
@@ -307,20 +307,20 @@ function initTaskFactory(
         title: 'Register Reward Share contract',
         task: async (ctx, task) => {
           ctx.rewardSharingContract = await ctx.client.platform.contracts.create(
-            rewardShareSchema, ctx.rewardShareIdentity,
+            masternodeRewardSharesSchema, ctx.masternodeRewardSharesIdentity,
           );
 
-          ctx.client.getApps().set('rewardShare', {
+          ctx.client.getApps().set('masternodeRewardShares', {
             contractId: ctx.rewardSharingContract.getId(),
-            contract: ctx.rewardShareIdentity,
+            contract: ctx.masternodeRewardSharesIdentity,
           });
 
           ctx.dataContractStateTransition = await ctx.client.platform.contracts.publish(
             ctx.rewardSharingContract,
-            ctx.rewardShareIdentity,
+            ctx.masternodeRewardSharesIdentity,
           );
 
-          config.set('platform.rewardShare.contract.id', ctx.rewardSharingContract.getId().toString());
+          config.set('platform.masternodeRewardShares.contract.id', ctx.rewardSharingContract.getId().toString());
 
           // eslint-disable-next-line no-param-reassign
           task.output = `Reward Share contract ID: ${ctx.rewardSharingContract.getId().toString()}`;
@@ -337,7 +337,7 @@ function initTaskFactory(
           if (ctx.dapiAddress || config.get('network') !== NETWORK_LOCAL) {
             task.skip('Can\'t obtain Reward Share contract commit block height from remote node.'
               + `Please, get block height manually using state transition hash "0x${stateTransitionHash.toString('hex')}"`
-              + 'and set it to "platform.rewardShare.contract.id" config option');
+              + 'and set it to "platform.masternodeRewardShares.contract.id" config option');
 
             return;
           }
@@ -354,9 +354,7 @@ function initTaskFactory(
 
           const { result: { height: contractBlockHeight } } = response;
 
-          config.set('platform.rewardShare.contract.blockHeight', contractBlockHeight);
-
-          ctx.rewardShareContractBlockHeight = contractBlockHeight;
+          config.set('platform.masternodeRewardShares.contract.blockHeight', contractBlockHeight);
 
           // eslint-disable-next-line no-param-reassign
           task.output = `Reward Share contract block height: ${contractBlockHeight}`;

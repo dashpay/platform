@@ -157,7 +157,7 @@ module.exports = {
       },
       ownerId: null,
     },
-    rewardShare: {
+    masternodeRewardShares: {
       contract: {
         id: null,
         blockHeight: null,

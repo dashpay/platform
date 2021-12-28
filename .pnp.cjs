@@ -67,12 +67,12 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
         "reference": "workspace:packages/js-grpc-common"
       },
       {
-        "name": "@dashevo/platform-test-suite",
-        "reference": "workspace:packages/platform-test-suite"
+        "name": "@dashevo/masternode-reward-shares-contract",
+        "reference": "workspace:packages/masternode-reward-shares-contract"
       },
       {
-        "name": "@dashevo/reward-share-contract",
-        "reference": "workspace:packages/reward-share-contract"
+        "name": "@dashevo/platform-test-suite",
+        "reference": "workspace:packages/platform-test-suite"
       },
       {
         "name": "@dashevo/wallet-lib",
@@ -92,9 +92,9 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
       ["@dashevo/drive", ["workspace:packages/js-drive"]],
       ["@dashevo/feature-flags-contract", ["workspace:packages/feature-flags-contract"]],
       ["@dashevo/grpc-common", ["workspace:packages/js-grpc-common"]],
+      ["@dashevo/masternode-reward-shares-contract", ["workspace:packages/masternode-reward-shares-contract"]],
       ["@dashevo/platform", ["workspace:."]],
       ["@dashevo/platform-test-suite", ["workspace:packages/platform-test-suite"]],
-      ["@dashevo/reward-share-contract", ["workspace:packages/reward-share-contract"]],
       ["@dashevo/wallet-lib", ["workspace:packages/wallet-lib"]],
       ["dash", ["workspace:packages/js-dash-sdk"]]
     ],
@@ -2414,7 +2414,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["@dashevo/dpns-contract", "workspace:packages/dpns-contract"],
             ["@dashevo/dpp", "workspace:packages/js-dpp"],
             ["@dashevo/feature-flags-contract", "workspace:packages/feature-flags-contract"],
-            ["@dashevo/reward-share-contract", "workspace:packages/reward-share-contract"],
+            ["@dashevo/masternode-reward-shares-contract", "workspace:packages/masternode-reward-shares-contract"],
             ["@dashevo/wallet-lib", "workspace:packages/wallet-lib"],
             ["@oclif/command", "virtual:f7d571e0d77017e1d29b1e07a522ecaa92b0544f222388541809a9c07f96976aeb3437afcfac1ce21bfe1d1a4fa7793cd36e5b24db59e3adef0819d088b77e0f#npm:1.8.9"],
             ["@oclif/config", "npm:1.18.2"],
@@ -2522,8 +2522,8 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["@dashevo/dashpay-contract", "workspace:packages/dashpay-contract"],
             ["@dashevo/dpns-contract", "workspace:packages/dpns-contract"],
             ["@dashevo/feature-flags-contract", "workspace:packages/feature-flags-contract"],
+            ["@dashevo/masternode-reward-shares-contract", "workspace:packages/masternode-reward-shares-contract"],
             ["@dashevo/re2-wasm", "npm:1.0.4"],
-            ["@dashevo/reward-share-contract", "workspace:packages/reward-share-contract"],
             ["acorn", "npm:8.6.0"],
             ["ajv", "npm:8.8.1"],
             ["ajv-formats", "virtual:58fb68f2aed20e5e0f2e48520ab903ae9bb3440369bfd5e912034003cf27c5aae368649fc5620dd2acbed578131f3a0975e75b838d77d12335fb0412e24026c6#npm:2.1.1"],
@@ -2683,6 +2683,24 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           "linkType": "SOFT",
         }]
       ]],
+      ["@dashevo/masternode-reward-shares-contract", [
+        ["workspace:packages/masternode-reward-shares-contract", {
+          "packageLocation": "./packages/masternode-reward-shares-contract/",
+          "packageDependencies": [
+            ["@dashevo/masternode-reward-shares-contract", "workspace:packages/masternode-reward-shares-contract"],
+            ["@dashevo/dpp", "workspace:packages/js-dpp"],
+            ["chai", "npm:4.3.4"],
+            ["dirty-chai", "virtual:595d7482cc8ddf98ee6aef33fc48b46393554ab5f17f851ef62e6e39315e53666c3e66226b978689aa0bc7f1e83a03081511a21db1c381362fe67614887077f9#npm:2.0.1"],
+            ["eslint", "npm:7.32.0"],
+            ["eslint-config-airbnb-base", "virtual:595d7482cc8ddf98ee6aef33fc48b46393554ab5f17f851ef62e6e39315e53666c3e66226b978689aa0bc7f1e83a03081511a21db1c381362fe67614887077f9#npm:14.2.1"],
+            ["eslint-plugin-import", "virtual:595d7482cc8ddf98ee6aef33fc48b46393554ab5f17f851ef62e6e39315e53666c3e66226b978689aa0bc7f1e83a03081511a21db1c381362fe67614887077f9#npm:2.25.3"],
+            ["mocha", "npm:9.1.3"],
+            ["sinon", "npm:11.1.2"],
+            ["sinon-chai", "virtual:595d7482cc8ddf98ee6aef33fc48b46393554ab5f17f851ef62e6e39315e53666c3e66226b978689aa0bc7f1e83a03081511a21db1c381362fe67614887077f9#npm:3.7.0"]
+          ],
+          "linkType": "SOFT",
+        }]
+      ]],
       ["@dashevo/merk", [
         ["https://github.com/dashevo/node-merk.git#commit=eb37003300d22c6c04604463bcd7e861dd07000f", {
           "packageLocation": "./.yarn/unplugged/@dashevo-merk-https-e3939f6b2b/node_modules/@dashevo/merk/",
@@ -2766,24 +2784,6 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["@dashevo/re2-wasm", "npm:1.0.4"]
           ],
           "linkType": "HARD",
-        }]
-      ]],
-      ["@dashevo/reward-share-contract", [
-        ["workspace:packages/reward-share-contract", {
-          "packageLocation": "./packages/reward-share-contract/",
-          "packageDependencies": [
-            ["@dashevo/reward-share-contract", "workspace:packages/reward-share-contract"],
-            ["@dashevo/dpp", "workspace:packages/js-dpp"],
-            ["chai", "npm:4.3.4"],
-            ["dirty-chai", "virtual:595d7482cc8ddf98ee6aef33fc48b46393554ab5f17f851ef62e6e39315e53666c3e66226b978689aa0bc7f1e83a03081511a21db1c381362fe67614887077f9#npm:2.0.1"],
-            ["eslint", "npm:7.32.0"],
-            ["eslint-config-airbnb-base", "virtual:595d7482cc8ddf98ee6aef33fc48b46393554ab5f17f851ef62e6e39315e53666c3e66226b978689aa0bc7f1e83a03081511a21db1c381362fe67614887077f9#npm:14.2.1"],
-            ["eslint-plugin-import", "virtual:595d7482cc8ddf98ee6aef33fc48b46393554ab5f17f851ef62e6e39315e53666c3e66226b978689aa0bc7f1e83a03081511a21db1c381362fe67614887077f9#npm:2.25.3"],
-            ["mocha", "npm:9.1.3"],
-            ["sinon", "npm:11.1.2"],
-            ["sinon-chai", "virtual:595d7482cc8ddf98ee6aef33fc48b46393554ab5f17f851ef62e6e39315e53666c3e66226b978689aa0bc7f1e83a03081511a21db1c381362fe67614887077f9#npm:3.7.0"]
-          ],
-          "linkType": "SOFT",
         }]
       ]],
       ["@dashevo/wallet-lib", [
