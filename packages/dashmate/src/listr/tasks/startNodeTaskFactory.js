@@ -74,11 +74,9 @@ function startNodeTaskFactory(
         },
       },
       {
-        enabled: (ctx) => !ctx.skipBuildServices && config.has('platform')
-          && (
-            config.get('platform.dapi.api.docker.build.path') !== null
-            || config.get('platform.drive.abci.docker.build.path') !== null
-          ),
+        enabled: (ctx) => !ctx.skipBuildServices
+          && config.has('platform.sourcePath')
+          && config.get('platform.sourcePath') !== null,
         task: () => buildServicesTask(config),
       },
       {

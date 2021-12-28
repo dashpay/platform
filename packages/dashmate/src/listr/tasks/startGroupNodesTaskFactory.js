@@ -36,10 +36,7 @@ function startGroupNodesTaskFactory(
     ));
 
     const platformBuildConfig = configGroup.find((config) => (
-      config.has('platform') && (
-        config.get('platform.dapi.api.docker.build.path') !== null
-      || config.get('platform.drive.abci.docker.build.path') !== null
-      )
+      config.has('platform.sourcePath') && config.get('platform.sourcePath') !== null
     ));
 
     return new Listr([
