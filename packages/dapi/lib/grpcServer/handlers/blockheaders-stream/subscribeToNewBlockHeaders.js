@@ -1,5 +1,4 @@
-const { BlockHeader } = require('@dashevo/dashcore-lib');
-const ChainLockSigMessage = require('@dashevo/dashcore-lib/lib/zmqMessages/ChainLockSigMessage');
+const { BlockHeader, ChainLock } = require('@dashevo/dashcore-lib');
 const ProcessMediator = require('./ProcessMediator');
 const wait = require('../../../utils/wait');
 
@@ -15,7 +14,7 @@ function subscribeToNewBlockHeaders(
   coreAPI,
 ) {
   const cachedHeadersHashes = new Set();
-  let latestClSig = null;
+  let latestChainLock = null;
 
   let isClientConnected = true;
 
@@ -27,11 +26,10 @@ function subscribeToNewBlockHeaders(
   };
 
   /**
-   * @param {Buffer} rawClSigMessage
+   * @param {Buffer} rawChainLock
    */
-  const rawClSigHandler = (rawClSigMessage) => {
-    const { chainLock } = new ChainLockSigMessage(rawClSigMessage);
-    latestClSig = chainLock.signature;
+  const rawChainLockHandler = (rawChainLock) => {
+    latestChainLock = new ChainLock(rawChainLock);
   };
 
   zmqClient.on(
@@ -40,8 +38,8 @@ function subscribeToNewBlockHeaders(
   );
 
   zmqClient.on(
-    zmqClient.topics.rawchainlocksig,
-    rawClSigHandler,
+    zmqClient.topics.rawchainlock,
+    rawChainLockHandler,
   );
 
   mediator.on(ProcessMediator.EVENTS.HISTORICAL_BLOCK_HEADERS_SENT, (hashes) => {
@@ -67,9 +65,9 @@ function subscribeToNewBlockHeaders(
         cachedHeadersHashes.clear();
       }
 
-      if (latestClSig) {
-        mediator.emit(ProcessMediator.EVENTS.CHAIN_LOCK_SIGNATURE, latestClSig);
-        latestClSig = null;
+      if (latestChainLock) {
+        mediator.emit(ProcessMediator.EVENTS.CHAIN_LOCK, latestChainLock);
+        latestChainLock = null;
       }
 
       // TODO: pick a right time interval having in mind that issuance of the block headers
@@ -82,7 +80,7 @@ function subscribeToNewBlockHeaders(
     isClientConnected = false;
     mediator.removeAllListeners();
     zmqClient.removeListener(zmqClient.topics.hashblock, blockHashHandler);
-    zmqClient.removeListener(zmqClient.topics.rawchainlocksig, rawClSigHandler);
+    zmqClient.removeListener(zmqClient.topics.rawchainlock, rawChainLockHandler);
   });
 }
 

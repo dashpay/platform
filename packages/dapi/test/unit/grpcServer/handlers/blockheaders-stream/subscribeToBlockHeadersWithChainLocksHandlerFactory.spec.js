@@ -1,3 +1,4 @@
+const { ChainLock } = require('@dashevo/dashcore-lib');
 const { expect, use } = require('chai');
 // eslint-disable-next-line no-underscore-dangle
 const _sinon = require('sinon');
@@ -21,7 +22,6 @@ const {
     BlockHeadersWithChainLocksRequest,
     BlockHeadersWithChainLocksResponse,
     BlockHeaders,
-    ChainLockSignatureMessages,
   },
 } = require('@dashevo/dapi-grpc');
 
@@ -89,7 +89,11 @@ describe('subscribeToTransactionsWithProofsHandlerFactory', () => {
     call.request.setFromBlockHash('fakehash');
     call.request.setCount(0);
 
-    coreAPIMock.getBestChainLock.resolves({ signature: 'fakesig' });
+    coreAPIMock.getBestChainLock.resolves({
+      height: 1,
+      signature: Buffer.from('fakeSig'),
+      blockHash: Buffer.from('fakeHash'),
+    });
     coreAPIMock.getBlock.resolves({ height: 1 });
 
     await subscribeToBlockHeadersWithChainLocksHandler(call);
@@ -105,7 +109,11 @@ describe('subscribeToTransactionsWithProofsHandlerFactory', () => {
     call.request.setFromBlockHash('someBlockHash');
     call.request.setCount(0);
 
-    coreAPIMock.getBestChainLock.resolves({ signature: 'fakesig' });
+    coreAPIMock.getBestChainLock.resolves({
+      height: 1,
+      signature: Buffer.from('fakesig', 'hex'),
+      blockHash: Buffer.from('fakeHash', 'hex'),
+    });
 
     try {
       coreAPIMock.getBlock.resolves({ height: -1 });
@@ -133,10 +141,12 @@ describe('subscribeToTransactionsWithProofsHandlerFactory', () => {
 
     await subscribeToBlockHeadersWithChainLocksHandler(call);
 
-    const clSigMessages = new ChainLockSignatureMessages();
-    clSigMessages.setMessagesList([Buffer.from('fakesig', 'hex')]);
     const clSigResponse = new BlockHeadersWithChainLocksResponse();
-    clSigResponse.setChainLockSignatureMessages(clSigMessages);
+    clSigResponse.setChainLock(new ChainLock({
+      height: 1,
+      signature: Buffer.from('fakesig', 'hex'),
+      blockHash: Buffer.from('fakeHash', 'hex'),
+    }).toBuffer());
 
     expect(writableStub.getCall(0).args).to.deep.equal(
       [clSigResponse],
@@ -163,7 +173,11 @@ describe('subscribeToTransactionsWithProofsHandlerFactory', () => {
     call.request.setFromBlockHeight(1);
     call.request.setCount(5);
 
-    coreAPIMock.getBestChainLock.resolves({ signature: 'fakesig' });
+    coreAPIMock.getBestChainLock.resolves({
+      height: 1,
+      signature: Buffer.from('fakeSig'),
+      blockHash: Buffer.from('fakeHash'),
+    });
     coreAPIMock.getBlock.resolves({ height: 1 });
 
     await subscribeToBlockHeadersWithChainLocksHandler(call);

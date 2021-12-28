@@ -1,3 +1,5 @@
+const { ChainLock } = require('@dashevo/dashcore-lib');
+
 const {
   server: {
     error: {
@@ -14,7 +16,6 @@ const {
   v0: {
     BlockHeadersWithChainLocksResponse,
     BlockHeaders,
-    ChainLockSignatureMessages,
   },
 } = require('@dashevo/dapi-grpc');
 const ProcessMediator = require('./ProcessMediator');
@@ -40,18 +41,15 @@ async function sendBlockHeadersResponse(call, blockHeaders) {
 }
 
 /**
- * Prepare and send clSig response
+ * Prepare and send chain lock response
  *
  * @param {AcknowledgingWritable} call
- * @param {Buffer} clSig
+ * @param {ChainLock} chainLock
  * @returns {Promise<void>}
  */
-async function sendClSigResponse(call, clSig) {
-  const clSigMessages = new ChainLockSignatureMessages();
-  clSigMessages.setMessagesList([clSig]);
-
+async function sendChainLockResponse(call, chainLock) {
   const response = new BlockHeadersWithChainLocksResponse();
-  response.setChainLockSignatureMessages(clSigMessages);
+  response.setChainLock(chainLock.toBuffer());
 
   await call.write(response);
 }
@@ -94,9 +92,9 @@ function subscribeToBlockHeadersWithChainLocksHandlerFactory(
     );
 
     mediator.on(
-      ProcessMediator.EVENTS.CHAIN_LOCK_SIGNATURE,
-      async (clSig) => {
-        await sendClSigResponse(acknowledgingCall, clSig);
+      ProcessMediator.EVENTS.CHAIN_LOCK,
+      async (chainLock) => {
+        await sendChainLockResponse(acknowledgingCall, chainLock);
       },
     );
 
@@ -150,7 +148,7 @@ function subscribeToBlockHeadersWithChainLocksHandlerFactory(
     }
 
     const bestChainLock = await coreAPI.getBestChainLock();
-    await sendClSigResponse(acknowledgingCall, Buffer.from(bestChainLock.signature, 'hex'));
+    await sendChainLockResponse(acknowledgingCall, new ChainLock(bestChainLock));
 
     const historicalDataIterator = getHistoricalBlockHeadersIterator(
       fromBlockHash,
