@@ -555,22 +555,22 @@ $root.org = (function() {
                             if (object.identitiesProof != null)
                                 if (typeof object.identitiesProof === "string")
                                     $util.base64.decode(object.identitiesProof, message.identitiesProof = $util.newBuffer($util.base64.length(object.identitiesProof)), 0);
-                                else if (object.identitiesProof.length >= 0)
+                                else if (object.identitiesProof.length)
                                     message.identitiesProof = object.identitiesProof;
                             if (object.publicKeyHashesToIdentityIdsProof != null)
                                 if (typeof object.publicKeyHashesToIdentityIdsProof === "string")
                                     $util.base64.decode(object.publicKeyHashesToIdentityIdsProof, message.publicKeyHashesToIdentityIdsProof = $util.newBuffer($util.base64.length(object.publicKeyHashesToIdentityIdsProof)), 0);
-                                else if (object.publicKeyHashesToIdentityIdsProof.length >= 0)
+                                else if (object.publicKeyHashesToIdentityIdsProof.length)
                                     message.publicKeyHashesToIdentityIdsProof = object.publicKeyHashesToIdentityIdsProof;
                             if (object.dataContractsProof != null)
                                 if (typeof object.dataContractsProof === "string")
                                     $util.base64.decode(object.dataContractsProof, message.dataContractsProof = $util.newBuffer($util.base64.length(object.dataContractsProof)), 0);
-                                else if (object.dataContractsProof.length >= 0)
+                                else if (object.dataContractsProof.length)
                                     message.dataContractsProof = object.dataContractsProof;
                             if (object.documentsProof != null)
                                 if (typeof object.documentsProof === "string")
                                     $util.base64.decode(object.documentsProof, message.documentsProof = $util.newBuffer($util.base64.length(object.documentsProof)), 0);
-                                else if (object.documentsProof.length >= 0)
+                                else if (object.documentsProof.length)
                                     message.documentsProof = object.documentsProof;
                             return message;
                         };
@@ -847,7 +847,7 @@ $root.org = (function() {
                             if (object.rootTreeProof != null)
                                 if (typeof object.rootTreeProof === "string")
                                     $util.base64.decode(object.rootTreeProof, message.rootTreeProof = $util.newBuffer($util.base64.length(object.rootTreeProof)), 0);
-                                else if (object.rootTreeProof.length >= 0)
+                                else if (object.rootTreeProof.length)
                                     message.rootTreeProof = object.rootTreeProof;
                             if (object.storeTreeProofs != null) {
                                 if (typeof object.storeTreeProofs !== "object")
@@ -857,12 +857,12 @@ $root.org = (function() {
                             if (object.signatureLlmqHash != null)
                                 if (typeof object.signatureLlmqHash === "string")
                                     $util.base64.decode(object.signatureLlmqHash, message.signatureLlmqHash = $util.newBuffer($util.base64.length(object.signatureLlmqHash)), 0);
-                                else if (object.signatureLlmqHash.length >= 0)
+                                else if (object.signatureLlmqHash.length)
                                     message.signatureLlmqHash = object.signatureLlmqHash;
                             if (object.signature != null)
                                 if (typeof object.signature === "string")
                                     $util.base64.decode(object.signature, message.signature = $util.newBuffer($util.base64.length(object.signature)), 0);
-                                else if (object.signature.length >= 0)
+                                else if (object.signature.length)
                                     message.signature = object.signature;
                             return message;
                         };
@@ -1342,7 +1342,7 @@ $root.org = (function() {
                             if (object.data != null)
                                 if (typeof object.data === "string")
                                     $util.base64.decode(object.data, message.data = $util.newBuffer($util.base64.length(object.data)), 0);
-                                else if (object.data.length >= 0)
+                                else if (object.data.length)
                                     message.data = object.data;
                             return message;
                         };
@@ -1545,7 +1545,7 @@ $root.org = (function() {
                             if (object.stateTransition != null)
                                 if (typeof object.stateTransition === "string")
                                     $util.base64.decode(object.stateTransition, message.stateTransition = $util.newBuffer($util.base64.length(object.stateTransition)), 0);
-                                else if (object.stateTransition.length >= 0)
+                                else if (object.stateTransition.length)
                                     message.stateTransition = object.stateTransition;
                             return message;
                         };
@@ -1918,7 +1918,7 @@ $root.org = (function() {
                             if (object.id != null)
                                 if (typeof object.id === "string")
                                     $util.base64.decode(object.id, message.id = $util.newBuffer($util.base64.length(object.id)), 0);
-                                else if (object.id.length >= 0)
+                                else if (object.id.length)
                                     message.id = object.id;
                             if (object.prove != null)
                                 message.prove = Boolean(object.prove);
@@ -2158,7 +2158,7 @@ $root.org = (function() {
                             if (object.identity != null)
                                 if (typeof object.identity === "string")
                                     $util.base64.decode(object.identity, message.identity = $util.newBuffer($util.base64.length(object.identity)), 0);
-                                else if (object.identity.length >= 0)
+                                else if (object.identity.length)
                                     message.identity = object.identity;
                             if (object.proof != null) {
                                 if (typeof object.proof !== "object")
@@ -2388,7 +2388,7 @@ $root.org = (function() {
                             if (object.id != null)
                                 if (typeof object.id === "string")
                                     $util.base64.decode(object.id, message.id = $util.newBuffer($util.base64.length(object.id)), 0);
-                                else if (object.id.length >= 0)
+                                else if (object.id.length)
                                     message.id = object.id;
                             if (object.prove != null)
                                 message.prove = Boolean(object.prove);
@@ -2628,7 +2628,7 @@ $root.org = (function() {
                             if (object.dataContract != null)
                                 if (typeof object.dataContract === "string")
                                     $util.base64.decode(object.dataContract, message.dataContract = $util.newBuffer($util.base64.length(object.dataContract)), 0);
-                                else if (object.dataContract.length >= 0)
+                                else if (object.dataContract.length)
                                     message.dataContract = object.dataContract;
                             if (object.proof != null) {
                                 if (typeof object.proof !== "object")
@@ -2763,19 +2763,19 @@ $root.org = (function() {
 
                         /**
                          * GetDocumentsRequest startAfter.
-                         * @member {number} startAfter
+                         * @member {number|null|undefined} startAfter
                          * @memberof org.dash.platform.dapi.v0.GetDocumentsRequest
                          * @instance
                          */
-                        GetDocumentsRequest.prototype.startAfter = 0;
+                        GetDocumentsRequest.prototype.startAfter = null;
 
                         /**
                          * GetDocumentsRequest startAt.
-                         * @member {number} startAt
+                         * @member {number|null|undefined} startAt
                          * @memberof org.dash.platform.dapi.v0.GetDocumentsRequest
                          * @instance
                          */
-                        GetDocumentsRequest.prototype.startAt = 0;
+                        GetDocumentsRequest.prototype.startAt = null;
 
                         /**
                          * GetDocumentsRequest prove.
@@ -2981,19 +2981,19 @@ $root.org = (function() {
                             if (object.dataContractId != null)
                                 if (typeof object.dataContractId === "string")
                                     $util.base64.decode(object.dataContractId, message.dataContractId = $util.newBuffer($util.base64.length(object.dataContractId)), 0);
-                                else if (object.dataContractId.length >= 0)
+                                else if (object.dataContractId.length)
                                     message.dataContractId = object.dataContractId;
                             if (object.documentType != null)
                                 message.documentType = String(object.documentType);
                             if (object.where != null)
                                 if (typeof object.where === "string")
                                     $util.base64.decode(object.where, message.where = $util.newBuffer($util.base64.length(object.where)), 0);
-                                else if (object.where.length >= 0)
+                                else if (object.where.length)
                                     message.where = object.where;
                             if (object.orderBy != null)
                                 if (typeof object.orderBy === "string")
                                     $util.base64.decode(object.orderBy, message.orderBy = $util.newBuffer($util.base64.length(object.orderBy)), 0);
-                                else if (object.orderBy.length >= 0)
+                                else if (object.orderBy.length)
                                     message.orderBy = object.orderBy;
                             if (object.limit != null)
                                 message.limit = object.limit >>> 0;
@@ -3285,7 +3285,7 @@ $root.org = (function() {
                                 for (var i = 0; i < object.documents.length; ++i)
                                     if (typeof object.documents[i] === "string")
                                         $util.base64.decode(object.documents[i], message.documents[i] = $util.newBuffer($util.base64.length(object.documents[i])), 0);
-                                    else if (object.documents[i].length >= 0)
+                                    else if (object.documents[i].length)
                                         message.documents[i] = object.documents[i];
                             }
                             if (object.proof != null) {
@@ -3526,7 +3526,7 @@ $root.org = (function() {
                                 for (var i = 0; i < object.publicKeyHashes.length; ++i)
                                     if (typeof object.publicKeyHashes[i] === "string")
                                         $util.base64.decode(object.publicKeyHashes[i], message.publicKeyHashes[i] = $util.newBuffer($util.base64.length(object.publicKeyHashes[i])), 0);
-                                    else if (object.publicKeyHashes[i].length >= 0)
+                                    else if (object.publicKeyHashes[i].length)
                                         message.publicKeyHashes[i] = object.publicKeyHashes[i];
                             }
                             if (object.prove != null)
@@ -3776,7 +3776,7 @@ $root.org = (function() {
                                 for (var i = 0; i < object.identities.length; ++i)
                                     if (typeof object.identities[i] === "string")
                                         $util.base64.decode(object.identities[i], message.identities[i] = $util.newBuffer($util.base64.length(object.identities[i])), 0);
-                                    else if (object.identities[i].length >= 0)
+                                    else if (object.identities[i].length)
                                         message.identities[i] = object.identities[i];
                             }
                             if (object.proof != null) {
@@ -4017,7 +4017,7 @@ $root.org = (function() {
                                 for (var i = 0; i < object.publicKeyHashes.length; ++i)
                                     if (typeof object.publicKeyHashes[i] === "string")
                                         $util.base64.decode(object.publicKeyHashes[i], message.publicKeyHashes[i] = $util.newBuffer($util.base64.length(object.publicKeyHashes[i])), 0);
-                                    else if (object.publicKeyHashes[i].length >= 0)
+                                    else if (object.publicKeyHashes[i].length)
                                         message.publicKeyHashes[i] = object.publicKeyHashes[i];
                             }
                             if (object.prove != null)
@@ -4267,7 +4267,7 @@ $root.org = (function() {
                                 for (var i = 0; i < object.identityIds.length; ++i)
                                     if (typeof object.identityIds[i] === "string")
                                         $util.base64.decode(object.identityIds[i], message.identityIds[i] = $util.newBuffer($util.base64.length(object.identityIds[i])), 0);
-                                    else if (object.identityIds[i].length >= 0)
+                                    else if (object.identityIds[i].length)
                                         message.identityIds[i] = object.identityIds[i];
                             }
                             if (object.proof != null) {
@@ -4496,7 +4496,7 @@ $root.org = (function() {
                             if (object.stateTransitionHash != null)
                                 if (typeof object.stateTransitionHash === "string")
                                     $util.base64.decode(object.stateTransitionHash, message.stateTransitionHash = $util.newBuffer($util.base64.length(object.stateTransitionHash)), 0);
-                                else if (object.stateTransitionHash.length >= 0)
+                                else if (object.stateTransitionHash.length)
                                     message.stateTransitionHash = object.stateTransitionHash;
                             if (object.prove != null)
                                 message.prove = Boolean(object.prove);
