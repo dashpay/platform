@@ -71,7 +71,7 @@ Account will by default be on expected BIP44 path (...0/0).
 
 Insight-Client has been removed from MVP and is not working since Wallet-lib v3.0.
 
-- [DAPI-Client](https://github.com/dashevo/dapi-client)
+- [DAPI-Client](https://github.com/dashevo/platform/tree/master/packages/js-dapi-client)
 
 ### Adapters :
 
@@ -80,7 +80,7 @@ Insight-Client has been removed from MVP and is not working since Wallet-lib v3.
 
 ## Documentation
 
-You can see some [examples here](/docs/usage/examples.md).
+You can see some [examples here](docs/usage/examples.md).
 
 More extensive documentation is available at https://dashevo.github.io/platform/Wallet-library/ along with additional [examples & snippets](https://dashevo.github.io/platform/Wallet-library/usage/examples/).
 
