@@ -97,7 +97,7 @@ Usage: test <seed> [options]
 
 ## Contributing
 
-Feel free to dive in! [Open an issue](https://github.com/dashevo/platform-test-suite/issues/new/choose) or submit PRs.
+Feel free to dive in! [Open an issue](https://github.com/dashevo/platform/issues/new/choose) or submit PRs.
 
 ## License
 
