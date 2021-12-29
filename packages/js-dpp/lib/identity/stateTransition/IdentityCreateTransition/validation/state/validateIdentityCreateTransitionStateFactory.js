@@ -38,16 +38,6 @@ function validateIdentityCreateTransitionStateFactory(
       );
     }
 
-    if (!result.isValid()) {
-      return result;
-    }
-
-    result.merge(
-      await validateIdentityPublicKeysUniqueness(
-        stateTransition.getPublicKeys(),
-      ),
-    );
-
     return result;
   }
 
