@@ -1474,6 +1474,7 @@ __metadata:
     "@dashevo/dashpay-contract": "workspace:~"
     "@dashevo/dpns-contract": "workspace:~"
     "@dashevo/feature-flags-contract": "workspace:~"
+    "@dashevo/masternode-reward-shares-contract": "workspace:~"
     "@dashevo/re2-wasm": ~1.0.4
     acorn: ^8.5.0
     ajv: ^8.6.0
@@ -1622,6 +1623,22 @@ __metadata:
     nyc: ^15.1.0
     protobufjs: "github:jawid-h/protobuf.js#fix/buffer-conversion"
     semver: ^7.3.2
+    sinon: ^11.1.2
+    sinon-chai: ^3.7.0
+  languageName: unknown
+  linkType: soft
+
+"@dashevo/masternode-reward-shares-contract@workspace:packages/masternode-reward-shares-contract, @dashevo/masternode-reward-shares-contract@workspace:~":
+  version: 0.0.0-use.local
+  resolution: "@dashevo/masternode-reward-shares-contract@workspace:packages/masternode-reward-shares-contract"
+  dependencies:
+    "@dashevo/dpp": "workspace:~"
+    chai: ^4.3.4
+    dirty-chai: ^2.0.1
+    eslint: ^7.32.0
+    eslint-config-airbnb-base: ^14.2.1
+    eslint-plugin-import: ^2.24.2
+    mocha: ^9.1.2
     sinon: ^11.1.2
     sinon-chai: ^3.7.0
   languageName: unknown
@@ -5097,6 +5114,7 @@ __metadata:
     "@dashevo/dpns-contract": "workspace:~"
     "@dashevo/dpp": "workspace:~"
     "@dashevo/feature-flags-contract": "workspace:~"
+    "@dashevo/masternode-reward-shares-contract": "workspace:~"
     "@dashevo/wallet-lib": "workspace:~"
     "@oclif/command": ^1.8.9
     "@oclif/config": ^1.18.2
