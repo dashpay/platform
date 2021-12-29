@@ -3022,7 +3022,6 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           "packageDependencies": [
             ["@oclif/core", "npm:1.0.10"],
             ["@oclif/linewrap", "npm:1.0.0"],
-            ["@oclif/plugin-warn-if-update-available", "npm:2.0.3"],
             ["chalk", "npm:4.1.2"],
             ["clean-stack", "npm:3.0.1"],
             ["cli-ux", "npm:6.0.5"],
@@ -3047,7 +3046,6 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           "packageDependencies": [
             ["@oclif/core", "npm:1.0.11"],
             ["@oclif/linewrap", "npm:1.0.0"],
-            ["@oclif/plugin-warn-if-update-available", "npm:2.0.3"],
             ["chalk", "npm:4.1.2"],
             ["clean-stack", "npm:3.0.1"],
             ["cli-ux", "npm:6.0.5"],
