@@ -1,6 +1,7 @@
 const { BlockHeader, ChainLock } = require('@dashevo/dashcore-lib');
 const ProcessMediator = require('./ProcessMediator');
 const wait = require('../../../utils/wait');
+const { NEW_BLOCK_HEADERS_PROPAGATE_INTERVAL } = require('./constants');
 
 /**
  * @typedef subscribeToNewBlockHeaders
@@ -75,7 +76,7 @@ function subscribeToNewBlockHeaders(
 
       // TODO: pick a right time interval having in mind that issuance of the block headers
       // is not frequent
-      await wait(5000);
+      await wait(NEW_BLOCK_HEADERS_PROPAGATE_INTERVAL);
     }
   });
 
