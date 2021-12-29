@@ -19,9 +19,13 @@ class PublicKeyToIdentityIdStoreRepository {
    * @return {Promise<PublicKeyToIdentityIdStoreRepository>}
    */
   async store(publicKeyHash, identityId, transaction = undefined) {
+    const identityIds = this.storage.get(publicKeyHash, transaction) || [];
+
+    identityIds.push(identityId);
+
     this.storage.put(
       publicKeyHash,
-      identityId,
+      identityIds,
       transaction,
     );
 
@@ -34,16 +38,16 @@ class PublicKeyToIdentityIdStoreRepository {
    * @param {Buffer} publicKeyHash
    * @param {MerkDbTransaction} [transaction]
    *
-   * @return {Promise<null|Identifier>}
+   * @return {Promise<Identifier[]>}
    */
   async fetch(publicKeyHash, transaction = undefined) {
-    const identityId = this.storage.get(publicKeyHash, transaction);
+    const identityIds = this.storage.get(publicKeyHash, transaction);
 
-    if (!identityId) {
-      return null;
+    if (identityIds === undefined) {
+      return [];
     }
 
-    return new Identifier(identityId);
+    return identityIds.map((id) => new Identifier(id));
   }
 }
 

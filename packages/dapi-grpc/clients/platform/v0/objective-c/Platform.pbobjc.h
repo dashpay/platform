@@ -29,6 +29,8 @@ CF_EXTERN_C_BEGIN
 
 @class ConsensusParamsBlock;
 @class ConsensusParamsEvidence;
+@class Identities;
+@class IdentityIds;
 @class Proof;
 @class ResponseMetadata;
 @class StateTransitionBroadcastError;
@@ -54,7 +56,7 @@ NS_ASSUME_NONNULL_BEGIN
 #pragma mark - StoreTreeProofs
 
 typedef GPB_ENUM(StoreTreeProofs_FieldNumber) {
-  StoreTreeProofs_FieldNumber_IdentitiesProof = 1,
+  StoreTreeProofs_FieldNumber_IdentitiesProofArray = 1,
   StoreTreeProofs_FieldNumber_PublicKeyHashesToIdentityIdsProof = 2,
   StoreTreeProofs_FieldNumber_DataContractsProof = 3,
   StoreTreeProofs_FieldNumber_DocumentsProof = 4,
@@ -62,7 +64,9 @@ typedef GPB_ENUM(StoreTreeProofs_FieldNumber) {
 
 @interface StoreTreeProofs : GPBMessage
 
-@property(nonatomic, readwrite, copy, null_resettable) NSData *identitiesProof;
+@property(nonatomic, readwrite, strong, null_resettable) NSMutableArray<NSData*> *identitiesProofArray;
+/** The number of items in @c identitiesProofArray without causing the array to be created. */
+@property(nonatomic, readonly) NSUInteger identitiesProofArray_Count;
 
 @property(nonatomic, readwrite, copy, null_resettable) NSData *publicKeyHashesToIdentityIdsProof;
 
@@ -307,6 +311,20 @@ typedef GPB_ENUM(GetIdentitiesByPublicKeyHashesRequest_FieldNumber) {
 
 @end
 
+#pragma mark - Identities
+
+typedef GPB_ENUM(Identities_FieldNumber) {
+  Identities_FieldNumber_IdentitiesArray = 1,
+};
+
+@interface Identities : GPBMessage
+
+@property(nonatomic, readwrite, strong, null_resettable) NSMutableArray<NSData*> *identitiesArray;
+/** The number of items in @c identitiesArray without causing the array to be created. */
+@property(nonatomic, readonly) NSUInteger identitiesArray_Count;
+
+@end
+
 #pragma mark - GetIdentitiesByPublicKeyHashesResponse
 
 typedef GPB_ENUM(GetIdentitiesByPublicKeyHashesResponse_FieldNumber) {
@@ -317,7 +335,7 @@ typedef GPB_ENUM(GetIdentitiesByPublicKeyHashesResponse_FieldNumber) {
 
 @interface GetIdentitiesByPublicKeyHashesResponse : GPBMessage
 
-@property(nonatomic, readwrite, strong, null_resettable) NSMutableArray<NSData*> *identitiesArray;
+@property(nonatomic, readwrite, strong, null_resettable) NSMutableArray<Identities*> *identitiesArray;
 /** The number of items in @c identitiesArray without causing the array to be created. */
 @property(nonatomic, readonly) NSUInteger identitiesArray_Count;
 
@@ -348,6 +366,20 @@ typedef GPB_ENUM(GetIdentityIdsByPublicKeyHashesRequest_FieldNumber) {
 
 @end
 
+#pragma mark - IdentityIds
+
+typedef GPB_ENUM(IdentityIds_FieldNumber) {
+  IdentityIds_FieldNumber_IdentityIdsArray = 1,
+};
+
+@interface IdentityIds : GPBMessage
+
+@property(nonatomic, readwrite, strong, null_resettable) NSMutableArray<NSData*> *identityIdsArray;
+/** The number of items in @c identityIdsArray without causing the array to be created. */
+@property(nonatomic, readonly) NSUInteger identityIdsArray_Count;
+
+@end
+
 #pragma mark - GetIdentityIdsByPublicKeyHashesResponse
 
 typedef GPB_ENUM(GetIdentityIdsByPublicKeyHashesResponse_FieldNumber) {
@@ -358,7 +390,7 @@ typedef GPB_ENUM(GetIdentityIdsByPublicKeyHashesResponse_FieldNumber) {
 
 @interface GetIdentityIdsByPublicKeyHashesResponse : GPBMessage
 
-@property(nonatomic, readwrite, strong, null_resettable) NSMutableArray<NSData*> *identityIdsArray;
+@property(nonatomic, readwrite, strong, null_resettable) NSMutableArray<IdentityIds*> *identityIdsArray;
 /** The number of items in @c identityIdsArray without causing the array to be created. */
 @property(nonatomic, readonly) NSUInteger identityIdsArray_Count;
 

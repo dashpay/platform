@@ -28,7 +28,11 @@ class GetIdentityIdsByPublicKeyHashesResponse extends AbstractResponse {
 
     return new GetIdentityIdsByPublicKeyHashesResponse(
       proto.getIdentityIdsList()
-        .map((identityId) => (identityId.length > 0 ? Buffer.from(identityId) : null)),
+        .map((identityIdsMessage) => (
+          identityIdsMessage.getIdentityIdsList().map(
+            (identityId) => (identityId.length > 0 ? Buffer.from(identityId) : null),
+          )
+        )),
       metadata,
       proof,
     );

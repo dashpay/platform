@@ -2,7 +2,7 @@ const AbstractResponse = require('../response/AbstractResponse');
 
 class GetIdentitiesByPublicKeyHashesResponse extends AbstractResponse {
   /**
-   * @param {Buffer[]} identities
+   * @param {Array<Buffer[]>} identities
    * @param {Metadata} metadata
    * @param {Proof} [proof]
    */
@@ -13,7 +13,7 @@ class GetIdentitiesByPublicKeyHashesResponse extends AbstractResponse {
   }
 
   /**
-   * @returns {Buffer[]}
+   * @returns {Array<Buffer[]>}
    */
   getIdentities() {
     return this.identities;
@@ -28,7 +28,11 @@ class GetIdentitiesByPublicKeyHashesResponse extends AbstractResponse {
 
     return new GetIdentitiesByPublicKeyHashesResponse(
       proto.getIdentitiesList()
-        .map((identity) => (identity.length > 0 ? Buffer.from(identity) : null)),
+        .map((identityMessage) => (
+          identityMessage.getIdentitiesList().map(
+            (identity) => (identity.length > 0 ? Buffer.from(identity) : null),
+          )
+        )),
       metadata,
       proof,
     );

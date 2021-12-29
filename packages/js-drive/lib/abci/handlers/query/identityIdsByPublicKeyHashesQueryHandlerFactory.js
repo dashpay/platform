@@ -11,6 +11,7 @@ const {
     GetIdentityIdsByPublicKeyHashesResponse,
     ResponseMetadata,
     StoreTreeProofs,
+    IdentityIds,
   },
 } = require('@dashevo/dapi-grpc');
 
@@ -57,7 +58,7 @@ function identityIdsByPublicKeyHashesQueryHandlerFactory(
     if (blockExecutionContext.isEmpty() || previousBlockExecutionContext.isEmpty()) {
       const response = new GetIdentityIdsByPublicKeyHashesResponse();
 
-      response.setIdentityIdsList(publicKeyHashes.map(() => Buffer.alloc(0)));
+      response.setIdentityIdsList(publicKeyHashes.map(() => new IdentityIds()));
 
       response.setMetadata(new ResponseMetadata());
 
@@ -68,7 +69,7 @@ function identityIdsByPublicKeyHashesQueryHandlerFactory(
 
     const response = createQueryResponse(GetIdentityIdsByPublicKeyHashesResponse, request.prove);
 
-    const identityIds = await Promise.all(
+    const identityIdsList = await Promise.all(
       publicKeyHashes.map(async (publicKeyHash) => (
         previousPublicKeyToIdentityIdRepository.fetch(publicKeyHash)
       )),
@@ -91,15 +92,23 @@ function identityIdsByPublicKeyHashesQueryHandlerFactory(
       proof.setRootTreeProof(rootTreeProof);
       proof.setStoreTreeProofs(storeTreeProofs);
     } else {
-      const identityIdBuffers = identityIds.map((identityId) => {
-        if (!identityId) {
-          return Buffer.alloc(0);
-        }
+      const identityIdMessages = identityIdsList.map((identityIds) => {
+        const message = new IdentityIds();
 
-        return identityId.toBuffer();
+        message.setIdentityIdsList(
+          identityIds.map((identityId) => {
+            if (!identityId) {
+              return Buffer.alloc(0);
+            }
+
+            return identityId.toBuffer();
+          }),
+        );
+
+        return message;
       });
 
-      response.setIdentityIdsList(identityIdBuffers);
+      response.setIdentityIdsList(identityIdMessages);
     }
 
     return new ResponseQuery({

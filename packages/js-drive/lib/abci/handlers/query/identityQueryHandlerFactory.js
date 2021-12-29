@@ -70,7 +70,7 @@ function identityQueryHandlerFactory(
         [id],
       );
 
-      storeTreeProofs.setIdentitiesProof(storeTreeProof);
+      storeTreeProofs.setIdentitiesProofList([storeTreeProof]);
 
       proof.setRootTreeProof(rootTreeProof);
       proof.setStoreTreeProofs(storeTreeProofs);

@@ -11,6 +11,7 @@ const {
     GetIdentitiesByPublicKeyHashesResponse,
     ResponseMetadata,
     StoreTreeProofs,
+    Identities,
   },
 } = require('@dashevo/dapi-grpc');
 
@@ -61,7 +62,7 @@ function identitiesByPublicKeyHashesQueryHandlerFactory(
     if (blockExecutionContext.isEmpty() || previousBlockExecutionContext.isEmpty()) {
       const response = new GetIdentitiesByPublicKeyHashesResponse();
 
-      response.setIdentitiesList(publicKeyHashes.map(() => Buffer.alloc(0)));
+      response.setIdentitiesList(publicKeyHashes.map(() => new Identities()));
 
       response.setMetadata(new ResponseMetadata());
 
@@ -72,7 +73,7 @@ function identitiesByPublicKeyHashesQueryHandlerFactory(
 
     const response = createQueryResponse(GetIdentitiesByPublicKeyHashesResponse, request.prove);
 
-    const identityIds = await Promise.all(
+    const identityIdsList = await Promise.all(
       publicKeyHashes.map((publicKeyHash) => (
         previousPublicKeyToIdentityIdRepository.fetch(publicKeyHash)
       )),
@@ -81,13 +82,13 @@ function identitiesByPublicKeyHashesQueryHandlerFactory(
     const notFoundIdentityPublicKeyHashes = [];
     const foundIdentityIds = [];
 
-    for (let i = 0; i < identityIds.length; i++) {
-      // If identity id was not found, we need to request non-inclusion proof by public key hash
-      if (!identityIds[i]) {
+    for (let i = 0; i < identityIdsList.length; i++) {
+      // If identity ids were not found, we need to request non-inclusion proof by public key hash
+      if (identityIdsList[i].length === 0) {
         notFoundIdentityPublicKeyHashes.push(publicKeyHashes[i]);
       } else {
-        // If identity was found, we need to request ordinary identity proof by id
-        foundIdentityIds.push(identityIds[i]);
+        // If identities were found, we need to request ordinary identity proof by id
+        foundIdentityIds.push(identityIdsList[i]);
       }
     }
 
@@ -95,15 +96,16 @@ function identitiesByPublicKeyHashesQueryHandlerFactory(
       const proof = response.getProof();
       const storeTreeProofs = new StoreTreeProofs();
 
-      const identitiesStoreTreeProof = previousIdentitiesStoreRootTreeLeaf.getProof(
-        foundIdentityIds.map((identityId) => {
-          if (identityId) {
-            return identityId.toBuffer();
-          }
+      const identitiesStoreTreeProofs = foundIdentityIds
+        .map((ids) => previousIdentitiesStoreRootTreeLeaf.getProof(
+          ids.map((identityId) => {
+            if (identityId) {
+              return identityId.toBuffer();
+            }
 
-          return null;
-        }),
-      );
+            return null;
+          }),
+        ));
 
       const publicKeyStoreTreeProof = previousPublicKeyToIdentityIdStoreRootTreeLeaf.getProof(
         notFoundIdentityPublicKeyHashes,
@@ -114,25 +116,33 @@ function identitiesByPublicKeyHashesQueryHandlerFactory(
         previousPublicKeyToIdentityIdStoreRootTreeLeaf,
       ]);
 
-      storeTreeProofs.setIdentitiesProof(identitiesStoreTreeProof);
+      storeTreeProofs.setIdentitiesProofList(identitiesStoreTreeProofs);
       storeTreeProofs.setPublicKeyHashesToIdentityIdsProof(publicKeyStoreTreeProof);
 
       proof.setRootTreeProof(rootTreeProof);
       proof.setStoreTreeProofs(storeTreeProofs);
     } else {
-      const identityBuffers = await Promise.all(
-        identityIds.map(async (identityId) => {
-          if (!identityId) {
-            return Buffer.alloc(0);
-          }
+      const identitiesPromises = identityIdsList.map(async (identityIds) => {
+        const identityBuffers = await Promise.all(
+          identityIds.map(async (identityId) => {
+            if (!identityId) {
+              return Buffer.alloc(0);
+            }
 
-          const identity = await previousIdentityRepository.fetch(identityId);
+            const identity = await previousIdentityRepository.fetch(identityId);
 
-          return identity.toBuffer();
-        }),
-      );
+            return identity.toBuffer();
+          }),
+        );
 
-      response.setIdentitiesList(identityBuffers);
+        const identities = new Identities();
+
+        identities.setIdentitiesList(identityBuffers);
+
+        return identities;
+      });
+
+      response.setIdentitiesList(await Promise.all(identitiesPromises));
     }
 
     return new ResponseQuery({

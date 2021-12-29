@@ -14,7 +14,7 @@ service Platform {
 }
 
 message StoreTreeProofs {
-  bytes identities_proof = 1;
+  repeated bytes identities_proof = 1;
   bytes public_key_hashes_to_identity_ids_proof = 2;
   bytes data_contracts_proof = 3;
   bytes documents_proof = 4;
@@ -96,8 +96,12 @@ message GetIdentitiesByPublicKeyHashesRequest {
   bool prove = 2;
 }
 
-message GetIdentitiesByPublicKeyHashesResponse {
+message Identities {
   repeated bytes identities = 1;
+}
+
+message GetIdentitiesByPublicKeyHashesResponse {
+  repeated Identities identities = 1;
   Proof proof = 2;
   ResponseMetadata metadata = 3;
 }
@@ -107,8 +111,12 @@ message GetIdentityIdsByPublicKeyHashesRequest {
   bool prove = 2;
 }
 
-message GetIdentityIdsByPublicKeyHashesResponse {
+message IdentityIds {
   repeated bytes identity_ids = 1;
+}
+
+message GetIdentityIdsByPublicKeyHashesResponse {
+  repeated IdentityIds identity_ids = 1;
   Proof proof = 2;
   ResponseMetadata metadata = 3;
 }
