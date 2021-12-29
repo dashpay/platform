@@ -31,7 +31,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
         "reference": "workspace:packages/dapi-grpc"
       },
       {
-        "name": "@dashevo/dashmate",
+        "name": "dashmate",
         "reference": "workspace:packages/dashmate"
       },
       {
@@ -67,10 +67,6 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
         "reference": "workspace:packages/js-grpc-common"
       },
       {
-        "name": "@dashevo/masternode-reward-shares-contract",
-        "reference": "workspace:packages/masternode-reward-shares-contract"
-      },
-      {
         "name": "@dashevo/platform-test-suite",
         "reference": "workspace:packages/platform-test-suite"
       },
@@ -85,18 +81,17 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
       ["@dashevo/dapi", ["workspace:packages/dapi"]],
       ["@dashevo/dapi-client", ["workspace:packages/js-dapi-client"]],
       ["@dashevo/dapi-grpc", ["workspace:packages/dapi-grpc"]],
-      ["@dashevo/dashmate", ["workspace:packages/dashmate"]],
       ["@dashevo/dashpay-contract", ["workspace:packages/dashpay-contract"]],
       ["@dashevo/dpns-contract", ["workspace:packages/dpns-contract"]],
       ["@dashevo/dpp", ["workspace:packages/js-dpp"]],
       ["@dashevo/drive", ["workspace:packages/js-drive"]],
       ["@dashevo/feature-flags-contract", ["workspace:packages/feature-flags-contract"]],
       ["@dashevo/grpc-common", ["workspace:packages/js-grpc-common"]],
-      ["@dashevo/masternode-reward-shares-contract", ["workspace:packages/masternode-reward-shares-contract"]],
       ["@dashevo/platform", ["workspace:."]],
       ["@dashevo/platform-test-suite", ["workspace:packages/platform-test-suite"]],
       ["@dashevo/wallet-lib", ["workspace:packages/wallet-lib"]],
-      ["dash", ["workspace:packages/js-dash-sdk"]]
+      ["dash", ["workspace:packages/js-dash-sdk"]],
+      ["dashmate", ["workspace:packages/dashmate"]]
     ],
     "fallbackPool": [
     ],
@@ -2403,63 +2398,6 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           "linkType": "HARD",
         }]
       ]],
-      ["@dashevo/dashmate", [
-        ["workspace:packages/dashmate", {
-          "packageLocation": "./packages/dashmate/",
-          "packageDependencies": [
-            ["@dashevo/dashmate", "workspace:packages/dashmate"],
-            ["@dashevo/dashcore-lib", "npm:0.19.28"],
-            ["@dashevo/dashd-rpc", "npm:2.3.1"],
-            ["@dashevo/dashpay-contract", "workspace:packages/dashpay-contract"],
-            ["@dashevo/dpns-contract", "workspace:packages/dpns-contract"],
-            ["@dashevo/dpp", "workspace:packages/js-dpp"],
-            ["@dashevo/feature-flags-contract", "workspace:packages/feature-flags-contract"],
-            ["@dashevo/masternode-reward-shares-contract", "workspace:packages/masternode-reward-shares-contract"],
-            ["@dashevo/wallet-lib", "workspace:packages/wallet-lib"],
-            ["@oclif/command", "virtual:f7d571e0d77017e1d29b1e07a522ecaa92b0544f222388541809a9c07f96976aeb3437afcfac1ce21bfe1d1a4fa7793cd36e5b24db59e3adef0819d088b77e0f#npm:1.8.9"],
-            ["@oclif/config", "npm:1.18.2"],
-            ["@oclif/dev-cli", "npm:1.26.0"],
-            ["@oclif/errors", "npm:1.3.5"],
-            ["@oclif/plugin-help", "npm:3.2.14"],
-            ["ajv", "npm:8.8.1"],
-            ["ajv-formats", "virtual:58fb68f2aed20e5e0f2e48520ab903ae9bb3440369bfd5e912034003cf27c5aae368649fc5620dd2acbed578131f3a0975e75b838d77d12335fb0412e24026c6#npm:2.1.1"],
-            ["awilix", "npm:4.3.4"],
-            ["bls-signatures", "npm:0.2.5"],
-            ["chalk", "npm:4.1.2"],
-            ["dash", "workspace:packages/js-dash-sdk"],
-            ["docker-compose", "npm:0.23.3"],
-            ["dockerode", "npm:3.3.1"],
-            ["dot", "npm:1.1.3"],
-            ["dotenv", "npm:8.6.0"],
-            ["enquirer", "npm:2.3.6"],
-            ["eslint", "npm:7.32.0"],
-            ["eslint-config-airbnb-base", "virtual:595d7482cc8ddf98ee6aef33fc48b46393554ab5f17f851ef62e6e39315e53666c3e66226b978689aa0bc7f1e83a03081511a21db1c381362fe67614887077f9#npm:14.2.1"],
-            ["eslint-plugin-import", "virtual:595d7482cc8ddf98ee6aef33fc48b46393554ab5f17f851ef62e6e39315e53666c3e66226b978689aa0bc7f1e83a03081511a21db1c381362fe67614887077f9#npm:2.25.3"],
-            ["glob", "npm:7.2.0"],
-            ["globby", "npm:10.0.2"],
-            ["hasbin", "npm:1.2.3"],
-            ["jayson", "npm:3.6.5"],
-            ["listr2", "virtual:5c08caaca88ae3f53d0e60b7c67d34a3f300e1de64d203b0a50b574953780efd310d7fbc88226564f364dc09da74f4acba6eab20ded0bfb2e74e40075c758339#npm:3.5.0"],
-            ["lodash.clonedeep", "npm:4.5.0"],
-            ["lodash.get", "npm:4.4.2"],
-            ["lodash.isequal", "npm:4.5.0"],
-            ["lodash.merge", "npm:4.6.2"],
-            ["lodash.set", "npm:4.3.2"],
-            ["memory-streams", "npm:0.1.3"],
-            ["node-fetch", "npm:2.6.6"],
-            ["node-graceful", "npm:3.1.0"],
-            ["pretty-bytes", "npm:5.6.0"],
-            ["pretty-ms", "npm:7.0.1"],
-            ["public-ip", "npm:4.0.4"],
-            ["rimraf", "npm:3.0.2"],
-            ["rxjs", "npm:6.6.7"],
-            ["semver", "npm:7.3.5"],
-            ["strip-ansi", "npm:6.0.1"],
-            ["table", "npm:5.4.6"]
-          ],
-          "linkType": "SOFT",
-        }]
-      ]],
       ["@dashevo/dashpay-contract", [
         ["workspace:packages/dashpay-contract", {
           "packageLocation": "./packages/dashpay-contract/",
@@ -2522,7 +2460,6 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["@dashevo/dashpay-contract", "workspace:packages/dashpay-contract"],
             ["@dashevo/dpns-contract", "workspace:packages/dpns-contract"],
             ["@dashevo/feature-flags-contract", "workspace:packages/feature-flags-contract"],
-            ["@dashevo/masternode-reward-shares-contract", "workspace:packages/masternode-reward-shares-contract"],
             ["@dashevo/re2-wasm", "npm:1.0.4"],
             ["acorn", "npm:8.6.0"],
             ["ajv", "npm:8.8.1"],
@@ -2677,24 +2614,6 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["nyc", "npm:15.1.0"],
             ["protobufjs", "https://github.com/jawid-h/protobuf.js.git#commit=8b91c72dca68fd6c418078fd2358c4969425dcdc"],
             ["semver", "npm:7.3.5"],
-            ["sinon", "npm:11.1.2"],
-            ["sinon-chai", "virtual:595d7482cc8ddf98ee6aef33fc48b46393554ab5f17f851ef62e6e39315e53666c3e66226b978689aa0bc7f1e83a03081511a21db1c381362fe67614887077f9#npm:3.7.0"]
-          ],
-          "linkType": "SOFT",
-        }]
-      ]],
-      ["@dashevo/masternode-reward-shares-contract", [
-        ["workspace:packages/masternode-reward-shares-contract", {
-          "packageLocation": "./packages/masternode-reward-shares-contract/",
-          "packageDependencies": [
-            ["@dashevo/masternode-reward-shares-contract", "workspace:packages/masternode-reward-shares-contract"],
-            ["@dashevo/dpp", "workspace:packages/js-dpp"],
-            ["chai", "npm:4.3.4"],
-            ["dirty-chai", "virtual:595d7482cc8ddf98ee6aef33fc48b46393554ab5f17f851ef62e6e39315e53666c3e66226b978689aa0bc7f1e83a03081511a21db1c381362fe67614887077f9#npm:2.0.1"],
-            ["eslint", "npm:7.32.0"],
-            ["eslint-config-airbnb-base", "virtual:595d7482cc8ddf98ee6aef33fc48b46393554ab5f17f851ef62e6e39315e53666c3e66226b978689aa0bc7f1e83a03081511a21db1c381362fe67614887077f9#npm:14.2.1"],
-            ["eslint-plugin-import", "virtual:595d7482cc8ddf98ee6aef33fc48b46393554ab5f17f851ef62e6e39315e53666c3e66226b978689aa0bc7f1e83a03081511a21db1c381362fe67614887077f9#npm:2.25.3"],
-            ["mocha", "npm:9.1.3"],
             ["sinon", "npm:11.1.2"],
             ["sinon-chai", "virtual:595d7482cc8ddf98ee6aef33fc48b46393554ab5f17f851ef62e6e39315e53666c3e66226b978689aa0bc7f1e83a03081511a21db1c381362fe67614887077f9#npm:3.7.0"]
           ],
@@ -6930,6 +6849,62 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["assert-plus", "npm:1.0.0"]
           ],
           "linkType": "HARD",
+        }]
+      ]],
+      ["dashmate", [
+        ["workspace:packages/dashmate", {
+          "packageLocation": "./packages/dashmate/",
+          "packageDependencies": [
+            ["dashmate", "workspace:packages/dashmate"],
+            ["@dashevo/dashcore-lib", "npm:0.19.28"],
+            ["@dashevo/dashd-rpc", "npm:2.3.1"],
+            ["@dashevo/dashpay-contract", "workspace:packages/dashpay-contract"],
+            ["@dashevo/dpns-contract", "workspace:packages/dpns-contract"],
+            ["@dashevo/dpp", "workspace:packages/js-dpp"],
+            ["@dashevo/feature-flags-contract", "workspace:packages/feature-flags-contract"],
+            ["@dashevo/wallet-lib", "workspace:packages/wallet-lib"],
+            ["@oclif/command", "virtual:f7d571e0d77017e1d29b1e07a522ecaa92b0544f222388541809a9c07f96976aeb3437afcfac1ce21bfe1d1a4fa7793cd36e5b24db59e3adef0819d088b77e0f#npm:1.8.9"],
+            ["@oclif/config", "npm:1.18.2"],
+            ["@oclif/dev-cli", "npm:1.26.0"],
+            ["@oclif/errors", "npm:1.3.5"],
+            ["@oclif/plugin-help", "npm:3.2.14"],
+            ["ajv", "npm:8.8.1"],
+            ["ajv-formats", "virtual:58fb68f2aed20e5e0f2e48520ab903ae9bb3440369bfd5e912034003cf27c5aae368649fc5620dd2acbed578131f3a0975e75b838d77d12335fb0412e24026c6#npm:2.1.1"],
+            ["awilix", "npm:4.3.4"],
+            ["bls-signatures", "npm:0.2.5"],
+            ["chalk", "npm:4.1.2"],
+            ["dash", "workspace:packages/js-dash-sdk"],
+            ["docker-compose", "npm:0.23.3"],
+            ["dockerode", "npm:3.3.1"],
+            ["dot", "npm:1.1.3"],
+            ["dotenv", "npm:8.6.0"],
+            ["enquirer", "npm:2.3.6"],
+            ["eslint", "npm:7.32.0"],
+            ["eslint-config-airbnb-base", "virtual:595d7482cc8ddf98ee6aef33fc48b46393554ab5f17f851ef62e6e39315e53666c3e66226b978689aa0bc7f1e83a03081511a21db1c381362fe67614887077f9#npm:14.2.1"],
+            ["eslint-plugin-import", "virtual:595d7482cc8ddf98ee6aef33fc48b46393554ab5f17f851ef62e6e39315e53666c3e66226b978689aa0bc7f1e83a03081511a21db1c381362fe67614887077f9#npm:2.25.3"],
+            ["glob", "npm:7.2.0"],
+            ["globby", "npm:10.0.2"],
+            ["hasbin", "npm:1.2.3"],
+            ["jayson", "npm:3.6.5"],
+            ["listr2", "virtual:880cda903c2a2be387819a3f857d21494004437a03c92969b9853f7bdeebdfed08d417e68364ee9e158338603a6d78d690c457a55ab11e56398bc10f0ad232fc#npm:3.5.0"],
+            ["lodash.clonedeep", "npm:4.5.0"],
+            ["lodash.get", "npm:4.4.2"],
+            ["lodash.isequal", "npm:4.5.0"],
+            ["lodash.merge", "npm:4.6.2"],
+            ["lodash.set", "npm:4.3.2"],
+            ["memory-streams", "npm:0.1.3"],
+            ["node-fetch", "npm:2.6.6"],
+            ["node-graceful", "npm:3.1.0"],
+            ["pretty-bytes", "npm:5.6.0"],
+            ["pretty-ms", "npm:7.0.1"],
+            ["public-ip", "npm:4.0.4"],
+            ["rimraf", "npm:3.0.2"],
+            ["rxjs", "npm:6.6.7"],
+            ["semver", "npm:7.3.5"],
+            ["strip-ansi", "npm:6.0.1"],
+            ["table", "npm:5.4.6"]
+          ],
+          "linkType": "SOFT",
         }]
       ]],
       ["date-format", [
@@ -11354,10 +11329,10 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           ],
           "linkType": "SOFT",
         }],
-        ["virtual:5c08caaca88ae3f53d0e60b7c67d34a3f300e1de64d203b0a50b574953780efd310d7fbc88226564f364dc09da74f4acba6eab20ded0bfb2e74e40075c758339#npm:3.5.0", {
-          "packageLocation": "./.yarn/__virtual__/listr2-virtual-c310d32517/0/cache/listr2-npm-3.5.0-6aad1da502-cf30837462.zip/node_modules/listr2/",
+        ["virtual:880cda903c2a2be387819a3f857d21494004437a03c92969b9853f7bdeebdfed08d417e68364ee9e158338603a6d78d690c457a55ab11e56398bc10f0ad232fc#npm:3.5.0", {
+          "packageLocation": "./.yarn/__virtual__/listr2-virtual-30886726f2/0/cache/listr2-npm-3.5.0-6aad1da502-cf30837462.zip/node_modules/listr2/",
           "packageDependencies": [
-            ["listr2", "virtual:5c08caaca88ae3f53d0e60b7c67d34a3f300e1de64d203b0a50b574953780efd310d7fbc88226564f364dc09da74f4acba6eab20ded0bfb2e74e40075c758339#npm:3.5.0"],
+            ["listr2", "virtual:880cda903c2a2be387819a3f857d21494004437a03c92969b9853f7bdeebdfed08d417e68364ee9e158338603a6d78d690c457a55ab11e56398bc10f0ad232fc#npm:3.5.0"],
             ["@types/enquirer", null],
             ["chalk", "npm:4.1.2"],
             ["cli-truncate", "npm:2.1.0"],

@@ -275,7 +275,7 @@ module.exports = {
               type: 'object',
               properties: {
                 docker: {
-                  $ref: '#/definitions/dockerBuild',
+                  $ref: '#/definitions/docker',
                 },
               },
               required: ['docker'],
@@ -302,7 +302,7 @@ module.exports = {
               type: 'object',
               properties: {
                 docker: {
-                  $ref: '#/definitions/dockerBuild',
+                  $ref: '#/definitions/docker',
                 },
                 log: {
                   type: 'object',
@@ -534,6 +534,10 @@ module.exports = {
           required: ['contract', 'ownerId'],
           additionalProperties: false,
         },
+        sourcePath: {
+          type: ['string', 'null'],
+          minLength: 1,
+        },
         masternodeRewardShares: {
           type: 'object',
           properties: {
@@ -561,7 +565,7 @@ module.exports = {
           additionalProperties: false,
         },
       },
-      required: ['dapi', 'drive', 'dpns', 'dashpay', 'featureFlags', 'masternodeRewardShares'],
+      required: ['dapi', 'drive', 'dpns', 'dashpay', 'featureFlags', 'sourcePath', 'masternodeRewardShares'],
       additionalProperties: false,
     },
     externalIp: {

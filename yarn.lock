@@ -1418,63 +1418,6 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@dashevo/dashmate@workspace:packages/dashmate":
-  version: 0.0.0-use.local
-  resolution: "@dashevo/dashmate@workspace:packages/dashmate"
-  dependencies:
-    "@dashevo/dashcore-lib": ~0.19.28
-    "@dashevo/dashd-rpc": ^2.3.1
-    "@dashevo/dashpay-contract": "workspace:~"
-    "@dashevo/dpns-contract": "workspace:~"
-    "@dashevo/dpp": "workspace:~"
-    "@dashevo/feature-flags-contract": "workspace:~"
-    "@dashevo/masternode-reward-shares-contract": "workspace:~"
-    "@dashevo/wallet-lib": "workspace:~"
-    "@oclif/command": ^1.8.9
-    "@oclif/config": ^1.18.2
-    "@oclif/dev-cli": ^1.22.2
-    "@oclif/errors": ^1.3.5
-    "@oclif/plugin-help": ^3.2.14
-    ajv: ^8.6.0
-    ajv-formats: ^2.1.1
-    awilix: ^4.2.6
-    bls-signatures: ^0.2.5
-    chalk: ^4.1.0
-    dash: "workspace:~"
-    docker-compose: 0.23.3
-    dockerode: ^3.2.0
-    dot: ^1.1.3
-    dotenv: ^8.6.0
-    enquirer: ^2.3.6
-    eslint: ^7.32.0
-    eslint-config-airbnb-base: ^14.2.1
-    eslint-plugin-import: ^2.24.2
-    glob: ^7.1.6
-    globby: ^10.0.2
-    hasbin: ^1.2.3
-    jayson: ^3.3.4
-    listr2: 3.5.0
-    lodash.clonedeep: ^4.5.0
-    lodash.get: ^4.4.2
-    lodash.isequal: ^4.5.0
-    lodash.merge: ^4.6.2
-    lodash.set: ^4.3.2
-    memory-streams: ^0.1.3
-    node-fetch: ^2.6.1
-    node-graceful: ^3.0.1
-    pretty-bytes: ^5.3.0
-    pretty-ms: ^7.0.0
-    public-ip: ^4.0.1
-    rimraf: ^3.0.2
-    rxjs: ^6.6.7
-    semver: ^7.3.2
-    strip-ansi: ^6.0.1
-    table: ^5.4.6
-  bin:
-    dashmate: bin/dashmate
-  languageName: unknown
-  linkType: soft
-
 "@dashevo/dashpay-contract@workspace:packages/dashpay-contract, @dashevo/dashpay-contract@workspace:~":
   version: 0.0.0-use.local
   resolution: "@dashevo/dashpay-contract@workspace:packages/dashpay-contract"
@@ -1531,7 +1474,6 @@ __metadata:
     "@dashevo/dashpay-contract": "workspace:~"
     "@dashevo/dpns-contract": "workspace:~"
     "@dashevo/feature-flags-contract": "workspace:~"
-    "@dashevo/masternode-reward-shares-contract": "workspace:~"
     "@dashevo/re2-wasm": ~1.0.4
     acorn: ^8.5.0
     ajv: ^8.6.0
@@ -1680,22 +1622,6 @@ __metadata:
     nyc: ^15.1.0
     protobufjs: "github:jawid-h/protobuf.js#fix/buffer-conversion"
     semver: ^7.3.2
-    sinon: ^11.1.2
-    sinon-chai: ^3.7.0
-  languageName: unknown
-  linkType: soft
-
-"@dashevo/masternode-reward-shares-contract@workspace:packages/masternode-reward-shares-contract, @dashevo/masternode-reward-shares-contract@workspace:~":
-  version: 0.0.0-use.local
-  resolution: "@dashevo/masternode-reward-shares-contract@workspace:packages/masternode-reward-shares-contract"
-  dependencies:
-    "@dashevo/dpp": "workspace:~"
-    chai: ^4.3.4
-    dirty-chai: ^2.0.1
-    eslint: ^7.32.0
-    eslint-config-airbnb-base: ^14.2.1
-    eslint-plugin-import: ^2.24.2
-    mocha: ^9.1.2
     sinon: ^11.1.2
     sinon-chai: ^3.7.0
   languageName: unknown
@@ -5160,6 +5086,62 @@ __metadata:
   checksum: 3634c249570f7f34e3d34f866c93f866c5b417f0dd616275decae08147dcdf8fccfaa5947380ccfb0473998ea3a8057c0b4cd90c875740ee685d0624b2983598
   languageName: node
   linkType: hard
+
+"dashmate@workspace:packages/dashmate":
+  version: 0.0.0-use.local
+  resolution: "dashmate@workspace:packages/dashmate"
+  dependencies:
+    "@dashevo/dashcore-lib": ~0.19.28
+    "@dashevo/dashd-rpc": ^2.3.1
+    "@dashevo/dashpay-contract": "workspace:~"
+    "@dashevo/dpns-contract": "workspace:~"
+    "@dashevo/dpp": "workspace:~"
+    "@dashevo/feature-flags-contract": "workspace:~"
+    "@dashevo/wallet-lib": "workspace:~"
+    "@oclif/command": ^1.8.9
+    "@oclif/config": ^1.18.2
+    "@oclif/dev-cli": ^1.22.2
+    "@oclif/errors": ^1.3.5
+    "@oclif/plugin-help": ^3.2.14
+    ajv: ^8.6.0
+    ajv-formats: ^2.1.1
+    awilix: ^4.2.6
+    bls-signatures: ^0.2.5
+    chalk: ^4.1.0
+    dash: "workspace:~"
+    docker-compose: 0.23.3
+    dockerode: ^3.2.0
+    dot: ^1.1.3
+    dotenv: ^8.6.0
+    enquirer: ^2.3.6
+    eslint: ^7.32.0
+    eslint-config-airbnb-base: ^14.2.1
+    eslint-plugin-import: ^2.24.2
+    glob: ^7.1.6
+    globby: ^10.0.2
+    hasbin: ^1.2.3
+    jayson: ^3.3.4
+    listr2: 3.5.0
+    lodash.clonedeep: ^4.5.0
+    lodash.get: ^4.4.2
+    lodash.isequal: ^4.5.0
+    lodash.merge: ^4.6.2
+    lodash.set: ^4.3.2
+    memory-streams: ^0.1.3
+    node-fetch: ^2.6.1
+    node-graceful: ^3.0.1
+    pretty-bytes: ^5.3.0
+    pretty-ms: ^7.0.0
+    public-ip: ^4.0.1
+    rimraf: ^3.0.2
+    rxjs: ^6.6.7
+    semver: ^7.3.2
+    strip-ansi: ^6.0.1
+    table: ^5.4.6
+  bin:
+    dashmate: bin/dashmate
+  languageName: unknown
+  linkType: soft
 
 "date-format@npm:^2.1.0":
   version: 2.1.0
