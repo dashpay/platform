@@ -12,19 +12,32 @@ chai.use(chaiAsPromised);
 
 describe('getHistoricalBlockHeadersIteratorFactory', () => {
   let coreRpcMock;
+  let blockHeaderMock;
   beforeEach(() => {
     coreRpcMock = {
       getBlock: sinon.stub(),
       getBlockHash: sinon.stub(),
       getBlockHeaders: sinon.stub(),
     };
+
+    blockHeaderMock = new BlockHeader({
+      version: 536870913,
+      prevHash: '0000000000000000000000000000000000000000000000000000000000000000',
+      merkleRoot: 'c4970326400177ce67ec582425a698b85ae03cae2b0d168e87eed697f1388e4b',
+      time: 1507208925,
+      timestamp: 1507208645,
+      bits: 0,
+      nonce: 1449878271,
+    });
+  });
+
+  afterEach(() => {
+    sinon.restore();
   });
 
   it('should proceed straight to done if all ranges are empty', async () => {
     coreRpcMock.getBlock.resolves({ height: 1 });
-    coreRpcMock.getBlockHeaders.resolves([{}]);
-
-    sinon.stub(BlockHeader, 'fromBuffer');
+    coreRpcMock.getBlockHeaders.resolves([blockHeaderMock.toBuffer().toString('hex')]);
 
     const fromBlockHash = 'fake';
     const count = 1337;

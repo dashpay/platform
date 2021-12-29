@@ -20,7 +20,7 @@ describe('subscribeToNewBlockHeaders', () => {
   beforeEach(async () => {
     mediator = new ProcessMediator();
     sinon.stub(dashCoreRpcClient, 'getBlockHeader')
-      .callsFake(async (hash) => blockHeaders[hash].toBuffer());
+      .callsFake(async (hash) => blockHeaders[hash].toBuffer().toString('hex'));
 
     zmqClient = new ZmqClient();
     sinon.stub(zmqClient.subscriberSocket, 'connect')

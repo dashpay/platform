@@ -47,7 +47,7 @@ describe('subscribeToBlockHeadersWithChainLocksHandlerFactory', () => {
 
       if (blockHeaders) {
         blockHeaders.getHeadersList().forEach((header) => {
-          historicalBlockHeaders.push(BlockHeader.fromBuffer(Buffer.from(header)));
+          historicalBlockHeaders.push(new BlockHeader(Buffer.from(header, 'hex')));
         });
       }
 

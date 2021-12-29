@@ -60,10 +60,13 @@ function subscribeToNewBlockHeaders(
     // Cache is populated from ZMQ events.
     while (isClientConnected) {
       if (cachedHeadersHashes.size) {
-        // TODO: figure out whether it's possible to omit BlockHeader.fromBuffer conversion
+        // TODO: figure out whether it's possible to omit new BlockHeader() conversion
         // and directly send bytes to the client
         const blockHeaders = await Promise.all(Array.from(cachedHeadersHashes)
-          .map(async (hash) => BlockHeader.fromBuffer(await coreAPI.getBlockHeader(hash))));
+          .map(async (hash) => {
+            const rawBlockHeader = await coreAPI.getBlockHeader(hash);
+            return new BlockHeader(Buffer.from(rawBlockHeader, 'hex'));
+          }));
 
         mediator.emit(ProcessMediator.EVENTS.BLOCK_HEADERS, blockHeaders);
         cachedHeadersHashes.clear();

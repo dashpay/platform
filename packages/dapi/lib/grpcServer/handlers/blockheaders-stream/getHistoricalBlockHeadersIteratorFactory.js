@@ -41,11 +41,11 @@ function getHistoricalBlockHeadersIteratorFactory(coreRpcApi) {
 
       const blockHash = await coreRpcApi.getBlockHash(currentHeight);
 
-      // TODO: figure out whether it's possible to omit BlockHeader.fromBuffer conversion
+      // TODO: figure out whether it's possible to omit new BlockHeader() conversion
       // and directly send bytes to the client
       const blockHeaders = (await coreRpcApi.getBlockHeaders(
         blockHash, blocksToScan,
-      )).map((blockHeader) => BlockHeader.fromBuffer(blockHeader));
+      )).map((rawBlockHeader) => new BlockHeader(Buffer.from(rawBlockHeader, 'hex')));
 
       yield blockHeaders;
     }
