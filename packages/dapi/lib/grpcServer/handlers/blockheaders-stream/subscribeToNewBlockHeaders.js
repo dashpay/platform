@@ -51,6 +51,9 @@ function subscribeToNewBlockHeaders(
 
   // Receive an event when all historical data is sent to the user.
   mediator.once(ProcessMediator.EVENTS.HISTORICAL_DATA_SENT, async () => {
+    // TODO: WARNING! If error is thrown within this function, it does not propagate
+    // and do not fire UnhandledPromiseRejection
+
     // Run a loop until client is disconnected and send cached as well
     // as new data (through the cache) continuously after that.
     // Cache is populated from ZMQ events.
