@@ -5,9 +5,10 @@
   "main": "src/index.js",
   "scripts": {
     "lint": "eslint .",
-    "postpack": "rm -f oclif.manifest.json",
-    "prepack": "oclif-dev manifest && oclif-dev readme",
-    "version": "oclif-dev readme && git add README.md"
+    "postpack": "shx rm -f oclif.manifest.json",
+    "posttest": "yarn lint",
+    "prepack": "oclif manifest && oclif readme",
+    "version": "oclif readme && git add README.md"
   },
   "repository": {
     "type": "git",
@@ -52,8 +53,9 @@
     "@dashevo/dpp": "workspace:~",
     "@dashevo/feature-flags-contract": "workspace:~",
     "@dashevo/wallet-lib": "workspace:~",
-    "@oclif/core": "^1.0.11",
-    "@oclif/plugin-help": "^3.2.14",
+    "@oclif/core": "^1.0.10",
+    "@oclif/plugin-help": "^5",
+    "@oclif/plugin-plugins": "^2.0.1",
     "@oclif/plugin-version": "^1",
     "ajv": "^8.6.0",
     "ajv-formats": "^2.1.1",
@@ -88,11 +90,12 @@
     "table": "^5.4.6"
   },
   "devDependencies": {
-    "@oclif/dev-cli": "^1.22.2",
     "eslint": "^7.32.0",
     "eslint-config-airbnb-base": "^14.2.1",
     "eslint-plugin-import": "^2.24.2",
-    "globby": "^10.0.2"
+    "globby": "^11",
+    "oclif": "^2.1.0",
+    "shx": "^0.3.3"
   },
   "files": [
     "bin",
@@ -111,6 +114,8 @@
     "commands": "./src/commands",
     "bin": "dashmate",
     "plugins": [
+      "@oclif/plugin-help",
+      "@oclif/plugin-plugins",
       "@oclif/plugin-version"
     ],
     "topics": {
