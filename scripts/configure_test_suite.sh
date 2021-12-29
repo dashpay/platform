@@ -19,8 +19,8 @@ DPNS_TOP_LEVEL_IDENTITY_PRIVATE_KEY=$(grep -m 1 "HD private key:" ${PATH_TO_PROJ
 FEATURE_FLAGS_IDENTITY_ID=$(yarn dashmate config:get --config="${CONFIG}_1" platform.featureFlags.ownerId)
 FEATURE_FLAGS_CONTRACT_ID=$(yarn dashmate config:get --config="${CONFIG}_1" platform.featureFlags.contract.id)
 
-REWARD_SHARE_IDENTITY_ID=$(yarn dashmate config:get --config="${CONFIG}_1" platform.rewardShare.ownerId)
-REWARD_SHARE_CONTRACT_ID=$(yarn dashmate config:get --config="${CONFIG}_1" platform.rewardShare.contract.id)
+REWARD_SHARE_IDENTITY_ID=$(yarn dashmate config:get --config="${CONFIG}_1" platform.masternodeRewardShares.ownerId)
+REWARD_SHARE_CONTRACT_ID=$(yarn dashmate config:get --config="${CONFIG}_1" platform.masternodeRewardShares.contract.id)
 
 echo "Mint 100 Dash to faucet address"
 
