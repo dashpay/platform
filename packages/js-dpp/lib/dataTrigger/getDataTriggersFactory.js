@@ -47,14 +47,16 @@ function getDataTriggersFactory() {
   }
 
   let masternodeRewardSharesContractId = Buffer.alloc(0);
-  if (process.env.REWARD_SHARE_CONTRACT_ID) {
-    masternodeRewardSharesContractId = Identifier.from(process.env.REWARD_SHARE_CONTRACT_ID);
+  if (process.env.MASTERNODE_REWARD_SHARES_CONTRACT_ID) {
+    masternodeRewardSharesContractId = Identifier.from(
+      process.env.MASTERNODE_REWARD_SHARES_CONTRACT_ID,
+    );
   }
 
   let masternodeRewardSharesTopLevelIdentityId = Buffer.alloc(0);
-  if (process.env.REWARD_SHARE_TOP_LEVEL_IDENTITY) {
+  if (process.env.MASTERNODE_REWARD_SHARES_TOP_LEVEL_IDENTITY) {
     masternodeRewardSharesTopLevelIdentityId = Identifier.from(
-      process.env.REWARD_SHARE_TOP_LEVEL_IDENTITY,
+      process.env.MASTERNODE_REWARD_SHARES_TOP_LEVEL_IDENTITY,
     );
   }
 

@@ -14,6 +14,7 @@ describe('createMasternodeRewardSharesDataTrigger', () => {
   let topLevelIdentityId;
   let smlStoreMock;
   let smlMock;
+  let documentsFixture;
 
   beforeEach(function beforeEach() {
     topLevelIdentityId = Buffer.from('c286807d463b06c7aba3b9a60acf64c1fc03da8c1422005cd9b4293f08cf0562', 'hex');
@@ -42,6 +43,8 @@ describe('createMasternodeRewardSharesDataTrigger', () => {
       ]),
     };
 
+    documentsFixture = getMasternodeRewardSharesDocumentsFixture();
+
     smlStoreMock = {
       getSMLbyHeight: this.sinonSandbox.stub().returns(smlMock),
       getCurrentSML: this.sinonSandbox.stub().returns(smlMock),
@@ -50,6 +53,7 @@ describe('createMasternodeRewardSharesDataTrigger', () => {
     stateRepositoryMock = createStateRepositoryMock(this.sinonSandbox);
     stateRepositoryMock.fetchSMLStore.resolves(smlStoreMock);
     stateRepositoryMock.fetchIdentity.resolves(null);
+    stateRepositoryMock.fetchDocuments.resolves(documentsFixture);
 
     const [document] = getMasternodeRewardSharesDocumentsFixture();
 
@@ -66,7 +70,7 @@ describe('createMasternodeRewardSharesDataTrigger', () => {
   });
 
   it('should return an error if percentage > 10000', async () => {
-    documentTransition.data.percentage = 10001;
+    documentTransition.data.percentage = 9501;
 
     const result = await createRewardShareDataTrigger(
       documentTransition, contextMock, topLevelIdentityId,
@@ -79,6 +83,11 @@ describe('createMasternodeRewardSharesDataTrigger', () => {
 
     expect(error).to.be.an.instanceOf(DataTriggerConditionError);
     expect(error.message).to.equal('Percentage can not be more than 10000');
+
+    expect(stateRepositoryMock.fetchSMLStore).to.be.calledOnce();
+    expect(stateRepositoryMock.fetchIdentity).to.be.calledOnceWithExactly(
+      documentTransition.data.payToId,
+    );
   });
 
   it('should return an error if payToId already exists', async () => {
@@ -95,6 +104,11 @@ describe('createMasternodeRewardSharesDataTrigger', () => {
 
     expect(error).to.be.an.instanceOf(DataTriggerConditionError);
     expect(error.message).to.equal(`Identity ${documentTransition.data.payToId.toString()} already exists`);
+
+    expect(stateRepositoryMock.fetchSMLStore).to.be.calledOnce();
+    expect(stateRepositoryMock.fetchIdentity).to.be.calledOnceWithExactly(
+      documentTransition.data.payToId,
+    );
   });
 
   it('should return an error if ownerId is not in SML', async () => {
@@ -111,6 +125,11 @@ describe('createMasternodeRewardSharesDataTrigger', () => {
 
     expect(error).to.be.an.instanceOf(DataTriggerConditionError);
     expect(error.message).to.equal(`Owner ID ${getIdentityFixture().getId()} is not in SML`);
+
+    expect(stateRepositoryMock.fetchSMLStore).to.be.calledOnce();
+    expect(stateRepositoryMock.fetchIdentity).to.be.calledOnceWithExactly(
+      documentTransition.data.payToId,
+    );
   });
 
   it('should pass', async () => {
@@ -120,5 +139,10 @@ describe('createMasternodeRewardSharesDataTrigger', () => {
 
     expect(result).to.be.an.instanceOf(DataTriggerExecutionResult);
     expect(result.isOk()).to.be.true();
+
+    expect(stateRepositoryMock.fetchSMLStore).to.be.calledOnce();
+    expect(stateRepositoryMock.fetchIdentity).to.be.calledOnceWithExactly(
+      documentTransition.data.payToId,
+    );
   });
 });
