@@ -359,7 +359,7 @@ $root.org = (function() {
                          * Properties of a StoreTreeProofs.
                          * @memberof org.dash.platform.dapi.v0
                          * @interface IStoreTreeProofs
-                         * @property {Array.<Uint8Array>|null} [identitiesProof] StoreTreeProofs identitiesProof
+                         * @property {Uint8Array|null} [identitiesProof] StoreTreeProofs identitiesProof
                          * @property {Uint8Array|null} [publicKeyHashesToIdentityIdsProof] StoreTreeProofs publicKeyHashesToIdentityIdsProof
                          * @property {Uint8Array|null} [dataContractsProof] StoreTreeProofs dataContractsProof
                          * @property {Uint8Array|null} [documentsProof] StoreTreeProofs documentsProof
@@ -374,7 +374,6 @@ $root.org = (function() {
                          * @param {org.dash.platform.dapi.v0.IStoreTreeProofs=} [properties] Properties to set
                          */
                         function StoreTreeProofs(properties) {
-                            this.identitiesProof = [];
                             if (properties)
                                 for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
                                     if (properties[keys[i]] != null)
@@ -383,11 +382,11 @@ $root.org = (function() {
 
                         /**
                          * StoreTreeProofs identitiesProof.
-                         * @member {Array.<Uint8Array>} identitiesProof
+                         * @member {Uint8Array} identitiesProof
                          * @memberof org.dash.platform.dapi.v0.StoreTreeProofs
                          * @instance
                          */
-                        StoreTreeProofs.prototype.identitiesProof = $util.emptyArray;
+                        StoreTreeProofs.prototype.identitiesProof = $util.newBuffer([]);
 
                         /**
                          * StoreTreeProofs publicKeyHashesToIdentityIdsProof.
@@ -437,9 +436,8 @@ $root.org = (function() {
                         StoreTreeProofs.encode = function encode(message, writer) {
                             if (!writer)
                                 writer = $Writer.create();
-                            if (message.identitiesProof != null && message.identitiesProof.length)
-                                for (var i = 0; i < message.identitiesProof.length; ++i)
-                                    writer.uint32(/* id 1, wireType 2 =*/10).bytes(message.identitiesProof[i]);
+                            if (message.identitiesProof != null && Object.hasOwnProperty.call(message, "identitiesProof"))
+                                writer.uint32(/* id 1, wireType 2 =*/10).bytes(message.identitiesProof);
                             if (message.publicKeyHashesToIdentityIdsProof != null && Object.hasOwnProperty.call(message, "publicKeyHashesToIdentityIdsProof"))
                                 writer.uint32(/* id 2, wireType 2 =*/18).bytes(message.publicKeyHashesToIdentityIdsProof);
                             if (message.dataContractsProof != null && Object.hasOwnProperty.call(message, "dataContractsProof"))
@@ -481,9 +479,7 @@ $root.org = (function() {
                                 var tag = reader.uint32();
                                 switch (tag >>> 3) {
                                 case 1:
-                                    if (!(message.identitiesProof && message.identitiesProof.length))
-                                        message.identitiesProof = [];
-                                    message.identitiesProof.push(reader.bytes());
+                                    message.identitiesProof = reader.bytes();
                                     break;
                                 case 2:
                                     message.publicKeyHashesToIdentityIdsProof = reader.bytes();
@@ -529,13 +525,9 @@ $root.org = (function() {
                         StoreTreeProofs.verify = function verify(message) {
                             if (typeof message !== "object" || message === null)
                                 return "object expected";
-                            if (message.identitiesProof != null && message.hasOwnProperty("identitiesProof")) {
-                                if (!Array.isArray(message.identitiesProof))
-                                    return "identitiesProof: array expected";
-                                for (var i = 0; i < message.identitiesProof.length; ++i)
-                                    if (!(message.identitiesProof[i] && typeof message.identitiesProof[i].length === "number" || $util.isString(message.identitiesProof[i])))
-                                        return "identitiesProof: buffer[] expected";
-                            }
+                            if (message.identitiesProof != null && message.hasOwnProperty("identitiesProof"))
+                                if (!(message.identitiesProof && typeof message.identitiesProof.length === "number" || $util.isString(message.identitiesProof)))
+                                    return "identitiesProof: buffer expected";
                             if (message.publicKeyHashesToIdentityIdsProof != null && message.hasOwnProperty("publicKeyHashesToIdentityIdsProof"))
                                 if (!(message.publicKeyHashesToIdentityIdsProof && typeof message.publicKeyHashesToIdentityIdsProof.length === "number" || $util.isString(message.publicKeyHashesToIdentityIdsProof)))
                                     return "publicKeyHashesToIdentityIdsProof: buffer expected";
@@ -560,16 +552,11 @@ $root.org = (function() {
                             if (object instanceof $root.org.dash.platform.dapi.v0.StoreTreeProofs)
                                 return object;
                             var message = new $root.org.dash.platform.dapi.v0.StoreTreeProofs();
-                            if (object.identitiesProof) {
-                                if (!Array.isArray(object.identitiesProof))
-                                    throw TypeError(".org.dash.platform.dapi.v0.StoreTreeProofs.identitiesProof: array expected");
-                                message.identitiesProof = [];
-                                for (var i = 0; i < object.identitiesProof.length; ++i)
-                                    if (typeof object.identitiesProof[i] === "string")
-                                        $util.base64.decode(object.identitiesProof[i], message.identitiesProof[i] = $util.newBuffer($util.base64.length(object.identitiesProof[i])), 0);
-                                    else if (object.identitiesProof[i].length >= 0)
-                                        message.identitiesProof[i] = object.identitiesProof[i];
-                            }
+                            if (object.identitiesProof != null)
+                                if (typeof object.identitiesProof === "string")
+                                    $util.base64.decode(object.identitiesProof, message.identitiesProof = $util.newBuffer($util.base64.length(object.identitiesProof)), 0);
+                                else if (object.identitiesProof.length >= 0)
+                                    message.identitiesProof = object.identitiesProof;
                             if (object.publicKeyHashesToIdentityIdsProof != null)
                                 if (typeof object.publicKeyHashesToIdentityIdsProof === "string")
                                     $util.base64.decode(object.publicKeyHashesToIdentityIdsProof, message.publicKeyHashesToIdentityIdsProof = $util.newBuffer($util.base64.length(object.publicKeyHashesToIdentityIdsProof)), 0);
@@ -601,9 +588,14 @@ $root.org = (function() {
                             if (!options)
                                 options = {};
                             var object = {};
-                            if (options.arrays || options.defaults)
-                                object.identitiesProof = [];
                             if (options.defaults) {
+                                if (options.bytes === String)
+                                    object.identitiesProof = "";
+                                else {
+                                    object.identitiesProof = [];
+                                    if (options.bytes !== Array)
+                                        object.identitiesProof = $util.newBuffer(object.identitiesProof);
+                                }
                                 if (options.bytes === String)
                                     object.publicKeyHashesToIdentityIdsProof = "";
                                 else {
@@ -626,11 +618,8 @@ $root.org = (function() {
                                         object.documentsProof = $util.newBuffer(object.documentsProof);
                                 }
                             }
-                            if (message.identitiesProof && message.identitiesProof.length) {
-                                object.identitiesProof = [];
-                                for (var j = 0; j < message.identitiesProof.length; ++j)
-                                    object.identitiesProof[j] = options.bytes === String ? $util.base64.encode(message.identitiesProof[j], 0, message.identitiesProof[j].length) : options.bytes === Array ? Array.prototype.slice.call(message.identitiesProof[j]) : message.identitiesProof[j];
-                            }
+                            if (message.identitiesProof != null && message.hasOwnProperty("identitiesProof"))
+                                object.identitiesProof = options.bytes === String ? $util.base64.encode(message.identitiesProof, 0, message.identitiesProof.length) : options.bytes === Array ? Array.prototype.slice.call(message.identitiesProof) : message.identitiesProof;
                             if (message.publicKeyHashesToIdentityIdsProof != null && message.hasOwnProperty("publicKeyHashesToIdentityIdsProof"))
                                 object.publicKeyHashesToIdentityIdsProof = options.bytes === String ? $util.base64.encode(message.publicKeyHashesToIdentityIdsProof, 0, message.publicKeyHashesToIdentityIdsProof.length) : options.bytes === Array ? Array.prototype.slice.call(message.publicKeyHashesToIdentityIdsProof) : message.publicKeyHashesToIdentityIdsProof;
                             if (message.dataContractsProof != null && message.hasOwnProperty("dataContractsProof"))

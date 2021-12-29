@@ -47,14 +47,14 @@ static GPBFileDescriptor *PlatformRoot_FileDescriptor(void) {
 
 @implementation StoreTreeProofs
 
-@dynamic identitiesProofArray, identitiesProofArray_Count;
+@dynamic identitiesProof;
 @dynamic publicKeyHashesToIdentityIdsProof;
 @dynamic dataContractsProof;
 @dynamic documentsProof;
 
 typedef struct StoreTreeProofs__storage_ {
   uint32_t _has_storage_[1];
-  NSMutableArray *identitiesProofArray;
+  NSData *identitiesProof;
   NSData *publicKeyHashesToIdentityIdsProof;
   NSData *dataContractsProof;
   NSData *documentsProof;
@@ -67,19 +67,19 @@ typedef struct StoreTreeProofs__storage_ {
   if (!descriptor) {
     static GPBMessageFieldDescription fields[] = {
       {
-        .name = "identitiesProofArray",
+        .name = "identitiesProof",
         .dataTypeSpecific.className = NULL,
-        .number = StoreTreeProofs_FieldNumber_IdentitiesProofArray,
-        .hasIndex = GPBNoHasBit,
-        .offset = (uint32_t)offsetof(StoreTreeProofs__storage_, identitiesProofArray),
-        .flags = GPBFieldRepeated,
+        .number = StoreTreeProofs_FieldNumber_IdentitiesProof,
+        .hasIndex = 0,
+        .offset = (uint32_t)offsetof(StoreTreeProofs__storage_, identitiesProof),
+        .flags = GPBFieldOptional,
         .dataType = GPBDataTypeBytes,
       },
       {
         .name = "publicKeyHashesToIdentityIdsProof",
         .dataTypeSpecific.className = NULL,
         .number = StoreTreeProofs_FieldNumber_PublicKeyHashesToIdentityIdsProof,
-        .hasIndex = 0,
+        .hasIndex = 1,
         .offset = (uint32_t)offsetof(StoreTreeProofs__storage_, publicKeyHashesToIdentityIdsProof),
         .flags = GPBFieldOptional,
         .dataType = GPBDataTypeBytes,
@@ -88,7 +88,7 @@ typedef struct StoreTreeProofs__storage_ {
         .name = "dataContractsProof",
         .dataTypeSpecific.className = NULL,
         .number = StoreTreeProofs_FieldNumber_DataContractsProof,
-        .hasIndex = 1,
+        .hasIndex = 2,
         .offset = (uint32_t)offsetof(StoreTreeProofs__storage_, dataContractsProof),
         .flags = GPBFieldOptional,
         .dataType = GPBDataTypeBytes,
@@ -97,7 +97,7 @@ typedef struct StoreTreeProofs__storage_ {
         .name = "documentsProof",
         .dataTypeSpecific.className = NULL,
         .number = StoreTreeProofs_FieldNumber_DocumentsProof,
-        .hasIndex = 2,
+        .hasIndex = 3,
         .offset = (uint32_t)offsetof(StoreTreeProofs__storage_, documentsProof),
         .flags = GPBFieldOptional,
         .dataType = GPBDataTypeBytes,

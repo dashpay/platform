@@ -124,7 +124,7 @@ function waitForStateTransitionResultHandlerFactory(
       if (stateTransition.isDocumentStateTransition()) {
         storeTreeProofs.setDocumentsProof(proofObject.storeTreeProof);
       } else if (stateTransition.isIdentityStateTransition()) {
-        storeTreeProofs.setIdentitiesProofList([proofObject.storeTreeProof]);
+        storeTreeProofs.setIdentitiesProof(proofObject.storeTreeProof);
       } else if (stateTransition.isDataContractStateTransition()) {
         storeTreeProofs.setDataContractsProof(proofObject.storeTreeProof);
       }

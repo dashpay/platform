@@ -56,7 +56,7 @@ NS_ASSUME_NONNULL_BEGIN
 #pragma mark - StoreTreeProofs
 
 typedef GPB_ENUM(StoreTreeProofs_FieldNumber) {
-  StoreTreeProofs_FieldNumber_IdentitiesProofArray = 1,
+  StoreTreeProofs_FieldNumber_IdentitiesProof = 1,
   StoreTreeProofs_FieldNumber_PublicKeyHashesToIdentityIdsProof = 2,
   StoreTreeProofs_FieldNumber_DataContractsProof = 3,
   StoreTreeProofs_FieldNumber_DocumentsProof = 4,
@@ -64,9 +64,7 @@ typedef GPB_ENUM(StoreTreeProofs_FieldNumber) {
 
 @interface StoreTreeProofs : GPBMessage
 
-@property(nonatomic, readwrite, strong, null_resettable) NSMutableArray<NSData*> *identitiesProofArray;
-/** The number of items in @c identitiesProofArray without causing the array to be created. */
-@property(nonatomic, readonly) NSUInteger identitiesProofArray_Count;
+@property(nonatomic, readwrite, copy, null_resettable) NSData *identitiesProof;
 
 @property(nonatomic, readwrite, copy, null_resettable) NSData *publicKeyHashesToIdentityIdsProof;
 

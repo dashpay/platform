@@ -52,7 +52,7 @@ goog.exportSymbol('proto.org.dash.platform.dapi.v0.WaitForStateTransitionResultR
  * @constructor
  */
 proto.org.dash.platform.dapi.v0.StoreTreeProofs = function(opt_data) {
-  jspb.Message.initialize(this, opt_data, 0, -1, proto.org.dash.platform.dapi.v0.StoreTreeProofs.repeatedFields_, null);
+  jspb.Message.initialize(this, opt_data, 0, -1, null, null);
 };
 goog.inherits(proto.org.dash.platform.dapi.v0.StoreTreeProofs, jspb.Message);
 if (goog.DEBUG && !COMPILED) {
@@ -546,13 +546,6 @@ if (goog.DEBUG && !COMPILED) {
   proto.org.dash.platform.dapi.v0.GetConsensusParamsResponse.displayName = 'proto.org.dash.platform.dapi.v0.GetConsensusParamsResponse';
 }
 
-/**
- * List of repeated fields within this message type.
- * @private {!Array<number>}
- * @const
- */
-proto.org.dash.platform.dapi.v0.StoreTreeProofs.repeatedFields_ = [1];
-
 
 
 if (jspb.Message.GENERATE_TO_OBJECT) {
@@ -584,7 +577,7 @@ proto.org.dash.platform.dapi.v0.StoreTreeProofs.prototype.toObject = function(op
  */
 proto.org.dash.platform.dapi.v0.StoreTreeProofs.toObject = function(includeInstance, msg) {
   var f, obj = {
-    identitiesProofList: msg.getIdentitiesProofList_asB64(),
+    identitiesProof: msg.getIdentitiesProof_asB64(),
     publicKeyHashesToIdentityIdsProof: msg.getPublicKeyHashesToIdentityIdsProof_asB64(),
     dataContractsProof: msg.getDataContractsProof_asB64(),
     documentsProof: msg.getDocumentsProof_asB64()
@@ -626,7 +619,7 @@ proto.org.dash.platform.dapi.v0.StoreTreeProofs.deserializeBinaryFromReader = fu
     switch (field) {
     case 1:
       var value = /** @type {!Uint8Array} */ (reader.readBytes());
-      msg.addIdentitiesProof(value);
+      msg.setIdentitiesProof(value);
       break;
     case 2:
       var value = /** @type {!Uint8Array} */ (reader.readBytes());
@@ -669,9 +662,9 @@ proto.org.dash.platform.dapi.v0.StoreTreeProofs.prototype.serializeBinary = func
  */
 proto.org.dash.platform.dapi.v0.StoreTreeProofs.serializeBinaryToWriter = function(message, writer) {
   var f = undefined;
-  f = message.getIdentitiesProofList_asU8();
+  f = message.getIdentitiesProof_asU8();
   if (f.length > 0) {
-    writer.writeRepeatedBytes(
+    writer.writeBytes(
       1,
       f
     );
@@ -701,63 +694,44 @@ proto.org.dash.platform.dapi.v0.StoreTreeProofs.serializeBinaryToWriter = functi
 
 
 /**
- * repeated bytes identities_proof = 1;
- * @return {!Array<string>}
+ * optional bytes identities_proof = 1;
+ * @return {string}
  */
-proto.org.dash.platform.dapi.v0.StoreTreeProofs.prototype.getIdentitiesProofList = function() {
-  return /** @type {!Array<string>} */ (jspb.Message.getRepeatedField(this, 1));
+proto.org.dash.platform.dapi.v0.StoreTreeProofs.prototype.getIdentitiesProof = function() {
+  return /** @type {string} */ (jspb.Message.getFieldWithDefault(this, 1, ""));
 };
 
 
 /**
- * repeated bytes identities_proof = 1;
- * This is a type-conversion wrapper around `getIdentitiesProofList()`
- * @return {!Array<string>}
+ * optional bytes identities_proof = 1;
+ * This is a type-conversion wrapper around `getIdentitiesProof()`
+ * @return {string}
  */
-proto.org.dash.platform.dapi.v0.StoreTreeProofs.prototype.getIdentitiesProofList_asB64 = function() {
-  return /** @type {!Array<string>} */ (jspb.Message.bytesListAsB64(
-      this.getIdentitiesProofList()));
+proto.org.dash.platform.dapi.v0.StoreTreeProofs.prototype.getIdentitiesProof_asB64 = function() {
+  return /** @type {string} */ (jspb.Message.bytesAsB64(
+      this.getIdentitiesProof()));
 };
 
 
 /**
- * repeated bytes identities_proof = 1;
+ * optional bytes identities_proof = 1;
  * Note that Uint8Array is not supported on all browsers.
  * @see http://caniuse.com/Uint8Array
- * This is a type-conversion wrapper around `getIdentitiesProofList()`
- * @return {!Array<!Uint8Array>}
+ * This is a type-conversion wrapper around `getIdentitiesProof()`
+ * @return {!Uint8Array}
  */
-proto.org.dash.platform.dapi.v0.StoreTreeProofs.prototype.getIdentitiesProofList_asU8 = function() {
-  return /** @type {!Array<!Uint8Array>} */ (jspb.Message.bytesListAsU8(
-      this.getIdentitiesProofList()));
-};
-
-
-/**
- * @param {!(Array<!Uint8Array>|Array<string>)} value
- * @return {!proto.org.dash.platform.dapi.v0.StoreTreeProofs} returns this
- */
-proto.org.dash.platform.dapi.v0.StoreTreeProofs.prototype.setIdentitiesProofList = function(value) {
-  return jspb.Message.setField(this, 1, value || []);
+proto.org.dash.platform.dapi.v0.StoreTreeProofs.prototype.getIdentitiesProof_asU8 = function() {
+  return /** @type {!Uint8Array} */ (jspb.Message.bytesAsU8(
+      this.getIdentitiesProof()));
 };
 
 
 /**
  * @param {!(string|Uint8Array)} value
- * @param {number=} opt_index
  * @return {!proto.org.dash.platform.dapi.v0.StoreTreeProofs} returns this
  */
-proto.org.dash.platform.dapi.v0.StoreTreeProofs.prototype.addIdentitiesProof = function(value, opt_index) {
-  return jspb.Message.addToRepeatedField(this, 1, value, opt_index);
-};
-
-
-/**
- * Clears the list making it empty but non-null.
- * @return {!proto.org.dash.platform.dapi.v0.StoreTreeProofs} returns this
- */
-proto.org.dash.platform.dapi.v0.StoreTreeProofs.prototype.clearIdentitiesProofList = function() {
-  return this.setIdentitiesProofList([]);
+proto.org.dash.platform.dapi.v0.StoreTreeProofs.prototype.setIdentitiesProof = function(value) {
+  return jspb.Message.setProto3BytesField(this, 1, value);
 };
 
 
