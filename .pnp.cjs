@@ -3003,18 +3003,6 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
         }]
       ]],
       ["@oclif/color", [
-        ["npm:0.1.2", {
-          "packageLocation": "./.yarn/cache/@oclif-color-npm-0.1.2-ce883172b6-4b99ffed7f.zip/node_modules/@oclif/color/",
-          "packageDependencies": [
-            ["@oclif/color", "npm:0.1.2"],
-            ["ansi-styles", "npm:3.2.1"],
-            ["chalk", "npm:3.0.0"],
-            ["strip-ansi", "npm:5.2.0"],
-            ["supports-color", "npm:5.5.0"],
-            ["tslib", "npm:1.14.1"]
-          ],
-          "linkType": "HARD",
-        }],
         ["npm:1.0.0", {
           "packageLocation": "./.yarn/cache/@oclif-color-npm-1.0.0-a76d65e26d-60521f90eb.zip/node_modules/@oclif/color/",
           "packageDependencies": [
@@ -3130,37 +3118,6 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["cli-ux", "npm:6.0.6"],
             ["fast-levenshtein", "npm:3.0.0"],
             ["lodash", "npm:4.17.21"]
-          ],
-          "linkType": "HARD",
-        }]
-      ]],
-      ["@oclif/plugin-plugins", [
-        ["npm:2.0.11", {
-          "packageLocation": "./.yarn/cache/@oclif-plugin-plugins-npm-2.0.11-9d3ba1c383-dbeac230b2.zip/node_modules/@oclif/plugin-plugins/",
-          "packageDependencies": [
-            ["@oclif/plugin-plugins", "npm:2.0.11"],
-            ["@oclif/color", "npm:0.1.2"],
-            ["@oclif/core", "npm:1.0.10"],
-            ["chalk", "npm:4.1.2"],
-            ["cli-ux", "npm:6.0.6"],
-            ["debug", "virtual:40c87ada7f2f684a486a15e9daad470176b55201376bfdeb15dad896f5233b78f99666966eda31038040b4d17aa8b8f8bf53fddc6773a558064319b9a0677061#npm:4.3.2"],
-            ["fs-extra", "npm:9.1.0"],
-            ["http-call", "npm:5.3.0"],
-            ["load-json-file", "npm:5.3.0"],
-            ["npm-run-path", "npm:4.0.1"],
-            ["semver", "npm:7.3.5"],
-            ["tslib", "npm:2.3.1"],
-            ["yarn", "npm:1.22.17"]
-          ],
-          "linkType": "HARD",
-        }]
-      ]],
-      ["@oclif/plugin-version", [
-        ["npm:1.0.3", {
-          "packageLocation": "./.yarn/cache/@oclif-plugin-version-npm-1.0.3-791293b313-e50d800dea.zip/node_modules/@oclif/plugin-version/",
-          "packageDependencies": [
-            ["@oclif/plugin-version", "npm:1.0.3"],
-            ["@oclif/core", "npm:1.0.10"]
           ],
           "linkType": "HARD",
         }]
@@ -7437,8 +7394,6 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["@dashevo/wallet-lib", "workspace:packages/wallet-lib"],
             ["@oclif/core", "npm:1.0.11"],
             ["@oclif/plugin-help", "npm:5.1.10"],
-            ["@oclif/plugin-plugins", "npm:2.0.11"],
-            ["@oclif/plugin-version", "npm:1.0.3"],
             ["ajv", "npm:8.8.1"],
             ["ajv-formats", "virtual:58fb68f2aed20e5e0f2e48520ab903ae9bb3440369bfd5e912034003cf27c5aae368649fc5620dd2acbed578131f3a0975e75b838d77d12335fb0412e24026c6#npm:2.1.1"],
             ["awilix", "npm:4.3.4"],
@@ -7473,7 +7428,6 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["rimraf", "npm:3.0.2"],
             ["rxjs", "npm:6.6.7"],
             ["semver", "npm:7.3.5"],
-            ["shx", "npm:0.3.3"],
             ["strip-ansi", "npm:6.0.1"],
             ["table", "npm:5.4.6"]
           ],
@@ -12855,18 +12809,6 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           ],
           "linkType": "HARD",
         }],
-        ["npm:5.3.0", {
-          "packageLocation": "./.yarn/cache/load-json-file-npm-5.3.0-73edda140b-8bf15599db.zip/node_modules/load-json-file/",
-          "packageDependencies": [
-            ["load-json-file", "npm:5.3.0"],
-            ["graceful-fs", "npm:4.2.8"],
-            ["parse-json", "npm:4.0.0"],
-            ["pify", "npm:4.0.1"],
-            ["strip-bom", "npm:3.0.0"],
-            ["type-fest", "npm:0.3.1"]
-          ],
-          "linkType": "HARD",
-        }],
         ["npm:6.2.0", {
           "packageLocation": "./.yarn/cache/load-json-file-npm-6.2.0-516f143724-4429e430eb.zip/node_modules/load-json-file/",
           "packageDependencies": [
@@ -16868,17 +16810,6 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           "linkType": "HARD",
         }]
       ]],
-      ["shx", [
-        ["npm:0.3.3", {
-          "packageLocation": "./.yarn/cache/shx-npm-0.3.3-6071b4b10c-2e408a79c6.zip/node_modules/shx/",
-          "packageDependencies": [
-            ["shx", "npm:0.3.3"],
-            ["minimist", "npm:1.2.5"],
-            ["shelljs", "npm:0.8.4"]
-          ],
-          "linkType": "HARD",
-        }]
-      ]],
       ["side-channel", [
         ["npm:1.0.4", {
           "packageLocation": "./.yarn/cache/side-channel-npm-1.0.4-e1f38b9e06-351e41b947.zip/node_modules/side-channel/",
@@ -18735,13 +18666,6 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           ],
           "linkType": "HARD",
         }],
-        ["npm:0.3.1", {
-          "packageLocation": "./.yarn/cache/type-fest-npm-0.3.1-542c938bf6-347ff46c22.zip/node_modules/type-fest/",
-          "packageDependencies": [
-            ["type-fest", "npm:0.3.1"]
-          ],
-          "linkType": "HARD",
-        }],
         ["npm:0.6.0", {
           "packageLocation": "./.yarn/cache/type-fest-npm-0.6.0-76b229965b-b2188e6e4b.zip/node_modules/type-fest/",
           "packageDependencies": [
@@ -20156,15 +20080,6 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["decamelize", "npm:4.0.0"],
             ["flat", "npm:5.0.2"],
             ["is-plain-obj", "npm:2.1.0"]
-          ],
-          "linkType": "HARD",
-        }]
-      ]],
-      ["yarn", [
-        ["npm:1.22.17", {
-          "packageLocation": "./.yarn/unplugged/yarn-npm-1.22.17-2a65122719/node_modules/yarn/",
-          "packageDependencies": [
-            ["yarn", "npm:1.22.17"]
           ],
           "linkType": "HARD",
         }]
