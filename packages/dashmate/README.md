@@ -116,7 +116,7 @@ The `config` command is used to manage your node configuration before starting t
  - local - template for local node configs
  - testnet - testnet node configuration
 
-You can modify and use the system configs directly, or create your own. You can base your own configs on one of the system configs using the `dashmate config:create CONFIG [FROM]` command. You must set a default config with `dashmate config:default CONFIG` or specify a config with the `--config=<config>` option when running commands. The `base` config is initially set as default.
+You can modify and use the system configs directly, or create your own. You can base your own configs on one of the system configs using the `dashmate config create CONFIG [FROM]` command. You must set a default config with `dashmate config default CONFIG` or specify a config with the `--config=<config>` option when running commands. The `base` config is initially set as default.
 
 ```
 USAGE
@@ -211,7 +211,7 @@ COMMANDS
 
 To show the host status:
 ```bash
-$ dashmate status:host
+$ dashmate status host
 ```
 
 ### Reset node data
@@ -241,7 +241,7 @@ $ dashmate reset
 It is also possible to start a full node instead of a masternode. Modify the config setting as follows:
 
 ```bash
-dashmate config:set core.masternode.enable false
+dashmate config set core.masternode.enable false
 ```
 
 ### Node groups
@@ -254,7 +254,7 @@ The [setup](#setup-node) command set corresponding group as default. To output t
 
 ```
 USAGE
-  $ dashmate group:default [GROUP]
+  $ dashmate group default [GROUP]
 
 ARGUMENTS
   GROUP  group name
@@ -269,7 +269,7 @@ The `group:list` command outputs a list of group configs.
 
 ```
 USAGE
-  $ dashmate group:list
+  $ dashmate group list
 
 OPTIONS
   -v, --verbose  use verbose mode for output
@@ -282,7 +282,7 @@ The `group:start` command is used to start a group of nodes belonging to the def
 
 ```
 USAGE
-  $ dashmate group:start
+  $ dashmate group start
 
 OPTIONS
   -v, --verbose             use verbose mode for output
@@ -296,7 +296,7 @@ The `group:stop` command is used to stop group nodes belonging to the default gr
 
 ```
 USAGE
-  $ dashmate group:stop
+  $ dashmate group stop
 
 OPTIONS
   -v, --verbose  use verbose mode for output
@@ -309,7 +309,7 @@ The `group:restart` command is used to restart group nodes belonging to the defa
 
 ```
 USAGE
-  $ dashmate group:restart
+  $ dashmate group restart
 
 OPTIONS
   -v, --verbose  use verbose mode for output
@@ -322,7 +322,7 @@ The `group:status` command outputs group status information.
 
 ```
 USAGE
-  $ dashmate group:status
+  $ dashmate group status
 
 OPTIONS
   -v, --verbose  use verbose mode for output
@@ -335,7 +335,7 @@ The `group:reset` command removes all data corresponding to the specified group 
 
 ```
 USAGE
-  $ dashmate group:reset
+  $ dashmate group reset
 
 OPTIONS
   -h, --hard           reset config as well as data
@@ -353,14 +353,14 @@ To group nodes together, set a group name to `group` option in corresponding con
 Create a group of two testnet nodes:
 ```bash
 # create a new config using `testnet` config as template
-dashmate config:create testnet_2 testnet
+dashmate config create testnet_2 testnet
 
 # combine configs into the group
-dashmate config:set --config=testnet group testnet
-dashmate config:set --config=testnet_2 group testnet
+dashmate config set --config=testnet group testnet
+dashmate config set --config=testnet_2 group testnet
 
 # set the group as default
-dashmate group:default testnet
+dashmate group default testnet
 ```
 
 To start the group of nodes, ports and other required options need to be updated.
@@ -376,7 +376,7 @@ To allow developers quickly test changes to DAPI and Drive, a local path for thi
 If you want to use Docker Compose directly, you will need to pass a configuration as a dotenv file. You can output a config to a dotenv file for Docker Compose as follows:
 
 ```bash
-$ dashmate config:envs --config=testnet --output-file .env.testnet
+$ dashmate config envs --config=testnet --output-file .env.testnet
 ```
 
 Then specify the created dotenv file as an option for the `docker-compose` command:

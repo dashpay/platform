@@ -1,6 +1,6 @@
 const { Listr } = require('listr2');
 
-const { flags: flagTypes } = require('@oclif/command');
+const { Flags } = require('@oclif/core');
 
 const GroupBaseCommand = require('../../oclif/command/GroupBaseCommand');
 const MuteOneLineError = require('../../oclif/errors/MuteOneLineError');
@@ -134,16 +134,16 @@ GroupResetCommand.description = 'Reset group nodes';
 
 GroupResetCommand.flags = {
   ...GroupBaseCommand.flags,
-  hard: flagTypes.boolean({
+  hard: Flags.boolean({
     description: 'reset config as well as data',
     default: false,
   }),
-  force: flagTypes.boolean({
+  force: Flags.boolean({
     char: 'f',
     description: 'reset even running node',
     default: false,
   }),
-  'platform-only': flagTypes.boolean({
+  'platform-only': Flags.boolean({
     char: 'p',
     description: 'reset platform data only',
     default: false,

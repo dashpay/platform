@@ -1,4 +1,4 @@
-const { config } = require('@oclif/errors');
+const { config } = require('@oclif/core');
 
 const AbstractError = require('../../errors/AbstractError');
 
