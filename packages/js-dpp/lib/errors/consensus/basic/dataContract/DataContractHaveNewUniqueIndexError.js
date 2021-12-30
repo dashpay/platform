@@ -6,7 +6,7 @@ class DataContractHaveNewUniqueIndexError extends AbstractBasicError {
    * @param {string} indexName
    */
   constructor(documentType, indexName) {
-    super(`Adding unique indices during Data Contract update is not allowed. Document with type ${documentType} has new unique index named "${indexName}".`);
+    super(`Document with type ${documentType} has a new unique index named "${indexName}". Adding unique indices during Data Contract update is not allowed.`);
 
     this.documentType = documentType;
     this.indexName = indexName;

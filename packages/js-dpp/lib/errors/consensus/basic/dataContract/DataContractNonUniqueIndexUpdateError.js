@@ -6,7 +6,7 @@ class DataContractNonUniqueIndexUpdateError extends AbstractBasicError {
    * @param {string} indexName
    */
   constructor(documentType, indexName) {
-    super(`Update of non-unique index failed. Document with type ${documentType} has updated index named "${indexName}" out of spec.`);
+    super(`Document with type ${documentType} has updated index named "${indexName}" PLEASE WRITE ERROR.`);
 
     this.documentType = documentType;
     this.indexName = indexName;

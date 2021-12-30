@@ -1,7 +1,7 @@
 const lodashGet = require('lodash.get');
 const DataContractHaveNewIndexWithOldPropertiesError = require('../../../../../errors/consensus/basic/dataContract/DataContractHaveNewIndexWithOldPropertiesError');
 const DataContractHaveNewUniqueIndexError = require('../../../../../errors/consensus/basic/dataContract/DataContractHaveNewUniqueIndexError');
-const DataContractIndicesChangedError = require('../../../../../errors/consensus/basic/dataContract/DataContractIndicesChangedError');
+const DataContractIndicesChangedError = require('../../../../../errors/consensus/basic/dataContract/DataContractUniqueIndicesChangedError');
 const DataContractNonUniqueIndexUpdateError = require('../../../../../errors/consensus/basic/dataContract/DataContractNonUniqueIndexUpdateError');
 
 const serializer = require('../../../../../util/serializer');
@@ -11,97 +11,75 @@ const ValidationResult = require('../../../../../validation/ValidationResult');
 /**
  * Get one of old unique indices that have been changed
  *
+ * @param {Object<string, Object>} nameIndexMap
  * @param {string} documentType
- * @param {object} oldSchema
- * @param {object[]} newDocuments
+ * @param {Object} oldSchema
  *
  * @returns {object|undefined}
  */
-function getChangedOldUniqueIndex(documentType, oldSchema, newDocuments) {
-  const path = `${documentType}.indices`;
-
-  const newSchemaIndices = lodashGet(newDocuments, path);
-
-  // Building name - index map for easier search
-  const nameIndexMap = (newSchemaIndices || []).reduce((map, indexDefinition) => ({
-    ...map,
-    [indexDefinition.name]: indexDefinition,
-  }), {});
-
+function getChangedOldUniqueIndex(nameIndexMap, documentType, oldSchema) {
   // Checking every unique old and it's respective new index
   // if they are have the same definition
-  const changedIndex = (oldSchema.indices || []).find(
+  return (oldSchema.indices || []).find(
     (indexDefinition) => (
       !serializer.encode(indexDefinition).equals(
         serializer.encode(nameIndexMap[indexDefinition.name]),
       ) && indexDefinition.unique === true
     ),
   );
-
-  return changedIndex;
 }
 
 /**
  * Get one of the old non-unique indices that have been wrongly changed
  *
+ * @param {Object<string, Object>} nameIndexMap
  * @param {string} documentType
- * @param {object} oldSchema
- * @param {object[]} newDocuments
+ * @param {object} existingSchema
  *
  * @returns {object}
  */
-function getWronglyUpdatedNonUniqueIndex(documentType, oldSchema, newDocuments) {
-  const path = `${documentType}.indices`;
-
-  const newSchemaIndices = lodashGet(newDocuments, path);
-
-  const oldPropertyNames = Object.keys(oldSchema.properties);
-
-  // Building name - index map for easier search
-  const nameIndexMap = (newSchemaIndices || []).reduce((map, indexDefinition) => ({
-    ...map,
-    [indexDefinition.name]: indexDefinition,
-  }), {});
+function getWronglyUpdatedNonUniqueIndex(nameIndexMap, documentType, existingSchema) {
+  const oldPropertyNames = Object.keys(existingSchema.properties);
 
   // Checking every old non-unique index and it's respective new index
   // if they are have changes per spec
-  const changedIndex = (oldSchema.indices || []).find(
-    (indexDefinition) => {
-      if (indexDefinition.unique === true) {
-        return false;
-      }
-
-      const newIndexDefinition = nameIndexMap[indexDefinition.name];
-
-      // creating new index definition snapshot
-      // with the same amount of properties as old one
-      // if they are the same and in the same order
-      // later check will return nothing
-      const newIndexSnapshot = {
-        name: indexDefinition.name,
-        properties: newIndexDefinition.properties.slice(
-          0, indexDefinition.properties.length,
-        ),
-      };
-
-      if (!serializer.encode(indexDefinition).equals(
-        serializer.encode(newIndexSnapshot),
-      )) {
-        return true;
-      }
-
-      // check that rest of the properties are newly defined ones
-      const notNewProperty = newIndexDefinition.properties.slice(
-        indexDefinition.properties.length,
-      ).find((item) => oldPropertyNames.includes(Object.keys(item)[0]));
-
-      if (notNewProperty !== undefined) {
-        return true;
-      }
-
+  const changedIndex = (existingSchema.indices || []).find((indexDefinition) => {
+    if (indexDefinition.unique === true) {
       return false;
-    },
-  );
+    }
+
+    const newIndexDefinition = nameIndexMap[indexDefinition.name];
+
+    // creating new index definition snapshot
+    // with the same amount of properties as old one
+    // if they are the same and in the same order
+    // later check will return nothing
+    const newIndexSnapshot = {
+      name: indexDefinition.name,
+      properties: newIndexDefinition.properties.slice(
+        0, indexDefinition.properties.length,
+      ),
+    };
+
+    if (!serializer.encode(indexDefinition).equals(
+      serializer.encode(newIndexSnapshot),
+    )) {
+      return true;
+    }
+
+    // check that rest of the properties are newly defined ones
+    const notNewProperty = newIndexDefinition.properties.slice(
+      indexDefinition.properties.length,
+    ).find((propertyWithOrder) => {
+      const propertyName = Object.keys(propertyWithOrder)[0];
+
+      return Boolean(
+        getPropertyDefinitionByPath(documentSchema, propertyName),
+      );
+    });
+
+    return notNewProperty !== undefined;
+  });
 
   return changedIndex;
 }
@@ -127,28 +105,26 @@ function getNewUniqueIndex(documentType, oldSchema, newDocuments) {
     (indexDefinition) => !oldIndexNames.includes(indexDefinition.name),
   );
 
-  const indexUnique = (newIndices || []).find((indexDefinition) => indexDefinition.unique === true);
-
-  return indexUnique;
+  return (newIndices || []).find((indexDefinition) => indexDefinition.unique === true);
 }
 
 /**
  * Get one of the new indices that have old properties in them in the wrong order
  *
  * @param {string} documentType
- * @param {object} oldSchema
- * @param {object[]} newDocuments
+ * @param {object} existingSchema
+ * @param {object[]} newDocumentDefinitions
  *
  * @returns {object}
  */
-function getWronglyConstructedNewIndex(documentType, oldSchema, newDocuments) {
-  const newSchemaIndices = lodashGet(newDocuments, `${documentType}.indices`);
+function getWronglyConstructedNewIndex(documentType, existingSchema, newDocumentDefinitions) {
+  const newSchemaIndices = lodashGet(newDocumentDefinitions, `${documentType}.indices`);
 
-  const oldIndexNames = (oldSchema.indices || []).map(
+  const existingIndexNames = (existingSchema.indices || []).map(
     (indexDefinition) => indexDefinition.name,
   );
 
-  const oldIndexedProperties = new Set((oldSchema.indices || []).reduce(
+  const existingIndexedProperties = new Set((existingSchema.indices || []).reduce(
     (properties, indexDefinition) => [
       ...properties,
       ...indexDefinition.properties.map((definition) => Object.keys(definition)[0]),
@@ -157,7 +133,7 @@ function getWronglyConstructedNewIndex(documentType, oldSchema, newDocuments) {
 
   // Build an index of all possible allowed combinations
   // of old indices to check later
-  const oldIndexSnapshots = (oldSchema.indices || []).reduce(
+  const existingIndexSnapshots = (existingSchema.indices || []).reduce(
     (snapshots, indexDefinition) => [
       ...snapshots,
       ...indexDefinition.properties.map((_, index) => (
@@ -168,16 +144,16 @@ function getWronglyConstructedNewIndex(documentType, oldSchema, newDocuments) {
 
   // Gather only newly defined indices
   const newIndices = (newSchemaIndices || []).filter(
-    (indexDefinition) => !oldIndexNames.includes(indexDefinition.name),
+    (indexDefinition) => !existingIndexNames.includes(indexDefinition.name),
   );
 
-  const wronglyContstructedIndex = (newIndices || []).find((indexDefinition) => {
-    const oldProperties = indexDefinition.properties.filter(
-      (prop) => oldIndexedProperties.has(Object.keys(prop)[0]),
+  return (newIndices || []).find((indexDefinition) => {
+    const existingProperties = indexDefinition.properties.filter(
+      (prop) => existingIndexedProperties.has(Object.keys(prop)[0]),
     );
 
     // if no old properties being used - skip
-    if (oldProperties.length === 0) {
+    if (existingProperties.length === 0) {
       return false;
     }
 
@@ -187,36 +163,43 @@ function getWronglyConstructedNewIndex(documentType, oldSchema, newDocuments) {
     // sine they should be in the beginning of the
     // index we can check it with previously built snapshot combinations
     const partialNewIndexSnapshot = serializer.encode(
-      indexDefinition.properties.slice(0, oldProperties.length),
+      indexDefinition.properties.slice(0, existingProperties.length),
     ).toString('hex');
 
-    return !oldIndexSnapshots.includes(partialNewIndexSnapshot);
+    return !existingIndexSnapshots.includes(partialNewIndexSnapshot);
   });
-
-  return wronglyContstructedIndex;
 }
 
 /**
  * Validate indices have not been changed
  *
- * @param {Object} oldDocuments
- * @param {Object} newDocuments
+ * @param {Object} existingDocumentDefinitions
+ * @param {Object} newDocumentDefinitions
  *
  * @returns {ValidationResult}
  */
-function validateIndicesAreBackwardCompatible(oldDocuments, newDocuments) {
+function validateIndicesAreBackwardCompatible(existingDocumentDefinitions, newDocumentDefinitions) {
   const result = new ValidationResult();
 
-  Object.entries(oldDocuments)
-    .find(([documentType, oldSchema]) => {
-      const changedOldIndex = getChangedOldUniqueIndex(
-        documentType, oldSchema, newDocuments,
+  Object.entries(existingDocumentDefinitions)
+    .find(([documentType, existingSchema]) => {
+      // Building name - index map for easier search
+      const nameIndexMap = (newDocumentDefinitions[documentType].indices || [])
+        .reduce((map, indexDefinition) => ({
+          ...map,
+          [indexDefinition.name]: indexDefinition,
+        }), {});
+
+      const changedUniqueExistingIndex = getChangedOldUniqueIndex(
+        nameIndexMap,
+        documentType,
+        existingSchema,
       );
 
-      if (changedOldIndex !== undefined) {
+      if (changedUniqueExistingIndex !== undefined) {
         result.addError(
-          new DataContractIndicesChangedError(
-            documentType, changedOldIndex.name,
+          new DataContractUniqueIndicesChangedError(
+            documentType, changedUniqueExistingIndex.name,
           ),
         );
 
@@ -224,12 +207,14 @@ function validateIndicesAreBackwardCompatible(oldDocuments, newDocuments) {
       }
 
       const wronglyUpdatedIndex = getWronglyUpdatedNonUniqueIndex(
-        documentType, oldSchema, newDocuments,
+        nameIndexMap,
+        documentType,
+        existingSchema,
       );
 
       if (wronglyUpdatedIndex !== undefined) {
         result.addError(
-          new DataContractNonUniqueIndexUpdateError(
+          new DataContractInvalidIndexDefinitionUpdateError(
             documentType, wronglyUpdatedIndex.name,
           ),
         );
@@ -238,7 +223,7 @@ function validateIndicesAreBackwardCompatible(oldDocuments, newDocuments) {
       }
 
       const newUniqueIndex = getNewUniqueIndex(
-        documentType, oldSchema, newDocuments,
+        documentType, existingSchema, newDocumentDefinitions,
       );
 
       if (newUniqueIndex !== undefined) {
@@ -252,12 +237,12 @@ function validateIndicesAreBackwardCompatible(oldDocuments, newDocuments) {
       }
 
       const wronglyConstructedNewIndex = getWronglyConstructedNewIndex(
-        documentType, oldSchema, newDocuments,
+        documentType, existingSchema, newDocumentDefinitions,
       );
 
       if (wronglyConstructedNewIndex !== undefined) {
         result.addError(
-          new DataContractHaveNewIndexWithOldPropertiesError(
+          new DataContractInvalidIndexDefinitionUpdateError(
             documentType, wronglyConstructedNewIndex.name,
           ),
         );

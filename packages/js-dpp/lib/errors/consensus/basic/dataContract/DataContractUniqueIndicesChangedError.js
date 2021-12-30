@@ -1,12 +1,12 @@
 const AbstractBasicError = require('../AbstractBasicError');
 
-class DataContractIndicesChangedError extends AbstractBasicError {
+class DataContractUniqueIndicesChangedError extends AbstractBasicError {
   /**
    * @param {string} documentType
    * @param {string} indexName
    */
   constructor(documentType, indexName) {
-    super(`Change of indices during Data Contract update is not allowed. Document with type ${documentType} has updated index named "${indexName}".`);
+    super(`Document with type ${documentType} has updated unique index named "${indexName}". Change of unique indices is not allowed.`);
 
     this.documentType = documentType;
     this.indexName = indexName;
@@ -34,4 +34,4 @@ class DataContractIndicesChangedError extends AbstractBasicError {
   }
 }
 
-module.exports = DataContractIndicesChangedError;
+module.exports = DataContractUniqueIndicesChangedError;
