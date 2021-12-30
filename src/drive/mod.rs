@@ -431,6 +431,32 @@ impl Drive {
         Ok(())
     }
 
+    pub fn update_document(
+        &mut self,
+        document_cbor: &[u8],
+        contract_indices_cbor: &[u8],
+    ) -> Result<(), Error> {
+        // first we need to deserialize the document and contract indices
+        let document: HashMap<String, Vec<u8>> = minicbor::decode(document_cbor.as_ref())
+            .map_err(|_| Error::CorruptedData(String::from("unable to decode contract")))?;
+        let document_id: &[u8] =
+            document
+                .get("documentID")
+                .ok_or(Error::CorruptedData(String::from(
+                    "unable to get document id",
+                )))?;
+        let contract_id: &[u8] =
+            document
+                .get("contractID")
+                .ok_or(Error::CorruptedData(String::from(
+                    "unable to get contract id",
+                )))?;
+
+        // for now updating a document will delete the document, then insert a new document
+        self.delete_document(contract_id, document_id, contract_indices_cbor)?;
+        self.add_document(document_cbor, contract_indices_cbor)
+    }
+
     pub fn delete_document(
         &mut self,
         contract_id: &[u8],
