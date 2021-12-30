@@ -83,7 +83,7 @@ const validateProtocolVersionFactory = require('../version/validateProtocolVersi
 const validateDataContractUpdateTransitionBasicFactory = require('../dataContract/stateTransition/DataContractUpdateTransition/validation/basic/validateDataContractUpdateTransitionBasicFactory');
 const validateDataContractUpdateTransitionStateFactory = require('../dataContract/stateTransition/DataContractUpdateTransition/validation/state/validateDataContractUpdateTransitionStateFactory');
 const validateIndicesAreBackwardCompatible = require('../dataContract/stateTransition/DataContractUpdateTransition/validation/basic/validateIndicesAreBackwardCompatible');
-const getPropertyDefinitionByPath = require("../dataContract/getPropertyDefinitionByPath");
+const getPropertyDefinitionByPath = require('../dataContract/getPropertyDefinitionByPath');
 
 class StateTransitionFacade {
   /**

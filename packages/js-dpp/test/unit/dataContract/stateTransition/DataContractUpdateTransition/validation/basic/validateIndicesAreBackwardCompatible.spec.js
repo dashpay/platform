@@ -3,7 +3,7 @@ const DataContractHaveNewIndexWithOldPropertiesError = require('../../../../../.
 const DataContractHaveNewUniqueIndexError = require('../../../../../../../lib/errors/consensus/basic/dataContract/DataContractHaveNewUniqueIndexError');
 const DataContractIndicesChangedError = require('../../../../../../../lib/errors/consensus/basic/dataContract/DataContractUniqueIndicesChangedError');
 const getDataContractFixture = require('../../../../../../../lib/test/fixtures/getDataContractFixture');
-const DataContractInvalidIndexDefinitionUpdateError = require("../../../../../../../lib/errors/consensus/basic/dataContract/DataContractInvalidIndexDefinitionUpdateError");
+const DataContractInvalidIndexDefinitionUpdateError = require('../../../../../../../lib/errors/consensus/basic/dataContract/DataContractInvalidIndexDefinitionUpdateError');
 
 describe('validateIndicesAreBackwardCompatible', () => {
   let oldDocumentsSchema;

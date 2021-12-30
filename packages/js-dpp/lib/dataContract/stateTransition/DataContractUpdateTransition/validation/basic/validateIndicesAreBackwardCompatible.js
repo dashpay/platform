@@ -1,8 +1,8 @@
 const lodashGet = require('lodash.get');
 
 const DataContractHaveNewUniqueIndexError = require('../../../../../errors/consensus/basic/dataContract/DataContractHaveNewUniqueIndexError');
-const DataContractUniqueIndicesChangedError = require("../../../../../errors/consensus/basic/dataContract/DataContractUniqueIndicesChangedError");
-const DataContractInvalidIndexDefinitionUpdateError = require("../../../../../errors/consensus/basic/dataContract/DataContractInvalidIndexDefinitionUpdateError");
+const DataContractUniqueIndicesChangedError = require('../../../../../errors/consensus/basic/dataContract/DataContractUniqueIndicesChangedError');
+const DataContractInvalidIndexDefinitionUpdateError = require('../../../../../errors/consensus/basic/dataContract/DataContractInvalidIndexDefinitionUpdateError');
 
 const getPropertyDefinitionByPath = require('../../../../getPropertyDefinitionByPath');
 
