@@ -1,5 +1,4 @@
 const featureFlagTypes = require('@dashevo/feature-flags-contract/lib/featureFlagTypes');
-const masternodeRewardSharesTypes = require('@dashevo/masternode-reward-shares-contract/lib/rewardShareTypes');
 
 const Identifier = require('../identifier/Identifier');
 
@@ -150,20 +149,20 @@ function getDataTriggersFactory() {
     ),
     new DataTrigger(
       masternodeRewardSharesContractId,
-      masternodeRewardSharesTypes.MASTERNODE_REWARD_SHARES,
+      'masternodeRewardShares',
       AbstractDocumentTransition.ACTIONS.CREATE,
       createMasternodeRewardSharesDataTrigger,
       masternodeRewardSharesTopLevelIdentityId,
     ),
     new DataTrigger(
       masternodeRewardSharesContractId,
-      masternodeRewardSharesTypes.MASTERNODE_REWARD_SHARES,
+      'masternodeRewardShares',
       AbstractDocumentTransition.ACTIONS.REPLACE,
       rejectDataTrigger,
     ),
     new DataTrigger(
       masternodeRewardSharesContractId,
-      masternodeRewardSharesTypes.MASTERNODE_REWARD_SHARES,
+      'masternodeRewardShares',
       AbstractDocumentTransition.ACTIONS.DELETE,
       rejectDataTrigger,
     ),

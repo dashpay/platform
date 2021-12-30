@@ -21,6 +21,7 @@ async function createMasternodeRewardSharesDataTrigger(
 
   const result = new DataTriggerExecutionResult();
 
+  // payToId identity exists
   const identity = await context.getStateRepository().fetchIdentity(payToId);
   if (identity !== null) {
     const error = new DataTriggerConditionError(
@@ -45,6 +46,7 @@ async function createMasternodeRewardSharesDataTrigger(
     },
   );
 
+  // The percentage is not more than 10000
   const totalPercent = documents
     .reduce((prevValue, document) => prevValue + document.data.percentage, percentage);
 
@@ -61,6 +63,7 @@ async function createMasternodeRewardSharesDataTrigger(
     result.addError(error);
   }
 
+  // Do not allow to create document if ownerId is not in SML
   const smlStore = await context.getStateRepository().fetchSMLStore();
   const validMasternodesList = smlStore.getCurrentSML().getValidMasternodesList();
   const ownerIdInSml = !!validMasternodesList.find((smlEntry) => Buffer.compare(ownerId, Buffer.from(smlEntry.proRegTxHash, 'hex')) === 0);
