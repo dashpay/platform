@@ -281,7 +281,7 @@ impl Drive {
         }
     }
 
-    pub fn store_document(
+    pub fn add_document(
         &mut self,
         document_cbor: &[u8],
         contract_indices_cbor: &[u8],
@@ -443,6 +443,24 @@ impl Drive {
 mod tests {
     use crate::drive::Drive;
     use std::collections::HashMap;
+    use std::ptr::drop_in_place;
+
+    fn json_document_to_cbor(path: &str) -> Result<Vec<u8>, E> {
+        todo!()
+    }
+
+    #[test]
+    fn test_add_dashpay_data_contract() {
+        let tmp_dir = TempDir::new("db").unwrap();
+        let mut drive : Drive = Drive::open(tmp_dir)?;
+
+        // let's construct the grovedb structure for the dashpay data contract
+        dashpay_cbor = json_document_to_cbor("dashpay-contract.json")?;
+        drive.apply_contract(dashpay_cbor);
+
+        dashpay_profile_document_cbor = json_document_to_cbor("dashpay-profile-1.json")?;
+        drive.add_document(dashpay_profile_document_cbor, dashpay_cbor);
+    }
 
     #[test]
     fn store_document_1() {
