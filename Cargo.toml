@@ -5,20 +5,21 @@ version = "0.1.0"
 edition = "2021"
 license = "MIT"
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-
 [dependencies]
+serde = { version = "1.0.132", features = ["derive"] }
+ciborium = "0.2.0"
 
 [dependencies.grovedb]
 git = "https://github.com/dashevo/grovedb"
 branch = "master"
 
-[dependencies.minicbor]
-version = "0.12.0"
-features = ["std"]
+# [dependencies.minicbor]
+# version = "0.12.0"
+# features = ["std"]
 
-[dependencies.minicbor-derive]
-version = "0.8.0"
+# [dependencies.minicbor-derive]
+# version = "0.8.0"
 
-[dependencies.hex]
-version = "0.4.3"
+[dev-dependencies]
+serde_json = "1.0.73"
+tempdir = "0.3.7"
