@@ -1,3 +1,5 @@
+const cbor = require('cbor');
+
 const AbstractResponse = require('../response/AbstractResponse');
 
 class GetIdentitiesByPublicKeyHashesResponse extends AbstractResponse {
