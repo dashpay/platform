@@ -1,19 +1,22 @@
 use grovedb::{Element, Error, GroveDb};
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{HashMap};
 use std::path::Path;
+use minicbor_derive::{Encode, Decode};
 
 pub struct Drive {
     grove: GroveDb,
 }
 
+#[derive(Clone, Encode, Decode)]
 pub struct IndexProperty {
-    name: String,
-    ascending: bool,
+    #[n(0)] name: String,
+    #[n(1)] ascending: bool,
 }
 
+#[derive(Encode, Decode)]
 pub struct Index {
-    indices: Vec<IndexProperty>,
-    unique: bool,
+    #[n(0)] indices: Vec<IndexProperty>,
+    #[n(1)] unique: bool,
 }
 
 pub enum RootTree {
@@ -65,15 +68,14 @@ fn top_level_indices(indices: Vec<Index>) -> Vec<IndexProperty> {
     let mut top_level_indices: Vec<IndexProperty> = vec![];
     for index in indices {
         if index.indices.len() == 1 {
-            let owned_index_property = index.indices.first().unwrap();
-            let top_level = *owned_index_property.clone();
+            let top_level = index.indices[0].clone();
             top_level_indices.push(top_level);
         }
     }
     top_level_indices
 }
 
-fn contract_indices(contract: HashMap<String, Vec<u8>>) -> HashMap<String, Vec<Index>> {
+fn contract_indices(contract: &HashMap<String, Vec<u8>>) -> HashMap<String, Vec<Index>> {
     HashMap::new()
 }
 
@@ -118,11 +120,16 @@ impl Drive {
     fn insert_contract(
         &mut self,
         contract_bytes: Element,
-        contract: HashMap<String, Vec<u8>>,
+        contract: &HashMap<String, Vec<u8>>,
         contract_id: &[u8],
     ) -> Result<u64, Error> {
         let contract_root_path = contract_root_path(contract_id);
-        let contract_id: &[u8] = contract.get("contractID").ok_or(Error::CorruptedData(String::from("unable to get contract id")))?;
+        let contract_id: &[u8] =
+            contract
+                .get("contractID")
+                .ok_or(Error::CorruptedData(String::from(
+                    "unable to get contract id",
+                )))?;
 
         self.grove.insert(
             &[RootTree::ContractDocuments.into()],
@@ -148,10 +155,10 @@ impl Drive {
         // right now we are referring them by name
         // toDo: change this to be a reference by index
         let contract_documents_path = contract_documents_path(contract_id);
-        for (type_key, indices) in contract_indices(contract) {
+        for (type_key, indices) in contract_indices(&contract) {
             self.grove.insert(
                 &contract_documents_path,
-                Vec::from(type_key),
+                type_key.as_bytes().to_vec(),
                 Element::empty_tree(),
             )?;
 
@@ -176,14 +183,17 @@ impl Drive {
     fn update_contract(
         &mut self,
         contract_bytes: Element,
-        contract: HashMap<String, Vec<u8>>,
+        contract: &HashMap<String, Vec<u8>>,
         contract_id: &[u8],
     ) -> Result<u64, Error> {
         let contract_root_path = contract_root_path(contract_id);
         // Will need a proper error enum
-        let contract_id: &[u8] = contract
-            .get("contractID")
-            .ok_or(Error::CorruptedData(String::from("unable to get contract id")))?;
+        let contract_id: &[u8] =
+            contract
+                .get("contractID")
+                .ok_or(Error::CorruptedData(String::from(
+                    "unable to get contract id",
+                )))?;
 
         self.grove.insert(
             &[RootTree::ContractDocuments.into()],
@@ -209,10 +219,10 @@ impl Drive {
         // right now we are referring them by name
         // toDo: change this to be a reference by index
         let contract_documents_path = contract_documents_path(contract_id);
-        for (type_key, indices) in contract_indices(contract) {
+        for (type_key, indices) in contract_indices(&contract) {
             self.grove.insert(
                 &contract_documents_path,
-                Vec::from(type_key),
+                type_key.as_bytes().to_vec(),
                 Element::empty_tree(),
             )?;
 
@@ -238,10 +248,15 @@ impl Drive {
         // first we need to deserialize the contract
         let contract: HashMap<String, Vec<u8>> = minicbor::decode(contract_cbor.as_ref())
             .map_err(|_| Error::CorruptedData(String::from("unable to decode contract")))?;
-        let contract_id: &[u8] = contract.get("contractID").ok_or(Error::CorruptedData(String::from("unable to get contract id")))?;
+        let contract_id: &[u8] =
+            contract
+                .get("contractID")
+                .ok_or(Error::CorruptedData(String::from(
+                    "unable to get contract id",
+                )))?;
 
         let contract_bytes = Vec::from(contract_cbor);
-        let contract_element = Element::Item(contract_bytes);
+        let contract_element = Element::Item(contract_bytes.clone());
 
         // overlying structure
         let mut already_exists = false;
@@ -269,7 +284,7 @@ impl Drive {
         match already_exists {
             true => {
                 match different_contract_data {
-                    true => self.update_contract(contract_element, contract, contract_id),
+                    true => self.update_contract(contract_element, &contract, contract_id),
                     false => {
                         // there is nothing to do, nothing was changed
                         // accept it, but return cost 0
@@ -277,7 +292,7 @@ impl Drive {
                     }
                 }
             }
-            false => self.insert_contract(contract_element, contract, contract_id),
+            false => self.insert_contract(contract_element, &contract, contract_id),
         }
     }
 
@@ -287,11 +302,20 @@ impl Drive {
         contract_indices_cbor: &[u8],
     ) -> Result<(), Error> {
         // first we need to deserialize the document and contract indices
-        let document: HashMap<String, Vec<u8>> =
-            minicbor::decode(document_cbor.as_ref())
-                .map_err(|_| Error::CorruptedData(String::from("unable to decode contract")))?;
-        let document_id: &[u8] = document.get("documentID").ok_or(Error::CorruptedData(String::from("unable to get document id")))?;
-        let contract_id: &[u8] = document.get("contractID").ok_or(Error::CorruptedData(String::from("unable to get contract id")))?;
+        let document: HashMap<String, Vec<u8>> = minicbor::decode(document_cbor.as_ref())
+            .map_err(|_| Error::CorruptedData(String::from("unable to decode contract")))?;
+        let document_id: &[u8] =
+            document
+                .get("documentID")
+                .ok_or(Error::CorruptedData(String::from(
+                    "unable to get document id",
+                )))?;
+        let contract_id: &[u8] =
+            document
+                .get("contractID")
+                .ok_or(Error::CorruptedData(String::from(
+                    "unable to get contract id",
+                )))?;
 
         let contract_indices: Vec<Index> = minicbor::decode(contract_indices_cbor.as_ref())
             .map_err(|_| Error::CorruptedData(String::from("unable to decode contract indices")))?;
@@ -315,33 +339,67 @@ impl Drive {
             // for each index the top index component will already have been added
             // when the contract itself was created
             let mut index_path = contract_path.clone();
-            let top_index_property = index.indices.get(0)?;
+            let top_index_property =
+                index
+                    .indices
+                    .get(0)
+                    .ok_or(Error::CorruptedData(String::from(
+                        "invalid contract indices",
+                    )))?;
             index_path.push(top_index_property.name.as_bytes());
             // with the example of the dashpay contract's first index
             // the index path is now something like Contracts/ContractID/Documents(1)/$ownerId
 
-            let document_top_field: &[u8] = document.get(&top_index_property.name).ok_or(Error::CorruptedData(String::from("unable to get document top index field")))?;
+            let document_top_field: &[u8] =
+                document
+                    .get(&top_index_property.name)
+                    .ok_or(Error::CorruptedData(String::from(
+                        "unable to get document top index field",
+                    )))?;
 
             // here we are inserting an empty tree that will have a subtree of all other index properties
-            self.grove.insert_if_not_exists(&index_path, Vec::from(document_top_field), Element::empty_tree())?;
+            self.grove.insert_if_not_exists(
+                &index_path,
+                Vec::from(document_top_field),
+                Element::empty_tree(),
+            )?;
 
             // we push the actual value of the index path
             index_path.push(document_top_field);
             // the index path is now something like Contracts/ContractID/Documents(1)/$ownerId/<ownerId>
 
             for i in 1..index.indices.len() {
-                let index_property = index.indices.get(i)?;
+                let index_property =
+                    index
+                        .indices
+                        .get(i)
+                        .ok_or(Error::CorruptedData(String::from(
+                            "invalid contract indices",
+                        )))?;
                 // here we are inserting an empty tree that will have a subtree of all other index properties
-                self.grove.insert_if_not_exists(&index_path, Vec::from(&index_property.name), Element::empty_tree())?;
+                self.grove.insert_if_not_exists(
+                    &index_path,
+                    index_property.name.as_bytes().to_vec(),
+                    Element::empty_tree(),
+                )?;
 
                 index_path.push(index_property.name.as_bytes());
                 // Iteration 1. the index path is now something like Contracts/ContractID/Documents(1)/$ownerId/<ownerId>/toUserId
                 // Iteration 2. the index path is now something like Contracts/ContractID/Documents(1)/$ownerId/<ownerId>/toUserId/<ToUserId>/accountReference
 
-                let document_top_field: &[u8] = document.get(&index_property.name).ok_or(Error::CorruptedData(String::from("unable to get document field")))?;
+                let document_top_field: &[u8] =
+                    document
+                        .get(&index_property.name)
+                        .ok_or(Error::CorruptedData(String::from(
+                            "unable to get document field",
+                        )))?;
 
                 // here we are inserting an empty tree that will have a subtree of all other index properties
-                self.grove.insert_if_not_exists(&index_path, Vec::from(document_top_field), Element::empty_tree())?;
+                self.grove.insert_if_not_exists(
+                    &index_path,
+                    Vec::from(document_top_field),
+                    Element::empty_tree(),
+                )?;
 
                 // we push the actual value of the index path
                 index_path.push(document_top_field);
@@ -357,14 +415,20 @@ impl Drive {
             // non unique indices should have a tree at key "0" that has all elements based off of primary key
             if !index.unique {
                 // here we are inserting an empty tree that will have a subtree of all other index properties
-                self.grove.insert_if_not_exists(&index_path, Vec::from(b"0"), Element::empty_tree())?;
+                self.grove.insert_if_not_exists(
+                    &index_path,
+                    b"0".to_vec(),
+                    Element::empty_tree(),
+                )?;
                 index_path.push(b"0");
             }
 
             // here we should return an error if the element already exists
-            self.grove.insert(&index_path, Vec::from(b"0"), document_reference)?;
+            self.grove
+                .insert(&index_path, b"0".to_vec(), document_reference)?;
         }
-        Ok(cost)
+
+        Ok(())
     }
 
     pub fn delete_document(
@@ -381,17 +445,36 @@ impl Drive {
         let contract_documents_primary_key_path = contract_documents_primary_key_path(contract_id);
 
         // next we need to get the document from storage
-        let document_element : Element::Item = self.grove.get(&*contract_documents_primary_key_path, document_id)?;
-        let document: HashMap<String, Vec<u8>> =
-            minicbor::decode(document_element)
-                .map_err(|_| Error::CorruptedData(String::from("unable to decode document")))?;
+        let document_element: Element = self
+            .grove
+            .get(&contract_documents_primary_key_path, document_id)?;
+
+        let mut document_bytes: Option<Vec<u8>> = None;
+        match document_element {
+            Element::Item(data) => {
+                document_bytes = Some(data);
+            }
+            _ => {} // Can the element ever not be an item
+        }
+
+        // possibility that document might not be in storage
+        // TODO: how should this be handled
+        if document_bytes.is_none() {
+            todo!()
+        }
+
+        let document: HashMap<String, Vec<u8>> = minicbor::decode(&document_bytes.expect("Can't be none handled above"))
+            .map_err(|_| Error::CorruptedData(String::from("unable to decode document")))?;
 
         // next we need to get the contract indices to be able to delete them
         let contract_indices: Vec<Index> = minicbor::decode(contract_indices_cbor.as_ref())
             .map_err(|_| Error::CorruptedData(String::from("unable to decode contract indices")))?;
 
         // third we need to delete the document for it's primary key
-        self.grove.delete(&contract_documents_primary_key_path, Vec::from(document_id))?;
+        self.grove
+            .delete(&contract_documents_primary_key_path, Vec::from(document_id))?;
+
+        let contract_path = contract_documents_path(contract_id);
 
         // fourth we need delete all references to the document
         // to do this we need to go through each index
@@ -400,25 +483,47 @@ impl Drive {
             // for each index the top index component will already have been added
             // when the contract itself was created
             let mut index_path = contract_path.clone();
-            let top_index_property = index.indices.get(0)?;
+            let top_index_property =
+                index
+                    .indices
+                    .get(0)
+                    .ok_or(Error::CorruptedData(String::from(
+                        "invalid contract indices",
+                    )))?;
             index_path.push(top_index_property.name.as_bytes());
             // with the example of the dashpay contract's first index
             // the index path is now something like Contracts/ContractID/Documents(1)/$ownerId
 
-            let document_top_field: &[u8] = document.get(&top_index_property.name).ok_or(Error::CorruptedData(String::from("unable to get document top index field")))?;
+            let document_top_field: &[u8] =
+                document
+                    .get(&top_index_property.name)
+                    .ok_or(Error::CorruptedData(String::from(
+                        "unable to get document top index field",
+                    )))?;
 
             // we push the actual value of the index path
             index_path.push(document_top_field);
             // the index path is now something like Contracts/ContractID/Documents(1)/$ownerId/<ownerId>
 
             for i in 1..index.indices.len() {
-                let index_property = index.indices.get(i)?;
+                let index_property =
+                    index
+                        .indices
+                        .get(i)
+                        .ok_or(Error::CorruptedData(String::from(
+                            "invalid contract indices",
+                        )))?;
 
                 index_path.push(index_property.name.as_bytes());
                 // Iteration 1. the index path is now something like Contracts/ContractID/Documents(1)/$ownerId/<ownerId>/toUserId
                 // Iteration 2. the index path is now something like Contracts/ContractID/Documents(1)/$ownerId/<ownerId>/toUserId/<ToUserId>/accountReference
 
-                let document_top_field: &[u8] = document.get(&index_property.name).ok_or(Error::CorruptedData(String::from("unable to get document field")))?;
+                let document_top_field: &[u8] =
+                    document
+                        .get(&index_property.name)
+                        .ok_or(Error::CorruptedData(String::from(
+                            "unable to get document field",
+                        )))?;
 
                 // we push the actual value of the index path
                 index_path.push(document_top_field);
@@ -435,7 +540,8 @@ impl Drive {
             // here we should return an error if the element already exists
             self.grove.delete(&index_path, Vec::from(document_id))?;
         }
-        Ok(cost)
+
+        Ok(())
     }
 }
 
