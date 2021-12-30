@@ -8,14 +8,14 @@ Such uses case would be to generate a bunch of addresses that you could manually
 You also have ways to import a known address, transaction, account or any type of data that you could wish to have via the network,
 thus allowing you to use the wallet-library without connectivity.  
 
-See here [sample code](https://github.com/dashevo/wallet-lib/blob/master/examples/offline-wallet.js) 
+See here [sample code](https://github.com/dashevo/platform/blob/master/packages/wallet-lib/examples/offline-wallet.js) 
 
 ## Offline message signing : 
 
-See here [sample code](https://github.com/dashevo/wallet-lib/blob/master/examples/offline-wallet-signing-message.js) 
+See here [sample code](https://github.com/dashevo/platform/blob/master/packages/wallet-lib/examples/offline-wallet-signing-message.js) 
 
 ## Client usage
 
-- From Mnemonic: [sample code](https://github.com/dashevo/wallet-lib/blob/master/examples/client-usage.js) 
-- From PrivateKey: [sample code](https://github.com/dashevo/wallet-lib/blob/master/examples/client-usage-single-privateKey.js) 
+- From Mnemonic: [sample code](https://github.com/dashevo/platform/blob/master/packages/wallet-lib/examples/client-usage.js) 
+- From PrivateKey: [sample code](https://github.com/dashevo/platform/blob/master/packages/wallet-lib/examples/client-usage-single-privateKey.js) 
 
