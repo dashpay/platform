@@ -129,14 +129,12 @@ SetupCommand.args = [{
 }];
 
 SetupCommand.flags = {
-  'debug-logs': Flags.boolean({
-    char: 'd', description: 'enable debug logs', allowNo: true, default: null,
-  }),
+  'debug-logs': Flags.boolean({ char: 'd', description: 'enable debug logs', allowNo: true }),
   'external-ip': Flags.string({ char: 'i', description: 'external ip' }),
   'operator-bls-private-key': Flags.string({ char: 'k', description: 'operator bls private key' }),
   'funding-private-key': Flags.string({ char: 'p', description: `private key with more than ${MASTERNODE_DASH_AMOUNT} dash for funding collateral` }),
-  'node-count': Flags.integer({ description: 'number of nodes to setup', default: undefined }),
-  'miner-interval': Flags.string({ char: 'm', description: 'interval between blocks', default: undefined }),
+  'node-count': Flags.integer({ description: 'number of nodes to setup' }),
+  'miner-interval': Flags.string({ char: 'm', description: 'interval between blocks' }),
   verbose: Flags.boolean({ char: 'v', description: 'use verbose mode for output', default: false }),
 };
 
