@@ -1,5 +1,4 @@
 use grovedb::{Element, Error, GroveDb};
-// use minicbor_derive::{Decode, Encode};
 use ciborium::value::Value as CborValue;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -484,20 +483,34 @@ impl Drive {
         contract_indices_cbor: &[u8],
     ) -> Result<(), Error> {
         // first we need to deserialize the document and contract indices
-        let document: HashMap<String, Vec<u8>> = minicbor::decode(document_cbor.as_ref())
+        let document: HashMap<String, CborValue> = ciborium::de::from_reader(document_cbor)
             .map_err(|_| Error::CorruptedData(String::from("unable to decode contract")))?;
-        let document_id: &[u8] =
-            document
-                .get("documentID")
-                .ok_or(Error::CorruptedData(String::from(
-                    "unable to get document id",
-                )))?;
-        let contract_id: &[u8] =
-            document
-                .get("contractID")
-                .ok_or(Error::CorruptedData(String::from(
-                    "unable to get contract id",
-                )))?;
+        let document_id: &[u8] = document
+            .get("documentID")
+            .map(|id_cbor| {
+                if let CborValue::Bytes(b) = id_cbor {
+                    Some(b)
+                } else {
+                    None
+                }
+            })
+            .flatten()
+            .ok_or(Error::CorruptedData(String::from(
+                "unable to get document id",
+            )))?;
+        let contract_id: &[u8] = document
+            .get("contractID")
+            .map(|id_cbor| {
+                if let CborValue::Bytes(b) = id_cbor {
+                    Some(b)
+                } else {
+                    None
+                }
+            })
+            .flatten()
+            .ok_or(Error::CorruptedData(String::from(
+                "unable to get contract id",
+            )))?;
 
         // for now updating a document will delete the document, then insert a new document
         self.delete_document(contract_id, document_id, contract_indices_cbor)?;
