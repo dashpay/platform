@@ -1,6 +1,4 @@
 const { BlockHeader, Block, ChainLock } = require('@dashevo/dashcore-lib');
-const sinon = require('sinon');
-const { expect } = require('chai');
 const ZmqClient = require('../../../../../lib/externalApis/dashcore/ZmqClient');
 const dashCoreRpcClient = require('../../../../../lib/externalApis/dashcore/rpc');
 
@@ -17,13 +15,13 @@ describe('subscribeToNewBlockHeaders', () => {
   const blockHeaders = {};
   const chainLocks = {};
 
-  beforeEach(async () => {
+  beforeEach(async function () {
     mediator = new ProcessMediator();
-    sinon.stub(dashCoreRpcClient, 'getBlockHeader')
+    this.sinon.stub(dashCoreRpcClient, 'getBlockHeader')
       .callsFake(async (hash) => blockHeaders[hash].toBuffer().toString('hex'));
 
     zmqClient = new ZmqClient();
-    sinon.stub(zmqClient.subscriberSocket, 'connect')
+    this.sinon.stub(zmqClient.subscriberSocket, 'connect')
       .callsFake(() => {
         zmqClient.subscriberSocket.emit('connect');
       });
@@ -95,10 +93,6 @@ describe('subscribeToNewBlockHeaders', () => {
     chainLocks[chainLockOne.height] = chainLockOne;
     chainLocks[chainLockTwo.height] = chainLockTwo;
     chainLocks[chainLockThree.height] = chainLockThree;
-  });
-
-  afterEach(() => {
-    sinon.restore();
   });
 
   it('should add blocks and latest chain lock in cache and send them back when historical data is sent', async () => {

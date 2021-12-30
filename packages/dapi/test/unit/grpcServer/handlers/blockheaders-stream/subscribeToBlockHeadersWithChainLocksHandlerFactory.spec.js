@@ -1,10 +1,5 @@
 const { ChainLock } = require('@dashevo/dashcore-lib');
-const { expect, use } = require('chai');
-// eslint-disable-next-line no-underscore-dangle
-const _sinon = require('sinon');
-const sinonChai = require('sinon-chai');
-const dirtyChai = require('dirty-chai');
-const chaiAsPromised = require('chai-as-promised');
+
 const {
   server: {
     error: {
@@ -30,45 +25,30 @@ const subscribeToBlockHeadersWithChainLocksHandlerFactory = require(
   '../../../../../lib/grpcServer/handlers/blockheaders-stream/subscribeToBlockHeadersWithChainLocksHandlerFactory',
 );
 
-let sinon;
 let coreAPIMock;
 let zmqClientMock;
 
-use(sinonChai);
-use(chaiAsPromised);
-use(dirtyChai);
-
-describe('subscribeToTransactionsWithProofsHandlerFactory', () => {
-  afterEach(() => {
-    sinon.restore();
-  });
-
+describe('subscribeToBlockHeadersWithChainLocksHandlerFactory', () => {
   let call;
   let subscribeToBlockHeadersWithChainLocksHandler;
   let getHistoricalBlockHeadersIteratorMock;
   let subscribeToNewBlockHeadersMock;
 
-  beforeEach(() => {
-    if (!sinon) {
-      sinon = _sinon.createSandbox();
-    } else {
-      sinon.restore();
-    }
-
+  beforeEach(function () {
     coreAPIMock = {
-      getBlock: sinon.stub(),
-      getBestBlockHeight: sinon.stub(),
-      getBlockHash: sinon.stub(),
-      getBestChainLock: sinon.stub(),
+      getBlock: this.sinon.stub(),
+      getBestBlockHeight: this.sinon.stub(),
+      getBlockHash: this.sinon.stub(),
+      getBestChainLock: this.sinon.stub(),
     };
-    subscribeToNewBlockHeadersMock = sinon.stub();
+    subscribeToNewBlockHeadersMock = this.sinon.stub();
 
     async function* asyncGenerator() {
       yield [{ toBuffer: () => Buffer.from('fake', 'utf-8') }];
     }
 
     getHistoricalBlockHeadersIteratorMock = () => asyncGenerator();
-    zmqClientMock = { on: sinon.stub(), topics: { hashblock: 'fake' } };
+    zmqClientMock = { on: this.sinon.stub(), topics: { hashblock: 'fake' } };
 
     // eslint-disable-next-line operator-linebreak
     subscribeToBlockHeadersWithChainLocksHandler =
@@ -80,11 +60,11 @@ describe('subscribeToTransactionsWithProofsHandlerFactory', () => {
       );
   });
 
-  it('should subscribe to newBlockHeaders', async () => {
-    sinon.stub(AcknowledgingWritable.prototype, 'write');
+  it('should subscribe to newBlockHeaders', async function () {
+    this.sinon.stub(AcknowledgingWritable.prototype, 'write');
     const request = new BlockHeadersWithChainLocksRequest();
 
-    call = new GrpcCallMock(sinon, request);
+    call = new GrpcCallMock(this.sinon, request);
 
     call.request.setFromBlockHash('fakehash');
     call.request.setCount(0);
@@ -100,11 +80,11 @@ describe('subscribeToTransactionsWithProofsHandlerFactory', () => {
     expect(subscribeToNewBlockHeadersMock).to.have.been.called();
   });
 
-  it('should subscribe from block hash', async () => {
-    const writableStub = sinon.stub(AcknowledgingWritable.prototype, 'write');
+  it('should subscribe from block hash', async function () {
+    const writableStub = this.sinon.stub(AcknowledgingWritable.prototype, 'write');
     const request = new BlockHeadersWithChainLocksRequest();
 
-    call = new GrpcCallMock(sinon, request);
+    call = new GrpcCallMock(this.sinon, request);
 
     call.request.setFromBlockHash('someBlockHash');
     call.request.setCount(0);
@@ -164,11 +144,11 @@ describe('subscribeToTransactionsWithProofsHandlerFactory', () => {
     );
   });
 
-  it('should subscribe from block height', async () => {
-    sinon.stub(AcknowledgingWritable.prototype, 'write');
+  it('should subscribe from block height', async function () {
+    this.sinon.stub(AcknowledgingWritable.prototype, 'write');
     const request = new BlockHeadersWithChainLocksRequest();
 
-    call = new GrpcCallMock(sinon, request);
+    call = new GrpcCallMock(this.sinon, request);
 
     call.request.setFromBlockHeight(1);
     call.request.setCount(5);

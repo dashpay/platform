@@ -1,23 +1,15 @@
-const chai = require('chai');
-const dirtyChai = require('dirty-chai');
-const chaiAsPromised = require('chai-as-promised');
-const sinon = require('sinon');
 const { BlockHeader } = require('@dashevo/dashcore-lib');
 
 const getHistoricalBlockHeadersIteratorFactory = require('../../../lib/grpcServer/handlers/blockheaders-stream/getHistoricalBlockHeadersIteratorFactory');
 
-const { expect } = chai;
-chai.use(dirtyChai);
-chai.use(chaiAsPromised);
-
 describe('getHistoricalBlockHeadersIteratorFactory', () => {
   let coreRpcMock;
   let blockHeaderMock;
-  beforeEach(() => {
+  beforeEach(function () {
     coreRpcMock = {
-      getBlock: sinon.stub(),
-      getBlockHash: sinon.stub(),
-      getBlockHeaders: sinon.stub(),
+      getBlock: this.sinon.stub(),
+      getBlockHash: this.sinon.stub(),
+      getBlockHeaders: this.sinon.stub(),
     };
 
     blockHeaderMock = new BlockHeader({
@@ -29,10 +21,6 @@ describe('getHistoricalBlockHeadersIteratorFactory', () => {
       bits: 0,
       nonce: 1449878271,
     });
-  });
-
-  afterEach(() => {
-    sinon.restore();
   });
 
   it('should proceed straight to done if all ranges are empty', async () => {
