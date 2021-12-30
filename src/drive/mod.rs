@@ -126,7 +126,7 @@ impl Drive {
     ) -> Result<u64, Error> {
         let contract_root_path = contract_root_path(contract_id);
         let contract_id: &[u8] = contract
-            .get("contractID")
+            .get("$id")
             .map(|id_cbor| {
                 if let CborValue::Bytes(b) = id_cbor {
                     Some(b)
@@ -197,7 +197,7 @@ impl Drive {
         let contract_root_path = contract_root_path(contract_id);
         // Will need a proper error enum
         let contract_id: &[u8] = contract
-            .get("contractID")
+            .get("$id")
             .map(|id_cbor| {
                 if let CborValue::Bytes(b) = id_cbor {
                     Some(b)
@@ -264,7 +264,7 @@ impl Drive {
         let contract: HashMap<String, CborValue> = ciborium::de::from_reader(contract_cbor)
             .map_err(|_| Error::CorruptedData(String::from("unable to decode contract")))?;
         let contract_id: &[u8] = contract
-            .get("contractID")
+            .get("$id")
             .map(|id_cbor| {
                 if let CborValue::Bytes(b) = id_cbor {
                     Some(b)
@@ -336,7 +336,7 @@ impl Drive {
                 "unable to get document id",
             )))?;
         let contract_id: &[u8] = document
-            .get("contractID")
+            .get("$dataContractId")
             .map(|id_cbor| {
                 if let CborValue::Bytes(b) = id_cbor {
                     Some(b)
@@ -499,7 +499,7 @@ impl Drive {
                 "unable to get document id",
             )))?;
         let contract_id: &[u8] = document
-            .get("contractID")
+            .get("$dataContractId")
             .map(|id_cbor| {
                 if let CborValue::Bytes(b) = id_cbor {
                     Some(b)
@@ -666,18 +666,18 @@ mod tests {
         buffer
     }
 
-    // #[test]
-    // fn test_add_dashpay_data_contract() {
-    //     let tmp_dir = TempDir::new("db").unwrap();
-    //     let mut drive : Drive = Drive::open(tmp_dir).expect("expected to open Drive successfully");
+    #[test]
+    fn test_add_dashpay_data_contract() {
+        let tmp_dir = TempDir::new("db").unwrap();
+        let mut drive : Drive = Drive::open(tmp_dir).expect("expected to open Drive successfully");
 
-    //     // let's construct the grovedb structure for the dashpay data contract
-    //     let dashpay_cbor = json_document_to_cbor("dashpay-contract.json");
-    //     drive.apply_contract(&dashpay_cbor).expect("expected to apply contract successfully");
+        // let's construct the grovedb structure for the dashpay data contract
+        let dashpay_cbor = json_document_to_cbor("dashpay-contract.json");
+        drive.apply_contract(&dashpay_cbor).expect("expected to apply contract successfully");
 
-    //     // dashpay_profile_document_cbor = json_document_to_cbor("dashpay-profile-1.json")?;
-    //     // drive.add_document(dashpay_profile_document_cbor, dashpay_cbor);
-    // }
+        // dashpay_profile_document_cbor = json_document_to_cbor("dashpay-profile-1.json")?;
+        // drive.add_document(dashpay_profile_document_cbor, dashpay_cbor);
+    }
 
     #[test]
     fn store_document_1() {
