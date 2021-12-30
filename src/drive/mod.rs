@@ -388,6 +388,77 @@ impl Drive {
         }
         Ok(cost)
     }
+
+    pub fn delete_document(
+        &mut self,
+        contract_id: &[u8],
+        document_id: &[u8],
+        contract_indices_cbor: &[u8],
+    ) -> Result<(), Error> {
+        // first we need to construct the path for documents on the contract
+        // the path is
+        //  * Document and Contract root tree
+        //  * Contract ID recovered from document
+        //  * 0 to signify Documents and not Contract
+        let contract_documents_primary_key_path = contract_documents_primary_key_path(contract_id);
+
+        // next we need to get the document from storage
+        let document_element : Element::Item = self.grove.get(&*contract_documents_primary_key_path, document_id)?;
+        let document: HashMap<String, Vec<u8>> =
+            minicbor::decode(document_element)
+                .map_err(|_| Error::CorruptedData(String::from("unable to decode document")))?;
+
+        // next we need to get the contract indices to be able to delete them
+        let contract_indices: Vec<Index> = minicbor::decode(contract_indices_cbor.as_ref())
+            .map_err(|_| Error::CorruptedData(String::from("unable to decode contract indices")))?;
+
+        // third we need to delete the document for it's primary key
+        self.grove.delete(&contract_documents_primary_key_path, Vec::from(document_id))?;
+
+        // fourth we need delete all references to the document
+        // to do this we need to go through each index
+        for index in contract_indices {
+            // at this point the contract path is to the contract documents
+            // for each index the top index component will already have been added
+            // when the contract itself was created
+            let mut index_path = contract_path.clone();
+            let top_index_property = index.indices.get(0)?;
+            index_path.push(top_index_property.name.as_bytes());
+            // with the example of the dashpay contract's first index
+            // the index path is now something like Contracts/ContractID/Documents(1)/$ownerId
+
+            let document_top_field: &[u8] = document.get(&top_index_property.name).ok_or(Error::CorruptedData(String::from("unable to get document top index field")))?;
+
+            // we push the actual value of the index path
+            index_path.push(document_top_field);
+            // the index path is now something like Contracts/ContractID/Documents(1)/$ownerId/<ownerId>
+
+            for i in 1..index.indices.len() {
+                let index_property = index.indices.get(i)?;
+
+                index_path.push(index_property.name.as_bytes());
+                // Iteration 1. the index path is now something like Contracts/ContractID/Documents(1)/$ownerId/<ownerId>/toUserId
+                // Iteration 2. the index path is now something like Contracts/ContractID/Documents(1)/$ownerId/<ownerId>/toUserId/<ToUserId>/accountReference
+
+                let document_top_field: &[u8] = document.get(&index_property.name).ok_or(Error::CorruptedData(String::from("unable to get document field")))?;
+
+                // we push the actual value of the index path
+                index_path.push(document_top_field);
+                // Iteration 1. the index path is now something like Contracts/ContractID/Documents(1)/$ownerId/<ownerId>/toUserId/<ToUserId>/
+                // Iteration 2. the index path is now something like Contracts/ContractID/Documents(1)/$ownerId/<ownerId>/toUserId/<ToUserId>/accountReference/<accountReference>
+            }
+
+            // unique indexes will be stored under key "0"
+            // non unique indices should have a tree at key "0" that has all elements based off of primary key
+            if !index.unique {
+                index_path.push(b"0");
+            }
+
+            // here we should return an error if the element already exists
+            self.grove.delete(&index_path, Vec::from(document_id))?;
+        }
+        Ok(cost)
+    }
 }
 
 #[cfg(test)]
