@@ -1,5 +1,5 @@
 use grovedb::{Element, Error, GroveDb};
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::path::Path;
 
 pub struct Drive {
@@ -61,18 +61,13 @@ impl From<RootTree> for Vec<u8> {
 // //
 // }
 
-pub fn split_contract_indices<'a>(
-    contract_indicies: Vec<Vec<Vec<u8>>>,
-) -> HashMap<&'a [u8], &'a [u8]> {
-    HashMap::new()
-}
-
 fn top_level_indices(indices: Vec<Index>) -> Vec<IndexProperty> {
     let mut top_level_indices: Vec<IndexProperty> = vec![];
     for index in indices {
         if index.indices.len() == 1 {
-            let top_level = index.indices.first().unwrap().clone();
-            top_level_indices.push(*top_level);
+            let owned_index_property = index.indices.first().unwrap();
+            let top_level = *owned_index_property.clone();
+            top_level_indices.push(top_level);
         }
     }
     top_level_indices
@@ -88,6 +83,10 @@ fn contract_root_path(contract_id: &[u8]) -> Vec<&[u8]> {
 
 fn contract_documents_path(contract_id: &[u8]) -> Vec<&[u8]> {
     vec![RootTree::ContractDocuments.into(), contract_id, b"1"]
+}
+
+fn contract_documents_primary_key_path(contract_id: &[u8]) -> Vec<&[u8]> {
+    vec![RootTree::ContractDocuments.into(), contract_id, b"1", b"0"]
 }
 
 impl Drive {
@@ -294,7 +293,7 @@ impl Drive {
         let document_id: &[u8] = document.get("documentID").ok_or(Error::CorruptedData(String::from("unable to get document id")))?;
         let contract_id: &[u8] = document.get("contractID").ok_or(Error::CorruptedData(String::from("unable to get contract id")))?;
 
-        let contract_indices: Vec<Vec<Vec<u8>>> = minicbor::decode(contract_indices_cbor.as_ref())
+        let contract_indices: Vec<Index> = minicbor::decode(contract_indices_cbor.as_ref())
             .map_err(|_| Error::CorruptedData(String::from("unable to decode contract indices")))?;
 
         // second we need to construct the path for documents on the contract
@@ -305,31 +304,67 @@ impl Drive {
         let contract_path = contract_documents_path(contract_id);
 
         // third we need to store the document for it's primary key
-        let mut primary_key_path = contract_path.clone();
-        primary_key_path.push(document_id);
+        let mut primary_key_path = contract_documents_primary_key_path(contract_id);
         let document_element = Element::Item(Vec::from(document_cbor));
         self.grove
             .insert(&primary_key_path, Vec::from(document_id), document_element)?;
 
         // fourth we need to store a reference to the document for each index
-        for (grouped_contract_index_key, grouped) in split_contract_indices(contract_indices) {
-            // if there is a grouping on the contract index then we need to insert a tree
+        for index in contract_indices {
+            // at this point the contract path is to the contract documents
+            // for each index the top index component will already have been added
+            // when the contract itself was created
             let mut index_path = contract_path.clone();
-            index_path.push(grouped_contract_index_key);
-            let document_index = Element::empty_tree();
-            self.grove
-                .insert(&index_path, Vec::from(document_id), document_index)?;
+            let top_index_property = index.indices.get(0)?;
+            index_path.push(top_index_property.name.as_bytes());
+            // with the example of the dashpay contract's first index
+            // the index path is now something like Contracts/ContractID/Documents(1)/$ownerId
 
-            let mut index_path = contract_path.clone();
-            // index_path.push(contract_index);
-            index_path.push(grouped); // Grouped is contract_index??
-            let document_index =
+            let document_top_field: &[u8] = document.get(&top_index_property.name).ok_or(Error::CorruptedData(String::from("unable to get document top index field")))?;
+
+            // here we are inserting an empty tree that will have a subtree of all other index properties
+            self.grove.insert_if_not_exists(&index_path, Vec::from(document_top_field), Element::empty_tree())?;
+
+            // we push the actual value of the index path
+            index_path.push(document_top_field);
+            // the index path is now something like Contracts/ContractID/Documents(1)/$ownerId/<ownerId>
+
+            for i in 1..index.indices.len() {
+                let index_property = index.indices.get(i)?;
+                // here we are inserting an empty tree that will have a subtree of all other index properties
+                self.grove.insert_if_not_exists(&index_path, Vec::from(&index_property.name), Element::empty_tree())?;
+
+                index_path.push(index_property.name.as_bytes());
+                // Iteration 1. the index path is now something like Contracts/ContractID/Documents(1)/$ownerId/<ownerId>/toUserId
+                // Iteration 2. the index path is now something like Contracts/ContractID/Documents(1)/$ownerId/<ownerId>/toUserId/<ToUserId>/accountReference
+
+                let document_top_field: &[u8] = document.get(&index_property.name).ok_or(Error::CorruptedData(String::from("unable to get document field")))?;
+
+                // here we are inserting an empty tree that will have a subtree of all other index properties
+                self.grove.insert_if_not_exists(&index_path, Vec::from(document_top_field), Element::empty_tree())?;
+
+                // we push the actual value of the index path
+                index_path.push(document_top_field);
+                // Iteration 1. the index path is now something like Contracts/ContractID/Documents(1)/$ownerId/<ownerId>/toUserId/<ToUserId>/
+                // Iteration 2. the index path is now something like Contracts/ContractID/Documents(1)/$ownerId/<ownerId>/toUserId/<ToUserId>/accountReference/<accountReference>
+            }
+
+            // we need to construct the reference to the original document
+            let document_reference =
                 Element::Reference(primary_key_path.iter().map(|x| x.to_vec()).collect());
-            self.grove
-                .insert(&index_path, Vec::from(document_id), document_index)?;
-        }
 
-        Ok(())
+            // unique indexes will be stored under key "0"
+            // non unique indices should have a tree at key "0" that has all elements based off of primary key
+            if !index.unique {
+                // here we are inserting an empty tree that will have a subtree of all other index properties
+                self.grove.insert_if_not_exists(&index_path, Vec::from(b"0"), Element::empty_tree())?;
+                index_path.push(b"0");
+            }
+
+            // here we should return an error if the element already exists
+            self.grove.insert(&index_path, Vec::from(b"0"), document_reference)?;
+        }
+        Ok(cost)
     }
 }
 
