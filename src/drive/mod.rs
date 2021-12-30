@@ -6,6 +6,7 @@ pub struct Drive {
     grove: GroveDb,
 }
 
+#[derive(Clone)]
 pub struct IndexProperty {
     name: String,
     ascending: bool,
@@ -71,14 +72,14 @@ fn top_level_indices(indices: Vec<Index>) -> Vec<IndexProperty> {
     let mut top_level_indices: Vec<IndexProperty> = vec![];
     for index in indices {
         if index.indices.len() == 1 {
-            let top_level = index.indices.first().unwrap().clone();
-            top_level_indices.push(*top_level);
+            let top_level = index.indices[0].clone();
+            top_level_indices.push(top_level);
         }
     }
     top_level_indices
 }
 
-fn contract_indices(contract: HashMap<String, Vec<u8>>) -> HashMap<String, Vec<Index>> {
+fn contract_indices(contract: &HashMap<String, Vec<u8>>) -> HashMap<String, Vec<Index>> {
     HashMap::new()
 }
 
@@ -119,11 +120,16 @@ impl Drive {
     fn insert_contract(
         &mut self,
         contract_bytes: Element,
-        contract: HashMap<String, Vec<u8>>,
+        contract: &HashMap<String, Vec<u8>>,
         contract_id: &[u8],
     ) -> Result<u64, Error> {
         let contract_root_path = contract_root_path(contract_id);
-        let contract_id: &[u8] = contract.get("contractID").ok_or(Error::CorruptedData(String::from("unable to get contract id")))?;
+        let contract_id: &[u8] =
+            contract
+                .get("contractID")
+                .ok_or(Error::CorruptedData(String::from(
+                    "unable to get contract id",
+                )))?;
 
         self.grove.insert(
             &[RootTree::ContractDocuments.into()],
@@ -149,10 +155,10 @@ impl Drive {
         // right now we are referring them by name
         // toDo: change this to be a reference by index
         let contract_documents_path = contract_documents_path(contract_id);
-        for (type_key, indices) in contract_indices(contract) {
+        for (type_key, indices) in contract_indices(&contract) {
             self.grove.insert(
                 &contract_documents_path,
-                Vec::from(type_key),
+                type_key.as_bytes().to_vec(),
                 Element::empty_tree(),
             )?;
 
@@ -177,14 +183,17 @@ impl Drive {
     fn update_contract(
         &mut self,
         contract_bytes: Element,
-        contract: HashMap<String, Vec<u8>>,
+        contract: &HashMap<String, Vec<u8>>,
         contract_id: &[u8],
     ) -> Result<u64, Error> {
         let contract_root_path = contract_root_path(contract_id);
         // Will need a proper error enum
-        let contract_id: &[u8] = contract
-            .get("contractID")
-            .ok_or(Error::CorruptedData(String::from("unable to get contract id")))?;
+        let contract_id: &[u8] =
+            contract
+                .get("contractID")
+                .ok_or(Error::CorruptedData(String::from(
+                    "unable to get contract id",
+                )))?;
 
         self.grove.insert(
             &[RootTree::ContractDocuments.into()],
@@ -210,10 +219,10 @@ impl Drive {
         // right now we are referring them by name
         // toDo: change this to be a reference by index
         let contract_documents_path = contract_documents_path(contract_id);
-        for (type_key, indices) in contract_indices(contract) {
+        for (type_key, indices) in contract_indices(&contract) {
             self.grove.insert(
                 &contract_documents_path,
-                Vec::from(type_key),
+                type_key.as_bytes().to_vec(),
                 Element::empty_tree(),
             )?;
 
@@ -239,10 +248,15 @@ impl Drive {
         // first we need to deserialize the contract
         let contract: HashMap<String, Vec<u8>> = minicbor::decode(contract_cbor.as_ref())
             .map_err(|_| Error::CorruptedData(String::from("unable to decode contract")))?;
-        let contract_id: &[u8] = contract.get("contractID").ok_or(Error::CorruptedData(String::from("unable to get contract id")))?;
+        let contract_id: &[u8] =
+            contract
+                .get("contractID")
+                .ok_or(Error::CorruptedData(String::from(
+                    "unable to get contract id",
+                )))?;
 
         let contract_bytes = Vec::from(contract_cbor);
-        let contract_element = Element::Item(contract_bytes);
+        let contract_element = Element::Item(contract_bytes.clone());
 
         // overlying structure
         let mut already_exists = false;
@@ -270,7 +284,7 @@ impl Drive {
         match already_exists {
             true => {
                 match different_contract_data {
-                    true => self.update_contract(contract_element, contract, contract_id),
+                    true => self.update_contract(contract_element, &contract, contract_id),
                     false => {
                         // there is nothing to do, nothing was changed
                         // accept it, but return cost 0
@@ -278,7 +292,7 @@ impl Drive {
                     }
                 }
             }
-            false => self.insert_contract(contract_element, contract, contract_id),
+            false => self.insert_contract(contract_element, &contract, contract_id),
         }
     }
 
@@ -288,11 +302,20 @@ impl Drive {
         contract_indices_cbor: &[u8],
     ) -> Result<(), Error> {
         // first we need to deserialize the document and contract indices
-        let document: HashMap<String, Vec<u8>> =
-            minicbor::decode(document_cbor.as_ref())
-                .map_err(|_| Error::CorruptedData(String::from("unable to decode contract")))?;
-        let document_id: &[u8] = document.get("documentID").ok_or(Error::CorruptedData(String::from("unable to get document id")))?;
-        let contract_id: &[u8] = document.get("contractID").ok_or(Error::CorruptedData(String::from("unable to get contract id")))?;
+        let document: HashMap<String, Vec<u8>> = minicbor::decode(document_cbor.as_ref())
+            .map_err(|_| Error::CorruptedData(String::from("unable to decode contract")))?;
+        let document_id: &[u8] =
+            document
+                .get("documentID")
+                .ok_or(Error::CorruptedData(String::from(
+                    "unable to get document id",
+                )))?;
+        let contract_id: &[u8] =
+            document
+                .get("contractID")
+                .ok_or(Error::CorruptedData(String::from(
+                    "unable to get contract id",
+                )))?;
 
         let contract_indices: Vec<Vec<Vec<u8>>> = minicbor::decode(contract_indices_cbor.as_ref())
             .map_err(|_| Error::CorruptedData(String::from("unable to decode contract indices")))?;
