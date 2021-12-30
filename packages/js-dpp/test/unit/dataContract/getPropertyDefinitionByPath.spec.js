@@ -1,14 +1,11 @@
-const getPropertyDefinitionByPathFactory = require(
-  '../../../lib/dataContract/getPropertyDefinitionByPathFactory',
+const getPropertyDefinitionByPath = require(
+  '../../../lib/dataContract/getPropertyDefinitionByPath',
 );
 
-describe('getPropertyDefinitionByPathFactory', () => {
+describe('getPropertyDefinitionByPath', () => {
   let schema;
-  let getPropertyDefinitionByPath;
 
   beforeEach(() => {
-    getPropertyDefinitionByPath = getPropertyDefinitionByPathFactory();
-
     schema = {
       properties: {
         a: {

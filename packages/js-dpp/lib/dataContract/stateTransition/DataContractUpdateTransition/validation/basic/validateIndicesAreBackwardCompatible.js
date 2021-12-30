@@ -1,8 +1,10 @@
 const lodashGet = require('lodash.get');
-const DataContractHaveNewIndexWithOldPropertiesError = require('../../../../../errors/consensus/basic/dataContract/DataContractHaveNewIndexWithOldPropertiesError');
+
 const DataContractHaveNewUniqueIndexError = require('../../../../../errors/consensus/basic/dataContract/DataContractHaveNewUniqueIndexError');
-const DataContractIndicesChangedError = require('../../../../../errors/consensus/basic/dataContract/DataContractUniqueIndicesChangedError');
-const DataContractNonUniqueIndexUpdateError = require('../../../../../errors/consensus/basic/dataContract/DataContractNonUniqueIndexUpdateError');
+const DataContractUniqueIndicesChangedError = require("../../../../../errors/consensus/basic/dataContract/DataContractUniqueIndicesChangedError");
+const DataContractInvalidIndexDefinitionUpdateError = require("../../../../../errors/consensus/basic/dataContract/DataContractInvalidIndexDefinitionUpdateError");
+
+const getPropertyDefinitionByPath = require('../../../../getPropertyDefinitionByPath');
 
 const serializer = require('../../../../../util/serializer');
 
@@ -13,14 +15,13 @@ const ValidationResult = require('../../../../../validation/ValidationResult');
  *
  * @param {Object<string, Object>} nameIndexMap
  * @param {string} documentType
- * @param {Object} oldSchema
+ * @param {Object} existingSchema
  *
  * @returns {object|undefined}
  */
-function getChangedOldUniqueIndex(nameIndexMap, documentType, oldSchema) {
-  // Checking every unique old and it's respective new index
-  // if they are have the same definition
-  return (oldSchema.indices || []).find(
+function getChangedOldUniqueIndex(nameIndexMap, documentType, existingSchema) {
+  // Checking every unique existing index if it has been altered
+  return (existingSchema.indices || []).find(
     (indexDefinition) => (
       !serializer.encode(indexDefinition).equals(
         serializer.encode(nameIndexMap[indexDefinition.name]),
@@ -39,11 +40,9 @@ function getChangedOldUniqueIndex(nameIndexMap, documentType, oldSchema) {
  * @returns {object}
  */
 function getWronglyUpdatedNonUniqueIndex(nameIndexMap, documentType, existingSchema) {
-  const oldPropertyNames = Object.keys(existingSchema.properties);
-
-  // Checking every old non-unique index and it's respective new index
-  // if they are have changes per spec
-  const changedIndex = (existingSchema.indices || []).find((indexDefinition) => {
+  // Checking every existing non-unique index, and it's respective new index
+  // if they are changed per spec
+  return (existingSchema.indices || []).find((indexDefinition) => {
     if (indexDefinition.unique === true) {
       return false;
     }
@@ -74,35 +73,33 @@ function getWronglyUpdatedNonUniqueIndex(nameIndexMap, documentType, existingSch
       const propertyName = Object.keys(propertyWithOrder)[0];
 
       return Boolean(
-        getPropertyDefinitionByPath(documentSchema, propertyName),
+        getPropertyDefinitionByPath(existingSchema, propertyName),
       );
     });
 
     return notNewProperty !== undefined;
   });
-
-  return changedIndex;
 }
 
 /**
  * Get one of the new indices that have unique flag
  *
  * @param {string} documentType
- * @param {object} oldSchema
- * @param {object[]} newDocuments
+ * @param {object} existingSchema
+ * @param {object} newSchema
  *
  * @returns {object}
  */
-function getNewUniqueIndex(documentType, oldSchema, newDocuments) {
-  const newSchemaIndices = lodashGet(newDocuments, `${documentType}.indices`);
+function getNewUniqueIndex(documentType, existingSchema, newSchema) {
+  const newSchemaIndices = lodashGet(newSchema, `${documentType}.indices`);
 
-  const oldIndexNames = (oldSchema.indices || []).map(
+  const existingIndexNames = (existingSchema.indices || []).map(
     (indexDefinition) => indexDefinition.name,
   );
 
   // Gather only newly defined indices
   const newIndices = (newSchemaIndices || []).filter(
-    (indexDefinition) => !oldIndexNames.includes(indexDefinition.name),
+    (indexDefinition) => !existingIndexNames.includes(indexDefinition.name),
   );
 
   return (newIndices || []).find((indexDefinition) => indexDefinition.unique === true);

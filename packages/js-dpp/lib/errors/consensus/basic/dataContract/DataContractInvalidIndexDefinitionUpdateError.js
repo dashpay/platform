@@ -1,12 +1,12 @@
 const AbstractBasicError = require('../AbstractBasicError');
 
-class DataContractHaveNewIndexWithOldPropertiesError extends AbstractBasicError {
+class DataContractInvalidIndexDefinitionUpdateError extends AbstractBasicError {
   /**
    * @param {string} documentType
    * @param {string} indexName
    */
   constructor(documentType, indexName) {
-    super(`Old properties in the new indices should be defined in the beginning of it. Document with type ${documentType} has new index "${indexName}" with old properties in the wrong order.`);
+    super(`Document with type ${documentType} has badly constructed index "${indexName}". Existing properties in the indices should be defined in the beginning of it.`);
 
     this.documentType = documentType;
     this.indexName = indexName;
@@ -34,4 +34,4 @@ class DataContractHaveNewIndexWithOldPropertiesError extends AbstractBasicError 
   }
 }
 
-module.exports = DataContractHaveNewIndexWithOldPropertiesError;
+module.exports = DataContractInvalidIndexDefinitionUpdateError;

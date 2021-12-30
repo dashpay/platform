@@ -10,7 +10,7 @@ const decodeProtocolEntityFactory = require('../decodeProtocolEntityFactory');
 
 const protocolVersion = require('../version/protocolVersion');
 const validateProtocolVersionFactory = require('../version/validateProtocolVersionFactory');
-const getPropertyDefinitionByPathFactory = require('./getPropertyDefinitionByPathFactory');
+const getPropertyDefinitionByPath = require('./getPropertyDefinitionByPath');
 
 class DataContractFacade {
   /**
@@ -26,8 +26,6 @@ class DataContractFacade {
       dpp,
       protocolVersion.compatibility,
     );
-
-    const getPropertyDefinitionByPath = getPropertyDefinitionByPathFactory();
 
     this.validateDataContract = validateDataContractFactory(
       dpp.getJsonSchemaValidator(),

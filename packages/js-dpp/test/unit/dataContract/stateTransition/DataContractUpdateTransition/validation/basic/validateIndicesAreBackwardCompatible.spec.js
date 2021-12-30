@@ -1,9 +1,9 @@
 const validateIndicesAreBackwardCompatible = require('../../../../../../../lib/dataContract/stateTransition/DataContractUpdateTransition/validation/basic/validateIndicesAreBackwardCompatible');
-const DataContractHaveNewIndexWithOldPropertiesError = require('../../../../../../../lib/errors/consensus/basic/dataContract/DataContractHaveNewIndexWithOldPropertiesError');
+const DataContractHaveNewIndexWithOldPropertiesError = require('../../../../../../../lib/errors/consensus/basic/dataContract/DataContractInvalidIndexDefinitionUpdateError');
 const DataContractHaveNewUniqueIndexError = require('../../../../../../../lib/errors/consensus/basic/dataContract/DataContractHaveNewUniqueIndexError');
 const DataContractIndicesChangedError = require('../../../../../../../lib/errors/consensus/basic/dataContract/DataContractUniqueIndicesChangedError');
-const DataContractNonUniqueIndexUpdateError = require('../../../../../../../lib/errors/consensus/basic/dataContract/DataContractNonUniqueIndexUpdateError');
 const getDataContractFixture = require('../../../../../../../lib/test/fixtures/getDataContractFixture');
+const DataContractInvalidIndexDefinitionUpdateError = require("../../../../../../../lib/errors/consensus/basic/dataContract/DataContractInvalidIndexDefinitionUpdateError");
 
 describe('validateIndicesAreBackwardCompatible', () => {
   let oldDocumentsSchema;
@@ -50,7 +50,7 @@ describe('validateIndicesAreBackwardCompatible', () => {
 
     const error = result.getErrors()[0];
 
-    expect(error).to.be.an.instanceOf(DataContractNonUniqueIndexUpdateError);
+    expect(error).to.be.an.instanceOf(DataContractInvalidIndexDefinitionUpdateError);
     expect(error.getIndexName()).to.equal(newDocumentsSchema.indexedDocument.indices[2].name);
   });
 
@@ -63,7 +63,7 @@ describe('validateIndicesAreBackwardCompatible', () => {
 
     const error = result.getErrors()[0];
 
-    expect(error).to.be.an.instanceOf(DataContractNonUniqueIndexUpdateError);
+    expect(error).to.be.an.instanceOf(DataContractInvalidIndexDefinitionUpdateError);
     expect(error.getIndexName()).to.equal(newDocumentsSchema.indexedDocument.indices[2].name);
   });
 
