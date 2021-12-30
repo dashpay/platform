@@ -4,12 +4,10 @@ const IdentityAlreadyExistsError = require('../../../../../errors/consensus/stat
 
 /**
  * @param {StateRepository} stateRepository
- * @param {validateIdentityPublicKeysUniqueness} validateIdentityPublicKeysUniqueness
  * @return {validateIdentityCreateTransitionState}
  */
 function validateIdentityCreateTransitionStateFactory(
   stateRepository,
-  validateIdentityPublicKeysUniqueness,
 ) {
   /**
    *
@@ -37,16 +35,6 @@ function validateIdentityCreateTransitionStateFactory(
         new IdentityAlreadyExistsError(identityId.toBuffer()),
       );
     }
-
-    if (!result.isValid()) {
-      return result;
-    }
-
-    result.merge(
-      await validateIdentityPublicKeysUniqueness(
-        stateTransition.getPublicKeys(),
-      ),
-    );
 
     return result;
   }

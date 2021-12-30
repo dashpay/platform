@@ -1,3 +1,5 @@
+const cbor = require('cbor');
+
 const Identifier = require('@dashevo/dpp/lib/Identifier');
 
 class PublicKeyToIdentityIdStoreRepository {
@@ -19,11 +21,22 @@ class PublicKeyToIdentityIdStoreRepository {
    * @return {Promise<PublicKeyToIdentityIdStoreRepository>}
    */
   async store(publicKeyHash, identityId, transaction = undefined) {
-    this.storage.put(
-      publicKeyHash,
-      identityId,
-      transaction,
-    );
+    const identityIdsSerialized = this.storage.get(publicKeyHash, transaction);
+
+    let identityIds = [];
+    if (identityIdsSerialized) {
+      identityIds = cbor.decode(identityIdsSerialized);
+    }
+
+    if (!identityIds.includes(identityId)) {
+      identityIds.push(identityId);
+
+      this.storage.put(
+        publicKeyHash,
+        cbor.encode(identityIds),
+        transaction,
+      );
+    }
 
     return this;
   }
@@ -34,16 +47,18 @@ class PublicKeyToIdentityIdStoreRepository {
    * @param {Buffer} publicKeyHash
    * @param {MerkDbTransaction} [transaction]
    *
-   * @return {Promise<null|Identifier>}
+   * @return {Promise<Identifier[]>}
    */
   async fetch(publicKeyHash, transaction = undefined) {
-    const identityId = this.storage.get(publicKeyHash, transaction);
+    const identityIdsSerialized = this.storage.get(publicKeyHash, transaction);
 
-    if (!identityId) {
-      return null;
+    if (!identityIdsSerialized) {
+      return [];
     }
 
-    return new Identifier(identityId);
+    const identityIds = cbor.decode(identityIdsSerialized);
+
+    return identityIds.map((id) => new Identifier(id));
   }
 }
 
