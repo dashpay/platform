@@ -177,21 +177,34 @@ function updateMasternodeIdentitiesFactory(
       }),
     );
 
-    const documents = {};
+    const chunkedDocuments = [];
 
-    if (documentsToCreate.length > 0) {
-      documents.create = documentsToCreate;
+    const maxLength = Math.max(documentsToCreate.length, documentsToDelete.length);
+    const chunk = MAX_BATCH_LENGTH;
+
+    for (let i = 0; i < maxLength; i += chunk) {
+      const documents = {};
+
+      if (documentsToCreate.length > i) {
+        documents.create = documentsToCreate.slice(i, i + chunk);
+      }
+
+      if (documentsToDelete.length > i) {
+        documents.delete = documentsToDelete.slice(i, i + chunk);
+      }
+
+      chunkedDocuments.push(documents);
     }
 
-    if (documentsToDelete.length > 0) {
-      documents.delete = documentsToDelete;
-    }
+    await Promise.all(
+      chunkedDocuments.map(async (documentsChunk) => {
+        const documentsBatchTransition = transactionalDpp.document.createStateTransition(
+          documentsChunk,
+        );
 
-    const documentsBatchTransition = transactionalDpp.document.createStateTransition(
-      documents,
+        await transactionalDpp.stateTransition.apply(documentsBatchTransition);
+      }),
     );
-
-    await transactionalDpp.stateTransition.apply(documentsBatchTransition);
   }
 
   return updateMasternodeIdentities;
