@@ -1,4 +1,4 @@
-FROM node:16-alpine
+FROM node:16-alpine as builder
 
 ARG NODE_ENV=production
 ENV NODE_ENV ${NODE_ENV}
@@ -30,11 +30,12 @@ COPY packages/js-dpp packages/js-dpp
 COPY packages/wallet-lib packages/wallet-lib
 COPY packages/js-grpc-common packages/js-grpc-common
 COPY packages/feature-flags-contract packages/feature-flags-contract
+COPY packages/platform-test-suite packages/platform-test-suite
 
 # Install Test Suite specific dependencies using previous
 # node_modules directory to reuse built binaries
 RUN --mount=type=cache,target=/tmp/unplugged \
-    cp -R /tmp/unplugged /platform/.yarn/ && \
+    cp -R /tmp/unplugged /platform/.yarn/ && ls packages && \
     yarn workspaces focus --production @dashevo/platform-test-suite && \
     cp -R /platform/.yarn/unplugged /tmp/
 
@@ -56,7 +57,7 @@ ENV PATH /platform/node_modules/.bin:$PATH
 
 WORKDIR /platform
 
-COPY --from=node_modules /platform /platform
+COPY --from=builder /platform /platform
 
 RUN cp /platform/packages/platform-test-suite/.env.example /platform/packages/platform-test-suite/.env
 
