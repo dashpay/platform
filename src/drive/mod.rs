@@ -117,7 +117,7 @@ impl Drive {
         contract_bytes: Element,
         contract: &Contract,
     ) -> Result<u64, Error> {
-        let contract_root_path = contract_root_path(contract.id);
+        let contract_root_path = contract_root_path(&contract.id);
 
         self.grove.insert(
             &[RootTree::ContractDocuments.into()],
@@ -142,7 +142,7 @@ impl Drive {
         // next we should store each document type
         // right now we are referring them by name
         // toDo: change this to be a reference by index
-        let contract_documents_path = contract_documents_path(contract.id);
+        let contract_documents_path = contract_documents_path(&contract.id);
         for (type_key, document_type) in contract.document_types {
             self.grove.insert(
                 &contract_documents_path,
@@ -172,7 +172,7 @@ impl Drive {
         contract_bytes: Element,
         contract: &Contract,
     ) -> Result<u64, Error> {
-        let contract_root_path = contract_root_path(contract.id);
+        let contract_root_path = contract_root_path(&contract.id);
 
         let mut cost: u64 = 0;
 
@@ -180,7 +180,7 @@ impl Drive {
         self.grove
             .insert(&contract_root_path, b"0".to_vec(), contract_bytes)?;
 
-        let contract_documents_path = contract_documents_path(contract.id);
+        let contract_documents_path = contract_documents_path(&contract.id);
         for (type_key, document_type) in contract.document_types {
             let mut type_path = contract_documents_path.clone();
             type_path.push(type_key.as_bytes());
@@ -275,10 +275,10 @@ impl Drive {
         //  * Document and Contract root tree
         //  * Contract ID recovered from document
         //  * 0 to signify Documents and not Contract
-        let contract_path = contract_documents_path(contract.id);
+        let contract_path = contract_documents_path(&contract.id);
 
         // third we need to store the document for it's primary key
-        let mut primary_key_path = contract_documents_primary_key_path(contract.id);
+        let mut primary_key_path = contract_documents_primary_key_path(&contract.id);
         let document_element = Element::Item(Vec::from(document_cbor));
         self.grove
             .insert(&primary_key_path, Vec::from(document_id), document_element)?;
@@ -449,7 +449,7 @@ impl Drive {
         //  * Document and Contract root tree
         //  * Contract ID recovered from document
         //  * 0 to signify Documents and not Contract
-        let contract_documents_primary_key_path = contract_documents_primary_key_path(contract.id);
+        let contract_documents_primary_key_path = contract_documents_primary_key_path(&contract.id);
 
         // next we need to get the document from storage
         let document_element: Element = self
