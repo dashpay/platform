@@ -1,11 +1,11 @@
 use ciborium::value::{Value as CborValue, Value};
 use grovedb::Error;
-use proc_macro::Level::Error;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::BufReader;
 use std::path::Path;
+use serde_json;
 
 // contract
 // - id
@@ -21,7 +21,7 @@ use std::path::Path;
 #[derive(Serialize, Deserialize)]
 pub struct Contract {
     pub(crate) document_types: HashMap<String, DocumentType>,
-    pub(crate) id: vec<u8>,
+    pub(crate) id: Vec<u8>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -43,10 +43,13 @@ pub struct IndexProperty {
 
 // TODO: Make the error messages uniform
 
+// Crates look good, but there is too much duplication
+// Realized that the better way to test for the error is to try to convert it to the type
+// If it returns none, that means that the version is not valid
+// So get the value then check if it's exists
+
 // Struct Implementations
 impl Contract {
-    // Get the contract cbor
-    // Get the contract id
     pub fn from_cbor(contract_cbor: &[u8]) -> Result<Self, Error> {
         // Deserialize the contract
         let contract: HashMap<String, CborValue> = ciborium::de::from_reader(contract_cbor)
@@ -57,22 +60,20 @@ impl Contract {
             Error::CorruptedData(String::from("unable to get contract id")),
         )?;
 
-        let documents_cbor_value = contract.get("documents")?;
-        // Check if it is a map, if it is not a map then we cancel the process
-        if !documents_cbor_value.is_map() {
-            return Err(Error::CorruptedData(String::from(
-                "unable to get documents",
-            )));
-        }
-        let mut contract_document_types_raw = documents_cbor_value
-            .as_map()
-            .expect("already confirmed it's a map");
+        let documents_cbor_value = contract.get("documents").ok_or(Error::CorruptedData(String::from("unable to get documents")))?;
+        let mut contract_document_types_raw =
+            documents_cbor_value
+                .as_map()
+                .ok_or(Error::CorruptedData(String::from(
+                    "unable to get documents",
+                )))?;
+
         let mut contract_document_types: HashMap<String, DocumentType> = HashMap::new();
 
         // Build the actual hashmap
         for (type_key_value, document_type_value) in contract_document_types_raw {
             // TODO: Refactor
-            // We want to insert th type as a string and the the document type
+            // We want to insert the type as a string and the the document type
             // Make sure the type_key_value is a string
             if !type_key_value.is_text() {
                 return Err(Error::CorruptedData(String::from(
@@ -93,7 +94,7 @@ impl Contract {
             contract_document_types.insert(
                 String::from(type_key_value.as_text().expect("confirmed as text")),
                 document_type,
-            )
+            );
         }
 
         Ok(Contract {
@@ -142,11 +143,14 @@ impl DocumentType {
         // contract_document_types.push(DocumentType { indices: vec![] })
     }
 
-    pub fn top_level_indices(&self) -> Result<(Vec<IndexProperty>), Error> {
-        self.indices
-            .iter()
-            .map(|index| index.properties.get(0))
-            .collect()
+    pub fn top_level_indices(&self) -> Result<Vec<IndexProperty>, Error> {
+        Ok(Vec::new())
+        // This is needed, need to refactor this section
+        // TODO: Refactor
+        // self.indices
+        //     .iter()
+        //     .map(|index| index.properties.get(0))
+        //     .collect()
     }
 }
 
@@ -247,6 +251,9 @@ fn cbor_inner_map_value(
     key: &str,
 ) -> Option<Vec<(Value, Value)>> {
     for (key_value, value_value) in document_type.iter() {
+        // Need to fix this
+        // Can make this function way better
+        // Will come back to this
         let CborValue::Text(tuple_key) = key_value;
         if !key {
             None
@@ -262,7 +269,8 @@ fn cbor_inner_map_value(
     None
 }
 
-fn cbor_inner_array_value(document_type: &Vec<(Value, Value)>, key: &str) -> Option<Vec<(Value)>> {
+fn cbor_inner_array_value(document_type: &Vec<(Value, Value)>, key: &str) -> Option<Vec<Value>> {
+    // Fix this also
     for (key_value, value_value) in document_type.iter() {
         let CborValue::Text(tuple_key) = key_value;
         if !key {
