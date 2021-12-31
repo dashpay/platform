@@ -23,7 +23,7 @@ let latestCoreHeight = 1;
  * @param {updateSimplifiedMasternodeList} updateSimplifiedMasternodeList
  * @param {waitForChainLockedHeight} waitForChainLockedHeight
  * @param {SimplifiedMasternodeList} simplifiedMasternodeList
- * @param {manageMasternodesIdentities} manageMasternodesIdentities
+ * @param {updateMasternodeIdentities} updateMasternodeIdentities
  * @param {BaseLogger} logger
  *
  * @return {beginBlockHandler}
@@ -38,7 +38,7 @@ function beginBlockHandlerFactory(
   updateSimplifiedMasternodeList,
   waitForChainLockedHeight,
   simplifiedMasternodeList,
-  manageMasternodesIdentities,
+  updateMasternodeIdentities,
   logger,
 ) {
   /**
@@ -101,7 +101,7 @@ function beginBlockHandlerFactory(
     );
 
     if (simplifiedMasternodeListWasUpdated) {
-      await manageMasternodesIdentities(
+      await updateMasternodeIdentities(
         simplifiedMasternodeList,
         latestCoreHeight,
       );
