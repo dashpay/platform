@@ -1,6 +1,9 @@
+use crate::contract::{Contract, DocumentType};
 use ciborium::value::{Value as CborValue, Value};
 use grovedb::{Element, Error, GroveDb};
+use grovedb::{Element, Error, GroveDb};
 use serde::{Deserialize, Serialize};
+use std::any::Any;
 use std::collections::HashMap;
 use std::path::Path;
 
@@ -113,10 +116,9 @@ impl Drive {
     fn insert_contract(
         &mut self,
         contract_bytes: Element,
-        contract: &HashMap<String, CborValue>,
-        contract_id: &[u8],
+        contract: &Contract,
     ) -> Result<u64, Error> {
-        let contract_root_path = contract_root_path(contract_id);
+        let contract_root_path = contract_root_path(contract.id);
 
         self.grove.insert(
             &[RootTree::ContractDocuments.into()],
@@ -141,17 +143,8 @@ impl Drive {
         // next we should store each document type
         // right now we are referring them by name
         // toDo: change this to be a reference by index
-        let contract_documents_path = contract_documents_path(contract_id);
-        let contract_documents = contract_documents(contract).ok_or(Error::CorruptedData(
-            String::from("unable to get documents from contract"),
-        ))?;
-        for (type_key_value, document_type_value) in contract_documents {
-            let CborValue::Text(type_key) = type_key_value;
-            if !type_key {
-                Err(Error::CorruptedData(String::from(
-                    "table type is not a string as expected",
-                )))
-            }
+        let contract_documents_path = contract_documents_path(contract.id);
+        for (type_key, document_type) in contract.document_types {
             self.grove.insert(
                 &contract_documents_path,
                 type_key.as_bytes().to_vec(),
@@ -161,20 +154,8 @@ impl Drive {
             let mut type_path = contract_documents_path.clone();
             type_path.push(type_key.as_bytes());
 
-            let CborValue::Map(document_type) = document_type_value;
-            if !document_type {
-                Err(Error::CorruptedData(String::from(
-                    "table document is not a map as expected",
-                )))
-            }
-
-            let indices = cbor_inner_array_value(document_type, "indices").ok_or(
-                Error::CorruptedData(String::from("unable to get indices from the contract")),
-            )?;
-
             // for each type we should insert the indices that are top level
-            let top_level_indices = top_level_indices(indices);
-            for index in top_level_indices {
+            for index in document_type.top_level_indices()? {
                 // toDo: change this to be a reference by index
                 self.grove.insert(
                     &type_path,
@@ -190,50 +171,25 @@ impl Drive {
     fn update_contract(
         &mut self,
         contract_bytes: Element,
-        contract: &HashMap<String, CborValue>,
-        contract_id: &[u8],
+        contract: &Contract,
     ) -> Result<u64, Error> {
-        let contract_root_path = contract_root_path(contract_id);
-
-        self.grove.insert(
-            &[RootTree::ContractDocuments.into()],
-            Vec::from(contract_id),
-            Element::empty_tree(),
-        )?;
+        let contract_root_path = contract_root_path(contract.id);
 
         let mut cost: u64 = 0;
 
-        // unsafe {
-        //     cost += contract_cbor.size_of() * STORAGE_COST;
-        // }
-
-        // the contract
+        // this will override the previous contract
         self.grove
             .insert(&contract_root_path, b"0".to_vec(), contract_bytes)?;
 
-        // the documents
-        self.grove
-            .insert(&contract_root_path, b"1".to_vec(), Element::empty_tree())?;
-
-        // next we should store each document type
-        // right now we are referring them by name
-        // toDo: change this to be a reference by index
-        let contract_documents_path = contract_documents_path(contract_id);
-        for (type_key, indices) in contract_indices(contract) {
-            self.grove.insert(
-                &contract_documents_path,
-                type_key.as_bytes().to_vec(),
-                Element::empty_tree(),
-            )?;
-
+        let contract_documents_path = contract_documents_path(contract.id);
+        for (type_key, document_type) in contract.document_types {
             let mut type_path = contract_documents_path.clone();
             type_path.push(type_key.as_bytes());
 
             // for each type we should insert the indices that are top level
-            let top_level_indices = top_level_indices(indices);
-            for index in top_level_indices {
+            for index in document_type.top_level_indices()? {
                 // toDo: change this to be a reference by index
-                self.grove.insert(
+                self.grove.insert_if_not_exists(
                     &type_path,
                     Vec::from(index.name.as_bytes()),
                     Element::empty_tree(),
@@ -246,12 +202,7 @@ impl Drive {
 
     pub fn apply_contract(&mut self, contract_cbor: &[u8]) -> Result<u64, Error> {
         // first we need to deserialize the contract
-        let contract: HashMap<String, CborValue> = ciborium::de::from_reader(contract_cbor)
-            .map_err(|_| Error::CorruptedData(String::from("unable to decode contract")))?;
-
-        let contract_id = base58_value_as_bytes_from_hash_map(&contract, "$id").ok_or(
-            Error::CorruptedData(String::from("unable to get contract id")),
-        )?;
+        let contract = Contract::from_cbor(contract_cbor)?;
 
         let contract_bytes = Vec::from(contract_cbor);
         let contract_element = Element::Item(contract_bytes.clone());
@@ -259,6 +210,8 @@ impl Drive {
         // overlying structure
         let mut already_exists = false;
         let mut different_contract_data = false;
+
+        let contract_id = contract.id;
         match self.grove.get(&*contract_root_path(&contract_id), b"0") {
             Ok(stored_Element) => {
                 already_exists = true;
@@ -281,19 +234,24 @@ impl Drive {
 
         if already_exists {
             if different_contract_data {
-                self.update_contract(contract_element, &contract, &contract_id)
+                self.update_contract(contract_element, &contract)
             } else {
                 Ok(0)
             }
         } else {
-            self.insert_contract(contract_element, &contract, &contract_id)
+            self.insert_contract(contract_element, &contract)
         }
     }
 
-    pub fn add_document(
+    pub fn add_document(&mut self, document_cbor: &[u8]) -> Result<(), Error> {
+        todo!()
+    }
+
+    pub fn add_document_for_contract(
         &mut self,
         document_cbor: &[u8],
-        contract_indices_cbor: &[u8],
+        contract_cbor: &[u8],
+        document_type: &str,
     ) -> Result<(), Error> {
         // first we need to deserialize the document and contract indices
         let document: HashMap<String, CborValue> = ciborium::de::from_reader(document_cbor)
@@ -311,45 +269,37 @@ impl Drive {
             .ok_or(Error::CorruptedData(String::from(
                 "unable to get document id",
             )))?;
-        let contract_id: &[u8] = document
-            .get("$dataContractId")
-            .map(|id_cbor| {
-                if let CborValue::Bytes(b) = id_cbor {
-                    Some(b)
-                } else {
-                    None
-                }
-            })
-            .flatten()
-            .ok_or(Error::CorruptedData(String::from(
-                "unable to get contract id",
-            )))?;
-
-        let contract_indices: Vec<Index> = ciborium::de::from_reader(contract_indices_cbor)
-            .map_err(|_| Error::CorruptedData(String::from("unable to decode contract indices")))?;
+        let contract = Contract::from_cbor(contract_cbor)?;
 
         // second we need to construct the path for documents on the contract
         // the path is
         //  * Document and Contract root tree
         //  * Contract ID recovered from document
         //  * 0 to signify Documents and not Contract
-        let contract_path = contract_documents_path(contract_id);
+        let contract_path = contract_documents_path(contract.id);
 
         // third we need to store the document for it's primary key
-        let mut primary_key_path = contract_documents_primary_key_path(contract_id);
+        let mut primary_key_path = contract_documents_primary_key_path(contract.id);
         let document_element = Element::Item(Vec::from(document_cbor));
         self.grove
             .insert(&primary_key_path, Vec::from(document_id), document_element)?;
 
+        let document_type =
+            contract
+                .document_types
+                .get(document_type)
+                .ok_or(Error::CorruptedData(String::from(
+                    "can not get document type from contract",
+                )))?;
         // fourth we need to store a reference to the document for each index
-        for index in contract_indices {
+        for index in document_type.indices {
             // at this point the contract path is to the contract documents
             // for each index the top index component will already have been added
             // when the contract itself was created
             let mut index_path = contract_path.clone();
             let top_index_property =
                 index
-                    .indices
+                    .properties
                     .get(0)
                     .ok_or(Error::CorruptedData(String::from(
                         "invalid contract indices",
@@ -383,10 +333,10 @@ impl Drive {
             index_path.push(document_top_field);
             // the index path is now something like Contracts/ContractID/Documents(1)/$ownerId/<ownerId>
 
-            for i in 1..index.indices.len() {
+            for i in 1..index.properties.len() {
                 let index_property =
                     index
-                        .indices
+                        .properties
                         .get(i)
                         .ok_or(Error::CorruptedData(String::from(
                             "invalid contract indices",
@@ -453,10 +403,11 @@ impl Drive {
         Ok(())
     }
 
-    pub fn update_document(
+    pub fn update_document_for_contract(
         &mut self,
         document_cbor: &[u8],
-        contract_indices_cbor: &[u8],
+        contract_cbor: &[u8],
+        document_type: &str,
     ) -> Result<(), Error> {
         // first we need to deserialize the document and contract indices
         let document: HashMap<String, CborValue> = ciborium::de::from_reader(document_cbor)
@@ -474,37 +425,32 @@ impl Drive {
             .ok_or(Error::CorruptedData(String::from(
                 "unable to get document id",
             )))?;
-        let contract_id: &[u8] = document
-            .get("$dataContractId")
-            .map(|id_cbor| {
-                if let CborValue::Bytes(b) = id_cbor {
-                    Some(b)
-                } else {
-                    None
-                }
-            })
-            .flatten()
-            .ok_or(Error::CorruptedData(String::from(
-                "unable to get contract id",
-            )))?;
 
         // for now updating a document will delete the document, then insert a new document
-        self.delete_document(contract_id, document_id, contract_indices_cbor)?;
-        self.add_document(document_cbor, contract_indices_cbor)
+        self.delete_document_for_contract(document_id, contract_cbor, document_type)?;
+        self.add_document_for_contract(document_cbor, contract_cbor, document_type)
     }
 
-    pub fn delete_document(
+    pub fn delete_document_for_contract(
         &mut self,
-        contract_id: &[u8],
         document_id: &[u8],
-        contract_indices_cbor: &[u8],
+        contract_cbor: &[u8],
+        document_type: &str,
     ) -> Result<(), Error> {
+        let contract = Contract::from_cbor(contract_cbor)?;
+        let document_type =
+            contract
+                .document_types
+                .get(document_type)
+                .ok_or(Error::CorruptedData(String::from(
+                    "can not get document type from contract",
+                )))?;
         // first we need to construct the path for documents on the contract
         // the path is
         //  * Document and Contract root tree
         //  * Contract ID recovered from document
         //  * 0 to signify Documents and not Contract
-        let contract_documents_primary_key_path = contract_documents_primary_key_path(contract_id);
+        let contract_documents_primary_key_path = contract_documents_primary_key_path(contract.id);
 
         // next we need to get the document from storage
         let document_element: Element = self
@@ -532,10 +478,6 @@ impl Drive {
         )
         .map_err(|_| Error::CorruptedData(String::from("unable to decode document")))?;
 
-        // next we need to get the contract indices to be able to delete them
-        let contract_indices: Vec<Index> = ciborium::de::from_reader(contract_indices_cbor)
-            .map_err(|_| Error::CorruptedData(String::from("unable to decode contract indices")))?;
-
         // third we need to delete the document for it's primary key
         self.grove
             .delete(&contract_documents_primary_key_path, Vec::from(document_id))?;
@@ -544,14 +486,14 @@ impl Drive {
 
         // fourth we need delete all references to the document
         // to do this we need to go through each index
-        for index in contract_indices {
+        for index in &document_type.indices {
             // at this point the contract path is to the contract documents
             // for each index the top index component will already have been added
             // when the contract itself was created
             let mut index_path = contract_path.clone();
             let top_index_property =
                 index
-                    .indices
+                    .properties
                     .get(0)
                     .ok_or(Error::CorruptedData(String::from(
                         "invalid contract indices",
@@ -578,10 +520,10 @@ impl Drive {
             index_path.push(document_top_field);
             // the index path is now something like Contracts/ContractID/Documents(1)/$ownerId/<ownerId>
 
-            for i in 1..index.indices.len() {
+            for i in 1..index.properties.len() {
                 let index_property =
                     index
-                        .indices
+                        .properties
                         .get(i)
                         .ok_or(Error::CorruptedData(String::from(
                             "invalid contract indices",
