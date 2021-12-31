@@ -70,7 +70,7 @@ const IncompatibleRe2PatternError = require('./basic/dataContract/IncompatibleRe
 const InvalidDataContractVersionError = require('./basic/dataContract/InvalidDataContractVersionError');
 const IncompatibleDataContractSchemaError = require('./basic/dataContract/IncompatibleDataContractSchemaError');
 const DataContractImmutablePropertiesUpdateError = require('./basic/dataContract/DataContractImmutablePropertiesUpdateError');
-const DataContractIndicesChangedError = require('./basic/dataContract/DataContractIndicesChangedError');
+const DataContractIndicesChangedError = require('./basic/dataContract/DataContractUniqueIndicesChangedError');
 const DuplicateIndexNameError = require('./basic/dataContract/DuplicateIndexNameError');
 
 const codes = {

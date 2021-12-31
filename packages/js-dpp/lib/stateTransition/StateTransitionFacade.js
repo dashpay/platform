@@ -82,7 +82,8 @@ const protocolVersion = require('../version/protocolVersion');
 const validateProtocolVersionFactory = require('../version/validateProtocolVersionFactory');
 const validateDataContractUpdateTransitionBasicFactory = require('../dataContract/stateTransition/DataContractUpdateTransition/validation/basic/validateDataContractUpdateTransitionBasicFactory');
 const validateDataContractUpdateTransitionStateFactory = require('../dataContract/stateTransition/DataContractUpdateTransition/validation/state/validateDataContractUpdateTransitionStateFactory');
-const validateIndicesAreNotChanged = require('../dataContract/stateTransition/DataContractUpdateTransition/validation/basic/validateIndicesAreNotChanged');
+const validateIndicesAreBackwardCompatible = require('../dataContract/stateTransition/DataContractUpdateTransition/validation/basic/validateIndicesAreBackwardCompatible');
+const getPropertyDefinitionByPath = require('../dataContract/getPropertyDefinitionByPath');
 
 class StateTransitionFacade {
   /**
@@ -107,8 +108,8 @@ class StateTransitionFacade {
       validateDataContractMaxDepth,
       enrichDataContractWithBaseSchema,
       validateDataContractPatterns,
-      RE2,
       validateProtocolVersion,
+      getPropertyDefinitionByPath,
     );
 
     const validateIdentityExistence = validateIdentityExistenceFactory(this.stateRepository);
@@ -144,7 +145,7 @@ class StateTransitionFacade {
       validateProtocolVersion,
       this.stateRepository,
       jsonSchemaDiffValidator,
-      validateIndicesAreNotChanged,
+      validateIndicesAreBackwardCompatible,
       jsonPatch,
     );
 
