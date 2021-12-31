@@ -15,7 +15,7 @@ pub struct IndexProperty {
 #[derive(Serialize, Deserialize)]
 pub struct Index {
     properties: Vec<IndexProperty>,
-    unique: bool,
+    pub(crate) unique: bool,
 }
     
 impl Index {
@@ -26,7 +26,7 @@ impl Index {
 
 #[derive(Serialize, Deserialize)]
 pub struct DocumentType {
-    indices: Vec<Index>,
+    pub(crate) indices: Vec<Index>,
 }
 
 impl DocumentType {
@@ -52,7 +52,7 @@ impl DocumentType {
     }
 
     pub fn top_level_indices(
-        &mut self,
+        &self,
     ) -> Result<(Vec<Index>), Error> {
         self.indices.iter().map(|index | {
             index.properties.get(0)
@@ -62,8 +62,8 @@ impl DocumentType {
 
 #[derive(Serialize, Deserialize)]
 pub struct Contract {
-    document_types: HashMap<String, DocumentType>,
-    id: vec<u8>,
+    pub(crate) document_types: HashMap<String, DocumentType>,
+    pub(crate) id: vec<u8>,
 }
 
 fn contract_document_types(contract: &HashMap<String, CborValue>) -> Option<&Vec<(Value, Value)>> {
