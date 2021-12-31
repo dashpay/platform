@@ -1,7 +1,6 @@
 use crate::contract::{Contract, DocumentType};
 use ciborium::value::{Value as CborValue, Value};
 use grovedb::{Element, Error, GroveDb};
-use grovedb::{Element, Error, GroveDb};
 use serde::{Deserialize, Serialize};
 use std::any::Any;
 use std::collections::HashMap;
