@@ -1,5 +1,5 @@
-use grovedb::{Element, Error, GroveDb};
 use ciborium::value::{Value as CborValue, Value};
+use grovedb::{Element, Error, GroveDb};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::Path;
@@ -53,7 +53,6 @@ impl From<RootTree> for Vec<u8> {
 // //
 // }
 
-
 fn contract_root_path(contract_id: &[u8]) -> Vec<&[u8]> {
     vec![RootTree::ContractDocuments.into(), contract_id]
 }
@@ -66,23 +65,23 @@ fn contract_documents_primary_key_path(contract_id: &[u8]) -> Vec<&[u8]> {
     vec![RootTree::ContractDocuments.into(), contract_id, b"1", b"0"]
 }
 
-fn base58_value_as_bytes_from_hash_map(document: &HashMap<String, CborValue>, key: &str) -> Option<Vec<u8>> {
+fn base58_value_as_bytes_from_hash_map(
+    document: &HashMap<String, CborValue>,
+    key: &str,
+) -> Option<Vec<u8>> {
     document
         .get(key)
         .map(|id_cbor| {
             if let CborValue::Text(b) = id_cbor {
                 match bs58::decode(b).into_vec() {
-                    Ok(data) => {
-                        Some(data)
-                    }
-                    Err(_) => {
-                        None
-                    }
+                    Ok(data) => Some(data),
+                    Err(_) => None,
                 }
             } else {
                 None
             }
-        }).flatten()
+        })
+        .flatten()
 }
 
 impl Drive {
@@ -143,9 +142,9 @@ impl Drive {
         // right now we are referring them by name
         // toDo: change this to be a reference by index
         let contract_documents_path = contract_documents_path(contract_id);
-        let contract_documents = contract_documents(contract).ok_or(Error::CorruptedData(String::from(
-            "unable to get documents from contract",
-        )))?;
+        let contract_documents = contract_documents(contract).ok_or(Error::CorruptedData(
+            String::from("unable to get documents from contract"),
+        ))?;
         for (type_key_value, document_type_value) in contract_documents {
             let CborValue::Text(type_key) = type_key_value;
             if !type_key {
@@ -169,9 +168,9 @@ impl Drive {
                 )))
             }
 
-            let indices= cbor_inner_array_value(document_type, "indices").ok_or(Error::CorruptedData(String::from(
-                "unable to get indices from the contract",
-            )))?;
+            let indices = cbor_inner_array_value(document_type, "indices").ok_or(
+                Error::CorruptedData(String::from("unable to get indices from the contract")),
+            )?;
 
             // for each type we should insert the indices that are top level
             let top_level_indices = top_level_indices(indices);
@@ -250,10 +249,9 @@ impl Drive {
         let contract: HashMap<String, CborValue> = ciborium::de::from_reader(contract_cbor)
             .map_err(|_| Error::CorruptedData(String::from("unable to decode contract")))?;
 
-        let contract_id = base58_value_as_bytes_from_hash_map(&contract, "$id")
-            .ok_or(Error::CorruptedData(String::from(
-                "unable to get contract id",
-            )))?;
+        let contract_id = base58_value_as_bytes_from_hash_map(&contract, "$id").ok_or(
+            Error::CorruptedData(String::from("unable to get contract id")),
+        )?;
 
         let contract_bytes = Vec::from(contract_cbor);
         let contract_element = Element::Item(contract_bytes.clone());
@@ -647,13 +645,17 @@ mod tests {
     #[test]
     fn test_add_dashpay_data_contract() {
         let tmp_dir = TempDir::new("db").unwrap();
-        let mut drive : Drive = Drive::open(tmp_dir).expect("expected to open Drive successfully");
+        let mut drive: Drive = Drive::open(tmp_dir).expect("expected to open Drive successfully");
 
-        drive.create_root_tree().expect("expected to create root tree successfully");
+        drive
+            .create_root_tree()
+            .expect("expected to create root tree successfully");
 
         // let's construct the grovedb structure for the dashpay data contract
         let dashpay_cbor = json_document_to_cbor("dashpay-contract.json");
-        drive.apply_contract(&dashpay_cbor).expect("expected to apply contract successfully");
+        drive
+            .apply_contract(&dashpay_cbor)
+            .expect("expected to apply contract successfully");
 
         // dashpay_profile_document_cbor = json_document_to_cbor("dashpay-profile-1.json")?;
         // drive.add_document(dashpay_profile_document_cbor, dashpay_cbor);
