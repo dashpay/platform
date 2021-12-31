@@ -1,4 +1,5 @@
 mod drive;
+mod contract;
 
 #[cfg(test)]
 mod tests {
