@@ -288,7 +288,9 @@ impl Drive {
         self.grove
             .insert(&primary_key_path, Vec::from(document_id), document_element)?;
 
-        let document_type  = contract.document_types.get(document_type)?;
+        let document_type  = contract.document_types.get(document_type).ok_or(Error::CorruptedData(String::from(
+            "can not get document type from contract",
+        )))?;
         // fourth we need to store a reference to the document for each index
         for index in document_type.indices {
             // at this point the contract path is to the contract documents
@@ -297,7 +299,7 @@ impl Drive {
             let mut index_path = contract_path.clone();
             let top_index_property =
                 index
-                    .indices
+                    .properties
                     .get(0)
                     .ok_or(Error::CorruptedData(String::from(
                         "invalid contract indices",
@@ -331,10 +333,10 @@ impl Drive {
             index_path.push(document_top_field);
             // the index path is now something like Contracts/ContractID/Documents(1)/$ownerId/<ownerId>
 
-            for i in 1..index.indices.len() {
+            for i in 1..index.properties.len() {
                 let index_property =
                     index
-                        .indices
+                        .properties
                         .get(i)
                         .ok_or(Error::CorruptedData(String::from(
                             "invalid contract indices",
@@ -436,7 +438,11 @@ impl Drive {
         document_type: &str,
     ) -> Result<(), Error> {
         let contract = Contract::from_cbor(contract_cbor)?;
-        let document_type  = contract.document_types.get(document_type)?;
+        let document_type  = contract.document_types
+            .get(document_type)
+            .ok_or(Error::CorruptedData(String::from(
+                "can not get document type from contract",
+        )))?;
         // first we need to construct the path for documents on the contract
         // the path is
         //  * Document and Contract root tree
@@ -485,7 +491,7 @@ impl Drive {
             let mut index_path = contract_path.clone();
             let top_index_property =
                 index
-                    .indices
+                    .properties
                     .get(0)
                     .ok_or(Error::CorruptedData(String::from(
                         "invalid contract indices",
@@ -512,10 +518,10 @@ impl Drive {
             index_path.push(document_top_field);
             // the index path is now something like Contracts/ContractID/Documents(1)/$ownerId/<ownerId>
 
-            for i in 1..index.indices.len() {
+            for i in 1..index.properties.len() {
                 let index_property =
                     index
-                        .indices
+                        .properties
                         .get(i)
                         .ok_or(Error::CorruptedData(String::from(
                             "invalid contract indices",
