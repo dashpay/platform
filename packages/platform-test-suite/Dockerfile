@@ -35,7 +35,7 @@ COPY packages/platform-test-suite packages/platform-test-suite
 # Install Test Suite specific dependencies using previous
 # node_modules directory to reuse built binaries
 RUN --mount=type=cache,target=/tmp/unplugged \
-    cp -R /tmp/unplugged /platform/.yarn/ && ls packages && \
+    cp -R /tmp/unplugged /platform/.yarn/ && \
     yarn workspaces focus --production @dashevo/platform-test-suite && \
     cp -R /platform/.yarn/unplugged /tmp/
 
