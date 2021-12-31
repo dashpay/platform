@@ -8,13 +8,13 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Serialize, Deserialize)]
 pub struct IndexProperty {
-    name: String,
-    ascending: bool,
+    pub(crate) name: String,
+    pub(crate) ascending: bool,
 }
 
 #[derive(Serialize, Deserialize)]
 pub struct Index {
-    properties: Vec<IndexProperty>,
+    pub(crate) properties: Vec<IndexProperty>,
     pub(crate) unique: bool,
 }
     
@@ -53,7 +53,7 @@ impl DocumentType {
 
     pub fn top_level_indices(
         &self,
-    ) -> Result<(Vec<Index>), Error> {
+    ) -> Result<(Vec<IndexProperty>), Error> {
         self.indices.iter().map(|index | {
             index.properties.get(0)
         }).collect()
