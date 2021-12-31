@@ -53,7 +53,7 @@ describe('createMasternodeRewardSharesDataTrigger', () => {
     stateRepositoryMock = createStateRepositoryMock(this.sinonSandbox);
     stateRepositoryMock.fetchSMLStore.resolves(smlStoreMock);
     stateRepositoryMock.fetchIdentity.resolves(null);
-    stateRepositoryMock.fetchDocuments.resolves(documentsFixture);
+    stateRepositoryMock.fetchDocuments.resolves([]);
 
     const [document] = getMasternodeRewardSharesDocumentsFixture();
 
@@ -70,6 +70,8 @@ describe('createMasternodeRewardSharesDataTrigger', () => {
   });
 
   it('should return an error if percentage > 10000', async () => {
+    stateRepositoryMock.fetchDocuments.resolves(documentsFixture);
+    // documentsFixture contains percentage = 500
     documentTransition.data.percentage = 9501;
 
     const result = await createRewardShareDataTrigger(
@@ -127,9 +129,7 @@ describe('createMasternodeRewardSharesDataTrigger', () => {
     expect(error.message).to.equal(`Owner ID ${getIdentityFixture().getId()} is not in SML`);
 
     expect(stateRepositoryMock.fetchSMLStore).to.be.calledOnce();
-    expect(stateRepositoryMock.fetchIdentity).to.be.calledOnceWithExactly(
-      documentTransition.data.payToId,
-    );
+    expect(stateRepositoryMock.fetchIdentity).to.be.not.called();
   });
 
   it('should pass', async () => {

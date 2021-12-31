@@ -157,7 +157,6 @@ module.exports = {
         id: null,
         blockHeight: null,
       },
-      ownerId: null,
     },
   },
   externalIp: null,

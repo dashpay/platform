@@ -21,6 +21,28 @@ async function createMasternodeRewardSharesDataTrigger(
 
   const result = new DataTriggerExecutionResult();
 
+  // Do not allow creating document if ownerId is not in SML
+  const smlStore = await context.getStateRepository().fetchSMLStore();
+  const validMasternodesList = smlStore.getCurrentSML().getValidMasternodesList();
+  const ownerIdInSml = !!validMasternodesList.find((smlEntry) => Buffer.compare(ownerId, Buffer.from(smlEntry.proRegTxHash, 'hex')) === 0);
+
+  if (!ownerIdInSml) {
+    const error = new DataTriggerConditionError(
+      context.getDataContract().getId().toBuffer(),
+      documentTransition.getId().toBuffer(),
+      `Owner ID ${ownerId.toString()} is not in SML`,
+    );
+
+    error.setOwnerId(ownerId);
+    error.setDocumentTransition(documentTransition);
+
+    result.addError(error);
+  }
+
+  if (!result.isOk()) {
+    return result;
+  }
+
   // payToId identity exists
   const identity = await context.getStateRepository().fetchIdentity(payToId);
   if (identity !== null) {
@@ -55,24 +77,6 @@ async function createMasternodeRewardSharesDataTrigger(
       context.getDataContract().getId().toBuffer(),
       documentTransition.getId().toBuffer(),
       `Percentage can not be more than ${MAX_PERCENTAGE}`,
-    );
-
-    error.setOwnerId(ownerId);
-    error.setDocumentTransition(documentTransition);
-
-    result.addError(error);
-  }
-
-  // Do not allow to create document if ownerId is not in SML
-  const smlStore = await context.getStateRepository().fetchSMLStore();
-  const validMasternodesList = smlStore.getCurrentSML().getValidMasternodesList();
-  const ownerIdInSml = !!validMasternodesList.find((smlEntry) => Buffer.compare(ownerId, Buffer.from(smlEntry.proRegTxHash, 'hex')) === 0);
-
-  if (!ownerIdInSml) {
-    const error = new DataTriggerConditionError(
-      context.getDataContract().getId().toBuffer(),
-      documentTransition.getId().toBuffer(),
-      `Owner ID ${ownerId.toString()} is not in SML`,
     );
 
     error.setOwnerId(ownerId);

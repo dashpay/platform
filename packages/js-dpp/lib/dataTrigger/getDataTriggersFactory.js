@@ -52,13 +52,6 @@ function getDataTriggersFactory() {
     );
   }
 
-  let masternodeRewardSharesTopLevelIdentityId = Buffer.alloc(0);
-  if (process.env.MASTERNODE_REWARD_SHARES_TOP_LEVEL_IDENTITY) {
-    masternodeRewardSharesTopLevelIdentityId = Identifier.from(
-      process.env.MASTERNODE_REWARD_SHARES_TOP_LEVEL_IDENTITY,
-    );
-  }
-
   const dataTriggers = [
     new DataTrigger(
       dpnsDataContractId,
@@ -152,7 +145,6 @@ function getDataTriggersFactory() {
       'masternodeRewardShares',
       AbstractDocumentTransition.ACTIONS.CREATE,
       createMasternodeRewardSharesDataTrigger,
-      masternodeRewardSharesTopLevelIdentityId,
     ),
     new DataTrigger(
       masternodeRewardSharesContractId,

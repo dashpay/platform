@@ -556,10 +556,6 @@ module.exports = {
               required: ['id', 'blockHeight'],
               additionalProperties: false,
             },
-            ownerId: {
-              type: ['string', 'null'],
-              minLength: 1,
-            },
           },
           required: ['contract', 'ownerId'],
           additionalProperties: false,

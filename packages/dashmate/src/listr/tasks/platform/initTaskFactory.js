@@ -296,8 +296,6 @@ function initTaskFactory(
         task: async (ctx, task) => {
           ctx.masternodeRewardSharesIdentity = await ctx.client.platform.identities.register(5000);
 
-          config.set('platform.masternodeRewardShares.ownerId', ctx.masternodeRewardSharesIdentity.getId().toString());
-
           // eslint-disable-next-line no-param-reassign
           task.output = `Reward Share identity: ${ctx.masternodeRewardSharesIdentity.getId().toString()}`;
         },

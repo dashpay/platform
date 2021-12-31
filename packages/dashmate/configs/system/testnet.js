@@ -44,7 +44,6 @@ module.exports = lodashMerge({}, baseConfig, {
         id: null,
         blockHeight: null,
       },
-      ownerId: null,
     },
     drive: {
       abci: {
