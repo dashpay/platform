@@ -18,13 +18,11 @@ function manageMasternodesIdentitiesFactory(
    * @typedef manageMasternodesIdentities
    * @param {SimplifiedMasternodeList} simplifiedMasternodeList
    * @param {number} latestRequestedHeight
-   * @param {number} coreHeight
    * @return Promise<void>
    */
   async function manageMasternodesIdentities(
     simplifiedMasternodeList,
     latestRequestedHeight,
-    coreHeight,
   ) {
     const documentsToCreate = [];
     const documentsToDelete = [];
@@ -33,7 +31,7 @@ function manageMasternodesIdentitiesFactory(
       .getSMLbyHeight(latestRequestedHeight)
       .mnList;
     const currentMNList = simplifiedMasternodeList.getStore()
-      .getSMLbyHeight(coreHeight)
+      .getCurrentSML()
       .mnList;
 
     // new masternode is registered

@@ -9,7 +9,6 @@ const NotEnoughBlocksForValidSMLError = require('./errors/NotEnoughBlocksForVali
  * @param {SimplifiedMasternodeList} simplifiedMasternodeList
  * @param {number} smlMaxListsLimit
  * @param {string} network
- * @param {manageMasternodesIdentities} manageMasternodesIdentities
  * @param {BaseLogger} logger
  *
  * @returns {updateSimplifiedMasternodeList}
@@ -19,7 +18,6 @@ function updateSimplifiedMasternodeListFactory(
   simplifiedMasternodeList,
   smlMaxListsLimit,
   network,
-  manageMasternodesIdentities,
   logger,
 ) {
   // 1 means first block
@@ -52,9 +50,10 @@ function updateSimplifiedMasternodeListFactory(
    * @param {Object} [options]
    * @param {BaseLogger} [options.logger]
    *
-   * @returns {Promise<void>}
+   * @returns {Promise<boolean>}
    */
   async function updateSimplifiedMasternodeList(coreHeight, options = {}) {
+    let result = false;
     // either use a logger passed or use standard logger
     const contextLogger = (options.logger || logger);
 
@@ -97,14 +96,12 @@ function updateSimplifiedMasternodeListFactory(
 
       contextLogger.debug(`SML is updated for core heights ${latestRequestedHeight} to ${coreHeight}`);
 
-      await manageMasternodesIdentities(
-        simplifiedMasternodeList,
-        latestRequestedHeight,
-        coreHeight,
-      );
-
       latestRequestedHeight = coreHeight;
+
+      result = true;
     }
+
+    return result;
   }
 
   return updateSimplifiedMasternodeList;
