@@ -9,6 +9,8 @@ const {
 const NotSupportedNetworkProtocolVersionError = require('./errors/NotSupportedProtocolVersionError');
 const NetworkProtocolVersionIsNotSetError = require('./errors/NetworkProtocolVersionIsNotSetError');
 
+let latestCoreHeight = 1;
+
 /**
  * Begin Block ABCI Handler
  *
@@ -101,9 +103,11 @@ function beginBlockHandlerFactory(
     if (simplifiedMasternodeListWasUpdated) {
       await manageMasternodesIdentities(
         simplifiedMasternodeList,
-        latestRequestedHeight,
+        latestCoreHeight,
       );
     }
+
+    latestCoreHeight = coreChainLockedHeight;
 
     if (blockExecutionStoreTransactions.isStarted()) {
       // in case previous block execution failed in process
