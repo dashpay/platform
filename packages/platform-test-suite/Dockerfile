@@ -29,7 +29,6 @@ COPY packages/js-dash-sdk packages/js-dash-sdk
 COPY packages/js-dpp packages/js-dpp
 COPY packages/wallet-lib packages/wallet-lib
 COPY packages/js-grpc-common packages/js-grpc-common
-COPY packages/feature-flags-contract packages/feature-flags-contract
 COPY packages/platform-test-suite packages/platform-test-suite
 
 # Install Test Suite specific dependencies using previous
