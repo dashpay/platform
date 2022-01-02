@@ -121,7 +121,7 @@ impl Drive {
 
         self.grove.insert(
             &[RootTree::ContractDocuments.into()],
-            Vec::from(contract_id),
+            contract.id.clone(),
             Element::empty_tree(),
         )?;
 
@@ -143,7 +143,7 @@ impl Drive {
         // right now we are referring them by name
         // toDo: change this to be a reference by index
         let contract_documents_path = contract_documents_path(&contract.id);
-        for (type_key, document_type) in contract.document_types {
+        for (type_key, document_type) in &contract.document_types {
             self.grove.insert(
                 &contract_documents_path,
                 type_key.as_bytes().to_vec(),
@@ -181,7 +181,7 @@ impl Drive {
             .insert(&contract_root_path, b"0".to_vec(), contract_bytes)?;
 
         let contract_documents_path = contract_documents_path(&contract.id);
-        for (type_key, document_type) in contract.document_types {
+        for (type_key, document_type) in &contract.document_types {
             let mut type_path = contract_documents_path.clone();
             type_path.push(type_key.as_bytes());
 
@@ -210,8 +210,7 @@ impl Drive {
         let mut already_exists = false;
         let mut different_contract_data = false;
 
-        let contract_id = contract.id;
-        match self.grove.get(&*contract_root_path(&contract_id), b"0") {
+        match self.grove.get(&*contract_root_path(&contract.id), b"0") {
             Ok(stored_Element) => {
                 already_exists = true;
                 match stored_Element {
@@ -291,7 +290,7 @@ impl Drive {
                     "can not get document type from contract",
                 )))?;
         // fourth we need to store a reference to the document for each index
-        for index in document_type.indices {
+        for index in &document_type.indices {
             // at this point the contract path is to the contract documents
             // for each index the top index component will already have been added
             // when the contract itself was created
@@ -481,7 +480,7 @@ impl Drive {
         self.grove
             .delete(&contract_documents_primary_key_path, Vec::from(document_id))?;
 
-        let contract_path = contract_documents_path(contract_id);
+        let contract_path = contract_documents_path(&contract.id);
 
         // fourth we need delete all references to the document
         // to do this we need to go through each index

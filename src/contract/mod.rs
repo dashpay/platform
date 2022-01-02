@@ -1,3 +1,5 @@
+extern crate serde_json;
+
 use ciborium::value::{Value as CborValue, Value};
 use grovedb::Error;
 use serde::{Deserialize, Serialize};
@@ -5,7 +7,6 @@ use std::collections::HashMap;
 use std::fs::File;
 use std::io::BufReader;
 use std::path::Path;
-use serde_json;
 
 // contract
 // - id
@@ -29,7 +30,7 @@ pub struct DocumentType {
     pub(crate) indices: Vec<Index>,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct Index {
     pub(crate) properties: Vec<IndexProperty>,
     pub(crate) unique: bool,
@@ -60,7 +61,12 @@ impl Contract {
             Error::CorruptedData(String::from("unable to get contract id")),
         )?;
 
-        let documents_cbor_value = contract.get("documents").ok_or(Error::CorruptedData(String::from("unable to get documents")))?;
+        let documents_cbor_value =
+            contract
+                .get("documents")
+                .ok_or(Error::CorruptedData(String::from(
+                    "unable to get documents",
+                )))?;
         let mut contract_document_types_raw =
             documents_cbor_value
                 .as_map()
@@ -115,6 +121,11 @@ impl DocumentType {
 
         // In json, indices is an array, that contains objects
         // we want to iterate over those objects.
+        // Do we really need to do this?
+        // What are we trying to do here??
+        // We are trying to get the indices map
+        // Iterate over the map and then check if the key is indices
+        // If it is indices, then get it as an array and return that
         let index_values = cbor_inner_array_value(&document_type_value_map, "indices").ok_or(
             Error::CorruptedData(String::from("unable to get indices from the contract")),
         )?;
@@ -246,45 +257,47 @@ fn contract_document_types(contract: &HashMap<String, CborValue>) -> Option<&Vec
         .flatten()
 }
 
-fn cbor_inner_map_value(
-    document_type: &Vec<(Value, Value)>,
-    key: &str,
-) -> Option<Vec<(Value, Value)>> {
-    for (key_value, value_value) in document_type.iter() {
-        // Need to fix this
-        // Can make this function way better
-        // Will come back to this
-        let CborValue::Text(tuple_key) = key_value;
-        if !key {
-            None
-        }
-        if tuple_key == key {
-            let CborValue::Map(value_map) = value_value;
-            if !value_map {
-                None
-            }
-            Some(value_map)
-        }
-    }
-    None
-}
+// fn cbor_inner_map_value(
+//     document_type: &Vec<(Value, Value)>,
+//     key: &str,
+// ) -> Option<Vec<(Value, Value)>> {
+//     for (key_value, value_value) in document_type.iter() {
+//         // Need to fix this
+//         // Can make this function way better
+//         // Will come back to this
+//         let CborValue::Text(tuple_key) = key_value;
+//         if !key {
+//             None
+//         }
+//         if tuple_key == key {
+//             let CborValue::Map(value_map) = value_value;
+//             if !value_map {
+//                 None
+//             }
+//             Some(value_map)
+//         }
+//     }
+//     None
+// }
 
 fn cbor_inner_array_value(document_type: &Vec<(Value, Value)>, key: &str) -> Option<Vec<Value>> {
-    // Fix this also
     for (key_value, value_value) in document_type.iter() {
-        let CborValue::Text(tuple_key) = key_value;
-        if !key {
-            None
+        if !key_value.is_text() {
+            continue;
         }
-        if tuple_key == key {
-            let CborValue::Array(value_map) = value_value;
-            if !value_map {
-                None
+
+        if key_value.as_text().expect("confirmed as text") == key {
+            // Get the array value and return that
+            // First check if it's actually an array
+            if value_value.is_array() {
+                let value_array = value_value.as_array().expect("confirmed as array").clone();
+                return Some(value_array);
+            } else {
+                return None;
             }
-            Some(value_map)
         }
     }
-    None
+    return None;
 }
 
 // fn indices_from_values(values: &Vec<(Value)>) -> Option<Vec<Index>> {
