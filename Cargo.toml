@@ -9,6 +9,7 @@ license = "MIT"
 serde = { version = "1.0.132", features = ["derive"] }
 ciborium = "0.2.0"
 bs58 = "0.4.0"
+serde_json = "1.0.73"
 
 [dependencies.grovedb]
 git = "https://github.com/dashevo/grovedb"
@@ -22,5 +23,4 @@ branch = "master"
 # version = "0.8.0"
 
 [dev-dependencies]
-serde_json = "1.0.73"
 tempdir = "0.3.7"
