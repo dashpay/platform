@@ -303,8 +303,14 @@ mod tests {
         assert_eq!(contract.document_types.len(), 3);
         assert_eq!(contract.document_types.get("profile").is_some(), true);
         assert_eq!(contract.document_types.get("contactInfo").is_some(), true);
-        assert_eq!(contract.document_types.get("contactRequest").is_some(), true);
-        assert_eq!(contract.document_types.get("non_existent_key").is_some(), false);
+        assert_eq!(
+            contract.document_types.get("contactRequest").is_some(),
+            true
+        );
+        assert_eq!(
+            contract.document_types.get("non_existent_key").is_some(),
+            false
+        );
 
         let contact_info_indices = &contract.document_types.get("contactInfo").unwrap().indices;
         assert_eq!(contact_info_indices.len(), 2);
@@ -313,8 +319,14 @@ mod tests {
         assert_eq!(contact_info_indices[0].properties.len(), 3);
 
         assert_eq!(contact_info_indices[0].properties[0].name, "$ownerId");
-        assert_eq!(contact_info_indices[0].properties[1].name, "rootEncryptionKeyIndex");
-        assert_eq!(contact_info_indices[0].properties[2].name, "derivationEncryptionKeyIndex");
+        assert_eq!(
+            contact_info_indices[0].properties[1].name,
+            "rootEncryptionKeyIndex"
+        );
+        assert_eq!(
+            contact_info_indices[0].properties[2].name,
+            "derivationEncryptionKeyIndex"
+        );
 
         assert_eq!(contact_info_indices[0].properties[0].ascending, true);
     }
