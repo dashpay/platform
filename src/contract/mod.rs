@@ -6,6 +6,7 @@ use std::fs::File;
 use std::io::BufReader;
 use std::path::Path;
 use serde_json;
+use crate::drive::RootTree;
 
 // contract
 // - id
@@ -101,6 +102,18 @@ impl Contract {
             id: contract_id,
             document_types: contract_document_types,
         })
+    }
+
+    pub fn root_path(&self) -> Vec<&[u8]> {
+        vec![RootTree::ContractDocuments.into(), self.id]
+    }
+
+    pub fn documents_path(&self) -> Vec<&[u8]> {
+        vec![RootTree::ContractDocuments.into(), self.id, b"1"]
+    }
+
+    pub fn documents_primary_key_path(&self) -> Vec<&[u8]> {
+        vec![RootTree::ContractDocuments.into(), self.id, b"1", b"0"]
     }
 }
 
