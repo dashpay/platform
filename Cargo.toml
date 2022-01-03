@@ -9,6 +9,7 @@ license = "MIT"
 serde = { version = "1.0.132", features = ["derive"] }
 ciborium = "0.2.0"
 bs58 = "0.4.0"
+rand = "0.8.4"
 
 [dependencies.grovedb]
 git = "https://github.com/dashevo/grovedb"
