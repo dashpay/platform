@@ -1,10 +1,10 @@
-use std::any::Any;
-use grovedb::{Element, Error, GroveDb};
+use crate::contract::{Contract, DocumentType};
 use ciborium::value::{Value as CborValue, Value};
+use grovedb::{Element, Error, GroveDb};
 use serde::{Deserialize, Serialize};
+use std::any::Any;
 use std::collections::HashMap;
 use std::path::Path;
-use crate::contract::{Contract, DocumentType};
 
 pub struct Drive {
     grove: GroveDb,
@@ -55,7 +55,6 @@ impl From<RootTree> for Vec<u8> {
 // //
 // }
 
-
 fn contract_root_path(contract_id: &[u8]) -> Vec<&[u8]> {
     vec![RootTree::ContractDocuments.into(), contract_id]
 }
@@ -68,23 +67,23 @@ fn contract_documents_primary_key_path(contract_id: &[u8]) -> Vec<&[u8]> {
     vec![RootTree::ContractDocuments.into(), contract_id, b"1", b"0"]
 }
 
-fn base58_value_as_bytes_from_hash_map(document: &HashMap<String, CborValue>, key: &str) -> Option<Vec<u8>> {
+fn base58_value_as_bytes_from_hash_map(
+    document: &HashMap<String, CborValue>,
+    key: &str,
+) -> Option<Vec<u8>> {
     document
         .get(key)
         .map(|id_cbor| {
             if let CborValue::Text(b) = id_cbor {
                 match bs58::decode(b).into_vec() {
-                    Ok(data) => {
-                        Some(data)
-                    }
-                    Err(_) => {
-                        None
-                    }
+                    Ok(data) => Some(data),
+                    Err(_) => None,
                 }
             } else {
                 None
             }
-        }).flatten()
+        })
+        .flatten()
 }
 
 impl Drive {
@@ -118,11 +117,11 @@ impl Drive {
         contract_bytes: Element,
         contract: &Contract,
     ) -> Result<u64, Error> {
-        let contract_root_path = contract_root_path(contract.id);
+        let contract_root_path = contract_root_path(&contract.id);
 
         self.grove.insert(
             &[RootTree::ContractDocuments.into()],
-            Vec::from(contract_id),
+            contract.id.clone(),
             Element::empty_tree(),
         )?;
 
@@ -143,8 +142,8 @@ impl Drive {
         // next we should store each document type
         // right now we are referring them by name
         // toDo: change this to be a reference by index
-        let contract_documents_path = contract_documents_path(contract.id);
-        for (type_key, document_type) in contract.document_types {
+        let contract_documents_path = contract_documents_path(&contract.id);
+        for (type_key, document_type) in &contract.document_types {
             self.grove.insert(
                 &contract_documents_path,
                 type_key.as_bytes().to_vec(),
@@ -173,7 +172,7 @@ impl Drive {
         contract_bytes: Element,
         contract: &Contract,
     ) -> Result<u64, Error> {
-        let contract_root_path = contract_root_path(contract.id);
+        let contract_root_path = contract_root_path(&contract.id);
 
         let mut cost: u64 = 0;
 
@@ -181,9 +180,8 @@ impl Drive {
         self.grove
             .insert(&contract_root_path, b"0".to_vec(), contract_bytes)?;
 
-        let contract_documents_path = contract_documents_path(contract.id);
-        for (type_key, document_type) in contract.document_types {
-
+        let contract_documents_path = contract_documents_path(&contract.id);
+        for (type_key, document_type) in &contract.document_types {
             let mut type_path = contract_documents_path.clone();
             type_path.push(type_key.as_bytes());
 
@@ -212,8 +210,7 @@ impl Drive {
         let mut already_exists = false;
         let mut different_contract_data = false;
 
-        let contract_id = contract.id;
-        match self.grove.get(&*contract_root_path(&contract_id), b"0") {
+        match self.grove.get(&*contract_root_path(&contract.id), b"0") {
             Ok(stored_Element) => {
                 already_exists = true;
                 match stored_Element {
@@ -244,10 +241,7 @@ impl Drive {
         }
     }
 
-    pub fn add_document(
-        &mut self,
-        document_cbor: &[u8],
-    ) -> Result<(), Error> {
+    pub fn add_document(&mut self, document_cbor: &[u8]) -> Result<(), Error> {
         todo!()
     }
 
@@ -280,19 +274,23 @@ impl Drive {
         //  * Document and Contract root tree
         //  * Contract ID recovered from document
         //  * 0 to signify Documents and not Contract
-        let contract_path = contract_documents_path(contract.id);
+        let contract_path = contract_documents_path(&contract.id);
 
         // third we need to store the document for it's primary key
-        let mut primary_key_path = contract_documents_primary_key_path(contract.id);
+        let mut primary_key_path = contract_documents_primary_key_path(&contract.id);
         let document_element = Element::Item(Vec::from(document_cbor));
         self.grove
             .insert(&primary_key_path, Vec::from(document_id), document_element)?;
 
-        let document_type  = contract.document_types.get(document_type).ok_or(Error::CorruptedData(String::from(
-            "can not get document type from contract",
-        )))?;
+        let document_type =
+            contract
+                .document_types
+                .get(document_type)
+                .ok_or(Error::CorruptedData(String::from(
+                    "can not get document type from contract",
+                )))?;
         // fourth we need to store a reference to the document for each index
-        for index in document_type.indices {
+        for index in &document_type.indices {
             // at this point the contract path is to the contract documents
             // for each index the top index component will already have been added
             // when the contract itself was created
@@ -438,17 +436,19 @@ impl Drive {
         document_type: &str,
     ) -> Result<(), Error> {
         let contract = Contract::from_cbor(contract_cbor)?;
-        let document_type  = contract.document_types
-            .get(document_type)
-            .ok_or(Error::CorruptedData(String::from(
-                "can not get document type from contract",
-        )))?;
+        let document_type =
+            contract
+                .document_types
+                .get(document_type)
+                .ok_or(Error::CorruptedData(String::from(
+                    "can not get document type from contract",
+                )))?;
         // first we need to construct the path for documents on the contract
         // the path is
         //  * Document and Contract root tree
         //  * Contract ID recovered from document
         //  * 0 to signify Documents and not Contract
-        let contract_documents_primary_key_path = contract_documents_primary_key_path(contract.id);
+        let contract_documents_primary_key_path = contract_documents_primary_key_path(&contract.id);
 
         // next we need to get the document from storage
         let document_element: Element = self
@@ -480,7 +480,7 @@ impl Drive {
         self.grove
             .delete(&contract_documents_primary_key_path, Vec::from(document_id))?;
 
-        let contract_path = contract_documents_path(contract_id);
+        let contract_path = contract_documents_path(&contract.id);
 
         // fourth we need delete all references to the document
         // to do this we need to go through each index
@@ -585,13 +585,17 @@ mod tests {
     #[test]
     fn test_add_dashpay_data_contract() {
         let tmp_dir = TempDir::new("db").unwrap();
-        let mut drive : Drive = Drive::open(tmp_dir).expect("expected to open Drive successfully");
+        let mut drive: Drive = Drive::open(tmp_dir).expect("expected to open Drive successfully");
 
-        drive.create_root_tree().expect("expected to create root tree successfully");
+        drive
+            .create_root_tree()
+            .expect("expected to create root tree successfully");
 
         // let's construct the grovedb structure for the dashpay data contract
         let dashpay_cbor = json_document_to_cbor("dashpay-contract.json");
-        drive.apply_contract(&dashpay_cbor).expect("expected to apply contract successfully");
+        drive
+            .apply_contract(&dashpay_cbor)
+            .expect("expected to apply contract successfully");
 
         // dashpay_profile_document_cbor = json_document_to_cbor("dashpay-profile-1.json")?;
         // drive.add_document(dashpay_profile_document_cbor, dashpay_cbor);
