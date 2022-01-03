@@ -63,8 +63,12 @@ fn contract_documents_path(contract_id: &[u8]) -> Vec<&[u8]> {
     vec![RootTree::ContractDocuments.into(), contract_id, b"1"]
 }
 
-fn contract_documents_primary_key_path(contract_id: &[u8]) -> Vec<&[u8]> {
-    vec![RootTree::ContractDocuments.into(), contract_id, b"1", b"0"]
+fn contract_document_type_path<'a>(contract_id: &'a [u8], document_type_name: &'a str) -> Vec<&'a [u8]> {
+    vec![RootTree::ContractDocuments.into(), contract_id, b"1", document_type_name.as_bytes()]
+}
+
+fn contract_documents_primary_key_path<'a>(contract_id: &'a [u8], document_type_name: &'a str) -> Vec<&'a [u8]> {
+    vec![RootTree::ContractDocuments.into(), contract_id, b"1", document_type_name.as_bytes(), b"0"]
 }
 
 fn base58_value_as_bytes_from_hash_map(
@@ -144,10 +148,6 @@ impl Drive {
         // toDo: change this to be a reference by index
         let contract_documents_path = contract_documents_path(&contract.id);
 
-        // primary key tree
-        self.grove
-            .insert(&contract_documents_path, b"0".to_vec(), Element::empty_tree())?;
-
         for (type_key, document_type) in &contract.document_types {
             self.grove.insert(
                 &contract_documents_path,
@@ -157,6 +157,10 @@ impl Drive {
 
             let mut type_path = contract_documents_path.clone();
             type_path.push(type_key.as_bytes());
+
+            // primary key tree
+            self.grove
+                .insert(&type_path, b"0".to_vec(), Element::empty_tree())?;
 
             // for each type we should insert the indices that are top level
             for index in document_type.top_level_indices()? {
@@ -254,7 +258,7 @@ impl Drive {
         &mut self,
         document_cbor: &[u8],
         contract_cbor: &[u8],
-        document_type: &str,
+        document_type_name: &str,
         owner_id: &[u8],
     ) -> Result<u64, Error> {
         // we need to start by verifying that the owner_id is a 256 bit number (32 bytes)
@@ -276,10 +280,10 @@ impl Drive {
         //  * Document and Contract root tree
         //  * Contract ID recovered from document
         //  * 0 to signify Documents and not Contract
-        let contract_path = contract_documents_path(&contract.id);
+        let contract_document_type_path = contract_document_type_path(&contract.id, document_type_name);
 
         // third we need to store the document for it's primary key
-        let mut primary_key_path = contract_documents_primary_key_path(&contract.id);
+        let mut primary_key_path = contract_documents_primary_key_path(&contract.id, document_type_name);
         let document_element = Element::Item(Vec::from(document_cbor));
         self.grove
             .insert(&primary_key_path, Vec::from(document_id), document_element)?;
@@ -287,16 +291,18 @@ impl Drive {
         let document_type =
             contract
                 .document_types
-                .get(document_type)
+                .get(document_type_name)
                 .ok_or(Error::CorruptedData(String::from(
                     "can not get document type from contract",
                 )))?;
+
+
         // fourth we need to store a reference to the document for each index
         for index in &document_type.indices {
             // at this point the contract path is to the contract documents
             // for each index the top index component will already have been added
             // when the contract itself was created
-            let mut index_path = contract_path.clone();
+            let mut index_path = contract_document_type_path.clone();
             let top_index_property =
                 index
                     .properties
@@ -305,6 +311,7 @@ impl Drive {
                         "invalid contract indices",
                     )))?;
             index_path.push(top_index_property.name.as_bytes());
+
             // with the example of the dashpay contract's first index
             // the index path is now something like Contracts/ContractID/Documents(1)/$ownerId
             let document_top_field: &[u8];
@@ -444,14 +451,14 @@ impl Drive {
         &mut self,
         document_id: &[u8],
         contract_cbor: &[u8],
-        document_type: &str,
+        document_type_name: &str,
         owner_id: &[u8],
     ) -> Result<u64, Error> {
         let contract = Contract::from_cbor(contract_cbor)?;
         let document_type =
             contract
                 .document_types
-                .get(document_type)
+                .get(document_type_name)
                 .ok_or(Error::CorruptedData(String::from(
                     "can not get document type from contract",
                 )))?;
@@ -460,7 +467,7 @@ impl Drive {
         //  * Document and Contract root tree
         //  * Contract ID recovered from document
         //  * 0 to signify Documents and not Contract
-        let contract_documents_primary_key_path = contract_documents_primary_key_path(&contract.id);
+        let contract_documents_primary_key_path = contract_documents_primary_key_path(&contract.id, document_type_name);
 
         // next we need to get the document from storage
         let document_element: Element = self
@@ -572,7 +579,6 @@ impl Drive {
             // here we should return an error if the element already exists
             self.grove.delete(&index_path, Vec::from(document_id))?;
         }
-
         Ok(0)
     }
 }
