@@ -143,6 +143,11 @@ impl Drive {
         // right now we are referring them by name
         // toDo: change this to be a reference by index
         let contract_documents_path = contract_documents_path(&contract.id);
+
+        // primary key tree
+        self.grove
+            .insert(&contract_documents_path, b"0".to_vec(), Element::empty_tree())?;
+
         for (type_key, document_type) in &contract.document_types {
             self.grove.insert(
                 &contract_documents_path,
@@ -250,23 +255,20 @@ impl Drive {
         document_cbor: &[u8],
         contract_cbor: &[u8],
         document_type: &str,
-    ) -> Result<(), Error> {
+        owner_id: &[u8],
+    ) -> Result<u64, Error> {
+        // we need to start by verifying that the owner_id is a 256 bit number (32 bytes)
+        if owner_id.len() != 32 {
+            Err(Error::CorruptedData(String::from("invalid owner id")))?
+        }
         // first we need to deserialize the document and contract indices
         let document: HashMap<String, CborValue> = ciborium::de::from_reader(document_cbor)
             .map_err(|_| Error::CorruptedData(String::from("unable to decode contract")))?;
-        let document_id: &[u8] = document
-            .get("documentID")
-            .map(|id_cbor| {
-                if let CborValue::Bytes(b) = id_cbor {
-                    Some(b)
-                } else {
-                    None
-                }
-            })
-            .flatten()
+        let document_id: Vec<u8> = base58_value_as_bytes_from_hash_map(&document, "$id")
             .ok_or(Error::CorruptedData(String::from(
-                "unable to get document id",
-            )))?;
+            "unable to get document id",
+        )))?;
+
         let contract = Contract::from_cbor(contract_cbor)?;
 
         // second we need to construct the path for documents on the contract
@@ -305,20 +307,28 @@ impl Drive {
             index_path.push(top_index_property.name.as_bytes());
             // with the example of the dashpay contract's first index
             // the index path is now something like Contracts/ContractID/Documents(1)/$ownerId
+            let document_top_field: &[u8];
+            match top_index_property.name.as_str() {
+                "$ownerId" => {
+                    document_top_field = owner_id;
+                },
+                &_ => {
+                    document_top_field = document
+                        .get(&top_index_property.name)
+                        .map(|id_cbor| {
+                            if let CborValue::Bytes(b) = id_cbor {
+                                Some(b)
+                            } else {
+                                None
+                            }
+                        })
+                        .flatten()
+                        .ok_or(Error::CorruptedData(String::from(
+                            "unable to get document top index field",
+                        )))?;
+                }
+            };
 
-            let document_top_field: &[u8] = document
-                .get(&top_index_property.name)
-                .map(|id_cbor| {
-                    if let CborValue::Bytes(b) = id_cbor {
-                        Some(b)
-                    } else {
-                        None
-                    }
-                })
-                .flatten()
-                .ok_or(Error::CorruptedData(String::from(
-                    "unable to get document top index field",
-                )))?;
 
             // here we are inserting an empty tree that will have a subtree of all other index properties
             self.grove.insert_if_not_exists(
@@ -398,7 +408,7 @@ impl Drive {
                 .insert(&index_path, b"0".to_vec(), document_reference)?;
         }
 
-        Ok(())
+        Ok(0)
     }
 
     pub fn update_document_for_contract(
@@ -406,7 +416,8 @@ impl Drive {
         document_cbor: &[u8],
         contract_cbor: &[u8],
         document_type: &str,
-    ) -> Result<(), Error> {
+        owner_id: &[u8],
+    ) -> Result<u64, Error> {
         // first we need to deserialize the document and contract indices
         let document: HashMap<String, CborValue> = ciborium::de::from_reader(document_cbor)
             .map_err(|_| Error::CorruptedData(String::from("unable to decode contract")))?;
@@ -425,8 +436,8 @@ impl Drive {
             )))?;
 
         // for now updating a document will delete the document, then insert a new document
-        self.delete_document_for_contract(document_id, contract_cbor, document_type)?;
-        self.add_document_for_contract(document_cbor, contract_cbor, document_type)
+        self.delete_document_for_contract(document_id, contract_cbor, document_type, owner_id)?;
+        self.add_document_for_contract(document_cbor, contract_cbor, document_type, owner_id)
     }
 
     pub fn delete_document_for_contract(
@@ -434,7 +445,8 @@ impl Drive {
         document_id: &[u8],
         contract_cbor: &[u8],
         document_type: &str,
-    ) -> Result<(), Error> {
+        owner_id: &[u8],
+    ) -> Result<u64, Error> {
         let contract = Contract::from_cbor(contract_cbor)?;
         let document_type =
             contract
@@ -561,7 +573,7 @@ impl Drive {
             self.grove.delete(&index_path, Vec::from(document_id))?;
         }
 
-        Ok(())
+        Ok(0)
     }
 }
 
@@ -571,6 +583,7 @@ mod tests {
     use serde::{Deserialize, Serialize};
     use std::{collections::HashMap, fs::File, io::BufReader, path::Path};
     use tempdir::TempDir;
+    use rand::Rng;
 
     fn json_document_to_cbor(path: impl AsRef<Path>) -> Vec<u8> {
         let file = File::open(path).expect("file not found");
@@ -592,13 +605,15 @@ mod tests {
             .expect("expected to create root tree successfully");
 
         // let's construct the grovedb structure for the dashpay data contract
-        let dashpay_cbor = json_document_to_cbor("dashpay-contract.json");
+        let dashpay_cbor = json_document_to_cbor("test/contract/dashpay/dashpay-contract.json");
         drive
             .apply_contract(&dashpay_cbor)
             .expect("expected to apply contract successfully");
 
-        // dashpay_profile_document_cbor = json_document_to_cbor("dashpay-profile-1.json")?;
-        // drive.add_document(dashpay_profile_document_cbor, dashpay_cbor);
+        let dashpay_cr_document_cbor = json_document_to_cbor("test/contract/dashpay/contact-request0.json");
+
+        let random_owner_id = rand::thread_rng().gen::<[u8; 32]>();
+        drive.add_document_for_contract(&dashpay_cr_document_cbor, &dashpay_cbor, "contactRequest", &random_owner_id);
     }
 
     #[test]
