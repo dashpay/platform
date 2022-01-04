@@ -10,6 +10,7 @@ const decodeProtocolEntityFactory = require('../decodeProtocolEntityFactory');
 
 const protocolVersion = require('../version/protocolVersion');
 const validateProtocolVersionFactory = require('../version/validateProtocolVersionFactory');
+const getPropertyDefinitionByPath = require('./getPropertyDefinitionByPath');
 
 class DataContractFacade {
   /**
@@ -31,8 +32,8 @@ class DataContractFacade {
       validateDataContractMaxDepth,
       enrichDataContractWithBaseSchema,
       validateDataContractPatterns,
-      RE2,
       validateProtocolVersion,
+      getPropertyDefinitionByPath,
     );
 
     const decodeProtocolEntity = decodeProtocolEntityFactory();

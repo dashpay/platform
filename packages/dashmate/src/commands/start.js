@@ -1,6 +1,6 @@
 const { Listr } = require('listr2');
 
-const { flags: flagTypes } = require('@oclif/command');
+const { Flags } = require('@oclif/core');
 
 const ConfigBaseCommand = require('../oclif/command/ConfigBaseCommand');
 
@@ -67,7 +67,7 @@ Start node
 
 StartCommand.flags = {
   ...ConfigBaseCommand.flags,
-  'wait-for-readiness': flagTypes.boolean({ char: 'w', description: 'wait for nodes to be ready', default: false }),
+  'wait-for-readiness': Flags.boolean({ char: 'w', description: 'wait for nodes to be ready', default: false }),
 };
 
 module.exports = StartCommand;
