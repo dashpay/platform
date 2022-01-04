@@ -1,4 +1,4 @@
-use crate::contract::{Contract, DocumentType};
+use crate::contract::{Contract, Document, DocumentType};
 use ciborium::value::{Value as CborValue, Value};
 use grovedb::{Element, Error, GroveDb};
 use serde::{Deserialize, Serialize};
@@ -261,19 +261,10 @@ impl Drive {
         document_type_name: &str,
         owner_id: &[u8],
     ) -> Result<u64, Error> {
-        // we need to start by verifying that the owner_id is a 256 bit number (32 bytes)
-        if owner_id.len() != 32 {
-            Err(Error::CorruptedData(String::from("invalid owner id")))?
-        }
-        // first we need to deserialize the document and contract indices
-        let document: HashMap<String, CborValue> = ciborium::de::from_reader(document_cbor)
-            .map_err(|_| Error::CorruptedData(String::from("unable to decode contract")))?;
-        let document_id: Vec<u8> = base58_value_as_bytes_from_hash_map(&document, "$id")
-            .ok_or(Error::CorruptedData(String::from(
-            "unable to get document id",
-        )))?;
 
         let contract = Contract::from_cbor(contract_cbor)?;
+
+        let document = Document::from_cbor(document_cbor, owner_id)?;
 
         // second we need to construct the path for documents on the contract
         // the path is
@@ -286,7 +277,7 @@ impl Drive {
         let mut primary_key_path = contract_documents_primary_key_path(&contract.id, document_type_name);
         let document_element = Element::Item(Vec::from(document_cbor));
         self.grove
-            .insert(&primary_key_path, Vec::from(document_id), document_element)?;
+            .insert(&primary_key_path, document.id, document_element)?;
 
         let document_type =
             contract
@@ -325,6 +316,14 @@ impl Drive {
                         .map(|id_cbor| {
                             if let CborValue::Bytes(b) = id_cbor {
                                 Some(b)
+                            } else if let CborValue::Text( b ) = id_cbor {
+                                match bs58::decode( b).into_vec() {
+                                    Ok(data) => {
+                                        let vec = Vec::from(data.as_slice());
+                                        Some(vec)
+                                    },
+                                    Err(_) => None,
+                                }
                             } else {
                                 None
                             }
@@ -368,15 +367,7 @@ impl Drive {
                 // Iteration 2. the index path is now something like Contracts/ContractID/Documents(1)/$ownerId/<ownerId>/toUserId/<ToUserId>/accountReference
 
                 let document_top_field: &[u8] = document
-                    .get(&index_property.name)
-                    .map(|id_cbor| {
-                        if let CborValue::Bytes(b) = id_cbor {
-                            Some(b)
-                        } else {
-                            None
-                        }
-                    })
-                    .flatten()
+                    .get_raw(&index_property.name)
                     .ok_or(Error::CorruptedData(String::from(
                         "unable to get document field",
                     )))?;
@@ -555,6 +546,11 @@ impl Drive {
                     .map(|id_cbor| {
                         if let CborValue::Bytes(b) = id_cbor {
                             Some(b)
+                        } else if let CborValue::Text(b) = id_cbor {
+                            match bs58::decode(b).into_vec() {
+                                Ok(data) => Some(&data),
+                                Err(_) => None,
+                            }
                         } else {
                             None
                         }
