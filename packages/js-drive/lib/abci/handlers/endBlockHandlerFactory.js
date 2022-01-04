@@ -99,7 +99,8 @@ function endBlockHandlerFactory(
       }
     }
 
-    if (masternodeRewardSharesContractId && height === masternodeRewardSharesContractBlockHeight) {
+    if (masternodeRewardSharesContractId
+      && height.equals(masternodeRewardSharesContractBlockHeight)) {
       if (!blockExecutionContext.hasDataContract(masternodeRewardSharesContractId)) {
         throw new NoSystemContractFoundError(
           'Masternode reward shares',
