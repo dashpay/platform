@@ -5,6 +5,9 @@ use std::collections::HashMap;
 use std::fs::File;
 use std::io::BufReader;
 use std::path::Path;
+use std::ptr::swap;
+use std::rc::{Rc, Weak};
+use byteorder::{BigEndian, WriteBytesExt};
 
 // contract
 // - id
@@ -28,6 +31,13 @@ pub struct DocumentType {
     pub(crate) indices: Vec<Index>,
 }
 
+#[derive(Serialize, Deserialize)]
+pub struct Document {
+    pub(crate) id: Vec<u8>,
+    pub(crate) properties: HashMap<String, CborValue>,
+    pub(crate) owner_id: Vec<u8>,
+}
+
 #[derive(Clone, Serialize, Deserialize)]
 pub struct Index {
     pub(crate) properties: Vec<IndexProperty>,
@@ -41,6 +51,58 @@ pub struct IndexProperty {
 }
 
 // TODO: Make the error messages uniform
+
+impl Document {
+    pub fn from_cbor(document_cbor: &[u8], owner_id: &[u8]) -> Result<Self, Error> {
+        // we need to start by verifying that the owner_id is a 256 bit number (32 bytes)
+        if owner_id.len() != 32 {
+            Err(Error::CorruptedData(String::from("invalid owner id")))?
+        }
+        // first we need to deserialize the document and contract indices
+        let mut document: HashMap<String, CborValue> = ciborium::de::from_reader(document_cbor)
+            .map_err(|_| Error::CorruptedData(String::from("unable to decode contract")))?;
+        let document_id: Vec<u8> = base58_value_as_bytes_from_hash_map(&document, "$id")
+            .ok_or(Error::CorruptedData(String::from(
+                "unable to get document id",
+            )))?;
+        document.remove("$id");
+        
+        let document = Document{
+            properties: document,
+            owner_id: Vec::from(owner_id),
+            id: document_id,
+        };
+        Ok(document)
+    }
+
+    pub fn get(&self, key: &str) -> Option<&Value> {
+        self.properties.get(key)
+    }
+
+    pub fn get_raw(&self, key: &str) -> Option<&[u8]> {
+        let value = self.properties.get(key)?;
+        match value {
+            Value::Integer(i) => {
+                let mut wtr = vec![];
+                wtr.write_i128::<BigEndian>(i128(i)).unwrap()?;
+                Some(wtr.as_bytes())
+            }
+            Value::Bytes(bytes) => {
+                Some(bytes.as_bytes())
+            }
+            Value::Float(f) => {
+
+            }
+            Value::Text(text) => {
+
+            }
+            Value::Bool(bool) => {
+                if bool { &[1] } else { &[0] }
+            }
+            _ => None()
+        }?;
+    }
+}
 
 // Struct Implementations
 impl Contract {
