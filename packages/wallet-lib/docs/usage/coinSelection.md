@@ -34,7 +34,7 @@ const selectedUTXO = coinSelection(utxosList, outputsList);
 
 By creating a simple function algorithm that you pass to the createTransaction parameter, you can provide your own algorithm that will be used to the coinSelection.   
 
-To implements your own algorithm, you might want to take example on the [already existing one](https://github.com/dashevo/wallet-lib/tree/master/src/utils/coinSelections/strategies).  
+To implements your own algorithm, you might want to take example on the [already existing one](https://github.com/dashevo/platform/tree/master/packages/wallet-lib/src/utils/coinSelections/strategies).  
 You will need your algorithm to handle multiples parameter : 
 
 - `utxosList` - An array consisting of multiple [unspent output](https://github.com/dashevo/dashcore-lib/blob/master/docs/unspentoutput.md).

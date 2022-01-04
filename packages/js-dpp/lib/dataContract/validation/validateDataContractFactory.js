@@ -13,8 +13,6 @@ const UniqueIndicesLimitReachedError = require('../../errors/consensus/basic/dat
 const InvalidIndexedPropertyConstraintError = require('../../errors/consensus/basic/dataContract/InvalidIndexedPropertyConstraintError');
 const InvalidCompoundIndexError = require('../../errors/consensus/basic/dataContract/InvalidCompoundIndexError');
 
-const getPropertyDefinitionByPathFactory = require('../getPropertyDefinitionByPathFactory');
-
 const convertBuffersToArrays = require('../../util/convertBuffersToArrays');
 const DuplicateIndexNameError = require('../../errors/consensus/basic/dataContract/DuplicateIndexNameError');
 
@@ -28,8 +26,8 @@ const MAX_INDEXED_STRING_PROPERTY_LENGTH = 1024;
  * @param {validateDataContractMaxDepth} validateDataContractMaxDepth
  * @param {enrichDataContractWithBaseSchema} enrichDataContractWithBaseSchema
  * @param {validateDataContractPatterns} validateDataContractPatterns
- * @param {RE2} RE2
  * @param {validateProtocolVersion} validateProtocolVersion
+ * @param {getPropertyDefinitionByPath} getPropertyDefinitionByPath
  * @return {validateDataContract}
  */
 module.exports = function validateDataContractFactory(
@@ -37,8 +35,8 @@ module.exports = function validateDataContractFactory(
   validateDataContractMaxDepth,
   enrichDataContractWithBaseSchema,
   validateDataContractPatterns,
-  RE2,
   validateProtocolVersion,
+  getPropertyDefinitionByPath,
 ) {
   /**
    * @typedef validateDataContract
@@ -166,7 +164,6 @@ module.exports = function validateDataContractFactory(
           // Ensure index properties are defined in the document
           const userDefinedProperties = indexPropertyNames
             .filter((name) => !allowedSystemProperties.includes(name));
-          const getPropertyDefinitionByPath = getPropertyDefinitionByPathFactory(RE2);
 
           const propertyDefinitionEntities = userDefinedProperties
             .map((propertyName) => (
