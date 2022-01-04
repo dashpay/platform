@@ -65,11 +65,11 @@ class IdentitySyncWorker extends Worker {
       const publicKey = privateKey.toPublicKey();
 
       // eslint-disable-next-line no-await-in-loop
-      const [fetchedId] = await this.transport.getIdentityIdsByPublicKeyHash([publicKey.hash]);
+      const [[fetchedId]] = await this.transport.getIdentityIdsByPublicKeyHash([publicKey.hash]);
 
       // if identity id is not preset then increment gap count
       // and stop sync if gap limit is reached
-      if (fetchedId === null) {
+      if (fetchedId === undefined) {
         gapCount += 1;
 
         logger.silly(`IdentitySyncWorker - gap at index ${index}`);
@@ -84,11 +84,11 @@ class IdentitySyncWorker extends Worker {
         continue;
       }
 
-      // If it's not a null and not a buffer or Identifier (which inherits Buffer),
+      // If it's not an undefined and not a buffer or Identifier (which inherits Buffer),
       // this method will loop forever.
       // This check prevents this from happening
       if (!Buffer.isBuffer(fetchedId)) {
-        throw new Error(`Expected identity id to be a Buffer or null, got ${fetchedId}`);
+        throw new Error(`Expected identity id to be a Buffer or undefined, got ${fetchedId}`);
       }
 
       // reset gap counter if we got an identity

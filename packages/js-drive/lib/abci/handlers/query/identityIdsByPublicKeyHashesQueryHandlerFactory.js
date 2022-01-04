@@ -6,6 +6,8 @@ const {
   },
 } = require('@dashevo/abci/types');
 
+const cbor = require('cbor');
+
 const {
   v0: {
     GetIdentityIdsByPublicKeyHashesResponse,
@@ -57,8 +59,7 @@ function identityIdsByPublicKeyHashesQueryHandlerFactory(
     if (blockExecutionContext.isEmpty() || previousBlockExecutionContext.isEmpty()) {
       const response = new GetIdentityIdsByPublicKeyHashesResponse();
 
-      response.setIdentityIdsList(publicKeyHashes.map(() => Buffer.alloc(0)));
-
+      response.setIdentityIdsList(publicKeyHashes.map(() => cbor.encode([])));
       response.setMetadata(new ResponseMetadata());
 
       return new ResponseQuery({
@@ -91,15 +92,15 @@ function identityIdsByPublicKeyHashesQueryHandlerFactory(
       proof.setRootTreeProof(rootTreeProof);
       proof.setStoreTreeProofs(storeTreeProofs);
     } else {
-      const identityIdBuffers = identityIds.map((identityId) => {
-        if (!identityId) {
-          return Buffer.alloc(0);
+      const idsList = identityIds.map((ids) => {
+        if (!ids) {
+          return cbor.encode([]);
         }
 
-        return identityId.toBuffer();
-      });
+        return ids;
+      })
 
-      response.setIdentityIdsList(identityIdBuffers);
+      response.setIdentityIdsList(idsList);
     }
 
     return new ResponseQuery({

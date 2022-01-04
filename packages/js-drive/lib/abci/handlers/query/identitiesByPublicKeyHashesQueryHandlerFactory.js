@@ -6,6 +6,8 @@ const {
   },
 } = require('@dashevo/abci/types');
 
+const cbor = require('cbor');
+
 const {
   v0: {
     GetIdentitiesByPublicKeyHashesResponse,
@@ -61,8 +63,7 @@ function identitiesByPublicKeyHashesQueryHandlerFactory(
     if (blockExecutionContext.isEmpty() || previousBlockExecutionContext.isEmpty()) {
       const response = new GetIdentitiesByPublicKeyHashesResponse();
 
-      response.setIdentitiesList(publicKeyHashes.map(() => Buffer.alloc(0)));
-
+      response.setIdentitiesList(publicKeyHashes.map(() => cbor.encode([])));
       response.setMetadata(new ResponseMetadata());
 
       return new ResponseQuery({
@@ -96,13 +97,7 @@ function identitiesByPublicKeyHashesQueryHandlerFactory(
       const storeTreeProofs = new StoreTreeProofs();
 
       const identitiesStoreTreeProof = previousIdentitiesStoreRootTreeLeaf.getProof(
-        foundIdentityIds.map((identityId) => {
-          if (identityId) {
-            return identityId.toBuffer();
-          }
-
-          return null;
-        }),
+        foundIdentityIds,
       );
 
       const publicKeyStoreTreeProof = previousPublicKeyToIdentityIdStoreRootTreeLeaf.getProof(
@@ -121,14 +116,22 @@ function identitiesByPublicKeyHashesQueryHandlerFactory(
       proof.setStoreTreeProofs(storeTreeProofs);
     } else {
       const identityBuffers = await Promise.all(
-        identityIds.map(async (identityId) => {
-          if (!identityId) {
-            return Buffer.alloc(0);
+        identityIds.map(async (serializedIds) => {
+          if (!serializedIds) {
+            return cbor.encode([]);
           }
 
-          const identity = await previousIdentityRepository.fetch(identityId);
+          const ids = cbor.decode(serializedIds);
 
-          return identity.toBuffer();
+          const identities = await Promise.all(
+            ids.map(async (id) => {
+              const identity = await previousIdentityRepository.fetch(id);
+
+              return identity.toBuffer();
+            }),
+          );
+
+          return cbor.encode(identities);
         }),
       );
 

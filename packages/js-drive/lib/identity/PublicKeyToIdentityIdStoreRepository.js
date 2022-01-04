@@ -12,7 +12,7 @@ class PublicKeyToIdentityIdStoreRepository {
   }
 
   /**
-   * Store public key to identity id map into database
+   * Store public key to identity ids map into database
    *
    * @param {Buffer} publicKeyHash
    * @param {Identifier} identityId
@@ -29,7 +29,7 @@ class PublicKeyToIdentityIdStoreRepository {
     }
 
     if (!identityIds.includes(identityId)) {
-      identityIds.push(identityId);
+      identityIds.push(identityId.toBuffer());
 
       this.storage.put(
         publicKeyHash,
@@ -42,14 +42,26 @@ class PublicKeyToIdentityIdStoreRepository {
   }
 
   /**
-   * Fetch identity id by public key hash from database
+   * Fetch serialized identity ids by public key hash from database
+   *
+   * @param {Buffer} publicKeyHash
+   * @param {MerkDbTransaction} [transaction]
+   *
+   * @return {Promise<Buffer|null>}
+   */
+  async fetch(publicKeyHash, transaction = undefined) {
+    return this.storage.get(publicKeyHash, transaction);
+  }
+
+  /**
+   * Fetch deserialized identity ids by public key hash from database
    *
    * @param {Buffer} publicKeyHash
    * @param {MerkDbTransaction} [transaction]
    *
    * @return {Promise<Identifier[]>}
    */
-  async fetch(publicKeyHash, transaction = undefined) {
+  async fetchDeserialized(publicKeyHash, transaction = undefined) {
     const identityIdsSerialized = this.storage.get(publicKeyHash, transaction);
 
     if (!identityIdsSerialized) {
