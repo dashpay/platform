@@ -6,6 +6,8 @@ const {
   },
 } = require('@dashevo/abci/types');
 
+const cbor = require('cbor');
+
 const {
   v0: {
     GetIdentityIdsByPublicKeyHashesResponse,
@@ -86,12 +88,12 @@ describe('identityIdsByPublicKeyHashesQueryHandlerFactory', () => {
     previousPublicKeyIdentityIdRepositoryMock
       .fetch
       .withArgs(publicKeyHashes[0])
-      .resolves(identityIds[0]);
+      .resolves(cbor.encode([identityIds[0]]));
 
     previousPublicKeyIdentityIdRepositoryMock
       .fetch
       .withArgs(publicKeyHashes[1])
-      .resolves(identityIds[1]);
+      .resolves(cbor.encode([identityIds[1]]));
 
     params = {};
     data = { publicKeyHashes };
@@ -101,7 +103,11 @@ describe('identityIdsByPublicKeyHashesQueryHandlerFactory', () => {
     previousBlockExecutionContextMock.isEmpty.returns(true);
 
     responseMock = new GetIdentityIdsByPublicKeyHashesResponse();
-    responseMock.setIdentityIdsList([Buffer.alloc(0), Buffer.alloc(0), Buffer.alloc(0)]);
+    responseMock.setIdentityIdsList([
+      cbor.encode([]),
+      cbor.encode([]),
+      cbor.encode([]),
+    ]);
     responseMock.setMetadata(new ResponseMetadata());
 
     const result = await identityIdsByPublicKeyHashesQueryHandler(params, data, {});
@@ -119,7 +125,11 @@ describe('identityIdsByPublicKeyHashesQueryHandlerFactory', () => {
     previousBlockExecutionContextMock.isEmpty.returns(true);
 
     responseMock = new GetIdentityIdsByPublicKeyHashesResponse();
-    responseMock.setIdentityIdsList([Buffer.alloc(0), Buffer.alloc(0), Buffer.alloc(0)]);
+    responseMock.setIdentityIdsList([
+      cbor.encode([]),
+      cbor.encode([]),
+      cbor.encode([]),
+    ]);
     responseMock.setMetadata(new ResponseMetadata());
 
     const result = await identityIdsByPublicKeyHashesQueryHandler(params, data, {});

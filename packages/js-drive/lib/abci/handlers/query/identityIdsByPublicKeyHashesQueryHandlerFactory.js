@@ -98,7 +98,7 @@ function identityIdsByPublicKeyHashesQueryHandlerFactory(
         }
 
         return ids;
-      })
+      });
 
       response.setIdentityIdsList(idsList);
     }

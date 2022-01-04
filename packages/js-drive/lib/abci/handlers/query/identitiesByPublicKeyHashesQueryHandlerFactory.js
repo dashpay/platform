@@ -16,6 +16,7 @@ const {
   },
 } = require('@dashevo/dapi-grpc');
 
+const Identifier = require('@dashevo/dpp/lib/identifier/Identifier');
 const InvalidArgumentAbciError = require('../../errors/InvalidArgumentAbciError');
 
 /**
@@ -125,7 +126,9 @@ function identitiesByPublicKeyHashesQueryHandlerFactory(
 
           const identities = await Promise.all(
             ids.map(async (id) => {
-              const identity = await previousIdentityRepository.fetch(id);
+              const identity = await previousIdentityRepository.fetch(
+                Identifier.from(id),
+              );
 
               return identity.toBuffer();
             }),

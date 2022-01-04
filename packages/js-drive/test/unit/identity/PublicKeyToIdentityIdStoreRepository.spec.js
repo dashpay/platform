@@ -1,6 +1,7 @@
 const getIdentityFixture = require('@dashevo/dpp/lib/test/fixtures/getIdentityFixture');
 const IdentityPublicKey = require('@dashevo/dpp/lib/identity/IdentityPublicKey');
 
+const cbor = require('cbor');
 const StoreMock = require('../../../lib/test/mock/StoreMock');
 
 const PublicKeyToIdentityIdStoreRepository = require('../../../lib/identity/PublicKeyToIdentityIdStoreRepository');
@@ -37,7 +38,7 @@ describe('PublicKeyToIdentityIdStoreRepository', () => {
 
       expect(storeMock.put).to.be.calledOnceWithExactly(
         publicKey.hash(),
-        identity.getId(),
+        cbor.encode([identity.getId()]),
         transactionMock,
       );
     });
