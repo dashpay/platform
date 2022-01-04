@@ -37,9 +37,7 @@ async function createMasternodeRewardSharesDataTrigger(
     error.setDocumentTransition(documentTransition);
 
     result.addError(error);
-  }
 
-  if (!result.isOk()) {
     return result;
   }
 
@@ -56,8 +54,11 @@ async function createMasternodeRewardSharesDataTrigger(
     error.setDocumentTransition(documentTransition);
 
     result.addError(error);
+
+    return result;
   }
 
+  // The overall percentage for ownerId is not more than 10000
   const documents = await context.getStateRepository().fetchDocuments(
     context.getDataContract().getId(),
     documentTransition.getType(),
@@ -68,7 +69,6 @@ async function createMasternodeRewardSharesDataTrigger(
     },
   );
 
-  // The percentage is not more than 10000
   const totalPercent = documents
     .reduce((prevValue, document) => prevValue + document.data.percentage, percentage);
 

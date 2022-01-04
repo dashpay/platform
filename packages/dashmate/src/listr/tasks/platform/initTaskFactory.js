@@ -292,7 +292,7 @@ function initTaskFactory(
         options: { persistentOutput: true },
       },
       {
-        title: 'Register Reward Share identity',
+        title: 'Register Masternode Reward Shares identity',
         task: async (ctx, task) => {
           ctx.masternodeRewardSharesIdentity = await ctx.client.platform.identities.register(5000);
 
@@ -302,7 +302,7 @@ function initTaskFactory(
         options: { persistentOutput: true },
       },
       {
-        title: 'Register Reward Share contract',
+        title: 'Register Masternode Reward Share contract',
         task: async (ctx, task) => {
           ctx.rewardSharingContract = await ctx.client.platform.contracts.create(
             masternodeRewardSharesSchema, ctx.masternodeRewardSharesIdentity,
@@ -326,7 +326,7 @@ function initTaskFactory(
         options: { persistentOutput: true },
       },
       {
-        title: 'Obtain Reward Share contract commit block height',
+        title: 'Obtain Masternode Reward Share contract commit block height',
         task: async (ctx, task) => {
           const stateTransitionHash = crypto.createHash('sha256')
             .update(ctx.dataContractStateTransition.toBuffer())

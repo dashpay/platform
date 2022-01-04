@@ -557,7 +557,7 @@ module.exports = {
               additionalProperties: false,
             },
           },
-          required: ['contract', 'ownerId'],
+          required: ['contract'],
           additionalProperties: false,
         },
       },
