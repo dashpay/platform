@@ -89,7 +89,9 @@ function identitiesByPublicKeyHashesQueryHandlerFactory(
         notFoundIdentityPublicKeyHashes.push(publicKeyHashes[i]);
       } else {
         // If identity was found, we need to request ordinary identity proof by id
-        foundIdentityIds.push(identityIds[i]);
+        const ids = cbor.decode(identityIds[i]);
+
+        ids.forEach((id) => foundIdentityIds.push(id));
       }
     }
 

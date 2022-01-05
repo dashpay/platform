@@ -248,16 +248,10 @@ describe('Platform', () => {
 
             // Existing identities should be in the identitiesProof, as it also serves
             // as an inclusion proof
-            const restoredIdentitiesList = parsedIdentitiesStoreTreeProof.values.map(
-              (serializedIdentities) => {
-                const identities = cbor.decode(serializedIdentities);
-
-                return identities.map(
-                  (identityBuffer) => dashClient.platform.dpp.identity.createFromBuffer(
-                    identityBuffer,
-                  ),
-                );
-              },
+            const restoredIdentities = parsedIdentitiesStoreTreeProof.values.map(
+              (identityBuffer) => dashClient.platform.dpp.identity.createFromBuffer(
+                identityBuffer,
+              ),
             );
 
             /* Figuring out what was found */
@@ -267,17 +261,15 @@ describe('Platform', () => {
 
             // Scanning through public keys to figure out what identities were found
             for (const publicKeyHash of publicKeyHashes) {
-              for (const restoredIdentities of restoredIdentitiesList) {
-                const foundIdentity = restoredIdentities
-                  .find(
-                    (restoredIdentity) => restoredIdentity.getPublicKeyById(0)
-                      .hash().toString('hex') === publicKeyHash.toString('hex'),
-                  );
-                if (foundIdentity) {
-                  foundIdentityIds.push(foundIdentity.getId());
-                } else {
-                  notFoundPublicKeyHashes.push(publicKeyHash);
-                }
+              const foundIdentity = restoredIdentities
+                .find(
+                  (restoredIdentity) => restoredIdentity.getPublicKeyById(0)
+                    .hash().toString('hex') === publicKeyHash.toString('hex'),
+                );
+              if (foundIdentity) {
+                foundIdentityIds.push(foundIdentity.getId());
+              } else {
+                notFoundPublicKeyHashes.push(publicKeyHash);
               }
             }
 
