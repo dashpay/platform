@@ -1,3 +1,28 @@
+### [0.21.7](https://github.com/dashevo/platform/compare/v0.21.6...v0.21.7) (2022-01-05)
+
+
+### ⚠ BREAKING CHANGES
+
+* **dashmate:** `platform.drive.abci.docker.build.path' and 'platform.dapi.api.docker.build.path' are removed in favor of `platform.sourcePath'
+
+### Features
+
+* **dashmate:** build DAPI and Drive from monorepo path ([#145](https://github.com/dashevo/platform/issues/145))
+* distribute dashmate with NPM ([#148](https://github.com/dashevo/platform/issues/148))
+* support Apple Silicone ([#143](https://github.com/dashevo/platform/issues/143))
+
+
+### Miscellaneous Chores
+
+* fix wrong version in a release PR title ([#82](https://github.com/dashevo/platform/issues/82))
+* missed merk darwin x64 pre-build binary ([#144](https://github.com/dashevo/platform/issues/144))
+* undefined "-w" argument in restart script ([#85](https://github.com/dashevo/platform/issues/85))
+
+
+### Documentation
+
+* escape literal '|' in table ([#164](https://github.com/dashevo/platform/issues/164))
+
 ### [0.21.6](https://github.com/dashevo/platform/compare/v0.21.5...v0.21.6) (2021-12-13)
 
 
