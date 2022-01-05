@@ -52,6 +52,7 @@
     "@dashevo/dpns-contract": "workspace:~",
     "@dashevo/dpp": "workspace:~",
     "@dashevo/feature-flags-contract": "workspace:~",
+    "@dashevo/masternode-reward-shares-contract": "workspace:~",
     "@dashevo/wallet-lib": "workspace:~",
     "@oclif/core": "^1.0.10",
     "@oclif/plugin-help": "^5",

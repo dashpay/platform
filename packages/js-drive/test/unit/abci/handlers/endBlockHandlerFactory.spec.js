@@ -17,8 +17,7 @@ const generateRandomIdentifier = require('@dashevo/dpp/lib/test/utils/generateRa
 const endBlockHandlerFactory = require('../../../../lib/abci/handlers/endBlockHandlerFactory');
 
 const BlockExecutionContextMock = require('../../../../lib/test/mock/BlockExecutionContextMock');
-const NoDPNSContractFoundError = require('../../../../lib/abci/handlers/errors/NoDPNSContractFoundError');
-const NoDashpayContractFoundError = require('../../../../lib/abci/handlers/errors/NoDashpayContractFoundError');
+const NoSystemContractFoundError = require('../../../../lib/abci/handlers/errors/NoSystemContractFoundError');
 const LoggerMock = require('../../../../lib/test/mock/LoggerMock');
 const BlockExecutionDBTransactionsMock = require('../../../../lib/test/mock/BlockExecutionStoreTransactionsMock');
 
@@ -39,6 +38,10 @@ describe('endBlockHandlerFactory', () => {
   let validatorSetMock;
   let getFeatureFlagForHeightMock;
   let blockExecutionStoreTransactionsMock;
+  let featureFlagDataContractId;
+  let featureFlagDataContractBlockHeight;
+  let masternodeRewardSharesContractId;
+  let masternodeRewardSharesContractBlockHeight;
 
   beforeEach(function beforeEach() {
     headerMock = {
@@ -99,10 +102,14 @@ describe('endBlockHandlerFactory', () => {
       loggerMock,
       getFeatureFlagForHeightMock,
       blockExecutionStoreTransactionsMock,
+      featureFlagDataContractId,
+      featureFlagDataContractBlockHeight,
+      masternodeRewardSharesContractId,
+      masternodeRewardSharesContractBlockHeight,
     );
 
     requestMock = {
-      height: dpnsContractBlockHeight,
+      height: Long.fromInt(dpnsContractBlockHeight),
     };
   });
 
@@ -119,6 +126,10 @@ describe('endBlockHandlerFactory', () => {
       loggerMock,
       getFeatureFlagForHeightMock,
       blockExecutionStoreTransactionsMock,
+      featureFlagDataContractId,
+      featureFlagDataContractBlockHeight,
+      masternodeRewardSharesContractId,
+      masternodeRewardSharesContractBlockHeight,
     );
 
     const response = await endBlockHandler(requestMock);
@@ -142,6 +153,10 @@ describe('endBlockHandlerFactory', () => {
       loggerMock,
       getFeatureFlagForHeightMock,
       blockExecutionStoreTransactionsMock,
+      featureFlagDataContractId,
+      featureFlagDataContractBlockHeight,
+      masternodeRewardSharesContractId,
+      masternodeRewardSharesContractBlockHeight,
     );
 
     const response = await endBlockHandler(requestMock);
@@ -168,6 +183,10 @@ describe('endBlockHandlerFactory', () => {
       loggerMock,
       getFeatureFlagForHeightMock,
       blockExecutionStoreTransactionsMock,
+      featureFlagDataContractId,
+      featureFlagDataContractBlockHeight,
+      masternodeRewardSharesContractId,
+      masternodeRewardSharesContractBlockHeight,
     );
 
     blockExecutionContextMock.hasDataContract.returns(false);
@@ -177,7 +196,7 @@ describe('endBlockHandlerFactory', () => {
 
       expect.fail('Error was not thrown');
     } catch (e) {
-      expect(e).to.be.an.instanceOf(NoDPNSContractFoundError);
+      expect(e).to.be.an.instanceOf(NoSystemContractFoundError);
       expect(e.getContractId()).to.equal(dpnsContractId);
       expect(e.getHeight()).to.equal(dpnsContractBlockHeight);
 
@@ -202,6 +221,10 @@ describe('endBlockHandlerFactory', () => {
       loggerMock,
       getFeatureFlagForHeightMock,
       blockExecutionStoreTransactionsMock,
+      featureFlagDataContractId,
+      featureFlagDataContractBlockHeight,
+      masternodeRewardSharesContractId,
+      masternodeRewardSharesContractBlockHeight,
     );
 
     const response = await endBlockHandler(requestMock);
@@ -228,6 +251,10 @@ describe('endBlockHandlerFactory', () => {
       loggerMock,
       getFeatureFlagForHeightMock,
       blockExecutionStoreTransactionsMock,
+      featureFlagDataContractId,
+      featureFlagDataContractBlockHeight,
+      masternodeRewardSharesContractId,
+      masternodeRewardSharesContractBlockHeight,
     );
 
     blockExecutionContextMock.hasDataContract.returns(false);
@@ -237,7 +264,7 @@ describe('endBlockHandlerFactory', () => {
 
       expect.fail('Error was not thrown');
     } catch (e) {
-      expect(e).to.be.an.instanceOf(NoDashpayContractFoundError);
+      expect(e).to.be.an.instanceOf(NoSystemContractFoundError);
       expect(e.getContractId()).to.equal(dashpayContractId);
       expect(e.getHeight()).to.equal(dashpayContractBlockHeight);
 
@@ -268,7 +295,7 @@ describe('endBlockHandlerFactory', () => {
 
   it('should rotate validator set and return ValidatorSetUpdate if height is divisible by ROTATION_BLOCK_INTERVAL', async () => {
     requestMock = {
-      height: 15,
+      height: Long.fromInt(15),
     };
 
     validatorSetMock.rotate.resolves(true);

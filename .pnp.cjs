@@ -67,6 +67,10 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
         "reference": "workspace:packages/js-grpc-common"
       },
       {
+        "name": "@dashevo/masternode-reward-shares-contract",
+        "reference": "workspace:packages/masternode-reward-shares-contract"
+      },
+      {
         "name": "@dashevo/platform-test-suite",
         "reference": "workspace:packages/platform-test-suite"
       },
@@ -87,6 +91,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
       ["@dashevo/drive", ["workspace:packages/js-drive"]],
       ["@dashevo/feature-flags-contract", ["workspace:packages/feature-flags-contract"]],
       ["@dashevo/grpc-common", ["workspace:packages/js-grpc-common"]],
+      ["@dashevo/masternode-reward-shares-contract", ["workspace:packages/masternode-reward-shares-contract"]],
       ["@dashevo/platform", ["workspace:."]],
       ["@dashevo/platform-test-suite", ["workspace:packages/platform-test-suite"]],
       ["@dashevo/wallet-lib", ["workspace:packages/wallet-lib"]],
@@ -2460,6 +2465,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["@dashevo/dashpay-contract", "workspace:packages/dashpay-contract"],
             ["@dashevo/dpns-contract", "workspace:packages/dpns-contract"],
             ["@dashevo/feature-flags-contract", "workspace:packages/feature-flags-contract"],
+            ["@dashevo/masternode-reward-shares-contract", "workspace:packages/masternode-reward-shares-contract"],
             ["@dashevo/re2-wasm", "npm:1.0.4"],
             ["acorn", "npm:8.6.0"],
             ["ajv", "npm:8.8.1"],
@@ -2614,6 +2620,24 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["nyc", "npm:15.1.0"],
             ["protobufjs", "https://github.com/jawid-h/protobuf.js.git#commit=8b91c72dca68fd6c418078fd2358c4969425dcdc"],
             ["semver", "npm:7.3.5"],
+            ["sinon", "npm:11.1.2"],
+            ["sinon-chai", "virtual:595d7482cc8ddf98ee6aef33fc48b46393554ab5f17f851ef62e6e39315e53666c3e66226b978689aa0bc7f1e83a03081511a21db1c381362fe67614887077f9#npm:3.7.0"]
+          ],
+          "linkType": "SOFT",
+        }]
+      ]],
+      ["@dashevo/masternode-reward-shares-contract", [
+        ["workspace:packages/masternode-reward-shares-contract", {
+          "packageLocation": "./packages/masternode-reward-shares-contract/",
+          "packageDependencies": [
+            ["@dashevo/masternode-reward-shares-contract", "workspace:packages/masternode-reward-shares-contract"],
+            ["@dashevo/dpp", "workspace:packages/js-dpp"],
+            ["chai", "npm:4.3.4"],
+            ["dirty-chai", "virtual:595d7482cc8ddf98ee6aef33fc48b46393554ab5f17f851ef62e6e39315e53666c3e66226b978689aa0bc7f1e83a03081511a21db1c381362fe67614887077f9#npm:2.0.1"],
+            ["eslint", "npm:7.32.0"],
+            ["eslint-config-airbnb-base", "virtual:595d7482cc8ddf98ee6aef33fc48b46393554ab5f17f851ef62e6e39315e53666c3e66226b978689aa0bc7f1e83a03081511a21db1c381362fe67614887077f9#npm:14.2.1"],
+            ["eslint-plugin-import", "virtual:595d7482cc8ddf98ee6aef33fc48b46393554ab5f17f851ef62e6e39315e53666c3e66226b978689aa0bc7f1e83a03081511a21db1c381362fe67614887077f9#npm:2.25.3"],
+            ["mocha", "npm:9.1.3"],
             ["sinon", "npm:11.1.2"],
             ["sinon-chai", "virtual:595d7482cc8ddf98ee6aef33fc48b46393554ab5f17f851ef62e6e39315e53666c3e66226b978689aa0bc7f1e83a03081511a21db1c381362fe67614887077f9#npm:3.7.0"]
           ],
@@ -7389,6 +7413,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["@dashevo/dpns-contract", "workspace:packages/dpns-contract"],
             ["@dashevo/dpp", "workspace:packages/js-dpp"],
             ["@dashevo/feature-flags-contract", "workspace:packages/feature-flags-contract"],
+            ["@dashevo/masternode-reward-shares-contract", "workspace:packages/masternode-reward-shares-contract"],
             ["@dashevo/wallet-lib", "workspace:packages/wallet-lib"],
             ["@oclif/core", "npm:1.0.11"],
             ["@oclif/plugin-help", "npm:5.1.10"],
