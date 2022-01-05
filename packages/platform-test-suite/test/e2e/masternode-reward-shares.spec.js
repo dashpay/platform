@@ -1,5 +1,6 @@
 const Identifier = require('@dashevo/dpp/lib/identifier/Identifier');
 const generateRandomIdentifier = require('@dashevo/dpp/lib/test/utils/generateRandomIdentifier');
+const hash = require('@dashevo/dpp/lib/util/hash');
 
 const createClientWithFundedWallet = require('../../lib/test/createClientWithFundedWallet');
 const wait = require('../../lib/wait');
@@ -28,7 +29,9 @@ describe('Masternode Reward Shares', () => {
   });
 
   after(async () => {
-    await client.disconnect();
+    if (client) {
+      await client.disconnect();
+    }
   });
 
   describe('Data Contract', () => {
@@ -45,8 +48,7 @@ describe('Masternode Reward Shares', () => {
     });
   });
 
-  describe('Masternode owner', () => {
-    let ownerClient;
+  describe.skip('Masternode owner', () => {
     let anotherIdentity;
     let rewardShare;
     let anotherRewardShare;
@@ -54,32 +56,24 @@ describe('Masternode Reward Shares', () => {
 
     before(async function before() {
       if (!process.env.MASTERNODE_REWARD_SHARES_OWNER_PRIVATE_KEY
-        || process.env.MASTERNODE_REWARD_SHARES_OWNER_PRO_REG_TX_HASH) {
+        || !process.env.MASTERNODE_REWARD_SHARES_OWNER_PRO_REG_TX_HASH) {
         this.skip('masternode owner credentials are not set');
       }
 
-      ownerClient = await createClientWithFundedWallet(
-        process.env.MASTERNODE_REWARD_SHARES_OWNER_PRIVATE_KEY,
+      const ownerIdentifier = hash(
+        Buffer.from(process.env.MASTERNODE_REWARD_SHARES_OWNER_PRO_REG_TX_HASH, 'hex'),
       );
 
       // Masternode identity should exist
-      ownerIdentity = await ownerClient.platform.identities.get(
-        process.env.MASTERNODE_REWARD_SHARES_OWNER_PRO_REG_TX_HASH,
-      );
+      ownerIdentity = await client.platform.identities.get(ownerIdentifier);
 
       expect(ownerIdentity).to.exist();
-
-      await ownerClient.platform.identities.topUp(ownerIdentity.getId(), 5);
-    });
-
-    after(async () => {
-      await ownerClient.disconnect();
     });
 
     it('should be able to create reward shares with existing identity', async () => {
       anotherIdentity = await client.platform.identities.register(5);
 
-      rewardShare = await ownerClient.platform.documents.create(
+      rewardShare = await client.platform.documents.create(
         'masternodeRewardShares.rewardShare',
         ownerIdentity,
         {
@@ -88,7 +82,7 @@ describe('Masternode Reward Shares', () => {
         },
       );
 
-      ownerClient.platform.documents.broadcast({
+      client.platform.documents.broadcast({
         create: [rewardShare],
       });
     });
@@ -96,7 +90,7 @@ describe('Masternode Reward Shares', () => {
     it('should not be able to create reward shares with non-existing identity', async () => {
       const payToId = generateRandomIdentifier();
 
-      const invalidRewardShare = await ownerClient.platform.documents.create(
+      const invalidRewardShare = await client.platform.documents.create(
         'masternodeRewardShares.rewardShare',
         ownerIdentity,
         {
@@ -106,7 +100,7 @@ describe('Masternode Reward Shares', () => {
       );
 
       try {
-        await ownerClient.platform.documents.broadcast({
+        await client.platform.documents.broadcast({
           create: [invalidRewardShare],
         }, ownerIdentity);
 
@@ -120,7 +114,7 @@ describe('Masternode Reward Shares', () => {
     it('should be able to update reward shares with existing identity', async () => {
       rewardShare.set('percentage', 2);
 
-      await ownerClient.platform.documents.broadcast({
+      await client.platform.documents.broadcast({
         replace: [rewardShare],
       }, ownerIdentity);
 
@@ -129,7 +123,7 @@ describe('Masternode Reward Shares', () => {
         await wait(5000);
       }
 
-      const [updatedRewardShare] = await ownerClient.platform.documents.get('masternodeRewardShares.rewardShare', {
+      const [updatedRewardShare] = await client.platform.documents.get('masternodeRewardShares.rewardShare', {
         where: [['$id', '==', rewardShare.getId()]],
       });
 
@@ -144,7 +138,7 @@ describe('Masternode Reward Shares', () => {
       rewardShare.set('payToId', payToId);
 
       try {
-        await ownerClient.platform.documents.broadcast({
+        await client.platform.documents.broadcast({
           replace: [rewardShare],
         }, ownerIdentity);
 
@@ -158,7 +152,7 @@ describe('Masternode Reward Shares', () => {
     it('should not be able to share more than 100% of rewards', async () => {
       anotherIdentity = await client.platform.identities.register(5);
 
-      anotherRewardShare = await ownerClient.platform.documents.create(
+      anotherRewardShare = await client.platform.documents.create(
         'masternodeRewardShares.rewardShare',
         ownerIdentity,
         {
@@ -168,7 +162,7 @@ describe('Masternode Reward Shares', () => {
       );
 
       try {
-        await ownerClient.platform.documents.broadcast({
+        await client.platform.documents.broadcast({
           create: [rewardShare],
         }, ownerIdentity);
 
@@ -180,13 +174,13 @@ describe('Masternode Reward Shares', () => {
     });
 
     it('should be able to remove reward shares', async () => {
-      await ownerClient.platform.documents.broadcast({
+      await client.platform.documents.broadcast({
         delete: [rewardShare, anotherRewardShare],
       }, ownerIdentity);
     });
   });
 
-  describe('Any Identity', () => {
+  describe.skip('Any Identity', () => {
     let identity;
 
     before(async () => {
