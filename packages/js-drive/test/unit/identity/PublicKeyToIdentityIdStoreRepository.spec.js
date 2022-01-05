@@ -28,6 +28,20 @@ describe('PublicKeyToIdentityIdStoreRepository', () => {
   });
 
   describe('#store', () => {
+    it('should not store identity id if it is already stored', async () => {
+      storeMock.get.returns(
+        cbor.encode([identity.getId()]),
+      );
+
+      await repository.store(
+        publicKey.hash(),
+        identity.getId(),
+        transactionMock,
+      );
+
+      expect(storeMock.put).to.have.not.been.called();
+    });
+
     it('should store public key to identity id map', async () => {
       const repositoryInstance = await repository.store(
         publicKey.hash(),
@@ -44,11 +58,11 @@ describe('PublicKeyToIdentityIdStoreRepository', () => {
     });
   });
 
-  describe('#fetch', () => {
+  describe('#fetchBuffer', () => {
     it('should return null if publicKeyHash is not present', async () => {
       storeMock.get.returns(null);
 
-      const result = await repository.fetch(publicKey.hash(), transactionMock);
+      const result = await repository.fetchBuffer(publicKey.hash(), transactionMock);
 
       expect(result).to.be.null();
 
@@ -58,12 +72,42 @@ describe('PublicKeyToIdentityIdStoreRepository', () => {
       );
     });
 
-    it('should return identity Id', async () => {
-      storeMock.get.returns(identity.getId().toBuffer());
+    it('should return buffer', async () => {
+      storeMock.get.returns(cbor.encode([]));
+
+      const result = await repository.fetchBuffer(publicKey.hash(), transactionMock);
+
+      expect(result).to.be.deep.equal(cbor.encode([]));
+
+      expect(storeMock.get).to.be.calledOnceWithExactly(
+        publicKey.hash(),
+        transactionMock,
+      );
+    });
+  });
+
+  describe('#fetch', () => {
+    it('should return empty array if publicKeyHash is not present', async () => {
+      storeMock.get.returns(null);
 
       const result = await repository.fetch(publicKey.hash(), transactionMock);
 
-      expect(result).to.be.deep.equal(identity.getId());
+      expect(result).to.deep.equal([]);
+
+      expect(storeMock.get).to.be.calledOnceWithExactly(
+        publicKey.hash(),
+        transactionMock,
+      );
+    });
+
+    it('should return array of Identity ids', async () => {
+      storeMock.get.returns(cbor.encode([identity.getId().toBuffer()]));
+
+      const result = await repository.fetch(publicKey.hash(), transactionMock);
+
+      expect(result).to.have.deep.members([
+        identity.getId(),
+      ]);
 
       expect(storeMock.get).to.be.calledOnceWithExactly(
         publicKey.hash(),

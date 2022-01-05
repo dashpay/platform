@@ -76,7 +76,7 @@ function identitiesByPublicKeyHashesQueryHandlerFactory(
 
     const identityIds = await Promise.all(
       publicKeyHashes.map((publicKeyHash) => (
-        previousPublicKeyToIdentityIdRepository.fetch(publicKeyHash)
+        previousPublicKeyToIdentityIdRepository.fetchBuffer(publicKeyHash)
       )),
     );
 

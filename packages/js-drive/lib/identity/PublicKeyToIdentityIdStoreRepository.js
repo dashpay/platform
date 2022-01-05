@@ -28,7 +28,7 @@ class PublicKeyToIdentityIdStoreRepository {
       identityIds = cbor.decode(identityIdsSerialized);
     }
 
-    if (!identityIds.includes(identityId)) {
+    if (identityIds.find((id) => id.equals(identityId)) === undefined) {
       identityIds.push(identityId.toBuffer());
 
       this.storage.put(
@@ -49,7 +49,7 @@ class PublicKeyToIdentityIdStoreRepository {
    *
    * @return {Promise<Buffer|null>}
    */
-  async fetch(publicKeyHash, transaction = undefined) {
+  async fetchBuffer(publicKeyHash, transaction = undefined) {
     return this.storage.get(publicKeyHash, transaction);
   }
 
@@ -61,7 +61,7 @@ class PublicKeyToIdentityIdStoreRepository {
    *
    * @return {Promise<Identifier[]>}
    */
-  async fetchDeserialized(publicKeyHash, transaction = undefined) {
+  async fetch(publicKeyHash, transaction = undefined) {
     const identityIdsSerialized = this.storage.get(publicKeyHash, transaction);
 
     if (!identityIdsSerialized) {
