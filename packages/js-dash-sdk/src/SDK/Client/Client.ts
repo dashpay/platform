@@ -113,7 +113,7 @@ export class Client extends EventEmitter {
                 contractId: '2Vuou3EfbrtunwCZvQp1XS5PXZ5CgC1pGBz4VPT4ojmy',
             },
             masternodeRewardShares: {
-                contractId: '',
+                contractId: '2Vuou3EfbrtunwCZvQp1XS5PXZ5CgC1pGBz4VPT4ojmy',
             }
         }, this.options.apps));
 
