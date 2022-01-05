@@ -10,12 +10,14 @@ pub struct DocumentPathQuery<'a> {
 }
 
 impl DocumentPathQuery {
-    pub fn construct(contract: &Contract, document_type_name : &str, index: &Index, intermediate_values: Vec<Vec<u8>>, final_query: Query) -> Result<Self, Error> {
+    pub fn construct<'a>(contract: &'a Contract, document_type_name : &str, index: &Index, intermediate_values: Vec<Vec<u8>>, final_query: Query) -> Result<Self, Error> {
         // first let's get the contract path
 
         let mut contract_path = contract.document_type_path(document_type_name);
 
-        let document_type = contract.document_types.get(document_type_name)?;
+        let document_type = contract.document_types.get(document_type_name).ok_or(
+            Error::CorruptedData(String::from("unknown document type name")),
+        )?;
 
         let (last_index, intermediate_indexes) = index.properties.split_last().ok_or(
             Error::CorruptedData(String::from("document query has no index with fields")),
