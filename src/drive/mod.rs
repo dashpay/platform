@@ -410,11 +410,12 @@ impl Drive {
                 let index_path_slices : Vec<&[u8]> = index_path.iter().map(|x| x.as_slice()).collect();
 
                 // here we should return an error if the element already exists
-                self.grove
-                    .insert(&index_path_slices, b"0".to_vec(), document_reference)?;
+                let inserted = self.grove
+                    .insert_if_not_exists(&index_path_slices, b"0".to_vec(), document_reference)?;
+                if !inserted {
+                    return Err(Error::CorruptedData(String::from("index already exists")));
+                }
             }
-
-
         }
         Ok(0)
     }
@@ -603,7 +604,7 @@ mod tests {
     }
 
     #[test]
-    fn test_add_dashpay_data_contract_and_documents() {
+    fn test_add_dashpay_documents() {
         let (mut drive, dashpay_cbor) = setup_dashpay();
 
         let dashpay_cr_document_cbor = json_document_to_cbor("test/contract/dashpay/contact-request0.json");
@@ -614,6 +615,37 @@ mod tests {
         drive.add_document_for_contract(&dashpay_cr_document_cbor, &dashpay_cbor, "contactRequest", &random_owner_id, false).expect_err("expected not to be able to insert same document twice");
 
         drive.add_document_for_contract(&dashpay_cr_document_cbor, &dashpay_cbor, "contactRequest", &random_owner_id, true).expect("expected to override a document successfully");
+
+    }
+
+    #[test]
+    fn test_add_dashpay_many_non_conflicting_documents() {
+        let (mut drive, dashpay_cbor) = setup_dashpay();
+
+        let dashpay_cr_document_cbor_0 = json_document_to_cbor("test/contract/dashpay/contact-request0.json");
+
+        let dashpay_cr_document_cbor_1 = json_document_to_cbor("test/contract/dashpay/contact-request1.json");
+
+        let dashpay_cr_document_cbor_2 = json_document_to_cbor("test/contract/dashpay/contact-request1.json");
+
+        let random_owner_id = rand::thread_rng().gen::<[u8; 32]>();
+        drive.add_document_for_contract(&dashpay_cr_document_cbor_0, &dashpay_cbor, "contactRequest", &random_owner_id, false).expect("expected to insert a document successfully");
+        drive.add_document_for_contract(&dashpay_cr_document_cbor_1, &dashpay_cbor, "contactRequest", &random_owner_id, false).expect("expected to insert a document successfully");
+        drive.add_document_for_contract(&dashpay_cr_document_cbor_2, &dashpay_cbor, "contactRequest", &random_owner_id, false).expect("expected to insert a document successfully");
+
+    }
+
+    #[test]
+    fn test_add_dashpay_conflicting_unique_index_documents() {
+        let (mut drive, dashpay_cbor) = setup_dashpay();
+
+        let dashpay_cr_document_cbor_0 = json_document_to_cbor("test/contract/dashpay/contact-request0.json");
+
+        let dashpay_cr_document_cbor_0_dup = json_document_to_cbor("test/contract/dashpay/contact-request0-dup-unique-index.json");
+
+        let random_owner_id = rand::thread_rng().gen::<[u8; 32]>();
+        drive.add_document_for_contract(&dashpay_cr_document_cbor_0, &dashpay_cbor, "contactRequest", &random_owner_id, false).expect("expected to insert a document successfully");
+        drive.add_document_for_contract(&dashpay_cr_document_cbor_0_dup, &dashpay_cbor, "contactRequest", &random_owner_id, false).expect_err("expected not to be able to insert document with already existing unique index");
 
     }
 
