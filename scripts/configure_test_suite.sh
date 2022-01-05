@@ -22,6 +22,8 @@ FEATURE_FLAGS_IDENTITY_ID=$(yarn dashmate config get --config="${CONFIG}_1" plat
 FEATURE_FLAGS_CONTRACT_ID=$(yarn dashmate config get --config="${CONFIG}_1" platform.featureFlags.contract.id)
 
 MASTERNODE_REWARD_SHARES_CONTRACT_ID=$(yarn dashmate config:get --config="${CONFIG}_1" platform.masternodeRewardShares.contract.id)
+MASTERNODE_REWARD_SHARES_OWNER_PRO_REG_TX_HASH=$(grep -m 1 "ProRegTx transaction ID:" "${SETUP_FILE_PATH}" | awk '{printf $5}')
+MASTERNODE_REWARD_SHARES_OWNER_PRIVATE_KEY=$(grep -m 1 -A 2 "Create a new owner addresses" "${SETUP_FILE_PATH}" | grep "Private key" | awk  '{printf $4}')
 
 echo "Mint 100 Dash to faucet address"
 
@@ -30,9 +32,6 @@ MINT_FILE_PATH=${PATH_TO_PROJECT_ROOT}/logs/mint.log
 yarn dashmate wallet mint --verbose --config=local_seed 100 | tee "${MINT_FILE_PATH}"
 FAUCET_ADDRESS=$(grep -m 1 "Address:" "${MINT_FILE_PATH}" | awk '{printf $3}')
 FAUCET_PRIVATE_KEY=$(grep -m 1 "Private key:" "${MINT_FILE_PATH}" | awk '{printf $4}')
-
-MASTERNODE_REWARD_SHARES_OWNER_PRO_REG_TX_HASH=$(grep -m 1 "ProRegTx transaction ID:" "${SETUP_FILE_PATH}" | awk '{printf $5}')
-MASTERNODE_REWARD_SHARES_OWNER_PRIVATE_KEY=$(grep -m 1 -A 2 "Create a new owner addresses" "${SETUP_FILE_PATH}" | grep "Private key" | awk  '{printf $4}')
 
 # check variables are not empty
 if [ -z "$FAUCET_ADDRESS" ] || \
