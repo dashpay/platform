@@ -7,6 +7,7 @@ use std::io::BufReader;
 use std::path::Path;
 use std::ptr::swap;
 use std::rc::{Rc, Weak};
+use base64::DecodeError;
 use byteorder::{BigEndian, WriteBytesExt};
 
 // contract
@@ -79,28 +80,45 @@ impl Document {
         self.properties.get(key)
     }
 
-    pub fn get_raw(&self, key: &str) -> Option<&[u8]> {
+    pub fn get_raw_for_contract<'a>(&'a self, key: &str, contract: &Contract) -> Option<Vec<u8>> {
         let value = self.properties.get(key)?;
         match value {
             Value::Integer(i) => {
                 let mut wtr = vec![];
-                wtr.write_i128::<BigEndian>(i128(i)).unwrap()?;
-                Some(wtr.as_bytes())
+                wtr.write_i128::<BigEndian>(i128::from(*i));
+                Some(wtr)
             }
             Value::Bytes(bytes) => {
-                Some(bytes.as_bytes())
+                Some(bytes.clone())
             }
             Value::Float(f) => {
-
+                let mut wtr = vec![];
+                wtr.write_f64::<BigEndian>(*f);
+                Some(wtr)
             }
             Value::Text(text) => {
-
+                let len = text.len();
+                // todo: get this for the contract and not with this stupid hack
+                if len == 44 {
+                    match base64::decode(text) {
+                        Ok(decoded) => {
+                            Some(decoded)
+                        }
+                        Err(_) => {
+                            Some(text.as_bytes().to_vec())
+                        }
+                    }
+                } else {
+                    Some(text.as_bytes().to_vec())
+                }
             }
             Value::Bool(bool) => {
-                if bool { &[1] } else { &[0] }
+                if *bool { Some(vec![1]) } else { Some(vec![0]) }
             }
-            _ => None()
-        }?;
+            _ => {
+                None
+            }
+        }
     }
 }
 
