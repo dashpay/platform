@@ -4,6 +4,7 @@ const { executeProof, verifyProof } = require('@dashevo/merk');
 const { PrivateKey } = require('@dashevo/dashcore-lib');
 
 const generateRandomIdentifier = require('@dashevo/dpp/lib/test/utils/generateRandomIdentifier');
+const cbor = require('@dashevo/dpp/lib/util/serializer');
 const hashFunction = require('../../../lib/proofHashFunction');
 const testProofStructure = require('../../../lib/test/testProofStructure');
 const parseStoreTreeProof = require('../../../lib/parseStoreTreeProof');
@@ -247,8 +248,16 @@ describe('Platform', () => {
 
             // Existing identities should be in the identitiesProof, as it also serves
             // as an inclusion proof
-            const restoredIdentities = parsedIdentitiesStoreTreeProof.values.map(
-              (identityBuffer) => dashClient.platform.dpp.identity.createFromBuffer(identityBuffer),
+            const restoredIdentitiesList = parsedIdentitiesStoreTreeProof.values.map(
+              (serializedIdentities) => {
+                const identities = cbor.decode(serializedIdentities);
+
+                return identities.map(
+                  (identityBuffer) => dashClient.platform.dpp.identity.createFromBuffer(
+                    identityBuffer,
+                  ),
+                );
+              },
             );
 
             /* Figuring out what was found */
@@ -258,15 +267,17 @@ describe('Platform', () => {
 
             // Scanning through public keys to figure out what identities were found
             for (const publicKeyHash of publicKeyHashes) {
-              const foundIdentity = restoredIdentities
-                .find(
-                  (restoredIdentity) => restoredIdentity.getPublicKeyById(0)
-                    .hash().toString('hex') === publicKeyHash.toString('hex'),
-                );
-              if (foundIdentity) {
-                foundIdentityIds.push(foundIdentity.getId());
-              } else {
-                notFoundPublicKeyHashes.push(publicKeyHash);
+              for (const restoredIdentities of restoredIdentitiesList) {
+                const foundIdentity = restoredIdentities
+                  .find(
+                    (restoredIdentity) => restoredIdentity.getPublicKeyById(0)
+                      .hash().toString('hex') === publicKeyHash.toString('hex'),
+                  );
+                if (foundIdentity) {
+                  foundIdentityIds.push(foundIdentity.getId());
+                } else {
+                  notFoundPublicKeyHashes.push(publicKeyHash);
+                }
               }
             }
 
@@ -394,8 +405,8 @@ describe('Platform', () => {
             expect(secondIdentityId).to.be.null();
             expect(thirdIdentityId).to.be.an.instanceof(Uint8Array);
 
-            expect(firstIdentityId).to.be.deep.equal(identityAtKey6.getId());
-            expect(thirdIdentityId).to.be.deep.equal(identityAtKey8.getId());
+            expect(firstIdentityId).to.be.deep.equal(cbor.encode([identityAtKey6.getId()]));
+            expect(thirdIdentityId).to.be.deep.equal(cbor.encode([identityAtKey8.getId()]));
           });
         });
       });

@@ -167,7 +167,7 @@ describe('Platform', () => {
           [identity.getPublicKeyById(0).hash()],
         );
 
-      const [serializedIdentity] = response.getIdentities();
+      const [[serializedIdentity]] = response.getIdentities();
 
       expect(serializedIdentity).to.be.not.null();
 
@@ -191,7 +191,7 @@ describe('Platform', () => {
         [identity.getPublicKeyById(0).hash()],
       );
 
-      const [identityId] = response.getIdentityIds();
+      const [[identityId]] = response.getIdentityIds();
 
       expect(identityId).to.be.not.null();
       expect(identityId).to.deep.equal(identity.getId());
