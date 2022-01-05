@@ -3,7 +3,7 @@
 
 ### ⚠ BREAKING CHANGES
 
-* **dashmate:** `platform.drive.abci.docker.build.path' and 'platform.dapi.api.docker.build.path' are removed in favor of `platform.sourcePath'
+* **dashmate:** `platform.drive.abci.docker.build.path` and `platform.dapi.api.docker.build.path` are removed in favor of `platform.sourcePath`
 
 ### Features
 
