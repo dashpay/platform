@@ -9,6 +9,7 @@ use std::ptr::swap;
 use std::rc::{Rc, Weak};
 use base64::DecodeError;
 use byteorder::{BigEndian, WriteBytesExt};
+use test::RunIgnored::No;
 use crate::drive::RootTree;
 
 // contract
@@ -33,6 +34,26 @@ pub struct DocumentType {
     pub(crate) indices: Vec<Index>,
 }
 
+impl DocumentType {
+    pub fn index_for_types(&self, index_names :&[&str], sort_on: Option<&str>) -> Option<Index> {
+        let mut best_index : Option<Index> = None;
+        let mut best_difference = u16::MAX;
+        for index in self.indices {
+            let difference_option = index.matches(index_names, sort_on);
+            if difference_option.is_some() {
+                let difference = difference_option.unwrap();
+                if difference == 0 {
+                    Some(index)
+                } else if difference < best_difference {
+                    best_difference = difference;
+                    best_index = Some(index);
+                }
+            }
+        }
+        best_index
+    }
+}
+
 #[derive(Serialize, Deserialize)]
 pub struct Document {
     pub(crate) id: Vec<u8>,
@@ -44,6 +65,47 @@ pub struct Document {
 pub struct Index {
     pub(crate) properties: Vec<IndexProperty>,
     pub(crate) unique: bool,
+}
+
+impl Index {
+    // The matches function will take a slice of an array of strings and an optional sort on value.
+    // An index matches if all the index_names in the slice are consecutively the index's properties
+    // with leftovers permitted.
+    // If a sort_on value is provided it must match the last index property.
+    // The number returned is the number of unused index properties
+    pub fn matches(&self, index_names :&[&str], sort_on: Option<&str>) -> Option<u16> {
+        let mut d = self.properties.len();
+        if sort_on.is_some() {
+            let last_property = self.properties.last();
+            if last_property.is_none() {
+                None
+            } else if last_property.unwrap().name.as_str() != sort_on.unwrap() {
+                None
+            } else {
+                let last_search_name = index_names.last();
+                if last_search_name.is_some() {
+                    if last_search_name != sort_on {
+                        // we can remove the -1 here
+                        // this is a case for example if we have an index on person's name and age
+                        // where we say name == 'Sam' sort by age
+                        // there is no field operator on age
+                        // The return value for name == 'Sam' sort by age would be 0
+                        // The return value for name == 'Sam and age > 5 sort by age would be 0
+                        // the return value for sort by age would be 1
+                        d -= 1;
+                    }
+                }
+            }
+        }
+        for (property_name, search_name) in self.properties.iter().zip(index_names.iter()) {
+            if property_name.name != search_name {
+                None
+            }
+            d -= 1;
+        }
+
+        Some(d as u16)
+    }
 }
 
 #[derive(Clone, Serialize, Deserialize)]
