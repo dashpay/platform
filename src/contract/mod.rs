@@ -43,7 +43,7 @@ impl DocumentType {
             if difference_option.is_some() {
                 let difference = difference_option.unwrap();
                 if difference == 0 {
-                    Some(index)
+                    return Some(index);
                 } else if difference < best_difference {
                     best_difference = difference;
                     best_index = Some(index);
@@ -78,13 +78,13 @@ impl Index {
         if sort_on.is_some() {
             let last_property = self.properties.last();
             if last_property.is_none() {
-                None
+                return None;
             } else if last_property.unwrap().name.as_str() != sort_on.unwrap() {
-                None
+                return None;
             } else {
                 let last_search_name = index_names.last();
                 if last_search_name.is_some() {
-                    if last_search_name != sort_on {
+                    if *last_search_name.unwrap() != sort_on.unwrap() {
                         // we can remove the -1 here
                         // this is a case for example if we have an index on person's name and age
                         // where we say name == 'Sam' sort by age
@@ -98,8 +98,8 @@ impl Index {
             }
         }
         for (property_name, search_name) in self.properties.iter().zip(index_names.iter()) {
-            if property_name.name != search_name {
-                None
+            if property_name.name.as_str() != *search_name {
+                return None;
             }
             d -= 1;
         }
@@ -243,19 +243,19 @@ impl Contract {
     }
 
     pub fn root_path(&self) -> Vec<&[u8]> {
-        vec![RootTree::ContractDocuments.into(), self.id]
+        vec![RootTree::ContractDocuments.into(), &self.id]
     }
 
     pub fn documents_path(&self) -> Vec<&[u8]> {
-        vec![RootTree::ContractDocuments.into(), self.id, b"1"]
+        vec![RootTree::ContractDocuments.into(), &self.id, b"1"]
     }
 
     pub fn document_type_path<'a>(&'a self, document_type_name: &'a str) -> Vec<&'a [u8]> {
-    vec![RootTree::ContractDocuments.into(), contract_id, b"1", document_type_name.as_bytes()]
+    vec![RootTree::ContractDocuments.into(), &self.id, b"1", document_type_name.as_bytes()]
     }
 
     pub fn documents_primary_key_path<'a>(&'a self, document_type_name: &'a str) -> Vec<&'a [u8]> {
-        vec![RootTree::ContractDocuments.into(), self.id, b"1", document_type_name.as_bytes(), b"0"]
+        vec![RootTree::ContractDocuments.into(), &self.id, b"1", document_type_name.as_bytes(), b"0"]
     }
 }
 
