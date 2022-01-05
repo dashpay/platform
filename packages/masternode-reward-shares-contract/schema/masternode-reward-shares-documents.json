@@ -1,6 +1,6 @@
 {
-  "masternodeRewardShares": {
-    "description": "Masternodes reward sharing",
+  "rewardShare": {
+    "description": "Share specified percentage of masternode rewards with identities",
     "type": "object",
     "indices": [
       {
@@ -26,7 +26,7 @@
     ],
     "properties": {
       "payToId": {
-        "description": "Identifier to to pay reward",
+        "description": "Identifier to to share reward",
         "type": "array",
         "byteArray": true,
         "minItems": 32,
@@ -34,7 +34,7 @@
         "contentMediaType": "application/x.dash.dpp.identifier"
       },
       "percentage": {
-        "description": "Reward percentage to pay",
+        "description": "Reward percentage to share",
         "type": "integer",
         "minimum": 1,
         "maximum": 10000

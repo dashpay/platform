@@ -30,7 +30,7 @@ async function createMasternodeRewardSharesDataTrigger(
     const error = new DataTriggerConditionError(
       context.getDataContract().getId().toBuffer(),
       documentTransition.getId().toBuffer(),
-      `Owner ID ${ownerId.toString()} is not in SML`,
+      'Only masternode identities can share rewards',
     );
 
     error.setOwnerId(ownerId);
@@ -47,7 +47,7 @@ async function createMasternodeRewardSharesDataTrigger(
     const error = new DataTriggerConditionError(
       context.getDataContract().getId().toBuffer(),
       documentTransition.getId().toBuffer(),
-      `Identity ${payToId.toString()} already exists`,
+      `Identity ${payToId.toString()} doesn't exist`,
     );
 
     error.setOwnerId(ownerId);

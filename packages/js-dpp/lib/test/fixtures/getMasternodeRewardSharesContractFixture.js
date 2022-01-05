@@ -1,4 +1,4 @@
-const masternodeRewardSharesDocuments = require('@dashevo/masternode-reward-shares-contract/schema/reward-share-documents.json');
+const masternodeRewardSharesDocuments = require('@dashevo/masternode-reward-shares-contract/schema/masternode-reward-shares-documents.json');
 const DataContractFactory = require('../../dataContract/DataContractFactory');
 const createDPPMock = require('../mocks/createDPPMock');
 const generateRandomIdentifier = require('../utils/generateRandomIdentifier');

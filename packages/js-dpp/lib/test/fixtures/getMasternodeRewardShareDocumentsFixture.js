@@ -7,7 +7,7 @@ const ownerId = generateRandomIdentifier();
 const payToId = generateRandomIdentifier();
 const dataContract = getMasternodeRewardSharesContractFixture();
 
-function getMasternodeRewardSharesDocumentsFixture() {
+function getMasternodeRewardShareDocumentsFixture() {
   const factory = new DocumentFactory(
     createDPPMock(),
     () => ({
@@ -17,13 +17,13 @@ function getMasternodeRewardSharesDocumentsFixture() {
   );
 
   return [
-    factory.create(dataContract, ownerId, 'masternodeRewardShares', {
+    factory.create(dataContract, ownerId, 'rewardShare', {
       payToId,
       percentage: 500,
     }),
   ];
 }
 
-module.exports = getMasternodeRewardSharesDocumentsFixture;
+module.exports = getMasternodeRewardShareDocumentsFixture;
 
 module.exports.dataContract = dataContract;

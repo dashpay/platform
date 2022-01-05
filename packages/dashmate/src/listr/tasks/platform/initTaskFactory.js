@@ -9,7 +9,7 @@ const fundWallet = require('@dashevo/wallet-lib/src/utils/fundWallet');
 const dpnsDocumentSchema = require('@dashevo/dpns-contract/schema/dpns-contract-documents.json');
 const dashpayDocumentSchema = require('@dashevo/dashpay-contract/schema/dashpay.schema.json');
 const featureFlagsDocumentSchema = require('@dashevo/feature-flags-contract/schema/feature-flags-documents.json');
-const masternodeRewardSharesSchema = require('@dashevo/masternode-reward-shares-contract/schema/reward-share-documents.json');
+const masternodeRewardSharesSchema = require('@dashevo/masternode-reward-shares-contract/schema/masternode-reward-shares-documents.json');
 
 const { NETWORK_LOCAL } = require('../../../constants');
 

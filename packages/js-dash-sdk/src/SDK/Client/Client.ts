@@ -112,6 +112,9 @@ export class Client extends EventEmitter {
             dashpay: {
                 contractId: '2Vuou3EfbrtunwCZvQp1XS5PXZ5CgC1pGBz4VPT4ojmy',
             },
+            masternodeRewardShares: {
+                contractId: '',
+            }
         }, this.options.apps));
 
         this.platform = new Platform({

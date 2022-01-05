@@ -1,13 +1,13 @@
 const DashPlatformProtocol = require('@dashevo/dpp');
 const generateRandomIdentifier = require('@dashevo/dpp/lib/test/utils/generateRandomIdentifier');
 
-const rewardSharingContractSchema = require('../../schema/reward-share-documents.json');
+const rewardSharingContractSchema = require('../../schema/masternode-reward-shares-documents.json');
 
 describe('Masternode reward shares contract', () => {
   let dpp;
   let contract;
   let identityId;
-  let masternodeRewardShares;
+  let rewardShare;
 
   beforeEach(async function beforeEach() {
     const rewardSharingContractStub = this.sinon.stub();
@@ -26,7 +26,7 @@ describe('Masternode reward shares contract', () => {
 
     rewardSharingContractStub.resolves(contract);
 
-    masternodeRewardShares = {
+    rewardShare = {
       payToId: generateRandomIdentifier(),
       percentage: 500,
     };
@@ -42,10 +42,10 @@ describe('Masternode reward shares contract', () => {
 
   describe('payToId', () => {
     it('should be defined', () => {
-      delete masternodeRewardShares.payToId;
+      delete rewardShare.payToId;
 
       try {
-        dpp.document.create(contract, identityId, 'masternodeRewardShares', masternodeRewardShares);
+        dpp.document.create(contract, identityId, 'rewardShare', rewardShare);
 
         expect.fail('should throw error');
       } catch (e) {
@@ -61,10 +61,10 @@ describe('Masternode reward shares contract', () => {
     });
 
     it('should have no less than 32 bytes', () => {
-      masternodeRewardShares.payToId = Buffer.alloc(31);
+      rewardShare.payToId = Buffer.alloc(31);
 
       try {
-        dpp.document.create(contract, identityId, 'masternodeRewardShares', masternodeRewardShares);
+        dpp.document.create(contract, identityId, 'rewardShare', rewardShare);
 
         expect.fail('should throw error');
       } catch (e) {
@@ -80,10 +80,10 @@ describe('Masternode reward shares contract', () => {
     });
 
     it('should have no more than 32 bytes', async () => {
-      masternodeRewardShares.payToId = Buffer.alloc(33);
+      rewardShare.payToId = Buffer.alloc(33);
 
       try {
-        dpp.document.create(contract, identityId, 'masternodeRewardShares', masternodeRewardShares);
+        dpp.document.create(contract, identityId, 'rewardShare', rewardShare);
 
         expect.fail('should throw error');
       } catch (e) {
@@ -101,10 +101,10 @@ describe('Masternode reward shares contract', () => {
 
   describe('percentage', () => {
     it('should be defined', () => {
-      delete masternodeRewardShares.percentage;
+      delete rewardShare.percentage;
 
       try {
-        dpp.document.create(contract, identityId, 'masternodeRewardShares', masternodeRewardShares);
+        dpp.document.create(contract, identityId, 'rewardShare', rewardShare);
 
         expect.fail('should throw error');
       } catch (e) {
@@ -120,10 +120,10 @@ describe('Masternode reward shares contract', () => {
     });
 
     it('should not be less than 1', () => {
-      masternodeRewardShares.percentage = 0;
+      rewardShare.percentage = 0;
 
       try {
-        dpp.document.create(contract, identityId, 'masternodeRewardShares', masternodeRewardShares);
+        dpp.document.create(contract, identityId, 'rewardShare', rewardShare);
 
         expect.fail('should throw error');
       } catch (e) {
@@ -137,10 +137,10 @@ describe('Masternode reward shares contract', () => {
     });
 
     it('should not be more than 10000', () => {
-      masternodeRewardShares.percentage = 10001;
+      rewardShare.percentage = 10001;
 
       try {
-        dpp.document.create(contract, identityId, 'masternodeRewardShares', masternodeRewardShares);
+        dpp.document.create(contract, identityId, 'rewardShare', rewardShare);
 
         expect.fail('should throw error');
       } catch (e) {
@@ -154,10 +154,10 @@ describe('Masternode reward shares contract', () => {
     });
 
     it('should be a number', () => {
-      masternodeRewardShares.percentage = '10';
+      rewardShare.percentage = '10';
 
       try {
-        dpp.document.create(contract, identityId, 'masternodeRewardShares', masternodeRewardShares);
+        dpp.document.create(contract, identityId, 'rewardShare', rewardShare);
 
         expect.fail('should throw error');
       } catch (e) {
@@ -173,10 +173,10 @@ describe('Masternode reward shares contract', () => {
   });
 
   it('should should not have additional properties', () => {
-    masternodeRewardShares.someOtherProperty = 42;
+    rewardShare.someOtherProperty = 42;
 
     try {
-      dpp.document.create(contract, identityId, 'masternodeRewardShares', masternodeRewardShares);
+      dpp.document.create(contract, identityId, 'rewardShare', rewardShare);
 
       expect.fail('should throw error');
     } catch (e) {

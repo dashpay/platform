@@ -1,7 +1,7 @@
 const SimplifiedMNListEntry = require('@dashevo/dashcore-lib/lib/deterministicmnlist/SimplifiedMNListEntry');
 const getIdentityFixture = require('../../../../lib/test/fixtures/getIdentityFixture');
 const createStateRepositoryMock = require('../../../../lib/test/mocks/createStateRepositoryMock');
-const getMasternodeRewardSharesDocumentsFixture = require('../../../../lib/test/fixtures/getMasternodeRewardSharesDocumentsFixture');
+const getMasternodeRewardShareDocumentsFixture = require('../../../../lib/test/fixtures/getMasternodeRewardShareDocumentsFixture');
 const getDocumentTransitionsFixture = require('../../../../lib/test/fixtures/getDocumentTransitionsFixture');
 const createRewardShareDataTrigger = require('../../../../lib/dataTrigger/rewardShareDataTriggers/createMasternodeRewardSharesDataTrigger');
 const DataTriggerExecutionResult = require('../../../../lib/dataTrigger/DataTriggerExecutionResult');
@@ -43,7 +43,7 @@ describe('createMasternodeRewardSharesDataTrigger', () => {
       ]),
     };
 
-    documentsFixture = getMasternodeRewardSharesDocumentsFixture();
+    documentsFixture = getMasternodeRewardShareDocumentsFixture();
 
     smlStoreMock = {
       getSMLbyHeight: this.sinonSandbox.stub().returns(smlMock),
@@ -55,7 +55,7 @@ describe('createMasternodeRewardSharesDataTrigger', () => {
     stateRepositoryMock.fetchIdentity.resolves(null);
     stateRepositoryMock.fetchDocuments.resolves([]);
 
-    const [document] = getMasternodeRewardSharesDocumentsFixture();
+    const [document] = getMasternodeRewardShareDocumentsFixture();
 
     [documentTransition] = getDocumentTransitionsFixture({
       create: [document],
@@ -64,7 +64,7 @@ describe('createMasternodeRewardSharesDataTrigger', () => {
     contextMock = {
       getStateRepository: () => stateRepositoryMock,
       getOwnerId: this.sinonSandbox.stub(),
-      getDataContract: () => getMasternodeRewardSharesDocumentsFixture.dataContract,
+      getDataContract: () => getMasternodeRewardShareDocumentsFixture.dataContract,
     };
     contextMock.getOwnerId.returns(topLevelIdentityId);
   });
@@ -92,7 +92,7 @@ describe('createMasternodeRewardSharesDataTrigger', () => {
     );
   });
 
-  it('should return an error if payToId already exists', async () => {
+  it('should return an error if payToId does not exist', async () => {
     stateRepositoryMock.fetchIdentity.resolves(topLevelIdentityId);
 
     const result = await createRewardShareDataTrigger(
@@ -105,7 +105,7 @@ describe('createMasternodeRewardSharesDataTrigger', () => {
     const [error] = result.getErrors();
 
     expect(error).to.be.an.instanceOf(DataTriggerConditionError);
-    expect(error.message).to.equal(`Identity ${documentTransition.data.payToId.toString()} already exists`);
+    expect(error.message).to.equal(`Identity ${documentTransition.data.payToId} doesn't exist`);
 
     expect(stateRepositoryMock.fetchSMLStore).to.be.calledOnce();
     expect(stateRepositoryMock.fetchIdentity).to.be.calledOnceWithExactly(
@@ -113,7 +113,7 @@ describe('createMasternodeRewardSharesDataTrigger', () => {
     );
   });
 
-  it('should return an error if ownerId is not in SML', async () => {
+  it('should return an error if ownerId is not a masternode identity', async () => {
     contextMock.getOwnerId.returns(getIdentityFixture().getId());
 
     const result = await createRewardShareDataTrigger(
@@ -126,7 +126,7 @@ describe('createMasternodeRewardSharesDataTrigger', () => {
     const [error] = result.getErrors();
 
     expect(error).to.be.an.instanceOf(DataTriggerConditionError);
-    expect(error.message).to.equal(`Owner ID ${getIdentityFixture().getId()} is not in SML`);
+    expect(error.message).to.equal('Only masternode identities can share rewards');
 
     expect(stateRepositoryMock.fetchSMLStore).to.be.calledOnce();
     expect(stateRepositoryMock.fetchIdentity).to.be.not.called();
