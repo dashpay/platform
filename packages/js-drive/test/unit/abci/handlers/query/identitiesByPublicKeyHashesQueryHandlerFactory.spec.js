@@ -259,8 +259,8 @@ describe('identitiesByPublicKeyHashesQueryHandlerFactory', () => {
     expect(previousIdentitiesStoreRootTreeLeafMock.getProof).to.have.been.calledOnceWithExactly(
       // Fetch only found identity ids to optimize proof size
       [
-        cbor.encode([identityIds[0]]),
-        cbor.encode([identityIds[1]]),
+        identityIds[0].toBuffer(),
+        identityIds[1].toBuffer(),
       ],
     );
     expect(previousRootTreeMock.getProof).to.be.calledOnce();
