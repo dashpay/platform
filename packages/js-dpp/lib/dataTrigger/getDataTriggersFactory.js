@@ -10,6 +10,7 @@ const rejectDataTrigger = require('./rejectDataTrigger');
 const createDomainDataTrigger = require('./dpnsTriggers/createDomainDataTrigger');
 const createContactRequestDataTrigger = require('./dashpayDataTriggers/createContactRequestDataTrigger');
 const createFeatureFlagDataTrigger = require('./featureFlagsDataTriggers/createFeatureFlagDataTrigger');
+const createMasternodeRewardSharesDataTrigger = require('./rewardShareDataTriggers/createMasternodeRewardSharesDataTrigger');
 
 /**
  * Get respective data triggers (factory)
@@ -41,6 +42,13 @@ function getDataTriggersFactory() {
   if (process.env.FEATURE_FLAGS_TOP_LEVEL_IDENTITY) {
     featureFlagsTopLevelIdentityId = Identifier.from(
       process.env.FEATURE_FLAGS_TOP_LEVEL_IDENTITY,
+    );
+  }
+
+  let masternodeRewardSharesContractId = Buffer.alloc(0);
+  if (process.env.MASTERNODE_REWARD_SHARES_CONTRACT_ID) {
+    masternodeRewardSharesContractId = Identifier.from(
+      process.env.MASTERNODE_REWARD_SHARES_CONTRACT_ID,
     );
   }
 
@@ -131,6 +139,18 @@ function getDataTriggersFactory() {
       featureFlagTypes.FIX_CUMULATIVE_FEES,
       AbstractDocumentTransition.ACTIONS.DELETE,
       rejectDataTrigger,
+    ),
+    new DataTrigger(
+      masternodeRewardSharesContractId,
+      'rewardShare',
+      AbstractDocumentTransition.ACTIONS.CREATE,
+      createMasternodeRewardSharesDataTrigger,
+    ),
+    new DataTrigger(
+      masternodeRewardSharesContractId,
+      'rewardShare',
+      AbstractDocumentTransition.ACTIONS.REPLACE,
+      createMasternodeRewardSharesDataTrigger,
     ),
   ];
 

@@ -296,4 +296,23 @@ module.exports = {
 
     return configFile;
   },
+  '0.22.0': (configFile) => {
+    Object.entries(configFile.configs)
+      .forEach(([, config]) => {
+        if (!config.platform.masternodeRewardShares) {
+          config.platform.masternodeRewardShares = systemConfigs.base.platform
+            .masternodeRewardShares;
+        }
+      });
+
+    // Update contracts
+    configFile.configs.testnet.platform.drive.tenderdash.genesis = systemConfigs.testnet.platform
+      .drive.tenderdash.genesis;
+    configFile.configs.testnet.platform.dpns = systemConfigs.testnet.platform.dpns;
+    configFile.configs.testnet.platform.dashpay = systemConfigs.testnet.platform.dashpay;
+    configFile.configs.testnet.platform.featureFlags = systemConfigs.testnet.platform.featureFlags;
+
+    configFile.configs.testnet.platform.masternodeRewardShares = systemConfigs.testnet.platform
+      .masternodeRewardShares;
+  },
 };

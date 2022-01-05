@@ -152,6 +152,12 @@ module.exports = {
       ownerId: null,
     },
     sourcePath: null,
+    masternodeRewardShares: {
+      contract: {
+        id: null,
+        blockHeight: null,
+      },
+    },
   },
   externalIp: null,
   network: NETWORK_TESTNET,

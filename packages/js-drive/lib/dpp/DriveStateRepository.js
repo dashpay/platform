@@ -286,6 +286,15 @@ class DriveStateRepository {
 
     return transaction;
   }
+
+  /**
+   * Fetch Simplified Masternode List Store
+   *
+   * @return {Promise<SimplifiedMNListStore>}
+   */
+  async fetchSMLStore() {
+    return this.simplifiedMasternodeList.getStore();
+  }
 }
 
 module.exports = DriveStateRepository;
