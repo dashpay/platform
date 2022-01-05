@@ -5,7 +5,10 @@ use std::collections::HashMap;
 use std::fs::File;
 use std::io::BufReader;
 use std::path::Path;
-use serde_json;
+use std::ptr::swap;
+use std::rc::{Rc, Weak};
+use base64::DecodeError;
+use byteorder::{BigEndian, WriteBytesExt};
 use crate::drive::RootTree;
 
 // contract
@@ -31,6 +34,13 @@ pub struct DocumentType {
 }
 
 #[derive(Serialize, Deserialize)]
+pub struct Document {
+    pub(crate) id: Vec<u8>,
+    pub(crate) properties: HashMap<String, CborValue>,
+    pub(crate) owner_id: Vec<u8>,
+}
+
+#[derive(Clone, Serialize, Deserialize)]
 pub struct Index {
     pub(crate) properties: Vec<IndexProperty>,
     pub(crate) unique: bool,
@@ -44,10 +54,74 @@ pub struct IndexProperty {
 
 // TODO: Make the error messages uniform
 
-// Crates look good, but there is too much duplication
-// Realized that the better way to test for the error is to try to convert it to the type
-// If it returns none, that means that the version is not valid
-// So get the value then check if it's exists
+impl Document {
+    pub fn from_cbor(document_cbor: &[u8], owner_id: &[u8]) -> Result<Self, Error> {
+        // we need to start by verifying that the owner_id is a 256 bit number (32 bytes)
+        if owner_id.len() != 32 {
+            Err(Error::CorruptedData(String::from("invalid owner id")))?
+        }
+        // first we need to deserialize the document and contract indices
+        let mut document: HashMap<String, CborValue> = ciborium::de::from_reader(document_cbor)
+            .map_err(|_| Error::CorruptedData(String::from("unable to decode contract")))?;
+        let document_id: Vec<u8> = base58_value_as_bytes_from_hash_map(&document, "$id")
+            .ok_or(Error::CorruptedData(String::from(
+                "unable to get document id",
+            )))?;
+        document.remove("$id");
+        
+        let document = Document{
+            properties: document,
+            owner_id: Vec::from(owner_id),
+            id: document_id,
+        };
+        Ok(document)
+    }
+
+    pub fn get(&self, key: &str) -> Option<&Value> {
+        self.properties.get(key)
+    }
+
+    pub fn get_raw_for_contract<'a>(&'a self, key: &str, contract: &Contract) -> Option<Vec<u8>> {
+        let value = self.properties.get(key)?;
+        match value {
+            Value::Integer(i) => {
+                let mut wtr = vec![];
+                wtr.write_i128::<BigEndian>(i128::from(*i));
+                Some(wtr)
+            }
+            Value::Bytes(bytes) => {
+                Some(bytes.clone())
+            }
+            Value::Float(f) => {
+                let mut wtr = vec![];
+                wtr.write_f64::<BigEndian>(*f);
+                Some(wtr)
+            }
+            Value::Text(text) => {
+                let len = text.len();
+                // todo: get this for the contract and not with this stupid hack
+                if len == 44 {
+                    match base64::decode(text) {
+                        Ok(decoded) => {
+                            Some(decoded)
+                        }
+                        Err(_) => {
+                            Some(text.as_bytes().to_vec())
+                        }
+                    }
+                } else {
+                    Some(text.as_bytes().to_vec())
+                }
+            }
+            Value::Bool(bool) => {
+                if *bool { Some(vec![1]) } else { Some(vec![0]) }
+            }
+            _ => {
+                None
+            }
+        }
+    }
+}
 
 // Struct Implementations
 impl Contract {
@@ -61,7 +135,12 @@ impl Contract {
             Error::CorruptedData(String::from("unable to get contract id")),
         )?;
 
-        let documents_cbor_value = contract.get("documents").ok_or(Error::CorruptedData(String::from("unable to get documents")))?;
+        let documents_cbor_value =
+            contract
+                .get("documents")
+                .ok_or(Error::CorruptedData(String::from(
+                    "unable to get documents",
+                )))?;
         let mut contract_document_types_raw =
             documents_cbor_value
                 .as_map()
@@ -71,11 +150,8 @@ impl Contract {
 
         let mut contract_document_types: HashMap<String, DocumentType> = HashMap::new();
 
-        // Build the actual hashmap
+        // Build the document type hashmap
         for (type_key_value, document_type_value) in contract_document_types_raw {
-            // TODO: Refactor
-            // We want to insert the type as a string and the the document type
-            // Make sure the type_key_value is a string
             if !type_key_value.is_text() {
                 return Err(Error::CorruptedData(String::from(
                     "table type is not a string as expected",
@@ -112,34 +188,24 @@ impl Contract {
         vec![RootTree::ContractDocuments.into(), self.id, b"1"]
     }
 
-    pub fn documents_primary_key_path(&self) -> Vec<&[u8]> {
-        vec![RootTree::ContractDocuments.into(), self.id, b"1", b"0"]
+    pub fn document_type_path<'a>(&'a self, document_type_name: &'a str) -> Vec<&'a [u8]> {
+    vec![RootTree::ContractDocuments.into(), contract_id, b"1", document_type_name.as_bytes()]
+    }
+
+    pub fn documents_primary_key_path<'a>(&'a self, document_type_name: &'a str) -> Vec<&'a [u8]> {
+        vec![RootTree::ContractDocuments.into(), self.id, b"1", document_type_name.as_bytes(), b"0"]
     }
 }
 
 impl DocumentType {
     pub fn from_cbor_value(document_type_value_map: &Vec<(Value, Value)>) -> Result<Self, Error> {
-        // Here we want to parse the indices array
-        // and return a DocumentType
-        // A document type is a collection of Index values
-        // An index value contains a set of properties and a unique key
-        // Assumption: if the unique key is absent, then the unique key should be set to false
         let mut indices: Vec<Index> = Vec::new();
 
-        // In json, indices is an array, that contains objects
-        // we want to iterate over those objects.
         let index_values = cbor_inner_array_value(&document_type_value_map, "indices").ok_or(
             Error::CorruptedData(String::from("unable to get indices from the contract")),
         )?;
 
-        // Now that we have the values, we should iterate over them (indices array)
-        // Each element is an index object
-        // I should pass the value to the index object conversion function
-        // Then insert the index in a vector
-        // Which we then return as part of the document type
         for index_value in index_values {
-            // Probably have to restructure this
-            // We want to check if it is a map
             if !index_value.is_map() {
                 return Err(Error::CorruptedData(String::from(
                     "table document is not a map as expected",
@@ -157,13 +223,14 @@ impl DocumentType {
     }
 
     pub fn top_level_indices(&self) -> Result<Vec<IndexProperty>, Error> {
-        Ok(Vec::new())
-        // This is needed, need to refactor this section
-        // TODO: Refactor
-        // self.indices
-        //     .iter()
-        //     .map(|index| index.properties.get(0))
-        //     .collect()
+        let mut index_properties: Vec<IndexProperty> = Vec::new();
+        for index in &self.indices {
+            let property = index.properties.get(0);
+            if property.is_some() {
+                index_properties.push(property.expect("confirmed is some").clone());
+            }
+        }
+        Ok(index_properties)
     }
 }
 
@@ -179,12 +246,12 @@ impl Index {
         let mut index_properties: Vec<IndexProperty> = Vec::new();
 
         for (key_value, value_value) in index_type_value_map {
-            // Cases, properties or unique
             let key = key_value
                 .as_text()
                 .ok_or(Error::CorruptedData(String::from(
                     "key should be of type text",
                 )))?;
+
             if key == "unique" {
                 if value_value.is_bool() {
                     unique = value_value.as_bool().expect("confirmed as bool");
@@ -196,6 +263,7 @@ impl Index {
                         .ok_or(Error::CorruptedData(String::from(
                             "property value should be an array",
                         )))?;
+
                 // Iterate over this and get the index properties
                 for property in properties {
                     if !property.is_map() {
@@ -259,67 +327,24 @@ fn contract_document_types(contract: &HashMap<String, CborValue>) -> Option<&Vec
         .flatten()
 }
 
-fn cbor_inner_map_value(
-    document_type: &Vec<(Value, Value)>,
-    key: &str,
-) -> Option<Vec<(Value, Value)>> {
-    for (key_value, value_value) in document_type.iter() {
-        // Need to fix this
-        // Can make this function way better
-        // Will come back to this
-        let CborValue::Text(tuple_key) = key_value;
-        if !key {
-            None
-        }
-        if tuple_key == key {
-            let CborValue::Map(value_map) = value_value;
-            if !value_map {
-                None
-            }
-            Some(value_map)
-        }
-    }
-    None
-}
-
 fn cbor_inner_array_value(document_type: &Vec<(Value, Value)>, key: &str) -> Option<Vec<Value>> {
-    // Fix this also
     for (key_value, value_value) in document_type.iter() {
-        let CborValue::Text(tuple_key) = key_value;
-        if !key {
-            None
+        if !key_value.is_text() {
+            continue;
         }
-        if tuple_key == key {
-            let CborValue::Array(value_map) = value_value;
-            if !value_map {
-                None
+
+        if key_value.as_text().expect("confirmed as text") == key {
+            // Get the array value and return that
+            // First check if it's actually an array
+            if value_value.is_array() {
+                let value_array = value_value.as_array().expect("confirmed as array").clone();
+                return Some(value_array);
+            } else {
+                return None;
             }
-            Some(value_map)
         }
     }
-    None
-}
-
-// fn indices_from_values(values: &Vec<(Value)>) -> Option<Vec<Index>> {
-//     values
-//         .iter()
-//         .map(|id_cbor| {
-//             if let CborValue::Map(documents) = id_cbor {
-//                 Some(documents)
-//             } else {
-//                 None
-//             }
-//         })
-//         .flatten()
-// }
-
-pub fn json_document_to_cbor(path: impl AsRef<Path>) -> Vec<u8> {
-    let file = File::open(path).expect("file not found");
-    let reader = BufReader::new(file);
-    let json: serde_json::Value = serde_json::from_reader(reader).expect("expected a valid json");
-    let mut buffer: Vec<u8> = Vec::new();
-    ciborium::ser::into_writer(&json, &mut buffer).expect("unable to serialize into cbor");
-    buffer
+    return None;
 }
 
 fn base58_value_as_bytes_from_hash_map(
@@ -343,11 +368,21 @@ fn base58_value_as_bytes_from_hash_map(
 
 #[cfg(test)]
 mod tests {
-    use crate::contract::{json_document_to_cbor, Contract};
+    use crate::contract::Contract;
     use crate::drive::Drive;
     use serde::{Deserialize, Serialize};
     use std::{collections::HashMap, fs::File, io::BufReader, path::Path};
     use tempdir::TempDir;
+
+    fn json_document_to_cbor(path: impl AsRef<Path>) -> Vec<u8> {
+        let file = File::open(path).expect("file not found");
+        let reader = BufReader::new(file);
+        let json: serde_json::Value =
+            serde_json::from_reader(reader).expect("expected a valid json");
+        let mut buffer: Vec<u8> = Vec::new();
+        ciborium::ser::into_writer(&json, &mut buffer).expect("unable to serialize into cbor");
+        buffer
+    }
 
     #[test]
     fn test_cbor_deserialization() {
@@ -357,9 +392,39 @@ mod tests {
         assert!(document.get("a").is_some());
     }
 
-    // #[test]
-    // fn test_import_contract() {
-    //     let dashpay_cbor = json_document_to_cbor("dashpay-contract.json");
-    //     let contract = Contract::from_cbor(dashpay_cbor)?;
-    // }
+    #[test]
+    fn test_import_contract() {
+        let dashpay_cbor = json_document_to_cbor("../../test/contract/dashpay-contract.json");
+        let contract = Contract::from_cbor(&dashpay_cbor).unwrap();
+
+        assert_eq!(contract.document_types.len(), 3);
+        assert_eq!(contract.document_types.get("profile").is_some(), true);
+        assert_eq!(contract.document_types.get("contactInfo").is_some(), true);
+        assert_eq!(
+            contract.document_types.get("contactRequest").is_some(),
+            true
+        );
+        assert_eq!(
+            contract.document_types.get("non_existent_key").is_some(),
+            false
+        );
+
+        let contact_info_indices = &contract.document_types.get("contactInfo").unwrap().indices;
+        assert_eq!(contact_info_indices.len(), 2);
+        assert_eq!(contact_info_indices[0].unique, true);
+        assert_eq!(contact_info_indices[1].unique, false);
+        assert_eq!(contact_info_indices[0].properties.len(), 3);
+
+        assert_eq!(contact_info_indices[0].properties[0].name, "$ownerId");
+        assert_eq!(
+            contact_info_indices[0].properties[1].name,
+            "rootEncryptionKeyIndex"
+        );
+        assert_eq!(
+            contact_info_indices[0].properties[2].name,
+            "derivationEncryptionKeyIndex"
+        );
+
+        assert_eq!(contact_info_indices[0].properties[0].ascending, true);
+    }
 }
