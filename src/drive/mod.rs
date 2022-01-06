@@ -254,7 +254,7 @@ impl Drive {
         todo!()
     }
 
-    pub fn add_document_for_contract(
+    pub fn add_document_for_contract_cbor(
         &mut self,
         document_cbor: &[u8],
         contract_cbor: &[u8],
@@ -262,10 +262,22 @@ impl Drive {
         owner_id: &[u8],
         override_document: bool,
     ) -> Result<u64, Error> {
-
         let contract = Contract::from_cbor(contract_cbor)?;
 
         let document = Document::from_cbor(document_cbor, owner_id)?;
+
+        self.add_document_for_contract(&document, document_cbor, &contract, document_type_name, owner_id, override_document)
+    }
+
+    pub fn add_document_for_contract(
+        &mut self,
+        document: &Document,
+        document_cbor: &[u8],
+        contract: &Contract,
+        document_type_name: &str,
+        owner_id: &[u8],
+        override_document: bool,
+    ) -> Result<u64, Error> {
 
         // second we need to construct the path for documents on the contract
         // the path is
@@ -277,7 +289,11 @@ impl Drive {
         // third we need to store the document for it's primary key
         let mut primary_key_path = contract_documents_primary_key_path(&contract.id, document_type_name);
         let document_element = Element::Item(Vec::from(document_cbor));
+        let overrode;
         if override_document {
+            if self.grove.get(&primary_key_path, &document.id.clone()).is_ok() {
+                return self.update_document_for_contract(document, document_cbor, contract, document_type_name, owner_id);
+            }
             self.grove
                 .insert(&primary_key_path, document.id.clone(), document_element)?;
         } else {
@@ -286,6 +302,7 @@ impl Drive {
             if !inserted {
                 return Err(Error::CorruptedData(String::from("item already exists")));
             }
+            overrode = false;
         }
 
         let document_type =
@@ -420,36 +437,35 @@ impl Drive {
         Ok(0)
     }
 
-    pub fn update_document_for_contract(
+    pub fn update_document_for_contract_cbor(
         &mut self,
         document_cbor: &[u8],
         contract_cbor: &[u8],
         document_type: &str,
         owner_id: &[u8],
     ) -> Result<u64, Error> {
-        // first we need to deserialize the document and contract indices
-        let document: HashMap<String, CborValue> = ciborium::de::from_reader(document_cbor)
-            .map_err(|_| Error::CorruptedData(String::from("unable to decode contract")))?;
-        let document_id: &[u8] = document
-            .get("documentID")
-            .map(|id_cbor| {
-                if let CborValue::Bytes(b) = id_cbor {
-                    Some(b)
-                } else {
-                    None
-                }
-            })
-            .flatten()
-            .ok_or(Error::CorruptedData(String::from(
-                "unable to get document id",
-            )))?;
+        let contract = Contract::from_cbor(contract_cbor)?;
 
-        // for now updating a document will delete the document, then insert a new document
-        self.delete_document_for_contract(document_id, contract_cbor, document_type, owner_id)?;
-        self.add_document_for_contract(document_cbor, contract_cbor, document_type, owner_id, false)
+        let document = Document::from_cbor(document_cbor, owner_id)?;
+
+        self.update_document_for_contract(&document, document_cbor, &contract, document_type, owner_id)
     }
 
-    pub fn delete_document_for_contract(
+    pub fn update_document_for_contract(
+        &mut self,
+        document: &Document,
+        document_cbor: &[u8],
+        contract: &Contract,
+        document_type: &str,
+        owner_id: &[u8],
+    ) -> Result<u64, Error> {
+
+        // for now updating a document will delete the document, then insert a new document
+        self.delete_document_for_contract(document.id.clone().as_slice(), contract, document_type, owner_id)?;
+        self.add_document_for_contract(document, document_cbor, contract, document_type, owner_id, false)
+    }
+
+    pub fn delete_document_for_contract_cbor(
         &mut self,
         document_id: &[u8],
         contract_cbor: &[u8],
@@ -457,6 +473,16 @@ impl Drive {
         owner_id: &[u8],
     ) -> Result<u64, Error> {
         let contract = Contract::from_cbor(contract_cbor)?;
+        self.delete_document_for_contract(document_id, &contract, document_type_name, owner_id)
+    }
+
+    pub fn delete_document_for_contract(
+        &mut self,
+        document_id: &[u8],
+        contract: &Contract,
+        document_type_name: &str,
+        owner_id: &[u8],
+    ) -> Result<u64, Error> {
         let document_type =
             contract
                 .document_types
@@ -515,14 +541,22 @@ impl Drive {
                         "invalid contract indices",
                     )))?;
             index_path.push(Vec::from(top_index_property.name.as_bytes()));
+
             // with the example of the dashpay contract's first index
             // the index path is now something like Contracts/ContractID/Documents(1)/$ownerId
-
-            let document_top_field: Vec<u8> = document
-                .get_raw_for_contract(&top_index_property.name, &contract)
-                .ok_or(Error::CorruptedData(String::from(
-                    "unable to get document top index field",
-                )))?;
+            let document_top_field: Vec<u8>;
+            match top_index_property.name.as_str() {
+                "$ownerId" => {
+                    document_top_field = owner_id.to_vec();
+                },
+                &_ => {
+                    document_top_field = document
+                        .get_raw_for_contract(&top_index_property.name, &contract)
+                        .ok_or(Error::CorruptedData(String::from(
+                            "unable to get document top index field",
+                        )))?;
+                }
+            };
 
             // we push the actual value of the index path
             index_path.push(document_top_field);
@@ -557,12 +591,19 @@ impl Drive {
             // non unique indices should have a tree at key "0" that has all elements based off of primary key
             if !index.unique {
                 index_path.push(b"0".to_vec());
+
+                let index_path_slices : Vec<&[u8]> = index_path.iter().map(|x| x.as_slice()).collect();
+
+                // here we should return an error if the element already exists
+                self.grove.delete(&index_path_slices, Vec::from(document_id))?;
+            } else {
+                let index_path_slices : Vec<&[u8]> = index_path.iter().map(|x| x.as_slice()).collect();
+
+                // here we should return an error if the element already exists
+                self.grove.delete(&index_path_slices, b"0".to_vec())?;
             }
 
-            let index_path_slices : Vec<&[u8]> = index_path.iter().map(|x| x.as_slice()).collect();
 
-            // here we should return an error if the element already exists
-            self.grove.delete(&index_path_slices, Vec::from(document_id))?;
         }
         Ok(0)
     }
@@ -586,8 +627,8 @@ mod tests {
         buffer
     }
 
-    fn setup_dashpay() -> (Drive, Vec<u8>) {
-        let tmp_dir = TempDir::new("db").unwrap();
+    fn setup_dashpay(prefix: &str) -> (Drive, Vec<u8>) {
+        let tmp_dir = TempDir::new(prefix).unwrap();
         let mut drive: Drive = Drive::open(tmp_dir).expect("expected to open Drive successfully");
 
         drive
@@ -605,47 +646,47 @@ mod tests {
 
     #[test]
     fn test_add_dashpay_documents() {
-        let (mut drive, dashpay_cbor) = setup_dashpay();
+        let (mut drive, dashpay_cbor) = setup_dashpay("add");
 
         let dashpay_cr_document_cbor = json_document_to_cbor("test/contract/dashpay/contact-request0.json");
 
         let random_owner_id = rand::thread_rng().gen::<[u8; 32]>();
-        drive.add_document_for_contract(&dashpay_cr_document_cbor, &dashpay_cbor, "contactRequest", &random_owner_id, false).expect("expected to insert a document successfully");
+        drive.add_document_for_contract_cbor(&dashpay_cr_document_cbor, &dashpay_cbor, "contactRequest", &random_owner_id, false).expect("expected to insert a document successfully");
 
-        drive.add_document_for_contract(&dashpay_cr_document_cbor, &dashpay_cbor, "contactRequest", &random_owner_id, false).expect_err("expected not to be able to insert same document twice");
+        drive.add_document_for_contract_cbor(&dashpay_cr_document_cbor, &dashpay_cbor, "contactRequest", &random_owner_id, false).expect_err("expected not to be able to insert same document twice");
 
-        drive.add_document_for_contract(&dashpay_cr_document_cbor, &dashpay_cbor, "contactRequest", &random_owner_id, true).expect("expected to override a document successfully");
+        drive.add_document_for_contract_cbor(&dashpay_cr_document_cbor, &dashpay_cbor, "contactRequest", &random_owner_id, true).expect("expected to override a document successfully");
 
     }
 
     #[test]
     fn test_add_dashpay_many_non_conflicting_documents() {
-        let (mut drive, dashpay_cbor) = setup_dashpay();
+        let (mut drive, dashpay_cbor) = setup_dashpay("add_no_conflict");
 
         let dashpay_cr_document_cbor_0 = json_document_to_cbor("test/contract/dashpay/contact-request0.json");
 
         let dashpay_cr_document_cbor_1 = json_document_to_cbor("test/contract/dashpay/contact-request1.json");
 
-        let dashpay_cr_document_cbor_2 = json_document_to_cbor("test/contract/dashpay/contact-request1.json");
+        let dashpay_cr_document_cbor_2 = json_document_to_cbor("test/contract/dashpay/contact-request2.json");
 
         let random_owner_id = rand::thread_rng().gen::<[u8; 32]>();
-        drive.add_document_for_contract(&dashpay_cr_document_cbor_0, &dashpay_cbor, "contactRequest", &random_owner_id, false).expect("expected to insert a document successfully");
-        drive.add_document_for_contract(&dashpay_cr_document_cbor_1, &dashpay_cbor, "contactRequest", &random_owner_id, false).expect("expected to insert a document successfully");
-        drive.add_document_for_contract(&dashpay_cr_document_cbor_2, &dashpay_cbor, "contactRequest", &random_owner_id, false).expect("expected to insert a document successfully");
+        drive.add_document_for_contract_cbor(&dashpay_cr_document_cbor_0, &dashpay_cbor, "contactRequest", &random_owner_id, false).expect("expected to insert a document successfully");
+        drive.add_document_for_contract_cbor(&dashpay_cr_document_cbor_1, &dashpay_cbor, "contactRequest", &random_owner_id, false).expect("expected to insert a document successfully");
+        drive.add_document_for_contract_cbor(&dashpay_cr_document_cbor_2, &dashpay_cbor, "contactRequest", &random_owner_id, false).expect("expected to insert a document successfully");
 
     }
 
     #[test]
     fn test_add_dashpay_conflicting_unique_index_documents() {
-        let (mut drive, dashpay_cbor) = setup_dashpay();
+        let (mut drive, dashpay_cbor) = setup_dashpay("add_conflict");
 
         let dashpay_cr_document_cbor_0 = json_document_to_cbor("test/contract/dashpay/contact-request0.json");
 
         let dashpay_cr_document_cbor_0_dup = json_document_to_cbor("test/contract/dashpay/contact-request0-dup-unique-index.json");
 
         let random_owner_id = rand::thread_rng().gen::<[u8; 32]>();
-        drive.add_document_for_contract(&dashpay_cr_document_cbor_0, &dashpay_cbor, "contactRequest", &random_owner_id, false).expect("expected to insert a document successfully");
-        drive.add_document_for_contract(&dashpay_cr_document_cbor_0_dup, &dashpay_cbor, "contactRequest", &random_owner_id, false).expect_err("expected not to be able to insert document with already existing unique index");
+        drive.add_document_for_contract_cbor(&dashpay_cr_document_cbor_0, &dashpay_cbor, "contactRequest", &random_owner_id, false).expect("expected to insert a document successfully");
+        drive.add_document_for_contract_cbor(&dashpay_cr_document_cbor_0_dup, &dashpay_cbor, "contactRequest", &random_owner_id, false).expect_err("expected not to be able to insert document with already existing unique index");
 
     }
 
