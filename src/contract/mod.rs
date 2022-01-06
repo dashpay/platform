@@ -55,8 +55,6 @@ pub struct IndexProperty {
     pub(crate) ascending: bool,
 }
 
-// TODO: Make the error messages uniform
-
 impl Document {
     pub fn from_cbor(document_cbor: &[u8], owner_id: &[u8]) -> Result<Self, Error> {
         // we need to start by verifying that the owner_id is a 256 bit number (32 bytes)
@@ -90,17 +88,14 @@ impl Document {
         document_type_name: &str,
         contract: &Contract,
     ) -> Option<Vec<u8>> {
-        // TODO: Handle errors better
         let value = self.properties.get(key)?;
-        let field_type = contract
-            .document_types
-            .get(document_type_name)
-            .unwrap()
-            .properties
-            .get(key)
-            .unwrap();
-        let raw_value = types::encode_document_field_type(field_type, value).unwrap();
-        return raw_value;
+        let document_type = contract.document_types.get(document_type_name)?;
+        let field_type = document_type.properties.get(key)?;
+        let raw_value = types::encode_document_field_type(field_type, value);
+        if raw_value.is_err() {
+            return None;
+        }
+        return Some(raw_value.expect("confirmed it's not an error")?);
     }
 }
 
