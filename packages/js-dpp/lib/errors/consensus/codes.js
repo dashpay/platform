@@ -58,7 +58,6 @@ const DocumentTimestampWindowViolationError = require('./state/document/Document
 const DuplicateUniqueIndexError = require('./state/document/DuplicateUniqueIndexError');
 const InvalidDocumentRevisionError = require('./state/document/InvalidDocumentRevisionError');
 const IdentityAlreadyExistsError = require('./state/identity/IdentityAlreadyExistsError');
-const IdentityPublicKeyAlreadyExistsError = require('./state/identity/IdentityPublicKeyAlreadyExistsError');
 const InvalidJsonSchemaRefError = require('./basic/dataContract/InvalidJsonSchemaRefError');
 const JsonSchemaCompilationError = require('./basic/JsonSchemaCompilationError');
 const DuplicateDocumentTransitionsWithIdsError = require('./basic/document/DuplicateDocumentTransitionsWithIdsError');
@@ -179,7 +178,6 @@ const codes = {
 
   // Identity
   4011: IdentityAlreadyExistsError,
-  4012: IdentityPublicKeyAlreadyExistsError,
 };
 
 module.exports = codes;

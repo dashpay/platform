@@ -12,25 +12,19 @@ const IdentityAlreadyExistsError = require(
   '../../../../../../../lib/errors/consensus/state/identity/IdentityAlreadyExistsError',
 );
 
-const ValidationResult = require('../../../../../../../lib/validation/ValidationResult');
-
 const createStateRepositoryMock = require('../../../../../../../lib/test/mocks/createStateRepositoryMock');
 
 describe('validateIdentityCreateTransitionStateFactory', () => {
   let validateIdentityCreateTransitionState;
   let stateTransition;
   let stateRepositoryMock;
-  let validateIdentityPublicKeyUniquenessMock;
 
   beforeEach(function beforeEach() {
     const privateKey = 'af432c476f65211f45f48f1d42c9c0b497e56696aa1736b40544ef1a496af837';
     stateRepositoryMock = createStateRepositoryMock(this.sinonSandbox);
-    validateIdentityPublicKeyUniquenessMock = this.sinonSandbox.stub()
-      .returns(new ValidationResult());
 
     validateIdentityCreateTransitionState = validateIdentityCreateTransitionStateFactory(
       stateRepositoryMock,
-      validateIdentityPublicKeyUniquenessMock,
     );
 
     stateTransition = getIdentityCreateTransitionFixture();
@@ -54,21 +48,6 @@ describe('validateIdentityCreateTransitionStateFactory', () => {
     expect(error.getCode()).to.equal(4011);
     expect(Buffer.isBuffer(error.getIdentityId())).to.be.true();
     expect(error.getIdentityId()).to.deep.equal(stateTransition.getIdentityId());
-  });
-
-  it('should return invalid result if identity public key already exists', async () => {
-    const validationError = new Error('Some error');
-
-    const validationResult = new ValidationResult([
-      validationError,
-    ]);
-
-    validateIdentityPublicKeyUniquenessMock.returns(validationResult);
-
-    const result = await validateIdentityCreateTransitionState(stateTransition);
-
-    const [error] = result.getErrors();
-    expect(error).to.deep.equal(validationError);
   });
 
   it('should return valid result if state transition is valid', async () => {

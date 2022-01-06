@@ -121,7 +121,7 @@ class DriveStateRepository {
    *
    * @param {Buffer[]} publicKeyHashes
    *
-   * @returns {Promise<Array<Identifier|null>>}
+   * @returns {Promise<Array<Identifier[]>>}
    */
   async fetchIdentityIdsByPublicKeyHashes(publicKeyHashes) {
     const transaction = this.getDBTransaction('publicKeyToIdentityId');

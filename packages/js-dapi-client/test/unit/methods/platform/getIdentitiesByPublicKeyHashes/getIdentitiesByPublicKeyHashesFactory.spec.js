@@ -9,6 +9,8 @@ const {
   },
 } = require('@dashevo/dapi-grpc');
 
+const cbor = require('cbor');
+
 const getIdentityFixture = require('@dashevo/dpp/lib/test/fixtures/getIdentityFixture');
 const getMetadataFixture = require('../../../../../lib/test/fixtures/getMetadataFixture');
 const getProofFixture = require('../../../../../lib/test/fixtures/getProofFixture');
@@ -41,7 +43,7 @@ describe('getIdentitiesByPublicKeyHashesFactory', () => {
 
     response = new GetIdentitiesByPublicKeyHashesResponse();
     response.setIdentitiesList(
-      [identityFixture.toBuffer()],
+      [cbor.encode([identityFixture.toBuffer()])],
     );
     response.setMetadata(metadata);
 
@@ -84,7 +86,7 @@ describe('getIdentitiesByPublicKeyHashesFactory', () => {
       request,
       options,
     );
-    expect(result.getIdentities()).to.have.deep.members([identityFixture.toBuffer()]);
+    expect(result.getIdentities()).to.have.deep.members([[identityFixture.toBuffer()]]);
     expect(result.getMetadata()).to.deep.equal(metadataFixture);
     expect(result.getProof()).to.equal(undefined);
   });
