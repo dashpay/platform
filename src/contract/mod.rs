@@ -9,6 +9,7 @@ use std::ptr::swap;
 use std::rc::{Rc, Weak};
 use base64::DecodeError;
 use byteorder::{BigEndian, WriteBytesExt};
+use ciborium::cbor;
 
 // contract
 // - id
@@ -30,6 +31,7 @@ pub struct Contract {
 #[derive(Serialize, Deserialize)]
 pub struct DocumentType {
     pub(crate) indices: Vec<Index>,
+    // pub(crate) properties: HashMap<String, String>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -198,6 +200,10 @@ impl DocumentType {
             indices.push(index);
         }
 
+        // We need to also create the properties of the document
+        // This list all the fields, their type and some extra information regarding them
+        // We have a function that can extract the cbor map
+
         Ok(DocumentType { indices })
 
         // for each type we should insert the indices that are top level
@@ -310,22 +316,33 @@ fn contract_document_types(contract: &HashMap<String, CborValue>) -> Option<&Vec
         .flatten()
 }
 
-fn cbor_inner_array_value(document_type: &Vec<(Value, Value)>, key: &str) -> Option<Vec<Value>> {
-    for (key_value, value_value) in document_type.iter() {
-        if !key_value.is_text() {
-            continue;
+fn get_key_from_cbor_map(cbor_map: &Vec<(Value, Value)>, key: &str) -> Option<Value> {
+    for (cbor_key, cbor_value) in cbor_map.iter() {
+        if !cbor_key.is_text() {
+           continue
         }
 
-        if key_value.as_text().expect("confirmed as text") == key {
-            // Get the array value and return that
-            // First check if it's actually an array
-            if value_value.is_array() {
-                let value_array = value_value.as_array().expect("confirmed as array").clone();
-                return Some(value_array);
-            } else {
-                return None;
-            }
+        if cbor_key.as_text().expect("confirmed as text") == key {
+            return Some(cbor_value.clone());
         }
+    }
+    return None;
+}
+
+fn cbor_inner_array_value(document_type: &Vec<(Value, Value)>, key: &str) -> Option<Vec<Value>> {
+    let key_value = get_key_from_cbor_map(document_type, key)?;
+    if key_value.is_array() {
+        let array_value = key_value.as_array().expect("confirmed as array");
+        return Some(array_value.clone());
+    }
+    return None;
+}
+
+fn cbor_inner_map_value(document_type: &Vec<(Value, Value)>, key: &str) -> Option<Vec<(Value, Value)>> {
+    let key_value = get_key_from_cbor_map(document_type, key)?;
+    if key_value.is_map() {
+        let map_value = key_value.as_map().expect("confirmed as map");
+        return Some(map_value.clone());
     }
     return None;
 }
