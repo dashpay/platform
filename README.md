@@ -24,7 +24,7 @@ If you are looking for how to contribute to the project or need any help with
 building an app on the Dash Platform - message us on the [Devs
 Discord](https://chat.dashdevs.org/)!
 
-<h2 style="text-align:left;">Note: Dash Platform is currently available on the Dash Testnet only</h2>
+## Note: Dash Platform is currently available on the Dash Testnet only
 
 ## Intro
 
