@@ -1,26 +1,14 @@
-const { startMongoDb } = require('@dashevo/dp-services-ctl');
 const { expect } = require('chai');
 
-const { init: initHashFunction } = require('../../lib/rootTree/hashFunction');
 const createTestDIContainer = require('../../lib/test/createTestDIContainer');
 
 describe('createDIContainer', function describeContainer() {
   this.timeout(25000);
 
   let container;
-  let mongoDB;
-
-  before(async () => {
-    await initHashFunction();
-    mongoDB = await startMongoDb();
-  });
-
-  after(async () => {
-    await mongoDB.remove();
-  });
 
   beforeEach(async () => {
-    container = await createTestDIContainer(mongoDB);
+    container = await createTestDIContainer();
   });
 
   afterEach(async () => {
@@ -49,7 +37,7 @@ describe('createDIContainer', function describeContainer() {
     it('should throw an error if DPNS contract is set but height is missing', async () => {
       process.env.DPNS_CONTRACT_ID = 'someId';
       try {
-        container = await createTestDIContainer(mongoDB);
+        container = await createTestDIContainer();
         expect.fail('Error was not thrown');
       } catch (e) {
         expect(e.message).to.equal('DPNS_CONTRACT_BLOCK_HEIGHT must be set');

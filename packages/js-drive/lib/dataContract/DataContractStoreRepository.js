@@ -1,24 +1,27 @@
+const decodeProtocolEntityFactory = require('@dashevo/dpp/lib/decodeProtocolEntityFactory');
+const DataContract = require('@dashevo/dpp/lib/dataContract/DataContract');
+
+const decodeProtocolEntity = decodeProtocolEntityFactory();
+
 class DataContractStoreRepository {
   /**
    *
-   * @param {MerkDbStore} dataContractsStore
-   * @param {AwilixContainer} container
+   * @param {GroveDBStore} groveDBStore
    */
-  constructor(dataContractsStore, container) {
-    this.storage = dataContractsStore;
-    this.container = container;
+  constructor(groveDBStore) {
+    this.storage = groveDBStore;
   }
 
   /**
    * Store Data Contract into database
    *
    * @param {DataContract} dataContract
-   * @param {MerkDbTransaction} [transaction]
+   * @param {GroveDBTransaction} [transaction]
    * @return {Promise<DataContractStoreRepository>}
    */
   async store(dataContract, transaction = undefined) {
     this.storage.put(
-      dataContract.getId(),
+      dataContract.getId().toBuffer(),
       dataContract.toBuffer(),
       transaction,
     );
@@ -30,22 +33,19 @@ class DataContractStoreRepository {
    * Fetch Data Contract by ID from database
    *
    * @param {Identifier} id
-   * @param {MerkDbTransaction} [transaction]
+   * @param {GroveDBTransaction} [transaction]
    * @return {Promise<null|DataContract>}
    */
   async fetch(id, transaction = undefined) {
-    const encodedDataContract = this.storage.get(id, transaction);
+    const encodedDataContract = this.storage.get(id.toBuffer(), transaction);
 
     if (!encodedDataContract) {
       return null;
     }
 
-    const dpp = this.container.resolve(transaction ? 'transactionalDpp' : 'dpp');
+    const [, rawDataContract] = decodeProtocolEntity(encodedDataContract);
 
-    return dpp.dataContract.createFromBuffer(
-      encodedDataContract,
-      { skipValidation: true },
-    );
+    return new DataContract(rawDataContract);
   }
 }
 

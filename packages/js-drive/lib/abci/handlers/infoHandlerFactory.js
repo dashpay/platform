@@ -17,23 +17,17 @@ const NoPreviousBlockExecutionStoreTransactionsFoundError = require('./errors/No
 /**
  * @param {BlockExecutionContext} blockExecutionContext
  * @param {Long} latestProtocolVersion
- * @param {RootTree} rootTree
  * @param {updateSimplifiedMasternodeList} updateSimplifiedMasternodeList
  * @param {BaseLogger} logger
- * @param {
- *   PreviousBlockExecutionStoreTransactionsRepository
- * } previousBlockExecutionStoreTransactionsRepository
- * @param {AwilixContainer} container
+ * @param {GroveDBStore} groveDBStore
  * @return {infoHandler}
  */
 function infoHandlerFactory(
   blockExecutionContext,
   latestProtocolVersion,
-  rootTree,
   updateSimplifiedMasternodeList,
   logger,
-  previousBlockExecutionStoreTransactionsRepository,
-  container,
+  groveDBStore,
 ) {
   /**
    * Info ABCI handler
@@ -67,22 +61,6 @@ function infoHandlerFactory(
     });
 
     if (lastHeader) {
-      // If the current block is higher than 1 we need to obtain previous block data
-      if (!container.has('previousBlockExecutionStoreTransactions')) {
-        // If container doesn't have previous transactions, load them from file (node cold start)
-        const previousBlockExecutionStoreTransactions = (
-          await previousBlockExecutionStoreTransactionsRepository.fetch()
-        );
-
-        if (!previousBlockExecutionStoreTransactions) {
-          throw new NoPreviousBlockExecutionStoreTransactionsFoundError();
-        }
-
-        container.register({
-          previousBlockExecutionStoreTransactions: asValue(previousBlockExecutionStoreTransactions),
-        });
-      }
-
       // Update SML store to latest saved core chain lock to make sure
       // that verify chain lock handler has updated SML Store to verify signatures
 
@@ -91,7 +69,7 @@ function infoHandlerFactory(
       });
     }
 
-    const appHash = rootTree.getRootHash();
+    const appHash = groveDBStore.getRootHash();
 
     contextLogger.info(
       {

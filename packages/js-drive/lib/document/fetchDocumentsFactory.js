@@ -5,7 +5,7 @@ const InvalidQueryError = require('./errors/InvalidQueryError');
 const InvalidDocumentTypeError = require('./query/errors/InvalidDocumentTypeError');
 const InvalidContractIdError = require('./query/errors/InvalidContractIdError');
 /**
- * @param {DocumentIndexedStoreRepository} documentRepository
+ * @param {DocumentStoreRepository} documentRepository
  * @param {DataContractStoreRepository} dataContractRepository
  * @param {LRUCache} dataContractCache
  * @returns {fetchDocuments}

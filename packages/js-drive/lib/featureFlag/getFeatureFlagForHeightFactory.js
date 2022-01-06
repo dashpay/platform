@@ -15,7 +15,7 @@ function getFeatureFlagForHeightFactory(
    *
    * @param {string} flagType
    * @param {Long} blockHeight
-   * @param {DocumentsIndexedTransaction} [transaction]
+   * @param {GroveDBTransaction} [transaction]
    *
    * @return {Promise<Document|null>}
    */

@@ -20,26 +20,20 @@ const InvalidQueryError = require('../../../document/errors/InvalidQueryError');
 
 /**
  *
- * @param {fetchDocuments} fetchPreviousDocuments
- * @param {RootTree} previousRootTree
- * @param {DocumentsStoreRootTreeLeaf} previousDocumentsStoreRootTreeLeaf
+ * @param {fetchDocuments} fetchSignedDocuments
  * @param {AwilixContainer} container
  * @param {createQueryResponse} createQueryResponse
- * @param {BlockExecutionContext} blockExecutionContext
- * @param {BlockExecutionContext} previousBlockExecutionContext
+ * @param {BlockExecutionContextStack} blockExecutionContextStack
  * @return {documentQueryHandler}
  */
 function documentQueryHandlerFactory(
-  fetchPreviousDocuments,
-  previousRootTree,
-  previousDocumentsStoreRootTreeLeaf,
+  fetchSignedDocuments,
   container,
   createQueryResponse,
-  blockExecutionContext,
-  previousBlockExecutionContext,
+  blockExecutionContextStack,
 ) {
   /**
-   * @typedef documentQueryHandler
+   * @typedef {documentQueryHandler}
    * @param {Object} params
    * @param {Object} data
    * @param {Buffer} data.contractId
@@ -65,8 +59,8 @@ function documentQueryHandlerFactory(
     },
     request,
   ) {
-    // There is no signed state (current committed block height less then 2)
-    if (blockExecutionContext.isEmpty() || previousBlockExecutionContext.isEmpty()) {
+    // There is no signed state (current committed block height less than 3)
+    if (!blockExecutionContextStack.getLast()) {
       const response = new GetDocumentsResponse();
 
       response.setMetadata(new ResponseMetadata());
@@ -76,22 +70,12 @@ function documentQueryHandlerFactory(
       });
     }
 
-    if (!container.has('previousBlockExecutionStoreTransactions')) {
-      throw new UnavailableAbciError('Documents temporary unavailable');
-    }
-
-    const previousBlockExecutionTransactions = container.resolve('previousBlockExecutionStoreTransactions');
-    const dataContractTransaction = previousBlockExecutionTransactions.getTransaction('dataContracts');
-    if (!dataContractTransaction.isStarted()) {
-      throw new UnavailableAbciError('Documents temporary unavailable');
-    }
-
     const response = createQueryResponse(GetDocumentsResponse, request.prove);
 
     let documents;
 
     try {
-      documents = await fetchPreviousDocuments(contractId, type, {
+      documents = await fetchSignedDocuments(contractId, type, {
         where,
         orderBy,
         limit,

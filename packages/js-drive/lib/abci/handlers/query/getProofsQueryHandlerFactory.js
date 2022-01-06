@@ -10,21 +10,13 @@ const cbor = require('cbor');
 
 /**
  *
- * @param {RootTree} previousRootTree
- * @param {DocumentsStoreRootTreeLeaf} previousDocumentsStoreRootTreeLeaf
- * @param {IdentitiesStoreRootTreeLeaf} previousIdentitiesStoreRootTreeLeaf
- * @param {DataContractsStoreRootTreeLeaf} previousDataContractsStoreRootTreeLeaf
  * @param {BlockExecutionContext} blockExecutionContext
- * @param {BlockExecutionContext} previousBlockExecutionContext,
+ * @param {blockExecutionContextStack} blockExecutionContextStack,
  * @return {getProofsQueryHandler}
  */
 function getProofsQueryHandlerFactory(
-  previousRootTree,
-  previousDocumentsStoreRootTreeLeaf,
-  previousIdentitiesStoreRootTreeLeaf,
-  previousDataContractsStoreRootTreeLeaf,
   blockExecutionContext,
-  previousBlockExecutionContext,
+  blockExecutionContextStack,
 ) {
   /**
    * @typedef getProofsQueryHandler
@@ -40,7 +32,8 @@ function getProofsQueryHandlerFactory(
     documentIds,
     dataContractIds,
   }) {
-    if (blockExecutionContext.isEmpty() || previousBlockExecutionContext.isEmpty()) {
+    // There is no signed state (current committed block height less than 3)
+    if (!blockExecutionContextStack.getLast()) {
       return new ResponseQuery({
         value: await cbor.encodeAsync({
           documentsProof: null,

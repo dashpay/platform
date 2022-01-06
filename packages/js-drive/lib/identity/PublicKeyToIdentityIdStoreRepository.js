@@ -3,10 +3,10 @@ const Identifier = require('@dashevo/dpp/lib/Identifier');
 class PublicKeyToIdentityIdStoreRepository {
   /**
    *
-   * @param {MerkDbStore} publicKeyToIdentityIdStore
+   * @param {GroveDBStore} groveDBStore
    */
-  constructor(publicKeyToIdentityIdStore) {
-    this.storage = publicKeyToIdentityIdStore;
+  constructor(groveDBStore) {
+    this.storage = groveDBStore;
   }
 
   /**
@@ -14,14 +14,14 @@ class PublicKeyToIdentityIdStoreRepository {
    *
    * @param {Buffer} publicKeyHash
    * @param {Identifier} identityId
-   * @param {MerkDbTransaction} [transaction]
+   * @param {GroveDBTransaction} [transaction]
    *
    * @return {Promise<PublicKeyToIdentityIdStoreRepository>}
    */
   async store(publicKeyHash, identityId, transaction = undefined) {
     this.storage.put(
       publicKeyHash,
-      identityId,
+      identityId.toBuffer(),
       transaction,
     );
 
@@ -32,7 +32,7 @@ class PublicKeyToIdentityIdStoreRepository {
    * Fetch identity id by public key hash from database
    *
    * @param {Buffer} publicKeyHash
-   * @param {MerkDbTransaction} [transaction]
+   * @param {GroveDBTransaction} [transaction]
    *
    * @return {Promise<null|Identifier>}
    */

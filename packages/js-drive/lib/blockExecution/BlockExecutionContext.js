@@ -22,6 +22,7 @@ class BlockExecutionContext {
     this.validTxs = 0;
     this.invalidTxs = 0;
     this.consensusLogger = null;
+    this.dbTransaction = null;
   }
 
   /**
@@ -176,6 +177,23 @@ class BlockExecutionContext {
   }
 
   /**
+   *
+   * @param {GroveDBTransaction} dbTransaction
+   */
+  setDBTransaction(dbTransaction) {
+    this.dbTransaction = dbTransaction;
+
+    return this;
+  }
+
+  /**
+   * @returns {GroveDBTransaction}
+   */
+  getDBTransaction() {
+    return this.dbTransaction;
+  }
+
+  /**
    * Reset state
    */
   reset() {
@@ -210,6 +228,7 @@ class BlockExecutionContext {
     this.validTxs = blockExecutionContext.validTxs;
     this.invalidTxs = blockExecutionContext.invalidTxs;
     this.consensusLogger = blockExecutionContext.consensusLogger;
+    this.dbTransaction = blockExecutionContext.dbTransaction;
   }
 
   /**
@@ -234,6 +253,7 @@ class BlockExecutionContext {
   /**
    * @param {Object} options
    * @param {boolean} [options.skipConsensusLogger=false]
+   * @param {boolean} [options.skipDBTransaction=false]
    * @return {{
    *  dataContracts: Object[],
    *  invalidTxs: number,
@@ -259,6 +279,10 @@ class BlockExecutionContext {
 
     if (!options.skipConsensusLogger) {
       object.consensusLogger = this.consensusLogger;
+    }
+
+    if (!options.skipDBTransaction) {
+      object.dbTransaction = this.dbTransaction;
     }
 
     return object;

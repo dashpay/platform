@@ -17,21 +17,15 @@ const NotFoundAbciError = require('../../errors/NotFoundAbciError');
 
 /**
  *
- * @param {DataContractStoreRepository} previousDataContractRepository
- * @param {RootTree} previousRootTree
- * @param {DataContractsStoreRootTreeLeaf} previousDataContractsStoreRootTreeLeaf
+ * @param {DataContractStoreRepository} signedDataContractRepository
  * @param {createQueryResponse} createQueryResponse
- * @param {BlockExecutionContext} blockExecutionContext
- * @param {BlockExecutionContext} previousBlockExecutionContext
+ * @param {BlockExecutionContextStack} blockExecutionContextStack
  * @return {dataContractQueryHandler}
  */
 function dataContractQueryHandlerFactory(
-  previousDataContractRepository,
-  previousRootTree,
-  previousDataContractsStoreRootTreeLeaf,
+  signedDataContractRepository,
   createQueryResponse,
-  blockExecutionContext,
-  previousBlockExecutionContext,
+  blockExecutionContextStack,
 ) {
   /**
    * @typedef dataContractQueryHandler
@@ -42,37 +36,27 @@ function dataContractQueryHandlerFactory(
    * @return {Promise<ResponseQuery>}
    */
   async function dataContractQueryHandler(params, { id }, request) {
-    // There is no signed state (current committed block height less then 2)
-    if (blockExecutionContext.isEmpty() || previousBlockExecutionContext.isEmpty()) {
+    // There is no signed state (current committed block height less than 3)
+    if (!blockExecutionContextStack.getLast()) {
       throw new NotFoundAbciError('Data Contract not found');
     }
 
     const response = createQueryResponse(GetDataContractResponse, request.prove);
 
-    const dataContract = await previousDataContractRepository.fetch(id);
-
-    let dataContractBuffer;
-    if (!dataContract && !request.prove) {
-      throw new NotFoundAbciError('Data Contract not found');
-    } else if (dataContract) {
-      dataContractBuffer = dataContract.toBuffer();
-    }
-
     if (request.prove) {
       const proof = response.getProof();
-      const storeTreeProofs = new StoreTreeProofs();
 
-      const {
-        rootTreeProof,
-        storeTreeProof,
-      } = previousRootTree.getFullProofForOneLeaf(previousDataContractsStoreRootTreeLeaf, [id]);
-
-      storeTreeProofs.setDataContractsProof(storeTreeProof);
-
-      proof.setRootTreeProof(rootTreeProof);
-      proof.setStoreTreeProofs(storeTreeProofs);
+      proof.setMerkleProof(
+        signedDataContractRepository.prove(),
+      );
     } else {
-      response.setDataContract(dataContractBuffer);
+      const dataContract = await signedDataContractRepository.fetch(id);
+
+      if (dataContract) {
+        throw new NotFoundAbciError('Data Contract not found');
+      }
+
+      response.setDataContract(dataContract.toBuffer());
     }
 
     return new ResponseQuery({

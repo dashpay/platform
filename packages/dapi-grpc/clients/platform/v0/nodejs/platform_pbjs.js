@@ -353,304 +353,13 @@ $root.org = (function() {
                         return Platform;
                     })();
 
-                    v0.StoreTreeProofs = (function() {
-
-                        /**
-                         * Properties of a StoreTreeProofs.
-                         * @memberof org.dash.platform.dapi.v0
-                         * @interface IStoreTreeProofs
-                         * @property {Uint8Array|null} [identitiesProof] StoreTreeProofs identitiesProof
-                         * @property {Uint8Array|null} [publicKeyHashesToIdentityIdsProof] StoreTreeProofs publicKeyHashesToIdentityIdsProof
-                         * @property {Uint8Array|null} [dataContractsProof] StoreTreeProofs dataContractsProof
-                         * @property {Uint8Array|null} [documentsProof] StoreTreeProofs documentsProof
-                         */
-
-                        /**
-                         * Constructs a new StoreTreeProofs.
-                         * @memberof org.dash.platform.dapi.v0
-                         * @classdesc Represents a StoreTreeProofs.
-                         * @implements IStoreTreeProofs
-                         * @constructor
-                         * @param {org.dash.platform.dapi.v0.IStoreTreeProofs=} [properties] Properties to set
-                         */
-                        function StoreTreeProofs(properties) {
-                            if (properties)
-                                for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
-                                    if (properties[keys[i]] != null)
-                                        this[keys[i]] = properties[keys[i]];
-                        }
-
-                        /**
-                         * StoreTreeProofs identitiesProof.
-                         * @member {Uint8Array} identitiesProof
-                         * @memberof org.dash.platform.dapi.v0.StoreTreeProofs
-                         * @instance
-                         */
-                        StoreTreeProofs.prototype.identitiesProof = $util.newBuffer([]);
-
-                        /**
-                         * StoreTreeProofs publicKeyHashesToIdentityIdsProof.
-                         * @member {Uint8Array} publicKeyHashesToIdentityIdsProof
-                         * @memberof org.dash.platform.dapi.v0.StoreTreeProofs
-                         * @instance
-                         */
-                        StoreTreeProofs.prototype.publicKeyHashesToIdentityIdsProof = $util.newBuffer([]);
-
-                        /**
-                         * StoreTreeProofs dataContractsProof.
-                         * @member {Uint8Array} dataContractsProof
-                         * @memberof org.dash.platform.dapi.v0.StoreTreeProofs
-                         * @instance
-                         */
-                        StoreTreeProofs.prototype.dataContractsProof = $util.newBuffer([]);
-
-                        /**
-                         * StoreTreeProofs documentsProof.
-                         * @member {Uint8Array} documentsProof
-                         * @memberof org.dash.platform.dapi.v0.StoreTreeProofs
-                         * @instance
-                         */
-                        StoreTreeProofs.prototype.documentsProof = $util.newBuffer([]);
-
-                        /**
-                         * Creates a new StoreTreeProofs instance using the specified properties.
-                         * @function create
-                         * @memberof org.dash.platform.dapi.v0.StoreTreeProofs
-                         * @static
-                         * @param {org.dash.platform.dapi.v0.IStoreTreeProofs=} [properties] Properties to set
-                         * @returns {org.dash.platform.dapi.v0.StoreTreeProofs} StoreTreeProofs instance
-                         */
-                        StoreTreeProofs.create = function create(properties) {
-                            return new StoreTreeProofs(properties);
-                        };
-
-                        /**
-                         * Encodes the specified StoreTreeProofs message. Does not implicitly {@link org.dash.platform.dapi.v0.StoreTreeProofs.verify|verify} messages.
-                         * @function encode
-                         * @memberof org.dash.platform.dapi.v0.StoreTreeProofs
-                         * @static
-                         * @param {org.dash.platform.dapi.v0.IStoreTreeProofs} message StoreTreeProofs message or plain object to encode
-                         * @param {$protobuf.Writer} [writer] Writer to encode to
-                         * @returns {$protobuf.Writer} Writer
-                         */
-                        StoreTreeProofs.encode = function encode(message, writer) {
-                            if (!writer)
-                                writer = $Writer.create();
-                            if (message.identitiesProof != null && Object.hasOwnProperty.call(message, "identitiesProof"))
-                                writer.uint32(/* id 1, wireType 2 =*/10).bytes(message.identitiesProof);
-                            if (message.publicKeyHashesToIdentityIdsProof != null && Object.hasOwnProperty.call(message, "publicKeyHashesToIdentityIdsProof"))
-                                writer.uint32(/* id 2, wireType 2 =*/18).bytes(message.publicKeyHashesToIdentityIdsProof);
-                            if (message.dataContractsProof != null && Object.hasOwnProperty.call(message, "dataContractsProof"))
-                                writer.uint32(/* id 3, wireType 2 =*/26).bytes(message.dataContractsProof);
-                            if (message.documentsProof != null && Object.hasOwnProperty.call(message, "documentsProof"))
-                                writer.uint32(/* id 4, wireType 2 =*/34).bytes(message.documentsProof);
-                            return writer;
-                        };
-
-                        /**
-                         * Encodes the specified StoreTreeProofs message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.StoreTreeProofs.verify|verify} messages.
-                         * @function encodeDelimited
-                         * @memberof org.dash.platform.dapi.v0.StoreTreeProofs
-                         * @static
-                         * @param {org.dash.platform.dapi.v0.IStoreTreeProofs} message StoreTreeProofs message or plain object to encode
-                         * @param {$protobuf.Writer} [writer] Writer to encode to
-                         * @returns {$protobuf.Writer} Writer
-                         */
-                        StoreTreeProofs.encodeDelimited = function encodeDelimited(message, writer) {
-                            return this.encode(message, writer).ldelim();
-                        };
-
-                        /**
-                         * Decodes a StoreTreeProofs message from the specified reader or buffer.
-                         * @function decode
-                         * @memberof org.dash.platform.dapi.v0.StoreTreeProofs
-                         * @static
-                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
-                         * @param {number} [length] Message length if known beforehand
-                         * @returns {org.dash.platform.dapi.v0.StoreTreeProofs} StoreTreeProofs
-                         * @throws {Error} If the payload is not a reader or valid buffer
-                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
-                         */
-                        StoreTreeProofs.decode = function decode(reader, length) {
-                            if (!(reader instanceof $Reader))
-                                reader = $Reader.create(reader);
-                            var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.StoreTreeProofs();
-                            while (reader.pos < end) {
-                                var tag = reader.uint32();
-                                switch (tag >>> 3) {
-                                case 1:
-                                    message.identitiesProof = reader.bytes();
-                                    break;
-                                case 2:
-                                    message.publicKeyHashesToIdentityIdsProof = reader.bytes();
-                                    break;
-                                case 3:
-                                    message.dataContractsProof = reader.bytes();
-                                    break;
-                                case 4:
-                                    message.documentsProof = reader.bytes();
-                                    break;
-                                default:
-                                    reader.skipType(tag & 7);
-                                    break;
-                                }
-                            }
-                            return message;
-                        };
-
-                        /**
-                         * Decodes a StoreTreeProofs message from the specified reader or buffer, length delimited.
-                         * @function decodeDelimited
-                         * @memberof org.dash.platform.dapi.v0.StoreTreeProofs
-                         * @static
-                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
-                         * @returns {org.dash.platform.dapi.v0.StoreTreeProofs} StoreTreeProofs
-                         * @throws {Error} If the payload is not a reader or valid buffer
-                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
-                         */
-                        StoreTreeProofs.decodeDelimited = function decodeDelimited(reader) {
-                            if (!(reader instanceof $Reader))
-                                reader = new $Reader(reader);
-                            return this.decode(reader, reader.uint32());
-                        };
-
-                        /**
-                         * Verifies a StoreTreeProofs message.
-                         * @function verify
-                         * @memberof org.dash.platform.dapi.v0.StoreTreeProofs
-                         * @static
-                         * @param {Object.<string,*>} message Plain object to verify
-                         * @returns {string|null} `null` if valid, otherwise the reason why it is not
-                         */
-                        StoreTreeProofs.verify = function verify(message) {
-                            if (typeof message !== "object" || message === null)
-                                return "object expected";
-                            if (message.identitiesProof != null && message.hasOwnProperty("identitiesProof"))
-                                if (!(message.identitiesProof && typeof message.identitiesProof.length === "number" || $util.isString(message.identitiesProof)))
-                                    return "identitiesProof: buffer expected";
-                            if (message.publicKeyHashesToIdentityIdsProof != null && message.hasOwnProperty("publicKeyHashesToIdentityIdsProof"))
-                                if (!(message.publicKeyHashesToIdentityIdsProof && typeof message.publicKeyHashesToIdentityIdsProof.length === "number" || $util.isString(message.publicKeyHashesToIdentityIdsProof)))
-                                    return "publicKeyHashesToIdentityIdsProof: buffer expected";
-                            if (message.dataContractsProof != null && message.hasOwnProperty("dataContractsProof"))
-                                if (!(message.dataContractsProof && typeof message.dataContractsProof.length === "number" || $util.isString(message.dataContractsProof)))
-                                    return "dataContractsProof: buffer expected";
-                            if (message.documentsProof != null && message.hasOwnProperty("documentsProof"))
-                                if (!(message.documentsProof && typeof message.documentsProof.length === "number" || $util.isString(message.documentsProof)))
-                                    return "documentsProof: buffer expected";
-                            return null;
-                        };
-
-                        /**
-                         * Creates a StoreTreeProofs message from a plain object. Also converts values to their respective internal types.
-                         * @function fromObject
-                         * @memberof org.dash.platform.dapi.v0.StoreTreeProofs
-                         * @static
-                         * @param {Object.<string,*>} object Plain object
-                         * @returns {org.dash.platform.dapi.v0.StoreTreeProofs} StoreTreeProofs
-                         */
-                        StoreTreeProofs.fromObject = function fromObject(object) {
-                            if (object instanceof $root.org.dash.platform.dapi.v0.StoreTreeProofs)
-                                return object;
-                            var message = new $root.org.dash.platform.dapi.v0.StoreTreeProofs();
-                            if (object.identitiesProof != null)
-                                if (typeof object.identitiesProof === "string")
-                                    $util.base64.decode(object.identitiesProof, message.identitiesProof = $util.newBuffer($util.base64.length(object.identitiesProof)), 0);
-                                else if (object.identitiesProof.length >= 0)
-                                    message.identitiesProof = object.identitiesProof;
-                            if (object.publicKeyHashesToIdentityIdsProof != null)
-                                if (typeof object.publicKeyHashesToIdentityIdsProof === "string")
-                                    $util.base64.decode(object.publicKeyHashesToIdentityIdsProof, message.publicKeyHashesToIdentityIdsProof = $util.newBuffer($util.base64.length(object.publicKeyHashesToIdentityIdsProof)), 0);
-                                else if (object.publicKeyHashesToIdentityIdsProof.length >= 0)
-                                    message.publicKeyHashesToIdentityIdsProof = object.publicKeyHashesToIdentityIdsProof;
-                            if (object.dataContractsProof != null)
-                                if (typeof object.dataContractsProof === "string")
-                                    $util.base64.decode(object.dataContractsProof, message.dataContractsProof = $util.newBuffer($util.base64.length(object.dataContractsProof)), 0);
-                                else if (object.dataContractsProof.length >= 0)
-                                    message.dataContractsProof = object.dataContractsProof;
-                            if (object.documentsProof != null)
-                                if (typeof object.documentsProof === "string")
-                                    $util.base64.decode(object.documentsProof, message.documentsProof = $util.newBuffer($util.base64.length(object.documentsProof)), 0);
-                                else if (object.documentsProof.length >= 0)
-                                    message.documentsProof = object.documentsProof;
-                            return message;
-                        };
-
-                        /**
-                         * Creates a plain object from a StoreTreeProofs message. Also converts values to other types if specified.
-                         * @function toObject
-                         * @memberof org.dash.platform.dapi.v0.StoreTreeProofs
-                         * @static
-                         * @param {org.dash.platform.dapi.v0.StoreTreeProofs} message StoreTreeProofs
-                         * @param {$protobuf.IConversionOptions} [options] Conversion options
-                         * @returns {Object.<string,*>} Plain object
-                         */
-                        StoreTreeProofs.toObject = function toObject(message, options) {
-                            if (!options)
-                                options = {};
-                            var object = {};
-                            if (options.defaults) {
-                                if (options.bytes === String)
-                                    object.identitiesProof = "";
-                                else {
-                                    object.identitiesProof = [];
-                                    if (options.bytes !== Array)
-                                        object.identitiesProof = $util.newBuffer(object.identitiesProof);
-                                }
-                                if (options.bytes === String)
-                                    object.publicKeyHashesToIdentityIdsProof = "";
-                                else {
-                                    object.publicKeyHashesToIdentityIdsProof = [];
-                                    if (options.bytes !== Array)
-                                        object.publicKeyHashesToIdentityIdsProof = $util.newBuffer(object.publicKeyHashesToIdentityIdsProof);
-                                }
-                                if (options.bytes === String)
-                                    object.dataContractsProof = "";
-                                else {
-                                    object.dataContractsProof = [];
-                                    if (options.bytes !== Array)
-                                        object.dataContractsProof = $util.newBuffer(object.dataContractsProof);
-                                }
-                                if (options.bytes === String)
-                                    object.documentsProof = "";
-                                else {
-                                    object.documentsProof = [];
-                                    if (options.bytes !== Array)
-                                        object.documentsProof = $util.newBuffer(object.documentsProof);
-                                }
-                            }
-                            if (message.identitiesProof != null && message.hasOwnProperty("identitiesProof"))
-                                object.identitiesProof = options.bytes === String ? $util.base64.encode(message.identitiesProof, 0, message.identitiesProof.length) : options.bytes === Array ? Array.prototype.slice.call(message.identitiesProof) : message.identitiesProof;
-                            if (message.publicKeyHashesToIdentityIdsProof != null && message.hasOwnProperty("publicKeyHashesToIdentityIdsProof"))
-                                object.publicKeyHashesToIdentityIdsProof = options.bytes === String ? $util.base64.encode(message.publicKeyHashesToIdentityIdsProof, 0, message.publicKeyHashesToIdentityIdsProof.length) : options.bytes === Array ? Array.prototype.slice.call(message.publicKeyHashesToIdentityIdsProof) : message.publicKeyHashesToIdentityIdsProof;
-                            if (message.dataContractsProof != null && message.hasOwnProperty("dataContractsProof"))
-                                object.dataContractsProof = options.bytes === String ? $util.base64.encode(message.dataContractsProof, 0, message.dataContractsProof.length) : options.bytes === Array ? Array.prototype.slice.call(message.dataContractsProof) : message.dataContractsProof;
-                            if (message.documentsProof != null && message.hasOwnProperty("documentsProof"))
-                                object.documentsProof = options.bytes === String ? $util.base64.encode(message.documentsProof, 0, message.documentsProof.length) : options.bytes === Array ? Array.prototype.slice.call(message.documentsProof) : message.documentsProof;
-                            return object;
-                        };
-
-                        /**
-                         * Converts this StoreTreeProofs to JSON.
-                         * @function toJSON
-                         * @memberof org.dash.platform.dapi.v0.StoreTreeProofs
-                         * @instance
-                         * @returns {Object.<string,*>} JSON object
-                         */
-                        StoreTreeProofs.prototype.toJSON = function toJSON() {
-                            return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
-                        };
-
-                        return StoreTreeProofs;
-                    })();
-
                     v0.Proof = (function() {
 
                         /**
                          * Properties of a Proof.
                          * @memberof org.dash.platform.dapi.v0
                          * @interface IProof
-                         * @property {Uint8Array|null} [rootTreeProof] Proof rootTreeProof
-                         * @property {org.dash.platform.dapi.v0.IStoreTreeProofs|null} [storeTreeProofs] Proof storeTreeProofs
+                         * @property {Uint8Array|null} [merkleProof] Proof merkleProof
                          * @property {Uint8Array|null} [signatureLlmqHash] Proof signatureLlmqHash
                          * @property {Uint8Array|null} [signature] Proof signature
                          */
@@ -671,20 +380,12 @@ $root.org = (function() {
                         }
 
                         /**
-                         * Proof rootTreeProof.
-                         * @member {Uint8Array} rootTreeProof
+                         * Proof merkleProof.
+                         * @member {Uint8Array} merkleProof
                          * @memberof org.dash.platform.dapi.v0.Proof
                          * @instance
                          */
-                        Proof.prototype.rootTreeProof = $util.newBuffer([]);
-
-                        /**
-                         * Proof storeTreeProofs.
-                         * @member {org.dash.platform.dapi.v0.IStoreTreeProofs|null|undefined} storeTreeProofs
-                         * @memberof org.dash.platform.dapi.v0.Proof
-                         * @instance
-                         */
-                        Proof.prototype.storeTreeProofs = null;
+                        Proof.prototype.merkleProof = $util.newBuffer([]);
 
                         /**
                          * Proof signatureLlmqHash.
@@ -726,14 +427,12 @@ $root.org = (function() {
                         Proof.encode = function encode(message, writer) {
                             if (!writer)
                                 writer = $Writer.create();
-                            if (message.rootTreeProof != null && Object.hasOwnProperty.call(message, "rootTreeProof"))
-                                writer.uint32(/* id 1, wireType 2 =*/10).bytes(message.rootTreeProof);
-                            if (message.storeTreeProofs != null && Object.hasOwnProperty.call(message, "storeTreeProofs"))
-                                $root.org.dash.platform.dapi.v0.StoreTreeProofs.encode(message.storeTreeProofs, writer.uint32(/* id 2, wireType 2 =*/18).fork()).ldelim();
+                            if (message.merkleProof != null && Object.hasOwnProperty.call(message, "merkleProof"))
+                                writer.uint32(/* id 1, wireType 2 =*/10).bytes(message.merkleProof);
                             if (message.signatureLlmqHash != null && Object.hasOwnProperty.call(message, "signatureLlmqHash"))
-                                writer.uint32(/* id 3, wireType 2 =*/26).bytes(message.signatureLlmqHash);
+                                writer.uint32(/* id 2, wireType 2 =*/18).bytes(message.signatureLlmqHash);
                             if (message.signature != null && Object.hasOwnProperty.call(message, "signature"))
-                                writer.uint32(/* id 4, wireType 2 =*/34).bytes(message.signature);
+                                writer.uint32(/* id 3, wireType 2 =*/26).bytes(message.signature);
                             return writer;
                         };
 
@@ -769,15 +468,12 @@ $root.org = (function() {
                                 var tag = reader.uint32();
                                 switch (tag >>> 3) {
                                 case 1:
-                                    message.rootTreeProof = reader.bytes();
+                                    message.merkleProof = reader.bytes();
                                     break;
                                 case 2:
-                                    message.storeTreeProofs = $root.org.dash.platform.dapi.v0.StoreTreeProofs.decode(reader, reader.uint32());
-                                    break;
-                                case 3:
                                     message.signatureLlmqHash = reader.bytes();
                                     break;
-                                case 4:
+                                case 3:
                                     message.signature = reader.bytes();
                                     break;
                                 default:
@@ -815,14 +511,9 @@ $root.org = (function() {
                         Proof.verify = function verify(message) {
                             if (typeof message !== "object" || message === null)
                                 return "object expected";
-                            if (message.rootTreeProof != null && message.hasOwnProperty("rootTreeProof"))
-                                if (!(message.rootTreeProof && typeof message.rootTreeProof.length === "number" || $util.isString(message.rootTreeProof)))
-                                    return "rootTreeProof: buffer expected";
-                            if (message.storeTreeProofs != null && message.hasOwnProperty("storeTreeProofs")) {
-                                var error = $root.org.dash.platform.dapi.v0.StoreTreeProofs.verify(message.storeTreeProofs);
-                                if (error)
-                                    return "storeTreeProofs." + error;
-                            }
+                            if (message.merkleProof != null && message.hasOwnProperty("merkleProof"))
+                                if (!(message.merkleProof && typeof message.merkleProof.length === "number" || $util.isString(message.merkleProof)))
+                                    return "merkleProof: buffer expected";
                             if (message.signatureLlmqHash != null && message.hasOwnProperty("signatureLlmqHash"))
                                 if (!(message.signatureLlmqHash && typeof message.signatureLlmqHash.length === "number" || $util.isString(message.signatureLlmqHash)))
                                     return "signatureLlmqHash: buffer expected";
@@ -844,16 +535,11 @@ $root.org = (function() {
                             if (object instanceof $root.org.dash.platform.dapi.v0.Proof)
                                 return object;
                             var message = new $root.org.dash.platform.dapi.v0.Proof();
-                            if (object.rootTreeProof != null)
-                                if (typeof object.rootTreeProof === "string")
-                                    $util.base64.decode(object.rootTreeProof, message.rootTreeProof = $util.newBuffer($util.base64.length(object.rootTreeProof)), 0);
-                                else if (object.rootTreeProof.length >= 0)
-                                    message.rootTreeProof = object.rootTreeProof;
-                            if (object.storeTreeProofs != null) {
-                                if (typeof object.storeTreeProofs !== "object")
-                                    throw TypeError(".org.dash.platform.dapi.v0.Proof.storeTreeProofs: object expected");
-                                message.storeTreeProofs = $root.org.dash.platform.dapi.v0.StoreTreeProofs.fromObject(object.storeTreeProofs);
-                            }
+                            if (object.merkleProof != null)
+                                if (typeof object.merkleProof === "string")
+                                    $util.base64.decode(object.merkleProof, message.merkleProof = $util.newBuffer($util.base64.length(object.merkleProof)), 0);
+                                else if (object.merkleProof.length >= 0)
+                                    message.merkleProof = object.merkleProof;
                             if (object.signatureLlmqHash != null)
                                 if (typeof object.signatureLlmqHash === "string")
                                     $util.base64.decode(object.signatureLlmqHash, message.signatureLlmqHash = $util.newBuffer($util.base64.length(object.signatureLlmqHash)), 0);
@@ -882,13 +568,12 @@ $root.org = (function() {
                             var object = {};
                             if (options.defaults) {
                                 if (options.bytes === String)
-                                    object.rootTreeProof = "";
+                                    object.merkleProof = "";
                                 else {
-                                    object.rootTreeProof = [];
+                                    object.merkleProof = [];
                                     if (options.bytes !== Array)
-                                        object.rootTreeProof = $util.newBuffer(object.rootTreeProof);
+                                        object.merkleProof = $util.newBuffer(object.merkleProof);
                                 }
-                                object.storeTreeProofs = null;
                                 if (options.bytes === String)
                                     object.signatureLlmqHash = "";
                                 else {
@@ -904,10 +589,8 @@ $root.org = (function() {
                                         object.signature = $util.newBuffer(object.signature);
                                 }
                             }
-                            if (message.rootTreeProof != null && message.hasOwnProperty("rootTreeProof"))
-                                object.rootTreeProof = options.bytes === String ? $util.base64.encode(message.rootTreeProof, 0, message.rootTreeProof.length) : options.bytes === Array ? Array.prototype.slice.call(message.rootTreeProof) : message.rootTreeProof;
-                            if (message.storeTreeProofs != null && message.hasOwnProperty("storeTreeProofs"))
-                                object.storeTreeProofs = $root.org.dash.platform.dapi.v0.StoreTreeProofs.toObject(message.storeTreeProofs, options);
+                            if (message.merkleProof != null && message.hasOwnProperty("merkleProof"))
+                                object.merkleProof = options.bytes === String ? $util.base64.encode(message.merkleProof, 0, message.merkleProof.length) : options.bytes === Array ? Array.prototype.slice.call(message.merkleProof) : message.merkleProof;
                             if (message.signatureLlmqHash != null && message.hasOwnProperty("signatureLlmqHash"))
                                 object.signatureLlmqHash = options.bytes === String ? $util.base64.encode(message.signatureLlmqHash, 0, message.signatureLlmqHash.length) : options.bytes === Array ? Array.prototype.slice.call(message.signatureLlmqHash) : message.signatureLlmqHash;
                             if (message.signature != null && message.hasOwnProperty("signature"))

@@ -2,7 +2,7 @@ const AbstractRootTreeLeaf = require('../rootTree/AbstractRootTreeLeaf');
 
 class DocumentsStoreRootTreeLeaf extends AbstractRootTreeLeaf {
   /**
-   * @param {MerkDbStore} documentsStore
+   * @param {GroveDBStore} documentsStore
    */
   constructor(documentsStore) {
     super(DocumentsStoreRootTreeLeaf.INDEX);

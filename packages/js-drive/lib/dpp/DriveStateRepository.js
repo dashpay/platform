@@ -1,4 +1,6 @@
 class DriveStateRepository {
+  #options;
+
   /**
    * @param {IdentityStoreRepository} identityRepository
    * @param {PublicKeyToIdentityIdStoreRepository} publicKeyToIdentityIdRepository
@@ -9,8 +11,8 @@ class DriveStateRepository {
    * @param {RpcClient} coreRpcClient
    * @param {BlockExecutionContext} blockExecutionContext
    * @param {SimplifiedMasternodeList} simplifiedMasternodeList
-   * @param {getLatestFeatureFlag} getLatestFeatureFlag
-   * @param {BlockExecutionStoreTransactions} [blockExecutionStoreTransactions]
+   * @param {Object} [options]
+   * @param {Object} [options.useTransaction=false]
    */
   constructor(
     identityRepository,
@@ -22,8 +24,7 @@ class DriveStateRepository {
     coreRpcClient,
     blockExecutionContext,
     simplifiedMasternodeList,
-    getLatestFeatureFlag,
-    blockExecutionStoreTransactions = undefined,
+    options,
   ) {
     this.identityRepository = identityRepository;
     this.publicKeyToIdentityIdRepository = publicKeyToIdentityIdRepository;
@@ -32,10 +33,9 @@ class DriveStateRepository {
     this.documentRepository = documentRepository;
     this.spentAssetLockTransactionsRepository = spentAssetLockTransactionsRepository;
     this.coreRpcClient = coreRpcClient;
-    this.blockExecutionStoreTransactions = blockExecutionStoreTransactions;
     this.blockExecutionContext = blockExecutionContext;
     this.simplifiedMasternodeList = simplifiedMasternodeList;
-    this.getLatestFeatureFlag = getLatestFeatureFlag;
+    this.#options = options;
   }
 
   /**
@@ -46,7 +46,7 @@ class DriveStateRepository {
    * @return {Promise<Identity|null>}
    */
   async fetchIdentity(id) {
-    const transaction = this.getDBTransaction('identities');
+    const transaction = this.#getDBTransaction();
 
     return this.identityRepository.fetch(id, transaction);
   }
@@ -58,7 +58,7 @@ class DriveStateRepository {
    * @returns {Promise<void>}
    */
   async storeIdentity(identity) {
-    const transaction = this.getDBTransaction('identities');
+    const transaction = this.#getDBTransaction();
 
     await this.identityRepository.store(identity, transaction);
   }
@@ -72,7 +72,7 @@ class DriveStateRepository {
    * @returns {Promise<void>}
    */
   async storeIdentityPublicKeyHashes(identityId, publicKeyHashes) {
-    const transaction = this.getDBTransaction('publicKeyToIdentityId');
+    const transaction = this.#getDBTransaction();
 
     await Promise.all(
       publicKeyHashes.map(async (publicKeyHash) => this.publicKeyToIdentityIdRepository
@@ -90,7 +90,7 @@ class DriveStateRepository {
    * @return {Promise<void>}
    */
   async markAssetLockTransactionOutPointAsUsed(outPointBuffer) {
-    const transaction = this.getDBTransaction('assetLockTransactions');
+    const transaction = this.#getDBTransaction();
 
     this.spentAssetLockTransactionsRepository.store(
       outPointBuffer,
@@ -106,7 +106,7 @@ class DriveStateRepository {
    * @return {Promise<boolean>}
    */
   async isAssetLockTransactionOutPointAlreadyUsed(outPointBuffer) {
-    const transaction = this.getDBTransaction('assetLockTransactions');
+    const transaction = this.#getDBTransaction();
 
     const result = this.spentAssetLockTransactionsRepository.fetch(
       outPointBuffer,
@@ -124,7 +124,7 @@ class DriveStateRepository {
    * @returns {Promise<Array<Identifier|null>>}
    */
   async fetchIdentityIdsByPublicKeyHashes(publicKeyHashes) {
-    const transaction = this.getDBTransaction('publicKeyToIdentityId');
+    const transaction = this.#getDBTransaction();
 
     // Keep await here.
     // noinspection UnnecessaryLocalVariableJS
@@ -159,7 +159,7 @@ class DriveStateRepository {
    * @returns {Promise<void>}
    */
   async storeDataContract(dataContract) {
-    const transaction = this.getDBTransaction('dataContracts');
+    const transaction = this.#getDBTransaction();
 
     await this.dataContractRepository.store(dataContract, transaction);
   }
@@ -173,7 +173,7 @@ class DriveStateRepository {
    * @returns {Promise<Document[]>}
    */
   async fetchDocuments(contractId, type, options = {}) {
-    const transaction = this.getDBTransaction('documents');
+    const transaction = this.#getDBTransaction();
 
     return this.fetchDocumentsFunction(contractId, type, options, transaction);
   }
@@ -185,7 +185,7 @@ class DriveStateRepository {
    * @returns {Promise<void>}
    */
   async storeDocument(document) {
-    const transaction = this.getDBTransaction('documents');
+    const transaction = this.#getDBTransaction();
 
     await this.documentRepository.store(document, transaction);
   }
@@ -199,7 +199,7 @@ class DriveStateRepository {
    * @returns {Promise<void>}
    */
   async removeDocument(contractId, type, id) {
-    const transaction = this.getDBTransaction('documents');
+    const transaction = this.#getDBTransaction();
 
     await this.documentRepository.delete(contractId, type, id, transaction);
   }
@@ -274,14 +274,13 @@ class DriveStateRepository {
 
   /**
    * @private
-   * @param {string} name
-   * @return {MerkDbTransaction|DocumentsIndexedTransaction}
+   * @return {GroveDBTransaction}
    */
-  getDBTransaction(name) {
+  #getDBTransaction() {
     let transaction;
 
-    if (this.blockExecutionStoreTransactions) {
-      transaction = this.blockExecutionStoreTransactions.getTransaction(name);
+    if (this.#options.useTransaction) {
+      transaction = this.blockExecutionContext.getDBTransaction();
     }
 
     return transaction;

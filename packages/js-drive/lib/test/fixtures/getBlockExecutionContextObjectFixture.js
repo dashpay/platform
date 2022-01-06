@@ -17,6 +17,7 @@ const {
 const pino = require('pino');
 
 const getDataContractFixture = require('@dashevo/dpp/lib/test/fixtures/getDataContractFixture');
+const GroveDBTransaction = require('../../groveDB/GroveDBTransaction');
 
 /**
  * @param {DataContract} [dataContract]
@@ -27,7 +28,8 @@ const getDataContractFixture = require('@dashevo/dpp/lib/test/fixtures/getDataCo
  *   header: Object,
  *   validTxs: number,
  *   cumulativeFees: number,
- *   consensusLogger: (Logger)
+ *   consensusLogger: Logger,
+ *   dbTransaction: GroveDBTransaction,
  * }}
  */
 function getBlockExecutionContextObjectFixture(dataContract = getDataContractFixture()) {
@@ -52,6 +54,8 @@ function getBlockExecutionContextObjectFixture(dataContract = getDataContractFix
   const validTxs = 2;
   const invalidTxs = 1;
 
+  const groveDB = {};
+
   return {
     dataContracts: [dataContract.toObject()],
     lastCommitInfo: LastCommitInfo.toObject(lastCommitInfo),
@@ -60,6 +64,7 @@ function getBlockExecutionContextObjectFixture(dataContract = getDataContractFix
     validTxs,
     invalidTxs,
     consensusLogger: logger,
+    dbTransaction: new GroveDBTransaction(groveDB),
   };
 }
 

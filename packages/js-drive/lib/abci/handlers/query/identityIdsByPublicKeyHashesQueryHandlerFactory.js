@@ -18,23 +18,19 @@ const InvalidArgumentAbciError = require('../../errors/InvalidArgumentAbciError'
 
 /**
  *
- * @param {PublicKeyToIdentityIdStoreRepository} previousPublicKeyToIdentityIdRepository
+ * @param {PublicKeyToIdentityIdStoreRepository} signedPublicKeyToIdentityIdRepository
  * @param {number} maxIdentitiesPerRequest
- * @param {RootTree} previousRootTree
- * @param {PublicKeyToIdentityIdStoreRootTreeLeaf} previousPublicKeyToIdentityIdStoreRootTreeLeaf
  * @param {createQueryResponse} createQueryResponse
  * @param {BlockExecutionContext} blockExecutionContext
- * @param {BlockExecutionContext} previousBlockExecutionContext
+ * @param {BlockExecutionContext} blockExecutionContextStack
  * @return {identityIdsByPublicKeyHashesQueryHandler}
  */
 function identityIdsByPublicKeyHashesQueryHandlerFactory(
-  previousPublicKeyToIdentityIdRepository,
+  signedPublicKeyToIdentityIdRepository,
   maxIdentitiesPerRequest,
-  previousRootTree,
-  previousPublicKeyToIdentityIdStoreRootTreeLeaf,
   createQueryResponse,
   blockExecutionContext,
-  previousBlockExecutionContext,
+  blockExecutionContextStack,
 ) {
   /**
    * @typedef identityIdsByPublicKeyHashesQueryHandler
@@ -53,8 +49,8 @@ function identityIdsByPublicKeyHashesQueryHandlerFactory(
       );
     }
 
-    // There is no signed state (current committed block height less then 2)
-    if (blockExecutionContext.isEmpty() || previousBlockExecutionContext.isEmpty()) {
+    // There is no signed state (current committed block height less than 3)
+    if (!blockExecutionContextStack.getLast()) {
       const response = new GetIdentityIdsByPublicKeyHashesResponse();
 
       response.setIdentityIdsList(publicKeyHashes.map(() => Buffer.alloc(0)));

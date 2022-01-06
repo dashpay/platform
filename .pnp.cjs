@@ -2584,7 +2584,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["@dashevo/dpp", "workspace:packages/js-dpp"],
             ["@dashevo/feature-flags-contract", "workspace:packages/feature-flags-contract"],
             ["@dashevo/grpc-common", "workspace:packages/js-grpc-common"],
-            ["@dashevo/merk", "https://github.com/dashevo/node-merk.git#commit=eb37003300d22c6c04604463bcd7e861dd07000f"],
+            ["@dashevo/node-grove", "npm:0.0.10"],
             ["@types/pino", "npm:6.3.12"],
             ["ajv", "npm:8.8.1"],
             ["ajv-keywords", "virtual:34fbe5a7dba3086dcbcce8a7faed986b10f7a208f11db70499feb2c1afd76e24089e5b95f9e3b937e89512de1cf4937177cc2000303a1e908baefc73362a7d48#npm:5.0.0"],
@@ -2615,7 +2615,6 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["lru-cache", "npm:5.1.1"],
             ["memdown", "npm:5.1.0"],
             ["mocha", "npm:9.1.3"],
-            ["mongodb", "virtual:a39316770159f0a8e3f370c1c3a56eb433794f8d2beaf0837a3349497b1cf2188cea77a97e39f187d7b9f59864fa6d9d57b4c49a9871c8de6a876e77cba350c7#npm:3.7.3"],
             ["node-graceful", "npm:3.1.0"],
             ["nyc", "npm:15.1.0"],
             ["pino", "npm:6.13.3"],
@@ -2682,6 +2681,16 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           "packageDependencies": [
             ["@dashevo/merk", "https://github.com/dashevo/node-merk.git#commit=eb37003300d22c6c04604463bcd7e861dd07000f"],
             ["neon-load-or-build", "npm:2.2.2"]
+          ],
+          "linkType": "HARD",
+        }]
+      ]],
+      ["@dashevo/node-grove", [
+        ["npm:0.0.10", {
+          "packageLocation": "./.yarn/unplugged/@dashevo-node-grove-npm-0.0.10-74d836927d/node_modules/@dashevo/node-grove/",
+          "packageDependencies": [
+            ["@dashevo/node-grove", "npm:0.0.10"],
+            ["cargo-cp-artifact", "npm:0.1.6"]
           ],
           "linkType": "HARD",
         }]
@@ -5777,6 +5786,15 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["cardinal", "npm:2.1.1"],
             ["ansicolors", "npm:0.3.2"],
             ["redeyed", "npm:2.1.1"]
+          ],
+          "linkType": "HARD",
+        }]
+      ]],
+      ["cargo-cp-artifact", [
+        ["npm:0.1.6", {
+          "packageLocation": "./.yarn/cache/cargo-cp-artifact-npm-0.1.6-fe2dd40a8f-2f5d2f3e73.zip/node_modules/cargo-cp-artifact/",
+          "packageDependencies": [
+            ["cargo-cp-artifact", "npm:0.1.6"]
           ],
           "linkType": "HARD",
         }]
