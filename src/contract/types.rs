@@ -1,17 +1,24 @@
 use ciborium::value::{Integer, Value};
 use grovedb::Error;
-use std::borrow::Borrow;
+use serde::{Deserialize, Serialize};
 
-enum DocumentFieldType {
+#[derive(Serialize, Deserialize)]
+pub enum DocumentFieldType {
     Integer,
     String,
     Float,
 }
 
-// What kind of error should be returned if something goes wrong
-// THe value might not match the document field type is that corrupted data??
-// Yeah corrupted data
-// If the value match then encoding should work, so only one type of error really
+fn string_to_field_type(field_type_name: String) -> Option<DocumentFieldType> {
+    return match field_type_name.as_str() {
+        "integer" => Some(DocumentFieldType::Integer),
+        "string" => Some(DocumentFieldType::String),
+        "float" => Some(DocumentFieldType::Float),
+        _ => None,
+    }
+}
+
+// Given a field type this function chooses and executes the right encoding method
 fn encode_document_field_type(
     field_type: DocumentFieldType,
     value: &Value,

@@ -33,7 +33,7 @@ pub struct Contract {
 #[derive(Serialize, Deserialize)]
 pub struct DocumentType {
     pub(crate) indices: Vec<Index>,
-    pub(crate) properties: HashMap<String, String>,
+    pub(crate) properties: HashMap<String, types::DocumentFieldType>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -229,6 +229,9 @@ impl DocumentType {
                     "document property is not a map as expected",
                 )));
             }
+            // Get the value of type in the property value map
+            let property_values = property_value.as_map().expect("confirmed as map")?;
+            let type_value = cbor_inner_text_value(property_values, "type").ok_or(Error::CorruptedData(String::from("cannot find type property")))?;
             document_properties.insert(String::from("a"), String::from("b"));
         }
 
@@ -377,6 +380,18 @@ fn cbor_inner_map_value(
     if key_value.is_map() {
         let map_value = key_value.as_map().expect("confirmed as map");
         return Some(map_value.clone());
+    }
+    return None;
+}
+
+fn cbor_inner_text_value(
+    document_type: &Vec<(Value, Value)>,
+    key: &str,
+) -> Option<String> {
+    let key_value = get_key_from_cbor_map(document_type, key)?;
+    if key_value.is_text() {
+        let string_value = key_value.as_text().expect("confirmed as text");
+        return Some(string_value.to_string());
     }
     return None;
 }
