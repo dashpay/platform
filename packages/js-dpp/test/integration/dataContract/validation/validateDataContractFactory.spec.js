@@ -1471,11 +1471,12 @@ describe('validateDataContractFactory', function main() {
         expect(error.getDocumentType()).to.equal('indexedDocument');
       });
 
-      it('should return invalid result if index is prebuilt', async () => {
+      it('should return invalid result if $id is specified as an indexed property', async () => {
         const indexDefinition = {
           name: 'index_1',
           properties: [
             { $id: 'asc' },
+            { firstName: 'desc' },
           ],
         };
 
