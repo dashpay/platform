@@ -9,8 +9,6 @@ const {
 const NotSupportedNetworkProtocolVersionError = require('./errors/NotSupportedProtocolVersionError');
 const NetworkProtocolVersionIsNotSetError = require('./errors/NetworkProtocolVersionIsNotSetError');
 
-let latestCoreHeight = 1;
-
 /**
  * Begin Block ABCI Handler
  *
@@ -22,7 +20,6 @@ let latestCoreHeight = 1;
  * @param {DashPlatformProtocol} transactionalDpp
  * @param {updateSimplifiedMasternodeList} updateSimplifiedMasternodeList
  * @param {waitForChainLockedHeight} waitForChainLockedHeight
- * @param {SimplifiedMasternodeList} simplifiedMasternodeList
  * @param {updateMasternodeIdentities} updateMasternodeIdentities
  * @param {BaseLogger} logger
  *
@@ -37,7 +34,6 @@ function beginBlockHandlerFactory(
   transactionalDpp,
   updateSimplifiedMasternodeList,
   waitForChainLockedHeight,
-  simplifiedMasternodeList,
   updateMasternodeIdentities,
   logger,
 ) {
@@ -94,20 +90,15 @@ function beginBlockHandlerFactory(
 
     await waitForChainLockedHeight(coreChainLockedHeight);
 
-    const simplifiedMasternodeListWasUpdated = await updateSimplifiedMasternodeList(
+    const isSimplifiedMasternodeListUpdated = await updateSimplifiedMasternodeList(
       coreChainLockedHeight, {
         logger: consensusLogger,
       },
     );
 
-    if (simplifiedMasternodeListWasUpdated) {
-      await updateMasternodeIdentities(
-        simplifiedMasternodeList,
-        latestCoreHeight,
-      );
+    if (isSimplifiedMasternodeListUpdated) {
+      await updateMasternodeIdentities(coreChainLockedHeight);
     }
-
-    latestCoreHeight = coreChainLockedHeight;
 
     if (blockExecutionStoreTransactions.isStarted()) {
       // in case previous block execution failed in process

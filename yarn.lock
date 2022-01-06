@@ -1541,6 +1541,7 @@ __metadata:
     "@dashevo/dpp": "workspace:~"
     "@dashevo/feature-flags-contract": "workspace:~"
     "@dashevo/grpc-common": "workspace:~"
+    "@dashevo/masternode-reward-shares-contract": "workspace:~"
     "@dashevo/merk": "github:dashevo/node-merk#eb37003300d22c6c04604463bcd7e861dd07000f"
     "@types/pino": ^6.3.0
     ajv: ^8.6.0

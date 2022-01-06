@@ -129,8 +129,8 @@ const fetchQuorumMembersFactory = require('./core/fetchQuorumMembersFactory');
 const getRandomQuorum = require('./core/getRandomQuorum');
 const createQueryResponseFactory = require('./abci/handlers/query/response/createQueryResponseFactory');
 const BlockExecutionContextRepository = require('./blockExecution/BlockExecutionContextRepository');
-const updateMasternodeIdentitiesFactory = require('./masternodes/updateMasternodeIdentitiesFactory');
-const createIdentityFactory = require('./masternodes/createIdentity');
+const updateMasternodeIdentitiesFactory = require('./identity/masternode/updateMasternodeIdentitiesFactory');
+const createMasternodeIdentityFactory = require('./identity/masternode/createMasternodeIdentityFactory');
 
 /**
  *
@@ -1062,7 +1062,7 @@ function createDIContainer(options) {
 
     updateMasternodeIdentities: asFunction(updateMasternodeIdentitiesFactory).singleton(),
 
-    createIdentity: asFunction(createIdentityFactory).singleton(),
+    createMasternodeIdentity: asFunction(createMasternodeIdentityFactory).singleton(),
   });
 
   /**
