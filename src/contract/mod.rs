@@ -1,3 +1,8 @@
+mod types;
+
+use base64::DecodeError;
+use byteorder::{BigEndian, WriteBytesExt};
+use ciborium::cbor;
 use ciborium::value::{Value as CborValue, Value};
 use grovedb::Error;
 use serde::{Deserialize, Serialize};
@@ -7,9 +12,6 @@ use std::io::BufReader;
 use std::path::Path;
 use std::ptr::swap;
 use std::rc::{Rc, Weak};
-use base64::DecodeError;
-use byteorder::{BigEndian, WriteBytesExt};
-use ciborium::cbor;
 
 // contract
 // - id
@@ -31,7 +33,7 @@ pub struct Contract {
 #[derive(Serialize, Deserialize)]
 pub struct DocumentType {
     pub(crate) indices: Vec<Index>,
-    // pub(crate) properties: HashMap<String, String>,
+    pub(crate) properties: HashMap<String, String>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -64,13 +66,13 @@ impl Document {
         // first we need to deserialize the document and contract indices
         let mut document: HashMap<String, CborValue> = ciborium::de::from_reader(document_cbor)
             .map_err(|_| Error::CorruptedData(String::from("unable to decode contract")))?;
-        let document_id: Vec<u8> = base58_value_as_bytes_from_hash_map(&document, "$id")
-            .ok_or(Error::CorruptedData(String::from(
-                "unable to get document id",
-            )))?;
+        let document_id: Vec<u8> = base58_value_as_bytes_from_hash_map(&document, "$id").ok_or(
+            Error::CorruptedData(String::from("unable to get document id")),
+        )?;
         document.remove("$id");
-        
-        let document = Document{
+
+        // dev-note: properties is everything other than the id
+        let document = Document {
             properties: document,
             owner_id: Vec::from(owner_id),
             id: document_id,
@@ -83,6 +85,21 @@ impl Document {
     }
 
     pub fn get_raw_for_contract<'a>(&'a self, key: &str, contract: &Contract) -> Option<Vec<u8>> {
+        // dev-note
+        // key for only stack items?? integer, strings ... not hashmaps, arrays??
+
+        // We are getting based on a key, this key is most likely a field
+        // The contract already specifies the type for most field, does it do it for all?
+        // - no
+        // Convert from cbor type to equivalent rust type then to a vector??
+        // Basically converting every value type to a consistent vector format
+        // Most top index are ownerId's, seems they are handled specially
+        // Anything other than that is passed here
+        // What of updatedAt, createdAt e.t.c.
+        // UpdatedAt and CreatedAt should be handled the same way ownerId was??
+
+        // A path is being built from the values
+        // end-dev-note
         let value = self.properties.get(key)?;
         match value {
             Value::Integer(i) => {
@@ -90,9 +107,7 @@ impl Document {
                 wtr.write_i128::<BigEndian>(i128::from(*i));
                 Some(wtr)
             }
-            Value::Bytes(bytes) => {
-                Some(bytes.clone())
-            }
+            Value::Bytes(bytes) => Some(bytes.clone()),
             Value::Float(f) => {
                 let mut wtr = vec![];
                 wtr.write_f64::<BigEndian>(*f);
@@ -103,23 +118,21 @@ impl Document {
                 // todo: get this for the contract and not with this stupid hack
                 if len == 44 {
                     match base64::decode(text) {
-                        Ok(decoded) => {
-                            Some(decoded)
-                        }
-                        Err(_) => {
-                            Some(text.as_bytes().to_vec())
-                        }
+                        Ok(decoded) => Some(decoded),
+                        Err(_) => Some(text.as_bytes().to_vec()),
                     }
                 } else {
                     Some(text.as_bytes().to_vec())
                 }
             }
             Value::Bool(bool) => {
-                if *bool { Some(vec![1]) } else { Some(vec![0]) }
+                if *bool {
+                    Some(vec![1])
+                } else {
+                    Some(vec![0])
+                }
             }
-            _ => {
-                None
-            }
+            _ => None,
         }
     }
 }
@@ -185,6 +198,7 @@ impl Contract {
 impl DocumentType {
     pub fn from_cbor_value(document_type_value_map: &Vec<(Value, Value)>) -> Result<Self, Error> {
         let mut indices: Vec<Index> = Vec::new();
+        let mut document_properties: HashMap<String, String> = HashMap::new();
 
         let index_values = cbor_inner_array_value(&document_type_value_map, "indices").ok_or(
             Error::CorruptedData(String::from("unable to get indices from the contract")),
@@ -203,8 +217,25 @@ impl DocumentType {
         // We need to also create the properties of the document
         // This list all the fields, their type and some extra information regarding them
         // We have a function that can extract the cbor map
+        let property_values = cbor_inner_map_value(&document_type_value_map, "properties").ok_or(
+            Error::CorruptedData(String::from(
+                "unable to get document properties from the contract",
+            )),
+        )?;
 
-        Ok(DocumentType { indices })
+        for (property_key, property_value) in property_values {
+            if !property_value.is_map() {
+                return Err(Error::CorruptedData(String::from(
+                    "document property is not a map as expected",
+                )));
+            }
+            document_properties.insert(String::from("a"), String::from("b"));
+        }
+
+        Ok(DocumentType {
+            indices,
+            properties: document_properties,
+        })
 
         // for each type we should insert the indices that are top level
         // let top_level_indices = top_level_indices(index_value);
@@ -319,7 +350,7 @@ fn contract_document_types(contract: &HashMap<String, CborValue>) -> Option<&Vec
 fn get_key_from_cbor_map(cbor_map: &Vec<(Value, Value)>, key: &str) -> Option<Value> {
     for (cbor_key, cbor_value) in cbor_map.iter() {
         if !cbor_key.is_text() {
-           continue
+            continue;
         }
 
         if cbor_key.as_text().expect("confirmed as text") == key {
@@ -338,7 +369,10 @@ fn cbor_inner_array_value(document_type: &Vec<(Value, Value)>, key: &str) -> Opt
     return None;
 }
 
-fn cbor_inner_map_value(document_type: &Vec<(Value, Value)>, key: &str) -> Option<Vec<(Value, Value)>> {
+fn cbor_inner_map_value(
+    document_type: &Vec<(Value, Value)>,
+    key: &str,
+) -> Option<Vec<(Value, Value)>> {
     let key_value = get_key_from_cbor_map(document_type, key)?;
     if key_value.is_map() {
         let map_value = key_value.as_map().expect("confirmed as map");
