@@ -84,56 +84,23 @@ impl Document {
         self.properties.get(key)
     }
 
-    pub fn get_raw_for_contract<'a>(&'a self, key: &str, contract: &Contract) -> Option<Vec<u8>> {
-        // dev-note
-        // key for only stack items?? integer, strings ... not hashmaps, arrays??
-
-        // We are getting based on a key, this key is most likely a field
-        // The contract already specifies the type for most field, does it do it for all?
-        // - no
-        // Convert from cbor type to equivalent rust type then to a vector??
-        // Basically converting every value type to a consistent vector format
-        // Most top index are ownerId's, seems they are handled specially
-        // Anything other than that is passed here
-        // What of updatedAt, createdAt e.t.c.
-        // UpdatedAt and CreatedAt should be handled the same way ownerId was??
-
-        // A path is being built from the values
-        // end-dev-note
+    pub fn get_raw_for_contract<'a>(
+        &'a self,
+        key: &str,
+        document_type_name: &str,
+        contract: &Contract,
+    ) -> Option<Vec<u8>> {
+        // TODO: Handle errors better
         let value = self.properties.get(key)?;
-        match value {
-            Value::Integer(i) => {
-                let mut wtr = vec![];
-                wtr.write_i128::<BigEndian>(i128::from(*i));
-                Some(wtr)
-            }
-            Value::Bytes(bytes) => Some(bytes.clone()),
-            Value::Float(f) => {
-                let mut wtr = vec![];
-                wtr.write_f64::<BigEndian>(*f);
-                Some(wtr)
-            }
-            Value::Text(text) => {
-                let len = text.len();
-                // todo: get this for the contract and not with this stupid hack
-                if len == 44 {
-                    match base64::decode(text) {
-                        Ok(decoded) => Some(decoded),
-                        Err(_) => Some(text.as_bytes().to_vec()),
-                    }
-                } else {
-                    Some(text.as_bytes().to_vec())
-                }
-            }
-            Value::Bool(bool) => {
-                if *bool {
-                    Some(vec![1])
-                } else {
-                    Some(vec![0])
-                }
-            }
-            _ => None,
-        }
+        let field_type = contract
+            .document_types
+            .get(document_type_name)
+            .unwrap()
+            .properties
+            .get(key)
+            .unwrap();
+        let raw_value = types::encode_document_field_type(field_type, value).unwrap();
+        return raw_value;
     }
 }
 
@@ -198,7 +165,7 @@ impl Contract {
 impl DocumentType {
     pub fn from_cbor_value(document_type_value_map: &Vec<(Value, Value)>) -> Result<Self, Error> {
         let mut indices: Vec<Index> = Vec::new();
-        let mut document_properties: HashMap<String, String> = HashMap::new();
+        let mut document_properties: HashMap<String, types::DocumentFieldType> = HashMap::new();
 
         let index_values = cbor_inner_array_value(&document_type_value_map, "indices").ok_or(
             Error::CorruptedData(String::from("unable to get indices from the contract")),
@@ -214,9 +181,7 @@ impl DocumentType {
             indices.push(index);
         }
 
-        // We need to also create the properties of the document
-        // This list all the fields, their type and some extra information regarding them
-        // We have a function that can extract the cbor map
+        // Extract the properties
         let property_values = cbor_inner_map_value(&document_type_value_map, "properties").ok_or(
             Error::CorruptedData(String::from(
                 "unable to get document properties from the contract",
@@ -224,16 +189,39 @@ impl DocumentType {
         )?;
 
         for (property_key, property_value) in property_values {
+            if !property_key.is_text() {
+                return Err(Error::CorruptedData(String::from(
+                    "property key should be text",
+                )));
+            }
+
             if !property_value.is_map() {
                 return Err(Error::CorruptedData(String::from(
                     "document property is not a map as expected",
                 )));
             }
             // Get the value of type in the property value map
-            let property_values = property_value.as_map().expect("confirmed as map")?;
-            let type_value = cbor_inner_text_value(property_values, "type").ok_or(Error::CorruptedData(String::from("cannot find type property")))?;
-            document_properties.insert(String::from("a"), String::from("b"));
+            // We also need to be able to tell if the array is say a bytearray or not
+            let property_values = property_value.as_map().expect("confirmed as map");
+            let type_value = cbor_inner_text_value(property_values, "type").ok_or(
+                Error::CorruptedData(String::from("cannot find type property")),
+            )?;
+            let field_type = types::string_to_field_type(type_value)
+                .ok_or(Error::CorruptedData(String::from("invalid type")))?;
+
+            document_properties.insert(
+                property_key
+                    .as_text()
+                    .expect("confirmed as text")
+                    .to_string(),
+                field_type,
+            );
         }
+
+        // Add system properties
+        document_properties.insert(String::from("$createdAt"), types::DocumentFieldType::String);
+
+        document_properties.insert(String::from("$updatedAt"), types::DocumentFieldType::String);
 
         Ok(DocumentType {
             indices,
@@ -384,10 +372,7 @@ fn cbor_inner_map_value(
     return None;
 }
 
-fn cbor_inner_text_value(
-    document_type: &Vec<(Value, Value)>,
-    key: &str,
-) -> Option<String> {
+fn cbor_inner_text_value(document_type: &Vec<(Value, Value)>, key: &str) -> Option<String> {
     let key_value = get_key_from_cbor_map(document_type, key)?;
     if key_value.is_text() {
         let string_value = key_value.as_text().expect("confirmed as text");
