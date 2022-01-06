@@ -251,7 +251,7 @@ impl Contract {
     }
 
     pub fn document_type_path<'a>(&'a self, document_type_name: &'a str) -> Vec<&'a [u8]> {
-    vec![RootTree::ContractDocuments.into(), &self.id, b"1", document_type_name.as_bytes()]
+        vec![RootTree::ContractDocuments.into(), &self.id, b"1", document_type_name.as_bytes()]
     }
 
     pub fn documents_primary_key_path<'a>(&'a self, document_type_name: &'a str) -> Vec<&'a [u8]> {
