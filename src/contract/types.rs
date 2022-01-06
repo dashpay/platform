@@ -14,12 +14,12 @@ pub fn string_to_field_type(field_type_name: String) -> Option<DocumentFieldType
         "integer" => Some(DocumentFieldType::Integer),
         "string" => Some(DocumentFieldType::String),
         "float" => Some(DocumentFieldType::Float),
-        "array" => Some(DocumentFieldType::String),
+        "array" => Some(DocumentFieldType::String), // TODO: Create bytearray type
         _ => None,
     };
 }
 
-// Given a field type this function chooses and executes the right encoding method
+// Given a field type and a value this function chooses and executes the right encoding method
 pub fn encode_document_field_type(
     field_type: &DocumentFieldType,
     value: &Value,
