@@ -50,7 +50,7 @@ class CachedStateRepositoryDecorator {
    *
    * @param {Buffer[]} publicKeyHashes
    *
-   * @returns {Promise<Array<Identifier|null>>}
+   * @returns {Promise<Array<Identifier[]>>}
    */
   async fetchIdentityIdsByPublicKeyHashes(publicKeyHashes) {
     return this.stateRepository.fetchIdentityIdsByPublicKeyHashes(publicKeyHashes);
