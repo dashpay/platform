@@ -28,6 +28,7 @@ const IncompatibleRe2PatternError = require('../../../../lib/errors/consensus/ba
 const InvalidJsonSchemaRefError = require('../../../../lib/errors/consensus/basic/dataContract/InvalidJsonSchemaRefError');
 const JsonSchemaCompilationError = require('../../../../lib/errors/consensus/basic/JsonSchemaCompilationError');
 const SomeConsensusError = require('../../../../lib/test/mocks/SomeConsensusError');
+const getPropertyDefinitionByPath = require('../../../../lib/dataContract/getPropertyDefinitionByPath');
 
 describe('validateDataContractFactory', function main() {
   this.timeout(15000);
@@ -60,8 +61,8 @@ describe('validateDataContractFactory', function main() {
       validateDataContractMaxDepth,
       enrichDataContractWithBaseSchema,
       validateDataContractPatterns,
-      RE2,
       validateProtocolVersionMock,
+      getPropertyDefinitionByPath,
     );
   });
 

@@ -1,6 +1,6 @@
 const chalk = require('chalk');
 
-const { flags: flagTypes } = require('@oclif/command');
+const { Flags } = require('@oclif/core');
 const { OUTPUT_FORMATS } = require('../../constants');
 
 const printArrayOfObjects = require('../../printers/printArrayOfObjects');
@@ -88,7 +88,7 @@ ServicesStatusCommand.description = 'Show service status details';
 
 ServicesStatusCommand.flags = {
   ...ConfigBaseCommand.flags,
-  format: flagTypes.string({
+  format: Flags.string({
     description: 'display output format',
     default: OUTPUT_FORMATS.PLAIN,
     options: Object.values(OUTPUT_FORMATS),

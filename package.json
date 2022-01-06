@@ -4,9 +4,9 @@
   "private": true,
   "scripts": {
     "setup": "yarn install && yarn run build && yarn run configure",
-    "start": "yarn run dashmate group:start --verbose -w",
-    "restart": "yarn run dashmate group:restart --verbose",
-    "stop": "yarn run dashmate group:stop --verbose",
+    "start": "yarn run dashmate group start --verbose -w",
+    "restart": "yarn run dashmate group restart --verbose",
+    "stop": "yarn run dashmate group stop --verbose",
     "reset": "yarn run clean:data --force && yarn run setup",
     "test": "ultra -r $* test",
     "test:dapi": "ultra -r --filter \"packages/@(dapi|platform-test-suite)\" test",
@@ -28,7 +28,7 @@
     "configure:tests": "yarn exec ./scripts/configure_test_suite.sh",
     "configure:dotenv": "yarn exec ./scripts/configure_dotenv.sh",
     "configure": "yarn run configure:dashmate && yarn run configure:network && yarn run configure:tests && yarn run configure:dotenv",
-    "clean:data": "yarn run dashmate group:reset --verbose --group=local --hard",
+    "clean:data": "yarn run dashmate group reset --verbose --group=local --hard",
     "clean": "yarn run clean:data && yarn run build",
     "dashmate": "yarn exec packages/dashmate/bin/dashmate",
     "release": "yarn exec ./scripts/release/release.sh"
@@ -61,7 +61,8 @@
     "packages/dapi",
     "packages/js-drive",
     "packages/dashmate",
-    "packages/platform-test-suite"
+    "packages/platform-test-suite",
+    "packages/masternode-reward-shares-contract"
   ],
   "resolutions": {
     "protobufjs": "github:jawid-h/protobuf.js#fix/buffer-conversion",

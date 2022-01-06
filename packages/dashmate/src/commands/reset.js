@@ -1,6 +1,6 @@
 const { Listr } = require('listr2');
 
-const { flags: flagTypes } = require('@oclif/command');
+const { Flags } = require('@oclif/core');
 
 const ConfigBaseCommand = require('../oclif/command/ConfigBaseCommand');
 
@@ -70,8 +70,8 @@ Reset node data
 
 ResetCommand.flags = {
   ...ConfigBaseCommand.flags,
-  hard: flagTypes.boolean({ char: 'h', description: 'reset config as well as data', default: false }),
-  'platform-only': flagTypes.boolean({ char: 'p', description: 'reset platform data only', default: false }),
+  hard: Flags.boolean({ char: 'h', description: 'reset config as well as data', default: false }),
+  'platform-only': Flags.boolean({ char: 'p', description: 'reset platform data only', default: false }),
 };
 
 module.exports = ResetCommand;

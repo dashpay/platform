@@ -1,4 +1,4 @@
-const { flags: flagTypes } = require('@oclif/command');
+const { Flags } = require('@oclif/core');
 
 const { asValue } = require('awilix');
 
@@ -52,7 +52,7 @@ class GroupBaseCommand extends BaseCommand {
 }
 
 GroupBaseCommand.flags = {
-  group: flagTypes.string({
+  group: Flags.string({
     description: 'group name to use',
     default: null,
   }),
