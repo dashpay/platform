@@ -17,21 +17,17 @@ const NotFoundAbciError = require('../../errors/NotFoundAbciError');
 
 /**
  *
- * @param {IdentityStoreRepository} previousIdentityRepository
- * @param {RootTree} previousRootTree
- * @param {IdentitiesStoreRootTreeLeaf} previousIdentitiesStoreRootTreeLeaf
+ * @param {IdentityStoreRepository} signedIdentityRepository
  * @param {createQueryResponse} createQueryResponse
  * @param {BlockExecutionContext} blockExecutionContext
- * @param {BlockExecutionContext} previousBlockExecutionContext
+ * @param {BlockExecutionContextStack} blockExecutionContextStack
  * @return {identityQueryHandler}
  */
 function identityQueryHandlerFactory(
-  previousIdentityRepository,
-  previousRootTree,
-  previousIdentitiesStoreRootTreeLeaf,
+  signedIdentityRepository,
   createQueryResponse,
   blockExecutionContext,
-  previousBlockExecutionContext,
+  blockExecutionContextStack,
 ) {
   /**
    * @typedef identityQueryHandler
@@ -42,14 +38,14 @@ function identityQueryHandlerFactory(
    * @return {Promise<ResponseQuery>}
    */
   async function identityQueryHandler(params, { id }, request) {
-    // There is no signed state (current committed block height less then 2)
-    if (blockExecutionContext.isEmpty() || previousBlockExecutionContext.isEmpty()) {
+    // There is no signed state (current committed block height less than 3)
+    if (!blockExecutionContextStack.getLast()) {
       throw new NotFoundAbciError('Identity not found');
     }
 
     const response = createQueryResponse(GetIdentityResponse, request.prove);
 
-    const identity = await previousIdentityRepository.fetch(id);
+    const identity = await signedIdentityRepository.fetch(id);
 
     let identityBuffer;
     if (!identity && !request.prove) {

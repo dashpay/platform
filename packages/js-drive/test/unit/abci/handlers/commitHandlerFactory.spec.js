@@ -19,7 +19,7 @@ const BlockExecutionDBTransactionsMock = require('../../../../lib/test/mock/Bloc
 const BlockExecutionContextMock = require('../../../../lib/test/mock/BlockExecutionContextMock');
 const DataCorruptedError = require('../../../../lib/abci/handlers/errors/DataCorruptedError');
 const LoggerMock = require('../../../../lib/test/mock/LoggerMock');
-const BlockExecutionContextRepository = require('../../../../lib/blockExecution/BlockExecutionContextRepository');
+const BlockExecutionContextRepository = require('../../../../lib/blockExecution/BlockExecutionContextStackRepository');
 
 describe('commitHandlerFactory', () => {
   let commitHandler;

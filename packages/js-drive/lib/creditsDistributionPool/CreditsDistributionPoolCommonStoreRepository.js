@@ -4,17 +4,17 @@ const CreditsDistributionPool = require('./CreditsDistributionPool');
 class CreditsDistributionPoolCommonStoreRepository {
   /**
    *
-   * @param {CommonStore} commonStore
+   * @param {GroveDBStore} groveDBStore
    */
-  constructor(commonStore) {
-    this.storage = commonStore;
+  constructor(groveDBStore) {
+    this.storage = groveDBStore;
   }
 
   /**
    * Store Credits Distribution Pool
    *
    * @param {CreditsDistributionPool} creditsDistributionPool
-   * @param {MerkDbTransaction} transaction
+   * @param {GroveDBTransaction} transaction
    * @return {this}
    */
   async store(creditsDistributionPool, transaction = undefined) {
@@ -30,7 +30,7 @@ class CreditsDistributionPoolCommonStoreRepository {
   /**
    * Fetch Credits Distribution Pool
    *
-   * @param {MerkDbTransaction} transaction
+   * @param {GroveDBTransaction} transaction
    * @return {CreditsDistributionPool}
    */
   async fetch(transaction = undefined) {

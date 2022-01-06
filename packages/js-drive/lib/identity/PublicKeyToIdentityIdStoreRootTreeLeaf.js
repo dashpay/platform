@@ -2,7 +2,7 @@ const AbstractRootTreeLeaf = require('../rootTree/AbstractRootTreeLeaf');
 
 class PublicKeyToIdentityIdStoreRootTreeLeaf extends AbstractRootTreeLeaf {
   /**
-   * @param {MerkDbStore} publicKeyToIdentityIdStore
+   * @param {GroveDBStore} publicKeyToIdentityIdStore
    */
   constructor(publicKeyToIdentityIdStore) {
     super(PublicKeyToIdentityIdStoreRootTreeLeaf.INDEX);

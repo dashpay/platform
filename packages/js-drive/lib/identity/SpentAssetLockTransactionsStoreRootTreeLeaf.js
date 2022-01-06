@@ -2,7 +2,7 @@ const AbstractRootTreeLeaf = require('../rootTree/AbstractRootTreeLeaf');
 
 class SpentAssetLockTransactionsStoreRootTreeLeaf extends AbstractRootTreeLeaf {
   /**
-   * @param {MerkDbStore} spentAssetLockTransactionsStore
+   * @param {GroveDBStore} spentAssetLockTransactionsStore
    */
   constructor(spentAssetLockTransactionsStore) {
     super(SpentAssetLockTransactionsStoreRootTreeLeaf.INDEX);

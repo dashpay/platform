@@ -1,21 +1,10 @@
 version: '3.7'
 
 services:
-  drive_mongodb:
-    image: ${PLATFORM_DRIVE_MONGODB_DOCKER_IMAGE:?err}
-    restart: unless-stopped
-    volumes:
-      - drive_mongodb_data:/data/db
-      - ./docker/mongodb/initiate_mongodb_replica.js:/docker-entrypoint-initdb.d/initiate_mongodb_replica.js
-    extra_hosts:
-      - "drive_mongodb:127.0.0.1"
-    command: mongod --replSet driveDocumentIndices --bind_ip_all
-
   drive_abci:
     image: ${PLATFORM_DRIVE_ABCI_DOCKER_IMAGE:?err}
     restart: unless-stopped
     depends_on:
-      - drive_mongodb
       - core
     volumes:
       - drive_abci_data:/platform/packages/js-drive/db
@@ -28,7 +17,6 @@ services:
       - CORE_JSON_RPC_PORT=${CORE_RPC_PORT:?err}
       - CORE_ZMQ_HOST=core
       - CORE_ZMQ_PORT=29998
-      - DOCUMENT_MONGODB_URL=mongodb://drive_mongodb:27017?replicaSet=driveDocumentIndices
       - DPNS_CONTRACT_ID=${PLATFORM_DPNS_CONTRACT_ID}
       - DPNS_CONTRACT_BLOCK_HEIGHT=${PLATFORM_DPNS_CONTRACT_BLOCK_HEIGHT}
       - DPNS_TOP_LEVEL_IDENTITY=${PLATFORM_DPNS_OWNER_ID}
@@ -120,5 +108,4 @@ services:
 
 volumes:
   drive_abci_data:
-  drive_mongodb_data:
   drive_tenderdash:

@@ -18,27 +18,19 @@ const InvalidArgumentAbciError = require('../../errors/InvalidArgumentAbciError'
 
 /**
  *
- * @param {PublicKeyToIdentityIdStoreRepository} previousPublicKeyToIdentityIdRepository
- * @param {IdentityStoreRepository} previousIdentityRepository
+ * @param {PublicKeyToIdentityIdStoreRepository} signedPublicKeyToIdentityIdRepository
+ * @param {IdentityStoreRepository} signedIdentityRepository
  * @param {number} maxIdentitiesPerRequest
- * @param {RootTree} previousRootTree
- * @param {IdentitiesStoreRootTreeLeaf} previousIdentitiesStoreRootTreeLeaf
- * @param {PublicKeyToIdentityIdStoreRootTreeLeaf} previousPublicKeyToIdentityIdStoreRootTreeLeaf
  * @param {createQueryResponse} createQueryResponse
- * @param {BlockExecutionContext} blockExecutionContext
- * @param {BlockExecutionContext} previousBlockExecutionContext
+ * @param {BlockExecutionContextStack} blockExecutionContextStack
  * @return {identitiesByPublicKeyHashesQueryHandler}
  */
 function identitiesByPublicKeyHashesQueryHandlerFactory(
-  previousPublicKeyToIdentityIdRepository,
-  previousIdentityRepository,
+  signedPublicKeyToIdentityIdRepository,
+  signedIdentityRepository,
   maxIdentitiesPerRequest,
-  previousRootTree,
-  previousIdentitiesStoreRootTreeLeaf,
-  previousPublicKeyToIdentityIdStoreRootTreeLeaf,
   createQueryResponse,
-  blockExecutionContext,
-  previousBlockExecutionContext,
+  blockExecutionContextStack,
 ) {
   /**
    * @typedef identitiesByPublicKeyHashesQueryHandler
@@ -57,8 +49,8 @@ function identitiesByPublicKeyHashesQueryHandlerFactory(
       );
     }
 
-    // There is no signed state (current committed block height less then 2)
-    if (blockExecutionContext.isEmpty() || previousBlockExecutionContext.isEmpty()) {
+    // There is no signed state (current committed block height less than 3)
+    if (!blockExecutionContextStack.getLast()) {
       const response = new GetIdentitiesByPublicKeyHashesResponse();
 
       response.setIdentitiesList(publicKeyHashes.map(() => Buffer.alloc(0)));
@@ -126,7 +118,7 @@ function identitiesByPublicKeyHashesQueryHandlerFactory(
             return Buffer.alloc(0);
           }
 
-          const identity = await previousIdentityRepository.fetch(identityId);
+          const identity = await signedIdentityRepository.fetch(identityId);
 
           return identity.toBuffer();
         }),

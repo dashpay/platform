@@ -9,7 +9,7 @@ const ZMQClient = require('../lib/core/ZmqClient');
 const { init: initHashFunction } = require('../lib/rootTree/hashFunction');
 
 const createDIContainer = require('../lib/createDIContainer');
-const BlockExecutionContextRepository = require('../lib/blockExecution/BlockExecutionContextRepository');
+const BlockExecutionContextRepository = require('../lib/blockExecution/BlockExecutionContextStackRepository');
 
 const { version: driveVersion } = require('../package.json');
 
@@ -73,20 +73,12 @@ console.log(chalk.hex('#008de4')(banner));
   /**
    * Initialize Block Execution Contexts
    */
-  const blockExecutionContext = container.resolve('blockExecutionContext');
-  const previousBlockExecutionContext = container.resolve('previousBlockExecutionContext');
-  const blockExecutionContextRepository = container.resolve('blockExecutionContextRepository');
+  const blockExecutionContextStack = container.resolve('blockExecutionContextStack');
+  const blockExecutionContextStackRepository = container.resolve('blockExecutionContextStackRepository');
 
-  const persistedBlockExecutionContext = await blockExecutionContextRepository.fetch(
-    BlockExecutionContextRepository.KEY_PREFIX_CURRENT,
-  );
+  const persistedBlockExecutionContextStack = await blockExecutionContextStackRepository.fetch();
 
-  const persistedPreviousBlockExecutionContext = await blockExecutionContextRepository.fetch(
-    BlockExecutionContextRepository.KEY_PREFIX_PREVIOUS,
-  );
-
-  blockExecutionContext.populate(persistedBlockExecutionContext);
-  previousBlockExecutionContext.populate(persistedPreviousBlockExecutionContext);
+  blockExecutionContextStack.setContexts(persistedBlockExecutionContextStack.getContexts());
 
   /**
    * Initialize Credits Distribution Pool
@@ -97,19 +89,6 @@ console.log(chalk.hex('#008de4')(banner));
 
   const fetchedCreditsDistributionPool = await creditsDistributionPoolRepository.fetch();
   creditsDistributionPool.populate(fetchedCreditsDistributionPool.toJSON());
-
-  /**
-   * Make sure MongoDB is running
-   */
-
-  logger.info('Connecting to MongoDB...');
-
-  const waitReplicaSetInitialize = container.resolve('waitReplicaSetInitialize');
-  await waitReplicaSetInitialize((retry, maxRetries) => {
-    logger.info(
-      `waiting for replica set to be initialized ${retry}/${maxRetries}...`,
-    );
-  });
 
   /**
    * Make sure Core is synced

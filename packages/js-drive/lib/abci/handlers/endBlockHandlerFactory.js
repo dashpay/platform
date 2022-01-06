@@ -28,7 +28,6 @@ const NoDashpayContractFoundError = require('./errors/NoDashpayContractFoundErro
  * @param {createValidatorSetUpdate} createValidatorSetUpdate
  * @param {BaseLogger} logger
  * @param {getFeatureFlagForHeight} getFeatureFlagForHeight
- * @param {BlockExecutionStoreTransactions} blockExecutionStoreTransactions
  *
  * @return {endBlockHandler}
  */
@@ -43,7 +42,6 @@ function endBlockHandlerFactory(
   createValidatorSetUpdate,
   logger,
   getFeatureFlagForHeight,
-  blockExecutionStoreTransactions,
 ) {
   /**
    * @typedef endBlockHandler
@@ -115,10 +113,10 @@ function endBlockHandlerFactory(
     }
 
     // Update consensus params feature flag
-    const documentsTransaction = blockExecutionStoreTransactions.getTransaction('documents');
-
     const updateConsensusParamsFeatureFlag = await getFeatureFlagForHeight(
-      featureFlagTypes.UPDATE_CONSENSUS_PARAMS, height, documentsTransaction,
+      featureFlagTypes.UPDATE_CONSENSUS_PARAMS,
+      height,
+      blockExecutionContext.getDBTransaction(),
     );
 
     let consensusParamUpdates;

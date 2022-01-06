@@ -1,16 +1,16 @@
 class SpentAssetLockTransactionsRepository {
   /**
-   * @param {MerkDbStore} spentAssetLockTransactionsStore
+   * @param {GroveDBStore} groveDBStore
    */
-  constructor(spentAssetLockTransactionsStore) {
-    this.storage = spentAssetLockTransactionsStore;
+  constructor(groveDBStore) {
+    this.storage = groveDBStore;
   }
 
   /**
    * Store the outPoint
    *
    * @param {Buffer} outPointBuffer
-   * @param {MerkDbTransaction} [transaction]
+   * @param {GroveDBTransaction} [transaction]
    *
    * @return {SpentAssetLockTransactionsRepository}
    */
@@ -28,7 +28,7 @@ class SpentAssetLockTransactionsRepository {
    * Fetch the outPoint
    *
    * @param {Buffer} outPointBuffer
-   * @param {MerkDbTransaction} [transaction]
+   * @param {GroveDBTransaction} [transaction]
    *
    * @return {null|Buffer}
    */

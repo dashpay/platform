@@ -74,11 +74,6 @@ module.exports = {
       },
     },
     drive: {
-      mongodb: {
-        docker: {
-          image: 'mongo:4.2',
-        },
-      },
       abci: {
         docker: {
           image: 'dashpay/drive:0.21',

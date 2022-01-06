@@ -12,9 +12,9 @@ const NetworkProtocolVersionIsNotSetError = require('./errors/NetworkProtocolVer
 /**
  * Begin Block ABCI Handler
  *
- * @param {BlockExecutionStoreTransactions} blockExecutionStoreTransactions
+ * @param {GroveDBStore} groveDBStore
  * @param {BlockExecutionContext} blockExecutionContext
- * @param {BlockExecutionContext} previousBlockExecutionContext
+ * @param {BlockExecutionContextStack} blockExecutionContextStack
  * @param {Long} latestProtocolVersion
  * @param {DashPlatformProtocol} dpp
  * @param {DashPlatformProtocol} transactionalDpp
@@ -25,9 +25,9 @@ const NetworkProtocolVersionIsNotSetError = require('./errors/NetworkProtocolVer
  * @return {beginBlockHandler}
  */
 function beginBlockHandlerFactory(
-  blockExecutionStoreTransactions,
+  groveDBStore,
   blockExecutionContext,
-  previousBlockExecutionContext,
+  blockExecutionContextStack,
   latestProtocolVersion,
   dpp,
   transactionalDpp,
@@ -71,12 +71,27 @@ function beginBlockHandlerFactory(
       );
     }
 
+    // Make sure Core has the same height as the network
+    await waitForChainLockedHeight(coreChainLockedHeight);
+
+    await updateSimplifiedMasternodeList(coreChainLockedHeight, {
+      logger: consensusLogger,
+    });
+
+    // Set block execution context
+
     // in case previous block execution failed in process
     // and not committed. We need to make sure
-    // previous context copied and reset.
+    // previous context properly reset.
+    const contextHeader = blockExecutionContext.getHeader();
+    if (contextHeader && contextHeader.height.equals(height)) {
+      const transaction = blockExecutionContext.getDBTransaction();
+      if (transaction.isStarted()) {
+        transaction.abort();
+      }
 
-    previousBlockExecutionContext.reset();
-    previousBlockExecutionContext.populate(blockExecutionContext);
+      // TODO: Clean stack too?
+    }
 
     blockExecutionContext.reset();
 
@@ -86,21 +101,14 @@ function beginBlockHandlerFactory(
 
     blockExecutionContext.setLastCommitInfo(lastCommitInfo);
 
-    await waitForChainLockedHeight(coreChainLockedHeight);
+    // Start GroveDB transaction
+    const transaction = groveDBStore.createTransaction();
 
-    await updateSimplifiedMasternodeList(coreChainLockedHeight, {
-      logger: consensusLogger,
-    });
+    await transaction.start();
 
-    if (blockExecutionStoreTransactions.isStarted()) {
-      // in case previous block execution failed in process
-      // and not commited. We need to make sure
-      // previous transactions are aborted.
-      await blockExecutionStoreTransactions.abort();
-    }
+    blockExecutionContext.setDBTransaction(transaction);
 
-    await blockExecutionStoreTransactions.start();
-
+    // Set protocol version to DPP
     dpp.setProtocolVersion(version.app.toNumber());
     transactionalDpp.setProtocolVersion(version.app.toNumber());
 

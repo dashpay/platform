@@ -1596,7 +1596,7 @@ __metadata:
     "@dashevo/dpp": "workspace:~"
     "@dashevo/feature-flags-contract": "workspace:~"
     "@dashevo/grpc-common": "workspace:~"
-    "@dashevo/merk": "github:dashevo/node-merk#eb37003300d22c6c04604463bcd7e861dd07000f"
+    "@dashevo/node-grove": ^0.0.10
     "@types/pino": ^6.3.0
     ajv: ^8.6.0
     ajv-keywords: ^5.0.0
@@ -1627,7 +1627,6 @@ __metadata:
     lru-cache: ^5.1.1
     memdown: ^5.1.0
     mocha: ^9.1.2
-    mongodb: ^3.5.5
     node-graceful: ^3.0.1
     nyc: ^15.1.0
     pino: ^6.4.0
@@ -1689,6 +1688,15 @@ __metadata:
   dependencies:
     neon-load-or-build: ^2.2.2
   checksum: 1e056bbd02fc3fc459efd85169bb35b4e33435137c0f4eb2e1fa993a1e913d83d662f133884889cd1cd2ab410009c9359429df769f4f2f3caa4e5f22fb8c1a04
+  languageName: node
+  linkType: hard
+
+"@dashevo/node-grove@npm:^0.0.10":
+  version: 0.0.10
+  resolution: "@dashevo/node-grove@npm:0.0.10"
+  dependencies:
+    cargo-cp-artifact: ^0.1.6
+  checksum: 69301460ddd6cd8e1379d77acb142438eedc58c1f3bc482123279840554e9e3eaeff04cbe77da9ee099140ff703fde62773641effd9a358c7edbffc572fc80b1
   languageName: node
   linkType: hard
 
@@ -4152,6 +4160,15 @@ __metadata:
   bin:
     cdl: ./bin/cdl.js
   checksum: e8d4ae46439cf8fed481c0efd267711ee91e199aa7821a9143e784ed94a6495accd01a0b36d84d377e8ee2cc9928a6c9c123b03be761c60b805f2c026b8a99ad
+  languageName: node
+  linkType: hard
+
+"cargo-cp-artifact@npm:^0.1.6":
+  version: 0.1.6
+  resolution: "cargo-cp-artifact@npm:0.1.6"
+  bin:
+    cargo-cp-artifact: bin/cargo-cp-artifact.js
+  checksum: 2f5d2f3e73372c9d398746372e8d1f7b171f27c8d4e4e9f7de898ead93b29631d62ea26c1ae352fa2c1542e124c2c77ac8a60acc5634bb433133ee2c7c6f1e09
   languageName: node
   linkType: hard
 
@@ -9664,7 +9681,7 @@ fsevents@~2.3.2:
   languageName: node
   linkType: hard
 
-"mongodb@npm:^3.3.4, mongodb@npm:^3.5.5":
+"mongodb@npm:^3.3.4":
   version: 3.7.3
   resolution: "mongodb@npm:3.7.3"
   dependencies:

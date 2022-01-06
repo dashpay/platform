@@ -1,24 +1,27 @@
+const decodeProtocolEntityFactory = require('@dashevo/dpp/lib/decodeProtocolEntityFactory');
+const Identity = require('@dashevo/dpp/lib/identity/Identity');
+
+const decodeProtocolEntity = decodeProtocolEntityFactory();
+
 class IdentityStoreRepository {
   /**
    *
-   * @param {MerkDbStore} identitiesStore
-   * @param {AwilixContainer} container
+   * @param {GroveDBStore} groveDBStore
    */
-  constructor(identitiesStore, container) {
-    this.storage = identitiesStore;
-    this.container = container;
+  constructor(groveDBStore) {
+    this.storage = groveDBStore;
   }
 
   /**
    * Store identity into database
    *
    * @param {Identity} identity
-   * @param {MerkDbTransaction} [transaction]
+   * @param {GroveDBTransaction} [transaction]
    * @return {Promise<IdentityStoreRepository>}
    */
   async store(identity, transaction = undefined) {
     this.storage.put(
-      identity.getId(),
+      identity.getId().toBuffer(),
       identity.toBuffer(),
       transaction,
     );
@@ -30,22 +33,19 @@ class IdentityStoreRepository {
    * Fetch identity by id from database
    *
    * @param {Identifier} id
-   * @param {MerkDbTransaction} [transaction]
+   * @param {GroveDBTransaction} [transaction]
    * @return {Promise<null|Identity>}
    */
   async fetch(id, transaction = undefined) {
-    const encodedIdentity = this.storage.get(id, transaction);
+    const encodedIdentity = this.storage.get(id.toBuffer(), transaction);
 
     if (!encodedIdentity) {
       return null;
     }
 
-    const dpp = this.container.resolve(transaction ? 'transactionalDpp' : 'dpp');
+    const [, rawIdentity] = decodeProtocolEntity(encodedIdentity);
 
-    return dpp.identity.createFromBuffer(
-      encodedIdentity,
-      { skipValidation: true },
-    );
+    return new Identity(rawIdentity);
   }
 }
 
