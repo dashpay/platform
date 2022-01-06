@@ -27,7 +27,9 @@ fn encode_document_field_type(
         }
         DocumentFieldType::Integer => {
             let value_as_integer = value.as_integer().ok_or(field_type_match_error)?;
-            let value_as_u64: u64 = value_as_integer.try_into().unwrap();
+            let value_as_u64: u64 = value_as_integer
+                .try_into()
+                .map_err(|_| Error::CorruptedData(String::from("expected integer value")))?;
             Ok(value_as_u64.to_be_bytes().to_vec())
         }
         DocumentFieldType::Float => {
@@ -39,7 +41,7 @@ fn encode_document_field_type(
 
 mod tests {
     use crate::contract::types::{encode_document_field_type, DocumentFieldType};
-    use ciborium::value::Value;
+    use ciborium::value::{Integer, Value};
 
     #[test]
     fn test_successful_encode() {
@@ -75,5 +77,20 @@ mod tests {
         assert_eq!(encoded_float2 > encoded_float3, true);
         // 13.0 > 11.0
         assert_eq!(encoded_float3 > encoded_float1, true);
+
+        // Integer encoding
+        let integer1 = Value::Integer(Integer::from(50));
+        let integer2 = Value::Integer(Integer::from(60));
+        let integer3 = Value::Integer(Integer::from(60));
+
+        let encoded_integer1 = encode_document_field_type(DocumentFieldType::Integer, &integer1)
+            .expect("should encode: valid parameters");
+        let encoded_integer2 = encode_document_field_type(DocumentFieldType::Integer, &integer2)
+            .expect("should encode: valid parameters");
+        let encoded_integer3 = encode_document_field_type(DocumentFieldType::Integer, &integer3)
+            .expect("should encode: valid parameters");
+
+        assert_eq!(encoded_integer1 < encoded_integer2, true);
+        assert_eq!(encoded_integer2 == encoded_integer3, true);
     }
 }
