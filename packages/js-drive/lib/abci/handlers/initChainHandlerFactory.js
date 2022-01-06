@@ -55,6 +55,7 @@ function initChainHandlerFactory(
 
     return new ResponseInitChain({
       validatorSetUpdate,
+      initialCoreHeight: initialCoreChainLockedHeight,
     });
   }
 
