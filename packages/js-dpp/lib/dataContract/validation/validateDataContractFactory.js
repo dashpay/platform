@@ -20,6 +20,8 @@ const allowedSystemProperties = ['$id', '$ownerId', '$createdAt', '$updatedAt'];
 const prebuiltIndices = ['$id'];
 
 const MAX_INDEXED_STRING_PROPERTY_LENGTH = 1024;
+const MAX_INDEXED_BYTE_ARRAY_PROPERTY_LENGTH = 4096;
+const MAX_INDEXED_ARRAY_ITEMS = 1024;
 
 /**
  * @param {JsonSchemaValidator} jsonSchemaValidator
@@ -205,9 +207,10 @@ module.exports = function validateDataContractFactory(
               invalidPropertyType = 'object';
             }
 
-            if (propertyType === 'array' && !isByteArray) {
-              const { items, prefixItems } = propertyDefinition;
+            const { items, prefixItems } = propertyDefinition;
 
+            // Validate arrays contain scalar values or have the same types
+            if (propertyType === 'array' && !isByteArray) {
               const isInvalidPrefixItems = prefixItems
                 && (
                   prefixItems.some((prefixItem) => prefixItem.type === 'object' || prefixItem.type === 'array')
@@ -230,22 +233,59 @@ module.exports = function validateDataContractFactory(
               ));
             }
 
-            if (propertyType === 'string') {
-              const { maxLength } = propertyDefinition;
+            // Validate sting length inside arrays
+            if (!invalidPropertyType && propertyType === 'array' && !isByteArray) {
+              const isInvalidPrefixItems = prefixItems && prefixItems.some((prefixItem) => (
+                prefixItem.type === 'string'
+                && (
+                  !prefixItem.maxLength || prefixItem.maxLength > MAX_INDEXED_STRING_PROPERTY_LENGTH
+                )
+              ));
 
-              if (maxLength === undefined) {
+              const isInvalidItemTypes = items.type === 'string' && (
+                !items.maxLength || items.maxLength > MAX_INDEXED_STRING_PROPERTY_LENGTH
+              );
+
+              if (isInvalidPrefixItems || isInvalidItemTypes) {
                 result.addError(
                   new InvalidIndexedPropertyConstraintError(
                     documentType,
                     indexDefinition,
                     propertyName,
                     'maxLength',
-                    'should be set',
+                    `should be less or equal ${MAX_INDEXED_STRING_PROPERTY_LENGTH}`,
                   ),
                 );
               }
+            }
 
-              if (maxLength !== undefined && maxLength > MAX_INDEXED_STRING_PROPERTY_LENGTH) {
+            if (!invalidPropertyType && propertyType === 'array') {
+              const { maxItems } = propertyDefinition;
+
+              let maxLimit;
+              if (isByteArray) {
+                maxLimit = MAX_INDEXED_BYTE_ARRAY_PROPERTY_LENGTH;
+              } else {
+                maxLimit = MAX_INDEXED_ARRAY_ITEMS;
+              }
+
+              if ((maxItems === undefined || maxItems > maxLimit)) {
+                result.addError(
+                  new InvalidIndexedPropertyConstraintError(
+                    documentType,
+                    indexDefinition,
+                    propertyName,
+                    'maxItems',
+                    `should be less or equal ${maxLimit}`,
+                  ),
+                );
+              }
+            }
+
+            if (propertyType === 'string') {
+              const { maxLength } = propertyDefinition;
+
+              if (maxLength === undefined || maxLength > MAX_INDEXED_STRING_PROPERTY_LENGTH) {
                 result.addError(
                   new InvalidIndexedPropertyConstraintError(
                     documentType,

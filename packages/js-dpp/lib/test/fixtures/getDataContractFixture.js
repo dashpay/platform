@@ -103,6 +103,7 @@ module.exports = function getDataContractFixture(ownerId = randomOwnerId) {
           prefixItems: [
             {
               type: 'string',
+              maxLength: 100,
             },
           ],
           minItems: 1,
