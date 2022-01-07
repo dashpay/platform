@@ -1,6 +1,6 @@
 {
   "name": "@dashevo/dpp",
-  "version": "0.21.5",
+  "version": "0.22.0-dev.4",
   "description": "The JavaScript implementation of the Dash Platform Protocol",
   "scripts": {
     "lint": "eslint .",
@@ -45,6 +45,7 @@
     "@babel/preset-env": "^7.15.4",
     "@dashevo/dashpay-contract": "workspace:~",
     "@dashevo/dpns-contract": "workspace:~",
+    "@dashevo/masternode-reward-shares-contract": "workspace:~",
     "acorn": "^8.5.0",
     "assert": "^2.0.0",
     "babel-loader": "^8.2.2",

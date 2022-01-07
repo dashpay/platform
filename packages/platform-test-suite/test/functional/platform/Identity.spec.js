@@ -11,7 +11,6 @@ const { StateTransitionBroadcastError } = require('dash/build/src/errors/StateTr
 const InvalidInstantAssetLockProofSignatureError = require('@dashevo/dpp/lib/errors/consensus/basic/identity/InvalidInstantAssetLockProofSignatureError');
 const IdentityAssetLockTransactionOutPointAlreadyExistsError = require('@dashevo/dpp/lib/errors/consensus/basic/identity/IdentityAssetLockTransactionOutPointAlreadyExistsError');
 const BalanceIsNotEnoughError = require('@dashevo/dpp/lib/errors/consensus/fee/BalanceIsNotEnoughError');
-const IdentityPublicKeyAlreadyExistsError = require('@dashevo/dpp/lib/errors/consensus/state/identity/IdentityPublicKeyAlreadyExistsError');
 const IdentityPublicKey = require('@dashevo/dpp/lib/identity/IdentityPublicKey');
 
 const createClientWithFundedWallet = require('../../../lib/test/createClientWithFundedWallet');
@@ -144,51 +143,6 @@ describe('Platform', () => {
       );
     });
 
-    it('should fail to create an identity with already used public key', async () => {
-      const {
-        transaction,
-        privateKey,
-        outputIndex,
-      } = await createAssetLockTransaction({ client }, 1);
-
-      await client.getDAPIClient().core.broadcastTransaction(transaction.toBuffer());
-
-      const assetLockProof = await createAssetLockProof(client.platform, transaction, outputIndex);
-
-      const duplicateIdentity = dpp.identity.create(
-        assetLockProof,
-        [{
-          purpose: IdentityPublicKey.PURPOSES.AUTHENTICATION,
-          securityLevel: IdentityPublicKey.SECURITY_LEVELS.MASTER,
-          key: walletPublicKey,
-        }],
-      );
-
-      const duplicateIdentityCreateTransition = dpp.identity.createIdentityCreateTransition(
-        duplicateIdentity,
-      );
-
-      duplicateIdentityCreateTransition.signByPrivateKey(
-        privateKey,
-      );
-
-      let broadcastError;
-
-      try {
-        await client.platform.broadcastStateTransition(
-          duplicateIdentityCreateTransition,
-        );
-      } catch (e) {
-        broadcastError = e;
-      }
-
-      expect(broadcastError).to.exist();
-      expect(broadcastError.message).to.be.equal(`Identity public key ${identity.getPublicKeyById(0).hash().toString('hex')} already exists`);
-      expect(broadcastError.getCause()).to.be.an.instanceOf(
-        IdentityPublicKeyAlreadyExistsError,
-      );
-    });
-
     it('should be able to get newly created identity', async () => {
       const fetchedIdentity = await client.platform.identities.get(
         identity.getId(),
@@ -213,7 +167,7 @@ describe('Platform', () => {
           [identity.getPublicKeyById(0).hash()],
         );
 
-      const [serializedIdentity] = response.getIdentities();
+      const [[serializedIdentity]] = response.getIdentities();
 
       expect(serializedIdentity).to.be.not.null();
 
@@ -237,7 +191,7 @@ describe('Platform', () => {
         [identity.getPublicKeyById(0).hash()],
       );
 
-      const [identityId] = response.getIdentityIds();
+      const [[identityId]] = response.getIdentityIds();
 
       expect(identityId).to.be.not.null();
       expect(identityId).to.deep.equal(identity.getId());

@@ -1,14 +1,14 @@
 {
-  "name": "@dashevo/dashmate",
-  "private": true,
-  "version": "0.21.5",
+  "name": "dashmate",
+  "version": "0.22.0-dev.4",
   "description": "Distribution package for Dash Masternode installation",
   "main": "src/index.js",
   "scripts": {
     "lint": "eslint .",
     "postpack": "rm -f oclif.manifest.json",
-    "prepack": "oclif-dev manifest && oclif-dev readme",
-    "version": "oclif-dev readme && git add README.md"
+    "posttest": "yarn lint",
+    "prepack": "oclif manifest && oclif readme",
+    "version": "oclif readme && git add README.md"
   },
   "repository": {
     "type": "git",
@@ -52,11 +52,10 @@
     "@dashevo/dpns-contract": "workspace:~",
     "@dashevo/dpp": "workspace:~",
     "@dashevo/feature-flags-contract": "workspace:~",
+    "@dashevo/masternode-reward-shares-contract": "workspace:~",
     "@dashevo/wallet-lib": "workspace:~",
-    "@oclif/command": "^1.8.0",
-    "@oclif/config": "^1.17.0",
-    "@oclif/errors": "^1.3.4",
-    "@oclif/plugin-help": "^3.2.2",
+    "@oclif/core": "^1.0.10",
+    "@oclif/plugin-help": "^5",
     "ajv": "^8.6.0",
     "ajv-formats": "^2.1.1",
     "awilix": "^4.2.6",
@@ -90,18 +89,26 @@
     "table": "^5.4.6"
   },
   "devDependencies": {
-    "@oclif/dev-cli": "^1.22.2",
     "eslint": "^7.32.0",
     "eslint-config-airbnb-base": "^14.2.1",
     "eslint-plugin-import": "^2.24.2",
-    "globby": "^10.0.2"
+    "globby": "^11",
+    "oclif": "^2.1.0"
   },
   "files": [
     "bin",
+    "configs",
+    "docker",
+    "src",
+    "templates",
+    "docker-compose.*",
     "oclif.manifest.json",
-    "src"
+    "npm-shrinkwrap.json"
   ],
   "oclif": {
+    "additionalHelpFlags": [
+      "-h"
+    ],
     "commands": "./src/commands",
     "bin": "dashmate",
     "plugins": [
@@ -117,6 +124,7 @@
       "status": {
         "description": "Show node status details"
       }
-    }
+    },
+    "topicSeparator": " "
   }
 }

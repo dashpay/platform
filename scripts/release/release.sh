@@ -62,7 +62,7 @@ else
  BRANCH="v${VERSION_WITHOUT_PRERELEASE%.*}-dev"
 fi
 
-if [[ $CURRENT_BRANCH != BRANCH ]]
+if [[ "$CURRENT_BRANCH" != "$BRANCH" ]]
 then
  echo "you must run this script either from the master of from the dev branch"
  git checkout .
@@ -88,7 +88,7 @@ fi
 
 gh pr create --base $BRANCH \
              --fill \
-             --title "chore(release): update changelog and bump version to $PACKAGE_VERSION" \
+             --title "chore(release): update changelog and bump version to $NEW_PACKAGE_VERSION" \
              --body-file $DIR/pr_description.md \
              --milestone $MILESTONE
 

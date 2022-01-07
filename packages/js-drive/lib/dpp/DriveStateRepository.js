@@ -121,7 +121,7 @@ class DriveStateRepository {
    *
    * @param {Buffer[]} publicKeyHashes
    *
-   * @returns {Promise<Array<Identifier|null>>}
+   * @returns {Promise<Array<Identifier[]>>}
    */
   async fetchIdentityIdsByPublicKeyHashes(publicKeyHashes) {
     const transaction = this.getDBTransaction('publicKeyToIdentityId');
@@ -285,6 +285,15 @@ class DriveStateRepository {
     }
 
     return transaction;
+  }
+
+  /**
+   * Fetch Simplified Masternode List Store
+   *
+   * @return {Promise<SimplifiedMNListStore>}
+   */
+  async fetchSMLStore() {
+    return this.simplifiedMasternodeList.getStore();
   }
 }
 

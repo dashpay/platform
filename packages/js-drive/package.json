@@ -1,7 +1,7 @@
 {
   "name": "@dashevo/drive",
   "private": true,
-  "version": "0.21.5",
+  "version": "0.22.0-dev.4",
   "description": "Replicated state machine for Dash Platform",
   "engines": {
     "node": ">=12"
@@ -63,14 +63,14 @@
     "sinon-chai": "^3.7.0"
   },
   "dependencies": {
-    "@dashevo/abci": "~0.21.0",
+    "@dashevo/abci": "github:dashevo/js-abci#5f18c2cd23ade43878a02ef25dff996a1d9c6537",
     "@dashevo/dapi-grpc": "workspace:~",
     "@dashevo/dashcore-lib": "~0.19.28",
     "@dashevo/dashd-rpc": "^2.3.1",
     "@dashevo/dpp": "workspace:~",
     "@dashevo/feature-flags-contract": "workspace:~",
     "@dashevo/grpc-common": "workspace:~",
-    "@dashevo/merk": "github:dashevo/node-merk",
+    "@dashevo/merk": "github:dashevo/node-merk#eb37003300d22c6c04604463bcd7e861dd07000f",
     "ajv": "^8.6.0",
     "ajv-keywords": "^5.0.0",
     "awilix": "^4.2.6",
@@ -83,7 +83,7 @@
     "dotenv-safe": "^8.2.0",
     "find-my-way": "^2.2.2",
     "js-merkle": "^0.1.5",
-    "level-rocksdb": "4.0.0",
+    "level-rocksdb": "^5.0.0",
     "level-transactions": "^2.1.4",
     "lodash.escaperegexp": "^4.1.2",
     "lodash.get": "^4.4.2",

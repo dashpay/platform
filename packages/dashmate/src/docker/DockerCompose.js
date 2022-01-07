@@ -129,23 +129,15 @@ class DockerCompose {
    * @param {string} [serviceName]
    * @return {Promise<ChildProcess>}
    */
+  // eslint-disable-next-line no-unused-vars
   async build(envs, serviceName = undefined) {
     await this.throwErrorIfNotInstalled();
 
     try {
-      let driveArg = '-f docker-compose.platform.build-drive.yml';
-      let dapiArg = '-f docker-compose.platform.build-dapi.yml';
-
-      if (serviceName === 'drive_abci') {
-        dapiArg = '';
-      } else if (serviceName === 'dapi_api') {
-        driveArg = '';
-      }
-
       // Temporarily build with buildx bake until docker compose build selects correct builder
       // https://github.com/docker/compose-cli/issues/1840
       const childProcess = exec(
-        `docker buildx bake --progress plain --load ${driveArg} ${dapiArg}`,
+        'docker buildx bake --progress plain --load -f docker-compose.platform.build.yml',
         this.getOptions(envs),
       );
 
