@@ -9,9 +9,6 @@ const getDocumentDatabaseFactory = require('../../../../lib/document/mongoDbRepo
 const convertWhereToMongoDbQuery = require('../../../../lib/document/mongoDbRepository/convertWhereToMongoDbQuery');
 const validateQueryFactory = require('../../../../lib/document/query/validateQueryFactory');
 const findConflictingConditions = require('../../../../lib/document/query/findConflictingConditions');
-const getIndexedFieldsFromDocumentSchema = require('../../../../lib/document/query/getIndexedFieldsFromDocumentSchema');
-const findNotIndexedFields = require('../../../../lib/document/query/findNotIndexedFields');
-const findNotIndexedOrderByFields = require('../../../../lib/document/query/findNotIndexedOrderByFields');
 const createTestDIContainer = require('../../../../lib/test/createTestDIContainer');
 
 describe('DocumentDatabaseManager', function main() {
@@ -36,9 +33,6 @@ describe('DocumentDatabaseManager', function main() {
 
     const validateQuery = validateQueryFactory(
       findConflictingConditions,
-      getIndexedFieldsFromDocumentSchema,
-      findNotIndexedFields,
-      findNotIndexedOrderByFields,
     );
 
     connectToDocumentMongoDB = async () => mongoClient;
