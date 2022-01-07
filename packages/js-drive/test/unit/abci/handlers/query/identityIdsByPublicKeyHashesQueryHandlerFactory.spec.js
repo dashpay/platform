@@ -6,6 +6,8 @@ const {
   },
 } = require('@dashevo/abci/types');
 
+const cbor = require('cbor');
+
 const {
   v0: {
     GetIdentityIdsByPublicKeyHashesResponse,
@@ -41,7 +43,7 @@ describe('identityIdsByPublicKeyHashesQueryHandlerFactory', () => {
 
   beforeEach(function beforeEach() {
     previousPublicKeyIdentityIdRepositoryMock = {
-      fetch: this.sinon.stub(),
+      fetchBuffer: this.sinon.stub(),
     };
 
     maxIdentitiesPerRequest = 5;
@@ -84,14 +86,14 @@ describe('identityIdsByPublicKeyHashesQueryHandlerFactory', () => {
     ];
 
     previousPublicKeyIdentityIdRepositoryMock
-      .fetch
+      .fetchBuffer
       .withArgs(publicKeyHashes[0])
-      .resolves(identityIds[0]);
+      .resolves(cbor.encode([identityIds[0]]));
 
     previousPublicKeyIdentityIdRepositoryMock
-      .fetch
+      .fetchBuffer
       .withArgs(publicKeyHashes[1])
-      .resolves(identityIds[1]);
+      .resolves(cbor.encode([identityIds[1]]));
 
     params = {};
     data = { publicKeyHashes };
@@ -101,7 +103,11 @@ describe('identityIdsByPublicKeyHashesQueryHandlerFactory', () => {
     previousBlockExecutionContextMock.isEmpty.returns(true);
 
     responseMock = new GetIdentityIdsByPublicKeyHashesResponse();
-    responseMock.setIdentityIdsList([Buffer.alloc(0), Buffer.alloc(0), Buffer.alloc(0)]);
+    responseMock.setIdentityIdsList([
+      cbor.encode([]),
+      cbor.encode([]),
+      cbor.encode([]),
+    ]);
     responseMock.setMetadata(new ResponseMetadata());
 
     const result = await identityIdsByPublicKeyHashesQueryHandler(params, data, {});
@@ -111,7 +117,7 @@ describe('identityIdsByPublicKeyHashesQueryHandlerFactory', () => {
 
     expect(result.value).to.deep.equal(responseMock.serializeBinary());
 
-    expect(previousPublicKeyIdentityIdRepositoryMock.fetch).to.have.not.been.called();
+    expect(previousPublicKeyIdentityIdRepositoryMock.fetchBuffer).to.have.not.been.called();
     expect(previousRootTreeMock.getFullProofForOneLeaf).to.have.not.been.called();
   });
 
@@ -119,7 +125,11 @@ describe('identityIdsByPublicKeyHashesQueryHandlerFactory', () => {
     previousBlockExecutionContextMock.isEmpty.returns(true);
 
     responseMock = new GetIdentityIdsByPublicKeyHashesResponse();
-    responseMock.setIdentityIdsList([Buffer.alloc(0), Buffer.alloc(0), Buffer.alloc(0)]);
+    responseMock.setIdentityIdsList([
+      cbor.encode([]),
+      cbor.encode([]),
+      cbor.encode([]),
+    ]);
     responseMock.setMetadata(new ResponseMetadata());
 
     const result = await identityIdsByPublicKeyHashesQueryHandler(params, data, {});
@@ -129,7 +139,7 @@ describe('identityIdsByPublicKeyHashesQueryHandlerFactory', () => {
 
     expect(result.value).to.deep.equal(responseMock.serializeBinary());
 
-    expect(previousPublicKeyIdentityIdRepositoryMock.fetch).to.have.not.been.called();
+    expect(previousPublicKeyIdentityIdRepositoryMock.fetchBuffer).to.have.not.been.called();
     expect(previousRootTreeMock.getFullProofForOneLeaf).to.have.not.been.called();
   });
 
@@ -160,19 +170,19 @@ describe('identityIdsByPublicKeyHashesQueryHandlerFactory', () => {
   it('should return identity id map', async () => {
     const result = await identityIdsByPublicKeyHashesQueryHandler(params, data, {});
 
-    expect(previousPublicKeyIdentityIdRepositoryMock.fetch.callCount).to.equal(
+    expect(previousPublicKeyIdentityIdRepositoryMock.fetchBuffer.callCount).to.equal(
       publicKeyHashes.length,
     );
 
-    expect(previousPublicKeyIdentityIdRepositoryMock.fetch.getCall(0).args).to.deep.equal([
+    expect(previousPublicKeyIdentityIdRepositoryMock.fetchBuffer.getCall(0).args).to.deep.equal([
       publicKeyHashes[0],
     ]);
 
-    expect(previousPublicKeyIdentityIdRepositoryMock.fetch.getCall(1).args).to.deep.equal([
+    expect(previousPublicKeyIdentityIdRepositoryMock.fetchBuffer.getCall(1).args).to.deep.equal([
       publicKeyHashes[1],
     ]);
 
-    expect(previousPublicKeyIdentityIdRepositoryMock.fetch.getCall(2).args).to.deep.equal([
+    expect(previousPublicKeyIdentityIdRepositoryMock.fetchBuffer.getCall(2).args).to.deep.equal([
       publicKeyHashes[2],
     ]);
 
@@ -191,19 +201,19 @@ describe('identityIdsByPublicKeyHashesQueryHandlerFactory', () => {
 
     const result = await identityIdsByPublicKeyHashesQueryHandler(params, data, { prove: true });
 
-    expect(previousPublicKeyIdentityIdRepositoryMock.fetch.callCount).to.equal(
+    expect(previousPublicKeyIdentityIdRepositoryMock.fetchBuffer.callCount).to.equal(
       publicKeyHashes.length,
     );
 
-    expect(previousPublicKeyIdentityIdRepositoryMock.fetch.getCall(0).args).to.deep.equal([
+    expect(previousPublicKeyIdentityIdRepositoryMock.fetchBuffer.getCall(0).args).to.deep.equal([
       publicKeyHashes[0],
     ]);
 
-    expect(previousPublicKeyIdentityIdRepositoryMock.fetch.getCall(1).args).to.deep.equal([
+    expect(previousPublicKeyIdentityIdRepositoryMock.fetchBuffer.getCall(1).args).to.deep.equal([
       publicKeyHashes[1],
     ]);
 
-    expect(previousPublicKeyIdentityIdRepositoryMock.fetch.getCall(2).args).to.deep.equal([
+    expect(previousPublicKeyIdentityIdRepositoryMock.fetchBuffer.getCall(2).args).to.deep.equal([
       publicKeyHashes[2],
     ]);
 

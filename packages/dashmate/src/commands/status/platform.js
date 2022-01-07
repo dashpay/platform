@@ -1,7 +1,7 @@
 const fetch = require('node-fetch');
 const chalk = require('chalk');
 
-const { flags: flagTypes } = require('@oclif/command');
+const { Flags } = require('@oclif/core');
 const { OUTPUT_FORMATS } = require('../../constants');
 
 const ConfigBaseCommand = require('../../oclif/command/ConfigBaseCommand');
@@ -213,7 +213,7 @@ PlatformStatusCommand.description = 'Show platform status details';
 
 PlatformStatusCommand.flags = {
   ...ConfigBaseCommand.flags,
-  format: flagTypes.string({
+  format: Flags.string({
     description: 'display output format',
     default: OUTPUT_FORMATS.PLAIN,
     options: Object.values(OUTPUT_FORMATS),

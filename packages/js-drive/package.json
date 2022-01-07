@@ -1,7 +1,7 @@
 {
   "name": "@dashevo/drive",
   "private": true,
-  "version": "0.22.0-dev.3",
+  "version": "0.22.0-dev.5",
   "description": "Replicated state machine for Dash Platform",
   "engines": {
     "node": ">=12"
@@ -63,7 +63,7 @@
     "sinon-chai": "^3.7.0"
   },
   "dependencies": {
-    "@dashevo/abci": "github:dashevo/js-abci#v0.22-dev",
+    "@dashevo/abci": "github:dashevo/js-abci#init-chain-chain-lock-height",
     "@dashevo/dapi-grpc": "workspace:~",
     "@dashevo/dashcore-lib": "~0.19.28",
     "@dashevo/dashd-rpc": "^2.3.1",

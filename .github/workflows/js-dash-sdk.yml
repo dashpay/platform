@@ -17,6 +17,7 @@ on:
       - packages/js-grpc-common/**
       - packages/dashpay-contract/**
       - packages/feature-flags-contract/**
+      - packages/masternode-reward-shares-contract/**
       - packages/dpns-contract/**
 
 jobs:

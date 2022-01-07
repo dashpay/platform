@@ -135,6 +135,8 @@ const BlockExecutionContextStack = require('./blockExecution/BlockExecutionConte
  * @param {string} options.DASHPAY_CONTRACT_BLOCK_HEIGHT
  * @param {string} options.FEATURE_FLAGS_CONTRACT_ID
  * @param {string} options.FEATURE_FLAGS_CONTRACT_BLOCK_HEIGHT
+ * @param {string} options.MASTERNODE_REWARD_SHARES_CONTRACT_ID
+ * @param {string} options.MASTERNODE_REWARD_SHARES_CONTRACT_BLOCK_HEIGHT
  * @param {string} options.INITIAL_CORE_CHAINLOCKED_HEIGHT
  * @param {string} options.VALIDATOR_SET_LLMQ_TYPE
  * @param {string} options.LOG_STDOUT_LEVEL
@@ -159,6 +161,11 @@ function createDIContainer(options) {
 
   if (options.FEATURE_FLAGS_CONTRACT_ID && !options.FEATURE_FLAGS_CONTRACT_BLOCK_HEIGHT) {
     throw new Error('FEATURE_FLAGS_CONTRACT_BLOCK_HEIGHT must be set');
+  }
+
+  if (options.MASTERNODE_REWARD_SHARES_CONTRACT_ID
+    && !options.MASTERNODE_REWARD_SHARES_CONTRACT_BLOCK_HEIGHT) {
+    throw new Error('MASTERNODE_REWARD_SHARES_CONTRACT_BLOCK_HEIGHT must be set');
   }
 
   const container = createAwilixContainer({
@@ -233,6 +240,18 @@ function createDIContainer(options) {
     validatorSetLLMQType: asValue(
       parseInt(options.VALIDATOR_SET_LLMQ_TYPE, 10),
     ),
+    masternodeRewardSharesContractId: asValue(
+      options.MASTERNODE_REWARD_SHARES_CONTRACT_ID
+        ? Identifier.from(options.MASTERNODE_REWARD_SHARES_CONTRACT_ID)
+        : undefined,
+    ),
+    masternodeRewardSharesContractBlockHeight: asFunction(() => {
+      if (options.MASTERNODE_REWARD_SHARES_CONTRACT_BLOCK_HEIGHT === undefined || options.MASTERNODE_REWARD_SHARES_CONTRACT_BLOCK_HEIGHT === '') {
+        return Long.fromInt(0);
+      }
+
+      return Long.fromString(options.MASTERNODE_REWARD_SHARES_CONTRACT_BLOCK_HEIGHT);
+    }),
     featureFlagDataContractId: asValue(
       options.FEATURE_FLAGS_CONTRACT_ID
         ? Identifier.from(options.FEATURE_FLAGS_CONTRACT_ID)

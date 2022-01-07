@@ -74,7 +74,6 @@ function infoHandlerFactory(
     contextLogger.info(
       {
         lastHeight: lastHeight.toString(),
-        lastCoreChainLockedHeight,
         appHash: appHash.toString('hex').toUpperCase(),
         latestProtocolVersion: latestProtocolVersion.toString(),
       },
@@ -86,7 +85,6 @@ function infoHandlerFactory(
       appVersion: latestProtocolVersion,
       lastBlockHeight: lastHeight,
       lastBlockAppHash: appHash,
-      lastCoreChainLockedHeight,
     });
   }
 

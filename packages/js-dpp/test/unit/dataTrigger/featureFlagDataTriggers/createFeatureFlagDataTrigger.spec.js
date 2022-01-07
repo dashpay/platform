@@ -38,7 +38,7 @@ describe('createFeatureFlagDataTrigger', () => {
     contextMock.getOwnerId.returns(topLevelIdentityId);
   });
 
-  it('should return an error if heigh is lower than block height', async () => {
+  it('should return an error if height is lower than block height', async () => {
     documentTransition.data.enableAtHeight = 1;
 
     const result = await createFeatureFlagDataTrigger(

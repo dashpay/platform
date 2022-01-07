@@ -3,7 +3,7 @@ const publicIp = require('public-ip');
 const prettyMs = require('pretty-ms');
 const prettyByte = require('pretty-bytes');
 
-const { flags: flagTypes } = require('@oclif/command');
+const { Flags } = require('@oclif/core');
 const { OUTPUT_FORMATS } = require('../../constants');
 
 const ConfigBaseCommand = require('../../oclif/command/ConfigBaseCommand');
@@ -34,7 +34,7 @@ HostStatusCommand.description = 'Show host status details';
 
 HostStatusCommand.flags = {
   ...ConfigBaseCommand.flags,
-  format: flagTypes.string({
+  format: Flags.string({
     description: 'display output format',
     default: OUTPUT_FORMATS.PLAIN,
     options: Object.values(OUTPUT_FORMATS),
