@@ -16,8 +16,8 @@ const InvalidCompoundIndexError = require('../../errors/consensus/basic/dataCont
 const convertBuffersToArrays = require('../../util/convertBuffersToArrays');
 const DuplicateIndexNameError = require('../../errors/consensus/basic/dataContract/DuplicateIndexNameError');
 
-const allowedSystemProperties = ['$id', '$ownerId', '$createdAt', '$updatedAt'];
-const prebuiltIndices = ['$id'];
+const allowedIndexSystemProperties = ['$ownerId', '$createdAt', '$updatedAt'];
+const notAllowedIndexProperties = ['$id'];
 
 const MAX_INDEXED_STRING_PROPERTY_LENGTH = 1024;
 const MAX_INDEXED_BYTE_ARRAY_PROPERTY_LENGTH = 4096;
@@ -149,12 +149,9 @@ module.exports = function validateDataContractFactory(
           }
 
           // Ensure there are no duplicate system indices
-          prebuiltIndices
+          notAllowedIndexProperties
             .forEach((propertyName) => {
-              const isSingleIndex = indexPropertyNames.length === 1
-                    && indexPropertyNames[0] === propertyName;
-
-              if (isSingleIndex) {
+              if (indexPropertyNames.includes(propertyName)) {
                 result.addError(new SystemPropertyIndexAlreadyPresentError(
                   documentType,
                   indexDefinition,
@@ -165,7 +162,7 @@ module.exports = function validateDataContractFactory(
 
           // Ensure index properties are defined in the document
           const userDefinedProperties = indexPropertyNames
-            .filter((name) => !allowedSystemProperties.includes(name));
+            .filter((name) => !allowedIndexSystemProperties.includes(name));
 
           const propertyDefinitionEntities = userDefinedProperties
             .map((propertyName) => (

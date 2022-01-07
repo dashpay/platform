@@ -56,7 +56,6 @@ module.exports = function getDataContractFixture(ownerId = randomOwnerId) {
         {
           name: 'index3',
           properties: [
-            { $id: 'asc' },
             { lastName: 'asc' },
           ],
         },
@@ -209,7 +208,6 @@ module.exports = function getDataContractFixture(ownerId = randomOwnerId) {
         {
           name: 'index2',
           properties: [
-            { $id: 'asc' },
             { $ownerId: 'asc' },
             { firstName: 'asc' },
             { lastName: 'asc' },
