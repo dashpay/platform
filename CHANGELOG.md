@@ -1,3 +1,47 @@
+## [0.22.0-dev.5](https://github.com/dashevo/platform/compare/v0.22.0-dev.4...v0.22.0-dev.5) (2022-01-07)
+
+
+### ⚠ BREAKING CHANGES
+
+* **dpp:** `$id` can't be used in secondary indices
+* **dpp:** Indexed properties now require size constraints
+* allow using non-unique Identity public keys (#168)
+* **dashmate:** `platform.drive.abci.docker.build.path' and 'platform.dapi.api.docker.build.path' are removed in favor of `platform.sourcePath'
+
+### Features
+
+* allow adding non-unique indices for newly defined properties ([#83](https://github.com/dashevo/platform/issues/83))
+* allow using non-unique Identity public keys ([#168](https://github.com/dashevo/platform/issues/168))
+* **dashmate:** build DAPI and Drive from monorepo path ([#145](https://github.com/dashevo/platform/issues/145))
+* distribute dashmate with NPM ([#148](https://github.com/dashevo/platform/issues/148))
+* **dpp:** `$id` can't be used in secondary indices ([#178](https://github.com/dashevo/platform/issues/178))
+* **dpp:** size constraints for indexed properties ([#179](https://github.com/dashevo/platform/issues/179))
+* masternode reward shares contract ([#160](https://github.com/dashevo/platform/issues/160))
+
+
+### Bug Fixes
+
+* downgrade dash-core image to v0.17 ([#171](https://github.com/dashevo/platform/issues/171))
+
+
+### Documentation
+
+* minor Readme fixes ([#163](https://github.com/dashevo/platform/issues/163))
+
+
+### Miscellaneous Chores
+
+* **drive:** send initial core chain locked height on init chain ([#180](https://github.com/dashevo/platform/issues/180))
+* update to use current @oclif/core ([#154](https://github.com/dashevo/platform/issues/154))
+
+## [0.22.0-dev.4](https://github.com/dashevo/platform/compare/v0.22.0-dev.3...v0.22.0-dev.4) (2021-12-24)
+
+
+### Bug Fixes
+
+* **drive:** `ValidatorSetUpdate` doesn't contain `nodeAddress` ([#155](https://github.com/dashevo/platform/issues/155))
+* **drive:** missed JS ABCI yarn cache ([#156](https://github.com/dashevo/platform/issues/156))
+
 ## [0.22.0-dev.3](https://github.com/dashevo/platform/compare/v0.21.6...v0.22.0-dev.3) (2021-12-21)
 
 

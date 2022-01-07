@@ -12,22 +12,25 @@ const {
 
 const featureFlagTypes = require('@dashevo/feature-flags-contract/lib/featureFlagTypes');
 
-const NoDPNSContractFoundError = require('./errors/NoDPNSContractFoundError');
-const NoDashpayContractFoundError = require('./errors/NoDashpayContractFoundError');
+const NoSystemContractFoundError = require('./errors/NoSystemContractFoundError');
 
 /**
  * Begin block ABCI handler
  *
  * @param {BlockExecutionContext} blockExecutionContext
- * @param {number|undefined} dpnsContractBlockHeight
- * @param {Identifier|undefined} dpnsContractId
- * @param {number|undefined} dashpayContractBlockHeight
- * @param {Identifier|undefined} dashpayContractId
+ * @param {number} dpnsContractBlockHeight
+ * @param {Identifier} dpnsContractId
+ * @param {number} dashpayContractBlockHeight
+ * @param {Identifier} dashpayContractId
  * @param {LatestCoreChainLock} latestCoreChainLock
  * @param {ValidatorSet} validatorSet
  * @param {createValidatorSetUpdate} createValidatorSetUpdate
  * @param {BaseLogger} logger
  * @param {getFeatureFlagForHeight} getFeatureFlagForHeight
+ * @param {Identifier} featureFlagDataContractId
+ * @param {Long} featureFlagDataContractBlockHeight
+ * @param {Identifier} masternodeRewardSharesContractId
+ * @param {Long} masternodeRewardSharesContractBlockHeight
  *
  * @return {endBlockHandler}
  */
@@ -42,6 +45,10 @@ function endBlockHandlerFactory(
   createValidatorSetUpdate,
   logger,
   getFeatureFlagForHeight,
+  featureFlagDataContractId,
+  featureFlagDataContractBlockHeight,
+  masternodeRewardSharesContractId,
+  masternodeRewardSharesContractBlockHeight,
 ) {
   /**
    * @typedef endBlockHandler
@@ -61,15 +68,44 @@ function endBlockHandlerFactory(
 
     blockExecutionContext.setConsensusLogger(consensusLogger);
 
-    if (dpnsContractId && height === dpnsContractBlockHeight) {
+    if (dpnsContractId && height.equals(dpnsContractBlockHeight)) {
       if (!blockExecutionContext.hasDataContract(dpnsContractId)) {
-        throw new NoDPNSContractFoundError(dpnsContractId, dpnsContractBlockHeight);
+        throw new NoSystemContractFoundError(
+          'DPNS',
+          dpnsContractId,
+          dpnsContractBlockHeight,
+        );
       }
     }
 
-    if (dashpayContractId && height === dashpayContractBlockHeight) {
+    if (dashpayContractId && height.equals(dashpayContractBlockHeight)) {
       if (!blockExecutionContext.hasDataContract(dashpayContractId)) {
-        throw new NoDashpayContractFoundError(dashpayContractId, dashpayContractBlockHeight);
+        throw new NoSystemContractFoundError(
+          'Dashpay',
+          dashpayContractId,
+          dashpayContractBlockHeight,
+        );
+      }
+    }
+
+    if (featureFlagDataContractId && height.equals(featureFlagDataContractBlockHeight)) {
+      if (!blockExecutionContext.hasDataContract(featureFlagDataContractId)) {
+        throw new NoSystemContractFoundError(
+          'Feature flags',
+          featureFlagDataContractId,
+          featureFlagDataContractBlockHeight.toNumber(),
+        );
+      }
+    }
+
+    if (masternodeRewardSharesContractId
+      && height.equals(masternodeRewardSharesContractBlockHeight)) {
+      if (!blockExecutionContext.hasDataContract(masternodeRewardSharesContractId)) {
+        throw new NoSystemContractFoundError(
+          'Masternode reward shares',
+          masternodeRewardSharesContractId,
+          masternodeRewardSharesContractBlockHeight.toNumber(),
+        );
       }
     }
 

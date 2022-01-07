@@ -9,6 +9,7 @@ const fundWallet = require('@dashevo/wallet-lib/src/utils/fundWallet');
 const dpnsDocumentSchema = require('@dashevo/dpns-contract/schema/dpns-contract-documents.json');
 const dashpayDocumentSchema = require('@dashevo/dashpay-contract/schema/dashpay.schema.json');
 const featureFlagsDocumentSchema = require('@dashevo/feature-flags-contract/schema/feature-flags-documents.json');
+const masternodeRewardSharesSchema = require('@dashevo/masternode-reward-shares-contract/schema/masternode-reward-shares-documents.json');
 
 const { NETWORK_LOCAL } = require('../../../constants');
 
@@ -264,7 +265,7 @@ function initTaskFactory(
           if (ctx.dapiAddress || config.get('network') !== NETWORK_LOCAL) {
             task.skip('Can\'t obtain Feature Flags contract commit block height from remote node.'
               + `Please, get block height manually using state transition hash "0x${stateTransitionHash.toString('hex')}"`
-              + 'and set it to "platform.dpns.contract.id" config option');
+              + 'and set it to "platform.featureFlags.contract.id" config option');
 
             return;
           }
@@ -287,6 +288,74 @@ function initTaskFactory(
 
           // eslint-disable-next-line no-param-reassign
           task.output = `Feature Flags contract block height: ${contractBlockHeight}`;
+        },
+        options: { persistentOutput: true },
+      },
+      {
+        title: 'Register Masternode Reward Shares identity',
+        task: async (ctx, task) => {
+          ctx.masternodeRewardSharesIdentity = await ctx.client.platform.identities.register(5000);
+
+          // eslint-disable-next-line no-param-reassign
+          task.output = `Reward Share identity: ${ctx.masternodeRewardSharesIdentity.getId().toString()}`;
+        },
+        options: { persistentOutput: true },
+      },
+      {
+        title: 'Register Masternode Reward Share contract',
+        task: async (ctx, task) => {
+          ctx.rewardSharingContract = await ctx.client.platform.contracts.create(
+            masternodeRewardSharesSchema, ctx.masternodeRewardSharesIdentity,
+          );
+
+          ctx.client.getApps().set('masternodeRewardShares', {
+            contractId: ctx.rewardSharingContract.getId(),
+            contract: ctx.masternodeRewardSharesIdentity,
+          });
+
+          ctx.dataContractStateTransition = await ctx.client.platform.contracts.publish(
+            ctx.rewardSharingContract,
+            ctx.masternodeRewardSharesIdentity,
+          );
+
+          config.set('platform.masternodeRewardShares.contract.id', ctx.rewardSharingContract.getId().toString());
+
+          // eslint-disable-next-line no-param-reassign
+          task.output = `Reward Share contract ID: ${ctx.rewardSharingContract.getId().toString()}`;
+        },
+        options: { persistentOutput: true },
+      },
+      {
+        title: 'Obtain Masternode Reward Share contract commit block height',
+        task: async (ctx, task) => {
+          const stateTransitionHash = crypto.createHash('sha256')
+            .update(ctx.dataContractStateTransition.toBuffer())
+            .digest();
+
+          if (ctx.dapiAddress || config.get('network') !== NETWORK_LOCAL) {
+            task.skip('Can\'t obtain Reward Share contract commit block height from remote node.'
+              + `Please, get block height manually using state transition hash "0x${stateTransitionHash.toString('hex')}"`
+              + 'and set it to "platform.masternodeRewardShares.contract.id" config option');
+
+            return;
+          }
+
+          const tenderdashRpcClient = createTenderdashRpcClient();
+
+          const params = { hash: stateTransitionHash.toString('base64') };
+
+          const response = await tenderdashRpcClient.request('tx', params);
+
+          if (response.error) {
+            throw new Error(`Tenderdash error: ${response.error.message}: ${response.error.data}`);
+          }
+
+          const { result: { height: contractBlockHeight } } = response;
+
+          config.set('platform.masternodeRewardShares.contract.blockHeight', contractBlockHeight);
+
+          // eslint-disable-next-line no-param-reassign
+          task.output = `Reward Share contract block height: ${contractBlockHeight}`;
         },
         options: { persistentOutput: true },
       },

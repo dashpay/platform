@@ -1,6 +1,6 @@
 const { Listr } = require('listr2');
 
-const { flags: flagTypes } = require('@oclif/command');
+const { Flags } = require('@oclif/core');
 
 const GroupBaseCommand = require('../../oclif/command/GroupBaseCommand');
 const MuteOneLineError = require('../../oclif/errors/MuteOneLineError');
@@ -61,6 +61,7 @@ class GroupResetCommand extends GroupBaseCommand {
                 config.set('platform.dpns', baseConfig.platform.dpns);
                 config.set('platform.dashpay', baseConfig.platform.dashpay);
                 config.set('platform.featureFlags', baseConfig.platform.featureFlags);
+                config.set('platform.masternodeRewardShares', baseConfig.platform.masternodeRewardShares);
 
                 // TODO: Should stay the same
                 config.set('platform.drive.tenderdash.nodeId', baseConfig.platform.drive.tenderdash.nodeId);
@@ -134,16 +135,16 @@ GroupResetCommand.description = 'Reset group nodes';
 
 GroupResetCommand.flags = {
   ...GroupBaseCommand.flags,
-  hard: flagTypes.boolean({
+  hard: Flags.boolean({
     description: 'reset config as well as data',
     default: false,
   }),
-  force: flagTypes.boolean({
+  force: Flags.boolean({
     char: 'f',
     description: 'reset even running node',
     default: false,
   }),
-  'platform-only': flagTypes.boolean({
+  'platform-only': Flags.boolean({
     char: 'p',
     description: 'reset platform data only',
     default: false,
