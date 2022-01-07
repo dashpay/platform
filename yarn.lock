@@ -1538,9 +1538,11 @@ __metadata:
     "@dashevo/dashcore-lib": ~0.19.28
     "@dashevo/dashd-rpc": ^2.3.1
     "@dashevo/dp-services-ctl": "github:dashevo/js-dp-services-ctl#v0.19-dev"
+    "@dashevo/dpns-contract": "workspace:~"
     "@dashevo/dpp": "workspace:~"
     "@dashevo/feature-flags-contract": "workspace:~"
     "@dashevo/grpc-common": "workspace:~"
+    "@dashevo/masternode-reward-shares-contract": "workspace:~"
     "@dashevo/merk": "github:dashevo/node-merk#eb37003300d22c6c04604463bcd7e861dd07000f"
     "@types/pino": ^6.3.0
     ajv: ^8.6.0

@@ -30,6 +30,7 @@ COPY packages/feature-flags-contract packages/feature-flags-contract
 COPY packages/js-dpp packages/js-dpp
 COPY packages/js-grpc-common packages/js-grpc-common
 COPY packages/masternode-reward-shares-contract packages/masternode-reward-shares-contract
+COPY packages/dpns-contract packages/dpns-contract
 
 # Print build output
 RUN yarn config set enableInlineBuilds true

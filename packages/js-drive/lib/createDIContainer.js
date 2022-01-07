@@ -129,6 +129,7 @@ const fetchQuorumMembersFactory = require('./core/fetchQuorumMembersFactory');
 const getRandomQuorum = require('./core/getRandomQuorum');
 const createQueryResponseFactory = require('./abci/handlers/query/response/createQueryResponseFactory');
 const BlockExecutionContextRepository = require('./blockExecution/BlockExecutionContextRepository');
+const registerSystemDataContractFactory = require('./registerSystemDataContractFactory');
 
 /**
  *
@@ -315,6 +316,11 @@ function createDIContainer(options) {
       return Long.fromString(options.FEATURE_FLAGS_CONTRACT_BLOCK_HEIGHT);
     }),
     tenderdashP2pPort: asValue(options.TENDERDASH_P2P_PORT),
+    systemContractOwnerIdPublicKeys: asValue({
+      featureFlags: '025276ce727b4d9c06c57dbb409f4594afb2682fb9286ac7e7aa14295b6c719f5e',
+      dpns: '038b7810b4894b0b39ee8bb4d6b7b08a1bd86fdb38f21956c1d3728b8c4842877f',
+      masternodeRewards: '025c46216b487f73ec2a55e358fdf901c66e38b6fceee66551cd6baf693b71e2ec',
+    }),
   });
 
   /**
@@ -1057,6 +1063,13 @@ function createDIContainer(options) {
     waitForCoreChainLockSync: asFunction(waitForCoreChainLockSyncFactory).singleton(),
 
     waitReplicaSetInitialize: asFunction(waitReplicaSetInitializeFactory).singleton(),
+  });
+
+  /**
+   * Register system data contract utils
+   */
+  container.register({
+    registerSystemDataContract: asFunction(registerSystemDataContractFactory).singleton(),
   });
 
   /**
