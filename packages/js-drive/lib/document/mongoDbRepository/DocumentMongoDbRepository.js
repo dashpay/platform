@@ -6,7 +6,6 @@ const lodashGet = require('lodash.get');
 const convertFieldName = require('./convertFieldName');
 
 const InvalidQueryError = require('../errors/InvalidQueryError');
-const getIndexedFieldsFromDocumentSchema = require('../query/getIndexedFieldsFromDocumentSchema');
 
 class DocumentMongoDbRepository {
   /**
@@ -227,8 +226,10 @@ class DocumentMongoDbRepository {
    */
   createMongoDBDocument(document) {
     const documentSchema = this.dataContract.getDocumentSchema(document.getType());
-    const documentIndexedProperties = getIndexedFieldsFromDocumentSchema(documentSchema)
-      .map((properties) => properties.map((property) => Object.keys(property)[0])).flat();
+    const documentIndexedProperties = (documentSchema.indices || [])
+      .map((indexDefinition) => (
+        indexDefinition.properties.map((propertyAndOrder) => Object.keys(propertyAndOrder)[0])
+      )).flat();
 
     const uniqueDocumentIndexedDataProperties = [...new Set(documentIndexedProperties)]
       .filter((field) => !field.startsWith('$'));

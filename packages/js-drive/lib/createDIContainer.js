@@ -47,10 +47,6 @@ const PublicKeyToIdentityIdStoreRepository = require(
 
 const DataContractStoreRepository = require('./dataContract/DataContractStoreRepository');
 
-const findNotIndexedOrderByFields = require('./document/query/findNotIndexedOrderByFields');
-const findNotIndexedFields = require('./document/query/findNotIndexedFields');
-const getIndexedFieldsFromDocumentSchema = require('./document/query/getIndexedFieldsFromDocumentSchema');
-
 const DocumentStoreRepository = require('./document/DocumentStoreRepository');
 const findConflictingConditions = require('./document/query/findConflictingConditions');
 const validateQueryFactory = require('./document/query/validateQueryFactory');
@@ -478,9 +474,6 @@ function createDIContainer(options) {
     ) => (new DocumentStoreRepository(signedGroveDBStore))).singleton(),
 
     findConflictingConditions: asValue(findConflictingConditions),
-    getIndexedFieldsFromDocumentSchema: asValue(getIndexedFieldsFromDocumentSchema),
-    findNotIndexedFields: asValue(findNotIndexedFields),
-    findNotIndexedOrderByFields: asValue(findNotIndexedOrderByFields),
     convertWhereToMongoDbQuery: asValue(convertWhereToMongoDbQuery),
     validateQuery: asFunction(validateQueryFactory).singleton(),
 
