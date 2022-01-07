@@ -7,6 +7,7 @@ const generateRandomIdentifier = require('@dashevo/dpp/lib/test/utils/generateRa
 const InvalidQueryError = require('../../../lib/document/errors/InvalidQueryError');
 
 const createTestDIContainer = require('../../../lib/test/createTestDIContainer');
+const NotIndexedPropertiesInWhereConditionsError = require('../../../lib/document/query/errors/NotIndexedPropertiesInWhereConditionsError');
 
 describe('fetchDocumentsFactory', () => {
   let fetchDocuments;
@@ -103,7 +104,7 @@ describe('fetchDocumentsFactory', () => {
   });
 
   it('should fetch documents by an equal date', async () => {
-    const [, , , indexedDocument] = getDocumentsFixture(dataContract);
+    const indexedDocument = getDocumentsFixture(dataContract)[3];
 
     await documentRepository.store(indexedDocument);
 
@@ -242,7 +243,7 @@ describe('fetchDocumentsFactory', () => {
 
       const [error] = e.getErrors();
 
-      expect(error.getNotIndexedField()).to.be.equal('lastName');
+      expect(error).to.be.instanceOf(NotIndexedPropertiesInWhereConditionsError);
     }
   });
 });
