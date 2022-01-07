@@ -19,7 +19,7 @@ async function createDocuments(documentRepository, documents) {
 }
 
 describe('DocumentMongoDbRepository', function main() {
-  this.timeout(10000);
+  this.timeout(30000);
 
   let documentRepository;
   let document;
@@ -98,6 +98,9 @@ describe('DocumentMongoDbRepository', function main() {
         properties: [{ name: 'asc' }],
       },
       {
+        properties: [{ name: 'asc' }, { 'arrayWithObjects.item': 'asc' }],
+      },
+      {
         properties: [{ order: 'asc' }],
       },
       {
@@ -110,7 +113,10 @@ describe('DocumentMongoDbRepository', function main() {
         properties: [{ arrayWithObjects: 'asc' }],
       },
       {
-        properties: [{ 'arrayWithObjects.item': 'asc' }, { 'arrayWithObjects.flag': 'asc' }],
+        properties: [{ 'arrayWithObjects.item': 'asc' }],
+      },
+      {
+        properties: [{ 'arrayWithObjects.flag': 'asc' }],
       },
       {
         properties: [{ primaryOrder: 'asc' }, { order: 'desc' }],
@@ -361,7 +367,7 @@ describe('DocumentMongoDbRepository', function main() {
         expect(result).to.have.deep.members(expectedIds);
       });
 
-      it('should find Document ids using "length" operator', async () => {
+      it.skip('should find Document ids using "length" operator', async () => {
         const query = {
           where: [['arrayWithObjects', 'length', 2]],
         };
@@ -391,7 +397,7 @@ describe('DocumentMongoDbRepository', function main() {
         expect(expectedDocumentId).to.deep.equal(documents[2].getId());
       });
 
-      it('should find Document ids using "elementMatch" operator', async () => {
+      it.skip('should find Document ids using "elementMatch" operator', async () => {
         const query = {
           where: [
             ['arrayWithObjects', 'elementMatch', [
@@ -410,7 +416,7 @@ describe('DocumentMongoDbRepository', function main() {
         expect(expectedDocumentId).to.deep.equal(documents[1].getId());
       });
 
-      it('should find Document ids using "contains" operator and array value', async () => {
+      it.skip('should find Document ids using "contains" operator and array value', async () => {
         const query = {
           where: [
             ['arrayWithScalar', 'contains', [2, 3]],
@@ -427,7 +433,7 @@ describe('DocumentMongoDbRepository', function main() {
         expect(expectedDocumentId).to.deep.equal(documents[2].getId());
       });
 
-      it('should find Document ids using "contains" operator and scalar value', async () => {
+      it.skip('should find Document ids using "contains" operator and scalar value', async () => {
         const query = {
           where: [
             ['arrayWithScalar', 'contains', 2],
@@ -474,10 +480,8 @@ describe('DocumentMongoDbRepository', function main() {
       it('should return Document ids by several conditions', async () => {
         const query = {
           where: [
-            ['arrayWithObjects', 'elementMatch', [
-              ['item', '==', 1],
-              ['flag', '==', true],
-            ]],
+            ['name', '==', 'Cutie'],
+            ['arrayWithObjects.item', '==', 1],
           ],
         };
 
@@ -527,6 +531,9 @@ describe('DocumentMongoDbRepository', function main() {
     describe('startAt', () => {
       it('should return Document ids from 2 document', async () => {
         const query = {
+          where: [
+            ['order', '>=', 0],
+          ],
           orderBy: [
             ['order', 'asc'],
           ],
@@ -546,6 +553,9 @@ describe('DocumentMongoDbRepository', function main() {
     describe('startAfter', () => {
       it('should return Document ids after 1 document', async () => {
         const options = {
+          where: [
+            ['order', '>=', 0],
+          ],
           orderBy: [
             ['order', 'asc'],
           ],
@@ -565,6 +575,9 @@ describe('DocumentMongoDbRepository', function main() {
     describe('orderBy', () => {
       it('should sort Document ids in descending order', async () => {
         const query = {
+          where: [
+            ['order', '>=', 0],
+          ],
           orderBy: [
             ['order', 'desc'],
           ],
@@ -581,6 +594,9 @@ describe('DocumentMongoDbRepository', function main() {
 
       it('should sort Document ids in ascending order', async () => {
         const query = {
+          where: [
+            ['order', '>=', 0],
+          ],
           orderBy: [
             ['order', 'asc'],
           ],
@@ -593,36 +609,6 @@ describe('DocumentMongoDbRepository', function main() {
         const expectedIds = getIds(documents);
 
         expect(result).to.deep.equal(expectedIds);
-      });
-
-      it('should sort Document ids using two fields', async () => {
-        documents[0].set('primaryOrder', 1);
-        documents[1].set('primaryOrder', 2);
-        documents[2].set('primaryOrder', 2);
-        documents[3].set('primaryOrder', 3);
-        documents[4].set('primaryOrder', 4);
-
-        await Promise.all(
-          documents.map((o) => documentRepository.store(o)),
-        );
-
-        const query = {
-          orderBy: [
-            ['primaryOrder', 'asc'],
-            ['order', 'desc'],
-          ],
-        };
-
-        const result = await documentRepository.find(query);
-
-        expect(result).to.be.an('array');
-        expect(result).to.be.lengthOf(documents.length);
-
-        expect(result[0]).to.deep.equal(documents[0].getId());
-        expect(result[1]).to.deep.equal(documents[2].getId());
-        expect(result[2]).to.deep.equal(documents[1].getId());
-        expect(result[3]).to.deep.equal(documents[3].getId());
-        expect(result[4]).to.deep.equal(documents[4].getId());
       });
 
       it('should sort Documents by $id', async () => {
@@ -640,6 +626,9 @@ describe('DocumentMongoDbRepository', function main() {
         );
 
         const query = {
+          where: [
+            ['$id', '>=', Buffer.from([0])],
+          ],
           orderBy: [
             ['$id', 'desc'],
           ],
