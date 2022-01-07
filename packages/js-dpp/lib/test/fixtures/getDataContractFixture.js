@@ -73,6 +73,12 @@ module.exports = function getDataContractFixture(ownerId = randomOwnerId) {
             { $updatedAt: 'asc' },
           ],
         },
+        {
+          name: 'index6',
+          properties: [
+            { $createdAt: 'asc' },
+          ],
+        },
       ],
       properties: {
         firstName: {
