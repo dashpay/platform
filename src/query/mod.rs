@@ -65,6 +65,8 @@ impl WhereClause {
 }
 
 pub struct DriveQuery<'a> {
+    contract: &'a Contract,
+    document_type: &'a DocumentType,
     where_clauses: Vec<WhereClause<'a>>,
     range_clause: WhereClause<'a>,
     limit: u32,
@@ -74,7 +76,7 @@ pub struct DriveQuery<'a> {
 }
 
 impl DriveQuery {
-    pub fn from_cbor(query_cbor: &[u8], contract: &Contract) -> Result<Self, Error> {
+    pub fn from_cbor(query_cbor: &[u8], contract: &Contract, document_type: &DocumentType) -> Result<Self, Error> {
         let mut document: HashMap<String, CborValue> = ciborium::de::from_reader(query_cbor)
             .map_err(|_| Error::CorruptedData(String::from("unable to decode query")))?;
 
@@ -86,7 +88,7 @@ impl DriveQuery {
             }
         }).ok_or(Error::CorruptedData(String::from("limit should be a integer from 1 to 100")))?;
 
-        let where_clauses : Vec<WhereClause> = document.get("where").map_or( vec![], |id_cbor| {
+        let all_where_clauses : Vec<WhereClause> = document.get("where").map_or( vec![], |id_cbor| {
             if let CborValue::Array(clauses) = id_cbor {
                 clauses.iter().map( | where_clause| {
                     if let CborValue::Array(clauses_components) = where_clause {
@@ -99,6 +101,30 @@ impl DriveQuery {
                 vec![]
             }
         });
+
+        let equal_clauses = all_where_clauses.iter().filter(| where_clause| {
+            match where_clause.operator {
+                Equal => true,
+                GreaterThan => false,
+                GreaterThanOrEquals => false,
+                LessThan => false,
+                LessThanOrEquals => false,
+                In => true,
+                StartsWith => false,
+            }
+        }).collect();
+
+        let range_clauses = all_where_clauses.iter().filter(| where_clause| {
+            match where_clause.operator {
+                Equal => false,
+                GreaterThan => true,
+                GreaterThanOrEquals => true,
+                LessThan => true,
+                LessThanOrEquals => true,
+                In => false,
+                StartsWith => true,
+            }
+        }).collect();
 
         let start_at_option = document.get("startAt");
         let start_after_option = document.get("startAfter");
