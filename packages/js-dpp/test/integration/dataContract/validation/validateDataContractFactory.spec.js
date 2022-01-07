@@ -1927,7 +1927,7 @@ describe('validateDataContractFactory', function main() {
     expect(error.message).to.startsWith('Invalid JSON Schema $ref: Circular $ref pointer found');
   });
 
-  it('should return invalid result if indexed property missing maxLength constraint', async () => {
+  it('should return invalid result if indexed string property missing maxLength constraint', async () => {
     delete rawDataContract.documents.indexedDocument.properties.firstName.maxLength;
 
     const result = await validateDataContract(rawDataContract);
@@ -1939,10 +1939,10 @@ describe('validateDataContractFactory', function main() {
     expect(error.getCode()).to.equal(1012);
     expect(error.getPropertyName()).to.equal('firstName');
     expect(error.getConstraintName()).to.equal('maxLength');
-    expect(error.getReason()).to.equal('should be set');
+    expect(error.getReason()).to.equal('should be less or equal 1024');
   });
 
-  it('should return invalid result if indexed property have to big maxLength', async () => {
+  it('should return invalid result if indexed string property have to big maxLength', async () => {
     rawDataContract.documents.indexedDocument.properties.firstName.maxLength = 2048;
 
     const result = await validateDataContract(rawDataContract);
@@ -1955,6 +1955,96 @@ describe('validateDataContractFactory', function main() {
     expect(error.getPropertyName()).to.equal('firstName');
     expect(error.getConstraintName()).to.equal('maxLength');
     expect(error.getReason()).to.equal('should be less or equal 1024');
+  });
+
+  it('should return invalid result if indexed array property missing maxItems constraint', async () => {
+    delete rawDataContract.documents.indexedArray.properties.mentions.maxItems;
+
+    const result = await validateDataContract(rawDataContract);
+
+    expectValidationError(result, InvalidIndexedPropertyConstraintError);
+
+    const [error] = result.getErrors();
+
+    expect(error.getCode()).to.equal(1012);
+    expect(error.getPropertyName()).to.equal('mentions');
+    expect(error.getConstraintName()).to.equal('maxItems');
+    expect(error.getReason()).to.equal('should be less or equal 1024');
+  });
+
+  it('should return invalid result if indexed array property have to big maxItems', async () => {
+    rawDataContract.documents.indexedArray.properties.mentions.maxItems = 2048;
+
+    const result = await validateDataContract(rawDataContract);
+
+    expectValidationError(result, InvalidIndexedPropertyConstraintError);
+
+    const [error] = result.getErrors();
+
+    expect(error.getCode()).to.equal(1012);
+    expect(error.getPropertyName()).to.equal('mentions');
+    expect(error.getConstraintName()).to.equal('maxItems');
+    expect(error.getReason()).to.equal('should be less or equal 1024');
+  });
+
+  it('should return invalid result if indexed array property have string item without maxItems constraint', async () => {
+    delete rawDataContract.documents.indexedArray.properties.mentions.maxItems;
+
+    const result = await validateDataContract(rawDataContract);
+
+    expectValidationError(result, InvalidIndexedPropertyConstraintError);
+
+    const [error] = result.getErrors();
+
+    expect(error.getCode()).to.equal(1012);
+    expect(error.getPropertyName()).to.equal('mentions');
+    expect(error.getConstraintName()).to.equal('maxItems');
+    expect(error.getReason()).to.equal('should be less or equal 1024');
+  });
+
+  it('should return invalid result if indexed array property have string item with maxItems bigger than 1024', async () => {
+    rawDataContract.documents.indexedArray.properties.mentions.maxItems = 2048;
+
+    const result = await validateDataContract(rawDataContract);
+
+    expectValidationError(result, InvalidIndexedPropertyConstraintError);
+
+    const [error] = result.getErrors();
+
+    expect(error.getCode()).to.equal(1012);
+    expect(error.getPropertyName()).to.equal('mentions');
+    expect(error.getConstraintName()).to.equal('maxItems');
+    expect(error.getReason()).to.equal('should be less or equal 1024');
+  });
+
+  it('should return invalid result if indexed byte array property missing maxItems constraint', async () => {
+    delete rawDataContract.documents.withByteArrays.properties.byteArrayField.maxItems;
+
+    const result = await validateDataContract(rawDataContract);
+
+    expectValidationError(result, InvalidIndexedPropertyConstraintError);
+
+    const [error] = result.getErrors();
+
+    expect(error.getCode()).to.equal(1012);
+    expect(error.getPropertyName()).to.equal('byteArrayField');
+    expect(error.getConstraintName()).to.equal('maxItems');
+    expect(error.getReason()).to.equal('should be less or equal 4096');
+  });
+
+  it('should return invalid result if indexed byte array property have to big maxItems', async () => {
+    rawDataContract.documents.withByteArrays.properties.byteArrayField.maxItems = 8192;
+
+    const result = await validateDataContract(rawDataContract);
+
+    expectValidationError(result, InvalidIndexedPropertyConstraintError);
+
+    const [error] = result.getErrors();
+
+    expect(error.getCode()).to.equal(1012);
+    expect(error.getPropertyName()).to.equal('byteArrayField');
+    expect(error.getConstraintName()).to.equal('maxItems');
+    expect(error.getReason()).to.equal('should be less or equal 4096');
   });
 
   it('should return valid result if Data Contract is valid', async () => {
