@@ -7,6 +7,9 @@ pub enum DocumentFieldType {
     Integer,
     String,
     Float,
+    ByteArray,
+    Boolean,
+    Object,
 }
 
 pub fn string_to_field_type(field_type_name: String) -> Option<DocumentFieldType> {
@@ -14,7 +17,8 @@ pub fn string_to_field_type(field_type_name: String) -> Option<DocumentFieldType
         "integer" => Some(DocumentFieldType::Integer),
         "string" => Some(DocumentFieldType::String),
         "float" => Some(DocumentFieldType::Float),
-        "array" => Some(DocumentFieldType::String), // TODO: Create bytearray type
+        // "array" => Some(DocumentFieldType::String), // TODO: Create bytearray type
+        "object" => Some(DocumentFieldType::Object),
         _ => None,
     };
 }
@@ -44,6 +48,9 @@ pub fn encode_document_field_type(
             let value_as_float = value.as_float().ok_or(field_type_match_error)?;
             Ok(Some(value_as_float.to_be_bytes().to_vec()))
         }
+        DocumentFieldType::ByteArray => Ok(Some(Vec::new())),
+        DocumentFieldType::Boolean => Ok(Some(Vec::new())),
+        DocumentFieldType::Object => Ok(Some(Vec::new())),
     };
 }
 
