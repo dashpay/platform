@@ -23,6 +23,15 @@ pub fn string_to_field_type(field_type_name: String) -> Option<DocumentFieldType
     };
 }
 
+// Deserialization is actually separate from encoding
+// Deserialization takes the cbor value and the type then returns the (rust) type we care about
+// this is so we can work with the data
+// Encoding now takes that type and converts it to binary since that a > b == encoding(a) > encoding(b)
+
+// Rust allows you to have multiple implementations for different types
+// Encode should first deserialize then do the actual binary encoding
+//
+
 // Given a field type and a value this function chooses and executes the right encoding method
 pub fn encode_document_field_type(
     field_type: &DocumentFieldType,
@@ -48,8 +57,18 @@ pub fn encode_document_field_type(
             let value_as_float = value.as_float().ok_or(field_type_match_error)?;
             Ok(Some(value_as_float.to_be_bytes().to_vec()))
         }
-        DocumentFieldType::ByteArray => Ok(Some(Vec::new())),
-        DocumentFieldType::Boolean => Ok(Some(Vec::new())),
+        DocumentFieldType::ByteArray => {
+            let value_as_bytes = value.as_bytes().ok_or(field_type_match_error)?;
+            Ok(Some(value_as_bytes.to_vec()))
+        }
+        DocumentFieldType::Boolean => {
+            let value_as_boolean = value.as_bool().ok_or(field_type_match_error)?;
+            if value_as_boolean == true {
+                Ok(Some(vec![1]))
+            } else {
+                Ok(Some(vec![0]))
+            }
+        }
         DocumentFieldType::Object => Ok(Some(Vec::new())),
     };
 }
