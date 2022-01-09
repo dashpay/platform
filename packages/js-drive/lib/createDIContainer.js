@@ -212,16 +212,6 @@ function createDIContainer(options) {
     throw new Error('MASTERNODE_REWARD_SHARES_CONTRACT_OWNER_PUBLIC_KEY must be set');
   }
 
-  /**
-   * Set env variables for DPP
-   */
-  process.env.DPNS_CONTRACT_ID = dpnsSystemIds.contractId;
-  process.env.DPNS_TOP_LEVEL_IDENTITY = dpnsSystemIds.ownerId;
-  process.env.DASHPAY_CONTRACT_ID = dashpaySystemIds.contractId;
-  process.env.FEATURE_FLAGS_CONTRACT_ID = featureFlagsSystemIds.contractId;
-  process.env.FEATURE_FLAGS_TOP_LEVEL_IDENTITY = featureFlagsSystemIds.ownerId;
-  process.env.MASTERNODE_REWARD_SHARES_CONTRACT_ID = masternodeRewardsSystemIds.contractId;
-
   const container = createAwilixContainer({
     injectionMode: InjectionMode.CLASSIC,
   });

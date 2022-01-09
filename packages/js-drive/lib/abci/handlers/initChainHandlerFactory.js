@@ -16,6 +16,7 @@ const {
  * @param {BaseLogger} logger
  * @param {registerSystemDataContract} registerSystemDataContract
  * @param {registerTopLevelDomain} registerTopLevelDomain
+ * @param {registerFeatureFlag} registerFeatureFlag
  * @param {RootTree} rootTree
  * @param {Identifier} dpnsContractId
  * @param {Identifier} dpnsOwnerId
@@ -44,6 +45,7 @@ function initChainHandlerFactory(
   logger,
   registerSystemDataContract,
   registerTopLevelDomain,
+  registerFeatureFlag,
   rootTree,
   dpnsContractId,
   dpnsOwnerId,
@@ -85,12 +87,14 @@ function initChainHandlerFactory(
     });
 
     // Registering feature flags data contract
-    await registerSystemDataContract(
+    const featureFlagContract = await registerSystemDataContract(
       featureFlagsOwnerId,
       featureFlagsContractId,
       featureFlagsOwnerPublicKey,
       featureFlagsDocuments,
     );
+
+    await registerFeatureFlag('fixCumulativeFeesBug', featureFlagContract, featureFlagsOwnerId);
 
     contextLogger.debug('Registering system data contract: DPNS');
     contextLogger.trace({
