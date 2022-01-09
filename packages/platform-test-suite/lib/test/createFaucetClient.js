@@ -14,11 +14,11 @@ function createFaucetClient() {
   const clientOpts = {
     seeds,
     network: process.env.NETWORK,
-    apps: {
-      dpns: {
-        contractId: process.env.DPNS_CONTRACT_ID,
-      },
-    },
+    // apps: {
+    //   dpns: {
+    //     contractId: process.env.DPNS_CONTRACT_ID,
+    //   },
+    // },
   };
 
   const walletOptions = {

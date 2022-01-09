@@ -6,15 +6,6 @@ const {
   },
 } = require('@dashevo/abci/types');
 
-const featureFlagsSystemIds = require('@dashevo/feature-flags-contract/lib/systemIds');
-const featureFlagsDocuments = require('@dashevo/feature-flags-contract/schema/feature-flags-documents.json');
-
-const dpnsSystemIds = require('@dashevo/dpns-contract/lib/systemIds');
-const dpnsDocuments = require('@dashevo/dpns-contract/schema/dpns-contract-documents.json');
-
-const masternodeRewardsSystemIds = require('@dashevo/masternode-reward-shares-contract/lib/systemIds');
-const masternodeRewardsDocuments = require('@dashevo/masternode-reward-shares-contract/schema/masternode-reward-shares-documents.json');
-
 /**
  * Init Chain ABCI handler
  *
@@ -22,10 +13,26 @@ const masternodeRewardsDocuments = require('@dashevo/masternode-reward-shares-co
  * @param {number} initialCoreChainLockedHeight
  * @param {ValidatorSet} validatorSet
  * @param {createValidatorSetUpdate} createValidatorSetUpdate
- * @param {Object} systemContractOwnerIdPublicKeys
- * @param {registerSystemDataContract} registerSystemDataContract
- * @param {RootTree} rootTree
  * @param {BaseLogger} logger
+ * @param {registerSystemDataContract} registerSystemDataContract
+ * @param {registerTopLevelDomain} registerTopLevelDomain
+ * @param {RootTree} rootTree
+ * @param {Identifier} dpnsContractId
+ * @param {Identifier} dpnsOwnerId
+ * @param {PublicKey} dpnsOwnerPublicKey
+ * @param {Object} dpnsDocuments
+ * @param {Identifier} featureFlagsContractId
+ * @param {Identifier} featureFlagsOwnerId
+ * @param {PublicKey} featureFlagsOwnerPublicKey
+ * @param {Object} featureFlagsDocuments
+ * @param {Identifier} masternodeRewardSharesContractId
+ * @param {Identifier} masternodeRewardSharesOwnerId
+ * @param {PublicKey} masternodeRewardSharesOwnerPublicKey
+ * @param {Object} masternodeRewardSharesDocuments
+ * @param {Identifier} dashpayContractId
+ * @param {Identifier} dashpayOwnerId
+ * @param {PublicKey} dashpayOwnerPublicKey
+ * @param {Object} dashpayDocuments
  *
  * @return {initChainHandler}
  */
@@ -35,9 +42,25 @@ function initChainHandlerFactory(
   validatorSet,
   createValidatorSetUpdate,
   logger,
-  systemContractOwnerIdPublicKeys,
   registerSystemDataContract,
+  registerTopLevelDomain,
   rootTree,
+  dpnsContractId,
+  dpnsOwnerId,
+  dpnsOwnerPublicKey,
+  dpnsDocuments,
+  featureFlagsContractId,
+  featureFlagsOwnerId,
+  featureFlagsOwnerPublicKey,
+  featureFlagsDocuments,
+  masternodeRewardSharesContractId,
+  masternodeRewardSharesOwnerId,
+  masternodeRewardSharesOwnerPublicKey,
+  masternodeRewardSharesDocuments,
+  dashpayContractId,
+  dashpayOwnerId,
+  dashpayOwnerPublicKey,
+  dashpayDocuments,
 ) {
   /**
    * @typedef initChainHandler
@@ -56,47 +79,64 @@ function initChainHandlerFactory(
 
     contextLogger.debug('Registering system data contract: feature flags');
     contextLogger.trace({
-      ownerId: featureFlagsSystemIds.ownerId,
-      contractId: featureFlagsSystemIds.contractId,
-      publicKey: systemContractOwnerIdPublicKeys.featureFlags,
+      ownerId: featureFlagsOwnerId,
+      contractId: featureFlagsContractId,
+      publicKey: featureFlagsOwnerPublicKey,
     });
 
     // Registering feature flags data contract
     await registerSystemDataContract(
-      featureFlagsSystemIds.ownerId,
-      featureFlagsSystemIds.contractId,
-      systemContractOwnerIdPublicKeys.featureFlags,
+      featureFlagsOwnerId,
+      featureFlagsContractId,
+      featureFlagsOwnerPublicKey,
       featureFlagsDocuments,
     );
 
     contextLogger.debug('Registering system data contract: DPNS');
     contextLogger.trace({
-      ownerId: dpnsSystemIds.ownerId,
-      contractId: dpnsSystemIds.contractId,
-      publicKey: systemContractOwnerIdPublicKeys.dpns,
+      ownerId: dpnsOwnerId,
+      contractId: dpnsContractId,
+      publicKey: dpnsOwnerPublicKey,
     });
 
     // Registering DPNS data contract
-    await registerSystemDataContract(
-      dpnsSystemIds.ownerId,
-      dpnsSystemIds.contractId,
-      systemContractOwnerIdPublicKeys.dpns,
+    const dpnsContract = await registerSystemDataContract(
+      dpnsOwnerId,
+      dpnsContractId,
+      dpnsOwnerPublicKey,
       dpnsDocuments,
     );
 
+    await registerTopLevelDomain('dash', dpnsContract, dpnsOwnerId);
+
     contextLogger.debug('Registering system data contract: masternode rewards');
     contextLogger.trace({
-      ownerId: masternodeRewardsSystemIds.ownerId,
-      contractId: masternodeRewardsSystemIds.contractId,
-      publicKey: systemContractOwnerIdPublicKeys.masternodeRewards,
+      ownerId: masternodeRewardSharesOwnerId,
+      contractId: masternodeRewardSharesContractId,
+      publicKey: masternodeRewardSharesOwnerPublicKey,
     });
 
     // Registering masternode reward sharing data contract
     await registerSystemDataContract(
-      masternodeRewardsSystemIds.ownerId,
-      masternodeRewardsSystemIds.contractId,
-      systemContractOwnerIdPublicKeys.masternodeRewards,
-      masternodeRewardsDocuments,
+      masternodeRewardSharesOwnerId,
+      masternodeRewardSharesContractId,
+      masternodeRewardSharesOwnerPublicKey,
+      masternodeRewardSharesDocuments,
+    );
+
+    contextLogger.debug('Registering system data contract: dashpay');
+    contextLogger.trace({
+      ownerId: dashpayOwnerId,
+      contractId: dashpayContractId,
+      publicKey: dashpayOwnerPublicKey,
+    });
+
+    // Registering masternode reward sharing data contract
+    await registerSystemDataContract(
+      dashpayOwnerId,
+      dashpayContractId,
+      dashpayOwnerPublicKey,
+      dashpayDocuments,
     );
 
     await updateSimplifiedMasternodeList(initialCoreChainLockedHeight, {

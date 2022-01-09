@@ -2530,6 +2530,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["@dashevo/dapi-grpc", "workspace:packages/dapi-grpc"],
             ["@dashevo/dashcore-lib", "npm:0.19.28"],
             ["@dashevo/dashd-rpc", "npm:2.3.1"],
+            ["@dashevo/dashpay-contract", "workspace:packages/dashpay-contract"],
             ["@dashevo/dp-services-ctl", "https://github.com/dashevo/js-dp-services-ctl.git#commit=3976076b0018c5b4632ceda4c752fc597f27a640"],
             ["@dashevo/dpns-contract", "workspace:packages/dpns-contract"],
             ["@dashevo/dpp", "workspace:packages/js-dpp"],

@@ -18,11 +18,11 @@ async function createClientWithFundedWallet(HDPrivateKey = undefined) {
   const clientOpts = {
     seeds,
     network: process.env.NETWORK,
-    apps: {
-      dpns: {
-        contractId: process.env.DPNS_CONTRACT_ID,
-      },
-    },
+    // apps: {
+    //   dpns: {
+    //     contractId: process.env.DPNS_CONTRACT_ID,
+    //   },
+    // },
   };
 
   const faucetClient = createFaucetClient();

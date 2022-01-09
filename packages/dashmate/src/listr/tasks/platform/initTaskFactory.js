@@ -6,10 +6,10 @@ const crypto = require('crypto');
 
 const fundWallet = require('@dashevo/wallet-lib/src/utils/fundWallet');
 
-const dpnsDocumentSchema = require('@dashevo/dpns-contract/schema/dpns-contract-documents.json');
-const dashpayDocumentSchema = require('@dashevo/dashpay-contract/schema/dashpay.schema.json');
-const featureFlagsDocumentSchema = require('@dashevo/feature-flags-contract/schema/feature-flags-documents.json');
-const masternodeRewardSharesSchema = require('@dashevo/masternode-reward-shares-contract/schema/masternode-reward-shares-documents.json');
+const dpnsSystemIds = require('@dashevo/dpns-contract/lib/systemIds');
+const dashpaySystemIds = require('@dashevo/dashpay-contract/lib/systemIds');
+const featureFlagsSystemIds = require('@dashevo/feature-flags-contract/lib/systemIds');
+const masternodeRewardSharesSystemIds = require('@dashevo/masternode-reward-shares-contract/lib/systemIds');
 
 const { NETWORK_LOCAL } = require('../../../constants');
 
@@ -78,287 +78,176 @@ function initTaskFactory(
         },
         options: { persistentOutput: true },
       },
-      {
-        title: 'Register DPNS identity',
-        task: async (ctx, task) => {
-          ctx.identity = await ctx.client.platform.identities.register(5);
-
-          config.set('platform.dpns.ownerId', ctx.identity.getId().toString());
-
-          // eslint-disable-next-line no-param-reassign
-          task.output = `DPNS identity: ${ctx.identity.getId().toString()}`;
-        },
-        options: { persistentOutput: true },
-      },
-      {
-        title: 'Register DPNS contract',
-        task: async (ctx, task) => {
-          ctx.dataContract = await ctx.client.platform.contracts.create(
-            dpnsDocumentSchema, ctx.identity,
-          );
-
-          ctx.dataContractStateTransition = await ctx.client.platform.contracts.publish(
-            ctx.dataContract,
-            ctx.identity,
-          );
-
-          config.set('platform.dpns.contract.id', ctx.dataContract.getId().toString());
-
-          // eslint-disable-next-line no-param-reassign
-          task.output = `DPNS contract ID: ${ctx.dataContract.getId().toString()}`;
-        },
-        options: { persistentOutput: true },
-      },
-      {
-        title: 'Obtain DPNS contract commit block height',
-        task: async (ctx, task) => {
-          const stateTransitionHash = crypto.createHash('sha256')
-            .update(ctx.dataContractStateTransition.toBuffer())
-            .digest();
-
-          if (ctx.dapiAddress || config.get('network') !== NETWORK_LOCAL) {
-            task.skip('Can\'t obtain DPNS contract commit block height from remote node.'
-              + `Please, get block height manually using state transition hash "0x${stateTransitionHash.toString('hex')}"`
-              + 'and set it to "platform.dpns.contract.id" config option');
-
-            return;
-          }
-
-          const tenderdashRpcClient = createTenderdashRpcClient();
-
-          const params = { hash: stateTransitionHash.toString('base64') };
-
-          const response = await tenderdashRpcClient.request('tx', params);
-
-          if (response.error) {
-            throw new Error(`Tenderdash error: ${response.error.message}: ${response.error.data}`);
-          }
-
-          const { result: { height: contractBlockHeight } } = response;
-
-          config.set('platform.dpns.contract.blockHeight', contractBlockHeight);
-
-          // eslint-disable-next-line no-param-reassign
-          task.output = `DPNS contract block height: ${contractBlockHeight}`;
-        },
-        options: { persistentOutput: true },
-      },
-      {
-        title: 'Register top level domain "dash"',
-        task: async (ctx) => {
-          ctx.client.getApps().set('dpns', {
-            contractId: ctx.dataContract.getId(),
-            contract: ctx.dataContract,
-          });
-
-          await ctx.client.platform.names.register('dash', {
-            dashAliasIdentityId: ctx.identity.getId(),
-          }, ctx.identity);
-        },
-      },
-      {
-        title: 'Register identity for Dashpay',
-        task: async (ctx, task) => {
-          ctx.identity = await ctx.client.platform.identities.register(5);
-
-          // eslint-disable-next-line no-param-reassign
-          task.output = `Dashpay's owner identity: ${ctx.identity.getId()}`;
-        },
-        options: { persistentOutput: true },
-      },
-      {
-        title: 'Register Dashpay Contract',
-        task: async (ctx, task) => {
-          ctx.dataContract = await ctx.client.platform.contracts.create(
-            dashpayDocumentSchema, ctx.identity,
-          );
-
-          ctx.dashpayStateTransition = await ctx.client.platform.contracts.publish(
-            ctx.dataContract,
-            ctx.identity,
-          );
-
-          config.set('platform.dashpay.contract.id', ctx.dataContract.getId().toString());
-
-          // eslint-disable-next-line no-param-reassign
-          task.output = `Dashpay contract ID: ${ctx.dataContract.getId()}`;
-        },
-        options: { persistentOutput: true },
-      },
-      {
-        title: 'Obtain Dashpay contract commit block height',
-        task: async (ctx, task) => {
-          const stateTransitionHash = crypto.createHash('sha256')
-            .update(ctx.dashpayStateTransition.toBuffer())
-            .digest();
-
-          if (ctx.dapiAddress || config.get('network') !== NETWORK_LOCAL) {
-            task.skip('Can\'t obtain Dashpay contract commit block height from remote node.'
-              + `Please, get block height manually using state transition hash "0x${stateTransitionHash.toString('hex')}"`
-              + 'and set it to "platform.dashpay.contract.id" config option');
-
-            return;
-          }
-
-          const tenderdashRpcClient = createTenderdashRpcClient();
-
-          const params = { hash: stateTransitionHash.toString('base64') };
-
-          const response = await tenderdashRpcClient.request('tx', params);
-
-          if (response.error) {
-            throw new Error(`Tenderdash error: ${response.error.message}: ${response.error.data}`);
-          }
-
-          const { result: { height: contractBlockHeight } } = response;
-
-          config.set('platform.dashpay.contract.blockHeight', contractBlockHeight);
-
-          // eslint-disable-next-line no-param-reassign
-          task.output = `Dashpay contract block height: ${contractBlockHeight}`;
-        },
-        options: { persistentOutput: true },
-      },
-      {
-        title: 'Register Feature Flags identity',
-        task: async (ctx, task) => {
-          ctx.featureFlagsIdentity = await ctx.client.platform.identities.register(5000);
-
-          config.set('platform.featureFlags.ownerId', ctx.featureFlagsIdentity.getId().toString());
-
-          // eslint-disable-next-line no-param-reassign
-          task.output = `Feature Flags identity: ${ctx.featureFlagsIdentity.getId().toString()}`;
-        },
-        options: { persistentOutput: true },
-      },
-      {
-        title: 'Register Feature Flags contract',
-        task: async (ctx, task) => {
-          ctx.featureFlagsDataContract = await ctx.client.platform.contracts.create(
-            featureFlagsDocumentSchema, ctx.featureFlagsIdentity,
-          );
-
-          ctx.client.getApps().set('featureFlags', {
-            contractId: ctx.featureFlagsDataContract.getId(),
-            contract: ctx.featureFlagsDataContract,
-          });
-
-          ctx.dataContractStateTransition = await ctx.client.platform.contracts.publish(
-            ctx.featureFlagsDataContract,
-            ctx.featureFlagsIdentity,
-          );
-
-          config.set('platform.featureFlags.contract.id', ctx.featureFlagsDataContract.getId().toString());
-
-          // eslint-disable-next-line no-param-reassign
-          task.output = `Feature Flags contract ID: ${ctx.featureFlagsDataContract.getId().toString()}`;
-        },
-        options: { persistentOutput: true },
-      },
-      {
-        title: 'Obtain Feature Flags contract commit block height',
-        task: async (ctx, task) => {
-          const stateTransitionHash = crypto.createHash('sha256')
-            .update(ctx.dataContractStateTransition.toBuffer())
-            .digest();
-
-          if (ctx.dapiAddress || config.get('network') !== NETWORK_LOCAL) {
-            task.skip('Can\'t obtain Feature Flags contract commit block height from remote node.'
-              + `Please, get block height manually using state transition hash "0x${stateTransitionHash.toString('hex')}"`
-              + 'and set it to "platform.featureFlags.contract.id" config option');
-
-            return;
-          }
-
-          const tenderdashRpcClient = createTenderdashRpcClient();
-
-          const params = { hash: stateTransitionHash.toString('base64') };
-
-          const response = await tenderdashRpcClient.request('tx', params);
-
-          if (response.error) {
-            throw new Error(`Tenderdash error: ${response.error.message}: ${response.error.data}`);
-          }
-
-          const { result: { height: contractBlockHeight } } = response;
-
-          config.set('platform.featureFlags.contract.blockHeight', contractBlockHeight);
-
-          ctx.featureFlagsContractBlockHeight = contractBlockHeight;
-
-          // eslint-disable-next-line no-param-reassign
-          task.output = `Feature Flags contract block height: ${contractBlockHeight}`;
-        },
-        options: { persistentOutput: true },
-      },
-      {
-        title: 'Register Masternode Reward Shares identity',
-        task: async (ctx, task) => {
-          ctx.masternodeRewardSharesIdentity = await ctx.client.platform.identities.register(5000);
-
-          // eslint-disable-next-line no-param-reassign
-          task.output = `Reward Share identity: ${ctx.masternodeRewardSharesIdentity.getId().toString()}`;
-        },
-        options: { persistentOutput: true },
-      },
-      {
-        title: 'Register Masternode Reward Share contract',
-        task: async (ctx, task) => {
-          ctx.rewardSharingContract = await ctx.client.platform.contracts.create(
-            masternodeRewardSharesSchema, ctx.masternodeRewardSharesIdentity,
-          );
-
-          ctx.client.getApps().set('masternodeRewardShares', {
-            contractId: ctx.rewardSharingContract.getId(),
-            contract: ctx.masternodeRewardSharesIdentity,
-          });
-
-          ctx.dataContractStateTransition = await ctx.client.platform.contracts.publish(
-            ctx.rewardSharingContract,
-            ctx.masternodeRewardSharesIdentity,
-          );
-
-          config.set('platform.masternodeRewardShares.contract.id', ctx.rewardSharingContract.getId().toString());
-
-          // eslint-disable-next-line no-param-reassign
-          task.output = `Reward Share contract ID: ${ctx.rewardSharingContract.getId().toString()}`;
-        },
-        options: { persistentOutput: true },
-      },
-      {
-        title: 'Obtain Masternode Reward Share contract commit block height',
-        task: async (ctx, task) => {
-          const stateTransitionHash = crypto.createHash('sha256')
-            .update(ctx.dataContractStateTransition.toBuffer())
-            .digest();
-
-          if (ctx.dapiAddress || config.get('network') !== NETWORK_LOCAL) {
-            task.skip('Can\'t obtain Reward Share contract commit block height from remote node.'
-              + `Please, get block height manually using state transition hash "0x${stateTransitionHash.toString('hex')}"`
-              + 'and set it to "platform.masternodeRewardShares.contract.id" config option');
-
-            return;
-          }
-
-          const tenderdashRpcClient = createTenderdashRpcClient();
-
-          const params = { hash: stateTransitionHash.toString('base64') };
-
-          const response = await tenderdashRpcClient.request('tx', params);
-
-          if (response.error) {
-            throw new Error(`Tenderdash error: ${response.error.message}: ${response.error.data}`);
-          }
-
-          const { result: { height: contractBlockHeight } } = response;
-
-          config.set('platform.masternodeRewardShares.contract.blockHeight', contractBlockHeight);
-
-          // eslint-disable-next-line no-param-reassign
-          task.output = `Reward Share contract block height: ${contractBlockHeight}`;
-        },
-        options: { persistentOutput: true },
-      },
+      // {
+      //   title: 'Top up DPNS identity',
+      //   task: async (ctx, task) => {
+      //     ctx.identity = await ctx.client.platform.identities.get(
+      //       dpnsSystemIds.ownerId,
+      //     );
+      //
+      //     await ctx.client.platform.identities.topUp(ctx.identity.getId(), 5);
+      //
+      //     config.set('platform.dpns.ownerId', ctx.identity.getId().toString());
+      //
+      //     // eslint-disable-next-line no-param-reassign
+      //     task.output = `DPNS identity: ${ctx.identity.getId()}`;
+      //   },
+      //   options: { persistentOutput: true },
+      // },
+      // {
+      //   title: 'Setup DPNS contract',
+      //   task: async (ctx, task) => {
+      //     ctx.dataContract = await ctx.client.platform.contracts.get(
+      //       dpnsSystemIds.contractId,
+      //     );
+      //
+      //     config.set('platform.dpns.contract.id', ctx.dataContract.getId().toString());
+      //
+      //     // eslint-disable-next-line no-param-reassign
+      //     task.output = `DPNS contract ID: ${ctx.dataContract.getId().toString()}`;
+      //   },
+      //   options: { persistentOutput: true },
+      // },
+      // {
+      //   title: 'Obtain DPNS contract commit block height',
+      //   task: async (ctx, task) => {
+      //     config.set('platform.dpns.contract.blockHeight', 42);
+      //
+      //     // eslint-disable-next-line no-param-reassign
+      //     task.output = `DPNS contract block height: ${42}`;
+      //   },
+      //   options: { persistentOutput: true },
+      // },
+      // {
+      //   title: 'Top up identity for Dashpay',
+      //   task: async (ctx, task) => {
+      //     ctx.identity = await ctx.client.platform.identities.get(
+      //       dashpaySystemIds.ownerId,
+      //     );
+      //
+      //     await ctx.client.platform.identities.topUp(ctx.identity.getId(), 5);
+      //
+      //     // eslint-disable-next-line no-param-reassign
+      //     task.output = `Dashpay's owner identity: ${ctx.identity.getId()}`;
+      //   },
+      //   options: { persistentOutput: true },
+      // },
+      // {
+      //   title: 'Setup Dashpay Contract',
+      //   task: async (ctx, task) => {
+      //     ctx.dataContract = await ctx.client.platform.contracts.get(
+      //       dashpaySystemIds.contractId,
+      //     );
+      //
+      //     config.set('platform.dashpay.contract.id', ctx.dataContract.getId().toString());
+      //
+      //     // eslint-disable-next-line no-param-reassign
+      //     task.output = `Dashpay contract ID: ${ctx.dataContract.getId()}`;
+      //   },
+      //   options: { persistentOutput: true },
+      // },
+      // {
+      //   title: 'Obtain Dashpay contract commit block height',
+      //   task: async (ctx, task) => {
+      //     config.set('platform.dashpay.contract.blockHeight', 42);
+      //
+      //     // eslint-disable-next-line no-param-reassign
+      //     task.output = `Dashpay contract block height: ${42}`;
+      //   },
+      //   options: { persistentOutput: true },
+      // },
+      // {
+      //   title: 'Top up Feature Flags identity',
+      //   task: async (ctx, task) => {
+      //     ctx.featureFlagsIdentity = await ctx.client.platform.identities.get(
+      //       featureFlagsSystemIds.ownerId,
+      //     );
+      //
+      //     await ctx.client.platform.identities.topUp(ctx.featureFlagsIdentity.getId(), 5000);
+      //
+      //     config.set('platform.featureFlags.ownerId', ctx.featureFlagsIdentity.getId().toString());
+      //
+      //     // eslint-disable-next-line no-param-reassign
+      //     task.output = `Feature Flags identity: ${ctx.featureFlagsIdentity.getId().toString()}`;
+      //   },
+      //   options: { persistentOutput: true },
+      // },
+      // {
+      //   title: 'Setup Feature Flags contract',
+      //   task: async (ctx, task) => {
+      //     ctx.featureFlagsDataContract = await ctx.client.platform.contracts.get(
+      //       featureFlagsSystemIds.contractId,
+      //     );
+      //
+      //     ctx.client.getApps().set('featureFlags', {
+      //       contractId: ctx.featureFlagsDataContract.getId(),
+      //       contract: ctx.featureFlagsDataContract,
+      //     });
+      //
+      //     config.set('platform.featureFlags.contract.id', ctx.featureFlagsDataContract.getId().toString());
+      //
+      //     // eslint-disable-next-line no-param-reassign
+      //     task.output = `Feature Flags contract ID: ${ctx.featureFlagsDataContract.getId().toString()}`;
+      //   },
+      //   options: { persistentOutput: true },
+      // },
+      // {
+      //   title: 'Obtain Feature Flags contract commit block height',
+      //   task: async (ctx, task) => {
+      //     config.set('platform.featureFlags.contract.blockHeight', 42);
+      //
+      //     ctx.featureFlagsContractBlockHeight = 42;
+      //
+      //     // eslint-disable-next-line no-param-reassign
+      //     task.output = `Feature Flags contract block height: ${42}`;
+      //   },
+      //   options: { persistentOutput: true },
+      // },
+      // {
+      //   title: 'Top up Masternode Reward Shares identity',
+      //   task: async (ctx, task) => {
+      //     ctx.masternodeRewardSharesIdentity = await ctx.client.platform.identities.get(
+      //       masternodeRewardSharesSystemIds.ownerId,
+      //     );
+      //
+      //     await ctx.client.platform.identities.topUp(
+      //       ctx.masternodeRewardSharesIdentity.getId(), 5000,
+      //     );
+      //
+      //     // eslint-disable-next-line no-param-reassign
+      //     task.output = `Reward Share identity: ${ctx.masternodeRewardSharesIdentity.getId().toString()}`;
+      //   },
+      //   options: { persistentOutput: true },
+      // },
+      // {
+      //   title: 'Setup Masternode Reward Share contract',
+      //   task: async (ctx, task) => {
+      //     ctx.rewardSharingContract = await ctx.client.platform.contracts.get(
+      //       masternodeRewardSharesSystemIds.contractId,
+      //     );
+      //
+      //     ctx.client.getApps().set('masternodeRewardShares', {
+      //       contractId: ctx.rewardSharingContract.getId(),
+      //       contract: ctx.masternodeRewardSharesIdentity,
+      //     });
+      //
+      //     config.set('platform.masternodeRewardShares.contract.id', ctx.rewardSharingContract.getId().toString());
+      //
+      //     // eslint-disable-next-line no-param-reassign
+      //     task.output = `Reward Share contract ID: ${ctx.rewardSharingContract.getId().toString()}`;
+      //   },
+      //   options: { persistentOutput: true },
+      // },
+      // {
+      //   title: 'Obtain Masternode Reward Share contract commit block height',
+      //   task: async (ctx, task) => {
+      //     config.set('platform.masternodeRewardShares.contract.blockHeight', 42);
+      //
+      //     // eslint-disable-next-line no-param-reassign
+      //     task.output = `Reward Share contract block height: ${42}`;
+      //   },
+      //   options: { persistentOutput: true },
+      // },
       {
         title: 'Disconnect SDK',
         task: async (ctx) => ctx.client.disconnect(),

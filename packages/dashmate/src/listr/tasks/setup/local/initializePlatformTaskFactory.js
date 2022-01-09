@@ -33,39 +33,39 @@ function initializePlatformTaskFactory(
       {
         task: () => initTask(configGroup[0]),
       },
-      {
-        title: 'Activating feature flags',
-        task: async (ctx) => {
-          const enableAtHeight = parseInt(ctx.featureFlagsContractBlockHeight, 10) + 1;
-
-          const cumulativeFeesDocument = await ctx.client.platform.documents.create(
-            'featureFlags.fixCumulativeFeesBug',
-            ctx.featureFlagsIdentity,
-            {
-              enabled: true,
-              enableAtHeight,
-            },
-          );
-
-          await ctx.client.platform.documents.broadcast({
-            create: [cumulativeFeesDocument],
-          }, ctx.featureFlagsIdentity);
-        },
-      },
-      {
-        task: () => {
-          // set platform data contracts
-          const [initializedConfig, ...otherConfigs] = configGroup;
-
-          otherConfigs
-            .filter((config) => config.has('platform'))
-            .forEach((config) => {
-              config.set('platform.dpns', initializedConfig.get('platform.dpns'));
-              config.set('platform.dashpay', initializedConfig.get('platform.dashpay'));
-              config.set('platform.featureFlags', initializedConfig.get('platform.featureFlags'));
-            });
-        },
-      },
+      // {
+      //   title: 'Activating feature flags',
+      //   task: async (ctx) => {
+      //     const enableAtHeight = parseInt(ctx.featureFlagsContractBlockHeight, 10) + 1;
+      //
+      //     const cumulativeFeesDocument = await ctx.client.platform.documents.create(
+      //       'featureFlags.fixCumulativeFeesBug',
+      //       ctx.featureFlagsIdentity,
+      //       {
+      //         enabled: true,
+      //         enableAtHeight,
+      //       },
+      //     );
+      //
+      //     await ctx.client.platform.documents.broadcast({
+      //       create: [cumulativeFeesDocument],
+      //     }, ctx.featureFlagsIdentity);
+      //   },
+      // },
+      // {
+      //   task: () => {
+      //     // set platform data contracts
+      //     const [initializedConfig, ...otherConfigs] = configGroup;
+      //
+      //     otherConfigs
+      //       .filter((config) => config.has('platform'))
+      //       .forEach((config) => {
+      //         config.set('platform.dpns', initializedConfig.get('platform.dpns'));
+      //         config.set('platform.dashpay', initializedConfig.get('platform.dashpay'));
+      //         config.set('platform.featureFlags', initializedConfig.get('platform.featureFlags'));
+      //       });
+      //   },
+      // },
       {
         title: 'Stopping nodes',
         task: () => (

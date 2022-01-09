@@ -1,3 +1,5 @@
+const featureFlagsSystemIds = require('@dashevo/feature-flags-contract/lib/systemIds');
+
 const createClientWithFundedWallet = require('../../../lib/test/createClientWithFundedWallet');
 
 describe('Platform', () => {
@@ -11,22 +13,27 @@ describe('Platform', () => {
       let revertConsensusParamsFeatureFlag;
       let identity;
 
+      let contractId;
+      let ownerId;
+
       before(async () => {
         ownerClient = await createClientWithFundedWallet(
-          process.env.DPNS_TOP_LEVEL_IDENTITY_PRIVATE_KEY,
+          process.env.FEATURE_FLAGS_CONTRACT_OWNER_PRIVATE_KEY,
         );
 
+        ({ contractId, ownerId } = featureFlagsSystemIds);
+
         const featureFlagContract = await ownerClient.platform.contracts.get(
-          process.env.FEATURE_FLAGS_CONTRACT_ID,
+          contractId,
         );
 
         ownerClient.getApps().set('featureFlags', {
-          contractId: process.env.FEATURE_FLAGS_CONTRACT_ID,
+          contractId,
           contract: featureFlagContract,
         });
 
         identity = await ownerClient.platform.identities.get(
-          process.env.FEATURE_FLAGS_IDENTITY_ID,
+          ownerId,
         );
 
         const { blockHeight: lastBlockHeight } = identity.getMetadata();
@@ -93,7 +100,7 @@ describe('Platform', () => {
         let height;
         do {
           const someIdentity = await ownerClient.platform.identities.get(
-            process.env.FEATURE_FLAGS_IDENTITY_ID,
+            ownerId,
           );
 
           ({ blockHeight: height } = someIdentity.getMetadata());
@@ -121,7 +128,7 @@ describe('Platform', () => {
         // wait for block and check consensus params were reverted
         do {
           const someIdentity = await ownerClient.platform.identities.get(
-            process.env.FEATURE_FLAGS_IDENTITY_ID,
+            ownerId,
           );
 
           ({ blockHeight: height } = someIdentity.getMetadata());

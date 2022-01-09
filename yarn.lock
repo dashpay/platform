@@ -1537,6 +1537,7 @@ __metadata:
     "@dashevo/dapi-grpc": "workspace:~"
     "@dashevo/dashcore-lib": ~0.19.28
     "@dashevo/dashd-rpc": ^2.3.1
+    "@dashevo/dashpay-contract": "workspace:~"
     "@dashevo/dp-services-ctl": "github:dashevo/js-dp-services-ctl#v0.19-dev"
     "@dashevo/dpns-contract": "workspace:~"
     "@dashevo/dpp": "workspace:~"

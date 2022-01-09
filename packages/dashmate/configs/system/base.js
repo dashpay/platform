@@ -135,6 +135,8 @@ module.exports = {
       contract: {
         id: null,
         blockHeight: null,
+        ownerPublicKey: null,
+        ownerPrivateKey: null,
       },
       ownerId: null,
     },
@@ -142,12 +144,16 @@ module.exports = {
       contract: {
         id: null,
         blockHeight: null,
+        ownerPublicKey: null,
+        ownerPrivateKey: null,
       },
     },
     featureFlags: {
       contract: {
         id: null,
         blockHeight: null,
+        ownerPublicKey: null,
+        ownerPrivateKey: null,
       },
       ownerId: null,
     },
@@ -156,6 +162,8 @@ module.exports = {
       contract: {
         id: null,
         blockHeight: null,
+        ownerPublicKey: null,
+        ownerPrivateKey: null,
       },
     },
   },

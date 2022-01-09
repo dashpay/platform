@@ -18,6 +18,8 @@ const { Merk } = require('@dashevo/merk');
 const LRUCache = require('lru-cache');
 const RpcClient = require('@dashevo/dashd-rpc/promise');
 
+const { PublicKey } = require('@dashevo/dashcore-lib');
+
 const DashPlatformProtocol = require('@dashevo/dpp');
 
 const Identifier = require('@dashevo/dpp/lib/identifier/Identifier');
@@ -30,6 +32,18 @@ const pinoMultistream = require('pino-multi-stream');
 const createABCIServer = require('@dashevo/abci');
 
 const protocolVersion = require('@dashevo/dpp/lib/version/protocolVersion');
+
+const featureFlagsSystemIds = require('@dashevo/feature-flags-contract/lib/systemIds');
+const featureFlagsDocuments = require('@dashevo/feature-flags-contract/schema/feature-flags-documents.json');
+
+const dpnsSystemIds = require('@dashevo/dpns-contract/lib/systemIds');
+const dpnsDocuments = require('@dashevo/dpns-contract/schema/dpns-contract-documents.json');
+
+const masternodeRewardsSystemIds = require('@dashevo/masternode-reward-shares-contract/lib/systemIds');
+const masternodeRewardsDocuments = require('@dashevo/masternode-reward-shares-contract/schema/masternode-reward-shares-documents.json');
+
+const dashpaySystemIds = require('@dashevo/dashpay-contract/lib/systemIds');
+const dashpayDocuments = require('@dashevo/dashpay-contract/schema/dashpay.schema.json');
 
 const packageJSON = require('../package.json');
 
@@ -130,6 +144,7 @@ const getRandomQuorum = require('./core/getRandomQuorum');
 const createQueryResponseFactory = require('./abci/handlers/query/response/createQueryResponseFactory');
 const BlockExecutionContextRepository = require('./blockExecution/BlockExecutionContextRepository');
 const registerSystemDataContractFactory = require('./registerSystemDataContractFactory');
+const registerTopLevelDomainFactory = require('./registerTopLevelDomainFactory');
 
 /**
  *
@@ -163,14 +178,10 @@ const registerSystemDataContractFactory = require('./registerSystemDataContractF
  * @param {string} options.CORE_ZMQ_CONNECTION_RETRIES
  * @param {string} options.PREVIOUS_BLOCK_EXECUTION_TRANSACTIONS_FILE
  * @param {string} options.NETWORK
- * @param {string} options.DPNS_CONTRACT_BLOCK_HEIGHT
- * @param {string} options.DPNS_CONTRACT_ID
- * @param {string} options.DASHPAY_CONTRACT_ID
- * @param {string} options.DASHPAY_CONTRACT_BLOCK_HEIGHT
- * @param {string} options.FEATURE_FLAGS_CONTRACT_ID
- * @param {string} options.FEATURE_FLAGS_CONTRACT_BLOCK_HEIGHT
- * @param {string} options.MASTERNODE_REWARD_SHARES_CONTRACT_ID
- * @param {string} options.MASTERNODE_REWARD_SHARES_CONTRACT_BLOCK_HEIGHT
+ * @param {string} options.DPNS_CONTRACT_OWNER_PUBLIC_KEY
+ * @param {string} options.DASHPAY_CONTRACT_OWNER_PUBLIC_KEY
+ * @param {string} options.FEATURE_FLAGS_CONTRACT_OWNER_PUBLIC_KEY
+ * @param {string} options.MASTERNODE_REWARD_SHARES_CONTRACT_OWNER_PUBLIC_KEY
  * @param {string} options.INITIAL_CORE_CHAINLOCKED_HEIGHT
  * @param {string} options.VALIDATOR_SET_LLMQ_TYPE
  * @param {string} options.LOG_STDOUT_LEVEL
@@ -185,22 +196,31 @@ const registerSystemDataContractFactory = require('./registerSystemDataContractF
  * @return {AwilixContainer}
  */
 function createDIContainer(options) {
-  if (options.DPNS_CONTRACT_ID && !options.DPNS_CONTRACT_BLOCK_HEIGHT) {
-    throw new Error('DPNS_CONTRACT_BLOCK_HEIGHT must be set');
+  if (!options.DPNS_CONTRACT_OWNER_PUBLIC_KEY) {
+    throw new Error('DPNS_CONTRACT_OWNER_PUBLIC_KEY must be set');
   }
 
-  if (options.DASHPAY_CONTRACT_ID && !options.DASHPAY_CONTRACT_BLOCK_HEIGHT) {
-    throw new Error('DASHPAY_CONTRACT_BLOCK_HEIGHT must be set');
+  if (!options.DASHPAY_CONTRACT_OWNER_PUBLIC_KEY) {
+    throw new Error('DASHPAY_CONTRACT_OWNER_PUBLIC_KEY must be set');
   }
 
-  if (options.FEATURE_FLAGS_CONTRACT_ID && !options.FEATURE_FLAGS_CONTRACT_BLOCK_HEIGHT) {
-    throw new Error('FEATURE_FLAGS_CONTRACT_BLOCK_HEIGHT must be set');
+  if (!options.FEATURE_FLAGS_CONTRACT_OWNER_PUBLIC_KEY) {
+    throw new Error('FEATURE_FLAGS_CONTRACT_OWNER_PUBLIC_KEY must be set');
   }
 
-  if (options.MASTERNODE_REWARD_SHARES_CONTRACT_ID
-    && !options.MASTERNODE_REWARD_SHARES_CONTRACT_BLOCK_HEIGHT) {
-    throw new Error('MASTERNODE_REWARD_SHARES_CONTRACT_BLOCK_HEIGHT must be set');
+  if (!options.MASTERNODE_REWARD_SHARES_CONTRACT_OWNER_PUBLIC_KEY) {
+    throw new Error('MASTERNODE_REWARD_SHARES_CONTRACT_OWNER_PUBLIC_KEY must be set');
   }
+
+  /**
+   * Set env variables for DPP
+   */
+  process.env.DPNS_CONTRACT_ID = dpnsSystemIds.contractId;
+  process.env.DPNS_TOP_LEVEL_IDENTITY = dpnsSystemIds.ownerId;
+  process.env.DASHPAY_CONTRACT_ID = dashpaySystemIds.contractId;
+  process.env.FEATURE_FLAGS_CONTRACT_ID = featureFlagsSystemIds.contractId;
+  process.env.FEATURE_FLAGS_TOP_LEVEL_IDENTITY = featureFlagsSystemIds.ownerId;
+  process.env.MASTERNODE_REWARD_SHARES_CONTRACT_ID = masternodeRewardsSystemIds.contractId;
 
   const container = createAwilixContainer({
     injectionMode: InjectionMode.CLASSIC,
@@ -262,18 +282,6 @@ function createDIContainer(options) {
     previousBlockExecutionTransactionFile: asValue(
       options.PREVIOUS_BLOCK_EXECUTION_TRANSACTIONS_FILE,
     ),
-    dpnsContractBlockHeight: asValue(parseInt(options.DPNS_CONTRACT_BLOCK_HEIGHT, 10)),
-    dpnsContractId: asValue(
-      options.DPNS_CONTRACT_ID
-        ? Identifier.from(options.DPNS_CONTRACT_ID)
-        : undefined,
-    ),
-    dashpayContractId: asValue(
-      options.DASHPAY_CONTRACT_ID
-        ? Identifier.from(options.DASHPAY_CONTRACT_ID)
-        : undefined,
-    ),
-    dashpayContractBlockHeight: asValue(parseInt(options.DASHPAY_CONTRACT_BLOCK_HEIGHT, 10)),
     network: asValue(options.NETWORK),
     logStdoutLevel: asValue(options.LOG_STDOUT_LEVEL),
     logPrettyFileLevel: asValue(options.LOG_PRETTY_FILE_LEVEL),
@@ -292,35 +300,48 @@ function createDIContainer(options) {
       parseInt(options.VALIDATOR_SET_LLMQ_TYPE, 10),
     ),
     masternodeRewardSharesContractId: asValue(
-      options.MASTERNODE_REWARD_SHARES_CONTRACT_ID
-        ? Identifier.from(options.MASTERNODE_REWARD_SHARES_CONTRACT_ID)
-        : undefined,
+      Identifier.from(masternodeRewardsSystemIds.contractId),
     ),
-    masternodeRewardSharesContractBlockHeight: asFunction(() => {
-      if (options.MASTERNODE_REWARD_SHARES_CONTRACT_BLOCK_HEIGHT === undefined || options.MASTERNODE_REWARD_SHARES_CONTRACT_BLOCK_HEIGHT === '') {
-        return Long.fromInt(0);
-      }
-
-      return Long.fromString(options.MASTERNODE_REWARD_SHARES_CONTRACT_BLOCK_HEIGHT);
-    }),
-    featureFlagDataContractId: asValue(
-      options.FEATURE_FLAGS_CONTRACT_ID
-        ? Identifier.from(options.FEATURE_FLAGS_CONTRACT_ID)
-        : undefined,
+    masternodeRewardSharesOwnerId: asValue(
+      Identifier.from(masternodeRewardsSystemIds.ownerId),
     ),
-    featureFlagDataContractBlockHeight: asFunction(() => {
-      if (options.FEATURE_FLAGS_CONTRACT_BLOCK_HEIGHT === undefined || options.FEATURE_FLAGS_CONTRACT_BLOCK_HEIGHT === '') {
-        return Long.fromInt(0);
-      }
-
-      return Long.fromString(options.FEATURE_FLAGS_CONTRACT_BLOCK_HEIGHT);
-    }),
+    masternodeRewardSharesOwnerPublicKey: asValue(
+      PublicKey.fromString(
+        options.MASTERNODE_REWARD_SHARES_CONTRACT_OWNER_PUBLIC_KEY,
+      ),
+    ),
+    masternodeRewardSharesDocuments: asValue(
+      masternodeRewardsDocuments,
+    ),
+    featureFlagsContractId: asValue(
+      Identifier.from(featureFlagsSystemIds.contractId),
+    ),
+    featureFlagsOwnerId: asValue(
+      Identifier.from(featureFlagsSystemIds.ownerId),
+    ),
+    featureFlagsOwnerPublicKey: asValue(
+      PublicKey.fromString(
+        options.FEATURE_FLAGS_CONTRACT_OWNER_PUBLIC_KEY,
+      ),
+    ),
+    featureFlagsDocuments: asValue(featureFlagsDocuments),
+    dpnsContractId: asValue(Identifier.from(dpnsSystemIds.contractId)),
+    dpnsOwnerId: asValue(Identifier.from(dpnsSystemIds.ownerId)),
+    dpnsOwnerPublicKey: asValue(
+      PublicKey.fromString(
+        options.DPNS_CONTRACT_OWNER_PUBLIC_KEY,
+      ),
+    ),
+    dpnsDocuments: asValue(dpnsDocuments),
+    dashpayContractId: asValue(Identifier.from(dashpaySystemIds.contractId)),
+    dashpayOwnerId: asValue(Identifier.from(dashpaySystemIds.ownerId)),
+    dashpayOwnerPublicKey: asValue(
+      PublicKey.fromString(
+        options.DASHPAY_CONTRACT_OWNER_PUBLIC_KEY,
+      ),
+    ),
+    dashpayDocuments: asValue(dashpayDocuments),
     tenderdashP2pPort: asValue(options.TENDERDASH_P2P_PORT),
-    systemContractOwnerIdPublicKeys: asValue({
-      featureFlags: '025276ce727b4d9c06c57dbb409f4594afb2682fb9286ac7e7aa14295b6c719f5e',
-      dpns: '038b7810b4894b0b39ee8bb4d6b7b08a1bd86fdb38f21956c1d3728b8c4842877f',
-      masternodeRewards: '025c46216b487f73ec2a55e358fdf901c66e38b6fceee66551cd6baf693b71e2ec',
-    }),
   });
 
   /**
@@ -1070,6 +1091,7 @@ function createDIContainer(options) {
    */
   container.register({
     registerSystemDataContract: asFunction(registerSystemDataContractFactory).singleton(),
+    registerTopLevelDomain: asFunction(registerTopLevelDomainFactory).singleton(),
   });
 
   /**

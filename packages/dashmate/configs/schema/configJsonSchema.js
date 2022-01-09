@@ -474,8 +474,16 @@ module.exports = {
                   type: ['integer', 'null'],
                   minimum: 1,
                 },
+                ownerPublicKey: {
+                  type: ['string', 'null'],
+                  minLength: 1,
+                },
+                ownerPrivateKey: {
+                  type: ['string', 'null'],
+                  minLength: 1,
+                },
               },
-              required: ['id', 'blockHeight'],
+              required: ['id', 'blockHeight', 'ownerPublicKey', 'ownerPrivateKey'],
               additionalProperties: false,
             },
             ownerId: {
@@ -500,8 +508,16 @@ module.exports = {
                   type: ['integer', 'null'],
                   minimum: 1,
                 },
+                ownerPublicKey: {
+                  type: ['string', 'null'],
+                  minLength: 1,
+                },
+                ownerPrivateKey: {
+                  type: ['string', 'null'],
+                  minLength: 1,
+                },
               },
-              required: ['id', 'blockHeight'],
+              required: ['id', 'blockHeight', 'ownerPublicKey', 'ownerPrivateKey'],
               additionalProperties: false,
             },
           },
@@ -522,8 +538,16 @@ module.exports = {
                   type: ['integer', 'null'],
                   minimum: 1,
                 },
+                ownerPublicKey: {
+                  type: ['string', 'null'],
+                  minLength: 1,
+                },
+                ownerPrivateKey: {
+                  type: ['string', 'null'],
+                  minLength: 1,
+                },
               },
-              required: ['id', 'blockHeight'],
+              required: ['id', 'blockHeight', 'ownerPublicKey', 'ownerPrivateKey'],
               additionalProperties: false,
             },
             ownerId: {
@@ -552,8 +576,16 @@ module.exports = {
                   type: ['integer', 'null'],
                   minimum: 1,
                 },
+                ownerPublicKey: {
+                  type: ['string', 'null'],
+                  minLength: 1,
+                },
+                ownerPrivateKey: {
+                  type: ['string', 'null'],
+                  minLength: 1,
+                },
               },
-              required: ['id', 'blockHeight'],
+              required: ['id', 'blockHeight', 'ownerPublicKey', 'ownerPrivateKey'],
               additionalProperties: false,
             },
           },

@@ -2,6 +2,8 @@ const { Listr } = require('listr2');
 
 const path = require('path');
 
+const { PrivateKey } = require('@dashevo/dashcore-lib');
+
 const {
   PRESET_LOCAL,
   HOME_DIR_PATH,
@@ -96,6 +98,11 @@ function setupLocalPresetTaskFactory(
 
           const hostDockerInternalIp = await resolveDockerHostIp();
 
+          const dpnsPrivateKey = new PrivateKey(undefined, ctx.configGroup[0].get('network'));
+          const featureFlagsPrivateKey = new PrivateKey(undefined, ctx.configGroup[0].get('network'));
+          const dashpayPrivateKey = new PrivateKey(undefined, ctx.configGroup[0].get('network'));
+          const masternodeRewardSharesPrivateKey = new PrivateKey(undefined, ctx.configGroup[0].get('network'));
+
           const subTasks = ctx.configGroup.map((config, i) => (
             {
               title: `Create ${config.getName()} config`,
@@ -150,6 +157,24 @@ function setupLocalPresetTaskFactory(
 
                   config.set('platform.drive.abci.log.prettyFile.path', drivePrettyLogFile);
                   config.set('platform.drive.abci.log.jsonFile.path', driveJsonLogFile);
+
+                  config.set('platform.dpns.contract.ownerPublicKey', dpnsPrivateKey.toPublicKey().toString());
+                  config.set('platform.dpns.contract.ownerPrivateKey', dpnsPrivateKey.toString());
+
+                  config.set('platform.featureFlags.contract.ownerPublicKey', featureFlagsPrivateKey.toPublicKey().toString());
+                  config.set('platform.featureFlags.contract.ownerPrivateKey', featureFlagsPrivateKey.toString());
+
+                  config.set('platform.dashpay.contract.ownerPublicKey', dashpayPrivateKey.toPublicKey().toString());
+                  config.set('platform.dashpay.contract.ownerPrivateKey', dashpayPrivateKey.toString());
+
+                  config.set(
+                    'platform.masternodeRewardShares.contract.ownerPublicKey',
+                    masternodeRewardSharesPrivateKey.toPublicKey().toString(),
+                  );
+                  config.set(
+                    'platform.masternodeRewardShares.contract.ownerPrivateKey',
+                    masternodeRewardSharesPrivateKey.toString(),
+                  );
                 }
               },
             }
