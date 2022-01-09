@@ -6,7 +6,7 @@ const wait = require('../../lib/wait');
 
 const getRandomDomain = () => crypto.randomBytes(10).toString('hex');
 
-xdescribe('DPNS', () => {
+describe('DPNS', () => {
   let failed = false;
   let client;
   let identity;

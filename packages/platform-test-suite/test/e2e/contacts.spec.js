@@ -3,7 +3,7 @@ const Identifier = require('@dashevo/dpp/lib/Identifier');
 const createClientWithFundedWallet = require('../../lib/test/createClientWithFundedWallet');
 const wait = require('../../lib/wait');
 
-xdescribe('e2e', () => {
+describe('e2e', () => {
   describe('Contacts', function contacts() {
     this.timeout(950000);
 

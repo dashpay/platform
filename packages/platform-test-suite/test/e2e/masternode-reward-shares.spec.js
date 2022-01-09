@@ -5,7 +5,7 @@ const hash = require('@dashevo/dpp/lib/util/hash');
 const createClientWithFundedWallet = require('../../lib/test/createClientWithFundedWallet');
 const wait = require('../../lib/wait');
 
-xdescribe('Masternode Reward Shares', () => {
+describe('Masternode Reward Shares', () => {
   let failed = false;
   let client;
 
