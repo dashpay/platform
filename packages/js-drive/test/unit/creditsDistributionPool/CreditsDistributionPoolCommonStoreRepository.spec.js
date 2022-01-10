@@ -1,6 +1,6 @@
 const cbor = require('cbor');
 
-const CreditsDistributionPoolCommonStoreRepository = require('../../../lib/creditsDistributionPool/CreditsDistributionPoolCommonStoreRepository');
+const CreditsDistributionPoolRepository = require('../../../lib/creditsDistributionPool/CreditsDistributionPoolRepository');
 const CreditsDistributionPool = require('../../../lib/creditsDistributionPool/CreditsDistributionPool');
 
 describe('ChainInfoExternalStoreRepository', () => {
@@ -16,7 +16,7 @@ describe('ChainInfoExternalStoreRepository', () => {
       get: this.sinon.stub(),
     };
 
-    repository = new CreditsDistributionPoolCommonStoreRepository(externalStoreMock);
+    repository = new CreditsDistributionPoolRepository(externalStoreMock);
 
     initialCreditsDistributionPool = 42;
 
@@ -31,7 +31,7 @@ describe('ChainInfoExternalStoreRepository', () => {
       expect(repositoryInstance).to.equal(repository);
 
       expect(externalStoreMock.put).to.be.calledOnceWithExactly(
-        CreditsDistributionPoolCommonStoreRepository.COMMON_STORE_KEY_NAME,
+        CreditsDistributionPoolRepository.COMMON_STORE_KEY_NAME,
         cbor.encodeCanonical(creditsDistributionPool.toJSON()),
         transactionMock,
       );
@@ -49,7 +49,7 @@ describe('ChainInfoExternalStoreRepository', () => {
       expect(result.getAmount()).to.equal(0);
 
       expect(externalStoreMock.get).to.be.calledOnceWithExactly(
-        CreditsDistributionPoolCommonStoreRepository.COMMON_STORE_KEY_NAME,
+        CreditsDistributionPoolRepository.COMMON_STORE_KEY_NAME,
         transactionMock,
       );
     });
@@ -66,7 +66,7 @@ describe('ChainInfoExternalStoreRepository', () => {
       expect(result.getAmount()).to.equal(initialCreditsDistributionPool);
 
       expect(externalStoreMock.get).to.be.calledOnceWithExactly(
-        CreditsDistributionPoolCommonStoreRepository.COMMON_STORE_KEY_NAME,
+        CreditsDistributionPoolRepository.COMMON_STORE_KEY_NAME,
         transactionMock,
       );
     });

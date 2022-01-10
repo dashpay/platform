@@ -14,11 +14,12 @@ class SpentAssetLockTransactionsRepository {
    *
    * @return {SpentAssetLockTransactionsRepository}
    */
-  store(outPointBuffer, transaction = undefined) {
-    this.storage.put(
+  async store(outPointBuffer, transaction = undefined) {
+    await this.storage.put(
+      SpentAssetLockTransactionsRepository.TREE_PATH,
       outPointBuffer,
       Buffer.from([1]),
-      transaction,
+      { transaction },
     );
 
     return this;
@@ -32,8 +33,12 @@ class SpentAssetLockTransactionsRepository {
    *
    * @return {null|Buffer}
    */
-  fetch(outPointBuffer, transaction = undefined) {
-    const result = this.storage.get(outPointBuffer, transaction);
+  async fetch(outPointBuffer, transaction = undefined) {
+    const result = await this.storage.get(
+      SpentAssetLockTransactionsRepository.TREE_PATH,
+      outPointBuffer,
+      { transaction },
+    );
 
     if (!result) {
       return null;
@@ -41,6 +46,20 @@ class SpentAssetLockTransactionsRepository {
 
     return result;
   }
+
+  /**
+   * @return {Promise<SpentAssetLockTransactionsRepository>}
+   */
+  async createTree() {
+    await this.storage.createTree([], SpentAssetLockTransactionsRepository.TREE_PATH[0]);
+
+    return this;
+  }
 }
+
+SpentAssetLockTransactionsRepository.TREE_PATH = [
+  Buffer.from('misc'),
+  Buffer.from('spentAssetLockTransactions'),
+];
 
 module.exports = SpentAssetLockTransactionsRepository;

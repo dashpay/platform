@@ -3,43 +3,56 @@ const GroveDBTransaction = require('./GroveDBTransaction');
 class GroveDBStore {
   /**
    * @param {GroveDB} db
-   * @param {BaseLogger} [logger]
    * @param {string} [name]
    */
-  constructor(db, logger = undefined, name = undefined) {
+  constructor(db, name = undefined) {
     this.db = db;
-    this.logger = logger;
     this.name = name;
   }
 
   /**
-   * Store a key into store
+   * Store a key
    *
+   * @param {Buffer[]} path
    * @param {Buffer} key
    * @param {Buffer} value
-   * @param {GroveDBTransaction} [transaction]
-   * @return {GroveDBStore}
+   * @param {Object} [options]
+   * @param {GroveDBTransaction} [options.transaction]
+   * @param {boolean} [options.skipIfExists]
+   * @return {Promise<GroveDBStore>}
    */
-  put(key, value, transaction = undefined) {
-    if (this.logger) {
-      this.logger.trace({
-        merk: {
-          storeName: this.name,
-          key: key.toString('hex'),
-          value: value.toString('hex'),
-          transaction: Boolean(transaction),
-        },
-      }, `Update ${key.toString('hex')} in ${this.name} store`);
-    }
+  async put(path, key, value, options = {}) {
+    const method = options.skipIfExists ? 'insert_if_not_exists' : 'insert';
 
-    if (transaction) {
-      transaction.db.put(key, value);
-    } else {
-      this.db
-        .batch()
-        .put(key, value)
-        .commitSync();
-    }
+    await this.db[method](
+      path,
+      key,
+      { type: 'item', value },
+      options.transaction,
+    );
+
+    return this;
+  }
+
+  /**
+   * Create empty key
+   *
+   * @param {Buffer[]} path
+   * @param {Buffer} key
+   * @param {Object} [options]
+   * @param {GroveDBTransaction} [options.transaction]
+   * @param {boolean} [options.skipIfExists]
+   * @return {Promise<GroveDBStore>}
+   */
+  async createTree(path, key, options = { }) {
+    const method = options.skipIfExists ? 'insert_if_not_exists' : 'insert';
+
+    await this.db[method](
+      path,
+      key,
+      { type: 'tree', value: undefined },
+      options.transaction,
+    );
 
     return this;
   }
@@ -47,15 +60,19 @@ class GroveDBStore {
   /**
    * Get a value by key
    *
+   * @param {Buffer[]} path
    * @param {Buffer} key
-   * @param {GroveDBTransaction} [transaction]
+   * @param {Object} [options]
+   * @param {GroveDBTransaction} [options.transaction]
    * @return {Buffer|null}
    */
-  get(key, transaction = undefined) {
-    const db = transaction ? transaction.db : this.db;
-
+  async get(path, key, options = { }) {
     try {
-      return db.getSync(key);
+      return this.db.get(
+        path,
+        key,
+        options,
+      );
     } catch (e) {
       if (e.message.indexOf('no value found for key') !== -1 || e.message.indexOf('key not found') !== -1) {
         return null;
@@ -68,18 +85,59 @@ class GroveDBStore {
   /**
    * Delete value by key
    *
+   * @param {Buffer[]} path
    * @param {Buffer} key
-   * @param {GroveDBTransaction} [transaction]
+   * @param {Object} [options]
+   * @param {GroveDBTransaction} [options.transaction]
+   * @return {Promise<GroveDBStore>}
    */
-  delete(key, transaction = undefined) {
-    if (transaction) {
-      transaction.db.delete(key);
-    } else {
-      this.db
-        .batch()
-        .delete(key)
-        .commitSync();
-    }
+  async delete(path, key, options = { }) {
+    await this.db.delete(path, key, options.transaction);
+
+    return this;
+  }
+
+  /**
+   * Fetch auxiliary value by key
+   *
+   * @param {Buffer} key
+   * @param {Object} [options]
+   * @param {GroveDBTransaction} [options.transaction]
+   * @return {Promise<GroveDBStore>}
+   */
+  async getAux(key, options) {
+    await this.db.getAux(key, options.transaction);
+
+    return this;
+  }
+
+  /**
+   * Store auxiliary value by key
+   *
+   * @param {Buffer} key
+   * @param {Object} [options]
+   * @param {GroveDBTransaction} [options.transaction]
+   * @return {Promise<GroveDBStore>}
+   */
+  async putAux(key, options) {
+    await this.db.putAux(key, value, options.transaction);
+
+    return this;
+  }
+
+  /**
+   * Delete auxiliary value by key
+   *
+   * @param {Buffer} key
+   * @param {Buffer} value
+   * @param {Object} [options]
+   * @param {GroveDBTransaction} [options.transaction]
+   * @return {Promise<GroveDBStore>}
+   */
+  async deleteAux(key, value, options) {
+    await this.db.deleteAux(key, value, options.transaction);
+
+    return this;
   }
 
   /**
@@ -103,11 +161,11 @@ class GroveDBStore {
   /**
    * Get proof for array of keys
    *
-   * @param {Array<Buffer>} keys
+   * @param {PathQuery} query
    * @return {Buffer}
    */
-  getProof(keys) {
-    return this.db.proveSync(keys.sort(Buffer.compare));
+  getProve(query) {
+    return this.db.proof(query);
   }
 
   /**

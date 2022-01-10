@@ -1,38 +1,34 @@
 const cbor = require('cbor');
 
-const LevelDbTransaction = require('../levelDb/LevelDBTransaction');
 const BlockExecutionContextStack = require('./BlockExecutionContextStack');
 
 class BlockExecutionContextStackRepository {
   /**
    *
-   * @param {LevelUP} externalLevelDB
+   * @param {GroveDBStore} groveDBStore
    */
-  constructor(externalLevelDB) {
-    this.db = externalLevelDB;
+  constructor(groveDBStore) {
+    this.db = groveDBStore;
   }
 
   /**
    * Store block execution context
    *
    * @param {BlockExecutionContextStack} blockExecutionContextStack
-   * @param {LevelDBTransaction} transaction
+   * @param {GroveDBTransaction} transaction
    * @return {this}
    */
   async store(blockExecutionContextStack, transaction = undefined) {
-    const db = transaction ? transaction.db : this.db;
-
     const contexts = blockExecutionContextStack.getContexts()
       .map((context) => context.toObject({
         skipDBTransaction: true,
         skipConsensusLogger: true,
       }));
 
-    await db.put(
+    await this.db.putAux(
       BlockExecutionContextStackRepository.EXTERNAL_STORE_KEY_NAME,
       await cbor.encodeAsync(contexts),
-      // transaction-level convert value to string without this flag
-      { asBuffer: true },
+      { transaction },
     );
 
     return this;
@@ -41,16 +37,15 @@ class BlockExecutionContextStackRepository {
   /**
    * Fetch block execution stack
    *
-   * @param {LevelDBTransaction} [transaction]
+   * @param {GroveDBTransaction} [transaction]
    *
    * @return {BlockExecutionContextStack}
    */
   async fetch(transaction = undefined) {
-    const db = transaction ? transaction.db : this.db;
-
     try {
-      const blockExecutionContextsEncoded = await db.get(
+      const blockExecutionContextsEncoded = await this.db.getAux(
         BlockExecutionContextStackRepository.EXTERNAL_STORE_KEY_NAME,
+        { transaction },
       );
 
       const blockExecutionContextStack = new BlockExecutionContextStack();
@@ -71,15 +66,6 @@ class BlockExecutionContextStackRepository {
 
       throw e;
     }
-  }
-
-  /**
-   * Creates new transaction instance
-   *
-   * @return {LevelDBTransaction}
-   */
-  createTransaction() {
-    return new LevelDbTransaction(this.db);
   }
 }
 

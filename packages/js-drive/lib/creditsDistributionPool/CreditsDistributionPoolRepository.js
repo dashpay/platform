@@ -1,7 +1,7 @@
 const cbor = require('cbor');
 const CreditsDistributionPool = require('./CreditsDistributionPool');
 
-class CreditsDistributionPoolCommonStoreRepository {
+class CreditsDistributionPoolRepository {
   /**
    *
    * @param {GroveDBStore} groveDBStore
@@ -18,10 +18,10 @@ class CreditsDistributionPoolCommonStoreRepository {
    * @return {this}
    */
   async store(creditsDistributionPool, transaction = undefined) {
-    await this.storage.put(
-      CreditsDistributionPoolCommonStoreRepository.COMMON_STORE_KEY_NAME,
+    await this.storage.putAux(
+      CreditsDistributionPoolRepository.COMMON_STORE_KEY_NAME,
       cbor.encodeCanonical(creditsDistributionPool.toJSON()),
-      transaction,
+      { transaction },
     );
 
     return this;
@@ -34,9 +34,9 @@ class CreditsDistributionPoolCommonStoreRepository {
    * @return {CreditsDistributionPool}
    */
   async fetch(transaction = undefined) {
-    const creditsDistributionPoolEncoded = await this.storage.get(
-      CreditsDistributionPoolCommonStoreRepository.COMMON_STORE_KEY_NAME,
-      transaction,
+    const creditsDistributionPoolEncoded = await this.storage.getAux(
+      CreditsDistributionPoolRepository.COMMON_STORE_KEY_NAME,
+      { transaction },
     );
 
     if (!creditsDistributionPoolEncoded) {
@@ -49,6 +49,6 @@ class CreditsDistributionPoolCommonStoreRepository {
   }
 }
 
-CreditsDistributionPoolCommonStoreRepository.COMMON_STORE_KEY_NAME = Buffer.from('CreditsDistributionPool');
+CreditsDistributionPoolRepository.COMMON_STORE_KEY_NAME = Buffer.from('CreditsDistributionPool');
 
-module.exports = CreditsDistributionPoolCommonStoreRepository;
+module.exports = CreditsDistributionPoolRepository;

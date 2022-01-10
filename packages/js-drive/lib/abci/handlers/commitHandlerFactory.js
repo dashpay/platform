@@ -8,7 +8,7 @@ const {
 
 /**
  * @param {CreditsDistributionPool} creditsDistributionPool
- * @param {CreditsDistributionPoolCommonStoreRepository} creditsDistributionPoolRepository
+ * @param {CreditsDistributionPoolRepository} creditsDistributionPoolRepository
  * @param {BlockExecutionContext} blockExecutionContext
  * @param {BlockExecutionContextStack} blockExecutionContextStack
  * @param {BlockExecutionContextStackRepository} blockExecutionContextStackRepository
@@ -16,7 +16,6 @@ const {
  * @param {DashPlatformProtocol} transactionalDpp
  * @param {AwilixContainer} container
  * @param {BaseLogger} logger
- * @param {getLatestFeatureFlag} getLatestFeatureFlag
  * @param {LRUCache} dataContractCache
  * @param {GroveDBStore} groveDBStore
  *
@@ -32,7 +31,6 @@ function commitHandlerFactory(
   transactionalDpp,
   container,
   logger,
-  getLatestFeatureFlag,
   dataContractCache,
   groveDBStore,
 ) {
@@ -78,11 +76,7 @@ function commitHandlerFactory(
       // Commit the current block db transactions
       await dbTransaction.commit();
     } catch (e) {
-      // Abort DB transactions. It doesn't work since some of transaction may already be committed
-      // and will produce "transaction in not started" error.
-      if (dbTransaction.isStarted()) {
-        await dbTransaction.abort();
-      }
+      await dbTransaction.abort();
 
       throw e;
     }
