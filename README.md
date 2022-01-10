@@ -24,6 +24,8 @@ If you are looking for how to contribute to the project or need any help with
 building an app on the Dash Platform - message us on the [Devs
 Discord](https://chat.dashdevs.org/)!
 
+## Note: Dash Platform is currently available on the Dash Testnet only
+
 ## Intro
 
 This is a multi-package repository - sometimes also known as monorepository -
@@ -31,6 +33,16 @@ that contains all packages that comprise the Dash platform - for example, Drive,
 which is the storage component of Dash Platform, the JavaScript SDK, wallet-lib,
 DAPI, and others. Every individual package contains its own readme. Packages are
 located in the [packages](./packages) directory.
+
+### Supported networks
+
+Dash Platform is currently undergoing testing and final development necessary to
+support its release on the Dash production network (mainnet). The packages in
+this repository may be used on the following networks:
+
+- [x] **Development networks** ([**devnets**](https://dashplatform.readme.io/docs/reference-glossary#devnet))
+- [x] [**Testnet**](https://dashplatform.readme.io/docs/reference-glossary#testnet)
+- [ ] [Mainnet](https://dashplatform.readme.io/docs/reference-glossary#mainnet)
 
 ## FAQ
 
