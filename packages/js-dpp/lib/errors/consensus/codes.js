@@ -58,7 +58,6 @@ const DocumentTimestampWindowViolationError = require('./state/document/Document
 const DuplicateUniqueIndexError = require('./state/document/DuplicateUniqueIndexError');
 const InvalidDocumentRevisionError = require('./state/document/InvalidDocumentRevisionError');
 const IdentityAlreadyExistsError = require('./state/identity/IdentityAlreadyExistsError');
-const IdentityPublicKeyAlreadyExistsError = require('./state/identity/IdentityPublicKeyAlreadyExistsError');
 const InvalidJsonSchemaRefError = require('./basic/dataContract/InvalidJsonSchemaRefError');
 const JsonSchemaCompilationError = require('./basic/JsonSchemaCompilationError');
 const DuplicateDocumentTransitionsWithIdsError = require('./basic/document/DuplicateDocumentTransitionsWithIdsError');
@@ -70,7 +69,7 @@ const IncompatibleRe2PatternError = require('./basic/dataContract/IncompatibleRe
 const InvalidDataContractVersionError = require('./basic/dataContract/InvalidDataContractVersionError');
 const IncompatibleDataContractSchemaError = require('./basic/dataContract/IncompatibleDataContractSchemaError');
 const DataContractImmutablePropertiesUpdateError = require('./basic/dataContract/DataContractImmutablePropertiesUpdateError');
-const DataContractIndicesChangedError = require('./basic/dataContract/DataContractIndicesChangedError');
+const DataContractIndicesChangedError = require('./basic/dataContract/DataContractUniqueIndicesChangedError');
 const DuplicateIndexNameError = require('./basic/dataContract/DuplicateIndexNameError');
 
 const codes = {
@@ -179,7 +178,6 @@ const codes = {
 
   // Identity
   4011: IdentityAlreadyExistsError,
-  4012: IdentityPublicKeyAlreadyExistsError,
 };
 
 module.exports = codes;

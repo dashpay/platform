@@ -24,7 +24,6 @@ const validateIdentityCreateTransitionStateFactory = require('../identity/stateT
 const validateIdentityTopUpTransitionStateFactory = require('../identity/stateTransition/IdentityTopUpTransition/validation/state/validateIdentityTopUpTransitionStateFactory');
 const validateIdentityCreateTransitionBasicFactory = require('../identity/stateTransition/IdentityCreateTransition/validation/basic/validateIdentityCreateTransitionBasicFactory');
 const validateIdentityTopUpTransitionBasicFactory = require('../identity/stateTransition/IdentityTopUpTransition/validation/basic/validateIdentityTopUpTransitionBasicFactory');
-const validateIdentityPublicKeysUniquenessFactory = require('../identity/stateTransition/IdentityCreateTransition/validation/state/validateIdentityPublicKeysUniquenessFactory');
 const validateStateTransitionIdentitySignatureFactory = require('./validation/validateStateTransitionIdentitySignatureFactory');
 const validateStateTransitionFeeFactory = require('./validation/validateStateTransitionFeeFactory');
 
@@ -82,7 +81,8 @@ const protocolVersion = require('../version/protocolVersion');
 const validateProtocolVersionFactory = require('../version/validateProtocolVersionFactory');
 const validateDataContractUpdateTransitionBasicFactory = require('../dataContract/stateTransition/DataContractUpdateTransition/validation/basic/validateDataContractUpdateTransitionBasicFactory');
 const validateDataContractUpdateTransitionStateFactory = require('../dataContract/stateTransition/DataContractUpdateTransition/validation/state/validateDataContractUpdateTransitionStateFactory');
-const validateIndicesAreNotChanged = require('../dataContract/stateTransition/DataContractUpdateTransition/validation/basic/validateIndicesAreNotChanged');
+const validateIndicesAreBackwardCompatible = require('../dataContract/stateTransition/DataContractUpdateTransition/validation/basic/validateIndicesAreBackwardCompatible');
+const getPropertyDefinitionByPath = require('../dataContract/getPropertyDefinitionByPath');
 
 class StateTransitionFacade {
   /**
@@ -107,8 +107,8 @@ class StateTransitionFacade {
       validateDataContractMaxDepth,
       enrichDataContractWithBaseSchema,
       validateDataContractPatterns,
-      RE2,
       validateProtocolVersion,
+      getPropertyDefinitionByPath,
     );
 
     const validateIdentityExistence = validateIdentityExistenceFactory(this.stateRepository);
@@ -144,7 +144,7 @@ class StateTransitionFacade {
       validateProtocolVersion,
       this.stateRepository,
       jsonSchemaDiffValidator,
-      validateIndicesAreNotChanged,
+      validateIndicesAreBackwardCompatible,
       jsonPatch,
     );
 
@@ -232,13 +232,8 @@ class StateTransitionFacade {
       )
     );
 
-    const validateIdentityPublicKeysUniqueness = validateIdentityPublicKeysUniquenessFactory(
-      this.stateRepository,
-    );
-
     const validateIdentityCreateTransitionState = validateIdentityCreateTransitionStateFactory(
       this.stateRepository,
-      validateIdentityPublicKeysUniqueness,
     );
 
     const validateIdentityTopUpTransitionState = validateIdentityTopUpTransitionStateFactory();

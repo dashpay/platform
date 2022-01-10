@@ -10,7 +10,7 @@ module.exports = {
   group: null,
   core: {
     docker: {
-      image: 'dashpay/dashd:0.18.0.0-beta1',
+      image: 'dashpay/dashd:0.17',
     },
     p2p: {
       port: 20001,
@@ -152,6 +152,12 @@ module.exports = {
       ownerId: null,
     },
     sourcePath: null,
+    masternodeRewardShares: {
+      contract: {
+        id: null,
+        blockHeight: null,
+      },
+    },
   },
   externalIp: null,
   network: NETWORK_TESTNET,

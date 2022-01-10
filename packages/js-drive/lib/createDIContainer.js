@@ -54,10 +54,6 @@ const PublicKeyToIdentityIdStoreRootTreeLeaf = require(
 const DataContractStoreRepository = require('./dataContract/DataContractStoreRepository');
 const DataContractsStoreRootTreeLeaf = require('./dataContract/DataContractsStoreRootTreeLeaf');
 
-const findNotIndexedOrderByFields = require('./document/query/findNotIndexedOrderByFields');
-const findNotIndexedFields = require('./document/query/findNotIndexedFields');
-const getIndexedFieldsFromDocumentSchema = require('./document/query/getIndexedFieldsFromDocumentSchema');
-
 const DocumentsStoreRootTreeLeaf = require('./document/DocumentsStoreRootTreeLeaf');
 const DocumentStoreRepository = require('./document/DocumentStoreRepository');
 const DocumentIndexedStoreRepository = require('./document/DocumentIndexedStoreRepository');
@@ -149,6 +145,7 @@ const BlockExecutionContextRepository = require('./blockExecution/BlockExecution
  * @param {string} options.EXTERNAL_STORE_LEVEL_DB_FILE
  * @param {string} options.PREVIOUS_EXTERNAL_STORE_LEVEL_DB_FILE
  * @param {string} options.DOCUMENT_MONGODB_DB_PREFIX
+ * @param {string} options.PREVIOUS_DOCUMENT_MONGODB_DB_PREFIX
  * @param {string} options.DOCUMENT_MONGODB_URL
  * @param {string} options.ASSET_LOCK_TRANSACTIONS_STORE_MERK_DB_FILE
  * @param {string} options.PREVIOUS_ASSET_LOCK_TRANSACTIONS_STORE_MERK_DB_FILE
@@ -165,6 +162,10 @@ const BlockExecutionContextRepository = require('./blockExecution/BlockExecution
  * @param {string} options.DPNS_CONTRACT_ID
  * @param {string} options.DASHPAY_CONTRACT_ID
  * @param {string} options.DASHPAY_CONTRACT_BLOCK_HEIGHT
+ * @param {string} options.FEATURE_FLAGS_CONTRACT_ID
+ * @param {string} options.FEATURE_FLAGS_CONTRACT_BLOCK_HEIGHT
+ * @param {string} options.MASTERNODE_REWARD_SHARES_CONTRACT_ID
+ * @param {string} options.MASTERNODE_REWARD_SHARES_CONTRACT_BLOCK_HEIGHT
  * @param {string} options.INITIAL_CORE_CHAINLOCKED_HEIGHT
  * @param {string} options.VALIDATOR_SET_LLMQ_TYPE
  * @param {string} options.LOG_STDOUT_LEVEL
@@ -185,6 +186,15 @@ function createDIContainer(options) {
 
   if (options.DASHPAY_CONTRACT_ID && !options.DASHPAY_CONTRACT_BLOCK_HEIGHT) {
     throw new Error('DASHPAY_CONTRACT_BLOCK_HEIGHT must be set');
+  }
+
+  if (options.FEATURE_FLAGS_CONTRACT_ID && !options.FEATURE_FLAGS_CONTRACT_BLOCK_HEIGHT) {
+    throw new Error('FEATURE_FLAGS_CONTRACT_BLOCK_HEIGHT must be set');
+  }
+
+  if (options.MASTERNODE_REWARD_SHARES_CONTRACT_ID
+    && !options.MASTERNODE_REWARD_SHARES_CONTRACT_BLOCK_HEIGHT) {
+    throw new Error('MASTERNODE_REWARD_SHARES_CONTRACT_BLOCK_HEIGHT must be set');
   }
 
   const container = createAwilixContainer({
@@ -276,6 +286,18 @@ function createDIContainer(options) {
     validatorSetLLMQType: asValue(
       parseInt(options.VALIDATOR_SET_LLMQ_TYPE, 10),
     ),
+    masternodeRewardSharesContractId: asValue(
+      options.MASTERNODE_REWARD_SHARES_CONTRACT_ID
+        ? Identifier.from(options.MASTERNODE_REWARD_SHARES_CONTRACT_ID)
+        : undefined,
+    ),
+    masternodeRewardSharesContractBlockHeight: asFunction(() => {
+      if (options.MASTERNODE_REWARD_SHARES_CONTRACT_BLOCK_HEIGHT === undefined || options.MASTERNODE_REWARD_SHARES_CONTRACT_BLOCK_HEIGHT === '') {
+        return Long.fromInt(0);
+      }
+
+      return Long.fromString(options.MASTERNODE_REWARD_SHARES_CONTRACT_BLOCK_HEIGHT);
+    }),
     featureFlagDataContractId: asValue(
       options.FEATURE_FLAGS_CONTRACT_ID
         ? Identifier.from(options.FEATURE_FLAGS_CONTRACT_ID)
@@ -283,7 +305,7 @@ function createDIContainer(options) {
     ),
     featureFlagDataContractBlockHeight: asFunction(() => {
       if (options.FEATURE_FLAGS_CONTRACT_BLOCK_HEIGHT === undefined || options.FEATURE_FLAGS_CONTRACT_BLOCK_HEIGHT === '') {
-        return new Long();
+        return Long.fromInt(0);
       }
 
       return Long.fromString(options.FEATURE_FLAGS_CONTRACT_BLOCK_HEIGHT);
@@ -689,9 +711,6 @@ function createDIContainer(options) {
     )).singleton(),
 
     findConflictingConditions: asValue(findConflictingConditions),
-    getIndexedFieldsFromDocumentSchema: asValue(getIndexedFieldsFromDocumentSchema),
-    findNotIndexedFields: asValue(findNotIndexedFields),
-    findNotIndexedOrderByFields: asValue(findNotIndexedOrderByFields),
     convertWhereToMongoDbQuery: asValue(convertWhereToMongoDbQuery),
     validateQuery: asFunction(validateQueryFactory).singleton(),
 

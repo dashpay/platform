@@ -29,8 +29,8 @@ COPY packages/js-dash-sdk packages/js-dash-sdk
 COPY packages/js-dpp packages/js-dpp
 COPY packages/wallet-lib packages/wallet-lib
 COPY packages/js-grpc-common packages/js-grpc-common
-COPY packages/masternode-reward-shares-contract packages/masternode-reward-shares-contract
 COPY packages/platform-test-suite packages/platform-test-suite
+COPY packages/masternode-reward-shares-contract packages/masternode-reward-shares-contract
 
 # Install Test Suite specific dependencies using previous
 # node_modules directory to reuse built binaries

@@ -61,8 +61,8 @@ npm test
 
 ## Contributing
 
-Feel free to dive in! [Open an issue](https://github.com/dashevo/dashpay-contract/issues/new/choose) or submit PRs.
+Feel free to dive in! [Open an issue](https://github.com/dashevo/platform/issues/new/choose) or submit PRs.
 
-## Licence
+## License
 
-[MIT](LICENCE) © Dash Core Group, Inc.
+[MIT](LICENSE) © Dash Core Group, Inc.
