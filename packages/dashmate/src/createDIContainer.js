@@ -67,6 +67,8 @@ const enableCoreQuorumsTaskFactory = require('./listr/tasks/setup/local/enableCo
 const startGroupNodesTaskFactory = require('./listr/tasks/startGroupNodesTaskFactory');
 const buildServicesTaskFactory = require('./listr/tasks/buildServicesTaskFactory');
 
+const generateHDPrivateKeys = require('./util/generateHDPrivateKeys');
+
 async function createDIContainer() {
   const container = createAwilixContainer({
     injectionMode: InjectionMode.CLASSIC,
@@ -83,6 +85,13 @@ async function createDIContainer() {
     isSystemConfig: asFunction(isSystemConfigFactory).singleton(),
     migrateConfigFile: asValue(migrateConfigFile),
     // `configFile` and `config` are registering on command init
+  });
+
+  /**
+   * Utils
+   */
+  container.register({
+    generateHDPrivateKeys: asValue(generateHDPrivateKeys),
   });
 
   /**

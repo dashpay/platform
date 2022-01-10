@@ -18,6 +18,8 @@ const {
  * @param {registerTopLevelDomain} registerTopLevelDomain
  * @param {registerFeatureFlag} registerFeatureFlag
  * @param {RootTree} rootTree
+ * @param {DocumentDatabaseManager} documentDatabaseManager
+ * @param {DocumentDatabaseManager} previousDocumentDatabaseManager
  * @param {Identifier} dpnsContractId
  * @param {Identifier} dpnsOwnerId
  * @param {PublicKey} dpnsOwnerPublicKey
@@ -47,6 +49,8 @@ function initChainHandlerFactory(
   registerTopLevelDomain,
   registerFeatureFlag,
   rootTree,
+  documentDatabaseManager,
+  previousDocumentDatabaseManager,
   dpnsContractId,
   dpnsOwnerId,
   dpnsOwnerPublicKey,
@@ -94,6 +98,8 @@ function initChainHandlerFactory(
       featureFlagsDocuments,
     );
 
+    await documentDatabaseManager.create(featureFlagContract, { isTransactional: false });
+
     await registerFeatureFlag('fixCumulativeFeesBug', featureFlagContract, featureFlagsOwnerId);
 
     contextLogger.debug('Registering system data contract: DPNS');
@@ -111,6 +117,8 @@ function initChainHandlerFactory(
       dpnsDocuments,
     );
 
+    await documentDatabaseManager.create(dpnsContract, { isTransactional: false });
+
     await registerTopLevelDomain('dash', dpnsContract, dpnsOwnerId);
 
     contextLogger.debug('Registering system data contract: masternode rewards');
@@ -121,12 +129,14 @@ function initChainHandlerFactory(
     });
 
     // Registering masternode reward sharing data contract
-    await registerSystemDataContract(
+    const masternodeRewardSharesContract = await registerSystemDataContract(
       masternodeRewardSharesOwnerId,
       masternodeRewardSharesContractId,
       masternodeRewardSharesOwnerPublicKey,
       masternodeRewardSharesDocuments,
     );
+
+    await documentDatabaseManager.create(masternodeRewardSharesContract, { isTransactional: false });
 
     contextLogger.debug('Registering system data contract: dashpay');
     contextLogger.trace({
@@ -136,12 +146,14 @@ function initChainHandlerFactory(
     });
 
     // Registering masternode reward sharing data contract
-    await registerSystemDataContract(
+    const dashpayContract = await registerSystemDataContract(
       dashpayOwnerId,
       dashpayContractId,
       dashpayOwnerPublicKey,
       dashpayDocuments,
     );
+
+    await documentDatabaseManager.create(dashpayContract, { isTransactional: false });
 
     await updateSimplifiedMasternodeList(initialCoreChainLockedHeight, {
       logger: contextLogger,

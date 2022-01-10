@@ -156,22 +156,22 @@ function initTaskFactory(
       //   },
       //   options: { persistentOutput: true },
       // },
-      // {
-      //   title: 'Top up Feature Flags identity',
-      //   task: async (ctx, task) => {
-      //     ctx.featureFlagsIdentity = await ctx.client.platform.identities.get(
-      //       featureFlagsSystemIds.ownerId,
-      //     );
-      //
-      //     await ctx.client.platform.identities.topUp(ctx.featureFlagsIdentity.getId(), 5000);
-      //
-      //     config.set('platform.featureFlags.ownerId', ctx.featureFlagsIdentity.getId().toString());
-      //
-      //     // eslint-disable-next-line no-param-reassign
-      //     task.output = `Feature Flags identity: ${ctx.featureFlagsIdentity.getId().toString()}`;
-      //   },
-      //   options: { persistentOutput: true },
-      // },
+      {
+        title: 'Top up Feature Flags identity',
+        task: async (ctx, task) => {
+          ctx.featureFlagsIdentity = await ctx.client.platform.identities.get(
+            featureFlagsSystemIds.ownerId,
+          );
+
+          await ctx.client.platform.identities.topUp(ctx.featureFlagsIdentity.getId(), 5000);
+
+          config.set('platform.featureFlags.ownerId', ctx.featureFlagsIdentity.getId().toString());
+
+          // eslint-disable-next-line no-param-reassign
+          task.output = `Feature Flags identity: ${ctx.featureFlagsIdentity.getId().toString()}`;
+        },
+        options: { persistentOutput: true },
+      },
       // {
       //   title: 'Setup Feature Flags contract',
       //   task: async (ctx, task) => {

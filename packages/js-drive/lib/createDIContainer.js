@@ -145,6 +145,7 @@ const createQueryResponseFactory = require('./abci/handlers/query/response/creat
 const BlockExecutionContextRepository = require('./blockExecution/BlockExecutionContextRepository');
 const registerSystemDataContractFactory = require('./registerSystemDataContractFactory');
 const registerTopLevelDomainFactory = require('./registerTopLevelDomainFactory');
+const registerFeatureFlagFactory = require('./registerFeatureFlagFactory');
 
 /**
  *
@@ -1082,6 +1083,25 @@ function createDIContainer(options) {
   container.register({
     registerSystemDataContract: asFunction(registerSystemDataContractFactory).singleton(),
     registerTopLevelDomain: asFunction(registerTopLevelDomainFactory).singleton(),
+    registerFeatureFlag: asFunction(registerFeatureFlagFactory).singleton(),
+    documentEntropy: asValue(
+      Buffer.from('593160c0db0a8be327f23a4fc3b23d58c5ecbc47d491fd04bada693ae884a991', 'hex'),
+    ),
+    documentCreatedAt: asValue(
+      new Date(1641811919122),
+    ),
+    cumulativeFeesFeatureFlagDocumentId: asValue(
+      Identifier.from('4AR6eEiHcWKMSspWTfLg9K91UXCRNqXeC78eBqzcsqgP'),
+    ),
+    dashPreorderDocumentId: asValue(
+      Identifier.from('7U61skuuQKV1WRMEN3gm3zvR3SGkqT8uY2cNJmesoQDu'),
+    ),
+    dashDomainDocumentId: asValue(
+      Identifier.from('9SH7FthJgBCJk1DC6mC5H8P5X9zvQocjLjBHhgw3Pzj4'),
+    ),
+    dashPreorderSalt: asValue(
+      Buffer.from('e0b508c5a36825a206693a1f414aa13edbecf43c41e3c799ea9e737b4f9aa226', 'hex'),
+    ),
   });
 
   /**

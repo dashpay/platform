@@ -23,6 +23,11 @@ function registerTopLevelDomainFactory(
   blockExecutionStoreTransactions,
   cloneToPreviousStoreTransactions,
   container,
+  documentEntropy,
+  documentCreatedAt,
+  dashPreorderDocumentId,
+  dashDomainDocumentId,
+  dashPreorderSalt,
 ) {
   /**
    * @typedef registerTopLevelDomain
@@ -56,8 +61,6 @@ function registerTopLevelDomainFactory(
     const [label] = nameLabels;
     const normalizedLabel = label.toLowerCase();
 
-    const preorderSalt = crypto.randomBytes(32);
-
     const isSecondLevelDomain = normalizedParentDomainName.length > 0;
 
     const fullDomainName = isSecondLevelDomain
@@ -66,7 +69,7 @@ function registerTopLevelDomainFactory(
 
     const saltedDomainHash = hash(
       Buffer.concat([
-        preorderSalt,
+        dashPreorderSalt,
         Buffer.from(fullDomainName),
       ]),
     );
@@ -80,6 +83,10 @@ function registerTopLevelDomainFactory(
       },
     );
 
+    preorderDocument.id = dashPreorderDocumentId;
+    preorderDocument.entropy = documentEntropy;
+    preorderDocument.createdAt = documentCreatedAt;
+
     const domainDocument = await dpp.document.create(
       dataContract,
       ownerId,
@@ -88,7 +95,7 @@ function registerTopLevelDomainFactory(
         label,
         normalizedLabel,
         normalizedParentDomainName,
-        preorderSalt,
+        preorderSalt: dashPreorderSalt,
         records: {
           dashAliasIdentityId: ownerId,
         },
@@ -97,6 +104,10 @@ function registerTopLevelDomainFactory(
         },
       },
     );
+
+    domainDocument.id = dashDomainDocumentId;
+    domainDocument.entropy = documentEntropy;
+    domainDocument.createdAt = documentCreatedAt;
 
     await documentRepository.store(preorderDocument);
     await documentRepository.store(domainDocument);

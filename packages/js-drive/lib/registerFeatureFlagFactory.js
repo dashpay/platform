@@ -21,6 +21,9 @@ function registerFeatureFlagFactory(
   blockExecutionStoreTransactions,
   cloneToPreviousStoreTransactions,
   container,
+  documentEntropy,
+  documentCreatedAt,
+  cumulativeFeesFeatureFlagDocumentId,
 ) {
   /**
    * @typedef registerFeatureFlag
@@ -53,6 +56,14 @@ function registerFeatureFlagFactory(
         enableAtHeight: 1,
       },
     );
+
+    cumulativeFeesDocument.id = cumulativeFeesFeatureFlagDocumentId;
+    cumulativeFeesDocument.entropy = documentEntropy;
+    cumulativeFeesDocument.createdAt = documentCreatedAt;
+
+    console.log('Storing feature flag');
+    console.log(cumulativeFeesDocument.toBuffer().toString('hex'));
+    console.dir(cumulativeFeesDocument.toJSON());
 
     await documentRepository.store(cumulativeFeesDocument);
     await documentRepository.store(cumulativeFeesDocument);

@@ -20,7 +20,7 @@ class DocumentDatabaseManager {
    * @param {DataContract} dataContract
    * @returns {Promise<*[]>}
    */
-  async create(dataContract) {
+  async create(dataContract, runtimeOptions = {}) {
     const documentTypes = Object.keys(dataContract.getDocuments());
 
     const promises = documentTypes.map(async (documentType) => {
@@ -33,6 +33,7 @@ class DocumentDatabaseManager {
       const documentRepository = await this.createDocumentRepository(
         dataContract.getId(),
         documentType,
+        runtimeOptions,
       );
 
       return documentRepository.createCollection(indices);
