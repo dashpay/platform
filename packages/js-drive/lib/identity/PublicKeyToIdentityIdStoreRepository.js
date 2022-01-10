@@ -21,7 +21,7 @@ class PublicKeyToIdentityIdStoreRepository {
    * @return {Promise<PublicKeyToIdentityIdStoreRepository>}
    */
   async store(publicKeyHash, identityId, transaction = undefined) {
-    const identityIdsSerialized = this.storage.get(publicKeyHash, transaction);
+    const identityIdsSerialized = await this.fetchBuffer(publicKeyHash, transaction);
 
     let identityIds = [];
     if (identityIdsSerialized) {
@@ -31,10 +31,11 @@ class PublicKeyToIdentityIdStoreRepository {
     if (identityIds.find((id) => id.equals(identityId)) === undefined) {
       identityIds.push(identityId.toBuffer());
 
-      this.storage.put(
+      await this.storage.put(
+        PublicKeyToIdentityIdStoreRepository.TREE_PATH,
         publicKeyHash,
         cbor.encode(identityIds),
-        transaction,
+        { transaction },
       );
     }
     return this;
@@ -44,12 +45,16 @@ class PublicKeyToIdentityIdStoreRepository {
    * Fetch serialized identity ids by public key hash from database
    *
    * @param {Buffer} publicKeyHash
-   * @param {MerkDbTransaction} [transaction]
+   * @param {GroveDBTransaction} [transaction]
    *
    * @return {Promise<Buffer|null>}
    */
   async fetchBuffer(publicKeyHash, transaction = undefined) {
-    return this.storage.get(publicKeyHash, transaction);
+    return this.storage.get(
+      PublicKeyToIdentityIdStoreRepository.TREE_PATH,
+      publicKeyHash,
+      { transaction },
+    );
   }
 
   /**
@@ -61,7 +66,7 @@ class PublicKeyToIdentityIdStoreRepository {
    * @return {Promise<Identifier[]>}
    */
   async fetch(publicKeyHash, transaction = undefined) {
-    const identityIdsSerialized = this.storage.get(publicKeyHash, transaction);
+    const identityIdsSerialized = this.fetchBuffer(publicKeyHash, transaction);
 
     if (!identityIdsSerialized) {
       return [];
@@ -71,6 +76,17 @@ class PublicKeyToIdentityIdStoreRepository {
 
     return identityIds.map((id) => new Identifier(id));
   }
+
+  /**
+   * @return {Promise<PublicKeyToIdentityIdStoreRepository>}
+   */
+  async createTree() {
+    await this.storage.createTree([], PublicKeyToIdentityIdStoreRepository.TREE_PATH[0]);
+
+    return this;
+  }
 }
+
+PublicKeyToIdentityIdStoreRepository.TREE_PATH = [Buffer.from('publicKeysToIdentityIds')];
 
 module.exports = PublicKeyToIdentityIdStoreRepository;

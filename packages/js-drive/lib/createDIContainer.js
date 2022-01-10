@@ -10,9 +10,6 @@ const fs = require('fs');
 
 const Long = require('long');
 
-// eslint-disable-next-line import/no-unresolved
-const level = require('level-rocksdb');
-
 const GroveDB = require('@dashevo/node-grove');
 
 const LRUCache = require('lru-cache');
@@ -47,7 +44,7 @@ const PublicKeyToIdentityIdStoreRepository = require(
 
 const DataContractStoreRepository = require('./dataContract/DataContractStoreRepository');
 
-const DocumentStoreRepository = require('./document/DocumentStoreRepository');
+const DocumentStoreRepository = require('./document/DocumentRepository');
 const findConflictingConditions = require('./document/query/findConflictingConditions');
 const validateQueryFactory = require('./document/query/validateQueryFactory');
 const convertWhereToMongoDbQuery = require('./document/mongoDbRepository/convertWhereToMongoDbQuery');
@@ -55,7 +52,7 @@ const convertToMongoDbIndicesFunction = require('./document/mongoDbRepository/co
 const fetchDocumentsFactory = require('./document/fetchDocumentsFactory');
 
 const BlockExecutionContext = require('./blockExecution/BlockExecutionContext');
-const CreditsDistributionPoolCommonStoreRepository = require('./creditsDistributionPool/CreditsDistributionPoolCommonStoreRepository');
+const CreditsDistributionPoolRepository = require('./creditsDistributionPool/CreditsDistributionPoolRepository');
 
 const unserializeStateTransitionFactory = require(
   './abci/handlers/stateTransition/unserializeStateTransitionFactory',
@@ -106,6 +103,7 @@ const createQueryResponseFactory = require('./abci/handlers/query/response/creat
 const BlockExecutionContextStackRepository = require('./blockExecution/BlockExecutionContextStackRepository');
 const rotateSignedStoreFactory = require('./groveDB/rotateSignedStoreFactory');
 const BlockExecutionContextStack = require('./blockExecution/BlockExecutionContextStack');
+const createInitialStateStructureFactory = require('./state/createInitialStateStructureFactory');
 
 /**
  *
@@ -115,8 +113,6 @@ const BlockExecutionContextStack = require('./blockExecution/BlockExecutionConte
  * @param {string} options.DB_PATH
  * @param {string} options.GROVEDB_LATEST_FILE
  * @param {string} options.DATA_CONTRACT_CACHE_SIZE
- * @param {string} options.EXTERNAL_STORE_LEVEL_DB_FILE
- * @param {string} options.SIGNED_EXTERNAL_STORE_LEVEL_DB_FILE
  * @param {string} options.CORE_JSON_RPC_HOST
  * @param {string} options.CORE_JSON_RPC_PORT
  * @param {string} options.CORE_JSON_RPC_USERNAME
@@ -194,8 +190,6 @@ function createDIContainer(options) {
 
     groveDBLatestFile: asValue(options.GROVEDB_LATEST_FILE),
     dataContractCacheSize: asValue(options.DATA_CONTRACT_CACHE_SIZE),
-    externalStoreLevelDBFile: asValue(options.EXTERNAL_STORE_LEVEL_DB_FILE),
-    signedExternalStoreLevelDBFile: asValue(options.SIGNED_EXTERNAL_STORE_LEVEL_DB_FILE),
 
     coreJsonRpcHost: asValue(options.CORE_JSON_RPC_HOST),
     coreJsonRpcPort: asValue(options.CORE_JSON_RPC_PORT),
@@ -226,7 +220,6 @@ function createDIContainer(options) {
     logJsonFileLevel: asValue(options.LOG_JSON_FILE_LEVEL),
     logJsonFilePath: asValue(options.LOG_JSON_FILE_PATH),
     logStateRepository: asValue(options.LOG_STATE_REPOSITORY === 'true'),
-    logGroveDB: asValue(options.LOG_GROVEDB === 'true'),
     isProductionEnvironment: asValue(options.NODE_ENV === 'production'),
     maxIdentitiesPerRequest: asValue(25),
     smlMaxListsLimit: asValue(16),
@@ -376,10 +369,8 @@ function createDIContainer(options) {
 
     groveDBStore: asFunction((
       groveDB,
-      logger,
-      logGroveDB,
     ) => (
-      new GroveDBStore(groveDB, logGroveDB ? logger : null, 'latest')
+      new GroveDBStore(groveDB, 'latest')
     )).disposer(async (groveDBStore) => {
     // Flush data on disk
     // await groveDBStore.db.flushSync();
@@ -395,10 +386,8 @@ function createDIContainer(options) {
 
     signedGroveDBStore: asFunction((
       groveDB,
-      logger,
-      logGroveDB,
     ) => (
-      new GroveDBStore(groveDB, logGroveDB ? logger : null, 'signed')
+      new GroveDBStore(groveDB, 'signed')
     )).disposer(async (groveDBStore) => {
       // Flush data on disk
       // await groveDBStore.db.flushSync();
@@ -409,6 +398,7 @@ function createDIContainer(options) {
     }).singleton(),
 
     rotateSignedStore: asFunction(rotateSignedStoreFactory).singleton(),
+    createInitialStateStructure: asFunction(createInitialStateStructureFactory).singleton(),
   });
 
   /**
@@ -495,30 +485,15 @@ function createDIContainer(options) {
   });
 
   /**
-   * Register chain info
-   * */
-  container.register({
-    externalLevelDB: asFunction((externalStoreLevelDBFile) => (
-      level(externalStoreLevelDBFile, { keyEncoding: 'binary', valueEncoding: 'binary' })
-    )).disposer((levelDB) => levelDB.close())
-      .singleton(),
-
-    signedExternalLevelDB: asFunction((signedExternalStoreLevelDBFile) => (
-      level(signedExternalStoreLevelDBFile, { keyEncoding: 'binary', valueEncoding: 'binary' })
-    )).disposer((levelDB) => levelDB.close())
-      .singleton(),
-  });
-
-  /**
    * Register credits distribution pool
    */
   container.register({
-    creditsDistributionPoolRepository: asClass(CreditsDistributionPoolCommonStoreRepository)
+    creditsDistributionPoolRepository: asClass(CreditsDistributionPoolRepository)
       .singleton(),
 
     signedCreditsDistributionPoolRepository: asFunction((
       signedGroveDBStore,
-    ) => (new CreditsDistributionPoolCommonStoreRepository(signedGroveDBStore))).singleton(),
+    ) => (new CreditsDistributionPoolRepository(signedGroveDBStore))).singleton(),
 
     creditsDistributionPool: asValue(new CreditsDistributionPool()),
   });

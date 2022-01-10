@@ -20,10 +20,11 @@ class IdentityStoreRepository {
    * @return {Promise<IdentityStoreRepository>}
    */
   async store(identity, transaction = undefined) {
-    this.storage.put(
+    await this.storage.put(
+      IdentityStoreRepository.TREE_PATH,
       identity.getId().toBuffer(),
       identity.toBuffer(),
-      transaction,
+      { transaction },
     );
 
     return this;
@@ -37,7 +38,11 @@ class IdentityStoreRepository {
    * @return {Promise<null|Identity>}
    */
   async fetch(id, transaction = undefined) {
-    const encodedIdentity = this.storage.get(id.toBuffer(), transaction);
+    const encodedIdentity = this.storage.get(
+      IdentityStoreRepository.TREE_PATH,
+      id.toBuffer(),
+      { transaction },
+    );
 
     if (!encodedIdentity) {
       return null;
@@ -47,6 +52,17 @@ class IdentityStoreRepository {
 
     return new Identity(rawIdentity);
   }
+
+  /**
+   * @return {Promise<IdentityStoreRepository>}
+   */
+  async createTree() {
+    await this.storage.createTree([], IdentityStoreRepository.TREE_PATH[0]);
+
+    return this;
+  }
 }
+
+IdentityStoreRepository.TREE_PATH = [Buffer.from('identities')];
 
 module.exports = IdentityStoreRepository;

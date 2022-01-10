@@ -14,6 +14,8 @@ const {
  * @param {ValidatorSet} validatorSet
  * @param {createValidatorSetUpdate} createValidatorSetUpdate
  * @param {BaseLogger} logger
+ * @param {createInitialStateStructure} createInitialStateStructure
+ * @param {groveDBStore} groveDBStore
  *
  * @return {initChainHandler}
  */
@@ -23,6 +25,8 @@ function initChainHandlerFactory(
   validatorSet,
   createValidatorSetUpdate,
   logger,
+  createInitialStateStructure,
+  groveDBStore,
 ) {
   /**
    * @typedef initChainHandler
@@ -43,6 +47,8 @@ function initChainHandlerFactory(
       logger: contextLogger,
     });
 
+    await createInitialStateStructure();
+
     contextLogger.info(`Init ${request.chainId} chain on block #${request.initialHeight.toString()}`);
 
     await validatorSet.initialize(initialCoreChainLockedHeight);
@@ -53,8 +59,11 @@ function initChainHandlerFactory(
 
     contextLogger.trace(validatorSetUpdate, `Validator set initialized with ${quorumHash} quorum`);
 
+    const appHash = groveDBStore.getRootHash();
+
     return new ResponseInitChain({
       validatorSetUpdate,
+      appHash,
       initialCoreHeight: initialCoreChainLockedHeight,
     });
   }
