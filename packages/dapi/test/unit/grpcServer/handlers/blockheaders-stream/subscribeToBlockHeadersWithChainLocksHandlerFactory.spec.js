@@ -95,29 +95,7 @@ describe('subscribeToBlockHeadersWithChainLocksHandlerFactory', () => {
       blockHash: Buffer.from('fakeHash', 'hex'),
     });
 
-    try {
-      coreAPIMock.getBlock.resolves({ height: -1 });
-      await subscribeToBlockHeadersWithChainLocksHandler(call);
-    } catch (e) {
-      expect(e).to.be.instanceOf(NotFoundGrpcError);
-      expect(e.message).to.be('fromBlockHash is not found');
-    }
-
-    try {
-      coreAPIMock.getBlock.resolves({ height: 1, confirmations: -1 });
-      await subscribeToBlockHeadersWithChainLocksHandler(call);
-    } catch (e) {
-      expect(e).to.be.instanceOf(NotFoundGrpcError);
-      expect(e.message.includes('is not part of the best block chain')).to.be.true();
-    }
-
-    try {
-      coreAPIMock.getBlock.resolves({ height: 10 });
-      coreAPIMock.getBestBlockHeight.resolves(11);
-      await subscribeToBlockHeadersWithChainLocksHandler(call);
-    } catch (e) {
-      expect(e).to.be.instanceOf(InvalidArgumentGrpcError);
-    }
+    coreAPIMock.getBlock.resolves({ height: 1 });
 
     await subscribeToBlockHeadersWithChainLocksHandler(call);
 
@@ -162,5 +140,39 @@ describe('subscribeToBlockHeadersWithChainLocksHandlerFactory', () => {
 
     await subscribeToBlockHeadersWithChainLocksHandler(call);
     expect(subscribeToNewBlockHeadersMock).to.not.have.been.called();
+  });
+
+  it('should validate responses from coreAPI', async function () {
+    this.sinon.stub(AcknowledgingWritable.prototype, 'write');
+    const request = new BlockHeadersWithChainLocksRequest();
+
+    call = new GrpcCallMock(this.sinon, request);
+
+    call.request.setFromBlockHash('someBlockHash');
+    call.request.setCount(0);
+
+    try {
+      coreAPIMock.getBlock.resolves({ height: -1 });
+      await subscribeToBlockHeadersWithChainLocksHandler(call);
+    } catch (e) {
+      expect(e).to.be.instanceOf(NotFoundGrpcError);
+      expect(e.message).to.be('fromBlockHash is not found');
+    }
+
+    try {
+      coreAPIMock.getBlock.resolves({ height: 1, confirmations: -1 });
+      await subscribeToBlockHeadersWithChainLocksHandler(call);
+    } catch (e) {
+      expect(e).to.be.instanceOf(NotFoundGrpcError);
+      expect(e.message.includes('is not part of the best block chain')).to.be.true();
+    }
+
+    try {
+      coreAPIMock.getBlock.resolves({ height: 10 });
+      coreAPIMock.getBestBlockHeight.resolves(11);
+      await subscribeToBlockHeadersWithChainLocksHandler(call);
+    } catch (e) {
+      expect(e).to.be.instanceOf(InvalidArgumentGrpcError);
+    }
   });
 });
