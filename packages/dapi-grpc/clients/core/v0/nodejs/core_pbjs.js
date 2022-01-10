@@ -1603,14 +1603,14 @@ $root.org = (function() {
                                 if (object.bestBlockHash != null)
                                     if (typeof object.bestBlockHash === "string")
                                         $util.base64.decode(object.bestBlockHash, message.bestBlockHash = $util.newBuffer($util.base64.length(object.bestBlockHash)), 0);
-                                    else if (object.bestBlockHash.length)
+                                    else if (object.bestBlockHash.length >= 0)
                                         message.bestBlockHash = object.bestBlockHash;
                                 if (object.difficulty != null)
                                     message.difficulty = Number(object.difficulty);
                                 if (object.chainWork != null)
                                     if (typeof object.chainWork === "string")
                                         $util.base64.decode(object.chainWork, message.chainWork = $util.newBuffer($util.base64.length(object.chainWork)), 0);
-                                    else if (object.chainWork.length)
+                                    else if (object.chainWork.length >= 0)
                                         message.chainWork = object.chainWork;
                                 if (object.isSynced != null)
                                     message.isSynced = Boolean(object.isSynced);
@@ -1951,7 +1951,7 @@ $root.org = (function() {
                                 if (object.proTxHash != null)
                                     if (typeof object.proTxHash === "string")
                                         $util.base64.decode(object.proTxHash, message.proTxHash = $util.newBuffer($util.base64.length(object.proTxHash)), 0);
-                                    else if (object.proTxHash.length)
+                                    else if (object.proTxHash.length >= 0)
                                         message.proTxHash = object.proTxHash;
                                 if (object.posePenalty != null)
                                     message.posePenalty = object.posePenalty >>> 0;
@@ -2496,19 +2496,19 @@ $root.org = (function() {
 
                         /**
                          * GetBlockRequest height.
-                         * @member {number|null|undefined} height
+                         * @member {number} height
                          * @memberof org.dash.platform.dapi.v0.GetBlockRequest
                          * @instance
                          */
-                        GetBlockRequest.prototype.height = null;
+                        GetBlockRequest.prototype.height = 0;
 
                         /**
                          * GetBlockRequest hash.
-                         * @member {string|null|undefined} hash
+                         * @member {string} hash
                          * @memberof org.dash.platform.dapi.v0.GetBlockRequest
                          * @instance
                          */
-                        GetBlockRequest.prototype.hash = null;
+                        GetBlockRequest.prototype.hash = "";
 
                         // OneOf field names bound to virtual getters and setters
                         var $oneOfFields;
@@ -2853,7 +2853,7 @@ $root.org = (function() {
                             if (object.block != null)
                                 if (typeof object.block === "string")
                                     $util.base64.decode(object.block, message.block = $util.newBuffer($util.base64.length(object.block)), 0);
-                                else if (object.block.length)
+                                else if (object.block.length >= 0)
                                     message.block = object.block;
                             return message;
                         };
@@ -3083,7 +3083,7 @@ $root.org = (function() {
                             if (object.transaction != null)
                                 if (typeof object.transaction === "string")
                                     $util.base64.decode(object.transaction, message.transaction = $util.newBuffer($util.base64.length(object.transaction)), 0);
-                                else if (object.transaction.length)
+                                else if (object.transaction.length >= 0)
                                     message.transaction = object.transaction;
                             if (object.allowHighFees != null)
                                 message.allowHighFees = Boolean(object.allowHighFees);
@@ -3749,12 +3749,12 @@ $root.org = (function() {
                             if (object.transaction != null)
                                 if (typeof object.transaction === "string")
                                     $util.base64.decode(object.transaction, message.transaction = $util.newBuffer($util.base64.length(object.transaction)), 0);
-                                else if (object.transaction.length)
+                                else if (object.transaction.length >= 0)
                                     message.transaction = object.transaction;
                             if (object.blockHash != null)
                                 if (typeof object.blockHash === "string")
                                     $util.base64.decode(object.blockHash, message.blockHash = $util.newBuffer($util.base64.length(object.blockHash)), 0);
-                                else if (object.blockHash.length)
+                                else if (object.blockHash.length >= 0)
                                     message.blockHash = object.blockHash;
                             if (object.height != null)
                                 message.height = object.height >>> 0;
@@ -3857,19 +3857,19 @@ $root.org = (function() {
 
                         /**
                          * BlockHeadersWithChainLocksRequest fromBlockHash.
-                         * @member {Uint8Array|null|undefined} fromBlockHash
+                         * @member {Uint8Array} fromBlockHash
                          * @memberof org.dash.platform.dapi.v0.BlockHeadersWithChainLocksRequest
                          * @instance
                          */
-                        BlockHeadersWithChainLocksRequest.prototype.fromBlockHash = null;
+                        BlockHeadersWithChainLocksRequest.prototype.fromBlockHash = $util.newBuffer([]);
 
                         /**
                          * BlockHeadersWithChainLocksRequest fromBlockHeight.
-                         * @member {number|null|undefined} fromBlockHeight
+                         * @member {number} fromBlockHeight
                          * @memberof org.dash.platform.dapi.v0.BlockHeadersWithChainLocksRequest
                          * @instance
                          */
-                        BlockHeadersWithChainLocksRequest.prototype.fromBlockHeight = null;
+                        BlockHeadersWithChainLocksRequest.prototype.fromBlockHeight = 0;
 
                         /**
                          * BlockHeadersWithChainLocksRequest count.
@@ -4035,7 +4035,7 @@ $root.org = (function() {
                             if (object.fromBlockHash != null)
                                 if (typeof object.fromBlockHash === "string")
                                     $util.base64.decode(object.fromBlockHash, message.fromBlockHash = $util.newBuffer($util.base64.length(object.fromBlockHash)), 0);
-                                else if (object.fromBlockHash.length)
+                                else if (object.fromBlockHash.length >= 0)
                                     message.fromBlockHash = object.fromBlockHash;
                             if (object.fromBlockHeight != null)
                                 message.fromBlockHeight = object.fromBlockHeight >>> 0;
@@ -4123,11 +4123,11 @@ $root.org = (function() {
 
                         /**
                          * BlockHeadersWithChainLocksResponse chainLock.
-                         * @member {Uint8Array|null|undefined} chainLock
+                         * @member {Uint8Array} chainLock
                          * @memberof org.dash.platform.dapi.v0.BlockHeadersWithChainLocksResponse
                          * @instance
                          */
-                        BlockHeadersWithChainLocksResponse.prototype.chainLock = null;
+                        BlockHeadersWithChainLocksResponse.prototype.chainLock = $util.newBuffer([]);
 
                         // OneOf field names bound to virtual getters and setters
                         var $oneOfFields;
@@ -4285,7 +4285,7 @@ $root.org = (function() {
                             if (object.chainLock != null)
                                 if (typeof object.chainLock === "string")
                                     $util.base64.decode(object.chainLock, message.chainLock = $util.newBuffer($util.base64.length(object.chainLock)), 0);
-                                else if (object.chainLock.length)
+                                else if (object.chainLock.length >= 0)
                                     message.chainLock = object.chainLock;
                             return message;
                         };
@@ -4493,7 +4493,7 @@ $root.org = (function() {
                                 for (var i = 0; i < object.headers.length; ++i)
                                     if (typeof object.headers[i] === "string")
                                         $util.base64.decode(object.headers[i], message.headers[i] = $util.newBuffer($util.base64.length(object.headers[i])), 0);
-                                    else if (object.headers[i].length)
+                                    else if (object.headers[i].length >= 0)
                                         message.headers[i] = object.headers[i];
                             }
                             return message;
@@ -4948,19 +4948,19 @@ $root.org = (function() {
 
                         /**
                          * TransactionsWithProofsRequest fromBlockHash.
-                         * @member {Uint8Array|null|undefined} fromBlockHash
+                         * @member {Uint8Array} fromBlockHash
                          * @memberof org.dash.platform.dapi.v0.TransactionsWithProofsRequest
                          * @instance
                          */
-                        TransactionsWithProofsRequest.prototype.fromBlockHash = null;
+                        TransactionsWithProofsRequest.prototype.fromBlockHash = $util.newBuffer([]);
 
                         /**
                          * TransactionsWithProofsRequest fromBlockHeight.
-                         * @member {number|null|undefined} fromBlockHeight
+                         * @member {number} fromBlockHeight
                          * @memberof org.dash.platform.dapi.v0.TransactionsWithProofsRequest
                          * @instance
                          */
-                        TransactionsWithProofsRequest.prototype.fromBlockHeight = null;
+                        TransactionsWithProofsRequest.prototype.fromBlockHeight = 0;
 
                         /**
                          * TransactionsWithProofsRequest count.
@@ -5157,7 +5157,7 @@ $root.org = (function() {
                             if (object.fromBlockHash != null)
                                 if (typeof object.fromBlockHash === "string")
                                     $util.base64.decode(object.fromBlockHash, message.fromBlockHash = $util.newBuffer($util.base64.length(object.fromBlockHash)), 0);
-                                else if (object.fromBlockHash.length)
+                                else if (object.fromBlockHash.length >= 0)
                                     message.fromBlockHash = object.fromBlockHash;
                             if (object.fromBlockHeight != null)
                                 message.fromBlockHeight = object.fromBlockHeight >>> 0;
@@ -5421,7 +5421,7 @@ $root.org = (function() {
                             if (object.vData != null)
                                 if (typeof object.vData === "string")
                                     $util.base64.decode(object.vData, message.vData = $util.newBuffer($util.base64.length(object.vData)), 0);
-                                else if (object.vData.length)
+                                else if (object.vData.length >= 0)
                                     message.vData = object.vData;
                             if (object.nHashFuncs != null)
                                 message.nHashFuncs = object.nHashFuncs >>> 0;
@@ -5526,11 +5526,11 @@ $root.org = (function() {
 
                         /**
                          * TransactionsWithProofsResponse rawMerkleBlock.
-                         * @member {Uint8Array|null|undefined} rawMerkleBlock
+                         * @member {Uint8Array} rawMerkleBlock
                          * @memberof org.dash.platform.dapi.v0.TransactionsWithProofsResponse
                          * @instance
                          */
-                        TransactionsWithProofsResponse.prototype.rawMerkleBlock = null;
+                        TransactionsWithProofsResponse.prototype.rawMerkleBlock = $util.newBuffer([]);
 
                         // OneOf field names bound to virtual getters and setters
                         var $oneOfFields;
@@ -5708,7 +5708,7 @@ $root.org = (function() {
                             if (object.rawMerkleBlock != null)
                                 if (typeof object.rawMerkleBlock === "string")
                                     $util.base64.decode(object.rawMerkleBlock, message.rawMerkleBlock = $util.newBuffer($util.base64.length(object.rawMerkleBlock)), 0);
-                                else if (object.rawMerkleBlock.length)
+                                else if (object.rawMerkleBlock.length >= 0)
                                     message.rawMerkleBlock = object.rawMerkleBlock;
                             return message;
                         };
@@ -5921,7 +5921,7 @@ $root.org = (function() {
                                 for (var i = 0; i < object.transactions.length; ++i)
                                     if (typeof object.transactions[i] === "string")
                                         $util.base64.decode(object.transactions[i], message.transactions[i] = $util.newBuffer($util.base64.length(object.transactions[i])), 0);
-                                    else if (object.transactions[i].length)
+                                    else if (object.transactions[i].length >= 0)
                                         message.transactions[i] = object.transactions[i];
                             }
                             return message;
@@ -6127,7 +6127,7 @@ $root.org = (function() {
                                 for (var i = 0; i < object.messages.length; ++i)
                                     if (typeof object.messages[i] === "string")
                                         $util.base64.decode(object.messages[i], message.messages[i] = $util.newBuffer($util.base64.length(object.messages[i])), 0);
-                                    else if (object.messages[i].length)
+                                    else if (object.messages[i].length >= 0)
                                         message.messages[i] = object.messages[i];
                             }
                             return message;
