@@ -20,6 +20,7 @@ pub fn string_to_field_type(field_type_name: String) -> Option<DocumentFieldType
         "string" => Some(DocumentFieldType::String),
         "float" => Some(DocumentFieldType::Float),
         "boolean" => Some(DocumentFieldType::Boolean),
+        "date" => Some(DocumentFieldType::Date),
         "object" => Some(DocumentFieldType::Object),
         _ => None,
     };
@@ -40,8 +41,6 @@ pub fn encode_document_field_type(
             Ok(Some(value_as_text.as_bytes().to_vec()))
         }
         DocumentFieldType::Integer => {
-            // Direct integer to byte encoding doesn't take into account the signed bit
-            // for negative and positive integers
             let value_as_integer = value.as_integer().ok_or(field_type_match_error)?;
             let value_as_i64: i64 = value_as_integer
                 .try_into()
@@ -87,10 +86,25 @@ pub fn encode_document_field_type(
 }
 
 fn encode_integer(val: i64) -> Result<Option<Vec<u8>>, Error> {
+    // Positive integers are represented in binary with the signed bit set to 0
+    // Negative integers are represented in 2's complement form
+
+    // Encode the integer in big endian form
+    // This ensures that most significant bits are compared first
+    // a bigger positive number would be greater than a smaller one
+    // and a bigger negative number would be greater than a smaller one
+    // maintains sort order for each domain
     let mut wtr = vec![];
     wtr.write_i64::<BigEndian>(val).unwrap();
 
     // Flip the sign bit
+    // to deal with interaction between the domains
+    // 2's complement values have the sign bit set to 1
+    // this makes them greater than the positive domain in terms of sort order
+    // to fix this, we just flip the sign bit
+    // so positive integers have the high bit and negative integers have the low bit
+    // the relative order of elements in each domain is still maintained, as the
+    // change was uniform across all elements
     wtr[0] = wtr[0] ^ 0b1000_0000;
 
     Ok(Some(wtr))
