@@ -11,7 +11,6 @@ pub enum DocumentFieldType {
     ByteArray,
     Boolean,
     Date,
-    Object,
 }
 
 pub fn string_to_field_type(field_type_name: String) -> Option<DocumentFieldType> {
@@ -21,7 +20,6 @@ pub fn string_to_field_type(field_type_name: String) -> Option<DocumentFieldType
         "float" => Some(DocumentFieldType::Float),
         "boolean" => Some(DocumentFieldType::Boolean),
         "date" => Some(DocumentFieldType::Date),
-        "object" => Some(DocumentFieldType::Object),
         _ => None,
     };
 }
@@ -81,7 +79,6 @@ pub fn encode_document_field_type(
                 .map_err(|_| Error::CorruptedData(String::from("invalid integer string")))?;
             encode_integer(date_as_integer)
         }
-        DocumentFieldType::Object => Ok(Some(Vec::new())),
     };
 }
 
@@ -168,14 +165,14 @@ mod tests {
         let encoded_integer3 = encode_document_field_type(&DocumentFieldType::Integer, &integer3)
             .expect(encode_err_msg);
 
-        assert_eq!(integer2 > integer1, true);
-        assert_eq!(integer2 < integer3, true);
+        assert_eq!(encoded_integer2 > encoded_integer1, true);
+        assert_eq!(encoded_integer2 < encoded_integer3, true);
 
         // Test the relationship between positive and negative integers
         // Since it has been shown that positive integers and negative integers maintain sort order
         // If the smallest positive number is greater than the largest negative number
         // then the positive domain is greater than the negative domain
         // Smallest positive integer is 1 and largest negative integer is -1
-        assert_eq!(integer3 > integer1, true);
+        assert_eq!(encoded_integer3 > encoded_integer1, true);
     }
 }
