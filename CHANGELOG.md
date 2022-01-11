@@ -1,3 +1,41 @@
+## [0.22.0-dev.6](https://github.com/dashevo/platform/compare/v0.22.0-dev.5...v0.22.0-dev.6) (2022-01-11)
+
+
+### ⚠ BREAKING CHANGES
+
+* **drive:** temporary restrictions for a document query (#77)
+
+### Features
+
+* **dapi:** `subscribeToBlockHeadersWithChainLocks` endpoint ([#153](https://github.com/dashevo/platform/issues/153))
+
+
+### Bug Fixes
+
+* **drive:** missed `nodeAddress` field on `EndBlock` ([#184](https://github.com/dashevo/platform/issues/184))
+
+
+### Miscellaneous Chores
+
+* **drive:** temporary restrictions for a document query ([#77](https://github.com/dashevo/platform/issues/77))
+
+
+### Build System
+
+* **test-suite:** docker image build doesn't work ([#172](https://github.com/dashevo/platform/issues/172))
+
+
+### Code Refactoring
+
+* **dapi:** rename tx-filter-stream.js to core-streams.js ([#169](https://github.com/dashevo/platform/issues/169))
+
+
+### Documentation
+
+* add readme to docs folder ([#175](https://github.com/dashevo/platform/issues/175))
+* escape literal '|' in table ([#164](https://github.com/dashevo/platform/issues/164))
+* indicate which network(s) this repo supports ([#174](https://github.com/dashevo/platform/issues/174))
+
 ## [0.22.0-dev.5](https://github.com/dashevo/platform/compare/v0.22.0-dev.4...v0.22.0-dev.5) (2022-01-07)
 
 
