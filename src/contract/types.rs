@@ -102,58 +102,66 @@ mod tests {
 
     #[test]
     fn test_successful_encode() {
-        // TODO: Add more edge cases
         // Constraint: for all types, if a > b then encoding(a) > enconding(b)
-
-        // String encoding
-        let string1 = Value::Text(String::from("a"));
-        let string2 = Value::Text(String::from("b"));
-
-        let encoded_string1 = encode_document_field_type(&DocumentFieldType::String, &string1)
-            .expect("should encode: valid parameters");
-        let encoded_string2 = encode_document_field_type(&DocumentFieldType::String, &string2)
-            .expect("should encode: valid parameters");
-
-        assert_eq!(string1 > string2, encoded_string1 > encoded_string2);
-
-        // Float encoding
-        let float1 = Value::Float(11.0);
-        let float2 = Value::Float(121.1);
-        let float3 = Value::Float(13.0);
-
-        let encoded_float1 = encode_document_field_type(&DocumentFieldType::Float, &float1)
-            .expect("should encode: valid parameters");
-        let encoded_float2 = encode_document_field_type(&DocumentFieldType::Float, &float2)
-            .expect("should encode: valid parameters");
-        let encoded_float3 = encode_document_field_type(&DocumentFieldType::Float, &float3)
-            .expect("should encode: valid parameters");
-
-        // 11.0 < 121.1
-        assert_eq!(encoded_float1 < encoded_float2, true);
-        // 121.1 > 13.0
-        assert_eq!(encoded_float2 > encoded_float3, true);
-        // 13.0 > 11.0
-        assert_eq!(encoded_float3 > encoded_float1, true);
+        let encode_err_msg = "should encode: valid parameters";
 
         // Integer encoding
+        // Test approach
+        // Test positive domain
+        // Test negative domain
+        // Test against 0
+        // Test relationship between positive and negative domain
+
+        // Show that the domain of positive integers maintains sort order after encoding
         let integer1 = Value::Integer(Integer::from(1));
         let integer2 = Value::Integer(Integer::from(600));
-        let integer3 = Value::Integer(Integer::from(60));
-        let integer4 = Value::Integer(Integer::from(-10));
+        let integer3 = Value::Integer(Integer::from(i64::MAX));
 
         let encoded_integer1 = encode_document_field_type(&DocumentFieldType::Integer, &integer1)
-            .expect("should encode: valid parameters");
+            .expect(encode_err_msg);
         let encoded_integer2 = encode_document_field_type(&DocumentFieldType::Integer, &integer2)
-            .expect("should encode: valid parameters");
+            .expect(encode_err_msg);
         let encoded_integer3 = encode_document_field_type(&DocumentFieldType::Integer, &integer3)
-            .expect("should encode: valid parameters");
-        let encoded_integer4 = encode_document_field_type(&DocumentFieldType::Integer, &integer4)
-            .expect("should encode: valid parameters");
-
-        dbg!(&encoded_integer2);
-        dbg!(&encoded_integer4);
+            .expect(encode_err_msg);
 
         assert_eq!(encoded_integer1 < encoded_integer2, true);
-        assert_eq!(encoded_integer2 > encoded_integer4, true);
+        assert_eq!(encoded_integer2 < encoded_integer3, true);
+
+        // Show that the domain of negative integers maintain sort order after encoding
+        let integer1 = Value::Integer(Integer::from(-1));
+        let integer2 = Value::Integer(Integer::from(-600));
+        let integer3 = Value::Integer(Integer::from(i64::MIN));
+
+        let encoded_integer1 = encode_document_field_type(&DocumentFieldType::Integer, &integer1)
+            .expect(encode_err_msg);
+        let encoded_integer2 = encode_document_field_type(&DocumentFieldType::Integer, &integer2)
+            .expect(encode_err_msg);
+        let encoded_integer3 = encode_document_field_type(&DocumentFieldType::Integer, &integer3)
+            .expect(encode_err_msg);
+
+        assert_eq!(encoded_integer1 > encoded_integer2, true);
+        assert_eq!(encoded_integer2 > encoded_integer3, true);
+
+        // Show that zero is smack in the middle
+        let integer1 = Value::Integer(Integer::from(-1));
+        let integer2 = Value::Integer(Integer::from(0));
+        let integer3 = Value::Integer(Integer::from(1));
+
+        let encoded_integer1 = encode_document_field_type(&DocumentFieldType::Integer, &integer1)
+            .expect(encode_err_msg);
+        let encoded_integer2 = encode_document_field_type(&DocumentFieldType::Integer, &integer2)
+            .expect(encode_err_msg);
+        let encoded_integer3 = encode_document_field_type(&DocumentFieldType::Integer, &integer3)
+            .expect(encode_err_msg);
+
+        assert_eq!(integer2 > integer1, true);
+        assert_eq!(integer2 < integer3, true);
+
+        // Test the relationship between positive and negative integers
+        // Since it has been shown that positive integers and negative integers maintain sort order
+        // If the smallest positive number is greater than the largest negative number
+        // then the positive domain is greater than the negative domain
+        // Smallest positive integer is 1 and largest negative integer is -1
+        assert_eq!(integer3 > integer1, true);
     }
 }
