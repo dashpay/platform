@@ -102,7 +102,7 @@ fn encode_integer(val: i64) -> Result<Option<Vec<u8>>, Error> {
     // so positive integers have the high bit and negative integers have the low bit
     // the relative order of elements in each domain is still maintained, as the
     // change was uniform across all elements
-    wtr[0] = wtr[0] ^ 0b1000_0000;
+    wtr[0] ^= 0b1000_0000;
 
     Ok(Some(wtr))
 }
