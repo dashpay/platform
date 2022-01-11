@@ -75,7 +75,13 @@ pub fn encode_document_field_type(
                 Ok(Some(vec![0]))
             }
         }
-        DocumentFieldType::Date => Ok(Some(Vec::new())),
+        DocumentFieldType::Date => {
+            let date_string = value.as_text().ok_or(field_type_match_error)?;
+            let date_as_integer: i64 = date_string
+                .parse()
+                .map_err(|_| Error::CorruptedData(String::from("invalid integer string")))?;
+            encode_integer(date_as_integer)
+        }
         DocumentFieldType::Object => Ok(Some(Vec::new())),
     };
 }
