@@ -10,6 +10,7 @@ pub enum DocumentFieldType {
     Float,
     ByteArray,
     Boolean,
+    Date,
     Object,
 }
 
@@ -19,7 +20,6 @@ pub fn string_to_field_type(field_type_name: String) -> Option<DocumentFieldType
         "string" => Some(DocumentFieldType::String),
         "float" => Some(DocumentFieldType::Float),
         "boolean" => Some(DocumentFieldType::Boolean),
-        // "array" => Some(DocumentFieldType::String), // TODO: Create bytearray type
         "object" => Some(DocumentFieldType::Object),
         _ => None,
     };
@@ -43,17 +43,11 @@ pub fn encode_document_field_type(
             // Direct integer to byte encoding doesn't take into account the signed bit
             // for negative and positive integers
             let value_as_integer = value.as_integer().ok_or(field_type_match_error)?;
-            let value_as_i64: i16 = value_as_integer
+            let value_as_i64: i64 = value_as_integer
                 .try_into()
                 .map_err(|_| Error::CorruptedData(String::from("expected integer value")))?;
 
-            let mut wtr = vec![];
-            wtr.write_i16::<BigEndian>(value_as_i64).unwrap();
-
-            // Flip the sign bit
-            wtr[0] = wtr[0] ^ 0b1000_0000;
-
-            Ok(Some(wtr))
+            encode_integer(value_as_i64)
         }
         DocumentFieldType::Float => {
             let value_as_float = value.as_float().ok_or(field_type_match_error)?;
@@ -81,8 +75,19 @@ pub fn encode_document_field_type(
                 Ok(Some(vec![0]))
             }
         }
+        DocumentFieldType::Date => Ok(Some(Vec::new())),
         DocumentFieldType::Object => Ok(Some(Vec::new())),
     };
+}
+
+fn encode_integer(val: i64) -> Result<Option<Vec<u8>>, Error> {
+    let mut wtr = vec![];
+    wtr.write_i64::<BigEndian>(val).unwrap();
+
+    // Flip the sign bit
+    wtr[0] = wtr[0] ^ 0b1000_0000;
+
+    Ok(Some(wtr))
 }
 
 mod tests {
