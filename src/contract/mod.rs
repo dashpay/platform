@@ -187,8 +187,8 @@ impl DocumentType {
         }
 
         // Add system properties
-        document_properties.insert(String::from("$createdAt"), types::DocumentFieldType::String);
-        document_properties.insert(String::from("$updatedAt"), types::DocumentFieldType::String);
+        document_properties.insert(String::from("$createdAt"), types::DocumentFieldType::Date);
+        document_properties.insert(String::from("$updatedAt"), types::DocumentFieldType::Date);
 
         Ok(DocumentType {
             indices,
