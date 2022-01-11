@@ -177,8 +177,6 @@ async function main() {
     getCoreDefinition(0),
     {
       subscribeToTransactionsWithProofs: wrappedSubscribeToTransactionsWithProofs,
-      // TODO: should we rename tx-filter-stream.js to something different,
-      // having in mind that it now holds subscribeToBlockHeadersWithChainLocks?
       subscribeToBlockHeadersWithChainLocks: wrappedSubscribeToBlockHeadersWithChainLocks,
     },
   );
