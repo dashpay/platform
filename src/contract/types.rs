@@ -1,3 +1,4 @@
+use byteorder::{BigEndian, LittleEndian, WriteBytesExt};
 use ciborium::value::{Integer, Value};
 use grovedb::Error;
 use serde::{Deserialize, Serialize};
@@ -17,20 +18,12 @@ pub fn string_to_field_type(field_type_name: String) -> Option<DocumentFieldType
         "integer" => Some(DocumentFieldType::Integer),
         "string" => Some(DocumentFieldType::String),
         "float" => Some(DocumentFieldType::Float),
+        "boolean" => Some(DocumentFieldType::Boolean),
         // "array" => Some(DocumentFieldType::String), // TODO: Create bytearray type
         "object" => Some(DocumentFieldType::Object),
         _ => None,
     };
 }
-
-// Deserialization is actually separate from encoding
-// Deserialization takes the cbor value and the type then returns the (rust) type we care about
-// this is so we can work with the data
-// Encoding now takes that type and converts it to binary since that a > b == encoding(a) > encoding(b)
-
-// Rust allows you to have multiple implementations for different types
-// Encode should first deserialize then do the actual binary encoding
-//
 
 // Given a field type and a value this function chooses and executes the right encoding method
 pub fn encode_document_field_type(
@@ -47,19 +40,38 @@ pub fn encode_document_field_type(
             Ok(Some(value_as_text.as_bytes().to_vec()))
         }
         DocumentFieldType::Integer => {
+            // Direct integer to byte encoding doesn't take into account the signed bit
+            // for negative and positive integers
             let value_as_integer = value.as_integer().ok_or(field_type_match_error)?;
-            let value_as_u64: u64 = value_as_integer
+            let value_as_i64: i16 = value_as_integer
                 .try_into()
                 .map_err(|_| Error::CorruptedData(String::from("expected integer value")))?;
-            Ok(Some(value_as_u64.to_be_bytes().to_vec()))
+
+            let mut wtr = vec![];
+            wtr.write_i16::<BigEndian>(value_as_i64).unwrap();
+
+            // Flip the sign bit
+            wtr[0] = wtr[0] ^ 0b1000_0000;
+
+            Ok(Some(wtr))
         }
         DocumentFieldType::Float => {
             let value_as_float = value.as_float().ok_or(field_type_match_error)?;
             Ok(Some(value_as_float.to_be_bytes().to_vec()))
         }
         DocumentFieldType::ByteArray => {
-            let value_as_bytes = value.as_bytes().ok_or(field_type_match_error)?;
-            Ok(Some(value_as_bytes.to_vec()))
+            // Byte array could either be raw bytes or encoded as a base64 string
+            if value.is_text() {
+                // Decode base64 string
+                let base64_value = value.as_text().expect("confirmed as text");
+                let value_as_bytes = base64::decode(base64_value).map_err(|_| {
+                    Error::CorruptedData(String::from("bytearray: invalid base64 value"))
+                })?;
+                Ok(Some(value_as_bytes))
+            } else {
+                let value_as_bytes = value.as_bytes().ok_or(field_type_match_error)?;
+                Ok(Some(value_as_bytes.clone()))
+            }
         }
         DocumentFieldType::Boolean => {
             let value_as_boolean = value.as_bool().ok_or(field_type_match_error)?;
@@ -113,9 +125,10 @@ mod tests {
         assert_eq!(encoded_float3 > encoded_float1, true);
 
         // Integer encoding
-        let integer1 = Value::Integer(Integer::from(50));
-        let integer2 = Value::Integer(Integer::from(60));
+        let integer1 = Value::Integer(Integer::from(1));
+        let integer2 = Value::Integer(Integer::from(600));
         let integer3 = Value::Integer(Integer::from(60));
+        let integer4 = Value::Integer(Integer::from(-10));
 
         let encoded_integer1 = encode_document_field_type(&DocumentFieldType::Integer, &integer1)
             .expect("should encode: valid parameters");
@@ -123,8 +136,13 @@ mod tests {
             .expect("should encode: valid parameters");
         let encoded_integer3 = encode_document_field_type(&DocumentFieldType::Integer, &integer3)
             .expect("should encode: valid parameters");
+        let encoded_integer4 = encode_document_field_type(&DocumentFieldType::Integer, &integer4)
+            .expect("should encode: valid parameters");
+
+        dbg!(&encoded_integer2);
+        dbg!(&encoded_integer4);
 
         assert_eq!(encoded_integer1 < encoded_integer2, true);
-        assert_eq!(encoded_integer2 == encoded_integer3, true);
+        assert_eq!(encoded_integer2 > encoded_integer4, true);
     }
 }
