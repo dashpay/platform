@@ -1264,14 +1264,14 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@dashevo/abci@github:dashevo/js-abci#init-chain-chain-lock-height":
+"@dashevo/abci@github:dashevo/js-abci#v0.22-dev":
   version: 0.20.0
-  resolution: "@dashevo/abci@https://github.com/dashevo/js-abci.git#commit=c4e58ce017626b6db6650a565f9681595039f6f9"
+  resolution: "@dashevo/abci@https://github.com/dashevo/js-abci.git#commit=8806ff71cdac918f79920b1373824653f15698c5"
   dependencies:
     bl: ^1.2.3
     protobufjs: "github:jawid-h/protobuf.js#fix/buffer-conversion"
     protocol-buffers-encodings: ^1.1.0
-  checksum: db0c3050e071e0957007552bec524d0b33c8e1fab53326b93b863a4a77d5435e914d38ef1da426b6b69b84c1ccaf2c8b756d9191d371f5c85352c44ea1d8002d
+  checksum: 1c8ba91935e9fb99d4e6ad234b299e4956f1486bb00ede8c06ecb5b38341b2042d7fa1a001a58441d7c98d42c14345b63108c607050f0dddc0fb19a64a46cb9f
   languageName: node
   linkType: hard
 
@@ -1533,7 +1533,7 @@ __metadata:
   version: 0.0.0-use.local
   resolution: "@dashevo/drive@workspace:packages/js-drive"
   dependencies:
-    "@dashevo/abci": "github:dashevo/js-abci#init-chain-chain-lock-height"
+    "@dashevo/abci": "github:dashevo/js-abci#v0.22-dev"
     "@dashevo/dapi-grpc": "workspace:~"
     "@dashevo/dashcore-lib": ~0.19.28
     "@dashevo/dashd-rpc": ^2.3.1
