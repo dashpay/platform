@@ -14,7 +14,7 @@ function createMasternodeIdentityFactory(dpp, stateRepository) {
    * @param {number} pubKeyType
    * @return {Promise<void>}
    */
-  async function createMasternodeIdentity(identityId, pubKeyType, pubKeyData) {
+  async function createMasternodeIdentity(identityId, pubKeyData, pubKeyType) {
     const identity = new Identity({
       protocolVersion: dpp.getProtocolVersion(),
       id: identityId,
