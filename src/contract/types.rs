@@ -48,7 +48,10 @@ pub fn encode_document_field_type(
         }
         DocumentFieldType::Float => {
             let value_as_float = value.as_float().ok_or(field_type_match_error)?;
-            Ok(Some(value_as_float.to_be_bytes().to_vec()))
+            let value_as_f64 = value_as_float
+                .try_into()
+                .map_err(|_| Error::CorruptedData(String::from("expected float value")))?;
+            encode_float(value_as_f64)
         }
         DocumentFieldType::ByteArray => {
             // Byte array could either be raw bytes or encoded as a base64 string
@@ -102,6 +105,30 @@ fn encode_integer(val: i64) -> Result<Option<Vec<u8>>, Error> {
     // so positive integers have the high bit and negative integers have the low bit
     // the relative order of elements in each domain is still maintained, as the
     // change was uniform across all elements
+    wtr[0] ^= 0b1000_0000;
+
+    Ok(Some(wtr))
+}
+
+fn encode_float(val: f64) -> Result<Option<Vec<u8>>, Error> {
+    // Floats are represented based on the  IEEE 754-2008 standard
+    // [sign bit] [biased exponent] [mantissa]
+    // when comparing floats, the most impactful section is the sign bit
+    // positive domain is greater then negative domain all other sections don't matter
+    // next is the exponent (this determines the range of a number, numbers in the 100s range
+    // are greater than numbers in the 10s range)
+    // finally if two numbers are in the same range, then the mantissa would be the determining
+    // factor.
+    // The standard representation is already setup in this order.
+    // Only the sign bit needs to be flipped to so positive domain is before the negative
+    // domain.
+
+    // Encode in big endian form, so most significant bits are compared first
+    let mut wtr = vec![];
+    wtr.write_f64::<BigEndian>(val).unwrap();
+
+    // Flip the sign bit
+    // to place the positive domain above the negative domain
     wtr[0] ^= 0b1000_0000;
 
     Ok(Some(wtr))
