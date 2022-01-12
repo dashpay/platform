@@ -35,18 +35,6 @@ function registerFeatureFlagFactory(
    * @return {Promise<void>}
    */
   async function registerFeatureFlag(flagName, dataContract, ownerId) {
-    await blockExecutionStoreTransactions.start();
-
-    const previousBlockExecutionStoreTransactions = await cloneToPreviousStoreTransactions(
-      blockExecutionStoreTransactions,
-    );
-
-    container.register({
-      previousBlockExecutionStoreTransactions: asValue(previousBlockExecutionStoreTransactions),
-    });
-
-    await blockExecutionStoreTransactions.commit();
-
     const cumulativeFeesDocument = await dpp.document.create(
       dataContract,
       ownerId,
@@ -60,10 +48,6 @@ function registerFeatureFlagFactory(
     cumulativeFeesDocument.id = cumulativeFeesFeatureFlagDocumentId;
     cumulativeFeesDocument.entropy = documentEntropy;
     cumulativeFeesDocument.createdAt = documentCreatedAt;
-
-    console.log('Storing feature flag');
-    console.log(cumulativeFeesDocument.toBuffer().toString('hex'));
-    console.dir(cumulativeFeesDocument.toJSON());
 
     await documentRepository.store(cumulativeFeesDocument);
     await documentRepository.store(cumulativeFeesDocument);

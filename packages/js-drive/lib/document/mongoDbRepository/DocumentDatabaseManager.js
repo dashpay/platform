@@ -18,6 +18,8 @@ class DocumentDatabaseManager {
    * Create a database for @dataContract documents
    *
    * @param {DataContract} dataContract
+   * @param {{ isTransactional: boolean }} [runtimeOptions={}]
+   *
    * @returns {Promise<*[]>}
    */
   async create(dataContract, runtimeOptions = {}) {

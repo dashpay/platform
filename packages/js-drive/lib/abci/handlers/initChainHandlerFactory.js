@@ -6,6 +6,8 @@ const {
   },
 } = require('@dashevo/abci/types');
 
+const { asValue } = require('awilix');
+
 /**
  * Init Chain ABCI handler
  *
@@ -36,6 +38,9 @@ const {
  * @param {Identifier} dashpayOwnerId
  * @param {PublicKey} dashpayOwnerPublicKey
  * @param {Object} dashpayDocuments
+ * @param {BlockExecutionStoreTransactions} blockExecutionStoreTransactions
+ * @param {cloneToPreviousStoreTransactions} cloneToPreviousStoreTransactions
+ * @param {AwilixContainer} container
  *
  * @return {initChainHandler}
  */
@@ -67,6 +72,9 @@ function initChainHandlerFactory(
   dashpayOwnerId,
   dashpayOwnerPublicKey,
   dashpayDocuments,
+  blockExecutionStoreTransactions,
+  cloneToPreviousStoreTransactions,
+  container,
 ) {
   /**
    * @typedef initChainHandler
@@ -83,6 +91,18 @@ function initChainHandlerFactory(
     contextLogger.debug('InitChain ABCI method requested');
     contextLogger.trace({ abciRequest: request });
 
+    await blockExecutionStoreTransactions.start();
+
+    const previousBlockExecutionStoreTransactions = await cloneToPreviousStoreTransactions(
+      blockExecutionStoreTransactions,
+    );
+
+    container.register({
+      previousBlockExecutionStoreTransactions: asValue(previousBlockExecutionStoreTransactions),
+    });
+
+    await blockExecutionStoreTransactions.commit();
+
     contextLogger.debug('Registering system data contract: feature flags');
     contextLogger.trace({
       ownerId: featureFlagsOwnerId,
@@ -98,7 +118,12 @@ function initChainHandlerFactory(
       featureFlagsDocuments,
     );
 
-    await documentDatabaseManager.create(featureFlagContract, { isTransactional: false });
+    await documentDatabaseManager.create(
+      featureFlagContract, { isTransactional: false },
+    );
+    await previousDocumentDatabaseManager.create(
+      featureFlagContract, { isTransactional: false },
+    );
 
     await registerFeatureFlag('fixCumulativeFeesBug', featureFlagContract, featureFlagsOwnerId);
 
@@ -117,7 +142,12 @@ function initChainHandlerFactory(
       dpnsDocuments,
     );
 
-    await documentDatabaseManager.create(dpnsContract, { isTransactional: false });
+    await documentDatabaseManager.create(
+      dpnsContract, { isTransactional: false },
+    );
+    await previousDocumentDatabaseManager.create(
+      dpnsContract, { isTransactional: false },
+    );
 
     await registerTopLevelDomain('dash', dpnsContract, dpnsOwnerId);
 
@@ -136,7 +166,14 @@ function initChainHandlerFactory(
       masternodeRewardSharesDocuments,
     );
 
-    await documentDatabaseManager.create(masternodeRewardSharesContract, { isTransactional: false });
+    await documentDatabaseManager.create(
+      masternodeRewardSharesContract,
+      { isTransactional: false },
+    );
+    await previousDocumentDatabaseManager.create(
+      masternodeRewardSharesContract,
+      { isTransactional: false },
+    );
 
     contextLogger.debug('Registering system data contract: dashpay');
     contextLogger.trace({
@@ -153,7 +190,12 @@ function initChainHandlerFactory(
       dashpayDocuments,
     );
 
-    await documentDatabaseManager.create(dashpayContract, { isTransactional: false });
+    await documentDatabaseManager.create(
+      dashpayContract, { isTransactional: false },
+    );
+    await previousDocumentDatabaseManager.create(
+      dashpayContract, { isTransactional: false },
+    );
 
     await updateSimplifiedMasternodeList(initialCoreChainLockedHeight, {
       logger: contextLogger,

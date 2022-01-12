@@ -20,9 +20,6 @@ function registerTopLevelDomainFactory(
   previousDocumentRepository,
   rootTree,
   previousRootTree,
-  blockExecutionStoreTransactions,
-  cloneToPreviousStoreTransactions,
-  container,
   documentEntropy,
   documentCreatedAt,
   dashPreorderDocumentId,
@@ -39,18 +36,6 @@ function registerTopLevelDomainFactory(
    * @return {Promise<void>}
    */
   async function registerTopLevelDomain(name, dataContract, ownerId) {
-    await blockExecutionStoreTransactions.start();
-
-    const previousBlockExecutionStoreTransactions = await cloneToPreviousStoreTransactions(
-      blockExecutionStoreTransactions,
-    );
-
-    container.register({
-      previousBlockExecutionStoreTransactions: asValue(previousBlockExecutionStoreTransactions),
-    });
-
-    await blockExecutionStoreTransactions.commit();
-
     const nameLabels = name.split('.');
 
     const normalizedParentDomainName = nameLabels
