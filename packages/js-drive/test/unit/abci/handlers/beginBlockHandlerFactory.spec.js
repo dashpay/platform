@@ -32,7 +32,7 @@ describe('beginBlockHandlerFactory', () => {
   let lastCommitInfo;
   let dppMock;
   let transactionalDppMock;
-  let updateMasternodeIdentitiesMock;
+  let synchronizeMasternodeIdentitiesMock;
 
   beforeEach(function beforeEach() {
     protocolVersion = Long.fromInt(1);
@@ -53,7 +53,7 @@ describe('beginBlockHandlerFactory', () => {
 
     updateSimplifiedMasternodeListMock = this.sinon.stub().resolves(false);
     waitForChainLockedHeightMock = this.sinon.stub();
-    updateMasternodeIdentitiesMock = this.sinon.stub();
+    synchronizeMasternodeIdentitiesMock = this.sinon.stub();
 
     beginBlockHandler = beginBlockHandlerFactory(
       blockExecutionDBTransactionsMock,
@@ -64,7 +64,7 @@ describe('beginBlockHandlerFactory', () => {
       transactionalDppMock,
       updateSimplifiedMasternodeListMock,
       waitForChainLockedHeightMock,
-      updateMasternodeIdentitiesMock,
+      synchronizeMasternodeIdentitiesMock,
       loggerMock,
     );
 
@@ -120,7 +120,7 @@ describe('beginBlockHandlerFactory', () => {
       protocolVersion.toNumber(),
     );
 
-    expect(updateMasternodeIdentitiesMock).to.have.been.calledOnceWithExactly(
+    expect(synchronizeMasternodeIdentitiesMock).to.have.been.calledOnceWithExactly(
       coreChainLockedHeight,
     );
   });
@@ -175,6 +175,6 @@ describe('beginBlockHandlerFactory', () => {
 
     expect(waitForChainLockedHeightMock).to.be.calledOnceWithExactly(coreChainLockedHeight);
     expect(blockExecutionDBTransactionsMock.abort).to.be.calledOnce();
-    expect(updateMasternodeIdentitiesMock).to.have.not.been.called();
+    expect(synchronizeMasternodeIdentitiesMock).to.have.not.been.called();
   });
 });

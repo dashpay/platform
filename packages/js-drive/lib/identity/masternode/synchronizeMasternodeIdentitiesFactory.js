@@ -11,9 +11,9 @@ const documentsBatchSchema = require('@dashevo/dpp/schema/document/stateTransiti
  * @param {createMasternodeIdentity} createMasternodeIdentity
  * @param {SimplifiedMasternodeList} simplifiedMasternodeList
  * @param {DataContractStoreRepository} dataContractRepository
- * @return {updateMasternodeIdentities}
+ * @return {synchronizeMasternodeIdentities}
  */
-function updateMasternodeIdentitiesFactory(
+function synchronizeMasternodeIdentitiesFactory(
   transactionalDpp,
   stateRepository,
   createMasternodeIdentity,
@@ -171,13 +171,11 @@ function updateMasternodeIdentitiesFactory(
   }
 
   /**
-   * @typedef updateMasternodeIdentities
+   * @typedef synchronizeMasternodeIdentities
    * @param {number} coreHeight
    * @return Promise<void>
    */
-  async function updateMasternodeIdentities( // TODO: Rename to synchronizeMasternodeIdentities
-    coreHeight,
-  ) {
+  async function synchronizeMasternodeIdentities(coreHeight) {
     let documentsToCreate = [];
     let documentsToDelete = [];
 
@@ -278,7 +276,7 @@ function updateMasternodeIdentitiesFactory(
     );
   }
 
-  return updateMasternodeIdentities;
+  return synchronizeMasternodeIdentities;
 }
 
-module.exports = updateMasternodeIdentitiesFactory;
+module.exports = synchronizeMasternodeIdentitiesFactory;

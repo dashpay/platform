@@ -20,7 +20,7 @@ describe('initChainHandlerFactory', () => {
   let createValidatorSetUpdateMock;
   let loggerMock;
   let validatorSetUpdate;
-  let updateMasternodeIdentitiesMock;
+  let synchronizeMasternodeIdentitiesMock;
 
   beforeEach(function beforeEach() {
     initialCoreChainLockedHeight = 1;
@@ -38,7 +38,7 @@ describe('initChainHandlerFactory', () => {
     validatorSetUpdate = new ValidatorSetUpdate();
 
     createValidatorSetUpdateMock = this.sinon.stub().returns(validatorSetUpdate);
-    updateMasternodeIdentitiesMock = this.sinon.stub();
+    synchronizeMasternodeIdentitiesMock = this.sinon.stub();
 
     loggerMock = new LoggerMock(this.sinon);
 
@@ -47,7 +47,7 @@ describe('initChainHandlerFactory', () => {
       initialCoreChainLockedHeight,
       validatorSetMock,
       createValidatorSetUpdateMock,
-      updateMasternodeIdentitiesMock,
+      synchronizeMasternodeIdentitiesMock,
       loggerMock,
     );
   });
@@ -77,7 +77,7 @@ describe('initChainHandlerFactory', () => {
 
     expect(createValidatorSetUpdateMock).to.be.calledOnceWithExactly(validatorSetMock);
 
-    expect(updateMasternodeIdentitiesMock).to.be.calledOnceWithExactly(
+    expect(synchronizeMasternodeIdentitiesMock).to.be.calledOnceWithExactly(
       initialCoreChainLockedHeight,
     );
   });

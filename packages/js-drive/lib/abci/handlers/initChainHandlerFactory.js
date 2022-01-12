@@ -13,7 +13,7 @@ const {
  * @param {number} initialCoreChainLockedHeight
  * @param {ValidatorSet} validatorSet
  * @param {createValidatorSetUpdate} createValidatorSetUpdate
- * @param {updateMasternodeIdentities} updateMasternodeIdentities
+ * @param {synchronizeMasternodeIdentities} synchronizeMasternodeIdentities
  * @param {BaseLogger} logger
  *
  * @return {initChainHandler}
@@ -23,7 +23,7 @@ function initChainHandlerFactory(
   initialCoreChainLockedHeight,
   validatorSet,
   createValidatorSetUpdate,
-  updateMasternodeIdentities,
+  synchronizeMasternodeIdentities,
   logger,
 ) {
   /**
@@ -45,7 +45,7 @@ function initChainHandlerFactory(
       logger: contextLogger,
     });
 
-    await updateMasternodeIdentities(initialCoreChainLockedHeight);
+    await synchronizeMasternodeIdentities(initialCoreChainLockedHeight);
 
     contextLogger.info(`Init ${request.chainId} chain on block #${request.initialHeight.toString()}`);
 
