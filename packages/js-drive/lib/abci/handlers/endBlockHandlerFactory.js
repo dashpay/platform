@@ -16,8 +16,6 @@ const featureFlagTypes = require('@dashevo/feature-flags-contract/lib/featureFla
  * Begin block ABCI handler
  *
  * @param {BlockExecutionContext} blockExecutionContext
- * @param {Identifier} dpnsContractId
- * @param {Identifier} dashpayContractId
  * @param {LatestCoreChainLock} latestCoreChainLock
  * @param {ValidatorSet} validatorSet
  * @param {createValidatorSetUpdate} createValidatorSetUpdate
@@ -29,8 +27,6 @@ const featureFlagTypes = require('@dashevo/feature-flags-contract/lib/featureFla
  */
 function endBlockHandlerFactory(
   blockExecutionContext,
-  dpnsContractId,
-  dashpayContractId,
   latestCoreChainLock,
   validatorSet,
   createValidatorSetUpdate,

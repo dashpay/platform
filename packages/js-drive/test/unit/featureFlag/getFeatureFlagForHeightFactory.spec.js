@@ -26,7 +26,6 @@ describe('getFeatureFlagForHeightFactory', () => {
 
     getFeatureFlagForHeight = getFeatureFlagForHeightFactory(
       featureFlagDataContractId,
-      featureFlagDataContractBlockHeight,
       fetchDocumentsMock,
     );
   });

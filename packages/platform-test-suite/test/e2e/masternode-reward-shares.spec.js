@@ -1,6 +1,5 @@
 const {
-  contractId: masternodeRewardSharesContracId,
-  ownerId: masternodeRewardSharesOwnerId,
+  contractId: masternodeRewardSharesContractId,
 } = require('@dashevo/masternode-reward-shares-contract/lib/systemIds');
 
 const Identifier = require('@dashevo/dpp/lib/identifier/Identifier');
@@ -29,7 +28,7 @@ describe('Masternode Reward Shares', () => {
     client = await createClientWithFundedWallet();
 
     client.getApps().get('masternodeRewardShares').contractId = Identifier.from(
-      masternodeRewardSharesContracId,
+      masternodeRewardSharesContractId,
     );
   });
 
@@ -42,13 +41,13 @@ describe('Masternode Reward Shares', () => {
   describe('Data Contract', () => {
     it('should exists', async () => {
       const createdDataContract = await client.platform.contracts.get(
-        masternodeRewardSharesContracId,
+        masternodeRewardSharesContractId,
       );
 
       expect(createdDataContract).to.exist();
 
       expect(createdDataContract.getId().toString()).to.equal(
-        masternodeRewardSharesContracId,
+        masternodeRewardSharesContractId,
       );
     });
   });

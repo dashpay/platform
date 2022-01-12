@@ -11,7 +11,6 @@ const { StateTransitionBroadcastError } = require('dash/build/src/errors/StateTr
 const InvalidInstantAssetLockProofSignatureError = require('@dashevo/dpp/lib/errors/consensus/basic/identity/InvalidInstantAssetLockProofSignatureError');
 const IdentityAssetLockTransactionOutPointAlreadyExistsError = require('@dashevo/dpp/lib/errors/consensus/basic/identity/IdentityAssetLockTransactionOutPointAlreadyExistsError');
 const BalanceIsNotEnoughError = require('@dashevo/dpp/lib/errors/consensus/fee/BalanceIsNotEnoughError');
-const IdentityPublicKey = require('@dashevo/dpp/lib/identity/IdentityPublicKey');
 
 const createClientWithFundedWallet = require('../../../lib/test/createClientWithFundedWallet');
 const wait = require('../../../lib/wait');
@@ -22,7 +21,6 @@ describe('Platform', () => {
     let client;
     let identity;
     let walletAccount;
-    let walletPublicKey;
 
     before(async () => {
       dpp = new DashPlatformProtocol();
@@ -30,9 +28,6 @@ describe('Platform', () => {
 
       client = await createClientWithFundedWallet();
       walletAccount = await client.getWalletAccount();
-      ({
-        publicKey: walletPublicKey,
-      } = walletAccount.identities.getIdentityHDKeyByIndex(0, 0));
     });
 
     after(async () => {

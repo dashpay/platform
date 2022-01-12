@@ -10,7 +10,6 @@ describe('getLatestFeatureFlagFactory', () => {
   let featureFlagDataContractId;
   let fetchDocumentsMock;
   let getLatestFeatureFlag;
-  let featureFlagDataContractBlockHeight;
   let document;
 
   beforeEach(function beforeEach() {
@@ -23,11 +22,8 @@ describe('getLatestFeatureFlagFactory', () => {
       document,
     ]);
 
-    featureFlagDataContractBlockHeight = new Long(12);
-
     getLatestFeatureFlag = getLatestFeatureFlagFactory(
       featureFlagDataContractId,
-      featureFlagDataContractBlockHeight,
       fetchDocumentsMock,
     );
   });

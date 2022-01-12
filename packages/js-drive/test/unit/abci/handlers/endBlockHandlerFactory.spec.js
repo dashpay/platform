@@ -92,20 +92,12 @@ describe('endBlockHandlerFactory', () => {
 
     endBlockHandler = endBlockHandlerFactory(
       blockExecutionContextMock,
-      dpnsContractBlockHeight,
-      dpnsContractId,
-      dashpayContractBlockHeight,
-      dashpayContractId,
       latestCoreChainLockMock,
       validatorSetMock,
       createValidatorSetUpdateMock,
       loggerMock,
       getFeatureFlagForHeightMock,
       blockExecutionStoreTransactionsMock,
-      featureFlagDataContractId,
-      featureFlagDataContractBlockHeight,
-      masternodeRewardSharesContractId,
-      masternodeRewardSharesContractBlockHeight,
     );
 
     requestMock = {
