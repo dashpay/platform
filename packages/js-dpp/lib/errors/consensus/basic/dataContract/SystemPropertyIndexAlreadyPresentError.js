@@ -7,7 +7,7 @@ class SystemPropertyIndexAlreadyPresentError extends AbstractIndexError {
    * @param {string} propertyName
    */
   constructor(documentType, indexDefinition, propertyName) {
-    const message = `Single-property index on ${propertyName} system property is already indexed for ${documentType} document.`;
+    const message = `System property ${propertyName} is already indexed and can't be used in other indices for ${documentType} document.`;
 
     super(
       message,

@@ -105,7 +105,6 @@ describe('infoHandlerFactory', () => {
       appVersion: protocolVersion,
       lastBlockHeight,
       lastBlockAppHash,
-      lastCoreChainLockedHeight,
     });
 
     expect(updateSimplifiedMasternodeListMock).to.be.calledOnceWithExactly(

@@ -54,10 +54,6 @@ const PublicKeyToIdentityIdStoreRootTreeLeaf = require(
 const DataContractStoreRepository = require('./dataContract/DataContractStoreRepository');
 const DataContractsStoreRootTreeLeaf = require('./dataContract/DataContractsStoreRootTreeLeaf');
 
-const findNotIndexedOrderByFields = require('./document/query/findNotIndexedOrderByFields');
-const findNotIndexedFields = require('./document/query/findNotIndexedFields');
-const getIndexedFieldsFromDocumentSchema = require('./document/query/getIndexedFieldsFromDocumentSchema');
-
 const DocumentsStoreRootTreeLeaf = require('./document/DocumentsStoreRootTreeLeaf');
 const DocumentStoreRepository = require('./document/DocumentStoreRepository');
 const DocumentIndexedStoreRepository = require('./document/DocumentIndexedStoreRepository');
@@ -717,9 +713,6 @@ function createDIContainer(options) {
     )).singleton(),
 
     findConflictingConditions: asValue(findConflictingConditions),
-    getIndexedFieldsFromDocumentSchema: asValue(getIndexedFieldsFromDocumentSchema),
-    findNotIndexedFields: asValue(findNotIndexedFields),
-    findNotIndexedOrderByFields: asValue(findNotIndexedOrderByFields),
     convertWhereToMongoDbQuery: asValue(convertWhereToMongoDbQuery),
     validateQuery: asFunction(validateQueryFactory).singleton(),
 

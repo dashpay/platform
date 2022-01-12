@@ -1,6 +1,7 @@
 /**
  * Get user property definition
  *
+ * @typeof getPropertyDefinitionByPath
  * @param {Object} documentDefinition
  * @param {string} path
  *
