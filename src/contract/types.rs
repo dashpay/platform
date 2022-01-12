@@ -127,9 +127,14 @@ fn encode_float(val: f64) -> Result<Option<Vec<u8>>, Error> {
     let mut wtr = vec![];
     wtr.write_f64::<BigEndian>(val).unwrap();
 
-    // Flip the sign bit
-    // to place the positive domain above the negative domain
-    wtr[0] ^= 0b1000_0000;
+    // For positive numbers, the greater the exponent the bigger the number
+    if val < 0.0 {
+        // Flip all the bits
+        wtr = wtr.iter().map(|byte| !byte).collect();
+    } else {
+        // Just flip the sign bit
+        wtr[0] ^= 0b1000_0000;
+    }
 
     Ok(Some(wtr))
 }
@@ -201,5 +206,81 @@ mod tests {
         // then the positive domain is greater than the negative domain
         // Smallest positive integer is 1 and largest negative integer is -1
         assert_eq!(encoded_integer3 > encoded_integer1, true);
+
+        // Float encoding
+        // Test approach
+        // Test positive domain
+        // Test negative domain
+        // Test against 0
+        // Test relationship between positive and negative domain
+
+        // Show that the domain of positive floats maintains sort order after encoding
+        let float1 = Value::Float(1.0);
+        let float2 = Value::Float(23.65);
+        let float3 = Value::Float(1394.584);
+        let float4 = Value::Float(f64::MAX);
+
+        let encoded_float1 =
+            encode_document_field_type(&DocumentFieldType::Float, &float1).expect(encode_err_msg);
+        let encoded_float2 =
+            encode_document_field_type(&DocumentFieldType::Float, &float2).expect(encode_err_msg);
+        let encoded_float3 =
+            encode_document_field_type(&DocumentFieldType::Float, &float3).expect(encode_err_msg);
+        let encoded_float4 =
+            encode_document_field_type(&DocumentFieldType::Float, &float4).expect(encode_err_msg);
+
+        assert_eq!(encoded_float1 < encoded_float2, true);
+        assert_eq!(encoded_float2 < encoded_float3, true);
+        assert_eq!(encoded_float3 < encoded_float4, true);
+
+        // Show that the domain of negative floats maintains sort order after encoding
+        let float1 = Value::Float(-0.5);
+        let float2 = Value::Float(-23.65);
+        let float3 = Value::Float(-1394.584);
+        let float4 = Value::Float(f64::MIN);
+
+        let encoded_float1 =
+            encode_document_field_type(&DocumentFieldType::Float, &float1).expect(encode_err_msg);
+        let encoded_float2 =
+            encode_document_field_type(&DocumentFieldType::Float, &float2).expect(encode_err_msg);
+        let encoded_float3 =
+            encode_document_field_type(&DocumentFieldType::Float, &float3).expect(encode_err_msg);
+        let encoded_float4 =
+            encode_document_field_type(&DocumentFieldType::Float, &float4).expect(encode_err_msg);
+
+        assert_eq!(encoded_float1 > encoded_float2, true);
+        assert_eq!(encoded_float2 > encoded_float3, true);
+        assert_eq!(encoded_float3 > encoded_float4, true);
+
+        // Show that 0 is in the middle
+        let float1 = Value::Float(-1.0);
+        let float2 = Value::Float(0.0);
+        let float3 = Value::Float(1.0);
+
+        let encoded_float1 =
+            encode_document_field_type(&DocumentFieldType::Float, &float1).expect(encode_err_msg);
+        let encoded_float2 =
+            encode_document_field_type(&DocumentFieldType::Float, &float2).expect(encode_err_msg);
+        let encoded_float3 =
+            encode_document_field_type(&DocumentFieldType::Float, &float3).expect(encode_err_msg);
+
+        assert_eq!(encoded_float1 < encoded_float2, true);
+        assert_eq!(encoded_float2 < encoded_float3, true);
+
+        // Test the relationship between positive and negative integers
+        // Since it has been shown that positive integers and negative integers maintain sort order
+        // If the smallest positive number is greater than the largest negative number
+        // then the positive domain is greater than the negative domain
+        let smallest_positive_float = Value::Float(0.0 + f64::EPSILON);
+        let largest_negative_float = Value::Float(0.0 - f64::EPSILON);
+
+        let encoded_float1 =
+            encode_document_field_type(&DocumentFieldType::Float, &smallest_positive_float)
+                .expect(encode_err_msg);
+        let encoded_float2 =
+            encode_document_field_type(&DocumentFieldType::Float, &largest_negative_float)
+                .expect(encode_err_msg);
+
+        assert_eq!(smallest_positive_float > largest_negative_float, true);
     }
 }
