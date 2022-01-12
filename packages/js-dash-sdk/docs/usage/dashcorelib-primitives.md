@@ -93,7 +93,6 @@ In Dash, transaction have in their inputs and outputs some script, very simple p
 A valid Transaction is a transaction which output script are evaluated as valid.  
 
 Some operations of this language, such as OP_RETURN has been used to store hashes and B64 data on the payment chain.  
-Learn more on our walkthrough [Transaction script manipulation with the OP_RETURN example](/docs/walkthroughs/op_return/or_return.md)
 
 `import { Script } from 'dash'`
 
