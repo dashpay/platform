@@ -229,6 +229,7 @@ mod tests {
         let float2 = Value::Float(23.65);
         let float3 = Value::Float(1394.584);
         let float4 = Value::Float(f64::MAX);
+        let float5 = Value::Float(f64::INFINITY);
 
         let encoded_float1 =
             encode_document_field_type(&DocumentFieldType::Float, &float1).expect(encode_err_msg);
@@ -238,16 +239,20 @@ mod tests {
             encode_document_field_type(&DocumentFieldType::Float, &float3).expect(encode_err_msg);
         let encoded_float4 =
             encode_document_field_type(&DocumentFieldType::Float, &float4).expect(encode_err_msg);
+        let encoded_float5 =
+            encode_document_field_type(&DocumentFieldType::Float, &float5).expect(encode_err_msg);
 
         assert_eq!(encoded_float1 < encoded_float2, true);
         assert_eq!(encoded_float2 < encoded_float3, true);
         assert_eq!(encoded_float3 < encoded_float4, true);
+        assert_eq!(encoded_float4 < encoded_float5, true);
 
         // Show that the domain of negative floats maintains sort order after encoding
         let float1 = Value::Float(-0.5);
         let float2 = Value::Float(-23.65);
         let float3 = Value::Float(-1394.584);
         let float4 = Value::Float(f64::MIN);
+        let float5 = Value::Float(f64::NEG_INFINITY);
 
         let encoded_float1 =
             encode_document_field_type(&DocumentFieldType::Float, &float1).expect(encode_err_msg);
@@ -257,10 +262,13 @@ mod tests {
             encode_document_field_type(&DocumentFieldType::Float, &float3).expect(encode_err_msg);
         let encoded_float4 =
             encode_document_field_type(&DocumentFieldType::Float, &float4).expect(encode_err_msg);
+        let encoded_float5 =
+            encode_document_field_type(&DocumentFieldType::Float, &float5).expect(encode_err_msg);
 
         assert_eq!(encoded_float1 > encoded_float2, true);
         assert_eq!(encoded_float2 > encoded_float3, true);
         assert_eq!(encoded_float3 > encoded_float4, true);
+        assert_eq!(encoded_float4 > encoded_float5, true);
 
         // Show that 0 is in the middle
         // EPSILON: This is the difference between 1.0 and the next larger representable number.
