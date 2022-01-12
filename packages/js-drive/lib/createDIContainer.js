@@ -179,10 +179,10 @@ const registerFeatureFlagFactory = require('./registerFeatureFlagFactory');
  * @param {string} options.CORE_ZMQ_CONNECTION_RETRIES
  * @param {string} options.PREVIOUS_BLOCK_EXECUTION_TRANSACTIONS_FILE
  * @param {string} options.NETWORK
- * @param {string} options.DPNS_CONTRACT_OWNER_PUBLIC_KEY
- * @param {string} options.DASHPAY_CONTRACT_OWNER_PUBLIC_KEY
- * @param {string} options.FEATURE_FLAGS_CONTRACT_OWNER_PUBLIC_KEY
- * @param {string} options.MASTERNODE_REWARD_SHARES_CONTRACT_OWNER_PUBLIC_KEY
+ * @param {string} options.DPNS_MASTER_PUBLIC_KEY
+ * @param {string} options.DASHPAY_MASTER_PUBLIC_KEY
+ * @param {string} options.FEATURE_FLAGS_MASTER_PUBLIC_KEY
+ * @param {string} options.MASTERNODE_REWARD_SHARES_MASTER_PUBLIC_KEY
  * @param {string} options.INITIAL_CORE_CHAINLOCKED_HEIGHT
  * @param {string} options.VALIDATOR_SET_LLMQ_TYPE
  * @param {string} options.LOG_STDOUT_LEVEL
@@ -197,20 +197,20 @@ const registerFeatureFlagFactory = require('./registerFeatureFlagFactory');
  * @return {AwilixContainer}
  */
 function createDIContainer(options) {
-  if (!options.DPNS_CONTRACT_OWNER_PUBLIC_KEY) {
-    throw new Error('DPNS_CONTRACT_OWNER_PUBLIC_KEY must be set');
+  if (!options.DPNS_MASTER_PUBLIC_KEY) {
+    throw new Error('DPNS_MASTER_PUBLIC_KEY must be set');
   }
 
-  if (!options.DASHPAY_CONTRACT_OWNER_PUBLIC_KEY) {
-    throw new Error('DASHPAY_CONTRACT_OWNER_PUBLIC_KEY must be set');
+  if (!options.DASHPAY_MASTER_PUBLIC_KEY) {
+    throw new Error('DASHPAY_MASTER_PUBLIC_KEY must be set');
   }
 
-  if (!options.FEATURE_FLAGS_CONTRACT_OWNER_PUBLIC_KEY) {
-    throw new Error('FEATURE_FLAGS_CONTRACT_OWNER_PUBLIC_KEY must be set');
+  if (!options.FEATURE_FLAGS_MASTER_PUBLIC_KEY) {
+    throw new Error('FEATURE_FLAGS_MASTER_PUBLIC_KEY must be set');
   }
 
-  if (!options.MASTERNODE_REWARD_SHARES_CONTRACT_OWNER_PUBLIC_KEY) {
-    throw new Error('MASTERNODE_REWARD_SHARES_CONTRACT_OWNER_PUBLIC_KEY must be set');
+  if (!options.MASTERNODE_REWARD_SHARES_MASTER_PUBLIC_KEY) {
+    throw new Error('MASTERNODE_REWARD_SHARES_MASTER_PUBLIC_KEY must be set');
   }
 
   const container = createAwilixContainer({
@@ -298,7 +298,7 @@ function createDIContainer(options) {
     ),
     masternodeRewardSharesOwnerPublicKey: asValue(
       PublicKey.fromString(
-        options.MASTERNODE_REWARD_SHARES_CONTRACT_OWNER_PUBLIC_KEY,
+        options.MASTERNODE_REWARD_SHARES_MASTER_PUBLIC_KEY,
       ),
     ),
     masternodeRewardSharesDocuments: asValue(
@@ -312,7 +312,7 @@ function createDIContainer(options) {
     ),
     featureFlagsOwnerPublicKey: asValue(
       PublicKey.fromString(
-        options.FEATURE_FLAGS_CONTRACT_OWNER_PUBLIC_KEY,
+        options.FEATURE_FLAGS_MASTER_PUBLIC_KEY,
       ),
     ),
     featureFlagsDocuments: asValue(featureFlagsDocuments),
@@ -320,7 +320,7 @@ function createDIContainer(options) {
     dpnsOwnerId: asValue(Identifier.from(dpnsSystemIds.ownerId)),
     dpnsOwnerPublicKey: asValue(
       PublicKey.fromString(
-        options.DPNS_CONTRACT_OWNER_PUBLIC_KEY,
+        options.DPNS_MASTER_PUBLIC_KEY,
       ),
     ),
     dpnsDocuments: asValue(dpnsDocuments),
@@ -328,7 +328,7 @@ function createDIContainer(options) {
     dashpayOwnerId: asValue(Identifier.from(dashpaySystemIds.ownerId)),
     dashpayOwnerPublicKey: asValue(
       PublicKey.fromString(
-        options.DASHPAY_CONTRACT_OWNER_PUBLIC_KEY,
+        options.DASHPAY_MASTER_PUBLIC_KEY,
       ),
     ),
     dashpayDocuments: asValue(dashpayDocuments),
@@ -1084,10 +1084,7 @@ function createDIContainer(options) {
     registerSystemDataContract: asFunction(registerSystemDataContractFactory).singleton(),
     registerTopLevelDomain: asFunction(registerTopLevelDomainFactory).singleton(),
     registerFeatureFlag: asFunction(registerFeatureFlagFactory).singleton(),
-    documentEntropy: asValue(
-      Buffer.from('593160c0db0a8be327f23a4fc3b23d58c5ecbc47d491fd04bada693ae884a991', 'hex'),
-    ),
-    documentCreatedAt: asValue(
+    systemDocumentCreatedAt: asValue(
       new Date(1641811919122),
     ),
     cumulativeFeesFeatureFlagDocumentId: asValue(

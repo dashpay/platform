@@ -18,7 +18,7 @@ describe('Platform', () => {
 
       before(async () => {
         ownerClient = await createClientWithFundedWallet(
-          process.env.FEATURE_FLAGS_CONTRACT_OWNER_PRIVATE_KEY,
+          process.env.FEATURE_FLAGS_OWNER_PRIVATE_KEY,
         );
 
         ({ contractId, ownerId } = featureFlagsSystemIds);

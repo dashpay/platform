@@ -11,6 +11,7 @@ const IdentityPublicKey = require('@dashevo/dpp/lib/identity/IdentityPublicKey')
  * @param {DataContractStoreRepository} previousDataContractRepository
  * @param {PublicKeyToIdentityIdStoreRepository} previousPublicKeyToIdentityIdRepository
  * @param {RootTree} previousRootTree
+ * @param {LRUCache} dataContractCache
  *
  * @return {registerSystemDataContract}
  */
@@ -71,7 +72,6 @@ function registerSystemDataContractFactory(
     await previousDataContractRepository.store(dataContract);
 
     // Store data contract in the cache
-    // blockExecutionContext.addDataContract(dataContract);
     dataContractCache.set(dataContract.getId().toString(), dataContract);
 
     // Rebuild root tree to accommodate for changes

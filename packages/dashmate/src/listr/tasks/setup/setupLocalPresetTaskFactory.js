@@ -84,7 +84,7 @@ function setupLocalPresetTaskFactory(
       },
       {
         title: 'Create local group configs',
-        task: async (ctx) => {
+        task: async (ctx, task) => {
           ctx.configGroup = new Array(ctx.nodeCount)
             .fill(undefined)
             .map((value, i) => `local_${i + 1}`)
@@ -119,6 +119,18 @@ function setupLocalPresetTaskFactory(
             hdPrivateKey: masternodeRewardSharesPrivateKey,
             derivedPrivateKey: masternodeRewardSharesDerivedPrivateKey,
           } = await generateHDPrivateKeys(network);
+
+          // eslint-disable-next-line no-param-reassign
+          task.output = `DPNS Private Key: ${dpnsPrivateKey.toString()}`;
+
+          // eslint-disable-next-line no-param-reassign
+          task.output = `Feature Flags Private Key: ${featureFlagsPrivateKey.toString()}`;
+
+          // eslint-disable-next-line no-param-reassign
+          task.output = `Dashpay Private Key: ${dashpayPrivateKey.toString()}`;
+
+          // eslint-disable-next-line no-param-reassign
+          task.output = `Masternode Reward Shares Private Key: ${masternodeRewardSharesPrivateKey.toString()}`;
 
           const subTasks = ctx.configGroup.map((config, i) => (
             {
@@ -175,24 +187,17 @@ function setupLocalPresetTaskFactory(
                   config.set('platform.drive.abci.log.prettyFile.path', drivePrettyLogFile);
                   config.set('platform.drive.abci.log.jsonFile.path', driveJsonLogFile);
 
-                  config.set('platform.dpns.contract.ownerPublicKey', dpnsDerivedPrivateKey.privateKey.toPublicKey().toString());
-                  config.set('platform.dpns.contract.ownerPrivateKey', dpnsPrivateKey.toString());
-
-                  config.set('platform.featureFlags.contract.ownerPublicKey', featureFlagsDerivedPrivateKey.privateKey.toPublicKey().toString());
-                  config.set('platform.featureFlags.contract.ownerPrivateKey', featureFlagsPrivateKey.toString());
-
-                  config.set('platform.dashpay.contract.ownerPublicKey', dashpayDerivedPrivateKey.privateKey.toPublicKey().toString());
-                  config.set('platform.dashpay.contract.ownerPrivateKey', dashpayPrivateKey.toString());
-
+                  config.set('platform.dpns.masterPublicKey', dpnsDerivedPrivateKey.privateKey.toPublicKey().toString());
+                  config.set('platform.featureFlags.masterPublicKey', featureFlagsDerivedPrivateKey.privateKey.toPublicKey().toString());
+                  config.set('platform.dashpay.masterPublicKey', dashpayDerivedPrivateKey.privateKey.toPublicKey().toString());
                   config.set(
-                    'platform.masternodeRewardShares.contract.ownerPublicKey',
+                    'platform.masternodeRewardShares.masterPublicKey',
                     masternodeRewardSharesDerivedPrivateKey.privateKey.toPublicKey().toString(),
                   );
-                  config.set(
-                    'platform.masternodeRewardShares.contract.ownerPrivateKey',
-                    masternodeRewardSharesPrivateKey.toString(),
-                  );
                 }
+              },
+              options: {
+                persistentOutput: true,
               },
             }
           ));
@@ -208,6 +213,9 @@ function setupLocalPresetTaskFactory(
           });
 
           return new Listr(subTasks);
+        },
+        options: {
+          persistentOutput: true,
         },
       },
       {

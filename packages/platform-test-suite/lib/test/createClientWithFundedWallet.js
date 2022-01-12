@@ -2,6 +2,8 @@ const Dash = require('dash');
 
 const fundWallet = require('@dashevo/wallet-lib/src/utils/fundWallet');
 
+const { contractId } = require('@dashevo/dpns-contract/lib/systemIds');
+
 const getDAPISeeds = require('./getDAPISeeds');
 
 const createFaucetClient = require('./createFaucetClient');
@@ -18,11 +20,11 @@ async function createClientWithFundedWallet(HDPrivateKey = undefined) {
   const clientOpts = {
     seeds,
     network: process.env.NETWORK,
-    // apps: {
-    //   dpns: {
-    //     contractId: process.env.DPNS_CONTRACT_ID,
-    //   },
-    // },
+    apps: {
+      dpns: {
+        contractId,
+      },
+    },
   };
 
   const faucetClient = createFaucetClient();

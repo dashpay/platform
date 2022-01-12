@@ -1,14 +1,11 @@
-const { asValue } = require('awilix');
-
 /**
  * @param {DashPlatformProtocol} dpp
  * @param {DocumentIndexedStoreRepository} documentRepository
  * @param {DocumentIndexedStoreRepository} previousDocumentRepository
  * @param {RootTree} rootTree
  * @param {RootTree} previousRootTree
- * @param {BlockExecutionStoreTransactions} blockExecutionStoreTransactions
- * @param {cloneToPreviousStoreTransactions} cloneToPreviousStoreTransactions
- * @param {AwilixContainer} container
+ * @param {Date} systemDocumentCreatedAt
+ * @param {Identifier} cumulativeFeesFeatureFlagDocumentId
  *
  * @return {registerFeatureFlag}
  */
@@ -18,11 +15,7 @@ function registerFeatureFlagFactory(
   previousDocumentRepository,
   rootTree,
   previousRootTree,
-  blockExecutionStoreTransactions,
-  cloneToPreviousStoreTransactions,
-  container,
-  documentEntropy,
-  documentCreatedAt,
+  systemDocumentCreatedAt,
   cumulativeFeesFeatureFlagDocumentId,
 ) {
   /**
@@ -46,8 +39,7 @@ function registerFeatureFlagFactory(
     );
 
     cumulativeFeesDocument.id = cumulativeFeesFeatureFlagDocumentId;
-    cumulativeFeesDocument.entropy = documentEntropy;
-    cumulativeFeesDocument.createdAt = documentCreatedAt;
+    cumulativeFeesDocument.createdAt = systemDocumentCreatedAt;
 
     await documentRepository.store(cumulativeFeesDocument);
     await documentRepository.store(cumulativeFeesDocument);

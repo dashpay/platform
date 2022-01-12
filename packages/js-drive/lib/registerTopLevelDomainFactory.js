@@ -1,6 +1,4 @@
-const crypto = require('crypto');
 const { hash } = require('@dashevo/dpp/lib/util/hash');
-const { asValue } = require('awilix');
 
 /**
  * @param {DashPlatformProtocol} dpp
@@ -8,9 +6,10 @@ const { asValue } = require('awilix');
  * @param {DocumentIndexedStoreRepository} previousDocumentRepository
  * @param {RootTree} rootTree
  * @param {RootTree} previousRootTree
- * @param {BlockExecutionStoreTransactions} blockExecutionStoreTransactions
- * @param {cloneToPreviousStoreTransactions} cloneToPreviousStoreTransactions
- * @param {AwilixContainer} container
+ * @param {Date} systemDocumentCreatedAt
+ * @param {Identifier} dashPreorderDocumentId
+ * @param {Identifier} dashDomainDocumentId
+ * @param {Buffer} dashPreorderSalt
  *
  * @return {registerTopLevelDomain}
  */
@@ -20,8 +19,7 @@ function registerTopLevelDomainFactory(
   previousDocumentRepository,
   rootTree,
   previousRootTree,
-  documentEntropy,
-  documentCreatedAt,
+  systemDocumentCreatedAt,
   dashPreorderDocumentId,
   dashDomainDocumentId,
   dashPreorderSalt,
@@ -69,8 +67,7 @@ function registerTopLevelDomainFactory(
     );
 
     preorderDocument.id = dashPreorderDocumentId;
-    preorderDocument.entropy = documentEntropy;
-    preorderDocument.createdAt = documentCreatedAt;
+    preorderDocument.createdAt = systemDocumentCreatedAt;
 
     const domainDocument = await dpp.document.create(
       dataContract,
@@ -91,8 +88,7 @@ function registerTopLevelDomainFactory(
     );
 
     domainDocument.id = dashDomainDocumentId;
-    domainDocument.entropy = documentEntropy;
-    domainDocument.createdAt = documentCreatedAt;
+    domainDocument.createdAt = systemDocumentCreatedAt;
 
     await documentRepository.store(preorderDocument);
     await documentRepository.store(domainDocument);

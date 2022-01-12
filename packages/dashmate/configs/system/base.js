@@ -134,37 +134,29 @@ module.exports = {
     dpns: {
       contract: {
         id: null,
-        blockHeight: null,
-        ownerPublicKey: null,
-        ownerPrivateKey: null,
       },
       ownerId: null,
+      masterPublicKey: null,
     },
     dashpay: {
       contract: {
         id: null,
-        blockHeight: null,
-        ownerPublicKey: null,
-        ownerPrivateKey: null,
       },
+      masterPublicKey: null,
     },
     featureFlags: {
       contract: {
         id: null,
-        blockHeight: null,
-        ownerPublicKey: null,
-        ownerPrivateKey: null,
       },
       ownerId: null,
+      masterPublicKey: null,
     },
     sourcePath: null,
     masternodeRewardShares: {
       contract: {
         id: null,
-        blockHeight: null,
-        ownerPublicKey: null,
-        ownerPrivateKey: null,
       },
+      masterPublicKey: null,
     },
   },
   externalIp: null,

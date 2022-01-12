@@ -2,6 +2,7 @@ const Identifier = require('@dashevo/dpp/lib/Identifier');
 const { MerkleProof, MerkleTree } = require('js-merkle');
 const { executeProof, verifyProof } = require('@dashevo/merk');
 const { PrivateKey } = require('@dashevo/dashcore-lib');
+const { contractId } = require('@dashevo/dpns-contract/lib/systemIds');
 
 const generateRandomIdentifier = require('@dashevo/dpp/lib/test/utils/generateRandomIdentifier');
 const cbor = require('@dashevo/dpp/lib/util/serializer');
@@ -14,7 +15,6 @@ describe('Platform', () => {
   describe('Proofs', () => {
     let blake3;
     let dashClient;
-    let contractId;
 
     before(async () => {
       await hashFunction.init();
@@ -23,8 +23,6 @@ describe('Platform', () => {
       dashClient = await createClientWithFundedWallet();
 
       await dashClient.platform.initialize();
-
-      contractId = Identifier.from(process.env.DPNS_CONTRACT_ID);
     });
 
     after(() => {
