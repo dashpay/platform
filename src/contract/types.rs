@@ -113,26 +113,36 @@ fn encode_integer(val: i64) -> Result<Option<Vec<u8>>, Error> {
 fn encode_float(val: f64) -> Result<Option<Vec<u8>>, Error> {
     // Floats are represented based on the  IEEE 754-2008 standard
     // [sign bit] [biased exponent] [mantissa]
-    // when comparing floats, the most impactful section is the sign bit
-    // positive domain is greater then negative domain all other sections don't matter
-    // next is the exponent (this determines the range of a number, numbers in the 100s range
-    // are greater than numbers in the 10s range)
-    // finally if two numbers are in the same range, then the mantissa would be the determining
-    // factor.
-    // The standard representation is already setup in this order.
-    // Only the sign bit needs to be flipped to so positive domain is before the negative
-    // domain.
+
+    // when comparing floats, the sign bit has the greatest impact
+    // any positive number is greater than all negative numbers
+    // if the numbers come from the same domain then the exponent is the next factor to consider
+    // the exponent gives a sense of how many digits are in the non fractional part of the number
+    // for example in base 10, 10 has an exponent of 1 (1.0 * 10^1)
+    // while 5000 (5.0 * 10^3) has an exponent of 3
+    // for the positive domain, the bigger the exponent the larger the number i.e 5000 > 10
+    // for the negative domain, the bigger the exponent the smaller the number i.e -10 > -5000
+    // if the exponents are the same, then the mantissa is used to determine the greater number
+    // the inverse relationship still holds
+    // i.e bigger mantissa (bigger number in positive domain but smaller number in negative domain)
+
+    // There are two things to fix to achieve total sort order
+    // 1. Place positive domain above negative domain (i.e flip the sign bit)
+    // 2. Exponent and mantissa for a smaller number like -5000 is greater than that of -10
+    //    so bit level comparison would say -5000 is greater than -10
+    //    we fix this by flipping the exponent and mantissa values, which has the effect of reversing
+    //    the order (0000 [smallest] -> 1111 [largest])
 
     // Encode in big endian form, so most significant bits are compared first
     let mut wtr = vec![];
     wtr.write_f64::<BigEndian>(val).unwrap();
 
-    // For positive numbers, the greater the exponent the bigger the number
+    // Check if the value is negative, if it is
+    // flip all the bits i.e sign, exponent and mantissa
     if val < 0.0 {
-        // Flip all the bits
         wtr = wtr.iter().map(|byte| !byte).collect();
     } else {
-        // Just flip the sign bit
+        // for positive values, just flip the sign bit
         wtr[0] ^= 0b1000_0000;
     }
 
@@ -253,16 +263,19 @@ mod tests {
         assert_eq!(encoded_float3 > encoded_float4, true);
 
         // Show that 0 is in the middle
-        let float1 = Value::Float(-1.0);
+        // EPSILON: This is the difference between 1.0 and the next larger representable number.
+        let largest_negative_float = Value::Float(0.0 - f64::EPSILON);
         let float2 = Value::Float(0.0);
-        let float3 = Value::Float(1.0);
+        let smallest_positive_float = Value::Float(0.0 + f64::EPSILON);
 
         let encoded_float1 =
-            encode_document_field_type(&DocumentFieldType::Float, &float1).expect(encode_err_msg);
+            encode_document_field_type(&DocumentFieldType::Float, &largest_negative_float)
+                .expect(encode_err_msg);
         let encoded_float2 =
             encode_document_field_type(&DocumentFieldType::Float, &float2).expect(encode_err_msg);
         let encoded_float3 =
-            encode_document_field_type(&DocumentFieldType::Float, &float3).expect(encode_err_msg);
+            encode_document_field_type(&DocumentFieldType::Float, &smallest_positive_float)
+                .expect(encode_err_msg);
 
         assert_eq!(encoded_float1 < encoded_float2, true);
         assert_eq!(encoded_float2 < encoded_float3, true);
@@ -271,16 +284,6 @@ mod tests {
         // Since it has been shown that positive integers and negative integers maintain sort order
         // If the smallest positive number is greater than the largest negative number
         // then the positive domain is greater than the negative domain
-        let smallest_positive_float = Value::Float(0.0 + f64::EPSILON);
-        let largest_negative_float = Value::Float(0.0 - f64::EPSILON);
-
-        let encoded_float1 =
-            encode_document_field_type(&DocumentFieldType::Float, &smallest_positive_float)
-                .expect(encode_err_msg);
-        let encoded_float2 =
-            encode_document_field_type(&DocumentFieldType::Float, &largest_negative_float)
-                .expect(encode_err_msg);
-
-        assert_eq!(smallest_positive_float > largest_negative_float, true);
+        assert_eq!(encoded_float3 > encoded_float1, true);
     }
 }
