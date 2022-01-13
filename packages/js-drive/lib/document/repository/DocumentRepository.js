@@ -1,7 +1,5 @@
 const Document = require('@dashevo/dpp/lib/document/Document');
 
-const lodashGet = require('lodash.get');
-
 const decodeProtocolEntityFactory = require('@dashevo/dpp/lib/decodeProtocolEntityFactory');
 const DataContractStoreRepository = require("../../dataContract/DataContractStoreRepository");
 const getPropertyDefinitionByPath = require("@dashevo/dpp/lib/dataContract/getPropertyDefinitionByPath");
@@ -12,13 +10,11 @@ class DocumentRepository {
   /**
    *
    * @param {GroveDBStore} groveDBStore
-   * @param {encodeInteger} encodeInteger
-   * @param {encodeFloat} encodeFloat
+   * @param {encodeDocumentPropertyValue} encodeDocumentPropertyValue
    */
   constructor(groveDBStore, encodeDocumentPropertyValue) {
     this.storage = groveDBStore;
     this.encodeDocumentPropertyValue = encodeDocumentPropertyValue;
-    this.encodeFloat = encodeFloat;
   }
 
   /**
@@ -62,8 +58,6 @@ class DocumentRepository {
     );
 
     // Create indexed property trees
-    const rawDocument = document.toObject();
-
     const documentDefinition = document.getDataContract().getDocumentSchema(document.getType());
 
     const documentIndices = documentDefinition.indices || [];
@@ -74,9 +68,7 @@ class DocumentRepository {
       return Promise.all(indexDefinition.properties.map(async (propertyAndOrder, i) => {
         const propertyName = Object.keys(propertyAndOrder)[0];
 
-        const propertyDefinition = getPropertyDefinitionByPath(documentDefinition, propertyName);
-
-        const propertyValue = lodashGet(rawDocument, propertyName);
+        const propertyValue = document.get(propertyName);
 
         if (propertyValue === undefined) {
           return;
@@ -91,6 +83,8 @@ class DocumentRepository {
 
         // Create a value subtree if not exists
         const propertyTreePath = indexedPropertiesPath.concat([Buffer.from(propertyName)]);
+
+        const propertyDefinition = getPropertyDefinitionByPath(documentDefinition, propertyName);
 
         const encodedPropertyValue = this.encodeDocumentPropertyValue(propertyValue, propertyDefinition);
 
@@ -135,31 +129,18 @@ class DocumentRepository {
   }
 
   /**
-   * Fetch document by id
    *
-   * @param {DataContract} dataContract
-   * @param {string} documentType
-   * @param {Identifier} id
-   * @param {GroveDBTransaction} [transaction]
-   * @return {Promise<null|Document>}
+   * @param dataContract
+   * @param documentType
+   * @param [query]
+   * @param [query.where]
+   * @param [query.limit]
+   * @param [query.startAt]
+   * @param [query.startAfter]
+   * @param [query.orderBy]
    */
-  async fetch(dataContract, documentType, id, transaction = undefined) {
-    const documentTypeTreePath = this.#getDocumentTypeTreePath(dataContract, documentType);
+  find(dataContract, documentType, query= {}) {
 
-    // Store document
-    const encodedDocument = await this.storage.get(
-      documentTypeTreePath.concat([ DataContractStoreRepository.DOCUMENTS_TREE_KEY]),
-      id.toBuffer(),
-      { transaction },
-    );
-
-    if (!encodedDocument) {
-      return null;
-    }
-
-    const [, rawDocument] = decodeProtocolEntity(encodedDocument);
-
-    return new Document(rawDocument, dataContract);
   }
 
   /**
@@ -175,6 +156,66 @@ class DocumentRepository {
       dataContract,
       documentType,
     );
+
+    // Fetch document
+    const encodedDocument = await this.storage.get(
+      documentTypeTreePath.concat([ DataContractStoreRepository.DOCUMENTS_TREE_KEY]),
+      id.toBuffer(),
+      { transaction },
+    );
+
+    if (!encodedDocument) {
+      return;
+    }
+
+    /**
+     * Remove index property subtrees
+     */
+
+    const [, rawDocument] = decodeProtocolEntity(encodedDocument);
+
+    const document = new Document(rawDocument, dataContract);
+
+    const documentDefinition = document.getDataContract().getDocumentSchema(document.getType());
+
+    const documentIndices = documentDefinition.indices || [];
+
+    await Promise.all(documentIndices.map(async (indexDefinition) => {
+      let indexedPropertiesPath = documentTypeTreePath;
+
+      return Promise.all(indexDefinition.properties.map(async (propertyAndOrder, i) => {
+        const propertyName = Object.keys(propertyAndOrder)[0];
+
+        const propertyValue = document.get(propertyName);
+
+        if (propertyValue === undefined) {
+          return;
+        }
+
+        const propertyDefinition = getPropertyDefinitionByPath(documentDefinition, propertyName);
+
+        const encodedPropertyValue = this.encodeDocumentPropertyValue(propertyValue, propertyDefinition);
+
+        // Create a value subtree if not exists
+        indexedPropertiesPath = indexedPropertiesPath.concat([
+          Buffer.from(propertyName),
+          encodedPropertyValue,
+        ]);
+
+        // TODO: We need to cleanup values too
+
+        // Delete ID reference
+        if (i === indexDefinition.properties.length - 1) {
+          await this.storage.delete(
+            indexedPropertiesPath.concat([DataContractStoreRepository.DOCUMENTS_TREE_KEY]),
+            document.getId().toBuffer(),
+            {
+              transaction,
+            },
+          );
+        }
+      }));
+    }));
 
     // Delete document
     await this.storage.delete(

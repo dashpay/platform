@@ -10,13 +10,12 @@ const {
   v0: {
     GetDocumentsResponse,
     ResponseMetadata,
-    StoreTreeProofs,
   },
 } = require('@dashevo/dapi-grpc');
 
 const InvalidArgumentAbciError = require('../../errors/InvalidArgumentAbciError');
-const UnavailableAbciError = require('../../errors/UnavailableAbciError');
 const InvalidQueryError = require('../../../document/errors/InvalidQueryError');
+const UnimplementedAbciError = require('../../errors/UnimplementedAbciError');
 
 /**
  *
@@ -72,6 +71,10 @@ function documentQueryHandlerFactory(
 
     const response = createQueryResponse(GetDocumentsResponse, request.prove);
 
+    if (request.prove) {
+      throw new UnimplementedAbciError('Proofs are not implemented yet');
+    }
+
     let documents;
 
     try {
@@ -93,24 +96,9 @@ function documentQueryHandlerFactory(
       throw e;
     }
 
-    if (request.prove) {
-      const documentIds = documents.map((document) => document.getId());
-
-      const proof = response.getProof();
-      const storeTreeProofs = new StoreTreeProofs();
-
-      const {
-        rootTreeProof,
-        storeTreeProof,
-      } = previousRootTree.getFullProofForOneLeaf(previousDocumentsStoreRootTreeLeaf, documentIds);
-
-      storeTreeProofs.setDocumentsProof(storeTreeProof);
-
-      proof.setRootTreeProof(rootTreeProof);
-      proof.setStoreTreeProofs(storeTreeProofs);
-    } else {
-      response.setDocumentsList(documents.map((document) => document.toBuffer()));
-    }
+    response.setDocumentsList(
+      documents.map((document) => document.toBuffer()),
+    );
 
     return new ResponseQuery({
       value: response.serializeBinary(),

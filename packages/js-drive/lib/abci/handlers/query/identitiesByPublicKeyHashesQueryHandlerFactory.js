@@ -12,12 +12,12 @@ const {
   v0: {
     GetIdentitiesByPublicKeyHashesResponse,
     ResponseMetadata,
-    StoreTreeProofs,
   },
 } = require('@dashevo/dapi-grpc');
 
 const Identifier = require('@dashevo/dpp/lib/identifier/Identifier');
 const InvalidArgumentAbciError = require('../../errors/InvalidArgumentAbciError');
+const UnimplementedAbciError = require('../../errors/UnimplementedAbciError');
 
 /**
  *
@@ -64,21 +64,25 @@ function identitiesByPublicKeyHashesQueryHandlerFactory(
       });
     }
 
+    if (request.prove) {
+      throw new UnimplementedAbciError('Proofs are not implemented yet');
+    }
+
     const response = createQueryResponse(GetIdentitiesByPublicKeyHashesResponse, request.prove);
 
     const identityIds = await Promise.all(
       publicKeyHashes.map((publicKeyHash) => (
-        previousPublicKeyToIdentityIdRepository.fetchBuffer(publicKeyHash)
+        signedPublicKeyToIdentityIdRepository.fetchBuffer(publicKeyHash)
       )),
     );
 
-    const notFoundIdentityPublicKeyHashes = [];
+    // const notFoundIdentityPublicKeyHashes = [];
     const foundIdentityIds = [];
 
     for (let i = 0; i < identityIds.length; i++) {
       // If identity id was not found, we need to request non-inclusion proof by public key hash
       if (!identityIds[i]) {
-        notFoundIdentityPublicKeyHashes.push(publicKeyHashes[i]);
+        // notFoundIdentityPublicKeyHashes.push(publicKeyHashes[i]);
       } else {
         // If identity was found, we need to request ordinary identity proof by id
         const ids = cbor.decode(identityIds[i]);
@@ -87,53 +91,53 @@ function identitiesByPublicKeyHashesQueryHandlerFactory(
       }
     }
 
-    if (request.prove) {
-      const proof = response.getProof();
-      const storeTreeProofs = new StoreTreeProofs();
+    // if (request.prove) {
+    //   const proof = response.getProof();
+    //   const storeTreeProofs = new StoreTreeProofs();
+    //
+    //   const identitiesStoreTreeProof = previousIdentitiesStoreRootTreeLeaf.getProof(
+    //     foundIdentityIds,
+    //   );
+    //
+    //   const publicKeyStoreTreeProof = previousPublicKeyToIdentityIdStoreRootTreeLeaf.getProof(
+    //     notFoundIdentityPublicKeyHashes,
+    //   );
+    //
+    //   const rootTreeProof = previousRootTree.getProof([
+    //     previousIdentitiesStoreRootTreeLeaf,
+    //     previousPublicKeyToIdentityIdStoreRootTreeLeaf,
+    //   ]);
+    //
+    //   storeTreeProofs.setIdentitiesProof(identitiesStoreTreeProof);
+    //   storeTreeProofs.setPublicKeyHashesToIdentityIdsProof(publicKeyStoreTreeProof);
+    //
+    //   proof.setRootTreeProof(rootTreeProof);
+    //   proof.setStoreTreeProofs(storeTreeProofs);
+    // } else {
 
-      const identitiesStoreTreeProof = previousIdentitiesStoreRootTreeLeaf.getProof(
-        foundIdentityIds,
-      );
+    const identityBuffers = await Promise.all(
+      identityIds.map(async (serializedIds) => {
+        if (!serializedIds) {
+          return cbor.encode([]);
+        }
 
-      const publicKeyStoreTreeProof = previousPublicKeyToIdentityIdStoreRootTreeLeaf.getProof(
-        notFoundIdentityPublicKeyHashes,
-      );
+        const ids = cbor.decode(serializedIds);
 
-      const rootTreeProof = previousRootTree.getProof([
-        previousIdentitiesStoreRootTreeLeaf,
-        previousPublicKeyToIdentityIdStoreRootTreeLeaf,
-      ]);
+        const identities = await Promise.all(
+          ids.map(async (id) => {
+            const identity = await signedIdentityRepository.fetch(
+              Identifier.from(id),
+            );
 
-      storeTreeProofs.setIdentitiesProof(identitiesStoreTreeProof);
-      storeTreeProofs.setPublicKeyHashesToIdentityIdsProof(publicKeyStoreTreeProof);
+            return identity.toBuffer();
+          }),
+        );
 
-      proof.setRootTreeProof(rootTreeProof);
-      proof.setStoreTreeProofs(storeTreeProofs);
-    } else {
-      const identityBuffers = await Promise.all(
-        identityIds.map(async (serializedIds) => {
-          if (!serializedIds) {
-            return cbor.encode([]);
-          }
+        return cbor.encode(identities);
+      }),
+    );
 
-          const ids = cbor.decode(serializedIds);
-
-          const identities = await Promise.all(
-            ids.map(async (id) => {
-              const identity = await signedIdentityRepository.fetch(
-                Identifier.from(id),
-              );
-
-              return identity.toBuffer();
-            }),
-          );
-
-          return cbor.encode(identities);
-        }),
-      );
-
-      response.setIdentitiesList(identityBuffers);
-    }
+    response.setIdentitiesList(identityBuffers);
 
     return new ResponseQuery({
       value: response.serializeBinary(),

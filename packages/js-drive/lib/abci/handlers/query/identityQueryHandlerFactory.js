@@ -9,11 +9,11 @@ const {
 const {
   v0: {
     GetIdentityResponse,
-    StoreTreeProofs,
   },
 } = require('@dashevo/dapi-grpc');
 
 const NotFoundAbciError = require('../../errors/NotFoundAbciError');
+const UnimplementedAbciError = require('../../errors/UnimplementedAbciError');
 
 /**
  *
@@ -43,36 +43,19 @@ function identityQueryHandlerFactory(
       throw new NotFoundAbciError('Identity not found');
     }
 
+    if (request.prove) {
+      throw new UnimplementedAbciError('Proofs are not implemented yet');
+    }
+
     const response = createQueryResponse(GetIdentityResponse, request.prove);
 
     const identity = await signedIdentityRepository.fetch(id);
 
-    let identityBuffer;
-    if (!identity && !request.prove) {
+    if (!identity) {
       throw new NotFoundAbciError('Identity not found');
-    } else if (identity) {
-      identityBuffer = identity.toBuffer();
     }
 
-    if (request.prove) {
-      const proof = response.getProof();
-      const storeTreeProofs = new StoreTreeProofs();
-
-      const {
-        rootTreeProof,
-        storeTreeProof,
-      } = previousRootTree.getFullProofForOneLeaf(
-        previousIdentitiesStoreRootTreeLeaf,
-        [id],
-      );
-
-      storeTreeProofs.setIdentitiesProof(storeTreeProof);
-
-      proof.setRootTreeProof(rootTreeProof);
-      proof.setStoreTreeProofs(storeTreeProofs);
-    } else {
-      response.setIdentity(identityBuffer);
-    }
+    response.setIdentity(identity.toBuffer());
 
     return new ResponseQuery({
       value: response.serializeBinary(),
