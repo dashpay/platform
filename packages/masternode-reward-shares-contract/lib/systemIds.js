@@ -1,4 +1,4 @@
 module.exports = {
-  ownerId: '9hZM7e4of8oA5tkjLzaJtPai4vuGuVYc9zL5aiVzWioH',
-  contractId: '8KohU9P45Hg7GEEqDsy7LBVwuTJRJsJZYNJsmNb2rBzV',
+  ownerId: 'BjDiho3ahEBT6w45YungawKrUcqCZ7q7p46FXwnoakXR',
+  contractId: 'rUnsWrFu3PKyRMGk2mxmZVBPbQuZx2qtHeFjURoQevX',
 };

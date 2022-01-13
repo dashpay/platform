@@ -1084,17 +1084,14 @@ function createDIContainer(options) {
     registerSystemDataContract: asFunction(registerSystemDataContractFactory).singleton(),
     registerTopLevelDomain: asFunction(registerTopLevelDomainFactory).singleton(),
     registerFeatureFlag: asFunction(registerFeatureFlagFactory).singleton(),
-    systemDocumentCreatedAt: asValue(
-      new Date(1641811919122),
-    ),
     cumulativeFeesFeatureFlagDocumentId: asValue(
-      Identifier.from('4AR6eEiHcWKMSspWTfLg9K91UXCRNqXeC78eBqzcsqgP'),
+      Identifier.from('73qjFBuY4Zb8DqUpj6RYgG9rYDARNPFnEnyt8u4bxPcw'),
     ),
     dashPreorderDocumentId: asValue(
-      Identifier.from('7U61skuuQKV1WRMEN3gm3zvR3SGkqT8uY2cNJmesoQDu'),
+      Identifier.from('i8QZtAJ1WshunyZg64wGYcm3jASrpeSKAbAYVHTxvsL'),
     ),
     dashDomainDocumentId: asValue(
-      Identifier.from('9SH7FthJgBCJk1DC6mC5H8P5X9zvQocjLjBHhgw3Pzj4'),
+      Identifier.from('FXyN2NZAdRFADgBQfb1XM1Qq7pWoEcgSWj1GaiQJqcrS'),
     ),
     dashPreorderSalt: asValue(
       Buffer.from('e0b508c5a36825a206693a1f414aa13edbecf43c41e3c799ea9e737b4f9aa226', 'hex'),
