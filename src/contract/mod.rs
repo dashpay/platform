@@ -235,8 +235,25 @@ impl DocumentType {
             let type_value = cbor_inner_text_value(property_values, "type").ok_or(
                 Error::CorruptedData(String::from("cannot find type property")),
             )?;
-            let field_type = types::string_to_field_type(type_value)
-                .ok_or(Error::CorruptedData(String::from("invalid type")))?;
+
+            let mut field_type: types::DocumentFieldType;
+
+            if type_value == "array" {
+                // Only handling bytearrays for v1
+                // Return an error if it is not a byte array
+                let is_byte_array_value = cbor_inner_bool_value(property_values, "byteArray")
+                    .ok_or(Error::CorruptedData(String::from(
+                        "cannot find byteArray property for array type",
+                    )))?;
+                if is_byte_array_value {
+                    field_type = types::DocumentFieldType::ByteArray;
+                } else {
+                    return Err(Error::CorruptedData(String::from("invalid type")));
+                }
+            } else {
+                field_type = types::string_to_field_type(type_value)
+                    .ok_or(Error::CorruptedData(String::from("invalid type")))?;
+            }
 
             document_properties.insert(
                 property_key
@@ -248,8 +265,8 @@ impl DocumentType {
         }
 
         // Add system properties
-        document_properties.insert(String::from("$createdAt"), types::DocumentFieldType::String);
-        document_properties.insert(String::from("$updatedAt"), types::DocumentFieldType::String);
+        document_properties.insert(String::from("$createdAt"), types::DocumentFieldType::Date);
+        document_properties.insert(String::from("$updatedAt"), types::DocumentFieldType::Date);
 
         Ok(DocumentType {
             indices,
@@ -276,6 +293,7 @@ impl Document {
             Err(Error::CorruptedData(String::from("invalid owner id")))?
         }
         // first we need to deserialize the document and contract indices
+        // we would need dedicated deserialization functions based on the document type
         let mut document: HashMap<String, CborValue> = ciborium::de::from_reader(document_cbor)
             .map_err(|_| Error::CorruptedData(String::from("unable to decode contract")))?;
         let document_id: Vec<u8> = base58_value_as_bytes_from_hash_map(&document, "$id").ok_or(
@@ -445,6 +463,15 @@ fn cbor_inner_text_value(document_type: &Vec<(Value, Value)>, key: &str) -> Opti
     if key_value.is_text() {
         let string_value = key_value.as_text().expect("confirmed as text");
         return Some(string_value.to_string());
+    }
+    return None;
+}
+
+fn cbor_inner_bool_value(document_type: &Vec<(Value, Value)>, key: &str) -> Option<bool> {
+    let key_value = get_key_from_cbor_map(document_type, key)?;
+    if key_value.is_bool() {
+        let bool_value = key_value.as_bool().expect("confirmed as text");
+        return Some(bool_value);
     }
     return None;
 }
