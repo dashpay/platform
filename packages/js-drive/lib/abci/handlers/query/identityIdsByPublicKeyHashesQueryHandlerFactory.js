@@ -12,26 +12,24 @@ const {
   v0: {
     GetIdentityIdsByPublicKeyHashesResponse,
     ResponseMetadata,
-    StoreTreeProofs,
   },
 } = require('@dashevo/dapi-grpc');
 
 const InvalidArgumentAbciError = require('../../errors/InvalidArgumentAbciError');
+const UnimplementedAbciError = require("../../errors/UnimplementedAbciError");
 
 /**
  *
  * @param {PublicKeyToIdentityIdStoreRepository} signedPublicKeyToIdentityIdRepository
  * @param {number} maxIdentitiesPerRequest
  * @param {createQueryResponse} createQueryResponse
- * @param {BlockExecutionContext} blockExecutionContext
- * @param {BlockExecutionContext} blockExecutionContextStack
+ * @param {BlockExecutionContextStack} blockExecutionContextStack
  * @return {identityIdsByPublicKeyHashesQueryHandler}
  */
 function identityIdsByPublicKeyHashesQueryHandlerFactory(
   signedPublicKeyToIdentityIdRepository,
   maxIdentitiesPerRequest,
   createQueryResponse,
-  blockExecutionContext,
   blockExecutionContextStack,
 ) {
   /**
@@ -63,41 +61,27 @@ function identityIdsByPublicKeyHashesQueryHandlerFactory(
       });
     }
 
+    if (request.prove) {
+      throw new UnimplementedAbciError('Proofs are not implemented yet');
+    }
+
     const response = createQueryResponse(GetIdentityIdsByPublicKeyHashesResponse, request.prove);
 
     const identityIds = await Promise.all(
       publicKeyHashes.map(async (publicKeyHash) => (
-        previousPublicKeyToIdentityIdRepository.fetchBuffer(publicKeyHash)
+        signedPublicKeyToIdentityIdRepository.fetchBuffer(publicKeyHash)
       )),
     );
 
-    if (request.prove) {
-      const proof = response.getProof();
-      const storeTreeProofs = new StoreTreeProofs();
+    const idsList = identityIds.map((ids) => {
+      if (!ids) {
+        return cbor.encode([]);
+      }
 
-      const {
-        rootTreeProof,
-        storeTreeProof,
-      } = previousRootTree.getFullProofForOneLeaf(
-        previousPublicKeyToIdentityIdStoreRootTreeLeaf,
-        publicKeyHashes,
-      );
+      return ids;
+    });
 
-      storeTreeProofs.setPublicKeyHashesToIdentityIdsProof(storeTreeProof);
-
-      proof.setRootTreeProof(rootTreeProof);
-      proof.setStoreTreeProofs(storeTreeProofs);
-    } else {
-      const idsList = identityIds.map((ids) => {
-        if (!ids) {
-          return cbor.encode([]);
-        }
-
-        return ids;
-      });
-
-      response.setIdentityIdsList(idsList);
-    }
+    response.setIdentityIdsList(idsList);
 
     return new ResponseQuery({
       value: response.serializeBinary(),
