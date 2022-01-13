@@ -1,6 +1,24 @@
 const path = require('path');
 
 const {
+  contractId: dpnsContractId,
+  ownerId: dpnsOwnerId,
+} = require('@dashevo/dpns-contract/lib/systemIds');
+
+const {
+  contractId: dashpayContractId,
+} = require('@dashevo/dashpay-contract/lib/systemIds');
+
+const {
+  contractId: featureFlagsContractId,
+  ownerId: featureFlagsOwnerId,
+} = require('@dashevo/feature-flags-contract/lib/systemIds');
+
+const {
+  contractId: masternodeRewardSharesContractId,
+} = require('@dashevo/masternode-reward-shares-contract/lib/systemIds');
+
+const {
   NETWORK_TESTNET,
   HOME_DIR_PATH,
 } = require('../../src/constants');
@@ -133,28 +151,28 @@ module.exports = {
     },
     dpns: {
       contract: {
-        id: 'GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec',
+        id: dpnsContractId,
       },
-      ownerId: '4EfA9Jrvv3nnCFdSf7fad59851iiTRZ6Wcu6YVJ4iSeF',
+      ownerId: dpnsOwnerId,
       masterPublicKey: null,
     },
     dashpay: {
       contract: {
-        id: 'Bwr4WHCPz5rFVAD87RqTs3izo4zpzwsEdKPWUT1NS1C7',
+        id: dashpayContractId,
       },
       masterPublicKey: null,
     },
     featureFlags: {
       contract: {
-        id: 'HY1keaRK5bcDmujNCQq5pxNyvAiHHpoHQgLN5ppiu4kh',
+        id: featureFlagsContractId,
       },
-      ownerId: 'H9sjb2bHG8t7gq5SwNdqzMWG7KR6sf3CbziFzthCkDD6',
+      ownerId: featureFlagsOwnerId,
       masterPublicKey: null,
     },
     sourcePath: null,
     masternodeRewardShares: {
       contract: {
-        id: 'rUnsWrFu3PKyRMGk2mxmZVBPbQuZx2qtHeFjURoQevX',
+        id: masternodeRewardSharesContractId,
       },
       masterPublicKey: null,
     },
