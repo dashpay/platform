@@ -11,7 +11,6 @@ const {
  * @param {ConfigFile} configFile
  * @param {configureCoreTask} configureCoreTask
  * @param {configureTenderdashTask} configureTenderdashTask
- * @param {initializePlatformTask} initializePlatformTask
  * @param {resolveDockerHostIp} resolveDockerHostIp
  * @param {configFileRepository} configFileRepository
  * @param {generateHDPrivateKeys} generateHDPrivateKeys
@@ -20,7 +19,6 @@ function setupLocalPresetTaskFactory(
   configFile,
   configureCoreTask,
   configureTenderdashTask,
-  initializePlatformTask,
   resolveDockerHostIp,
   configFileRepository,
   generateHDPrivateKeys,
@@ -225,10 +223,6 @@ function setupLocalPresetTaskFactory(
       {
         title: 'Configure Tenderdash nodes',
         task: (ctx) => configureTenderdashTask(ctx.configGroup),
-      },
-      {
-        title: 'Initialize Platform',
-        task: (ctx) => initializePlatformTask(ctx.configGroup),
       },
     ]);
   }
