@@ -122,25 +122,6 @@ function getDataTriggersFactory() {
       rejectDataTrigger,
     ),
     new DataTrigger(
-      featureFlagsDataContractId,
-      featureFlagTypes.FIX_CUMULATIVE_FEES,
-      AbstractDocumentTransition.ACTIONS.CREATE,
-      createFeatureFlagDataTrigger,
-      featureFlagsTopLevelIdentityId,
-    ),
-    new DataTrigger(
-      featureFlagsDataContractId,
-      featureFlagTypes.FIX_CUMULATIVE_FEES,
-      AbstractDocumentTransition.ACTIONS.REPLACE,
-      rejectDataTrigger,
-    ),
-    new DataTrigger(
-      featureFlagsDataContractId,
-      featureFlagTypes.FIX_CUMULATIVE_FEES,
-      AbstractDocumentTransition.ACTIONS.DELETE,
-      rejectDataTrigger,
-    ),
-    new DataTrigger(
       masternodeRewardSharesContractId,
       'rewardShare',
       AbstractDocumentTransition.ACTIONS.CREATE,

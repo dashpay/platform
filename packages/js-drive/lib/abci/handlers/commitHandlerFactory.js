@@ -8,8 +8,6 @@ const {
 
 const { asValue } = require('awilix');
 
-const featureFlagTypes = require('@dashevo/feature-flags-contract/lib/featureFlagTypes');
-
 const DataCorruptedError = require('./errors/DataCorruptedError');
 const BlockExecutionContextRepository = require('../../blockExecution/BlockExecutionContextRepository');
 
@@ -91,22 +89,10 @@ function commitHandlerFactory(
         }
       }
 
-      const documentsTransaction = blockExecutionStoreTransactions.getTransaction('documents');
-
-      const fixCumulativeFeesFeatureFlag = await getLatestFeatureFlag(
-        featureFlagTypes.FIX_CUMULATIVE_FEES, blockHeight, documentsTransaction,
-      );
-
       // Store ST fees from the block to distribution pool
-      if (fixCumulativeFeesFeatureFlag && fixCumulativeFeesFeatureFlag.get('enabled')) {
-        creditsDistributionPool.incrementAmount(
-          blockExecutionContext.getCumulativeFees(),
-        );
-      } else {
-        creditsDistributionPool.setAmount(
-          blockExecutionContext.getCumulativeFees(),
-        );
-      }
+      creditsDistributionPool.setAmount(
+        blockExecutionContext.getCumulativeFees(),
+      );
 
       const commonStoreTransaction = blockExecutionStoreTransactions.getTransaction('common');
       await creditsDistributionPoolRepository.store(
