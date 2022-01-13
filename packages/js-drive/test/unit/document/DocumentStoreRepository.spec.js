@@ -3,7 +3,7 @@ const createDPPMock = require('@dashevo/dpp/lib/test/mocks/createDPPMock');
 
 const StoreMock = require('../../../lib/test/mock/StoreMock');
 
-const DocumentStoreRepository = require('../../../lib/document/DocumentRepository');
+const DocumentStoreRepository = require('../../../lib/document/repository/DocumentRepository');
 
 describe('DocumentStoreRepository', () => {
   let document;
