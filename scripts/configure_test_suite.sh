@@ -23,7 +23,10 @@ FEATURE_FLAGS_CONTRACT_ID=$(yarn dashmate config get --config="${CONFIG}_1" plat
 
 MASTERNODE_REWARD_SHARES_CONTRACT_ID=$(yarn dashmate config:get --config="${CONFIG}_1" platform.masternodeRewardShares.contract.id)
 MASTERNODE_REWARD_SHARES_OWNER_PRO_REG_TX_HASH=$(grep -m 1 "ProRegTx transaction ID:" "${SETUP_FILE_PATH}" | awk '{printf $5}')
-MASTERNODE_REWARD_SHARES_OWNER_PRIVATE_KEY=$(grep -m 2 -A 2 "Create a new owner addresses" "${SETUP_FILE_PATH}" | grep "Private key" | awk  '{printf $4}')
+# -m 2 flag in first grep fixing incorrect behaviour on grep v2.5.1
+# -m 1 flag in second grep is to pick only first occurrence on correctly working versions of the grep
+MASTERNODE_REWARD_SHARES_OWNER_PRIVATE_KEY=$(grep -m 2 -A 2 "Create a new owner addresses" "${SETUP_FILE_PATH}" | grep -m 1 "Private key" | awk  '{printf $4}')
+
 
 echo "Mint 100 Dash to faucet address"
 
