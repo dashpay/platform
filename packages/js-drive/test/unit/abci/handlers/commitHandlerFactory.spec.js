@@ -218,15 +218,10 @@ describe('commitHandlerFactory', () => {
 
     expect(blockExecutionStoreTransactionsMock.commit).to.be.calledOnce();
 
-    expect(creditsDistributionPoolMock.incrementAmount).to.be.calledOnceWith(
-      accumulativeFees,
-    );
-
     expect(blockExecutionContextMock.getCumulativeFees).to.be.calledOnce();
 
-    expect(blockExecutionStoreTransactionsMock.getTransaction).to.be.calledTwice();
-    expect(blockExecutionStoreTransactionsMock.getTransaction.getCall(0).args).to.deep.equal(['documents']);
-    expect(blockExecutionStoreTransactionsMock.getTransaction.getCall(1).args).to.deep.equal(['common']);
+    expect(blockExecutionStoreTransactionsMock.getTransaction).to.be.calledOnce();
+    expect(blockExecutionStoreTransactionsMock.getTransaction.getCall(0).args).to.deep.equal(['common']);
 
     expect(blockExecutionContextRepositoryMock.store).to.be.calledOnceWithExactly(
       BlockExecutionContextRepository.KEY_PREFIX_CURRENT,
@@ -273,12 +268,9 @@ describe('commitHandlerFactory', () => {
 
     expect(blockExecutionContextMock.getDataContracts).to.be.calledOnce();
     expect(documentsDatabaseManagerMock.create).to.be.calledOnceWithExactly(dataContract);
-    expect(creditsDistributionPoolMock.incrementAmount).to.be.calledOnceWith(accumulativeFees);
-    expect(blockExecutionContextMock.getCumulativeFees).to.be.calledOnce();
 
-    expect(blockExecutionStoreTransactionsMock.getTransaction).to.be.calledTwice();
-    expect(blockExecutionStoreTransactionsMock.getTransaction.getCall(0).args).to.deep.equal(['documents']);
-    expect(blockExecutionStoreTransactionsMock.getTransaction.getCall(1).args).to.deep.equal(['common']);
+    expect(blockExecutionStoreTransactionsMock.getTransaction).to.be.calledOnce();
+    expect(blockExecutionStoreTransactionsMock.getTransaction.getCall(0).args).to.deep.equal(['common']);
 
     expect(blockExecutionContextRepositoryMock.store).to.be.calledTwice();
     expect(blockExecutionContextRepositoryMock.store.getCall(0)).to.be.calledWithExactly(
