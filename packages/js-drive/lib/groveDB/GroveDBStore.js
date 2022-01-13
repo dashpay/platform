@@ -35,6 +35,30 @@ class GroveDBStore {
   }
 
   /**
+   * Store a reference to the specified key
+   *
+   * @param {Buffer[]} path
+   * @param {Buffer} key
+   * @param {Buffer[]} referencePath
+   * @param {Object} [options]
+   * @param {GroveDBTransaction} [options.transaction]
+   * @param {boolean} [options.skipIfExists]
+   * @return {Promise<GroveDBStore>}
+   */
+  async putReference(path, key, referencePath, options = {}) {
+    const method = options.skipIfExists ? 'insert_if_not_exists' : 'insert';
+
+    await this.db[method](
+      path,
+      key,
+      { type: 'reference', referencePath },
+      options.transaction,
+    );
+
+    return this;
+  }
+
+  /**
    * Create empty key
    *
    * @param {Buffer[]} path

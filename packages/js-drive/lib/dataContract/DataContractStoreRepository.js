@@ -20,6 +20,10 @@ class DataContractStoreRepository {
    * @return {Promise<DataContractStoreRepository>}
    */
   async store(dataContract, transaction = undefined) {
+    /**
+     * Store contract
+     */
+
     // Create contract tree
     await this.storage.createTree(
       DataContractStoreRepository.TREE_PATH,
@@ -27,14 +31,14 @@ class DataContractStoreRepository {
       { transaction },
     );
 
+    // Store contract under Data Contract key
     const contractTreePath = DataContractStoreRepository.TREE_PATH
       .concat([dataContract.getId().toBuffer()]);
 
-    // Store contract
     await this.storage.put(
       contractTreePath,
-      DataContractStoreRepository.DATA_CONTRACT_REFERENCE_KEY,
-      dataContract.toBuffer(), // TODO: we should use references
+      DataContractStoreRepository.DATA_CONTRACT_KEY,
+      dataContract.toBuffer(),
       { transaction },
     );
 
@@ -52,10 +56,10 @@ class DataContractStoreRepository {
 
         const documentTypeTreePath = contractTreePath.concat([Buffer.from(documentType)]);
 
-        // Create $id tree
+        // Create IDs tree
         await this.storage.createTree(
           documentTypeTreePath,
-          DataContractStoreRepository.ID_TREE_KEY,
+          DataContractStoreRepository.DOCUMENTS_TREE_KEY,
           { transaction, skipIfExists: true },
         );
 
@@ -77,7 +81,7 @@ class DataContractStoreRepository {
           // Create tree for ID references
           await this.storage.createTree(
             documentTypeTreePath.concat([Buffer.from(indexedProperty)]),
-            DataContractStoreRepository.ID_TREE_KEY,
+            DataContractStoreRepository.DOCUMENTS_TREE_KEY,
             { transaction, skipIfExists: true },
           );
         }));
@@ -98,7 +102,7 @@ class DataContractStoreRepository {
   async fetch(id, transaction = undefined) {
     const encodedDataContract = await this.storage.get(
       DataContractStoreRepository.TREE_PATH.concat([id.toBuffer()]),
-      Buffer.from(0),
+      DataContractStoreRepository.DATA_CONTRACT_KEY,
       { transaction },
     );
 
@@ -122,7 +126,7 @@ class DataContractStoreRepository {
 }
 
 DataContractStoreRepository.TREE_PATH = [Buffer.from('contracts')];
-DataContractStoreRepository.DATA_CONTRACT_REFERENCE_KEY = Buffer.from(0);
-DataContractStoreRepository.ID_TREE_KEY = Buffer.from(0);
+DataContractStoreRepository.DATA_CONTRACT_KEY = Buffer.from(0);
+DataContractStoreRepository.DOCUMENTS_TREE_KEY = Buffer.from(0);
 
 module.exports = DataContractStoreRepository;

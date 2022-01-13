@@ -44,7 +44,7 @@ const PublicKeyToIdentityIdStoreRepository = require(
 
 const DataContractStoreRepository = require('./dataContract/DataContractStoreRepository');
 
-const DocumentStoreRepository = require('./document/DocumentRepository');
+const DocumentStoreRepository = require('./document/repository/DocumentRepository');
 const findConflictingConditions = require('./document/query/findConflictingConditions');
 const validateQueryFactory = require('./document/query/validateQueryFactory');
 const convertWhereToMongoDbQuery = require('./document/mongoDbRepository/convertWhereToMongoDbQuery');
@@ -104,6 +104,7 @@ const BlockExecutionContextStackRepository = require('./blockExecution/BlockExec
 const rotateSignedStoreFactory = require('./groveDB/rotateSignedStoreFactory');
 const BlockExecutionContextStack = require('./blockExecution/BlockExecutionContextStack');
 const createInitialStateStructureFactory = require('./state/createInitialStateStructureFactory');
+const encodeDocumentPropertyValue = require('')
 
 /**
  *
@@ -458,6 +459,7 @@ function createDIContainer(options) {
    * Register Document
    */
   container.register({
+    encodeDocumentPropertyValue: asValue(encodeDocumentPropertyValue),
     documentRepository: asClass(DocumentStoreRepository).singleton(),
     signedDocumentRepository: asFunction((
       signedGroveDBStore,

@@ -3,7 +3,7 @@ const Document = require('@dashevo/dpp/lib/document/Document');
 const lodashGet = require('lodash.get');
 
 const decodeProtocolEntityFactory = require('@dashevo/dpp/lib/decodeProtocolEntityFactory');
-const DataContractStoreRepository = require("../dataContract/DataContractStoreRepository");
+const DataContractStoreRepository = require("../../dataContract/DataContractStoreRepository");
 const getPropertyDefinitionByPath = require("@dashevo/dpp/lib/dataContract/getPropertyDefinitionByPath");
 
 const decodeProtocolEntity = decodeProtocolEntityFactory();
@@ -12,9 +12,13 @@ class DocumentRepository {
   /**
    *
    * @param {GroveDBStore} groveDBStore
+   * @param {encodeInteger} encodeInteger
+   * @param {encodeFloat} encodeFloat
    */
-  constructor(groveDBStore) {
+  constructor(groveDBStore, encodeDocumentPropertyValue) {
     this.storage = groveDBStore;
+    this.encodeDocumentPropertyValue = encodeDocumentPropertyValue;
+    this.encodeFloat = encodeFloat;
   }
 
   /**
@@ -28,24 +32,30 @@ class DocumentRepository {
   async store(document, transaction = undefined) {
     const documentTypeTreePath = this.#getDocumentTypeTreePath(
       document.getDataContract(),
-      documentType,
+      document.getType(),
     );
 
-    // Store document
-    const isDocumentExist = Boolean(await this.storage.get(
-      documentTypeTreePath.concat([ DataContractStoreRepository.ID_TREE_KEY]),
+    const documentIdsTreePath = documentTypeTreePath.concat([ DataContractStoreRepository.DOCUMENTS_TREE_KEY]);
+
+    const isDocumentAlreadyExist = Boolean(await this.storage.get(
+      documentIdsTreePath,
       document.getId().toBuffer(),
       { transaction },
     ));
 
     // TODO: Implement proper update
-    if (isDocumentExist) {
-      await this.delete(document.getId(), transaction);
+    if (isDocumentAlreadyExist) {
+      await this.delete(
+        document.getDataContract(),
+        document.getType(),
+        document.getId(),
+        transaction,
+      );
     }
 
     // Store document
     await this.storage.put(
-      documentTypeTreePath.concat([ DataContractStoreRepository.ID_TREE_KEY]),
+      documentIdsTreePath,
       document.getId().toBuffer(),
       document.toBuffer(),
       { transaction },
@@ -64,7 +74,7 @@ class DocumentRepository {
       return Promise.all(indexDefinition.properties.map(async (propertyAndOrder, i) => {
         const propertyName = Object.keys(propertyAndOrder)[0];
 
-        // const propertyDefinition = getPropertyDefinitionByPath(documentDefinition, propertyName);
+        const propertyDefinition = getPropertyDefinitionByPath(documentDefinition, propertyName);
 
         const propertyValue = lodashGet(rawDocument, propertyName);
 
@@ -72,38 +82,48 @@ class DocumentRepository {
           return;
         }
 
-        // Create tree for indexed property
+        // Create tree for indexed property if not exists
         await this.storage.createTree(
           indexedPropertiesPath,
           Buffer.from(propertyName),
           { transaction, skipIfExists: true },
         );
 
-        // Create a value subtree
+        // Create a value subtree if not exists
+        const propertyTreePath = indexedPropertiesPath.concat([Buffer.from(propertyName)]);
+
+        const encodedPropertyValue = this.encodeDocumentPropertyValue(propertyValue, propertyDefinition);
+
         await this.storage.createTree(
-          indexedPropertiesPath.concat([Buffer.from(propertyName)]),
-          Buffer.from(propertyValue), // TODO: Encode value depending on the type
+          propertyTreePath,
+          encodedPropertyValue,
           { transaction, skipIfExists: true },
         );
 
-        indexedPropertiesPath = indexedPropertiesPath.concat([Buffer.from(propertyName), Buffer.from(propertyValue)]);
+        indexedPropertiesPath = propertyTreePath.concat([encodedPropertyValue]);
 
-        // Create tree for ID references
+        // Create tree for ID references if not exists
         if (i === indexDefinition.properties.length - 1) {
           await this.storage.createTree(
             indexedPropertiesPath,
-            DataContractStoreRepository.ID_TREE_KEY, // TODO: Encode value depending on the type
+            DataContractStoreRepository.DOCUMENTS_TREE_KEY,
             {
               transaction,
               skipIfExists: true
             },
           );
 
-          // Create tree for ID references
-          await this.storage.put(
-            indexedPropertiesPath.concat([DataContractStoreRepository.ID_TREE_KEY]),
+          const documentPath = DataContractStoreRepository.TREE_PATH.concat([
+            document.getDataContractId().toBuffer(),
+            Buffer.from(document.getType()),
+
+          ]);
+
+          // Store
+          await this.storage.putReference(
+            indexedPropertiesPath.concat([DataContractStoreRepository.DOCUMENTS_TREE_KEY]),
             document.getId().toBuffer(),
-            document.toBuffer(), // TODO: must be reference
+            documentPath,
             {
               transaction,
               skipIfExists: true
@@ -128,7 +148,7 @@ class DocumentRepository {
 
     // Store document
     const encodedDocument = await this.storage.get(
-      documentTypeTreePath.concat([ DataContractStoreRepository.ID_TREE_KEY]),
+      documentTypeTreePath.concat([ DataContractStoreRepository.DOCUMENTS_TREE_KEY]),
       id.toBuffer(),
       { transaction },
     );
@@ -158,7 +178,7 @@ class DocumentRepository {
 
     // Delete document
     await this.storage.delete(
-      documentTypeTreePath.concat([DataContractStoreRepository.ID_TREE_KEY]),
+      documentTypeTreePath.concat([DataContractStoreRepository.DOCUMENTS_TREE_KEY]),
       id.toBuffer(),
       { transaction },
     );
