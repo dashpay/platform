@@ -8,36 +8,32 @@ let keychain2;
 const mnemonic = 'during develop before curtain hazard rare job language become verb message travel';
 const mnemonic2 = 'birth kingdom trash renew flavor utility donkey gasp regular alert pave layer';
 const pk = '4226d5e2fe8cbfe6f5beb7adf5a5b08b310f6c4a67fc27826779073be6f5699e';
-
+const hdPublicKey = 'xpub661MyMwAqRbcFGB6XSWBsD725rJDUbFUpy4zWe2u22nJ2BxpoHFxtVDfKnTnvVQHohnY7AsVpRTHDv6PyPQTYu1KxFPKw29MAVXPEpz1G7V';
 const expectedRootDIP15AccountKey_0 = 'tprv8hRzmheQujhJN5XP2dj955nAFCKeEoSifJRWuutdbwWRtusdDQ426jbp75EqErUSuTxmPyxYmP1TpcF5qdxGhXLNXRLMGsRLG6NFCv1WnaQ';
 const expectedRootDIP15AccountKey_1 = 'tprv8hRzmheQujhJQyCtFTuUFHxB3Ag5VLB994zhH4CfxbA41cq73HT2mpYq5M33V54oJyn6g514saxxVJB886G55eYX56J6D6x87UNNT6iQHkR';
 const expectedKeyForChild_0 = 'tprv8d4podc2Tg459CH2bwLHXj3vdJFBT2rdsk5Nr1djH7hzHdt5LRdvN6QyFwMiDy7ffRdik7fEVRKKgsHB4F18sh8xF6jFXpKq4sUgGBoSbKw';
 describe('Keychain', function suite() {
-  this.timeout(10000);
+  this.timeout(1000);
   it('should create a keychain', () => {
-    const expectedException1 = 'Expect privateKey, publicKey, HDPublicKey, HDPrivateKey or Address';
+    const expectedException1 = 'Expect one of [mnemonic, HDPrivateKey, HDPublicKey, privateKey, publicKey, address] to be provided.';
     expect(() => new KeyChain()).to.throw(expectedException1);
-    expect(() => new KeyChain(mnemonic)).to.throw(expectedException1);
 
-    keychain = new KeyChain({ HDPrivateKey: mnemonicToHDPrivateKey(mnemonic, 'testnet') });
-    expect(keychain.type).to.equal('HDPrivateKey');
+    keychain = new KeyChain({ mnemonic: mnemonic, network: 'testnet' });
+    expect(keychain.rootKeyType).to.equal('HDPrivateKey');
     expect(keychain.network.toString()).to.equal('testnet');
-    expect(keychain.keys).to.deep.equal({});
+    expect(keychain.rootKey.network.toString()).to.equal('testnet');
 
-    keychain2 = new KeyChain({ HDPrivateKey: mnemonicToHDPrivateKey(mnemonic2, 'mainnet') });
-  });
-  it('should get private key', () => {
-    expect(keychain.getPrivateKey().toString()).to.equal(pk);
+    keychain2 = new KeyChain({ mnemonic: mnemonic2, network: 'livenet' });
   });
   it('should generate key for full path', () => {
     const path = 'm/44\'/1\'/0\'/0/0';
-    const pk2 = keychain.getKeyForPath(path);
+    const pk2 = keychain.getForPath(path).key;
     const address = new Dashcore.Address(pk2.publicKey.toAddress()).toString();
     expect(address).to.equal('yNfUebksUc5HoSfg8gv98ruC3jUNJUM8pT');
   });
   it('should get hardened feature path', () => {
     const hardenedPk = keychain.getHardenedBIP44HDKey();
-    const pk2 = keychain.getKeyForPath('m/44\'/1\'');
+    const pk2 = keychain.getForPath('m/44\'/1\'').key;
     expect(pk2.toString()).to.equal(hardenedPk.toString());
   });
   it('should get DIP15 account key', function () {
@@ -46,6 +42,7 @@ describe('Keychain', function suite() {
     const rootDIP15AccountKey_1 = keychain.getHardenedDIP15AccountKey(1);
     expect(rootDIP15AccountKey_1.toString()).to.deep.equal(expectedRootDIP15AccountKey_1);
   });
+
   it('should get DIP15 extended key', function () {
     const userUniqueId = '0x555d3854c910b7dee436869c4724bed2fe0784e198b8a39f02bbb49d8ebcfc3a';
     const contactUniqueId = '0xa137439f36d04a15474ff7423e4b904a14373fafb37a41db74c84f1dbb5c89b5';
@@ -65,11 +62,10 @@ describe('Keychain', function suite() {
     const DIP15ExtKey_1 = keychain.getDIP15ExtendedKey(userAhash, userBhash, 0, 0);
     expect(DIP15ExtKey_1.privateKey.toString()).to.equal('60581b6dca8244d3fb3cfe619b5a22277e5423b01e5285f356981f247e0f4a60')
     expect(DIP15ExtKey_1.publicKey.toString()).to.equal('03deaac00f721151307fbc7bf80d7b8afab98c1f026d67e5f56b21e2013f551ce6')
-
   });
   it('should derive from hardened feature path', () => {
     const hardenedHDKey = keychain.getHardenedBIP44HDKey();
-    const pk2 = keychain.getKeyForPath(`m/44'/1'`);
+    const pk2 = keychain.getForPath(`m/44'/1'`).key;
     expect(pk2.toString()).to.equal(hardenedHDKey.toString());
     expect(hardenedHDKey.toString()).to.deep.equal('tprv8dtrJNytYHRiZY585hmHGbguS6VjGpK49puSB7oXZjLHcQfrAzQkF4ZCxM2DkEbyY85J4EYcZ8EjT5ZCU8ozB727TDdodbfXet5GkGau2RQ');
     const derivedPk = hardenedHDKey.deriveChild(0, true).deriveChild(0).deriveChild(0);
@@ -78,29 +74,88 @@ describe('Keychain', function suite() {
   });
   it('should get hardened DIP9FeatureHDKey', function () {
     const hardenedHDKey = keychain.getHardenedDIP9FeatureHDKey();
-    const pk2 = keychain.getKeyForPath(`m/9'/1'`);
+    const pk2 = keychain.getForPath(`m/9'/1'`).key;
     expect(pk2.toString()).to.equal(hardenedHDKey.toString());
     expect(hardenedHDKey.toString()).to.deep.equal('tprv8fBJjWoGgCpGRCbyzE9RUA59rmoN1RUijhLnXGL4VHnLxvSe523yVg4GrGzbR6TyXtdynAEh5z8UX55EXt2Cb3xjvrsx2PgTY9BHxzFVkWn');
   });
-  it('should generate key for child', () => {
+  it('should get key for path', () => {
     const keychain2 = new KeyChain({ HDPrivateKey: mnemonicToHDPrivateKey(mnemonic, 'testnet') });
-    const keyForChild = keychain2.generateKeyForChild(0);
+    const keyForChild = keychain2.getForPath('m/0').key;
     expect(keyForChild.toString()).to.equal(expectedKeyForChild_0);
   });
 
+  it('should mark address watched and get watched addresses', function () {
+    const key0 = keychain.getForPath('m/0');
+    keychain.getForPath('m/0').isWatched = true
+    key0.isWatched = true;
+    const key1 = keychain.getForPath('m/1', { isWatched: true });
+    const key2 = keychain.getForPath('m/2', { isWatched: true });
 
-  it('should sign', () => {
+    const watchedAddresses = keychain.getWatchedAddresses();
+    let expectedWatchedAddresses = [
+        keychain.getForPath('m/0').address.toString(),
+      keychain.getForPath('m/1').address.toString(),
+      keychain.getForPath('m/2').address.toString()
+    ];
+    expect(watchedAddresses).to.deep.equal(expectedWatchedAddresses);
+  });
+  it('should get watched addresses', function () {
+    const watchedAddresses = keychain.getWatchedAddresses();
+    const expectedWatchedAddresses = [
+      'ybQDfNwiDjk8ZH5UUmHQzAMEmjbrbK5dAj',
+      'yhFX5rseJPitV45HUCaa9haeGHtLuooBaq',
+      'yhqxsmYk6jfoGWf1hJKq7d4U2cGHCgzpFU'
+    ]
+    expect(watchedAddresses).to.deep.equal(expectedWatchedAddresses);
+  });
+  // it('should get watched public keys', function () {
+  //   const watchedPubKeys = keychain.getWatchedPublicKeys();
+  //   const expectedWatchedPubKeys = [
+  //     '03e6ab8177a7ca2699da4f83ca3c27768fb88b70ae9d6bde1cba8de88355ccf199',
+  //     '0246a870b65153b98e453ff08f7198d06bce2a790286f44d90929aceafafa0673f',
+  //     '025ad16f78f67801e52abe5b512d66e3896d4c2fa3ca3150349437a5dd13519967'
+  //   ]
+  //   expect(watchedPubKeys).to.deep.equal(expectedWatchedPubKeys)
+  // });
+  it('should remove an address from watched addresses', function () {
+      const data0 = keychain.getForPath('m/0', { isWatched: false });
+      const data1 = keychain.getForPath('m/1');
+      const data2 = keychain.getForPath('m/2');
+      data2.isWatched = false;
 
+    expect(keychain.getWatchedAddresses().length).to.equal(1);
+  });
+  it('should get address for path', function (){
+    const address0_1 = keychain.getForPath('m/1').address;
+    expect(address0_1.toString()).to.equal('yhFX5rseJPitV45HUCaa9haeGHtLuooBaq')
+  })
+  it('should mark address as used', function () {
+    const address0_0 = keychain.getForPath('m/0').address;
+    keychain.markAddressAsUsed(address0_0);
+    expect(keychain.issuedPaths.get('m/0').isUsed).to.equal(true)
   });
 });
-describe('Keychain - clone', function suite() {
-  this.timeout(10000);
-  it('should clone', () => {
-    const keychain2 = new KeyChain(keychain);
-    expect(keychain2).to.deep.equal(keychain);
-    expect(keychain2.keys).to.deep.equal(keychain.keys);
+describe('Keychain - HDPublicKey', function suite(){
+  let hdpubKeyChain;
+  it('should initiate from a HDPublicKey', function () {
+    hdpubKeyChain = new KeyChain({
+      HDPublicKey: new Dashcore.HDPublicKey(hdPublicKey),
+      network: 'testnet'
+    });
+    // As the HDPublicKey starts with xpub, it's livenet and should take priority over our network being set.
+    expect(hdpubKeyChain.network.toString()).to.equal('livenet');
+    expect(hdpubKeyChain.keyChainId).to.equal('kc5059442d66');
+    expect(hdpubKeyChain.getRootKey().toString()).to.equal(hdPublicKey);
   });
-});
+  it('should derivate', function () {
+    const key0_1 = hdpubKeyChain.getForPath('m/1').key;
+    expect(key0_1.publicKey.toAddress(hdpubKeyChain.network).toString()).to.equal('XoL5LcBiDWcj6L7fFwytsFoX5Vz7BVXw9w')
+  });
+  it('should get address for path', function (){
+    const address0_1 = hdpubKeyChain.getForPath('m/2').address;
+    expect(address0_1.toString()).to.equal('XwAzpxQKbgebaLiadq1c6rDeFJ4FKPUufy')
+  })
+})
 describe('Keychain - single privateKey', function suite() {
   this.timeout(10000);
   it('should correctly errors out when not a HDPublicKey (privateKey)', () => {
@@ -108,18 +163,16 @@ describe('Keychain - single privateKey', function suite() {
     const network = 'livenet';
     const pkKeyChain = new KeyChain({ privateKey, network });
     expect(pkKeyChain.network).to.equal(network);
-    expect(pkKeyChain.keys).to.deep.equal({});
-    expect(pkKeyChain.type).to.equal('privateKey');
-    expect(pkKeyChain.privateKey).to.equal(privateKey);
+    expect(pkKeyChain.rootKeyType).to.equal('privateKey');
+    expect(pkKeyChain.rootKey.toString()).to.equal(privateKey);
 
-    const expectedException1 = 'Wallet is not loaded from a mnemonic or a HDPubKey, impossible to derivate keys';
-    const expectedException2 = 'Wallet is not loaded from a mnemonic or a HDPubKey, impossible to derivate child';
-    expect(() => pkKeyChain.generateKeyForPath()).to.throw(expectedException1);
-    expect(() => pkKeyChain.generateKeyForChild()).to.throw(expectedException2);
+    const expectedException1 = 'Wallet is not loaded from a mnemonic or a HDPrivateKey, impossible to derivate keys for path m/0';
+    expect(() => pkKeyChain.getForPath('m/0')).to.throw(expectedException1);
   });
   it('should get private key', () => {
     const privateKey = Dashcore.PrivateKey().toString();
     const pkKeyChain = new KeyChain({ privateKey, network: 'livenet' });
-    expect(pkKeyChain.getPrivateKey().toString()).to.equal(privateKey);
+    expect(pkKeyChain.getRootKey().toString()).to.equal(privateKey);
+    expect(pkKeyChain.rootKey.toString()).to.equal(privateKey);
   });
 });

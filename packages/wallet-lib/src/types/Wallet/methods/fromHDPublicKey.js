@@ -2,6 +2,7 @@ const Dashcore = require('@dashevo/dashcore-lib');
 const { is } = require('../../../utils');
 const KeyChain = require('../../KeyChain/KeyChain');
 const { WALLET_TYPES } = require('../../../CONSTANTS');
+const KeyChainStore = require('../../KeyChainStore/KeyChainStore');
 
 const normalizeHDPubKey = (key) => (is.string(key) ? Dashcore.HDPublicKey(key) : key);
 /**
@@ -13,5 +14,8 @@ module.exports = function fromHDPublicKey(_hdPublicKey) {
   this.walletType = WALLET_TYPES.HDPUBLIC;
   this.mnemonic = null;
   this.HDPublicKey = normalizeHDPubKey(_hdPublicKey);
-  this.keyChain = new KeyChain({ HDPublicKey: this.HDPublicKey });
+
+  const keyChain = new KeyChain({ HDPublicKey: this.HDPublicKey });
+  this.keyChainStore = new KeyChainStore();
+  this.keyChainStore.addKeyChain(keyChain, { isMasterKeyChain: true });
 };
