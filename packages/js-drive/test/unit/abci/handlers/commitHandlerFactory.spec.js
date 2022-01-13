@@ -218,6 +218,10 @@ describe('commitHandlerFactory', () => {
 
     expect(blockExecutionStoreTransactionsMock.commit).to.be.calledOnce();
 
+    expect(creditsDistributionPoolMock.incrementAmount).to.be.calledOnceWith(
+      accumulativeFees,
+    );
+
     expect(blockExecutionContextMock.getCumulativeFees).to.be.calledOnce();
 
     expect(blockExecutionStoreTransactionsMock.getTransaction).to.be.calledOnce();
@@ -268,6 +272,8 @@ describe('commitHandlerFactory', () => {
 
     expect(blockExecutionContextMock.getDataContracts).to.be.calledOnce();
     expect(documentsDatabaseManagerMock.create).to.be.calledOnceWithExactly(dataContract);
+    expect(creditsDistributionPoolMock.incrementAmount).to.be.calledOnceWith(accumulativeFees);
+    expect(blockExecutionContextMock.getCumulativeFees).to.be.calledOnce();
 
     expect(blockExecutionStoreTransactionsMock.getTransaction).to.be.calledOnce();
     expect(blockExecutionStoreTransactionsMock.getTransaction.getCall(0).args).to.deep.equal(['common']);
