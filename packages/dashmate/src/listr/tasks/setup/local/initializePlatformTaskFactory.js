@@ -1,7 +1,6 @@
 const { Listr } = require('listr2');
 
 /**
- * @param {initTask} initTask
  * @param {waitForNodeToBeReadyTask} waitForNodeToBeReadyTask
  * @param {DockerCompose} dockerCompose
  * @param {startGroupNodesTask} startGroupNodesTask
@@ -9,7 +8,6 @@ const { Listr } = require('listr2');
  * @return {initializePlatformTask}
  */
 function initializePlatformTaskFactory(
-  initTask,
   waitForNodeToBeReadyTask,
   dockerCompose,
   startGroupNodesTask,
@@ -28,23 +26,6 @@ function initializePlatformTaskFactory(
           ctx.waitForReadiness = true;
 
           return startGroupNodesTask(configGroup);
-        },
-      },
-      {
-        task: () => initTask(configGroup[0]),
-      },
-      {
-        task: () => {
-          // set platform data contracts
-          const [initializedConfig, ...otherConfigs] = configGroup;
-
-          otherConfigs
-            .filter((config) => config.has('platform'))
-            .forEach((config) => {
-              config.set('platform.dpns', initializedConfig.get('platform.dpns'));
-              config.set('platform.dashpay', initializedConfig.get('platform.dashpay'));
-              config.set('platform.featureFlags', initializedConfig.get('platform.featureFlags'));
-            });
         },
       },
       {

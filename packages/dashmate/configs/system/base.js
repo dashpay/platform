@@ -133,28 +133,28 @@ module.exports = {
     },
     dpns: {
       contract: {
-        id: null,
+        id: 'GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec',
       },
-      ownerId: null,
+      ownerId: '4EfA9Jrvv3nnCFdSf7fad59851iiTRZ6Wcu6YVJ4iSeF',
       masterPublicKey: null,
     },
     dashpay: {
       contract: {
-        id: null,
+        id: 'Bwr4WHCPz5rFVAD87RqTs3izo4zpzwsEdKPWUT1NS1C7',
       },
       masterPublicKey: null,
     },
     featureFlags: {
       contract: {
-        id: null,
+        id: 'HY1keaRK5bcDmujNCQq5pxNyvAiHHpoHQgLN5ppiu4kh',
       },
-      ownerId: null,
+      ownerId: 'H9sjb2bHG8t7gq5SwNdqzMWG7KR6sf3CbziFzthCkDD6',
       masterPublicKey: null,
     },
     sourcePath: null,
     masternodeRewardShares: {
       contract: {
-        id: null,
+        id: 'rUnsWrFu3PKyRMGk2mxmZVBPbQuZx2qtHeFjURoQevX',
       },
       masterPublicKey: null,
     },

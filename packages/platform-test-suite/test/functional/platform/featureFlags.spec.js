@@ -21,6 +21,8 @@ describe('Platform', () => {
           process.env.FEATURE_FLAGS_OWNER_PRIVATE_KEY,
         );
 
+        await ownerClient.platform.identities.topUp(featureFlagsSystemIds.ownerId, 5000);
+
         ({ contractId, ownerId } = featureFlagsSystemIds);
 
         const featureFlagContract = await ownerClient.platform.contracts.get(

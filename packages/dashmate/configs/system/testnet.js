@@ -19,28 +19,6 @@ module.exports = lodashMerge({}, baseConfig, {
     },
   },
   platform: {
-    dpns: {
-      contract: {
-        id: 'Bw9PUC3aSEGQ4j5qrvpNLrRNFPVMiUHZLr1atgfYJcmf',
-      },
-      ownerId: '3nJjUPiVbwvKRpZ6pLUwVjcFoEJdeqPqakobctF3uECU',
-    },
-    dashpay: {
-      contract: {
-        id: '2Vuou3EfbrtunwCZvQp1XS5PXZ5CgC1pGBz4VPT4ojmy',
-      },
-    },
-    featureFlags: {
-      contract: {
-        id: '7jr118TzVYZoA9XcwYBjUghVF1RT77vfeTzxJEgbaKEU',
-      },
-      ownerId: 'CQSDSPkdCXRQWX74SQHddWfBEQbKPW3XhqkeEoa7jZXn',
-    },
-    masternodeRewardShares: {
-      contract: {
-        id: null,
-      },
-    },
     drive: {
       abci: {
         log: {

@@ -34,6 +34,8 @@ describe('DPNS', () => {
     topLevelDomain = 'dash';
     secondLevelDomain = getRandomDomain();
     client = await createClientWithFundedWallet();
+
+    await client.platform.identities.topUp(dpnsOwnerId, 5);
   });
 
   after(async () => {
