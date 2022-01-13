@@ -1,6 +1,24 @@
 const path = require('path');
 
 const {
+  contractId: dpnsContractId,
+  ownerId: dpnsOwnerId,
+} = require('@dashevo/dpns-contract/lib/systemIds');
+
+const {
+  contractId: dashpayContractId,
+} = require('@dashevo/dashpay-contract/lib/systemIds');
+
+const {
+  contractId: featureFlagsContractId,
+  ownerId: featureFlagsOwnerId,
+} = require('@dashevo/feature-flags-contract/lib/systemIds');
+
+const {
+  contractId: masternodeRewardSharesContractId,
+} = require('@dashevo/masternode-reward-shares-contract/lib/systemIds');
+
+const {
   NETWORK_TESTNET,
   HOME_DIR_PATH,
 } = require('../../src/constants');
@@ -133,30 +151,30 @@ module.exports = {
     },
     dpns: {
       contract: {
-        id: null,
-        blockHeight: null,
+        id: dpnsContractId,
       },
-      ownerId: null,
+      ownerId: dpnsOwnerId,
+      masterPublicKey: null,
     },
     dashpay: {
       contract: {
-        id: null,
-        blockHeight: null,
+        id: dashpayContractId,
       },
+      masterPublicKey: null,
     },
     featureFlags: {
       contract: {
-        id: null,
-        blockHeight: null,
+        id: featureFlagsContractId,
       },
-      ownerId: null,
+      ownerId: featureFlagsOwnerId,
+      masterPublicKey: null,
     },
     sourcePath: null,
     masternodeRewardShares: {
       contract: {
-        id: null,
-        blockHeight: null,
+        id: masternodeRewardSharesContractId,
       },
+      masterPublicKey: null,
     },
   },
   externalIp: null,

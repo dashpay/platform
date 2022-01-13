@@ -12,12 +12,9 @@ const {
 
 const Long = require('long');
 
-const generateRandomIdentifier = require('@dashevo/dpp/lib/test/utils/generateRandomIdentifier');
-
 const endBlockHandlerFactory = require('../../../../lib/abci/handlers/endBlockHandlerFactory');
 
 const BlockExecutionContextMock = require('../../../../lib/test/mock/BlockExecutionContextMock');
-const NoSystemContractFoundError = require('../../../../lib/abci/handlers/errors/NoSystemContractFoundError');
 const LoggerMock = require('../../../../lib/test/mock/LoggerMock');
 const BlockExecutionDBTransactionsMock = require('../../../../lib/test/mock/BlockExecutionStoreTransactionsMock');
 
@@ -27,10 +24,7 @@ describe('endBlockHandlerFactory', () => {
   let headerMock;
   let lastCommitInfoMock;
   let blockExecutionContextMock;
-  let dpnsContractId;
   let dpnsContractBlockHeight;
-  let dashpayContractId;
-  let dashpayContractBlockHeight;
   let latestCoreChainLockMock;
   let loggerMock;
   let createValidatorSetUpdateMock;
@@ -38,10 +32,6 @@ describe('endBlockHandlerFactory', () => {
   let validatorSetMock;
   let getFeatureFlagForHeightMock;
   let blockExecutionStoreTransactionsMock;
-  let featureFlagDataContractId;
-  let featureFlagDataContractBlockHeight;
-  let masternodeRewardSharesContractId;
-  let masternodeRewardSharesContractBlockHeight;
 
   beforeEach(function beforeEach() {
     headerMock = {
@@ -73,11 +63,7 @@ describe('endBlockHandlerFactory', () => {
 
     loggerMock = new LoggerMock(this.sinon);
 
-    dpnsContractId = generateRandomIdentifier();
     dpnsContractBlockHeight = 2;
-
-    dashpayContractId = generateRandomIdentifier();
-    dashpayContractBlockHeight = 2;
 
     validatorSetMock = {
       rotate: this.sinon.stub(),
@@ -92,20 +78,12 @@ describe('endBlockHandlerFactory', () => {
 
     endBlockHandler = endBlockHandlerFactory(
       blockExecutionContextMock,
-      dpnsContractBlockHeight,
-      dpnsContractId,
-      dashpayContractBlockHeight,
-      dashpayContractId,
       latestCoreChainLockMock,
       validatorSetMock,
       createValidatorSetUpdateMock,
       loggerMock,
       getFeatureFlagForHeightMock,
       blockExecutionStoreTransactionsMock,
-      featureFlagDataContractId,
-      featureFlagDataContractBlockHeight,
-      masternodeRewardSharesContractId,
-      masternodeRewardSharesContractBlockHeight,
     );
 
     requestMock = {
@@ -116,20 +94,12 @@ describe('endBlockHandlerFactory', () => {
   it('should return a response', async () => {
     endBlockHandler = endBlockHandlerFactory(
       blockExecutionContextMock,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
       latestCoreChainLockMock,
       validatorSetMock,
       createValidatorSetUpdateMock,
       loggerMock,
       getFeatureFlagForHeightMock,
       blockExecutionStoreTransactionsMock,
-      featureFlagDataContractId,
-      featureFlagDataContractBlockHeight,
-      masternodeRewardSharesContractId,
-      masternodeRewardSharesContractBlockHeight,
     );
 
     const response = await endBlockHandler(requestMock);
@@ -138,142 +108,6 @@ describe('endBlockHandlerFactory', () => {
     expect(response.toJSON()).to.be.empty();
 
     expect(blockExecutionContextMock.hasDataContract).to.not.have.been.called();
-  });
-
-  it('should return a response if DPNS contract is present at specified height', async () => {
-    endBlockHandler = endBlockHandlerFactory(
-      blockExecutionContextMock,
-      dpnsContractBlockHeight,
-      dpnsContractId,
-      undefined,
-      undefined,
-      latestCoreChainLockMock,
-      validatorSetMock,
-      createValidatorSetUpdateMock,
-      loggerMock,
-      getFeatureFlagForHeightMock,
-      blockExecutionStoreTransactionsMock,
-      featureFlagDataContractId,
-      featureFlagDataContractBlockHeight,
-      masternodeRewardSharesContractId,
-      masternodeRewardSharesContractBlockHeight,
-    );
-
-    const response = await endBlockHandler(requestMock);
-
-    expect(response).to.be.an.instanceOf(ResponseEndBlock);
-
-    expect(response.toJSON()).to.be.empty();
-
-    expect(blockExecutionContextMock.hasDataContract).to.have.been.calledOnceWithExactly(
-      dpnsContractId,
-    );
-  });
-
-  it('should throw and error if DPNS contract is not present at specified height', async () => {
-    endBlockHandler = endBlockHandlerFactory(
-      blockExecutionContextMock,
-      dpnsContractBlockHeight,
-      dpnsContractId,
-      undefined,
-      undefined,
-      latestCoreChainLockMock,
-      validatorSetMock,
-      createValidatorSetUpdateMock,
-      loggerMock,
-      getFeatureFlagForHeightMock,
-      blockExecutionStoreTransactionsMock,
-      featureFlagDataContractId,
-      featureFlagDataContractBlockHeight,
-      masternodeRewardSharesContractId,
-      masternodeRewardSharesContractBlockHeight,
-    );
-
-    blockExecutionContextMock.hasDataContract.returns(false);
-
-    try {
-      await endBlockHandler(requestMock);
-
-      expect.fail('Error was not thrown');
-    } catch (e) {
-      expect(e).to.be.an.instanceOf(NoSystemContractFoundError);
-      expect(e.getContractId()).to.equal(dpnsContractId);
-      expect(e.getHeight()).to.equal(dpnsContractBlockHeight);
-
-      expect(blockExecutionContextMock.hasDataContract).to.have.been.calledOnceWithExactly(
-        dpnsContractId,
-      );
-
-      expect(latestCoreChainLockMock.getChainLock).to.have.not.been.called();
-    }
-  });
-
-  it('should return a response if DashPay contract is present at specified height', async () => {
-    endBlockHandler = endBlockHandlerFactory(
-      blockExecutionContextMock,
-      undefined,
-      undefined,
-      dashpayContractBlockHeight,
-      dashpayContractId,
-      latestCoreChainLockMock,
-      validatorSetMock,
-      createValidatorSetUpdateMock,
-      loggerMock,
-      getFeatureFlagForHeightMock,
-      blockExecutionStoreTransactionsMock,
-      featureFlagDataContractId,
-      featureFlagDataContractBlockHeight,
-      masternodeRewardSharesContractId,
-      masternodeRewardSharesContractBlockHeight,
-    );
-
-    const response = await endBlockHandler(requestMock);
-
-    expect(response).to.be.an.instanceOf(ResponseEndBlock);
-
-    expect(response.toJSON()).to.be.empty();
-
-    expect(blockExecutionContextMock.hasDataContract).to.have.been.calledOnceWithExactly(
-      dashpayContractId,
-    );
-  });
-
-  it('should throw and error if DashPay contract is not present at specified height', async () => {
-    endBlockHandler = endBlockHandlerFactory(
-      blockExecutionContextMock,
-      undefined,
-      undefined,
-      dashpayContractBlockHeight,
-      dashpayContractId,
-      latestCoreChainLockMock,
-      validatorSetMock,
-      createValidatorSetUpdateMock,
-      loggerMock,
-      getFeatureFlagForHeightMock,
-      blockExecutionStoreTransactionsMock,
-      featureFlagDataContractId,
-      featureFlagDataContractBlockHeight,
-      masternodeRewardSharesContractId,
-      masternodeRewardSharesContractBlockHeight,
-    );
-
-    blockExecutionContextMock.hasDataContract.returns(false);
-
-    try {
-      await endBlockHandler(requestMock);
-
-      expect.fail('Error was not thrown');
-    } catch (e) {
-      expect(e).to.be.an.instanceOf(NoSystemContractFoundError);
-      expect(e.getContractId()).to.equal(dashpayContractId);
-      expect(e.getHeight()).to.equal(dashpayContractBlockHeight);
-
-      expect(blockExecutionContextMock.hasDataContract).to.have.been.calledOnceWithExactly(
-        dashpayContractId,
-      );
-
-      expect(latestCoreChainLockMock.getChainLock).to.have.not.been.called();
-    }
   });
 
   it('should return nextCoreChainLockUpdate if latestCoreChainLock above header height', async () => {
