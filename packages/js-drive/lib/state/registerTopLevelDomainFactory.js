@@ -6,7 +6,6 @@ const { hash } = require('@dashevo/dpp/lib/util/hash');
  * @param {DocumentIndexedStoreRepository} previousDocumentRepository
  * @param {RootTree} rootTree
  * @param {RootTree} previousRootTree
- * @param {Date} systemDocumentCreatedAt
  * @param {Identifier} dashPreorderDocumentId
  * @param {Identifier} dashDomainDocumentId
  * @param {Buffer} dashPreorderSalt
@@ -19,7 +18,6 @@ function registerTopLevelDomainFactory(
   previousDocumentRepository,
   rootTree,
   previousRootTree,
-  systemDocumentCreatedAt,
   dashPreorderDocumentId,
   dashDomainDocumentId,
   dashPreorderSalt,
@@ -30,10 +28,11 @@ function registerTopLevelDomainFactory(
    * @param {string} name
    * @param {DataContract} dataContract
    * @param {Identifier} ownerId
+   * @param {Date} genesisTime
    *
    * @return {Promise<void>}
    */
-  async function registerTopLevelDomain(name, dataContract, ownerId) {
+  async function registerTopLevelDomain(name, dataContract, ownerId, genesisTime) {
     const nameLabels = name.split('.');
 
     const normalizedParentDomainName = nameLabels
@@ -67,7 +66,7 @@ function registerTopLevelDomainFactory(
     );
 
     preorderDocument.id = dashPreorderDocumentId;
-    preorderDocument.createdAt = systemDocumentCreatedAt;
+    preorderDocument.createdAt = genesisTime;
 
     const domainDocument = await dpp.document.create(
       dataContract,
@@ -88,7 +87,7 @@ function registerTopLevelDomainFactory(
     );
 
     domainDocument.id = dashDomainDocumentId;
-    domainDocument.createdAt = systemDocumentCreatedAt;
+    domainDocument.createdAt = genesisTime;
 
     await documentRepository.store(preorderDocument);
     await documentRepository.store(domainDocument);

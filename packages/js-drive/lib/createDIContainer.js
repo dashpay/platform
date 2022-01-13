@@ -143,9 +143,9 @@ const fetchQuorumMembersFactory = require('./core/fetchQuorumMembersFactory');
 const getRandomQuorum = require('./core/getRandomQuorum');
 const createQueryResponseFactory = require('./abci/handlers/query/response/createQueryResponseFactory');
 const BlockExecutionContextRepository = require('./blockExecution/BlockExecutionContextRepository');
-const registerSystemDataContractFactory = require('./registerSystemDataContractFactory');
-const registerTopLevelDomainFactory = require('./registerTopLevelDomainFactory');
-const registerFeatureFlagFactory = require('./registerFeatureFlagFactory');
+const registerSystemDataContractFactory = require('./state/registerSystemDataContractFactory');
+const registerTopLevelDomainFactory = require('./state/registerTopLevelDomainFactory');
+const registerFeatureFlagFactory = require('./state/registerFeatureFlagFactory');
 
 /**
  *

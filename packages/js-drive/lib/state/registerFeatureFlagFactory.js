@@ -4,7 +4,6 @@
  * @param {DocumentIndexedStoreRepository} previousDocumentRepository
  * @param {RootTree} rootTree
  * @param {RootTree} previousRootTree
- * @param {Date} systemDocumentCreatedAt
  * @param {Identifier} cumulativeFeesFeatureFlagDocumentId
  *
  * @return {registerFeatureFlag}
@@ -15,7 +14,6 @@ function registerFeatureFlagFactory(
   previousDocumentRepository,
   rootTree,
   previousRootTree,
-  systemDocumentCreatedAt,
   cumulativeFeesFeatureFlagDocumentId,
 ) {
   /**
@@ -24,10 +22,11 @@ function registerFeatureFlagFactory(
    * @param {string} flagName
    * @param {DataContract} dataContract
    * @param {Identifier} ownerId
+   * @param {Date} genesisTime
    *
    * @return {Promise<void>}
    */
-  async function registerFeatureFlag(flagName, dataContract, ownerId) {
+  async function registerFeatureFlag(flagName, dataContract, ownerId, genesisTime) {
     const cumulativeFeesDocument = await dpp.document.create(
       dataContract,
       ownerId,
@@ -39,7 +38,7 @@ function registerFeatureFlagFactory(
     );
 
     cumulativeFeesDocument.id = cumulativeFeesFeatureFlagDocumentId;
-    cumulativeFeesDocument.createdAt = systemDocumentCreatedAt;
+    cumulativeFeesDocument.createdAt = genesisTime;
 
     await documentRepository.store(cumulativeFeesDocument);
     await documentRepository.store(cumulativeFeesDocument);

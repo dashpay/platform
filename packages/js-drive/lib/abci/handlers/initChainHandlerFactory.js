@@ -83,6 +83,12 @@ function initChainHandlerFactory(
    * @return {Promise<abci.ResponseInitChain>}
    */
   async function initChainHandler(request) {
+    const { time } = request;
+
+    const genesisTime = new Date(
+      time.seconds.toNumber() * 1000,
+    );
+
     const contextLogger = logger.child({
       height: request.initialHeight.toString(),
       abciMethod: 'initChain',
@@ -125,7 +131,12 @@ function initChainHandlerFactory(
       featureFlagContract, { isTransactional: false },
     );
 
-    await registerFeatureFlag('fixCumulativeFeesBug', featureFlagContract, featureFlagsOwnerId);
+    await registerFeatureFlag(
+      'fixCumulativeFeesBug',
+      featureFlagContract,
+      featureFlagsOwnerId,
+      genesisTime,
+    );
 
     contextLogger.debug('Registering system data contract: DPNS');
     contextLogger.trace({
@@ -149,7 +160,7 @@ function initChainHandlerFactory(
       dpnsContract, { isTransactional: false },
     );
 
-    await registerTopLevelDomain('dash', dpnsContract, dpnsOwnerId);
+    await registerTopLevelDomain('dash', dpnsContract, dpnsOwnerId, genesisTime);
 
     contextLogger.debug('Registering system data contract: masternode rewards');
     contextLogger.trace({
