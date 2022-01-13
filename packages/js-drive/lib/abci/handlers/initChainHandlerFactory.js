@@ -227,6 +227,7 @@ function initChainHandlerFactory(
     return new ResponseInitChain({
       appHash,
       validatorSetUpdate,
+      initialCoreHeight: initialCoreChainLockedHeight,
     });
   }
 

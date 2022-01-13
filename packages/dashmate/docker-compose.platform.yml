@@ -100,7 +100,7 @@ services:
       - NETWORK=devnet
       - TENDERMINT_RPC_HOST=drive_tenderdash
       - TENDERMINT_RPC_PORT=26657
-    command: yarn workspace @dashevo/dapi tx-filter-stream
+    command: yarn workspace @dashevo/dapi core-streams
 
   dapi_envoy:
     image: ${PLATFORM_DAPI_ENVOY_DOCKER_IMAGE:?err}

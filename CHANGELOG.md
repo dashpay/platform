@@ -1,3 +1,77 @@
+## [0.22.0-dev.6](https://github.com/dashevo/platform/compare/v0.22.0-dev.5...v0.22.0-dev.6) (2022-01-11)
+
+
+### ⚠ BREAKING CHANGES
+
+* **drive:** temporary restrictions for a document query (#77)
+
+### Features
+
+* **dapi:** `subscribeToBlockHeadersWithChainLocks` endpoint ([#153](https://github.com/dashevo/platform/issues/153))
+
+
+### Bug Fixes
+
+* **drive:** missed `nodeAddress` field on `EndBlock` ([#184](https://github.com/dashevo/platform/issues/184))
+
+
+### Miscellaneous Chores
+
+* **drive:** temporary restrictions for a document query ([#77](https://github.com/dashevo/platform/issues/77))
+
+
+### Build System
+
+* **test-suite:** docker image build doesn't work ([#172](https://github.com/dashevo/platform/issues/172))
+
+
+### Code Refactoring
+
+* **dapi:** rename tx-filter-stream.js to core-streams.js ([#169](https://github.com/dashevo/platform/issues/169))
+
+
+### Documentation
+
+* add readme to docs folder ([#175](https://github.com/dashevo/platform/issues/175))
+* escape literal '|' in table ([#164](https://github.com/dashevo/platform/issues/164))
+* indicate which network(s) this repo supports ([#174](https://github.com/dashevo/platform/issues/174))
+
+## [0.22.0-dev.5](https://github.com/dashevo/platform/compare/v0.22.0-dev.4...v0.22.0-dev.5) (2022-01-07)
+
+
+### ⚠ BREAKING CHANGES
+
+* **dpp:** `$id` can't be used in secondary indices
+* **dpp:** Indexed properties now require size constraints
+* allow using non-unique Identity public keys (#168)
+* **dashmate:** `platform.drive.abci.docker.build.path' and 'platform.dapi.api.docker.build.path' are removed in favor of `platform.sourcePath'
+
+### Features
+
+* allow adding non-unique indices for newly defined properties ([#83](https://github.com/dashevo/platform/issues/83))
+* allow using non-unique Identity public keys ([#168](https://github.com/dashevo/platform/issues/168))
+* **dashmate:** build DAPI and Drive from monorepo path ([#145](https://github.com/dashevo/platform/issues/145))
+* distribute dashmate with NPM ([#148](https://github.com/dashevo/platform/issues/148))
+* **dpp:** `$id` can't be used in secondary indices ([#178](https://github.com/dashevo/platform/issues/178))
+* **dpp:** size constraints for indexed properties ([#179](https://github.com/dashevo/platform/issues/179))
+* masternode reward shares contract ([#160](https://github.com/dashevo/platform/issues/160))
+
+
+### Bug Fixes
+
+* downgrade dash-core image to v0.17 ([#171](https://github.com/dashevo/platform/issues/171))
+
+
+### Documentation
+
+* minor Readme fixes ([#163](https://github.com/dashevo/platform/issues/163))
+
+
+### Miscellaneous Chores
+
+* **drive:** send initial core chain locked height on init chain ([#180](https://github.com/dashevo/platform/issues/180))
+* update to use current @oclif/core ([#154](https://github.com/dashevo/platform/issues/154))
+
 ## [0.22.0-dev.4](https://github.com/dashevo/platform/compare/v0.22.0-dev.3...v0.22.0-dev.4) (2021-12-24)
 
 

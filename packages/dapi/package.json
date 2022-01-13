@@ -1,11 +1,11 @@
 {
   "name": "@dashevo/dapi",
   "private": true,
-  "version": "0.22.0-dev.4",
+  "version": "0.22.0-dev.6",
   "description": "A decentralized API for the Dash network",
   "scripts": {
     "api": "node scripts/api.js",
-    "tx-filter-stream": "node scripts/tx-filter-stream.js",
+    "core-streams": "node scripts/core-streams.js",
     "test": "yarn run test:coverage && yarn run test:functional",
     "test:coverage": "nyc --check-coverage --lines=50 --branches=50 --functions=50 yarn run mocha --recursive test/unit test/integration",
     "test:unit": "mocha --recursive test/unit",

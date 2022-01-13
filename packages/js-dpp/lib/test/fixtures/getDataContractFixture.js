@@ -56,7 +56,6 @@ module.exports = function getDataContractFixture(ownerId = randomOwnerId) {
         {
           name: 'index3',
           properties: [
-            { $id: 'asc' },
             { lastName: 'asc' },
           ],
         },
@@ -71,6 +70,12 @@ module.exports = function getDataContractFixture(ownerId = randomOwnerId) {
           name: 'index5',
           properties: [
             { $updatedAt: 'asc' },
+          ],
+        },
+        {
+          name: 'index6',
+          properties: [
+            { $createdAt: 'asc' },
           ],
         },
       ],
@@ -103,6 +108,7 @@ module.exports = function getDataContractFixture(ownerId = randomOwnerId) {
           prefixItems: [
             {
               type: 'string',
+              maxLength: 100,
             },
           ],
           minItems: 1,
@@ -208,7 +214,6 @@ module.exports = function getDataContractFixture(ownerId = randomOwnerId) {
         {
           name: 'index2',
           properties: [
-            { $id: 'asc' },
             { $ownerId: 'asc' },
             { firstName: 'asc' },
             { lastName: 'asc' },

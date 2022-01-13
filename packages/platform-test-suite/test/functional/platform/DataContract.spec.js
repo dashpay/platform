@@ -134,6 +134,13 @@ describe('Platform', () => {
         type: 'object',
         indices: [
           {
+            name: 'firstName',
+            properties: [
+              { firstName: 'asc' },
+            ],
+            unique: true,
+          },
+          {
             name: 'firstNameLastName',
             properties: [
               { firstName: 'asc' },

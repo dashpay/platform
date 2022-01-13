@@ -20,9 +20,12 @@ const {
 const {
   v0: {
     TransactionsWithProofsRequest,
+    BlockHeadersWithChainLocksRequest,
     pbjs: {
       TransactionsWithProofsRequest: PBJSTransactionsWithProofsRequest,
       TransactionsWithProofsResponse: PBJSTransactionsWithProofsResponse,
+      BlockHeadersWithChainLocksRequest: PBJSBlockHeadersWithChainLocksRequest,
+      BlockHeadersWithChainLocksResponse: PBJSBlockHeadersWithChainLocksResponse,
     },
   },
   getCoreDefinition,
@@ -45,6 +48,9 @@ const emitBlockEventToFilterCollectionFactory = require('../lib/transactionsFilt
 const testTransactionsAgainstFilter = require('../lib/transactionsFilter/testTransactionAgainstFilter');
 const emitInstantLockToFilterCollectionFactory = require('../lib/transactionsFilter/emitInstantLockToFilterCollectionFactory');
 const subscribeToTransactionsWithProofsHandlerFactory = require('../lib/grpcServer/handlers/tx-filter-stream/subscribeToTransactionsWithProofsHandlerFactory');
+const subscribeToBlockHeadersWithChainLocksHandlerFactory = require('../lib/grpcServer/handlers/blockheaders-stream/subscribeToBlockHeadersWithChainLocksHandlerFactory');
+const getHistoricalBlockHeadersIteratorFactory = require('../lib/grpcServer/handlers/blockheaders-stream/getHistoricalBlockHeadersIteratorFactory');
+const subscribeToNewBlockHeaders = require('../lib/grpcServer/handlers/blockheaders-stream/subscribeToNewBlockHeaders');
 
 const subscribeToNewTransactions = require('../lib/transactionsFilter/subscribeToNewTransactions');
 const getHistoricalTransactionsIteratorFactory = require('../lib/transactionsFilter/getHistoricalTransactionsIteratorFactory');
@@ -118,6 +124,10 @@ async function main() {
     dashCoreRpcClient,
   );
 
+  const getHistoricalBlockHeadersIterator = getHistoricalBlockHeadersIteratorFactory(
+    dashCoreRpcClient,
+  );
+
   const getMemPoolTransactions = getMemPoolTransactionsFactory(
     dashCoreRpcClient,
     testTransactionsAgainstFilter,
@@ -143,10 +153,31 @@ async function main() {
     wrapInErrorHandler(subscribeToTransactionsWithProofsHandler),
   );
 
+  // eslint-disable-next-line operator-linebreak
+  const subscribeToBlockHeadersWithChainLocksHandler =
+    subscribeToBlockHeadersWithChainLocksHandlerFactory(
+      getHistoricalBlockHeadersIterator,
+      dashCoreRpcClient,
+      dashCoreZmqClient,
+      subscribeToNewBlockHeaders,
+    );
+
+  const wrappedSubscribeToBlockHeadersWithChainLocks = jsonToProtobufHandlerWrapper(
+    jsonToProtobufFactory(
+      BlockHeadersWithChainLocksRequest,
+      PBJSBlockHeadersWithChainLocksRequest,
+    ),
+    protobufToJsonFactory(
+      PBJSBlockHeadersWithChainLocksResponse,
+    ),
+    wrapInErrorHandler(subscribeToBlockHeadersWithChainLocksHandler),
+  );
+
   const grpcServer = createServer(
     getCoreDefinition(0),
     {
       subscribeToTransactionsWithProofs: wrappedSubscribeToTransactionsWithProofs,
+      subscribeToBlockHeadersWithChainLocks: wrappedSubscribeToBlockHeadersWithChainLocks,
     },
   );
 
