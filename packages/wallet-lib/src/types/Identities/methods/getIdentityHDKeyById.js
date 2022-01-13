@@ -11,8 +11,6 @@ function getIdentityHDKeyById(identityId, keyIndex) {
     throw new Error(`Identity with ID ${identityId} is not associated with wallet, or it's not synced`);
   }
 
-  console.log('Getting identity hd key by index', identityIndex);
-
   return this.getIdentityHDKeyByIndex(identityIndex, keyIndex);
 }
 
