@@ -33,28 +33,9 @@ pub struct Contract {
 
 #[derive(Serialize, Deserialize)]
 pub struct DocumentType {
+    pub(crate) name: String,
     pub(crate) indices: Vec<Index>,
     pub(crate) properties: HashMap<String, types::DocumentFieldType>,
-}
-
-impl DocumentType {
-    pub fn index_for_types(&self, index_names :&[&str], sort_on: Option<&str>) -> Option<Index> {
-        let mut best_index : Option<Index> = None;
-        let mut best_difference = u16::MAX;
-        for index in self.indices {
-            let difference_option = index.matches(index_names, sort_on);
-            if difference_option.is_some() {
-                let difference = difference_option.unwrap();
-                if difference == 0 {
-                    return Some(index);
-                } else if difference < best_difference {
-                    best_difference = difference;
-                    best_index = Some(index);
-                }
-            }
-        }
-        best_index
-    }
 }
 
 #[derive(Serialize, Deserialize)]
@@ -160,6 +141,7 @@ impl Contract {
             }
 
             let document_type = DocumentType::from_cbor_value(
+                type_key_value.as_text().expect("confirmed as text"),
                 document_type_value.as_map().expect("confirmed as map"),
             )?;
             contract_document_types.insert(
@@ -192,7 +174,38 @@ impl Contract {
 }
 
 impl DocumentType {
-    pub fn from_cbor_value(document_type_value_map: &Vec<(Value, Value)>) -> Result<Self, Error> {
+    pub fn index_for_types(&self, index_names :&[&str], sort_on: Option<&str>) -> Option<(&Index, u16)> {
+        let mut best_index : Option<(&Index, u16)> = None;
+        let mut best_difference = u16::MAX;
+        for index in self.indices.iter() {
+            let difference_option = index.matches(index_names, sort_on);
+            if difference_option.is_some() {
+                let difference = difference_option.unwrap();
+                if difference == 0 {
+                    return Some((index, 0));
+                } else if difference < best_difference {
+                    best_difference = difference;
+                    best_index = Some((index, bes));
+                }
+            }
+        }
+        best_index
+    }
+
+    pub fn serialize_value_for_key<'a>(
+        &'a self,
+        key: &str,
+        value: &Value,
+    ) -> Option<Vec<u8>> {
+        let field_type = self.properties.get(key)?;
+        let raw_value = types::encode_document_field_type(field_type, value);
+        if raw_value.is_err() {
+            return None;
+        }
+        return Some(raw_value.expect("confirmed it's not an error")?);
+    }
+
+    pub fn from_cbor_value(name: &str, document_type_value_map: &Vec<(Value, Value)>) -> Result<Self, Error> {
         let mut indices: Vec<Index> = Vec::new();
         let mut document_properties: HashMap<String, types::DocumentFieldType> = HashMap::new();
 
@@ -269,6 +282,7 @@ impl DocumentType {
         document_properties.insert(String::from("$updatedAt"), types::DocumentFieldType::Date);
 
         Ok(DocumentType {
+            name: name.into_string(),
             indices,
             properties: document_properties,
         })
