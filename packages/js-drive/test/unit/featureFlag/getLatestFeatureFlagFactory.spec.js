@@ -49,16 +49,4 @@ describe('getLatestFeatureFlagFactory', () => {
     );
     expect(result).to.deep.equal(document);
   });
-
-  it('should return null if height specified is lower then height of activation', async () => {
-    const result = await getLatestFeatureFlag('someType', new Long(1));
-
-    expect(result).to.equal(null);
-  });
-
-  it('should return null if height specified is equal to the height of activation', async () => {
-    const result = await getLatestFeatureFlag('someType', new Long(12));
-
-    expect(result).to.equal(null);
-  });
 });
