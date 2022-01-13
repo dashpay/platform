@@ -12,8 +12,6 @@ const {
 
 const Long = require('long');
 
-const generateRandomIdentifier = require('@dashevo/dpp/lib/test/utils/generateRandomIdentifier');
-
 const endBlockHandlerFactory = require('../../../../lib/abci/handlers/endBlockHandlerFactory');
 
 const BlockExecutionContextMock = require('../../../../lib/test/mock/BlockExecutionContextMock');
@@ -26,10 +24,7 @@ describe('endBlockHandlerFactory', () => {
   let headerMock;
   let lastCommitInfoMock;
   let blockExecutionContextMock;
-  let dpnsContractId;
   let dpnsContractBlockHeight;
-  let dashpayContractId;
-  let dashpayContractBlockHeight;
   let latestCoreChainLockMock;
   let loggerMock;
   let createValidatorSetUpdateMock;
@@ -37,10 +32,6 @@ describe('endBlockHandlerFactory', () => {
   let validatorSetMock;
   let getFeatureFlagForHeightMock;
   let blockExecutionStoreTransactionsMock;
-  let featureFlagDataContractId;
-  let featureFlagDataContractBlockHeight;
-  let masternodeRewardSharesContractId;
-  let masternodeRewardSharesContractBlockHeight;
 
   beforeEach(function beforeEach() {
     headerMock = {
@@ -72,11 +63,7 @@ describe('endBlockHandlerFactory', () => {
 
     loggerMock = new LoggerMock(this.sinon);
 
-    dpnsContractId = generateRandomIdentifier();
     dpnsContractBlockHeight = 2;
-
-    dashpayContractId = generateRandomIdentifier();
-    dashpayContractBlockHeight = 2;
 
     validatorSetMock = {
       rotate: this.sinon.stub(),

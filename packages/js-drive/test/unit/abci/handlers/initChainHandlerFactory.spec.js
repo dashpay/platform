@@ -11,6 +11,8 @@ const {
 
 const { PrivateKey } = require('@dashevo/dashcore-lib');
 
+const getDataContractFixture = require('@dashevo/dpp/lib/test/fixtures/getDataContractFixture');
+
 const generateRandomIdentifier = require('@dashevo/dpp/lib/test/utils/generateRandomIdentifier');
 const initChainHandlerFactory = require('../../../../lib/abci/handlers/initChainHandlerFactory');
 const LoggerMock = require('../../../../lib/test/mock/LoggerMock');
@@ -48,9 +50,17 @@ describe('initChainHandlerFactory', () => {
   let blockExecutionStoreTransactionsMock;
   let cloneToPreviousStoreTransactionsMock;
   let containerMock;
+  let dataContracts;
 
   beforeEach(function beforeEach() {
     initialCoreChainLockedHeight = 1;
+
+    dataContracts = [
+      getDataContractFixture(),
+      getDataContractFixture(),
+      getDataContractFixture(),
+      getDataContractFixture(),
+    ];
 
     updateSimplifiedMasternodeListMock = this.sinon.stub();
 
@@ -71,6 +81,10 @@ describe('initChainHandlerFactory', () => {
     registerSystemDataContractMock = this.sinon.stub();
     registerTopLevelDomainMock = this.sinon.stub();
     registerFeatureFlagMock = this.sinon.stub();
+
+    dataContracts.forEach((contract, index) => {
+      registerSystemDataContractMock.onCall(index).returns(contract);
+    });
 
     dpnsContractId = generateRandomIdentifier();
     dpnsOwnerId = generateRandomIdentifier();
@@ -151,7 +165,7 @@ describe('initChainHandlerFactory', () => {
       initialHeight: Long.fromInt(1),
       chainId: 'test',
       time: {
-        seconds: new Long((new Date()).getTime() / 1000),
+        seconds: Long.fromInt((new Date()).getTime() / 1000),
       },
     };
 
@@ -173,5 +187,54 @@ describe('initChainHandlerFactory', () => {
     );
 
     expect(createValidatorSetUpdateMock).to.be.calledOnceWithExactly(validatorSetMock);
+
+    expect(blockExecutionStoreTransactionsMock.start).to.have.been.calledOnce();
+    expect(blockExecutionStoreTransactionsMock.commit).to.have.been.calledOnce();
+    expect(cloneToPreviousStoreTransactionsMock).to.have.been.calledOnceWithExactly(
+      blockExecutionStoreTransactionsMock,
+    );
+    expect(registerSystemDataContractMock.getCall(0).args).to.deep.equal([
+      featureFlagsOwnerId,
+      featureFlagsContractId,
+      featureFlagsOwnerPublicKey,
+      featureFlagsDocuments,
+    ]);
+    expect(registerSystemDataContractMock.getCall(1).args).to.deep.equal([
+      dpnsOwnerId,
+      dpnsContractId,
+      dpnsOwnerPublicKey,
+      dpnsDocuments,
+    ]);
+    expect(registerSystemDataContractMock.getCall(2).args).to.deep.equal([
+      masternodeRewardSharesOwnerId,
+      masternodeRewardSharesContractId,
+      masternodeRewardSharesOwnerPublicKey,
+      masternodeRewardSharesDocuments,
+    ]);
+    expect(registerSystemDataContractMock.getCall(3).args).to.deep.equal([
+      dashpayOwnerId,
+      dashpayContractId,
+      dashpayOwnerPublicKey,
+      dashpayDocuments,
+    ]);
+    dataContracts.forEach((contract, index) => {
+      expect(documentDatabaseManagerMock.create.getCall(index).args).to.deep.equal([
+        contract,
+        { isTransactional: false },
+      ]);
+      expect(previousDocumentDatabaseManagerMock.create.getCall(index).args).to.deep.equal([
+        contract,
+        { isTransactional: false },
+      ]);
+    });
+    expect(registerTopLevelDomainMock).to.have.been.calledOnceWithExactly(
+      'dash', dataContracts[1], dpnsOwnerId, new Date(request.time.seconds.toNumber() * 1000),
+    );
+    expect(registerFeatureFlagMock).to.have.been.calledOnceWithExactly(
+      'fixCumulativeFeesBug',
+      dataContracts[0],
+      featureFlagsOwnerId,
+      new Date(request.time.seconds.toNumber() * 1000),
+    );
   });
 });
