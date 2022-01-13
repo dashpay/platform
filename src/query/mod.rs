@@ -1,3 +1,5 @@
+mod defaults;
+
 use std::collections::HashMap;
 use std::path::Path;
 use grovedb::{Element, Error, GroveDb, PathQuery, Query, QueryItem};
@@ -133,15 +135,33 @@ impl<'a> WhereClause<'a> {
 
         Ok(None)
     }
+
+    fn to_path_query(&self) -> Query {
+        let mut query = Query::new();
+        match self.operator {
+            Equal => { query.insert_key(self.value)}
+            GreaterThan => { query.insert_range_from()}
+            GreaterThanOrEquals => {query.insert_range_from()}
+            LessThan => {query.insert_range_to()}
+            LessThanOrEquals => {query.insert_range_to()}
+            Between => { query.insert_range_inclusive()}
+            BetweenExcludeBounds => { query.insert_range()}
+            BetweenExcludeLeft => { query.insert_range()}
+            BetweenExcludeRight => { query.insert_range()}
+            In => {}
+            StartsWith => {}
+        }
+        query
+    }
 }
 
 pub struct DriveQuery<'a> {
     contract: &'a Contract,
     document_type: &'a DocumentType,
-    equal_clauses: Vec<WhereClause<'a>>,
+    equal_clauses: HashMap<&'a str, WhereClause<'a>>,
     range_clause: Option<WhereClause<'a>>,
-    offset: u32,
-    limit: u32,
+    offset: u16,
+    limit: u16,
     order_by: &'a str,
     start_at: Option<Vec<u8>>,
     start_at_included: bool,
@@ -149,18 +169,18 @@ pub struct DriveQuery<'a> {
 
 impl<'a> DriveQuery<'a> {
     pub fn from_cbor(query_cbor: &[u8], contract: &'a Contract, document_type: &'a DocumentType) -> Result<Self, Error> {
-        let mut document: HashMap<String, CborValue> = ciborium::de::from_reader(query_cbor)
+        let mut query_document: HashMap<String, CborValue> = ciborium::de::from_reader(query_cbor)
             .map_err(|_| Error::CorruptedData(String::from("unable to decode query")))?;
 
-        let limit: u32 = document.get("limit").map_or( Some(100), |id_cbor| {
+        let limit: u16 = query_document.get("limit").map_or( Some(defaults::DEFAULT_QUERY_LIMIT), |id_cbor| {
             if let CborValue::Integer(b) = id_cbor {
-                Some(i128::from(*b) as u32)
+                Some(i128::from(*b) as u16)
             } else {
                 None
             }
         }).ok_or(Error::CorruptedData(String::from("limit should be a integer from 1 to 100")))?;
 
-        let all_where_clauses : Vec<WhereClause> = document.get("where").map_or( vec![], |id_cbor| {
+        let all_where_clauses : Vec<WhereClause> = query_document.get("where").map_or( vec![], |id_cbor| {
             if let CborValue::Array(clauses) = id_cbor {
                 clauses.iter().filter_map( | where_clause| {
                     if let CborValue::Array(clauses_components) = where_clause {
@@ -176,16 +196,20 @@ impl<'a> DriveQuery<'a> {
 
         let range_clause = WhereClause::group_range_clauses(&all_where_clauses)?;
 
-        let equal_clauses = all_where_clauses.into_iter().filter(| where_clause| {
+        let equal_clauses_array = all_where_clauses.into_iter().filter(| where_clause| {
             match where_clause.operator {
                 Equal => true,
                 In => true,
                 _ => false,
             }
+        }).collect::<Vec<&WhereClause>>();
+
+        let equal_clauses= equal_clauses_array.into_iter().map(| where_clause| {
+            (where_clause.field, where_clause)
         }).collect();
 
-        let start_at_option = document.get("startAt");
-        let start_after_option = document.get("startAfter");
+        let start_at_option = query_document.get("startAt");
+        let start_after_option = query_document.get("startAfter");
         if start_after_option.is_some() && start_at_option.is_some() {
             return Err(Error::CorruptedData(String::from("only one of startAt or startAfter should be provided")));
         }
@@ -202,9 +226,9 @@ impl<'a> DriveQuery<'a> {
             start_at_included = true;
         }
 
-        let mut offset: u32 = start_option.map_or( Some(0), |id_cbor| {
+        let mut offset: u16 = start_option.map_or( Some(0), |id_cbor| {
             if let CborValue::Integer(b) = id_cbor {
-                Some(i128::from(*b) as u32)
+                Some(i128::from(*b) as u16)
             } else {
                 None
             }
@@ -226,11 +250,48 @@ impl<'a> DriveQuery<'a> {
             start_at_included,
         })
     }
+
+    pub fn create_path_query(&self) -> Result<DocumentPathQuery, Error> {
+        let equal_fields = self.equal_clauses.iter().map(|clause| {
+            clause.field
+        }).collect::<Vec<&str>>();
+        let range_field = match self.range_clause {
+            None => None,
+            Some(range_clause) => Some(range_clause.field)
+        };
+        let (index, difference) = self.document_type.index_for_types(equal_fields.as_slice(), range_field).ok_or(
+            Error::InvalidQuery("query must be for valid indexes"),
+        )?;
+        if difference > defaults::MAX_INDEX_DIFFERENCE {
+            Err(Error::InvalidQuery("query must better match an existing index"))
+        }
+        let ordered_clauses: Vec<&WhereClause> = index.properties.iter().filter_map(| field| {
+            match self.equal_clauses.get(&field.name) {
+                None => None,
+                Some(where_clause) => Some(where_clause)
+            }
+        }).collect();
+        let last_clause = match self.range_clause {
+            None => {
+                ordered_clauses.last()
+            }
+            Some(where_clause) => {
+                &where_clause
+            }
+        };
+        let intermediate_values = index.properties.iter().filter_map(| field| {
+            match self.equal_clauses.get(&field.name) {
+                None => None,
+                Some(where_clause) => Some(where_clause.value)
+            }
+        }).collect();
+        DocumentPathQuery::new(self.contract, self.document_type.name.as_str(), index, intermediate_values, last_clause.unwrap().to_path_query())
+    }
 }
 
 impl<'a> DocumentPathQuery<'a> {
 
-    pub fn construct(contract: &'a Contract, document_type_name : &'a str, index: &'a Index, intermediate_values: Vec<Vec<u8>>, final_query: Query) -> Result<Self, Error> {
+    pub fn new(contract: &'a Contract, document_type_name : &'a str, index: &'a Index, intermediate_values: Vec<Vec<u8>>, final_query: Query) -> Result<Self, Error> {
         // first let's get the contract path
 
         let mut contract_path = contract.document_type_path(document_type_name);
