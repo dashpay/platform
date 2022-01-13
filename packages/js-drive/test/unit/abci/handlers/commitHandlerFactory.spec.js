@@ -180,7 +180,7 @@ describe('commitHandlerFactory', () => {
 
       await commitHandler();
 
-      expect(creditsDistributionPoolMock.setAmount).to.be.calledOnceWith(
+      expect(creditsDistributionPoolMock.incrementAmount).to.be.calledOnceWith(
         accumulativeFees,
       );
     });
@@ -194,7 +194,7 @@ describe('commitHandlerFactory', () => {
 
       await commitHandler();
 
-      expect(creditsDistributionPoolMock.setAmount).to.be.calledOnceWith(
+      expect(creditsDistributionPoolMock.incrementAmount).to.be.calledOnceWith(
         accumulativeFees,
       );
     });

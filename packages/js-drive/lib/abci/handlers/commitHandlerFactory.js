@@ -90,7 +90,7 @@ function commitHandlerFactory(
       }
 
       // Store ST fees from the block to distribution pool
-      creditsDistributionPool.setAmount(
+      creditsDistributionPool.incrementAmount(
         blockExecutionContext.getCumulativeFees(),
       );
 
