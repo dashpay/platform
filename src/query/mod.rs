@@ -2,12 +2,14 @@ mod defaults;
 
 use std::collections::HashMap;
 use std::path::Path;
-use grovedb::{Element, Error, GroveDb, PathQuery, Query, QueryItem, SizedQuery};
+use grovedb::{
+    Element, Error, GroveDb, PathQuery, Query, QueryItem, SizedQuery,
+    storage::rocksdb_storage::OptimisticTransactionDBTransaction,
+};
 use crate::contract::{Contract, DocumentType, Index};
 use ciborium::value::{Value as CborValue, Value};
 use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
-use proc_macro::Level;
 use crate::query::WhereOperator::{Equal, GreaterThan, GreaterThanOrEquals, LessThan, LessThanOrEquals, In, StartsWith, Between, BetweenExcludeBounds, BetweenExcludeLeft, BetweenExcludeRight};
 
 pub struct DocumentPathQuery<'a> {
@@ -144,7 +146,7 @@ impl<'a> WhereClause<'a> {
             _ => None
         }.ok_or(Error::CorruptedData(String::from("when using between operator you must provide a tuple array of values")))?;
         if in_values.len() != 2 {
-            Err(Error::CorruptedData(String::from("when using between operator you must provide an array of exactly two values")))
+            return Err(Error::CorruptedData(String::from("when using between operator you must provide an array of exactly two values")));
         }
         let left_key = document_type.serialize_value_for_key(self.field, in_values.get(0).unwrap())?;
         let right_key = document_type.serialize_value_for_key(self.field, in_values.get(0).unwrap())?;
@@ -255,7 +257,7 @@ impl<'a> DriveQuery<'a> {
                 In => true,
                 _ => false,
             }
-        }).collect::<Vec<&WhereClause>>();
+        }).collect::<Vec<WhereClause>>();
 
         let equal_clauses= equal_clauses_array.into_iter().map(| where_clause| {
             (where_clause.field, where_clause)
@@ -293,11 +295,11 @@ impl<'a> DriveQuery<'a> {
 
         let order_by = query_document.get("orderBy").iter().map(|record| {
             let order_tuple = match record {
-                Value::Array(order_tuple) => order_tuple,
+                Value::Array(order_tuple) => Some(order_tuple),
                 _ => None
             }.ok_or(Error::CorruptedData(String::from("orderBy must always be an array of tuples")))?;
             if order_tuple.len() != 2 {
-                Err(Error::CorruptedData(String::from("orderBy must always have a tuple comprising a string and a asc/desc")))
+                return Err(Error::CorruptedData(String::from("orderBy must always have a tuple comprising a string and a asc/desc")));
             }
             let field_value = order_tuple.get(0).unwrap();
             let asc_string_value = order_tuple.get(0).unwrap();
@@ -306,11 +308,11 @@ impl<'a> DriveQuery<'a> {
                 Value::Text(asc_string) => Some(asc_string.as_str()),
                 _ => None
             }.ok_or(Error::CorruptedData(String::from("orderBy right component must be a string")))?;
-            match asc_string.as_str() {
+            match asc_string {
                 "asc" => left_to_right = true,
                 "desc" => left_to_right = false,
                 _ => {
-                    Err(Error::CorruptedData(String::from("orderBy right component must be either a asc or desc string")))
+                    return Err(Error::CorruptedData(String::from("orderBy right component must be either a asc or desc string")));
                 }
             }
             let field = match field_value {
@@ -334,9 +336,7 @@ impl<'a> DriveQuery<'a> {
     }
 
     pub fn create_path_query(&self) -> Result<DocumentPathQuery, Error> {
-        let equal_fields = self.equal_clauses.iter().map(|clause| {
-            clause.field
-        }).collect::<Vec<&str>>();
+        let equal_fields = self.equal_clauses.into_keys().collect::<Vec<&str>>();
         let range_field = match self.range_clause {
             None => None,
             Some(range_clause) => Some(range_clause.field)
@@ -345,10 +345,10 @@ impl<'a> DriveQuery<'a> {
             Error::InvalidQuery("query must be for valid indexes"),
         )?;
         if difference > defaults::MAX_INDEX_DIFFERENCE {
-            Err(Error::InvalidQuery("query must better match an existing index"))
+            return Err(Error::InvalidQuery("query must better match an existing index"));
         }
         let ordered_clauses: Vec<&WhereClause> = index.properties.iter().filter_map(| field| {
-            match self.equal_clauses.get(&field.name) {
+            match self.equal_clauses.get(field.name.as_str()) {
                 None => None,
                 Some(where_clause) => Some(where_clause)
             }
@@ -362,18 +362,18 @@ impl<'a> DriveQuery<'a> {
             }
         };
         let intermediate_values = index.properties.iter().filter_map(| field| {
-            match self.equal_clauses.get(&field.name) {
+            match self.equal_clauses.get(field.name.as_str()) {
                 None => None,
                 Some(where_clause) => {
                     if self.order_by.len() == 0 && !last_clause_is_range && last_clause.is_some() && last_clause.unwrap().field == &field.name {
                         //there is no need to give an intermediate value as the last clause is an equality
                         None
                     } else {
-                        Some(where_clause.value)
+                        Some(self.document_type.serialize_value_for_key(field.name.as_str(), where_clause.value))
                     }
                 }
             }
-        }).collect();
+        }).collect::<Result<Vec<Vec<u8>>, Error>>()?;
         let (final_query, left_to_right) = match last_clause {
             None => {
                 let mut query = Query::new();

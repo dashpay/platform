@@ -197,7 +197,9 @@ impl DocumentType {
         key: &str,
         value: &Value,
     ) -> Result<Vec<u8>, Error> {
-        let field_type = self.properties.get(key).ok_or("expected document to have field")?;
+        let field_type = self.properties.get(key).ok_or(
+            Error::CorruptedData(String::from("expected document to have field")),
+        )?;
         Ok(types::encode_document_field_type(field_type, value)?)
     }
 
@@ -278,7 +280,7 @@ impl DocumentType {
         document_properties.insert(String::from("$updatedAt"), types::DocumentFieldType::Date);
 
         Ok(DocumentType {
-            name: name.into_string(),
+            name: String::from(name),
             indices,
             properties: document_properties,
         })
@@ -329,15 +331,17 @@ impl Document {
         key: &str,
         document_type_name: &str,
         contract: &Contract,
-    ) -> Option<Vec<u8>> {
-        let value = self.properties.get(key)?;
-        let document_type = contract.document_types.get(document_type_name)?;
-        let field_type = document_type.properties.get(key)?;
-        let raw_value = types::encode_document_field_type(field_type, value);
-        if raw_value.is_err() {
-            return None;
+    ) -> Result<Option<Vec<u8>>, Error> {
+        match self.properties.get(key) {
+            None => Ok(None),
+            Some(value) => {
+                let document_type = contract.document_types.get(document_type_name)
+                    .ok_or(Error::CorruptedData(String::from(
+                        "document type should exist for name",
+                    )))?;
+                Ok(Some(document_type.serialize_value_for_key(key, value)?))
+            }
         }
-        return Some(raw_value.expect("confirmed it's not an error")?);
     }
 }
 
