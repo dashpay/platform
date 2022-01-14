@@ -115,21 +115,23 @@ impl Drive {
         }
     }
 
-    fn create_root_tree(&mut self) -> Result<(), Error> {
+    fn create_root_tree(&mut self, transaction: Option<&OptimisticTransactionDBTransaction>) -> Result<(), Error> {
         self.grove
-            .insert(&[], RootTree::Identities.into(), Element::empty_tree())?;
+            .insert(&[], RootTree::Identities.into(), Element::empty_tree(), transaction)?;
         self.grove.insert(
             &[],
             RootTree::ContractDocuments.into(),
             Element::empty_tree(),
+            transaction,
         )?;
         self.grove.insert(
             &[],
             RootTree::PublicKeyHashesToIdentities.into(),
             Element::empty_tree(),
+            transaction,
         )?;
         self.grove
-            .insert(&[], RootTree::Misc.into(), Element::empty_tree())?;
+            .insert(&[], RootTree::Misc.into(), Element::empty_tree(), transaction)?;
         Ok(())
     }
 
@@ -137,6 +139,7 @@ impl Drive {
         &mut self,
         contract_bytes: Element,
         contract: &Contract,
+        transaction: Option<&OptimisticTransactionDBTransaction>,
     ) -> Result<u64, Error> {
         let contract_root_path = contract_root_path(&contract.id);
 
@@ -144,6 +147,7 @@ impl Drive {
             &[RootTree::ContractDocuments.into()],
             contract.id.clone(),
             Element::empty_tree(),
+            transaction,
         )?;
 
         let mut cost: u64 = 0;
@@ -154,11 +158,11 @@ impl Drive {
 
         // the contract
         self.grove
-            .insert(&contract_root_path, b"0".to_vec(), contract_bytes)?;
+            .insert(&contract_root_path, b"0".to_vec(), contract_bytes, transaction)?;
 
         // the documents
         self.grove
-            .insert(&contract_root_path, b"1".to_vec(), Element::empty_tree())?;
+            .insert(&contract_root_path, b"1".to_vec(), Element::empty_tree(), transaction)?;
 
         // next we should store each document type
         // right now we are referring them by name
@@ -170,6 +174,7 @@ impl Drive {
                 &contract_documents_path,
                 type_key.as_bytes().to_vec(),
                 Element::empty_tree(),
+                transaction,
             )?;
 
             let mut type_path = contract_documents_path.clone();
@@ -177,7 +182,7 @@ impl Drive {
 
             // primary key tree
             self.grove
-                .insert(&type_path, b"0".to_vec(), Element::empty_tree())?;
+                .insert(&type_path, b"0".to_vec(), Element::empty_tree(), transaction)?;
 
             // for each type we should insert the indices that are top level
             for index in document_type.top_level_indices()? {
@@ -186,6 +191,7 @@ impl Drive {
                     &type_path,
                     Vec::from(index.name.as_bytes()),
                     Element::empty_tree(),
+                    transaction,
                 )?;
             }
         }
@@ -197,6 +203,7 @@ impl Drive {
         &mut self,
         contract_bytes: Element,
         contract: &Contract,
+        transaction: Option<&OptimisticTransactionDBTransaction>,
     ) -> Result<u64, Error> {
         let contract_root_path = contract_root_path(&contract.id);
 
@@ -204,7 +211,7 @@ impl Drive {
 
         // this will override the previous contract
         self.grove
-            .insert(&contract_root_path, b"0".to_vec(), contract_bytes)?;
+            .insert(&contract_root_path, b"0".to_vec(), contract_bytes, transaction)?;
 
         let contract_documents_path = contract_documents_path(&contract.id);
         for (type_key, document_type) in &contract.document_types {
@@ -218,6 +225,7 @@ impl Drive {
                     &type_path,
                     Vec::from(index.name.as_bytes()),
                     Element::empty_tree(),
+                    transaction
                 )?;
             }
         }
@@ -225,7 +233,7 @@ impl Drive {
         Ok(cost)
     }
 
-    pub fn apply_contract(&mut self, contract_cbor: &[u8]) -> Result<u64, Error> {
+    pub fn apply_contract(&mut self, contract_cbor: &[u8], transaction: Option<&OptimisticTransactionDBTransaction>) -> Result<u64, Error> {
         // first we need to deserialize the contract
         let contract = Contract::from_cbor(contract_cbor)?;
 
@@ -236,7 +244,7 @@ impl Drive {
         let mut already_exists = false;
         let mut different_contract_data = false;
 
-        match self.grove.get(&*contract_root_path(&contract.id), b"0") {
+        match self.grove.get(&*contract_root_path(&contract.id), b"0", transaction) {
             Ok(stored_Element) => {
                 already_exists = true;
                 match stored_Element {
@@ -258,12 +266,12 @@ impl Drive {
 
         if already_exists {
             if different_contract_data {
-                self.update_contract(contract_element, &contract)
+                self.update_contract(contract_element, &contract, transaction)
             } else {
                 Ok(0)
             }
         } else {
-            self.insert_contract(contract_element, &contract)
+            self.insert_contract(contract_element, &contract, transaction)
         }
     }
 
@@ -278,6 +286,7 @@ impl Drive {
         document_type_name: &str,
         owner_id: &[u8],
         override_document: bool,
+        transaction: Option<&OptimisticTransactionDBTransaction>,
     ) -> Result<u64, Error> {
         let contract = Contract::from_cbor(contract_cbor)?;
 
@@ -290,6 +299,7 @@ impl Drive {
             document_type_name,
             owner_id,
             override_document,
+            transaction,
         )
     }
 
@@ -301,6 +311,7 @@ impl Drive {
         document_type_name: &str,
         owner_id: &[u8],
         override_document: bool,
+        transaction: Option<&OptimisticTransactionDBTransaction>,
     ) -> Result<u64, Error> {
         // second we need to construct the path for documents on the contract
         // the path is
@@ -318,7 +329,7 @@ impl Drive {
         if override_document {
             if self
                 .grove
-                .get(&primary_key_path, &document.id.clone())
+                .get(&primary_key_path, &document.id.clone(), transaction)
                 .is_ok()
             {
                 return self.update_document_for_contract(
@@ -327,15 +338,17 @@ impl Drive {
                     contract,
                     document_type_name,
                     owner_id,
+                    transaction,
                 );
             }
             self.grove
-                .insert(&primary_key_path, document.id.clone(), document_element)?;
+                .insert(&primary_key_path, document.id.clone(), document_element, transaction)?;
         } else {
             let inserted = self.grove.insert_if_not_exists(
                 &primary_key_path,
                 document.id.clone(),
                 document_element,
+                transaction,
             )?;
             if !inserted {
                 return Err(Error::CorruptedData(String::from("item already exists")));
@@ -396,6 +409,7 @@ impl Drive {
                 &index_path_slices,
                 document_top_field.clone(),
                 Element::empty_tree(),
+                transaction,
             )?;
 
             // we push the actual value of the index path
@@ -419,6 +433,7 @@ impl Drive {
                     &index_path_slices,
                     index_property.name.as_bytes().to_vec(),
                     Element::empty_tree(),
+                    transaction,
                 )?;
 
                 index_path.push(Vec::from(index_property.name.as_bytes()));
@@ -439,6 +454,7 @@ impl Drive {
                     &index_path_slices,
                     document_index_field.clone(),
                     Element::empty_tree(),
+                    transaction,
                 )?;
 
                 // we push the actual value of the index path
@@ -461,6 +477,7 @@ impl Drive {
                     &index_path_slices,
                     b"0".to_vec(),
                     Element::empty_tree(),
+                    transaction,
                 )?;
                 index_path.push(b"0".to_vec());
 
@@ -469,7 +486,7 @@ impl Drive {
 
                 // here we should return an error if the element already exists
                 self.grove
-                    .insert(&index_path_slices, document.id.clone(), document_reference)?;
+                    .insert(&index_path_slices, document.id.clone(), document_reference, transaction)?;
             } else {
                 let index_path_slices: Vec<&[u8]> =
                     index_path.iter().map(|x| x.as_slice()).collect();
@@ -479,6 +496,7 @@ impl Drive {
                     &index_path_slices,
                     b"0".to_vec(),
                     document_reference,
+                    transaction,
                 )?;
                 if !inserted {
                     return Err(Error::CorruptedData(String::from("index already exists")));
@@ -494,6 +512,7 @@ impl Drive {
         contract_cbor: &[u8],
         document_type: &str,
         owner_id: &[u8],
+        transaction: Option<&OptimisticTransactionDBTransaction>,
     ) -> Result<u64, Error> {
         let contract = Contract::from_cbor(contract_cbor)?;
 
@@ -505,6 +524,7 @@ impl Drive {
             &contract,
             document_type,
             owner_id,
+            transaction,
         )
     }
 
@@ -515,6 +535,7 @@ impl Drive {
         contract: &Contract,
         document_type: &str,
         owner_id: &[u8],
+        transaction: Option<&OptimisticTransactionDBTransaction>,
     ) -> Result<u64, Error> {
         // for now updating a document will delete the document, then insert a new document
         self.delete_document_for_contract(
@@ -522,6 +543,7 @@ impl Drive {
             contract,
             document_type,
             owner_id,
+            transaction,
         )?;
         self.add_document_for_contract(
             document,
@@ -530,6 +552,7 @@ impl Drive {
             document_type,
             owner_id,
             false,
+            transaction,
         )
     }
 
@@ -539,9 +562,10 @@ impl Drive {
         contract_cbor: &[u8],
         document_type_name: &str,
         owner_id: &[u8],
+        transaction: Option<&OptimisticTransactionDBTransaction>,
     ) -> Result<u64, Error> {
         let contract = Contract::from_cbor(contract_cbor)?;
-        self.delete_document_for_contract(document_id, &contract, document_type_name, owner_id)
+        self.delete_document_for_contract(document_id, &contract, document_type_name, owner_id, transaction)
     }
 
     pub fn delete_document_for_contract(
@@ -550,6 +574,7 @@ impl Drive {
         contract: &Contract,
         document_type_name: &str,
         owner_id: &[u8],
+        transaction: Option<&OptimisticTransactionDBTransaction>,
     ) -> Result<u64, Error> {
         let document_type =
             contract
@@ -569,7 +594,7 @@ impl Drive {
         // next we need to get the document from storage
         let document_element: Element = self
             .grove
-            .get(&contract_documents_primary_key_path, document_id)?;
+            .get(&contract_documents_primary_key_path, document_id, transaction)?;
 
         let mut document_bytes: Option<Vec<u8>> = None;
         match document_element {
@@ -594,7 +619,7 @@ impl Drive {
 
         // third we need to delete the document for it's primary key
         self.grove
-            .delete(&contract_documents_primary_key_path, Vec::from(document_id))?;
+            .delete(&contract_documents_primary_key_path, Vec::from(document_id), transaction)?;
 
         let contract_document_type_path =
             contract_document_type_path(&contract.id, document_type_name);
@@ -677,13 +702,13 @@ impl Drive {
 
                 // here we should return an error if the element already exists
                 self.grove
-                    .delete(&index_path_slices, Vec::from(document_id))?;
+                    .delete(&index_path_slices, Vec::from(document_id), transaction)?;
             } else {
                 let index_path_slices: Vec<&[u8]> =
                     index_path.iter().map(|x| x.as_slice()).collect();
 
                 // here we should return an error if the element already exists
-                self.grove.delete(&index_path_slices, b"0".to_vec())?;
+                self.grove.delete(&index_path_slices, b"0".to_vec(), transaction)?;
             }
         }
         Ok(0)
@@ -713,13 +738,13 @@ mod tests {
         let mut drive: Drive = Drive::open(tmp_dir).expect("expected to open Drive successfully");
 
         drive
-            .create_root_tree()
+            .create_root_tree(None)
             .expect("expected to create root tree successfully");
 
         // let's construct the grovedb structure for the dashpay data contract
         let dashpay_cbor = json_document_to_cbor("test/contract/dashpay/dashpay-contract.json");
         drive
-            .apply_contract(&dashpay_cbor)
+            .apply_contract(&dashpay_cbor, None)
             .expect("expected to apply contract successfully");
 
         (drive, dashpay_cbor)
@@ -740,6 +765,7 @@ mod tests {
                 "contactRequest",
                 &random_owner_id,
                 false,
+                None,
             )
             .expect("expected to insert a document successfully");
 
@@ -750,6 +776,7 @@ mod tests {
                 "contactRequest",
                 &random_owner_id,
                 false,
+                None,
             )
             .expect_err("expected not to be able to insert same document twice");
 
@@ -760,6 +787,7 @@ mod tests {
                 "contactRequest",
                 &random_owner_id,
                 true,
+                None,
             )
             .expect("expected to override a document successfully");
     }
@@ -785,6 +813,7 @@ mod tests {
                 "contactRequest",
                 &random_owner_id,
                 false,
+                None,
             )
             .expect("expected to insert a document successfully");
         drive
@@ -794,6 +823,7 @@ mod tests {
                 "contactRequest",
                 &random_owner_id,
                 false,
+                None,
             )
             .expect("expected to insert a document successfully");
         drive
@@ -803,6 +833,7 @@ mod tests {
                 "contactRequest",
                 &random_owner_id,
                 false,
+                None,
             )
             .expect("expected to insert a document successfully");
     }
@@ -825,6 +856,7 @@ mod tests {
                 "contactRequest",
                 &random_owner_id,
                 false,
+                None,
             )
             .expect("expected to insert a document successfully");
         drive
@@ -834,6 +866,7 @@ mod tests {
                 "contactRequest",
                 &random_owner_id,
                 false,
+                None,
             )
             .expect_err(
                 "expected not to be able to insert document with already existing unique index",
