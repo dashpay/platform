@@ -18,9 +18,11 @@ class DocumentDatabaseManager {
    * Create a database for @dataContract documents
    *
    * @param {DataContract} dataContract
+   * @param {{ isTransactional: boolean }} [runtimeOptions={}]
+   *
    * @returns {Promise<*[]>}
    */
-  async create(dataContract) {
+  async create(dataContract, runtimeOptions = {}) {
     const documentTypes = Object.keys(dataContract.getDocuments());
 
     const promises = documentTypes.map(async (documentType) => {
@@ -33,6 +35,7 @@ class DocumentDatabaseManager {
       const documentRepository = await this.createDocumentRepository(
         dataContract.getId(),
         documentType,
+        runtimeOptions,
       );
 
       return documentRepository.createCollection(indices);

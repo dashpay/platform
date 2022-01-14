@@ -1,13 +1,11 @@
 /**
- * @param {Identifier} featureFlagDataContractId
- * @param {Long} featureFlagDataContractBlockHeight
+ * @param {Identifier} featureFlagsContractId
  * @param {fetchDocuments} fetchDocuments
  *
  * @return {getFeatureFlagForHeight}
  */
 function getFeatureFlagForHeightFactory(
-  featureFlagDataContractId,
-  featureFlagDataContractBlockHeight,
+  featureFlagsContractId,
   fetchDocuments,
 ) {
   /**
@@ -20,11 +18,7 @@ function getFeatureFlagForHeightFactory(
    * @return {Promise<Document|null>}
    */
   async function getFeatureFlagForHeight(flagType, blockHeight, transaction = undefined) {
-    if (!featureFlagDataContractId) {
-      return null;
-    }
-
-    if (blockHeight.lte(featureFlagDataContractBlockHeight)) {
+    if (!featureFlagsContractId) {
       return null;
     }
 
@@ -35,7 +29,7 @@ function getFeatureFlagForHeightFactory(
     };
 
     const [document] = await fetchDocuments(
-      featureFlagDataContractId,
+      featureFlagsContractId,
       flagType,
       query,
       transaction,
