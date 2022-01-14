@@ -395,7 +395,7 @@ impl Drive {
                             &top_index_property.name,
                             document_type_name,
                             &contract,
-                        )
+                        )?
                         .ok_or(Error::CorruptedData(String::from(
                             "unable to get document top index field",
                         )))?;
@@ -441,7 +441,7 @@ impl Drive {
                 // Iteration 2. the index path is now something like Contracts/ContractID/Documents(1)/$ownerId/<ownerId>/toUserId/<ToUserId>/accountReference
 
                 let document_index_field: Vec<u8> = document
-                    .get_raw_for_contract(&index_property.name, document_type_name, &contract)
+                    .get_raw_for_contract(&index_property.name, document_type_name, &contract)?
                     .ok_or(Error::CorruptedData(String::from(
                         "unable to get document field",
                     )))?;
@@ -656,7 +656,7 @@ impl Drive {
                             &top_index_property.name,
                             document_type_name,
                             &contract,
-                        )
+                        )?
                         .ok_or(Error::CorruptedData(String::from(
                             "unable to get document top index field",
                         )))?;
@@ -681,7 +681,7 @@ impl Drive {
                 // Iteration 2. the index path is now something like Contracts/ContractID/Documents(1)/$ownerId/<ownerId>/toUserId/<ToUserId>/accountReference
 
                 let document_top_field: Vec<u8> = document
-                    .get_raw_for_contract(&index_property.name, document_type_name, &contract)
+                    .get_raw_for_contract(&index_property.name, document_type_name, &contract)?
                     .ok_or(Error::CorruptedData(String::from(
                         "unable to get document field",
                     )))?;
