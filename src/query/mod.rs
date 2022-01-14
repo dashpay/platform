@@ -1,22 +1,25 @@
 mod defaults;
 
-use std::collections::HashMap;
-use std::path::Path;
-use grovedb::{
-    Element, Error, GroveDb, PathQuery, Query, QueryItem, SizedQuery,
-    storage::rocksdb_storage::OptimisticTransactionDBTransaction,
-};
 use crate::contract::{Contract, DocumentType, Index};
+use crate::query::WhereOperator::{
+    Between, BetweenExcludeBounds, BetweenExcludeLeft, BetweenExcludeRight, Equal, GreaterThan,
+    GreaterThanOrEquals, In, LessThan, LessThanOrEquals, StartsWith,
+};
 use ciborium::value::{Value as CborValue, Value};
+use grovedb::{
+    storage::rocksdb_storage::OptimisticTransactionDBTransaction, Element, Error, GroveDb,
+    PathQuery, Query, QueryItem, SizedQuery,
+};
 use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
-use crate::query::WhereOperator::{Equal, GreaterThan, GreaterThanOrEquals, LessThan, LessThanOrEquals, In, StartsWith, Between, BetweenExcludeBounds, BetweenExcludeLeft, BetweenExcludeRight};
+use std::collections::HashMap;
+use std::path::Path;
 
 pub struct DocumentPathQuery<'a> {
     document_type: &'a DocumentType,
-    index : &'a Index,
+    index: &'a Index,
     intermediate_values: Vec<Vec<u8>>,
-    path_query : PathQuery<'a>,
+    path_query: PathQuery<'a>,
 }
 
 #[derive(Copy, Clone)]
@@ -47,7 +50,7 @@ fn operator_from_string(string: &str) -> Option<WhereOperator> {
         "BetweenExcludeRight" => Some(BetweenExcludeRight),
         "In" => Some(In),
         "StartsWith" => Some(StartsWith),
-        &_ => None
+        &_ => None,
     }
 }
 
@@ -55,22 +58,36 @@ fn operator_from_string(string: &str) -> Option<WhereOperator> {
 pub struct WhereClause<'a> {
     field: &'a str,
     operator: WhereOperator,
-    value: &'a Value
+    value: &'a Value,
 }
 
 impl<'a> WhereClause<'a> {
     pub fn from_components(clause_components: &'a Vec<Value>) -> Result<Self, Error> {
         if clause_components.len() != 3 {
-            return Err(Error::CorruptedData(String::from("limit should be a integer from 1 to 100")));
+            return Err(Error::CorruptedData(String::from(
+                "limit should be a integer from 1 to 100",
+            )));
         }
-        let CborValue::Text(field) = clause_components.get(0)
-            .ok_or(Error::CorruptedData(String::from("first field of where component should be a string")))?;
-        let CborValue::Text(operator_string) = clause_components.get(1)
-            .ok_or(Error::CorruptedData(String::from("second field of where component should exist")))?;
-        let operator = operator_from_string(operator_string)
-            .ok_or(Error::CorruptedData(String::from("second field of where component should be a known operator")))?;
-        let value = clause_components.get(2)
-            .ok_or(Error::CorruptedData(String::from("third field of where component should exist")))?;
+        let CborValue::Text(field) =
+            clause_components
+                .get(0)
+                .ok_or(Error::CorruptedData(String::from(
+                    "first field of where component should be a string",
+                )))?;
+        let CborValue::Text(operator_string) =
+            clause_components
+                .get(1)
+                .ok_or(Error::CorruptedData(String::from(
+                    "second field of where component should exist",
+                )))?;
+        let operator = operator_from_string(operator_string).ok_or(Error::CorruptedData(
+            String::from("second field of where component should be a known operator"),
+        ))?;
+        let value = clause_components
+            .get(2)
+            .ok_or(Error::CorruptedData(String::from(
+                "third field of where component should exist",
+            )))?;
         Ok(WhereClause {
             field,
             operator,
@@ -78,10 +95,11 @@ impl<'a> WhereClause<'a> {
         })
     }
 
-    fn group_range_clauses(where_clauses: &'a[WhereClause]) -> Result<Option<Self>, Error> {
+    fn group_range_clauses(where_clauses: &'a [WhereClause]) -> Result<Option<Self>, Error> {
         // In order to group range clauses
-        let groupable_range_clauses : Vec<&WhereClause> = where_clauses.iter().filter(| where_clause| {
-            match where_clause.operator {
+        let groupable_range_clauses: Vec<&WhereClause> = where_clauses
+            .iter()
+            .filter(|where_clause| match where_clause.operator {
                 Equal => false,
                 In => false,
                 GreaterThan => true,
@@ -93,11 +111,12 @@ impl<'a> WhereClause<'a> {
                 BetweenExcludeBounds => false,
                 BetweenExcludeRight => false,
                 BetweenExcludeLeft => false,
-            }
-        }).collect();
+            })
+            .collect();
 
-        let non_groupable_range_clauses : Vec<&WhereClause> = where_clauses.iter().filter(| where_clause| {
-            match where_clause.operator {
+        let non_groupable_range_clauses: Vec<&WhereClause> = where_clauses
+            .iter()
+            .filter(|where_clause| match where_clause.operator {
                 Equal => false,
                 In => false,
                 GreaterThan => false,
@@ -109,19 +128,21 @@ impl<'a> WhereClause<'a> {
                 BetweenExcludeBounds => true,
                 BetweenExcludeRight => true,
                 BetweenExcludeLeft => true,
-            }
-        }).collect();
+            })
+            .collect();
 
         if non_groupable_range_clauses.len() == 0 {
             if groupable_range_clauses.len() == 0 {
                 return Ok(None);
             }
             if groupable_range_clauses.len() == 1 {
-                return Ok(Some(*groupable_range_clauses.get(0).unwrap().clone()))
+                return Ok(Some(*groupable_range_clauses.get(0).unwrap().clone()));
             }
 
             if groupable_range_clauses.len() > 2 {
-                return Err(Error::CorruptedData(String::from("there can only be at most 2 range clauses")));
+                return Err(Error::CorruptedData(String::from(
+                    "there can only be at most 2 range clauses",
+                )));
             }
 
             groupable_range_clauses.get(0).unwrap();
@@ -131,25 +152,37 @@ impl<'a> WhereClause<'a> {
                 field: where_clause.field,
                 operator: where_clause.operator,
                 value: where_clause.value,
-            }))
+            }));
         } else {
             // if non_groupable_range_clauses.len() > 1
-            return Err(Error::CorruptedData(String::from("there can not be more than 1 non groupable range clause")));
+            return Err(Error::CorruptedData(String::from(
+                "there can not be more than 1 non groupable range clause",
+            )));
         }
 
         Ok(None)
     }
 
-    fn split_value_for_between(&self, document_type: &DocumentType) -> Result<(Vec<u8>, Vec<u8>),Error> {
+    fn split_value_for_between(
+        &self,
+        document_type: &DocumentType,
+    ) -> Result<(Vec<u8>, Vec<u8>), Error> {
         let in_values = match self.value {
             Value::Array(array) => Some(array),
-            _ => None
-        }.ok_or(Error::CorruptedData(String::from("when using between operator you must provide a tuple array of values")))?;
-        if in_values.len() != 2 {
-            return Err(Error::CorruptedData(String::from("when using between operator you must provide an array of exactly two values")));
+            _ => None,
         }
-        let left_key = document_type.serialize_value_for_key(self.field, in_values.get(0).unwrap())?;
-        let right_key = document_type.serialize_value_for_key(self.field, in_values.get(0).unwrap())?;
+        .ok_or(Error::CorruptedData(String::from(
+            "when using between operator you must provide a tuple array of values",
+        )))?;
+        if in_values.len() != 2 {
+            return Err(Error::CorruptedData(String::from(
+                "when using between operator you must provide an array of exactly two values",
+            )));
+        }
+        let left_key =
+            document_type.serialize_value_for_key(self.field, in_values.get(0).unwrap())?;
+        let right_key =
+            document_type.serialize_value_for_key(self.field, in_values.get(0).unwrap())?;
         Ok((left_key, right_key))
     }
 
@@ -195,8 +228,11 @@ impl<'a> WhereClause<'a> {
             In => {
                 let in_values = match self.value {
                     Value::Array(array) => Some(array),
-                    _ => None
-                }.ok_or(Error::CorruptedData(String::from("when using in operator you must provide an array of values")))?;
+                    _ => None,
+                }
+                .ok_or(Error::CorruptedData(String::from(
+                    "when using in operator you must provide an array of values",
+                )))?;
                 for value in in_values.iter() {
                     let key = document_type.serialize_value_for_key(self.field, value)?;
                     query.insert_key(key)
@@ -223,50 +259,67 @@ pub struct DriveQuery<'a> {
 }
 
 impl<'a> DriveQuery<'a> {
-    pub fn from_cbor(query_cbor: &[u8], contract: &'a Contract, document_type: &'a DocumentType) -> Result<Self, Error> {
+    pub fn from_cbor(
+        query_cbor: &[u8],
+        contract: &'a Contract,
+        document_type: &'a DocumentType,
+    ) -> Result<Self, Error> {
         let mut query_document: HashMap<String, CborValue> = ciborium::de::from_reader(query_cbor)
             .map_err(|_| Error::CorruptedData(String::from("unable to decode query")))?;
 
-        let limit: u16 = query_document.get("limit").map_or( Some(defaults::DEFAULT_QUERY_LIMIT), |id_cbor| {
-            if let CborValue::Integer(b) = id_cbor {
-                Some(i128::from(*b) as u16)
-            } else {
-                None
-            }
-        }).ok_or(Error::CorruptedData(String::from("limit should be a integer from 1 to 100")))?;
+        let limit: u16 = query_document
+            .get("limit")
+            .map_or(Some(defaults::DEFAULT_QUERY_LIMIT), |id_cbor| {
+                if let CborValue::Integer(b) = id_cbor {
+                    Some(i128::from(*b) as u16)
+                } else {
+                    None
+                }
+            })
+            .ok_or(Error::CorruptedData(String::from(
+                "limit should be a integer from 1 to 100",
+            )))?;
 
-        let all_where_clauses : Vec<WhereClause> = query_document.get("where").map_or( vec![], |id_cbor| {
-            if let CborValue::Array(clauses) = id_cbor {
-                clauses.iter().filter_map( | where_clause| {
-                    if let CborValue::Array(clauses_components) = where_clause {
-                        WhereClause::from_components(clauses_components).ok()
-                    } else {
-                        None
-                    }
-                }).collect()
-            } else {
-                vec![]
-            }
-        });
+        let all_where_clauses: Vec<WhereClause> =
+            query_document.get("where").map_or(vec![], |id_cbor| {
+                if let CborValue::Array(clauses) = id_cbor {
+                    clauses
+                        .iter()
+                        .filter_map(|where_clause| {
+                            if let CborValue::Array(clauses_components) = where_clause {
+                                WhereClause::from_components(clauses_components).ok()
+                            } else {
+                                None
+                            }
+                        })
+                        .collect()
+                } else {
+                    vec![]
+                }
+            });
 
         let range_clause = WhereClause::group_range_clauses(&all_where_clauses)?;
 
-        let equal_clauses_array = all_where_clauses.into_iter().filter(| where_clause| {
-            match where_clause.operator {
+        let equal_clauses_array = all_where_clauses
+            .into_iter()
+            .filter(|where_clause| match where_clause.operator {
                 Equal => true,
                 In => true,
                 _ => false,
-            }
-        }).collect::<Vec<WhereClause>>();
+            })
+            .collect::<Vec<WhereClause>>();
 
-        let equal_clauses= equal_clauses_array.into_iter().map(| where_clause| {
-            (where_clause.field, where_clause)
-        }).collect();
+        let equal_clauses = equal_clauses_array
+            .into_iter()
+            .map(|where_clause| (where_clause.field, where_clause))
+            .collect();
 
         let start_at_option = query_document.get("startAt");
         let start_after_option = query_document.get("startAfter");
         if start_after_option.is_some() && start_at_option.is_some() {
-            return Err(Error::CorruptedData(String::from("only one of startAt or startAfter should be provided")));
+            return Err(Error::CorruptedData(String::from(
+                "only one of startAt or startAfter should be provided",
+            )));
         }
 
         let mut start_at_included = true;
@@ -281,46 +334,67 @@ impl<'a> DriveQuery<'a> {
             start_at_included = true;
         }
 
-        let mut offset: u16 = start_option.map_or( Some(0), |id_cbor| {
-            if let CborValue::Integer(b) = id_cbor {
-                Some(i128::from(*b) as u16)
-            } else {
-                None
-            }
-        }).ok_or(Error::CorruptedData(String::from("limit should be a integer from 1 to 100")))?;
+        let mut offset: u16 = start_option
+            .map_or(Some(0), |id_cbor| {
+                if let CborValue::Integer(b) = id_cbor {
+                    Some(i128::from(*b) as u16)
+                } else {
+                    None
+                }
+            })
+            .ok_or(Error::CorruptedData(String::from(
+                "limit should be a integer from 1 to 100",
+            )))?;
 
         if !start_at_included {
             offset += 1;
         }
 
-        let order_by = query_document.get("orderBy").iter().map(|record| {
-            let order_tuple = match record {
-                Value::Array(order_tuple) => Some(order_tuple),
-                _ => None
-            }.ok_or(Error::CorruptedData(String::from("orderBy must always be an array of tuples")))?;
-            if order_tuple.len() != 2 {
-                return Err(Error::CorruptedData(String::from("orderBy must always have a tuple comprising a string and a asc/desc")));
-            }
-            let field_value = order_tuple.get(0).unwrap();
-            let asc_string_value = order_tuple.get(0).unwrap();
-            let mut left_to_right = true;
-            let asc_string = match asc_string_value {
-                Value::Text(asc_string) => Some(asc_string.as_str()),
-                _ => None
-            }.ok_or(Error::CorruptedData(String::from("orderBy right component must be a string")))?;
-            match asc_string {
-                "asc" => left_to_right = true,
-                "desc" => left_to_right = false,
-                _ => {
-                    return Err(Error::CorruptedData(String::from("orderBy right component must be either a asc or desc string")));
+        let order_by = query_document
+            .get("orderBy")
+            .iter()
+            .map(|record| {
+                let order_tuple = match record {
+                    Value::Array(order_tuple) => Some(order_tuple),
+                    _ => None,
                 }
-            }
-            let field = match field_value {
-                Value::Text(field) => Some(field.as_str()),
-                _ => None
-            }.ok_or(Error::CorruptedData(String::from("orderBy left component must be a string")))?;
-            Ok((field, left_to_right))
-        }).collect::<Result<IndexMap<&str, bool>, Error>>()?;
+                .ok_or(Error::CorruptedData(String::from(
+                    "orderBy must always be an array of tuples",
+                )))?;
+                if order_tuple.len() != 2 {
+                    return Err(Error::CorruptedData(String::from(
+                        "orderBy must always have a tuple comprising a string and a asc/desc",
+                    )));
+                }
+                let field_value = order_tuple.get(0).unwrap();
+                let asc_string_value = order_tuple.get(0).unwrap();
+                let mut left_to_right = true;
+                let asc_string = match asc_string_value {
+                    Value::Text(asc_string) => Some(asc_string.as_str()),
+                    _ => None,
+                }
+                .ok_or(Error::CorruptedData(String::from(
+                    "orderBy right component must be a string",
+                )))?;
+                match asc_string {
+                    "asc" => left_to_right = true,
+                    "desc" => left_to_right = false,
+                    _ => {
+                        return Err(Error::CorruptedData(String::from(
+                            "orderBy right component must be either a asc or desc string",
+                        )));
+                    }
+                }
+                let field = match field_value {
+                    Value::Text(field) => Some(field.as_str()),
+                    _ => None,
+                }
+                .ok_or(Error::CorruptedData(String::from(
+                    "orderBy left component must be a string",
+                )))?;
+                Ok((field, left_to_right))
+            })
+            .collect::<Result<IndexMap<&str, bool>, Error>>()?;
 
         Ok(DriveQuery {
             contract,
@@ -339,74 +413,118 @@ impl<'a> DriveQuery<'a> {
         let equal_fields = self.equal_clauses.into_keys().collect::<Vec<&str>>();
         let range_field = match self.range_clause {
             None => None,
-            Some(range_clause) => Some(range_clause.field)
+            Some(range_clause) => Some(range_clause.field),
         };
-        let (index, difference) = self.document_type.index_for_types(equal_fields.as_slice(), range_field).ok_or(
-            Error::InvalidQuery("query must be for valid indexes"),
-        )?;
+        let (index, difference) = self
+            .document_type
+            .index_for_types(equal_fields.as_slice(), range_field)
+            .ok_or(Error::InvalidQuery("query must be for valid indexes"))?;
         if difference > defaults::MAX_INDEX_DIFFERENCE {
-            return Err(Error::InvalidQuery("query must better match an existing index"));
+            return Err(Error::InvalidQuery(
+                "query must better match an existing index",
+            ));
         }
-        let ordered_clauses: Vec<&WhereClause> = index.properties.iter().filter_map(| field| {
-            match self.equal_clauses.get(field.name.as_str()) {
+        let ordered_clauses: Vec<&WhereClause> = index
+            .properties
+            .iter()
+            .filter_map(|field| match self.equal_clauses.get(field.name.as_str()) {
                 None => None,
-                Some(where_clause) => Some(where_clause)
-            }
-        }).collect();
+                Some(where_clause) => Some(where_clause),
+            })
+            .collect();
         let (last_clause, last_clause_is_range) = match self.range_clause {
-            None => {
-                (ordered_clauses.last(), false)
-            }
-            Some(where_clause) => {
-                (Some(&where_clause), true)
-            }
+            None => (ordered_clauses.last(), false),
+            Some(where_clause) => (Some(&&where_clause), true),
         };
-        let intermediate_values = index.properties.iter().filter_map(| field| {
-            match self.equal_clauses.get(field.name.as_str()) {
-                None => None,
-                Some(where_clause) => {
-                    if self.order_by.len() == 0 && !last_clause_is_range && last_clause.is_some() && last_clause.unwrap().field == &field.name {
-                        //there is no need to give an intermediate value as the last clause is an equality
-                        None
-                    } else {
-                        Some(self.document_type.serialize_value_for_key(field.name.as_str(), where_clause.value))
+        let intermediate_values =
+            index
+                .properties
+                .iter()
+                .filter_map(|field| {
+                    match self.equal_clauses.get(field.name.as_str()) {
+                        None => None,
+                        Some(where_clause) => {
+                            if self.order_by.len() == 0
+                                && !last_clause_is_range
+                                && last_clause.is_some()
+                                && last_clause.unwrap().field == &field.name
+                            {
+                                //there is no need to give an intermediate value as the last clause is an equality
+                                None
+                            } else {
+                                Some(self.document_type.serialize_value_for_key(
+                                    field.name.as_str(),
+                                    where_clause.value,
+                                ))
+                            }
+                        }
                     }
-                }
-            }
-        }).collect::<Result<Vec<Vec<u8>>, Error>>()?;
+                })
+                .collect::<Result<Vec<Vec<u8>>, Error>>()?;
         let (final_query, left_to_right) = match last_clause {
             None => {
                 let mut query = Query::new();
                 query.insert_all();
-                Ok((query, true))
+                (query, true)
             }
             Some(where_clause) => {
-                let left_to_right = self.order_by.get(where_clause.field).ok_or(Error::InvalidQuery("query must have an orderBy field for each range element"))?;
+                let left_to_right =
+                    self.order_by
+                        .get(where_clause.field)
+                        .ok_or(Error::InvalidQuery(
+                            "query must have an orderBy field for each range element",
+                        ))?;
                 let query = where_clause.to_path_query(self.document_type)?;
-                Ok((query, left_to_right))
+                (query, *left_to_right)
             }
-        }?;
-        let final_sized_query = SizedQuery::new(final_query, Some(self.limit), Some(self.offset), left_to_right);
-        DocumentPathQuery::new(self.contract, self.document_type.name.as_str(), index, intermediate_values, final_sized_query)
+        };
+        let final_sized_query = SizedQuery::new(
+            final_query,
+            Some(self.limit),
+            Some(self.offset),
+            left_to_right,
+        );
+        DocumentPathQuery::new(
+            self.contract,
+            self.document_type.name.as_str(),
+            index,
+            intermediate_values,
+            final_sized_query,
+        )
     }
 }
 
 impl<'a> DocumentPathQuery<'a> {
-
-    pub fn new(contract: &'a Contract, document_type_name : &'a str, index: &'a Index, intermediate_values: Vec<Vec<u8>>, final_query: SizedQuery) -> Result<Self, Error> {
+    pub fn new(
+        contract: &'a Contract,
+        document_type_name: &'a str,
+        index: &'a Index,
+        intermediate_values: Vec<Vec<u8>>,
+        final_query: SizedQuery,
+    ) -> Result<Self, Error> {
         // first let's get the contract path
 
         let mut contract_path = contract.document_type_path(document_type_name);
 
-        let document_type = contract.document_types.get(document_type_name).ok_or(
-            Error::CorruptedData(String::from("unknown document type name")),
-        )?;
+        let document_type =
+            contract
+                .document_types
+                .get(document_type_name)
+                .ok_or(Error::CorruptedData(String::from(
+                    "unknown document type name",
+                )))?;
 
-        let (last_index, intermediate_indexes) = index.properties.split_last().ok_or(
-            Error::CorruptedData(String::from("document query has no index with fields")),
-        )?;
+        let (last_index, intermediate_indexes) =
+            index
+                .properties
+                .split_last()
+                .ok_or(Error::CorruptedData(String::from(
+                    "document query has no index with fields",
+                )))?;
 
-        for (intermediate_index, intermediate_value) in intermediate_indexes.iter().zip(intermediate_values.iter()) {
+        for (intermediate_index, intermediate_value) in
+            intermediate_indexes.iter().zip(intermediate_values.iter())
+        {
             contract_path.push(intermediate_index.name.as_bytes());
             contract_path.push(intermediate_value.as_slice());
         }
@@ -419,18 +537,22 @@ impl<'a> DocumentPathQuery<'a> {
                 let mut query = Query::new();
                 query.insert_all();
                 Some(query)
-            },
+            }
         };
 
         Ok(DocumentPathQuery {
             document_type,
             index,
             intermediate_values,
-            path_query: PathQuery::new(contract_path.as_slice(), final_query, Some(b"0"), subquery)
+            path_query: PathQuery::new(contract_path.as_slice(), final_query, Some(b"0"), subquery),
         })
     }
 
-    fn execute_no_proof(self, mut grove: GroveDb, transaction: Option<&OptimisticTransactionDBTransaction>) -> Result<(Vec<Vec<u8>>, u16), Error> {
+    fn execute_no_proof(
+        self,
+        mut grove: GroveDb,
+        transaction: Option<&OptimisticTransactionDBTransaction>,
+    ) -> Result<(Vec<Vec<u8>>, u16), Error> {
         let path_query = self.path_query;
         grove.get_path_query(&path_query, transaction)
     }
