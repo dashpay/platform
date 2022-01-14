@@ -44,11 +44,9 @@ const PublicKeyToIdentityIdStoreRepository = require(
 
 const DataContractStoreRepository = require('./dataContract/DataContractStoreRepository');
 
-const DocumentStoreRepository = require('./document/repository/DocumentRepository');
+const DocumentStoreRepository = require('./document/groveDB/DocumentRepository');
 const findConflictingConditions = require('./document/query/findConflictingConditions');
 const validateQueryFactory = require('./document/query/validateQueryFactory');
-const convertWhereToMongoDbQuery = require('./document/mongoDbRepository/convertWhereToMongoDbQuery');
-const convertToMongoDbIndicesFunction = require('./document/mongoDbRepository/convertToMongoDbIndices');
 const fetchDocumentsFactory = require('./document/fetchDocumentsFactory');
 
 const BlockExecutionContext = require('./blockExecution/BlockExecutionContext');
@@ -104,7 +102,8 @@ const BlockExecutionContextStackRepository = require('./blockExecution/BlockExec
 const rotateSignedStoreFactory = require('./groveDB/rotateSignedStoreFactory');
 const BlockExecutionContextStack = require('./blockExecution/BlockExecutionContextStack');
 const createInitialStateStructureFactory = require('./state/createInitialStateStructureFactory');
-const encodeDocumentPropertyValue = require('')
+const encodeDocumentPropertyValue = require('./document/groveDB/encodeDocumentPropertyValue');
+const createGroveDBPathQuery = require('./document/groveDB/createGroveDBPathQuery');
 
 /**
  *
@@ -460,16 +459,15 @@ function createDIContainer(options) {
    */
   container.register({
     encodeDocumentPropertyValue: asValue(encodeDocumentPropertyValue),
+    createGroveDBPathQuery: asValue(createGroveDBPathQuery),
+
     documentRepository: asClass(DocumentStoreRepository).singleton(),
     signedDocumentRepository: asFunction((
       signedGroveDBStore,
     ) => (new DocumentStoreRepository(signedGroveDBStore))).singleton(),
 
     findConflictingConditions: asValue(findConflictingConditions),
-    convertWhereToMongoDbQuery: asValue(convertWhereToMongoDbQuery),
     validateQuery: asFunction(validateQueryFactory).singleton(),
-
-    convertToMongoDbIndices: asValue(convertToMongoDbIndicesFunction),
 
     fetchDocuments: asFunction(fetchDocumentsFactory).singleton(),
 
@@ -513,6 +511,8 @@ function createDIContainer(options) {
    * Register DPP
    */
   container.register({
+    decodeProtocolEntity: asFunction(decodeProtocolEntityFactory);
+
     stateRepository: asFunction((
       identityRepository,
       publicKeyToIdentityIdRepository,

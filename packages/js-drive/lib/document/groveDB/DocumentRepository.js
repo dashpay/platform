@@ -1,20 +1,32 @@
 const Document = require('@dashevo/dpp/lib/document/Document');
 
-const decodeProtocolEntityFactory = require('@dashevo/dpp/lib/decodeProtocolEntityFactory');
-const DataContractStoreRepository = require("../../dataContract/DataContractStoreRepository");
-const getPropertyDefinitionByPath = require("@dashevo/dpp/lib/dataContract/getPropertyDefinitionByPath");
+const getPropertyDefinitionByPath = require('@dashevo/dpp/lib/dataContract/getPropertyDefinitionByPath');
 
-const decodeProtocolEntity = decodeProtocolEntityFactory();
+const DataContractStoreRepository = require('../../dataContract/DataContractStoreRepository');
+const InvalidQueryError = require('../errors/InvalidQueryError');
+const createDocumentTypeTreePath = require('./createDocumentTreePath');
 
 class DocumentRepository {
   /**
    *
    * @param {GroveDBStore} groveDBStore
    * @param {encodeDocumentPropertyValue} encodeDocumentPropertyValue
+   * @param {validateQuery} validateQuery
+   * @param {decodeProtocolEntity} decodeProtocolEntity
+   * @param {createGroveDBPathQuery} createGroveDBPathQuery
    */
-  constructor(groveDBStore, encodeDocumentPropertyValue) {
+  constructor(
+    groveDBStore,
+    encodeDocumentPropertyValue,
+    validateQuery,
+    decodeProtocolEntity,
+    createGroveDBPathQuery,
+  ) {
     this.storage = groveDBStore;
     this.encodeDocumentPropertyValue = encodeDocumentPropertyValue;
+    this.validateQuery = validateQuery;
+    this.decodeProtocolEntity = decodeProtocolEntity;
+    this.createGroveDBPathQuery = createGroveDBPathQuery;
   }
 
   /**
@@ -26,12 +38,14 @@ class DocumentRepository {
    * @return {Promise<IdentityStoreRepository>}
    */
   async store(document, transaction = undefined) {
-    const documentTypeTreePath = this.#getDocumentTypeTreePath(
+    const documentTypeTreePath = createDocumentTypeTreePath(
       document.getDataContract(),
       document.getType(),
     );
 
-    const documentIdsTreePath = documentTypeTreePath.concat([ DataContractStoreRepository.DOCUMENTS_TREE_KEY]);
+    const documentIdsTreePath = documentTypeTreePath.concat([
+      DataContractStoreRepository.DOCUMENTS_TREE_KEY,
+    ]);
 
     const isDocumentAlreadyExist = Boolean(await this.storage.get(
       documentIdsTreePath,
@@ -86,7 +100,10 @@ class DocumentRepository {
 
         const propertyDefinition = getPropertyDefinitionByPath(documentDefinition, propertyName);
 
-        const encodedPropertyValue = this.encodeDocumentPropertyValue(propertyValue, propertyDefinition);
+        const encodedPropertyValue = this.encodeDocumentPropertyValue(
+          propertyValue,
+          propertyDefinition,
+        );
 
         await this.storage.createTree(
           propertyTreePath,
@@ -103,14 +120,12 @@ class DocumentRepository {
             DataContractStoreRepository.DOCUMENTS_TREE_KEY,
             {
               transaction,
-              skipIfExists: true
+              skipIfExists: true,
             },
           );
 
-          const documentPath = DataContractStoreRepository.TREE_PATH.concat([
-            document.getDataContractId().toBuffer(),
-            Buffer.from(document.getType()),
-
+          const documentPath = documentIdsTreePath.concat([
+            document.getId().toBuffer(),
           ]);
 
           // Store
@@ -120,7 +135,7 @@ class DocumentRepository {
             documentPath,
             {
               transaction,
-              skipIfExists: true
+              skipIfExists: true,
             },
           );
         }
@@ -129,6 +144,7 @@ class DocumentRepository {
   }
 
   /**
+   * Find documents with query
    *
    * @param dataContract
    * @param documentType
@@ -138,9 +154,30 @@ class DocumentRepository {
    * @param [query.startAt]
    * @param [query.startAfter]
    * @param [query.orderBy]
+   * @param {GroveDBTransaction} [transaction]
+   *
+   * @throws InvalidQueryError
+   *
+   * @returns {Document[]}
    */
-  find(dataContract, documentType, query= {}) {
+  async find(dataContract, documentType, query = {}, transaction = undefined) {
+    const documentSchema = dataContract.getDocumentSchema(documentType);
 
+    const result = this.validateQuery(query, documentSchema);
+
+    if (!result.isValid()) {
+      throw new InvalidQueryError(result.getErrors());
+    }
+
+    const pathQuery = this.createGroveDBPathQuery(dataContract, documentType, query);
+
+    const encodedDocuments = await this.storage.getWithQuery(pathQuery, transaction);
+
+    return Promise.all(encodedDocuments.map(async (encodedDocument) => {
+      const [, rawDocument] = this.decodeProtocolEntity(encodedDocument);
+
+      return new Document(rawDocument, dataContract);
+    }));
   }
 
   /**
@@ -152,14 +189,14 @@ class DocumentRepository {
    * @return {Promise<void>}
    */
   async delete(dataContract, documentType, id, transaction = undefined) {
-    const documentTypeTreePath = this.#getDocumentTypeTreePath(
+    const documentTypeTreePath = createDocumentTypeTreePath(
       dataContract,
       documentType,
     );
 
     // Fetch document
     const encodedDocument = await this.storage.get(
-      documentTypeTreePath.concat([ DataContractStoreRepository.DOCUMENTS_TREE_KEY]),
+      documentTypeTreePath.concat([DataContractStoreRepository.DOCUMENTS_TREE_KEY]),
       id.toBuffer(),
       { transaction },
     );
@@ -172,7 +209,7 @@ class DocumentRepository {
      * Remove index property subtrees
      */
 
-    const [, rawDocument] = decodeProtocolEntity(encodedDocument);
+    const [, rawDocument] = this.decodeProtocolEntity(encodedDocument);
 
     const document = new Document(rawDocument, dataContract);
 
@@ -194,7 +231,10 @@ class DocumentRepository {
 
         const propertyDefinition = getPropertyDefinitionByPath(documentDefinition, propertyName);
 
-        const encodedPropertyValue = this.encodeDocumentPropertyValue(propertyValue, propertyDefinition);
+        const encodedPropertyValue = this.encodeDocumentPropertyValue(
+          propertyValue,
+          propertyDefinition,
+        );
 
         // Create a value subtree if not exists
         indexedPropertiesPath = indexedPropertiesPath.concat([
@@ -223,18 +263,6 @@ class DocumentRepository {
       id.toBuffer(),
       { transaction },
     );
-  }
-
-  /**
-   * @param {DataContract} dataContract
-   * @param {string} documentType
-   * @return {Buffer[]}
-   */
-  #getDocumentTypeTreePath(dataContract, documentType) {
-    return DataContractStoreRepository.TREE_PATH.concat([
-      document.getDataContractId().toBuffer(),
-      document.getType()
-    ]);
   }
 }
 
