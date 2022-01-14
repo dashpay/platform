@@ -1,5 +1,6 @@
 mod types;
 
+use crate::drive::RootTree;
 use base64::DecodeError;
 use byteorder::{BigEndian, WriteBytesExt};
 use ciborium::cbor;
@@ -12,7 +13,6 @@ use std::io::BufReader;
 use std::path::Path;
 use std::ptr::swap;
 use std::rc::{Rc, Weak};
-use crate::drive::RootTree;
 
 // contract
 // - id
@@ -57,7 +57,7 @@ impl Index {
     // with leftovers permitted.
     // If a sort_on value is provided it must match the last index property.
     // The number returned is the number of unused index properties
-    pub fn matches(&self, index_names :&[&str], sort_on: Option<&str>) -> Option<u16> {
+    pub fn matches(&self, index_names: &[&str], sort_on: Option<&str>) -> Option<u16> {
         let mut d = self.properties.len();
         if sort_on.is_some() {
             let last_property = self.properties.last();
@@ -165,17 +165,32 @@ impl Contract {
     }
 
     pub fn document_type_path<'a>(&'a self, document_type_name: &'a str) -> Vec<&'a [u8]> {
-        vec![RootTree::ContractDocuments.into(), &self.id, b"1", document_type_name.as_bytes()]
+        vec![
+            RootTree::ContractDocuments.into(),
+            &self.id,
+            b"1",
+            document_type_name.as_bytes(),
+        ]
     }
 
     pub fn documents_primary_key_path<'a>(&'a self, document_type_name: &'a str) -> Vec<&'a [u8]> {
-        vec![RootTree::ContractDocuments.into(), &self.id, b"1", document_type_name.as_bytes(), b"0"]
+        vec![
+            RootTree::ContractDocuments.into(),
+            &self.id,
+            b"1",
+            document_type_name.as_bytes(),
+            b"0",
+        ]
     }
 }
 
 impl DocumentType {
-    pub fn index_for_types(&self, index_names :&[&str], sort_on: Option<&str>) -> Option<(&Index, u16)> {
-        let mut best_index : Option<(&Index, u16)> = None;
+    pub fn index_for_types(
+        &self,
+        index_names: &[&str],
+        sort_on: Option<&str>,
+    ) -> Option<(&Index, u16)> {
+        let mut best_index: Option<(&Index, u16)> = None;
         let mut best_difference = u16::MAX;
         for index in self.indices.iter() {
             let difference_option = index.matches(index_names, sort_on);
@@ -197,13 +212,19 @@ impl DocumentType {
         key: &str,
         value: &Value,
     ) -> Result<Vec<u8>, Error> {
-        let field_type = self.properties.get(key).ok_or(
-            Error::CorruptedData(String::from("expected document to have field")),
-        )?;
+        let field_type = self
+            .properties
+            .get(key)
+            .ok_or(Error::CorruptedData(String::from(
+                "expected document to have field",
+            )))?;
         Ok(types::encode_document_field_type(field_type, value)?)
     }
 
-    pub fn from_cbor_value(name: &str, document_type_value_map: &Vec<(Value, Value)>) -> Result<Self, Error> {
+    pub fn from_cbor_value(
+        name: &str,
+        document_type_value_map: &Vec<(Value, Value)>,
+    ) -> Result<Self, Error> {
         let mut indices: Vec<Index> = Vec::new();
         let mut document_properties: HashMap<String, types::DocumentFieldType> = HashMap::new();
 
@@ -335,10 +356,13 @@ impl Document {
         match self.properties.get(key) {
             None => Ok(None),
             Some(value) => {
-                let document_type = contract.document_types.get(document_type_name)
-                    .ok_or(Error::CorruptedData(String::from(
-                        "document type should exist for name",
-                    )))?;
+                let document_type =
+                    contract
+                        .document_types
+                        .get(document_type_name)
+                        .ok_or(Error::CorruptedData(String::from(
+                            "document type should exist for name",
+                        )))?;
                 Ok(Some(document_type.serialize_value_for_key(key, value)?))
             }
         }
