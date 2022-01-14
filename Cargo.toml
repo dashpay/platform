@@ -12,6 +12,7 @@ bs58 = "0.4.0"
 base64 = "0.13.0"
 rand = "0.8.4"
 byteorder = "1.4.3"
+indexmap = "1.8.0"
 
 [dependencies.grovedb]
 git = "https://github.com/dashevo/grovedb"

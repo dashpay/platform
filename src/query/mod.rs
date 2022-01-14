@@ -2,10 +2,12 @@ mod defaults;
 
 use std::collections::HashMap;
 use std::path::Path;
-use grovedb::{Element, Error, GroveDb, PathQuery, Query, QueryItem};
+use grovedb::{Element, Error, GroveDb, PathQuery, Query, QueryItem, SizedQuery};
 use crate::contract::{Contract, DocumentType, Index};
 use ciborium::value::{Value as CborValue, Value};
+use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
+use proc_macro::Level;
 use crate::query::WhereOperator::{Equal, GreaterThan, GreaterThanOrEquals, LessThan, LessThanOrEquals, In, StartsWith, Between, BetweenExcludeBounds, BetweenExcludeLeft, BetweenExcludeRight};
 
 pub struct DocumentPathQuery<'a> {
@@ -136,22 +138,73 @@ impl<'a> WhereClause<'a> {
         Ok(None)
     }
 
-    fn to_path_query(&self) -> Query {
+    fn split_value_for_between(&self, document_type: &DocumentType) -> Result<(Vec<u8>, Vec<u8>),Error> {
+        let in_values = match self.value {
+            Value::Array(array) => Some(array),
+            _ => None
+        }.ok_or(Error::CorruptedData(String::from("when using between operator you must provide a tuple array of values")))?;
+        if in_values.len() != 2 {
+            Err(Error::CorruptedData(String::from("when using between operator you must provide an array of exactly two values")))
+        }
+        let left_key = document_type.serialize_value_for_key(self.field, in_values.get(0).unwrap())?;
+        let right_key = document_type.serialize_value_for_key(self.field, in_values.get(0).unwrap())?;
+        Ok((left_key, right_key))
+    }
+
+    fn to_path_query(&self, document_type: &DocumentType) -> Result<Query, Error> {
         let mut query = Query::new();
         match self.operator {
-            Equal => { query.insert_key(self.value)}
-            GreaterThan => { query.insert_range_from()}
-            GreaterThanOrEquals => {query.insert_range_from()}
-            LessThan => {query.insert_range_to()}
-            LessThanOrEquals => {query.insert_range_to()}
-            Between => { query.insert_range_inclusive()}
-            BetweenExcludeBounds => { query.insert_range()}
-            BetweenExcludeLeft => { query.insert_range()}
-            BetweenExcludeRight => { query.insert_range()}
-            In => {}
-            StartsWith => {}
+            Equal => {
+                let key = document_type.serialize_value_for_key(self.field, self.value)?;
+                query.insert_key(key);
+            }
+            GreaterThan => {
+                let key = document_type.serialize_value_for_key(self.field, self.value)?;
+                query.insert_range_from(key..);
+            }
+            GreaterThanOrEquals => {
+                let key = document_type.serialize_value_for_key(self.field, self.value)?;
+                query.insert_range_from(key..);
+            }
+            LessThan => {
+                let key = document_type.serialize_value_for_key(self.field, self.value)?;
+                query.insert_range_to(..key);
+            }
+            LessThanOrEquals => {
+                let key = document_type.serialize_value_for_key(self.field, self.value)?;
+                query.insert_range_to_inclusive(..=key);
+            }
+            Between => {
+                let (left_key, right_key) = self.split_value_for_between(document_type)?;
+                query.insert_range_inclusive(left_key..=left_key)
+            }
+            BetweenExcludeBounds => {
+                let (left_key, right_key) = self.split_value_for_between(document_type)?;
+                query.insert_range(left_key..left_key)
+            }
+            BetweenExcludeLeft => {
+                let (left_key, right_key) = self.split_value_for_between(document_type)?;
+                query.insert_range(left_key..left_key)
+            }
+            BetweenExcludeRight => {
+                let (left_key, right_key) = self.split_value_for_between(document_type)?;
+                query.insert_range(left_key..left_key)
+            }
+            In => {
+                let in_values = match self.value {
+                    Value::Array(array) => Some(array),
+                    _ => None
+                }.ok_or(Error::CorruptedData(String::from("when using in operator you must provide an array of values")))?;
+                for value in in_values.iter() {
+                    let key = document_type.serialize_value_for_key(self.field, value)?;
+                    query.insert_key(key)
+                }
+            }
+            StartsWith => {
+                todo!()
+            }
         }
-        query
+        Ok(query)
     }
 }
 
@@ -162,7 +215,7 @@ pub struct DriveQuery<'a> {
     range_clause: Option<WhereClause<'a>>,
     offset: u16,
     limit: u16,
-    order_by: &'a str,
+    order_by: IndexMap<&'a str, bool>,
     start_at: Option<Vec<u8>>,
     start_at_included: bool,
 }
@@ -238,6 +291,35 @@ impl<'a> DriveQuery<'a> {
             offset += 1;
         }
 
+        let order_by = query_document.get("orderBy").iter().map(|record| {
+            let order_tuple = match record {
+                Value::Array(order_tuple) => order_tuple,
+                _ => None
+            }.ok_or(Error::CorruptedData(String::from("orderBy must always be an array of tuples")))?;
+            if order_tuple.len() != 2 {
+                Err(Error::CorruptedData(String::from("orderBy must always have a tuple comprising a string and a asc/desc")))
+            }
+            let field_value = order_tuple.get(0).unwrap();
+            let asc_string_value = order_tuple.get(0).unwrap();
+            let mut left_to_right = true;
+            let asc_string = match asc_string_value {
+                Value::Text(asc_string) => Some(asc_string.as_str()),
+                _ => None
+            }.ok_or(Error::CorruptedData(String::from("orderBy right component must be a string")))?;
+            match asc_string.as_str() {
+                "asc" => left_to_right = true,
+                "desc" => left_to_right = false,
+                _ => {
+                    Err(Error::CorruptedData(String::from("orderBy right component must be either a asc or desc string")))
+                }
+            }
+            let field = match field_value {
+                Value::Text(field) => Some(field.as_str()),
+                _ => None
+            }.ok_or(Error::CorruptedData(String::from("orderBy left component must be a string")))?;
+            Ok((field, left_to_right))
+        }).collect::<Result<IndexMap<&str, bool>, Error>>()?;
+
         Ok(DriveQuery {
             contract,
             document_type,
@@ -245,7 +327,7 @@ impl<'a> DriveQuery<'a> {
             range_clause,
             offset,
             limit,
-            order_by: "",
+            order_by,
             start_at: None,
             start_at_included,
         })
@@ -271,27 +353,47 @@ impl<'a> DriveQuery<'a> {
                 Some(where_clause) => Some(where_clause)
             }
         }).collect();
-        let last_clause = match self.range_clause {
+        let (last_clause, last_clause_is_range) = match self.range_clause {
             None => {
-                ordered_clauses.last()
+                (ordered_clauses.last(), false)
             }
             Some(where_clause) => {
-                &where_clause
+                (Some(&where_clause), true)
             }
         };
         let intermediate_values = index.properties.iter().filter_map(| field| {
             match self.equal_clauses.get(&field.name) {
                 None => None,
-                Some(where_clause) => Some(where_clause.value)
+                Some(where_clause) => {
+                    if self.order_by.len() == 0 && !last_clause_is_range && last_clause.is_some() && last_clause.unwrap().field == &field.name {
+                        //there is no need to give an intermediate value as the last clause is an equality
+                        None
+                    } else {
+                        Some(where_clause.value)
+                    }
+                }
             }
         }).collect();
-        DocumentPathQuery::new(self.contract, self.document_type.name.as_str(), index, intermediate_values, last_clause.unwrap().to_path_query())
+        let (final_query, left_to_right) = match last_clause {
+            None => {
+                let mut query = Query::new();
+                query.insert_all();
+                Ok((query, true))
+            }
+            Some(where_clause) => {
+                let left_to_right = self.order_by.get(where_clause.field).ok_or(Error::InvalidQuery("query must have an orderBy field for each range element"))?;
+                let query = where_clause.to_path_query(self.document_type)?;
+                Ok((query, left_to_right))
+            }
+        }?;
+        let final_sized_query = SizedQuery::new(final_query, Some(self.limit), Some(self.offset), left_to_right);
+        DocumentPathQuery::new(self.contract, self.document_type.name.as_str(), index, intermediate_values, final_sized_query)
     }
 }
 
 impl<'a> DocumentPathQuery<'a> {
 
-    pub fn new(contract: &'a Contract, document_type_name : &'a str, index: &'a Index, intermediate_values: Vec<Vec<u8>>, final_query: Query) -> Result<Self, Error> {
+    pub fn new(contract: &'a Contract, document_type_name : &'a str, index: &'a Index, intermediate_values: Vec<Vec<u8>>, final_query: SizedQuery) -> Result<Self, Error> {
         // first let's get the contract path
 
         let mut contract_path = contract.document_type_path(document_type_name);
@@ -311,11 +413,20 @@ impl<'a> DocumentPathQuery<'a> {
 
         contract_path.push(last_index.name.as_bytes());
 
+        let subquery = match index.unique {
+            true => None,
+            false => {
+                let mut query = Query::new();
+                query.insert_all();
+                Some(query)
+            },
+        };
+
         Ok(DocumentPathQuery {
             document_type,
             index,
             intermediate_values,
-            path_query: PathQuery::new(contract_path.as_slice(), final_query)
+            path_query: PathQuery::new(contract_path.as_slice(), final_query, Some(b"0"), subquery)
         })
     }
 

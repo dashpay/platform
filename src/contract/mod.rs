@@ -196,13 +196,9 @@ impl DocumentType {
         &'a self,
         key: &str,
         value: &Value,
-    ) -> Option<Vec<u8>> {
-        let field_type = self.properties.get(key)?;
-        let raw_value = types::encode_document_field_type(field_type, value);
-        if raw_value.is_err() {
-            return None;
-        }
-        return Some(raw_value.expect("confirmed it's not an error")?);
+    ) -> Result<Vec<u8>, Error> {
+        let field_type = self.properties.get(key).ok_or("expected document to have field")?;
+        Ok(types::encode_document_field_type(field_type, value)?)
     }
 
     pub fn from_cbor_value(name: &str, document_type_value_map: &Vec<(Value, Value)>) -> Result<Self, Error> {
