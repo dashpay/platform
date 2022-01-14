@@ -9,11 +9,11 @@ const {
 const {
   v0: {
     GetDataContractResponse,
-    StoreTreeProofs,
   },
 } = require('@dashevo/dapi-grpc');
 
 const NotFoundAbciError = require('../../errors/NotFoundAbciError');
+const UnimplementedAbciError = require('../../errors/UnimplementedAbciError');
 
 /**
  *
@@ -44,20 +44,16 @@ function dataContractQueryHandlerFactory(
     const response = createQueryResponse(GetDataContractResponse, request.prove);
 
     if (request.prove) {
-      const proof = response.getProof();
-
-      proof.setMerkleProof(
-        signedDataContractRepository.prove(),
-      );
-    } else {
-      const dataContract = await signedDataContractRepository.fetch(id);
-
-      if (dataContract) {
-        throw new NotFoundAbciError('Data Contract not found');
-      }
-
-      response.setDataContract(dataContract.toBuffer());
+      throw new UnimplementedAbciError('Proofs are not implemented yet');
     }
+
+    const dataContract = await signedDataContractRepository.fetch(id);
+
+    if (dataContract) {
+      throw new NotFoundAbciError('Data Contract not found');
+    }
+
+    response.setDataContract(dataContract.toBuffer());
 
     return new ResponseQuery({
       value: response.serializeBinary(),

@@ -10,12 +10,10 @@ const cbor = require('cbor');
 
 /**
  *
- * @param {BlockExecutionContext} blockExecutionContext
- * @param {blockExecutionContextStack} blockExecutionContextStack,
+ * @param {BlockExecutionContextStack} blockExecutionContextStack
  * @return {getProofsQueryHandler}
  */
 function getProofsQueryHandlerFactory(
-  blockExecutionContext,
   blockExecutionContextStack,
 ) {
   /**
@@ -47,10 +45,13 @@ function getProofsQueryHandlerFactory(
       });
     }
 
+    const blockExecutionContext = blockExecutionContextStack.getFirst();
+    const signedBlockExecutionContext = blockExecutionContextStack.getLast();
+
     const {
-      height: previousBlockHeight,
-      coreChainLockedHeight: previousCoreChainLockedHeight,
-    } = previousBlockExecutionContext.getHeader();
+      height: signedBlockHeight,
+      coreChainLockedHeight: signedCoreChainLockedHeight,
+    } = signedBlockExecutionContext.getHeader();
 
     const {
       quorumHash: signatureLlmqHash,
@@ -62,8 +63,8 @@ function getProofsQueryHandlerFactory(
       identitiesProof: null,
       dataContractsProof: null,
       metadata: {
-        height: previousBlockHeight.toNumber(),
-        coreChainLockedHeight: previousCoreChainLockedHeight,
+        height: signedBlockHeight.toNumber(),
+        coreChainLockedHeight: signedCoreChainLockedHeight,
       },
     };
 
@@ -71,7 +72,7 @@ function getProofsQueryHandlerFactory(
       response.documentsProof = {
         signatureLlmqHash,
         signature,
-        ...previousRootTree.getFullProofForOneLeaf(previousDocumentsStoreRootTreeLeaf, documentIds),
+        merkleProof: Buffer.from(1),
       };
     }
 
@@ -79,9 +80,7 @@ function getProofsQueryHandlerFactory(
       response.identitiesProof = {
         signatureLlmqHash,
         signature,
-        ...previousRootTree.getFullProofForOneLeaf(
-          previousIdentitiesStoreRootTreeLeaf, identityIds,
-        ),
+        merkleProof: Buffer.from(1),
       };
     }
 
@@ -89,9 +88,7 @@ function getProofsQueryHandlerFactory(
       response.dataContractsProof = {
         signatureLlmqHash,
         signature,
-        ...previousRootTree.getFullProofForOneLeaf(
-          previousDataContractsStoreRootTreeLeaf, dataContractIds,
-        ),
+        merkleProof: Buffer.from(1),
       };
     }
 
