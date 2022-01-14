@@ -93,7 +93,8 @@ function commitHandlerFactory(
 
     // Rotate signed store
     // Create a new GroveDB checkpoint and remove the old one
-    await rotateSignedStore(blockHeight);
+    // TODO: We do not rotate signed state for now
+    // await rotateSignedStore(blockHeight);
 
     const appHash = groveDBStore.getRootHash();
 
