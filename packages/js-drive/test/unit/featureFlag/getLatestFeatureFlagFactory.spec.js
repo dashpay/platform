@@ -10,7 +10,6 @@ describe('getLatestFeatureFlagFactory', () => {
   let featureFlagDataContractId;
   let fetchDocumentsMock;
   let getLatestFeatureFlag;
-  let featureFlagDataContractBlockHeight;
   let document;
 
   beforeEach(function beforeEach() {
@@ -23,11 +22,8 @@ describe('getLatestFeatureFlagFactory', () => {
       document,
     ]);
 
-    featureFlagDataContractBlockHeight = new Long(12);
-
     getLatestFeatureFlag = getLatestFeatureFlagFactory(
       featureFlagDataContractId,
-      featureFlagDataContractBlockHeight,
       fetchDocumentsMock,
     );
   });
@@ -52,17 +48,5 @@ describe('getLatestFeatureFlagFactory', () => {
       undefined,
     );
     expect(result).to.deep.equal(document);
-  });
-
-  it('should return null if height specified is lower then height of activation', async () => {
-    const result = await getLatestFeatureFlag('someType', new Long(1));
-
-    expect(result).to.equal(null);
-  });
-
-  it('should return null if height specified is equal to the height of activation', async () => {
-    const result = await getLatestFeatureFlag('someType', new Long(12));
-
-    expect(result).to.equal(null);
   });
 });

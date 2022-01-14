@@ -14,7 +14,6 @@ class GroupResetCommand extends GroupBaseCommand {
    * @param {Config[]} configGroup
    * @param {configureCoreTask} configureCoreTask
    * @param {configureTenderdashTask} configureTenderdashTask
-   * @param {initializePlatformTask} initializePlatformTask
    * @param {generateToAddressTask} generateToAddressTask
    * @param {ConfigFile} configFile
    * @param {Object[]} systemConfigs
@@ -33,7 +32,6 @@ class GroupResetCommand extends GroupBaseCommand {
     configGroup,
     configureCoreTask,
     configureTenderdashTask,
-    initializePlatformTask,
     generateToAddressTask,
     configFile,
     systemConfigs,
@@ -100,11 +98,6 @@ class GroupResetCommand extends GroupBaseCommand {
           enabled: (ctx) => !ctx.isHardReset,
           skip: (ctx) => !!ctx.fundingPrivateKeyString,
           task: () => generateToAddressTask(configGroup[0], amount),
-        },
-        {
-          enabled: (ctx) => !ctx.isHardReset,
-          title: 'Initialize Platform',
-          task: () => initializePlatformTask(configGroup),
         },
       ],
       {
