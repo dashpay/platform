@@ -24,5 +24,8 @@
       "error",
       "all"
     ]
+  },
+  "globals": {
+    "BigInt": true
   }
 }
