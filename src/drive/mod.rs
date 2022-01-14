@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 use std::any::Any;
 use std::collections::HashMap;
 use std::path::Path;
+use storage::rocksdb_storage::OptimisticTransactionDBTransaction;
 
 pub struct Drive {
     grove: GroveDb,
