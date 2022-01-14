@@ -106,6 +106,10 @@ class GroveDBStore {
     }
   }
 
+  async getWithQuery(queryPath, options) {
+
+  }
+
   /**
    * Delete value by key
    *
