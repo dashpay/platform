@@ -185,7 +185,7 @@ impl DocumentType {
                     return Some((index, 0));
                 } else if difference < best_difference {
                     best_difference = difference;
-                    best_index = Some((index, bes));
+                    best_index = Some((index, best_difference));
                 }
             }
         }
