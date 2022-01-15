@@ -66,26 +66,36 @@ impl<'a> WhereClause<'a> {
                 "limit should be a integer from 1 to 100",
             )));
         }
-        let CborValue::Text(field) =
-            clause_components
-                .get(0)
+
+        let field_value = clause_components
+            .get(0)
+            .expect("check above enforces it exists");
+        let field = field_value
+            .as_text()
+            .ok_or(Error::CorruptedData(String::from(
+                "first field of where component should be a string",
+            )))?;
+
+        let operator_value = clause_components
+            .get(1)
+            .expect("check above enforces it exists");
+        let operator_string =
+            operator_value
+                .as_text()
                 .ok_or(Error::CorruptedData(String::from(
-                    "first field of where component should be a string",
+                    "second field of where component should be a string",
                 )))?;
-        let CborValue::Text(operator_string) =
-            clause_components
-                .get(1)
-                .ok_or(Error::CorruptedData(String::from(
-                    "second field of where component should exist",
-                )))?;
+
         let operator = operator_from_string(operator_string).ok_or(Error::CorruptedData(
             String::from("second field of where component should be a known operator"),
         ))?;
+
         let value = clause_components
             .get(2)
             .ok_or(Error::CorruptedData(String::from(
                 "third field of where component should exist",
             )))?;
+
         Ok(WhereClause {
             field,
             operator,
@@ -209,19 +219,19 @@ impl<'a> WhereClause<'a> {
             }
             Between => {
                 let (left_key, right_key) = self.split_value_for_between(document_type)?;
-                query.insert_range_inclusive(left_key..=left_key)
+                query.insert_range_inclusive(left_key..=right_key)
             }
             BetweenExcludeBounds => {
                 let (left_key, right_key) = self.split_value_for_between(document_type)?;
-                query.insert_range(left_key..left_key)
+                query.insert_range(left_key..right_key)
             }
             BetweenExcludeLeft => {
                 let (left_key, right_key) = self.split_value_for_between(document_type)?;
-                query.insert_range(left_key..left_key)
+                query.insert_range(left_key..right_key)
             }
             BetweenExcludeRight => {
                 let (left_key, right_key) = self.split_value_for_between(document_type)?;
-                query.insert_range(left_key..left_key)
+                query.insert_range(left_key..right_key)
             }
             In => {
                 let in_values = match self.value {
@@ -278,7 +288,7 @@ impl<'a> DriveQuery<'a> {
                 "limit should be a integer from 1 to 100",
             )))?;
 
-        let all_where_clauses: Vec<WhereClause> =
+        let all_where_clauses: Vec<WhereClause<'a>> =
             query_document.get("where").map_or(vec![], |id_cbor| {
                 if let CborValue::Array(clauses) = id_cbor {
                     clauses
@@ -298,7 +308,7 @@ impl<'a> DriveQuery<'a> {
 
         let range_clause = WhereClause::group_range_clauses(&all_where_clauses)?;
 
-        let equal_clauses_array = all_where_clauses
+        let equal_clauses_array = all_where_clauses.clone()
             .into_iter()
             .filter(|where_clause| match where_clause.operator {
                 Equal => true,
