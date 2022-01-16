@@ -37,6 +37,7 @@ describe('subscribeToBlockHeadersWithChainLocksHandlerFactory', () => {
   beforeEach(function () {
     coreAPIMock = {
       getBlock: this.sinon.stub(),
+      getBlockStats: this.sinon.stub(),
       getBestBlockHeight: this.sinon.stub(),
       getBlockHash: this.sinon.stub(),
       getBestChainLock: this.sinon.stub(),
@@ -74,7 +75,7 @@ describe('subscribeToBlockHeadersWithChainLocksHandlerFactory', () => {
       signature: Buffer.from('fakeSig'),
       blockHash: Buffer.from('fakeHash'),
     });
-    coreAPIMock.getBlock.resolves({ height: 1 });
+    coreAPIMock.getBlockStats.resolves({ height: 1 });
 
     await subscribeToBlockHeadersWithChainLocksHandler(call);
     expect(subscribeToNewBlockHeadersMock).to.have.been.called();
@@ -95,7 +96,7 @@ describe('subscribeToBlockHeadersWithChainLocksHandlerFactory', () => {
       blockHash: Buffer.from('fakeHash', 'hex'),
     });
 
-    coreAPIMock.getBlock.resolves({ height: 1 });
+    coreAPIMock.getBlockStats.resolves({ height: 1 });
 
     await subscribeToBlockHeadersWithChainLocksHandler(call);
 
@@ -136,7 +137,7 @@ describe('subscribeToBlockHeadersWithChainLocksHandlerFactory', () => {
       signature: Buffer.from('fakeSig'),
       blockHash: Buffer.from('fakeHash'),
     });
-    coreAPIMock.getBlock.resolves({ height: 1 });
+    coreAPIMock.getBlockStats.resolves({ height: 1 });
 
     await subscribeToBlockHeadersWithChainLocksHandler(call);
     expect(subscribeToNewBlockHeadersMock).to.not.have.been.called();
@@ -152,15 +153,15 @@ describe('subscribeToBlockHeadersWithChainLocksHandlerFactory', () => {
     call.request.setCount(0);
 
     try {
-      coreAPIMock.getBlock.resolves({ height: -1 });
+      coreAPIMock.getBlockStats.throws({ code: -5 });
       await subscribeToBlockHeadersWithChainLocksHandler(call);
     } catch (e) {
       expect(e).to.be.instanceOf(NotFoundGrpcError);
-      expect(e.message).to.be('fromBlockHash is not found');
+      expect(e.message).to.be.equal('fromBlockHash is not found');
     }
 
     try {
-      coreAPIMock.getBlock.resolves({ height: 1, confirmations: -1 });
+      coreAPIMock.getBlockStats.throws({code: -8})
       await subscribeToBlockHeadersWithChainLocksHandler(call);
     } catch (e) {
       expect(e).to.be.instanceOf(NotFoundGrpcError);
@@ -168,7 +169,7 @@ describe('subscribeToBlockHeadersWithChainLocksHandlerFactory', () => {
     }
 
     try {
-      coreAPIMock.getBlock.resolves({ height: 10 });
+      coreAPIMock.getBlockStats.resolves({ height: 10 });
       coreAPIMock.getBestBlockHeight.resolves(11);
       await subscribeToBlockHeadersWithChainLocksHandler(call);
     } catch (e) {

@@ -126,19 +126,19 @@ function subscribeToBlockHeadersWithChainLocksHandlerFactory(
     let fromBlock;
 
     try {
-      // TODO: rework with getBlockStats
-      fromBlock = await coreAPI.getBlock(fromBlockHash);
+      fromBlock = await coreAPI.getBlockStats(fromBlockHash);
     } catch (e) {
       // Block not found
       if (e.code === -5) {
         throw new NotFoundGrpcError('fromBlockHash is not found');
       }
 
-      throw e;
-    }
+      // Block is not on best chain
+      if (e.code === -8) {
+        throw new NotFoundGrpcError(`Block ${fromBlockHash} is not part of the best block chain`);
+      }
 
-    if (fromBlock.confirmations === -1) {
-      throw new NotFoundGrpcError(`block ${fromBlockHash} is not part of the best block chain`);
+      throw e;
     }
 
     const bestBlockHeight = await coreAPI.getBestBlockHeight();
