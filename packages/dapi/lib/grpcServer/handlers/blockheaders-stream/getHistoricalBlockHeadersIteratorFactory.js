@@ -30,7 +30,7 @@ function getHistoricalBlockHeadersIteratorFactory(coreRpcApi) {
     fromBlockHash,
     count,
   ) {
-    const fromBlock = await coreRpcApi.getBlockStats(fromBlockHash, ["height"]);
+    const fromBlock = await coreRpcApi.getBlockStats(fromBlockHash, ['height']);
     const fromHeight = fromBlock.height;
     const numberOfBatches = Math.ceil(count / MAX_HEADERS_PER_REQUEST);
 
