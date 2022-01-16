@@ -1,5 +1,5 @@
-use byteorder::{BigEndian, LittleEndian, WriteBytesExt};
-use ciborium::value::{Integer, Value};
+use byteorder::{BigEndian, WriteBytesExt};
+use ciborium::value::Value;
 use grovedb::Error;
 use serde::{Deserialize, Serialize};
 
@@ -150,9 +150,6 @@ fn encode_float(val: f64) -> Result<Vec<u8>, Error> {
 }
 
 mod tests {
-    use crate::contract::types::{encode_document_field_type, DocumentFieldType};
-    use ciborium::value::{Integer, Value};
-
     #[test]
     fn test_successful_encode() {
         // Constraint: for all types, if a > b then encoding(a) > enconding(b)
