@@ -86,7 +86,7 @@ describe('getHistoricalTransactionsIteratorFactory', () => {
 
     mockData.blocks.forEach((mockedBlockData) => {
       coreRpcMock.getBlock.withArgs(mockedBlockData.hash).resolves(mockedBlockData);
-      coreRpcMock.getBlockStats.withArgs(mockedBlockData.hash, ['height']).resolves({height: mockedBlockData.height});
+      coreRpcMock.getBlockStats.withArgs(mockedBlockData.hash, ['height']).resolves({ height: mockedBlockData.height });
     });
 
     mockData.blocks.forEach((mockedBlockData) => {

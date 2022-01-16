@@ -363,7 +363,7 @@ describe('subscribeToTransactionsWithProofsHandlerFactory', () => {
     const error = new Error();
     error.code = -8;
 
-    coreAPIMock.getBlockStats.throws(error)
+    coreAPIMock.getBlockStats.throws(error);
 
     try {
       await subscribeToTransactionsWithProofsHandler(call);
