@@ -298,6 +298,17 @@ const getBlockchainInfo = () => new Promise((resolve, reject) => {
   });
 });
 
+const getBlockStats = (hashOrHeight, topics) => new Promise((resolve, reject) => {
+  console.log(hashOrHeight, topics, '555')
+  client.getblockstats(hashOrHeight, topics, (err, r) => {
+    if (err) {
+      reject(new DashCoreRpcError(err.message, null, err.code));
+    } else {
+      resolve(r.result);
+    }
+  });
+});
+
 /**
  * @typedef CoreRpcClient
  * @type {{
@@ -337,6 +348,7 @@ module.exports = {
   getBlock,
   getBlockHeader,
   getBlockHeaders,
+  getBlockStats,
   getMasternodesList,
   getMempoolInfo,
   getMnListDiff,

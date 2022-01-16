@@ -180,18 +180,18 @@ function subscribeToTransactionsWithProofsHandlerFactory(
     let fromBlock;
 
     try {
-      fromBlock = await coreAPI.getBlock(fromBlockHash);
+      fromBlock = await coreAPI.getBlockStats(fromBlockHash, ['height']);
     } catch (e) {
       // Block not found
       if (e.code === -5) {
         throw new NotFoundGrpcError('fromBlockHash is not found');
       }
+      // Block is not on best chain
+      if (e.code === -8) {
+        throw new NotFoundGrpcError(`Block ${fromBlockHash} is not part of the best block chain`);
+      }
 
       throw e;
-    }
-
-    if (fromBlock.confirmations === -1) {
-      throw new NotFoundGrpcError(`block ${fromBlockHash} is not part of the best block chain`);
     }
 
     const bestBlockHeight = await coreAPI.getBestBlockHeight();
