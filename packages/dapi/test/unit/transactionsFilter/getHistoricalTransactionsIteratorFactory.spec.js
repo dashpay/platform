@@ -67,6 +67,7 @@ describe('getHistoricalTransactionsIteratorFactory', () => {
       getMerkleBlocks: sinon.stub(),
       getRawTransaction: sinon.stub(),
       getBlock: sinon.stub(),
+      getBlockStats: sinon.stub(),
       getBlockHash: sinon.stub(),
     };
     coreRpcMock.getMerkleBlocks
@@ -85,6 +86,7 @@ describe('getHistoricalTransactionsIteratorFactory', () => {
 
     mockData.blocks.forEach((mockedBlockData) => {
       coreRpcMock.getBlock.withArgs(mockedBlockData.hash).resolves(mockedBlockData);
+      coreRpcMock.getBlockStats.withArgs(mockedBlockData.hash, ['height']).resolves({height: mockedBlockData.height});
     });
 
     mockData.blocks.forEach((mockedBlockData) => {
@@ -107,8 +109,9 @@ describe('getHistoricalTransactionsIteratorFactory', () => {
 
     const { value: { merkleBlock, transactions } } = await merkleBlocksAndTransactions.next();
 
-    expect(coreRpcMock.getBlock.callCount).to.be.equal(1);
-    expect(coreRpcMock.getBlock.getCall(0).calledWith(mockData.blocks[0].hash)).to.be.true();
+    expect(coreRpcMock.getBlock.callCount).to.be.equal(0);
+    expect(coreRpcMock.getBlockStats.callCount).to.be.equal(1);
+    expect(coreRpcMock.getBlockStats.getCall(0).calledWith(mockData.blocks[0].hash, ['height'])).to.be.true();
 
     expect(coreRpcMock.getBlockHash.callCount).to.be.equal(1);
     expect(coreRpcMock.getBlockHash.getCall(0).calledWith(mockData.blocks[0].height)).to.be.true();
@@ -144,8 +147,10 @@ describe('getHistoricalTransactionsIteratorFactory', () => {
 
     const { value: { merkleBlock, transactions } } = await merkleBlocksIterator.next();
 
-    expect(coreRpcMock.getBlock.callCount).to.be.equal(1);
-    expect(coreRpcMock.getBlock.getCall(0).calledWith(mockData.blocks[0].hash)).to.be.true();
+    expect(coreRpcMock.getBlock.callCount).to.be.equal(0);
+
+    expect(coreRpcMock.getBlockStats.callCount).to.be.equal(1);
+    expect(coreRpcMock.getBlockStats.getCall(0).calledWith(mockData.blocks[0].hash), ['height']).to.be.true();
 
     expect(coreRpcMock.getBlockHash.callCount).to.be.equal(1);
     expect(coreRpcMock.getBlockHash.getCall(0).calledWith(mockData.blocks[0].height)).to.be.true();
@@ -165,7 +170,8 @@ describe('getHistoricalTransactionsIteratorFactory', () => {
 
     await merkleBlocksIterator.next();
 
-    expect(coreRpcMock.getBlock.callCount).to.be.equal(1);
+    expect(coreRpcMock.getBlock.callCount).to.be.equal(0);
+    expect(coreRpcMock.getBlockStats.callCount).to.be.equal(1);
 
     expect(coreRpcMock.getBlockHash.callCount).to.be.equal(2);
     expect(coreRpcMock.getBlockHash.getCall(1).calledWith(mockData.blocks[2].height)).to.be.true();
@@ -179,7 +185,8 @@ describe('getHistoricalTransactionsIteratorFactory', () => {
 
     await merkleBlocksIterator.next();
 
-    expect(coreRpcMock.getBlock.callCount).to.be.equal(1);
+    expect(coreRpcMock.getBlock.callCount).to.be.equal(0);
+    expect(coreRpcMock.getBlockStats.callCount).to.be.equal(1);
 
     expect(coreRpcMock.getBlockHash.callCount).to.be.equal(3);
     expect(coreRpcMock.getBlockHash.getCall(2).calledWith(mockData.blocks[3].height)).to.be.true();
@@ -213,8 +220,10 @@ describe('getHistoricalTransactionsIteratorFactory', () => {
 
     const { value: { merkleBlock, transactions } } = await merkleBlocksAndTransactions.next();
 
-    expect(coreRpcMock.getBlock.callCount).to.be.equal(1);
-    expect(coreRpcMock.getBlock.getCall(0).calledWith(mockData.blocks[0].hash)).to.be.true();
+    expect(coreRpcMock.getBlock.callCount).to.be.equal(0);
+
+    expect(coreRpcMock.getBlockStats.callCount).to.be.equal(1);
+    expect(coreRpcMock.getBlockStats.getCall(0).calledWith(mockData.blocks[0].hash), ['height']).to.be.true();
 
     expect(coreRpcMock.getBlockHash.callCount).to.be.equal(1);
     expect(coreRpcMock.getBlockHash.getCall(0).calledWith(mockData.blocks[0].height)).to.be.true();
@@ -245,7 +254,8 @@ describe('getHistoricalTransactionsIteratorFactory', () => {
       expect(rawTx).to.be.an.instanceof(Transaction);
     });
 
-    expect(coreRpcMock.getBlock.callCount).to.be.equal(1);
+    expect(coreRpcMock.getBlock.callCount).to.be.equal(0);
+    expect(coreRpcMock.getBlockStats.callCount).to.be.equal(1);
     expect(coreRpcMock.getBlockHash.callCount).to.be.equal(1);
     expect(coreRpcMock.getMerkleBlocks.callCount).to.be.equal(1);
 

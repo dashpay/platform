@@ -92,6 +92,7 @@ describe('subscribeToTransactionsWithProofsHandlerFactory', () => {
 
     coreAPIMock = {
       getBlock: this.sinon.stub(),
+      getBlockStats: this.sinon.stub(),
       getBestBlockHeight: this.sinon.stub(),
       getBlockHash: this.sinon.stub(),
     };
@@ -199,7 +200,7 @@ describe('subscribeToTransactionsWithProofsHandlerFactory', () => {
     call.request.setFromBlockHash('someBlockHash');
     call.request.setCount(100);
 
-    coreAPIMock.getBlock.resolves({ height: 1 });
+    coreAPIMock.getBlockStats.resolves({ height: 1 });
     coreAPIMock.getBestBlockHeight.resolves(10);
 
     try {
@@ -222,7 +223,7 @@ describe('subscribeToTransactionsWithProofsHandlerFactory', () => {
 
     const writableStub = this.sinon.stub(AcknowledgingWritable.prototype, 'write');
 
-    coreAPIMock.getBlock.resolves({ height: 1 });
+    coreAPIMock.getBlockStats.resolves({ height: 1 });
     coreAPIMock.getBestBlockHeight.resolves(10);
 
     historicalTxData.push({
@@ -288,7 +289,7 @@ describe('subscribeToTransactionsWithProofsHandlerFactory', () => {
 
   it('should end call and emit CLIENT_DISCONNECTED event when client disconnects', async () => {
     call.request.setFromBlockHash('someHash');
-    coreAPIMock.getBlock.resolves({ height: 1 });
+    coreAPIMock.getBlockStats.resolves({ height: 1 });
 
     await subscribeToTransactionsWithProofsHandler(call);
 
@@ -337,7 +338,7 @@ describe('subscribeToTransactionsWithProofsHandlerFactory', () => {
     const error = new Error();
     error.code = -5;
 
-    coreAPIMock.getBlock.throws(error);
+    coreAPIMock.getBlockStats.throws(error);
 
     try {
       await subscribeToTransactionsWithProofsHandler(call);
@@ -360,9 +361,9 @@ describe('subscribeToTransactionsWithProofsHandlerFactory', () => {
     call.request.setCount(0);
 
     const error = new Error();
-    error.code = -5;
+    error.code = -8;
 
-    coreAPIMock.getBlock.resolves({ height: 1, confirmations: -1 });
+    coreAPIMock.getBlockStats.throws(error)
 
     try {
       await subscribeToTransactionsWithProofsHandler(call);
@@ -371,7 +372,7 @@ describe('subscribeToTransactionsWithProofsHandlerFactory', () => {
     } catch (e) {
       expect(e).to.be.instanceOf(NotFoundGrpcError);
       expect(e.getMessage()).to.equal(
-        `block ${Buffer.from(blockHash).toString('hex')} is not part of the best block chain`,
+        `Block ${Buffer.from(blockHash).toString('hex')} is not part of the best block chain`,
       );
 
       expect(call.write).to.not.have.been.called();
