@@ -270,7 +270,7 @@ impl<'a> DriveQuery<'a> {
         contract: &'a Contract,
         document_type: &'a DocumentType,
     ) -> Result<Self, Error> {
-        let mut query_document: HashMap<String, CborValue> = ciborium::de::from_reader(query_cbor)
+        let query_document: HashMap<String, CborValue> = ciborium::de::from_reader(query_cbor)
             .map_err(|_| Error::CorruptedData(String::from("unable to decode query")))?;
 
         let limit: u16 = query_document

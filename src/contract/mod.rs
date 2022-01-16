@@ -108,7 +108,7 @@ impl Contract {
                 .ok_or(Error::CorruptedData(String::from(
                     "unable to get documents",
                 )))?;
-        let mut contract_document_types_raw =
+        let contract_document_types_raw =
             documents_cbor_value
                 .as_map()
                 .ok_or(Error::CorruptedData(String::from(
@@ -260,7 +260,7 @@ impl DocumentType {
                 Error::CorruptedData(String::from("cannot find type property")),
             )?;
 
-            let mut field_type: types::DocumentFieldType;
+            let field_type: types::DocumentFieldType;
 
             if type_value == "array" {
                 // Only handling bytearrays for v1

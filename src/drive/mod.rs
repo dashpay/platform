@@ -355,7 +355,7 @@ impl Drive {
             contract_document_type_path(&contract.id, document_type_name);
 
         // third we need to store the document for it's primary key
-        let mut primary_key_path =
+        let primary_key_path =
             contract_documents_primary_key_path(&contract.id, document_type_name);
         let document_element = Element::Item(Vec::from(document_cbor));
         let overrode;
