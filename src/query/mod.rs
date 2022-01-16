@@ -6,11 +6,9 @@ use crate::query::WhereOperator::{
     GreaterThanOrEquals, In, LessThan, LessThanOrEquals, StartsWith,
 };
 use ciborium::value::{Value as CborValue, Value};
-use grovedb::{Element, Error, GroveDb, PathQuery, Query, QueryItem, SizedQuery};
+use grovedb::{Error, GroveDb, PathQuery, Query, SizedQuery};
 use indexmap::IndexMap;
-use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::path::Path;
 use storage::rocksdb_storage::OptimisticTransactionDBTransaction;
 
 pub struct DocumentPathQuery<'a> {
