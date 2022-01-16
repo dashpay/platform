@@ -161,7 +161,7 @@ describe('subscribeToBlockHeadersWithChainLocksHandlerFactory', () => {
     }
 
     try {
-      coreAPIMock.getBlockStats.throws({code: -8})
+      coreAPIMock.getBlockStats.throws({ code: -8 });
       await subscribeToBlockHeadersWithChainLocksHandler(call);
     } catch (e) {
       expect(e).to.be.instanceOf(NotFoundGrpcError);
