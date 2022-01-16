@@ -374,7 +374,6 @@ impl<'a> DriveQuery<'a> {
                 }
                 let field_value = order_tuple.get(0).unwrap();
                 let asc_string_value = order_tuple.get(0).unwrap();
-                let mut left_to_right = true;
                 let asc_string = match asc_string_value {
                     Value::Text(asc_string) => Some(asc_string.as_str()),
                     _ => None,
@@ -382,15 +381,15 @@ impl<'a> DriveQuery<'a> {
                 .ok_or(Error::CorruptedData(String::from(
                     "orderBy right component must be a string",
                 )))?;
-                match asc_string {
-                    "asc" => left_to_right = true,
-                    "desc" => left_to_right = false,
+                let left_to_right = match asc_string {
+                    "asc" => true,
+                    "desc" => false,
                     _ => {
                         return Err(Error::CorruptedData(String::from(
                             "orderBy right component must be either a asc or desc string",
                         )));
                     }
-                }
+                };
                 let field = match field_value {
                     Value::Text(field) => Some(field.as_str()),
                     _ => None,
