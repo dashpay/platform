@@ -358,7 +358,6 @@ impl Drive {
         let primary_key_path =
             contract_documents_primary_key_path(&contract.id, document_type_name);
         let document_element = Element::Item(Vec::from(document_cbor));
-        let overrode;
         if override_document {
             if self
                 .grove
@@ -390,7 +389,6 @@ impl Drive {
             if !inserted {
                 return Err(Error::CorruptedData(String::from("item already exists")));
             }
-            overrode = false;
         }
 
         let document_type =
