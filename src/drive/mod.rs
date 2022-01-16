@@ -160,7 +160,8 @@ impl Drive {
             transaction,
         )?;
 
-        let mut cost: u64 = 0;
+        // todo handle cost calculation
+        let cost: u64 = 0;
 
         // unsafe {
         //     cost += contract_cbor.size_of() * STORAGE_COST;
@@ -229,7 +230,8 @@ impl Drive {
     ) -> Result<u64, Error> {
         let contract_root_path = contract_root_path(&contract.id);
 
-        let mut cost: u64 = 0;
+        // todo handle cost calculation
+        let cost: u64 = 0;
 
         // this will override the previous contract
         self.grove.insert(
