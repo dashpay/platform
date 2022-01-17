@@ -48,7 +48,6 @@ describe('getHistoricalBlockHeadersIteratorFactory', () => {
     expect(r3.done).to.be.false();
     expect(r4.done).to.be.true();
 
-    expect(coreRpcMock.getBlock.callCount).to.be.equal(0);
     expect(coreRpcMock.getBlockStats.callCount).to.be.equal(1);
     expect(coreRpcMock.getBlockHash.callCount).to.be.equal(3);
     expect(coreRpcMock.getBlockHeaders.callCount).to.be.equal(3);

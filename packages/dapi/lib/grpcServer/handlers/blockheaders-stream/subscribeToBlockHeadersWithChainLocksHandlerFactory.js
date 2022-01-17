@@ -126,7 +126,7 @@ function subscribeToBlockHeadersWithChainLocksHandlerFactory(
     let fromBlock;
 
     try {
-      fromBlock = await coreAPI.getBlockStats(fromBlockHash);
+      fromBlock = await coreAPI.getBlockStats(fromBlockHash, ['height']);
     } catch (e) {
       // Block not found
       if (e.code === -5) {
