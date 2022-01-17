@@ -150,6 +150,9 @@ fn encode_float(val: f64) -> Result<Vec<u8>, Error> {
 }
 
 mod tests {
+    use ciborium::value::{Integer, Value};
+    use crate::contract::types::{DocumentFieldType, encode_document_field_type};
+
     #[test]
     fn test_successful_encode() {
         // Constraint: for all types, if a > b then encoding(a) > enconding(b)
