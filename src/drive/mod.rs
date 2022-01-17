@@ -501,8 +501,10 @@ impl Drive {
             }
 
             // we need to construct the reference to the original document
+            let mut reference_path = primary_key_path.iter().map(|x| x.to_vec()).collect::<Vec<Vec<u8>>>();
+            reference_path.push(document.id.clone());
             let document_reference =
-                Element::Reference(primary_key_path.iter().map(|x| x.to_vec()).collect());
+                Element::Reference(reference_path);
 
             let index_path_slices: Vec<&[u8]> = index_path.iter().map(|x| x.as_slice()).collect();
 
@@ -710,7 +712,7 @@ impl Drive {
                             &contract,
                         )?
                         .ok_or(Error::CorruptedData(String::from(
-                            "unable to get document top index field",
+                            "unable to get document top index field for deletion",
                         )))?;
                 }
             };

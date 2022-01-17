@@ -5,10 +5,12 @@ use rs_drive::drive::Drive;
 use rs_drive::query::DriveQuery;
 use serde::{Deserialize, Serialize};
 use rand::seq::SliceRandom;
+use serde_json::json;
 
 mod common;
 
 #[derive(Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct Person {
     first_name: String,
     middle_name: String,
@@ -39,14 +41,14 @@ pub fn setup() -> (Drive, Contract) {
     // setup code
     let (mut drive, contract) = common::setup_contract("family", "tests/supporting_files/contract/family/family-contract.json");
 
-    let people = Person::random_people(10000);
+    let people = Person::random_people(100);
     for person in people {
         let value = serde_json::to_value(&person).expect("serialized person");
         let document_cbor = common::value_to_cbor(value);
         let random_owner_id = rand::thread_rng().gen::<[u8; 32]>();
         let random_document_id = rand::thread_rng().gen::<[u8; 32]>();
         let document = Document::from_cbor_with_id(document_cbor.as_slice(), &random_document_id, &random_owner_id).expect("document should be properly deserialized");
-        drive.add_document_for_contract(&document, &document_cbor, &contract, "person", &random_owner_id, true, None);
+        drive.add_document_for_contract(&document, &document_cbor, &contract, "person", &random_owner_id, true, None).expect("document should be inserted");
     }
     (drive, contract)
 }
@@ -54,21 +56,17 @@ pub fn setup() -> (Drive, Contract) {
 #[test]
 fn test_query_many() {
     let (drive, contract) = setup();
-    let query = r#"
-        {
-	"where": [
-		["firstName", ">", "Susan"]
-	],
-	"startAt": 0,
-	"limit": 100,
-	"orderBy": [
-		["firstName", "asc"]
-	]
-}"#;
-    let query_value = serde_json::to_value(query).expect("serialized query");
+    let query_value = json!({
+        "where": [
+            ["firstName", ">", "Abe"]
+        ],
+        "startAt": 0,
+        "limit": 100,
+        "orderBy": ["firstName", "asc"]
+    });
     let where_cbor = common::value_to_cbor(query_value);
     let person_document_type = contract.document_types.get("person").expect("contract should have a person document type");
     let query = DriveQuery::from_cbor(where_cbor.as_slice(), &contract, &person_document_type).expect("query should be built");
     let (results, skipped) = query.execute_no_proof(drive.grove, None).expect("proof should be executed");
-    assert_eq!(results.len(), 100);
+    assert!(results.len() > 50);
 }

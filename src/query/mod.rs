@@ -272,6 +272,7 @@ impl<'a> DriveQuery<'a> {
         contract: &'a Contract,
         document_type: &'a DocumentType,
     ) -> Result<Self, Error> {
+        let a = hex::encode(query_cbor);
         let query_document: HashMap<String, CborValue> = ciborium::de::from_reader(query_cbor)
             .map_err(|err| Error::CorruptedData(String::from(format!("unable to decode query: {}", err.to_string()))))?;
 
@@ -375,7 +376,7 @@ impl<'a> DriveQuery<'a> {
                     )));
                 }
                 let field_value = order_tuple.get(0).unwrap();
-                let asc_string_value = order_tuple.get(0).unwrap();
+                let asc_string_value = order_tuple.get(1).unwrap();
                 let asc_string = match asc_string_value {
                     Value::Text(asc_string) => Some(asc_string.as_str()),
                     _ => None,
