@@ -125,7 +125,7 @@ class DataContractStoreRepository {
 }
 
 DataContractStoreRepository.TREE_PATH = [Buffer.from('contracts')];
-DataContractStoreRepository.DATA_CONTRACT_KEY = Buffer.from(0);
-DataContractStoreRepository.DOCUMENTS_TREE_KEY = Buffer.from(0);
+DataContractStoreRepository.DATA_CONTRACT_KEY = Buffer.from([0]);
+DataContractStoreRepository.DOCUMENTS_TREE_KEY = Buffer.from([0]);
 
 module.exports = DataContractStoreRepository;
