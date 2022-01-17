@@ -46,7 +46,6 @@ const waitForBalanceToConfirm = require('./core/wallet/waitForBalanceToConfirm')
 
 const generateToAddressTaskFactory = require('./listr/tasks/wallet/generateToAddressTaskFactory');
 const registerMasternodeTaskFactory = require('./listr/tasks/registerMasternodeTaskFactory');
-const initTaskFactory = require('./listr/tasks/platform/initTaskFactory');
 const featureFlagTaskFactory = require('./listr/tasks/platform/featureFlagTaskFactory');
 const tenderdashInitTaskFactory = require('./listr/tasks/platform/tenderdashInitTaskFactory');
 const startNodeTaskFactory = require('./listr/tasks/startNodeTaskFactory');
@@ -61,11 +60,12 @@ const restartNodeTaskFactory = require('./listr/tasks/restartNodeTaskFactory');
 const resetNodeTaskFactory = require('./listr/tasks/resetNodeTaskFactory');
 const configureCoreTaskFactory = require('./listr/tasks/setup/local/configureCoreTaskFactory');
 const configureTenderdashTaskFactory = require('./listr/tasks/setup/local/configureTenderdashTaskFactory');
-const initializePlatformTaskFactory = require('./listr/tasks/setup/local/initializePlatformTaskFactory');
 const waitForNodeToBeReadyTaskFactory = require('./listr/tasks/platform/waitForNodeToBeReadyTaskFactory');
 const enableCoreQuorumsTaskFactory = require('./listr/tasks/setup/local/enableCoreQuorumsTaskFactory');
 const startGroupNodesTaskFactory = require('./listr/tasks/startGroupNodesTaskFactory');
 const buildServicesTaskFactory = require('./listr/tasks/buildServicesTaskFactory');
+
+const generateHDPrivateKeys = require('./util/generateHDPrivateKeys');
 
 async function createDIContainer() {
   const container = createAwilixContainer({
@@ -83,6 +83,13 @@ async function createDIContainer() {
     isSystemConfig: asFunction(isSystemConfigFactory).singleton(),
     migrateConfigFile: asValue(migrateConfigFile),
     // `configFile` and `config` are registering on command init
+  });
+
+  /**
+   * Utils
+   */
+  container.register({
+    generateHDPrivateKeys: asValue(generateHDPrivateKeys),
   });
 
   /**
@@ -155,7 +162,6 @@ async function createDIContainer() {
     startGroupNodesTask: asFunction(startGroupNodesTaskFactory).singleton(),
     generateToAddressTask: asFunction(generateToAddressTaskFactory).singleton(),
     registerMasternodeTask: asFunction(registerMasternodeTaskFactory).singleton(),
-    initTask: asFunction(initTaskFactory).singleton(),
     featureFlagTask: asFunction(featureFlagTaskFactory).singleton(),
     tenderdashInitTask: asFunction(tenderdashInitTaskFactory).singleton(),
     startNodeTask: asFunction(startNodeTaskFactory).singleton(),
@@ -166,7 +172,6 @@ async function createDIContainer() {
     setupRegularPresetTask: asFunction(setupRegularPresetTaskFactory).singleton(),
     configureCoreTask: asFunction(configureCoreTaskFactory).singleton(),
     configureTenderdashTask: asFunction(configureTenderdashTaskFactory).singleton(),
-    initializePlatformTask: asFunction(initializePlatformTaskFactory).singleton(),
     outputStatusOverview: asFunction(outputStatusOverviewFactory),
     waitForNodeToBeReadyTask: asFunction(waitForNodeToBeReadyTaskFactory).singleton(),
     enableCoreQuorumsTask: asFunction(enableCoreQuorumsTaskFactory).singleton(),

@@ -26,7 +26,6 @@ describe('getFeatureFlagForHeightFactory', () => {
 
     getFeatureFlagForHeight = getFeatureFlagForHeightFactory(
       featureFlagDataContractId,
-      featureFlagDataContractBlockHeight,
       fetchDocumentsMock,
     );
   });
@@ -57,18 +56,6 @@ describe('getFeatureFlagForHeightFactory', () => {
     );
 
     const result = await getFeatureFlagForHeight('someType', new Long(42));
-
-    expect(result).to.equal(null);
-    expect(fetchDocumentsMock).to.not.be.called();
-  });
-
-  it('should return null if blockHeight is less or equal than featureFlagDataContractBlockHeight', async () => {
-    let result = await getFeatureFlagForHeight('someType', new Long(42));
-
-    expect(result).to.equal(null);
-    expect(fetchDocumentsMock).to.not.be.called();
-
-    result = await getFeatureFlagForHeight('someType', new Long(1));
 
     expect(result).to.equal(null);
     expect(fetchDocumentsMock).to.not.be.called();

@@ -33,17 +33,5 @@ describe('createDIContainer', function describeContainer() {
       expect(abciHandlers).to.have.property('commit');
       expect(abciHandlers).to.have.property('query');
     });
-
-    it('should throw an error if DPNS contract is set but height is missing', async () => {
-      process.env.DPNS_CONTRACT_ID = 'someId';
-      try {
-        container = await createTestDIContainer();
-        expect.fail('Error was not thrown');
-      } catch (e) {
-        expect(e.message).to.equal('DPNS_CONTRACT_BLOCK_HEIGHT must be set');
-      } finally {
-        delete process.env.DPNS_CONTRACT_ID;
-      }
-    });
   });
 });

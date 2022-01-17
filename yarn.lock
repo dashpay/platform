@@ -1264,14 +1264,14 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@dashevo/abci@github:dashevo/js-abci#init-chain-chain-lock-height":
+"@dashevo/abci@github:dashevo/js-abci#v0.22-dev":
   version: 0.20.0
-  resolution: "@dashevo/abci@https://github.com/dashevo/js-abci.git#commit=c4e58ce017626b6db6650a565f9681595039f6f9"
+  resolution: "@dashevo/abci@https://github.com/dashevo/js-abci.git#commit=8806ff71cdac918f79920b1373824653f15698c5"
   dependencies:
     bl: ^1.2.3
     protobufjs: "github:jawid-h/protobuf.js#fix/buffer-conversion"
     protocol-buffers-encodings: ^1.1.0
-  checksum: db0c3050e071e0957007552bec524d0b33c8e1fab53326b93b863a4a77d5435e914d38ef1da426b6b69b84c1ccaf2c8b756d9191d371f5c85352c44ea1d8002d
+  checksum: 1c8ba91935e9fb99d4e6ad234b299e4956f1486bb00ede8c06ecb5b38341b2042d7fa1a001a58441d7c98d42c14345b63108c607050f0dddc0fb19a64a46cb9f
   languageName: node
   linkType: hard
 
@@ -1281,7 +1281,7 @@ __metadata:
   dependencies:
     "@babel/core": ^7.15.5
     "@dashevo/dapi-grpc": "workspace:~"
-    "@dashevo/dashcore-lib": ~0.19.28
+    "@dashevo/dashcore-lib": ~0.19.29
     "@dashevo/dpp": "workspace:~"
     "@dashevo/grpc-common": "workspace:~"
     "@grpc/grpc-js": ^1.3.7
@@ -1355,7 +1355,7 @@ __metadata:
   dependencies:
     "@dashevo/dapi-client": "workspace:~"
     "@dashevo/dapi-grpc": "workspace:~"
-    "@dashevo/dashcore-lib": ~0.19.28
+    "@dashevo/dashcore-lib": ~0.19.29
     "@dashevo/dashd-rpc": ^2.3.1
     "@dashevo/dp-services-ctl": "github:dashevo/js-dp-services-ctl#v0.19-dev"
     "@dashevo/dpp": "workspace:~"
@@ -1389,9 +1389,9 @@ __metadata:
   languageName: unknown
   linkType: soft
 
-"@dashevo/dashcore-lib@npm:~0.19.28":
-  version: 0.19.28
-  resolution: "@dashevo/dashcore-lib@npm:0.19.28"
+"@dashevo/dashcore-lib@npm:~0.19.29":
+  version: 0.19.29
+  resolution: "@dashevo/dashcore-lib@npm:0.19.29"
   dependencies:
     "@dashevo/x11-hash-js": ^1.0.2
     "@types/node": ^12.12.47
@@ -1404,7 +1404,7 @@ __metadata:
     inherits: =2.0.1
     lodash: ^4.17.20
     unorm: ^1.6.0
-  checksum: d33fc388ff909dbaf84f3ad0d206208b6a053c9fe40f6bad5527f6619c29728ac88638725d990a2586660485bb9cc55aa8e0c1767cff8d25ddc61ff15e19d517
+  checksum: 34c9cdf161fe1068b978d25ccbf896d049e2590c0f23c2a6c647aab0c1211cde817ae53991523c7f222ce25de3b196d2f7442e8293f9333114f8b7bc429ced94
   languageName: node
   linkType: hard
 
@@ -1470,7 +1470,7 @@ __metadata:
     "@apidevtools/json-schema-ref-parser": ^8.0.0
     "@babel/core": ^7.15.5
     "@babel/preset-env": ^7.15.4
-    "@dashevo/dashcore-lib": ~0.19.28
+    "@dashevo/dashcore-lib": ~0.19.29
     "@dashevo/dashpay-contract": "workspace:~"
     "@dashevo/dpns-contract": "workspace:~"
     "@dashevo/feature-flags-contract": "workspace:~"
@@ -1533,14 +1533,17 @@ __metadata:
   version: 0.0.0-use.local
   resolution: "@dashevo/drive@workspace:packages/js-drive"
   dependencies:
-    "@dashevo/abci": "github:dashevo/js-abci#init-chain-chain-lock-height"
+    "@dashevo/abci": "github:dashevo/js-abci#v0.22-dev"
     "@dashevo/dapi-grpc": "workspace:~"
-    "@dashevo/dashcore-lib": ~0.19.28
+    "@dashevo/dashcore-lib": ~0.19.29
     "@dashevo/dashd-rpc": ^2.3.1
+    "@dashevo/dashpay-contract": "workspace:~"
     "@dashevo/dp-services-ctl": "github:dashevo/js-dp-services-ctl#v0.19-dev"
+    "@dashevo/dpns-contract": "workspace:~"
     "@dashevo/dpp": "workspace:~"
     "@dashevo/feature-flags-contract": "workspace:~"
     "@dashevo/grpc-common": "workspace:~"
+    "@dashevo/masternode-reward-shares-contract": "workspace:~"
     "@dashevo/node-grove": ^0.0.10
     "@types/pino": ^6.3.0
     ajv: ^8.6.0
@@ -1665,11 +1668,12 @@ __metadata:
   resolution: "@dashevo/platform-test-suite@workspace:packages/platform-test-suite"
   dependencies:
     "@dashevo/dapi-client": "workspace:~"
-    "@dashevo/dashcore-lib": ~0.19.28
+    "@dashevo/dashcore-lib": ~0.19.29
     "@dashevo/dpns-contract": "workspace:~"
     "@dashevo/dpp": "workspace:~"
     "@dashevo/feature-flags-contract": "workspace:~"
     "@dashevo/grpc-common": "workspace:~"
+    "@dashevo/masternode-reward-shares-contract": "workspace:~"
     "@dashevo/merk": "github:dashevo/node-merk#eb37003300d22c6c04604463bcd7e861dd07000f"
     "@dashevo/wallet-lib": "workspace:~"
     assert-browserify: ^2.0.0
@@ -1734,7 +1738,7 @@ __metadata:
   resolution: "@dashevo/wallet-lib@workspace:packages/wallet-lib"
   dependencies:
     "@dashevo/dapi-client": "workspace:~"
-    "@dashevo/dashcore-lib": ~0.19.28
+    "@dashevo/dashcore-lib": ~0.19.29
     "@dashevo/dpp": "workspace:~"
     "@dashevo/grpc-common": "workspace:~"
     assert: ^2.0.0
@@ -5512,9 +5516,12 @@ __metadata:
   resolution: "dash@workspace:packages/js-dash-sdk"
   dependencies:
     "@dashevo/dapi-client": "workspace:~"
-    "@dashevo/dashcore-lib": ~0.19.28
+    "@dashevo/dashcore-lib": ~0.19.29
+    "@dashevo/dashpay-contract": "workspace:~"
+    "@dashevo/dpns-contract": "workspace:~"
     "@dashevo/dpp": "workspace:~"
     "@dashevo/grpc-common": "workspace:~"
+    "@dashevo/masternode-reward-shares-contract": "workspace:~"
     "@dashevo/wallet-lib": "workspace:~"
     "@types/chai": ^4.2.12
     "@types/dirty-chai": ^2.0.2
@@ -5578,7 +5585,7 @@ __metadata:
   version: 0.0.0-use.local
   resolution: "dashmate@workspace:packages/dashmate"
   dependencies:
-    "@dashevo/dashcore-lib": ~0.19.28
+    "@dashevo/dashcore-lib": ~0.19.29
     "@dashevo/dashd-rpc": ^2.3.1
     "@dashevo/dashpay-contract": "workspace:~"
     "@dashevo/dpns-contract": "workspace:~"
