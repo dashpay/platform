@@ -1,15 +1,13 @@
-const {Transaction} = require('@dashevo/dashcore-lib');
-const {is} = require('../../../utils');
-const {FETCHED_CONFIRMED_TRANSACTION, UPDATED_ADDRESS} = require('../../../EVENTS');
+const { Transaction } = require('@dashevo/dashcore-lib');
 const logger = require('../../../logger');
 
-const {Output} = Transaction;
+const { Output } = Transaction;
 
 function considerTransaction(transactionHash) {
   logger.silly(`ChainStore - Considering transaction ${transactionHash}`);
-  const {transaction, metadata} = this.getTransaction(transactionHash);
+  const { transaction, metadata } = this.getTransaction(transactionHash);
 
-  const {inputs, outputs} = transaction;
+  const { inputs, outputs } = transaction;
   let outputIndex = -1;
 
   const processedAddressesForTx = {};

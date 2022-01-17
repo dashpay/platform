@@ -1,4 +1,4 @@
-const {Transaction} = require('@dashevo/dashcore-lib');
+const { Transaction } = require('@dashevo/dashcore-lib');
 const is = require('../../../utils/is');
 
 function importTransaction(transaction, metadata = {}) {

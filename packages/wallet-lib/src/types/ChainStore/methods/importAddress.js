@@ -18,7 +18,7 @@ function importAddress(address) {
     const heightB = b[1].metadata.height;
     return heightA - heightB;
   });
-  
+
   sortedTransactions.forEach(([transactionHash]) => {
     this.considerTransaction(transactionHash);
   });
