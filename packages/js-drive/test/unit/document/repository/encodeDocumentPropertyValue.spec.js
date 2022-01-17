@@ -1,4 +1,4 @@
-const encodeDocumentPropertyValue = require('../../../../lib/document/repository/encodeDocumentPropertyValue');
+const encodeDocumentPropertyValue = require('../../../../lib/document/groveDB/encodeDocumentPropertyValue');
 
 describe('encodeDocumentPropertyValue', () => {
   describe('integer', () => {

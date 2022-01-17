@@ -1,4 +1,3 @@
-const level = require('level-rocksdb');
 const cbor = require('cbor');
 
 const BlockExecutionContextStackRepository = require('../../../lib/blockExecution/BlockExecutionContextStackRepository');
