@@ -17,7 +17,10 @@ pub struct DocumentPathQuery<'a> {
     document_type: &'a DocumentType,
     index: &'a Index,
     intermediate_values: Vec<Vec<u8>>,
-    path_query: PathQuery<'a>,
+    path: Vec<Vec<u8>>,
+    query: SizedQuery,
+    subquery_key: Option<Vec<u8>>,
+    subquery: Option<Query>,
 }
 
 #[derive(Copy, Clone)]
@@ -52,14 +55,14 @@ fn operator_from_string(string: &str) -> Option<WhereOperator> {
     }
 }
 
-#[derive(Copy, Clone)]
-pub struct WhereClause<'a> {
-    field: &'a str,
+#[derive(Clone)]
+pub struct WhereClause {
+    field: String,
     operator: WhereOperator,
-    value: &'a Value,
+    value: Value,
 }
 
-impl<'a> WhereClause<'a> {
+impl<'a> WhereClause {
     pub fn from_components(clause_components: &'a Vec<Value>) -> Result<Self, Error> {
         if clause_components.len() != 3 {
             return Err(Error::CorruptedData(String::from(
@@ -70,11 +73,12 @@ impl<'a> WhereClause<'a> {
         let field_value = clause_components
             .get(0)
             .expect("check above enforces it exists");
-        let field = field_value
+        let field_ref = field_value
             .as_text()
             .ok_or(Error::CorruptedData(String::from(
                 "first field of where component should be a string",
             )))?;
+        let field = String::from(field_ref);
 
         let operator_value = clause_components
             .get(1)
@@ -94,7 +98,7 @@ impl<'a> WhereClause<'a> {
             .get(2)
             .ok_or(Error::CorruptedData(String::from(
                 "third field of where component should exist",
-            )))?;
+            )))?.clone();
 
         Ok(WhereClause {
             field,
@@ -142,12 +146,10 @@ impl<'a> WhereClause<'a> {
         if non_groupable_range_clauses.len() == 0 {
             if groupable_range_clauses.len() == 0 {
                 return Ok(None);
-            }
-            if groupable_range_clauses.len() == 1 {
-                return Ok(Some(*groupable_range_clauses.get(0).unwrap().clone()));
-            }
-
-            if groupable_range_clauses.len() > 2 {
+            } else if groupable_range_clauses.len() == 1 {
+                let clause = *groupable_range_clauses.get(0).unwrap();
+                return Ok(Some(clause.clone()));
+            } else if groupable_range_clauses.len() > 2 {
                 return Err(Error::CorruptedData(String::from(
                     "there can only be at most 2 range clauses",
                 )));
@@ -157,9 +159,9 @@ impl<'a> WhereClause<'a> {
         } else if non_groupable_range_clauses.len() == 1 {
             let where_clause = non_groupable_range_clauses.get(0).unwrap();
             return Ok(Some(WhereClause {
-                field: where_clause.field,
+                field: where_clause.field.clone(),
                 operator: where_clause.operator,
-                value: where_clause.value,
+                value: where_clause.value.clone(),
             }));
         } else {
             // if non_groupable_range_clauses.len() > 1
@@ -175,7 +177,7 @@ impl<'a> WhereClause<'a> {
         &self,
         document_type: &DocumentType,
     ) -> Result<(Vec<u8>, Vec<u8>), Error> {
-        let in_values = match self.value {
+        let in_values = match &self.value {
             Value::Array(array) => Some(array),
             _ => None,
         }
@@ -188,9 +190,9 @@ impl<'a> WhereClause<'a> {
             )));
         }
         let left_key =
-            document_type.serialize_value_for_key(self.field, in_values.get(0).unwrap())?;
+            document_type.serialize_value_for_key(self.field.as_str(), in_values.get(0).unwrap())?;
         let right_key =
-            document_type.serialize_value_for_key(self.field, in_values.get(0).unwrap())?;
+            document_type.serialize_value_for_key(self.field.as_str(), in_values.get(0).unwrap())?;
         Ok((left_key, right_key))
     }
 
@@ -198,23 +200,23 @@ impl<'a> WhereClause<'a> {
         let mut query = Query::new();
         match self.operator {
             Equal => {
-                let key = document_type.serialize_value_for_key(self.field, self.value)?;
+                let key = document_type.serialize_value_for_key(self.field.as_str(), &self.value)?;
                 query.insert_key(key);
             }
             GreaterThan => {
-                let key = document_type.serialize_value_for_key(self.field, self.value)?;
+                let key = document_type.serialize_value_for_key(self.field.as_str(), &self.value)?;
                 query.insert_range_from(key..);
             }
             GreaterThanOrEquals => {
-                let key = document_type.serialize_value_for_key(self.field, self.value)?;
+                let key = document_type.serialize_value_for_key(self.field.as_str(), &self.value)?;
                 query.insert_range_from(key..);
             }
             LessThan => {
-                let key = document_type.serialize_value_for_key(self.field, self.value)?;
+                let key = document_type.serialize_value_for_key(self.field.as_str(), &self.value)?;
                 query.insert_range_to(..key);
             }
             LessThanOrEquals => {
-                let key = document_type.serialize_value_for_key(self.field, self.value)?;
+                let key = document_type.serialize_value_for_key(self.field.as_str(), &self.value)?;
                 query.insert_range_to_inclusive(..=key);
             }
             Between => {
@@ -234,7 +236,7 @@ impl<'a> WhereClause<'a> {
                 query.insert_range(left_key..right_key)
             }
             In => {
-                let in_values = match self.value {
+                let in_values = match &self.value {
                     Value::Array(array) => Some(array),
                     _ => None,
                 }
@@ -242,7 +244,7 @@ impl<'a> WhereClause<'a> {
                     "when using in operator you must provide an array of values",
                 )))?;
                 for value in in_values.iter() {
-                    let key = document_type.serialize_value_for_key(self.field, value)?;
+                    let key = document_type.serialize_value_for_key(self.field.as_str(), value)?;
                     query.insert_key(key)
                 }
             }
@@ -257,11 +259,11 @@ impl<'a> WhereClause<'a> {
 pub struct DriveQuery<'a> {
     contract: &'a Contract,
     document_type: &'a DocumentType,
-    equal_clauses: HashMap<&'a str, WhereClause<'a>>,
-    range_clause: Option<WhereClause<'a>>,
+    equal_clauses: HashMap<String, WhereClause>,
+    range_clause: Option<WhereClause>,
     offset: u16,
     limit: u16,
-    order_by: IndexMap<&'a str, bool>,
+    order_by: IndexMap<String, bool>,
     start_at: Option<Vec<u8>>,
     start_at_included: bool,
 }
@@ -288,7 +290,7 @@ impl<'a> DriveQuery<'a> {
                 "limit should be a integer from 1 to 100",
             )))?;
 
-        let all_where_clauses: Vec<WhereClause<'a>> =
+        let all_where_clauses: Vec<WhereClause> =
             query_document.get("where").map_or(vec![], |id_cbor| {
                 if let CborValue::Array(clauses) = id_cbor {
                     clauses
@@ -319,7 +321,7 @@ impl<'a> DriveQuery<'a> {
 
         let equal_clauses = equal_clauses_array
             .into_iter()
-            .map(|where_clause| (where_clause.field, where_clause))
+            .map(|where_clause| (where_clause.field.clone(), where_clause))
             .collect();
 
         let start_at_option = query_document.get("startAt");
@@ -400,9 +402,9 @@ impl<'a> DriveQuery<'a> {
                 .ok_or(Error::CorruptedData(String::from(
                     "orderBy left component must be a string",
                 )))?;
-                Ok((field, left_to_right))
+                Ok((String::from(field), left_to_right))
             })
-            .collect::<Result<IndexMap<&str, bool>, Error>>()?;
+            .collect::<Result<IndexMap<String, bool>, Error>>()?;
 
         Ok(DriveQuery {
             contract,
@@ -418,10 +420,10 @@ impl<'a> DriveQuery<'a> {
     }
 
     pub fn create_path_query(&self) -> Result<DocumentPathQuery, Error> {
-        let equal_fields = self.equal_clauses.into_keys().collect::<Vec<&str>>();
-        let range_field = match self.range_clause {
+        let equal_fields = self.equal_clauses.keys().map(|s| s.as_str()).collect::<Vec<&str>>();
+        let range_field = match &self.range_clause {
             None => None,
-            Some(range_clause) => Some(range_clause.field),
+            Some(range_clause) => Some(range_clause.field.as_str()),
         };
         let (index, difference) = self
             .document_type
@@ -440,9 +442,9 @@ impl<'a> DriveQuery<'a> {
                 Some(where_clause) => Some(where_clause),
             })
             .collect();
-        let (last_clause, last_clause_is_range) = match self.range_clause {
-            None => (ordered_clauses.last(), false),
-            Some(where_clause) => (Some(&&where_clause), true),
+        let (last_clause, last_clause_is_range) = match &self.range_clause {
+            None => (ordered_clauses.last().map(|clause| *clause), false),
+            Some(where_clause) => (Some(where_clause), true),
         };
         let intermediate_values =
             index
@@ -455,14 +457,14 @@ impl<'a> DriveQuery<'a> {
                             if self.order_by.len() == 0
                                 && !last_clause_is_range
                                 && last_clause.is_some()
-                                && last_clause.unwrap().field == &field.name
+                                && last_clause.unwrap().field == field.name
                             {
                                 //there is no need to give an intermediate value as the last clause is an equality
                                 None
                             } else {
                                 Some(self.document_type.serialize_value_for_key(
                                     field.name.as_str(),
-                                    where_clause.value,
+                                    &where_clause.value,
                                 ))
                             }
                         }
@@ -478,7 +480,7 @@ impl<'a> DriveQuery<'a> {
             Some(where_clause) => {
                 let left_to_right =
                     self.order_by
-                        .get(where_clause.field)
+                        .get(where_clause.field.as_str())
                         .ok_or(Error::InvalidQuery(
                             "query must have an orderBy field for each range element",
                         ))?;
@@ -512,7 +514,7 @@ impl<'a> DocumentPathQuery<'a> {
     ) -> Result<Self, Error> {
         // first let's get the contract path
 
-        let mut contract_path = contract.document_type_path(document_type_name);
+        let mut contract_path = contract.document_type_path(document_type_name).into_iter().map(|a| a.to_vec()).collect::<Vec<Vec<u8>>>();
 
         let document_type =
             contract
@@ -533,11 +535,11 @@ impl<'a> DocumentPathQuery<'a> {
         for (intermediate_index, intermediate_value) in
             intermediate_indexes.iter().zip(intermediate_values.iter())
         {
-            contract_path.push(intermediate_index.name.as_bytes());
-            contract_path.push(intermediate_value.as_slice());
+            contract_path.push(intermediate_index.name.as_bytes().to_vec());
+            contract_path.push(intermediate_value.as_slice().to_vec());
         }
 
-        contract_path.push(last_index.name.as_bytes());
+        contract_path.push(last_index.name.as_bytes().to_vec());
 
         let subquery = match index.unique {
             true => None,
@@ -552,7 +554,10 @@ impl<'a> DocumentPathQuery<'a> {
             document_type,
             index,
             intermediate_values,
-            path_query: PathQuery::new(contract_path.as_slice(), final_query, Some(b"0"), subquery),
+            path: contract_path,
+            query: final_query,
+            subquery_key: Some(b"0".to_vec()),
+            subquery
         })
     }
 
@@ -561,7 +566,9 @@ impl<'a> DocumentPathQuery<'a> {
         mut grove: GroveDb,
         transaction: Option<&OptimisticTransactionDBTransaction>,
     ) -> Result<(Vec<Vec<u8>>, u16), Error> {
-        let path_query = self.path_query;
+        let path = self.path.iter().map(|a| a.as_slice()).collect::<Vec<&[u8]>>();
+        let subquery_key = self.subquery_key.unwrap_or_default();
+        let path_query = PathQuery::new(path.as_slice(), self.query, subquery_key, self.subquery);
         grove.get_path_query(&path_query, transaction)
     }
 
