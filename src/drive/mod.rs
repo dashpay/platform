@@ -1,8 +1,6 @@
-use crate::contract::{Contract, Document, DocumentType};
-use ciborium::value::{Value as CborValue, Value};
+use crate::contract::{Contract, Document};
+use ciborium::value::{Value as CborValue};
 use grovedb::{Element, Error, GroveDb};
-use serde::{Deserialize, Serialize};
-use std::any::Any;
 use std::collections::HashMap;
 use std::path::Path;
 use storage::rocksdb_storage::OptimisticTransactionDBTransaction;
@@ -162,7 +160,8 @@ impl Drive {
             transaction,
         )?;
 
-        let mut cost: u64 = 0;
+        // todo handle cost calculation
+        let cost: u64 = 0;
 
         // unsafe {
         //     cost += contract_cbor.size_of() * STORAGE_COST;
@@ -231,7 +230,8 @@ impl Drive {
     ) -> Result<u64, Error> {
         let contract_root_path = contract_root_path(&contract.id);
 
-        let mut cost: u64 = 0;
+        // todo handle cost calculation
+        let cost: u64 = 0;
 
         // this will override the previous contract
         self.grove.insert(
@@ -357,10 +357,9 @@ impl Drive {
             contract_document_type_path(&contract.id, document_type_name);
 
         // third we need to store the document for it's primary key
-        let mut primary_key_path =
+        let primary_key_path =
             contract_documents_primary_key_path(&contract.id, document_type_name);
         let document_element = Element::Item(Vec::from(document_cbor));
-        let overrode;
         if override_document {
             if self
                 .grove
@@ -392,7 +391,6 @@ impl Drive {
             if !inserted {
                 return Err(Error::CorruptedData(String::from("item already exists")));
             }
-            overrode = false;
         }
 
         let document_type =

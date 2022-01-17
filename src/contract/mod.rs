@@ -1,18 +1,10 @@
 mod types;
 
 use crate::drive::RootTree;
-use base64::DecodeError;
-use byteorder::{BigEndian, WriteBytesExt};
-use ciborium::cbor;
 use ciborium::value::{Value as CborValue, Value};
 use grovedb::Error;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::fs::File;
-use std::io::BufReader;
-use std::path::Path;
-use std::ptr::swap;
-use std::rc::{Rc, Weak};
 
 // contract
 // - id
@@ -116,7 +108,7 @@ impl Contract {
                 .ok_or(Error::CorruptedData(String::from(
                     "unable to get documents",
                 )))?;
-        let mut contract_document_types_raw =
+        let contract_document_types_raw =
             documents_cbor_value
                 .as_map()
                 .ok_or(Error::CorruptedData(String::from(
@@ -268,7 +260,7 @@ impl DocumentType {
                 Error::CorruptedData(String::from("cannot find type property")),
             )?;
 
-            let mut field_type: types::DocumentFieldType;
+            let field_type: types::DocumentFieldType;
 
             if type_value == "array" {
                 // Only handling bytearrays for v1
