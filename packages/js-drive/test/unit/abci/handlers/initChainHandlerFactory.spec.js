@@ -230,11 +230,5 @@ describe('initChainHandlerFactory', () => {
     expect(registerTopLevelDomainMock).to.have.been.calledOnceWithExactly(
       'dash', dataContracts[1], dpnsOwnerId, new Date(request.time.seconds.toNumber() * 1000),
     );
-    expect(registerFeatureFlagMock).to.have.been.calledOnceWithExactly(
-      'fixCumulativeFeesBug',
-      dataContracts[0],
-      featureFlagsOwnerId,
-      new Date(request.time.seconds.toNumber() * 1000),
-    );
   });
 });
