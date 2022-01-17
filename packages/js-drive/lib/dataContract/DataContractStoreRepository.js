@@ -1,15 +1,14 @@
-const decodeProtocolEntityFactory = require('@dashevo/dpp/lib/decodeProtocolEntityFactory');
 const DataContract = require('@dashevo/dpp/lib/dataContract/DataContract');
-
-const decodeProtocolEntity = decodeProtocolEntityFactory();
 
 class DataContractStoreRepository {
   /**
    *
    * @param {GroveDBStore} groveDBStore
+   * @param {decodeProtocolEntity} decodeProtocolEntity
    */
-  constructor(groveDBStore) {
+  constructor(groveDBStore, decodeProtocolEntity) {
     this.storage = groveDBStore;
+    this.decodeProtocolEntity = decodeProtocolEntity;
   }
 
   /**
@@ -110,7 +109,7 @@ class DataContractStoreRepository {
       return null;
     }
 
-    const [, rawDataContract] = decodeProtocolEntity(encodedDataContract);
+    const [, rawDataContract] = this.decodeProtocolEntity(encodedDataContract);
 
     return new DataContract(rawDataContract);
   }
