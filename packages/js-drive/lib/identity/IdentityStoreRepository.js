@@ -1,15 +1,14 @@
-const decodeProtocolEntityFactory = require('@dashevo/dpp/lib/decodeProtocolEntityFactory');
 const Identity = require('@dashevo/dpp/lib/identity/Identity');
-
-const decodeProtocolEntity = decodeProtocolEntityFactory();
 
 class IdentityStoreRepository {
   /**
    *
    * @param {GroveDBStore} groveDBStore
+   * @param {decodeProtocolEntity} decodeProtocolEntity
    */
-  constructor(groveDBStore) {
+  constructor(groveDBStore, decodeProtocolEntity) {
     this.storage = groveDBStore;
+    this.decodeProtocolEntity = decodeProtocolEntity;
   }
 
   /**
@@ -48,7 +47,7 @@ class IdentityStoreRepository {
       return null;
     }
 
-    const [, rawIdentity] = decodeProtocolEntity(encodedIdentity);
+    const [, rawIdentity] = this.decodeProtocolEntity(encodedIdentity);
 
     return new Identity(rawIdentity);
   }

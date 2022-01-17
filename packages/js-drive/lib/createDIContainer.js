@@ -28,48 +28,49 @@ const createABCIServer = require('@dashevo/abci');
 
 const protocolVersion = require('@dashevo/dpp/lib/version/protocolVersion');
 
+const decodeProtocolEntityFactory = require('@dashevo/dpp/lib/decodeProtocolEntityFactory');
+
 const packageJSON = require('../package.json');
 
 const ZMQClient = require('./core/ZmqClient');
-
 const sanitizeUrl = require('./util/sanitizeUrl');
+
 const LatestCoreChainLock = require('./core/LatestCoreChainLock');
 
 const GroveDBStore = require('./groveDB/GroveDBStore');
-
 const IdentityStoreRepository = require('./identity/IdentityStoreRepository');
+
 const PublicKeyToIdentityIdStoreRepository = require(
   './identity/PublicKeyToIdentityIdStoreRepository',
 );
 
 const DataContractStoreRepository = require('./dataContract/DataContractStoreRepository');
-
 const DocumentStoreRepository = require('./document/groveDB/DocumentRepository');
 const findConflictingConditions = require('./document/query/findConflictingConditions');
 const validateQueryFactory = require('./document/query/validateQueryFactory');
+
 const fetchDocumentsFactory = require('./document/fetchDocumentsFactory');
-
 const BlockExecutionContext = require('./blockExecution/BlockExecutionContext');
-const CreditsDistributionPoolRepository = require('./creditsDistributionPool/CreditsDistributionPoolRepository');
 
+const CreditsDistributionPoolRepository = require('./creditsDistributionPool/CreditsDistributionPoolRepository');
 const unserializeStateTransitionFactory = require(
   './abci/handlers/stateTransition/unserializeStateTransitionFactory',
 );
 const DriveStateRepository = require('./dpp/DriveStateRepository');
-const CachedStateRepositoryDecorator = require('./dpp/CachedStateRepositoryDecorator');
 
+const CachedStateRepositoryDecorator = require('./dpp/CachedStateRepositoryDecorator');
 const LoggedStateRepositoryDecorator = require('./dpp/LoggedStateRepositoryDecorator');
 const dataContractQueryHandlerFactory = require('./abci/handlers/query/dataContractQueryHandlerFactory');
 const identityQueryHandlerFactory = require('./abci/handlers/query/identityQueryHandlerFactory');
 const documentQueryHandlerFactory = require('./abci/handlers/query/documentQueryHandlerFactory');
 const identitiesByPublicKeyHashesQueryHandlerFactory = require('./abci/handlers/query/identitiesByPublicKeyHashesQueryHandlerFactory');
-const getProofsQueryHandlerFactory = require('./abci/handlers/query/getProofsQueryHandlerFactory');
 
+const getProofsQueryHandlerFactory = require('./abci/handlers/query/getProofsQueryHandlerFactory');
 const identityIdsByPublicKeyHashesQueryHandlerFactory = require('./abci/handlers/query/identityIdsByPublicKeyHashesQueryHandlerFactory');
+
 const verifyChainLockQueryHandlerFactory = require('./abci/handlers/query/verifyChainLockQueryHandlerFactory');
 
 const wrapInErrorHandlerFactory = require('./abci/errors/wrapInErrorHandlerFactory');
-
 const errorHandlerFactory = require('./errorHandlerFactory');
 const checkTxHandlerFactory = require('./abci/handlers/checkTxHandlerFactory');
 const commitHandlerFactory = require('./abci/handlers/commitHandlerFactory');
@@ -77,16 +78,16 @@ const deliverTxHandlerFactory = require('./abci/handlers/deliverTxHandlerFactory
 const initChainHandlerFactory = require('./abci/handlers/initChainHandlerFactory');
 const infoHandlerFactory = require('./abci/handlers/infoHandlerFactory');
 const beginBlockHandlerFactory = require('./abci/handlers/beginBlockHandlerFactory');
-const endBlockHandlerFactory = require('./abci/handlers/endBlockHandlerFactory');
 
+const endBlockHandlerFactory = require('./abci/handlers/endBlockHandlerFactory');
 const queryHandlerFactory = require('./abci/handlers/queryHandlerFactory');
 const waitForCoreSyncFactory = require('./core/waitForCoreSyncFactory');
 const waitForCoreChainLockSyncFactory = require('./core/waitForCoreChainLockSyncFactory');
 const updateSimplifiedMasternodeListFactory = require('./core/updateSimplifiedMasternodeListFactory');
 const waitForChainLockedHeightFactory = require('./core/waitForChainLockedHeightFactory');
 const SimplifiedMasternodeList = require('./core/SimplifiedMasternodeList');
-const decodeChainLock = require('./core/decodeChainLock');
 
+const decodeChainLock = require('./core/decodeChainLock');
 const SpentAssetLockTransactionsRepository = require('./identity/SpentAssetLockTransactionsRepository');
 const enrichErrorWithConsensusErrorFactory = require('./abci/errors/enrichErrorWithConsensusLoggerFactory');
 const CreditsDistributionPool = require('./creditsDistributionPool/CreditsDistributionPool');
@@ -104,6 +105,7 @@ const BlockExecutionContextStack = require('./blockExecution/BlockExecutionConte
 const createInitialStateStructureFactory = require('./state/createInitialStateStructureFactory');
 const encodeDocumentPropertyValue = require('./document/groveDB/encodeDocumentPropertyValue');
 const createGroveDBPathQuery = require('./document/groveDB/createGroveDBPathQuery');
+const findAppropriateIndex = require('./document/query/findAppropriateIndex');
 
 /**
  *
@@ -512,7 +514,7 @@ function createDIContainer(options) {
    * Register DPP
    */
   container.register({
-    decodeProtocolEntity: asFunction(decodeProtocolEntityFactory);
+    decodeProtocolEntity: asFunction(decodeProtocolEntityFactory),
 
     stateRepository: asFunction((
       identityRepository,
