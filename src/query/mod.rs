@@ -273,7 +273,7 @@ impl<'a> DriveQuery<'a> {
         document_type: &'a DocumentType,
     ) -> Result<Self, Error> {
         let query_document: HashMap<String, CborValue> = ciborium::de::from_reader(query_cbor)
-            .map_err(|_| Error::CorruptedData(String::from("unable to decode query")))?;
+            .map_err(|err| Error::CorruptedData(String::from(format!("unable to decode query: {}", err.to_string()))))?;
 
         let limit: u16 = query_document
             .get("limit")
@@ -416,7 +416,21 @@ impl<'a> DriveQuery<'a> {
         })
     }
 
-    pub fn create_path_query(&self) -> Result<DocumentPathQuery, Error> {
+    pub fn execute_no_proof(
+        self,
+        mut grove: GroveDb,
+        transaction: Option<&OptimisticTransactionDBTransaction>,
+    ) -> Result<(Vec<Vec<u8>>, u16), Error> {
+        let document_path_query = self.create_path_query()?;
+        document_path_query.execute_no_proof(grove, transaction)
+    }
+
+    pub fn execute_with_proof(self, mut grove: GroveDb, transaction: Option<&OptimisticTransactionDBTransaction>) -> Result<Vec<u8>, Error> {
+        let document_path_query = self.create_path_query()?;
+        document_path_query.execute_with_proof(grove, transaction)
+    }
+
+    fn create_path_query(&self) -> Result<DocumentPathQuery, Error> {
         let equal_fields = self.equal_clauses.keys().map(|s| s.as_str()).collect::<Vec<&str>>();
         let range_field = match &self.range_clause {
             None => None,
@@ -569,7 +583,7 @@ impl<'a> DocumentPathQuery<'a> {
         grove.get_path_query(&path_query, transaction)
     }
 
-    fn execute_with_proof(self, mut grove: GroveDb) -> Result<Vec<u8>, Error> {
+    fn execute_with_proof(self, mut grove: GroveDb, transaction: Option<&OptimisticTransactionDBTransaction>) -> Result<Vec<u8>, Error> {
         todo!()
     }
 }
