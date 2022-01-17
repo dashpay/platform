@@ -1,124 +1,149 @@
+const cloneDeep = require('lodash.clonedeep');
+
 const getPropertyDefinitionByPath = require('@dashevo/dpp/lib/dataContract/getPropertyDefinitionByPath');
 const DataContractStoreRepository = require('../../dataContract/DataContractStoreRepository');
 const createDocumentTypeTreePath = require('./createDocumentTreePath');
 
-function createGroveDBPathQuery(dataContract, documentType, query) {
-  const documentSchema = dataContract.getDocumentSchema(documentType);
+/**
+ * @param {findAppropriateIndex} findAppropriateIndex
+ * @return {createGroveDBPathQuery}
+ */
+function createGroveDBPathQueryFactory(
+  findAppropriateIndex,
+) {
+  /**
+   * @typedef {createGroveDBPathQuery}
+   * @param {DataContract} dataContract
+   * @param {string} documentType
+   * @param [query]
+   * @param [query.where]
+   * @param [query.limit]
+   * @param [query.startAt]
+   * @param [query.startAfter]
+   * @param [query.orderBy]
+   *
+   * @return {PathQuery}
+   */
+  function createGroveDBPathQuery(dataContract, documentType, query) {
+    const documentSchema = dataContract.getDocumentSchema(documentType);
 
-  const documentTypeTreePath = createDocumentTypeTreePath(dataContract, documentType);
+    const documentTypeTreePath = createDocumentTypeTreePath(dataContract, documentType);
 
-  // TODO: Allow startAt and startAfter for documentId
-  let offset;
-  if (query.startAt && query.startAt > 1) {
-    offset = query.startAt - 1;
-  }
+    // Documents query
+    const documentsQuery = new Query();
 
-  if (query.startAfter) {
-    offset = query.startAfter;
-  }
+    documentsQuery.insertAllKeys();
 
-  const limit = query.limit || 100;
+    let path = documentTypeTreePath;
+    let rangeQuery = new Query();
+    let subQuery;
+    let subQueryKey;
 
-  const queryPaths = [];
+    // Range query
+    if (query.where) {
+      const whereClauses = cloneDeep(query.where);
 
-  let staticPath = documentTypeTreePath;
+      const lastClause = whereClauses[whereClauses.length - 1];
 
-  if (query.where) {
-    let skipNextClause = false;
+      const [lastPropertyName, lastOperator, lastValue] = lastClause;
 
-    query.where.forEach(([propertyName, operator, value], clauseIndex) => {
-      if (skipNextClause) {
-        return;
-      }
+      const lastPropertyDefinition = getPropertyDefinitionByPath(
+        documentSchema,
+        lastPropertyName,
+      );
 
-      const propertyDefinition = getPropertyDefinitionByPath(documentSchema, propertyName);
-
-      staticPath.push(propertyName);
-
-      switch (operator) {
-        case '==': {
-          const encodedValue = this.encodeDocumentPropertyValue(value, propertyDefinition);
-
-          staticPath.push(encodedValue);
-
-          return;
-        }
+      // eslint-disable-next-line default-case
+      switch (lastOperator) {
         case 'in': {
-          const query = new Query();
-
-          value.forEach((item, i) => {
+          lastValue.forEach((item, i) => {
             let arrayPropertyDefinition;
-            if (propertyDefinition.items) {
-              arrayPropertyDefinition = propertyDefinition.items;
+            if (lastPropertyDefinition.items) {
+              arrayPropertyDefinition = lastPropertyDefinition.items;
             } else {
-              arrayPropertyDefinition = propertyDefinition.prefixItems[i];
+              arrayPropertyDefinition = lastPropertyDefinition.prefixItems[i];
             }
 
-            const encodedValue = this.encodeDocumentPropertyValue(item, arrayPropertyDefinition);
+            const encodedValue = this.encodeDocumentPropertyValue(
+              item,
+              arrayPropertyDefinition,
+            );
+
             query.insertKey(encodedValue);
           });
 
-          const pathQuery = new PathQuery(staticPath, query);
+          whereClauses.pop();
 
-          queryPaths.push(pathQuery);
-          staticPath = [];
+          break;
         }
         case 'startsWith': {
-          throw new Error('Not implemented');
+          const encodedValue = this.encodeDocumentPropertyValue(
+            lastValue,
+            lastPropertyDefinition,
+          );
+
+          query.inserKeyPrefix(encodedValue);
+
+          whereClauses.pop();
+
+          break;
         }
         case '<':
         case '<=':
         case '>':
         case '>=': {
-          const query = new Query();
-
-          const encodedValue = this.encodeDocumentPropertyValue(value, propertyDefinition);
+          const encodedValue = this.encodeDocumentPropertyValue(
+            lastValue,
+            lastPropertyDefinition,
+          );
 
           let leftBound;
           let leftBoundInclusive = false;
           let rightBound;
           let rightBoundInclusive = false;
 
-          if (operator.startsWith('<')) {
+          if (lastOperator.startsWith('<')) {
             leftBound = encodedValue;
 
-            if (operator.includes('=')) {
+            if (lastOperator.includes('=')) {
               leftBoundInclusive = true;
             }
           }
 
-          if (operator.startsWith('>')) {
+          if (lastOperator.startsWith('>')) {
             rightBound = encodedValue;
 
-            if (operator.includes('=')) {
+            if (lastOperator.includes('=')) {
               rightBoundInclusive = true;
             }
           }
 
           // Two bounds range
-          const nextClause = query.where[clauseIndex + 1];
+          const nextClause = whereClauses[whereClauses.length - 2];
           if (nextClause && (nextClause.includes('<') || nextClause.includes('>'))) {
-            skipNextClause = true;
+            const [, previousOperator, previousValue] = nextClause;
 
-            const [, nextOperator, nextValue] = nextClause;
+            const nextEncodedValue = this.encodeDocumentPropertyValue(
+              previousValue,
+              lastPropertyDefinition,
+            );
 
-            const nextEncodedValue = this.encodeDocumentPropertyValue(nextValue, propertyDefinition);
-
-            if (nextOperator.startsWith('<')) {
+            if (previousOperator.startsWith('<')) {
               leftBound = nextEncodedValue;
 
-              if (nextOperator.includes('=')) {
+              if (previousOperator.includes('=')) {
                 leftBoundInclusive = true;
               }
             }
 
-            if (nextOperator.startsWith('>')) {
+            if (previousOperator.startsWith('>')) {
               rightBound = nextEncodedValue;
 
-              if (nextOperator.includes('=')) {
+              if (previousOperator.includes('=')) {
                 rightBoundInclusive = true;
               }
             }
+
+            whereClauses.pop();
           }
 
           // Create a range
@@ -143,25 +168,75 @@ function createGroveDBPathQuery(dataContract, documentType, query) {
             // RangeTo
             // insert_range_to
           }
+
+          whereClauses.pop();
         }
       }
-    });
-  }
 
-  // Add "select all document Ids" path query
-  {
-    const documentIdsTreePath = staticPath.concat([DataContractStoreRepository.DOCUMENTS_TREE_KEY]);
+      const pathSegments = whereClauses.map(([propertyName, , propertyValue]) => {
+        const propertyDefinition = getPropertyDefinitionByPath(documentSchema, propertyName);
 
-    const query = new Query();
+        const encodedValue = this.encodeDocumentPropertyValue(propertyValue, propertyDefinition);
 
-    query.insertAll();
+        return [
+          Buffer.from(propertyName),
+          encodedValue,
+        ];
+      });
 
-    pathQueries.push(
-      new PathQuery(documentIdsTreePath, query),
+      path = path.concat(pathSegments.flat());
+
+      subQuery = documentsQuery;
+      subQueryKey = DataContractStoreRepository.DOCUMENTS_TREE_KEY;
+    } else {
+      // Query all documents for specified document type
+      path.push(DataContractStoreRepository.DOCUMENTS_TREE_KEY);
+      rangeQuery = documentsQuery;
+    }
+
+    // Apply sorting
+    let order = 'asc';
+    if (query.orderBy) {
+      [[, order]] = query.orderBy;
+    } else if (query.where.length) {
+      // Get default for last clause according to index definition
+      const currentIndex = findAppropriateIndex(query.where, documentSchema);
+
+      const lastIndexedProperty = currentIndex.properties[currentIndex.properties.length - 1];
+
+      [order] = Object.values(lastIndexedProperty);
+    }
+
+    // Apply limit and offset
+    // TODO: Allow startAt and startAfter for documentId
+    let offset;
+    if (query.startAt && query.startAt > 1) {
+      offset = query.startAt - 1;
+    }
+
+    if (query.startAfter) {
+      offset = query.startAfter;
+    }
+
+    const limit = query.limit || 100;
+
+    const sizedQuery = new SizedQuery(
+      rangeQuery,
+      limit,
+      offset,
+      order === 'asc',
+    );
+
+    // Create PathQuery
+    return new PathQuery(
+      path,
+      sizedQuery,
+      subQuery,
+      subQueryKey,
     );
   }
 
-  return pathQueries;
+  return createGroveDBPathQuery;
 }
 
-module.exports = createGroveDBPathQuery;
+module.exports = createGroveDBPathQueryFactory;

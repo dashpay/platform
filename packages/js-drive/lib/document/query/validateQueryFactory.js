@@ -13,11 +13,12 @@ const InvalidPropertiesInOrderByError = require('./errors/InvalidPropertiesInOrd
 
 /**
  * @param {findConflictingConditions} findConflictingConditions
- *
+ * @param {findAppropriateIndex} findAppropriateIndex
  * @return {validateQuery}
  */
 function validateQueryFactory(
   findConflictingConditions,
+  findAppropriateIndex,
 ) {
   const ajv = defineAjvKeywords(new Ajv({
     strictTypes: true,
@@ -48,19 +49,6 @@ function validateQueryFactory(
       );
     }
 
-    const systemIndices = [
-      {
-        properties: [{ $id: 'asc' }],
-        unique: true,
-      },
-    ];
-
-    const documentIndices = (documentSchema.indices || []).concat(systemIndices);
-
-    const whereProperties = (query.where || []).map(([field]) => field);
-
-    const uniqueWhereProperties = [...new Set(whereProperties)];
-
     // Where conditions must follow document indices
     if (query.where) {
       // Find conflicting conditions
@@ -69,12 +57,7 @@ function validateQueryFactory(
           .map(([field, operators]) => new ConflictingConditionsError(field, operators)),
       );
 
-      const appropriateIndex = documentIndices.find((indexDefinition) => {
-        const indexedProperties = indexDefinition.properties
-          .map((indexedProperty) => Object.keys(indexedProperty)[0]);
-
-        return JSON.stringify(indexedProperties) === JSON.stringify(uniqueWhereProperties);
-      });
+      const appropriateIndex = findAppropriateIndex(query, documentSchema);
 
       if (!appropriateIndex) {
         result.addError(new NotIndexedPropertiesInWhereConditionsError());

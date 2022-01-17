@@ -2556,8 +2556,9 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["find-my-way", "npm:2.2.5"],
             ["js-merkle", "npm:0.1.5"],
             ["levelup", "npm:4.4.0"],
-            ["lodash.escaperegexp", "npm:4.1.2"],
+            ["lodash.clonedeep", "npm:4.5.0"],
             ["lodash.get", "npm:4.4.2"],
+            ["lodash.isequal", "npm:4.5.0"],
             ["lodash.set", "npm:4.3.2"],
             ["long", "npm:5.2.0"],
             ["lru-cache", "npm:5.1.1"],
@@ -12753,15 +12754,6 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           "packageLocation": "./.yarn/cache/lodash.debounce-npm-4.0.8-f1d6e09799-a3f527d22c.zip/node_modules/lodash.debounce/",
           "packageDependencies": [
             ["lodash.debounce", "npm:4.0.8"]
-          ],
-          "linkType": "HARD",
-        }]
-      ]],
-      ["lodash.escaperegexp", [
-        ["npm:4.1.2", {
-          "packageLocation": "./.yarn/cache/lodash.escaperegexp-npm-4.1.2-c5b90e0e9c-6d99452b1c.zip/node_modules/lodash.escaperegexp/",
-          "packageDependencies": [
-            ["lodash.escaperegexp", "npm:4.1.2"]
           ],
           "linkType": "HARD",
         }]

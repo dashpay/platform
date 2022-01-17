@@ -460,6 +460,7 @@ function createDIContainer(options) {
   container.register({
     encodeDocumentPropertyValue: asValue(encodeDocumentPropertyValue),
     createGroveDBPathQuery: asValue(createGroveDBPathQuery),
+    findAppropriateIndex: asValue(findAppropriateIndex),
 
     documentRepository: asClass(DocumentStoreRepository).singleton(),
     signedDocumentRepository: asFunction((
