@@ -87,33 +87,5 @@
     "minProperties": 3,
     "additionalProperties": false,
     "required": ["$createdAt", "enableAtHeight"]
-  },
-  "fixCumulativeFeesBug": {
-    "description": "Defines if cumulative fees should be processed in an old way or new one",
-    "type": "object",
-    "indices": [
-      {
-        "name": "enableAtHeight",
-        "properties": [
-          {
-            "enableAtHeight": "desc"
-          }
-        ],
-        "unique": true
-      }
-    ],
-    "properties": {
-      "enabled": {
-        "description": "Switch to determine if feature should be enabled",
-        "type": "boolean"
-      },
-      "enableAtHeight": {
-        "description": "Block height on which flag will be applied",
-        "type": "integer",
-        "minimum": 1
-      }
-    },
-    "additionalProperties": false,
-    "required": ["$createdAt", "enableAtHeight", "enabled"]
   }
 }
