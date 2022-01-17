@@ -21,11 +21,12 @@
   "homepage": "https://github.com/dashevo/platform-test-suite#readme",
   "dependencies": {
     "@dashevo/dapi-client": "workspace:~",
-    "@dashevo/dashcore-lib": "~0.19.28",
+    "@dashevo/dashcore-lib": "~0.19.29",
     "@dashevo/dpns-contract": "workspace:~",
     "@dashevo/dpp": "workspace:~",
     "@dashevo/feature-flags-contract": "workspace:~",
     "@dashevo/grpc-common": "workspace:~",
+    "@dashevo/masternode-reward-shares-contract": "workspace:~",
     "@dashevo/merk": "github:dashevo/node-merk#eb37003300d22c6c04604463bcd7e861dd07000f",
     "@dashevo/wallet-lib": "workspace:~",
     "assert-browserify": "^2.0.0",

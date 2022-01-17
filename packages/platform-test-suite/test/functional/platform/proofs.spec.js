@@ -2,6 +2,10 @@ const Identifier = require('@dashevo/dpp/lib/Identifier');
 const { MerkleProof, MerkleTree } = require('js-merkle');
 const { executeProof, verifyProof } = require('@dashevo/merk');
 const { PrivateKey } = require('@dashevo/dashcore-lib');
+const {
+  contractId: dpnsContractId,
+  ownerId: dpnsOwnerId,
+} = require('@dashevo/dpns-contract/lib/systemIds');
 
 const generateRandomIdentifier = require('@dashevo/dpp/lib/test/utils/generateRandomIdentifier');
 const cbor = require('@dashevo/dpp/lib/util/serializer');
@@ -24,7 +28,7 @@ describe('Platform', () => {
 
       await dashClient.platform.initialize();
 
-      contractId = Identifier.from(process.env.DPNS_CONTRACT_ID);
+      contractId = Identifier.from(dpnsContractId);
     });
 
     after(() => {
@@ -424,7 +428,7 @@ describe('Platform', () => {
         // as a reference root when verifying the root tree proof.
 
         const dapiClient = await dashClient.getDAPIClient();
-        const identityId = Identifier.from(process.env.DPNS_TOP_LEVEL_IDENTITY_ID);
+        const identityId = Identifier.from(dpnsOwnerId);
         const identity = await dashClient.platform.identities.get(identityId);
 
         const [
