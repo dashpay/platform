@@ -85,7 +85,7 @@
   },
   "dependencies": {
     "@apidevtools/json-schema-ref-parser": "^8.0.0",
-    "@dashevo/dashcore-lib": "~0.19.28",
+    "@dashevo/dashcore-lib": "~0.19.29",
     "@dashevo/feature-flags-contract": "workspace:~",
     "@dashevo/re2-wasm": "~1.0.4",
     "ajv": "^8.6.0",
