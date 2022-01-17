@@ -564,7 +564,7 @@ impl<'a> DocumentPathQuery<'a> {
         transaction: Option<&OptimisticTransactionDBTransaction>,
     ) -> Result<(Vec<Vec<u8>>, u16), Error> {
         let path = self.path.iter().map(|a| a.as_slice()).collect::<Vec<&[u8]>>();
-        let subquery_key = self.subquery_key.unwrap_or_default();
+        let subquery_key = self.subquery_key;
         let path_query = PathQuery::new(path.as_slice(), self.query, subquery_key, self.subquery);
         grove.get_path_query(&path_query, transaction)
     }
