@@ -19,28 +19,28 @@ use std::collections::HashMap;
 // Struct Definitions
 #[derive(Serialize, Deserialize)]
 pub struct Contract {
-    pub(crate) document_types: HashMap<String, DocumentType>,
-    pub(crate) id: Vec<u8>,
+    pub document_types: HashMap<String, DocumentType>,
+    pub id: Vec<u8>,
 }
 
 #[derive(Serialize, Deserialize)]
 pub struct DocumentType {
-    pub(crate) name: String,
-    pub(crate) indices: Vec<Index>,
-    pub(crate) properties: HashMap<String, types::DocumentFieldType>,
+    pub name: String,
+    pub indices: Vec<Index>,
+    pub properties: HashMap<String, types::DocumentFieldType>,
 }
 
 #[derive(Serialize, Deserialize)]
 pub struct Document {
-    pub(crate) id: Vec<u8>,
-    pub(crate) properties: HashMap<String, CborValue>,
-    pub(crate) owner_id: Vec<u8>,
+    pub id: Vec<u8>,
+    pub properties: HashMap<String, CborValue>,
+    pub owner_id: Vec<u8>,
 }
 
 #[derive(Clone, Serialize, Deserialize)]
 pub struct Index {
-    pub(crate) properties: Vec<IndexProperty>,
-    pub(crate) unique: bool,
+    pub properties: Vec<IndexProperty>,
+    pub unique: bool,
 }
 
 impl Index {
@@ -335,6 +335,29 @@ impl Document {
         Ok(document)
     }
 
+    pub fn from_cbor_with_id(document_cbor: &[u8], document_id: &[u8], owner_id: &[u8]) -> Result<Self, Error> {
+        // we need to start by verifying that the owner_id is a 256 bit number (32 bytes)
+        if owner_id.len() != 32 {
+            Err(Error::CorruptedData(String::from("invalid owner id")))?
+        }
+
+        if document_id.len() != 32 {
+            Err(Error::CorruptedData(String::from("invalid document id")))?
+        }
+        // first we need to deserialize the document and contract indices
+        // we would need dedicated deserialization functions based on the document type
+        let mut document: HashMap<String, CborValue> = ciborium::de::from_reader(document_cbor)
+            .map_err(|_| Error::CorruptedData(String::from("unable to decode contract")))?;
+
+        // dev-note: properties is everything other than the id
+        let document = Document {
+            properties: document,
+            owner_id: Vec::from(owner_id),
+            id: Vec::from(document_id),
+        };
+        Ok(document)
+    }
+
     pub fn get(&self, key: &str) -> Option<&Value> {
         self.properties.get(key)
     }
@@ -553,7 +576,7 @@ mod tests {
 
     #[test]
     fn test_import_contract() {
-        let dashpay_cbor = json_document_to_cbor("tests/supporting files/contract/dashpay/dashpay-contract.json");
+        let dashpay_cbor = json_document_to_cbor("tests/supporting_files/contract/dashpay/dashpay-contract.json");
         let contract = Contract::from_cbor(&dashpay_cbor).unwrap();
 
         assert_eq!(contract.document_types.len(), 3);

@@ -6,7 +6,7 @@ use std::path::Path;
 use storage::rocksdb_storage::OptimisticTransactionDBTransaction;
 
 pub struct Drive {
-    grove: GroveDb,
+    pub grove: GroveDb,
 }
 
 pub enum RootTree {
@@ -795,7 +795,7 @@ mod tests {
             .expect("expected to create root tree successfully");
 
         // let's construct the grovedb structure for the dashpay data contract
-        let dashpay_cbor = json_document_to_cbor("tests/supporting files/contract/dashpay/dashpay-contract.json");
+        let dashpay_cbor = json_document_to_cbor("tests/supporting_files/contract/dashpay/dashpay-contract.json");
         drive
             .apply_contract(&dashpay_cbor, None)
             .expect("expected to apply contract successfully");
@@ -808,7 +808,7 @@ mod tests {
         let (mut drive, dashpay_cbor) = setup_dashpay("add");
 
         let dashpay_cr_document_cbor =
-            json_document_to_cbor("tests/supporting files/contract/dashpay/contact-request0.json");
+            json_document_to_cbor("tests/supporting_files/contract/dashpay/contact-request0.json");
 
         let random_owner_id = rand::thread_rng().gen::<[u8; 32]>();
         drive
@@ -850,13 +850,13 @@ mod tests {
         let (mut drive, dashpay_cbor) = setup_dashpay("add_no_conflict");
 
         let dashpay_cr_document_cbor_0 =
-            json_document_to_cbor("tests/supporting files/contract/dashpay/contact-request0.json");
+            json_document_to_cbor("tests/supporting_files/contract/dashpay/contact-request0.json");
 
         let dashpay_cr_document_cbor_1 =
-            json_document_to_cbor("tests/supporting files/contract/dashpay/contact-request1.json");
+            json_document_to_cbor("tests/supporting_files/contract/dashpay/contact-request1.json");
 
         let dashpay_cr_document_cbor_2 =
-            json_document_to_cbor("tests/supporting files/contract/dashpay/contact-request2.json");
+            json_document_to_cbor("tests/supporting_files/contract/dashpay/contact-request2.json");
 
         let random_owner_id = rand::thread_rng().gen::<[u8; 32]>();
         drive
@@ -896,10 +896,10 @@ mod tests {
         let (mut drive, dashpay_cbor) = setup_dashpay("add_conflict");
 
         let dashpay_cr_document_cbor_0 =
-            json_document_to_cbor("tests/supporting files/contract/dashpay/contact-request0.json");
+            json_document_to_cbor("tests/supporting_files/contract/dashpay/contact-request0.json");
 
         let dashpay_cr_document_cbor_0_dup =
-            json_document_to_cbor("tests/supporting files/contract/dashpay/contact-request0-dup-unique-index.json");
+            json_document_to_cbor("tests/supporting_files/contract/dashpay/contact-request0-dup-unique-index.json");
 
         let random_owner_id = rand::thread_rng().gen::<[u8; 32]>();
         drive
