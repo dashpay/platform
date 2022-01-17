@@ -75,7 +75,7 @@ function subscribeToBlockHeadersWithChainLocksHandlerFactory(
   async function subscribeToBlockHeadersWithChainLocksHandler(call) {
     const { request } = call;
 
-    let fromBlockHash = Buffer.from(request.getFromBlockHash()).toString('hex');
+    const fromBlockHash = Buffer.from(request.getFromBlockHash()).toString('hex');
     const fromBlockHeight = request.getFromBlockHeight();
     const count = request.getCount();
 

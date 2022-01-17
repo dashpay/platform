@@ -108,7 +108,7 @@ function subscribeToTransactionsWithProofsHandlerFactory(
       nFlags: bloomFilterMessage.getNFlags(),
     };
 
-    let fromBlockHash = Buffer.from(request.getFromBlockHash()).toString('hex');
+    const fromBlockHash = Buffer.from(request.getFromBlockHash()).toString('hex');
     const fromBlockHeight = request.getFromBlockHeight();
     const count = request.getCount();
 

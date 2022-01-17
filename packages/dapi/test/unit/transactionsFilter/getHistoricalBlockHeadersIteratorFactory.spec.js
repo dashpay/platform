@@ -28,13 +28,13 @@ describe('getHistoricalBlockHeadersIteratorFactory', () => {
     coreRpcMock.getBlockStats.resolves({ height: 1 });
     coreRpcMock.getBlockHeaders.resolves([blockHeaderMock.toBuffer().toString('hex')]);
 
-    const fromBlockHash = 'fake';
+    const fromBlockHeight = 1;
     const count = 1337;
 
     const getHistoricalBlockHeadersIterator = getHistoricalBlockHeadersIteratorFactory(coreRpcMock);
 
     const blockHeadersIterator = getHistoricalBlockHeadersIterator(
-      fromBlockHash,
+      fromBlockHeight,
       count,
     );
 
@@ -48,7 +48,6 @@ describe('getHistoricalBlockHeadersIteratorFactory', () => {
     expect(r3.done).to.be.false();
     expect(r4.done).to.be.true();
 
-    expect(coreRpcMock.getBlockStats.callCount).to.be.equal(1);
     expect(coreRpcMock.getBlockHash.callCount).to.be.equal(3);
     expect(coreRpcMock.getBlockHeaders.callCount).to.be.equal(3);
   });

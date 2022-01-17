@@ -157,7 +157,7 @@ describe('subscribeToBlockHeadersWithChainLocksHandlerFactory', () => {
       await subscribeToBlockHeadersWithChainLocksHandler(call);
     } catch (e) {
       expect(e).to.be.instanceOf(NotFoundGrpcError);
-      expect(e.message).to.be.equal('fromBlockHash is not found');
+      expect(e.message).to.be.equal('Block not found');
     }
 
     try {
