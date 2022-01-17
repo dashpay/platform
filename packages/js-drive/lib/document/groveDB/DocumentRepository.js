@@ -100,6 +100,7 @@ class DocumentRepository {
 
         const propertyDefinition = getPropertyDefinitionByPath(documentDefinition, propertyName);
 
+        // TODO: We need to apply sorting order defined in index to speed up
         const encodedPropertyValue = this.encodeDocumentPropertyValue(
           propertyValue,
           propertyDefinition,
