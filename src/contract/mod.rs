@@ -553,7 +553,7 @@ mod tests {
 
     #[test]
     fn test_import_contract() {
-        let dashpay_cbor = json_document_to_cbor("test/contract/dashpay/dashpay-contract.json");
+        let dashpay_cbor = json_document_to_cbor("tests/supporting files/contract/dashpay/dashpay-contract.json");
         let contract = Contract::from_cbor(&dashpay_cbor).unwrap();
 
         assert_eq!(contract.document_types.len(), 3);
