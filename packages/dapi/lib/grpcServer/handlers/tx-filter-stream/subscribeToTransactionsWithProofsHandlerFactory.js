@@ -23,6 +23,7 @@ const {
 const ProcessMediator = require('../../../transactionsFilter/ProcessMediator');
 
 const { strHexOrNum } = require('../../../utils');
+const wait = require('../../../utils/wait');
 
 /**
  * Prepare the response and send transactions response
@@ -110,7 +111,7 @@ function subscribeToTransactionsWithProofsHandlerFactory(
 
     const fromBlockHash = Buffer.from(request.getFromBlockHash()).toString('hex');
     const fromBlockHeight = request.getFromBlockHeight();
-    const from = fromBlockHash || fromBlockHeight
+    const from = fromBlockHash || fromBlockHeight;
     const count = request.getCount();
 
     // Create a new bloom filter emitter when client connects
@@ -158,7 +159,6 @@ function subscribeToTransactionsWithProofsHandlerFactory(
     }
 
     // Send historical transactions
-    const notFoundErrorStr = `Block ${from.toString()} not found`
     let fromBlock;
 
     try {

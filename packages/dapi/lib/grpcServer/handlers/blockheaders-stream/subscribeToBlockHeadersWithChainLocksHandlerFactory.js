@@ -1,5 +1,4 @@
 const { ChainLock } = require('@dashevo/dashcore-lib');
-const { strHexOrNum } = require('../../../utils/index');
 
 const {
   server: {
@@ -21,6 +20,7 @@ const {
 } = require('@dashevo/dapi-grpc');
 const ProcessMediator = require('./ProcessMediator');
 const wait = require('../../../utils/wait');
+const { strHexOrNum } = require('../../../utils/index');
 const log = require('../../../log');
 
 /**
@@ -78,7 +78,7 @@ function subscribeToBlockHeadersWithChainLocksHandlerFactory(
 
     const fromBlockHash = Buffer.from(request.getFromBlockHash()).toString('hex');
     const fromBlockHeight = request.getFromBlockHeight();
-    const from = fromBlockHash || fromBlockHeight
+    const from = fromBlockHash || fromBlockHeight;
     const count = request.getCount();
 
     const newHeadersRequested = count === 0;

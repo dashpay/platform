@@ -20,11 +20,11 @@ const utils = {
    */
   strHexOrNum(bufferOrNumber) {
     if (typeof bufferOrNumber === 'number') {
-      return bufferOrNumber.toString()
+      return bufferOrNumber.toString();
     }
 
-    return bufferOrNumber.toString('hex')
-  }
+    return bufferOrNumber.toString('hex');
+  },
 };
 
 module.exports = utils;
