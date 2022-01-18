@@ -1,174 +1,27 @@
-const { hash } = require('@dashevo/dpp/lib/util/hash');
-const IdentityPublicKey = require('@dashevo/dpp/lib/identity/IdentityPublicKey');
-const Transaction = require('@dashevo/dashcore-lib/lib/transaction');
 const Identifier = require('@dashevo/dpp/lib/identifier/Identifier');
-const documentsBatchSchema = require('@dashevo/dpp/schema/document/stateTransition/documentsBatch.json');
+const { hash } = require('@dashevo/dpp/lib/util/hash');
 
 /**
  *
  * @param {DashPlatformProtocol} transactionalDpp
  * @param {DriveStateRepository|CachedStateRepositoryDecorator} stateRepository
- * @param {createMasternodeIdentity} createMasternodeIdentity
  * @param {SimplifiedMasternodeList} simplifiedMasternodeList
- * @param {DataContractStoreRepository} dataContractRepository
+ * @param {Identifier} masternodeRewardSharesContractId
+ * @param {handleNewMasternode} handleNewMasternode
+ * @param {handleUpdatedPubKeyOperator} handleUpdatedPubKeyOperator
+ * @param {splitDocumentsIntoChunks} splitDocumentsIntoChunks
  * @return {synchronizeMasternodeIdentities}
  */
 function synchronizeMasternodeIdentitiesFactory(
   transactionalDpp,
   stateRepository,
-  createMasternodeIdentity,
   simplifiedMasternodeList,
-  dataContractRepository,
+  masternodeRewardSharesContractId,
+  handleNewMasternode,
+  handleUpdatedPubKeyOperator,
+  splitDocumentsIntoChunks, // TODO - DI!!!!
 ) {
   let lastSyncedCoreHeight = 0;
-
-  /**
-   * @param {SimplifiedMNListEntry} masternodeEntry
-   * @return {Promise<{
-   *            create: Document[],
-   *            delete: Document[],
-   * }        >}
-   */
-  async function handleNewMasternode(masternodeEntry) {
-    const rawTransaction = await stateRepository
-      .fetchTransaction(masternodeEntry.proRegTxHash);
-
-    const { extraPayload: proRegTxPayload } = new Transaction(rawTransaction.data);
-
-    // Create a masternode identity
-    const masternodeIdentityId = Identifier.from(masternodeEntry.proRegTxHash, 'hex');
-
-    await createMasternodeIdentity(
-      masternodeIdentityId,
-      Buffer.from(proRegTxPayload.keyIdOwner, 'hex'),
-      IdentityPublicKey.TYPES.ECDSA_HASH160,
-    );
-
-    const documentsToCreate = [];
-    const documentsToDelete = [];
-
-    if (proRegTxPayload.operatorReward > 0) {
-      const operatorPubKey = Buffer.from(proRegTxPayload.state.pubKeyOperator, 'hex');
-
-      // Create an identity for operator
-      const operatorIdentityHash = hash(
-        Buffer.concat([
-          masternodeIdentityId.toBuffer(),
-          operatorPubKey,
-        ]),
-      );
-
-      const operatorIdentityId = Identifier.from(operatorIdentityHash);
-
-      await createMasternodeIdentity(
-        operatorIdentityId,
-        Buffer.from(proRegTxPayload.state.pubKeyOperator, 'hex'),
-        IdentityPublicKey.TYPES.BLS12_381,
-      );
-
-      const contract = await dataContractRepository.fetch(contractId);
-
-      // Create a document in rewards data contract with percentage
-      documentsToCreate.push(transactionalDpp.document.create(
-        contract,
-        Identifier.from(masternodeIdentityId),
-        'masternodeRewardShares',
-        {
-          payToId: operatorIdentityId,
-          percentage: proRegTxPayload.operatorReward,
-        },
-      ));
-    }
-
-    return {
-      create: documentsToCreate,
-      delete: documentsToDelete,
-    };
-  }
-
-  /**
-   * @param {SimplifiedMNListEntry} masternodeEntry
-   * @param {SimplifiedMNListEntry} previousMasternodeEntry
-   * @return {Promise<{
-   *            create: Document[],
-   *            delete: Document[],
-   * }        >}
-   */
-  async function handleUpdatedPubKeyOperator(masternodeEntry, previousMasternodeEntry) {
-    const rawTransaction = await stateRepository
-      .fetchTransaction(masternodeEntry.proRegTxHash);
-
-    const { extraPayload: proRegTxPayload } = new Transaction(rawTransaction.data);
-
-    const documentsToCreate = [];
-    let documentsToDelete = [];
-
-    if (proRegTxPayload.operatorReward > 0) {
-      const proRegTxHash = Buffer.from(masternodeEntry.proRegTxHash, 'hex');
-
-      const operatorIdentityHash = hash(
-        Buffer.concat([
-          proRegTxHash,
-          Buffer.from(masternodeEntry.pubKeyOperator, 'hex'),
-        ]),
-      );
-
-      const operatorIdentityId = Identifier.from(operatorIdentityHash);
-
-      const operatorIdentity = await stateRepository.fetchIdentity(operatorIdentityId);
-
-      //  Create an identity for operator if there is no identity exist with the same ID
-      if (operatorIdentity === null) {
-        await createMasternodeIdentity(
-          operatorIdentityId,
-          Buffer.from(proRegTxPayload.state.pubKeyOperator, 'hex'),
-          IdentityPublicKey.TYPES.BLS12_381,
-        );
-      }
-
-      const contract = await dataContractRepository.fetch(contractId);
-
-      // Create a document in rewards data contract with percentage defined
-      // in corresponding ProRegTx
-      documentsToCreate.push(transactionalDpp.document.create(
-        contract,
-        Identifier.from(masternodeEntry.proRegTxHash, 'hex'),
-        'masternodeRewardShares',
-        {
-          payToId: operatorIdentityId,
-          percentage: proRegTxPayload.operatorReward,
-        },
-      ));
-
-      // Delete document from reward shares data contract with ID corresponding to the
-      // masternode identity (ownerId) and previous operator identity (payToId)
-
-      const previousOperatorIdentityHash = hash(
-        Buffer.concat([
-          proRegTxHash,
-          Buffer.from(previousMasternodeEntry.pubKeyOperator, 'hex'),
-        ]),
-      );
-
-      const previousOperatorIdentityId = Identifier.from(previousOperatorIdentityHash);
-
-      documentsToDelete = await stateRepository.fetchDocuments(
-        contractId,
-        'rewardShare',
-        {
-          where: [
-            ['$ownerId', '===', Identifier.from(proRegTxHash)],
-            ['payToId', '===', previousOperatorIdentityId],
-          ],
-        },
-      );
-    }
-
-    return {
-      create: documentsToCreate,
-      delete: documentsToDelete,
-    };
-  }
 
   /**
    * @typedef synchronizeMasternodeIdentities
@@ -182,9 +35,13 @@ function synchronizeMasternodeIdentitiesFactory(
     let newMasternodes = [];
     let masternodesWithNewPubKeyOperator = [];
 
-    const previousMNList = simplifiedMasternodeList.getStore()
-      .getSMLbyHeight(lastSyncedCoreHeight)
-      .mnList;
+    let previousMNList = [];
+
+    if (lastSyncedCoreHeight > 0) {
+      previousMNList = simplifiedMasternodeList.getStore()
+        .getSMLbyHeight(lastSyncedCoreHeight)
+        .mnList;
+    }
 
     const currentMNList = simplifiedMasternodeList.getStore()
       .getSMLbyHeight(coreHeight)
@@ -192,7 +49,7 @@ function synchronizeMasternodeIdentitiesFactory(
 
     if (lastSyncedCoreHeight === 0) {
       // Create identities for all masternodes on the first sync
-      newMasternodes = simplifiedMasternodeList.getStore().currentSML;
+      newMasternodes = simplifiedMasternodeList.getStore().getCurrentSML().mnList;
     } else {
       // Get the difference between last sync and requested core height
       newMasternodes = currentMNList.filter((currentMnListEntry) => (
@@ -210,13 +67,25 @@ function synchronizeMasternodeIdentitiesFactory(
     }
 
     // Create identities and shares for new masternodes
-    documentsToCreate = await Promise.all(
+    let documentsToModify = await Promise.all(
       newMasternodes.map(handleNewMasternode),
     );
 
-    await Promise.all(
-      masternodesWithNewPubKeyOperator.map(handleUpdatedPubKeyOperator),
-    );
+    documentsToModify = documentsToModify.concat(await Promise.all(
+      masternodesWithNewPubKeyOperator.map(async (mnEntry) => {
+        const previousMnEntry = previousMNList.find((previousMnListEntry) => (
+          previousMnListEntry.proRegTxHash === mnEntry.proRegTxHash
+          && previousMnListEntry.pubKeyOperator !== mnEntry.pubKeyOperator
+        ));
+
+        return handleUpdatedPubKeyOperator(mnEntry, previousMnEntry);
+      }),
+    ));
+
+    documentsToModify.forEach((item) => {
+      documentsToCreate = documentsToCreate.concat(item.create);
+      documentsToDelete = documentsToDelete.concat(item.delete);
+    });
 
     lastSyncedCoreHeight = coreHeight;
 
@@ -231,49 +100,39 @@ function synchronizeMasternodeIdentitiesFactory(
 
     await Promise.all(
       disappearedOrInvalidMasterNodes.map(async (masternodeEntry) => {
+        const doubleSha256Hash = hash(Buffer.from(masternodeEntry.proRegTxHash, 'hex'));
         //  Delete documents belongs to masternode identity (ownerId) from rewards contract
         const documents = await stateRepository.fetchDocuments(
-          contractId,
+          masternodeRewardSharesContractId,
           'masternodeRewardShares',
           {
             where: [
-              ['$ownerId', '===', Identifier.from(masternodeEntry.proRegTxHash, 'hex')],
+              ['$ownerId', '===', Identifier.from(doubleSha256Hash),
+              ],
             ],
           },
         );
+
         documentsToDelete = documentsToDelete.concat(documents);
       }),
     );
 
-    const chunkedDocuments = [];
+    if (documentsToCreate.length > 0 || documentsToDelete > 0) {
+      const chunkedDocuments = splitDocumentsIntoChunks({
+        create: documentsToCreate,
+        delete: documentsToDelete,
+      });
 
-    const maxLength = Math.max(documentsToCreate.length, documentsToDelete.length);
-    // TODO is it OK?
-    const chunk = documentsBatchSchema.properties.transitions.maxItems;
+      await Promise.all(
+        chunkedDocuments.map(async (documentsChunk) => {
+          const documentsBatchTransition = transactionalDpp.document.createStateTransition(
+            documentsChunk,
+          );
 
-    for (let i = 0; i < maxLength; i += chunk) {
-      const documents = {};
-
-      if (documentsToCreate.length > i) {
-        documents.create = documentsToCreate.slice(i, i + chunk);
-      }
-
-      if (documentsToDelete.length > i) {
-        documents.delete = documentsToDelete.slice(i, i + chunk);
-      }
-
-      chunkedDocuments.push(documents);
+          await transactionalDpp.stateTransition.apply(documentsBatchTransition);
+        }),
+      );
     }
-
-    await Promise.all(
-      chunkedDocuments.map(async (documentsChunk) => {
-        const documentsBatchTransition = transactionalDpp.document.createStateTransition(
-          documentsChunk,
-        );
-
-        await transactionalDpp.stateTransition.apply(documentsBatchTransition);
-      }),
-    );
   }
 
   return synchronizeMasternodeIdentities;

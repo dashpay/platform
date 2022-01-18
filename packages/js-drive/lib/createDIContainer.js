@@ -144,6 +144,9 @@ const registerTopLevelDomainFactory = require('./state/registerTopLevelDomainFac
 const registerFeatureFlagFactory = require('./state/registerFeatureFlagFactory');
 const synchronizeMasternodeIdentitiesFactory = require('./identity/masternode/synchronizeMasternodeIdentitiesFactory');
 const createMasternodeIdentityFactory = require('./identity/masternode/createMasternodeIdentityFactory');
+const handleNewMasternodeFactory = require('./identity/masternode/handleNewMasternodeFactory');
+const handleUpdatedPubKeyOperatorFactory = require('./identity/masternode/handleUpdatedPubKeyOperatorFactory');
+const splitDocumentsIntoChunks = require('./identity/masternode/splitDocumentsIntoChunks');
 
 /**
  *
@@ -1074,6 +1077,12 @@ function createDIContainer(options) {
     synchronizeMasternodeIdentities: asFunction(synchronizeMasternodeIdentitiesFactory).singleton(),
 
     createMasternodeIdentity: asFunction(createMasternodeIdentityFactory).singleton(),
+
+    handleNewMasternode: asFunction(handleNewMasternodeFactory).singleton(),
+
+    handleUpdatedPubKeyOperator: asFunction(handleUpdatedPubKeyOperatorFactory).singleton(),
+
+    splitDocumentsIntoChunks: asValue(splitDocumentsIntoChunks),
   });
 
   /**
