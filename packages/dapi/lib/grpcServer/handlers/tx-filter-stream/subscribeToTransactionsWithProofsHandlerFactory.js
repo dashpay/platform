@@ -114,6 +114,10 @@ function subscribeToTransactionsWithProofsHandlerFactory(
     const from = fromBlockHash || fromBlockHeight;
     const count = request.getCount();
 
+    if (from === 0) {
+      throw new InvalidArgumentGrpcError('Minimum value for `fromBlockHeight` is 1');
+    }
+
     // Create a new bloom filter emitter when client connects
     let filter;
     try {

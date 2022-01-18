@@ -81,6 +81,10 @@ function subscribeToBlockHeadersWithChainLocksHandlerFactory(
     const from = fromBlockHash || fromBlockHeight;
     const count = request.getCount();
 
+    if (from === 0) {
+      throw new InvalidArgumentGrpcError('Minimum value for `fromBlockHeight` is 1');
+    }
+
     const newHeadersRequested = count === 0;
 
     const acknowledgingCall = new AcknowledgingWritable(call);

@@ -123,6 +123,7 @@ describe('subscribeToTransactionsWithProofsHandlerFactory', () => {
     const request = new TransactionsWithProofsRequest();
 
     request.setBloomFilter(bloomFilterMessage);
+    request.setFromBlockHeight(1);
 
     call.request = request;
 
@@ -341,7 +342,7 @@ describe('subscribeToTransactionsWithProofsHandlerFactory', () => {
       expect.fail('should fail with InvalidArgumentGrpcError');
     } catch (e) {
       expect(e).to.be.an.instanceOf(InvalidArgumentGrpcError);
-      expect(e.getMessage()).to.equal('minimum value for `fromBlockHeight` is 1');
+      expect(e.getMessage()).to.equal('Minimum value for `fromBlockHeight` is 1');
       expect(call.write).to.not.have.been.called();
       expect(call.end).to.not.have.been.called();
       expect(getMemPoolTransactionsMock).to.not.have.been.called();
@@ -368,7 +369,7 @@ describe('subscribeToTransactionsWithProofsHandlerFactory', () => {
       expect.fail('should fail with InvalidArgumentGrpcError');
     } catch (e) {
       expect(e).to.be.an.instanceOf(InvalidArgumentGrpcError);
-      expect(e.getMessage()).to.equal('minimum value for `fromBlockHeight` is 1');
+      expect(e.getMessage()).to.equal('Minimum value for `fromBlockHeight` is 1');
       expect(call.write).to.not.have.been.called();
       expect(call.end).to.not.have.been.called();
       expect(getMemPoolTransactionsMock).to.not.have.been.called();
