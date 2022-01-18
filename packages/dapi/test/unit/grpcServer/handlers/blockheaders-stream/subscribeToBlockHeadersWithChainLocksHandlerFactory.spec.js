@@ -165,7 +165,7 @@ describe('subscribeToBlockHeadersWithChainLocksHandlerFactory', () => {
       await subscribeToBlockHeadersWithChainLocksHandler(call);
     } catch (e) {
       expect(e).to.be.instanceOf(NotFoundGrpcError);
-      expect(e.message.includes('is not part of the best block chain')).to.be.true();
+      expect(e.message.includes('Block not found')).to.be.true();
     }
 
     try {

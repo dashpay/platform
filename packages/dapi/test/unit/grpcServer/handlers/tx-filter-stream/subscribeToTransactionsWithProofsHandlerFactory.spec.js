@@ -267,9 +267,7 @@ describe('subscribeToTransactionsWithProofsHandlerFactory', () => {
     } catch (e) {
       expect(e).to.be.instanceOf(NotFoundGrpcError);
 
-      expect(e.getMessage()).to.equal(
-        'Block 100 is not part of the best block chain',
-      );
+      expect(e.getMessage()).to.equal(`Block not found`);
 
       expect(call.write).to.not.have.been.called();
       expect(call.end).to.not.have.been.called();
@@ -316,9 +314,7 @@ describe('subscribeToTransactionsWithProofsHandlerFactory', () => {
       expect.fail('should throw NotFoundGrpcError');
     } catch (e) {
       expect(e).to.be.instanceOf(NotFoundGrpcError);
-      expect(e.getMessage()).to.equal(
-        `Block ${Buffer.from(blockHash).toString('hex')} is not part of the best block chain`,
-      );
+      expect(e.getMessage()).to.equal(`Block not found`);
 
       expect(call.write).to.not.have.been.called();
       expect(call.end).to.not.have.been.called();

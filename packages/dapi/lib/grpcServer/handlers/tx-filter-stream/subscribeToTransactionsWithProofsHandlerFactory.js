@@ -162,15 +162,11 @@ function subscribeToTransactionsWithProofsHandlerFactory(
     try {
       fromBlock = await coreAPI.getBlockStats(fromBlockHash || fromBlockHeight, ['height']);
     } catch (e) {
-      // Block not found
-      if (e.code === -5) {
+      if (e.code === -5 || e.code === -8) {
+        // -5 -> invalid block height or block is not on best chain
+        // -8 -> block hash not found
         throw new NotFoundGrpcError('Block not found');
       }
-      // Block is not on best chain
-      if (e.code === -8) {
-        throw new NotFoundGrpcError(`Block ${fromBlockHash || fromBlockHeight} is not part of the best block chain`);
-      }
-
       throw e;
     }
 
