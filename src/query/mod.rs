@@ -105,6 +105,38 @@ impl<'a> WhereClause {
         })
     }
 
+    fn lower_bound_clause(where_clauses: &'a [&WhereClause]) -> Result<Option<&'a Self>, Error> {
+        let lower_range_clauses : Vec<&&WhereClause> = where_clauses.iter().filter(|&where_clause| match where_clause.operator {
+            GreaterThan => true,
+            GreaterThanOrEquals => true,
+            _ => false,
+        })
+        .collect::<Vec<&&WhereClause>>();
+        match lower_range_clauses.len() {
+            0 => Ok(None),
+            1 => Ok(Some(lower_range_clauses.get(0).unwrap())),
+            _ => Err(Error::CorruptedData(String::from(
+                "there can only at most one range clause with a lower bound",
+            )))
+        }
+    }
+
+    fn upper_bound_clause(where_clauses: &'a [&WhereClause]) -> Result<Option<&'a Self>, Error> {
+        let upper_range_clauses : Vec<&&WhereClause> = where_clauses.into_iter().filter(|&where_clause| match where_clause.operator {
+            LessThan => true,
+            LessThanOrEquals => true,
+            _ => false,
+        })
+            .collect::<Vec<&&WhereClause>>();
+        match upper_range_clauses.len() {
+            0 => Ok(None),
+            1 => Ok(Some(upper_range_clauses.get(0).unwrap())),
+            _ => Err(Error::CorruptedData(String::from(
+                "there can only at most one range clause with a lower bound",
+            )))
+        }
+    }
+
     fn group_range_clauses(where_clauses: &'a [WhereClause]) -> Result<Option<Self>, Error> {
         // In order to group range clauses
         let groupable_range_clauses: Vec<&WhereClause> = where_clauses
@@ -153,22 +185,46 @@ impl<'a> WhereClause {
                 )));
             }
 
-            groupable_range_clauses.get(0).unwrap();
+            if groupable_range_clauses.iter().any(|&z| z.field != groupable_range_clauses.first().unwrap().field) {
+                return Err(Error::CorruptedData(String::from(
+                    "all ranges must be on same field",
+                )));
+            }
+
+            // we need to find the bounds of the clauses
+            let lower_bounds_clause = WhereClause::lower_bound_clause(groupable_range_clauses.as_slice())?;
+            let upper_bounds_clause = WhereClause::upper_bound_clause(groupable_range_clauses.as_slice())?;
+
+            if lower_bounds_clause.is_none() || upper_bounds_clause.is_none() {
+                return Err(Error::CorruptedData(String::from(
+                    "lower and upper bounds must be passed if providing 2 ranges",
+                )));
+            }
+
+            let operator = match (lower_bounds_clause.unwrap().operator, upper_bounds_clause.unwrap().operator) {
+                (GreaterThanOrEquals, LessThanOrEquals) => Some(Between),
+                (GreaterThanOrEquals, LessThan) => Some(BetweenExcludeRight),
+                (GreaterThan, LessThanOrEquals) => Some(BetweenExcludeLeft),
+                (GreaterThan, LessThan) => Some(BetweenExcludeBounds),
+                _ => None
+            }.ok_or(Error::CorruptedData(String::from(
+                "lower and upper bounds must be passed if providing 2 ranges",
+            )))?;
+
+            return Ok(Some(WhereClause {
+                field: groupable_range_clauses.first().unwrap().field.clone(),
+                operator,
+                value: Value::Array(vec![lower_bounds_clause.unwrap().value.clone(), upper_bounds_clause.unwrap().value.clone()])
+            }));
         } else if non_groupable_range_clauses.len() == 1 {
             let where_clause = non_groupable_range_clauses.get(0).unwrap();
-            return Ok(Some(WhereClause {
-                field: where_clause.field.clone(),
-                operator: where_clause.operator,
-                value: where_clause.value.clone(),
-            }));
+            return Ok(Some((*where_clause).clone()));
         } else {
             // if non_groupable_range_clauses.len() > 1
             return Err(Error::CorruptedData(String::from(
                 "there can not be more than 1 non groupable range clause",
             )));
         }
-
-        Ok(None)
     }
 
     fn split_value_for_between(
@@ -203,7 +259,7 @@ impl<'a> WhereClause {
             }
             GreaterThan => {
                 let key = document_type.serialize_value_for_key(self.field.as_str(), &self.value)?;
-                query.insert_range_from(key..);
+                query.insert_range_after(key..);
             }
             GreaterThanOrEquals => {
                 let key = document_type.serialize_value_for_key(self.field.as_str(), &self.value)?;
@@ -223,11 +279,11 @@ impl<'a> WhereClause {
             }
             BetweenExcludeBounds => {
                 let (left_key, right_key) = self.split_value_for_between(document_type)?;
-                query.insert_range(left_key..right_key)
+                query.insert_range_after_to(left_key..right_key)
             }
             BetweenExcludeLeft => {
                 let (left_key, right_key) = self.split_value_for_between(document_type)?;
-                query.insert_range(left_key..right_key)
+                query.insert_range_after_to_inclusive(left_key..=right_key)
             }
             BetweenExcludeRight => {
                 let (left_key, right_key) = self.split_value_for_between(document_type)?;
