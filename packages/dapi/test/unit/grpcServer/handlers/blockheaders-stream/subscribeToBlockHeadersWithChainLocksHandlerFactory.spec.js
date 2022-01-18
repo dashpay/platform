@@ -149,13 +149,13 @@ describe('subscribeToBlockHeadersWithChainLocksHandlerFactory', () => {
 
     call = new GrpcCallMock(this.sinon, request);
 
-    const blockHash = '00000bafbc94add76cb75e2ec92894837288a481e5c005f6563d91623bf8bc2c'
+    const blockHash = '00000bafbc94add76cb75e2ec92894837288a481e5c005f6563d91623bf8bc2c';
 
-    call.request.setFromBlockHash(Buffer.from(blockHash, 'hex'),);
+    call.request.setFromBlockHash(Buffer.from(blockHash, 'hex'));
     call.request.setCount(0);
 
     try {
-      coreAPIMock.getBlockStats.throws({ code: -5 })
+      coreAPIMock.getBlockStats.throws({ code: -5 });
       await subscribeToBlockHeadersWithChainLocksHandler(call);
     } catch (e) {
       expect(e).to.be.instanceOf(NotFoundGrpcError);

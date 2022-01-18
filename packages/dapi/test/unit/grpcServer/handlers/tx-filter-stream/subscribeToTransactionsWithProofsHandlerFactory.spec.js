@@ -275,8 +275,8 @@ describe('subscribeToTransactionsWithProofsHandlerFactory', () => {
   });
 
   it('should respond with not found error if Block not found', async () => {
-    const blockHash = '00000bafbc94add76cb75e2ec92894837288a481e5c005f6563d91623bf8bc2c'
-    call.request.setFromBlockHash(Buffer.from(blockHash, 'hex'),);
+    const blockHash = '00000bafbc94add76cb75e2ec92894837288a481e5c005f6563d91623bf8bc2c';
+    call.request.setFromBlockHash(Buffer.from(blockHash, 'hex'));
     call.request.setCount(0);
 
     const error = new Error();
@@ -299,7 +299,7 @@ describe('subscribeToTransactionsWithProofsHandlerFactory', () => {
 
   it('should respond with Not Found error if fromBlockHash is not part of the best block chain', async () => {
     const blockHash = '00000bafbc94add76cb75e2ec92894837288a481e5c005f6563d91623bf8bc2c';
-    call.request.setFromBlockHash(Buffer.from(blockHash, 'hex'),);
+    call.request.setFromBlockHash(Buffer.from(blockHash, 'hex'));
     call.request.setCount(0);
 
     const error = new Error();
@@ -317,6 +317,61 @@ describe('subscribeToTransactionsWithProofsHandlerFactory', () => {
 
       expect(call.write).to.not.have.been.called();
       expect(call.end).to.not.have.been.called();
+    }
+  });
+
+  it('should respond with error if `fromBlockHeight is 0 and `fromBlockHash` is not set', async () => {
+    const bloomFilterMessage = new BloomFilter();
+
+    bloomFilterMessage.setVData(new Uint8Array());
+    bloomFilterMessage.setNTweak(1000);
+    bloomFilterMessage.setNFlags(100);
+    bloomFilterMessage.setNHashFuncs(10);
+
+    const request = new TransactionsWithProofsRequest();
+
+    request.setFromBlockHeight(0);
+    request.setBloomFilter(bloomFilterMessage);
+
+    call.request = request;
+
+    try {
+      await subscribeToTransactionsWithProofsHandler(call);
+
+      expect.fail('should fail with InvalidArgumentGrpcError');
+    } catch (e) {
+      expect(e).to.be.an.instanceOf(InvalidArgumentGrpcError);
+      expect(e.getMessage()).to.equal('minimum value for `fromBlockHeight` is 1');
+      expect(call.write).to.not.have.been.called();
+      expect(call.end).to.not.have.been.called();
+      expect(getMemPoolTransactionsMock).to.not.have.been.called();
+    }
+  });
+
+  it('should respond with error if if both fromBlockHash and fromBlockHeight are not specified', async () => {
+    const bloomFilterMessage = new BloomFilter();
+
+    bloomFilterMessage.setVData(new Uint8Array());
+    bloomFilterMessage.setNTweak(1000);
+    bloomFilterMessage.setNFlags(100);
+    bloomFilterMessage.setNHashFuncs(10);
+
+    const request = new TransactionsWithProofsRequest();
+
+    request.setBloomFilter(bloomFilterMessage);
+
+    call.request = request;
+
+    try {
+      await subscribeToTransactionsWithProofsHandler(call);
+
+      expect.fail('should fail with InvalidArgumentGrpcError');
+    } catch (e) {
+      expect(e).to.be.an.instanceOf(InvalidArgumentGrpcError);
+      expect(e.getMessage()).to.equal('minimum value for `fromBlockHeight` is 1');
+      expect(call.write).to.not.have.been.called();
+      expect(call.end).to.not.have.been.called();
+      expect(getMemPoolTransactionsMock).to.not.have.been.called();
     }
   });
 });
