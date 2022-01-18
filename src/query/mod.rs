@@ -419,14 +419,14 @@ impl<'a> DriveQuery<'a> {
 
     pub fn execute_no_proof(
         self,
-        mut grove: GroveDb,
+        grove: &mut GroveDb,
         transaction: Option<&OptimisticTransactionDBTransaction>,
     ) -> Result<(Vec<Vec<u8>>, u16), Error> {
         let document_path_query = self.create_path_query()?;
         document_path_query.execute_no_proof(grove, transaction)
     }
 
-    pub fn execute_with_proof(self, mut grove: GroveDb, transaction: Option<&OptimisticTransactionDBTransaction>) -> Result<Vec<u8>, Error> {
+    pub fn execute_with_proof(self, grove: &mut GroveDb, transaction: Option<&OptimisticTransactionDBTransaction>) -> Result<Vec<u8>, Error> {
         let document_path_query = self.create_path_query()?;
         document_path_query.execute_with_proof(grove, transaction)
     }
@@ -575,7 +575,7 @@ impl<'a> DocumentPathQuery<'a> {
 
     fn execute_no_proof(
         self,
-        mut grove: GroveDb,
+        grove: &mut GroveDb,
         transaction: Option<&OptimisticTransactionDBTransaction>,
     ) -> Result<(Vec<Vec<u8>>, u16), Error> {
         let path = self.path.iter().map(|a| a.as_slice()).collect::<Vec<&[u8]>>();
@@ -584,7 +584,7 @@ impl<'a> DocumentPathQuery<'a> {
         grove.get_path_query(&path_query, transaction)
     }
 
-    fn execute_with_proof(self, mut grove: GroveDb, transaction: Option<&OptimisticTransactionDBTransaction>) -> Result<Vec<u8>, Error> {
+    fn execute_with_proof(self, grove: &mut GroveDb, transaction: Option<&OptimisticTransactionDBTransaction>) -> Result<Vec<u8>, Error> {
         todo!()
     }
 }
