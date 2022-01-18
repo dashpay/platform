@@ -1,16 +1,22 @@
 class DriveStateRepository {
-  #options;
+  #options = {};
+
+  /**
+   * @type {LRUCache}
+   */
+  #dataContractCache;
 
   /**
    * @param {IdentityStoreRepository} identityRepository
    * @param {PublicKeyToIdentityIdStoreRepository} publicKeyToIdentityIdRepository
    * @param {DataContractStoreRepository} dataContractRepository
    * @param {fetchDocuments} fetchDocuments
-   * @param {DocumentIndexedStoreRepository} documentRepository
+   * @param {DocumentRepository} documentRepository
    * @param {SpentAssetLockTransactionsRepository} spentAssetLockTransactionsRepository
    * @param {RpcClient} coreRpcClient
    * @param {BlockExecutionContext} blockExecutionContext
    * @param {SimplifiedMasternodeList} simplifiedMasternodeList
+   * @param {LRUCache} dataContractCache
    * @param {Object} [options]
    * @param {Object} [options.useTransaction=false]
    */
@@ -24,6 +30,7 @@ class DriveStateRepository {
     coreRpcClient,
     blockExecutionContext,
     simplifiedMasternodeList,
+    dataContractCache,
     options,
   ) {
     this.identityRepository = identityRepository;
@@ -35,6 +42,7 @@ class DriveStateRepository {
     this.coreRpcClient = coreRpcClient;
     this.blockExecutionContext = blockExecutionContext;
     this.simplifiedMasternodeList = simplifiedMasternodeList;
+    this.#dataContractCache = dataContractCache;
     this.#options = options;
   }
 
@@ -46,9 +54,7 @@ class DriveStateRepository {
    * @return {Promise<Identity|null>}
    */
   async fetchIdentity(id) {
-    const transaction = this.#getDBTransaction();
-
-    return this.identityRepository.fetch(id, transaction);
+    return this.identityRepository.fetch(id, this.#options.useTransaction || false);
   }
 
   /**
@@ -58,9 +64,7 @@ class DriveStateRepository {
    * @returns {Promise<void>}
    */
   async storeIdentity(identity) {
-    const transaction = this.#getDBTransaction();
-
-    await this.identityRepository.store(identity, transaction);
+    await this.identityRepository.store(identity, this.#options.useTransaction || false);
   }
 
   /**
@@ -72,12 +76,10 @@ class DriveStateRepository {
    * @returns {Promise<void>}
    */
   async storeIdentityPublicKeyHashes(identityId, publicKeyHashes) {
-    const transaction = this.#getDBTransaction();
-
     await Promise.all(
       publicKeyHashes.map(async (publicKeyHash) => this.publicKeyToIdentityIdRepository
         .store(
-          publicKeyHash, identityId, transaction,
+          publicKeyHash, identityId, this.#options.useTransaction || false,
         )),
     );
   }
@@ -90,11 +92,9 @@ class DriveStateRepository {
    * @return {Promise<void>}
    */
   async markAssetLockTransactionOutPointAsUsed(outPointBuffer) {
-    const transaction = this.#getDBTransaction();
-
     this.spentAssetLockTransactionsRepository.store(
       outPointBuffer,
-      transaction,
+      this.#options.useTransaction || false,
     );
   }
 
@@ -106,11 +106,9 @@ class DriveStateRepository {
    * @return {Promise<boolean>}
    */
   async isAssetLockTransactionOutPointAlreadyUsed(outPointBuffer) {
-    const transaction = this.#getDBTransaction();
-
     const result = this.spentAssetLockTransactionsRepository.fetch(
       outPointBuffer,
-      transaction,
+      this.#options.useTransaction || false,
     );
 
     return result !== null;
@@ -124,14 +122,12 @@ class DriveStateRepository {
    * @returns {Promise<Array<Identifier[]>>}
    */
   async fetchIdentityIdsByPublicKeyHashes(publicKeyHashes) {
-    const transaction = this.#getDBTransaction();
-
     // Keep await here.
     // noinspection UnnecessaryLocalVariableJS
     const identityIds = await Promise.all(
       publicKeyHashes.map(async (publicKeyHash) => (
         this.publicKeyToIdentityIdRepository.fetch(
-          publicKeyHash, transaction,
+          publicKeyHash, this.#options.useTransaction || false,
         )
       )),
     );
@@ -159,9 +155,7 @@ class DriveStateRepository {
    * @returns {Promise<void>}
    */
   async storeDataContract(dataContract) {
-    const transaction = this.#getDBTransaction();
-
-    await this.dataContractRepository.store(dataContract, transaction);
+    await this.dataContractRepository.store(dataContract, this.#options.useTransaction || false);
   }
 
   /**
@@ -173,9 +167,7 @@ class DriveStateRepository {
    * @returns {Promise<Document[]>}
    */
   async fetchDocuments(contractId, type, options = {}) {
-    const transaction = this.#getDBTransaction();
-
-    return this.fetchDocumentsFunction(contractId, type, options, transaction);
+    return this.fetchDocumentsFunction(contractId, type, options, this.#options.useTransaction || false);
   }
 
   /**
@@ -185,9 +177,7 @@ class DriveStateRepository {
    * @returns {Promise<void>}
    */
   async storeDocument(document) {
-    const transaction = this.#getDBTransaction();
-
-    await this.documentRepository.store(document, transaction);
+    await this.documentRepository.store(document, this.#options.useTransaction || false);
   }
 
   /**
@@ -199,9 +189,24 @@ class DriveStateRepository {
    * @returns {Promise<void>}
    */
   async removeDocument(contractId, type, id) {
-    const transaction = this.#getDBTransaction();
+    const contractIdString = contractId.toString();
 
-    await this.documentRepository.delete(contractId, type, id, transaction);
+    // TODO: This is not very clean approach since we have already cached decorator
+    //  to enable caching for the whole state repository
+    let dataContract = this.#dataContractCache.get(contractIdString);
+
+    if (!dataContract) {
+      dataContract = await this.fetchDataContract(contractId);
+
+      this.#dataContractCache.set(contractIdString, dataContract);
+    }
+
+    await this.documentRepository.delete(
+      dataContract,
+      type,
+      id,
+      this.#options.useTransaction || false,
+    );
   }
 
   /**
@@ -270,20 +275,6 @@ class DriveStateRepository {
 
       throw e;
     }
-  }
-
-  /**
-   * @private
-   * @return {GroveDBTransaction}
-   */
-  #getDBTransaction() {
-    let transaction;
-
-    if (this.#options.useTransaction) {
-      transaction = this.blockExecutionContext.getDBTransaction();
-    }
-
-    return transaction;
   }
 
   /**

@@ -83,7 +83,7 @@ class DocumentMongoDbRepository {
    * @returns {Promise<Identifier[]>}
    * @throws {InvalidQueryError}
    */
-  async find(query = {}, transaction = undefined) {
+  async find(query = {}, useTransaction = false) {
     const documentSchema = this.dataContract.getDocumentSchema(this.documentType);
 
     const result = this.validateQuery(query, documentSchema);
@@ -152,7 +152,7 @@ class DocumentMongoDbRepository {
    * @param {MongoDBTransaction} [transaction]
    * @returns {Promise}
    */
-  store(document, transaction = undefined) {
+  store(document, useTransaction = false) {
     if (
       document.getType() !== this.documentType
       || !document.getDataContractId().equals(this.dataContract.getId())
@@ -195,7 +195,7 @@ class DocumentMongoDbRepository {
    * @param {MongoDBTransaction} [transaction]
    * @returns {Promise}
    */
-  async delete(id, transaction = undefined) {
+  async delete(id, useTransaction = false) {
     const filter = { _id: id };
 
     if (transaction) {

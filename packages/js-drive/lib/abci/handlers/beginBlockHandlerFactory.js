@@ -85,12 +85,17 @@ function beginBlockHandlerFactory(
     // previous context properly reset.
     const contextHeader = blockExecutionContext.getHeader();
     if (contextHeader && contextHeader.height.equals(height)) {
-      const transaction = blockExecutionContext.getDBTransaction();
-      if (transaction.isStarted()) {
-        transaction.abort();
+      if (groveDBStore.isTransactionStarted()) {
+        groveDBStore.rollbackTransaction();
       }
 
-      // TODO: Clean stack too?
+      // Remove failed block context from the stack
+      const latestContext = blockExecutionContextStack.getLatest();
+      const latestContextHeader = latestContext.getHeader();
+
+      if (latestContextHeader.height.equals(height)) {
+        blockExecutionContextStack.removeLatest();
+      }
     }
 
     blockExecutionContext.reset();
@@ -100,13 +105,6 @@ function beginBlockHandlerFactory(
     blockExecutionContext.setHeader(header);
 
     blockExecutionContext.setLastCommitInfo(lastCommitInfo);
-
-    // Start GroveDB transaction
-    const transaction = groveDBStore.createTransaction();
-
-    await transaction.start();
-
-    blockExecutionContext.setDBTransaction(transaction);
 
     // Set protocol version to DPP
     dpp.setProtocolVersion(version.app.toNumber());

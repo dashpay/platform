@@ -23,7 +23,6 @@ describe('BlockExecutionContext', () => {
   let plainObject;
   let validTxs;
   let invalidTxs;
-  let dbTransaction;
 
   beforeEach(() => {
     blockExecutionContext = new BlockExecutionContext();
@@ -40,7 +39,6 @@ describe('BlockExecutionContext', () => {
     cumulativeFees = plainObject.cumulativeFees;
     validTxs = plainObject.validTxs;
     invalidTxs = plainObject.invalidTxs;
-    dbTransaction = plainObject.dbTransaction;
   });
 
   describe('#addDataContract', () => {
@@ -162,24 +160,6 @@ describe('BlockExecutionContext', () => {
     });
   });
 
-  describe('#setDBTransaction', () => {
-    it('should set db transaction', async () => {
-      const result = blockExecutionContext.setDBTransaction(dbTransaction);
-
-      expect(result).to.equal(blockExecutionContext);
-
-      expect(blockExecutionContext.dbTransaction).to.deep.equal(dbTransaction);
-    });
-  });
-
-  describe('#getDBTransaction', () => {
-    it('should get db transaction', async () => {
-      blockExecutionContext.dbTransaction = dbTransaction;
-
-      expect(blockExecutionContext.getDBTransaction()).to.deep.equal(dbTransaction);
-    });
-  });
-
   describe('#populate', () => {
     it('should populate instance from another instance', () => {
       const anotherBlockExecutionContext = new BlockExecutionContext();
@@ -191,7 +171,6 @@ describe('BlockExecutionContext', () => {
       anotherBlockExecutionContext.validTxs = validTxs;
       anotherBlockExecutionContext.invalidTxs = invalidTxs;
       anotherBlockExecutionContext.consensusLogger = logger;
-      anotherBlockExecutionContext.dbTransaction = dbTransaction;
 
       blockExecutionContext.populate(anotherBlockExecutionContext);
 
@@ -228,7 +207,6 @@ describe('BlockExecutionContext', () => {
       blockExecutionContext.validTxs = validTxs;
       blockExecutionContext.invalidTxs = invalidTxs;
       blockExecutionContext.consensusLogger = logger;
-      blockExecutionContext.dbTransaction = dbTransaction;
 
       expect(blockExecutionContext.toObject()).to.deep.equal(plainObject);
     });
@@ -241,28 +219,10 @@ describe('BlockExecutionContext', () => {
       blockExecutionContext.validTxs = validTxs;
       blockExecutionContext.invalidTxs = invalidTxs;
       blockExecutionContext.consensusLogger = logger;
-      blockExecutionContext.dbTransaction = dbTransaction;
 
       const result = blockExecutionContext.toObject({ skipConsensusLogger: true });
 
       delete plainObject.consensusLogger;
-
-      expect(result).to.deep.equal(plainObject);
-    });
-
-    it('should skipDBTransaction if the option passed', () => {
-      blockExecutionContext.dataContracts = [dataContract];
-      blockExecutionContext.lastCommitInfo = lastCommitInfo;
-      blockExecutionContext.cumulativeFees = cumulativeFees;
-      blockExecutionContext.header = header;
-      blockExecutionContext.validTxs = validTxs;
-      blockExecutionContext.invalidTxs = invalidTxs;
-      blockExecutionContext.consensusLogger = logger;
-      blockExecutionContext.dbTransaction = dbTransaction;
-
-      const result = blockExecutionContext.toObject({ skipDBTransaction: true });
-
-      delete plainObject.dbTransaction;
 
       expect(result).to.deep.equal(plainObject);
     });

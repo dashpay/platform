@@ -14,14 +14,14 @@ class CreditsDistributionPoolRepository {
    * Store Credits Distribution Pool
    *
    * @param {CreditsDistributionPool} creditsDistributionPool
-   * @param {GroveDBTransaction} transaction
+   * @param {boolean} [useTransaction=false]
    * @return {this}
    */
-  async store(creditsDistributionPool, transaction = undefined) {
+  async store(creditsDistributionPool, useTransaction = false) {
     await this.storage.putAux(
       CreditsDistributionPoolRepository.COMMON_STORE_KEY_NAME,
       cbor.encodeCanonical(creditsDistributionPool.toJSON()),
-      { transaction },
+      { useTransaction },
     );
 
     return this;
@@ -30,13 +30,13 @@ class CreditsDistributionPoolRepository {
   /**
    * Fetch Credits Distribution Pool
    *
-   * @param {GroveDBTransaction} transaction
+   * @param {boolean} [useTransaction=false]
    * @return {CreditsDistributionPool}
    */
-  async fetch(transaction = undefined) {
+  async fetch(useTransaction = false) {
     const creditsDistributionPoolEncoded = await this.storage.getAux(
       CreditsDistributionPoolRepository.COMMON_STORE_KEY_NAME,
-      { transaction },
+      { useTransaction },
     );
 
     if (!creditsDistributionPoolEncoded) {

@@ -1,5 +1,6 @@
 /* eslint-disable no-bitwise */
 /**
+ * @typedef {encodeDocumentPropertyValue}
  * @param {*} propertyValue
  * @param {Object} propertyDefinition
  * @return Buffer
