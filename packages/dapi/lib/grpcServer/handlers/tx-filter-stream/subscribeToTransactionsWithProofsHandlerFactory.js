@@ -22,7 +22,7 @@ const {
 
 const ProcessMediator = require('../../../transactionsFilter/ProcessMediator');
 
-const wait = require('../../../utils/wait');
+const { strHexOrNum } = require('../../../utils');
 
 /**
  * Prepare the response and send transactions response
@@ -110,6 +110,7 @@ function subscribeToTransactionsWithProofsHandlerFactory(
 
     const fromBlockHash = Buffer.from(request.getFromBlockHash()).toString('hex');
     const fromBlockHeight = request.getFromBlockHeight();
+    const from = fromBlockHash || fromBlockHeight
     const count = request.getCount();
 
     // Create a new bloom filter emitter when client connects
@@ -157,15 +158,16 @@ function subscribeToTransactionsWithProofsHandlerFactory(
     }
 
     // Send historical transactions
+    const notFoundErrorStr = `Block ${from.toString()} not found`
     let fromBlock;
 
     try {
-      fromBlock = await coreAPI.getBlockStats(fromBlockHash || fromBlockHeight, ['height']);
+      fromBlock = await coreAPI.getBlockStats(from, ['height']);
     } catch (e) {
       if (e.code === -5 || e.code === -8) {
         // -5 -> invalid block height or block is not on best chain
         // -8 -> block hash not found
-        throw new NotFoundGrpcError('Block not found');
+        throw new NotFoundGrpcError(`Block ${strHexOrNum(from)} not found`);
       }
       throw e;
     }

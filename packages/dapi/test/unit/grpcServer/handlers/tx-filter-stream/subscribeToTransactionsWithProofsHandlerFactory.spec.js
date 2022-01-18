@@ -267,7 +267,7 @@ describe('subscribeToTransactionsWithProofsHandlerFactory', () => {
     } catch (e) {
       expect(e).to.be.instanceOf(NotFoundGrpcError);
 
-      expect(e.getMessage()).to.equal(`Block not found`);
+      expect(e.getMessage()).to.equal('Block 100 not found');
 
       expect(call.write).to.not.have.been.called();
       expect(call.end).to.not.have.been.called();
@@ -275,7 +275,8 @@ describe('subscribeToTransactionsWithProofsHandlerFactory', () => {
   });
 
   it('should respond with not found error if Block not found', async () => {
-    call.request.setFromBlockHash('someBlockHash');
+    const blockHash = '00000bafbc94add76cb75e2ec92894837288a481e5c005f6563d91623bf8bc2c'
+    call.request.setFromBlockHash(Buffer.from(blockHash, 'hex'),);
     call.request.setCount(0);
 
     const error = new Error();
@@ -289,9 +290,7 @@ describe('subscribeToTransactionsWithProofsHandlerFactory', () => {
       expect.fail('should fail with NotFoundGrpcError');
     } catch (e) {
       expect(e).to.be.instanceOf(NotFoundGrpcError);
-      expect(e.getMessage()).to.equal(
-        'Block not found',
-      );
+      expect(e.getMessage()).to.equal(`Block ${blockHash} not found`);
 
       expect(call.write).to.not.have.been.called();
       expect(call.end).to.not.have.been.called();
@@ -299,8 +298,8 @@ describe('subscribeToTransactionsWithProofsHandlerFactory', () => {
   });
 
   it('should respond with Not Found error if fromBlockHash is not part of the best block chain', async () => {
-    const blockHash = 'someBlockHash';
-    call.request.setFromBlockHash(blockHash);
+    const blockHash = '00000bafbc94add76cb75e2ec92894837288a481e5c005f6563d91623bf8bc2c';
+    call.request.setFromBlockHash(Buffer.from(blockHash, 'hex'),);
     call.request.setCount(0);
 
     const error = new Error();
@@ -314,7 +313,7 @@ describe('subscribeToTransactionsWithProofsHandlerFactory', () => {
       expect.fail('should throw NotFoundGrpcError');
     } catch (e) {
       expect(e).to.be.instanceOf(NotFoundGrpcError);
-      expect(e.getMessage()).to.equal(`Block not found`);
+      expect(e.getMessage()).to.equal(`Block ${blockHash} not found`);
 
       expect(call.write).to.not.have.been.called();
       expect(call.end).to.not.have.been.called();

@@ -149,15 +149,17 @@ describe('subscribeToBlockHeadersWithChainLocksHandlerFactory', () => {
 
     call = new GrpcCallMock(this.sinon, request);
 
-    call.request.setFromBlockHash('someBlockHash');
+    const blockHash = '00000bafbc94add76cb75e2ec92894837288a481e5c005f6563d91623bf8bc2c'
+
+    call.request.setFromBlockHash(Buffer.from(blockHash, 'hex'),);
     call.request.setCount(0);
 
     try {
-      coreAPIMock.getBlockStats.throws({ code: -5 });
+      coreAPIMock.getBlockStats.throws({ code: -5 })
       await subscribeToBlockHeadersWithChainLocksHandler(call);
     } catch (e) {
       expect(e).to.be.instanceOf(NotFoundGrpcError);
-      expect(e.message).to.be.equal('Block not found');
+      expect(e.message).to.be.equal(`Block ${blockHash} not found`);
     }
 
     try {
@@ -165,7 +167,7 @@ describe('subscribeToBlockHeadersWithChainLocksHandlerFactory', () => {
       await subscribeToBlockHeadersWithChainLocksHandler(call);
     } catch (e) {
       expect(e).to.be.instanceOf(NotFoundGrpcError);
-      expect(e.message.includes('Block not found')).to.be.true();
+      expect(e.message).to.be.equal(`Block ${blockHash} not found`);
     }
 
     try {

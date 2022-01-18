@@ -1,4 +1,5 @@
 const { ChainLock } = require('@dashevo/dashcore-lib');
+const { strHexOrNum } = require('../../../utils/index');
 
 const {
   server: {
@@ -77,6 +78,7 @@ function subscribeToBlockHeadersWithChainLocksHandlerFactory(
 
     const fromBlockHash = Buffer.from(request.getFromBlockHash()).toString('hex');
     const fromBlockHeight = request.getFromBlockHeight();
+    const from = fromBlockHash || fromBlockHeight
     const count = request.getCount();
 
     const newHeadersRequested = count === 0;
@@ -106,19 +108,13 @@ function subscribeToBlockHeadersWithChainLocksHandlerFactory(
     let fromBlock;
 
     try {
-      fromBlock = await coreAPI.getBlockStats(fromBlockHash || fromBlockHeight, ['height']);
+      fromBlock = await coreAPI.getBlockStats(from, ['height']);
     } catch (e) {
       if (e.code === -5 || e.code === -8) {
         // -5 -> invalid block height or block is not on best chain
         // -8 -> block hash not found
-        throw new NotFoundGrpcError('Block not found');
+        throw new NotFoundGrpcError(`Block ${strHexOrNum(from)} not found`);
       }
-
-      // Block is not on best chain
-      if (e.code === -8) {
-        throw new NotFoundGrpcError(`Block ${fromBlockHash || fromBlockHeight} is not part of the best block chain`);
-      }
-
       throw e;
     }
 
