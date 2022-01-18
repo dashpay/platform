@@ -93,7 +93,7 @@ function endBlockHandlerFactory(
     const updateConsensusParamsFeatureFlag = await getFeatureFlagForHeight(
       featureFlagTypes.UPDATE_CONSENSUS_PARAMS,
       height,
-      blockExecutionContext.getDBTransaction(),
+      true,
     );
 
     let consensusParamUpdates;

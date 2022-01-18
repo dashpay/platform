@@ -15,10 +15,10 @@ class DataContractStoreRepository {
    * Store Data Contract into database
    *
    * @param {DataContract} dataContract
-   * @param {GroveDBTransaction} [transaction]
+   * @param {boolean} [useTransaction=false]
    * @return {Promise<DataContractStoreRepository>}
    */
-  async store(dataContract, transaction = undefined) {
+  async store(dataContract, useTransaction = false) {
     /**
      * Store contract
      */
@@ -27,7 +27,7 @@ class DataContractStoreRepository {
     await this.storage.createTree(
       DataContractStoreRepository.TREE_PATH,
       dataContract.getId().toBuffer(),
-      { transaction },
+      { useTransaction },
     );
 
     // Store contract under Data Contract key
@@ -38,7 +38,7 @@ class DataContractStoreRepository {
       contractTreePath,
       DataContractStoreRepository.DATA_CONTRACT_KEY,
       dataContract.toBuffer(),
-      { transaction },
+      { useTransaction },
     );
 
     /**
@@ -50,7 +50,7 @@ class DataContractStoreRepository {
         await this.storage.createTree(
           contractTreePath,
           Buffer.from(documentType),
-          { transaction, skipIfExists: true },
+          { useTransaction, skipIfExists: true },
         );
 
         const documentTypeTreePath = contractTreePath.concat([Buffer.from(documentType)]);
@@ -59,7 +59,7 @@ class DataContractStoreRepository {
         await this.storage.createTree(
           documentTypeTreePath,
           DataContractStoreRepository.DOCUMENTS_TREE_KEY,
-          { transaction, skipIfExists: true },
+          { useTransaction, skipIfExists: true },
         );
 
         // Create first indexed property trees
@@ -74,14 +74,14 @@ class DataContractStoreRepository {
           await this.storage.createTree(
             documentTypeTreePath,
             Buffer.from(indexedProperty),
-            { transaction, skipIfExists: true },
+            { useTransaction, skipIfExists: true },
           );
 
           // Create tree for ID references
           await this.storage.createTree(
             documentTypeTreePath.concat([Buffer.from(indexedProperty)]),
             DataContractStoreRepository.DOCUMENTS_TREE_KEY,
-            { transaction, skipIfExists: true },
+            { useTransaction, skipIfExists: true },
           );
         }));
       });
@@ -95,14 +95,14 @@ class DataContractStoreRepository {
    * Fetch Data Contract by ID from database
    *
    * @param {Identifier} id
-   * @param {GroveDBTransaction} [transaction]
+   * @param {boolean} [useTransaction=false]
    * @return {Promise<null|DataContract>}
    */
-  async fetch(id, transaction = undefined) {
+  async fetch(id, useTransaction = false) {
     const encodedDataContract = await this.storage.get(
       DataContractStoreRepository.TREE_PATH.concat([id.toBuffer()]),
       DataContractStoreRepository.DATA_CONTRACT_KEY,
-      { transaction },
+      { useTransaction },
     );
 
     if (!encodedDataContract) {

@@ -15,20 +15,19 @@ class BlockExecutionContextStackRepository {
    * Store block execution context
    *
    * @param {BlockExecutionContextStack} blockExecutionContextStack
-   * @param {GroveDBTransaction} transaction
+   * @param {boolean} [useTransaction=false]
    * @return {this}
    */
-  async store(blockExecutionContextStack, transaction = undefined) {
+  async store(blockExecutionContextStack, useTransaction = false) {
     const contexts = blockExecutionContextStack.getContexts()
       .map((context) => context.toObject({
-        skipDBTransaction: true,
         skipConsensusLogger: true,
       }));
 
     await this.db.putAux(
       BlockExecutionContextStackRepository.EXTERNAL_STORE_KEY_NAME,
       await cbor.encodeAsync(contexts),
-      { transaction },
+      { useTransaction },
     );
 
     return this;
@@ -37,15 +36,15 @@ class BlockExecutionContextStackRepository {
   /**
    * Fetch block execution stack
    *
-   * @param {GroveDBTransaction} [transaction]
+   * @param {boolean} [useTransaction=false]
    *
    * @return {BlockExecutionContextStack}
    */
-  async fetch(transaction = undefined) {
+  async fetch(useTransaction = false) {
     try {
       const blockExecutionContextsEncoded = await this.db.getAux(
         BlockExecutionContextStackRepository.EXTERNAL_STORE_KEY_NAME,
-        { transaction },
+        { useTransaction },
       );
 
       const blockExecutionContextStack = new BlockExecutionContextStack();

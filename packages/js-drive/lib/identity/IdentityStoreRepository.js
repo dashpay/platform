@@ -15,15 +15,15 @@ class IdentityStoreRepository {
    * Store identity into database
    *
    * @param {Identity} identity
-   * @param {GroveDBTransaction} [transaction]
+   * @param {boolean} [useTransaction=false]
    * @return {Promise<IdentityStoreRepository>}
    */
-  async store(identity, transaction = undefined) {
+  async store(identity, useTransaction = false) {
     await this.storage.put(
       IdentityStoreRepository.TREE_PATH,
       identity.getId().toBuffer(),
       identity.toBuffer(),
-      { transaction },
+      { useTransaction },
     );
 
     return this;
@@ -33,14 +33,14 @@ class IdentityStoreRepository {
    * Fetch identity by id from database
    *
    * @param {Identifier} id
-   * @param {GroveDBTransaction} [transaction]
+   * @param {boolean} [useTransaction=false]
    * @return {Promise<null|Identity>}
    */
-  async fetch(id, transaction = undefined) {
+  async fetch(id, useTransaction = false) {
     const encodedIdentity = this.storage.get(
       IdentityStoreRepository.TREE_PATH,
       id.toBuffer(),
-      { transaction },
+      { useTransaction },
     );
 
     if (!encodedIdentity) {

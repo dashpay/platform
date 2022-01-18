@@ -6,10 +6,7 @@ const chalk = require('chalk');
 
 const ZMQClient = require('../lib/core/ZmqClient');
 
-const { init: initHashFunction } = require('../lib/rootTree/hashFunction');
-
 const createDIContainer = require('../lib/createDIContainer');
-const BlockExecutionContextRepository = require('../lib/blockExecution/BlockExecutionContextStackRepository');
 
 const { version: driveVersion } = require('../package.json');
 
@@ -32,8 +29,6 @@ console.log(chalk.hex('#008de4')(banner));
    * and it won't work if left uninitialized. This is workaround to blake3 causing a segfault
    * on node14, and init function initializes WASM build instead of NEON, which is default behaviour
    */
-
-  await initHashFunction();
 
   const container = createDIContainer(process.env);
   const logger = container.resolve('logger');
@@ -73,12 +68,27 @@ console.log(chalk.hex('#008de4')(banner));
   /**
    * Initialize Block Execution Contexts
    */
+
+  /**
+   * @type {BlockExecutionContextStack}
+   */
   const blockExecutionContextStack = container.resolve('blockExecutionContextStack');
+
+  /**
+   * @type {BlockExecutionContextStackRepository}
+   */
   const blockExecutionContextStackRepository = container.resolve('blockExecutionContextStackRepository');
+
+  /**
+   * @type {BlockExecutionContext}
+   */
+  const blockExecutionContext = container.resolve('blockExecutionContext');
 
   const persistedBlockExecutionContextStack = await blockExecutionContextStackRepository.fetch();
 
   blockExecutionContextStack.setContexts(persistedBlockExecutionContextStack.getContexts());
+
+  blockExecutionContext.populate(blockExecutionContextStack.getLatest());
 
   /**
    * Initialize Credits Distribution Pool

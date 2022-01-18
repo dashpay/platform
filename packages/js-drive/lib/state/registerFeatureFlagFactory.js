@@ -1,7 +1,7 @@
 /**
  * @param {DashPlatformProtocol} dpp
- * @param {DocumentIndexedStoreRepository} documentRepository
- * @param {DocumentIndexedStoreRepository} previousDocumentRepository
+ * @param {DocumentRepository} documentRepository
+ * @param {DocumentRepository} previousDocumentRepository
  * @param {RootTree} rootTree
  * @param {RootTree} previousRootTree
  * @param {Identifier} cumulativeFeesFeatureFlagDocumentId

@@ -16,12 +16,12 @@ class PublicKeyToIdentityIdStoreRepository {
    *
    * @param {Buffer} publicKeyHash
    * @param {Identifier} identityId
-   * @param {GroveDBTransaction} [transaction]
+   * @param {boolean} [useTransaction=false]
    *
    * @return {Promise<PublicKeyToIdentityIdStoreRepository>}
    */
-  async store(publicKeyHash, identityId, transaction = undefined) {
-    const identityIdsSerialized = await this.fetchBuffer(publicKeyHash, transaction);
+  async store(publicKeyHash, identityId, useTransaction = false) {
+    const identityIdsSerialized = await this.fetchBuffer(publicKeyHash, useTransaction);
 
     let identityIds = [];
     if (identityIdsSerialized) {
@@ -35,7 +35,7 @@ class PublicKeyToIdentityIdStoreRepository {
         PublicKeyToIdentityIdStoreRepository.TREE_PATH,
         publicKeyHash,
         cbor.encode(identityIds),
-        { transaction },
+        { useTransaction },
       );
     }
     return this;
@@ -45,15 +45,15 @@ class PublicKeyToIdentityIdStoreRepository {
    * Fetch serialized identity ids by public key hash from database
    *
    * @param {Buffer} publicKeyHash
-   * @param {GroveDBTransaction} [transaction]
+   * @param {boolean} [useTransaction=false]
    *
    * @return {Promise<Buffer|null>}
    */
-  async fetchBuffer(publicKeyHash, transaction = undefined) {
+  async fetchBuffer(publicKeyHash, useTransaction = false) {
     return this.storage.get(
       PublicKeyToIdentityIdStoreRepository.TREE_PATH,
       publicKeyHash,
-      { transaction },
+      { useTransaction },
     );
   }
 
@@ -61,12 +61,12 @@ class PublicKeyToIdentityIdStoreRepository {
    * Fetch deserialized identity ids by public key hash from database
    *
    * @param {Buffer} publicKeyHash
-   * @param {GroveDBTransaction} [transaction]
+   * @param {boolean} [useTransaction=false]
    *
    * @return {Promise<Identifier[]>}
    */
-  async fetch(publicKeyHash, transaction = undefined) {
-    const identityIdsSerialized = this.fetchBuffer(publicKeyHash, transaction);
+  async fetch(publicKeyHash, useTransaction = false) {
+    const identityIdsSerialized = this.fetchBuffer(publicKeyHash, useTransaction);
 
     if (!identityIdsSerialized) {
       return [];

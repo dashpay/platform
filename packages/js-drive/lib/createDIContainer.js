@@ -119,13 +119,12 @@ const rotateSignedStoreFactory = require('./groveDB/rotateSignedStoreFactory');
 const BlockExecutionContextStack = require('./blockExecution/BlockExecutionContextStack');
 const createInitialStateStructureFactory = require('./state/createInitialStateStructureFactory');
 const encodeDocumentPropertyValue = require('./document/groveDB/encodeDocumentPropertyValue');
-const createGroveDBPathQuery = require('./document/groveDB/createGroveDBPathQuery');
+const createGroveDBPathQueryFactory = require('./document/groveDB/createGroveDBPathQueryFactory');
 const findAppropriateIndex = require('./document/query/findAppropriateIndex');
 
 const registerSystemDataContractFactory = require('./state/registerSystemDataContractFactory');
 const registerTopLevelDomainFactory = require('./state/registerTopLevelDomainFactory');
 const registerFeatureFlagFactory = require('./state/registerFeatureFlagFactory');
-
 
 /**
  *
@@ -149,6 +148,7 @@ const registerFeatureFlagFactory = require('./state/registerFeatureFlagFactory')
  * @param {string} options.MASTERNODE_REWARD_SHARES_MASTER_PUBLIC_KEY
  * @param {string} options.INITIAL_CORE_CHAINLOCKED_HEIGHT
  * @param {string} options.VALIDATOR_SET_LLMQ_TYPE
+ * @param {string} options.TENDERDASH_P2P_PORT
  * @param {string} options.LOG_STDOUT_LEVEL
  * @param {string} options.LOG_PRETTY_FILE_LEVEL
  * @param {string} options.LOG_PRETTY_FILE_PATH
@@ -480,13 +480,22 @@ function createDIContainer(options) {
    */
   container.register({
     encodeDocumentPropertyValue: asValue(encodeDocumentPropertyValue),
-    createGroveDBPathQuery: asValue(createGroveDBPathQuery),
+    createGroveDBPathQuery: asFunction(createGroveDBPathQueryFactory),
     findAppropriateIndex: asValue(findAppropriateIndex),
 
     documentRepository: asClass(DocumentStoreRepository).singleton(),
     signedDocumentRepository: asFunction((
       signedGroveDBStore,
-    ) => (new DocumentStoreRepository(signedGroveDBStore))).singleton(),
+      validateQuery,
+      decodeProtocolEntity,
+      createGroveDBPathQuery,
+    ) => (new DocumentStoreRepository(
+      signedGroveDBStore,
+      encodeDocumentPropertyValue,
+      validateQuery,
+      decodeProtocolEntity,
+      createGroveDBPathQuery,
+    ))).singleton(),
 
     findConflictingConditions: asValue(findConflictingConditions),
     validateQuery: asFunction(validateQueryFactory).singleton(),
@@ -557,6 +566,7 @@ function createDIContainer(options) {
         coreRpcClient,
         blockExecutionContext,
         simplifiedMasternodeList,
+        dataContractCache,
       );
 
       return new CachedStateRepositoryDecorator(
@@ -588,6 +598,7 @@ function createDIContainer(options) {
         coreRpcClient,
         blockExecutionContext,
         simplifiedMasternodeList,
+        dataContractCache,
         {
           useTransaction: true,
         },

@@ -79,6 +79,25 @@ describe('BlockExecutionContextStack', () => {
     });
   });
 
+  describe('#removeLatest', () => {
+    it('should return remove the last context from the stack', () => {
+      const lastContext = new BlockExecutionContext();
+
+      blockExecutionContextStack.setContexts([
+        blockExecutionContext,
+        lastContext,
+      ]);
+
+      blockExecutionContextStack.removeLatest();
+
+      const result = blockExecutionContextStack.getContexts();
+
+      expect(result).to.deep.equals([
+        blockExecutionContext,
+      ]);
+    });
+  });
+
   describe('add', () => {
     it('should append a context to the stack and remove the last one', () => {
       const firstContext = new BlockExecutionContext();

@@ -53,33 +53,25 @@ function commitHandlerFactory(
 
     consensusLogger.debug('Commit ABCI method requested');
 
-    const dbTransaction = blockExecutionContext.getDBTransaction();
+    // Store ST fees from the block to distribution pool
+    creditsDistributionPool.incrementAmount(
+      blockExecutionContext.getCumulativeFees(),
+    );
 
-    try {
-      // Store ST fees from the block to distribution pool
-      creditsDistributionPool.incrementAmount(
-        blockExecutionContext.getCumulativeFees(),
-      );
+    await creditsDistributionPoolRepository.store(
+      creditsDistributionPool,
+      true,
+    );
 
-      await creditsDistributionPoolRepository.store(
-        creditsDistributionPool,
-        blockExecutionContext.getDBTransaction(),
-      );
+    // Store block execution context
+    blockExecutionContextStack.add(blockExecutionContext);
+    blockExecutionContextStackRepository.store(
+      blockExecutionContextStack,
+      true,
+    );
 
-      // Store block execution context
-      blockExecutionContextStack.add(blockExecutionContext);
-      blockExecutionContextStackRepository.store(
-        blockExecutionContextStack,
-        dbTransaction,
-      );
-
-      // Commit the current block db transactions
-      await dbTransaction.commit();
-    } catch (e) {
-      await dbTransaction.abort();
-
-      throw e;
-    }
+    // Commit the current block db transactions
+    await groveDBStore.commitTransaction();
 
     // Update data contract cache with new version of
     // commited data contract

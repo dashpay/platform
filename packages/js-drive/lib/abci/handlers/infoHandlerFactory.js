@@ -8,11 +8,7 @@ const {
 
 const Long = require('long');
 
-const { asValue } = require('awilix');
-
 const { version: driveVersion } = require('../../../package.json');
-
-const NoPreviousBlockExecutionStoreTransactionsFoundError = require('./errors/NoPreviousBlockExecutionStoreTransactionsFoundError');
 
 /**
  * @param {BlockExecutionContext} blockExecutionContext

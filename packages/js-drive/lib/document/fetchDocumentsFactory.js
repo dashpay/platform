@@ -5,7 +5,7 @@ const InvalidQueryError = require('./errors/InvalidQueryError');
 const InvalidDocumentTypeError = require('./query/errors/InvalidDocumentTypeError');
 const InvalidContractIdError = require('./query/errors/InvalidContractIdError');
 /**
- * @param {DocumentStoreRepository} documentRepository
+ * @param {DocumentRepository} documentRepository
  * @param {DataContractStoreRepository} dataContractRepository
  * @param {LRUCache} dataContractCache
  * @returns {fetchDocuments}
@@ -22,10 +22,10 @@ function fetchDocumentsFactory(
    * @param {Buffer|Identifier} contractId
    * @param {string} type
    * @param {Object} [options] options
-   * @param {DocumentsIndexedTransaction} [storeTransaction]
+   * @param {boolean} [useTransaction=false]
    * @returns {Promise<Document[]>}
    */
-  async function fetchDocuments(contractId, type, options, storeTransaction = undefined) {
+  async function fetchDocuments(contractId, type, options, useTransaction = false) {
     let contractIdIdentifier;
     try {
       contractIdIdentifier = new Identifier(contractId);
@@ -65,7 +65,7 @@ function fetchDocumentsFactory(
       contractIdIdentifier,
       type,
       options,
-      storeTransaction,
+      useTransaction,
     );
   }
 

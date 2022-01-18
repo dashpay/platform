@@ -1,7 +1,14 @@
 const ContextsAreMoreThanStackMaxSizeError = require("./errors/ContextsAreMoreThanStackMaxSizeError");
 
 class BlockExecutionContextStack {
+  /**
+   * @type {BlockExecutionContext[]}
+   */
   #contexts = [];
+
+  /**
+   * @type {number}
+   */
   #maxSize = 3;
 
   /**
@@ -32,10 +39,32 @@ class BlockExecutionContextStack {
   }
 
   /**
+   * Get last context according to stack maximum size
+   *
    * @returns {BlockExecutionContext}
    */
   getLast() {
     return this.#contexts[this.#maxSize - 1];
+  }
+
+  /**
+   * Get the latest context from the stack
+   *
+   * @return {BlockExecutionContext}
+   */
+  getLatest() {
+    return this.#contexts[this.#contexts.length - 1];
+  }
+
+  /**
+   * Remove the last context from the stack
+   *
+   * @return {BlockExecutionContextStack}
+   */
+  removeLatest() {
+    this.#contexts.pop();
+
+    return this;
   }
 
   /**

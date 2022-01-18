@@ -34,10 +34,10 @@ class DocumentRepository {
    *
    * @param {DataContract} document
    * @param {Document} document
-   * @param {GroveDBTransaction} [transaction]
+   * @param {boolean} [useTransaction=false]
    * @return {Promise<IdentityStoreRepository>}
    */
-  async store(document, transaction = undefined) {
+  async store(document, useTransaction = false) {
     const documentTypeTreePath = createDocumentTypeTreePath(
       document.getDataContract(),
       document.getType(),
@@ -50,7 +50,7 @@ class DocumentRepository {
     const isDocumentAlreadyExist = Boolean(await this.storage.get(
       documentIdsTreePath,
       document.getId().toBuffer(),
-      { transaction },
+      { useTransaction },
     ));
 
     // TODO: Implement proper update
@@ -59,7 +59,7 @@ class DocumentRepository {
         document.getDataContract(),
         document.getType(),
         document.getId(),
-        transaction,
+        useTransaction,
       );
     }
 
@@ -68,7 +68,7 @@ class DocumentRepository {
       documentIdsTreePath,
       document.getId().toBuffer(),
       document.toBuffer(),
-      { transaction },
+      { useTransaction },
     );
 
     // Create indexed property trees
@@ -92,7 +92,7 @@ class DocumentRepository {
         await this.storage.createTree(
           indexedPropertiesPath,
           Buffer.from(propertyName),
-          { transaction, skipIfExists: true },
+          { useTransaction, skipIfExists: true },
         );
 
         // Create a value subtree if not exists
@@ -109,7 +109,7 @@ class DocumentRepository {
         await this.storage.createTree(
           propertyTreePath,
           encodedPropertyValue,
-          { transaction, skipIfExists: true },
+          { useTransaction, skipIfExists: true },
         );
 
         indexedPropertiesPath = propertyTreePath.concat([encodedPropertyValue]);
@@ -120,7 +120,7 @@ class DocumentRepository {
             indexedPropertiesPath,
             DataContractStoreRepository.DOCUMENTS_TREE_KEY,
             {
-              transaction,
+              useTransaction,
               skipIfExists: true,
             },
           );
@@ -135,7 +135,7 @@ class DocumentRepository {
             document.getId().toBuffer(),
             documentPath,
             {
-              transaction,
+              useTransaction,
               skipIfExists: true,
             },
           );
@@ -155,13 +155,13 @@ class DocumentRepository {
    * @param [query.startAt]
    * @param [query.startAfter]
    * @param [query.orderBy]
-   * @param {GroveDBTransaction} [transaction]
+   * @param {boolean} [useTransaction=false]
    *
    * @throws InvalidQueryError
    *
    * @returns {Document[]}
    */
-  async find(dataContract, documentType, query = {}, transaction = undefined) {
+  async find(dataContract, documentType, query = {}, useTransaction = false) {
     const documentSchema = dataContract.getDocumentSchema(documentType);
 
     const result = this.validateQuery(query, documentSchema);
@@ -172,7 +172,7 @@ class DocumentRepository {
 
     const pathQuery = this.createGroveDBPathQuery(dataContract, documentType, query);
 
-    const encodedDocuments = await this.storage.getWithQuery(pathQuery, transaction);
+    const encodedDocuments = await this.storage.getWithQuery(pathQuery, useTransaction);
 
     return Promise.all(encodedDocuments.map(async (encodedDocument) => {
       const [, rawDocument] = this.decodeProtocolEntity(encodedDocument);
@@ -186,10 +186,10 @@ class DocumentRepository {
    * @param {DataContract} dataContract
    * @param {string} documentType
    * @param {Identifier} id
-   * @param {GroveDBTransaction} transaction
+   * @param {boolean} useTransaction
    * @return {Promise<void>}
    */
-  async delete(dataContract, documentType, id, transaction = undefined) {
+  async delete(dataContract, documentType, id, useTransaction = false) {
     const documentTypeTreePath = createDocumentTypeTreePath(
       dataContract,
       documentType,
@@ -199,7 +199,7 @@ class DocumentRepository {
     const encodedDocument = await this.storage.get(
       documentTypeTreePath.concat([DataContractStoreRepository.DOCUMENTS_TREE_KEY]),
       id.toBuffer(),
-      { transaction },
+      { useTransaction },
     );
 
     if (!encodedDocument) {
@@ -251,7 +251,7 @@ class DocumentRepository {
             indexedPropertiesPath.concat([DataContractStoreRepository.DOCUMENTS_TREE_KEY]),
             document.getId().toBuffer(),
             {
-              transaction,
+              useTransaction,
             },
           );
         }
@@ -262,7 +262,7 @@ class DocumentRepository {
     await this.storage.delete(
       documentTypeTreePath.concat([DataContractStoreRepository.DOCUMENTS_TREE_KEY]),
       id.toBuffer(),
-      { transaction },
+      { useTransaction },
     );
   }
 }

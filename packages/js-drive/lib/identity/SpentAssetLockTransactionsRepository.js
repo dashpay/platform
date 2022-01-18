@@ -10,16 +10,18 @@ class SpentAssetLockTransactionsRepository {
    * Store the outPoint
    *
    * @param {Buffer} outPointBuffer
-   * @param {GroveDBTransaction} [transaction]
+   * @param {boolean} [useTransaction=false]
    *
    * @return {SpentAssetLockTransactionsRepository}
    */
-  async store(outPointBuffer, transaction = undefined) {
+  async store(outPointBuffer, useTransaction = false) {
+    const emptyValue = Buffer.from([0]);
+
     await this.storage.put(
       SpentAssetLockTransactionsRepository.TREE_PATH,
       outPointBuffer,
-      Buffer.from([1]),
-      { transaction },
+      emptyValue,
+      { useTransaction },
     );
 
     return this;
@@ -29,15 +31,15 @@ class SpentAssetLockTransactionsRepository {
    * Fetch the outPoint
    *
    * @param {Buffer} outPointBuffer
-   * @param {GroveDBTransaction} [transaction]
+   * @param {boolean} [useTransaction=false]
    *
    * @return {null|Buffer}
    */
-  async fetch(outPointBuffer, transaction = undefined) {
+  async fetch(outPointBuffer, useTransaction = false) {
     const result = await this.storage.get(
       SpentAssetLockTransactionsRepository.TREE_PATH,
       outPointBuffer,
-      { transaction },
+      { useTransaction },
     );
 
     if (!result) {
