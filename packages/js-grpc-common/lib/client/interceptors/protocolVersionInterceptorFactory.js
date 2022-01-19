@@ -34,9 +34,7 @@ function protocolVersionInterceptorFactory(clientProtocolVersionString) {
           clientProtocolVersionString,
         );
 
-        metadata.set(
-          'protocolVersion', clientProtocolVersionNumber,
-        );
+        metadata.set('protocolVersion', clientProtocolVersionNumber);
 
         next(metadata, {
           onReceiveMetadata: (receivedMetadata, onReceiveMetadataNext) => {

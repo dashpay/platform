@@ -6,6 +6,7 @@ class DAPIAddress {
    */
   constructor(address) {
     if (address instanceof DAPIAddress) {
+      // eslint-disable-next-line no-constructor-return
       return new DAPIAddress(address.toJSON());
     }
 

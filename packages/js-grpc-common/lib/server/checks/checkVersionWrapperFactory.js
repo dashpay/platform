@@ -23,9 +23,7 @@ function checkVersionWrapperFactory(serverProtocolVersionString) {
   );
 
   const serverMetadata = new Metadata();
-  serverMetadata.set(
-    'protocolVersion', serverProtocolVersionNumber,
-  );
+  serverMetadata.set('protocolVersion', serverProtocolVersionNumber);
 
   /**
    *

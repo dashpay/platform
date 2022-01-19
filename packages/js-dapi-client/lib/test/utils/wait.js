@@ -6,7 +6,9 @@
  * @returns {Promise<void>} The promise to await on.
  */
 async function wait(ms) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
+  await new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
 }
 
 module.exports = wait;

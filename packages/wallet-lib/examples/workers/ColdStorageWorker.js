@@ -13,7 +13,7 @@ class ColdStorageWorker extends Worker {
       ],
     });
     if (!props.address) {
-      return new Error('ColdStorageWorker expect an address');
+      throw new Error('ColdStorageWorker expect an address');
     }
     this.address = props.address;
   }

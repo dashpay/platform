@@ -194,11 +194,13 @@ class TransactionSyncStreamWorker extends Worker {
 
     this.syncIncomingTransactions = false;
 
+    let result;
+
     if (isBrowser()) {
       // Under browser environment, grpc-web doesn't call error and end events
       // so we call it by ourselves
       if (this.stream) {
-        return new Promise((resolve) => setImmediate(() => {
+        result = await new Promise((resolve) => setImmediate(() => {
           if (this.stream) {
             this.stream.cancel();
 
@@ -214,13 +216,15 @@ class TransactionSyncStreamWorker extends Worker {
 
           resolve(true);
         }));
+
+        return result;
       }
     }
 
     // Wrapping `cancel` in `setImmediate` due to bug with double-free
     // explained here (https://github.com/grpc/grpc-node/issues/1652)
     // and here (https://github.com/nodejs/node/issues/38964)
-    return new Promise((resolve) => setImmediate(() => {
+    result = new Promise((resolve) => setImmediate(() => {
       if (this.stream) {
         this.stream.cancel();
         // When calling stream.cancel(), the stream will emit 'error' event
@@ -235,6 +239,8 @@ class TransactionSyncStreamWorker extends Worker {
       }
       resolve(true);
     }));
+
+    return result;
   }
 
   setLastSyncedBlockHash(hash) {

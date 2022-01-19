@@ -104,12 +104,14 @@ const updateAddress = function updateAddress(addressObj, walletId) {
       );
     }
     if (previousObject.unconfirmedBalanceSat !== newObject.unconfirmedBalanceSat) {
-      this.announce(EVENTS.UNCONFIRMED_BALANCE_CHANGED,
+      this.announce(
+        EVENTS.UNCONFIRMED_BALANCE_CHANGED,
         {
           delta: newObject.unconfirmedBalanceSat - previousObject.unconfirmedBalanceSat,
           // currentValue: newObject.unconfirmedBalanceSat,
           currentValue: this.calculateDuffBalance(walletId, accountIndex, 'unconfirmed'),
-        });
+        },
+      );
     }
   }
 

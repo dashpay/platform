@@ -132,11 +132,9 @@ describe('GrpcTransport', () => {
           ...options,
         });
         expect(clientClassMock).to.be.calledOnceWithExactly(url);
-        expect(requestFunc).to.be.calledOnceWithExactly(
-          requestMessage, {}, {
-            deadline,
-          },
-        );
+        expect(requestFunc).to.be.calledOnceWithExactly(requestMessage, {}, {
+          deadline,
+        });
         expect(grpcTransport.lastUsedAddress).to.deep.equal(dapiAddress);
       });
 
