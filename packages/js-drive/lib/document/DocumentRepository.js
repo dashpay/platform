@@ -2,9 +2,9 @@ const Document = require('@dashevo/dpp/lib/document/Document');
 
 const getPropertyDefinitionByPath = require('@dashevo/dpp/lib/dataContract/getPropertyDefinitionByPath');
 
-const DataContractStoreRepository = require('../../dataContract/DataContractStoreRepository');
-const InvalidQueryError = require('../errors/InvalidQueryError');
-const createDocumentTypeTreePath = require('./createDocumentTreePath');
+const DataContractStoreRepository = require('../dataContract/DataContractStoreRepository');
+const InvalidQueryError = require('./errors/InvalidQueryError');
+const createDocumentTypeTreePath = require('./groveDB/createDocumentTreePath');
 
 class DocumentRepository {
   /**

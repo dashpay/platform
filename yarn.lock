@@ -1568,7 +1568,6 @@ __metadata:
     levelup: ^4.4.0
     lodash.clonedeep: ^4.5.0
     lodash.get: ^4.4.2
-    lodash.isequal: ^4.5.0
     lodash.set: ^4.3.2
     long: ^5.2.0
     lru-cache: ^5.1.1

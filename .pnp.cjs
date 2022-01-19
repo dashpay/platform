@@ -2561,7 +2561,6 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["levelup", "npm:4.4.0"],
             ["lodash.clonedeep", "npm:4.5.0"],
             ["lodash.get", "npm:4.4.2"],
-            ["lodash.isequal", "npm:4.5.0"],
             ["lodash.set", "npm:4.3.2"],
             ["long", "npm:5.2.0"],
             ["lru-cache", "npm:5.1.1"],
