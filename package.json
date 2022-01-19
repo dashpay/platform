@@ -22,7 +22,7 @@
     "test:suite": "ultra -r --filter '@dashevo/platform-test-suite' test",
     "test:wallet-lib": "ultra -r --filter \"packages/@(wallet-lib|js-dash-sdk|platform-test-suite)\" test",
     "build": "ultra --recursive $* --build",
-    "lint": "ultra --recursive $* lint",
+    "lint": "ultra --recursive $* run lint",
     "configure:dashmate": "yarn exec ./scripts/configure_dashmate.sh",
     "configure:network": "yarn exec ./scripts/setup_local_network.sh",
     "configure:tests": "yarn exec ./scripts/configure_test_suite.sh",
