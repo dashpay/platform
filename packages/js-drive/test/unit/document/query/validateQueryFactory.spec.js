@@ -545,6 +545,35 @@ describe('validateQueryFactory', () => {
               expect(result.isValid()).to.be.true();
             });
           });
+
+          ['>', '<', '<=', '>='].forEach((operator) => {
+            it(`should return invalid results if "${operator}" used not in the last where condition`, () => {
+              documentSchema = {
+                indices: [
+                  {
+                    properties: [{ a: 'asc' }],
+                  },
+                ],
+              };
+
+              const result = validateQuery(
+                {
+                  where: [
+                    ['a', operator, 1],
+                    ['a', 'startsWith', 'rt-'],
+                  ],
+                },
+                documentSchema,
+              );
+
+              expect(result).to.be.instanceOf(ValidationResult);
+              expect(result.isValid()).to.be.false();
+
+              const error = result.getErrors()[0];
+
+              expect(error).to.be.an.instanceOf(NotLastOperatorInWhereConditionsError);
+            });
+          });
         });
 
         describe('timestamps', () => {

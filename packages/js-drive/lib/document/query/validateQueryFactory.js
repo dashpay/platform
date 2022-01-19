@@ -82,7 +82,7 @@ function validateQueryFactory(
       }
 
       // check following operators are used only in last where condition
-      ['in', 'startsWith'].forEach((operator) => {
+      ['in', 'startsWith', '>', '<', '>=', '<='].forEach((operator) => {
         const nonLastOperator = query.where.find((clause, index) => (
           clause[1] === operator && index !== query.where.length - 1
         ));
