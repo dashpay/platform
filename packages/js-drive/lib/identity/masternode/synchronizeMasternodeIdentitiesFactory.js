@@ -5,6 +5,7 @@ const { hash } = require('@dashevo/dpp/lib/util/hash');
  *
  * @param {DashPlatformProtocol} transactionalDpp
  * @param {DriveStateRepository|CachedStateRepositoryDecorator} stateRepository
+ * @param {DataContractStoreRepository} dataContractRepository
  * @param {SimplifiedMasternodeList} simplifiedMasternodeList
  * @param {Identifier} masternodeRewardSharesContractId
  * @param {handleNewMasternode} handleNewMasternode
@@ -15,11 +16,12 @@ const { hash } = require('@dashevo/dpp/lib/util/hash');
 function synchronizeMasternodeIdentitiesFactory(
   transactionalDpp,
   stateRepository,
+  dataContractRepository,
   simplifiedMasternodeList,
   masternodeRewardSharesContractId,
   handleNewMasternode,
   handleUpdatedPubKeyOperator,
-  splitDocumentsIntoChunks, // TODO - DI!!!!
+  splitDocumentsIntoChunks,
 ) {
   let lastSyncedCoreHeight = 0;
 
@@ -37,18 +39,18 @@ function synchronizeMasternodeIdentitiesFactory(
 
     let previousMNList = [];
 
-    if (lastSyncedCoreHeight > 0) {
+    const currentMNList = simplifiedMasternodeList.getStore()
+      .getSMLbyHeight(coreHeight)
+      .mnList;
+
+    if (lastSyncedCoreHeight === 0) {
+      // Create identities for all masternodes on the first sync
+      newMasternodes = simplifiedMasternodeList.getStore().getCurrentSML().mnList;
+    } else {
       previousMNList = simplifiedMasternodeList.getStore()
         .getSMLbyHeight(lastSyncedCoreHeight)
         .mnList;
-        
-      currentMNList = simplifiedMasternodeList.getStore()
-      .getSMLbyHeight(coreHeight)
-      .mnList;
-    } else {
-      previousMNList = []
-      currentMNList  = simplifiedMasternodeList.getStore().getCurrentSML().mnList
-    }
+
       // Get the difference between last sync and requested core height
       newMasternodes = currentMNList.filter((currentMnListEntry) => (
         !previousMNList.find((previousMnListEntry) => (
@@ -64,11 +66,14 @@ function synchronizeMasternodeIdentitiesFactory(
       ));
     }
 
+    const contract = await dataContractRepository.fetch(masternodeRewardSharesContractId);
+
     // Create identities and shares for new masternodes
     let documentsToModify = await Promise.all(
-      newMasternodes.map(handleNewMasternode),
+      newMasternodes.map((newMasternodeEntry) => handleNewMasternode(newMasternodeEntry, contract)),
     );
 
+    // update operator identities (PubKeyOperator is changed)
     documentsToModify = documentsToModify.concat(await Promise.all(
       masternodesWithNewPubKeyOperator.map(async (mnEntry) => {
         const previousMnEntry = previousMNList.find((previousMnListEntry) => (
@@ -76,7 +81,7 @@ function synchronizeMasternodeIdentitiesFactory(
           && previousMnListEntry.pubKeyOperator !== mnEntry.pubKeyOperator
         ));
 
-        return handleUpdatedPubKeyOperator(mnEntry, previousMnEntry);
+        return handleUpdatedPubKeyOperator(mnEntry, previousMnEntry, contract);
       }),
     ));
 
@@ -87,9 +92,7 @@ function synchronizeMasternodeIdentitiesFactory(
 
     lastSyncedCoreHeight = coreHeight;
 
-    // PubKeyOperator is changed
-
-    // A masternode disappeared or is not valid
+    // Remove masternode reward shares for invalid/removed masternodes
     const disappearedOrInvalidMasterNodes = previousMNList
       .filter((previousMnListEntry) =>
         // eslint-disable-next-line max-len,implicit-arrow-linebreak
@@ -115,6 +118,7 @@ function synchronizeMasternodeIdentitiesFactory(
       }),
     );
 
+    // Process masternode reward contract updates
     if (documentsToCreate.length > 0 || documentsToDelete > 0) {
       const chunkedDocuments = splitDocumentsIntoChunks({
         create: documentsToCreate,

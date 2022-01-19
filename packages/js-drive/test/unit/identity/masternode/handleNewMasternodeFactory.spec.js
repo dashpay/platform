@@ -3,7 +3,6 @@ const getDataContractFixture = require('@dashevo/dpp/lib/test/fixtures/getDataCo
 const createDPPMock = require('@dashevo/dpp/lib/test/mocks/createDPPMock');
 const createStateRepositoryMock = require('@dashevo/dpp/lib/test/mocks/createStateRepositoryMock');
 const Identifier = require('@dashevo/dpp/lib/identifier/Identifier');
-const { contractId } = require('@dashevo/masternode-reward-shares-contract/lib/systemIds');
 const SimplifiedMNListEntry = require('@dashevo/dashcore-lib/lib/deterministicmnlist/SimplifiedMNListEntry');
 const IdentityPublicKey = require('@dashevo/dpp/lib/identity/IdentityPublicKey');
 const getIdentityFixture = require('@dashevo/dpp/lib/test/fixtures/getIdentityFixture');
@@ -14,8 +13,6 @@ describe('handleNewMasternodeFactory', () => {
   let transactionalDppMock;
   let stateRepositoryMock;
   let createMasternodeIdentityMock;
-  let dataContractRepositoryMock;
-  let masternodeRewardSharesContractId;
   let documentsFixture;
   let rawTransactionFixture;
   let masternodeEntry;
@@ -41,18 +38,11 @@ describe('handleNewMasternodeFactory', () => {
     );
 
     createMasternodeIdentityMock = this.sinon.stub();
-    dataContractRepositoryMock = {
-      fetch: this.sinon.stub(),
-    };
-    dataContractRepositoryMock.fetch.resolves(dataContractFixture);
-    masternodeRewardSharesContractId = Identifier.from(contractId);
 
     handleNewMasternode = handleNewMasternodeFactory(
       transactionalDppMock,
       stateRepositoryMock,
       createMasternodeIdentityMock,
-      dataContractRepositoryMock,
-      masternodeRewardSharesContractId,
     );
 
     masternodeEntry = new SimplifiedMNListEntry({
@@ -66,7 +56,7 @@ describe('handleNewMasternodeFactory', () => {
   });
 
   it('should return no documents if operatorReward = 0', async () => {
-    const result = await handleNewMasternode(masternodeEntry);
+    const result = await handleNewMasternode(masternodeEntry, dataContractFixture);
 
     expect(result).to.deep.equal({
       create: [],
@@ -85,7 +75,6 @@ describe('handleNewMasternodeFactory', () => {
 
     // operatorReward = 0
     expect(transactionalDppMock.document.create).to.be.not.called();
-    expect(dataContractRepositoryMock.fetch).to.be.not.called();
   });
 
   it('should return a document if operatorReward > 0', async () => {
@@ -96,16 +85,12 @@ describe('handleNewMasternodeFactory', () => {
       height: 626,
     });
 
-    const result = await handleNewMasternode(masternodeEntry);
+    const result = await handleNewMasternode(masternodeEntry, dataContractFixture);
 
     expect(result).to.deep.equal({
       create: [documentsFixture[0]],
       delete: [],
     });
-
-    expect(dataContractRepositoryMock.fetch).to.be.calledOnceWithExactly(
-      masternodeRewardSharesContractId,
-    );
 
     expect(transactionalDppMock.document.create).to.be.calledWithExactly(
       dataContractFixture,

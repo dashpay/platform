@@ -8,26 +8,23 @@ const Transaction = require('@dashevo/dashcore-lib/lib/transaction');
  * @param {DashPlatformProtocol} transactionalDpp
  * @param {DriveStateRepository|CachedStateRepositoryDecorator} stateRepository
  * @param {createMasternodeIdentity} createMasternodeIdentity
- * @param {DataContractStoreRepository} dataContractRepository
- * @param {Identifier} masternodeRewardSharesContractId
  * @return {handleNewMasternode}
  */
 function handleNewMasternodeFactory(
   transactionalDpp,
   stateRepository,
   createMasternodeIdentity,
-  dataContractRepository,
-  masternodeRewardSharesContractId,
 ) {
   /**
    * @typedef handleNewMasternode
    * @param {SimplifiedMNListEntry} masternodeEntry
+   * @param {DataContract} dataContract
    * @return {Promise<{
    *            create: Document[],
    *            delete: Document[],
    * }>}
    */
-  async function handleNewMasternode(masternodeEntry) {
+  async function handleNewMasternode(masternodeEntry, dataContract) {
     const rawTransaction = await stateRepository
       .fetchTransaction(masternodeEntry.proRegTxHash);
 
@@ -46,6 +43,7 @@ function handleNewMasternodeFactory(
       IdentityPublicKey.TYPES.ECDSA_HASH160,
     );
 
+    // we need to crate reward shares only if it's enabled in proRegTx
     const documentsToCreate = [];
     const documentsToDelete = [];
 
@@ -68,11 +66,9 @@ function handleNewMasternodeFactory(
         IdentityPublicKey.TYPES.BLS12_381,
       );
 
-      const contract = await dataContractRepository.fetch(masternodeRewardSharesContractId);
-
       // Create a document in rewards data contract with percentage
       documentsToCreate.push(transactionalDpp.document.create(
-        contract,
+        dataContract,
         Identifier.from(masternodeIdentityId),
         'masternodeRewardShares',
         {

@@ -23,27 +23,34 @@ function handleUpdatedPubKeyOperatorFactory(
    * @typedef handleUpdatedPubKeyOperator
    * @param {SimplifiedMNListEntry} masternodeEntry
    * @param {SimplifiedMNListEntry} previousMasternodeEntry
+   * @param {DataContract} dataContract
    * @return {Promise<{
    *            create: Document[],
    *            delete: Document[],
    * }>}
    */
-  async function handleUpdatedPubKeyOperator(masternodeEntry, previousMasternodeEntry) {
+  async function handleUpdatedPubKeyOperator(
+    masternodeEntry,
+    previousMasternodeEntry,
+    dataContract,
+  ) {
     const rawTransaction = await stateRepository
       .fetchTransaction(masternodeEntry.proRegTxHash);
 
     const { extraPayload: proRegTxPayload } = new Transaction(rawTransaction.data);
 
+    // we need to crate reward shares only if it's enabled in proRegTx
     const documentsToCreate = [];
     let documentsToDelete = [];
 
     if (proRegTxPayload.operatorReward > 0) {
       const proRegTxHash = Buffer.from(masternodeEntry.proRegTxHash, 'hex');
+      const pubKeyOperator = Buffer.from(proRegTxPayload.pubKeyOperator, 'hex');
 
       const operatorIdentityHash = hash(
         Buffer.concat([
           proRegTxHash,
-          Buffer.from(masternodeEntry.pubKeyOperator, 'hex'),
+          pubKeyOperator,
         ]),
       );
 
@@ -55,19 +62,19 @@ function handleUpdatedPubKeyOperatorFactory(
       if (operatorIdentity === null) {
         await createMasternodeIdentity(
           operatorIdentityId,
-          Buffer.from(proRegTxPayload.pubKeyOperator, 'hex'),
+          pubKeyOperator,
           IdentityPublicKey.TYPES.BLS12_381,
         );
       }
-
-      const contract = await dataContractRepository.fetch(masternodeRewardSharesContractId);
-
+      console.log(Identifier.from(
+        hash(proRegTxHash),
+      ).toString());
       // Create a document in rewards data contract with percentage defined
       // in corresponding ProRegTx
       documentsToCreate.push(transactionalDpp.document.create(
-        contract,
+        dataContract,
         Identifier.from(
-          hash(masternodeEntry.proRegTxHash, 'hex'),
+          hash(proRegTxHash),
         ),
         'masternodeRewardShares',
         {
@@ -88,16 +95,26 @@ function handleUpdatedPubKeyOperatorFactory(
 
       const previousOperatorIdentityId = Identifier.from(previousOperatorIdentityHash);
 
-      documentsToDelete = await stateRepository.fetchDocuments(
-        masternodeRewardSharesContractId,
-        'rewardShare',
-        {
-          where: [
-            ['$ownerId', '===', Identifier.from(proRegTxHash)],
-            ['payToId', '===', previousOperatorIdentityId],
-          ],
-        },
-      );
+      let startAt = 0;
+      let fetchedDocuments;
+      const limit = 100;
+
+      do {
+        fetchedDocuments = await stateRepository.fetchDocuments(
+          masternodeRewardSharesContractId,
+          'rewardShare',
+          {
+            limit,
+            startAt,
+            where: [
+              ['$ownerId', '===', Identifier.from(proRegTxHash)],
+              ['payToId', '===', previousOperatorIdentityId],
+            ],
+          },
+        );
+        documentsToDelete = documentsToDelete.concat(fetchedDocuments);
+        startAt += limit;
+      } while (fetchedDocuments.length === limit);
     }
 
     return {

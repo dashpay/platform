@@ -6,6 +6,7 @@ const getDocumentsFixture = require('@dashevo/dpp/lib/test/fixtures/getDocuments
 
 const SimplifiedMNListEntry = require('@dashevo/dashcore-lib/lib/deterministicmnlist/SimplifiedMNListEntry');
 const getIdentityCreateTransitionFixture = require('@dashevo/dpp/lib/test/fixtures/getIdentityCreateTransitionFixture');
+const getDataContractFixture = require('@dashevo/dpp/lib/test/fixtures/getDataContractFixture');
 const synchronizeMasternodeIdentitiesFactory = require('../../../../lib/identity/masternode/synchronizeMasternodeIdentitiesFactory');
 
 describe('synchronizeMasternodeIdentitiesFactory', () => {
@@ -23,6 +24,8 @@ describe('synchronizeMasternodeIdentitiesFactory', () => {
   let splitDocumentsIntoChunksMock;
   let newSmlFixture;
   let stateTransitionFixture;
+  let dataContractFixture;
+  let dataContractRepositoryMock;
 
   beforeEach(function beforeEach() {
     stateTransitionFixture = getIdentityCreateTransitionFixture();
@@ -38,6 +41,8 @@ describe('synchronizeMasternodeIdentitiesFactory', () => {
     };
 
     masternodeRewardSharesContractId = Identifier.from(contractId);
+
+    dataContractFixture = getDataContractFixture();
 
     smlFixture = [
       new SimplifiedMNListEntry({
@@ -79,9 +84,14 @@ describe('synchronizeMasternodeIdentitiesFactory', () => {
 
     splitDocumentsIntoChunksMock = this.sinon.stub().returns([{ create: [], delete: [] }]);
 
+    dataContractRepositoryMock = {
+      fetch: this.sinon.stub().resolves(dataContractFixture),
+    };
+
     synchronizeMasternodeIdentities = synchronizeMasternodeIdentitiesFactory(
       transactionalDppMock,
       stateRepositoryMock,
+      dataContractRepositoryMock,
       simplifiedMasternodeListMock,
       masternodeRewardSharesContractId,
       handleNewMasternodeMock,
@@ -100,8 +110,14 @@ describe('synchronizeMasternodeIdentitiesFactory', () => {
     expect(smlStoreMock.getCurrentSML).to.be.calledOnce();
 
     expect(handleNewMasternodeMock).to.be.calledTwice();
-    expect(handleNewMasternodeMock.getCall(0)).to.be.calledWith(smlFixture[0]);
-    expect(handleNewMasternodeMock.getCall(1)).to.be.calledWith(smlFixture[1]);
+    expect(handleNewMasternodeMock.getCall(0)).to.be.calledWithExactly(
+      smlFixture[0],
+      dataContractFixture,
+    );
+    expect(handleNewMasternodeMock.getCall(1)).to.be.calledWithExactly(
+      smlFixture[1],
+      dataContractFixture,
+    );
 
     expect(handleUpdatedPubKeyOperatorMock).to.be.not.called();
 
@@ -109,6 +125,10 @@ describe('synchronizeMasternodeIdentitiesFactory', () => {
     expect(transactionalDppMock.stateTransition.apply).to.be.not.called();
     expect(transactionalDppMock.document.createStateTransition).to.be.not.called();
     expect(splitDocumentsIntoChunksMock).to.be.not.called();
+
+    expect(dataContractRepositoryMock.fetch).to.be.calledOnceWithExactly(
+      masternodeRewardSharesContractId,
+    );
   });
 
   it('should do nothing if nothing changed', async () => {
@@ -117,8 +137,14 @@ describe('synchronizeMasternodeIdentitiesFactory', () => {
     await synchronizeMasternodeIdentities(coreHeight + 1);
 
     expect(handleNewMasternodeMock).to.be.calledTwice();
-    expect(handleNewMasternodeMock.getCall(0)).to.be.calledWith(smlFixture[0]);
-    expect(handleNewMasternodeMock.getCall(1)).to.be.calledWith(smlFixture[1]);
+    expect(handleNewMasternodeMock.getCall(0)).to.be.calledWithExactly(
+      smlFixture[0],
+      dataContractFixture,
+    );
+    expect(handleNewMasternodeMock.getCall(1)).to.be.calledWithExactly(
+      smlFixture[1],
+      dataContractFixture,
+    );
 
     expect(handleUpdatedPubKeyOperatorMock).to.be.not.called();
 
@@ -126,6 +152,7 @@ describe('synchronizeMasternodeIdentitiesFactory', () => {
     expect(splitDocumentsIntoChunksMock).to.be.not.called();
     expect(transactionalDppMock.document.createStateTransition).to.be.not.called();
     expect(transactionalDppMock.stateTransition.apply).to.be.not.called();
+    expect(dataContractRepositoryMock.fetch).to.be.calledTwice();
   });
 
   it('should sync masternode identities if new masternode appeared', async () => {
@@ -143,9 +170,18 @@ describe('synchronizeMasternodeIdentitiesFactory', () => {
     await synchronizeMasternodeIdentities(coreHeight + 1);
 
     expect(handleNewMasternodeMock).to.be.calledThrice();
-    expect(handleNewMasternodeMock.getCall(0)).to.be.calledWith(smlFixture[0]);
-    expect(handleNewMasternodeMock.getCall(1)).to.be.calledWith(smlFixture[1]);
-    expect(handleNewMasternodeMock.getCall(2)).to.be.calledWith(newSmlFixture);
+    expect(handleNewMasternodeMock.getCall(0)).to.be.calledWithExactly(
+      smlFixture[0],
+      dataContractFixture,
+    );
+    expect(handleNewMasternodeMock.getCall(1)).to.be.calledWithExactly(
+      smlFixture[1],
+      dataContractFixture,
+    );
+    expect(handleNewMasternodeMock.getCall(2)).to.be.calledWithExactly(
+      newSmlFixture,
+      dataContractFixture,
+    );
 
     expect(handleUpdatedPubKeyOperatorMock).to.be.not.called();
     expect(stateRepositoryMock.fetchDocuments).to.be.not.called();
@@ -156,6 +192,7 @@ describe('synchronizeMasternodeIdentitiesFactory', () => {
     expect(transactionalDppMock.stateTransition.apply).to.be.calledWithExactly(
       stateTransitionFixture,
     );
+    expect(dataContractRepositoryMock.fetch).to.be.calledTwice();
   });
 
   it('should sync masternode identities if masternode disappeared', async () => {
@@ -218,6 +255,7 @@ describe('synchronizeMasternodeIdentitiesFactory', () => {
     expect(handleUpdatedPubKeyOperatorMock).to.be.calledOnceWithExactly(
       changedSmlEntry,
       smlFixture[1],
+      dataContractFixture,
     );
     expect(stateRepositoryMock.fetchDocuments).to.be.not.called();
   });

@@ -78,7 +78,11 @@ describe('handleUpdatedPubKeyOperatorFactory', () => {
   });
 
   it('should return no documents if operatorReward = 0', async () => {
-    const result = await handleUpdatedPubKeyOperator(masternodeEntry, previousMasternodeEntry);
+    const result = await handleUpdatedPubKeyOperator(
+      masternodeEntry,
+      previousMasternodeEntry,
+      dataContractFixture,
+    );
 
     expect(result).to.deep.equal({
       create: [],
@@ -101,7 +105,11 @@ describe('handleUpdatedPubKeyOperatorFactory', () => {
       height: 626,
     });
 
-    const result = await handleUpdatedPubKeyOperator(masternodeEntry, previousMasternodeEntry);
+    const result = await handleUpdatedPubKeyOperator(
+      masternodeEntry,
+      previousMasternodeEntry,
+      dataContractFixture,
+    );
 
     expect(result).to.deep.equal({
       create: [documentsFixture[0]],
@@ -112,7 +120,7 @@ describe('handleUpdatedPubKeyOperatorFactory', () => {
     expect(createMasternodeIdentityMock).to.be.not.called();
     expect(transactionalDppMock.document.create).to.be.calledOnceWithExactly(
       dataContractFixture,
-      Identifier.from('6LxUBJPcyr5esVysXoZwgCBLXYqVsNp3VbdgFDiFkTRC'),
+      Identifier.from('xmdKYeUsEU49sncsu76TmtufyqwP1By92RX4e48oRUW'),
       'masternodeRewardShares',
       {
         payToId: Identifier.from('BWpTcdybaKcLLMXVErB8LJpEhp9XKDuaVsAjCxQkQXPd'),
@@ -123,6 +131,8 @@ describe('handleUpdatedPubKeyOperatorFactory', () => {
       masternodeRewardSharesContractId,
       'rewardShare',
       {
+        limit: 100,
+        startAt: 0,
         where: [
           ['$ownerId', '===', Identifier.from('B3dJHVDWcjC7i8MGwJodgb87M6oj48niNsRW9F8aoVzV')],
           ['payToId', '===', Identifier.from('AcLbs82zFkMdN3uSurZePaZtgVKiXtme6ECsNXjZsA22')],
@@ -141,7 +151,7 @@ describe('handleUpdatedPubKeyOperatorFactory', () => {
       null,
     );
 
-    const result = await handleUpdatedPubKeyOperator(masternodeEntry, previousMasternodeEntry);
+    const result = await handleUpdatedPubKeyOperator(masternodeEntry, previousMasternodeEntry, dataContractFixture);
 
     expect(result).to.deep.equal({
       create: [documentsFixture[0]],
@@ -156,7 +166,7 @@ describe('handleUpdatedPubKeyOperatorFactory', () => {
     );
     expect(transactionalDppMock.document.create).to.be.calledOnceWithExactly(
       dataContractFixture,
-      Identifier.from('6LxUBJPcyr5esVysXoZwgCBLXYqVsNp3VbdgFDiFkTRC'),
+      Identifier.from('xmdKYeUsEU49sncsu76TmtufyqwP1By92RX4e48oRUW'),
       'masternodeRewardShares',
       {
         payToId: Identifier.from('BWpTcdybaKcLLMXVErB8LJpEhp9XKDuaVsAjCxQkQXPd'),
@@ -167,6 +177,8 @@ describe('handleUpdatedPubKeyOperatorFactory', () => {
       masternodeRewardSharesContractId,
       'rewardShare',
       {
+        limit: 100,
+        startAt: 0,
         where: [
           ['$ownerId', '===', Identifier.from('B3dJHVDWcjC7i8MGwJodgb87M6oj48niNsRW9F8aoVzV')],
           ['payToId', '===', Identifier.from('AcLbs82zFkMdN3uSurZePaZtgVKiXtme6ECsNXjZsA22')],
