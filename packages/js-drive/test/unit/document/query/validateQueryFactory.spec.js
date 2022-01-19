@@ -547,7 +547,7 @@ describe('validateQueryFactory', () => {
           });
 
           ['>', '<', '<=', '>='].forEach((operator) => {
-            it(`should return invalid results if "${operator}" used not in the last where condition`, () => {
+            it(`should return invalid results if "${operator}" used not in the last 2 where conditions`, () => {
               documentSchema = {
                 indices: [
                   {
@@ -561,6 +561,7 @@ describe('validateQueryFactory', () => {
                   where: [
                     ['a', operator, 1],
                     ['a', 'startsWith', 'rt-'],
+                    ['a', 'startsWith', 'r-'],
                   ],
                 },
                 documentSchema,
