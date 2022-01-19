@@ -171,7 +171,7 @@ function subscribeToTransactionsWithProofsHandlerFactory(
       if (e.code === -5 || e.code === -8) {
         // -5 -> invalid block height or block is not on best chain
         // -8 -> block hash not found
-        throw new NotFoundGrpcError(`Block ${strHexOrNum(from)} not found`);
+        throw new NotFoundGrpcError(`Block ${fromBlockHeight || fromBlockHash.toBuffer('hex')} not found`);
       }
       throw e;
     }
