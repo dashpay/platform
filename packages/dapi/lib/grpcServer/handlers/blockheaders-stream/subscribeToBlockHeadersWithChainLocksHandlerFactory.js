@@ -116,7 +116,7 @@ function subscribeToBlockHeadersWithChainLocksHandlerFactory(
       if (e.code === -5 || e.code === -8) {
         // -5 -> invalid block height or block is not on best chain
         // -8 -> block hash not found
-        throw new NotFoundGrpcError(`Block ${fromBlockHeight || fromBlockHash} not found`);
+        throw new NotFoundGrpcError(`Block ${ fromBlockHeight || fromBlockHash } not found`);
       }
       throw e;
     }
