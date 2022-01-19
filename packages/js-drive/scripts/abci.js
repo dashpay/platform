@@ -1,4 +1,8 @@
-require('dotenv-expand')(require('dotenv-safe').config());
+const { expand } = require('dotenv-expand');
+
+const dotenv = require('dotenv-safe').config();
+
+expand(dotenv);
 
 const graceful = require('node-graceful');
 

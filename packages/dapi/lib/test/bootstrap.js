@@ -1,6 +1,6 @@
 const path = require('path');
 const dotenvSafe = require('dotenv-safe');
-const dotenvExpand = require('dotenv-expand');
+const { expand } = require('dotenv-expand');
 const { expect, use } = require('chai');
 const sinon = require('sinon');
 const sinonChai = require('sinon-chai');
@@ -18,7 +18,8 @@ process.env.NODE_ENV = 'test';
 const dotenvConfig = dotenvSafe.config({
   path: path.resolve(__dirname, '..', '..', '.env'),
 });
-dotenvExpand(dotenvConfig);
+
+expand(dotenvConfig);
 
 const rootPath = process.cwd();
 

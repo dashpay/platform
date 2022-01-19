@@ -2541,7 +2541,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["chai", "npm:4.3.4"],
             ["chai-as-promised", "virtual:595d7482cc8ddf98ee6aef33fc48b46393554ab5f17f851ef62e6e39315e53666c3e66226b978689aa0bc7f1e83a03081511a21db1c381362fe67614887077f9#npm:7.1.1"],
             ["chai-string", "virtual:58fb68f2aed20e5e0f2e48520ab903ae9bb3440369bfd5e912034003cf27c5aae368649fc5620dd2acbed578131f3a0975e75b838d77d12335fb0412e24026c6#npm:1.5.0"],
-            ["chalk", "npm:5.0.0"],
+            ["chalk", "npm:4.1.2"],
             ["dirty-chai", "virtual:595d7482cc8ddf98ee6aef33fc48b46393554ab5f17f851ef62e6e39315e53666c3e66226b978689aa0bc7f1e83a03081511a21db1c381362fe67614887077f9#npm:2.0.1"],
             ["dotenv-expand", "npm:6.0.1"],
             ["dotenv-safe", "npm:8.2.0"],
@@ -6029,13 +6029,6 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["supports-color", "npm:7.2.0"]
           ],
           "linkType": "HARD",
-        }],
-        ["npm:5.0.0", {
-          "packageLocation": "./.yarn/cache/chalk-npm-5.0.0-7be183234e-6eba7c518b.zip/node_modules/chalk/",
-          "packageDependencies": [
-            ["chalk", "npm:5.0.0"]
-          ],
-          "linkType": "HARD",
         }]
       ]],
       ["chance", [
@@ -7261,7 +7254,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["ajv-formats", "virtual:58fb68f2aed20e5e0f2e48520ab903ae9bb3440369bfd5e912034003cf27c5aae368649fc5620dd2acbed578131f3a0975e75b838d77d12335fb0412e24026c6#npm:2.1.1"],
             ["awilix", "npm:6.0.0"],
             ["bls-signatures", "npm:0.2.5"],
-            ["chalk", "npm:5.0.0"],
+            ["chalk", "npm:4.1.2"],
             ["dash", "workspace:packages/js-dash-sdk"],
             ["docker-compose", "npm:0.23.3"],
             ["dockerode", "npm:3.3.1"],

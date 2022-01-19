@@ -60,7 +60,7 @@
     "ajv-formats": "^2.1.1",
     "awilix": "^6.0.0",
     "bls-signatures": "^0.2.5",
-    "chalk": "^5.0.0",
+    "chalk": "^4.0.0",
     "dash": "workspace:~",
     "docker-compose": "0.23.3",
     "dockerode": "^3.2.0",

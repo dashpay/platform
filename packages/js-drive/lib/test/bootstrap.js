@@ -1,6 +1,6 @@
 const path = require('path');
 const dotenvSafe = require('dotenv-safe');
-const dotenvExpand = require('dotenv-expand');
+const { expand } = require('dotenv-expand');
 const { expect, use } = require('chai');
 const sinon = require('sinon');
 const sinonChai = require('sinon-chai');
@@ -39,7 +39,8 @@ if (process.env.MASTERNODE_REWARD_SHARES_MASTER_PUBLIC_KEY === undefined) {
 const dotenvConfig = dotenvSafe.config({
   path: path.resolve(__dirname, '..', '..', '.env'),
 });
-dotenvExpand(dotenvConfig);
+
+expand(dotenvConfig);
 
 beforeEach(function beforeEach() {
   if (!this.sinon) {
