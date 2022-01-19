@@ -110,7 +110,7 @@ function subscribeToTransactionsWithProofsHandlerFactory(
     const fromBlockHash = Buffer.from(request.getFromBlockHash()).toString('hex');
     const fromBlockHeight = request.getFromBlockHeight();
 
-    if(!fromBlockHash && fromBlockHeight === 0) {
+    if (!fromBlockHash && fromBlockHeight === 0) {
       throw new InvalidArgumentGrpcError('Minimum value for `fromBlockHeight` is 1');
     }
 
