@@ -41,16 +41,14 @@ function synchronizeMasternodeIdentitiesFactory(
       previousMNList = simplifiedMasternodeList.getStore()
         .getSMLbyHeight(lastSyncedCoreHeight)
         .mnList;
-    }
-
-    const currentMNList = simplifiedMasternodeList.getStore()
+        
+      currentMNList = simplifiedMasternodeList.getStore()
       .getSMLbyHeight(coreHeight)
       .mnList;
-
-    if (lastSyncedCoreHeight === 0) {
-      // Create identities for all masternodes on the first sync
-      newMasternodes = simplifiedMasternodeList.getStore().getCurrentSML().mnList;
     } else {
+      previousMNList = []
+      currentMNList  = simplifiedMasternodeList.getStore().getCurrentSML().mnList
+    }
       // Get the difference between last sync and requested core height
       newMasternodes = currentMNList.filter((currentMnListEntry) => (
         !previousMNList.find((previousMnListEntry) => (
