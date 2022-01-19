@@ -58,7 +58,7 @@
     "@oclif/plugin-help": "^5",
     "ajv": "^8.6.0",
     "ajv-formats": "^2.1.1",
-    "awilix": "^4.2.6",
+    "awilix": "^6.0.0",
     "bls-signatures": "^0.2.5",
     "chalk": "^4.1.0",
     "dash": "workspace:~",
@@ -85,14 +85,14 @@
     "rimraf": "^3.0.2",
     "rxjs": "^6.6.7",
     "semver": "^7.3.2",
-    "strip-ansi": "^6.0.1",
-    "table": "^5.4.6"
+    "strip-ansi": "^7.0.1",
+    "table": "^6.8.0"
   },
   "devDependencies": {
-    "eslint": "^7.32.0",
-    "eslint-config-airbnb-base": "^14.2.1",
+    "eslint": "^8.7.0",
+    "eslint-config-airbnb-base": "^15.0.0",
     "eslint-plugin-import": "^2.24.2",
-    "globby": "^11",
+    "globby": "^12.2.0",
     "oclif": "^2.1.0"
   },
   "files": [

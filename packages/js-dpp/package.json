@@ -54,8 +54,8 @@
     "core-js": "^3.17.2",
     "crypto-browserify": "^3.12.0",
     "dirty-chai": "^2.0.1",
-    "eslint": "^7.32.0",
-    "eslint-config-airbnb-base": "^14.2.1",
+    "eslint": "^8.7.0",
+    "eslint-config-airbnb-base": "^15.0.0",
     "eslint-plugin-import": "^2.24.2",
     "events": "^3.3.0",
     "https-browserify": "^1.0.0",
@@ -71,7 +71,7 @@
     "nyc": "^15.1.0",
     "path-browserify": "^1.0.1",
     "process": "^0.11.10",
-    "sinon": "^11.1.2",
+    "sinon": "^12.0.1",
     "sinon-chai": "^3.7.0",
     "stream-browserify": "^3.0.0",
     "stream-http": "^3.2.0",
@@ -82,7 +82,7 @@
     "webpack-cli": "^4.9.1"
   },
   "dependencies": {
-    "@apidevtools/json-schema-ref-parser": "^8.0.0",
+    "@apidevtools/json-schema-ref-parser": "^9.0.9",
     "@dashevo/dashcore-lib": "~0.19.29",
     "@dashevo/dashpay-contract": "workspace:~",
     "@dashevo/dpns-contract": "workspace:~",
