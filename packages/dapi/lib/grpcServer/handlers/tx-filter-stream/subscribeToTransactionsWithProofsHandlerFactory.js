@@ -21,8 +21,6 @@ const {
 } = require('@dashevo/dapi-grpc');
 
 const ProcessMediator = require('../../../transactionsFilter/ProcessMediator');
-
-const { strHexOrNum } = require('../../../utils');
 const wait = require('../../../utils/wait');
 
 /**

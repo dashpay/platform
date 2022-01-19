@@ -12,7 +12,7 @@ const utils = {
    */
   isDevnet(network) {
     return /^devnet/.test(network);
-  }
+  },
 };
 
 module.exports = utils;
