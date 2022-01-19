@@ -4,7 +4,7 @@ const ValidationResult = require('../../../../lib/document/query/ValidationResul
 const ConflictingConditionsError = require('../../../../lib/document/query/errors/ConflictingConditionsError');
 const InvalidPropertiesInOrderByError = require('../../../../lib/document/query/errors/InvalidPropertiesInOrderByError');
 const NotIndexedPropertiesInWhereConditionsError = require('../../../../lib/document/query/errors/NotIndexedPropertiesInWhereConditionsError');
-const NotLastOperatorInWhereConditionsError = require('../../../../lib/document/query/errors/NotLastOperatorInWhereConditionsError');
+const RangeOperatorAllowedOnlyForLastIndexedPropertyError = require('../../../../lib/document/query/errors/RangeOperatorAllowedOnlyForLastIndexedPropertyError');
 
 const typesTestCases = {
   number: {
@@ -126,7 +126,7 @@ const invalidFieldNameTestCases = [
   'a.b.c.',
 ];
 
-describe('validateQueryFactory', () => {
+describe.only('validateQueryFactory', () => {
   let findConflictingConditionsStub;
   let validateQuery;
   let documentSchema;
@@ -572,7 +572,9 @@ describe('validateQueryFactory', () => {
 
               const error = result.getErrors()[0];
 
-              expect(error).to.be.an.instanceOf(NotLastOperatorInWhereConditionsError);
+              expect(error).to.be.an.instanceOf(
+                RangeOperatorAllowedOnlyForLastIndexedPropertyError,
+              );
             });
           });
         });
@@ -756,7 +758,7 @@ describe('validateQueryFactory', () => {
 
             const error = result.getErrors()[0];
 
-            expect(error).to.be.an.instanceOf(NotLastOperatorInWhereConditionsError);
+            expect(error).to.be.an.instanceOf(RangeOperatorAllowedOnlyForLastIndexedPropertyError);
           });
         });
 
@@ -834,7 +836,7 @@ describe('validateQueryFactory', () => {
 
             const error = result.getErrors()[0];
 
-            expect(error).to.be.an.instanceOf(NotLastOperatorInWhereConditionsError);
+            expect(error).to.be.an.instanceOf(RangeOperatorAllowedOnlyForLastIndexedPropertyError);
           });
         });
 

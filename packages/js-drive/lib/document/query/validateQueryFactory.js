@@ -10,7 +10,7 @@ const jsonSchema = require('./jsonSchema');
 
 const NotIndexedPropertiesInWhereConditionsError = require('./errors/NotIndexedPropertiesInWhereConditionsError');
 const InvalidPropertiesInOrderByError = require('./errors/InvalidPropertiesInOrderByError');
-const NotLastOperatorInWhereConditionsError = require('./errors/NotLastOperatorInWhereConditionsError');
+const RangeOperatorAllowedOnlyForLastIndexedPropertyError = require('./errors/RangeOperatorAllowedOnlyForLastIndexedPropertyError');
 
 /**
  * @param {findConflictingConditions} findConflictingConditions
@@ -83,24 +83,28 @@ function validateQueryFactory(
 
       // check following operators are used only in last where condition
       ['in', 'startsWith'].forEach((operator) => {
-        const nonLastOperator = query.where.find((clause, index) => (
+        const invalidClause = query.where.find((clause, index) => (
           clause[1] === operator && index !== query.where.length - 1
         ));
 
-        if (nonLastOperator) {
-          result.addError(new NotLastOperatorInWhereConditionsError(operator));
+        if (invalidClause) {
+          result.addError(
+            new RangeOperatorAllowedOnlyForLastIndexedPropertyError(invalidClause[0], operator),
+          );
         }
       });
 
       // check following operators are used only in last 2 where condition
       ['>', '<', '>=', '<='].forEach((operator) => {
-        const nonLastOrSecondToTheLastOperator = query.where.find((clause, index) => (
+        const invalidClause = query.where.find((clause, index) => (
           clause[1] === operator
             && (index !== query.where.length - 1 && index !== query.where.length - 2)
         ));
 
-        if (nonLastOrSecondToTheLastOperator) {
-          result.addError(new NotLastOperatorInWhereConditionsError(operator));
+        if (invalidClause) {
+          result.addError(
+            new RangeOperatorAllowedOnlyForLastIndexedPropertyError(invalidClause[0], operator),
+          );
         }
       });
     }
