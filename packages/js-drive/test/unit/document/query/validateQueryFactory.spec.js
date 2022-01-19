@@ -126,7 +126,22 @@ const invalidFieldNameTestCases = [
   'a.b.c.',
 ];
 
-describe.only('validateQueryFactory', () => {
+const validOrderByOperators = {
+  '>': {
+    value: 42,
+  },
+  '<': {
+    value: 42,
+  },
+  startsWith: {
+    value: 'rt-',
+  },
+  in: {
+    value: ['a', 'b'],
+  },
+};
+
+describe('validateQueryFactory', () => {
   let findConflictingConditionsStub;
   let validateQuery;
   let documentSchema;
@@ -1524,6 +1539,29 @@ describe.only('validateQueryFactory', () => {
       expect(result.errors[0].instancePath).to.be.equal('/orderBy/0');
       expect(result.errors[0].keyword).to.be.equal('maxItems');
       expect(result.errors[0].params.limit).to.be.equal(2);
+    });
+
+    Object.keys(validOrderByOperators).forEach((operator) => {
+      it(`should return true if "orderBy" has valid field with valid operator in "where" clause - "${operator}"`, () => {
+        documentSchema = {
+          indices: [
+            {
+              properties: [{ a: 'asc' }],
+            },
+          ],
+        };
+
+        const result = validateQuery({
+          where: [
+            ['a', operator, validOrderByOperators[operator].value],
+          ],
+          orderBy: [['a', 'asc']],
+        },
+        documentSchema);
+
+        expect(result).to.be.instanceOf(ValidationResult);
+        expect(result.isValid()).to.be.true();
+      });
     });
   });
 

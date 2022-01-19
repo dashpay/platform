@@ -127,7 +127,8 @@ function validateQueryFactory(
 
       const [property, operator] = lastCondition;
 
-      if (!operator.includes('<') && !operator.includes('>')) {
+      if (!operator.includes('<') && !operator.includes('>')
+          && !operator.includes('startsWith') && !operator.includes('in')) {
         result.addError(new InvalidPropertiesInOrderByError());
 
         return result;
