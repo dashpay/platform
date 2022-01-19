@@ -8,7 +8,7 @@ const graceful = require('node-graceful');
 
 const chalk = require('chalk');
 
-const ZMQClient = require('../lib/core/wZmqClient');
+const ZMQClient = require('../lib/core/ZmqClient');
 
 const { init: initHashFunction } = require('../lib/rootTree/hashFunction');
 
