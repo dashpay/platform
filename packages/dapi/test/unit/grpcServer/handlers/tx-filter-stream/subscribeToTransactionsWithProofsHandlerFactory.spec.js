@@ -348,31 +348,4 @@ describe('subscribeToTransactionsWithProofsHandlerFactory', () => {
       expect(getMemPoolTransactionsMock).to.not.have.been.called();
     }
   });
-
-  it('should respond with error if if both fromBlockHash and fromBlockHeight are not specified', async () => {
-    const bloomFilterMessage = new BloomFilter();
-
-    bloomFilterMessage.setVData(new Uint8Array());
-    bloomFilterMessage.setNTweak(1000);
-    bloomFilterMessage.setNFlags(100);
-    bloomFilterMessage.setNHashFuncs(10);
-
-    const request = new TransactionsWithProofsRequest();
-
-    request.setBloomFilter(bloomFilterMessage);
-
-    call.request = request;
-
-    try {
-      await subscribeToTransactionsWithProofsHandler(call);
-
-      expect.fail('should fail with InvalidArgumentGrpcError');
-    } catch (e) {
-      expect(e).to.be.an.instanceOf(InvalidArgumentGrpcError);
-      expect(e.getMessage()).to.equal('Minimum value for `fromBlockHeight` is 1');
-      expect(call.write).to.not.have.been.called();
-      expect(call.end).to.not.have.been.called();
-      expect(getMemPoolTransactionsMock).to.not.have.been.called();
-    }
-  });
 });
