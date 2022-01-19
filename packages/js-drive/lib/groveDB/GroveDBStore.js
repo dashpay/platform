@@ -194,8 +194,8 @@ class GroveDBStore {
    *
    * @return {Buffer}
    */
-  getRootHash() {
-    return Buffer.from(this.db.rootHash());
+  async getRootHash() {
+    return Buffer.from(await this.db.rootHash());
   }
 
   /**
