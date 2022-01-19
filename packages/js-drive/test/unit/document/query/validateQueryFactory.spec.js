@@ -4,6 +4,7 @@ const ValidationResult = require('../../../../lib/document/query/ValidationResul
 const ConflictingConditionsError = require('../../../../lib/document/query/errors/ConflictingConditionsError');
 const InvalidPropertiesInOrderByError = require('../../../../lib/document/query/errors/InvalidPropertiesInOrderByError');
 const NotIndexedPropertiesInWhereConditionsError = require('../../../../lib/document/query/errors/NotIndexedPropertiesInWhereConditionsError');
+const NotLastOperatorInWhereConditionsError = require('../../../../lib/document/query/errors/NotLastOperatorInWhereConditionsError');
 
 const typesTestCases = {
   number: {
@@ -698,6 +699,35 @@ describe('validateQueryFactory', () => {
             expect(result).to.be.instanceOf(ValidationResult);
             expect(result.isValid()).to.be.false();
           });
+
+          it('should return invalid results if used not in the last where condition', () => {
+            documentSchema = {
+              indices: [
+                {
+                  properties: [{ a: 'asc' }],
+                },
+              ],
+            };
+
+            const arr = [1, 2];
+
+            const result = validateQuery(
+              {
+                where: [
+                  ['a', 'in', arr],
+                  ['a', '>', 1],
+                ],
+              },
+              documentSchema,
+            );
+
+            expect(result).to.be.instanceOf(ValidationResult);
+            expect(result.isValid()).to.be.false();
+
+            const error = result.getErrors()[0];
+
+            expect(error).to.be.an.instanceOf(NotLastOperatorInWhereConditionsError);
+          });
         });
 
         describe('startsWith', () => {
@@ -748,6 +778,33 @@ describe('validateQueryFactory', () => {
               expect(result.errors[3].keyword).to.be.equal('type');
               expect(result.errors[3].params.type).to.be.equal('string');
             });
+          });
+
+          it('should return invalid results if used not in the last where condition', () => {
+            documentSchema = {
+              indices: [
+                {
+                  properties: [{ a: 'asc' }],
+                },
+              ],
+            };
+
+            const result = validateQuery(
+              {
+                where: [
+                  ['a', 'startsWith', 'r-'],
+                  ['a', '>', 1],
+                ],
+              },
+              documentSchema,
+            );
+
+            expect(result).to.be.instanceOf(ValidationResult);
+            expect(result.isValid()).to.be.false();
+
+            const error = result.getErrors()[0];
+
+            expect(error).to.be.an.instanceOf(NotLastOperatorInWhereConditionsError);
           });
         });
 

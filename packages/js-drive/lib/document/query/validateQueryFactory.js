@@ -10,6 +10,7 @@ const jsonSchema = require('./jsonSchema');
 
 const NotIndexedPropertiesInWhereConditionsError = require('./errors/NotIndexedPropertiesInWhereConditionsError');
 const InvalidPropertiesInOrderByError = require('./errors/InvalidPropertiesInOrderByError');
+const NotLastOperatorInWhereConditionsError = require('./errors/NotLastOperatorInWhereConditionsError');
 
 /**
  * @param {findConflictingConditions} findConflictingConditions
@@ -79,6 +80,17 @@ function validateQueryFactory(
       if (!appropriateIndex) {
         result.addError(new NotIndexedPropertiesInWhereConditionsError());
       }
+
+      // check following operators are used only in last where condition
+      ['in', 'startsWith'].forEach((operator) => {
+        const nonLastOperator = query.where.find((clause, index) => (
+          clause[1] === operator && index !== query.where.length - 1
+        ));
+
+        if (nonLastOperator) {
+          result.addError(new NotLastOperatorInWhereConditionsError(operator));
+        }
+      });
     }
 
     // Sorting is allowed only for the last indexed property
