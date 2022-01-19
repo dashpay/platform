@@ -109,12 +109,13 @@ function subscribeToTransactionsWithProofsHandlerFactory(
 
     const fromBlockHash = Buffer.from(request.getFromBlockHash()).toString('hex');
     const fromBlockHeight = request.getFromBlockHeight();
-    const from = fromBlockHash || fromBlockHeight;
-    const count = request.getCount();
 
-    if (from === 0) {
+    if(!fromBlockHash && fromBlockHeight === 0) {
       throw new InvalidArgumentGrpcError('Minimum value for `fromBlockHeight` is 1');
     }
+
+    const from = fromBlockHash || fromBlockHeight;
+    const count = request.getCount();
 
     // Create a new bloom filter emitter when client connects
     let filter;
@@ -169,7 +170,7 @@ function subscribeToTransactionsWithProofsHandlerFactory(
       if (e.code === -5 || e.code === -8) {
         // -5 -> invalid block height or block is not on best chain
         // -8 -> block hash not found
-        throw new NotFoundGrpcError(`Block ${fromBlockHeight || fromBlockHash} not found`);
+        throw new NotFoundGrpcError(`Block ${from} not found`);
       }
       throw e;
     }
