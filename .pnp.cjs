@@ -2257,7 +2257,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["@dashevo/dp-services-ctl", "https://github.com/dashevo/js-dp-services-ctl.git#commit=3976076b0018c5b4632ceda4c752fc597f27a640"],
             ["@dashevo/dpp", "workspace:packages/js-dpp"],
             ["@dashevo/grpc-common", "workspace:packages/js-grpc-common"],
-            ["@grpc/grpc-js", "npm:1.4.4"],
+            ["@grpc/grpc-js", "npm:1.5.2"],
             ["ajv", "npm:8.8.1"],
             ["bs58", "npm:4.0.1"],
             ["cbor", "npm:8.1.0"],
@@ -2297,7 +2297,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["@dashevo/dashcore-lib", "npm:0.19.29"],
             ["@dashevo/dpp", "workspace:packages/js-dpp"],
             ["@dashevo/grpc-common", "workspace:packages/js-grpc-common"],
-            ["@grpc/grpc-js", "npm:1.4.4"],
+            ["@grpc/grpc-js", "npm:1.5.2"],
             ["assert-browserify", "npm:2.0.0"],
             ["axios", "npm:0.21.4"],
             ["babel-loader", "virtual:8f25fc90e0fb5fd89843707863857591fa8c52f9f33eadced4bf404b1871d91959f7bb86948ae0e1b53ee94d491ef8fde9c0b58b39c9490c0d0fa6c931945f97#npm:8.2.3"],
@@ -2346,7 +2346,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           "packageDependencies": [
             ["@dashevo/dapi-grpc", "workspace:packages/dapi-grpc"],
             ["@dashevo/grpc-common", "workspace:packages/js-grpc-common"],
-            ["@grpc/grpc-js", "npm:1.4.4"],
+            ["@grpc/grpc-js", "npm:1.5.2"],
             ["chai", "npm:4.3.4"],
             ["chai-as-promised", "virtual:595d7482cc8ddf98ee6aef33fc48b46393554ab5f17f851ef62e6e39315e53666c3e66226b978689aa0bc7f1e83a03081511a21db1c381362fe67614887077f9#npm:7.1.1"],
             ["dirty-chai", "virtual:595d7482cc8ddf98ee6aef33fc48b46393554ab5f17f851ef62e6e39315e53666c3e66226b978689aa0bc7f1e83a03081511a21db1c381362fe67614887077f9#npm:2.0.1"],
@@ -2599,7 +2599,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           "packageLocation": "./packages/js-grpc-common/",
           "packageDependencies": [
             ["@dashevo/grpc-common", "workspace:packages/js-grpc-common"],
-            ["@grpc/grpc-js", "npm:1.4.4"],
+            ["@grpc/grpc-js", "npm:1.5.2"],
             ["@grpc/proto-loader", "npm:0.5.6"],
             ["cbor", "npm:8.1.0"],
             ["chai", "npm:4.3.4"],
@@ -2824,10 +2824,10 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
         }]
       ]],
       ["@grpc/grpc-js", [
-        ["npm:1.4.4", {
-          "packageLocation": "./.yarn/cache/@grpc-grpc-js-npm-1.4.4-f333f82239-f9be710cef.zip/node_modules/@grpc/grpc-js/",
+        ["npm:1.5.2", {
+          "packageLocation": "./.yarn/cache/@grpc-grpc-js-npm-1.5.2-b0eaba4094-883945c359.zip/node_modules/@grpc/grpc-js/",
           "packageDependencies": [
-            ["@grpc/grpc-js", "npm:1.4.4"],
+            ["@grpc/grpc-js", "npm:1.5.2"],
             ["@grpc/proto-loader", "npm:0.6.7"],
             ["@types/node", "npm:16.11.9"]
           ],
