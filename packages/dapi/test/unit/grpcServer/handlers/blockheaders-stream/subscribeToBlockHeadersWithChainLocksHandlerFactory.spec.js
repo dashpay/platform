@@ -201,6 +201,8 @@ describe.only('subscribeToBlockHeadersWithChainLocksHandlerFactory', () => {
     }
 
     try {
+      request.setCount(10);
+
       coreAPIMock.getBlockStats.resolves({ height: 10 });
 
       coreAPIMock.getBestBlockHeight.resolves(11);
