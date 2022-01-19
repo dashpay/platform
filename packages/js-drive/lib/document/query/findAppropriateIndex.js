@@ -1,5 +1,3 @@
-const isEqual = require('lodash.isequal');
-
 const systemIndices = [
   {
     properties: [{ $id: 'asc' }],
@@ -16,7 +14,7 @@ const systemIndices = [
 function findAppropriateIndex(whereClauses, documentSchema) {
   const documentIndices = (documentSchema.indices || []).concat(systemIndices);
 
-  const whereProperties = (whereClauses || []).map(([field]) => field);
+  const whereProperties = (whereClauses || []).map(([propertyName]) => propertyName);
 
   const uniqueWhereProperties = [...new Set(whereProperties)];
 
@@ -24,7 +22,7 @@ function findAppropriateIndex(whereClauses, documentSchema) {
     const indexedProperties = indexDefinition.properties
       .map((indexedProperty) => Object.keys(indexedProperty)[0]);
 
-    return isEqual(indexedProperties, uniqueWhereProperties);
+    return !uniqueWhereProperties.find((propertyName) => !indexedProperties.includes(propertyName));
   });
 }
 

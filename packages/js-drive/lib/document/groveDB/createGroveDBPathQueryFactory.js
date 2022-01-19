@@ -1,15 +1,15 @@
-const cloneDeep = require('lodash.clonedeep');
-
 const getPropertyDefinitionByPath = require('@dashevo/dpp/lib/dataContract/getPropertyDefinitionByPath');
 const DataContractStoreRepository = require('../../dataContract/DataContractStoreRepository');
 const createDocumentTypeTreePath = require('./createDocumentTreePath');
 
 /**
  * @param {findAppropriateIndex} findAppropriateIndex
+ * @param {sortWhereClausesAccordingToIndex} sortWhereClausesAccordingToIndex
  * @return {createGroveDBPathQuery}
  */
 function createGroveDBPathQueryFactory(
   findAppropriateIndex,
+  sortWhereClausesAccordingToIndex,
 ) {
   /**
    * @typedef {createGroveDBPathQuery}
@@ -39,9 +39,14 @@ function createGroveDBPathQueryFactory(
     let subQuery;
     let subQueryKey;
 
+    let currentIndex;
+    let whereClauses;
+
     // Range query
     if (query.where) {
-      const whereClauses = cloneDeep(query.where);
+      currentIndex = findAppropriateIndex(query.where, documentSchema);
+
+      whereClauses = sortWhereClausesAccordingToIndex(query.where, currentIndex);
 
       const lastClause = whereClauses[whereClauses.length - 1];
 
@@ -200,8 +205,6 @@ function createGroveDBPathQueryFactory(
       [[, order]] = query.orderBy;
     } else if (query.where.length) {
       // Get default for last clause according to index definition
-      const currentIndex = findAppropriateIndex(query.where, documentSchema);
-
       const lastIndexedProperty = currentIndex.properties[currentIndex.properties.length - 1];
 
       [order] = Object.values(lastIndexedProperty);

@@ -60,7 +60,7 @@ const PublicKeyToIdentityIdStoreRepository = require(
 );
 
 const DataContractStoreRepository = require('./dataContract/DataContractStoreRepository');
-const DocumentStoreRepository = require('./document/groveDB/DocumentRepository');
+const DocumentStoreRepository = require('./document/DocumentRepository');
 const findConflictingConditions = require('./document/query/findConflictingConditions');
 const validateQueryFactory = require('./document/query/validateQueryFactory');
 

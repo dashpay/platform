@@ -14,11 +14,13 @@ const InvalidPropertiesInOrderByError = require('./errors/InvalidPropertiesInOrd
 /**
  * @param {findConflictingConditions} findConflictingConditions
  * @param {findAppropriateIndex} findAppropriateIndex
+ * @param {sortWhereClausesAccordingToIndex} sortWhereClausesAccordingToIndex
  * @return {validateQuery}
  */
 function validateQueryFactory(
   findConflictingConditions,
   findAppropriateIndex,
+  sortWhereClausesAccordingToIndex,
 ) {
   const ajv = defineAjvKeywords(new Ajv({
     strictTypes: true,
@@ -49,6 +51,9 @@ function validateQueryFactory(
       );
     }
 
+    let sortedWhereClauses = [];
+    let appropriateIndex;
+
     // Where conditions must follow document indices
     if (query.where) {
       // Find conflicting conditions
@@ -57,11 +62,13 @@ function validateQueryFactory(
           .map(([field, operators]) => new ConflictingConditionsError(field, operators)),
       );
 
-      const appropriateIndex = findAppropriateIndex(query, documentSchema);
+      appropriateIndex = findAppropriateIndex(query, documentSchema);
 
       if (!appropriateIndex) {
         result.addError(new NotIndexedPropertiesInWhereConditionsError());
       }
+
+      sortedWhereClauses = sortWhereClausesAccordingToIndex(query.where, appropriateIndex);
     }
 
     // Sorting is allowed only for the last indexed property
@@ -78,7 +85,7 @@ function validateQueryFactory(
         return result;
       }
 
-      const lastCondition = query.where[query.where.length - 1];
+      const lastCondition = sortedWhereClauses[sortedWhereClauses.length - 1];
 
       const [property, operator] = lastCondition;
 
