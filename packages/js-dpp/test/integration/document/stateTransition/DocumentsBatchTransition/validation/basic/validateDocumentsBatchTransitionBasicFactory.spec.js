@@ -419,7 +419,8 @@ describe('validateDocumentsBatchTransitionBasicFactory', () => {
             rawStateTransition.transitions,
           );
           expect(findDuplicatesByIndicesMock).to.have.been.calledOnceWithExactly(
-            rawStateTransition.transitions, dataContract,
+            rawStateTransition.transitions,
+            dataContract,
           );
         });
       });
@@ -448,7 +449,8 @@ describe('validateDocumentsBatchTransitionBasicFactory', () => {
             rawStateTransition.transitions.slice(1),
           );
           expect(findDuplicatesByIndicesMock).to.have.been.calledOnceWithExactly(
-            rawStateTransition.transitions.slice(1), dataContract,
+            rawStateTransition.transitions.slice(1),
+            dataContract,
           );
         });
 
@@ -480,7 +482,8 @@ describe('validateDocumentsBatchTransitionBasicFactory', () => {
             rawStateTransition.transitions.slice(1),
           );
           expect(findDuplicatesByIndicesMock).to.have.been.calledOnceWithExactly(
-            rawStateTransition.transitions.slice(1), dataContract,
+            rawStateTransition.transitions.slice(1),
+            dataContract,
           );
         });
 
@@ -846,7 +849,8 @@ describe('validateDocumentsBatchTransitionBasicFactory', () => {
           rawStateTransition.transitions,
         );
         expect(findDuplicatesByIndicesMock).to.have.been.calledOnceWithExactly(
-          rawStateTransition.transitions, dataContract,
+          rawStateTransition.transitions,
+          dataContract,
         );
       });
 
@@ -983,7 +987,8 @@ describe('validateDocumentsBatchTransitionBasicFactory', () => {
     );
 
     expect(findDuplicatesByIndicesMock).to.have.been.calledOnceWithExactly(
-      rawStateTransition.transitions, dataContract,
+      rawStateTransition.transitions,
+      dataContract,
     );
   });
 });

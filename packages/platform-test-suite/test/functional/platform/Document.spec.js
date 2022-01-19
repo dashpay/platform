@@ -265,8 +265,11 @@ describe('Platform', () => {
       documentsBatchTransition.transitions[0].data.firstName = 'nameToProve';
       documentsBatchTransition.transitions[0].updatedAt = new Date();
       documentsBatchTransition.transitions[0].revision += 1;
+
       const signedTransition = await signStateTransition(
-        client.platform, documentsBatchTransition, identity,
+        client.platform,
+        documentsBatchTransition,
+        identity,
       );
 
       const proof = await client.platform.broadcastStateTransition(signedTransition);
@@ -313,8 +316,11 @@ describe('Platform', () => {
 
       documentsBatchTransition.transitions[0].updatedAt = updatedAt;
       documentsBatchTransition.transitions[0].revision += 1;
+
       const signedTransition = await signStateTransition(
-        client.platform, documentsBatchTransition, identity,
+        client.platform,
+        documentsBatchTransition,
+        identity,
       );
 
       try {

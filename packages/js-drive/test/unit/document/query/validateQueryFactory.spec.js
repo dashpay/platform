@@ -218,13 +218,15 @@ describe('validateQueryFactory', () => {
     it('should return invalid result if "where" contains conflicting conditions', () => {
       findConflictingConditionsStub.returns([['a', ['<', '>']]]);
 
-      const result = validateQuery({
-        where: [
-          ['a', '<', 1],
-          ['a', '>', 1],
-        ],
-      },
-      documentSchema);
+      const result = validateQuery(
+        {
+          where: [
+            ['a', '<', 1],
+            ['a', '>', 1],
+          ],
+        },
+        documentSchema,
+      );
 
       expect(result).to.be.instanceOf(ValidationResult);
       expect(result.isValid()).to.be.false();
@@ -857,28 +859,32 @@ describe('validateQueryFactory', () => {
 
         describe.skip('elementMatch', () => {
           it('should return valid result if "elementMatch" operator used with "where" conditions', () => {
-            const result = validateQuery({
-              where: [
-                ['arr', 'elementMatch',
-                  [['elem', '>', 1], ['elem', '<', 3]],
+            const result = validateQuery(
+              {
+                where: [
+                  ['arr', 'elementMatch',
+                    [['elem', '>', 1], ['elem', '<', 3]],
+                  ],
                 ],
-              ],
-            },
-            documentSchema);
+              },
+              documentSchema,
+            );
 
             expect(result).to.be.instanceOf(ValidationResult);
             expect(result.isValid()).to.be.true();
           });
 
           it('should return invalid result if "elementMatch" operator used with invalid "where" conditions', () => {
-            const result = validateQuery({
-              where: [
-                ['arr', 'elementMatch',
-                  [['elem', 'startsWith', 1], ['elem', '<', 3]],
+            const result = validateQuery(
+              {
+                where: [
+                  ['arr', 'elementMatch',
+                    [['elem', 'startsWith', 1], ['elem', '<', 3]],
+                  ],
                 ],
-              ],
-            },
-            documentSchema);
+              },
+              documentSchema,
+            );
 
             expect(result).to.be.instanceOf(ValidationResult);
             expect(result.isValid()).to.be.false();
@@ -887,14 +893,16 @@ describe('validateQueryFactory', () => {
           });
 
           it('should return invalid result if "elementMatch" operator used with less than 2 "where" conditions', () => {
-            const result = validateQuery({
-              where: [
-                ['arr', 'elementMatch',
-                  [['elem', '>', 1]],
+            const result = validateQuery(
+              {
+                where: [
+                  ['arr', 'elementMatch',
+                    [['elem', '>', 1]],
+                  ],
                 ],
-              ],
-            },
-            documentSchema);
+              },
+              documentSchema,
+            );
 
             expect(result).to.be.instanceOf(ValidationResult);
             expect(result.isValid()).to.be.false();
@@ -906,14 +914,16 @@ describe('validateQueryFactory', () => {
           it('should return invalid result if value contains conflicting conditions', () => {
             findConflictingConditionsStub.returns([['elem', ['>', '>']]]);
 
-            const result = validateQuery({
-              where: [
-                ['arr', 'elementMatch',
-                  [['elem', '>', 1], ['elem', '>', 1]],
+            const result = validateQuery(
+              {
+                where: [
+                  ['arr', 'elementMatch',
+                    [['elem', '>', 1], ['elem', '>', 1]],
+                  ],
                 ],
-              ],
-            },
-            documentSchema);
+              },
+              documentSchema,
+            );
 
             expect(result).to.be.instanceOf(ValidationResult);
             expect(result.isValid()).to.be.false();
@@ -923,14 +933,16 @@ describe('validateQueryFactory', () => {
           });
 
           it('should return invalid result if $id field is specified', () => {
-            const result = validateQuery({
-              where: [
-                ['arr', 'elementMatch',
-                  [['$id', '>', 1], ['$id', '<', 3]],
+            const result = validateQuery(
+              {
+                where: [
+                  ['arr', 'elementMatch',
+                    [['$id', '>', 1], ['$id', '<', 3]],
+                  ],
                 ],
-              ],
-            },
-            documentSchema);
+              },
+              documentSchema,
+            );
 
             expect(result).to.be.instanceOf(ValidationResult);
             expect(result.isValid()).to.be.false();
@@ -939,14 +951,16 @@ describe('validateQueryFactory', () => {
           });
 
           it('should return invalid result if $ownerId field is specified', () => {
-            const result = validateQuery({
-              where: [
-                ['arr', 'elementMatch',
-                  [['$ownerId', '>', 1], ['$ownerId', '<', 3]],
+            const result = validateQuery(
+              {
+                where: [
+                  ['arr', 'elementMatch',
+                    [['$ownerId', '>', 1], ['$ownerId', '<', 3]],
+                  ],
                 ],
-              ],
-            },
-            documentSchema);
+              },
+              documentSchema,
+            );
 
             expect(result).to.be.instanceOf(ValidationResult);
             expect(result.isValid()).to.be.false();
@@ -957,16 +971,18 @@ describe('validateQueryFactory', () => {
           it('should return invalid result if value contains nested "elementMatch" operator', () => {
             findConflictingConditionsStub.returns([]);
 
-            const result = validateQuery({
-              where: [
-                ['arr', 'elementMatch',
-                  [['subArr', 'elementMatch', [
-                    ['subArrElem', '>', 1], ['subArrElem', '<', 3],
-                  ]], ['subArr', '<', 3]],
+            const result = validateQuery(
+              {
+                where: [
+                  ['arr', 'elementMatch',
+                    [['subArr', 'elementMatch', [
+                      ['subArrElem', '>', 1], ['subArrElem', '<', 3],
+                    ]], ['subArr', '<', 3]],
+                  ],
                 ],
-              ],
-            },
-            documentSchema);
+              },
+              documentSchema,
+            );
 
             expect(result).to.be.instanceOf(ValidationResult);
             expect(result.isValid()).to.be.false();
@@ -999,12 +1015,14 @@ describe('validateQueryFactory', () => {
           });
 
           it('should return invalid result if "length" operator used with a float numeric value', () => {
-            const result = validateQuery({
-              where: [
-                ['arr', 'length', 1.2],
-              ],
-            },
-            documentSchema);
+            const result = validateQuery(
+              {
+                where: [
+                  ['arr', 'length', 1.2],
+                ],
+              },
+              documentSchema,
+            );
 
             expect(result).to.be.instanceOf(ValidationResult);
             expect(result.isValid()).to.be.false();
@@ -1014,12 +1032,14 @@ describe('validateQueryFactory', () => {
           });
 
           it('should return invalid result if "length" operator used with a NaN', () => {
-            const result = validateQuery({
-              where: [
-                ['arr', 'length', NaN],
-              ],
-            },
-            documentSchema);
+            const result = validateQuery(
+              {
+                where: [
+                  ['arr', 'length', NaN],
+                ],
+              },
+              documentSchema,
+            );
 
             expect(result).to.be.instanceOf(ValidationResult);
             expect(result.isValid()).to.be.false();
@@ -1029,12 +1049,14 @@ describe('validateQueryFactory', () => {
           });
 
           it('should return invalid result if "length" operator used with a numeric value which is less than 0', () => {
-            const result = validateQuery({
-              where: [
-                ['arr', 'length', -1],
-              ],
-            },
-            documentSchema);
+            const result = validateQuery(
+              {
+                where: [
+                  ['arr', 'length', -1],
+                ],
+              },
+              documentSchema,
+            );
 
             expect(result).to.be.instanceOf(ValidationResult);
             expect(result.isValid()).to.be.false();
@@ -1046,12 +1068,14 @@ describe('validateQueryFactory', () => {
 
           nonNumberTestCases.forEach(({ type, value }) => {
             it(`should return invalid result if "length" operator used with a ${type} instead of numeric value`, () => {
-              const result = validateQuery({
-                where: [
-                  ['arr', 'length', value],
-                ],
-              },
-              documentSchema);
+              const result = validateQuery(
+                {
+                  where: [
+                    ['arr', 'length', value],
+                  ],
+                },
+                documentSchema,
+              );
 
               expect(result).to.be.instanceOf(ValidationResult);
               expect(result.isValid()).to.be.false();
@@ -1065,12 +1089,14 @@ describe('validateQueryFactory', () => {
         describe.skip('contains', () => {
           scalarTestCases.forEach(({ type, value }) => {
             it(`should return valid result if "contains" operator used with a scalar value ${type}`, () => {
-              const result = validateQuery({
-                where: [
-                  ['arr', 'contains', value],
-                ],
-              },
-              documentSchema);
+              const result = validateQuery(
+                {
+                  where: [
+                    ['arr', 'contains', value],
+                  ],
+                },
+                documentSchema,
+              );
 
               expect(result).to.be.instanceOf(ValidationResult);
               expect(result.isValid()).to.be.true();
@@ -1079,12 +1105,14 @@ describe('validateQueryFactory', () => {
 
           scalarTestCases.forEach(({ type, value }) => {
             it(`should return valid result if "contains" operator used with an array of scalar values ${type}`, () => {
-              const result = validateQuery({
-                where: [
-                  ['arr', 'contains', [value]],
-                ],
-              },
-              documentSchema);
+              const result = validateQuery(
+                {
+                  where: [
+                    ['arr', 'contains', [value]],
+                  ],
+                },
+                documentSchema,
+              );
 
               expect(result).to.be.instanceOf(ValidationResult);
               expect(result.isValid()).to.be.true();
@@ -1098,24 +1126,28 @@ describe('validateQueryFactory', () => {
               arr.push(i);
             }
 
-            let result = validateQuery({
-              where: [
-                ['arr', 'contains', arr],
-              ],
-            },
-            documentSchema);
+            let result = validateQuery(
+              {
+                where: [
+                  ['arr', 'contains', arr],
+                ],
+              },
+              documentSchema,
+            );
 
             expect(result).to.be.instanceOf(ValidationResult);
             expect(result.isValid()).to.be.true();
 
             arr.push(101);
 
-            result = validateQuery({
-              where: [
-                ['arr', 'contains', arr],
-              ],
-            },
-            documentSchema);
+            result = validateQuery(
+              {
+                where: [
+                  ['arr', 'contains', arr],
+                ],
+              },
+              documentSchema,
+            );
 
             expect(result).to.be.instanceOf(ValidationResult);
             expect(result.isValid()).to.be.false();
@@ -1125,12 +1157,14 @@ describe('validateQueryFactory', () => {
           });
 
           it('should return invalid result if "contains" operator used with an empty array', () => {
-            const result = validateQuery({
-              where: [
-                ['arr', 'contains', []],
-              ],
-            },
-            documentSchema);
+            const result = validateQuery(
+              {
+                where: [
+                  ['arr', 'contains', []],
+                ],
+              },
+              documentSchema,
+            );
 
             expect(result).to.be.instanceOf(ValidationResult);
             expect(result.isValid()).to.be.false();
@@ -1141,12 +1175,14 @@ describe('validateQueryFactory', () => {
 
           it('should return invalid result if "contains" operator used with an array which contains not unique'
             + ' elements', () => {
-            const result = validateQuery({
-              where: [
-                ['arr', 'contains', [1, 1]],
-              ],
-            },
-            documentSchema);
+            const result = validateQuery(
+              {
+                where: [
+                  ['arr', 'contains', [1, 1]],
+                ],
+              },
+              documentSchema,
+            );
 
             expect(result).to.be.instanceOf(ValidationResult);
             expect(result.isValid()).to.be.false();
@@ -1157,12 +1193,14 @@ describe('validateQueryFactory', () => {
 
           nonScalarTestCases.forEach(({ type, value }) => {
             it(`should return invalid result if used with non-scalar value ${type}`, () => {
-              const result = validateQuery({
-                where: [
-                  ['arr', 'contains', value],
-                ],
-              },
-              documentSchema);
+              const result = validateQuery(
+                {
+                  where: [
+                    ['arr', 'contains', value],
+                  ],
+                },
+                documentSchema,
+              );
 
               expect(result).to.be.instanceOf(ValidationResult);
               expect(result.isValid()).to.be.false();
@@ -1180,12 +1218,14 @@ describe('validateQueryFactory', () => {
 
           nonScalarTestCases.forEach(({ type, value }) => {
             it(`should return invalid result if used with an array of non-scalar values ${type}`, () => {
-              const result = validateQuery({
-                where: [
-                  ['arr', 'contains', [value]],
-                ],
-              },
-              documentSchema);
+              const result = validateQuery(
+                {
+                  where: [
+                    ['arr', 'contains', [value]],
+                  ],
+                },
+                documentSchema,
+              );
 
               expect(result).to.be.instanceOf(ValidationResult);
               expect(result.isValid()).to.be.false();
@@ -1215,13 +1255,15 @@ describe('validateQueryFactory', () => {
         ],
       };
 
-      const result = validateQuery({
-        where: [
-          ['a', '>', 1],
-        ],
-        limit: 1,
-      },
-      documentSchema);
+      const result = validateQuery(
+        {
+          where: [
+            ['a', '>', 1],
+          ],
+          limit: 1,
+        },
+        documentSchema,
+      );
 
       expect(result).to.be.instanceOf(ValidationResult);
       expect(result.isValid()).to.be.true();
@@ -1294,13 +1336,15 @@ describe('validateQueryFactory', () => {
 
     nonNumberAndUndefinedTestCases.forEach(({ type, value }) => {
       it(`should return invalid result if "limit" is not a number, but ${type}`, () => {
-        const result = validateQuery({
-          where: [
-            ['a', '>', 1],
-          ],
-          limit: value,
-        },
-        documentSchema);
+        const result = validateQuery(
+          {
+            where: [
+              ['a', '>', 1],
+            ],
+            limit: value,
+          },
+          documentSchema,
+        );
 
         expect(result).to.be.instanceOf(ValidationResult);
         expect(result.isValid()).to.be.false();
@@ -1322,13 +1366,15 @@ describe('validateQueryFactory', () => {
         ],
       };
 
-      const result = validateQuery({
-        where: [
-          ['a', '>', 1],
-        ],
-        orderBy: [['a', 'asc']],
-      },
-      documentSchema);
+      const result = validateQuery(
+        {
+          where: [
+            ['a', '>', 1],
+          ],
+          orderBy: [['a', 'asc']],
+        },
+        documentSchema,
+      );
 
       expect(result).to.be.instanceOf(ValidationResult);
       expect(result.isValid()).to.be.true();
@@ -1343,13 +1389,15 @@ describe('validateQueryFactory', () => {
         ],
       };
 
-      const result = validateQuery({
-        where: [
-          ['a', '>', 1],
-        ],
-        orderBy: [['a', 'asc'], ['b', 'desc']],
-      },
-      documentSchema);
+      const result = validateQuery(
+        {
+          where: [
+            ['a', '>', 1],
+          ],
+          orderBy: [['a', 'asc'], ['b', 'desc']],
+        },
+        documentSchema,
+      );
 
       expect(result).to.be.instanceOf(ValidationResult);
       expect(result.isValid()).to.be.false();
@@ -1359,13 +1407,15 @@ describe('validateQueryFactory', () => {
     });
 
     it('should return invalid result if "orderBy" is an empty array', () => {
-      const result = validateQuery({
-        where: [
-          ['a', '>', 1],
-        ],
-        orderBy: [],
-      },
-      documentSchema);
+      const result = validateQuery(
+        {
+          where: [
+            ['a', '>', 1],
+          ],
+          orderBy: [],
+        },
+        documentSchema,
+      );
 
       expect(result).to.be.instanceOf(ValidationResult);
       expect(result.isValid()).to.be.false();
@@ -1383,11 +1433,13 @@ describe('validateQueryFactory', () => {
         ],
       };
 
-      const result = validateQuery({
-        where: [['a', '==', 'b']],
-        orderBy: [['a', 'asc']],
-      },
-      documentSchema);
+      const result = validateQuery(
+        {
+          where: [['a', '==', 'b']],
+          orderBy: [['a', 'asc']],
+        },
+        documentSchema,
+      );
 
       expect(result).to.be.instanceOf(ValidationResult);
       expect(result.isValid()).to.be.false();
@@ -1398,10 +1450,12 @@ describe('validateQueryFactory', () => {
     });
 
     it('should return invalid result if there is no where conditions', () => {
-      const result = validateQuery({
-        orderBy: [['a', 'asc']],
-      },
-      documentSchema);
+      const result = validateQuery(
+        {
+          orderBy: [['a', 'asc']],
+        },
+        documentSchema,
+      );
 
       expect(result).to.be.instanceOf(ValidationResult);
       expect(result.isValid()).to.be.false();
@@ -1412,13 +1466,15 @@ describe('validateQueryFactory', () => {
     });
 
     it('should return invalid result if the field inside an "orderBy" is an empty array', () => {
-      const result = validateQuery({
-        where: [
-          ['a', '>', 1],
-        ],
-        orderBy: [[]],
-      },
-      documentSchema);
+      const result = validateQuery(
+        {
+          where: [
+            ['a', '>', 1],
+          ],
+          orderBy: [[]],
+        },
+        documentSchema,
+      );
 
       expect(result).to.be.instanceOf(ValidationResult);
       expect(result.isValid()).to.be.false();
@@ -1428,13 +1484,15 @@ describe('validateQueryFactory', () => {
     });
 
     it('should return invalid result if "orderBy" has more than 2 sorting fields', () => {
-      const result = validateQuery({
-        where: [
-          ['a', '>', 1],
-        ],
-        orderBy: [['a', 'asc'], ['b', 'desc'], ['c', 'asc']],
-      },
-      documentSchema);
+      const result = validateQuery(
+        {
+          where: [
+            ['a', '>', 1],
+          ],
+          orderBy: [['a', 'asc'], ['b', 'desc'], ['c', 'asc']],
+        },
+        documentSchema,
+      );
 
       expect(result).to.be.instanceOf(ValidationResult);
       expect(result.isValid()).to.be.false();
@@ -1453,13 +1511,15 @@ describe('validateQueryFactory', () => {
           ],
         };
 
-        const result = validateQuery({
-          where: [
-            [fieldName, '>', 1],
-          ],
-          orderBy: [[fieldName, 'asc']],
-        },
-        documentSchema);
+        const result = validateQuery(
+          {
+            where: [
+              [fieldName, '>', 1],
+            ],
+            orderBy: [[fieldName, 'asc']],
+          },
+          documentSchema,
+        );
 
         expect(result).to.be.instanceOf(ValidationResult);
         expect(result.isValid()).to.be.true();
@@ -1476,13 +1536,15 @@ describe('validateQueryFactory', () => {
           ],
         };
 
-        const result = validateQuery({
-          where: [
-            ['a', '>', 1],
-          ],
-          orderBy: [['$a', 'asc']],
-        },
-        documentSchema);
+        const result = validateQuery(
+          {
+            where: [
+              ['a', '>', 1],
+            ],
+            orderBy: [['$a', 'asc']],
+          },
+          documentSchema,
+        );
 
         expect(result).to.be.instanceOf(ValidationResult);
         expect(result.isValid()).to.be.false();
@@ -1495,13 +1557,15 @@ describe('validateQueryFactory', () => {
     });
 
     it('should return invalid result if "orderBy" has wrong direction', () => {
-      const result = validateQuery({
-        where: [
-          ['a', '>', 1],
-        ],
-        orderBy: [['a', 'a']],
-      },
-      documentSchema);
+      const result = validateQuery(
+        {
+          where: [
+            ['a', '>', 1],
+          ],
+          orderBy: [['a', 'a']],
+        },
+        documentSchema,
+      );
 
       expect(result).to.be.instanceOf(ValidationResult);
       expect(result.isValid()).to.be.false();
@@ -1510,13 +1574,15 @@ describe('validateQueryFactory', () => {
     });
 
     it('should return invalid result if "orderBy" field array has less than 2 elements (field, direction)', () => {
-      const result = validateQuery({
-        where: [
-          ['a', '>', 1],
-        ],
-        orderBy: [['a']],
-      },
-      documentSchema);
+      const result = validateQuery(
+        {
+          where: [
+            ['a', '>', 1],
+          ],
+          orderBy: [['a']],
+        },
+        documentSchema,
+      );
 
       expect(result).to.be.instanceOf(ValidationResult);
       expect(result.isValid()).to.be.false();
@@ -1526,13 +1592,15 @@ describe('validateQueryFactory', () => {
     });
 
     it('should return invalid result if "orderBy" field array has more than 2 elements (field, direction)', () => {
-      const result = validateQuery({
-        where: [
-          ['a', '>', 1],
-        ],
-        orderBy: [['a', 'asc', 'desc']],
-      },
-      documentSchema);
+      const result = validateQuery(
+        {
+          where: [
+            ['a', '>', 1],
+          ],
+          orderBy: [['a', 'asc', 'desc']],
+        },
+        documentSchema,
+      );
 
       expect(result).to.be.instanceOf(ValidationResult);
       expect(result.isValid()).to.be.false();
@@ -1551,13 +1619,15 @@ describe('validateQueryFactory', () => {
           ],
         };
 
-        const result = validateQuery({
-          where: [
-            ['a', operator, validOrderByOperators[operator].value],
-          ],
-          orderBy: [['a', 'asc']],
-        },
-        documentSchema);
+        const result = validateQuery(
+          {
+            where: [
+              ['a', operator, validOrderByOperators[operator].value],
+            ],
+            orderBy: [['a', 'asc']],
+          },
+          documentSchema,
+        );
 
         expect(result).to.be.instanceOf(ValidationResult);
         expect(result.isValid()).to.be.true();
@@ -1567,10 +1637,12 @@ describe('validateQueryFactory', () => {
 
   describe('startAt', () => {
     it('should return valid result if "startAt" is a number', () => {
-      const result = validateQuery({
-        startAt: 1,
-      },
-      documentSchema);
+      const result = validateQuery(
+        {
+          startAt: 1,
+        },
+        documentSchema,
+      );
 
       expect(result).to.be.instanceOf(ValidationResult);
       expect(result.isValid()).to.be.true();
@@ -1578,10 +1650,12 @@ describe('validateQueryFactory', () => {
 
     nonNumberAndUndefinedTestCases.forEach(({ type, value }) => {
       it(`should return invalid result if "startAt" is not a number, but ${type}`, () => {
-        const result = validateQuery({
-          startAt: value,
-        },
-        documentSchema);
+        const result = validateQuery(
+          {
+            startAt: value,
+          },
+          documentSchema,
+        );
 
         expect(result).to.be.instanceOf(ValidationResult);
         expect(result.isValid()).to.be.false();
@@ -1592,20 +1666,24 @@ describe('validateQueryFactory', () => {
     });
 
     it('should return valid result if "startAt" is up to 20000', () => {
-      const result = validateQuery({
-        startAt: 20000,
-      },
-      documentSchema);
+      const result = validateQuery(
+        {
+          startAt: 20000,
+        },
+        documentSchema,
+      );
 
       expect(result).to.be.instanceOf(ValidationResult);
       expect(result.isValid()).to.be.true();
     });
 
     it('should return invalid result if "startAt" less than 1', () => {
-      const result = validateQuery({
-        startAt: 0,
-      },
-      documentSchema);
+      const result = validateQuery(
+        {
+          startAt: 0,
+        },
+        documentSchema,
+      );
 
       expect(result).to.be.instanceOf(ValidationResult);
       expect(result.isValid()).to.be.false();
@@ -1616,10 +1694,12 @@ describe('validateQueryFactory', () => {
     });
 
     it('should return invalid result if "startAt" more than 20000', () => {
-      const result = validateQuery({
-        startAt: 20001,
-      },
-      documentSchema);
+      const result = validateQuery(
+        {
+          startAt: 20001,
+        },
+        documentSchema,
+      );
 
       expect(result).to.be.instanceOf(ValidationResult);
       expect(result.isValid()).to.be.false();
@@ -1630,10 +1710,12 @@ describe('validateQueryFactory', () => {
     });
 
     it('should return invalid result if "startAt" is not an integer', () => {
-      const result = validateQuery({
-        startAt: 1.1,
-      },
-      documentSchema);
+      const result = validateQuery(
+        {
+          startAt: 1.1,
+        },
+        documentSchema,
+      );
 
       expect(result).to.be.instanceOf(ValidationResult);
       expect(result.isValid()).to.be.false();
@@ -1645,11 +1727,13 @@ describe('validateQueryFactory', () => {
 
   describe('startAfter', () => {
     it('should return invalid result if both "startAt" and "startAfter" are present', () => {
-      const result = validateQuery({
-        startAfter: 1,
-        startAt: 1,
-      },
-      documentSchema);
+      const result = validateQuery(
+        {
+          startAfter: 1,
+          startAt: 1,
+        },
+        documentSchema,
+      );
 
       expect(result).to.be.instanceOf(ValidationResult);
       expect(result.isValid()).to.be.false();
@@ -1662,10 +1746,12 @@ describe('validateQueryFactory', () => {
     });
 
     it('should return valid result if "startAfter" is a number', () => {
-      const result = validateQuery({
-        startAfter: 1,
-      },
-      documentSchema);
+      const result = validateQuery(
+        {
+          startAfter: 1,
+        },
+        documentSchema,
+      );
 
       expect(result).to.be.instanceOf(ValidationResult);
       expect(result.isValid()).to.be.true();
@@ -1673,10 +1759,12 @@ describe('validateQueryFactory', () => {
 
     nonNumberAndUndefinedTestCases.forEach(({ type, value }) => {
       it(`should return invalid result if "startAfter" is not a number, but ${type}`, () => {
-        const result = validateQuery({
-          startAfter: value,
-        },
-        documentSchema);
+        const result = validateQuery(
+          {
+            startAfter: value,
+          },
+          documentSchema,
+        );
 
         expect(result).to.be.instanceOf(ValidationResult);
         expect(result.isValid()).to.be.false();
@@ -1687,20 +1775,24 @@ describe('validateQueryFactory', () => {
     });
 
     it('should return valid result if "startAfter" is up to 20000', () => {
-      const result = validateQuery({
-        startAfter: 20000,
-      },
-      documentSchema);
+      const result = validateQuery(
+        {
+          startAfter: 20000,
+        },
+        documentSchema,
+      );
 
       expect(result).to.be.instanceOf(ValidationResult);
       expect(result.isValid()).to.be.true();
     });
 
     it('should return invalid result if "startAfter" less than 1', () => {
-      const result = validateQuery({
-        startAfter: 0,
-      },
-      documentSchema);
+      const result = validateQuery(
+        {
+          startAfter: 0,
+        },
+        documentSchema,
+      );
 
       expect(result).to.be.instanceOf(ValidationResult);
       expect(result.isValid()).to.be.false();
@@ -1711,10 +1803,12 @@ describe('validateQueryFactory', () => {
     });
 
     it('should return invalid result if "startAfter" more than 20000', () => {
-      const result = validateQuery({
-        startAfter: 20001,
-      },
-      documentSchema);
+      const result = validateQuery(
+        {
+          startAfter: 20001,
+        },
+        documentSchema,
+      );
 
       expect(result).to.be.instanceOf(ValidationResult);
       expect(result.isValid()).to.be.false();
@@ -1725,10 +1819,12 @@ describe('validateQueryFactory', () => {
     });
 
     it('should return invalid result if "startAfter" is not an integer', () => {
-      const result = validateQuery({
-        startAfter: 1.1,
-      },
-      documentSchema);
+      const result = validateQuery(
+        {
+          startAfter: 1.1,
+        },
+        documentSchema,
+      );
 
       expect(result).to.be.instanceOf(ValidationResult);
       expect(result.isValid()).to.be.false();

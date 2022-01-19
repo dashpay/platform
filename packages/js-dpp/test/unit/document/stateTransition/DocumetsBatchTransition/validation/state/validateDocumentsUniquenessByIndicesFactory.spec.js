@@ -43,7 +43,9 @@ describe('validateDocumentsUniquenessByIndices', () => {
     });
 
     const result = await validateDocumentsUniquenessByIndices(
-      ownerId, noIndexDocumentTransitions, dataContract,
+      ownerId,
+      noIndexDocumentTransitions,
+      dataContract,
     );
 
     expect(result).to.be.an.instanceOf(ValidationResult);
@@ -81,7 +83,9 @@ describe('validateDocumentsUniquenessByIndices', () => {
       .resolves([william]);
 
     const result = await validateDocumentsUniquenessByIndices(
-      ownerId, documentTransitions, dataContract,
+      ownerId,
+      documentTransitions,
+      dataContract,
     );
 
     expect(result).to.be.an.instanceOf(ValidationResult);
@@ -146,7 +150,9 @@ describe('validateDocumentsUniquenessByIndices', () => {
       .resolves([william]);
 
     const result = await validateDocumentsUniquenessByIndices(
-      ownerId, documentTransitions, dataContract,
+      ownerId,
+      documentTransitions,
+      dataContract,
     );
 
     expectValidationError(result, DuplicateUniqueIndexError, 4);
@@ -204,7 +210,9 @@ describe('validateDocumentsUniquenessByIndices', () => {
       .resolves([indexedDocument]);
 
     const result = await validateDocumentsUniquenessByIndices(
-      ownerId, indexedDocumentTransitions, dataContract,
+      ownerId,
+      indexedDocumentTransitions,
+      dataContract,
     );
 
     expect(result).to.be.an.instanceOf(ValidationResult);
@@ -231,7 +239,9 @@ describe('validateDocumentsUniquenessByIndices', () => {
       .resolves([uniqueDatesDocument]);
 
     const result = await validateDocumentsUniquenessByIndices(
-      ownerId, uniqueDatesDocumentTransitions, dataContract,
+      ownerId,
+      uniqueDatesDocumentTransitions,
+      dataContract,
     );
 
     expect(result.isValid()).to.be.true();

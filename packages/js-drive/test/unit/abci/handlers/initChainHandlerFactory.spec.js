@@ -227,8 +227,6 @@ describe('initChainHandlerFactory', () => {
         { isTransactional: false },
       ]);
     });
-    expect(registerTopLevelDomainMock).to.have.been.calledOnceWithExactly(
-      'dash', dataContracts[1], dpnsOwnerId, new Date(request.time.seconds.toNumber() * 1000),
-    );
+    expect(registerTopLevelDomainMock).to.have.been.calledOnceWithExactly('dash', dataContracts[1], dpnsOwnerId, new Date(request.time.seconds.toNumber() * 1000));
   });
 });

@@ -370,7 +370,9 @@ function createDIContainer(options) {
     })).singleton(),
 
     logJsonFileStream: asFunction((logJsonFilePath) => fs.createWriteStream(logJsonFilePath, { flags: 'a' }))
-      .disposer(async (stream) => new Promise((resolve) => stream.end(resolve))).singleton(),
+      .disposer(async (stream) => new Promise((resolve) => {
+        stream.end(resolve);
+      })).singleton(),
 
     loggerStreams: asFunction((
       logStdoutLevel,
@@ -1002,7 +1004,8 @@ function createDIContainer(options) {
       );
 
       const cachedRepository = new CachedStateRepositoryDecorator(
-        stateRepository, dataContractCache,
+        stateRepository,
+        dataContractCache,
       );
 
       if (!logStateRepository) {

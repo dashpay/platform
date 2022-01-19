@@ -44,9 +44,7 @@ function verifyChainLockQueryHandlerFactory(
         'Invalid chainLock format',
       );
 
-      throw new InvalidArgumentAbciError(
-        'Invalid ChainLock format', { chainLock: data.toString('hex') },
-      );
+      throw new InvalidArgumentAbciError('Invalid ChainLock format', { chainLock: data.toString('hex') });
     }
 
     let isVerified;
@@ -69,9 +67,7 @@ function verifyChainLockQueryHandlerFactory(
     if (!isVerified) {
       logger.debug(`Invalid chainLock for height ${chainLock.height}`);
 
-      throw new InvalidArgumentAbciError(
-        'ChainLock verification failed', chainLock.toJSON(),
-      );
+      throw new InvalidArgumentAbciError('ChainLock verification failed', chainLock.toJSON());
     }
 
     logger.debug(`ChainLock is valid for height ${chainLock.height}`);

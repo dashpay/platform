@@ -105,7 +105,8 @@ describe('e2e', () => {
       it('should publish "Contacts" data contract', async () => {
         // 1. Create and broadcast data contract
         dataContract = await bobClient.platform.contracts.create(
-          dataContractDocumentSchemas, bobIdentity,
+          dataContractDocumentSchemas,
+          bobIdentity,
         );
 
         await bobClient.platform.contracts.publish(dataContract, bobIdentity);
@@ -257,7 +258,9 @@ describe('e2e', () => {
       it('should be able to approve contact request', async () => {
         // 1. Create and broadcast contact approval document
         aliceContactAcceptance = await aliceClient.platform.documents.create(
-          'contacts.contact', aliceIdentity, {
+          'contacts.contact',
+          aliceIdentity,
+          {
             toUserId: bobIdentity.getId(),
             publicKey: aliceIdentity.getPublicKeyById(0).getData(),
           },

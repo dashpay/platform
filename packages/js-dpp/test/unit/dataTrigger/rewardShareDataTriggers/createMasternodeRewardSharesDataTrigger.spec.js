@@ -74,9 +74,7 @@ describe('createMasternodeRewardSharesDataTrigger', () => {
     // documentsFixture contains percentage = 500
     documentTransition.data.percentage = 9501;
 
-    const result = await createRewardShareDataTrigger(
-      documentTransition, contextMock, topLevelIdentityId,
-    );
+    const result = await createRewardShareDataTrigger(documentTransition, contextMock);
 
     expect(result).to.be.an.instanceOf(DataTriggerExecutionResult);
     expect(result.isOk()).to.be.false();
@@ -95,9 +93,7 @@ describe('createMasternodeRewardSharesDataTrigger', () => {
   it('should return an error if payToId does not exist', async () => {
     stateRepositoryMock.fetchIdentity.resolves(topLevelIdentityId);
 
-    const result = await createRewardShareDataTrigger(
-      documentTransition, contextMock, topLevelIdentityId,
-    );
+    const result = await createRewardShareDataTrigger(documentTransition, contextMock);
 
     expect(result).to.be.an.instanceOf(DataTriggerExecutionResult);
     expect(result.isOk()).to.be.false();
@@ -116,9 +112,7 @@ describe('createMasternodeRewardSharesDataTrigger', () => {
   it('should return an error if ownerId is not a masternode identity', async () => {
     contextMock.getOwnerId.returns(getIdentityFixture().getId());
 
-    const result = await createRewardShareDataTrigger(
-      documentTransition, contextMock, topLevelIdentityId,
-    );
+    const result = await createRewardShareDataTrigger(documentTransition, contextMock);
 
     expect(result).to.be.an.instanceOf(DataTriggerExecutionResult);
     expect(result.isOk()).to.be.false();
@@ -133,9 +127,7 @@ describe('createMasternodeRewardSharesDataTrigger', () => {
   });
 
   it('should pass', async () => {
-    const result = await createRewardShareDataTrigger(
-      documentTransition, contextMock, topLevelIdentityId,
-    );
+    const result = await createRewardShareDataTrigger(documentTransition, contextMock);
 
     expect(result).to.be.an.instanceOf(DataTriggerExecutionResult);
     expect(result.isOk()).to.be.true();

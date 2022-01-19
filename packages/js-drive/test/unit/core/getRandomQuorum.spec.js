@@ -32,9 +32,7 @@ describe('getRandomQuorum', () => {
     const result = getRandomQuorum(smlMock, quorumType, Buffer.alloc(1));
 
     expect(smlMock.getQuorumsOfType).to.have.been.calledOnceWithExactly(quorumType);
-    expect(smlMock.getQuorum).to.have.been.calledOnceWithExactly(
-      quorumType, '20',
-    );
+    expect(smlMock.getQuorum).to.have.been.calledOnceWithExactly(quorumType, '20');
     expect(result).to.equals(randomQuorum);
   });
 

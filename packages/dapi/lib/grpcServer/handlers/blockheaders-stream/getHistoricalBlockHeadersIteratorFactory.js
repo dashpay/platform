@@ -44,7 +44,8 @@ function getHistoricalBlockHeadersIteratorFactory(coreRpcApi) {
       // TODO: figure out whether it's possible to omit new BlockHeader() conversion
       // and directly send bytes to the client
       const blockHeaders = (await coreRpcApi.getBlockHeaders(
-        blockHash, blocksToScan,
+        blockHash,
+        blocksToScan,
       )).map((rawBlockHeader) => new BlockHeader(Buffer.from(rawBlockHeader, 'hex')));
 
       yield blockHeaders;

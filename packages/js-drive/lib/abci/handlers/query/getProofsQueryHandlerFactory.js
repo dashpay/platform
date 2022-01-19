@@ -87,7 +87,8 @@ function getProofsQueryHandlerFactory(
         signatureLlmqHash,
         signature,
         ...previousRootTree.getFullProofForOneLeaf(
-          previousIdentitiesStoreRootTreeLeaf, identityIds,
+          previousIdentitiesStoreRootTreeLeaf,
+          identityIds,
         ),
       };
     }
@@ -97,7 +98,8 @@ function getProofsQueryHandlerFactory(
         signatureLlmqHash,
         signature,
         ...previousRootTree.getFullProofForOneLeaf(
-          previousDataContractsStoreRootTreeLeaf, dataContractIds,
+          previousDataContractsStoreRootTreeLeaf,
+          dataContractIds,
         ),
       };
     }

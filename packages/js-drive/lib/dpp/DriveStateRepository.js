@@ -76,9 +76,7 @@ class DriveStateRepository {
 
     await Promise.all(
       publicKeyHashes.map(async (publicKeyHash) => this.publicKeyToIdentityIdRepository
-        .store(
-          publicKeyHash, identityId, transaction,
-        )),
+        .store(publicKeyHash, identityId, transaction)),
     );
   }
 
@@ -130,9 +128,7 @@ class DriveStateRepository {
     // noinspection UnnecessaryLocalVariableJS
     const identityIds = await Promise.all(
       publicKeyHashes.map(async (publicKeyHash) => (
-        this.publicKeyToIdentityIdRepository.fetch(
-          publicKeyHash, transaction,
-        )
+        this.publicKeyToIdentityIdRepository.fetch(publicKeyHash, transaction)
       )),
     );
 

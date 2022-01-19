@@ -67,11 +67,13 @@ describe('CachedStateRepositoryDecorator', () => {
       const publicKeyHashes = identity.getPublicKeys().map((pk) => pk.hash());
 
       await cachedStateRepository.storeIdentityPublicKeyHashes(
-        identity.getId(), publicKeyHashes,
+        identity.getId(),
+        publicKeyHashes,
       );
 
       expect(stateRepositoryMock.storeIdentityPublicKeyHashes).to.be.calledOnceWithExactly(
-        identity.getId(), publicKeyHashes,
+        identity.getId(),
+        publicKeyHashes,
       );
     });
   });

@@ -116,7 +116,9 @@ describe('getHistoricalTransactionsIteratorFactory', () => {
     expect(coreRpcMock.getMerkleBlocks.callCount).to.be.equal(1);
     expect(
       coreRpcMock.getMerkleBlocks.getCall(0).calledWith(
-        bloomFilter.toBuffer().toString('hex'), mockData.blocks[0].hash, 580,
+        bloomFilter.toBuffer().toString('hex'),
+        mockData.blocks[0].hash,
+        580,
       ),
     ).to.be.true();
 
@@ -153,7 +155,9 @@ describe('getHistoricalTransactionsIteratorFactory', () => {
     expect(coreRpcMock.getMerkleBlocks.callCount).to.be.equal(1);
     expect(
       coreRpcMock.getMerkleBlocks.getCall(0).calledWith(
-        bloomFilter.toBuffer().toString('hex'), mockData.blocks[0].hash, 2000,
+        bloomFilter.toBuffer().toString('hex'),
+        mockData.blocks[0].hash,
+        2000,
       ),
     ).to.be.true();
 
@@ -173,7 +177,9 @@ describe('getHistoricalTransactionsIteratorFactory', () => {
     expect(coreRpcMock.getMerkleBlocks.callCount).to.be.equal(2);
     expect(
       coreRpcMock.getMerkleBlocks.getCall(1).calledWith(
-        bloomFilter.toBuffer().toString('hex'), mockData.blocks[2].hash, 2000,
+        bloomFilter.toBuffer().toString('hex'),
+        mockData.blocks[2].hash,
+        2000,
       ),
     ).to.be.true();
 
@@ -187,7 +193,9 @@ describe('getHistoricalTransactionsIteratorFactory', () => {
     expect(coreRpcMock.getMerkleBlocks.callCount).to.be.equal(3);
     expect(
       coreRpcMock.getMerkleBlocks.getCall(2).calledWith(
-        bloomFilter.toBuffer().toString('hex'), mockData.blocks[3].hash, 123,
+        bloomFilter.toBuffer().toString('hex'),
+        mockData.blocks[3].hash,
+        123,
       ),
     ).to.be.true();
 
@@ -222,7 +230,9 @@ describe('getHistoricalTransactionsIteratorFactory', () => {
     expect(coreRpcMock.getMerkleBlocks.callCount).to.be.equal(1);
     expect(
       coreRpcMock.getMerkleBlocks.getCall(0).calledWith(
-        bloomFilter.toBuffer().toString('hex'), mockData.blocks[0].hash, 580,
+        bloomFilter.toBuffer().toString('hex'),
+        mockData.blocks[0].hash,
+        580,
       ),
     ).to.be.true();
 

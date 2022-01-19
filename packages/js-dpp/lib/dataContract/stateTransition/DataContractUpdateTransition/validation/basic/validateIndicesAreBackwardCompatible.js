@@ -55,9 +55,7 @@ function getWronglyUpdatedNonUniqueIndex(nameIndexMap, documentType, existingSch
     // later check will return nothing
     const newIndexSnapshot = {
       name: indexDefinition.name,
-      properties: newIndexDefinition.properties.slice(
-        0, indexDefinition.properties.length,
-      ),
+      properties: newIndexDefinition.properties.slice(0, indexDefinition.properties.length),
     };
 
     if (!serializer.encode(indexDefinition).equals(
@@ -110,34 +108,36 @@ function getNewUniqueIndex(documentType, existingSchema, newSchema) {
  *
  * @param {string} documentType
  * @param {object} existingSchema
- * @param {object[]} newDocumentDefinitions
+ * @param {object} newDocumentDefinitions
  *
  * @returns {object}
  */
-function getWronglyConstructedNewIndex(documentType, existingSchema, newDocumentDefinitions) {
+function getWronglyConstructedNewIndex(
+  documentType,
+  existingSchema,
+  newDocumentDefinitions,
+) {
   const newSchemaIndices = lodashGet(newDocumentDefinitions, `${documentType}.indices`);
 
   const existingIndexNames = (existingSchema.indices || []).map(
     (indexDefinition) => indexDefinition.name,
   );
 
-  const existingIndexedProperties = new Set((existingSchema.indices || []).reduce(
-    (properties, indexDefinition) => [
+  const existingIndexedProperties = new Set((existingSchema.indices || [])
+    .reduce((properties, indexDefinition) => [
       ...properties,
       ...indexDefinition.properties.map((definition) => Object.keys(definition)[0]),
-    ], [],
-  ));
+    ], []));
 
   // Build an index of all possible allowed combinations
   // of old indices to check later
-  const existingIndexSnapshots = (existingSchema.indices || []).reduce(
-    (snapshots, indexDefinition) => [
+  const existingIndexSnapshots = (existingSchema.indices || [])
+    .reduce((snapshots, indexDefinition) => [
       ...snapshots,
       ...indexDefinition.properties.map((_, index) => (
         serializer.encode(indexDefinition.properties.slice(0, index + 1)).toString('hex')
       )),
-    ], [],
-  );
+    ], []);
 
   // Gather only newly defined indices
   const newIndices = (newSchemaIndices || []).filter(
@@ -175,7 +175,10 @@ function getWronglyConstructedNewIndex(documentType, existingSchema, newDocument
  *
  * @returns {ValidationResult}
  */
-function validateIndicesAreBackwardCompatible(existingDocumentDefinitions, newDocumentDefinitions) {
+function validateIndicesAreBackwardCompatible(
+  existingDocumentDefinitions,
+  newDocumentDefinitions,
+) {
   const result = new ValidationResult();
 
   Object.entries(existingDocumentDefinitions)
@@ -195,9 +198,7 @@ function validateIndicesAreBackwardCompatible(existingDocumentDefinitions, newDo
 
       if (changedUniqueExistingIndex !== undefined) {
         result.addError(
-          new DataContractUniqueIndicesChangedError(
-            documentType, changedUniqueExistingIndex.name,
-          ),
+          new DataContractUniqueIndicesChangedError(documentType, changedUniqueExistingIndex.name),
         );
 
         return true;
@@ -211,36 +212,37 @@ function validateIndicesAreBackwardCompatible(existingDocumentDefinitions, newDo
 
       if (wronglyUpdatedIndex !== undefined) {
         result.addError(
-          new DataContractInvalidIndexDefinitionUpdateError(
-            documentType, wronglyUpdatedIndex.name,
-          ),
+          new DataContractInvalidIndexDefinitionUpdateError(documentType, wronglyUpdatedIndex.name),
         );
 
         return true;
       }
 
       const newUniqueIndex = getNewUniqueIndex(
-        documentType, existingSchema, newDocumentDefinitions,
+        documentType,
+        existingSchema,
+        newDocumentDefinitions,
       );
 
       if (newUniqueIndex !== undefined) {
         result.addError(
-          new DataContractHaveNewUniqueIndexError(
-            documentType, newUniqueIndex.name,
-          ),
+          new DataContractHaveNewUniqueIndexError(documentType, newUniqueIndex.name),
         );
 
         return true;
       }
 
       const wronglyConstructedNewIndex = getWronglyConstructedNewIndex(
-        documentType, existingSchema, newDocumentDefinitions,
+        documentType,
+        existingSchema,
+        newDocumentDefinitions,
       );
 
       if (wronglyConstructedNewIndex !== undefined) {
         result.addError(
           new DataContractInvalidIndexDefinitionUpdateError(
-            documentType, wronglyConstructedNewIndex.name,
+            documentType,
+            wronglyConstructedNewIndex.name,
           ),
         );
 

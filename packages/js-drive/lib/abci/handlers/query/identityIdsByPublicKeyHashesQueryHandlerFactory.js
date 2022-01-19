@@ -48,11 +48,9 @@ function identityIdsByPublicKeyHashesQueryHandlerFactory(
    */
   async function identityIdsByPublicKeyHashesQueryHandler(params, { publicKeyHashes }, request) {
     if (publicKeyHashes && publicKeyHashes.length > maxIdentitiesPerRequest) {
-      throw new InvalidArgumentAbciError(
-        `Maximum number of ${maxIdentitiesPerRequest} requested items exceeded.`, {
-          maxIdentitiesPerRequest,
-        },
-      );
+      throw new InvalidArgumentAbciError(`Maximum number of ${maxIdentitiesPerRequest} requested items exceeded.`, {
+        maxIdentitiesPerRequest,
+      });
     }
 
     // There is no signed state (current committed block height less then 2)

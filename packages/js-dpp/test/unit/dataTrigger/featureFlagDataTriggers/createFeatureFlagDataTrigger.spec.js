@@ -42,7 +42,9 @@ describe('createFeatureFlagDataTrigger', () => {
     documentTransition.data.enableAtHeight = 1;
 
     const result = await createFeatureFlagDataTrigger(
-      documentTransition, contextMock, topLevelIdentityId,
+      documentTransition,
+      contextMock,
+      topLevelIdentityId,
     );
 
     expect(result).to.be.an.instanceOf(DataTriggerExecutionResult);
@@ -58,7 +60,9 @@ describe('createFeatureFlagDataTrigger', () => {
     contextMock.getOwnerId.returns(Identifier.from(Buffer.alloc(32, 1)));
 
     const result = await createFeatureFlagDataTrigger(
-      documentTransition, contextMock, topLevelIdentityId,
+      documentTransition,
+      contextMock,
+      topLevelIdentityId,
     );
 
     expect(result).to.be.an.instanceOf(DataTriggerExecutionResult);
@@ -72,7 +76,9 @@ describe('createFeatureFlagDataTrigger', () => {
 
   it('should pass', async () => {
     const result = await createFeatureFlagDataTrigger(
-      documentTransition, contextMock, topLevelIdentityId,
+      documentTransition,
+      contextMock,
+      topLevelIdentityId,
     );
 
     expect(result).to.be.an.instanceOf(DataTriggerExecutionResult);

@@ -108,7 +108,10 @@ function getDocumentsHandlerFactory(driveClient) {
     const prove = request.getProve();
 
     const documentResponseBuffer = await driveClient.fetchDocuments(
-      Buffer.from(dataContractId), documentType, options, prove,
+      Buffer.from(dataContractId),
+      documentType,
+      options,
+      prove,
     );
 
     return GetDocumentsResponse.deserializeBinary(documentResponseBuffer);

@@ -16,7 +16,8 @@ async function sweepWallet(opts = {}) {
   // eslint-disable-next-line no-async-promise-executor,consistent-return
   return new Promise(async (resolve, reject) => {
     if (self.walletType !== WALLET_TYPES.PRIVATEKEY) {
-      return reject(new Error('Can only sweep wallet initialized from privateKey'));
+      reject(new Error('Can only sweep wallet initialized from privateKey'));
+      return;
     }
 
     const account = await self.getAccount({ index: 0 });
@@ -24,7 +25,8 @@ async function sweepWallet(opts = {}) {
 
     const balance = await account.getTotalBalance();
     if (balance <= 0) {
-      return reject(new Error(`Cannot sweep an empty private key (current balance: ${balance})`));
+      reject(new Error(`Cannot sweep an empty private key (current balance: ${balance})`));
+      return;
     }
 
     let newWallet;
@@ -48,13 +50,13 @@ async function sweepWallet(opts = {}) {
 
       logger.info(`SweepWallet: ${balance} of ${account.getAddress().address} to ${recipient} transfered. Txid :${txid}`);
 
-      return resolve(newWallet);
+      resolve(newWallet);
     } catch (err) {
       if (newWallet) {
         await newWallet.disconnect();
       }
 
-      return reject(err);
+      reject(err);
     }
   });
 }

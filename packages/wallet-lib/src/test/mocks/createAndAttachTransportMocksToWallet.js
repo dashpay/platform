@@ -10,7 +10,9 @@ module.exports = async function createAndAttachTransportMocksToWallet(wallet, si
 
   const accountSyncPromise = wallet.getAccount();
   // Breaking the event loop to start wallet syncing
-  await new Promise((resolve) => setTimeout(resolve, 0));
+  await new Promise((resolve) => {
+    setTimeout(resolve, 0);
+  });
   // Emitting tx stream end to make wallet sync finish
   txStreamMock.emit(TxStreamMock.EVENTS.end);
   // Waiting for wallet to sync

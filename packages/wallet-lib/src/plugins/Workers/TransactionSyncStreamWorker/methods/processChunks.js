@@ -57,17 +57,20 @@ async function processChunks(dataChunk) {
       if (isBrowser()) {
         // Under browser environment, grpc-web doesn't call error and end events
         // so we call it by ourselves
-        await new Promise((resolveCancel) => setImmediate(() => {
-          self.stream.cancel();
-          const error = new GrpcError(GrpcErrorCodes.CANCELLED, 'Cancelled on client');
+        await new Promise((resolveCancel) => {
+          setImmediate(() => {
+            self.stream.cancel();
+            const error = new GrpcError(GrpcErrorCodes.CANCELLED, 'Cancelled on client');
 
-          // call onError events
-          self.stream.f.forEach((func) => func(error));
+            // call onError events
+            self.stream.f.forEach((func) => func(error));
 
-          // call onEnd events
-          self.stream.c.forEach((func) => func());
-          resolveCancel();
-        }));
+            // call onEnd events
+            self.stream.c.forEach((func) => func());
+
+            resolveCancel();
+          });
+        });
       } else {
         // If there are some new addresses being imported
         // to the storage, that mean that we hit the gap limit
@@ -80,10 +83,12 @@ async function processChunks(dataChunk) {
         // Wrapping `cancel` in `setImmediate` due to bug with double-free
         // explained here (https://github.com/grpc/grpc-node/issues/1652)
         // and here (https://github.com/nodejs/node/issues/38964)
-        await new Promise((resolveCancel) => setImmediate(() => {
-          self.stream.cancel();
-          resolveCancel();
-        }));
+        await new Promise((resolveCancel) => {
+          setImmediate(() => {
+            self.stream.cancel();
+            resolveCancel();
+          });
+        });
       }
     }
   }

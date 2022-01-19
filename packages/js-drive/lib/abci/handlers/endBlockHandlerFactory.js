@@ -95,7 +95,9 @@ function endBlockHandlerFactory(
     const documentsTransaction = blockExecutionStoreTransactions.getTransaction('documents');
 
     const updateConsensusParamsFeatureFlag = await getFeatureFlagForHeight(
-      featureFlagTypes.UPDATE_CONSENSUS_PARAMS, height, documentsTransaction,
+      featureFlagTypes.UPDATE_CONSENSUS_PARAMS,
+      height,
+      documentsTransaction,
     );
 
     let consensusParamUpdates;

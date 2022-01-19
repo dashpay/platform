@@ -126,7 +126,10 @@ describe('subscribeToNewBlockHeaders', () => {
 
     mediator.emit(ProcessMediator.EVENTS.HISTORICAL_DATA_SENT);
 
-    await new Promise((resolve) => setImmediate(resolve));
+    await new Promise((resolve) => {
+      setImmediate(resolve);
+    });
+
     mediator.emit(ProcessMediator.EVENTS.CLIENT_DISCONNECTED);
 
     expect(receivedHeaders).to.deep.equal(blockHeaders);
@@ -157,7 +160,10 @@ describe('subscribeToNewBlockHeaders', () => {
 
     mediator.emit(ProcessMediator.EVENTS.HISTORICAL_DATA_SENT);
 
-    await new Promise((resolve) => setImmediate(resolve));
+    await new Promise((resolve) => {
+      setImmediate(resolve);
+    });
+
     mediator.emit(ProcessMediator.EVENTS.CLIENT_DISCONNECTED);
 
     const expectedHeaders = { ...blockHeaders };

@@ -22,11 +22,9 @@ function connectToMongoDBFactory(connectionUrl) {
       return clients[connectionUrl];
     }
 
-    clients[connectionUrl] = await MongoClient.connect(
-      connectionUrl, {
-        useUnifiedTopology: true,
-      },
-    );
+    clients[connectionUrl] = await MongoClient.connect(connectionUrl, {
+      useUnifiedTopology: true,
+    });
 
     return clients[connectionUrl];
   }

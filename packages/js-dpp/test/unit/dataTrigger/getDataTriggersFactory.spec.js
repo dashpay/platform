@@ -44,19 +44,35 @@ describe('getDataTriggers', () => {
     topLevelIdentity = Identifier.from(dpnsOwnerId);
 
     createTrigger = new DataTrigger(
-      dataContractId, 'domain', AbstractDocumentTransition.ACTIONS.CREATE, createDomainDataTrigger, topLevelIdentity,
+      dataContractId,
+      'domain',
+      AbstractDocumentTransition.ACTIONS.CREATE,
+      createDomainDataTrigger,
+      topLevelIdentity,
     );
     updateTrigger = new DataTrigger(
-      dataContractId, 'domain', AbstractDocumentTransition.ACTIONS.REPLACE, rejectDataTrigger,
+      dataContractId,
+      'domain',
+      AbstractDocumentTransition.ACTIONS.REPLACE,
+      rejectDataTrigger,
     );
     deleteTrigger = new DataTrigger(
-      dataContractId, 'domain', AbstractDocumentTransition.ACTIONS.DELETE, rejectDataTrigger,
+      dataContractId,
+      'domain',
+      AbstractDocumentTransition.ACTIONS.DELETE,
+      rejectDataTrigger,
     );
     updatePreorderTrigger = new DataTrigger(
-      dataContractId, 'preorder', AbstractDocumentTransition.ACTIONS.REPLACE, rejectDataTrigger,
+      dataContractId,
+      'preorder',
+      AbstractDocumentTransition.ACTIONS.REPLACE,
+      rejectDataTrigger,
     );
     deletePreorderTrigger = new DataTrigger(
-      dataContractId, 'preorder', AbstractDocumentTransition.ACTIONS.DELETE, rejectDataTrigger,
+      dataContractId,
+      'preorder',
+      AbstractDocumentTransition.ACTIONS.DELETE,
+      rejectDataTrigger,
     );
 
     processMock = this.sinonSandbox.stub(process, 'env').value({
@@ -73,31 +89,41 @@ describe('getDataTriggers', () => {
 
   it('should return matching triggers', () => {
     let result = getDataTriggers(
-      dataContractId, createDocument.getType(), AbstractDocumentTransition.ACTIONS.CREATE,
+      dataContractId,
+      createDocument.getType(),
+      AbstractDocumentTransition.ACTIONS.CREATE,
     );
 
     expect(result).to.deep.equal([createTrigger]);
 
     result = getDataTriggers(
-      dataContractId, updateDocument.getType(), AbstractDocumentTransition.ACTIONS.REPLACE,
+      dataContractId,
+      updateDocument.getType(),
+      AbstractDocumentTransition.ACTIONS.REPLACE,
     );
 
     expect(result).to.deep.equal([updateTrigger]);
 
     result = getDataTriggers(
-      dataContractId, deleteDocument.getType(), AbstractDocumentTransition.ACTIONS.DELETE,
+      dataContractId,
+      deleteDocument.getType(),
+      AbstractDocumentTransition.ACTIONS.DELETE,
     );
 
     expect(result).to.deep.equal([deleteTrigger]);
 
     result = getDataTriggers(
-      dataContractId, 'preorder', AbstractDocumentTransition.ACTIONS.REPLACE,
+      dataContractId,
+      'preorder',
+      AbstractDocumentTransition.ACTIONS.REPLACE,
     );
 
     expect(result).to.deep.equal([updatePreorderTrigger]);
 
     result = getDataTriggers(
-      dataContractId, 'preorder', AbstractDocumentTransition.ACTIONS.DELETE,
+      dataContractId,
+      'preorder',
+      AbstractDocumentTransition.ACTIONS.DELETE,
     );
 
     expect(result).to.deep.equal([deletePreorderTrigger]);
@@ -105,7 +131,9 @@ describe('getDataTriggers', () => {
 
   it('should return empty trigger array for any other type except `domain`', () => {
     const result = getDataTriggers(
-      dataContractId, 'otherType', AbstractDocumentTransition.ACTIONS.CREATE,
+      dataContractId,
+      'otherType',
+      AbstractDocumentTransition.ACTIONS.CREATE,
     );
 
     expect(result).to.deep.equal([]);

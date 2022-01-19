@@ -194,53 +194,51 @@ class TransactionSyncStreamWorker extends Worker {
 
     this.syncIncomingTransactions = false;
 
-    let result;
-
     if (isBrowser()) {
       // Under browser environment, grpc-web doesn't call error and end events
       // so we call it by ourselves
       if (this.stream) {
-        result = await new Promise((resolve) => setImmediate(() => {
-          if (this.stream) {
-            this.stream.cancel();
+        return new Promise((resolve) => {
+          setImmediate(() => {
+            if (this.stream) {
+              this.stream.cancel();
 
-            const error = new GrpcError(GrpcErrorCodes.CANCELLED, 'Cancelled on client');
-            // call onError events
-            this.stream.f.forEach((func) => func(error));
+              const error = new GrpcError(GrpcErrorCodes.CANCELLED, 'Cancelled on client');
+              // call onError events
+              this.stream.f.forEach((func) => func(error));
 
-            // call onEnd events
-            this.stream.c.forEach((func) => func());
+              // call onEnd events
+              this.stream.c.forEach((func) => func());
 
-            this.stream = null;
-          }
+              this.stream = null;
+            }
 
-          resolve(true);
-        }));
-
-        return result;
+            resolve(true);
+          });
+        });
       }
     }
 
     // Wrapping `cancel` in `setImmediate` due to bug with double-free
     // explained here (https://github.com/grpc/grpc-node/issues/1652)
     // and here (https://github.com/nodejs/node/issues/38964)
-    result = new Promise((resolve) => setImmediate(() => {
-      if (this.stream) {
-        this.stream.cancel();
-        // When calling stream.cancel(), the stream will emit 'error' event
-        // with the code 'CANCELLED'.
-        // There are two cases when this happens: when the gap limit is filled
-        // and syncToTheGapLimit and the stream needs to be restarted with new parameters,
-        // and here, when stopping the worker.
-        // The code in stream worker distinguishes whether it need to reconnect or not by the fact
-        // that the old stream object is present or not. When it is set to null, it won't try to
-        // reconnect to the stream.
-        this.stream = null;
-      }
-      resolve(true);
-    }));
-
-    return result;
+    return new Promise((resolve) => {
+      setImmediate(() => {
+        if (this.stream) {
+          this.stream.cancel();
+          // When calling stream.cancel(), the stream will emit 'error' event
+          // with the code 'CANCELLED'.
+          // There are two cases when this happens: when the gap limit is filled
+          // and syncToTheGapLimit and the stream needs to be restarted with new parameters,
+          // and here, when stopping the worker.
+          // The code in stream worker distinguishes whether it need to reconnect or not by the fact
+          // that the old stream object is present or not. When it is set to null, it won't try to
+          // reconnect to the stream.
+          this.stream = null;
+        }
+        resolve(true);
+      });
+    });
   }
 
   setLastSyncedBlockHash(hash) {

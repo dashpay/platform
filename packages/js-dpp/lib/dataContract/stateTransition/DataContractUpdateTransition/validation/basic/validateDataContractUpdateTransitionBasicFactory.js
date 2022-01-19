@@ -117,9 +117,7 @@ function validateDataContractUpdateTransitionBasicFactory(
     if (baseDataContractDiff.length > 0) {
       const { op: operation, path: fieldPath } = baseDataContractDiff[0];
 
-      const error = new DataContractImmutablePropertiesUpdateError(
-        operation, fieldPath,
-      );
+      const error = new DataContractImmutablePropertiesUpdateError(operation, fieldPath);
       error.setDiff(baseDataContractDiff);
 
       result.addError(error);

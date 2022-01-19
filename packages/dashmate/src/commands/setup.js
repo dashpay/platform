@@ -56,41 +56,43 @@ class SetupCommand extends BaseCommand {
       throw new Error('node-count flag should be not less than 3');
     }
 
-    const tasks = new Listr([
-      {
-        title: 'Set configuration preset',
-        task: async (ctx, task) => {
-          if (ctx.preset === undefined) {
-            ctx.preset = await task.prompt([
-              {
-                type: 'select',
-                message: 'Select configuration preset',
-                choices: PRESETS,
-                initial: 'testnet',
-              },
-            ]);
-          }
+    const tasks = new Listr(
+      [
+        {
+          title: 'Set configuration preset',
+          task: async (ctx, task) => {
+            if (ctx.preset === undefined) {
+              ctx.preset = await task.prompt([
+                {
+                  type: 'select',
+                  message: 'Select configuration preset',
+                  choices: PRESETS,
+                  initial: 'testnet',
+                },
+              ]);
+            }
+          },
         },
-      },
-      {
-        task: (ctx) => {
-          if (ctx.preset === PRESET_LOCAL) {
-            return setupLocalPresetTask();
-          }
+        {
+          task: (ctx) => {
+            if (ctx.preset === PRESET_LOCAL) {
+              return setupLocalPresetTask();
+            }
 
-          return setupRegularPresetTask();
+            return setupRegularPresetTask();
+          },
+        },
+      ],
+      {
+        renderer: isVerbose ? 'verbose' : 'default',
+        rendererOptions: {
+          showTimer: isVerbose,
+          clearOutput: false,
+          collapse: false,
+          showSubtasks: true,
         },
       },
-    ],
-    {
-      renderer: isVerbose ? 'verbose' : 'default',
-      rendererOptions: {
-        showTimer: isVerbose,
-        clearOutput: false,
-        collapse: false,
-        showSubtasks: true,
-      },
-    });
+    );
 
     try {
       await tasks.run({

@@ -32,21 +32,23 @@ class MintCommand extends ConfigBaseCommand {
       throw new Error('Only local network supports generation of dash');
     }
 
-    const tasks = new Listr([
+    const tasks = new Listr(
+      [
+        {
+          title: `Generate ${amount} dash to address`,
+          task: () => generateToAddressTask(config, amount),
+        },
+      ],
       {
-        title: `Generate ${amount} dash to address`,
-        task: () => generateToAddressTask(config, amount),
+        renderer: isVerbose ? 'verbose' : 'default',
+        rendererOptions: {
+          showTimer: isVerbose,
+          clearOutput: false,
+          collapse: false,
+          showSubtasks: true,
+        },
       },
-    ],
-    {
-      renderer: isVerbose ? 'verbose' : 'default',
-      rendererOptions: {
-        showTimer: isVerbose,
-        clearOutput: false,
-        collapse: false,
-        showSubtasks: true,
-      },
-    });
+    );
 
     try {
       await tasks.run({

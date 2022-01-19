@@ -69,9 +69,7 @@ describe('executeDataTriggersFactory', () => {
 
     const ownerId = bs58.decode('5zcXZpTLWFwZjKjq3ME5KVavtZa9YUaZESVzrndehBhq');
 
-    context = new DataTriggerExecutionContext(
-      null, ownerId, contractMock,
-    );
+    context = new DataTriggerExecutionContext(null, ownerId, contractMock);
 
     documentTransitions = getDocumentTransitionsFixture({
       create: [childDocument],
@@ -87,9 +85,7 @@ describe('executeDataTriggersFactory', () => {
   });
 
   it('should return an array of DataTriggerExecutionResult', async () => {
-    const dataTriggerExecutionResults = await executeDataTriggers(
-      documentTransitions, context,
-    );
+    const dataTriggerExecutionResults = await executeDataTriggers(documentTransitions, context);
 
     expect(dataTriggerExecutionResults).to.have.a.lengthOf(1);
 
@@ -111,9 +107,7 @@ describe('executeDataTriggersFactory', () => {
     const expectedTriggersCount = 3;
     expect(dpnsTriggers.length).to.equal(expectedTriggersCount);
 
-    const dataTriggerExecutionResults = await executeDataTriggers(
-      documentTransitions, context,
-    );
+    const dataTriggerExecutionResults = await executeDataTriggers(documentTransitions, context);
 
     expect(dataTriggerExecutionResults).to.have.a.lengthOf(expectedTriggersCount);
 
@@ -164,12 +158,13 @@ describe('executeDataTriggersFactory', () => {
       .returns([throwingDataTriggerMock]);
 
     context = new DataTriggerExecutionContext(
-      null, generateRandomIdentifier(), contractMock, stateTransitionHeaderMock,
+      null,
+      generateRandomIdentifier(),
+      contractMock,
+      stateTransitionHeaderMock,
     );
 
-    const dataTriggerExecutionResults = await executeDataTriggers(
-      documentTransitions, context,
-    );
+    const dataTriggerExecutionResults = await executeDataTriggers(documentTransitions, context);
 
     const expectedResultsCount = 3;
 

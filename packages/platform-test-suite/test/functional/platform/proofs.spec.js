@@ -40,7 +40,8 @@ describe('Platform', () => {
         it('should be able to get and verify proof that data contract exists with getIdentity', async () => {
           const dataContractResponseWithProof = await dashClient.getDAPIClient()
             .platform.getDataContract(
-              contractId, { prove: true },
+              contractId,
+              { prove: true },
             );
 
           const dataContractResponse = await dashClient.getDAPIClient().platform.getDataContract(
@@ -91,7 +92,8 @@ describe('Platform', () => {
           const dataContractId = generateRandomIdentifier();
 
           const dataContractWithProof = await dashClient.getDAPIClient().platform.getDataContract(
-            dataContractId, { prove: true },
+            dataContractId,
+            { prove: true },
           );
 
           const fullProof = dataContractWithProof.proof;
@@ -143,7 +145,8 @@ describe('Platform', () => {
             identity = identityAtKey5;
 
             const identityProof = await dashClient.getDAPIClient().platform.getIdentity(
-              identity.getId(), { prove: true },
+              identity.getId(),
+              { prove: true },
             );
 
             const fullProof = identityProof.proof;
@@ -188,7 +191,8 @@ describe('Platform', () => {
             const fakeIdentityId = generateRandomIdentifier();
 
             const identityProof = await dashClient.getDAPIClient().platform.getIdentity(
-              fakeIdentityId, { prove: true },
+              fakeIdentityId,
+              { prove: true },
             );
 
             const fullProof = identityProof.proof;
@@ -235,7 +239,8 @@ describe('Platform', () => {
 
             const identityProof = await dashClient.getDAPIClient().platform
               .getIdentitiesByPublicKeyHashes(
-                publicKeyHashes, { prove: true },
+                publicKeyHashes,
+                { prove: true },
               );
 
             const fullProof = identityProof.proof;
@@ -362,7 +367,8 @@ describe('Platform', () => {
 
             const identityProof = await dashClient.getDAPIClient().platform
               .getIdentityIdsByPublicKeyHashes(
-                publicKeyHashes, { prove: true },
+                publicKeyHashes,
+                { prove: true },
               );
 
             const fullProof = identityProof.proof;
@@ -440,32 +446,43 @@ describe('Platform', () => {
         ] = await Promise.all([
           dapiClient.platform.getIdentity(identityId, { prove: true }),
           dapiClient.platform.getIdentityIdsByPublicKeyHashes(
-            [identity.getPublicKeyById(0).getData()], { prove: true },
+            [identity.getPublicKeyById(0).getData()],
+            { prove: true },
           ),
           dapiClient.platform.getDataContract(contractId, { prove: true }),
-          dapiClient.platform.getDocuments(contractId, 'preorder', {
-            where: [['$id', '==', identityId]],
-            prove: true,
-          }),
+          dapiClient.platform.getDocuments(
+            contractId,
+            'preorder',
+            {
+              where: [['$id', '==', identityId]],
+              prove: true,
+            },
+          ),
           dapiClient.platform.getIdentitiesByPublicKeyHashes(
-            [identity.getPublicKeyById(0).getData()], { prove: true },
+            [identity.getPublicKeyById(0).getData()],
+            { prove: true },
           ),
         ]);
 
         const identityProof = MerkleProof.fromBuffer(
-          identityResponse.proof.rootTreeProof, blake3,
+          identityResponse.proof.rootTreeProof,
+          blake3,
         );
         const contractsProof = MerkleProof.fromBuffer(
-          contractsResponse.proof.rootTreeProof, blake3,
+          contractsResponse.proof.rootTreeProof,
+          blake3,
         );
         const documentsProof = MerkleProof.fromBuffer(
-          documentsResponse.proof.rootTreeProof, blake3,
+          documentsResponse.proof.rootTreeProof,
+          blake3,
         );
         const keysProof = MerkleProof.fromBuffer(
-          keysResponse.proof.rootTreeProof, blake3,
+          keysResponse.proof.rootTreeProof,
+          blake3,
         );
         const identitiesByPublicKeyHashesProof = MerkleProof.fromBuffer(
-          identitiesByPublicKeyHashesResponse.proof.rootTreeProof, blake3,
+          identitiesByPublicKeyHashesResponse.proof.rootTreeProof,
+          blake3,
         );
 
         const { rootHash: identityLeaf } = executeProof(

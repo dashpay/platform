@@ -59,9 +59,7 @@ describe('wrapInErrorHandlerFactory', () => {
   });
 
   it('should respond with internal error code if any Error is thrown in handler and respondWithInternalError enabled', async () => {
-    handler = wrapInErrorHandler(
-      methodMock, { respondWithInternalError: true },
-    );
+    handler = wrapInErrorHandler(methodMock, { respondWithInternalError: true });
 
     const error = new Error('Custom error');
 
@@ -75,9 +73,7 @@ describe('wrapInErrorHandlerFactory', () => {
   });
 
   it('should respond with internal error code if an InternalAbciError is thrown in handler and respondWithInternalError enabled', async () => {
-    handler = wrapInErrorHandler(
-      methodMock, { respondWithInternalError: true },
-    );
+    handler = wrapInErrorHandler(methodMock, { respondWithInternalError: true });
 
     const data = { sample: 'data' };
     const error = new InternalAbciError(new Error(), data);
@@ -107,9 +103,7 @@ describe('wrapInErrorHandlerFactory', () => {
 
     methodMock.throws(error);
 
-    handler = wrapInErrorHandler(
-      methodMock, { respondWithInternalError: true },
-    );
+    handler = wrapInErrorHandler(methodMock, { respondWithInternalError: true });
 
     const response = await handler(request);
 
@@ -128,9 +122,7 @@ describe('wrapInErrorHandlerFactory', () => {
 
     methodMock.throws(dppValidationError);
 
-    handler = wrapInErrorHandler(
-      methodMock, { respondWithInternalError: true },
-    );
+    handler = wrapInErrorHandler(methodMock, { respondWithInternalError: true });
 
     const response = await handler(request);
 

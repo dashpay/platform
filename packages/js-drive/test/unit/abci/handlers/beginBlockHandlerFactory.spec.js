@@ -104,8 +104,10 @@ describe('beginBlockHandlerFactory', () => {
     expect(blockExecutionContextMock.setLastCommitInfo).to.be.calledOnceWithExactly(lastCommitInfo);
 
     expect(updateSimplifiedMasternodeListMock).to.be.calledOnceWithExactly(
-      coreChainLockedHeight, { logger: loggerMock },
+      coreChainLockedHeight,
+      { logger: loggerMock },
     );
+
     expect(waitForChainLockedHeightMock).to.be.calledOnceWithExactly(coreChainLockedHeight);
     expect(blockExecutionDBTransactionsMock.abort).to.be.not.called();
     expect(dppMock.setProtocolVersion).to.have.been.calledOnceWithExactly(
@@ -161,7 +163,8 @@ describe('beginBlockHandlerFactory', () => {
     expect(blockExecutionContextMock.setLastCommitInfo).to.be.calledOnceWithExactly(lastCommitInfo);
 
     expect(updateSimplifiedMasternodeListMock).to.be.calledOnceWithExactly(
-      coreChainLockedHeight, { logger: loggerMock },
+      coreChainLockedHeight,
+      { logger: loggerMock },
     );
 
     expect(waitForChainLockedHeightMock).to.be.calledOnceWithExactly(coreChainLockedHeight);

@@ -47,13 +47,17 @@ describe('Platform', () => {
       // Broadcast Asset Lock transaction
       await account.broadcastTransaction(assetLockTransaction);
       const assetLockProof = await createAssetLockProof(
-        client.platform, assetLockTransaction, assetLockOutputIndex,
+        client.platform,
+        assetLockTransaction,
+        assetLockOutputIndex,
       );
 
       const {
         identity, identityCreateTransition,
-      } = await createIdentityCreateTransition(
-        client.platform, assetLockProof, assetLockPrivateKey,
+      } = createIdentityCreateTransition(
+        client.platform,
+        assetLockProof,
+        assetLockPrivateKey,
       );
 
       const hash = crypto.createHash('sha256')
@@ -78,8 +82,10 @@ describe('Platform', () => {
       const { rootHash: identityLeafRoot } = executeProof(identitiesProofBuffer);
 
       const identityProof = MerkleProof.fromBuffer(
-        rootTreeProof, blake3,
+        rootTreeProof,
+        blake3,
       );
+
       Buffer
         .from(
           identityProof.calculateRoot([1], [identityLeafRoot], 6),

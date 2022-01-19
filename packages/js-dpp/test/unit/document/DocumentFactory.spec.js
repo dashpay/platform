@@ -160,9 +160,7 @@ describe('DocumentFactory', () => {
 
       expect(fetchAndValidateDataContractMock).to.have.been.calledOnceWithExactly(rawDocument);
 
-      expect(validateDocumentMock).to.have.been.calledOnceWithExactly(
-        rawDocument, dataContract,
-      );
+      expect(validateDocumentMock).to.have.been.calledOnceWithExactly(rawDocument, dataContract);
     });
 
     it('should return new Document without validation if "skipValidation" option is passed', async function it() {

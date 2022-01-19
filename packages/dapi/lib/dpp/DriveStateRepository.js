@@ -24,7 +24,8 @@ class DriveStateRepository {
    */
   async fetchDataContract(contractIdentifier) {
     const dataContractProtoBuffer = await this.driveClient.fetchDataContract(
-      contractIdentifier, false,
+      contractIdentifier,
+      false,
     );
 
     const dataContractResponse = GetDataContractResponse.deserializeBinary(

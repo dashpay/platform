@@ -54,7 +54,8 @@ function createDocumentMongoDbRepositoryFactory(
     // As documents are always created in the next block
     // we don't need transaction for data contracts here
     const dataContract = await dataContractRepository.fetch(
-      dataContractId, dataContractTransaction,
+      dataContractId,
+      dataContractTransaction,
     );
 
     if (!dataContract) {

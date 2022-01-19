@@ -60,8 +60,10 @@ describe('Platform', () => {
 
       const {
         identityCreateTransition: invalidIdentityCreateTransition,
-      } = await createIdentityCreateTransition(
-        client.platform, assetLockProof, privateKey,
+      } = createIdentityCreateTransition(
+        client.platform,
+        assetLockProof,
+        privateKey,
       );
 
       let broadcastError;
@@ -96,8 +98,10 @@ describe('Platform', () => {
         identity: identityOne,
         identityCreateTransition: identityCreateTransitionOne,
         identityIndex: identityOneIndex,
-      } = await createIdentityCreateTransition(
-        client.platform, assetLockProof, privateKey,
+      } = createIdentityCreateTransition(
+        client.platform,
+        assetLockProof,
+        privateKey,
       );
 
       await client.platform.broadcastStateTransition(
@@ -118,8 +122,10 @@ describe('Platform', () => {
       // Creating transition that tries to spend the same transaction
       const {
         identityCreateTransition: identityCreateDoubleSpendTransition,
-      } = await createIdentityCreateTransition(
-        client.platform, assetLockProof, privateKey,
+      } = createIdentityCreateTransition(
+        client.platform,
+        assetLockProof,
+        privateKey,
       );
 
       let broadcastError;
@@ -244,8 +250,10 @@ describe('Platform', () => {
           await wait(5000);
         }
 
-        const identityCreateTransitionData = await createIdentityCreateTransition(
-          client.platform, assetLockProof, privateKey,
+        const identityCreateTransitionData = createIdentityCreateTransition(
+          client.platform,
+          assetLockProof,
+          privateKey,
         );
 
         const {
@@ -424,12 +432,18 @@ describe('Platform', () => {
         );
 
         // Creating normal transition
-        const identityTopUpTransitionOne = await createIdentityTopUpTransition(
-          client.platform, assetLockProof, privateKey, identity.getId(),
+        const identityTopUpTransitionOne = createIdentityTopUpTransition(
+          client.platform,
+          assetLockProof,
+          privateKey,
+          identity.getId(),
         );
         // Creating ST that tries to spend the same output
-        const conflictingTopUpStateTransition = await createIdentityTopUpTransition(
-          client.platform, assetLockProof, privateKey, identity.getId(),
+        const conflictingTopUpStateTransition = createIdentityTopUpTransition(
+          client.platform,
+          assetLockProof,
+          privateKey,
+          identity.getId(),
         );
 
         await client.platform.broadcastStateTransition(

@@ -12,7 +12,6 @@ const { getContactRequestDocumentFixture } = require('../../../../lib/test/fixtu
 
 describe('createContactRequestDataTrigger', () => {
   let context;
-  let dashPayIdentity;
   let stateRepositoryMock;
   let dataContract;
   let contactRequestDocument;
@@ -36,8 +35,6 @@ describe('createContactRequestDataTrigger', () => {
       contactRequestDocument.getOwnerId(),
       dataContract,
     );
-
-    dashPayIdentity = context.getOwnerId();
   });
 
   it('should successfully execute if document is valid', async () => {
@@ -48,7 +45,8 @@ describe('createContactRequestDataTrigger', () => {
     });
 
     const result = await createContactRequestDataTrigger(
-      documentTransition, context, dashPayIdentity,
+      documentTransition,
+      context,
     );
 
     expect(result).to.be.an.instanceOf(DataTriggerExecutionResult);
@@ -58,7 +56,8 @@ describe('createContactRequestDataTrigger', () => {
 
   it('should successfully execute if document has no `coreHeightCreatedAt` field', async () => {
     const result = await createContactRequestDataTrigger(
-      documentTransition, context, dashPayIdentity,
+      documentTransition,
+      context,
     );
 
     expect(result).to.be.an.instanceOf(DataTriggerExecutionResult);
@@ -73,9 +72,7 @@ describe('createContactRequestDataTrigger', () => {
       create: [contactRequestDocument],
     });
 
-    const result = await createContactRequestDataTrigger(
-      documentTransition, context, dashPayIdentity,
-    );
+    const result = await createContactRequestDataTrigger(documentTransition, context);
 
     expect(result).to.be.an.instanceOf(DataTriggerExecutionResult);
     expect(result.isOk()).to.be.false();

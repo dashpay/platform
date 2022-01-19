@@ -20,20 +20,22 @@ class StopCommand extends ConfigBaseCommand {
     stopNodeTask,
     config,
   ) {
-    const tasks = new Listr([
+    const tasks = new Listr(
+      [
+        {
+          task: async () => stopNodeTask(config),
+        },
+      ],
       {
-        task: async () => stopNodeTask(config),
+        renderer: isVerbose ? 'verbose' : 'default',
+        rendererOptions: {
+          showTimer: isVerbose,
+          clearOutput: false,
+          collapse: false,
+          showSubtasks: true,
+        },
       },
-    ],
-    {
-      renderer: isVerbose ? 'verbose' : 'default',
-      rendererOptions: {
-        showTimer: isVerbose,
-        clearOutput: false,
-        collapse: false,
-        showSubtasks: true,
-      },
-    });
+    );
 
     try {
       await tasks.run({

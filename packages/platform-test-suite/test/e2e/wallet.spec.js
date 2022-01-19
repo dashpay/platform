@@ -107,7 +107,9 @@ describe('e2e', () => {
 
         // Due to the limitations of DAPI, we need to wait for a block to be mined if we connected
         // in the moment when transaction already entered the mempool, but haven't been mined yet
-        await new Promise((resolve) => restoredAccount.once(EVENTS.BLOCKHEADER, resolve));
+        await new Promise((resolve) => {
+          restoredAccount.once(EVENTS.BLOCKHEADER, resolve);
+        });
 
         await waitForBalanceToChange(restoredAccount);
 

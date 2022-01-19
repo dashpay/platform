@@ -97,7 +97,9 @@ class MasternodeStatusCommand extends ConfigBaseCommand {
     let lastPaidTime;
     if (masternodeState === 'READY') {
       paymentQueuePosition = getPaymentQueuePosition(
-        masternodeDmnState, masternodeEnabledCount, coreBlocks,
+        masternodeDmnState,
+        masternodeEnabledCount,
+        coreBlocks,
       );
 
       // Determine last paid time

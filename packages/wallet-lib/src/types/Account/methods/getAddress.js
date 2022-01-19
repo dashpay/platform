@@ -1,6 +1,6 @@
 const { WALLET_TYPES } = require('../../../CONSTANTS');
 
-const getTypePathFromWalletType = (walletType, addressType = 'external', index, BIP44PATH) => {
+const getTypePathFromWalletType = (walletType, addressType, index, BIP44PATH) => {
   let type;
   let path;
 

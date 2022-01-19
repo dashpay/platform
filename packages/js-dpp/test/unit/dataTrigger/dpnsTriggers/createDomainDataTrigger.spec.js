@@ -105,14 +105,19 @@ describe('createDomainDataTrigger', () => {
 
   it('should successfully execute if document is valid', async () => {
     const result = await createDomainDataTrigger(
-      childDocumentTransition, context, topLevelIdentity,
+      childDocumentTransition,
+      context,
+      topLevelIdentity,
     );
 
     expect(result.isOk()).to.be.true();
   });
 
   it('should fail with invalid normalizedLabel', async () => {
-    childDocument = getChildDocumentFixture({ normalizedLabel: childDocument.getData().label });
+    childDocument = getChildDocumentFixture(
+      { normalizedLabel: childDocument.getData().label },
+    );
+
     stateRepositoryMock.fetchTransaction
       .withArgs(
         childDocument.getData().records.dashUniqueIdentityId,
@@ -124,7 +129,9 @@ describe('createDomainDataTrigger', () => {
     });
 
     const result = await createDomainDataTrigger(
-      childDocumentTransition, context, topLevelIdentity,
+      childDocumentTransition,
+      context,
+      topLevelIdentity,
     );
 
     expect(result).to.be.an.instanceOf(DataTriggerExecutionResult);
@@ -154,7 +161,9 @@ describe('createDomainDataTrigger', () => {
     });
 
     const result = await createDomainDataTrigger(
-      childDocumentTransition, context, topLevelIdentity,
+      childDocumentTransition,
+      context,
+      topLevelIdentity,
     );
 
     expect(result).to.be.an.instanceOf(DataTriggerExecutionResult);
@@ -193,7 +202,9 @@ describe('createDomainDataTrigger', () => {
     });
 
     const result = await createDomainDataTrigger(
-      childDocumentTransition, context, topLevelIdentity,
+      childDocumentTransition,
+      context,
+      topLevelIdentity,
     );
 
     expect(result).to.be.an.instanceOf(DataTriggerExecutionResult);
@@ -202,7 +213,9 @@ describe('createDomainDataTrigger', () => {
     const [error] = result.getErrors();
 
     expect(error).to.be.an.instanceOf(DataTriggerConditionError);
-    expect(error.message).to.equal(`ownerId ${childDocument.getOwnerId()} doesn't match dashUniqueIdentityId ${dashUniqueIdentityId}`);
+    expect(error.message).to.equal(
+      `ownerId ${childDocument.getOwnerId()} doesn't match dashUniqueIdentityId ${dashUniqueIdentityId}`,
+    );
   });
 
   it('should fail with invalid dashAliasIdentityId', async () => {
@@ -221,7 +234,9 @@ describe('createDomainDataTrigger', () => {
     });
 
     const result = await createDomainDataTrigger(
-      childDocumentTransition, context, topLevelIdentity,
+      childDocumentTransition,
+      context,
+      topLevelIdentity,
     );
 
     expect(result).to.be.an.instanceOf(DataTriggerExecutionResult);
@@ -230,7 +245,9 @@ describe('createDomainDataTrigger', () => {
     const [error] = result.getErrors();
 
     expect(error).to.be.an.instanceOf(DataTriggerConditionError);
-    expect(error.message).to.equal(`ownerId ${childDocument.getOwnerId()} doesn't match dashAliasIdentityId ${dashUniqueIdentityId}`);
+    expect(error.message).to.equal(
+      `ownerId ${childDocument.getOwnerId()} doesn't match dashAliasIdentityId ${dashUniqueIdentityId}`,
+    );
   });
 
   it('should fail with preorder document was not found', async () => {
@@ -243,7 +260,9 @@ describe('createDomainDataTrigger', () => {
     });
 
     const result = await createDomainDataTrigger(
-      childDocumentTransition, context, topLevelIdentity,
+      childDocumentTransition,
+      context,
+      topLevelIdentity,
     );
 
     expect(result).to.be.an.instanceOf(DataTriggerExecutionResult);
@@ -265,7 +284,9 @@ describe('createDomainDataTrigger', () => {
     });
 
     const result = await createDomainDataTrigger(
-      childDocumentTransition, context, topLevelIdentity,
+      childDocumentTransition,
+      context,
+      topLevelIdentity,
     );
 
     expect(result).to.be.an.instanceOf(DataTriggerExecutionResult);
@@ -285,7 +306,9 @@ describe('createDomainDataTrigger', () => {
     topLevelIdentity = Buffer.from('someIdentity');
 
     const result = await createDomainDataTrigger(
-      parentDocumentTransition, context, topLevelIdentity,
+      parentDocumentTransition,
+      context,
+      topLevelIdentity,
     );
 
     expect(result).to.be.an.instanceOf(DataTriggerExecutionResult);
@@ -303,7 +326,9 @@ describe('createDomainDataTrigger', () => {
     parentDocument.ownerId = Buffer.from('newId');
 
     const result = await createDomainDataTrigger(
-      childDocumentTransition, context, topLevelIdentity,
+      childDocumentTransition,
+      context,
+      topLevelIdentity,
     );
 
     expect(result).to.be.an.instanceOf(DataTriggerExecutionResult);
@@ -324,7 +349,9 @@ describe('createDomainDataTrigger', () => {
     });
 
     const result = await createDomainDataTrigger(
-      childDocumentTransition, context, topLevelIdentity,
+      childDocumentTransition,
+      context,
+      topLevelIdentity,
     );
 
     expect(result).to.be.an.instanceOf(DataTriggerExecutionResult);
@@ -344,7 +371,9 @@ describe('createDomainDataTrigger', () => {
     stateRepositoryMock.fetchDocuments.resolves([topDocument]);
 
     const result = await createDomainDataTrigger(
-      parentDocumentTransition, context, topLevelIdentity,
+      parentDocumentTransition,
+      context,
+      topLevelIdentity,
     );
 
     expect(result.isOk()).to.be.true();

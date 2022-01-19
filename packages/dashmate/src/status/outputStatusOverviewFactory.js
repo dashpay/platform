@@ -197,7 +197,9 @@ function outputStatusOverviewFactory(
     let paymentQueuePosition;
     if (config.get('core.masternode.enable') && masternodeStatus === 'Ready') {
       paymentQueuePosition = getPaymentQueuePosition(
-        masternodeState, masternodeEnabledCount, coreBlocks,
+        masternodeState,
+        masternodeEnabledCount,
+        coreBlocks,
       );
     }
 

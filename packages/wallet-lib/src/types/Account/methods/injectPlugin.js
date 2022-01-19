@@ -129,9 +129,10 @@ module.exports = async function injectPlugin(
       }
 
       logger.debug(`Account.injectPlugin(${pluginName}) - successfully injected`);
-      return resolve(plugin);
+
+      resolve(plugin);
     } catch (e) {
-      return reject(e);
+      reject(e);
     }
   });
 };

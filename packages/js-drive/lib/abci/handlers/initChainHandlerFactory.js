@@ -125,10 +125,12 @@ function initChainHandlerFactory(
     );
 
     await documentDatabaseManager.create(
-      featureFlagContract, { isTransactional: false },
+      featureFlagContract,
+      { isTransactional: false },
     );
     await previousDocumentDatabaseManager.create(
-      featureFlagContract, { isTransactional: false },
+      featureFlagContract,
+      { isTransactional: false },
     );
 
     contextLogger.debug('Registering system data contract: DPNS');
@@ -147,10 +149,12 @@ function initChainHandlerFactory(
     );
 
     await documentDatabaseManager.create(
-      dpnsContract, { isTransactional: false },
+      dpnsContract,
+      { isTransactional: false },
     );
     await previousDocumentDatabaseManager.create(
-      dpnsContract, { isTransactional: false },
+      dpnsContract,
+      { isTransactional: false },
     );
 
     await registerTopLevelDomain('dash', dpnsContract, dpnsOwnerId, genesisTime);
@@ -195,10 +199,12 @@ function initChainHandlerFactory(
     );
 
     await documentDatabaseManager.create(
-      dashpayContract, { isTransactional: false },
+      dashpayContract,
+      { isTransactional: false },
     );
     await previousDocumentDatabaseManager.create(
-      dashpayContract, { isTransactional: false },
+      dashpayContract,
+      { isTransactional: false },
     );
 
     await updateSimplifiedMasternodeList(initialCoreChainLockedHeight, {

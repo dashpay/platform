@@ -53,9 +53,7 @@ function validateDataContractCreateTransitionBasicFactory(
     }
 
     // Validate Data Contract ID
-    const generatedId = generateDataContractId(
-      rawDataContract.ownerId, rawStateTransition.entropy,
-    );
+    const generatedId = generateDataContractId(rawDataContract.ownerId, rawStateTransition.entropy);
 
     if (!generatedId.equals(rawDataContract.$id)) {
       result.addError(

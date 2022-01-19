@@ -18,10 +18,10 @@ const Identifier = require('../../../identifier/Identifier');
 
 class DocumentsBatchTransition extends AbstractStateTransitionIdentitySigned {
   /**
-   * @param {RawDocumentsBatchTransition} [rawStateTransition]
+   * @param {RawDocumentsBatchTransition} rawStateTransition
    * @param {DataContract[]} dataContracts
    */
-  constructor(rawStateTransition = {}, dataContracts) {
+  constructor(rawStateTransition, dataContracts) {
     super(rawStateTransition);
 
     if (Object.prototype.hasOwnProperty.call(rawStateTransition, 'ownerId')) {

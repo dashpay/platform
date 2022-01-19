@@ -197,16 +197,28 @@ class Account extends EventEmitter {
   async isInitialized() {
     // eslint-disable-next-line consistent-return
     return new Promise(((resolve) => {
-      if (this.state.isInitialized) return resolve(true);
-      this.on(EVENTS.INITIALIZED, () => resolve(true));
+      if (this.state.isInitialized) {
+        resolve(true);
+
+        return;
+      }
+      this.on(EVENTS.INITIALIZED, () => {
+        resolve(true);
+      });
     }));
   }
 
   async isReady() {
     // eslint-disable-next-line consistent-return
     return new Promise(((resolve) => {
-      if (this.state.isReady) return resolve(true);
-      this.on(EVENTS.READY, () => resolve(true));
+      if (this.state.isReady) {
+        resolve(true);
+
+        return;
+      }
+      this.on(EVENTS.READY, () => {
+        resolve(true);
+      });
     }));
   }
 
