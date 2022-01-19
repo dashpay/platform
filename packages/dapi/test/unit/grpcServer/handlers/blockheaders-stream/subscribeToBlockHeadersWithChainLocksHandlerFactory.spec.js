@@ -28,7 +28,7 @@ const subscribeToBlockHeadersWithChainLocksHandlerFactory = require(
 let coreAPIMock;
 let zmqClientMock;
 
-describe.only('subscribeToBlockHeadersWithChainLocksHandlerFactory', () => {
+describe('subscribeToBlockHeadersWithChainLocksHandlerFactory', () => {
   let call;
   let subscribeToBlockHeadersWithChainLocksHandler;
   let getHistoricalBlockHeadersIteratorMock;
@@ -63,22 +63,31 @@ describe.only('subscribeToBlockHeadersWithChainLocksHandlerFactory', () => {
 
   it('should subscribe to newBlockHeaders', async function () {
     this.sinon.stub(AcknowledgingWritable.prototype, 'write');
-    const request = new BlockHeadersWithChainLocksRequest();
+
+    const blockHash = Buffer.from('00000bafbc94add76cb75e2ec92894837288a481e5c005f6563d91623bf8bc2c', 'hex');
+
+    let request = new BlockHeadersWithChainLocksRequest();
+
+    request.setFromBlockHash(blockHash);
+    request.setCount(0);
+
+    request = BlockHeadersWithChainLocksRequest.deserializeBinary(request.serializeBinary());
 
     call = new GrpcCallMock(this.sinon, request);
-
-    call.request.setFromBlockHash('fakehash');
-    call.request.setCount(0);
 
     coreAPIMock.getBestChainLock.resolves({
       height: 1,
       signature: Buffer.from('fakeSig'),
-      blockHash: Buffer.from('fakeHash'),
+      blockHash,
     });
     coreAPIMock.getBlockStats.resolves({ height: 1 });
 
     await subscribeToBlockHeadersWithChainLocksHandler(call);
     expect(subscribeToNewBlockHeadersMock).to.have.been.called();
+    expect(coreAPIMock.getBlockStats).to.be.calledOnceWithExactly(
+      blockHash.toString('hex'),
+      ['height'],
+    );
   });
 
   it('should subscribe from block hash', async function () {

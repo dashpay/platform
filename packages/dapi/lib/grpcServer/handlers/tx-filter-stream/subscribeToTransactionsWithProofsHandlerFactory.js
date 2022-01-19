@@ -119,6 +119,7 @@ function subscribeToTransactionsWithProofsHandlerFactory(
 
     // Create a new bloom filter emitter when client connects
     let filter;
+
     try {
       filter = new BloomFilter(bloomFilter);
     } catch (e) {
