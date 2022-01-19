@@ -150,8 +150,6 @@ describe('subscribeToTransactionsWithProofsHandlerFactory', () => {
 
     call.request = TransactionsWithProofsRequest.deserializeBinary(call.request.serializeBinary());
 
-    call = new GrpcCallMock(this.sinon, call.request);
-
     coreAPIMock.getBlockStats.resolves({ height: 1 });
     coreAPIMock.getBestBlockHeight.resolves(10);
 
@@ -260,8 +258,6 @@ describe('subscribeToTransactionsWithProofsHandlerFactory', () => {
 
     call.request = TransactionsWithProofsRequest.deserializeBinary(call.request.serializeBinary());
 
-    call = new GrpcCallMock(this.sinon, call.request);
-
     coreAPIMock.getBlockStats.resolves({ height: 1 });
 
     await subscribeToTransactionsWithProofsHandler(call);
@@ -314,8 +310,6 @@ describe('subscribeToTransactionsWithProofsHandlerFactory', () => {
 
     call.request = TransactionsWithProofsRequest.deserializeBinary(call.request.serializeBinary());
 
-    call = new GrpcCallMock(this.sinon, call.request);
-
     const error = new Error();
     error.code = -5;
 
@@ -327,7 +321,7 @@ describe('subscribeToTransactionsWithProofsHandlerFactory', () => {
       expect.fail('should fail with NotFoundGrpcError');
     } catch (e) {
       expect(e).to.be.instanceOf(NotFoundGrpcError);
-      expect(e.getMessage()).to.equal(`Block ${blockHash} not found`);
+      expect(e.getMessage()).to.equal(`Block ${blockHash.toString('hex')} not found`);
 
       expect(coreAPIMock.getBlockStats).to.be.calledOnceWithExactly(
         blockHash.toString('hex'),
@@ -346,8 +340,6 @@ describe('subscribeToTransactionsWithProofsHandlerFactory', () => {
 
     call.request = TransactionsWithProofsRequest.deserializeBinary(call.request.serializeBinary());
 
-    call = new GrpcCallMock(this.sinon, call.request);
-
     const error = new Error();
     error.code = -8;
 
@@ -359,7 +351,7 @@ describe('subscribeToTransactionsWithProofsHandlerFactory', () => {
       expect.fail('should throw NotFoundGrpcError');
     } catch (e) {
       expect(e).to.be.instanceOf(NotFoundGrpcError);
-      expect(e.getMessage()).to.equal(`Block ${blockHash} not found`);
+      expect(e.getMessage()).to.equal(`Block ${blockHash.toString('hex')} not found`);
 
       expect(coreAPIMock.getBlockStats).to.be.calledOnceWithExactly(
         blockHash.toString('hex'),
