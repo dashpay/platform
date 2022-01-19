@@ -4519,13 +4519,6 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["ansi-regex", "npm:5.0.1"]
           ],
           "linkType": "HARD",
-        }],
-        ["npm:6.0.1", {
-          "packageLocation": "./.yarn/cache/ansi-regex-npm-6.0.1-8d663a607d-1ff8b7667c.zip/node_modules/ansi-regex/",
-          "packageDependencies": [
-            ["ansi-regex", "npm:6.0.1"]
-          ],
-          "linkType": "HARD",
         }]
       ]],
       ["ansi-split", [
@@ -7235,9 +7228,9 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["pretty-ms", "npm:7.0.1"],
             ["public-ip", "npm:4.0.4"],
             ["rimraf", "npm:3.0.2"],
-            ["rxjs", "npm:7.5.2"],
+            ["rxjs", "npm:6.6.7"],
             ["semver", "npm:7.3.5"],
-            ["strip-ansi", "npm:7.0.1"],
+            ["strip-ansi", "npm:6.0.1"],
             ["table", "npm:6.8.0"]
           ],
           "linkType": "SOFT",
@@ -16196,14 +16189,6 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["tslib", "npm:1.14.1"]
           ],
           "linkType": "HARD",
-        }],
-        ["npm:7.5.2", {
-          "packageLocation": "./.yarn/cache/rxjs-npm-7.5.2-3e62ff62c6-daf1fe7289.zip/node_modules/rxjs/",
-          "packageDependencies": [
-            ["rxjs", "npm:7.5.2"],
-            ["tslib", "npm:2.3.1"]
-          ],
-          "linkType": "HARD",
         }]
       ]],
       ["safe-buffer", [
@@ -17242,14 +17227,6 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           "packageDependencies": [
             ["strip-ansi", "npm:6.0.1"],
             ["ansi-regex", "npm:5.0.1"]
-          ],
-          "linkType": "HARD",
-        }],
-        ["npm:7.0.1", {
-          "packageLocation": "./.yarn/cache/strip-ansi-npm-7.0.1-668c121204-257f78fa43.zip/node_modules/strip-ansi/",
-          "packageDependencies": [
-            ["strip-ansi", "npm:7.0.1"],
-            ["ansi-regex", "npm:6.0.1"]
           ],
           "linkType": "HARD",
         }]
