@@ -66,9 +66,7 @@ function handleUpdatedPubKeyOperatorFactory(
           IdentityPublicKey.TYPES.BLS12_381,
         );
       }
-      console.log(Identifier.from(
-        hash(proRegTxHash),
-      ).toString());
+
       // Create a document in rewards data contract with percentage defined
       // in corresponding ProRegTx
       documentsToCreate.push(transactionalDpp.document.create(

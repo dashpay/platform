@@ -151,7 +151,11 @@ describe('handleUpdatedPubKeyOperatorFactory', () => {
       null,
     );
 
-    const result = await handleUpdatedPubKeyOperator(masternodeEntry, previousMasternodeEntry, dataContractFixture);
+    const result = await handleUpdatedPubKeyOperator(
+      masternodeEntry,
+      previousMasternodeEntry,
+      dataContractFixture,
+    );
 
     expect(result).to.deep.equal({
       create: [documentsFixture[0]],
