@@ -27,7 +27,7 @@
   },
   "dependencies": {
     "@grpc/grpc-js": "^1.5.2",
-    "@grpc/proto-loader": "^0.5.2",
+    "@grpc/proto-loader": "^0.6.9",
     "cbor": "^8.0.0",
     "lodash.get": "^4.4.2",
     "long": "^5.2.0",

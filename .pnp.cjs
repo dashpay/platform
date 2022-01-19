@@ -2258,7 +2258,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["@dashevo/dpp", "workspace:packages/js-dpp"],
             ["@dashevo/grpc-common", "workspace:packages/js-grpc-common"],
             ["@grpc/grpc-js", "npm:1.5.2"],
-            ["ajv", "npm:8.8.1"],
+            ["ajv", "npm:8.9.0"],
             ["bs58", "npm:4.0.1"],
             ["cbor", "npm:8.1.0"],
             ["chai", "npm:4.3.4"],
@@ -2307,7 +2307,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["chai", "npm:4.3.4"],
             ["chai-as-promised", "virtual:595d7482cc8ddf98ee6aef33fc48b46393554ab5f17f851ef62e6e39315e53666c3e66226b978689aa0bc7f1e83a03081511a21db1c381362fe67614887077f9#npm:7.1.1"],
             ["comment-parser", "npm:1.3.0"],
-            ["core-js", "npm:3.19.1"],
+            ["core-js", "npm:3.20.3"],
             ["crypto-browserify", "npm:3.12.0"],
             ["dirty-chai", "virtual:595d7482cc8ddf98ee6aef33fc48b46393554ab5f17f851ef62e6e39315e53666c3e66226b978689aa0bc7f1e83a03081511a21db1c381362fe67614887077f9#npm:2.0.1"],
             ["eslint", "npm:8.7.0"],
@@ -2460,8 +2460,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["@dashevo/feature-flags-contract", "workspace:packages/feature-flags-contract"],
             ["@dashevo/masternode-reward-shares-contract", "workspace:packages/masternode-reward-shares-contract"],
             ["@dashevo/re2-wasm", "npm:1.0.4"],
-            ["acorn", "npm:8.6.0"],
-            ["ajv", "npm:8.8.1"],
+            ["ajv", "npm:8.9.0"],
             ["ajv-formats", "virtual:58fb68f2aed20e5e0f2e48520ab903ae9bb3440369bfd5e912034003cf27c5aae368649fc5620dd2acbed578131f3a0975e75b838d77d12335fb0412e24026c6#npm:2.1.1"],
             ["assert", "npm:2.0.0"],
             ["babel-loader", "virtual:58fb68f2aed20e5e0f2e48520ab903ae9bb3440369bfd5e912034003cf27c5aae368649fc5620dd2acbed578131f3a0975e75b838d77d12335fb0412e24026c6#npm:8.2.3"],
@@ -2473,7 +2472,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["chai-as-promised", "virtual:595d7482cc8ddf98ee6aef33fc48b46393554ab5f17f851ef62e6e39315e53666c3e66226b978689aa0bc7f1e83a03081511a21db1c381362fe67614887077f9#npm:7.1.1"],
             ["chai-exclude", "virtual:58fb68f2aed20e5e0f2e48520ab903ae9bb3440369bfd5e912034003cf27c5aae368649fc5620dd2acbed578131f3a0975e75b838d77d12335fb0412e24026c6#npm:2.1.0"],
             ["chai-string", "virtual:58fb68f2aed20e5e0f2e48520ab903ae9bb3440369bfd5e912034003cf27c5aae368649fc5620dd2acbed578131f3a0975e75b838d77d12335fb0412e24026c6#npm:1.5.0"],
-            ["core-js", "npm:3.19.1"],
+            ["core-js", "npm:3.20.3"],
             ["crypto-browserify", "npm:3.12.0"],
             ["dirty-chai", "virtual:595d7482cc8ddf98ee6aef33fc48b46393554ab5f17f851ef62e6e39315e53666c3e66226b978689aa0bc7f1e83a03081511a21db1c381362fe67614887077f9#npm:2.0.1"],
             ["eslint", "npm:8.7.0"],
@@ -2532,8 +2531,8 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["@dashevo/masternode-reward-shares-contract", "workspace:packages/masternode-reward-shares-contract"],
             ["@dashevo/merk", "https://github.com/dashevo/node-merk.git#commit=eb37003300d22c6c04604463bcd7e861dd07000f"],
             ["@types/pino", "npm:7.0.5"],
-            ["ajv", "npm:8.8.1"],
-            ["ajv-keywords", "virtual:34fbe5a7dba3086dcbcce8a7faed986b10f7a208f11db70499feb2c1afd76e24089e5b95f9e3b937e89512de1cf4937177cc2000303a1e908baefc73362a7d48#npm:5.0.0"],
+            ["ajv", "npm:8.9.0"],
+            ["ajv-keywords", "virtual:34fbe5a7dba3086dcbcce8a7faed986b10f7a208f11db70499feb2c1afd76e24089e5b95f9e3b937e89512de1cf4937177cc2000303a1e908baefc73362a7d48#npm:5.1.0"],
             ["awilix", "npm:6.0.0"],
             ["blake3", "npm:2.1.7"],
             ["bs58", "npm:4.0.1"],
@@ -2600,7 +2599,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           "packageDependencies": [
             ["@dashevo/grpc-common", "workspace:packages/js-grpc-common"],
             ["@grpc/grpc-js", "npm:1.5.2"],
-            ["@grpc/proto-loader", "npm:0.5.6"],
+            ["@grpc/proto-loader", "npm:0.6.9"],
             ["cbor", "npm:8.1.0"],
             ["chai", "npm:4.3.4"],
             ["chai-as-promised", "virtual:595d7482cc8ddf98ee6aef33fc48b46393554ab5f17f851ef62e6e39315e53666c3e66226b978689aa0bc7f1e83a03081511a21db1c381362fe67614887077f9#npm:7.1.1"],
@@ -2847,19 +2846,22 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
         }]
       ]],
       ["@grpc/proto-loader", [
-        ["npm:0.5.6", {
-          "packageLocation": "./.yarn/cache/@grpc-proto-loader-npm-0.5.6-ef97ffeb0b-13fe76d84a.zip/node_modules/@grpc/proto-loader/",
-          "packageDependencies": [
-            ["@grpc/proto-loader", "npm:0.5.6"],
-            ["lodash.camelcase", "npm:4.3.0"],
-            ["protobufjs", "https://github.com/jawid-h/protobuf.js.git#commit=8b91c72dca68fd6c418078fd2358c4969425dcdc"]
-          ],
-          "linkType": "HARD",
-        }],
         ["npm:0.6.7", {
           "packageLocation": "./.yarn/cache/@grpc-proto-loader-npm-0.6.7-283fc039b9-af1909ec36.zip/node_modules/@grpc/proto-loader/",
           "packageDependencies": [
             ["@grpc/proto-loader", "npm:0.6.7"],
+            ["@types/long", "npm:4.0.1"],
+            ["lodash.camelcase", "npm:4.3.0"],
+            ["long", "npm:4.0.0"],
+            ["protobufjs", "https://github.com/jawid-h/protobuf.js.git#commit=8b91c72dca68fd6c418078fd2358c4969425dcdc"],
+            ["yargs", "npm:16.2.0"]
+          ],
+          "linkType": "HARD",
+        }],
+        ["npm:0.6.9", {
+          "packageLocation": "./.yarn/cache/@grpc-proto-loader-npm-0.6.9-25554b0c4d-30081a5a6e.zip/node_modules/@grpc/proto-loader/",
+          "packageDependencies": [
+            ["@grpc/proto-loader", "npm:0.6.9"],
             ["@types/long", "npm:4.0.1"],
             ["lodash.camelcase", "npm:4.3.0"],
             ["long", "npm:4.0.0"],
@@ -3395,6 +3397,13 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           "packageLocation": "./.yarn/cache/@types-chai-npm-4.2.22-557883092e-dca66a263b.zip/node_modules/@types/chai/",
           "packageDependencies": [
             ["@types/chai", "npm:4.2.22"]
+          ],
+          "linkType": "HARD",
+        }],
+        ["npm:4.3.0", {
+          "packageLocation": "./.yarn/cache/@types-chai-npm-4.3.0-42bcda9bbc-3e393e0942.zip/node_modules/@types/chai/",
+          "packageDependencies": [
+            ["@types/chai", "npm:4.3.0"]
           ],
           "linkType": "HARD",
         }]
@@ -4412,6 +4421,17 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["uri-js", "npm:4.4.1"]
           ],
           "linkType": "HARD",
+        }],
+        ["npm:8.9.0", {
+          "packageLocation": "./.yarn/cache/ajv-npm-8.9.0-d7480193a9-756c048bfa.zip/node_modules/ajv/",
+          "packageDependencies": [
+            ["ajv", "npm:8.9.0"],
+            ["fast-deep-equal", "npm:3.1.3"],
+            ["json-schema-traverse", "npm:1.0.0"],
+            ["require-from-string", "npm:2.0.2"],
+            ["uri-js", "npm:4.4.1"]
+          ],
+          "linkType": "HARD",
         }]
       ]],
       ["ajv-formats", [
@@ -4427,7 +4447,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           "packageDependencies": [
             ["ajv-formats", "virtual:58fb68f2aed20e5e0f2e48520ab903ae9bb3440369bfd5e912034003cf27c5aae368649fc5620dd2acbed578131f3a0975e75b838d77d12335fb0412e24026c6#npm:2.1.1"],
             ["@types/ajv", null],
-            ["ajv", "npm:8.8.1"]
+            ["ajv", "npm:8.9.0"]
           ],
           "packagePeers": [
             "@types/ajv",
@@ -4444,19 +4464,19 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           ],
           "linkType": "SOFT",
         }],
-        ["npm:5.0.0", {
-          "packageLocation": "./.yarn/cache/ajv-keywords-npm-5.0.0-50b946aaa2-239dd46383.zip/node_modules/ajv-keywords/",
+        ["npm:5.1.0", {
+          "packageLocation": "./.yarn/cache/ajv-keywords-npm-5.1.0-ee670a3944-c35193940b.zip/node_modules/ajv-keywords/",
           "packageDependencies": [
-            ["ajv-keywords", "npm:5.0.0"]
+            ["ajv-keywords", "npm:5.1.0"]
           ],
           "linkType": "SOFT",
         }],
-        ["virtual:34fbe5a7dba3086dcbcce8a7faed986b10f7a208f11db70499feb2c1afd76e24089e5b95f9e3b937e89512de1cf4937177cc2000303a1e908baefc73362a7d48#npm:5.0.0", {
-          "packageLocation": "./.yarn/__virtual__/ajv-keywords-virtual-75ea4b6cf0/0/cache/ajv-keywords-npm-5.0.0-50b946aaa2-239dd46383.zip/node_modules/ajv-keywords/",
+        ["virtual:34fbe5a7dba3086dcbcce8a7faed986b10f7a208f11db70499feb2c1afd76e24089e5b95f9e3b937e89512de1cf4937177cc2000303a1e908baefc73362a7d48#npm:5.1.0", {
+          "packageLocation": "./.yarn/__virtual__/ajv-keywords-virtual-3dc237beb8/0/cache/ajv-keywords-npm-5.1.0-ee670a3944-c35193940b.zip/node_modules/ajv-keywords/",
           "packageDependencies": [
-            ["ajv-keywords", "virtual:34fbe5a7dba3086dcbcce8a7faed986b10f7a208f11db70499feb2c1afd76e24089e5b95f9e3b937e89512de1cf4937177cc2000303a1e908baefc73362a7d48#npm:5.0.0"],
+            ["ajv-keywords", "virtual:34fbe5a7dba3086dcbcce8a7faed986b10f7a208f11db70499feb2c1afd76e24089e5b95f9e3b937e89512de1cf4937177cc2000303a1e908baefc73362a7d48#npm:5.1.0"],
             ["@types/ajv", null],
-            ["ajv", "npm:8.8.1"],
+            ["ajv", "npm:8.9.0"],
             ["fast-deep-equal", "npm:3.1.3"]
           ],
           "packagePeers": [
@@ -6886,10 +6906,10 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
         }]
       ]],
       ["core-js", [
-        ["npm:3.19.1", {
-          "packageLocation": "./.yarn/unplugged/core-js-npm-3.19.1-772a85cbf5/node_modules/core-js/",
+        ["npm:3.20.3", {
+          "packageLocation": "./.yarn/unplugged/core-js-npm-3.20.3-f16b5c4c27/node_modules/core-js/",
           "packageDependencies": [
-            ["core-js", "npm:3.19.1"]
+            ["core-js", "npm:3.20.3"]
           ],
           "linkType": "HARD",
         }]
@@ -7175,7 +7195,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["@dashevo/grpc-common", "workspace:packages/js-grpc-common"],
             ["@dashevo/masternode-reward-shares-contract", "workspace:packages/masternode-reward-shares-contract"],
             ["@dashevo/wallet-lib", "workspace:packages/wallet-lib"],
-            ["@types/chai", "npm:4.2.22"],
+            ["@types/chai", "npm:4.3.0"],
             ["@types/dirty-chai", "npm:2.0.2"],
             ["@types/expect", "npm:24.3.0"],
             ["@types/mocha", "npm:9.0.0"],
@@ -7248,9 +7268,9 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["@dashevo/feature-flags-contract", "workspace:packages/feature-flags-contract"],
             ["@dashevo/masternode-reward-shares-contract", "workspace:packages/masternode-reward-shares-contract"],
             ["@dashevo/wallet-lib", "workspace:packages/wallet-lib"],
-            ["@oclif/core", "npm:1.0.11"],
+            ["@oclif/core", "npm:1.1.2"],
             ["@oclif/plugin-help", "npm:5.1.10"],
-            ["ajv", "npm:8.8.1"],
+            ["ajv", "npm:8.9.0"],
             ["ajv-formats", "virtual:58fb68f2aed20e5e0f2e48520ab903ae9bb3440369bfd5e912034003cf27c5aae368649fc5620dd2acbed578131f3a0975e75b838d77d12335fb0412e24026c6#npm:2.1.1"],
             ["awilix", "npm:6.0.0"],
             ["bls-signatures", "npm:0.2.5"],
@@ -7823,7 +7843,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           "packageLocation": "./.yarn/__virtual__/dirty-chai-virtual-776ab6e5e1/0/cache/dirty-chai-npm-2.0.1-acaf82c8df-1e8602e78a.zip/node_modules/dirty-chai/",
           "packageDependencies": [
             ["dirty-chai", "virtual:ad53cff31b1dbd4927a99e71702e3b8b10338636eaff010987c27c9ccea2d52af36900a9e36a4231cbb6e5464248ccc9c1da5d1d24d9b0f4f95660296b1060a6#npm:2.0.1"],
-            ["@types/chai", "npm:4.2.22"],
+            ["@types/chai", "npm:4.3.0"],
             ["chai", "npm:4.3.4"]
           ],
           "packagePeers": [
@@ -12129,7 +12149,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           "packageLocation": "./.yarn/__virtual__/karma-chai-virtual-e2e0d5ff8a/0/cache/karma-chai-npm-0.1.0-d1d807f507-7fae0b4ace.zip/node_modules/karma-chai/",
           "packageDependencies": [
             ["karma-chai", "virtual:ad53cff31b1dbd4927a99e71702e3b8b10338636eaff010987c27c9ccea2d52af36900a9e36a4231cbb6e5464248ccc9c1da5d1d24d9b0f4f95660296b1060a6#npm:0.1.0"],
-            ["@types/chai", "npm:4.2.22"],
+            ["@types/chai", "npm:4.3.0"],
             ["@types/karma", null],
             ["chai", "npm:4.3.4"],
             ["karma", "npm:6.3.9"]
@@ -16785,7 +16805,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           "packageLocation": "./.yarn/__virtual__/sinon-chai-virtual-02851cc178/0/cache/sinon-chai-npm-3.7.0-8e6588805e-49a353d8eb.zip/node_modules/sinon-chai/",
           "packageDependencies": [
             ["sinon-chai", "virtual:ad53cff31b1dbd4927a99e71702e3b8b10338636eaff010987c27c9ccea2d52af36900a9e36a4231cbb6e5464248ccc9c1da5d1d24d9b0f4f95660296b1060a6#npm:3.7.0"],
-            ["@types/chai", "npm:4.2.22"],
+            ["@types/chai", "npm:4.3.0"],
             ["@types/sinon", "npm:10.0.6"],
             ["chai", "npm:4.3.4"],
             ["sinon", "npm:12.0.1"]

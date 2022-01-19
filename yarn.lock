@@ -1286,7 +1286,7 @@ __metadata:
     chai: ^4.3.4
     chai-as-promised: ^7.1.1
     comment-parser: ^1.3.0
-    core-js: ^3.17.2
+    core-js: ^3.20.3
     crypto-browserify: ^3.12.0
     dirty-chai: ^2.0.1
     eslint: ^8.7.0
@@ -1353,7 +1353,7 @@ __metadata:
     "@dashevo/dpp": "workspace:~"
     "@dashevo/grpc-common": "workspace:~"
     "@grpc/grpc-js": ^1.5.2
-    ajv: ^8.6.0
+    ajv: ^8.9.0
     bs58: ^4.0.1
     cbor: ^8.0.0
     chai: ^4.3.4
@@ -1468,8 +1468,7 @@ __metadata:
     "@dashevo/feature-flags-contract": "workspace:~"
     "@dashevo/masternode-reward-shares-contract": "workspace:~"
     "@dashevo/re2-wasm": ~1.0.4
-    acorn: ^8.5.0
-    ajv: ^8.6.0
+    ajv: ^8.9.0
     ajv-formats: ^2.1.1
     assert: ^2.0.0
     babel-loader: ^8.2.2
@@ -1481,7 +1480,7 @@ __metadata:
     chai-as-promised: ^7.1.1
     chai-exclude: ^2.1.0
     chai-string: ^1.5.0
-    core-js: ^3.17.2
+    core-js: ^3.20.3
     crypto-browserify: ^3.12.0
     dirty-chai: ^2.0.1
     eslint: ^8.7.0
@@ -1538,8 +1537,8 @@ __metadata:
     "@dashevo/masternode-reward-shares-contract": "workspace:~"
     "@dashevo/merk": "github:dashevo/node-merk#eb37003300d22c6c04604463bcd7e861dd07000f"
     "@types/pino": ^7.0.5
-    ajv: ^8.6.0
-    ajv-keywords: ^5.0.0
+    ajv: ^8.9.0
+    ajv-keywords: ^5.1.0
     awilix: ^6.0.0
     blake3: ^2.1.4
     bs58: ^4.0.1
@@ -1602,7 +1601,7 @@ __metadata:
   resolution: "@dashevo/grpc-common@workspace:packages/js-grpc-common"
   dependencies:
     "@grpc/grpc-js": ^1.5.2
-    "@grpc/proto-loader": ^0.5.2
+    "@grpc/proto-loader": ^0.6.9
     cbor: ^8.0.0
     chai: ^4.3.4
     chai-as-promised: ^7.1.1
@@ -1827,16 +1826,6 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@grpc/proto-loader@npm:^0.5.2":
-  version: 0.5.6
-  resolution: "@grpc/proto-loader@npm:0.5.6"
-  dependencies:
-    lodash.camelcase: ^4.3.0
-    protobufjs: ^6.8.6
-  checksum: 13fe76d84ab1a516f3dc47d06df4dd682f6f1515a7a4aa3f8cddcc8f8256f33cbf529bd0b6729946f548f7459acfcd9b5b026c10572e21d40213a358115658b5
-  languageName: node
-  linkType: hard
-
 "@grpc/proto-loader@npm:^0.6.4":
   version: 0.6.7
   resolution: "@grpc/proto-loader@npm:0.6.7"
@@ -1849,6 +1838,21 @@ __metadata:
   bin:
     proto-loader-gen-types: build/bin/proto-loader-gen-types.js
   checksum: af1909ec3697cb3b6ba4eac47c5ecd3dcbfd28e3d95b2a8b0e8cc84edb33e9ec7ed75efbb9f5ec479712ed3c1f23638f2dc5130a28e7da388a59f54ef158ba9c
+  languageName: node
+  linkType: hard
+
+"@grpc/proto-loader@npm:^0.6.9":
+  version: 0.6.9
+  resolution: "@grpc/proto-loader@npm:0.6.9"
+  dependencies:
+    "@types/long": ^4.0.1
+    lodash.camelcase: ^4.3.0
+    long: ^4.0.0
+    protobufjs: ^6.10.0
+    yargs: ^16.2.0
+  bin:
+    proto-loader-gen-types: build/bin/proto-loader-gen-types.js
+  checksum: 30081a5a6e866506d8e799ebed00367024a2710b9b990104d804fe23c60d81d5ccaa74ad14bd0bedfab6fb313eccbc18e0bbcf3bda7f3288d8eb31cab040255f
   languageName: node
   linkType: hard
 
@@ -2033,7 +2037,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@oclif/core@npm:^1.0.11, @oclif/core@npm:^1.1.1":
+"@oclif/core@npm:^1.0.11, @oclif/core@npm:^1.1.1, @oclif/core@npm:^1.1.2":
   version: 1.1.2
   resolution: "@oclif/core@npm:1.1.2"
   dependencies:
@@ -2315,10 +2319,17 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@types/chai@npm:*, @types/chai@npm:^4.2.12":
+"@types/chai@npm:*":
   version: 4.2.22
   resolution: "@types/chai@npm:4.2.22"
   checksum: dca66a263b25c26112c0a8c6df20316412fa54b557443a108836c07cee961aa56cc5b1763273f69eb450c83ca9f28069ff78b617bffc01806cdd83afc1c20c2a
+  languageName: node
+  linkType: hard
+
+"@types/chai@npm:^4.3.0":
+  version: 4.3.0
+  resolution: "@types/chai@npm:4.3.0"
+  checksum: 3e393e094263db65df28a0123dc13f342937c1bab6cd173eae913d593c5b9a16b555713a08c34863a1fbf079aa7222b96197c70380a5c130549d6b2f6845a989
   languageName: node
   linkType: hard
 
@@ -2938,7 +2949,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"acorn@npm:^8.4.1, acorn@npm:^8.5.0, acorn@npm:^8.6.0":
+"acorn@npm:^8.4.1, acorn@npm:^8.6.0":
   version: 8.6.0
   resolution: "acorn@npm:8.6.0"
   bin:
@@ -3016,14 +3027,14 @@ __metadata:
   languageName: node
   linkType: hard
 
-"ajv-keywords@npm:^5.0.0":
-  version: 5.0.0
-  resolution: "ajv-keywords@npm:5.0.0"
+"ajv-keywords@npm:^5.1.0":
+  version: 5.1.0
+  resolution: "ajv-keywords@npm:5.1.0"
   dependencies:
     fast-deep-equal: ^3.1.3
   peerDependencies:
-    ajv: ^8.0.0
-  checksum: 239dd46383a861f9e1dda1f463542ddfa07b4aed886eccb2a4328672c886030b5fdbb7869e0e293ba5549c9b86b23b40fa0e3c0785047e081302f00e41b1e4c1
+    ajv: ^8.8.2
+  checksum: c35193940b853119242c6757787f09ecf89a2c19bcd36d03ed1a615e710d19d450cb448bfda407b939aba54b002368c8bff30529cc50a0536a8e10bcce300421
   languageName: node
   linkType: hard
 
@@ -3039,7 +3050,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"ajv@npm:^8.0.0, ajv@npm:^8.0.1, ajv@npm:^8.6.0":
+"ajv@npm:^8.0.0, ajv@npm:^8.0.1":
   version: 8.8.1
   resolution: "ajv@npm:8.8.1"
   dependencies:
@@ -3048,6 +3059,18 @@ __metadata:
     require-from-string: ^2.0.2
     uri-js: ^4.2.2
   checksum: 1d586cea81b266f5f984c3a9f392a70f59181eb895ecb3463c4fc5c6acd5a4aefbe28f6d361dec4b04078fa6ec8343113cc8abdf577c8b99790d30ef71eea6b2
+  languageName: node
+  linkType: hard
+
+"ajv@npm:^8.9.0":
+  version: 8.9.0
+  resolution: "ajv@npm:8.9.0"
+  dependencies:
+    fast-deep-equal: ^3.1.1
+    json-schema-traverse: ^1.0.0
+    require-from-string: ^2.0.2
+    uri-js: ^4.2.2
+  checksum: 756c048bfa917b43bb84c8a0a53e6a489123203bc4bdec8cbeb8ec2d715674f5e61d49560a1a6ec83268af4f33bed324f5cb6d9c76d96849fd58ed7089b8e7f3
   languageName: node
   linkType: hard
 
@@ -5131,10 +5154,10 @@ __metadata:
   languageName: node
   linkType: hard
 
-"core-js@npm:^3.17.2":
-  version: 3.19.1
-  resolution: "core-js@npm:3.19.1"
-  checksum: 2f669061788dc6fea823f0433d871deeaaaacc7d68ef2748859509522a34df5c83e648c3c6a1993fed0ab188081b3cf32b957b2a1f46156a2b20bd775961ade4
+"core-js@npm:^3.20.3":
+  version: 3.20.3
+  resolution: "core-js@npm:3.20.3"
+  checksum: 2106cdfb1330abf9e27d577666fc0421feafe8c39bb5af90a63af16e9706c767a7e3a82edc21ce3ed6b9d806f3200d1cf6cc3d0597a8c0af12dbec287c781d65
   languageName: node
   linkType: hard
 
@@ -5388,7 +5411,7 @@ __metadata:
     "@dashevo/grpc-common": "workspace:~"
     "@dashevo/masternode-reward-shares-contract": "workspace:~"
     "@dashevo/wallet-lib": "workspace:~"
-    "@types/chai": ^4.2.12
+    "@types/chai": ^4.3.0
     "@types/dirty-chai": ^2.0.2
     "@types/expect": ^24.3.0
     "@types/mocha": ^9.0.0
@@ -5458,9 +5481,9 @@ __metadata:
     "@dashevo/feature-flags-contract": "workspace:~"
     "@dashevo/masternode-reward-shares-contract": "workspace:~"
     "@dashevo/wallet-lib": "workspace:~"
-    "@oclif/core": ^1.0.10
+    "@oclif/core": ^1.1.2
     "@oclif/plugin-help": ^5
-    ajv: ^8.6.0
+    ajv: ^8.9.0
     ajv-formats: ^2.1.1
     awilix: ^6.0.0
     bls-signatures: ^0.2.5
