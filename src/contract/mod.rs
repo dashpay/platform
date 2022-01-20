@@ -1,10 +1,11 @@
 mod types;
 
-use crate::drive::RootTree;
+use crate::drive::{Drive, RootTree};
 use ciborium::value::{Value as CborValue, Value};
 use grovedb::Error;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::ops::Not;
 
 // contract
 // - id
@@ -93,8 +94,12 @@ pub struct IndexProperty {
 // Struct Implementations
 impl Contract {
     pub fn from_cbor(contract_cbor: &[u8]) -> Result<Self, Error> {
+        let (version, read_contract_cbor) = contract_cbor.split_at(4);
+        if !Drive::check_protocol_version_bytes(version) {
+            return Err(Error::CorruptedData(String::from("invalid protocol version")));
+        }
         // Deserialize the contract
-        let contract: HashMap<String, CborValue> = ciborium::de::from_reader(contract_cbor)
+        let contract: HashMap<String, CborValue> = ciborium::de::from_reader(read_contract_cbor)
             .map_err(|_| Error::CorruptedData(String::from("unable to decode contract")))?;
 
         // Get the contract id
@@ -317,9 +322,13 @@ impl Document {
         if owner_id.len() != 32 {
             Err(Error::CorruptedData(String::from("invalid owner id")))?
         }
+        let (version, read_document_cbor) = document_cbor.split_at(4);
+        if !Drive::check_protocol_version_bytes(version) {
+            return Err(Error::CorruptedData(String::from("invalid protocol version")));
+        }
         // first we need to deserialize the document and contract indices
         // we would need dedicated deserialization functions based on the document type
-        let mut document: HashMap<String, CborValue> = ciborium::de::from_reader(document_cbor)
+        let mut document: HashMap<String, CborValue> = ciborium::de::from_reader(read_document_cbor)
             .map_err(|_| Error::CorruptedData(String::from("unable to decode contract")))?;
         let document_id: Vec<u8> = base58_value_as_bytes_from_hash_map(&document, "$id").ok_or(
             Error::CorruptedData(String::from("unable to get document id")),
@@ -344,9 +353,15 @@ impl Document {
         if document_id.len() != 32 {
             Err(Error::CorruptedData(String::from("invalid document id")))?
         }
+
+        let (version, read_document_cbor) = document_cbor.split_at(4);
+        if !Drive::check_protocol_version_bytes(version) {
+            return Err(Error::CorruptedData(String::from("invalid protocol version")));
+        }
+
         // first we need to deserialize the document and contract indices
         // we would need dedicated deserialization functions based on the document type
-        let mut document: HashMap<String, CborValue> = ciborium::de::from_reader(document_cbor)
+        let mut document: HashMap<String, CborValue> = ciborium::de::from_reader(read_document_cbor)
             .map_err(|_| Error::CorruptedData(String::from("unable to decode contract")))?;
 
         // dev-note: properties is everything other than the id
@@ -554,6 +569,8 @@ mod tests {
     use crate::drive::Drive;
     use serde::{Deserialize, Serialize};
     use std::{collections::HashMap, fs::File, io::BufReader, path::Path};
+    use std::ops::Not;
+    use grovedb::Error;
     use tempdir::TempDir;
 
     fn json_document_to_cbor(path: impl AsRef<Path>) -> Vec<u8> {
@@ -562,6 +579,10 @@ mod tests {
         let json: serde_json::Value =
             serde_json::from_reader(reader).expect("expected a valid json");
         let mut buffer: Vec<u8> = Vec::new();
+        buffer.push(0);
+        buffer.push(0);
+        buffer.push(0);
+        buffer.push(1);
         ciborium::ser::into_writer(&json, &mut buffer).expect("unable to serialize into cbor");
         buffer
     }
@@ -569,8 +590,10 @@ mod tests {
     #[test]
     fn test_cbor_deserialization() {
         let document_cbor = json_document_to_cbor("simple.json");
+        let (version, read_document_cbor) = document_cbor.split_at(4);
+        assert!(Drive::check_protocol_version_bytes(version));
         let document: HashMap<String, ciborium::value::Value> =
-            ciborium::de::from_reader(document_cbor.as_slice()).expect("cannot deserialize cbor");
+            ciborium::de::from_reader(read_document_cbor).expect("cannot deserialize cbor");
         assert!(document.get("a").is_some());
     }
 

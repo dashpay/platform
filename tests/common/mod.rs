@@ -1,7 +1,8 @@
 use std::fs::File;
 use std::io;
-use std::io::{BufRead, BufReader};
+use std::io::{BufRead, BufReader, Write};
 use std::path::Path;
+use byteorder::{BigEndian, WriteBytesExt};
 use tempdir::TempDir;
 use rs_drive::contract::Contract;
 use rs_drive::drive::Drive;
@@ -20,22 +21,25 @@ pub fn setup(prefix: &str) -> Drive {
 
 pub fn setup_contract(prefix: &str, path: &str) -> (Drive, Contract) {
     let mut drive = setup(prefix);
-    let contract_cbor = json_document_to_cbor(path);
+    let contract_cbor = json_document_to_cbor(path,Some(rs_drive::drive::defaults::PROTOCOL_VERSION));
     let contract = Contract::from_cbor(&contract_cbor).expect("contract should be deserialized");
     drive.apply_contract(&contract_cbor, None);
     (drive, contract)
 }
 
-pub fn json_document_to_cbor(path: impl AsRef<Path>) -> Vec<u8> {
+pub fn json_document_to_cbor(path: impl AsRef<Path>, protocol_version: Option<u32>) -> Vec<u8> {
     let file = File::open(path).expect("file not found");
     let reader = BufReader::new(file);
     let json: serde_json::Value =
         serde_json::from_reader(reader).expect("expected a valid json");
-    value_to_cbor(json)
+    value_to_cbor(json, protocol_version)
 }
 
-pub fn value_to_cbor(value: serde_json::Value) -> Vec<u8> {
+pub fn value_to_cbor(value: serde_json::Value, protocol_version: Option<u32>) -> Vec<u8> {
     let mut buffer: Vec<u8> = Vec::new();
+    if protocol_version.is_some() {
+        buffer.write_u32::<BigEndian>(protocol_version.unwrap());
+    }
     ciborium::ser::into_writer(&value, &mut buffer).expect("unable to serialize into cbor");
     buffer
 }
