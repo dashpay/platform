@@ -1,3 +1,5 @@
+pub mod defaults;
+
 use crate::contract::{Contract, Document};
 use ciborium::value::{Value as CborValue};
 use grovedb::{Element, Error, GroveDb};
@@ -111,6 +113,20 @@ impl Drive {
         match GroveDb::open(path) {
             Ok(grove) => Ok(Drive { grove }),
             Err(e) => Err(e),
+        }
+    }
+
+    pub fn check_protocol_version(version: u32) -> bool {
+        version == defaults::PROTOCOL_VERSION
+    }
+
+    pub fn check_protocol_version_bytes(version_bytes: &[u8]) -> bool {
+        if version_bytes.len() != 4 {
+            false
+        } else {
+            let version_set_bytes : [u8; 4] = version_bytes.try_into().expect("slice with incorrect length");
+            let version = u32::from_be_bytes(version_set_bytes);
+            Drive::check_protocol_version(version)
         }
     }
 
@@ -784,6 +800,10 @@ mod tests {
         let json: serde_json::Value =
             serde_json::from_reader(reader).expect("expected a valid json");
         let mut buffer: Vec<u8> = Vec::new();
+        buffer.push(0);
+        buffer.push(0);
+        buffer.push(0);
+        buffer.push(1);
         ciborium::ser::into_writer(&json, &mut buffer).expect("unable to serialize into cbor");
         buffer
     }
@@ -937,8 +957,10 @@ mod tests {
     #[test]
     fn test_cbor_deserialization() {
         let document_cbor = json_document_to_cbor("simple.json");
+        let (version, read_document_cbor) = document_cbor.split_at(4);
+        assert!(Drive::check_protocol_version_bytes(version));
         let document: HashMap<String, ciborium::value::Value> =
-            ciborium::de::from_reader(document_cbor.as_slice()).expect("cannot deserialize cbor");
+            ciborium::de::from_reader(read_document_cbor).expect("cannot deserialize cbor");
         assert!(document.get("a").is_some());
         let tmp_dir = TempDir::new("db").unwrap();
         let _drive = Drive::open(tmp_dir);
