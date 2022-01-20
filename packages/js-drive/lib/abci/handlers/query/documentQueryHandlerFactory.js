@@ -76,7 +76,7 @@ function documentQueryHandlerFactory(
       });
     }
 
-    if (!container.has('previousBlockExecutionStoreTransactions')) {
+    if (!container.hasRegistration('previousBlockExecutionStoreTransactions')) {
       throw new UnavailableAbciError('Documents temporary unavailable');
     }
 

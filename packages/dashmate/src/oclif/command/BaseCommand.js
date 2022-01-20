@@ -101,7 +101,7 @@ class BaseCommand extends Command {
     if (this.container) {
       const configFileRepository = this.container.resolve('configFileRepository');
 
-      if (this.container.has('configFile')) {
+      if (this.container.hasRegistration('configFile')) {
         const configFile = this.container.resolve('configFile');
 
         await configFileRepository.write(configFile);

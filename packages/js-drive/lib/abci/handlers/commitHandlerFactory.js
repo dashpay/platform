@@ -144,7 +144,7 @@ function commitHandlerFactory(
     rootTree.rebuild();
 
     // Commit previous block data to previous stores if available
-    if (container.has('previousBlockExecutionStoreTransactions')) {
+    if (container.hasRegistration('previousBlockExecutionStoreTransactions')) {
       const previousBlockExecutionStoreTransactions = container.resolve(
         'previousBlockExecutionStoreTransactions',
       );

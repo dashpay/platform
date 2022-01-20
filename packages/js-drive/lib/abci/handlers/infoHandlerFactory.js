@@ -68,7 +68,7 @@ function infoHandlerFactory(
 
     if (lastHeader) {
       // If the current block is higher than 1 we need to obtain previous block data
-      if (!container.has('previousBlockExecutionStoreTransactions')) {
+      if (!container.hasRegistration('previousBlockExecutionStoreTransactions')) {
         // If container doesn't have previous transactions, load them from file (node cold start)
         const previousBlockExecutionStoreTransactions = (
           await previousBlockExecutionStoreTransactionsRepository.fetch()
