@@ -2563,7 +2563,6 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["node-graceful", "npm:3.1.0"],
             ["nyc", "npm:15.1.0"],
             ["pino", "npm:7.6.3"],
-            ["pino-multi-stream", "npm:6.0.0"],
             ["pino-pretty", "npm:7.4.0"],
             ["rimraf", "npm:3.0.2"],
             ["setimmediate", "npm:1.0.5"],
@@ -14937,16 +14936,6 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["pino-abstract-transport", "npm:0.5.0"],
             ["duplexify", "npm:4.1.2"],
             ["split2", "npm:4.1.0"]
-          ],
-          "linkType": "HARD",
-        }]
-      ]],
-      ["pino-multi-stream", [
-        ["npm:6.0.0", {
-          "packageLocation": "./.yarn/cache/pino-multi-stream-npm-6.0.0-d3841552e3-dbed3cc327.zip/node_modules/pino-multi-stream/",
-          "packageDependencies": [
-            ["pino-multi-stream", "npm:6.0.0"],
-            ["pino", "npm:7.6.3"]
           ],
           "linkType": "HARD",
         }]

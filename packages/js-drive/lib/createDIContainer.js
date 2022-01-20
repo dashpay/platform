@@ -6,8 +6,6 @@ const {
   asValue,
 } = require('awilix');
 
-const fs = require('fs');
-
 const Long = require('long');
 
 // eslint-disable-next-line import/no-unresolved
@@ -27,7 +25,6 @@ const Identifier = require('@dashevo/dpp/lib/identifier/Identifier');
 const findMyWay = require('find-my-way');
 
 const pino = require('pino');
-const pinoMultistream = require('pino-multi-stream');
 
 const createABCIServer = require('@dashevo/abci');
 
@@ -353,55 +350,49 @@ function createDIContainer(options) {
    * Register common services
    */
   container.register({
-    loggerPrettyfierOptions: asValue({
-      translateTime: true,
-    }),
-
-    logStdoutStream: asFunction((loggerPrettyfierOptions) => pinoMultistream.prettyStream({
-      prettyPrint: loggerPrettyfierOptions,
-    })).singleton(),
-
-    logPrettyFileStream: asFunction((
-      logPrettyFilePath,
-      loggerPrettyfierOptions,
-    ) => pinoMultistream.prettyStream({
-      prettyPrint: loggerPrettyfierOptions,
-      dest: fs.createWriteStream(logPrettyFilePath, { flags: 'a' }),
-    })).singleton(),
-
-    logJsonFileStream: asFunction((logJsonFilePath) => fs.createWriteStream(logJsonFilePath, { flags: 'a' }))
-      .disposer(async (stream) => new Promise((resolve) => {
-        stream.end(resolve);
-      })).singleton(),
-
-    loggerStreams: asFunction((
+    loggerTransport: asFunction((
       logStdoutLevel,
-      logStdoutStream,
       logPrettyFileLevel,
-      logPrettyFileStream,
+      logPrettyFilePath,
       logJsonFileLevel,
-      logJsonFileStream,
-    ) => [
-      {
-        level: logStdoutLevel,
-        stream: logStdoutStream,
-      },
-      {
-        level: logPrettyFileLevel,
-        stream: logPrettyFileStream,
-      },
-      {
-        level: logJsonFileLevel,
-        stream: logJsonFileStream,
-      },
-    ]),
+      logJsonFilePath,
+    ) => (
+      pino.transport({
+        pipeline: [{
+          level: logPrettyFileLevel,
+          target: 'pino/file',
+          options: {
+            destination: logPrettyFilePath,
+          },
+        }, {
+          target: 'pino-pretty',
+          options: {
+            translateTime: true,
+          },
+        }],
+        targets: [
+          {
+            level: logStdoutLevel,
+            target: 'pino-pretty',
+            options: {
+              translateTime: true,
+            },
+          },
+          {
+            level: logJsonFileLevel,
+            target: 'pino/file',
+            options: {
+              destination: logJsonFilePath,
+            },
+          },
+        ],
+      })
+    )),
 
     logger: asFunction(
-      (loggerStreams) => pino({
-        level: 'trace',
-      }, pinoMultistream.multistream(loggerStreams))
+      (loggerTransport) => pino(loggerTransport)
         .child({ driveVersion: packageJSON.version }),
-    ).singleton(),
+    ).singleton().disposer((logger) => logger.flush()),
 
     noopLogger: asFunction(() => (
       Object.keys(pino.levels.values).reduce((logger, functionName) => ({

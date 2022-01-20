@@ -95,7 +95,6 @@
     "mongodb": "^3.5.5",
     "node-graceful": "^3.0.1",
     "pino": "^7.6.3",
-    "pino-multi-stream": "^6.0.0",
     "pino-pretty": "^7.4.0",
     "rimraf": "^3.0.2",
     "setimmediate": "^1.0.5",

@@ -1569,7 +1569,6 @@ __metadata:
     node-graceful: ^3.0.1
     nyc: ^15.1.0
     pino: ^7.6.3
-    pino-multi-stream: ^6.0.0
     pino-pretty: ^7.4.0
     rimraf: ^3.0.2
     setimmediate: ^1.0.5
@@ -12190,15 +12189,6 @@ fsevents@~2.3.2:
   languageName: node
   linkType: hard
 
-"pino-multi-stream@npm:^6.0.0":
-  version: 6.0.0
-  resolution: "pino-multi-stream@npm:6.0.0"
-  dependencies:
-    pino: ^7.0.0
-  checksum: dbed3cc327da643f685761f35208a566acd917b3f6288de246c3200497096616280ab22c7d09adf37d724d1fcba05dcacff012abd2cd73dd28259a16c4caf8e5
-  languageName: node
-  linkType: hard
-
 "pino-pretty@npm:^4.0.3":
   version: 4.8.0
   resolution: "pino-pretty@npm:4.8.0"
@@ -12250,7 +12240,7 @@ fsevents@~2.3.2:
   languageName: node
   linkType: hard
 
-"pino@npm:*, pino@npm:^7.0.0, pino@npm:^7.6.3":
+"pino@npm:*, pino@npm:^7.6.3":
   version: 7.6.3
   resolution: "pino@npm:7.6.3"
   dependencies:
