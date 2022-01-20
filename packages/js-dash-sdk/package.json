@@ -49,7 +49,7 @@
     "@types/chai": "^4.3.0",
     "@types/dirty-chai": "^2.0.2",
     "@types/expect": "^24.3.0",
-    "@types/mocha": "^9.0.0",
+    "@types/mocha": "^9.1.0",
     "@types/node": "^16.11.21",
     "@types/sinon": "^10.0.6",
     "@types/sinon-chai": "^3.2.4",
@@ -88,7 +88,7 @@
     "typescript": "^3.9.5",
     "url": "^0.11.0",
     "util": "^0.12.4",
-    "webpack": "^5.59.1",
+    "webpack": "^5.66.0",
     "webpack-cli": "^4.9.1"
   }
 }
