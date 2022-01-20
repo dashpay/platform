@@ -105,7 +105,7 @@ describe('commitHandlerFactory', () => {
     containerMock = {
       register: this.sinon.stub(),
       resolve: this.sinon.stub(),
-      has: this.sinon.stub(),
+      hasRegistration: this.sinon.stub(),
     };
 
     const loggerMock = new LoggerMock(this.sinon);
@@ -174,7 +174,7 @@ describe('commitHandlerFactory', () => {
 
   describe('Cumulative fees', () => {
     it('should call setAmount instead of incrementAmount if feature flag was not set', async () => {
-      containerMock.has.withArgs('previousBlockExecutionStoreTransactions').returns(false);
+      containerMock.hasRegistration.withArgs('previousBlockExecutionStoreTransactions').returns(false);
 
       getLatestFeatureFlagMock.resolves(null);
 
@@ -186,7 +186,7 @@ describe('commitHandlerFactory', () => {
     });
 
     it('should call setAmount instead of incrementAmount if feature flag was set to false', async () => {
-      containerMock.has.withArgs('previousBlockExecutionStoreTransactions').returns(false);
+      containerMock.hasRegistration.withArgs('previousBlockExecutionStoreTransactions').returns(false);
 
       getLatestFeatureFlagMock.resolves({
         get: () => false,
@@ -201,7 +201,7 @@ describe('commitHandlerFactory', () => {
   });
 
   it('should commit db transactions, create document dbs and return ResponseCommit', async () => {
-    containerMock.has.withArgs('previousBlockExecutionStoreTransactions').returns(false);
+    containerMock.hasRegistration.withArgs('previousBlockExecutionStoreTransactions').returns(false);
 
     previousBlockExecutionContextMock.isEmpty.returns(true);
 
@@ -247,7 +247,7 @@ describe('commitHandlerFactory', () => {
   it('should commit db transactions, create document dbs and return ResponseCommit on height > 1', async () => {
     header.height = Long.fromInt(2);
 
-    containerMock.has.withArgs('previousBlockExecutionStoreTransactions').returns(true);
+    containerMock.hasRegistration.withArgs('previousBlockExecutionStoreTransactions').returns(true);
 
     containerMock.resolve.withArgs('previousBlockExecutionStoreTransactions').returns(
       previousBlockExecutionStoreTransactionsMock,
@@ -318,7 +318,7 @@ describe('commitHandlerFactory', () => {
   it('should abort DB transactions', async () => {
     header.height = Long.fromInt(2);
 
-    containerMock.has.withArgs('previousBlockExecutionStoreTransactionsMock').returns(true);
+    containerMock.hasRegistration.withArgs('previousBlockExecutionStoreTransactionsMock').returns(true);
 
     previousBlockExecutionStoreTransactionsMock.getTransaction.withArgs('dataContracts').returns(
       previousDataContractTransactionMock,

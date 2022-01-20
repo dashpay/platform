@@ -47,7 +47,7 @@ describe('infoHandlerFactory', () => {
 
     containerMock = {
       register: this.sinon.stub(),
-      has: this.sinon.stub().withArgs('previousBlockExecutionStoreTransactions').returns(false),
+      hasRegistration: this.sinon.stub().withArgs('previousBlockExecutionStoreTransactions').returns(false),
     };
 
     blockExecutionStoreTransactionsMock = {};
@@ -84,7 +84,7 @@ describe('infoHandlerFactory', () => {
     expect(updateSimplifiedMasternodeListMock).to.not.be.called();
 
     expect(previousBlockExecutionStoreTransactionsRepositoryMock.fetch).to.not.be.called();
-    expect(containerMock.has).to.not.be.called();
+    expect(containerMock.hasRegistration).to.not.be.called();
   });
 
   it('should update SML to latest core chain locked height and return stored info', async () => {
@@ -115,7 +115,7 @@ describe('infoHandlerFactory', () => {
     );
 
     expect(previousBlockExecutionStoreTransactionsRepositoryMock.fetch).to.be.calledWithExactly();
-    expect(containerMock.has).to.be.calledOnceWithExactly('previousBlockExecutionStoreTransactions');
+    expect(containerMock.hasRegistration).to.be.calledOnceWithExactly('previousBlockExecutionStoreTransactions');
   });
 
   it('should throw NoPreviousBlockExecutionStoreTransactionsFoundError if previous BlockExecutionStoreTransactions is not present', async () => {

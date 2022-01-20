@@ -64,7 +64,7 @@ describe('documentQueryHandlerFactory', () => {
     };
 
     containerMock = {
-      has: this.sinon.stub().returns(true),
+      hasRegistration: this.sinon.stub().returns(true),
       resolve: this.sinon.stub().returns(previousBlockExecutionTransactionsMock),
     };
 
@@ -152,7 +152,7 @@ describe('documentQueryHandlerFactory', () => {
 
     expect(result.value).to.deep.equal(responseMock.serializeBinary());
     expect(previousRootTreeMock.getFullProofForOneLeaf).to.be.not.called();
-    expect(containerMock.has).to.be.calledOnceWithExactly('previousBlockExecutionStoreTransactions');
+    expect(containerMock.hasRegistration).to.be.calledOnceWithExactly('previousBlockExecutionStoreTransactions');
   });
 
   it('should return serialized documents with proof', async () => {
@@ -178,11 +178,11 @@ describe('documentQueryHandlerFactory', () => {
       previousDocumentsStoreRootTreeLeafMock,
       documentIds,
     ]);
-    expect(containerMock.has).to.be.calledOnceWithExactly('previousBlockExecutionStoreTransactions');
+    expect(containerMock.hasRegistration).to.be.calledOnceWithExactly('previousBlockExecutionStoreTransactions');
   });
 
   it('should throw UnavailableAbciError if previousBlockExecutionStoreTransactions is not present', async () => {
-    containerMock.has.returns(false);
+    containerMock.hasRegistration.returns(false);
 
     try {
       await documentQueryHandler(params, data, {});
@@ -192,7 +192,7 @@ describe('documentQueryHandlerFactory', () => {
       expect(e).to.be.an.instanceof(UnavailableAbciError);
       expect(e.getCode()).to.equal(GrpcErrorCodes.UNAVAILABLE);
       expect(fetchPreviousDocumentsMock).to.not.be.called();
-      expect(containerMock.has).to.be.calledOnceWithExactly('previousBlockExecutionStoreTransactions');
+      expect(containerMock.hasRegistration).to.be.calledOnceWithExactly('previousBlockExecutionStoreTransactions');
     }
   });
 
@@ -245,7 +245,7 @@ describe('documentQueryHandlerFactory', () => {
       expect(e.getCode()).to.equal(GrpcErrorCodes.INVALID_ARGUMENT);
       expect(e.getData()).to.deep.equal({ errors: [error] });
       expect(fetchPreviousDocumentsMock).to.be.calledOnceWith(data.contractId, data.type, options);
-      expect(containerMock.has).to.be.calledOnceWithExactly('previousBlockExecutionStoreTransactions');
+      expect(containerMock.hasRegistration).to.be.calledOnceWithExactly('previousBlockExecutionStoreTransactions');
     }
   });
 
@@ -261,7 +261,7 @@ describe('documentQueryHandlerFactory', () => {
     } catch (e) {
       expect(e).to.deep.equal(error);
       expect(fetchPreviousDocumentsMock).to.be.calledOnceWith(data.contractId, data.type, options);
-      expect(containerMock.has).to.be.calledOnceWithExactly('previousBlockExecutionStoreTransactions');
+      expect(containerMock.hasRegistration).to.be.calledOnceWithExactly('previousBlockExecutionStoreTransactions');
     }
   });
 });
