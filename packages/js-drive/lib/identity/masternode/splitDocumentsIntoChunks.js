@@ -11,24 +11,34 @@ function splitDocumentsIntoChunks(documents) {
   const chunkedDocuments = [];
   const { create: documentsToCreate, delete: documentsToDelete } = documents;
 
-  const maxLength = Math.max(documentsToCreate.length, documentsToDelete.length);
-  const chunk = documentsBatchSchema.properties.transitions.maxItems;
-  if (maxLength <= chunk) {
+  const chunkLength = documentsBatchSchema.properties.transitions.maxItems;
+
+  if (documentsToCreate.length + documentsToDelete.length <= chunkLength) {
     return [documents];
   }
 
-  for (let i = 0; i < maxLength; i += chunk) {
-    const result = {};
+  for (let i = 0; i < documentsToCreate.length; i += chunkLength) {
+    const chunk = {
+      create: documentsToCreate.slice(i, i + chunkLength),
+    };
 
-    if (documentsToCreate.length > i) {
-      result.create = documentsToCreate.slice(i, i + chunk);
-    }
+    chunkedDocuments.push(chunk);
+  }
 
-    if (documentsToDelete.length > i) {
-      result.delete = documentsToDelete.slice(i, i + chunk);
-    }
+  const lastCreateChunkLength = chunkedDocuments[chunkedDocuments.length - 1].create.length;
+  const documentsToAddLength = chunkLength - lastCreateChunkLength;
 
-    chunkedDocuments.push(result);
+  chunkedDocuments[chunkedDocuments.length - 1].delete = documentsToDelete.slice(
+    0,
+    documentsToAddLength,
+  );
+
+  for (let i = documentsToAddLength; i < documentsToDelete.length; i += chunkLength) {
+    const chunk = {
+      delete: documentsToDelete.slice(i, i + chunkLength),
+    };
+
+    chunkedDocuments.push(chunk);
   }
 
   return chunkedDocuments;

@@ -69,4 +69,32 @@ describe('splitDocumentsIntoChunks', () => {
       documents.delete.slice(chunkLength * 2, chunkLength * 3 + 1),
     );
   });
+
+  it('should split create and delete documents', () => {
+    documents.create = Array.from(
+      { length: chunkLength * 2 + 1 },
+      () => Math.floor(Math.random() * 40),
+    );
+
+    documents.delete = Array.from(
+      { length: chunkLength * 2 + 1 },
+      () => Math.floor(Math.random() * 40),
+    );
+
+    const result = splitDocumentsIntoChunks(documents);
+    expect(result).to.have.lengthOf(5);
+
+    result.forEach((chunk) => {
+      let ducumentsAmount = 0;
+      if (chunk.create) {
+        ducumentsAmount += chunk.create.length;
+      }
+
+      if (chunk.delete) {
+        ducumentsAmount += chunk.delete.length;
+      }
+
+      expect(ducumentsAmount).to.be.lessThanOrEqual(chunkLength);
+    });
+  });
 });
