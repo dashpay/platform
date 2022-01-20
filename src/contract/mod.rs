@@ -5,7 +5,6 @@ use ciborium::value::{Value as CborValue, Value};
 use grovedb::Error;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::ops::Not;
 
 // contract
 // - id
@@ -103,7 +102,7 @@ impl Contract {
             .map_err(|_| Error::CorruptedData(String::from("unable to decode contract")))?;
 
         // Get the contract id
-        let contract_id = base58_value_as_bytes_from_hash_map(&contract, "$id").ok_or(
+        let contract_id = bytes_for_system_value_from_hash_map(&contract, "$id").ok_or(
             Error::CorruptedData(String::from("unable to get contract id")),
         )?;
 
@@ -317,11 +316,7 @@ impl DocumentType {
 }
 
 impl Document {
-    pub fn from_cbor(document_cbor: &[u8], owner_id: &[u8]) -> Result<Self, Error> {
-        // we need to start by verifying that the owner_id is a 256 bit number (32 bytes)
-        if owner_id.len() != 32 {
-            Err(Error::CorruptedData(String::from("invalid owner id")))?
-        }
+    pub fn from_cbor(document_cbor: &[u8], document_id: Option<&[u8]>, owner_id: Option<&[u8]>) -> Result<Self, Error> {
         let (version, read_document_cbor) = document_cbor.split_at(4);
         if !Drive::check_protocol_version_bytes(version) {
             return Err(Error::CorruptedData(String::from("invalid protocol version")));
@@ -330,16 +325,46 @@ impl Document {
         // we would need dedicated deserialization functions based on the document type
         let mut document: HashMap<String, CborValue> = ciborium::de::from_reader(read_document_cbor)
             .map_err(|_| Error::CorruptedData(String::from("unable to decode contract")))?;
-        let document_id: Vec<u8> = base58_value_as_bytes_from_hash_map(&document, "$id").ok_or(
-            Error::CorruptedData(String::from("unable to get document id")),
-        )?;
-        document.remove("$id");
+
+        let owner_id = match owner_id {
+            None => {
+                let owner_id: Vec<u8> = bytes_for_system_value_from_hash_map(&document, "$ownerId").ok_or(
+                    Error::CorruptedData(String::from("unable to get document $ownerId")),
+                )?;
+                document.remove("$ownerId");
+                owner_id
+            }
+            Some(owner_id) => {
+                // we need to start by verifying that the owner_id is a 256 bit number (32 bytes)
+                if owner_id.len() != 32 {
+                    Err(Error::CorruptedData(String::from("invalid owner id")))?
+                }
+                Vec::from(owner_id)
+            }
+        };
+
+        let id = match document_id {
+            None => {
+                let document_id: Vec<u8> = bytes_for_system_value_from_hash_map(&document, "$id").ok_or(
+                    Error::CorruptedData(String::from("unable to get document $id")),
+                )?;
+                document.remove("$id");
+                document_id
+            }
+            Some(document_id) => {
+                // we need to start by verifying that the document_id is a 256 bit number (32 bytes)
+                if document_id.len() != 32 {
+                    Err(Error::CorruptedData(String::from("invalid document id")))?
+                }
+                Vec::from(document_id)
+            }
+        };
 
         // dev-note: properties is everything other than the id
         let document = Document {
             properties: document,
-            owner_id: Vec::from(owner_id),
-            id: document_id,
+            owner_id,
+            id,
         };
         Ok(document)
     }
@@ -382,18 +407,23 @@ impl Document {
         key: &str,
         document_type_name: &str,
         contract: &Contract,
+        owner_id: Option<&[u8]>
     ) -> Result<Option<Vec<u8>>, Error> {
-        match self.properties.get(key) {
-            None => Ok(None),
-            Some(value) => {
-                let document_type =
-                    contract
-                        .document_types
-                        .get(document_type_name)
-                        .ok_or(Error::CorruptedData(String::from(
-                            "document type should exist for name",
-                        )))?;
-                Ok(Some(document_type.serialize_value_for_key(key, value)?))
+        if key == "$ownerId" && owner_id.is_some() {
+            Ok(Some(Vec::from(owner_id.unwrap())))
+        } else {
+            match self.properties.get(key) {
+                None => Ok(None),
+                Some(value) => {
+                    let document_type =
+                        contract
+                            .document_types
+                            .get(document_type_name)
+                            .ok_or(Error::CorruptedData(String::from(
+                                "document type should exist for name",
+                            )))?;
+                    Ok(Some(document_type.serialize_value_for_key(key, value)?))
+                }
             }
         }
     }
@@ -544,20 +574,46 @@ fn cbor_inner_bool_value(document_type: &Vec<(Value, Value)>, key: &str) -> Opti
     return None;
 }
 
-fn base58_value_as_bytes_from_hash_map(
+fn bytes_for_system_value_from_hash_map(
     document: &HashMap<String, CborValue>,
     key: &str,
 ) -> Option<Vec<u8>> {
     document
         .get(key)
         .map(|id_cbor| {
-            if let CborValue::Text(b) = id_cbor {
-                match bs58::decode(b).into_vec() {
-                    Ok(data) => Some(data),
-                    Err(_) => None,
+            match id_cbor {
+                Value::Bytes(bytes) => {
+                    Some(bytes.clone())
                 }
-            } else {
-                None
+                Value::Text(text) => {
+                    match bs58::decode(text).into_vec() {
+                        Ok(data) => Some(data),
+                        Err(_) => None,
+                    }
+                }
+                Value::Array(array) => {
+                    let bytes_result : Result<Vec<u8>, Error> = array.iter().map(|byte| {
+                        match byte {
+                            Value::Integer(int) => {
+                                let value_as_u8: u8 = int.clone()
+                                    .try_into()
+                                    .map_err(|_| Error::CorruptedData(String::from("expected u8 value")))?;
+                                Ok(value_as_u8)
+                            }
+                            _ => {
+                                Err(Error::CorruptedData(String::from("not an array of integers")))
+                            }
+                        }
+                    }).collect::<Result<Vec<u8>, Error>>();
+                    match bytes_result {
+                        Ok(bytes) => {
+                            Some(bytes)
+                        }
+                        Err(e) => None
+                    }
+
+                }
+                _ => None
             }
         })
         .flatten()
