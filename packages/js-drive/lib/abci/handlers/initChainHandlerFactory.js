@@ -135,13 +135,6 @@ function initChainHandlerFactory(
       featureFlagContract, { isTransactional: false },
     );
 
-    await registerFeatureFlag(
-      'fixCumulativeFeesBug',
-      featureFlagContract,
-      featureFlagsOwnerId,
-      genesisTime,
-    );
-
     contextLogger.debug('Registering system data contract: DPNS');
     contextLogger.trace({
       ownerId: dpnsOwnerId,
