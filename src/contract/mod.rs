@@ -1,17 +1,10 @@
 mod types;
 
-use base64::DecodeError;
-use byteorder::{BigEndian, WriteBytesExt};
-use ciborium::cbor;
+use crate::drive::RootTree;
 use ciborium::value::{Value as CborValue, Value};
 use grovedb::Error;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::fs::File;
-use std::io::BufReader;
-use std::path::Path;
-use std::ptr::swap;
-use std::rc::{Rc, Weak};
 
 // contract
 // - id
@@ -26,27 +19,69 @@ use std::rc::{Rc, Weak};
 // Struct Definitions
 #[derive(Serialize, Deserialize)]
 pub struct Contract {
-    pub(crate) document_types: HashMap<String, DocumentType>,
-    pub(crate) id: Vec<u8>,
+    pub document_types: HashMap<String, DocumentType>,
+    pub id: Vec<u8>,
 }
 
 #[derive(Serialize, Deserialize)]
 pub struct DocumentType {
-    pub(crate) indices: Vec<Index>,
-    pub(crate) properties: HashMap<String, types::DocumentFieldType>,
+    pub name: String,
+    pub indices: Vec<Index>,
+    pub properties: HashMap<String, types::DocumentFieldType>,
 }
 
 #[derive(Serialize, Deserialize)]
 pub struct Document {
-    pub(crate) id: Vec<u8>,
-    pub(crate) properties: HashMap<String, CborValue>,
-    pub(crate) owner_id: Vec<u8>,
+    pub id: Vec<u8>,
+    pub properties: HashMap<String, CborValue>,
+    pub owner_id: Vec<u8>,
 }
 
 #[derive(Clone, Serialize, Deserialize)]
 pub struct Index {
-    pub(crate) properties: Vec<IndexProperty>,
-    pub(crate) unique: bool,
+    pub properties: Vec<IndexProperty>,
+    pub unique: bool,
+}
+
+impl Index {
+    // The matches function will take a slice of an array of strings and an optional sort on value.
+    // An index matches if all the index_names in the slice are consecutively the index's properties
+    // with leftovers permitted.
+    // If a sort_on value is provided it must match the last index property.
+    // The number returned is the number of unused index properties
+    pub fn matches(&self, index_names: &[&str], sort_on: Option<&str>) -> Option<u16> {
+        let mut d = self.properties.len();
+        if sort_on.is_some() {
+            let last_property = self.properties.last();
+            if last_property.is_none() {
+                return None;
+            } else if last_property.unwrap().name.as_str() != sort_on.unwrap() {
+                return None;
+            } else {
+                let last_search_name = index_names.last();
+                if last_search_name.is_some() {
+                    if *last_search_name.unwrap() != sort_on.unwrap() {
+                        // we can remove the -1 here
+                        // this is a case for example if we have an index on person's name and age
+                        // where we say name == 'Sam' sort by age
+                        // there is no field operator on age
+                        // The return value for name == 'Sam' sort by age would be 0
+                        // The return value for name == 'Sam and age > 5 sort by age would be 0
+                        // the return value for sort by age would be 1
+                        d -= 1;
+                    }
+                }
+            }
+        }
+        for (property_name, search_name) in self.properties.iter().zip(index_names.iter()) {
+            if property_name.name.as_str() != *search_name {
+                return None;
+            }
+            d -= 1;
+        }
+
+        Some(d as u16)
+    }
 }
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -73,7 +108,7 @@ impl Contract {
                 .ok_or(Error::CorruptedData(String::from(
                     "unable to get documents",
                 )))?;
-        let mut contract_document_types_raw =
+        let contract_document_types_raw =
             documents_cbor_value
                 .as_map()
                 .ok_or(Error::CorruptedData(String::from(
@@ -98,6 +133,7 @@ impl Contract {
             }
 
             let document_type = DocumentType::from_cbor_value(
+                type_key_value.as_text().expect("confirmed as text"),
                 document_type_value.as_map().expect("confirmed as map"),
             )?;
             contract_document_types.insert(
@@ -111,10 +147,76 @@ impl Contract {
             document_types: contract_document_types,
         })
     }
+
+    pub fn root_path(&self) -> Vec<&[u8]> {
+        vec![RootTree::ContractDocuments.into(), &self.id]
+    }
+
+    pub fn documents_path(&self) -> Vec<&[u8]> {
+        vec![RootTree::ContractDocuments.into(), &self.id, b"1"]
+    }
+
+    pub fn document_type_path<'a>(&'a self, document_type_name: &'a str) -> Vec<&'a [u8]> {
+        vec![
+            RootTree::ContractDocuments.into(),
+            &self.id,
+            b"1",
+            document_type_name.as_bytes(),
+        ]
+    }
+
+    pub fn documents_primary_key_path<'a>(&'a self, document_type_name: &'a str) -> Vec<&'a [u8]> {
+        vec![
+            RootTree::ContractDocuments.into(),
+            &self.id,
+            b"1",
+            document_type_name.as_bytes(),
+            b"0",
+        ]
+    }
 }
 
 impl DocumentType {
-    pub fn from_cbor_value(document_type_value_map: &Vec<(Value, Value)>) -> Result<Self, Error> {
+    pub fn index_for_types(
+        &self,
+        index_names: &[&str],
+        sort_on: Option<&str>,
+    ) -> Option<(&Index, u16)> {
+        let mut best_index: Option<(&Index, u16)> = None;
+        let mut best_difference = u16::MAX;
+        for index in self.indices.iter() {
+            let difference_option = index.matches(index_names, sort_on);
+            if difference_option.is_some() {
+                let difference = difference_option.unwrap();
+                if difference == 0 {
+                    return Some((index, 0));
+                } else if difference < best_difference {
+                    best_difference = difference;
+                    best_index = Some((index, best_difference));
+                }
+            }
+        }
+        best_index
+    }
+
+    pub fn serialize_value_for_key<'a>(
+        &'a self,
+        key: &str,
+        value: &Value,
+    ) -> Result<Vec<u8>, Error> {
+        let field_type = self
+            .properties
+            .get(key)
+            .ok_or(Error::CorruptedData(String::from(
+                "expected document to have field",
+            )))?;
+        Ok(types::encode_document_field_type(field_type, value)?)
+    }
+
+    pub fn from_cbor_value(
+        name: &str,
+        document_type_value_map: &Vec<(Value, Value)>,
+    ) -> Result<Self, Error> {
         let mut indices: Vec<Index> = Vec::new();
         let mut document_properties: HashMap<String, types::DocumentFieldType> = HashMap::new();
 
@@ -158,7 +260,7 @@ impl DocumentType {
                 Error::CorruptedData(String::from("cannot find type property")),
             )?;
 
-            let mut field_type: types::DocumentFieldType;
+            let field_type: types::DocumentFieldType;
 
             if type_value == "array" {
                 // Only handling bytearrays for v1
@@ -191,6 +293,7 @@ impl DocumentType {
         document_properties.insert(String::from("$updatedAt"), types::DocumentFieldType::Date);
 
         Ok(DocumentType {
+            name: String::from(name),
             indices,
             properties: document_properties,
         })
@@ -232,6 +335,29 @@ impl Document {
         Ok(document)
     }
 
+    pub fn from_cbor_with_id(document_cbor: &[u8], document_id: &[u8], owner_id: &[u8]) -> Result<Self, Error> {
+        // we need to start by verifying that the owner_id is a 256 bit number (32 bytes)
+        if owner_id.len() != 32 {
+            Err(Error::CorruptedData(String::from("invalid owner id")))?
+        }
+
+        if document_id.len() != 32 {
+            Err(Error::CorruptedData(String::from("invalid document id")))?
+        }
+        // first we need to deserialize the document and contract indices
+        // we would need dedicated deserialization functions based on the document type
+        let mut document: HashMap<String, CborValue> = ciborium::de::from_reader(document_cbor)
+            .map_err(|_| Error::CorruptedData(String::from("unable to decode contract")))?;
+
+        // dev-note: properties is everything other than the id
+        let document = Document {
+            properties: document,
+            owner_id: Vec::from(owner_id),
+            id: Vec::from(document_id),
+        };
+        Ok(document)
+    }
+
     pub fn get(&self, key: &str) -> Option<&Value> {
         self.properties.get(key)
     }
@@ -241,15 +367,20 @@ impl Document {
         key: &str,
         document_type_name: &str,
         contract: &Contract,
-    ) -> Option<Vec<u8>> {
-        let value = self.properties.get(key)?;
-        let document_type = contract.document_types.get(document_type_name)?;
-        let field_type = document_type.properties.get(key)?;
-        let raw_value = types::encode_document_field_type(field_type, value);
-        if raw_value.is_err() {
-            return None;
+    ) -> Result<Option<Vec<u8>>, Error> {
+        match self.properties.get(key) {
+            None => Ok(None),
+            Some(value) => {
+                let document_type =
+                    contract
+                        .document_types
+                        .get(document_type_name)
+                        .ok_or(Error::CorruptedData(String::from(
+                            "document type should exist for name",
+                        )))?;
+                Ok(Some(document_type.serialize_value_for_key(key, value)?))
+            }
         }
-        return Some(raw_value.expect("confirmed it's not an error")?);
     }
 }
 
@@ -445,7 +576,7 @@ mod tests {
 
     #[test]
     fn test_import_contract() {
-        let dashpay_cbor = json_document_to_cbor("test/contract/dashpay/dashpay-contract.json");
+        let dashpay_cbor = json_document_to_cbor("tests/supporting_files/contract/dashpay/dashpay-contract.json");
         let contract = Contract::from_cbor(&dashpay_cbor).unwrap();
 
         assert_eq!(contract.document_types.len(), 3);

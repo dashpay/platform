@@ -1,5 +1,6 @@
-mod contract;
-mod drive;
+pub mod contract;
+pub mod drive;
+pub mod query;
 
 #[cfg(test)]
 mod tests {
