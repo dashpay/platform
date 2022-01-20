@@ -96,7 +96,8 @@ impl<'a> WhereClause {
             .get(2)
             .ok_or(Error::CorruptedData(String::from(
                 "third field of where component should exist",
-            )))?.clone();
+            )))?
+            .clone();
 
         Ok(WhereClause {
             field,
@@ -106,34 +107,38 @@ impl<'a> WhereClause {
     }
 
     fn lower_bound_clause(where_clauses: &'a [&WhereClause]) -> Result<Option<&'a Self>, Error> {
-        let lower_range_clauses : Vec<&&WhereClause> = where_clauses.iter().filter(|&where_clause| match where_clause.operator {
-            GreaterThan => true,
-            GreaterThanOrEquals => true,
-            _ => false,
-        })
-        .collect::<Vec<&&WhereClause>>();
+        let lower_range_clauses: Vec<&&WhereClause> = where_clauses
+            .iter()
+            .filter(|&where_clause| match where_clause.operator {
+                GreaterThan => true,
+                GreaterThanOrEquals => true,
+                _ => false,
+            })
+            .collect::<Vec<&&WhereClause>>();
         match lower_range_clauses.len() {
             0 => Ok(None),
             1 => Ok(Some(lower_range_clauses.get(0).unwrap())),
             _ => Err(Error::CorruptedData(String::from(
                 "there can only at most one range clause with a lower bound",
-            )))
+            ))),
         }
     }
 
     fn upper_bound_clause(where_clauses: &'a [&WhereClause]) -> Result<Option<&'a Self>, Error> {
-        let upper_range_clauses : Vec<&&WhereClause> = where_clauses.into_iter().filter(|&where_clause| match where_clause.operator {
-            LessThan => true,
-            LessThanOrEquals => true,
-            _ => false,
-        })
+        let upper_range_clauses: Vec<&&WhereClause> = where_clauses
+            .into_iter()
+            .filter(|&where_clause| match where_clause.operator {
+                LessThan => true,
+                LessThanOrEquals => true,
+                _ => false,
+            })
             .collect::<Vec<&&WhereClause>>();
         match upper_range_clauses.len() {
             0 => Ok(None),
             1 => Ok(Some(upper_range_clauses.get(0).unwrap())),
             _ => Err(Error::CorruptedData(String::from(
                 "there can only at most one range clause with a lower bound",
-            )))
+            ))),
         }
     }
 
@@ -185,15 +190,20 @@ impl<'a> WhereClause {
                 )));
             }
 
-            if groupable_range_clauses.iter().any(|&z| z.field != groupable_range_clauses.first().unwrap().field) {
+            if groupable_range_clauses
+                .iter()
+                .any(|&z| z.field != groupable_range_clauses.first().unwrap().field)
+            {
                 return Err(Error::CorruptedData(String::from(
                     "all ranges must be on same field",
                 )));
             }
 
             // we need to find the bounds of the clauses
-            let lower_bounds_clause = WhereClause::lower_bound_clause(groupable_range_clauses.as_slice())?;
-            let upper_bounds_clause = WhereClause::upper_bound_clause(groupable_range_clauses.as_slice())?;
+            let lower_bounds_clause =
+                WhereClause::lower_bound_clause(groupable_range_clauses.as_slice())?;
+            let upper_bounds_clause =
+                WhereClause::upper_bound_clause(groupable_range_clauses.as_slice())?;
 
             if lower_bounds_clause.is_none() || upper_bounds_clause.is_none() {
                 return Err(Error::CorruptedData(String::from(
@@ -201,20 +211,27 @@ impl<'a> WhereClause {
                 )));
             }
 
-            let operator = match (lower_bounds_clause.unwrap().operator, upper_bounds_clause.unwrap().operator) {
+            let operator = match (
+                lower_bounds_clause.unwrap().operator,
+                upper_bounds_clause.unwrap().operator,
+            ) {
                 (GreaterThanOrEquals, LessThanOrEquals) => Some(Between),
                 (GreaterThanOrEquals, LessThan) => Some(BetweenExcludeRight),
                 (GreaterThan, LessThanOrEquals) => Some(BetweenExcludeLeft),
                 (GreaterThan, LessThan) => Some(BetweenExcludeBounds),
-                _ => None
-            }.ok_or(Error::CorruptedData(String::from(
+                _ => None,
+            }
+            .ok_or(Error::CorruptedData(String::from(
                 "lower and upper bounds must be passed if providing 2 ranges",
             )))?;
 
             return Ok(Some(WhereClause {
                 field: groupable_range_clauses.first().unwrap().field.clone(),
                 operator,
-                value: Value::Array(vec![lower_bounds_clause.unwrap().value.clone(), upper_bounds_clause.unwrap().value.clone()])
+                value: Value::Array(vec![
+                    lower_bounds_clause.unwrap().value.clone(),
+                    upper_bounds_clause.unwrap().value.clone(),
+                ]),
             }));
         } else if non_groupable_range_clauses.len() == 1 {
             let where_clause = non_groupable_range_clauses.get(0).unwrap();
@@ -243,10 +260,10 @@ impl<'a> WhereClause {
                 "when using between operator you must provide an array of exactly two values",
             )));
         }
-        let left_key =
-            document_type.serialize_value_for_key(self.field.as_str(), in_values.get(0).unwrap())?;
-        let right_key =
-            document_type.serialize_value_for_key(self.field.as_str(), in_values.get(0).unwrap())?;
+        let left_key = document_type
+            .serialize_value_for_key(self.field.as_str(), in_values.get(0).unwrap())?;
+        let right_key = document_type
+            .serialize_value_for_key(self.field.as_str(), in_values.get(0).unwrap())?;
         Ok((left_key, right_key))
     }
 
@@ -254,23 +271,28 @@ impl<'a> WhereClause {
         let mut query = Query::new();
         match self.operator {
             Equal => {
-                let key = document_type.serialize_value_for_key(self.field.as_str(), &self.value)?;
+                let key =
+                    document_type.serialize_value_for_key(self.field.as_str(), &self.value)?;
                 query.insert_key(key);
             }
             GreaterThan => {
-                let key = document_type.serialize_value_for_key(self.field.as_str(), &self.value)?;
+                let key =
+                    document_type.serialize_value_for_key(self.field.as_str(), &self.value)?;
                 query.insert_range_after(key..);
             }
             GreaterThanOrEquals => {
-                let key = document_type.serialize_value_for_key(self.field.as_str(), &self.value)?;
+                let key =
+                    document_type.serialize_value_for_key(self.field.as_str(), &self.value)?;
                 query.insert_range_from(key..);
             }
             LessThan => {
-                let key = document_type.serialize_value_for_key(self.field.as_str(), &self.value)?;
+                let key =
+                    document_type.serialize_value_for_key(self.field.as_str(), &self.value)?;
                 query.insert_range_to(..key);
             }
             LessThanOrEquals => {
-                let key = document_type.serialize_value_for_key(self.field.as_str(), &self.value)?;
+                let key =
+                    document_type.serialize_value_for_key(self.field.as_str(), &self.value)?;
                 query.insert_range_to_inclusive(..=key);
             }
             Between => {
@@ -316,7 +338,7 @@ pub struct OrderClause {
     ascending: bool,
 }
 
-impl<'a>  OrderClause {
+impl<'a> OrderClause {
     pub fn from_components(clause_components: &'a Vec<Value>) -> Result<Self, Error> {
         if clause_components.len() != 2 {
             return Err(Error::CorruptedData(String::from(
@@ -339,9 +361,9 @@ impl<'a>  OrderClause {
             Value::Text(asc_string) => Some(asc_string.as_str()),
             _ => None,
         }
-            .ok_or(Error::CorruptedData(String::from(
-                "orderBy right component must be a string",
-            )))?;
+        .ok_or(Error::CorruptedData(String::from(
+            "orderBy right component must be a string",
+        )))?;
         let ascending = match asc_string {
             "asc" => true,
             "desc" => false,
@@ -352,13 +374,9 @@ impl<'a>  OrderClause {
             }
         };
 
-        Ok(OrderClause {
-            field,
-            ascending,
-        })
+        Ok(OrderClause { field, ascending })
     }
 }
-
 
 pub struct DriveQuery<'a> {
     contract: &'a Contract,
@@ -379,7 +397,12 @@ impl<'a> DriveQuery<'a> {
         document_type: &'a DocumentType,
     ) -> Result<Self, Error> {
         let query_document: HashMap<String, CborValue> = ciborium::de::from_reader(query_cbor)
-            .map_err(|err| Error::CorruptedData(String::from(format!("unable to decode query: {}", err.to_string()))))?;
+            .map_err(|err| {
+                Error::CorruptedData(String::from(format!(
+                    "unable to decode query: {}",
+                    err.to_string()
+                )))
+            })?;
 
         let limit: u16 = query_document
             .get("limit")
@@ -414,7 +437,8 @@ impl<'a> DriveQuery<'a> {
 
         let range_clause = WhereClause::group_range_clauses(&all_where_clauses)?;
 
-        let equal_clauses_array = all_where_clauses.clone()
+        let equal_clauses_array = all_where_clauses
+            .clone()
             .into_iter()
             .filter(|where_clause| match where_clause.operator {
                 Equal => true,
@@ -464,8 +488,9 @@ impl<'a> DriveQuery<'a> {
             offset += 1;
         }
 
-        let order_by: IndexMap<String, OrderClause> =
-            query_document.get("orderBy").map_or(vec![], |id_cbor| {
+        let order_by: IndexMap<String, OrderClause> = query_document
+            .get("orderBy")
+            .map_or(vec![], |id_cbor| {
                 if let CborValue::Array(clauses) = id_cbor {
                     clauses
                         .iter()
@@ -480,8 +505,10 @@ impl<'a> DriveQuery<'a> {
                 } else {
                     vec![]
                 }
-            }).iter()
-                .map(|order_clause| Ok((order_clause.field.clone(), order_clause.to_owned()))).collect::<Result<IndexMap<String, OrderClause>, Error>>()?;
+            })
+            .iter()
+            .map(|order_clause| Ok((order_clause.field.clone(), order_clause.to_owned())))
+            .collect::<Result<IndexMap<String, OrderClause>, Error>>()?;
 
         Ok(DriveQuery {
             contract,
@@ -505,13 +532,21 @@ impl<'a> DriveQuery<'a> {
         document_path_query.execute_no_proof(grove, transaction)
     }
 
-    pub fn execute_with_proof(self, grove: &mut GroveDb, transaction: Option<&OptimisticTransactionDBTransaction>) -> Result<Vec<u8>, Error> {
+    pub fn execute_with_proof(
+        self,
+        grove: &mut GroveDb,
+        transaction: Option<&OptimisticTransactionDBTransaction>,
+    ) -> Result<Vec<u8>, Error> {
         let document_path_query = self.create_path_query()?;
         document_path_query.execute_with_proof(grove, transaction)
     }
 
     fn create_path_query(&self) -> Result<DocumentPathQuery, Error> {
-        let equal_fields = self.equal_clauses.keys().map(|s| s.as_str()).collect::<Vec<&str>>();
+        let equal_fields = self
+            .equal_clauses
+            .keys()
+            .map(|s| s.as_str())
+            .collect::<Vec<&str>>();
         let range_field = match &self.range_clause {
             None => None,
             Some(range_clause) => Some(range_clause.field.as_str()),
@@ -569,12 +604,12 @@ impl<'a> DriveQuery<'a> {
                 (query, true)
             }
             Some(where_clause) => {
-                let order_clause : &OrderClause =
-                    self.order_by
-                        .get(where_clause.field.as_str())
-                        .ok_or(Error::InvalidQuery(
-                            "query must have an orderBy field for each range element",
-                        ))?;
+                let order_clause: &OrderClause = self
+                    .order_by
+                    .get(where_clause.field.as_str())
+                    .ok_or(Error::InvalidQuery(
+                        "query must have an orderBy field for each range element",
+                    ))?;
                 let query = where_clause.to_path_query(self.document_type)?;
                 (query, order_clause.ascending)
             }
@@ -605,7 +640,11 @@ impl<'a> DocumentPathQuery<'a> {
     ) -> Result<Self, Error> {
         // first let's get the contract path
 
-        let mut contract_path = contract.document_type_path(document_type_name).into_iter().map(|a| a.to_vec()).collect::<Vec<Vec<u8>>>();
+        let mut contract_path = contract
+            .document_type_path(document_type_name)
+            .into_iter()
+            .map(|a| a.to_vec())
+            .collect::<Vec<Vec<u8>>>();
 
         let document_type =
             contract
@@ -648,7 +687,7 @@ impl<'a> DocumentPathQuery<'a> {
             path: contract_path,
             query: final_query,
             subquery_key: Some(b"0".to_vec()),
-            subquery
+            subquery,
         })
     }
 
@@ -657,13 +696,21 @@ impl<'a> DocumentPathQuery<'a> {
         grove: &mut GroveDb,
         transaction: Option<&OptimisticTransactionDBTransaction>,
     ) -> Result<(Vec<Vec<u8>>, u16), Error> {
-        let path = self.path.iter().map(|a| a.as_slice()).collect::<Vec<&[u8]>>();
+        let path = self
+            .path
+            .iter()
+            .map(|a| a.as_slice())
+            .collect::<Vec<&[u8]>>();
         let subquery_key = self.subquery_key;
         let path_query = PathQuery::new(path.as_slice(), self.query, subquery_key, self.subquery);
         grove.get_path_query(&path_query, transaction)
     }
 
-    fn execute_with_proof(self, grove: &mut GroveDb, transaction: Option<&OptimisticTransactionDBTransaction>) -> Result<Vec<u8>, Error> {
+    fn execute_with_proof(
+        self,
+        grove: &mut GroveDb,
+        transaction: Option<&OptimisticTransactionDBTransaction>,
+    ) -> Result<Vec<u8>, Error> {
         todo!()
     }
 }
