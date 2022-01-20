@@ -89,25 +89,6 @@ fn contract_documents_primary_key_path<'a>(
     ]
 }
 
-fn base58_value_as_bytes_from_hash_map(
-    document: &HashMap<String, CborValue>,
-    key: &str,
-) -> Option<Vec<u8>> {
-    document
-        .get(key)
-        .map(|id_cbor| {
-            if let CborValue::Text(b) = id_cbor {
-                match bs58::decode(b).into_vec() {
-                    Ok(data) => Some(data),
-                    Err(_) => None,
-                }
-            } else {
-                None
-            }
-        })
-        .flatten()
-}
-
 impl Drive {
     pub fn open<P: AsRef<Path>>(path: P) -> Result<Self, Error> {
         match GroveDb::open(path) {
@@ -335,13 +316,13 @@ impl Drive {
         document_cbor: &[u8],
         contract_cbor: &[u8],
         document_type_name: &str,
-        owner_id: &[u8],
+        owner_id: Option<&[u8]>,
         override_document: bool,
         transaction: Option<&OptimisticTransactionDBTransaction>,
     ) -> Result<u64, Error> {
         let contract = Contract::from_cbor(contract_cbor)?;
 
-        let document = Document::from_cbor(document_cbor, owner_id)?;
+        let document = Document::from_cbor(document_cbor, None, owner_id)?;
 
         self.add_document_for_contract(
             &document,
@@ -360,7 +341,7 @@ impl Drive {
         document_cbor: &[u8],
         contract: &Contract,
         document_type_name: &str,
-        owner_id: &[u8],
+        owner_id: Option<&[u8]>,
         override_document: bool,
         transaction: Option<&OptimisticTransactionDBTransaction>,
     ) -> Result<u64, Error> {
@@ -437,23 +418,16 @@ impl Drive {
 
             // with the example of the dashpay contract's first index
             // the index path is now something like Contracts/ContractID/Documents(1)/$ownerId
-            let document_top_field: Vec<u8>;
-            match top_index_property.name.as_str() {
-                "$ownerId" => {
-                    document_top_field = owner_id.to_vec();
-                }
-                &_ => {
-                    document_top_field = document
+            let document_top_field = document
                         .get_raw_for_contract(
                             &top_index_property.name,
                             document_type_name,
                             &contract,
+                            owner_id,
                         )?
                         .ok_or(Error::CorruptedData(String::from(
                             "unable to get document top index field",
                         )))?;
-                }
-            };
 
             let index_path_slices: Vec<&[u8]> = index_path.iter().map(|x| x.as_slice()).collect();
 
@@ -494,7 +468,7 @@ impl Drive {
                 // Iteration 2. the index path is now something like Contracts/ContractID/Documents(1)/$ownerId/<ownerId>/toUserId/<ToUserId>/accountReference
 
                 let document_index_field: Vec<u8> = document
-                    .get_raw_for_contract(&index_property.name, document_type_name, &contract)?
+                    .get_raw_for_contract(&index_property.name, document_type_name, &contract, owner_id)?
                     .ok_or(Error::CorruptedData(String::from(
                         "unable to get document field",
                     )))?;
@@ -570,12 +544,12 @@ impl Drive {
         document_cbor: &[u8],
         contract_cbor: &[u8],
         document_type: &str,
-        owner_id: &[u8],
+        owner_id: Option<&[u8]>,
         transaction: Option<&OptimisticTransactionDBTransaction>,
     ) -> Result<u64, Error> {
         let contract = Contract::from_cbor(contract_cbor)?;
 
-        let document = Document::from_cbor(document_cbor, owner_id)?;
+        let document = Document::from_cbor(document_cbor, None, owner_id)?;
 
         self.update_document_for_contract(
             &document,
@@ -593,7 +567,7 @@ impl Drive {
         document_cbor: &[u8],
         contract: &Contract,
         document_type: &str,
-        owner_id: &[u8],
+        owner_id: Option<&[u8]>,
         transaction: Option<&OptimisticTransactionDBTransaction>,
     ) -> Result<u64, Error> {
         // for now updating a document will delete the document, then insert a new document
@@ -620,7 +594,7 @@ impl Drive {
         document_id: &[u8],
         contract_cbor: &[u8],
         document_type_name: &str,
-        owner_id: &[u8],
+        owner_id: Option<&[u8]>,
         transaction: Option<&OptimisticTransactionDBTransaction>,
     ) -> Result<u64, Error> {
         let contract = Contract::from_cbor(contract_cbor)?;
@@ -638,7 +612,7 @@ impl Drive {
         document_id: &[u8],
         contract: &Contract,
         document_type_name: &str,
-        owner_id: &[u8],
+        owner_id: Option<&[u8]>,
         transaction: Option<&OptimisticTransactionDBTransaction>,
     ) -> Result<u64, Error> {
         let document_type =
@@ -681,6 +655,7 @@ impl Drive {
             document_bytes
                 .expect("Can't be none handled above")
                 .as_slice(),
+            None,
             owner_id,
         )?;
 
@@ -715,23 +690,16 @@ impl Drive {
 
             // with the example of the dashpay contract's first index
             // the index path is now something like Contracts/ContractID/Documents(1)/$ownerId
-            let document_top_field: Vec<u8>;
-            match top_index_property.name.as_str() {
-                "$ownerId" => {
-                    document_top_field = owner_id.to_vec();
-                }
-                &_ => {
-                    document_top_field = document
+            let document_top_field: Vec<u8> = document
                         .get_raw_for_contract(
                             &top_index_property.name,
                             document_type_name,
                             &contract,
+                            owner_id,
                         )?
                         .ok_or(Error::CorruptedData(String::from(
                             "unable to get document top index field for deletion",
                         )))?;
-                }
-            };
 
             // we push the actual value of the index path
             index_path.push(document_top_field);
@@ -751,7 +719,7 @@ impl Drive {
                 // Iteration 2. the index path is now something like Contracts/ContractID/Documents(1)/$ownerId/<ownerId>/toUserId/<ToUserId>/accountReference
 
                 let document_top_field: Vec<u8> = document
-                    .get_raw_for_contract(&index_property.name, document_type_name, &contract)?
+                    .get_raw_for_contract(&index_property.name, document_type_name, &contract, owner_id)?
                     .ok_or(Error::CorruptedData(String::from(
                         "unable to get document field",
                     )))?;
@@ -838,7 +806,7 @@ mod tests {
                 &dashpay_cr_document_cbor,
                 &dashpay_cbor,
                 "contactRequest",
-                &random_owner_id,
+                Some(&random_owner_id),
                 false,
                 None,
             )
@@ -849,7 +817,7 @@ mod tests {
                 &dashpay_cr_document_cbor,
                 &dashpay_cbor,
                 "contactRequest",
-                &random_owner_id,
+                Some(&random_owner_id),
                 false,
                 None,
             )
@@ -860,7 +828,7 @@ mod tests {
                 &dashpay_cr_document_cbor,
                 &dashpay_cbor,
                 "contactRequest",
-                &random_owner_id,
+                Some(&random_owner_id),
                 true,
                 None,
             )
@@ -886,7 +854,7 @@ mod tests {
                 &dashpay_cr_document_cbor_0,
                 &dashpay_cbor,
                 "contactRequest",
-                &random_owner_id,
+                Some(&random_owner_id),
                 false,
                 None,
             )
@@ -896,7 +864,7 @@ mod tests {
                 &dashpay_cr_document_cbor_1,
                 &dashpay_cbor,
                 "contactRequest",
-                &random_owner_id,
+                Some(&random_owner_id),
                 false,
                 None,
             )
@@ -906,7 +874,7 @@ mod tests {
                 &dashpay_cr_document_cbor_2,
                 &dashpay_cbor,
                 "contactRequest",
-                &random_owner_id,
+                Some(&random_owner_id),
                 false,
                 None,
             )
@@ -929,7 +897,7 @@ mod tests {
                 &dashpay_cr_document_cbor_0,
                 &dashpay_cbor,
                 "contactRequest",
-                &random_owner_id,
+                Some(&random_owner_id),
                 false,
                 None,
             )
@@ -939,7 +907,7 @@ mod tests {
                 &dashpay_cr_document_cbor_0_dup,
                 &dashpay_cbor,
                 "contactRequest",
-                &random_owner_id,
+                Some(&random_owner_id),
                 false,
                 None,
             )

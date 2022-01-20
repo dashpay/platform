@@ -1,4 +1,4 @@
-use grovedb::Query;
+use grovedb::{Error, Query};
 use rand::Rng;
 use tempdir::TempDir;
 use rs_drive::contract::{Contract, Document, DocumentType};
@@ -13,6 +13,10 @@ mod common;
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct Person {
+    #[serde(rename = "$id")]
+    id: Vec<u8>,
+    #[serde(rename = "$ownerId")]
+    owner_id: Vec<u8>,
     first_name: String,
     middle_name: String,
     last_name: String,
@@ -27,6 +31,8 @@ impl Person {
         let mut vec : Vec<Person> = vec![];
         for i in 0..count {
             let person = Person {
+                id: Vec::from(rand::thread_rng().gen::<[u8; 32]>()),
+                owner_id: Vec::from(rand::thread_rng().gen::<[u8; 32]>()),
                 first_name: first_names.choose(&mut rand::thread_rng()).unwrap().clone(),
                 middle_name: middle_names.choose(&mut rand::thread_rng()).unwrap().clone(),
                 last_name: last_names.choose(&mut rand::thread_rng()).unwrap().clone(),
@@ -46,14 +52,12 @@ pub fn setup() -> (Drive, Contract) {
     let db_transaction = storage.transaction();
     drive.grove.start_transaction();
 
-    let people = Person::random_people(100);
+    let people = Person::random_people(10);
     for person in people {
         let value = serde_json::to_value(&person).expect("serialized person");
         let document_cbor = common::value_to_cbor(value, Some(rs_drive::drive::defaults::PROTOCOL_VERSION));
-        let random_owner_id = rand::thread_rng().gen::<[u8; 32]>();
-        let random_document_id = rand::thread_rng().gen::<[u8; 32]>();
-        let document = Document::from_cbor_with_id(document_cbor.as_slice(), &random_document_id, &random_owner_id).expect("document should be properly deserialized");
-        drive.add_document_for_contract(&document, &document_cbor, &contract, "person", &random_owner_id, true, Some(&db_transaction)).expect("document should be inserted");
+        let document = Document::from_cbor(document_cbor.as_slice(), None, None).expect("document should be properly deserialized");
+        drive.add_document_for_contract(&document, &document_cbor, &contract, "person", None, true, Some(&db_transaction)).expect("document should be inserted");
     }
     drive.grove.commit_transaction(db_transaction);
     (drive, contract)
@@ -83,11 +87,35 @@ fn test_query_many() {
         ],
         "startAt": 0,
         "limit": 100,
-        "orderBy": ["firstName", "asc"]
+        "orderBy": [
+            ["firstName", "asc"]
+        ]
     });
     let where_cbor = common::value_to_cbor(query_value, None);
     let person_document_type = contract.document_types.get("person").expect("contract should have a person document type");
     let query = DriveQuery::from_cbor(where_cbor.as_slice(), &contract, &person_document_type).expect("query should be built");
     let (results, skipped) = query.execute_no_proof(&mut drive.grove, None).expect("proof should be executed");
      assert_ne!(results.len(), 100);
+
+    let names : Result<Vec<Document>, Error> = results.into_iter().map(|result| {
+        Document::from_cbor(result.as_slice(), None, None)
+    }).collect();
+
+    let query_value = json!({
+        "where": [
+            ["firstName", "in", "Sam"],
+            ["age", ">", 30]
+        ],
+        "startAt": 0,
+        "limit": 100,
+        "orderBy": [
+            ["firstName", "asc"],
+            ["age", "asc"]
+        ]
+    });
+    let where_cbor = common::value_to_cbor(query_value, None);
+    let person_document_type = contract.document_types.get("person").expect("contract should have a person document type");
+    let query = DriveQuery::from_cbor(where_cbor.as_slice(), &contract, &person_document_type).expect("query should be built");
+    let (results, skipped) = query.execute_no_proof(&mut drive.grove, None).expect("proof should be executed");
+    assert_eq!(results.len(), 100);
 }

@@ -64,7 +64,7 @@ impl<'a> WhereClause {
     pub fn from_components(clause_components: &'a Vec<Value>) -> Result<Self, Error> {
         if clause_components.len() != 3 {
             return Err(Error::CorruptedData(String::from(
-                "limit should be a integer from 1 to 100",
+                "where clauses should have at most 3 components",
             )));
         }
 
@@ -310,6 +310,56 @@ impl<'a> WhereClause {
     }
 }
 
+#[derive(Clone)]
+pub struct OrderClause {
+    field: String,
+    ascending: bool,
+}
+
+impl<'a>  OrderClause {
+    pub fn from_components(clause_components: &'a Vec<Value>) -> Result<Self, Error> {
+        if clause_components.len() != 2 {
+            return Err(Error::CorruptedData(String::from(
+                "order clause should have exactly 2 components",
+            )));
+        }
+
+        let field_value = clause_components
+            .get(0)
+            .expect("check above enforces it exists");
+        let field_ref = field_value
+            .as_text()
+            .ok_or(Error::CorruptedData(String::from(
+                "first field of where component should be a string",
+            )))?;
+        let field = String::from(field_ref);
+
+        let asc_string_value = clause_components.get(1).unwrap();
+        let asc_string = match asc_string_value {
+            Value::Text(asc_string) => Some(asc_string.as_str()),
+            _ => None,
+        }
+            .ok_or(Error::CorruptedData(String::from(
+                "orderBy right component must be a string",
+            )))?;
+        let ascending = match asc_string {
+            "asc" => true,
+            "desc" => false,
+            _ => {
+                return Err(Error::CorruptedData(String::from(
+                    "orderBy right component must be either a asc or desc string",
+                )));
+            }
+        };
+
+        Ok(OrderClause {
+            field,
+            ascending,
+        })
+    }
+}
+
+
 pub struct DriveQuery<'a> {
     contract: &'a Contract,
     document_type: &'a DocumentType,
@@ -317,7 +367,7 @@ pub struct DriveQuery<'a> {
     range_clause: Option<WhereClause>,
     offset: u16,
     limit: u16,
-    order_by: IndexMap<String, bool>,
+    order_by: IndexMap<String, OrderClause>,
     start_at: Option<Vec<u8>>,
     start_at_included: bool,
 }
@@ -328,7 +378,6 @@ impl<'a> DriveQuery<'a> {
         contract: &'a Contract,
         document_type: &'a DocumentType,
     ) -> Result<Self, Error> {
-        let a = hex::encode(query_cbor);
         let query_document: HashMap<String, CborValue> = ciborium::de::from_reader(query_cbor)
             .map_err(|err| Error::CorruptedData(String::from(format!("unable to decode query: {}", err.to_string()))))?;
 
@@ -415,50 +464,24 @@ impl<'a> DriveQuery<'a> {
             offset += 1;
         }
 
-        let order_by = query_document
-            .get("orderBy")
-            .iter()
-            .map(|record| {
-                let order_tuple = match record {
-                    Value::Array(order_tuple) => Some(order_tuple),
-                    _ => None,
+        let order_by: IndexMap<String, OrderClause> =
+            query_document.get("orderBy").map_or(vec![], |id_cbor| {
+                if let CborValue::Array(clauses) = id_cbor {
+                    clauses
+                        .iter()
+                        .filter_map(|order_clause| {
+                            if let CborValue::Array(clauses_components) = order_clause {
+                                OrderClause::from_components(clauses_components).ok()
+                            } else {
+                                None
+                            }
+                        })
+                        .collect()
+                } else {
+                    vec![]
                 }
-                .ok_or(Error::CorruptedData(String::from(
-                    "orderBy must always be an array of tuples",
-                )))?;
-                if order_tuple.len() != 2 {
-                    return Err(Error::CorruptedData(String::from(
-                        "orderBy must always have a tuple comprising a string and a asc/desc",
-                    )));
-                }
-                let field_value = order_tuple.get(0).unwrap();
-                let asc_string_value = order_tuple.get(1).unwrap();
-                let asc_string = match asc_string_value {
-                    Value::Text(asc_string) => Some(asc_string.as_str()),
-                    _ => None,
-                }
-                .ok_or(Error::CorruptedData(String::from(
-                    "orderBy right component must be a string",
-                )))?;
-                let left_to_right = match asc_string {
-                    "asc" => true,
-                    "desc" => false,
-                    _ => {
-                        return Err(Error::CorruptedData(String::from(
-                            "orderBy right component must be either a asc or desc string",
-                        )));
-                    }
-                };
-                let field = match field_value {
-                    Value::Text(field) => Some(field.as_str()),
-                    _ => None,
-                }
-                .ok_or(Error::CorruptedData(String::from(
-                    "orderBy left component must be a string",
-                )))?;
-                Ok((String::from(field), left_to_right))
-            })
-            .collect::<Result<IndexMap<String, bool>, Error>>()?;
+            }).iter()
+                .map(|order_clause| Ok((order_clause.field.clone(), order_clause.to_owned()))).collect::<Result<IndexMap<String, OrderClause>, Error>>()?;
 
         Ok(DriveQuery {
             contract,
@@ -546,14 +569,14 @@ impl<'a> DriveQuery<'a> {
                 (query, true)
             }
             Some(where_clause) => {
-                let left_to_right =
+                let order_clause : &OrderClause =
                     self.order_by
                         .get(where_clause.field.as_str())
                         .ok_or(Error::InvalidQuery(
                             "query must have an orderBy field for each range element",
                         ))?;
                 let query = where_clause.to_path_query(self.document_type)?;
-                (query, *left_to_right)
+                (query, order_clause.ascending)
             }
         };
         let final_sized_query = SizedQuery::new(

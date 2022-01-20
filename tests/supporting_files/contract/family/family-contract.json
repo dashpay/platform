@@ -7,7 +7,14 @@
         "properties": [{
           "firstName": "asc"
         }]
-      },
+        },
+        {
+          "properties": [{
+            "firstName": "asc"
+          }, {
+            "age": "asc"
+          }]
+        },
         {
           "properties": [{
             "firstName": "asc"
