@@ -1,0 +1,64 @@
+{
+  "$id": "cccDCSvAmUwryNsQqkqqD1o3BnFuzepGtR3Mhh2swGt5",
+  "documents": {
+    "person": {
+      "indices": [
+        {
+        "properties": [{
+          "firstName": "asc"
+        }]
+      },
+        {
+          "properties": [{
+            "firstName": "asc"
+          }, {
+            "lastName": "asc"
+          }]
+        },
+        {
+          "properties": [{
+            "firstName": "asc"
+          }, {
+            "middleName": "asc"
+          }, {
+            "lastName": "asc"
+          }]
+        },
+        {
+          "properties": [{
+            "age": "asc"
+          }, {
+            "firstName": "asc"
+          }, {
+            "middleName": "asc"
+          }, {
+            "lastName": "asc"
+          }]
+        },
+        {
+          "properties": [{
+            "age": "asc"
+          }]
+        }],
+      "properties": {
+        "age": {
+          "type": "integer"
+        },
+        "firstName": {
+          "type": "string",
+          "maxLength":50
+        },
+        "middleName": {
+          "type": "string",
+          "maxLength":50
+        },
+        "lastName": {
+          "type": "string",
+          "maxLength":50
+        }
+      },
+      "required": ["firstName", "lastName", "age"],
+      "additionalProperties": false
+    }
+  }
+}

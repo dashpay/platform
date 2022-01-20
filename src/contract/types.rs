@@ -1,5 +1,5 @@
-use byteorder::{BigEndian, LittleEndian, WriteBytesExt};
-use ciborium::value::{Integer, Value};
+use byteorder::{BigEndian, WriteBytesExt};
+use ciborium::value::Value;
 use grovedb::Error;
 use serde::{Deserialize, Serialize};
 
@@ -28,7 +28,7 @@ pub fn string_to_field_type(field_type_name: String) -> Option<DocumentFieldType
 pub fn encode_document_field_type(
     field_type: &DocumentFieldType,
     value: &Value,
-) -> Result<Option<Vec<u8>>, Error> {
+) -> Result<Vec<u8>, Error> {
     let field_type_match_error = Error::CorruptedData(String::from(
         "document field type doesn't match document value",
     ));
@@ -36,7 +36,7 @@ pub fn encode_document_field_type(
     return match field_type {
         DocumentFieldType::String => {
             let value_as_text = value.as_text().ok_or(field_type_match_error)?;
-            Ok(Some(value_as_text.as_bytes().to_vec()))
+            Ok(value_as_text.as_bytes().to_vec())
         }
         DocumentFieldType::Integer => {
             let value_as_integer = value.as_integer().ok_or(field_type_match_error)?;
@@ -61,18 +61,18 @@ pub fn encode_document_field_type(
                 let value_as_bytes = base64::decode(base64_value).map_err(|_| {
                     Error::CorruptedData(String::from("bytearray: invalid base64 value"))
                 })?;
-                Ok(Some(value_as_bytes))
+                Ok(value_as_bytes)
             } else {
                 let value_as_bytes = value.as_bytes().ok_or(field_type_match_error)?;
-                Ok(Some(value_as_bytes.clone()))
+                Ok(value_as_bytes.clone())
             }
         }
         DocumentFieldType::Boolean => {
             let value_as_boolean = value.as_bool().ok_or(field_type_match_error)?;
             if value_as_boolean == true {
-                Ok(Some(vec![1]))
+                Ok(vec![1])
             } else {
-                Ok(Some(vec![0]))
+                Ok(vec![0])
             }
         }
         DocumentFieldType::Date => {
@@ -85,7 +85,7 @@ pub fn encode_document_field_type(
     };
 }
 
-fn encode_integer(val: i64) -> Result<Option<Vec<u8>>, Error> {
+fn encode_integer(val: i64) -> Result<Vec<u8>, Error> {
     // Positive integers are represented in binary with the signed bit set to 0
     // Negative integers are represented in 2's complement form
 
@@ -107,10 +107,10 @@ fn encode_integer(val: i64) -> Result<Option<Vec<u8>>, Error> {
     // change was uniform across all elements
     wtr[0] ^= 0b1000_0000;
 
-    Ok(Some(wtr))
+    Ok(wtr)
 }
 
-fn encode_float(val: f64) -> Result<Option<Vec<u8>>, Error> {
+fn encode_float(val: f64) -> Result<Vec<u8>, Error> {
     // Floats are represented based on the  IEEE 754-2008 standard
     // [sign bit] [biased exponent] [mantissa]
 
@@ -146,12 +146,12 @@ fn encode_float(val: f64) -> Result<Option<Vec<u8>>, Error> {
         wtr[0] ^= 0b1000_0000;
     }
 
-    Ok(Some(wtr))
+    Ok(wtr)
 }
 
 mod tests {
-    use crate::contract::types::{encode_document_field_type, DocumentFieldType};
     use ciborium::value::{Integer, Value};
+    use crate::contract::types::{DocumentFieldType, encode_document_field_type};
 
     #[test]
     fn test_successful_encode() {
