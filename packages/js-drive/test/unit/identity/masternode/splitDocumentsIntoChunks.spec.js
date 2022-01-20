@@ -6,10 +6,7 @@ describe('splitDocumentsIntoChunks', () => {
   let chunkLength;
 
   beforeEach(() => {
-    documents = {
-      create: ['document1', 'document2'],
-      delete: ['document3', 'document4'],
-    };
+    documents = {};
 
     chunkLength = documentsBatchSchema.properties.transitions.maxItems;
   });

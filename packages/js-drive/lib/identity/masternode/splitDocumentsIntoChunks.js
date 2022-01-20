@@ -9,7 +9,9 @@ const documentsBatchSchema = require('@dashevo/dpp/schema/document/stateTransiti
  */
 function splitDocumentsIntoChunks(documents) {
   const chunkedDocuments = [];
-  const { create: documentsToCreate, delete: documentsToDelete } = documents;
+
+  const documentsToCreate = documents.create || [];
+  const documentsToDelete = documents.delete || [];
 
   const chunkLength = documentsBatchSchema.properties.transitions.maxItems;
 
@@ -25,13 +27,19 @@ function splitDocumentsIntoChunks(documents) {
     chunkedDocuments.push(chunk);
   }
 
-  const lastCreateChunkLength = chunkedDocuments[chunkedDocuments.length - 1].create.length;
-  const documentsToAddLength = chunkLength - lastCreateChunkLength;
+  let documentsToAddLength = 0;
 
-  chunkedDocuments[chunkedDocuments.length - 1].delete = documentsToDelete.slice(
-    0,
-    documentsToAddLength,
-  );
+  if (chunkedDocuments.length > 0) {
+    const lastCreateChunkLength = chunkedDocuments[chunkedDocuments.length - 1].create.length;
+    documentsToAddLength = chunkLength - lastCreateChunkLength;
+
+    if (documentsToAddLength > 0 && documentsToDelete.length > 0) {
+      chunkedDocuments[chunkedDocuments.length - 1].delete = documentsToDelete.slice(
+        0,
+        documentsToAddLength,
+      );
+    }
+  }
 
   for (let i = documentsToAddLength; i < documentsToDelete.length; i += chunkLength) {
     const chunk = {
