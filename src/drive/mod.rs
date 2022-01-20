@@ -1,7 +1,7 @@
 pub mod defaults;
 
 use crate::contract::{Contract, Document};
-use ciborium::value::{Value as CborValue};
+use ciborium::value::Value as CborValue;
 use grovedb::{Element, Error, GroveDb};
 use std::collections::HashMap;
 use std::path::Path;
@@ -105,7 +105,9 @@ impl Drive {
         if version_bytes.len() != 4 {
             false
         } else {
-            let version_set_bytes : [u8; 4] = version_bytes.try_into().expect("slice with incorrect length");
+            let version_set_bytes: [u8; 4] = version_bytes
+                .try_into()
+                .expect("slice with incorrect length");
             let version = u32::from_be_bytes(version_set_bytes);
             Drive::check_protocol_version(version)
         }
@@ -419,15 +421,15 @@ impl Drive {
             // with the example of the dashpay contract's first index
             // the index path is now something like Contracts/ContractID/Documents(1)/$ownerId
             let document_top_field = document
-                        .get_raw_for_contract(
-                            &top_index_property.name,
-                            document_type_name,
-                            &contract,
-                            owner_id,
-                        )?
-                        .ok_or(Error::CorruptedData(String::from(
-                            "unable to get document top index field",
-                        )))?;
+                .get_raw_for_contract(
+                    &top_index_property.name,
+                    document_type_name,
+                    &contract,
+                    owner_id,
+                )?
+                .ok_or(Error::CorruptedData(String::from(
+                    "unable to get document top index field",
+                )))?;
 
             let index_path_slices: Vec<&[u8]> = index_path.iter().map(|x| x.as_slice()).collect();
 
@@ -468,7 +470,12 @@ impl Drive {
                 // Iteration 2. the index path is now something like Contracts/ContractID/Documents(1)/$ownerId/<ownerId>/toUserId/<ToUserId>/accountReference
 
                 let document_index_field: Vec<u8> = document
-                    .get_raw_for_contract(&index_property.name, document_type_name, &contract, owner_id)?
+                    .get_raw_for_contract(
+                        &index_property.name,
+                        document_type_name,
+                        &contract,
+                        owner_id,
+                    )?
                     .ok_or(Error::CorruptedData(String::from(
                         "unable to get document field",
                     )))?;
@@ -491,10 +498,12 @@ impl Drive {
             }
 
             // we need to construct the reference to the original document
-            let mut reference_path = primary_key_path.iter().map(|x| x.to_vec()).collect::<Vec<Vec<u8>>>();
+            let mut reference_path = primary_key_path
+                .iter()
+                .map(|x| x.to_vec())
+                .collect::<Vec<Vec<u8>>>();
             reference_path.push(document.id.clone());
-            let document_reference =
-                Element::Reference(reference_path);
+            let document_reference = Element::Reference(reference_path);
 
             let index_path_slices: Vec<&[u8]> = index_path.iter().map(|x| x.as_slice()).collect();
 
@@ -691,15 +700,15 @@ impl Drive {
             // with the example of the dashpay contract's first index
             // the index path is now something like Contracts/ContractID/Documents(1)/$ownerId
             let document_top_field: Vec<u8> = document
-                        .get_raw_for_contract(
-                            &top_index_property.name,
-                            document_type_name,
-                            &contract,
-                            owner_id,
-                        )?
-                        .ok_or(Error::CorruptedData(String::from(
-                            "unable to get document top index field for deletion",
-                        )))?;
+                .get_raw_for_contract(
+                    &top_index_property.name,
+                    document_type_name,
+                    &contract,
+                    owner_id,
+                )?
+                .ok_or(Error::CorruptedData(String::from(
+                    "unable to get document top index field for deletion",
+                )))?;
 
             // we push the actual value of the index path
             index_path.push(document_top_field);
@@ -719,7 +728,12 @@ impl Drive {
                 // Iteration 2. the index path is now something like Contracts/ContractID/Documents(1)/$ownerId/<ownerId>/toUserId/<ToUserId>/accountReference
 
                 let document_top_field: Vec<u8> = document
-                    .get_raw_for_contract(&index_property.name, document_type_name, &contract, owner_id)?
+                    .get_raw_for_contract(
+                        &index_property.name,
+                        document_type_name,
+                        &contract,
+                        owner_id,
+                    )?
                     .ok_or(Error::CorruptedData(String::from(
                         "unable to get document field",
                     )))?;
@@ -785,7 +799,8 @@ mod tests {
             .expect("expected to create root tree successfully");
 
         // let's construct the grovedb structure for the dashpay data contract
-        let dashpay_cbor = json_document_to_cbor("tests/supporting_files/contract/dashpay/dashpay-contract.json");
+        let dashpay_cbor =
+            json_document_to_cbor("tests/supporting_files/contract/dashpay/dashpay-contract.json");
         drive
             .apply_contract(&dashpay_cbor, None)
             .expect("expected to apply contract successfully");
@@ -888,8 +903,9 @@ mod tests {
         let dashpay_cr_document_cbor_0 =
             json_document_to_cbor("tests/supporting_files/contract/dashpay/contact-request0.json");
 
-        let dashpay_cr_document_cbor_0_dup =
-            json_document_to_cbor("tests/supporting_files/contract/dashpay/contact-request0-dup-unique-index.json");
+        let dashpay_cr_document_cbor_0_dup = json_document_to_cbor(
+            "tests/supporting_files/contract/dashpay/contact-request0-dup-unique-index.json",
+        );
 
         let random_owner_id = rand::thread_rng().gen::<[u8; 32]>();
         drive
