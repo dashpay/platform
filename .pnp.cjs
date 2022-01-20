@@ -2301,6 +2301,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["@dashevo/dapi-client", "workspace:packages/js-dapi-client"],
             ["@babel/core", "npm:7.16.0"],
             ["@dashevo/dapi-grpc", "workspace:packages/dapi-grpc"],
+            ["@dashevo/dash-spv", "https://github.com/dashevo/dash-spv.git#commit=87eeee9c0842c573b3b3ab6e00704161babcee98"],
             ["@dashevo/dashcore-lib", "npm:0.19.29"],
             ["@dashevo/dpp", "workspace:packages/js-dpp"],
             ["@dashevo/grpc-common", "workspace:packages/js-grpc-common"],
@@ -2370,6 +2371,40 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["sinon-chai", "virtual:595d7482cc8ddf98ee6aef33fc48b46393554ab5f17f851ef62e6e39315e53666c3e66226b978689aa0bc7f1e83a03081511a21db1c381362fe67614887077f9#npm:3.7.0"]
           ],
           "linkType": "SOFT",
+        }]
+      ]],
+      ["@dashevo/dark-gravity-wave", [
+        ["npm:1.1.1", {
+          "packageLocation": "./.yarn/cache/@dashevo-dark-gravity-wave-npm-1.1.1-aa785de435-4f2f0bddfa.zip/node_modules/@dashevo/dark-gravity-wave/",
+          "packageDependencies": [
+            ["@dashevo/dark-gravity-wave", "npm:1.1.1"]
+          ],
+          "linkType": "HARD",
+        }]
+      ]],
+      ["@dashevo/dash-spv", [
+        ["https://github.com/dashevo/dash-spv.git#commit=87eeee9c0842c573b3b3ab6e00704161babcee98", {
+          "packageLocation": "./.yarn/cache/@dashevo-dash-spv-https-dc9e7f1113-6e147869c4.zip/node_modules/@dashevo/dash-spv/",
+          "packageDependencies": [
+            ["@dashevo/dash-spv", "https://github.com/dashevo/dash-spv.git#commit=87eeee9c0842c573b3b3ab6e00704161babcee98"],
+            ["@dashevo/dark-gravity-wave", "npm:1.1.1"],
+            ["@dashevo/dash-util", "npm:2.0.3"],
+            ["@dashevo/dashcore-lib", "npm:0.19.29"],
+            ["levelup", "npm:4.4.0"],
+            ["memdown", "npm:3.0.0"]
+          ],
+          "linkType": "HARD",
+        }]
+      ]],
+      ["@dashevo/dash-util", [
+        ["npm:2.0.3", {
+          "packageLocation": "./.yarn/cache/@dashevo-dash-util-npm-2.0.3-a597c1b8b3-ef93e629e9.zip/node_modules/@dashevo/dash-util/",
+          "packageDependencies": [
+            ["@dashevo/dash-util", "npm:2.0.3"],
+            ["bn.js", "npm:4.12.0"],
+            ["buffer-reverse", "npm:1.0.1"]
+          ],
+          "linkType": "HARD",
         }]
       ]],
       ["@dashevo/dashcore-lib", [
@@ -4242,6 +4277,14 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           ],
           "linkType": "HARD",
         }],
+        ["npm:5.0.0", {
+          "packageLocation": "./.yarn/cache/abstract-leveldown-npm-5.0.0-33db6ac172-d55d03cc7f.zip/node_modules/abstract-leveldown/",
+          "packageDependencies": [
+            ["abstract-leveldown", "npm:5.0.0"],
+            ["xtend", "npm:4.0.2"]
+          ],
+          "linkType": "HARD",
+        }],
         ["npm:6.2.3", {
           "packageLocation": "./.yarn/cache/abstract-leveldown-npm-6.2.3-73e4ffefa5-00202b2eb7.zip/node_modules/abstract-leveldown/",
           "packageDependencies": [
@@ -5765,6 +5808,15 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           "packageLocation": "./.yarn/cache/buffer-from-npm-1.1.2-03d2f20d7e-0448524a56.zip/node_modules/buffer-from/",
           "packageDependencies": [
             ["buffer-from", "npm:1.1.2"]
+          ],
+          "linkType": "HARD",
+        }]
+      ]],
+      ["buffer-reverse", [
+        ["npm:1.0.1", {
+          "packageLocation": "./.yarn/cache/buffer-reverse-npm-1.0.1-2224e35393-e350872a89.zip/node_modules/buffer-reverse/",
+          "packageDependencies": [
+            ["buffer-reverse", "npm:1.0.1"]
           ],
           "linkType": "HARD",
         }]
@@ -13389,6 +13441,19 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
         }]
       ]],
       ["memdown", [
+        ["npm:3.0.0", {
+          "packageLocation": "./.yarn/cache/memdown-npm-3.0.0-2bae7b9b8f-4446fdf719.zip/node_modules/memdown/",
+          "packageDependencies": [
+            ["memdown", "npm:3.0.0"],
+            ["abstract-leveldown", "npm:5.0.0"],
+            ["functional-red-black-tree", "npm:1.0.1"],
+            ["immediate", "npm:3.2.3"],
+            ["inherits", "npm:2.0.4"],
+            ["ltgt", "npm:2.2.1"],
+            ["safe-buffer", "npm:5.1.2"]
+          ],
+          "linkType": "HARD",
+        }],
         ["npm:5.1.0", {
           "packageLocation": "./.yarn/cache/memdown-npm-5.1.0-e769608fe2-23e4414034.zip/node_modules/memdown/",
           "packageDependencies": [
