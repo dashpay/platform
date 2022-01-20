@@ -2260,7 +2260,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["@dashevo/dapi-client", "workspace:packages/js-dapi-client"],
             ["@dashevo/dapi-grpc", "workspace:packages/dapi-grpc"],
             ["@dashevo/dashcore-lib", "npm:0.19.29"],
-            ["@dashevo/dashd-rpc", "npm:2.3.1"],
+            ["@dashevo/dashd-rpc", "npm:2.3.2"],
             ["@dashevo/dp-services-ctl", "https://github.com/dashevo/js-dp-services-ctl.git#commit=3976076b0018c5b4632ceda4c752fc597f27a640"],
             ["@dashevo/dpp", "workspace:packages/js-dpp"],
             ["@dashevo/grpc-common", "workspace:packages/js-grpc-common"],
@@ -2393,10 +2393,10 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
         }]
       ]],
       ["@dashevo/dashd-rpc", [
-        ["npm:2.3.1", {
-          "packageLocation": "./.yarn/cache/@dashevo-dashd-rpc-npm-2.3.1-7f7419ef40-8a5bda30a4.zip/node_modules/@dashevo/dashd-rpc/",
+        ["npm:2.3.2", {
+          "packageLocation": "./.yarn/cache/@dashevo-dashd-rpc-npm-2.3.2-119e544222-56ff41d695.zip/node_modules/@dashevo/dashd-rpc/",
           "packageDependencies": [
-            ["@dashevo/dashd-rpc", "npm:2.3.1"],
+            ["@dashevo/dashd-rpc", "npm:2.3.2"],
             ["async", "npm:3.2.2"],
             ["bluebird", "npm:3.7.2"]
           ],
@@ -2426,7 +2426,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           "packageLocation": "./.yarn/cache/@dashevo-dp-services-ctl-https-a393167701-0325823966.zip/node_modules/@dashevo/dp-services-ctl/",
           "packageDependencies": [
             ["@dashevo/dp-services-ctl", "https://github.com/dashevo/js-dp-services-ctl.git#commit=3976076b0018c5b4632ceda4c752fc597f27a640"],
-            ["@dashevo/dashd-rpc", "npm:2.3.1"],
+            ["@dashevo/dashd-rpc", "npm:2.3.2"],
             ["dockerode", "npm:3.3.1"],
             ["jayson", "npm:2.1.2"],
             ["lodash", "npm:4.17.21"],
@@ -2529,7 +2529,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["@dashevo/abci", "https://github.com/dashevo/js-abci.git#commit=8806ff71cdac918f79920b1373824653f15698c5"],
             ["@dashevo/dapi-grpc", "workspace:packages/dapi-grpc"],
             ["@dashevo/dashcore-lib", "npm:0.19.29"],
-            ["@dashevo/dashd-rpc", "npm:2.3.1"],
+            ["@dashevo/dashd-rpc", "npm:2.3.2"],
             ["@dashevo/dashpay-contract", "workspace:packages/dashpay-contract"],
             ["@dashevo/dp-services-ctl", "https://github.com/dashevo/js-dp-services-ctl.git#commit=3976076b0018c5b4632ceda4c752fc597f27a640"],
             ["@dashevo/dpns-contract", "workspace:packages/dpns-contract"],
@@ -7415,7 +7415,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           "packageDependencies": [
             ["dashmate", "workspace:packages/dashmate"],
             ["@dashevo/dashcore-lib", "npm:0.19.29"],
-            ["@dashevo/dashd-rpc", "npm:2.3.1"],
+            ["@dashevo/dashd-rpc", "npm:2.3.2"],
             ["@dashevo/dashpay-contract", "workspace:packages/dashpay-contract"],
             ["@dashevo/dpns-contract", "workspace:packages/dpns-contract"],
             ["@dashevo/dpp", "workspace:packages/js-dpp"],
