@@ -75,8 +75,14 @@ function subscribeToBlockHeadersWithChainLocksHandlerFactory(
   async function subscribeToBlockHeadersWithChainLocksHandler(call) {
     const { request } = call;
 
-    let fromBlockHash = Buffer.from(request.getFromBlockHash()).toString('hex');
+    const fromBlockHash = Buffer.from(request.getFromBlockHash_asU8()).toString('hex');
     const fromBlockHeight = request.getFromBlockHeight();
+
+    if (!fromBlockHash && fromBlockHeight === 0) {
+      throw new InvalidArgumentGrpcError('Minimum value for `fromBlockHeight` is 1');
+    }
+
+    const from = fromBlockHash || fromBlockHeight;
     const count = request.getCount();
 
     const newHeadersRequested = count === 0;
@@ -103,42 +109,17 @@ function subscribeToBlockHeadersWithChainLocksHandlerFactory(
       subscribeToNewBlockHeaders(mediator, zmqClient, coreAPI);
     }
 
-    // If block height is specified instead of block hash, we obtain block hash by block height
-    if (fromBlockHash === '') {
-      if (fromBlockHeight === 0) {
-        throw new InvalidArgumentGrpcError('minimum value for `fromBlockHeight` is 1');
-      }
-
-      // we don't need to check bestBlockHeight because getBlockHash throws
-      // an error in case of wrong height
-      try {
-        fromBlockHash = await coreAPI.getBlockHash(fromBlockHeight);
-      } catch (e) {
-        if (e.code === -8) {
-          // Block height out of range
-          throw new NotFoundGrpcError('fromBlockHeight is bigger than block count');
-        }
-
-        throw e;
-      }
-    }
-
     let fromBlock;
 
     try {
-      // TODO: rework with getBlockStats
-      fromBlock = await coreAPI.getBlock(fromBlockHash);
+      fromBlock = await coreAPI.getBlockStats(from, ['height']);
     } catch (e) {
-      // Block not found
-      if (e.code === -5) {
-        throw new NotFoundGrpcError('fromBlockHash is not found');
+      if (e.code === -5 || e.code === -8) {
+        // -5 -> invalid block height or block is not on best chain
+        // -8 -> block hash not found
+        throw new NotFoundGrpcError(`Block ${from} not found`);
       }
-
       throw e;
-    }
-
-    if (fromBlock.confirmations === -1) {
-      throw new NotFoundGrpcError(`block ${fromBlockHash} is not part of the best block chain`);
     }
 
     const bestBlockHeight = await coreAPI.getBestBlockHeight();
@@ -165,7 +146,7 @@ function subscribeToBlockHeadersWithChainLocksHandlerFactory(
     }
 
     const historicalDataIterator = getHistoricalBlockHeadersIterator(
-      fromBlockHash,
+      fromBlock.height,
       historicalCount,
     );
 
