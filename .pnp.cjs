@@ -2301,7 +2301,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["@dashevo/dapi-client", "workspace:packages/js-dapi-client"],
             ["@babel/core", "npm:7.16.0"],
             ["@dashevo/dapi-grpc", "workspace:packages/dapi-grpc"],
-            ["@dashevo/dash-spv", "https://github.com/dashevo/dash-spv.git#commit=87eeee9c0842c573b3b3ab6e00704161babcee98"],
+            ["@dashevo/dash-spv", "https://github.com/dashevo/dash-spv.git#commit=3eeb01ed5d0636c949cf3ca2e495c4fe3d1b74ce"],
             ["@dashevo/dashcore-lib", "npm:0.19.29"],
             ["@dashevo/dpp", "workspace:packages/js-dpp"],
             ["@dashevo/grpc-common", "workspace:packages/js-grpc-common"],
@@ -2383,10 +2383,10 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
         }]
       ]],
       ["@dashevo/dash-spv", [
-        ["https://github.com/dashevo/dash-spv.git#commit=87eeee9c0842c573b3b3ab6e00704161babcee98", {
-          "packageLocation": "./.yarn/cache/@dashevo-dash-spv-https-dc9e7f1113-6e147869c4.zip/node_modules/@dashevo/dash-spv/",
+        ["https://github.com/dashevo/dash-spv.git#commit=3eeb01ed5d0636c949cf3ca2e495c4fe3d1b74ce", {
+          "packageLocation": "./.yarn/cache/@dashevo-dash-spv-https-d3c2470b1e-3f11f82e43.zip/node_modules/@dashevo/dash-spv/",
           "packageDependencies": [
-            ["@dashevo/dash-spv", "https://github.com/dashevo/dash-spv.git#commit=87eeee9c0842c573b3b3ab6e00704161babcee98"],
+            ["@dashevo/dash-spv", "https://github.com/dashevo/dash-spv.git#commit=3eeb01ed5d0636c949cf3ca2e495c4fe3d1b74ce"],
             ["@dashevo/dark-gravity-wave", "npm:1.1.1"],
             ["@dashevo/dash-util", "npm:2.0.3"],
             ["@dashevo/dashcore-lib", "npm:0.19.29"],

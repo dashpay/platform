@@ -1281,7 +1281,7 @@ __metadata:
   dependencies:
     "@babel/core": ^7.15.5
     "@dashevo/dapi-grpc": "workspace:~"
-    "@dashevo/dash-spv": "github:dashevo/dash-spv#chore/update-dashcore-lib"
+    "@dashevo/dash-spv": "github:dashevo/dash-spv"
     "@dashevo/dashcore-lib": ~0.19.29
     "@dashevo/dpp": "workspace:~"
     "@dashevo/grpc-common": "workspace:~"
@@ -1397,16 +1397,16 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@dashevo/dash-spv@github:dashevo/dash-spv#chore/update-dashcore-lib":
+"@dashevo/dash-spv@github:dashevo/dash-spv":
   version: 1.1.6
-  resolution: "@dashevo/dash-spv@https://github.com/dashevo/dash-spv.git#commit=87eeee9c0842c573b3b3ab6e00704161babcee98"
+  resolution: "@dashevo/dash-spv@https://github.com/dashevo/dash-spv.git#commit=3eeb01ed5d0636c949cf3ca2e495c4fe3d1b74ce"
   dependencies:
     "@dashevo/dark-gravity-wave": ^1.1.1
     "@dashevo/dash-util": ^2.0.3
-    "@dashevo/dashcore-lib": ^0.19.28
+    "@dashevo/dashcore-lib": ^0.19.29
     levelup: ^4.0.1
     memdown: ^3.0.0
-  checksum: 6e147869c45e1d5c6c073656294b6db7517040d2c98858167305a5e0d93c5ff5290c53bde1e8e3787177f5430415ec1d3038d792679bd823af25136d0d3a32a4
+  checksum: 3f11f82e43c91862c712606a824c8916774bd3c61dec552ac8dbdc76fdc27e5a5118d0e0773a459ec25ff66351fda34cfe5d58d22fcc96e31b41dac9d2da87c3
   languageName: node
   linkType: hard
 
@@ -1420,7 +1420,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@dashevo/dashcore-lib@npm:^0.19.28, @dashevo/dashcore-lib@npm:~0.19.29":
+"@dashevo/dashcore-lib@npm:^0.19.29, @dashevo/dashcore-lib@npm:~0.19.29":
   version: 0.19.29
   resolution: "@dashevo/dashcore-lib@npm:0.19.29"
   dependencies:

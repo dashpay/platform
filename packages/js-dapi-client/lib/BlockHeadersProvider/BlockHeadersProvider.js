@@ -27,9 +27,7 @@ class BlockHeadersProvider {
       ...options,
     };
 
-    // TODO: Dash SPV does not understand 'regtest'. Fix
-    const network = this.options.network === 'regtest' ? 'devnet' : this.options.network;
-    this.spvChain = new SpvChain(network);
+    this.spvChain = new SpvChain(this.options.network);
   }
 
   /**
