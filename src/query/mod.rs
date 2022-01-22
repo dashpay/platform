@@ -11,17 +11,7 @@ use indexmap::IndexMap;
 use std::collections::HashMap;
 use storage::rocksdb_storage::OptimisticTransactionDBTransaction;
 
-pub struct DocumentPathQuery<'a> {
-    document_type: &'a DocumentType,
-    index: &'a Index,
-    intermediate_values: Vec<Vec<u8>>,
-    path: Vec<Vec<u8>>,
-    query: SizedQuery,
-    subquery_key: Option<Vec<u8>>,
-    subquery: Option<Query>,
-}
-
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Debug)]
 pub enum WhereOperator {
     Equal,
     GreaterThan,
@@ -44,16 +34,26 @@ fn operator_from_string(string: &str) -> Option<WhereOperator> {
         "<" => Some(LessThan),
         "<=" => Some(LessThanOrEquals),
         "Between" => Some(Between),
+        "between" => Some(Between),
         "BetweenExcludeBounds" => Some(BetweenExcludeBounds),
+        "betweenexcludebounds" => Some(BetweenExcludeBounds),
+        "between_exclude_bounds" => Some(BetweenExcludeBounds),
         "BetweenExcludeLeft" => Some(BetweenExcludeLeft),
+        "betweenexcludeleft" => Some(BetweenExcludeLeft),
+        "between_exclude_left" => Some(BetweenExcludeLeft),
         "BetweenExcludeRight" => Some(BetweenExcludeRight),
+        "betweenexcluderight" => Some(BetweenExcludeRight),
+        "between_exclude_right" => Some(BetweenExcludeRight),
         "In" => Some(In),
+        "in" => Some(In),
         "StartsWith" => Some(StartsWith),
+        "startswith" => Some(StartsWith),
+        "starts_with" => Some(StartsWith),
         &_ => None,
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct WhereClause {
     field: String,
     operator: WhereOperator,
@@ -332,7 +332,7 @@ impl<'a> WhereClause {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct OrderClause {
     field: String,
     ascending: bool,
@@ -378,10 +378,12 @@ impl<'a> OrderClause {
     }
 }
 
+#[derive(Debug)]
 pub struct DriveQuery<'a> {
     contract: &'a Contract,
     document_type: &'a DocumentType,
     equal_clauses: HashMap<String, WhereClause>,
+    in_clause: Option<WhereClause>,
     range_clause: Option<WhereClause>,
     offset: u16,
     limit: u16,
@@ -418,34 +420,54 @@ impl<'a> DriveQuery<'a> {
             )))?;
 
         let all_where_clauses: Vec<WhereClause> =
-            query_document.get("where").map_or(vec![], |id_cbor| {
+            query_document.get("where").map_or(Ok(vec![]), |id_cbor| {
                 if let CborValue::Array(clauses) = id_cbor {
                     clauses
                         .iter()
-                        .filter_map(|where_clause| {
+                        .map(|where_clause| {
                             if let CborValue::Array(clauses_components) = where_clause {
-                                WhereClause::from_components(clauses_components).ok()
+                                WhereClause::from_components(clauses_components)
                             } else {
-                                None
+                                Err(Error::CorruptedData(String::from(
+                                    "where clause must be an array",
+                                )))
                             }
                         })
-                        .collect()
+                        .collect::<Result<Vec<WhereClause>, Error>>()
                 } else {
-                    vec![]
+                    Err(Error::CorruptedData(String::from(
+                        "where clause must be an array",
+                    )))
                 }
-            });
+            })?;
 
         let range_clause = WhereClause::group_range_clauses(&all_where_clauses)?;
 
         let equal_clauses_array = all_where_clauses
-            .clone()
-            .into_iter()
-            .filter(|where_clause| match where_clause.operator {
-                Equal => true,
-                In => true,
-                _ => false,
+            .iter()
+            .filter_map(|where_clause| match where_clause.operator {
+                Equal => Some(where_clause.clone()),
+                _ => None,
             })
             .collect::<Vec<WhereClause>>();
+
+        let in_clauses_array = all_where_clauses
+            .iter()
+            .filter_map(|where_clause| match where_clause.operator {
+                In => Some(where_clause.clone()),
+                _ => None,
+            })
+            .collect::<Vec<WhereClause>>();
+
+        let in_clause = match in_clauses_array.len() {
+            0 => Ok(None),
+            1 => Ok(Some(in_clauses_array.get(0).expect("there must be a value").clone())),
+            _ => {
+                Err(Error::CorruptedData(String::from(
+                    "There should only be one in clause",
+                )))
+            }
+        }?;
 
         let equal_clauses = equal_clauses_array
             .into_iter()
@@ -514,6 +536,7 @@ impl<'a> DriveQuery<'a> {
             contract,
             document_type,
             equal_clauses,
+            in_clause,
             range_clause,
             offset,
             limit,
@@ -523,37 +546,45 @@ impl<'a> DriveQuery<'a> {
         })
     }
 
-    pub fn execute_no_proof(
-        self,
-        grove: &mut GroveDb,
-        transaction: Option<&OptimisticTransactionDBTransaction>,
-    ) -> Result<(Vec<Vec<u8>>, u16), Error> {
-        let document_path_query = self.create_path_query()?;
-        document_path_query.execute_no_proof(grove, transaction)
-    }
-
     pub fn execute_with_proof(
         self,
         grove: &mut GroveDb,
         transaction: Option<&OptimisticTransactionDBTransaction>,
     ) -> Result<Vec<u8>, Error> {
-        let document_path_query = self.create_path_query()?;
-        document_path_query.execute_with_proof(grove, transaction)
+        todo!()
     }
 
-    fn create_path_query(&self) -> Result<DocumentPathQuery, Error> {
+    pub fn execute_no_proof(&self,
+                        grove: &mut GroveDb,
+                        transaction: Option<&OptimisticTransactionDBTransaction>) -> Result<(Vec<Vec<u8>>, u16), Error> {
         let equal_fields = self
             .equal_clauses
             .keys()
             .map(|s| s.as_str())
             .collect::<Vec<&str>>();
+        let in_field = match &self.in_clause {
+            None => None,
+            Some(in_clause) => Some(in_clause.field.as_str()),
+        };
         let range_field = match &self.range_clause {
             None => None,
             Some(range_clause) => Some(range_clause.field.as_str()),
         };
+        let mut fields = equal_fields;
+        let mut sort_on = None;
+        if range_field.is_some() {
+            fields.push(range_field.unwrap());
+            sort_on = Some(range_field.unwrap());
+        }
+        if in_field.is_some() {
+            fields.push(in_field.unwrap());
+            //if there is an in_field, it always takes precedence
+            sort_on = Some(in_field.unwrap());
+        }
+
         let (index, difference) = self
             .document_type
-            .index_for_types(equal_fields.as_slice(), range_field)
+            .index_for_types(fields.as_slice(), in_field, range_field)
             .ok_or(Error::InvalidQuery("query must be for valid indexes"))?;
         if difference > defaults::MAX_INDEX_DIFFERENCE {
             return Err(Error::InvalidQuery(
@@ -568,10 +599,21 @@ impl<'a> DriveQuery<'a> {
                 Some(where_clause) => Some(where_clause),
             })
             .collect();
-        let (last_clause, last_clause_is_range) = match &self.range_clause {
-            None => (ordered_clauses.last().map(|clause| *clause), false),
-            Some(where_clause) => (Some(where_clause), true),
+        let (last_clause, last_clause_is_range, subquery_clause) = match &self.in_clause {
+            None => {
+                match &self.range_clause {
+                    None => (ordered_clauses.last().map(|clause| *clause), false, None),
+                    Some(where_clause) => (Some(where_clause), true, None),
+                }
+            }
+            Some(where_clause) => {
+                match &self.range_clause {
+                    None => (Some(where_clause), true, None),
+                    Some(range_clause) => (Some(where_clause), true, Some(range_clause)),
+                }
+            }
         };
+
         let intermediate_values =
             index
                 .properties
@@ -597,7 +639,7 @@ impl<'a> DriveQuery<'a> {
                     }
                 })
                 .collect::<Result<Vec<Vec<u8>>, Error>>()?;
-        let (final_query, left_to_right) = match last_clause {
+        let (mut final_query, left_to_right) = match last_clause {
             None => {
                 let mut query = Query::new();
                 query.insert_all();
@@ -614,56 +656,68 @@ impl<'a> DriveQuery<'a> {
                 (query, order_clause.ascending)
             }
         };
-        let final_sized_query = SizedQuery::new(
-            final_query,
-            Some(self.limit),
-            Some(self.offset),
-            left_to_right,
-        );
-        DocumentPathQuery::new(
-            self.contract,
-            self.document_type.name.as_str(),
-            index,
-            intermediate_values,
-            final_sized_query,
-        )
-    }
-}
 
-impl<'a> DocumentPathQuery<'a> {
-    pub fn new(
-        contract: &'a Contract,
-        document_type_name: &'a str,
-        index: &'a Index,
-        intermediate_values: Vec<Vec<u8>>,
-        final_query: SizedQuery,
-    ) -> Result<Self, Error> {
-        // first let's get the contract path
+        let (subquery_key, subquery) = match subquery_clause {
+            None => {
+                match index.unique {
+                    true => (Some(b"0".to_vec()), None),
+                    false => {
+                        let mut full_query = Query::new();
+                        full_query.insert_all();
+                        (Some(b"0".to_vec()), Some(full_query))
+                    }
+                }
+            },
+            Some(where_clause) => {
+                let subindex = where_clause.field.as_bytes().to_vec();
+                let mut subquery = where_clause.to_path_query(self.document_type)?;
+                match index.unique {
+                    true => {
+                        subquery.set_subquery_key(b"0".to_vec());
+                    }
+                    false => {
+                        let mut full_query = Query::new();
+                        full_query.insert_all();
+                        subquery.set_subquery_key(b"0".to_vec());
+                        subquery.set_subquery(full_query);
+                    }
+                }
+                (Some(subindex), Some(subquery))
+            }
+        };
 
-        let mut contract_path = contract
-            .document_type_path(document_type_name)
+        match subquery{
+            None => {
+            }
+            Some(subquery) => {
+                final_query.set_subquery(subquery);
+            }
+        }
+
+        match subquery_key {
+            None => {},
+            Some(subquery_key) => {
+                final_query.set_subquery_key(subquery_key);
+            }
+        }
+
+        // Now we should construct the path
+
+        let mut contract_path = self.contract
+            .document_type_path(self.document_type.name.as_str())
             .into_iter()
             .map(|a| a.to_vec())
             .collect::<Vec<Vec<u8>>>();
 
-        let document_type =
-            contract
-                .document_types
-                .get(document_type_name)
-                .ok_or(Error::CorruptedData(String::from(
-                    "unknown document type name",
-                )))?;
+        let (intermediate_indexes, last_indexes) = index
+            .properties.split_at(intermediate_values.len());
 
-        let (last_index, intermediate_indexes) =
-            index
-                .properties
-                .split_last()
-                .ok_or(Error::CorruptedData(String::from(
-                    "document query has no index with fields",
-                )))?;
+        let last_index = last_indexes.first().ok_or(Error::CorruptedData(String::from(
+            "document query has no index with fields",
+        )))?;
 
         for (intermediate_index, intermediate_value) in
-            intermediate_indexes.iter().zip(intermediate_values.iter())
+        intermediate_indexes.iter().zip(intermediate_values.iter())
         {
             contract_path.push(intermediate_index.name.as_bytes().to_vec());
             contract_path.push(intermediate_value.as_slice().to_vec());
@@ -671,47 +725,19 @@ impl<'a> DocumentPathQuery<'a> {
 
         contract_path.push(last_index.name.as_bytes().to_vec());
 
-        let subquery = match index.unique {
-            true => None,
-            false => {
-                let mut query = Query::new();
-                query.insert_all();
-                Some(query)
-            }
-        };
-
-        Ok(DocumentPathQuery {
-            document_type,
-            index,
-            intermediate_values,
-            path: contract_path,
-            query: final_query,
-            subquery_key: Some(b"0".to_vec()),
-            subquery,
-        })
-    }
-
-    fn execute_no_proof(
-        self,
-        grove: &mut GroveDb,
-        transaction: Option<&OptimisticTransactionDBTransaction>,
-    ) -> Result<(Vec<Vec<u8>>, u16), Error> {
-        let path = self
-            .path
+        let path = contract_path
             .iter()
             .map(|a| a.as_slice())
             .collect::<Vec<&[u8]>>();
-        let subquery_key = self.subquery_key;
-        let path_query = PathQuery::new(path.as_slice(), self.query, subquery_key, self.subquery);
-        grove.get_path_query(&path_query, transaction)
-    }
 
-    fn execute_with_proof(
-        self,
-        grove: &mut GroveDb,
-        transaction: Option<&OptimisticTransactionDBTransaction>,
-    ) -> Result<Vec<u8>, Error> {
-        todo!()
+        let path_query = PathQuery::new(path.as_slice(), SizedQuery::new(
+            final_query,
+            Some(self.limit),
+            Some(self.offset),
+            left_to_right,
+        ));
+
+        grove.get_path_query(&path_query, transaction)
     }
 }
 
