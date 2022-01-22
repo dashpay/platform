@@ -19,11 +19,11 @@ rand_distr = "0.4.3"
 
 [dependencies.grovedb]
 git = "https://github.com/dashevo/grovedb"
-branch = "feat/recursiveSubqueries"
+branch = "fix/iteration"
 
 [dependencies.storage]
 git = "https://github.com/dashevo/grovedb"
-branch = "feat/recursiveSubqueries"
+branch = "fix/iteration"
 
 [dev-dependencies]
 tempdir = "0.3.7"

@@ -263,7 +263,7 @@ impl<'a> WhereClause {
         let left_key = document_type
             .serialize_value_for_key(self.field.as_str(), in_values.get(0).unwrap())?;
         let right_key = document_type
-            .serialize_value_for_key(self.field.as_str(), in_values.get(0).unwrap())?;
+            .serialize_value_for_key(self.field.as_str(), in_values.get(1).unwrap())?;
         Ok((left_key, right_key))
     }
 
