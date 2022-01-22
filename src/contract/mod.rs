@@ -5,6 +5,7 @@ use ciborium::value::{Value as CborValue, Value};
 use grovedb::Error;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use array_tool::vec::Intersect;
 
 // contract
 // - id
@@ -17,27 +18,27 @@ use std::collections::HashMap;
 //               - unique
 
 // Struct Definitions
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Debug)]
 pub struct Contract {
     pub document_types: HashMap<String, DocumentType>,
     pub id: Vec<u8>,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Debug)]
 pub struct DocumentType {
     pub name: String,
     pub indices: Vec<Index>,
     pub properties: HashMap<String, types::DocumentFieldType>,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Debug)]
 pub struct Document {
     pub id: Vec<u8>,
     pub properties: HashMap<String, CborValue>,
     pub owner_id: Vec<u8>,
 }
 
-#[derive(Clone, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize, Debug)]
 pub struct Index {
     pub properties: Vec<IndexProperty>,
     pub unique: bool,
@@ -49,32 +50,48 @@ impl Index {
     // with leftovers permitted.
     // If a sort_on value is provided it must match the last index property.
     // The number returned is the number of unused index properties
-    pub fn matches(&self, index_names: &[&str], sort_on: Option<&str>) -> Option<u16> {
+    pub fn matches(&self, index_names: &[&str], in_field_name: Option<&str>, sort_on: Option<&str>) -> Option<u16> {
+        let last_property = self.properties.last();
+        if last_property.is_none() {
+            return None;
+        }
         let mut d = self.properties.len();
         if sort_on.is_some() {
-            let last_property = self.properties.last();
-            if last_property.is_none() {
-                return None;
-            } else if last_property.unwrap().name.as_str() != sort_on.unwrap() {
+            if last_property.unwrap().name.as_str() != sort_on.unwrap() {
                 return None;
             } else {
-                let last_search_name = index_names.last();
-                if last_search_name.is_some() {
-                    if *last_search_name.unwrap() != sort_on.unwrap() {
-                        // we can remove the -1 here
-                        // this is a case for example if we have an index on person's name and age
-                        // where we say name == 'Sam' sort by age
-                        // there is no field operator on age
-                        // The return value for name == 'Sam' sort by age would be 0
-                        // The return value for name == 'Sam and age > 5 sort by age would be 0
-                        // the return value for sort by age would be 1
-                        d -= 1;
-                    }
+                if !index_names.iter().any(|&a| a == sort_on.unwrap()) {
+                    // we can remove the -1 here
+                    // this is a case for example if we have an index on person's name and age
+                    // where we say name == 'Sam' sort by age
+                    // there is no field operator on age
+                    // The return value for name == 'Sam' sort by age would be 0
+                    // The return value for name == 'Sam and age > 5 sort by age would be 0
+                    // the return value for sort by age would be 1
+                    d -= 1;
                 }
             }
         }
-        for (property_name, search_name) in self.properties.iter().zip(index_names.iter()) {
-            if property_name.name.as_str() != *search_name {
+
+        // the in field can only be on the last or before last property
+        if in_field_name.is_some() {
+
+            if last_property.unwrap().name.as_str() != in_field_name.unwrap() {
+                // it can also be on the before last
+                if self.properties.len() == 1 {
+                    return None;
+                }
+                let before_last_property = self.properties.get(self.properties.len() - 2);
+                if before_last_property.is_none() {
+                    return None;
+                }
+                if before_last_property.unwrap().name.as_str() != in_field_name.unwrap() {
+                    return None;
+                }
+            }
+        }
+        for search_name in index_names.iter() {
+            if !self.properties.iter().any(|property| property.name.as_str() == *search_name) {
                 return None;
             }
             d -= 1;
@@ -84,7 +101,7 @@ impl Index {
     }
 }
 
-#[derive(Clone, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize, Debug)]
 pub struct IndexProperty {
     pub(crate) name: String,
     pub(crate) ascending: bool,
@@ -183,15 +200,18 @@ impl Contract {
 }
 
 impl DocumentType {
+    // index_names can be in any order
+    // in field name must be in the last two indexes.
     pub fn index_for_types(
         &self,
         index_names: &[&str],
+        in_field_name: Option<&str>,
         sort_on: Option<&str>,
     ) -> Option<(&Index, u16)> {
         let mut best_index: Option<(&Index, u16)> = None;
         let mut best_difference = u16::MAX;
         for index in self.indices.iter() {
-            let difference_option = index.matches(index_names, sort_on);
+            let difference_option = index.matches(index_names, in_field_name, sort_on);
             if difference_option.is_some() {
                 let difference = difference_option.unwrap();
                 if difference == 0 {

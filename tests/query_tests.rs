@@ -1,6 +1,8 @@
+use std::collections::HashMap;
 use grovedb::{Error, Query};
 use rand::seq::SliceRandom;
-use rand::Rng;
+use rand::{Rng, SeedableRng};
+use rand_distr::{Exp, Distribution};
 use rs_drive::contract::{Contract, Document, DocumentType};
 use rs_drive::drive::Drive;
 use rs_drive::query::DriveQuery;
@@ -24,7 +26,7 @@ struct Person {
 }
 
 impl Person {
-    fn random_people(count: u32) -> Vec<Self> {
+    fn random_people(count: u32, seed: u64) -> Vec<Self> {
         let first_names =
             common::text_file_strings("tests/supporting_files/contract/family/first-names.txt");
         let middle_names =
@@ -32,17 +34,19 @@ impl Person {
         let last_names =
             common::text_file_strings("tests/supporting_files/contract/family/last-names.txt");
         let mut vec: Vec<Person> = vec![];
+
+        let mut rng = rand::rngs::StdRng::seed_from_u64(seed);
         for i in 0..count {
             let person = Person {
-                id: Vec::from(rand::thread_rng().gen::<[u8; 32]>()),
-                owner_id: Vec::from(rand::thread_rng().gen::<[u8; 32]>()),
-                first_name: first_names.choose(&mut rand::thread_rng()).unwrap().clone(),
+                id: Vec::from(rng.gen::<[u8; 32]>()),
+                owner_id: Vec::from(rng.gen::<[u8; 32]>()),
+                first_name: first_names.choose(&mut rng).unwrap().clone(),
                 middle_name: middle_names
-                    .choose(&mut rand::thread_rng())
+                    .choose(&mut rng)
                     .unwrap()
                     .clone(),
-                last_name: last_names.choose(&mut rand::thread_rng()).unwrap().clone(),
-                age: rand::thread_rng().gen_range(0..85),
+                last_name: last_names.choose(&mut rng).unwrap().clone(),
+                age: rng.gen_range(0..85),
             };
             vec.push(person);
         }
@@ -50,7 +54,7 @@ impl Person {
     }
 }
 
-pub fn setup() -> (Drive, Contract) {
+pub fn setup(count: u32, seed : u64) -> (Drive, Contract) {
     // setup code
     let (mut drive, contract) = common::setup_contract(
         "family",
@@ -61,7 +65,7 @@ pub fn setup() -> (Drive, Contract) {
     let db_transaction = storage.transaction();
     drive.grove.start_transaction();
 
-    let people = Person::random_people(10);
+    let people = Person::random_people(count, seed);
     for person in people {
         let value = serde_json::to_value(&person).expect("serialized person");
         let document_cbor =
@@ -86,7 +90,11 @@ pub fn setup() -> (Drive, Contract) {
 
 #[test]
 fn test_query_many() {
-    let (mut drive, contract) = setup();
+    let (mut drive, contract) = setup(10, 73509);
+    let expected_names = vec!["Gilligan".to_string(), "Kevina".to_string(), "Meta".to_string(), "Noellyn".to_string(), "Prissie".to_string()];
+
+    let expected_names_30_over = vec!["Gilligan".to_string(), "Kevina".to_string(), "Meta".to_string(), "Noellyn".to_string()];
+
     // let query_value = json!({
     //     "where": [
     //         ["firstName", ">", "Abe"]
@@ -103,7 +111,7 @@ fn test_query_many() {
 
     let query_value = json!({
         "where": [
-            ["firstName", ">", "Kiara"],
+            ["firstName", ">", "Chris"],
             ["firstName", "<", "Sam"]
         ],
         "startAt": 0,
@@ -122,23 +130,28 @@ fn test_query_many() {
     let (results, skipped) = query
         .execute_no_proof(&mut drive.grove, None)
         .expect("proof should be executed");
-    assert_ne!(results.len(), 100);
+    assert_eq!(results.len(), 5);
 
-    let names: Result<Vec<Document>, Error> = results
+    let names: Vec<String> = results
         .into_iter()
-        .map(|result| Document::from_cbor(result.as_slice(), None, None))
+        .map(|result| {
+            let document = Document::from_cbor(result.as_slice(), None, None).expect("we should be able to deserialize the cbor");
+            let first_name_value = document.properties.get("firstName").expect("we should be able to get the first name");
+            let first_name = first_name_value.as_text().expect("the first name should be a string");
+            String::from(first_name)
+        })
         .collect();
+
+    assert_eq!(names, expected_names);
 
     let query_value = json!({
         "where": [
-            ["firstName", "in", "Sam"],
-            ["age", ">", 30]
+            ["firstName", "in", names]
         ],
         "startAt": 0,
         "limit": 100,
         "orderBy": [
-            ["firstName", "asc"],
-            ["age", "asc"]
+            ["firstName", "asc"]
         ]
     });
     let where_cbor = common::value_to_cbor(query_value, None);
@@ -151,5 +164,66 @@ fn test_query_many() {
     let (results, skipped) = query
         .execute_no_proof(&mut drive.grove, None)
         .expect("proof should be executed");
-    assert_eq!(results.len(), 100);
+    let names: Vec<String> = results
+        .into_iter()
+        .map(|result| {
+            let document = Document::from_cbor(result.as_slice(), None, None).expect("we should be able to deserialize the cbor");
+            let first_name_value = document.properties.get("firstName").expect("we should be able to get the first name");
+            let first_name = first_name_value.as_text().expect("the first name should be a string");
+            String::from(first_name)
+        })
+        .collect();
+
+    assert_eq!(names, expected_names);
+
+    let query_value = json!({
+        "where": [
+            ["firstName", "in", names],
+            ["age", ">=", 30]
+        ],
+        "startAt": 0,
+        "limit": 100,
+        "orderBy": [
+            ["firstName", "asc"],
+            ["age", "desc"]
+        ]
+    });
+    let where_cbor = common::value_to_cbor(query_value, None);
+    let person_document_type = contract
+        .document_types
+        .get("person")
+        .expect("contract should have a person document type");
+    let query = DriveQuery::from_cbor(where_cbor.as_slice(), &contract, &person_document_type)
+        .expect("query should be built");
+    let (results, skipped) = query
+        .execute_no_proof(&mut drive.grove, None)
+        .expect("proof should be executed");
+    let names: Vec<String> = results
+        .iter()
+        .map(|result| {
+            let document = Document::from_cbor(result.as_slice(), None, None).expect("we should be able to deserialize the cbor");
+            let first_name_value = document.properties.get("firstName").expect("we should be able to get the first name");
+            let first_name = first_name_value.as_text().expect("the first name should be a string");
+            String::from(first_name)
+        })
+        .collect();
+
+    assert_eq!(names, expected_names_30_over);
+
+    let ages: HashMap<String,u8> = results
+        .into_iter()
+        .map(|result| {
+            let document = Document::from_cbor(result.as_slice(), None, None).expect("we should be able to deserialize the cbor");
+            let name_value = document.properties.get("firstName").expect("we should be able to get the first name");
+            let name = name_value.as_text().expect("the first name should be a string").to_string();
+            let age_value = document.properties.get("age").expect("we should be able to get the age");
+            let age_integer = age_value.as_integer().expect("age should be an integer");
+            let age: u8 = age_integer.try_into().expect("expected u8 value");
+            (name, age)
+        })
+        .collect();
+
+    let kevina_age = ages.get("Kevina").expect("we should be able to get Kevina as she is 48");
+
+    assert_eq!(*kevina_age, 48)
 }
