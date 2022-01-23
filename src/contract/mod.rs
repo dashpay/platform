@@ -616,40 +616,45 @@ fn cbor_inner_bool_value(document_type: &Vec<(Value, Value)>, key: &str) -> Opti
     return None;
 }
 
+pub fn bytes_for_system_value(value: &Value) -> Option<Vec<u8>> {
+    match value {
+        Value::Bytes(bytes) => Some(bytes.clone()),
+        Value::Text(text) => match bs58::decode(text).into_vec() {
+            Ok(data) => Some(data),
+            Err(_) => None,
+        },
+        Value::Array(array) => {
+            let bytes_result: Result<Vec<u8>, Error> = array
+                .iter()
+                .map(|byte| match byte {
+                    Value::Integer(int) => {
+                        let value_as_u8: u8 = int
+                            .clone()
+                            .try_into()
+                            .map_err(|_| Error::CorruptedData(String::from("expected u8 value")))?;
+                        Ok(value_as_u8)
+                    }
+                    _ => Err(Error::CorruptedData(String::from(
+                        "not an array of integers",
+                    ))),
+                })
+                .collect::<Result<Vec<u8>, Error>>();
+            match bytes_result {
+                Ok(bytes) => Some(bytes),
+                Err(e) => None,
+            }
+        }
+        _ => None,
+    }
+}
+
 fn bytes_for_system_value_from_hash_map(
     document: &HashMap<String, CborValue>,
     key: &str,
 ) -> Option<Vec<u8>> {
     document
         .get(key)
-        .map(|id_cbor| match id_cbor {
-            Value::Bytes(bytes) => Some(bytes.clone()),
-            Value::Text(text) => match bs58::decode(text).into_vec() {
-                Ok(data) => Some(data),
-                Err(_) => None,
-            },
-            Value::Array(array) => {
-                let bytes_result: Result<Vec<u8>, Error> = array
-                    .iter()
-                    .map(|byte| match byte {
-                        Value::Integer(int) => {
-                            let value_as_u8: u8 = int.clone().try_into().map_err(|_| {
-                                Error::CorruptedData(String::from("expected u8 value"))
-                            })?;
-                            Ok(value_as_u8)
-                        }
-                        _ => Err(Error::CorruptedData(String::from(
-                            "not an array of integers",
-                        ))),
-                    })
-                    .collect::<Result<Vec<u8>, Error>>();
-                match bytes_result {
-                    Ok(bytes) => Some(bytes),
-                    Err(e) => None,
-                }
-            }
-            _ => None,
-        })
+        .map(|id_cbor| bytes_for_system_value(id_cbor))
         .flatten()
 }
 
