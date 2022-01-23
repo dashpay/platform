@@ -399,7 +399,7 @@ impl Document {
         let id = match document_id {
             None => {
                 let document_id: Vec<u8> = bytes_for_system_value_from_hash_map(&document, "$id")
-                    .ok_or(Error::CorruptedData(String::from(
+                    .ok_or_else(|| Error::CorruptedData(String::from(
                     "unable to get document $id",
                 )))?;
                 document.remove("$id");
