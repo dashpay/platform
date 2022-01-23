@@ -318,6 +318,41 @@ impl<'a> WhereClause {
                     }
                 }
             }
+            In => {
+                let in_values = match &self.value {
+                    Value::Array(array) => Some(array),
+                    _ => None,
+                }
+                    .ok_or(Error::CorruptedData(String::from(
+                        "when using in operator you must provide an array of values",
+                    )))?;
+                match starts_at_key_option {
+                    None => {
+                        for value in in_values.iter() {
+                            let key = document_type.serialize_value_for_key(self.field.as_str(), value)?;
+                            query.insert_key(key)
+                        }
+                    }
+                    Some((starts_at_key, included)) => {
+                        for value in in_values.iter() {
+                            let key = document_type.serialize_value_for_key(self.field.as_str(), value)?;
+                            if left_to_right {
+                                if starts_at_key < key || (included && starts_at_key == key) {
+                                    query.insert_key(key);
+                                }
+                            } else {
+                                if starts_at_key > key || (included && starts_at_key == key) {
+                                    query.insert_key(key);
+                                }
+                            }
+                        }
+                    }
+                }
+                for value in in_values.iter() {
+                    let key = document_type.serialize_value_for_key(self.field.as_str(), value)?;
+                    query.insert_key(key)
+                }
+            }
             GreaterThan => {
                 let key =
                     document_type.serialize_value_for_key(self.field.as_str(), &self.value)?;
@@ -582,19 +617,6 @@ impl<'a> WhereClause {
                     }
                 }
             }
-            In => {
-                let in_values = match &self.value {
-                    Value::Array(array) => Some(array),
-                    _ => None,
-                }
-                .ok_or(Error::CorruptedData(String::from(
-                    "when using in operator you must provide an array of values",
-                )))?;
-                for value in in_values.iter() {
-                    let key = document_type.serialize_value_for_key(self.field.as_str(), value)?;
-                    query.insert_key(key)
-                }
-            }
             StartsWith => {
                 let left_key =
                     document_type.serialize_value_for_key(self.field.as_str(), &self.value)?;
@@ -605,7 +627,38 @@ impl<'a> WhereClause {
                         "starts with must have at least one character",
                     )))?;
                 *last_char += 1;
-                query.insert_range(left_key..right_key)
+                match starts_at_key_option {
+                    None => {
+                        query.insert_range(left_key..right_key)
+                    }
+                    Some((starts_at_key, included)) => {
+                        if left_to_right {
+                            if starts_at_key < left_key || (included && starts_at_key == left_key) {
+                                query.insert_range(left_key..right_key)
+                            } else if starts_at_key == left_key {
+                                query.insert_range_after_to(left_key..right_key)
+                            } else if starts_at_key > left_key && starts_at_key < right_key {
+                                if included {
+                                    query.insert_range(starts_at_key..right_key);
+                                } else {
+                                    query.insert_range_after_to(starts_at_key..right_key);
+                                }
+                            }
+                        } else {
+                            if starts_at_key >= right_key {
+                                query.insert_range(left_key..right_key)
+                            } else if starts_at_key > left_key && starts_at_key < right_key {
+                                if included {
+                                    query.insert_range_inclusive(left_key..=starts_at_key);
+                                } else {
+                                    query.insert_range(left_key..starts_at_key);
+                                }
+                            } else if starts_at_key == left_key && included {
+                                query.insert_key(left_key);
+                            }
+                        }
+                    }
+                }
             }
         }
         Ok(query)
