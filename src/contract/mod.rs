@@ -5,7 +5,6 @@ use ciborium::value::{Value as CborValue, Value};
 use grovedb::Error;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use array_tool::vec::Intersect;
 
 // contract
 // - id
