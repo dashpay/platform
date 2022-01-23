@@ -185,8 +185,8 @@ impl<'a> WhereClause {
             })
             .collect();
 
-        if non_groupable_range_clauses.len() == 0 {
-            if groupable_range_clauses.len() == 0 {
+        if non_groupable_range_clauses.is_empty() {
+            if groupable_range_clauses.is_empty() {
                 return Ok(None);
             } else if groupable_range_clauses.len() == 1 {
                 let clause = *groupable_range_clauses.get(0).unwrap();
@@ -939,7 +939,7 @@ impl<'a> DriveQuery<'a> {
                     match self.equal_clauses.get(field.name.as_str()) {
                         None => None,
                         Some(where_clause) => {
-                            if self.order_by.len() == 0
+                            if self.order_by.is_empty()
                                 && !last_clause_is_range
                                 && last_clause.is_some()
                                 && last_clause.unwrap().field == field.name
