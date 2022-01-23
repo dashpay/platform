@@ -667,8 +667,8 @@ impl<'a> WhereClause {
 
 #[derive(Clone, Debug)]
 pub struct OrderClause {
-    field: String,
-    ascending: bool,
+    pub field: String,
+    pub ascending: bool,
 }
 
 impl<'a> OrderClause {
@@ -713,16 +713,16 @@ impl<'a> OrderClause {
 
 #[derive(Debug)]
 pub struct DriveQuery<'a> {
-    contract: &'a Contract,
-    document_type: &'a DocumentType,
-    equal_clauses: HashMap<String, WhereClause>,
-    in_clause: Option<WhereClause>,
-    range_clause: Option<WhereClause>,
-    offset: u16,
-    limit: u16,
-    order_by: IndexMap<String, OrderClause>,
-    start_at: Option<Vec<u8>>,
-    start_at_included: bool,
+    pub contract: &'a Contract,
+    pub document_type: &'a DocumentType,
+    pub equal_clauses: HashMap<String, WhereClause>,
+    pub in_clause: Option<WhereClause>,
+    pub range_clause: Option<WhereClause>,
+    pub offset: u16,
+    pub limit: u16,
+    pub order_by: IndexMap<String, OrderClause>,
+    pub start_at: Option<Vec<u8>>,
+    pub start_at_included: bool,
 }
 
 impl<'a> DriveQuery<'a> {
