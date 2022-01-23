@@ -1,7 +1,7 @@
 mod defaults;
 
 use crate::contract::{
-    bytes_for_system_value, Contract, Document, DocumentType, Index, IndexProperty,
+    bytes_for_system_value, Contract, Document, DocumentType, IndexProperty,
 };
 use crate::query::WhereOperator::{
     Between, BetweenExcludeBounds, BetweenExcludeLeft, BetweenExcludeRight, Equal, GreaterThan,
