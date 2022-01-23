@@ -690,11 +690,7 @@ fn bytes_for_system_value_from_hash_map(
 mod tests {
     use crate::contract::Contract;
     use crate::drive::Drive;
-    use grovedb::Error;
-    use serde::{Deserialize, Serialize};
-    use std::ops::Not;
     use std::{collections::HashMap, fs::File, io::BufReader, path::Path};
-    use tempdir::TempDir;
 
     fn json_document_to_cbor(path: impl AsRef<Path>) -> Vec<u8> {
         let file = File::open(path).expect("file not found");
