@@ -6,8 +6,7 @@ use rs_drive::drive::Drive;
 use rs_drive::query::DriveQuery;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
-
-mod common;
+use rs_drive::common;
 
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

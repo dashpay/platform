@@ -16,6 +16,8 @@ indexmap = "1.8.0"
 hex = "0.4.3"
 array_tool = "1.0.3"
 rand_distr = "0.4.3"
+tempdir = "0.3.7"
+serde_json = "1.0.73"
 
 [dependencies.grovedb]
 git = "https://github.com/dashevo/grovedb"
@@ -24,7 +26,3 @@ branch = "fix/iteration"
 [dependencies.storage]
 git = "https://github.com/dashevo/grovedb"
 branch = "fix/iteration"
-
-[dev-dependencies]
-tempdir = "0.3.7"
-serde_json = "1.0.73"
