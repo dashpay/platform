@@ -388,7 +388,7 @@ impl Document {
             Some(owner_id) => {
                 // we need to start by verifying that the owner_id is a 256 bit number (32 bytes)
                 if owner_id.len() != 32 {
-                    Err(Error::CorruptedData(String::from("invalid owner id")))?
+                    return Err(Error::CorruptedData(String::from("invalid owner id")));
                 }
                 Vec::from(owner_id)
             }
@@ -406,7 +406,7 @@ impl Document {
             Some(document_id) => {
                 // we need to start by verifying that the document_id is a 256 bit number (32 bytes)
                 if document_id.len() != 32 {
-                    Err(Error::CorruptedData(String::from("invalid document id")))?
+                    return Err(Error::CorruptedData(String::from("invalid document id")));
                 }
                 Vec::from(document_id)
             }
@@ -427,11 +427,11 @@ impl Document {
     ) -> Result<Self, Error> {
         // we need to start by verifying that the owner_id is a 256 bit number (32 bytes)
         if owner_id.len() != 32 {
-            Err(Error::CorruptedData(String::from("invalid owner id")))?
+            return Err(Error::CorruptedData(String::from("invalid owner id")));
         }
 
         if document_id.len() != 32 {
-            Err(Error::CorruptedData(String::from("invalid document id")))?
+            return Err(Error::CorruptedData(String::from("invalid document id")));
         }
 
         let (version, read_document_cbor) = document_cbor.split_at(4);
