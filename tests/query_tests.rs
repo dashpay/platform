@@ -91,8 +91,8 @@ pub fn setup(count: u32, seed : u64) -> (Drive, Contract) {
 #[test]
 fn test_query_many() {
     let (mut drive, contract) = setup(10, 73509);
-    let all_names = vec!["Adey".to_string(), "Briney".to_string(), "Cammi".to_string(), "Celinda".to_string(), "Dalia".to_string(), "Gilligan".to_string(), "Kevina".to_string(), "Meta".to_string(), "Noellyn".to_string(), "Prissie".to_string()];
-
+    // let all_names = vec!["Adey".to_string(), "Briney".to_string(), "Cammi".to_string(), "Celinda".to_string(), "Dalia".to_string(), "Gilligan".to_string(), "Kevina".to_string(), "Meta".to_string(), "Noellyn".to_string(), "Prissie".to_string()];
+    //
     // // A query getting all elements by firstName
     //
     // let query_value = json!({
