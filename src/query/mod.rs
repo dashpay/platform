@@ -444,19 +444,143 @@ impl<'a> WhereClause {
             }
             Between => {
                 let (left_key, right_key) = self.split_value_for_between(document_type)?;
-                query.insert_range_inclusive(left_key..=right_key)
+                match starts_at_key_option {
+                    None => {
+                        query.insert_range_inclusive(left_key..=right_key)
+                    }
+                    Some((starts_at_key, included)) => {
+                        if left_to_right {
+                            if starts_at_key < left_key || (included && starts_at_key == left_key) {
+                                query.insert_range_inclusive(left_key..=right_key)
+                            } else if starts_at_key == left_key {
+                                query.insert_range_after_to_inclusive(left_key..=right_key)
+                            } else if starts_at_key > left_key && starts_at_key < right_key {
+                                if included {
+                                    query.insert_range_inclusive(starts_at_key..=right_key);
+                                } else {
+                                    query.insert_range_after_to_inclusive(starts_at_key..=right_key);
+                                }
+                            } else if starts_at_key == right_key && included {
+                                query.insert_key(right_key);
+                            }
+                        } else {
+                            if starts_at_key > right_key || (included && starts_at_key == right_key) {
+                                query.insert_range_inclusive(left_key..=right_key)
+                            } else if starts_at_key == right_key {
+                                query.insert_range(left_key..right_key)
+                            } else if starts_at_key > left_key && starts_at_key < right_key {
+                                if included {
+                                    query.insert_range_inclusive(left_key..=starts_at_key);
+                                } else {
+                                    query.insert_range(left_key..starts_at_key);
+                                }
+                            } else if starts_at_key == left_key && included {
+                                query.insert_key(left_key);
+                            }
+                        }
+                    }
+                }
             }
             BetweenExcludeBounds => {
                 let (left_key, right_key) = self.split_value_for_between(document_type)?;
-                query.insert_range_after_to(left_key..right_key)
+                match starts_at_key_option {
+                    None => {
+                        query.insert_range_after_to(left_key..right_key)
+                    }
+                    Some((starts_at_key, included)) => {
+                        if left_to_right {
+                            if starts_at_key <= left_key {
+                                query.insert_range_after_to(left_key..right_key)
+                            } else if starts_at_key > left_key && starts_at_key < right_key {
+                                if included {
+                                    query.insert_range(starts_at_key..right_key);
+                                } else {
+                                    query.insert_range_after_to(starts_at_key..right_key);
+                                }
+                            }
+                        } else {
+                            if starts_at_key > right_key {
+                                query.insert_range_inclusive(left_key..=right_key)
+                            } else if starts_at_key == right_key {
+                                query.insert_range(left_key..right_key)
+                            } else if starts_at_key > left_key && starts_at_key < right_key {
+                                if included {
+                                    query.insert_range_after_to_inclusive(left_key..=starts_at_key);
+                                } else {
+                                    query.insert_range_after_to(left_key..starts_at_key);
+                                }
+                            }
+                        }
+                    }
+                }
             }
             BetweenExcludeLeft => {
                 let (left_key, right_key) = self.split_value_for_between(document_type)?;
-                query.insert_range_after_to_inclusive(left_key..=right_key)
+                match starts_at_key_option {
+                    None => {
+                        query.insert_range_after_to_inclusive(left_key..=right_key)
+                    }
+                    Some((starts_at_key, included)) => {
+                        if left_to_right {
+                            if starts_at_key <= left_key {
+                                query.insert_range_after_to_inclusive(left_key..=right_key)
+                            } else if starts_at_key > left_key && starts_at_key < right_key {
+                                if included {
+                                    query.insert_range_inclusive(starts_at_key..=right_key);
+                                } else {
+                                    query.insert_range_after_to_inclusive(starts_at_key..=right_key);
+                                }
+                            } else if starts_at_key == right_key && included {
+                                query.insert_key(right_key);
+                            }
+                        } else {
+                            if starts_at_key > right_key || (included && starts_at_key == right_key) {
+                                query.insert_range_after_to_inclusive(left_key..=right_key)
+                            } else if starts_at_key > left_key && starts_at_key < right_key {
+                                if included {
+                                    query.insert_range_inclusive(left_key..=starts_at_key);
+                                } else {
+                                    query.insert_range(left_key..starts_at_key);
+                                }
+                            }
+                        }
+                    }
+                }
             }
             BetweenExcludeRight => {
                 let (left_key, right_key) = self.split_value_for_between(document_type)?;
-                query.insert_range(left_key..right_key)
+                match starts_at_key_option {
+                    None => {
+                        query.insert_range(left_key..right_key)
+                    }
+                    Some((starts_at_key, included)) => {
+                        if left_to_right {
+                            if starts_at_key < left_key || (included && starts_at_key == left_key) {
+                                query.insert_range(left_key..right_key)
+                            } else if starts_at_key == left_key {
+                                query.insert_range_after_to(left_key..right_key)
+                            } else if starts_at_key > left_key && starts_at_key < right_key {
+                                if included {
+                                    query.insert_range(starts_at_key..right_key);
+                                } else {
+                                    query.insert_range_after_to(starts_at_key..right_key);
+                                }
+                            }
+                        } else {
+                            if starts_at_key >= right_key {
+                                query.insert_range(left_key..right_key)
+                            } else if starts_at_key > left_key && starts_at_key < right_key {
+                                if included {
+                                    query.insert_range_inclusive(left_key..=starts_at_key);
+                                } else {
+                                    query.insert_range(left_key..starts_at_key);
+                                }
+                            } else if starts_at_key == left_key && included {
+                                query.insert_key(left_key);
+                            }
+                        }
+                    }
+                }
             }
             In => {
                 let in_values = match &self.value {
