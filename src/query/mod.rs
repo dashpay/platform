@@ -177,7 +177,7 @@ impl<'a> WhereClause {
             })
             .collect();
 
-        if non_groupable_range_clauses.is_empty() {
+        return if non_groupable_range_clauses.is_empty() {
             if groupable_range_clauses.is_empty() {
                 return Ok(None);
             } else if groupable_range_clauses.len() == 1 {
@@ -187,59 +187,54 @@ impl<'a> WhereClause {
                 return Err(Error::CorruptedData(String::from(
                     "there can only be at most 2 range clauses",
                 )));
-            }
-
-            if groupable_range_clauses
+            } else if groupable_range_clauses
                 .iter()
                 .any(|&z| z.field != groupable_range_clauses.first().unwrap().field)
             {
                 return Err(Error::CorruptedData(String::from(
                     "all ranges must be on same field",
                 )));
-            }
+            } else {
 
-            // we need to find the bounds of the clauses
-            let lower_bounds_clause =
-                WhereClause::lower_bound_clause(groupable_range_clauses.as_slice())?;
-            let upper_bounds_clause =
-                WhereClause::upper_bound_clause(groupable_range_clauses.as_slice())?;
-
-            if lower_bounds_clause.is_none() || upper_bounds_clause.is_none() {
-                return Err(Error::CorruptedData(String::from(
+                let lower_upper_error = || Error::CorruptedData(String::from(
                     "lower and upper bounds must be passed if providing 2 ranges",
-                )));
-            }
+                ));
 
-            let operator = match (
-                lower_bounds_clause.unwrap().operator,
-                upper_bounds_clause.unwrap().operator,
-            ) {
-                (GreaterThanOrEquals, LessThanOrEquals) => Some(Between),
-                (GreaterThanOrEquals, LessThan) => Some(BetweenExcludeRight),
-                (GreaterThan, LessThanOrEquals) => Some(BetweenExcludeLeft),
-                (GreaterThan, LessThan) => Some(BetweenExcludeBounds),
-                _ => None,
-            }
-            .ok_or_else(|| Error::CorruptedData(String::from(
-                "lower and upper bounds must be passed if providing 2 ranges",
-            )))?;
+                // we need to find the bounds of the clauses
+                let lower_bounds_clause =
+                    WhereClause::lower_bound_clause(groupable_range_clauses.as_slice())?.ok_or_else(lower_upper_error)?;
+                let upper_bounds_clause =
+                    WhereClause::upper_bound_clause(groupable_range_clauses.as_slice())?.ok_or_else(lower_upper_error)?;
 
-            return Ok(Some(WhereClause {
-                field: groupable_range_clauses.first().unwrap().field.clone(),
-                operator,
-                value: Value::Array(vec![
-                    lower_bounds_clause.unwrap().value.clone(),
-                    upper_bounds_clause.unwrap().value.clone(),
-                ]),
-            }));
+                let operator = match (
+                    lower_bounds_clause.operator,
+                    upper_bounds_clause.operator,
+                ) {
+                    (GreaterThanOrEquals, LessThanOrEquals) => Some(Between),
+                    (GreaterThanOrEquals, LessThan) => Some(BetweenExcludeRight),
+                    (GreaterThan, LessThanOrEquals) => Some(BetweenExcludeLeft),
+                    (GreaterThan, LessThan) => Some(BetweenExcludeBounds),
+                    _ => None,
+                }
+                .ok_or_else(lower_upper_error)?;
+
+                Ok(Some(WhereClause {
+                    field: groupable_range_clauses.first().unwrap().field.clone(),
+                    operator,
+                    value: Value::Array(vec![
+                        lower_bounds_clause.value.clone(),
+                        upper_bounds_clause.value.clone(),
+                    ]),
+                }))
+            }
         } else if non_groupable_range_clauses.len() == 1 {
             let where_clause = non_groupable_range_clauses.get(0).unwrap();
-            return Ok(Some((*where_clause).clone()));
+            Ok(Some((*where_clause).clone()))
         } else {
             // if non_groupable_range_clauses.len() > 1
-            return Err(Error::CorruptedData(String::from(
+            Err(Error::CorruptedData(String::from(
                 "there can not be more than 1 non groupable range clause",
-            )));
+            )))
         }
     }
 
