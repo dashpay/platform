@@ -129,7 +129,7 @@ impl<'a> WhereClause {
 
     fn upper_bound_clause(where_clauses: &'a [&WhereClause]) -> Result<Option<&'a Self>, Error> {
         let upper_range_clauses: Vec<&&WhereClause> = where_clauses
-            .into_iter()
+            .iter()
             .filter(|&where_clause| matches!(where_clause.operator, LessThan | LessThanOrEquals))
             .collect::<Vec<&&WhereClause>>();
         match upper_range_clauses.len() {
