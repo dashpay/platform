@@ -574,7 +574,7 @@ impl IndexProperty {
                 "value should be of type string",
             )))?;
 
-        let ascending = if value == "asc" { true } else { false };
+        let ascending = value == "asc";
 
         Ok(IndexProperty {
             name: key.to_string(),
