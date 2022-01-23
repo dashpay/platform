@@ -269,7 +269,7 @@ impl DocumentType {
         let mut indices: Vec<Index> = Vec::new();
         let mut document_properties: HashMap<String, types::DocumentFieldType> = HashMap::new();
 
-        let index_values = cbor_inner_array_value(&document_type_value_map, "indices")
+        let index_values = cbor_inner_array_value(document_type_value_map, "indices")
             .ok_or_else(|| Error::CorruptedData(String::from("unable to get indices from the contract"))
         )?;
 
@@ -284,7 +284,7 @@ impl DocumentType {
         }
 
         // Extract the properties
-        let property_values = cbor_inner_map_value(&document_type_value_map, "properties")
+        let property_values = cbor_inner_map_value(document_type_value_map, "properties")
             .ok_or_else(|| Error::CorruptedData(String::from(
                 "unable to get document properties from the contract",
             )))?;
