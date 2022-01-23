@@ -1,14 +1,11 @@
 use std::collections::HashMap;
-use grovedb::{Error, Query};
 use rand::seq::SliceRandom;
 use rand::{Rng, SeedableRng};
-use rand_distr::{Exp, Distribution};
-use rs_drive::contract::{Contract, Document, DocumentType};
+use rs_drive::contract::{Contract, Document};
 use rs_drive::drive::Drive;
 use rs_drive::query::DriveQuery;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
-use tempdir::TempDir;
 
 mod common;
 
@@ -91,8 +88,8 @@ pub fn setup(count: u32, seed : u64) -> (Drive, Contract) {
 #[test]
 fn test_query_many() {
     let (mut drive, contract) = setup(10, 73509);
-    let all_names = vec!["Adey".to_string(), "Briney".to_string(), "Cammi".to_string(), "Celinda".to_string(), "Dalia".to_string(), "Gilligan".to_string(), "Kevina".to_string(), "Meta".to_string(), "Noellyn".to_string(), "Prissie".to_string()];
-
+    // let all_names = vec!["Adey".to_string(), "Briney".to_string(), "Cammi".to_string(), "Celinda".to_string(), "Dalia".to_string(), "Gilligan".to_string(), "Kevina".to_string(), "Meta".to_string(), "Noellyn".to_string(), "Prissie".to_string()];
+    //
     // // A query getting all elements by firstName
     //
     // let query_value = json!({
@@ -169,7 +166,7 @@ fn test_query_many() {
         .expect("contract should have a person document type");
     let query = DriveQuery::from_cbor(where_cbor.as_slice(), &contract, &person_document_type)
         .expect("query should be built");
-    let (results, skipped) = query
+    let (results, _) = query
         .execute_no_proof(&mut drive.grove, None)
         .expect("proof should be executed");
     assert_eq!(results.len(), 5);
@@ -207,7 +204,7 @@ fn test_query_many() {
         .expect("contract should have a person document type");
     let query = DriveQuery::from_cbor(where_cbor.as_slice(), &contract, &person_document_type)
         .expect("query should be built");
-    let (results, skipped) = query
+    let (results, _) = query
         .execute_no_proof(&mut drive.grove, None)
         .expect("proof should be executed");
     let names: Vec<String> = results
@@ -243,7 +240,7 @@ fn test_query_many() {
         .expect("contract should have a person document type");
     let query = DriveQuery::from_cbor(where_cbor.as_slice(), &contract, &person_document_type)
         .expect("query should be built");
-    let (results, skipped) = query
+    let (results, _) = query
         .execute_no_proof(&mut drive.grove, None)
         .expect("proof should be executed");
     let names: Vec<String> = results
@@ -281,7 +278,7 @@ fn test_query_many() {
         .expect("contract should have a person document type");
     let query = DriveQuery::from_cbor(where_cbor.as_slice(), &contract, &person_document_type)
         .expect("query should be built");
-    let (results, skipped) = query
+    let (results, _) = query
         .execute_no_proof(&mut drive.grove, None)
         .expect("proof should be executed");
     let names: Vec<String> = results
