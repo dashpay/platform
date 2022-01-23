@@ -273,26 +273,19 @@ impl Drive {
         let mut already_exists = false;
         let mut different_contract_data = false;
 
-        match self
+        if let Ok(stored_Element) = self
             .grove
-            .get(&*contract_root_path(&contract.id), b"0", transaction)
-        {
-            Ok(stored_Element) => {
-                already_exists = true;
-                match stored_Element {
-                    Element::Item(stored_contract_bytes) => {
-                        if contract_bytes != stored_contract_bytes {
-                            different_contract_data = true;
-                        }
-                    }
-                    _ => {
-                        already_exists = false;
+            .get(&*contract_root_path(&contract.id), b"0", transaction) {
+            already_exists = true;
+            match stored_Element {
+                Element::Item(stored_contract_bytes) => {
+                    if contract_bytes != stored_contract_bytes {
+                        different_contract_data = true;
                     }
                 }
-            }
-            Err(_) => {
-                // the element doesn't exist
-                // no need to do anything
+                _ => {
+                    already_exists = false;
+                }
             }
         };
 
