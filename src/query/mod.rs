@@ -1,12 +1,12 @@
 mod defaults;
 
-use crate::contract::{Contract, DocumentType, Index};
+use crate::contract::{bytes_for_system_value, Contract, Document, DocumentType, Index};
 use crate::query::WhereOperator::{
     Between, BetweenExcludeBounds, BetweenExcludeLeft, BetweenExcludeRight, Equal, GreaterThan,
     GreaterThanOrEquals, In, LessThan, LessThanOrEquals, StartsWith,
 };
 use ciborium::value::{Value as CborValue, Value};
-use grovedb::{Error, GroveDb, PathQuery, Query, SizedQuery};
+use grovedb::{Element, Error, GroveDb, PathQuery, Query, SizedQuery};
 use indexmap::IndexMap;
 use std::collections::HashMap;
 use storage::rocksdb_storage::OptimisticTransactionDBTransaction;
@@ -510,21 +510,8 @@ impl<'a> DriveQuery<'a> {
             start_at_included = true;
         }
 
-        let mut offset: u16 = start_option
-            .map_or(Some(0), |id_cbor| {
-                if let CborValue::Integer(b) = id_cbor {
-                    Some(i128::from(*b) as u16)
-                } else {
-                    None
-                }
-            })
-            .ok_or(Error::CorruptedData(String::from(
-                "limit should be a integer from 1 to 100",
-            )))?;
-
-        if !start_at_included {
-            offset += 1;
-        }
+        let mut start_at: Option<Vec<u8>> =
+            start_option.map_or(None, |id_cbor| bytes_for_system_value(id_cbor));
 
         let order_by: IndexMap<String, OrderClause> = query_document
             .get("orderBy")
@@ -554,10 +541,10 @@ impl<'a> DriveQuery<'a> {
             equal_clauses,
             in_clause,
             range_clause,
-            offset,
+            offset: 0,
             limit,
             order_by,
-            start_at: None,
+            start_at,
             start_at_included,
         })
     }
@@ -575,6 +562,36 @@ impl<'a> DriveQuery<'a> {
         grove: &mut GroveDb,
         transaction: Option<&OptimisticTransactionDBTransaction>,
     ) -> Result<(Vec<Vec<u8>>, u16), Error> {
+        // First we should get the overall document_type_path
+        let document_type_path = self
+            .contract
+            .document_type_path(self.document_type.name.as_str())
+            .into_iter()
+            .map(|a| a.to_vec())
+            .collect::<Vec<Vec<u8>>>();
+
+        let starts_at_document: Option<Document> = match &self.start_at {
+            None => Ok(None),
+            Some(starts_at) => {
+                // First if we have a startAt or or startsAfter we must get the element
+                // from the backing store
+
+                let document_holding_path = self
+                    .contract
+                    .documents_primary_key_path(self.document_type.name.as_str());
+                let start_at_document =
+                    grove.get(document_holding_path.as_slice(), starts_at, transaction)?;
+                if let Element::Item(item) = start_at_document {
+                    let document = Document::from_cbor(item.as_slice(), None, None)?;
+                    Ok(Some(document))
+                } else {
+                    Err(Error::CorruptedData(String::from(
+                        "Holding paths should only have items",
+                    )))
+                }
+            }
+        }?;
+
         let equal_fields = self
             .equal_clauses
             .keys()
@@ -714,13 +731,6 @@ impl<'a> DriveQuery<'a> {
 
         // Now we should construct the path
 
-        let mut contract_path = self
-            .contract
-            .document_type_path(self.document_type.name.as_str())
-            .into_iter()
-            .map(|a| a.to_vec())
-            .collect::<Vec<Vec<u8>>>();
-
         let (intermediate_indexes, last_indexes) =
             index.properties.split_at(intermediate_values.len());
 
@@ -730,22 +740,21 @@ impl<'a> DriveQuery<'a> {
                 "document query has no index with fields",
             )))?;
 
+        let mut path = document_type_path.clone();
+
         for (intermediate_index, intermediate_value) in
             intermediate_indexes.iter().zip(intermediate_values.iter())
         {
-            contract_path.push(intermediate_index.name.as_bytes().to_vec());
-            contract_path.push(intermediate_value.as_slice().to_vec());
+            path.push(intermediate_index.name.as_bytes().to_vec());
+            path.push(intermediate_value.as_slice().to_vec());
         }
 
-        contract_path.push(last_index.name.as_bytes().to_vec());
+        path.push(last_index.name.as_bytes().to_vec());
 
-        let path = contract_path
-            .iter()
-            .map(|a| a.as_slice())
-            .collect::<Vec<&[u8]>>();
+        let path_slices = path.iter().map(|a| a.as_slice()).collect::<Vec<&[u8]>>();
 
         let path_query = PathQuery::new(
-            path.as_slice(),
+            path_slices.as_slice(),
             SizedQuery::new(
                 final_query,
                 Some(self.limit),

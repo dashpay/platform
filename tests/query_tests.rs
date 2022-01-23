@@ -106,7 +106,6 @@ fn test_query_many() {
     let query_value = json!({
         "where": [
         ],
-        "startAt": 0,
         "limit": 100,
         "orderBy": [
             ["firstName", "asc"]
@@ -146,7 +145,6 @@ fn test_query_many() {
         "where": [
             ["firstName", "<", "Chris"]
         ],
-        "startAt": 0,
         "limit": 100,
         "orderBy": [
             ["firstName", "asc"]
@@ -192,7 +190,6 @@ fn test_query_many() {
         "where": [
             ["firstName", "StartsWith", "C"]
         ],
-        "startAt": 0,
         "limit": 100,
         "orderBy": [
             ["firstName", "asc"]
@@ -234,7 +231,6 @@ fn test_query_many() {
             ["firstName", ">", "Chris"],
             ["firstName", "<=", "Noellyn"]
         ],
-        "startAt": 0,
         "limit": 100,
         "orderBy": [
             ["firstName", "asc"]
@@ -253,7 +249,7 @@ fn test_query_many() {
     assert_eq!(results.len(), 5);
 
     let names: Vec<String> = results
-        .into_iter()
+        .iter()
         .map(|result| {
             let document = Document::from_cbor(result.as_slice(), None, None)
                 .expect("we should be able to deserialize the cbor");
@@ -278,13 +274,85 @@ fn test_query_many() {
 
     assert_eq!(names, expected_between_names);
 
+    // A query getting all people who's first name is between Chris and Noellyn included
+    // However here there will be a startAt of the ID of Kevina
+
+    // Let's first get the ID of Kevina
+    let ids: HashMap<String, Vec<u8>> = results
+        .into_iter()
+        .map(|result| {
+            let document = Document::from_cbor(result.as_slice(), None, None)
+                .expect("we should be able to deserialize the cbor");
+            let name_value = document
+                .properties
+                .get("firstName")
+                .expect("we should be able to get the first name");
+            let name = name_value
+                .as_text()
+                .expect("the first name should be a string")
+                .to_string();
+            (name, document.id.clone())
+        })
+        .collect();
+
+    let kevina_id = ids
+        .get("Kevina")
+        .expect("We should be able to get back Kevina's Id");
+    let kevina_encoded_id = bs58::encode(kevina_id).into_string();
+
+    let query_value = json!({
+        "where": [
+            ["firstName", ">", "Chris"],
+            ["firstName", "<=", "Noellyn"]
+        ],
+        "startAt": kevina_encoded_id, //Kevina
+        "limit": 100,
+        "orderBy": [
+            ["firstName", "asc"]
+        ]
+    });
+    let where_cbor = common::value_to_cbor(query_value, None);
+    let person_document_type = contract
+        .document_types
+        .get("person")
+        .expect("contract should have a person document type");
+    let query = DriveQuery::from_cbor(where_cbor.as_slice(), &contract, &person_document_type)
+        .expect("query should be built");
+    let (results, skipped) = query
+        .execute_no_proof(&mut drive.grove, None)
+        .expect("proof should be executed");
+    assert_eq!(results.len(), 5);
+
+    let reduced_names_after: Vec<String> = results
+        .into_iter()
+        .map(|result| {
+            let document = Document::from_cbor(result.as_slice(), None, None)
+                .expect("we should be able to deserialize the cbor");
+            let first_name_value = document
+                .properties
+                .get("firstName")
+                .expect("we should be able to get the first name");
+            let first_name = first_name_value
+                .as_text()
+                .expect("the first name should be a string");
+            String::from(first_name)
+        })
+        .collect();
+
+    let expected_between_names = vec![
+        "Kevina".to_string(),
+        "Meta".to_string(),
+        "Noellyn".to_string(),
+    ];
+
+    assert_eq!(reduced_names_after, expected_between_names);
+
     // A query getting back elements having specific names
 
     let query_value = json!({
         "where": [
             ["firstName", "in", names]
         ],
-        "startAt": 0,
         "limit": 100,
         "orderBy": [
             ["firstName", "asc"]
@@ -325,7 +393,6 @@ fn test_query_many() {
             ["firstName", "in", names],
             ["age", ">=", 45]
         ],
-        "startAt": 0,
         "limit": 100,
         "orderBy": [
             ["firstName", "asc"],
@@ -374,7 +441,6 @@ fn test_query_many() {
             ["firstName", "in", names],
             ["age", ">", 48]
         ],
-        "startAt": 0,
         "limit": 100,
         "orderBy": [
             ["firstName", "asc"],
