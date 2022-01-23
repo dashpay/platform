@@ -415,7 +415,7 @@ impl Drive {
                 .get_raw_for_contract(
                     &top_index_property.name,
                     document_type_name,
-                    &contract,
+                    contract,
                     owner_id,
                 )?
                 .ok_or_else(|| Error::CorruptedData(String::from(
@@ -464,7 +464,7 @@ impl Drive {
                     .get_raw_for_contract(
                         &index_property.name,
                         document_type_name,
-                        &contract,
+                        contract,
                         owner_id,
                     )?
                     .ok_or_else(|| Error::CorruptedData(String::from(
@@ -694,7 +694,7 @@ impl Drive {
                 .get_raw_for_contract(
                     &top_index_property.name,
                     document_type_name,
-                    &contract,
+                    contract,
                     owner_id,
                 )?
                 .ok_or_else(|| Error::CorruptedData(String::from(
@@ -722,7 +722,7 @@ impl Drive {
                     .get_raw_for_contract(
                         &index_property.name,
                         document_type_name,
-                        &contract,
+                        contract,
                         owner_id,
                     )?
                     .ok_or_else(|| Error::CorruptedData(String::from(
