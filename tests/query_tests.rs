@@ -1,14 +1,11 @@
 use std::collections::HashMap;
-use grovedb::{Error, Query};
 use rand::seq::SliceRandom;
 use rand::{Rng, SeedableRng};
-use rand_distr::{Exp, Distribution};
-use rs_drive::contract::{Contract, Document, DocumentType};
+use rs_drive::contract::{Contract, Document};
 use rs_drive::drive::Drive;
 use rs_drive::query::DriveQuery;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
-use tempdir::TempDir;
 
 mod common;
 
