@@ -585,14 +585,13 @@ impl IndexProperty {
 fn contract_document_types(contract: &HashMap<String, CborValue>) -> Option<&Vec<(Value, Value)>> {
     contract
         .get("documents")
-        .map(|id_cbor| {
+        .and_then(|id_cbor| {
             if let CborValue::Map(documents) = id_cbor {
                 Some(documents)
             } else {
                 None
             }
         })
-        .flatten()
 }
 
 fn get_key_from_cbor_map(cbor_map: &[(Value, Value)], key: &str) -> Option<Value> {
