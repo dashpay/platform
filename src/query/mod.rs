@@ -672,10 +672,10 @@ impl<'a> DriveQuery<'a> {
     ) -> Result<Self, Error> {
         let query_document: HashMap<String, CborValue> = ciborium::de::from_reader(query_cbor)
             .map_err(|err| {
-                Error::CorruptedData(String::from(format!(
+                Error::CorruptedData(format!(
                     "unable to decode query: {}",
-                    err.to_string()
-                )))
+                    err
+                ))
             })?;
 
         let limit: u16 = query_document
