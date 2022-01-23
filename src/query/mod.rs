@@ -886,10 +886,7 @@ impl<'a> DriveQuery<'a> {
         let ordered_clauses: Vec<&WhereClause> = index
             .properties
             .iter()
-            .filter_map(|field| match self.equal_clauses.get(field.name.as_str()) {
-                None => None,
-                Some(where_clause) => Some(where_clause),
-            })
+            .filter_map(|field| self.equal_clauses.get(field.name.as_str()))
             .collect();
         let (last_clause, last_clause_is_range, subquery_clause) = match &self.in_clause {
             None => match &self.range_clause {
