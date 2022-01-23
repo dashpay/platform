@@ -116,11 +116,7 @@ impl<'a> WhereClause {
     fn lower_bound_clause(where_clauses: &'a [&WhereClause]) -> Result<Option<&'a Self>, Error> {
         let lower_range_clauses: Vec<&&WhereClause> = where_clauses
             .iter()
-            .filter(|&where_clause| match where_clause.operator {
-                GreaterThan => true,
-                GreaterThanOrEquals => true,
-                _ => false,
-            })
+            .filter(|&where_clause| matches!(where_clause.operator, GreaterThan | GreaterThanOrEquals))
             .collect::<Vec<&&WhereClause>>();
         match lower_range_clauses.len() {
             0 => Ok(None),
