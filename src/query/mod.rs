@@ -68,7 +68,7 @@ pub struct WhereClause {
 }
 
 impl<'a> WhereClause {
-    pub fn from_components(clause_components: &'a Vec<Value>) -> Result<Self, Error> {
+    pub fn from_components(clause_components: &'a [Value]) -> Result<Self, Error> {
         if clause_components.len() != 3 {
             return Err(Error::CorruptedData(String::from(
                 "where clauses should have at most 3 components",
@@ -619,7 +619,7 @@ pub struct OrderClause {
 }
 
 impl<'a> OrderClause {
-    pub fn from_components(clause_components: &'a Vec<Value>) -> Result<Self, Error> {
+    pub fn from_components(clause_components: &'a [Value]) -> Result<Self, Error> {
         if clause_components.len() != 2 {
             return Err(Error::CorruptedData(String::from(
                 "order clause should have exactly 2 components",
