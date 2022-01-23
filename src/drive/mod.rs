@@ -753,7 +753,6 @@ impl Drive {
 mod tests {
     use crate::drive::Drive;
     use rand::Rng;
-    use serde::{Deserialize, Serialize};
     use std::{collections::HashMap, fs::File, io::BufReader, path::Path};
     use tempdir::TempDir;
 
