@@ -350,9 +350,8 @@ impl DocumentType {
     pub fn top_level_indices(&self) -> Result<Vec<IndexProperty>, Error> {
         let mut index_properties: Vec<IndexProperty> = Vec::new();
         for index in &self.indices {
-            let property = index.properties.get(0);
-            if property.is_some() {
-                index_properties.push(property.expect("confirmed is some").clone());
+            if let Some(property) = index.properties.get(0) {
+                index_properties.push(property.clone());
             }
         }
         Ok(index_properties)
