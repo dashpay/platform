@@ -869,11 +869,11 @@ impl<'a> DriveQuery<'a> {
             Some(range_clause) => Some(range_clause.field.as_str()),
         };
         let mut fields = equal_fields;
-        if range_field.is_some() {
-            fields.push(range_field.unwrap());
+        if let Some(range_field) = range_field {
+            fields.push(range_field);
         }
-        if in_field.is_some() {
-            fields.push(in_field.unwrap());
+        if let Some(in_field) = in_field {
+            fields.push(in_field);
             //if there is an in_field, it always takes precedence
         }
 
