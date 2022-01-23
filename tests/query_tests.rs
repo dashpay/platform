@@ -32,7 +32,7 @@ impl Person {
         let mut vec: Vec<Person> = vec![];
 
         let mut rng = rand::rngs::StdRng::seed_from_u64(seed);
-        for i in 0..count {
+        for _ in 0..count {
             let person = Person {
                 id: Vec::from(rng.gen::<[u8; 32]>()),
                 owner_id: Vec::from(rng.gen::<[u8; 32]>()),
