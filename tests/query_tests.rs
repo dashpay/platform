@@ -1,14 +1,11 @@
-use grovedb::{Error, Query};
+use std::collections::HashMap;
 use rand::seq::SliceRandom;
 use rand::{Rng, SeedableRng};
-use rand_distr::{Distribution, Exp};
-use rs_drive::contract::{Contract, Document, DocumentType};
+use rs_drive::contract::{Contract, Document};
 use rs_drive::drive::Drive;
 use rs_drive::query::DriveQuery;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
-use std::collections::HashMap;
-use tempdir::TempDir;
 
 mod common;
 
@@ -247,7 +244,7 @@ fn test_query_many() {
         .expect("contract should have a person document type");
     let query = DriveQuery::from_cbor(where_cbor.as_slice(), &contract, &person_document_type)
         .expect("query should be built");
-    let (results, skipped) = query
+    let (results, _) = query
         .execute_no_proof(&mut drive.grove, None)
         .expect("proof should be executed");
     assert_eq!(results.len(), 5);
@@ -297,7 +294,7 @@ fn test_query_many() {
         .expect("contract should have a person document type");
     let query = DriveQuery::from_cbor(where_cbor.as_slice(), &contract, &person_document_type)
         .expect("query should be built");
-    let (results, skipped) = query
+    let (results, _) = query
         .execute_no_proof(&mut drive.grove, None)
         .expect("proof should be executed");
     let names: Vec<String> = results
@@ -339,7 +336,7 @@ fn test_query_many() {
         .expect("contract should have a person document type");
     let query = DriveQuery::from_cbor(where_cbor.as_slice(), &contract, &person_document_type)
         .expect("query should be built");
-    let (results, skipped) = query
+    let (results, _) = query
         .execute_no_proof(&mut drive.grove, None)
         .expect("proof should be executed");
     let names: Vec<String> = results
@@ -388,7 +385,7 @@ fn test_query_many() {
         .expect("contract should have a person document type");
     let query = DriveQuery::from_cbor(where_cbor.as_slice(), &contract, &person_document_type)
         .expect("query should be built");
-    let (results, skipped) = query
+    let (results, _) = query
         .execute_no_proof(&mut drive.grove, None)
         .expect("proof should be executed");
     let names: Vec<String> = results

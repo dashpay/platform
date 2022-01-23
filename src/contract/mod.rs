@@ -64,34 +64,30 @@ impl Index {
         if sort_on.is_some() {
             if last_property.unwrap().name.as_str() != sort_on.unwrap() {
                 return None;
-            } else {
-                if !index_names.iter().any(|&a| a == sort_on.unwrap()) {
-                    // we can remove the -1 here
-                    // this is a case for example if we have an index on person's name and age
-                    // where we say name == 'Sam' sort by age
-                    // there is no field operator on age
-                    // The return value for name == 'Sam' sort by age would be 0
-                    // The return value for name == 'Sam and age > 5 sort by age would be 0
-                    // the return value for sort by age would be 1
-                    d -= 1;
-                }
+            } else if !index_names.iter().any(|&a| a == sort_on.unwrap()) {
+                // we can remove the -1 here
+                // this is a case for example if we have an index on person's name and age
+                // where we say name == 'Sam' sort by age
+                // there is no field operator on age
+                // The return value for name == 'Sam' sort by age would be 0
+                // The return value for name == 'Sam and age > 5 sort by age would be 0
+                // the return value for sort by age would be 1
+                d -= 1;
             }
         }
 
         // the in field can only be on the last or before last property
-        if in_field_name.is_some() {
-            if last_property.unwrap().name.as_str() != in_field_name.unwrap() {
-                // it can also be on the before last
-                if self.properties.len() == 1 {
-                    return None;
-                }
-                let before_last_property = self.properties.get(self.properties.len() - 2);
-                if before_last_property.is_none() {
-                    return None;
-                }
-                if before_last_property.unwrap().name.as_str() != in_field_name.unwrap() {
-                    return None;
-                }
+        if in_field_name.is_some() && last_property.unwrap().name.as_str() != in_field_name.unwrap() {
+            // it can also be on the before last
+            if self.properties.len() == 1 {
+                return None;
+            }
+            let before_last_property = self.properties.get(self.properties.len() - 2);
+            if before_last_property.is_none() {
+                return None;
+            }
+            if before_last_property.unwrap().name.as_str() != in_field_name.unwrap() {
+                return None;
             }
         }
         for search_name in index_names.iter() {
