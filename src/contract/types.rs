@@ -157,7 +157,7 @@ mod tests {
 
     #[test]
     fn test_successful_encode() {
-        // Constraint: for all types, if a > b then encoding(a) > enconding(b)
+        // Constraint: for all types, if a > b then encoding(a) > encoding(b)
         let encode_err_msg = "should encode: valid parameters";
 
         // Integer encoding
