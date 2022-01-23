@@ -605,7 +605,7 @@ fn get_key_from_cbor_map(cbor_map: &Vec<(Value, Value)>, key: &str) -> Option<Va
             return Some(cbor_value.clone());
         }
     }
-    return None;
+    None
 }
 
 fn cbor_inner_array_value(document_type: &Vec<(Value, Value)>, key: &str) -> Option<Vec<Value>> {
@@ -614,7 +614,7 @@ fn cbor_inner_array_value(document_type: &Vec<(Value, Value)>, key: &str) -> Opt
         let array_value = key_value.as_array().expect("confirmed as array");
         return Some(array_value.clone());
     }
-    return None;
+    None
 }
 
 fn cbor_inner_map_value(
@@ -626,7 +626,7 @@ fn cbor_inner_map_value(
         let map_value = key_value.as_map().expect("confirmed as map");
         return Some(map_value.clone());
     }
-    return None;
+    None
 }
 
 fn cbor_inner_text_value(document_type: &Vec<(Value, Value)>, key: &str) -> Option<String> {
@@ -635,7 +635,7 @@ fn cbor_inner_text_value(document_type: &Vec<(Value, Value)>, key: &str) -> Opti
         let string_value = key_value.as_text().expect("confirmed as text");
         return Some(string_value.to_string());
     }
-    return None;
+    None
 }
 
 fn cbor_inner_bool_value(document_type: &Vec<(Value, Value)>, key: &str) -> Option<bool> {
@@ -644,7 +644,7 @@ fn cbor_inner_bool_value(document_type: &Vec<(Value, Value)>, key: &str) -> Opti
         let bool_value = key_value.as_bool().expect("confirmed as text");
         return Some(bool_value);
     }
-    return None;
+    None
 }
 
 pub fn bytes_for_system_value(value: &Value) -> Option<Vec<u8>> {
