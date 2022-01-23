@@ -80,7 +80,7 @@ impl<'a> WhereClause {
             .expect("check above enforces it exists");
         let field_ref = field_value
             .as_text()
-            .ok_or(Error::CorruptedData(String::from(
+            .ok_or_else(|| Error::CorruptedData(String::from(
                 "first field of where component should be a string",
             )))?;
         let field = String::from(field_ref);
@@ -91,17 +91,17 @@ impl<'a> WhereClause {
         let operator_string =
             operator_value
                 .as_text()
-                .ok_or(Error::CorruptedData(String::from(
+                .ok_or_else(|| Error::CorruptedData(String::from(
                     "second field of where component should be a string",
                 )))?;
 
-        let operator = operator_from_string(operator_string).ok_or(Error::CorruptedData(
+        let operator = operator_from_string(operator_string).ok_or_else(|| Error::CorruptedData(
             String::from("second field of where component should be a known operator"),
         ))?;
 
         let value = clause_components
             .get(2)
-            .ok_or(Error::CorruptedData(String::from(
+            .ok_or_else(|| Error::CorruptedData(String::from(
                 "third field of where component should exist",
             )))?
             .clone();
@@ -228,7 +228,7 @@ impl<'a> WhereClause {
                 (GreaterThan, LessThan) => Some(BetweenExcludeBounds),
                 _ => None,
             }
-            .ok_or(Error::CorruptedData(String::from(
+            .ok_or_else(|| Error::CorruptedData(String::from(
                 "lower and upper bounds must be passed if providing 2 ranges",
             )))?;
 
@@ -259,7 +259,7 @@ impl<'a> WhereClause {
             Value::Array(array) => Some(array),
             _ => None,
         }
-        .ok_or(Error::CorruptedData(String::from(
+        .ok_or_else(|| Error::CorruptedData(String::from(
             "when using between operator you must provide a tuple array of values",
         )))?;
         if in_values.len() != 2 {
@@ -631,7 +631,7 @@ impl<'a> OrderClause {
             .expect("check above enforces it exists");
         let field_ref = field_value
             .as_text()
-            .ok_or(Error::CorruptedData(String::from(
+            .ok_or_else(|| Error::CorruptedData(String::from(
                 "first field of where component should be a string",
             )))?;
         let field = String::from(field_ref);
@@ -641,7 +641,7 @@ impl<'a> OrderClause {
             Value::Text(asc_string) => Some(asc_string.as_str()),
             _ => None,
         }
-        .ok_or(Error::CorruptedData(String::from(
+        .ok_or_else(|| Error::CorruptedData(String::from(
             "orderBy right component must be a string",
         )))?;
         let ascending = match asc_string {
@@ -695,7 +695,7 @@ impl<'a> DriveQuery<'a> {
                     None
                 }
             })
-            .ok_or(Error::CorruptedData(String::from(
+            .ok_or_else(|| Error::CorruptedData(String::from(
                 "limit should be a integer from 1 to 100",
             )))?;
 
@@ -1057,7 +1057,7 @@ impl<'a> DriveQuery<'a> {
 
         let last_index = last_indexes
             .first()
-            .ok_or(Error::CorruptedData(String::from(
+            .ok_or_else(|| Error::CorruptedData(String::from(
                 "document query has no index with fields",
             )))?;
 
