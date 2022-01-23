@@ -1,9 +1,7 @@
 pub mod defaults;
 
 use crate::contract::{Contract, Document};
-use ciborium::value::Value as CborValue;
 use grovedb::{Element, Error, GroveDb};
-use std::collections::HashMap;
 use std::path::Path;
 use storage::rocksdb_storage::OptimisticTransactionDBTransaction;
 

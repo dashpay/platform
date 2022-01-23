@@ -3,7 +3,7 @@ use rs_drive::contract::Contract;
 use rs_drive::drive::Drive;
 use std::fs::File;
 use std::io;
-use std::io::{BufRead, BufReader, Write};
+use std::io::{BufRead, BufReader};
 use std::path::Path;
 use tempdir::TempDir;
 
