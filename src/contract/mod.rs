@@ -724,21 +724,15 @@ mod tests {
         let contract = Contract::from_cbor(&dashpay_cbor).unwrap();
 
         assert_eq!(contract.document_types.len(), 3);
-        assert_eq!(contract.document_types.get("profile").is_some(), true);
-        assert_eq!(contract.document_types.get("contactInfo").is_some(), true);
-        assert_eq!(
-            contract.document_types.get("contactRequest").is_some(),
-            true
-        );
-        assert_eq!(
-            contract.document_types.get("non_existent_key").is_some(),
-            false
-        );
+        assert!(contract.document_types.get("profile").is_some());
+        assert!(contract.document_types.get("contactInfo").is_some());
+        assert!(contract.document_types.get("contactRequest").is_some());
+        assert!(contract.document_types.get("non_existent_key").is_none());
 
         let contact_info_indices = &contract.document_types.get("contactInfo").unwrap().indices;
         assert_eq!(contact_info_indices.len(), 2);
-        assert_eq!(contact_info_indices[0].unique, true);
-        assert_eq!(contact_info_indices[1].unique, false);
+        assert!(contact_info_indices[0].unique);
+        assert!(!contact_info_indices[1].unique);
         assert_eq!(contact_info_indices[0].properties.len(), 3);
 
         assert_eq!(contact_info_indices[0].properties[0].name, "$ownerId");
@@ -751,6 +745,6 @@ mod tests {
             "derivationEncryptionKeyIndex"
         );
 
-        assert_eq!(contact_info_indices[0].properties[0].ascending, true);
+        assert!(contact_info_indices[0].properties[0].ascending);
     }
 }
