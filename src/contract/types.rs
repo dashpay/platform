@@ -179,8 +179,8 @@ mod tests {
         let encoded_integer3 = encode_document_field_type(&DocumentFieldType::Integer, &integer3)
             .expect(encode_err_msg);
 
-        assert_eq!(encoded_integer1 < encoded_integer2, true);
-        assert_eq!(encoded_integer2 < encoded_integer3, true);
+        assert!(encoded_integer1 < encoded_integer2);
+        assert!(encoded_integer2 < encoded_integer3);
 
         // Show that the domain of negative integers maintain sort order after encoding
         let integer1 = Value::Integer(Integer::from(-1));
@@ -194,8 +194,8 @@ mod tests {
         let encoded_integer3 = encode_document_field_type(&DocumentFieldType::Integer, &integer3)
             .expect(encode_err_msg);
 
-        assert_eq!(encoded_integer1 > encoded_integer2, true);
-        assert_eq!(encoded_integer2 > encoded_integer3, true);
+        assert!(encoded_integer1 > encoded_integer2);
+        assert!(encoded_integer2 > encoded_integer3);
 
         // Show that zero is smack in the middle
         let integer1 = Value::Integer(Integer::from(-1));
@@ -209,15 +209,15 @@ mod tests {
         let encoded_integer3 = encode_document_field_type(&DocumentFieldType::Integer, &integer3)
             .expect(encode_err_msg);
 
-        assert_eq!(encoded_integer2 > encoded_integer1, true);
-        assert_eq!(encoded_integer2 < encoded_integer3, true);
+        assert!(encoded_integer2 > encoded_integer1);
+        assert!(encoded_integer2 < encoded_integer3);
 
         // Test the relationship between positive and negative integers
         // Since it has been shown that positive integers and negative integers maintain sort order
         // If the smallest positive number is greater than the largest negative number
         // then the positive domain is greater than the negative domain
         // Smallest positive integer is 1 and largest negative integer is -1
-        assert_eq!(encoded_integer3 > encoded_integer1, true);
+        assert!(encoded_integer3 > encoded_integer1);
 
         // Float encoding
         // Test approach
@@ -244,10 +244,10 @@ mod tests {
         let encoded_float5 =
             encode_document_field_type(&DocumentFieldType::Float, &float5).expect(encode_err_msg);
 
-        assert_eq!(encoded_float1 < encoded_float2, true);
-        assert_eq!(encoded_float2 < encoded_float3, true);
-        assert_eq!(encoded_float3 < encoded_float4, true);
-        assert_eq!(encoded_float4 < encoded_float5, true);
+        assert!(encoded_float1 < encoded_float2);
+        assert!(encoded_float2 < encoded_float3);
+        assert!(encoded_float3 < encoded_float4);
+        assert!(encoded_float4 < encoded_float5);
 
         // Show that the domain of negative floats maintains sort order after encoding
         let float1 = Value::Float(-0.5);
@@ -267,10 +267,10 @@ mod tests {
         let encoded_float5 =
             encode_document_field_type(&DocumentFieldType::Float, &float5).expect(encode_err_msg);
 
-        assert_eq!(encoded_float1 > encoded_float2, true);
-        assert_eq!(encoded_float2 > encoded_float3, true);
-        assert_eq!(encoded_float3 > encoded_float4, true);
-        assert_eq!(encoded_float4 > encoded_float5, true);
+        assert!(encoded_float1 > encoded_float2);
+        assert!(encoded_float2 > encoded_float3);
+        assert!(encoded_float3 > encoded_float4);
+        assert!(encoded_float4 > encoded_float5);
 
         // Show that 0 is in the middle
         // EPSILON: This is the difference between 1.0 and the next larger representable number.
@@ -287,13 +287,13 @@ mod tests {
             encode_document_field_type(&DocumentFieldType::Float, &smallest_positive_float)
                 .expect(encode_err_msg);
 
-        assert_eq!(encoded_float1 < encoded_float2, true);
-        assert_eq!(encoded_float2 < encoded_float3, true);
+        assert!(encoded_float1 < encoded_float2);
+        assert!(encoded_float2 < encoded_float3);
 
         // Test the relationship between positive and negative integers
         // Since it has been shown that positive integers and negative integers maintain sort order
         // If the smallest positive number is greater than the largest negative number
         // then the positive domain is greater than the negative domain
-        assert_eq!(encoded_float3 > encoded_float1, true);
+        assert!(encoded_float3 > encoded_float1);
     }
 }
