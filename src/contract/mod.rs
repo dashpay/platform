@@ -259,7 +259,7 @@ impl DocumentType {
             .ok_or_else(|| Error::CorruptedData(String::from(
                 "expected document to have field",
             )))?;
-        Ok(types::encode_document_field_type(field_type, value)?)
+        types::encode_document_field_type(field_type, value)
     }
 
     pub fn from_cbor_value(
