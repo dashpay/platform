@@ -703,11 +703,7 @@ mod tests {
         let reader = BufReader::new(file);
         let json: serde_json::Value =
             serde_json::from_reader(reader).expect("expected a valid json");
-        let mut buffer: Vec<u8> = Vec::new();
-        buffer.push(0);
-        buffer.push(0);
-        buffer.push(0);
-        buffer.push(1);
+        let mut buffer: Vec<u8> = vec![0, 0, 0, 1];
         ciborium::ser::into_writer(&json, &mut buffer).expect("unable to serialize into cbor");
         buffer
     }
