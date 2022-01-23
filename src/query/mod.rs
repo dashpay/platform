@@ -332,9 +332,11 @@ impl<'a> WhereClause {
                 let left_key =
                     document_type.serialize_value_for_key(self.field.as_str(), &self.value)?;
                 let mut right_key = left_key.clone();
-                let last_char = right_key.last_mut().ok_or(Error::CorruptedData(String::from(
-                    "starts with must have at least one character",
-                )))?;
+                let last_char = right_key
+                    .last_mut()
+                    .ok_or(Error::CorruptedData(String::from(
+                        "starts with must have at least one character",
+                    )))?;
                 *last_char += 1;
                 query.insert_range(left_key..right_key)
             }
@@ -472,12 +474,15 @@ impl<'a> DriveQuery<'a> {
 
         let in_clause = match in_clauses_array.len() {
             0 => Ok(None),
-            1 => Ok(Some(in_clauses_array.get(0).expect("there must be a value").clone())),
-            _ => {
-                Err(Error::CorruptedData(String::from(
-                    "There should only be one in clause",
-                )))
-            }
+            1 => Ok(Some(
+                in_clauses_array
+                    .get(0)
+                    .expect("there must be a value")
+                    .clone(),
+            )),
+            _ => Err(Error::CorruptedData(String::from(
+                "There should only be one in clause",
+            ))),
         }?;
 
         let equal_clauses = equal_clauses_array
@@ -565,9 +570,11 @@ impl<'a> DriveQuery<'a> {
         todo!()
     }
 
-    pub fn execute_no_proof(&self,
-                        grove: &mut GroveDb,
-                        transaction: Option<&OptimisticTransactionDBTransaction>) -> Result<(Vec<Vec<u8>>, u16), Error> {
+    pub fn execute_no_proof(
+        &self,
+        grove: &mut GroveDb,
+        transaction: Option<&OptimisticTransactionDBTransaction>,
+    ) -> Result<(Vec<Vec<u8>>, u16), Error> {
         let equal_fields = self
             .equal_clauses
             .keys()
@@ -611,18 +618,14 @@ impl<'a> DriveQuery<'a> {
             })
             .collect();
         let (last_clause, last_clause_is_range, subquery_clause) = match &self.in_clause {
-            None => {
-                match &self.range_clause {
-                    None => (ordered_clauses.last().map(|clause| *clause), false, None),
-                    Some(where_clause) => (Some(where_clause), true, None),
-                }
-            }
-            Some(where_clause) => {
-                match &self.range_clause {
-                    None => (Some(where_clause), true, None),
-                    Some(range_clause) => (Some(where_clause), true, Some(range_clause)),
-                }
-            }
+            None => match &self.range_clause {
+                None => (ordered_clauses.last().map(|clause| *clause), false, None),
+                Some(where_clause) => (Some(where_clause), true, None),
+            },
+            Some(where_clause) => match &self.range_clause {
+                None => (Some(where_clause), true, None),
+                Some(range_clause) => (Some(where_clause), true, Some(range_clause)),
+            },
         };
 
         let intermediate_values =
@@ -669,14 +672,12 @@ impl<'a> DriveQuery<'a> {
         };
 
         let (subquery_key, subquery) = match subquery_clause {
-            None => {
-                match index.unique {
-                    true => (Some(b"0".to_vec()), None),
-                    false => {
-                        let mut full_query = Query::new();
-                        full_query.insert_all();
-                        (Some(b"0".to_vec()), Some(full_query))
-                    }
+            None => match index.unique {
+                true => (Some(b"0".to_vec()), None),
+                false => {
+                    let mut full_query = Query::new();
+                    full_query.insert_all();
+                    (Some(b"0".to_vec()), Some(full_query))
                 }
             },
             Some(where_clause) => {
@@ -697,16 +698,15 @@ impl<'a> DriveQuery<'a> {
             }
         };
 
-        match subquery{
-            None => {
-            }
+        match subquery {
+            None => {}
             Some(subquery) => {
                 final_query.set_subquery(subquery);
             }
         }
 
         match subquery_key {
-            None => {},
+            None => {}
             Some(subquery_key) => {
                 final_query.set_subquery_key(subquery_key);
             }
@@ -714,21 +714,24 @@ impl<'a> DriveQuery<'a> {
 
         // Now we should construct the path
 
-        let mut contract_path = self.contract
+        let mut contract_path = self
+            .contract
             .document_type_path(self.document_type.name.as_str())
             .into_iter()
             .map(|a| a.to_vec())
             .collect::<Vec<Vec<u8>>>();
 
-        let (intermediate_indexes, last_indexes) = index
-            .properties.split_at(intermediate_values.len());
+        let (intermediate_indexes, last_indexes) =
+            index.properties.split_at(intermediate_values.len());
 
-        let last_index = last_indexes.first().ok_or(Error::CorruptedData(String::from(
-            "document query has no index with fields",
-        )))?;
+        let last_index = last_indexes
+            .first()
+            .ok_or(Error::CorruptedData(String::from(
+                "document query has no index with fields",
+            )))?;
 
         for (intermediate_index, intermediate_value) in
-        intermediate_indexes.iter().zip(intermediate_values.iter())
+            intermediate_indexes.iter().zip(intermediate_values.iter())
         {
             contract_path.push(intermediate_index.name.as_bytes().to_vec());
             contract_path.push(intermediate_value.as_slice().to_vec());
@@ -741,12 +744,15 @@ impl<'a> DriveQuery<'a> {
             .map(|a| a.as_slice())
             .collect::<Vec<&[u8]>>();
 
-        let path_query = PathQuery::new(path.as_slice(), SizedQuery::new(
-            final_query,
-            Some(self.limit),
-            Some(self.offset),
-            left_to_right,
-        ));
+        let path_query = PathQuery::new(
+            path.as_slice(),
+            SizedQuery::new(
+                final_query,
+                Some(self.limit),
+                Some(self.offset),
+                left_to_right,
+            ),
+        );
 
         grove.get_path_query(&path_query, transaction)
     }
