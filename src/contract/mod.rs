@@ -236,8 +236,7 @@ impl DocumentType {
         let mut best_difference = u16::MAX;
         for index in self.indices.iter() {
             let difference_option = index.matches(index_names, in_field_name, order_by);
-            if difference_option.is_some() {
-                let difference = difference_option.unwrap();
+            if let Some(difference) = difference_option {
                 if difference == 0 {
                     return Some((index, 0));
                 } else if difference < best_difference {
