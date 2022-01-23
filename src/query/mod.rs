@@ -36,17 +36,21 @@ fn operator_from_string(string: &str) -> Option<WhereOperator> {
         "Between" => Some(Between),
         "between" => Some(Between),
         "BetweenExcludeBounds" => Some(BetweenExcludeBounds),
+        "betweenExcludeBounds" => Some(BetweenExcludeBounds),
         "betweenexcludebounds" => Some(BetweenExcludeBounds),
         "between_exclude_bounds" => Some(BetweenExcludeBounds),
         "BetweenExcludeLeft" => Some(BetweenExcludeLeft),
+        "betweenExcludeLeft" => Some(BetweenExcludeLeft),
         "betweenexcludeleft" => Some(BetweenExcludeLeft),
         "between_exclude_left" => Some(BetweenExcludeLeft),
         "BetweenExcludeRight" => Some(BetweenExcludeRight),
+        "betweenExcludeRight" => Some(BetweenExcludeRight),
         "betweenexcluderight" => Some(BetweenExcludeRight),
         "between_exclude_right" => Some(BetweenExcludeRight),
         "In" => Some(In),
         "in" => Some(In),
         "StartsWith" => Some(StartsWith),
+        "startsWith" => Some(StartsWith),
         "startswith" => Some(StartsWith),
         "starts_with" => Some(StartsWith),
         &_ => None,
@@ -325,7 +329,14 @@ impl<'a> WhereClause {
                 }
             }
             StartsWith => {
-                todo!()
+                let left_key =
+                    document_type.serialize_value_for_key(self.field.as_str(), &self.value)?;
+                let mut right_key = left_key.clone();
+                let last_char = right_key.last_mut().ok_or(Error::CorruptedData(String::from(
+                    "starts with must have at least one character",
+                )))?;
+                *last_char += 1;
+                query.insert_range(left_key..right_key)
             }
         }
         Ok(query)
