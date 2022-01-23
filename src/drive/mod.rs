@@ -387,7 +387,7 @@ impl Drive {
             contract
                 .document_types
                 .get(document_type_name)
-                .ok_or(Error::CorruptedData(String::from(
+                .ok_or_else(|| Error::CorruptedData(String::from(
                     "can not get document type from contract",
                 )))?;
 
@@ -404,7 +404,7 @@ impl Drive {
                 index
                     .properties
                     .get(0)
-                    .ok_or(Error::CorruptedData(String::from(
+                    .ok_or_else(|| Error::CorruptedData(String::from(
                         "invalid contract indices",
                     )))?;
             index_path.push(Vec::from(top_index_property.name.as_bytes()));
@@ -418,7 +418,7 @@ impl Drive {
                     &contract,
                     owner_id,
                 )?
-                .ok_or(Error::CorruptedData(String::from(
+                .ok_or_else(|| Error::CorruptedData(String::from(
                     "unable to get document top index field",
                 )))?;
 
@@ -441,7 +441,7 @@ impl Drive {
                     index
                         .properties
                         .get(i)
-                        .ok_or(Error::CorruptedData(String::from(
+                        .ok_or_else(|| Error::CorruptedData(String::from(
                             "invalid contract indices",
                         )))?;
 
@@ -467,7 +467,7 @@ impl Drive {
                         &contract,
                         owner_id,
                     )?
-                    .ok_or(Error::CorruptedData(String::from(
+                    .ok_or_else(|| Error::CorruptedData(String::from(
                         "unable to get document field",
                     )))?;
 
@@ -619,7 +619,7 @@ impl Drive {
             contract
                 .document_types
                 .get(document_type_name)
-                .ok_or(Error::CorruptedData(String::from(
+                .ok_or_else(|| Error::CorruptedData(String::from(
                     "can not get document type from contract",
                 )))?;
         // first we need to construct the path for documents on the contract
@@ -683,7 +683,7 @@ impl Drive {
                 index
                     .properties
                     .get(0)
-                    .ok_or(Error::CorruptedData(String::from(
+                    .ok_or_else(|| Error::CorruptedData(String::from(
                         "invalid contract indices",
                     )))?;
             index_path.push(Vec::from(top_index_property.name.as_bytes()));
@@ -697,7 +697,7 @@ impl Drive {
                     &contract,
                     owner_id,
                 )?
-                .ok_or(Error::CorruptedData(String::from(
+                .ok_or_else(|| Error::CorruptedData(String::from(
                     "unable to get document top index field for deletion",
                 )))?;
 
@@ -710,7 +710,7 @@ impl Drive {
                     index
                         .properties
                         .get(i)
-                        .ok_or(Error::CorruptedData(String::from(
+                        .ok_or_else(|| Error::CorruptedData(String::from(
                             "invalid contract indices",
                         )))?;
 
@@ -725,7 +725,7 @@ impl Drive {
                         &contract,
                         owner_id,
                     )?
-                    .ok_or(Error::CorruptedData(String::from(
+                    .ok_or_else(|| Error::CorruptedData(String::from(
                         "unable to get document field",
                     )))?;
 
