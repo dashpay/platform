@@ -71,7 +71,7 @@ pub fn encode_document_field_type(
         }
         DocumentFieldType::Boolean => {
             let value_as_boolean = value.as_bool().ok_or_else(get_field_type_matching_error)?;
-            if value_as_boolean == true {
+            if value_as_boolean {
                 Ok(vec![1])
             } else {
                 Ok(vec![0])
