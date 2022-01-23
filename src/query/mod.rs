@@ -851,14 +851,8 @@ impl<'a> DriveQuery<'a> {
             .keys()
             .map(|s| s.as_str())
             .collect::<Vec<&str>>();
-        let in_field = match &self.in_clause {
-            None => None,
-            Some(in_clause) => Some(in_clause.field.as_str()),
-        };
-        let range_field = match &self.range_clause {
-            None => None,
-            Some(range_clause) => Some(range_clause.field.as_str()),
-        };
+        let in_field = self.in_clause.as_ref().map(|in_clause| in_clause.field.as_str());
+        let range_field = self.range_clause.as_ref().map(|range_clause| range_clause.field.as_str());
         let mut fields = equal_fields;
         if let Some(range_field) = range_field {
             fields.push(range_field);
