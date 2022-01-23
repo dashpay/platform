@@ -383,12 +383,64 @@ impl<'a> WhereClause {
             LessThan => {
                 let key =
                     document_type.serialize_value_for_key(self.field.as_str(), &self.value)?;
-                query.insert_range_to(..key);
+                match starts_at_key_option {
+                    None => {
+                        query.insert_range_to(..key)
+                    }
+                    Some((starts_at_key, included)) => {
+                        if left_to_right {
+                            if starts_at_key < key {
+                                if included {
+                                    query.insert_range(key..starts_at_key);
+                                } else {
+                                    query.insert_range_after_to(key..starts_at_key);
+                                }
+                            }
+                        } else {
+                            if starts_at_key > key {
+                                query.insert_range_to(..key);
+                            } else {
+                                if included {
+                                    query.insert_range_to_inclusive(..=starts_at_key);
+                                } else {
+                                    query.insert_range_to(..starts_at_key);
+                                }
+                            }
+                        }
+                    }
+                }
             }
             LessThanOrEquals => {
                 let key =
                     document_type.serialize_value_for_key(self.field.as_str(), &self.value)?;
-                query.insert_range_to_inclusive(..=key);
+                match starts_at_key_option {
+                    None => {
+                        query.insert_range_to_inclusive(..=key)
+                    }
+                    Some((starts_at_key, included)) => {
+                        if left_to_right {
+                            if included && starts_at_key == key {
+                                query.insert_key(key);
+                            } else if starts_at_key < key {
+                                if included {
+                                    query.insert_range_inclusive(key..=starts_at_key);
+                                } else {
+                                    query.insert_range_after_to_inclusive(key..=starts_at_key);
+                                }
+                            }
+                        } else {
+                            if starts_at_key > key || (included && starts_at_key == key) {
+                                query.insert_range_to_inclusive(..=key);
+                            } else {
+                                if included {
+                                    query.insert_range_to_inclusive(..=starts_at_key);
+                                } else {
+                                    query.insert_range_to(..starts_at_key);
+                                }
+                            }
+                        }
+                    }
+                }
             }
             Between => {
                 let (left_key, right_key) = self.split_value_for_between(document_type)?;
