@@ -637,23 +637,13 @@ impl Drive {
             transaction,
         )?;
 
-        let mut document_bytes: Option<Vec<u8>> = None;
-        match document_element {
-            Element::Item(data) => {
-                document_bytes = Some(data);
-            }
-            _ => {} // Can the element ever not be an item
-        }
-
-        // possibility that document might not be in storage
-        // TODO: how should this be handled
-        if document_bytes.is_none() {
-            todo!()
-        }
+        let document_bytes: Vec<u8> = match document_element {
+            Element::Item(data) => data,
+            _ => todo!() // TODO: how should this be handled, possibility that document might not be in storage
+        };
 
         let document = Document::from_cbor(
             document_bytes
-                .expect("Can't be none handled above")
                 .as_slice(),
             None,
             owner_id,
