@@ -321,7 +321,7 @@ fn test_query_many() {
     let (results, skipped) = query
         .execute_no_proof(&mut drive.grove, None)
         .expect("proof should be executed");
-    assert_eq!(results.len(), 5);
+    assert_eq!(results.len(), 3);
 
     let reduced_names_after: Vec<String> = results
         .into_iter()
@@ -339,13 +339,13 @@ fn test_query_many() {
         })
         .collect();
 
-    let expected_between_names = vec![
+    let expected_reduced_names = vec![
         "Kevina".to_string(),
         "Meta".to_string(),
         "Noellyn".to_string(),
     ];
 
-    assert_eq!(reduced_names_after, expected_between_names);
+    assert_eq!(reduced_names_after, expected_reduced_names);
 
     // A query getting back elements having specific names
 
