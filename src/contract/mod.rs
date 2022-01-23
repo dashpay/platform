@@ -444,8 +444,24 @@ impl Document {
         Ok(document)
     }
 
-    pub fn get(&self, key: &str) -> Option<&Value> {
-        self.properties.get(key)
+    pub fn get_raw_for_document_type<'a>(
+        &'a self,
+        key: &str,
+        document_type: &DocumentType,
+        owner_id: Option<&[u8]>,
+    ) -> Result<Option<Vec<u8>>, Error> {
+        if key == "$ownerId" && owner_id.is_some() {
+            Ok(Some(Vec::from(owner_id.unwrap())))
+        } else {
+            match self.properties.get(key) {
+                None => Ok(None),
+                Some(value) => match key {
+                    "$id" => Ok(Some(self.id.clone())),
+                    "$ownerId" => Ok(Some(self.owner_id.clone())),
+                    _ => Ok(Some(document_type.serialize_value_for_key(key, value)?)),
+                },
+            }
+        }
     }
 
     pub fn get_raw_for_contract<'a>(
@@ -460,12 +476,18 @@ impl Document {
         } else {
             match self.properties.get(key) {
                 None => Ok(None),
-                Some(value) => {
-                    let document_type = contract.document_types.get(document_type_name).ok_or(
-                        Error::CorruptedData(String::from("document type should exist for name")),
-                    )?;
-                    Ok(Some(document_type.serialize_value_for_key(key, value)?))
-                }
+                Some(value) => match key {
+                    "$id" => Ok(Some(self.id.clone())),
+                    "$ownerId" => Ok(Some(self.owner_id.clone())),
+                    _ => {
+                        let document_type = contract.document_types.get(document_type_name).ok_or(
+                            Error::CorruptedData(String::from(
+                                "document type should exist for name",
+                            )),
+                        )?;
+                        Ok(Some(document_type.serialize_value_for_key(key, value)?))
+                    }
+                },
             }
         }
     }
