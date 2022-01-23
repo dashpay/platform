@@ -271,23 +271,114 @@ impl<'a> WhereClause {
         Ok((left_key, right_key))
     }
 
-    fn to_path_query(&self, document_type: &DocumentType) -> Result<Query, Error> {
-        let mut query = Query::new();
+    // The start at document fields are:
+    // document: The Document that we should start at
+    // included: whether we should start at or after this document
+    // left_to_right: should we be going left to right or right to left?
+    fn to_path_query(
+        &self,
+        document_type: &DocumentType,
+        start_at_document: &Option<(Document, bool)>,
+        left_to_right: bool,
+    ) -> Result<Query, Error> {
+        // If there is a start_at_document, we need to get the value that it has for the
+        // current field.
+        let starts_at_key_option = match start_at_document {
+            None => None,
+            Some((document, included)) => {
+                let raw_value_option =
+                    document.get_raw_for_document_type(self.field.as_str(), document_type, None)?;
+                match raw_value_option {
+                    // if the key doesn't exist then we should ignore the starts at key
+                    None => None,
+                    Some(raw_value_option) => Some((raw_value_option, *included)),
+                }
+            }
+        };
+
+        let mut query = Query::new_with_direction(left_to_right);
         match self.operator {
             Equal => {
                 let key =
                     document_type.serialize_value_for_key(self.field.as_str(), &self.value)?;
-                query.insert_key(key);
+                match starts_at_key_option {
+                    None => {
+                        query.insert_key(key);
+                    }
+                    Some((starts_at_key, included)) => {
+                        if left_to_right {
+                            if starts_at_key < key || (included && starts_at_key == key) {
+                                query.insert_key(key);
+                            }
+                        } else {
+                            if starts_at_key > key || (included && starts_at_key == key) {
+                                query.insert_key(key);
+                            }
+                        }
+                    }
+                }
             }
             GreaterThan => {
                 let key =
                     document_type.serialize_value_for_key(self.field.as_str(), &self.value)?;
-                query.insert_range_after(key..);
+                match starts_at_key_option {
+                    None => {
+                        query.insert_range_after(key..)
+                    }
+                    Some((starts_at_key, included)) => {
+                        if left_to_right {
+                            if starts_at_key <= key {
+                                query.insert_range_after(key.. );
+                            } else {
+                                if included {
+                                    query.insert_range_from(starts_at_key..);
+                                } else {
+                                    query.insert_range_after(starts_at_key..);
+                                }
+                            }
+                        } else {
+                            if starts_at_key > key {
+                                if included {
+                                    query.insert_range_after_to_inclusive(key..=starts_at_key);
+                                } else {
+                                    query.insert_range_after_to(key..starts_at_key);
+                                }
+                            }
+                        }
+                    }
+                }
             }
             GreaterThanOrEquals => {
                 let key =
                     document_type.serialize_value_for_key(self.field.as_str(), &self.value)?;
-                query.insert_range_from(key..);
+                match starts_at_key_option {
+                    None => {
+                        query.insert_range_from(key..)
+                    }
+                    Some((starts_at_key, included)) => {
+                        if left_to_right {
+                            if starts_at_key < key || (included && starts_at_key == key) {
+                                query.insert_range_from(key.. );
+                            } else {
+                                if included {
+                                    query.insert_range_from(starts_at_key..);
+                                } else {
+                                    query.insert_range_after(starts_at_key..);
+                                }
+                            }
+                        } else {
+                            if included && starts_at_key == key {
+                                query.insert_key(key);
+                            } else if starts_at_key > key {
+                                if included {
+                                    query.insert_range_inclusive(key..=starts_at_key);
+                                } else {
+                                    query.insert_range(key..starts_at_key);
+                                }
+                            }
+                        }
+                    }
+                }
             }
             LessThan => {
                 let key =
@@ -570,7 +661,7 @@ impl<'a> DriveQuery<'a> {
             .map(|a| a.to_vec())
             .collect::<Vec<Vec<u8>>>();
 
-        let starts_at_document: Option<Document> = match &self.start_at {
+        let starts_at_document: Option<(Document, bool)> = match &self.start_at {
             None => Ok(None),
             Some(starts_at) => {
                 // First if we have a startAt or or startsAfter we must get the element
@@ -583,7 +674,7 @@ impl<'a> DriveQuery<'a> {
                     grove.get(document_holding_path.as_slice(), starts_at, transaction)?;
                 if let Element::Item(item) = start_at_document {
                     let document = Document::from_cbor(item.as_slice(), None, None)?;
-                    Ok(Some(document))
+                    Ok(Some((document, self.start_at_included)))
                 } else {
                     Err(Error::CorruptedData(String::from(
                         "Holding paths should only have items",
@@ -670,11 +761,11 @@ impl<'a> DriveQuery<'a> {
                     }
                 })
                 .collect::<Result<Vec<Vec<u8>>, Error>>()?;
-        let (mut final_query, left_to_right) = match last_clause {
+        let mut final_query = match last_clause {
             None => {
                 let mut query = Query::new();
                 query.insert_all();
-                (query, true)
+                query
             }
             Some(where_clause) => {
                 let order_clause: &OrderClause = self
@@ -683,8 +774,9 @@ impl<'a> DriveQuery<'a> {
                     .ok_or(Error::InvalidQuery(
                         "query must have an orderBy field for each range element",
                     ))?;
-                let query = where_clause.to_path_query(self.document_type)?;
-                (query, order_clause.ascending)
+                let query = where_clause
+                    .to_path_query(self.document_type, &starts_at_document, order_clause.ascending)?;
+                query
             }
         };
 
@@ -692,14 +784,21 @@ impl<'a> DriveQuery<'a> {
             None => match index.unique {
                 true => (Some(b"0".to_vec()), None),
                 false => {
+                    // we just get all by document id order ascending
                     let mut full_query = Query::new();
                     full_query.insert_all();
                     (Some(b"0".to_vec()), Some(full_query))
                 }
             },
             Some(where_clause) => {
-                let subindex = where_clause.field.as_bytes().to_vec();
-                let mut subquery = where_clause.to_path_query(self.document_type)?;
+                let order_clause: &OrderClause = self
+                    .order_by
+                    .get(where_clause.field.as_str())
+                    .ok_or(Error::InvalidQuery(
+                        "query must have an orderBy field for each range element",
+                    ))?;
+                let mut subquery = where_clause
+                    .to_path_query(self.document_type, &starts_at_document, order_clause.ascending)?;
                 match index.unique {
                     true => {
                         subquery.set_subquery_key(b"0".to_vec());
@@ -711,6 +810,7 @@ impl<'a> DriveQuery<'a> {
                         subquery.set_subquery(full_query);
                     }
                 }
+                let subindex = where_clause.field.as_bytes().to_vec();
                 (Some(subindex), Some(subquery))
             }
         };
@@ -755,12 +855,7 @@ impl<'a> DriveQuery<'a> {
 
         let path_query = PathQuery::new(
             path_slices.as_slice(),
-            SizedQuery::new(
-                final_query,
-                Some(self.limit),
-                Some(self.offset),
-                left_to_right,
-            ),
+            SizedQuery::new(final_query, Some(self.limit), Some(self.offset)),
         );
 
         grove.get_path_query(&path_query, transaction)
