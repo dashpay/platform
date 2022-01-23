@@ -36,8 +36,8 @@ pub fn json_document_to_cbor(path: impl AsRef<Path>, protocol_version: Option<u3
 
 pub fn value_to_cbor(value: serde_json::Value, protocol_version: Option<u32>) -> Vec<u8> {
     let mut buffer: Vec<u8> = Vec::new();
-    if protocol_version.is_some() {
-        buffer.write_u32::<BigEndian>(protocol_version.unwrap());
+    if let Some(protocol_version) = protocol_version {
+        buffer.write_u32::<BigEndian>(protocol_version);
     }
     ciborium::ser::into_writer(&value, &mut buffer).expect("unable to serialize into cbor");
     buffer
