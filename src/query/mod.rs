@@ -904,7 +904,7 @@ impl<'a> DriveQuery<'a> {
             .collect();
         let (last_clause, last_clause_is_range, subquery_clause) = match &self.in_clause {
             None => match &self.range_clause {
-                None => (ordered_clauses.last().map(|clause| *clause), false, None),
+                None => (ordered_clauses.last().copied(), false, None),
                 Some(where_clause) => (Some(where_clause), true, None),
             },
             Some(where_clause) => match &self.range_clause {
