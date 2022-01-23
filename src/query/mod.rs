@@ -9,6 +9,7 @@ use ciborium::value::{Value as CborValue, Value};
 use grovedb::{Element, Error, GroveDb, PathQuery, Query, SizedQuery};
 use indexmap::IndexMap;
 use std::collections::HashMap;
+use indexmap::map::Keys;
 use storage::rocksdb_storage::OptimisticTransactionDBTransaction;
 
 #[derive(Copy, Clone, Debug)]
@@ -926,20 +927,25 @@ impl<'a> DriveQuery<'a> {
             Some(range_clause) => Some(range_clause.field.as_str()),
         };
         let mut fields = equal_fields;
-        let mut sort_on = None;
         if range_field.is_some() {
             fields.push(range_field.unwrap());
-            sort_on = Some(range_field.unwrap());
         }
         if in_field.is_some() {
             fields.push(in_field.unwrap());
             //if there is an in_field, it always takes precedence
-            sort_on = Some(in_field.unwrap());
         }
+
+        let order_by_keys : Vec<&str> = self.order_by.keys().map(|key: &String| {
+            let str = key.as_str();
+            if !fields.contains(&str) {
+                fields.push(&str);
+            }
+            str
+        }).collect();
 
         let (index, difference) = self
             .document_type
-            .index_for_types(fields.as_slice(), in_field, range_field)
+            .index_for_types(fields.as_slice(), in_field, order_by_keys.as_slice())
             .ok_or(Error::InvalidQuery("query must be for valid indexes"))?;
         if difference > defaults::MAX_INDEX_DIFFERENCE {
             return Err(Error::InvalidQuery(

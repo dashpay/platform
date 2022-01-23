@@ -50,30 +50,45 @@ impl Index {
     // with leftovers permitted.
     // If a sort_on value is provided it must match the last index property.
     // The number returned is the number of unused index properties
+
+    // A case for example if we have an index on person's name and age
+    // where we say name == 'Sam' sort by age
+    // there is no field operator on age
+    // The return value for name == 'Sam' sort by age would be 0
+    // The return value for name == 'Sam and age > 5 sort by age would be 0
+    // the return value for sort by age would be 1
     pub fn matches(
         &self,
         index_names: &[&str],
         in_field_name: Option<&str>,
-        sort_on: Option<&str>,
+        order_by: &[&str],
     ) -> Option<u16> {
+        // Here we are trying to figure out if the Index matches the order by
+        // To do so we take the index and go backwards as we need the order by clauses to be
+        // continuous, but they do not need to be at the end.
+        let mut reduced_properties = self.properties.clone();
+        let mut should_ignore: Vec<String> = order_by.iter().map(|&str| str.to_string()).collect();
+        for i in 0..self.properties.len() {
+            if reduced_properties.len() < order_by.len() {
+                return None;
+            }
+            let matched_ordering = reduced_properties.iter().rev().zip(order_by.iter().rev()).all(|(property, &sort)| {
+                property.name.as_str() == sort
+            });
+            if matched_ordering {
+                break;
+            }
+            if let Some((last, elements)) = reduced_properties.split_last() {
+                should_ignore.push(last.name.clone());
+                reduced_properties = elements.to_vec();
+            } else {
+                return None;
+            }
+        }
+
         let last_property = self.properties.last();
         if last_property.is_none() {
             return None;
-        }
-        let mut d = self.properties.len();
-        if sort_on.is_some() {
-            if last_property.unwrap().name.as_str() != sort_on.unwrap() {
-                return None;
-            } else if !index_names.iter().any(|&a| a == sort_on.unwrap()) {
-                // we can remove the -1 here
-                // this is a case for example if we have an index on person's name and age
-                // where we say name == 'Sam' sort by age
-                // there is no field operator on age
-                // The return value for name == 'Sam' sort by age would be 0
-                // The return value for name == 'Sam and age > 5 sort by age would be 0
-                // the return value for sort by age would be 1
-                d -= 1;
-            }
         }
 
         // the in field can only be on the last or before last property
@@ -90,9 +105,11 @@ impl Index {
                 return None;
             }
         }
+
+        let mut d = reduced_properties.len();
+
         for search_name in index_names.iter() {
-            if !self
-                .properties
+            if !reduced_properties
                 .iter()
                 .any(|property| property.name.as_str() == *search_name)
             {
@@ -210,12 +227,12 @@ impl DocumentType {
         &self,
         index_names: &[&str],
         in_field_name: Option<&str>,
-        sort_on: Option<&str>,
+        order_by: &[&str],
     ) -> Option<(&Index, u16)> {
         let mut best_index: Option<(&Index, u16)> = None;
         let mut best_difference = u16::MAX;
         for index in self.indices.iter() {
-            let difference_option = index.matches(index_names, in_field_name, sort_on);
+            let difference_option = index.matches(index_names, in_field_name, order_by);
             if difference_option.is_some() {
                 let difference = difference_option.unwrap();
                 if difference == 0 {
