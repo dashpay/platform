@@ -28,8 +28,8 @@ class BlockHeadersReader extends EventEmitter {
   /**
    * Reads historical block heights using multiple streams
    *
-   * @param fromBlockHeight
-   * @param toBlockHeight
+   * @param {number} fromBlockHeight
+   * @param {number} toBlockHeight
    * @returns {Promise<void>}
    */
   async readHistorical(fromBlockHeight, toBlockHeight) {
@@ -65,7 +65,7 @@ class BlockHeadersReader extends EventEmitter {
   /**
    * Subscribes to continuously arriving block headers
    *
-   * @param fromBlockHeight
+   * @param {number} fromBlockHeight
    * @returns {Promise<Stream>}
    */
   async subscribeToNew(fromBlockHeight) {
@@ -107,8 +107,8 @@ class BlockHeadersReader extends EventEmitter {
     /**
      * Subscribes to the stream of historical data and handles retry logic
      *
-     * @param fromBlockHeight
-     * @param count
+     * @param {number} fromBlockHeight
+     * @param {number} count
      * @returns {Promise<Stream>}
      */
     const fetchBatch = async (fromBlockHeight, count) => new Promise((resolve, reject) => {
