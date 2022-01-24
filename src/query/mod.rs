@@ -9,7 +9,6 @@ use crate::query::WhereOperator::{
 };
 use ciborium::value::{Value as CborValue, Value};
 use grovedb::{Element, Error, GroveDb, PathQuery, Query, SizedQuery};
-use indexmap::map::Keys;
 use indexmap::IndexMap;
 use std::collections::HashMap;
 use storage::rocksdb_storage::OptimisticTransactionDBTransaction;
