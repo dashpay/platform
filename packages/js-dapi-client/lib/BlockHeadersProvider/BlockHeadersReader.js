@@ -16,7 +16,6 @@ const EVENTS = {
 class BlockHeadersReader extends EventEmitter {
   /**
    * @param {BlockHeadersReaderOptions} options
-   * @param onError
    */
   constructor(options = {}) {
     super();
