@@ -867,7 +867,7 @@ impl<'a> DriveQuery<'a> {
             .map(|key: &String| {
                 let str = key.as_str();
                 if !fields.contains(&str) {
-                    fields.push(&str);
+                    fields.push(str);
                 }
                 str
             })
@@ -1038,7 +1038,7 @@ impl<'a> DriveQuery<'a> {
                 "document query has no index with fields",
             )))?;
 
-        let mut path = document_type_path.clone();
+        let mut path = document_type_path;
 
         for (intermediate_index, intermediate_value) in
             intermediate_indexes.iter().zip(intermediate_values.iter())
