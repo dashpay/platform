@@ -616,7 +616,7 @@ impl<'a> WhereClause {
                 let mut right_key = left_key.clone();
                 let last_char = right_key
                     .last_mut()
-                    .ok_or(Error::CorruptedData(String::from(
+                    .ok_or_else(|| Error::CorruptedData(String::from(
                         "starts with must have at least one character",
                     )))?;
                 *last_char += 1;
