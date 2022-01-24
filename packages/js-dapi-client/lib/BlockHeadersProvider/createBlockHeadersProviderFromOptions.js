@@ -2,6 +2,20 @@ const networks = require('@dashevo/dashcore-lib/lib/networks');
 const DAPIClientError = require('../errors/DAPIClientError');
 const BlockHeadersProvider = require('./BlockHeadersProvider');
 
+const validateNumber = (value, name, min = NaN, max = NaN) => {
+  if (typeof value !== 'number') {
+    throw new DAPIClientError(`'${name}' is not a number`);
+  }
+
+  if (!Number.isNaN(min) && value < min) {
+    throw new DAPIClientError(`'${name}' can not be less than ${min}`);
+  }
+
+  if (!Number.isNaN(max) && value > min) {
+    throw new DAPIClientError(`'${name}' can not be more than ${max}`);
+  }
+};
+
 /**
  * @typedef {createBlockHeadersProviderFromOptions}
  * @param {DAPIClientOptions} options
@@ -19,7 +33,10 @@ function createBlockHeadersProviderFromOptions(options, coreMethods) {
   }
 
   if (options.blockHeadersProviderOptions) {
-    const blockHeadersProviderOptions = { ...options, ...BlockHeadersProvider.defaultOptions };
+    const blockHeadersProviderOptions = {
+      ...BlockHeadersProvider.defaultOptions,
+      ...options.blockHeadersProviderOptions,
+    };
 
     const {
       network,
@@ -38,37 +55,10 @@ function createBlockHeadersProviderFromOptions(options, coreMethods) {
       throw new DAPIClientError('\'autoStart\' option must have boolean type');
     }
 
-    if (typeof maxParallelStreams !== 'number') {
-      throw new DAPIClientError('\'maxParallelStreams\' is not a number');
-    }
-
-    if (maxParallelStreams < 1) {
-      throw new DAPIClientError('\'maxParallelStreams\' can not be less than 1');
-    }
-
-    if (typeof targetBatchSize !== 'number') {
-      throw new DAPIClientError('\'targetBatchSize\' is not a number');
-    }
-
-    if (targetBatchSize < 1) {
-      throw new DAPIClientError('\'targetBatchSize\' can not be less than 1');
-    }
-
-    if (typeof fromBlockHeight !== 'number') {
-      throw new DAPIClientError('\'fromBlockHeight\' is not a number');
-    }
-
-    if (fromBlockHeight < 1) {
-      throw new DAPIClientError('\'fromBlockHeight\' can not be less than 1');
-    }
-
-    if (typeof maxRetries !== 'number') {
-      throw new DAPIClientError('\'maxRetries\' is not a number');
-    }
-
-    if (maxRetries < 0) {
-      throw new DAPIClientError('\'maxRetries\' can not be less than 0');
-    }
+    validateNumber(maxParallelStreams, 'maxParallelStreams', 1);
+    validateNumber(targetBatchSize, 'targetBatchSize', 1);
+    validateNumber(fromBlockHeight, 'fromBlockHeight', 1);
+    validateNumber(maxRetries, 'maxRetries', 0);
 
     blockHeadersProvider = new BlockHeadersProvider(
       blockHeadersProviderOptions,

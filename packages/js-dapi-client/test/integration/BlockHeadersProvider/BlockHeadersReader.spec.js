@@ -4,6 +4,13 @@ const BlockHeadersReader = require('../../../lib/BlockHeadersProvider/BlockHeade
 const mockedHeaders = require('./headers');
 
 const sleep = (time) => new Promise((resolve) => setTimeout(resolve, time));
+const sleepOneTick = () => new Promise((resolve) => {
+  if (typeof setImmediate === 'undefined') {
+    setTimeout(resolve, 10);
+  } else {
+    setImmediate(resolve);
+  }
+});
 
 describe('BlockHeadersProvider', () => {
   let options;
@@ -42,7 +49,7 @@ describe('BlockHeadersProvider', () => {
           const headersToReturn = mockedHeaders.slice(start, end);
 
           // Simulate async emission
-          await new Promise((resolve) => setImmediate(resolve));
+          await sleepOneTick();
 
           this.push({
             getBlockHeaders: () => ({
@@ -105,11 +112,11 @@ describe('BlockHeadersProvider', () => {
       });
 
       // Wait for the first chunk of data to enter the stream
-      await new Promise((resolve) => setImmediate(resolve));
+      await sleepOneTick();
 
       for (let i = 0; i < Math.ceil(options.maxRetries / 2); i += 1) {
         // eslint-disable-next-line no-await-in-loop
-        await new Promise((resolve) => setImmediate(resolve));
+        await sleepOneTick();
         blockHeadersStream.destroy(new Error());
       }
 
@@ -130,7 +137,7 @@ describe('BlockHeadersProvider', () => {
 
       for (let i = 0; i < options.maxRetries + 1; i += 1) {
         // eslint-disable-next-line no-await-in-loop
-        await new Promise((resolve) => setImmediate(resolve));
+        await sleepOneTick();
         blockHeadersStream.destroy(errorToThrow);
       }
 

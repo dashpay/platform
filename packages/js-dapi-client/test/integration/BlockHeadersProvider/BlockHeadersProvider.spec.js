@@ -4,7 +4,13 @@ const mockedHeaders = require('./headers');
 const BlockHeadersProvider = require('../../../lib/BlockHeadersProvider');
 
 const sleep = (time) => new Promise((resolve) => setTimeout(resolve, time));
-const sleepOneTick = () => new Promise((resolve) => setImmediate(resolve));
+const sleepOneTick = () => new Promise((resolve) => {
+  if (typeof setImmediate === 'undefined') {
+    setTimeout(resolve, 10);
+  } else {
+    setImmediate(resolve);
+  }
+});
 
 describe('BlockHeadersProvider', () => {
   let coreApiMock;
