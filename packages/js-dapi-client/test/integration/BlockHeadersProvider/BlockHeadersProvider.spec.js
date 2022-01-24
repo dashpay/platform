@@ -48,7 +48,7 @@ describe('BlockHeadersProvider', () => {
           const headersToReturn = mockedHeaders.slice(start, lastItemIndex);
 
           // Simulate async emission
-          await new Promise((resolve) => setImmediate(resolve));
+          await sleepOneTick();
 
           this.push({
             getBlockHeaders: () => ({
