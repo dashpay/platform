@@ -9,7 +9,7 @@ const requestJsonRpc = require('./transport/JsonRpcTransport/requestJsonRpc');
 const createGrpcTransportError = require('./transport/GrpcTransport/createGrpcTransportError');
 const createJsonTransportError = require('./transport/JsonRpcTransport/createJsonTransportError');
 
-const BlockHeadersProvider = require('./BlockHeadersProvider');
+const BlockHeadersProvider = require('./BlockHeadersProvider/BlockHeadersProvider');
 const createBlockHeadersProviderFromOptions = require('./BlockHeadersProvider/createBlockHeadersProviderFromOptions');
 
 class DAPIClient {

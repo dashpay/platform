@@ -204,5 +204,12 @@ const headers = [
   },
 ];
 
-module.exports = headers
-  .map((header) => new BlockHeader({ ...header, bits: parseInt(header.bits, 16) }));
+/**
+ * @returns {BlockHeader[]}
+ */
+function getHeadersFixture() {
+  return headers
+    .map((header) => new BlockHeader({ ...header, bits: parseInt(header.bits, 16) }));
+}
+
+module.exports = getHeadersFixture;

@@ -1,4 +1,4 @@
-const BlockHeadersProvider = require('../../../lib/BlockHeadersProvider');
+const BlockHeadersProvider = require('../../../lib/BlockHeadersProvider/BlockHeadersProvider');
 const createBlockHeadersProviderFromOptions = require('../../../lib/BlockHeadersProvider/createBlockHeadersProviderFromOptions');
 
 describe('#createBlockHeadersProviderFromOptions', () => {

@@ -1,7 +1,7 @@
 const stream = require('stream');
 
 const BlockHeadersReader = require('../../../lib/BlockHeadersProvider/BlockHeadersReader');
-const mockedHeaders = require('./headers');
+const getHeadersFixture = require('../../../lib/test/fixtures/getHeadersFixture');
 
 const sleep = (time) => new Promise((resolve) => setTimeout(resolve, time));
 const sleepOneTick = () => new Promise((resolve) => {
@@ -18,6 +18,7 @@ describe('BlockHeadersProvider', () => {
   let coreApiMock;
   let blockHeadersReader;
   let blockHeadersStream;
+  const mockedHeaders = getHeadersFixture();
   const headersBatchSize = 5;
 
   beforeEach(function () {

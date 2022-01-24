@@ -3,7 +3,7 @@ const CoreMethodsFacade = require('../../lib/methods/core/CoreMethodsFacade');
 const PlatformMethodsFacade = require('../../lib/methods/platform/PlatformMethodsFacade');
 const SimplifiedMasternodeListDAPIAddressProvider = require('../../lib/dapiAddressProvider/SimplifiedMasternodeListDAPIAddressProvider');
 const ListDAPIAddressProvider = require('../../lib/dapiAddressProvider/ListDAPIAddressProvider');
-const BlockHeadersProvider = require('../../lib/BlockHeadersProvider');
+const BlockHeadersProvider = require('../../lib/BlockHeadersProvider/BlockHeadersProvider');
 
 describe('DAPIClient', () => {
   let options;

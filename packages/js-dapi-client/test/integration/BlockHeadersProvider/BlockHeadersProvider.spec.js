@@ -1,7 +1,7 @@
 const stream = require('stream');
 const { BlockHeader } = require('@dashevo/dashcore-lib');
-const mockedHeaders = require('./headers');
-const BlockHeadersProvider = require('../../../lib/BlockHeadersProvider');
+const getHeadersFixture = require('../../../lib/test/fixtures/getHeadersFixture');
+const BlockHeadersProvider = require('../../../lib/BlockHeadersProvider/BlockHeadersProvider');
 
 const sleep = (time) => new Promise((resolve) => setTimeout(resolve, time));
 const sleepOneTick = () => new Promise((resolve) => {
@@ -16,6 +16,7 @@ describe('BlockHeadersProvider', () => {
   let coreApiMock;
   let blockHeadersProvider;
   let blockHeadersStream;
+  const mockedHeaders = getHeadersFixture();
 
   beforeEach(function () {
     coreApiMock = {
