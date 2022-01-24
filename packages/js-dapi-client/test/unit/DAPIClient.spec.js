@@ -3,6 +3,7 @@ const CoreMethodsFacade = require('../../lib/methods/core/CoreMethodsFacade');
 const PlatformMethodsFacade = require('../../lib/methods/platform/PlatformMethodsFacade');
 const SimplifiedMasternodeListDAPIAddressProvider = require('../../lib/dapiAddressProvider/SimplifiedMasternodeListDAPIAddressProvider');
 const ListDAPIAddressProvider = require('../../lib/dapiAddressProvider/ListDAPIAddressProvider');
+const BlockHeadersProvider = require('../../lib/BlockHeadersProvider');
 
 describe('DAPIClient', () => {
   let options;
@@ -22,10 +23,15 @@ describe('DAPIClient', () => {
         retries: 0,
         newOption: true,
         timeout: 10000,
+        blockHeadersProviderOptions: BlockHeadersProvider.defaultOptions,
       });
 
       expect(dapiClient.dapiAddressProvider).to.be.an.instanceOf(
         SimplifiedMasternodeListDAPIAddressProvider,
+      );
+
+      expect(dapiClient.blockHeadersProvider).to.be.an.instanceOf(
+        BlockHeadersProvider,
       );
 
       expect(dapiClient.core).to.be.an.instanceOf(CoreMethodsFacade);
@@ -39,10 +45,15 @@ describe('DAPIClient', () => {
         retries: 5,
         timeout: 10000,
         network: 'testnet',
+        blockHeadersProviderOptions: BlockHeadersProvider.defaultOptions,
       });
 
       expect(dapiClient.dapiAddressProvider).to.be.an.instanceOf(
         SimplifiedMasternodeListDAPIAddressProvider,
+      );
+
+      expect(dapiClient.blockHeadersProvider).to.be.an.instanceOf(
+        BlockHeadersProvider,
       );
 
       expect(dapiClient.core).to.be.an.instanceOf(CoreMethodsFacade);
@@ -62,9 +73,14 @@ describe('DAPIClient', () => {
         dapiAddresses: ['localhost'],
         network: 'testnet',
         timeout: 10000,
+        blockHeadersProviderOptions: BlockHeadersProvider.defaultOptions,
       });
 
       expect(dapiClient.dapiAddressProvider).to.be.an.instanceOf(ListDAPIAddressProvider);
+
+      expect(dapiClient.blockHeadersProvider).to.be.an.instanceOf(
+        BlockHeadersProvider,
+      );
 
       expect(dapiClient.core).to.be.an.instanceOf(CoreMethodsFacade);
       expect(dapiClient.platform).to.be.an.instanceOf(PlatformMethodsFacade);
@@ -81,9 +97,13 @@ describe('DAPIClient', () => {
         retries: 3,
         network: 'local',
         timeout: 10000,
+        blockHeadersProviderOptions: BlockHeadersProvider.defaultOptions,
       });
 
       expect(dapiClient.dapiAddressProvider).to.be.an.instanceOf(ListDAPIAddressProvider);
+      expect(dapiClient.blockHeadersProvider).to.be.an.instanceOf(
+        BlockHeadersProvider,
+      );
       expect(dapiClient.core).to.be.an.instanceOf(CoreMethodsFacade);
       expect(dapiClient.platform).to.be.an.instanceOf(PlatformMethodsFacade);
     });

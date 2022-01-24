@@ -8,6 +8,7 @@ const BlockHeadersReader = require('./BlockHeadersReader');
  * @property {number} [maxParallelStreams=5] max parallel streams to read historical block headers
  * @property {number} [targetBatchSize=100000] a target batch size per stream
  * @property {number} [maxRetries=10] max amount of retries per stream connection
+ * @property {number} [autoStart=false] auto start fetching verifying block headers
  */
 const defaultOptions = {
   network: 'testnet',
@@ -15,6 +16,7 @@ const defaultOptions = {
   targetBatchSize: 100000,
   fromBlockHeight: 1,
   maxRetries: 10,
+  autoStart: false,
 };
 
 class BlockHeadersProvider {
