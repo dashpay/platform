@@ -68,7 +68,7 @@ impl Index {
         let mut reduced_properties = self.properties.clone();
         let mut should_ignore: Vec<String> = order_by.iter().map(|&str| str.to_string()).collect();
         if order_by.len() > 0 {
-            for i in 0..self.properties.len() {
+            for _ in 0..self.properties.len() {
                 if reduced_properties.len() < order_by.len() {
                     return None;
                 }
