@@ -48,8 +48,9 @@ class DAPIClient {
     this.blockHeadersProvider = createBlockHeadersProviderFromOptions(this.options, this.core);
 
     if (this.options.blockHeadersProviderOptions.autoStart) {
-      // TODO: handle possible errors in async function
-      this.blockHeadersProvider.start();
+      this.blockHeadersProvider.start().catch((e) => {
+        throw e;
+      });
     }
   }
 }
