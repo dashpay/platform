@@ -67,14 +67,14 @@ describe('BlockHeadersReader', () => {
     });
 
     it('should create only one stream in case the amount of blocks is too small', async () => {
-      await blockHeadersReader.readHistorical(1, Math.ceil(options.targetBatchSize * 1.5));
+      await blockHeadersReader.readHistorical(1, Math.ceil(options.targetBatchSize * 1.4));
       expect(blockHeadersReader.createSubscribeToStream).to.be.calledOnce();
     });
 
     it('should evenly spread the load between streams', async () => {
       const fromBlock = 1;
       const toBlock = Math.round(options.targetBatchSize * 3.5 - 1);
-      const totalAmount = toBlock - fromBlock;
+      const totalAmount = toBlock - fromBlock + 1;
       const numStreams = Math.round(totalAmount / options.targetBatchSize);
 
       const itemsPerBatch = Math.ceil(totalAmount / numStreams);

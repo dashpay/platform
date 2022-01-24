@@ -83,8 +83,8 @@ describe('BlockHeadersProvider', () => {
       const count = Math.ceil(mockedHeaders.length / 2);
 
       let obtainedHeaders = [];
-      blockHeadersReader.on(BlockHeadersReader.EVENTS.BLOCK_HEADERS, (blockHeaders) => {
-        obtainedHeaders = [...obtainedHeaders, ...blockHeaders];
+      blockHeadersReader.on(BlockHeadersReader.EVENTS.BLOCK_HEADERS, (headers) => {
+        obtainedHeaders = [...obtainedHeaders, ...headers];
       });
 
       await subscribeToStream(1, count);
@@ -96,8 +96,8 @@ describe('BlockHeadersProvider', () => {
       let obtainedHeaders = [];
       let completed = false;
 
-      blockHeadersReader.on(BlockHeadersReader.EVENTS.BLOCK_HEADERS, (blockHeaders) => {
-        obtainedHeaders = [...obtainedHeaders, ...blockHeaders];
+      blockHeadersReader.on(BlockHeadersReader.EVENTS.BLOCK_HEADERS, (headers) => {
+        obtainedHeaders = [...obtainedHeaders, ...headers];
       });
 
       subscribeToStream(1, mockedHeaders.length).then(() => {

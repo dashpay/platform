@@ -57,12 +57,7 @@ class BlockHeadersProvider {
     });
 
     blockHeadersReader.on(BlockHeadersReader.EVENTS.BLOCK_HEADERS, (headers) => {
-      try {
-        this.spvChain.addHeaders(headers.map((header) => Buffer.from(header)));
-      } catch (e) {
-        // throw e;
-        console.log(e);
-      }
+      this.spvChain.addHeaders(headers.map((header) => Buffer.from(header)));
     });
 
     await blockHeadersReader.readHistorical(

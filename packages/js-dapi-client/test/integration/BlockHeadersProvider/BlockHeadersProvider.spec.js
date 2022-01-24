@@ -1,8 +1,10 @@
 const stream = require('stream');
+const { BlockHeader } = require('@dashevo/dashcore-lib');
 const mockedHeaders = require('./headers');
 const BlockHeadersProvider = require('../../../lib/BlockHeadersProvider');
 
 const sleep = (time) => new Promise((resolve) => setTimeout(resolve, time));
+const sleepOneTick = () => new Promise((resolve) => setImmediate(resolve));
 
 describe('BlockHeadersProvider', () => {
   let coreApiMock;
@@ -69,6 +71,36 @@ describe('BlockHeadersProvider', () => {
   it('should obtain all block headers and validate them against the SPV chain', async () => {
     await blockHeadersProvider.start();
 
+    let longestChain = blockHeadersProvider.spvChain.getLongestChain();
+
+    while (longestChain.length !== mockedHeaders.length + 1) {
+      // eslint-disable-next-line no-await-in-loop
+      await sleep(100);
+      longestChain = blockHeadersProvider.spvChain.getLongestChain();
+    }
+
+    // slice(1): ignore genesis block
+    expect(longestChain.slice(1).map((header) => header.hash))
+      .to.deep.equal(mockedHeaders.map((header) => header.hash));
+  });
+
+  it('should retry to obtain historical headers in case of SPV failure', async () => {
+    blockHeadersProvider.start();
+
+    await sleepOneTick();
+
+    // Perform MITM attack :)
+    const badHeader = mockedHeaders[0].toObject();
+    delete badHeader.hash;
+    badHeader.prevHash = Buffer.from('deadbeef', 'hex');
+
+    blockHeadersStream.push({
+      getBlockHeaders: () => ({
+        getHeadersList: () => [new BlockHeader(badHeader).toBuffer()],
+      }),
+    });
+
+    // Continue waiting for the recovery
     let longestChain = blockHeadersProvider.spvChain.getLongestChain();
 
     while (longestChain.length !== mockedHeaders.length + 1) {

@@ -65,7 +65,6 @@ class DAPIClient {
  * @property {number} [retries=3]
  * @property {number} [baseBanTime=60000]
  * @property {boolean} [throwDeadlineExceeded]
- * @property {boolean} [autoStartBlockHeadersProvider=true]
  * @property {BlockHeadersProvider} [blockHeadersProvider]
  * @property {BlockHeadersProviderOptions} [blockHeadersProviderOptions]
  */

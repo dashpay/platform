@@ -120,8 +120,13 @@ class BlockHeadersReader extends EventEmitter {
 
           if (blockHeaders) {
             const headersList = blockHeaders.getHeadersList();
-            headersObtained += headersList.length;
-            this.emit(EVENTS.BLOCK_HEADERS, headersList);
+            try {
+              this.emit(EVENTS.BLOCK_HEADERS, headersList);
+              headersObtained += headersList.length;
+            } catch (e) {
+              // Destroy and restart stream in case headers validation has failed
+              stream.destroy(e);
+            }
           }
         });
 
