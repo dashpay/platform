@@ -98,7 +98,7 @@ describe('BlockHeadersProvider', () => {
     // Perform MITM attack :)
     const badHeader = mockedHeaders[0].toObject();
     delete badHeader.hash;
-    badHeader.prevHash = Buffer.from('deadbeef', 'hex');
+    badHeader.prevHash = Buffer.from('00000bafbc94add76cb75e2ec92894837288a481e5c005f6563d91623bf8bc22', 'hex');
 
     blockHeadersStream.push({
       getBlockHeaders: () => ({

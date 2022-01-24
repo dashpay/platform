@@ -58,8 +58,16 @@ class BlockHeadersProvider {
       throw e;
     });
 
-    blockHeadersReader.on(BlockHeadersReader.EVENTS.BLOCK_HEADERS, (headers) => {
-      this.spvChain.addHeaders(headers.map((header) => Buffer.from(header)));
+    blockHeadersReader.on(BlockHeadersReader.EVENTS.BLOCK_HEADERS, (headers, reject) => {
+      try {
+        this.spvChain.addHeaders(headers.map((header) => Buffer.from(header)));
+      } catch (e) {
+        if (e.message === 'Some headers are invalid') {
+          reject(e);
+        } else {
+          throw e;
+        }
+      }
     });
 
     await blockHeadersReader.readHistorical(

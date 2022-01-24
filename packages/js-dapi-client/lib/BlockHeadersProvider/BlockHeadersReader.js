@@ -77,7 +77,13 @@ class BlockHeadersReader extends EventEmitter {
       const blockHeaders = data.getBlockHeaders();
 
       if (blockHeaders) {
-        this.emit(EVENTS.BLOCK_HEADERS, blockHeaders.getHeadersList());
+        try {
+          this.emit(EVENTS.BLOCK_HEADERS, blockHeaders.getHeadersList(), (e) => {
+            stream.destroy(e);
+          });
+        } catch (e) {
+          this.emit(EVENTS.ERROR, e);
+        }
       }
     });
 
@@ -117,12 +123,19 @@ class BlockHeadersReader extends EventEmitter {
 
           if (blockHeaders) {
             const headersList = blockHeaders.getHeadersList();
+
+            let rejected = false;
             try {
-              this.emit(EVENTS.BLOCK_HEADERS, headersList);
-              headersObtained += headersList.length;
+              this.emit(EVENTS.BLOCK_HEADERS, headersList, (e) => {
+                rejected = true;
+                stream.destroy(e);
+              });
             } catch (e) {
-              // Destroy and restart stream in case headers validation has failed
-              stream.destroy(e);
+              this.emit(EVENTS.ERROR, e);
+            }
+
+            if (!rejected) {
+              headersObtained += headersList.length;
             }
           }
         });
