@@ -1,7 +1,6 @@
 mod types;
 
 use crate::drive::{Drive, RootTree};
-use array_tool::vec::Intersect;
 use ciborium::value::{Value as CborValue, Value};
 use grovedb::Error;
 use serde::{Deserialize, Serialize};
