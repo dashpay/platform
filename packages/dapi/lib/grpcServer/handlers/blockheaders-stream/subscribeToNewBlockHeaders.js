@@ -2,6 +2,7 @@ const { BlockHeader, ChainLock } = require('@dashevo/dashcore-lib');
 const ProcessMediator = require('./ProcessMediator');
 const wait = require('../../../utils/wait');
 const { NEW_BLOCK_HEADERS_PROPAGATE_INTERVAL } = require('./constants');
+const cache = require('../core/cache')
 
 /**
  * @typedef subscribeToNewBlockHeaders
@@ -64,8 +65,14 @@ function subscribeToNewBlockHeaders(
         // and directly send bytes to the client
         const blockHeaders = await Promise.all(Array.from(cachedHeadersHashes)
           .map(async (hash) => {
-            const rawBlockHeader = await coreAPI.getBlockHeader(hash);
-            return new BlockHeader(Buffer.from(rawBlockHeader, 'hex'));
+            const cachedBlockHeader = cache.get(hash)
+
+            if (!cachedBlockHeader) {
+              const rawBlockHeader = await coreAPI.getBlockHeader(hash);
+              return new BlockHeader(Buffer.from(rawBlockHeader, 'hex'));
+            }
+
+            return cachedBlockHeader
           }));
 
         mediator.emit(ProcessMediator.EVENTS.BLOCK_HEADERS, blockHeaders);

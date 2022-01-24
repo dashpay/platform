@@ -1,4 +1,5 @@
-const { BlockHeader } = require('@dashevo/dashcore-lib');
+const {BlockHeader} = require('@dashevo/dashcore-lib');
+const cache = require('../core/cache')
 
 const MAX_HEADERS_PER_REQUEST = 500;
 
@@ -34,17 +35,37 @@ function getHistoricalBlockHeadersIteratorFactory(coreRpcApi) {
 
     for (let batchIndex = 0; batchIndex < numberOfBatches; batchIndex++) {
       const currentHeight = fromBlockHeight + batchIndex * MAX_HEADERS_PER_REQUEST;
-      const blocksToScan = getBlocksToScan(batchIndex, numberOfBatches, count);
 
-      const blockHash = await coreRpcApi.getBlockHash(currentHeight);
+      let blocksToScan = getBlocksToScan(batchIndex, numberOfBatches, count);
+      let blockHash = await coreRpcApi.getBlockHash(currentHeight);
+
+      const blockHeights = [...Array(blocksToScan).keys()]
+        .map((e, i) => {
+          return currentHeight + i + 1
+        })
+
+      const cachedBlockHeaders = blockHeights.map((height) => cache.get(height))
+      const lastCachedIndex = (cachedBlockHeaders.findIndex((e) => e === undefined)) - 1
+
+      if (lastCachedIndex >= 0) {
+        const rawBlockHeader = cachedBlockHeaders[lastCachedIndex]
+        const blockHeader = BlockHeader.fromRawBlock(rawBlockHeader)
+
+        blockHash = blockHeader.getHash()
+        blocksToScan = (blocksToScan - lastCachedIndex) - 1
+
+        if (blocksToScan === 0) {
+          return cachedBlockHeaders
+        }
+      }
+
+      const rawBlockHeaders = await coreRpcApi.getBlockHeaders(blockHash, blocksToScan)
+
+      rawBlockHeaders.forEach((e, i) => cache.set(currentHeight + i, e))
 
       // TODO: figure out whether it's possible to omit new BlockHeader() conversion
       // and directly send bytes to the client
-      const blockHeaders = (await coreRpcApi.getBlockHeaders(
-        blockHash, blocksToScan,
-      )).map((rawBlockHeader) => new BlockHeader(Buffer.from(rawBlockHeader, 'hex')));
-
-      yield blockHeaders;
+      yield rawBlockHeaders.map((rawBlockHeader) => new BlockHeader(Buffer.from(rawBlockHeader, 'hex')));
     }
   }
 
