@@ -353,10 +353,6 @@ impl<'a> WhereClause {
                         }
                     }
                 }
-                for value in in_values.iter() {
-                    let key = document_type.serialize_value_for_key(self.field.as_str(), value)?;
-                    query.insert_key(key)
-                }
             }
             GreaterThan => {
                 let key =
