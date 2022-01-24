@@ -1035,9 +1035,7 @@ impl<'a> DriveQuery<'a> {
                     inner_query.insert_all();
                     recursive_insert(Some(&mut inner_query), left_over.to_vec(), unique);
                     match query {
-                        None => {
-                            Some(inner_query)
-                        }
+                        None => Some(inner_query),
                         Some(query) => {
                             query.set_subquery(inner_query);
                             query.set_subquery_key(first.name.as_bytes().to_vec());
