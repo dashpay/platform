@@ -39,4 +39,25 @@ describe('#createBlockHeadersProviderFromOptions', () => {
       expect(provider.options[key]).to.equal(options.blockHeadersProviderOptions[key]);
     });
   });
+
+  it('should validate options', () => {
+    const badOptions = {
+      maxRetries: -1,
+      maxParallelStreams: 0,
+      targetBatchSize: 0,
+      fromBlockHeight: 0,
+      autoStart: 'true',
+      network: 'keknet',
+    };
+
+    Object.keys(badOptions).forEach((badOption) => {
+      options = {
+        ...options,
+        blockHeadersProviderOptions: {
+          [badOption]: badOptions[badOption],
+        },
+      };
+      expect(() => createBlockHeadersProviderFromOptions(options, coreMethodsMock)).to.throw();
+    });
+  });
 });
