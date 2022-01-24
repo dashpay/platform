@@ -27,6 +27,7 @@ function createBlockHeadersProviderFromOptions(options, coreMethods) {
       maxParallelStreams,
       targetBatchSize,
       fromBlockHeight,
+      maxRetries,
     } = blockHeadersProviderOptions;
 
     if (network && !networks.get(network)) {
@@ -58,7 +59,15 @@ function createBlockHeadersProviderFromOptions(options, coreMethods) {
     }
 
     if (fromBlockHeight < 1) {
-      throw new DAPIClientError('\'fromBlockHeight\' can not be less than');
+      throw new DAPIClientError('\'fromBlockHeight\' can not be less than 1');
+    }
+
+    if (typeof maxRetries !== 'number') {
+      throw new DAPIClientError('\'maxRetries\' is not a number');
+    }
+
+    if (maxRetries < 0) {
+      throw new DAPIClientError('\'maxRetries\' can not be less than 0');
     }
 
     blockHeadersProvider = new BlockHeadersProvider(
