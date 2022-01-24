@@ -9,6 +9,9 @@ const requestJsonRpc = require('./transport/JsonRpcTransport/requestJsonRpc');
 const createGrpcTransportError = require('./transport/GrpcTransport/createGrpcTransportError');
 const createJsonTransportError = require('./transport/JsonRpcTransport/createJsonTransportError');
 
+const BlockHeadersProvider = require('./BlockHeadersProvider/BlockHeadersProvider');
+const createBlockHeadersProviderFromOptions = require('./BlockHeadersProvider/createBlockHeadersProviderFromOptions');
+
 class DAPIClient {
   /**
    * @param {DAPIClientOptions} [options]
@@ -18,6 +21,7 @@ class DAPIClient {
       network: 'testnet',
       timeout: 10000,
       retries: 5,
+      blockHeadersProviderOptions: BlockHeadersProvider.defaultOptions,
       ...options,
     };
 
@@ -40,6 +44,14 @@ class DAPIClient {
 
     this.core = new CoreMethodsFacade(jsonRpcTransport, grpcTransport);
     this.platform = new PlatformMethodsFacade(grpcTransport);
+
+    this.blockHeadersProvider = createBlockHeadersProviderFromOptions(this.options, this.core);
+
+    if (this.options.blockHeadersProviderOptions.autoStart) {
+      this.blockHeadersProvider.start().catch((e) => {
+        throw e;
+      });
+    }
   }
 }
 
@@ -54,6 +66,8 @@ class DAPIClient {
  * @property {number} [retries=3]
  * @property {number} [baseBanTime=60000]
  * @property {boolean} [throwDeadlineExceeded]
+ * @property {BlockHeadersProvider} [blockHeadersProvider]
+ * @property {BlockHeadersProviderOptions} [blockHeadersProviderOptions]
  */
 
 module.exports = DAPIClient;

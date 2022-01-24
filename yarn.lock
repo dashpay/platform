@@ -1281,6 +1281,7 @@ __metadata:
   dependencies:
     "@babel/core": ^7.15.5
     "@dashevo/dapi-grpc": "workspace:~"
+    "@dashevo/dash-spv": "github:dashevo/dash-spv"
     "@dashevo/dashcore-lib": ~0.19.29
     "@dashevo/dpp": "workspace:~"
     "@dashevo/grpc-common": "workspace:~"
@@ -1389,7 +1390,37 @@ __metadata:
   languageName: unknown
   linkType: soft
 
-"@dashevo/dashcore-lib@npm:~0.19.29":
+"@dashevo/dark-gravity-wave@npm:^1.1.1":
+  version: 1.1.1
+  resolution: "@dashevo/dark-gravity-wave@npm:1.1.1"
+  checksum: 4f2f0bddfa339bafe38248970b8747e6e002499fbaffb69953d19565de84c9c054a442bd6f950240927023122fd2e74fc7663269c97bba138f83d77053dec6c4
+  languageName: node
+  linkType: hard
+
+"@dashevo/dash-spv@github:dashevo/dash-spv":
+  version: 1.1.6
+  resolution: "@dashevo/dash-spv@https://github.com/dashevo/dash-spv.git#commit=3eeb01ed5d0636c949cf3ca2e495c4fe3d1b74ce"
+  dependencies:
+    "@dashevo/dark-gravity-wave": ^1.1.1
+    "@dashevo/dash-util": ^2.0.3
+    "@dashevo/dashcore-lib": ^0.19.29
+    levelup: ^4.0.1
+    memdown: ^3.0.0
+  checksum: 3f11f82e43c91862c712606a824c8916774bd3c61dec552ac8dbdc76fdc27e5a5118d0e0773a459ec25ff66351fda34cfe5d58d22fcc96e31b41dac9d2da87c3
+  languageName: node
+  linkType: hard
+
+"@dashevo/dash-util@npm:^2.0.3":
+  version: 2.0.3
+  resolution: "@dashevo/dash-util@npm:2.0.3"
+  dependencies:
+    bn.js: ^4.6.4
+    buffer-reverse: ^1.0.1
+  checksum: ef93e629e98dfe4203cd5f20a2cca6a80706e3a19ddbcf93e6c5eb9c740ac3aab6e2d5427484a75e2ab3cd0161871ef1697b305ff9f6c68c0ca27762e72ba65a
+  languageName: node
+  linkType: hard
+
+"@dashevo/dashcore-lib@npm:^0.19.29, @dashevo/dashcore-lib@npm:~0.19.29":
   version: 0.19.29
   resolution: "@dashevo/dashcore-lib@npm:0.19.29"
   dependencies:
@@ -2905,6 +2936,15 @@ __metadata:
   languageName: node
   linkType: hard
 
+"abstract-leveldown@npm:~5.0.0":
+  version: 5.0.0
+  resolution: "abstract-leveldown@npm:5.0.0"
+  dependencies:
+    xtend: ~4.0.0
+  checksum: d55d03cc7fad011d5fea30d26504b1a76123ec8edd3623d21f80ce0561c610b7ed1e00eb037c14746ec2b7ad8638586024f11d4a1476beee2c470c8cf27e3586
+  languageName: node
+  linkType: hard
+
 "abstract-leveldown@npm:~6.2.1":
   version: 6.2.3
   resolution: "abstract-leveldown@npm:6.2.3"
@@ -4116,6 +4156,13 @@ __metadata:
   version: 1.1.2
   resolution: "buffer-from@npm:1.1.2"
   checksum: 0448524a562b37d4d7ed9efd91685a5b77a50672c556ea254ac9a6d30e3403a517d8981f10e565db24e8339413b43c97ca2951f10e399c6125a0d8911f5679bb
+  languageName: node
+  linkType: hard
+
+"buffer-reverse@npm:^1.0.1":
+  version: 1.0.1
+  resolution: "buffer-reverse@npm:1.0.1"
+  checksum: e350872a89b17af0a7e1bd7a73239a535164f3f010b0800add44f2e52bd0511548dc5b96c20309effba969868c385023d2d02a0add6155f6a76da7b3073b77bd
   languageName: node
   linkType: hard
 
@@ -10223,7 +10270,7 @@ fsevents@~2.3.2:
   languageName: node
   linkType: hard
 
-"levelup@npm:^4.4.0":
+"levelup@npm:^4.0.1, levelup@npm:^4.4.0":
   version: 4.4.0
   resolution: "levelup@npm:4.4.0"
   dependencies:
@@ -10831,6 +10878,20 @@ fsevents@~2.3.2:
     vinyl: ^2.0.1
     vinyl-file: ^3.0.0
   checksum: 21e81fc689f442b1eebe7aac16875207ac3e4b82a4d9ee6cd2940f4ad20768b2d7824035475c63fb0b821a0298922bf14b74a0afb459b3084dc11f2822f435ca
+  languageName: node
+  linkType: hard
+
+"memdown@npm:^3.0.0":
+  version: 3.0.0
+  resolution: "memdown@npm:3.0.0"
+  dependencies:
+    abstract-leveldown: ~5.0.0
+    functional-red-black-tree: ~1.0.1
+    immediate: ~3.2.3
+    inherits: ~2.0.1
+    ltgt: ~2.2.0
+    safe-buffer: ~5.1.1
+  checksum: 4446fdf7198dcdbae764324200526f41738c9f2a32decb59b5a4dbb1bdfc72e2fc046e9bbe016469ab8a0a52e5d5c8b36bf3829e90dd4674a5f4c961e059d4de
   languageName: node
   linkType: hard
 

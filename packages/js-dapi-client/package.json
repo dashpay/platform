@@ -27,6 +27,7 @@
   ],
   "dependencies": {
     "@dashevo/dapi-grpc": "workspace:~",
+    "@dashevo/dash-spv": "github:dashevo/dash-spv",
     "@dashevo/dashcore-lib": "~0.19.29",
     "@dashevo/dpp": "workspace:~",
     "@dashevo/grpc-common": "workspace:~",
@@ -85,7 +86,7 @@
     "test:integration": "mocha './test/integration/**/*.spec.js'",
     "test:node": "NODE_ENV=test mocha",
     "test:browsers": "karma start ./karma.conf.js --single-run",
-    "test:coverage": "NODE_ENV=test nyc --check-coverage --stmts=98 --branch=98 --funcs=98 --lines=95 yarn run mocha 'test/unit/**/*.spec.js' 'test/integration/**/*.spec.js'",
+    "test:coverage": "NODE_ENV=test nyc --check-coverage --stmts=98 --branch=98 --funcs=98 --lines=94 yarn run mocha 'test/unit/**/*.spec.js' 'test/integration/**/*.spec.js'",
     "prepublishOnly": "yarn run build:web"
   },
   "ultra": {
