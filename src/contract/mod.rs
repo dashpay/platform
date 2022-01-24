@@ -89,24 +89,19 @@ impl Index {
             }
         }
 
-        let last_property = self.properties.last();
-        if last_property.is_none() {
-            return None;
-        }
+        let last_property = self.properties.last()?;
 
         // the in field can only be on the last or before last property
-        if in_field_name.is_some() && last_property.unwrap().name.as_str() != in_field_name.unwrap()
-        {
-            // it can also be on the before last
-            if self.properties.len() == 1 {
-                return None;
-            }
-            let before_last_property = self.properties.get(self.properties.len() - 2);
-            if before_last_property.is_none() {
-                return None;
-            }
-            if before_last_property.unwrap().name.as_str() != in_field_name.unwrap() {
-                return None;
+        if let Some(in_field_name) = in_field_name {
+            if last_property.name.as_str() != in_field_name {
+                // it can also be on the before last
+                if self.properties.len() == 1 {
+                    return None;
+                }
+                let before_last_property = self.properties.get(self.properties.len() - 2)?;
+                if before_last_property.name.as_str() != in_field_name {
+                    return None;
+                }
             }
         }
 
