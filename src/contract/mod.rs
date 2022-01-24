@@ -417,13 +417,12 @@ impl Document {
             }
         };
 
-        // dev-note: properties is everything other than the id
-        let document = Document {
+        // dev-note: properties is everything other than the id and owner id
+        Ok(Document {
             properties: document,
             owner_id,
             id,
-        };
-        Ok(document)
+        })
     }
 
     pub fn from_cbor_with_id(
@@ -449,17 +448,15 @@ impl Document {
 
         // first we need to deserialize the document and contract indices
         // we would need dedicated deserialization functions based on the document type
-        let mut document: HashMap<String, CborValue> =
-            ciborium::de::from_reader(read_document_cbor)
-                .map_err(|_| Error::CorruptedData(String::from("unable to decode contract")))?;
+        let properties: HashMap<String, CborValue> = ciborium::de::from_reader(read_document_cbor)
+            .map_err(|_| Error::CorruptedData(String::from("unable to decode contract")))?;
 
-        // dev-note: properties is everything other than the id
-        let document = Document {
-            properties: document,
+        // dev-note: properties is everything other than the id and owner id
+        Ok(Document {
+            properties,
             owner_id: Vec::from(owner_id),
             id: Vec::from(document_id),
-        };
-        Ok(document)
+        })
     }
 
     pub fn get_raw_for_document_type<'a>(
