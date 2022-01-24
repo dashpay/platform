@@ -68,21 +68,25 @@ impl Index {
         // continuous, but they do not need to be at the end.
         let mut reduced_properties = self.properties.clone();
         let mut should_ignore: Vec<String> = order_by.iter().map(|&str| str.to_string()).collect();
-        for i in 0..self.properties.len() {
-            if reduced_properties.len() < order_by.len() {
-                return None;
-            }
-            let matched_ordering = reduced_properties.iter().rev().zip(order_by.iter().rev()).all(|(property, &sort)| {
-                property.name.as_str() == sort
-            });
-            if matched_ordering {
-                break;
-            }
-            if let Some((last, elements)) = reduced_properties.split_last() {
-                should_ignore.push(last.name.clone());
-                reduced_properties = elements.to_vec();
-            } else {
-                return None;
+        if order_by.len() > 0 {
+            for i in 0..self.properties.len() {
+                if reduced_properties.len() < order_by.len() {
+                    return None;
+                }
+                let matched_ordering = reduced_properties
+                    .iter()
+                    .rev()
+                    .zip(order_by.iter().rev())
+                    .all(|(property, &sort)| property.name.as_str() == sort);
+                if matched_ordering {
+                    break;
+                }
+                if let Some((last, elements)) = reduced_properties.split_last() {
+                    should_ignore.push(last.name.clone());
+                    reduced_properties = elements.to_vec();
+                } else {
+                    return None;
+                }
             }
         }
 
@@ -92,7 +96,8 @@ impl Index {
         }
 
         // the in field can only be on the last or before last property
-        if in_field_name.is_some() && last_property.unwrap().name.as_str() != in_field_name.unwrap() {
+        if in_field_name.is_some() && last_property.unwrap().name.as_str() != in_field_name.unwrap()
+        {
             // it can also be on the before last
             if self.properties.len() == 1 {
                 return None;
@@ -106,7 +111,7 @@ impl Index {
             }
         }
 
-        let mut d = reduced_properties.len();
+        let mut d = self.properties.len();
 
         for search_name in index_names.iter() {
             if !reduced_properties
