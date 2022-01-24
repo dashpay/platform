@@ -1,6 +1,7 @@
 mod types;
 
 use crate::drive::{Drive, RootTree};
+use array_tool::vec::Intersect;
 use ciborium::value::{Value as CborValue, Value};
 use grovedb::Error;
 use serde::{Deserialize, Serialize};
@@ -49,7 +50,12 @@ impl Index {
     // with leftovers permitted.
     // If a sort_on value is provided it must match the last index property.
     // The number returned is the number of unused index properties
-    pub fn matches(&self, index_names: &[&str], in_field_name: Option<&str>, sort_on: Option<&str>) -> Option<u16> {
+    pub fn matches(
+        &self,
+        index_names: &[&str],
+        in_field_name: Option<&str>,
+        sort_on: Option<&str>,
+    ) -> Option<u16> {
         let last_property = self.properties.last();
         if last_property.is_none() {
             return None;
@@ -85,7 +91,11 @@ impl Index {
             }
         }
         for search_name in index_names.iter() {
-            if !self.properties.iter().any(|property| property.name.as_str() == *search_name) {
+            if !self
+                .properties
+                .iter()
+                .any(|property| property.name.as_str() == *search_name)
+            {
                 return None;
             }
             d -= 1;
