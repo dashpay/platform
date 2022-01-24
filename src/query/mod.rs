@@ -1,12 +1,15 @@
 mod defaults;
 
-use crate::contract::{bytes_for_system_value, Contract, Document, DocumentType, Index};
+use crate::contract::{
+    bytes_for_system_value, Contract, Document, DocumentType, Index, IndexProperty,
+};
 use crate::query::WhereOperator::{
     Between, BetweenExcludeBounds, BetweenExcludeLeft, BetweenExcludeRight, Equal, GreaterThan,
     GreaterThanOrEquals, In, LessThan, LessThanOrEquals, StartsWith,
 };
 use ciborium::value::{Value as CborValue, Value};
 use grovedb::{Element, Error, GroveDb, PathQuery, Query, SizedQuery};
+use indexmap::map::Keys;
 use indexmap::IndexMap;
 use std::collections::HashMap;
 use storage::rocksdb_storage::OptimisticTransactionDBTransaction;
@@ -286,13 +289,9 @@ impl<'a> WhereClause {
         let starts_at_key_option = match start_at_document {
             None => None,
             Some((document, included)) => {
-                let raw_value_option =
-                    document.get_raw_for_document_type(self.field.as_str(), document_type, None)?;
-                match raw_value_option {
-                    // if the key doesn't exist then we should ignore the starts at key
-                    None => None,
-                    Some(raw_value_option) => Some((raw_value_option, *included)),
-                }
+                // if the key doesn't exist then we should ignore the starts at key
+                document.get_raw_for_document_type(self.field.as_str(), document_type, None)?
+                    .map(|raw_value_option| (raw_value_option, *included))
             }
         };
 
@@ -306,78 +305,62 @@ impl<'a> WhereClause {
                         query.insert_key(key);
                     }
                     Some((starts_at_key, included)) => {
-                        if left_to_right {
-                            if starts_at_key < key || (included && starts_at_key == key) {
+                        if  ( left_to_right && starts_at_key < key) ||
+                            (!left_to_right && starts_at_key > key) ||
+                            (included && starts_at_key == key) {
                                 query.insert_key(key);
                             }
-                        } else {
-                            if starts_at_key > key || (included && starts_at_key == key) {
-                                query.insert_key(key);
-                            }
-                        }
                     }
                 }
             }
             In => {
                 let in_values = match &self.value {
-                    Value::Array(array) => Some(array),
-                    _ => None,
-                }
-                    .ok_or(Error::CorruptedData(String::from(
-                        "when using in operator you must provide an array of values",
-                    )))?;
+                    Value::Array(array) => Ok(array),
+                    _ => Err(Error::CorruptedData(String::from(
+                    "when using in operator you must provide an array of values",
+                ))),
+                }?;
                 match starts_at_key_option {
                     None => {
                         for value in in_values.iter() {
-                            let key = document_type.serialize_value_for_key(self.field.as_str(), value)?;
+                            let key = document_type
+                                .serialize_value_for_key(self.field.as_str(), value)?;
                             query.insert_key(key)
                         }
                     }
                     Some((starts_at_key, included)) => {
                         for value in in_values.iter() {
-                            let key = document_type.serialize_value_for_key(self.field.as_str(), value)?;
-                            if left_to_right {
-                                if starts_at_key < key || (included && starts_at_key == key) {
-                                    query.insert_key(key);
-                                }
-                            } else {
-                                if starts_at_key > key || (included && starts_at_key == key) {
-                                    query.insert_key(key);
-                                }
+                            let key = document_type
+                                .serialize_value_for_key(self.field.as_str(), value)?;
+
+                            if  ( left_to_right && starts_at_key < key) ||
+                                (!left_to_right && starts_at_key > key) ||
+                                (included && starts_at_key == key) {
+                                query.insert_key(key);
                             }
                         }
                     }
-                }
-                for value in in_values.iter() {
-                    let key = document_type.serialize_value_for_key(self.field.as_str(), value)?;
-                    query.insert_key(key)
                 }
             }
             GreaterThan => {
                 let key =
                     document_type.serialize_value_for_key(self.field.as_str(), &self.value)?;
                 match starts_at_key_option {
-                    None => {
-                        query.insert_range_after(key..)
-                    }
+                    None => query.insert_range_after(key..),
                     Some((starts_at_key, included)) => {
                         if left_to_right {
                             if starts_at_key <= key {
-                                query.insert_range_after(key.. );
+                                query.insert_range_after(key..);
+                            } else if included {
+                                query.insert_range_from(starts_at_key..);
                             } else {
-                                if included {
-                                    query.insert_range_from(starts_at_key..);
-                                } else {
-                                    query.insert_range_after(starts_at_key..);
-                                }
+                                query.insert_range_after(starts_at_key..);
                             }
-                        } else {
-                            if starts_at_key > key {
-                                if included {
-                                    query.insert_range_after_to_inclusive(key..=starts_at_key);
-                                } else {
-                                    query.insert_range_after_to(key..starts_at_key);
-                                }
+                        } else if starts_at_key > key {
+                            if included {
+                                query.insert_range_after_to_inclusive(key..=starts_at_key);
+                            } else {
+                                query.insert_range_after_to(key..starts_at_key);
                             }
                         }
                     }
@@ -387,30 +370,24 @@ impl<'a> WhereClause {
                 let key =
                     document_type.serialize_value_for_key(self.field.as_str(), &self.value)?;
                 match starts_at_key_option {
-                    None => {
-                        query.insert_range_from(key..)
-                    }
+                    None => query.insert_range_from(key..),
                     Some((starts_at_key, included)) => {
                         if left_to_right {
                             if starts_at_key < key || (included && starts_at_key == key) {
-                                query.insert_range_from(key.. );
+                                query.insert_range_from(key..);
+                            } else if included {
+                                query.insert_range_from(starts_at_key..);
                             } else {
-                                if included {
-                                    query.insert_range_from(starts_at_key..);
-                                } else {
-                                    query.insert_range_after(starts_at_key..);
-                                }
+                                query.insert_range_after(starts_at_key..);
                             }
-                        } else {
-                            if included && starts_at_key == key {
-                                query.insert_key(key);
-                            } else if starts_at_key > key {
-                                if included {
-                                    query.insert_range_inclusive(key..=starts_at_key);
-                                } else {
-                                    query.insert_range(key..starts_at_key);
-                                }
+                        } else if starts_at_key > key {
+                            if included {
+                                query.insert_range_inclusive(key..=starts_at_key);
+                            } else {
+                                query.insert_range(key..starts_at_key);
                             }
+                        } else if included && starts_at_key == key {
+                            query.insert_key(key);
                         }
                     }
                 }
@@ -419,9 +396,7 @@ impl<'a> WhereClause {
                 let key =
                     document_type.serialize_value_for_key(self.field.as_str(), &self.value)?;
                 match starts_at_key_option {
-                    None => {
-                        query.insert_range_to(..key)
-                    }
+                    None => query.insert_range_to(..key),
                     Some((starts_at_key, included)) => {
                         if left_to_right {
                             if starts_at_key < key {
@@ -431,16 +406,12 @@ impl<'a> WhereClause {
                                     query.insert_range_after_to(key..starts_at_key);
                                 }
                             }
+                        } else if starts_at_key > key {
+                            query.insert_range_to(..key);
+                        } else if included {
+                            query.insert_range_to_inclusive(..=starts_at_key);
                         } else {
-                            if starts_at_key > key {
-                                query.insert_range_to(..key);
-                            } else {
-                                if included {
-                                    query.insert_range_to_inclusive(..=starts_at_key);
-                                } else {
-                                    query.insert_range_to(..starts_at_key);
-                                }
-                            }
+                            query.insert_range_to(..starts_at_key);
                         }
                     }
                 }
@@ -449,9 +420,7 @@ impl<'a> WhereClause {
                 let key =
                     document_type.serialize_value_for_key(self.field.as_str(), &self.value)?;
                 match starts_at_key_option {
-                    None => {
-                        query.insert_range_to_inclusive(..=key)
-                    }
+                    None => query.insert_range_to_inclusive(..=key),
                     Some((starts_at_key, included)) => {
                         if left_to_right {
                             if included && starts_at_key == key {
@@ -463,16 +432,12 @@ impl<'a> WhereClause {
                                     query.insert_range_after_to_inclusive(key..=starts_at_key);
                                 }
                             }
+                        } else if starts_at_key > key || (included && starts_at_key == key) {
+                            query.insert_range_to_inclusive(..=key);
+                        } else if included {
+                            query.insert_range_to_inclusive(..=starts_at_key);
                         } else {
-                            if starts_at_key > key || (included && starts_at_key == key) {
-                                query.insert_range_to_inclusive(..=key);
-                            } else {
-                                if included {
-                                    query.insert_range_to_inclusive(..=starts_at_key);
-                                } else {
-                                    query.insert_range_to(..starts_at_key);
-                                }
-                            }
+                            query.insert_range_to(..starts_at_key);
                         }
                     }
                 }
@@ -480,9 +445,7 @@ impl<'a> WhereClause {
             Between => {
                 let (left_key, right_key) = self.split_value_for_between(document_type)?;
                 match starts_at_key_option {
-                    None => {
-                        query.insert_range_inclusive(left_key..=right_key)
-                    }
+                    None => query.insert_range_inclusive(left_key..=right_key),
                     Some((starts_at_key, included)) => {
                         if left_to_right {
                             if starts_at_key < left_key || (included && starts_at_key == left_key) {
@@ -493,25 +456,24 @@ impl<'a> WhereClause {
                                 if included {
                                     query.insert_range_inclusive(starts_at_key..=right_key);
                                 } else {
-                                    query.insert_range_after_to_inclusive(starts_at_key..=right_key);
+                                    query
+                                        .insert_range_after_to_inclusive(starts_at_key..=right_key);
                                 }
                             } else if starts_at_key == right_key && included {
                                 query.insert_key(right_key);
                             }
-                        } else {
-                            if starts_at_key > right_key || (included && starts_at_key == right_key) {
-                                query.insert_range_inclusive(left_key..=right_key)
-                            } else if starts_at_key == right_key {
-                                query.insert_range(left_key..right_key)
-                            } else if starts_at_key > left_key && starts_at_key < right_key {
-                                if included {
-                                    query.insert_range_inclusive(left_key..=starts_at_key);
-                                } else {
-                                    query.insert_range(left_key..starts_at_key);
-                                }
-                            } else if starts_at_key == left_key && included {
-                                query.insert_key(left_key);
+                        } else if starts_at_key > right_key || (included && starts_at_key == right_key)
+                            {query.insert_range_inclusive(left_key..=right_key)
+                        } else if starts_at_key == right_key {
+                            query.insert_range(left_key..right_key)
+                        } else if starts_at_key > left_key && starts_at_key < right_key {
+                            if included {
+                                query.insert_range_inclusive(left_key..=starts_at_key);
+                            } else {
+                                query.insert_range(left_key..starts_at_key);
                             }
+                        } else if starts_at_key == left_key && included {
+                            query.insert_key(left_key);
                         }
                     }
                 }
@@ -519,9 +481,7 @@ impl<'a> WhereClause {
             BetweenExcludeBounds => {
                 let (left_key, right_key) = self.split_value_for_between(document_type)?;
                 match starts_at_key_option {
-                    None => {
-                        query.insert_range_after_to(left_key..right_key)
-                    }
+                    None => query.insert_range_after_to(left_key..right_key),
                     Some((starts_at_key, included)) => {
                         if left_to_right {
                             if starts_at_key <= left_key {
@@ -533,17 +493,15 @@ impl<'a> WhereClause {
                                     query.insert_range_after_to(starts_at_key..right_key);
                                 }
                             }
-                        } else {
-                            if starts_at_key > right_key {
-                                query.insert_range_inclusive(left_key..=right_key)
-                            } else if starts_at_key == right_key {
-                                query.insert_range(left_key..right_key)
-                            } else if starts_at_key > left_key && starts_at_key < right_key {
-                                if included {
-                                    query.insert_range_after_to_inclusive(left_key..=starts_at_key);
-                                } else {
-                                    query.insert_range_after_to(left_key..starts_at_key);
-                                }
+                        } else if starts_at_key > right_key {
+                            query.insert_range_inclusive(left_key..=right_key)
+                        } else if starts_at_key == right_key {
+                            query.insert_range(left_key..right_key)
+                        } else if starts_at_key > left_key && starts_at_key < right_key {
+                            if included {
+                                query.insert_range_after_to_inclusive(left_key..=starts_at_key);
+                            } else {
+                                query.insert_range_after_to(left_key..starts_at_key);
                             }
                         }
                     }
@@ -552,9 +510,7 @@ impl<'a> WhereClause {
             BetweenExcludeLeft => {
                 let (left_key, right_key) = self.split_value_for_between(document_type)?;
                 match starts_at_key_option {
-                    None => {
-                        query.insert_range_after_to_inclusive(left_key..=right_key)
-                    }
+                    None => query.insert_range_after_to_inclusive(left_key..=right_key),
                     Some((starts_at_key, included)) => {
                         if left_to_right {
                             if starts_at_key <= left_key {
@@ -563,20 +519,19 @@ impl<'a> WhereClause {
                                 if included {
                                     query.insert_range_inclusive(starts_at_key..=right_key);
                                 } else {
-                                    query.insert_range_after_to_inclusive(starts_at_key..=right_key);
+                                    query
+                                        .insert_range_after_to_inclusive(starts_at_key..=right_key);
                                 }
                             } else if starts_at_key == right_key && included {
                                 query.insert_key(right_key);
                             }
-                        } else {
-                            if starts_at_key > right_key || (included && starts_at_key == right_key) {
-                                query.insert_range_after_to_inclusive(left_key..=right_key)
-                            } else if starts_at_key > left_key && starts_at_key < right_key {
-                                if included {
-                                    query.insert_range_inclusive(left_key..=starts_at_key);
-                                } else {
-                                    query.insert_range(left_key..starts_at_key);
-                                }
+                        } else if starts_at_key > right_key || (included && starts_at_key == right_key)
+                            {query.insert_range_after_to_inclusive(left_key..=right_key)
+                        } else if starts_at_key > left_key && starts_at_key < right_key {
+                            if included {
+                                query.insert_range_inclusive(left_key..=starts_at_key);
+                            } else {
+                                query.insert_range(left_key..starts_at_key);
                             }
                         }
                     }
@@ -585,9 +540,7 @@ impl<'a> WhereClause {
             BetweenExcludeRight => {
                 let (left_key, right_key) = self.split_value_for_between(document_type)?;
                 match starts_at_key_option {
-                    None => {
-                        query.insert_range(left_key..right_key)
-                    }
+                    None => query.insert_range(left_key..right_key),
                     Some((starts_at_key, included)) => {
                         if left_to_right {
                             if starts_at_key < left_key || (included && starts_at_key == left_key) {
@@ -601,18 +554,16 @@ impl<'a> WhereClause {
                                     query.insert_range_after_to(starts_at_key..right_key);
                                 }
                             }
-                        } else {
-                            if starts_at_key >= right_key {
-                                query.insert_range(left_key..right_key)
-                            } else if starts_at_key > left_key && starts_at_key < right_key {
-                                if included {
-                                    query.insert_range_inclusive(left_key..=starts_at_key);
-                                } else {
-                                    query.insert_range(left_key..starts_at_key);
-                                }
-                            } else if starts_at_key == left_key && included {
-                                query.insert_key(left_key);
+                        } else if starts_at_key >= right_key {
+                            query.insert_range(left_key..right_key)
+                        } else if starts_at_key > left_key && starts_at_key < right_key {
+                            if included {
+                                query.insert_range_inclusive(left_key..=starts_at_key);
+                            } else {
+                                query.insert_range(left_key..starts_at_key);
                             }
+                        } else if starts_at_key == left_key && included {
+                            query.insert_key(left_key);
                         }
                     }
                 }
@@ -623,14 +574,12 @@ impl<'a> WhereClause {
                 let mut right_key = left_key.clone();
                 let last_char = right_key
                     .last_mut()
-                    .ok_or(Error::CorruptedData(String::from(
+                    .ok_or_else(|| Error::CorruptedData(String::from(
                         "starts with must have at least one character",
                     )))?;
                 *last_char += 1;
                 match starts_at_key_option {
-                    None => {
-                        query.insert_range(left_key..right_key)
-                    }
+                    None => query.insert_range(left_key..right_key),
                     Some((starts_at_key, included)) => {
                         if left_to_right {
                             if starts_at_key < left_key || (included && starts_at_key == left_key) {
@@ -644,18 +593,16 @@ impl<'a> WhereClause {
                                     query.insert_range_after_to(starts_at_key..right_key);
                                 }
                             }
-                        } else {
-                            if starts_at_key >= right_key {
-                                query.insert_range(left_key..right_key)
-                            } else if starts_at_key > left_key && starts_at_key < right_key {
-                                if included {
-                                    query.insert_range_inclusive(left_key..=starts_at_key);
-                                } else {
-                                    query.insert_range(left_key..starts_at_key);
-                                }
-                            } else if starts_at_key == left_key && included {
-                                query.insert_key(left_key);
+                        } else if starts_at_key >= right_key {
+                            query.insert_range(left_key..right_key)
+                        } else if starts_at_key > left_key && starts_at_key < right_key {
+                            if included {
+                                query.insert_range_inclusive(left_key..=starts_at_key);
+                            } else {
+                                query.insert_range(left_key..starts_at_key);
                             }
+                        } else if starts_at_key == left_key && included {
+                            query.insert_key(left_key);
                         }
                     }
                 }
@@ -667,8 +614,8 @@ impl<'a> WhereClause {
 
 #[derive(Clone, Debug)]
 pub struct OrderClause {
-    field: String,
-    ascending: bool,
+    pub field: String,
+    pub ascending: bool,
 }
 
 impl<'a> OrderClause {
@@ -713,16 +660,16 @@ impl<'a> OrderClause {
 
 #[derive(Debug)]
 pub struct DriveQuery<'a> {
-    contract: &'a Contract,
-    document_type: &'a DocumentType,
-    equal_clauses: HashMap<String, WhereClause>,
-    in_clause: Option<WhereClause>,
-    range_clause: Option<WhereClause>,
-    offset: u16,
-    limit: u16,
-    order_by: IndexMap<String, OrderClause>,
-    start_at: Option<Vec<u8>>,
-    start_at_included: bool,
+    pub contract: &'a Contract,
+    pub document_type: &'a DocumentType,
+    pub equal_clauses: HashMap<String, WhereClause>,
+    pub in_clause: Option<WhereClause>,
+    pub range_clause: Option<WhereClause>,
+    pub offset: u16,
+    pub limit: u16,
+    pub order_by: IndexMap<String, OrderClause>,
+    pub start_at: Option<Vec<u8>>,
+    pub start_at_included: bool,
 }
 
 impl<'a> DriveQuery<'a> {
@@ -830,8 +777,8 @@ impl<'a> DriveQuery<'a> {
             start_at_included = true;
         }
 
-        let mut start_at: Option<Vec<u8>> =
-            start_option.map_or(None, |id_cbor| bytes_for_system_value(id_cbor));
+        let start_at: Option<Vec<u8>> =
+            start_option.and_then(bytes_for_system_value);
 
         let order_by: IndexMap<String, OrderClause> = query_document
             .get("orderBy")
@@ -926,20 +873,29 @@ impl<'a> DriveQuery<'a> {
             Some(range_clause) => Some(range_clause.field.as_str()),
         };
         let mut fields = equal_fields;
-        let mut sort_on = None;
         if range_field.is_some() {
             fields.push(range_field.unwrap());
-            sort_on = Some(range_field.unwrap());
         }
         if in_field.is_some() {
             fields.push(in_field.unwrap());
             //if there is an in_field, it always takes precedence
-            sort_on = Some(in_field.unwrap());
         }
+
+        let order_by_keys: Vec<&str> = self
+            .order_by
+            .keys()
+            .map(|key: &String| {
+                let str = key.as_str();
+                if !fields.contains(&str) {
+                    fields.push(&str);
+                }
+                str
+            })
+            .collect();
 
         let (index, difference) = self
             .document_type
-            .index_for_types(fields.as_slice(), in_field, range_field)
+            .index_for_types(fields.as_slice(), in_field, order_by_keys.as_slice())
             .ok_or(Error::InvalidQuery("query must be for valid indexes"))?;
         if difference > defaults::MAX_INDEX_DIFFERENCE {
             return Err(Error::InvalidQuery(
@@ -965,6 +921,16 @@ impl<'a> DriveQuery<'a> {
             },
         };
 
+        // We need to get the terminal indexes unused by clauses.
+        let left_over_index_properties = index
+            .properties
+            .iter()
+            .filter(|field| {
+                !(self.equal_clauses.get(field.name.as_str()).is_some()
+                    || (last_clause.is_some() && last_clause.unwrap().field == field.name)
+                    || (subquery_clause.is_some() && subquery_clause.unwrap().field == field.name))
+            })
+            .collect::<Vec<&IndexProperty>>();
         let intermediate_values =
             index
                 .properties
@@ -990,78 +956,104 @@ impl<'a> DriveQuery<'a> {
                     }
                 })
                 .collect::<Result<Vec<Vec<u8>>, Error>>()?;
-        let mut final_query = match last_clause {
-            None => {
-                let mut query = Query::new();
-                query.insert_all();
-                query
-            }
-            Some(where_clause) => {
-                let order_clause: &OrderClause = self
-                    .order_by
-                    .get(where_clause.field.as_str())
-                    .ok_or(Error::InvalidQuery(
-                        "query must have an orderBy field for each range element",
-                    ))?;
-                let query = where_clause
-                    .to_path_query(self.document_type, &starts_at_document, order_clause.ascending)?;
-                query
-            }
-        };
-
-        let (subquery_key, subquery) = match subquery_clause {
-            None => match index.unique {
-                true => (Some(b"0".to_vec()), None),
-                false => {
-                    // we just get all by document id order ascending
-                    let mut full_query = Query::new();
-                    full_query.insert_all();
-                    (Some(b"0".to_vec()), Some(full_query))
-                }
-            },
-            Some(where_clause) => {
-                let order_clause: &OrderClause = self
-                    .order_by
-                    .get(where_clause.field.as_str())
-                    .ok_or(Error::InvalidQuery(
-                        "query must have an orderBy field for each range element",
-                    ))?;
-                let mut subquery = where_clause
-                    .to_path_query(self.document_type, &starts_at_document, order_clause.ascending)?;
-                match index.unique {
-                    true => {
-                        subquery.set_subquery_key(b"0".to_vec());
-                    }
-                    false => {
-                        let mut full_query = Query::new();
-                        full_query.insert_all();
-                        subquery.set_subquery_key(b"0".to_vec());
-                        subquery.set_subquery(full_query);
-                    }
-                }
-                let subindex = where_clause.field.as_bytes().to_vec();
-                (Some(subindex), Some(subquery))
-            }
-        };
-
-        match subquery {
-            None => {}
-            Some(subquery) => {
-                final_query.set_subquery(subquery);
-            }
-        }
-
-        match subquery_key {
-            None => {}
-            Some(subquery_key) => {
-                final_query.set_subquery_key(subquery_key);
-            }
-        }
-
-        // Now we should construct the path
 
         let (intermediate_indexes, last_indexes) =
             index.properties.split_at(intermediate_values.len());
+
+        fn recursive_insert(
+            query: Option<&mut Query>,
+            left_over_index_properties: Vec<&IndexProperty>,
+            unique: bool,
+        ) -> Option<Query> {
+            match left_over_index_properties.split_first() {
+                None => {
+                    match query {
+                        None => {}
+                        Some(query) => {
+                            match unique {
+                                true => {
+                                    query.set_subquery_key(b"0".to_vec());
+                                }
+                                false => {
+                                    query.set_subquery_key(b"0".to_vec());
+                                    // we just get all by document id order ascending
+                                    let mut full_query = Query::new();
+                                    full_query.insert_all();
+                                    query.set_subquery(full_query);
+                                }
+                            }
+                        }
+                    }
+                    None
+                }
+                Some((first, left_over)) => {
+                    let mut inner_query = Query::new_with_direction(first.ascending);
+                    inner_query.insert_all();
+                    recursive_insert(Some(&mut inner_query), left_over.to_vec(), unique);
+                    match query {
+                        None => Some(inner_query),
+                        Some(query) => {
+                            query.set_subquery(inner_query);
+                            query.set_subquery_key(first.name.as_bytes().to_vec());
+                            None
+                        }
+                    }
+                }
+            }
+        }
+
+        let mut final_query = match last_clause {
+            None => recursive_insert(None, left_over_index_properties, index.unique)
+                .expect("Index must have left over properties if no last clause"),
+            Some(where_clause) => {
+                let order_clause: &OrderClause = self
+                    .order_by
+                    .get(where_clause.field.as_str())
+                    .ok_or(Error::InvalidQuery(
+                        "query must have an orderBy field for each range element",
+                    ))?;
+                let mut query = where_clause.to_path_query(
+                    self.document_type,
+                    &starts_at_document,
+                    order_clause.ascending,
+                )?;
+
+                match subquery_clause {
+                    None => {
+                        recursive_insert(
+                            Some(&mut query),
+                            left_over_index_properties,
+                            index.unique,
+                        );
+                    }
+                    Some(where_clause) => {
+                        let order_clause: &OrderClause = self
+                            .order_by
+                            .get(where_clause.field.as_str())
+                            .ok_or(Error::InvalidQuery(
+                                "query must have an orderBy field for each range element",
+                            ))?;
+                        let mut subquery = where_clause.to_path_query(
+                            self.document_type,
+                            &starts_at_document,
+                            order_clause.ascending,
+                        )?;
+                        recursive_insert(
+                            Some(&mut subquery),
+                            left_over_index_properties,
+                            index.unique,
+                        );
+                        let subindex = where_clause.field.as_bytes().to_vec();
+                        query.set_subquery_key(subindex);
+                        query.set_subquery(subquery);
+                    }
+                };
+
+                query
+            }
+        };
+
+        // Now we should construct the path
 
         let last_index = last_indexes
             .first()

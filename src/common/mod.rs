@@ -1,6 +1,6 @@
+use crate::contract::Contract;
+use crate::drive::Drive;
 use byteorder::{BigEndian, WriteBytesExt};
-use rs_drive::contract::Contract;
-use rs_drive::drive::Drive;
 use std::fs::File;
 use std::io;
 use std::io::{BufRead, BufReader};
@@ -21,8 +21,7 @@ pub fn setup(prefix: &str) -> Drive {
 
 pub fn setup_contract(prefix: &str, path: &str) -> (Drive, Contract) {
     let mut drive = setup(prefix);
-    let contract_cbor =
-        json_document_to_cbor(path, Some(rs_drive::drive::defaults::PROTOCOL_VERSION));
+    let contract_cbor = json_document_to_cbor(path, Some(crate::drive::defaults::PROTOCOL_VERSION));
     let contract = Contract::from_cbor(&contract_cbor).expect("contract should be deserialized");
     drive.apply_contract(&contract_cbor, None);
     (drive, contract)
