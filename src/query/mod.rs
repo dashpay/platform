@@ -979,7 +979,7 @@ impl<'a> DriveQuery<'a> {
             }
         }
 
-        let mut final_query = match last_clause {
+        let final_query = match last_clause {
             None => recursive_insert(None, left_over_index_properties, index.unique)
                 .expect("Index must have left over properties if no last clause"),
             Some(where_clause) => {
