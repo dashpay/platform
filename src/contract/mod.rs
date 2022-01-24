@@ -1,7 +1,6 @@
 mod types;
 
 use crate::drive::{Drive, RootTree};
-use array_tool::vec::Intersect;
 use ciborium::value::{Value as CborValue, Value};
 use grovedb::Error;
 use serde::{Deserialize, Serialize};
@@ -50,34 +49,54 @@ impl Index {
     // with leftovers permitted.
     // If a sort_on value is provided it must match the last index property.
     // The number returned is the number of unused index properties
+
+    // A case for example if we have an index on person's name and age
+    // where we say name == 'Sam' sort by age
+    // there is no field operator on age
+    // The return value for name == 'Sam' sort by age would be 0
+    // The return value for name == 'Sam and age > 5 sort by age would be 0
+    // the return value for sort by age would be 1
     pub fn matches(
         &self,
         index_names: &[&str],
         in_field_name: Option<&str>,
-        sort_on: Option<&str>,
+        order_by: &[&str],
     ) -> Option<u16> {
+        // Here we are trying to figure out if the Index matches the order by
+        // To do so we take the index and go backwards as we need the order by clauses to be
+        // continuous, but they do not need to be at the end.
+        let mut reduced_properties = self.properties.clone();
+        let mut should_ignore: Vec<String> = order_by.iter().map(|&str| str.to_string()).collect();
+        if order_by.len() > 0 {
+            for i in 0..self.properties.len() {
+                if reduced_properties.len() < order_by.len() {
+                    return None;
+                }
+                let matched_ordering = reduced_properties
+                    .iter()
+                    .rev()
+                    .zip(order_by.iter().rev())
+                    .all(|(property, &sort)| property.name.as_str() == sort);
+                if matched_ordering {
+                    break;
+                }
+                if let Some((last, elements)) = reduced_properties.split_last() {
+                    should_ignore.push(last.name.clone());
+                    reduced_properties = elements.to_vec();
+                } else {
+                    return None;
+                }
+            }
+        }
+
         let last_property = self.properties.last();
         if last_property.is_none() {
             return None;
         }
-        let mut d = self.properties.len();
-        if sort_on.is_some() {
-            if last_property.unwrap().name.as_str() != sort_on.unwrap() {
-                return None;
-            } else if !index_names.iter().any(|&a| a == sort_on.unwrap()) {
-                // we can remove the -1 here
-                // this is a case for example if we have an index on person's name and age
-                // where we say name == 'Sam' sort by age
-                // there is no field operator on age
-                // The return value for name == 'Sam' sort by age would be 0
-                // The return value for name == 'Sam and age > 5 sort by age would be 0
-                // the return value for sort by age would be 1
-                d -= 1;
-            }
-        }
 
         // the in field can only be on the last or before last property
-        if in_field_name.is_some() && last_property.unwrap().name.as_str() != in_field_name.unwrap() {
+        if in_field_name.is_some() && last_property.unwrap().name.as_str() != in_field_name.unwrap()
+        {
             // it can also be on the before last
             if self.properties.len() == 1 {
                 return None;
@@ -90,9 +109,11 @@ impl Index {
                 return None;
             }
         }
+
+        let mut d = self.properties.len();
+
         for search_name in index_names.iter() {
-            if !self
-                .properties
+            if !reduced_properties
                 .iter()
                 .any(|property| property.name.as_str() == *search_name)
             {
@@ -210,12 +231,12 @@ impl DocumentType {
         &self,
         index_names: &[&str],
         in_field_name: Option<&str>,
-        sort_on: Option<&str>,
+        order_by: &[&str],
     ) -> Option<(&Index, u16)> {
         let mut best_index: Option<(&Index, u16)> = None;
         let mut best_difference = u16::MAX;
         for index in self.indices.iter() {
-            let difference_option = index.matches(index_names, in_field_name, sort_on);
+            let difference_option = index.matches(index_names, in_field_name, order_by);
             if difference_option.is_some() {
                 let difference = difference_option.unwrap();
                 if difference == 0 {
@@ -395,13 +416,12 @@ impl Document {
             }
         };
 
-        // dev-note: properties is everything other than the id
-        let document = Document {
+        // dev-note: properties is everything other than the id and owner id
+        Ok(Document {
             properties: document,
             owner_id,
             id,
-        };
-        Ok(document)
+        })
     }
 
     pub fn from_cbor_with_id(
@@ -427,17 +447,15 @@ impl Document {
 
         // first we need to deserialize the document and contract indices
         // we would need dedicated deserialization functions based on the document type
-        let mut document: HashMap<String, CborValue> =
-            ciborium::de::from_reader(read_document_cbor)
-                .map_err(|_| Error::CorruptedData(String::from("unable to decode contract")))?;
+        let properties: HashMap<String, CborValue> = ciborium::de::from_reader(read_document_cbor)
+            .map_err(|_| Error::CorruptedData(String::from("unable to decode contract")))?;
 
-        // dev-note: properties is everything other than the id
-        let document = Document {
-            properties: document,
+        // dev-note: properties is everything other than the id and owner id
+        Ok(Document {
+            properties,
             owner_id: Vec::from(owner_id),
             id: Vec::from(document_id),
-        };
-        Ok(document)
+        })
     }
 
     pub fn get_raw_for_document_type<'a>(
@@ -476,11 +494,10 @@ impl Document {
                     "$id" => Ok(Some(self.id.clone())),
                     "$ownerId" => Ok(Some(self.owner_id.clone())),
                     _ => {
-                        let document_type = contract.document_types.get(document_type_name).ok_or(
-                            Error::CorruptedData(String::from(
+                        let document_type = contract.document_types.get(document_type_name)
+                            .ok_or_else(|| Error::CorruptedData(String::from(
                                 "document type should exist for name",
-                            )),
-                        )?;
+                            )))?;
                         Ok(Some(document_type.serialize_value_for_key(key, value)?))
                     }
                 },
@@ -646,8 +663,7 @@ pub fn bytes_for_system_value(value: &Value) -> Option<Vec<u8>> {
                 .iter()
                 .map(|byte| match byte {
                     Value::Integer(int) => {
-                        let value_as_u8: u8 = int
-                            .clone()
+                        let value_as_u8: u8 = (*int)
                             .try_into()
                             .map_err(|_| Error::CorruptedData(String::from("expected u8 value")))?;
                         Ok(value_as_u8)
@@ -659,7 +675,7 @@ pub fn bytes_for_system_value(value: &Value) -> Option<Vec<u8>> {
                 .collect::<Result<Vec<u8>, Error>>();
             match bytes_result {
                 Ok(bytes) => Some(bytes),
-                Err(e) => None,
+                Err(_) => None,
             }
         }
         _ => None,
@@ -672,8 +688,7 @@ fn bytes_for_system_value_from_hash_map(
 ) -> Option<Vec<u8>> {
     document
         .get(key)
-        .map(|id_cbor| bytes_for_system_value(id_cbor))
-        .flatten()
+        .and_then(bytes_for_system_value)
 }
 
 #[cfg(test)]
