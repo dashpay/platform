@@ -1,7 +1,7 @@
 mod defaults;
 
 use crate::contract::{
-    bytes_for_system_value, Contract, Document, DocumentType, Index, IndexProperty,
+    bytes_for_system_value, Contract, Document, DocumentType, IndexProperty,
 };
 use crate::query::WhereOperator::{
     Between, BetweenExcludeBounds, BetweenExcludeLeft, BetweenExcludeRight, Equal, GreaterThan,
@@ -9,7 +9,6 @@ use crate::query::WhereOperator::{
 };
 use ciborium::value::{Value as CborValue, Value};
 use grovedb::{Element, Error, GroveDb, PathQuery, Query, SizedQuery};
-use indexmap::map::Keys;
 use indexmap::IndexMap;
 use std::collections::HashMap;
 use storage::rocksdb_storage::OptimisticTransactionDBTransaction;
@@ -68,7 +67,7 @@ pub struct WhereClause {
 }
 
 impl<'a> WhereClause {
-    pub fn from_components(clause_components: &'a Vec<Value>) -> Result<Self, Error> {
+    pub fn from_components(clause_components: &'a [Value]) -> Result<Self, Error> {
         if clause_components.len() != 3 {
             return Err(Error::CorruptedData(String::from(
                 "where clauses should have at most 3 components",
@@ -80,7 +79,7 @@ impl<'a> WhereClause {
             .expect("check above enforces it exists");
         let field_ref = field_value
             .as_text()
-            .ok_or(Error::CorruptedData(String::from(
+            .ok_or_else(|| Error::CorruptedData(String::from(
                 "first field of where component should be a string",
             )))?;
         let field = String::from(field_ref);
@@ -91,17 +90,17 @@ impl<'a> WhereClause {
         let operator_string =
             operator_value
                 .as_text()
-                .ok_or(Error::CorruptedData(String::from(
+                .ok_or_else(|| Error::CorruptedData(String::from(
                     "second field of where component should be a string",
                 )))?;
 
-        let operator = operator_from_string(operator_string).ok_or(Error::CorruptedData(
+        let operator = operator_from_string(operator_string).ok_or_else(|| Error::CorruptedData(
             String::from("second field of where component should be a known operator"),
         ))?;
 
         let value = clause_components
             .get(2)
-            .ok_or(Error::CorruptedData(String::from(
+            .ok_or_else(|| Error::CorruptedData(String::from(
                 "third field of where component should exist",
             )))?
             .clone();
@@ -116,11 +115,7 @@ impl<'a> WhereClause {
     fn lower_bound_clause(where_clauses: &'a [&WhereClause]) -> Result<Option<&'a Self>, Error> {
         let lower_range_clauses: Vec<&&WhereClause> = where_clauses
             .iter()
-            .filter(|&where_clause| match where_clause.operator {
-                GreaterThan => true,
-                GreaterThanOrEquals => true,
-                _ => false,
-            })
+            .filter(|&where_clause| matches!(where_clause.operator, GreaterThan | GreaterThanOrEquals))
             .collect::<Vec<&&WhereClause>>();
         match lower_range_clauses.len() {
             0 => Ok(None),
@@ -133,12 +128,8 @@ impl<'a> WhereClause {
 
     fn upper_bound_clause(where_clauses: &'a [&WhereClause]) -> Result<Option<&'a Self>, Error> {
         let upper_range_clauses: Vec<&&WhereClause> = where_clauses
-            .into_iter()
-            .filter(|&where_clause| match where_clause.operator {
-                LessThan => true,
-                LessThanOrEquals => true,
-                _ => false,
-            })
+            .iter()
+            .filter(|&where_clause| matches!(where_clause.operator, LessThan | LessThanOrEquals))
             .collect::<Vec<&&WhereClause>>();
         match upper_range_clauses.len() {
             0 => Ok(None),
@@ -185,8 +176,8 @@ impl<'a> WhereClause {
             })
             .collect();
 
-        if non_groupable_range_clauses.len() == 0 {
-            if groupable_range_clauses.len() == 0 {
+        return if non_groupable_range_clauses.is_empty() {
+            if groupable_range_clauses.is_empty() {
                 return Ok(None);
             } else if groupable_range_clauses.len() == 1 {
                 let clause = *groupable_range_clauses.get(0).unwrap();
@@ -195,59 +186,54 @@ impl<'a> WhereClause {
                 return Err(Error::CorruptedData(String::from(
                     "there can only be at most 2 range clauses",
                 )));
-            }
-
-            if groupable_range_clauses
+            } else if groupable_range_clauses
                 .iter()
                 .any(|&z| z.field != groupable_range_clauses.first().unwrap().field)
             {
                 return Err(Error::CorruptedData(String::from(
                     "all ranges must be on same field",
                 )));
-            }
+            } else {
 
-            // we need to find the bounds of the clauses
-            let lower_bounds_clause =
-                WhereClause::lower_bound_clause(groupable_range_clauses.as_slice())?;
-            let upper_bounds_clause =
-                WhereClause::upper_bound_clause(groupable_range_clauses.as_slice())?;
-
-            if lower_bounds_clause.is_none() || upper_bounds_clause.is_none() {
-                return Err(Error::CorruptedData(String::from(
+                let lower_upper_error = || Error::CorruptedData(String::from(
                     "lower and upper bounds must be passed if providing 2 ranges",
-                )));
-            }
+                ));
 
-            let operator = match (
-                lower_bounds_clause.unwrap().operator,
-                upper_bounds_clause.unwrap().operator,
-            ) {
-                (GreaterThanOrEquals, LessThanOrEquals) => Some(Between),
-                (GreaterThanOrEquals, LessThan) => Some(BetweenExcludeRight),
-                (GreaterThan, LessThanOrEquals) => Some(BetweenExcludeLeft),
-                (GreaterThan, LessThan) => Some(BetweenExcludeBounds),
-                _ => None,
-            }
-            .ok_or(Error::CorruptedData(String::from(
-                "lower and upper bounds must be passed if providing 2 ranges",
-            )))?;
+                // we need to find the bounds of the clauses
+                let lower_bounds_clause =
+                    WhereClause::lower_bound_clause(groupable_range_clauses.as_slice())?.ok_or_else(lower_upper_error)?;
+                let upper_bounds_clause =
+                    WhereClause::upper_bound_clause(groupable_range_clauses.as_slice())?.ok_or_else(lower_upper_error)?;
 
-            return Ok(Some(WhereClause {
-                field: groupable_range_clauses.first().unwrap().field.clone(),
-                operator,
-                value: Value::Array(vec![
-                    lower_bounds_clause.unwrap().value.clone(),
-                    upper_bounds_clause.unwrap().value.clone(),
-                ]),
-            }));
+                let operator = match (
+                    lower_bounds_clause.operator,
+                    upper_bounds_clause.operator,
+                ) {
+                    (GreaterThanOrEquals, LessThanOrEquals) => Some(Between),
+                    (GreaterThanOrEquals, LessThan) => Some(BetweenExcludeRight),
+                    (GreaterThan, LessThanOrEquals) => Some(BetweenExcludeLeft),
+                    (GreaterThan, LessThan) => Some(BetweenExcludeBounds),
+                    _ => None,
+                }
+                .ok_or_else(lower_upper_error)?;
+
+                Ok(Some(WhereClause {
+                    field: groupable_range_clauses.first().unwrap().field.clone(),
+                    operator,
+                    value: Value::Array(vec![
+                        lower_bounds_clause.value.clone(),
+                        upper_bounds_clause.value.clone(),
+                    ]),
+                }))
+            }
         } else if non_groupable_range_clauses.len() == 1 {
             let where_clause = non_groupable_range_clauses.get(0).unwrap();
-            return Ok(Some((*where_clause).clone()));
+            Ok(Some((*where_clause).clone()))
         } else {
             // if non_groupable_range_clauses.len() > 1
-            return Err(Error::CorruptedData(String::from(
+            Err(Error::CorruptedData(String::from(
                 "there can not be more than 1 non groupable range clause",
-            )));
+            )))
         }
     }
 
@@ -259,7 +245,7 @@ impl<'a> WhereClause {
             Value::Array(array) => Some(array),
             _ => None,
         }
-        .ok_or(Error::CorruptedData(String::from(
+        .ok_or_else(|| Error::CorruptedData(String::from(
             "when using between operator you must provide a tuple array of values",
         )))?;
         if in_values.len() != 2 {
@@ -619,7 +605,7 @@ pub struct OrderClause {
 }
 
 impl<'a> OrderClause {
-    pub fn from_components(clause_components: &'a Vec<Value>) -> Result<Self, Error> {
+    pub fn from_components(clause_components: &'a [Value]) -> Result<Self, Error> {
         if clause_components.len() != 2 {
             return Err(Error::CorruptedData(String::from(
                 "order clause should have exactly 2 components",
@@ -631,7 +617,7 @@ impl<'a> OrderClause {
             .expect("check above enforces it exists");
         let field_ref = field_value
             .as_text()
-            .ok_or(Error::CorruptedData(String::from(
+            .ok_or_else(|| Error::CorruptedData(String::from(
                 "first field of where component should be a string",
             )))?;
         let field = String::from(field_ref);
@@ -641,7 +627,7 @@ impl<'a> OrderClause {
             Value::Text(asc_string) => Some(asc_string.as_str()),
             _ => None,
         }
-        .ok_or(Error::CorruptedData(String::from(
+        .ok_or_else(|| Error::CorruptedData(String::from(
             "orderBy right component must be a string",
         )))?;
         let ascending = match asc_string {
@@ -680,10 +666,10 @@ impl<'a> DriveQuery<'a> {
     ) -> Result<Self, Error> {
         let query_document: HashMap<String, CborValue> = ciborium::de::from_reader(query_cbor)
             .map_err(|err| {
-                Error::CorruptedData(String::from(format!(
+                Error::CorruptedData(format!(
                     "unable to decode query: {}",
-                    err.to_string()
-                )))
+                    err
+                ))
             })?;
 
         let limit: u16 = query_document
@@ -695,7 +681,7 @@ impl<'a> DriveQuery<'a> {
                     None
                 }
             })
-            .ok_or(Error::CorruptedData(String::from(
+            .ok_or_else(|| Error::CorruptedData(String::from(
                 "limit should be a integer from 1 to 100",
             )))?;
 
@@ -864,20 +850,14 @@ impl<'a> DriveQuery<'a> {
             .keys()
             .map(|s| s.as_str())
             .collect::<Vec<&str>>();
-        let in_field = match &self.in_clause {
-            None => None,
-            Some(in_clause) => Some(in_clause.field.as_str()),
-        };
-        let range_field = match &self.range_clause {
-            None => None,
-            Some(range_clause) => Some(range_clause.field.as_str()),
-        };
+        let in_field = self.in_clause.as_ref().map(|in_clause| in_clause.field.as_str());
+        let range_field = self.range_clause.as_ref().map(|range_clause| range_clause.field.as_str());
         let mut fields = equal_fields;
-        if range_field.is_some() {
-            fields.push(range_field.unwrap());
+        if let Some(range_field) = range_field {
+            fields.push(range_field);
         }
-        if in_field.is_some() {
-            fields.push(in_field.unwrap());
+        if let Some(in_field) = in_field {
+            fields.push(in_field);
             //if there is an in_field, it always takes precedence
         }
 
@@ -887,7 +867,7 @@ impl<'a> DriveQuery<'a> {
             .map(|key: &String| {
                 let str = key.as_str();
                 if !fields.contains(&str) {
-                    fields.push(&str);
+                    fields.push(str);
                 }
                 str
             })
@@ -905,14 +885,11 @@ impl<'a> DriveQuery<'a> {
         let ordered_clauses: Vec<&WhereClause> = index
             .properties
             .iter()
-            .filter_map(|field| match self.equal_clauses.get(field.name.as_str()) {
-                None => None,
-                Some(where_clause) => Some(where_clause),
-            })
+            .filter_map(|field| self.equal_clauses.get(field.name.as_str()))
             .collect();
         let (last_clause, last_clause_is_range, subquery_clause) = match &self.in_clause {
             None => match &self.range_clause {
-                None => (ordered_clauses.last().map(|clause| *clause), false, None),
+                None => (ordered_clauses.last().copied(), false, None),
                 Some(where_clause) => (Some(where_clause), true, None),
             },
             Some(where_clause) => match &self.range_clause {
@@ -939,7 +916,7 @@ impl<'a> DriveQuery<'a> {
                     match self.equal_clauses.get(field.name.as_str()) {
                         None => None,
                         Some(where_clause) => {
-                            if self.order_by.len() == 0
+                            if self.order_by.is_empty()
                                 && !last_clause_is_range
                                 && last_clause.is_some()
                                 && last_clause.unwrap().field == field.name
@@ -1002,7 +979,7 @@ impl<'a> DriveQuery<'a> {
             }
         }
 
-        let mut final_query = match last_clause {
+        let final_query = match last_clause {
             None => recursive_insert(None, left_over_index_properties, index.unique)
                 .expect("Index must have left over properties if no last clause"),
             Some(where_clause) => {
@@ -1057,11 +1034,11 @@ impl<'a> DriveQuery<'a> {
 
         let last_index = last_indexes
             .first()
-            .ok_or(Error::CorruptedData(String::from(
+            .ok_or_else(|| Error::CorruptedData(String::from(
                 "document query has no index with fields",
             )))?;
 
-        let mut path = document_type_path.clone();
+        let mut path = document_type_path;
 
         for (intermediate_index, intermediate_value) in
             intermediate_indexes.iter().zip(intermediate_values.iter())

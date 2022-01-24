@@ -273,26 +273,19 @@ impl Drive {
         let mut already_exists = false;
         let mut different_contract_data = false;
 
-        match self
+        if let Ok(stored_element) = self
             .grove
-            .get(&*contract_root_path(&contract.id), b"0", transaction)
-        {
-            Ok(stored_Element) => {
-                already_exists = true;
-                match stored_Element {
-                    Element::Item(stored_contract_bytes) => {
-                        if contract_bytes != stored_contract_bytes {
-                            different_contract_data = true;
-                        }
-                    }
-                    _ => {
-                        already_exists = false;
+            .get(&*contract_root_path(&contract.id), b"0", transaction) {
+            already_exists = true;
+            match stored_element {
+                Element::Item(stored_contract_bytes) => {
+                    if contract_bytes != stored_contract_bytes {
+                        different_contract_data = true;
                     }
                 }
-            }
-            Err(_) => {
-                // the element doesn't exist
-                // no need to do anything
+                _ => {
+                    already_exists = false;
+                }
             }
         };
 
@@ -394,7 +387,7 @@ impl Drive {
             contract
                 .document_types
                 .get(document_type_name)
-                .ok_or(Error::CorruptedData(String::from(
+                .ok_or_else(|| Error::CorruptedData(String::from(
                     "can not get document type from contract",
                 )))?;
 
@@ -411,7 +404,7 @@ impl Drive {
                 index
                     .properties
                     .get(0)
-                    .ok_or(Error::CorruptedData(String::from(
+                    .ok_or_else(|| Error::CorruptedData(String::from(
                         "invalid contract indices",
                     )))?;
             index_path.push(Vec::from(top_index_property.name.as_bytes()));
@@ -422,10 +415,10 @@ impl Drive {
                 .get_raw_for_contract(
                     &top_index_property.name,
                     document_type_name,
-                    &contract,
+                    contract,
                     owner_id,
                 )?
-                .ok_or(Error::CorruptedData(String::from(
+                .ok_or_else(|| Error::CorruptedData(String::from(
                     "unable to get document top index field",
                 )))?;
 
@@ -448,7 +441,7 @@ impl Drive {
                     index
                         .properties
                         .get(i)
-                        .ok_or(Error::CorruptedData(String::from(
+                        .ok_or_else(|| Error::CorruptedData(String::from(
                             "invalid contract indices",
                         )))?;
 
@@ -471,10 +464,10 @@ impl Drive {
                     .get_raw_for_contract(
                         &index_property.name,
                         document_type_name,
-                        &contract,
+                        contract,
                         owner_id,
                     )?
-                    .ok_or(Error::CorruptedData(String::from(
+                    .ok_or_else(|| Error::CorruptedData(String::from(
                         "unable to get document field",
                     )))?;
 
@@ -626,7 +619,7 @@ impl Drive {
             contract
                 .document_types
                 .get(document_type_name)
-                .ok_or(Error::CorruptedData(String::from(
+                .ok_or_else(|| Error::CorruptedData(String::from(
                     "can not get document type from contract",
                 )))?;
         // first we need to construct the path for documents on the contract
@@ -644,23 +637,13 @@ impl Drive {
             transaction,
         )?;
 
-        let mut document_bytes: Option<Vec<u8>> = None;
-        match document_element {
-            Element::Item(data) => {
-                document_bytes = Some(data);
-            }
-            _ => {} // Can the element ever not be an item
-        }
-
-        // possibility that document might not be in storage
-        // TODO: how should this be handled
-        if document_bytes.is_none() {
-            todo!()
-        }
+        let document_bytes: Vec<u8> = match document_element {
+            Element::Item(data) => data,
+            _ => todo!() // TODO: how should this be handled, possibility that document might not be in storage
+        };
 
         let document = Document::from_cbor(
             document_bytes
-                .expect("Can't be none handled above")
                 .as_slice(),
             None,
             owner_id,
@@ -690,7 +673,7 @@ impl Drive {
                 index
                     .properties
                     .get(0)
-                    .ok_or(Error::CorruptedData(String::from(
+                    .ok_or_else(|| Error::CorruptedData(String::from(
                         "invalid contract indices",
                     )))?;
             index_path.push(Vec::from(top_index_property.name.as_bytes()));
@@ -701,10 +684,10 @@ impl Drive {
                 .get_raw_for_contract(
                     &top_index_property.name,
                     document_type_name,
-                    &contract,
+                    contract,
                     owner_id,
                 )?
-                .ok_or(Error::CorruptedData(String::from(
+                .ok_or_else(|| Error::CorruptedData(String::from(
                     "unable to get document top index field for deletion",
                 )))?;
 
@@ -717,7 +700,7 @@ impl Drive {
                     index
                         .properties
                         .get(i)
-                        .ok_or(Error::CorruptedData(String::from(
+                        .ok_or_else(|| Error::CorruptedData(String::from(
                             "invalid contract indices",
                         )))?;
 
@@ -729,10 +712,10 @@ impl Drive {
                     .get_raw_for_contract(
                         &index_property.name,
                         document_type_name,
-                        &contract,
+                        contract,
                         owner_id,
                     )?
-                    .ok_or(Error::CorruptedData(String::from(
+                    .ok_or_else(|| Error::CorruptedData(String::from(
                         "unable to get document field",
                     )))?;
 
@@ -770,7 +753,6 @@ impl Drive {
 mod tests {
     use crate::drive::Drive;
     use rand::Rng;
-    use serde::{Deserialize, Serialize};
     use std::{collections::HashMap, fs::File, io::BufReader, path::Path};
     use tempdir::TempDir;
 
@@ -779,11 +761,7 @@ mod tests {
         let reader = BufReader::new(file);
         let json: serde_json::Value =
             serde_json::from_reader(reader).expect("expected a valid json");
-        let mut buffer: Vec<u8> = Vec::new();
-        buffer.push(0);
-        buffer.push(0);
-        buffer.push(0);
-        buffer.push(1);
+        let mut buffer: Vec<u8> = vec![0, 0, 0, 1];
         ciborium::ser::into_writer(&json, &mut buffer).expect("unable to serialize into cbor");
         buffer
     }

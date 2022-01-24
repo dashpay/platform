@@ -32,7 +32,7 @@ impl Person {
         let mut vec: Vec<Person> = vec![];
 
         let mut rng = rand::rngs::StdRng::seed_from_u64(seed);
-        for i in 0..count {
+        for _ in 0..count {
             let person = Person {
                 id: Vec::from(rng.gen::<[u8; 32]>()),
                 owner_id: Vec::from(rng.gen::<[u8; 32]>()),
@@ -97,43 +97,43 @@ fn test_query_many() {
         "Prissie".to_string(),
     ];
 
-    // // A query getting all elements by firstName
-    //
-    // let query_value = json!({
-    //     "where": [
-    //     ],
-    //     "limit": 100,
-    //     "orderBy": [
-    //         ["firstName", "asc"]
-    //     ]
-    // });
-    // let where_cbor = common::value_to_cbor(query_value, None);
-    // let person_document_type = contract
-    //     .document_types
-    //     .get("person")
-    //     .expect("contract should have a person document type");
-    // let query = DriveQuery::from_cbor(where_cbor.as_slice(), &contract, &person_document_type)
-    //     .expect("query should be built");
-    // let (results, skipped) = query
-    //     .execute_no_proof(&mut drive.grove, None)
-    //     .expect("proof should be executed");
-    // let names: Vec<String> = results
-    //     .into_iter()
-    //     .map(|result| {
-    //         let document = Document::from_cbor(result.as_slice(), None, None)
-    //             .expect("we should be able to deserialize the cbor");
-    //         let first_name_value = document
-    //             .properties
-    //             .get("firstName")
-    //             .expect("we should be able to get the first name");
-    //         let first_name = first_name_value
-    //             .as_text()
-    //             .expect("the first name should be a string");
-    //         String::from(first_name)
-    //     })
-    //     .collect();
-    //
-    // assert_eq!(names, all_names);
+    // A query getting all elements by firstName
+
+    let query_value = json!({
+        "where": [
+        ],
+        "limit": 100,
+        "orderBy": [
+            ["firstName", "asc"]
+        ]
+    });
+    let where_cbor = common::value_to_cbor(query_value, None);
+    let person_document_type = contract
+        .document_types
+        .get("person")
+        .expect("contract should have a person document type");
+    let query = DriveQuery::from_cbor(where_cbor.as_slice(), &contract, &person_document_type)
+        .expect("query should be built");
+    let (results, _) = query
+        .execute_no_proof(&mut drive.grove, None)
+        .expect("proof should be executed");
+    let names: Vec<String> = results
+        .into_iter()
+        .map(|result| {
+            let document = Document::from_cbor(result.as_slice(), None, None)
+                .expect("we should be able to deserialize the cbor");
+            let first_name_value = document
+                .properties
+                .get("firstName")
+                .expect("we should be able to get the first name");
+            let first_name = first_name_value
+                .as_text()
+                .expect("the first name should be a string");
+            String::from(first_name)
+        })
+        .collect();
+
+    assert_eq!(names, all_names);
 
     // A query getting all people who's first name is before Chris
 
@@ -404,7 +404,7 @@ fn test_query_many() {
         .document_types
         .get("person")
         .expect("contract should have a person document type");
-    let query = DriveQuery::from_cbor(where_cbor.as_slice(), &contract, &person_document_type)
+    let query = DriveQuery::from_cbor(where_cbor.as_slice(), &contract, person_document_type)
         .expect("query should be built");
     let (results, _) = query
         .execute_no_proof(&mut drive.grove, None)
@@ -445,7 +445,7 @@ fn test_query_many() {
         .document_types
         .get("person")
         .expect("contract should have a person document type");
-    let query = DriveQuery::from_cbor(where_cbor.as_slice(), &contract, &person_document_type)
+    let query = DriveQuery::from_cbor(where_cbor.as_slice(), &contract, person_document_type)
         .expect("query should be built");
     let (results, _) = query
         .execute_no_proof(&mut drive.grove, None)
@@ -493,7 +493,7 @@ fn test_query_many() {
         .document_types
         .get("person")
         .expect("contract should have a person document type");
-    let query = DriveQuery::from_cbor(where_cbor.as_slice(), &contract, &person_document_type)
+    let query = DriveQuery::from_cbor(where_cbor.as_slice(), &contract, person_document_type)
         .expect("query should be built");
     let (results, _) = query
         .execute_no_proof(&mut drive.grove, None)
