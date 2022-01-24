@@ -1033,27 +1033,16 @@ impl<'a> DriveQuery<'a> {
                 Some((first, left_over)) => {
                     let mut inner_query = Query::new_with_direction(first.ascending);
                     inner_query.insert_all();
-                    if left_over.len() > 0 {
-                        recursive_insert(Some(&mut inner_query), left_over.to_vec(), unique);
-                    } else {
-                        match unique {
-                            true => {
-                                inner_query.set_subquery_key(b"0".to_vec());
-                            }
-                            false => {
-                                inner_query.set_subquery_key(b"0".to_vec());
-                                // we just get all by document id order ascending
-                                let mut full_query = Query::new();
-                                full_query.insert_all();
-                                inner_query.set_subquery(full_query);
-                            }
+                    recursive_insert(Some(&mut inner_query), left_over.to_vec(), unique);
+                    match query {
+                        None => {
+                            Some(inner_query)
                         }
-                    }
-                    if query.is_some() {
-                        query.unwrap().set_subquery(inner_query);
-                        None
-                    } else {
-                        Some(inner_query)
+                        Some(query) => {
+                            query.set_subquery(inner_query);
+                            query.set_subquery_key(first.name.as_bytes().to_vec());
+                            None
+                        }
                     }
                 }
             }
