@@ -35,7 +35,11 @@ class BlockHeadersReader extends EventEmitter {
    */
   async readHistorical(fromBlockHeight, toBlockHeight) {
     const totalAmount = toBlockHeight - fromBlockHeight + 1;
-    if (totalAmount < 1) {
+    if (totalAmount === 0) {
+      return;
+    }
+
+    if (totalAmount < 0) {
       throw new Error(`Invalid total amount of headers to read: ${totalAmount}`);
     }
 

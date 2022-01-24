@@ -5,14 +5,12 @@ const BlockHeadersReader = require('./BlockHeadersReader');
 /**
  * @typedef {BlockHeadersProviderOptions} BlockHeadersProviderOptions
  * @property {string} [network=testnet]
- * @property {boolean} [autoStart=false]
  * @property {number} [maxParallelStreams=5] max parallel streams to read historical block headers
  * @property {number} [targetBatchSize=100000] a target batch size per stream
  * @property {number} [maxRetries=10] max amount of retries per stream connection
  */
 const defaultOptions = {
   network: 'testnet',
-  autoStart: false,
   maxParallelStreams: 5,
   targetBatchSize: 100000,
   fromBlockHeight: 1,
@@ -54,27 +52,25 @@ class BlockHeadersProvider {
       },
     );
 
-    blockHeadersReader.on(BlockHeadersReader.EVENTS.BLOCK_HEADERS, (headers) => {
-      this.spvChain.addHeaders(headers.map((header) => Buffer.from(header)));
+    blockHeadersReader.on(BlockHeadersReader.EVENTS.ERROR, (e) => {
+      throw e;
     });
 
-    blockHeadersReader
-      .on(BlockHeadersReader.EVENTS.HISTORICAL_BLOCK_HEADERS_OBTAINED, () => {
-        blockHeadersReader
-          .subscribeToNew(bestBlockHeight)
-          .catch((e) => {
-            throw e;
-          });
-      });
-
-    blockHeadersReader.on('error', (e) => {
-      throw e;
+    blockHeadersReader.on(BlockHeadersReader.EVENTS.BLOCK_HEADERS, (headers) => {
+      try {
+        this.spvChain.addHeaders(headers.map((header) => Buffer.from(header)));
+      } catch (e) {
+        // throw e;
+        console.log(e);
+      }
     });
 
     await blockHeadersReader.readHistorical(
       this.options.fromBlockHeight,
-      bestBlockHeight,
+      bestBlockHeight - 1,
     );
+
+    await blockHeadersReader.subscribeToNew(bestBlockHeight);
   }
 }
 

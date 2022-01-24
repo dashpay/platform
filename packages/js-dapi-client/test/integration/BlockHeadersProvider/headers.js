@@ -204,4 +204,4 @@ const headers = [
   },
 ];
 
-module.exports = headers.map((header) => new BlockHeader(header));
+module.exports = headers.map((header) => new BlockHeader({ ...header, bits: parseInt(header.bits, 16) }));
