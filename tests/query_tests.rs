@@ -38,10 +38,7 @@ impl Person {
                 id: Vec::from(rng.gen::<[u8; 32]>()),
                 owner_id: Vec::from(rng.gen::<[u8; 32]>()),
                 first_name: first_names.choose(&mut rng).unwrap().clone(),
-                middle_name: middle_names
-                    .choose(&mut rng)
-                    .unwrap()
-                    .clone(),
+                middle_name: middle_names.choose(&mut rng).unwrap().clone(),
                 last_name: last_names.choose(&mut rng).unwrap().clone(),
                 age: rng.gen_range(0..85),
             };
@@ -51,7 +48,7 @@ impl Person {
     }
 }
 
-pub fn setup(count: u32, seed : u64) -> (Drive, Contract) {
+pub fn setup(count: u32, seed: u64) -> (Drive, Contract) {
     // setup code
     let (mut drive, contract) = common::setup_contract(
         "family",
@@ -88,63 +85,144 @@ pub fn setup(count: u32, seed : u64) -> (Drive, Contract) {
 #[test]
 fn test_query_many() {
     let (mut drive, contract) = setup(10, 73509);
-    // let all_names = vec!["Adey".to_string(), "Briney".to_string(), "Cammi".to_string(), "Celinda".to_string(), "Dalia".to_string(), "Gilligan".to_string(), "Kevina".to_string(), "Meta".to_string(), "Noellyn".to_string(), "Prissie".to_string()];
-    //
-    // // A query getting all elements by firstName
-    //
-    // let query_value = json!({
-    //     "where": [
-    //     ],
-    //     "startAt": 0,
-    //     "limit": 100,
-    //     "orderBy": [
-    //         ["firstName", "asc"]
-    //     ]
-    // });
-    // let where_cbor = common::value_to_cbor(query_value, None);
-    // let person_document_type = contract.document_types.get("person").expect("contract should have a person document type");
-    // let query = DriveQuery::from_cbor(where_cbor.as_slice(), &contract, &person_document_type).expect("query should be built");
-    // let (results, skipped) = query.execute_no_proof(&mut drive.grove, None).expect("proof should be executed");
-    // let names: Vec<String> = results
-    //     .into_iter()
-    //     .map(|result| {
-    //         let document = Document::from_cbor(result.as_slice(), None, None).expect("we should be able to deserialize the cbor");
-    //         let first_name_value = document.properties.get("firstName").expect("we should be able to get the first name");
-    //         let first_name = first_name_value.as_text().expect("the first name should be a string");
-    //         String::from(first_name)
-    //     })
-    //     .collect();
-    //
-    // assert_eq!(names, all_names);
-    //
-    // // A query getting all people who's first name is before Chris
-    //
-    // let query_value = json!({
-    //     "where": [
-    //         ["firstName", "<", "Chris"]
-    //     ],
-    //     "startAt": 0,
-    //     "limit": 100,
-    //     "orderBy": [
-    //         ["firstName", "asc"]
-    //     ]
-    // });
-    // let where_cbor = common::value_to_cbor(query_value, None);
-    // let person_document_type = contract.document_types.get("person").expect("contract should have a person document type");
-    // let query = DriveQuery::from_cbor(where_cbor.as_slice(), &contract, &person_document_type).expect("query should be built");
-    // let (results, skipped) = query.execute_no_proof(&mut drive.grove, None).expect("proof should be executed");
-    // let names: Vec<String> = results
-    //     .into_iter()
-    //     .map(|result| {
-    //         let document = Document::from_cbor(result.as_slice(), None, None).expect("we should be able to deserialize the cbor");
-    //         let first_name_value = document.properties.get("firstName").expect("we should be able to get the first name");
-    //         let first_name = first_name_value.as_text().expect("the first name should be a string");
-    //         String::from(first_name)
-    //     })
-    //     .collect();
-    //
-    // let expected_names_before_chris = vec!["Adey".to_string(), "Briney".to_string(), "Cammi".to_string(), "Celinda".to_string()];
-    // assert_eq!(names, expected_names_before_chris);
+    let all_names = vec![
+        "Adey".to_string(),
+        "Briney".to_string(),
+        "Cammi".to_string(),
+        "Celinda".to_string(),
+        "Dalia".to_string(),
+        "Gilligan".to_string(),
+        "Kevina".to_string(),
+        "Meta".to_string(),
+        "Noellyn".to_string(),
+        "Prissie".to_string(),
+    ];
+
+    // A query getting all elements by firstName
+
+    let query_value = json!({
+        "where": [
+        ],
+        "startAt": 0,
+        "limit": 100,
+        "orderBy": [
+            ["firstName", "asc"]
+        ]
+    });
+    let where_cbor = common::value_to_cbor(query_value, None);
+    let person_document_type = contract
+        .document_types
+        .get("person")
+        .expect("contract should have a person document type");
+    let query = DriveQuery::from_cbor(where_cbor.as_slice(), &contract, &person_document_type)
+        .expect("query should be built");
+    let (results, skipped) = query
+        .execute_no_proof(&mut drive.grove, None)
+        .expect("proof should be executed");
+    let names: Vec<String> = results
+        .into_iter()
+        .map(|result| {
+            let document = Document::from_cbor(result.as_slice(), None, None)
+                .expect("we should be able to deserialize the cbor");
+            let first_name_value = document
+                .properties
+                .get("firstName")
+                .expect("we should be able to get the first name");
+            let first_name = first_name_value
+                .as_text()
+                .expect("the first name should be a string");
+            String::from(first_name)
+        })
+        .collect();
+
+    assert_eq!(names, all_names);
+
+    // A query getting all people who's first name is before Chris
+
+    let query_value = json!({
+        "where": [
+            ["firstName", "<", "Chris"]
+        ],
+        "startAt": 0,
+        "limit": 100,
+        "orderBy": [
+            ["firstName", "asc"]
+        ]
+    });
+    let where_cbor = common::value_to_cbor(query_value, None);
+    let person_document_type = contract
+        .document_types
+        .get("person")
+        .expect("contract should have a person document type");
+    let query = DriveQuery::from_cbor(where_cbor.as_slice(), &contract, &person_document_type)
+        .expect("query should be built");
+    let (results, skipped) = query
+        .execute_no_proof(&mut drive.grove, None)
+        .expect("proof should be executed");
+    let names: Vec<String> = results
+        .into_iter()
+        .map(|result| {
+            let document = Document::from_cbor(result.as_slice(), None, None)
+                .expect("we should be able to deserialize the cbor");
+            let first_name_value = document
+                .properties
+                .get("firstName")
+                .expect("we should be able to get the first name");
+            let first_name = first_name_value
+                .as_text()
+                .expect("the first name should be a string");
+            String::from(first_name)
+        })
+        .collect();
+
+    let expected_names_before_chris = vec![
+        "Adey".to_string(),
+        "Briney".to_string(),
+        "Cammi".to_string(),
+        "Celinda".to_string(),
+    ];
+    assert_eq!(names, expected_names_before_chris);
+
+    // A query getting all people who's first name is before Chris
+
+    let query_value = json!({
+        "where": [
+            ["firstName", "StartsWith", "C"]
+        ],
+        "startAt": 0,
+        "limit": 100,
+        "orderBy": [
+            ["firstName", "asc"]
+        ]
+    });
+    let where_cbor = common::value_to_cbor(query_value, None);
+    let person_document_type = contract
+        .document_types
+        .get("person")
+        .expect("contract should have a person document type");
+    let query = DriveQuery::from_cbor(where_cbor.as_slice(), &contract, &person_document_type)
+        .expect("query should be built");
+    let (results, skipped) = query
+        .execute_no_proof(&mut drive.grove, None)
+        .expect("proof should be executed");
+    let names: Vec<String> = results
+        .into_iter()
+        .map(|result| {
+            let document = Document::from_cbor(result.as_slice(), None, None)
+                .expect("we should be able to deserialize the cbor");
+            let first_name_value = document
+                .properties
+                .get("firstName")
+                .expect("we should be able to get the first name");
+            let first_name = first_name_value
+                .as_text()
+                .expect("the first name should be a string");
+            String::from(first_name)
+        })
+        .collect();
+
+    let expected_names_before_chris = vec!["Cammi".to_string(), "Celinda".to_string()];
+    assert_eq!(names, expected_names_before_chris);
 
     // A query getting all people who's first name is between Chris and Noellyn included
 
@@ -174,14 +252,26 @@ fn test_query_many() {
     let names: Vec<String> = results
         .into_iter()
         .map(|result| {
-            let document = Document::from_cbor(result.as_slice(), None, None).expect("we should be able to deserialize the cbor");
-            let first_name_value = document.properties.get("firstName").expect("we should be able to get the first name");
-            let first_name = first_name_value.as_text().expect("the first name should be a string");
+            let document = Document::from_cbor(result.as_slice(), None, None)
+                .expect("we should be able to deserialize the cbor");
+            let first_name_value = document
+                .properties
+                .get("firstName")
+                .expect("we should be able to get the first name");
+            let first_name = first_name_value
+                .as_text()
+                .expect("the first name should be a string");
             String::from(first_name)
         })
         .collect();
 
-    let expected_between_names = vec!["Dalia".to_string(), "Gilligan".to_string(), "Kevina".to_string(), "Meta".to_string(), "Noellyn".to_string()];
+    let expected_between_names = vec![
+        "Dalia".to_string(),
+        "Gilligan".to_string(),
+        "Kevina".to_string(),
+        "Meta".to_string(),
+        "Noellyn".to_string(),
+    ];
 
     assert_eq!(names, expected_between_names);
 
@@ -210,9 +300,15 @@ fn test_query_many() {
     let names: Vec<String> = results
         .into_iter()
         .map(|result| {
-            let document = Document::from_cbor(result.as_slice(), None, None).expect("we should be able to deserialize the cbor");
-            let first_name_value = document.properties.get("firstName").expect("we should be able to get the first name");
-            let first_name = first_name_value.as_text().expect("the first name should be a string");
+            let document = Document::from_cbor(result.as_slice(), None, None)
+                .expect("we should be able to deserialize the cbor");
+            let first_name_value = document
+                .properties
+                .get("firstName")
+                .expect("we should be able to get the first name");
+            let first_name = first_name_value
+                .as_text()
+                .expect("the first name should be a string");
             String::from(first_name)
         })
         .collect();
@@ -246,14 +342,25 @@ fn test_query_many() {
     let names: Vec<String> = results
         .iter()
         .map(|result| {
-            let document = Document::from_cbor(result.as_slice(), None, None).expect("we should be able to deserialize the cbor");
-            let first_name_value = document.properties.get("firstName").expect("we should be able to get the first name");
-            let first_name = first_name_value.as_text().expect("the first name should be a string");
+            let document = Document::from_cbor(result.as_slice(), None, None)
+                .expect("we should be able to deserialize the cbor");
+            let first_name_value = document
+                .properties
+                .get("firstName")
+                .expect("we should be able to get the first name");
+            let first_name = first_name_value
+                .as_text()
+                .expect("the first name should be a string");
             String::from(first_name)
         })
         .collect();
 
-    let expected_names_45_over = vec!["Dalia".to_string(), "Gilligan".to_string(), "Kevina".to_string(), "Meta".to_string()];
+    let expected_names_45_over = vec![
+        "Dalia".to_string(),
+        "Gilligan".to_string(),
+        "Kevina".to_string(),
+        "Meta".to_string(),
+    ];
 
     assert_eq!(names, expected_names_45_over);
 
@@ -284,33 +391,55 @@ fn test_query_many() {
     let names: Vec<String> = results
         .iter()
         .map(|result| {
-            let document = Document::from_cbor(result.as_slice(), None, None).expect("we should be able to deserialize the cbor");
-            let first_name_value = document.properties.get("firstName").expect("we should be able to get the first name");
-            let first_name = first_name_value.as_text().expect("the first name should be a string");
+            let document = Document::from_cbor(result.as_slice(), None, None)
+                .expect("we should be able to deserialize the cbor");
+            let first_name_value = document
+                .properties
+                .get("firstName")
+                .expect("we should be able to get the first name");
+            let first_name = first_name_value
+                .as_text()
+                .expect("the first name should be a string");
             String::from(first_name)
         })
         .collect();
 
     // Kevina is 48 so she should be now excluded, Dalia is 68, Gilligan is 49 and Meta is 59
 
-    let expected_names_over_48 = vec!["Dalia".to_string(), "Gilligan".to_string(), "Meta".to_string()];
+    let expected_names_over_48 = vec![
+        "Dalia".to_string(),
+        "Gilligan".to_string(),
+        "Meta".to_string(),
+    ];
 
     assert_eq!(names, expected_names_over_48);
 
-    let ages: HashMap<String,u8> = results
+    let ages: HashMap<String, u8> = results
         .into_iter()
         .map(|result| {
-            let document = Document::from_cbor(result.as_slice(), None, None).expect("we should be able to deserialize the cbor");
-            let name_value = document.properties.get("firstName").expect("we should be able to get the first name");
-            let name = name_value.as_text().expect("the first name should be a string").to_string();
-            let age_value = document.properties.get("age").expect("we should be able to get the age");
+            let document = Document::from_cbor(result.as_slice(), None, None)
+                .expect("we should be able to deserialize the cbor");
+            let name_value = document
+                .properties
+                .get("firstName")
+                .expect("we should be able to get the first name");
+            let name = name_value
+                .as_text()
+                .expect("the first name should be a string")
+                .to_string();
+            let age_value = document
+                .properties
+                .get("age")
+                .expect("we should be able to get the age");
             let age_integer = age_value.as_integer().expect("age should be an integer");
             let age: u8 = age_integer.try_into().expect("expected u8 value");
             (name, age)
         })
         .collect();
 
-    let meta_age = ages.get("Meta").expect("we should be able to get Kevina as she is 48");
+    let meta_age = ages
+        .get("Meta")
+        .expect("we should be able to get Kevina as she is 48");
 
     assert_eq!(*meta_age, 59)
 }

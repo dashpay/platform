@@ -35,8 +35,6 @@ pub fn encode_document_field_type(
     field_type: &DocumentFieldType,
     value: &Value,
 ) -> Result<Vec<u8>, Error> {
-
-
     return match field_type {
         DocumentFieldType::String => {
             let value_as_text = value.as_text().ok_or(get_field_type_matching_error())?;
