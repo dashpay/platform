@@ -289,13 +289,9 @@ impl<'a> WhereClause {
         let starts_at_key_option = match start_at_document {
             None => None,
             Some((document, included)) => {
-                let raw_value_option =
-                    document.get_raw_for_document_type(self.field.as_str(), document_type, None)?;
-                match raw_value_option {
-                    // if the key doesn't exist then we should ignore the starts at key
-                    None => None,
-                    Some(raw_value_option) => Some((raw_value_option, *included)),
-                }
+                // if the key doesn't exist then we should ignore the starts at key
+                document.get_raw_for_document_type(self.field.as_str(), document_type, None)?
+                    .map(|raw_value_option| (raw_value_option, *included))
             }
         };
 
@@ -309,26 +305,21 @@ impl<'a> WhereClause {
                         query.insert_key(key);
                     }
                     Some((starts_at_key, included)) => {
-                        if left_to_right {
-                            if starts_at_key < key || (included && starts_at_key == key) {
+                        if  ( left_to_right && starts_at_key < key) ||
+                            (!left_to_right && starts_at_key > key) ||
+                            (included && starts_at_key == key) {
                                 query.insert_key(key);
                             }
-                        } else {
-                            if starts_at_key > key || (included && starts_at_key == key) {
-                                query.insert_key(key);
-                            }
-                        }
                     }
                 }
             }
             In => {
                 let in_values = match &self.value {
-                    Value::Array(array) => Some(array),
-                    _ => None,
-                }
-                .ok_or(Error::CorruptedData(String::from(
+                    Value::Array(array) => Ok(array),
+                    _ => Err(Error::CorruptedData(String::from(
                     "when using in operator you must provide an array of values",
-                )))?;
+                ))),
+                }?;
                 match starts_at_key_option {
                     None => {
                         for value in in_values.iter() {
@@ -341,14 +332,11 @@ impl<'a> WhereClause {
                         for value in in_values.iter() {
                             let key = document_type
                                 .serialize_value_for_key(self.field.as_str(), value)?;
-                            if left_to_right {
-                                if starts_at_key < key || (included && starts_at_key == key) {
-                                    query.insert_key(key);
-                                }
-                            } else {
-                                if starts_at_key > key || (included && starts_at_key == key) {
-                                    query.insert_key(key);
-                                }
+
+                            if  ( left_to_right && starts_at_key < key) ||
+                                (!left_to_right && starts_at_key > key) ||
+                                (included && starts_at_key == key) {
+                                query.insert_key(key);
                             }
                         }
                     }
@@ -363,20 +351,16 @@ impl<'a> WhereClause {
                         if left_to_right {
                             if starts_at_key <= key {
                                 query.insert_range_after(key..);
+                            } else if included {
+                                query.insert_range_from(starts_at_key..);
                             } else {
-                                if included {
-                                    query.insert_range_from(starts_at_key..);
-                                } else {
-                                    query.insert_range_after(starts_at_key..);
-                                }
+                                query.insert_range_after(starts_at_key..);
                             }
-                        } else {
-                            if starts_at_key > key {
-                                if included {
-                                    query.insert_range_after_to_inclusive(key..=starts_at_key);
-                                } else {
-                                    query.insert_range_after_to(key..starts_at_key);
-                                }
+                        } else if starts_at_key > key {
+                            if included {
+                                query.insert_range_after_to_inclusive(key..=starts_at_key);
+                            } else {
+                                query.insert_range_after_to(key..starts_at_key);
                             }
                         }
                     }
@@ -391,23 +375,19 @@ impl<'a> WhereClause {
                         if left_to_right {
                             if starts_at_key < key || (included && starts_at_key == key) {
                                 query.insert_range_from(key..);
+                            } else if included {
+                                query.insert_range_from(starts_at_key..);
                             } else {
-                                if included {
-                                    query.insert_range_from(starts_at_key..);
-                                } else {
-                                    query.insert_range_after(starts_at_key..);
-                                }
+                                query.insert_range_after(starts_at_key..);
                             }
-                        } else {
-                            if included && starts_at_key == key {
-                                query.insert_key(key);
-                            } else if starts_at_key > key {
-                                if included {
-                                    query.insert_range_inclusive(key..=starts_at_key);
-                                } else {
-                                    query.insert_range(key..starts_at_key);
-                                }
+                        } else if starts_at_key > key {
+                            if included {
+                                query.insert_range_inclusive(key..=starts_at_key);
+                            } else {
+                                query.insert_range(key..starts_at_key);
                             }
+                        } else if included && starts_at_key == key {
+                            query.insert_key(key);
                         }
                     }
                 }
@@ -426,16 +406,12 @@ impl<'a> WhereClause {
                                     query.insert_range_after_to(key..starts_at_key);
                                 }
                             }
+                        } else if starts_at_key > key {
+                            query.insert_range_to(..key);
+                        } else if included {
+                            query.insert_range_to_inclusive(..=starts_at_key);
                         } else {
-                            if starts_at_key > key {
-                                query.insert_range_to(..key);
-                            } else {
-                                if included {
-                                    query.insert_range_to_inclusive(..=starts_at_key);
-                                } else {
-                                    query.insert_range_to(..starts_at_key);
-                                }
-                            }
+                            query.insert_range_to(..starts_at_key);
                         }
                     }
                 }
@@ -456,16 +432,12 @@ impl<'a> WhereClause {
                                     query.insert_range_after_to_inclusive(key..=starts_at_key);
                                 }
                             }
+                        } else if starts_at_key > key || (included && starts_at_key == key) {
+                            query.insert_range_to_inclusive(..=key);
+                        } else if included {
+                            query.insert_range_to_inclusive(..=starts_at_key);
                         } else {
-                            if starts_at_key > key || (included && starts_at_key == key) {
-                                query.insert_range_to_inclusive(..=key);
-                            } else {
-                                if included {
-                                    query.insert_range_to_inclusive(..=starts_at_key);
-                                } else {
-                                    query.insert_range_to(..starts_at_key);
-                                }
-                            }
+                            query.insert_range_to(..starts_at_key);
                         }
                     }
                 }
@@ -490,21 +462,18 @@ impl<'a> WhereClause {
                             } else if starts_at_key == right_key && included {
                                 query.insert_key(right_key);
                             }
-                        } else {
-                            if starts_at_key > right_key || (included && starts_at_key == right_key)
-                            {
-                                query.insert_range_inclusive(left_key..=right_key)
-                            } else if starts_at_key == right_key {
-                                query.insert_range(left_key..right_key)
-                            } else if starts_at_key > left_key && starts_at_key < right_key {
-                                if included {
-                                    query.insert_range_inclusive(left_key..=starts_at_key);
-                                } else {
-                                    query.insert_range(left_key..starts_at_key);
-                                }
-                            } else if starts_at_key == left_key && included {
-                                query.insert_key(left_key);
+                        } else if starts_at_key > right_key || (included && starts_at_key == right_key)
+                            {query.insert_range_inclusive(left_key..=right_key)
+                        } else if starts_at_key == right_key {
+                            query.insert_range(left_key..right_key)
+                        } else if starts_at_key > left_key && starts_at_key < right_key {
+                            if included {
+                                query.insert_range_inclusive(left_key..=starts_at_key);
+                            } else {
+                                query.insert_range(left_key..starts_at_key);
                             }
+                        } else if starts_at_key == left_key && included {
+                            query.insert_key(left_key);
                         }
                     }
                 }
@@ -524,17 +493,15 @@ impl<'a> WhereClause {
                                     query.insert_range_after_to(starts_at_key..right_key);
                                 }
                             }
-                        } else {
-                            if starts_at_key > right_key {
-                                query.insert_range_inclusive(left_key..=right_key)
-                            } else if starts_at_key == right_key {
-                                query.insert_range(left_key..right_key)
-                            } else if starts_at_key > left_key && starts_at_key < right_key {
-                                if included {
-                                    query.insert_range_after_to_inclusive(left_key..=starts_at_key);
-                                } else {
-                                    query.insert_range_after_to(left_key..starts_at_key);
-                                }
+                        } else if starts_at_key > right_key {
+                            query.insert_range_inclusive(left_key..=right_key)
+                        } else if starts_at_key == right_key {
+                            query.insert_range(left_key..right_key)
+                        } else if starts_at_key > left_key && starts_at_key < right_key {
+                            if included {
+                                query.insert_range_after_to_inclusive(left_key..=starts_at_key);
+                            } else {
+                                query.insert_range_after_to(left_key..starts_at_key);
                             }
                         }
                     }
@@ -558,16 +525,13 @@ impl<'a> WhereClause {
                             } else if starts_at_key == right_key && included {
                                 query.insert_key(right_key);
                             }
-                        } else {
-                            if starts_at_key > right_key || (included && starts_at_key == right_key)
-                            {
-                                query.insert_range_after_to_inclusive(left_key..=right_key)
-                            } else if starts_at_key > left_key && starts_at_key < right_key {
-                                if included {
-                                    query.insert_range_inclusive(left_key..=starts_at_key);
-                                } else {
-                                    query.insert_range(left_key..starts_at_key);
-                                }
+                        } else if starts_at_key > right_key || (included && starts_at_key == right_key)
+                            {query.insert_range_after_to_inclusive(left_key..=right_key)
+                        } else if starts_at_key > left_key && starts_at_key < right_key {
+                            if included {
+                                query.insert_range_inclusive(left_key..=starts_at_key);
+                            } else {
+                                query.insert_range(left_key..starts_at_key);
                             }
                         }
                     }
@@ -590,18 +554,16 @@ impl<'a> WhereClause {
                                     query.insert_range_after_to(starts_at_key..right_key);
                                 }
                             }
-                        } else {
-                            if starts_at_key >= right_key {
-                                query.insert_range(left_key..right_key)
-                            } else if starts_at_key > left_key && starts_at_key < right_key {
-                                if included {
-                                    query.insert_range_inclusive(left_key..=starts_at_key);
-                                } else {
-                                    query.insert_range(left_key..starts_at_key);
-                                }
-                            } else if starts_at_key == left_key && included {
-                                query.insert_key(left_key);
+                        } else if starts_at_key >= right_key {
+                            query.insert_range(left_key..right_key)
+                        } else if starts_at_key > left_key && starts_at_key < right_key {
+                            if included {
+                                query.insert_range_inclusive(left_key..=starts_at_key);
+                            } else {
+                                query.insert_range(left_key..starts_at_key);
                             }
+                        } else if starts_at_key == left_key && included {
+                            query.insert_key(left_key);
                         }
                     }
                 }
@@ -631,18 +593,16 @@ impl<'a> WhereClause {
                                     query.insert_range_after_to(starts_at_key..right_key);
                                 }
                             }
-                        } else {
-                            if starts_at_key >= right_key {
-                                query.insert_range(left_key..right_key)
-                            } else if starts_at_key > left_key && starts_at_key < right_key {
-                                if included {
-                                    query.insert_range_inclusive(left_key..=starts_at_key);
-                                } else {
-                                    query.insert_range(left_key..starts_at_key);
-                                }
-                            } else if starts_at_key == left_key && included {
-                                query.insert_key(left_key);
+                        } else if starts_at_key >= right_key {
+                            query.insert_range(left_key..right_key)
+                        } else if starts_at_key > left_key && starts_at_key < right_key {
+                            if included {
+                                query.insert_range_inclusive(left_key..=starts_at_key);
+                            } else {
+                                query.insert_range(left_key..starts_at_key);
                             }
+                        } else if starts_at_key == left_key && included {
+                            query.insert_key(left_key);
                         }
                     }
                 }
@@ -817,8 +777,8 @@ impl<'a> DriveQuery<'a> {
             start_at_included = true;
         }
 
-        let mut start_at: Option<Vec<u8>> =
-            start_option.map_or(None, |id_cbor| bytes_for_system_value(id_cbor));
+        let start_at: Option<Vec<u8>> =
+            start_option.and_then(bytes_for_system_value);
 
         let order_by: IndexMap<String, OrderClause> = query_document
             .get("orderBy")

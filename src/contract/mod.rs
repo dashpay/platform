@@ -494,11 +494,10 @@ impl Document {
                     "$id" => Ok(Some(self.id.clone())),
                     "$ownerId" => Ok(Some(self.owner_id.clone())),
                     _ => {
-                        let document_type = contract.document_types.get(document_type_name).ok_or(
-                            Error::CorruptedData(String::from(
+                        let document_type = contract.document_types.get(document_type_name)
+                            .ok_or_else(|| Error::CorruptedData(String::from(
                                 "document type should exist for name",
-                            )),
-                        )?;
+                            )))?;
                         Ok(Some(document_type.serialize_value_for_key(key, value)?))
                     }
                 },
@@ -664,8 +663,7 @@ pub fn bytes_for_system_value(value: &Value) -> Option<Vec<u8>> {
                 .iter()
                 .map(|byte| match byte {
                     Value::Integer(int) => {
-                        let value_as_u8: u8 = int
-                            .clone()
+                        let value_as_u8: u8 = (*int)
                             .try_into()
                             .map_err(|_| Error::CorruptedData(String::from("expected u8 value")))?;
                         Ok(value_as_u8)
@@ -677,7 +675,7 @@ pub fn bytes_for_system_value(value: &Value) -> Option<Vec<u8>> {
                 .collect::<Result<Vec<u8>, Error>>();
             match bytes_result {
                 Ok(bytes) => Some(bytes),
-                Err(e) => None,
+                Err(_) => None,
             }
         }
         _ => None,
@@ -690,8 +688,7 @@ fn bytes_for_system_value_from_hash_map(
 ) -> Option<Vec<u8>> {
     document
         .get(key)
-        .map(|id_cbor| bytes_for_system_value(id_cbor))
-        .flatten()
+        .and_then(bytes_for_system_value)
 }
 
 #[cfg(test)]
