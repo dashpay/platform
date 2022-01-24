@@ -114,7 +114,7 @@ fn test_query_many() {
         .expect("contract should have a person document type");
     let query = DriveQuery::from_cbor(where_cbor.as_slice(), &contract, &person_document_type)
         .expect("query should be built");
-    let (results, skipped) = query
+    let (results, _) = query
         .execute_no_proof(&mut drive.grove, None)
         .expect("proof should be executed");
     let names: Vec<String> = results
