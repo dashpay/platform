@@ -5,7 +5,6 @@ use ciborium::value::{Value as CborValue, Value};
 use grovedb::Error;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::ops::Not;
 
 // contract
 // - id
@@ -18,27 +17,27 @@ use std::ops::Not;
 //               - unique
 
 // Struct Definitions
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Debug)]
 pub struct Contract {
     pub document_types: HashMap<String, DocumentType>,
     pub id: Vec<u8>,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Debug)]
 pub struct DocumentType {
     pub name: String,
     pub indices: Vec<Index>,
     pub properties: HashMap<String, types::DocumentFieldType>,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Debug)]
 pub struct Document {
     pub id: Vec<u8>,
     pub properties: HashMap<String, CborValue>,
     pub owner_id: Vec<u8>,
 }
 
-#[derive(Clone, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize, Debug)]
 pub struct Index {
     pub properties: Vec<IndexProperty>,
     pub unique: bool,
@@ -50,32 +49,43 @@ impl Index {
     // with leftovers permitted.
     // If a sort_on value is provided it must match the last index property.
     // The number returned is the number of unused index properties
-    pub fn matches(&self, index_names: &[&str], sort_on: Option<&str>) -> Option<u16> {
+    pub fn matches(&self, index_names: &[&str], in_field_name: Option<&str>, sort_on: Option<&str>) -> Option<u16> {
+        let last_property = self.properties.last();
+        if last_property.is_none() {
+            return None;
+        }
         let mut d = self.properties.len();
         if sort_on.is_some() {
-            let last_property = self.properties.last();
-            if last_property.is_none() {
+            if last_property.unwrap().name.as_str() != sort_on.unwrap() {
                 return None;
-            } else if last_property.unwrap().name.as_str() != sort_on.unwrap() {
-                return None;
-            } else {
-                let last_search_name = index_names.last();
-                if last_search_name.is_some() {
-                    if *last_search_name.unwrap() != sort_on.unwrap() {
-                        // we can remove the -1 here
-                        // this is a case for example if we have an index on person's name and age
-                        // where we say name == 'Sam' sort by age
-                        // there is no field operator on age
-                        // The return value for name == 'Sam' sort by age would be 0
-                        // The return value for name == 'Sam and age > 5 sort by age would be 0
-                        // the return value for sort by age would be 1
-                        d -= 1;
-                    }
-                }
+            } else if !index_names.iter().any(|&a| a == sort_on.unwrap()) {
+                // we can remove the -1 here
+                // this is a case for example if we have an index on person's name and age
+                // where we say name == 'Sam' sort by age
+                // there is no field operator on age
+                // The return value for name == 'Sam' sort by age would be 0
+                // The return value for name == 'Sam and age > 5 sort by age would be 0
+                // the return value for sort by age would be 1
+                d -= 1;
             }
         }
-        for (property_name, search_name) in self.properties.iter().zip(index_names.iter()) {
-            if property_name.name.as_str() != *search_name {
+
+        // the in field can only be on the last or before last property
+        if in_field_name.is_some() && last_property.unwrap().name.as_str() != in_field_name.unwrap() {
+            // it can also be on the before last
+            if self.properties.len() == 1 {
+                return None;
+            }
+            let before_last_property = self.properties.get(self.properties.len() - 2);
+            if before_last_property.is_none() {
+                return None;
+            }
+            if before_last_property.unwrap().name.as_str() != in_field_name.unwrap() {
+                return None;
+            }
+        }
+        for search_name in index_names.iter() {
+            if !self.properties.iter().any(|property| property.name.as_str() == *search_name) {
                 return None;
             }
             d -= 1;
@@ -85,7 +95,7 @@ impl Index {
     }
 }
 
-#[derive(Clone, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize, Debug)]
 pub struct IndexProperty {
     pub(crate) name: String,
     pub(crate) ascending: bool,
@@ -96,14 +106,16 @@ impl Contract {
     pub fn from_cbor(contract_cbor: &[u8]) -> Result<Self, Error> {
         let (version, read_contract_cbor) = contract_cbor.split_at(4);
         if !Drive::check_protocol_version_bytes(version) {
-            return Err(Error::CorruptedData(String::from("invalid protocol version")));
+            return Err(Error::CorruptedData(String::from(
+                "invalid protocol version",
+            )));
         }
         // Deserialize the contract
         let contract: HashMap<String, CborValue> = ciborium::de::from_reader(read_contract_cbor)
             .map_err(|_| Error::CorruptedData(String::from("unable to decode contract")))?;
 
         // Get the contract id
-        let contract_id = base58_value_as_bytes_from_hash_map(&contract, "$id").ok_or(
+        let contract_id = bytes_for_system_value_from_hash_map(&contract, "$id").ok_or(
             Error::CorruptedData(String::from("unable to get contract id")),
         )?;
 
@@ -182,15 +194,18 @@ impl Contract {
 }
 
 impl DocumentType {
+    // index_names can be in any order
+    // in field name must be in the last two indexes.
     pub fn index_for_types(
         &self,
         index_names: &[&str],
+        in_field_name: Option<&str>,
         sort_on: Option<&str>,
     ) -> Option<(&Index, u16)> {
         let mut best_index: Option<(&Index, u16)> = None;
         let mut best_difference = u16::MAX;
         for index in self.indices.iter() {
-            let difference_option = index.matches(index_names, sort_on);
+            let difference_option = index.matches(index_names, in_field_name, sort_on);
             if difference_option.is_some() {
                 let difference = difference_option.unwrap();
                 if difference == 0 {
@@ -317,34 +332,73 @@ impl DocumentType {
 }
 
 impl Document {
-    pub fn from_cbor(document_cbor: &[u8], owner_id: &[u8]) -> Result<Self, Error> {
-        // we need to start by verifying that the owner_id is a 256 bit number (32 bytes)
-        if owner_id.len() != 32 {
-            Err(Error::CorruptedData(String::from("invalid owner id")))?
-        }
+    pub fn from_cbor(
+        document_cbor: &[u8],
+        document_id: Option<&[u8]>,
+        owner_id: Option<&[u8]>,
+    ) -> Result<Self, Error> {
         let (version, read_document_cbor) = document_cbor.split_at(4);
         if !Drive::check_protocol_version_bytes(version) {
-            return Err(Error::CorruptedData(String::from("invalid protocol version")));
+            return Err(Error::CorruptedData(String::from(
+                "invalid protocol version",
+            )));
         }
         // first we need to deserialize the document and contract indices
         // we would need dedicated deserialization functions based on the document type
-        let mut document: HashMap<String, CborValue> = ciborium::de::from_reader(read_document_cbor)
-            .map_err(|_| Error::CorruptedData(String::from("unable to decode contract")))?;
-        let document_id: Vec<u8> = base58_value_as_bytes_from_hash_map(&document, "$id").ok_or(
-            Error::CorruptedData(String::from("unable to get document id")),
-        )?;
-        document.remove("$id");
+        let mut document: HashMap<String, CborValue> =
+            ciborium::de::from_reader(read_document_cbor)
+                .map_err(|_| Error::CorruptedData(String::from("unable to decode contract")))?;
+
+        let owner_id = match owner_id {
+            None => {
+                let owner_id: Vec<u8> = bytes_for_system_value_from_hash_map(&document, "$ownerId")
+                    .ok_or(Error::CorruptedData(String::from(
+                        "unable to get document $ownerId",
+                    )))?;
+                document.remove("$ownerId");
+                owner_id
+            }
+            Some(owner_id) => {
+                // we need to start by verifying that the owner_id is a 256 bit number (32 bytes)
+                if owner_id.len() != 32 {
+                    Err(Error::CorruptedData(String::from("invalid owner id")))?
+                }
+                Vec::from(owner_id)
+            }
+        };
+
+        let id = match document_id {
+            None => {
+                let document_id: Vec<u8> = bytes_for_system_value_from_hash_map(&document, "$id")
+                    .ok_or(Error::CorruptedData(String::from(
+                    "unable to get document $id",
+                )))?;
+                document.remove("$id");
+                document_id
+            }
+            Some(document_id) => {
+                // we need to start by verifying that the document_id is a 256 bit number (32 bytes)
+                if document_id.len() != 32 {
+                    Err(Error::CorruptedData(String::from("invalid document id")))?
+                }
+                Vec::from(document_id)
+            }
+        };
 
         // dev-note: properties is everything other than the id
         let document = Document {
             properties: document,
-            owner_id: Vec::from(owner_id),
-            id: document_id,
+            owner_id,
+            id,
         };
         Ok(document)
     }
 
-    pub fn from_cbor_with_id(document_cbor: &[u8], document_id: &[u8], owner_id: &[u8]) -> Result<Self, Error> {
+    pub fn from_cbor_with_id(
+        document_cbor: &[u8],
+        document_id: &[u8],
+        owner_id: &[u8],
+    ) -> Result<Self, Error> {
         // we need to start by verifying that the owner_id is a 256 bit number (32 bytes)
         if owner_id.len() != 32 {
             Err(Error::CorruptedData(String::from("invalid owner id")))?
@@ -356,13 +410,16 @@ impl Document {
 
         let (version, read_document_cbor) = document_cbor.split_at(4);
         if !Drive::check_protocol_version_bytes(version) {
-            return Err(Error::CorruptedData(String::from("invalid protocol version")));
+            return Err(Error::CorruptedData(String::from(
+                "invalid protocol version",
+            )));
         }
 
         // first we need to deserialize the document and contract indices
         // we would need dedicated deserialization functions based on the document type
-        let mut document: HashMap<String, CborValue> = ciborium::de::from_reader(read_document_cbor)
-            .map_err(|_| Error::CorruptedData(String::from("unable to decode contract")))?;
+        let mut document: HashMap<String, CborValue> =
+            ciborium::de::from_reader(read_document_cbor)
+                .map_err(|_| Error::CorruptedData(String::from("unable to decode contract")))?;
 
         // dev-note: properties is everything other than the id
         let document = Document {
@@ -382,18 +439,19 @@ impl Document {
         key: &str,
         document_type_name: &str,
         contract: &Contract,
+        owner_id: Option<&[u8]>,
     ) -> Result<Option<Vec<u8>>, Error> {
-        match self.properties.get(key) {
-            None => Ok(None),
-            Some(value) => {
-                let document_type =
-                    contract
-                        .document_types
-                        .get(document_type_name)
-                        .ok_or(Error::CorruptedData(String::from(
-                            "document type should exist for name",
-                        )))?;
-                Ok(Some(document_type.serialize_value_for_key(key, value)?))
+        if key == "$ownerId" && owner_id.is_some() {
+            Ok(Some(Vec::from(owner_id.unwrap())))
+        } else {
+            match self.properties.get(key) {
+                None => Ok(None),
+                Some(value) => {
+                    let document_type = contract.document_types.get(document_type_name).ok_or(
+                        Error::CorruptedData(String::from("document type should exist for name")),
+                    )?;
+                    Ok(Some(document_type.serialize_value_for_key(key, value)?))
+                }
             }
         }
     }
@@ -544,21 +602,39 @@ fn cbor_inner_bool_value(document_type: &Vec<(Value, Value)>, key: &str) -> Opti
     return None;
 }
 
-fn base58_value_as_bytes_from_hash_map(
+fn bytes_for_system_value_from_hash_map(
     document: &HashMap<String, CborValue>,
     key: &str,
 ) -> Option<Vec<u8>> {
     document
         .get(key)
-        .map(|id_cbor| {
-            if let CborValue::Text(b) = id_cbor {
-                match bs58::decode(b).into_vec() {
-                    Ok(data) => Some(data),
-                    Err(_) => None,
+        .map(|id_cbor| match id_cbor {
+            Value::Bytes(bytes) => Some(bytes.clone()),
+            Value::Text(text) => match bs58::decode(text).into_vec() {
+                Ok(data) => Some(data),
+                Err(_) => None,
+            },
+            Value::Array(array) => {
+                let bytes_result: Result<Vec<u8>, Error> = array
+                    .iter()
+                    .map(|byte| match byte {
+                        Value::Integer(int) => {
+                            let value_as_u8: u8 = int.clone().try_into().map_err(|_| {
+                                Error::CorruptedData(String::from("expected u8 value"))
+                            })?;
+                            Ok(value_as_u8)
+                        }
+                        _ => Err(Error::CorruptedData(String::from(
+                            "not an array of integers",
+                        ))),
+                    })
+                    .collect::<Result<Vec<u8>, Error>>();
+                match bytes_result {
+                    Ok(bytes) => Some(bytes),
+                    Err(e) => None,
                 }
-            } else {
-                None
             }
+            _ => None,
         })
         .flatten()
 }
@@ -567,10 +643,10 @@ fn base58_value_as_bytes_from_hash_map(
 mod tests {
     use crate::contract::Contract;
     use crate::drive::Drive;
-    use serde::{Deserialize, Serialize};
-    use std::{collections::HashMap, fs::File, io::BufReader, path::Path};
-    use std::ops::Not;
     use grovedb::Error;
+    use serde::{Deserialize, Serialize};
+    use std::ops::Not;
+    use std::{collections::HashMap, fs::File, io::BufReader, path::Path};
     use tempdir::TempDir;
 
     fn json_document_to_cbor(path: impl AsRef<Path>) -> Vec<u8> {
@@ -599,7 +675,8 @@ mod tests {
 
     #[test]
     fn test_import_contract() {
-        let dashpay_cbor = json_document_to_cbor("tests/supporting_files/contract/dashpay/dashpay-contract.json");
+        let dashpay_cbor =
+            json_document_to_cbor("tests/supporting_files/contract/dashpay/dashpay-contract.json");
         let contract = Contract::from_cbor(&dashpay_cbor).unwrap();
 
         assert_eq!(contract.document_types.len(), 3);
