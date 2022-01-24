@@ -80,10 +80,10 @@ describe('BlockHeadersProvider', () => {
     }
   });
 
-  describe('#subscribeToStream', () => {
-    let subscribeToStream;
+  describe('#fetchBatch', () => {
+    let fetchBatch;
     beforeEach(() => {
-      subscribeToStream = blockHeadersReader.createSubscribeToStream();
+      fetchBatch = blockHeadersReader.createBatchFetcher();
     });
 
     it('should emit BLOCK_HEADERS event', async () => {
@@ -94,7 +94,7 @@ describe('BlockHeadersProvider', () => {
         obtainedHeaders = [...obtainedHeaders, ...headers];
       });
 
-      await subscribeToStream(1, count);
+      await fetchBatch(1, count);
 
       expect(obtainedHeaders).to.deep.equal(mockedHeaders.slice(0, count));
     });
@@ -107,7 +107,7 @@ describe('BlockHeadersProvider', () => {
         obtainedHeaders = [...obtainedHeaders, ...headers];
       });
 
-      subscribeToStream(1, mockedHeaders.length).then(() => {
+      fetchBatch(1, mockedHeaders.length).then(() => {
         completed = true;
       });
 
@@ -131,7 +131,7 @@ describe('BlockHeadersProvider', () => {
     it('should throw an error in case the amount of retry attempts reached it\'s limit', async () => {
       const errorToThrow = new Error('');
       let errorThrown;
-      subscribeToStream(1, mockedHeaders.length).catch((e) => {
+      fetchBatch(1, mockedHeaders.length).catch((e) => {
         errorThrown = e;
       });
 

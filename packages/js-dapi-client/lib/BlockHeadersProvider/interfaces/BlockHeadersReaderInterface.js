@@ -6,7 +6,7 @@
  * @private
  * @function
  * @async
- * @name BlockHeadersReader#createSubscribeToStream
+ * @name BlockHeadersReader#createBatchFetcher
  * @returns {(function(*, *): Promise<void>)|*}
  */
 

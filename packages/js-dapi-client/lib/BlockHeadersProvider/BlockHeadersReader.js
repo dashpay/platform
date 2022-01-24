@@ -55,7 +55,7 @@ class BlockHeadersReader extends EventEmitter {
         const startingHeight = (batchIndex * actualBatchSize) + 1;
         const count = Math.min(actualBatchSize, toBlockHeight - startingHeight + 1);
 
-        const subscribe = this.createSubscribeToStream();
+        const subscribe = this.createBatchFetcher();
 
         return subscribe(startingHeight, count);
       });
@@ -90,15 +90,13 @@ class BlockHeadersReader extends EventEmitter {
   }
 
   /**
-   * A HOC that return a function to subscribe to block headers and chain locks
+   * A HOC that returns a function to subscribe to block headers and chain locks
    * and handles retry logic
    *
    * @private
-   * @param maxRetries - max amount fo retries for stream
-   * @param onStreamEnded - stream end callback
    * @returns {function(*, *): Promise<Stream>}
    */
-  createSubscribeToStream() {
+  createBatchFetcher() {
     let currentRetries = 0;
 
     /**
@@ -108,7 +106,7 @@ class BlockHeadersReader extends EventEmitter {
      * @param count
      * @returns {Promise<Stream>}
      */
-    const subscribeToStream = async (fromBlockHeight, count) => new Promise((resolve, reject) => {
+    const fetchBatch = async (fromBlockHeight, count) => new Promise((resolve, reject) => {
       let headersObtained = 0;
 
       this.coreMethods.subscribeToBlockHeadersWithChainLocks({
@@ -134,7 +132,7 @@ class BlockHeadersReader extends EventEmitter {
           if (currentRetries < this.maxRetries) {
             const newFromBlockHeight = fromBlockHeight + headersObtained;
             const newCount = count - headersObtained;
-            subscribeToStream(newFromBlockHeight, newCount)
+            fetchBatch(newFromBlockHeight, newCount)
               .then(resolve)
               .catch(reject);
           } else {
@@ -150,7 +148,7 @@ class BlockHeadersReader extends EventEmitter {
       });
     });
 
-    return subscribeToStream;
+    return fetchBatch;
   }
 }
 

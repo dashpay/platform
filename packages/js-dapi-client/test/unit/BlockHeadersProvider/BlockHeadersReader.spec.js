@@ -24,10 +24,10 @@ describe('BlockHeadersReader', () => {
     blockHeadersReader = new BlockHeadersReader(options);
   });
 
-  describe('#subscribeToStream', () => {
+  describe('#fetchBatch', () => {
     beforeEach(async () => {
-      const subscribeToStream = blockHeadersReader.createSubscribeToStream(5);
-      subscribeToStream(1, 1);
+      const fetchBatch = blockHeadersReader.createBatchFetcher(5);
+      fetchBatch(1, 1);
     });
 
     it('should subscribe to a stream', () => {
@@ -63,12 +63,12 @@ describe('BlockHeadersReader', () => {
     let subscribeFunction;
     beforeEach(function () {
       subscribeFunction = this.sinon.stub();
-      blockHeadersReader.createSubscribeToStream = this.sinon.stub().returns(subscribeFunction);
+      blockHeadersReader.createBatchFetcher = this.sinon.stub().returns(subscribeFunction);
     });
 
     it('should create only one stream in case the amount of blocks is too small', async () => {
       await blockHeadersReader.readHistorical(1, Math.ceil(options.targetBatchSize * 1.4));
-      expect(blockHeadersReader.createSubscribeToStream).to.be.calledOnce();
+      expect(blockHeadersReader.createBatchFetcher).to.be.calledOnce();
     });
 
     it('should evenly spread the load between streams', async () => {
@@ -92,7 +92,7 @@ describe('BlockHeadersReader', () => {
 
     it('should limit amount of streams in case batch size is too small compared to total amount', async () => {
       await blockHeadersReader.readHistorical(1, options.targetBatchSize * 10);
-      expect(blockHeadersReader.createSubscribeToStream.callCount)
+      expect(blockHeadersReader.createBatchFetcher.callCount)
         .to.equal(options.maxParallelStreams);
     });
 
