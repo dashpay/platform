@@ -223,4 +223,35 @@ describe('subscribeToBlockHeadersWithChainLocksHandlerFactory', () => {
       expect(e).to.be.instanceOf(InvalidArgumentGrpcError);
     }
   });
+
+  it.only('should use cache when subscribe several times', async function () {
+    const writableStub = this.sinon.stub(AcknowledgingWritable.prototype, 'write');
+
+    const blockHash = Buffer.from('00000bafbc94add76cb75e2ec92894837288a481e5c005f6563d91623bf8bc2c', 'hex');
+
+    let request = new BlockHeadersWithChainLocksRequest();
+    request.setFromBlockHash(blockHash);
+    request.setCount(0);
+
+    request = BlockHeadersWithChainLocksRequest.deserializeBinary(request.serializeBinary());
+
+    call = new GrpcCallMock(this.sinon, request);
+
+    coreAPIMock.getBestChainLock.resolves({
+      height: 1,
+      signature: Buffer.from('fakesig', 'hex'),
+      blockHash: Buffer.from('fakeHash', 'hex'),
+    });
+
+    coreAPIMock.getBlockStats.resolves({ height: 1 });
+
+    await subscribeToBlockHeadersWithChainLocksHandler(call);
+    await subscribeToBlockHeadersWithChainLocksHandler(call);
+    await subscribeToBlockHeadersWithChainLocksHandler(call);
+
+    expect(coreAPIMock.getBlockStats).to.be.calledOnceWithExactly(
+      blockHash.toString('hex'),
+      ['height'],
+    );
+  });
 });
