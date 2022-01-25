@@ -53,7 +53,9 @@ function synchronizeMasternodeIdentitiesFactory(
       // Create identities for all masternodes on the first sync
       newMasternodes = currentMNList;
     } else {
+      // simplifiedMasternodeList contains sml only for the last `smlMaxListsLimit` number of blocks
       if (coreHeight - lastSyncedCoreHeight > smlMaxListsLimit) {
+        // get diff directly from core
         const { result: rawDiff } = await coreRpcClient.protx('diff', 1, lastSyncedCoreHeight);
 
         previousMNList = new SimplifiedMNList(rawDiff).mnList;
