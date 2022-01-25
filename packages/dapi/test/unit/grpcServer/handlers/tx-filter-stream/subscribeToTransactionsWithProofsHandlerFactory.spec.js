@@ -92,6 +92,7 @@ describe('subscribeToTransactionsWithProofsHandlerFactory', () => {
 
     coreAPIMock = {
       getBlock: this.sinon.stub(),
+      getBlockStats: this.sinon.stub(),
       getBestBlockHeight: this.sinon.stub(),
       getBlockHash: this.sinon.stub(),
     };
@@ -122,6 +123,7 @@ describe('subscribeToTransactionsWithProofsHandlerFactory', () => {
     const request = new TransactionsWithProofsRequest();
 
     request.setBloomFilter(bloomFilterMessage);
+    request.setFromBlockHeight(1);
 
     call.request = request;
 
@@ -140,66 +142,15 @@ describe('subscribeToTransactionsWithProofsHandlerFactory', () => {
     }
   });
 
-  it('should respond with error if `fromBlockHeight is 0 and `fromBlockHash` is not set', async () => {
-    const bloomFilterMessage = new BloomFilter();
-
-    bloomFilterMessage.setVData(new Uint8Array());
-    bloomFilterMessage.setNTweak(1000);
-    bloomFilterMessage.setNFlags(100);
-    bloomFilterMessage.setNHashFuncs(10);
-
-    const request = new TransactionsWithProofsRequest();
-
-    request.setFromBlockHeight(0);
-    request.setBloomFilter(bloomFilterMessage);
-
-    call.request = request;
-
-    try {
-      await subscribeToTransactionsWithProofsHandler(call);
-
-      expect.fail('should fail with InvalidArgumentGrpcError');
-    } catch (e) {
-      expect(e).to.be.an.instanceOf(InvalidArgumentGrpcError);
-      expect(e.getMessage()).to.equal('minimum value for `fromBlockHeight` is 1');
-      expect(call.write).to.not.have.been.called();
-      expect(call.end).to.not.have.been.called();
-      expect(getMemPoolTransactionsMock).to.not.have.been.called();
-    }
-  });
-
-  it('should respond with error if if both fromBlockHash and fromBlockHeight are not specified', async () => {
-    const bloomFilterMessage = new BloomFilter();
-
-    bloomFilterMessage.setVData(new Uint8Array());
-    bloomFilterMessage.setNTweak(1000);
-    bloomFilterMessage.setNFlags(100);
-    bloomFilterMessage.setNHashFuncs(10);
-
-    const request = new TransactionsWithProofsRequest();
-
-    request.setBloomFilter(bloomFilterMessage);
-
-    call.request = request;
-
-    try {
-      await subscribeToTransactionsWithProofsHandler(call);
-
-      expect.fail('should fail with InvalidArgumentGrpcError');
-    } catch (e) {
-      expect(e).to.be.an.instanceOf(InvalidArgumentGrpcError);
-      expect(e.getMessage()).to.equal('minimum value for `fromBlockHeight` is 1');
-      expect(call.write).to.not.have.been.called();
-      expect(call.end).to.not.have.been.called();
-      expect(getMemPoolTransactionsMock).to.not.have.been.called();
-    }
-  });
-
   it('should respond with error if requested data length exceeded blockchain length', async () => {
-    call.request.setFromBlockHash('someBlockHash');
+    const blockHash = Buffer.from('00000bafbc94add76cb75e2ec92894837288a481e5c005f6563d91623bf8bc2c', 'hex');
+
+    call.request.setFromBlockHash(blockHash);
     call.request.setCount(100);
 
-    coreAPIMock.getBlock.resolves({ height: 1 });
+    call.request = TransactionsWithProofsRequest.deserializeBinary(call.request.serializeBinary());
+
+    coreAPIMock.getBlockStats.resolves({ height: 1 });
     coreAPIMock.getBestBlockHeight.resolves(10);
 
     try {
@@ -210,6 +161,10 @@ describe('subscribeToTransactionsWithProofsHandlerFactory', () => {
         'count is too big, could not fetch more than blockchain length',
       );
 
+      expect(coreAPIMock.getBlockStats).to.be.calledOnceWithExactly(
+        blockHash.toString('hex'),
+        ['height'],
+      );
       expect(call.write).to.not.have.been.called();
       expect(call.end).to.not.have.been.called();
       expect(getMemPoolTransactionsMock).to.not.have.been.called();
@@ -217,12 +172,18 @@ describe('subscribeToTransactionsWithProofsHandlerFactory', () => {
   });
 
   it('should subscribe to new transactions if count is not specified', async function it() {
-    call.request.setFromBlockHash('someBlockHash');
+    const blockHash = Buffer.from('00000bafbc94add76cb75e2ec92894837288a481e5c005f6563d91623bf8bc2c', 'hex');
+
+    call.request.setFromBlockHash(blockHash);
     call.request.setCount(0);
+
+    call.request = TransactionsWithProofsRequest.deserializeBinary(call.request.serializeBinary());
+
+    call = new GrpcCallMock(this.sinon, call.request);
 
     const writableStub = this.sinon.stub(AcknowledgingWritable.prototype, 'write');
 
-    coreAPIMock.getBlock.resolves({ height: 1 });
+    coreAPIMock.getBlockStats.resolves({ height: 1 });
     coreAPIMock.getBestBlockHeight.resolves(10);
 
     historicalTxData.push({
@@ -254,10 +215,14 @@ describe('subscribeToTransactionsWithProofsHandlerFactory', () => {
       nHashFuncs: 10,
     });
 
+    expect(coreAPIMock.getBlockStats).to.be.calledOnceWithExactly(
+      blockHash.toString('hex'),
+      ['height'],
+    );
     expect(getHistoricalTransactionsIteratorMock).to.have.been
       .calledOnceWith(
         filter,
-        Buffer.from('someBlockHash').toString('hex'),
+        1,
         10,
       );
     expect(getMemPoolTransactionsMock).to.have.been.calledOnce();
@@ -287,8 +252,13 @@ describe('subscribeToTransactionsWithProofsHandlerFactory', () => {
   });
 
   it('should end call and emit CLIENT_DISCONNECTED event when client disconnects', async () => {
-    call.request.setFromBlockHash('someHash');
-    coreAPIMock.getBlock.resolves({ height: 1 });
+    const blockHash = Buffer.from('00000bafbc94add76cb75e2ec92894837288a481e5c005f6563d91623bf8bc2c', 'hex');
+
+    call.request.setFromBlockHash(blockHash);
+
+    call.request = TransactionsWithProofsRequest.deserializeBinary(call.request.serializeBinary());
+
+    coreAPIMock.getBlockStats.resolves({ height: 1 });
 
     await subscribeToTransactionsWithProofsHandler(call);
 
@@ -300,6 +270,10 @@ describe('subscribeToTransactionsWithProofsHandlerFactory', () => {
       ProcessMediator.EVENTS.CLIENT_DISCONNECTED,
     );
 
+    expect(coreAPIMock.getBlockStats).to.be.calledOnceWithExactly(
+      blockHash.toString('hex'),
+      ['height'],
+    );
     expect(call.write).to.not.have.been.called();
     expect(call.end).to.have.been.calledOnce();
     expect(getMemPoolTransactionsMock).to.have.been.calledOnce();
@@ -312,7 +286,7 @@ describe('subscribeToTransactionsWithProofsHandlerFactory', () => {
     const error = new Error();
     error.code = -8;
 
-    coreAPIMock.getBlockHash.throws(error);
+    coreAPIMock.getBlockStats.throws(error);
 
     try {
       await subscribeToTransactionsWithProofsHandler(call);
@@ -321,23 +295,25 @@ describe('subscribeToTransactionsWithProofsHandlerFactory', () => {
     } catch (e) {
       expect(e).to.be.instanceOf(NotFoundGrpcError);
 
-      expect(e.getMessage()).to.equal(
-        'fromBlockHeight is bigger than block count',
-      );
+      expect(e.getMessage()).to.equal('Block 100 not found');
 
       expect(call.write).to.not.have.been.called();
       expect(call.end).to.not.have.been.called();
     }
   });
 
-  it('should respond with not found error if fromBlockHash is not found', async () => {
-    call.request.setFromBlockHash('someBlockHash');
+  it('should respond with not found error if Block not found', async () => {
+    const blockHash = Buffer.from('00000bafbc94add76cb75e2ec92894837288a481e5c005f6563d91623bf8bc2c', 'hex');
+
+    call.request.setFromBlockHash(blockHash);
     call.request.setCount(0);
+
+    call.request = TransactionsWithProofsRequest.deserializeBinary(call.request.serializeBinary());
 
     const error = new Error();
     error.code = -5;
 
-    coreAPIMock.getBlock.throws(error);
+    coreAPIMock.getBlockStats.throws(error);
 
     try {
       await subscribeToTransactionsWithProofsHandler(call);
@@ -345,24 +321,29 @@ describe('subscribeToTransactionsWithProofsHandlerFactory', () => {
       expect.fail('should fail with NotFoundGrpcError');
     } catch (e) {
       expect(e).to.be.instanceOf(NotFoundGrpcError);
-      expect(e.getMessage()).to.equal(
-        'fromBlockHash is not found',
-      );
+      expect(e.getMessage()).to.equal(`Block ${blockHash.toString('hex')} not found`);
 
+      expect(coreAPIMock.getBlockStats).to.be.calledOnceWithExactly(
+        blockHash.toString('hex'),
+        ['height'],
+      );
       expect(call.write).to.not.have.been.called();
       expect(call.end).to.not.have.been.called();
     }
   });
 
   it('should respond with Not Found error if fromBlockHash is not part of the best block chain', async () => {
-    const blockHash = 'someBlockHash';
-    call.request.setFromBlockHash(blockHash);
+    const blockHash = Buffer.from('00000bafbc94add76cb75e2ec92894837288a481e5c005f6563d91623bf8bc2c', 'hex');
+
+    call.request.setFromBlockHash(Buffer.from(blockHash, 'hex'));
     call.request.setCount(0);
 
-    const error = new Error();
-    error.code = -5;
+    call.request = TransactionsWithProofsRequest.deserializeBinary(call.request.serializeBinary());
 
-    coreAPIMock.getBlock.resolves({ height: 1, confirmations: -1 });
+    const error = new Error();
+    error.code = -8;
+
+    coreAPIMock.getBlockStats.throws(error);
 
     try {
       await subscribeToTransactionsWithProofsHandler(call);
@@ -370,12 +351,42 @@ describe('subscribeToTransactionsWithProofsHandlerFactory', () => {
       expect.fail('should throw NotFoundGrpcError');
     } catch (e) {
       expect(e).to.be.instanceOf(NotFoundGrpcError);
-      expect(e.getMessage()).to.equal(
-        `block ${Buffer.from(blockHash).toString('hex')} is not part of the best block chain`,
-      );
+      expect(e.getMessage()).to.equal(`Block ${blockHash.toString('hex')} not found`);
 
+      expect(coreAPIMock.getBlockStats).to.be.calledOnceWithExactly(
+        blockHash.toString('hex'),
+        ['height'],
+      );
       expect(call.write).to.not.have.been.called();
       expect(call.end).to.not.have.been.called();
+    }
+  });
+
+  it('should respond with error if `fromBlockHeight is 0 and `fromBlockHash` is not set', async () => {
+    const bloomFilterMessage = new BloomFilter();
+
+    bloomFilterMessage.setVData(new Uint8Array());
+    bloomFilterMessage.setNTweak(1000);
+    bloomFilterMessage.setNFlags(100);
+    bloomFilterMessage.setNHashFuncs(10);
+
+    const request = new TransactionsWithProofsRequest();
+
+    request.setFromBlockHeight(0);
+    request.setBloomFilter(bloomFilterMessage);
+
+    call.request = request;
+
+    try {
+      await subscribeToTransactionsWithProofsHandler(call);
+
+      expect.fail('should fail with InvalidArgumentGrpcError');
+    } catch (e) {
+      expect(e).to.be.an.instanceOf(InvalidArgumentGrpcError);
+      expect(e.getMessage()).to.equal('Minimum value for `fromBlockHeight` is 1');
+      expect(call.write).to.not.have.been.called();
+      expect(call.end).to.not.have.been.called();
+      expect(getMemPoolTransactionsMock).to.not.have.been.called();
     }
   });
 });

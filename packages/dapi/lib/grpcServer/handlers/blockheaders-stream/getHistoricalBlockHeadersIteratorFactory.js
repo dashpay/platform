@@ -22,21 +22,18 @@ function getBlocksToScan(batchIndex, numberOfBatches, totalCount) {
 function getHistoricalBlockHeadersIteratorFactory(coreRpcApi) {
   /**
    * @typedef getHistoricalBlockHeadersIterator
-   * @param fromBlockHash
-   * @param count
+   * @param fromBlockHeight {number}
+   * @param count {number}
    * @return {AsyncIterableIterator<BlockHeader[]>}
    */
   async function* getHistoricalBlockHeadersIterator(
-    fromBlockHash,
+    fromBlockHeight,
     count,
   ) {
-    // TODO: implement `getblockstats` in dashd-rpc and use instead of getBlock
-    const fromBlock = await coreRpcApi.getBlock(fromBlockHash);
-    const fromHeight = fromBlock.height;
     const numberOfBatches = Math.ceil(count / MAX_HEADERS_PER_REQUEST);
 
     for (let batchIndex = 0; batchIndex < numberOfBatches; batchIndex++) {
-      const currentHeight = fromHeight + batchIndex * MAX_HEADERS_PER_REQUEST;
+      const currentHeight = fromBlockHeight + batchIndex * MAX_HEADERS_PER_REQUEST;
       const blocksToScan = getBlocksToScan(batchIndex, numberOfBatches, count);
 
       const blockHash = await coreRpcApi.getBlockHash(currentHeight);
