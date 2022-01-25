@@ -12,8 +12,12 @@ const InvalidInstantAssetLockProofSignatureError = require('@dashevo/dpp/lib/err
 const IdentityAssetLockTransactionOutPointAlreadyExistsError = require('@dashevo/dpp/lib/errors/consensus/basic/identity/IdentityAssetLockTransactionOutPointAlreadyExistsError');
 const BalanceIsNotEnoughError = require('@dashevo/dpp/lib/errors/consensus/fee/BalanceIsNotEnoughError');
 
+const DAPIClient = require('@dashevo/dapi-client/lib/DAPIClient');
+const { hash } = require('@dashevo/dpp/lib/util/hash');
+const Identifier = require('@dashevo/dpp/lib/identifier/Identifier');
 const createClientWithFundedWallet = require('../../../lib/test/createClientWithFundedWallet');
 const wait = require('../../../lib/wait');
+const getDAPISeeds = require('../../../lib/test/getDAPISeeds');
 
 describe('Platform', () => {
   describe('Identity', () => {
@@ -455,6 +459,59 @@ describe('Platform', () => {
         expect(broadcastError.getCause()).to.be.an.instanceOf(
           IdentityAssetLockTransactionOutPointAlreadyExistsError,
         );
+      });
+    });
+
+    describe('Masternodes', () => {
+      let dapiClient;
+      const network = process.env.NETWORK;
+
+      beforeEach(() => {
+        dapiClient = new DAPIClient({
+          network,
+          seeds: getDAPISeeds(),
+        });
+      });
+
+      it('should receive masternode identities', async () => {
+        const bestBlockHash = await dapiClient.core.getBestBlockHash();
+        const baseBlockHash = await dapiClient.core.getBlockHash(1);
+
+        const { mnList } = await dapiClient.core.getMnListDiff(
+          baseBlockHash,
+          bestBlockHash,
+        );
+
+        for (const masternodeEntry of mnList) {
+          const masternodeIdentityId = Identifier.from(
+            hash(
+              Buffer.from(masternodeEntry.proRegTxHash, 'hex'),
+            ),
+          );
+
+          let fetchedIdentity = await client.platform.identities.get(
+            masternodeIdentityId,
+          );
+
+          expect(fetchedIdentity).to.be.not.null();
+
+          const operatorPubKey = Buffer.from(masternodeEntry.pubKeyOperator, 'hex');
+
+          const operatorIdentityHash = hash(
+            Buffer.concat([
+              masternodeIdentityId.toBuffer(),
+              operatorPubKey,
+            ]),
+          );
+
+          const operatorIdentityId = Identifier.from(operatorIdentityHash);
+
+          fetchedIdentity = await client.platform.identities.get(
+            operatorIdentityId,
+          );
+
+          expect(fetchedIdentity).to.be.not.null();
+        }
       });
     });
   });
