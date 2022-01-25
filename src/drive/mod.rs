@@ -22,7 +22,7 @@ pub const STORAGE_COST: i32 = 50;
 impl From<RootTree> for &'static [u8] {
     fn from(root_tree: RootTree) -> Self {
         match root_tree {
-            RootTree::Identities => b"0",
+            RootTree::Identities => b"\0",
             RootTree::ContractDocuments => b"1",
             RootTree::PublicKeyHashesToIdentities => b"2",
             RootTree::Misc => b"3",
@@ -33,7 +33,7 @@ impl From<RootTree> for &'static [u8] {
 impl From<RootTree> for Vec<u8> {
     fn from(root_tree: RootTree) -> Self {
         match root_tree {
-            RootTree::Identities => b"0".to_vec(),
+            RootTree::Identities => b"\0".to_vec(),
             RootTree::ContractDocuments => b"1".to_vec(),
             RootTree::PublicKeyHashesToIdentities => b"2".to_vec(),
             RootTree::Misc => b"3".to_vec(),
@@ -50,7 +50,7 @@ impl From<RootTree> for Vec<u8> {
 // //    [firstName, lastName, age]
 // //    [age]
 // //    =>
-// //    [firstName : [b"0", {lastName : [b"0", {age : b"0" }]}], age: b"0"],
+// //    [firstName : [b"\0", {lastName : [b"\0", {age : b"\0" }]}], age: b"\0"],
 // //
 // }
 
@@ -83,7 +83,7 @@ fn contract_documents_primary_key_path<'a>(
         contract_id,
         b"1",
         document_type_name.as_bytes(),
-        b"0",
+        b"\0",
     ]
 }
 
@@ -167,7 +167,7 @@ impl Drive {
         // the contract
         self.grove.insert(
             &contract_root_path,
-            b"0".to_vec(),
+            b"\0".to_vec(),
             contract_bytes,
             transaction,
         )?;
@@ -199,7 +199,7 @@ impl Drive {
             // primary key tree
             self.grove.insert(
                 &type_path,
-                b"0".to_vec(),
+                b"\0".to_vec(),
                 Element::empty_tree(),
                 transaction,
             )?;
@@ -233,7 +233,7 @@ impl Drive {
         // this will override the previous contract
         self.grove.insert(
             &contract_root_path,
-            b"0".to_vec(),
+            b"\0".to_vec(),
             contract_bytes,
             transaction,
         )?;
@@ -275,7 +275,7 @@ impl Drive {
 
         if let Ok(stored_element) = self
             .grove
-            .get(&*contract_root_path(&contract.id), b"0", transaction) {
+            .get(&*contract_root_path(&contract.id), b"\0", transaction) {
             already_exists = true;
             match stored_element {
                 Element::Item(stored_contract_bytes) => {
@@ -504,11 +504,11 @@ impl Drive {
                 // here we are inserting an empty tree that will have a subtree of all other index properties
                 self.grove.insert_if_not_exists(
                     &index_path_slices,
-                    b"0".to_vec(),
+                    b"\0".to_vec(),
                     Element::empty_tree(),
                     transaction,
                 )?;
-                index_path.push(b"0".to_vec());
+                index_path.push(b"\0".to_vec());
 
                 let index_path_slices: Vec<&[u8]> =
                     index_path.iter().map(|x| x.as_slice()).collect();
@@ -527,7 +527,7 @@ impl Drive {
                 // here we should return an error if the element already exists
                 let inserted = self.grove.insert_if_not_exists(
                     &index_path_slices,
-                    b"0".to_vec(),
+                    b"\0".to_vec(),
                     document_reference,
                     transaction,
                 )?;
@@ -728,7 +728,7 @@ impl Drive {
             // unique indexes will be stored under key "0"
             // non unique indices should have a tree at key "0" that has all elements based off of primary key
             if !index.unique {
-                index_path.push(b"0".to_vec());
+                index_path.push(b"\0".to_vec());
 
                 let index_path_slices: Vec<&[u8]> =
                     index_path.iter().map(|x| x.as_slice()).collect();
@@ -742,7 +742,7 @@ impl Drive {
 
                 // here we should return an error if the element already exists
                 self.grove
-                    .delete(&index_path_slices, b"0".to_vec(), transaction)?;
+                    .delete(&index_path_slices, b"\0".to_vec(), transaction)?;
             }
         }
         Ok(0)

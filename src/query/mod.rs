@@ -949,10 +949,10 @@ impl<'a> DriveQuery<'a> {
                         Some(query) => {
                             match unique {
                                 true => {
-                                    query.set_subquery_key(b"0".to_vec());
+                                    query.set_subquery_key(b"\0".to_vec());
                                 }
                                 false => {
-                                    query.set_subquery_key(b"0".to_vec());
+                                    query.set_subquery_key(b"\0".to_vec());
                                     // we just get all by document id order ascending
                                     let mut full_query = Query::new();
                                     full_query.insert_all();

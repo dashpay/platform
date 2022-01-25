@@ -213,7 +213,7 @@ impl Contract {
             &self.id,
             b"1",
             document_type_name.as_bytes(),
-            b"0",
+            b"\0",
         ]
     }
 }
