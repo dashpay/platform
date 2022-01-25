@@ -82,6 +82,7 @@ describe('handleUpdatedPubKeyOperatorFactory', () => {
       masternodeEntry,
       previousMasternodeEntry,
       dataContractFixture,
+      true,
     );
 
     expect(result).to.deep.equal({
@@ -109,6 +110,7 @@ describe('handleUpdatedPubKeyOperatorFactory', () => {
       masternodeEntry,
       previousMasternodeEntry,
       dataContractFixture,
+      false,
     );
 
     expect(result).to.deep.equal({
@@ -155,6 +157,7 @@ describe('handleUpdatedPubKeyOperatorFactory', () => {
       masternodeEntry,
       previousMasternodeEntry,
       dataContractFixture,
+      true,
     );
 
     expect(result).to.deep.equal({
@@ -167,6 +170,7 @@ describe('handleUpdatedPubKeyOperatorFactory', () => {
       Identifier.from('BWpTcdybaKcLLMXVErB8LJpEhp9XKDuaVsAjCxQkQXPd'),
       Buffer.from(masternodeEntry.pubKeyOperator, 'hex'),
       IdentityPublicKey.TYPES.BLS12_381,
+      true,
     );
     expect(transactionalDppMock.document.create).to.be.calledOnceWithExactly(
       dataContractFixture,

@@ -19,12 +19,13 @@ function handleNewMasternodeFactory(
    * @typedef handleNewMasternode
    * @param {SimplifiedMNListEntry} masternodeEntry
    * @param {DataContract} dataContract
+   * @param {boolean} storePreviousState
    * @return {Promise<{
    *            create: Document[],
    *            delete: Document[],
    * }>}
    */
-  async function handleNewMasternode(masternodeEntry, dataContract) {
+  async function handleNewMasternode(masternodeEntry, dataContract, storePreviousState) {
     const rawTransaction = await stateRepository
       .fetchTransaction(masternodeEntry.proRegTxHash);
 
@@ -41,6 +42,7 @@ function handleNewMasternodeFactory(
       masternodeIdentityId,
       Buffer.from(proRegTxPayload.keyIDOwner, 'hex'),
       IdentityPublicKey.TYPES.ECDSA_HASH160,
+      storePreviousState,
     );
 
     // we need to crate reward shares only if it's enabled in proRegTx
@@ -64,6 +66,7 @@ function handleNewMasternodeFactory(
         operatorIdentityId,
         Buffer.from(proRegTxPayload.pubKeyOperator, 'hex'),
         IdentityPublicKey.TYPES.BLS12_381,
+        storePreviousState,
       );
 
       // Create a document in rewards data contract with percentage

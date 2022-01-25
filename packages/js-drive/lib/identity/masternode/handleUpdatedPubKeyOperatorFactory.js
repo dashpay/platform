@@ -24,6 +24,7 @@ function handleUpdatedPubKeyOperatorFactory(
    * @param {SimplifiedMNListEntry} masternodeEntry
    * @param {SimplifiedMNListEntry} previousMasternodeEntry
    * @param {DataContract} dataContract
+   * @param {boolean} storePreviousState
    * @return {Promise<{
    *            create: Document[],
    *            delete: Document[],
@@ -33,6 +34,7 @@ function handleUpdatedPubKeyOperatorFactory(
     masternodeEntry,
     previousMasternodeEntry,
     dataContract,
+    storePreviousState = false,
   ) {
     const rawTransaction = await stateRepository
       .fetchTransaction(masternodeEntry.proRegTxHash);
@@ -64,6 +66,7 @@ function handleUpdatedPubKeyOperatorFactory(
           operatorIdentityId,
           pubKeyOperator,
           IdentityPublicKey.TYPES.BLS12_381,
+          storePreviousState,
         );
       }
 

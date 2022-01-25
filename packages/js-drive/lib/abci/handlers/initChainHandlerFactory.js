@@ -203,11 +203,15 @@ function initChainHandlerFactory(
       dashpayContract, { isTransactional: false },
     );
 
-    await updateSimplifiedMasternodeList(initialCoreChainLockedHeight, {
-      logger: contextLogger,
-    });
+    await updateSimplifiedMasternodeList(
+      initialCoreChainLockedHeight, {
+        logger: contextLogger,
+      },
+    );
 
-    await synchronizeMasternodeIdentities(initialCoreChainLockedHeight);
+    await synchronizeMasternodeIdentities(initialCoreChainLockedHeight, true);
+
+    rootTree.rebuild();
 
     contextLogger.info(`Init ${request.chainId} chain on block #${request.initialHeight.toString()}`);
 

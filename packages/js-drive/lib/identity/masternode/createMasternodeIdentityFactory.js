@@ -4,20 +4,33 @@ const Identity = require('@dashevo/dpp/lib/identity/Identity');
 /**
  * @param {DashPlatformProtocol} dpp
  * @param {DriveStateRepository|CachedStateRepositoryDecorator} stateRepository
+ * @param {IdentityStoreRepository} previousIdentityRepository
+ * @param {PublicKeyToIdentityIdStoreRepository} previousPublicKeyToIdentityIdRepository
  * @return {createMasternodeIdentity}
  */
-function createMasternodeIdentityFactory(dpp, stateRepository) {
+function createMasternodeIdentityFactory(
+  dpp,
+  stateRepository,
+  previousIdentityRepository,
+  previousPublicKeyToIdentityIdRepository,
+) {
   /**
    * @typedef createMasternodeIdentity
    * @param {Identifier} identityId
    * @param {Buffer} pubKeyData
    * @param {number} pubKeyType
+   * @param {boolean} storePreviousState
    * @return {Promise<void>}
    */
-  async function createMasternodeIdentity(identityId, pubKeyData, pubKeyType) {
+  async function createMasternodeIdentity(
+    identityId,
+    pubKeyData,
+    pubKeyType,
+    storePreviousState,
+  ) {
     const identity = new Identity({
       protocolVersion: dpp.getProtocolVersion(),
-      id: identityId,
+      id: identityId.toBuffer(),
       publicKeys: [{
         id: 0,
         type: pubKeyType,
@@ -33,6 +46,10 @@ function createMasternodeIdentityFactory(dpp, stateRepository) {
 
     await stateRepository.storeIdentity(identity);
 
+    if (storePreviousState) {
+      await previousIdentityRepository.store(identity);
+    }
+
     const publicKeyHashes = identity
       .getPublicKeys()
       .map((publicKey) => publicKey.hash());
@@ -41,6 +58,15 @@ function createMasternodeIdentityFactory(dpp, stateRepository) {
       identity.getId(),
       publicKeyHashes,
     );
+
+    if (storePreviousState) {
+      for (const publicKeyHash of publicKeyHashes) {
+        await previousPublicKeyToIdentityIdRepository
+          .store(
+            publicKeyHash, identityId,
+          );
+      }
+    }
   }
 
   return createMasternodeIdentity;

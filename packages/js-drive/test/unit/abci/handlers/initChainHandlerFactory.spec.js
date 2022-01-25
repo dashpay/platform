@@ -111,6 +111,7 @@ describe('initChainHandlerFactory', () => {
 
     rootTreeMock = {
       getRootHash: this.sinon.stub(),
+      rebuild: this.sinon.stub(),
     };
     documentDatabaseManagerMock = {
       create: this.sinon.stub(),
@@ -193,7 +194,10 @@ describe('initChainHandlerFactory', () => {
 
     expect(synchronizeMasternodeIdentitiesMock).to.be.calledOnceWithExactly(
       initialCoreChainLockedHeight,
+      true,
     );
+
+    expect(rootTreeMock.rebuild).to.be.calledOnce();
 
     expect(blockExecutionStoreTransactionsMock.start).to.have.been.calledOnce();
     expect(blockExecutionStoreTransactionsMock.commit).to.have.been.calledOnce();

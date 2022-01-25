@@ -56,7 +56,7 @@ describe('handleNewMasternodeFactory', () => {
   });
 
   it('should return no documents if operatorReward = 0', async () => {
-    const result = await handleNewMasternode(masternodeEntry, dataContractFixture);
+    const result = await handleNewMasternode(masternodeEntry, dataContractFixture, true);
 
     expect(result).to.deep.equal({
       create: [],
@@ -71,6 +71,7 @@ describe('handleNewMasternodeFactory', () => {
       Identifier.from('xmdKYeUsEU49sncsu76TmtufyqwP1By92RX4e48oRUW'),
       Buffer.from('4136bcaf69d15e767c56a8b4bb04304fe0b395d0', 'hex'),
       IdentityPublicKey.TYPES.ECDSA_HASH160,
+      true,
     );
 
     // operatorReward = 0
@@ -85,7 +86,7 @@ describe('handleNewMasternodeFactory', () => {
       height: 626,
     });
 
-    const result = await handleNewMasternode(masternodeEntry, dataContractFixture);
+    const result = await handleNewMasternode(masternodeEntry, dataContractFixture, false);
 
     expect(result).to.deep.equal({
       create: [documentsFixture[0]],
@@ -100,6 +101,20 @@ describe('handleNewMasternodeFactory', () => {
         payToId: Identifier.from('F1Fggqney3rdpLc69pS6CJr1yUxwEsRwmnBsLLCMjFsC'),
         percentage: 1,
       },
+    );
+
+    expect(createMasternodeIdentityMock).to.be.calledTwice();
+    expect(createMasternodeIdentityMock.getCall(0)).to.be.calledWithExactly(
+      Identifier.from('xmdKYeUsEU49sncsu76TmtufyqwP1By92RX4e48oRUW'),
+      Buffer.from('4136bcaf69d15e767c56a8b4bb04304fe0b395d0', 'hex'),
+      IdentityPublicKey.TYPES.ECDSA_HASH160,
+      false,
+    );
+    expect(createMasternodeIdentityMock.getCall(1)).to.be.calledWithExactly(
+      Identifier.from('F1Fggqney3rdpLc69pS6CJr1yUxwEsRwmnBsLLCMjFsC'),
+      Buffer.from('8e4c8c144bd6c62640fe3ae295973d512f83f7f541525a5da3c91e77ec02ff4dcd214e7431b7d2cc28e420ebfeb612ee', 'hex'),
+      IdentityPublicKey.TYPES.BLS12_381,
+      false,
     );
   });
 });

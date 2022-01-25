@@ -122,6 +122,7 @@ describe('beginBlockHandlerFactory', () => {
 
     expect(synchronizeMasternodeIdentitiesMock).to.have.been.calledOnceWithExactly(
       coreChainLockedHeight,
+      false,
     );
   });
 

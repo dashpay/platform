@@ -97,7 +97,7 @@ function beginBlockHandlerFactory(
     );
 
     if (isSimplifiedMasternodeListUpdated) {
-      await synchronizeMasternodeIdentities(coreChainLockedHeight);
+      await synchronizeMasternodeIdentities(coreChainLockedHeight, false);
     }
 
     if (blockExecutionStoreTransactions.isStarted()) {
