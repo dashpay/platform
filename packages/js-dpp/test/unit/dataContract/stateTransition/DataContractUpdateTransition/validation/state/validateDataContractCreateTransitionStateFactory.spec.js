@@ -67,6 +67,14 @@ describe('validateDataContractUpdateTransitionStateFactory', () => {
     expect(stateRepositoryMock.fetchDataContract).to.be.calledOnceWithExactly(dataContract.getId());
   });
 
+  it('should return valid result if Data Contract version is larger by exactly 1', async () => {
+    dataContract.version += 1;
+
+    const result = await validateDataContractUpdateTransitionState(stateTransition);
+
+    expect(result.isValid()).to.be.true();
+  });
+
   it('should return valid result', async () => {
     const result = await validateDataContractUpdateTransitionState(stateTransition);
 
