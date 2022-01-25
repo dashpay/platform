@@ -27,7 +27,7 @@ function encodeDocumentPropertyValue(propertyValue, propertyDefinition) {
 
       if (propertyValue < 0) {
         // Check if the value is negative, if it is
-        // flip all the bits i.e sign, exponent and mantissa
+        // flip all the bits i.e. sign, exponent and mantissa
 
         // eslint-disable-next-line no-bitwise
         result = result.map((item) => ~item);
