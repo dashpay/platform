@@ -9,9 +9,13 @@ import { contractId as dashpayContractId } from "@dashevo/dashpay-contract/lib/s
 import { contractId as masternodeRewardSharesContractId } from "@dashevo/masternode-reward-shares-contract/lib/systemIds";
 import { ClientApps, ClientAppsOptions } from "./ClientApps";
 
+
+
 export interface WalletOptions extends Wallet.IWalletOptions {
     defaultAccountIndex?: number;
 }
+
+require('dotenv').config();
 
 /**
  * Interface Client Options
@@ -25,6 +29,7 @@ export interface WalletOptions extends Wallet.IWalletOptions {
  * @param {number} [timeout=2000]
  * @param {number} [retries=3]
  * @param {number} [baseBanTime=60000]
+ * @param {boolean} [enableDebugLogs] - Debug logs
  */
 export interface ClientOpts {
     apps?: ClientAppsOptions,
@@ -37,6 +42,7 @@ export interface ClientOpts {
     retries?: number,
     baseBanTime?: number,
     driveProtocolVersion?: number,
+    enableDebugLogs?: boolean,
 }
 
 /**
@@ -105,6 +111,13 @@ export class Client extends EventEmitter {
             ));
         }
 
+        // Enable Debug logs
+        if (this.options.enableDebugLogs == true) {
+            process.env.ENABLE_DEBUG_LOGS = "true";
+        } else {
+            process.env.ENABLE_DEBUG_LOGS = "false";
+        }
+
         // @ts-ignore
         this.defaultAccountIndex = this.options.wallet?.defaultAccountIndex || 0;
 
@@ -133,7 +146,7 @@ export class Client extends EventEmitter {
      * @param {Account.Options} [options]
      * @returns {Promise<Account>}
      */
-    async getWalletAccount(options: Account.Options = {}) : Promise<Account> {
+    async getWalletAccount(options: Account.Options = {}): Promise<Account> {
         if (!this.wallet) {
             throw new Error('Wallet is not initialized, pass `wallet` option to Client');
         }
@@ -161,7 +174,7 @@ export class Client extends EventEmitter {
      *
      * @returns {DAPIClient}
      */
-    getDAPIClient() : DAPIClient {
+    getDAPIClient(): DAPIClient {
         return this.dapiClient;
     }
 

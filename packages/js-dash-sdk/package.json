@@ -43,14 +43,18 @@
     "@dashevo/masternode-reward-shares-contract": "workspace:~",
     "@dashevo/wallet-lib": "workspace:~",
     "bs58": "^4.0.1",
-    "node-inspect-extracted": "^1.0.8"
+    "config": "^3.3.7",
+    "dotenv": "^14.3.2",
+    "node-inspect-extracted": "^1.0.8",
+    "pino": "^7.6.4",
+    "pino-pretty": "^7.5.1"
   },
   "devDependencies": {
     "@types/chai": "^4.2.12",
     "@types/dirty-chai": "^2.0.2",
     "@types/expect": "^24.3.0",
     "@types/mocha": "^8.0.3",
-    "@types/node": "^14.6.0",
+    "@types/node": "^14.18.9",
     "@types/sinon": "^9.0.4",
     "@types/sinon-chai": "^3.2.4",
     "assert": "^2.0.0",
