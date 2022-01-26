@@ -4,7 +4,7 @@
   "version": "0.22.0-dev.6",
   "description": "Dash Network end-to-end tests",
   "scripts": {
-    "test": "mocha './test/**/*.spec.js'",
+    "test": "mocha -b './test/**/*.spec.js'",
     "lint": "eslint .",
     "test:e2e": "NODE_ENV=test mocha 'test/e2e/**/*.spec.js'",
     "test:functional": "NODE_ENV=test mocha 'test/functional/**/*.spec.js'",
