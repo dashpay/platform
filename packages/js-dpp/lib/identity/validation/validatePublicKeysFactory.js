@@ -123,7 +123,7 @@ function validatePublicKeysFactory(validator, bls) {
           // Do nothing
             break;
           default:
-            validationError = new TypeError(`Unknown public key type: ${rawPublicKey.type}`);
+            throw new TypeError(`Unknown public key type: ${rawPublicKey.type}`);
         }
 
         if (validationError !== undefined) {

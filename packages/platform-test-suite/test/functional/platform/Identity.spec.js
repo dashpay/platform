@@ -490,7 +490,7 @@ describe('Platform', () => {
             ),
           );
 
-          const fetchedIdentity = await client.platform.identities.get(
+          let fetchedIdentity = await client.platform.identities.get(
             masternodeIdentityId,
           );
 
@@ -502,8 +502,24 @@ describe('Platform', () => {
 
           const transaction = new Transaction(transactionBuffer);
 
-          expect(transaction.extraPayload).to.have.property('operatorReward');
-          expect(transaction.extraPayload.operatorReward).to.be.at.least(0);
+          if (transaction.extraPayload.operatorReward > 0) {
+            const operatorPubKey = Buffer.from(masternodeEntry.pubKeyOperator, 'hex');
+
+            const operatorIdentityHash = hash(
+              Buffer.concat([
+                masternodeIdentityId.toBuffer(),
+                operatorPubKey,
+              ]),
+            );
+
+            const operatorIdentityId = Identifier.from(operatorIdentityHash);
+
+            fetchedIdentity = await client.platform.identities.get(
+              operatorIdentityId,
+            );
+
+            expect(fetchedIdentity).to.be.not.null();
+          }
         }
       });
     });
