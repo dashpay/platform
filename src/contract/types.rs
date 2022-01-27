@@ -11,6 +11,7 @@ pub enum DocumentFieldType {
     ByteArray,
     Boolean,
     Date,
+    Object,
 }
 
 pub fn string_to_field_type(field_type_name: String) -> Option<DocumentFieldType> {
@@ -20,6 +21,7 @@ pub fn string_to_field_type(field_type_name: String) -> Option<DocumentFieldType
         "float" => Some(DocumentFieldType::Float),
         "boolean" => Some(DocumentFieldType::Boolean),
         "date" => Some(DocumentFieldType::Date),
+        "object" => Some(DocumentFieldType::Object),
         _ => None,
     };
 }
@@ -83,6 +85,9 @@ pub fn encode_document_field_type(
                 .parse()
                 .map_err(|_| Error::CorruptedData(String::from("invalid integer string")))?;
             encode_integer(date_as_integer)
+        }
+        DocumentFieldType::Object => {
+            Err(Error::CorruptedData(String::from("we should never try encoding an object")))
         }
     };
 }
@@ -295,5 +300,13 @@ mod tests {
         // If the smallest positive number is greater than the largest negative number
         // then the positive domain is greater than the negative domain
         assert!(encoded_float3 > encoded_float1);
+
+        // Objects should error
+
+        let object_value = Value::Map(vec![(smallest_positive_float, integer1)]);
+
+        let encoded_object = encode_document_field_type(&DocumentFieldType::Object, &object_value);
+
+        assert!(encoded_object.is_err());
     }
 }
