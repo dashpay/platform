@@ -204,21 +204,24 @@ module.exports = function validateDataContractFactory(
               invalidPropertyType = 'object';
             }
 
-            const { items, prefixItems } = propertyDefinition;
+            // const { items, prefixItems } = propertyDefinition;
 
             // Validate arrays contain scalar values or have the same types
             if (propertyType === 'array' && !isByteArray) {
-              const isInvalidPrefixItems = prefixItems
-                && (
-                  prefixItems.some((prefixItem) => prefixItem.type === 'object' || prefixItem.type === 'array')
-                  || !prefixItems.every((prefixItem) => prefixItem.type === prefixItems[0].type)
-                );
+              invalidPropertyType = 'array';
 
-              const isInvalidItemTypes = items.type === 'object' || items.type === 'array';
-
-              if (isInvalidPrefixItems || isInvalidItemTypes) {
-                invalidPropertyType = 'array';
-              }
+            // const isInvalidPrefixItems = prefixItems
+            //   && (
+            // prefixItems.some((prefixItem) =>
+              // prefixItem.type === 'object' || prefixItem.type === 'array')
+            //     || !prefixItems.every((prefixItem) => prefixItem.type === prefixItems[0].type)
+            //   );
+            //
+            // const isInvalidItemTypes = items.type === 'object' || items.type === 'array';
+            //
+            // if (isInvalidPrefixItems || isInvalidItemTypes) {
+            //   invalidPropertyType = 'array';
+            // }
             }
 
             if (invalidPropertyType) {
@@ -231,31 +234,31 @@ module.exports = function validateDataContractFactory(
             }
 
             // Validate sting length inside arrays
-            if (!invalidPropertyType && propertyType === 'array' && !isByteArray) {
-              const isInvalidPrefixItems = prefixItems && prefixItems.some((prefixItem) => (
-                prefixItem.type === 'string'
-                && (
-                  !prefixItem.maxLength || prefixItem.maxLength > MAX_INDEXED_STRING_PROPERTY_LENGTH
-                )
-              ));
-
-              const isInvalidItemTypes = items.type === 'string' && (
-                !items.maxLength || items.maxLength > MAX_INDEXED_STRING_PROPERTY_LENGTH
-              );
-
-              if (isInvalidPrefixItems || isInvalidItemTypes) {
-                result.addError(
-                  new InvalidIndexedPropertyConstraintError(
-                    documentType,
-                    indexDefinition,
-                    propertyName,
-                    'maxLength',
-                    `should be less or equal ${MAX_INDEXED_STRING_PROPERTY_LENGTH}`,
-                  ),
-                );
-              }
-            }
-
+            // if (!invalidPropertyType && propertyType === 'array' && !isByteArray) {
+            //   const isInvalidPrefixItems = prefixItems && prefixItems.some((prefixItem) => (
+            //     prefixItem.type === 'string'
+            //     && (
+            // !prefixItem.maxLength || prefixItem.maxLength > MAX_INDEXED_STRING_PROPERTY_LENGTH
+            //     )
+            //   ));
+            //
+            //   const isInvalidItemTypes = items.type === 'string' && (
+            //     !items.maxLength || items.maxLength > MAX_INDEXED_STRING_PROPERTY_LENGTH
+            //   );
+            //
+            //   if (isInvalidPrefixItems || isInvalidItemTypes) {
+            //     result.addError(
+            //       new InvalidIndexedPropertyConstraintError(
+            //         documentType,
+            //         indexDefinition,
+            //         propertyName,
+            //         'maxLength',
+            //         `should be less or equal ${MAX_INDEXED_STRING_PROPERTY_LENGTH}`,
+            //       ),
+            //     );
+            //   }
+            // }
+            //
             if (!invalidPropertyType && propertyType === 'array') {
               const { maxItems } = propertyDefinition;
 
