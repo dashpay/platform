@@ -1,5 +1,6 @@
 const logger = require('../../../../logger');
 const EVENTS = require('../../../../EVENTS');
+const TempChainCache = require('../TempChainCache');
 
 async function handleTransactionFromStream(transaction) {
   const self = this;
@@ -10,8 +11,9 @@ async function handleTransactionFromStream(transaction) {
 
   this.pendingRequest[transactionHash] = { isProcessing: true, type: 'transaction' };
   // eslint-disable-next-line no-await-in-loop
-  const getTransactionResponse = await this.transport.getTransaction(transactionHash);
-
+  // const getTransactionResponse = await this.transport.getTransaction(transactionHash);
+  // TODO: POC cache
+  const getTransactionResponse = TempChainCache.i().transactionsMetadata[transactionHash];
   if (!getTransactionResponse) {
     // This can happen due to propagation when one node inform us about a transaction,
     // but the node we ask the transaction to is not aware of it.
@@ -74,11 +76,12 @@ async function handleTransactionFromStream(transaction) {
 
   await executor();
 
+  // TODO: POC fix
   const metadata = {
     blockHash: getTransactionResponse.blockHash,
     height: getTransactionResponse.height,
-    instantLocked: getTransactionResponse.instantLocked,
-    chainLocked: getTransactionResponse.chainLocked,
+    // instantLocked: getTransactionResponse.instantLocked,
+    // chainLocked: getTransactionResponse.chainLocked,
   };
 
   delete this.pendingRequest[transactionHash];

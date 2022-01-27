@@ -3,10 +3,10 @@ const GrpcError = require('@dashevo/grpc-common/lib/server/error/GrpcError');
 const GrpcErrorCodes = require('@dashevo/grpc-common/lib/server/error/GrpcErrorCodes');
 const logger = require('../../../../logger');
 const isBrowser = require('../../../../utils/isBrowser');
+const TempChainCache = require('../TempChainCache');
 
-function isAnyIntersection(arrayA, arrayB) {
-  const intersection = arrayA.filter((e) => arrayB.indexOf(e) > -1);
-  return intersection.length > 0;
+function getIntersection(arrayA, arrayB) {
+  return arrayA.filter((e) => arrayB.indexOf(e) > -1);
 }
 
 async function processChunks(dataChunk) {
@@ -26,6 +26,27 @@ async function processChunks(dataChunk) {
   const walletTransactions = this.constructor
     .filterWalletTransactions(transactionsFromResponse, addresses, network);
 
+  /* Incoming Merkle block handling */
+  const merkleBlockFromResponse = this.constructor
+    .getMerkleBlockFromStreamResponse(dataChunk);
+
+  if (merkleBlockFromResponse) {
+    // Reverse hashes, as they're little endian in the header
+    const transactionsInHeader = merkleBlockFromResponse.hashes.map((hashHex) => Buffer.from(hashHex, 'hex').reverse().toString('hex'));
+    const transactionsInWallet = Object.keys(self.storage.getStore().transactions);
+    const intersection = getIntersection(transactionsInHeader, transactionsInWallet);
+    if (intersection.length) {
+      const { header } = merkleBlockFromResponse;
+      self.importBlockHeader(header);
+
+      if (TempChainCache.i().transactionsByBlockHash[header.hash]) {
+        console.log('Dup of', header.hash);
+      }
+      TempChainCache.i().transactionsByBlockHash[header.hash] = intersection;
+    }
+  }
+
+  console.log('Wall', walletTransactions.transactions.length);
   if (walletTransactions.transactions.length) {
     // When a transaction exist, there is multiple things we need to do :
     // 1) The transaction itself needs to be imported
@@ -85,20 +106,6 @@ async function processChunks(dataChunk) {
           resolveCancel();
         }));
       }
-    }
-  }
-
-  /* Incoming Merkle block handling */
-  const merkleBlockFromResponse = this.constructor
-    .getMerkleBlockFromStreamResponse(dataChunk);
-
-  if (merkleBlockFromResponse) {
-    // Reverse hashes, as they're little endian in the header
-    const transactionsInHeader = merkleBlockFromResponse.hashes.map((hashHex) => Buffer.from(hashHex, 'hex').reverse().toString('hex'));
-    const transactionsInWallet = Object.keys(self.storage.getStore().transactions);
-    const isTruePositive = isAnyIntersection(transactionsInHeader, transactionsInWallet);
-    if (isTruePositive) {
-      self.importBlockHeader(merkleBlockFromResponse.header);
     }
   }
 }

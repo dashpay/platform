@@ -10,14 +10,29 @@ const DAPIClientTransport = require('./DAPIClientTransport/DAPIClientTransport')
  * @returns {Transport|DAPIClientTransport}
  */
 function createTransportFromOptions(options) {
+  let transport;
   if (!_.isPlainObject(options)) {
     // Return transport instance
-    return options;
+    transport = options;
+  } else {
+    const client = new DAPIClient(options);
+
+    // TODO: handle errors from DAPIClient there
+
+    transport = new DAPIClientTransport(client);
   }
 
-  const client = new DAPIClient(options);
+  transport.client.blockHeadersProvider
+    .on(DAPIClient.BlockHeadersProvider.EVENTS.BATCH_OF_HEADERS_VERIFIED, (headers) => {
+      console.log('Verified', headers.length);
+    });
 
-  return new DAPIClientTransport(client);
+  transport.client.blockHeadersProvider
+    .on(DAPIClient.BlockHeadersProvider.EVENTS.HISTORICAL_SYNC_FINISHED, () => {
+      console.log('Historical sync finished');
+    });
+
+  return transport;
 }
 
 module.exports = createTransportFromOptions;

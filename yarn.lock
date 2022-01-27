@@ -1281,7 +1281,7 @@ __metadata:
   dependencies:
     "@babel/core": ^7.15.5
     "@dashevo/dapi-grpc": "workspace:~"
-    "@dashevo/dash-spv": "github:dashevo/dash-spv"
+    "@dashevo/dash-spv": "github:dashevo/dash-spv#feat/integrate-with-wallet"
     "@dashevo/dashcore-lib": ~0.19.29
     "@dashevo/dpp": "workspace:~"
     "@dashevo/grpc-common": "workspace:~"
@@ -1397,16 +1397,16 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@dashevo/dash-spv@github:dashevo/dash-spv":
+"@dashevo/dash-spv@github:dashevo/dash-spv#feat/integrate-with-wallet":
   version: 1.1.6
-  resolution: "@dashevo/dash-spv@https://github.com/dashevo/dash-spv.git#commit=3eeb01ed5d0636c949cf3ca2e495c4fe3d1b74ce"
+  resolution: "@dashevo/dash-spv@https://github.com/dashevo/dash-spv.git#commit=4cc2dbbfdb653e983085135735288e3cd6974a58"
   dependencies:
     "@dashevo/dark-gravity-wave": ^1.1.1
     "@dashevo/dash-util": ^2.0.3
     "@dashevo/dashcore-lib": ^0.19.29
     levelup: ^4.0.1
     memdown: ^3.0.0
-  checksum: 3f11f82e43c91862c712606a824c8916774bd3c61dec552ac8dbdc76fdc27e5a5118d0e0773a459ec25ff66351fda34cfe5d58d22fcc96e31b41dac9d2da87c3
+  checksum: 238d5e7f7845acdfe9290140f494cf625ce0ae9536fdd3255d3bc2abd0dffdc6d0b78431a1e582a966427e6b277a0f31b8c208d5f32678cf93690b1e28679d3a
   languageName: node
   linkType: hard
 

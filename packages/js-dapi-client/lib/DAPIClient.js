@@ -24,6 +24,7 @@ class DAPIClient {
       blockHeadersProviderOptions: BlockHeadersProvider.defaultOptions,
       ...options,
     };
+    this.options.blockHeadersProviderOptions.network = options.network;
 
     this.dapiAddressProvider = createDAPIAddressProviderFromOptions(this.options);
 
@@ -54,6 +55,8 @@ class DAPIClient {
     }
   }
 }
+
+DAPIClient.BlockHeadersProvider = BlockHeadersProvider;
 
 /**
  * @typedef {DAPIClientOptions} DAPIClientOptions

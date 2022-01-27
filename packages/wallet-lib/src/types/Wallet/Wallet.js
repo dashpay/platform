@@ -166,7 +166,7 @@ class Wallet extends EventEmitter {
       }
 
       // eslint-disable-next-line no-param-reassign
-      opts.transport.network = this.network;
+      opts.transport.network = opts.network;
 
       this.transport = createTransportFromOptions(opts.transport);
     }

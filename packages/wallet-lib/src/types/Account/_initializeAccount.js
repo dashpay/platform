@@ -3,6 +3,7 @@ const EVENTS = require('../../EVENTS');
 const { WALLET_TYPES } = require('../../CONSTANTS');
 const preparePlugins = require('./_preparePlugins');
 const ensureAddressesToGapLimit = require('../../utils/bip44/ensureAddressesToGapLimit');
+const TempChainCache = require('../../plugins/Workers/TransactionSyncStreamWorker/TempChainCache');
 
 // eslint-disable-next-line no-underscore-dangle
 async function _initializeAccount(account, userUnsafePlugins) {
@@ -25,6 +26,14 @@ async function _initializeAccount(account, userUnsafePlugins) {
           await account.getAddress('0'); // We force what is usually done by the BIP44Worker.
         }
       }
+
+      // TODO: [POC] make abstraction for this call
+      TempChainCache.i().blockHeadersProvider = self.transport.client.blockHeadersProvider;
+      self.transport.client.blockHeadersProvider.start()
+        .catch((e) => {
+          console.log('Block headers provider error');
+          console.log(e);
+        });
 
       // Will sort and inject plugins.
       await preparePlugins(account, userUnsafePlugins);
