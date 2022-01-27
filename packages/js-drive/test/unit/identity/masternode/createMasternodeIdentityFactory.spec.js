@@ -3,7 +3,9 @@ const createStateRepositoryMock = require('@dashevo/dpp/lib/test/mocks/createSta
 const Identity = require('@dashevo/dpp/lib/identity/Identity');
 const IdentityPublicKey = require('@dashevo/dpp/lib/identity/IdentityPublicKey');
 const generateRandomIdentifier = require('@dashevo/dpp/lib/test/utils/generateRandomIdentifier');
+const ValidationResult = require('@dashevo/dpp/lib/validation/ValidationResult');
 const createMasternodeIdentityFactory = require('../../../../lib/identity/masternode/createMasternodeIdentityFactory');
+const InvalidMasternodeIdentityError = require('../../../../lib/identity/masternode/errors/InvalidMasternodeIdentityError');
 
 describe('createMasternodeIdentityFactory', () => {
   let createMasternodeIdentity;
@@ -11,6 +13,7 @@ describe('createMasternodeIdentityFactory', () => {
   let stateRepositoryMock;
   let previousIdentityRepositoryMock;
   let previousPublicKeyToIdentityIdRepositoryMock;
+  let validationResult;
 
   beforeEach(function beforeEach() {
     dppMock = createDPPMock(this.sinon);
@@ -21,6 +24,10 @@ describe('createMasternodeIdentityFactory', () => {
     previousPublicKeyToIdentityIdRepositoryMock = {
       store: this.sinon.stub(),
     };
+
+    validationResult = new ValidationResult();
+
+    dppMock.identity.validate.resolves(validationResult);
 
     createMasternodeIdentity = createMasternodeIdentityFactory(
       dppMock,
@@ -66,6 +73,7 @@ describe('createMasternodeIdentityFactory', () => {
 
     expect(previousIdentityRepositoryMock.store).to.be.not.called();
     expect(previousPublicKeyToIdentityIdRepositoryMock.store).to.be.not.called();
+    expect(dppMock.identity.validate).to.be.calledOnceWithExactly(identity);
   });
 
   it('should store identity and public key hashed to the previous store', async () => {
@@ -107,5 +115,26 @@ describe('createMasternodeIdentityFactory', () => {
       publicKeyHashes[0],
       identity.getId(),
     );
+    expect(dppMock.identity.validate).to.be.calledOnceWithExactly(identity);
+  });
+
+  it('should throw DPPValidationAbciError if identity is not valid', async () => {
+    const validationError = new Error('Validation error');
+
+    validationResult.addError(validationError);
+
+    const identityId = generateRandomIdentifier();
+    const pubKeyData = Buffer.from([0]);
+    const pubKeyType = IdentityPublicKey.TYPES.ECDSA_HASH160;
+
+    try {
+      await createMasternodeIdentity(identityId, pubKeyData, pubKeyType, false);
+
+      expect.fail('should fail with an error');
+    } catch (e) {
+      expect(e).to.be.an.instanceof(InvalidMasternodeIdentityError);
+      expect(e.message).to.be.equal('Invalid masternode identity');
+      expect(e.getValidationError()).to.be.deep.equal(validationError);
+    }
   });
 });

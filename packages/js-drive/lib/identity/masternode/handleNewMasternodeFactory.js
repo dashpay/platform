@@ -64,7 +64,7 @@ function handleNewMasternodeFactory(
 
       await createMasternodeIdentity(
         operatorIdentityId,
-        Buffer.from(proRegTxPayload.pubKeyOperator, 'hex'),
+        operatorPubKey,
         IdentityPublicKey.TYPES.BLS12_381,
         storePreviousState,
       );

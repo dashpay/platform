@@ -1,5 +1,6 @@
 const IdentityPublicKey = require('@dashevo/dpp/lib/identity/IdentityPublicKey');
 const Identity = require('@dashevo/dpp/lib/identity/Identity');
+const InvalidMasternodeIdentityError = require('./errors/InvalidMasternodeIdentityError');
 
 /**
  * @param {DashPlatformProtocol} dpp
@@ -43,6 +44,13 @@ function createMasternodeIdentityFactory(
       balance: 0,
       revision: 0,
     });
+
+    const validationResult = await dpp.identity.validate(identity);
+    if (!validationResult.isValid()) {
+      const validationError = validationResult.getFirstError();
+
+      throw new InvalidMasternodeIdentityError(validationError);
+    }
 
     await stateRepository.storeIdentity(identity);
 

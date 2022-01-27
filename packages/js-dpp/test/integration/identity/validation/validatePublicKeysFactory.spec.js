@@ -35,6 +35,7 @@ const InvalidIdentityPublicKeySecurityLevelError = require(
 const IdentityPublicKey = require(
   '../../../../lib/identity/IdentityPublicKey',
 );
+const BlsSignatures = require('../../../../lib/bls/bls');
 
 describe('validatePublicKeysFactory', () => {
   let rawPublicKeys;
@@ -45,11 +46,13 @@ describe('validatePublicKeysFactory', () => {
 
     const RE2 = await getRE2Class();
     const ajv = createAjv(RE2);
+    const bls = await BlsSignatures.getInstance();
 
     const validator = new JsonSchemaValidator(ajv);
 
     validatePublicKeys = validatePublicKeysFactory(
       validator,
+      bls,
     );
   });
 
@@ -286,5 +289,57 @@ describe('validatePublicKeysFactory', () => {
     const result = validatePublicKeys(rawPublicKeys);
 
     expect(result.isValid()).to.be.true();
+  });
+
+  it('should pass valid BLS12_381 public key', () => {
+    rawPublicKeys = [{
+      id: 0,
+      type: IdentityPublicKey.TYPES.BLS12_381,
+      purpose: 0,
+      securityLevel: 0,
+      readOnly: true,
+      data: Buffer.from('01fac99ca2c8f39c286717c213e190aba4b7af76db320ec43f479b7d9a2012313a0ae59ca576edf801444bc694686694', 'hex'),
+    }];
+
+    const result = validatePublicKeys(rawPublicKeys);
+
+    expect(result.isValid()).to.be.true();
+  });
+
+  it('should pass valid ECDSA_HASH160 public key', () => {
+    rawPublicKeys = [{
+      id: 0,
+      type: IdentityPublicKey.TYPES.ECDSA_HASH160,
+      purpose: 0,
+      securityLevel: 0,
+      readOnly: true,
+      data: Buffer.from('6086389d3fa4773aa950b8de18c5bd6d8f2b73bc', 'hex'),
+    }];
+
+    const result = validatePublicKeys(rawPublicKeys);
+
+    expect(result.isValid()).to.be.true();
+  });
+
+  it('should invalid result if BLS12_381 public key is invalid', () => {
+    rawPublicKeys = [{
+      id: 0,
+      type: IdentityPublicKey.TYPES.BLS12_381,
+      purpose: 0,
+      securityLevel: 0,
+      readOnly: true,
+      data: Buffer.from('11fac99ca2c8f39c286717c213e190aba4b7af76db320ec43f479b7d9a2012313a0ae59ca576edf801444bc694686694', 'hex'),
+    }];
+
+    const result = validatePublicKeys(rawPublicKeys);
+
+    expectValidationError(result, InvalidIdentityPublicKeyDataError);
+
+    const [error] = result.getErrors();
+
+    expect(error.getCode()).to.equal(1040);
+    expect(error.getPublicKeyId()).to.deep.equal(rawPublicKeys[0].id);
+    expect(error.getValidationError()).to.be.instanceOf(TypeError);
+    expect(error.getValidationError().message).to.equal('Invalid public key');
   });
 });

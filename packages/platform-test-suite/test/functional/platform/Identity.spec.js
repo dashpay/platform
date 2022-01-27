@@ -489,28 +489,28 @@ describe('Platform', () => {
             ),
           );
 
-          let fetchedIdentity = await client.platform.identities.get(
+          const fetchedIdentity = await client.platform.identities.get(
             masternodeIdentityId,
           );
 
           expect(fetchedIdentity).to.be.not.null();
 
-          const operatorPubKey = Buffer.from(masternodeEntry.pubKeyOperator, 'hex');
-
-          const operatorIdentityHash = hash(
-            Buffer.concat([
-              masternodeIdentityId.toBuffer(),
-              operatorPubKey,
-            ]),
-          );
-
-          const operatorIdentityId = Identifier.from(operatorIdentityHash);
-
-          fetchedIdentity = await client.platform.identities.get(
-            operatorIdentityId,
-          );
-
-          expect(fetchedIdentity).to.be.not.null();
+          // const operatorPubKey = Buffer.from(masternodeEntry.pubKeyOperator, 'hex');
+          //
+          // const operatorIdentityHash = hash(
+          //   Buffer.concat([
+          //     masternodeIdentityId.toBuffer(),
+          //     operatorPubKey,
+          //   ]),
+          // );
+          //
+          // const operatorIdentityId = Identifier.from(operatorIdentityHash);
+          //
+          // fetchedIdentity = await client.platform.identities.get(
+          //   operatorIdentityId,
+          // );
+          //
+          // expect(fetchedIdentity).to.be.not.null();
         }
       });
     });
