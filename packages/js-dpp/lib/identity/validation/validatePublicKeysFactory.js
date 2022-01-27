@@ -120,8 +120,10 @@ function validatePublicKeysFactory(validator, bls) {
             break;
           }
           case IdentityPublicKey.TYPES.ECDSA_HASH160:
+          // Do nothing
+            break;
           default:
-            // Do nothing
+            validationError = new TypeError(`Unknown public key type: ${rawPublicKey.type}`);
         }
 
         if (validationError !== undefined) {

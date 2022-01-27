@@ -18,6 +18,7 @@ const Identifier = require('@dashevo/dpp/lib/identifier/Identifier');
 const createClientWithFundedWallet = require('../../../lib/test/createClientWithFundedWallet');
 const wait = require('../../../lib/wait');
 const getDAPISeeds = require('../../../lib/test/getDAPISeeds');
+const Transaction = require('@dashevo/dashcore-lib/lib/transaction');
 
 describe('Platform', () => {
   describe('Identity', () => {
@@ -495,22 +496,14 @@ describe('Platform', () => {
 
           expect(fetchedIdentity).to.be.not.null();
 
-          // const operatorPubKey = Buffer.from(masternodeEntry.pubKeyOperator, 'hex');
-          //
-          // const operatorIdentityHash = hash(
-          //   Buffer.concat([
-          //     masternodeIdentityId.toBuffer(),
-          //     operatorPubKey,
-          //   ]),
-          // );
-          //
-          // const operatorIdentityId = Identifier.from(operatorIdentityHash);
-          //
-          // fetchedIdentity = await client.platform.identities.get(
-          //   operatorIdentityId,
-          // );
-          //
-          // expect(fetchedIdentity).to.be.not.null();
+          const { transaction: transactionBuffer } = await client.dapiClient.core.getTransaction(
+            masternodeEntry.proRegTxHash,
+          );
+
+          const transaction = new Transaction(transactionBuffer);
+
+          expect(transaction.extraPayload).to.have.property('operatorReward');
+          expect(transaction.extraPayload.operatorReward).to.be.at.least(0);
         }
       });
     });

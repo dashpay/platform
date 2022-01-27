@@ -321,7 +321,7 @@ describe('validatePublicKeysFactory', () => {
     expect(result.isValid()).to.be.true();
   });
 
-  it('should invalid result if BLS12_381 public key is invalid', () => {
+  it('should return invalid result if BLS12_381 public key is invalid', () => {
     rawPublicKeys = [{
       id: 0,
       type: IdentityPublicKey.TYPES.BLS12_381,
