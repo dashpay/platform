@@ -24,12 +24,12 @@ function createTransportFromOptions(options) {
 
   transport.client.blockHeadersProvider
     .on(DAPIClient.BlockHeadersProvider.EVENTS.BATCH_OF_HEADERS_VERIFIED, (headers) => {
-      console.log('Verified', headers.length);
+      console.log(`[BlockHeadersProvider] verified ${headers.length} headers`);
     });
 
   transport.client.blockHeadersProvider
     .on(DAPIClient.BlockHeadersProvider.EVENTS.HISTORICAL_SYNC_FINISHED, () => {
-      console.log('Historical sync finished');
+      console.log('[BlockHeadersProvider] Historical sync finished');
     });
 
   return transport;

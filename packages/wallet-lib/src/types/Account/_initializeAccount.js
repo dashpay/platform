@@ -28,7 +28,9 @@ async function _initializeAccount(account, userUnsafePlugins) {
       }
 
       // TODO: [POC] make abstraction for this call
-      if (self.transport) {
+      if (self.transport
+          && self.transport.client
+          && self.transport.client.blockHeadersProvider) {
         TempChainCache.i().blockHeadersProvider = self.transport.client.blockHeadersProvider;
         self.transport.client.blockHeadersProvider.start()
           .catch((e) => {

@@ -13,7 +13,11 @@ async function handleTransactionFromStream(transaction) {
   // eslint-disable-next-line no-await-in-loop
   // const getTransactionResponse = await this.transport.getTransaction(transactionHash);
   // TODO: POC cache
-  const getTransactionResponse = TempChainCache.i().transactionsMetadata[transactionHash];
+  const getTransactionResponse = TempChainCache.i().getTransactionMetadata(transactionHash);
+
+  // TODO: split this if into two cases
+  // if the sync of historical headers is not done yet - do setTimeout
+  // if it is done, hook on block height changed
   if (!getTransactionResponse) {
     // This can happen due to propagation when one node inform us about a transaction,
     // but the node we ask the transaction to is not aware of it.
@@ -25,56 +29,57 @@ async function handleTransactionFromStream(transaction) {
     });
   }
 
-  if (!getTransactionResponse.blockHash) {
-    // at this point, transaction is not yet mined, therefore we gonna retry on next block to
-    // fetch this tx and subsequently its blockhash for blockheader fetching.
-    logger.silly(`TransactionSyncStreamWorker - Unconfirmed transaction ${transactionHash}: delayed.`);
-    const existingListener = this.delayedRequests[transactionHash]
-      && this.delayedRequests[transactionHash].blockHeightChangeListener;
+  // if (!getTransactionResponse.blockHash) {
+  //   // at this point, transaction is not yet mined, therefore we gonna retry on next block to
+  //   // fetch this tx and subsequently its blockhash for blockheader fetching.
+  //   logger.silly(`TransactionSyncStreamWorker - Unconfirmed transaction ${transactionHash}: delayed.`);
+  //   const existingListener = this.delayedRequests[transactionHash]
+  //     && this.delayedRequests[transactionHash].blockHeightChangeListener;
+  //
+  //   if (existingListener) {
+  //     self.parentEvents.removeListener(EVENTS.BLOCKHEIGHT_CHANGED, existingListener);
+  //   }
+  //
+  //   this.delayedRequests[transactionHash] = { isDelayed: true, type: 'transaction', blockHeightChangeListener: null };
+  //
+  //   return new Promise((resolve) => {
+  //     const blockHeightChangeListener = () => {
+  //       resolve(self.handleTransactionFromStream(transaction));
+  //     };
+  //
+  //     this.delayedRequests[transactionHash].blockHeightChangeListener = blockHeightChangeListener;
+  //
+  //     self.parentEvents.once(
+  //       EVENTS.BLOCKHEIGHT_CHANGED,
+  //       blockHeightChangeListener,
+  //     );
+  //   });
+  // }
 
-    if (existingListener) {
-      self.parentEvents.removeListener(EVENTS.BLOCKHEIGHT_CHANGED, existingListener);
-    }
+  // const executor = async () => {
+  //   if (self.delayedRequests[transactionHash]) {
+  //     logger.silly(`TransactionSyncStreamWorker - Processing previously delayed transaction ${transactionHash} from stream`);
+  //     const { blockHeightChangeListener } = self.delayedRequests[transactionHash];
+  //     if (blockHeightChangeListener) {
+  //       self.parentEvents.removeListener(EVENTS.BLOCKHEIGHT_CHANGED, blockHeightChangeListener);
+  //     }
+  //     delete self.delayedRequests[transactionHash];
+  //   } else {
+  //     logger.silly(`TransactionSyncStreamWorker - Processing transaction ${transactionHash} from stream`);
+  //   }
+  //
+  //   this.pendingRequest[getTransactionResponse.blockHash.toString('hex')] = { isProcessing: true, type: 'blockheader' };
+  //   // eslint-disable-next-line no-await-in-loop
+  //   const getBlockHeaderResponse = await this
+  //     .transport
+  //     .getBlockHeaderByHash(getTransactionResponse.blockHash);
+  //   // eslint-disable-next-line no-await-in-loop
+  //   await this.importBlockHeader(getBlockHeaderResponse);
+  //   delete this.pendingRequest[getTransactionResponse.blockHash.toString('hex')];
+  // };
 
-    this.delayedRequests[transactionHash] = { isDelayed: true, type: 'transaction', blockHeightChangeListener: null };
-
-    return new Promise((resolve) => {
-      const blockHeightChangeListener = () => {
-        resolve(self.handleTransactionFromStream(transaction));
-      };
-
-      this.delayedRequests[transactionHash].blockHeightChangeListener = blockHeightChangeListener;
-
-      self.parentEvents.once(
-        EVENTS.BLOCKHEIGHT_CHANGED,
-        blockHeightChangeListener,
-      );
-    });
-  }
-
-  const executor = async () => {
-    if (self.delayedRequests[transactionHash]) {
-      logger.silly(`TransactionSyncStreamWorker - Processing previously delayed transaction ${transactionHash} from stream`);
-      const { blockHeightChangeListener } = self.delayedRequests[transactionHash];
-      if (blockHeightChangeListener) {
-        self.parentEvents.removeListener(EVENTS.BLOCKHEIGHT_CHANGED, blockHeightChangeListener);
-      }
-      delete self.delayedRequests[transactionHash];
-    } else {
-      logger.silly(`TransactionSyncStreamWorker - Processing transaction ${transactionHash} from stream`);
-    }
-
-    this.pendingRequest[getTransactionResponse.blockHash.toString('hex')] = { isProcessing: true, type: 'blockheader' };
-    // eslint-disable-next-line no-await-in-loop
-    const getBlockHeaderResponse = await this
-      .transport
-      .getBlockHeaderByHash(getTransactionResponse.blockHash);
-    // eslint-disable-next-line no-await-in-loop
-    await this.importBlockHeader(getBlockHeaderResponse);
-    delete this.pendingRequest[getTransactionResponse.blockHash.toString('hex')];
-  };
-
-  await executor();
+  // await executor();
+  await this.importBlockHeader(getTransactionResponse.blockHeader);
 
   // TODO: POC fix
   const metadata = {

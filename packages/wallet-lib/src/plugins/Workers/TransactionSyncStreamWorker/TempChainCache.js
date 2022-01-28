@@ -3,6 +3,7 @@ const sleep = (time) => new Promise((resolve) => setTimeout(resolve, time));
 class TempChainCache {
   constructor() {
     this.transactionsByBlockHash = {};
+    this.blockHashesPerTx = {};
     this.transactionsMetadata = {};
     this.self = null;
     this.blockHeadersProvider = null;
@@ -11,32 +12,31 @@ class TempChainCache {
   static i() {
     if (!this.self) {
       this.self = new TempChainCache();
-      this.self.startStuff().catch((e) => {
-        console.log(e);
-      });
     }
     return this.self;
   }
 
-  async startStuff() {
-    while (true) {
-      Object.keys(this.transactionsByBlockHash).forEach((blockHash) => {
-        const transactions = this.transactionsByBlockHash[blockHash];
+  getTransactionMetadata(txHash) {
+    const blockHash = this.blockHashesPerTx[txHash];
 
-        const headerHeight = this.blockHeadersProvider.spvChain.headersHeights.get(blockHash);
-        if (headerHeight) {
-          transactions.forEach((txHash) => {
-            this.transactionsMetadata[txHash] = {
-              height: headerHeight,
-              blockHash,
-            };
-          });
-        }
-      });
-
-      // eslint-disable-next-line no-await-in-loop
-      await sleep(1000);
+    if (blockHash) {
+      const headerHeight = this.blockHeadersProvider.spvChain.headersHeights.get(blockHash);
+      const longestChain = this.blockHeadersProvider.spvChain.getLongestChain();
+      const header = longestChain[headerHeight];
+      return {
+        height: headerHeight,
+        blockHash,
+        blockHeader: header,
+      };
     }
+    return null;
+  }
+
+  addTransactionsForBlockHash(hash, txHashes) {
+    this.transactionsByBlockHash[hash] = txHashes;
+    txHashes.forEach((txHash) => {
+      this.blockHashesPerTx[txHash] = hash;
+    });
   }
 }
 

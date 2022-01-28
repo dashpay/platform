@@ -39,14 +39,13 @@ async function processChunks(dataChunk) {
       const { header } = merkleBlockFromResponse;
       self.importBlockHeader(header);
 
-      if (TempChainCache.i().transactionsByBlockHash[header.hash]) {
-        console.log('Dup of', header.hash);
-      }
-      TempChainCache.i().transactionsByBlockHash[header.hash] = intersection;
+      // if (TempChainCache.i().transactionsByBlockHash[header.hash]) {
+      //   console.log('Dup of', header.hash);
+      // }
+      TempChainCache.i().addTransactionsForBlockHash(header.hash, intersection);
     }
   }
 
-  console.log('Wall', walletTransactions.transactions.length);
   if (walletTransactions.transactions.length) {
     // When a transaction exist, there is multiple things we need to do :
     // 1) The transaction itself needs to be imported
