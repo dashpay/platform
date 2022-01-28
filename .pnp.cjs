@@ -2508,6 +2508,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["assert", "npm:2.0.0"],
             ["babel-loader", "virtual:58fb68f2aed20e5e0f2e48520ab903ae9bb3440369bfd5e912034003cf27c5aae368649fc5620dd2acbed578131f3a0975e75b838d77d12335fb0412e24026c6#npm:8.2.3"],
             ["bignumber.js", "npm:9.0.1"],
+            ["bls-signatures", "npm:0.2.5"],
             ["bs58", "npm:4.0.1"],
             ["buffer", "npm:6.0.3"],
             ["cbor", "npm:8.1.0"],
