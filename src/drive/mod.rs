@@ -437,10 +437,7 @@ impl Drive {
                     document_type_name,
                     contract,
                     owner_id,
-                )?
-                .ok_or_else(|| Error::CorruptedData(String::from(
-                    "unable to get document top index field",
-                )))?;
+                )?.unwrap_or_else(|| vec![0]);
 
             let index_path_slices: Vec<&[u8]> = index_path.iter().map(|x| x.as_slice()).collect();
 

@@ -81,10 +81,10 @@ pub fn setup(count: u32, seed: u64) -> (Drive, Contract) {
     (drive, contract)
 }
 
-#[test]
-fn test_query_many() {
-    let (mut drive, contract) = setup(1000, 73509);
-}
+// #[test]
+// fn test_query_many() {
+//     let (mut drive, contract) = setup(1000, 73509);
+// }
 
 #[test]
 fn test_query() {
