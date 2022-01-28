@@ -11,6 +11,10 @@ const jsonSchema = require('./jsonSchema');
 const NotIndexedPropertiesInWhereConditionsError = require('./errors/NotIndexedPropertiesInWhereConditionsError');
 const InvalidPropertiesInOrderByError = require('./errors/InvalidPropertiesInOrderByError');
 const RangeOperatorAllowedOnlyForLastIndexedPropertyError = require('./errors/RangeOperatorAllowedOnlyForLastIndexedPropertyError');
+const MultipleRangeOperatorsError = require('./errors/MultipleRangeOperatorsError');
+const InOperatorAllowedOnlyForLastTwoIndexedPropertiesError = require('./errors/InOperatorAllowedOnlyForLastTwoIndexedPropertiesError');
+const RangeOperatorAllowedOnlyWithEqualOperatorsError = require('./errors/RangeOperatorAllowedOnlyWithEqualOperatorsError');
+const RangePropertyDoesNotHaveOrderByError = require('./errors/RangePropertyDoesNotHaveOrderByError');
 
 /**
  * @param {findConflictingConditions} findConflictingConditions
@@ -97,6 +101,73 @@ function validateQueryFactory(
           );
         }
       });
+
+      // check we have only one range in query
+      const rangeOperators = ['>', '<', '>=', '<=', 'startsWith'];
+      let hasRangeOperator = false;
+      sortedWhereClauses.forEach((clause) => {
+        if (rangeOperators.includes(clause[1])) {
+          if (!hasRangeOperator) {
+            hasRangeOperator = true;
+          } else {
+            result.addError(
+              new MultipleRangeOperatorsError(clause[0], clause[1]),
+            );
+          }
+        }
+      });
+
+      // check 'in' is used only in the last two indexed conditions
+      const invalidClause = sortedWhereClauses.find((clause) => {
+        let clauseIsInvalid = false;
+        if (clause[1] === 'in') {
+          clauseIsInvalid = appropriateIndex.find((indexObj, index) => {
+            const [indexProperty] = Object.keys(indexObj)[0];
+
+            return indexProperty === clause[0]
+              && index !== appropriateIndex.length - 1
+              && index !== appropriateIndex.length - 2;
+          });
+        }
+
+        return clauseIsInvalid;
+      });
+
+      if (invalidClause) {
+        result.addError(
+          new InOperatorAllowedOnlyForLastTwoIndexedPropertiesError(invalidClause[0], 'in'),
+        );
+      }
+
+      // check range operators are used after '==' and 'in'
+      let lastPrefixOperatorIndex;
+      sortedWhereClauses.forEach((clause, index) => {
+        if ((clause[1] === '==' || clause[1] === 'in')) {
+          lastPrefixOperatorIndex = index;
+        }
+      });
+
+      sortedWhereClauses.forEach((clause, index) => {
+        if (rangeOperators.includes(clause[1]) && index < lastPrefixOperatorIndex) {
+          result.addError(
+            new RangeOperatorAllowedOnlyWithEqualOperatorsError(clause[0], clause[1]),
+          );
+        }
+      });
+
+      // check 'in' or range operators are in orderBy
+      sortedWhereClauses.forEach((clause) => {
+        if (['>', '<', '>=', '<=', 'startsWith', 'in'].includes(clause[1])) {
+          const hasOrderBy = (query.orderBy || [])
+            .find(([orderByProperty]) => orderByProperty === clause[0]);
+
+          if (!hasOrderBy) {
+            result.addError(
+              new RangePropertyDoesNotHaveOrderByError(clause[0], clause[1]),
+            );
+          }
+        }
+      });
     }
 
     // Sorting is allowed only for the last indexed property
@@ -131,6 +202,17 @@ function validateQueryFactory(
 
         return result;
       }
+
+      // check that property was used with range operator + 'in'
+      query.orderBy.forEach(([orderBy]) => {
+        sortedWhereClauses.forEach((clause) => {
+          if (clause[0] === orderBy && !['>', '<', '>=', '<=', 'startsWith', 'in'].includes(clause[1])) {
+            result.addError(
+              new InvalidPropertiesInOrderByError(),
+            );
+          }
+        });
+      });
     }
 
     return result;
