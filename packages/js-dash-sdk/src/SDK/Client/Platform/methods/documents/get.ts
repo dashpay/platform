@@ -1,5 +1,6 @@
 import Identifier from '@dashevo/dpp/lib/Identifier';
 import Metadata from "@dashevo/dpp/lib/Metadata";
+import Document from '@dashevo/dpp/lib/document/Document';
 
 import {Platform} from "../../Platform";
 
@@ -14,8 +15,8 @@ declare interface fetchOpts {
     where?: WhereCondition[];
     orderBy?: OrderByCondition[];
     limit?: number;
-    startAt?: number;
-    startAfter?: number;
+    startAt?: number|Document|Identifier;
+    startAfter?: number|Document|Identifier;
 }
 
 type OrderByCondition = [
@@ -119,6 +120,14 @@ export async function get(this: Platform, typeLocator: string, opts: fetchOpts):
         const binaryProperties = appDefinition.contract.getBinaryProperties(fieldType);
 
         opts.where = opts.where.map((whereCondition) => convertIdentifierProperties(whereCondition, binaryProperties));
+    }
+
+    if (opts.startAt instanceof Document) {
+      opts.startAt = opts.startAt.getId();
+    }
+
+    if (opts.startAfter instanceof Document) {
+      opts.startAt = opts.startAfter.getId();
     }
 
     // @ts-ignore
