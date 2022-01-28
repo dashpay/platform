@@ -27,6 +27,7 @@ module.exports = function createDPPMock(sinonSandbox = undefined) {
     createFromObject: sinonSandbox.stub(),
     createFromBuffer: sinonSandbox.stub(),
     validate: sinonSandbox.stub(),
+    createStateTransition: sinonSandbox.stub(),
   };
 
   const stateTransition = {
