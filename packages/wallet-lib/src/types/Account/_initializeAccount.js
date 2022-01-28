@@ -28,12 +28,14 @@ async function _initializeAccount(account, userUnsafePlugins) {
       }
 
       // TODO: [POC] make abstraction for this call
-      TempChainCache.i().blockHeadersProvider = self.transport.client.blockHeadersProvider;
-      self.transport.client.blockHeadersProvider.start()
-        .catch((e) => {
-          console.log('Block headers provider error');
-          console.log(e);
-        });
+      if (self.transport) {
+        TempChainCache.i().blockHeadersProvider = self.transport.client.blockHeadersProvider;
+        self.transport.client.blockHeadersProvider.start()
+          .catch((e) => {
+            console.log('Block headers provider error');
+            console.log(e);
+          });
+      }
 
       // Will sort and inject plugins.
       await preparePlugins(account, userUnsafePlugins);
