@@ -496,31 +496,39 @@ impl Document {
             }
             let key_paths: Vec<&str> = key_path.split('.').collect::<Vec<&str>>();
             let (key, rest_key_paths) = key_paths.split_first().ok_or_else(|| Error::CorruptedData(String::from(
-                "c key must not be null when getting from document",
+                "key must not be null when getting from document",
             )))?;
 
-            fn get_value_at_path<'a>(value: &'a Value, key_paths: &'a [&str]) -> Result<&'a Value, Error> {
-                if key_paths.len() == 0 {
-                    Ok(value)
+            fn get_value_at_path<'a>(value: &'a Value, key_paths: &'a [&str]) -> Result<Option<&'a Value>, Error> {
+                if key_paths.is_empty() {
+                    Ok(Some(value))
                 } else {
                     let (key, rest_key_paths) = key_paths.split_first().ok_or_else(|| Error::CorruptedData(String::from(
-                        "a key must not be null when getting from document",
+                        "key must not be null when getting from document",
                     )))?;
                     let map_values = value.as_map().ok_or_else(|| Error::CorruptedData(String::from(
                         "inner key must refer to a value map",
                     )))?;
-                    let value = get_key_from_cbor_map(map_values, key).ok_or_else(|| Error::CorruptedData(String::from(
-                        "b key must not be null when getting from document",
-                    )))?;
-                    get_value_at_path(value, rest_key_paths)
+                    match get_key_from_cbor_map(map_values, key) {
+                        None => {
+                            Ok(None)
+                        }
+                        Some(value) => {
+                            get_value_at_path(value, rest_key_paths)
+                        }
+                    }
                 }
             }
 
             match self.properties.get(*key) {
                 None => Ok(None),
                 Some(value) => {
-                    let path_value = get_value_at_path(value, rest_key_paths)?;
-                    Ok(Some(document_type.serialize_value_for_key(key_path, path_value)?))
+                    match get_value_at_path(value, rest_key_paths)? {
+                        None => Ok(None),
+                        Some(path_value) => {
+                            Ok(Some(document_type.serialize_value_for_key(key_path, path_value)?))
+                        }
+                    }
                 },
             }
         }
