@@ -43,7 +43,8 @@
     "@dashevo/masternode-reward-shares-contract": "workspace:~",
     "@dashevo/wallet-lib": "workspace:~",
     "bs58": "^4.0.1",
-    "node-inspect-extracted": "^1.0.8"
+    "node-inspect-extracted": "^1.0.8",
+    "secp256k1": "^4.0.3"
   },
   "devDependencies": {
     "@types/chai": "^4.2.12",
