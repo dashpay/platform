@@ -11,10 +11,14 @@ const { StateTransitionBroadcastError } = require('dash/build/src/errors/StateTr
 const InvalidInstantAssetLockProofSignatureError = require('@dashevo/dpp/lib/errors/consensus/basic/identity/InvalidInstantAssetLockProofSignatureError');
 const IdentityAssetLockTransactionOutPointAlreadyExistsError = require('@dashevo/dpp/lib/errors/consensus/basic/identity/IdentityAssetLockTransactionOutPointAlreadyExistsError');
 const BalanceIsNotEnoughError = require('@dashevo/dpp/lib/errors/consensus/fee/BalanceIsNotEnoughError');
-const IdentityPublicKey = require('@dashevo/dpp/lib/identity/IdentityPublicKey');
 
+const DAPIClient = require('@dashevo/dapi-client/lib/DAPIClient');
+const { hash } = require('@dashevo/dpp/lib/util/hash');
+const Identifier = require('@dashevo/dpp/lib/identifier/Identifier');
 const createClientWithFundedWallet = require('../../../lib/test/createClientWithFundedWallet');
 const wait = require('../../../lib/wait');
+const getDAPISeeds = require('../../../lib/test/getDAPISeeds');
+const Transaction = require('@dashevo/dashcore-lib/lib/transaction');
 
 describe('Platform', () => {
   describe('Identity', () => {
@@ -22,7 +26,6 @@ describe('Platform', () => {
     let client;
     let identity;
     let walletAccount;
-    let walletPublicKey;
 
     before(async () => {
       dpp = new DashPlatformProtocol();
@@ -30,9 +33,6 @@ describe('Platform', () => {
 
       client = await createClientWithFundedWallet();
       walletAccount = await client.getWalletAccount();
-      ({
-        publicKey: walletPublicKey,
-      } = walletAccount.identities.getIdentityHDKeyByIndex(0, 0));
     });
 
     after(async () => {
@@ -460,6 +460,67 @@ describe('Platform', () => {
         expect(broadcastError.getCause()).to.be.an.instanceOf(
           IdentityAssetLockTransactionOutPointAlreadyExistsError,
         );
+      });
+    });
+
+    describe('Masternodes', () => {
+      let dapiClient;
+      const network = process.env.NETWORK;
+
+      beforeEach(() => {
+        dapiClient = new DAPIClient({
+          network,
+          seeds: getDAPISeeds(),
+        });
+      });
+
+      it('should receive masternode identities', async () => {
+        const bestBlockHash = await dapiClient.core.getBestBlockHash();
+        const baseBlockHash = await dapiClient.core.getBlockHash(1);
+
+        const { mnList } = await dapiClient.core.getMnListDiff(
+          baseBlockHash,
+          bestBlockHash,
+        );
+
+        for (const masternodeEntry of mnList) {
+          const masternodeIdentityId = Identifier.from(
+            hash(
+              Buffer.from(masternodeEntry.proRegTxHash, 'hex'),
+            ),
+          );
+
+          let fetchedIdentity = await client.platform.identities.get(
+            masternodeIdentityId,
+          );
+
+          expect(fetchedIdentity).to.be.not.null();
+
+          const { transaction: transactionBuffer } = await client.dapiClient.core.getTransaction(
+            masternodeEntry.proRegTxHash,
+          );
+
+          const transaction = new Transaction(transactionBuffer);
+
+          if (transaction.extraPayload.operatorReward > 0) {
+            const operatorPubKey = Buffer.from(masternodeEntry.pubKeyOperator, 'hex');
+
+            const operatorIdentityHash = hash(
+              Buffer.concat([
+                masternodeIdentityId.toBuffer(),
+                operatorPubKey,
+              ]),
+            );
+
+            const operatorIdentityId = Identifier.from(operatorIdentityHash);
+
+            fetchedIdentity = await client.platform.identities.get(
+              operatorIdentityId,
+            );
+
+            expect(fetchedIdentity).to.be.not.null();
+          }
+        }
       });
     });
   });

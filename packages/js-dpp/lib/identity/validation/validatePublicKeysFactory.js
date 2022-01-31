@@ -27,10 +27,11 @@ const IdentityPublicKey = require('../IdentityPublicKey');
  * Validate public keys (factory)
  *
  * @param {JsonSchemaValidator} validator
+ * @param {BlsSignatures} bls
  *
  * @return {validatePublicKeys}
  */
-function validatePublicKeysFactory(validator) {
+function validatePublicKeysFactory(validator, bls) {
   /**
    * Validate public keys
    *
@@ -97,11 +98,35 @@ function validatePublicKeysFactory(validator) {
     // validate key data
     rawPublicKeys
       .forEach((rawPublicKey) => {
-        const dataHex = rawPublicKey.data.toString('hex');
+        let validationError;
 
-        if (!PublicKey.isValid(dataHex)) {
-          const validationError = PublicKey.getValidationError(dataHex);
+        switch (rawPublicKey.type) {
+          case IdentityPublicKey.TYPES.ECDSA_SECP256K1: {
+            const dataHex = rawPublicKey.data.toString('hex');
 
+            if (!PublicKey.isValid(dataHex)) {
+              validationError = PublicKey.getValidationError(dataHex);
+            }
+            break;
+          }
+          case IdentityPublicKey.TYPES.BLS12_381: {
+            try {
+              bls.PublicKey.fromBytes(
+                Uint8Array.from(rawPublicKey.data),
+              );
+            } catch (e) {
+              validationError = new TypeError('Invalid public key');
+            }
+            break;
+          }
+          case IdentityPublicKey.TYPES.ECDSA_HASH160:
+          // Do nothing
+            break;
+          default:
+            throw new TypeError(`Unknown public key type: ${rawPublicKey.type}`);
+        }
+
+        if (validationError !== undefined) {
           const consensusError = new InvalidIdentityPublicKeyDataError(
             rawPublicKey.id,
             validationError.message,

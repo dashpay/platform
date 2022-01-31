@@ -4,6 +4,9 @@ import DAPIClientTransport from "@dashevo/wallet-lib/src/transport/DAPIClientTra
 import { Platform } from './Platform';
 import { Network } from "@dashevo/dashcore-lib";
 import DAPIClient from "@dashevo/dapi-client";
+import { contractId as dpnsContractId } from "@dashevo/dpns-contract/lib/systemIds";
+import { contractId as dashpayContractId } from "@dashevo/dashpay-contract/lib/systemIds";
+import { contractId as masternodeRewardSharesContractId } from "@dashevo/masternode-reward-shares-contract/lib/systemIds";
 import { ClientApps, ClientAppsOptions } from "./ClientApps";
 
 export interface WalletOptions extends Wallet.IWalletOptions {
@@ -107,13 +110,13 @@ export class Client extends EventEmitter {
 
         this.apps = new ClientApps(Object.assign({
             dpns: {
-                contractId: 'Bw9PUC3aSEGQ4j5qrvpNLrRNFPVMiUHZLr1atgfYJcmf'
+                contractId: dpnsContractId,
             },
             dashpay: {
-                contractId: '2Vuou3EfbrtunwCZvQp1XS5PXZ5CgC1pGBz4VPT4ojmy',
+                contractId: dashpayContractId,
             },
             masternodeRewardShares: {
-                contractId: '2Vuou3EfbrtunwCZvQp1XS5PXZ5CgC1pGBz4VPT4ojmy',
+                contractId: masternodeRewardSharesContractId,
             }
         }, this.options.apps));
 

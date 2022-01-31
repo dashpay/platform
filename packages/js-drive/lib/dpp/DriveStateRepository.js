@@ -207,7 +207,7 @@ class DriveStateRepository {
   /**
    * Fetch Core transaction by ID
    *
-   * @param {string} id
+   * @param {string} id - Transaction ID hex
    * @returns {Promise<Object|null>}
    */
   async fetchTransaction(id) {

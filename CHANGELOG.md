@@ -1,3 +1,66 @@
+## [0.22.0-dev.7](https://github.com/dashevo/platform/compare/v0.21.7...v0.22.0-dev.7) (2022-01-19)
+
+
+### Features
+
+* added WalletStore ([#197](https://github.com/dashevo/platform/issues/197))
+* **drive:** allow using `in` and `startsWith` only in last `where` condition ([#201](https://github.com/dashevo/platform/issues/201))
+* **drive:** allow using `orderBy` for fields having `in` and `startsWith` in last `where` clause ([#199](https://github.com/dashevo/platform/issues/199))
+* register system contracts on `initChain` ([#182](https://github.com/dashevo/platform/issues/182))
+* **wallet-lib:** ChainStore ([#196](https://github.com/dashevo/platform/issues/196))
+
+
+### Bug Fixes
+
+* **sdk:** system contract ids were hardcoded in SDKs Client module ([#192](https://github.com/dashevo/platform/issues/192))
+
+
+### Build System
+
+* fix configure test suite script for grep 2.5.1 ([#187](https://github.com/dashevo/platform/issues/187))
+
+
+### Miscellaneous Chores
+
+* **dashmate:** update tenderdash to 0.7.0-dev ([#188](https://github.com/dashevo/platform/issues/188))
+* remove `fixCumulativeFeesBug` feature flag ([#191](https://github.com/dashevo/platform/issues/191))
+
+
+### [0.21.7](https://github.com/dashevo/platform/compare/v0.21.6...v0.21.7) (2022-01-17)
+
+
+### ⚠ BREAKING CHANGES
+
+* **dashmate:** `platform.drive.abci.docker.build.path' and 'platform.dapi.api.docker.build.path' are removed in favor of `platform.sourcePath'
+
+### Features
+
+* **dashmate:** build DAPI and Drive from monorepo path ([#145](https://github.com/dashevo/platform/issues/145))
+* distribute dashmate with NPM ([#148](https://github.com/dashevo/platform/issues/148))
+* support Apple Silicone ([#143](https://github.com/dashevo/platform/issues/143))
+
+
+### Bug Fixes
+
+* instantlock waiting period for transaction <hash> timed out
+
+
+### Miscellaneous Chores
+
+* fix wrong version in a release PR title ([#82](https://github.com/dashevo/platform/issues/82))
+* missed merk darwin x64 pre-build binary ([#144](https://github.com/dashevo/platform/issues/144))
+* undefined "-w" argument in restart script ([#85](https://github.com/dashevo/platform/issues/85))
+
+
+### Documentation
+
+* escape literal '|' in table ([#164](https://github.com/dashevo/platform/issues/164))
+
+
+### Tests
+
+* **wallet-lib:** fix hanging functional test ([#186](https://github.com/dashevo/platform/issues/186))
+
 ## [0.22.0-dev.6](https://github.com/dashevo/platform/compare/v0.22.0-dev.5...v0.22.0-dev.6) (2022-01-11)
 
 
@@ -124,6 +187,7 @@
 * fix wrong version in a release PR title ([#82](https://github.com/dashevo/platform/issues/82))
 * missed merk darwin x64 pre-build binary ([#144](https://github.com/dashevo/platform/issues/144))
 * undefined "-w" argument in restart script ([#85](https://github.com/dashevo/platform/issues/85))
+
 
 ### [0.21.6](https://github.com/dashevo/platform/compare/v0.21.5...v0.21.6) (2021-12-13)
 

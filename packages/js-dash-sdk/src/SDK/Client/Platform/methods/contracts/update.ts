@@ -6,21 +6,34 @@ import { signStateTransition } from "../../signStateTransition";
  * Publish contract onto the platform
  *
  * @param {Platform} this - bound instance class
- * @param dataContract - contract
+ * @param {DataContract} dataContract - contract
  * @param identity - identity
  * @return {DataContractUpdateTransition}
  */
 export default async function update(this: Platform, dataContract: any, identity: any): Promise<any> {
-    await this.initialize();
+  await this.initialize();
 
-    const { dpp } = this;
+  const { dpp } = this;
 
-    dataContract.incrementVersion();
+  // Clone contract
+  const updatedDataContract = await this.dpp.dataContract.createFromObject(
+    dataContract.toObject(),
+  );
 
-    const dataContractUpdateTransition = dpp.dataContract.createDataContractUpdateTransition(dataContract);
+  updatedDataContract.incrementVersion();
 
-    await signStateTransition(this, dataContractUpdateTransition, identity);
-    await broadcastStateTransition(this, dataContractUpdateTransition);
+  const dataContractUpdateTransition = dpp.dataContract.createDataContractUpdateTransition(updatedDataContract);
 
-    return dataContractUpdateTransition;
+  await signStateTransition(this, dataContractUpdateTransition, identity);
+  await broadcastStateTransition(this, dataContractUpdateTransition);
+
+  // Update app with updated data contract if available
+  for (const appName of this.client.getApps().getNames()) {
+    const appDefinition = this.client.getApps().get(appName);
+    if (appDefinition.contractId.equals(updatedDataContract.getId()) && appDefinition.contract) {
+      appDefinition.contract = updatedDataContract;
+    }
+  }
+
+  return dataContractUpdateTransition;
 }
