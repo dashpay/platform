@@ -52,7 +52,7 @@ impl From<RootTree> for &'static [u8; 1] {
 // //    [firstName, lastName, age]
 // //    [age]
 // //    =>
-// //    [firstName : [b"\0", {lastName : [b"\0", {age : b"\0" }]}], age: b"\0"],
+// //    [firstName : [&[0], {lastName : [&[0], {age : &[0] }]}], age: &[0]],
 // //
 // }
 
@@ -71,7 +71,7 @@ fn contract_documents_path(
     [
         Into::<&[u8; 1]>::into(RootTree::ContractDocuments),
         contract_id,
-        b"1"
+        &[1]
     ]
 }
 
@@ -82,7 +82,7 @@ fn contract_document_type_path<'a>(
     [
         Into::<&[u8; 1]>::into(RootTree::ContractDocuments),
         contract_id,
-        b"1",
+        &[1],
         document_type_name.as_bytes(),
     ]
 }
@@ -94,9 +94,9 @@ fn contract_documents_primary_key_path<'a>(
     [
         Into::<&[u8; 1]>::into(RootTree::ContractDocuments),
         contract_id,
-        b"1",
+        &[1],
         document_type_name.as_bytes(),
-        b"\0",
+        &[0]
     ]
 }
 
@@ -180,7 +180,7 @@ impl Drive {
         // the contract
         self.grove.insert(
             contract_root_path,
-            b"\0",
+            &[0],
             contract_bytes,
             transaction,
         )?;
@@ -188,7 +188,7 @@ impl Drive {
         // the documents
         self.grove.insert(
             contract_root_path,
-            b"1",
+            &[1],
             Element::empty_tree(),
             transaction,
         )?;
@@ -216,7 +216,7 @@ impl Drive {
             // primary key tree
             self.grove.insert(
                 type_path,
-                b"\0",
+                &[0],
                 Element::empty_tree(),
                 transaction,
             )?;
@@ -250,7 +250,7 @@ impl Drive {
         // this will override the previous contract
         self.grove.insert(
             contract_root_path,
-            b"\0",
+            &[0],
             contract_bytes,
             transaction,
         )?;
@@ -295,7 +295,7 @@ impl Drive {
 
         if let Ok(stored_element) = self
             .grove
-            .get(contract_root_path(&contract.id), b"\0", transaction) {
+            .get(contract_root_path(&contract.id), &[0], transaction) {
             already_exists = true;
             match stored_element {
                 Element::Item(stored_contract_bytes) => {
@@ -524,11 +524,11 @@ impl Drive {
                 // here we are inserting an empty tree that will have a subtree of all other index properties
                 self.grove.insert_if_not_exists(
                     index_path_slices,
-                    b"\0",
+                    &[0],
                     Element::empty_tree(),
                     transaction,
                 )?;
-                index_path.push(b"\0".to_vec());
+                index_path.push(vec![0]);
 
                 let index_path_slices: Vec<&[u8]> =
                     index_path.iter().map(|x| x.as_slice()).collect();
@@ -547,7 +547,7 @@ impl Drive {
                 // here we should return an error if the element already exists
                 let inserted = self.grove.insert_if_not_exists(
                     index_path_slices,
-                    b"\0",
+                    &[0],
                     document_reference,
                     transaction,
                 )?;
@@ -748,7 +748,7 @@ impl Drive {
             // unique indexes will be stored under key "0"
             // non unique indices should have a tree at key "0" that has all elements based off of primary key
             if !index.unique {
-                index_path.push(b"\0".to_vec());
+                index_path.push(vec![0]);
 
                 let index_path_slices: Vec<&[u8]> =
                     index_path.iter().map(|x| x.as_slice()).collect();
@@ -762,7 +762,7 @@ impl Drive {
 
                 // here we should return an error if the element already exists
                 self.grove
-                    .delete(index_path_slices, b"\0", transaction)?;
+                    .delete(index_path_slices, &[0], transaction)?;
             }
         }
         Ok(0)

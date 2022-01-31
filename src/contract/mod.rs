@@ -201,7 +201,7 @@ impl Contract {
         [
             Into::<&[u8; 1]>::into(RootTree::ContractDocuments),
             &self.id,
-            b"1"
+            &[1]
         ]
     }
 
@@ -209,7 +209,7 @@ impl Contract {
         [
             Into::<&[u8; 1]>::into(RootTree::ContractDocuments),
             &self.id,
-            b"1",
+            &[1],
             document_type_name.as_bytes(),
         ]
     }
@@ -218,9 +218,9 @@ impl Contract {
         [
             Into::<&[u8; 1]>::into(RootTree::ContractDocuments),
             &self.id,
-            b"1",
+            &[1],
             document_type_name.as_bytes(),
-            b"\0",
+            &[0]
         ]
     }
 }
