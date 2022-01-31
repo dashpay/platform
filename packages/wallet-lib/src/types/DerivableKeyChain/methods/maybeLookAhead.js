@@ -38,7 +38,6 @@ function maybeLookAhead() {
       // and set it up to watched or used outside of lookAhead bounds
       const sortedBasePaths = basePaths.sort((a, b) => a.split('/').splice(-1) - b.split('/').splice(-1));
 
-      let prevIndex;
       sortedBasePaths.forEach((path) => {
         const addressData = this.issuedPaths.get(path);
 
@@ -49,7 +48,6 @@ function maybeLookAhead() {
         }
 
         lastGeneratedIndexes[basePath] = currentIndex;
-        prevIndex = currentIndex;
       });
     });
 

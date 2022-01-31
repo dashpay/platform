@@ -8,7 +8,7 @@
  * @return {HDPrivateKey|HDPublicKey}
  */
 function getDIP15ExtendedKey(userUniqueId, contactUniqueId, index = 0, accountIndex = 0, type = 'HDPrivateKey') {
-  if (!['HDPrivateKey', 'HDPublicKey'].includes(this.type)) {
+  if (!['HDPrivateKey', 'HDPublicKey'].includes(this.rootKeyType)) {
     throw new Error('Wallet is not loaded from a mnemonic or a HDPubKey, impossible to derivate keys');
   }
   if (!userUniqueId || !contactUniqueId) throw new Error('Required userUniqueId and contactUniqueId to be defined');

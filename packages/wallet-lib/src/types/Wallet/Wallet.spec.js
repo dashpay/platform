@@ -23,7 +23,7 @@ describe('Wallet - class', function suite() {
 
     expect(wallet1.plugins).to.be.deep.equal({});
     expect(wallet1.accounts).to.be.deep.equal([]);
-    expect(wallet1.keyChainStore.getMasterKeyChain().rootKeyType).to.be.deep.equal('HDPrivateKey');
+    expect(wallet1.keyChain.type).to.be.deep.equal('HDPrivateKey');
     expect(wallet1.passphrase).to.be.deep.equal(null);
     expect(wallet1.allowSensitiveOperations).to.be.deep.equal(false);
     expect(wallet1.injectDefaultPlugins).to.be.deep.equal(true);
@@ -50,7 +50,7 @@ describe('Wallet - class', function suite() {
     expect(wallet1.plugins).to.be.deep.equal({});
     expect(wallet1.accounts).to.be.deep.equal([]);
     expect(wallet1.network).to.be.deep.equal(Dashcore.Networks.testnet.toString());
-    expect(wallet1.keyChainStore.getMasterKeyChain().rootKeyType).to.be.deep.equal('HDPrivateKey');
+    expect(wallet1.keyChain.type).to.be.deep.equal('HDPrivateKey');
     expect(wallet1.passphrase).to.be.deep.equal(null);
     expect(wallet1.allowSensitiveOperations).to.be.deep.equal(false);
     expect(wallet1.injectDefaultPlugins).to.be.deep.equal(true);
@@ -77,7 +77,7 @@ describe('Wallet - class', function suite() {
     expect(wallet1.plugins).to.be.deep.equal({});
     expect(wallet1.accounts).to.be.deep.equal([]);
     expect(wallet1.network).to.be.deep.equal(Dashcore.Networks.testnet.toString());
-    expect(wallet1.keyChainStore.getMasterKeyChain().rootKeyType).to.be.deep.equal('HDPrivateKey');
+    expect(wallet1.keyChain.type).to.be.deep.equal('HDPrivateKey');
     expect(wallet1.passphrase).to.be.deep.equal(null);
     expect(wallet1.allowSensitiveOperations).to.be.deep.equal(false);
     expect(wallet1.injectDefaultPlugins).to.be.deep.equal(true);
@@ -95,7 +95,7 @@ describe('Wallet - class', function suite() {
     expect(wallet1.plugins).to.be.deep.equal({});
     expect(wallet1.accounts).to.be.deep.equal([]);
     expect(wallet1.network).to.be.deep.equal(Dashcore.Networks.testnet.toString());
-    expect(wallet1.keyChainStore.getMasterKeyChain().rootKeyType).to.be.deep.equal('HDPublicKey');
+    expect(wallet1.keyChain.type).to.be.deep.equal('HDPublicKey');
     expect(wallet1.passphrase).to.be.deep.equal(null);
     expect(wallet1.allowSensitiveOperations).to.be.deep.equal(false);
     expect(wallet1.injectDefaultPlugins).to.be.deep.equal(true);
@@ -112,7 +112,7 @@ describe('Wallet - class', function suite() {
     expect(wallet1.plugins).to.be.deep.equal({});
     expect(wallet1.accounts).to.be.deep.equal([]);
     expect(wallet1.network).to.be.deep.equal(Dashcore.Networks.testnet.toString());
-    expect(wallet1.keyChainStore.getMasterKeyChain().rootKeyType).to.be.deep.equal('privateKey');
+    expect(wallet1.keyChain.type).to.be.deep.equal('privateKey');
     expect(wallet1.passphrase).to.be.deep.equal(null);
     expect(wallet1.allowSensitiveOperations).to.be.deep.equal(false);
     expect(wallet1.injectDefaultPlugins).to.be.deep.equal(true);
@@ -132,7 +132,7 @@ describe('Wallet - class', function suite() {
     expect(wallet1.plugins).to.be.deep.equal({});
     expect(wallet1.accounts).to.be.deep.equal([]);
     expect(wallet1.network).to.be.deep.equal(Dashcore.Networks.testnet.toString());
-    expect(wallet1.keyChainStore.getMasterKeyChain().rootKeyType).to.be.deep.equal('publicKey');
+    expect(wallet1.keyChain.type).to.be.deep.equal('publicKey');
     expect(wallet1.passphrase).to.be.deep.equal(null);
     expect(wallet1.allowSensitiveOperations).to.be.deep.equal(false);
     expect(wallet1.injectDefaultPlugins).to.be.deep.equal(true);
@@ -149,7 +149,7 @@ describe('Wallet - class', function suite() {
     expect(wallet2.plugins).to.be.deep.equal({});
     expect(wallet2.accounts).to.be.deep.equal([]);
     expect(wallet2.network).to.be.deep.equal(Dashcore.Networks.testnet.toString());
-    expect(wallet2.keyChainStore.getMasterKeyChain().rootKeyType).to.be.deep.equal('publicKey');
+    expect(wallet2.keyChain.type).to.be.deep.equal('publicKey');
     expect(wallet2.passphrase).to.be.deep.equal(null);
     expect(wallet2.allowSensitiveOperations).to.be.deep.equal(false);
     expect(wallet2.injectDefaultPlugins).to.be.deep.equal(true);
@@ -170,7 +170,7 @@ describe('Wallet - class', function suite() {
   });
 });
 describe('Wallet - Get/Create Account',  function suite() {
-  this.timeout(10000);
+  this.timeout(15000);
   const wallet1 = new Wallet({ mnemonic: fluidMnemonic.mnemonic, ...mocks });
 
   it('should be able to create/get a wallet', async () => {
@@ -246,5 +246,6 @@ describe('Wallet - Get/Create Account',  function suite() {
   it('should not leak', () => {
     const mockOpts1 = { };
     fromHDPublicKey.call(mockOpts1, gatherSail.testnet.external.hdpubkey);
+    expect(mockOpts1.keyChain.keys).to.deep.equal({});
   });
 });

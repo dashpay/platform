@@ -1,6 +1,4 @@
-const { Networks } = require('@dashevo/dashcore-lib');
-const { BIP44_LIVENET_ROOT_PATH, BIP44_TESTNET_ROOT_PATH } = require('../../../CONSTANTS');
-const KeyChain = require('../../KeyChain/KeyChain');
+const DerivableKeyChain = require('../../DerivableKeyChain/DerivableKeyChain');
 const logger = require('../../../logger');
 
 function makeChildKeyChainStore(path, opts) {
@@ -13,7 +11,7 @@ function makeChildKeyChainStore(path, opts) {
 
   // Accessing the type from getKeyForPath would behave on browser differently due to mangling.
   keyChainOpts[masterKeyChain.rootKeyType] = masterKeyChain.getForPath(path).key;
-  const childKeyChain = new KeyChain(keyChainOpts);
+  const childKeyChain = new DerivableKeyChain(keyChainOpts);
   childKeyChainStore.addKeyChain(childKeyChain, { isMasterKeyChain: true });
   return childKeyChainStore;
 }

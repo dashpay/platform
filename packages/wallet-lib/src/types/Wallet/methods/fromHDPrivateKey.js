@@ -3,7 +3,6 @@ const {
   is,
 } = require('../../../utils');
 const KeyChain = require('../../KeyChain/KeyChain');
-const KeyChainStore = require('../../KeyChainStore/KeyChainStore');
 const { WALLET_TYPES } = require('../../../CONSTANTS');
 
 /**
@@ -15,8 +14,5 @@ module.exports = function fromHDPrivateKey(hdPrivateKey) {
   this.walletType = WALLET_TYPES.HDWALLET;
   this.mnemonic = null;
   this.HDPrivateKey = HDPrivateKey(hdPrivateKey);
-
-  const keyChain = new KeyChain({ HDPrivateKey: this.HDPrivateKey });
-  this.keyChainStore = new KeyChainStore();
-  this.keyChainStore.addKeyChain(keyChain, { isMasterKeyChain: true });
+  this.keyChain = new KeyChain({ HDPrivateKey: hdPrivateKey });
 };

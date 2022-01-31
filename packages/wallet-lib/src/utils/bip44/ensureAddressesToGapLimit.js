@@ -1,5 +1,5 @@
 const logger = require('../../logger');
-const { BIP44_ADDRESS_GAP, WALLET_TYPES } = require('../../CONSTANTS');
+const { BIP44_ADDRESS_GAP } = require('../../CONSTANTS');
 const is = require('../is');
 
 const getMissingIndexes = require('./getMissingIndexes');
@@ -77,15 +77,13 @@ function ensureAccountAddressesToGapLimit(walletStore, walletType, accountIndex,
 
   const gapBetweenLastUsedAndLastGenerated = {
     external: lastGeneratedIndexes.external - lastUsedIndexes.external,
+    internal: lastGeneratedIndexes.internal - lastUsedIndexes.internal,
   };
   const addressesToGenerate = {
     external: BIP44_ADDRESS_GAP - gapBetweenLastUsedAndLastGenerated.external,
+    internal: BIP44_ADDRESS_GAP - gapBetweenLastUsedAndLastGenerated.internal,
   };
-  if (walletType.includes(WALLET_TYPES.HDWALLET)) {
-    // eslint-disable-next-line max-len
-    gapBetweenLastUsedAndLastGenerated.internal = lastGeneratedIndexes.internal - lastUsedIndexes.internal;
-    addressesToGenerate.internal = BIP44_ADDRESS_GAP - gapBetweenLastUsedAndLastGenerated.internal;
-  }
+
   Object.entries(addressesToGenerate)
     .forEach(([typeToGenerate, numberToGenerate]) => {
       if (numberToGenerate > 0) {

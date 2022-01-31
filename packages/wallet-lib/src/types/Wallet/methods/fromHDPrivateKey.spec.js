@@ -16,10 +16,9 @@ describe('Wallet - fromHDPrivateKey', function suite() {
     expect(self1.walletType).to.equal(WALLET_TYPES.HDWALLET);
     expect(self1.mnemonic).to.equal(null);
     expect(self1.HDPrivateKey.toString()).to.equal(knifeFixture.HDRootPrivateKeyMainnet);
-
-    const keyChain = self1.keyChainStore.getMasterKeyChain()
-    expect(keyChain.rootKeyType).to.equal('HDPrivateKey');
-    expect(keyChain.rootKey.toString()).to.equal(knifeFixture.HDRootPrivateKeyMainnet);
+    expect(self1.keyChain.type).to.equal('HDPrivateKey');
+    expect(self1.keyChain.HDPrivateKey.toString()).to.equal(knifeFixture.HDRootPrivateKeyMainnet);
+    expect(self1.keyChain.keys).to.deep.equal({});
   });
   it('should reject invalid mnemonic', () => {
     const invalidInputs = [

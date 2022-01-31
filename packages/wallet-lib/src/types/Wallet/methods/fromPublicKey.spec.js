@@ -18,18 +18,18 @@ describe('Wallet - fromPublicKey', function suite() {
     expect(self1.walletType).to.equal(WALLET_TYPES.PUBLICKEY);
     expect(self1.mnemonic).to.equal(null);
     expect(self1.publicKey).to.equal(cR4t6ePublicKey);
-    const keyChain = self1.keyChainStore.getMasterKeyChain()
-    expect(keyChain.rootKeyType).to.equal('publicKey');
-    expect(keyChain.rootKey.toString()).to.equal(cR4t6ePublicKey.toString());
+    expect(self1.keyChain.type).to.equal('publicKey');
+    expect(self1.keyChain.publicKey).to.equal(cR4t6ePublicKey);
+    expect(self1.keyChain.keys).to.deep.equal({});
 
     const self2 = {};
     fromPublicKey.call(self2, cR4t6ePublicKey.toString());
     expect(self2.walletType).to.equal(WALLET_TYPES.PUBLICKEY);
     expect(self2.mnemonic).to.equal(null);
     expect(self2.publicKey).to.equal(cR4t6ePublicKey.toString());
-    const keyChain2 = self2.keyChainStore.getMasterKeyChain()
-    expect(keyChain2.rootKeyType).to.equal('publicKey');
-    expect(keyChain2.rootKey.toString()).to.equal(cR4t6ePublicKey.toString());
+    expect(self2.keyChain.type).to.equal('publicKey');
+    expect(self2.keyChain.publicKey).to.equal(cR4t6ePublicKey.toString());
+    expect(self2.keyChain.keys).to.deep.equal({});
   });
   it('should reject invalid mnemonic', () => {
     const invalidInputs = [

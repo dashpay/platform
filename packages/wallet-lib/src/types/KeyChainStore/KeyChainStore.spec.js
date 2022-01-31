@@ -1,15 +1,15 @@
 const {HDPrivateKey} = require("@dashevo/dashcore-lib");
 const KeyChainsStore = require('./KeyChainStore');
-const KeyChain = require("../KeyChain/KeyChain");
+const DerivableKeyChain = require("../DerivableKeyChain/DerivableKeyChain");
 const { expect } = require('chai');
 
 describe('KeyChainStore', function suite() {
   let keyChainsStore;
   let hdPrivateKey = new HDPrivateKey()
   let hdPublicKey = new HDPrivateKey().hdPublicKey
-  let keyChain = new KeyChain({HDPrivateKey: hdPrivateKey})
-  let keyChainPublic = new KeyChain({HDPublicKey: hdPublicKey})
-  let walletKeyChain = new KeyChain({HDPrivateKey:new HDPrivateKey()});
+  let keyChain = new DerivableKeyChain({HDPrivateKey: hdPrivateKey})
+  let keyChainPublic = new DerivableKeyChain({HDPublicKey: hdPublicKey})
+  let walletKeyChain = new DerivableKeyChain({HDPrivateKey:new HDPrivateKey()});
   it('should create a KeyChainStore', () => {
     keyChainsStore = new KeyChainsStore();
     expect(keyChainsStore).to.exist;

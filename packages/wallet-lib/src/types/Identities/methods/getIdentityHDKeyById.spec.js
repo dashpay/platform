@@ -1,6 +1,7 @@
 const { expect } = require('chai');
 const mockedStore = require('../../../../fixtures/sirentonight-fullstore-snapshot-1562711703');
 const getIdentityHDKeyById = require('./getIdentityHDKeyById');
+const searchTransaction = require('../../Storage/methods/searchTransaction');
 
 let walletMock;
 let fetchTransactionInfoCalledNb = 0;
@@ -9,15 +10,12 @@ describe('Wallet#getIdentityHDKeyById', function suite() {
   this.timeout(10000);
   before(() => {
     expectedKeyMock = "123";
-    const walletStoreMock = {
-        getIndexedIdentityIds: () => mockedStore.wallets[Object.keys(mockedStore.wallets)].identityIds
-    }
-
     const storageMock = {
       store: mockedStore,
       getStore: () => mockedStore,
       mappedAddress: {},
-      getWalletStore:  () => walletStoreMock,
+      searchTransaction,
+      getIndexedIdentityIds: () => mockedStore.wallets[Object.keys(mockedStore.wallets)].identityIds,
     };
     const walletId = Object.keys(mockedStore.wallets)[0];
     walletMock = {
