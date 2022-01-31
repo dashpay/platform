@@ -2,7 +2,8 @@ const { HDPrivateKey } = require('@dashevo/dashcore-lib');
 const {
   is,
 } = require('../../../utils');
-const KeyChain = require('../../KeyChain/KeyChain');
+const DerivableKeyChain = require('../../DerivableKeyChain/DerivableKeyChain');
+const KeyChainStore = require('../../KeyChainStore/KeyChainStore');
 const { WALLET_TYPES } = require('../../../CONSTANTS');
 
 /**
@@ -14,5 +15,8 @@ module.exports = function fromHDPrivateKey(hdPrivateKey) {
   this.walletType = WALLET_TYPES.HDWALLET;
   this.mnemonic = null;
   this.HDPrivateKey = HDPrivateKey(hdPrivateKey);
-  this.keyChain = new KeyChain({ HDPrivateKey: hdPrivateKey });
+
+  const keyChain = new DerivableKeyChain({ HDPrivateKey: this.HDPrivateKey });
+  this.keyChainStore = new KeyChainStore();
+  this.keyChainStore.addKeyChain(keyChain, { isMasterKeyChain: true });
 };

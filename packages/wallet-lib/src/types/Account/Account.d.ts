@@ -11,7 +11,7 @@ import {
     broadcastTransactionOpts,
     Plugins, RawTransaction, TransactionsMap, WalletObj, StatusInfo, TransactionsHistory
 } from "../types";
-import { KeyChain } from "../KeyChain/KeyChain";
+import { DerivableKeyChain } from "../DerivableKeyChain/DerivableKeyChain";
 import { InstantLock } from "@dashevo/dashcore-lib";
 import { Identities, Wallet} from "../../index";
 import { Transport } from "../../transport/Transport";
@@ -30,7 +30,7 @@ export declare class Account {
     cacheBlockHeaders?: boolean;
     label?: string | null;
     strategy?: Strategy;
-    keyChain: KeyChain;
+    keyChainSore: KeyChainStore;
     state: any;
     storage: Storage;
     store: Storage.store;

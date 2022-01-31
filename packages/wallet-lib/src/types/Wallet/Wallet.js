@@ -86,21 +86,21 @@ class Wallet extends EventEmitter {
         mnemonic = generateNewMnemonic();
         createdFromNewMnemonic = true;
       }
-      this.fromMnemonic(mnemonic);
+      this.fromMnemonic(mnemonic, this.network, this.passphrase);
     } else if ('seed' in opts) {
-      this.fromSeed(opts.seed);
+      this.fromSeed(opts.seed, this.network);
     } else if ('HDPrivateKey' in opts) {
       this.fromHDPrivateKey(opts.HDPrivateKey);
     } else if ('privateKey' in opts) {
       this.fromPrivateKey((opts.privateKey === null)
         ? new PrivateKey(network).toString()
-        : opts.privateKey);
+        : opts.privateKey, this.network);
     } else if ('publicKey' in opts) {
-      this.fromPublicKey(opts.publicKey);
+      this.fromPublicKey(opts.publicKey, this.network);
     } else if ('HDPublicKey' in opts) {
       this.fromHDPublicKey(opts.HDPublicKey);
     } else if ('address' in opts) {
-      this.fromAddress(opts.address);
+      this.fromAddress(opts.address, this.network);
     } else {
       this.fromMnemonic(generateNewMnemonic());
       createdFromNewMnemonic = true;

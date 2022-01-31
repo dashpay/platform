@@ -1,7 +1,7 @@
 const _ = require('lodash');
 const EventEmitter = require('events');
 const logger = require('../../logger');
-const { WALLET_TYPES } = require('../../CONSTANTS');
+const { WALLET_TYPES, BIP44_ADDRESS_GAP } = require('../../CONSTANTS');
 const { is } = require('../../utils');
 const EVENTS = require('../../EVENTS');
 const Wallet = require('../Wallet/Wallet');
@@ -90,10 +90,10 @@ class Account extends EventEmitter {
     // If transport is null or invalid, we won't try to fetch anything
     this.transport = wallet.transport;
 
-    this.store = wallet.storage.store;
     this.storage = wallet.storage;
 
     // Forward all storage event
+    this.storage.on(EVENTS.UPDATED_ADDRESS, (ev) => this.emit(ev.type, ev));
     this.storage.on(EVENTS.CONFIGURED, (ev) => this.emit(ev.type, ev));
     this.storage.on(EVENTS.REHYDRATE_STATE_FAILED, (ev) => this.emit(ev.type, ev));
     this.storage.on(EVENTS.REHYDRATE_STATE_SUCCESS, (ev) => this.emit(ev.type, ev));
@@ -114,29 +114,76 @@ class Account extends EventEmitter {
     }
     switch (this.walletType) {
       case WALLET_TYPES.HDWALLET:
-      case WALLET_TYPES.HDPUBLIC:
-        this.storage.createAccount(
-          this.walletId,
-          this.BIP44PATH,
-          this.network,
-          this.label,
-        );
+        this.accountPath = getBIP44Path(this.network, this.index);
+        // this.storage
+        //   .getWalletStore(this.walletId)
+        //   .createPathState(this.BIP44PATH);
+        // this.storage.createAccount(
+        //   this.walletId,
+        //   this.BIP44PATH,
+        //   this.network,
+        //   this.label,
+        // );
         break;
+      case WALLET_TYPES.HDPUBLIC:
       case WALLET_TYPES.PRIVATEKEY:
       case WALLET_TYPES.PUBLICKEY:
       case WALLET_TYPES.ADDRESS:
       case WALLET_TYPES.SINGLE_ADDRESS:
-        this.storage.createSingleAddress(
-          this.walletId,
-          this.network,
-          this.label,
-        );
+        this.accountPath = 'm/0';
+        // this.storage
+        //   .getWalletStore(this.walletId)
+        //   .createPathState(this);
+        // this.storage.createSingleAddress(
+        //   this.walletId,
+        //   this.network,
+        //   this.label,
+        // );
         break;
       default:
         throw new Error(`Invalid wallet type ${this.walletType}`);
     }
 
-    this.keyChain = wallet.keyChain;
+    this.storage
+      .getWalletStore(this.walletId)
+      .createPathState(this.accountPath);
+
+    let keyChainStorePath = this.index;
+    const keyChainStoreOpts = {};
+
+    switch (this.walletType) {
+      case WALLET_TYPES.HDPUBLIC:
+        keyChainStorePath = this.accountPath;
+        keyChainStoreOpts.lookAheadOpts = {
+          paths: {
+            'm/0': BIP44_ADDRESS_GAP,
+          },
+        };
+        break;
+      case WALLET_TYPES.HDWALLET:
+      case WALLET_TYPES.HDPRIVATE:
+        keyChainStorePath = this.BIP44PATH;
+        keyChainStoreOpts.lookAheadOpts = {
+          paths: {
+            'm/0': BIP44_ADDRESS_GAP,
+            'm/1': BIP44_ADDRESS_GAP,
+          },
+        };
+        break;
+      default:
+        break;
+    }
+
+    this.keyChainStore = wallet
+      .keyChainStore
+      .makeChildKeyChainStore(keyChainStorePath, keyChainStoreOpts);
+
+    // This forces keychainStore to set to issued key what is already its masterkey
+    if ([WALLET_TYPES.PUBLICKEY, WALLET_TYPES.PRIVATEKEY].includes(this.walletType)) {
+      this.keyChainStore
+        .getMasterKeyChain()
+        .getForPath('0', { isWatched: true });
+    }
 
     this.cacheTx = (opts.cacheTx) ? opts.cacheTx : defaultOptions.cacheTx;
     this.cacheBlockHeaders = (opts.cacheBlockHeaders)
@@ -149,36 +196,26 @@ class Account extends EventEmitter {
       watchers: {},
     };
 
-    // Handle import of cache
-    if (opts.cache) {
-      if (opts.cache.addresses) {
-        try {
-          this.storage.importAddresses(opts.cache.addresses, this.walletId);
-        } catch (e) {
-          this.disconnect();
-          throw e;
-        }
-      }
-      if (opts.cache.transactions) {
-        try {
-          this.storage.importTransactions(opts.cache.transactions);
-        } catch (e) {
-          this.disconnect();
-          throw e;
-        }
-      }
-    }
+    // // Handle import of cache
+    // if (opts.cache) {
+    //   if (opts.cache.addresses) {
+    //     try {
+    //       this.storage.importAddresses(opts.cache.addresses, this.walletId);
+    //     } catch (e) {
+    //       this.disconnect();
+    //       throw e;
+    //     }
+    //   }
+    //   if (opts.cache.transactions) {
+    //     try {
+    //       this.storage.importTransactions(opts.cache.transactions);
+    //     } catch (e) {
+    //       this.disconnect();
+    //       throw e;
+    //     }
+    //   }
+    // }
     this.emit(EVENTS.CREATED, { type: EVENTS.CREATED, payload: null });
-
-    /**
-     * Stores promise that waits for the IS lock of the particular transaction
-     * @type {Promise<void>}
-     */
-    this.txISLockListener = null;
-
-    // Increases a limit of max listeners for transactions related events
-    // 25 - mempool limit
-    this.setMaxListeners(25);
   }
 
   static getInstantLockTopicName(transactionHash) {
@@ -215,7 +252,8 @@ class Account extends EventEmitter {
    * @param {InstantLock} instantLock
    */
   importInstantLock(instantLock) {
-    this.storage.importInstantLock(instantLock);
+    const chainStore = this.storage.getChainStore(this.network);
+    chainStore.importInstantLock(instantLock);
     this.emit(Account.getInstantLockTopicName(instantLock.txid), instantLock);
   }
 
@@ -235,10 +273,10 @@ class Account extends EventEmitter {
    */
   waitForInstantLock(transactionHash, timeout = this.waitForInstantLockTimeout) {
     let rejectTimeout;
-
+    const chainStore = this.storage.getChainStore(this.network);
     return Promise.race([
       new Promise((resolve) => {
-        const instantLock = this.storage.getInstantLock(transactionHash);
+        const instantLock = chainStore.getInstantLock(transactionHash);
         if (instantLock != null) {
           clearTimeout(rejectTimeout);
           resolve(instantLock);
