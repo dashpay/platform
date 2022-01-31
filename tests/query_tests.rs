@@ -29,7 +29,7 @@ impl Person {
             common::text_file_strings("tests/supporting_files/contract/family/middle-names.txt");
         let last_names =
             common::text_file_strings("tests/supporting_files/contract/family/last-names.txt");
-        let mut vec: Vec<Person> = vec![];
+        let mut vec: Vec<Person> = Vec::with_capacity(count as usize);
 
         let mut rng = rand::rngs::StdRng::seed_from_u64(seed);
         for _ in 0..count {
@@ -84,7 +84,7 @@ pub fn setup(count: u32, seed: u64) -> (Drive, Contract) {
 #[test]
 fn test_query_many() {
     let (mut drive, contract) = setup(10, 73509);
-    let all_names = vec![
+    let all_names = [
         "Adey".to_string(),
         "Briney".to_string(),
         "Cammi".to_string(),
@@ -172,7 +172,7 @@ fn test_query_many() {
         })
         .collect();
 
-    let expected_names_before_chris = vec![
+    let expected_names_before_chris = [
         "Adey".to_string(),
         "Briney".to_string(),
         "Cammi".to_string(),
@@ -217,7 +217,7 @@ fn test_query_many() {
         })
         .collect();
 
-    let expected_names_before_chris = vec!["Cammi".to_string(), "Celinda".to_string()];
+    let expected_names_before_chris = ["Cammi".to_string(), "Celinda".to_string()];
     assert_eq!(names, expected_names_before_chris);
 
     // A query getting all people who's first name is between Chris and Noellyn included
@@ -260,7 +260,7 @@ fn test_query_many() {
         })
         .collect();
 
-    let expected_between_names = vec![
+    let expected_between_names = [
         "Dalia".to_string(),
         "Gilligan".to_string(),
         "Kevina".to_string(),
@@ -335,7 +335,7 @@ fn test_query_many() {
         })
         .collect();
 
-    let expected_reduced_names = vec![
+    let expected_reduced_names = [
         "Kevina".to_string(),
         "Meta".to_string(),
         "Noellyn".to_string(),
@@ -384,7 +384,7 @@ fn test_query_many() {
         })
         .collect();
 
-    let expected_reduced_names = vec!["Meta".to_string(), "Noellyn".to_string()];
+    let expected_reduced_names = ["Meta".to_string(), "Noellyn".to_string()];
 
     assert_eq!(reduced_names_after, expected_reduced_names);
 
@@ -466,7 +466,7 @@ fn test_query_many() {
         })
         .collect();
 
-    let expected_names_45_over = vec![
+    let expected_names_45_over = [
         "Dalia".to_string(),
         "Gilligan".to_string(),
         "Kevina".to_string(),
@@ -516,7 +516,7 @@ fn test_query_many() {
 
     // Kevina is 48 so she should be now excluded, Dalia is 68, Gilligan is 49 and Meta is 59
 
-    let expected_names_over_48 = vec![
+    let expected_names_over_48 = [
         "Dalia".to_string(),
         "Gilligan".to_string(),
         "Meta".to_string(),
