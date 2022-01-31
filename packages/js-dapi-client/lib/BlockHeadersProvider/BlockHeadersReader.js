@@ -77,10 +77,17 @@ class BlockHeadersReader extends EventEmitter {
       const blockHeaders = data.getBlockHeaders();
 
       if (blockHeaders) {
+        /**
+         * Kills stream in case of deliberate rejection from the outside
+         *
+         * @param e
+         */
+        const rejectHeaders = (e) => {
+          stream.destroy(e);
+        };
+
         try {
-          this.emit(EVENTS.BLOCK_HEADERS, blockHeaders.getHeadersList(), (e) => {
-            stream.destroy(e);
-          });
+          this.emit(EVENTS.BLOCK_HEADERS, blockHeaders.getHeadersList(), rejectHeaders);
         } catch (e) {
           this.emit(EVENTS.ERROR, e);
         }

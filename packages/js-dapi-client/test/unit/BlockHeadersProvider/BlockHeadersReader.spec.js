@@ -1,3 +1,5 @@
+const EventEmitter = require('events');
+const { expect } = require('chai');
 const BlockHeadersReader = require('../../../lib/BlockHeadersProvider/BlockHeadersReader');
 
 describe('BlockHeadersReader', () => {
@@ -7,9 +9,12 @@ describe('BlockHeadersReader', () => {
   let blockHeadersReader;
   let streamMock;
   beforeEach(function () {
-    streamMock = {
-      on: this.sinon.stub(),
+    streamMock = new EventEmitter();
+    streamMock.destroy = (e) => {
+      streamMock.emit('error', e);
     };
+    this.sinon.spy(streamMock, 'on');
+
     coreApiMock = {
       subscribeToBlockHeadersWithChainLocks: this.sinon.stub().resolves(streamMock),
     };
@@ -56,6 +61,59 @@ describe('BlockHeadersReader', () => {
     it('should hook on stream events', () => {
       expect(stream.on).to.be.calledWith('data');
       expect(stream.on).to.be.calledWith('error');
+    });
+
+    it('should emit ERROR event in case of the stream error', () => {
+      let emittedError;
+      blockHeadersReader.on(BlockHeadersReader.EVENTS.ERROR, (e) => {
+        emittedError = e;
+      });
+      const errorToThrow = new Error('test');
+      streamMock.emit('error', errorToThrow);
+      expect(emittedError).to.equal(errorToThrow);
+    });
+
+    it('should emit ERROR event in case of deliberate rejection of BLOCK_HEADERS', () => {
+      const errorToRejectWith = new Error('test');
+      let errorEmitted;
+
+      blockHeadersReader.on(BlockHeadersReader.EVENTS.ERROR, (e) => {
+        errorEmitted = e;
+      });
+
+      blockHeadersReader.on(BlockHeadersReader.EVENTS.BLOCK_HEADERS, (_, reject) => {
+        // Simulate rejection of the headers in case they are not valid
+        reject(errorToRejectWith);
+      });
+
+      streamMock.emit('data', {
+        getBlockHeaders: () => ({
+          getHeadersList: () => [],
+        }),
+      });
+
+      expect(errorEmitted).to.equal(errorToRejectWith);
+    });
+
+    it('should emit ERROR event in case unhandled error being thrown in BLOCK_HEADERS listener', () => {
+      const errorToThrow = new Error('test');
+      let errorEmitted;
+
+      blockHeadersReader.on(BlockHeadersReader.EVENTS.BLOCK_HEADERS, () => {
+        throw errorToThrow;
+      });
+
+      blockHeadersReader.on(BlockHeadersReader.EVENTS.ERROR, (e) => {
+        errorEmitted = e;
+      });
+
+      streamMock.emit('data', {
+        getBlockHeaders: () => ({
+          getHeadersList: () => [],
+        }),
+      });
+
+      expect(errorEmitted).to.equal(errorToThrow);
     });
   });
 
