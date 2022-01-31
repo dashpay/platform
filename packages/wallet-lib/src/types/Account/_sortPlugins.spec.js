@@ -274,8 +274,8 @@ describe('Account - _sortPlugins', () => {
     });
     it('should handle userDefinedConflictingDependencies', function () {
       expect(() => sortPlugins(accountOnlineWithDefaultPlugins, userDefinedConflictingDependencies))
-          .to
-          .throw('Conflicting dependency order for userDefinedConflictingDependenciesWorker');
+        .to
+        .throw('Conflicting dependency order for userDefinedConflictingDependenciesWorker');
     });
     it('should handle userDefinedSimpleDependencyPluginDependenciesPlugins', async function () {
       const sortedPlugins = sortPlugins(accountOnlineWithDefaultPlugins, userDefinedSimpleDependencyPluginDependenciesPlugins);
@@ -294,8 +294,8 @@ describe('Account - _sortPlugins', () => {
       // TODO: User specified wrongly sorted plugins with deps is not yet handled.
       // rejecting with error for now.
       expect(() => sortPlugins(accountOnlineWithDefaultPlugins, userDefinedComplexPluginDependenciesPlugins))
-          .to
-          .throw('Dependency withSinglePluginDependenciesWorker not found');
+        .to
+        .throw('Dependency withSinglePluginDependenciesWorker not found');
       // const sortedPlugins = await sortPlugins(accountOnlineWithDefaultPlugins, userDefinedComplexPluginDependenciesPlugins);
       // expect(sortedPlugins).to.deep.equal([
       //   [ChainPlugin, true],

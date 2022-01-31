@@ -1,9 +1,6 @@
-const Dashcore = require('@dashevo/dashcore-lib');
 const WalletStore = require('../../WalletStore/WalletStore');
 
-const { testnet } = Dashcore.Networks;
-
-const createWalletStore = function createWallet(walletId = 'squawk7700', network = testnet.toString(), mnemonic = null, type = null) {
+const createWalletStore = function createWallet(walletId = 'squawk7700') {
   if (!this.wallets.has(walletId)) {
     this.wallets.set(walletId, new WalletStore(walletId));
     return true;

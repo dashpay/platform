@@ -6,40 +6,41 @@ const {
   InvalidDashcoreTransaction,
 } = require('../../../errors');
 
-function impactAffectedInputs({ transaction, txid }) {
-  const { inputs, changeIndex } = transaction.toObject();
-
+function impactAffectedInputs({ transaction }) {
   const {
-    storage, walletId, network,
+    storage, network,
   } = this;
 
+  const { inputs, changeIndex } = transaction.toObject();
+  const txid = transaction.hash;
+
+  const addresses = storage.getChainStore(network).getAddresses();
   // We iterate out input to substract their balance.
   inputs.forEach((input) => {
-    const potentiallySelectedAddresses = storage.searchAddressesWithTx(input.prevTxId);
-    // Fixme : If you want this check, you will need to modify fixtures of our tests.
-    // if (!potentiallySelectedAddresses.found) {
-    //   throw new Error('Input is not part of that Wallet.');
-    // }
-    potentiallySelectedAddresses.results.forEach((potentiallySelectedAddress) => {
-      const { type, path } = potentiallySelectedAddress;
-      if (potentiallySelectedAddress.utxos[`${input.prevTxId}-${input.outputIndex}`]) {
-        const inputUTXO = potentiallySelectedAddress.utxos[`${input.prevTxId}-${input.outputIndex}`];
-        const address = storage.store.wallets[walletId].addresses[type][path];
+    const potentiallySelectedAddresses = [...addresses]
+      .reduce((acc, [address, { transactions }]) => {
+        if (transactions.includes(input.prevTxId)) acc.push(address);
+        return acc;
+      }, []);
+
+    potentiallySelectedAddresses.forEach((potentiallySelectedAddress) => {
+      // console.log(addresses.get(pot));
+      const addressData = addresses.get(potentiallySelectedAddress);
+      if (addressData.utxos[`${input.prevTxId}-${input.outputIndex}`]) {
+        const inputUTXO = addressData.utxos[`${input.prevTxId}-${input.outputIndex}`];
+        // const address = storage.store.wallets[walletId].addresses[type][path];
         // Todo: This modify the balance of an address, we need a std method to do that instead.
-        address.balanceSat -= inputUTXO.satoshis;
-        delete address.utxos[`${input.prevTxId}-${input.outputIndex}`];
+        addressData.balanceSat -= inputUTXO.satoshis;
+        delete addressData.utxos[`${input.prevTxId}-${input.outputIndex}`];
       }
     });
   });
 
   const changeOutput = transaction.getChangeOutput();
   if (changeOutput) {
-    const addressString = changeOutput.script.toAddress(network);
+    const addressString = changeOutput.script.toAddress(network).toString();
 
-    const mapped = storage.mappedAddress[addressString];
-
-    const { type, path } = mapped;
-    const address = storage.store.wallets[walletId].addresses[type][path];
+    const address = addresses.get(addressString);
     const utxoKey = `${txid}-${changeIndex}`;
 
     /**
@@ -65,10 +66,15 @@ function impactAffectedInputs({ transaction, txid }) {
   return true;
 }
 
-// eslint-disable-next-line no-underscore-dangle
-async function _broadcastTransaction(transaction, options = {}) {
+/**
+ * Broadcast a Transaction to the transport layer
+ * @param {Transaction|RawTransaction} transaction - A txobject or it's hexadecimal representation
+ * @param {Object} [options]
+ * @param {Boolean} [options.skipFeeValidation=false] - Allow to skip fee validation
+ * @return {Promise<transactionId>}
+ */
+async function broadcastTransaction(transaction, options = {}) {
   const { network, storage } = this;
-  const { chains } = storage.getStore();
   if (!this.transport) throw new ValidTransportLayerRequired('broadcast');
 
   // We still support having in rawtransaction, if this is the case
@@ -76,7 +82,7 @@ async function _broadcastTransaction(transaction, options = {}) {
   if (is.string(transaction)) {
     const rawtx = transaction.toString();
     if (!is.rawtx(rawtx)) throw new InvalidRawTransaction(rawtx);
-    return _broadcastTransaction.call(this, new Dashcore.Transaction(rawtx));
+    return broadcastTransaction.call(this, new Dashcore.Transaction(rawtx));
   }
 
   if (!is.dashcoreTransaction(transaction)) {
@@ -87,7 +93,7 @@ async function _broadcastTransaction(transaction, options = {}) {
     throw new Error('Transaction not signed.');
   }
 
-  const { minRelay: minRelayFeeRate } = chains[network.toString()].fees;
+  const { minRelay: minRelayFeeRate } = storage.getChainStore(network).state.fees;
 
   // eslint-disable-next-line no-underscore-dangle
   const estimateKbSize = transaction._estimateSize() / 1000;
@@ -104,40 +110,8 @@ async function _broadcastTransaction(transaction, options = {}) {
   // so we clear them out from UTXOset.
   impactAffectedInputs.call(this, {
     transaction,
-    txid,
   });
-
   return txid;
-}
-
-/**
- * Broadcast a Transaction to the transport layer
- * @param {Transaction|RawTransaction} transaction - A txobject or it's hexadecimal representation
- * @param {Object} [options]
- * @param {Boolean} [options.skipFeeValidation=false] - Allow to skip fee validation
- * @return {Promise<transactionId>}
- */
-async function broadcastTransaction(transaction, options = {}) {
-  if (!this.txISLockListener) {
-    const txId = await _broadcastTransaction.call(this, transaction, options);
-
-    this.txISLockListener = new Promise((resolve) => {
-      this.subscribeToTransactionInstantLock.call(this, txId, () => {
-        this.txISLockListener = null;
-        resolve();
-      });
-
-      // TODO: Also subscribe to FETCHED_CONFIRMED_TRANSACTION
-      // to use as a fallback to resolve the promise
-      // (blocked by https://github.com/dashevo/wallet-lib/pull/340)
-    });
-
-    return txId;
-  }
-
-  await this.txISLockListener;
-
-  return broadcastTransaction.call(this, transaction, options);
 }
 
 module.exports = broadcastTransaction;

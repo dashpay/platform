@@ -1,9 +1,10 @@
 const { merge } = require('lodash');
-const { InstantLock } = require('@dashevo/dashcore-lib');
 const { hasMethod } = require('../../../utils');
 
 const mergeHelper = (initial = {}, additional = {}) => merge(initial, additional);
 const { REHYDRATE_STATE_FAILED, REHYDRATE_STATE_SUCCESS } = require('../../../EVENTS');
+const WalletStore = require('../../WalletStore/WalletStore');
+const ChainStore = require('../../ChainStore/ChainStore');
 
 /**
  * Fetch the state from the persistence adapter
@@ -12,31 +13,27 @@ const { REHYDRATE_STATE_FAILED, REHYDRATE_STATE_SUCCESS } = require('../../../EV
 const rehydrateState = async function rehydrateState() {
   if (this.rehydrate && this.lastRehydrate === null) {
     try {
-      const transactions = (this.adapter && hasMethod(this.adapter, 'getItem'))
-        ? (await this.adapter.getItem('transactions') || this.store.transactions)
-        : this.store.transactions;
-      const wallets = (this.adapter && hasMethod(this.adapter, 'getItem'))
-        ? (await this.adapter.getItem('wallets') || this.store.wallets)
-        : this.store.wallets;
-      const chains = (this.adapter && hasMethod(this.adapter, 'getItem'))
-        ? (await this.adapter.getItem('chains') || this.store.chains)
-        : this.store.chains;
-      const instantLocks = (this.adapter && hasMethod(this.adapter, 'getItem'))
-        ? (await this.adapter.getItem('instantLocks') || this.store.instantLocks)
-        : this.store.instantLocks;
-
-      // We need to keep deserialized instant locks
-      Object.keys(instantLocks).forEach((transactionHash) => {
-        const instantLock = instantLocks[transactionHash];
-        if (!(instantLock instanceof InstantLock)) {
-          instantLocks[transactionHash] = new InstantLock(instantLock);
+      if (this.adapter && hasMethod(this.adapter, 'getItem')) {
+        const wallets = await this.adapter.getItem('wallets');
+        if (wallets) {
+          wallets.forEach((walletState) => {
+            const walletStore = new WalletStore();
+            walletStore.importState(walletState);
+            this.wallets.add(walletStore);
+          });
         }
-      });
 
-      this.store.transactions = mergeHelper(this.store.transactions, transactions);
-      this.store.wallets = mergeHelper(this.store.wallets, wallets);
-      this.store.chains = mergeHelper(this.store.chains, chains);
-      this.store.instantLocks = mergeHelper(this.store.instantLocks, instantLocks);
+        const chains = await this.adapter.getItem('chains');
+        if (chains) {
+          chains.forEach((chainState) => {
+            const chainStore = new ChainStore();
+            chainStore.importState(chainState);
+            this.chains.add(chainStore);
+          });
+        }
+        this.application = mergeHelper(this.application, await this.adapter.getItem('application'));
+      }
+
       this.lastRehydrate = +new Date();
       this.emit(REHYDRATE_STATE_SUCCESS, { type: REHYDRATE_STATE_SUCCESS, payload: null });
     } catch (e) {

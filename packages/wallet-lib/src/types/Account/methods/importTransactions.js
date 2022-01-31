@@ -1,7 +1,4 @@
-const { chain } = require('lodash/seq');
 const logger = require('../../../logger');
-const { WALLET_TYPES } = require('../../../CONSTANTS');
-const ensureAddressesToGapLimit = require('../../../utils/bip44/ensureAddressesToGapLimit');
 
 /**
  * Import transactions and always keep a number of unused addresses up to gap

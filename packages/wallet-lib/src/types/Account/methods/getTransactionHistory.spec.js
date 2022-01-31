@@ -3,13 +3,13 @@ const {Transaction, BlockHeader} = require('@dashevo/dashcore-lib');
 const {WALLET_TYPES} = require('../../../CONSTANTS');
 const getTransactions = require('./getTransactions');
 const getTransactionHistory = require('./getTransactionHistory');
-const searchTransaction = require('../../Storage/methods/searchTransaction');
-const getTransaction = require('../../Storage/methods/getTransaction');
-const getBlockHeader = require('../../Storage/methods/getBlockHeader');
-const searchBlockHeader = require('../../Storage/methods/searchBlockHeader');
-const searchAddress = require('../../Storage/methods/searchAddress');
 const mockedStoreHDWallet = require('../../../../fixtures/duringdevelop-fullstore-snapshot-1548538361');
 const mockedStoreSingleAddress = require('../../../../fixtures/da07-fullstore-snapshot-1548533266');
+
+
+const getFixtureHDAccountWithStorage = require('../../../../fixtures/wallets/apart-trip-dignity/getFixtureAccountWithStorage');
+const getFixturePrivateAccountWithStorage = require('../../../../fixtures/wallets/2a331817b9d6bf85100ef0/getFixtureAccountWithStorage');
+
 
 
 const normalizedHDStoreFixtures = require('../../../../fixtures/wallets/apart-trip-dignity/store.json');
@@ -39,7 +39,7 @@ const normalizedStoreToStore = (normalizedStore) => {
   }
   return store;
 }
-const mockedSelf = {
+const mockedEmptySelf = {
   getTransactions,
   network: 'testnet',
   walletId: 'd6143ef4e6',
@@ -72,20 +72,35 @@ const mockedSelf = {
     }
   }
 }
+
+const mockedHDAccount = getFixtureHDAccountWithStorage();
+mockedHDAccount.getTransactions = getTransactions;
+
+const mockedPKAccount = getFixturePrivateAccountWithStorage();
+mockedPKAccount.getTransactions = getTransactions;
+
 describe('Account - getTransactionHistory', () => {
   it('should return empty array on no transaction history', async function () {
     const mockedHDSelf = {
-      ...mockedSelf
+      ...getFixtureHDAccountWithStorage(),
     }
+    mockedHDSelf.getTransactions = getTransactions;
+    const chainStore = mockedHDSelf.storage.getChainStore('testnet')
+    chainStore.state.blockHeaders = new Map();
+    chainStore.state.transactions = new Map();
+    chainStore.state.addresses.forEach((address)=>{
+      address.transactions = [];
+      address.utxos = {};
+      address.balanceSat = 0;
+    })
     const transactionHistoryHD = await getTransactionHistory.call(mockedHDSelf);
     const expectedTransactionHistoryHD = [];
     expect(transactionHistoryHD).to.deep.equal(expectedTransactionHistoryHD);
   });
   it('should return valid transaction for HDWallet', async function () {
     const mockedHDSelf = {
-      ...mockedSelf
+      ...mockedHDAccount
     }
-    mockedHDSelf.storage.store = normalizedStoreToStore(normalizedHDStoreFixtures)
     const timestartTs = +new Date();
     const transactionHistoryHD = await getTransactionHistory.call(mockedHDSelf);
     const timeendTs = +new Date();
@@ -176,6 +191,7 @@ describe('Account - getTransactionHistory', () => {
         isChainLocked: true,
         isInstantLocked: true
       },
+
       {
         from: [
           {address: 'ygHAVkMtYSqoTWHebDv7qkhMV6dHyuRsp2'},
@@ -219,16 +235,77 @@ describe('Account - getTransactionHistory', () => {
         blockHash: '00000c1e4556add15119392ed36ec6af2640569409abfa23a9972bc3be1b3717',
         isChainLocked: true,
         isInstantLocked: true
+      },
+      {
+        from: [{address: 'yXxUiAnB31voBDPqnwxkffcPnUvwJz6a2k'},{address: 'yNh6Xzw4rs1kenAo8VWCswdyUnkdYXDZsg'}],
+        to: [
+          {"address": "yXiTNo71QQAqiw2u1i6vkEEj3m6y4sEGae","satoshis": 1768694},
+          {"address": "yMLhEsiP2ajSh8STmXnNmkWXtoHsmawZxd","satoshis": 840010000}
+        ],
+        time: 1629126597,
+        txId: "eb1a7fc8e3b43d3021653b1176f8f9b41e9667d05b65ee225d14c149a5b14f77",
+        blockHash: "00000221952c2a60adcb929de837f659308cb5c6bb7783016479381fb550fbad",
+        type: "received",
+        isChainLocked: true,
+        isInstantLocked: true,
+      },
+      {
+        from: [{address: 'yTcjWB7v7opDzpfYKpFdFEtEvSKFsh3bW3'}],
+        to: [
+          {"address": "ygk3GCSba2J3L9G665Snozhj9HSkh5ByVE","satoshis": 10000000},
+          {"address": "yiDVYtUZ2mKV4teSJzKBArqY4BRsZoFLYs","satoshis": 522649259}
+        ],
+        time: 1628846998,
+        txId: "7d1b78157f9f2238669f260d95af03aeefc99577ff0cddb91b3e518ee557a2fd",
+        blockHash: "0000012cf6377c6cf2b317a4deed46573c09f04f6880dca731cc9ccea6691e19",
+        type: "received",
+        isChainLocked: true,
+        isInstantLocked: true,
+      },
+      {
+        from: [{address: 'yaLhoAZ4iex2zKmfvS9rvEmxXmRiPrjHdD'}],
+        to: [
+          {"address": "yercyhdN9oEkZcB9BsW5ktFaDxFEuK6qXN","satoshis": 10000000},
+          {"address": "yTcjWB7v7opDzpfYKpFdFEtEvSKFsh3bW3","satoshis": 532649506}
+        ],
+        type: 'received',
+        time: 1628846768,
+        txId: 'd37b6c7dd449d605bea9997af8bbeed2f3fbbcb23a4068b1f1ad694db801912d',
+        blockHash: '000000b6006c758eda23ec7e2a640a0bf2c6a0c44827be216faff6bf4fd388e8',
+        isChainLocked: true,
+        isInstantLocked: true
+      },
+      {
+        from: [
+          {address: 'ygrRyPRf9vSHnP1ieoRRvY9THtFbTMc66e'},
+          {address: 'yhDaDMNRUAB93S2ZcprNLuEGHPG4VT8kYL'},
+          {address: 'ygZ5fgrtGQDtwsN8K7sftSNPXN4Srhz99s'},
+          {address: 'yb39TanhfUKeqaBtzqDvAE3ad9UsDuj3Fd'},
+          {address: 'yToX9gDE6tn2Sv1zhq88WNfJSomeHee3rR'},
+          {address: 'yViAv63brJ5kB7Gyc7yX2c7rJ9NuykCzRh'},
+          {address: 'yfnJMvdE32izNQP68PhMPiHAeJKYo2PBdH'},
+        ],
+        to: [
+          {"address": "ySE2UYPf7PWMJ5oYikSscVifzQEoGiGRmd","satoshis": 1823313},
+          {"address": "yTwEca67QSkZ6axGdpNFzWPaCj8zqYybY7","satoshis": 187980000}
+        ],
+        type: 'received',
+        time: 1628846677,
+        txId: 'a43845e580ad01f31bc06ce47ab39674e40316c4c6b765b6e54d6d35777ef456',
+        blockHash: '000001deee9f99e8219a9abcaaea135dbaae8a9b0f1ea214e6b6a37a5c5b115d',
+        isChainLocked: true,
+        isInstantLocked: true
       }
+
     ]
     expect(transactionHistoryHD).to.deep.equal(expectedTransactionHistoryHD);
   });
-  it('should correctly deal with HDWallet accounts', async function () {
+  it('should correctly deal with multiple HDWallet accounts', async function () {
     const mockedHDSelf = {
-      ...mockedSelf
+      ...mockedHDAccount
     }
-    mockedHDSelf.storage.store = normalizedStoreToStore(normalizedHDStoreFixtures)
     mockedHDSelf.index = 1;
+    mockedHDSelf.accountPath = `m/44'/1'/1'`;
     const transactionHistoryHD = await getTransactionHistory.call(mockedHDSelf);
     const expectedTransactionHistoryHD = [
       {
@@ -247,25 +324,6 @@ describe('Account - getTransactionHistory', () => {
         time: 1629236158,
         txId: '6f76ca8038c6cb1b373bbbf80698afdc0d638e4a223be12a4feb5fd8e1801135',
         blockHash: '000000444b3f2f02085f8befe72da5442c865c290658766cf935e1a71a4f4ba7',
-        isChainLocked: true,
-        isInstantLocked: true
-      },
-      {
-        from: [ { address: 'yYJmzWey5kNecAThet5BFxAga1F4b4DKQ2' } ],
-        to: [
-          {
-            address: 'yNCqctyQaq51WU1hN5aNwsgMsZ5fRiB7GY',
-            satoshis: 1200000000
-          },
-          {
-            address: 'yXMrw79LPgu78EJsfGGYpm6fXKc1EMnQ49',
-            satoshis: 59999753
-          }
-        ],
-        type: 'address_transfer',
-        time: 1629235557,
-        txId: '9cd3d44a87a7f99a33aebc6957105d5fb41698ef642189a36bac59ec0b5cd840',
-        blockHash: '0000016fb685b4b1efed743d2263de34a9f8323ed75e732654b1b951c5cb4dde',
         isChainLocked: true,
         isInstantLocked: true
       },
@@ -289,17 +347,18 @@ describe('Account - getTransactionHistory', () => {
         isInstantLocked: true
       }
     ]
-    expect(transactionHistoryHD).to.deep.equal(expectedTransactionHistoryHD);
+    expect(transactionHistoryHD.slice(0,5)).to.deep.equal(expectedTransactionHistoryHD);
   });
   it('should correctly compute transaction history for private key based wallet', async function (){
     const mockedPKSelf = {
-      ...mockedSelf
+      ...mockedPKAccount
     }
-    mockedPKSelf.storage.store = normalizedStoreToStore(normalizedPKStoreFixtures)
-    mockedPKSelf.walletType = 'single_address';
-    mockedPKSelf.walletId = '6101b44d50';
+    // mockedPKSelf.storage.store = normalizedStoreToStore(normalizedPKStoreFixtures)
+    // mockedPKSelf.walletType = 'single_address';
+    // mockedPKSelf.walletId = '6101b44d50';
 
     const transactionHistoryPK = await getTransactionHistory.call(mockedPKSelf);
+
     const expectedTransactionHistoryPK = [
       {
         from: [ { address: 'ycDeuTfs4U77bTb5cq17dame28zdWHVYfk' } ],
@@ -313,7 +372,7 @@ describe('Account - getTransactionHistory', () => {
             satoshis: 8999753
           }
         ],
-        type: 'address_transfer',
+        type: 'sent',
         time: 1629510092,
         txId: '47d13f7f713f4258953292c2298c1d91e2d6dee309d689f3c8b44ccf457bab52',
         blockHash: '0000007b7356e715b43ed7d5b7135fb9a2bf403e079bbcf7faec0f0da5c40117',

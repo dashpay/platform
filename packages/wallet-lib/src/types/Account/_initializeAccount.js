@@ -1,31 +1,43 @@
 const logger = require('../../logger');
 const EVENTS = require('../../EVENTS');
-const { WALLET_TYPES } = require('../../CONSTANTS');
 const preparePlugins = require('./_preparePlugins');
-const ensureAddressesToGapLimit = require('../../utils/bip44/ensureAddressesToGapLimit');
+const { UPDATED_ADDRESS } = require('../../EVENTS');
 
 // eslint-disable-next-line no-underscore-dangle
 async function _initializeAccount(account, userUnsafePlugins) {
   const self = account;
+
+  function markAddressAsUsed(props) {
+    const { address } = props.payload;
+    // This works if the TX cames from our main address, but not in all cases...
+    self.keyChainStore
+      .getMasterKeyChain()
+      .markAddressAsUsed(address);
+  }
+
+  self.on(UPDATED_ADDRESS, markAddressAsUsed);
+
+  const accountStore = account.storage
+    .getWalletStore(account.walletId)
+    .getPathState(account.accountPath);
+
+  const chainStore = account.storage.getChainStore(account.network);
+
+  const issuedPaths = account.keyChainStore
+    .getMasterKeyChain()
+    .getIssuedPaths();
+
+  issuedPaths.forEach((issuedPath) => {
+    accountStore.addresses[issuedPath.path] = issuedPath.address.toString();
+    chainStore.importAddress(issuedPath.address.toString());
+  });
+
   // We run faster in offlineMode to speed up the process when less happens.
   const readinessIntervalTime = (account.offlineMode) ? 50 : 200;
   // TODO: perform rejection with a timeout
   // eslint-disable-next-line no-async-promise-executor
   return new Promise(async (resolve, reject) => {
     try {
-      if (account.injectDefaultPlugins) {
-        if ([WALLET_TYPES.HDWALLET, WALLET_TYPES.HDPUBLIC].includes(account.walletType)) {
-          ensureAddressesToGapLimit(
-            account.store.wallets[account.walletId],
-            account.walletType,
-            account.index,
-            account.getAddress.bind(account),
-          );
-        } else {
-          await account.getAddress('0'); // We force what is usually done by the BIP44Worker.
-        }
-      }
-
       // Will sort and inject plugins.
       await preparePlugins(account, userUnsafePlugins);
 
@@ -60,7 +72,7 @@ async function _initializeAccount(account, userUnsafePlugins) {
         });
         logger.debug(`Initializing - ${readyPlugins}/${watchedPlugins.length} plugins`);
         if (readyPlugins === watchedPlugins.length) {
-        // At this stage, our worker are initialized
+          // At this stage, our worker are initialized
           sendInitialized();
 
           // If both of the plugins are present
@@ -68,33 +80,9 @@ async function _initializeAccount(account, userUnsafePlugins) {
           // while SyncWorker fetch'em on network
           clearInterval(self.readinessInterval);
 
-          switch (account.walletType) {
-            case WALLET_TYPES.PRIVATEKEY:
-            case WALLET_TYPES.SINGLE_ADDRESS:
-              account.generateAddress(0);
-              sendReady();
-              return resolve(true);
-            case WALLET_TYPES.PUBLICKEY:
-            case WALLET_TYPES.ADDRESS:
-              account.generateAddress(0);
-              sendReady();
-              return resolve(true);
-            default:
-              break;
-          }
-
           if (!account.injectDefaultPlugins) {
             sendReady();
             return resolve(true);
-          }
-
-          if ([WALLET_TYPES.HDWALLET, WALLET_TYPES.HDPUBLIC].includes(account.walletType)) {
-            ensureAddressesToGapLimit(
-              account.store.wallets[account.walletId],
-              account.walletType,
-              account.index,
-              account.getAddress.bind(account),
-            );
           }
 
           sendReady();

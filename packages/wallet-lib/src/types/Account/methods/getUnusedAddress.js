@@ -1,5 +1,3 @@
-const logger = require('../../../logger');
-
 /**
  * Get an unused address from the store
  * @param {AddressType} [type="external"] - Type of the requested usused address
