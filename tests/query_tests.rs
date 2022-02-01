@@ -81,8 +81,13 @@ pub fn setup(count: u32, seed: u64) -> (Drive, Contract) {
     (drive, contract)
 }
 
+// #[test]
+// fn test_query_many() {
+//     let (mut drive, contract) = setup(1000, 73509);
+// }
+
 #[test]
-fn test_query_many() {
+fn test_query() {
     let (mut drive, contract) = setup(10, 73509);
     let all_names = [
         "Adey".to_string(),
