@@ -2,6 +2,6 @@
 require('../bootstrap');
 
 // noinspection JSUnresolvedFunction
-const testsContext = require.context('../../../test', true, /^(?!.*functional).*\.js$/);
+const testsContext = require.context('../../../test', true, /.*\.js$/);
 
 testsContext.keys().forEach(testsContext);
