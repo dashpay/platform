@@ -280,14 +280,11 @@ impl Drive {
 
     pub fn apply_contract(
         &mut self,
-        contract_cbor: &[u8],
+        contract_cbor: Vec<u8>,
         transaction: Option<&OptimisticTransactionDBTransaction>,
     ) -> Result<u64, Error> {
         // first we need to deserialize the contract
-        let contract = Contract::from_cbor(contract_cbor)?;
-
-        let contract_bytes = Vec::from(contract_cbor);
-        let contract_element = Element::Item(contract_bytes.clone());
+        let contract = Contract::from_cbor(&contract_cbor)?;
 
         // overlying structure
         let mut already_exists = false;
@@ -299,7 +296,7 @@ impl Drive {
             already_exists = true;
             match stored_element {
                 Element::Item(stored_contract_bytes) => {
-                    if contract_bytes != stored_contract_bytes {
+                    if contract_cbor != stored_contract_bytes {
                         different_contract_data = true;
                     }
                 }
@@ -308,6 +305,8 @@ impl Drive {
                 }
             }
         };
+
+        let contract_element = Element::Item(contract_cbor);
 
         if already_exists {
             if different_contract_data {
@@ -500,7 +499,7 @@ impl Drive {
                 )?;
 
                 // we push the actual value of the index path
-                index_path.push(document_index_field.clone());
+                index_path.push(document_index_field);
                 // Iteration 1. the index path is now something like Contracts/ContractID/Documents(1)/$ownerId/<ownerId>/toUserId/<ToUserId>/
                 // Iteration 2. the index path is now something like Contracts/ContractID/Documents(1)/$ownerId/<ownerId>/toUserId/<ToUserId>/accountReference/<accountReference>
             }
@@ -787,7 +786,7 @@ mod tests {
         let dashpay_cbor =
             json_document_to_cbor("tests/supporting_files/contract/dashpay/dashpay-contract.json", Some(1));
         drive
-            .apply_contract(&dashpay_cbor, None)
+            .apply_contract(dashpay_cbor.clone(), None)
             .expect("expected to apply contract successfully");
 
         (drive, dashpay_cbor)

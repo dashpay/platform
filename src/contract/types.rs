@@ -14,8 +14,8 @@ pub enum DocumentFieldType {
     Object,
 }
 
-pub fn string_to_field_type(field_type_name: String) -> Option<DocumentFieldType> {
-    return match field_type_name.as_str() {
+pub fn string_to_field_type(field_type_name: &str) -> Option<DocumentFieldType> {
+    match field_type_name {
         "integer" => Some(DocumentFieldType::Integer),
         "string" => Some(DocumentFieldType::String),
         "float" => Some(DocumentFieldType::Float),
@@ -23,7 +23,7 @@ pub fn string_to_field_type(field_type_name: String) -> Option<DocumentFieldType
         "date" => Some(DocumentFieldType::Date),
         "object" => Some(DocumentFieldType::Object),
         _ => None,
-    };
+    }
 }
 
 fn get_field_type_matching_error() -> Error {

@@ -227,8 +227,8 @@ impl<'a> WhereClause {
                 }))
             }
         } else if non_groupable_range_clauses.len() == 1 {
-            let where_clause = non_groupable_range_clauses.get(0).unwrap();
-            Ok(Some((*where_clause).clone()))
+            let where_clause = *non_groupable_range_clauses.get(0).unwrap();
+            Ok(Some(where_clause.clone()))
         } else {
             // if non_groupable_range_clauses.len() > 1
             Err(Error::CorruptedData(String::from(
@@ -714,29 +714,22 @@ impl<'a> DriveQuery<'a> {
             .filter_map(|where_clause| match where_clause.operator {
                 Equal => Some(where_clause.clone()),
                 _ => None,
-            })
-            .collect::<Vec<WhereClause>>();
+            });
 
-        let in_clauses_array = all_where_clauses
+        let mut in_clauses_array = all_where_clauses
             .iter()
             .filter_map(|where_clause| match where_clause.operator {
                 In => Some(where_clause.clone()),
                 _ => None,
-            })
-            .collect::<Vec<WhereClause>>();
+            });
 
-        let in_clause = match in_clauses_array.len() {
-            0 => Ok(None),
-            1 => Ok(Some(
-                in_clauses_array
-                    .get(0)
-                    .expect("there must be a value")
-                    .clone(),
-            )),
-            _ => Err(Error::CorruptedData(String::from(
+        let in_clause = in_clauses_array.next();
+
+        if in_clauses_array.next().is_some() {
+            return Err(Error::CorruptedData(String::from(
                 "There should only be one in clause",
-            ))),
-        }?;
+            )));
+        }
 
         let equal_clauses = equal_clauses_array
             .into_iter()
