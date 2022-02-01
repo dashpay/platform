@@ -103,6 +103,24 @@ describe('Client - Platform - Documents - .get()', () => {
     ]);
   });
 
+  it('should convert string to identifiers inside where condition for "startAt" and "startAfter"', async () => {
+    const [docA, docB] = getDocumentsFixture();
+
+    await get.call(platform, 'app.withByteArrays', {
+      startAt: docA.getId().toString('base58'),
+      startAfter: docB.getId().toString('base58'),
+    });
+
+    expect(getDocumentsMock.getCall(0).args).to.have.deep.members([
+      appDefinition.contractId,
+      'withByteArrays',
+      {
+        startAt: docA.getId(),
+        startAfter: docB.getId(),
+      },
+    ]);
+  });
+
   it('should convert nested identifier properties inside where condition if `elementMatch` is used', async () => {
     const id = generateRandomIdentifier();
 

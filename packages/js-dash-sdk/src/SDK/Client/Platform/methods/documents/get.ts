@@ -15,8 +15,8 @@ declare interface fetchOpts {
     where?: WhereCondition[];
     orderBy?: OrderByCondition[];
     limit?: number;
-    startAt?: number|Document|Identifier;
-    startAfter?: number|Document|Identifier;
+    startAt?: number|string|Buffer|Document|Identifier;
+    startAfter?: number|string|Buffer|Document|Identifier;
 }
 
 type OrderByCondition = [
@@ -124,10 +124,14 @@ export async function get(this: Platform, typeLocator: string, opts: fetchOpts):
 
     if (opts.startAt instanceof Document) {
       opts.startAt = opts.startAt.getId();
+    } else if (typeof opts.startAt === 'string') {
+      opts.startAt = Identifier.from(opts.startAt);
     }
 
     if (opts.startAfter instanceof Document) {
       opts.startAt = opts.startAfter.getId();
+    } else if (typeof opts.startAfter === 'string') {
+      opts.startAfter = Identifier.from(opts.startAfter);
     }
 
     // @ts-ignore
