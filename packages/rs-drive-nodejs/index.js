@@ -11,6 +11,7 @@ const {
   driveApplyContract,
   driveCreateDocument,
   driveUpdateDocument,
+  driveDeleteDocument,
 } = require('neon-load-or-build')({
   dir: pathJoin(__dirname, '..'),
 });
@@ -27,6 +28,7 @@ const driveCreateRootTreeAsync = promisify(driveCreateRootTree);
 const driveApplyContractAsync = promisify(driveApplyContract);
 const driveCreateDocumentAsync = promisify(driveCreateDocument);
 const driveUpdateDocumentAsync = promisify(driveUpdateDocument);
+const driveDeleteDocumentAsync = promisify(driveDeleteDocument);
 
 // Wrapper class for the boxed `Drive` for idiomatic JavaScript usage
 class Drive {
@@ -116,6 +118,31 @@ class Drive {
     return driveUpdateDocumentAsync.call(
       this.drive,
       encodedDocument,
+      encodedContract,
+      documentType,
+      ownerId,
+      useTransaction,
+    );
+  }
+
+  /**
+   * @param {Buffer} documentId
+   * @param {Buffer} encodedContract
+   * @param {string} documentType
+   * @param {Buffer} ownerId
+   * @param {boolean} [useTransaction=false]
+   * @returns {Promise<void>}
+   */
+  async deleteDocument(
+    documentId,
+    encodedContract,
+    documentType,
+    ownerId,
+    useTransaction = false,
+  ) {
+    return driveUpdateDocumentAsync.call(
+      this.drive,
+      documentId,
       encodedContract,
       documentType,
       ownerId,
