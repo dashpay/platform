@@ -21,8 +21,8 @@ serde_json = "1.0.73"
 
 [dependencies.grovedb]
 git = "https://github.com/dashevo/grovedb"
-branch = "feat/queryLevelOrdering"
+branch = "master"
 
 [dependencies.storage]
 git = "https://github.com/dashevo/grovedb"
-branch = "feat/queryLevelOrdering"
+branch = "master"
