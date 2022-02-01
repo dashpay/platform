@@ -833,7 +833,7 @@ impl<'a> DriveQuery<'a> {
                     .contract
                     .documents_primary_key_path(self.document_type.name.as_str());
                 let start_at_document =
-                    grove.get(document_holding_path.as_slice(), starts_at, transaction)?;
+                    grove.get(document_holding_path, starts_at, transaction)?;
                 if let Element::Item(item) = start_at_document {
                     let document = Document::from_cbor(item.as_slice(), None, None)?;
                     Ok(Some((document, self.start_at_included)))
@@ -939,7 +939,7 @@ impl<'a> DriveQuery<'a> {
 
         fn recursive_insert(
             query: Option<&mut Query>,
-            left_over_index_properties: Vec<&IndexProperty>,
+            left_over_index_properties: &[&IndexProperty],
             unique: bool,
         ) -> Option<Query> {
             match left_over_index_properties.split_first() {
@@ -949,10 +949,10 @@ impl<'a> DriveQuery<'a> {
                         Some(query) => {
                             match unique {
                                 true => {
-                                    query.set_subquery_key(b"0".to_vec());
+                                    query.set_subquery_key(vec![0]);
                                 }
                                 false => {
-                                    query.set_subquery_key(b"0".to_vec());
+                                    query.set_subquery_key(vec![0]);
                                     // we just get all by document id order ascending
                                     let mut full_query = Query::new();
                                     full_query.insert_all();
@@ -966,7 +966,7 @@ impl<'a> DriveQuery<'a> {
                 Some((first, left_over)) => {
                     let mut inner_query = Query::new_with_direction(first.ascending);
                     inner_query.insert_all();
-                    recursive_insert(Some(&mut inner_query), left_over.to_vec(), unique);
+                    recursive_insert(Some(&mut inner_query), left_over, unique);
                     match query {
                         None => Some(inner_query),
                         Some(query) => {
@@ -980,7 +980,7 @@ impl<'a> DriveQuery<'a> {
         }
 
         let final_query = match last_clause {
-            None => recursive_insert(None, left_over_index_properties, index.unique)
+            None => recursive_insert(None, left_over_index_properties.as_slice(), index.unique)
                 .expect("Index must have left over properties if no last clause"),
             Some(where_clause) => {
                 let order_clause: &OrderClause = self
@@ -999,7 +999,7 @@ impl<'a> DriveQuery<'a> {
                     None => {
                         recursive_insert(
                             Some(&mut query),
-                            left_over_index_properties,
+                            left_over_index_properties.as_slice(),
                             index.unique,
                         );
                     }
@@ -1017,7 +1017,7 @@ impl<'a> DriveQuery<'a> {
                         )?;
                         recursive_insert(
                             Some(&mut subquery),
-                            left_over_index_properties,
+                            left_over_index_properties.as_slice(),
                             index.unique,
                         );
                         let subindex = where_clause.field.as_bytes().to_vec();
@@ -1049,10 +1049,8 @@ impl<'a> DriveQuery<'a> {
 
         path.push(last_index.name.as_bytes().to_vec());
 
-        let path_slices = path.iter().map(|a| a.as_slice()).collect::<Vec<&[u8]>>();
-
         let path_query = PathQuery::new(
-            path_slices.as_slice(),
+            path,
             SizedQuery::new(final_query, Some(self.limit), Some(self.offset)),
         );
 
