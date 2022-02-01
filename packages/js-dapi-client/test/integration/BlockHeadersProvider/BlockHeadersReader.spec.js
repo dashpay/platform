@@ -81,13 +81,14 @@ describe('BlockHeadersProvider', () => {
     }
   });
 
-  describe('#fetchBatch', () => {
-    let fetchBatch;
+  describe('#subscribeToHistoricalBatch', () => {
+    let subscribeToHistoricalBatch;
     beforeEach(() => {
-      fetchBatch = blockHeadersReader.createBatchFetcher();
+      subscribeToHistoricalBatch = blockHeadersReader
+        .subscribeToHistoricalBatchHOF(options.maxRetries);
     });
 
-    it('should emit BLOCK_HEADERS event', async () => {
+    it('should deliver block headers from the stream', async () => {
       const count = Math.ceil(mockedHeaders.length / 2);
 
       let obtainedHeaders = [];
@@ -95,22 +96,24 @@ describe('BlockHeadersProvider', () => {
         obtainedHeaders = [...obtainedHeaders, ...headers];
       });
 
-      await fetchBatch(1, count);
+      await subscribeToHistoricalBatch(1, count);
+
+      while (obtainedHeaders.length < count) {
+        // eslint-disable-next-line no-await-in-loop
+        await sleepOneTick();
+      }
 
       expect(obtainedHeaders).to.deep.equal(mockedHeaders.slice(0, count));
     });
 
-    it('should deliver all block headers in case of errors and retry attempts', async () => {
+    it('should deliver block headers in case of errors and retry attempts', async () => {
       let obtainedHeaders = [];
-      let completed = false;
 
       blockHeadersReader.on(BlockHeadersReader.EVENTS.BLOCK_HEADERS, (headers) => {
         obtainedHeaders = [...obtainedHeaders, ...headers];
       });
 
-      fetchBatch(1, mockedHeaders.length).then(() => {
-        completed = true;
-      });
+      subscribeToHistoricalBatch(1, mockedHeaders.length);
 
       // Wait for the first chunk of data to enter the stream
       await sleepOneTick();
@@ -121,33 +124,12 @@ describe('BlockHeadersProvider', () => {
         blockHeadersStream.destroy(new Error());
       }
 
-      while (!completed) {
+      while (obtainedHeaders.length !== mockedHeaders.length) {
         // eslint-disable-next-line no-await-in-loop
-        await sleep(100);
+        await sleepOneTick();
       }
 
       expect(obtainedHeaders).to.deep.equal(mockedHeaders);
-    });
-
-    it('should throw an error in case the amount of retry attempts reached it\'s limit', async () => {
-      const errorToThrow = new Error('');
-      let errorThrown;
-      fetchBatch(1, mockedHeaders.length).catch((e) => {
-        errorThrown = e;
-      });
-
-      for (let i = 0; i < options.maxRetries + 1; i += 1) {
-        // eslint-disable-next-line no-await-in-loop
-        await sleepOneTick();
-        blockHeadersStream.destroy(errorToThrow);
-      }
-
-      while (!errorThrown) {
-        // eslint-disable-next-line no-await-in-loop
-        await new Promise((resolve) => setTimeout(resolve, 100));
-      }
-
-      expect(errorThrown).to.equal(errorToThrow);
     });
   });
 
@@ -156,7 +138,7 @@ describe('BlockHeadersProvider', () => {
       await blockHeadersReader.subscribeToNew(1);
     });
 
-    it('should emit BLOCK_HEADERS event', async () => {
+    it('should deliver block headers from the stream', async () => {
       let obtainedHeaders = null;
       blockHeadersReader.on(BlockHeadersReader.EVENTS.BLOCK_HEADERS, (headers) => {
         obtainedHeaders = headers;
@@ -170,24 +152,6 @@ describe('BlockHeadersProvider', () => {
 
       expect(obtainedHeaders).to.deep.equal(mockedHeaders.slice(0, headersBatchSize));
     });
-
-    it('should propagate an error from the stream', async () => {
-      const errorToThrow = new Error();
-      let errorThrown = null;
-
-      blockHeadersReader.on(BlockHeadersReader.EVENTS.ERROR, (e) => {
-        errorThrown = e;
-      });
-
-      blockHeadersStream.destroy(errorToThrow);
-
-      while (!errorThrown) {
-        // eslint-disable-next-line no-await-in-loop
-        await sleep(100);
-      }
-
-      expect(errorThrown).to.equal(errorToThrow);
-    });
   });
 
   describe('#readHistorical', () => {
@@ -198,6 +162,11 @@ describe('BlockHeadersProvider', () => {
       });
 
       await blockHeadersReader.readHistorical(1, mockedHeaders.length);
+
+      while (obtainedHeaders.length !== mockedHeaders.length) {
+        // eslint-disable-next-line no-await-in-loop
+        await sleepOneTick();
+      }
 
       obtainedHeaders.sort((a, b) => a.timestamp - b.timestamp);
       expect(obtainedHeaders).to.deep.equal(mockedHeaders);
