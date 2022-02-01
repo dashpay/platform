@@ -1,5 +1,7 @@
 /target
 Cargo.lock
+node_modules
+prebuilds
 .idea
 .DS_Store
 .DS_Store?
