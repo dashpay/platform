@@ -1,0 +1,184 @@
+name: Release
+
+on:
+  workflow_dispatch:
+  release:
+    types:
+      - published
+
+jobs:
+  build:
+    name: Build Node.JS binding
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            arch: x86_64
+            compiler: gnu
+            platform: unknown-linux
+# TODO: Enable build for arm64 linux gnu
+#          - os: ubuntu-latest
+#            arch: aarch64
+#            node_arch: arm64
+#            compiler: gnu
+#            platform: unknown-linux
+#            build_dependencies:
+#              - gcc-aarch64-linux-gnu
+#              - binutils-aarch64-linux-gnu
+#              - clang
+          - os: ubuntu-latest
+            arch: x86_64
+            compiler: musl
+            platform: unknown-linux
+            build_dependencies:
+              - musl-tools
+          - os: ubuntu-latest
+            arch: aarch64
+            node_arch: arm64
+            compiler: musl
+            platform: unknown-linux
+          - os: macos-11
+            arch: x86_64
+            platform: apple-darwin
+          - os: macos-11
+            arch: aarch64
+            node_arch: arm64
+            platform: apple-darwin
+
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Check out repo
+        uses: actions/checkout@v2
+
+      - name: Setup Node.JS
+        uses: actions/setup-node@v2
+        with:
+          node-version: 16
+
+      - name: Install NPM deps
+        run: npm ci
+
+      - name: Set target name
+        uses: actions/github-script@v5
+        id: set-target
+        with:
+          script: |
+            let target = '${{ matrix.arch }}-${{ matrix.platform }}';
+
+            if ('${{ matrix.compiler }}') {
+              target += '-${{ matrix.compiler }}';
+            }
+
+            core.info(`Set target ${target}`);
+
+            return target;
+          result-encoding: string
+
+      - name: Install build deps
+        if: ${{ matrix.os == 'ubuntu-latest' && matrix.build_dependencies && matrix.build_dependencies[0] }}
+        run: |
+          sudo apt-get update
+          sudo apt-get install ${{ join(matrix.build_dependencies, ' ') }}
+
+      - name: Fix missing "musl-g++" for x86_64-unknown-linux-musl # https://github.com/rust-lang/cargo/issues/3359
+        if: ${{ steps.set-target.outputs.result == 'x86_64-unknown-linux-musl' }}
+        run: sudo ln -s /bin/g++ /bin/musl-g++
+
+      - name: Setup Rust toolchain and target
+        if: ${{ steps.set-target.outputs.result != 'aarch64-unknown-linux-musl' }}
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: nightly
+          default: true
+          target: ${{ steps.set-target.outputs.result }}
+
+      - name: Set defualt target to cargo config
+        uses: DamianReeves/write-file-action@v1.0
+        with:
+          path: .cargo/config.toml
+          write-mode: append
+          contents: |
+            
+            [build]
+            target = "${{ steps.set-target.outputs.result }}"
+
+      - name: Set LIBC env
+        uses: actions/github-script@v5
+        id: set-libc
+        with:
+          script: |
+            let env = '';
+
+            if (${{ matrix.compiler == 'musl' }}) {
+              env = 'musl'
+            }
+
+            core.info(`Set LIBC env to "${env}"`);
+
+            return env;
+          result-encoding: string
+
+      - name: Run tests
+        run: npm test
+        if: ${{ steps.set-target.outputs.result != 'aarch64-unknown-linux-musl' && steps.set-target.outputs.result != 'aarch64-apple-darwin' }}
+        env:
+          LIBC: ${{ steps.set-libc.outputs.result }}
+          ARCH: ${{ matrix.node_arch }} # Overwrite current arch with target one
+
+      - name: Build aarch64-unknown-linux-musl
+        if: ${{ steps.set-target.outputs.result == 'aarch64-unknown-linux-musl' }}
+        uses: docker://messense/rust-musl-cross:aarch64-musl
+        with:
+          workdir: /github/workspace/
+          entrypoint: node-grove/docker/build-aarch64-unknown-linux-musl.sh
+
+      - name: Build
+        if: ${{ steps.set-target.outputs.result != 'aarch64-unknown-linux-musl' }}
+        run: npm run build:release
+        env:
+          LIBC: ${{ steps.set-libc.outputs.result }}
+          ARCH: ${{ matrix.node_arch }} # Overwrite current arch with target one
+
+      - name: Upload prebuild artifacts
+        uses: actions/upload-artifact@v2
+        with:
+          name: prebuilds
+          path: prebuilds/
+
+  publish:
+    name: Publish NPM Package
+    needs: [build]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout the repo
+        uses: actions/checkout@v2
+
+      - name: Check package version matches tag
+        uses: geritol/match-tag-to-package-version@0.2.0
+        env:
+          TAG_PREFIX: v
+
+      - name: Setup Node.JS
+        uses: actions/setup-node@v2
+        with:
+          node-version: ${{ matrix.node-version }}
+
+      - name: Install NPM deps
+        run: npm ci
+
+      - name: Download prebuild artifacts
+        uses: actions/download-artifact@v2
+        with:
+          name: prebuilds
+          path: prebuilds
+
+      - name: List prebuilds
+        run: ls -laR prebuilds
+
+      - name: Publish NPM package
+        uses: JS-DevTools/npm-publish@v1
+        with:
+          access: public
+          token: ${{ secrets.NPM_TOKEN }}
