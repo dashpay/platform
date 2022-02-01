@@ -1,3 +1,4 @@
+const EventEmitter = require('events');
 const { SpvChain } = require('@dashevo/dash-spv');
 
 const BlockHeadersReader = require('./BlockHeadersReader');
@@ -19,11 +20,16 @@ const defaultOptions = {
   autoStart: false,
 };
 
-class BlockHeadersProvider {
+const EVENTS = {
+  ERROR: 'ERROR',
+};
+
+class BlockHeadersProvider extends EventEmitter {
   /**
    * @param {BlockHeadersProviderOptions} options
    */
   constructor(options = {}) {
+    super();
     this.options = {
       ...defaultOptions,
       ...options,
@@ -55,7 +61,14 @@ class BlockHeadersProvider {
     );
 
     blockHeadersReader.on(BlockHeadersReader.EVENTS.ERROR, (e) => {
-      throw e;
+      this.emit(EVENTS.ERROR, e);
+    });
+
+    blockHeadersReader.on(BlockHeadersReader.EVENTS.HISTORICAL_DATA_OBTAINED, () => {
+      blockHeadersReader.subscribeToNew(bestBlockHeight)
+        .catch((e) => {
+          this.emit(EVENTS.ERROR, e);
+        });
     });
 
     blockHeadersReader.on(BlockHeadersReader.EVENTS.BLOCK_HEADERS, (headers, reject) => {
@@ -65,7 +78,7 @@ class BlockHeadersProvider {
         if (e.message === 'Some headers are invalid') {
           reject(e);
         } else {
-          throw e;
+          this.emit(EVENTS.ERROR, e);
         }
       }
     });
@@ -74,11 +87,10 @@ class BlockHeadersProvider {
       this.options.fromBlockHeight,
       bestBlockHeight - 1,
     );
-
-    await blockHeadersReader.subscribeToNew(bestBlockHeight);
   }
 }
 
+BlockHeadersProvider.EVENTS = EVENTS;
 BlockHeadersProvider.defaultOptions = defaultOptions;
 
 module.exports = BlockHeadersProvider;
