@@ -2,7 +2,14 @@ const { EventEmitter } = require('events');
 
 const EVENTS = {
   BLOCK_HEADERS: 'BLOCK_HEADERS',
+  HISTORICAL_DATA_OBTAINED: 'HISTORICAL_DATA_OBTAINED',
   ERROR: 'ERROR',
+};
+
+const COMMANDS = {
+  HANDLE_FINISHED_STREAM: 'HANDLE_FINISHED_STREAM',
+  HANDLE_STREAM_RETRY: 'HANDLE_STREAM_RETRY',
+  HANDLE_STREAM_ERROR: 'HANDLE_STREAM_ERROR',
 };
 
 /**
@@ -23,6 +30,13 @@ class BlockHeadersReader extends EventEmitter {
     this.maxParallelStreams = options.maxParallelStreams;
     this.targetBatchSize = options.targetBatchSize;
     this.maxRetries = options.maxRetries;
+
+    /**
+     * Holds references to the historical streams
+     *
+     * @type {*[]}
+     */
+    this.historicalStreams = [];
   }
 
   /**
@@ -33,6 +47,14 @@ class BlockHeadersReader extends EventEmitter {
    * @returns {Promise<void>}
    */
   async readHistorical(fromBlockHeight, toBlockHeight) {
+    if (this.historicalStreams.length) {
+      this.removeAllListeners(COMMANDS.HANDLE_STREAM_RETRY);
+      this.removeAllListeners(COMMANDS.HANDLE_STREAM_ERROR);
+      this.removeAllListeners(COMMANDS.HANDLE_FINISHED_STREAM);
+      this.historicalStreams.forEach((stream) => stream.destroy());
+      this.historicalStreams = [];
+    }
+
     const totalAmount = toBlockHeight - fromBlockHeight + 1;
     if (totalAmount === 0) {
       return;
@@ -42,6 +64,28 @@ class BlockHeadersReader extends EventEmitter {
       throw new Error(`Invalid total amount of headers to read: ${totalAmount}`);
     }
 
+    // Resubscribe to the stream in case of error, and replace the stream in the array
+    this.on(COMMANDS.HANDLE_STREAM_RETRY, (oldStream, newStream) => {
+      const index = this.historicalStreams.indexOf(oldStream);
+      this.historicalStreams[index] = newStream;
+    });
+
+    // Remove stream from the array in case of error
+    this.on(COMMANDS.HANDLE_STREAM_ERROR, (stream, e) => {
+      const index = this.historicalStreams.indexOf(stream);
+      this.historicalStreams.splice(index, 1);
+      this.emit(EVENTS.ERROR, e);
+    });
+
+    // Remove finished stream from the array and emit HISTORICAL_DATA_OBTAINED event
+    this.on(COMMANDS.HANDLE_FINISHED_STREAM, (stream) => {
+      const index = this.historicalStreams.indexOf(stream);
+      this.historicalStreams.splice(index, 1);
+      if (this.historicalStreams.length === 0) {
+        this.emit(EVENTS.HISTORICAL_DATA_OBTAINED);
+      }
+    });
+
     const numStreams = Math.min(
       Math.max(Math.round(totalAmount / this.targetBatchSize), 1),
       this.maxParallelStreams,
@@ -49,17 +93,16 @@ class BlockHeadersReader extends EventEmitter {
 
     const actualBatchSize = Math.ceil(totalAmount / numStreams);
 
-    const streamsPromises = Array.from({ length: numStreams })
-      .map((_, batchIndex) => {
-        const startingHeight = (batchIndex * actualBatchSize) + 1;
-        const count = Math.min(actualBatchSize, toBlockHeight - startingHeight + 1);
+    for (let batchIndex = 0; batchIndex < numStreams; batchIndex += 1) {
+      const startingHeight = (batchIndex * actualBatchSize) + 1;
+      const count = Math.min(actualBatchSize, toBlockHeight - startingHeight + 1);
 
-        const subscribe = this.createBatchFetcher();
+      const subscribeToHistoricalBatch = this.subscribeToHistoricalBatchHOF(this.maxRetries);
 
-        return subscribe(startingHeight, count);
-      });
-
-    await Promise.all(streamsPromises);
+      // eslint-disable-next-line no-await-in-loop
+      const stream = await subscribeToHistoricalBatch(startingHeight, count);
+      this.historicalStreams.push(stream);
+    }
   }
 
   /**
@@ -86,11 +129,7 @@ class BlockHeadersReader extends EventEmitter {
           stream.destroy(e);
         };
 
-        try {
-          this.emit(EVENTS.BLOCK_HEADERS, blockHeaders.getHeadersList(), rejectHeaders);
-        } catch (e) {
-          this.emit(EVENTS.ERROR, e);
-        }
+        this.emit(EVENTS.BLOCK_HEADERS, blockHeaders.getHeadersList(), rejectHeaders);
       }
     });
 
@@ -102,13 +141,14 @@ class BlockHeadersReader extends EventEmitter {
   }
 
   /**
-   * A HOC that returns a function to subscribe to block headers and chain locks
+   * A HOF that returns a function to subscribe to historical block headers and chain locks
    * and handles retry logic
    *
    * @private
+   * @param {number} [maxRetries=0] - maximum amount of retries
    * @returns {function(*, *): Promise<Stream>}
    */
-  createBatchFetcher() {
+  subscribeToHistoricalBatchHOF(maxRetries = 0) {
     let currentRetries = 0;
 
     /**
@@ -118,59 +158,69 @@ class BlockHeadersReader extends EventEmitter {
      * @param {number} count
      * @returns {Promise<Stream>}
      */
-    const fetchBatch = async (fromBlockHeight, count) => new Promise((resolve, reject) => {
+    const subscribeToHistoricalBatch = async (fromBlockHeight, count) => {
       let headersObtained = 0;
 
-      this.coreMethods.subscribeToBlockHeadersWithChainLocks({
+      const stream = await this.coreMethods.subscribeToBlockHeadersWithChainLocks({
         fromBlockHeight,
         count,
-      }).then((stream) => {
-        stream.on('data', (data) => {
-          const blockHeaders = data.getBlockHeaders();
-
-          if (blockHeaders) {
-            const headersList = blockHeaders.getHeadersList();
-
-            let rejected = false;
-            try {
-              this.emit(EVENTS.BLOCK_HEADERS, headersList, (e) => {
-                rejected = true;
-                stream.destroy(e);
-              });
-            } catch (e) {
-              this.emit(EVENTS.ERROR, e);
-            }
-
-            if (!rejected) {
-              headersObtained += headersList.length;
-            }
-          }
-        });
-
-        stream.on('error', (e) => {
-          if (currentRetries < this.maxRetries) {
-            const newFromBlockHeight = fromBlockHeight + headersObtained;
-            const newCount = count - headersObtained;
-            fetchBatch(newFromBlockHeight, newCount)
-              .then(resolve)
-              .catch(reject);
-          } else {
-            reject(e);
-          }
-
-          currentRetries += 1;
-        });
-
-        stream.on('end', () => {
-          resolve();
-        });
       });
-    });
 
-    return fetchBatch;
+      stream.on('data', (data) => {
+        const blockHeaders = data.getBlockHeaders();
+
+        if (blockHeaders) {
+          const headersList = blockHeaders.getHeadersList();
+
+          let rejected = false;
+
+          /**
+           * Kills stream in case of deliberate rejection from the outside
+           *
+           * @param e
+           */
+          const rejectHeaders = (e) => {
+            rejected = true;
+            stream.destroy(e);
+          };
+
+          this.emit(EVENTS.BLOCK_HEADERS, headersList, rejectHeaders);
+
+          if (!rejected) {
+            headersObtained += headersList.length;
+          }
+        }
+      });
+
+      stream.on('error', (streamError) => {
+        if (currentRetries < maxRetries) {
+          const newFromBlockHeight = fromBlockHeight + headersObtained;
+          const newCount = count - headersObtained;
+
+          subscribeToHistoricalBatch(newFromBlockHeight, newCount)
+            .then((newStream) => {
+              currentRetries += 1;
+              this.emit(COMMANDS.HANDLE_STREAM_RETRY, stream, newStream);
+            }).catch((e) => {
+              this.emit(COMMANDS.HANDLE_STREAM_ERROR, stream, e);
+            });
+        } else {
+          this.emit(COMMANDS.HANDLE_STREAM_ERROR, stream, streamError);
+        }
+      });
+
+      stream.on('end', () => {
+        this.emit(COMMANDS.HANDLE_FINISHED_STREAM, stream);
+      });
+
+      return stream;
+    };
+
+    return subscribeToHistoricalBatch;
   }
 }
 
 BlockHeadersReader.EVENTS = EVENTS;
+BlockHeadersReader.COMMANDS = COMMANDS;
 
 module.exports = BlockHeadersReader;
