@@ -109,10 +109,9 @@ impl Drive {
         }
     }
 
-    // TODO: Protocol version is dynamic and goes from consenus params
-    //  we need to remove this check for now
-    pub fn check_protocol_version(version: u32) -> bool {
-        version == defaults::PROTOCOL_VERSION
+    pub fn check_protocol_version(_version: u32) -> bool {
+        // Temporary disabled due protocol version is dynamic and goes from consensus params
+        true
     }
 
     pub fn check_protocol_version_bytes(version_bytes: &[u8]) -> bool {
