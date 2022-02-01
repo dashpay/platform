@@ -39,6 +39,7 @@ impl From<RootTree> for &'static [u8; 1] {
             RootTree::ContractDocuments => &[1],
             RootTree::PublicKeyHashesToIdentities => &[2],
             RootTree::Misc => &[3]
+            // TODO: We also need to create spent asset lock tree
         }
     }
 }
@@ -108,6 +109,8 @@ impl Drive {
         }
     }
 
+    // TODO: Protocol version is dynamic and goes from consenus params
+    //  we need to remove this check for now
     pub fn check_protocol_version(version: u32) -> bool {
         version == defaults::PROTOCOL_VERSION
     }
@@ -784,7 +787,7 @@ mod tests {
 
         // let's construct the grovedb structure for the dashpay data contract
         let dashpay_cbor =
-            json_document_to_cbor("tests/supporting_files/contract/dashpay/dashpay-contract.json", Some(1));
+            json_document_to_cbor("../../tests/supporting_files/contract/dashpay/dashpay-contract.json", Some(1));
         drive
             .apply_contract(dashpay_cbor.clone(), None)
             .expect("expected to apply contract successfully");
@@ -797,7 +800,7 @@ mod tests {
         let (mut drive, dashpay_cbor) = setup_dashpay("add");
 
         let dashpay_cr_document_cbor =
-            json_document_to_cbor("tests/supporting_files/contract/dashpay/contact-request0.json", Some(1));
+            json_document_to_cbor("../../tests/supporting_files/contract/dashpay/contact-request0.json", Some(1));
 
         let random_owner_id = rand::thread_rng().gen::<[u8; 32]>();
         drive
@@ -839,7 +842,7 @@ mod tests {
         let (mut drive, contract) = setup_contract("dpns", "tests/supporting_files/contract/dpns/dpns-contract.json");
 
         let dpns_domain_document_cbor =
-            json_document_to_cbor("tests/supporting_files/contract/dpns/domain0.json", Some(1));
+            json_document_to_cbor("../../tests/supporting_files/contract/dpns/domain0.json", Some(1));
 
         let random_owner_id = rand::thread_rng().gen::<[u8; 32]>();
 
@@ -855,13 +858,13 @@ mod tests {
         let (mut drive, dashpay_cbor) = setup_dashpay("add_no_conflict");
 
         let dashpay_cr_document_cbor_0 =
-            json_document_to_cbor("tests/supporting_files/contract/dashpay/contact-request0.json", Some(1));
+            json_document_to_cbor("../../tests/supporting_files/contract/dashpay/contact-request0.json", Some(1));
 
         let dashpay_cr_document_cbor_1 =
-            json_document_to_cbor("tests/supporting_files/contract/dashpay/contact-request1.json", Some(1));
+            json_document_to_cbor("../../tests/supporting_files/contract/dashpay/contact-request1.json", Some(1));
 
         let dashpay_cr_document_cbor_2 =
-            json_document_to_cbor("tests/supporting_files/contract/dashpay/contact-request2.json", Some(1));
+            json_document_to_cbor("../../tests/supporting_files/contract/dashpay/contact-request2.json", Some(1));
 
         let random_owner_id = rand::thread_rng().gen::<[u8; 32]>();
         drive
@@ -901,10 +904,10 @@ mod tests {
         let (mut drive, dashpay_cbor) = setup_dashpay("add_conflict");
 
         let dashpay_cr_document_cbor_0 =
-            json_document_to_cbor("tests/supporting_files/contract/dashpay/contact-request0.json", Some(1));
+            json_document_to_cbor("../../tests/supporting_files/contract/dashpay/contact-request0.json", Some(1));
 
         let dashpay_cr_document_cbor_0_dup = json_document_to_cbor(
-            "tests/supporting_files/contract/dashpay/contact-request0-dup-unique-index.json", Some(1)
+            "../../tests/supporting_files/contract/dashpay/contact-request0-dup-unique-index.json", Some(1)
         );
 
         let random_owner_id = rand::thread_rng().gen::<[u8; 32]>();
@@ -940,7 +943,7 @@ mod tests {
 
     #[test]
     fn test_cbor_deserialization() {
-        let document_cbor = json_document_to_cbor("simple.json", Some(1));
+        let document_cbor = json_document_to_cbor("../../simple.json", Some(1));
         let (version, read_document_cbor) = document_cbor.split_at(4);
         assert!(Drive::check_protocol_version_bytes(version));
         let document: HashMap<String, ciborium::value::Value> =
