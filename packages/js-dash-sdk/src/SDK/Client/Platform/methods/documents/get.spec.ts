@@ -1,6 +1,7 @@
 import getDataContractFixture from '@dashevo/dpp/lib/test/fixtures/getDataContractFixture';
 import generateRandomIdentifier from '@dashevo/dpp/lib/test/utils/generateRandomIdentifier';
 import createDPPMock from '@dashevo/dpp/lib/test/mocks/createDPPMock';
+import getDocumentsFixture from '@dashevo/dpp/lib/test/fixtures/getDocumentsFixture';
 import getResponseMetadataFixture from '../../../../../test/fixtures/getResponseMetadataFixture';
 const GetDocumentsResponse = require("@dashevo/dapi-client/lib/methods/platform/getDocuments/GetDocumentsResponse");
 
@@ -80,6 +81,42 @@ describe('Client - Platform - Documents - .get()', () => {
           ['$id', '==', id],
           ['$ownerId', '==', ownerId],
         ],
+      },
+    ]);
+  });
+
+  it('should convert Document to identifiers inside where condition for "startAt" and "startAfter"', async () => {
+    const [docA, docB] = getDocumentsFixture();
+
+    await get.call(platform, 'app.withByteArrays', {
+      startAt: docA,
+      startAfter: docB,
+    });
+
+    expect(getDocumentsMock.getCall(0).args).to.have.deep.members([
+      appDefinition.contractId,
+      'withByteArrays',
+      {
+        startAt: docA.getId(),
+        startAfter: docB.getId(),
+      },
+    ]);
+  });
+
+  it('should convert string to identifiers inside where condition for "startAt" and "startAfter"', async () => {
+    const [docA, docB] = getDocumentsFixture();
+
+    await get.call(platform, 'app.withByteArrays', {
+      startAt: docA.getId().toString('base58'),
+      startAfter: docB.getId().toString('base58'),
+    });
+
+    expect(getDocumentsMock.getCall(0).args).to.have.deep.members([
+      appDefinition.contractId,
+      'withByteArrays',
+      {
+        startAt: docA.getId(),
+        startAfter: docB.getId(),
       },
     ]);
   });

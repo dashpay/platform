@@ -1,3 +1,4 @@
+const generateRandomIdentifier = require('@dashevo/dpp/lib/test/utils/generateRandomIdentifier');
 const validateQueryFactory = require('../../../../lib/document/query/validateQueryFactory');
 const ValidationResult = require('../../../../lib/document/query/ValidationResult');
 
@@ -143,15 +144,21 @@ const validOrderByOperators = {
 
 describe('validateQueryFactory', () => {
   let findConflictingConditionsStub;
+  let findAppropriateIndexStub;
+  let sortWhereClausesAccordingToIndexStub;
   let validateQuery;
   let documentSchema;
 
   beforeEach(function beforeEach() {
     findConflictingConditionsStub = this.sinon.stub().returns([]);
+    findAppropriateIndexStub = this.sinon.stub().returns({});
+    sortWhereClausesAccordingToIndexStub = this.sinon.stub().returns([]);
     documentSchema = {};
 
     validateQuery = validateQueryFactory(
       findConflictingConditionsStub,
+      findAppropriateIndexStub,
+      sortWhereClausesAccordingToIndexStub,
     );
   });
 
@@ -273,6 +280,8 @@ describe('validateQueryFactory', () => {
         });
 
         it('should return invalid result if property is not specified in document indices', () => {
+          findAppropriateIndexStub.returns(null);
+
           const result = validateQuery({ where: [['a', '==', '1']] }, documentSchema);
 
           expect(result).to.be.instanceOf(ValidationResult);
@@ -1641,6 +1650,18 @@ describe('validateQueryFactory', () => {
       expect(result.errors[0].keyword).to.be.equal('multipleOf');
       expect(result.errors[0].params.multipleOf).to.be.equal(1);
     });
+
+    it('should return valid result if "startAt" is an Identifier', () => {
+      const result = validateQuery(
+        {
+          startAt: generateRandomIdentifier(),
+        },
+        documentSchema,
+      );
+
+      expect(result).to.be.instanceOf(ValidationResult);
+      expect(result.isValid()).to.be.true();
+    });
   });
 
   describe('startAfter', () => {
@@ -1735,6 +1756,18 @@ describe('validateQueryFactory', () => {
       expect(result.errors[0].instancePath).to.be.equal('/startAfter');
       expect(result.errors[0].keyword).to.be.equal('multipleOf');
       expect(result.errors[0].params.multipleOf).to.be.equal(1);
+    });
+
+    it('should return valid result if "startAfter" is an Identifier', () => {
+      const result = validateQuery(
+        {
+          startAfter: generateRandomIdentifier(),
+        },
+        documentSchema,
+      );
+
+      expect(result).to.be.instanceOf(ValidationResult);
+      expect(result.isValid()).to.be.true();
     });
   });
 });
