@@ -1,5 +1,7 @@
 const dotenv = require('dotenv');
 const grpc = require('@grpc/grpc-js');
+const chainlocks = require('../lib/grpcServer/handlers/blockheaders-stream/chainlocks');
+const { ChainLock } = require('@dashevo/dashcore-lib');
 
 const {
   client: {
@@ -74,6 +76,8 @@ async function main() {
   dashCoreZmqClient.on(ZmqClient.events.DISCONNECTED, log.warn);
   dashCoreZmqClient.on(ZmqClient.events.CONNECTION_DELAY, log.warn);
   dashCoreZmqClient.on(ZmqClient.events.MONITOR_ERROR, log.warn);
+
+  dashCoreZmqClient.on(dashCoreZmqClient.topics.rawchainlock, (chainlock) => chainlocks.updateBestChainLock(new ChainLock(chainlock)));
 
   // Wait until zmq connection is established
   log.info(`Connecting to dashcore ZMQ on ${dashCoreZmqClient.connectionString}`);

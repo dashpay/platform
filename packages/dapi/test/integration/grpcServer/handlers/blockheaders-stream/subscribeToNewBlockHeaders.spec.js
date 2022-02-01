@@ -1,9 +1,10 @@
-const { BlockHeader, Block, ChainLock } = require('@dashevo/dashcore-lib');
+const {BlockHeader, Block, ChainLock} = require('@dashevo/dashcore-lib');
 const ZmqClient = require('../../../../../lib/externalApis/dashcore/ZmqClient');
 const dashCoreRpcClient = require('../../../../../lib/externalApis/dashcore/rpc');
 
 const subscribeToNewBlockHeaders = require('../../../../../lib/grpcServer/handlers/blockheaders-stream/subscribeToNewBlockHeaders');
-const { NEW_BLOCK_HEADERS_PROPAGATE_INTERVAL } = require('../../../../../lib/grpcServer/handlers/blockheaders-stream/constants');
+const cache = require('../../../../../lib/grpcServer/handlers/blockheaders-stream/cache');
+const {NEW_BLOCK_HEADERS_PROPAGATE_INTERVAL} = require('../../../../../lib/grpcServer/handlers/blockheaders-stream/constants');
 const ProcessMediator = require('../../../../../lib/grpcServer/handlers/blockheaders-stream/ProcessMediator');
 
 const wait = require('../../../../../lib/utils/wait');
@@ -190,5 +191,51 @@ describe('subscribeToNewBlockHeaders', () => {
     const expectedChainLocks = { ...chainLocks };
     delete expectedChainLocks[locksHeights[1]];
     expect(receivedChainLocks).to.deep.equal(expectedChainLocks);
+  });
+
+  it('should use cache when historical data is sent', async () => {
+    const receivedHeaders = {};
+    let latestChainLock = null;
+    console.log(this)
+
+    mediator.on(ProcessMediator.EVENTS.BLOCK_HEADERS, (headers) => {
+      headers.forEach((header) => {
+        receivedHeaders[header.hash] = header;
+      });
+    });
+
+    mediator.on(ProcessMediator.EVENTS.CHAIN_LOCK, (chainLock) => {
+      latestChainLock = chainLock;
+    });
+
+    subscribeToNewBlockHeaders(
+      mediator,
+      zmqClient,
+      dashCoreRpcClient,
+    );
+
+    const hashes = Object.keys(blockHeaders);
+    zmqClient.subscriberSocket.emit('message', zmqClient.topics.hashblock, Buffer.from(hashes[0], 'hex'));
+    zmqClient.subscriberSocket.emit('message', zmqClient.topics.hashblock, Buffer.from(hashes[1], 'hex'));
+    zmqClient.subscriberSocket.emit('message', zmqClient.topics.hashblock, Buffer.from(hashes[2], 'hex'));
+
+    const locksHeights = Object.keys(chainLocks);
+    zmqClient.subscriberSocket.emit('message', zmqClient.topics.rawchainlock, chainLocks[locksHeights[0]].toBuffer());
+    zmqClient.subscriberSocket.emit('message', zmqClient.topics.rawchainlock, chainLocks[locksHeights[1]].toBuffer());
+
+    mediator.emit(ProcessMediator.EVENTS.HISTORICAL_DATA_SENT);
+
+    subscribeToNewBlockHeaders(
+      mediator,
+      zmqClient,
+      dashCoreRpcClient,
+    );
+
+    await new Promise((resolve) => setImmediate(resolve));
+    mediator.emit(ProcessMediator.EVENTS.CLIENT_DISCONNECTED);
+
+    expect(dashCoreRpcClient.getBlockHeader.callCount).to.be.equal(3)
+    expect(spyCache.set.callCount).to.be.equal(3)
+    expect(spyCache.get.callCount).to.be.equal(6)
   });
 });

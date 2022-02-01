@@ -1,5 +1,5 @@
 const {BlockHeader} = require('@dashevo/dashcore-lib');
-const cache = require('../core/cache')
+const cache = require('./cache')
 
 const MAX_HEADERS_PER_REQUEST = 500;
 
@@ -40,18 +40,22 @@ function getHistoricalBlockHeadersIteratorFactory(coreRpcApi) {
       let blockHash = await coreRpcApi.getBlockHash(currentHeight);
 
       const blockHeights = [...Array(blocksToScan).keys()]
-        .map((e, i) => {
-          return currentHeight + i + 1
-        })
+        .map((e, i) => currentHeight + i)
 
       const cachedBlockHeaders = blockHeights.map((height) => cache.get(height))
-      const lastCachedIndex = (cachedBlockHeaders.findIndex((e) => e === undefined)) - 1
+      const [firstCachedItem] = cachedBlockHeaders
 
-      if (lastCachedIndex >= 0) {
+      let lastCachedIndex = -1
+
+      if (firstCachedItem) {
+        lastCachedIndex = cachedBlockHeaders.indexOf(undefined) - 1
+      }
+
+      if (lastCachedIndex > 0) {
         const rawBlockHeader = cachedBlockHeaders[lastCachedIndex]
         const blockHeader = BlockHeader.fromRawBlock(rawBlockHeader)
 
-        blockHash = blockHeader.getHash()
+        blockHash = blockHeader.hash.toString('hex')
         blocksToScan = (blocksToScan - lastCachedIndex) - 1
 
         if (blocksToScan === 0) {
@@ -59,7 +63,8 @@ function getHistoricalBlockHeadersIteratorFactory(coreRpcApi) {
         }
       }
 
-      const rawBlockHeaders = await coreRpcApi.getBlockHeaders(blockHash, blocksToScan)
+      const missingBlockHeaders = await coreRpcApi.getBlockHeaders(blockHash, blocksToScan)
+      const rawBlockHeaders = [...cachedBlockHeaders.slice(0, lastCachedIndex + 1), ...missingBlockHeaders]
 
       rawBlockHeaders.forEach((e, i) => cache.set(currentHeight + i, e))
 

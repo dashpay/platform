@@ -1,8 +1,9 @@
-const { BlockHeader, ChainLock } = require('@dashevo/dashcore-lib');
+const { BlockHeader } = require('@dashevo/dashcore-lib');
 const ProcessMediator = require('./ProcessMediator');
 const wait = require('../../../utils/wait');
 const { NEW_BLOCK_HEADERS_PROPAGATE_INTERVAL } = require('./constants');
-const cache = require('../core/cache')
+const cache = require('./cache')
+const chainlocks = require('./chainlocks')
 
 /**
  * @typedef subscribeToNewBlockHeaders
@@ -16,7 +17,6 @@ function subscribeToNewBlockHeaders(
   coreAPI,
 ) {
   const cachedHeadersHashes = new Set();
-  let latestChainLock = null;
 
   let isClientConnected = true;
 
@@ -27,11 +27,8 @@ function subscribeToNewBlockHeaders(
     cachedHeadersHashes.add(hash.toString('hex'));
   };
 
-  /**
-   * @param {Buffer} rawChainLock
-   */
-  const rawChainLockHandler = (rawChainLock) => {
-    latestChainLock = new ChainLock(rawChainLock);
+  const rawChainLockHandler = () => {
+    mediator.emit(ProcessMediator.EVENTS.CHAIN_LOCK, chainlocks.getBestChainLock());
   };
 
   zmqClient.on(
@@ -69,6 +66,7 @@ function subscribeToNewBlockHeaders(
 
             if (!cachedBlockHeader) {
               const rawBlockHeader = await coreAPI.getBlockHeader(hash);
+              cache.set(hash, rawBlockHeader)
               return new BlockHeader(Buffer.from(rawBlockHeader, 'hex'));
             }
 
@@ -77,11 +75,6 @@ function subscribeToNewBlockHeaders(
 
         mediator.emit(ProcessMediator.EVENTS.BLOCK_HEADERS, blockHeaders);
         cachedHeadersHashes.clear();
-      }
-
-      if (latestChainLock) {
-        mediator.emit(ProcessMediator.EVENTS.CHAIN_LOCK, latestChainLock);
-        latestChainLock = null;
       }
 
       // TODO: pick a right time interval having in mind that issuance of the block headers

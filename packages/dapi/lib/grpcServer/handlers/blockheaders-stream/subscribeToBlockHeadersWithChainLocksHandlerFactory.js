@@ -1,4 +1,5 @@
-const { ChainLock } = require('@dashevo/dashcore-lib');
+const {ChainLock} = require('@dashevo/dashcore-lib');
+const chainlocks = require('./chainlocks')
 
 const {
   server: {
@@ -130,19 +131,12 @@ function subscribeToBlockHeadersWithChainLocksHandlerFactory(
       throw new InvalidArgumentGrpcError('`count` value exceeds the chain tip');
     }
 
-    let bestChainLock;
-    try {
-      bestChainLock = await coreAPI.getBestChainLock();
-    } catch (e) {
-      if (e.code === -32603) {
-        log.info('No chain lock available in dashcore node');
-      } else {
-        throw e;
-      }
-    }
+    const bestChainLock = chainlocks.getBestChainLock()
 
     if (bestChainLock) {
       await sendChainLockResponse(acknowledgingCall, new ChainLock(bestChainLock));
+    } else {
+      log.info('No chain lock available in dashcore node');
     }
 
     const historicalDataIterator = getHistoricalBlockHeadersIterator(

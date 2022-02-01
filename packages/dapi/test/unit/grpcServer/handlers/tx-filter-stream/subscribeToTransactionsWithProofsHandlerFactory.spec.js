@@ -62,6 +62,8 @@ describe('subscribeToTransactionsWithProofsHandlerFactory', () => {
   let coreAPIMock;
   let getMemPoolTransactionsMock;
 
+  const writableStub = sinon.stub(AcknowledgingWritable.prototype, 'write');
+
   beforeEach(function beforeEach() {
     const bloomFilterMessage = new BloomFilter();
 
@@ -180,8 +182,6 @@ describe('subscribeToTransactionsWithProofsHandlerFactory', () => {
     call.request = TransactionsWithProofsRequest.deserializeBinary(call.request.serializeBinary());
 
     call = new GrpcCallMock(this.sinon, call.request);
-
-    const writableStub = this.sinon.stub(AcknowledgingWritable.prototype, 'write');
 
     coreAPIMock.getBlockStats.resolves({ height: 1 });
     coreAPIMock.getBestBlockHeight.resolves(10);
