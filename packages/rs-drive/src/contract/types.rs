@@ -79,17 +79,6 @@ pub fn encode_document_field_type(
                 Ok(vec![0])
             }
         }
-        // DocumentFieldType::Date => {
-        //     println!("date {:?}", value);
-        //
-        //     let date_integer = value.as_integer().ok_or_else(get_field_type_matching_error)?;
-        //
-        //     println!("date is ok");
-        //     // let date_as_integer: i64 = date_string
-        //     //     .parse()
-        //     //     .map_err(|_| Error::CorruptedData(String::from("invalid integer string")))?;
-        //     encode_integer(date_integer.to_i64())
-        // }
         DocumentFieldType::Object => {
             Err(Error::CorruptedData(String::from("we should never try encoding an object")))
         }
