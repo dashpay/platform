@@ -191,14 +191,22 @@ describe('BlockHeadersReader - unit', () => {
         streamToRemove = stream;
       });
 
+      let emittedError;
+      blockHeadersReader.on(BlockHeadersReader.EVENTS.ERROR, (e) => {
+        emittedError = e;
+      });
+
+      let lastError;
       // Exhaust all retry attempts to actually throw an error
       for (let i = 0; i < options.maxRetries + 1; i += 1) {
         const [streamToBreak] = blockHeadersReader.historicalStreams;
-        streamToBreak.emit('error', new Error('retry'));
+        lastError = new Error('retry');
+        streamToBreak.emit('error', lastError);
         // eslint-disable-next-line no-await-in-loop
         await sleepOneTick();
       }
 
+      expect(emittedError).to.deep.equal(lastError);
       expect(streamToRemove).to.exist();
       expect(blockHeadersReader.historicalStreams.length).to.equal(streamsAmount - 1);
       expect(blockHeadersReader.historicalStreams.includes(streamToRemove)).to.be.false();
