@@ -64,90 +64,78 @@ class Drive {
   }
 
   /**
-   * @param {Buffer} encodedContract
+   * @param {DataContract} dataContract
    * @param {boolean} [useTransaction=false]
    * @returns {Promise<void>}
    */
-  async applyContract(encodedContract, useTransaction = false) {
-    return driveApplyContractAsync.call(this.drive, encodedContract, useTransaction);
+  async applyContract(dataContract, useTransaction = false) {
+    return driveApplyContractAsync.call(this.drive, dataContract.toBuffer(), useTransaction);
   }
 
   /**
-   * @param {Buffer} encodedDocument
-   * @param {Buffer} encodedContract
-   * @param {string} documentType
-   * @param {Buffer} ownerId
-   * @param {boolean} [isOverride=false]
+   * @param {Document} document
    * @param {boolean} [useTransaction=false]
    * @returns {Promise<void>}
    */
-  async createDocument(
-    encodedDocument,
-    encodedContract,
-    documentType,
-    ownerId,
-    isOverride = false,
-    useTransaction = false,
-  ) {
+  async createDocument(document, useTransaction = false) {
     return driveCreateDocumentAsync.call(
       this.drive,
-      encodedDocument,
-      encodedContract,
-      documentType,
-      ownerId,
-      isOverride,
+      document.toBuffer(),
+      document.getDataContract().toBuffer(),
+      document.getType(),
+      document.getOwnerId().toBuffer(),
+      true,
       useTransaction,
     );
   }
 
   /**
-   * @param {Buffer} encodedDocument
-   * @param {Buffer} encodedContract
-   * @param {string} documentType
-   * @param {Buffer} ownerId
+   * @param {Document} document
    * @param {boolean} [useTransaction=false]
    * @returns {Promise<void>}
    */
-  async updateDocument(
-    encodedDocument,
-    encodedContract,
-    documentType,
-    ownerId,
-    useTransaction = false,
-  ) {
+  async updateDocument(document, useTransaction = false) {
     return driveUpdateDocumentAsync.call(
       this.drive,
-      encodedDocument,
-      encodedContract,
-      documentType,
-      ownerId,
+      document.toBuffer(),
+      document.getDataContract().toBuffer(),
+      document.getType(),
+      document.getOwnerId().toBuffer(),
       useTransaction,
     );
   }
 
   /**
-   * @param {Buffer} documentId
-   * @param {Buffer} encodedContract
+   * @param {DataContract} dataContract
    * @param {string} documentType
-   * @param {Buffer} ownerId
+   * @param {Identifier} documentId
    * @param {boolean} [useTransaction=false]
    * @returns {Promise<void>}
    */
   async deleteDocument(
-    documentId,
-    encodedContract,
+    dataContract,
     documentType,
-    ownerId,
+    documentId,
     useTransaction = false,
   ) {
     return driveDeleteDocumentAsync.call(
       this.drive,
-      documentId,
-      encodedContract,
+      documentId.toBuffer(),
+      dataContract.toBuffer(),
       documentType,
-      ownerId,
       useTransaction,
     );
+  }
+
+  /**
+   *
+   * @param contract
+   * @param type
+   * @param query
+   * @returns {Promise<void>}
+   */
+  async findDocuments(contract, type, query) {
+
   }
 }
 

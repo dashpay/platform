@@ -42,13 +42,13 @@ describe('Drive', () => {
     });
 
     it('should create contract if not exists', async () => {
-      const result = await drive.applyContract(dataContract.toBuffer());
+      const result = await drive.applyContract(dataContract);
 
       expect(result).to.equals(0);
     });
 
     it('should update existing contract', async () => {
-      await drive.applyContract(dataContract.toBuffer());
+      await drive.applyContract(dataContract);
 
       dataContract.setDocumentSchema('newDocumentType', {
         type: 'object',
@@ -60,7 +60,7 @@ describe('Drive', () => {
         additionalProperties: false,
       });
 
-      const result = await drive.applyContract(dataContract.toBuffer());
+      const result = await drive.applyContract(dataContract);
 
       expect(result).to.equals(0);
     });
@@ -70,20 +70,14 @@ describe('Drive', () => {
     beforeEach(async () => {
       await drive.createRootTree();
 
-      await drive.applyContract(dataContract.toBuffer());
+      await drive.applyContract(dataContract);
     });
 
     context('without indices', () => {
       it('should create a document', async () => {
         const documentWithoutIndices = documents[0];
 
-        const result = await drive.createDocument(
-          documentWithoutIndices.toBuffer(),
-          dataContract.toBuffer(),
-          documentWithoutIndices.getType(),
-          documentWithoutIndices.getOwnerId(),
-          true,
-        );
+        const result = await drive.createDocument(documentWithoutIndices);
 
         expect(result).to.equals(0);
       });
@@ -92,23 +86,12 @@ describe('Drive', () => {
         // Create a document
         const documentWithoutIndices = documents[0];
 
-        await drive.createDocument(
-          documentWithoutIndices.toBuffer(),
-          dataContract.toBuffer(),
-          documentWithoutIndices.getType(),
-          documentWithoutIndices.getOwnerId(),
-          true,
-        );
+        await drive.createDocument(documentWithoutIndices);
 
         // Update the document
         documentWithoutIndices.set('name', 'Bob');
 
-        const result = await drive.updateDocument(
-          documentWithoutIndices.toBuffer(),
-          dataContract.toBuffer(),
-          documentWithoutIndices.getType(),
-          documentWithoutIndices.getOwnerId(),
-        );
+        const result = await drive.updateDocument(documentWithoutIndices);
 
         expect(result).to.equals(0);
       });
@@ -117,19 +100,12 @@ describe('Drive', () => {
         // Create a document
         const documentWithoutIndices = documents[3];
 
-        await drive.createDocument(
-          documentWithoutIndices.toBuffer(),
-          dataContract.toBuffer(),
-          documentWithoutIndices.getType(),
-          documentWithoutIndices.getOwnerId(),
-          true,
-        );
+        await drive.createDocument(documentWithoutIndices);
 
         const result = await drive.deleteDocument(
-          documentWithoutIndices.getId(),
-          dataContract.toBuffer(),
+          dataContract,
           documentWithoutIndices.getType(),
-          documentWithoutIndices.getOwnerId(),
+          documentWithoutIndices.getId(),
         );
 
         expect(result).to.equals(0);
@@ -140,13 +116,7 @@ describe('Drive', () => {
       it('should create a document', async () => {
         const documentWithIndices = documents[3];
 
-        const result = await drive.createDocument(
-          documentWithIndices.toBuffer(),
-          dataContract.toBuffer(),
-          documentWithIndices.getType(),
-          documentWithIndices.getOwnerId(),
-          true,
-        );
+        const result = await drive.createDocument(documentWithIndices);
 
         expect(result).to.equals(0);
       });
@@ -155,23 +125,12 @@ describe('Drive', () => {
         // Create a document
         const documentWithIndices = documents[3];
 
-        await drive.createDocument(
-          documentWithIndices.toBuffer(),
-          dataContract.toBuffer(),
-          documentWithIndices.getType(),
-          documentWithIndices.getOwnerId(),
-          true,
-        );
+        await drive.createDocument(documentWithIndices);
 
         // Update the document
         documentWithIndices.set('firstName', 'Bob');
 
-        const result = await drive.updateDocument(
-          documentWithIndices.toBuffer(),
-          dataContract.toBuffer(),
-          documentWithIndices.getType(),
-          documentWithIndices.getOwnerId(),
-        );
+        const result = await drive.updateDocument(documentWithIndices);
 
         expect(result).to.equals(0);
       });
@@ -180,19 +139,12 @@ describe('Drive', () => {
         // Create a document
         const documentWithIndices = documents[3];
 
-        await drive.createDocument(
-          documentWithIndices.toBuffer(),
-          dataContract.toBuffer(),
-          documentWithIndices.getType(),
-          documentWithIndices.getOwnerId(),
-          true,
-        );
+        await drive.createDocument(documentWithIndices);
 
         const result = await drive.deleteDocument(
-          documentWithIndices.getId(),
-          dataContract.toBuffer(),
+          dataContract,
           documentWithIndices.getType(),
-          documentWithIndices.getOwnerId(),
+          documentWithIndices.getId(),
         );
 
         expect(result).to.equals(0);

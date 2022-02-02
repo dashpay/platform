@@ -335,9 +335,8 @@ impl DriveWrapper {
         let js_document_id = cx.argument::<JsBuffer>(0)?;
         let js_contract_cbor = cx.argument::<JsBuffer>(1)?;
         let js_document_type_name = cx.argument::<JsString>(2)?;
-        let js_owner_id = cx.argument::<JsBuffer>(3)?;
-        let js_using_transaction = cx.argument::<JsBoolean>(4)?;
-        let js_callback = cx.argument::<JsFunction>(5)?.root(&mut cx);
+        let js_using_transaction = cx.argument::<JsBoolean>(3)?;
+        let js_callback = cx.argument::<JsFunction>(4)?.root(&mut cx);
 
         let drive = cx
             .this()
@@ -346,7 +345,6 @@ impl DriveWrapper {
         let document_id = converter::js_buffer_to_vec_u8(js_document_id, &mut cx);
         let contract_cbor = converter::js_buffer_to_vec_u8(js_contract_cbor, &mut cx);
         let document_type_name = js_document_type_name.value(&mut cx);
-        let owner_id = converter::js_buffer_to_vec_u8(js_owner_id, &mut cx);
         let using_transaction = js_using_transaction.value(&mut cx);
 
         drive.send_to_drive_thread(move |drive: &mut Drive, transaction, channel| {
@@ -354,7 +352,7 @@ impl DriveWrapper {
                 &document_id,
                 &contract_cbor,
                 &document_type_name,
-                Some(&owner_id),
+                None,
                 using_transaction.then(|| transaction).flatten());
 
             channel.send(move |mut task_context| {
