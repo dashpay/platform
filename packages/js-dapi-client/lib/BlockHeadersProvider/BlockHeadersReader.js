@@ -3,7 +3,7 @@ const { EventEmitter } = require('events');
 const EVENTS = {
   BLOCK_HEADERS: 'BLOCK_HEADERS',
   HISTORICAL_DATA_OBTAINED: 'HISTORICAL_DATA_OBTAINED',
-  ERROR: 'ERROR',
+  ERROR: 'error',
 };
 
 const COMMANDS = {

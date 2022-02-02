@@ -21,7 +21,7 @@ const defaultOptions = {
 };
 
 const EVENTS = {
-  ERROR: 'ERROR',
+  ERROR: 'error',
 };
 
 class BlockHeadersProvider extends EventEmitter {

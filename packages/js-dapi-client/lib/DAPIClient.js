@@ -15,7 +15,7 @@ const BlockHeadersProvider = require('./BlockHeadersProvider/BlockHeadersProvide
 const createBlockHeadersProviderFromOptions = require('./BlockHeadersProvider/createBlockHeadersProviderFromOptions');
 
 const EVENTS = {
-  ERROR: 'ERROR',
+  ERROR: 'error',
 };
 
 class DAPIClient extends EventEmitter {
