@@ -270,9 +270,16 @@ impl DocumentType {
     ) -> Result<Self, Error> {
         let mut document_properties: HashMap<String, types::DocumentFieldType> = HashMap::new();
 
-        let index_values = cbor_inner_array_value(document_type_value_map, "indices")
-            .ok_or_else(|| Error::CorruptedData(String::from("unable to get indices from the contract"))
-        )?;
+        let index_values = match cbor_inner_array_value(document_type_value_map, "indices") {
+            Some(index_values) => index_values,
+            None => {
+                return Ok(DocumentType {
+                    name: String::from(name),
+                    indices: vec![],
+                    properties: document_properties,
+                })
+            }
+        };
 
         let mut indices: Vec<Index> = Vec::with_capacity(index_values.len());
         for index_value in index_values {
@@ -322,15 +329,17 @@ impl DocumentType {
                 "array" => {
                     // Only handling bytearrays for v1
                     // Return an error if it is not a byte array
-                    let is_byte_array_value = cbor_inner_bool_value(inner_property_values, "byteArray")
-                        .ok_or_else(|| Error::CorruptedData(String::from(
-                            "cannot find byteArray property for array type",
-                        )))?;
-                    if is_byte_array_value {
-                        field_type = types::DocumentFieldType::ByteArray;
-                    } else {
-                        return Err(Error::CorruptedData(String::from("invalid type")));
+                    match cbor_inner_bool_value(inner_property_values, "byteArray") {
+                        Some(bool) => {
+                            if bool {
+                                field_type = types::DocumentFieldType::ByteArray;
+                            } else {
+                                return Err(Error::CorruptedData(String::from("invalid type")));
+                            }
+                        },
+                        None =>  field_type = types::DocumentFieldType::Object,
                     }
+
                     document_properties.insert(
                         prefixed_property_key,
                         field_type,
