@@ -730,7 +730,7 @@ impl Drive {
         Ok(0)
     }
 
-    pub fn query_documents_from_cbor(
+    pub fn query_documents_from_contract_cbor(
         &mut self,
         contract_cbor: &[u8],
         document_type_name: String,
