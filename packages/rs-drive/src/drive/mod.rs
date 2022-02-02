@@ -464,6 +464,19 @@ impl Drive {
                             "invalid contract indices",
                         )))?;
 
+                let document_index_field_result = document
+                    .get_raw_for_contract(
+                        &index_property.name,
+                        document_type_name,
+                        contract,
+                        owner_id,
+                    )?;
+
+                let document_index_field: Vec<u8> = match document_index_field_result {
+                    Some(document_index_field) => document_index_field,
+                    None => continue // Do nothing is optional indexed field is not present
+                };
+
                 let index_path_slices: Vec<&[u8]> =
                     index_path.iter().map(|x| x.as_slice()).collect();
 
@@ -476,18 +489,9 @@ impl Drive {
                 )?;
 
                 index_path.push(Vec::from(index_property.name.as_bytes()));
+
                 // Iteration 1. the index path is now something like Contracts/ContractID/Documents(1)/$ownerId/<ownerId>/toUserId
                 // Iteration 2. the index path is now something like Contracts/ContractID/Documents(1)/$ownerId/<ownerId>/toUserId/<ToUserId>/accountReference
-                let document_index_field: Vec<u8> = document
-                    .get_raw_for_contract(
-                        &index_property.name,
-                        document_type_name,
-                        contract,
-                        owner_id,
-                    )?
-                    .ok_or_else(|| Error::CorruptedData(String::from(
-                        "unable to get document field",
-                    )))?;
 
                 let index_path_slices: Vec<&[u8]> =
                     index_path.iter().map(|x| x.as_slice()).collect();

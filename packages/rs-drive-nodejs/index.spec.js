@@ -187,7 +187,7 @@ describe('Drive', () => {
 
     it('should query existing documents', async () => {
       // TODO: Fix optional indexed field
-      documents.pop();
+      // documents.pop();
 
       // Create documents
       await Promise.all(
@@ -196,12 +196,11 @@ describe('Drive', () => {
 
       const fetchedDocuments = await drive.queryDocuments(dataContract, 'indexedDocument', {
         where: [['lastName', '==', 'Kennedy']],
-        // orderBy: [['lastName', 'asc']], // TODO: We don't need orderBy for equal operator
       });
 
       expect(fetchedDocuments).to.have.lengthOf(1);
       expect(fetchedDocuments[0]).to.be.an.instanceOf(Document);
-      expect(fetchedDocuments[0].toObject()).to.equal(documents[3].toObject());
+      expect(fetchedDocuments[0].toObject()).to.deep.equal(documents[4].toObject());
     });
 
     it('should return empty array if documents are not exist', async () => {

@@ -989,9 +989,6 @@ impl<'a> DriveQuery<'a> {
                 .expect("Index must have left over properties if no last clause"),
             Some(where_clause) => {
 
-
-
-
                 let left_to_right = if where_clause.operator.is_range() {
                     let order_clause: &OrderClause = self
                         .order_by
