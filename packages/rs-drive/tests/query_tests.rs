@@ -140,7 +140,31 @@ fn test_query() {
 
     assert_eq!(names, all_names);
 
-    // A query getting all people who's first name is Chris
+    // A query getting all people who's first name is Chris (which is not exist)
+
+    let query_value = json!({
+        "where": [
+            ["firstName", "==", "Adey"]
+        ]
+    });
+
+    let query_cbor = common::value_to_cbor(query_value, None);
+
+    let person_document_type = contract
+        .document_types
+        .get("person")
+        .expect("contract should have a person document type");
+
+    let (results, _) = drive.query_documents_from_contract(
+        &contract,
+        person_document_type,
+        query_cbor.as_slice(),
+        None,
+    ).expect("query should be executed");
+
+    assert_eq!(results.len(), 1);
+
+    // A query getting all people who's first name is Chris (which is not exist)
 
     let query_value = json!({
         "where": [
@@ -154,7 +178,6 @@ fn test_query() {
         .document_types
         .get("person")
         .expect("contract should have a person document type");
-
 
     let (results, _) = drive.query_documents_from_contract(
         &contract,
