@@ -2,7 +2,7 @@ mod converter;
 
 use std::{option::Option::None, path::Path, sync::mpsc, thread};
 
-use grovedb::{PrefixedRocksDbStorage, Storage};
+use grovedb::{GroveDb, PrefixedRocksDbStorage, Storage};
 use neon::prelude::*;
 use rs_drive::contract::{Contract, DocumentType};
 use rs_drive::drive::Drive;
@@ -23,6 +23,11 @@ enum DriveMessage {
     Callback(DriveCallback),
     // Indicates that the thread should be stopped and connection closed
     Close(UnitCallback),
+    StartTransaction(UnitCallback),
+    CommitTransaction(UnitCallback),
+    RollbackTransaction(UnitCallback),
+    AbortTransaction(UnitCallback),
+    Flush(UnitCallback),
 }
 
 struct DriveWrapper {
@@ -60,6 +65,8 @@ impl DriveWrapper {
             // TODO: think how to pass this error to JS
             let mut drive = Drive::open(path).unwrap();
 
+            let storage = drive.grove.storage();
+
             let mut transaction: Option<<PrefixedRocksDbStorage as Storage>::DBTransaction<'_>> =
                 None;
 
@@ -78,9 +85,39 @@ impl DriveWrapper {
                     // Immediately close the connection, even if there are pending messages
                     DriveMessage::Close(callback) => {
                         drop(transaction);
+                        drop(storage);
                         drop(drive);
                         callback(&channel);
                         break;
+                    }
+                    // Flush message
+                    DriveMessage::Flush(callback) => {
+                        drive.grove.flush().unwrap();
+
+                        callback(&channel);
+                    }
+                    DriveMessage::StartTransaction(callback) => {
+                        drive.grove.start_transaction().unwrap();
+                        transaction = Some(storage.transaction());
+                        callback(&channel);
+                    }
+                    DriveMessage::CommitTransaction(callback) => {
+                        drive.grove
+                            .commit_transaction(transaction.take().unwrap())
+                            .unwrap();
+                        callback(&channel);
+                    }
+                    DriveMessage::RollbackTransaction(callback) => {
+                        drive.grove
+                            .rollback_transaction(&transaction.take().unwrap())
+                            .unwrap();
+                        callback(&channel);
+                    }
+                    DriveMessage::AbortTransaction(callback) => {
+                        drive.grove
+                            .abort_transaction(transaction.take().unwrap())
+                            .unwrap();
+                        callback(&channel);
                     }
                 }
             }
@@ -110,6 +147,49 @@ impl DriveWrapper {
     ) -> Result<(), mpsc::SendError<DriveMessage>> {
         self.tx.send(DriveMessage::Callback(Box::new(callback)))
     }
+
+    fn start_transaction(
+        &self,
+        callback: impl FnOnce(&Channel) + Send + 'static,
+    ) -> Result<(), mpsc::SendError<DriveMessage>> {
+        self.tx
+            .send(DriveMessage::StartTransaction(Box::new(callback)))
+    }
+
+    fn commit_transaction(
+        &self,
+        callback: impl FnOnce(&Channel) + Send + 'static,
+    ) -> Result<(), mpsc::SendError<DriveMessage>> {
+        self.tx
+            .send(DriveMessage::CommitTransaction(Box::new(callback)))
+    }
+    
+    fn rollback_transaction(
+        &self,
+        callback: impl FnOnce(&Channel) + Send + 'static,
+    ) -> Result<(), mpsc::SendError<DriveMessage>> {
+        self.tx
+            .send(DriveMessage::RollbackTransaction(Box::new(callback)))
+    }
+
+    // Idiomatic rust would take an owned `self` to prevent use after close
+    // However, it's not possible to prevent JavaScript from continuing to hold a
+    // closed database
+    fn flush(
+        &self,
+        callback: impl FnOnce(&Channel) + Send + 'static,
+    ) -> Result<(), mpsc::SendError<DriveMessage>> {
+        self.tx.send(DriveMessage::Flush(Box::new(callback)))
+    }
+
+    fn abort_transaction(
+        &self,
+        callback: impl FnOnce(&Channel) + Send + 'static,
+    ) -> Result<(), mpsc::SendError<DriveMessage>> {
+        self.tx
+            .send(DriveMessage::AbortTransaction(Box::new(callback)))
+    }
+
 }
 
 // Ensures that DriveWrapper is properly disposed when the corresponding JS
@@ -451,46 +531,127 @@ impl DriveWrapper {
         Ok(cx.undefined())
     }
 
-    fn js_grove_db_insert(mut cx: FunctionContext) -> JsResult<JsUndefined> {
-        let js_path = cx.argument::<JsArray>(0)?;
-        let js_key = cx.argument::<JsBuffer>(1)?;
-        let js_element = cx.argument::<JsObject>(2)?;
-        let js_using_transaction = cx.argument::<JsBoolean>(3)?;
-        let js_callback = cx.argument::<JsFunction>(4)?.root(&mut cx);
 
-        let path = converter::js_array_of_buffers_to_vec(js_path, &mut cx)?;
-        let key = converter::js_buffer_to_vec_u8(js_key, &mut cx);
-        let element = converter::js_object_to_element(js_element, &mut cx)?;
-        let using_transaction = js_using_transaction.value(&mut cx);
+    fn js_grove_db_start_transaction(mut cx: FunctionContext) -> JsResult<JsUndefined> {
+        let js_callback = cx.argument::<JsFunction>(0)?.root(&mut cx);
 
-        // Get the `this` value as a `JsBox<Database>`
         let db = cx
             .this()
             .downcast_or_throw::<JsBox<DriveWrapper>, _>(&mut cx)?;
 
-        db.send_to_drive_thread(move |drive: &mut Drive, transaction, channel| {
+        db.start_transaction(|channel| {
+            channel.send(move |mut task_context| {
+                let callback = js_callback.into_inner(&mut task_context);
+                let this = task_context.undefined();
+                let callback_arguments: Vec<Handle<JsValue>> = vec![task_context.null().upcast()];
+
+                callback.call(&mut task_context, this, callback_arguments)?;
+
+                Ok(())
+            });
+        })
+            .or_else(|err| cx.throw_error(err.to_string()))?;
+
+        Ok(cx.undefined())
+    }
+
+    fn js_grove_db_commit_transaction(mut cx: FunctionContext) -> JsResult<JsUndefined> {
+        let js_callback = cx.argument::<JsFunction>(0)?.root(&mut cx);
+
+        let db = cx
+            .this()
+            .downcast_or_throw::<JsBox<DriveWrapper>, _>(&mut cx)?;
+
+        db.commit_transaction(|channel| {
+            channel.send(move |mut task_context| {
+                let callback = js_callback.into_inner(&mut task_context);
+                let this = task_context.undefined();
+                let callback_arguments: Vec<Handle<JsValue>> = vec![task_context.null().upcast()];
+
+                callback.call(&mut task_context, this, callback_arguments)?;
+
+                Ok(())
+            });
+        })
+            .or_else(|err| cx.throw_error(err.to_string()))?;
+
+        Ok(cx.undefined())
+    }
+
+    fn js_grove_db_rollback_transaction(mut cx: FunctionContext) -> JsResult<JsUndefined> {
+        let js_callback = cx.argument::<JsFunction>(0)?.root(&mut cx);
+
+        let db = cx
+            .this()
+            .downcast_or_throw::<JsBox<DriveWrapper>, _>(&mut cx)?;
+
+        db.rollback_transaction(|channel| {
+            channel.send(move |mut task_context| {
+                let callback = js_callback.into_inner(&mut task_context);
+                let this = task_context.undefined();
+                let callback_arguments: Vec<Handle<JsValue>> = vec![task_context.null().upcast()];
+
+                callback.call(&mut task_context, this, callback_arguments)?;
+
+                Ok(())
+            });
+        })
+            .or_else(|err| cx.throw_error(err.to_string()))?;
+
+        Ok(cx.undefined())
+    }
+
+    fn js_grove_db_is_transaction_started(mut cx: FunctionContext) -> JsResult<JsUndefined> {
+        let js_callback = cx.argument::<JsFunction>(0)?.root(&mut cx);
+
+        let db = cx
+            .this()
+            .downcast_or_throw::<JsBox<DriveWrapper>, _>(&mut cx)?;
+
+        db.send_to_drive_thread(move |drive: &mut Drive, _transaction, channel| {
             let grove_db = &mut drive.grove;
-            let path_slice = path.iter().map(|fragment| fragment.as_slice());
-            let result = grove_db.insert(
-                path_slice,
-                &key,
-                element,
-                using_transaction.then(|| transaction).flatten(),
-            );
+
+            let result = grove_db.is_transaction_started();
 
             channel.send(move |mut task_context| {
                 let callback = js_callback.into_inner(&mut task_context);
                 let this = task_context.undefined();
-                let callback_arguments: Vec<Handle<JsValue>> = match result {
-                    Ok(_) => vec![task_context.null().upcast()],
-                    Err(err) => vec![task_context.error(err.to_string())?.upcast()],
-                };
+
+                // First parameter of JS callbacks is error, which is null in this case
+                let callback_arguments: Vec<Handle<JsValue>> = vec![
+                    task_context.null().upcast(),
+                    task_context.boolean(result).upcast(),
+                ];
 
                 callback.call(&mut task_context, this, callback_arguments)?;
+
                 Ok(())
             });
         })
-        .or_else(|err| cx.throw_error(err.to_string()))?;
+            .or_else(|err| cx.throw_error(err.to_string()))?;
+
+        Ok(cx.undefined())
+    }
+
+    fn js_grove_db_abort_transaction(mut cx: FunctionContext) -> JsResult<JsUndefined> {
+        let js_callback = cx.argument::<JsFunction>(0)?.root(&mut cx);
+
+        let db = cx
+            .this()
+            .downcast_or_throw::<JsBox<DriveWrapper>, _>(&mut cx)?;
+
+        db.abort_transaction(|channel| {
+            channel.send(move |mut task_context| {
+                let callback = js_callback.into_inner(&mut task_context);
+                let this = task_context.undefined();
+                let callback_arguments: Vec<Handle<JsValue>> = vec![task_context.null().upcast()];
+
+                callback.call(&mut task_context, this, callback_arguments)?;
+
+                Ok(())
+            });
+        })
+            .or_else(|err| cx.throw_error(err.to_string()))?;
 
         Ok(cx.undefined())
     }
@@ -540,11 +701,404 @@ impl DriveWrapper {
                 Ok(())
             });
         })
-        .or_else(|err| cx.throw_error(err.to_string()))?;
+            .or_else(|err| cx.throw_error(err.to_string()))?;
 
         // The result is returned through the callback, not through direct return
         Ok(cx.undefined())
     }
+
+    fn js_grove_db_insert(mut cx: FunctionContext) -> JsResult<JsUndefined> {
+        let js_path = cx.argument::<JsArray>(0)?;
+        let js_key = cx.argument::<JsBuffer>(1)?;
+        let js_element = cx.argument::<JsObject>(2)?;
+        let js_using_transaction = cx.argument::<JsBoolean>(3)?;
+        let js_callback = cx.argument::<JsFunction>(4)?.root(&mut cx);
+
+        let path = converter::js_array_of_buffers_to_vec(js_path, &mut cx)?;
+        let key = converter::js_buffer_to_vec_u8(js_key, &mut cx);
+        let element = converter::js_object_to_element(js_element, &mut cx)?;
+        let using_transaction = js_using_transaction.value(&mut cx);
+
+        // Get the `this` value as a `JsBox<Database>`
+        let db = cx
+            .this()
+            .downcast_or_throw::<JsBox<DriveWrapper>, _>(&mut cx)?;
+
+        db.send_to_drive_thread(move |drive: &mut Drive, transaction, channel| {
+            let grove_db = &mut drive.grove;
+            let path_slice = path.iter().map(|fragment| fragment.as_slice());
+            let result = grove_db.insert(
+                path_slice,
+                &key,
+                element,
+                using_transaction.then(|| transaction).flatten(),
+            );
+
+            channel.send(move |mut task_context| {
+                let callback = js_callback.into_inner(&mut task_context);
+                let this = task_context.undefined();
+                let callback_arguments: Vec<Handle<JsValue>> = match result {
+                    Ok(_) => vec![task_context.null().upcast()],
+                    Err(err) => vec![task_context.error(err.to_string())?.upcast()],
+                };
+
+                callback.call(&mut task_context, this, callback_arguments)?;
+                Ok(())
+            });
+        })
+        .or_else(|err| cx.throw_error(err.to_string()))?;
+
+        Ok(cx.undefined())
+    }
+
+    fn js_grove_db_insert_if_not_exists(mut cx: FunctionContext) -> JsResult<JsUndefined> {
+        let js_path = cx.argument::<JsArray>(0)?;
+        let js_key = cx.argument::<JsBuffer>(1)?;
+        let js_element = cx.argument::<JsObject>(2)?;
+        let js_using_transaction = cx.argument::<JsBoolean>(3)?;
+        let js_callback = cx.argument::<JsFunction>(4)?.root(&mut cx);
+
+        let path = converter::js_array_of_buffers_to_vec(js_path, &mut cx)?;
+        let key = converter::js_buffer_to_vec_u8(js_key, &mut cx);
+        let element = converter::js_object_to_element(js_element, &mut cx)?;
+        let using_transaction = js_using_transaction.value(&mut cx);
+
+        // Get the `this` value as a `JsBox<Database>`
+        let db = cx
+            .this()
+            .downcast_or_throw::<JsBox<DriveWrapper>, _>(&mut cx)?;
+
+        db.send_to_drive_thread(move |drive: &mut Drive, transaction, channel| {
+            let grove_db = &mut drive.grove;
+
+            let path_slice: Vec<&[u8]> = path.iter().map(|fragment| fragment.as_slice()).collect();
+            let result = grove_db.insert_if_not_exists(
+                path_slice,
+                key.as_slice(),
+                element,
+                using_transaction.then(|| transaction).flatten(),
+            );
+
+            channel.send(move |mut task_context| {
+                let callback = js_callback.into_inner(&mut task_context);
+                let this = task_context.undefined();
+                let callback_arguments: Vec<Handle<JsValue>> = match result {
+                    Ok(is_inserted) => vec![
+                        task_context.null().upcast(),
+                        task_context
+                            .boolean(is_inserted)
+                            .as_value(&mut task_context),
+                    ],
+                    Err(err) => vec![task_context.error(err.to_string())?.upcast()],
+                };
+
+                callback.call(&mut task_context, this, callback_arguments)?;
+                Ok(())
+            });
+        })
+            .or_else(|err| cx.throw_error(err.to_string()))?;
+
+        Ok(cx.undefined())
+    }
+
+    fn js_grove_db_put_aux(mut cx: FunctionContext) -> JsResult<JsUndefined> {
+        let js_key = cx.argument::<JsBuffer>(0)?;
+        let js_value = cx.argument::<JsBuffer>(1)?;
+        let js_using_transaction = cx.argument::<JsBoolean>(2)?;
+        let js_callback = cx.argument::<JsFunction>(3)?.root(&mut cx);
+
+        let key = converter::js_buffer_to_vec_u8(js_key, &mut cx);
+        let value = converter::js_buffer_to_vec_u8(js_value, &mut cx);
+
+        let db = cx
+            .this()
+            .downcast_or_throw::<JsBox<DriveWrapper>, _>(&mut cx)?;
+        let using_transaction = js_using_transaction.value(&mut cx);
+
+        db.send_to_drive_thread(move |drive: &mut Drive, transaction, channel| {
+            let grove_db = &mut drive.grove;
+            
+            let result = grove_db.put_aux(
+                &key,
+                &value,
+                using_transaction.then(|| transaction).flatten(),
+            );
+
+            channel.send(move |mut task_context| {
+                let callback = js_callback.into_inner(&mut task_context);
+                let this = task_context.undefined();
+                let callback_arguments: Vec<Handle<JsValue>> = match result {
+                    Ok(()) => {
+                        vec![task_context.null().upcast()]
+                    }
+
+                    // Convert the error to a JavaScript exception on failure
+                    Err(err) => vec![task_context.error(err.to_string())?.upcast()],
+                };
+
+                callback.call(&mut task_context, this, callback_arguments)?;
+
+                Ok(())
+            });
+        })
+            .or_else(|err| cx.throw_error(err.to_string()))?;
+
+        // The result is returned through the callback, not through direct return
+        Ok(cx.undefined())
+    }
+
+    fn js_grove_db_delete_aux(mut cx: FunctionContext) -> JsResult<JsUndefined> {
+        let js_key = cx.argument::<JsBuffer>(0)?;
+        let js_using_transaction = cx.argument::<JsBoolean>(1)?;
+        let js_callback = cx.argument::<JsFunction>(2)?.root(&mut cx);
+
+        let key = converter::js_buffer_to_vec_u8(js_key, &mut cx);
+
+        let db = cx
+            .this()
+            .downcast_or_throw::<JsBox<DriveWrapper>, _>(&mut cx)?;
+        let using_transaction = js_using_transaction.value(&mut cx);
+
+        db.send_to_drive_thread(move |drive: &mut Drive, transaction, channel| {
+            let grove_db = &mut drive.grove;
+            
+            let result =
+                grove_db.delete_aux(&key, using_transaction.then(|| transaction).flatten());
+
+            channel.send(move |mut task_context| {
+                let callback = js_callback.into_inner(&mut task_context);
+                let this = task_context.undefined();
+                let callback_arguments: Vec<Handle<JsValue>> = match result {
+                    Ok(()) => {
+                        vec![task_context.null().upcast()]
+                    }
+
+                    // Convert the error to a JavaScript exception on failure
+                    Err(err) => vec![task_context.error(err.to_string())?.upcast()],
+                };
+
+                callback.call(&mut task_context, this, callback_arguments)?;
+
+                Ok(())
+            });
+        })
+            .or_else(|err| cx.throw_error(err.to_string()))?;
+
+        // The result is returned through the callback, not through direct return
+        Ok(cx.undefined())
+    }
+
+    fn js_grove_db_get_aux(mut cx: FunctionContext) -> JsResult<JsUndefined> {
+        let js_key = cx.argument::<JsBuffer>(0)?;
+        let js_using_transaction = cx.argument::<JsBoolean>(1)?;
+        let js_callback = cx.argument::<JsFunction>(2)?.root(&mut cx);
+
+        let key = converter::js_buffer_to_vec_u8(js_key, &mut cx);
+
+        let db = cx
+            .this()
+            .downcast_or_throw::<JsBox<DriveWrapper>, _>(&mut cx)?;
+        let using_transaction = js_using_transaction.value(&mut cx);
+
+        db.send_to_drive_thread(move |drive: &mut Drive, transaction, channel| {
+            let grove_db = &mut drive.grove;
+
+            let result = grove_db.get_aux(&key, using_transaction.then(|| transaction).flatten());
+
+            channel.send(move |mut task_context| {
+                let callback = js_callback.into_inner(&mut task_context);
+                let this = task_context.undefined();
+                let callback_arguments: Vec<Handle<JsValue>> = match result {
+                    Ok(value) => {
+                        if let Some(value) = value {
+                            vec![
+                                task_context.null().upcast(),
+                                JsBuffer::external(&mut task_context, value).upcast(),
+                            ]
+                        } else {
+                            vec![task_context.null().upcast(), task_context.null().upcast()]
+                        }
+                    }
+
+                    // Convert the error to a JavaScript exception on failure
+                    Err(err) => vec![task_context.error(err.to_string())?.upcast()],
+                };
+
+                callback.call(&mut task_context, this, callback_arguments)?;
+
+                Ok(())
+            });
+        })
+            .or_else(|err| cx.throw_error(err.to_string()))?;
+
+        // The result is returned through the callback, not through direct return
+        Ok(cx.undefined())
+    }
+
+    fn js_grove_db_get_path_query(mut cx: FunctionContext) -> JsResult<JsUndefined> {
+        let js_path_query = cx.argument::<JsObject>(0)?;
+        let js_using_transaction = cx.argument::<JsBoolean>(1)?;
+        let js_callback = cx.argument::<JsFunction>(2)?.root(&mut cx);
+
+        let path_query = converter::js_path_query_to_path_query(js_path_query, &mut cx)?;
+
+        let db = cx
+            .this()
+            .downcast_or_throw::<JsBox<DriveWrapper>, _>(&mut cx)?;
+        let using_transaction = js_using_transaction.value(&mut cx);
+
+        db.send_to_drive_thread(move |drive: &mut Drive, transaction, channel| {
+            let grove_db = &mut drive.grove;
+
+            let result = grove_db.get_path_query(
+                &path_query,
+                using_transaction.then(|| transaction).flatten(),
+            );
+
+            channel.send(move |mut task_context| {
+                let callback = js_callback.into_inner(&mut task_context);
+                let this = task_context.undefined();
+                let callback_arguments: Vec<Handle<JsValue>> = match result {
+                    Ok((value, skipped)) => {
+                        let js_array: Handle<JsArray> = task_context.empty_array();
+                        let js_vecs = converter::nested_vecs_to_js(value, &mut task_context)?;
+                        let js_num = task_context.number(skipped).upcast::<JsValue>();
+                        js_array.set(&mut task_context, 0, js_vecs)?;
+                        js_array.set(&mut task_context, 1, js_num)?;
+                        vec![task_context.null().upcast(), js_array.upcast()]
+                    }
+
+                    // Convert the error to a JavaScript exception on failure
+                    Err(err) => vec![task_context.error(err.to_string())?.upcast()],
+                };
+
+                callback.call(&mut task_context, this, callback_arguments)?;
+
+                Ok(())
+            });
+        })
+            .or_else(|err| cx.throw_error(err.to_string()))?;
+
+        // The result is returned through the callback, not through direct return
+        Ok(cx.undefined())
+    }
+
+    /// Not implemented
+    fn js_grove_db_proof(mut cx: FunctionContext) -> JsResult<JsUndefined> {
+        Ok(cx.undefined())
+    }
+    
+    /// Flush data on disc and then calls js callback passed as a first
+    /// argument to the function
+    fn js_grove_db_flush(mut cx: FunctionContext) -> JsResult<JsUndefined> {
+        let js_callback = cx.argument::<JsFunction>(0)?.root(&mut cx);
+
+        let db = cx
+            .this()
+            .downcast_or_throw::<JsBox<DriveWrapper>, _>(&mut cx)?;
+
+        db.flush(|channel| {
+            channel.send(move |mut task_context| {
+                let callback = js_callback.into_inner(&mut task_context);
+                let this = task_context.undefined();
+                let callback_arguments: Vec<Handle<JsValue>> = vec![task_context.null().upcast()];
+
+                callback.call(&mut task_context, this, callback_arguments)?;
+
+                Ok(())
+            });
+        })
+            .or_else(|err| cx.throw_error(err.to_string()))?;
+
+        Ok(cx.undefined())
+    }
+
+    /// Returns root hash or empty buffer
+    fn js_grove_db_root_hash(mut cx: FunctionContext) -> JsResult<JsUndefined> {
+        let js_using_transaction = cx.argument::<JsBoolean>(0)?;
+        let js_callback = cx.argument::<JsFunction>(1)?.root(&mut cx);
+
+        let db = cx
+            .this()
+            .downcast_or_throw::<JsBox<DriveWrapper>, _>(&mut cx)?;
+
+        let using_transaction = js_using_transaction.value(&mut cx);
+
+        db.send_to_drive_thread(move |drive: &mut Drive, transaction, channel| {
+            let grove_db = &mut drive.grove;
+
+            let result = grove_db.root_hash(using_transaction.then(|| transaction).flatten());
+
+            channel.send(move |mut task_context| {
+                let callback = js_callback.into_inner(&mut task_context);
+                let this = task_context.undefined();
+
+                let hash = match result {
+                    Some(hash) => JsBuffer::external(&mut task_context, hash),
+                    None => task_context.buffer(32)?,
+                };
+
+                let callback_arguments: Vec<Handle<JsValue>> =
+                    vec![task_context.null().upcast(), hash.upcast()];
+
+                callback.call(&mut task_context, this, callback_arguments)?;
+
+                Ok(())
+            });
+        })
+            .or_else(|err| cx.throw_error(err.to_string()))?;
+
+        // The result is returned through the callback, not through direct return
+        Ok(cx.undefined())
+    }
+
+    fn js_grove_db_delete(mut cx: FunctionContext) -> JsResult<JsUndefined> {
+        let js_path = cx.argument::<JsArray>(0)?;
+        let js_key = cx.argument::<JsBuffer>(1)?;
+        let js_using_transaction = cx.argument::<JsBoolean>(2)?;
+        let js_callback = cx.argument::<JsFunction>(3)?.root(&mut cx);
+
+        let path = converter::js_array_of_buffers_to_vec(js_path, &mut cx)?;
+        let key = converter::js_buffer_to_vec_u8(js_key, &mut cx);
+
+        let db = cx
+            .this()
+            .downcast_or_throw::<JsBox<DriveWrapper>, _>(&mut cx)?;
+        let using_transaction = js_using_transaction.value(&mut cx);
+
+        db.send_to_drive_thread(move |drive: &mut Drive, transaction, channel| {
+            let grove_db = &mut drive.grove;
+
+            let path_slice: Vec<&[u8]> = path.iter().map(|fragment| fragment.as_slice()).collect();
+            let result = grove_db.delete(
+                path_slice,
+                key.as_slice(),
+                using_transaction.then(|| transaction).flatten(),
+            );
+
+            channel.send(move |mut task_context| {
+                let callback = js_callback.into_inner(&mut task_context);
+                let this = task_context.undefined();
+                let callback_arguments: Vec<Handle<JsValue>> = match result {
+                    Ok(()) => {
+                        vec![task_context.null().upcast()]
+                    }
+
+                    // Convert the error to a JavaScript exception on failure
+                    Err(err) => vec![task_context.error(err.to_string())?.upcast()],
+                };
+
+                callback.call(&mut task_context, this, callback_arguments)?;
+
+                Ok(())
+            });
+        })
+            .or_else(|err| cx.throw_error(err.to_string()))?;
+
+        // The result is returned through the callback, not through direct return
+        Ok(cx.undefined())
+    }
+
 }
 
 #[neon::main]
@@ -571,8 +1125,39 @@ fn main(mut cx: ModuleContext) -> NeonResult<()> {
     )?;
 
     cx.export_function("groveDbInsert", DriveWrapper::js_grove_db_insert)?;
+    cx.export_function(
+        "groveDbInsertIfNotExists",
+        DriveWrapper::js_grove_db_insert_if_not_exists,
+    )?;
     cx.export_function("groveDbGet", DriveWrapper::js_grove_db_get)?;
-    // TODO: rest of the methods
+    cx.export_function("groveDbDelete", DriveWrapper::js_grove_db_delete)?;
+    cx.export_function("groveDbProof", DriveWrapper::js_grove_db_proof)?;
+    cx.export_function("groveDbFlush", DriveWrapper::js_grove_db_flush)?;
+    cx.export_function(
+        "groveDbStartTransaction",
+        DriveWrapper::js_grove_db_start_transaction,
+    )?;
+    cx.export_function(
+        "groveDbCommitTransaction",
+        DriveWrapper::js_grove_db_commit_transaction,
+    )?;
+    cx.export_function(
+        "groveDbRollbackTransaction",
+        DriveWrapper::js_grove_db_rollback_transaction,
+    )?;
+    cx.export_function(
+        "groveDbIsTransactionStarted",
+        DriveWrapper::js_grove_db_is_transaction_started,
+    )?;
+    cx.export_function(
+        "groveDbAbortTransaction",
+        DriveWrapper::js_grove_db_abort_transaction,
+    )?;
+    cx.export_function("groveDbPutAux", DriveWrapper::js_grove_db_put_aux)?;
+    cx.export_function("groveDbDeleteAux", DriveWrapper::js_grove_db_delete_aux)?;
+    cx.export_function("groveDbGetAux", DriveWrapper::js_grove_db_get_aux)?;
+    cx.export_function("groveDbGetPathQuery", DriveWrapper::js_grove_db_get_path_query)?;
+    cx.export_function("groveDbRootHash", DriveWrapper::js_grove_db_root_hash)?;
 
     Ok(())
 }
