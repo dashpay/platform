@@ -7,7 +7,7 @@ const Document = require('@dashevo/dpp/lib/document/Document');
 const getDataContractFixture = require('@dashevo/dpp/lib/test/fixtures/getDataContractFixture');
 const getDocumentsFixture = require('@dashevo/dpp/lib/test/fixtures/getDocumentsFixture');
 
-const Drive = require('./index');
+const Drive = require('../Drive');
 
 const TEST_DATA_PATH = './test_data';
 
