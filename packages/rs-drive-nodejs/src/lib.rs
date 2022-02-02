@@ -100,19 +100,22 @@ impl DriveWrapper {
                         callback(&channel);
                     }
                     DriveMessage::CommitTransaction(callback) => {
-                        drive.grove
+                        drive
+                            .grove
                             .commit_transaction(transaction.take().unwrap())
                             .unwrap();
                         callback(&channel);
                     }
                     DriveMessage::RollbackTransaction(callback) => {
-                        drive.grove
+                        drive
+                            .grove
                             .rollback_transaction(&transaction.take().unwrap())
                             .unwrap();
                         callback(&channel);
                     }
                     DriveMessage::AbortTransaction(callback) => {
-                        drive.grove
+                        drive
+                            .grove
                             .abort_transaction(transaction.take().unwrap())
                             .unwrap();
                         callback(&channel);
@@ -161,7 +164,7 @@ impl DriveWrapper {
         self.tx
             .send(DriveMessage::CommitTransaction(Box::new(callback)))
     }
-    
+
     fn rollback_transaction(
         &self,
         callback: impl FnOnce(&Channel) + Send + 'static,
@@ -187,7 +190,6 @@ impl DriveWrapper {
         self.tx
             .send(DriveMessage::AbortTransaction(Box::new(callback)))
     }
-
 }
 
 // Ensures that DriveWrapper is properly disposed when the corresponding JS
@@ -245,7 +247,9 @@ impl DriveWrapper {
 
         drive
             .send_to_drive_thread(move |drive: &mut Drive, transaction, channel| {
-                drive.create_root_tree(using_transaction.then(|| transaction).flatten()).expect("create_root_tree should not fail");
+                drive
+                    .create_root_tree(using_transaction.then(|| transaction).flatten())
+                    .expect("create_root_tree should not fail");
 
                 channel.send(move |mut task_context| {
                     let callback = js_callback.into_inner(&mut task_context);
@@ -529,7 +533,6 @@ impl DriveWrapper {
         Ok(cx.undefined())
     }
 
-
     fn js_grove_db_start_transaction(mut cx: FunctionContext) -> JsResult<JsUndefined> {
         let js_callback = cx.argument::<JsFunction>(0)?.root(&mut cx);
 
@@ -548,7 +551,7 @@ impl DriveWrapper {
                 Ok(())
             });
         })
-            .or_else(|err| cx.throw_error(err.to_string()))?;
+        .or_else(|err| cx.throw_error(err.to_string()))?;
 
         Ok(cx.undefined())
     }
@@ -571,7 +574,7 @@ impl DriveWrapper {
                 Ok(())
             });
         })
-            .or_else(|err| cx.throw_error(err.to_string()))?;
+        .or_else(|err| cx.throw_error(err.to_string()))?;
 
         Ok(cx.undefined())
     }
@@ -594,7 +597,7 @@ impl DriveWrapper {
                 Ok(())
             });
         })
-            .or_else(|err| cx.throw_error(err.to_string()))?;
+        .or_else(|err| cx.throw_error(err.to_string()))?;
 
         Ok(cx.undefined())
     }
@@ -626,7 +629,7 @@ impl DriveWrapper {
                 Ok(())
             });
         })
-            .or_else(|err| cx.throw_error(err.to_string()))?;
+        .or_else(|err| cx.throw_error(err.to_string()))?;
 
         Ok(cx.undefined())
     }
@@ -649,7 +652,7 @@ impl DriveWrapper {
                 Ok(())
             });
         })
-            .or_else(|err| cx.throw_error(err.to_string()))?;
+        .or_else(|err| cx.throw_error(err.to_string()))?;
 
         Ok(cx.undefined())
     }
@@ -699,7 +702,7 @@ impl DriveWrapper {
                 Ok(())
             });
         })
-            .or_else(|err| cx.throw_error(err.to_string()))?;
+        .or_else(|err| cx.throw_error(err.to_string()))?;
 
         // The result is returned through the callback, not through direct return
         Ok(cx.undefined())
@@ -794,7 +797,7 @@ impl DriveWrapper {
                 Ok(())
             });
         })
-            .or_else(|err| cx.throw_error(err.to_string()))?;
+        .or_else(|err| cx.throw_error(err.to_string()))?;
 
         Ok(cx.undefined())
     }
@@ -815,7 +818,7 @@ impl DriveWrapper {
 
         db.send_to_drive_thread(move |drive: &mut Drive, transaction, channel| {
             let grove_db = &mut drive.grove;
-            
+
             let result = grove_db.put_aux(
                 &key,
                 &value,
@@ -839,7 +842,7 @@ impl DriveWrapper {
                 Ok(())
             });
         })
-            .or_else(|err| cx.throw_error(err.to_string()))?;
+        .or_else(|err| cx.throw_error(err.to_string()))?;
 
         // The result is returned through the callback, not through direct return
         Ok(cx.undefined())
@@ -859,7 +862,7 @@ impl DriveWrapper {
 
         db.send_to_drive_thread(move |drive: &mut Drive, transaction, channel| {
             let grove_db = &mut drive.grove;
-            
+
             let result =
                 grove_db.delete_aux(&key, using_transaction.then(|| transaction).flatten());
 
@@ -880,7 +883,7 @@ impl DriveWrapper {
                 Ok(())
             });
         })
-            .or_else(|err| cx.throw_error(err.to_string()))?;
+        .or_else(|err| cx.throw_error(err.to_string()))?;
 
         // The result is returned through the callback, not through direct return
         Ok(cx.undefined())
@@ -927,7 +930,7 @@ impl DriveWrapper {
                 Ok(())
             });
         })
-            .or_else(|err| cx.throw_error(err.to_string()))?;
+        .or_else(|err| cx.throw_error(err.to_string()))?;
 
         // The result is returned through the callback, not through direct return
         Ok(cx.undefined())
@@ -975,7 +978,7 @@ impl DriveWrapper {
                 Ok(())
             });
         })
-            .or_else(|err| cx.throw_error(err.to_string()))?;
+        .or_else(|err| cx.throw_error(err.to_string()))?;
 
         // The result is returned through the callback, not through direct return
         Ok(cx.undefined())
@@ -985,7 +988,7 @@ impl DriveWrapper {
     fn js_grove_db_proof(mut cx: FunctionContext) -> JsResult<JsUndefined> {
         Ok(cx.undefined())
     }
-    
+
     /// Flush data on disc and then calls js callback passed as a first
     /// argument to the function
     fn js_grove_db_flush(mut cx: FunctionContext) -> JsResult<JsUndefined> {
@@ -1006,7 +1009,7 @@ impl DriveWrapper {
                 Ok(())
             });
         })
-            .or_else(|err| cx.throw_error(err.to_string()))?;
+        .or_else(|err| cx.throw_error(err.to_string()))?;
 
         Ok(cx.undefined())
     }
@@ -1044,7 +1047,7 @@ impl DriveWrapper {
                 Ok(())
             });
         })
-            .or_else(|err| cx.throw_error(err.to_string()))?;
+        .or_else(|err| cx.throw_error(err.to_string()))?;
 
         // The result is returned through the callback, not through direct return
         Ok(cx.undefined())
@@ -1091,12 +1094,11 @@ impl DriveWrapper {
                 Ok(())
             });
         })
-            .or_else(|err| cx.throw_error(err.to_string()))?;
+        .or_else(|err| cx.throw_error(err.to_string()))?;
 
         // The result is returned through the callback, not through direct return
         Ok(cx.undefined())
     }
-
 }
 
 #[neon::main]
@@ -1154,7 +1156,10 @@ fn main(mut cx: ModuleContext) -> NeonResult<()> {
     cx.export_function("groveDbPutAux", DriveWrapper::js_grove_db_put_aux)?;
     cx.export_function("groveDbDeleteAux", DriveWrapper::js_grove_db_delete_aux)?;
     cx.export_function("groveDbGetAux", DriveWrapper::js_grove_db_get_aux)?;
-    cx.export_function("groveDbGetPathQuery", DriveWrapper::js_grove_db_get_path_query)?;
+    cx.export_function(
+        "groveDbGetPathQuery",
+        DriveWrapper::js_grove_db_get_path_query,
+    )?;
     cx.export_function("groveDbRootHash", DriveWrapper::js_grove_db_root_hash)?;
 
     Ok(())
