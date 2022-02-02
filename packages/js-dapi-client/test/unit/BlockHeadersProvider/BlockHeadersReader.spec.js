@@ -10,7 +10,7 @@ const sleepOneTick = () => new Promise((resolve) => {
   }
 });
 
-describe('BlockHeadersReader', () => {
+describe('BlockHeadersReader - unit', () => {
   let options;
 
   let coreApiMock;

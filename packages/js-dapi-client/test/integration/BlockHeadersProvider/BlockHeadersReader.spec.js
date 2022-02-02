@@ -12,7 +12,7 @@ const sleepOneTick = () => new Promise((resolve) => {
   }
 });
 
-describe('BlockHeadersProvider', () => {
+describe('BlockHeadersReader - integration', () => {
   let options;
 
   let coreApiMock;
