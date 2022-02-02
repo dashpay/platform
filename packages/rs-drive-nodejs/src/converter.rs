@@ -97,7 +97,7 @@ pub fn js_array_of_buffers_to_vec<'a, C: Context<'a>>(
     cx: &mut C,
 ) -> NeonResult<Vec<Vec<u8>>> {
     let buf_vec = js_array.to_vec(cx)?;
-    let mut vec: Vec<Vec<u8>> = Vec::new();
+    let mut vec: Vec<Vec<u8>> = Vec::with_capacity(buf_vec.len());
 
     for buf in buf_vec {
         let js_buffer_handle = buf.downcast_or_throw::<JsBuffer, _>(cx)?;
