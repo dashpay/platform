@@ -10,7 +10,7 @@
     "postbuild": "neon-tag-prebuild && rm -rf native",
     "install": "neon-load-or-build",
     "clean": "cargo clean",
-    "pretest": "npm run build:debug",
+    "pretest": "rm -rf prebuilds/ && npm run build:debug",
     "test": "mocha node/test",
     "lint": "eslint node"
   },
