@@ -96,10 +96,10 @@ class BlockHeadersReader extends EventEmitter {
       const startingHeight = (batchIndex * actualBatchSize) + 1;
       const count = Math.min(actualBatchSize, toBlockHeight - startingHeight + 1);
 
-      const subscribeToHistoricalBatch = this.subscribeToHistoricalBatchHOF(this.maxRetries);
+      const subscribeWithRetries = this.subscribeToHistoricalBatch(this.maxRetries);
 
       // eslint-disable-next-line no-await-in-loop
-      const stream = await subscribeToHistoricalBatch(startingHeight, count);
+      const stream = await subscribeWithRetries(startingHeight, count);
       this.historicalStreams.push(stream);
     }
   }
@@ -147,7 +147,7 @@ class BlockHeadersReader extends EventEmitter {
    * @param {number} [maxRetries=0] - maximum amount of retries
    * @returns {function(*, *): Promise<Stream>}
    */
-  subscribeToHistoricalBatchHOF(maxRetries = 0) {
+  subscribeToHistoricalBatch(maxRetries = 0) {
     let currentRetries = 0;
 
     /**
@@ -157,7 +157,7 @@ class BlockHeadersReader extends EventEmitter {
      * @param {number} count
      * @returns {Promise<Stream>}
      */
-    const subscribeToHistoricalBatch = async (fromBlockHeight, count) => {
+    const subscribeWithRetries = async (fromBlockHeight, count) => {
       let headersObtained = 0;
 
       const stream = await this.coreMethods.subscribeToBlockHeadersWithChainLocks({
@@ -196,7 +196,7 @@ class BlockHeadersReader extends EventEmitter {
           const newFromBlockHeight = fromBlockHeight + headersObtained;
           const newCount = count - headersObtained;
 
-          subscribeToHistoricalBatch(newFromBlockHeight, newCount)
+          subscribeWithRetries(newFromBlockHeight, newCount)
             .then((newStream) => {
               currentRetries += 1;
               this.emit(COMMANDS.HANDLE_STREAM_RETRY, stream, newStream);
@@ -215,7 +215,7 @@ class BlockHeadersReader extends EventEmitter {
       return stream;
     };
 
-    return subscribeToHistoricalBatch;
+    return subscribeWithRetries;
   }
 }
 
