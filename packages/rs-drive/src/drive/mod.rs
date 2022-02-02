@@ -471,7 +471,7 @@ impl Drive {
                         owner_id,
                     )?;
 
-                let document_index_field: Vec<u8> = match document_index_field_result {
+                let document_index_field = match document_index_field_result {
                     Some(document_index_field) => document_index_field,
                     None => continue // Do nothing is optional indexed field is not present
                 };
