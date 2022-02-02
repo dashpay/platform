@@ -2,7 +2,7 @@
   "name": "@dashevo/rs-drive",
   "version": "0.1.0",
   "description": "Node.JS binding for Rust Drive",
-  "main": "node/index.js",
+  "main": "node/Drive.js",
   "scripts": {
     "build": "cargo-cp-artifact -ac node native/index.node -- cargo build --message-format=json-render-diagnostics",
     "build:debug": "npm run build --",
@@ -11,12 +11,13 @@
     "install": "neon-load-or-build",
     "clean": "cargo clean",
     "pretest": "npm run build:debug",
-    "test": "mocha node/index.spec.js",
+    "test": "mocha node/test",
     "lint": "eslint node"
   },
   "files": [
     "prebuilds",
-    "node/index.js",
+    "node/Drive.js",
+    "node/GroveDB.js",
     "node/src",
     "node/Cargo.toml",
     "drive/src",
