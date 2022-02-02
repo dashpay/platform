@@ -371,5 +371,13 @@ describe('BlockHeadersReader - integration', () => {
 
       expect(errorsEmitted).to.deep.equal(errorsToEmit);
     });
+
+    it('should throw an error in attempt to run readHistorical for a second time', async () => {
+      try {
+        await blockHeadersReader.readHistorical(1, headersAmount);
+      } catch (e) {
+        expect(e.message).to.equal('Historical streams are already running');
+      }
+    });
   });
 });
