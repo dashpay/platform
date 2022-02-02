@@ -330,8 +330,8 @@ impl DocumentType {
                     // Only handling bytearrays for v1
                     // Return an error if it is not a byte array
                     match cbor_inner_bool_value(inner_property_values, "byteArray") {
-                        Some(bool) => {
-                            if bool {
+                        Some(inner_bool) => {
+                            if inner_bool {
                                 field_type = types::DocumentFieldType::ByteArray;
                             } else {
                                 return Err(Error::CorruptedData(String::from("invalid type")));
