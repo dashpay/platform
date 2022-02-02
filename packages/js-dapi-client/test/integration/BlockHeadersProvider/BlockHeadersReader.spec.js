@@ -86,10 +86,10 @@ describe('BlockHeadersReader - integration', () => {
   describe('#subscribeToHistoricalBatch', () => {
     it('should emit BLOCK_HEADERS event', async () => {
       const maxRetries = 0;
-      const subscribeToHistoricalBatch = blockHeadersReader.subscribeToHistoricalBatchHOF(
+      const subscribeToHistoricalBatchWithRetry = blockHeadersReader.subscribeToHistoricalBatch(
         maxRetries,
       );
-      await subscribeToHistoricalBatch(1, mockedHeaders.length);
+      await subscribeToHistoricalBatchWithRetry(1, mockedHeaders.length);
 
       let headersFromEvent = [];
 
@@ -107,10 +107,10 @@ describe('BlockHeadersReader - integration', () => {
 
     it('should emit BLOCK_HEADERS event in case of error and retry attempt', async () => {
       const maxRetries = 3;
-      const subscribeToHistoricalBatch = blockHeadersReader.subscribeToHistoricalBatchHOF(
+      const subscribeToHistoricalBatchWithRetry = blockHeadersReader.subscribeToHistoricalBatch(
         maxRetries,
       );
-      await subscribeToHistoricalBatch(1, mockedHeaders.length);
+      await subscribeToHistoricalBatchWithRetry(1, mockedHeaders.length);
 
       let headersFromEvent = [];
 
@@ -146,10 +146,10 @@ describe('BlockHeadersReader - integration', () => {
 
     it('should emit HANDLE_STREAM_ERROR command in case of the stream error', async () => {
       const maxRetries = 0;
-      const subscribeToHistoricalBatch = blockHeadersReader.subscribeToHistoricalBatchHOF(
+      const subscribeToHistoricalBatchWithRetry = blockHeadersReader.subscribeToHistoricalBatch(
         maxRetries,
       );
-      await subscribeToHistoricalBatch(1, 1);
+      await subscribeToHistoricalBatchWithRetry(1, 1);
 
       let emittedError;
       let streamFromCommand;
@@ -168,10 +168,10 @@ describe('BlockHeadersReader - integration', () => {
 
     it('should emit HANDLE_STREAM_ERROR command in case of deliberate rejection of the headers', async () => {
       const maxRetries = 0;
-      const subscribeToHistoricalBatch = blockHeadersReader.subscribeToHistoricalBatchHOF(
+      const subscribeToHistoricalBatchWithRetry = blockHeadersReader.subscribeToHistoricalBatch(
         maxRetries,
       );
-      await subscribeToHistoricalBatch(1, 1);
+      await subscribeToHistoricalBatchWithRetry(1, 1);
 
       const errorToRejectWith = new Error('test');
       let errorEmitted;
@@ -198,10 +198,10 @@ describe('BlockHeadersReader - integration', () => {
 
     it('should emit HANDLE_STREAM_ERROR command if retry attempts are exhausted', async () => {
       const maxRetries = 3;
-      const subscribeToHistoricalBatch = blockHeadersReader.subscribeToHistoricalBatchHOF(
+      const subscribeToHistoricalBatchWithRetry = blockHeadersReader.subscribeToHistoricalBatch(
         maxRetries,
       );
-      await subscribeToHistoricalBatch(1, 1);
+      await subscribeToHistoricalBatchWithRetry(1, 1);
 
       const errorToThrow = new Error('test');
       let emittedError;
@@ -228,10 +228,10 @@ describe('BlockHeadersReader - integration', () => {
 
     it('should emit HANDLE_STREAM_ERROR command if stream failed to be created in retry attempt', async () => {
       const maxRetries = 1;
-      const subscribeToHistoricalBatch = blockHeadersReader.subscribeToHistoricalBatchHOF(
+      const subscribeToHistoricalBatchWithRetry = blockHeadersReader.subscribeToHistoricalBatch(
         maxRetries,
       );
-      await subscribeToHistoricalBatch(1, 1);
+      await subscribeToHistoricalBatchWithRetry(1, 1);
 
       // Throw an error on a second call of subscribe
       const errorToThrow = new Error('test');
@@ -319,6 +319,8 @@ describe('BlockHeadersReader - integration', () => {
       await blockHeadersReader.readHistorical(1, headersAmount);
     });
 
+    // after
+
     it('should emit BLOCK_HEADERS event', async () => {
       let obtainedHeaders = [];
       blockHeadersReader.on(BlockHeadersReader.EVENTS.BLOCK_HEADERS, (headers) => {
@@ -353,7 +355,6 @@ describe('BlockHeadersReader - integration', () => {
       const errorsToEmit = [];
 
       blockHeadersReader.on(BlockHeadersReader.EVENTS.ERROR, (e) => {
-        // console.log('AS')
         errorsEmitted.push(e);
       });
 

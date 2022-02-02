@@ -48,11 +48,7 @@ class BlockHeadersReader extends EventEmitter {
    */
   async readHistorical(fromBlockHeight, toBlockHeight) {
     if (this.historicalStreams.length) {
-      this.removeAllListeners(COMMANDS.HANDLE_STREAM_RETRY);
-      this.removeAllListeners(COMMANDS.HANDLE_STREAM_ERROR);
-      this.removeAllListeners(COMMANDS.HANDLE_FINISHED_STREAM);
-      this.historicalStreams.forEach((stream) => stream.destroy());
-      this.historicalStreams = [];
+      throw new Error('Historical streams are already running');
     }
 
     const totalAmount = toBlockHeight - fromBlockHeight + 1;
@@ -102,6 +98,14 @@ class BlockHeadersReader extends EventEmitter {
       const stream = await subscribeWithRetries(startingHeight, count);
       this.historicalStreams.push(stream);
     }
+  }
+
+  stopReadingHistorical() {
+    this.removeAllListeners(COMMANDS.HANDLE_STREAM_RETRY);
+    this.removeAllListeners(COMMANDS.HANDLE_STREAM_ERROR);
+    this.removeAllListeners(COMMANDS.HANDLE_FINISHED_STREAM);
+    this.historicalStreams.forEach((stream) => stream.destroy());
+    this.historicalStreams = [];
   }
 
   /**
