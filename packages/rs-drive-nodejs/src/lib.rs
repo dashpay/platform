@@ -401,7 +401,7 @@ impl DriveWrapper {
         let using_transaction = js_using_transaction.value(&mut cx);
 
         drive.send_to_drive_thread(move |drive: &mut Drive, transaction, channel| {
-            let result = drive.query_documents(
+            let result = drive.query_documents_from_cbor(
                 &contract_cbor,
                 document_type_name,
                 &query_cbor,
