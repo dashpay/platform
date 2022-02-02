@@ -245,7 +245,7 @@ impl DriveWrapper {
 
         drive
             .send_to_drive_thread(move |drive: &mut Drive, transaction, channel| {
-                drive.create_root_tree(using_transaction.then(|| transaction).flatten());
+                drive.create_root_tree(using_transaction.then(|| transaction).flatten()).expect("create_root_tree should not fail");
 
                 channel.send(move |mut task_context| {
                     let callback = js_callback.into_inner(&mut task_context);
