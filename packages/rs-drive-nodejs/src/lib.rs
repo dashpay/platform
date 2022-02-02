@@ -4,7 +4,9 @@ use std::{option::Option::None, path::Path, sync::mpsc, thread};
 
 use grovedb::{PrefixedRocksDbStorage, Storage};
 use neon::prelude::*;
+use rs_drive::contract::{Contract, DocumentType};
 use rs_drive::drive::Drive;
+use rs_drive::query::DriveQuery;
 
 type DriveCallback = Box<
     dyn for<'a> FnOnce(
@@ -381,6 +383,59 @@ impl DriveWrapper {
 
         Ok(cx.undefined())
     }
+
+    fn js_create_and_execute_query(mut cx: FunctionContext) -> JsResult<JsUndefined> {
+        let js_query_cbor = cx.argument::<JsBuffer>(0)?;
+        let js_contract_cbor = cx.argument::<JsBuffer>(1)?;
+        let js_document_type_name = cx.argument::<JsString>(2)?;
+        let js_using_transaction = cx.argument::<JsBoolean>(3)?;
+        let js_callback = cx.argument::<JsFunction>(4)?.root(&mut cx);
+
+        let drive = cx
+            .this()
+            .downcast_or_throw::<JsBox<DriveWrapper>, _>(&mut cx)?;
+
+        let query_cbor = converter::js_buffer_to_vec_u8(js_query_cbor, &mut cx);
+        let contract_cbor = converter::js_buffer_to_vec_u8(js_contract_cbor, &mut cx);
+        let document_type_name = js_document_type_name.value(&mut cx);
+        let using_transaction = js_using_transaction.value(&mut cx);
+
+        drive.send_to_drive_thread(move |drive: &mut Drive, transaction, channel| {
+            let result = drive.query_documents(
+                &contract_cbor,
+                document_type_name,
+                &query_cbor,
+                using_transaction.then(|| transaction).flatten(),
+            );
+
+            channel.send(move |mut task_context| {
+                let callback = js_callback.into_inner(&mut task_context);
+                let this = task_context.undefined();
+                let callback_arguments: Vec<Handle<JsValue>> = match result {
+                    Ok((value, skipped)) => {
+                        let js_array: Handle<JsArray> = task_context.empty_array();
+                        let js_vecs = converter::nested_vecs_to_js(value, &mut task_context)?;
+                        let js_num = task_context.number(skipped).upcast::<JsValue>();
+
+                        js_array.set(&mut task_context, 0, js_vecs)?;
+                        js_array.set(&mut task_context, 1, js_num)?;
+
+                        vec![task_context.null().upcast(), js_array.upcast()]
+                    }
+
+                    // Convert the error to a JavaScript exception on failure
+                    Err(err) => vec![task_context.error(err.to_string())?.upcast()],
+                };
+
+                callback.call(&mut task_context, this, callback_arguments)?;
+
+                Ok(())
+            });
+        })
+            .or_else(|err| cx.throw_error(err.to_string()))?;
+
+        Ok(cx.undefined())
+    }
 }
 
 #[neon::main]
@@ -392,6 +447,7 @@ fn main(mut cx: ModuleContext) -> NeonResult<()> {
     cx.export_function("driveCreateDocument", DriveWrapper::js_add_document_for_contract_cbor)?;
     cx.export_function("driveUpdateDocument", DriveWrapper::js_update_document_for_contract_cbor)?;
     cx.export_function("driveDeleteDocument", DriveWrapper::js_delete_document_for_contract_cbor)?;
+    cx.export_function("driveQueryDocuments", DriveWrapper::js_create_and_execute_query)?;
 
     Ok(())
 }

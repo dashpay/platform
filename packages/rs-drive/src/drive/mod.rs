@@ -4,6 +4,7 @@ use crate::contract::{Contract, Document};
 use grovedb::{Element, Error, GroveDb};
 use std::path::Path;
 use storage::rocksdb_storage::OptimisticTransactionDBTransaction;
+use crate::query::DriveQuery;
 
 pub struct Drive {
     pub grove: GroveDb,
@@ -477,7 +478,6 @@ impl Drive {
                 index_path.push(Vec::from(index_property.name.as_bytes()));
                 // Iteration 1. the index path is now something like Contracts/ContractID/Documents(1)/$ownerId/<ownerId>/toUserId
                 // Iteration 2. the index path is now something like Contracts/ContractID/Documents(1)/$ownerId/<ownerId>/toUserId/<ToUserId>/accountReference
-
                 let document_index_field: Vec<u8> = document
                     .get_raw_for_contract(
                         &index_property.name,
@@ -764,6 +764,25 @@ impl Drive {
             }
         }
         Ok(0)
+    }
+
+    pub fn query_documents(
+        &mut self,
+        contract_cbor: &[u8],
+        document_type_name: String,
+        query_cbor: &[u8],
+        transaction: Option<&OptimisticTransactionDBTransaction>,
+    ) -> Result<(Vec<Vec<u8>>, u16), Error> {
+        let contract = Contract::from_cbor(&contract_cbor)?;
+
+        let document_type = &contract.document_types[&document_type_name];
+
+        let query = DriveQuery::from_cbor(&query_cbor, &contract, &document_type)?;
+
+        return query.execute_no_proof(
+            &mut self.grove,
+            transaction,
+        );
     }
 }
 

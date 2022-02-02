@@ -2,6 +2,8 @@ const fs = require('fs');
 
 const { expect } = require('chai');
 
+const Document = require('@dashevo/dpp/lib/document/Document');
+
 const getDataContractFixture = require('@dashevo/dpp/lib/test/fixtures/getDataContractFixture');
 const getDocumentsFixture = require('@dashevo/dpp/lib/test/fixtures/getDocumentsFixture');
 
@@ -66,7 +68,7 @@ describe('Drive', () => {
     });
   });
 
-  describe('documents', () => {
+  describe('#createDocument', () => {
     beforeEach(async () => {
       await drive.createRootTree();
 
@@ -81,7 +83,27 @@ describe('Drive', () => {
 
         expect(result).to.equals(0);
       });
+    });
 
+    context('with indices', () => {
+      it('should create a document', async () => {
+        const documentWithIndices = documents[3];
+
+        const result = await drive.createDocument(documentWithIndices);
+
+        expect(result).to.equals(0);
+      });
+    });
+  });
+
+  describe('#updateDocument', () => {
+    beforeEach(async () => {
+      await drive.createRootTree();
+
+      await drive.applyContract(dataContract);
+    });
+
+    context('without indices', () => {
       it('should should update a document', async () => {
         // Create a document
         const documentWithoutIndices = documents[0];
@@ -95,7 +117,33 @@ describe('Drive', () => {
 
         expect(result).to.equals(0);
       });
+    });
 
+    context('with indices', () => {
+      it('should should update the document', async () => {
+        // Create a document
+        const documentWithIndices = documents[3];
+
+        await drive.createDocument(documentWithIndices);
+
+        // Update the document
+        documentWithIndices.set('firstName', 'Bob');
+
+        const result = await drive.updateDocument(documentWithIndices);
+
+        expect(result).to.equals(0);
+      });
+    });
+  });
+
+  describe('#deleteDocument', () => {
+    beforeEach(async () => {
+      await drive.createRootTree();
+
+      await drive.applyContract(dataContract);
+    });
+
+    context('without indices', () => {
       it('should should delete the document', async () => {
         // Create a document
         const documentWithoutIndices = documents[3];
@@ -113,28 +161,6 @@ describe('Drive', () => {
     });
 
     context('with indices', () => {
-      it('should create a document', async () => {
-        const documentWithIndices = documents[3];
-
-        const result = await drive.createDocument(documentWithIndices);
-
-        expect(result).to.equals(0);
-      });
-
-      it('should should update the document', async () => {
-        // Create a document
-        const documentWithIndices = documents[3];
-
-        await drive.createDocument(documentWithIndices);
-
-        // Update the document
-        documentWithIndices.set('firstName', 'Bob');
-
-        const result = await drive.updateDocument(documentWithIndices);
-
-        expect(result).to.equals(0);
-      });
-
       it('should should delete the document', async () => {
         // Create a document
         const documentWithIndices = documents[3];
@@ -149,6 +175,41 @@ describe('Drive', () => {
 
         expect(result).to.equals(0);
       });
+    });
+  });
+
+  describe('#queryDocuments', () => {
+    beforeEach(async () => {
+      await drive.createRootTree();
+
+      await drive.applyContract(dataContract);
+    });
+
+    it('should query existing documents', async () => {
+      // TODO: Fix optional indexed field
+      documents.pop();
+
+      // Create documents
+      await Promise.all(
+        documents.map((document) => drive.createDocument(document)),
+      );
+
+      const fetchedDocuments = await drive.queryDocuments(dataContract, 'indexedDocument', {
+        where: [['lastName', '==', 'Kennedy']],
+        orderBy: [['lastName', 'asc']], // TODO: We don't need orderBy for equal operator
+      });
+
+      expect(fetchedDocuments).to.have.lengthOf(1);
+      expect(fetchedDocuments[0]).to.be.an.instanceOf(Document);
+      expect(fetchedDocuments[0].toObject()).to.equal(documents[3].toObject());
+    });
+
+    it('should return empty array if documents are not exist', async () => {
+      const fetchedDocuments = await drive.queryDocuments(dataContract, 'indexedDocument', {
+        where: [['lastName', '==', 'Kennedy']],
+      });
+
+      expect(fetchedDocuments).to.have.lengthOf(0);
     });
   });
 });
