@@ -747,7 +747,7 @@ mod tests {
 
     #[test]
     fn test_cbor_deserialization() {
-        let document_cbor = json_document_to_cbor("../../simple.json", Some(1));
+        let document_cbor = json_document_to_cbor("simple.json", Some(1));
         let (version, read_document_cbor) = document_cbor.split_at(4);
         assert!(Drive::check_protocol_version_bytes(version));
         let document: HashMap<String, ciborium::value::Value> =
@@ -758,7 +758,7 @@ mod tests {
     #[test]
     fn test_import_contract() {
         let dashpay_cbor =
-            json_document_to_cbor("../../tests/supporting_files/contract/dashpay/dashpay-contract.json", Some(1));
+            json_document_to_cbor("tests/supporting_files/contract/dashpay/dashpay-contract.json", Some(1));
         let contract = Contract::from_cbor(&dashpay_cbor).unwrap();
 
         assert_eq!(contract.document_types.len(), 3);
