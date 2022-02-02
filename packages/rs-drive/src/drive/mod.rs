@@ -1,6 +1,6 @@
 pub mod defaults;
 
-use crate::contract::{Contract, Document};
+use crate::contract::{Contract, Document, DocumentType};
 use grovedb::{Element, Error, GroveDb};
 use std::path::Path;
 use storage::rocksdb_storage::OptimisticTransactionDBTransaction;
@@ -766,7 +766,7 @@ impl Drive {
         Ok(0)
     }
 
-    pub fn query_documents(
+    pub fn query_documents_from_cbor(
         &mut self,
         contract_cbor: &[u8],
         document_type_name: String,
@@ -777,7 +777,17 @@ impl Drive {
 
         let document_type = &contract.document_types[&document_type_name];
 
-        let query = DriveQuery::from_cbor(&query_cbor, &contract, &document_type)?;
+        return self.query_documents_from_contract(&contract, document_type, query_cbor, transaction);
+    }
+
+    pub fn query_documents_from_contract(
+        &mut self,
+        contract: &Contract,
+        document_type: &DocumentType,
+        query_cbor: &[u8],
+        transaction: Option<&OptimisticTransactionDBTransaction>,
+    ) -> Result<(Vec<Vec<u8>>, u16), Error> {
+        let query = DriveQuery::from_cbor(&query_cbor, contract, document_type)?;
 
         return query.execute_no_proof(
             &mut self.grove,
