@@ -2,11 +2,9 @@ mod converter;
 
 use std::{option::Option::None, path::Path, sync::mpsc, thread};
 
-use grovedb::{GroveDb, PrefixedRocksDbStorage, Storage};
+use grovedb::{PrefixedRocksDbStorage, Storage};
 use neon::prelude::*;
-use rs_drive::contract::{Contract, DocumentType};
 use rs_drive::drive::Drive;
-use rs_drive::query::DriveQuery;
 
 type DriveCallback = Box<
     dyn for<'a> FnOnce(
