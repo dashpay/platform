@@ -7,7 +7,7 @@ const systemIndices = [
 
 /**
  * @typedef {findAppropriateIndex}
- * @param {Object[]} whereClauses
+ * @param {Array[]} whereClauses
  * @param {Object} documentSchema
  * @return {Object}
  */

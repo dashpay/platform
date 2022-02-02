@@ -20,12 +20,17 @@ const RangePropertyDoesNotHaveOrderByError = require('./errors/RangePropertyDoes
  * @param {findConflictingConditions} findConflictingConditions
  * @param {findAppropriateIndex} findAppropriateIndex
  * @param {sortWhereClausesAccordingToIndex} sortWhereClausesAccordingToIndex
+ * @param {findThreesomeOfIndexedProperties} findThreesomeOfIndexedProperties
+ * @param {findIndexedPropertiesSince} findIndexedPropertiesSince
+ *
  * @return {validateQuery}
  */
 function validateQueryFactory(
   findConflictingConditions,
   findAppropriateIndex,
   sortWhereClausesAccordingToIndex,
+  findThreesomeOfIndexedProperties,
+  findIndexedPropertiesSince,
 ) {
   const ajv = defineAjvKeywords(new Ajv({
     strictTypes: true,
@@ -67,7 +72,7 @@ function validateQueryFactory(
           .map(([field, operators]) => new ConflictingConditionsError(field, operators)),
       );
 
-      appropriateIndex = findAppropriateIndex(query, documentSchema);
+      appropriateIndex = findAppropriateIndex(query.where, documentSchema);
 
       if (!appropriateIndex) {
         result.addError(new NotIndexedPropertiesInWhereConditionsError());
@@ -168,6 +173,12 @@ function validateQueryFactory(
           }
         }
       });
+
+      if (sortedWhereClauses.length < appropriateIndex.properties.length - 2) {
+        result.addError(new Error('"where" conditions should have not less than "number of indexed properties - 2" properties'));
+
+        return result;
+      }
     }
 
     // Sorting is allowed only for the last indexed property
@@ -178,41 +189,63 @@ function validateQueryFactory(
         return result;
       }
 
-      if (query.orderBy.length > 1) {
-        result.addError(new InvalidPropertiesInOrderByError());
-
-        return result;
-      }
-
-      const lastCondition = sortedWhereClauses[sortedWhereClauses.length - 1];
-
-      const [property, operator] = lastCondition;
-
-      if (!operator.includes('<') && !operator.includes('>')
-          && !operator.includes('startsWith') && !operator.includes('in')) {
-        result.addError(new InvalidPropertiesInOrderByError());
-
-        return result;
-      }
-
-      const orderedProperty = query.orderBy[0][0];
-
-      if (property !== orderedProperty) {
-        result.addError(new InvalidPropertiesInOrderByError());
-
-        return result;
-      }
-
       // check that property was used with range operator + 'in'
-      query.orderBy.forEach(([orderBy]) => {
-        sortedWhereClauses.forEach((clause) => {
-          if (clause[0] === orderBy && !['>', '<', '>=', '<=', 'startsWith', 'in'].includes(clause[1])) {
+      let lastInRangeOrIn;
+      for (const [orderByProperty] of query.orderBy) {
+        const foundInRangeOrIn = sortedWhereClauses.find((whereClause) => (
+          whereClause[0] === orderByProperty && ['>', '<', '>=', '<=', 'startsWith', 'in'].includes(whereClause[1])
+        ));
+
+        if (foundInRangeOrIn) {
+          [lastInRangeOrIn] = foundInRangeOrIn;
+
+          // everything is fine, going next
+          continue;
+        }
+
+        // not in a range, but there was a match before
+        if (!foundInRangeOrIn && lastInRangeOrIn) {
+          // check that this property is within 2 positions from the previous match
+          const foundIndexList = findThreesomeOfIndexedProperties(
+            lastInRangeOrIn, documentSchema,
+          );
+
+          if (!foundIndexList.find((indices) => indices.includes(orderByProperty))) {
             result.addError(
-              new InvalidPropertiesInOrderByError(),
+              new Error('If property not used in a range "where" query it should not be more than 2 positions away in the compound index'),
             );
+
+            return result;
           }
-        });
+        }
+
+        // not in a range and there were no previous matches
+        if (!foundInRangeOrIn && !lastInRangeOrIn) {
+          result.addError(new Error('Property should be used in a range "where" query statement'));
+
+          return result;
+        }
+      }
+
+      const firstOrderByProperty = query.orderBy[0][0];
+
+      const foundIndexPropertyLists = findIndexedPropertiesSince(
+        firstOrderByProperty, query.orderBy.length, documentSchema,
+      );
+
+      const orderByPropertiesString = query.orderBy.reduce((s, [prop]) => s.concat(prop), '');
+
+      const orderMatch = foundIndexPropertyLists.find((propertyList) => {
+        const propertyListString = propertyList.reduce(
+          (s, prop) => s.concat(prop), '',
+        );
+
+        return propertyListString === orderByPropertiesString;
       });
+
+      if (!orderMatch) {
+        result.addError(new Error('"orderBy" properties order does not match order in compound index'));
+      }
     }
 
     return result;

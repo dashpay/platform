@@ -150,19 +150,26 @@ describe('validateQueryFactory', () => {
   let findConflictingConditionsStub;
   let findAppropriateIndexStub;
   let sortWhereClausesAccordingToIndexStub;
+  let findThreesomeOfIndexedPropertiesStub;
+  let findIndexedPropertiesSinceStub;
   let validateQuery;
   let documentSchema;
 
   beforeEach(function beforeEach() {
     findConflictingConditionsStub = this.sinon.stub().returns([]);
     findAppropriateIndexStub = this.sinon.stub().returns({});
-    sortWhereClausesAccordingToIndexStub = this.sinon.stub().returns([]);
+    sortWhereClausesAccordingToIndexStub = this.sinon.stub().returnsArg(0);
+    findThreesomeOfIndexedPropertiesStub = this.sinon.stub().returns([]);
+    findIndexedPropertiesSinceStub = this.sinon.stub().returns([]);
+
     documentSchema = {};
 
     validateQuery = validateQueryFactory(
       findConflictingConditionsStub,
       findAppropriateIndexStub,
       sortWhereClausesAccordingToIndexStub,
+      findThreesomeOfIndexedPropertiesStub,
+      findIndexedPropertiesSinceStub,
     );
   });
 
@@ -247,6 +254,24 @@ describe('validateQueryFactory', () => {
       expect(result.errors[0]).to.be.an.instanceOf(ConflictingConditionsError);
       expect(result.errors[0].getField()).to.be.equal('a');
       expect(result.errors[0].getOperators()).to.be.deep.equal(['<', '>']);
+    });
+
+    it('should return invalid result if number of properties queried does not match number of indexed ones minus 2', () => {
+      findAppropriateIndexStub.returns({
+        properties: ['a', 'b', 'c', 'd'],
+      });
+
+      const result = validateQuery(
+        {
+          where: [
+            ['a', '==', 1],
+          ],
+        },
+        documentSchema,
+      );
+
+      expect(result).to.be.instanceOf(ValidationResult);
+      expect(result.isValid()).to.be.false();
     });
 
     describe('condition', () => {
@@ -1649,6 +1674,80 @@ describe('validateQueryFactory', () => {
       expect(result.errors[0].instancePath).to.be.equal('/orderBy');
       expect(result.errors[0].keyword).to.be.equal('maxItems');
       expect(result.errors[0].params.limit).to.be.equal(2);
+    });
+
+    it('should return invalid result if order of three of two properties after indexed one is not preserved', () => {
+      documentSchema = {
+        indices: [
+          {
+            name: 'index1',
+            properties: [
+              { a: 'asc' },
+              { b: 'desc' },
+              { c: 'desc' },
+              { d: 'desc' },
+              { e: 'desc' },
+            ],
+            unique: true,
+          },
+        ],
+      };
+
+      findThreesomeOfIndexedPropertiesStub.returns([['b', 'c', 'd']]);
+      findIndexedPropertiesSinceStub.returns([['b', 'c']]);
+      findAppropriateIndexStub.returns({
+        properties: ['b', 'c'],
+      });
+
+      const result = validateQuery(
+        {
+          where: [
+            ['b', '>', 1],
+          ],
+          orderBy: [['b', 'desc'], ['e', 'asc']],
+        },
+        documentSchema,
+      );
+
+      expect(result).to.be.instanceOf(ValidationResult);
+      expect(result.isValid()).to.be.false();
+    });
+
+    it('should return invalid result if order of properties does not match index', () => {
+      documentSchema = {
+        indices: [
+          {
+            name: 'index1',
+            properties: [
+              { a: 'asc' },
+              { b: 'desc' },
+              { c: 'desc' },
+              { d: 'desc' },
+              { e: 'desc' },
+            ],
+            unique: true,
+          },
+        ],
+      };
+
+      findThreesomeOfIndexedPropertiesStub.returns([['b', 'c', 'd']]);
+      findIndexedPropertiesSinceStub.returns([['b', 'c']]);
+      findAppropriateIndexStub.returns({
+        properties: ['b', 'c'],
+      });
+
+      const result = validateQuery(
+        {
+          where: [
+            ['b', '>', 1],
+          ],
+          orderBy: [['b', 'desc'], ['d', 'asc']],
+        },
+        documentSchema,
+      );
+
+      expect(result).to.be.instanceOf(ValidationResult);
+      expect(result.isValid()).to.be.false();
     });
 
     validFieldNameTestCases.forEach((fieldName) => {
