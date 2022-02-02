@@ -140,7 +140,7 @@ class Drive {
     ownerId,
     useTransaction = false,
   ) {
-    return driveUpdateDocumentAsync.call(
+    return driveDeleteDocumentAsync.call(
       this.drive,
       documentId,
       encodedContract,
