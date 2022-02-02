@@ -776,7 +776,7 @@ impl Drive {
         query_cbor: &[u8],
         transaction: Option<&OptimisticTransactionDBTransaction>,
     ) -> Result<(Vec<Vec<u8>>, u16), Error> {
-        let contract = Contract::from_cbor(&contract_cbor)?;
+        let contract = Contract::from_cbor(contract_cbor)?;
 
         let document_type = &contract.document_types[&document_type_name];
 
