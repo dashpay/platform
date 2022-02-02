@@ -1,11 +1,11 @@
 use grovedb::{Element, PathQuery, Query, SizedQuery};
 use neon::{borrow::Borrow, prelude::*};
 
-fn element_to_string(element: Element) -> String {
+fn element_to_string(element: &Element) -> &'static str {
     match element {
-        Element::Item(_) => "item".to_string(),
-        Element::Reference(_) => "reference".to_string(),
-        Element::Tree(_) => "tree".to_string(),
+        Element::Item(_) => "item",
+        Element::Reference(_) => "reference",
+        Element::Tree(_) => "tree",
     }
 }
 
@@ -50,7 +50,7 @@ pub fn element_to_js_object<'a, C: Context<'a>>(
     cx: &mut C,
 ) -> NeonResult<Handle<'a, JsValue>> {
     let js_object = cx.empty_object();
-    let js_type_string = cx.string(element_to_string(element.clone()));
+    let js_type_string = cx.string(element_to_string(&element));
     js_object.set(cx, "type", js_type_string)?;
 
     let js_value: Handle<JsValue> = match element {
