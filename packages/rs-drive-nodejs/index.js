@@ -2,6 +2,9 @@ const { promisify } = require('util');
 const { join: pathJoin } = require('path');
 const cbor = require('cbor');
 const Document = require('@dashevo/dpp/lib/document/Document');
+const decodeProtocolEntityFactory = require('@dashevo/dpp/lib/decodeProtocolEntityFactory');
+
+const decodeProtocolEntity = decodeProtocolEntityFactory();
 
 // const GroveDB = require('@dashevo/grovedb');
 
@@ -157,7 +160,9 @@ class Drive {
     );
 
     return encodedDocuments.map((encodedDocument) => {
-      const rawDocument = cbor.decodeAllSync(encodedDocument);
+      const [protocolVersion, rawDocument] = decodeProtocolEntity(encodedDocument);
+
+      rawDocument.$protocolVersion = protocolVersion;
 
       return new Document(rawDocument, dataContract);
     });
