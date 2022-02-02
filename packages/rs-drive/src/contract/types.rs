@@ -42,8 +42,10 @@ pub fn encode_document_field_type(
             let value_as_text = value.as_text().ok_or_else(get_field_type_matching_error)?;
             Ok(value_as_text.as_bytes().to_vec())
         }
-        DocumentFieldType::Date|DocumentFieldType::Integer => {
-            let value_as_integer = value.as_integer().ok_or_else(get_field_type_matching_error)?;
+        DocumentFieldType::Date | DocumentFieldType::Integer => {
+            let value_as_integer = value
+                .as_integer()
+                .ok_or_else(get_field_type_matching_error)?;
             let value_as_i64: i64 = value_as_integer
                 .try_into()
                 .map_err(|_| Error::CorruptedData(String::from("expected integer value")))?;
@@ -79,9 +81,9 @@ pub fn encode_document_field_type(
                 Ok(vec![0])
             }
         }
-        DocumentFieldType::Object => {
-            Err(Error::CorruptedData(String::from("we should never try encoding an object")))
-        }
+        DocumentFieldType::Object => Err(Error::CorruptedData(String::from(
+            "we should never try encoding an object",
+        ))),
     };
 }
 

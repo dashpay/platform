@@ -155,12 +155,9 @@ fn test_query() {
         .get("person")
         .expect("contract should have a person document type");
 
-    let (results, _) = drive.query_documents_from_contract(
-        &contract,
-        person_document_type,
-        query_cbor.as_slice(),
-        None,
-    ).expect("query should be executed");
+    let (results, _) = drive
+        .query_documents_from_contract(&contract, person_document_type, query_cbor.as_slice(), None)
+        .expect("query should be executed");
 
     assert_eq!(results.len(), 1);
 
@@ -179,12 +176,9 @@ fn test_query() {
         .get("person")
         .expect("contract should have a person document type");
 
-    let (results, _) = drive.query_documents_from_contract(
-        &contract,
-        person_document_type,
-        query_cbor.as_slice(),
-        None,
-    ).expect("query should be executed");
+    let (results, _) = drive
+        .query_documents_from_contract(&contract, person_document_type, query_cbor.as_slice(), None)
+        .expect("query should be executed");
 
     assert_eq!(results.len(), 0);
 
