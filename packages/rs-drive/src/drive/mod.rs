@@ -780,7 +780,7 @@ impl Drive {
 
         let document_type = &contract.document_types[&document_type_name];
 
-        return self.query_documents_from_contract(&contract, document_type, query_cbor, transaction);
+        self.query_documents_from_contract(&contract, document_type, query_cbor, transaction)
     }
 
     pub fn query_documents_from_contract(
