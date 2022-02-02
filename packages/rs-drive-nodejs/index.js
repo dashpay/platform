@@ -19,6 +19,8 @@ const {
   driveUpdateDocument,
   driveDeleteDocument,
   driveQueryDocuments,
+  groveDbInsert,
+  groveDbGet,
 } = require('neon-load-or-build')({
   dir: pathJoin(__dirname, '..'),
 });
@@ -37,6 +39,9 @@ const driveCreateDocumentAsync = promisify(driveCreateDocument);
 const driveUpdateDocumentAsync = promisify(driveUpdateDocument);
 const driveDeleteDocumentAsync = promisify(driveDeleteDocument);
 const driveQueryDocumentsAsync = promisify(driveQueryDocuments);
+
+const groveDbInsertAsync = promisify(groveDbInsert);
+const groveDbGetAsync = promisify(groveDbGet);
 
 // Wrapper class for the boxed `Drive` for idiomatic JavaScript usage
 class Drive {
@@ -166,6 +171,27 @@ class Drive {
 
       return new Document(rawDocument, dataContract);
     });
+  }
+
+  /**
+   * @param {Buffer[]} path
+   * @param {Buffer} key
+   * @param {boolean} [useTransaction=false]
+   * @returns {Promise<Element>}
+   */
+  async groveDbGet(path, key, useTransaction = false) {
+    return groveDbGetAsync.call(this.drive, path, key, useTransaction);
+  }
+
+  /**
+   * @param {Buffer[]} path
+   * @param {Buffer} key
+   * @param {Element} value
+   * @param {boolean} [useTransaction=false]
+   * @returns {Promise<*>}
+   */
+  async groveDbInsert(path, key, value, useTransaction = false) {
+    return groveDbInsertAsync.call(this.drive, path, key, value, useTransaction);
   }
 }
 

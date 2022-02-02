@@ -29,6 +29,33 @@ describe('Drive', () => {
     fs.rmSync(TEST_DATA_PATH, { recursive: true });
   });
 
+  it('should work with grovedb directly', async () => {
+    const treeKey = Buffer.from('test_tree');
+    const itemKey = Buffer.from('test_key');
+    const itemValue = Buffer.from('very nice test value');
+
+    const rootTreePath = [];
+    const itemTreePath = [treeKey];
+    // Making a subtree to insert items into
+    await drive.groveDbInsert(
+      rootTreePath,
+      treeKey,
+      { type: 'tree', value: Buffer.alloc(32) },
+    );
+
+    // Inserting an item into the subtree
+    await drive.groveDbInsert(
+      itemTreePath,
+      itemKey,
+      { type: 'item', value: itemValue },
+    );
+
+    const element = await drive.groveDbGet(itemTreePath, itemKey);
+
+    expect(element.type).to.be.equal('item');
+    expect(element.value).to.deep.equal(itemValue);
+  });
+
   describe('#createRootTree', () => {
     it('should create initial tree structure', async () => {
       const result = await drive.createRootTree();
