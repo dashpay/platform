@@ -140,6 +140,55 @@ fn test_query() {
 
     assert_eq!(names, all_names);
 
+    // A query getting all people who's first name is Chris
+
+    let query_value = json!({
+        "where": [
+            ["firstName", "==", "Chris"]
+        ]
+    });
+
+    let query_cbor = common::value_to_cbor(query_value, None);
+
+    let person_document_type = contract
+        .document_types
+        .get("person")
+        .expect("contract should have a person document type");
+
+
+    let (results, _) = drive.query_documents_from_contract(
+        &contract,
+        person_document_type,
+        query_cbor.as_slice(),
+        None,
+    ).expect("query should be executed");
+
+    assert_eq!(results.len(), 1);
+    //
+    // let names: Vec<String> = results
+    //     .into_iter()
+    //     .map(|result| {
+    //         let document = Document::from_cbor(result.as_slice(), None, None)
+    //             .expect("we should be able to deserialize the cbor");
+    //         let first_name_value = document
+    //             .properties
+    //             .get("firstName")
+    //             .expect("we should be able to get the first name");
+    //         let first_name = first_name_value
+    //             .as_text()
+    //             .expect("the first name should be a string");
+    //         String::from(first_name)
+    //     })
+    //     .collect();
+    //
+    // let expected_names_before_chris = [
+    //     "Adey".to_string(),
+    //     "Briney".to_string(),
+    //     "Cammi".to_string(),
+    //     "Celinda".to_string(),
+    // ];
+    // assert_eq!(names, expected_names_before_chris);
+
     // A query getting all people who's first name is before Chris
 
     let query_value = json!({
