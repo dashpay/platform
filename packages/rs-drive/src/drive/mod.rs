@@ -792,10 +792,10 @@ impl Drive {
     ) -> Result<(Vec<Vec<u8>>, u16), Error> {
         let query = DriveQuery::from_cbor(&query_cbor, contract, document_type)?;
 
-        return query.execute_no_proof(
+        query.execute_no_proof(
             &mut self.grove,
             transaction,
-        );
+        )
     }
 }
 
