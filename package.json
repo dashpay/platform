@@ -1,0 +1,53 @@
+{
+  "name": "@dashevo/rs-drive",
+  "version": "0.1.0",
+  "description": "Node.JS binding for Rust Drive",
+  "main": "node/Drive.js",
+  "scripts": {
+    "build": "cargo-cp-artifact -ac node native/index.node -- cargo build --message-format=json-render-diagnostics",
+    "build:debug": "npm run build --",
+    "build:release": "npm run build -- --release",
+    "postbuild": "neon-tag-prebuild && rm -rf native",
+    "install": "neon-load-or-build",
+    "clean": "cargo clean",
+    "pretest": "rm -rf prebuilds/ && npm run build:debug",
+    "test": "mocha node/test",
+    "lint": "eslint node"
+  },
+  "files": [
+    "prebuilds",
+    "node/Drive.js",
+    "node/GroveDB.js",
+    "node/src",
+    "node/Cargo.toml",
+    "drive/src",
+    "drive/Cargo.toml"
+  ],
+  "license": "MIT",
+  "devDependencies": {
+    "chai": "^4.3.4",
+    "eslint": "^8.7.0",
+    "eslint-config-airbnb-base": "^15.0.0",
+    "eslint-plugin-import": "^2.25.4",
+    "mocha": "^9.1.4"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/dashevo/rs-drive.git"
+  },
+  "keywords": [
+    "Dash Platform",
+    "Drive"
+  ],
+  "bugs": {
+    "url": "https://github.com/dashevo/rs-drive/issues"
+  },
+  "homepage": "https://github.com/dashevo/rs-drive#readme",
+  "dependencies": {
+    "@dashevo/dpp": "~0.22.0-dev.7",
+    "cargo-cp-artifact": "^0.1.6",
+    "cbor": "^8.1.0",
+    "neon-load-or-build": "^2.2.2",
+    "neon-tag-prebuild": "github:shumkov/neon-tag-prebuild#patch-1"
+  }
+}
