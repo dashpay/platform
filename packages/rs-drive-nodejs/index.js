@@ -157,7 +157,7 @@ class Drive {
     );
 
     return encodedDocuments.map((encodedDocument) => {
-      const rawDocument = cbor.decodeAll(encodedDocument);
+      const rawDocument = cbor.decodeAllSync(encodedDocument);
 
       return new Document(rawDocument, dataContract);
     });

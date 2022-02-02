@@ -28,6 +28,17 @@ pub enum WhereOperator {
     StartsWith,
 }
 
+impl WhereOperator {
+    pub const fn is_range(self) -> bool {
+        match self {
+            Equal => false,
+            GreaterThan | GreaterThanOrEquals | LessThan | LessThanOrEquals | Between | BetweenExcludeBounds | BetweenExcludeLeft | BetweenExcludeRight | In | StartsWith => {
+                true
+            }
+        }
+    }
+}
+
 fn operator_from_string(string: &str) -> Option<WhereOperator> {
     match string {
         "=" => Some(Equal),
@@ -977,16 +988,27 @@ impl<'a> DriveQuery<'a> {
             None => recursive_insert(None, left_over_index_properties.as_slice(), index.unique)
                 .expect("Index must have left over properties if no last clause"),
             Some(where_clause) => {
-                let order_clause: &OrderClause = self
-                    .order_by
-                    .get(where_clause.field.as_str())
-                    .ok_or(Error::InvalidQuery(
-                        "query must have an orderBy field for each range element",
-                    ))?;
+
+
+
+
+                let left_to_right = if where_clause.operator.is_range() {
+                    let order_clause: &OrderClause = self
+                        .order_by
+                        .get(where_clause.field.as_str())
+                        .ok_or(Error::InvalidQuery(
+                            "query must have an orderBy field for each range element",
+                        ))?;
+
+                    order_clause.ascending
+                } else {
+                    true
+                };
+
                 let mut query = where_clause.to_path_query(
                     self.document_type,
                     &starts_at_document,
-                    order_clause.ascending,
+                    left_to_right,
                 )?;
 
                 match subquery_clause {

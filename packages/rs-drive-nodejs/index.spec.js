@@ -196,7 +196,7 @@ describe('Drive', () => {
 
       const fetchedDocuments = await drive.queryDocuments(dataContract, 'indexedDocument', {
         where: [['lastName', '==', 'Kennedy']],
-        orderBy: [['lastName', 'asc']], // TODO: We don't need orderBy for equal operator
+        // orderBy: [['lastName', 'asc']], // TODO: We don't need orderBy for equal operator
       });
 
       expect(fetchedDocuments).to.have.lengthOf(1);
