@@ -40,7 +40,6 @@ impl From<RootTree> for &'static [u8; 1] {
             RootTree::ContractDocuments => &[1],
             RootTree::PublicKeyHashesToIdentities => &[2],
             RootTree::Misc => &[3]
-            // TODO: We also need to create spent asset lock tree
         }
     }
 }
