@@ -338,7 +338,7 @@ impl DocumentType {
                                 return Err(Error::CorruptedData(String::from("invalid type")));
                             }
                         }
-                        None => types::DocumentFieldType::Object,
+                        None => types::DocumentFieldType::Array,
                     };
 
                     document_properties.insert(prefixed_property_key, field_type);

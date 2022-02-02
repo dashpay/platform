@@ -12,6 +12,7 @@ pub enum DocumentFieldType {
     Boolean,
     Date,
     Object,
+    Array,
 }
 
 pub fn string_to_field_type(field_type_name: &str) -> Option<DocumentFieldType> {
@@ -83,6 +84,9 @@ pub fn encode_document_field_type(
         }
         DocumentFieldType::Object => Err(Error::CorruptedData(String::from(
             "we should never try encoding an object",
+        ))),
+        DocumentFieldType::Array => Err(Error::CorruptedData(String::from(
+            "we should never try encoding an array",
         ))),
     };
 }
