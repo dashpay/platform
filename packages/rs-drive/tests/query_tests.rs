@@ -24,11 +24,11 @@ struct Person {
 impl Person {
     fn random_people(count: u32, seed: u64) -> Vec<Self> {
         let first_names =
-            common::text_file_strings("supporting_files/contract/family/first-names.txt");
+            common::text_file_strings("tests/supporting_files/contract/family/first-names.txt");
         let middle_names =
-            common::text_file_strings("supporting_files/contract/family/middle-names.txt");
+            common::text_file_strings("tests/supporting_files/contract/family/middle-names.txt");
         let last_names =
-            common::text_file_strings("supporting_files/contract/family/last-names.txt");
+            common::text_file_strings("tests/supporting_files/contract/family/last-names.txt");
         let mut vec: Vec<Person> = Vec::with_capacity(count as usize);
 
         let mut rng = rand::rngs::StdRng::seed_from_u64(seed);
