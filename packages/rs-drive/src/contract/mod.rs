@@ -333,7 +333,7 @@ impl DocumentType {
                     field_type = match cbor_inner_bool_value(inner_property_values, "byteArray") {
                         Some(inner_bool) => {
                             if inner_bool {
-                                 types::DocumentFieldType::ByteArray
+                                types::DocumentFieldType::ByteArray
                             } else {
                                 return Err(Error::CorruptedData(String::from("invalid type")));
                             }
