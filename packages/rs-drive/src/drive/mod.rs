@@ -790,7 +790,7 @@ impl Drive {
         query_cbor: &[u8],
         transaction: Option<&OptimisticTransactionDBTransaction>,
     ) -> Result<(Vec<Vec<u8>>, u16), Error> {
-        let query = DriveQuery::from_cbor(&query_cbor, contract, document_type)?;
+        let query = DriveQuery::from_cbor(query_cbor, contract, document_type)?;
 
         query.execute_no_proof(
             &mut self.grove,
