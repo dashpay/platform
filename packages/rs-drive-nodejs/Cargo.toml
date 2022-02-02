@@ -16,10 +16,6 @@ rs-drive = { path = "../drive" }
 git = "https://github.com/dashevo/grovedb"
 branch = "master"
 
-[dependencies.node-grove]
-git = "https://github.com/dashevo/grovedb"
-branch = "master"
-
 [dependencies.neon]
 version = "0.9"
 default-features = false
