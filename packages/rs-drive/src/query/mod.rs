@@ -31,6 +31,7 @@ pub enum WhereOperator {
 fn operator_from_string(string: &str) -> Option<WhereOperator> {
     match string {
         "=" => Some(Equal),
+        "==" => Some(Equal),
         ">" => Some(GreaterThan),
         ">=" => Some(GreaterThanOrEquals),
         "<" => Some(LessThan),
@@ -1024,7 +1025,6 @@ impl<'a> DriveQuery<'a> {
         };
 
         // Now we should construct the path
-
         let last_index = last_indexes
             .first()
             .ok_or_else(|| Error::CorruptedData(String::from(

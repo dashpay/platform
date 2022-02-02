@@ -3,15 +3,8 @@
   "documents": {
     "person": {
       "indices": [
-        {
-        "properties": [{
-          "firstName": "asc"
-        }]
-        },
-        {
-          "properties": [{
-            "firstName": "asc"
-          }, {
+        { "properties": [{ "firstName": "asc" }] },
+        { "properties": [{ "firstName": "asc"           }, {
             "age": "asc"
           }]
         },

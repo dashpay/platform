@@ -1,5 +1,8 @@
 const { promisify } = require('util');
 const { join: pathJoin } = require('path');
+const cbor = require('cbor');
+const Document = require('@dashevo/dpp/lib/document/Document');
+
 // const GroveDB = require('@dashevo/grovedb');
 
 // This file is crated when run `npm run build`. The actual source file that
@@ -12,6 +15,7 @@ const {
   driveCreateDocument,
   driveUpdateDocument,
   driveDeleteDocument,
+  driveQueryDocuments,
 } = require('neon-load-or-build')({
   dir: pathJoin(__dirname, '..'),
 });
@@ -29,6 +33,7 @@ const driveApplyContractAsync = promisify(driveApplyContract);
 const driveCreateDocumentAsync = promisify(driveCreateDocument);
 const driveUpdateDocumentAsync = promisify(driveUpdateDocument);
 const driveDeleteDocumentAsync = promisify(driveDeleteDocument);
+const driveQueryDocumentsAsync = promisify(driveQueryDocuments);
 
 // Wrapper class for the boxed `Drive` for idiomatic JavaScript usage
 class Drive {
@@ -129,13 +134,33 @@ class Drive {
 
   /**
    *
-   * @param contract
-   * @param type
-   * @param query
-   * @returns {Promise<void>}
+   * @param {DataContract} dataContract
+   * @param {string} documentType
+   * @param [query]
+   * @param [query.where]
+   * @param [query.limit]
+   * @param [query.startAt]
+   * @param [query.startAfter]
+   * @param [query.orderBy]
+   * @param {Boolean} [useTransaction=false]
+   * @returns {Promise<Document[]>}
    */
-  async findDocuments(contract, type, query) {
+  async queryDocuments(dataContract, documentType, query = {}, useTransaction = false) {
+    const encodedQuery = await cbor.encodeAsync(query);
 
+    const [encodedDocuments] = await driveQueryDocumentsAsync.call(
+      this.drive,
+      encodedQuery,
+      dataContract.toBuffer(),
+      documentType,
+      useTransaction,
+    );
+
+    return encodedDocuments.map((encodedDocument) => {
+      const rawDocument = cbor.decodeAll(encodedDocument);
+
+      return new Document(rawDocument, dataContract);
+    });
   }
 }
 
