@@ -1,3 +1,5 @@
+const EventEmitter = require('events');
+
 const GrpcTransport = require('./transport/GrpcTransport/GrpcTransport');
 const JsonRpcTransport = require('./transport/JsonRpcTransport/JsonRpcTransport');
 
@@ -12,11 +14,17 @@ const createJsonTransportError = require('./transport/JsonRpcTransport/createJso
 const BlockHeadersProvider = require('./BlockHeadersProvider/BlockHeadersProvider');
 const createBlockHeadersProviderFromOptions = require('./BlockHeadersProvider/createBlockHeadersProviderFromOptions');
 
-class DAPIClient {
+const EVENTS = {
+  ERROR: 'error',
+};
+
+class DAPIClient extends EventEmitter {
   /**
    * @param {DAPIClientOptions} [options]
    */
   constructor(options = {}) {
+    super();
+
     this.options = {
       network: 'testnet',
       timeout: 10000,
@@ -45,15 +53,28 @@ class DAPIClient {
     this.core = new CoreMethodsFacade(jsonRpcTransport, grpcTransport);
     this.platform = new PlatformMethodsFacade(grpcTransport);
 
+    this.initBlockHeadersProvider();
+  }
+
+  /**
+   * @private
+   */
+  initBlockHeadersProvider() {
     this.blockHeadersProvider = createBlockHeadersProviderFromOptions(this.options, this.core);
+
+    this.blockHeadersProvider.on(BlockHeadersProvider.EVENTS.ERROR, (e) => {
+      this.emit(EVENTS.ERROR, e);
+    });
 
     if (this.options.blockHeadersProviderOptions.autoStart) {
       this.blockHeadersProvider.start().catch((e) => {
-        throw e;
+        this.emit(EVENTS.ERROR, e);
       });
     }
   }
 }
+
+DAPIClient.EVENTS = EVENTS;
 
 /**
  * @typedef {DAPIClientOptions} DAPIClientOptions
