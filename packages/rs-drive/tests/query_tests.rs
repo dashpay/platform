@@ -334,7 +334,7 @@ fn test_query() {
                 .as_text()
                 .expect("the first name should be a string")
                 .to_string();
-            (name, document.id.clone())
+            (name, Vec::from(document.id))
         })
         .collect();
 

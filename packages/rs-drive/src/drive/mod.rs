@@ -487,7 +487,7 @@ impl Drive {
                 .iter()
                 .map(|x| x.to_vec())
                 .collect::<Vec<Vec<u8>>>();
-            reference_path.push(document.id.clone());
+            reference_path.push(Vec::from(document.id));
             let document_reference = Element::Reference(reference_path);
 
             let index_path_slices: Vec<&[u8]> = index_path.iter().map(|x| x.as_slice()).collect();
