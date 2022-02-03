@@ -2,6 +2,7 @@ const stream = require('stream');
 const { BlockHeader } = require('@dashevo/dashcore-lib');
 const getHeadersFixture = require('../../../lib/test/fixtures/getHeadersFixture');
 const BlockHeadersProvider = require('../../../lib/BlockHeadersProvider/BlockHeadersProvider');
+const BlockHeadersReader = require('../../../lib/BlockHeadersProvider/BlockHeadersReader');
 
 const sleep = (time) => new Promise((resolve) => setTimeout(resolve, time));
 const sleepOneTick = () => new Promise((resolve) => {
@@ -12,7 +13,7 @@ const sleepOneTick = () => new Promise((resolve) => {
   }
 });
 
-describe('BlockHeadersProvider', () => {
+describe('BlockHeadersProvider - integration', () => {
   let coreApiMock;
   let blockHeadersProvider;
   let blockHeadersStream;
@@ -119,5 +120,77 @@ describe('BlockHeadersProvider', () => {
     // slice(1): ignore genesis block
     expect(longestChain.slice(1).map((header) => header.hash))
       .to.deep.equal(mockedHeaders.map((header) => header.hash));
+  });
+
+  it('should throw error in case core methods are missing', async () => {
+    blockHeadersProvider.setCoreMethods(null);
+    try {
+      await blockHeadersProvider.start();
+    } catch (e) {
+      expect(e).to.be.instanceOf(Error);
+    }
+  });
+
+  it('should throw error in case BlockHeadersProvider has already been started', async () => {
+    await blockHeadersProvider.start();
+
+    try {
+      await blockHeadersProvider.start();
+    } catch (e) {
+      expect(e).to.be.instanceOf(Error);
+    }
+  });
+
+  it('should emit ERROR event in case BlockHeadersReader emits ERROR', async () => {
+    await blockHeadersProvider.start();
+
+    let emittedError;
+    blockHeadersProvider.on(BlockHeadersProvider.EVENTS.ERROR, (e) => {
+      emittedError = e;
+    });
+
+    const errorToThrow = new Error('test');
+    blockHeadersProvider.blockHeadersReader
+      .emit(BlockHeadersProvider.EVENTS.ERROR, errorToThrow);
+
+    expect(emittedError).to.be.equal(errorToThrow);
+  });
+
+  it('should emit ERROR event in case SpvChain fails to addHeaders', async function () {
+    const errorToThrow = new Error('test');
+    blockHeadersProvider.spvChain.addHeaders = this.sinon.stub();
+    blockHeadersProvider.spvChain.addHeaders.onFirstCall().throws(errorToThrow);
+
+    await blockHeadersProvider.start();
+
+    let emittedError;
+    blockHeadersProvider.on(BlockHeadersProvider.EVENTS.ERROR, (e) => {
+      emittedError = e;
+    });
+
+    blockHeadersProvider.blockHeadersReader
+      .emit(BlockHeadersReader.EVENTS.BLOCK_HEADERS, []);
+
+    expect(emittedError).to.be.equal(errorToThrow);
+  });
+
+  it('should emit ERROR event in case of a failure subscribing to the new block headers', async function () {
+    await blockHeadersProvider.start();
+
+    const errorToThrow = new Error('test');
+    blockHeadersProvider.blockHeadersReader.subscribeToNew = this.sinon.stub()
+      .rejects(errorToThrow);
+
+    let emittedError;
+    blockHeadersProvider.on(BlockHeadersProvider.EVENTS.ERROR, (e) => {
+      emittedError = e;
+    });
+
+    blockHeadersProvider.blockHeadersReader
+      .emit(BlockHeadersReader.EVENTS.HISTORICAL_DATA_OBTAINED);
+
+    await sleepOneTick();
+
+    expect(emittedError).to.be.equal(errorToThrow);
   });
 });
