@@ -20,7 +20,7 @@ use std::collections::HashMap;
 #[derive(Serialize, Deserialize, Debug)]
 pub struct Contract {
     pub document_types: HashMap<String, DocumentType>,
-    pub id: Vec<u8>,
+    pub id: [u8; 32],
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -32,9 +32,9 @@ pub struct DocumentType {
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct Document {
-    pub id: Vec<u8>,
+    pub id: [u8; 32],
     pub properties: HashMap<String, CborValue>,
-    pub owner_id: Vec<u8>,
+    pub owner_id: [u8; 32],
 }
 
 #[derive(Clone, Serialize, Deserialize, Debug)]
@@ -141,8 +141,10 @@ impl Contract {
             .map_err(|_| Error::CorruptedData(String::from("unable to decode contract")))?;
 
         // Get the contract id
-        let contract_id = bytes_for_system_value_from_hash_map(&contract, "$id")
-            .ok_or_else(|| Error::CorruptedData(String::from("unable to get contract id")))?;
+        let contract_id: [u8; 32] = bytes_for_system_value_from_hash_map(&contract, "$id")
+            .ok_or_else(|| Error::CorruptedData(String::from("unable to get contract id")))?
+            .try_into()
+            .map_err(|_| Error::CorruptedData(String::from("contract_id must be 32 bytes")))?;
 
         let documents_cbor_value = contract
             .get("documents")
@@ -418,41 +420,49 @@ impl Document {
             ciborium::de::from_reader(read_document_cbor)
                 .map_err(|_| Error::CorruptedData(String::from("unable to decode contract")))?;
 
-        let owner_id = match owner_id {
+        let owner_id: [u8; 32] = match owner_id {
             None => {
                 let owner_id: Vec<u8> = bytes_for_system_value_from_hash_map(&document, "$ownerId")
                     .ok_or_else(|| {
                         Error::CorruptedData(String::from("unable to get document $ownerId"))
                     })?;
                 document.remove("$ownerId");
-                owner_id
+                if owner_id.len() != 32 {
+                    return Err(Error::CorruptedData(String::from("invalid owner id")));
+                }
+                owner_id.as_slice().try_into()
             }
             Some(owner_id) => {
                 // we need to start by verifying that the owner_id is a 256 bit number (32 bytes)
                 if owner_id.len() != 32 {
                     return Err(Error::CorruptedData(String::from("invalid owner id")));
                 }
-                Vec::from(owner_id)
+                owner_id.try_into()
             }
-        };
+        }
+        .expect("conversion to 32bytes shouldn't fail");
 
-        let id = match document_id {
+        let id: [u8; 32] = match document_id {
             None => {
                 let document_id: Vec<u8> = bytes_for_system_value_from_hash_map(&document, "$id")
                     .ok_or_else(|| {
                     Error::CorruptedData(String::from("unable to get document $id"))
                 })?;
                 document.remove("$id");
-                document_id
+                if document_id.len() != 32 {
+                    return Err(Error::CorruptedData(String::from("invalid document id")));
+                }
+                document_id.as_slice().try_into()
             }
             Some(document_id) => {
                 // we need to start by verifying that the document_id is a 256 bit number (32 bytes)
                 if document_id.len() != 32 {
                     return Err(Error::CorruptedData(String::from("invalid document id")));
                 }
-                Vec::from(document_id)
+                document_id.try_into()
             }
-        };
+        }
+        .expect("document_id must be 32 bytes");
 
         // dev-note: properties is everything other than the id and owner id
         Ok(Document {
@@ -491,8 +501,12 @@ impl Document {
         // dev-note: properties is everything other than the id and owner id
         Ok(Document {
             properties,
-            owner_id: Vec::from(owner_id),
-            id: Vec::from(document_id),
+            owner_id: owner_id
+                .try_into()
+                .expect("try_into shouldn't fail, document_id must be 32 bytes"),
+            id: document_id
+                .try_into()
+                .expect("try_into shouldn't fail, document_id must be 32 bytes"),
         })
     }
 
@@ -506,8 +520,8 @@ impl Document {
             Ok(Some(Vec::from(owner_id.unwrap())))
         } else {
             match key_path {
-                "$id" => return Ok(Some(self.id.clone())),
-                "$ownerId" => return Ok(Some(self.owner_id.clone())),
+                "$id" => return Ok(Some(Vec::from(self.id))),
+                "$ownerId" => return Ok(Some(Vec::from(self.owner_id))),
                 _ => {}
             }
             let key_paths: Vec<&str> = key_path.split('.').collect::<Vec<&str>>();
