@@ -132,7 +132,7 @@ jobs:
         uses: docker://messense/rust-musl-cross:aarch64-musl
         with:
           workdir: /github/workspace/
-          entrypoint: node-grove/docker/build-aarch64-unknown-linux-musl.sh
+          entrypoint: node/docker/build-aarch64-unknown-linux-musl.sh
 
       - name: Build
         if: ${{ steps.set-target.outputs.result != 'aarch64-unknown-linux-musl' }}
