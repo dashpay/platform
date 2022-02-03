@@ -1,9 +1,10 @@
 [package]
 name = "rs-drive"
 description = "Dash drive built on top of GroveDB"
-version = "0.1.0"
+version = "0.22.0-dev.1"
 edition = "2021"
 license = "MIT"
+private = true
 
 [dependencies]
 serde = { version = "1.0.132", features = ["derive"] }
