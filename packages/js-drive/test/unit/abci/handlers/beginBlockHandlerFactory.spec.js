@@ -32,6 +32,7 @@ describe('beginBlockHandlerFactory', () => {
   let lastCommitInfo;
   let dppMock;
   let transactionalDppMock;
+  let synchronizeMasternodeIdentitiesMock;
 
   beforeEach(function beforeEach() {
     protocolVersion = Long.fromInt(1);
@@ -50,8 +51,9 @@ describe('beginBlockHandlerFactory', () => {
       setProtocolVersion: this.sinon.stub(),
     };
 
-    updateSimplifiedMasternodeListMock = this.sinon.stub();
+    updateSimplifiedMasternodeListMock = this.sinon.stub().resolves(false);
     waitForChainLockedHeightMock = this.sinon.stub();
+    synchronizeMasternodeIdentitiesMock = this.sinon.stub();
 
     beginBlockHandler = beginBlockHandlerFactory(
       blockExecutionDBTransactionsMock,
@@ -62,6 +64,7 @@ describe('beginBlockHandlerFactory', () => {
       transactionalDppMock,
       updateSimplifiedMasternodeListMock,
       waitForChainLockedHeightMock,
+      synchronizeMasternodeIdentitiesMock,
       loggerMock,
     );
 
@@ -87,7 +90,9 @@ describe('beginBlockHandlerFactory', () => {
     };
   });
 
-  it('should update height, start transactions return ResponseBeginBlock', async () => {
+  it('should update height, update masternode identities, start transactions return ResponseBeginBlock', async () => {
+    updateSimplifiedMasternodeListMock.resolves(true);
+
     const response = await beginBlockHandler(request);
 
     expect(response).to.be.an.instanceOf(ResponseBeginBlock);
@@ -113,6 +118,11 @@ describe('beginBlockHandlerFactory', () => {
     );
     expect(transactionalDppMock.setProtocolVersion).to.have.been.calledOnceWithExactly(
       protocolVersion.toNumber(),
+    );
+
+    expect(synchronizeMasternodeIdentitiesMock).to.have.been.calledOnceWithExactly(
+      coreChainLockedHeight,
+      false,
     );
   });
 
@@ -166,5 +176,6 @@ describe('beginBlockHandlerFactory', () => {
 
     expect(waitForChainLockedHeightMock).to.be.calledOnceWithExactly(coreChainLockedHeight);
     expect(blockExecutionDBTransactionsMock.abort).to.be.calledOnce();
+    expect(synchronizeMasternodeIdentitiesMock).to.have.not.been.called();
   });
 });

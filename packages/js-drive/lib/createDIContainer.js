@@ -125,6 +125,11 @@ const findAppropriateIndex = require('./document/query/findAppropriateIndex');
 const registerSystemDataContractFactory = require('./state/registerSystemDataContractFactory');
 const registerTopLevelDomainFactory = require('./state/registerTopLevelDomainFactory');
 const registerFeatureFlagFactory = require('./state/registerFeatureFlagFactory');
+const synchronizeMasternodeIdentitiesFactory = require('./identity/masternode/synchronizeMasternodeIdentitiesFactory');
+const createMasternodeIdentityFactory = require('./identity/masternode/createMasternodeIdentityFactory');
+const handleNewMasternodeFactory = require('./identity/masternode/handleNewMasternodeFactory');
+const handleUpdatedPubKeyOperatorFactory = require('./identity/masternode/handleUpdatedPubKeyOperatorFactory');
+const splitDocumentsIntoChunks = require('./identity/masternode/splitDocumentsIntoChunks');
 
 /**
  *
@@ -669,6 +674,18 @@ function createDIContainer(options) {
     waitForChainLockedHeight: asFunction(waitForChainLockedHeightFactory).singleton(),
 
     waitForCoreChainLockSync: asFunction(waitForCoreChainLockSyncFactory).singleton(),
+
+    waitReplicaSetInitialize: asFunction(waitReplicaSetInitializeFactory).singleton(),
+
+    synchronizeMasternodeIdentities: asFunction(synchronizeMasternodeIdentitiesFactory).singleton(),
+
+    createMasternodeIdentity: asFunction(createMasternodeIdentityFactory).singleton(),
+
+    handleNewMasternode: asFunction(handleNewMasternodeFactory).singleton(),
+
+    handleUpdatedPubKeyOperator: asFunction(handleUpdatedPubKeyOperatorFactory).singleton(),
+
+    splitDocumentsIntoChunks: asValue(splitDocumentsIntoChunks),
   });
 
   /**
