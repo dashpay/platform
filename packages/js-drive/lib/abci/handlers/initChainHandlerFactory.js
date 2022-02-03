@@ -15,6 +15,7 @@ const { asValue } = require('awilix');
  * @param {number} initialCoreChainLockedHeight
  * @param {ValidatorSet} validatorSet
  * @param {createValidatorSetUpdate} createValidatorSetUpdate
+ * @param {synchronizeMasternodeIdentities} synchronizeMasternodeIdentities
  * @param {BaseLogger} logger
  * @param {createInitialStateStructure} createInitialStateStructure
  * @param {groveDBStore} groveDBStore
@@ -51,6 +52,7 @@ function initChainHandlerFactory(
   initialCoreChainLockedHeight,
   validatorSet,
   createValidatorSetUpdate,
+  synchronizeMasternodeIdentities,
   logger,
   createInitialStateStructure,
   groveDBStore,
@@ -205,9 +207,15 @@ function initChainHandlerFactory(
       dashpayContract, { isTransactional: false },
     );
 
-    await updateSimplifiedMasternodeList(initialCoreChainLockedHeight, {
-      logger: contextLogger,
-    });
+    await updateSimplifiedMasternodeList(
+      initialCoreChainLockedHeight, {
+        logger: contextLogger,
+      },
+    );
+
+    await synchronizeMasternodeIdentities(initialCoreChainLockedHeight, true);
+
+    rootTree.rebuild();
 
     await createInitialStateStructure();
 
