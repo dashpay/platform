@@ -2,7 +2,6 @@
  *
  * @param {registerSystemDataContract} registerSystemDataContract
  * @param {registerTopLevelDomain} registerTopLevelDomain
- * @param {registerFeatureFlag} registerFeatureFlag
  * @param {Identifier} dpnsContractId
  * @param {Identifier} dpnsOwnerId
  * @param {PublicKey} dpnsOwnerPublicKey
@@ -25,7 +24,6 @@
 function registerSystemDataContractsFactory(
   registerSystemDataContract,
   registerTopLevelDomain,
-  registerFeatureFlag,
   dpnsContractId,
   dpnsOwnerId,
   dpnsOwnerPublicKey,

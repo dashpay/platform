@@ -22,14 +22,6 @@ const banner = '\n ____       ______      ____        __  __                 ___
 console.log(chalk.hex('#008de4')(banner));
 
 (async function main() {
-  /**
-   * Initialize hashFunction module
-   *
-   * It needs to be initialized prior to anything else - createDIContainer uses hashFunction,
-   * and it won't work if left uninitialized. This is workaround to blake3 causing a segfault
-   * on node14, and init function initializes WASM build instead of NEON, which is default behaviour
-   */
-
   const container = createDIContainer(process.env);
   const logger = container.resolve('logger');
   const dpp = container.resolve('dpp');
@@ -64,41 +56,6 @@ console.log(chalk.hex('#008de4')(banner));
 
   await dpp.initialize();
   await transactionalDpp.initialize();
-
-  /**
-   * Initialize Block Execution Contexts
-   */
-
-  /**
-   * @type {BlockExecutionContextStack}
-   */
-  const blockExecutionContextStack = container.resolve('blockExecutionContextStack');
-
-  /**
-   * @type {BlockExecutionContextStackRepository}
-   */
-  const blockExecutionContextStackRepository = container.resolve('blockExecutionContextStackRepository');
-
-  /**
-   * @type {BlockExecutionContext}
-   */
-  const blockExecutionContext = container.resolve('blockExecutionContext');
-
-  const persistedBlockExecutionContextStack = await blockExecutionContextStackRepository.fetch();
-
-  blockExecutionContextStack.setContexts(persistedBlockExecutionContextStack.getContexts());
-
-  blockExecutionContext.populate(blockExecutionContextStack.getLatest());
-
-  /**
-   * Initialize Credits Distribution Pool
-   */
-
-  const creditsDistributionPoolRepository = container.resolve('creditsDistributionPoolRepository');
-  const creditsDistributionPool = container.resolve('creditsDistributionPool');
-
-  const fetchedCreditsDistributionPool = await creditsDistributionPoolRepository.fetch();
-  creditsDistributionPool.populate(fetchedCreditsDistributionPool.toJSON());
 
   /**
    * Make sure Core is synced

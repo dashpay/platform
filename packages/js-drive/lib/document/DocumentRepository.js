@@ -44,9 +44,11 @@ class DocumentRepository {
       document.getType(),
     );
 
-    const documentTreePath = documentTypeTreePath.push(Buffer.from(0));
+    const documentTreePath = documentTypeTreePath.concat(
+      [Buffer.from([0])],
+    );
 
-    const [fetchedDocument] = await this.storage.get(
+    const fetchedDocument = await this.storage.get(
       documentTreePath,
       document.getId().toBuffer(),
       { useTransaction },
