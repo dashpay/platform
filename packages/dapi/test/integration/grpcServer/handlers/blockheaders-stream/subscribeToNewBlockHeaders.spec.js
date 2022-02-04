@@ -6,23 +6,33 @@ const subscribeToNewBlockHeaders = require('../../../../../lib/grpcServer/handle
 const cache = require('../../../../../lib/grpcServer/handlers/blockheaders-stream/cache');
 const {NEW_BLOCK_HEADERS_PROPAGATE_INTERVAL} = require('../../../../../lib/grpcServer/handlers/blockheaders-stream/constants');
 const ProcessMediator = require('../../../../../lib/grpcServer/handlers/blockheaders-stream/ProcessMediator');
-
+const AppMediator = require('../../.././../../lib/mediators/app-mediator');
+const sinon = require('sinon')
 const wait = require('../../../../../lib/utils/wait');
+const chainlocks = require('../../../../../lib/grpcServer/handlers/blockheaders-stream/chainlocks');
 
 describe('subscribeToNewBlockHeaders', () => {
+  let appMediator;
   let mediator;
   let zmqClient;
 
   const blockHeaders = {};
   const chainLocks = {};
 
-  beforeEach(async function () {
+  sinon.stub(dashCoreRpcClient, 'getBlockHeader')
+    .callsFake(async (hash) => {
+      return blockHeaders[hash].toBuffer().toString('hex')
+    });
+
+  beforeEach(async () => {
+    appMediator = new AppMediator();
     mediator = new ProcessMediator();
-    this.sinon.stub(dashCoreRpcClient, 'getBlockHeader')
-      .callsFake(async (hash) => blockHeaders[hash].toBuffer().toString('hex'));
+
+    dashCoreRpcClient.getBlockHeader.resetHistory()
+    cache.purge()
 
     zmqClient = new ZmqClient();
-    this.sinon.stub(zmqClient.subscriberSocket, 'connect')
+    sinon.stub(zmqClient.subscriberSocket, 'connect')
       .callsFake(() => {
         zmqClient.subscriberSocket.emit('connect');
       });
@@ -94,6 +104,14 @@ describe('subscribeToNewBlockHeaders', () => {
     chainLocks[chainLockOne.height] = chainLockOne;
     chainLocks[chainLockTwo.height] = chainLockTwo;
     chainLocks[chainLockThree.height] = chainLockThree;
+
+    zmqClient.on(zmqClient.topics.rawchainlock, (chainlock) => {
+      chainlocks.updateBestChainLock(new ChainLock(chainlock))
+      appMediator.emit('chainlock', chainlocks.getBestChainLock())
+    });
+    zmqClient.on(zmqClient.topics.hashblock, (blockhash) => {
+      appMediator.emit(appMediator.events.hashblock, blockhash)
+    });
   });
 
   it('should add blocks and latest chain lock in cache and send them back when historical data is sent', async () => {
@@ -112,6 +130,7 @@ describe('subscribeToNewBlockHeaders', () => {
 
     subscribeToNewBlockHeaders(
       mediator,
+      appMediator,
       zmqClient,
       dashCoreRpcClient,
     );
@@ -145,6 +164,7 @@ describe('subscribeToNewBlockHeaders', () => {
 
     subscribeToNewBlockHeaders(
       mediator,
+      appMediator,
       zmqClient,
       dashCoreRpcClient,
     );
@@ -161,7 +181,7 @@ describe('subscribeToNewBlockHeaders', () => {
     await new Promise((resolve) => setImmediate(resolve));
     mediator.emit(ProcessMediator.EVENTS.CLIENT_DISCONNECTED);
 
-    const expectedHeaders = { ...blockHeaders };
+    const expectedHeaders = {...blockHeaders};
     delete expectedHeaders[hashes[0]];
     expect(receivedHeaders).to.deep.equal(expectedHeaders);
   });
@@ -175,6 +195,7 @@ describe('subscribeToNewBlockHeaders', () => {
 
     subscribeToNewBlockHeaders(
       mediator,
+      appMediator,
       zmqClient,
       dashCoreRpcClient,
     );
@@ -184,19 +205,17 @@ describe('subscribeToNewBlockHeaders', () => {
     mediator.emit(ProcessMediator.EVENTS.HISTORICAL_DATA_SENT);
     zmqClient.subscriberSocket.emit('message', zmqClient.topics.rawchainlock, chainLocks[locksHeights[1]].toBuffer());
     zmqClient.subscriberSocket.emit('message', zmqClient.topics.rawchainlock, chainLocks[locksHeights[2]].toBuffer());
-
     await wait(NEW_BLOCK_HEADERS_PROPAGATE_INTERVAL + 100);
     mediator.emit(ProcessMediator.EVENTS.CLIENT_DISCONNECTED);
-
-    const expectedChainLocks = { ...chainLocks };
+    const expectedChainLocks = {...chainLocks};
     delete expectedChainLocks[locksHeights[1]];
     expect(receivedChainLocks).to.deep.equal(expectedChainLocks);
   });
 
   it('should use cache when historical data is sent', async () => {
+    const spyCache = sinon.spy(cache)
     const receivedHeaders = {};
     let latestChainLock = null;
-    console.log(this)
 
     mediator.on(ProcessMediator.EVENTS.BLOCK_HEADERS, (headers) => {
       headers.forEach((header) => {
@@ -210,6 +229,7 @@ describe('subscribeToNewBlockHeaders', () => {
 
     subscribeToNewBlockHeaders(
       mediator,
+      appMediator,
       zmqClient,
       dashCoreRpcClient,
     );
@@ -225,14 +245,24 @@ describe('subscribeToNewBlockHeaders', () => {
 
     mediator.emit(ProcessMediator.EVENTS.HISTORICAL_DATA_SENT);
 
+    await new Promise((resolve) => setImmediate(resolve));
+    mediator.emit(ProcessMediator.EVENTS.CLIENT_DISCONNECTED);
+
     subscribeToNewBlockHeaders(
       mediator,
+      appMediator,
       zmqClient,
       dashCoreRpcClient,
     );
 
-    await new Promise((resolve) => setImmediate(resolve));
-    mediator.emit(ProcessMediator.EVENTS.CLIENT_DISCONNECTED);
+    zmqClient.subscriberSocket.emit('message', zmqClient.topics.hashblock, Buffer.from(hashes[0], 'hex'));
+    zmqClient.subscriberSocket.emit('message', zmqClient.topics.hashblock, Buffer.from(hashes[1], 'hex'));
+    zmqClient.subscriberSocket.emit('message', zmqClient.topics.hashblock, Buffer.from(hashes[2], 'hex'));
+
+    zmqClient.subscriberSocket.emit('message', zmqClient.topics.rawchainlock, chainLocks[locksHeights[0]].toBuffer());
+    zmqClient.subscriberSocket.emit('message', zmqClient.topics.rawchainlock, chainLocks[locksHeights[1]].toBuffer());
+
+    mediator.emit(ProcessMediator.EVENTS.HISTORICAL_DATA_SENT);
 
     expect(dashCoreRpcClient.getBlockHeader.callCount).to.be.equal(3)
     expect(spyCache.set.callCount).to.be.equal(3)

@@ -16,5 +16,6 @@ module.exports = {
   },
   set: (key, value) => {
     cache.set(key, value)
-  }
+  },
+  purge: () => cache.reset()
 }

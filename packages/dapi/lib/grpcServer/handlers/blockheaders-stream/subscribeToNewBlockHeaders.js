@@ -1,22 +1,26 @@
-const { BlockHeader } = require('@dashevo/dashcore-lib');
+const {BlockHeader} = require('@dashevo/dashcore-lib');
 const ProcessMediator = require('./ProcessMediator');
 const wait = require('../../../utils/wait');
-const { NEW_BLOCK_HEADERS_PROPAGATE_INTERVAL } = require('./constants');
+const {NEW_BLOCK_HEADERS_PROPAGATE_INTERVAL} = require('./constants');
 const cache = require('./cache')
 const chainlocks = require('./chainlocks')
+const {has} = require("lodash");
 
 /**
  * @typedef subscribeToNewBlockHeaders
  * @param {ProcessMediator} mediator
+ * @param {AppMediator} appMediator
  * @param {CoreRpcClient} coreAPI
  * @param {ZmqClient} zmqClient
  */
-function subscribeToNewBlockHeaders(
-  mediator,
-  zmqClient,
-  coreAPI,
+function subscribeToNewBlockHeaders(mediator,
+                                    appMediator,
+                                    zmqClient,
+                                    coreAPI,
 ) {
-  const cachedHeadersHashes = new Set();
+  const pendingHeadersHashes = new Set();
+
+  let lastChainLock
 
   let isClientConnected = true;
 
@@ -24,27 +28,24 @@ function subscribeToNewBlockHeaders(
    * @param {Buffer} hash
    */
   const blockHashHandler = (hash) => {
-    cachedHeadersHashes.add(hash.toString('hex'));
+    pendingHeadersHashes.add(hash.toString('hex'));
   };
 
-  const rawChainLockHandler = () => {
-    mediator.emit(ProcessMediator.EVENTS.CHAIN_LOCK, chainlocks.getBestChainLock());
+  /**
+   *
+   * @param rawChainLock {Buffer}
+   */
+  const rawChainLockHandler = (rawChainLock) => {
+    lastChainLock = rawChainLock
   };
 
-  zmqClient.on(
-    zmqClient.topics.hashblock,
-    blockHashHandler,
-  );
-
-  zmqClient.on(
-    zmqClient.topics.rawchainlock,
-    rawChainLockHandler,
-  );
+  appMediator.on(appMediator.events.hashblock, blockHashHandler);
+  appMediator.on(appMediator.events.chainlock, rawChainLockHandler);
 
   mediator.on(ProcessMediator.EVENTS.HISTORICAL_BLOCK_HEADERS_SENT, (hashes) => {
     // Remove data from cache by hashes
     hashes.forEach((hash) => {
-      cachedHeadersHashes.delete(hash);
+      pendingHeadersHashes.delete(hash);
     });
   });
 
@@ -57,10 +58,10 @@ function subscribeToNewBlockHeaders(
     // as new data (through the cache) continuously after that.
     // Cache is populated from ZMQ events.
     while (isClientConnected) {
-      if (cachedHeadersHashes.size) {
+      if (pendingHeadersHashes.size) {
         // TODO: figure out whether it's possible to omit new BlockHeader() conversion
         // and directly send bytes to the client
-        const blockHeaders = await Promise.all(Array.from(cachedHeadersHashes)
+        const blockHeaders = await Promise.all(Array.from(pendingHeadersHashes)
           .map(async (hash) => {
             const cachedBlockHeader = cache.get(hash)
 
@@ -70,11 +71,16 @@ function subscribeToNewBlockHeaders(
               return new BlockHeader(Buffer.from(rawBlockHeader, 'hex'));
             }
 
-            return cachedBlockHeader
+            return new BlockHeader(Buffer.from(cachedBlockHeader, 'hex'));
           }));
 
         mediator.emit(ProcessMediator.EVENTS.BLOCK_HEADERS, blockHeaders);
-        cachedHeadersHashes.clear();
+        pendingHeadersHashes.clear();
+      }
+
+      if (lastChainLock) {
+        mediator.emit(ProcessMediator.EVENTS.CHAIN_LOCK, chainlocks.getBestChainLock());
+        lastChainLock = null
       }
 
       // TODO: pick a right time interval having in mind that issuance of the block headers
@@ -86,9 +92,10 @@ function subscribeToNewBlockHeaders(
   mediator.once(ProcessMediator.EVENTS.CLIENT_DISCONNECTED, () => {
     isClientConnected = false;
     mediator.removeAllListeners();
-    zmqClient.removeListener(zmqClient.topics.hashblock, blockHashHandler);
-    zmqClient.removeListener(zmqClient.topics.rawchainlock, rawChainLockHandler);
+    appMediator.removeListener(appMediator.events.hashblock, blockHashHandler);
+    appMediator.removeListener(appMediator.events.chainlock, rawChainLockHandler);
   });
 }
+
 
 module.exports = subscribeToNewBlockHeaders;

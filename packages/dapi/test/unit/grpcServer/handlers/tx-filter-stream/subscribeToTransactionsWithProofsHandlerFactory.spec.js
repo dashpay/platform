@@ -62,7 +62,7 @@ describe('subscribeToTransactionsWithProofsHandlerFactory', () => {
   let coreAPIMock;
   let getMemPoolTransactionsMock;
 
-  const writableStub = sinon.stub(AcknowledgingWritable.prototype, 'write');
+  //const writableStub = sinon.stub(AcknowledgingWritable.prototype, 'write');
 
   beforeEach(function beforeEach() {
     const bloomFilterMessage = new BloomFilter();

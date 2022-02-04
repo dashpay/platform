@@ -30,11 +30,15 @@ const cache = require("../../../../../lib/grpcServer/handlers/blockheaders-strea
 let coreAPIMock;
 let zmqClientMock;
 
-describe('subscribeToBlockHeadersWithChainLocksHandlerFactory', () => {
+describe.only('subscribeToBlockHeadersWithChainLocksHandlerFactory', () => {
   let call;
   let subscribeToBlockHeadersWithChainLocksHandler;
   let getHistoricalBlockHeadersIterator;
   let subscribeToNewBlockHeadersMock;
+
+  const cacheSpy = sinon.spy(cache);
+
+  const writableStub = sinon.stub(AcknowledgingWritable.prototype, 'write');
 
   beforeEach(function () {
     coreAPIMock = {
@@ -45,7 +49,11 @@ describe('subscribeToBlockHeadersWithChainLocksHandlerFactory', () => {
       getBlockHash: sinon.stub(),
       getBestChainLock: sinon.stub(),
     };
+
     subscribeToNewBlockHeadersMock = sinon.stub();
+
+    cache.set.resetHistory()
+    cache.get.resetHistory()
 
     async function* asyncGenerator() {
       yield [{toBuffer: () => Buffer.from('fake', 'utf-8')}];
@@ -64,9 +72,7 @@ describe('subscribeToBlockHeadersWithChainLocksHandlerFactory', () => {
       );
   });
 
-
   it('should subscribe to newBlockHeaders', async function () {
-    sinon.stub(AcknowledgingWritable.prototype, 'write');
 
     const blockHash = Buffer.from('00000bafbc94add76cb75e2ec92894837288a481e5c005f6563d91623bf8bc2c', 'hex');
 
@@ -95,8 +101,6 @@ describe('subscribeToBlockHeadersWithChainLocksHandlerFactory', () => {
   });
 
   it('should subscribe from block hash', async function () {
-    const writableStub = sinon.stub(AcknowledgingWritable.prototype, 'write');
-
     const blockHash = Buffer.from('00000bafbc94add76cb75e2ec92894837288a481e5c005f6563d91623bf8bc2c', 'hex');
 
     let request = new BlockHeadersWithChainLocksRequest();
@@ -146,8 +150,6 @@ describe('subscribeToBlockHeadersWithChainLocksHandlerFactory', () => {
   });
 
   it('should subscribe from block height', async function () {
-    sinon.stub(AcknowledgingWritable.prototype, 'write');
-
     const blockHeight = 1;
     const count = 5;
 
@@ -178,8 +180,6 @@ describe('subscribeToBlockHeadersWithChainLocksHandlerFactory', () => {
   });
 
   it('should handle getBlockStats RPC method errors', async function () {
-    sinon.stub(AcknowledgingWritable.prototype, 'write');
-
     const blockHash = Buffer.from('00000bafbc94add76cb75e2ec92894837288a481e5c005f6563d91623bf8bc2c', 'hex');
 
     let request = new BlockHeadersWithChainLocksRequest();
@@ -230,7 +230,6 @@ describe('subscribeToBlockHeadersWithChainLocksHandlerFactory', () => {
 
 
   describe('getHistoricalBlockHeaders and cache', function () {
-    const cacheSpy = sinon.spy(cache);
     const blockHash = Buffer.from('00000bafbc94add76cb75e2ec92894837288a481e5c005f6563d91623bf8bc2c', 'hex');
     const fakeBlockHeaderHex = '00000020272e374a06c87a0ce0e6ee1a0754c98b9ec2493e7c0ac7ba41a0730000000000568b3c4156090db4d8db5447762e95dd1d4c921c96801a9086720ded85266325916cc05caa94001c5caf3595'
     const differentFakeBlockHeaderHex = '000000202be60663802ead0740cb6d6e49ee7824481280f03c71369eb90f7b00000000006abd277facc8cf02886d88662dbcc2adb6d8de7a491915e74bed4d835656a4f1f26dc05ced93001ccf81cabc'
@@ -242,7 +241,6 @@ describe('subscribeToBlockHeadersWithChainLocksHandlerFactory', () => {
 
     call = new GrpcCallMock(sinon, request);
 
-    sinon.stub(AcknowledgingWritable.prototype, 'write');
     beforeEach(function () {
       historicalBlockHeadersIterator = getHistoricalBlockHeadersIteratorFactory(coreAPIMock)
 
@@ -391,9 +389,7 @@ describe('subscribeToBlockHeadersWithChainLocksHandlerFactory', () => {
     // the case where we have blockHeaders in cache, but missing something in the middle
     // in this case we pick up last cached blockHeader without a gap
     it('should use cache for different ranges and gaps', async function () {
-      sinon.stub(AcknowledgingWritable.prototype, 'write')
       const fakeBlockHeaderHex = '00000020272e374a06c87a0ce0e6ee1a0754c98b9ec2493e7c0ac7ba41a0730000000000568b3c4156090db4d8db5447762e95dd1d4c921c96801a9086720ded85266325916cc05caa94001c5caf3595'
-      const cacheSpy = sinon.spy(cache);
 
       const blockHash = Buffer.from('00000bafbc94add76cb75e2ec92894837288a481e5c005f6563d91623bf8bc2c', 'hex');
 

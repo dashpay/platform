@@ -61,6 +61,7 @@ async function sendChainLockResponse(call, chainLock) {
  * @param {CoreRpcClient} coreAPI
  * @param {ZmqClient} zmqClient
  * @param {subscribeToNewBlockHeaders} subscribeToNewBlockHeaders
+ * @param appMediator {AppMediator}
  * @return {subscribeToBlockHeadersWithChainLocksHandler}
  */
 function subscribeToBlockHeadersWithChainLocksHandlerFactory(
@@ -68,6 +69,7 @@ function subscribeToBlockHeadersWithChainLocksHandlerFactory(
   coreAPI,
   zmqClient,
   subscribeToNewBlockHeaders,
+  appMediator,
 ) {
   /**
    * @typedef subscribeToBlockHeadersWithChainLocksHandler
@@ -107,7 +109,7 @@ function subscribeToBlockHeadersWithChainLocksHandlerFactory(
     );
 
     if (newHeadersRequested) {
-      subscribeToNewBlockHeaders(mediator, zmqClient, coreAPI);
+      subscribeToNewBlockHeaders(mediator, appMediator, zmqClient, coreAPI);
     }
 
     let fromBlock;

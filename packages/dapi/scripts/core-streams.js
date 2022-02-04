@@ -1,7 +1,8 @@
 const dotenv = require('dotenv');
 const grpc = require('@grpc/grpc-js');
 const chainlocks = require('../lib/grpcServer/handlers/blockheaders-stream/chainlocks');
-const { ChainLock } = require('@dashevo/dashcore-lib');
+const {ChainLock} = require('@dashevo/dashcore-lib');
+const AppMediator = require('../lib/mediators/app-mediator')
 
 const {
   client: {
@@ -37,7 +38,7 @@ const {
 dotenv.config();
 
 const config = require('../lib/config');
-const { validateConfig } = require('../lib/config/validator');
+const {validateConfig} = require('../lib/config/validator');
 const log = require('../lib/log');
 
 const ZmqClient = require('../lib/externalApis/dashcore/ZmqClient');
@@ -58,6 +59,8 @@ const subscribeToNewTransactions = require('../lib/transactionsFilter/subscribeT
 const getHistoricalTransactionsIteratorFactory = require('../lib/transactionsFilter/getHistoricalTransactionsIteratorFactory');
 const getMemPoolTransactionsFactory = require('../lib/transactionsFilter/getMemPoolTransactionsFactory');
 
+const appMediator = new AppMediator()
+
 async function main() {
   // Validate config
   const configValidationResult = validateConfig(config);
@@ -77,7 +80,13 @@ async function main() {
   dashCoreZmqClient.on(ZmqClient.events.CONNECTION_DELAY, log.warn);
   dashCoreZmqClient.on(ZmqClient.events.MONITOR_ERROR, log.warn);
 
-  dashCoreZmqClient.on(dashCoreZmqClient.topics.rawchainlock, (chainlock) => chainlocks.updateBestChainLock(new ChainLock(chainlock)));
+  dashCoreZmqClient.on(dashCoreZmqClient.topics.rawchainlock, (chainlock) => {
+    chainlocks.updateBestChainLock(new ChainLock(chainlock))
+    appMediator.emit(appMediator.events.chainlock, chainlocks.getBestChainLock())
+  });
+  dashCoreZmqClient.on(dashCoreZmqClient.topics.hashblock, (hashblock) => {
+    appMediator.emit(appMediator.events.hashblock, new BlockHeader(hashblock))
+  });
 
   // Wait until zmq connection is established
   log.info(`Connecting to dashcore ZMQ on ${dashCoreZmqClient.connectionString}`);
@@ -164,6 +173,7 @@ async function main() {
       dashCoreRpcClient,
       dashCoreZmqClient,
       subscribeToNewBlockHeaders,
+      appMediator
     );
 
   const wrappedSubscribeToBlockHeadersWithChainLocks = jsonToProtobufHandlerWrapper(
