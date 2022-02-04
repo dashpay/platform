@@ -61,13 +61,27 @@ function initChainHandlerFactory(
 
     await createInitialStateStructure();
 
+    let appHash = await groveDBStore.getRootHash();
+
+    console.log(`structure ${appHash.toString('hex').toUpperCase()}`);
+
     await registerSystemDataContracts(contextLogger, time);
+
+    appHash = await groveDBStore.getRootHash();
+
+    console.log(`system contracts ${appHash.toString('hex').toUpperCase()}`);
 
     await synchronizeMasternodeIdentities(initialCoreChainLockedHeight);
 
+    appHash = await groveDBStore.getRootHash();
+
+    console.log(`masternode identities ${appHash.toString('hex').toUpperCase()}`);
+
     await groveDBStore.commitTransaction();
 
-    const appHash = await groveDBStore.getRootHash();
+    appHash = await groveDBStore.getRootHash();
+
+    console.log(`commit ${appHash.toString('hex').toUpperCase()}`);
 
     // Set initial validator set
 
