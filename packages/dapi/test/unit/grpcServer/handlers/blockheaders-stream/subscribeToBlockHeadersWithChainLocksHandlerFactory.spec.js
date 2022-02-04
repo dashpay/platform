@@ -73,7 +73,6 @@ describe.only('subscribeToBlockHeadersWithChainLocksHandlerFactory', () => {
   });
 
   it('should subscribe to newBlockHeaders', async function () {
-
     const blockHash = Buffer.from('00000bafbc94add76cb75e2ec92894837288a481e5c005f6563d91623bf8bc2c', 'hex');
 
     let request = new BlockHeadersWithChainLocksRequest();
@@ -102,8 +101,6 @@ describe.only('subscribeToBlockHeadersWithChainLocksHandlerFactory', () => {
 
   it('should subscribe from block hash', async function () {
     const blockHash = Buffer.from('00000bafbc94add76cb75e2ec92894837288a481e5c005f6563d91623bf8bc2c', 'hex');
-
-    let request = new BlockHeadersWithChainLocksRequest();
     request.setFromBlockHash(blockHash);
     request.setCount(0);
 
@@ -117,7 +114,7 @@ describe.only('subscribeToBlockHeadersWithChainLocksHandlerFactory', () => {
       blockHash: Buffer.from('fakeHash', 'hex'),
     });
 
-    coreAPIMock.getBlockStats.resolves({height: 1});
+    coreAPIMock.getBlockStats.resolves({ height: 1 });
 
     await subscribeToBlockHeadersWithChainLocksHandler(call);
 
@@ -203,7 +200,7 @@ describe.only('subscribeToBlockHeadersWithChainLocksHandlerFactory', () => {
     }
 
     try {
-      coreAPIMock.getBlockStats.throws({code: -8});
+      coreAPIMock.getBlockStats.throws({ code: -8 });
 
       await subscribeToBlockHeadersWithChainLocksHandler(call);
 

@@ -109,7 +109,7 @@ function subscribeToBlockHeadersWithChainLocksHandlerFactory(
     );
 
     if (newHeadersRequested) {
-      subscribeToNewBlockHeaders(mediator, appMediator, zmqClient, coreAPI);
+      subscribeToNewBlockHeaders(mediator, zmqClient, coreAPI);
     }
 
     let fromBlock;
