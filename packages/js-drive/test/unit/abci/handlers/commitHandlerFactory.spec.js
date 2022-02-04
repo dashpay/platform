@@ -17,7 +17,6 @@ const RootTreeMock = require('../../../../lib/test/mock/RootTreeMock');
 
 const BlockExecutionDBTransactionsMock = require('../../../../lib/test/mock/BlockExecutionStoreTransactionsMock');
 const BlockExecutionContextMock = require('../../../../lib/test/mock/BlockExecutionContextMock');
-const DataCorruptedError = require('../../../../lib/abci/handlers/errors/DataCorruptedError');
 const LoggerMock = require('../../../../lib/test/mock/LoggerMock');
 const BlockExecutionContextRepository = require('../../../../lib/blockExecution/BlockExecutionContextStackRepository');
 

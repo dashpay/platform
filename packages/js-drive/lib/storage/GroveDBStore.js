@@ -1,10 +1,11 @@
 class GroveDBStore {
   /**
-   * @param {GroveDB} db
+   * @param {Drive} rsDrive
    * @param {string} [name]
    */
-  constructor(db, name = undefined) {
-    this.db = db;
+  constructor(rsDrive, name = undefined) {
+    this.rsDrive = rsDrive;
+    this.db = rsDrive.getGroveDB();
     this.name = name;
   }
 
@@ -113,10 +114,6 @@ class GroveDBStore {
     return value;
   }
 
-  async getWithQuery(queryPath, options) {
-
-  }
-
   /**
    * Delete value by key
    *
@@ -126,7 +123,7 @@ class GroveDBStore {
    * @param {boolean} [options.useTransaction=false]
    * @return {Promise<GroveDBStore>}
    */
-  async delete(path, key, options = { }) {
+  async delete(path, key, options = {}) {
     await this.db.delete(
       path,
       key,
@@ -144,7 +141,7 @@ class GroveDBStore {
    * @param {boolean} [options.useTransaction=false]
    * @return {Promise<GroveDBStore>}
    */
-  async getAux(key, options) {
+  async getAux(key, options = {}) {
     return this.db.getAux(
       key,
       options.useTransaction || false,
@@ -160,7 +157,7 @@ class GroveDBStore {
    * @param {boolean} [options.useTransaction=false]
    * @return {Promise<GroveDBStore>}
    */
-  async putAux(key, value, options) {
+  async putAux(key, value, options = {}) {
     await this.db.putAux(
       key,
       value,
@@ -179,7 +176,7 @@ class GroveDBStore {
    * @param {boolean} [options.useTransaction=false]
    * @return {Promise<GroveDBStore>}
    */
-  async deleteAux(key, value, options) {
+  async deleteAux(key, value, options = {}) {
     await this.db.deleteAux(
       key,
       value,
@@ -192,20 +189,56 @@ class GroveDBStore {
   /**
    * Get tree root hash
    *
+   * @param {Object} [options]
+   * @param {boolean} [options.useTransaction=false]
    * @return {Buffer}
    */
-  async getRootHash() {
-    return Buffer.from(await this.db.rootHash());
+  async getRootHash(options = {}) {
+    return this.db.getRootHash(options.useTransaction || false);
   }
 
   /**
-   * Get proof for array of keys
-   *
-   * @param {PathQuery} query
-   * @return {Buffer}
+   * @return {Promise<void>}
    */
-  getProve(query) {
-    return this.db.proof(query);
+  async startTransaction() {
+    return this.db.startTransaction();
+  }
+
+  /**
+   * @return {Promise<void>}
+   */
+  async isTransactionStarted() {
+    return this.db.isTransactionStarted();
+  }
+
+  /**
+   * Rollback transaction to this initial state when it was created
+   *
+   * @returns {Promise<void>}
+   */
+  async rollbackTransaction() {
+    return this.db.rollbackTransaction();
+  }
+
+  /**
+   * @return {Promise<void>}
+   */
+  async commitTransaction() {
+    return this.db.commitTransaction();
+  }
+
+  /**
+   * @return {Promise<void>}
+   */
+  async abortTransaction() {
+    return this.db.abortTransaction();
+  }
+
+  /**
+   * @return {Drive}
+   */
+  getDrive() {
+    return this.rsDrive;
   }
 
   /**

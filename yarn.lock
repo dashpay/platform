@@ -1494,7 +1494,7 @@ __metadata:
   languageName: unknown
   linkType: soft
 
-"@dashevo/dpp@workspace:packages/js-dpp, @dashevo/dpp@workspace:~":
+"@dashevo/dpp@workspace:packages/js-dpp, @dashevo/dpp@workspace:~, @dashevo/dpp@~0.22.0-dev.7":
   version: 0.0.0-use.local
   resolution: "@dashevo/dpp@workspace:packages/js-dpp"
   dependencies:
@@ -1576,7 +1576,7 @@ __metadata:
     "@dashevo/feature-flags-contract": "workspace:~"
     "@dashevo/grpc-common": "workspace:~"
     "@dashevo/masternode-reward-shares-contract": "workspace:~"
-    "@dashevo/node-grove": ^0.0.10
+    "@dashevo/rs-drive": ~0.22.0-dev.1
     "@types/pino": ^6.3.0
     ajv: ^8.6.0
     ajv-keywords: ^5.0.0
@@ -1685,15 +1685,6 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@dashevo/node-grove@npm:^0.0.10":
-  version: 0.0.10
-  resolution: "@dashevo/node-grove@npm:0.0.10"
-  dependencies:
-    cargo-cp-artifact: ^0.1.6
-  checksum: 69301460ddd6cd8e1379d77acb142438eedc58c1f3bc482123279840554e9e3eaeff04cbe77da9ee099140ff703fde62773641effd9a358c7edbffc572fc80b1
-  languageName: node
-  linkType: hard
-
 "@dashevo/platform-test-suite@workspace:packages/platform-test-suite":
   version: 0.0.0-use.local
   resolution: "@dashevo/platform-test-suite@workspace:packages/platform-test-suite"
@@ -1761,6 +1752,19 @@ __metadata:
   version: 1.0.4
   resolution: "@dashevo/re2-wasm@npm:1.0.4"
   checksum: 4f1fca10c5190387e5652a7f900de52b15e68c66ca81ac0db4f368f2cfc95335eb2c4c6ee74c7204869ad937da4a84565411fdf33d308af89eaf41fda766e7be
+  languageName: node
+  linkType: hard
+
+"@dashevo/rs-drive@npm:~0.22.0-dev.1":
+  version: 0.22.0-dev.1
+  resolution: "@dashevo/rs-drive@npm:0.22.0-dev.1"
+  dependencies:
+    "@dashevo/dpp": ~0.22.0-dev.7
+    cargo-cp-artifact: ^0.1.6
+    cbor: ^8.1.0
+    neon-load-or-build: ^2.2.2
+    neon-tag-prebuild: "github:shumkov/neon-tag-prebuild#patch-1"
+  checksum: 6a0da75ecdd9b9dc2fe540670ddcb68477fb4d9d865d1b26a7384060b86c574ed49f8fca3a37d8b7a1795350361d5346ab95a67f9682d5ebbb3235bbe3f1e0ec
   languageName: node
   linkType: hard
 
@@ -4387,7 +4391,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"cbor@npm:^8.0.0":
+"cbor@npm:^8.0.0, cbor@npm:^8.1.0":
   version: 8.1.0
   resolution: "cbor@npm:8.1.0"
   dependencies:
@@ -11283,6 +11287,18 @@ fsevents@~2.3.2:
   languageName: node
   linkType: hard
 
+"neon-tag-prebuild@github:shumkov/neon-tag-prebuild#patch-1":
+  version: 1.1.0
+  resolution: "neon-tag-prebuild@https://github.com/shumkov/neon-tag-prebuild.git#commit=a429834da27432b129eceb737e4d2b3f03fa5496"
+  dependencies:
+    mkdirp: ^1.0.4
+    node-abi: ^2.19.1
+  bin:
+    neon-tag-prebuild: ./bin.js
+  checksum: 00a16bf27c06e0fa021be8019942490b4dc4f9cfd09b13eda042fdbc1f3873b7d74438f3b0d327651f77b93d087dd6ca5b9497bfc73457d12870f15cff0f0066
+  languageName: node
+  linkType: hard
+
 "nested-error-stacks@npm:^1.0.0, nested-error-stacks@npm:^1.0.1":
   version: 1.0.2
   resolution: "nested-error-stacks@npm:1.0.2"
@@ -11322,7 +11338,7 @@ fsevents@~2.3.2:
   languageName: node
   linkType: hard
 
-"node-abi@npm:^2.7.0":
+"node-abi@npm:^2.19.1, node-abi@npm:^2.7.0":
   version: 2.30.1
   resolution: "node-abi@npm:2.30.1"
   dependencies:

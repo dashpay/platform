@@ -1,12 +1,6 @@
-const { hash } = require('@dashevo/dpp/lib/util/hash');
-
 /**
  * @param {DashPlatformProtocol} dpp
  * @param {DocumentRepository} documentRepository
- * @param {DocumentRepository} previousDocumentRepository
- * @param {RootTree} rootTree
- * @param {RootTree} previousRootTree
- * @param {Identifier} dashPreorderDocumentId
  * @param {Identifier} dashDomainDocumentId
  * @param {Buffer} dashPreorderSalt
  *
@@ -15,10 +9,7 @@ const { hash } = require('@dashevo/dpp/lib/util/hash');
 function registerTopLevelDomainFactory(
   dpp,
   documentRepository,
-  previousDocumentRepository,
-  rootTree,
-  previousRootTree,
-  dashPreorderDocumentId,
+  // dashPreorderDocumentId,
   dashDomainDocumentId,
   dashPreorderSalt,
 ) {
@@ -28,11 +19,11 @@ function registerTopLevelDomainFactory(
    * @param {string} name
    * @param {DataContract} dataContract
    * @param {Identifier} ownerId
-   * @param {Date} genesisTime
+   * @param {Date} genesisDate
    *
    * @return {Promise<void>}
    */
-  async function registerTopLevelDomain(name, dataContract, ownerId, genesisTime) {
+  async function registerTopLevelDomain(name, dataContract, ownerId, genesisDate) {
     const nameLabels = name.split('.');
 
     const normalizedParentDomainName = nameLabels
@@ -43,30 +34,24 @@ function registerTopLevelDomainFactory(
     const [label] = nameLabels;
     const normalizedLabel = label.toLowerCase();
 
-    const isSecondLevelDomain = normalizedParentDomainName.length > 0;
+    // const saltedDomainHash = hash(
+    //   Buffer.concat([
+    //     dashPreorderSalt,
+    //     Buffer.from(normalizedLabel),
+    //   ]),
+    // );
 
-    const fullDomainName = isSecondLevelDomain
-      ? `${normalizedLabel}.${normalizedParentDomainName}`
-      : normalizedLabel;
-
-    const saltedDomainHash = hash(
-      Buffer.concat([
-        dashPreorderSalt,
-        Buffer.from(fullDomainName),
-      ]),
-    );
-
-    const preorderDocument = await dpp.document.create(
-      dataContract,
-      ownerId,
-      'preorder',
-      {
-        saltedDomainHash,
-      },
-    );
-
-    preorderDocument.id = dashPreorderDocumentId;
-    preorderDocument.createdAt = genesisTime;
+    // const preorderDocument = await dpp.document.create(
+    //   dataContract,
+    //   ownerId,
+    //   'preorder',
+    //   {
+    //     saltedDomainHash,
+    //   },
+    // );
+    //
+    // preorderDocument.id = dashPreorderDocumentId;
+    // preorderDocument.createdAt = genesisDate;
 
     const domainDocument = await dpp.document.create(
       dataContract,
@@ -81,22 +66,16 @@ function registerTopLevelDomainFactory(
           dashAliasIdentityId: ownerId,
         },
         subdomainRules: {
-          allowSubdomains: !isSecondLevelDomain,
+          allowSubdomains: true,
         },
       },
     );
 
     domainDocument.id = dashDomainDocumentId;
-    domainDocument.createdAt = genesisTime;
+    domainDocument.createdAt = genesisDate;
 
-    await documentRepository.store(preorderDocument);
-    await documentRepository.store(domainDocument);
-
-    await previousDocumentRepository.store(preorderDocument);
-    await previousDocumentRepository.store(domainDocument);
-
-    rootTree.rebuild();
-    previousRootTree.rebuild();
+    // await documentRepository.store(preorderDocument, true);
+    await documentRepository.store(domainDocument, true);
   }
 
   return registerTopLevelDomain;

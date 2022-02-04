@@ -78,15 +78,19 @@ class PublicKeyToIdentityIdStoreRepository {
   }
 
   /**
+   * @param {Object} [options]
+   * @param {boolean} [options.useTransaction=false]
+   * @param {boolean} [options.skipIfExists]
+   *
    * @return {Promise<PublicKeyToIdentityIdStoreRepository>}
    */
-  async createTree() {
-    await this.storage.createTree([], PublicKeyToIdentityIdStoreRepository.TREE_PATH[0]);
+  async createTree(options = {}) {
+    await this.storage.createTree([], PublicKeyToIdentityIdStoreRepository.TREE_PATH[0], options);
 
     return this;
   }
 }
 
-PublicKeyToIdentityIdStoreRepository.TREE_PATH = [Buffer.from('publicKeysToIdentityIds')];
+PublicKeyToIdentityIdStoreRepository.TREE_PATH = [Buffer.from([2])];
 
 module.exports = PublicKeyToIdentityIdStoreRepository;
