@@ -97,18 +97,39 @@ function validateQueryFactory(
 
       // check we have only one range in query
       const rangeOperators = ['>', '<', '>=', '<=', 'startsWith'];
-      let hasRangeOperator = false;
-      sortedWhereClauses.forEach((clause) => {
-        if (rangeOperators.includes(clause[1])) {
-          if (!hasRangeOperator) {
-            hasRangeOperator = true;
-          } else {
+
+      const propertyRangeOperatorMap = {};
+
+      let anotherRangeOperatorSet = false;
+      for (const [property, operator] of sortedWhereClauses) {
+        if (propertyRangeOperatorMap[property] === undefined && rangeOperators.includes(operator)) {
+          propertyRangeOperatorMap[property] = 1;
+
+          if (anotherRangeOperatorSet) {
             result.addError(
-              new MultipleRangeOperatorsError(clause[0], clause[1]),
+              new MultipleRangeOperatorsError(property, operator),
             );
+
+            return result;
           }
+
+          anotherRangeOperatorSet = true;
+
+          continue;
         }
-      });
+
+        if (rangeOperators.includes(operator)) {
+          propertyRangeOperatorMap[property] += 1;
+        }
+
+        if (propertyRangeOperatorMap[property] > 2) {
+          result.addError(
+            new MultipleRangeOperatorsError(property, operator),
+          );
+
+          return result;
+        }
+      }
 
       // check 'in' is used only in the last two indexed conditions
       const invalidClause = sortedWhereClauses.find((clause) => {

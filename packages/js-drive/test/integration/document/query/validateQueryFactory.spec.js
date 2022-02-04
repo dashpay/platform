@@ -108,6 +108,10 @@ describe('validateQueryFactory', () => {
           ['c', '>', 3],
           ['d', '>', 3],
         ],
+        orderBy: [
+          ['c', 'asc'],
+          ['d', 'desc'],
+        ],
       },
       error: new Error('Invalid range clause with \'d\' and \'>\' operator. Only one range operator is allowed'),
     },
@@ -176,8 +180,6 @@ describe('validateQueryFactory', () => {
   validQueries.forEach((query) => {
     it(`should return valid result for query "${JSON.stringify(query)}"`, () => {
       const result = validateQuery(query, documentSchema);
-
-      console.log(result);
 
       expect(result.isValid()).to.be.true();
     });
