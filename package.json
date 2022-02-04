@@ -18,6 +18,7 @@
     "prebuilds",
     "node/Drive.js",
     "node/GroveDB.js",
+    "node/appendStack.js",
     "node/src",
     "node/Cargo.toml",
     "drive/src",
