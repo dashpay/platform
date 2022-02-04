@@ -1576,7 +1576,7 @@ __metadata:
     "@dashevo/feature-flags-contract": "workspace:~"
     "@dashevo/grpc-common": "workspace:~"
     "@dashevo/masternode-reward-shares-contract": "workspace:~"
-    "@dashevo/rs-drive": ~0.22.0-dev.2
+    "@dashevo/rs-drive": ~0.22.0-dev.1
     "@types/pino": ^6.3.0
     ajv: ^8.6.0
     ajv-keywords: ^5.0.0
@@ -1755,7 +1755,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@dashevo/rs-drive@npm:~0.22.0-dev.2":
+"@dashevo/rs-drive@npm:~0.22.0-dev.1":
   version: 0.22.0-dev.2
   resolution: "@dashevo/rs-drive@npm:0.22.0-dev.2"
   dependencies:
