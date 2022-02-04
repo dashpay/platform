@@ -1,8 +1,4 @@
-const { GroveDB } = require('@dashevo/node-grove');
-
-const GroveDBStore = require('../../../lib/groveDB/GroveDBStore');
-
-const GroveDBTransaction = require('../../../lib/groveDB/GroveDBTransaction');
+const GroveDBStore = require('../../../lib/storage/GroveDBStore');
 
 describe('GroveDBStore', () => {
   let groveDB;
@@ -11,7 +7,7 @@ describe('GroveDBStore', () => {
   let value;
 
   beforeEach(() => {
-    groveDB = GroveDB.open('./db/grovedb_test');
+    // groveDB = GroveDB.open('./db/grovedb_test');
 
     store = new GroveDBStore(groveDB);
 

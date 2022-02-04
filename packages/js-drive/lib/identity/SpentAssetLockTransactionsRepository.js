@@ -50,18 +50,26 @@ class SpentAssetLockTransactionsRepository {
   }
 
   /**
+   * @param {Object} [options]
+   * @param {boolean} [options.useTransaction=false]
+   * @param {boolean} [options.skipIfExists]
+   *
    * @return {Promise<SpentAssetLockTransactionsRepository>}
    */
-  async createTree() {
-    await this.storage.createTree([], SpentAssetLockTransactionsRepository.TREE_PATH[0]);
+  async createTree(options = {}) {
+    await this.storage.createTree(
+      [SpentAssetLockTransactionsRepository.TREE_PATH[0]],
+      SpentAssetLockTransactionsRepository.TREE_PATH[1],
+      options,
+    );
 
     return this;
   }
 }
 
 SpentAssetLockTransactionsRepository.TREE_PATH = [
-  Buffer.from('misc'),
-  Buffer.from('spentAssetLockTransactions'),
+  Buffer.from([3]),
+  Buffer.from([0]),
 ];
 
 module.exports = SpentAssetLockTransactionsRepository;

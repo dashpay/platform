@@ -4,30 +4,24 @@ const InvalidMasternodeIdentityError = require('./errors/InvalidMasternodeIdenti
 
 /**
  * @param {DashPlatformProtocol} dpp
- * @param {DriveStateRepository|CachedStateRepositoryDecorator} stateRepository
- * @param {IdentityStoreRepository} previousIdentityRepository
- * @param {PublicKeyToIdentityIdStoreRepository} previousPublicKeyToIdentityIdRepository
+ * @param {DriveStateRepository|CachedStateRepositoryDecorator} transactionalStateRepository
  * @return {createMasternodeIdentity}
  */
 function createMasternodeIdentityFactory(
   dpp,
-  stateRepository,
-  previousIdentityRepository,
-  previousPublicKeyToIdentityIdRepository,
+  transactionalStateRepository,
 ) {
   /**
    * @typedef createMasternodeIdentity
    * @param {Identifier} identityId
    * @param {Buffer} pubKeyData
    * @param {number} pubKeyType
-   * @param {boolean} storePreviousState
    * @return {Promise<void>}
    */
   async function createMasternodeIdentity(
     identityId,
     pubKeyData,
     pubKeyType,
-    storePreviousState,
   ) {
     const identity = new Identity({
       protocolVersion: dpp.getProtocolVersion(),
@@ -52,29 +46,16 @@ function createMasternodeIdentityFactory(
       throw new InvalidMasternodeIdentityError(validationError);
     }
 
-    await stateRepository.storeIdentity(identity);
-
-    if (storePreviousState) {
-      await previousIdentityRepository.store(identity);
-    }
+    await transactionalStateRepository.storeIdentity(identity);
 
     const publicKeyHashes = identity
       .getPublicKeys()
       .map((publicKey) => publicKey.hash());
 
-    await stateRepository.storeIdentityPublicKeyHashes(
+    await transactionalStateRepository.storeIdentityPublicKeyHashes(
       identity.getId(),
       publicKeyHashes,
     );
-
-    if (storePreviousState) {
-      for (const publicKeyHash of publicKeyHashes) {
-        await previousPublicKeyToIdentityIdRepository
-          .store(
-            publicKeyHash, identityId,
-          );
-      }
-    }
   }
 
   return createMasternodeIdentity;

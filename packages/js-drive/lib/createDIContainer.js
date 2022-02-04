@@ -10,7 +10,7 @@ const fs = require('fs');
 
 const Long = require('long');
 
-const GroveDB = require('@dashevo/node-grove');
+const RSDrive = require('@dashevo/rs-drive');
 
 const LRUCache = require('lru-cache');
 const RpcClient = require('@dashevo/dashd-rpc/promise');
@@ -52,7 +52,7 @@ const sanitizeUrl = require('./util/sanitizeUrl');
 
 const LatestCoreChainLock = require('./core/LatestCoreChainLock');
 
-const GroveDBStore = require('./groveDB/GroveDBStore');
+const GroveDBStore = require('./storage/GroveDBStore');
 const IdentityStoreRepository = require('./identity/IdentityStoreRepository');
 
 const PublicKeyToIdentityIdStoreRepository = require(
@@ -60,7 +60,6 @@ const PublicKeyToIdentityIdStoreRepository = require(
 );
 
 const DataContractStoreRepository = require('./dataContract/DataContractStoreRepository');
-const DocumentStoreRepository = require('./document/DocumentRepository');
 const findConflictingConditions = require('./document/query/findConflictingConditions');
 const validateQueryFactory = require('./document/query/validateQueryFactory');
 
@@ -115,21 +114,20 @@ const fetchQuorumMembersFactory = require('./core/fetchQuorumMembersFactory');
 const getRandomQuorum = require('./core/getRandomQuorum');
 const createQueryResponseFactory = require('./abci/handlers/query/response/createQueryResponseFactory');
 const BlockExecutionContextStackRepository = require('./blockExecution/BlockExecutionContextStackRepository');
-const rotateSignedStoreFactory = require('./groveDB/rotateSignedStoreFactory');
+const rotateSignedStoreFactory = require('./storage/rotateSignedStoreFactory');
 const BlockExecutionContextStack = require('./blockExecution/BlockExecutionContextStack');
 const createInitialStateStructureFactory = require('./state/createInitialStateStructureFactory');
-const encodeDocumentPropertyValue = require('./document/groveDB/encodeDocumentPropertyValue');
-const createGroveDBPathQueryFactory = require('./document/groveDB/createGroveDBPathQueryFactory');
 const findAppropriateIndex = require('./document/query/findAppropriateIndex');
 
 const registerSystemDataContractFactory = require('./state/registerSystemDataContractFactory');
 const registerTopLevelDomainFactory = require('./state/registerTopLevelDomainFactory');
-const registerFeatureFlagFactory = require('./state/registerFeatureFlagFactory');
 const synchronizeMasternodeIdentitiesFactory = require('./identity/masternode/synchronizeMasternodeIdentitiesFactory');
 const createMasternodeIdentityFactory = require('./identity/masternode/createMasternodeIdentityFactory');
 const handleNewMasternodeFactory = require('./identity/masternode/handleNewMasternodeFactory');
 const handleUpdatedPubKeyOperatorFactory = require('./identity/masternode/handleUpdatedPubKeyOperatorFactory');
 const splitDocumentsIntoChunks = require('./identity/masternode/splitDocumentsIntoChunks');
+const registerSystemDataContractsFactory = require('./abci/handlers/state/registerSystemDataContractsFactory');
+const DocumentRepository = require('./document/DocumentRepository');
 
 /**
  *
@@ -387,44 +385,37 @@ function createDIContainer(options) {
   });
 
   /**
-   * GroveDB store
+   * RS Drive and GroveDB
    */
 
   container.register({
-    groveDB: asFunction((groveDBLatestFile) => GroveDB.open(groveDBLatestFile)).singleton(),
+    rsDrive: asFunction((groveDBLatestFile) => new RSDrive(groveDBLatestFile))
+      // TODO: With signed state rotation we need to dispose each groveDB store.
+      .disposer(async (rsDrive) => {
+        // Flush data on disk
+        await rsDrive.getGroveDB().flush();
+
+        await rsDrive.close();
+
+        if (process.env.NODE_ENV === 'test') {
+          fs.rmSync(options.GROVEDB_LATEST_FILE, { recursive: true });
+        }
+      }).singleton(),
+    groveDB: asFunction((rsDrive) => rsDrive.getGroveDB()).singleton(),
 
     groveDBStore: asFunction((
-      groveDB,
+      rsDrive,
     ) => (
-      new GroveDBStore(groveDB, 'latest')
-    )).disposer(async (groveDBStore) => {
-    // Flush data on disk
-    // await groveDBStore.db.flushSync();
-
-      await groveDBStore.db.close();
-
-      if (process.env.NODE_ENV === 'test') {
-        fs.rmSync(options.GROVEDB_LATEST_FILE, { recursive: true });
-      }
-
-      console.log('closed');
-    }).singleton(),
+      new GroveDBStore(rsDrive, 'latest')
+    )).singleton(),
 
     signedGroveDBStore: asFunction((
-      groveDB,
+      rsDrive,
     ) => (
-      new GroveDBStore(groveDB, 'signed')
-    )).disposer(async (groveDBStore) => {
-      // Flush data on disk
-      // await groveDBStore.db.flushSync();
-
-      await groveDBStore.db.close();
-
-      console.log('closed');
-    }).singleton(),
+      new GroveDBStore(rsDrive, 'signed')
+    )).singleton(),
 
     rotateSignedStore: asFunction(rotateSignedStoreFactory).singleton(),
-    createInitialStateStructure: asFunction(createInitialStateStructureFactory).singleton(),
   });
 
   /**
@@ -484,22 +475,15 @@ function createDIContainer(options) {
    * Register Document
    */
   container.register({
-    encodeDocumentPropertyValue: asValue(encodeDocumentPropertyValue),
-    createGroveDBPathQuery: asFunction(createGroveDBPathQueryFactory),
     findAppropriateIndex: asValue(findAppropriateIndex),
 
-    documentRepository: asClass(DocumentStoreRepository).singleton(),
+    documentRepository: asClass(DocumentRepository).singleton(),
     signedDocumentRepository: asFunction((
       signedGroveDBStore,
       validateQuery,
-      decodeProtocolEntity,
-      createGroveDBPathQuery,
-    ) => (new DocumentStoreRepository(
+    ) => (new DocumentRepository(
       signedGroveDBStore,
-      encodeDocumentPropertyValue,
       validateQuery,
-      decodeProtocolEntity,
-      createGroveDBPathQuery,
     ))).singleton(),
 
     findConflictingConditions: asValue(findConflictingConditions),
@@ -675,8 +659,6 @@ function createDIContainer(options) {
 
     waitForCoreChainLockSync: asFunction(waitForCoreChainLockSyncFactory).singleton(),
 
-    waitReplicaSetInitialize: asFunction(waitReplicaSetInitializeFactory).singleton(),
-
     synchronizeMasternodeIdentities: asFunction(synchronizeMasternodeIdentitiesFactory).singleton(),
 
     createMasternodeIdentity: asFunction(createMasternodeIdentityFactory).singleton(),
@@ -689,18 +671,16 @@ function createDIContainer(options) {
   });
 
   /**
-   * Register system data contract utils
+   * State
    */
   container.register({
+    createInitialStateStructure: asFunction(createInitialStateStructureFactory).singleton(),
     registerSystemDataContract: asFunction(registerSystemDataContractFactory).singleton(),
+    registerSystemDataContracts: asFunction(registerSystemDataContractsFactory).singleton(),
     registerTopLevelDomain: asFunction(registerTopLevelDomainFactory).singleton(),
-    registerFeatureFlag: asFunction(registerFeatureFlagFactory).singleton(),
-    cumulativeFeesFeatureFlagDocumentId: asValue(
-      Identifier.from('73qjFBuY4Zb8DqUpj6RYgG9rYDARNPFnEnyt8u4bxPcw'),
-    ),
-    dashPreorderDocumentId: asValue(
-      Identifier.from('i8QZtAJ1WshunyZg64wGYcm3jASrpeSKAbAYVHTxvsL'),
-    ),
+    // dashPreorderDocumentId: asValue(
+    //   Identifier.from('i8QZtAJ1WshunyZg64wGYcm3jASrpeSKAbAYVHTxvsL'),
+    // ),
     dashDomainDocumentId: asValue(
       Identifier.from('FXyN2NZAdRFADgBQfb1XM1Qq7pWoEcgSWj1GaiQJqcrS'),
     ),

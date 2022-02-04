@@ -2573,7 +2573,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["@dashevo/feature-flags-contract", "workspace:packages/feature-flags-contract"],
             ["@dashevo/grpc-common", "workspace:packages/js-grpc-common"],
             ["@dashevo/masternode-reward-shares-contract", "workspace:packages/masternode-reward-shares-contract"],
-            ["@dashevo/node-grove", "npm:0.0.10"],
+            ["@dashevo/rs-drive", "npm:0.22.0-dev.1"],
             ["@types/pino", "npm:6.3.12"],
             ["ajv", "npm:8.8.1"],
             ["ajv-keywords", "virtual:34fbe5a7dba3086dcbcce8a7faed986b10f7a208f11db70499feb2c1afd76e24089e5b95f9e3b937e89512de1cf4937177cc2000303a1e908baefc73362a7d48#npm:5.0.0"],
@@ -2690,16 +2690,6 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           "linkType": "HARD",
         }]
       ]],
-      ["@dashevo/node-grove", [
-        ["npm:0.0.10", {
-          "packageLocation": "./.yarn/unplugged/@dashevo-node-grove-npm-0.0.10-74d836927d/node_modules/@dashevo/node-grove/",
-          "packageDependencies": [
-            ["@dashevo/node-grove", "npm:0.0.10"],
-            ["cargo-cp-artifact", "npm:0.1.6"]
-          ],
-          "linkType": "HARD",
-        }]
-      ]],
       ["@dashevo/platform", [
         ["workspace:.", {
           "packageLocation": "./",
@@ -2772,6 +2762,20 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           "packageLocation": "./.yarn/cache/@dashevo-re2-wasm-npm-1.0.4-89e4ca33d4-4f1fca10c5.zip/node_modules/@dashevo/re2-wasm/",
           "packageDependencies": [
             ["@dashevo/re2-wasm", "npm:1.0.4"]
+          ],
+          "linkType": "HARD",
+        }]
+      ]],
+      ["@dashevo/rs-drive", [
+        ["npm:0.22.0-dev.1", {
+          "packageLocation": "./.yarn/unplugged/@dashevo-rs-drive-npm-0.22.0-dev.1-dc0897f603/node_modules/@dashevo/rs-drive/",
+          "packageDependencies": [
+            ["@dashevo/rs-drive", "npm:0.22.0-dev.1"],
+            ["@dashevo/dpp", "workspace:packages/js-dpp"],
+            ["cargo-cp-artifact", "npm:0.1.6"],
+            ["cbor", "npm:8.1.0"],
+            ["neon-load-or-build", "npm:2.2.2"],
+            ["neon-tag-prebuild", "https://github.com/shumkov/neon-tag-prebuild.git#commit=a429834da27432b129eceb737e4d2b3f03fa5496"]
           ],
           "linkType": "HARD",
         }]
@@ -13926,6 +13930,17 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           "linkType": "HARD",
         }]
       ]],
+      ["neon-tag-prebuild", [
+        ["https://github.com/shumkov/neon-tag-prebuild.git#commit=a429834da27432b129eceb737e4d2b3f03fa5496", {
+          "packageLocation": "./.yarn/cache/neon-tag-prebuild-https-d665d28b1f-00a16bf27c.zip/node_modules/neon-tag-prebuild/",
+          "packageDependencies": [
+            ["neon-tag-prebuild", "https://github.com/shumkov/neon-tag-prebuild.git#commit=a429834da27432b129eceb737e4d2b3f03fa5496"],
+            ["mkdirp", "npm:1.0.4"],
+            ["node-abi", "npm:2.30.1"]
+          ],
+          "linkType": "HARD",
+        }]
+      ]],
       ["nested-error-stacks", [
         ["npm:1.0.2", {
           "packageLocation": "./.yarn/cache/nested-error-stacks-npm-1.0.2-0d527c567f-c50eb77fe0.zip/node_modules/nested-error-stacks/",
@@ -24357,7 +24372,7 @@ module.exports = require("path");;
 /************************************************************************/
 /******/ 	// The module cache
 /******/ 	var __webpack_module_cache__ = {};
-/******/ 	
+/******/
 /******/ 	// The require function
 /******/ 	function __webpack_require__(moduleId) {
 /******/ 		// Check if module is in cache
@@ -24371,14 +24386,14 @@ module.exports = require("path");;
 /******/ 			// no module.loaded needed
 /******/ 			exports: {}
 /******/ 		};
-/******/ 	
+/******/
 /******/ 		// Execute the module function
 /******/ 		__webpack_modules__[moduleId](module, module.exports, __webpack_require__);
-/******/ 	
+/******/
 /******/ 		// Return the exports of the module
 /******/ 		return module.exports;
 /******/ 	}
-/******/ 	
+/******/
 /************************************************************************/
 /******/ 	/* webpack/runtime/compat get default export */
 /******/ 	(() => {
@@ -24391,7 +24406,7 @@ module.exports = require("path");;
 /******/ 			return getter;
 /******/ 		};
 /******/ 	})();
-/******/ 	
+/******/
 /******/ 	/* webpack/runtime/define property getters */
 /******/ 	(() => {
 /******/ 		// define getter functions for harmony exports
@@ -24403,12 +24418,12 @@ module.exports = require("path");;
 /******/ 			}
 /******/ 		};
 /******/ 	})();
-/******/ 	
+/******/
 /******/ 	/* webpack/runtime/hasOwnProperty shorthand */
 /******/ 	(() => {
 /******/ 		__webpack_require__.o = (obj, prop) => (Object.prototype.hasOwnProperty.call(obj, prop))
 /******/ 	})();
-/******/ 	
+/******/
 /************************************************************************/
 var __webpack_exports__ = {};
 // This entry need to be wrapped in an IIFE because it need to be in strict mode.

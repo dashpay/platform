@@ -18,9 +18,14 @@ class CreditsDistributionPoolRepository {
    * @return {this}
    */
   async store(creditsDistributionPool, useTransaction = false) {
-    await this.storage.putAux(
-      CreditsDistributionPoolRepository.COMMON_STORE_KEY_NAME,
-      cbor.encodeCanonical(creditsDistributionPool.toJSON()),
+    const encodedCreditsDistributionPool = await cbor.encodeCanonical(
+      creditsDistributionPool.toJSON(),
+    );
+
+    await this.storage.put(
+      CreditsDistributionPoolRepository.PATH,
+      CreditsDistributionPoolRepository.KEY,
+      encodedCreditsDistributionPool,
       { useTransaction },
     );
 
@@ -34,8 +39,9 @@ class CreditsDistributionPoolRepository {
    * @return {CreditsDistributionPool}
    */
   async fetch(useTransaction = false) {
-    const creditsDistributionPoolEncoded = await this.storage.getAux(
-      CreditsDistributionPoolRepository.COMMON_STORE_KEY_NAME,
+    const creditsDistributionPoolEncoded = await this.storage.get(
+      CreditsDistributionPoolRepository.PATH,
+      CreditsDistributionPoolRepository.KEY,
       { useTransaction },
     );
 
@@ -43,12 +49,13 @@ class CreditsDistributionPoolRepository {
       return new CreditsDistributionPool();
     }
 
-    const { amount } = cbor.decode(creditsDistributionPoolEncoded);
+    const { amount } = await cbor.decode(creditsDistributionPoolEncoded);
 
     return new CreditsDistributionPool(amount);
   }
 }
 
-CreditsDistributionPoolRepository.COMMON_STORE_KEY_NAME = Buffer.from('CreditsDistributionPool');
+CreditsDistributionPoolRepository.PATH = [Buffer.from([3])];
+CreditsDistributionPoolRepository.KEY = Buffer.from([1]);
 
 module.exports = CreditsDistributionPoolRepository;
