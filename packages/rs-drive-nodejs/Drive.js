@@ -21,16 +21,18 @@ const {
 
 const GroveDB = require('./GroveDB');
 
+const appendStack = require('./appendStack');
+
 const decodeProtocolEntity = decodeProtocolEntityFactory();
 
 // Convert the Drive methods from using callbacks to returning promises
-const driveCloseAsync = promisify(driveClose);
-const driveCreateRootTreeAsync = promisify(driveCreateRootTree);
-const driveApplyContractAsync = promisify(driveApplyContract);
-const driveCreateDocumentAsync = promisify(driveCreateDocument);
-const driveUpdateDocumentAsync = promisify(driveUpdateDocument);
-const driveDeleteDocumentAsync = promisify(driveDeleteDocument);
-const driveQueryDocumentsAsync = promisify(driveQueryDocuments);
+const driveCloseAsync = appendStack(promisify(driveClose));
+const driveCreateRootTreeAsync = appendStack(promisify(driveCreateRootTree));
+const driveApplyContractAsync = appendStack(promisify(driveApplyContract));
+const driveCreateDocumentAsync = appendStack(promisify(driveCreateDocument));
+const driveUpdateDocumentAsync = appendStack(promisify(driveUpdateDocument));
+const driveDeleteDocumentAsync = appendStack(promisify(driveDeleteDocument));
+const driveQueryDocumentsAsync = appendStack(promisify(driveQueryDocuments));
 
 // Wrapper class for the boxed `Drive` for idiomatic JavaScript usage
 class Drive {

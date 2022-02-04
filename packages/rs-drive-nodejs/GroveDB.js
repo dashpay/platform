@@ -23,21 +23,23 @@ const {
   dir: pathJoin(__dirname, '..'),
 });
 
-const groveDbGetAsync = promisify(groveDbGet);
-const groveDbInsertAsync = promisify(groveDbInsert);
-const groveDbInsertIfNotExistsAsync = promisify(groveDbInsertIfNotExists);
-const groveDbDeleteAsync = promisify(groveDbDelete);
-const groveDbFlushAsync = promisify(groveDbFlush);
-const groveDbStartTransactionAsync = promisify(groveDbStartTransaction);
-const groveDbCommitTransactionAsync = promisify(groveDbCommitTransaction);
-const groveDbRollbackTransactionAsync = promisify(groveDbRollbackTransaction);
-const groveDbIsTransactionStartedAsync = promisify(groveDbIsTransactionStarted);
-const groveDbAbortTransactionAsync = promisify(groveDbAbortTransaction);
-const groveDbPutAuxAsync = promisify(groveDbPutAux);
-const groveDbDeleteAuxAsync = promisify(groveDbDeleteAux);
-const groveDbGetAuxAsync = promisify(groveDbGetAux);
-const groveDbGetPathQueryAsync = promisify(groveDbGetPathQuery);
-const groveDbRootHashAsync = promisify(groveDbRootHash);
+const appendStack = require('./appendStack');
+
+const groveDbGetAsync = appendStack(promisify(groveDbGet));
+const groveDbInsertAsync = appendStack(promisify(groveDbInsert));
+const groveDbInsertIfNotExistsAsync = appendStack(promisify(groveDbInsertIfNotExists));
+const groveDbDeleteAsync = appendStack(promisify(groveDbDelete));
+const groveDbFlushAsync = appendStack(promisify(groveDbFlush));
+const groveDbStartTransactionAsync = appendStack(promisify(groveDbStartTransaction));
+const groveDbCommitTransactionAsync = appendStack(promisify(groveDbCommitTransaction));
+const groveDbRollbackTransactionAsync = appendStack(promisify(groveDbRollbackTransaction));
+const groveDbIsTransactionStartedAsync = appendStack(promisify(groveDbIsTransactionStarted));
+const groveDbAbortTransactionAsync = appendStack(promisify(groveDbAbortTransaction));
+const groveDbPutAuxAsync = appendStack(promisify(groveDbPutAux));
+const groveDbDeleteAuxAsync = appendStack(promisify(groveDbDeleteAux));
+const groveDbGetAuxAsync = appendStack(promisify(groveDbGetAux));
+const groveDbGetPathQueryAsync = appendStack(promisify(groveDbGetPathQuery));
+const groveDbRootHashAsync = appendStack(promisify(groveDbRootHash));
 
 // Wrapper class for the boxed `GroveDB` for idiomatic JavaScript usage
 class GroveDB {
