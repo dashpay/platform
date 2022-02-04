@@ -94,17 +94,21 @@ class GroveDBStore {
     let value;
 
     try {
-      ({ type, value } = this.db.get(
+      ({ type, value } = await this.db.get(
         path,
         key,
         options.useTransaction || false,
       ));
     } catch (e) {
-      if (e.message === 'invalid path: key not found in Merk') {
+      if (e.message.startsWith('invalid path key: key not found in Merk')) {
         return null;
       }
 
       throw e;
+    }
+
+    if (type === undefined) {
+      return null;
     }
 
     if (type !== 'item') {
@@ -142,10 +146,21 @@ class GroveDBStore {
    * @return {Promise<GroveDBStore>}
    */
   async getAux(key, options = {}) {
-    return this.db.getAux(
-      key,
-      options.useTransaction || false,
-    );
+    let result;
+    try {
+      result = await this.db.getAux(
+        key,
+        options.useTransaction || false,
+      );
+    } catch (e) {
+      if (e.message.startsWith('invalid path key: key not found in Merk')) {
+        return null;
+      }
+
+      throw e;
+    }
+
+    return result;
   }
 
   /**

@@ -88,7 +88,7 @@ function commitHandlerFactory(
     // TODO: We do not rotate signed state for now
     // await rotateSignedStore(blockHeight);
 
-    const appHash = groveDBStore.getRootHash();
+    const appHash = await groveDBStore.getRootHash();
 
     consensusLogger.info(
       {

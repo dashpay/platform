@@ -67,7 +67,7 @@ function initChainHandlerFactory(
 
     await groveDBStore.commitTransaction();
 
-    const appHash = groveDBStore.getRootHash();
+    const appHash = await groveDBStore.getRootHash();
 
     // Set initial validator set
 
@@ -79,7 +79,15 @@ function initChainHandlerFactory(
 
     contextLogger.trace(validatorSetUpdate, `Validator set initialized with ${quorumHash} quorum`);
 
-    contextLogger.info(`Init ${request.chainId} chain on block #${request.initialHeight.toString()}`);
+    contextLogger.info(
+      {
+        chainId: request.chainId,
+        appHash: appHash.toString('hex').toUpperCase(),
+        initialHeight: request.initialHeight.toString(),
+        initialCoreHeight: initialCoreChainLockedHeight,
+      },
+      `Init ${request.chainId} chain on block #${request.initialHeight.toString()} with app hash ${appHash.toString('hex').toUpperCase()}`,
+    );
 
     return new ResponseInitChain({
       appHash,

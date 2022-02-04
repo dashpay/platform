@@ -297,6 +297,7 @@ module.exports = {
     return configFile;
   },
   '0.22.0': (configFile) => {
+    // TODO: Handle the changes in schema and configs
     Object.entries(configFile.configs)
       .forEach(([, config]) => {
         if (!config.platform.masternodeRewardShares) {

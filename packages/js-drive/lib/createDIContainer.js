@@ -128,6 +128,7 @@ const handleUpdatedPubKeyOperatorFactory = require('./identity/masternode/handle
 const splitDocumentsIntoChunks = require('./identity/masternode/splitDocumentsIntoChunks');
 const registerSystemDataContractsFactory = require('./abci/handlers/state/registerSystemDataContractsFactory');
 const DocumentRepository = require('./document/DocumentRepository');
+const sortWhereClausesAccordingToIndex = require('./document/query/sortWhereClausesAccordingToIndex');
 
 /**
  *
@@ -475,6 +476,7 @@ function createDIContainer(options) {
    * Register Document
    */
   container.register({
+    sortWhereClausesAccordingToIndex: asValue(sortWhereClausesAccordingToIndex),
     findAppropriateIndex: asValue(findAppropriateIndex),
 
     documentRepository: asClass(DocumentRepository).singleton(),
