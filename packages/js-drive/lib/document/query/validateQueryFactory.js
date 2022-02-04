@@ -10,7 +10,6 @@ const jsonSchema = require('./jsonSchema');
 
 const NotIndexedPropertiesInWhereConditionsError = require('./errors/NotIndexedPropertiesInWhereConditionsError');
 const InvalidPropertiesInOrderByError = require('./errors/InvalidPropertiesInOrderByError');
-const RangeOperatorAllowedOnlyForLastIndexedPropertyError = require('./errors/RangeOperatorAllowedOnlyForLastIndexedPropertyError');
 const MultipleRangeOperatorsError = require('./errors/MultipleRangeOperatorsError');
 const InOperatorAllowedOnlyForLastTwoIndexedPropertiesError = require('./errors/InOperatorAllowedOnlyForLastTwoIndexedPropertiesError');
 const RangeOperatorAllowedOnlyWithEqualOperatorsError = require('./errors/RangeOperatorAllowedOnlyWithEqualOperatorsError');
@@ -74,24 +73,13 @@ function validateQueryFactory(
 
       appropriateIndex = findAppropriateIndex(query.where, documentSchema);
 
-      if (!appropriateIndex) {
+      if (appropriateIndex === undefined) {
         result.addError(new NotIndexedPropertiesInWhereConditionsError());
+
+        return result;
       }
 
       sortedWhereClauses = sortWhereClausesAccordingToIndex(query.where, appropriateIndex);
-
-      // check following operators are used only in last where condition
-      ['in', 'startsWith'].forEach((operator) => {
-        const invalidClause = sortedWhereClauses.find((clause, index) => (
-          clause[1] === operator && index !== query.where.length - 1
-        ));
-
-        if (invalidClause) {
-          result.addError(
-            new RangeOperatorAllowedOnlyForLastIndexedPropertyError(invalidClause[0], operator),
-          );
-        }
-      });
 
       // check following operators are used only in last 2 where condition
       ['>', '<', '>=', '<='].forEach((operator) => {
@@ -102,7 +90,7 @@ function validateQueryFactory(
 
         if (invalidClause) {
           result.addError(
-            new RangeOperatorAllowedOnlyForLastIndexedPropertyError(invalidClause[0], operator),
+            new Error("'>', '<', '>=', '<=' operators are allowed only in the last two where conditions"),
           );
         }
       });
@@ -126,12 +114,12 @@ function validateQueryFactory(
       const invalidClause = sortedWhereClauses.find((clause) => {
         let clauseIsInvalid = false;
         if (clause[1] === 'in') {
-          clauseIsInvalid = appropriateIndex.find((indexObj, index) => {
+          clauseIsInvalid = appropriateIndex.properties.find((indexObj, index) => {
             const [indexProperty] = Object.keys(indexObj)[0];
 
             return indexProperty === clause[0]
-              && index !== appropriateIndex.length - 1
-              && index !== appropriateIndex.length - 2;
+              && index !== appropriateIndex.properties.length - 1
+              && index !== appropriateIndex.properties.length - 2;
           });
         }
 
@@ -142,6 +130,8 @@ function validateQueryFactory(
         result.addError(
           new InOperatorAllowedOnlyForLastTwoIndexedPropertiesError(invalidClause[0], 'in'),
         );
+
+        return result;
       }
 
       // check range operators are used after '==' and 'in'
@@ -157,6 +147,8 @@ function validateQueryFactory(
           result.addError(
             new RangeOperatorAllowedOnlyWithEqualOperatorsError(clause[0], clause[1]),
           );
+
+          return result;
         }
       });
 
@@ -170,6 +162,8 @@ function validateQueryFactory(
             result.addError(
               new RangePropertyDoesNotHaveOrderByError(clause[0], clause[1]),
             );
+
+            return result;
           }
         }
       });

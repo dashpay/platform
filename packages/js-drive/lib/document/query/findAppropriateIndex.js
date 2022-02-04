@@ -23,7 +23,7 @@ function findAppropriateIndex(whereClauses, documentSchema) {
       .map((indexedProperty) => Object.keys(indexedProperty)[0]);
 
     return !uniqueWhereProperties.find((propertyName) => !indexedProperties.includes(propertyName));
-  }) || {};
+  });
 }
 
 module.exports = findAppropriateIndex;
