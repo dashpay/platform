@@ -21,6 +21,7 @@ class SetupCommand extends BaseCommand {
    * @param {generateBlsKeys} generateBlsKeys
    * @param {setupLocalPresetTask} setupLocalPresetTask
    * @param {setupRegularPresetTask} setupRegularPresetTask
+   * @param {Docker} docker
    * @return {Promise<void>}
    */
   async runWithDependencies(
@@ -40,6 +41,7 @@ class SetupCommand extends BaseCommand {
     generateBlsKeys,
     setupLocalPresetTask,
     setupRegularPresetTask,
+    docker,
   ) {
     if (preset === PRESET_LOCAL) {
       if (nodeType === undefined) {
@@ -73,7 +75,18 @@ class SetupCommand extends BaseCommand {
         },
       },
       {
-        task: (ctx) => {
+        task: async (ctx) => {
+          await docker.createNetwork({
+            Name: 'dash_test_network',
+            IPAM: {
+              Config: [
+                {
+                  Subnet: '172.24.24.0/24',
+                },
+              ],
+            },
+          });
+
           if (ctx.preset === PRESET_LOCAL) {
             return setupLocalPresetTask();
           }

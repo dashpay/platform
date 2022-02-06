@@ -16,3 +16,8 @@ services:
 
 volumes:
   core_data:
+
+networks:
+  default:
+    external:
+      name: dash_test_network
