@@ -5,13 +5,19 @@ use crate::query::WhereOperator::{
     Between, BetweenExcludeBounds, BetweenExcludeLeft, BetweenExcludeRight, Equal, GreaterThan,
     GreaterThanOrEquals, In, LessThan, LessThanOrEquals, StartsWith,
 };
-use ciborium::value::{Value as CborValue, Value};
+use ciborium::value::{Integer, Value as CborValue, Value};
 use grovedb::{Element, Error, GroveDb, PathQuery, Query, SizedQuery};
 use indexmap::IndexMap;
+use sqlparser::ast;
+use sqlparser::ast::TableFactor::Table;
+use sqlparser::ast::Value::Number;
+use sqlparser::ast::{OrderByExpr, Select, Statement};
+use sqlparser::dialect::GenericDialect;
+use sqlparser::parser::Parser;
 use std::collections::HashMap;
 use storage::rocksdb_storage::OptimisticTransactionDBTransaction;
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, PartialEq)]
 pub enum WhereOperator {
     Equal,
     GreaterThan,
@@ -24,6 +30,40 @@ pub enum WhereOperator {
     BetweenExcludeRight,
     In,
     StartsWith,
+}
+
+impl WhereOperator {
+    pub fn allows_flip(&self) -> bool {
+        match self {
+            Equal => true,
+            GreaterThan => true,
+            GreaterThanOrEquals => true,
+            LessThan => true,
+            LessThanOrEquals => true,
+            Between => false,
+            BetweenExcludeBounds => false,
+            BetweenExcludeLeft => false,
+            BetweenExcludeRight => false,
+            In => false,
+            StartsWith => false,
+        }
+    }
+
+    pub fn flip(&self) -> Result<WhereOperator, Error> {
+        match self {
+            Equal => Ok(Equal),
+            GreaterThan => Ok(LessThan),
+            GreaterThanOrEquals => Ok(LessThanOrEquals),
+            LessThan => Ok(GreaterThan),
+            LessThanOrEquals => Ok(GreaterThanOrEquals),
+            Between => Err(Error::InvalidQuery("Between clause order invalid")),
+            BetweenExcludeBounds => Err(Error::InvalidQuery("Between clause order invalid")),
+            BetweenExcludeLeft => Err(Error::InvalidQuery("Between clause order invalid")),
+            BetweenExcludeRight => Err(Error::InvalidQuery("Between clause order invalid")),
+            In => Err(Error::InvalidQuery("In clause order invalid")),
+            StartsWith => Err(Error::InvalidQuery("Startswith clause order invalid")),
+        }
+    }
 }
 
 impl WhereOperator {
@@ -64,11 +104,53 @@ fn operator_from_string(string: &str) -> Option<WhereOperator> {
     }
 }
 
-#[derive(Clone, Debug)]
+fn where_operator_from_sql_operator(sql_operator: ast::BinaryOperator) -> Option<WhereOperator> {
+    match sql_operator {
+        ast::BinaryOperator::Eq => Some(WhereOperator::Equal),
+        ast::BinaryOperator::Gt => Some(WhereOperator::GreaterThan),
+        ast::BinaryOperator::GtEq => Some(WhereOperator::GreaterThanOrEquals),
+        ast::BinaryOperator::Lt => Some(WhereOperator::LessThan),
+        ast::BinaryOperator::LtEq => Some(WhereOperator::LessThanOrEquals),
+        ast::BinaryOperator::Like => Some(WhereOperator::StartsWith),
+        _ => None,
+    }
+}
+
+fn sql_value_to_cbor(sql_value: ast::Value) -> Option<CborValue> {
+    match sql_value {
+        ast::Value::Boolean(bool) => Some(CborValue::Bool(bool)),
+        ast::Value::Number(num, _) => {
+            let number_as_string = num as String;
+            if number_as_string.contains('.') {
+                // Float
+                let num_as_float = number_as_string.parse::<f64>().ok();
+                num_as_float.map(CborValue::Float)
+            } else {
+                // Integer
+                let num_as_int = number_as_string.parse::<i64>().ok();
+                num_as_int.map(|num| CborValue::Integer(Integer::from(num)))
+            }
+        }
+        ast::Value::DoubleQuotedString(s) => Some(CborValue::Text(s)),
+        ast::Value::SingleQuotedString(s) => Some(CborValue::Text(s)),
+        ast::Value::HexStringLiteral(s) => Some(CborValue::Text(s)),
+        ast::Value::NationalStringLiteral(s) => Some(CborValue::Text(s)),
+        _ => None,
+    }
+}
+
+#[derive(Clone, Debug, PartialEq)]
 pub struct WhereClause {
     field: String,
     operator: WhereOperator,
     value: Value,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct InternalClauses {
+    in_clause: Option<WhereClause>,
+    range_clause: Option<WhereClause>,
+    equal_clauses: HashMap<String, WhereClause>,
 }
 
 impl<'a> WhereClause {
@@ -615,7 +697,7 @@ impl<'a> WhereClause {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct OrderClause {
     pub field: String,
     pub ascending: bool,
@@ -661,13 +743,11 @@ impl<'a> OrderClause {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub struct DriveQuery<'a> {
     pub contract: &'a Contract,
     pub document_type: &'a DocumentType,
-    pub equal_clauses: HashMap<String, WhereClause>,
-    pub in_clause: Option<WhereClause>,
-    pub range_clause: Option<WhereClause>,
+    pub internal_clauses: InternalClauses,
     pub offset: u16,
     pub limit: u16,
     pub order_by: IndexMap<String, OrderClause>,
@@ -719,36 +799,7 @@ impl<'a> DriveQuery<'a> {
                 }
             })?;
 
-        let range_clause = WhereClause::group_range_clauses(&all_where_clauses)?;
-
-        let equal_clauses_array =
-            all_where_clauses
-                .iter()
-                .filter_map(|where_clause| match where_clause.operator {
-                    Equal => Some(where_clause.clone()),
-                    _ => None,
-                });
-
-        let mut in_clauses_array =
-            all_where_clauses
-                .iter()
-                .filter_map(|where_clause| match where_clause.operator {
-                    In => Some(where_clause.clone()),
-                    _ => None,
-                });
-
-        let in_clause = in_clauses_array.next();
-
-        if in_clauses_array.next().is_some() {
-            return Err(Error::CorruptedData(String::from(
-                "There should only be one in clause",
-            )));
-        }
-
-        let equal_clauses = equal_clauses_array
-            .into_iter()
-            .map(|where_clause| (where_clause.field.clone(), where_clause))
-            .collect();
+        let internal_clauses = Self::extract_clauses(all_where_clauses)?;
 
         let start_at_option = query_document.get("startAt");
         let start_after_option = query_document.get("startAfter");
@@ -797,14 +848,239 @@ impl<'a> DriveQuery<'a> {
         Ok(DriveQuery {
             contract,
             document_type,
-            equal_clauses,
-            in_clause,
-            range_clause,
+            internal_clauses,
             offset: 0,
             limit,
             order_by,
             start_at,
             start_at_included,
+        })
+    }
+
+    pub fn from_sql_expr(sql_string: &str, contract: &'a Contract) -> Result<Self, Error> {
+        let dialect: GenericDialect = sqlparser::dialect::GenericDialect {};
+        let statements: Vec<Statement> = Parser::parse_sql(&dialect, sql_string)
+            .map_err(|_| Error::CorruptedData(String::from("Issue parsing sql")))?;
+
+        // Should ideally iterate over each statement
+        let first_statement = statements
+            .get(0)
+            .ok_or_else(|| Error::CorruptedData(String::from("Issue parsing SQL")))?;
+
+        let query: &ast::Query = match first_statement {
+            ast::Statement::Query(query_struct) => Some(query_struct),
+            _ => None,
+        }
+        .ok_or_else(|| Error::CorruptedData(String::from("Issue parsing sql")))?;
+
+        let limit = if let Some(limit_expr) = &query.limit {
+            match limit_expr {
+                ast::Expr::Value(Number(num_string, _)) => num_string.parse::<u16>().ok(),
+                _ => None,
+            }
+            .ok_or_else(|| {
+                Error::CorruptedData(String::from("Issue parsing sql: invalid limit value"))
+            })?
+        } else {
+            defaults::DEFAULT_QUERY_LIMIT
+        };
+
+        let order_by: IndexMap<String, OrderClause> = query
+            .order_by
+            .iter()
+            .map(|order_exp: &OrderByExpr| {
+                let ascending = order_exp.asc.is_none() || order_exp.asc.unwrap();
+                let field = order_exp.expr.to_string();
+                (field.clone(), OrderClause { field, ascending })
+            })
+            .collect::<IndexMap<String, OrderClause>>();
+
+        // Grab the select section of the query
+        let select: &Select = match &query.body {
+            ast::SetExpr::Select(select) => Some(select),
+            _ => None,
+        }
+        .ok_or_else(|| Error::CorruptedData(String::from("Issue parsing sql")))?;
+
+        // Get the document type from the 'from' section
+        let document_type_name = match &select
+            .from
+            .get(0)
+            .ok_or(Error::InvalidQuery("Invalid query: missing from section"))?
+            .relation
+        {
+            Table {
+                name,
+                alias: _,
+                args: _,
+                with_hints: _,
+            } => name.0.get(0).as_ref().map(|identifier| &identifier.value),
+            _ => None,
+        }
+        .ok_or_else(|| {
+            Error::CorruptedData(String::from("Issue parsing sql: invalid from value"))
+        })?;
+
+        let document_type = contract
+            .document_types
+            .get(document_type_name)
+            .ok_or(Error::InvalidQuery("document type not found in contract"))?;
+
+        // Restrictions
+        // only binary where clauses are supported
+        // i.e. [<fieldname>, <operator>, <value>]
+        // [and] is used to separate where clauses
+        // hence once [and] is encountered [left] and [right] must be binary operations
+        // i.e other where clauses
+        // e.g. firstname = wisdom and lastname = ogwu
+        // if op is not [and] then [left] or [right] must not be a binary operation
+        let mut all_where_clauses: Vec<WhereClause> = Vec::new();
+        let selection_tree = select.selection.as_ref();
+
+        fn build_where_clause(
+            binary_operation: &ast::Expr,
+            where_clauses: &mut Vec<WhereClause>,
+        ) -> Result<(), Error> {
+            match &binary_operation {
+                ast::Expr::BinaryOp { left, op, right } => {
+                    if *op == ast::BinaryOperator::And {
+                        build_where_clause(&*left, where_clauses)?;
+                        build_where_clause(&*right, where_clauses)?;
+                    } else {
+                        let mut where_operator = where_operator_from_sql_operator(op.clone())
+                            .ok_or(Error::InvalidQuery("Unknown operator"))?;
+
+                        let identifier;
+                        let value_expr;
+
+                        if matches!(&**left, ast::Expr::Identifier(_))
+                            && matches!(&**right, ast::Expr::Value(_))
+                        {
+                            identifier = &**left;
+                            value_expr = &**right;
+                        } else if matches!(&**right, ast::Expr::Identifier(_))
+                            && matches!(&**left, ast::Expr::Value(_))
+                        {
+                            identifier = &**right;
+                            value_expr = &**left;
+                            where_operator = where_operator.flip()?;
+                        } else {
+                            return Err(Error::InvalidQuery(
+                                "Invalid query: where clause should have field name and value",
+                            ));
+                        }
+
+                        let field_name = if let ast::Expr::Identifier(ident) = identifier {
+                            ident.value.clone()
+                        } else {
+                            panic!("unreachable: confirmed it's identifier variant");
+                        };
+
+                        let value = if let ast::Expr::Value(value) = value_expr {
+                            let cbor_val = sql_value_to_cbor(value.clone()).ok_or({
+                                Error::InvalidQuery("Invalid query: unexpected value type")
+                            })?;
+                            if where_operator == StartsWith {
+                                // make sure the value is of the right format i.e prefix%
+                                let inner_text = cbor_val.as_text().ok_or({
+                                    Error::InvalidQuery("Invalid query: startsWith takes text")
+                                })?;
+                                let match_locations: Vec<_> =
+                                    inner_text.match_indices('%').collect();
+                                if match_locations.len() == 1
+                                    && match_locations[0].0 == inner_text.len() - 1
+                                {
+                                    CborValue::Text(String::from(
+                                        &inner_text[..(inner_text.len() - 1)],
+                                    ))
+                                } else {
+                                    return Err(Error::InvalidQuery("Invalid query: like can only be used to represent startswith"));
+                                }
+                            } else {
+                                cbor_val
+                            }
+                        } else {
+                            panic!("unreachable: confirmed it's value variant");
+                        };
+
+                        where_clauses.push(WhereClause {
+                            field: field_name,
+                            operator: where_operator,
+                            value,
+                        });
+                    }
+                    Ok(())
+                }
+                _ => Err(Error::CorruptedData(String::from(
+                    "Issue parsing sql: invalid selection format",
+                ))),
+            }
+        }
+
+        // Where clauses are optional
+        if let Some(selection_tree) = selection_tree {
+            build_where_clause(selection_tree, &mut all_where_clauses)?;
+        }
+
+        let internal_clauses = Self::extract_clauses(all_where_clauses)?;
+
+        let start_at_option = None;
+        let start_at_included = true;
+        let start_at: Option<Vec<u8>> = start_at_option.and_then(bytes_for_system_value);
+
+        Ok(DriveQuery {
+            contract,
+            document_type,
+            internal_clauses,
+            offset: 0,
+            limit,
+            order_by,
+            start_at,
+            start_at_included,
+        })
+    }
+
+    fn extract_clauses(all_where_clauses: Vec<WhereClause>) -> Result<InternalClauses, Error> {
+        let range_clause = WhereClause::group_range_clauses(&all_where_clauses)?;
+
+        let equal_clauses_array = all_where_clauses
+            .iter()
+            .filter_map(|where_clause| match where_clause.operator {
+                Equal => Some(where_clause.clone()),
+                _ => None,
+            })
+            .collect::<Vec<WhereClause>>();
+
+        let in_clauses_array = all_where_clauses
+            .iter()
+            .filter_map(|where_clause| match where_clause.operator {
+                In => Some(where_clause.clone()),
+                _ => None,
+            })
+            .collect::<Vec<WhereClause>>();
+
+        let in_clause = match in_clauses_array.len() {
+            0 => Ok(None),
+            1 => Ok(Some(
+                in_clauses_array
+                    .get(0)
+                    .expect("there must be a value")
+                    .clone(),
+            )),
+            _ => Err(Error::CorruptedData(String::from(
+                "There should only be one in clause",
+            ))),
+        }?;
+
+        let equal_clauses: HashMap<String, WhereClause> = equal_clauses_array
+            .into_iter()
+            .map(|where_clause| (where_clause.field.clone(), where_clause))
+            .collect();
+
+        Ok(InternalClauses {
+            in_clause,
+            range_clause,
+            equal_clauses,
         })
     }
 
@@ -851,15 +1127,18 @@ impl<'a> DriveQuery<'a> {
         }?;
 
         let equal_fields = self
+            .internal_clauses
             .equal_clauses
             .keys()
             .map(|s| s.as_str())
             .collect::<Vec<&str>>();
         let in_field = self
+            .internal_clauses
             .in_clause
             .as_ref()
             .map(|in_clause| in_clause.field.as_str());
         let range_field = self
+            .internal_clauses
             .range_clause
             .as_ref()
             .map(|range_clause| range_clause.field.as_str());
@@ -896,25 +1175,30 @@ impl<'a> DriveQuery<'a> {
         let ordered_clauses: Vec<&WhereClause> = index
             .properties
             .iter()
-            .filter_map(|field| self.equal_clauses.get(field.name.as_str()))
+            .filter_map(|field| self.internal_clauses.equal_clauses.get(field.name.as_str()))
             .collect();
-        let (last_clause, last_clause_is_range, subquery_clause) = match &self.in_clause {
-            None => match &self.range_clause {
-                None => (ordered_clauses.last().copied(), false, None),
-                Some(where_clause) => (Some(where_clause), true, None),
-            },
-            Some(where_clause) => match &self.range_clause {
-                None => (Some(where_clause), true, None),
-                Some(range_clause) => (Some(where_clause), true, Some(range_clause)),
-            },
-        };
+        let (last_clause, last_clause_is_range, subquery_clause) =
+            match &self.internal_clauses.in_clause {
+                None => match &self.internal_clauses.range_clause {
+                    None => (ordered_clauses.last().copied(), false, None),
+                    Some(where_clause) => (Some(where_clause), true, None),
+                },
+                Some(where_clause) => match &self.internal_clauses.range_clause {
+                    None => (Some(where_clause), true, None),
+                    Some(range_clause) => (Some(where_clause), true, Some(range_clause)),
+                },
+            };
 
         // We need to get the terminal indexes unused by clauses.
         let left_over_index_properties = index
             .properties
             .iter()
             .filter(|field| {
-                !(self.equal_clauses.get(field.name.as_str()).is_some()
+                !(self
+                    .internal_clauses
+                    .equal_clauses
+                    .get(field.name.as_str())
+                    .is_some()
                     || (last_clause.is_some() && last_clause.unwrap().field == field.name)
                     || (subquery_clause.is_some() && subquery_clause.unwrap().field == field.name))
             })
@@ -924,7 +1208,7 @@ impl<'a> DriveQuery<'a> {
                 .properties
                 .iter()
                 .filter_map(|field| {
-                    match self.equal_clauses.get(field.name.as_str()) {
+                    match self.internal_clauses.equal_clauses.get(field.name.as_str()) {
                         None => None,
                         Some(where_clause) => {
                             if !last_clause_is_range
