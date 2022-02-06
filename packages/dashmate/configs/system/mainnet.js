@@ -8,6 +8,11 @@ const baseConfig = require('./base');
 
 const mainnetConfig = lodashMerge({}, baseConfig, {
   description: 'node with mainnet configuration',
+  docker: {
+    network: {
+      subnet: '172.26.24.0/24',
+    },
+  },
   core: {
     p2p: {
       port: 9999,

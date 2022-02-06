@@ -303,7 +303,14 @@ module.exports = {
           config.platform.masternodeRewardShares = systemConfigs.base.platform
             .masternodeRewardShares;
         }
+
+        config.docker = systemConfigs[config.group || 'base'].docker;
       });
+
+    // Update docker subnet settings
+    configFile.base.docker = systemConfigs.base.docker;
+    configFile.testnet.docker = systemConfigs.testnet.docker;
+    configFile.mainnet.docker = systemConfigs.mainnet.docker;
 
     // Update contracts
     configFile.configs.testnet.platform.drive.tenderdash.genesis = systemConfigs.testnet.platform

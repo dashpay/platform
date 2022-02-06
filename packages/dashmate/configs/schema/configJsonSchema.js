@@ -86,6 +86,23 @@ module.exports = {
     group: {
       type: ['string', 'null'],
     },
+    docker: {
+      type: 'object',
+      properties: {
+        network: {
+          type: 'object',
+          properties: {
+            subnet: {
+              type: 'string',
+            },
+          },
+          additionalProperties: false,
+          required: ['subnet'],
+        },
+      },
+      additionalProperties: false,
+      required: ['network'],
+    },
     core: {
       type: 'object',
       properties: {
