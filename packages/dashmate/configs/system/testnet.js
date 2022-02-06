@@ -10,6 +10,11 @@ const baseConfig = require('./base');
 
 module.exports = lodashMerge({}, baseConfig, {
   description: 'node with testnet configuration',
+  docker: {
+    network: {
+      subnet: '172.25.24.0/24',
+    },
+  },
   core: {
     p2p: {
       port: 19999,
