@@ -304,11 +304,7 @@ module.exports = {
             .masternodeRewardShares;
         }
 
-        if (config.group === 'local') {
-          config.docker = systemConfigs.local.docker;
-        } else {
-          config.docker = systemConfigs.base.docker;
-        }
+        config.docker = systemConfigs[config.group || 'base'].docker;
       });
 
     // Update docker subnet settings
