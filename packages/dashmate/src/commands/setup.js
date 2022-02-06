@@ -76,16 +76,23 @@ class SetupCommand extends BaseCommand {
       },
       {
         task: async (ctx) => {
-          await docker.createNetwork({
-            Name: 'dash_test_network',
-            IPAM: {
-              Config: [
-                {
-                  Subnet: '172.24.24.0/24',
-                },
-              ],
-            },
-          });
+          const dashLocalNetworkName = 'dash_test_network';
+
+          const dashLocalNetwork = (await docker.listNetworks())
+            .find(({ Name }) => Name === dashLocalNetworkName);
+
+          if (!dashLocalNetwork) {
+            await docker.createNetwork({
+              Name: dashLocalNetworkName,
+              IPAM: {
+                Config: [
+                  {
+                    Subnet: '172.24.24.0/24',
+                  },
+                ],
+              },
+            });
+          }
 
           if (ctx.preset === PRESET_LOCAL) {
             return setupLocalPresetTask();
