@@ -305,6 +305,12 @@ module.exports = {
         }
       });
 
+    // Update docker subnet settings
+    configFile.base.docker = systemConfigs.base.docker;
+    configFile.local.docker = systemConfigs.local.docker;
+    configFile.testnet.docker = systemConfigs.testnet.docker;
+    configFile.mainnet.docker = systemConfigs.mainnet.docker;
+
     // Update contracts
     configFile.configs.testnet.platform.drive.tenderdash.genesis = systemConfigs.testnet.platform
       .drive.tenderdash.genesis;
