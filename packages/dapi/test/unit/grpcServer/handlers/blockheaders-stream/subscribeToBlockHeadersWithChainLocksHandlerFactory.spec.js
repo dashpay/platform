@@ -20,6 +20,7 @@ const {
     BlockHeaders,
   },
 } = require('@dashevo/dapi-grpc');
+
 const GrpcCallMock = require('../../../../../lib/test/mock/GrpcCallMock');
 const subscribeToBlockHeadersWithChainLocksHandlerFactory = require(
   '../../../../../lib/grpcServer/handlers/blockheaders-stream/subscribeToBlockHeadersWithChainLocksHandlerFactory',
@@ -30,10 +31,10 @@ const cache = require("../../../../../lib/grpcServer/handlers/blockheaders-strea
 let coreAPIMock;
 let zmqClientMock;
 
-describe.only('subscribeToBlockHeadersWithChainLocksHandlerFactory', () => {
+describe('subscribeToBlockHeadersWithChainLocksHandlerFactory', () => {
   let call;
   let subscribeToBlockHeadersWithChainLocksHandler;
-  let getHistoricalBlockHeadersIterator;
+  let getHistoricalBlockHeadersIteratorMock;
   let subscribeToNewBlockHeadersMock;
 
   const cacheSpy = sinon.spy(cache);
@@ -101,6 +102,9 @@ describe.only('subscribeToBlockHeadersWithChainLocksHandlerFactory', () => {
 
   it('should subscribe from block hash', async function () {
     const blockHash = Buffer.from('00000bafbc94add76cb75e2ec92894837288a481e5c005f6563d91623bf8bc2c', 'hex');
+
+    let request = new BlockHeadersWithChainLocksRequest();
+
     request.setFromBlockHash(blockHash);
     request.setCount(0);
 
@@ -114,7 +118,7 @@ describe.only('subscribeToBlockHeadersWithChainLocksHandlerFactory', () => {
       blockHash: Buffer.from('fakeHash', 'hex'),
     });
 
-    coreAPIMock.getBlockStats.resolves({ height: 1 });
+    coreAPIMock.getBlockStats.resolves({height: 1});
 
     await subscribeToBlockHeadersWithChainLocksHandler(call);
 
@@ -164,7 +168,7 @@ describe.only('subscribeToBlockHeadersWithChainLocksHandlerFactory', () => {
       blockHash: Buffer.from('fakeHash'),
     });
 
-    coreAPIMock.getBlockStats.resolves({ height: 1 });
+    coreAPIMock.getBlockStats.resolves({height: 1});
 
     await subscribeToBlockHeadersWithChainLocksHandler(call);
 
@@ -200,7 +204,7 @@ describe.only('subscribeToBlockHeadersWithChainLocksHandlerFactory', () => {
     }
 
     try {
-      coreAPIMock.getBlockStats.throws({ code: -8 });
+      coreAPIMock.getBlockStats.throws({code: -8});
 
       await subscribeToBlockHeadersWithChainLocksHandler(call);
 
@@ -232,13 +236,14 @@ describe.only('subscribeToBlockHeadersWithChainLocksHandlerFactory', () => {
     const differentFakeBlockHeaderHex = '000000202be60663802ead0740cb6d6e49ee7824481280f03c71369eb90f7b00000000006abd277facc8cf02886d88662dbcc2adb6d8de7a491915e74bed4d835656a4f1f26dc05ced93001ccf81cabc'
 
     let request = new BlockHeadersWithChainLocksRequest();
-    request.setFromBlockHash(blockHash);
-    request.setCount(0);
-    request = BlockHeadersWithChainLocksRequest.deserializeBinary(request.serializeBinary());
-
-    call = new GrpcCallMock(sinon, request);
 
     beforeEach(function () {
+      request.setFromBlockHash(blockHash);
+      request.setCount(0);
+      request = BlockHeadersWithChainLocksRequest.deserializeBinary(request.serializeBinary());
+
+      call = new GrpcCallMock(sinon, request);
+
       historicalBlockHeadersIterator = getHistoricalBlockHeadersIteratorFactory(coreAPIMock)
 
       subscribeToBlockHeadersWithChainLocksHandler =
@@ -249,20 +254,21 @@ describe.only('subscribeToBlockHeadersWithChainLocksHandlerFactory', () => {
           subscribeToNewBlockHeadersMock,
         );
 
+      cache.set(1, undefined)
+      cache.set(2, undefined)
+      cache.set(3, undefined)
+      cache.set(4, undefined)
+      cache.set(5, undefined)
+
       cacheSpy.get.resetHistory()
       cacheSpy.set.resetHistory()
     });
 
-
-    it('should iterate over getHistoricalBlockHeaders without cache', async function () {
-      coreAPIMock.getBestChainLock.resolves({
-        height: 3,
-        signature: Buffer.from('fakesig', 'hex'),
-        blockHash: Buffer.from('fakeHash', 'hex'),
-      });
+    // the case where we request for N blocks, and theres nothing at all in the cache
+    it('should call for rpc when nothing in the cache', async function () {
       coreAPIMock.getBlockStats.resolves({height: 1});
-      coreAPIMock.getBlockHash.resolves(blockHash.toString('hex'));
       coreAPIMock.getBestBlockHeight.resolves(3);
+      coreAPIMock.getBlockHash.resolves(blockHash.toString('hex'));
       coreAPIMock.getBlockHeaders.resolves([fakeBlockHeaderHex, fakeBlockHeaderHex, fakeBlockHeaderHex]);
 
       await subscribeToBlockHeadersWithChainLocksHandler(call);
@@ -280,16 +286,11 @@ describe.only('subscribeToBlockHeadersWithChainLocksHandlerFactory', () => {
       expect(cacheSpy.set).to.be.calledWith(3, fakeBlockHeaderHex)
     });
 
+    // the case when we request for cached blocks (all N block are cached)
     it('should use cache and do not call for blockHeaders', async function () {
-      coreAPIMock.getBestChainLock.resolves({
-        height: 3,
-        signature: Buffer.from('fakesig', 'hex'),
-        blockHash: Buffer.from('fakeHash', 'hex'),
-      });
       coreAPIMock.getBlockStats.resolves({height: 1});
-      coreAPIMock.getBlockHash.resolves(blockHash.toString('hex'));
       coreAPIMock.getBestBlockHeight.resolves(3);
-      coreAPIMock.getBlockHeaders.resolves([fakeBlockHeaderHex, fakeBlockHeaderHex, fakeBlockHeaderHex]);
+      coreAPIMock.getBlockHash.resolves(blockHash.toString('hex'));
 
       cache.set(1, fakeBlockHeaderHex)
       cache.set(2, fakeBlockHeaderHex)
@@ -307,49 +308,47 @@ describe.only('subscribeToBlockHeadersWithChainLocksHandlerFactory', () => {
       expect(cacheSpy.get).to.always.returned(fakeBlockHeaderHex);
     });
 
-    it('should use maximum available cache', async function () {
-      coreAPIMock.getBestChainLock.resolves({
-        height: 3,
-        signature: Buffer.from('fakesig', 'hex'),
-        blockHash: Buffer.from('fakeHash', 'hex'),
-      });
+    // the case where we missing some blocks in the tail
+    // f.e. we request for 5 blocks, and what we have in cache is [1,2,3,undefined,undefined]
+    it('should use cache when miss something in the tail', async function () {
       coreAPIMock.getBlockStats.resolves({height: 1});
+      coreAPIMock.getBestBlockHeight.resolves(5);
       coreAPIMock.getBlockHash.resolves(blockHash.toString('hex'));
-      coreAPIMock.getBestBlockHeight.resolves(3);
       coreAPIMock.getBlockHeaders.resolves([fakeBlockHeaderHex, fakeBlockHeaderHex, fakeBlockHeaderHex]);
 
       // should use cache and does not hit rpc
       cache.set(1, fakeBlockHeaderHex)
       cache.set(2, fakeBlockHeaderHex)
-      cache.set(3, fakeBlockHeaderHex)
+      cache.set(3, differentFakeBlockHeaderHex)
+      cache.set(4, undefined)
+      cache.set(5, undefined)
       cacheSpy.set.resetHistory()
 
       await subscribeToBlockHeadersWithChainLocksHandler(call);
 
       expect(coreAPIMock.getBlockHash).to.be.calledOnceWithExactly(1);
-      expect(coreAPIMock.getBlockHeaders.callCount).to.be.equal(0)
+      expect(coreAPIMock.getBlockHeaders.callCount).to.be.equal(1)
+      expect(coreAPIMock.getBlockHeaders).to.be.calledOnceWithExactly(BlockHeader.fromRawBlock(differentFakeBlockHeaderHex).hash, 3);
 
-      expect(cacheSpy.get.callCount).to.be.equal(3);
-      expect(cacheSpy.set.callCount).to.be.equal(0);
+      expect(cacheSpy.get.callCount).to.be.equal(5);
+      expect(cacheSpy.set.callCount).to.be.equal(3);
 
-      expect(cacheSpy.get).to.always.returned(fakeBlockHeaderHex);
+      expect(cacheSpy.get).to.returned(fakeBlockHeaderHex);
+      expect(cacheSpy.get).to.returned(undefined);
     });
 
+    // the case when we have nothing in the cache at all, rpc for all blocks should be called
     it('should call for rpc if theres no cache', async function () {
-      coreAPIMock.getBestChainLock.resolves({
-        height: 3,
-        signature: Buffer.from('fakesig', 'hex'),
-        blockHash: Buffer.from('fakeHash', 'hex'),
-      });
       coreAPIMock.getBlockStats.resolves({height: 1});
-      coreAPIMock.getBlockHash.resolves(blockHash.toString('hex'));
       coreAPIMock.getBestBlockHeight.resolves(3);
+      coreAPIMock.getBlockHash.resolves(blockHash.toString('hex'));
       coreAPIMock.getBlockHeaders.resolves([fakeBlockHeaderHex, fakeBlockHeaderHex, fakeBlockHeaderHex]);
 
       await subscribeToBlockHeadersWithChainLocksHandler(call);
 
       expect(coreAPIMock.getBlockHash).to.be.calledOnceWithExactly(1);
       expect(coreAPIMock.getBlockHeaders.callCount).to.be.equal(1)
+      expect(coreAPIMock.getBlockHeaders).to.be.calledOnceWithExactly(blockHash.toString('hex'), 3);
 
       expect(cacheSpy.get.callCount).to.be.equal(3);
       expect(cacheSpy.set.callCount).to.be.equal(3);
@@ -357,60 +356,14 @@ describe.only('subscribeToBlockHeadersWithChainLocksHandlerFactory', () => {
       expect(cacheSpy.get).to.always.returned(undefined);
     });
 
-    it('should use cache for only 1 block', async function () {
-      coreAPIMock.getBestChainLock.resolves({
-        height: 3,
-        signature: Buffer.from('fakesig', 'hex'),
-        blockHash: Buffer.from('fakeHash', 'hex'),
-      });
-      coreAPIMock.getBlockStats.resolves({height: 1});
-      coreAPIMock.getBlockHash.resolves(blockHash.toString('hex'));
-      coreAPIMock.getBestBlockHeight.resolves(3);
-      coreAPIMock.getBlockHeaders.resolves([fakeBlockHeaderHex, fakeBlockHeaderHex, fakeBlockHeaderHex]);
-
-      cache.set(1, fakeBlockHeaderHex)
-      cacheSpy.set.resetHistory()
-
-      await subscribeToBlockHeadersWithChainLocksHandler(call);
-
-      expect(coreAPIMock.getBlockHash).to.be.calledOnceWithExactly(1);
-      expect(coreAPIMock.getBlockHeaders.callCount).to.be.equal(1)
-      expect(coreAPIMock.getBlockHeaders).to.be.calledOnceWithExactly(blockHash);
-
-      expect(cacheSpy.get.callCount).to.be.equal(3);
-      expect(cacheSpy.set.callCount).to.be.equal(3);
-
-      expect(cacheSpy.get).to.always.returned(undefined);
-    });
-
-    // the case where we have blockHeaders in cache, but missing something in the middle
-    // in this case we pick up last cached blockHeader without a gap
-    it('should use cache for different ranges and gaps', async function () {
-      const fakeBlockHeaderHex = '00000020272e374a06c87a0ce0e6ee1a0754c98b9ec2493e7c0ac7ba41a0730000000000568b3c4156090db4d8db5447762e95dd1d4c921c96801a9086720ded85266325916cc05caa94001c5caf3595'
-
-      const blockHash = Buffer.from('00000bafbc94add76cb75e2ec92894837288a481e5c005f6563d91623bf8bc2c', 'hex');
-
-      let request = new BlockHeadersWithChainLocksRequest();
-      request.setFromBlockHash(blockHash);
-      request.setCount(0);
-
-      request = BlockHeadersWithChainLocksRequest.deserializeBinary(request.serializeBinary());
-
-      call = new GrpcCallMock(sinon, request);
-
-
-      // 5 blocks in the network
-      // 3,4 is missing from cache
-      // means we request for 2,3,4,5
-      coreAPIMock.getBlockHash.resolves(blockHash.toString('hex'));
-      coreAPIMock.getBestChainLock.resolves({
-        height: 5,
-        signature: Buffer.from('fakesig', 'hex'),
-        blockHash: Buffer.from('fakeHash', 'hex'),
-      });
+    // the case when we miss something in the middle
+    // f.e we request for 5 blocks, and cache is [1,2,undefined,undefined,5]
+    // should take second block as a start point and request for 4 blocks
+    it('should use cache when missing in the middle', async function () {
       coreAPIMock.getBlockStats.resolves({height: 1});
       coreAPIMock.getBestBlockHeight.resolves(5);
-      coreAPIMock.getBlockHeaders.resolves([fakeBlockHeaderHex, fakeBlockHeaderHex, fakeBlockHeaderHex]);
+      coreAPIMock.getBlockHash.resolves(blockHash.toString('hex'));
+      coreAPIMock.getBlockHeaders.resolves([fakeBlockHeaderHex, fakeBlockHeaderHex, fakeBlockHeaderHex, fakeBlockHeaderHex]);
 
       cache.set(1, fakeBlockHeaderHex)
       cache.set(2, differentFakeBlockHeaderHex)
@@ -422,13 +375,100 @@ describe.only('subscribeToBlockHeadersWithChainLocksHandlerFactory', () => {
       await subscribeToBlockHeadersWithChainLocksHandler(call);
 
       expect(coreAPIMock.getBlockHash).to.be.calledOnceWithExactly(1);
+      expect(coreAPIMock.getBlockHeaders.callCount).to.be.equal(1)
       expect(coreAPIMock.getBlockHeaders).to.be.calledOnceWithExactly(BlockHeader.fromRawBlock(differentFakeBlockHeaderHex).hash, 4);
+
+      expect(cacheSpy.get.callCount).to.be.equal(5);
+      expect(cacheSpy.set.callCount).to.be.equal(4);
+
+      expect(cacheSpy.get).to.returned(fakeBlockHeaderHex);
+      expect(cacheSpy.get).to.returned(differentFakeBlockHeaderHex);
+      expect(cacheSpy.get).to.returned(undefined);
+    });
+
+    // the case where we have something in the cache, but the first blocks are not
+    // f.e. we request for 5 blocks, and cache is [undefined,undefined,3,4,5]
+    it('should not use cache when miss something in the beginning', async function () {
+      console.log(call.request.getCount())
+      coreAPIMock.getBlockStats.resolves({height: 1});
+      coreAPIMock.getBestBlockHeight.resolves(5);
+      coreAPIMock.getBlockHash.resolves(blockHash.toString('hex'));
+      coreAPIMock.getBlockHeaders.resolves([fakeBlockHeaderHex, fakeBlockHeaderHex, fakeBlockHeaderHex, fakeBlockHeaderHex, fakeBlockHeaderHex]);
+
+      cache.set(1, undefined)
+      cache.set(2, undefined)
+      cache.set(3, fakeBlockHeaderHex)
+      cache.set(4, fakeBlockHeaderHex)
+      cache.set(5, fakeBlockHeaderHex)
+      cacheSpy.set.resetHistory()
+
+      await subscribeToBlockHeadersWithChainLocksHandler(call);
+
+      expect(coreAPIMock.getBlockHash).to.be.calledOnceWithExactly(1);
+      expect(coreAPIMock.getBlockHeaders.callCount).to.be.equal(1)
+      expect(coreAPIMock.getBlockHeaders).to.be.calledOnceWithExactly(blockHash.toString('hex'), 5);
 
       expect(cacheSpy.get.callCount).to.be.equal(5);
       expect(cacheSpy.set.callCount).to.be.equal(5);
 
-      expect(cacheSpy.get).to.returned(differentFakeBlockHeaderHex);
+      expect(cacheSpy.get).to.returned(fakeBlockHeaderHex);
+      expect(cacheSpy.get).to.returned(undefined);
+    });
+
+    // the same as above, but with additional gap
+    // [undefined,2,undefined,4,5]
+    it('should not use cache when miss something in the beginning', async function () {
+      coreAPIMock.getBlockStats.resolves({height: 1});
+      coreAPIMock.getBestBlockHeight.resolves(5);
+      coreAPIMock.getBlockHash.resolves(blockHash.toString('hex'));
+      coreAPIMock.getBlockHeaders.resolves([fakeBlockHeaderHex, fakeBlockHeaderHex, fakeBlockHeaderHex, fakeBlockHeaderHex, fakeBlockHeaderHex]);
+
+      cache.set(1, undefined)
+      cache.set(2, fakeBlockHeaderHex)
+      cache.set(3, undefined)
+      cache.set(4, fakeBlockHeaderHex)
+      cache.set(5, fakeBlockHeaderHex)
+      cacheSpy.set.resetHistory()
+
+      await subscribeToBlockHeadersWithChainLocksHandler(call);
+
+      expect(coreAPIMock.getBlockHash).to.be.calledOnceWithExactly(1);
+      expect(coreAPIMock.getBlockHeaders.callCount).to.be.equal(1)
+      expect(coreAPIMock.getBlockHeaders).to.be.calledOnceWithExactly(blockHash.toString('hex'), 5);
+
+      expect(cacheSpy.get.callCount).to.be.equal(5);
+      expect(cacheSpy.set.callCount).to.be.equal(5);
+
+      expect(cacheSpy.get).to.returned(fakeBlockHeaderHex);
+      expect(cacheSpy.get).to.returned(undefined);
+    });
+
+    // the same as above, but with additional gap
+    // [undefined,2,undefined,4,5]
+    it('should not use cache when miss something in the beginning', async function () {
+      coreAPIMock.getBlockStats.resolves({height: 1});
+      coreAPIMock.getBestBlockHeight.resolves(5);
+      coreAPIMock.getBlockHash.resolves(blockHash.toString('hex'));
+      coreAPIMock.getBlockHeaders.resolves([fakeBlockHeaderHex, fakeBlockHeaderHex, fakeBlockHeaderHex, fakeBlockHeaderHex, fakeBlockHeaderHex]);
+
+      cache.set(1, undefined)
+      cache.set(2, fakeBlockHeaderHex)
+      cache.set(3, undefined)
+      cache.set(4, fakeBlockHeaderHex)
+      cache.set(5, fakeBlockHeaderHex)
+      cacheSpy.set.resetHistory()
+
+      await subscribeToBlockHeadersWithChainLocksHandler(call);
+
+      expect(coreAPIMock.getBlockHash).to.be.calledOnceWithExactly(1);
+      expect(coreAPIMock.getBlockHeaders.callCount).to.be.equal(1)
+      expect(coreAPIMock.getBlockHeaders).to.be.calledOnceWithExactly(blockHash.toString('hex'), 5);
+
+      expect(cacheSpy.get.callCount).to.be.equal(5);
+      expect(cacheSpy.set.callCount).to.be.equal(5);
+
+      expect(cacheSpy.get).to.returned(fakeBlockHeaderHex);
+      expect(cacheSpy.get).to.returned(undefined);
     });
   })
-
 });

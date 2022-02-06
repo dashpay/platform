@@ -1,5 +1,6 @@
 const {BlockHeader} = require('@dashevo/dashcore-lib');
 const cache = require('./cache')
+const {last} = require("lodash");
 
 const MAX_HEADERS_PER_REQUEST = 500;
 
@@ -48,25 +49,29 @@ function getHistoricalBlockHeadersIteratorFactory(coreRpcApi) {
       let lastCachedIndex = -1
 
       if (firstCachedItem) {
-        lastCachedIndex = cachedBlockHeaders.indexOf(undefined) - 1
-      }
+        const firstMissingIndex = cachedBlockHeaders.indexOf(undefined)
+        console.log('asdas', firstMissingIndex)
 
-      if (lastCachedIndex > 0) {
-        const rawBlockHeader = cachedBlockHeaders[lastCachedIndex]
-        const blockHeader = BlockHeader.fromRawBlock(rawBlockHeader)
-
-        blockHash = blockHeader.hash.toString('hex')
-        blocksToScan = (blocksToScan - lastCachedIndex) - 1
-
-        if (blocksToScan === 0) {
+        // return cache if we do not miss anything
+        if (cachedBlockHeaders.filter(e => !!e).length === blocksToScan) {
           return cachedBlockHeaders
+        }
+
+        if (firstMissingIndex !== -1) {
+          lastCachedIndex = firstMissingIndex - 1
+
+          const rawBlockHeader = cachedBlockHeaders[lastCachedIndex]
+          const blockHeader = BlockHeader.fromRawBlock(rawBlockHeader)
+
+          blockHash = blockHeader.hash.toString('hex')
+          blocksToScan = blocksToScan - lastCachedIndex
         }
       }
 
       const missingBlockHeaders = await coreRpcApi.getBlockHeaders(blockHash, blocksToScan)
-      const rawBlockHeaders = [...cachedBlockHeaders.slice(0, lastCachedIndex + 1), ...missingBlockHeaders]
+      const rawBlockHeaders = [...cachedBlockHeaders.slice(0, lastCachedIndex !== -1 ? lastCachedIndex : 0), ...missingBlockHeaders]
 
-      rawBlockHeaders.forEach((e, i) => cache.set(currentHeight + i, e))
+      missingBlockHeaders.forEach((e, i) => cache.set(currentHeight + i, e))
 
       // TODO: figure out whether it's possible to omit new BlockHeader() conversion
       // and directly send bytes to the client
