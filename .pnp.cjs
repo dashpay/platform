@@ -13833,15 +13833,6 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           "linkType": "HARD",
         }]
       ]],
-      ["napi-macros", [
-        ["npm:2.0.0", {
-          "packageLocation": "./.yarn/unplugged/napi-macros-npm-2.0.0-f996ef3cad/node_modules/napi-macros/",
-          "packageDependencies": [
-            ["napi-macros", "npm:2.0.0"]
-          ],
-          "linkType": "HARD",
-        }]
-      ]],
       ["natural-compare", [
         ["npm:1.4.0", {
           "packageLocation": "./.yarn/cache/natural-compare-npm-1.4.0-97b75b362d-23ad088b08.zip/node_modules/natural-compare/",
@@ -13951,6 +13942,16 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           "linkType": "HARD",
         }]
       ]],
+      ["node-abi", [
+        ["npm:2.30.1", {
+          "packageLocation": "./.yarn/cache/node-abi-npm-2.30.1-36a2c4e28a-3f4b0c912c.zip/node_modules/node-abi/",
+          "packageDependencies": [
+            ["node-abi", "npm:2.30.1"],
+            ["semver", "npm:5.7.1"]
+          ],
+          "linkType": "HARD",
+        }]
+      ]],
       ["node-fetch", [
         ["npm:2.6.6", {
           "packageLocation": "./.yarn/cache/node-fetch-npm-2.6.6-056db6b778-ee8290626b.zip/node_modules/node-fetch/",
@@ -13985,6 +13986,15 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["semver", "npm:7.3.5"],
             ["tar", "npm:6.1.11"],
             ["which", "npm:2.0.2"]
+          ],
+          "linkType": "HARD",
+        }]
+      ]],
+      ["node-gyp-build", [
+        ["npm:4.3.0", {
+          "packageLocation": "./.yarn/cache/node-gyp-build-npm-4.3.0-87bdf5216f-1ecab16d9f.zip/node_modules/node-gyp-build/",
+          "packageDependencies": [
+            ["node-gyp-build", "npm:4.3.0"]
           ],
           "linkType": "HARD",
         }]
