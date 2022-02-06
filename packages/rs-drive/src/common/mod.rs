@@ -5,26 +5,19 @@ use std::fs::File;
 use std::io;
 use std::io::{BufRead, BufReader};
 use std::path::Path;
-use tempdir::TempDir;
+use storage::rocksdb_storage::OptimisticTransactionDBTransaction;
 
-pub fn setup(prefix: &str) -> Drive {
-    // setup code
-    let tmp_dir = TempDir::new(prefix).unwrap();
-    let mut drive: Drive = Drive::open(tmp_dir).expect("expected to open Drive successfully");
-
-    drive
-        .create_root_tree(None)
-        .expect("expected to create root tree successfully");
-
-    drive
-}
-
-pub fn setup_contract(prefix: &str, path: &str) -> (Drive, Contract) {
-    let mut drive = setup(prefix);
+pub fn setup_contract(
+    drive: &mut Drive,
+    path: &str,
+    transaction: Option<&OptimisticTransactionDBTransaction>,
+) -> Contract {
     let contract_cbor = json_document_to_cbor(path, Some(crate::drive::defaults::PROTOCOL_VERSION));
     let contract = Contract::from_cbor(&contract_cbor).expect("contract should be deserialized");
-    drive.apply_contract(contract_cbor, None);
-    (drive, contract)
+    drive
+        .apply_contract(contract_cbor, transaction)
+        .expect("contract should be applied");
+    contract
 }
 
 pub fn json_document_to_cbor(path: impl AsRef<Path>, protocol_version: Option<u32>) -> Vec<u8> {

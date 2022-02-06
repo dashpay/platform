@@ -7,6 +7,7 @@ use rs_drive::query::DriveQuery;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::collections::HashMap;
+use tempdir::TempDir;
 
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -48,15 +49,27 @@ impl Person {
 }
 
 pub fn setup(count: u32, seed: u64) -> (Drive, Contract) {
-    // setup code
-    let (mut drive, contract) = common::setup_contract(
-        "family",
-        "tests/supporting_files/contract/family/family-contract.json",
-    );
+    let tmp_dir = TempDir::new("family").unwrap();
+    let mut drive: Drive = Drive::open(tmp_dir).expect("expected to open Drive successfully");
 
     let storage = drive.grove.storage();
     let db_transaction = storage.transaction();
-    drive.grove.start_transaction();
+
+    drive
+        .create_root_tree(Some(&db_transaction))
+        .expect("expected to create root tree successfully");
+
+    // setup code
+    let contract = common::setup_contract(
+        &mut drive,
+        "tests/supporting_files/contract/family/family-contract.json",
+        Some(&db_transaction),
+    );
+
+    drive
+        .grove
+        .start_transaction()
+        .expect("transaction should be started");
 
     let people = Person::random_people(count, seed);
     for person in people {
@@ -77,7 +90,10 @@ pub fn setup(count: u32, seed: u64) -> (Drive, Contract) {
             )
             .expect("document should be inserted");
     }
-    drive.grove.commit_transaction(db_transaction);
+    drive
+        .grove
+        .commit_transaction(db_transaction)
+        .expect("transaction should be committed");
     (drive, contract)
 }
 
@@ -102,6 +118,10 @@ fn test_query() {
         "Prissie".to_string(),
     ];
 
+    let storage = drive.grove.storage();
+    let db_transaction = storage.transaction();
+    drive.grove.start_transaction();
+
     // A query getting all elements by firstName
 
     let query_value = json!({
@@ -120,7 +140,7 @@ fn test_query() {
     let query = DriveQuery::from_cbor(where_cbor.as_slice(), &contract, &person_document_type)
         .expect("query should be built");
     let (results, _) = query
-        .execute_no_proof(&mut drive.grove, None)
+        .execute_no_proof(&mut drive.grove, Some(&db_transaction))
         .expect("proof should be executed");
     let names: Vec<String> = results
         .into_iter()
@@ -140,7 +160,7 @@ fn test_query() {
 
     assert_eq!(names, all_names);
 
-    // A query getting all people who's first name is Chris (which is not exist)
+    // A query getting all people who's first name is Chris (which should exist)
 
     let query_value = json!({
         "where": [
@@ -160,6 +180,100 @@ fn test_query() {
         .expect("query should be executed");
 
     assert_eq!(results.len(), 1);
+
+    // A query getting all people who's first name is Adey and lastName Randolf
+
+    let query_value = json!({
+        "where": [
+            ["firstName", "==", "Adey"],
+            ["lastName", "==", "Randolf"]
+        ],
+    });
+
+    let query_cbor = common::value_to_cbor(query_value, None);
+
+    let person_document_type = contract
+        .document_types
+        .get("person")
+        .expect("contract should have a person document type");
+
+    let (results, _) = drive
+        .query_documents_from_contract(&contract, person_document_type, query_cbor.as_slice(), None)
+        .expect("query should be executed");
+
+    assert_eq!(results.len(), 1);
+
+    let document = Document::from_cbor(results.first().unwrap().as_slice(), None, None)
+        .expect("we should be able to deserialize the cbor");
+    let last_name = document
+        .properties
+        .get("lastName")
+        .expect("we should be able to get the last name")
+        .as_text()
+        .expect("last name must be a string");
+
+    assert_eq!(last_name, "Randolf");
+
+    // A query getting all people who's first name is in a range with a single element Adey,
+    // order by lastName (this should exist)
+
+    let query_value = json!({
+        "where": [
+            ["firstName", "in", ["Adey"]]
+        ],
+        "orderBy": [
+            ["firstName", "asc"],
+            ["lastName", "asc"]
+        ]
+    });
+
+    let query_cbor = common::value_to_cbor(query_value, None);
+
+    let person_document_type = contract
+        .document_types
+        .get("person")
+        .expect("contract should have a person document type");
+
+    let (results, _) = drive
+        .query_documents_from_contract(&contract, person_document_type, query_cbor.as_slice(), None)
+        .expect("query should be executed");
+
+    assert_eq!(results.len(), 1);
+
+    // A query getting all people who's first name is Adey, order by lastName (which should exist)
+
+    let query_value = json!({
+        "where": [
+            ["firstName", "==", "Adey"]
+        ],
+        "orderBy": [
+            ["lastName", "asc"]
+        ]
+    });
+
+    let query_cbor = common::value_to_cbor(query_value, None);
+
+    let person_document_type = contract
+        .document_types
+        .get("person")
+        .expect("contract should have a person document type");
+
+    let (results, _) = drive
+        .query_documents_from_contract(&contract, person_document_type, query_cbor.as_slice(), None)
+        .expect("query should be executed");
+
+    assert_eq!(results.len(), 1);
+
+    let document = Document::from_cbor(results.first().unwrap().as_slice(), None, None)
+        .expect("we should be able to deserialize the cbor");
+    let last_name = document
+        .properties
+        .get("lastName")
+        .expect("we should be able to get the last name")
+        .as_text()
+        .expect("last name must be a string");
+
+    assert_eq!(last_name, "Randolf");
 
     // A query getting all people who's first name is Chris (which is not exist)
 
