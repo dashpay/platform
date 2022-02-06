@@ -3,7 +3,7 @@ use ciborium::value::Value;
 use grovedb::Error;
 use serde::{Deserialize, Serialize};
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, PartialEq)]
 pub enum DocumentFieldType {
     Integer,
     String,
