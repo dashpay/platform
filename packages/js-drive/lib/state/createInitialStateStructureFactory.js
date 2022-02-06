@@ -1,12 +1,4 @@
-const DataContractStoreRepository = require('../dataContract/DataContractStoreRepository');
-const IdentityStoreRepository = require('../identity/IdentityStoreRepository');
-const PublicKeyToIdentityIdStoreRepository = require('../identity/PublicKeyToIdentityIdStoreRepository');
-
-/**
- * @param {GroveDBStore} groveDBStore
- *
- * @return {createInitialStateStructure}
- */
+const SpentAssetLockTransactionsRepository = require('../identity/SpentAssetLockTransactionsRepository');
 
 /**
  *
@@ -14,6 +6,7 @@ const PublicKeyToIdentityIdStoreRepository = require('../identity/PublicKeyToIde
  * @param {PublicKeyToIdentityIdStoreRepository} publicKeyToIdentityIdRepository
  * @param {SpentAssetLockTransactionsRepository} spentAssetLockTransactionsRepository
  * @param {DataContractStoreRepository} dataContractRepository
+ * @param {GroveDBStore} groveDBStore
  * @return {createInitialStateStructure}
  */
 function createInitialStateStructureFactory(
@@ -21,18 +14,28 @@ function createInitialStateStructureFactory(
   publicKeyToIdentityIdRepository,
   spentAssetLockTransactionsRepository,
   dataContractRepository,
+  groveDBStore,
 ) {
   /**
    * @typedef {createInitialStateStructure}
    * @return {Promise<Array>}
    */
   async function createInitialStateStructure() {
-    return Promise.all([
-      identityRepository.createTree(),
-      publicKeyToIdentityIdRepository.createTree(),
-      spentAssetLockTransactionsRepository.createTree(),
-      dataContractRepository.createTree(),
-    ]);
+    await identityRepository.createTree({ useTransaction: true });
+
+    await publicKeyToIdentityIdRepository.createTree({ useTransaction: true });
+
+    await dataContractRepository.createTree({ useTransaction: true });
+
+    // Create Misc tree
+    await groveDBStore.createTree(
+      [],
+      SpentAssetLockTransactionsRepository.TREE_PATH[0],
+      { useTransaction: true },
+    );
+
+    // Add spent asset lock tree
+    await spentAssetLockTransactionsRepository.createTree({ useTransaction: true });
   }
 
   return createInitialStateStructure;

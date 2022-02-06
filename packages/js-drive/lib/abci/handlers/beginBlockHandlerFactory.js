@@ -20,6 +20,7 @@ const NetworkProtocolVersionIsNotSetError = require('./errors/NetworkProtocolVer
  * @param {DashPlatformProtocol} transactionalDpp
  * @param {updateSimplifiedMasternodeList} updateSimplifiedMasternodeList
  * @param {waitForChainLockedHeight} waitForChainLockedHeight
+ * @param {synchronizeMasternodeIdentities} synchronizeMasternodeIdentities
  * @param {BaseLogger} logger
  *
  * @return {beginBlockHandler}
@@ -33,6 +34,7 @@ function beginBlockHandlerFactory(
   transactionalDpp,
   updateSimplifiedMasternodeList,
   waitForChainLockedHeight,
+  synchronizeMasternodeIdentities,
   logger,
 ) {
   /**
@@ -72,11 +74,8 @@ function beginBlockHandlerFactory(
     }
 
     // Make sure Core has the same height as the network
-    await waitForChainLockedHeight(coreChainLockedHeight);
 
-    await updateSimplifiedMasternodeList(coreChainLockedHeight, {
-      logger: consensusLogger,
-    });
+    await waitForChainLockedHeight(coreChainLockedHeight);
 
     // Set block execution context
 
@@ -85,8 +84,8 @@ function beginBlockHandlerFactory(
     // previous context properly reset.
     const contextHeader = blockExecutionContext.getHeader();
     if (contextHeader && contextHeader.height.equals(height)) {
-      if (groveDBStore.isTransactionStarted()) {
-        groveDBStore.rollbackTransaction();
+      if (await groveDBStore.isTransactionStarted()) {
+        await groveDBStore.abortTransaction();
       }
 
       // Remove failed block context from the stack
@@ -109,6 +108,21 @@ function beginBlockHandlerFactory(
     // Set protocol version to DPP
     dpp.setProtocolVersion(version.app.toNumber());
     transactionalDpp.setProtocolVersion(version.app.toNumber());
+
+    // Start db transaction for the block
+    if (!await groveDBStore.isTransactionStarted()) {
+      await groveDBStore.startTransaction();
+    }
+
+    const isSimplifiedMasternodeListUpdated = await updateSimplifiedMasternodeList(
+      coreChainLockedHeight, {
+        logger: consensusLogger,
+      },
+    );
+
+    if (isSimplifiedMasternodeListUpdated) {
+      await synchronizeMasternodeIdentities(coreChainLockedHeight);
+    }
 
     consensusLogger.info(`Block begin #${height}`);
 

@@ -53,15 +53,19 @@ class IdentityStoreRepository {
   }
 
   /**
+   * @param {Object} [options]
+   * @param {boolean} [options.useTransaction=false]
+   * @param {boolean} [options.skipIfExists]
+   *
    * @return {Promise<IdentityStoreRepository>}
    */
-  async createTree() {
-    await this.storage.createTree([], IdentityStoreRepository.TREE_PATH[0]);
+  async createTree(options = {}) {
+    await this.storage.createTree([], IdentityStoreRepository.TREE_PATH[0], options);
 
     return this;
   }
 }
 
-IdentityStoreRepository.TREE_PATH = [Buffer.from('identities')];
+IdentityStoreRepository.TREE_PATH = [Buffer.from([0])];
 
 module.exports = IdentityStoreRepository;

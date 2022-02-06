@@ -7,7 +7,8 @@ const DataContractStoreRepository = require('../../dataContract/DataContractStor
 function createDocumentTypeTreePath(dataContract, documentType) {
   return DataContractStoreRepository.TREE_PATH.concat([
     dataContract.getId().toBuffer(),
-    documentType,
+    Buffer.from([1]),
+    Buffer.from(documentType),
   ]);
 }
 

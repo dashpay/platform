@@ -6,8 +6,6 @@ const {
   },
 } = require('@dashevo/abci/types');
 
-const { asValue } = require('awilix');
-
 /**
  * Init Chain ABCI handler
  *
@@ -15,34 +13,11 @@ const { asValue } = require('awilix');
  * @param {number} initialCoreChainLockedHeight
  * @param {ValidatorSet} validatorSet
  * @param {createValidatorSetUpdate} createValidatorSetUpdate
+ * @param {synchronizeMasternodeIdentities} synchronizeMasternodeIdentities
  * @param {BaseLogger} logger
  * @param {createInitialStateStructure} createInitialStateStructure
- * @param {groveDBStore} groveDBStore
- * @param {registerSystemDataContract} registerSystemDataContract
- * @param {registerTopLevelDomain} registerTopLevelDomain
- * @param {registerFeatureFlag} registerFeatureFlag
- * @param {RootTree} rootTree
- * @param {DocumentDatabaseManager} documentDatabaseManager
- * @param {DocumentDatabaseManager} previousDocumentDatabaseManager
- * @param {Identifier} dpnsContractId
- * @param {Identifier} dpnsOwnerId
- * @param {PublicKey} dpnsOwnerPublicKey
- * @param {Object} dpnsDocuments
- * @param {Identifier} featureFlagsContractId
- * @param {Identifier} featureFlagsOwnerId
- * @param {PublicKey} featureFlagsOwnerPublicKey
- * @param {Object} featureFlagsDocuments
- * @param {Identifier} masternodeRewardSharesContractId
- * @param {Identifier} masternodeRewardSharesOwnerId
- * @param {PublicKey} masternodeRewardSharesOwnerPublicKey
- * @param {Object} masternodeRewardSharesDocuments
- * @param {Identifier} dashpayContractId
- * @param {Identifier} dashpayOwnerId
- * @param {PublicKey} dashpayOwnerPublicKey
- * @param {Object} dashpayDocuments
- * @param {BlockExecutionStoreTransactions} blockExecutionStoreTransactions
- * @param {cloneToPreviousStoreTransactions} cloneToPreviousStoreTransactions
- * @param {AwilixContainer} container
+ * @param {registerSystemDataContracts} registerSystemDataContracts
+ * @param {GroveDBStore} groveDBStore
  *
  * @return {initChainHandler}
  */
@@ -51,34 +26,11 @@ function initChainHandlerFactory(
   initialCoreChainLockedHeight,
   validatorSet,
   createValidatorSetUpdate,
+  synchronizeMasternodeIdentities,
   logger,
   createInitialStateStructure,
+  registerSystemDataContracts,
   groveDBStore,
-  registerSystemDataContract,
-  registerTopLevelDomain,
-  registerFeatureFlag,
-  rootTree,
-  documentDatabaseManager,
-  previousDocumentDatabaseManager,
-  dpnsContractId,
-  dpnsOwnerId,
-  dpnsOwnerPublicKey,
-  dpnsDocuments,
-  featureFlagsContractId,
-  featureFlagsOwnerId,
-  featureFlagsOwnerPublicKey,
-  featureFlagsDocuments,
-  masternodeRewardSharesContractId,
-  masternodeRewardSharesOwnerId,
-  masternodeRewardSharesOwnerPublicKey,
-  masternodeRewardSharesDocuments,
-  dashpayContractId,
-  dashpayOwnerId,
-  dashpayOwnerPublicKey,
-  dashpayDocuments,
-  blockExecutionStoreTransactions,
-  cloneToPreviousStoreTransactions,
-  container,
 ) {
   /**
    * @typedef initChainHandler
@@ -89,10 +41,6 @@ function initChainHandlerFactory(
   async function initChainHandler(request) {
     const { time } = request;
 
-    const genesisTime = new Date(
-      time.seconds.toNumber() * 1000,
-    );
-
     const contextLogger = logger.child({
       height: request.initialHeight.toString(),
       abciMethod: 'initChain',
@@ -101,117 +49,41 @@ function initChainHandlerFactory(
     contextLogger.debug('InitChain ABCI method requested');
     contextLogger.trace({ abciRequest: request });
 
-    await blockExecutionStoreTransactions.start();
-
-    const previousBlockExecutionStoreTransactions = await cloneToPreviousStoreTransactions(
-      blockExecutionStoreTransactions,
+    await updateSimplifiedMasternodeList(
+      initialCoreChainLockedHeight, {
+        logger: contextLogger,
+      },
     );
 
-    container.register({
-      previousBlockExecutionStoreTransactions: asValue(previousBlockExecutionStoreTransactions),
-    });
+    // Create initial state
 
-    await blockExecutionStoreTransactions.commit();
-
-    contextLogger.debug('Registering system data contract: feature flags');
-    contextLogger.trace({
-      ownerId: featureFlagsOwnerId,
-      contractId: featureFlagsContractId,
-      publicKey: featureFlagsOwnerPublicKey,
-    });
-
-    // Registering feature flags data contract
-    const featureFlagContract = await registerSystemDataContract(
-      featureFlagsOwnerId,
-      featureFlagsContractId,
-      featureFlagsOwnerPublicKey,
-      featureFlagsDocuments,
-    );
-
-    await documentDatabaseManager.create(
-      featureFlagContract, { isTransactional: false },
-    );
-    await previousDocumentDatabaseManager.create(
-      featureFlagContract, { isTransactional: false },
-    );
-
-    contextLogger.debug('Registering system data contract: DPNS');
-    contextLogger.trace({
-      ownerId: dpnsOwnerId,
-      contractId: dpnsContractId,
-      publicKey: dpnsOwnerPublicKey,
-    });
-
-    // Registering DPNS data contract
-    const dpnsContract = await registerSystemDataContract(
-      dpnsOwnerId,
-      dpnsContractId,
-      dpnsOwnerPublicKey,
-      dpnsDocuments,
-    );
-
-    await documentDatabaseManager.create(
-      dpnsContract, { isTransactional: false },
-    );
-    await previousDocumentDatabaseManager.create(
-      dpnsContract, { isTransactional: false },
-    );
-
-    await registerTopLevelDomain('dash', dpnsContract, dpnsOwnerId, genesisTime);
-
-    contextLogger.debug('Registering system data contract: masternode rewards');
-    contextLogger.trace({
-      ownerId: masternodeRewardSharesOwnerId,
-      contractId: masternodeRewardSharesContractId,
-      publicKey: masternodeRewardSharesOwnerPublicKey,
-    });
-
-    // Registering masternode reward sharing data contract
-    const masternodeRewardSharesContract = await registerSystemDataContract(
-      masternodeRewardSharesOwnerId,
-      masternodeRewardSharesContractId,
-      masternodeRewardSharesOwnerPublicKey,
-      masternodeRewardSharesDocuments,
-    );
-
-    await documentDatabaseManager.create(
-      masternodeRewardSharesContract,
-      { isTransactional: false },
-    );
-    await previousDocumentDatabaseManager.create(
-      masternodeRewardSharesContract,
-      { isTransactional: false },
-    );
-
-    contextLogger.debug('Registering system data contract: dashpay');
-    contextLogger.trace({
-      ownerId: dashpayOwnerId,
-      contractId: dashpayContractId,
-      publicKey: dashpayOwnerPublicKey,
-    });
-
-    // Registering masternode reward sharing data contract
-    const dashpayContract = await registerSystemDataContract(
-      dashpayOwnerId,
-      dashpayContractId,
-      dashpayOwnerPublicKey,
-      dashpayDocuments,
-    );
-
-    await documentDatabaseManager.create(
-      dashpayContract, { isTransactional: false },
-    );
-    await previousDocumentDatabaseManager.create(
-      dashpayContract, { isTransactional: false },
-    );
-
-    await updateSimplifiedMasternodeList(initialCoreChainLockedHeight, {
-      logger: contextLogger,
-    });
+    await groveDBStore.startTransaction();
 
     await createInitialStateStructure();
 
-    contextLogger.info(`Init ${request.chainId} chain on block #${request.initialHeight.toString()}`);
+    let appHash = await groveDBStore.getRootHash();
+
+    console.log(`structure ${appHash.toString('hex').toUpperCase()}`);
+
+    await registerSystemDataContracts(contextLogger, time);
+
+    appHash = await groveDBStore.getRootHash();
+
+    console.log(`system contracts ${appHash.toString('hex').toUpperCase()}`);
+
+    await synchronizeMasternodeIdentities(initialCoreChainLockedHeight);
+
+    appHash = await groveDBStore.getRootHash();
+
+    console.log(`masternode identities ${appHash.toString('hex').toUpperCase()}`);
+
+    await groveDBStore.commitTransaction();
+
+    appHash = await groveDBStore.getRootHash();
+
+    console.log(`commit ${appHash.toString('hex').toUpperCase()}`);
+
+    // Set initial validator set
 
     await validatorSet.initialize(initialCoreChainLockedHeight);
 
@@ -221,7 +93,15 @@ function initChainHandlerFactory(
 
     contextLogger.trace(validatorSetUpdate, `Validator set initialized with ${quorumHash} quorum`);
 
-    const appHash = groveDBStore.getRootHash();
+    contextLogger.info(
+      {
+        chainId: request.chainId,
+        appHash: appHash.toString('hex').toUpperCase(),
+        initialHeight: request.initialHeight.toString(),
+        initialCoreHeight: initialCoreChainLockedHeight,
+      },
+      `Init ${request.chainId} chain on block #${request.initialHeight.toString()} with app hash ${appHash.toString('hex').toUpperCase()}`,
+    );
 
     return new ResponseInitChain({
       appHash,

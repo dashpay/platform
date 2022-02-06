@@ -50,7 +50,7 @@ function updateSimplifiedMasternodeListFactory(
    * @param {Object} [options]
    * @param {BaseLogger} [options.logger]
    *
-   * @returns {Promise<void>}
+   * @returns {Promise<boolean>}
    */
   async function updateSimplifiedMasternodeList(coreHeight, options = {}) {
     // either use a logger passed or use standard logger
@@ -86,7 +86,11 @@ function updateSimplifiedMasternodeListFactory(
       latestRequestedHeight = coreHeight;
 
       contextLogger.debug(`SML is initialized for core heights ${startHeight} to ${coreHeight}`);
-    } else if (latestRequestedHeight < coreHeight) {
+
+      return true;
+    }
+
+    if (latestRequestedHeight < coreHeight) {
       // Update SML
 
       const smlDiffs = await fetchDiffsPerBlock(latestRequestedHeight, coreHeight);
@@ -96,7 +100,11 @@ function updateSimplifiedMasternodeListFactory(
       contextLogger.debug(`SML is updated for core heights ${latestRequestedHeight} to ${coreHeight}`);
 
       latestRequestedHeight = coreHeight;
+
+      return true;
     }
+
+    return false;
   }
 
   return updateSimplifiedMasternodeList;

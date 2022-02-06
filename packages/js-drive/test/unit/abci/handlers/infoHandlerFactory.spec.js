@@ -8,8 +8,6 @@ const {
   },
 } = require('@dashevo/abci/types');
 
-const NoPreviousBlockExecutionStoreTransactionsFoundError = require('../../../../lib/abci/handlers/errors/NoPreviousBlockExecutionStoreTransactionsFoundError');
-
 const infoHandlerFactory = require('../../../../lib/abci/handlers/infoHandlerFactory');
 
 const RootTreeMock = require('../../../../lib/test/mock/RootTreeMock');

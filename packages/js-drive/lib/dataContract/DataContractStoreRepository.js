@@ -16,79 +16,10 @@ class DataContractStoreRepository {
    *
    * @param {DataContract} dataContract
    * @param {boolean} [useTransaction=false]
-   * @return {Promise<DataContractStoreRepository>}
+   * @return {Promise<number>}
    */
   async store(dataContract, useTransaction = false) {
-    /**
-     * Store contract
-     */
-
-    // Create contract tree
-    await this.storage.createTree(
-      DataContractStoreRepository.TREE_PATH,
-      dataContract.getId().toBuffer(),
-      { useTransaction },
-    );
-
-    // Store contract under Data Contract key
-    const contractTreePath = DataContractStoreRepository.TREE_PATH
-      .concat([dataContract.getId().toBuffer()]);
-
-    await this.storage.put(
-      contractTreePath,
-      DataContractStoreRepository.DATA_CONTRACT_KEY,
-      dataContract.toBuffer(),
-      { useTransaction },
-    );
-
-    /**
-     * Create document type trees
-     */
-    const promises = Object.entries(dataContract.getDocuments())
-      .map(async ([documentType, documentDefinition]) => {
-        // Create document type tree
-        await this.storage.createTree(
-          contractTreePath,
-          Buffer.from(documentType),
-          { useTransaction, skipIfExists: true },
-        );
-
-        const documentTypeTreePath = contractTreePath.concat([Buffer.from(documentType)]);
-
-        // Create IDs tree
-        await this.storage.createTree(
-          documentTypeTreePath,
-          DataContractStoreRepository.DOCUMENTS_TREE_KEY,
-          { useTransaction, skipIfExists: true },
-        );
-
-        // Create first indexed property trees
-        const firstIndexedProperties = (documentDefinition.indices || []).map((indexDefinition) => (
-          Object.keys(indexDefinition.properties[0])[0]
-        ));
-
-        const uniqueFirstIndexedProperties = [...new Set(firstIndexedProperties)];
-
-        await Promise.all(uniqueFirstIndexedProperties.map(async (indexedProperty) => {
-          // Create tree for indexed property
-          await this.storage.createTree(
-            documentTypeTreePath,
-            Buffer.from(indexedProperty),
-            { useTransaction, skipIfExists: true },
-          );
-
-          // Create tree for ID references
-          await this.storage.createTree(
-            documentTypeTreePath.concat([Buffer.from(indexedProperty)]),
-            DataContractStoreRepository.DOCUMENTS_TREE_KEY,
-            { useTransaction, skipIfExists: true },
-          );
-        }));
-      });
-
-    await Promise.all(promises);
-
-    return this;
+    return this.storage.getDrive().applyContract(dataContract, useTransaction);
   }
 
   /**
@@ -115,16 +46,20 @@ class DataContractStoreRepository {
   }
 
   /**
+   * @param {Object} [options]
+   * @param {boolean} [options.useTransaction=false]
+   * @param {boolean} [options.skipIfExists]
+   *
    * @return {Promise<DataContractStoreRepository>}
    */
-  async createTree() {
-    await this.storage.createTree([], DataContractStoreRepository.TREE_PATH[0]);
+  async createTree(options = {}) {
+    await this.storage.createTree([], DataContractStoreRepository.TREE_PATH[0], options);
 
     return this;
   }
 }
 
-DataContractStoreRepository.TREE_PATH = [Buffer.from('contracts')];
+DataContractStoreRepository.TREE_PATH = [Buffer.from([1])];
 DataContractStoreRepository.DATA_CONTRACT_KEY = Buffer.from([0]);
 DataContractStoreRepository.DOCUMENTS_TREE_KEY = Buffer.from([0]);
 

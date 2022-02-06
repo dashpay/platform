@@ -26,6 +26,11 @@ const {
 module.exports = {
   description: 'base config for use as template',
   group: null,
+  docker: {
+    network: {
+      subnet: '172.24.24.0/24',
+    },
+  },
   core: {
     docker: {
       image: 'dashpay/dashd:0.17',

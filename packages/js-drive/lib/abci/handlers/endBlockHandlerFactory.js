@@ -90,6 +90,7 @@ function endBlockHandlerFactory(
     }
 
     // Update consensus params feature flag
+
     const updateConsensusParamsFeatureFlag = await getFeatureFlagForHeight(
       featureFlagTypes.UPDATE_CONSENSUS_PARAMS,
       height,
