@@ -73,7 +73,7 @@
     "@dashevo/feature-flags-contract": "workspace:~",
     "@dashevo/grpc-common": "workspace:~",
     "@dashevo/masternode-reward-shares-contract": "workspace:~",
-    "@dashevo/rs-drive": "~0.22.0-dev.1",
+    "@dashevo/rs-drive": "~0.22.0-dev.3",
     "ajv": "^8.6.0",
     "ajv-keywords": "^5.0.0",
     "awilix": "^4.2.6",
