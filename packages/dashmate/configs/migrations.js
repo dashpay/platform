@@ -303,11 +303,16 @@ module.exports = {
           config.platform.masternodeRewardShares = systemConfigs.base.platform
             .masternodeRewardShares;
         }
+
+        if (config.group === 'local') {
+          config.docker = systemConfigs.local.docker;
+        } else {
+          config.docker = systemConfigs.base.docker;
+        }
       });
 
     // Update docker subnet settings
     configFile.base.docker = systemConfigs.base.docker;
-    configFile.local.docker = systemConfigs.local.docker;
     configFile.testnet.docker = systemConfigs.testnet.docker;
     configFile.mainnet.docker = systemConfigs.mainnet.docker;
 
