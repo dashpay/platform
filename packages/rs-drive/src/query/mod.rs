@@ -810,8 +810,8 @@ impl<'a> DriveQuery<'a> {
 
     pub fn execute_with_proof(
         self,
-        grove: &mut GroveDb,
-        transaction: Option<&OptimisticTransactionDBTransaction>,
+        _grove: &mut GroveDb,
+        _transaction: Option<&OptimisticTransactionDBTransaction>,
     ) -> Result<Vec<u8>, Error> {
         todo!()
     }
@@ -927,8 +927,7 @@ impl<'a> DriveQuery<'a> {
                     match self.equal_clauses.get(field.name.as_str()) {
                         None => None,
                         Some(where_clause) => {
-                            if self.order_by.is_empty()
-                                && !last_clause_is_range
+                            if !last_clause_is_range
                                 && last_clause.is_some()
                                 && last_clause.unwrap().field == field.name
                             {
@@ -945,9 +944,6 @@ impl<'a> DriveQuery<'a> {
                 })
                 .collect::<Result<Vec<Vec<u8>>, Error>>()?;
 
-        let (intermediate_indexes, last_indexes) =
-            index.properties.split_at(intermediate_values.len());
-
         fn recursive_insert(
             query: Option<&mut Query>,
             left_over_index_properties: &[&IndexProperty],
@@ -955,20 +951,17 @@ impl<'a> DriveQuery<'a> {
         ) -> Option<Query> {
             match left_over_index_properties.split_first() {
                 None => {
-                    match query {
-                        None => {}
-                        Some(query) => {
-                            match unique {
-                                true => {
-                                    query.set_subquery_key(vec![0]);
-                                }
-                                false => {
-                                    query.set_subquery_key(vec![0]);
-                                    // we just get all by document id order ascending
-                                    let mut full_query = Query::new();
-                                    full_query.insert_all();
-                                    query.set_subquery(full_query);
-                                }
+                    if let Some(query) = query {
+                        match unique {
+                            true => {
+                                query.set_subquery_key(vec![0]);
+                            }
+                            false => {
+                                query.set_subquery_key(vec![0]);
+                                // we just get all by document id order ascending
+                                let mut full_query = Query::new();
+                                full_query.insert_all();
+                                query.set_subquery(full_query);
                             }
                         }
                     }
@@ -1048,6 +1041,9 @@ impl<'a> DriveQuery<'a> {
             }
         };
 
+        let (intermediate_indexes, last_indexes) =
+            index.properties.split_at(intermediate_values.len());
+
         // Now we should construct the path
         let last_index = last_indexes.first().ok_or_else(|| {
             Error::CorruptedData(String::from("document query has no index with fields"))
@@ -1083,24 +1079,3 @@ impl<'a> DriveQuery<'a> {
         }
     }
 }
-
-// pub enum JoinType {
-//     JoinTypeIntersection,
-//     JoinTypeIntersectionExclusion,
-//     JoinTypeUnion,
-// }
-//
-// pub struct QueryGroupComponent {
-//     paths : Vec<GroveDb::PathQuery>,
-//     join : JoinType,
-// }
-//
-// impl QueryGroupComponent {
-//     fn execute(&self, mut grove: GroveDb) -> Result<vec<vec<u8>>, Error> {
-//         grove.get_query(self.paths)
-//     }
-// }
-//
-// pub struct Query {
-//     conditions : Vec<QueryGroupComponent>,
-// }

@@ -832,9 +832,20 @@ mod tests {
 
     #[test]
     fn test_add_dpns_documents() {
-        let (mut drive, contract) = setup_contract(
-            "dpns",
+        let tmp_dir = TempDir::new("dpns").unwrap();
+        let mut drive: Drive = Drive::open(tmp_dir).expect("expected to open Drive successfully");
+
+        let storage = drive.grove.storage();
+        let db_transaction = storage.transaction();
+
+        drive
+            .create_root_tree(Some(&db_transaction))
+            .expect("expected to create root tree successfully");
+
+        let contract = setup_contract(
+            &mut drive,
             "tests/supporting_files/contract/dpns/dpns-contract.json",
+            Some(&db_transaction),
         );
 
         let dpns_domain_document_cbor =
@@ -854,9 +865,14 @@ mod tests {
                 "domain",
                 None,
                 false,
-                None,
+                Some(&db_transaction),
             )
             .expect("expected to insert a document successfully");
+
+        drive
+            .grove
+            .commit_transaction(db_transaction)
+            .expect("unable to commit transaction");
     }
 
     #[test]
