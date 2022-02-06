@@ -19,5 +19,6 @@ volumes:
 
 networks:
   default:
-    external:
-      name: dash_test_network
+    ipam:
+      config:
+        - subnet: ${DOCKER_NETWORK_SUBNET:?err}
