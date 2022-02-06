@@ -73,7 +73,7 @@ class SetupCommand extends BaseCommand {
         },
       },
       {
-        task: async (ctx) => {
+        task: (ctx) => {
           if (ctx.preset === PRESET_LOCAL) {
             return setupLocalPresetTask();
           }
