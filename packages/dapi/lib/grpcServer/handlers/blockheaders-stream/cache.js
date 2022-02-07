@@ -1,8 +1,9 @@
 const LRU = require('lru-cache');
+const config = require('../../../config');
 
 const options = {
-  max: 500,
-  maxAge: 1000 * 60 * 60,
+  max: config.lru.maxSize,
+  maxAge: config.lru.maxAge,
   length: (n) => n.length
 };
 
