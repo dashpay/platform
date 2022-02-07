@@ -14,6 +14,7 @@ describe('GroveDB', () => {
   let itemValue;
   let rootTreePath;
   let itemTreePath;
+  let otherTreeKey;
 
   beforeEach(() => {
     drive = new Drive(TEST_DATA_PATH);
@@ -26,12 +27,40 @@ describe('GroveDB', () => {
 
     rootTreePath = [];
     itemTreePath = [treeKey];
+
+    otherTreeKey = Buffer.from('other_tree');
   });
 
   afterEach(async () => {
     await drive.close();
 
     fs.rmSync(TEST_DATA_PATH, { recursive: true });
+  });
+
+  it('should store and retrieve reference', async () => {
+    await groveDb.insert(
+      rootTreePath,
+      otherTreeKey,
+      { type: 'tree', value: Buffer.alloc(32) },
+    );
+
+    await groveDb.insert(
+      rootTreePath,
+      treeKey,
+      { type: 'tree', value: Buffer.alloc(32) },
+    );
+
+    await groveDb.insert(
+      itemTreePath,
+      itemKey,
+      { type: 'item', value: itemValue },
+    );
+
+    await groveDb.insert(
+      itemTreePath,
+      itemKey,
+      { type: 'reference', value: [otherTreeKey, itemKey] },
+    );
   });
 
   it('should store and retrieve a value', async () => {
@@ -98,11 +127,11 @@ describe('GroveDB', () => {
 
         expect.fail('should throw an error');
       } catch (e) {
-        expect(e.message).to.equal('invalid path: no subtree found under that path');
+        expect(e.message).to.equal('invalid path: no subtree found for root path');
         // appendStack wrapper should add call stack to neon binding errors
-        expect(e.stack).to.not.equal('invalid path: no subtree found under that path');
+        expect(e.stack).to.not.equal('invalid path: no subtree found for root path');
         expect(e.stack).to.be.a('string').and.satisfy((msg) => (
-          msg.startsWith('Error: invalid path: no subtree found under that path')
+          msg.startsWith('Error: invalid path: no subtree found for root path')
         ));
       }
     });
