@@ -50,7 +50,7 @@ class GroveDBStore {
     await this.db[method](
       path,
       key,
-      { type: 'reference', referencePath },
+      { type: 'reference', value: referencePath },
       options.useTransaction || false,
     );
 
@@ -186,15 +186,13 @@ class GroveDBStore {
    * Delete auxiliary value by key
    *
    * @param {Buffer} key
-   * @param {Buffer} value
    * @param {Object} [options]
    * @param {boolean} [options.useTransaction=false]
    * @return {Promise<GroveDBStore>}
    */
-  async deleteAux(key, value, options = {}) {
+  async deleteAux(key, options = {}) {
     await this.db.deleteAux(
       key,
-      value,
       options.useTransaction || false,
     );
 

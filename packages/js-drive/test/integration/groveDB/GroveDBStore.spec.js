@@ -131,7 +131,23 @@ describe('GroveDBStore', () => {
     });
 
     it('should put an item by reference in transaction', async () => {
-      throw new Error('Not implemented');
+      await store.put(otherTreePath, key, value);
+
+      await store.startTransaction();
+
+      await store.putReference(testTreePath, key, [otherTreePath[0], key], {
+        useTransaction: true,
+      });
+
+      const nonTxResult = await store.get(testTreePath, key);
+
+      expect(nonTxResult).to.be.null();
+
+      const txResult = await store.get(testTreePath, key, {
+        useTransaction: true,
+      });
+
+      expect(txResult).to.deep.equal(value);
     });
   });
 
@@ -220,9 +236,7 @@ describe('GroveDBStore', () => {
 
       expect(nonTxResult).to.be.null();
 
-      const txResult = await rsDrive.getGroveDB().getAux(key, {
-        useTransaction: true,
-      });
+      const txResult = await rsDrive.getGroveDB().getAux(key, true);
 
       expect(txResult).to.deep.equal(value);
     });
