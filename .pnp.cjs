@@ -2566,7 +2566,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["lodash.get", "npm:4.4.2"],
             ["lodash.set", "npm:4.3.2"],
             ["long", "npm:5.2.0"],
-            ["lru-cache", "npm:5.1.1"],
+            ["lru-cache", "npm:6.0.0"],
             ["memdown", "npm:5.1.0"],
             ["mocha", "npm:9.1.3"],
             ["mongodb", "virtual:a39316770159f0a8e3f370c1c3a56eb433794f8d2beaf0837a3349497b1cf2188cea77a97e39f187d7b9f59864fa6d9d57b4c49a9871c8de6a876e77cba350c7#npm:3.7.3"],
@@ -13187,14 +13187,6 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           ],
           "linkType": "HARD",
         }],
-        ["npm:5.1.1", {
-          "packageLocation": "./.yarn/cache/lru-cache-npm-5.1.1-f475882a51-c154ae1cbb.zip/node_modules/lru-cache/",
-          "packageDependencies": [
-            ["lru-cache", "npm:5.1.1"],
-            ["yallist", "npm:3.1.1"]
-          ],
-          "linkType": "HARD",
-        }],
         ["npm:6.0.0", {
           "packageLocation": "./.yarn/cache/lru-cache-npm-6.0.0-b4c8668fe1-f97f499f89.zip/node_modules/lru-cache/",
           "packageDependencies": [
@@ -20014,13 +20006,6 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           "packageLocation": "./.yarn/cache/yallist-npm-2.1.2-2e38c366a3-9ba9940920.zip/node_modules/yallist/",
           "packageDependencies": [
             ["yallist", "npm:2.1.2"]
-          ],
-          "linkType": "HARD",
-        }],
-        ["npm:3.1.1", {
-          "packageLocation": "./.yarn/cache/yallist-npm-3.1.1-a568a556b4-48f7bb00dc.zip/node_modules/yallist/",
-          "packageDependencies": [
-            ["yallist", "npm:3.1.1"]
           ],
           "linkType": "HARD",
         }],
