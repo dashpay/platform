@@ -9,11 +9,16 @@ const ConflictingConditionsError = require('./errors/ConflictingConditionsError'
 const jsonSchema = require('./jsonSchema');
 
 const NotIndexedPropertiesInWhereConditionsError = require('./errors/NotIndexedPropertiesInWhereConditionsError');
-const InvalidPropertiesInOrderByError = require('./errors/InvalidPropertiesInOrderByError');
 const MultipleRangeOperatorsError = require('./errors/MultipleRangeOperatorsError');
 const InOperatorAllowedOnlyForLastTwoIndexedPropertiesError = require('./errors/InOperatorAllowedOnlyForLastTwoIndexedPropertiesError');
 const RangeOperatorAllowedOnlyWithEqualOperatorsError = require('./errors/RangeOperatorAllowedOnlyWithEqualOperatorsError');
 const RangePropertyDoesNotHaveOrderByError = require('./errors/RangePropertyDoesNotHaveOrderByError');
+const RangeOperatorAllowedOnlyForLastTwoWhereConditionsError = require('./errors/RangeOperatorAllowedOnlyForLastTwoWhereConditionsError');
+const WhereConditionPropertiesNumberError = require('./errors/WhereConditionPropertiesNumberError');
+const OrderByWithoutWhereConditionsError = require('./errors/OrderByWithoutWhereConditionsError');
+const QueriedPropertyIsToFarAwayError = require('./errors/QueriedPropertyIsToFarAwayError');
+const InvalidPropertiesInOrderByError = require('./errors/InvalidPropertiesInOrderByError');
+const InvalidOrderByPropertiesOrderError = require('./errors/InvalidOrderByPropertiesOrderError');
 
 /**
  * @param {findConflictingConditions} findConflictingConditions
@@ -82,6 +87,7 @@ function validateQueryFactory(
       sortedWhereClauses = sortWhereClausesAccordingToIndex(query.where, appropriateIndex);
 
       // check following operators are used only in last 2 where condition
+      // eslint-disable-next-line consistent-return
       ['>', '<', '>=', '<='].forEach((operator) => {
         const invalidClause = sortedWhereClauses.find((clause, index) => (
           clause[1] === operator
@@ -90,8 +96,10 @@ function validateQueryFactory(
 
         if (invalidClause) {
           result.addError(
-            new Error("'>', '<', '>=', '<=' operators are allowed only in the last two where conditions"),
+            new RangeOperatorAllowedOnlyForLastTwoWhereConditionsError(),
           );
+
+          return result;
         }
       });
 
@@ -163,6 +171,7 @@ function validateQueryFactory(
         }
       });
 
+      // eslint-disable-next-line consistent-return
       sortedWhereClauses.forEach((clause, index) => {
         if (rangeOperators.includes(clause[1]) && index < lastPrefixOperatorIndex) {
           result.addError(
@@ -174,6 +183,7 @@ function validateQueryFactory(
       });
 
       // check 'in' or range operators are in orderBy
+      // eslint-disable-next-line consistent-return
       sortedWhereClauses.forEach((clause) => {
         if (['>', '<', '>=', '<=', 'startsWith', 'in'].includes(clause[1])) {
           const hasOrderBy = (query.orderBy || [])
@@ -190,7 +200,9 @@ function validateQueryFactory(
       });
 
       if (sortedWhereClauses.length < appropriateIndex.properties.length - 2) {
-        result.addError(new Error('"where" conditions should have not less than "number of indexed properties - 2" properties'));
+        result.addError(
+          new WhereConditionPropertiesNumberError(appropriateIndex.properties.length - 2),
+        );
 
         return result;
       }
@@ -199,7 +211,7 @@ function validateQueryFactory(
     // Sorting is allowed only for the last indexed property
     if (query.orderBy) {
       if (!query.where) {
-        result.addError(new InvalidPropertiesInOrderByError());
+        result.addError(new OrderByWithoutWhereConditionsError());
 
         return result;
       }
@@ -227,7 +239,7 @@ function validateQueryFactory(
 
           if (!foundIndexList.find((indices) => indices.includes(orderByProperty))) {
             result.addError(
-              new Error('If property not used in a range "where" query it should not be more than 2 positions away in the compound index'),
+              new QueriedPropertyIsToFarAwayError(orderByProperty),
             );
 
             return result;
@@ -236,7 +248,7 @@ function validateQueryFactory(
 
         // not in a range and there were no previous matches
         if (!foundInRangeOrIn && !lastInRangeOrIn) {
-          result.addError(new Error('Property should be used in a range "where" query statement'));
+          result.addError(new InvalidPropertiesInOrderByError(orderByProperty));
 
           return result;
         }
@@ -259,7 +271,9 @@ function validateQueryFactory(
       });
 
       if (!orderMatch) {
-        result.addError(new Error('"orderBy" properties order does not match order in compound index'));
+        result.addError(
+          new InvalidOrderByPropertiesOrderError(),
+        );
       }
     }
 

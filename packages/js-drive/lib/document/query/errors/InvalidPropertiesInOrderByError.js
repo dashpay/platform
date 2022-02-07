@@ -1,8 +1,11 @@
 const ValidationError = require('./ValidationError');
 
 class InvalidPropertiesInOrderByError extends ValidationError {
-  constructor() {
-    super('Sorting is allowed only for the last where condition');
+  /**
+   * @param {string} property
+   */
+  constructor(property) {
+    super(`${property} should be used in a range "where" query`);
   }
 }
 

@@ -5,6 +5,14 @@ const findAppropriateIndex = require('../../../../lib/document/query/findAppropr
 const sortWhereClausesAccordingToIndex = require('../../../../lib/document/query/sortWhereClausesAccordingToIndex');
 const findThreesomeOfIndexedProperties = require('../../../../lib/document/query/findThreesomeOfIndexedProperties');
 const findIndexedPropertiesSince = require('../../../../lib/document/query/findIndexedPropertiesSince');
+const WhereConditionPropertiesNumberError = require('../../../../lib/document/query/errors/WhereConditionPropertiesNumberError');
+const InOperatorAllowedOnlyForLastTwoIndexedPropertiesError = require('../../../../lib/document/query/errors/InOperatorAllowedOnlyForLastTwoIndexedPropertiesError');
+const ConflictingConditionsError = require('../../../../lib/document/query/errors/ConflictingConditionsError');
+const NotIndexedPropertiesInWhereConditionsError = require('../../../../lib/document/query/errors/NotIndexedPropertiesInWhereConditionsError');
+const RangeOperatorAllowedOnlyForLastTwoWhereConditionsError = require('../../../../lib/document/query/errors/RangeOperatorAllowedOnlyForLastTwoWhereConditionsError');
+const MultipleRangeOperatorsError = require('../../../../lib/document/query/errors/MultipleRangeOperatorsError');
+const RangePropertyDoesNotHaveOrderByError = require('../../../../lib/document/query/errors/RangePropertyDoesNotHaveOrderByError');
+const InvalidOrderByPropertiesOrderError = require('../../../../lib/document/query/errors/InvalidOrderByPropertiesOrderError');
 
 describe('validateQueryFactory', () => {
   const validQueries = [
@@ -52,7 +60,7 @@ describe('validateQueryFactory', () => {
           ['b', '==', 2],
         ],
       },
-      error: new Error('"where" conditions should have not less than "number of indexed properties - 2" properties'),
+      errorClass: WhereConditionPropertiesNumberError,
     },
     {
       query: {
@@ -65,7 +73,7 @@ describe('validateQueryFactory', () => {
           ['c', 'desc'],
         ],
       },
-      error: new Error('Invalid range clause with \'c\' and \'in\' operator. "in" operator are allowed only for the last two indexed properties'),
+      errorClass: InOperatorAllowedOnlyForLastTwoIndexedPropertiesError,
     },
     {
       query: {
@@ -78,7 +86,7 @@ describe('validateQueryFactory', () => {
           ['b', 'desc'],
         ],
       },
-      error: new Error('Using multiple conditions (==, in) with a single field ("b") is not allowed'),
+      errorClass: ConflictingConditionsError,
     },
     {
       query: {
@@ -86,7 +94,7 @@ describe('validateQueryFactory', () => {
           ['z', '==', 1],
         ],
       },
-      error: new Error('Properties in where conditions must be defined as a document index'),
+      errorClass: NotIndexedPropertiesInWhereConditionsError,
     },
     {
       query: {
@@ -98,7 +106,7 @@ describe('validateQueryFactory', () => {
           ['e', '>', 3],
         ],
       },
-      error: new Error('\'>\', \'<\', \'>=\', \'<=\' operators are allowed only in the last two where conditions'),
+      errorClass: RangeOperatorAllowedOnlyForLastTwoWhereConditionsError,
     },
     {
       query: {
@@ -113,7 +121,7 @@ describe('validateQueryFactory', () => {
           ['d', 'desc'],
         ],
       },
-      error: new Error('Invalid range clause with \'d\' and \'>\' operator. Only one range operator is allowed'),
+      errorClass: MultipleRangeOperatorsError,
     },
     {
       query: {
@@ -123,7 +131,7 @@ describe('validateQueryFactory', () => {
           ['c', '>', 1],
         ],
       },
-      error: new Error('Invalid range clause with \'c\' and \'>\' operator. Range operator must be used with order by'),
+      errorClass: RangePropertyDoesNotHaveOrderByError,
     },
     {
       query: {
@@ -139,7 +147,7 @@ describe('validateQueryFactory', () => {
           ['d', 'asc'],
         ],
       },
-      error: new Error('"orderBy" properties order does not match order in compound index'),
+      errorClass: InvalidOrderByPropertiesOrderError,
     },
   ];
 
@@ -185,15 +193,15 @@ describe('validateQueryFactory', () => {
     });
   });
 
-  invalidQueries.forEach(({ query, error }) => {
-    it(`should return invalid result with error "${error.message}" for query "${JSON.stringify(query)}"`, () => {
+  invalidQueries.forEach(({ query, errorClass }) => {
+    it(`should return invalid result with "${errorClass}" error for query "${JSON.stringify(query)}"`, () => {
       const result = validateQuery(query, documentSchema);
 
       expect(result.isValid()).to.be.false();
 
       const resultError = result.getErrors()[0];
 
-      expect(resultError.message).to.equal(error.message);
+      expect(resultError).to.be.an.instanceof(errorClass);
     });
   });
 });
