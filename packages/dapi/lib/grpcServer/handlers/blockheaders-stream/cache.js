@@ -4,7 +4,7 @@ const config = require('../../../config');
 const options = {
   max: config.lru.maxSize,
   maxAge: config.lru.maxAge,
-  length: (n) => n.length
+  length: (n) => n.length,
 };
 
 const cache = new LRU(options);

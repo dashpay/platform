@@ -94,6 +94,6 @@ module.exports = {
   },
   lru: {
     maxSize: config[OPTIONS.LRU_CACHE_SIZE_LIMIT],
-    maxAge: 1000 * 60 * 60
-  }
+    maxAge: 1000 * 60 * 60,
+  },
 };
