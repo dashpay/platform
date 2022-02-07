@@ -27,6 +27,7 @@ const subscribeToBlockHeadersWithChainLocksHandlerFactory = require(
 );
 const getHistoricalBlockHeadersIteratorFactory = require("../../../../../lib/grpcServer/handlers/blockheaders-stream/getHistoricalBlockHeadersIteratorFactory");
 const cache = require("../../../../../lib/grpcServer/handlers/blockheaders-stream/cache");
+const chainlocks = require("../../../../../lib/grpcServer/handlers/blockheaders-stream/chainlocks");
 
 let coreAPIMock;
 let zmqClientMock;
@@ -112,7 +113,7 @@ describe('subscribeToBlockHeadersWithChainLocksHandlerFactory', () => {
 
     call = new GrpcCallMock(sinon, request);
 
-    coreAPIMock.getBestChainLock.resolves({
+    chainlocks.updateBestChainLock({
       height: 1,
       signature: Buffer.from('fakesig', 'hex'),
       blockHash: Buffer.from('fakeHash', 'hex'),

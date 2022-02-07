@@ -80,12 +80,15 @@ async function main() {
   dashCoreZmqClient.on(ZmqClient.events.CONNECTION_DELAY, log.warn);
   dashCoreZmqClient.on(ZmqClient.events.MONITOR_ERROR, log.warn);
 
+  const rawBestChainLock = await dashCoreRpcClient.getBestChainLock()
+  chainlocks.updateBestChainLock(new ChainLock(rawBestChainLock))
+
   dashCoreZmqClient.on(dashCoreZmqClient.topics.rawchainlock, (chainlock) => {
     chainlocks.updateBestChainLock(new ChainLock(chainlock))
     appMediator.emit(appMediator.events.chainlock, chainlocks.getBestChainLock())
   });
   dashCoreZmqClient.on(dashCoreZmqClient.topics.hashblock, (hashblock) => {
-    appMediator.emit(appMediator.events.hashblock, new BlockHeader(hashblock))
+    appMediator.emit(appMediator.events.hashblock, hashblock)
   });
 
   // Wait until zmq connection is established
