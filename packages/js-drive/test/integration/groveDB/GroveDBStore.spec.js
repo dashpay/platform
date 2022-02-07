@@ -265,12 +265,17 @@ describe('GroveDBStore', () => {
   });
 
   describe('#getRootHash', () => {
-    it('should return a specific hash for empty store', async () => {
+    it('should return a null hash for empty store', async () => {
+      await rsDrive.close();
+
+      rimraf.sync('./db/grovedb_test');
+
+      rsDrive = new Drive('./db/grovedb_test');
+      store = new GroveDBStore(rsDrive, 'testStore');
+
       const result = await store.getRootHash();
 
-      expect(result).to.deep.equal(
-        Buffer.from('f5a5fd42d16a20302798ef6ed309979b43003d2320d9f0e8ea9831a92759fb4b', 'hex'),
-      );
+      expect(result).to.deep.equal(Buffer.alloc(32).fill(0));
     });
 
     it('should return a root hash for store with value', async () => {
