@@ -77,7 +77,6 @@ function subscribeToBlockHeadersWithChainLocksHandlerFactory(
    */
   async function subscribeToBlockHeadersWithChainLocksHandler(call) {
     const { request } = call;
-    console.log('count', request.getCount())
 
     const fromBlockHash = Buffer.from(request.getFromBlockHash_asU8()).toString('hex');
     const fromBlockHeight = request.getFromBlockHeight();
@@ -131,7 +130,6 @@ function subscribeToBlockHeadersWithChainLocksHandlerFactory(
     const historicalCount = count === 0 ? bestBlockHeight - fromBlock.height + 1 : count;
 
     if (fromBlock.height + historicalCount > bestBlockHeight + 1) {
-      console.log(fromBlock.height, historicalCount, bestBlockHeight, count)
       throw new InvalidArgumentGrpcError('`count` value exceeds the chain tip');
     }
 

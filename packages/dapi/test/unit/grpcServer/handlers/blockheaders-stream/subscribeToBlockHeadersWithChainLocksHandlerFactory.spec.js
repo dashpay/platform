@@ -389,7 +389,6 @@ describe('subscribeToBlockHeadersWithChainLocksHandlerFactory', () => {
     // the case where we have something in the cache, but the first blocks are not
     // f.e. we request for 5 blocks, and cache is [undefined,undefined,3,4,5]
     it('should not use cache when miss something in the beginning', async function () {
-      console.log(call.request.getCount())
       coreAPIMock.getBlockStats.resolves({height: 1});
       coreAPIMock.getBestBlockHeight.resolves(5);
       coreAPIMock.getBlockHash.resolves(blockHash.toString('hex'));

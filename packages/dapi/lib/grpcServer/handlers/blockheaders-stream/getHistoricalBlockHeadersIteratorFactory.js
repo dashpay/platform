@@ -50,7 +50,6 @@ function getHistoricalBlockHeadersIteratorFactory(coreRpcApi) {
 
       if (firstCachedItem) {
         const firstMissingIndex = cachedBlockHeaders.indexOf(undefined)
-        console.log('asdas', firstMissingIndex)
 
         // return cache if we do not miss anything
         if (cachedBlockHeaders.filter(e => !!e).length === blocksToScan) {

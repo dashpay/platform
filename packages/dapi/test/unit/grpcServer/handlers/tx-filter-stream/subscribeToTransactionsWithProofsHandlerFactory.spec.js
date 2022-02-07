@@ -40,18 +40,6 @@ use(chaiAsPromised);
 use(dirtyChai);
 
 describe('subscribeToTransactionsWithProofsHandlerFactory', () => {
-  beforeEach(function beforeEach() {
-    if (!this.sinon) {
-      this.sinon = sinon.createSandbox();
-    } else {
-      this.sinon.restore();
-    }
-  });
-
-  afterEach(function afterEach() {
-    this.sinon.restore();
-  });
-
   let call;
   let subscribeToTransactionsWithProofsHandler;
   let bloomFilterEmitterCollectionMock;
@@ -62,7 +50,11 @@ describe('subscribeToTransactionsWithProofsHandlerFactory', () => {
   let coreAPIMock;
   let getMemPoolTransactionsMock;
 
-  //const writableStub = sinon.stub(AcknowledgingWritable.prototype, 'write');
+  // i do not know why, buy AcknowledgingWritable comes here as a sinon stub already from subscribeToBlockHeadersWithChainLocksHandlerFactory.spec.js
+  const writableStub = AcknowledgingWritable.prototype.write
+
+  sinon.spy(ProcessMediator.prototype, 'emit');
+  sinon.spy(ProcessMediator.prototype, 'on');
 
   beforeEach(function beforeEach() {
     const bloomFilterMessage = new BloomFilter();
@@ -76,30 +68,30 @@ describe('subscribeToTransactionsWithProofsHandlerFactory', () => {
 
     request.setBloomFilter(bloomFilterMessage);
 
-    call = new GrpcCallMock(this.sinon, request);
+    call = new GrpcCallMock(sinon, request);
 
     bloomFilterEmitterCollectionMock = {
-      test: this.sinon.stub(),
+      test: sinon.stub(),
     };
 
     historicalTxData = [];
-    getHistoricalTransactionsIteratorMock = this.sinon.spy(function* generator() {
+    getHistoricalTransactionsIteratorMock = sinon.spy(function* generator() {
       for (let i = 0; i < historicalTxData.length; i++) {
         yield historicalTxData[i];
       }
     });
 
-    subscribeToNewTransactionsMock = this.sinon.stub();
-    testTransactionAgainstFilterMock = this.sinon.stub();
+    subscribeToNewTransactionsMock = sinon.stub();
+    testTransactionAgainstFilterMock = sinon.stub();
 
     coreAPIMock = {
-      getBlock: this.sinon.stub(),
-      getBlockStats: this.sinon.stub(),
-      getBestBlockHeight: this.sinon.stub(),
-      getBlockHash: this.sinon.stub(),
+      getBlock: sinon.stub(),
+      getBlockStats: sinon.stub(),
+      getBestBlockHeight: sinon.stub(),
+      getBlockHash: sinon.stub(),
     };
 
-    getMemPoolTransactionsMock = this.sinon.stub().returns([]);
+    getMemPoolTransactionsMock = sinon.stub().returns([]);
 
     subscribeToTransactionsWithProofsHandler = subscribeToTransactionsWithProofsHandlerFactory(
       getHistoricalTransactionsIteratorMock,
@@ -110,8 +102,10 @@ describe('subscribeToTransactionsWithProofsHandlerFactory', () => {
       getMemPoolTransactionsMock,
     );
 
-    this.sinon.spy(ProcessMediator.prototype, 'emit');
-    this.sinon.spy(ProcessMediator.prototype, 'on');
+    ProcessMediator.prototype.emit.resetHistory()
+    ProcessMediator.prototype.on.resetHistory()
+
+    writableStub.resetHistory()
   });
 
   it('should respond with error if bloom filter is not valid', async () => {
@@ -181,7 +175,7 @@ describe('subscribeToTransactionsWithProofsHandlerFactory', () => {
 
     call.request = TransactionsWithProofsRequest.deserializeBinary(call.request.serializeBinary());
 
-    call = new GrpcCallMock(this.sinon, call.request);
+    call = new GrpcCallMock(sinon, call.request);
 
     coreAPIMock.getBlockStats.resolves({ height: 1 });
     coreAPIMock.getBestBlockHeight.resolves(10);
