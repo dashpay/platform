@@ -16,3 +16,9 @@ services:
 
 volumes:
   core_data:
+
+networks:
+  default:
+    ipam:
+      config:
+        - subnet: ${DOCKER_NETWORK_SUBNET:?err}
