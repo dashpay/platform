@@ -24,15 +24,8 @@ function registerTopLevelDomainFactory(
    * @return {Promise<void>}
    */
   async function registerTopLevelDomain(name, dataContract, ownerId, genesisDate) {
-    const nameLabels = name.split('.');
-
-    const normalizedParentDomainName = nameLabels
-      .slice(1)
-      .join('.')
-      .toLowerCase();
-
-    const [label] = nameLabels;
-    const normalizedLabel = label.toLowerCase();
+    const normalizedParentDomainName = '';
+    const normalizedLabel = name.toLowerCase();
 
     // const saltedDomainHash = hash(
     //   Buffer.concat([
@@ -58,7 +51,7 @@ function registerTopLevelDomainFactory(
       ownerId,
       'domain',
       {
-        label,
+        label: name,
         normalizedLabel,
         normalizedParentDomainName,
         preorderSalt: dashPreorderSalt,
@@ -73,6 +66,8 @@ function registerTopLevelDomainFactory(
 
     domainDocument.id = dashDomainDocumentId;
     domainDocument.createdAt = genesisDate;
+
+    console.dir(domainDocument.toObject());
 
     // await documentRepository.store(preorderDocument, true);
     await documentRepository.store(domainDocument, true);
