@@ -50,13 +50,14 @@ describe('subscribeToTransactionsWithProofsHandlerFactory', () => {
   let coreAPIMock;
   let getMemPoolTransactionsMock;
 
-  // i do not know why, buy AcknowledgingWritable comes here as a sinon stub already from subscribeToBlockHeadersWithChainLocksHandlerFactory.spec.js
-  const writableStub = AcknowledgingWritable.prototype.write
+  // i do not know why, buy AcknowledgingWritable comes here as a sinon stub already
+  // from subscribeToBlockHeadersWithChainLocksHandlerFactory.spec.js
+  const writableStub = AcknowledgingWritable.prototype.write;
 
   sinon.spy(ProcessMediator.prototype, 'emit');
   sinon.spy(ProcessMediator.prototype, 'on');
 
-  beforeEach(function beforeEach() {
+  beforeEach(() => {
     const bloomFilterMessage = new BloomFilter();
 
     bloomFilterMessage.setVData(new Uint8Array());
@@ -102,10 +103,10 @@ describe('subscribeToTransactionsWithProofsHandlerFactory', () => {
       getMemPoolTransactionsMock,
     );
 
-    ProcessMediator.prototype.emit.resetHistory()
-    ProcessMediator.prototype.on.resetHistory()
+    ProcessMediator.prototype.emit.resetHistory();
+    ProcessMediator.prototype.on.resetHistory();
 
-    writableStub.resetHistory()
+    writableStub.resetHistory();
   });
 
   it('should respond with error if bloom filter is not valid', async () => {
@@ -167,7 +168,7 @@ describe('subscribeToTransactionsWithProofsHandlerFactory', () => {
     }
   });
 
-  it('should subscribe to new transactions if count is not specified', async function it() {
+  it('should subscribe to new transactions if count is not specified', async () => {
     const blockHash = Buffer.from('00000bafbc94add76cb75e2ec92894837288a481e5c005f6563d91623bf8bc2c', 'hex');
 
     call.request.setFromBlockHash(blockHash);

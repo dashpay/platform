@@ -1,13 +1,13 @@
-const {BlockHeader, Block, ChainLock} = require('@dashevo/dashcore-lib');
+const { BlockHeader, Block, ChainLock } = require('@dashevo/dashcore-lib');
+const sinon = require('sinon');
 const ZmqClient = require('../../../../../lib/externalApis/dashcore/ZmqClient');
 const dashCoreRpcClient = require('../../../../../lib/externalApis/dashcore/rpc');
 
 const subscribeToNewBlockHeaders = require('../../../../../lib/grpcServer/handlers/blockheaders-stream/subscribeToNewBlockHeaders');
 const cache = require('../../../../../lib/grpcServer/handlers/blockheaders-stream/cache');
-const {NEW_BLOCK_HEADERS_PROPAGATE_INTERVAL} = require('../../../../../lib/grpcServer/handlers/blockheaders-stream/constants');
+const { NEW_BLOCK_HEADERS_PROPAGATE_INTERVAL } = require('../../../../../lib/grpcServer/handlers/blockheaders-stream/constants');
 const ProcessMediator = require('../../../../../lib/grpcServer/handlers/blockheaders-stream/ProcessMediator');
-const AppMediator = require('../../.././../../lib/mediators/app-mediator');
-const sinon = require('sinon')
+const AppMediator = require('../../../../../lib/mediators/app-mediator');
 const wait = require('../../../../../lib/utils/wait');
 const chainlocks = require('../../../../../lib/grpcServer/handlers/blockheaders-stream/chainlocks');
 
@@ -20,16 +20,14 @@ describe('subscribeToNewBlockHeaders', () => {
   const chainLocks = {};
 
   sinon.stub(dashCoreRpcClient, 'getBlockHeader')
-    .callsFake(async (hash) => {
-      return blockHeaders[hash].toBuffer().toString('hex')
-    });
+    .callsFake(async (hash) => blockHeaders[hash].toBuffer().toString('hex'));
 
   beforeEach(async () => {
     appMediator = new AppMediator();
     mediator = new ProcessMediator();
 
-    dashCoreRpcClient.getBlockHeader.resetHistory()
-    cache.purge()
+    dashCoreRpcClient.getBlockHeader.resetHistory();
+    cache.purge();
 
     zmqClient = new ZmqClient();
     sinon.stub(zmqClient.subscriberSocket, 'connect')
@@ -106,11 +104,11 @@ describe('subscribeToNewBlockHeaders', () => {
     chainLocks[chainLockThree.height] = chainLockThree;
 
     zmqClient.on(zmqClient.topics.rawchainlock, (chainlock) => {
-      chainlocks.updateBestChainLock(new ChainLock(chainlock))
-      appMediator.emit('chainlock', chainlocks.getBestChainLock())
+      chainlocks.updateBestChainLock(new ChainLock(chainlock));
+      appMediator.emit('chainlock', chainlocks.getBestChainLock());
     });
     zmqClient.on(zmqClient.topics.hashblock, (blockhash) => {
-      appMediator.emit(appMediator.events.hashblock, blockhash)
+      appMediator.emit(appMediator.events.hashblock, blockhash);
     });
   });
 
@@ -181,7 +179,7 @@ describe('subscribeToNewBlockHeaders', () => {
     await new Promise((resolve) => setImmediate(resolve));
     mediator.emit(ProcessMediator.EVENTS.CLIENT_DISCONNECTED);
 
-    const expectedHeaders = {...blockHeaders};
+    const expectedHeaders = { ...blockHeaders };
     delete expectedHeaders[hashes[0]];
     expect(receivedHeaders).to.deep.equal(expectedHeaders);
   });
@@ -207,24 +205,19 @@ describe('subscribeToNewBlockHeaders', () => {
     zmqClient.subscriberSocket.emit('message', zmqClient.topics.rawchainlock, chainLocks[locksHeights[2]].toBuffer());
     await wait(NEW_BLOCK_HEADERS_PROPAGATE_INTERVAL + 100);
     mediator.emit(ProcessMediator.EVENTS.CLIENT_DISCONNECTED);
-    const expectedChainLocks = {...chainLocks};
+    const expectedChainLocks = { ...chainLocks };
     delete expectedChainLocks[locksHeights[1]];
     expect(receivedChainLocks).to.deep.equal(expectedChainLocks);
   });
 
   it('should use cache when historical data is sent', async () => {
-    const spyCache = sinon.spy(cache)
+    const spyCache = sinon.spy(cache);
     const receivedHeaders = {};
-    let latestChainLock = null;
 
     mediator.on(ProcessMediator.EVENTS.BLOCK_HEADERS, (headers) => {
       headers.forEach((header) => {
         receivedHeaders[header.hash] = header;
       });
-    });
-
-    mediator.on(ProcessMediator.EVENTS.CHAIN_LOCK, (chainLock) => {
-      latestChainLock = chainLock;
     });
 
     subscribeToNewBlockHeaders(
@@ -264,8 +257,8 @@ describe('subscribeToNewBlockHeaders', () => {
 
     mediator.emit(ProcessMediator.EVENTS.HISTORICAL_DATA_SENT);
 
-    expect(dashCoreRpcClient.getBlockHeader.callCount).to.be.equal(3)
-    expect(spyCache.set.callCount).to.be.equal(3)
-    expect(spyCache.get.callCount).to.be.equal(6)
+    expect(dashCoreRpcClient.getBlockHeader.callCount).to.be.equal(3);
+    expect(spyCache.set.callCount).to.be.equal(3);
+    expect(spyCache.get.callCount).to.be.equal(6);
   });
 });

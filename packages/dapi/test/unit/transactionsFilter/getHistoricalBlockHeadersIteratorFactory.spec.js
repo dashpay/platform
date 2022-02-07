@@ -5,7 +5,8 @@ const getHistoricalBlockHeadersIteratorFactory = require('../../../lib/grpcServe
 describe('getHistoricalBlockHeadersIteratorFactory', () => {
   let coreRpcMock;
   let blockHeaderMock;
-  beforeEach(function () {
+
+  beforeEach(() => {
     coreRpcMock = {
       getBlock: this.sinon.stub(),
       getBlockStats: this.sinon.stub(),

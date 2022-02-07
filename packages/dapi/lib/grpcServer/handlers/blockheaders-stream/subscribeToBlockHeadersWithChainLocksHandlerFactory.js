@@ -1,5 +1,4 @@
-const {ChainLock} = require('@dashevo/dashcore-lib');
-const chainlocks = require('./chainlocks')
+const { ChainLock } = require('@dashevo/dashcore-lib');
 
 const {
   server: {
@@ -19,6 +18,7 @@ const {
     BlockHeaders,
   },
 } = require('@dashevo/dapi-grpc');
+const chainlocks = require('./chainlocks');
 const ProcessMediator = require('./ProcessMediator');
 const wait = require('../../../utils/wait');
 const log = require('../../../log');
@@ -109,7 +109,7 @@ function subscribeToBlockHeadersWithChainLocksHandlerFactory(
     );
 
     if (newHeadersRequested) {
-      subscribeToNewBlockHeaders(mediator, zmqClient, coreAPI);
+      subscribeToNewBlockHeaders(mediator, appMediator, zmqClient, coreAPI);
     }
 
     let fromBlock;
@@ -133,7 +133,7 @@ function subscribeToBlockHeadersWithChainLocksHandlerFactory(
       throw new InvalidArgumentGrpcError('`count` value exceeds the chain tip');
     }
 
-    const bestChainLock = chainlocks.getBestChainLock()
+    const bestChainLock = chainlocks.getBestChainLock();
 
     if (bestChainLock) {
       await sendChainLockResponse(acknowledgingCall, new ChainLock(bestChainLock));

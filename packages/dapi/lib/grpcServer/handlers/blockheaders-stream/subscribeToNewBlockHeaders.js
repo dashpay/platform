@@ -1,10 +1,9 @@
-const {BlockHeader} = require('@dashevo/dashcore-lib');
+const { BlockHeader } = require('@dashevo/dashcore-lib');
 const ProcessMediator = require('./ProcessMediator');
 const wait = require('../../../utils/wait');
-const {NEW_BLOCK_HEADERS_PROPAGATE_INTERVAL} = require('./constants');
-const cache = require('./cache')
-const chainlocks = require('./chainlocks')
-const {has} = require("lodash");
+const { NEW_BLOCK_HEADERS_PROPAGATE_INTERVAL } = require('./constants');
+const cache = require('./cache');
+const chainlocks = require('./chainlocks');
 
 /**
  * @typedef subscribeToNewBlockHeaders
@@ -14,13 +13,12 @@ const {has} = require("lodash");
  * @param {ZmqClient} zmqClient
  */
 function subscribeToNewBlockHeaders(mediator,
-                                    appMediator,
-                                    zmqClient,
-                                    coreAPI,
-) {
+  appMediator,
+  zmqClient,
+  coreAPI) {
   const pendingHeadersHashes = new Set();
 
-  let lastChainLock
+  let lastChainLock;
 
   let isClientConnected = true;
 
@@ -36,7 +34,7 @@ function subscribeToNewBlockHeaders(mediator,
    * @param rawChainLock {Buffer}
    */
   const rawChainLockHandler = (rawChainLock) => {
-    lastChainLock = rawChainLock
+    lastChainLock = rawChainLock;
   };
 
   appMediator.on(appMediator.events.hashblock, blockHashHandler);
@@ -63,11 +61,11 @@ function subscribeToNewBlockHeaders(mediator,
         // and directly send bytes to the client
         const blockHeaders = await Promise.all(Array.from(pendingHeadersHashes)
           .map(async (hash) => {
-            const cachedBlockHeader = cache.get(hash)
+            const cachedBlockHeader = cache.get(hash);
 
             if (!cachedBlockHeader) {
               const rawBlockHeader = await coreAPI.getBlockHeader(hash);
-              cache.set(hash, rawBlockHeader)
+              cache.set(hash, rawBlockHeader);
               return new BlockHeader(Buffer.from(rawBlockHeader, 'hex'));
             }
 
@@ -80,7 +78,7 @@ function subscribeToNewBlockHeaders(mediator,
 
       if (lastChainLock) {
         mediator.emit(ProcessMediator.EVENTS.CHAIN_LOCK, chainlocks.getBestChainLock());
-        lastChainLock = null
+        lastChainLock = null;
       }
 
       // TODO: pick a right time interval having in mind that issuance of the block headers
@@ -96,6 +94,5 @@ function subscribeToNewBlockHeaders(mediator,
     appMediator.removeListener(appMediator.events.chainlock, rawChainLockHandler);
   });
 }
-
 
 module.exports = subscribeToNewBlockHeaders;

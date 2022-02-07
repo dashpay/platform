@@ -1,10 +1,8 @@
-let chainLock
+let chainLock;
 
 module.exports = {
   updateBestChainLock: (chainlock) => {
-   chainLock = chainlock
+    chainLock = chainlock;
   },
-  getBestChainLock: () => {
-    return chainLock
-  }
-}
+  getBestChainLock: () => chainLock,
+};
