@@ -52,7 +52,8 @@ function getHistoricalBlockHeadersIteratorFactory(coreRpcApi) {
 
         // return cache if we do not miss anything
         if (cachedBlockHeaders.filter((e) => !!e).length === blocksToScan) {
-          return cachedBlockHeaders.map((rawBlockHeader) => new BlockHeader(Buffer.from(rawBlockHeader, 'hex')));
+          yield cachedBlockHeaders.map((e) => new BlockHeader(Buffer.from(e, 'hex')));
+          continue; // eslint-disable-line
         }
 
         if (firstMissingIndex !== -1) {
