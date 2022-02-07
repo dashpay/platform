@@ -3,6 +3,7 @@ const LRU = require('lru-cache');
 const options = {
   max: 500,
   maxAge: 1000 * 60 * 60,
+  length: (n) => n.length
 };
 
 const cache = new LRU(options);
