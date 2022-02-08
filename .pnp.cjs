@@ -2573,7 +2573,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["@dashevo/feature-flags-contract", "workspace:packages/feature-flags-contract"],
             ["@dashevo/grpc-common", "workspace:packages/js-grpc-common"],
             ["@dashevo/masternode-reward-shares-contract", "workspace:packages/masternode-reward-shares-contract"],
-            ["@dashevo/rs-drive", "npm:0.22.0-dev.3"],
+            ["@dashevo/rs-drive", "npm:0.22.0-dev.4"],
             ["@types/pino", "npm:6.3.12"],
             ["ajv", "npm:8.8.1"],
             ["ajv-keywords", "virtual:34fbe5a7dba3086dcbcce8a7faed986b10f7a208f11db70499feb2c1afd76e24089e5b95f9e3b937e89512de1cf4937177cc2000303a1e908baefc73362a7d48#npm:5.0.0"],
@@ -2767,10 +2767,10 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
         }]
       ]],
       ["@dashevo/rs-drive", [
-        ["npm:0.22.0-dev.3", {
-          "packageLocation": "./.yarn/unplugged/@dashevo-rs-drive-npm-0.22.0-dev.3-142c4b5a95/node_modules/@dashevo/rs-drive/",
+        ["npm:0.22.0-dev.4", {
+          "packageLocation": "./.yarn/unplugged/@dashevo-rs-drive-npm-0.22.0-dev.4-720acc2c64/node_modules/@dashevo/rs-drive/",
           "packageDependencies": [
-            ["@dashevo/rs-drive", "npm:0.22.0-dev.3"],
+            ["@dashevo/rs-drive", "npm:0.22.0-dev.4"],
             ["@dashevo/dpp", "workspace:packages/js-dpp"],
             ["cargo-cp-artifact", "npm:0.1.6"],
             ["cbor", "npm:8.1.0"],
