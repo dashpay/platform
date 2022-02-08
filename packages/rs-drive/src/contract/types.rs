@@ -6,8 +6,8 @@ use serde::{Deserialize, Serialize};
 #[derive(Serialize, Deserialize, Debug, PartialEq)]
 pub enum DocumentFieldType {
     Integer,
+    Number,
     String,
-    Float,
     ByteArray,
     Boolean,
     Date,
@@ -18,8 +18,8 @@ pub enum DocumentFieldType {
 pub fn string_to_field_type(field_type_name: &str) -> Option<DocumentFieldType> {
     match field_type_name {
         "integer" => Some(DocumentFieldType::Integer),
+        "number" => Some(DocumentFieldType::Number),
         "string" => Some(DocumentFieldType::String),
-        "float" => Some(DocumentFieldType::Float),
         "boolean" => Some(DocumentFieldType::Boolean),
         "date" => Some(DocumentFieldType::Date),
         "object" => Some(DocumentFieldType::Object),
@@ -47,17 +47,28 @@ pub fn encode_document_field_type(
             let value_as_integer = value
                 .as_integer()
                 .ok_or_else(get_field_type_matching_error)?;
+
             let value_as_i64: i64 = value_as_integer
                 .try_into()
                 .map_err(|_| Error::CorruptedData(String::from("expected integer value")))?;
 
             encode_integer(value_as_i64)
         }
-        DocumentFieldType::Float => {
-            let value_as_float = value.as_float().ok_or_else(get_field_type_matching_error)?;
-            let value_as_f64 = value_as_float
-                .try_into()
-                .map_err(|_| Error::CorruptedData(String::from("expected float value")))?;
+        DocumentFieldType::Number => {
+            let value_as_f64 = if value.is_integer() {
+                let value_as_integer = value
+                    .as_integer()
+                    .ok_or_else(get_field_type_matching_error)?;
+
+                let value_as_i64: i64 = value_as_integer
+                    .try_into()
+                    .map_err(|_| Error::CorruptedData(String::from("expected number value")))?;
+
+                value_as_i64 as f64
+            } else {
+                value.as_float().ok_or_else(get_field_type_matching_error)?
+            };
+
             encode_float(value_as_f64)
         }
         DocumentFieldType::ByteArray => {
@@ -237,21 +248,31 @@ mod tests {
         let float4 = Value::Float(f64::MAX);
         let float5 = Value::Float(f64::INFINITY);
 
-        let encoded_float1 =
-            encode_document_field_type(&DocumentFieldType::Float, &float1).expect(encode_err_msg);
-        let encoded_float2 =
-            encode_document_field_type(&DocumentFieldType::Float, &float2).expect(encode_err_msg);
-        let encoded_float3 =
-            encode_document_field_type(&DocumentFieldType::Float, &float3).expect(encode_err_msg);
-        let encoded_float4 =
-            encode_document_field_type(&DocumentFieldType::Float, &float4).expect(encode_err_msg);
-        let encoded_float5 =
-            encode_document_field_type(&DocumentFieldType::Float, &float5).expect(encode_err_msg);
+        let encoded_number1 =
+            encode_document_field_type(&DocumentFieldType::Number, &float1).expect(encode_err_msg);
+        let encoded_number2 =
+            encode_document_field_type(&DocumentFieldType::Number, &float2).expect(encode_err_msg);
+        let encoded_number3 =
+            encode_document_field_type(&DocumentFieldType::Number, &float3).expect(encode_err_msg);
+        let encoded_number4 =
+            encode_document_field_type(&DocumentFieldType::Number, &float4).expect(encode_err_msg);
+        let encoded_number5 =
+            encode_document_field_type(&DocumentFieldType::Number, &float5).expect(encode_err_msg);
+        let encoded_number6 = encode_document_field_type(&DocumentFieldType::Number, &integer1)
+            .expect(encode_err_msg);
+        let encoded_number7 = encode_document_field_type(&DocumentFieldType::Number, &integer2)
+            .expect(encode_err_msg);
+        let encoded_number8 = encode_document_field_type(&DocumentFieldType::Number, &integer3)
+            .expect(encode_err_msg);
 
-        assert!(encoded_float1 < encoded_float2);
-        assert!(encoded_float2 < encoded_float3);
-        assert!(encoded_float3 < encoded_float4);
-        assert!(encoded_float4 < encoded_float5);
+        assert!(encoded_number1 < encoded_number2);
+        assert!(encoded_number2 < encoded_number3);
+        assert!(encoded_number3 < encoded_number4);
+        assert!(encoded_number4 < encoded_number5);
+        assert!(encoded_number6 < encoded_number1);
+        assert!(encoded_number7 < encoded_number2);
+        assert!(encoded_number7 < encoded_number2);
+        assert!(encoded_number8 < encoded_number4);
 
         // Show that the domain of negative floats maintains sort order after encoding
         let float1 = Value::Float(-0.5);
@@ -261,20 +282,21 @@ mod tests {
         let float5 = Value::Float(f64::NEG_INFINITY);
 
         let encoded_float1 =
-            encode_document_field_type(&DocumentFieldType::Float, &float1).expect(encode_err_msg);
+            encode_document_field_type(&DocumentFieldType::Number, &float1).expect(encode_err_msg);
         let encoded_float2 =
-            encode_document_field_type(&DocumentFieldType::Float, &float2).expect(encode_err_msg);
+            encode_document_field_type(&DocumentFieldType::Number, &float2).expect(encode_err_msg);
         let encoded_float3 =
-            encode_document_field_type(&DocumentFieldType::Float, &float3).expect(encode_err_msg);
+            encode_document_field_type(&DocumentFieldType::Number, &float3).expect(encode_err_msg);
         let encoded_float4 =
-            encode_document_field_type(&DocumentFieldType::Float, &float4).expect(encode_err_msg);
+            encode_document_field_type(&DocumentFieldType::Number, &float4).expect(encode_err_msg);
         let encoded_float5 =
-            encode_document_field_type(&DocumentFieldType::Float, &float5).expect(encode_err_msg);
+            encode_document_field_type(&DocumentFieldType::Number, &float5).expect(encode_err_msg);
 
         assert!(encoded_float1 > encoded_float2);
         assert!(encoded_float2 > encoded_float3);
         assert!(encoded_float3 > encoded_float4);
         assert!(encoded_float4 > encoded_float5);
+        assert!(encoded_float1 < encoded_number8);
 
         // Show that 0 is in the middle
         // EPSILON: This is the difference between 1.0 and the next larger representable number.
@@ -283,12 +305,12 @@ mod tests {
         let smallest_positive_float = Value::Float(0.0 + f64::EPSILON);
 
         let encoded_float1 =
-            encode_document_field_type(&DocumentFieldType::Float, &largest_negative_float)
+            encode_document_field_type(&DocumentFieldType::Number, &largest_negative_float)
                 .expect(encode_err_msg);
         let encoded_float2 =
-            encode_document_field_type(&DocumentFieldType::Float, &float2).expect(encode_err_msg);
+            encode_document_field_type(&DocumentFieldType::Number, &float2).expect(encode_err_msg);
         let encoded_float3 =
-            encode_document_field_type(&DocumentFieldType::Float, &smallest_positive_float)
+            encode_document_field_type(&DocumentFieldType::Number, &smallest_positive_float)
                 .expect(encode_err_msg);
 
         assert!(encoded_float1 < encoded_float2);
