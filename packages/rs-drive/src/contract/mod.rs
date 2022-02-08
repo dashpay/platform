@@ -4,7 +4,7 @@ use crate::drive::{Drive, RootTree};
 use ciborium::value::{Value as CborValue, Value};
 use grovedb::Error;
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 
 // contract
 // - id
@@ -19,7 +19,7 @@ use std::collections::HashMap;
 // Struct Definitions
 #[derive(Serialize, Deserialize, Debug, PartialEq)]
 pub struct Contract {
-    pub document_types: HashMap<String, DocumentType>,
+    pub document_types: BTreeMap<String, DocumentType>,
     pub id: [u8; 32],
 }
 
@@ -153,7 +153,7 @@ impl Contract {
             .as_map()
             .ok_or_else(|| Error::CorruptedData(String::from("unable to get documents")))?;
 
-        let mut contract_document_types: HashMap<String, DocumentType> = HashMap::new();
+        let mut contract_document_types: BTreeMap<String, DocumentType> = BTreeMap::new();
 
         // Build the document type hashmap
         for (type_key_value, document_type_value) in contract_document_types_raw {
@@ -752,7 +752,7 @@ mod tests {
     use crate::common::json_document_to_cbor;
     use crate::contract::Contract;
     use crate::drive::Drive;
-    use std::{collections::HashMap, fs::File, io::BufReader, path::Path};
+    use std::collections::HashMap;
 
     #[test]
     fn test_cbor_deserialization() {
