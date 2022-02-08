@@ -13,6 +13,8 @@ export interface WalletOptions extends Wallet.IWalletOptions {
     defaultAccountIndex?: number;
 }
 
+require('dotenv').config();
+
 /**
  * Interface Client Options
  *
@@ -25,6 +27,7 @@ export interface WalletOptions extends Wallet.IWalletOptions {
  * @param {number} [timeout=2000]
  * @param {number} [retries=3]
  * @param {number} [baseBanTime=60000]
+ * @param {boolean} [enableDebugLogs] - Debug logs
  */
 export interface ClientOpts {
     apps?: ClientAppsOptions,
@@ -37,6 +40,7 @@ export interface ClientOpts {
     retries?: number,
     baseBanTime?: number,
     driveProtocolVersion?: number,
+    enableDebugLogs?: boolean,
 }
 
 /**
@@ -64,6 +68,8 @@ export class Client extends EventEmitter {
         this.options = options;
 
         this.network = this.options.network ? this.options.network.toString() : 'testnet';
+
+        process.env.ENABLE_DEBUG_LOGS = this.options.enableDebugLogs === true ? 'true' : 'false'; // Set debug logger option
 
         // Initialize DAPI Client
         const dapiClientOptions = {
@@ -133,7 +139,7 @@ export class Client extends EventEmitter {
      * @param {Account.Options} [options]
      * @returns {Promise<Account>}
      */
-    async getWalletAccount(options: Account.Options = {}) : Promise<Account> {
+    async getWalletAccount(options: Account.Options = {}): Promise<Account> {
         if (!this.wallet) {
             throw new Error('Wallet is not initialized, pass `wallet` option to Client');
         }
@@ -161,7 +167,7 @@ export class Client extends EventEmitter {
      *
      * @returns {DAPIClient}
      */
-    getDAPIClient() : DAPIClient {
+    getDAPIClient(): DAPIClient {
         return this.dapiClient;
     }
 
