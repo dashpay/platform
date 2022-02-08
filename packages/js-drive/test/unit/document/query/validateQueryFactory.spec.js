@@ -6,6 +6,10 @@ const ConflictingConditionsError = require('../../../../lib/document/query/error
 const InvalidPropertiesInOrderByError = require('../../../../lib/document/query/errors/InvalidPropertiesInOrderByError');
 const NotIndexedPropertiesInWhereConditionsError = require('../../../../lib/document/query/errors/NotIndexedPropertiesInWhereConditionsError');
 const RangeOperatorAllowedOnlyForLastIndexedPropertyError = require('../../../../lib/document/query/errors/RangeOperatorAllowedOnlyForLastIndexedPropertyError');
+const MultipleRangeOperatorsError = require('../../../../lib/document/query/errors/MultipleRangeOperatorsError');
+const InOperatorAllowedOnlyForLastTwoIndexedPropertiesError = require('../../../../lib/document/query/errors/InOperatorAllowedOnlyForLastTwoIndexedPropertiesError');
+const RangeOperatorAllowedOnlyWithEqualOperatorsError = require('../../../../lib/document/query/errors/RangeOperatorAllowedOnlyWithEqualOperatorsError');
+const RangePropertyDoesNotHaveOrderByError = require('../../../../lib/document/query/errors/RangePropertyDoesNotHaveOrderByError');
 
 const typesTestCases = {
   number: {
@@ -146,19 +150,26 @@ describe('validateQueryFactory', () => {
   let findConflictingConditionsStub;
   let findAppropriateIndexStub;
   let sortWhereClausesAccordingToIndexStub;
+  let findThreesomeOfIndexedPropertiesStub;
+  let findIndexedPropertiesSinceStub;
   let validateQuery;
   let documentSchema;
 
   beforeEach(function beforeEach() {
     findConflictingConditionsStub = this.sinon.stub().returns([]);
     findAppropriateIndexStub = this.sinon.stub().returns({});
-    sortWhereClausesAccordingToIndexStub = this.sinon.stub().returns([]);
+    sortWhereClausesAccordingToIndexStub = this.sinon.stub().returnsArg(0);
+    findThreesomeOfIndexedPropertiesStub = this.sinon.stub().returns([]);
+    findIndexedPropertiesSinceStub = this.sinon.stub().returns([]);
+
     documentSchema = {};
 
     validateQuery = validateQueryFactory(
       findConflictingConditionsStub,
       findAppropriateIndexStub,
       sortWhereClausesAccordingToIndexStub,
+      findThreesomeOfIndexedPropertiesStub,
+      findIndexedPropertiesSinceStub,
     );
   });
 
@@ -181,7 +192,12 @@ describe('validateQueryFactory', () => {
   });
 
   it('should return valid result when some valid sample query is passed', () => {
-    const result = validateQuery({ where: [['$id', '>', 1]] }, documentSchema);
+    sortWhereClausesAccordingToIndexStub.returns([['$id', '>', 1]]);
+    findAppropriateIndexStub.returns({
+      properties: [{ $id: 'asc' }],
+    });
+
+    const result = validateQuery({ where: [['$id', '>', 1]], orderBy: [['$id', 'asc']] }, documentSchema);
 
     expect(result).to.be.instanceOf(ValidationResult);
     expect(result.isValid()).to.be.true();
@@ -238,6 +254,24 @@ describe('validateQueryFactory', () => {
       expect(result.errors[0]).to.be.an.instanceOf(ConflictingConditionsError);
       expect(result.errors[0].getField()).to.be.equal('a');
       expect(result.errors[0].getOperators()).to.be.deep.equal(['<', '>']);
+    });
+
+    it('should return invalid result if number of properties queried does not match number of indexed ones minus 2', () => {
+      findAppropriateIndexStub.returns({
+        properties: ['a', 'b', 'c', 'd'],
+      });
+
+      const result = validateQuery(
+        {
+          where: [
+            ['a', '==', 1],
+          ],
+        },
+        documentSchema,
+      );
+
+      expect(result).to.be.instanceOf(ValidationResult);
+      expect(result.isValid()).to.be.false();
     });
 
     describe('condition', () => {
@@ -598,6 +632,159 @@ describe('validateQueryFactory', () => {
 
               expect(error).to.be.an.instanceOf(
                 RangeOperatorAllowedOnlyForLastIndexedPropertyError,
+              );
+            });
+          });
+
+          describe('ranges', () => {
+            ['>', '<', '<=', '>='].forEach((operator) => {
+              it(`should return invalid result if ${operator} operator used with another range operator`, () => {
+                documentSchema = {
+                  indices: [
+                    {
+                      properties: [{ a: 'asc' }, { b: 'asc' }],
+                    },
+                  ],
+                };
+
+                findAppropriateIndexStub.returns(documentSchema.indices[0].properties);
+
+                ['>', '<', '>=', '<=', 'startsWith'].forEach((additionalOperator) => {
+                  const query = { where: [['a', operator, '1'], ['b', additionalOperator, 'a']] };
+                  sortWhereClausesAccordingToIndexStub.returns(query.where);
+
+                  const result = validateQuery(query, documentSchema);
+
+                  expect(result).to.be.instanceOf(ValidationResult);
+                  expect(result.isValid()).to.be.false();
+
+                  const [error] = result.getErrors();
+
+                  expect(error).to.be.an.instanceOf(
+                    MultipleRangeOperatorsError,
+                  );
+                });
+              });
+            });
+
+            it('should return invalid result if "in" operator is used before last two indexed conditions', () => {
+              documentSchema = {
+                indices: [
+                  {
+                    properties: [{ a: 'asc' }, { b: 'asc' }, { c: 'asc' }],
+                  },
+                ],
+              };
+
+              findAppropriateIndexStub.returns(documentSchema.indices[0]);
+
+              const query = { where: [['b', 'in', [1, 2]]] };
+              sortWhereClausesAccordingToIndexStub.returns(query.where);
+
+              query.where = [['a', 'in', [1, 2]]];
+              sortWhereClausesAccordingToIndexStub.returns(query.where);
+
+              const result = validateQuery(query, documentSchema);
+
+              expect(result).to.be.instanceOf(ValidationResult);
+              expect(result.isValid()).to.be.false();
+
+              const [error] = result.getErrors();
+              expect(error).to.be.an.instanceOf(
+                InOperatorAllowedOnlyForLastTwoIndexedPropertiesError,
+              );
+            });
+
+            ['>', '<', '>=', '<='].forEach((operator) => {
+              it(`should return invalid result if ${operator} operator is used before "=="`, () => {
+                documentSchema = {
+                  indices: [
+                    {
+                      properties: [{ a: 'asc' }, { b: 'asc' }, { c: 'asc' }],
+                    },
+                  ],
+                };
+
+                findAppropriateIndexStub.returns(documentSchema.indices[0]);
+
+                const query = { where: [['b', '==', 1], ['a', operator, 2]] };
+                sortWhereClausesAccordingToIndexStub.returns(query.where);
+
+                query.where = [['a', operator, 2], ['b', '==', 1]];
+                sortWhereClausesAccordingToIndexStub.returns(query.where);
+
+                const result = validateQuery(query, documentSchema);
+
+                expect(result).to.be.instanceOf(ValidationResult);
+                expect(result.isValid()).to.be.false();
+
+                const [error] = result.getErrors();
+                expect(error).to.be.an.instanceOf(
+                  RangeOperatorAllowedOnlyWithEqualOperatorsError,
+                );
+              });
+            });
+
+            ['>', '<', '>=', '<='].forEach((operator) => {
+              it(`should return invalid result if ${operator} operator is used before "in"`, () => {
+                documentSchema = {
+                  indices: [
+                    {
+                      properties: [{ b: 'asc' }, { a: 'asc' }],
+                    },
+                    {
+                      properties: [{ a: 'asc' }, { b: 'asc' }],
+                    },
+                  ],
+                };
+
+                findAppropriateIndexStub.returns(documentSchema.indices[1]);
+
+                const query = { where: [['a', operator, 2], ['b', 'in', [1, 2]]], orderBy: [['a', 'asc'], ['b', 'asc']] };
+                sortWhereClausesAccordingToIndexStub.returns(query.where);
+
+                const result = validateQuery(query, documentSchema);
+
+                expect(result).to.be.instanceOf(ValidationResult);
+                expect(result.isValid()).to.be.false();
+
+                const [error] = result.getErrors();
+                expect(error).to.be.an.instanceOf(
+                  RangeOperatorAllowedOnlyWithEqualOperatorsError,
+                );
+              });
+            });
+
+            it('should return invalid result if "in" or range operators are not in orderBy', () => {
+              documentSchema = {
+                indices: [
+                  {
+                    properties: [{ a: 'asc', b: 'asc', c: 'asc' }],
+                  },
+                ],
+              };
+
+              findAppropriateIndexStub.returns(documentSchema.indices[0]);
+
+              const query = {
+                where: [
+                  ['a', '==', 1],
+                  ['b', '>', 1],
+                ],
+                orderBy: [['b', 'asc']],
+              };
+              sortWhereClausesAccordingToIndexStub.returns(query.where);
+
+              delete query.orderBy;
+              sortWhereClausesAccordingToIndexStub.returns(query.where);
+
+              const result = validateQuery(query, documentSchema);
+
+              expect(result.isValid()).to.be.false();
+
+              const [error] = result.getErrors();
+              expect(error).to.be.an.instanceOf(
+                RangePropertyDoesNotHaveOrderByError,
               );
             });
           });
@@ -1452,6 +1639,80 @@ describe('validateQueryFactory', () => {
       expect(result.errors[0].params.limit).to.be.equal(2);
     });
 
+    it('should return invalid result if order of three of two properties after indexed one is not preserved', () => {
+      documentSchema = {
+        indices: [
+          {
+            name: 'index1',
+            properties: [
+              { a: 'asc' },
+              { b: 'desc' },
+              { c: 'desc' },
+              { d: 'desc' },
+              { e: 'desc' },
+            ],
+            unique: true,
+          },
+        ],
+      };
+
+      findThreesomeOfIndexedPropertiesStub.returns([['b', 'c', 'd']]);
+      findIndexedPropertiesSinceStub.returns([['b', 'c']]);
+      findAppropriateIndexStub.returns({
+        properties: ['b', 'c'],
+      });
+
+      const result = validateQuery(
+        {
+          where: [
+            ['b', '>', 1],
+          ],
+          orderBy: [['b', 'desc'], ['e', 'asc']],
+        },
+        documentSchema,
+      );
+
+      expect(result).to.be.instanceOf(ValidationResult);
+      expect(result.isValid()).to.be.false();
+    });
+
+    it('should return invalid result if order of properties does not match index', () => {
+      documentSchema = {
+        indices: [
+          {
+            name: 'index1',
+            properties: [
+              { a: 'asc' },
+              { b: 'desc' },
+              { c: 'desc' },
+              { d: 'desc' },
+              { e: 'desc' },
+            ],
+            unique: true,
+          },
+        ],
+      };
+
+      findThreesomeOfIndexedPropertiesStub.returns([['b', 'c', 'd']]);
+      findIndexedPropertiesSinceStub.returns([['b', 'c']]);
+      findAppropriateIndexStub.returns({
+        properties: ['b', 'c'],
+      });
+
+      const result = validateQuery(
+        {
+          where: [
+            ['b', '>', 1],
+          ],
+          orderBy: [['b', 'desc'], ['d', 'asc']],
+        },
+        documentSchema,
+      );
+
+      expect(result).to.be.instanceOf(ValidationResult);
+      expect(result.isValid()).to.be.false();
+    });
+
     validFieldNameTestCases.forEach((fieldName) => {
       it(`should return true if "orderBy" has valid field format, ${fieldName}`, () => {
         documentSchema = {
@@ -1569,6 +1830,55 @@ describe('validateQueryFactory', () => {
         documentSchema);
 
         expect(result).to.be.instanceOf(ValidationResult);
+        expect(result.isValid()).to.be.true();
+      });
+    });
+
+    it('should return invalid result if "orderBy" was not used with range operator', () => {
+      documentSchema = {
+        indices: [
+          {
+            properties: [{ b: 'asc' }],
+          },
+        ],
+      };
+
+      findAppropriateIndexStub.returns(documentSchema.indices[0].properties);
+
+      const query = {
+        orderBy: [['b', 'asc']],
+      };
+
+      let result = validateQuery(query, documentSchema);
+
+      expect(result.isValid()).to.be.false();
+
+      expect(result.getErrors()[0]).to.be.an.instanceOf(
+        InvalidPropertiesInOrderByError,
+      );
+
+      query.where = [['a', '==', 1]];
+      sortWhereClausesAccordingToIndexStub.returns(query.where);
+
+      result = validateQuery(query, documentSchema);
+
+      expect(result.isValid()).to.be.false();
+
+      expect(result.getErrors()[0]).to.be.an.instanceOf(
+        InvalidPropertiesInOrderByError,
+      );
+
+      ['>', '<', '>=', '<=', 'startsWith', 'in'].forEach((operator) => {
+        let value = '1';
+        if (operator === 'in') {
+          value = [1];
+        }
+
+        query.where = [['b', operator, value]];
+        sortWhereClausesAccordingToIndexStub.returns(query.where);
+
+        result = validateQuery(query, documentSchema);
+
         expect(result.isValid()).to.be.true();
       });
     });
