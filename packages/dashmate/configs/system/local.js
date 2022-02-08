@@ -8,6 +8,11 @@ const baseConfig = require('./base');
 
 module.exports = lodashMerge({}, baseConfig, {
   description: 'template for local configs',
+  docker: {
+    network: {
+      subnet: '172.24.24.0/24',
+    },
+  },
   platform: {
     dapi: {
       envoy: {

@@ -1,4 +1,5 @@
 const { default: getRE2Class } = require('@dashevo/re2-wasm');
+const BlsSignatures = require('./bls/bls');
 const createAjv = require('./ajv/createAjv');
 
 const protocolVersion = require('./version/protocolVersion');
@@ -43,6 +44,8 @@ class DashPlatformProtocol {
       return this.initialized;
     }
 
+    const bls = await BlsSignatures.getInstance();
+
     this.initialized = getRE2Class().then((RE2) => {
       this.stateRepository = this.options.stateRepository;
 
@@ -65,10 +68,12 @@ class DashPlatformProtocol {
       this.stateTransition = new StateTransitionFacade(
         this,
         RE2,
+        bls,
       );
 
       this.identity = new IdentityFacade(
         this,
+        bls,
       );
 
       return true;
