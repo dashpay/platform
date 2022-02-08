@@ -7,7 +7,7 @@ const systemIndices = [
 
 /**
  * @typedef {findAppropriateIndex}
- * @param {Object[]} whereClauses
+ * @param {Array[]} whereClauses
  * @param {Object} documentSchema
  * @return {Object}
  */
@@ -23,7 +23,7 @@ function findAppropriateIndex(whereClauses, documentSchema) {
       .map((indexedProperty) => Object.keys(indexedProperty)[0]);
 
     return !uniqueWhereProperties.find((propertyName) => !indexedProperties.includes(propertyName));
-  }) || {};
+  });
 }
 
 module.exports = findAppropriateIndex;
