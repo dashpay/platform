@@ -47,6 +47,7 @@ class IdentityFactory {
             ? IdentityPublicKey.SECURITY_LEVELS.CRITICAL : publicKey.securityLevel,
           // Copy data buffer
           data: publicKey.key.toBuffer(),
+          readOnly: Boolean(publicKey.readOnly),
         };
 
         if (publicKey.readOnly) {
