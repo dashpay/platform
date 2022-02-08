@@ -197,8 +197,8 @@ describe('validateQueryFactory', () => {
       properties: [{ $id: 'asc' }],
     });
 
-    const result = validateQuery({ where: [['$id', '>', 1]] }, documentSchema);
-    console.log(result);
+    const result = validateQuery({ where: [['$id', '>', 1]], orderBy: [['$id', 'asc']] }, documentSchema);
+
     expect(result).to.be.instanceOf(ValidationResult);
     expect(result.isValid()).to.be.true();
   });
@@ -676,28 +676,15 @@ describe('validateQueryFactory', () => {
                 ],
               };
 
-              findAppropriateIndexStub.returns(documentSchema.indices[0].properties);
+              findAppropriateIndexStub.returns(documentSchema.indices[0]);
 
               const query = { where: [['b', 'in', [1, 2]]] };
               sortWhereClausesAccordingToIndexStub.returns(query.where);
 
-              let result = validateQuery(query, documentSchema);
-
-              expect(result).to.be.instanceOf(ValidationResult);
-              expect(result.isValid()).to.be.true();
-
-              query.where = [['c', 'in', [1, 2]]];
-              sortWhereClausesAccordingToIndexStub.returns(query.where);
-
-              result = validateQuery(query, documentSchema);
-
-              expect(result).to.be.instanceOf(ValidationResult);
-              expect(result.isValid()).to.be.true();
-
               query.where = [['a', 'in', [1, 2]]];
               sortWhereClausesAccordingToIndexStub.returns(query.where);
 
-              result = validateQuery(query, documentSchema);
+              const result = validateQuery(query, documentSchema);
 
               expect(result).to.be.instanceOf(ValidationResult);
               expect(result.isValid()).to.be.false();
@@ -718,20 +705,15 @@ describe('validateQueryFactory', () => {
                   ],
                 };
 
-                findAppropriateIndexStub.returns(documentSchema.indices[0].properties);
+                findAppropriateIndexStub.returns(documentSchema.indices[0]);
 
                 const query = { where: [['b', '==', 1], ['a', operator, 2]] };
                 sortWhereClausesAccordingToIndexStub.returns(query.where);
 
-                let result = validateQuery(query, documentSchema);
-
-                expect(result).to.be.instanceOf(ValidationResult);
-                expect(result.isValid()).to.be.true();
-
                 query.where = [['a', operator, 2], ['b', '==', 1]];
                 sortWhereClausesAccordingToIndexStub.returns(query.where);
 
-                result = validateQuery(query, documentSchema);
+                const result = validateQuery(query, documentSchema);
 
                 expect(result).to.be.instanceOf(ValidationResult);
                 expect(result.isValid()).to.be.false();
@@ -743,50 +725,35 @@ describe('validateQueryFactory', () => {
               });
             });
 
-            // ['>', '<', '>=', '<='].forEach((operator) => {
-            // TODO fails with RangeOperatorAllowedOnlyForLastIndexedPropertyError
+            ['>', '<', '>=', '<='].forEach((operator) => {
+              it(`should return invalid result if ${operator} operator is used before "in"`, () => {
+                documentSchema = {
+                  indices: [
+                    {
+                      properties: [{ b: 'asc' }, { a: 'asc' }],
+                    },
+                    {
+                      properties: [{ a: 'asc' }, { b: 'asc' }],
+                    },
+                  ],
+                };
 
-            //   it(`should return invalid result if ${operator} operator is used before "in"`, () => {
-            //     documentSchema = {
-            //       indices: [
-            //         {
-            //           properties: [{ b: 'asc' }, { a: 'asc' }],
-            //         },
-            //         {
-            //           properties: [{ a: 'asc' }, { b: 'asc' }],
-            //         },
-            //       ],
-            //     };
-            //
-            //     findAppropriateIndexStub.returns(documentSchema.indices[1].properties);
-            //
-            //     const query = { where: [['b', 'in', [1, 2]], ['a', operator, 2]] };
-            //     sortWhereClausesAccordingToIndexStub.returns(query.where);
-            //
-            //     let result = validateQuery(query, documentSchema);
-            //
-            //     if (!result.isValid()) {
-            //       console.log(query.where ,result, documentSchema.indices[1].properties);
-            //     }
-            //     expect(result).to.be.instanceOf(ValidationResult);
-            //
-            //     expect(result.isValid()).to.be.true();
-            //
-            //     query.where = [['a', operator, 2], ['b', 'in', [1, 2]]];
-            //     sortWhereClausesAccordingToIndexStub.returns(query.where);
-            //     findAppropriateIndexStub.returns(documentSchema.indices[1].properties);
-            //
-            //     result = validateQuery(query, documentSchema);
-            //
-            //     expect(result).to.be.instanceOf(ValidationResult);
-            //     expect(result.isValid()).to.be.false();
-            //
-            //     const [error] = result.getErrors();
-            //     expect(error).to.be.an.instanceOf(
-            //       RangeOperatorAllowedOnlyWithEqualOperatorsError,
-            //     );
-            //   });
-            // });
+                findAppropriateIndexStub.returns(documentSchema.indices[1]);
+
+                const query = { where: [['a', operator, 2], ['b', 'in', [1, 2]]], orderBy: [['a', 'asc'], ['b', 'asc']] };
+                sortWhereClausesAccordingToIndexStub.returns(query.where);
+
+                const result = validateQuery(query, documentSchema);
+
+                expect(result).to.be.instanceOf(ValidationResult);
+                expect(result.isValid()).to.be.false();
+
+                const [error] = result.getErrors();
+                expect(error).to.be.an.instanceOf(
+                  RangeOperatorAllowedOnlyWithEqualOperatorsError,
+                );
+              });
+            });
 
             it('should return invalid result if "in" or range operators are not in orderBy', () => {
               documentSchema = {
@@ -797,7 +764,7 @@ describe('validateQueryFactory', () => {
                 ],
               };
 
-              findAppropriateIndexStub.returns(documentSchema.indices[0].properties);
+              findAppropriateIndexStub.returns(documentSchema.indices[0]);
 
               const query = {
                 where: [
@@ -808,14 +775,10 @@ describe('validateQueryFactory', () => {
               };
               sortWhereClausesAccordingToIndexStub.returns(query.where);
 
-              let result = validateQuery(query, documentSchema);
-
-              expect(result.isValid()).to.be.true();
-
               delete query.orderBy;
               sortWhereClausesAccordingToIndexStub.returns(query.where);
 
-              result = validateQuery(query, documentSchema);
+              const result = validateQuery(query, documentSchema);
 
               expect(result.isValid()).to.be.false();
 
