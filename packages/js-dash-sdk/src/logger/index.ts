@@ -1,12 +1,9 @@
-const pino = require('pino');
-const config = require('config');
+import { pino } from 'pino';
 
-
-require('dotenv').config();
 
 const ENABLE_DEBUG_LOGS = (process.env.ENABLE_DEBUG_LOGS === "true");
 
-const logger = pino({
+export const logger = pino({
     level: 'debug',
     enabled: ENABLE_DEBUG_LOGS,
     crlf: false,
@@ -17,5 +14,3 @@ const logger = pino({
     },
 });
 
-
-module.exports = logger;

@@ -43,8 +43,6 @@
     "@dashevo/masternode-reward-shares-contract": "workspace:~",
     "@dashevo/wallet-lib": "workspace:~",
     "bs58": "^4.0.1",
-    "config": "^3.3.7",
-    "dotenv": "^14.3.2",
     "node-inspect-extracted": "^1.0.8",
     "pino": "^7.6.4",
     "pino-pretty": "^7.5.1"

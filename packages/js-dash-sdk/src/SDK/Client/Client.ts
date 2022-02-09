@@ -13,7 +13,6 @@ export interface WalletOptions extends Wallet.IWalletOptions {
     defaultAccountIndex?: number;
 }
 
-require('dotenv').config();
 
 /**
  * Interface Client Options
@@ -69,7 +68,7 @@ export class Client extends EventEmitter {
 
         this.network = this.options.network ? this.options.network.toString() : 'testnet';
 
-        process.env.ENABLE_DEBUG_LOGS = this.options.enableDebugLogs === true ? 'true' : 'false'; // Set debug logger option
+        process.env.ENABLE_DEBUG_LOGS = this.options.enableDebugLogs === true ? "true" : "false"; // Set debug logger option
 
         // Initialize DAPI Client
         const dapiClientOptions = {
