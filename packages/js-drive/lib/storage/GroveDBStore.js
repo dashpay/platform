@@ -75,7 +75,7 @@ class GroveDBStore {
     await this.db[method](
       path,
       key,
-      { type: 'reference', referencePath },
+      { type: 'reference', value: referencePath },
       options.useTransaction || false,
     );
 

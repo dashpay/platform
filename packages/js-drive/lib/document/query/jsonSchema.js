@@ -146,7 +146,7 @@ module.exports = {
         items: false,
       },
       minItems: 1,
-      maxItems: 2,
+      maxItems: 255,
     },
     startAfter: {
       oneOf: [
