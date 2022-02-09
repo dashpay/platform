@@ -76,12 +76,11 @@ class DriveStateRepository {
    * @returns {Promise<void>}
    */
   async storeIdentityPublicKeyHashes(identityId, publicKeyHashes) {
-    await Promise.all(
-      publicKeyHashes.map(async (publicKeyHash) => this.publicKeyToIdentityIdRepository
-        .store(
-          publicKeyHash, identityId, this.#options.useTransaction || false,
-        )),
-    );
+    for (const publicKeyHash of publicKeyHashes) {
+      await this.publicKeyToIdentityIdRepository.store(
+        publicKeyHash, identityId, this.#options.useTransaction || false,
+      );
+    }
   }
 
   /**

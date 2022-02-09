@@ -37,7 +37,7 @@ class IdentityStoreRepository {
    * @return {Promise<null|Identity>}
    */
   async fetch(id, useTransaction = false) {
-    const encodedIdentity = this.storage.get(
+    const encodedIdentity = await this.storage.get(
       IdentityStoreRepository.TREE_PATH,
       id.toBuffer(),
       { useTransaction },
