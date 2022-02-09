@@ -26,7 +26,7 @@
     ],
     "properties": {
       "payToId": {
-        "description": "Identifier to to share reward",
+        "description": "Identifier to share reward with",
         "type": "array",
         "byteArray": true,
         "minItems": 32,
