@@ -62,7 +62,7 @@ function fetchDocumentsFactory(
     }
 
     return documentRepository.find(
-      contractIdIdentifier,
+      dataContract,
       type,
       options,
       useTransaction,

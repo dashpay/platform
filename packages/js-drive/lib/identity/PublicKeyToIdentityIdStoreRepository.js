@@ -66,7 +66,7 @@ class PublicKeyToIdentityIdStoreRepository {
    * @return {Promise<Identifier[]>}
    */
   async fetch(publicKeyHash, useTransaction = false) {
-    const identityIdsSerialized = this.fetchBuffer(publicKeyHash, useTransaction);
+    const identityIdsSerialized = await this.fetchBuffer(publicKeyHash, useTransaction);
 
     if (!identityIdsSerialized) {
       return [];

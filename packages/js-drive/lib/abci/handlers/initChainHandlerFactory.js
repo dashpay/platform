@@ -77,11 +77,11 @@ function initChainHandlerFactory(
 
     console.log(`masternode identities ${appHash.toString('hex').toUpperCase()}`);
 
+    appHash = await groveDBStore.getRootHash({ useTransaction: true });
+
+    console.log(`final ${appHash.toString('hex')}`);
+
     await groveDBStore.commitTransaction();
-
-    appHash = await groveDBStore.getRootHash();
-
-    console.log(`commit ${appHash.toString('hex').toUpperCase()}`);
 
     // Set initial validator set
 

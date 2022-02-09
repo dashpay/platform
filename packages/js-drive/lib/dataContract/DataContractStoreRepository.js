@@ -1,4 +1,5 @@
 const DataContract = require('@dashevo/dpp/lib/dataContract/DataContract');
+const { createHash } = require('crypto');
 
 class DataContractStoreRepository {
   /**
@@ -19,7 +20,19 @@ class DataContractStoreRepository {
    * @return {Promise<number>}
    */
   async store(dataContract, useTransaction = false) {
-    return this.storage.getDrive().applyContract(dataContract, useTransaction);
+    const result = await this.storage.getDrive().applyContract(dataContract, useTransaction);
+
+    this.storage.logger.info({
+      dataContract: dataContract.toBuffer().toString('hex'),
+      dataContractHash: createHash('sha256')
+        .update(
+          dataContract.toBuffer(),
+        ).digest('hex'),
+      useTransaction: Boolean(useTransaction),
+      appHash: (await this.storage.getRootHash({ useTransaction })).toString('hex'),
+    }, 'applyContract');
+
+    return result;
   }
 
   /**
