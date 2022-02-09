@@ -54,11 +54,10 @@ pub fn setup(count: u32, seed: u64) -> (Drive, Contract, TempDir) {
 
     let storage = drive.grove.storage();
     let db_transaction = storage.transaction();
-
     drive
         .grove
         .start_transaction()
-        .expect("transaction should be started");
+        .expect("expected to start transaction successfully");
 
     drive
         .create_root_tree(Some(&db_transaction))
@@ -130,6 +129,26 @@ fn test_query_many() {
 #[test]
 fn test_query() {
     let (mut drive, contract, tmp_dir) = setup(10, 73509);
+
+    let storage = drive.grove.storage();
+    let db_transaction = storage.transaction();
+    drive
+        .grove
+        .start_transaction()
+        .expect("expected to start transaction");
+
+    let root_hash = drive
+        .grove
+        .root_hash(Some(&db_transaction))
+        .expect("there is always a root hash");
+    assert_eq!(
+        root_hash.as_slice(),
+        vec![
+            36, 148, 221, 163, 46, 216, 16, 100, 121, 174, 200, 97, 221, 19, 165, 104, 73, 190,
+            202, 145, 86, 215, 115, 198, 103, 167, 187, 182, 253, 155, 166, 205
+        ]
+    );
+
     let all_names = [
         "Adey".to_string(),
         "Briney".to_string(),
@@ -142,10 +161,6 @@ fn test_query() {
         "Noellyn".to_string(),
         "Prissie".to_string(),
     ];
-
-    let storage = drive.grove.storage();
-    let db_transaction = storage.transaction();
-    drive.grove.start_transaction();
 
     // A query getting all elements by firstName
 
