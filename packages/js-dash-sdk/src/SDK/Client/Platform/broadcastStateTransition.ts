@@ -3,7 +3,7 @@ import { Platform } from "./Platform";
 import { StateTransitionBroadcastError } from "../../../errors/StateTransitionBroadcastError";
 import { IStateTransitionResult } from "./IStateTransitionResult";
 import { IPlatformStateProof } from "./IPlatformStateProof";
-import logger from "../../../logger";
+import { logger } from "../../../logger";
 
 const ResponseError = require('@dashevo/dapi-client/lib/transport/errors/response/ResponseError');
 const InvalidRequestDPPError = require('@dashevo/dapi-client/lib/transport/errors/response/InvalidRequestDPPError');
