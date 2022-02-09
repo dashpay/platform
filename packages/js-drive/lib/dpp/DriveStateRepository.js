@@ -110,6 +110,9 @@ class DriveStateRepository {
       this.#options.useTransaction || false,
     );
 
+    console.log(`isAssetLockTransactionOutPointAlreadyUsed ${result !== null}`);
+    console.dir(result);
+
     return result !== null;
   }
 

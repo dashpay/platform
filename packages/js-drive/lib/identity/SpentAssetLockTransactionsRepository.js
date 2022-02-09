@@ -36,17 +36,11 @@ class SpentAssetLockTransactionsRepository {
    * @return {null|Buffer}
    */
   async fetch(outPointBuffer, useTransaction = false) {
-    const result = await this.storage.get(
+    return this.storage.get(
       SpentAssetLockTransactionsRepository.TREE_PATH,
       outPointBuffer,
       { useTransaction },
     );
-
-    if (!result) {
-      return null;
-    }
-
-    return result;
   }
 
   /**
