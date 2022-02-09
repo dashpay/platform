@@ -44,8 +44,8 @@
     "@dashevo/wallet-lib": "workspace:~",
     "bs58": "^4.0.1",
     "node-inspect-extracted": "^1.0.8",
-    "pino": "^7.6.4",
-    "pino-pretty": "^7.5.1"
+    "pino": "^6.4.0",
+    "pino-pretty": "^4.0.3"
   },
   "devDependencies": {
     "@types/chai": "^4.2.12",
