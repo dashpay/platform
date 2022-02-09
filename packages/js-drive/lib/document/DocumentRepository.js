@@ -1,5 +1,4 @@
 const { createHash } = require('crypto');
-const Identifier = require('@dashevo/dpp/lib/identifier/Identifier');
 
 const createDocumentTypeTreePath = require('./groveDB/createDocumentTreePath');
 const InvalidQueryError = require('./errors/InvalidQueryError');
@@ -127,7 +126,7 @@ class DocumentRepository {
     this.storage.logger.info({
       dataContractId: dataContract.getId().toString(),
       documentType,
-      id: Identifier.from(id).toString(),
+      id: id.toString(),
       useTransaction: Boolean(useTransaction),
       appHash: (await this.storage.getRootHash({ useTransaction })).toString('hex'),
     }, 'deleteDocument');

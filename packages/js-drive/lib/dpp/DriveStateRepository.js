@@ -31,7 +31,7 @@ class DriveStateRepository {
     blockExecutionContext,
     simplifiedMasternodeList,
     dataContractCache,
-    options,
+    options= {},
   ) {
     this.identityRepository = identityRepository;
     this.publicKeyToIdentityIdRepository = publicKeyToIdentityIdRepository;
