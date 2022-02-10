@@ -462,8 +462,8 @@ function createDIContainer(options) {
 
     signedDataContractRepository: asFunction((
       signedGroveDBStore,
-      dpp,
-    ) => (new DataContractStoreRepository(signedGroveDBStore, dpp))).singleton(),
+      decodeProtocolEntity,
+    ) => (new DataContractStoreRepository(signedGroveDBStore, decodeProtocolEntity))).singleton(),
 
     dataContractCache: asFunction((dataContractCacheSize) => (
       new LRUCache(dataContractCacheSize)

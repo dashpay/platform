@@ -1,6 +1,7 @@
 const cbor = require('cbor');
 
 const BlockExecutionContextStack = require('./BlockExecutionContextStack');
+const BlockExecutionContext = require('./BlockExecutionContext');
 
 class BlockExecutionContextStackRepository {
   /**
@@ -53,7 +54,15 @@ class BlockExecutionContextStackRepository {
         return blockExecutionContextStack;
       }
 
-      const blockExecutionContexts = cbor.decode(blockExecutionContextsEncoded);
+      const rawBlockExecutionContexts = cbor.decode(blockExecutionContextsEncoded);
+
+      const blockExecutionContexts = rawBlockExecutionContexts.map((rawContext) => {
+        const context = new BlockExecutionContext();
+
+        context.fromObject(rawContext);
+
+        return context;
+      });
 
       blockExecutionContextStack.setContexts(blockExecutionContexts);
 
