@@ -1,5 +1,6 @@
-const validateQueryFactory = require('../../../../lib/document/query/validateQueryFactory');
+const generateRandomIdentifier = require('@dashevo/dpp/lib/test/utils/generateRandomIdentifier');
 
+const validateQueryFactory = require('../../../../lib/document/query/validateQueryFactory');
 const findConflictingConditions = require('../../../../lib/document/query/findConflictingConditions');
 const findAppropriateIndex = require('../../../../lib/document/query/findAppropriateIndex');
 const sortWhereClausesAccordingToIndex = require('../../../../lib/document/query/sortWhereClausesAccordingToIndex');
@@ -16,6 +17,14 @@ const InvalidOrderByPropertiesOrderError = require('../../../../lib/document/que
 
 describe('validateQueryFactory', () => {
   const validQueries = [
+    {
+      where: [['$id', 'in', [
+        generateRandomIdentifier(),
+        generateRandomIdentifier(),
+        generateRandomIdentifier(),
+      ]]],
+      orderBy: [['$id', 'asc']],
+    },
     {
       where: [
         ['a', '==', 1],
