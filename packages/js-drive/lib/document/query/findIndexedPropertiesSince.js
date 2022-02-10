@@ -1,3 +1,10 @@
+const systemIndices = [
+  {
+    properties: [{ $id: 'asc' }],
+    unique: true,
+  },
+];
+
 /**
  * Find all lists of indexed properties of specific length since selected one
  *
@@ -10,7 +17,7 @@
  * @return {string[][]}
  */
 function findIndexedPropertiesSince(property, numberOfProperties, documentSchema) {
-  const documentIndices = (documentSchema.indices || []);
+  const documentIndices = (documentSchema.indices || []).concat(systemIndices);
 
   const documentIndexedPropertiesList = documentIndices.map((indices) => (
     indices.properties.map((prop) => Object.keys(prop)[0])

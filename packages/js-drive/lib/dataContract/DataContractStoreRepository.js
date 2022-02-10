@@ -43,11 +43,20 @@ class DataContractStoreRepository {
    * @return {Promise<null|DataContract>}
    */
   async fetch(id, useTransaction = false) {
-    const encodedDataContract = await this.storage.get(
-      DataContractStoreRepository.TREE_PATH.concat([id.toBuffer()]),
-      DataContractStoreRepository.DATA_CONTRACT_KEY,
-      { useTransaction },
-    );
+    let encodedDataContract;
+    try {
+      encodedDataContract = await this.storage.get(
+        DataContractStoreRepository.TREE_PATH.concat([id.toBuffer()]),
+        DataContractStoreRepository.DATA_CONTRACT_KEY,
+        { useTransaction },
+      );
+    } catch (e) {
+      if (e.message === 'invalid path: no subtree found as parent does not contain child') {
+        return null;
+      }
+
+      throw e;
+    }
 
     if (!encodedDataContract) {
       return null;
