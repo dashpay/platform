@@ -91,7 +91,7 @@ class DriveStateRepository {
    * @return {Promise<void>}
    */
   async markAssetLockTransactionOutPointAsUsed(outPointBuffer) {
-    this.spentAssetLockTransactionsRepository.store(
+    await this.spentAssetLockTransactionsRepository.store(
       outPointBuffer,
       this.#options.useTransaction || false,
     );
@@ -105,13 +105,10 @@ class DriveStateRepository {
    * @return {Promise<boolean>}
    */
   async isAssetLockTransactionOutPointAlreadyUsed(outPointBuffer) {
-    const result = this.spentAssetLockTransactionsRepository.fetch(
+    const result = await this.spentAssetLockTransactionsRepository.fetch(
       outPointBuffer,
       this.#options.useTransaction || false,
     );
-
-    console.log(`isAssetLockTransactionOutPointAlreadyUsed ${result !== null}`);
-    console.dir(result);
 
     return result !== null;
   }
@@ -252,7 +249,7 @@ class DriveStateRepository {
    * @return {Promise<boolean>}
    */
   async verifyInstantLock(instantLock) {
-    const header = await this.blockExecutionContext.getHeader();
+    const header = this.blockExecutionContext.getHeader();
 
     const {
       coreChainLockedHeight,

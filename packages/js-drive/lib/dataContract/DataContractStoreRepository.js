@@ -53,7 +53,9 @@ class DataContractStoreRepository {
       return null;
     }
 
-    const [, rawDataContract] = this.decodeProtocolEntity(encodedDataContract);
+    const [protocolVersion, rawDataContract] = this.decodeProtocolEntity(encodedDataContract);
+
+    rawDataContract.protocolVersion = protocolVersion;
 
     return new DataContract(rawDataContract);
   }

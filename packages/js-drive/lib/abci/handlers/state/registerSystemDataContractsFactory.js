@@ -40,7 +40,6 @@ function registerSystemDataContractsFactory(
   dashpayOwnerId,
   dashpayOwnerPublicKey,
   dashpayDocuments,
-  groveDBStore,
 ) {
   /**
    * @typedef {registerSystemDataContracts}
@@ -66,10 +65,6 @@ function registerSystemDataContractsFactory(
       featureFlagsDocuments,
     );
 
-    let appHash = await groveDBStore.getRootHash({ useTransaction: true });
-
-    console.log(`feature flags ${appHash.toString('hex').toUpperCase()}`);
-
     contextLogger.debug('Registering DPNS data contract');
     contextLogger.trace({
       ownerId: dpnsOwnerId,
@@ -85,22 +80,11 @@ function registerSystemDataContractsFactory(
       dpnsDocuments,
     );
 
-    console.dir(dpnsContract.toObject(), { depth: 100 });
-    console.dir(dpnsContract.hash().toString('hex'));
-
     const genesisDate = new Date(
       genesisTime.seconds.toNumber() * 1000,
     );
 
-    appHash = await groveDBStore.getRootHash({ useTransaction: true });
-
-    console.log(`dpns contract ${appHash.toString('hex').toUpperCase()}`);
-
     await registerTopLevelDomain('dash', dpnsContract, dpnsOwnerId, genesisDate);
-
-    appHash = await groveDBStore.getRootHash({ useTransaction: true });
-
-    console.log(`top level domain ${appHash.toString('hex').toUpperCase()}`);
 
     contextLogger.debug('Registering Masternode Rewards data contract');
     contextLogger.trace({
@@ -117,10 +101,6 @@ function registerSystemDataContractsFactory(
       masternodeRewardSharesDocuments,
     );
 
-    appHash = await groveDBStore.getRootHash({ useTransaction: true });
-
-    console.log(`masternode reward shares ${appHash.toString('hex').toUpperCase()}`);
-
     contextLogger.debug('Registering Dashpay data contract');
     contextLogger.trace({
       ownerId: dashpayOwnerId,
@@ -135,10 +115,6 @@ function registerSystemDataContractsFactory(
       dashpayOwnerPublicKey,
       dashpayDocuments,
     );
-
-    appHash = await groveDBStore.getRootHash({ useTransaction: true });
-
-    console.log(`dashpay ${appHash.toString('hex').toUpperCase()}`);
   }
 
   return registerSystemDataContracts;
