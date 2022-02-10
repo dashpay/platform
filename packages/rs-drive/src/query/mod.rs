@@ -140,20 +140,44 @@ fn sql_value_to_cbor(sql_value: ast::Value) -> Option<CborValue> {
 }
 
 #[derive(Clone, Debug, PartialEq)]
+pub struct InternalClauses {
+    primary_key_in_clause: Option<WhereClause>,
+    primary_key_equal_clause: Option<WhereClause>,
+    in_clause: Option<WhereClause>,
+    range_clause: Option<WhereClause>,
+    equal_clauses: HashMap<String, WhereClause>,
+}
+
+impl InternalClauses {
+    pub fn verify(&self) -> bool {
+        // There can only be 1 primary key clause, or many other clauses
+        if self.primary_key_in_clause.is_some() ^ self.primary_key_equal_clause.is_some() {
+            // One is set, all rest must be empty
+            !(self.in_clause.is_some()
+                || self.range_clause.is_some()
+                || !self.equal_clauses.is_empty())
+        } else {
+            !(self.primary_key_in_clause.is_some() && self.primary_key_equal_clause.is_some())
+        }
+    }
+
+    pub fn is_for_primary_key(&self) -> bool {
+        self.primary_key_in_clause.is_some() || self.primary_key_equal_clause.is_some()
+    }
+}
+
+#[derive(Clone, Debug, PartialEq)]
 pub struct WhereClause {
     field: String,
     operator: WhereOperator,
     value: Value,
 }
 
-#[derive(Clone, Debug, PartialEq)]
-pub struct InternalClauses {
-    pub in_clause: Option<WhereClause>,
-    pub range_clause: Option<WhereClause>,
-    pub equal_clauses: HashMap<String, WhereClause>,
-}
-
 impl<'a> WhereClause {
+    pub fn is_identifier(&self) -> bool {
+        return self.field == "$id";
+    }
+
     pub fn from_components(clause_components: &'a [Value]) -> Result<Self, Error> {
         if clause_components.len() != 3 {
             return Err(Error::CorruptedData(String::from(
@@ -1041,12 +1065,37 @@ impl<'a> DriveQuery<'a> {
     }
 
     fn extract_clauses(all_where_clauses: Vec<WhereClause>) -> Result<InternalClauses, Error> {
+        let primary_key_equal_clauses_array = all_where_clauses
+            .iter()
+            .filter_map(|where_clause| match where_clause.operator {
+                Equal => match where_clause.is_identifier() {
+                    true => Some(where_clause.clone()),
+                    false => None,
+                },
+                _ => None,
+            })
+            .collect::<Vec<WhereClause>>();
+
+        let primary_key_in_clauses_array = all_where_clauses
+            .iter()
+            .filter_map(|where_clause| match where_clause.operator {
+                In => match where_clause.is_identifier() {
+                    true => Some(where_clause.clone()),
+                    false => None,
+                },
+                _ => None,
+            })
+            .collect::<Vec<WhereClause>>();
+
         let range_clause = WhereClause::group_range_clauses(&all_where_clauses)?;
 
         let equal_clauses_array = all_where_clauses
             .iter()
             .filter_map(|where_clause| match where_clause.operator {
-                Equal => Some(where_clause.clone()),
+                Equal => match where_clause.is_identifier() {
+                    true => None,
+                    false => Some(where_clause.clone()),
+                },
                 _ => None,
             })
             .collect::<Vec<WhereClause>>();
@@ -1054,10 +1103,39 @@ impl<'a> DriveQuery<'a> {
         let in_clauses_array = all_where_clauses
             .iter()
             .filter_map(|where_clause| match where_clause.operator {
-                In => Some(where_clause.clone()),
+                In => match where_clause.is_identifier() {
+                    true => None,
+                    false => Some(where_clause.clone()),
+                },
                 _ => None,
             })
             .collect::<Vec<WhereClause>>();
+
+        let primary_key_equal_clause = match primary_key_equal_clauses_array.len() {
+            0 => Ok(None),
+            1 => Ok(Some(
+                primary_key_equal_clauses_array
+                    .get(0)
+                    .expect("there must be a value")
+                    .clone(),
+            )),
+            _ => Err(Error::CorruptedData(String::from(
+                "There should only be one equal clause for the primary key",
+            ))),
+        }?;
+
+        let primary_key_in_clause = match primary_key_in_clauses_array.len() {
+            0 => Ok(None),
+            1 => Ok(Some(
+                primary_key_in_clauses_array
+                    .get(0)
+                    .expect("there must be a value")
+                    .clone(),
+            )),
+            _ => Err(Error::CorruptedData(String::from(
+                "There should only be one in clause for the primary key",
+            ))),
+        }?;
 
         let in_clause = match in_clauses_array.len() {
             0 => Ok(None),
@@ -1077,11 +1155,18 @@ impl<'a> DriveQuery<'a> {
             .map(|where_clause| (where_clause.field.clone(), where_clause))
             .collect();
 
-        Ok(InternalClauses {
+        let internal_clauses = InternalClauses {
+            primary_key_equal_clause,
+            primary_key_in_clause,
             in_clause,
             range_clause,
             equal_clauses,
-        })
+        };
+
+        match internal_clauses.verify() {
+            true => Ok(internal_clauses),
+            false => Err(Error::InvalidQuery("Query has invalid where clauses")),
+        }
     }
 
     pub fn execute_with_proof(
@@ -1163,11 +1248,7 @@ impl<'a> DriveQuery<'a> {
             })
             .collect();
 
-        // TODO: It's done in a terrable way due to unblock integration ASAP
-        //   must be refactoring in the upcoming PR
-        let is_primary_key_query = fields.contains(&"$id");
-
-        let path_query = if !is_primary_key_query {
+        let path_query = if !self.internal_clauses.is_for_primary_key() {
             let (index, difference) = self
                 .document_type
                 .index_for_types(fields.as_slice(), in_field, order_by_keys.as_slice())
@@ -1351,72 +1432,72 @@ impl<'a> DriveQuery<'a> {
 
             path.push(last_index.name.as_bytes().to_vec());
 
-            PathQuery::new(
+            Ok(PathQuery::new(
                 path,
                 SizedQuery::new(final_query, Some(self.limit), Some(self.offset)),
-            )
+            ))
         } else {
             let mut path = document_type_path.clone();
 
             // Add primary key ($id) subtree
             path.push(vec![0]);
 
-            let left_to_right = if self.order_by.keys().len() == 1 {
-                if self.order_by.keys().next().unwrap() != "$id" {
-                    return Err(Error::CorruptedData(String::from(
-                        "order by should include $id only",
-                    )));
-                }
+            if let Some(primary_key_equal_clause) = &self.internal_clauses.primary_key_equal_clause
+            {
+                let mut query = Query::new();
+                let key = self
+                    .document_type
+                    .serialize_value_for_key("$id", &primary_key_equal_clause.value)?;
+                query.insert_key(key);
 
-                let order_clause = self.order_by.get("$id").unwrap();
+                Ok(PathQuery::new(
+                    path,
+                    SizedQuery::new(query, Some(self.limit), Some(self.offset)),
+                ))
+            } else if let Some(primary_key_in_clause) = &self.internal_clauses.primary_key_in_clause
+            {
+                let left_to_right = if self.order_by.keys().len() == 1 {
+                    if self.order_by.keys().next().unwrap() != "$id" {
+                        return Err(Error::CorruptedData(String::from(
+                            "order by should include $id only",
+                        )));
+                    }
 
-                order_clause.ascending
-            } else {
-                true
-            };
+                    let order_clause = self.order_by.get("$id").unwrap();
 
-            let mut query = Query::new_with_direction(left_to_right);
-
-            // Allow only in and == operators
-            if self.internal_clauses.range_clause.is_some() {
-                return Err(Error::CorruptedData(String::from(
-                    "$id can be used only with '==' or 'in' operators",
-                )));
-            }
-
-            let where_clause = if self.internal_clauses.equal_clauses.get("$id").is_some() {
-                self.internal_clauses.equal_clauses.get("$id").unwrap()
-            } else if self.internal_clauses.in_clause.is_some() {
-                self.internal_clauses.in_clause.as_ref().unwrap()
-            } else {
-                return Err(Error::CorruptedData(String::from(
-                    "order by should include $id only",
-                )));
-            };
-
-            // If there is a start_at_document, we need to get the value that it has for the
-            // current field.
-            let starts_at_key_option = match starts_at_document {
-                None => None,
-                Some((document, included)) => {
-                    // if the key doesn't exist then we should ignore the starts at key
-                    document
-                        .get_raw_for_document_type("$id", self.document_type, None)?
-                        .map(|raw_value_option| (raw_value_option, included))
-                }
-            };
-
-            match where_clause.operator {
-                Equal => {
-                    let key = self
-                        .document_type
-                        .serialize_value_for_key("$id", &where_clause.value)?;
-
-                    match starts_at_key_option {
-                        None => {
-                            query.insert_key(key);
+                    order_clause.ascending
+                } else {
+                    true
+                };
+                let mut query = Query::new_with_direction(left_to_right);
+                // If there is a start_at_document, we need to get the value that it has for the
+                // current field.
+                let starts_at_key_option = match starts_at_document {
+                    None => None,
+                    Some((document, included)) => {
+                        // if the key doesn't exist then we should ignore the starts at key
+                        document
+                            .get_raw_for_document_type("$id", self.document_type, None)?
+                            .map(|raw_value_option| (raw_value_option, included))
+                    }
+                };
+                let in_values = match &primary_key_in_clause.value {
+                    Value::Array(array) => Ok(array),
+                    _ => Err(Error::CorruptedData(String::from(
+                        "when using in operator you must provide an array of values",
+                    ))),
+                }?;
+                match starts_at_key_option {
+                    None => {
+                        for value in in_values.iter() {
+                            let key = self.document_type.serialize_value_for_key("$id", value)?;
+                            query.insert_key(key)
                         }
-                        Some((starts_at_key, included)) => {
+                    }
+                    Some((starts_at_key, included)) => {
+                        for value in in_values.iter() {
+                            let key = self.document_type.serialize_value_for_key("$id", value)?;
+
                             if (left_to_right && starts_at_key < key)
                                 || (!left_to_right && starts_at_key > key)
                                 || (included && starts_at_key == key)
@@ -1426,48 +1507,16 @@ impl<'a> DriveQuery<'a> {
                         }
                     }
                 }
-                In => {
-                    let in_values = match &where_clause.value {
-                        Value::Array(array) => Ok(array),
-                        _ => Err(Error::CorruptedData(String::from(
-                            "when using in operator you must provide an array of values",
-                        ))),
-                    }?;
-                    match starts_at_key_option {
-                        None => {
-                            for value in in_values.iter() {
-                                let key =
-                                    self.document_type.serialize_value_for_key("$id", value)?;
-                                query.insert_key(key)
-                            }
-                        }
-                        Some((starts_at_key, included)) => {
-                            for value in in_values.iter() {
-                                let key =
-                                    self.document_type.serialize_value_for_key("$id", value)?;
-
-                                if (left_to_right && starts_at_key < key)
-                                    || (!left_to_right && starts_at_key > key)
-                                    || (included && starts_at_key == key)
-                                {
-                                    query.insert_key(key);
-                                }
-                            }
-                        }
-                    }
-                }
-                _ => {
-                    return Err(Error::CorruptedData(String::from(
-                        "only '==' and 'in' operators are supported for $id",
-                    )))
-                }
+                Ok(PathQuery::new(
+                    path,
+                    SizedQuery::new(query, Some(self.limit), Some(self.offset)),
+                ))
+            } else {
+                Err(Error::CorruptedData(String::from(
+                    "this should be impossible to get to",
+                )))
             }
-
-            PathQuery::new(
-                path,
-                SizedQuery::new(query, Some(self.limit), Some(self.offset)),
-            )
-        };
+        }?;
 
         let query_result = grove.get_path_query(&path_query, transaction);
         match query_result {
