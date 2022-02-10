@@ -1163,48 +1163,55 @@ impl<'a> DriveQuery<'a> {
             })
             .collect();
 
-        let (index, difference) = self
-            .document_type
-            .index_for_types(fields.as_slice(), in_field, order_by_keys.as_slice())
-            .ok_or(Error::InvalidQuery("query must be for valid indexes"))?;
-        if difference > defaults::MAX_INDEX_DIFFERENCE {
-            return Err(Error::InvalidQuery(
-                "query must better match an existing index",
-            ));
-        }
-        let ordered_clauses: Vec<&WhereClause> = index
-            .properties
-            .iter()
-            .filter_map(|field| self.internal_clauses.equal_clauses.get(field.name.as_str()))
-            .collect();
-        let (last_clause, last_clause_is_range, subquery_clause) =
-            match &self.internal_clauses.in_clause {
-                None => match &self.internal_clauses.range_clause {
-                    None => (ordered_clauses.last().copied(), false, None),
-                    Some(where_clause) => (Some(where_clause), true, None),
-                },
-                Some(where_clause) => match &self.internal_clauses.range_clause {
-                    None => (Some(where_clause), true, None),
-                    Some(range_clause) => (Some(where_clause), true, Some(range_clause)),
-                },
-            };
+        // TODO: It's done in a terrable way due to unblock integration ASAP
+        //   must be refactoring in the upcoming PR
+        let is_primary_key_query = fields.contains(&"$id");
 
-        // We need to get the terminal indexes unused by clauses.
-        let left_over_index_properties = index
-            .properties
-            .iter()
-            .filter(|field| {
-                !(self
-                    .internal_clauses
-                    .equal_clauses
-                    .get(field.name.as_str())
-                    .is_some()
-                    || (last_clause.is_some() && last_clause.unwrap().field == field.name)
-                    || (subquery_clause.is_some() && subquery_clause.unwrap().field == field.name))
-            })
-            .collect::<Vec<&IndexProperty>>();
-        let intermediate_values =
-            index
+        let path_query = if !is_primary_key_query {
+            let (index, difference) = self
+                .document_type
+                .index_for_types(fields.as_slice(), in_field, order_by_keys.as_slice())
+                .ok_or(Error::InvalidQuery("query must be for valid indexes"))?;
+            if difference > defaults::MAX_INDEX_DIFFERENCE {
+                return Err(Error::InvalidQuery(
+                    "query must better match an existing index",
+                ));
+            }
+
+            let ordered_clauses: Vec<&WhereClause> = index
+                .properties
+                .iter()
+                .filter_map(|field| self.internal_clauses.equal_clauses.get(field.name.as_str()))
+                .collect();
+            let (last_clause, last_clause_is_range, subquery_clause) =
+                match &self.internal_clauses.in_clause {
+                    None => match &self.internal_clauses.range_clause {
+                        None => (ordered_clauses.last().copied(), false, None),
+                        Some(where_clause) => (Some(where_clause), true, None),
+                    },
+                    Some(where_clause) => match &self.internal_clauses.range_clause {
+                        None => (Some(where_clause), true, None),
+                        Some(range_clause) => (Some(where_clause), true, Some(range_clause)),
+                    },
+                };
+
+            // We need to get the terminal indexes unused by clauses.
+            let left_over_index_properties = index
+                .properties
+                .iter()
+                .filter(|field| {
+                    !(self
+                        .internal_clauses
+                        .equal_clauses
+                        .get(field.name.as_str())
+                        .is_some()
+                        || (last_clause.is_some() && last_clause.unwrap().field == field.name)
+                        || (subquery_clause.is_some()
+                            && subquery_clause.unwrap().field == field.name))
+                })
+                .collect::<Vec<&IndexProperty>>();
+
+            let intermediate_values = index
                 .properties
                 .iter()
                 .filter_map(|field| {
@@ -1228,126 +1235,239 @@ impl<'a> DriveQuery<'a> {
                 })
                 .collect::<Result<Vec<Vec<u8>>, Error>>()?;
 
-        fn recursive_insert(
-            query: Option<&mut Query>,
-            left_over_index_properties: &[&IndexProperty],
-            unique: bool,
-        ) -> Option<Query> {
-            match left_over_index_properties.split_first() {
-                None => {
-                    if let Some(query) = query {
-                        match unique {
-                            true => {
-                                query.set_subquery_key(vec![0]);
-                            }
-                            false => {
-                                query.set_subquery_key(vec![0]);
-                                // we just get all by document id order ascending
-                                let mut full_query = Query::new();
-                                full_query.insert_all();
-                                query.set_subquery(full_query);
+            fn recursive_insert(
+                query: Option<&mut Query>,
+                left_over_index_properties: &[&IndexProperty],
+                unique: bool,
+            ) -> Option<Query> {
+                match left_over_index_properties.split_first() {
+                    None => {
+                        if let Some(query) = query {
+                            match unique {
+                                true => {
+                                    query.set_subquery_key(vec![0]);
+                                }
+                                false => {
+                                    query.set_subquery_key(vec![0]);
+                                    // we just get all by document id order ascending
+                                    let mut full_query = Query::new();
+                                    full_query.insert_all();
+                                    query.set_subquery(full_query);
+                                }
                             }
                         }
+                        None
                     }
-                    None
-                }
-                Some((first, left_over)) => {
-                    let mut inner_query = Query::new_with_direction(first.ascending);
-                    inner_query.insert_all();
-                    recursive_insert(Some(&mut inner_query), left_over, unique);
-                    match query {
-                        None => Some(inner_query),
-                        Some(query) => {
-                            query.set_subquery(inner_query);
-                            query.set_subquery_key(first.name.as_bytes().to_vec());
-                            None
+                    Some((first, left_over)) => {
+                        let mut inner_query = Query::new_with_direction(first.ascending);
+                        inner_query.insert_all();
+                        recursive_insert(Some(&mut inner_query), left_over, unique);
+                        match query {
+                            None => Some(inner_query),
+                            Some(query) => {
+                                query.set_subquery(inner_query);
+                                query.set_subquery_key(first.name.as_bytes().to_vec());
+                                None
+                            }
                         }
                     }
                 }
             }
-        }
 
-        let final_query = match last_clause {
-            None => recursive_insert(None, left_over_index_properties.as_slice(), index.unique)
-                .expect("Index must have left over properties if no last clause"),
-            Some(where_clause) => {
-                let left_to_right = if where_clause.operator.is_range() {
-                    let order_clause: &OrderClause = self
-                        .order_by
-                        .get(where_clause.field.as_str())
-                        .ok_or(Error::InvalidQuery(
-                            "query must have an orderBy field for each range element",
-                        ))?;
-
-                    order_clause.ascending
-                } else {
-                    true
-                };
-
-                let mut query = where_clause.to_path_query(
-                    self.document_type,
-                    &starts_at_document,
-                    left_to_right,
-                )?;
-
-                match subquery_clause {
-                    None => {
-                        recursive_insert(
-                            Some(&mut query),
-                            left_over_index_properties.as_slice(),
-                            index.unique,
-                        );
-                    }
-                    Some(where_clause) => {
+            let final_query = match last_clause {
+                None => recursive_insert(None, left_over_index_properties.as_slice(), index.unique)
+                    .expect("Index must have left over properties if no last clause"),
+                Some(where_clause) => {
+                    let left_to_right = if where_clause.operator.is_range() {
                         let order_clause: &OrderClause = self
                             .order_by
                             .get(where_clause.field.as_str())
                             .ok_or(Error::InvalidQuery(
                                 "query must have an orderBy field for each range element",
                             ))?;
-                        let mut subquery = where_clause.to_path_query(
-                            self.document_type,
-                            &starts_at_document,
-                            order_clause.ascending,
-                        )?;
-                        recursive_insert(
-                            Some(&mut subquery),
-                            left_over_index_properties.as_slice(),
-                            index.unique,
-                        );
-                        let subindex = where_clause.field.as_bytes().to_vec();
-                        query.set_subquery_key(subindex);
-                        query.set_subquery(subquery);
-                    }
-                };
 
-                query
+                        order_clause.ascending
+                    } else {
+                        true
+                    };
+
+                    let mut query = where_clause.to_path_query(
+                        self.document_type,
+                        &starts_at_document,
+                        left_to_right,
+                    )?;
+
+                    match subquery_clause {
+                        None => {
+                            recursive_insert(
+                                Some(&mut query),
+                                left_over_index_properties.as_slice(),
+                                index.unique,
+                            );
+                        }
+                        Some(where_clause) => {
+                            let order_clause: &OrderClause = self
+                                .order_by
+                                .get(where_clause.field.as_str())
+                                .ok_or(Error::InvalidQuery(
+                                    "query must have an orderBy field for each range element",
+                                ))?;
+                            let mut subquery = where_clause.to_path_query(
+                                self.document_type,
+                                &starts_at_document,
+                                order_clause.ascending,
+                            )?;
+                            recursive_insert(
+                                Some(&mut subquery),
+                                left_over_index_properties.as_slice(),
+                                index.unique,
+                            );
+                            let subindex = where_clause.field.as_bytes().to_vec();
+                            query.set_subquery_key(subindex);
+                            query.set_subquery(subquery);
+                        }
+                    };
+
+                    query
+                }
+            };
+
+            let (intermediate_indexes, last_indexes) =
+                index.properties.split_at(intermediate_values.len());
+
+            // Now we should construct the path
+            let last_index = last_indexes.first().ok_or_else(|| {
+                Error::CorruptedData(String::from("document query has no index with fields"))
+            })?;
+
+            let mut path = document_type_path;
+
+            for (intermediate_index, intermediate_value) in
+                intermediate_indexes.iter().zip(intermediate_values.iter())
+            {
+                path.push(intermediate_index.name.as_bytes().to_vec());
+                path.push(intermediate_value.as_slice().to_vec());
             }
+
+            path.push(last_index.name.as_bytes().to_vec());
+
+            PathQuery::new(
+                path,
+                SizedQuery::new(final_query, Some(self.limit), Some(self.offset)),
+            )
+        } else {
+            let mut path = document_type_path.clone();
+
+            // Add primary key ($id) subtree
+            path.push(vec![0]);
+
+            let left_to_right = if self.order_by.keys().len() == 1 {
+                if self.order_by.keys().next().unwrap() != "$id" {
+                    return Err(Error::CorruptedData(String::from(
+                        "order by should include $id only",
+                    )));
+                }
+
+                let order_clause = self.order_by.get("$id").unwrap();
+
+                order_clause.ascending
+            } else {
+                true
+            };
+
+            let mut query = Query::new_with_direction(left_to_right);
+
+            // Allow only in and == operators
+            if self.internal_clauses.range_clause.is_some() {
+                return Err(Error::CorruptedData(String::from(
+                    "$id can be used only with '==' or 'in' operators",
+                )));
+            }
+
+            let where_clause = if self.internal_clauses.equal_clauses.get("$id").is_some() {
+                self.internal_clauses.equal_clauses.get("$id").unwrap()
+            } else if self.internal_clauses.in_clause.is_some() {
+                self.internal_clauses.in_clause.as_ref().unwrap()
+            } else {
+                return Err(Error::CorruptedData(String::from(
+                    "order by should include $id only",
+                )));
+            };
+
+            // If there is a start_at_document, we need to get the value that it has for the
+            // current field.
+            let starts_at_key_option = match starts_at_document {
+                None => None,
+                Some((document, included)) => {
+                    // if the key doesn't exist then we should ignore the starts at key
+                    document
+                        .get_raw_for_document_type("$id", self.document_type, None)?
+                        .map(|raw_value_option| (raw_value_option, included))
+                }
+            };
+
+            match where_clause.operator {
+                Equal => {
+                    let key = self
+                        .document_type
+                        .serialize_value_for_key("$id", &where_clause.value)?;
+
+                    match starts_at_key_option {
+                        None => {
+                            query.insert_key(key);
+                        }
+                        Some((starts_at_key, included)) => {
+                            if (left_to_right && starts_at_key < key)
+                                || (!left_to_right && starts_at_key > key)
+                                || (included && starts_at_key == key)
+                            {
+                                query.insert_key(key);
+                            }
+                        }
+                    }
+                }
+                In => {
+                    let in_values = match &where_clause.value {
+                        Value::Array(array) => Ok(array),
+                        _ => Err(Error::CorruptedData(String::from(
+                            "when using in operator you must provide an array of values",
+                        ))),
+                    }?;
+                    match starts_at_key_option {
+                        None => {
+                            for value in in_values.iter() {
+                                let key =
+                                    self.document_type.serialize_value_for_key("$id", value)?;
+                                query.insert_key(key)
+                            }
+                        }
+                        Some((starts_at_key, included)) => {
+                            for value in in_values.iter() {
+                                let key =
+                                    self.document_type.serialize_value_for_key("$id", value)?;
+
+                                if (left_to_right && starts_at_key < key)
+                                    || (!left_to_right && starts_at_key > key)
+                                    || (included && starts_at_key == key)
+                                {
+                                    query.insert_key(key);
+                                }
+                            }
+                        }
+                    }
+                }
+                _ => {
+                    return Err(Error::CorruptedData(String::from(
+                        "only '==' and 'in' operators are supported for $id",
+                    )))
+                }
+            }
+
+            PathQuery::new(
+                path,
+                SizedQuery::new(query, Some(self.limit), Some(self.offset)),
+            )
         };
-
-        let (intermediate_indexes, last_indexes) =
-            index.properties.split_at(intermediate_values.len());
-
-        // Now we should construct the path
-        let last_index = last_indexes.first().ok_or_else(|| {
-            Error::CorruptedData(String::from("document query has no index with fields"))
-        })?;
-
-        let mut path = document_type_path;
-
-        for (intermediate_index, intermediate_value) in
-            intermediate_indexes.iter().zip(intermediate_values.iter())
-        {
-            path.push(intermediate_index.name.as_bytes().to_vec());
-            path.push(intermediate_value.as_slice().to_vec());
-        }
-
-        path.push(last_index.name.as_bytes().to_vec());
-
-        let path_query = PathQuery::new(
-            path,
-            SizedQuery::new(final_query, Some(self.limit), Some(self.offset)),
-        );
 
         let query_result = grove.get_path_query(&path_query, transaction);
         match query_result {

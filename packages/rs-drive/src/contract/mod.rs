@@ -376,6 +376,7 @@ impl DocumentType {
         }
 
         // Add system properties
+        document_properties.insert(String::from("$id"), types::DocumentFieldType::ByteArray);
         document_properties.insert(String::from("$createdAt"), types::DocumentFieldType::Date);
         document_properties.insert(String::from("$updatedAt"), types::DocumentFieldType::Date);
 
