@@ -148,9 +148,9 @@ pub struct WhereClause {
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct InternalClauses {
-    in_clause: Option<WhereClause>,
-    range_clause: Option<WhereClause>,
-    equal_clauses: HashMap<String, WhereClause>,
+    pub in_clause: Option<WhereClause>,
+    pub range_clause: Option<WhereClause>,
+    pub equal_clauses: HashMap<String, WhereClause>,
 }
 
 impl<'a> WhereClause {
