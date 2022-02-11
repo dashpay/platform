@@ -31,7 +31,7 @@ class DriveStateRepository {
     blockExecutionContext,
     simplifiedMasternodeList,
     dataContractCache,
-    options,
+    options= {},
   ) {
     this.identityRepository = identityRepository;
     this.publicKeyToIdentityIdRepository = publicKeyToIdentityIdRepository;
@@ -76,12 +76,11 @@ class DriveStateRepository {
    * @returns {Promise<void>}
    */
   async storeIdentityPublicKeyHashes(identityId, publicKeyHashes) {
-    await Promise.all(
-      publicKeyHashes.map(async (publicKeyHash) => this.publicKeyToIdentityIdRepository
-        .store(
-          publicKeyHash, identityId, this.#options.useTransaction || false,
-        )),
-    );
+    for (const publicKeyHash of publicKeyHashes) {
+      await this.publicKeyToIdentityIdRepository.store(
+        publicKeyHash, identityId, this.#options.useTransaction || false,
+      );
+    }
   }
 
   /**
@@ -92,7 +91,7 @@ class DriveStateRepository {
    * @return {Promise<void>}
    */
   async markAssetLockTransactionOutPointAsUsed(outPointBuffer) {
-    this.spentAssetLockTransactionsRepository.store(
+    await this.spentAssetLockTransactionsRepository.store(
       outPointBuffer,
       this.#options.useTransaction || false,
     );
@@ -106,7 +105,7 @@ class DriveStateRepository {
    * @return {Promise<boolean>}
    */
   async isAssetLockTransactionOutPointAlreadyUsed(outPointBuffer) {
-    const result = this.spentAssetLockTransactionsRepository.fetch(
+    const result = await this.spentAssetLockTransactionsRepository.fetch(
       outPointBuffer,
       this.#options.useTransaction || false,
     );
@@ -250,7 +249,7 @@ class DriveStateRepository {
    * @return {Promise<boolean>}
    */
   async verifyInstantLock(instantLock) {
-    const header = await this.blockExecutionContext.getHeader();
+    const header = this.blockExecutionContext.getHeader();
 
     const {
       coreChainLockedHeight,

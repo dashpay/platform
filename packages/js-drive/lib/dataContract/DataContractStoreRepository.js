@@ -1,4 +1,5 @@
 const DataContract = require('@dashevo/dpp/lib/dataContract/DataContract');
+const { createHash } = require('crypto');
 
 class DataContractStoreRepository {
   /**
@@ -19,7 +20,19 @@ class DataContractStoreRepository {
    * @return {Promise<number>}
    */
   async store(dataContract, useTransaction = false) {
-    return this.storage.getDrive().applyContract(dataContract, useTransaction);
+    const result = await this.storage.getDrive().applyContract(dataContract, useTransaction);
+
+    this.storage.logger.info({
+      dataContract: dataContract.toBuffer().toString('hex'),
+      dataContractHash: createHash('sha256')
+        .update(
+          dataContract.toBuffer(),
+        ).digest('hex'),
+      useTransaction: Boolean(useTransaction),
+      appHash: (await this.storage.getRootHash({ useTransaction })).toString('hex'),
+    }, 'applyContract');
+
+    return result;
   }
 
   /**
@@ -30,17 +43,28 @@ class DataContractStoreRepository {
    * @return {Promise<null|DataContract>}
    */
   async fetch(id, useTransaction = false) {
-    const encodedDataContract = await this.storage.get(
-      DataContractStoreRepository.TREE_PATH.concat([id.toBuffer()]),
-      DataContractStoreRepository.DATA_CONTRACT_KEY,
-      { useTransaction },
-    );
+    let encodedDataContract;
+    try {
+      encodedDataContract = await this.storage.get(
+        DataContractStoreRepository.TREE_PATH.concat([id.toBuffer()]),
+        DataContractStoreRepository.DATA_CONTRACT_KEY,
+        { useTransaction },
+      );
+    } catch (e) {
+      if (e.message === 'invalid path: no subtree found as parent does not contain child') {
+        return null;
+      }
+
+      throw e;
+    }
 
     if (!encodedDataContract) {
       return null;
     }
 
-    const [, rawDataContract] = this.decodeProtocolEntity(encodedDataContract);
+    const [protocolVersion, rawDataContract] = this.decodeProtocolEntity(encodedDataContract);
+
+    rawDataContract.protocolVersion = protocolVersion;
 
     return new DataContract(rawDataContract);
   }

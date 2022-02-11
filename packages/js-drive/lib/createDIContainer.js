@@ -61,6 +61,9 @@ const PublicKeyToIdentityIdStoreRepository = require(
 
 const DataContractStoreRepository = require('./dataContract/DataContractStoreRepository');
 const findConflictingConditions = require('./document/query/findConflictingConditions');
+const findThreesomeOfIndexedProperties = require('./document/query/findThreesomeOfIndexedProperties');
+const sortWhereClausesAccordingToIndex = require('./document/query/sortWhereClausesAccordingToIndex');
+const findIndexedPropertiesSince = require('./document/query/findIndexedPropertiesSince');
 const validateQueryFactory = require('./document/query/validateQueryFactory');
 
 const fetchDocumentsFactory = require('./document/fetchDocumentsFactory');
@@ -128,7 +131,6 @@ const handleUpdatedPubKeyOperatorFactory = require('./identity/masternode/handle
 const splitDocumentsIntoChunks = require('./identity/masternode/splitDocumentsIntoChunks');
 const registerSystemDataContractsFactory = require('./abci/handlers/state/registerSystemDataContractsFactory');
 const DocumentRepository = require('./document/DocumentRepository');
-const sortWhereClausesAccordingToIndex = require('./document/query/sortWhereClausesAccordingToIndex');
 
 /**
  *
@@ -460,8 +462,8 @@ function createDIContainer(options) {
 
     signedDataContractRepository: asFunction((
       signedGroveDBStore,
-      dpp,
-    ) => (new DataContractStoreRepository(signedGroveDBStore, dpp))).singleton(),
+      decodeProtocolEntity,
+    ) => (new DataContractStoreRepository(signedGroveDBStore, decodeProtocolEntity))).singleton(),
 
     dataContractCache: asFunction((dataContractCacheSize) => (
       new LRUCache(dataContractCacheSize)
@@ -489,6 +491,8 @@ function createDIContainer(options) {
     ))).singleton(),
 
     findConflictingConditions: asValue(findConflictingConditions),
+    findThreesomeOfIndexedProperties: asValue(findThreesomeOfIndexedProperties),
+    findIndexedPropertiesSince: asValue(findIndexedPropertiesSince),
     validateQuery: asFunction(validateQueryFactory).singleton(),
 
     fetchDocuments: asFunction(fetchDocumentsFactory).singleton(),

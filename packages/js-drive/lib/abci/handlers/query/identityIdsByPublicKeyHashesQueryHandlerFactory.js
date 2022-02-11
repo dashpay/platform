@@ -16,7 +16,7 @@ const {
 } = require('@dashevo/dapi-grpc');
 
 const InvalidArgumentAbciError = require('../../errors/InvalidArgumentAbciError');
-const UnimplementedAbciError = require("../../errors/UnimplementedAbciError");
+const UnimplementedAbciError = require('../../errors/UnimplementedAbciError');
 
 /**
  *

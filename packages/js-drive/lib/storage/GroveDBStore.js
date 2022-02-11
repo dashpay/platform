@@ -14,6 +14,7 @@ class GroveDBStore {
     this.rsDrive = rsDrive;
     this.db = rsDrive.getGroveDB();
     this.name = name;
+    this.logger = logger;
   }
 
   /**
@@ -30,24 +31,29 @@ class GroveDBStore {
   async put(path, key, value, options = {}) {
     const method = options.skipIfExists ? 'insertIfNotExists' : 'insert';
 
-    logger.info({
-      path: path.map((segment) => segment.toString('hex')),
-      pathHash: path.reduce((segment, buffer) => Buffer.concat([segment, buffer]), Buffer.alloc(0)),
-      key: key.toString('hex'),
-      valueHash: createHash('sha256')
-        .update(value)
-        .digest('hex'),
-      useTransaction: Boolean(options.useTransaction),
-      type: 'item',
-      method,
-    }, 'put');
-
     await this.db[method](
       path,
       key,
       { type: 'item', value },
       options.useTransaction || false,
     );
+
+    logger.info({
+      path: path.map((segment) => segment.toString('hex')),
+      pathHash: createHash('sha256')
+        .update(
+          path.reduce((segment, buffer) => Buffer.concat([segment, buffer]), Buffer.alloc(0)),
+        ).digest('hex'),
+      key: key.toString('hex'),
+      value: value.toString('hex'),
+      valueHash: createHash('sha256')
+        .update(value)
+        .digest('hex'),
+      useTransaction: Boolean(options.useTransaction),
+      type: 'item',
+      method,
+      appHash: (await this.getRootHash(options)).toString('hex'),
+    }, 'put');
 
     return this;
   }
@@ -66,10 +72,21 @@ class GroveDBStore {
   async putReference(path, key, referencePath, options = {}) {
     const method = options.skipIfExists ? 'insertIfNotExists' : 'insert';
 
+    await this.db[method](
+      path,
+      key,
+      { type: 'reference', value: referencePath },
+      options.useTransaction || false,
+    );
+
     logger.info({
       path: path.map((segment) => segment.toString('hex')),
-      pathHash: path.reduce((segment, buffer) => Buffer.concat([segment, buffer]), Buffer.alloc(0)),
+      pathHash: createHash('sha256')
+        .update(
+          path.reduce((segment, buffer) => Buffer.concat([segment, buffer]), Buffer.alloc(0)),
+        ).digest('hex'),
       key: key.toString('hex'),
+      value: referencePath.map((segment) => segment.toString('hex')),
       valueHash: createHash('sha256')
         .update(
           referencePath.reduce((segment, buffer) => (
@@ -80,14 +97,8 @@ class GroveDBStore {
       useTransaction: Boolean(options.useTransaction),
       type: 'reference',
       method,
+      appHash: (await this.getRootHash(options)).toString('hex'),
     }, 'putReference');
-
-    await this.db[method](
-      path,
-      key,
-      { type: 'reference', value: referencePath },
-      options.useTransaction || false,
-    );
 
     return this;
   }
@@ -105,24 +116,29 @@ class GroveDBStore {
   async createTree(path, key, options = { }) {
     const method = options.skipIfExists ? 'insertIfNotExists' : 'insert';
 
-    logger.info({
-      path: path.map((segment) => segment.toString('hex')),
-      pathHash: path.reduce((segment, buffer) => Buffer.concat([segment, buffer]), Buffer.alloc(0)),
-      key: key.toString('hex'),
-      valueHash: createHash('sha256')
-        .update(Buffer.alloc(32))
-        .digest('hex'),
-      useTransaction: Boolean(options.useTransaction),
-      type: 'tree',
-      method,
-    }, 'createTree');
-
     await this.db[method](
       path,
       key,
       { type: 'tree', value: Buffer.alloc(32) },
       options.useTransaction || false,
     );
+
+    logger.info({
+      path: path.map((segment) => segment.toString('hex')),
+      pathHash: createHash('sha256')
+        .update(
+          path.reduce((segment, buffer) => Buffer.concat([segment, buffer]), Buffer.alloc(0)),
+        ).digest('hex'),
+      key: key.toString('hex'),
+      value: Buffer.alloc(32).toString('hex'),
+      valueHash: createHash('sha256')
+        .update(Buffer.alloc(32))
+        .digest('hex'),
+      useTransaction: Boolean(options.useTransaction),
+      type: 'tree',
+      method,
+      appHash: (await this.getRootHash(options)).toString('hex'),
+    }, 'createTree');
 
     return this;
   }
@@ -175,19 +191,23 @@ class GroveDBStore {
    * @return {Promise<GroveDBStore>}
    */
   async delete(path, key, options = {}) {
-    logger.info({
-      path: path.map((segment) => segment.toString('hex')),
-      pathHash: path.reduce((segment, buffer) => Buffer.concat([segment, buffer]), Buffer.alloc(0)),
-      key: key.toString('hex'),
-      useTransaction: Boolean(options.useTransaction),
-      method: 'delete',
-    }, 'delete');
-
     await this.db.delete(
       path,
       key,
       options.useTransaction || false,
     );
+
+    logger.info({
+      path: path.map((segment) => segment.toString('hex')),
+      pathHash: createHash('sha256')
+        .update(
+          path.reduce((segment, buffer) => Buffer.concat([segment, buffer]), Buffer.alloc(0)),
+        ).digest('hex'),
+      key: key.toString('hex'),
+      useTransaction: Boolean(options.useTransaction),
+      method: 'delete',
+      appHash: (await this.getRootHash(options)).toString('hex'),
+    }, 'delete');
 
     return this;
   }
@@ -234,6 +254,17 @@ class GroveDBStore {
       options.useTransaction || false,
     );
 
+    logger.info({
+      key: key.toString('hex'),
+      value: value.toString('hex'),
+      valueHash: createHash('sha256')
+        .update(value)
+        .digest('hex'),
+      useTransaction: Boolean(options.useTransaction),
+      method: 'putAux',
+      appHash: (await this.getRootHash(options)).toString('hex'),
+    }, 'putAux');
+
     return this;
   }
 
@@ -250,6 +281,13 @@ class GroveDBStore {
       key,
       options.useTransaction || false,
     );
+
+    logger.info({
+      key: key.toString('hex'),
+      useTransaction: Boolean(options.useTransaction),
+      method: 'deleteAux',
+      appHash: (await this.getRootHash(options)).toString('hex'),
+    }, 'deleteAux');
 
     return this;
   }

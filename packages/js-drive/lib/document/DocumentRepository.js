@@ -1,3 +1,5 @@
+const { createHash } = require('crypto');
+
 const createDocumentTypeTreePath = require('./groveDB/createDocumentTreePath');
 const InvalidQueryError = require('./errors/InvalidQueryError');
 
@@ -26,11 +28,26 @@ class DocumentRepository {
   async store(document, useTransaction = false) {
     const isExists = await this.isExist(document, useTransaction);
 
+    let result;
+    let method = 'createDocument';
     if (isExists) {
-      return this.storage.getDrive().updateDocument(document, useTransaction);
+      result = await this.storage.getDrive().updateDocument(document, useTransaction);
+      method = 'updateDocument';
+    } else {
+      result = await this.storage.getDrive().createDocument(document, useTransaction);
     }
 
-    return this.storage.getDrive().createDocument(document, useTransaction);
+    this.storage.logger.info({
+      document: document.toBuffer().toString('hex'),
+      documentHash: createHash('sha256')
+        .update(
+          document.toBuffer(),
+        ).digest('hex'),
+      useTransaction: Boolean(useTransaction),
+      appHash: (await this.storage.getRootHash({ useTransaction })).toString('hex'),
+    }, method);
+
+    return result;
   }
 
   /**
@@ -60,8 +77,8 @@ class DocumentRepository {
   /**
    * Find documents with query
    *
-   * @param dataContract
-   * @param documentType
+   * @param {DataContract} dataContract
+   * @param {string} documentType
    * @param [query]
    * @param [query.where]
    * @param [query.limit]
@@ -99,12 +116,20 @@ class DocumentRepository {
    * @return {Promise<void>}
    */
   async delete(dataContract, documentType, id, useTransaction = false) {
-    return this.storage.getDrive().deleteDocument(
+    await this.storage.getDrive().deleteDocument(
       dataContract,
       documentType,
       id,
       useTransaction,
     );
+
+    this.storage.logger.info({
+      dataContractId: dataContract.getId().toString(),
+      documentType,
+      id: id.toString(),
+      useTransaction: Boolean(useTransaction),
+      appHash: (await this.storage.getRootHash({ useTransaction })).toString('hex'),
+    }, 'deleteDocument');
   }
 }
 

@@ -72,7 +72,7 @@ function getProofsQueryHandlerFactory(
       response.documentsProof = {
         signatureLlmqHash,
         signature,
-        merkleProof: Buffer.from(1),
+        merkleProof: Buffer.from([1]),
       };
     }
 
@@ -80,7 +80,7 @@ function getProofsQueryHandlerFactory(
       response.identitiesProof = {
         signatureLlmqHash,
         signature,
-        merkleProof: Buffer.from(1),
+        merkleProof: Buffer.from([1]),
       };
     }
 
@@ -88,7 +88,7 @@ function getProofsQueryHandlerFactory(
       response.dataContractsProof = {
         signatureLlmqHash,
         signature,
-        merkleProof: Buffer.from(1),
+        merkleProof: Buffer.from([1]),
       };
     }
 
