@@ -15,6 +15,7 @@ use sqlparser::ast::{OrderByExpr, Select, Statement};
 use sqlparser::dialect::GenericDialect;
 use sqlparser::parser::Parser;
 use std::collections::HashMap;
+use std::ops::BitXor;
 use storage::rocksdb_storage::OptimisticTransactionDBTransaction;
 
 #[derive(Copy, Clone, Debug, PartialEq)]
@@ -151,7 +152,11 @@ pub struct InternalClauses {
 impl InternalClauses {
     pub fn verify(&self) -> bool {
         // There can only be 1 primary key clause, or many other clauses
-        if self.primary_key_in_clause.is_some() ^ self.primary_key_equal_clause.is_some() {
+        if self
+            .primary_key_in_clause
+            .is_some()
+            .bitxor(self.primary_key_equal_clause.is_some())
+        {
             // One is set, all rest must be empty
             !(self.in_clause.is_some()
                 || self.range_clause.is_some()
