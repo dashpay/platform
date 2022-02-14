@@ -1895,7 +1895,7 @@ describe('validateQueryFactory', () => {
           startAt: value,
         },
         documentSchema);
-        console.log(result);
+
         expect(result).to.be.instanceOf(ValidationResult);
         expect(result.isValid()).to.be.false();
         expect(result.errors[0].instancePath).to.be.equal('/startAt');
