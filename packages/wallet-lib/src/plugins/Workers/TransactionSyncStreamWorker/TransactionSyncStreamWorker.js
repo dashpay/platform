@@ -3,7 +3,6 @@ const {
 } = require('@dashevo/dashcore-lib');
 const GrpcError = require('@dashevo/grpc-common/lib/server/error/GrpcError');
 const GrpcErrorCodes = require('@dashevo/grpc-common/lib/server/error/GrpcErrorCodes');
-const { WALLET_TYPES } = require('../../../CONSTANTS');
 const sleep = require('../../../utils/sleep');
 
 const Worker = require('../../Worker');
@@ -25,6 +24,7 @@ class TransactionSyncStreamWorker extends Worker {
         'importBlockHeader',
         'importInstantLock',
         'storage',
+        'keyChainStore',
         'transport',
         'walletId',
         'getAddress',
@@ -49,7 +49,7 @@ class TransactionSyncStreamWorker extends Worker {
    * @param {string[]} addressList
    * @param {string} network
    */
-  static filterWalletTransactions(transactions, addressList, network) {
+  static filterAddressesTransactions(transactions, addressList, network) {
     const spentOutputs = [];
     const unspentOutputs = [];
     const filteredTransactions = transactions.filter((tx) => {
@@ -135,11 +135,11 @@ class TransactionSyncStreamWorker extends Worker {
     const {
       skipSynchronizationBeforeHeight,
       skipSynchronization,
-    } = (this.storage.store.syncOptions || {});
+    } = (this.storage.application.syncOptions || {});
 
     if (skipSynchronization) {
       logger.debug('TransactionSyncStreamWorker - Wallet created from a new mnemonic. Sync from the best block height.');
-      const bestBlockHeight = this.storage.store.chains[this.network.toString()].blockHeight;
+      const bestBlockHeight = this.storage.getChainStore(this.network.toString()).blockHeight;
       this.setLastSyncedBlockHeight(bestBlockHeight);
       return;
     }
@@ -238,25 +238,13 @@ class TransactionSyncStreamWorker extends Worker {
   }
 
   setLastSyncedBlockHash(hash) {
-    const { walletId } = this;
-    const accountsStore = this.storage.store.wallets[walletId].accounts;
-
-    const accountStore = ([WALLET_TYPES.HDWALLET, WALLET_TYPES.HDPUBLIC].includes(this.walletType))
-      ? accountsStore[this.BIP44PATH.toString()]
-      : accountsStore[this.index.toString()];
-
-    accountStore.blockHash = hash;
-
-    return accountStore.blockHash;
+    const applicationStore = this.storage.application;
+    applicationStore.blockHash = hash;
+    return applicationStore.blockHash;
   }
 
   getLastSyncedBlockHash() {
-    const { walletId } = this;
-    const accountsStore = this.storage.store.wallets[walletId].accounts;
-
-    const { blockHash } = ([WALLET_TYPES.HDWALLET, WALLET_TYPES.HDPUBLIC].includes(this.walletType))
-      ? accountsStore[this.BIP44PATH.toString()]
-      : accountsStore[this.index.toString()];
+    const { blockHash } = this.storage.application;
 
     return blockHash;
   }
