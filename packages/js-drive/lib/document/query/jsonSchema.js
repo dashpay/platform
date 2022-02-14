@@ -149,32 +149,12 @@ module.exports = {
       maxItems: 255,
     },
     startAfter: {
-      oneOf: [
-        {
-          type: 'number',
-          minimum: 1,
-          maximum: 20000,
-          multipleOf: 1.0,
-        },
-        {
-          type: 'object',
-          instanceof: 'Buffer',
-        },
-      ],
+      type: 'object',
+      instanceof: 'Buffer',
     },
     startAt: {
-      oneOf: [
-        {
-          type: 'number',
-          minimum: 1,
-          maximum: 20000,
-          multipleOf: 1.0,
-        },
-        {
-          type: 'object',
-          instanceof: 'Buffer',
-        },
-      ],
+      type: 'object',
+      instanceof: 'Buffer',
     },
   },
   dependentSchemas: {

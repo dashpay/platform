@@ -69,10 +69,10 @@ message GetDocumentsRequest {
 
   uint32 limit = 5;
 
-  oneof start {
-    uint32 start_after = 6;
-    uint32 start_at = 7;
-  }
+    oneof start {
+      bytes start_after = 6;
+      bytes start_at = 7;
+    }
 
   bool prove = 8;
 }

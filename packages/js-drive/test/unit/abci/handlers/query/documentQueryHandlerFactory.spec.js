@@ -94,7 +94,7 @@ describe('documentQueryHandlerFactory', () => {
       type: 'documentType',
       orderBy: [{ sort: 'asc' }],
       limit: 2,
-      startAt: 0,
+      startAt: undefined,
       startAfter: undefined,
       where: [['field', '==', 'value']],
     };

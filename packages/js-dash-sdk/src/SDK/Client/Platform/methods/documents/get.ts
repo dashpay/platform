@@ -8,15 +8,15 @@ import {Platform} from "../../Platform";
  * @param {WhereCondition[]} [where] - where
  * @param {OrderByCondition[]} [orderBy] - order by
  * @param {number} [limit] - limit
- * @param {number} [startAt] - start value (included)
- * @param {number} [startAfter] - start value (not included)
+ * @param {string|Buffer|Document|Identifier} [startAt] - start value (included)
+ * @param {string|Buffer|Document|Identifier} [startAfter] - start value (not included)
  */
 declare interface fetchOpts {
     where?: WhereCondition[];
     orderBy?: OrderByCondition[];
     limit?: number;
-    startAt?: number|string|Buffer|Document|Identifier;
-    startAfter?: number|string|Buffer|Document|Identifier;
+    startAt?: string|Buffer|Document|Identifier;
+    startAfter?: string|Buffer|Document|Identifier;
 }
 
 type OrderByCondition = [
