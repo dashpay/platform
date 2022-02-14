@@ -141,7 +141,7 @@ impl Contract {
             .map_err(|_| Error::CorruptedData(String::from("unable to decode contract")))?;
 
         // Get the contract id
-        let contract_id: [u8; 32] = bytes_for_system_value_from_hash_map(&contract, "$id")
+        let contract_id: [u8; 32] = bytes_for_system_value_from_hash_map(&contract, "$id")?
             .ok_or_else(|| Error::CorruptedData(String::from("unable to get contract id")))?
             .try_into()
             .map_err(|_| Error::CorruptedData(String::from("contract_id must be 32 bytes")))?;
@@ -251,11 +251,17 @@ impl DocumentType {
         key: &str,
         value: &Value,
     ) -> Result<Vec<u8>, Error> {
-        let field_type = self
-            .properties
-            .get(key)
-            .ok_or_else(|| Error::CorruptedData(String::from("expected document to have field")))?;
-        types::encode_document_field_type(field_type, value)
+        match key {
+            "$ownerId" | "$id" => bytes_for_system_value(value)?.ok_or_else(|| {
+                Error::CorruptedData(String::from("expected system value to be deserialized"))
+            }),
+            _ => {
+                let field_type = self.properties.get(key).ok_or_else(|| {
+                    Error::CorruptedData(String::from("expected document to have field"))
+                })?;
+                types::encode_document_field_type(field_type, value)
+            }
+        }
     }
 
     pub fn from_cbor_value(
@@ -376,7 +382,6 @@ impl DocumentType {
         }
 
         // Add system properties
-        document_properties.insert(String::from("$id"), types::DocumentFieldType::ByteArray);
         document_properties.insert(String::from("$createdAt"), types::DocumentFieldType::Date);
         document_properties.insert(String::from("$updatedAt"), types::DocumentFieldType::Date);
 
@@ -418,10 +423,10 @@ impl Document {
 
         let owner_id: [u8; 32] = match owner_id {
             None => {
-                let owner_id: Vec<u8> = bytes_for_system_value_from_hash_map(&document, "$ownerId")
-                    .ok_or_else(|| {
-                        Error::CorruptedData(String::from("unable to get document $ownerId"))
-                    })?;
+                let owner_id: Vec<u8> =
+                    bytes_for_system_value_from_hash_map(&document, "$ownerId")?.ok_or_else(
+                        || Error::CorruptedData(String::from("unable to get document $ownerId")),
+                    )?;
                 document.remove("$ownerId");
                 if owner_id.len() != 32 {
                     return Err(Error::CorruptedData(String::from("invalid owner id")));
@@ -440,10 +445,10 @@ impl Document {
 
         let id: [u8; 32] = match document_id {
             None => {
-                let document_id: Vec<u8> = bytes_for_system_value_from_hash_map(&document, "$id")
+                let document_id: Vec<u8> = bytes_for_system_value_from_hash_map(&document, "$id")?
                     .ok_or_else(|| {
-                    Error::CorruptedData(String::from("unable to get document $id"))
-                })?;
+                        Error::CorruptedData(String::from("unable to get document $id"))
+                    })?;
                 document.remove("$id");
                 if document_id.len() != 32 {
                     return Err(Error::CorruptedData(String::from("invalid document id")));
@@ -710,42 +715,43 @@ fn cbor_inner_bool_value(document_type: &[(Value, Value)], key: &str) -> Option<
     None
 }
 
-pub fn bytes_for_system_value(value: &Value) -> Option<Vec<u8>> {
+pub fn bytes_for_system_value(value: &Value) -> Result<Option<Vec<u8>>, Error> {
     match value {
-        Value::Bytes(bytes) => Some(bytes.clone()),
+        Value::Bytes(bytes) => Ok(Some(bytes.clone())),
         Value::Text(text) => match bs58::decode(text).into_vec() {
-            Ok(data) => Some(data),
-            Err(_) => None,
+            Ok(data) => Ok(Some(data)),
+            Err(_) => Ok(None),
         },
-        Value::Array(array) => {
-            let bytes_result: Result<Vec<u8>, Error> = array
-                .iter()
-                .map(|byte| match byte {
-                    Value::Integer(int) => {
-                        let value_as_u8: u8 = (*int)
-                            .try_into()
-                            .map_err(|_| Error::CorruptedData(String::from("expected u8 value")))?;
-                        Ok(value_as_u8)
-                    }
-                    _ => Err(Error::CorruptedData(String::from(
-                        "not an array of integers",
-                    ))),
-                })
-                .collect::<Result<Vec<u8>, Error>>();
-            match bytes_result {
-                Ok(bytes) => Some(bytes),
-                Err(_) => None,
-            }
-        }
-        _ => None,
+        Value::Array(array) => array
+            .iter()
+            .map(|byte| match byte {
+                Value::Integer(int) => {
+                    let value_as_u8: u8 = (*int)
+                        .try_into()
+                        .map_err(|_| Error::CorruptedData(String::from("expected u8 value")))?;
+                    Ok(Some(value_as_u8))
+                }
+                _ => Err(Error::CorruptedData(String::from(
+                    "not an array of integers",
+                ))),
+            })
+            .collect::<Result<Option<Vec<u8>>, Error>>(),
+        _ => Err(Error::CorruptedData(String::from(
+            "system value is incorrect type",
+        ))),
     }
 }
 
 fn bytes_for_system_value_from_hash_map(
     document: &HashMap<String, CborValue>,
     key: &str,
-) -> Option<Vec<u8>> {
-    document.get(key).and_then(bytes_for_system_value)
+) -> Result<Option<Vec<u8>>, Error> {
+    let value = document.get(key);
+    if value.is_some() {
+        bytes_for_system_value(value.unwrap())
+    } else {
+        Ok(None)
+    }
 }
 
 #[cfg(test)]

@@ -850,7 +850,11 @@ impl<'a> DriveQuery<'a> {
             start_at_included = true;
         }
 
-        let start_at: Option<Vec<u8>> = start_option.and_then(bytes_for_system_value);
+        let start_at: Option<Vec<u8>> = if start_option.is_some() {
+            bytes_for_system_value(start_option.unwrap())?
+        } else {
+            None
+        };
 
         let order_by: IndexMap<String, OrderClause> = query_document
             .get("orderBy")
@@ -1055,7 +1059,11 @@ impl<'a> DriveQuery<'a> {
 
         let start_at_option = None;
         let start_at_included = true;
-        let start_at: Option<Vec<u8>> = start_at_option.and_then(bytes_for_system_value);
+        let start_at: Option<Vec<u8>> = if start_at_option.is_some() {
+            bytes_for_system_value(start_at_option.unwrap())?
+        } else {
+            None
+        };
 
         Ok(DriveQuery {
             contract,
