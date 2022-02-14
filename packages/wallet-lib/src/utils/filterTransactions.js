@@ -24,7 +24,8 @@ function filterTransactions(accountStore, walletType, accountIndex, transactions
   const isHDWallet = [WALLET_TYPES.HDWALLET, WALLET_TYPES.HDPUBLIC].includes(walletType);
   const { addresses } = accountStore;
   const { external, internal, misc } = addresses;
-  each({ ...external, internal }, (hdAddress) => {
+
+  each({ ...external, ...internal }, (hdAddress) => {
     if (
       hdAddress.path
         && isHDWallet
