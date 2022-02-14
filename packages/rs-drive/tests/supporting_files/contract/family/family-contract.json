@@ -6,6 +6,20 @@
         {
           "properties":[
             {
+              "$ownerId":"asc"
+            }
+          ]
+        },
+        {
+          "properties":[
+            {
+              "middleName":"asc"
+            }
+          ]
+        },
+        {
+          "properties":[
+            {
               "firstName":"asc"
             }
           ]
