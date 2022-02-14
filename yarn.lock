@@ -1357,7 +1357,7 @@ __metadata:
     "@dashevo/dapi-client": "workspace:~"
     "@dashevo/dapi-grpc": "workspace:~"
     "@dashevo/dashcore-lib": ~0.19.29
-    "@dashevo/dashd-rpc": ^2.3.1
+    "@dashevo/dashd-rpc": ^2.3.2
     "@dashevo/dp-services-ctl": "github:dashevo/js-dp-services-ctl#v0.19-dev"
     "@dashevo/dpp": "workspace:~"
     "@dashevo/grpc-common": "workspace:~"
@@ -1439,13 +1439,13 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@dashevo/dashd-rpc@npm:^2.3.0, @dashevo/dashd-rpc@npm:^2.3.1":
-  version: 2.3.1
-  resolution: "@dashevo/dashd-rpc@npm:2.3.1"
+"@dashevo/dashd-rpc@npm:^2.3.0, @dashevo/dashd-rpc@npm:^2.3.2":
+  version: 2.3.2
+  resolution: "@dashevo/dashd-rpc@npm:2.3.2"
   dependencies:
     async: ^3.2.0
     bluebird: ^3.7.2
-  checksum: 8a5bda30a4cd48152acdb44d81dcdd671004644ea6bb733a5a1d387cdab58901e3b2571131791234ba0e1a7c0e5a66a5081e0a4883d53162400047c9d66a807c
+  checksum: 56ff41d695b4ce44922228ee74cdeea83de212d0b75ba6b6f400ad363a12f004528b18d1377b231ffb020f79a7fa6c9f1a911f9ae1eb4f79b5ad16dade4672ee
   languageName: node
   linkType: hard
 
@@ -1568,7 +1568,7 @@ __metadata:
     "@dashevo/abci": "github:dashevo/js-abci#v0.22-dev"
     "@dashevo/dapi-grpc": "workspace:~"
     "@dashevo/dashcore-lib": ~0.19.29
-    "@dashevo/dashd-rpc": ^2.3.1
+    "@dashevo/dashd-rpc": ^2.3.2
     "@dashevo/dashpay-contract": "workspace:~"
     "@dashevo/dp-services-ctl": "github:dashevo/js-dp-services-ctl#v0.19-dev"
     "@dashevo/dpns-contract": "workspace:~"
@@ -5666,7 +5666,7 @@ __metadata:
   resolution: "dashmate@workspace:packages/dashmate"
   dependencies:
     "@dashevo/dashcore-lib": ~0.19.29
-    "@dashevo/dashd-rpc": ^2.3.1
+    "@dashevo/dashd-rpc": ^2.3.2
     "@dashevo/dashpay-contract": "workspace:~"
     "@dashevo/dpns-contract": "workspace:~"
     "@dashevo/dpp": "workspace:~"

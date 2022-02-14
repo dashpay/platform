@@ -8,6 +8,7 @@ describe('getHistoricalBlockHeadersIteratorFactory', () => {
   beforeEach(function () {
     coreRpcMock = {
       getBlock: this.sinon.stub(),
+      getBlockStats: this.sinon.stub(),
       getBlockHash: this.sinon.stub(),
       getBlockHeaders: this.sinon.stub(),
     };
@@ -24,16 +25,16 @@ describe('getHistoricalBlockHeadersIteratorFactory', () => {
   });
 
   it('should proceed straight to done if all ranges are empty', async () => {
-    coreRpcMock.getBlock.resolves({ height: 1 });
+    coreRpcMock.getBlockStats.resolves({ height: 1 });
     coreRpcMock.getBlockHeaders.resolves([blockHeaderMock.toBuffer().toString('hex')]);
 
-    const fromBlockHash = 'fake';
+    const fromBlockHeight = 1;
     const count = 1337;
 
     const getHistoricalBlockHeadersIterator = getHistoricalBlockHeadersIteratorFactory(coreRpcMock);
 
     const blockHeadersIterator = getHistoricalBlockHeadersIterator(
-      fromBlockHash,
+      fromBlockHeight,
       count,
     );
 
@@ -47,7 +48,6 @@ describe('getHistoricalBlockHeadersIteratorFactory', () => {
     expect(r3.done).to.be.false();
     expect(r4.done).to.be.true();
 
-    expect(coreRpcMock.getBlock.callCount).to.be.equal(1);
     expect(coreRpcMock.getBlockHash.callCount).to.be.equal(3);
     expect(coreRpcMock.getBlockHeaders.callCount).to.be.equal(3);
   });

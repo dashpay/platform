@@ -47,7 +47,7 @@
   "homepage": "https://github.com/dashevo/dashmate#readme",
   "dependencies": {
     "@dashevo/dashcore-lib": "~0.19.29",
-    "@dashevo/dashd-rpc": "^2.3.1",
+    "@dashevo/dashd-rpc": "^2.3.2",
     "@dashevo/dashpay-contract": "workspace:~",
     "@dashevo/dpns-contract": "workspace:~",
     "@dashevo/dpp": "workspace:~",
