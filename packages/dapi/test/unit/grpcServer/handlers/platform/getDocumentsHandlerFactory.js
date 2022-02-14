@@ -51,7 +51,7 @@ describe('getDocumentsHandlerFactory', () => {
     where = [['name', '==', 'John']];
     orderBy = [{ order: 'asc' }];
     limit = 20;
-    startAfter = 1;
+    startAfter = generateRandomIdentifier();
     startAt = null;
 
     request = {

@@ -82,7 +82,7 @@ function getDocumentsHandlerFactory(driveClient) {
     const startAfterDefault = request.getStartAfter();
 
     let startAfter;
-    if (startAfterDefault !== 0) {
+    if (startAfterDefault) {
       startAfter = startAfterDefault;
     }
 

@@ -226,9 +226,9 @@ typedef GPB_ENUM(GetDocumentsRequest_Start_OneOfCase) {
 
 @property(nonatomic, readonly) GetDocumentsRequest_Start_OneOfCase startOneOfCase;
 
-@property(nonatomic, readwrite) uint32_t startAfter;
+@property(nonatomic, readwrite, copy, null_resettable) NSData *startAfter;
 
-@property(nonatomic, readwrite) uint32_t startAt;
+@property(nonatomic, readwrite, copy, null_resettable) NSData *startAt;
 
 @property(nonatomic, readwrite) BOOL prove;
 

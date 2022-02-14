@@ -553,12 +553,12 @@ typedef struct GetDataContractResponse__storage_ {
 typedef struct GetDocumentsRequest__storage_ {
   uint32_t _has_storage_[2];
   uint32_t limit;
-  uint32_t startAfter;
-  uint32_t startAt;
   NSData *dataContractId;
   NSString *documentType;
   NSData *where;
   NSData *orderBy;
+  NSData *startAfter;
+  NSData *startAt;
 } GetDocumentsRequest__storage_;
 
 // This method is threadsafe because it is initially called
@@ -619,7 +619,7 @@ typedef struct GetDocumentsRequest__storage_ {
         .hasIndex = -1,
         .offset = (uint32_t)offsetof(GetDocumentsRequest__storage_, startAfter),
         .flags = GPBFieldOptional,
-        .dataType = GPBDataTypeUInt32,
+        .dataType = GPBDataTypeBytes,
       },
       {
         .name = "startAt",
@@ -628,7 +628,7 @@ typedef struct GetDocumentsRequest__storage_ {
         .hasIndex = -1,
         .offset = (uint32_t)offsetof(GetDocumentsRequest__storage_, startAt),
         .flags = GPBFieldOptional,
-        .dataType = GPBDataTypeUInt32,
+        .dataType = GPBDataTypeBytes,
       },
       {
         .name = "prove",

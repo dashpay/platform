@@ -2384,8 +2384,8 @@ $root.org = (function() {
                          * @property {Uint8Array|null} [where] GetDocumentsRequest where
                          * @property {Uint8Array|null} [orderBy] GetDocumentsRequest orderBy
                          * @property {number|null} [limit] GetDocumentsRequest limit
-                         * @property {number|null} [startAfter] GetDocumentsRequest startAfter
-                         * @property {number|null} [startAt] GetDocumentsRequest startAt
+                         * @property {Uint8Array|null} [startAfter] GetDocumentsRequest startAfter
+                         * @property {Uint8Array|null} [startAt] GetDocumentsRequest startAt
                          * @property {boolean|null} [prove] GetDocumentsRequest prove
                          */
 
@@ -2446,19 +2446,19 @@ $root.org = (function() {
 
                         /**
                          * GetDocumentsRequest startAfter.
-                         * @member {number} startAfter
+                         * @member {Uint8Array} startAfter
                          * @memberof org.dash.platform.dapi.v0.GetDocumentsRequest
                          * @instance
                          */
-                        GetDocumentsRequest.prototype.startAfter = 0;
+                        GetDocumentsRequest.prototype.startAfter = $util.newBuffer([]);
 
                         /**
                          * GetDocumentsRequest startAt.
-                         * @member {number} startAt
+                         * @member {Uint8Array} startAt
                          * @memberof org.dash.platform.dapi.v0.GetDocumentsRequest
                          * @instance
                          */
-                        GetDocumentsRequest.prototype.startAt = 0;
+                        GetDocumentsRequest.prototype.startAt = $util.newBuffer([]);
 
                         /**
                          * GetDocumentsRequest prove.
@@ -2517,9 +2517,9 @@ $root.org = (function() {
                             if (message.limit != null && Object.hasOwnProperty.call(message, "limit"))
                                 writer.uint32(/* id 5, wireType 0 =*/40).uint32(message.limit);
                             if (message.startAfter != null && Object.hasOwnProperty.call(message, "startAfter"))
-                                writer.uint32(/* id 6, wireType 0 =*/48).uint32(message.startAfter);
+                                writer.uint32(/* id 6, wireType 2 =*/50).bytes(message.startAfter);
                             if (message.startAt != null && Object.hasOwnProperty.call(message, "startAt"))
-                                writer.uint32(/* id 7, wireType 0 =*/56).uint32(message.startAt);
+                                writer.uint32(/* id 7, wireType 2 =*/58).bytes(message.startAt);
                             if (message.prove != null && Object.hasOwnProperty.call(message, "prove"))
                                 writer.uint32(/* id 8, wireType 0 =*/64).bool(message.prove);
                             return writer;
@@ -2572,10 +2572,10 @@ $root.org = (function() {
                                     message.limit = reader.uint32();
                                     break;
                                 case 6:
-                                    message.startAfter = reader.uint32();
+                                    message.startAfter = reader.bytes();
                                     break;
                                 case 7:
-                                    message.startAt = reader.uint32();
+                                    message.startAt = reader.bytes();
                                     break;
                                 case 8:
                                     message.prove = reader.bool();
@@ -2633,15 +2633,15 @@ $root.org = (function() {
                                     return "limit: integer expected";
                             if (message.startAfter != null && message.hasOwnProperty("startAfter")) {
                                 properties.start = 1;
-                                if (!$util.isInteger(message.startAfter))
-                                    return "startAfter: integer expected";
+                                if (!(message.startAfter && typeof message.startAfter.length === "number" || $util.isString(message.startAfter)))
+                                    return "startAfter: buffer expected";
                             }
                             if (message.startAt != null && message.hasOwnProperty("startAt")) {
                                 if (properties.start === 1)
                                     return "start: multiple values";
                                 properties.start = 1;
-                                if (!$util.isInteger(message.startAt))
-                                    return "startAt: integer expected";
+                                if (!(message.startAt && typeof message.startAt.length === "number" || $util.isString(message.startAt)))
+                                    return "startAt: buffer expected";
                             }
                             if (message.prove != null && message.hasOwnProperty("prove"))
                                 if (typeof message.prove !== "boolean")
@@ -2681,9 +2681,15 @@ $root.org = (function() {
                             if (object.limit != null)
                                 message.limit = object.limit >>> 0;
                             if (object.startAfter != null)
-                                message.startAfter = object.startAfter >>> 0;
+                                if (typeof object.startAfter === "string")
+                                    $util.base64.decode(object.startAfter, message.startAfter = $util.newBuffer($util.base64.length(object.startAfter)), 0);
+                                else if (object.startAfter.length >= 0)
+                                    message.startAfter = object.startAfter;
                             if (object.startAt != null)
-                                message.startAt = object.startAt >>> 0;
+                                if (typeof object.startAt === "string")
+                                    $util.base64.decode(object.startAt, message.startAt = $util.newBuffer($util.base64.length(object.startAt)), 0);
+                                else if (object.startAt.length >= 0)
+                                    message.startAt = object.startAt;
                             if (object.prove != null)
                                 message.prove = Boolean(object.prove);
                             return message;
@@ -2739,12 +2745,12 @@ $root.org = (function() {
                             if (message.limit != null && message.hasOwnProperty("limit"))
                                 object.limit = message.limit;
                             if (message.startAfter != null && message.hasOwnProperty("startAfter")) {
-                                object.startAfter = message.startAfter;
+                                object.startAfter = options.bytes === String ? $util.base64.encode(message.startAfter, 0, message.startAfter.length) : options.bytes === Array ? Array.prototype.slice.call(message.startAfter) : message.startAfter;
                                 if (options.oneofs)
                                     object.start = "startAfter";
                             }
                             if (message.startAt != null && message.hasOwnProperty("startAt")) {
-                                object.startAt = message.startAt;
+                                object.startAt = options.bytes === String ? $util.base64.encode(message.startAt, 0, message.startAt.length) : options.bytes === Array ? Array.prototype.slice.call(message.startAt) : message.startAt;
                                 if (options.oneofs)
                                     object.start = "startAt";
                             }

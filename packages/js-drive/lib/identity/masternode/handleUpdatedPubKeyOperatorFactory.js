@@ -91,7 +91,7 @@ function handleUpdatedPubKeyOperatorFactory(
 
       const previousOperatorIdentityId = Identifier.from(previousOperatorIdentityHash);
 
-      let startAt = 0;
+      let startAfter;
       let fetchedDocuments;
       const limit = 100;
 
@@ -101,7 +101,7 @@ function handleUpdatedPubKeyOperatorFactory(
           'rewardShare',
           {
             limit,
-            startAt,
+            startAfter,
             where: [
               ['$ownerId', '==', Identifier.from(proRegTxHash)],
               ['payToId', '==', previousOperatorIdentityId],
@@ -109,7 +109,8 @@ function handleUpdatedPubKeyOperatorFactory(
           },
         );
         documentsToDelete = documentsToDelete.concat(fetchedDocuments);
-        startAt += limit;
+        startAfter = fetchedDocuments.length > 0
+          ? fetchedDocuments[fetchedDocuments.length - 1].id : undefined;
       } while (fetchedDocuments.length === limit);
     }
 

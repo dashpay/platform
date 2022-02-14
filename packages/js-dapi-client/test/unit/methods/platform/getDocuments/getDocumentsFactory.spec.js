@@ -18,6 +18,7 @@ const getDocumentsFactory = require('../../../../../lib/methods/platform/getDocu
 const getMetadataFixture = require('../../../../../lib/test/fixtures/getMetadataFixture');
 const getProofFixture = require('../../../../../lib/test/fixtures/getProofFixture');
 const Proof = require('../../../../../lib/methods/platform/response/Proof');
+const generateRandomIdentifier = require('@dashevo/dpp/lib/test/utils/generateRandomIdentifier');
 
 describe('getDocumentsFactory', () => {
   let grpcTransportMock;
@@ -47,9 +48,9 @@ describe('getDocumentsFactory', () => {
       orderBy: [
         ['order', 'asc'],
       ],
-      startAt: 1,
+      startAt: generateRandomIdentifier(),
       where: [['lastName', '==', 'unknown']],
-      startAfter: 10,
+      startAfter: generateRandomIdentifier(),
     };
 
     documentsFixture = getDocumentsFixture();

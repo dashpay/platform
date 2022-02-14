@@ -1885,80 +1885,28 @@ describe('validateQueryFactory', () => {
   });
 
   describe('startAt', () => {
-    it('should return valid result if "startAt" is a number', () => {
-      const result = validateQuery({
-        startAt: 1,
-      },
-      documentSchema);
+    [...nonNumberAndUndefinedTestCases, typesTestCases.number].forEach(({ type, value }) => {
+      it(`should return invalid result if "startAt" is not a number, but ${type}`, function it() {
+        if (type === 'buffer') {
+          this.skip();
+        }
 
-      expect(result).to.be.instanceOf(ValidationResult);
-      expect(result.isValid()).to.be.true();
-    });
-
-    nonNumberAndUndefinedTestCases.forEach(({ type, value }) => {
-      it(`should return invalid result if "startAt" is not a number, but ${type}`, () => {
         const result = validateQuery({
           startAt: value,
         },
         documentSchema);
-
+        console.log(result);
         expect(result).to.be.instanceOf(ValidationResult);
         expect(result.isValid()).to.be.false();
         expect(result.errors[0].instancePath).to.be.equal('/startAt');
-        expect(result.errors[0].keyword).to.be.equal('type');
-        expect(result.errors[0].params.type).to.be.equal('number');
+
+        if (type === typesTestCases.object.type) {
+          expect(result.errors[0].keyword).to.be.equal('instanceof');
+        } else {
+          expect(result.errors[0].keyword).to.be.equal('type');
+          expect(result.errors[0].params.type).to.be.equal('object');
+        }
       });
-    });
-
-    it('should return valid result if "startAt" is up to 20000', () => {
-      const result = validateQuery({
-        startAt: 20000,
-      },
-      documentSchema);
-
-      expect(result).to.be.instanceOf(ValidationResult);
-      expect(result.isValid()).to.be.true();
-    });
-
-    it('should return invalid result if "startAt" less than 1', () => {
-      const result = validateQuery({
-        startAt: 0,
-      },
-      documentSchema);
-
-      expect(result).to.be.instanceOf(ValidationResult);
-      expect(result.isValid()).to.be.false();
-      expect(result.errors[0].instancePath).to.be.equal('/startAt');
-      expect(result.errors[0].keyword).to.be.equal('minimum');
-      expect(result.errors[0].params.comparison).to.be.equal('>=');
-      expect(result.errors[0].params.limit).to.be.equal(1);
-    });
-
-    it('should return invalid result if "startAt" more than 20000', () => {
-      const result = validateQuery({
-        startAt: 20001,
-      },
-      documentSchema);
-
-      expect(result).to.be.instanceOf(ValidationResult);
-      expect(result.isValid()).to.be.false();
-      expect(result.errors[0].instancePath).to.be.equal('/startAt');
-      expect(result.errors[0].keyword).to.be.equal('maximum');
-      expect(result.errors[0].params.comparison).to.be.equal('<=');
-      expect(result.errors[0].params.limit).to.be.equal(20000);
-    });
-
-    it('should return invalid result if "startAt" is not an integer', () => {
-      const result = validateQuery({
-        startAt: 1.1,
-      },
-      documentSchema);
-
-      expect(result).to.be.instanceOf(ValidationResult);
-      expect(result.isValid()).to.be.false();
-      expect(result.errors[0].instancePath).to.be.equal('/startAt');
-      expect(result.errors[0].keyword).to.be.equal('multipleOf');
-      expect(result.errors[0].params.multipleOf).to.be.equal(1);
     });
 
     it('should return valid result if "startAt" is an Identifier', () => {
@@ -1977,8 +1925,8 @@ describe('validateQueryFactory', () => {
   describe('startAfter', () => {
     it('should return invalid result if both "startAt" and "startAfter" are present', () => {
       const result = validateQuery({
-        startAfter: 1,
-        startAt: 1,
+        startAfter: generateRandomIdentifier(),
+        startAt: generateRandomIdentifier(),
       },
       documentSchema);
 
@@ -1992,18 +1940,12 @@ describe('validateQueryFactory', () => {
       expect(error.keyword).to.equal('not');
     });
 
-    it('should return valid result if "startAfter" is a number', () => {
-      const result = validateQuery({
-        startAfter: 1,
-      },
-      documentSchema);
+    [...nonNumberAndUndefinedTestCases, typesTestCases.number].forEach(({ type, value }) => {
+      it(`should return invalid result if "startAfter" is not a number, but ${type}`,  function it() {
+        if (type === 'buffer') {
+          this.skip();
+        }
 
-      expect(result).to.be.instanceOf(ValidationResult);
-      expect(result.isValid()).to.be.true();
-    });
-
-    nonNumberAndUndefinedTestCases.forEach(({ type, value }) => {
-      it(`should return invalid result if "startAfter" is not a number, but ${type}`, () => {
         const result = validateQuery({
           startAfter: value,
         },
@@ -2012,60 +1954,13 @@ describe('validateQueryFactory', () => {
         expect(result).to.be.instanceOf(ValidationResult);
         expect(result.isValid()).to.be.false();
         expect(result.errors[0].instancePath).to.be.equal('/startAfter');
-        expect(result.errors[0].keyword).to.be.equal('type');
-        expect(result.errors[0].params.type).to.be.equal('number');
+        if (type === typesTestCases.object.type) {
+          expect(result.errors[0].keyword).to.be.equal('instanceof');
+        } else {
+          expect(result.errors[0].keyword).to.be.equal('type');
+          expect(result.errors[0].params.type).to.be.equal('object');
+        }
       });
-    });
-
-    it('should return valid result if "startAfter" is up to 20000', () => {
-      const result = validateQuery({
-        startAfter: 20000,
-      },
-      documentSchema);
-
-      expect(result).to.be.instanceOf(ValidationResult);
-      expect(result.isValid()).to.be.true();
-    });
-
-    it('should return invalid result if "startAfter" less than 1', () => {
-      const result = validateQuery({
-        startAfter: 0,
-      },
-      documentSchema);
-
-      expect(result).to.be.instanceOf(ValidationResult);
-      expect(result.isValid()).to.be.false();
-      expect(result.errors[0].instancePath).to.be.equal('/startAfter');
-      expect(result.errors[0].keyword).to.be.equal('minimum');
-      expect(result.errors[0].params.comparison).to.be.equal('>=');
-      expect(result.errors[0].params.limit).to.be.equal(1);
-    });
-
-    it('should return invalid result if "startAfter" more than 20000', () => {
-      const result = validateQuery({
-        startAfter: 20001,
-      },
-      documentSchema);
-
-      expect(result).to.be.instanceOf(ValidationResult);
-      expect(result.isValid()).to.be.false();
-      expect(result.errors[0].instancePath).to.be.equal('/startAfter');
-      expect(result.errors[0].keyword).to.be.equal('maximum');
-      expect(result.errors[0].params.comparison).to.be.equal('<=');
-      expect(result.errors[0].params.limit).to.be.equal(20000);
-    });
-
-    it('should return invalid result if "startAfter" is not an integer', () => {
-      const result = validateQuery({
-        startAfter: 1.1,
-      },
-      documentSchema);
-
-      expect(result).to.be.instanceOf(ValidationResult);
-      expect(result.isValid()).to.be.false();
-      expect(result.errors[0].instancePath).to.be.equal('/startAfter');
-      expect(result.errors[0].keyword).to.be.equal('multipleOf');
-      expect(result.errors[0].params.multipleOf).to.be.equal(1);
     });
 
     it('should return valid result if "startAfter" is an Identifier', () => {

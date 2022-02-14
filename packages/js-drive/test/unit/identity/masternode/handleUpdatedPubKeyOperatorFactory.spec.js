@@ -14,7 +14,6 @@ describe('handleUpdatedPubKeyOperatorFactory', () => {
   let transactionalDppMock;
   let stateRepositoryMock;
   let createMasternodeIdentityMock;
-  let dataContractRepositoryMock;
   let masternodeRewardSharesContractId;
   let documentsFixture;
   let rawTransactionFixture;
@@ -44,17 +43,12 @@ describe('handleUpdatedPubKeyOperatorFactory', () => {
     stateRepositoryMock.fetchDocuments.resolves([documentsFixture[1]]);
 
     createMasternodeIdentityMock = this.sinon.stub();
-    dataContractRepositoryMock = {
-      fetch: this.sinon.stub(),
-    };
-    dataContractRepositoryMock.fetch.resolves(dataContractFixture);
     masternodeRewardSharesContractId = Identifier.from(contractId);
 
     handleUpdatedPubKeyOperator = handleUpdatedPubKeyOperatorFactory(
       transactionalDppMock,
       stateRepositoryMock,
       createMasternodeIdentityMock,
-      dataContractRepositoryMock,
       masternodeRewardSharesContractId,
     );
 
@@ -95,7 +89,6 @@ describe('handleUpdatedPubKeyOperatorFactory', () => {
     );
     expect(stateRepositoryMock.fetchIdentity).to.be.not.called();
     expect(stateRepositoryMock.fetchDocuments).to.be.not.called();
-    expect(dataContractRepositoryMock.fetch).to.be.not.called();
     expect(createMasternodeIdentityMock).to.be.not.called();
   });
 
@@ -134,10 +127,10 @@ describe('handleUpdatedPubKeyOperatorFactory', () => {
       'rewardShare',
       {
         limit: 100,
-        startAt: 0,
+        startAfter: undefined,
         where: [
-          ['$ownerId', '===', Identifier.from('B3dJHVDWcjC7i8MGwJodgb87M6oj48niNsRW9F8aoVzV')],
-          ['payToId', '===', Identifier.from('AcLbs82zFkMdN3uSurZePaZtgVKiXtme6ECsNXjZsA22')],
+          ['$ownerId', '==', Identifier.from('B3dJHVDWcjC7i8MGwJodgb87M6oj48niNsRW9F8aoVzV')],
+          ['payToId', '==', Identifier.from('AcLbs82zFkMdN3uSurZePaZtgVKiXtme6ECsNXjZsA22')],
         ],
       },
     );
@@ -170,7 +163,6 @@ describe('handleUpdatedPubKeyOperatorFactory', () => {
       Identifier.from('BWpTcdybaKcLLMXVErB8LJpEhp9XKDuaVsAjCxQkQXPd'),
       Buffer.from(masternodeEntry.pubKeyOperator, 'hex'),
       IdentityPublicKey.TYPES.BLS12_381,
-      true,
     );
     expect(transactionalDppMock.document.create).to.be.calledOnceWithExactly(
       dataContractFixture,
@@ -186,10 +178,10 @@ describe('handleUpdatedPubKeyOperatorFactory', () => {
       'rewardShare',
       {
         limit: 100,
-        startAt: 0,
+        startAfter: undefined,
         where: [
-          ['$ownerId', '===', Identifier.from('B3dJHVDWcjC7i8MGwJodgb87M6oj48niNsRW9F8aoVzV')],
-          ['payToId', '===', Identifier.from('AcLbs82zFkMdN3uSurZePaZtgVKiXtme6ECsNXjZsA22')],
+          ['$ownerId', '==', Identifier.from('B3dJHVDWcjC7i8MGwJodgb87M6oj48niNsRW9F8aoVzV')],
+          ['payToId', '==', Identifier.from('AcLbs82zFkMdN3uSurZePaZtgVKiXtme6ECsNXjZsA22')],
         ],
       },
     );

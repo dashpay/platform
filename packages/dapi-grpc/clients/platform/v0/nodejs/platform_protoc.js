@@ -2313,8 +2313,8 @@ proto.org.dash.platform.dapi.v0.GetDocumentsRequest.toObject = function(includeI
     where: msg.getWhere_asB64(),
     orderBy: msg.getOrderBy_asB64(),
     limit: jspb.Message.getFieldWithDefault(msg, 5, 0),
-    startAfter: jspb.Message.getFieldWithDefault(msg, 6, 0),
-    startAt: jspb.Message.getFieldWithDefault(msg, 7, 0),
+    startAfter: msg.getStartAfter_asB64(),
+    startAt: msg.getStartAt_asB64(),
     prove: jspb.Message.getBooleanFieldWithDefault(msg, 8, false)
   };
 
@@ -2373,11 +2373,11 @@ proto.org.dash.platform.dapi.v0.GetDocumentsRequest.deserializeBinaryFromReader 
       msg.setLimit(value);
       break;
     case 6:
-      var value = /** @type {number} */ (reader.readUint32());
+      var value = /** @type {!Uint8Array} */ (reader.readBytes());
       msg.setStartAfter(value);
       break;
     case 7:
-      var value = /** @type {number} */ (reader.readUint32());
+      var value = /** @type {!Uint8Array} */ (reader.readBytes());
       msg.setStartAt(value);
       break;
     case 8:
@@ -2448,16 +2448,16 @@ proto.org.dash.platform.dapi.v0.GetDocumentsRequest.serializeBinaryToWriter = fu
       f
     );
   }
-  f = /** @type {number} */ (jspb.Message.getField(message, 6));
+  f = /** @type {!(string|Uint8Array)} */ (jspb.Message.getField(message, 6));
   if (f != null) {
-    writer.writeUint32(
+    writer.writeBytes(
       6,
       f
     );
   }
-  f = /** @type {number} */ (jspb.Message.getField(message, 7));
+  f = /** @type {!(string|Uint8Array)} */ (jspb.Message.getField(message, 7));
   if (f != null) {
-    writer.writeUint32(
+    writer.writeBytes(
       7,
       f
     );
@@ -2635,16 +2635,40 @@ proto.org.dash.platform.dapi.v0.GetDocumentsRequest.prototype.setLimit = functio
 
 
 /**
- * optional uint32 start_after = 6;
- * @return {number}
+ * optional bytes start_after = 6;
+ * @return {string}
  */
 proto.org.dash.platform.dapi.v0.GetDocumentsRequest.prototype.getStartAfter = function() {
-  return /** @type {number} */ (jspb.Message.getFieldWithDefault(this, 6, 0));
+  return /** @type {string} */ (jspb.Message.getFieldWithDefault(this, 6, ""));
 };
 
 
 /**
- * @param {number} value
+ * optional bytes start_after = 6;
+ * This is a type-conversion wrapper around `getStartAfter()`
+ * @return {string}
+ */
+proto.org.dash.platform.dapi.v0.GetDocumentsRequest.prototype.getStartAfter_asB64 = function() {
+  return /** @type {string} */ (jspb.Message.bytesAsB64(
+      this.getStartAfter()));
+};
+
+
+/**
+ * optional bytes start_after = 6;
+ * Note that Uint8Array is not supported on all browsers.
+ * @see http://caniuse.com/Uint8Array
+ * This is a type-conversion wrapper around `getStartAfter()`
+ * @return {!Uint8Array}
+ */
+proto.org.dash.platform.dapi.v0.GetDocumentsRequest.prototype.getStartAfter_asU8 = function() {
+  return /** @type {!Uint8Array} */ (jspb.Message.bytesAsU8(
+      this.getStartAfter()));
+};
+
+
+/**
+ * @param {!(string|Uint8Array)} value
  * @return {!proto.org.dash.platform.dapi.v0.GetDocumentsRequest} returns this
  */
 proto.org.dash.platform.dapi.v0.GetDocumentsRequest.prototype.setStartAfter = function(value) {
@@ -2671,16 +2695,40 @@ proto.org.dash.platform.dapi.v0.GetDocumentsRequest.prototype.hasStartAfter = fu
 
 
 /**
- * optional uint32 start_at = 7;
- * @return {number}
+ * optional bytes start_at = 7;
+ * @return {string}
  */
 proto.org.dash.platform.dapi.v0.GetDocumentsRequest.prototype.getStartAt = function() {
-  return /** @type {number} */ (jspb.Message.getFieldWithDefault(this, 7, 0));
+  return /** @type {string} */ (jspb.Message.getFieldWithDefault(this, 7, ""));
 };
 
 
 /**
- * @param {number} value
+ * optional bytes start_at = 7;
+ * This is a type-conversion wrapper around `getStartAt()`
+ * @return {string}
+ */
+proto.org.dash.platform.dapi.v0.GetDocumentsRequest.prototype.getStartAt_asB64 = function() {
+  return /** @type {string} */ (jspb.Message.bytesAsB64(
+      this.getStartAt()));
+};
+
+
+/**
+ * optional bytes start_at = 7;
+ * Note that Uint8Array is not supported on all browsers.
+ * @see http://caniuse.com/Uint8Array
+ * This is a type-conversion wrapper around `getStartAt()`
+ * @return {!Uint8Array}
+ */
+proto.org.dash.platform.dapi.v0.GetDocumentsRequest.prototype.getStartAt_asU8 = function() {
+  return /** @type {!Uint8Array} */ (jspb.Message.bytesAsU8(
+      this.getStartAt()));
+};
+
+
+/**
+ * @param {!(string|Uint8Array)} value
  * @return {!proto.org.dash.platform.dapi.v0.GetDocumentsRequest} returns this
  */
 proto.org.dash.platform.dapi.v0.GetDocumentsRequest.prototype.setStartAt = function(value) {
