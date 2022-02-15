@@ -1,7 +1,7 @@
 const { expect } = require('chai');
 const getAddressesToSync = require('./getAddressesToSync');
 const KeyChainStore = require("../../../../types/KeyChainStore/KeyChainStore");
-const KeyChain = require("../../../../types/KeyChain/KeyChain");
+const DerivableKeyChain = require("../../../../types/DerivableKeyChain/DerivableKeyChain");
 const { HDPrivateKey, HDPublicKey, PrivateKey } = require("@dashevo/dashcore-lib");
 
 
@@ -9,9 +9,9 @@ const privateKey = new PrivateKey('ee56be968a42e58fda23b83da17f90e002cafbe35a702
 const hdprivateKey1 = new HDPrivateKey("xprv9s21ZrQH143K39R9Ux28kCBUHcQFdBeVE2CXFVz6GnA2a6pqTsPhHR5QHtMP5ZTRpYkKqc9ifjkJ2V1h318qWsYgyxCBUurRdTNthjgwKMw", 'testnet');
 const hdpublicKey1 = new HDPublicKey("xpub661MyMwAqRbcFhaucFQun3ivEyA5gy5NKnjr1xMUVkyqdF3VNNy3TLinwnYMSUye5FF5pDSrn2SPX3zvKRQGrpZ44VVUBeuxuzov7enWpkf",'testnet');
 
-const keychainPrivate1 = new KeyChain({privateKey});
-const keychainHDPrivate1 = new KeyChain({HDPrivateKey: hdprivateKey1});
-const keychainHDPublic1 = new KeyChain({HDPublicKey: hdpublicKey1});
+const keychainPrivate1 = new DerivableKeyChain({privateKey});
+const keychainHDPrivate1 = new DerivableKeyChain({HDPrivateKey: hdprivateKey1});
+const keychainHDPublic1 = new DerivableKeyChain({HDPublicKey: hdpublicKey1});
 
 const keychainStorePrivateKeyWallet = new KeyChainStore();
 keychainStorePrivateKeyWallet.addKeyChain(keychainPrivate1, { isMasterKeyChain: true});
