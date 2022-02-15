@@ -1,5 +1,15 @@
 #!/usr/bin/env bash
 
+## Setup arguments
+while getopts t:a:l: flag
+do
+    case "${flag}" in
+        t) target=${OPTARG};;
+        a) arch=${OPTARG};;
+        l) libc=${OPTARG};;
+    esac
+done
+
 ## Install multilib
 apt update
 apt install -y gcc-multilib
@@ -8,11 +18,14 @@ apt install -y gcc-multilib
 curl -fsSL https://deb.nodesource.com/setup_16.x | sudo -E bash -
 apt install -y nodejs
 
+## Update nightly
+rustup update nightly
+
 ## Install build target
-rustup target install aarch64-unknown-linux-musl
+rustup target install $target
 
 chmod 777 -R /root/.cargo
 mkdir -p /github/workspace/target
 chmod 777 -R /github/workspace/target
 
-ARCH=arm64 LIBC=musl npm run build -- --release --target=aarch64-unknown-linux-musl
+ARCH=$arch LIBC=$libc npm run build -- --release --target=$target
