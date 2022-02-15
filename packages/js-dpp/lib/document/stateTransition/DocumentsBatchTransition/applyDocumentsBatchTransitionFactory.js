@@ -1,3 +1,4 @@
+/* eslint-disable no-await-in-loop */
 const AbstractDocumentTransition = require(
   './documentTransition/AbstractDocumentTransition',
 );
@@ -42,68 +43,77 @@ function applyDocumentsBatchTransitionFactory(
       }
     ), {});
 
-    return Promise.all(stateTransition.getTransitions().map(async (documentTransition) => {
-      switch (documentTransition.getAction()) {
-        case AbstractDocumentTransition.ACTIONS.CREATE: {
-          const dataContract = await stateRepository.fetchDataContract(
-            documentTransition.getDataContractId(),
-          );
+    // since groveDB doesn't support parallel inserts, wee need to make them sequential
+    // we don't want to use regenerator-runtime, so we use `reduce` instead
+    // more info at https://jrsinclair.com/articles/2019/how-to-run-async-js-in-parallel-or-sequential/
 
-          if (!dataContract) {
-            throw new DataContractNotPresentError(
+    const starterPromise = Promise.resolve(null);
+
+    return stateTransition.getTransitions().reduce(
+      (previousPromise, documentTransition) => previousPromise.then(async () => {
+        switch (documentTransition.getAction()) {
+          case AbstractDocumentTransition.ACTIONS.CREATE: {
+            const dataContract = await stateRepository.fetchDataContract(
               documentTransition.getDataContractId(),
             );
+
+            if (!dataContract) {
+              throw new DataContractNotPresentError(
+                documentTransition.getDataContractId(),
+              );
+            }
+
+            const newDocument = new Document({
+              $protocolVersion: stateTransition.getProtocolVersion(),
+              $id: documentTransition.getId(),
+              $type: documentTransition.getType(),
+              $dataContractId: documentTransition.getDataContractId(),
+              $ownerId: stateTransition.getOwnerId(),
+              ...documentTransition.getData(),
+            }, dataContract);
+
+            if (documentTransition.getCreatedAt()) {
+              newDocument.setCreatedAt(documentTransition.getCreatedAt());
+            }
+
+            if (documentTransition.getUpdatedAt()) {
+              newDocument.setUpdatedAt(documentTransition.getUpdatedAt());
+            }
+
+            newDocument.setEntropy(documentTransition.getEntropy());
+            newDocument.setRevision(DocumentCreateTransition.INITIAL_REVISION);
+
+            return stateRepository.storeDocument(newDocument);
           }
+          case AbstractDocumentTransition.ACTIONS.REPLACE: {
+            const document = fetchedDocumentsById[documentTransition.getId()];
 
-          const newDocument = new Document({
-            $protocolVersion: stateTransition.getProtocolVersion(),
-            $id: documentTransition.getId(),
-            $type: documentTransition.getType(),
-            $dataContractId: documentTransition.getDataContractId(),
-            $ownerId: stateTransition.getOwnerId(),
-            ...documentTransition.getData(),
-          }, dataContract);
+            if (!document) {
+              throw new DocumentNotProvidedError(documentTransition);
+            }
 
-          if (documentTransition.getCreatedAt()) {
-            newDocument.setCreatedAt(documentTransition.getCreatedAt());
+            document.setRevision(documentTransition.getRevision());
+            document.setData(documentTransition.getData());
+
+            if (documentTransition.getUpdatedAt()) {
+              document.setUpdatedAt(documentTransition.getUpdatedAt());
+            }
+
+            return stateRepository.storeDocument(document);
           }
-
-          if (documentTransition.getUpdatedAt()) {
-            newDocument.setUpdatedAt(documentTransition.getUpdatedAt());
+          case AbstractDocumentTransition.ACTIONS.DELETE: {
+            return stateRepository.removeDocument(
+              documentTransition.getDataContractId(),
+              documentTransition.getType(),
+              documentTransition.getId(),
+            );
           }
-
-          newDocument.setEntropy(documentTransition.getEntropy());
-          newDocument.setRevision(DocumentCreateTransition.INITIAL_REVISION);
-
-          return stateRepository.storeDocument(newDocument);
+          default:
+            throw new InvalidDocumentActionError(documentTransition);
         }
-        case AbstractDocumentTransition.ACTIONS.REPLACE: {
-          const document = fetchedDocumentsById[documentTransition.getId()];
-
-          if (!document) {
-            throw new DocumentNotProvidedError(documentTransition);
-          }
-
-          document.setRevision(documentTransition.getRevision());
-          document.setData(documentTransition.getData());
-
-          if (documentTransition.getUpdatedAt()) {
-            document.setUpdatedAt(documentTransition.getUpdatedAt());
-          }
-
-          return stateRepository.storeDocument(document);
-        }
-        case AbstractDocumentTransition.ACTIONS.DELETE: {
-          return stateRepository.removeDocument(
-            documentTransition.getDataContractId(),
-            documentTransition.getType(),
-            documentTransition.getId(),
-          );
-        }
-        default:
-          throw new InvalidDocumentActionError(documentTransition);
-      }
-    }));
+      }),
+      starterPromise,
+    );
   }
 
   return applyDocumentsBatchTransition;
