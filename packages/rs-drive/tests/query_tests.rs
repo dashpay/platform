@@ -923,6 +923,43 @@ fn test_query() {
     assert_eq!(results.len(), 12);
 
     //
+    // // fetching with empty where and orderBy $id desc
+    //
+    let query_value = json!({
+        "orderBy": [["$id", "desc"]]
+    });
+
+    let query_cbor = common::value_to_cbor(query_value, None);
+
+    let person_document_type = contract
+        .document_types
+        .get("person")
+        .expect("contract should have a person document type");
+
+    let (results, _) = drive
+        .query_documents_from_contract(
+            &contract,
+            person_document_type,
+            query_cbor.as_slice(),
+            Some(&db_transaction),
+        )
+        .expect("query should be executed");
+
+    assert_eq!(results.len(), 12);
+
+    let last_person = Document::from_cbor(results.first().unwrap().as_slice(), None, None)
+        .expect("we should be able to deserialize the cbor");
+
+    assert_eq!(
+        last_person.id,
+        vec![
+            249, 170, 70, 122, 181, 31, 35, 176, 175, 131, 70, 150, 250, 223, 194, 203, 175, 200,
+            107, 252, 199, 227, 154, 105, 89, 57, 38, 85, 236, 192, 254, 88
+        ]
+        .as_slice()
+    );
+
+    //
     // // fetching with ownerId in a set of values
     //
     let query_value = json!({
