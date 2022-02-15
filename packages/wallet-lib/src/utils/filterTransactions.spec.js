@@ -3,9 +3,6 @@ const { expect } = require('chai');
 const { WALLET_TYPES } = require('../CONSTANTS');
 const filterTransactions = require('./filterTransactions');
 
-const rawtx = '03000000012d9101b84d69adf1b168403ab2bcfbf3d2eebbf87a99a9be05d649d47d6c7bd3010000006a47304402201cc3d6887d5161eba36a5e6fb1ccd8e8f9eeda7fe95b4fb0a1accb99eeba0223022040d0df81fde8f59c807e541ca5bcfc9d7450f76657aeb44c708fa7d65b7d58410121038cdae47fceb5b117cd3ef5bdf8c9f2a83679a9105d012095762067bdb2351ceaffffffff0280969800000000001976a914e00939d2ec2f885f5e7dc7b9f5b06dcf868d0c4b88acabfe261f000000001976a914f03286cbb7954ea6affa9654af6cfe1210dd0c6288ac00000000';
-const tx = new Transaction(rawtx);
-const txid = '7d1b78157f9f2238669f260d95af03aeefc99577ff0cddb91b3e518ee557a2fd';
 const fixtureAddressesStore = {
   external: {},
   internal: {},
@@ -67,29 +64,71 @@ const internalAddresses = [
   'yYccLAwvYUDkjSp8VXvEyZ1t2i799pGrde',
   'yMRfbbqFZvojgYZCshdJNWJHruQb3DuCSC'
 ];
+
+const fixtureTransactions = {};
+
+const mockTransactions = (amount) => {
+  return Array.from({ length: amount }).map((_, index) => {
+    const tx = new Transaction();
+
+    // Produce random lock date
+    const date = new Date()
+    date.setMinutes(Math.floor(Math.random() * 60) + index)
+
+    tx.lockUntilDate(date)
+
+    return tx;
+  })
+}
+
 for(let i = 0; i<=externalAddresses.length; i++){
-  fixtureAddressesStore.external[i] = {
-    path: `m/44'/1'/0'/0/${i}`,
+  let path = `m/44'/1'/0'/0/${i}`;
+
+  let externalTransactions = [];
+
+  // Leave some addresses without any tx
+  if (i < externalAddresses.length / 2) {
+    externalTransactions = mockTransactions(3);
+  }
+
+  fixtureAddressesStore.external[path] = {
+    path,
     index: i,
-    transactions: [],
+    transactions: externalTransactions.map(tx => tx.hash),
     balanceSat: 0,
     unconfirmedBalanceSat: 0,
     utxos: {},
     address: externalAddresses[i]
   }
-  fixtureAddressesStore.internal[i] = {
-    path: `m/44'/1'/0'/1/${i}`,
+
+  path = `m/44'/1'/0'/1/${i}`;
+
+  let internalTransactions = [];
+  // Leave some addresses without any tx
+  if (i < internalAddresses.length / 2) {
+    internalTransactions = mockTransactions(3);
+
+    if (externalTransactions.length) {
+      // Simulate TX change return from the external TX
+      internalTransactions.push(externalTransactions[0])
+    }
+  }
+
+  fixtureAddressesStore.internal[path] = {
+    path,
     index: i,
-    transactions: [],
+    transactions: internalTransactions.map(tx => tx.hash),
     balanceSat: 0,
     unconfirmedBalanceSat: 0,
     utxos: {},
     address: internalAddresses[i]
   };
+
+  [...externalTransactions, ...internalTransactions].forEach(tx => {
+    Object.assign(fixtureTransactions, { [tx.hash]: tx})
+  })
 }
-const fixtureTransactions = {};
-fixtureTransactions[txid] = tx;
-fixtureAddressesStore.external[2].transactions.push(txid);
+
 describe('Utils - filterTransactions', function suite() {
   it('should correctly filter a transaction', () => {
     const accountStore = {
@@ -98,7 +137,10 @@ describe('Utils - filterTransactions', function suite() {
     const walletType = WALLET_TYPES.HDWALLET;
     const accountIndex = 0;
     const result = filterTransactions(accountStore, walletType, accountIndex, fixtureTransactions);
-    const expectedResult = [tx];
+    result.sort((a,b) => a.nLockTime - b.nLockTime);
+    const expectedResult = Object.values(fixtureTransactions)
+      .sort((a, b) => a.nLockTime - b.nLockTime)
+
     expect(result).to.deep.equal(expectedResult);
 
     const accountIndex1 = 1;
