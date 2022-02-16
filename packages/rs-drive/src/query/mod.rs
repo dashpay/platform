@@ -986,10 +986,11 @@ impl<'a> DriveQuery<'a> {
         // only binary where clauses are supported
         // i.e. [<fieldname>, <operator>, <value>]
         // [and] is used to separate where clauses
-        // hence once [and] is encountered [left] and [right] must be binary operations
+        // currently where clauses are either binary operations or list descriptions (in clauses)
+        // hence once [and] is encountered [left] and [right] must be only one of the above
         // i.e other where clauses
         // e.g. firstname = wisdom and lastname = ogwu
-        // if op is not [and] then [left] or [right] must not be a binary operation
+        // if op is not [and] then [left] or [right] must not be a binary operation or list description
         let mut all_where_clauses: Vec<WhereClause> = Vec::new();
         let selection_tree = select.selection.as_ref();
 
@@ -998,6 +999,47 @@ impl<'a> DriveQuery<'a> {
             where_clauses: &mut Vec<WhereClause>,
         ) -> Result<(), Error> {
             match &binary_operation {
+                ast::Expr::InList {
+                    expr,
+                    list,
+                    negated,
+                } => {
+                    if *negated {
+                        return Err(Error::InvalidQuery(
+                            "Invalid query: negated in clause not supported",
+                        ));
+                    }
+
+                    let field_name = if let ast::Expr::Identifier(ident) = &**expr {
+                        ident.value.clone()
+                    } else {
+                        return Err(Error::InvalidQuery(
+                            "Invalid query: in clause should start with an identifier",
+                        ));
+                    };
+
+                    let mut in_values: Vec<Value> = Vec::new();
+                    for value in list {
+                        if let ast::Expr::Value(sql_value) = value {
+                            let cbor_val = sql_value_to_cbor(sql_value.clone()).ok_or({
+                                Error::InvalidQuery("Invalid query: unexpected value type")
+                            })?;
+                            in_values.push(cbor_val);
+                        } else {
+                            return Err(Error::InvalidQuery(
+                                "Invalid query: expected a list of sql values",
+                            ));
+                        }
+                    }
+
+                    where_clauses.push(WhereClause {
+                        field: field_name,
+                        operator: WhereOperator::In,
+                        value: CborValue::Array(in_values),
+                    });
+
+                    Ok(())
+                }
                 ast::Expr::BinaryOp { left, op, right } => {
                     if *op == ast::BinaryOperator::And {
                         build_where_clause(&*left, where_clauses)?;
@@ -1125,16 +1167,16 @@ impl<'a> DriveQuery<'a> {
 
         let range_clause = WhereClause::group_range_clauses(&all_where_clauses)?;
 
-        let equal_clauses_array = all_where_clauses
-            .iter()
-            .filter_map(|where_clause| match where_clause.operator {
-                Equal => match where_clause.is_identifier() {
-                    true => None,
-                    false => Some(where_clause.clone()),
-                },
-                _ => None,
-            })
-            .collect::<Vec<WhereClause>>();
+        let equal_clauses_array =
+            all_where_clauses
+                .iter()
+                .filter_map(|where_clause| match where_clause.operator {
+                    Equal => match where_clause.is_identifier() {
+                        true => None,
+                        false => Some(where_clause.clone()),
+                    },
+                    _ => None,
+                });
 
         let in_clauses_array = all_where_clauses
             .iter()

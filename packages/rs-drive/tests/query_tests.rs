@@ -1236,4 +1236,27 @@ fn test_sql_query() {
     let query2 = DriveQuery::from_sql_expr(sql_string, &contract).expect("should build query");
 
     assert_eq!(query1, query2);
+
+    // In clause
+    let names = vec![String::from("a"), String::from("b")];
+    let query_cbor = common::value_to_cbor(
+        json!({
+            "where": [
+                ["firstName", "in", names]
+            ],
+            "limit": 100,
+            "orderBy": [
+                ["firstName", "asc"]
+            ],
+        }),
+        None,
+    );
+    let query1 = DriveQuery::from_cbor(query_cbor.as_slice(), &contract, &person_document_type)
+        .expect("should build query");
+
+    let sql_string =
+        "select * from person where firstName in ('a', 'b') order by firstName limit 100";
+    let query2 = DriveQuery::from_sql_expr(sql_string, &contract).expect("should build query");
+
+    assert_eq!(query1, query2);
 }
