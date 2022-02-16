@@ -30,22 +30,27 @@ class DocumentRepository {
 
     let result;
     let method = 'createDocument';
-    if (isExists) {
-      result = await this.storage.getDrive().updateDocument(document, useTransaction);
-      method = 'updateDocument';
-    } else {
-      result = await this.storage.getDrive().createDocument(document, useTransaction);
-    }
 
-    this.storage.logger.info({
-      document: document.toBuffer().toString('hex'),
-      documentHash: createHash('sha256')
-        .update(
-          document.toBuffer(),
-        ).digest('hex'),
-      useTransaction: Boolean(useTransaction),
-      appHash: (await this.storage.getRootHash({ useTransaction })).toString('hex'),
-    }, method);
+    try {
+      if (isExists) {
+        method = 'updateDocument';
+        result = await this.storage.getDrive()
+          .updateDocument(document, useTransaction);
+      } else {
+        result = await this.storage.getDrive()
+          .createDocument(document, useTransaction);
+      }
+    } finally {
+      this.storage.logger.info({
+        document: document.toBuffer().toString('hex'),
+        documentHash: createHash('sha256')
+          .update(
+            document.toBuffer(),
+          ).digest('hex'),
+        useTransaction: Boolean(useTransaction),
+        appHash: (await this.storage.getRootHash({ useTransaction })).toString('hex'),
+      }, method);
+    }
 
     return result;
   }
