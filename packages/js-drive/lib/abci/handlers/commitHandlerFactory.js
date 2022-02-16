@@ -13,8 +13,6 @@ const {
  * @param {BlockExecutionContextStack} blockExecutionContextStack
  * @param {BlockExecutionContextStackRepository} blockExecutionContextStackRepository
  * @param {rotateSignedStore} rotateSignedStore
- * @param {DashPlatformProtocol} transactionalDpp
- * @param {AwilixContainer} container
  * @param {BaseLogger} logger
  * @param {LRUCache} dataContractCache
  * @param {GroveDBStore} groveDBStore
@@ -28,8 +26,6 @@ function commitHandlerFactory(
   blockExecutionContextStack,
   blockExecutionContextStackRepository,
   rotateSignedStore,
-  transactionalDpp,
-  container,
   logger,
   dataContractCache,
   groveDBStore,

@@ -24,7 +24,7 @@ function rotateSignedStoreFactory(groveDBStore, signedGroveDBStore, dbPath) {
     const previousSignedStatePath = `${dbPath}/signed_state_${previousSignedStateHeight}`;
 
     const newSignedGroveDB = groveDBStore.checkpoint(signedStatePath);
-    const previousSignedGroveDB = singedGroveDBStore.getDB();
+    const previousSignedGroveDB = signedGroveDBStore.getDB();
 
     if (previousSignedStateHeight.greaterThan(0)) {
       await previousSignedGroveDB.close();
@@ -32,7 +32,7 @@ function rotateSignedStoreFactory(groveDBStore, signedGroveDBStore, dbPath) {
       fs.rmSync(previousSignedStatePath, { recursive: true });
     }
 
-    singedGroveDBStore.setDB(newSignedGroveDB);
+    signedGroveDBStore.setDB(newSignedGroveDB);
 
     return true;
   }

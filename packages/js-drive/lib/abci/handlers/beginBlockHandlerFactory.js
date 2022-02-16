@@ -6,7 +6,7 @@ const {
   },
 } = require('@dashevo/abci/types');
 
-const NotSupportedNetworkProtocolVersionError = require('./errors/NotSupportedProtocolVersionError');
+const NotSupportedNetworkProtocolVersionError = require('./errors/NotSupportedNetworkProtocolVersionError');
 const NetworkProtocolVersionIsNotSetError = require('./errors/NetworkProtocolVersionIsNotSetError');
 
 /**

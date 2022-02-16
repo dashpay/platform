@@ -146,12 +146,10 @@ describe('synchronizeMasternodeIdentitiesFactory', () => {
     expect(handleNewMasternodeMock.getCall(0)).to.be.calledWithExactly(
       smlFixture[0],
       dataContractFixture,
-      false,
     );
     expect(handleNewMasternodeMock.getCall(1)).to.be.calledWithExactly(
       smlFixture[1],
       dataContractFixture,
-      false,
     );
 
     expect(handleUpdatedPubKeyOperatorMock).to.be.not.called();
@@ -163,6 +161,7 @@ describe('synchronizeMasternodeIdentitiesFactory', () => {
 
     expect(dataContractRepositoryMock.fetch).to.be.calledOnceWithExactly(
       masternodeRewardSharesContractId,
+      true,
     );
     expect(coreRpcClientMock.protx).to.be.not.called();
   });
@@ -176,12 +175,10 @@ describe('synchronizeMasternodeIdentitiesFactory', () => {
     expect(handleNewMasternodeMock.getCall(0)).to.be.calledWithExactly(
       smlFixture[0],
       dataContractFixture,
-      false,
     );
     expect(handleNewMasternodeMock.getCall(1)).to.be.calledWithExactly(
       smlFixture[1],
       dataContractFixture,
-      false,
     );
 
     expect(handleUpdatedPubKeyOperatorMock).to.be.not.called();
@@ -212,17 +209,14 @@ describe('synchronizeMasternodeIdentitiesFactory', () => {
     expect(handleNewMasternodeMock.getCall(0)).to.be.calledWithExactly(
       smlFixture[0],
       dataContractFixture,
-      false,
     );
     expect(handleNewMasternodeMock.getCall(1)).to.be.calledWithExactly(
       smlFixture[1],
       dataContractFixture,
-      false,
     );
     expect(handleNewMasternodeMock.getCall(2)).to.be.calledWithExactly(
       newSmlFixture,
       dataContractFixture,
-      true,
     );
 
     expect(handleUpdatedPubKeyOperatorMock).to.be.not.called();
@@ -254,7 +248,7 @@ describe('synchronizeMasternodeIdentitiesFactory', () => {
       'masternodeRewardShares',
       {
         where: [
-          ['$ownerId', '===', Identifier.from('XzhK3k3wuKfEsR6PBFPKf9BRpzLrXKcRHGHs5G6xgho')],
+          ['$ownerId', '==', Identifier.from('XzhK3k3wuKfEsR6PBFPKf9BRpzLrXKcRHGHs5G6xgho')],
         ],
       },
     );
@@ -278,7 +272,7 @@ describe('synchronizeMasternodeIdentitiesFactory', () => {
       'masternodeRewardShares',
       {
         where: [
-          ['$ownerId', '===', Identifier.from('XzhK3k3wuKfEsR6PBFPKf9BRpzLrXKcRHGHs5G6xgho')],
+          ['$ownerId', '==', Identifier.from('XzhK3k3wuKfEsR6PBFPKf9BRpzLrXKcRHGHs5G6xgho')],
         ],
       },
     );
@@ -300,7 +294,6 @@ describe('synchronizeMasternodeIdentitiesFactory', () => {
       changedSmlEntry,
       smlFixture[1],
       dataContractFixture,
-      false,
     );
     expect(stateRepositoryMock.fetchDocuments).to.be.not.called();
     expect(coreRpcClientMock.protx).to.be.not.called();
