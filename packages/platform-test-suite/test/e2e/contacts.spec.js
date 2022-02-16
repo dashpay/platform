@@ -54,7 +54,8 @@ describe('e2e', () => {
                 { $ownerId: 'asc' },
                 { toUserId: 'asc' },
               ],
-              unique: true,
+              // TODO: Enable it when https://github.com/dashevo/rs-drive/pull/65 merged
+              // unique: true,
             },
           ],
           properties: {
