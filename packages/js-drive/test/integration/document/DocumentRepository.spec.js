@@ -605,7 +605,7 @@ describe('DocumentRepository', function main() {
           expect(result.map((doc) => doc.toBuffer())).to.deep.equal(expectedDocuments);
         });
 
-        it.skip('should sort Documents by $id', async () => {
+        it('should sort Documents by $id', async () => {
           await Promise.all(
             documents.map((d) => documentRepository
               .delete(dataContract, document.getType(), d.getId())),
