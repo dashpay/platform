@@ -64,7 +64,7 @@ function dataContractQueryHandlerFactory(
 
     const dataContract = await signedDataContractRepository.fetch(contractIdIdentifier);
 
-    if (dataContract) {
+    if (!dataContract) {
       throw new NotFoundAbciError('Data Contract not found');
     }
 
