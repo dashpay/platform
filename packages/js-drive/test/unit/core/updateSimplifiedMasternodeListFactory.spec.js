@@ -78,7 +78,9 @@ describe('updateSimplifiedMasternodeListFactory', () => {
   });
 
   it('should obtain 16 latest diffs according to core height on first call', async () => {
-    await updateSimplifiedMasternodeList(coreHeight);
+    const isUpdated = await updateSimplifiedMasternodeList(coreHeight);
+
+    expect(isUpdated).to.be.true();
 
     const proTxCallCount = coreHeight - (coreHeight - smlMaxListsLimit) + 1;
 
@@ -117,8 +119,13 @@ describe('updateSimplifiedMasternodeListFactory', () => {
   });
 
   it('should update diffs since last call and up to passed core height', async () => {
-    await updateSimplifiedMasternodeList(coreHeight);
-    await updateSimplifiedMasternodeList(coreHeight + 1);
+    let isUpdated = await updateSimplifiedMasternodeList(coreHeight);
+
+    expect(isUpdated).to.be.true();
+
+    isUpdated = await updateSimplifiedMasternodeList(coreHeight + 1);
+
+    expect(isUpdated).to.be.true();
 
     const proTxCallCount = smlMaxListsLimit + 2;
 
@@ -158,11 +165,26 @@ describe('updateSimplifiedMasternodeListFactory', () => {
   });
 
   it('should not update more than 16 diffs', async () => {
-    await updateSimplifiedMasternodeList(coreHeight); // 3
-    await updateSimplifiedMasternodeList(coreHeight + 10); // 3
+    let isUpdated = await updateSimplifiedMasternodeList(coreHeight); // 3
+
+    expect(isUpdated).to.be.true();
+
+    isUpdated = await updateSimplifiedMasternodeList(coreHeight + 10); // 3
+
+    expect(isUpdated).to.be.true();
 
     const proTxCallCount = 3 + 3;
 
     expect(coreRpcClientMock.protx.callCount).to.equal(proTxCallCount);
+  });
+
+  it('should return false if SML was not updated', async () => {
+    let isUpdated = await updateSimplifiedMasternodeList(coreHeight);
+
+    expect(isUpdated).to.be.true();
+
+    isUpdated = await updateSimplifiedMasternodeList(coreHeight);
+
+    expect(isUpdated).to.be.false();
   });
 });

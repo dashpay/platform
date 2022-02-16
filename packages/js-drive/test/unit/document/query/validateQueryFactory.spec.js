@@ -4,6 +4,7 @@ const ValidationResult = require('../../../../lib/document/query/ValidationResul
 const ConflictingConditionsError = require('../../../../lib/document/query/errors/ConflictingConditionsError');
 const InvalidPropertiesInOrderByError = require('../../../../lib/document/query/errors/InvalidPropertiesInOrderByError');
 const NotIndexedPropertiesInWhereConditionsError = require('../../../../lib/document/query/errors/NotIndexedPropertiesInWhereConditionsError');
+const RangeOperatorAllowedOnlyForLastIndexedPropertyError = require('../../../../lib/document/query/errors/RangeOperatorAllowedOnlyForLastIndexedPropertyError');
 
 const typesTestCases = {
   number: {
@@ -124,6 +125,21 @@ const invalidFieldNameTestCases = [
   '.a',
   'a.b.c.',
 ];
+
+const validOrderByOperators = {
+  '>': {
+    value: 42,
+  },
+  '<': {
+    value: 42,
+  },
+  startsWith: {
+    value: 'rt-',
+  },
+  in: {
+    value: ['a', 'b'],
+  },
+};
 
 describe('validateQueryFactory', () => {
   let findConflictingConditionsStub;
@@ -544,6 +560,38 @@ describe('validateQueryFactory', () => {
               expect(result.isValid()).to.be.true();
             });
           });
+
+          ['>', '<', '<=', '>='].forEach((operator) => {
+            it(`should return invalid results if "${operator}" used not in the last 2 where conditions`, () => {
+              documentSchema = {
+                indices: [
+                  {
+                    properties: [{ a: 'asc' }],
+                  },
+                ],
+              };
+
+              const result = validateQuery(
+                {
+                  where: [
+                    ['a', operator, 1],
+                    ['a', 'startsWith', 'rt-'],
+                    ['a', 'startsWith', 'r-'],
+                  ],
+                },
+                documentSchema,
+              );
+
+              expect(result).to.be.instanceOf(ValidationResult);
+              expect(result.isValid()).to.be.false();
+
+              const error = result.getErrors()[0];
+
+              expect(error).to.be.an.instanceOf(
+                RangeOperatorAllowedOnlyForLastIndexedPropertyError,
+              );
+            });
+          });
         });
 
         describe('timestamps', () => {
@@ -698,6 +746,35 @@ describe('validateQueryFactory', () => {
             expect(result).to.be.instanceOf(ValidationResult);
             expect(result.isValid()).to.be.false();
           });
+
+          it('should return invalid results if used not in the last where condition', () => {
+            documentSchema = {
+              indices: [
+                {
+                  properties: [{ a: 'asc' }],
+                },
+              ],
+            };
+
+            const arr = [1, 2];
+
+            const result = validateQuery(
+              {
+                where: [
+                  ['a', 'in', arr],
+                  ['a', '>', 1],
+                ],
+              },
+              documentSchema,
+            );
+
+            expect(result).to.be.instanceOf(ValidationResult);
+            expect(result.isValid()).to.be.false();
+
+            const error = result.getErrors()[0];
+
+            expect(error).to.be.an.instanceOf(RangeOperatorAllowedOnlyForLastIndexedPropertyError);
+          });
         });
 
         describe('startsWith', () => {
@@ -748,6 +825,33 @@ describe('validateQueryFactory', () => {
               expect(result.errors[3].keyword).to.be.equal('type');
               expect(result.errors[3].params.type).to.be.equal('string');
             });
+          });
+
+          it('should return invalid results if used not in the last where condition', () => {
+            documentSchema = {
+              indices: [
+                {
+                  properties: [{ a: 'asc' }],
+                },
+              ],
+            };
+
+            const result = validateQuery(
+              {
+                where: [
+                  ['a', 'startsWith', 'r-'],
+                  ['a', '>', 1],
+                ],
+              },
+              documentSchema,
+            );
+
+            expect(result).to.be.instanceOf(ValidationResult);
+            expect(result.isValid()).to.be.false();
+
+            const error = result.getErrors()[0];
+
+            expect(error).to.be.an.instanceOf(RangeOperatorAllowedOnlyForLastIndexedPropertyError);
           });
         });
 
@@ -1435,6 +1539,29 @@ describe('validateQueryFactory', () => {
       expect(result.errors[0].instancePath).to.be.equal('/orderBy/0');
       expect(result.errors[0].keyword).to.be.equal('maxItems');
       expect(result.errors[0].params.limit).to.be.equal(2);
+    });
+
+    Object.keys(validOrderByOperators).forEach((operator) => {
+      it(`should return true if "orderBy" has valid field with valid operator in "where" clause - "${operator}"`, () => {
+        documentSchema = {
+          indices: [
+            {
+              properties: [{ a: 'asc' }],
+            },
+          ],
+        };
+
+        const result = validateQuery({
+          where: [
+            ['a', operator, validOrderByOperators[operator].value],
+          ],
+          orderBy: [['a', 'asc']],
+        },
+        documentSchema);
+
+        expect(result).to.be.instanceOf(ValidationResult);
+        expect(result.isValid()).to.be.true();
+      });
     });
   });
 

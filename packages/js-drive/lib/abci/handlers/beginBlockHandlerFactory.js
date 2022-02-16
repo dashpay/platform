@@ -20,6 +20,7 @@ const NetworkProtocolVersionIsNotSetError = require('./errors/NetworkProtocolVer
  * @param {DashPlatformProtocol} transactionalDpp
  * @param {updateSimplifiedMasternodeList} updateSimplifiedMasternodeList
  * @param {waitForChainLockedHeight} waitForChainLockedHeight
+ * @param {synchronizeMasternodeIdentities} synchronizeMasternodeIdentities
  * @param {BaseLogger} logger
  *
  * @return {beginBlockHandler}
@@ -33,6 +34,7 @@ function beginBlockHandlerFactory(
   transactionalDpp,
   updateSimplifiedMasternodeList,
   waitForChainLockedHeight,
+  synchronizeMasternodeIdentities,
   logger,
 ) {
   /**
@@ -88,9 +90,15 @@ function beginBlockHandlerFactory(
 
     await waitForChainLockedHeight(coreChainLockedHeight);
 
-    await updateSimplifiedMasternodeList(coreChainLockedHeight, {
-      logger: consensusLogger,
-    });
+    const isSimplifiedMasternodeListUpdated = await updateSimplifiedMasternodeList(
+      coreChainLockedHeight, {
+        logger: consensusLogger,
+      },
+    );
+
+    if (isSimplifiedMasternodeListUpdated) {
+      await synchronizeMasternodeIdentities(coreChainLockedHeight, false);
+    }
 
     if (blockExecutionStoreTransactions.isStarted()) {
       // in case previous block execution failed in process

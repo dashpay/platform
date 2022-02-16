@@ -10,6 +10,7 @@ const jsonSchema = require('./jsonSchema');
 
 const NotIndexedPropertiesInWhereConditionsError = require('./errors/NotIndexedPropertiesInWhereConditionsError');
 const InvalidPropertiesInOrderByError = require('./errors/InvalidPropertiesInOrderByError');
+const RangeOperatorAllowedOnlyForLastIndexedPropertyError = require('./errors/RangeOperatorAllowedOnlyForLastIndexedPropertyError');
 
 /**
  * @param {findConflictingConditions} findConflictingConditions
@@ -79,6 +80,33 @@ function validateQueryFactory(
       if (!appropriateIndex) {
         result.addError(new NotIndexedPropertiesInWhereConditionsError());
       }
+
+      // check following operators are used only in last where condition
+      ['in', 'startsWith'].forEach((operator) => {
+        const invalidClause = query.where.find((clause, index) => (
+          clause[1] === operator && index !== query.where.length - 1
+        ));
+
+        if (invalidClause) {
+          result.addError(
+            new RangeOperatorAllowedOnlyForLastIndexedPropertyError(invalidClause[0], operator),
+          );
+        }
+      });
+
+      // check following operators are used only in last 2 where condition
+      ['>', '<', '>=', '<='].forEach((operator) => {
+        const invalidClause = query.where.find((clause, index) => (
+          clause[1] === operator
+            && (index !== query.where.length - 1 && index !== query.where.length - 2)
+        ));
+
+        if (invalidClause) {
+          result.addError(
+            new RangeOperatorAllowedOnlyForLastIndexedPropertyError(invalidClause[0], operator),
+          );
+        }
+      });
     }
 
     // Sorting is allowed only for the last indexed property
@@ -99,7 +127,8 @@ function validateQueryFactory(
 
       const [property, operator] = lastCondition;
 
-      if (!operator.includes('<') && !operator.includes('>')) {
+      if (!operator.includes('<') && !operator.includes('>')
+          && !operator.includes('startsWith') && !operator.includes('in')) {
         result.addError(new InvalidPropertiesInOrderByError());
 
         return result;

@@ -92,32 +92,32 @@ module.exports = function getDataContractFixture(ownerId = randomOwnerId) {
       required: ['firstName', '$createdAt', '$updatedAt', 'lastName'],
       additionalProperties: false,
     },
-    indexedArray: {
-      type: 'object',
-      indices: [
-        {
-          name: 'index1',
-          properties: [
-            { mentions: 'asc' },
-          ],
-        },
-      ],
-      properties: {
-        mentions: {
-          type: 'array',
-          prefixItems: [
-            {
-              type: 'string',
-              maxLength: 100,
-            },
-          ],
-          minItems: 1,
-          maxItems: 5,
-          items: false,
-        },
-      },
-      additionalProperties: false,
-    },
+    // indexedArray: {
+    //   type: 'object',
+    //   indices: [
+    //     {
+    //       name: 'index1',
+    //       properties: [
+    //         { mentions: 'asc' },
+    //       ],
+    //     },
+    //   ],
+    //   properties: {
+    //     mentions: {
+    //       type: 'array',
+    //       prefixItems: [
+    //         {
+    //           type: 'string',
+    //           maxLength: 100,
+    //         },
+    //       ],
+    //       minItems: 1,
+    //       maxItems: 5,
+    //       items: false,
+    //     },
+    //   },
+    //   additionalProperties: false,
+    // },
     noTimeDocument: {
       type: 'object',
       properties: {
