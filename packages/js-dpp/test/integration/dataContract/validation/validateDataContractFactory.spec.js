@@ -1549,29 +1549,35 @@ describe('validateDataContractFactory', function main() {
         expect(error.getIndexDefinition()).to.deep.equal(indexDefinition);
       });
 
-      it('should return invalid result if index property is array of objects', async () => {
-        const indexedDocumentDefinition = rawDataContract.documents.indexedDocument;
-
-        indexedDocumentDefinition.properties.arrayProperty = {
-          type: 'array',
-          items: {
-            type: 'object',
-            properties: {
-              something: {
-                type: 'string',
-              },
+      it('should return invalid result if index property is an array', async () => {
+        rawDataContract.documents.indexedArray = {
+          type: 'object',
+          indices: [
+            {
+              name: 'index1',
+              properties: [
+                { mentions: 'asc' },
+              ],
             },
-            additionalProperties: false,
+          ],
+          properties: {
+            mentions: {
+              type: 'array',
+              prefixItems: [
+                {
+                  type: 'string',
+                  maxLength: 100,
+                },
+              ],
+              minItems: 1,
+              maxItems: 5,
+              items: false,
+            },
           },
+          additionalProperties: false,
         };
 
-        indexedDocumentDefinition.required.push('arrayProperty');
-
-        const indexDefinition = indexedDocumentDefinition.indices[0];
-
-        indexDefinition.properties.push({
-          arrayProperty: 'asc',
-        });
+        const indexDefinition = rawDataContract.documents.indexedArray.indices[0];
 
         const result = await validateDataContract(rawDataContract);
 
@@ -1580,128 +1586,168 @@ describe('validateDataContractFactory', function main() {
         const [error] = result.getErrors();
 
         expect(error.getCode()).to.equal(1013);
-        expect(error.getPropertyName()).to.equal('arrayProperty');
-        expect(error.getPropertyType()).to.equal('array');
-        expect(error.getDocumentType()).to.deep.equal('indexedDocument');
-        expect(error.getIndexDefinition()).to.deep.equal(indexDefinition);
-      });
-
-      it('should return invalid result if index property is an array of different types', async () => {
-        const indexedDocumentDefinition = rawDataContract.documents.indexedArray;
-
-        const indexDefinition = indexedDocumentDefinition.indices[0];
-
-        rawDataContract.documents.indexedArray.properties.mentions.prefixItems = [
-          {
-            type: 'string',
-          },
-          {
-            type: 'number',
-          },
-        ];
-
-        rawDataContract.documents.indexedArray.properties.mentions.minItems = 2;
-
-        const result = await validateDataContract(rawDataContract);
-        expectValidationError(result, InvalidIndexPropertyTypeError);
-
-        const error = result.getFirstError();
-
-        expect(error.getCode()).to.equal(1013);
         expect(error.getPropertyName()).to.equal('mentions');
         expect(error.getPropertyType()).to.equal('array');
         expect(error.getDocumentType()).to.deep.equal('indexedArray');
         expect(error.getIndexDefinition()).to.deep.equal(indexDefinition);
       });
 
-      it('should return invalid result if index property contained prefixItems array of arrays', async () => {
-        const indexedDocumentDefinition = rawDataContract.documents.indexedArray;
+      // it('should return invalid result if index property is array of objects', async () => {
+      //   const indexedDocumentDefinition = rawDataContract.documents.indexedDocument;
+      //
+      //   indexedDocumentDefinition.properties.arrayProperty = {
+      //     type: 'array',
+      //     items: {
+      //       type: 'object',
+      //       properties: {
+      //         something: {
+      //           type: 'string',
+      //         },
+      //       },
+      //       additionalProperties: false,
+      //     },
+      //   };
+      //
+      //   indexedDocumentDefinition.required.push('arrayProperty');
+      //
+      //   const indexDefinition = indexedDocumentDefinition.indices[0];
+      //
+      //   indexDefinition.properties.push({
+      //     arrayProperty: 'asc',
+      //   });
+      //
+      //   const result = await validateDataContract(rawDataContract);
+      //
+      //   expectValidationError(result, InvalidIndexPropertyTypeError);
+      //
+      //   const [error] = result.getErrors();
+      //
+      //   expect(error.getCode()).to.equal(1013);
+      //   expect(error.getPropertyName()).to.equal('arrayProperty');
+      //   expect(error.getPropertyType()).to.equal('array');
+      //   expect(error.getDocumentType()).to.deep.equal('indexedDocument');
+      //   expect(error.getIndexDefinition()).to.deep.equal(indexDefinition);
+      // });
 
-        const indexDefinition = indexedDocumentDefinition.indices[0];
+      // it('should return invalid result if index property is an array of different types',
+      // async () => {
+      //   const indexedDocumentDefinition = rawDataContract.documents.indexedArray;
+      //
+      //   const indexDefinition = indexedDocumentDefinition.indices[0];
+      //
+      //   rawDataContract.documents.indexedArray.properties.mentions.prefixItems = [
+      //     {
+      //       type: 'string',
+      //     },
+      //     {
+      //       type: 'number',
+      //     },
+      //   ];
+      //
+      //   rawDataContract.documents.indexedArray.properties.mentions.minItems = 2;
+      //
+      //   const result = await validateDataContract(rawDataContract);
+      //   expectValidationError(result, InvalidIndexPropertyTypeError);
+      //
+      //   const error = result.getFirstError();
+      //
+      //   expect(error.getCode()).to.equal(1013);
+      //   expect(error.getPropertyName()).to.equal('mentions');
+      //   expect(error.getPropertyType()).to.equal('array');
+      //   expect(error.getDocumentType()).to.deep.equal('indexedArray');
+      //   expect(error.getIndexDefinition()).to.deep.equal(indexDefinition);
+      // });
+      //
+      // it('should return invalid result if index property contained prefixItems array of arrays',
+      // async () => {
+      //   const indexedDocumentDefinition = rawDataContract.documents.indexedArray;
+      //
+      //   const indexDefinition = indexedDocumentDefinition.indices[0];
+      //
+      //   rawDataContract.documents.indexedArray.properties.mentions.prefixItems = [
+      //     {
+      //       type: 'array',
+      //       items: {
+      //         type: 'string',
+      //       },
+      //     },
+      //   ];
+      //
+      //   const result = await validateDataContract(rawDataContract);
+      //   expectValidationError(result, InvalidIndexPropertyTypeError);
+      //
+      //   const error = result.getFirstError();
+      //
+      //   expect(error.getCode()).to.equal(1013);
+      //   expect(error.getPropertyName()).to.equal('mentions');
+      //   expect(error.getPropertyType()).to.equal('array');
+      //   expect(error.getDocumentType()).to.deep.equal('indexedArray');
+      //   expect(error.getIndexDefinition()).to.deep.equal(indexDefinition);
+      // });
 
-        rawDataContract.documents.indexedArray.properties.mentions.prefixItems = [
-          {
-            type: 'array',
-            items: {
-              type: 'string',
-            },
-          },
-        ];
-
-        const result = await validateDataContract(rawDataContract);
-        expectValidationError(result, InvalidIndexPropertyTypeError);
-
-        const error = result.getFirstError();
-
-        expect(error.getCode()).to.equal(1013);
-        expect(error.getPropertyName()).to.equal('mentions');
-        expect(error.getPropertyType()).to.equal('array');
-        expect(error.getDocumentType()).to.deep.equal('indexedArray');
-        expect(error.getIndexDefinition()).to.deep.equal(indexDefinition);
-      });
-
-      it('should return invalid result if index property contained prefixItems array of objects', async () => {
-        const indexedDocumentDefinition = rawDataContract.documents.indexedArray;
-
-        const indexDefinition = indexedDocumentDefinition.indices[0];
-
-        rawDataContract.documents.indexedArray.properties.mentions.prefixItems = [
-          {
-            type: 'object',
-            properties: {
-              something: {
-                type: 'string',
-              },
-            },
-            additionalProperties: false,
-          },
-        ];
-
-        const result = await validateDataContract(rawDataContract);
-        expectValidationError(result, InvalidIndexPropertyTypeError);
-
-        const error = result.getFirstError();
-
-        expect(error.getCode()).to.equal(1013);
-        expect(error.getPropertyName()).to.equal('mentions');
-        expect(error.getPropertyType()).to.equal('array');
-        expect(error.getDocumentType()).to.deep.equal('indexedArray');
-        expect(error.getIndexDefinition()).to.deep.equal(indexDefinition);
-      });
-
-      it('should return invalid result if index property is array of arrays', async () => {
-        const indexedDocumentDefinition = rawDataContract.documents.indexedDocument;
-
-        indexedDocumentDefinition.properties.arrayProperty = {
-          type: 'array',
-          items: {
-            type: 'array',
-            items: {
-              type: 'string',
-            },
-          },
-        };
-
-        indexedDocumentDefinition.required.push('arrayProperty');
-
-        const indexDefinition = indexedDocumentDefinition.indices[0];
-
-        indexDefinition.properties.push({
-          arrayProperty: 'asc',
-        });
-
-        const result = await validateDataContract(rawDataContract);
-
-        expectValidationError(result, InvalidIndexPropertyTypeError);
-
-        const [error] = result.getErrors();
-
-        expect(error.getCode()).to.equal(1013);
-        expect(error.getPropertyName()).to.equal('arrayProperty');
-        expect(error.getPropertyType()).to.equal('array');
-        expect(error.getDocumentType()).to.deep.equal('indexedDocument');
-        expect(error.getIndexDefinition()).to.deep.equal(indexDefinition);
-      });
+      // it('should return invalid result if index property contained prefixItems array of objects',
+      // async () => {
+      //   const indexedDocumentDefinition = rawDataContract.documents.indexedArray;
+      //
+      //   const indexDefinition = indexedDocumentDefinition.indices[0];
+      //
+      //   rawDataContract.documents.indexedArray.properties.mentions.prefixItems = [
+      //     {
+      //       type: 'object',
+      //       properties: {
+      //         something: {
+      //           type: 'string',
+      //         },
+      //       },
+      //       additionalProperties: false,
+      //     },
+      //   ];
+      //
+      //   const result = await validateDataContract(rawDataContract);
+      //   expectValidationError(result, InvalidIndexPropertyTypeError);
+      //
+      //   const error = result.getFirstError();
+      //
+      //   expect(error.getCode()).to.equal(1013);
+      //   expect(error.getPropertyName()).to.equal('mentions');
+      //   expect(error.getPropertyType()).to.equal('array');
+      //   expect(error.getDocumentType()).to.deep.equal('indexedArray');
+      //   expect(error.getIndexDefinition()).to.deep.equal(indexDefinition);
+      // });
+      //
+      // it('should return invalid result if index property is array of arrays', async () => {
+      //   const indexedDocumentDefinition = rawDataContract.documents.indexedDocument;
+      //
+      //   indexedDocumentDefinition.properties.arrayProperty = {
+      //     type: 'array',
+      //     items: {
+      //       type: 'array',
+      //       items: {
+      //         type: 'string',
+      //       },
+      //     },
+      //   };
+      //
+      //   indexedDocumentDefinition.required.push('arrayProperty');
+      //
+      //   const indexDefinition = indexedDocumentDefinition.indices[0];
+      //
+      //   indexDefinition.properties.push({
+      //     arrayProperty: 'asc',
+      //   });
+      //
+      //   const result = await validateDataContract(rawDataContract);
+      //
+      //   expectValidationError(result, InvalidIndexPropertyTypeError);
+      //
+      //   const [error] = result.getErrors();
+      //
+      //   expect(error.getCode()).to.equal(1013);
+      //   expect(error.getPropertyName()).to.equal('arrayProperty');
+      //   expect(error.getPropertyType()).to.equal('array');
+      //   expect(error.getDocumentType()).to.deep.equal('indexedDocument');
+      //   expect(error.getIndexDefinition()).to.deep.equal(indexDefinition);
+      // });
 
       it('should return invalid result if index property is array with different item definitions', async () => {
         const indexedDocumentDefinition = rawDataContract.documents.indexedDocument;
@@ -1958,65 +2004,68 @@ describe('validateDataContractFactory', function main() {
     expect(error.getReason()).to.equal('should be less or equal 1024');
   });
 
-  it('should return invalid result if indexed array property missing maxItems constraint', async () => {
-    delete rawDataContract.documents.indexedArray.properties.mentions.maxItems;
-
-    const result = await validateDataContract(rawDataContract);
-
-    expectValidationError(result, InvalidIndexedPropertyConstraintError);
-
-    const [error] = result.getErrors();
-
-    expect(error.getCode()).to.equal(1012);
-    expect(error.getPropertyName()).to.equal('mentions');
-    expect(error.getConstraintName()).to.equal('maxItems');
-    expect(error.getReason()).to.equal('should be less or equal 1024');
-  });
-
-  it('should return invalid result if indexed array property have to big maxItems', async () => {
-    rawDataContract.documents.indexedArray.properties.mentions.maxItems = 2048;
-
-    const result = await validateDataContract(rawDataContract);
-
-    expectValidationError(result, InvalidIndexedPropertyConstraintError);
-
-    const [error] = result.getErrors();
-
-    expect(error.getCode()).to.equal(1012);
-    expect(error.getPropertyName()).to.equal('mentions');
-    expect(error.getConstraintName()).to.equal('maxItems');
-    expect(error.getReason()).to.equal('should be less or equal 1024');
-  });
-
-  it('should return invalid result if indexed array property have string item without maxItems constraint', async () => {
-    delete rawDataContract.documents.indexedArray.properties.mentions.maxItems;
-
-    const result = await validateDataContract(rawDataContract);
-
-    expectValidationError(result, InvalidIndexedPropertyConstraintError);
-
-    const [error] = result.getErrors();
-
-    expect(error.getCode()).to.equal(1012);
-    expect(error.getPropertyName()).to.equal('mentions');
-    expect(error.getConstraintName()).to.equal('maxItems');
-    expect(error.getReason()).to.equal('should be less or equal 1024');
-  });
-
-  it('should return invalid result if indexed array property have string item with maxItems bigger than 1024', async () => {
-    rawDataContract.documents.indexedArray.properties.mentions.maxItems = 2048;
-
-    const result = await validateDataContract(rawDataContract);
-
-    expectValidationError(result, InvalidIndexedPropertyConstraintError);
-
-    const [error] = result.getErrors();
-
-    expect(error.getCode()).to.equal(1012);
-    expect(error.getPropertyName()).to.equal('mentions');
-    expect(error.getConstraintName()).to.equal('maxItems');
-    expect(error.getReason()).to.equal('should be less or equal 1024');
-  });
+  // it('should return invalid result if indexed array property missing maxItems constraint',
+  // async () => {
+  //   delete rawDataContract.documents.indexedArray.properties.mentions.maxItems;
+  //
+  //   const result = await validateDataContract(rawDataContract);
+  //
+  //   expectValidationError(result, InvalidIndexedPropertyConstraintError);
+  //
+  //   const [error] = result.getErrors();
+  //
+  //   expect(error.getCode()).to.equal(1012);
+  //   expect(error.getPropertyName()).to.equal('mentions');
+  //   expect(error.getConstraintName()).to.equal('maxItems');
+  //   expect(error.getReason()).to.equal('should be less or equal 1024');
+  // });
+  //
+  // it('should return invalid result if indexed array property have to big maxItems', async () => {
+  //   rawDataContract.documents.indexedArray.properties.mentions.maxItems = 2048;
+  //
+  //   const result = await validateDataContract(rawDataContract);
+  //
+  //   expectValidationError(result, InvalidIndexedPropertyConstraintError);
+  //
+  //   const [error] = result.getErrors();
+  //
+  //   expect(error.getCode()).to.equal(1012);
+  //   expect(error.getPropertyName()).to.equal('mentions');
+  //   expect(error.getConstraintName()).to.equal('maxItems');
+  //   expect(error.getReason()).to.equal('should be less or equal 1024');
+  // });
+  //
+  // it('should return invalid result if indexed array property
+  // have string item without maxItems constraint', async () => {
+  //   delete rawDataContract.documents.indexedArray.properties.mentions.maxItems;
+  //
+  //   const result = await validateDataContract(rawDataContract);
+  //
+  //   expectValidationError(result, InvalidIndexedPropertyConstraintError);
+  //
+  //   const [error] = result.getErrors();
+  //
+  //   expect(error.getCode()).to.equal(1012);
+  //   expect(error.getPropertyName()).to.equal('mentions');
+  //   expect(error.getConstraintName()).to.equal('maxItems');
+  //   expect(error.getReason()).to.equal('should be less or equal 1024');
+  // });
+  //
+  // it('should return invalid result if indexed array property have
+  // string item with maxItems bigger than 1024', async () => {
+  //   rawDataContract.documents.indexedArray.properties.mentions.maxItems = 2048;
+  //
+  //   const result = await validateDataContract(rawDataContract);
+  //
+  //   expectValidationError(result, InvalidIndexedPropertyConstraintError);
+  //
+  //   const [error] = result.getErrors();
+  //
+  //   expect(error.getCode()).to.equal(1012);
+  //   expect(error.getPropertyName()).to.equal('mentions');
+  //   expect(error.getConstraintName()).to.equal('maxItems');
+  //   expect(error.getReason()).to.equal('should be less or equal 1024');
+  // });
 
   it('should return invalid result if indexed byte array property missing maxItems constraint', async () => {
     delete rawDataContract.documents.withByteArrays.properties.byteArrayField.maxItems;

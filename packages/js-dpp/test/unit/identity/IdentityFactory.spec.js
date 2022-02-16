@@ -61,6 +61,7 @@ describe('IdentityFactory', () => {
         .map((identityPublicKey) => ({
           ...identityPublicKey.toObject(),
           key: new PublicKey(identityPublicKey.getData()),
+          readonly: true,
         }));
 
       const result = factory.create(

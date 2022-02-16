@@ -88,8 +88,9 @@ class StateTransitionFacade {
   /**
    * @param {DashPlatformProtocol} dpp
    * @param {RE2} RE2
+   * @param {BlsSignatures} bls
    */
-  constructor(dpp, RE2) {
+  constructor(dpp, RE2, bls) {
     this.stateRepository = dpp.getStateRepository();
 
     const validator = dpp.getJsonSchemaValidator();
@@ -183,6 +184,7 @@ class StateTransitionFacade {
 
     const validatePublicKeys = validatePublicKeysFactory(
       validator,
+      bls,
     );
 
     const validatePublicKeysInIdentityCreateTransition = (
