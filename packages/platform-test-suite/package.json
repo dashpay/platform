@@ -4,7 +4,7 @@
   "version": "0.22.0-dev.7",
   "description": "Dash Network end-to-end tests",
   "scripts": {
-    "test": "mocha './test/**/*.spec.js'",
+    "test": "mocha -b './test/**/*.spec.js'",
     "lint": "eslint .",
     "test:e2e": "NODE_ENV=test mocha 'test/e2e/**/*.spec.js'",
     "test:functional": "NODE_ENV=test mocha 'test/functional/**/*.spec.js'",
@@ -21,7 +21,7 @@
   "homepage": "https://github.com/dashevo/platform-test-suite#readme",
   "dependencies": {
     "@dashevo/dapi-client": "workspace:~",
-    "@dashevo/dashcore-lib": "~0.19.29",
+    "@dashevo/dashcore-lib": "~0.19.30",
     "@dashevo/dpns-contract": "workspace:~",
     "@dashevo/dpp": "workspace:~",
     "@dashevo/feature-flags-contract": "workspace:~",
