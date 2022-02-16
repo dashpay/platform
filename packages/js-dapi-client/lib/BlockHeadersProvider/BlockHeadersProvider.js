@@ -1,3 +1,4 @@
+const EventEmitter = require('events');
 const { SpvChain } = require('@dashevo/dash-spv');
 
 const BlockHeadersReader = require('./BlockHeadersReader');
@@ -19,17 +20,23 @@ const defaultOptions = {
   autoStart: false,
 };
 
-class BlockHeadersProvider {
+const EVENTS = {
+  ERROR: 'error',
+};
+
+class BlockHeadersProvider extends EventEmitter {
   /**
    * @param {BlockHeadersProviderOptions} options
    */
   constructor(options = {}) {
+    super();
     this.options = {
       ...defaultOptions,
       ...options,
     };
 
     this.spvChain = new SpvChain(this.options.network);
+    this.started = false;
   }
 
   /**
@@ -39,46 +46,76 @@ class BlockHeadersProvider {
     this.coreMethods = coreMethods;
   }
 
+  /**
+   * @param {BlockHeadersReader} blockHeadersReader
+   */
+  setBlockHeadersReader(blockHeadersReader) {
+    this.blockHeadersReader = blockHeadersReader;
+  }
+
+  /**
+   *
+   * @param spvChain
+   */
+  setSpvChain(spvChain) {
+    this.spvChain = spvChain;
+  }
+
   async start() {
     if (!this.coreMethods) {
       throw new Error('Core methods have not been provided. Please use "setCoreMethods"');
     }
 
-    const { chain: { blocksCount: bestBlockHeight } } = await this.coreMethods.getStatus();
-    const blockHeadersReader = new BlockHeadersReader(
-      {
-        coreMethods: this.coreMethods,
-        maxParallelStreams: this.options.maxParallelStreams,
-        targetBatchSize: this.options.targetBatchSize,
-        maxRetries: this.options.maxRetries,
-      },
-    );
+    if (this.started) {
+      throw new Error('BlockHeaderProvider has already been started');
+    }
 
-    blockHeadersReader.on(BlockHeadersReader.EVENTS.ERROR, (e) => {
-      throw e;
+    const { chain: { blocksCount: bestBlockHeight } } = await this.coreMethods.getStatus();
+
+    if (!this.blockHeadersReader) {
+      this.blockHeadersReader = new BlockHeadersReader(
+        {
+          coreMethods: this.coreMethods,
+          maxParallelStreams: this.options.maxParallelStreams,
+          targetBatchSize: this.options.targetBatchSize,
+          maxRetries: this.options.maxRetries,
+        },
+      );
+    }
+
+    this.blockHeadersReader.on(BlockHeadersReader.EVENTS.ERROR, (e) => {
+      this.emit(EVENTS.ERROR, e);
     });
 
-    blockHeadersReader.on(BlockHeadersReader.EVENTS.BLOCK_HEADERS, (headers, reject) => {
+    this.blockHeadersReader.on(BlockHeadersReader.EVENTS.HISTORICAL_DATA_OBTAINED, () => {
+      this.blockHeadersReader.subscribeToNew(bestBlockHeight)
+        .catch((e) => {
+          this.emit(EVENTS.ERROR, e);
+        });
+    });
+
+    this.blockHeadersReader.on(BlockHeadersReader.EVENTS.BLOCK_HEADERS, (headers, reject) => {
       try {
         this.spvChain.addHeaders(headers.map((header) => Buffer.from(header)));
       } catch (e) {
         if (e.message === 'Some headers are invalid') {
           reject(e);
         } else {
-          throw e;
+          this.emit(EVENTS.ERROR, e);
         }
       }
     });
 
-    await blockHeadersReader.readHistorical(
+    await this.blockHeadersReader.readHistorical(
       this.options.fromBlockHeight,
       bestBlockHeight - 1,
     );
 
-    await blockHeadersReader.subscribeToNew(bestBlockHeight);
+    this.started = true;
   }
 }
 
+BlockHeadersProvider.EVENTS = EVENTS;
 BlockHeadersProvider.defaultOptions = defaultOptions;
 
 module.exports = BlockHeadersProvider;
