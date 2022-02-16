@@ -15,8 +15,9 @@ export function createIdentityFixtureInAccount(account) {
         securityLevel: IdentityPublicKey.SECURITY_LEVELS.MASTER
     });
 
-    account.storage.insertIdentityIdAtIndex(
-        account.walletId,
+    account.storage
+      .getWalletStore(account.walletId)
+      .insertIdentityIdAtIndex(
         identityFixture.getId().toString(),
         identityFixtureIndex,
     );

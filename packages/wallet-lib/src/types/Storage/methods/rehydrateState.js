@@ -19,7 +19,7 @@ const rehydrateState = async function rehydrateState() {
           wallets.forEach((walletState) => {
             const walletStore = new WalletStore();
             walletStore.importState(walletState);
-            this.wallets.add(walletStore);
+            this.wallets.set(walletStore.walletId, walletStore);
           });
         }
 
@@ -28,7 +28,7 @@ const rehydrateState = async function rehydrateState() {
           chains.forEach((chainState) => {
             const chainStore = new ChainStore();
             chainStore.importState(chainState);
-            this.chains.add(chainStore);
+            this.chains.set(chainStore.network, chainStore);
           });
         }
         this.application = mergeHelper(this.application, await this.adapter.getItem('application'));
