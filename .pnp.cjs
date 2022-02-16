@@ -7526,7 +7526,6 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["pretty-bytes", "npm:5.6.0"],
             ["pretty-ms", "npm:7.0.1"],
             ["public-ip", "npm:4.0.4"],
-            ["rimraf", "npm:3.0.2"],
             ["rxjs", "npm:6.6.7"],
             ["semver", "npm:7.3.5"],
             ["strip-ansi", "npm:6.0.1"],
