@@ -100,6 +100,15 @@ class DocumentRepository {
       throw new InvalidQueryError(result.getErrors());
     }
 
+    // Remove undefined options before we pass them to RS Drive
+    Object.keys(query)
+      .forEach((queryOption) => {
+        if (query[queryOption] === undefined) {
+          // eslint-disable-next-line no-param-reassign
+          delete query[queryOption];
+        }
+      });
+
     return this.storage.getDrive().queryDocuments(
       dataContract,
       documentType,
