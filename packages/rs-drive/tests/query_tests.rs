@@ -649,6 +649,51 @@ fn test_query() {
 
     assert_eq!(names, expected_between_names);
 
+    let query_value = json!({
+        "where": [
+            ["firstName", "in", names]
+        ],
+        "limit": 100,
+        "orderBy": [
+            ["firstName", "desc"]
+        ]
+    });
+    let where_cbor = common::value_to_cbor(query_value, None);
+    let person_document_type = contract
+        .document_types
+        .get("person")
+        .expect("contract should have a person document type");
+    let query = DriveQuery::from_cbor(where_cbor.as_slice(), &contract, person_document_type)
+        .expect("query should be built");
+    let (results, _) = query
+        .execute_no_proof(&mut drive.grove, None)
+        .expect("proof should be executed");
+    let names: Vec<String> = results
+        .into_iter()
+        .map(|result| {
+            let document = Document::from_cbor(result.as_slice(), None, None)
+                .expect("we should be able to deserialize the cbor");
+            let first_name_value = document
+                .properties
+                .get("firstName")
+                .expect("we should be able to get the first name");
+            let first_name = first_name_value
+                .as_text()
+                .expect("the first name should be a string");
+            String::from(first_name)
+        })
+        .collect();
+
+    let expected_reversed_between_names = [
+        "Noellyn".to_string(),
+        "Meta".to_string(),
+        "Kevina".to_string(),
+        "Gilligan".to_string(),
+        "Dalia".to_string(),
+    ];
+
+    assert_eq!(names, expected_reversed_between_names);
+
     // A query getting back elements having specific names and over a certain age
 
     let query_value = json!({
@@ -896,9 +941,60 @@ fn test_query() {
             Some(&db_transaction),
         )
         .expect("query should be executed");
-    // dbg!(&results);
 
     assert_eq!(results.len(), 2);
+
+    let last_person = Document::from_cbor(results.first().unwrap().as_slice(), None, None)
+        .expect("we should be able to deserialize the cbor");
+
+    assert_eq!(
+        last_person.id,
+        vec![
+            76, 161, 17, 201, 152, 232, 129, 48, 168, 13, 49, 10, 218, 53, 118, 136, 165, 198, 189,
+            116, 116, 22, 133, 92, 104, 165, 186, 249, 94, 81, 45, 20
+        ]
+        .as_slice()
+    );
+
+    // fetching by $id with order by desc
+
+    let query_value = json!({
+        "where": [
+            ["$id", "in", [String::from("ATxXeP5AvY4aeUFA6WRo7uaBKTBgPQCjTrgtNpCMNVRD"), String::from("6A8SGgdmj2NtWCYoYDPDpbsYkq2MCbgi6Lx4ALLfF179")]],
+        ],
+        "orderBy": [["$id", "desc"]],
+    });
+
+    let query_cbor = common::value_to_cbor(query_value, None);
+
+    let person_document_type = contract
+        .document_types
+        .get("person")
+        .expect("contract should have a person document type");
+
+    let (results, _) = drive
+        .query_documents_from_contract(
+            &contract,
+            person_document_type,
+            query_cbor.as_slice(),
+            Some(&db_transaction),
+        )
+        .expect("query should be executed");
+
+    assert_eq!(results.len(), 2);
+
+    let last_person = Document::from_cbor(results.first().unwrap().as_slice(), None, None)
+        .expect("we should be able to deserialize the cbor");
+
+    assert_eq!(
+        last_person.id,
+        vec![
+            140, 161, 17, 201, 152, 232, 129, 48, 168, 13, 49, 10, 218, 53, 118, 136, 165, 198,
+            189, 116, 116, 22, 133, 92, 104, 165, 186, 249, 94, 81, 45, 20
+        ]
+        .as_slice()
+    );
+
     //
     // // fetching with empty where and orderBy
     //
