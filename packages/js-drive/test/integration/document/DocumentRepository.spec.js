@@ -198,7 +198,7 @@ describe('DocumentRepository', function main() {
 
         expect.fail('should fail with NotFoundError error');
       } catch (e) {
-        expect(e.message.indexOf('invalid path key: key not found in Merk') !== -1).to.be.true();
+        expect(e.message.indexOf('path key not found: key not found in Merk') !== -1).to.be.true();
       }
 
       await documentRepository.storage.commitTransaction();
