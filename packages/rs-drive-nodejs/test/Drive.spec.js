@@ -281,7 +281,7 @@ describe('Drive', () => {
 
         expect.fail('Expected to throw en error');
       } catch (e) {
-        expect(e.message).to.be.equal('invalid path key: key not found in Merk: 746573745f6b6579');
+        expect(e.message).to.be.equal('path key not found: key not found in Merk: 746573745f6b6579');
       }
     });
 
@@ -344,7 +344,7 @@ describe('Drive', () => {
 
           expect.fail('Expected to throw an error');
         } catch (e) {
-          expect(e.message).to.be.equal('invalid path key: key not found in Merk: 746573745f6b6579');
+          expect(e.message).to.be.equal('path key not found: key not found in Merk: 746573745f6b6579');
         }
       });
     });
@@ -374,7 +374,7 @@ describe('Drive', () => {
 
           expect.fail('Expected to throw an error');
         } catch (e) {
-          expect(e.message).to.be.equal('invalid path key: key not found in Merk: 746573745f6b6579');
+          expect(e.message).to.be.equal('path key not found: key not found in Merk: 746573745f6b6579');
         }
 
         await groveDb.commitTransaction();
@@ -413,7 +413,7 @@ describe('Drive', () => {
 
           expect.fail('Expected to throw an error');
         } catch (e) {
-          expect(e.message).to.be.equal('invalid path key: key not found in Merk: 746573745f6b6579');
+          expect(e.message).to.be.equal('path key not found: key not found in Merk: 746573745f6b6579');
         }
       });
     });
@@ -475,7 +475,7 @@ describe('Drive', () => {
 
           expect.fail('Expected to throw an error');
         } catch (e) {
-          expect(e.message).to.be.equal('invalid path key: key not found in Merk: 746573745f6b6579');
+          expect(e.message).to.be.equal('path key not found: key not found in Merk: 746573745f6b6579');
         }
       });
     });
