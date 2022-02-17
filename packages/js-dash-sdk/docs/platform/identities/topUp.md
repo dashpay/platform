@@ -1,6 +1,8 @@
 **Usage**: `client.platform.identities.topUp(identity, amount)`    
 **Description**: This method will topup the provided identity's balance. 
 
+_The identity balance might slightly vary from the topped up amount due because of the transaction fee estimation._
+
 Parameters: 
 
 | parameters        | type    | required         | Description                                                                             |  
