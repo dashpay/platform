@@ -14,6 +14,8 @@ const BlockExecutionContextMock = require('../../../../lib/test/mock/BlockExecut
 const LoggerMock = require('../../../../lib/test/mock/LoggerMock');
 const NotSupportedNetworkProtocolVersionError = require('../../../../lib/abci/handlers/errors/NotSupportedNetworkProtocolVersionError');
 const NetworkProtocolVersionIsNotSetError = require('../../../../lib/abci/handlers/errors/NetworkProtocolVersionIsNotSetError');
+const GroveDBStoreMock = require('../../../../lib/test/mock/groveDBStoreMock');
+const BlockExecutionContextStackMock = require('../../../../lib/test/mock/BlockExecutionContextStackMock');
 
 describe('beginBlockHandlerFactory', () => {
   let protocolVersion;
@@ -51,18 +53,12 @@ describe('beginBlockHandlerFactory', () => {
     waitForChainLockedHeightMock = this.sinon.stub();
     synchronizeMasternodeIdentitiesMock = this.sinon.stub();
 
-    groveDBStoreMock = {
-      isTransactionStarted: this.sinon.stub(),
-      abortTransaction: this.sinon.stub(),
-      startTransaction: this.sinon.stub(),
-    };
+    groveDBStoreMock = new GroveDBStoreMock(this.sinon);
+    blockExecutionContextStackMock = new BlockExecutionContextStackMock(this.sinon);
 
-    blockExecutionContextStackMock = {
-      getLatest: this.sinon.stub().returns({
-        getHeader: this.sinon.stub(),
-      }),
-      removeLatest: this.sinon.stub(),
-    };
+    blockExecutionContextStackMock.getLatest.returns({
+      getHeader: this.sinon.stub(),
+    });
 
     beginBlockHandler = beginBlockHandlerFactory(
       groveDBStoreMock,

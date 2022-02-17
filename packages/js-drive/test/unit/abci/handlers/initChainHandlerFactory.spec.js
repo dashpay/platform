@@ -11,6 +11,7 @@ const {
 
 const initChainHandlerFactory = require('../../../../lib/abci/handlers/initChainHandlerFactory');
 const LoggerMock = require('../../../../lib/test/mock/LoggerMock');
+const GroveDBStoreMock = require('../../../../lib/test/mock/groveDBStoreMock');
 
 describe('initChainHandlerFactory', () => {
   let initChainHandler;
@@ -51,11 +52,8 @@ describe('initChainHandlerFactory', () => {
     registerSystemDataContractsMock = this.sinon.stub();
     createInitialStateStructureMock = this.sinon.stub();
 
-    groveDBStoreMock = {
-      startTransaction: this.sinon.stub(),
-      commitTransaction: this.sinon.stub(),
-      getRootHash: this.sinon.stub().resolves(appHashFixture),
-    };
+    groveDBStoreMock = new GroveDBStoreMock(this.sinon);
+    groveDBStoreMock.getRootHash.resolves(appHashFixture);
 
     initChainHandler = initChainHandlerFactory(
       updateSimplifiedMasternodeListMock,
