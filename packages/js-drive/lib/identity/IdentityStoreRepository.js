@@ -47,7 +47,9 @@ class IdentityStoreRepository {
       return null;
     }
 
-    const [, rawIdentity] = this.decodeProtocolEntity(encodedIdentity);
+    const [protocolVersion, rawIdentity] = this.decodeProtocolEntity(encodedIdentity);
+
+    rawIdentity.protocolVersion = protocolVersion;
 
     return new Identity(rawIdentity);
   }
