@@ -783,7 +783,7 @@ impl Drive {
 #[cfg(test)]
 mod tests {
     use crate::common::{json_document_to_cbor, setup_contract};
-    use crate::contract::Document;
+    use crate::contract::{Contract, Document};
     use crate::drive::Drive;
     use crate::query::DriveQuery;
     use rand::Rng;
@@ -1571,7 +1571,7 @@ mod tests {
     }
 
     #[test]
-    fn test_create_and_update_document() {
+    fn test_create_and_update_document_same_transaction() {
         let tmp_dir = TempDir::new("alice_bob_contacts").unwrap();
         let mut drive: Drive = Drive::open(tmp_dir).expect("expected to open Drive successfully");
 
@@ -1606,6 +1606,275 @@ mod tests {
                 Some(&db_transaction),
             )
             .expect("should create alice profile");
+
+        // Update Alice profile
+
+        let updated_alice_profile_cbor = hex::decode("01000000a763246964582035edfec54aea574df968990abb47b39c206abe5c43a6157885f62958a1f1230c6524747970656770726f66696c656561626f75746a4920616d20416c69636568246f776e65724964582041d52f93f6f7c5af79ce994381c90df73cce2863d3850b9c05ef586ff0fe795f69247265766973696f6e026961766174617255726c781a687474703a2f2f746573742e636f6d2f616c696365322e6a70676f2464617461436f6e747261637449645820b0248cd9a27f86d05badf475dd9ff574d63219cd60c52e2be1e540c2fdd71333").unwrap();
+
+        drive
+            .update_document_for_contract_cbor(
+                updated_alice_profile_cbor.as_slice(),
+                contract_cbor.as_slice(),
+                "profile",
+                None,
+                Some(&db_transaction),
+            )
+            .expect("should update alice profile");
+    }
+
+    #[test]
+    fn test_create_and_update_document_no_transactions() {
+        let tmp_dir = TempDir::new("alice_bob_contacts").unwrap();
+        let mut drive: Drive = Drive::open(tmp_dir).expect("expected to open Drive successfully");
+
+        drive
+            .create_root_tree(None)
+            .expect("expected to create root tree successfully");
+
+        let contract_cbor = hex::decode("01000000a5632469645820b0248cd9a27f86d05badf475dd9ff574d63219cd60c52e2be1e540c2fdd713336724736368656d61783468747470733a2f2f736368656d612e646173682e6f72672f6470702d302d342d302f6d6574612f646174612d636f6e7472616374676f776e6572496458204c9bf0db6ae315c85465e9ef26e6a006de9673731d08d14881945ddef1b5c5f26776657273696f6e0169646f63756d656e7473a267636f6e74616374a56474797065666f626a65637467696e646963657381a3646e616d656f6f6e7765724964546f55736572496466756e69717565f56a70726f7065727469657382a168246f776e6572496463617363a168746f557365724964636173636872657175697265648268746f557365724964697075626c69634b65796a70726f70657274696573a268746f557365724964a56474797065656172726179686d61784974656d731820686d696e4974656d73182069627974654172726179f570636f6e74656e744d656469615479706578216170706c69636174696f6e2f782e646173682e6470702e6964656e746966696572697075626c69634b6579a36474797065656172726179686d61784974656d73182169627974654172726179f5746164646974696f6e616c50726f70657274696573f46770726f66696c65a56474797065666f626a65637467696e646963657381a3646e616d65676f776e6572496466756e69717565f56a70726f7065727469657381a168246f776e6572496463617363687265717569726564826961766174617255726c6561626f75746a70726f70657274696573a26561626f7574a2647479706566737472696e67696d61784c656e67746818ff6961766174617255726ca3647479706566737472696e6766666f726d61746375726c696d61784c656e67746818ff746164646974696f6e616c50726f70657274696573f4").unwrap();
+
+        let contract =
+            Contract::from_cbor(contract_cbor.as_slice()).expect("expected to create contract");
+        drive
+            .apply_contract(contract_cbor.clone(), None)
+            .expect("expected to apply contract successfully");
+
+        // Create Alice profile
+
+        let alice_profile_cbor = hex::decode("01000000a763246964582035edfec54aea574df968990abb47b39c206abe5c43a6157885f62958a1f1230c6524747970656770726f66696c656561626f75746a4920616d20416c69636568246f776e65724964582041d52f93f6f7c5af79ce994381c90df73cce2863d3850b9c05ef586ff0fe795f69247265766973696f6e016961766174617255726c7819687474703a2f2f746573742e636f6d2f616c6963652e6a70676f2464617461436f6e747261637449645820b0248cd9a27f86d05badf475dd9ff574d63219cd60c52e2be1e540c2fdd71333").unwrap();
+
+        let alice_profile = Document::from_cbor(alice_profile_cbor.as_slice(), None, None)
+            .expect("expected to get a document");
+        drive
+            .add_document_for_contract(
+                &alice_profile,
+                alice_profile_cbor.as_slice(),
+                &contract,
+                "profile",
+                None,
+                true,
+                None,
+            )
+            .expect("should create alice profile");
+
+        let sql_string = "select * from profile";
+        let query = DriveQuery::from_sql_expr(sql_string, &contract).expect("should build query");
+
+        let (results_no_transaction, _) = query
+            .execute_no_proof(&mut drive.grove, None)
+            .expect("expected to execute query");
+
+        assert_eq!(results_no_transaction.len(), 1);
+
+        // Update Alice profile
+
+        let updated_alice_profile_cbor = hex::decode("01000000a763246964582035edfec54aea574df968990abb47b39c206abe5c43a6157885f62958a1f1230c6524747970656770726f66696c656561626f75746a4920616d20416c69636568246f776e65724964582041d52f93f6f7c5af79ce994381c90df73cce2863d3850b9c05ef586ff0fe795f69247265766973696f6e026961766174617255726c781a687474703a2f2f746573742e636f6d2f616c696365322e6a70676f2464617461436f6e747261637449645820b0248cd9a27f86d05badf475dd9ff574d63219cd60c52e2be1e540c2fdd71333").unwrap();
+
+        drive
+            .update_document_for_contract_cbor(
+                updated_alice_profile_cbor.as_slice(),
+                contract_cbor.as_slice(),
+                "profile",
+                None,
+                None,
+            )
+            .expect("should update alice profile");
+
+        let (results_no_transaction, _) = query
+            .execute_no_proof(&mut drive.grove, None)
+            .expect("expected to execute query");
+
+        assert_eq!(results_no_transaction.len(), 1);
+    }
+
+    #[test]
+    fn test_create_and_update_document_in_different_transactions() {
+        let tmp_dir = TempDir::new("alice_bob_contacts").unwrap();
+        let mut drive: Drive = Drive::open(tmp_dir).expect("expected to open Drive successfully");
+
+        let storage = drive.grove.storage();
+        let db_transaction = storage.transaction();
+        drive
+            .grove
+            .start_transaction()
+            .expect("expected to start transaction");
+
+        drive
+            .create_root_tree(Some(&db_transaction))
+            .expect("expected to create root tree successfully");
+
+        let contract_cbor = hex::decode("01000000a5632469645820b0248cd9a27f86d05badf475dd9ff574d63219cd60c52e2be1e540c2fdd713336724736368656d61783468747470733a2f2f736368656d612e646173682e6f72672f6470702d302d342d302f6d6574612f646174612d636f6e7472616374676f776e6572496458204c9bf0db6ae315c85465e9ef26e6a006de9673731d08d14881945ddef1b5c5f26776657273696f6e0169646f63756d656e7473a267636f6e74616374a56474797065666f626a65637467696e646963657381a3646e616d656f6f6e7765724964546f55736572496466756e69717565f56a70726f7065727469657382a168246f776e6572496463617363a168746f557365724964636173636872657175697265648268746f557365724964697075626c69634b65796a70726f70657274696573a268746f557365724964a56474797065656172726179686d61784974656d731820686d696e4974656d73182069627974654172726179f570636f6e74656e744d656469615479706578216170706c69636174696f6e2f782e646173682e6470702e6964656e746966696572697075626c69634b6579a36474797065656172726179686d61784974656d73182169627974654172726179f5746164646974696f6e616c50726f70657274696573f46770726f66696c65a56474797065666f626a65637467696e646963657381a3646e616d65676f776e6572496466756e69717565f56a70726f7065727469657381a168246f776e6572496463617363687265717569726564826961766174617255726c6561626f75746a70726f70657274696573a26561626f7574a2647479706566737472696e67696d61784c656e67746818ff6961766174617255726ca3647479706566737472696e6766666f726d61746375726c696d61784c656e67746818ff746164646974696f6e616c50726f70657274696573f4").unwrap();
+
+        let contract =
+            Contract::from_cbor(contract_cbor.as_slice()).expect("expected to create contract");
+        drive
+            .apply_contract(contract_cbor.clone(), Some(&db_transaction))
+            .expect("expected to apply contract successfully");
+
+        // Create Alice profile
+
+        let alice_profile_cbor = hex::decode("01000000a763246964582035edfec54aea574df968990abb47b39c206abe5c43a6157885f62958a1f1230c6524747970656770726f66696c656561626f75746a4920616d20416c69636568246f776e65724964582041d52f93f6f7c5af79ce994381c90df73cce2863d3850b9c05ef586ff0fe795f69247265766973696f6e016961766174617255726c7819687474703a2f2f746573742e636f6d2f616c6963652e6a70676f2464617461436f6e747261637449645820b0248cd9a27f86d05badf475dd9ff574d63219cd60c52e2be1e540c2fdd71333").unwrap();
+
+        let alice_profile = Document::from_cbor(alice_profile_cbor.as_slice(), None, None)
+            .expect("expected to get a document");
+        drive
+            .add_document_for_contract(
+                &alice_profile,
+                alice_profile_cbor.as_slice(),
+                &contract,
+                "profile",
+                None,
+                true,
+                Some(&db_transaction),
+            )
+            .expect("should create alice profile");
+
+        drive
+            .grove
+            .commit_transaction(db_transaction)
+            .expect("should commit transaction");
+
+        let sql_string = "select * from profile";
+        let query = DriveQuery::from_sql_expr(sql_string, &contract).expect("should build query");
+
+        let (results_no_transaction, _) = query
+            .execute_no_proof(&mut drive.grove, None)
+            .expect("expected to execute query");
+
+        assert_eq!(results_no_transaction.len(), 1);
+
+        let db_transaction = storage.transaction();
+        drive
+            .grove
+            .start_transaction()
+            .expect("expected to start transaction");
+
+        let (results_on_transaction, _) = query
+            .execute_no_proof(&mut drive.grove, Some(&db_transaction))
+            .expect("expected to execute query");
+
+        assert_eq!(results_on_transaction.len(), 1);
+
+        // Update Alice profile
+
+        let updated_alice_profile_cbor = hex::decode("01000000a763246964582035edfec54aea574df968990abb47b39c206abe5c43a6157885f62958a1f1230c6524747970656770726f66696c656561626f75746a4920616d20416c69636568246f776e65724964582041d52f93f6f7c5af79ce994381c90df73cce2863d3850b9c05ef586ff0fe795f69247265766973696f6e026961766174617255726c781a687474703a2f2f746573742e636f6d2f616c696365322e6a70676f2464617461436f6e747261637449645820b0248cd9a27f86d05badf475dd9ff574d63219cd60c52e2be1e540c2fdd71333").unwrap();
+
+        drive
+            .update_document_for_contract_cbor(
+                updated_alice_profile_cbor.as_slice(),
+                contract_cbor.as_slice(),
+                "profile",
+                None,
+                Some(&db_transaction),
+            )
+            .expect("should update alice profile");
+
+        let (results_on_transaction, _) = query
+            .execute_no_proof(&mut drive.grove, Some(&db_transaction))
+            .expect("expected to execute query");
+
+        assert_eq!(results_on_transaction.len(), 1);
+
+        drive
+            .grove
+            .commit_transaction(db_transaction)
+            .expect("should commit transaction");
+    }
+
+    #[test]
+    fn test_create_and_update_document_in_different_transactions_with_delete_rollback() {
+        let tmp_dir = TempDir::new("alice_bob_contacts").unwrap();
+        let mut drive: Drive = Drive::open(tmp_dir).expect("expected to open Drive successfully");
+
+        let storage = drive.grove.storage();
+        let db_transaction = storage.transaction();
+        drive
+            .grove
+            .start_transaction()
+            .expect("expected to start transaction");
+
+        drive
+            .create_root_tree(Some(&db_transaction))
+            .expect("expected to create root tree successfully");
+
+        let contract_cbor = hex::decode("01000000a5632469645820b0248cd9a27f86d05badf475dd9ff574d63219cd60c52e2be1e540c2fdd713336724736368656d61783468747470733a2f2f736368656d612e646173682e6f72672f6470702d302d342d302f6d6574612f646174612d636f6e7472616374676f776e6572496458204c9bf0db6ae315c85465e9ef26e6a006de9673731d08d14881945ddef1b5c5f26776657273696f6e0169646f63756d656e7473a267636f6e74616374a56474797065666f626a65637467696e646963657381a3646e616d656f6f6e7765724964546f55736572496466756e69717565f56a70726f7065727469657382a168246f776e6572496463617363a168746f557365724964636173636872657175697265648268746f557365724964697075626c69634b65796a70726f70657274696573a268746f557365724964a56474797065656172726179686d61784974656d731820686d696e4974656d73182069627974654172726179f570636f6e74656e744d656469615479706578216170706c69636174696f6e2f782e646173682e6470702e6964656e746966696572697075626c69634b6579a36474797065656172726179686d61784974656d73182169627974654172726179f5746164646974696f6e616c50726f70657274696573f46770726f66696c65a56474797065666f626a65637467696e646963657381a3646e616d65676f776e6572496466756e69717565f56a70726f7065727469657381a168246f776e6572496463617363687265717569726564826961766174617255726c6561626f75746a70726f70657274696573a26561626f7574a2647479706566737472696e67696d61784c656e67746818ff6961766174617255726ca3647479706566737472696e6766666f726d61746375726c696d61784c656e67746818ff746164646974696f6e616c50726f70657274696573f4").unwrap();
+
+        let contract =
+            Contract::from_cbor(contract_cbor.as_slice()).expect("expected to create contract");
+        drive
+            .apply_contract(contract_cbor.clone(), Some(&db_transaction))
+            .expect("expected to apply contract successfully");
+
+        // Create Alice profile
+
+        let alice_profile_cbor = hex::decode("01000000a763246964582035edfec54aea574df968990abb47b39c206abe5c43a6157885f62958a1f1230c6524747970656770726f66696c656561626f75746a4920616d20416c69636568246f776e65724964582041d52f93f6f7c5af79ce994381c90df73cce2863d3850b9c05ef586ff0fe795f69247265766973696f6e016961766174617255726c7819687474703a2f2f746573742e636f6d2f616c6963652e6a70676f2464617461436f6e747261637449645820b0248cd9a27f86d05badf475dd9ff574d63219cd60c52e2be1e540c2fdd71333").unwrap();
+
+        let alice_profile = Document::from_cbor(alice_profile_cbor.as_slice(), None, None)
+            .expect("expected to get a document");
+        drive
+            .add_document_for_contract(
+                &alice_profile,
+                alice_profile_cbor.as_slice(),
+                &contract,
+                "profile",
+                None,
+                true,
+                Some(&db_transaction),
+            )
+            .expect("should create alice profile");
+
+        drive
+            .grove
+            .commit_transaction(db_transaction)
+            .expect("should commit transaction");
+
+        let sql_string = "select * from profile";
+        let query = DriveQuery::from_sql_expr(sql_string, &contract).expect("should build query");
+
+        let (results_no_transaction, _) = query
+            .execute_no_proof(&mut drive.grove, None)
+            .expect("expected to execute query");
+
+        assert_eq!(results_no_transaction.len(), 1);
+
+        let db_transaction = storage.transaction();
+        drive
+            .grove
+            .start_transaction()
+            .expect("expected to start transaction");
+
+        let (results_on_transaction, _) = query
+            .execute_no_proof(&mut drive.grove, Some(&db_transaction))
+            .expect("expected to execute query");
+
+        assert_eq!(results_on_transaction.len(), 1);
+
+        drive
+            .delete_document_for_contract(
+                &alice_profile.id,
+                &contract,
+                "profile",
+                None,
+                Some(&db_transaction),
+            )
+            .expect("expected to delete document");
+
+        let (results_on_transaction, _) = query
+            .execute_no_proof(&mut drive.grove, Some(&db_transaction))
+            .expect("expected to execute query");
+
+        assert_eq!(results_on_transaction.len(), 0);
+
+        drive
+            .grove
+            .rollback_transaction(&db_transaction)
+            .expect("expected to rollback transaction");
+
+        let (results_on_transaction, _) = query
+            .execute_no_proof(&mut drive.grove, Some(&db_transaction))
+            .expect("expected to execute query");
+
+        assert_eq!(results_on_transaction.len(), 1);
 
         // Update Alice profile
 
