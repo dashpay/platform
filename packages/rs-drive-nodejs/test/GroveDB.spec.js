@@ -127,11 +127,11 @@ describe('GroveDB', () => {
 
         expect.fail('should throw an error');
       } catch (e) {
-        expect(e.message).to.equal('invalid path: no subtree found for root path');
+        expect(e.message).to.equal('path not found: no subtree found for root path');
         // appendStack wrapper should add call stack to neon binding errors
-        expect(e.stack).to.not.equal('invalid path: no subtree found for root path');
+        expect(e.stack).to.not.equal('path not found: no subtree found for root path');
         expect(e.stack).to.be.a('string').and.satisfy((msg) => (
-          msg.startsWith('Error: invalid path: no subtree found for root path')
+          msg.startsWith('Error: path not found: no subtree found for root path')
         ));
       }
     });
