@@ -17,6 +17,9 @@ const RootTreeMock = require('../../../../lib/test/mock/RootTreeMock');
 
 const BlockExecutionContextMock = require('../../../../lib/test/mock/BlockExecutionContextMock');
 const LoggerMock = require('../../../../lib/test/mock/LoggerMock');
+const GroveDBStoreMock = require('../../../../lib/test/mock/groveDBStoreMock');
+const BlockExecutionContextStackMock = require('../../../../lib/test/mock/BlockExecutionContextStackMock');
+const BlockExecutionContextStackRepositoryMock = require('../../../../lib/test/mock/BlockExecutionContextStackRepositoryMock');
 
 describe('commitHandlerFactory', () => {
   let commitHandler;
@@ -75,18 +78,13 @@ describe('commitHandlerFactory', () => {
       has: this.sinon.stub(),
     };
 
-    blockExecutionContextStackMock = {
-      add: this.sinon.stub(),
-    };
+    blockExecutionContextStackMock = new BlockExecutionContextStackMock(this.sinon);
+    blockExecutionContextStackRepositoryMock = new BlockExecutionContextStackRepositoryMock(
+      this.sinon,
+    );
 
-    blockExecutionContextStackRepositoryMock = {
-      store: this.sinon.stub(),
-    };
-
-    groveDBStoreMock = {
-      commitTransaction: this.sinon.stub(),
-      getRootHash: this.sinon.stub().resolves(appHash),
-    };
+    groveDBStoreMock = new GroveDBStoreMock(this.sinon);
+    groveDBStoreMock.getRootHash.resolves(appHash);
 
     commitHandler = commitHandlerFactory(
       creditsDistributionPoolMock,
