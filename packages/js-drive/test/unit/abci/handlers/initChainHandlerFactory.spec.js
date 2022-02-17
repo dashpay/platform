@@ -11,7 +11,7 @@ const {
 
 const initChainHandlerFactory = require('../../../../lib/abci/handlers/initChainHandlerFactory');
 const LoggerMock = require('../../../../lib/test/mock/LoggerMock');
-const GroveDBStoreMock = require('../../../../lib/test/mock/groveDBStoreMock');
+const GroveDBStoreMock = require('../../../../lib/test/mock/GroveDBStoreMock');
 
 describe('initChainHandlerFactory', () => {
   let initChainHandler;

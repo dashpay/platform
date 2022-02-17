@@ -14,7 +14,7 @@ const BlockExecutionContextMock = require('../../../../lib/test/mock/BlockExecut
 const LoggerMock = require('../../../../lib/test/mock/LoggerMock');
 const NotSupportedNetworkProtocolVersionError = require('../../../../lib/abci/handlers/errors/NotSupportedNetworkProtocolVersionError');
 const NetworkProtocolVersionIsNotSetError = require('../../../../lib/abci/handlers/errors/NetworkProtocolVersionIsNotSetError');
-const GroveDBStoreMock = require('../../../../lib/test/mock/groveDBStoreMock');
+const GroveDBStoreMock = require('../../../../lib/test/mock/GroveDBStoreMock');
 const BlockExecutionContextStackMock = require('../../../../lib/test/mock/BlockExecutionContextStackMock');
 
 describe('beginBlockHandlerFactory', () => {

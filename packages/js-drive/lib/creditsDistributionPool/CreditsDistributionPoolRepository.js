@@ -18,7 +18,7 @@ class CreditsDistributionPoolRepository {
    * @return {this}
    */
   async store(creditsDistributionPool, useTransaction = false) {
-    const encodedCreditsDistributionPool = await cbor.encodeCanonical(
+    const encodedCreditsDistributionPool = cbor.encodeCanonical(
       creditsDistributionPool.toJSON(),
     );
 
@@ -49,7 +49,7 @@ class CreditsDistributionPoolRepository {
       return new CreditsDistributionPool();
     }
 
-    const { amount } = await cbor.decode(creditsDistributionPoolEncoded);
+    const { amount } = cbor.decode(creditsDistributionPoolEncoded);
 
     return new CreditsDistributionPool(amount);
   }
