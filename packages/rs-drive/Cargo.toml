@@ -1,7 +1,7 @@
 [package]
 name = "rs-drive"
 description = "Dash drive built on top of GroveDB"
-version = "0.22.0-dev.11"
+version = "0.22.0-dev.12"
 edition = "2021"
 license = "MIT"
 private = true
