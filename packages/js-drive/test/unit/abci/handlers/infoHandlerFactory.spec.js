@@ -10,25 +10,30 @@ const {
 
 const infoHandlerFactory = require('../../../../lib/abci/handlers/infoHandlerFactory');
 
-const RootTreeMock = require('../../../../lib/test/mock/RootTreeMock');
 const packageJson = require('../../../../package.json');
 const LoggerMock = require('../../../../lib/test/mock/LoggerMock');
 
 const BlockExecutionContextMock = require('../../../../lib/test/mock/BlockExecutionContextMock');
+const GroveDBStoreMock = require('../../../../lib/test/mock/groveDBStoreMock');
+const BlockExecutionContextStackMock = require('../../../../lib/test/mock/BlockExecutionContextStackMock');
+const BlockExecutionContextStackRepositoryMock = require('../../../../lib/test/mock/BlockExecutionContextStackRepositoryMock');
+const CreditsDistributionPoolRepositoryMock = require('../../../../lib/test/mock/CreditsDistributionPoolRepositoryMock');
+const CreditsDistributionPoolMock = require('../../../../lib/test/mock/CreditsDistributionPoolMock');
 
 describe('infoHandlerFactory', () => {
   let protocolVersion;
   let lastBlockHeight;
   let lastBlockAppHash;
   let infoHandler;
-  let rootTreeMock;
   let updateSimplifiedMasternodeListMock;
   let lastCoreChainLockedHeight;
   let loggerMock;
-  let containerMock;
-  let previousBlockExecutionStoreTransactionsRepositoryMock;
-  let blockExecutionStoreTransactionsMock;
   let blockExecutionContextMock;
+  let blockExecutionContextStackMock;
+  let blockExecutionContextStackRepositoryMock;
+  let groveDBStoreMock;
+  let creditsDistributionPoolRepositoryMock;
+  let creditsDistributionPoolMock;
 
   beforeEach(function beforeEach() {
     lastBlockHeight = Long.fromInt(0);
@@ -36,34 +41,39 @@ describe('infoHandlerFactory', () => {
     protocolVersion = Long.fromInt(1);
     lastCoreChainLockedHeight = 0;
 
-    rootTreeMock = new RootTreeMock(this.sinon);
-    rootTreeMock.getRootHash.returns(lastBlockAppHash);
-
     updateSimplifiedMasternodeListMock = this.sinon.stub();
 
     loggerMock = new LoggerMock(this.sinon);
 
-    containerMock = {
-      register: this.sinon.stub(),
-      has: this.sinon.stub().withArgs('previousBlockExecutionStoreTransactions').returns(false),
-    };
-
-    blockExecutionStoreTransactionsMock = {};
-
-    previousBlockExecutionStoreTransactionsRepositoryMock = {
-      fetch: this.sinon.stub().resolves(blockExecutionStoreTransactionsMock),
-    };
-
     blockExecutionContextMock = new BlockExecutionContextMock(this.sinon);
+    blockExecutionContextStackMock = new BlockExecutionContextStackMock(this.sinon);
+    blockExecutionContextStackRepositoryMock = new BlockExecutionContextStackRepositoryMock(
+      this.sinon,
+    );
+    creditsDistributionPoolRepositoryMock = new CreditsDistributionPoolRepositoryMock(this.sinon);
+    creditsDistributionPoolMock = new CreditsDistributionPoolMock(this.sinon);
+    groveDBStoreMock = new GroveDBStoreMock(this.sinon);
+
+    blockExecutionContextStackRepositoryMock.fetch.resolves({
+      getContexts: this.sinon.stub(),
+    });
+
+    creditsDistributionPoolRepositoryMock.fetch.resolves({
+      toJSON: this.sinon.stub().returns('json'),
+    });
+
+    groveDBStoreMock.getRootHash.resolves(lastBlockAppHash);
 
     infoHandler = infoHandlerFactory(
+      blockExecutionContextStackMock,
+      blockExecutionContextStackRepositoryMock,
       blockExecutionContextMock,
       protocolVersion,
-      rootTreeMock,
       updateSimplifiedMasternodeListMock,
       loggerMock,
-      previousBlockExecutionStoreTransactionsRepositoryMock,
-      containerMock,
+      groveDBStoreMock,
+      creditsDistributionPoolRepositoryMock,
+      creditsDistributionPoolMock,
     );
   });
 
@@ -79,13 +89,18 @@ describe('infoHandlerFactory', () => {
       lastBlockAppHash,
     });
 
+    expect(blockExecutionContextStackRepositoryMock.fetch).to.be.calledOnce();
+    expect(blockExecutionContextStackMock.getLatest).to.be.calledOnce();
+    expect(blockExecutionContextMock.populate).to.not.be.called();
+    expect(creditsDistributionPoolRepositoryMock.fetch).to.not.be.called();
+    expect(blockExecutionContextMock.getHeader).to.not.be.called();
     expect(updateSimplifiedMasternodeListMock).to.not.be.called();
-
-    expect(previousBlockExecutionStoreTransactionsRepositoryMock.fetch).to.not.be.called();
-    expect(containerMock.has).to.not.be.called();
+    expect(groveDBStoreMock.getRootHash).to.be.calledOnce();
   });
 
-  it('should update SML to latest core chain locked height and return stored info', async () => {
+  it('should update SML and populate context', async () => {
+    blockExecutionContextStackMock.getLatest.returns('context');
+
     lastBlockHeight = Long.fromInt(1);
     lastCoreChainLockedHeight = 2;
 
@@ -105,34 +120,15 @@ describe('infoHandlerFactory', () => {
       lastBlockAppHash,
     });
 
+    expect(creditsDistributionPoolRepositoryMock.fetch).to.be.calledOnce();
+    expect(creditsDistributionPoolMock.populate).to.be.calledOnceWithExactly('json');
+    expect(blockExecutionContextMock.getHeader).to.be.calledOnce();
+
     expect(updateSimplifiedMasternodeListMock).to.be.calledOnceWithExactly(
       lastCoreChainLockedHeight,
       {
         logger: loggerMock,
       },
     );
-
-    expect(previousBlockExecutionStoreTransactionsRepositoryMock.fetch).to.be.calledWithExactly();
-    expect(containerMock.has).to.be.calledOnceWithExactly('previousBlockExecutionStoreTransactions');
-  });
-
-  it('should throw NoPreviousBlockExecutionStoreTransactionsFoundError if previous BlockExecutionStoreTransactions is not present', async () => {
-    lastBlockHeight = Long.fromInt(1);
-    lastCoreChainLockedHeight = 2;
-
-    blockExecutionContextMock.getHeader.returns({
-      height: lastBlockHeight,
-      coreChainLockedHeight: lastCoreChainLockedHeight,
-    });
-
-    previousBlockExecutionStoreTransactionsRepositoryMock.fetch.resolves(null);
-
-    try {
-      await infoHandler();
-
-      expect.fail('should throw NoPreviousBlockExecutionStoreTransactionsFoundError');
-    } catch (e) {
-      expect(e).to.be.an.instanceOf(NoPreviousBlockExecutionStoreTransactionsFoundError);
-    }
   });
 });
