@@ -59,7 +59,7 @@ describe('GroveDBStore', () => {
 
         expect.fail('Should fail with NotFoundError error');
       } catch (e) {
-        expect(e.message.indexOf('invalid path key: key not found in Merk') !== -1).to.be.true();
+        expect(e.message.indexOf('path key not found: key not found in Merk') !== -1).to.be.true();
       }
 
       // check we can't fetch data without transaction
@@ -162,7 +162,7 @@ describe('GroveDBStore', () => {
 
         expect.fail('should throw no value found for key error');
       } catch (e) {
-        expect(e.message.indexOf('invalid path key: key not found in Merk')).to.not.equal(-1);
+        expect(e.message.indexOf('path key not found: key not found in Merk')).to.not.equal(-1);
       }
     });
 

@@ -54,8 +54,7 @@ describe('e2e', () => {
                 { $ownerId: 'asc' },
                 { toUserId: 'asc' },
               ],
-              // TODO: Enable it when https://github.com/dashevo/rs-drive/pull/65 merged
-              // unique: true,
+              unique: true,
             },
           ],
           properties: {
@@ -200,7 +199,6 @@ describe('e2e', () => {
         expect(fetchedProfile.toJSON()).to.be.deep.equal(aliceProfile.toJSON());
       });
 
-      // TODO: Enable!
       it.skip('should be able to update her profile', async () => {
         // 1. Update profile document
         aliceProfile.set('avatarUrl', 'http://test.com/alice2.jpg');
