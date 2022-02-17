@@ -51,7 +51,7 @@ class DataContractStoreRepository {
         { useTransaction },
       );
     } catch (e) {
-      if (e.message === 'path not found: no subtree found as parent does not contain child') {
+      if (e.message && e.message.startsWith('path not found')) {
         return null;
       }
 

@@ -14,7 +14,7 @@ const packageJson = require('../../../../package.json');
 const LoggerMock = require('../../../../lib/test/mock/LoggerMock');
 
 const BlockExecutionContextMock = require('../../../../lib/test/mock/BlockExecutionContextMock');
-const GroveDBStoreMock = require('../../../../lib/test/mock/groveDBStoreMock');
+const GroveDBStoreMock = require('../../../../lib/test/mock/GroveDBStoreMock');
 const BlockExecutionContextStackMock = require('../../../../lib/test/mock/BlockExecutionContextStackMock');
 const BlockExecutionContextStackRepositoryMock = require('../../../../lib/test/mock/BlockExecutionContextStackRepositoryMock');
 const CreditsDistributionPoolRepositoryMock = require('../../../../lib/test/mock/CreditsDistributionPoolRepositoryMock');

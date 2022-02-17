@@ -117,14 +117,13 @@ describe('BlockExecutionContextStackRepository', () => {
 
       await store.commitTransaction();
 
-      const commitedData = await store.getAux(
+      const committedData = await store.getAux(
         BlockExecutionContextStackRepository.EXTERNAL_STORE_KEY_NAME,
-        { useTransaction: true },
       );
 
-      expect(commitedData).to.be.instanceOf(Buffer);
+      expect(committedData).to.be.instanceOf(Buffer);
 
-      storedContexts = cbor.decode(commitedData);
+      storedContexts = cbor.decode(committedData);
 
       expect(storedContexts).to.deep.equals(
         blockExecutionContextStack.getContexts()
