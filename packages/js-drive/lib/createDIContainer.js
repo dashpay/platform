@@ -429,8 +429,8 @@ function createDIContainer(options) {
 
     signedIdentityRepository: asFunction((
       signedGroveDBStore,
-      dpp,
-    ) => (new IdentityStoreRepository(signedGroveDBStore, dpp))).singleton(),
+      decodeProtocolEntity,
+    ) => (new IdentityStoreRepository(signedGroveDBStore, decodeProtocolEntity))).singleton(),
 
     publicKeyToIdentityIdRepository: asClass(PublicKeyToIdentityIdStoreRepository).singleton(),
 
