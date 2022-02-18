@@ -245,7 +245,7 @@ describe('Platform', () => {
         .to.be.greaterThan(fetchedDocument.getCreatedAt().getTime());
     });
 
-    it('should be able to prove that a document was updated', async () => {
+    it.skip('should be able to prove that a document was updated', async () => {
       const [storedDocument] = await client.platform.documents.get(
         'customContracts.indexedDocument',
         { where: [['$id', '==', document.getId()]] },

@@ -132,6 +132,8 @@ const splitDocumentsIntoChunks = require('./identity/masternode/splitDocumentsIn
 const registerSystemDataContractsFactory = require('./abci/handlers/state/registerSystemDataContractsFactory');
 const DocumentRepository = require('./document/DocumentRepository');
 
+const noopLoggerObject = require('./util/noopLogger');
+
 /**
  *
  * @param {Object} options
@@ -377,12 +379,7 @@ function createDIContainer(options) {
         .child({ driveVersion: packageJSON.version }),
     ).singleton(),
 
-    noopLogger: asFunction(() => (
-      Object.keys(pino.levels.values).reduce((logger, functionName) => ({
-        ...logger,
-        [functionName]: () => {},
-      }), {})
-    )).singleton(),
+    noopLogger: asValue(noopLoggerObject),
 
     sanitizeUrl: asValue(sanitizeUrl),
   });

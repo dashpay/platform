@@ -17,22 +17,22 @@ class DataContractStoreRepository {
    *
    * @param {DataContract} dataContract
    * @param {boolean} [useTransaction=false]
-   * @return {Promise<number>}
+   * @return {number}
    */
   async store(dataContract, useTransaction = false) {
-    const result = await this.storage.getDrive().applyContract(dataContract, useTransaction);
-
-    this.storage.logger.info({
-      dataContract: dataContract.toBuffer().toString('hex'),
-      dataContractHash: createHash('sha256')
-        .update(
-          dataContract.toBuffer(),
-        ).digest('hex'),
-      useTransaction: Boolean(useTransaction),
-      appHash: (await this.storage.getRootHash({ useTransaction })).toString('hex'),
-    }, 'applyContract');
-
-    return result;
+    try {
+      return await this.storage.getDrive().applyContract(dataContract, useTransaction);
+    } finally {
+      this.storage.logger.info({
+        dataContract: dataContract.toBuffer().toString('hex'),
+        dataContractHash: createHash('sha256')
+          .update(
+            dataContract.toBuffer(),
+          ).digest('hex'),
+        useTransaction: Boolean(useTransaction),
+        appHash: (await this.storage.getRootHash({ useTransaction })).toString('hex'),
+      }, 'applyContract');
+    }
   }
 
   /**
