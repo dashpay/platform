@@ -9,7 +9,7 @@ const systemIndices = [
  * @typedef {findAppropriateIndex}
  * @param {Array[]} whereClauses
  * @param {Object} documentSchema
- * @return {Object}
+ * @return {Object|undefined}
  */
 function findAppropriateIndex(whereClauses, documentSchema) {
   const documentIndices = (documentSchema.indices || []).concat(systemIndices);

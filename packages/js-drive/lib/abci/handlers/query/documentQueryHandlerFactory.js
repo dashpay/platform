@@ -20,14 +20,12 @@ const UnimplementedAbciError = require('../../errors/UnimplementedAbciError');
 /**
  *
  * @param {fetchDocuments} fetchSignedDocuments
- * @param {AwilixContainer} container
  * @param {createQueryResponse} createQueryResponse
  * @param {BlockExecutionContextStack} blockExecutionContextStack
  * @return {documentQueryHandler}
  */
 function documentQueryHandlerFactory(
   fetchSignedDocuments,
-  container,
   createQueryResponse,
   blockExecutionContextStack,
 ) {

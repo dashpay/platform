@@ -1,16 +1,16 @@
 const getIdentityFixture = require('@dashevo/dpp/lib/test/fixtures/getIdentityFixture');
 const createDPPMock = require('@dashevo/dpp/lib/test/mocks/createDPPMock');
 
-const StoreMock = require('../../../lib/test/mock/StoreMock');
+const decodeProtocolEntityFactory = require('@dashevo/dpp/lib/decodeProtocolEntityFactory');
 
 const IdentityStoreRepository = require('../../../lib/identity/IdentityStoreRepository');
+const GroveDBStoreMock = require('../../../lib/test/mock/GroveDBStoreMock');
 
 describe('IdentityStoreRepository', () => {
   let identity;
   let repository;
   let dppMock;
   let storeMock;
-  let transactionMock;
 
   beforeEach(function beforeEach() {
     identity = getIdentityFixture();
@@ -21,28 +21,23 @@ describe('IdentityStoreRepository', () => {
       .createFromBuffer
       .resolves(identity);
 
-    const containerMock = {
-      resolve() {
-        return dppMock;
-      },
-    };
+    storeMock = new GroveDBStoreMock(this.sinon);
 
-    storeMock = new StoreMock(this.sinon);
+    const decodeProtocolEntity = decodeProtocolEntityFactory();
 
-    transactionMock = {};
-
-    repository = new IdentityStoreRepository(storeMock, containerMock);
+    repository = new IdentityStoreRepository(storeMock, decodeProtocolEntity);
   });
 
   describe('#store', () => {
     it('should store identity', async () => {
-      const repositoryInstance = await repository.store(identity, transactionMock);
+      const repositoryInstance = await repository.store(identity, true);
       expect(repositoryInstance).to.equal(repository);
 
       expect(storeMock.put).to.be.calledOnceWithExactly(
-        identity.getId(),
+        IdentityStoreRepository.TREE_PATH,
+        identity.getId().toBuffer(),
         identity.toBuffer(),
-        transactionMock,
+        { useTransaction: true },
       );
     });
   });
@@ -51,28 +46,30 @@ describe('IdentityStoreRepository', () => {
     it('should return null if identity is not present', async () => {
       storeMock.get.returns(null);
 
-      const result = await repository.fetch(identity.getId(), transactionMock);
+      const result = await repository.fetch(identity.getId(), true);
 
       expect(result).to.be.null();
 
       expect(storeMock.get).to.be.calledOnceWithExactly(
-        identity.getId(),
-        transactionMock,
+        IdentityStoreRepository.TREE_PATH,
+        identity.getId().toBuffer(),
+        { useTransaction: true },
       );
     });
 
     it('should return identity', async () => {
-      const encodedIdentitiy = identity.toBuffer();
+      const encodedIdentity = identity.toBuffer();
 
-      storeMock.get.returns(encodedIdentitiy);
+      storeMock.get.resolves(encodedIdentity);
 
-      const result = await repository.fetch(identity.getId(), transactionMock);
+      const result = await repository.fetch(identity.getId(), true);
 
       expect(result).to.be.deep.equal(identity);
 
       expect(storeMock.get).to.be.calledOnceWithExactly(
-        identity.getId(),
-        transactionMock,
+        IdentityStoreRepository.TREE_PATH,
+        identity.getId().toBuffer(),
+        { useTransaction: true },
       );
     });
   });

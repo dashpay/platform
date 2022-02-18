@@ -29,7 +29,6 @@ describe('DataContractStoreRepository', () => {
     rimraf.sync('./db/grovedb_test');
   });
 
-
   describe('#store', () => {
     beforeEach(async () => {
       await store.createTree([], DataContractStoreRepository.TREE_PATH[0]);
