@@ -43,20 +43,11 @@ class DataContractStoreRepository {
    * @return {Promise<null|DataContract>}
    */
   async fetch(id, useTransaction = false) {
-    let encodedDataContract;
-    try {
-      encodedDataContract = await this.storage.get(
-        DataContractStoreRepository.TREE_PATH.concat([id.toBuffer()]),
-        DataContractStoreRepository.DATA_CONTRACT_KEY,
-        { useTransaction },
-      );
-    } catch (e) {
-      if (e.message && e.message.startsWith('path not found')) {
-        return null;
-      }
-
-      throw e;
-    }
+    const encodedDataContract = await this.storage.get(
+      DataContractStoreRepository.TREE_PATH.concat([id.toBuffer()]),
+      DataContractStoreRepository.DATA_CONTRACT_KEY,
+      { useTransaction },
+    );
 
     if (!encodedDataContract) {
       return null;
