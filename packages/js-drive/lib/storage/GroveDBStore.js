@@ -1,9 +1,11 @@
-const pino = require('pino');
+// const pino = require('pino');
 const { createHash } = require('crypto');
 
-const logger = pino({
-  prettyPrint: true,
-}, 'grovedb.log');
+const logger = require('../util/noopLogger');
+//
+// const logger = pino({
+//   prettyPrint: true,
+// }, 'grovedb.log');
 
 class GroveDBStore {
   /**

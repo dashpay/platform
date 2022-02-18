@@ -14,7 +14,7 @@ const testProofStructure = require('../../../lib/test/testProofStructure');
 const parseStoreTreeProof = require('../../../lib/parseStoreTreeProof');
 const createClientWithFundedWallet = require('../../../lib/test/createClientWithFundedWallet');
 
-describe('Platform', () => {
+describe.skip('Platform', () => {
   describe('Proofs', () => {
     let blake3;
     let dashClient;
