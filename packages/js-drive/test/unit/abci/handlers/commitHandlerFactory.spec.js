@@ -39,7 +39,6 @@ describe('commitHandlerFactory', () => {
   let rotateSignedStoreMock;
 
   beforeEach(function beforeEach() {
-    nextPreviousBlockExecutionStoreTransactionsMock = 'nextPreviousBlockExecutionStoreTransactionsMock';
     appHash = Buffer.alloc(0);
 
     creditsDistributionPoolMock = {

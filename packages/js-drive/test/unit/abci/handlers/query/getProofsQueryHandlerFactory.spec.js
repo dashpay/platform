@@ -15,63 +15,44 @@ const getDocumentsFixture = require('@dashevo/dpp/lib/test/fixtures/getDocuments
 
 const getProofsQueryHandlerFactory = require('../../../../../lib/abci/handlers/query/getProofsQueryHandlerFactory');
 const BlockExecutionContextMock = require('../../../../../lib/test/mock/BlockExecutionContextMock');
+const BlockExecutionContextStackMock = require('../../../../../lib/test/mock/BlockExecutionContextStackMock');
 
 describe('getProofsQueryHandlerFactory', () => {
   let getProofsQueryHandler;
-  let previousDataContractRepositoryMock;
   let dataContract;
   let identity;
   let documents;
   let dataContractData;
   let documentsData;
   let identityData;
-  let previousRootTreeMock;
-  let previousDataContractsStoreRootTreeLeafMock;
-  let previousIdentitiesStoreRootTreeLeafMock;
-  let previousDocumentsStoreRootTreeLeafMock;
+  let blockExecutionContextStackMock;
+  let signedBlockExecutionContextMock;
   let blockExecutionContextMock;
-  let previousBlockExecutionContextMock;
 
   beforeEach(function beforeEach() {
     dataContract = getDataContractFixture();
     identity = getIdentityFixture();
     documents = getDocumentsFixture();
 
-    previousDataContractRepositoryMock = {
-      fetch: this.sinon.stub(),
-    };
-
-    previousRootTreeMock = {
-      getFullProofForOneLeaf: this.sinon.stub(),
-    };
-
-    previousDataContractsStoreRootTreeLeafMock = this.sinon.stub();
-    previousDocumentsStoreRootTreeLeafMock = this.sinon.stub();
-    previousIdentitiesStoreRootTreeLeafMock = this.sinon.stub();
-
-    blockExecutionContextMock = new BlockExecutionContextMock(this.sinon);
-    previousBlockExecutionContextMock = new BlockExecutionContextMock(this.sinon);
-
-    blockExecutionContextMock.isEmpty.returns(false);
-    previousBlockExecutionContextMock.isEmpty.returns(false);
-
-    previousBlockExecutionContextMock.getHeader.returns({
+    signedBlockExecutionContextMock = new BlockExecutionContextMock(this.sinon);
+    signedBlockExecutionContextMock.getHeader.returns({
       height: new Long(42),
       coreChainLockedHeight: 41,
     });
 
+    blockExecutionContextMock = new BlockExecutionContextMock(this.sinon);
+
     blockExecutionContextMock.getLastCommitInfo.returns({
       quorumHash: Buffer.alloc(32, 1),
-      signature: Buffer.alloc(32, 1),
+      stateSignature: Buffer.alloc(32, 1),
     });
 
+    blockExecutionContextStackMock = new BlockExecutionContextStackMock(this.sinon);
+    blockExecutionContextStackMock.getLast.returns(signedBlockExecutionContextMock);
+    blockExecutionContextStackMock.getFirst.returns(blockExecutionContextMock);
+
     getProofsQueryHandler = getProofsQueryHandlerFactory(
-      previousRootTreeMock,
-      previousDocumentsStoreRootTreeLeafMock,
-      previousIdentitiesStoreRootTreeLeafMock,
-      previousDataContractsStoreRootTreeLeafMock,
-      blockExecutionContextMock,
-      previousBlockExecutionContextMock,
+      blockExecutionContextStackMock,
     );
 
     dataContractData = {
@@ -85,36 +66,11 @@ describe('getProofsQueryHandlerFactory', () => {
     };
   });
 
-  it('should return empty response if blockExecutionContext is empty', async () => {
-    blockExecutionContextMock.isEmpty.returns(true);
+  it('should return empty response if there is no signed state', async () => {
+    blockExecutionContextStackMock.getLast.returns(null);
 
     const result = await getProofsQueryHandler({}, {}, {});
 
-    expect(previousRootTreeMock.getFullProofForOneLeaf).to.have.not.been.called();
-    expect(result).to.be.an.instanceof(ResponseQuery);
-    expect(result.code).to.equal(0);
-
-    const emptyValue = cbor.encode(
-      {
-        documentsProof: null,
-        identitiesProof: null,
-        dataContractsProof: null,
-        metadata: {
-          height: 0,
-          coreChainLockedHeight: 0,
-        },
-      },
-    );
-
-    expect(result.value).to.deep.equal(emptyValue);
-  });
-
-  it('should return empty response if previousBlockExecutionContext is empty', async () => {
-    previousBlockExecutionContextMock.isEmpty.returns(true);
-
-    const result = await getProofsQueryHandler({}, {}, {});
-
-    expect(previousRootTreeMock.getFullProofForOneLeaf).to.have.not.been.called();
     expect(result).to.be.an.instanceof(ResponseQuery);
     expect(result.code).to.equal(0);
 
@@ -137,32 +93,18 @@ describe('getProofsQueryHandlerFactory', () => {
     const expectedProof = {
       signatureLlmqHash: Buffer.alloc(32, 1),
       signature: Buffer.alloc(32, 1),
-      rootTreeProof: Buffer.from('0100000001f0faf5f55674905a68eba1be2f946e667c1cb5010101', 'hex'),
-      storeTreeProof: Buffer.from('03046b657931060076616c75653103046b657932060076616c75653210', 'hex'),
+      merkleProof: Buffer.from([1]),
+      // rootTreeProof: Buffer.from('0100000001f0faf5f55674905a68eba1be2f946e667c1cb5010101',
+      // 'hex'),
+      // storeTreeProof: Buffer.from('03046b657931060076616c75653103046b657932060076616c75653210',
+      // 'hex'),
     };
-
-    previousDataContractRepositoryMock.fetch.resolves(dataContract);
-    previousRootTreeMock.getFullProofForOneLeaf.returns(expectedProof);
 
     const result = await getProofsQueryHandler({}, {
       dataContractIds: [dataContractData.id],
       identityIds: [identityData.id],
       documentIds: documentsData.ids,
     });
-
-    expect(previousRootTreeMock.getFullProofForOneLeaf).to.be.calledThrice();
-    expect(previousRootTreeMock.getFullProofForOneLeaf.getCall(0).args).to.be.deep.equal([
-      previousDocumentsStoreRootTreeLeafMock,
-      documentsData.ids,
-    ]);
-    expect(previousRootTreeMock.getFullProofForOneLeaf.getCall(1).args).to.be.deep.equal([
-      previousIdentitiesStoreRootTreeLeafMock,
-      [identity.getId()],
-    ]);
-    expect(previousRootTreeMock.getFullProofForOneLeaf.getCall(2).args).to.be.deep.equal([
-      previousDataContractsStoreRootTreeLeafMock,
-      [dataContract.getId()],
-    ]);
 
     const expectedResult = new ResponseQuery({
       value: cbor.encode(
@@ -179,61 +121,5 @@ describe('getProofsQueryHandlerFactory', () => {
     });
 
     expect(result).to.be.deep.equal(expectedResult);
-  });
-
-  it('should return no proofs if no data contract ids were passed', async () => {
-    const expectedProof = {
-      rootTreeProof: Buffer.from('0100000001f0faf5f55674905a68eba1be2f946e667c1cb5010101', 'hex'),
-      storeTreeProof: Buffer.from('03046b657931060076616c75653103046b657932060076616c75653210', 'hex'),
-    };
-
-    previousDataContractRepositoryMock.fetch.resolves(dataContract);
-    previousRootTreeMock.getFullProofForOneLeaf.returns(expectedProof);
-
-    const result = await getProofsQueryHandler({}, {});
-
-    expect(previousRootTreeMock.getFullProofForOneLeaf).to.not.be.called();
-
-    expect(result).to.be.deep.equal(new ResponseQuery({
-      value: cbor.encode({
-        documentsProof: null,
-        identitiesProof: null,
-        dataContractsProof: null,
-        metadata: {
-          height: 42,
-          coreChainLockedHeight: 41,
-        },
-      }),
-    }));
-  });
-
-  it('should return no proofs if an empty array of ids was passed', async () => {
-    const expectedProof = {
-      rootTreeProof: Buffer.from('0100000001f0faf5f55674905a68eba1be2f946e667c1cb5010101', 'hex'),
-      storeTreeProof: Buffer.from('03046b657931060076616c75653103046b657932060076616c75653210', 'hex'),
-    };
-
-    previousDataContractRepositoryMock.fetch.resolves(dataContract);
-    previousRootTreeMock.getFullProofForOneLeaf.returns(expectedProof);
-
-    const result = await getProofsQueryHandler({}, {
-      dataContractIds: [],
-      identityIds: [],
-      documentIds: [],
-    });
-
-    expect(previousRootTreeMock.getFullProofForOneLeaf).to.not.be.called();
-
-    expect(result).to.be.deep.equal(new ResponseQuery({
-      value: cbor.encode({
-        documentsProof: null,
-        identitiesProof: null,
-        dataContractsProof: null,
-        metadata: {
-          height: 42,
-          coreChainLockedHeight: 41,
-        },
-      }),
-    }));
   });
 });

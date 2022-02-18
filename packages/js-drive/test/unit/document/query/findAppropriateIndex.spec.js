@@ -70,7 +70,7 @@ describe('findAppropriateIndex', () => {
 
     let result = findAppropriateIndex(whereClauses, documentSchema);
 
-    expect(result).to.be.deep.equal({});
+    expect(result).to.be.deep.equal(undefined);
 
     whereClauses = [
       ['d', '==', 1],
@@ -78,7 +78,7 @@ describe('findAppropriateIndex', () => {
 
     result = findAppropriateIndex(whereClauses, documentSchema);
 
-    expect(result).to.be.deep.equal({});
+    expect(result).to.be.deep.equal(undefined);
 
     whereClauses = [
       ['b', '==', 1],
@@ -87,6 +87,6 @@ describe('findAppropriateIndex', () => {
 
     result = findAppropriateIndex(whereClauses, documentSchema);
 
-    expect(result).to.be.deep.equal({});
+    expect(result).to.be.deep.equal(undefined);
   });
 });

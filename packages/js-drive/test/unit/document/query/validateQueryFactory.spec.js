@@ -157,7 +157,7 @@ describe('validateQueryFactory', () => {
 
   beforeEach(function beforeEach() {
     findConflictingConditionsStub = this.sinon.stub().returns([]);
-    findAppropriateIndexStub = this.sinon.stub().returns({});
+    findAppropriateIndexStub = this.sinon.stub().returns(undefined);
     sortWhereClausesAccordingToIndexStub = this.sinon.stub().returnsArg(0);
     findThreesomeOfIndexedPropertiesStub = this.sinon.stub().returns([]);
     findIndexedPropertiesSinceStub = this.sinon.stub().returns([]);

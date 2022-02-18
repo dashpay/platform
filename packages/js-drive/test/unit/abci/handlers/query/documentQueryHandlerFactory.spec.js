@@ -23,51 +23,26 @@ const documentQueryHandlerFactory = require('../../../../../lib/abci/handlers/qu
 const InvalidQueryError = require('../../../../../lib/document/errors/InvalidQueryError');
 const ValidationError = require('../../../../../lib/document/query/errors/ValidationError');
 
-const BlockExecutionContextMock = require('../../../../../lib/test/mock/BlockExecutionContextMock');
 const UnavailableAbciError = require('../../../../../lib/abci/errors/UnavailableAbciError');
 const InvalidArgumentAbciError = require('../../../../../lib/abci/errors/InvalidArgumentAbciError');
+const BlockExecutionContextStackMock = require('../../../../../lib/test/mock/BlockExecutionContextStackMock');
+const UnimplementedAbciError = require('../../../../../lib/abci/errors/UnimplementedAbciError');
 
 describe('documentQueryHandlerFactory', () => {
   let documentQueryHandler;
-  let fetchPreviousDocumentsMock;
+  let fetchSignedDocumentsMock;
   let documents;
   let params;
   let data;
   let options;
-  let previousRootTreeMock;
-  let previousDocumentsStoreRootTreeLeafMock;
-  let containerMock;
-  let previousBlockExecutionTransactionsMock;
-  let transactionMock;
   let createQueryResponseMock;
   let responseMock;
-  let blockExecutionContextMock;
-  let previousBlockExecutionContextMock;
+  let blockExecutionContextStackMock;
 
   beforeEach(function beforeEach() {
     documents = getDocumentsFixture();
 
-    fetchPreviousDocumentsMock = this.sinon.stub();
-
-    previousRootTreeMock = {
-      getFullProofForOneLeaf: this.sinon.stub(),
-    };
-
-    previousDocumentsStoreRootTreeLeafMock = this.sinon.stub();
-
-    transactionMock = {
-      isStarted: this.sinon.stub().returns(true),
-    };
-
-    previousBlockExecutionTransactionsMock = {
-      getTransaction: this.sinon.stub().returns(transactionMock),
-    };
-
-    containerMock = {
-      has: this.sinon.stub().returns(true),
-      resolve: this.sinon.stub().returns(previousBlockExecutionTransactionsMock),
-    };
-
+    fetchSignedDocumentsMock = this.sinon.stub();
     createQueryResponseMock = this.sinon.stub();
 
     responseMock = new GetDocumentsResponse();
@@ -75,17 +50,13 @@ describe('documentQueryHandlerFactory', () => {
 
     createQueryResponseMock.returns(responseMock);
 
-    blockExecutionContextMock = new BlockExecutionContextMock(this.sinon);
-    previousBlockExecutionContextMock = new BlockExecutionContextMock(this.sinon);
+    blockExecutionContextStackMock = new BlockExecutionContextStackMock(this.sinon);
+    blockExecutionContextStackMock.getLast.returns(true);
 
     documentQueryHandler = documentQueryHandlerFactory(
-      fetchPreviousDocumentsMock,
-      previousRootTreeMock,
-      previousDocumentsStoreRootTreeLeafMock,
-      containerMock,
+      fetchSignedDocumentsMock,
       createQueryResponseMock,
-      blockExecutionContextMock,
-      previousBlockExecutionContextMock,
+      blockExecutionContextStackMock,
     );
 
     params = {};
@@ -107,8 +78,8 @@ describe('documentQueryHandlerFactory', () => {
     };
   });
 
-  it('should return empty response if blockExecutionContext is empty', async () => {
-    previousBlockExecutionContextMock.isEmpty.returns(true);
+  it('should return empty response if there is no signed state', async () => {
+    blockExecutionContextStackMock.getLast.returns(null);
 
     responseMock = new GetDocumentsResponse();
 
@@ -116,100 +87,60 @@ describe('documentQueryHandlerFactory', () => {
 
     const result = await documentQueryHandler(params, data, {});
 
-    expect(fetchPreviousDocumentsMock).to.have.not.been.called();
+    expect(createQueryResponseMock).to.have.not.been.called();
+    expect(fetchSignedDocumentsMock).to.have.not.been.called();
     expect(result).to.be.an.instanceof(ResponseQuery);
     expect(result.code).to.equal(0);
 
     expect(result.value).to.deep.equal(responseMock.serializeBinary());
-    expect(previousRootTreeMock.getFullProofForOneLeaf).to.have.not.been.called();
-  });
-
-  it('should return empty response if previousBlockExecutionContext is empty', async () => {
-    previousBlockExecutionContextMock.isEmpty.returns(true);
-
-    responseMock = new GetDocumentsResponse();
-
-    responseMock.setMetadata(new ResponseMetadata());
-
-    const result = await documentQueryHandler(params, data, {});
-
-    expect(fetchPreviousDocumentsMock).to.have.not.been.called();
-    expect(result).to.be.an.instanceof(ResponseQuery);
-    expect(result.code).to.equal(0);
-
-    expect(result.value).to.deep.equal(responseMock.serializeBinary());
-    expect(previousRootTreeMock.getFullProofForOneLeaf).to.have.not.been.called();
   });
 
   it('should return serialized documents', async () => {
-    fetchPreviousDocumentsMock.resolves(documents);
+    fetchSignedDocumentsMock.resolves(documents);
 
     const result = await documentQueryHandler(params, data, {});
 
-    expect(fetchPreviousDocumentsMock).to.be.calledOnceWith(data.contractId, data.type, options);
+    expect(createQueryResponseMock).to.be.calledOnceWith(GetDocumentsResponse, undefined);
+    expect(fetchSignedDocumentsMock).to.be.calledOnceWith(data.contractId, data.type, options);
     expect(result).to.be.an.instanceof(ResponseQuery);
     expect(result.code).to.equal(0);
 
     expect(result.value).to.deep.equal(responseMock.serializeBinary());
-    expect(previousRootTreeMock.getFullProofForOneLeaf).to.be.not.called();
-    expect(containerMock.has).to.be.calledOnceWithExactly('previousBlockExecutionStoreTransactions');
   });
 
-  it('should return serialized documents with proof', async () => {
-    const proof = {
-      rootTreeProof: Buffer.from('0100000001f0faf5f55674905a68eba1be2f946e667c1cb5010101', 'hex'),
-      storeTreeProof: Buffer.from('03046b657931060076616c75653103046b657932060076616c75653210', 'hex'),
-    };
+  it('should throw UnimplementedAbciError if proof was requested', async () => {
+    // const proof = {
+    //   rootTreeProof: Buffer.from('0100000001f0faf5f55674905a68eba1be2f946e667c1cb5010101',
+    //   'hex'),
+    //   storeTreeProof: Buffer.from('03046b657931060076616c75653103046b657932060076616c75653210',
+    //   'hex'),
+    // };
 
-    fetchPreviousDocumentsMock.resolves(documents);
-    previousRootTreeMock.getFullProofForOneLeaf.returns(proof);
-
-    const result = await documentQueryHandler(params, data, { prove: true });
-
-    expect(fetchPreviousDocumentsMock).to.be.calledOnceWith(data.contractId, data.type, options);
-    expect(result).to.be.an.instanceof(ResponseQuery);
-    expect(result.code).to.equal(0);
-
-    const documentIds = documents.map((document) => document.getId());
-
-    expect(result.value).to.deep.equal(responseMock.serializeBinary());
-    expect(previousRootTreeMock.getFullProofForOneLeaf).to.be.calledOnce();
-    expect(previousRootTreeMock.getFullProofForOneLeaf.getCall(0).args).to.deep.equal([
-      previousDocumentsStoreRootTreeLeafMock,
-      documentIds,
-    ]);
-    expect(containerMock.has).to.be.calledOnceWithExactly('previousBlockExecutionStoreTransactions');
-  });
-
-  it('should throw UnavailableAbciError if previousBlockExecutionStoreTransactions is not present', async () => {
-    containerMock.has.returns(false);
+    fetchSignedDocumentsMock.resolves(documents);
 
     try {
-      await documentQueryHandler(params, data, {});
+      await documentQueryHandler(params, data, { prove: true });
 
-      expect.fail('should throw UnavailableAbciError');
+      expect.fail('should throw UnimplementedAbciError');
     } catch (e) {
-      expect(e).to.be.an.instanceof(UnavailableAbciError);
-      expect(e.getCode()).to.equal(GrpcErrorCodes.UNAVAILABLE);
-      expect(fetchPreviousDocumentsMock).to.not.be.called();
-      expect(containerMock.has).to.be.calledOnceWithExactly('previousBlockExecutionStoreTransactions');
+      expect(e).to.be.an.instanceof(UnimplementedAbciError);
     }
   });
 
-  it('should throw UnavailableAbciError if transaction is not started', async () => {
-    transactionMock.isStarted.returns(false);
+  it('should throw InvalidArgumentAbciError on invalid query', async () => {
+    const error = new ValidationError('Invalid query');
+
+    fetchSignedDocumentsMock.throws(new InvalidQueryError([error]));
 
     try {
       await documentQueryHandler(params, data, {});
 
       expect.fail('should throw UnavailableAbciError');
     } catch (e) {
-      expect(e).to.be.an.instanceof(UnavailableAbciError);
-      expect(e.getCode()).to.equal(GrpcErrorCodes.UNAVAILABLE);
-      expect(fetchPreviousDocumentsMock).to.not.be.called();
-      expect(containerMock.resolve).to.be.calledOnceWithExactly('previousBlockExecutionStoreTransactions');
-      expect(previousBlockExecutionTransactionsMock.getTransaction).to.be.calledOnceWithExactly('dataContracts');
-      expect(transactionMock.isStarted).to.be.calledOnce();
+      expect(e).to.be.an.instanceof(InvalidArgumentAbciError);
+      expect(e.getCode()).to.equal(GrpcErrorCodes.INVALID_ARGUMENT);
+      expect(e.getData()).to.deep.equal({ errors: [error] });
+      expect(fetchSignedDocumentsMock).to.be.calledOnceWith(data.contractId, data.type, options);
     }
   });
 
@@ -223,36 +154,14 @@ describe('documentQueryHandlerFactory', () => {
     } catch (e) {
       expect(e).to.be.an.instanceof(UnavailableAbciError);
       expect(e.getCode()).to.equal(GrpcErrorCodes.UNAVAILABLE);
-      expect(fetchPreviousDocumentsMock).to.not.be.called();
-      expect(containerMock.resolve).to.be.calledOnceWithExactly('previousBlockExecutionStoreTransactions');
-      expect(previousBlockExecutionTransactionsMock.getTransaction).to.be.calledOnceWithExactly('dataContracts');
-      expect(transactionMock.isStarted).to.be.calledOnce();
-    }
-  });
-
-  it('should throw InvalidArgumentAbciError on invalid query', async () => {
-    const error = new ValidationError('Some error');
-    const queryError = new InvalidQueryError([error]);
-
-    fetchPreviousDocumentsMock.throws(queryError);
-
-    try {
-      await documentQueryHandler(params, data, {});
-
-      expect.fail('should throw InvalidArgumentAbciError');
-    } catch (e) {
-      expect(e).to.be.an.instanceof(InvalidArgumentAbciError);
-      expect(e.getCode()).to.equal(GrpcErrorCodes.INVALID_ARGUMENT);
-      expect(e.getData()).to.deep.equal({ errors: [error] });
-      expect(fetchPreviousDocumentsMock).to.be.calledOnceWith(data.contractId, data.type, options);
-      expect(containerMock.has).to.be.calledOnceWithExactly('previousBlockExecutionStoreTransactions');
+      expect(fetchSignedDocumentsMock).to.not.be.called();
     }
   });
 
   it('should throw error if fetchDocuments throws unknown error', async () => {
     const error = new Error('Some error');
 
-    fetchPreviousDocumentsMock.throws(error);
+    fetchSignedDocumentsMock.throws(error);
 
     try {
       await documentQueryHandler(params, data, {});
@@ -260,8 +169,7 @@ describe('documentQueryHandlerFactory', () => {
       expect.fail('should throw any error');
     } catch (e) {
       expect(e).to.deep.equal(error);
-      expect(fetchPreviousDocumentsMock).to.be.calledOnceWith(data.contractId, data.type, options);
-      expect(containerMock.has).to.be.calledOnceWithExactly('previousBlockExecutionStoreTransactions');
+      expect(fetchSignedDocumentsMock).to.be.calledOnceWith(data.contractId, data.type, options);
     }
   });
 });
