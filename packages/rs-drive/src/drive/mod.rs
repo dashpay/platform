@@ -254,6 +254,10 @@ impl Drive {
                 type_key.as_bytes(),
             ];
 
+            // primary key tree
+            self.grove
+                .insert_if_not_exists(type_path, &[0], Element::empty_tree(), transaction)?;
+
             // for each type we should insert the indices that are top level
             for index in document_type.top_level_indices()? {
                 // toDo: change this to be a reference by index
