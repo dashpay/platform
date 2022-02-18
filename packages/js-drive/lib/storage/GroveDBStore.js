@@ -1,9 +1,11 @@
-const pino = require('pino');
+// const pino = require('pino');
 const { createHash } = require('crypto');
 
-const logger = pino({
-  prettyPrint: true,
-}, 'grovedb.log');
+const logger = require('../util/noopLogger');
+//
+// const logger = pino({
+//   prettyPrint: true,
+// }, 'grovedb.log');
 
 class GroveDBStore {
   /**
@@ -163,7 +165,7 @@ class GroveDBStore {
         options.useTransaction || false,
       ));
     } catch (e) {
-      if (e.message.startsWith('path key not found: key not found in Merk')) {
+      if (e.message.startsWith('path key not found') || e.message.startsWith('path not found')) {
         return null;
       }
 
@@ -228,7 +230,7 @@ class GroveDBStore {
         options.useTransaction || false,
       );
     } catch (e) {
-      if (e.message.startsWith('path key not found: key not found in Merk')) {
+      if (e.message.startsWith('path key not found')) {
         return null;
       }
 
