@@ -165,7 +165,7 @@ class GroveDBStore {
         options.useTransaction || false,
       ));
     } catch (e) {
-      if (e.message.startsWith('path key not found: key not found in Merk')) {
+      if (e.message.startsWith('path key not found') || e.message.startsWith('path not found')) {
         return null;
       }
 
@@ -230,7 +230,7 @@ class GroveDBStore {
         options.useTransaction || false,
       );
     } catch (e) {
-      if (e.message.startsWith('path key not found: key not found in Merk')) {
+      if (e.message.startsWith('path key not found')) {
         return null;
       }
 
