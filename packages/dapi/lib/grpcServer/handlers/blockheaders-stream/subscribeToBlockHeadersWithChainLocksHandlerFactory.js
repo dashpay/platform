@@ -1,4 +1,4 @@
-const { ChainLock } = require('@dashevo/dashcore-lib');
+const {ChainLock} = require('@dashevo/dashcore-lib');
 
 const {
   server: {
@@ -18,7 +18,6 @@ const {
     BlockHeaders,
   },
 } = require('@dashevo/dapi-grpc');
-const chainlocks = require('./chainlocks');
 const ProcessMediator = require('./ProcessMediator');
 const wait = require('../../../utils/wait');
 const log = require('../../../log');
@@ -59,24 +58,24 @@ async function sendChainLockResponse(call, chainLock) {
 /**
  * @param {getHistoricalBlockHeadersIterator} getHistoricalBlockHeadersIterator
  * @param {CoreRpcClient} coreAPI
+ * @param {ChainDataProvider} chainDataProvider
  * @param {ZmqClient} zmqClient
  * @param {subscribeToNewBlockHeaders} subscribeToNewBlockHeaders
- * @param appMediator {AppMediator}
  * @return {subscribeToBlockHeadersWithChainLocksHandler}
  */
 function subscribeToBlockHeadersWithChainLocksHandlerFactory(
   getHistoricalBlockHeadersIterator,
   coreAPI,
+  chainDataProvider,
   zmqClient,
-  subscribeToNewBlockHeaders,
-  appMediator,
+  subscribeToNewBlockHeaders
 ) {
   /**
    * @typedef subscribeToBlockHeadersWithChainLocksHandler
    * @param {grpc.ServerWriteableStream<BlockHeadersWithChainLocksRequest>} call
    */
   async function subscribeToBlockHeadersWithChainLocksHandler(call) {
-    const { request } = call;
+    const {request} = call;
 
     const fromBlockHash = Buffer.from(request.getFromBlockHash_asU8()).toString('hex');
     const fromBlockHeight = request.getFromBlockHeight();
@@ -109,7 +108,7 @@ function subscribeToBlockHeadersWithChainLocksHandlerFactory(
     );
 
     if (newHeadersRequested) {
-      subscribeToNewBlockHeaders(mediator, appMediator, zmqClient, coreAPI);
+      subscribeToNewBlockHeaders(mediator, chainDataProvider, zmqClient, coreAPI);
     }
 
     let fromBlock;
@@ -133,10 +132,10 @@ function subscribeToBlockHeadersWithChainLocksHandlerFactory(
       throw new InvalidArgumentGrpcError('`count` value exceeds the chain tip');
     }
 
-    const bestChainLock = chainlocks.getBestChainLock();
+    const bestChainLock = await chainDataProvider.getBestChainLock();
 
     if (bestChainLock) {
-      await sendChainLockResponse(acknowledgingCall, new ChainLock(bestChainLock));
+      await sendChainLockResponse(acknowledgingCall, bestChainLock);
     } else {
       log.info('No chain lock available in dashcore node');
     }

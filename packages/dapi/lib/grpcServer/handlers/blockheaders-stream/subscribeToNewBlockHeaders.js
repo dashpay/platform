@@ -2,20 +2,19 @@ const { BlockHeader } = require('@dashevo/dashcore-lib');
 const ProcessMediator = require('./ProcessMediator');
 const wait = require('../../../utils/wait');
 const { NEW_BLOCK_HEADERS_PROPAGATE_INTERVAL } = require('./constants');
-const cache = require('./cache');
-const chainlocks = require('./chainlocks');
+const cache = require('../../../providers/blockheaders-cache');
 
 /**
  * @typedef subscribeToNewBlockHeaders
  * @param {ProcessMediator} mediator
- * @param {AppMediator} appMediator
+ * @param {ChainDataProvider} chainDataProvider
  * @param {CoreRpcClient} coreAPI
  * @param {ZmqClient} zmqClient
  */
 function subscribeToNewBlockHeaders(mediator,
-  appMediator,
-  zmqClient,
-  coreAPI) {
+  chainDataProvider,
+  coreAPI,
+  zmqClient) {
   const pendingHeadersHashes = new Set();
 
   let lastChainLock;
@@ -31,14 +30,14 @@ function subscribeToNewBlockHeaders(mediator,
 
   /**
    *
-   * @param rawChainLock {Buffer}
+   * @param chainLock {ChainLock}
    */
-  const rawChainLockHandler = (rawChainLock) => {
-    lastChainLock = rawChainLock;
+  const chainLockHandler = (chainLock) => {
+    lastChainLock = chainLock;
   };
 
-  appMediator.on(appMediator.events.hashblock, blockHashHandler);
-  appMediator.on(appMediator.events.chainlock, rawChainLockHandler);
+  chainDataProvider.on(chainDataProvider.events.newBlockHeader, blockHashHandler);
+  chainDataProvider.on(chainDataProvider.events.newChainLock, chainLockHandler);
 
   mediator.on(ProcessMediator.EVENTS.HISTORICAL_BLOCK_HEADERS_SENT, (hashes) => {
     // Remove data from cache by hashes
@@ -64,9 +63,7 @@ function subscribeToNewBlockHeaders(mediator,
             const cachedBlockHeader = cache.get(hash);
 
             if (!cachedBlockHeader) {
-              const rawBlockHeader = await coreAPI.getBlockHeader(hash);
-              cache.set(hash, rawBlockHeader);
-              return new BlockHeader(Buffer.from(rawBlockHeader, 'hex'));
+              return chainDataProvider.getBlockHeader(hash);
             }
 
             return new BlockHeader(Buffer.from(cachedBlockHeader, 'hex'));
@@ -77,7 +74,7 @@ function subscribeToNewBlockHeaders(mediator,
       }
 
       if (lastChainLock) {
-        mediator.emit(ProcessMediator.EVENTS.CHAIN_LOCK, chainlocks.getBestChainLock());
+        mediator.emit(ProcessMediator.EVENTS.CHAIN_LOCK, chainDataProvider.getBestChainLock());
         lastChainLock = null;
       }
 
@@ -90,8 +87,8 @@ function subscribeToNewBlockHeaders(mediator,
   mediator.once(ProcessMediator.EVENTS.CLIENT_DISCONNECTED, () => {
     isClientConnected = false;
     mediator.removeAllListeners();
-    appMediator.removeListener(appMediator.events.hashblock, blockHashHandler);
-    appMediator.removeListener(appMediator.events.chainlock, rawChainLockHandler);
+    chainDataProvider.removeListener(chainDataProvider.events.newBlockHeader, blockHashHandler);
+    chainDataProvider.removeListener(chainDataProvider.events.newChainLock, chainLockHandler);
   });
 }
 

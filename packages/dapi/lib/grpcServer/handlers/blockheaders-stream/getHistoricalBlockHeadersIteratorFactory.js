@@ -1,5 +1,4 @@
-const { BlockHeader } = require('@dashevo/dashcore-lib');
-const cache = require('./cache');
+const {BlockHeader} = require('@dashevo/dashcore-lib');
 
 const MAX_HEADERS_PER_REQUEST = 500;
 
@@ -18,9 +17,10 @@ function getBlocksToScan(batchIndex, numberOfBatches, totalCount) {
 
 /**
  * @param {CoreRpcClient} coreRpcApi
+ * @param {ChainDataProvider} chainDataProvider
  * @return {getHistoricalBlockHeadersIterator}
  */
-function getHistoricalBlockHeadersIteratorFactory(coreRpcApi) {
+function getHistoricalBlockHeadersIteratorFactory(coreRpcApi, chainDataProvider) {
   /**
    * @typedef getHistoricalBlockHeadersIterator
    * @param fromBlockHeight {number}
@@ -36,46 +36,13 @@ function getHistoricalBlockHeadersIteratorFactory(coreRpcApi) {
     for (let batchIndex = 0; batchIndex < numberOfBatches; batchIndex++) {
       const currentHeight = fromBlockHeight + batchIndex * MAX_HEADERS_PER_REQUEST;
 
-      let blocksToScan = getBlocksToScan(batchIndex, numberOfBatches, count);
-      let blockHash = await coreRpcApi.getBlockHash(currentHeight);
+      const blocksToScan = getBlocksToScan(batchIndex, numberOfBatches, count);
 
-      const blockHeights = [...Array(blocksToScan).keys()]
-        .map((e, i) => currentHeight + i);
+      const blockHash = await coreRpcApi.getBlockHash(currentHeight);
 
-      const cachedBlockHeaders = blockHeights.map((height) => cache.get(height));
-      const [firstCachedItem] = cachedBlockHeaders;
+      const blockHeaders = await chainDataProvider.getBlockHeaders(blockHash, blocksToScan);
 
-      let lastCachedIndex = -1;
-
-      if (firstCachedItem) {
-        const firstMissingIndex = cachedBlockHeaders.indexOf(undefined);
-
-        // return cache if we do not miss anything
-        if (cachedBlockHeaders.filter((e) => !!e).length === blocksToScan) {
-          yield cachedBlockHeaders.map((e) => new BlockHeader(Buffer.from(e, 'hex')));
-          continue; // eslint-disable-line
-        }
-
-        if (firstMissingIndex !== -1) {
-          lastCachedIndex = firstMissingIndex - 1;
-
-          const rawBlockHeader = cachedBlockHeaders[lastCachedIndex];
-          const blockHeader = BlockHeader.fromRawBlock(rawBlockHeader);
-
-          blockHash = blockHeader.hash.toString('hex');
-          blocksToScan -= lastCachedIndex;
-        }
-      }
-
-      const missingBlockHeaders = await coreRpcApi.getBlockHeaders(blockHash, blocksToScan);
-      const rawBlockHeaders = [...cachedBlockHeaders.slice(0,
-        lastCachedIndex !== -1 ? lastCachedIndex : 0), ...missingBlockHeaders];
-
-      missingBlockHeaders.forEach((e, i) => cache.set(currentHeight + i, e));
-
-      // TODO: figure out whether it's possible to omit new BlockHeader() conversion
-      // and directly send bytes to the client
-      yield rawBlockHeaders.map((rawBlockHeader) => new BlockHeader(Buffer.from(rawBlockHeader, 'hex')));
+      yield blockHeaders
     }
   }
 

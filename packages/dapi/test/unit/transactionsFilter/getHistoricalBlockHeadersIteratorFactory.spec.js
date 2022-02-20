@@ -1,4 +1,5 @@
 const { BlockHeader } = require('@dashevo/dashcore-lib');
+const sinon = require('sinon')
 
 const getHistoricalBlockHeadersIteratorFactory = require('../../../lib/grpcServer/handlers/blockheaders-stream/getHistoricalBlockHeadersIteratorFactory');
 
@@ -6,12 +7,14 @@ describe('getHistoricalBlockHeadersIteratorFactory', () => {
   let coreRpcMock;
   let blockHeaderMock;
 
+  const chainDataProvider = {getBlockHeaders: sinon.stub()}
+
   beforeEach(() => {
     coreRpcMock = {
-      getBlock: this.sinon.stub(),
-      getBlockStats: this.sinon.stub(),
-      getBlockHash: this.sinon.stub(),
-      getBlockHeaders: this.sinon.stub(),
+      getBlock: sinon.stub(),
+      getBlockStats: sinon.stub(),
+      getBlockHash: sinon.stub(),
+      getBlockHeaders: sinon.stub(),
     };
 
     blockHeaderMock = new BlockHeader({
@@ -23,6 +26,8 @@ describe('getHistoricalBlockHeadersIteratorFactory', () => {
       bits: 0,
       nonce: 1449878271,
     });
+
+    chainDataProvider.getBlockHeaders.resetHistory()
   });
 
   it('should proceed straight to done if all ranges are empty', async () => {
@@ -32,7 +37,7 @@ describe('getHistoricalBlockHeadersIteratorFactory', () => {
     const fromBlockHeight = 1;
     const count = 1337;
 
-    const getHistoricalBlockHeadersIterator = getHistoricalBlockHeadersIteratorFactory(coreRpcMock);
+    const getHistoricalBlockHeadersIterator = getHistoricalBlockHeadersIteratorFactory(coreRpcMock, chainDataProvider);
 
     const blockHeadersIterator = getHistoricalBlockHeadersIterator(
       fromBlockHeight,
@@ -50,6 +55,6 @@ describe('getHistoricalBlockHeadersIteratorFactory', () => {
     expect(r4.done).to.be.true();
 
     expect(coreRpcMock.getBlockHash.callCount).to.be.equal(3);
-    expect(coreRpcMock.getBlockHeaders.callCount).to.be.equal(3);
+    expect(chainDataProvider.getBlockHeaders.callCount).to.be.equal(3);
   });
 });

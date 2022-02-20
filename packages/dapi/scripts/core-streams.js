@@ -31,8 +31,8 @@ const {
   },
   getCoreDefinition,
 } = require('@dashevo/dapi-grpc');
-const AppMediator = require('../lib/mediators/app-mediator');
-const chainlocks = require('../lib/grpcServer/handlers/blockheaders-stream/chainlocks');
+
+const ChainDataProvider = require('../lib/providers/chainDataProvider');
 
 // Load config from .env
 dotenv.config();
@@ -59,8 +59,6 @@ const subscribeToNewTransactions = require('../lib/transactionsFilter/subscribeT
 const getHistoricalTransactionsIteratorFactory = require('../lib/transactionsFilter/getHistoricalTransactionsIteratorFactory');
 const getMemPoolTransactionsFactory = require('../lib/transactionsFilter/getMemPoolTransactionsFactory');
 
-const appMediator = new AppMediator();
-
 async function main() {
   // Validate config
   const configValidationResult = validateConfig(config);
@@ -79,17 +77,6 @@ async function main() {
   dashCoreZmqClient.on(ZmqClient.events.DISCONNECTED, log.warn);
   dashCoreZmqClient.on(ZmqClient.events.CONNECTION_DELAY, log.warn);
   dashCoreZmqClient.on(ZmqClient.events.MONITOR_ERROR, log.warn);
-
-  const rawBestChainLock = await dashCoreRpcClient.getBestChainLock();
-  chainlocks.updateBestChainLock(new ChainLock(rawBestChainLock));
-
-  dashCoreZmqClient.on(dashCoreZmqClient.topics.rawchainlock, (chainlock) => {
-    chainlocks.updateBestChainLock(new ChainLock(chainlock));
-    appMediator.emit(appMediator.events.chainlock, chainlocks.getBestChainLock());
-  });
-  dashCoreZmqClient.on(dashCoreZmqClient.topics.hashblock, (hashblock) => {
-    appMediator.emit(appMediator.events.hashblock, hashblock);
-  });
 
   // Wait until zmq connection is established
   log.info(`Connecting to dashcore ZMQ on ${dashCoreZmqClient.connectionString}`);
@@ -131,6 +118,8 @@ async function main() {
     emitInstantLockToFilterCollection,
   );
 
+  const chainDataProvider = new ChainDataProvider(dashCoreRpcClient, dashCoreZmqClient)
+
   // Start GRPC server
   log.info('Starting GRPC server');
 
@@ -142,6 +131,7 @@ async function main() {
 
   const getHistoricalBlockHeadersIterator = getHistoricalBlockHeadersIteratorFactory(
     dashCoreRpcClient,
+    chainDataProvider,
   );
 
   const getMemPoolTransactions = getMemPoolTransactionsFactory(
@@ -174,9 +164,9 @@ async function main() {
     subscribeToBlockHeadersWithChainLocksHandlerFactory(
       getHistoricalBlockHeadersIterator,
       dashCoreRpcClient,
+      chainDataProvider,
       dashCoreZmqClient,
-      subscribeToNewBlockHeaders,
-      appMediator,
+      subscribeToNewBlockHeaders
     );
 
   const wrappedSubscribeToBlockHeadersWithChainLocks = jsonToProtobufHandlerWrapper(
