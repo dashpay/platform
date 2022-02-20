@@ -37,7 +37,7 @@ describe('Dash - Client', function suite() {
 
   beforeEach(async function beforeEach() {
     testMnemonic = 'agree country attract master mimic ball load beauty join gentle turtle hover';
-    testHDKey = "xprv9s21ZrQH143K4PgfRZPuYjYUWRZkGfEPuWTEUESMoEZLC274ntC4G49qxgZJEPgmujsmY52eVggtwZgJPrWTMXmbYgqDVySWg46XzbGXrSZ";
+    testHDKey = "tprv8ZgxMBicQKsPeGi4CikhacVPz6UmErenu1PoD3S4XcEDSPP8auRaS8hG3DQtsQ2i9HACgohHwF5sgMVJNksoKqYoZbis8o75Pp1koCme2Yo";
 
     client = new Client({
       wallet: {
@@ -145,7 +145,7 @@ describe('Dash - Client', function suite() {
       const importedIdentityIds = account.identities.getIdentityIds();
       // Check that we've imported identities properly
       expect(importedIdentityIds.length).to.be.equal(accountIdentitiesCountBeforeTest + 1);
-      expect(importedIdentityIds[0]).to.be.equal(interceptedIdentityStateTransition.getIdentityId().toString());
+      expect(importedIdentityIds[1]).to.be.equal(interceptedIdentityStateTransition.getIdentityId().toString());
     });
 
     it('should throw TransitionBroadcastError when transport resolves error', async () => {
