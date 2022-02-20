@@ -141,6 +141,8 @@ function setupLocalPresetTaskFactory(
                 config.set('core.rpc.port', 20002 + (i * 100));
                 config.set('externalIp', hostDockerInternalIp);
 
+                config.set('docker.network.subnet', `172.24.${nodeIndex}.0/24`);
+
                 // Setup Core debug logs
                 if (ctx.debugLogs) {
                   config.set('core.debug', 1);

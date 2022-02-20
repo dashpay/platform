@@ -25,6 +25,7 @@ describe('initChainHandlerFactory', () => {
   let createValidatorSetUpdateMock;
   let loggerMock;
   let validatorSetUpdate;
+  let synchronizeMasternodeIdentitiesMock;
   let registerSystemDataContractMock;
   let registerTopLevelDomainMock;
   let registerFeatureFlagMock;
@@ -75,6 +76,7 @@ describe('initChainHandlerFactory', () => {
     validatorSetUpdate = new ValidatorSetUpdate();
 
     createValidatorSetUpdateMock = this.sinon.stub().returns(validatorSetUpdate);
+    synchronizeMasternodeIdentitiesMock = this.sinon.stub();
 
     loggerMock = new LoggerMock(this.sinon);
 
@@ -109,6 +111,7 @@ describe('initChainHandlerFactory', () => {
 
     rootTreeMock = {
       getRootHash: this.sinon.stub(),
+      rebuild: this.sinon.stub(),
     };
     documentDatabaseManagerMock = {
       create: this.sinon.stub(),
@@ -131,6 +134,7 @@ describe('initChainHandlerFactory', () => {
       initialCoreChainLockedHeight,
       validatorSetMock,
       createValidatorSetUpdateMock,
+      synchronizeMasternodeIdentitiesMock,
       loggerMock,
       registerSystemDataContractMock,
       registerTopLevelDomainMock,
@@ -188,6 +192,13 @@ describe('initChainHandlerFactory', () => {
 
     expect(createValidatorSetUpdateMock).to.be.calledOnceWithExactly(validatorSetMock);
 
+    expect(synchronizeMasternodeIdentitiesMock).to.be.calledOnceWithExactly(
+      initialCoreChainLockedHeight,
+      true,
+    );
+
+    expect(rootTreeMock.rebuild).to.be.calledOnce();
+
     expect(blockExecutionStoreTransactionsMock.start).to.have.been.calledOnce();
     expect(blockExecutionStoreTransactionsMock.commit).to.have.been.calledOnce();
     expect(cloneToPreviousStoreTransactionsMock).to.have.been.calledOnceWithExactly(
@@ -229,12 +240,6 @@ describe('initChainHandlerFactory', () => {
     });
     expect(registerTopLevelDomainMock).to.have.been.calledOnceWithExactly(
       'dash', dataContracts[1], dpnsOwnerId, new Date(request.time.seconds.toNumber() * 1000),
-    );
-    expect(registerFeatureFlagMock).to.have.been.calledOnceWithExactly(
-      'fixCumulativeFeesBug',
-      dataContracts[0],
-      featureFlagsOwnerId,
-      new Date(request.time.seconds.toNumber() * 1000),
     );
   });
 });
