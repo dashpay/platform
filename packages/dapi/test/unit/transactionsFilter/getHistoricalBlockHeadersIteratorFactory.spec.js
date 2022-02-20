@@ -1,5 +1,5 @@
 const { BlockHeader } = require('@dashevo/dashcore-lib');
-const sinon = require('sinon')
+const sinon = require('sinon');
 
 const getHistoricalBlockHeadersIteratorFactory = require('../../../lib/grpcServer/handlers/blockheaders-stream/getHistoricalBlockHeadersIteratorFactory');
 
@@ -7,7 +7,7 @@ describe('getHistoricalBlockHeadersIteratorFactory', () => {
   let coreRpcMock;
   let blockHeaderMock;
 
-  const chainDataProvider = {getBlockHeaders: sinon.stub()}
+  const chainDataProvider = { getBlockHeaders: sinon.stub() };
 
   beforeEach(() => {
     coreRpcMock = {
@@ -27,7 +27,7 @@ describe('getHistoricalBlockHeadersIteratorFactory', () => {
       nonce: 1449878271,
     });
 
-    chainDataProvider.getBlockHeaders.resetHistory()
+    chainDataProvider.getBlockHeaders.resetHistory();
   });
 
   it('should proceed straight to done if all ranges are empty', async () => {
@@ -37,7 +37,8 @@ describe('getHistoricalBlockHeadersIteratorFactory', () => {
     const fromBlockHeight = 1;
     const count = 1337;
 
-    const getHistoricalBlockHeadersIterator = getHistoricalBlockHeadersIteratorFactory(coreRpcMock, chainDataProvider);
+    const getHistoricalBlockHeadersIterator = getHistoricalBlockHeadersIteratorFactory(coreRpcMock,
+      chainDataProvider);
 
     const blockHeadersIterator = getHistoricalBlockHeadersIterator(
       fromBlockHeight,

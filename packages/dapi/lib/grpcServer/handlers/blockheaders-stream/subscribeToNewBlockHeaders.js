@@ -45,7 +45,6 @@ function subscribeToNewBlockHeaders(mediator,
       pendingHeadersHashes.delete(hash);
     });
   });
-  console.log('asdas')
 
   // Receive an event when all historical data is sent to the user.
   mediator.once(ProcessMediator.EVENTS.HISTORICAL_DATA_SENT, async () => {
@@ -57,7 +56,6 @@ function subscribeToNewBlockHeaders(mediator,
     // Cache is populated from ZMQ events.
     while (isClientConnected) {
       if (pendingHeadersHashes.size) {
-
         // TODO: figure out whether it's possible to omit new BlockHeader() conversion
         // and directly send bytes to the client
         const blockHeaders = await Promise.all(Array.from(pendingHeadersHashes)

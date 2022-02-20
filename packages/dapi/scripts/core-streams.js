@@ -1,6 +1,5 @@
 const dotenv = require('dotenv');
 const grpc = require('@grpc/grpc-js');
-const { ChainLock } = require('@dashevo/dashcore-lib');
 
 const {
   client: {
@@ -118,7 +117,7 @@ async function main() {
     emitInstantLockToFilterCollection,
   );
 
-  const chainDataProvider = new ChainDataProvider(dashCoreRpcClient, dashCoreZmqClient)
+  const chainDataProvider = new ChainDataProvider(dashCoreRpcClient, dashCoreZmqClient);
 
   // Start GRPC server
   log.info('Starting GRPC server');
@@ -166,7 +165,7 @@ async function main() {
       dashCoreRpcClient,
       chainDataProvider,
       dashCoreZmqClient,
-      subscribeToNewBlockHeaders
+      subscribeToNewBlockHeaders,
     );
 
   const wrappedSubscribeToBlockHeadersWithChainLocks = jsonToProtobufHandlerWrapper(

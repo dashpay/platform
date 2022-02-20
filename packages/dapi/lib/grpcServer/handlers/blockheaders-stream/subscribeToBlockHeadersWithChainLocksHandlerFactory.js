@@ -1,5 +1,3 @@
-const {ChainLock} = require('@dashevo/dashcore-lib');
-
 const {
   server: {
     error: {
@@ -68,14 +66,14 @@ function subscribeToBlockHeadersWithChainLocksHandlerFactory(
   coreAPI,
   chainDataProvider,
   zmqClient,
-  subscribeToNewBlockHeaders
+  subscribeToNewBlockHeaders,
 ) {
   /**
    * @typedef subscribeToBlockHeadersWithChainLocksHandler
    * @param {grpc.ServerWriteableStream<BlockHeadersWithChainLocksRequest>} call
    */
   async function subscribeToBlockHeadersWithChainLocksHandler(call) {
-    const {request} = call;
+    const { request } = call;
 
     const fromBlockHash = Buffer.from(request.getFromBlockHash_asU8()).toString('hex');
     const fromBlockHeight = request.getFromBlockHeight();

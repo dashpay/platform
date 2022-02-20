@@ -96,6 +96,6 @@ module.exports = {
     cache: {
       maxSize: Number(config[OPTIONS.BLOCK_HEADERS_CACHE_SIZE_LIMIT]),
       maxAge: 1000 * 60 * 60,
-    }
+    },
   },
 };

@@ -1,63 +1,58 @@
-const {EventEmitter} = require('events');
-const {BlockHeader, ChainLock} = require('@dashevo/dashcore-lib');
+const { EventEmitter } = require('events');
+const { BlockHeader, ChainLock } = require('@dashevo/dashcore-lib');
 const blockHeadersCache = require('./blockheaders-cache');
 
 class ChainDataProvider extends EventEmitter {
-
   constructor(coreRpcClient, zmqClient) {
-    super()
+    super();
 
-    this.coreRpcAPI = coreRpcClient
-    this.zmqClient = zmqClient
+    this.coreRpcAPI = coreRpcClient;
+    this.zmqClient = zmqClient;
 
-    this.chainLock = null
+    this.chainLock = null;
   }
 
-  events = {
+  blockHashHandler(blockHash) {
+    this.emit(this.events.newBlockHeader, blockHash);
   }
 
-  blockHashHandler = (blockHash) => {
-    this.emit(this.events.newBlockHeader, blockHash)
+  chainLockHandler(rawChainLock) {
+    this.chainLock = new ChainLock(Buffer.from(rawChainLock));
+
+    this.emit(this.events.newChainLock);
   }
-
-  newBestChainLockHandler = (rawChainLock) => {
-    this.bestChainLock = new ChainLock(Buffer.from(rawChainLock))
-
-    this.emit(this.events.newChainLock)
-  }
-
 
   async init() {
-    const chainLock = await this.coreRpcAPI.getBestChainLock()
+    const chainLock = await this.coreRpcAPI.getBestChainLock();
 
-    this.chainLock = new ChainLock(Buffer.from(chainLock))
+    this.chainLock = new ChainLock(Buffer.from(chainLock));
 
-    this.zmqClient.on(this.zmqClient.events.newChainLock, this.newBestChainLockHandler);
+    this.zmqClient.on(this.zmqClient.events.newChainLock, this.chainLockHandler);
     this.zmqClient.on(this.zmqClient.events.newBlockHeader, this.blockHashHandler);
   }
 
-
   async getBlockHeader(hash) {
-    const cached = blockHeadersCache.get(hash)
+    const cached = blockHeadersCache.get(hash);
 
     if (cached) {
       return new BlockHeader(Buffer.from(cached, 'hex'));
     }
 
-    const rawBlockHeader = await this.coreRpcAPI.getBlockHeader(hash)
+    const rawBlockHeader = await this.coreRpcAPI.getBlockHeader(hash);
 
-    blockHeadersCache.set(hash, rawBlockHeader)
+    blockHeadersCache.set(hash, rawBlockHeader);
 
     return new BlockHeader(Buffer.from(rawBlockHeader, 'hex'));
   }
 
   async getBlockHeaders(startHash, count) {
-    const {height} = await this.coreRpcAPI.getBlockStats(startHash, ['height'])
+    const { height } = await this.coreRpcAPI.getBlockStats(startHash, ['height']);
 
     const blockHeights = [...Array(count).keys()]
       .map((e, i) => height + i);
 
-    const cachedBlockHeaders = blockHeights.map((height) => blockHeadersCache.get(height));
+    const cachedBlockHeaders = blockHeights
+      .map((blockHeight) => blockHeadersCache.get(blockHeight));
     const [firstCachedItem] = cachedBlockHeaders;
 
     let lastCachedIndex = -1;
@@ -85,7 +80,7 @@ class ChainDataProvider extends EventEmitter {
     const rawBlockHeaders = [...cachedBlockHeaders.slice(0,
       lastCachedIndex !== -1 ? lastCachedIndex : 0), ...missingBlockHeaders];
 
-    missingBlockHeaders.forEach((e, i) => blockHeadersCache.set(currentHeight + i, e));
+    missingBlockHeaders.forEach((e, i) => blockHeadersCache.set(height + i, e));
 
     return rawBlockHeaders.map((rawBlockHeader) => new BlockHeader(Buffer.from(rawBlockHeader, 'hex')));
   }
@@ -95,14 +90,13 @@ class ChainDataProvider extends EventEmitter {
    * @returns {Promise<ChainLock>}
    */
   async getBestChainLock() {
-    return this.chainLock
+    return this.chainLock;
   }
-
 }
 
 ChainDataProvider.prototype.events = {
-  'newBlockHeader': 'newBlockHeader',
-  'newChainLock': 'newChainLock'
-}
+  newBlockHeader: 'newBlockHeader',
+  newChainLock: 'newChainLock',
+};
 
-module.exports = ChainDataProvider
+module.exports = ChainDataProvider;

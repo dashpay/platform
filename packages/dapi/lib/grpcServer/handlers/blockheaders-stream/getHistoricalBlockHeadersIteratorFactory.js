@@ -1,5 +1,3 @@
-const {BlockHeader} = require('@dashevo/dashcore-lib');
-
 const MAX_HEADERS_PER_REQUEST = 500;
 
 /**
@@ -42,7 +40,7 @@ function getHistoricalBlockHeadersIteratorFactory(coreRpcApi, chainDataProvider)
 
       const blockHeaders = await chainDataProvider.getBlockHeaders(blockHash, blocksToScan);
 
-      yield blockHeaders
+      yield blockHeaders;
     }
   }
 

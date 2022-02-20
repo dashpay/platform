@@ -1,5 +1,5 @@
 const sinon = require('sinon');
-const { ChainLock, BlockHeader } = require('@dashevo/dashcore-lib');
+const { ChainLock } = require('@dashevo/dashcore-lib');
 
 const {
   server: {
@@ -22,9 +22,8 @@ const {
 } = require('@dashevo/dapi-grpc');
 
 const GrpcCallMock = require('../../../../../lib/test/mock/GrpcCallMock');
-const subscribeToBlockHeadersWithChainLocksHandlerFactory = require(
-  '../../../../../lib/grpcServer/handlers/blockheaders-stream/subscribeToBlockHeadersWithChainLocksHandlerFactory');
-const ChainDataProvider = require("../../../../../lib/providers/chainDataProvider");
+const subscribeToBlockHeadersWithChainLocksHandlerFactory = require('../../../../../lib/grpcServer/handlers/blockheaders-stream/subscribeToBlockHeadersWithChainLocksHandlerFactory'); // eslint-disable-line
+const ChainDataProvider = require('../../../../../lib/providers/chainDataProvider');
 
 let coreAPIMock;
 let zmqClientMock;
@@ -58,7 +57,7 @@ describe('subscribeToBlockHeadersWithChainLocksHandlerFactory', async () => {
     getHistoricalBlockHeadersIteratorMock = () => asyncGenerator();
     zmqClientMock = { on: sinon.stub(), topics: { hashblock: 'fake' } };
 
-    chainDataProvider = new ChainDataProvider(coreAPIMock, zmqClientMock)
+    chainDataProvider = new ChainDataProvider(coreAPIMock, zmqClientMock);
 
     // eslint-disable-next-line operator-linebreak
     subscribeToBlockHeadersWithChainLocksHandler =
