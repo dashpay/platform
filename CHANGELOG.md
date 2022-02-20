@@ -1,4 +1,52 @@
-### [0.21.7](https://github.com/dashevo/platform/compare/v0.21.6...v0.21.7) (2022-01-17)
+## [0.21.8](https://github.com/dashevo/platform/compare/v0.21.7...v0.21.8) (2022-02-15)
+
+
+### Bug Fixes
+
+* sorting unconfirmed tx as oldest ([#206](https://github.com/dashevo/platform/issues/206))
+* **wallet-lib:** get transaction history missing txs ([#246](https://github.com/dashevo/platform/issues/246))
+
+
+### Tests
+
+* **platform-suite:** add -b flag to abort after first error ([#222](https://github.com/dashevo/platform/issues/222))
+
+
+### Miscellaneous Chores
+
+* updates @dashevo/dashcore-lib to v0.19.30 ([#238](https://github.com/dashevo/platform/issues/238))
+
+
+## [0.22.0-dev.7](https://github.com/dashevo/platform/compare/v0.21.7...v0.22.0-dev.7) (2022-01-19)
+
+
+### Features
+
+* added WalletStore ([#197](https://github.com/dashevo/platform/issues/197))
+* **drive:** allow using `in` and `startsWith` only in last `where` condition ([#201](https://github.com/dashevo/platform/issues/201))
+* **drive:** allow using `orderBy` for fields having `in` and `startsWith` in last `where` clause ([#199](https://github.com/dashevo/platform/issues/199))
+* register system contracts on `initChain` ([#182](https://github.com/dashevo/platform/issues/182))
+* **wallet-lib:** ChainStore ([#196](https://github.com/dashevo/platform/issues/196))
+
+
+### Bug Fixes
+
+* **sdk:** system contract ids were hardcoded in SDKs Client module ([#192](https://github.com/dashevo/platform/issues/192))
+
+
+### Build System
+
+* fix configure test suite script for grep 2.5.1 ([#187](https://github.com/dashevo/platform/issues/187))
+
+
+### Miscellaneous Chores
+
+* **dashmate:** update tenderdash to 0.7.0-dev ([#188](https://github.com/dashevo/platform/issues/188))
+* remove `fixCumulativeFeesBug` feature flag ([#191](https://github.com/dashevo/platform/issues/191))
+
+
+
+## [0.21.7](https://github.com/dashevo/platform/compare/v0.21.6...v0.21.7) (2022-01-17)
 
 
 ### ⚠ BREAKING CHANGES
@@ -161,7 +209,7 @@
 * undefined "-w" argument in restart script ([#85](https://github.com/dashevo/platform/issues/85))
 
 
-### [0.21.6](https://github.com/dashevo/platform/compare/v0.21.5...v0.21.6) (2021-12-13)
+## [0.21.6](https://github.com/dashevo/platform/compare/v0.21.5...v0.21.6) (2021-12-13)
 
 
 ### Bug Fixes
