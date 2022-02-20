@@ -22,9 +22,9 @@ describe('subscribeToNewBlockHeaders', async () => {
 
   const mockCoreAPI = sinon.stub();
   const mockZmqClient = sinon.stub();
-  const chainDataProviderMock = new ChainDataProvider(mockCoreAPI, mockZmqClient);
 
-  await chainDataProviderMock.init();
+  const chainDataProvider = new ChainDataProvider(mockCoreAPI, mockZmqClient);
+  await chainDataProvider.init();
 
   beforeEach(async () => {
     mediator = new ProcessMediator();
@@ -123,9 +123,7 @@ describe('subscribeToNewBlockHeaders', async () => {
 
     subscribeToNewBlockHeaders(
       mediator,
-      chainDataProviderMock,
-      dashCoreRpcClient,
-      zmqClient,
+      chainDataProvider,
     );
 
     const hashes = Object.keys(blockHeaders);
@@ -157,9 +155,7 @@ describe('subscribeToNewBlockHeaders', async () => {
 
     subscribeToNewBlockHeaders(
       mediator,
-      chainDataProviderMock,
-      dashCoreRpcClient,
-      zmqClient,
+      chainDataProvider,
     );
 
     const hashes = Object.keys(blockHeaders);
@@ -188,9 +184,7 @@ describe('subscribeToNewBlockHeaders', async () => {
 
     subscribeToNewBlockHeaders(
       mediator,
-      chainDataProviderMock,
-      dashCoreRpcClient,
-      zmqClient,
+      chainDataProvider,
     );
 
     const locksHeights = Object.keys(chainLocks);
@@ -217,9 +211,7 @@ describe('subscribeToNewBlockHeaders', async () => {
 
     subscribeToNewBlockHeaders(
       mediator,
-      chainDataProviderMock,
-      dashCoreRpcClient,
-      zmqClient,
+      chainDataProvider,
     );
 
     const hashes = Object.keys(blockHeaders);
@@ -241,9 +233,7 @@ describe('subscribeToNewBlockHeaders', async () => {
 
     subscribeToNewBlockHeaders(
       mediator,
-      chainDataProviderMock,
-      dashCoreRpcClient,
-      zmqClient,
+      chainDataProvider,
     );
 
     zmqClient.subscriberSocket.emit('message', zmqClient.topics.hashblock, Buffer.from(hashes[0], 'hex'));

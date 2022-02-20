@@ -8,13 +8,8 @@ const cache = require('../../../providers/blockheaders-cache');
  * @typedef subscribeToNewBlockHeaders
  * @param {ProcessMediator} mediator
  * @param {ChainDataProvider} chainDataProvider
- * @param {CoreRpcClient} coreAPI
- * @param {ZmqClient} zmqClient
  */
-function subscribeToNewBlockHeaders(mediator,
-  chainDataProvider,
-  coreAPI,
-  zmqClient) {
+function subscribeToNewBlockHeaders(mediator, chainDataProvider) {
   const pendingHeadersHashes = new Set();
 
   let lastChainLock;
