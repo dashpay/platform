@@ -13,13 +13,13 @@ class ChainDataProvider extends EventEmitter {
   }
 
   blockHashHandler(blockHash) {
-    this.emit(this.events.newBlockHeader, blockHash);
+    this.emit(this.events.NEW_BLOCK_HEADER, blockHash);
   }
 
   chainLockHandler(rawChainLock) {
     this.chainLock = new ChainLock(Buffer.from(rawChainLock));
 
-    this.emit(this.events.newChainLock);
+    this.emit(this.events.NEW_CHAIN_LOCK);
   }
 
   async init() {
@@ -27,8 +27,8 @@ class ChainDataProvider extends EventEmitter {
 
     this.chainLock = new ChainLock(Buffer.from(chainLock));
 
-    this.zmqClient.on(this.zmqClient.events.newChainLock, this.chainLockHandler);
-    this.zmqClient.on(this.zmqClient.events.newBlockHeader, this.blockHashHandler);
+    this.zmqClient.on(this.zmqClient.events.NEW_CHAIN_LOCK, this.chainLockHandler);
+    this.zmqClient.on(this.zmqClient.events.NEW_BLOCK_HEADER, this.blockHashHandler);
   }
 
   async getBlockHeader(hash) {
@@ -98,8 +98,8 @@ class ChainDataProvider extends EventEmitter {
 }
 
 ChainDataProvider.prototype.events = {
-  newBlockHeader: 'newBlockHeader',
-  newChainLock: 'newChainLock',
+  NEW_BLOCK_HEADER: 'NEW_BLOCK_HEADER',
+  NEW_CHAIN_LOCK: 'NEW_CHAIN_LOCK',
 };
 
 module.exports = ChainDataProvider;

@@ -30,8 +30,8 @@ function subscribeToNewBlockHeaders(mediator, chainDataProvider) {
     lastChainLock = chainLock;
   };
 
-  chainDataProvider.on(chainDataProvider.events.newBlockHeader, blockHashHandler);
-  chainDataProvider.on(chainDataProvider.events.newChainLock, chainLockHandler);
+  chainDataProvider.on(chainDataProvider.events.NEW_BLOCK_HEADER, blockHashHandler);
+  chainDataProvider.on(chainDataProvider.events.NEW_CHAIN_LOCK, chainLockHandler);
 
   mediator.on(ProcessMediator.EVENTS.HISTORICAL_BLOCK_HEADERS_SENT, (hashes) => {
     // Remove data from cache by hashes
@@ -76,8 +76,8 @@ function subscribeToNewBlockHeaders(mediator, chainDataProvider) {
   mediator.once(ProcessMediator.EVENTS.CLIENT_DISCONNECTED, () => {
     isClientConnected = false;
     mediator.removeAllListeners();
-    chainDataProvider.removeListener(chainDataProvider.events.newBlockHeader, blockHashHandler);
-    chainDataProvider.removeListener(chainDataProvider.events.newChainLock, chainLockHandler);
+    chainDataProvider.removeListener(chainDataProvider.events.NEW_BLOCK_HEADER, blockHashHandler);
+    chainDataProvider.removeListener(chainDataProvider.events.NEW_CHAIN_LOCK, chainLockHandler);
   });
 }
 
