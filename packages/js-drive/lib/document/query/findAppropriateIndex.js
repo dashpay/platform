@@ -22,7 +22,14 @@ function findAppropriateIndex(whereClauses, documentSchema) {
     const indexedProperties = indexDefinition.properties
       .map((indexedProperty) => Object.keys(indexedProperty)[0]);
 
-    return !uniqueWhereProperties.find((propertyName) => !indexedProperties.includes(propertyName));
+    const indexPlaces = uniqueWhereProperties
+      .map((propertyName) => indexedProperties.indexOf(propertyName))
+      .sort();
+
+    const correctIndexPlaces = Array(indexPlaces.length).fill().map((v, i) => i);
+
+    return indexPlaces.length <= uniqueWhereProperties.length
+      && indexPlaces.every((item, i) => item === correctIndexPlaces[i]);
   });
 }
 
