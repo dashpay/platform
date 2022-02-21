@@ -1,5 +1,4 @@
 const { BlockHeader, Block, ChainLock } = require('@dashevo/dashcore-lib');
-const sinon = require('sinon');
 const ZmqClient = require('../../../../../lib/externalApis/dashcore/ZmqClient');
 const dashCoreRpcClient = require('../../../../../lib/externalApis/dashcore/rpc');
 
@@ -17,11 +16,11 @@ describe('subscribeToNewBlockHeaders', async () => {
   const blockHeaders = {};
   const chainLocks = {};
 
-  sinon.stub(dashCoreRpcClient, 'getBlockHeader')
+  this.sinon.stub(dashCoreRpcClient, 'getBlockHeader')
     .callsFake(async (hash) => blockHeaders[hash].toBuffer().toString('hex'));
 
-  const mockCoreAPI = sinon.stub();
-  const mockZmqClient = sinon.stub();
+  const mockCoreAPI = this.sinon.stub();
+  const mockZmqClient = this.sinon.stub();
 
   const chainDataProvider = new ChainDataProvider(mockCoreAPI, mockZmqClient);
   await chainDataProvider.init();
@@ -33,7 +32,7 @@ describe('subscribeToNewBlockHeaders', async () => {
     blockHeadersCache.purge();
 
     zmqClient = new ZmqClient();
-    sinon.stub(zmqClient.subscriberSocket, 'connect')
+    this.sinon.stub(zmqClient.subscriberSocket, 'connect')
       .callsFake(() => {
         zmqClient.subscriberSocket.emit('connect');
       });
@@ -200,7 +199,7 @@ describe('subscribeToNewBlockHeaders', async () => {
   });
 
   it('should use cache when historical data is sent', async () => {
-    const spyCache = sinon.spy(blockHeadersCache);
+    const spyCache = this.sinon.spy(blockHeadersCache);
     const receivedHeaders = {};
 
     mediator.on(ProcessMediator.EVENTS.BLOCK_HEADERS, (headers) => {
