@@ -1,5 +1,3 @@
-const { mocha: { startMongoDb } } = require('@dashevo/dp-services-ctl');
-
 const getDataContractFixture = require('@dashevo/dpp/lib/test/fixtures/getDataContractFixture');
 const getDocumentsFixture = require('@dashevo/dpp/lib/test/fixtures/getDocumentsFixture');
 const generateRandomIdentifier = require('@dashevo/dpp/lib/test/utils/generateRandomIdentifier');
@@ -18,14 +16,9 @@ describe('fetchDocumentsFactory', () => {
   let documentRepository;
   let dataContract;
   let container;
-  let mongoDb;
-
-  startMongoDb().then((mongo) => {
-    mongoDb = mongo;
-  });
 
   beforeEach(async () => {
-    container = await createTestDIContainer(mongoDb);
+    container = await createTestDIContainer();
 
     dataContractRepository = container.resolve('dataContractRepository');
     documentRepository = container.resolve('documentRepository');
@@ -46,10 +39,8 @@ describe('fetchDocumentsFactory', () => {
       },
     ];
 
-    const blockExecutionStoreTransactions = container.resolve('blockExecutionStoreTransactions');
-    const dataContractsTransaction = blockExecutionStoreTransactions.getTransaction('dataContracts');
-
-    await dataContractsTransaction.start();
+    const createInitialStateStructure = container.resolve('createInitialStateStructure');
+    await createInitialStateStructure();
 
     await dataContractRepository.store(dataContract);
 
@@ -137,6 +128,7 @@ describe('fetchDocumentsFactory', () => {
         ['$createdAt', '>', startDate.getTime()],
         ['$createdAt', '<=', endDate.getTime()],
       ],
+      orderBy: [['$createdAt', 'asc']],
     };
 
     const result = await fetchDocuments(contractId, 'indexedDocument', query);
@@ -162,6 +154,7 @@ describe('fetchDocumentsFactory', () => {
         ['$createdAt', '>', startDate.getTime()],
         ['$createdAt', '<=', endDate.getTime()],
       ],
+      orderBy: [['$createdAt', 'asc']],
     };
 
     const result = await fetchDocuments(contractId, 'indexedDocument', query);

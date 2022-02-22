@@ -1,4 +1,4 @@
-const ContextsAreMoreThanStackMaxSizeError = require("./errors/ContextsAreMoreThanStackMaxSizeError");
+const ContextsAreMoreThanStackMaxSizeError = require('./errors/ContextsAreMoreThanStackMaxSizeError');
 
 class BlockExecutionContextStack {
   /**

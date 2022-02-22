@@ -295,7 +295,7 @@ describe('GroveDBStore', () => {
     it('should return a root hash for store with value', async () => {
       await store.put(testTreePath, key, value);
 
-      const valueHash = Buffer.from('d11176d953464b9f4e49a454885ec3b2c89ce659a5e8ede23ea46dfbf737a2a5', 'hex');
+      const valueHash = Buffer.from('c490ae30ef9508de2ff7c79f53efb2901ce7cc3b74ee1d02a14c697c2900687b', 'hex');
 
       const result = await store.getRootHash();
 

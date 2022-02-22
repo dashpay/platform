@@ -1,4 +1,4 @@
-const { startMongoDb, startDashCore } = require('@dashevo/dp-services-ctl');
+const { startDashCore } = require('@dashevo/dp-services-ctl');
 const SimplifiedMNListStore = require('@dashevo/dashcore-lib/lib/deterministicmnlist/SimplifiedMNListStore');
 
 const createTestDIContainer = require('../../../lib/test/createTestDIContainer');
@@ -6,16 +6,10 @@ const createTestDIContainer = require('../../../lib/test/createTestDIContainer')
 describe('updateSimplifiedMasternodeListFactory', function main() {
   this.timeout(190000);
 
-  let mongoDB;
   let container;
   let dashCore;
 
-  before(async () => {
-    mongoDB = await startMongoDb();
-  });
-
   after(async () => {
-    await mongoDB.remove();
     if (dashCore) {
       await dashCore.remove();
     }
@@ -30,7 +24,7 @@ describe('updateSimplifiedMasternodeListFactory', function main() {
   it('should wait until SML will be retrieved', async () => {
     dashCore = await startDashCore();
 
-    container = await createTestDIContainer(mongoDB, dashCore);
+    container = await createTestDIContainer(dashCore);
 
     const simplifiedMasternodeList = container.resolve('simplifiedMasternodeList');
 

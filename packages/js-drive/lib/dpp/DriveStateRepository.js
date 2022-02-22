@@ -31,7 +31,7 @@ class DriveStateRepository {
     blockExecutionContext,
     simplifiedMasternodeList,
     dataContractCache,
-    options= {},
+    options = {},
   ) {
     this.identityRepository = identityRepository;
     this.publicKeyToIdentityIdRepository = publicKeyToIdentityIdRepository;
@@ -166,7 +166,12 @@ class DriveStateRepository {
    * @returns {Promise<Document[]>}
    */
   async fetchDocuments(contractId, type, options = {}) {
-    return this.fetchDocumentsFunction(contractId, type, options, this.#options.useTransaction || false);
+    return this.fetchDocumentsFunction(
+      contractId,
+      type,
+      options,
+      this.#options.useTransaction || false,
+    );
   }
 
   /**

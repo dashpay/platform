@@ -59,17 +59,13 @@ describe('DataContractStoreRepository', () => {
         true,
       );
 
-      try {
-        await store.get(
-          DataContractStoreRepository.TREE_PATH.concat([dataContract.getId().toBuffer()]),
-          DataContractStoreRepository.DATA_CONTRACT_KEY,
-          { useTransaction: false },
-        );
+      const notFoundDataContract = await store.get(
+        DataContractStoreRepository.TREE_PATH.concat([dataContract.getId().toBuffer()]),
+        DataContractStoreRepository.DATA_CONTRACT_KEY,
+        { useTransaction: false },
+      );
 
-        expect.fail('should throw an error');
-      } catch (e) {
-        expect(e.message.startsWith('path not found')).to.be.true();
-      }
+      expect(notFoundDataContract).to.be.null();
 
       const dataFromTransaction = await store.get(
         DataContractStoreRepository.TREE_PATH.concat([dataContract.getId().toBuffer()]),

@@ -1,12 +1,12 @@
 const getDocumentsFixture = require('@dashevo/dpp/lib/test/fixtures/getDocumentsFixture');
 const createDPPMock = require('@dashevo/dpp/lib/test/mocks/createDPPMock');
 
+const getDataContractFixture = require('@dashevo/dpp/lib/test/fixtures/getDataContractFixture');
 const DocumentRepository = require('../../../lib/document/DocumentRepository');
 const GroveDBStoreMock = require('../../../lib/test/mock/GroveDBStoreMock');
 const LoggerMock = require('../../../lib/test/mock/LoggerMock');
 const DriveMock = require('../../../lib/test/mock/DriveMock');
 const createDocumentTypeTreePath = require('../../../lib/document/groveDB/createDocumentTreePath');
-const getDataContractFixture = require('@dashevo/dpp/lib/test/fixtures/getDataContractFixture');
 const InvalidQueryError = require('../../../lib/document/errors/InvalidQueryError');
 const ValidationError = require('../../../lib/document/query/errors/ValidationError');
 
@@ -15,7 +15,6 @@ describe('DocumentRepository', () => {
   let repository;
   let dppMock;
   let groveDBStoreMock;
-  let transactionMock;
   let loggerMock;
   let appHash;
   let driveMock;
@@ -50,8 +49,6 @@ describe('DocumentRepository', () => {
     groveDBStoreMock.logger = loggerMock;
     groveDBStoreMock.getRootHash.resolves(appHash);
     groveDBStoreMock.getDrive.returns(driveMock);
-
-    transactionMock = {};
 
     repository = new DocumentRepository(groveDBStoreMock, validateQueryMock);
   });

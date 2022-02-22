@@ -1,7 +1,5 @@
 const cbor = require('cbor');
 
-const { startMongoDb } = require('@dashevo/dp-services-ctl');
-
 const {
   asValue,
 } = require('awilix');
@@ -17,7 +15,6 @@ describe('queryHandlerFactory', function main() {
   this.timeout(90000);
 
   let container;
-  let mongoDB;
   let queryHandler;
   let identityQueryHandlerMock;
   let dataContractQueryHandlerMock;
@@ -27,19 +24,10 @@ describe('queryHandlerFactory', function main() {
   let identity;
   let proof;
 
-  before(async () => {
-    await initializeHashFunction();
-    mongoDB = await startMongoDb();
-  });
-
-  after(async () => {
-    await mongoDB.remove();
-  });
-
   beforeEach(async function beforeEach() {
     proof = Buffer.from('GbYYWuLCU6u7nb4pdnMM1uzAeURhE7ZPxGqAbUARBsb3', 'hex');
 
-    container = await createTestDIContainer(mongoDB);
+    container = await createTestDIContainer();
 
     dataContract = getDataContractFixture();
     documents = getDocumentsFixture(dataContract);

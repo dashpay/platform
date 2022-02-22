@@ -5,11 +5,13 @@ const ValidationResult = require('../../../../lib/document/query/ValidationResul
 const ConflictingConditionsError = require('../../../../lib/document/query/errors/ConflictingConditionsError');
 const InvalidPropertiesInOrderByError = require('../../../../lib/document/query/errors/InvalidPropertiesInOrderByError');
 const NotIndexedPropertiesInWhereConditionsError = require('../../../../lib/document/query/errors/NotIndexedPropertiesInWhereConditionsError');
-const RangeOperatorAllowedOnlyForLastIndexedPropertyError = require('../../../../lib/document/query/errors/RangeOperatorAllowedOnlyForLastIndexedPropertyError');
 const MultipleRangeOperatorsError = require('../../../../lib/document/query/errors/MultipleRangeOperatorsError');
 const InOperatorAllowedOnlyForLastTwoIndexedPropertiesError = require('../../../../lib/document/query/errors/InOperatorAllowedOnlyForLastTwoIndexedPropertiesError');
 const RangeOperatorAllowedOnlyWithEqualOperatorsError = require('../../../../lib/document/query/errors/RangeOperatorAllowedOnlyWithEqualOperatorsError');
 const RangePropertyDoesNotHaveOrderByError = require('../../../../lib/document/query/errors/RangePropertyDoesNotHaveOrderByError');
+const RangeOperatorAllowedOnlyForLastTwoWhereConditionsError = require('../../../../lib/document/query/errors/RangeOperatorAllowedOnlyForLastTwoWhereConditionsError');
+const OrderByWithoutWhereConditionsError = require('../../../../lib/document/query/errors/OrderByWithoutWhereConditionsError');
+const QueriedPropertyIsToFarAwayError = require('../../../../lib/document/query/errors/QueriedPropertyIsToFarAwayError');
 
 const typesTestCases = {
   number: {
@@ -192,12 +194,12 @@ describe('validateQueryFactory', () => {
   });
 
   it('should return valid result when some valid sample query is passed', () => {
-    sortWhereClausesAccordingToIndexStub.returns([['$id', '>', 1]]);
+    sortWhereClausesAccordingToIndexStub.returns([['$id', '==', generateRandomIdentifier()]]);
     findAppropriateIndexStub.returns({
       properties: [{ $id: 'asc' }],
     });
 
-    const result = validateQuery({ where: [['$id', '>', 1]], orderBy: [['$id', 'asc']] }, documentSchema);
+    const result = validateQuery({ where: [['$id', '==', generateRandomIdentifier()]] }, documentSchema);
 
     expect(result).to.be.instanceOf(ValidationResult);
     expect(result.isValid()).to.be.true();
@@ -277,7 +279,15 @@ describe('validateQueryFactory', () => {
     describe('condition', () => {
       describe('property', () => {
         it('should return valid result if condition contains "$id" field', () => {
-          const result = validateQuery({ where: [['$id', '==', 'idvalue']] }, documentSchema);
+          findAppropriateIndexStub.returns({
+            properties: [{ $id: 'asc' }],
+            unique: true,
+          });
+
+          const result = validateQuery(
+            { where: [['$id', '==', generateRandomIdentifier()]] },
+            documentSchema,
+          );
 
           expect(result).to.be.instanceOf(ValidationResult);
           expect(result.isValid()).to.be.true();
@@ -292,13 +302,17 @@ describe('validateQueryFactory', () => {
             ],
           };
 
+          findAppropriateIndexStub.returns({
+            properties: [{ a: 'asc' }],
+          });
+
           const result = validateQuery({ where: [['a', '==', '1']] }, documentSchema);
 
           expect(result).to.be.instanceOf(ValidationResult);
           expect(result.isValid()).to.be.true();
         });
 
-        it('should return valid result if condition contains nested path field', () => {
+        it.skip('should return valid result if condition contains nested path field', () => {
           documentSchema = {
             indices: [
               {
@@ -314,7 +328,7 @@ describe('validateQueryFactory', () => {
         });
 
         it('should return invalid result if property is not specified in document indices', () => {
-          findAppropriateIndexStub.returns(null);
+          findAppropriateIndexStub.returns(undefined);
 
           const result = validateQuery({ where: [['a', '==', '1']] }, documentSchema);
 
@@ -325,7 +339,7 @@ describe('validateQueryFactory', () => {
           expect(result.errors[0]).to.be.instanceOf(NotIndexedPropertiesInWhereConditionsError);
         });
 
-        it('should return invalid result if field name is more than 255 characters long', () => {
+        it.skip('should return invalid result if field name is more than 255 characters long', () => {
           const validPropertyName = 'a'.repeat(255);
           const longPropertyName = 'a'.repeat(256);
 
@@ -402,12 +416,24 @@ describe('validateQueryFactory', () => {
               ],
             };
 
+            findAppropriateIndexStub.returns({
+              properties: [{ a: 'asc' }],
+            });
+
+            findIndexedPropertiesSinceStub.returns([['a']]);
+
             const operators = ['<', '<=', '==', '>', '>='];
 
             operators.forEach((operator) => {
-              const result = validateQuery({ where: [['a', operator, '1']] }, documentSchema);
+              const query = { where: [['a', operator, '1']] };
+              if (operator !== '==') {
+                query.orderBy = [['a', 'asc']];
+              }
+
+              const result = validateQuery(query, documentSchema);
 
               expect(result).to.be.instanceOf(ValidationResult);
+
               expect(result.isValid()).to.be.true();
             });
             const result = validateQuery({ where: [['a', '===', '1']] }, documentSchema);
@@ -430,7 +456,12 @@ describe('validateQueryFactory', () => {
               ],
             };
 
-            const result = validateQuery({ where: [['a', '<', 1]] }, documentSchema);
+            findIndexedPropertiesSinceStub.returns([['a']]);
+            findAppropriateIndexStub.returns({
+              properties: [{ a: 'asc' }],
+            });
+
+            const result = validateQuery({ where: [['a', '<', 1]], orderBy: [['a', 'asc']] }, documentSchema);
 
             expect(result).to.be.instanceOf(ValidationResult);
             expect(result.isValid()).to.be.true();
@@ -445,13 +476,18 @@ describe('validateQueryFactory', () => {
               ],
             };
 
-            const result = validateQuery({ where: [['a', '<', 'test']] }, documentSchema);
+            findIndexedPropertiesSinceStub.returns([['a']]);
+            findAppropriateIndexStub.returns({
+              properties: [{ a: 'asc' }],
+            });
+
+            const result = validateQuery({ where: [['a', '<', 'test']], orderBy: [['a', 'asc']] }, documentSchema);
 
             expect(result).to.be.instanceOf(ValidationResult);
             expect(result.isValid()).to.be.true();
           });
 
-          it('should return invalid result if "<" operator used with a string value longer than 1024 chars', () => {
+          it.skip('should return invalid result if "<" operator used with a string value longer than 1024 chars', () => {
             documentSchema = {
               indices: [
                 {
@@ -487,7 +523,12 @@ describe('validateQueryFactory', () => {
               ],
             };
 
-            const result = validateQuery({ where: [['a', '<', true]] }, documentSchema);
+            findIndexedPropertiesSinceStub.returns([['a']]);
+            findAppropriateIndexStub.returns({
+              properties: [{ a: 'asc' }],
+            });
+
+            const result = validateQuery({ where: [['a', '<', true]], orderBy: [['a', 'asc']] }, documentSchema);
 
             expect(result).to.be.instanceOf(ValidationResult);
             expect(result.isValid()).to.be.true();
@@ -503,7 +544,7 @@ describe('validateQueryFactory', () => {
                 ],
               };
 
-              const result = validateQuery({ where: [['a', '<', value]] }, documentSchema);
+              const result = validateQuery({ where: [['a', '<', value]], orderBy: [['a', 'asc']] }, documentSchema);
 
               expect(result).to.be.instanceOf(ValidationResult);
               expect(result.isValid()).to.be.false();
@@ -528,14 +569,17 @@ describe('validateQueryFactory', () => {
                   },
                 ],
               };
+              findIndexedPropertiesSinceStub.returns([['a']]);
+              findAppropriateIndexStub.returns({
+                properties: [{ a: 'asc' }],
+              });
 
-              const result = validateQuery({ where: [['a', '<', value]] }, documentSchema);
+              const result = validateQuery({ where: [['a', '<', value]], orderBy: [['a', 'asc']] }, documentSchema);
 
               expect(result).to.be.instanceOf(ValidationResult);
               expect(result.isValid()).to.be.true();
             });
           });
-
           scalarTestCases.forEach(({ type, value }) => {
             it(`should return valid result if "<=" operator used with a scalar value ${type}`, () => {
               documentSchema = {
@@ -545,8 +589,12 @@ describe('validateQueryFactory', () => {
                   },
                 ],
               };
+              findIndexedPropertiesSinceStub.returns([['a']]);
+              findAppropriateIndexStub.returns({
+                properties: [{ a: 'asc' }],
+              });
 
-              const result = validateQuery({ where: [['a', '<=', value]] }, documentSchema);
+              const result = validateQuery({ where: [['a', '<=', value]], orderBy: [['a', 'asc']] }, documentSchema);
 
               expect(result).to.be.instanceOf(ValidationResult);
               expect(result.isValid()).to.be.true();
@@ -562,6 +610,10 @@ describe('validateQueryFactory', () => {
                   },
                 ],
               };
+              findIndexedPropertiesSinceStub.returns([['a']]);
+              findAppropriateIndexStub.returns({
+                properties: [{ a: 'asc' }],
+              });
 
               const result = validateQuery({ where: [['a', '==', value]] }, documentSchema);
 
@@ -579,8 +631,12 @@ describe('validateQueryFactory', () => {
                   },
                 ],
               };
+              findIndexedPropertiesSinceStub.returns([['a']]);
+              findAppropriateIndexStub.returns({
+                properties: [{ a: 'asc' }],
+              });
 
-              const result = validateQuery({ where: [['a', '<=', value]] }, documentSchema);
+              const result = validateQuery({ where: [['a', '<=', value]], orderBy: [['a', 'asc']] }, documentSchema);
 
               expect(result).to.be.instanceOf(ValidationResult);
               expect(result.isValid()).to.be.true();
@@ -596,8 +652,12 @@ describe('validateQueryFactory', () => {
                   },
                 ],
               };
+              findIndexedPropertiesSinceStub.returns([['a']]);
+              findAppropriateIndexStub.returns({
+                properties: [{ a: 'asc' }],
+              });
 
-              const result = validateQuery({ where: [['a', '>', value]] }, documentSchema);
+              const result = validateQuery({ where: [['a', '>', value]], orderBy: [['a', 'asc']] }, documentSchema);
 
               expect(result).to.be.instanceOf(ValidationResult);
               expect(result.isValid()).to.be.true();
@@ -613,6 +673,10 @@ describe('validateQueryFactory', () => {
                   },
                 ],
               };
+              findIndexedPropertiesSinceStub.returns([['a']]);
+              findAppropriateIndexStub.returns({
+                properties: [{ a: 'asc' }],
+              });
 
               const result = validateQuery(
                 {
@@ -621,6 +685,7 @@ describe('validateQueryFactory', () => {
                     ['a', 'startsWith', 'rt-'],
                     ['a', 'startsWith', 'r-'],
                   ],
+                  orderBy: [['a', 'asc']],
                 },
                 documentSchema,
               );
@@ -631,7 +696,7 @@ describe('validateQueryFactory', () => {
               const error = result.getErrors()[0];
 
               expect(error).to.be.an.instanceOf(
-                RangeOperatorAllowedOnlyForLastIndexedPropertyError,
+                RangeOperatorAllowedOnlyForLastTwoWhereConditionsError,
               );
             });
           });
@@ -832,6 +897,10 @@ describe('validateQueryFactory', () => {
               ],
             };
 
+            findAppropriateIndexStub.returns({
+              properties: [{ $createdAt: 'asc' }],
+            });
+
             const result = validateQuery({ where: [['$createdAt', '==', Date.now()]] }, documentSchema);
 
             expect(result).to.be.instanceOf(ValidationResult);
@@ -846,6 +915,9 @@ describe('validateQueryFactory', () => {
                 },
               ],
             };
+            findAppropriateIndexStub.returns({
+              properties: [{ $updatedAt: 'asc' }],
+            });
 
             const result = validateQuery({ where: [['$updatedAt', '==', Date.now()]] }, documentSchema);
 
@@ -864,7 +936,12 @@ describe('validateQueryFactory', () => {
               ],
             };
 
-            const result = validateQuery({ where: [['a', 'in', [1, 2]]] }, documentSchema);
+            findAppropriateIndexStub.returns({
+              properties: [{ a: 'asc' }],
+            });
+            findIndexedPropertiesSinceStub.returns([['a']]);
+
+            const result = validateQuery({ where: [['a', 'in', [1, 2]]], orderBy: [['a', 'asc']] }, documentSchema);
 
             expect(result).to.be.instanceOf(ValidationResult);
             expect(result.isValid()).to.be.true();
@@ -902,13 +979,18 @@ describe('validateQueryFactory', () => {
               ],
             };
 
+            findAppropriateIndexStub.returns({
+              properties: [{ a: 'asc' }],
+            });
+            findIndexedPropertiesSinceStub.returns([['a']]);
+
             const arr = [];
 
             for (let i = 0; i < 100; i++) {
               arr.push(i);
             }
 
-            let result = validateQuery({ where: [['a', 'in', arr]] }, documentSchema);
+            let result = validateQuery({ where: [['a', 'in', arr]], orderBy: [['a', 'asc']] }, documentSchema);
 
             expect(result).to.be.instanceOf(ValidationResult);
             expect(result.isValid()).to.be.true();
@@ -942,35 +1024,6 @@ describe('validateQueryFactory', () => {
             expect(result).to.be.instanceOf(ValidationResult);
             expect(result.isValid()).to.be.false();
           });
-
-          it('should return invalid results if used not in the last where condition', () => {
-            documentSchema = {
-              indices: [
-                {
-                  properties: [{ a: 'asc' }],
-                },
-              ],
-            };
-
-            const arr = [1, 2];
-
-            const result = validateQuery(
-              {
-                where: [
-                  ['a', 'in', arr],
-                  ['a', '>', 1],
-                ],
-              },
-              documentSchema,
-            );
-
-            expect(result).to.be.instanceOf(ValidationResult);
-            expect(result.isValid()).to.be.false();
-
-            const error = result.getErrors()[0];
-
-            expect(error).to.be.an.instanceOf(RangeOperatorAllowedOnlyForLastIndexedPropertyError);
-          });
         });
 
         describe('startsWith', () => {
@@ -983,7 +1036,12 @@ describe('validateQueryFactory', () => {
               ],
             };
 
-            const result = validateQuery({ where: [['a', 'startsWith', 'b']] }, documentSchema);
+            findAppropriateIndexStub.returns({
+              properties: [{ a: 'asc' }],
+            });
+            findIndexedPropertiesSinceStub.returns([['a']]);
+
+            const result = validateQuery({ where: [['a', 'startsWith', 'b']], orderBy: [['a', 'asc']] }, documentSchema);
 
             expect(result).to.be.instanceOf(ValidationResult);
             expect(result.isValid()).to.be.true();
@@ -1021,33 +1079,6 @@ describe('validateQueryFactory', () => {
               expect(result.errors[3].keyword).to.be.equal('type');
               expect(result.errors[3].params.type).to.be.equal('string');
             });
-          });
-
-          it('should return invalid results if used not in the last where condition', () => {
-            documentSchema = {
-              indices: [
-                {
-                  properties: [{ a: 'asc' }],
-                },
-              ],
-            };
-
-            const result = validateQuery(
-              {
-                where: [
-                  ['a', 'startsWith', 'r-'],
-                  ['a', '>', 1],
-                ],
-              },
-              documentSchema,
-            );
-
-            expect(result).to.be.instanceOf(ValidationResult);
-            expect(result.isValid()).to.be.false();
-
-            const error = result.getErrors()[0];
-
-            expect(error).to.be.an.instanceOf(RangeOperatorAllowedOnlyForLastIndexedPropertyError);
           });
         });
 
@@ -1410,11 +1441,17 @@ describe('validateQueryFactory', () => {
           },
         ],
       };
+      findAppropriateIndexStub.returns({
+        properties: [{ a: 'asc' }],
+      });
+
+      findIndexedPropertiesSinceStub.returns([['a']]);
 
       const result = validateQuery({
         where: [
           ['a', '>', 1],
         ],
+        orderBy: [['a', 'asc']],
         limit: 1,
       },
       documentSchema);
@@ -1459,7 +1496,12 @@ describe('validateQueryFactory', () => {
         ['a', '>', 1],
       ];
 
-      let result = validateQuery({ where, limit: 100 }, documentSchema);
+      findAppropriateIndexStub.returns({
+        properties: [{ a: 'asc' }],
+      });
+      findIndexedPropertiesSinceStub.returns([['a']]);
+
+      let result = validateQuery({ where, limit: 100, orderBy: [['a', 'asc']] }, documentSchema);
 
       expect(result).to.be.instanceOf(ValidationResult);
       expect(result.isValid()).to.be.true();
@@ -1517,6 +1559,10 @@ describe('validateQueryFactory', () => {
           },
         ],
       };
+      findAppropriateIndexStub.returns({
+        properties: [{ a: 'asc' }],
+      });
+      findIndexedPropertiesSinceStub.returns([['a']]);
 
       const result = validateQuery({
         where: [
@@ -1538,6 +1584,11 @@ describe('validateQueryFactory', () => {
           },
         ],
       };
+      findAppropriateIndexStub.returns({
+        properties: [{ a: 'asc' }],
+      });
+      findThreesomeOfIndexedPropertiesStub.returns([['a']]);
+      findIndexedPropertiesSinceStub.returns([['a']]);
 
       const result = validateQuery({
         where: [
@@ -1551,7 +1602,7 @@ describe('validateQueryFactory', () => {
       expect(result.isValid()).to.be.false();
 
       expect(result.errors).to.have.lengthOf(1);
-      expect(result.errors[0]).to.be.an.instanceOf(InvalidPropertiesInOrderByError);
+      expect(result.errors[0]).to.be.an.instanceOf(QueriedPropertyIsToFarAwayError);
     });
 
     it('should return invalid result if "orderBy" is an empty array', () => {
@@ -1579,6 +1630,10 @@ describe('validateQueryFactory', () => {
         ],
       };
 
+      findAppropriateIndexStub.returns({
+        properties: [{ a: 'asc' }],
+      });
+
       const result = validateQuery({
         where: [['a', '==', 'b']],
         orderBy: [['a', 'asc']],
@@ -1604,7 +1659,7 @@ describe('validateQueryFactory', () => {
 
       expect(result.errors).to.have.lengthOf(1);
 
-      expect(result.errors[0]).to.be.instanceOf(InvalidPropertiesInOrderByError);
+      expect(result.errors[0]).to.be.instanceOf(OrderByWithoutWhereConditionsError);
     });
 
     it('should return invalid result if the field inside an "orderBy" is an empty array', () => {
@@ -1623,12 +1678,12 @@ describe('validateQueryFactory', () => {
       expect(result.errors[0].params.limit).to.be.equal(2);
     });
 
-    it('should return invalid result if "orderBy" has more than 2 sorting fields', () => {
+    it('should return invalid result if "orderBy" has more than 255 sorting fields', () => {
       const result = validateQuery({
         where: [
           ['a', '>', 1],
         ],
-        orderBy: [['a', 'asc'], ['b', 'desc'], ['c', 'asc']],
+        orderBy: Array(256).fill().map((v, i) => [`a${i}`, 'asc']),
       },
       documentSchema);
 
@@ -1636,7 +1691,7 @@ describe('validateQueryFactory', () => {
       expect(result.isValid()).to.be.false();
       expect(result.errors[0].instancePath).to.be.equal('/orderBy');
       expect(result.errors[0].keyword).to.be.equal('maxItems');
-      expect(result.errors[0].params.limit).to.be.equal(2);
+      expect(result.errors[0].params.limit).to.be.equal(255);
     });
 
     it('should return invalid result if order of three of two properties after indexed one is not preserved', () => {
@@ -1722,6 +1777,11 @@ describe('validateQueryFactory', () => {
             },
           ],
         };
+
+        findAppropriateIndexStub.returns({
+          properties: [{ fieldName: 'asc' }],
+        });
+        findIndexedPropertiesSinceStub.returns([[fieldName]]);
 
         const result = validateQuery({
           where: [
@@ -1821,6 +1881,11 @@ describe('validateQueryFactory', () => {
           ],
         };
 
+        findAppropriateIndexStub.returns({
+          properties: [{ a: 'asc' }],
+        });
+        findIndexedPropertiesSinceStub.returns([['a']]);
+
         const result = validateQuery({
           where: [
             ['a', operator, validOrderByOperators[operator].value],
@@ -1843,7 +1908,8 @@ describe('validateQueryFactory', () => {
         ],
       };
 
-      findAppropriateIndexStub.returns(documentSchema.indices[0].properties);
+      findAppropriateIndexStub.returns(documentSchema.indices[0]);
+      findIndexedPropertiesSinceStub.returns([['b']]);
 
       const query = {
         orderBy: [['b', 'asc']],
@@ -1854,7 +1920,7 @@ describe('validateQueryFactory', () => {
       expect(result.isValid()).to.be.false();
 
       expect(result.getErrors()[0]).to.be.an.instanceOf(
-        InvalidPropertiesInOrderByError,
+        OrderByWithoutWhereConditionsError,
       );
 
       query.where = [['a', '==', 1]];
@@ -1941,7 +2007,7 @@ describe('validateQueryFactory', () => {
     });
 
     [...nonNumberAndUndefinedTestCases, typesTestCases.number].forEach(({ type, value }) => {
-      it(`should return invalid result if "startAfter" is not a number, but ${type}`,  function it() {
+      it(`should return invalid result if "startAfter" is not a number, but ${type}`, function it() {
         if (type === 'buffer') {
           this.skip();
         }
