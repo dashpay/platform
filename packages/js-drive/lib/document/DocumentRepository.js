@@ -8,16 +8,16 @@ class DocumentRepository {
    *
    * @param {GroveDBStore} groveDBStore
    * @param {validateQuery} validateQuery
-   * @param {Object} noopLogger
+   * @param {BaseLogger} [logger]
    */
   constructor(
     groveDBStore,
     validateQuery,
-    noopLogger,
+    logger = undefined,
   ) {
     this.storage = groveDBStore;
     this.validateQuery = validateQuery;
-    this.logger = noopLogger;
+    this.logger = logger;
   }
 
   /**
@@ -44,15 +44,17 @@ class DocumentRepository {
           .createDocument(document, useTransaction);
       }
     } finally {
-      this.logger.info({
-        document: document.toBuffer().toString('hex'),
-        documentHash: createHash('sha256')
-          .update(
-            document.toBuffer(),
-          ).digest('hex'),
-        useTransaction: Boolean(useTransaction),
-        appHash: (await this.storage.getRootHash({ useTransaction })).toString('hex'),
-      }, method);
+      if (this.logger) {
+        this.logger.info({
+          document: document.toBuffer().toString('hex'),
+          documentHash: createHash('sha256')
+            .update(
+              document.toBuffer(),
+            ).digest('hex'),
+          useTransaction: Boolean(useTransaction),
+          appHash: (await this.storage.getRootHash({ useTransaction })).toString('hex'),
+        }, method);
+      }
     }
 
     return result;
@@ -133,20 +135,25 @@ class DocumentRepository {
    * @return {Promise<void>}
    */
   async delete(dataContract, documentType, id, useTransaction = false) {
-    await this.storage.getDrive().deleteDocument(
-      dataContract,
-      documentType,
-      id,
-      useTransaction,
-    );
-
-    this.logger.info({
-      dataContractId: dataContract.getId().toString(),
-      documentType,
-      id: id.toString(),
-      useTransaction: Boolean(useTransaction),
-      appHash: (await this.storage.getRootHash({ useTransaction })).toString('hex'),
-    }, 'deleteDocument');
+    try {
+      await this.storage.getDrive()
+        .deleteDocument(
+          dataContract,
+          documentType,
+          id,
+          useTransaction,
+        );
+    } finally {
+      if (this.logger) {
+        this.logger.info({
+          dataContractId: dataContract.getId().toString(),
+          documentType,
+          id: id.toString(),
+          useTransaction: Boolean(useTransaction),
+          appHash: (await this.storage.getRootHash({ useTransaction })).toString('hex'),
+        }, 'deleteDocument');
+      }
+    }
   }
 }
 

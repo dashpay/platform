@@ -6,12 +6,12 @@ class DataContractStoreRepository {
    *
    * @param {GroveDBStore} groveDBStore
    * @param {decodeProtocolEntity} decodeProtocolEntity
-   * @param {Object} noopLogger
+   * @param {BaseLogger} [logger]
    */
-  constructor(groveDBStore, decodeProtocolEntity, noopLogger) {
+  constructor(groveDBStore, decodeProtocolEntity, logger = undefined) {
     this.storage = groveDBStore;
     this.decodeProtocolEntity = decodeProtocolEntity;
-    this.logger = noopLogger;
+    this.logger = logger;
   }
 
   /**
@@ -25,15 +25,17 @@ class DataContractStoreRepository {
     try {
       return await this.storage.getDrive().applyContract(dataContract, useTransaction);
     } finally {
-      this.logger.info({
-        dataContract: dataContract.toBuffer().toString('hex'),
-        dataContractHash: createHash('sha256')
-          .update(
-            dataContract.toBuffer(),
-          ).digest('hex'),
-        useTransaction: Boolean(useTransaction),
-        appHash: (await this.storage.getRootHash({ useTransaction })).toString('hex'),
-      }, 'applyContract');
+      if (this.logger) {
+        this.logger.trace({
+          dataContract: dataContract.toBuffer().toString('hex'),
+          dataContractHash: createHash('sha256')
+            .update(
+              dataContract.toBuffer(),
+            ).digest('hex'),
+          useTransaction: Boolean(useTransaction),
+          appHash: (await this.storage.getRootHash({ useTransaction })).toString('hex'),
+        }, 'applyContract');
+      }
     }
   }
 

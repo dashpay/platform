@@ -15,7 +15,7 @@ describe('GroveDBStore', () => {
   beforeEach(async () => {
     rsDrive = new Drive('./db/grovedb_test');
 
-    store = new GroveDBStore(rsDrive, logger, 'testStore');
+    store = new GroveDBStore(rsDrive, logger);
 
     testTreePath = [Buffer.from('testTree')];
     otherTreePath = [Buffer.from('otherTree')];
