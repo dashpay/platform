@@ -403,13 +403,9 @@ function createDIContainer(options) {
       }).singleton(),
     groveDB: asFunction((rsDrive) => rsDrive.getGroveDB()).singleton(),
 
-    groveDBStore: asFunction((
-      rsDrive,
-    ) => new GroveDBStore(rsDrive)).singleton(),
+    groveDBStore: asFunction((rsDrive) => new GroveDBStore(rsDrive)).singleton(),
 
-    signedGroveDBStore: asFunction((
-      rsDrive,
-    ) => new GroveDBStore(rsDrive)).singleton(),
+    signedGroveDBStore: asFunction((rsDrive) => new GroveDBStore(rsDrive)).singleton(),
 
     rotateSignedStore: asFunction(rotateSignedStoreFactory).singleton(),
   });
@@ -452,9 +448,9 @@ function createDIContainer(options) {
    */
   container.register({
     dataContractRepository: asFunction((
-      groveDbStore,
+      groveDBStore,
       decodeProtocolEntity,
-    ) => new DataContractStoreRepository(groveDbStore, decodeProtocolEntity)).singleton(),
+    ) => new DataContractStoreRepository(groveDBStore, decodeProtocolEntity)).singleton(),
 
     signedDataContractRepository: asFunction((
       signedGroveDBStore,
