@@ -22,7 +22,6 @@ import resolveName from "./methods/names/resolve";
 import resolveNameByRecord from "./methods/names/resolveByRecord";
 import searchName from "./methods/names/search";
 import broadcastStateTransition from "./broadcastStateTransition";
-import { IPlatformStateProof } from "./IPlatformStateProof";
 import StateRepository from './StateRepository';
 import { latestVersion as latestProtocolVersion } from "@dashevo/dpp/lib/version/protocolVersion";
 
