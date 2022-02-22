@@ -129,7 +129,7 @@ export async function get(this: Platform, typeLocator: string, opts: fetchOpts):
     }
 
     if (opts.startAfter instanceof Document) {
-      opts.startAt = opts.startAfter.getId();
+      opts.startAfter = opts.startAfter.getId();
     } else if (typeof opts.startAfter === 'string') {
       opts.startAfter = Identifier.from(opts.startAfter);
     }
