@@ -9,6 +9,7 @@ const BlockExecutionContext = require('../../../lib/blockExecution/BlockExecutio
 const getBlockExecutionContextObjectFixture = require('../../../lib/test/fixtures/getBlockExecutionContextObjectFixture');
 const BlockExecutionContextStack = require('../../../lib/blockExecution/BlockExecutionContextStack');
 const GroveDBStore = require('../../../lib/storage/GroveDBStore');
+const logger = require('../../../lib/util/noopLogger');
 
 function removeConsensusLogger(blockExecutionContextStack) {
   const plainContexts = blockExecutionContextStack.getContexts()
@@ -35,7 +36,7 @@ describe('BlockExecutionContextStackRepository', () => {
 
   beforeEach(async () => {
     rsDrive = new Drive('./db/grovedb_test');
-    store = new GroveDBStore(rsDrive, 'blockchainStateTestStore');
+    store = new GroveDBStore(rsDrive, logger, 'blockchainStateTestStore');
 
     repository = new BlockExecutionContextStackRepository(store);
 

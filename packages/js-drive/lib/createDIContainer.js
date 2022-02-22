@@ -406,13 +406,13 @@ function createDIContainer(options) {
     groveDBStore: asFunction((
       rsDrive,
     ) => (
-      new GroveDBStore(rsDrive, 'latest')
+      new GroveDBStore(rsDrive, noopLoggerObject, 'latest')
     )).singleton(),
 
     signedGroveDBStore: asFunction((
       rsDrive,
     ) => (
-      new GroveDBStore(rsDrive, 'signed')
+      new GroveDBStore(rsDrive, noopLoggerObject, 'signed')
     )).singleton(),
 
     rotateSignedStore: asFunction(rotateSignedStoreFactory).singleton(),

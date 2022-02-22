@@ -5,6 +5,7 @@ const Identifier = require('@dashevo/dpp/lib/Identifier');
 const cbor = require('cbor');
 const PublicKeyToIdentityIdStoreRepository = require('../../../lib/identity/PublicKeyToIdentityIdStoreRepository');
 const GroveDBStore = require('../../../lib/storage/GroveDBStore');
+const logger = require('../../../lib/util/noopLogger');
 
 describe('PublicKeyToIdentityIdStoreRepository', () => {
   let rsDrive;
@@ -15,7 +16,7 @@ describe('PublicKeyToIdentityIdStoreRepository', () => {
 
   beforeEach(async () => {
     rsDrive = new Drive('./db/grovedb_test');
-    store = new GroveDBStore(rsDrive, 'blockchainStateTestStore');
+    store = new GroveDBStore(rsDrive, logger, 'blockchainStateTestStore');
 
     repository = new PublicKeyToIdentityIdStoreRepository(store);
 

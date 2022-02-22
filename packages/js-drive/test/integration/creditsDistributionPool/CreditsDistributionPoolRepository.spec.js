@@ -4,6 +4,7 @@ const Drive = require('@dashevo/rs-drive');
 const GroveDBStore = require('../../../lib/storage/GroveDBStore');
 const CreditsDistributionPoolRepository = require('../../../lib/creditsDistributionPool/CreditsDistributionPoolRepository');
 const CreditsDistributionPool = require('../../../lib/creditsDistributionPool/CreditsDistributionPool');
+const logger = require('../../../lib/util/noopLogger');
 
 describe('CreditsDistributionPoolRepository', () => {
   let rsDrive;
@@ -14,7 +15,7 @@ describe('CreditsDistributionPoolRepository', () => {
 
   beforeEach(async () => {
     rsDrive = new Drive('./db/grovedb_test');
-    store = new GroveDBStore(rsDrive, 'creditsDistributionPoolTestStore');
+    store = new GroveDBStore(rsDrive, logger, 'creditsDistributionPoolTestStore');
 
     await store.createTree([], CreditsDistributionPoolRepository.PATH[0]);
 

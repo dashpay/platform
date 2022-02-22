@@ -6,10 +6,12 @@ class DataContractStoreRepository {
    *
    * @param {GroveDBStore} groveDBStore
    * @param {decodeProtocolEntity} decodeProtocolEntity
+   * @param {Object} noopLogger
    */
-  constructor(groveDBStore, decodeProtocolEntity) {
+  constructor(groveDBStore, decodeProtocolEntity, noopLogger) {
     this.storage = groveDBStore;
     this.decodeProtocolEntity = decodeProtocolEntity;
+    this.logger = noopLogger;
   }
 
   /**
@@ -23,7 +25,7 @@ class DataContractStoreRepository {
     try {
       return await this.storage.getDrive().applyContract(dataContract, useTransaction);
     } finally {
-      this.storage.logger.info({
+      this.logger.info({
         dataContract: dataContract.toBuffer().toString('hex'),
         dataContractHash: createHash('sha256')
           .update(
