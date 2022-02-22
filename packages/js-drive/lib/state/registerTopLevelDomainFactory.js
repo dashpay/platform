@@ -27,25 +27,6 @@ function registerTopLevelDomainFactory(
     const normalizedParentDomainName = '';
     const normalizedLabel = name.toLowerCase();
 
-    // const saltedDomainHash = hash(
-    //   Buffer.concat([
-    //     dashPreorderSalt,
-    //     Buffer.from(normalizedLabel),
-    //   ]),
-    // );
-
-    // const preorderDocument = await dpp.document.create(
-    //   dataContract,
-    //   ownerId,
-    //   'preorder',
-    //   {
-    //     saltedDomainHash,
-    //   },
-    // );
-    //
-    // preorderDocument.id = dashPreorderDocumentId;
-    // preorderDocument.createdAt = genesisDate;
-
     const domainDocument = await dpp.document.create(
       dataContract,
       ownerId,
@@ -67,7 +48,6 @@ function registerTopLevelDomainFactory(
     domainDocument.id = dashDomainDocumentId;
     domainDocument.createdAt = genesisDate;
 
-    // await documentRepository.store(preorderDocument, true);
     await documentRepository.store(domainDocument, true);
   }
 
