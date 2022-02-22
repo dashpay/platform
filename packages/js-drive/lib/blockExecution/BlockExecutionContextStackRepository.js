@@ -42,38 +42,30 @@ class BlockExecutionContextStackRepository {
    * @return {BlockExecutionContextStack}
    */
   async fetch(useTransaction = false) {
-    try {
-      const blockExecutionContextsEncoded = await this.db.getAux(
-        BlockExecutionContextStackRepository.EXTERNAL_STORE_KEY_NAME,
-        { useTransaction },
-      );
+    const blockExecutionContextsEncoded = await this.db.getAux(
+      BlockExecutionContextStackRepository.EXTERNAL_STORE_KEY_NAME,
+      { useTransaction },
+    );
 
-      const blockExecutionContextStack = new BlockExecutionContextStack();
+    const blockExecutionContextStack = new BlockExecutionContextStack();
 
-      if (!blockExecutionContextsEncoded) {
-        return blockExecutionContextStack;
-      }
-
-      const rawBlockExecutionContexts = cbor.decode(blockExecutionContextsEncoded);
-
-      const blockExecutionContexts = rawBlockExecutionContexts.map((rawContext) => {
-        const context = new BlockExecutionContext();
-
-        context.fromObject(rawContext);
-
-        return context;
-      });
-
-      blockExecutionContextStack.setContexts(blockExecutionContexts);
-
+    if (!blockExecutionContextsEncoded) {
       return blockExecutionContextStack;
-    } catch (e) {
-      if (e.type === 'NotFoundError') {
-        return new BlockExecutionContextStack();
-      }
-
-      throw e;
     }
+
+    const rawBlockExecutionContexts = cbor.decode(blockExecutionContextsEncoded);
+
+    const blockExecutionContexts = rawBlockExecutionContexts.map((rawContext) => {
+      const context = new BlockExecutionContext();
+
+      context.fromObject(rawContext);
+
+      return context;
+    });
+
+    blockExecutionContextStack.setContexts(blockExecutionContexts);
+
+    return blockExecutionContextStack;
   }
 }
 

@@ -132,7 +132,7 @@ const splitDocumentsIntoChunks = require('./identity/masternode/splitDocumentsIn
 const registerSystemDataContractsFactory = require('./abci/handlers/state/registerSystemDataContractsFactory');
 const DocumentRepository = require('./document/DocumentRepository');
 
-const noopLoggerObject = require('./util/noopLogger');
+const noopLoggerInstance = require('./util/noopLogger');
 
 /**
  *
@@ -379,7 +379,7 @@ function createDIContainer(options) {
         .child({ driveVersion: packageJSON.version }),
     ).singleton(),
 
-    noopLogger: asValue(noopLoggerObject),
+    noopLogger: asValue(noopLoggerInstance),
 
     sanitizeUrl: asValue(sanitizeUrl),
   });
@@ -405,15 +405,11 @@ function createDIContainer(options) {
 
     groveDBStore: asFunction((
       rsDrive,
-    ) => (
-      new GroveDBStore(rsDrive, noopLoggerObject, 'latest')
-    )).singleton(),
+    ) => new GroveDBStore(rsDrive)).singleton(),
 
     signedGroveDBStore: asFunction((
       rsDrive,
-    ) => (
-      new GroveDBStore(rsDrive, noopLoggerObject, 'signed')
-    )).singleton(),
+    ) => new GroveDBStore(rsDrive)).singleton(),
 
     rotateSignedStore: asFunction(rotateSignedStoreFactory).singleton(),
   });
@@ -455,7 +451,10 @@ function createDIContainer(options) {
    * Register Data Contract
    */
   container.register({
-    dataContractRepository: asClass(DataContractStoreRepository).singleton(),
+    dataContractRepository: asFunction((
+      groveDbStore,
+      decodeProtocolEntity,
+    ) => new DataContractStoreRepository(groveDbStore, decodeProtocolEntity)).singleton(),
 
     signedDataContractRepository: asFunction((
       signedGroveDBStore,
@@ -478,7 +477,11 @@ function createDIContainer(options) {
     sortWhereClausesAccordingToIndex: asValue(sortWhereClausesAccordingToIndex),
     findAppropriateIndex: asValue(findAppropriateIndex),
 
-    documentRepository: asClass(DocumentRepository).singleton(),
+    documentRepository: asFunction((
+      groveDBStore,
+      validateQuery,
+    ) => new DocumentRepository(groveDBStore, validateQuery)).singleton(),
+
     signedDocumentRepository: asFunction((
       signedGroveDBStore,
       validateQuery,

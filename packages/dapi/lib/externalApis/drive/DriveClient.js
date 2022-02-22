@@ -100,7 +100,7 @@ class DriveClient {
    * @param {Object} options.where - Mongo-like query
    * @param {Object} options.orderBy - Mongo-like sort field
    * @param {number} options.limit - how many objects to fetch
-   * @param {Buffer} options.startAt - number of objects to skip
+   * @param {Buffer} options.startAt - skip documents up to specific document ID
    * @param {Buffer} options.startAfter - exclusive skip
    * @param {boolean} prove - include proofs into the response
    *

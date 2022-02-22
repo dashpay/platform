@@ -76,44 +76,16 @@ function identitiesByPublicKeyHashesQueryHandlerFactory(
       )),
     );
 
-    // const notFoundIdentityPublicKeyHashes = [];
     const foundIdentityIds = [];
 
     for (let i = 0; i < identityIds.length; i++) {
-      // If identity id was not found, we need to request non-inclusion proof by public key hash
-      if (!identityIds[i]) {
-        // notFoundIdentityPublicKeyHashes.push(publicKeyHashes[i]);
-      } else {
+      if (identityIds[i]) {
         // If identity was found, we need to request ordinary identity proof by id
         const ids = cbor.decode(identityIds[i]);
 
         ids.forEach((id) => foundIdentityIds.push(id));
       }
     }
-
-    // if (request.prove) {
-    //   const proof = response.getProof();
-    //   const storeTreeProofs = new StoreTreeProofs();
-    //
-    //   const identitiesStoreTreeProof = previousIdentitiesStoreRootTreeLeaf.getProof(
-    //     foundIdentityIds,
-    //   );
-    //
-    //   const publicKeyStoreTreeProof = previousPublicKeyToIdentityIdStoreRootTreeLeaf.getProof(
-    //     notFoundIdentityPublicKeyHashes,
-    //   );
-    //
-    //   const rootTreeProof = previousRootTree.getProof([
-    //     previousIdentitiesStoreRootTreeLeaf,
-    //     previousPublicKeyToIdentityIdStoreRootTreeLeaf,
-    //   ]);
-    //
-    //   storeTreeProofs.setIdentitiesProof(identitiesStoreTreeProof);
-    //   storeTreeProofs.setPublicKeyHashesToIdentityIdsProof(publicKeyStoreTreeProof);
-    //
-    //   proof.setRootTreeProof(rootTreeProof);
-    //   proof.setStoreTreeProofs(storeTreeProofs);
-    // } else {
 
     const identityBuffers = await Promise.all(
       identityIds.map(async (serializedIds) => {
