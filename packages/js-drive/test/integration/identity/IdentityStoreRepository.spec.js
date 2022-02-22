@@ -5,6 +5,7 @@ const getIdentityFixture = require('@dashevo/dpp/lib/test/fixtures/getIdentityFi
 const Identity = require('@dashevo/dpp/lib/identity/Identity');
 const GroveDBStore = require('../../../lib/storage/GroveDBStore');
 const IdentityStoreRepository = require('../../../lib/identity/IdentityStoreRepository');
+const logger = require('../../../lib/util/noopLogger');
 
 describe('IdentityStoreRepository', () => {
   let rsDrive;
@@ -15,7 +16,7 @@ describe('IdentityStoreRepository', () => {
 
   beforeEach(async () => {
     rsDrive = new Drive('./db/grovedb_test');
-    store = new GroveDBStore(rsDrive, 'blockchainStateTestStore');
+    store = new GroveDBStore(rsDrive, logger, 'blockchainStateTestStore');
 
     decodeProtocolEntity = decodeProtocolEntityFactory();
 

@@ -5,6 +5,7 @@ const getDataContractFixture = require('@dashevo/dpp/lib/test/fixtures/getDataCo
 const DataContract = require('@dashevo/dpp/lib/dataContract/DataContract');
 const GroveDBStore = require('../../../lib/storage/GroveDBStore');
 const DataContractStoreRepository = require('../../../lib/dataContract/DataContractStoreRepository');
+const noopLogger = require('../../../lib/util/noopLogger');
 
 describe('DataContractStoreRepository', () => {
   let rsDrive;
@@ -15,11 +16,11 @@ describe('DataContractStoreRepository', () => {
 
   beforeEach(async () => {
     rsDrive = new Drive('./db/grovedb_test');
-    store = new GroveDBStore(rsDrive, 'testStore');
+    store = new GroveDBStore(rsDrive, noopLogger, 'testStore');
 
     decodeProtocolEntity = decodeProtocolEntityFactory();
 
-    repository = new DataContractStoreRepository(store, decodeProtocolEntity);
+    repository = new DataContractStoreRepository(store, decodeProtocolEntity, noopLogger);
 
     dataContract = getDataContractFixture();
   });

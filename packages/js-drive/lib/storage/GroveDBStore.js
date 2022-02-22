@@ -1,17 +1,16 @@
 const { createHash } = require('crypto');
 
-const logger = require('../util/noopLogger');
-
 class GroveDBStore {
   /**
    * @param {Drive} rsDrive
    * @param {string} [name]
+   * @param {Object} noopLogger
    */
-  constructor(rsDrive, name = undefined) {
+  constructor(rsDrive, noopLogger, name = undefined) {
     this.rsDrive = rsDrive;
     this.db = rsDrive.getGroveDB();
     this.name = name;
-    this.logger = logger;
+    this.logger = noopLogger;
   }
 
   /**
@@ -35,7 +34,7 @@ class GroveDBStore {
       options.useTransaction || false,
     );
 
-    logger.info({
+    this.logger.info({
       path: path.map((segment) => segment.toString('hex')),
       pathHash: createHash('sha256')
         .update(
@@ -76,7 +75,7 @@ class GroveDBStore {
       options.useTransaction || false,
     );
 
-    logger.info({
+    this.logger.info({
       path: path.map((segment) => segment.toString('hex')),
       pathHash: createHash('sha256')
         .update(
@@ -120,7 +119,7 @@ class GroveDBStore {
       options.useTransaction || false,
     );
 
-    logger.info({
+    this.logger.info({
       path: path.map((segment) => segment.toString('hex')),
       pathHash: createHash('sha256')
         .update(
@@ -194,7 +193,7 @@ class GroveDBStore {
       options.useTransaction || false,
     );
 
-    logger.info({
+    this.logger.info({
       path: path.map((segment) => segment.toString('hex')),
       pathHash: createHash('sha256')
         .update(
@@ -251,7 +250,7 @@ class GroveDBStore {
       options.useTransaction || false,
     );
 
-    logger.info({
+    this.logger.info({
       key: key.toString('hex'),
       value: value.toString('hex'),
       valueHash: createHash('sha256')
@@ -279,7 +278,7 @@ class GroveDBStore {
       options.useTransaction || false,
     );
 
-    logger.info({
+    this.logger.info({
       key: key.toString('hex'),
       useTransaction: Boolean(options.useTransaction),
       method: 'deleteAux',

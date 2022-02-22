@@ -8,13 +8,16 @@ class DocumentRepository {
    *
    * @param {GroveDBStore} groveDBStore
    * @param {validateQuery} validateQuery
+   * @param {Object} noopLogger
    */
   constructor(
     groveDBStore,
     validateQuery,
+    noopLogger,
   ) {
     this.storage = groveDBStore;
     this.validateQuery = validateQuery;
+    this.logger = noopLogger;
   }
 
   /**
@@ -41,7 +44,7 @@ class DocumentRepository {
           .createDocument(document, useTransaction);
       }
     } finally {
-      this.storage.logger.info({
+      this.logger.info({
         document: document.toBuffer().toString('hex'),
         documentHash: createHash('sha256')
           .update(
@@ -137,7 +140,7 @@ class DocumentRepository {
       useTransaction,
     );
 
-    this.storage.logger.info({
+    this.logger.info({
       dataContractId: dataContract.getId().toString(),
       documentType,
       id: id.toString(),

@@ -319,6 +319,8 @@ module.exports = {
 
           config.platform.dapi.api.docker.image = systemConfigs.base.platform
             .dapi.api.docker.image;
+
+          delete config.platform.drive.mongodb;
         }
       });
 

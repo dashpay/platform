@@ -50,7 +50,7 @@ describe('DocumentRepository', () => {
     groveDBStoreMock.getRootHash.resolves(appHash);
     groveDBStoreMock.getDrive.returns(driveMock);
 
-    repository = new DocumentRepository(groveDBStoreMock, validateQueryMock);
+    repository = new DocumentRepository(groveDBStoreMock, validateQueryMock, loggerMock);
   });
 
   describe('#store', () => {
@@ -76,6 +76,8 @@ describe('DocumentRepository', () => {
         document,
         false,
       );
+
+      expect(loggerMock.info).to.be.calledOnce();
     });
 
     it('should update document', async () => {
@@ -204,6 +206,8 @@ describe('DocumentRepository', () => {
         document.getId(),
         true,
       );
+
+      expect(loggerMock.info).to.be.calledOnce();
     });
   });
 });
