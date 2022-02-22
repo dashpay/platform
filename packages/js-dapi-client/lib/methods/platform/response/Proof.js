@@ -39,7 +39,7 @@ class Proof {
    */
   static createFromProto(proofProto) {
     return new Proof({
-      merleProof: Buffer.from(proofProto.getMerkleProof()),
+      merkleProof: Buffer.from(proofProto.getMerkleProof()),
       signatureLLMQHash: Buffer.from(proofProto.getSignatureLlmqHash()),
       signature: Buffer.from(proofProto.getSignature()),
     });
