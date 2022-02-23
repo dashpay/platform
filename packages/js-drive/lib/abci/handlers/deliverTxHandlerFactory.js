@@ -15,7 +15,7 @@ const AbstractDocumentTransition = require(
 
 const DPPValidationAbciError = require('../errors/DPPValidationAbciError');
 
-const DOCUMENT_ACTION_DESCRIPTONS = {
+const DOCUMENT_ACTION_DESCRIPTIONS = {
   [AbstractDocumentTransition.ACTIONS.CREATE]: 'created',
   [AbstractDocumentTransition.ACTIONS.REPLACE]: 'replaced',
   [AbstractDocumentTransition.ACTIONS.DELETE]: 'deleted',
@@ -163,7 +163,7 @@ function deliverTxHandlerFactory(
       }
       case stateTransitionTypes.DOCUMENTS_BATCH: {
         stateTransition.getTransitions().forEach((transition) => {
-          const description = DOCUMENT_ACTION_DESCRIPTONS[transition.getAction()];
+          const description = DOCUMENT_ACTION_DESCRIPTIONS[transition.getAction()];
 
           consensusLogger.info(
             {

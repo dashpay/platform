@@ -1,6 +1,6 @@
 {
   "name": "dashmate",
-  "version": "0.22.0-dev.7",
+  "version": "0.22.0-dev.7.alpha.2",
   "description": "Distribution package for Dash Masternode installation",
   "main": "src/index.js",
   "scripts": {
@@ -54,8 +54,8 @@
     "@dashevo/feature-flags-contract": "workspace:~",
     "@dashevo/masternode-reward-shares-contract": "workspace:~",
     "@dashevo/wallet-lib": "workspace:~",
-    "@oclif/core": "^1.0.10",
-    "@oclif/plugin-help": "^5",
+    "@oclif/core": "^1.3.4",
+    "@oclif/plugin-help": "^5.1.11",
     "ajv": "^8.6.0",
     "ajv-formats": "^2.1.1",
     "awilix": "^4.2.6",
@@ -93,7 +93,7 @@
     "eslint-config-airbnb-base": "^14.2.1",
     "eslint-plugin-import": "^2.24.2",
     "globby": "^11",
-    "oclif": "^2.1.0"
+    "oclif": "^2.4.5"
   },
   "files": [
     "bin",

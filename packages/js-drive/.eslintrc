@@ -1,5 +1,10 @@
 {
   "extends": "airbnb-base",
+  "env": {
+    "es2021": true,
+    "node": true
+  },
+  "parser": "babel-eslint",
   "rules": {
     "no-plusplus": 0,
     "eol-last": [
@@ -24,5 +29,8 @@
       "error",
       "all"
     ]
+  },
+  "globals": {
+    "BigInt": true
   }
 }

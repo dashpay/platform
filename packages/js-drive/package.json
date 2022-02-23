@@ -1,7 +1,7 @@
 {
   "name": "@dashevo/drive",
   "private": true,
-  "version": "0.22.0-dev.7",
+  "version": "0.22.0-dev.7.alpha.2",
   "description": "Replicated state machine for Dash Platform",
   "engines": {
     "node": ">=12"
@@ -48,6 +48,7 @@
   "devDependencies": {
     "@dashevo/dp-services-ctl": "github:dashevo/js-dp-services-ctl#v0.19-dev",
     "@types/pino": "^6.3.0",
+    "babel-eslint": "^10.1.0",
     "chai": "^4.3.4",
     "chai-as-promised": "^7.1.1",
     "chai-string": "^1.5.0",
@@ -59,6 +60,7 @@
     "memdown": "^5.1.0",
     "mocha": "^9.1.2",
     "nyc": "^15.1.0",
+    "rimraf": "^3.0.2",
     "sinon": "^11.1.2",
     "sinon-chai": "^3.7.0"
   },
@@ -73,7 +75,7 @@
     "@dashevo/feature-flags-contract": "workspace:~",
     "@dashevo/grpc-common": "workspace:~",
     "@dashevo/masternode-reward-shares-contract": "workspace:~",
-    "@dashevo/merk": "github:dashevo/node-merk#eb37003300d22c6c04604463bcd7e861dd07000f",
+    "@dashevo/rs-drive": "~0.22.0-dev.15",
     "ajv": "^8.6.0",
     "ajv-keywords": "^5.0.0",
     "awilix": "^4.2.6",
@@ -86,14 +88,11 @@
     "dotenv-safe": "^8.2.0",
     "find-my-way": "^2.2.2",
     "js-merkle": "^0.1.5",
-    "level-rocksdb": "^5.0.0",
-    "level-transactions": "^2.1.4",
-    "lodash.escaperegexp": "^4.1.2",
+    "lodash.clonedeep": "^4.5.0",
     "lodash.get": "^4.4.2",
     "lodash.set": "^4.3.2",
     "long": "^5.2.0",
     "lru-cache": "^5.1.1",
-    "mongodb": "^3.5.5",
     "node-graceful": "^3.0.1",
     "pino": "^6.4.0",
     "pino-multi-stream": "^5.2.0",

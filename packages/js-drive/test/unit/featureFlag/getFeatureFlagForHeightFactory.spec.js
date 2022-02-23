@@ -43,7 +43,7 @@ describe('getFeatureFlagForHeightFactory', () => {
       featureFlagDataContractId,
       'someType',
       query,
-      undefined,
+      false,
     );
     expect(result).to.deep.equal(document);
   });

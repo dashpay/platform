@@ -4,7 +4,6 @@ const {
     GetIdentityResponse,
     ResponseMetadata,
     Proof: ProofResponse,
-    StoreTreeProofs,
   },
 } = require('@dashevo/dapi-grpc');
 
@@ -62,8 +61,7 @@ describe('GetIdentityResponse', () => {
 
     expect(identity).to.deep.equal(Buffer.alloc(0));
     expect(proof).to.be.an.instanceOf(Proof);
-    expect(proof.getRootTreeProof()).to.deep.equal(proofFixture.rootTreeProof);
-    expect(proof.getStoreTreeProofs()).to.deep.equal(proofFixture.storeTreeProofs);
+    expect(proof.getMerkleProof()).to.deep.equal(proofFixture.merkleProof);
     expect(proof.getSignatureLLMQHash()).to.deep.equal(proofFixture.signatureLLMQHash);
     expect(proof.getSignature()).to.deep.equal(proofFixture.signature);
   });
@@ -85,17 +83,10 @@ describe('GetIdentityResponse', () => {
 
   it('should create an instance with proof from proto', () => {
     const proofProto = new ProofResponse();
-    const storeTreeProofsProto = new StoreTreeProofs();
-    storeTreeProofsProto.setIdentitiesProof(proofFixture.storeTreeProofs.identitiesProof);
-    storeTreeProofsProto.setPublicKeyHashesToIdentityIdsProof(
-      proofFixture.storeTreeProofs.publicKeyHashesToIdentityIdsProof,
-    );
-    storeTreeProofsProto.setDataContractsProof(proofFixture.storeTreeProofs.dataContractsProof);
-    storeTreeProofsProto.setDocumentsProof(proofFixture.storeTreeProofs.documentsProof);
+
     proofProto.setSignatureLlmqHash(proofFixture.signatureLLMQHash);
     proofProto.setSignature(proofFixture.signature);
-    proofProto.setRootTreeProof(proofFixture.rootTreeProof);
-    proofProto.setStoreTreeProofs(storeTreeProofsProto);
+    proofProto.setMerkleProof(proofFixture.merkleProof);
 
     proto.setIdentity(undefined);
     proto.setProof(proofProto);
@@ -107,8 +98,7 @@ describe('GetIdentityResponse', () => {
 
     const proof = getIdentityResponse.getProof();
     expect(proof).to.be.an.instanceOf(Proof);
-    expect(proof.getRootTreeProof()).to.deep.equal(proofFixture.rootTreeProof);
-    expect(proof.getStoreTreeProofs()).to.deep.equal(proofFixture.storeTreeProofs);
+    expect(proof.getMerkleProof()).to.deep.equal(proofFixture.merkleProof);
     expect(proof.getSignatureLLMQHash()).to.deep.equal(proofFixture.signatureLLMQHash);
     expect(proof.getSignature()).to.deep.equal(proofFixture.signature);
   });

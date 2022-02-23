@@ -2,7 +2,6 @@ import crypto from "crypto";
 import { Platform } from "./Platform";
 import { StateTransitionBroadcastError } from "../../../errors/StateTransitionBroadcastError";
 import { IStateTransitionResult } from "./IStateTransitionResult";
-import { IPlatformStateProof } from "./IPlatformStateProof";
 
 const ResponseError = require('@dashevo/dapi-client/lib/transport/errors/response/ResponseError');
 const InvalidRequestDPPError = require('@dashevo/dapi-client/lib/transport/errors/response/InvalidRequestDPPError');
@@ -15,7 +14,7 @@ const GrpcError = require('@dashevo/grpc-common/lib/server/error/GrpcError');
  * @param {Platform} platform
  * @param stateTransition
  */
-export default async function broadcastStateTransition(platform: Platform, stateTransition: any): Promise<IPlatformStateProof|void> {
+export default async function broadcastStateTransition(platform: Platform, stateTransition: any): Promise<IStateTransitionResult|void> {
     const { client, dpp } = platform;
 
     const result = await dpp.stateTransition.validateBasic(stateTransition);
@@ -83,5 +82,5 @@ export default async function broadcastStateTransition(platform: Platform, state
         );
     }
 
-    return stateTransitionResult.proof;
+    return stateTransitionResult;
 }
