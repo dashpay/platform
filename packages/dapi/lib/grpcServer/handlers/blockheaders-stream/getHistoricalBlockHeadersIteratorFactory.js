@@ -38,7 +38,7 @@ function getHistoricalBlockHeadersIteratorFactory(coreRpcApi, chainDataProvider)
 
       const blockHash = await coreRpcApi.getBlockHash(currentHeight);
 
-      const blockHeaders = await chainDataProvider.getBlockHeaders(blockHash, blocksToScan);
+      const blockHeaders = await chainDataProvider.getBlockHeaders(blockHash, currentHeight, blocksToScan);
 
       yield blockHeaders;
     }

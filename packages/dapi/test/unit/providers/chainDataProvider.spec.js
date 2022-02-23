@@ -131,9 +131,7 @@ describe('ChainDataProvider', () => {
     coreAPIMock.getBlockStats.resolves({ height: 1 });
     coreAPIMock.getBlockHeaders.resolves(fakeHeaders.map((e) => e.toString()));
 
-    await chainDataProvider.getBlockHeaders(first.hash, 5);
-
-    expect(coreAPIMock.getBlockStats).to.be.calledOnceWithExactly(first.hash, ['height']);
+    await chainDataProvider.getBlockHeaders(first.hash, 1, 5);
 
     expect(cacheSpy.get.callCount).to.be.equal(5);
     expect(cacheSpy.set.callCount).to.be.equal(5);
@@ -159,11 +157,9 @@ describe('ChainDataProvider', () => {
 
     cacheSpy.set.resetHistory();
 
-    await chainDataProvider.getBlockHeaders(first.hash, 3);
+    await chainDataProvider.getBlockHeaders(first.hash, 1, 3);
 
     expect(coreAPIMock.getBlockHeaders.callCount).to.be.equal(0);
-
-    expect(coreAPIMock.getBlockStats).to.be.calledOnceWithExactly(first.hash, ['height']);
 
     expect(cacheSpy.get.callCount).to.be.equal(3);
     expect(cacheSpy.set.callCount).to.be.equal(0);
@@ -191,9 +187,8 @@ describe('ChainDataProvider', () => {
     blockHeadersCache.set(5, undefined);
     cacheSpy.set.resetHistory();
 
-    await chainDataProvider.getBlockHeaders(first.hash, 5);
+    await chainDataProvider.getBlockHeaders(first.hash, 1, 5);
 
-    expect(coreAPIMock.getBlockStats).to.be.calledOnceWithExactly(first.hash, ['height']);
     expect(coreAPIMock.getBlockHeaders).to.be.calledOnceWithExactly(third.hash, 3);
 
     expect(cacheSpy.get.callCount).to.be.equal(5);
@@ -223,9 +218,7 @@ describe('ChainDataProvider', () => {
     blockHeadersCache.set(5, fifth.toString());
     cacheSpy.set.resetHistory();
 
-    await chainDataProvider.getBlockHeaders(first.hash, 5);
-
-    expect(coreAPIMock.getBlockStats).to.be.calledOnceWithExactly(first.hash, ['height']);
+    await chainDataProvider.getBlockHeaders(first.hash, 1, 5);
 
     expect(cacheSpy.get.callCount).to.be.equal(5);
     expect(cacheSpy.set.callCount).to.be.equal(4);
@@ -252,9 +245,8 @@ describe('ChainDataProvider', () => {
     blockHeadersCache.set(5, fifth.toString());
     cacheSpy.set.resetHistory();
 
-    await chainDataProvider.getBlockHeaders(first.toString(), 5);
+    await chainDataProvider.getBlockHeaders(first.toString(), 1, 5);
 
-    expect(coreAPIMock.getBlockStats).to.be.calledOnceWithExactly(first.toString(), ['height']);
     expect(coreAPIMock.getBlockHeaders).to.be
       .calledOnceWithExactly(first.toString(), 5);
 
@@ -284,10 +276,8 @@ describe('ChainDataProvider', () => {
     blockHeadersCache.set(5, fourth.toString());
     cacheSpy.set.resetHistory();
 
-    await chainDataProvider.getBlockHeaders(first.toString(), 5);
+    await chainDataProvider.getBlockHeaders(first.toString(), 1, 5);
 
-    expect(coreAPIMock.getBlockStats).to.be.calledOnceWithExactly(first
-      .toString(), ['height']);
     expect(coreAPIMock.getBlockHeaders).to.be
       .calledOnceWithExactly(first.toString(), 5);
 

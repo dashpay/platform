@@ -44,14 +44,12 @@ class ChainDataProvider extends EventEmitter {
     return new BlockHeader(Buffer.from(rawBlockHeader, 'hex'));
   }
 
-  async getBlockHeaders(fromHash, count) {
+  async getBlockHeaders(fromHash, fromHeight, count) {
     let startHash = fromHash;
     let fetchCount = count;
 
-    const { height } = await this.coreRpcAPI.getBlockStats(fromHash, ['height']);
-
     const blockHeights = [...Array(count).keys()]
-      .map((e, i) => height + i);
+      .map((e, i) => fromHeight + i);
 
     const cachedBlockHeaders = blockHeights
       .map((blockHeight) => blockHeadersCache.get(blockHeight));
@@ -82,7 +80,7 @@ class ChainDataProvider extends EventEmitter {
     const rawBlockHeaders = [...cachedBlockHeaders.slice(0,
       lastCachedIndex !== -1 ? lastCachedIndex : 0), ...missingBlockHeaders];
 
-    missingBlockHeaders.forEach((e, i) => blockHeadersCache.set(height + i, e));
+    missingBlockHeaders.forEach((e, i) => blockHeadersCache.set(fromHeight + i, e));
 
     return rawBlockHeaders.map((rawBlockHeader) => new BlockHeader(Buffer.from(rawBlockHeader, 'hex')));
   }
