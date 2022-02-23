@@ -68,7 +68,7 @@ describe('initChainHandlerFactory', () => {
     );
   });
 
-  it('should update height, start transactions and return ResponseBeginBlock', async () => {
+  it('should initialize the chain', async () => {
     const request = {
       initialHeight: Long.fromInt(1),
       chainId: 'test',
@@ -84,12 +84,16 @@ describe('initChainHandlerFactory', () => {
     expect(response.initialCoreHeight).to.be.equal(initialCoreChainLockedHeight);
     expect(response.appHash).to.deep.equal(appHashFixture);
 
+    // Update SML
+
     expect(updateSimplifiedMasternodeListMock).to.be.calledOnceWithExactly(
       initialCoreChainLockedHeight,
       {
         logger: loggerMock,
       },
     );
+
+    // Create initial state
 
     expect(groveDBStoreMock.startTransaction).to.be.calledOnce();
 
@@ -104,6 +108,8 @@ describe('initChainHandlerFactory', () => {
     expect(groveDBStoreMock.commitTransaction).to.be.calledOnce();
 
     expect(groveDBStoreMock.getRootHash).to.be.calledOnce();
+
+    // Initialize VS
 
     expect(validatorSetMock.initialize).to.be.calledOnceWithExactly(
       initialCoreChainLockedHeight,

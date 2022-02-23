@@ -77,7 +77,7 @@ describe('infoHandlerFactory', () => {
     );
   });
 
-  it('should return empty info', async () => {
+  it('should return respond with genesis heights and app hash on the first run', async () => {
     const response = await infoHandler();
 
     expect(response).to.be.an.instanceOf(ResponseInfo);
@@ -98,8 +98,8 @@ describe('infoHandlerFactory', () => {
     expect(groveDBStoreMock.getRootHash).to.be.calledOnce();
   });
 
-  it('should update SML and populate context', async () => {
-    blockExecutionContextStackMock.getLatest.returns('context');
+  it('should populate context, initialize Credits Distribution Pool and update SML on subsequent runs', async () => {
+    blockExecutionContextStackMock.getLatest.returns(blockExecutionContextMock);
 
     lastBlockHeight = Long.fromInt(1);
     lastCoreChainLockedHeight = 2;
