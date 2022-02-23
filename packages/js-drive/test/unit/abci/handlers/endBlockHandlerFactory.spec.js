@@ -86,7 +86,7 @@ describe('endBlockHandlerFactory', () => {
     };
   });
 
-  it('should return a response', async () => {
+  it('should finalize a block', async () => {
     endBlockHandler = endBlockHandlerFactory(
       blockExecutionContextMock,
       latestCoreChainLockMock,
