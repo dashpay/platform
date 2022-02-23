@@ -6,24 +6,30 @@ const {
 
 const BlockExecutionContextMock = require('../../../../../../lib/test/mock/BlockExecutionContextMock');
 const createQueryResponseFactory = require('../../../../../../lib/abci/handlers/query/response/createQueryResponseFactory');
+const BlockExecutionContextStackMock = require('../../../../../../lib/test/mock/BlockExecutionContextStackMock');
 
 describe('createQueryResponseFactory', () => {
-  let blockExecutionContextMock;
-  let previousBlockExecutionContextMock;
+  let blockExecutionContextStackMock;
   let createQueryResponse;
   let metadata;
   let lastCommitInfo;
+  let signedBlockExecutionContext;
+  let blockExecutionContextMock;
 
   beforeEach(function beforeEach() {
+    signedBlockExecutionContext = new BlockExecutionContextMock(this.sinon);
     blockExecutionContextMock = new BlockExecutionContextMock(this.sinon);
-    previousBlockExecutionContextMock = new BlockExecutionContextMock(this.sinon);
+    blockExecutionContextStackMock = new BlockExecutionContextStackMock(this.sinon);
+
+    blockExecutionContextStackMock.getLast.returns(signedBlockExecutionContext);
+    blockExecutionContextStackMock.getFirst.returns(blockExecutionContextMock);
 
     metadata = {
       height: 1,
       coreChainLockedHeight: 1,
     };
 
-    previousBlockExecutionContextMock.getHeader.returns(metadata);
+    signedBlockExecutionContext.getHeader.returns(metadata);
 
     lastCommitInfo = {
       quorumHash: Buffer.alloc(12).fill(1),
@@ -33,8 +39,7 @@ describe('createQueryResponseFactory', () => {
     blockExecutionContextMock.getLastCommitInfo.returns(lastCommitInfo);
 
     createQueryResponse = createQueryResponseFactory(
-      blockExecutionContextMock,
-      previousBlockExecutionContextMock,
+      blockExecutionContextStackMock,
     );
   });
 
@@ -61,8 +66,7 @@ describe('createQueryResponseFactory', () => {
     expect(response.getProof().toObject()).to.deep.equal({
       signatureLlmqHash: lastCommitInfo.quorumHash.toString('base64'),
       signature: lastCommitInfo.stateSignature.toString('base64'),
-      rootTreeProof: '',
-      storeTreeProofs: undefined,
+      merkleProof: '',
     });
   });
 });

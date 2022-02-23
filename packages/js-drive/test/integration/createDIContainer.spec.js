@@ -1,26 +1,14 @@
-const { startMongoDb } = require('@dashevo/dp-services-ctl');
 const { expect } = require('chai');
 
-const { init: initHashFunction } = require('../../lib/rootTree/hashFunction');
 const createTestDIContainer = require('../../lib/test/createTestDIContainer');
 
 describe('createDIContainer', function describeContainer() {
   this.timeout(25000);
 
   let container;
-  let mongoDB;
-
-  before(async () => {
-    await initHashFunction();
-    mongoDB = await startMongoDb();
-  });
-
-  after(async () => {
-    await mongoDB.remove();
-  });
 
   beforeEach(async () => {
-    container = await createTestDIContainer(mongoDB);
+    container = await createTestDIContainer();
   });
 
   afterEach(async () => {

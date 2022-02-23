@@ -12,7 +12,6 @@ const {
   v0: {
     GetDocumentsResponse,
     Proof,
-    StoreTreeProofs,
   },
 } = require('@dashevo/dapi-grpc');
 
@@ -43,7 +42,6 @@ describe('getDocumentsHandlerFactory', () => {
   let proofFixture;
   let response;
   let proofMock;
-  let storeTreeProofs;
 
   beforeEach(function beforeEach() {
     dataContractId = generateRandomIdentifier();
@@ -51,7 +49,7 @@ describe('getDocumentsHandlerFactory', () => {
     where = [['name', '==', 'John']];
     orderBy = [{ order: 'asc' }];
     limit = 20;
-    startAfter = 1;
+    startAfter = generateRandomIdentifier();
     startAt = null;
 
     request = {
@@ -73,16 +71,11 @@ describe('getDocumentsHandlerFactory', () => {
 
     documentsSerialized = documentsFixture.map((documentItem) => documentItem.toBuffer());
     proofFixture = {
-      rootTreeProof: Buffer.alloc(1, 1),
-      storeTreeProof: Buffer.alloc(1, 2),
+      merkleProof: Buffer.alloc(1, 1),
     };
 
-    storeTreeProofs = new StoreTreeProofs();
-    storeTreeProofs.setDataContractsProof(proofFixture.storeTreeProof);
-
     proofMock = new Proof();
-    proofMock.setRootTreeProof(proofFixture.rootTreeProof);
-    proofMock.setStoreTreeProofs(storeTreeProofs);
+    proofMock.setMerkleProof(proofFixture.merkleProof);
 
     response = new GetDocumentsResponse();
     response.setProof(proofMock);
@@ -153,11 +146,9 @@ describe('getDocumentsHandlerFactory', () => {
     const proof = result.getProof();
 
     expect(proof).to.be.an.instanceOf(Proof);
-    const rootTreeProof = proof.getRootTreeProof();
-    const resultStoreTreeProofs = proof.getStoreTreeProofs();
+    const merkleProof = proof.getMerkleProof();
 
-    expect(rootTreeProof).to.deep.equal(proofFixture.rootTreeProof);
-    expect(resultStoreTreeProofs).to.deep.equal(storeTreeProofs);
+    expect(merkleProof).to.deep.equal(proofFixture.merkleProof);
   });
 
   it('should throw InvalidArgumentGrpcError if dataContractId is not specified', async () => {

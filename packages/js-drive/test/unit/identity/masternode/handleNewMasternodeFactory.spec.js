@@ -71,7 +71,6 @@ describe('handleNewMasternodeFactory', () => {
       Identifier.from('xmdKYeUsEU49sncsu76TmtufyqwP1By92RX4e48oRUW'),
       Buffer.from('4136bcaf69d15e767c56a8b4bb04304fe0b395d0', 'hex'),
       IdentityPublicKey.TYPES.ECDSA_HASH160,
-      true,
     );
 
     // operatorReward = 0
@@ -108,13 +107,11 @@ describe('handleNewMasternodeFactory', () => {
       Identifier.from('xmdKYeUsEU49sncsu76TmtufyqwP1By92RX4e48oRUW'),
       Buffer.from('4136bcaf69d15e767c56a8b4bb04304fe0b395d0', 'hex'),
       IdentityPublicKey.TYPES.ECDSA_HASH160,
-      false,
     );
     expect(createMasternodeIdentityMock.getCall(1)).to.be.calledWithExactly(
       Identifier.from('F1Fggqney3rdpLc69pS6CJr1yUxwEsRwmnBsLLCMjFsC'),
       Buffer.from('8e4c8c144bd6c62640fe3ae295973d512f83f7f541525a5da3c91e77ec02ff4dcd214e7431b7d2cc28e420ebfeb612ee', 'hex'),
       IdentityPublicKey.TYPES.BLS12_381,
-      false,
     );
   });
 });

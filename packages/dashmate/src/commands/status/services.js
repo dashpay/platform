@@ -35,7 +35,6 @@ class ServicesStatusCommand extends ConfigBaseCommand {
 
     if (config.get('network') !== 'mainnet') {
       Object.assign(serviceHumanNames, {
-        drive_mongodb: 'Drive MongoDB',
         drive_abci: 'Drive ABCI',
         drive_tenderdash: 'Drive Tenderdash',
         dapi_api: 'DAPI API',

@@ -43,7 +43,7 @@ function startNodeTaskFactory(
 
       // Remove directory that could potentially be created by Docker mount
       if (fs.existsSync(prettyFilePath) && fs.lstatSync(prettyFilePath).isDirectory()) {
-        fs.rmdirSync(prettyFilePath, { recursive: true });
+        fs.rmSync(prettyFilePath, { recursive: true });
       }
 
       if (!fs.existsSync(prettyFilePath)) {
@@ -55,7 +55,7 @@ function startNodeTaskFactory(
 
       // Remove directory that could potentially be created by Docker mount
       if (fs.existsSync(jsonFilePath) && fs.lstatSync(jsonFilePath).isDirectory()) {
-        fs.rmdirSync(jsonFilePath, { recursive: true });
+        fs.rmSync(jsonFilePath, { recursive: true });
       }
 
       if (!fs.existsSync(jsonFilePath)) {
