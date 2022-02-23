@@ -1,4 +1,5 @@
 const { BlockHeader } = require('@dashevo/dashcore-lib');
+const sinon = require('sinon');
 const ChainDataProvider = require('../../../lib/providers/chainDataProvider');
 const blockHeadersCache = require('../../../lib/providers/blockheaders-cache');
 
@@ -42,12 +43,12 @@ const headers = [
     time: 1398712784,
     nonce: 41103,
     bits: '1e0ffff0',
-  }]
+  }];
 
 describe('ChainDataProvider', () => {
-  const fakeHeaders = headers.map(e => new BlockHeader(e))
+  const fakeHeaders = headers.map((e) => new BlockHeader(e));
 
-  let coreAPIMock
+  let coreAPIMock;
   let chainDataProvider;
   let cacheSpy;
 
@@ -58,7 +59,7 @@ describe('ChainDataProvider', () => {
       this.sinon.restore();
     }
 
-    const blockHash = fakeHeaders[0].hash
+    const blockHash = fakeHeaders[0].hash;
 
     coreAPIMock = {
       getBestChainLock: this.sinon.stub(),
@@ -66,7 +67,7 @@ describe('ChainDataProvider', () => {
       getBlockHeaders: this.sinon.stub(),
       getBlockStats: this.sinon.stub(),
     };
-    const zmqClientMock = {on: this.sinon.stub(), topics: {rawblock: '', rawtx: ''}}
+    const zmqClientMock = { on: this.sinon.stub(), topics: { rawblock: '', rawtx: '' } };
 
     cacheSpy = this.sinon.spy(blockHeadersCache);
     chainDataProvider = new ChainDataProvider(coreAPIMock, zmqClientMock);
@@ -75,10 +76,10 @@ describe('ChainDataProvider', () => {
       height: 1,
       signature: Buffer.from('fakeSig'),
       blockHash,
-    })
+    });
 
     await chainDataProvider.init();
-    coreAPIMock.getBestChainLock.resetHistory()
+    coreAPIMock.getBestChainLock.resetHistory();
 
     blockHeadersCache.purge();
 
@@ -97,9 +98,9 @@ describe('ChainDataProvider', () => {
   });
 
   it('should call for rpc on getBlockHeader when cache is empty', async () => {
-    const [fakeBlockHeader] = fakeHeaders
+    const [fakeBlockHeader] = fakeHeaders;
 
-    coreAPIMock.getBlockHeader.resolves(fakeBlockHeader.toString())
+    coreAPIMock.getBlockHeader.resolves(fakeBlockHeader.toString());
 
     await chainDataProvider.getBlockHeader(fakeBlockHeader.hash);
 
@@ -110,9 +111,9 @@ describe('ChainDataProvider', () => {
   });
 
   it('should return cache on getBlockHeader if it is cached', async () => {
-    const [fakeBlockHeader] = fakeHeaders
+    const [fakeBlockHeader] = fakeHeaders;
 
-    blockHeadersCache.set(fakeBlockHeader.hash, fakeBlockHeader.toString())
+    blockHeadersCache.set(fakeBlockHeader.hash, fakeBlockHeader.toString());
     cacheSpy.set.resetHistory();
 
     await chainDataProvider.getBlockHeader(fakeBlockHeader.hash);
@@ -120,15 +121,15 @@ describe('ChainDataProvider', () => {
     expect(cacheSpy.get.callCount).to.be.equal(1);
     expect(cacheSpy.set.callCount).to.be.equal(0);
 
-    expect(coreAPIMock.getBlockHeader.callCount).to.be.equal(0)
+    expect(coreAPIMock.getBlockHeader.callCount).to.be.equal(0);
   });
 
   // the case where we request for N blocks, and theres nothing at all in the cache
   it('should call for rpc when nothing is cached', async () => {
-    const [first, second, third, fourth, fifth] = fakeHeaders
+    const [first, second, third, fourth, fifth] = fakeHeaders;
 
     coreAPIMock.getBlockStats.resolves({ height: 1 });
-    coreAPIMock.getBlockHeaders.resolves(fakeHeaders.map(e => e.toString()));
+    coreAPIMock.getBlockHeaders.resolves(fakeHeaders.map((e) => e.toString()));
 
     await chainDataProvider.getBlockHeaders(first.hash, 5);
 
@@ -148,9 +149,9 @@ describe('ChainDataProvider', () => {
 
   // the case when we request for cached blocks (all N block are cached)
   it('should use cache and do not call for blockHeaders', async () => {
-    const [first, second, third] = fakeHeaders
+    const [first, second, third] = fakeHeaders;
 
-    coreAPIMock.getBlockStats.resolves({height: 1});
+    coreAPIMock.getBlockStats.resolves({ height: 1 });
 
     blockHeadersCache.set(1, first.toString());
     blockHeadersCache.set(2, second.toString());
@@ -176,9 +177,9 @@ describe('ChainDataProvider', () => {
   // f.e. we request for 5 blocks, and what we have in cache is [1,2,3,undefined,undefined]
   // we should call for 3 blocks (3,4,5) and set 2 missing in the cache
   it('should use cache when miss something in the tail', async () => {
-    const [first, second, third, fourth, fifth] = fakeHeaders
+    const [first, second, third, fourth, fifth] = fakeHeaders;
 
-    coreAPIMock.getBlockStats.resolves({height: 1});
+    coreAPIMock.getBlockStats.resolves({ height: 1 });
     coreAPIMock.getBlockHeaders.resolves([third.toString(), fourth.toString(),
       fifth.toString()]);
 
@@ -209,9 +210,9 @@ describe('ChainDataProvider', () => {
   // f.e we request for 5 blocks, and cache is [1,2,undefined,undefined,5]
   // should take second block as a start point and request for 4 blocks (to the end)
   it('should use cache when missing in the middle', async () => {
-    const [first, second, third, fourth, fifth] = fakeHeaders
+    const [first, second, third, fourth, fifth] = fakeHeaders;
 
-    coreAPIMock.getBlockStats.resolves({height: 1});
+    coreAPIMock.getBlockStats.resolves({ height: 1 });
     coreAPIMock.getBlockHeaders.resolves([second.toString(), third.toString(),
       fourth.toString(), fifth.toString()]);
 
@@ -239,10 +240,10 @@ describe('ChainDataProvider', () => {
   // the case where we have something in the cache, but the first blocks are not
   // f.e. we request for 5 blocks, and cache is [undefined,undefined,3,4,5]
   it('should not use cache when miss something in the beginning', async () => {
-    const [first,, third, fourth, fifth] = fakeHeaders
+    const [first,, third, fourth, fifth] = fakeHeaders;
 
-    coreAPIMock.getBlockStats.resolves({height: 1});
-    coreAPIMock.getBlockHeaders.resolves(fakeHeaders.map(e => e.toString()));
+    coreAPIMock.getBlockStats.resolves({ height: 1 });
+    coreAPIMock.getBlockHeaders.resolves(fakeHeaders.map((e) => e.toString()));
 
     blockHeadersCache.set(1, undefined);
     blockHeadersCache.set(2, undefined);
@@ -270,9 +271,9 @@ describe('ChainDataProvider', () => {
   // the same as above, but with additional gap
   // [undefined,2,undefined,4,5]
   it('should not use cache when miss something in the beginning', async () => {
-    const [first, second, third, fourth, fifth] = fakeHeaders
+    const [first, second, third, fourth, fifth] = fakeHeaders;
 
-    coreAPIMock.getBlockStats.resolves({height: 1});
+    coreAPIMock.getBlockStats.resolves({ height: 1 });
     coreAPIMock.getBlockHeaders.resolves([first.toString(), second.toString(),
       third.toString(), fourth.toString(), fifth.toString()]);
 

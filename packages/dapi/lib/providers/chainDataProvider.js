@@ -48,7 +48,7 @@ class ChainDataProvider extends EventEmitter {
     let startHash = fromHash;
     let fetchCount = count;
 
-      const { height } = await this.coreRpcAPI.getBlockStats(fromHash, ['height']);
+    const { height } = await this.coreRpcAPI.getBlockStats(fromHash, ['height']);
 
     const blockHeights = [...Array(count).keys()]
       .map((e, i) => height + i);
@@ -64,7 +64,7 @@ class ChainDataProvider extends EventEmitter {
 
       // return cache if we do not miss anything
       if (cachedBlockHeaders.filter((e) => !!e).length === count) {
-        return cachedBlockHeaders.map((e) =>  new BlockHeader(Buffer.from(e, 'hex')));
+        return cachedBlockHeaders.map((e) => new BlockHeader(Buffer.from(e, 'hex')));
       }
 
       if (firstMissingIndex !== -1) {
