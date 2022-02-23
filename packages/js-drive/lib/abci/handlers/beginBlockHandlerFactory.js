@@ -110,9 +110,7 @@ function beginBlockHandlerFactory(
     transactionalDpp.setProtocolVersion(version.app.toNumber());
 
     // Start db transaction for the block
-    if (!await groveDBStore.isTransactionStarted()) {
-      await groveDBStore.startTransaction();
-    }
+    await groveDBStore.startTransaction();
 
     const isSimplifiedMasternodeListUpdated = await updateSimplifiedMasternodeList(
       coreChainLockedHeight, {

@@ -95,34 +95,46 @@ describe('beginBlockHandlerFactory', () => {
     };
   });
 
-  it('should update height, update masternode identities, start transactions return ResponseBeginBlock', async () => {
-    updateSimplifiedMasternodeListMock.resolves(true);
-    groveDBStoreMock.isTransactionStarted.resolves(false);
-
+  it('should reset previous block state and prepare everything for for a next one', async () => {
     const response = await beginBlockHandler(request);
 
     expect(response).to.be.an.instanceOf(ResponseBeginBlock);
 
+    // Wait for chain locked core block height
     expect(waitForChainLockedHeightMock).to.be.calledOnceWithExactly(coreChainLockedHeight);
 
+    // Reset block execution context
     expect(blockExecutionContextMock.getHeader).to.be.calledOnceWithExactly();
-
     expect(blockExecutionContextMock.reset).to.be.calledOnceWithExactly();
     expect(blockExecutionContextMock.setHeader).to.be.calledOnceWithExactly(header);
     expect(blockExecutionContextMock.setLastCommitInfo).to.be.calledOnceWithExactly(lastCommitInfo);
 
+    // Set current protocol version
     expect(dppMock.setProtocolVersion).to.have.been.calledOnceWithExactly(
       protocolVersion.toNumber(),
     );
     expect(transactionalDppMock.setProtocolVersion).to.have.been.calledOnceWithExactly(
       protocolVersion.toNumber(),
     );
-    expect(groveDBStoreMock.isTransactionStarted).to.be.calledOnceWithExactly();
+
+    // Start new transaction
     expect(groveDBStoreMock.startTransaction).to.be.calledOnceWithExactly();
 
+    // Update SML
     expect(updateSimplifiedMasternodeListMock).to.be.calledOnceWithExactly(
       coreChainLockedHeight, { logger: loggerMock },
     );
+
+    expect(synchronizeMasternodeIdentitiesMock).to.not.been.called();
+  });
+
+  it('should synchronize masternode identities if SML is updated', async () => {
+    updateSimplifiedMasternodeListMock.resolves(true);
+
+    const response = await beginBlockHandler(request);
+
+    expect(response).to.be.an.instanceOf(ResponseBeginBlock);
+
     expect(synchronizeMasternodeIdentitiesMock).to.have.been.calledOnceWithExactly(
       coreChainLockedHeight,
     );
@@ -154,7 +166,7 @@ describe('beginBlockHandlerFactory', () => {
     }
   });
 
-  it('should abort already started transactions', async function it() {
+  it('should abort db transaction and reset previous execution context if previous block failed', async function it() {
     blockExecutionContextMock.getHeader.returns({
       height: {
         equals: this.sinon.stub().returns(true),
@@ -170,6 +182,7 @@ describe('beginBlockHandlerFactory', () => {
         },
       ),
     });
+
     groveDBStoreMock.isTransactionStarted.resolves(true);
 
     const response = await beginBlockHandler(request);
