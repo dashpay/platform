@@ -44,7 +44,7 @@ const headers = [
     bits: '1e0ffff0',
   }]
 
-describe.only('ChainDataProvider', () => {
+describe('ChainDataProvider', () => {
   const fakeHeaders = headers.map(e => new BlockHeader(e))
 
   let coreAPIMock
