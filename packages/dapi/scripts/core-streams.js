@@ -118,6 +118,7 @@ async function main() {
   );
 
   const chainDataProvider = new ChainDataProvider(dashCoreRpcClient, dashCoreZmqClient);
+  await chainDataProvider.init()
 
   // Start GRPC server
   log.info('Starting GRPC server');
