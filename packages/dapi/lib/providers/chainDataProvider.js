@@ -24,11 +24,10 @@ class ChainDataProvider extends EventEmitter {
 
   async init() {
     const chainLock = await this.coreRpcAPI.getBestChainLock();
+    this.chainLock = new ChainLock(chainLock);
 
-    this.chainLock = new ChainLock(Buffer.from(chainLock));
-
-    this.zmqClient.on(this.zmqClient.events.NEW_CHAIN_LOCK, this.chainLockHandler);
-    this.zmqClient.on(this.zmqClient.events.NEW_BLOCK_HEADER, this.blockHashHandler);
+    this.zmqClient.on(this.zmqClient.topics.rawtx, this.chainLockHandler);
+    this.zmqClient.on(this.zmqClient.topics.rawblock, this.blockHashHandler);
   }
 
   async getBlockHeader(hash) {
@@ -49,7 +48,7 @@ class ChainDataProvider extends EventEmitter {
     let startHash = fromHash;
     let fetchCount = count;
 
-    const { height } = await this.coreRpcAPI.getBlockStats(fromHash, ['height']);
+      const { height } = await this.coreRpcAPI.getBlockStats(fromHash, ['height']);
 
     const blockHeights = [...Array(count).keys()]
       .map((e, i) => height + i);
@@ -65,21 +64,21 @@ class ChainDataProvider extends EventEmitter {
 
       // return cache if we do not miss anything
       if (cachedBlockHeaders.filter((e) => !!e).length === count) {
-        return cachedBlockHeaders.map((e) => new BlockHeader(Buffer.from(e, 'hex')));
+        return cachedBlockHeaders.map((e) =>  new BlockHeader(Buffer.from(e, 'hex')));
       }
 
       if (firstMissingIndex !== -1) {
         lastCachedIndex = firstMissingIndex - 1;
 
         const rawBlockHeader = cachedBlockHeaders[lastCachedIndex];
-        const blockHeader = BlockHeader.fromRawBlock(rawBlockHeader);
+        const blockHeader = new BlockHeader(Buffer.from(rawBlockHeader, 'hex'));
 
         startHash = blockHeader.hash.toString('hex');
         fetchCount -= lastCachedIndex;
       }
     }
 
-    const missingBlockHeaders = await this.getBlockHeaders(startHash, fetchCount);
+    const missingBlockHeaders = await this.coreRpcAPI.getBlockHeaders(startHash, fetchCount);
     const rawBlockHeaders = [...cachedBlockHeaders.slice(0,
       lastCachedIndex !== -1 ? lastCachedIndex : 0), ...missingBlockHeaders];
 

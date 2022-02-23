@@ -4,7 +4,7 @@ const config = require('../config');
 const options = {
   max: config.blockHeaders.cache.maxSize,
   maxAge: config.blockHeaders.cache.maxAge,
-  length: (n) => n.length,
+  length: (n) => n && n.length,
 };
 
 const blockHeadersCache = new LRU(options);
