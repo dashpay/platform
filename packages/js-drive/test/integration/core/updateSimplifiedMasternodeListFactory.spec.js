@@ -41,4 +41,44 @@ describe('updateSimplifiedMasternodeListFactory', function main() {
     expect(simplifiedMasternodeList.getStore())
       .to.be.an.instanceOf(SimplifiedMNListStore);
   });
+
+  it('should synchronizeMasternodeIdentities by smlMaxListsLimit number of blocks', async () => {
+    dashCore = await startDashCore();
+
+    container = await createTestDIContainer(dashCore);
+
+    const simplifiedMasternodeList = container.resolve('simplifiedMasternodeList');
+    const updateSimplifiedMasternodeList = container.resolve('updateSimplifiedMasternodeList');
+    const synchronizeMasternodeIdentities = container.resolve('synchronizeMasternodeIdentities');
+    const smlMaxListsLimit = container.resolve('smlMaxListsLimit');
+
+    const api = dashCore.getApi();
+    const { result: randomAddress } = await api.getNewAddress();
+
+    await api.generateToAddress(600, randomAddress);
+
+    let blockNumber = 500;
+
+    await updateSimplifiedMasternodeList(blockNumber);
+    await synchronizeMasternodeIdentities(blockNumber);
+
+    expect(simplifiedMasternodeList.getStore())
+      .to.be.an.instanceOf(SimplifiedMNListStore);
+
+    blockNumber += smlMaxListsLimit;
+
+    await updateSimplifiedMasternodeList(blockNumber);
+    await synchronizeMasternodeIdentities(blockNumber);
+
+    expect(simplifiedMasternodeList.getStore())
+      .to.be.an.instanceOf(SimplifiedMNListStore);
+
+    blockNumber += smlMaxListsLimit;
+
+    await updateSimplifiedMasternodeList(blockNumber);
+    await synchronizeMasternodeIdentities(blockNumber);
+
+    expect(simplifiedMasternodeList.getStore())
+      .to.be.an.instanceOf(SimplifiedMNListStore);
+  });
 });
