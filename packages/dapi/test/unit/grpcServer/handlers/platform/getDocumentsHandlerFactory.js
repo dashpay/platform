@@ -49,17 +49,17 @@ describe('getDocumentsHandlerFactory', () => {
     where = [['name', '==', 'John']];
     orderBy = [{ order: 'asc' }];
     limit = 20;
-    startAfter = generateRandomIdentifier();
-    startAt = null;
+    startAfter = new Uint8Array(generateRandomIdentifier().toBuffer());
+    startAt = new Uint8Array([]);
 
     request = {
       getDataContractId: this.sinon.stub().returns(dataContractId),
       getDocumentType: this.sinon.stub().returns(documentType),
-      getWhere: this.sinon.stub().returns(new Uint8Array(cbor.encode(where))),
-      getOrderBy: this.sinon.stub().returns(new Uint8Array(cbor.encode(orderBy))),
+      getWhere_asU8: this.sinon.stub().returns(new Uint8Array(cbor.encode(where))),
+      getOrderBy_asU8: this.sinon.stub().returns(new Uint8Array(cbor.encode(orderBy))),
       getLimit: this.sinon.stub().returns(limit),
-      getStartAfter: this.sinon.stub().returns(startAfter),
-      getStartAt: this.sinon.stub().returns(startAt),
+      getStartAfter_asU8: this.sinon.stub().returns(startAfter),
+      getStartAt_asU8: this.sinon.stub().returns(startAt),
       getProve: this.sinon.stub().returns(false),
     };
 
@@ -110,7 +110,7 @@ describe('getDocumentsHandlerFactory', () => {
         where,
         orderBy,
         limit,
-        startAfter,
+        startAfter: Buffer.from(startAfter),
         startAt: undefined,
       },
       false,
@@ -137,7 +137,7 @@ describe('getDocumentsHandlerFactory', () => {
         where,
         orderBy,
         limit,
-        startAfter,
+        startAfter: Buffer.from(startAfter),
         startAt: undefined,
       },
       true,
