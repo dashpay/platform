@@ -10,7 +10,6 @@ const {
   v0: {
     GetIdentityResponse,
     Proof,
-    StoreTreeProofs,
   },
 } = require('@dashevo/dapi-grpc');
 
@@ -31,7 +30,6 @@ describe('getIdentityHandlerFactory', () => {
   let proofFixture;
   let proofMock;
   let response;
-  let storeTreeProofs;
 
   beforeEach(function beforeEach() {
     id = generateRandomIdentifier();
@@ -43,16 +41,11 @@ describe('getIdentityHandlerFactory', () => {
     identity = getIdentityFixture();
 
     proofFixture = {
-      rootTreeProof: Buffer.alloc(1, 1),
-      storeTreeProof: Buffer.alloc(1, 2),
+      merkleProof: Buffer.alloc(1, 1),
     };
 
-    storeTreeProofs = new StoreTreeProofs();
-    storeTreeProofs.setDataContractsProof(proofFixture.storeTreeProof);
-
     proofMock = new Proof();
-    proofMock.setRootTreeProof(proofFixture.rootTreeProof);
-    proofMock.setStoreTreeProofs(storeTreeProofs);
+    proofMock.setMerkleProof(proofFixture.merkleProof);
 
     response = new GetIdentityResponse();
     response.setProof(proofMock);
@@ -91,11 +84,9 @@ describe('getIdentityHandlerFactory', () => {
     const proof = result.getProof();
 
     expect(proof).to.be.an.instanceOf(Proof);
-    const rootTreeProof = proof.getRootTreeProof();
-    const resultStoreTreeProof = proof.getStoreTreeProofs();
+    const merkleProof = proof.getMerkleProof();
 
-    expect(rootTreeProof).to.deep.equal(proofFixture.rootTreeProof);
-    expect(resultStoreTreeProof).to.deep.equal(storeTreeProofs);
+    expect(merkleProof).to.deep.equal(proofFixture.merkleProof);
 
     expect(driveStateRepositoryMock.fetchIdentity).to.be.calledOnceWith(id.toBuffer(), true);
   });

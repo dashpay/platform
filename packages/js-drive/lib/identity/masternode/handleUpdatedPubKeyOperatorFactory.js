@@ -6,17 +6,15 @@ const Transaction = require('@dashevo/dashcore-lib/lib/transaction');
 /**
  *
  * @param {DashPlatformProtocol} transactionalDpp
- * @param {DriveStateRepository|CachedStateRepositoryDecorator} stateRepository
+ * @param {DriveStateRepository|CachedStateRepositoryDecorator} transactionalStateRepository
  * @param {createMasternodeIdentity} createMasternodeIdentity
- * @param {DataContractStoreRepository} dataContractRepository
  * @param {Identifier} masternodeRewardSharesContractId
  * @return {handleUpdatedPubKeyOperator}
  */
 function handleUpdatedPubKeyOperatorFactory(
   transactionalDpp,
-  stateRepository,
+  transactionalStateRepository,
   createMasternodeIdentity,
-  dataContractRepository,
   masternodeRewardSharesContractId,
 ) {
   /**
@@ -24,7 +22,6 @@ function handleUpdatedPubKeyOperatorFactory(
    * @param {SimplifiedMNListEntry} masternodeEntry
    * @param {SimplifiedMNListEntry} previousMasternodeEntry
    * @param {DataContract} dataContract
-   * @param {boolean} storePreviousState
    * @return {Promise<{
    *            create: Document[],
    *            delete: Document[],
@@ -34,9 +31,8 @@ function handleUpdatedPubKeyOperatorFactory(
     masternodeEntry,
     previousMasternodeEntry,
     dataContract,
-    storePreviousState = false,
   ) {
-    const rawTransaction = await stateRepository
+    const rawTransaction = await transactionalStateRepository
       .fetchTransaction(masternodeEntry.proRegTxHash);
 
     const { extraPayload: proRegTxPayload } = new Transaction(rawTransaction.data);
@@ -58,7 +54,7 @@ function handleUpdatedPubKeyOperatorFactory(
 
       const operatorIdentityId = Identifier.from(operatorIdentityHash);
 
-      const operatorIdentity = await stateRepository.fetchIdentity(operatorIdentityId);
+      const operatorIdentity = await transactionalStateRepository.fetchIdentity(operatorIdentityId);
 
       //  Create an identity for operator if there is no identity exist with the same ID
       if (operatorIdentity === null) {
@@ -66,7 +62,6 @@ function handleUpdatedPubKeyOperatorFactory(
           operatorIdentityId,
           pubKeyOperator,
           IdentityPublicKey.TYPES.BLS12_381,
-          storePreviousState,
         );
       }
 
@@ -96,25 +91,26 @@ function handleUpdatedPubKeyOperatorFactory(
 
       const previousOperatorIdentityId = Identifier.from(previousOperatorIdentityHash);
 
-      let startAt = 0;
+      let startAfter;
       let fetchedDocuments;
       const limit = 100;
 
       do {
-        fetchedDocuments = await stateRepository.fetchDocuments(
+        fetchedDocuments = await transactionalStateRepository.fetchDocuments(
           masternodeRewardSharesContractId,
           'rewardShare',
           {
             limit,
-            startAt,
+            startAfter,
             where: [
-              ['$ownerId', '===', Identifier.from(proRegTxHash)],
-              ['payToId', '===', previousOperatorIdentityId],
+              ['$ownerId', '==', Identifier.from(proRegTxHash)],
+              ['payToId', '==', previousOperatorIdentityId],
             ],
           },
         );
         documentsToDelete = documentsToDelete.concat(fetchedDocuments);
-        startAt += limit;
+        startAfter = fetchedDocuments.length > 0
+          ? fetchedDocuments[fetchedDocuments.length - 1].id : undefined;
       } while (fetchedDocuments.length === limit);
     }
 

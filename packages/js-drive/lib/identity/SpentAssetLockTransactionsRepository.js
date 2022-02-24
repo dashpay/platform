@@ -1,24 +1,27 @@
 class SpentAssetLockTransactionsRepository {
   /**
-   * @param {MerkDbStore} spentAssetLockTransactionsStore
+   * @param {GroveDBStore} groveDBStore
    */
-  constructor(spentAssetLockTransactionsStore) {
-    this.storage = spentAssetLockTransactionsStore;
+  constructor(groveDBStore) {
+    this.storage = groveDBStore;
   }
 
   /**
    * Store the outPoint
    *
    * @param {Buffer} outPointBuffer
-   * @param {MerkDbTransaction} [transaction]
+   * @param {boolean} [useTransaction=false]
    *
    * @return {SpentAssetLockTransactionsRepository}
    */
-  store(outPointBuffer, transaction = undefined) {
-    this.storage.put(
+  async store(outPointBuffer, useTransaction = false) {
+    const emptyValue = Buffer.from([0]);
+
+    await this.storage.put(
+      SpentAssetLockTransactionsRepository.TREE_PATH,
       outPointBuffer,
-      Buffer.from([1]),
-      transaction,
+      emptyValue,
+      { useTransaction },
     );
 
     return this;
@@ -28,19 +31,39 @@ class SpentAssetLockTransactionsRepository {
    * Fetch the outPoint
    *
    * @param {Buffer} outPointBuffer
-   * @param {MerkDbTransaction} [transaction]
+   * @param {boolean} [useTransaction=false]
    *
    * @return {null|Buffer}
    */
-  fetch(outPointBuffer, transaction = undefined) {
-    const result = this.storage.get(outPointBuffer, transaction);
+  async fetch(outPointBuffer, useTransaction = false) {
+    return this.storage.get(
+      SpentAssetLockTransactionsRepository.TREE_PATH,
+      outPointBuffer,
+      { useTransaction },
+    );
+  }
 
-    if (!result) {
-      return null;
-    }
+  /**
+   * @param {Object} [options]
+   * @param {boolean} [options.useTransaction=false]
+   * @param {boolean} [options.skipIfExists]
+   *
+   * @return {Promise<SpentAssetLockTransactionsRepository>}
+   */
+  async createTree(options = {}) {
+    await this.storage.createTree(
+      [SpentAssetLockTransactionsRepository.TREE_PATH[0]],
+      SpentAssetLockTransactionsRepository.TREE_PATH[1],
+      options,
+    );
 
-    return result;
+    return this;
   }
 }
+
+SpentAssetLockTransactionsRepository.TREE_PATH = [
+  Buffer.from([3]),
+  Buffer.from([0]),
+];
 
 module.exports = SpentAssetLockTransactionsRepository;

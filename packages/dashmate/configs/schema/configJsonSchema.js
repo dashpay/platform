@@ -301,16 +301,6 @@ module.exports = {
         drive: {
           type: 'object',
           properties: {
-            mongodb: {
-              type: 'object',
-              properties: {
-                docker: {
-                  $ref: '#/definitions/docker',
-                },
-              },
-              required: ['docker'],
-              additionalProperties: false,
-            },
             abci: {
               type: 'object',
               properties: {
@@ -473,7 +463,7 @@ module.exports = {
               additionalProperties: false,
             },
           },
-          required: ['mongodb', 'abci', 'tenderdash'],
+          required: ['abci', 'tenderdash'],
           additionalProperties: false,
         },
         dpns: {

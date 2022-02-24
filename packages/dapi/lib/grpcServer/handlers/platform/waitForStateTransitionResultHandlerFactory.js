@@ -13,7 +13,6 @@ const {
     StateTransitionBroadcastError,
     Proof,
     ResponseMetadata,
-    StoreTreeProofs,
   },
 } = require('@dashevo/dapi-grpc');
 
@@ -119,18 +118,8 @@ function waitForStateTransitionResultHandlerFactory(
       response.setMetadata(responseMetadata);
 
       const proof = new Proof();
-      const storeTreeProofs = new StoreTreeProofs();
 
-      if (stateTransition.isDocumentStateTransition()) {
-        storeTreeProofs.setDocumentsProof(proofObject.storeTreeProof);
-      } else if (stateTransition.isIdentityStateTransition()) {
-        storeTreeProofs.setIdentitiesProof(proofObject.storeTreeProof);
-      } else if (stateTransition.isDataContractStateTransition()) {
-        storeTreeProofs.setDataContractsProof(proofObject.storeTreeProof);
-      }
-
-      proof.setRootTreeProof(proofObject.rootTreeProof);
-      proof.setStoreTreeProofs(storeTreeProofs);
+      proof.setMerkleProof(proofObject.merkleProof);
       proof.setSignatureLlmqHash(proofObject.signatureLlmqHash);
       proof.setSignature(proofObject.signature);
 

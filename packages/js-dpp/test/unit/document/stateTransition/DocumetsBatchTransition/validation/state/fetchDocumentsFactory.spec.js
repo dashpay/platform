@@ -57,6 +57,12 @@ describe('fetchDocumentsFactory', () => {
         where: [
           ['$id', 'in', [documents[0].getId()]],
         ],
+        orderBy: [
+          [
+            '$id',
+            'asc',
+          ],
+        ],
       },
     ];
 
@@ -70,6 +76,12 @@ describe('fetchDocumentsFactory', () => {
             documents[2].getId(),
           ]],
         ],
+        orderBy: [
+          [
+            '$id',
+            'asc',
+          ],
+        ],
       },
     ];
 
@@ -82,6 +94,12 @@ describe('fetchDocumentsFactory', () => {
             documents[3].getId(),
             documents[4].getId(),
           ]],
+        ],
+        orderBy: [
+          [
+            '$id',
+            'asc',
+          ],
         ],
       },
     ];

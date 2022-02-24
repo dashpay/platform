@@ -36,6 +36,7 @@ describe('Platform', () => {
                             ["normalizedParentDomainName", "==", "dash"],
                             ["normalizedLabel", "startsWith", "prefix"]
                         ],
+                        orderBy: [['normalizedLabel', 'asc']],
                     },
                 ]);
 
@@ -57,6 +58,7 @@ describe('Platform', () => {
                             ["normalizedParentDomainName", "==", "dash"],
                             ["normalizedLabel", "startsWith", "prefix"]
                         ],
+                      orderBy: [['normalizedLabel', 'asc']]
                     },
                 ]);
 

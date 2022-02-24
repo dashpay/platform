@@ -10,10 +10,7 @@ const fs = require('fs');
 
 const Long = require('long');
 
-// eslint-disable-next-line import/no-unresolved
-const level = require('level-rocksdb');
-
-const { Merk } = require('@dashevo/merk');
+const RSDrive = require('@dashevo/rs-drive');
 
 const LRUCache = require('lru-cache');
 const RpcClient = require('@dashevo/dashd-rpc/promise');
@@ -33,6 +30,8 @@ const createABCIServer = require('@dashevo/abci');
 
 const protocolVersion = require('@dashevo/dpp/lib/version/protocolVersion');
 
+const decodeProtocolEntityFactory = require('@dashevo/dpp/lib/decodeProtocolEntityFactory');
+
 const featureFlagsSystemIds = require('@dashevo/feature-flags-contract/lib/systemIds');
 const featureFlagsDocuments = require('@dashevo/feature-flags-contract/schema/feature-flags-documents.json');
 
@@ -50,62 +49,45 @@ const packageJSON = require('../package.json');
 const ZMQClient = require('./core/ZmqClient');
 
 const sanitizeUrl = require('./util/sanitizeUrl');
+
 const LatestCoreChainLock = require('./core/LatestCoreChainLock');
 
-const MerkDbStore = require('./merkDb/MerkDbStore');
-const RootTree = require('./rootTree/RootTree');
-const CommonStoreRootTreeLeaf = require('./rootTree/CommonStoreRootTreeLeaf');
-
+const GroveDBStore = require('./storage/GroveDBStore');
 const IdentityStoreRepository = require('./identity/IdentityStoreRepository');
-const IdentitiesStoreRootTreeLeaf = require('./identity/IdentitiesStoreRootTreeLeaf');
+
 const PublicKeyToIdentityIdStoreRepository = require(
   './identity/PublicKeyToIdentityIdStoreRepository',
 );
-const PublicKeyToIdentityIdStoreRootTreeLeaf = require(
-  './identity/PublicKeyToIdentityIdStoreRootTreeLeaf',
-);
 
 const DataContractStoreRepository = require('./dataContract/DataContractStoreRepository');
-const DataContractsStoreRootTreeLeaf = require('./dataContract/DataContractsStoreRootTreeLeaf');
-
-const DocumentsStoreRootTreeLeaf = require('./document/DocumentsStoreRootTreeLeaf');
-const DocumentStoreRepository = require('./document/DocumentStoreRepository');
-const DocumentIndexedStoreRepository = require('./document/DocumentIndexedStoreRepository');
 const findConflictingConditions = require('./document/query/findConflictingConditions');
-const getDocumentDatabaseFactory = require('./document/mongoDbRepository/getDocumentMongoDbDatabaseFactory');
+const findThreesomeOfIndexedProperties = require('./document/query/findThreesomeOfIndexedProperties');
+const sortWhereClausesAccordingToIndex = require('./document/query/sortWhereClausesAccordingToIndex');
+const findIndexedPropertiesSince = require('./document/query/findIndexedPropertiesSince');
 const validateQueryFactory = require('./document/query/validateQueryFactory');
-const convertWhereToMongoDbQuery = require('./document/mongoDbRepository/convertWhereToMongoDbQuery');
-const createDocumentMongoDbRepositoryFactory = require('./document/mongoDbRepository/createDocumentMongoDbRepositoryFactory');
-const DocumentDatabaseManager = require('./document/mongoDbRepository/DocumentDatabaseManager');
-const convertToMongoDbIndicesFunction = require('./document/mongoDbRepository/convertToMongoDbIndices');
+
 const fetchDocumentsFactory = require('./document/fetchDocumentsFactory');
-const connectToMongoDBFactory = require('./mongoDb/connectToMongoDBFactory');
-
-const waitReplicaSetInitializeFactory = require('./mongoDb/waitReplicaSetInitializeFactory');
 const BlockExecutionContext = require('./blockExecution/BlockExecutionContext');
-const CreditsDistributionPoolCommonStoreRepository = require('./creditsDistributionPool/CreditsDistributionPoolCommonStoreRepository');
 
-const BlockExecutionStoreTransactions = require('./blockExecution/BlockExecutionStoreTransactions');
-const PreviousBlockExecutionStoreTransactionsRepository = require('./blockExecution/PreviousBlockExecutionStoreTransactionsRepository');
-
+const CreditsDistributionPoolRepository = require('./creditsDistributionPool/CreditsDistributionPoolRepository');
 const unserializeStateTransitionFactory = require(
   './abci/handlers/stateTransition/unserializeStateTransitionFactory',
 );
 const DriveStateRepository = require('./dpp/DriveStateRepository');
-const CachedStateRepositoryDecorator = require('./dpp/CachedStateRepositoryDecorator');
 
+const CachedStateRepositoryDecorator = require('./dpp/CachedStateRepositoryDecorator');
 const LoggedStateRepositoryDecorator = require('./dpp/LoggedStateRepositoryDecorator');
 const dataContractQueryHandlerFactory = require('./abci/handlers/query/dataContractQueryHandlerFactory');
 const identityQueryHandlerFactory = require('./abci/handlers/query/identityQueryHandlerFactory');
 const documentQueryHandlerFactory = require('./abci/handlers/query/documentQueryHandlerFactory');
 const identitiesByPublicKeyHashesQueryHandlerFactory = require('./abci/handlers/query/identitiesByPublicKeyHashesQueryHandlerFactory');
-const getProofsQueryHandlerFactory = require('./abci/handlers/query/getProofsQueryHandlerFactory');
 
+const getProofsQueryHandlerFactory = require('./abci/handlers/query/getProofsQueryHandlerFactory');
 const identityIdsByPublicKeyHashesQueryHandlerFactory = require('./abci/handlers/query/identityIdsByPublicKeyHashesQueryHandlerFactory');
+
 const verifyChainLockQueryHandlerFactory = require('./abci/handlers/query/verifyChainLockQueryHandlerFactory');
 
 const wrapInErrorHandlerFactory = require('./abci/errors/wrapInErrorHandlerFactory');
-
 const errorHandlerFactory = require('./errorHandlerFactory');
 const checkTxHandlerFactory = require('./abci/handlers/checkTxHandlerFactory');
 const commitHandlerFactory = require('./abci/handlers/commitHandlerFactory');
@@ -113,21 +95,17 @@ const deliverTxHandlerFactory = require('./abci/handlers/deliverTxHandlerFactory
 const initChainHandlerFactory = require('./abci/handlers/initChainHandlerFactory');
 const infoHandlerFactory = require('./abci/handlers/infoHandlerFactory');
 const beginBlockHandlerFactory = require('./abci/handlers/beginBlockHandlerFactory');
-const endBlockHandlerFactory = require('./abci/handlers/endBlockHandlerFactory');
 
+const endBlockHandlerFactory = require('./abci/handlers/endBlockHandlerFactory');
 const queryHandlerFactory = require('./abci/handlers/queryHandlerFactory');
 const waitForCoreSyncFactory = require('./core/waitForCoreSyncFactory');
 const waitForCoreChainLockSyncFactory = require('./core/waitForCoreChainLockSyncFactory');
 const updateSimplifiedMasternodeListFactory = require('./core/updateSimplifiedMasternodeListFactory');
 const waitForChainLockedHeightFactory = require('./core/waitForChainLockedHeightFactory');
 const SimplifiedMasternodeList = require('./core/SimplifiedMasternodeList');
-const decodeChainLock = require('./core/decodeChainLock');
-const populateMongoDbTransactionFromObjectFactory = require('./document/populateMongoDbTransactionFromObjectFactory');
 
-const FileDb = require('./fileDb/FileDb');
+const decodeChainLock = require('./core/decodeChainLock');
 const SpentAssetLockTransactionsRepository = require('./identity/SpentAssetLockTransactionsRepository');
-const SpentAssetLockTransactionsStoreRootTreeLeaf = require('./identity/SpentAssetLockTransactionsStoreRootTreeLeaf');
-const cloneToPreviousStoreTransactionsFactory = require('./blockExecution/cloneToPreviousStoreTransactionsFactory');
 const enrichErrorWithConsensusErrorFactory = require('./abci/errors/enrichErrorWithConsensusLoggerFactory');
 const CreditsDistributionPool = require('./creditsDistributionPool/CreditsDistributionPool');
 const closeAbciServerFactory = require('./abci/closeAbciServerFactory');
@@ -138,39 +116,32 @@ const createValidatorSetUpdate = require('./abci/handlers/validator/createValida
 const fetchQuorumMembersFactory = require('./core/fetchQuorumMembersFactory');
 const getRandomQuorum = require('./core/getRandomQuorum');
 const createQueryResponseFactory = require('./abci/handlers/query/response/createQueryResponseFactory');
-const BlockExecutionContextRepository = require('./blockExecution/BlockExecutionContextRepository');
+const BlockExecutionContextStackRepository = require('./blockExecution/BlockExecutionContextStackRepository');
+const rotateSignedStoreFactory = require('./storage/rotateSignedStoreFactory');
+const BlockExecutionContextStack = require('./blockExecution/BlockExecutionContextStack');
+const createInitialStateStructureFactory = require('./state/createInitialStateStructureFactory');
+const findAppropriateIndex = require('./document/query/findAppropriateIndex');
+
 const registerSystemDataContractFactory = require('./state/registerSystemDataContractFactory');
 const registerTopLevelDomainFactory = require('./state/registerTopLevelDomainFactory');
-const registerFeatureFlagFactory = require('./state/registerFeatureFlagFactory');
 const synchronizeMasternodeIdentitiesFactory = require('./identity/masternode/synchronizeMasternodeIdentitiesFactory');
 const createMasternodeIdentityFactory = require('./identity/masternode/createMasternodeIdentityFactory');
 const handleNewMasternodeFactory = require('./identity/masternode/handleNewMasternodeFactory');
 const handleUpdatedPubKeyOperatorFactory = require('./identity/masternode/handleUpdatedPubKeyOperatorFactory');
 const splitDocumentsIntoChunks = require('./identity/masternode/splitDocumentsIntoChunks');
+const registerSystemDataContractsFactory = require('./abci/handlers/state/registerSystemDataContractsFactory');
+const DocumentRepository = require('./document/DocumentRepository');
+
+const noopLoggerInstance = require('./util/noopLogger');
 
 /**
  *
  * @param {Object} options
  * @param {string} options.ABCI_HOST
  * @param {string} options.ABCI_PORT
- * @param {string} options.COMMON_STORE_MERK_DB_FILE
- * @param {string} options.PREVIOUS_COMMON_STORE_MERK_DB_FILE
+ * @param {string} options.DB_PATH
+ * @param {string} options.GROVEDB_LATEST_FILE
  * @param {string} options.DATA_CONTRACT_CACHE_SIZE
- * @param {string} options.IDENTITIES_STORE_MERK_DB_FILE
- * @param {string} options.PREVIOUS_IDENTITIES_STORE_MERK_DB_FILE
- * @param {string} options.PUBLIC_KEY_TO_IDENTITY_STORE_MERK_DB_FILE
- * @param {string} options.PREVIOUS_PUBLIC_KEY_TO_IDENTITY_STORE_MERK_DB_FILE
- * @param {string} options.DATA_CONTRACTS_STORE_MERK_DB_FILE
- * @param {string} options.PREVIOUS_DATA_CONTRACTS_STORE_MERK_DB_FILE
- * @param {string} options.DOCUMENTS_STORE_MERK_DB_FILE
- * @param {string} options.PREVIOUS_DOCUMENTS_STORE_MERK_DB_FILE
- * @param {string} options.EXTERNAL_STORE_LEVEL_DB_FILE
- * @param {string} options.PREVIOUS_EXTERNAL_STORE_LEVEL_DB_FILE
- * @param {string} options.DOCUMENT_MONGODB_DB_PREFIX
- * @param {string} options.PREVIOUS_DOCUMENT_MONGODB_DB_PREFIX
- * @param {string} options.DOCUMENT_MONGODB_URL
- * @param {string} options.ASSET_LOCK_TRANSACTIONS_STORE_MERK_DB_FILE
- * @param {string} options.PREVIOUS_ASSET_LOCK_TRANSACTIONS_STORE_MERK_DB_FILE
  * @param {string} options.CORE_JSON_RPC_HOST
  * @param {string} options.CORE_JSON_RPC_PORT
  * @param {string} options.CORE_JSON_RPC_USERNAME
@@ -178,7 +149,6 @@ const splitDocumentsIntoChunks = require('./identity/masternode/splitDocumentsIn
  * @param {string} options.CORE_ZMQ_HOST
  * @param {string} options.CORE_ZMQ_PORT
  * @param {string} options.CORE_ZMQ_CONNECTION_RETRIES
- * @param {string} options.PREVIOUS_BLOCK_EXECUTION_TRANSACTIONS_FILE
  * @param {string} options.NETWORK
  * @param {string} options.DPNS_MASTER_PUBLIC_KEY
  * @param {string} options.DASHPAY_MASTER_PUBLIC_KEY
@@ -186,13 +156,13 @@ const splitDocumentsIntoChunks = require('./identity/masternode/splitDocumentsIn
  * @param {string} options.MASTERNODE_REWARD_SHARES_MASTER_PUBLIC_KEY
  * @param {string} options.INITIAL_CORE_CHAINLOCKED_HEIGHT
  * @param {string} options.VALIDATOR_SET_LLMQ_TYPE
+ * @param {string} options.TENDERDASH_P2P_PORT
  * @param {string} options.LOG_STDOUT_LEVEL
  * @param {string} options.LOG_PRETTY_FILE_LEVEL
  * @param {string} options.LOG_PRETTY_FILE_PATH
  * @param {string} options.LOG_JSON_FILE_LEVEL
  * @param {string} options.LOG_JSON_FILE_PATH
  * @param {string} options.LOG_STATE_REPOSITORY
- * @param {string} options.LOG_MERK
  * @param {string} options.NODE_ENV
  *
  * @return {AwilixContainer}
@@ -239,29 +209,12 @@ function createDIContainer(options) {
   container.register({
     abciHost: asValue(options.ABCI_HOST),
     abciPort: asValue(options.ABCI_PORT),
-    commonStoreMerkDBFile: asValue(options.COMMON_STORE_MERK_DB_FILE),
-    previousCommonStoreMerkDBFile: asValue(options.PREVIOUS_COMMON_STORE_MERK_DB_FILE),
+
+    dbPath: asValue(options.DB_PATH),
+
+    groveDBLatestFile: asValue(options.GROVEDB_LATEST_FILE),
     dataContractCacheSize: asValue(options.DATA_CONTRACT_CACHE_SIZE),
-    publicKeyToIdentityIdStoreMerkDBFile:
-      asValue(options.PUBLIC_KEY_TO_IDENTITY_STORE_MERK_DB_FILE),
-    previousPublicKeyToIdentityIdStoreMerkDBFile:
-      asValue(options.PREVIOUS_PUBLIC_KEY_TO_IDENTITY_STORE_MERK_DB_FILE),
-    identitiesStoreMerkDBFile: asValue(options.IDENTITIES_STORE_MERK_DB_FILE),
-    previousIdentitiesStoreMerkDBFile: asValue(options.PREVIOUS_IDENTITIES_STORE_MERK_DB_FILE),
-    externalStoreLevelDBFile: asValue(options.EXTERNAL_STORE_LEVEL_DB_FILE),
-    previousExternalStoreLevelDBFile: asValue(options.PREVIOUS_EXTERNAL_STORE_LEVEL_DB_FILE),
-    dataContractsStoreMerkDBFile: asValue(options.DATA_CONTRACTS_STORE_MERK_DB_FILE),
-    previousDataContractsStoreMerkDBFile:
-      asValue(options.PREVIOUS_DATA_CONTRACTS_STORE_MERK_DB_FILE),
-    documentsStoreMerkDBFile: asValue(options.DOCUMENTS_STORE_MERK_DB_FILE),
-    previousDocumentsStoreMerkDBFile: asValue(options.PREVIOUS_DOCUMENTS_STORE_MERK_DB_FILE),
-    documentMongoDBPrefix: asValue(options.DOCUMENT_MONGODB_DB_PREFIX),
-    previousDocumentMongoDBPrefix: asValue(options.PREVIOUS_DOCUMENT_MONGODB_DB_PREFIX),
-    documentMongoDBUrl: asValue(options.DOCUMENT_MONGODB_URL),
-    spentAssetLockTransactionsStoreMerkDBFile:
-      asValue(options.ASSET_LOCK_TRANSACTIONS_STORE_MERK_DB_FILE),
-    previousSpentAssetLockTransactionsStoreMerkDBFile:
-      asValue(options.PREVIOUS_ASSET_LOCK_TRANSACTIONS_STORE_MERK_DB_FILE),
+
     coreJsonRpcHost: asValue(options.CORE_JSON_RPC_HOST),
     coreJsonRpcPort: asValue(options.CORE_JSON_RPC_PORT),
     coreJsonRpcUsername: asValue(options.CORE_JSON_RPC_USERNAME),
@@ -271,9 +224,6 @@ function createDIContainer(options) {
     coreZMQConnectionRetries: asValue(
       parseInt(options.CORE_ZMQ_CONNECTION_RETRIES, 10),
     ),
-    previousBlockExecutionTransactionFile: asValue(
-      options.PREVIOUS_BLOCK_EXECUTION_TRANSACTIONS_FILE,
-    ),
     network: asValue(options.NETWORK),
     logStdoutLevel: asValue(options.LOG_STDOUT_LEVEL),
     logPrettyFileLevel: asValue(options.LOG_PRETTY_FILE_LEVEL),
@@ -281,7 +231,6 @@ function createDIContainer(options) {
     logJsonFileLevel: asValue(options.LOG_JSON_FILE_LEVEL),
     logJsonFilePath: asValue(options.LOG_JSON_FILE_PATH),
     logStateRepository: asValue(options.LOG_STATE_REPOSITORY === 'true'),
-    logMerk: asValue(options.LOG_MERK === 'true'),
     isProductionEnvironment: asValue(options.NODE_ENV === 'production'),
     maxIdentitiesPerRequest: asValue(25),
     smlMaxListsLimit: asValue(16),
@@ -352,6 +301,30 @@ function createDIContainer(options) {
     decodeChainLock: asValue(decodeChainLock),
     fetchQuorumMembers: asFunction(fetchQuorumMembersFactory),
     getRandomQuorum: asValue(getRandomQuorum),
+    coreZMQClient: asFunction((
+      coreZMQHost,
+      coreZMQPort,
+      coreZMQConnectionRetries,
+    ) => (
+      new ZMQClient(coreZMQHost, coreZMQPort, {
+        maxRetryCount: coreZMQConnectionRetries,
+      })
+    )).singleton(),
+
+    coreRpcClient: asFunction((
+      coreJsonRpcHost,
+      coreJsonRpcPort,
+      coreJsonRpcUsername,
+      coreJsonRpcPassword,
+    ) => (
+      new RpcClient({
+        protocol: 'http',
+        host: coreJsonRpcHost,
+        port: coreJsonRpcPort,
+        user: coreJsonRpcUsername,
+        pass: coreJsonRpcPassword,
+      })
+    )).singleton(),
   });
 
   /**
@@ -406,140 +379,54 @@ function createDIContainer(options) {
         .child({ driveVersion: packageJSON.version }),
     ).singleton(),
 
-    noopLogger: asFunction(() => (
-      Object.keys(pino.levels.values).reduce((logger, functionName) => ({
-        ...logger,
-        [functionName]: () => {},
-      }), {})
-    )).singleton(),
+    noopLogger: asValue(noopLoggerInstance),
 
     sanitizeUrl: asValue(sanitizeUrl),
-    coreZMQClient: asFunction((
-      coreZMQHost,
-      coreZMQPort,
-      coreZMQConnectionRetries,
-    ) => (
-      new ZMQClient(coreZMQHost, coreZMQPort, {
-        maxRetryCount: coreZMQConnectionRetries,
-      })
-    )).singleton(),
+  });
 
-    coreRpcClient: asFunction((
-      coreJsonRpcHost,
-      coreJsonRpcPort,
-      coreJsonRpcUsername,
-      coreJsonRpcPassword,
-    ) => (
-      new RpcClient({
-        protocol: 'http',
-        host: coreJsonRpcHost,
-        port: coreJsonRpcPort,
-        user: coreJsonRpcUsername,
-        pass: coreJsonRpcPassword,
-      })
-    )).singleton(),
+  /**
+   * RS Drive and GroveDB
+   */
+
+  container.register({
+    rsDrive: asFunction((groveDBLatestFile) => new RSDrive(groveDBLatestFile))
+      // TODO: With signed state rotation we need to dispose each groveDB store.
+      .disposer(async (rsDrive) => {
+        // Flush data on disk
+        await rsDrive.getGroveDB().flush();
+
+        await rsDrive.close();
+
+        if (process.env.NODE_ENV === 'test') {
+          fs.rmSync(options.GROVEDB_LATEST_FILE, { recursive: true });
+        }
+      }).singleton(),
+    groveDB: asFunction((rsDrive) => rsDrive.getGroveDB()).singleton(),
+
+    groveDBStore: asFunction((rsDrive) => new GroveDBStore(rsDrive)).singleton(),
+
+    signedGroveDBStore: asFunction((rsDrive) => new GroveDBStore(rsDrive)).singleton(),
+
+    rotateSignedStore: asFunction(rotateSignedStoreFactory).singleton(),
   });
 
   /**
    * Register Identity
    */
   container.register({
-    publicKeyToIdentityIdStore: asFunction((
-      publicKeyToIdentityIdStoreMerkDBFile,
-      logger,
-      logMerk,
-    ) => {
-      const merkDb = new Merk(publicKeyToIdentityIdStoreMerkDBFile);
-
-      return new MerkDbStore(merkDb, logMerk ? logger : null, 'publicKeyToIdentityId');
-    }).disposer((merkDb) => {
-      // Flush data on disk
-      merkDb.db.flushSync();
-
-      // Drop test database
-      if (process.env.NODE_ENV === 'test') {
-        merkDb.db.destroy();
-      } else {
-        // or close in case of production
-        merkDb.db.close();
-      }
-    }).singleton(),
-
-    previousPublicKeyToIdentityIdStore: asFunction((
-      previousPublicKeyToIdentityIdStoreMerkDBFile,
-    ) => {
-      const merkDb = new Merk(previousPublicKeyToIdentityIdStoreMerkDBFile);
-
-      return new MerkDbStore(merkDb);
-    }).disposer((merkDb) => {
-      // Flush data on disk
-      merkDb.db.flushSync();
-
-      // Drop test database
-      if (process.env.NODE_ENV === 'test') {
-        merkDb.db.destroy();
-      } else {
-        // or close in case of production
-        merkDb.db.close();
-      }
-    }).singleton(),
-
-    publicKeyToIdentityIdStoreRootTreeLeaf: asClass(PublicKeyToIdentityIdStoreRootTreeLeaf)
-      .singleton(),
-
-    previousPublicKeyToIdentityIdStoreRootTreeLeaf: asFunction((
-      previousPublicKeyToIdentityIdStore,
-    ) => (new PublicKeyToIdentityIdStoreRootTreeLeaf(previousPublicKeyToIdentityIdStore))),
-
-    identitiesStore: asFunction((identitiesStoreMerkDBFile, logger, logMerk) => {
-      const merkDb = new Merk(identitiesStoreMerkDBFile);
-
-      return new MerkDbStore(merkDb, logMerk ? logger : null, 'identities');
-    }).disposer((merkDb) => {
-      // Flush data on disk
-      merkDb.db.flushSync();
-
-      // Drop test database
-      if (process.env.NODE_ENV === 'test') {
-        merkDb.db.destroy();
-      } else {
-        // or close in case of production
-        merkDb.db.close();
-      }
-    }).singleton(),
-
-    previousIdentitiesStore: asFunction((previousIdentitiesStoreMerkDBFile) => {
-      const merkDb = new Merk(previousIdentitiesStoreMerkDBFile);
-
-      return new MerkDbStore(merkDb);
-    }).disposer((merkDb) => {
-      // Flush data on disk
-      merkDb.db.flushSync();
-
-      // Drop test database
-      if (process.env.NODE_ENV === 'test') {
-        merkDb.db.destroy();
-      } else {
-        // or close in case of production
-        merkDb.db.close();
-      }
-    }).singleton(),
-
-    identitiesStoreRootTreeLeaf: asClass(IdentitiesStoreRootTreeLeaf).singleton(),
-    previousIdentitiesStoreRootTreeLeaf: asFunction((
-      previousIdentitiesStore,
-    ) => (new IdentitiesStoreRootTreeLeaf(previousIdentitiesStore))).singleton(),
-
     identityRepository: asClass(IdentityStoreRepository).singleton(),
-    previousIdentityRepository: asFunction((
-      previousIdentitiesStore,
-    ) => (new IdentityStoreRepository(previousIdentitiesStore, container))).singleton(),
+
+    signedIdentityRepository: asFunction((
+      signedGroveDBStore,
+      decodeProtocolEntity,
+    ) => (new IdentityStoreRepository(signedGroveDBStore, decodeProtocolEntity))).singleton(),
 
     publicKeyToIdentityIdRepository: asClass(PublicKeyToIdentityIdStoreRepository).singleton(),
-    previousPublicKeyToIdentityIdRepository: asFunction((
-      previousPublicKeyToIdentityIdStore,
+
+    signedPublicKeyToIdentityIdRepository: asFunction((
+      signedGroveDBStore,
     ) => (
-      new PublicKeyToIdentityIdStoreRepository(previousPublicKeyToIdentityIdStore)
+      new PublicKeyToIdentityIdStoreRepository(signedGroveDBStore)
     )).singleton(),
   });
 
@@ -547,124 +434,34 @@ function createDIContainer(options) {
    * Register asset lock transactions
    */
   container.register({
-    spentAssetLockTransactionsStore: asFunction((
-      spentAssetLockTransactionsStoreMerkDBFile,
-      logger,
-      logMerk,
-    ) => {
-      const merkDb = new Merk(
-        spentAssetLockTransactionsStoreMerkDBFile,
-      );
-
-      return new MerkDbStore(merkDb, logMerk ? logger : null, 'spentAssetLockTransactions');
-    }).disposer((merkDb) => {
-      // Flush data on disk
-      merkDb.db.flushSync();
-
-      // Drop test database
-      if (process.env.NODE_ENV === 'test') {
-        merkDb.db.destroy();
-      } else {
-        // or close in case of production
-        merkDb.db.close();
-      }
-    }).singleton(),
-
-    previousSpentAssetLockTransactionsStore: asFunction((
-      previousSpentAssetLockTransactionsStoreMerkDBFile,
-    ) => {
-      const merkDb = new Merk(
-        previousSpentAssetLockTransactionsStoreMerkDBFile,
-      );
-
-      return new MerkDbStore(merkDb);
-    }).disposer((merkDb) => {
-      // Flush data on disk
-      merkDb.db.flushSync();
-
-      // Drop test database
-      if (process.env.NODE_ENV === 'test') {
-        merkDb.db.destroy();
-      } else {
-        // or close in case of production
-        merkDb.db.close();
-      }
-    }).singleton(),
-
     spentAssetLockTransactionsRepository: asClass(SpentAssetLockTransactionsRepository).singleton(),
 
-    previousSpentAssetLockTransactionsRepository: asFunction((
-      previousSpentAssetLockTransactionsStore,
+    signedSpentAssetLockTransactionsRepository: asFunction((
+      signedGroveDBStore,
     ) => (
-      new SpentAssetLockTransactionsRepository(previousSpentAssetLockTransactionsStore)
+      new SpentAssetLockTransactionsRepository(signedGroveDBStore)
     )).singleton(),
-
-    spentAssetLockTransactionsStoreRootTreeLeaf: asClass(
-      SpentAssetLockTransactionsStoreRootTreeLeaf,
-    ).singleton(),
-
-    previousSpentAssetLockTransactionsStoreRootTreeLeaf: asFunction((
-      previousSpentAssetLockTransactionsStore,
-    ) => (new SpentAssetLockTransactionsStoreRootTreeLeaf(
-      previousSpentAssetLockTransactionsStore,
-    ))).singleton(),
   });
 
   /**
    * Register Data Contract
    */
   container.register({
-    dataContractsStore: asFunction((dataContractsStoreMerkDBFile, logger, logMerk) => {
-      const merkDb = new Merk(dataContractsStoreMerkDBFile);
+    dataContractRepository: asFunction((
+      groveDBStore,
+      decodeProtocolEntity,
+    ) => new DataContractStoreRepository(groveDBStore, decodeProtocolEntity)).singleton(),
 
-      return new MerkDbStore(merkDb, logMerk ? logger : null, 'dataContracts');
-    }).disposer((merkDb) => {
-      // Flush data on disk
-      merkDb.db.flushSync();
-
-      // Drop test database
-      if (process.env.NODE_ENV === 'test') {
-        merkDb.db.destroy();
-      } else {
-        // or close in case of production
-        merkDb.db.close();
-      }
-    }).singleton(),
-
-    previousDataContractsStore: asFunction((previousDataContractsStoreMerkDBFile) => {
-      const merkDb = new Merk(previousDataContractsStoreMerkDBFile);
-
-      return new MerkDbStore(merkDb);
-    }).disposer((merkDb) => {
-      // Flush data on disk
-      merkDb.db.flushSync();
-
-      // Drop test database
-      if (process.env.NODE_ENV === 'test') {
-        merkDb.db.destroy();
-      } else {
-        // or close in case of production
-        merkDb.db.close();
-      }
-    }).singleton(),
-
-    dataContractsStoreRootTreeLeaf: asClass(DataContractsStoreRootTreeLeaf).singleton(),
-
-    previousDataContractsStoreRootTreeLeaf: asFunction((
-      previousDataContractsStore,
-    ) => (new DataContractsStoreRootTreeLeaf(previousDataContractsStore))).singleton(),
-
-    dataContractRepository: asClass(DataContractStoreRepository).singleton(),
-
-    previousDataContractRepository: asFunction((
-      previousDataContractsStore,
-    ) => (new DataContractStoreRepository(previousDataContractsStore, container))).singleton(),
+    signedDataContractRepository: asFunction((
+      signedGroveDBStore,
+      decodeProtocolEntity,
+    ) => (new DataContractStoreRepository(signedGroveDBStore, decodeProtocolEntity))).singleton(),
 
     dataContractCache: asFunction((dataContractCacheSize) => (
       new LRUCache(dataContractCacheSize)
     )).singleton(),
 
-    previousDataContractCache: asFunction((dataContractCacheSize) => (
+    signedDataContractCache: asFunction((dataContractCacheSize) => (
       new LRUCache(dataContractCacheSize)
     )).singleton(),
   });
@@ -673,204 +470,52 @@ function createDIContainer(options) {
    * Register Document
    */
   container.register({
-    documentsStore: asFunction((documentsStoreMerkDBFile, logger, logMerk) => {
-      const merkDb = new Merk(documentsStoreMerkDBFile);
+    sortWhereClausesAccordingToIndex: asValue(sortWhereClausesAccordingToIndex),
+    findAppropriateIndex: asValue(findAppropriateIndex),
 
-      return new MerkDbStore(merkDb, logMerk ? logger : null, 'documents');
-    }).disposer((merkDb) => {
-      // Flush data on disk
-      merkDb.db.flushSync();
+    documentRepository: asFunction((
+      groveDBStore,
+      validateQuery,
+    ) => new DocumentRepository(groveDBStore, validateQuery)).singleton(),
 
-      // Drop test database
-      if (process.env.NODE_ENV === 'test') {
-        merkDb.db.destroy();
-      } else {
-        // or close in case of production
-        merkDb.db.close();
-      }
-    }).singleton(),
-
-    previousDocumentsStore: asFunction((previousDocumentsStoreMerkDBFile) => {
-      const merkDb = new Merk(previousDocumentsStoreMerkDBFile);
-
-      return new MerkDbStore(merkDb);
-    }).disposer((merkDb) => {
-      // Flush data on disk
-      merkDb.db.flushSync();
-
-      // Drop test database
-      if (process.env.NODE_ENV === 'test') {
-        merkDb.db.destroy();
-      } else {
-        // or close in case of production
-        merkDb.db.close();
-      }
-    }).singleton(),
-
-    documentStoreRepository: asClass(DocumentStoreRepository).singleton(),
-    previousDocumentStoreRepository: asFunction((
-      previousDocumentsStore,
-    ) => (new DocumentStoreRepository(previousDocumentsStore, container))).singleton(),
-
-    documentsStoreRootTreeLeaf: asClass(DocumentsStoreRootTreeLeaf).singleton(),
-    previousDocumentsStoreRootTreeLeaf: asFunction((
-      previousDocumentsStore,
-    ) => (new DocumentsStoreRootTreeLeaf(previousDocumentsStore))).singleton(),
-
-    documentRepository: asClass(DocumentIndexedStoreRepository).singleton(),
-
-    previousDocumentRepository: asFunction((
-      previousDocumentStoreRepository,
-      createPreviousDocumentMongoDbRepository,
-    ) => (
-      new DocumentIndexedStoreRepository(
-        previousDocumentStoreRepository,
-        createPreviousDocumentMongoDbRepository,
-      )
-    )).singleton(),
-
-    connectToDocumentMongoDB: asFunction((documentMongoDBUrl) => (
-      connectToMongoDBFactory(documentMongoDBUrl)
-    )).singleton(),
+    signedDocumentRepository: asFunction((
+      signedGroveDBStore,
+      validateQuery,
+    ) => (new DocumentRepository(
+      signedGroveDBStore,
+      validateQuery,
+    ))).singleton(),
 
     findConflictingConditions: asValue(findConflictingConditions),
-    convertWhereToMongoDbQuery: asValue(convertWhereToMongoDbQuery),
+    findThreesomeOfIndexedProperties: asValue(findThreesomeOfIndexedProperties),
+    findIndexedPropertiesSince: asValue(findIndexedPropertiesSince),
     validateQuery: asFunction(validateQueryFactory).singleton(),
-
-    convertToMongoDbIndices: asValue(convertToMongoDbIndicesFunction),
-
-    getDocumentMongoDBDatabase: asFunction(getDocumentDatabaseFactory).singleton(),
-
-    getPreviousDocumentMongoDBDatabase: asFunction((
-      connectToDocumentMongoDB,
-      previousDocumentMongoDBPrefix,
-    ) => (
-      getDocumentDatabaseFactory(
-        connectToDocumentMongoDB,
-        previousDocumentMongoDBPrefix,
-      )
-    )).singleton(),
-
-    createDocumentMongoDbRepository: asFunction(createDocumentMongoDbRepositoryFactory).singleton(),
-
-    createPreviousDocumentMongoDbRepository: asFunction((
-      validateQuery,
-      getPreviousDocumentMongoDBDatabase,
-      dataContractRepository,
-    ) => (
-      createDocumentMongoDbRepositoryFactory(
-        convertWhereToMongoDbQuery,
-        validateQuery,
-        getPreviousDocumentMongoDBDatabase,
-        dataContractRepository,
-        container,
-        { isPrevious: true },
-      )
-    )).singleton(),
-
-    documentDatabaseManager: asClass(DocumentDatabaseManager).singleton(),
-
-    previousDocumentDatabaseManager: asFunction((
-      createPreviousDocumentMongoDbRepository,
-      convertToMongoDbIndices,
-      getPreviousDocumentMongoDBDatabase,
-    ) => (
-      new DocumentDatabaseManager(
-        createPreviousDocumentMongoDbRepository,
-        convertToMongoDbIndices,
-        getPreviousDocumentMongoDBDatabase,
-      )
-    )).singleton(),
 
     fetchDocuments: asFunction(fetchDocumentsFactory).singleton(),
 
-    fetchPreviousDocuments: asFunction((
-      previousDocumentRepository,
-      previousDataContractRepository,
-      previousDataContractCache,
+    fetchSignedDocuments: asFunction((
+      signedDocumentRepository,
+      signedDataContractRepository,
+      signedDataContractCache,
     ) => (
       fetchDocumentsFactory(
-        previousDocumentRepository,
-        previousDataContractRepository,
-        previousDataContractCache,
+        signedDocumentRepository,
+        signedDataContractRepository,
+        signedDataContractCache,
       )
     )).singleton(),
-
-    populateMongoDbTransactionFromObject: asFunction((
-      createPreviousDocumentMongoDbRepository,
-      dpp,
-    ) => (
-      populateMongoDbTransactionFromObjectFactory(
-        createPreviousDocumentMongoDbRepository,
-        dpp,
-      )
-    )).singleton(),
-  });
-
-  /**
-   * Register chain info
-   * */
-  container.register({
-    externalLevelDB: asFunction((externalStoreLevelDBFile) => (
-      level(externalStoreLevelDBFile, { keyEncoding: 'binary', valueEncoding: 'binary' })
-    )).disposer((levelDB) => levelDB.close())
-      .singleton(),
-
-    previousExternalLevelDB: asFunction((previousExternalStoreLevelDBFile) => (
-      level(previousExternalStoreLevelDBFile, { keyEncoding: 'binary', valueEncoding: 'binary' })
-    )).disposer((levelDB) => levelDB.close())
-      .singleton(),
   });
 
   /**
    * Register credits distribution pool
    */
   container.register({
-    commonStore: asFunction((commonStoreMerkDBFile, logger, logMerk) => {
-      const merkDb = new Merk(commonStoreMerkDBFile);
-
-      return new MerkDbStore(merkDb, logMerk ? logger : null, 'common');
-    }).disposer((merkDb) => {
-      // Flush data on disk
-      merkDb.db.flushSync();
-
-      // Drop test database
-      if (process.env.NODE_ENV === 'test') {
-        merkDb.db.destroy();
-      } else {
-        // or close in case of production
-        merkDb.db.close();
-      }
-    }).singleton(),
-
-    previousCommonStore: asFunction((previousCommonStoreMerkDBFile) => {
-      const merkDb = new Merk(previousCommonStoreMerkDBFile);
-
-      return new MerkDbStore(merkDb);
-    }).disposer((merkDb) => {
-      // Flush data on disk
-      merkDb.db.flushSync();
-
-      // Drop test database
-      if (process.env.NODE_ENV === 'test') {
-        merkDb.db.destroy();
-      } else {
-        // or close in case of production
-        merkDb.db.close();
-      }
-    }).singleton(),
-
-    commonStoreRootTreeLeaf: asClass(CommonStoreRootTreeLeaf).singleton(),
-    previousCommonStoreRootTreeLeaf: asFunction((
-      previousCommonStore,
-    ) => (new CommonStoreRootTreeLeaf(previousCommonStore))).singleton(),
-
-    creditsDistributionPoolRepository: asClass(CreditsDistributionPoolCommonStoreRepository)
+    creditsDistributionPoolRepository: asClass(CreditsDistributionPoolRepository)
       .singleton(),
 
-    previousCreditsDistributionPoolRepository: asFunction((
-      previousCommonStore,
-    ) => (new CreditsDistributionPoolCommonStoreRepository(previousCommonStore))).singleton(),
+    signedCreditsDistributionPoolRepository: asFunction((
+      signedGroveDBStore,
+    ) => (new CreditsDistributionPoolRepository(signedGroveDBStore))).singleton(),
 
     creditsDistributionPool: asValue(new CreditsDistributionPool()),
   });
@@ -879,72 +524,17 @@ function createDIContainer(options) {
    * Register block execution context
    */
   container.register({
-    blockExecutionStoreTransactions: asClass(BlockExecutionStoreTransactions).singleton(),
-
-    previousBlockExecutionStoreTransactionsRepository: asClass(
-      PreviousBlockExecutionStoreTransactionsRepository,
-    ).singleton(),
-
-    previousBlockExecutionTransactionDB: asFunction((previousBlockExecutionTransactionFile) => (
-      new FileDb(previousBlockExecutionTransactionFile)
-    )).singleton(),
-
     blockExecutionContext: asClass(BlockExecutionContext).singleton(),
-
-    previousBlockExecutionContext: asClass(BlockExecutionContext).singleton(),
-
-    blockExecutionContextRepository: asClass(BlockExecutionContextRepository).singleton(),
-
-    cloneToPreviousStoreTransactions: asFunction(
-      cloneToPreviousStoreTransactionsFactory,
-    ).singleton(),
-  });
-
-  /**
-   * Register root tree
-   */
-  container.register({
-    rootTree: asFunction((
-      commonStoreRootTreeLeaf,
-      identitiesStoreRootTreeLeaf,
-      publicKeyToIdentityIdStoreRootTreeLeaf,
-      dataContractsStoreRootTreeLeaf,
-      documentsStoreRootTreeLeaf,
-      spentAssetLockTransactionsStoreRootTreeLeaf,
-    ) => (
-      new RootTree([
-        commonStoreRootTreeLeaf,
-        identitiesStoreRootTreeLeaf,
-        publicKeyToIdentityIdStoreRootTreeLeaf,
-        dataContractsStoreRootTreeLeaf,
-        documentsStoreRootTreeLeaf,
-        spentAssetLockTransactionsStoreRootTreeLeaf,
-      ])
-    )).singleton(),
-
-    previousRootTree: asFunction((
-      previousCommonStoreRootTreeLeaf,
-      previousIdentitiesStoreRootTreeLeaf,
-      previousPublicKeyToIdentityIdStoreRootTreeLeaf,
-      previousDataContractsStoreRootTreeLeaf,
-      previousDocumentsStoreRootTreeLeaf,
-      previousSpentAssetLockTransactionsStoreRootTreeLeaf,
-    ) => (
-      new RootTree([
-        previousCommonStoreRootTreeLeaf,
-        previousIdentitiesStoreRootTreeLeaf,
-        previousPublicKeyToIdentityIdStoreRootTreeLeaf,
-        previousDataContractsStoreRootTreeLeaf,
-        previousDocumentsStoreRootTreeLeaf,
-        previousSpentAssetLockTransactionsStoreRootTreeLeaf,
-      ])
-    )).singleton(),
+    blockExecutionContextStack: asClass(BlockExecutionContextStack).singleton(),
+    blockExecutionContextStackRepository: asClass(BlockExecutionContextStackRepository).singleton(),
   });
 
   /**
    * Register DPP
    */
   container.register({
+    decodeProtocolEntity: asFunction(decodeProtocolEntityFactory),
+
     stateRepository: asFunction((
       identityRepository,
       publicKeyToIdentityIdRepository,
@@ -956,7 +546,6 @@ function createDIContainer(options) {
       dataContractCache,
       blockExecutionContext,
       simplifiedMasternodeList,
-      getLatestFeatureFlag,
     ) => {
       const stateRepository = new DriveStateRepository(
         identityRepository,
@@ -968,7 +557,7 @@ function createDIContainer(options) {
         coreRpcClient,
         blockExecutionContext,
         simplifiedMasternodeList,
-        getLatestFeatureFlag,
+        dataContractCache,
       );
 
       return new CachedStateRepositoryDecorator(
@@ -985,12 +574,10 @@ function createDIContainer(options) {
       documentRepository,
       spentAssetLockTransactionsRepository,
       coreRpcClient,
-      blockExecutionStoreTransactions,
       dataContractCache,
       blockExecutionContext,
       simplifiedMasternodeList,
       logStateRepository,
-      getLatestFeatureFlag,
     ) => {
       const stateRepository = new DriveStateRepository(
         identityRepository,
@@ -1002,8 +589,10 @@ function createDIContainer(options) {
         coreRpcClient,
         blockExecutionContext,
         simplifiedMasternodeList,
-        getLatestFeatureFlag,
-        blockExecutionStoreTransactions,
+        dataContractCache,
+        {
+          useTransaction: true,
+        },
       );
 
       const cachedRepository = new CachedStateRepositoryDecorator(
@@ -1072,8 +661,6 @@ function createDIContainer(options) {
 
     waitForCoreChainLockSync: asFunction(waitForCoreChainLockSyncFactory).singleton(),
 
-    waitReplicaSetInitialize: asFunction(waitReplicaSetInitializeFactory).singleton(),
-
     synchronizeMasternodeIdentities: asFunction(synchronizeMasternodeIdentitiesFactory).singleton(),
 
     createMasternodeIdentity: asFunction(createMasternodeIdentityFactory).singleton(),
@@ -1086,18 +673,16 @@ function createDIContainer(options) {
   });
 
   /**
-   * Register system data contract utils
+   * State
    */
   container.register({
+    createInitialStateStructure: asFunction(createInitialStateStructureFactory).singleton(),
     registerSystemDataContract: asFunction(registerSystemDataContractFactory).singleton(),
+    registerSystemDataContracts: asFunction(registerSystemDataContractsFactory).singleton(),
     registerTopLevelDomain: asFunction(registerTopLevelDomainFactory).singleton(),
-    registerFeatureFlag: asFunction(registerFeatureFlagFactory).singleton(),
-    cumulativeFeesFeatureFlagDocumentId: asValue(
-      Identifier.from('73qjFBuY4Zb8DqUpj6RYgG9rYDARNPFnEnyt8u4bxPcw'),
-    ),
-    dashPreorderDocumentId: asValue(
-      Identifier.from('i8QZtAJ1WshunyZg64wGYcm3jASrpeSKAbAYVHTxvsL'),
-    ),
+    // dashPreorderDocumentId: asValue(
+    //   Identifier.from('i8QZtAJ1WshunyZg64wGYcm3jASrpeSKAbAYVHTxvsL'),
+    // ),
     dashDomainDocumentId: asValue(
       Identifier.from('FXyN2NZAdRFADgBQfb1XM1Qq7pWoEcgSWj1GaiQJqcrS'),
     ),

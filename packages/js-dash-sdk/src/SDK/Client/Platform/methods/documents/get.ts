@@ -1,5 +1,6 @@
 import Identifier from '@dashevo/dpp/lib/Identifier';
 import Metadata from "@dashevo/dpp/lib/Metadata";
+import Document from '@dashevo/dpp/lib/document/Document';
 
 import {Platform} from "../../Platform";
 
@@ -7,15 +8,15 @@ import {Platform} from "../../Platform";
  * @param {WhereCondition[]} [where] - where
  * @param {OrderByCondition[]} [orderBy] - order by
  * @param {number} [limit] - limit
- * @param {number} [startAt] - start value (included)
- * @param {number} [startAfter] - start value (not included)
+ * @param {string|Buffer|Document|Identifier} [startAt] - start value (included)
+ * @param {string|Buffer|Document|Identifier} [startAfter] - start value (not included)
  */
 declare interface fetchOpts {
     where?: WhereCondition[];
     orderBy?: OrderByCondition[];
     limit?: number;
-    startAt?: number;
-    startAfter?: number;
+    startAt?: string|Buffer|Document|Identifier;
+    startAfter?: string|Buffer|Document|Identifier;
 }
 
 type OrderByCondition = [
@@ -119,6 +120,18 @@ export async function get(this: Platform, typeLocator: string, opts: fetchOpts):
         const binaryProperties = appDefinition.contract.getBinaryProperties(fieldType);
 
         opts.where = opts.where.map((whereCondition) => convertIdentifierProperties(whereCondition, binaryProperties));
+    }
+
+    if (opts.startAt instanceof Document) {
+      opts.startAt = opts.startAt.getId();
+    } else if (typeof opts.startAt === 'string') {
+      opts.startAt = Identifier.from(opts.startAt);
+    }
+
+    if (opts.startAfter instanceof Document) {
+      opts.startAfter = opts.startAfter.getId();
+    } else if (typeof opts.startAfter === 'string') {
+      opts.startAfter = Identifier.from(opts.startAfter);
     }
 
     // @ts-ignore

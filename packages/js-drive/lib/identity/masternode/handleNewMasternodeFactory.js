@@ -6,27 +6,26 @@ const Transaction = require('@dashevo/dashcore-lib/lib/transaction');
 /**
  *
  * @param {DashPlatformProtocol} transactionalDpp
- * @param {DriveStateRepository|CachedStateRepositoryDecorator} stateRepository
+ * @param {DriveStateRepository|CachedStateRepositoryDecorator} transactionalStateRepository
  * @param {createMasternodeIdentity} createMasternodeIdentity
  * @return {handleNewMasternode}
  */
 function handleNewMasternodeFactory(
   transactionalDpp,
-  stateRepository,
+  transactionalStateRepository,
   createMasternodeIdentity,
 ) {
   /**
    * @typedef handleNewMasternode
    * @param {SimplifiedMNListEntry} masternodeEntry
    * @param {DataContract} dataContract
-   * @param {boolean} storePreviousState
    * @return {Promise<{
    *            create: Document[],
    *            delete: Document[],
    * }>}
    */
-  async function handleNewMasternode(masternodeEntry, dataContract, storePreviousState) {
-    const rawTransaction = await stateRepository
+  async function handleNewMasternode(masternodeEntry, dataContract) {
+    const rawTransaction = await transactionalStateRepository
       .fetchTransaction(masternodeEntry.proRegTxHash);
 
     const { extraPayload: proRegTxPayload } = new Transaction(rawTransaction.data);
@@ -42,7 +41,6 @@ function handleNewMasternodeFactory(
       masternodeIdentityId,
       Buffer.from(proRegTxPayload.keyIDOwner, 'hex'),
       IdentityPublicKey.TYPES.ECDSA_HASH160,
-      storePreviousState,
     );
 
     // we need to crate reward shares only if it's enabled in proRegTx
@@ -66,13 +64,12 @@ function handleNewMasternodeFactory(
         operatorIdentityId,
         operatorPubKey,
         IdentityPublicKey.TYPES.BLS12_381,
-        storePreviousState,
       );
 
       // Create a document in rewards data contract with percentage
       documentsToCreate.push(transactionalDpp.document.create(
         dataContract,
-        Identifier.from(masternodeIdentityId),
+        masternodeIdentityId,
         'masternodeRewardShares',
         {
           payToId: operatorIdentityId,

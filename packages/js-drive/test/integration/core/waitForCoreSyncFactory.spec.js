@@ -1,23 +1,17 @@
-const { startMongoDb, startDashCore } = require('@dashevo/dp-services-ctl');
+const { startDashCore } = require('@dashevo/dp-services-ctl');
 
 const createTestDIContainer = require('../../../lib/test/createTestDIContainer');
 
 describe('waitForCoreSyncFactory', function main() {
   this.timeout(90000);
 
-  let mongoDB;
   let firstDashCore;
   let secondDashCore;
   let thirdDashCore;
   let container;
   let waitForCoreSync;
 
-  before(async () => {
-    mongoDB = await startMongoDb();
-  });
-
   after(async () => {
-    await mongoDB.remove();
     if (firstDashCore) {
       await firstDashCore.remove();
     }
@@ -45,7 +39,7 @@ describe('waitForCoreSyncFactory', function main() {
     secondDashCore = await startDashCore();
     await secondDashCore.connect(firstDashCore);
 
-    container = await createTestDIContainer(mongoDB, secondDashCore);
+    container = await createTestDIContainer(secondDashCore);
     waitForCoreSync = container.resolve('waitForCoreSync');
 
     await waitForCoreSync(() => {});
