@@ -10,36 +10,27 @@ const {
   v0: {
     GetDocumentsResponse,
     ResponseMetadata,
-    StoreTreeProofs,
   },
 } = require('@dashevo/dapi-grpc');
 
 const InvalidArgumentAbciError = require('../../errors/InvalidArgumentAbciError');
-const UnavailableAbciError = require('../../errors/UnavailableAbciError');
 const InvalidQueryError = require('../../../document/errors/InvalidQueryError');
+const UnimplementedAbciError = require('../../errors/UnimplementedAbciError');
 
 /**
  *
- * @param {fetchDocuments} fetchPreviousDocuments
- * @param {RootTree} previousRootTree
- * @param {DocumentsStoreRootTreeLeaf} previousDocumentsStoreRootTreeLeaf
- * @param {AwilixContainer} container
+ * @param {fetchDocuments} fetchSignedDocuments
  * @param {createQueryResponse} createQueryResponse
- * @param {BlockExecutionContext} blockExecutionContext
- * @param {BlockExecutionContext} previousBlockExecutionContext
+ * @param {BlockExecutionContextStack} blockExecutionContextStack
  * @return {documentQueryHandler}
  */
 function documentQueryHandlerFactory(
-  fetchPreviousDocuments,
-  previousRootTree,
-  previousDocumentsStoreRootTreeLeaf,
-  container,
+  fetchSignedDocuments,
   createQueryResponse,
-  blockExecutionContext,
-  previousBlockExecutionContext,
+  blockExecutionContextStack,
 ) {
   /**
-   * @typedef documentQueryHandler
+   * @typedef {documentQueryHandler}
    * @param {Object} params
    * @param {Object} data
    * @param {Buffer} data.contractId
@@ -65,8 +56,8 @@ function documentQueryHandlerFactory(
     },
     request,
   ) {
-    // There is no signed state (current committed block height less then 2)
-    if (blockExecutionContext.isEmpty() || previousBlockExecutionContext.isEmpty()) {
+    // There is no signed state (current committed block height less than 3)
+    if (!blockExecutionContextStack.getLast()) {
       const response = new GetDocumentsResponse();
 
       response.setMetadata(new ResponseMetadata());
@@ -76,22 +67,16 @@ function documentQueryHandlerFactory(
       });
     }
 
-    if (!container.has('previousBlockExecutionStoreTransactions')) {
-      throw new UnavailableAbciError('Documents temporary unavailable');
-    }
-
-    const previousBlockExecutionTransactions = container.resolve('previousBlockExecutionStoreTransactions');
-    const dataContractTransaction = previousBlockExecutionTransactions.getTransaction('dataContracts');
-    if (!dataContractTransaction.isStarted()) {
-      throw new UnavailableAbciError('Documents temporary unavailable');
-    }
-
     const response = createQueryResponse(GetDocumentsResponse, request.prove);
+
+    if (request.prove) {
+      throw new UnimplementedAbciError('Proofs are not implemented yet');
+    }
 
     let documents;
 
     try {
-      documents = await fetchPreviousDocuments(contractId, type, {
+      documents = await fetchSignedDocuments(contractId, type, {
         where,
         orderBy,
         limit,
@@ -109,24 +94,9 @@ function documentQueryHandlerFactory(
       throw e;
     }
 
-    if (request.prove) {
-      const documentIds = documents.map((document) => document.getId());
-
-      const proof = response.getProof();
-      const storeTreeProofs = new StoreTreeProofs();
-
-      const {
-        rootTreeProof,
-        storeTreeProof,
-      } = previousRootTree.getFullProofForOneLeaf(previousDocumentsStoreRootTreeLeaf, documentIds);
-
-      storeTreeProofs.setDocumentsProof(storeTreeProof);
-
-      proof.setRootTreeProof(rootTreeProof);
-      proof.setStoreTreeProofs(storeTreeProofs);
-    } else {
-      response.setDocumentsList(documents.map((document) => document.toBuffer()));
-    }
+    response.setDocumentsList(
+      documents.map((document) => document.toBuffer()),
+    );
 
     return new ResponseQuery({
       value: response.serializeBinary(),

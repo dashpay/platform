@@ -48,7 +48,7 @@ class DataContractFacade {
   /**
    * Create Data Contract
    *
-   * @param {Buffer} ownerId
+   * @param {Identifier|Buffer} ownerId
    * @param {Object} documents
    * @return {DataContract}
    */

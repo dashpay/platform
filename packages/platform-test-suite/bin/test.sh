@@ -189,9 +189,9 @@ fi
 
 if [ -n "$GITHUB_ACTIONS" ]
 then
-  cmd="${cmd} NODE_ENV=test node_modules/.bin/mocha ${scope_dirs}"
+  cmd="${cmd} NODE_ENV=test node_modules/.bin/mocha -b ${scope_dirs}"
 else
-  cmd="${cmd} NODE_ENV=test mocha ${scope_dirs}"
+  cmd="${cmd} NODE_ENV=test mocha -b ${scope_dirs}"
 fi
 
 if [ -n "$timeout" ]

@@ -305,6 +305,22 @@ module.exports = {
         }
 
         config.docker = systemConfigs[config.group || 'base'].docker;
+
+        // Update images
+        config.core.docker.image = systemConfigs.base.core.docker.image;
+
+        if (config.platform) {
+          config.platform.drive.tenderdash.docker.image = systemConfigs.base.platform
+            .drive.tenderdash.docker.image;
+
+          config.platform.drive.abci.docker.image = systemConfigs.base.platform
+            .drive.abci.docker.image;
+
+          config.platform.dapi.api.docker.image = systemConfigs.base.platform
+            .dapi.api.docker.image;
+
+          delete config.platform.drive.mongodb;
+        }
       });
 
     // Update docker subnet settings

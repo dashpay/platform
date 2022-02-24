@@ -5,7 +5,7 @@ const SimplifiedMNList = require('@dashevo/dashcore-lib/lib/deterministicmnlist/
 /**
  *
  * @param {DashPlatformProtocol} transactionalDpp
- * @param {DriveStateRepository|CachedStateRepositoryDecorator} stateRepository
+ * @param {DriveStateRepository|CachedStateRepositoryDecorator} transactionalStateRepository
  * @param {DataContractStoreRepository} dataContractRepository
  * @param {SimplifiedMasternodeList} simplifiedMasternodeList
  * @param {Identifier} masternodeRewardSharesContractId
@@ -18,7 +18,7 @@ const SimplifiedMNList = require('@dashevo/dashcore-lib/lib/deterministicmnlist/
  */
 function synchronizeMasternodeIdentitiesFactory(
   transactionalDpp,
-  stateRepository,
+  transactionalStateRepository,
   dataContractRepository,
   simplifiedMasternodeList,
   masternodeRewardSharesContractId,
@@ -33,10 +33,9 @@ function synchronizeMasternodeIdentitiesFactory(
   /**
    * @typedef synchronizeMasternodeIdentities
    * @param {number} coreHeight
-   * @param {boolean} storePreviousState
    * @return Promise<void>
    */
-  async function synchronizeMasternodeIdentities(coreHeight, storePreviousState = false) {
+  async function synchronizeMasternodeIdentities(coreHeight) {
     let documentsToCreate = [];
     let documentsToDelete = [];
 
@@ -80,12 +79,12 @@ function synchronizeMasternodeIdentitiesFactory(
       ));
     }
 
-    const contract = await dataContractRepository.fetch(masternodeRewardSharesContractId);
+    const contract = await dataContractRepository.fetch(masternodeRewardSharesContractId, true);
 
     // Create identities and shares for new masternodes
     const documentsToModify = [];
     for (const newMasternodeEntry of newMasternodes) {
-      const documents = await handleNewMasternode(newMasternodeEntry, contract, storePreviousState);
+      const documents = await handleNewMasternode(newMasternodeEntry, contract);
 
       documentsToModify.push(documents);
     }
@@ -101,7 +100,6 @@ function synchronizeMasternodeIdentitiesFactory(
         mnEntry,
         previousMnEntry,
         contract,
-        storePreviousState,
       );
 
       documentsToModify.push(documents);
@@ -125,13 +123,12 @@ function synchronizeMasternodeIdentitiesFactory(
       const doubleSha256Hash = hash(Buffer.from(masternodeEntry.proRegTxHash, 'hex'));
 
       //  Delete documents belongs to masternode identity (ownerId) from rewards contract
-      const documents = await stateRepository.fetchDocuments(
+      const documents = await transactionalStateRepository.fetchDocuments(
         masternodeRewardSharesContractId,
         'masternodeRewardShares',
         {
           where: [
-            ['$ownerId', '===', Identifier.from(doubleSha256Hash),
-            ],
+            ['$ownerId', '==', Identifier.from(doubleSha256Hash)],
           ],
         },
       );
