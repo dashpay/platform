@@ -37,33 +37,6 @@ function startNodeTaskFactory(
       throw new Error(`'core.miner.enabled' option only works with local network. Your network is ${config.get('network')}.`);
     }
 
-    // Check Drive log files are created
-    if (config.has('platform')) {
-      const prettyFilePath = config.get('platform.drive.abci.log.prettyFile.path');
-
-      // Remove directory that could potentially be created by Docker mount
-      if (fs.existsSync(prettyFilePath) && fs.lstatSync(prettyFilePath).isDirectory()) {
-        fs.rmdirSync(prettyFilePath, { recursive: true });
-      }
-
-      if (!fs.existsSync(prettyFilePath)) {
-        fs.mkdirSync(path.dirname(prettyFilePath), { recursive: true });
-        fs.writeFileSync(prettyFilePath, '');
-      }
-
-      const jsonFilePath = config.get('platform.drive.abci.log.jsonFile.path');
-
-      // Remove directory that could potentially be created by Docker mount
-      if (fs.existsSync(jsonFilePath) && fs.lstatSync(jsonFilePath).isDirectory()) {
-        fs.rmdirSync(jsonFilePath, { recursive: true });
-      }
-
-      if (!fs.existsSync(jsonFilePath)) {
-        fs.mkdirSync(path.dirname(jsonFilePath), { recursive: true });
-        fs.writeFileSync(jsonFilePath, '');
-      }
-    }
-
     return new Listr([
       {
         title: 'Check node is not started',

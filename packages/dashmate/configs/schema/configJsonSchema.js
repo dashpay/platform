@@ -66,13 +66,9 @@ module.exports = {
           type: 'string',
           enum: ['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent'],
         },
-        path: {
-          type: 'string',
-          minLength: 1,
-        },
       },
       additionalProperties: false,
-      required: ['level', 'path'],
+      required: ['level'],
     },
     tenderdashLogModule: {
       type: 'string',
@@ -333,6 +329,9 @@ module.exports = {
                       },
                       additionalProperties: false,
                       required: ['level'],
+                    },
+                    directoryPath: {
+                      type: 'string',
                     },
                     prettyFile: {
                       $ref: '#/definitions/abciLogFile',

@@ -19,8 +19,7 @@ services:
       - core
     volumes:
       - drive_abci_data:/platform/packages/js-drive/db
-      - ${PLATFORM_DRIVE_ABCI_LOG_PRETTY_FILE_PATH:?err}:/var/log/drive-pretty.log
-      - ${PLATFORM_DRIVE_ABCI_LOG_JSON_FILE_PATH:?err}:/var/log/drive-json.log
+      - ${PLATFORM_DRIVE_ABCI_LOG_DIRECTORY_PATH:?err}:/var/log
     environment:
       - CORE_JSON_RPC_USERNAME=${CORE_RPC_USER:?err}
       - CORE_JSON_RPC_PASSWORD=${CORE_RPC_PASSWORD:?err}

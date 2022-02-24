@@ -1,6 +1,7 @@
 const { Listr } = require('listr2');
 
 const path = require('path');
+const fs = require('fs');
 
 const {
   PRESET_LOCAL,
@@ -181,11 +182,11 @@ function setupLocalPresetTaskFactory(
                     });
                   }
 
-                  const drivePrettyLogFile = path.join(HOME_DIR_PATH, config.getName(), 'logs', 'drive_pretty.log');
-                  const driveJsonLogFile = path.join(HOME_DIR_PATH, config.getName(), 'logs', 'drive_json.log');
+                  const logDirectoryPath = path.join(HOME_DIR_PATH, `${config.getName()}_logs`);
 
-                  config.set('platform.drive.abci.log.prettyFile.path', drivePrettyLogFile);
-                  config.set('platform.drive.abci.log.jsonFile.path', driveJsonLogFile);
+                  config.set('platform.drive.abci.log.directoryPath', logDirectoryPath);
+
+                  fs.mkdirSync(logDirectoryPath);
 
                   config.set('platform.dpns.masterPublicKey', dpnsDerivedPrivateKey.privateKey.toPublicKey().toString());
                   config.set('platform.featureFlags.masterPublicKey', featureFlagsDerivedPrivateKey.privateKey.toPublicKey().toString());

@@ -305,6 +305,7 @@ module.exports = {
         }
 
         config.docker = systemConfigs[config.group || 'base'].docker;
+        config.platform.abci.log = systemConfigs.base.platform.abci.log;
       });
 
     // Update docker subnet settings

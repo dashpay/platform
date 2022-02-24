@@ -107,13 +107,12 @@ module.exports = {
           stdout: {
             level: 'info',
           },
+          directoryPath: path.join(HOME_DIR_PATH, 'base_logs'),
           prettyFile: {
             level: 'silent',
-            path: path.join(HOME_DIR_PATH, 'base', 'logs', 'drive-pretty.log'),
           },
           jsonFile: {
             level: 'silent',
-            path: path.join(HOME_DIR_PATH, 'base', 'logs', 'drive-json.log'),
           },
         },
         validatorSet: {
