@@ -1,3 +1,4 @@
+use grovedb::Error;
 use rand::seq::SliceRandom;
 use rand::{Rng, SeedableRng};
 use rs_drive::common;
@@ -1138,6 +1139,62 @@ fn test_query() {
         .expect("query should be executed");
 
     assert_eq!(results.len(), 0);
+
+    // using non existing document in startAt
+
+    let query_value = json!({
+        "where": [
+            ["$id", "in", [String::from("ATxXeP5AvY4aeUFA6WRo7uaBKTBgPQCjTrgtNpCMNVRD"), String::from("6A8SGgdmj2NtWCYoYDPDpbsYkq2MCbgi6Lx4ALLfF179")]],
+        ],
+        "startAt": String::from("6A8SGgdmj2NtWCYoYDPDpbsYkq2MCbgi6Lx4ALLfF178"),
+        "orderBy": [["$id", "asc"]],
+    });
+
+    let query_cbor = common::value_to_cbor(query_value, None);
+
+    let person_document_type = contract
+        .document_types
+        .get("person")
+        .expect("contract should have a person document type");
+
+    let result = drive.query_documents_from_contract(
+        &contract,
+        person_document_type,
+        query_cbor.as_slice(),
+        Some(&db_transaction),
+    );
+
+    assert!(
+        matches!(result, Err(Error::InvalidQuery(message)) if message == "startAt document not found")
+    );
+
+    // using non existing document in startAfter
+
+    let query_value = json!({
+        "where": [
+            ["$id", "in", [String::from("ATxXeP5AvY4aeUFA6WRo7uaBKTBgPQCjTrgtNpCMNVRD"), String::from("6A8SGgdmj2NtWCYoYDPDpbsYkq2MCbgi6Lx4ALLfF179")]],
+        ],
+        "startAfter": String::from("6A8SGgdmj2NtWCYoYDPDpbsYkq2MCbgi6Lx4ALLfF178"),
+        "orderBy": [["$id", "asc"]],
+    });
+
+    let query_cbor = common::value_to_cbor(query_value, None);
+
+    let person_document_type = contract
+        .document_types
+        .get("person")
+        .expect("contract should have a person document type");
+
+    let result = drive.query_documents_from_contract(
+        &contract,
+        person_document_type,
+        query_cbor.as_slice(),
+        Some(&db_transaction),
+    );
+
+    assert!(
+        matches!(result, Err(Error::InvalidQuery(message)) if message == "startAfter document not found")
+    );
 
     // validate eventual root hash
 
