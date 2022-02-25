@@ -8,8 +8,7 @@ services:
       - core
     volumes:
       - drive_abci_data:/platform/packages/js-drive/db
-      - ${PLATFORM_DRIVE_ABCI_LOG_PRETTY_FILE_PATH:?err}:/var/log/drive-pretty.log
-      - ${PLATFORM_DRIVE_ABCI_LOG_JSON_FILE_PATH:?err}:/var/log/drive-json.log
+      - ${PLATFORM_DRIVE_ABCI_LOG_DIRECTORY_PATH:?err}:/var/log
     environment:
       - CORE_JSON_RPC_USERNAME=${CORE_RPC_USER:?err}
       - CORE_JSON_RPC_PASSWORD=${CORE_RPC_PASSWORD:?err}
@@ -24,9 +23,9 @@ services:
       - NODE_ENV=${ENVIRONMENT:?err}
       - LOG_STDOUT_LEVEL=${PLATFORM_DRIVE_ABCI_LOG_STDOUT_LEVEL:?err}
       - LOG_PRETTY_FILE_LEVEL=${PLATFORM_DRIVE_ABCI_LOG_PRETTY_FILE_LEVEL:?err}
-      - LOG_PRETTY_FILE_PATH=/var/log/drive-pretty.log
+      - LOG_PRETTY_FILE_PATH=/var/log/${PLATFORM_DRIVE_ABCI_LOG_PRETTY_FILE_NAME:?err}
       - LOG_JSON_FILE_LEVEL=${PLATFORM_DRIVE_ABCI_LOG_JSON_FILE_LEVEL:?err}
-      - LOG_JSON_FILE_PATH=/var/log/drive-json.log
+      - LOG_JSON_FILE_PATH=/var/log/${PLATFORM_DRIVE_ABCI_LOG_JSON_FILE_NAME:?err}
       - INITIAL_CORE_CHAINLOCKED_HEIGHT=${PLATFORM_DRIVE_TENDERDASH_GENESIS_INITIAL_CORE_CHAIN_LOCKED_HEIGHT:-1}
       - VALIDATOR_SET_LLMQ_TYPE=${PLATFORM_DRIVE_ABCI_VALIDATOR_SET_LLMQ_TYPE:?err}
       - NETWORK=${NETWORK}

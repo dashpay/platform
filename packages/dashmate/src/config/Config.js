@@ -1,5 +1,7 @@
 const Ajv = require('ajv');
 
+const path = require('path');
+
 const lodashGet = require('lodash.get');
 const lodashSet = require('lodash.set');
 const lodashCloneDeep = require('lodash.clonedeep');
@@ -156,6 +158,27 @@ class Config {
       }
     }
 
+    let logDirectoryPath = '/dev/null';
+    if (this.has('platform.drive.abci.log.prettyFile.path')) {
+      logDirectoryPath = path.dirname(
+        this.get('platform.drive.abci.log.prettyFile.path'),
+      );
+    }
+
+    let logPrettyFileName = 'drive-pretty.log';
+    if (this.has('platform.drive.abci.log.prettyFile.path')) {
+      logPrettyFileName = path.basename(
+        this.get('platform.drive.abci.log.prettyFile.path'),
+      );
+    }
+
+    let logJsonFileName = 'drive-json.log';
+    if (this.has('platform.drive.abci.log.jsonFile.path')) {
+      logJsonFileName = path.basename(
+        this.get('platform.drive.abci.log.jsonFile.path'),
+      );
+    }
+
     return {
       CONFIG_NAME: this.getName(),
       COMPOSE_PROJECT_NAME: `dash_masternode_${this.getName()}`,
@@ -163,6 +186,9 @@ class Config {
       COMPOSE_PATH_SEPARATOR: ':',
       COMPOSE_DOCKER_CLI_BUILD: 1,
       DOCKER_BUILDKIT: 1,
+      PLATFORM_DRIVE_ABCI_LOG_DIRECTORY_PATH: logDirectoryPath,
+      PLATFORM_DRIVE_ABCI_LOG_PRETTY_FILE_NAME: logPrettyFileName,
+      PLATFORM_DRIVE_ABCI_LOG_JSON_FILE_NAME: logJsonFileName,
       ...convertObjectToEnvs(this.getOptions()),
     };
   }

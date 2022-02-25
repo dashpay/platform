@@ -181,8 +181,8 @@ function setupLocalPresetTaskFactory(
                     });
                   }
 
-                  const drivePrettyLogFile = path.join(HOME_DIR_PATH, config.getName(), 'logs', 'drive_pretty.log');
-                  const driveJsonLogFile = path.join(HOME_DIR_PATH, config.getName(), 'logs', 'drive_json.log');
+                  const drivePrettyLogFile = path.join(HOME_DIR_PATH, `${config.getName()}_logs`, 'drive_pretty.log');
+                  const driveJsonLogFile = path.join(HOME_DIR_PATH, `${config.getName()}_logs`, 'drive_json.log');
 
                   config.set('platform.drive.abci.log.prettyFile.path', drivePrettyLogFile);
                   config.set('platform.drive.abci.log.jsonFile.path', driveJsonLogFile);
