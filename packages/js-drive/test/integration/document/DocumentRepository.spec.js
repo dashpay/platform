@@ -4,6 +4,7 @@ const Identifier = require('@dashevo/dpp/lib/identifier/Identifier');
 const createTestDIContainer = require('../../../lib/test/createTestDIContainer');
 const createDocumentTypeTreePath = require('../../../lib/document/groveDB/createDocumentTreePath');
 const InvalidQueryError = require('../../../lib/document/errors/InvalidQueryError');
+const StartDocumentNotFoundError = require('../../../lib/document/query/errors/StartDocumentNotFoundError');
 
 async function createDocuments(documentRepository, documents) {
   return Promise.all(
@@ -542,6 +543,26 @@ describe('DocumentRepository', function main() {
 
           expect(result.map((doc) => doc.toBuffer())).to.deep.members(expectedDocuments);
         });
+
+        it('should throw InvalidQuery if document not found', async () => {
+          const options = {
+            startAt: Buffer.alloc(0),
+          };
+
+          try {
+            await documentRepository.find(dataContract, document.getType(), options);
+
+            expect.fail('should throw InvalidQueryError');
+          } catch (e) {
+            expect(e).to.be.an.instanceOf(InvalidQueryError);
+            expect(e.getErrors()).to.have.lengthOf(1);
+
+            const [error] = e.getErrors();
+
+            expect(error).to.be.an.instanceOf(StartDocumentNotFoundError);
+            expect(error.getField()).to.equals('startAt');
+          }
+        });
       });
 
       describe('startAfter', () => {
@@ -563,6 +584,26 @@ describe('DocumentRepository', function main() {
           const expectedDocuments = documents.splice(1).map((doc) => doc.toBuffer());
 
           expect(result.map((doc) => doc.toBuffer())).to.deep.members(expectedDocuments);
+        });
+
+        it('should throw InvalidQuery if document not found', async () => {
+          const options = {
+            startAfter: Buffer.alloc(0),
+          };
+
+          try {
+            await documentRepository.find(dataContract, document.getType(), options);
+
+            expect.fail('should throw InvalidQueryError');
+          } catch (e) {
+            expect(e).to.be.an.instanceOf(InvalidQueryError);
+            expect(e.getErrors()).to.have.lengthOf(1);
+
+            const [error] = e.getErrors();
+
+            expect(error).to.be.an.instanceOf(StartDocumentNotFoundError);
+            expect(error.getField()).to.equals('startAfter');
+          }
         });
       });
 
