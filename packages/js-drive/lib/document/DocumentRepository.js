@@ -2,6 +2,8 @@ const { createHash } = require('crypto');
 
 const createDocumentTypeTreePath = require('./groveDB/createDocumentTreePath');
 const InvalidQueryError = require('./errors/InvalidQueryError');
+const StartDocumentNotFoundError = require('./query/errors/StartDocumentNotFoundError');
+const ValidationError = require('./query/errors/ValidationError');
 
 class DocumentRepository {
   /**
@@ -119,12 +121,39 @@ class DocumentRepository {
         }
       });
 
-    return this.storage.getDrive().queryDocuments(
-      dataContract,
-      documentType,
-      query,
-      useTransaction,
-    );
+    try {
+      return await this.storage.getDrive()
+        .queryDocuments(
+          dataContract,
+          documentType,
+          query,
+          useTransaction,
+        );
+    } catch (e) {
+      const invalidQueryMessagePrefix = 'invalid query: ';
+
+      if (e.message.startsWith(invalidQueryMessagePrefix)) {
+        let validationError;
+
+        if (e.message === `${invalidQueryMessagePrefix}startAt document not found`) {
+          validationError = new StartDocumentNotFoundError('startAt');
+        }
+
+        if (e.message === `${invalidQueryMessagePrefix}startAfter document not found`) {
+          validationError = new StartDocumentNotFoundError('startAfter');
+        }
+
+        if (!validationError) {
+          validationError = new ValidationError(
+            e.message.substring(invalidQueryMessagePrefix.length),
+          );
+        }
+
+        throw new InvalidQueryError([validationError]);
+      }
+
+      throw e;
+    }
   }
 
   /**
