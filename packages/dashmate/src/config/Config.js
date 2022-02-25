@@ -158,39 +158,35 @@ class Config {
       }
     }
 
-    let logDirectoryPath = '/dev/null';
-    if (this.has('platform.drive.abci.log.prettyFile.path')) {
-      logDirectoryPath = path.dirname(
-        this.get('platform.drive.abci.log.prettyFile.path'),
-      );
-    }
-
-    let logPrettyFileName = 'drive-pretty.log';
-    if (this.has('platform.drive.abci.log.prettyFile.path')) {
-      logPrettyFileName = path.basename(
-        this.get('platform.drive.abci.log.prettyFile.path'),
-      );
-    }
-
-    let logJsonFileName = 'drive-json.log';
-    if (this.has('platform.drive.abci.log.jsonFile.path')) {
-      logJsonFileName = path.basename(
-        this.get('platform.drive.abci.log.jsonFile.path'),
-      );
-    }
-
-    return {
+    let envs = {
       CONFIG_NAME: this.getName(),
       COMPOSE_PROJECT_NAME: `dash_masternode_${this.getName()}`,
       COMPOSE_FILE: dockerComposeFiles.join(':'),
       COMPOSE_PATH_SEPARATOR: ':',
       COMPOSE_DOCKER_CLI_BUILD: 1,
       DOCKER_BUILDKIT: 1,
-      PLATFORM_DRIVE_ABCI_LOG_DIRECTORY_PATH: logDirectoryPath,
-      PLATFORM_DRIVE_ABCI_LOG_PRETTY_FILE_NAME: logPrettyFileName,
-      PLATFORM_DRIVE_ABCI_LOG_JSON_FILE_NAME: logJsonFileName,
       ...convertObjectToEnvs(this.getOptions()),
     };
+
+    if (this.has('platform')) {
+      envs = {
+        ...envs,
+
+        PLATFORM_DRIVE_ABCI_LOG_DIRECTORY_PATH: path.dirname(
+          this.get('platform.drive.abci.log.prettyFile.path'),
+        ),
+        
+        PLATFORM_DRIVE_ABCI_LOG_PRETTY_FILE_NAME: path.basename(
+          this.get('platform.drive.abci.log.prettyFile.path'),
+        ),
+        
+        PLATFORM_DRIVE_ABCI_LOG_JSON_FILE_NAME: path.basename(
+          this.get('platform.drive.abci.log.jsonFile.path'),
+        ),
+      };
+    };
+
+    return envs;
   }
 }
 
