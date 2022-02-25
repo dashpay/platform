@@ -172,10 +172,14 @@ class Config {
       envs = {
         ...envs,
 
-        PLATFORM_DRIVE_ABCI_LOG_DIRECTORY_PATH: path.dirname(
+        PLATFORM_DRIVE_ABCI_LOG_PRETTY_DIRECTORY_PATH: path.dirname(
           this.get('platform.drive.abci.log.prettyFile.path'),
         ),
-        
+
+        PLATFORM_DRIVE_ABCI_LOG_JSON_DIRECTORY_PATH: path.dirname(
+          this.get('platform.drive.abci.log.jsonFile.path'),
+        ),
+
         PLATFORM_DRIVE_ABCI_LOG_PRETTY_FILE_NAME: path.basename(
           this.get('platform.drive.abci.log.prettyFile.path'),
         ),
