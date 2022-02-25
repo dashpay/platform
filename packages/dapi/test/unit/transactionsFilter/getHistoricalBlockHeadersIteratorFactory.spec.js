@@ -10,6 +10,12 @@ describe('getHistoricalBlockHeadersIteratorFactory', () => {
   const chainDataProvider = { getBlockHeaders: sinon.stub() };
 
   beforeEach(() => {
+    if (!this.sinon) {
+      this.sinon = sinon.createSandbox();
+    } else {
+      this.sinon.restore();
+    }
+
     coreRpcMock = {
       getBlock: sinon.stub(),
       getBlockStats: sinon.stub(),
