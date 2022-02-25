@@ -1,5 +1,4 @@
 const { BlockHeader } = require('@dashevo/dashcore-lib');
-const sinon = require('sinon');
 
 const getHistoricalBlockHeadersIteratorFactory = require('../../../lib/grpcServer/handlers/blockheaders-stream/getHistoricalBlockHeadersIteratorFactory');
 
@@ -7,14 +6,14 @@ describe('getHistoricalBlockHeadersIteratorFactory', () => {
   let coreRpcMock;
   let blockHeaderMock;
 
-  const chainDataProvider = { getBlockHeaders: sinon.stub() };
+  const chainDataProvider = { getBlockHeaders: this.sinon.stub() };
 
   beforeEach(() => {
     coreRpcMock = {
-      getBlock: sinon.stub(),
-      getBlockStats: sinon.stub(),
-      getBlockHash: sinon.stub(),
-      getBlockHeaders: sinon.stub(),
+      getBlock: this.sinon.stub(),
+      getBlockStats: this.sinon.stub(),
+      getBlockHash: this.sinon.stub(),
+      getBlockHeaders: this.sinon.stub(),
     };
 
     blockHeaderMock = new BlockHeader({
