@@ -53,12 +53,6 @@ describe('ChainDataProvider', () => {
   let cacheSpy;
 
   beforeEach(async function it() {
-    if (!this.sinon) {
-      this.sinon = sinon.createSandbox();
-    } else {
-      this.sinon.restore();
-    }
-
     const blockHash = fakeHeaders[0].hash;
 
     coreAPIMock = {
