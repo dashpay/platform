@@ -193,18 +193,16 @@ impl<'a> WhereClause {
 
     pub fn from_components(clause_components: &'a [Value]) -> Result<Self, Error> {
         if clause_components.len() != 3 {
-            return Err(Error::CorruptedData(String::from(
+            return Err(Error::InvalidQuery(
                 "where clauses should have at most 3 components",
-            )));
+            ));
         }
 
         let field_value = clause_components
             .get(0)
             .expect("check above enforces it exists");
         let field_ref = field_value.as_text().ok_or_else(|| {
-            Error::CorruptedData(String::from(
-                "first field of where component should be a string",
-            ))
+            Error::InvalidQuery("first field of where component should be a string")
         })?;
         let field = String::from(field_ref);
 
@@ -212,22 +210,16 @@ impl<'a> WhereClause {
             .get(1)
             .expect("check above enforces it exists");
         let operator_string = operator_value.as_text().ok_or_else(|| {
-            Error::CorruptedData(String::from(
-                "second field of where component should be a string",
-            ))
+            Error::InvalidQuery("second field of where component should be a string")
         })?;
 
         let operator = operator_from_string(operator_string).ok_or_else(|| {
-            Error::CorruptedData(String::from(
-                "second field of where component should be a known operator",
-            ))
+            Error::InvalidQuery("second field of where component should be a known operator")
         })?;
 
         let value = clause_components
             .get(2)
-            .ok_or_else(|| {
-                Error::CorruptedData(String::from("third field of where component should exist"))
-            })?
+            .ok_or_else(|| Error::InvalidQuery("third field of where component should exist"))?
             .clone();
 
         Ok(WhereClause {
@@ -247,9 +239,9 @@ impl<'a> WhereClause {
         match lower_range_clauses.len() {
             0 => Ok(None),
             1 => Ok(Some(lower_range_clauses.get(0).unwrap())),
-            _ => Err(Error::CorruptedData(String::from(
+            _ => Err(Error::InvalidQuery(
                 "there can only at most one range clause with a lower bound",
-            ))),
+            )),
         }
     }
 
@@ -261,9 +253,9 @@ impl<'a> WhereClause {
         match upper_range_clauses.len() {
             0 => Ok(None),
             1 => Ok(Some(upper_range_clauses.get(0).unwrap())),
-            _ => Err(Error::CorruptedData(String::from(
+            _ => Err(Error::InvalidQuery(
                 "there can only at most one range clause with a lower bound",
-            ))),
+            )),
         }
     }
 
@@ -310,21 +302,19 @@ impl<'a> WhereClause {
                 let clause = *groupable_range_clauses.get(0).unwrap();
                 return Ok(Some(clause.clone()));
             } else if groupable_range_clauses.len() > 2 {
-                return Err(Error::CorruptedData(String::from(
+                return Err(Error::InvalidQuery(
                     "there can only be at most 2 range clauses",
-                )));
+                ));
             } else if groupable_range_clauses
                 .iter()
                 .any(|&z| z.field != groupable_range_clauses.first().unwrap().field)
             {
-                return Err(Error::CorruptedData(String::from(
-                    "all ranges must be on same field",
-                )));
+                return Err(Error::InvalidQuery("all ranges must be on same field"));
             } else {
                 let lower_upper_error = || {
-                    Error::CorruptedData(String::from(
+                    Error::InvalidQuery(
                         "lower and upper bounds must be passed if providing 2 ranges",
-                    ))
+                    )
                 };
 
                 // we need to find the bounds of the clauses
@@ -358,9 +348,9 @@ impl<'a> WhereClause {
             Ok(Some(where_clause.clone()))
         } else {
             // if non_groupable_range_clauses.len() > 1
-            Err(Error::CorruptedData(String::from(
+            Err(Error::InvalidQuery(
                 "there can not be more than 1 non groupable range clause",
-            )))
+            ))
         };
     }
 
@@ -373,14 +363,14 @@ impl<'a> WhereClause {
             _ => None,
         }
         .ok_or_else(|| {
-            Error::CorruptedData(String::from(
+            Error::InvalidQuery(
                 "when using between operator you must provide a tuple array of values",
-            ))
+            )
         })?;
         if in_values.len() != 2 {
-            return Err(Error::CorruptedData(String::from(
+            return Err(Error::InvalidQuery(
                 "when using between operator you must provide an array of exactly two values",
-            )));
+            ));
         }
         let left_key = document_type
             .serialize_value_for_key(self.field.as_str(), in_values.get(0).unwrap())?;
@@ -433,9 +423,9 @@ impl<'a> WhereClause {
             In => {
                 let in_values = match &self.value {
                     Value::Array(array) => Ok(array),
-                    _ => Err(Error::CorruptedData(String::from(
+                    _ => Err(Error::InvalidQuery(
                         "when using in operator you must provide an array of values",
-                    ))),
+                    )),
                 }?;
                 match starts_at_key_option {
                     None => {
@@ -695,9 +685,7 @@ impl<'a> WhereClause {
                     document_type.serialize_value_for_key(self.field.as_str(), &self.value)?;
                 let mut right_key = left_key.clone();
                 let last_char = right_key.last_mut().ok_or_else(|| {
-                    Error::CorruptedData(String::from(
-                        "starts with must have at least one character",
-                    ))
+                    Error::InvalidQuery("starts with must have at least one character")
                 })?;
                 *last_char += 1;
                 match starts_at_key_option {
@@ -743,18 +731,16 @@ pub struct OrderClause {
 impl<'a> OrderClause {
     pub fn from_components(clause_components: &'a [Value]) -> Result<Self, Error> {
         if clause_components.len() != 2 {
-            return Err(Error::CorruptedData(String::from(
+            return Err(Error::InvalidQuery(
                 "order clause should have exactly 2 components",
-            )));
+            ));
         }
 
         let field_value = clause_components
             .get(0)
             .expect("check above enforces it exists");
         let field_ref = field_value.as_text().ok_or_else(|| {
-            Error::CorruptedData(String::from(
-                "first field of where component should be a string",
-            ))
+            Error::InvalidQuery("first field of where component should be a string")
         })?;
         let field = String::from(field_ref);
 
@@ -763,16 +749,14 @@ impl<'a> OrderClause {
             Value::Text(asc_string) => Some(asc_string.as_str()),
             _ => None,
         }
-        .ok_or_else(|| {
-            Error::CorruptedData(String::from("orderBy right component must be a string"))
-        })?;
+        .ok_or_else(|| Error::InvalidQuery("orderBy right component must be a string"))?;
         let ascending = match asc_string {
             "asc" => true,
             "desc" => false,
             _ => {
-                return Err(Error::CorruptedData(String::from(
+                return Err(Error::InvalidQuery(
                     "orderBy right component must be either a asc or desc string",
-                )));
+                ));
             }
         };
 
@@ -814,7 +798,7 @@ impl<'a> DriveQuery<'a> {
         document_type: &'a DocumentType,
     ) -> Result<Self, Error> {
         let query_document: HashMap<String, CborValue> = ciborium::de::from_reader(query_cbor)
-            .map_err(|err| Error::CorruptedData(format!("unable to decode query: {}", err)))?;
+            .map_err(|_| Error::InvalidQuery("unable to decode query"))?;
 
         let limit: u16 = query_document
             .get("limit")
@@ -825,9 +809,7 @@ impl<'a> DriveQuery<'a> {
                     None
                 }
             })
-            .ok_or_else(|| {
-                Error::CorruptedData(String::from("limit should be a integer from 1 to 100"))
-            })?;
+            .ok_or_else(|| Error::InvalidQuery("limit should be a integer from 1 to 100"))?;
 
         let all_where_clauses: Vec<WhereClause> =
             query_document.get("where").map_or(Ok(vec![]), |id_cbor| {
@@ -838,16 +820,12 @@ impl<'a> DriveQuery<'a> {
                             if let CborValue::Array(clauses_components) = where_clause {
                                 WhereClause::from_components(clauses_components)
                             } else {
-                                Err(Error::CorruptedData(String::from(
-                                    "where clause must be an array",
-                                )))
+                                Err(Error::InvalidQuery("where clause must be an array"))
                             }
                         })
                         .collect::<Result<Vec<WhereClause>, Error>>()
                 } else {
-                    Err(Error::CorruptedData(String::from(
-                        "where clause must be an array",
-                    )))
+                    Err(Error::InvalidQuery("where clause must be an array"))
                 }
             })?;
 
@@ -856,9 +834,9 @@ impl<'a> DriveQuery<'a> {
         let start_at_option = query_document.get("startAt");
         let start_after_option = query_document.get("startAfter");
         if start_after_option.is_some() && start_at_option.is_some() {
-            return Err(Error::CorruptedData(String::from(
+            return Err(Error::InvalidQuery(
                 "only one of startAt or startAfter should be provided",
-            )));
+            ));
         }
 
         let mut start_at_included = true;
@@ -916,27 +894,25 @@ impl<'a> DriveQuery<'a> {
     pub fn from_sql_expr(sql_string: &str, contract: &'a Contract) -> Result<Self, Error> {
         let dialect: GenericDialect = sqlparser::dialect::GenericDialect {};
         let statements: Vec<Statement> = Parser::parse_sql(&dialect, sql_string)
-            .map_err(|_| Error::CorruptedData(String::from("Issue parsing sql")))?;
+            .map_err(|_| Error::InvalidQuery("Issue parsing sql"))?;
 
         // Should ideally iterate over each statement
         let first_statement = statements
             .get(0)
-            .ok_or_else(|| Error::CorruptedData(String::from("Issue parsing SQL")))?;
+            .ok_or_else(|| Error::InvalidQuery("Issue parsing SQL"))?;
 
         let query: &ast::Query = match first_statement {
             ast::Statement::Query(query_struct) => Some(query_struct),
             _ => None,
         }
-        .ok_or_else(|| Error::CorruptedData(String::from("Issue parsing sql")))?;
+        .ok_or_else(|| Error::InvalidQuery("Issue parsing sql"))?;
 
         let limit = if let Some(limit_expr) = &query.limit {
             match limit_expr {
                 ast::Expr::Value(Number(num_string, _)) => num_string.parse::<u16>().ok(),
                 _ => None,
             }
-            .ok_or_else(|| {
-                Error::CorruptedData(String::from("Issue parsing sql: invalid limit value"))
-            })?
+            .ok_or_else(|| Error::InvalidQuery("Issue parsing sql: invalid limit value"))?
         } else {
             defaults::DEFAULT_QUERY_LIMIT
         };
@@ -956,7 +932,7 @@ impl<'a> DriveQuery<'a> {
             ast::SetExpr::Select(select) => Some(select),
             _ => None,
         }
-        .ok_or_else(|| Error::CorruptedData(String::from("Issue parsing sql")))?;
+        .ok_or_else(|| Error::InvalidQuery("Issue parsing sql"))?;
 
         // Get the document type from the 'from' section
         let document_type_name = match &select
@@ -973,9 +949,7 @@ impl<'a> DriveQuery<'a> {
             } => name.0.get(0).as_ref().map(|identifier| &identifier.value),
             _ => None,
         }
-        .ok_or_else(|| {
-            Error::CorruptedData(String::from("Issue parsing sql: invalid from value"))
-        })?;
+        .ok_or_else(|| Error::InvalidQuery("Issue parsing sql: invalid from value"))?;
 
         let document_type = contract
             .document_types
@@ -1109,9 +1083,9 @@ impl<'a> DriveQuery<'a> {
                     }
                     Ok(())
                 }
-                _ => Err(Error::CorruptedData(String::from(
+                _ => Err(Error::InvalidQuery(
                     "Issue parsing sql: invalid selection format",
-                ))),
+                )),
             }
         }
 
@@ -1197,9 +1171,9 @@ impl<'a> DriveQuery<'a> {
                     .expect("there must be a value")
                     .clone(),
             )),
-            _ => Err(Error::CorruptedData(String::from(
+            _ => Err(Error::InvalidQuery(
                 "There should only be one equal clause for the primary key",
-            ))),
+            )),
         }?;
 
         let primary_key_in_clause = match primary_key_in_clauses_array.len() {
@@ -1210,9 +1184,9 @@ impl<'a> DriveQuery<'a> {
                     .expect("there must be a value")
                     .clone(),
             )),
-            _ => Err(Error::CorruptedData(String::from(
+            _ => Err(Error::InvalidQuery(
                 "There should only be one in clause for the primary key",
-            ))),
+            )),
         }?;
 
         let in_clause = match in_clauses_array.len() {
@@ -1223,9 +1197,7 @@ impl<'a> DriveQuery<'a> {
                     .expect("there must be a value")
                     .clone(),
             )),
-            _ => Err(Error::CorruptedData(String::from(
-                "There should only be one in clause",
-            ))),
+            _ => Err(Error::InvalidQuery("There should only be one in clause")),
         }?;
 
         let equal_clauses: HashMap<String, WhereClause> = equal_clauses_array
@@ -1327,9 +1299,7 @@ impl<'a> DriveQuery<'a> {
             // This is for a range
             let left_to_right = if self.order_by.keys().len() == 1 {
                 if self.order_by.keys().next().unwrap() != "$id" {
-                    return Err(Error::CorruptedData(String::from(
-                        "order by should include $id only",
-                    )));
+                    return Err(Error::InvalidQuery("order by should include $id only"));
                 }
 
                 let order_clause = self.order_by.get("$id").unwrap();
@@ -1355,9 +1325,9 @@ impl<'a> DriveQuery<'a> {
             if let Some(primary_key_in_clause) = &self.internal_clauses.primary_key_in_clause {
                 let in_values = match &primary_key_in_clause.value {
                     Value::Array(array) => Ok(array),
-                    _ => Err(Error::CorruptedData(String::from(
+                    _ => Err(Error::InvalidQuery(
                         "when using in operator you must provide an array of values",
-                    ))),
+                    )),
                 }?;
                 match starts_at_key_option {
                     None => {
@@ -1618,9 +1588,9 @@ impl<'a> DriveQuery<'a> {
             index.properties.split_at(intermediate_values.len());
 
         // Now we should construct the path
-        let last_index = last_indexes.first().ok_or_else(|| {
-            Error::CorruptedData(String::from("document query has no index with fields"))
-        })?;
+        let last_index = last_indexes
+            .first()
+            .ok_or_else(|| Error::InvalidQuery("document query has no index with fields"))?;
 
         let mut path = document_type_path;
 
