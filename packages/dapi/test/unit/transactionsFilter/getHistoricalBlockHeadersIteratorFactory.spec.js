@@ -5,16 +5,17 @@ const getHistoricalBlockHeadersIteratorFactory = require('../../../lib/grpcServe
 describe('getHistoricalBlockHeadersIteratorFactory', () => {
   let coreRpcMock;
   let blockHeaderMock;
+  let chainDataProvider;
 
-  const chainDataProvider = { getBlockHeaders: this.sinon.stub() };
-
-  beforeEach(() => {
+  beforeEach(function beforeEach() {
     coreRpcMock = {
       getBlock: this.sinon.stub(),
       getBlockStats: this.sinon.stub(),
       getBlockHash: this.sinon.stub(),
       getBlockHeaders: this.sinon.stub(),
     };
+
+    chainDataProvider = { getBlockHeaders: this.sinon.stub() };
 
     blockHeaderMock = new BlockHeader({
       version: 536870913,

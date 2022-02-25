@@ -1,5 +1,4 @@
 const { BlockHeader } = require('@dashevo/dashcore-lib');
-const sinon = require('sinon');
 const ChainDataProvider = require('../../../lib/providers/chainDataProvider');
 const blockHeadersCache = require('../../../lib/providers/blockheaders-cache');
 
