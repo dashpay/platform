@@ -14,11 +14,10 @@ function getBlocksToScan(batchIndex, numberOfBatches, totalCount) {
 }
 
 /**
- * @param {CoreRpcClient} coreRpcApi
  * @param {ChainDataProvider} chainDataProvider
  * @return {getHistoricalBlockHeadersIterator}
  */
-function getHistoricalBlockHeadersIteratorFactory(coreRpcApi, chainDataProvider) {
+function getHistoricalBlockHeadersIteratorFactory(chainDataProvider) {
   /**
    * @typedef getHistoricalBlockHeadersIterator
    * @param fromBlockHeight {number}
@@ -36,7 +35,7 @@ function getHistoricalBlockHeadersIteratorFactory(coreRpcApi, chainDataProvider)
 
       const blocksToScan = getBlocksToScan(batchIndex, numberOfBatches, count);
 
-      const blockHash = await coreRpcApi.getBlockHash(currentHeight);
+      const blockHash = await chainDataProvider.getBlockHash(currentHeight);
 
       const blockHeaders = await chainDataProvider.getBlockHeaders(blockHash,
         currentHeight, blocksToScan);

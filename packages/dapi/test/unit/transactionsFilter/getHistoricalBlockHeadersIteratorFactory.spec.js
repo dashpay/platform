@@ -15,7 +15,10 @@ describe('getHistoricalBlockHeadersIteratorFactory', () => {
       getBlockHeaders: this.sinon.stub(),
     };
 
-    chainDataProvider = { getBlockHeaders: this.sinon.stub() };
+    chainDataProvider = {
+      getBlockHeaders: this.sinon.stub(),
+      getBlockHash: this.sinon.stub(),
+    };
 
     blockHeaderMock = new BlockHeader({
       version: 536870913,
@@ -37,8 +40,9 @@ describe('getHistoricalBlockHeadersIteratorFactory', () => {
     const fromBlockHeight = 1;
     const count = 1337;
 
-    const getHistoricalBlockHeadersIterator = getHistoricalBlockHeadersIteratorFactory(coreRpcMock,
-      chainDataProvider);
+    const getHistoricalBlockHeadersIterator = getHistoricalBlockHeadersIteratorFactory(
+      chainDataProvider,
+    );
 
     const blockHeadersIterator = getHistoricalBlockHeadersIterator(
       fromBlockHeight,
@@ -55,7 +59,7 @@ describe('getHistoricalBlockHeadersIteratorFactory', () => {
     expect(r3.done).to.be.false();
     expect(r4.done).to.be.true();
 
-    expect(coreRpcMock.getBlockHash.callCount).to.be.equal(3);
+    expect(chainDataProvider.getBlockHash.callCount).to.be.equal(3);
     expect(chainDataProvider.getBlockHeaders.callCount).to.be.equal(3);
   });
 });

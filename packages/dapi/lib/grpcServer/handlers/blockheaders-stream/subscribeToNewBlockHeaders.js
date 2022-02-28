@@ -63,7 +63,7 @@ function subscribeToNewBlockHeaders(mediator, chainDataProvider) {
       }
 
       if (lastChainLock) {
-        mediator.emit(ProcessMediator.EVENTS.CHAIN_LOCK, chainDataProvider.getBestChainLock());
+        mediator.emit(ProcessMediator.EVENTS.CHAIN_LOCK, lastChainLock);
         lastChainLock = null;
       }
 

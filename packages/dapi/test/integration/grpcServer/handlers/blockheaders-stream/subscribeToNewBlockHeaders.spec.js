@@ -3,8 +3,8 @@ const ZmqClient = require('../../../../../lib/externalApis/dashcore/ZmqClient');
 const dashCoreRpcClient = require('../../../../../lib/externalApis/dashcore/rpc');
 
 const subscribeToNewBlockHeaders = require('../../../../../lib/grpcServer/handlers/blockheaders-stream/subscribeToNewBlockHeaders');
-const ChainDataProvider = require('../../../../../lib/providers/chainDataProvider');
-const blockHeadersCache = require('../../../../../lib/providers/blockheaders-cache');
+const ChainDataProvider = require('../../../../../lib/chainDataProvider/ChainDataProvider');
+const blockHeadersCache = require('../../../../../lib/chainDataProvider/BlockHeadersCache');
 const { NEW_BLOCK_HEADERS_PROPAGATE_INTERVAL } = require('../../../../../lib/grpcServer/handlers/blockheaders-stream/constants');
 const ProcessMediator = require('../../../../../lib/grpcServer/handlers/blockheaders-stream/ProcessMediator');
 const wait = require('../../../../../lib/utils/wait');

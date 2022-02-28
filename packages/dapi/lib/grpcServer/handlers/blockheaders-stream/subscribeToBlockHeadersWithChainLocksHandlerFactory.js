@@ -18,7 +18,6 @@ const {
 } = require('@dashevo/dapi-grpc');
 const ProcessMediator = require('./ProcessMediator');
 const wait = require('../../../utils/wait');
-const log = require('../../../log');
 
 /**
  * Prepare and send block headers response
@@ -130,12 +129,10 @@ function subscribeToBlockHeadersWithChainLocksHandlerFactory(
       throw new InvalidArgumentGrpcError('`count` value exceeds the chain tip');
     }
 
-    const bestChainLock = await chainDataProvider.getBestChainLock();
+    const bestChainLock = chainDataProvider.getBestChainLock();
 
     if (bestChainLock) {
       await sendChainLockResponse(acknowledgingCall, bestChainLock);
-    } else {
-      log.info('No chain lock available in dashcore node');
     }
 
     const historicalDataIterator = getHistoricalBlockHeadersIterator(
