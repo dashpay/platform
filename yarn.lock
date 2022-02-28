@@ -2,7 +2,7 @@
 # Manual changes might be lost - proceed with caution!
 
 __metadata:
-  version: 5
+  version: 6
   cacheKey: 8
 
 "@apidevtools/json-schema-ref-parser@npm:^8.0.0":
@@ -1354,7 +1354,7 @@ __metadata:
     long: ^5.2.0
     mocha: ^9.1.2
     mocha-sinon: ^2.1.2
-    protobufjs: "github:jawid-h/protobuf.js#fix/buffer-conversion"
+    protobufjs: "github:jawid-h/protobuf.js#d13d5d5688052e366aa2e9169f50dfca376b32cf"
     sinon: ^11.1.2
     sinon-chai: ^3.7.0
   languageName: unknown
@@ -1664,7 +1664,7 @@ __metadata:
     mocha: ^9.1.2
     mocha-sinon: ^2.1.2
     nyc: ^15.1.0
-    protobufjs: "github:jawid-h/protobuf.js#fix/buffer-conversion"
+    protobufjs: "github:jawid-h/protobuf.js#d13d5d5688052e366aa2e9169f50dfca376b32cf"
     semver: ^7.3.2
     sinon: ^11.1.2
     sinon-chai: ^3.7.0
@@ -2782,6 +2782,13 @@ __metadata:
   languageName: node
   linkType: hard
 
+"@types/node@npm:>=13.7.0":
+  version: 17.0.21
+  resolution: "@types/node@npm:17.0.21"
+  checksum: 89dcd2fe82f21d3634266f8384e9c865cf8af49685639fbdbd799bdd1040480fb1e8eeda2d3b9fce41edbe704d2a4be9f427118c4ae872e8d9bb7cbeb3c41a94
+  languageName: node
+  linkType: hard
+
 "@types/node@npm:^10.3.5":
   version: 10.17.60
   resolution: "@types/node@npm:10.17.60"
@@ -2793,13 +2800,6 @@ __metadata:
   version: 12.20.37
   resolution: "@types/node@npm:12.20.37"
   checksum: 8c8b12f802678b3b87c5344b6c84082be08561dda81dc161d42be8cd327330d1a5227cef039c45a5e63a6d4a01ef5ef215dccc42d06100f59f6a8814b4f91cdd
-  languageName: node
-  linkType: hard
-
-"@types/node@npm:^13.7.0":
-  version: 13.13.52
-  resolution: "@types/node@npm:13.13.52"
-  checksum: 8f1afff497ebeba209e2dc340d823284e087a47632afe99a7daa30eaff80893e520f222ad400cd1f2d3b8288e93cf3eaded52a8e64eaefb8aacfe6c35de98f42
   languageName: node
   linkType: hard
 
@@ -11932,9 +11932,9 @@ fsevents@~2.3.2:
   languageName: node
   linkType: hard
 
-"protobufjs@github:jawid-h/protobuf.js#fix/buffer-conversion":
-  version: 6.10.1
-  resolution: "protobufjs@https://github.com/jawid-h/protobuf.js.git#commit=8b91c72dca68fd6c418078fd2358c4969425dcdc"
+"protobufjs@github:jawid-h/protobuf.js#d13d5d5688052e366aa2e9169f50dfca376b32cf":
+  version: 6.10.2
+  resolution: "protobufjs@https://github.com/jawid-h/protobuf.js.git#commit=d13d5d5688052e366aa2e9169f50dfca376b32cf"
   dependencies:
     "@protobufjs/aspromise": ^1.1.2
     "@protobufjs/base64": ^1.1.2
@@ -11947,12 +11947,9 @@ fsevents@~2.3.2:
     "@protobufjs/pool": ^1.1.0
     "@protobufjs/utf8": ^1.1.0
     "@types/long": ^4.0.1
-    "@types/node": ^13.7.0
+    "@types/node": ">=13.7.0"
     long: ^4.0.0
-  bin:
-    pbjs: bin/pbjs
-    pbts: bin/pbts
-  checksum: 52be5630b25b162caeff09048580a86df8c5e8bb8af49d753bd43f699c381272fbbc4deb3c11f32900beb846a868fe1fd7f21bc0ba189e622ee4d98d09dcc4a7
+  checksum: cd8c6fa49f03c4516ce17addaba2fde6b5c500b59d02c260e64b25179ec38c1e149ca6a8a96d90216ea02a41a6dba3f6fe6ce35e5edd143de76157d9b8b30903
   languageName: node
   linkType: hard
 
@@ -14386,7 +14383,7 @@ typescript@^3.9.5:
 
 "typescript@patch:typescript@^3.9.5#~builtin<compat/typescript>":
   version: 3.9.10
-  resolution: "typescript@patch:typescript@npm%3A3.9.10#~builtin<compat/typescript>::version=3.9.10&hash=ddd1e8"
+  resolution: "typescript@patch:typescript@npm%3A3.9.10#~builtin<compat/typescript>::version=3.9.10&hash=bda367"
   bin:
     tsc: bin/tsc
     tsserver: bin/tsserver
