@@ -2,7 +2,7 @@
 # Manual changes might be lost - proceed with caution!
 
 __metadata:
-  version: 6
+  version: 5
   cacheKey: 8
 
 "@apidevtools/json-schema-ref-parser@npm:^8.0.0":
@@ -14383,7 +14383,7 @@ typescript@^3.9.5:
 
 "typescript@patch:typescript@^3.9.5#~builtin<compat/typescript>":
   version: 3.9.10
-  resolution: "typescript@patch:typescript@npm%3A3.9.10#~builtin<compat/typescript>::version=3.9.10&hash=bda367"
+  resolution: "typescript@patch:typescript@npm%3A3.9.10#~builtin<compat/typescript>::version=3.9.10&hash=ddd1e8"
   bin:
     tsc: bin/tsc
     tsserver: bin/tsserver
