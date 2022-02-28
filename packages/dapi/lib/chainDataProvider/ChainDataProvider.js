@@ -2,7 +2,16 @@ const { EventEmitter } = require('events');
 const { BlockHeader, ChainLock } = require('@dashevo/dashcore-lib');
 const log = require('../log');
 
+/**
+ * Data access layer with caching support
+ */
 class ChainDataProvider extends EventEmitter {
+  /**
+   *
+   * @param coreRpcClient {CoreRpcClient}
+   * @param zmqClient {ZmqClient}
+   * @param blockHeadersCache {BlockHeadersCache}
+   */
   constructor(coreRpcClient, zmqClient, blockHeadersCache) {
     super();
 
@@ -31,6 +40,10 @@ class ChainDataProvider extends EventEmitter {
     this.emit(this.events.NEW_CHAIN_LOCK);
   }
 
+  /**
+   * Grabs most recent chainlock
+   * @returns {Promise<void>}
+   */
   async init() {
     let chainLock;
 
@@ -50,25 +63,42 @@ class ChainDataProvider extends EventEmitter {
     this.zmqClient.on(this.zmqClient.topics.rawblock, this.blockHashHandler);
   }
 
+  /**
+   * Get block hash by height
+   * @param height {number}
+   * @returns {Promise<string>}
+   */
   async getBlockHash(height) {
     return this.coreRpcAPI.getBlockHash(height);
   }
 
-  async getBlockHeader(hash) {
-    const cached = this.blockHeadersCache.get(hash);
+  /**
+   * Get block header by block hash
+   * @param blockHash {string}
+   * @returns {Promise<BlockHeader>}
+   */
+  async getBlockHeader(blockHash) {
+    const cached = this.blockHeadersCache.get(blockHash);
 
     if (cached) {
       return new BlockHeader(cached);
     }
 
-    const rawBlockHeader = await this.coreRpcAPI.getBlockHeader(hash);
+    const rawBlockHeader = await this.coreRpcAPI.getBlockHeader(blockHash);
     const blockHeaderBuffer = Buffer.from(rawBlockHeader, 'hex');
 
-    this.blockHeadersCache.set(hash, blockHeaderBuffer);
+    this.blockHeadersCache.set(blockHash, blockHeaderBuffer);
 
     return new BlockHeader(blockHeaderBuffer);
   }
 
+  /**
+   * Receive set of block headers with cache support
+   * @param fromHash {string}
+   * @param fromHeight {number}
+   * @param count {number}
+   * @returns {Promise<BlockHeader[]>}
+   */
   async getBlockHeaders(fromHash, fromHeight, count) {
     let startHash = fromHash;
     let fetchCount = count;
@@ -109,7 +139,7 @@ class ChainDataProvider extends EventEmitter {
   }
 
   /**
-   *
+   * Return best chain lock
    * @returns {ChainLock}
    */
   getBestChainLock() {
