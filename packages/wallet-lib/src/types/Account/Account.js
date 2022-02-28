@@ -216,6 +216,16 @@ class Account extends EventEmitter {
     //   }
     // }
     this.emit(EVENTS.CREATED, { type: EVENTS.CREATED, payload: null });
+
+    /**
+     * Stores promise that waits for the IS lock of the particular transaction
+     * @type {Promise<void>}
+     */
+    this.txISLockListener = null;
+
+    // Increases a limit of max listeners for transactions related events
+    // 25 - mempool limit
+    this.setMaxListeners(25);
   }
 
   static getInstantLockTopicName(transactionHash) {

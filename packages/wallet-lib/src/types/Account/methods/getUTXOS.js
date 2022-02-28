@@ -29,16 +29,19 @@ function getUTXOS(options = {
     utxosKeys.forEach((utxoIdentifier) => {
       let skipUtxo = false;
       const [txid, outputIndex] = utxoIdentifier.split('-');
-      const { transaction } = chainStore.getTransaction(txid);
-      if (transaction.isCoinbase()) {
+
+      const txInStore = chainStore.getTransaction(txid);
+
+      if (txInStore && txInStore.transaction.isCoinbase()) {
+        const { transaction, metadata } = txInStore;
         // If the transaction is not a special transaction, we can't check its
         // maturity at the moment of writing this comment.
         // The wallet library doesn't maintain the header chain and thus we can
         // figure out the height only from the payload, but old coinbase transactions
         // doesn't have a payload.
         if (transaction.isSpecialTransaction()) {
-          const transactionHeight = (this.store.transactionsMetadata[txid])
-            ? this.store.transactionsMetadata[txid].height
+          const transactionHeight = metadata
+            ? metadata.height
             : transaction.extraPayload.height;
 
           // We check maturity is at least 100 blocks.

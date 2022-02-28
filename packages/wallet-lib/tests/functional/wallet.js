@@ -46,7 +46,8 @@ describe('Wallet-lib - functional', function suite() {
         expect(newWallet.walletType).to.be.equal('hdwallet');
         expect(newWallet.plugins).to.be.deep.equal({});
         expect(newWallet.accounts).to.be.deep.equal([]);
-        expect(newWallet.keyChain.type).to.be.deep.equal('HDPrivateKey');
+        expect(newWallet.keyChainStore.getMasterKeyChain().rootKeyType)
+          .to.be.deep.equal('HDPrivateKey');
         expect(newWallet.passphrase).to.be.deep.equal(null);
         expect(newWallet.allowSensitiveOperations).to.be.deep.equal(false);
         expect(newWallet.injectDefaultPlugins).to.be.deep.equal(true);
@@ -71,7 +72,8 @@ describe('Wallet-lib - functional', function suite() {
         expect(wallet.walletType).to.be.equal('hdwallet');
         expect(wallet.plugins).to.be.deep.equal({});
         expect(wallet.accounts).to.be.deep.equal([]);
-        expect(wallet.keyChain.type).to.be.deep.equal('HDPrivateKey');
+        expect(newWallet.keyChainStore.getMasterKeyChain().rootKeyType)
+          .to.be.deep.equal('HDPrivateKey');
         expect(wallet.passphrase).to.be.deep.equal(null);
         expect(wallet.allowSensitiveOperations).to.be.deep.equal(false);
         expect(wallet.injectDefaultPlugins).to.be.deep.equal(true);

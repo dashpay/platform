@@ -66,14 +66,8 @@ function impactAffectedInputs({ transaction }) {
   return true;
 }
 
-/**
- * Broadcast a Transaction to the transport layer
- * @param {Transaction|RawTransaction} transaction - A txobject or it's hexadecimal representation
- * @param {Object} [options]
- * @param {Boolean} [options.skipFeeValidation=false] - Allow to skip fee validation
- * @return {Promise<transactionId>}
- */
-async function broadcastTransaction(transaction, options = {}) {
+// eslint-disable-next-line no-underscore-dangle
+async function _broadcastTransaction(transaction, options = {}) {
   const { network, storage } = this;
   if (!this.transport) throw new ValidTransportLayerRequired('broadcast');
 
@@ -82,7 +76,7 @@ async function broadcastTransaction(transaction, options = {}) {
   if (is.string(transaction)) {
     const rawtx = transaction.toString();
     if (!is.rawtx(rawtx)) throw new InvalidRawTransaction(rawtx);
-    return broadcastTransaction.call(this, new Dashcore.Transaction(rawtx));
+    return _broadcastTransaction.call(this, new Dashcore.Transaction(rawtx));
   }
 
   if (!is.dashcoreTransaction(transaction)) {
@@ -112,6 +106,36 @@ async function broadcastTransaction(transaction, options = {}) {
     transaction,
   });
   return txid;
+}
+
+/**
+ * Broadcast a Transaction to the transport layer
+ * @param {Transaction|RawTransaction} transaction - A txobject or it's hexadecimal representation
+ * @param {Object} [options]
+ * @param {Boolean} [options.skipFeeValidation=false] - Allow to skip fee validation
+ * @return {Promise<transactionId>}
+ */
+async function broadcastTransaction(transaction, options = {}) {
+  if (!this.txISLockListener) {
+    const txId = await _broadcastTransaction.call(this, transaction, options);
+
+    this.txISLockListener = new Promise((resolve) => {
+      this.subscribeToTransactionInstantLock.call(this, txId, () => {
+        this.txISLockListener = null;
+        resolve();
+      });
+
+      // TODO: Also subscribe to FETCHED_CONFIRMED_TRANSACTION
+      // to use as a fallback to resolve the promise
+      // (blocked by https://github.com/dashevo/wallet-lib/pull/340)
+    });
+
+    return txId;
+  }
+
+  await this.txISLockListener;
+
+  return broadcastTransaction.call(this, transaction, options);
 }
 
 module.exports = broadcastTransaction;
