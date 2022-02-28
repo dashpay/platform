@@ -34,11 +34,11 @@
   "homepage": "https://github.com/dashevo/dapi-grpc#readme",
   "dependencies": {
     "@dashevo/grpc-common": "workspace:~",
+    "@dashevo/protobufjs": "6.10.5",
     "@grpc/grpc-js": "^1.3.7",
     "google-protobuf": "^3.12.2",
     "grpc-web": "1.2.1",
-    "long": "^5.2.0",
-    "protobufjs": "github:jawid-h/protobuf.js#d13d5d5688052e366aa2e9169f50dfca376b32cf"
+    "long": "^5.2.0"
   },
   "devDependencies": {
     "chai": "^4.3.4",
