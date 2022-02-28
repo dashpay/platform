@@ -31,7 +31,7 @@
     "cbor": "^8.0.0",
     "lodash.get": "^4.4.2",
     "long": "^5.2.0",
-    "protobufjs": "github:jawid-h/protobuf.js#fix/buffer-conversion",
+    "protobufjs": "github:jawid-h/protobuf.js#d13d5d5688052e366aa2e9169f50dfca376b32cf",
     "semver": "^7.3.2"
   }
 }

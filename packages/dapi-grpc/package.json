@@ -38,7 +38,7 @@
     "google-protobuf": "^3.12.2",
     "grpc-web": "1.2.1",
     "long": "^5.2.0",
-    "protobufjs": "github:jawid-h/protobuf.js#fix/buffer-conversion"
+    "protobufjs": "github:jawid-h/protobuf.js#d13d5d5688052e366aa2e9169f50dfca376b32cf"
   },
   "devDependencies": {
     "chai": "^4.3.4",
