@@ -85,11 +85,6 @@ class ChainDataProvider extends EventEmitter {
     if (firstCachedItem) {
       const firstMissingIndex = cachedBlockHeaders.indexOf(undefined);
 
-      // return cache if we do not miss anything
-      if (cachedBlockHeaders.filter((e) => !!e).length === count) {
-        return cachedBlockHeaders.map((e) => new BlockHeader(e));
-      }
-
       if (firstMissingIndex !== -1) {
         lastCachedIndex = firstMissingIndex - 1;
 
@@ -98,6 +93,9 @@ class ChainDataProvider extends EventEmitter {
 
         startHash = blockHeader.hash;
         fetchCount -= lastCachedIndex;
+      } else {
+        // return cache if we do not miss anything
+        return cachedBlockHeaders.map((e) => new BlockHeader(e));
       }
     }
 
