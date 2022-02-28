@@ -2257,7 +2257,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           "packageDependencies": [
             ["@dashevo/abci", "https://github.com/dashevo/js-abci.git#commit=8806ff71cdac918f79920b1373824653f15698c5"],
             ["bl", "npm:1.2.3"],
-            ["protobufjs", "https://github.com/jawid-h/protobuf.js.git#commit=8b91c72dca68fd6c418078fd2358c4969425dcdc"],
+            ["protobufjs", "https://github.com/jawid-h/protobuf.js.git#commit=d13d5d5688052e366aa2e9169f50dfca376b32cf"],
             ["protocol-buffers-encodings", "npm:1.1.1"]
           ],
           "linkType": "HARD",
@@ -2377,7 +2377,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["long", "npm:5.2.0"],
             ["mocha", "npm:9.1.3"],
             ["mocha-sinon", "virtual:595d7482cc8ddf98ee6aef33fc48b46393554ab5f17f851ef62e6e39315e53666c3e66226b978689aa0bc7f1e83a03081511a21db1c381362fe67614887077f9#npm:2.1.2"],
-            ["protobufjs", "https://github.com/jawid-h/protobuf.js.git#commit=8b91c72dca68fd6c418078fd2358c4969425dcdc"],
+            ["protobufjs", "https://github.com/jawid-h/protobuf.js.git#commit=d13d5d5688052e366aa2e9169f50dfca376b32cf"],
             ["sinon", "npm:11.1.2"],
             ["sinon-chai", "virtual:595d7482cc8ddf98ee6aef33fc48b46393554ab5f17f851ef62e6e39315e53666c3e66226b978689aa0bc7f1e83a03081511a21db1c381362fe67614887077f9#npm:3.7.0"]
           ],
@@ -2666,7 +2666,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["mocha", "npm:9.1.3"],
             ["mocha-sinon", "virtual:595d7482cc8ddf98ee6aef33fc48b46393554ab5f17f851ef62e6e39315e53666c3e66226b978689aa0bc7f1e83a03081511a21db1c381362fe67614887077f9#npm:2.1.2"],
             ["nyc", "npm:15.1.0"],
-            ["protobufjs", "https://github.com/jawid-h/protobuf.js.git#commit=8b91c72dca68fd6c418078fd2358c4969425dcdc"],
+            ["protobufjs", "https://github.com/jawid-h/protobuf.js.git#commit=d13d5d5688052e366aa2e9169f50dfca376b32cf"],
             ["semver", "npm:7.3.5"],
             ["sinon", "npm:11.1.2"],
             ["sinon-chai", "virtual:595d7482cc8ddf98ee6aef33fc48b46393554ab5f17f851ef62e6e39315e53666c3e66226b978689aa0bc7f1e83a03081511a21db1c381362fe67614887077f9#npm:3.7.0"]
@@ -2907,7 +2907,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           "packageDependencies": [
             ["@grpc/proto-loader", "npm:0.5.6"],
             ["lodash.camelcase", "npm:4.3.0"],
-            ["protobufjs", "https://github.com/jawid-h/protobuf.js.git#commit=8b91c72dca68fd6c418078fd2358c4969425dcdc"]
+            ["protobufjs", "https://github.com/jawid-h/protobuf.js.git#commit=d13d5d5688052e366aa2e9169f50dfca376b32cf"]
           ],
           "linkType": "HARD",
         }],
@@ -2918,7 +2918,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["@types/long", "npm:4.0.1"],
             ["lodash.camelcase", "npm:4.3.0"],
             ["long", "npm:4.0.0"],
-            ["protobufjs", "https://github.com/jawid-h/protobuf.js.git#commit=8b91c72dca68fd6c418078fd2358c4969425dcdc"],
+            ["protobufjs", "https://github.com/jawid-h/protobuf.js.git#commit=d13d5d5688052e366aa2e9169f50dfca376b32cf"],
             ["yargs", "npm:16.2.0"]
           ],
           "linkType": "HARD",
@@ -3973,13 +3973,6 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           ],
           "linkType": "HARD",
         }],
-        ["npm:13.13.52", {
-          "packageLocation": "./.yarn/cache/@types-node-npm-13.13.52-95159539bb-8f1afff497.zip/node_modules/@types/node/",
-          "packageDependencies": [
-            ["@types/node", "npm:13.13.52"]
-          ],
-          "linkType": "HARD",
-        }],
         ["npm:14.17.34", {
           "packageLocation": "./.yarn/cache/@types-node-npm-14.17.34-1d7f20f643-803a7532b6.zip/node_modules/@types/node/",
           "packageDependencies": [
@@ -3998,6 +3991,13 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           "packageLocation": "./.yarn/cache/@types-node-npm-16.11.9-fd7b539464-baec2e6471.zip/node_modules/@types/node/",
           "packageDependencies": [
             ["@types/node", "npm:16.11.9"]
+          ],
+          "linkType": "HARD",
+        }],
+        ["npm:17.0.21", {
+          "packageLocation": "./.yarn/cache/@types-node-npm-17.0.21-7d68eb6a13-89dcd2fe82.zip/node_modules/@types/node/",
+          "packageDependencies": [
+            ["@types/node", "npm:17.0.21"]
           ],
           "linkType": "HARD",
         }]
@@ -14774,10 +14774,10 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
         }]
       ]],
       ["protobufjs", [
-        ["https://github.com/jawid-h/protobuf.js.git#commit=8b91c72dca68fd6c418078fd2358c4969425dcdc", {
-          "packageLocation": "./.yarn/unplugged/protobufjs-https-58d0d695f1/node_modules/protobufjs/",
+        ["https://github.com/jawid-h/protobuf.js.git#commit=d13d5d5688052e366aa2e9169f50dfca376b32cf", {
+          "packageLocation": "./.yarn/unplugged/protobufjs-https-f7cc81dafb/node_modules/protobufjs/",
           "packageDependencies": [
-            ["protobufjs", "https://github.com/jawid-h/protobuf.js.git#commit=8b91c72dca68fd6c418078fd2358c4969425dcdc"],
+            ["protobufjs", "https://github.com/jawid-h/protobuf.js.git#commit=d13d5d5688052e366aa2e9169f50dfca376b32cf"],
             ["@protobufjs/aspromise", "npm:1.1.2"],
             ["@protobufjs/base64", "npm:1.1.2"],
             ["@protobufjs/codegen", "npm:2.0.4"],
@@ -14789,7 +14789,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["@protobufjs/pool", "npm:1.1.0"],
             ["@protobufjs/utf8", "npm:1.1.0"],
             ["@types/long", "npm:4.0.1"],
-            ["@types/node", "npm:13.13.52"],
+            ["@types/node", "npm:17.0.21"],
             ["chalk", "npm:3.0.0"],
             ["escodegen", "npm:2.0.0"],
             ["espree", "npm:9.1.0"],
