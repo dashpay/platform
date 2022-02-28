@@ -49,14 +49,14 @@ describe('StateTransitionFacade', () => {
     dataContractCreateTransition = dataContractFactory.createDataContractCreateTransition(
       dataContract,
     );
-    dataContractCreateTransition.sign(identityPublicKey, privateKey);
+    await dataContractCreateTransition.sign(identityPublicKey, privateKey);
 
     const documentFactory = new DocumentFactory(createDPPMock(), undefined, undefined);
 
     documentsBatchTransition = documentFactory.createStateTransition({
       create: getDocumentsFixture(dataContract),
     });
-    documentsBatchTransition.sign(identityPublicKey, privateKey);
+    await documentsBatchTransition.sign(identityPublicKey, privateKey);
 
     const getPublicKeyById = this.sinonSandbox.stub().returns(identityPublicKey);
     const getBalance = this.sinonSandbox.stub().returns(10000);
@@ -348,7 +348,7 @@ describe('StateTransitionFacade', () => {
 
       const identityCreateTransition = getIdentityCreateTransitionFixture(oneTimePrivateKey);
 
-      identityCreateTransition.signByPrivateKey(oneTimePrivateKey);
+      await identityCreateTransition.signByPrivateKey(oneTimePrivateKey);
 
       const result = await dpp.stateTransition.validateSignature(
         identityCreateTransition,

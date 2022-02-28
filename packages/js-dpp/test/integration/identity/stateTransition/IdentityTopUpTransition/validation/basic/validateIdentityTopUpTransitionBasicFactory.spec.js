@@ -57,7 +57,7 @@ describe('validateIdentityTopUpTransitionBasicFactory', () => {
 
     const privateKey = '9b67f852093bc61cea0eeca38599dbfba0de28574d2ed9b99d10d33dc1bde7b2';
 
-    stateTransition.signByPrivateKey(privateKey);
+    await stateTransition.signByPrivateKey(privateKey);
 
     rawStateTransition = stateTransition.toObject();
   });
