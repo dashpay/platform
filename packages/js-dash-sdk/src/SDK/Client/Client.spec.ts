@@ -269,7 +269,7 @@ describe('Dash - Client', function suite() {
       const interceptedSt = await client.platform.dpp.stateTransition.createFromBuffer(serializedSt);
 
       // .to.be.true() doesn't work after TS compilation in Chrome
-      expect(interceptedSt.verifySignature(identityFixture.getPublicKeyById(0))).to.be.equal(true);
+      expect(await interceptedSt.verifySignature(identityFixture.getPublicKeyById(0))).to.be.equal(true);
 
       const documentTransitions = interceptedSt.getTransitions();
 
@@ -313,7 +313,7 @@ describe('Dash - Client', function suite() {
       const interceptedSt = await client.platform.dpp.stateTransition.createFromBuffer(serializedSt);
 
       // .to.be.true() doesn't work after TS compilation in Chrome
-      expect(interceptedSt.verifySignature(identityFixture.getPublicKeyById(0))).to.be.equal(true);
+      expect(await interceptedSt.verifySignature(identityFixture.getPublicKeyById(0))).to.be.equal(true);
       expect(interceptedSt.getEntropy()).to.be.deep.equal(dataContractFixture.entropy);
       expect(interceptedSt.getDataContract().toObject()).to.be.deep.equal(dataContractFixture.toObject());
     });
