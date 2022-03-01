@@ -348,7 +348,7 @@ describe('StateTransitionFacade', () => {
 
       const identityCreateTransition = getIdentityCreateTransitionFixture(oneTimePrivateKey);
 
-      await identityCreateTransition.signByPrivateKey(oneTimePrivateKey);
+      await identityCreateTransition.signByPrivateKey(oneTimePrivateKey, IdentityPublicKey.TYPES.ECDSA_SECP256K1);
 
       const result = await dpp.stateTransition.validateSignature(
         identityCreateTransition,

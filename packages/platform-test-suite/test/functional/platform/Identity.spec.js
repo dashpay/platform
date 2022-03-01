@@ -19,6 +19,7 @@ const Transaction = require('@dashevo/dashcore-lib/lib/transaction');
 const createClientWithFundedWallet = require('../../../lib/test/createClientWithFundedWallet');
 const wait = require('../../../lib/wait');
 const getDAPISeeds = require('../../../lib/test/getDAPISeeds');
+const IdentityPublicKey = require('@dashevo/dpp/lib/identity/IdentityPublicKey');
 
 describe('Platform', () => {
   describe('Identity', () => {
@@ -352,6 +353,7 @@ describe('Platform', () => {
         );
         await identityTopUpTransition.signByPrivateKey(
           privateKey,
+          IdentityPublicKey.TYPES.ECDSA_SECP256K1,
         );
 
         let broadcastError;
