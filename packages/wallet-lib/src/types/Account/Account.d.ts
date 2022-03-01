@@ -1,5 +1,6 @@
 import {
     Transaction,
+    TransactionHistory,
     AddressObj,
     AddressInfo,
     AddressType,
@@ -62,6 +63,7 @@ export declare class Account {
     getPrivateKeys(addressList: [PublicAddress]): [PrivateKey];
     getTotalBalance(displayDuffs?: boolean): number;
     getTransaction(txid: transactionId): Transaction;
+    getTransactionHistory(): [TransactionHistory];
     getTransactions(): [Transaction];
     getUTXOS(): [UnspentOutput];
     getUnconfirmedBalance(displayDuffs?: boolean): number;
