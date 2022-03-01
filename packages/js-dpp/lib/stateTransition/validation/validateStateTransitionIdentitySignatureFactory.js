@@ -52,7 +52,7 @@ function validateStateTransitionIdentitySignatureFactory(
       return result;
     }
 
-    const signatureIsValid = stateTransition.verifySignature(publicKey);
+    const signatureIsValid = await stateTransition.verifySignature(publicKey);
 
     if (!signatureIsValid) {
       result.addError(

@@ -19,6 +19,7 @@ const ValidationResult = require('../../../../../../../lib/validation/Validation
 const InstantAssetLockProof = require('../../../../../../../lib/identity/stateTransition/assetLockProof/instant/InstantAssetLockProof');
 const ChainAssetLockProof = require('../../../../../../../lib/identity/stateTransition/assetLockProof/chain/ChainAssetLockProof');
 const SomeConsensusError = require('../../../../../../../lib/test/mocks/SomeConsensusError');
+const IdentityPublicKey = require('../../../../../../../lib/identity/IdentityPublicKey');
 
 describe('validateIdentityCreateTransitionBasicFactory', () => {
   let validateIdentityCreateTransitionBasic;
@@ -70,7 +71,7 @@ describe('validateIdentityCreateTransitionBasicFactory', () => {
 
     const privateKey = '9b67f852093bc61cea0eeca38599dbfba0de28574d2ed9b99d10d33dc1bde7b2';
 
-    stateTransition.signByPrivateKey(privateKey);
+    await stateTransition.signByPrivateKey(privateKey, IdentityPublicKey.TYPES.ECDSA_SECP256K1);
 
     rawStateTransition = stateTransition.toObject();
   });
