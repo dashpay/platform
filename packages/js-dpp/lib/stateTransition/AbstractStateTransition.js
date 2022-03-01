@@ -240,7 +240,7 @@ class AbstractStateTransition {
   /**
    * Verify signature with public key
    * @protected
-   * @param {string|Buffer|Uint8Array|PublicKey} publicKey string must be hex or base58
+   * @param {string|Buffer|Uint8Array|PublicKey} publicKey string must be hex
    * @returns {Promise<boolean>}
    */
   async verifyBLSSignatureByPublicKey(publicKey) {
