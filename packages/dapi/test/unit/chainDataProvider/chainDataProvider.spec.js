@@ -129,11 +129,20 @@ describe('ChainDataProvider', () => {
 
     expect(cacheSpy.get).to.always.returned(undefined);
 
-    expect(cacheSpy.set).to.be.calledWith(1, first.toBuffer());
-    expect(cacheSpy.set).to.be.calledWith(2, second.toBuffer());
-    expect(cacheSpy.set).to.be.calledWith(3, third.toBuffer());
-    expect(cacheSpy.set).to.be.calledWith(4, fourth.toBuffer());
-    expect(cacheSpy.set).to.be.calledWith(5, fifth.toBuffer());
+    expect(cacheSpy.set.getCall(0).args[0]).to.be.equal(1);
+    expect(cacheSpy.set.getCall(0).args[1].toString()).to.be.equal(first.toString());
+
+    expect(cacheSpy.set.getCall(1).args[0]).to.be.equal(2);
+    expect(cacheSpy.set.getCall(1).args[1].toString()).to.be.equal(second.toString());
+
+    expect(cacheSpy.set.getCall(2).args[0]).to.be.equal(3);
+    expect(cacheSpy.set.getCall(2).args[1].toString()).to.be.equal(third.toString());
+
+    expect(cacheSpy.set.getCall(3).args[0]).to.be.equal(4);
+    expect(cacheSpy.set.getCall(3).args[1].toString()).to.be.equal(fourth.toString());
+
+    expect(cacheSpy.set.getCall(4).args[0]).to.be.equal(5);
+    expect(cacheSpy.set.getCall(4).args[1].toString()).to.be.equal(fifth.toString());
   });
 
   // the case when we request for cached blocks (all N block are cached)
@@ -142,9 +151,9 @@ describe('ChainDataProvider', () => {
 
     coreAPIMock.getBlockStats.resolves({ height: 1 });
 
-    blockHeadersCache.set(1, first.toBuffer());
-    blockHeadersCache.set(2, second.toBuffer());
-    blockHeadersCache.set(3, third.toBuffer());
+    blockHeadersCache.set(1, first);
+    blockHeadersCache.set(2, second);
+    blockHeadersCache.set(3, third);
 
     cacheSpy.set.resetHistory();
 
@@ -155,9 +164,9 @@ describe('ChainDataProvider', () => {
     expect(cacheSpy.get.callCount).to.be.equal(3);
     expect(cacheSpy.set.callCount).to.be.equal(0);
 
-    expect(cacheSpy.get.getCall(0).returnValue).to.deep.equal(first.toBuffer());
-    expect(cacheSpy.get.getCall(1).returnValue).to.deep.equal(second.toBuffer());
-    expect(cacheSpy.get.getCall(2).returnValue).to.deep.equal(third.toBuffer());
+    expect(cacheSpy.get.getCall(0).returnValue.toString()).to.deep.equal(first.toString());
+    expect(cacheSpy.get.getCall(1).returnValue.toString()).to.deep.equal(second.toString());
+    expect(cacheSpy.get.getCall(2).returnValue.toString()).to.deep.equal(third.toString());
   });
 
   // the case where we are missing some blocks in the tail
@@ -171,9 +180,9 @@ describe('ChainDataProvider', () => {
       fifth.toString()]);
 
     // should use cache and does not hit rpc
-    blockHeadersCache.set(1, first.toBuffer());
-    blockHeadersCache.set(2, second.toBuffer());
-    blockHeadersCache.set(3, third.toBuffer());
+    blockHeadersCache.set(1, first);
+    blockHeadersCache.set(2, second);
+    blockHeadersCache.set(3, third);
     blockHeadersCache.set(4, undefined);
     blockHeadersCache.set(5, undefined);
     cacheSpy.set.resetHistory();
@@ -185,9 +194,9 @@ describe('ChainDataProvider', () => {
     expect(cacheSpy.get.callCount).to.be.equal(5);
     expect(cacheSpy.set.callCount).to.be.equal(3);
 
-    expect(cacheSpy.get.getCall(0).returnValue).to.deep.equal(first.toBuffer());
-    expect(cacheSpy.get.getCall(1).returnValue).to.deep.equal(second.toBuffer());
-    expect(cacheSpy.get.getCall(2).returnValue).to.deep.equal(third.toBuffer());
+    expect(cacheSpy.get.getCall(0).returnValue.toString()).to.deep.equal(first.toString());
+    expect(cacheSpy.get.getCall(1).returnValue.toString()).to.deep.equal(second.toString());
+    expect(cacheSpy.get.getCall(2).returnValue.toString()).to.deep.equal(third.toString());
     expect(cacheSpy.get.getCall(3).returnValue).to.deep.equal(undefined);
     expect(cacheSpy.get.getCall(4).returnValue).to.deep.equal(undefined);
   });
@@ -202,11 +211,11 @@ describe('ChainDataProvider', () => {
     coreAPIMock.getBlockHeaders.resolves([second.toString(), third.toString(),
       fourth.toString(), fifth.toString()]);
 
-    blockHeadersCache.set(1, first.toBuffer());
-    blockHeadersCache.set(2, second.toBuffer());
+    blockHeadersCache.set(1, first);
+    blockHeadersCache.set(2, second);
     blockHeadersCache.set(3, undefined);
     blockHeadersCache.set(4, undefined);
-    blockHeadersCache.set(5, fifth.toBuffer());
+    blockHeadersCache.set(5, fifth);
     cacheSpy.set.resetHistory();
 
     await chainDataProvider.getBlockHeaders(first.hash, 1, 5);
@@ -214,11 +223,11 @@ describe('ChainDataProvider', () => {
     expect(cacheSpy.get.callCount).to.be.equal(5);
     expect(cacheSpy.set.callCount).to.be.equal(4);
 
-    expect(cacheSpy.get.getCall(0).returnValue).to.deep.equal(first.toBuffer());
-    expect(cacheSpy.get.getCall(1).returnValue).to.deep.equal(second.toBuffer());
+    expect(cacheSpy.get.getCall(0).returnValue.toString()).to.deep.equal(first.toString());
+    expect(cacheSpy.get.getCall(1).returnValue.toString()).to.deep.equal(second.toString());
     expect(cacheSpy.get.getCall(2).returnValue).to.deep.equal(undefined);
     expect(cacheSpy.get.getCall(3).returnValue).to.deep.equal(undefined);
-    expect(cacheSpy.get.getCall(4).returnValue).to.deep.equal(fifth.toBuffer());
+    expect(cacheSpy.get.getCall(4).returnValue).to.deep.equal(fifth);
   });
 
   // the case where we have something in the cache, but the first blocks are not
@@ -231,9 +240,9 @@ describe('ChainDataProvider', () => {
 
     blockHeadersCache.set(1, undefined);
     blockHeadersCache.set(2, undefined);
-    blockHeadersCache.set(3, third.toBuffer());
-    blockHeadersCache.set(4, fourth.toBuffer());
-    blockHeadersCache.set(5, fifth.toBuffer());
+    blockHeadersCache.set(3, third);
+    blockHeadersCache.set(4, fourth);
+    blockHeadersCache.set(5, fifth);
     cacheSpy.set.resetHistory();
 
     await chainDataProvider.getBlockHeaders(first.toString(), 1, 5);
@@ -246,9 +255,9 @@ describe('ChainDataProvider', () => {
 
     expect(cacheSpy.get.getCall(0).returnValue).to.deep.equal(undefined);
     expect(cacheSpy.get.getCall(1).returnValue).to.deep.equal(undefined);
-    expect(cacheSpy.get.getCall(2).returnValue).to.deep.equal(third.toBuffer());
-    expect(cacheSpy.get.getCall(3).returnValue).to.deep.equal(fourth.toBuffer());
-    expect(cacheSpy.get.getCall(4).returnValue).to.deep.equal(fifth.toBuffer());
+    expect(cacheSpy.get.getCall(2).returnValue.toString()).to.deep.equal(third.toString());
+    expect(cacheSpy.get.getCall(3).returnValue.toString()).to.deep.equal(fourth.toString());
+    expect(cacheSpy.get.getCall(4).returnValue.toString()).to.deep.equal(fifth.toString());
   });
 
   // the same as above, but with additional gap
@@ -261,10 +270,10 @@ describe('ChainDataProvider', () => {
       third.toString(), fourth.toString(), fifth.toString()]);
 
     blockHeadersCache.set(1, undefined);
-    blockHeadersCache.set(2, second.toBuffer());
+    blockHeadersCache.set(2, second);
     blockHeadersCache.set(3, undefined);
-    blockHeadersCache.set(4, third.toBuffer());
-    blockHeadersCache.set(5, fourth.toBuffer());
+    blockHeadersCache.set(4, third);
+    blockHeadersCache.set(5, fourth);
     cacheSpy.set.resetHistory();
 
     await chainDataProvider.getBlockHeaders(first.toString(), 1, 5);

@@ -57,10 +57,12 @@ class ChainDataProvider extends EventEmitter {
       }
     }
 
-    this.chainLock = new ChainLock(chainLock);
+    const chainlock = new ChainLock(chainLock);
 
     this.zmqClient.on(this.zmqClient.topics.rawtx, this.chainLockHandler);
     this.zmqClient.on(this.zmqClient.topics.rawblock, this.blockHashHandler);
+
+    this.chainLockHandler(chainlock.toString());
   }
 
   /**
@@ -81,13 +83,14 @@ class ChainDataProvider extends EventEmitter {
     const cached = this.blockHeadersCache.get(blockHash);
 
     if (cached) {
-      return new BlockHeader(cached);
+      return cached;
     }
 
     const rawBlockHeader = await this.coreRpcAPI.getBlockHeader(blockHash);
     const blockHeaderBuffer = Buffer.from(rawBlockHeader, 'hex');
+    const blockHeader = new BlockHeader(blockHeaderBuffer);
 
-    this.blockHeadersCache.set(blockHash, blockHeaderBuffer);
+    this.blockHeadersCache.set(blockHash, blockHeader);
 
     return new BlockHeader(blockHeaderBuffer);
   }
@@ -118,14 +121,13 @@ class ChainDataProvider extends EventEmitter {
       if (firstMissingIndex !== -1) {
         lastCachedIndex = firstMissingIndex - 1;
 
-        const rawBlockHeader = cachedBlockHeaders[lastCachedIndex];
-        const blockHeader = new BlockHeader(rawBlockHeader);
+        const blockHeader = cachedBlockHeaders[lastCachedIndex];
 
         startHash = blockHeader.hash;
         fetchCount -= lastCachedIndex;
       } else {
         // return cache if we do not miss anything
-        return cachedBlockHeaders.map((e) => new BlockHeader(e));
+        return cachedBlockHeaders;
       }
     }
 
@@ -133,14 +135,14 @@ class ChainDataProvider extends EventEmitter {
     const rawBlockHeaders = [...((cachedBlockHeaders.slice(0,
       lastCachedIndex !== -1 ? lastCachedIndex : 0)).map((e) => e.toString('hex'))), ...missingBlockHeaders];
 
-    missingBlockHeaders.forEach((e, i) => this.blockHeadersCache.set(fromHeight + i, Buffer.from(e, 'hex')));
+    missingBlockHeaders.forEach((e, i) => this.blockHeadersCache.set(fromHeight + i, new BlockHeader(Buffer.from(e, 'hex'))));
 
     return rawBlockHeaders.map((rawBlockHeader) => new BlockHeader(Buffer.from(rawBlockHeader, 'hex')));
   }
 
   /**
    * Return best chain lock
-   * @returns {ChainLock}
+   * @returns {ChainLock|null}
    */
   getBestChainLock() {
     return this.chainLock;
