@@ -186,7 +186,7 @@ describe('AbstractStateTransitionIdentitySigned', () => {
       }
     });
 
-    it('should throw an error if the key security level is not met', async function () {
+    it('should throw an error if the key security level is not met', async function it() {
       stateTransition.getRequiredKeySecurityLevel = this.sinonSandbox
         .stub()
         .returns(IdentityPublicKey.SECURITY_LEVELS.MASTER);
