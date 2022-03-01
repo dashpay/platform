@@ -139,7 +139,7 @@ class TransactionSyncStreamWorker extends Worker {
 
     if (skipSynchronization) {
       logger.debug('TransactionSyncStreamWorker - Wallet created from a new mnemonic. Sync from the best block height.');
-      const bestBlockHeight = this.storage.getChainStore(this.network.toString()).blockHeight;
+      const bestBlockHeight = this.storage.getChainStore(this.network.toString()).state.blockHeight;
       this.setLastSyncedBlockHeight(bestBlockHeight);
       return;
     }
