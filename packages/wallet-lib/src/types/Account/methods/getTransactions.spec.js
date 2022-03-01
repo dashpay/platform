@@ -11,11 +11,8 @@ mockedHDSelf.getTransactions = getTransactions;
 describe('Account - getTransactions', function suite() {
   this.timeout(10000);
   it('should get the transactions', () => {
-    const transactionsWithMetadata = getTransactions.call(mockedHDSelf);
-    const transactionsHash = transactionsWithMetadata.reduce((acc, el)=>{
-      acc.push(el[0].hash);
-      return acc;
-    },[]);
+    const transactions = getTransactions.call(mockedHDSelf);
+    const transactionsHash = Object.keys(transactions);
 
     expect(transactionsHash).to.deep.equal([
       'a43845e580ad01f31bc06ce47ab39674e40316c4c6b765b6e54d6d35777ef456',

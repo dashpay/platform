@@ -22,9 +22,17 @@ function getTransactionHistory() {
     network,
   } = this;
 
-  const transactionsWithMetadata = this.getTransactions();
+  const transactions = this.getTransactions();
+
   const walletStore = storage.getWalletStore(walletId);
   const chainStore = storage.getChainStore(network);
+
+  const transactionsWithMetadata = Object.keys(transactions).reduce((acc, hash) => {
+    const { metadata } = chainStore.getTransaction(hash);
+    acc.push([transactions[hash], metadata]);
+    return acc;
+  }, []);
+
   const { blockHeaders } = chainStore.state;
 
   const categorizedTransactions = categorizeTransactions(
