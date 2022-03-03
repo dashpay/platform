@@ -24,20 +24,22 @@ class ChainDataProvider extends EventEmitter {
 
   /**
    * @private
-   * @param blockHash {string}
+   * @param blockHash {Buffer}
    */
   blockHashHandler(blockHash) {
-    this.emit(this.events.NEW_BLOCK_HEADER, blockHash);
+    this.emit(this.events.NEW_BLOCK_HEADER, blockHash.toString('hex'));
   }
 
   /**
    * @private
-   * @param rawChainLock {string}
+   * @param rawChainLock {Buffer}
    */
   chainLockHandler(rawChainLock) {
-    this.chainLock = new ChainLock(Buffer.from(rawChainLock, 'hex'));
+    const chainLock = new ChainLock(rawChainLock);
 
-    this.emit(this.events.NEW_CHAIN_LOCK);
+    this.chainLock = chainLock
+
+    this.emit(this.events.NEW_CHAIN_LOCK, chainLock);
   }
 
   /**
@@ -45,10 +47,11 @@ class ChainDataProvider extends EventEmitter {
    * @returns {Promise<void>}
    */
   async init() {
-    let chainLock;
-
     try {
-      chainLock = await this.coreRpcAPI.getBestChainLock();
+      const data = await this.coreRpcAPI.getBestChainLock();
+      const chainLock = new ChainLock(data);
+
+      this.chainLockHandler(chainLock.toBuffer());
     } catch (e) {
       if (e.code === -32603) {
         log.info('No chain lock available in dashcore node');
@@ -57,12 +60,8 @@ class ChainDataProvider extends EventEmitter {
       }
     }
 
-    const chainlock = new ChainLock(chainLock);
-
-    this.zmqClient.on(this.zmqClient.topics.rawtx, this.chainLockHandler);
-    this.zmqClient.on(this.zmqClient.topics.rawblock, this.blockHashHandler);
-
-    this.chainLockHandler(chainlock.toString());
+    this.zmqClient.on(this.zmqClient.topics.rawtx, (buffer) => this.chainLockHandler(buffer));
+    this.zmqClient.on(this.zmqClient.topics.rawblock, (buffer) => this.blockHashHandler(buffer));
   }
 
   /**

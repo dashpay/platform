@@ -16,10 +16,10 @@ function subscribeToNewBlockHeaders(mediator, chainDataProvider) {
   let isClientConnected = true;
 
   /**
-   * @param {Buffer} hash
+   * @param {string} blockHash
    */
-  const blockHashHandler = (hash) => {
-    pendingHeadersHashes.add(hash.toString('hex'));
+  const blockHashHandler = (blockHash) => {
+    pendingHeadersHashes.add(blockHash);
   };
 
   /**
