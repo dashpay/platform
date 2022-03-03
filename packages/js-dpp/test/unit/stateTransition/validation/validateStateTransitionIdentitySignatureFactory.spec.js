@@ -144,7 +144,7 @@ describe('validateStateTransitionIdentitySignatureFactory', () => {
   });
 
   it('should return InvalidStateTransitionSignatureError if signature is invalid', async () => {
-    stateTransition.verifySignature.returns(false);
+    stateTransition.verifySignature.resolves(false);
 
     const result = await validateStateTransitionIdentitySignature(
       stateTransition,

@@ -19,7 +19,7 @@ export async function signStateTransition(platform: Platform, stateTransition: a
         keyIndex,
     );
 
-    stateTransition.sign(
+    await stateTransition.sign(
         identity.getPublicKeyById(keyIndex),
         privateKey,
     );

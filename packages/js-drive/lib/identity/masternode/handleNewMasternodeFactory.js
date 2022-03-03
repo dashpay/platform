@@ -39,7 +39,7 @@ function handleNewMasternodeFactory(
 
     await createMasternodeIdentity(
       masternodeIdentityId,
-      Buffer.from(proRegTxPayload.keyIDOwner, 'hex'),
+      Buffer.from(proRegTxPayload.keyIDOwner, 'hex').reverse(),
       IdentityPublicKey.TYPES.ECDSA_HASH160,
     );
 

@@ -39,7 +39,7 @@ function isDuplicateByIndices(originalTransition, transitionToCheck, typeIndices
  */
 function findDuplicatesByIndices(documentTransitions, dataContract) {
   const groupsObject = documentTransitions
-    // Group documentTransitions by it's type, enrich them by type's unique indices
+    // Group documentTransitions by its type, enrich them by type's unique indices
     .reduce((groups, documentTransition) => {
       const { $type: type } = documentTransition;
       const typeIndices = (dataContract.getDocumentSchema(type).indices || []);

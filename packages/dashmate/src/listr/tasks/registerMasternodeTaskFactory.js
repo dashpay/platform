@@ -225,7 +225,8 @@ function registerMasternodeTaskFactory(
           );
 
           // eslint-disable-next-line no-param-reassign
-          task.output = `ProRegTx transaction ID: ${ctx.proTxHash}`;
+          task.output = `ProRegTx transaction ID: ${ctx.proTxHash}\n`
+          + `Owner Private Key: ${ctx.owner.privateKey}`;
         },
         options: { persistentOutput: true },
       },

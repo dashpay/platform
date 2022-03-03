@@ -328,6 +328,19 @@ describe('Platform', () => {
       expect(broadcastError.code).to.be.equal(4008);
     });
 
+    it('should be able to delete a document', async () => {
+      await client.platform.documents.broadcast({
+        delete: [document],
+      }, identity);
+
+      const [storedDocument] = await client.platform.documents.get(
+        'customContracts.indexedDocument',
+        { where: [['$id', '==', document.getId()]] },
+      );
+
+      expect(storedDocument).to.be.null();
+    });
+
     it('should fail to create a new document with timestamp in violated time frame', async () => {
       document = await client.platform.documents.create(
         'customContracts.indexedDocument',
