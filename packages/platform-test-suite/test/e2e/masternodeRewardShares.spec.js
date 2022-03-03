@@ -10,6 +10,7 @@ const DashPlatformProtocol = require('@dashevo/dpp/lib/DashPlatformProtocol');
 const IdentityPublicKey = require('@dashevo/dpp/lib/identity/IdentityPublicKey');
 const createClientWithFundedWallet = require('../../lib/test/createClientWithFundedWallet');
 const wait = require('../../lib/wait');
+const {expect} = require('chai');
 
 describe('Masternode Reward Shares', () => {
   let failed = false;
@@ -273,6 +274,13 @@ describe('Masternode Reward Shares', () => {
       await client.platform.broadcastStateTransition(
         stateTransition,
       );
+
+      const [storedDocument] = await client.platform.documents.get(
+        'masternodeRewardShares.rewardShare',
+        { where: [['$id', '==', rewardShare.getId()]] },
+      );
+
+      expect(storedDocument).to.not.exist();
     });
   });
 

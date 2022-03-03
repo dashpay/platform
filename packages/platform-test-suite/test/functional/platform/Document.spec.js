@@ -338,7 +338,7 @@ describe('Platform', () => {
         { where: [['$id', '==', document.getId()]] },
       );
 
-      expect(storedDocument).to.be.null();
+      expect(storedDocument).to.not.exist();
     });
 
     it('should fail to create a new document with timestamp in violated time frame', async () => {
