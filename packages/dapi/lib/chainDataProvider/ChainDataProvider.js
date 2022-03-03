@@ -37,7 +37,7 @@ class ChainDataProvider extends EventEmitter {
   chainLockHandler(rawChainLock) {
     const chainLock = new ChainLock(rawChainLock);
 
-    this.chainLock = chainLock
+    this.chainLock = chainLock;
 
     this.emit(this.events.NEW_CHAIN_LOCK, chainLock);
   }
