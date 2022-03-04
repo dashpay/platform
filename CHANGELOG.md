@@ -1,3 +1,19 @@
+## [0.22.0-dev.9](https://github.com/dashevo/platform/compare/v0.22.0-dev.8...v0.22.0-dev.9) (2022-03-04)
+
+
+### ⚠ BREAKING CHANGES
+
+* **dpp:** lower indexed string properties constraints (#273)
+
+### Features
+
+* **dpp:** lower indexed string properties constraints ([#273](https://github.com/dashevo/platform/issues/273))
+
+
+### Bug Fixes
+
+* masternode reward shares ([#272](https://github.com/dashevo/platform/issues/272))
+
 ## [0.22.0-dev.8](https://github.com/dashevo/platform/compare/v0.21.8...v0.22.0-dev.8) (2022-03-01)
 
 
