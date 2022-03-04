@@ -6,6 +6,7 @@ const getDocumentTransitionsFixture = require('../../../../lib/test/fixtures/get
 const createRewardShareDataTrigger = require('../../../../lib/dataTrigger/rewardShareDataTriggers/createMasternodeRewardSharesDataTrigger');
 const DataTriggerExecutionResult = require('../../../../lib/dataTrigger/DataTriggerExecutionResult');
 const DataTriggerConditionError = require('../../../../lib/errors/consensus/state/dataContract/dataTrigger/DataTriggerConditionError');
+const { hash } = require('../../../../lib/util/hash');
 
 describe('createMasternodeRewardSharesDataTrigger', () => {
   let contextMock;
@@ -17,7 +18,7 @@ describe('createMasternodeRewardSharesDataTrigger', () => {
   let documentsFixture;
 
   beforeEach(function beforeEach() {
-    topLevelIdentityId = Buffer.from('c286807d463b06c7aba3b9a60acf64c1fc03da8c1422005cd9b4293f08cf0562', 'hex');
+    topLevelIdentityId = hash(Buffer.from('c286807d463b06c7aba3b9a60acf64c1fc03da8c1422005cd9b4293f08cf0562', 'hex'));
 
     smlMock = {
       getQuorum: this.sinonSandbox.stub(),
@@ -25,7 +26,7 @@ describe('createMasternodeRewardSharesDataTrigger', () => {
       getQuorumsOfType: this.sinonSandbox.stub(),
       getValidMasternodesList: this.sinonSandbox.stub().returns([
         new SimplifiedMNListEntry({
-          proRegTxHash: topLevelIdentityId.toString('hex'),
+          proRegTxHash: 'c286807d463b06c7aba3b9a60acf64c1fc03da8c1422005cd9b4293f08cf0562',
           confirmedHash: '4eb56228c535db3b234907113fd41d57bcc7cdcb8e0e00e57590af27ee88c119',
           service: '192.168.65.2:20101',
           pubKeyOperator: '809519c5f6f3be1c08782ac42ae9a83b6c7205eba43f9a96a4f032ec7a73f1a7c25fa78cce0d6d9c135f7e2c28527179',
@@ -52,7 +53,7 @@ describe('createMasternodeRewardSharesDataTrigger', () => {
 
     stateRepositoryMock = createStateRepositoryMock(this.sinonSandbox);
     stateRepositoryMock.fetchSMLStore.resolves(smlStoreMock);
-    stateRepositoryMock.fetchIdentity.resolves(null);
+    stateRepositoryMock.fetchIdentity.resolves(getIdentityFixture());
     stateRepositoryMock.fetchDocuments.resolves([]);
 
     const [document] = getMasternodeRewardShareDocumentsFixture();
@@ -75,7 +76,7 @@ describe('createMasternodeRewardSharesDataTrigger', () => {
     documentTransition.data.percentage = 9501;
 
     const result = await createRewardShareDataTrigger(
-      documentTransition, contextMock, topLevelIdentityId,
+      documentTransition, contextMock,
     );
 
     expect(result).to.be.an.instanceOf(DataTriggerExecutionResult);
@@ -93,10 +94,10 @@ describe('createMasternodeRewardSharesDataTrigger', () => {
   });
 
   it('should return an error if payToId does not exist', async () => {
-    stateRepositoryMock.fetchIdentity.resolves(topLevelIdentityId);
+    stateRepositoryMock.fetchIdentity.resolves(null);
 
     const result = await createRewardShareDataTrigger(
-      documentTransition, contextMock, topLevelIdentityId,
+      documentTransition, contextMock,
     );
 
     expect(result).to.be.an.instanceOf(DataTriggerExecutionResult);
@@ -117,7 +118,7 @@ describe('createMasternodeRewardSharesDataTrigger', () => {
     contextMock.getOwnerId.returns(getIdentityFixture().getId());
 
     const result = await createRewardShareDataTrigger(
-      documentTransition, contextMock, topLevelIdentityId,
+      documentTransition, contextMock,
     );
 
     expect(result).to.be.an.instanceOf(DataTriggerExecutionResult);
@@ -134,7 +135,7 @@ describe('createMasternodeRewardSharesDataTrigger', () => {
 
   it('should pass', async () => {
     const result = await createRewardShareDataTrigger(
-      documentTransition, contextMock, topLevelIdentityId,
+      documentTransition, contextMock,
     );
 
     expect(result).to.be.an.instanceOf(DataTriggerExecutionResult);
