@@ -105,7 +105,7 @@ class ChainDataProvider extends EventEmitter {
     let startHash = fromHash;
     let fetchCount = count;
 
-    const blockHeights = Array.from({length: count})
+    const blockHeights = Array.from({ length: count })
       .map((e, i) => fromHeight + i);
 
     const cachedBlockHeaders = blockHeights

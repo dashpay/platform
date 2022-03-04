@@ -1,4 +1,3 @@
-const { BlockHeader } = require('@dashevo/dashcore-lib');
 const ProcessMediator = require('./ProcessMediator');
 const wait = require('../../../utils/wait');
 const { NEW_BLOCK_HEADERS_PROPAGATE_INTERVAL } = require('./constants');
