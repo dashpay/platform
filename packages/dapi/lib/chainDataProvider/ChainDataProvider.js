@@ -61,7 +61,7 @@ class ChainDataProvider extends EventEmitter {
     }
 
     this.zmqClient.on(this.zmqClient.topics.rawtx, (buffer) => this.chainLockHandler(buffer));
-    this.zmqClient.on(this.zmqClient.topics.rawblock, (buffer) => this.blockHashHandler(buffer));
+    this.zmqClient.on(this.zmqClient.topics.hashblock, (buffer) => this.blockHashHandler(buffer));
   }
 
   /**
@@ -105,7 +105,7 @@ class ChainDataProvider extends EventEmitter {
     let startHash = fromHash;
     let fetchCount = count;
 
-    const blockHeights = Array.from({ length: count })
+    const blockHeights = Array.from({length: count})
       .map((e, i) => fromHeight + i);
 
     const cachedBlockHeaders = blockHeights
