@@ -69,7 +69,7 @@ describe('handleNewMasternodeFactory', () => {
 
     expect(createMasternodeIdentityMock).to.be.calledOnceWithExactly(
       Identifier.from('xmdKYeUsEU49sncsu76TmtufyqwP1By92RX4e48oRUW'),
-      Buffer.from('4136bcaf69d15e767c56a8b4bb04304fe0b395d0', 'hex'),
+      Buffer.from('4136bcaf69d15e767c56a8b4bb04304fe0b395d0', 'hex').reverse(),
       IdentityPublicKey.TYPES.ECDSA_HASH160,
     );
 
@@ -105,7 +105,7 @@ describe('handleNewMasternodeFactory', () => {
     expect(createMasternodeIdentityMock).to.be.calledTwice();
     expect(createMasternodeIdentityMock.getCall(0)).to.be.calledWithExactly(
       Identifier.from('xmdKYeUsEU49sncsu76TmtufyqwP1By92RX4e48oRUW'),
-      Buffer.from('4136bcaf69d15e767c56a8b4bb04304fe0b395d0', 'hex'),
+      Buffer.from('4136bcaf69d15e767c56a8b4bb04304fe0b395d0', 'hex').reverse(),
       IdentityPublicKey.TYPES.ECDSA_HASH160,
     );
     expect(createMasternodeIdentityMock.getCall(1)).to.be.calledWithExactly(

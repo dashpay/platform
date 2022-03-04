@@ -16,10 +16,10 @@ const DAPIClient = require('@dashevo/dapi-client/lib/DAPIClient');
 const { hash } = require('@dashevo/dpp/lib/util/hash');
 const Identifier = require('@dashevo/dpp/lib/identifier/Identifier');
 const Transaction = require('@dashevo/dashcore-lib/lib/transaction');
+const IdentityPublicKey = require('@dashevo/dpp/lib/identity/IdentityPublicKey');
 const createClientWithFundedWallet = require('../../../lib/test/createClientWithFundedWallet');
 const wait = require('../../../lib/wait');
 const getDAPISeeds = require('../../../lib/test/getDAPISeeds');
-const IdentityPublicKey = require('@dashevo/dpp/lib/identity/IdentityPublicKey');
 
 describe('Platform', () => {
   describe('Identity', () => {

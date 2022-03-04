@@ -1,17 +1,41 @@
 const {
   contractId: masternodeRewardSharesContractId,
+  ownerId: masternodeRewardSharesOwnerId,
 } = require('@dashevo/masternode-reward-shares-contract/lib/systemIds');
 
-const Identifier = require('@dashevo/dpp/lib/identifier/Identifier');
 const generateRandomIdentifier = require('@dashevo/dpp/lib/test/utils/generateRandomIdentifier');
-const hash = require('@dashevo/dpp/lib/util/hash');
+const { hash } = require('@dashevo/dpp/lib/util/hash');
 
+const DashPlatformProtocol = require('@dashevo/dpp/lib/DashPlatformProtocol');
+const IdentityPublicKey = require('@dashevo/dpp/lib/identity/IdentityPublicKey');
 const createClientWithFundedWallet = require('../../lib/test/createClientWithFundedWallet');
 const wait = require('../../lib/wait');
+const {expect} = require('chai');
 
 describe('Masternode Reward Shares', () => {
   let failed = false;
   let client;
+  let dpp;
+
+  before(async () => {
+    dpp = new DashPlatformProtocol();
+    await dpp.initialize();
+
+    client = await createClientWithFundedWallet(
+      process.env.MASTERNODE_REWARD_SHARES_OWNER_PRIVATE_KEY,
+    );
+
+    await client.platform.identities.topUp(masternodeRewardSharesOwnerId, 5000);
+
+    const masternodeRewardSharesContract = await client.platform.contracts.get(
+      masternodeRewardSharesContractId,
+    );
+
+    client.getApps().set('masternodeRewardShares', {
+      contractId: masternodeRewardSharesContractId,
+      contract: masternodeRewardSharesContract,
+    });
+  });
 
   // Skip test if any prior test in this describe failed
   beforeEach(function beforeEach() {
@@ -22,14 +46,6 @@ describe('Masternode Reward Shares', () => {
 
   afterEach(function afterEach() {
     failed = this.currentTest.state === 'failed';
-  });
-
-  before(async () => {
-    client = await createClientWithFundedWallet();
-
-    client.getApps().get('masternodeRewardShares').contractId = Identifier.from(
-      masternodeRewardSharesContractId,
-    );
   });
 
   after(async () => {
@@ -52,15 +68,17 @@ describe('Masternode Reward Shares', () => {
     });
   });
 
-  describe.skip('Masternode owner', () => {
+  describe('Masternode owner', () => {
     let anotherIdentity;
     let rewardShare;
     let anotherRewardShare;
-    let ownerIdentity;
+    let ownerPrivateKey;
+    let masternodeIdentity;
 
     before(async function before() {
       if (!process.env.MASTERNODE_REWARD_SHARES_OWNER_PRIVATE_KEY
-        || !process.env.MASTERNODE_REWARD_SHARES_OWNER_PRO_REG_TX_HASH) {
+        || !process.env.MASTERNODE_REWARD_SHARES_OWNER_PRO_REG_TX_HASH
+        || !process.env.MASTERNODE_REWARD_SHARES_MN_OWNER_PRIVATE_KEY) {
         this.skip('masternode owner credentials are not set');
       }
 
@@ -68,10 +86,14 @@ describe('Masternode Reward Shares', () => {
         Buffer.from(process.env.MASTERNODE_REWARD_SHARES_OWNER_PRO_REG_TX_HASH, 'hex'),
       );
 
-      // Masternode identity should exist
-      ownerIdentity = await client.platform.identities.get(ownerIdentifier);
+      masternodeIdentity = await client.platform.identities.get(ownerIdentifier);
 
-      expect(ownerIdentity).to.exist();
+      ownerPrivateKey = process.env.MASTERNODE_REWARD_SHARES_MN_OWNER_PRIVATE_KEY;
+
+      // Masternode identity should exist
+      expect(masternodeIdentity).to.exist();
+
+      await client.platform.identities.topUp(masternodeIdentity.getId(), 7000);
     });
 
     it('should be able to create reward shares with existing identity', async () => {
@@ -79,16 +101,27 @@ describe('Masternode Reward Shares', () => {
 
       rewardShare = await client.platform.documents.create(
         'masternodeRewardShares.rewardShare',
-        ownerIdentity,
+        masternodeIdentity,
         {
           payToId: anotherIdentity.getId(),
           percentage: 1,
         },
       );
 
-      client.platform.documents.broadcast({
+      const stateTransition = dpp.document.createStateTransition({
         create: [rewardShare],
       });
+
+      stateTransition.setSignaturePublicKeyId(0);
+
+      await stateTransition.signByPrivateKey(
+        ownerPrivateKey,
+        IdentityPublicKey.TYPES.ECDSA_SECP256K1,
+      );
+
+      await client.platform.broadcastStateTransition(
+        stateTransition,
+      );
     });
 
     it('should not be able to create reward shares with non-existing identity', async () => {
@@ -96,17 +129,28 @@ describe('Masternode Reward Shares', () => {
 
       const invalidRewardShare = await client.platform.documents.create(
         'masternodeRewardShares.rewardShare',
-        ownerIdentity,
+        masternodeIdentity,
         {
           payToId,
           percentage: 1,
         },
       );
 
+      const stateTransition = dpp.document.createStateTransition({
+        create: [invalidRewardShare],
+      });
+
+      stateTransition.setSignaturePublicKeyId(0);
+
+      await stateTransition.signByPrivateKey(
+        ownerPrivateKey,
+        IdentityPublicKey.TYPES.ECDSA_SECP256K1,
+      );
+
       try {
-        await client.platform.documents.broadcast({
-          create: [invalidRewardShare],
-        }, ownerIdentity);
+        await client.platform.broadcastStateTransition(
+          stateTransition,
+        );
 
         expect.fail('should throw broadcast error');
       } catch (e) {
@@ -118,9 +162,20 @@ describe('Masternode Reward Shares', () => {
     it('should be able to update reward shares with existing identity', async () => {
       rewardShare.set('percentage', 2);
 
-      await client.platform.documents.broadcast({
+      const stateTransition = dpp.document.createStateTransition({
         replace: [rewardShare],
-      }, ownerIdentity);
+      });
+
+      stateTransition.setSignaturePublicKeyId(0);
+
+      await stateTransition.signByPrivateKey(
+        ownerPrivateKey,
+        IdentityPublicKey.TYPES.ECDSA_SECP256K1,
+      );
+
+      await client.platform.broadcastStateTransition(
+        stateTransition,
+      );
 
       // Additional wait time to mitigate testnet latency
       if (process.env.NETWORK === 'testnet') {
@@ -139,12 +194,28 @@ describe('Masternode Reward Shares', () => {
     it('should not be able to update reward shares with non-existing identity', async () => {
       const payToId = generateRandomIdentifier();
 
+      [rewardShare] = await client.platform.documents.get(
+        'masternodeRewardShares.rewardShare',
+        { where: [['$id', '==', rewardShare.getId()]] },
+      );
+
       rewardShare.set('payToId', payToId);
 
+      const stateTransition = dpp.document.createStateTransition({
+        replace: [rewardShare],
+      });
+
+      stateTransition.setSignaturePublicKeyId(0);
+
+      await stateTransition.signByPrivateKey(
+        ownerPrivateKey,
+        IdentityPublicKey.TYPES.ECDSA_SECP256K1,
+      );
+
       try {
-        await client.platform.documents.broadcast({
-          replace: [rewardShare],
-        }, ownerIdentity);
+        await client.platform.broadcastStateTransition(
+          stateTransition,
+        );
 
         expect.fail('should throw broadcast error');
       } catch (e) {
@@ -158,17 +229,28 @@ describe('Masternode Reward Shares', () => {
 
       anotherRewardShare = await client.platform.documents.create(
         'masternodeRewardShares.rewardShare',
-        ownerIdentity,
+        masternodeIdentity,
         {
           payToId: anotherIdentity.getId(),
           percentage: 9999, // it will be 10001 in summary
         },
       );
 
+      const stateTransition = dpp.document.createStateTransition({
+        create: [anotherRewardShare],
+      });
+
+      stateTransition.setSignaturePublicKeyId(0);
+
+      await stateTransition.signByPrivateKey(
+        ownerPrivateKey,
+        IdentityPublicKey.TYPES.ECDSA_SECP256K1,
+      );
+
       try {
-        await client.platform.documents.broadcast({
-          create: [rewardShare],
-        }, ownerIdentity);
+        await client.platform.broadcastStateTransition(
+          stateTransition,
+        );
 
         expect.fail('should throw broadcast error');
       } catch (e) {
@@ -178,13 +260,31 @@ describe('Masternode Reward Shares', () => {
     });
 
     it('should be able to remove reward shares', async () => {
-      await client.platform.documents.broadcast({
-        delete: [rewardShare, anotherRewardShare],
-      }, ownerIdentity);
+      const stateTransition = dpp.document.createStateTransition({
+        delete: [rewardShare],
+      });
+
+      stateTransition.setSignaturePublicKeyId(0);
+
+      await stateTransition.signByPrivateKey(
+        ownerPrivateKey,
+        IdentityPublicKey.TYPES.ECDSA_SECP256K1,
+      );
+
+      await client.platform.broadcastStateTransition(
+        stateTransition,
+      );
+
+      const [storedDocument] = await client.platform.documents.get(
+        'masternodeRewardShares.rewardShare',
+        { where: [['$id', '==', rewardShare.getId()]] },
+      );
+
+      expect(storedDocument).to.not.exist();
     });
   });
 
-  describe.skip('Any Identity', () => {
+  describe('Any Identity', () => {
     let identity;
 
     before(async () => {
@@ -199,6 +299,24 @@ describe('Masternode Reward Shares', () => {
           payToId: generateRandomIdentifier(),
           percentage: 1,
         },
+      );
+
+      const stateTransition = dpp.document.createStateTransition({
+        create: [rewardShare],
+      });
+
+      stateTransition.setSignaturePublicKeyId(0);
+
+      const account = await client.getWalletAccount();
+
+      const { privateKey } = account.identities.getIdentityHDKeyById(
+        identity.getId().toString(),
+        0,
+      );
+
+      await stateTransition.signByPrivateKey(
+        privateKey,
+        IdentityPublicKey.TYPES.ECDSA_SECP256K1,
       );
 
       try {
