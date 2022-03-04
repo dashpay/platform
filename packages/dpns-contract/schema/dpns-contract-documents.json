@@ -49,9 +49,9 @@
       },
       "normalizedParentDomainName": {
         "type": "string",
-        "pattern": "^$|^[[a-z0-9][a-z0-9-\\.]{0,188}[a-z0-9]$",
+        "pattern": "^$|^[[a-z0-9][a-z0-9-\\.]{0,61}[a-z0-9]$",
         "minLength": 0,
-        "maxLength": 190,
+        "maxLength": 63,
         "description": "A full parent domain name in lowercase for case-insensitive uniqueness validation. e.g. 'dash'",
         "$comment": "Must either be equal to an existing domain or empty to create a top level domain. Only the data contract owner can create top level domains."
       },
