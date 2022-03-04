@@ -152,11 +152,11 @@ describe('Platform', () => {
         properties: {
           firstName: {
             type: 'string',
-            maxLength: 64,
+            maxLength: 63,
           },
           lastName: {
             type: 'string',
-            maxLength: 64,
+            maxLength: 63,
           },
         },
         required: ['firstName', '$createdAt', '$updatedAt', 'lastName'],

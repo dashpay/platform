@@ -19,8 +19,8 @@ const DuplicateIndexNameError = require('../../errors/consensus/basic/dataContra
 const allowedIndexSystemProperties = ['$ownerId', '$createdAt', '$updatedAt'];
 const notAllowedIndexProperties = ['$id'];
 
-const MAX_INDEXED_STRING_PROPERTY_LENGTH = 64;
-const MAX_INDEXED_BYTE_ARRAY_PROPERTY_LENGTH = 256;
+const MAX_INDEXED_STRING_PROPERTY_LENGTH = 63;
+const MAX_INDEXED_BYTE_ARRAY_PROPERTY_LENGTH = 255;
 const MAX_INDEXED_ARRAY_ITEMS = 1024;
 
 /**
