@@ -1451,7 +1451,7 @@ describe('validateDataContractFactory', function main() {
 
           rawDataContract.documents.indexedDocument.properties[propertyName] = {
             type: 'string',
-            maxLength: 256,
+            maxLength: 64,
           };
 
           rawDataContract.documents.indexedDocument.indices.push({
@@ -1986,7 +1986,7 @@ describe('validateDataContractFactory', function main() {
     expect(error.getCode()).to.equal(1012);
     expect(error.getPropertyName()).to.equal('firstName');
     expect(error.getConstraintName()).to.equal('maxLength');
-    expect(error.getReason()).to.equal('should be less or equal 1024');
+    expect(error.getReason()).to.equal('should be less or equal 64');
   });
 
   it('should return invalid result if indexed string property have to big maxLength', async () => {
@@ -2001,7 +2001,7 @@ describe('validateDataContractFactory', function main() {
     expect(error.getCode()).to.equal(1012);
     expect(error.getPropertyName()).to.equal('firstName');
     expect(error.getConstraintName()).to.equal('maxLength');
-    expect(error.getReason()).to.equal('should be less or equal 1024');
+    expect(error.getReason()).to.equal('should be less or equal 64');
   });
 
   // it('should return invalid result if indexed array property missing maxItems constraint',
@@ -2017,7 +2017,7 @@ describe('validateDataContractFactory', function main() {
   //   expect(error.getCode()).to.equal(1012);
   //   expect(error.getPropertyName()).to.equal('mentions');
   //   expect(error.getConstraintName()).to.equal('maxItems');
-  //   expect(error.getReason()).to.equal('should be less or equal 1024');
+  //   expect(error.getReason()).to.equal('should be less or equal 64');
   // });
   //
   // it('should return invalid result if indexed array property have to big maxItems', async () => {
@@ -2032,7 +2032,7 @@ describe('validateDataContractFactory', function main() {
   //   expect(error.getCode()).to.equal(1012);
   //   expect(error.getPropertyName()).to.equal('mentions');
   //   expect(error.getConstraintName()).to.equal('maxItems');
-  //   expect(error.getReason()).to.equal('should be less or equal 1024');
+  //   expect(error.getReason()).to.equal('should be less or equal 64');
   // });
   //
   // it('should return invalid result if indexed array property
@@ -2048,7 +2048,7 @@ describe('validateDataContractFactory', function main() {
   //   expect(error.getCode()).to.equal(1012);
   //   expect(error.getPropertyName()).to.equal('mentions');
   //   expect(error.getConstraintName()).to.equal('maxItems');
-  //   expect(error.getReason()).to.equal('should be less or equal 1024');
+  //   expect(error.getReason()).to.equal('should be less or equal 64');
   // });
   //
   // it('should return invalid result if indexed array property have
@@ -2064,7 +2064,7 @@ describe('validateDataContractFactory', function main() {
   //   expect(error.getCode()).to.equal(1012);
   //   expect(error.getPropertyName()).to.equal('mentions');
   //   expect(error.getConstraintName()).to.equal('maxItems');
-  //   expect(error.getReason()).to.equal('should be less or equal 1024');
+  //   expect(error.getReason()).to.equal('should be less or equal 64');
   // });
 
   it('should return invalid result if indexed byte array property missing maxItems constraint', async () => {
@@ -2079,7 +2079,7 @@ describe('validateDataContractFactory', function main() {
     expect(error.getCode()).to.equal(1012);
     expect(error.getPropertyName()).to.equal('byteArrayField');
     expect(error.getConstraintName()).to.equal('maxItems');
-    expect(error.getReason()).to.equal('should be less or equal 4096');
+    expect(error.getReason()).to.equal('should be less or equal 256');
   });
 
   it('should return invalid result if indexed byte array property have to big maxItems', async () => {
@@ -2094,7 +2094,7 @@ describe('validateDataContractFactory', function main() {
     expect(error.getCode()).to.equal(1012);
     expect(error.getPropertyName()).to.equal('byteArrayField');
     expect(error.getConstraintName()).to.equal('maxItems');
-    expect(error.getReason()).to.equal('should be less or equal 4096');
+    expect(error.getReason()).to.equal('should be less or equal 256');
   });
 
   it('should return valid result if Data Contract is valid', async () => {
