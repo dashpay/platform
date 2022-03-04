@@ -53,10 +53,7 @@ function subscribeToNewBlockHeaders(mediator, chainDataProvider) {
         // TODO: figure out whether it's possible to omit new BlockHeader() conversion
         // and directly send bytes to the client
         const blockHeaders = await Promise.all(Array.from(pendingHeadersHashes)
-          .map(async (hash) => {
-            const rawBlockHeader = await chainDataProvider.getBlockHeader(hash);
-            return new BlockHeader(Buffer.from(rawBlockHeader, 'hex'));
-          }));
+          .map((hash) => chainDataProvider.getBlockHeader(hash)));
 
         mediator.emit(ProcessMediator.EVENTS.BLOCK_HEADERS, blockHeaders);
         pendingHeadersHashes.clear();
