@@ -60,7 +60,7 @@ class ChainDataProvider extends EventEmitter {
       }
     }
 
-    this.zmqClient.on(this.zmqClient.topics.rawtx, (buffer) => this.chainLockHandler(buffer));
+    this.zmqClient.on(this.zmqClient.topics.rawchainlock, (buffer) => this.chainLockHandler(buffer));
     this.zmqClient.on(this.zmqClient.topics.hashblock, (buffer) => this.blockHashHandler(buffer));
   }
 
