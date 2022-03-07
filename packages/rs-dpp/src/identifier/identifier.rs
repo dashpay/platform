@@ -1,9 +1,11 @@
+use serde::{Deserialize, Serialize};
 use std::convert::TryInto;
 
 use crate::errors::ProtocolError;
 use crate::util::string_encoding;
 use crate::util::string_encoding::Encoding;
 
+#[derive(Default, Debug, Serialize, Deserialize)]
 pub struct Identifier {
     buffer: [u8; 32],
 }
@@ -11,6 +13,7 @@ pub struct Identifier {
 fn encoding_string_to_encoding(encoding_string: Option<&str>) -> Encoding {
     match encoding_string {
         Some(str) => {
+            //? should it be case-sensitive??
             if str == "base58" {
                 Encoding::Base58
             } else {
