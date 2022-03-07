@@ -48,8 +48,7 @@ class ChainDataProvider extends EventEmitter {
    */
   async init() {
     try {
-      const data = await this.coreRpcAPI.getBestChainLock();
-      const chainLock = new ChainLock(data);
+      const chainLock = await this.coreRpcAPI.getBestChainLock();
 
       this.chainLockHandler(chainLock);
     } catch (e) {
