@@ -125,7 +125,7 @@ function synchronizeMasternodeIdentitiesFactory(
       //  Delete documents belongs to masternode identity (ownerId) from rewards contract
       const documents = await transactionalStateRepository.fetchDocuments(
         masternodeRewardSharesContractId,
-        'masternodeRewardShares',
+        'rewardShares',
         {
           where: [
             ['$ownerId', '==', Identifier.from(doubleSha256Hash)],

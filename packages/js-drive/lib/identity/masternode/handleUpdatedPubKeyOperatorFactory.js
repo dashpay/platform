@@ -72,7 +72,7 @@ function handleUpdatedPubKeyOperatorFactory(
         Identifier.from(
           hash(proRegTxHash),
         ),
-        'masternodeRewardShares',
+        'rewardShares',
         {
           payToId: operatorIdentityId,
           percentage: proRegTxPayload.operatorReward,
