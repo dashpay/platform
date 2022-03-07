@@ -37,7 +37,7 @@ function applyIdentityCreateTransitionFactory(
 
     await stateRepository.storeIdentity(identity);
 
-    const publicKeyHashes = Promise.all(
+    const publicKeyHashes = await Promise.all(
       identity
         .getPublicKeys()
         .map(async (publicKey) => publicKey.hash()),

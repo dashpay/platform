@@ -125,8 +125,8 @@ describe('IdentityPublicKey', () => {
   });
 
   describe('#hash', () => {
-    it('should return original public key hash', () => {
-      const result = publicKey.hash();
+    it('should return original public key hash', async () => {
+      const result = await publicKey.hash();
 
       const expectedHash = Buffer.from('Q/5mfilFPdZt+Fr5JWC1+tg0cPs=', 'base64');
 
