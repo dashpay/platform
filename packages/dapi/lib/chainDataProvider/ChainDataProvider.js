@@ -32,7 +32,7 @@ class ChainDataProvider extends EventEmitter {
 
   /**
    * @private
-   * @param rawChainLock {Buffer}
+   * @param rawChainLock {Buffer|Object} could be Buffer, or JSON-object from getBestChainLock
    */
   chainLockHandler(rawChainLock) {
     const chainLock = new ChainLock(rawChainLock);
@@ -51,7 +51,7 @@ class ChainDataProvider extends EventEmitter {
       const data = await this.coreRpcAPI.getBestChainLock();
       const chainLock = new ChainLock(data);
 
-      this.chainLockHandler(chainLock.toBuffer());
+      this.chainLockHandler(chainLock);
     } catch (e) {
       if (e.code === -32603) {
         log.info('No chain lock available in dashcore node');
