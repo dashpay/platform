@@ -47,6 +47,7 @@
     "dotenv-safe": "^8.2.0",
     "jayson": "^3.3.4",
     "lodash": "^4.17.19",
+    "lru-cache": "^5.1.1",
     "request": "^2.87.0",
     "request-promise-native": "^1.0.5",
     "ws": "^7.5.3",

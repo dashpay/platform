@@ -1,4 +1,3 @@
-const { BlockHeader, ChainLock } = require('@dashevo/dashcore-lib');
 const ProcessMediator = require('./ProcessMediator');
 const wait = require('../../../utils/wait');
 const { NEW_BLOCK_HEADERS_PROPAGATE_INTERVAL } = require('./constants');
@@ -6,47 +5,37 @@ const { NEW_BLOCK_HEADERS_PROPAGATE_INTERVAL } = require('./constants');
 /**
  * @typedef subscribeToNewBlockHeaders
  * @param {ProcessMediator} mediator
- * @param {CoreRpcClient} coreAPI
- * @param {ZmqClient} zmqClient
+ * @param {ChainDataProvider} chainDataProvider
  */
-function subscribeToNewBlockHeaders(
-  mediator,
-  zmqClient,
-  coreAPI,
-) {
-  const cachedHeadersHashes = new Set();
-  let latestChainLock = null;
+function subscribeToNewBlockHeaders(mediator, chainDataProvider) {
+  const pendingHeadersHashes = new Set();
+
+  let lastChainLock;
 
   let isClientConnected = true;
 
   /**
-   * @param {Buffer} hash
+   * @param {string} blockHash
    */
-  const blockHashHandler = (hash) => {
-    cachedHeadersHashes.add(hash.toString('hex'));
+  const blockHashHandler = (blockHash) => {
+    pendingHeadersHashes.add(blockHash);
   };
 
   /**
-   * @param {Buffer} rawChainLock
+   *
+   * @param chainLock {ChainLock}
    */
-  const rawChainLockHandler = (rawChainLock) => {
-    latestChainLock = new ChainLock(rawChainLock);
+  const chainLockHandler = (chainLock) => {
+    lastChainLock = chainLock;
   };
 
-  zmqClient.on(
-    zmqClient.topics.hashblock,
-    blockHashHandler,
-  );
-
-  zmqClient.on(
-    zmqClient.topics.rawchainlock,
-    rawChainLockHandler,
-  );
+  chainDataProvider.on(chainDataProvider.events.NEW_BLOCK_HEADER, blockHashHandler);
+  chainDataProvider.on(chainDataProvider.events.NEW_CHAIN_LOCK, chainLockHandler);
 
   mediator.on(ProcessMediator.EVENTS.HISTORICAL_BLOCK_HEADERS_SENT, (hashes) => {
     // Remove data from cache by hashes
     hashes.forEach((hash) => {
-      cachedHeadersHashes.delete(hash);
+      pendingHeadersHashes.delete(hash);
     });
   });
 
@@ -59,22 +48,19 @@ function subscribeToNewBlockHeaders(
     // as new data (through the cache) continuously after that.
     // Cache is populated from ZMQ events.
     while (isClientConnected) {
-      if (cachedHeadersHashes.size) {
+      if (pendingHeadersHashes.size) {
         // TODO: figure out whether it's possible to omit new BlockHeader() conversion
         // and directly send bytes to the client
-        const blockHeaders = await Promise.all(Array.from(cachedHeadersHashes)
-          .map(async (hash) => {
-            const rawBlockHeader = await coreAPI.getBlockHeader(hash);
-            return new BlockHeader(Buffer.from(rawBlockHeader, 'hex'));
-          }));
+        const blockHeaders = await Promise.all(Array.from(pendingHeadersHashes)
+          .map((hash) => chainDataProvider.getBlockHeader(hash)));
 
         mediator.emit(ProcessMediator.EVENTS.BLOCK_HEADERS, blockHeaders);
-        cachedHeadersHashes.clear();
+        pendingHeadersHashes.clear();
       }
 
-      if (latestChainLock) {
-        mediator.emit(ProcessMediator.EVENTS.CHAIN_LOCK, latestChainLock);
-        latestChainLock = null;
+      if (lastChainLock) {
+        mediator.emit(ProcessMediator.EVENTS.CHAIN_LOCK, lastChainLock);
+        lastChainLock = null;
       }
 
       // TODO: pick a right time interval having in mind that issuance of the block headers
@@ -86,8 +72,8 @@ function subscribeToNewBlockHeaders(
   mediator.once(ProcessMediator.EVENTS.CLIENT_DISCONNECTED, () => {
     isClientConnected = false;
     mediator.removeAllListeners();
-    zmqClient.removeListener(zmqClient.topics.hashblock, blockHashHandler);
-    zmqClient.removeListener(zmqClient.topics.rawchainlock, rawChainLockHandler);
+    chainDataProvider.removeListener(chainDataProvider.events.NEW_BLOCK_HEADER, blockHashHandler);
+    chainDataProvider.removeListener(chainDataProvider.events.NEW_CHAIN_LOCK, chainLockHandler);
   });
 }
 
