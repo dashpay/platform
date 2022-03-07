@@ -1,5 +1,7 @@
 const { PublicKey } = require('@dashevo/dashcore-lib');
 
+const BlsSignatures = require('bls-signatures');
+
 const EmptyPublicKeyDataError = require('./errors/EmptyPublicKeyDataError');
 
 class IdentityPublicKey {
@@ -163,9 +165,18 @@ class IdentityPublicKey {
    *
    * @returns {Buffer}
    */
-  hash() {
+  async hash() {
     if (!this.getData()) {
       throw new EmptyPublicKeyDataError();
+    }
+
+    if (this.getType() === IdentityPublicKey.TYPES.BLS12_381) {
+      const blsSignatures = await BlsSignatures();
+      const { BlsPublicKey } = blsSignatures;
+      const originalPublicKey = new BlsPublicKey(
+        this.getData(),
+      );
+      return originalPublicKey;
     }
 
     if (this.getType() === IdentityPublicKey.TYPES.ECDSA_HASH160) {
