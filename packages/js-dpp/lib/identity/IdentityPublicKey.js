@@ -1,8 +1,7 @@
-const { PublicKey, crypto: { Hash } } = require('@dashevo/dashcore-lib');
+const { crypto: { Hash } } = require('@dashevo/dashcore-lib');
 
 const EmptyPublicKeyDataError = require('./errors/EmptyPublicKeyDataError');
 const InvalidIdentityPublicKeyTypeError = require('../stateTransition/errors/InvalidIdentityPublicKeyTypeError');
-const blsPublicKeyFactory = require('../bls/blsPublicKeyFactory');
 
 class IdentityPublicKey {
   /**
