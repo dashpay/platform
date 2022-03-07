@@ -270,7 +270,6 @@ describe.skip('Platform', () => {
                   (restoredIdentity) => restoredIdentity.getPublicKeyById(0)
                     .hash().toString('hex') === publicKeyHash.toString('hex'),
                 );
-
               if (foundIdentity) {
                 foundIdentityIds.push(foundIdentity.getId());
               } else {
