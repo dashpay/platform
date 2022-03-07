@@ -131,19 +131,19 @@ describe('DriveStateRepository', () => {
       await stateRepository.storeIdentityPublicKeyHashes(
         identity.getId(),
         [
-          identity.getPublicKeyById(0).hash(),
-          identity.getPublicKeyById(1).hash(),
+          await identity.getPublicKeyById(0).hash(),
+          await identity.getPublicKeyById(1).hash(),
         ],
       );
 
       expect(publicKeyIdentityIdRepositoryMock.store).to.have.been.calledTwice();
       expect(publicKeyIdentityIdRepositoryMock.store.getCall(0).args).to.have.deep.members([
-        identity.getPublicKeyById(0).hash(),
+        await identity.getPublicKeyById(0).hash(),
         identity.getId(),
         repositoryOptions.useTransaction,
       ]);
       expect(publicKeyIdentityIdRepositoryMock.store.getCall(1).args).to.have.deep.members([
-        identity.getPublicKeyById(1).hash(),
+        await identity.getPublicKeyById(1).hash(),
         identity.getId(),
         repositoryOptions.useTransaction,
       ]);

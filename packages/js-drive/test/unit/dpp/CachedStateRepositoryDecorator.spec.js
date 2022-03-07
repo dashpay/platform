@@ -86,11 +86,11 @@ describe('CachedStateRepositoryDecorator', () => {
       });
 
       const result = await cachedStateRepository.fetchIdentityIdsByPublicKeyHashes(
-        publicKeys.map((pk) => pk.hash()),
+        await Promise.all(publicKeys.map(async (pk) => pk.hash())),
       );
 
       expect(stateRepositoryMock.fetchIdentityIdsByPublicKeyHashes).to.be.calledOnceWithExactly(
-        publicKeys.map((pk) => pk.hash()),
+        await Promise.all(publicKeys.map(async (pk) => pk.hash())),
       );
       expect(result).to.deep.equal({
         [publicKeys[0].hash()]: identity.getId(),
