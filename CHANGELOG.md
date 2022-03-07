@@ -1,3 +1,10 @@
+## [0.22.0-dev.10](https://github.com/dashevo/platform/compare/v0.22.0-dev.9...v0.22.0-dev.10) (2022-03-07)
+
+
+### Bug Fixes
+
+* **dpp:** Invalid DER format public key ([#275](https://github.com/dashevo/platform/issues/275))
+
 ## [0.22.0-dev.9](https://github.com/dashevo/platform/compare/v0.22.0-dev.8...v0.22.0-dev.9) (2022-03-04)
 
 
