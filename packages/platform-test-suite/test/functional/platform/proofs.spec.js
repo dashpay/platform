@@ -135,8 +135,8 @@ describe.skip('Platform', () => {
             nonIncludedIdentityPubKeyHash = new PrivateKey().toPublicKey().hash;
 
             // Public key hashes
-            identity6PublicKeyHash = identityAtKey6.getPublicKeyById(0).hash();
-            identity8PublicKeyHash = identityAtKey8.getPublicKeyById(0).hash();
+            identity6PublicKeyHash = await identityAtKey6.getPublicKeyById(0).hash();
+            identity8PublicKeyHash = await identityAtKey8.getPublicKeyById(0).hash();
           });
 
           it('should be able to get and verify proof that identity exists with getIdentity', async () => {

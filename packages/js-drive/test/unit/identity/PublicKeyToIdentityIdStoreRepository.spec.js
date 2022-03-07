@@ -31,7 +31,7 @@ describe('PublicKeyToIdentityIdStoreRepository', () => {
       );
 
       await repository.store(
-        publicKey.hash(),
+        await publicKey.hash(),
         identity.getId(),
       );
 

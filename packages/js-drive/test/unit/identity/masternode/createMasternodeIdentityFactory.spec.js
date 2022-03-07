@@ -55,7 +55,7 @@ describe('createMasternodeIdentityFactory', () => {
     const publicKeyHashes = await Promise.all(
       identity
         .getPublicKeys()
-        .map((publicKey) => publicKey.hash()),
+        .map(async (publicKey) => publicKey.hash()),
     );
 
     expect(stateRepositoryMock.storeIdentityPublicKeyHashes).to.have.been.calledOnceWithExactly(

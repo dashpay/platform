@@ -153,8 +153,8 @@ describe('DriveStateRepository', () => {
   describe('#fetchIdentityIdsByPublicKeyHashes', () => {
     it('should fetch map of previously stored public key hash and identity id pairs', async () => {
       const publicKeyHashes = [
-        identity.getPublicKeyById(0).hash(),
-        identity.getPublicKeyById(1).hash(),
+        await identity.getPublicKeyById(0).hash(),
+        await identity.getPublicKeyById(1).hash(),
       ];
 
       publicKeyIdentityIdRepositoryMock
@@ -179,8 +179,8 @@ describe('DriveStateRepository', () => {
 
     it('should have null as value if pair was not found', async () => {
       const publicKeyHashes = [
-        identity.getPublicKeyById(0).hash(),
-        identity.getPublicKeyById(1).hash(),
+        await identity.getPublicKeyById(0).hash(),
+        await identity.getPublicKeyById(1).hash(),
       ];
 
       publicKeyIdentityIdRepositoryMock

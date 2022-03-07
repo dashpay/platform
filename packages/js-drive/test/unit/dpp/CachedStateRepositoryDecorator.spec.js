@@ -64,7 +64,9 @@ describe('CachedStateRepositoryDecorator', () => {
 
   describe('#storeIdentityPublicKeyHashes', () => {
     it('should store identity id and public key hashes to repository', async () => {
-      const publicKeyHashes = identity.getPublicKeys().map((pk) => pk.hash());
+      const publicKeyHashes = await Promise.all(
+        identity.getPublicKeys().map(async (pk) => pk.hash()),
+      );
 
       await cachedStateRepository.storeIdentityPublicKeyHashes(
         identity.getId(), publicKeyHashes,
@@ -81,8 +83,8 @@ describe('CachedStateRepositoryDecorator', () => {
       const publicKeys = identity.getPublicKeys();
 
       stateRepositoryMock.fetchIdentityIdsByPublicKeyHashes.resolves({
-        [publicKeys[0].hash()]: identity.getId(),
-        [publicKeys[1].hash()]: identity.getId(),
+        [await publicKeys[0].hash()]: identity.getId(),
+        [await publicKeys[1].hash()]: identity.getId(),
       });
 
       const result = await cachedStateRepository.fetchIdentityIdsByPublicKeyHashes(
@@ -93,8 +95,8 @@ describe('CachedStateRepositoryDecorator', () => {
         await Promise.all(publicKeys.map(async (pk) => pk.hash())),
       );
       expect(result).to.deep.equal({
-        [publicKeys[0].hash()]: identity.getId(),
-        [publicKeys[1].hash()]: identity.getId(),
+        [await publicKeys[0].hash()]: identity.getId(),
+        [await publicKeys[1].hash()]: identity.getId(),
       });
     });
   });
