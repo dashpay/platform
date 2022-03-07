@@ -1,5 +1,3 @@
-const { ChainLock } = require('@dashevo/dashcore-lib');
-
 const {
   server: {
     error: {
@@ -20,7 +18,6 @@ const {
 } = require('@dashevo/dapi-grpc');
 const ProcessMediator = require('./ProcessMediator');
 const wait = require('../../../utils/wait');
-const log = require('../../../log');
 
 /**
  * Prepare and send block headers response
@@ -58,6 +55,7 @@ async function sendChainLockResponse(call, chainLock) {
 /**
  * @param {getHistoricalBlockHeadersIterator} getHistoricalBlockHeadersIterator
  * @param {CoreRpcClient} coreAPI
+ * @param {ChainDataProvider} chainDataProvider
  * @param {ZmqClient} zmqClient
  * @param {subscribeToNewBlockHeaders} subscribeToNewBlockHeaders
  * @return {subscribeToBlockHeadersWithChainLocksHandler}
@@ -65,6 +63,7 @@ async function sendChainLockResponse(call, chainLock) {
 function subscribeToBlockHeadersWithChainLocksHandlerFactory(
   getHistoricalBlockHeadersIterator,
   coreAPI,
+  chainDataProvider,
   zmqClient,
   subscribeToNewBlockHeaders,
 ) {
@@ -106,7 +105,7 @@ function subscribeToBlockHeadersWithChainLocksHandlerFactory(
     );
 
     if (newHeadersRequested) {
-      subscribeToNewBlockHeaders(mediator, zmqClient, coreAPI);
+      subscribeToNewBlockHeaders(mediator, chainDataProvider);
     }
 
     let fromBlock;
@@ -130,19 +129,10 @@ function subscribeToBlockHeadersWithChainLocksHandlerFactory(
       throw new InvalidArgumentGrpcError('`count` value exceeds the chain tip');
     }
 
-    let bestChainLock;
-    try {
-      bestChainLock = await coreAPI.getBestChainLock();
-    } catch (e) {
-      if (e.code === -32603) {
-        log.info('No chain lock available in dashcore node');
-      } else {
-        throw e;
-      }
-    }
+    const bestChainLock = chainDataProvider.getBestChainLock();
 
     if (bestChainLock) {
-      await sendChainLockResponse(acknowledgingCall, new ChainLock(bestChainLock));
+      await sendChainLockResponse(acknowledgingCall, bestChainLock);
     }
 
     const historicalDataIterator = getHistoricalBlockHeadersIterator(

@@ -1,5 +1,3 @@
-const { BlockHeader } = require('@dashevo/dashcore-lib');
-
 const MAX_HEADERS_PER_REQUEST = 500;
 
 /**
@@ -16,10 +14,10 @@ function getBlocksToScan(batchIndex, numberOfBatches, totalCount) {
 }
 
 /**
- * @param {CoreRpcClient} coreRpcApi
+ * @param {ChainDataProvider} chainDataProvider
  * @return {getHistoricalBlockHeadersIterator}
  */
-function getHistoricalBlockHeadersIteratorFactory(coreRpcApi) {
+function getHistoricalBlockHeadersIteratorFactory(chainDataProvider) {
   /**
    * @typedef getHistoricalBlockHeadersIterator
    * @param fromBlockHeight {number}
@@ -34,15 +32,13 @@ function getHistoricalBlockHeadersIteratorFactory(coreRpcApi) {
 
     for (let batchIndex = 0; batchIndex < numberOfBatches; batchIndex++) {
       const currentHeight = fromBlockHeight + batchIndex * MAX_HEADERS_PER_REQUEST;
+
       const blocksToScan = getBlocksToScan(batchIndex, numberOfBatches, count);
 
-      const blockHash = await coreRpcApi.getBlockHash(currentHeight);
+      const blockHash = await chainDataProvider.getBlockHash(currentHeight);
 
-      // TODO: figure out whether it's possible to omit new BlockHeader() conversion
-      // and directly send bytes to the client
-      const blockHeaders = (await coreRpcApi.getBlockHeaders(
-        blockHash, blocksToScan,
-      )).map((rawBlockHeader) => new BlockHeader(Buffer.from(rawBlockHeader, 'hex')));
+      const blockHeaders = await chainDataProvider.getBlockHeaders(blockHash,
+        currentHeight, blocksToScan);
 
       yield blockHeaders;
     }

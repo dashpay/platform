@@ -31,6 +31,8 @@ const {
   getCoreDefinition,
 } = require('@dashevo/dapi-grpc');
 
+const ChainDataProvider = require('../lib/chainDataProvider/ChainDataProvider');
+
 // Load config from .env
 dotenv.config();
 
@@ -38,6 +40,7 @@ const config = require('../lib/config');
 const { validateConfig } = require('../lib/config/validator');
 const log = require('../lib/log');
 
+const BlockHeadersCache = require('../lib/chainDataProvider/BlockHeadersCache');
 const ZmqClient = require('../lib/externalApis/dashcore/ZmqClient');
 const dashCoreRpcClient = require('../lib/externalApis/dashcore/rpc');
 
@@ -115,6 +118,12 @@ async function main() {
     emitInstantLockToFilterCollection,
   );
 
+  const blockHeadersCache = new BlockHeadersCache();
+
+  const chainDataProvider = new ChainDataProvider(dashCoreRpcClient,
+    dashCoreZmqClient, blockHeadersCache);
+  await chainDataProvider.init();
+
   // Start GRPC server
   log.info('Starting GRPC server');
 
@@ -125,7 +134,7 @@ async function main() {
   );
 
   const getHistoricalBlockHeadersIterator = getHistoricalBlockHeadersIteratorFactory(
-    dashCoreRpcClient,
+    chainDataProvider,
   );
 
   const getMemPoolTransactions = getMemPoolTransactionsFactory(
@@ -158,6 +167,7 @@ async function main() {
     subscribeToBlockHeadersWithChainLocksHandlerFactory(
       getHistoricalBlockHeadersIterator,
       dashCoreRpcClient,
+      chainDataProvider,
       dashCoreZmqClient,
       subscribeToNewBlockHeaders,
     );
