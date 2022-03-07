@@ -135,8 +135,8 @@ describe.skip('Platform', () => {
             nonIncludedIdentityPubKeyHash = new PrivateKey().toPublicKey().hash;
 
             // Public key hashes
-            identity6PublicKeyHash = await identityAtKey6.getPublicKeyById(0).hash();
-            identity8PublicKeyHash = await identityAtKey8.getPublicKeyById(0).hash();
+            identity6PublicKeyHash = identityAtKey6.getPublicKeyById(0).hash();
+            identity8PublicKeyHash = identityAtKey8.getPublicKeyById(0).hash();
           });
 
           it('should be able to get and verify proof that identity exists with getIdentity', async () => {
@@ -265,18 +265,11 @@ describe.skip('Platform', () => {
 
             // Scanning through public keys to figure out what identities were found
             for (const publicKeyHash of publicKeyHashes) {
-              let foundIdentity;
-
-              for (const restoredIdentity of restoredIdentities) {
-                const hash = await restoredIdentity.getPublicKeyById(0)
-                  .hash();
-
-                if (hash.toString('hex') === publicKeyHash.toString('hex')) {
-                  foundIdentity = restoredIdentity;
-
-                  break;
-                }
-              }
+              const foundIdentity = restoredIdentities
+                .find(
+                  (restoredIdentity) => restoredIdentity.getPublicKeyById(0)
+                    .hash().toString('hex') === publicKeyHash.toString('hex'),
+                );
 
               if (foundIdentity) {
                 foundIdentityIds.push(foundIdentity.getId());

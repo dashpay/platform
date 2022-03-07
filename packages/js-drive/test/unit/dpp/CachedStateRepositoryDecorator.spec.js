@@ -64,9 +64,7 @@ describe('CachedStateRepositoryDecorator', () => {
 
   describe('#storeIdentityPublicKeyHashes', () => {
     it('should store identity id and public key hashes to repository', async () => {
-      const publicKeyHashes = await Promise.all(
-        identity.getPublicKeys().map(async (pk) => pk.hash()),
-      );
+      const publicKeyHashes = identity.getPublicKeys().map((pk) => pk.hash());
 
       await cachedStateRepository.storeIdentityPublicKeyHashes(
         identity.getId(), publicKeyHashes,
@@ -83,20 +81,20 @@ describe('CachedStateRepositoryDecorator', () => {
       const publicKeys = identity.getPublicKeys();
 
       stateRepositoryMock.fetchIdentityIdsByPublicKeyHashes.resolves({
-        [await publicKeys[0].hash()]: identity.getId(),
-        [await publicKeys[1].hash()]: identity.getId(),
+        [publicKeys[0].hash()]: identity.getId(),
+        [publicKeys[1].hash()]: identity.getId(),
       });
 
       const result = await cachedStateRepository.fetchIdentityIdsByPublicKeyHashes(
-        await Promise.all(publicKeys.map(async (pk) => pk.hash())),
+        publicKeys.map((pk) => pk.hash()),
       );
 
       expect(stateRepositoryMock.fetchIdentityIdsByPublicKeyHashes).to.be.calledOnceWithExactly(
-        await Promise.all(publicKeys.map(async (pk) => pk.hash())),
+        publicKeys.map((pk) => pk.hash()),
       );
       expect(result).to.deep.equal({
-        [await publicKeys[0].hash()]: identity.getId(),
-        [await publicKeys[1].hash()]: identity.getId(),
+        [publicKeys[0].hash()]: identity.getId(),
+        [publicKeys[1].hash()]: identity.getId(),
       });
     });
   });

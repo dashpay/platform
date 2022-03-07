@@ -131,19 +131,19 @@ describe('DriveStateRepository', () => {
       await stateRepository.storeIdentityPublicKeyHashes(
         identity.getId(),
         [
-          await identity.getPublicKeyById(0).hash(),
-          await identity.getPublicKeyById(1).hash(),
+          identity.getPublicKeyById(0).hash(),
+          identity.getPublicKeyById(1).hash(),
         ],
       );
 
       expect(publicKeyIdentityIdRepositoryMock.store).to.have.been.calledTwice();
       expect(publicKeyIdentityIdRepositoryMock.store.getCall(0).args).to.have.deep.members([
-        await identity.getPublicKeyById(0).hash(),
+        identity.getPublicKeyById(0).hash(),
         identity.getId(),
         repositoryOptions.useTransaction,
       ]);
       expect(publicKeyIdentityIdRepositoryMock.store.getCall(1).args).to.have.deep.members([
-        await identity.getPublicKeyById(1).hash(),
+        identity.getPublicKeyById(1).hash(),
         identity.getId(),
         repositoryOptions.useTransaction,
       ]);
@@ -153,8 +153,8 @@ describe('DriveStateRepository', () => {
   describe('#fetchIdentityIdsByPublicKeyHashes', () => {
     it('should fetch map of previously stored public key hash and identity id pairs', async () => {
       const publicKeyHashes = [
-        await identity.getPublicKeyById(0).hash(),
-        await identity.getPublicKeyById(1).hash(),
+        identity.getPublicKeyById(0).hash(),
+        identity.getPublicKeyById(1).hash(),
       ];
 
       publicKeyIdentityIdRepositoryMock
@@ -179,8 +179,8 @@ describe('DriveStateRepository', () => {
 
     it('should have null as value if pair was not found', async () => {
       const publicKeyHashes = [
-        await identity.getPublicKeyById(0).hash(),
-        await identity.getPublicKeyById(1).hash(),
+        identity.getPublicKeyById(0).hash(),
+        identity.getPublicKeyById(1).hash(),
       ];
 
       publicKeyIdentityIdRepositoryMock

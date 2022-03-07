@@ -30,7 +30,7 @@ describe('getIdentitiesByPublicKeyHashesFactory', () => {
   let proofFixture;
   let proofResponse;
 
-  beforeEach(async function beforeEach() {
+  beforeEach(function beforeEach() {
     identityFixture = getIdentityFixture();
     metadataFixture = getMetadataFixture();
     proofFixture = getProofFixture();
@@ -51,7 +51,7 @@ describe('getIdentitiesByPublicKeyHashesFactory', () => {
     proofResponse.setSignature(proofFixture.signature);
     proofResponse.setMerkleProof(proofFixture.merkleProof);
 
-    publicKeyHash = await identityFixture.getPublicKeyById(1).hash();
+    publicKeyHash = identityFixture.getPublicKeyById(1).hash();
 
     grpcTransportMock = {
       request: this.sinon.stub().resolves(response),

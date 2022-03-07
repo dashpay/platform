@@ -125,15 +125,15 @@ describe('IdentityPublicKey', () => {
   });
 
   describe('#hash', () => {
-    it('should return original public key hash', async () => {
-      const result = await publicKey.hash();
+    it('should return original public key hash', () => {
+      const result = publicKey.hash();
 
       const expectedHash = Buffer.from('Q/5mfilFPdZt+Fr5JWC1+tg0cPs=', 'base64');
 
       expect(result).to.deep.equal(expectedHash);
     });
 
-    it('should return data in case ECDSA_HASH160', async () => {
+    it('should return data in case ECDSA_HASH160', () => {
       rawPublicKey = {
         id: 0,
         type: IdentityPublicKey.TYPES.ECDSA_HASH160,
@@ -144,14 +144,14 @@ describe('IdentityPublicKey', () => {
 
       publicKey = new IdentityPublicKey(rawPublicKey);
 
-      const result = await publicKey.hash();
+      const result = publicKey.hash();
 
       const expectedHash = Buffer.from('AkVuTKyF3YgKLAQlLEtaUL2HTditwGILfWUVqjzYnIgH', 'base64');
 
       expect(result).to.deep.equal(expectedHash);
     });
 
-    it('should return original public key hash in case BLS12_381', async () => {
+    it('should return original public key hash in case BLS12_381', () => {
       rawPublicKey = {
         id: 0,
         type: IdentityPublicKey.TYPES.BLS12_381,
@@ -162,7 +162,7 @@ describe('IdentityPublicKey', () => {
 
       publicKey = new IdentityPublicKey(rawPublicKey);
 
-      const result = await publicKey.hash();
+      const result = publicKey.hash();
 
       const expectedHash = Buffer.from('1de31a0a328e8822f9cb2c25141d7d80baee26ef', 'hex');
 
@@ -176,7 +176,7 @@ describe('IdentityPublicKey', () => {
       });
 
       try {
-        await publicKey.hash();
+        publicKey.hash();
 
         expect.fail('Error was not thrown');
       } catch (e) {

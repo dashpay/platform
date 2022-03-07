@@ -31,7 +31,7 @@ describe('PublicKeyToIdentityIdStoreRepository', () => {
       );
 
       await repository.store(
-        await publicKey.hash(),
+        publicKey.hash(),
         identity.getId(),
       );
 
@@ -40,7 +40,7 @@ describe('PublicKeyToIdentityIdStoreRepository', () => {
 
     it('should store public key to identity id map', async () => {
       const repositoryInstance = await repository.store(
-        await publicKey.hash(),
+        publicKey.hash(),
         identity.getId(),
         true,
       );
@@ -48,7 +48,7 @@ describe('PublicKeyToIdentityIdStoreRepository', () => {
 
       expect(storeMock.put).to.be.calledOnceWithExactly(
         PublicKeyToIdentityIdStoreRepository.TREE_PATH,
-        await publicKey.hash(),
+        publicKey.hash(),
         cbor.encode([identity.getId()]),
         { useTransaction: true },
       );
@@ -59,13 +59,13 @@ describe('PublicKeyToIdentityIdStoreRepository', () => {
     it('should return null if publicKeyHash is not present', async () => {
       storeMock.get.returns(null);
 
-      const result = await repository.fetchBuffer(await publicKey.hash(), true);
+      const result = await repository.fetchBuffer(publicKey.hash(), true);
 
       expect(result).to.be.null();
 
       expect(storeMock.get).to.be.calledOnceWithExactly(
         PublicKeyToIdentityIdStoreRepository.TREE_PATH,
-        await publicKey.hash(),
+        publicKey.hash(),
         { useTransaction: true },
       );
     });
@@ -73,13 +73,13 @@ describe('PublicKeyToIdentityIdStoreRepository', () => {
     it('should return buffer', async () => {
       storeMock.get.returns(cbor.encode([]));
 
-      const result = await repository.fetchBuffer(await publicKey.hash(), true);
+      const result = await repository.fetchBuffer(publicKey.hash(), true);
 
       expect(result).to.be.deep.equal(cbor.encode([]));
 
       expect(storeMock.get).to.be.calledOnceWithExactly(
         PublicKeyToIdentityIdStoreRepository.TREE_PATH,
-        await publicKey.hash(),
+        publicKey.hash(),
         { useTransaction: true },
       );
     });
@@ -89,13 +89,13 @@ describe('PublicKeyToIdentityIdStoreRepository', () => {
     it('should return empty array if publicKeyHash is not present', async () => {
       storeMock.get.returns(null);
 
-      const result = await repository.fetch(await publicKey.hash(), true);
+      const result = await repository.fetch(publicKey.hash(), true);
 
       expect(result).to.deep.equal([]);
 
       expect(storeMock.get).to.be.calledOnceWithExactly(
         PublicKeyToIdentityIdStoreRepository.TREE_PATH,
-        await publicKey.hash(),
+        publicKey.hash(),
         { useTransaction: true },
       );
     });
@@ -103,7 +103,7 @@ describe('PublicKeyToIdentityIdStoreRepository', () => {
     it('should return array of Identity ids', async () => {
       storeMock.get.returns(cbor.encode([identity.getId().toBuffer()]));
 
-      const result = await repository.fetch(await publicKey.hash(), true);
+      const result = await repository.fetch(publicKey.hash(), true);
 
       expect(result).to.have.deep.members([
         identity.getId(),
@@ -111,7 +111,7 @@ describe('PublicKeyToIdentityIdStoreRepository', () => {
 
       expect(storeMock.get).to.be.calledOnceWithExactly(
         PublicKeyToIdentityIdStoreRepository.TREE_PATH,
-        await publicKey.hash(),
+        publicKey.hash(),
         { useTransaction: true },
       );
     });

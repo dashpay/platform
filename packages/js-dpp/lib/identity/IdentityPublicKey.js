@@ -165,26 +165,18 @@ class IdentityPublicKey {
    *
    * @returns {Buffer}
    */
-  async hash() {
+  hash() {
     if (!this.getData()) {
       throw new EmptyPublicKeyDataError();
     }
 
     switch (this.getType()) {
-      case IdentityPublicKey.TYPES.BLS12_381: {
-        const originalPublicKey = await blsPublicKeyFactory(this.getData());
-
-        return Hash.sha256ripemd160(Buffer.from(originalPublicKey.serialize()));
+      case IdentityPublicKey.TYPES.BLS12_381:
+      case IdentityPublicKey.TYPES.ECDSA_SECP256K1: {
+        return Hash.sha256ripemd160(this.getData());
       }
       case IdentityPublicKey.TYPES.ECDSA_HASH160:
         return this.getData();
-      case IdentityPublicKey.TYPES.ECDSA_SECP256K1: {
-        const originalPublicKey = new PublicKey(
-          this.getData(),
-        );
-
-        return originalPublicKey.hash;
-      }
       default:
         throw new InvalidIdentityPublicKeyTypeError(this.getType());
     }

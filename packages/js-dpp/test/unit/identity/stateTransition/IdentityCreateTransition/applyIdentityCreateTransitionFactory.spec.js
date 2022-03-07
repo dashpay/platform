@@ -53,11 +53,9 @@ describe('applyIdentityCreateTransitionFactory', () => {
       identity,
     );
 
-    const publicKeyHashes = await Promise.all(
-      identity
-        .getPublicKeys()
-        .map(async (publicKey) => publicKey.hash()),
-    );
+    const publicKeyHashes = identity
+      .getPublicKeys()
+      .map((publicKey) => publicKey.hash());
 
     expect(stateRepositoryMock.storeIdentityPublicKeyHashes).to.have.been.calledOnceWithExactly(
       identity.getId(),

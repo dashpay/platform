@@ -165,7 +165,7 @@ describe('Platform', () => {
     it('should be able to get newly created identity by it\'s first public key', async () => {
       const response = await client.getDAPIClient().platform
         .getIdentitiesByPublicKeyHashes(
-          [await identity.getPublicKeyById(0).hash()],
+          [identity.getPublicKeyById(0).hash()],
         );
 
       const [[serializedIdentity]] = response.getIdentities();
@@ -189,7 +189,7 @@ describe('Platform', () => {
 
     it('should be able to get newly created identity id by it\'s first public key', async () => {
       const response = await client.getDAPIClient().platform.getIdentityIdsByPublicKeyHashes(
-        [await identity.getPublicKeyById(0).hash()],
+        [identity.getPublicKeyById(0).hash()],
       );
 
       const [[identityId]] = response.getIdentityIds();
