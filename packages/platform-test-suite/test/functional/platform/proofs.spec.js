@@ -265,11 +265,19 @@ describe.skip('Platform', () => {
 
             // Scanning through public keys to figure out what identities were found
             for (const publicKeyHash of publicKeyHashes) {
-              const foundIdentity = restoredIdentities
-                .find(
-                  (restoredIdentity) => restoredIdentity.getPublicKeyById(0)
-                    .hash().toString('hex') === publicKeyHash.toString('hex'),
-                );
+              let foundIdentity;
+
+              for (const restoredIdentity of restoredIdentities) {
+                const hash = await restoredIdentity.getPublicKeyById(0)
+                  .hash();
+
+                if (hash.toString('hex') === publicKeyHash.toString('hex')) {
+                  foundIdentity = restoredIdentity;
+
+                  break;
+                }
+              }
+
               if (foundIdentity) {
                 foundIdentityIds.push(foundIdentity.getId());
               } else {

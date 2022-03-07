@@ -1,6 +1,6 @@
 const Ajv = require('ajv');
 
-const path = require('path');
+const nodePath = require('path');
 
 const lodashGet = require('lodash.get');
 const lodashSet = require('lodash.set');
@@ -172,23 +172,23 @@ class Config {
       envs = {
         ...envs,
 
-        PLATFORM_DRIVE_ABCI_LOG_PRETTY_DIRECTORY_PATH: path.dirname(
+        PLATFORM_DRIVE_ABCI_LOG_PRETTY_DIRECTORY_PATH: nodePath.dirname(
           this.get('platform.drive.abci.log.prettyFile.path'),
         ),
 
-        PLATFORM_DRIVE_ABCI_LOG_JSON_DIRECTORY_PATH: path.dirname(
+        PLATFORM_DRIVE_ABCI_LOG_JSON_DIRECTORY_PATH: nodePath.dirname(
           this.get('platform.drive.abci.log.jsonFile.path'),
         ),
 
-        PLATFORM_DRIVE_ABCI_LOG_PRETTY_FILE_NAME: path.basename(
+        PLATFORM_DRIVE_ABCI_LOG_PRETTY_FILE_NAME: nodePath.basename(
           this.get('platform.drive.abci.log.prettyFile.path'),
         ),
-        
-        PLATFORM_DRIVE_ABCI_LOG_JSON_FILE_NAME: path.basename(
+
+        PLATFORM_DRIVE_ABCI_LOG_JSON_FILE_NAME: nodePath.basename(
           this.get('platform.drive.abci.log.jsonFile.path'),
         ),
       };
-    };
+    }
 
     return envs;
   }

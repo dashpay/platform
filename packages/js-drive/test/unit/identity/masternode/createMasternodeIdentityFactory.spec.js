@@ -52,9 +52,11 @@ describe('createMasternodeIdentityFactory', () => {
 
     expect(stateRepositoryMock.storeIdentity).to.have.been.calledOnceWithExactly(identity);
 
-    const publicKeyHashes = identity
-      .getPublicKeys()
-      .map((publicKey) => publicKey.hash());
+    const publicKeyHashes = await Promise.all(
+      identity
+        .getPublicKeys()
+        .map((publicKey) => publicKey.hash()),
+    );
 
     expect(stateRepositoryMock.storeIdentityPublicKeyHashes).to.have.been.calledOnceWithExactly(
       identity.getId(),
@@ -89,9 +91,11 @@ describe('createMasternodeIdentityFactory', () => {
 
     expect(stateRepositoryMock.storeIdentity).to.have.been.calledOnceWithExactly(identity);
 
-    const publicKeyHashes = identity
-      .getPublicKeys()
-      .map((publicKey) => publicKey.hash());
+    const publicKeyHashes = await Promise.all(
+      identity
+        .getPublicKeys()
+        .map(async (publicKey) => publicKey.hash()),
+    );
 
     expect(stateRepositoryMock.storeIdentityPublicKeyHashes).to.have.been.calledOnceWithExactly(
       identity.getId(),

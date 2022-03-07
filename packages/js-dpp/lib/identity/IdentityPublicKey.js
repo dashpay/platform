@@ -1,8 +1,8 @@
-const { PublicKey } = require('@dashevo/dashcore-lib');
-
-const BlsSignatures = require('bls-signatures');
+const { PublicKey, crypto: { Hash } } = require('@dashevo/dashcore-lib');
 
 const EmptyPublicKeyDataError = require('./errors/EmptyPublicKeyDataError');
+const InvalidIdentityPublicKeyTypeError = require('../stateTransition/errors/InvalidIdentityPublicKeyTypeError');
+const blsPublicKeyFactory = require('../bls/blsPublicKeyFactory');
 
 class IdentityPublicKey {
   /**
@@ -170,24 +170,24 @@ class IdentityPublicKey {
       throw new EmptyPublicKeyDataError();
     }
 
-    if (this.getType() === IdentityPublicKey.TYPES.BLS12_381) {
-      const blsSignatures = await BlsSignatures();
-      const { BlsPublicKey } = blsSignatures;
-      const originalPublicKey = new BlsPublicKey(
-        this.getData(),
-      );
-      return originalPublicKey;
+    switch (this.getType()) {
+      case IdentityPublicKey.TYPES.BLS12_381: {
+        const originalPublicKey = await blsPublicKeyFactory(this.getData());
+
+        return Hash.sha256ripemd160(Buffer.from(originalPublicKey.serialize()));
+      }
+      case IdentityPublicKey.TYPES.ECDSA_HASH160:
+        return this.getData();
+      case IdentityPublicKey.TYPES.ECDSA_SECP256K1: {
+        const originalPublicKey = new PublicKey(
+          this.getData(),
+        );
+
+        return originalPublicKey.hash;
+      }
+      default:
+        throw new InvalidIdentityPublicKeyTypeError(this.getType());
     }
-
-    if (this.getType() === IdentityPublicKey.TYPES.ECDSA_HASH160) {
-      return this.getData();
-    }
-
-    const originalPublicKey = new PublicKey(
-      this.getData(),
-    );
-
-    return originalPublicKey.hash;
   }
 
   /**

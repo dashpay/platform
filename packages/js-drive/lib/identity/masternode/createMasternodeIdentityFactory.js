@@ -48,9 +48,11 @@ function createMasternodeIdentityFactory(
 
     await transactionalStateRepository.storeIdentity(identity);
 
-    const publicKeyHashes = identity
-      .getPublicKeys()
-      .map((publicKey) => publicKey.hash());
+    const publicKeyHashes = await Promise.all(
+      identity
+        .getPublicKeys()
+        .map(async (publicKey) => publicKey.hash()),
+    );
 
     await transactionalStateRepository.storeIdentityPublicKeyHashes(
       identity.getId(),
