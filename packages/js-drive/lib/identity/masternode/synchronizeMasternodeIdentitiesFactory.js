@@ -138,24 +138,20 @@ function synchronizeMasternodeIdentitiesFactory(
 
     // Process masternode reward contract updates
 
-    if (documentsToCreate.length > 0) {
-      for (const document of documentsToCreate) {
-        const documentsBatchTransition = transactionalDpp.document.createStateTransition({
-          create: [document],
-        });
+    for (const document of documentsToCreate) {
+      const documentsBatchTransition = transactionalDpp.document.createStateTransition({
+        create: [document],
+      });
 
-        await transactionalDpp.stateTransition.apply(documentsBatchTransition);
-      }
+      await transactionalDpp.stateTransition.apply(documentsBatchTransition);
     }
 
-    if (documentsToDelete > 0) {
-      for (const document of documentsToDelete) {
-        const documentsBatchTransition = transactionalDpp.document.createStateTransition({
-          delete: [document],
-        });
+    for (const document of documentsToDelete) {
+      const documentsBatchTransition = transactionalDpp.document.createStateTransition({
+        delete: [document],
+      });
 
-        await transactionalDpp.stateTransition.apply(documentsBatchTransition);
-      }
+      await transactionalDpp.stateTransition.apply(documentsBatchTransition);
     }
   }
 
