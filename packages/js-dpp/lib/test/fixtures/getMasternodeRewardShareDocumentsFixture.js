@@ -17,7 +17,7 @@ function getMasternodeRewardShareDocumentsFixture() {
   );
 
   return [
-    factory.create(dataContract, ownerId, 'masternodeRewardShares.rewardShare', {
+    factory.create(dataContract, ownerId, 'rewardShare', {
       payToId,
       percentage: 500,
     }),
