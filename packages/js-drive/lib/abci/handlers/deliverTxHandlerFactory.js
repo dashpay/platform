@@ -31,6 +31,7 @@ const DATA_CONTRACT_ACTION_DESCRIPTIONS = {
  * @param {DashPlatformProtocol} transactionalDpp
  * @param {BlockExecutionContext} blockExecutionContext
  * @param {BaseLogger} logger
+ * @param {ExecutionTimer} executionTimer
  *
  * @return {deliverTxHandler}
  */
@@ -39,6 +40,7 @@ function deliverTxHandlerFactory(
   transactionalDpp,
   blockExecutionContext,
   logger,
+  executionTimer,
 ) {
   /**
    * DeliverTx ABCI Handler
@@ -50,6 +52,14 @@ function deliverTxHandlerFactory(
    */
   async function deliverTxHandler({ tx: stateTransitionByteArray }) {
     const { height: blockHeight } = blockExecutionContext.getHeader();
+
+    // Start execution timer
+
+    if (executionTimer.isStarted('deliverTx')) {
+      executionTimer.endTimer('deliverTx');
+    }
+
+    executionTimer.startTimer('deliverTx');
 
     const stHash = crypto
       .createHash('sha256')
@@ -178,6 +188,16 @@ function deliverTxHandlerFactory(
       default:
         break;
     }
+
+    const deliverTxTimings = executionTimer.endTimer('deliverTx');
+
+    logger.trace(
+      {
+        timings: deliverTxTimings,
+        stateTransitionType: stateTransition.getType(),
+      },
+      `${stateTransition.constructor.name} execution took ${deliverTxTimings} seconds`,
+    );
 
     return new ResponseDeliverTx();
   }
