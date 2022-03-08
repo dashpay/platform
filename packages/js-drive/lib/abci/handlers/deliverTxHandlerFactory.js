@@ -190,7 +190,7 @@ function deliverTxHandlerFactory(
         timings: deliverTxTimings,
         stateTransitionType: stateTransition.getType(),
       },
-      `${stateTransition.constructor.name} execution took ${deliverTxTimings.seconds} seconds and ${deliverTxTimings.nanoseconds} nanoseconds`,
+      `${stateTransition.constructor.name} execution took ${deliverTxTimings} seconds`,
     );
 
     return new ResponseDeliverTx();
