@@ -1,5 +1,6 @@
 const { Transaction } = require('@dashevo/dashcore-lib');
 const logger = require('../../../logger');
+const EVENTS = require('../../../EVENTS');
 
 const { Output } = Transaction;
 
@@ -11,6 +12,8 @@ function considerTransaction(transactionHash) {
   let outputIndex = -1;
 
   const processedAddressesForTx = {};
+
+  let broadcastTxEvent = false;
 
   [...inputs, ...outputs].forEach((element) => {
     const isOutput = (element instanceof Output);
@@ -39,6 +42,7 @@ function considerTransaction(transactionHash) {
             const previousOutput = watchedAddress.utxos[utxoKey];
             watchedAddress.balanceSat -= previousOutput.satoshis;
             delete watchedAddress.utxos[utxoKey];
+            broadcastTxEvent = true;
           }
         } else {
           const vout = element;
@@ -47,6 +51,11 @@ function considerTransaction(transactionHash) {
           if (!watchedAddress.utxos[utxoKey]) {
             watchedAddress.utxos[utxoKey] = vout.toJSON();
             watchedAddress.balanceSat += vout.satoshis;
+            broadcastTxEvent = true;
+          } else if (watchedAddress.unconfirmedBalanceSat >= vout.satoshis) {
+            watchedAddress.unconfirmedBalanceSat -= vout.satoshis;
+            watchedAddress.balanceSat += vout.satoshis;
+            broadcastTxEvent = true;
           }
         }
       }
@@ -75,6 +84,11 @@ function considerTransaction(transactionHash) {
           }
         });
       });
+  }
+
+  // TODO: restore EVENTS.FETCHED_UNCONFIRMED_TRANSACTION
+  if (broadcastTxEvent) {
+    this.emit(EVENTS.FETCHED_CONFIRMED_TRANSACTION, { transaction });
   }
 
   return processedAddressesForTx;

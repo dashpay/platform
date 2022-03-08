@@ -4,7 +4,7 @@ const broadcastTransaction = require('./broadcastTransaction');
 const validRawTxs = require('../../../../fixtures/rawtx').valid;
 const invalidRawTxs = require('../../../../fixtures/rawtx').invalid;
 const expectThrowsAsync = require('../../../utils/expectThrowsAsync');
-
+const ChainStore = require('../../ChainStore/ChainStore');
 const { PrivateKey } = Dashcore;
 
 describe('Account - broadcastTransaction', function suite() {
@@ -14,12 +14,12 @@ describe('Account - broadcastTransaction', function suite() {
   let keysToSign;
   let oneToOneTx;
   let fee;
+
+  const chainStore = new ChainStore('testnet');
+  chainStore.state.fees.minRelay = 888;
+  chainStore.importAddress('yTBXsrcGw74yMUsK34fBKAWJx3RNCq97Aq');
   const storage = {
-    getStore: ()=>({
-      chains:{
-          "testnet": { fees: { minRelay: 888 }}
-      }
-    })
+    getChainStore:()=> chainStore
   }
   beforeEach(() => {
     utxos = [
@@ -34,12 +34,12 @@ describe('Account - broadcastTransaction', function suite() {
     fee = 680;
     address = 'yTBXsrcGw74yMUsK34fBKAWJx3RNCq97Aq';
     keysToSign = [
-        new PrivateKey('26d6b24119d1a71de6372ea2d3dc22a014d37e4828b43db6936cb41ea461cce8')
+      new PrivateKey('26d6b24119d1a71de6372ea2d3dc22a014d37e4828b43db6936cb41ea461cce8')
     ];
     oneToOneTx = new Dashcore.Transaction()
-        .from(utxos)
-        .to(address, 138)
-        .fee(fee);
+      .from(utxos)
+      .to(address, 138)
+      .fee(fee);
     oneToOneTx.sign(keysToSign);
   });
 
@@ -87,11 +87,7 @@ describe('Account - broadcastTransaction', function suite() {
         sendTransaction: () => sendCalled = +1,
       },
       network: 'testnet',
-      storage: {
-        getStore: storage.getStore,
-        searchAddress: () => { searchCalled = +1; return { found: false }; },
-        searchAddressesWithTx: () => { searchCalled = +1; return { results: [] }; },
-      },
+      storage
     };
 
     const tx = oneToOneTx;
@@ -109,11 +105,7 @@ describe('Account - broadcastTransaction', function suite() {
         sendTransaction: () => sendCalled = +1,
       },
       network: 'testnet',
-      storage: {
-        getStore: storage.getStore,
-        searchAddress: () => { searchCalled = +1; return { found: false }; },
-        searchAddressesWithTx: (affectedTxId) => { searchCalled = +1; return { results: [] }; },
-      },
+      storage
     };
 
     return broadcastTransaction
@@ -132,11 +124,7 @@ describe('Account - broadcastTransaction', function suite() {
         sendTransaction: () => sendCalled = +1,
       },
       network: 'testnet',
-      storage: {
-        getStore: storage.getStore,
-        searchAddress: () => { searchCalled = +1; return { found: false }; },
-        searchAddressesWithTx: () => { searchCalled = +1; return { results: [] }; },
-      },
+      storage
     };
 
     const tx = oneToOneTx;
@@ -151,20 +139,16 @@ describe('Account - broadcastTransaction', function suite() {
         sendTransaction: () => sendCalled = +1,
       },
       network: 'testnet',
-      storage: {
-        getStore: storage.getStore,
-        searchAddress: () => { searchCalled = +1; return { found: false }; },
-        searchAddressesWithTx: () => { searchCalled = +1; return { results: [] }; },
-      },
+      storage
     };
 
     const tx = oneToOneTx;
     tx.fee(0);
 
     return broadcastTransaction
-        .call(self, tx, {skipFeeValidation: true})
-        .then(
-            () => expect(sendCalled).to.equal(1) && expect(searchCalled).to.equal(1),
-        );
+      .call(self, tx, {skipFeeValidation: true})
+      .then(
+        () => expect(sendCalled).to.equal(1) && expect(searchCalled).to.equal(1),
+      );
   });
 });

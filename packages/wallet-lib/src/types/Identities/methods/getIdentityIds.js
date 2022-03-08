@@ -3,7 +3,10 @@
  * @return {string[]}
  */
 function getIdentityIds() {
-  return this.storage.getIndexedIdentityIds(this.walletId).filter(Boolean);
+  return this.storage
+    .getWalletStore(this.walletId)
+    .getIndexedIdentityIds()
+    .filter(Boolean);
 }
 
 module.exports = getIdentityIds;
