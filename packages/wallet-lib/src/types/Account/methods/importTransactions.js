@@ -15,6 +15,8 @@ module.exports = async function importTransactions(transactionsWithMayBeMetadata
     keyChainStore,
   } = this;
 
+  let addressesGenerated = 0;
+
   const chainStore = storage.getChainStore(network);
   const accountStore = storage
     .getWalletStore(walletId)
@@ -36,6 +38,7 @@ module.exports = async function importTransactions(transactionsWithMayBeMetadata
       keyChains.forEach((keyChain) => {
         const issuedPaths = keyChain.markAddressAsUsed(address);
         if (issuedPaths) {
+          addressesGenerated += issuedPaths.length;
           issuedPaths.forEach((issuedPath) => {
             if (keyChain.keyChainId === masterKeyChain.keyChainId) {
               logger.silly(`Account.importTransactions - newly issued paths ${issuedPath.length}`);
@@ -48,5 +51,5 @@ module.exports = async function importTransactions(transactionsWithMayBeMetadata
     });
   });
   logger.silly(`Account.importTransactions(len: ${transactionsWithMayBeMetadata.length})`);
-  return 0;
+  return addressesGenerated;
 };

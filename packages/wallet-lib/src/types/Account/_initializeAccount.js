@@ -1,21 +1,10 @@
 const logger = require('../../logger');
 const EVENTS = require('../../EVENTS');
 const preparePlugins = require('./_preparePlugins');
-const { UPDATED_ADDRESS } = require('../../EVENTS');
 
 // eslint-disable-next-line no-underscore-dangle
 async function _initializeAccount(account, userUnsafePlugins) {
   const self = account;
-
-  function markAddressAsUsed(props) {
-    const { address } = props.payload;
-    // This works if the TX cames from our main address, but not in all cases...
-    self.keyChainStore
-      .getMasterKeyChain()
-      .markAddressAsUsed(address);
-  }
-
-  self.on(UPDATED_ADDRESS, markAddressAsUsed);
 
   const accountStore = account.storage
     .getWalletStore(account.walletId)

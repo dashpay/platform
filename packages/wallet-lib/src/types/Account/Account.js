@@ -93,7 +93,6 @@ class Account extends EventEmitter {
     this.storage = wallet.storage;
 
     // Forward all storage event
-    this.storage.on(EVENTS.UPDATED_ADDRESS, (ev) => this.emit(ev.type, ev));
     this.storage.on(EVENTS.CONFIGURED, (ev) => this.emit(ev.type, ev));
     this.storage.on(EVENTS.REHYDRATE_STATE_FAILED, (ev) => this.emit(ev.type, ev));
     this.storage.on(EVENTS.REHYDRATE_STATE_SUCCESS, (ev) => this.emit(ev.type, ev));
@@ -115,15 +114,6 @@ class Account extends EventEmitter {
     switch (this.walletType) {
       case WALLET_TYPES.HDWALLET:
         this.accountPath = getBIP44Path(this.network, this.index);
-        // this.storage
-        //   .getWalletStore(this.walletId)
-        //   .createPathState(this.BIP44PATH);
-        // this.storage.createAccount(
-        //   this.walletId,
-        //   this.BIP44PATH,
-        //   this.network,
-        //   this.label,
-        // );
         break;
       case WALLET_TYPES.HDPUBLIC:
       case WALLET_TYPES.PRIVATEKEY:
@@ -131,14 +121,6 @@ class Account extends EventEmitter {
       case WALLET_TYPES.ADDRESS:
       case WALLET_TYPES.SINGLE_ADDRESS:
         this.accountPath = 'm/0';
-        // this.storage
-        //   .getWalletStore(this.walletId)
-        //   .createPathState(this);
-        // this.storage.createSingleAddress(
-        //   this.walletId,
-        //   this.network,
-        //   this.label,
-        // );
         break;
       default:
         throw new Error(`Invalid wallet type ${this.walletType}`);
@@ -196,25 +178,6 @@ class Account extends EventEmitter {
       watchers: {},
     };
 
-    // // Handle import of cache
-    // if (opts.cache) {
-    //   if (opts.cache.addresses) {
-    //     try {
-    //       this.storage.importAddresses(opts.cache.addresses, this.walletId);
-    //     } catch (e) {
-    //       this.disconnect();
-    //       throw e;
-    //     }
-    //   }
-    //   if (opts.cache.transactions) {
-    //     try {
-    //       this.storage.importTransactions(opts.cache.transactions);
-    //     } catch (e) {
-    //       this.disconnect();
-    //       throw e;
-    //     }
-    //   }
-    // }
     this.emit(EVENTS.CREATED, { type: EVENTS.CREATED, payload: null });
 
     /**
