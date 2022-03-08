@@ -1,3 +1,10 @@
+## [0.22.0-dev.12](https://github.com/dashevo/platform/compare/v0.22.0-dev.11...v0.22.0-dev.12) (2022-03-08)
+
+
+### Bug Fixes
+
+* **drive:** documents have mixed owner ids ([#283](https://github.com/dashevo/platform/issues/283))
+
 ## [0.22.0-dev.11](https://github.com/dashevo/platform/compare/v0.22.0-dev.10...v0.22.0-dev.11) (2022-03-08)
 
 
