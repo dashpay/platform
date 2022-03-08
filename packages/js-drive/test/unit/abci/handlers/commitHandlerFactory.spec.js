@@ -37,6 +37,7 @@ describe('commitHandlerFactory', () => {
   let blockExecutionContextStackRepositoryMock;
   let groveDBStoreMock;
   let rotateSignedStoreMock;
+  let executionTimerMock;
 
   beforeEach(function beforeEach() {
     appHash = Buffer.alloc(0);
@@ -85,6 +86,14 @@ describe('commitHandlerFactory', () => {
     groveDBStoreMock = new GroveDBStoreMock(this.sinon);
     groveDBStoreMock.getRootHash.resolves(appHash);
 
+    executionTimerMock = {
+      startTimer: this.sinon.stub(),
+      endTimer: this.sinon.stub().returns({
+        seconds: 1,
+        nanoseconds: 1,
+      }),
+    };
+
     commitHandler = commitHandlerFactory(
       creditsDistributionPoolMock,
       creditsDistributionPoolRepositoryMock,
@@ -95,6 +104,7 @@ describe('commitHandlerFactory', () => {
       loggerMock,
       dataContractCacheMock,
       groveDBStoreMock,
+      executionTimerMock,
     );
   });
 

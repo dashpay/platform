@@ -22,6 +22,7 @@ const NetworkProtocolVersionIsNotSetError = require('./errors/NetworkProtocolVer
  * @param {waitForChainLockedHeight} waitForChainLockedHeight
  * @param {synchronizeMasternodeIdentities} synchronizeMasternodeIdentities
  * @param {BaseLogger} logger
+ * @param {ExecutionTimer} executionTimer
  *
  * @return {beginBlockHandler}
  */
@@ -36,6 +37,7 @@ function beginBlockHandlerFactory(
   waitForChainLockedHeight,
   synchronizeMasternodeIdentities,
   logger,
+  executionTimer,
 ) {
   /**
    * @typedef beginBlockHandler
@@ -51,6 +53,14 @@ function beginBlockHandlerFactory(
       height,
       version,
     } = header;
+
+    // Start block execution timer
+
+    if (executionTimer.isStarted('blockExecution')) {
+      executionTimer.endTimer('blockExecution');
+    }
+
+    executionTimer.startTimer('blockExecution');
 
     const consensusLogger = logger.child({
       height: height.toString(),

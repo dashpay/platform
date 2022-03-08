@@ -132,6 +132,8 @@ const splitDocumentsIntoChunks = require('./identity/masternode/splitDocumentsIn
 const registerSystemDataContractsFactory = require('./abci/handlers/state/registerSystemDataContractsFactory');
 const DocumentRepository = require('./document/DocumentRepository');
 
+const ExecutionTimer = require('./util/ExecutionTimer');
+
 const noopLoggerInstance = require('./util/noopLogger');
 
 /**
@@ -382,6 +384,8 @@ function createDIContainer(options) {
     noopLogger: asValue(noopLoggerInstance),
 
     sanitizeUrl: asValue(sanitizeUrl),
+
+    executionTimer: asClass(ExecutionTimer).singleton(),
   });
 
   /**
