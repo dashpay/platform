@@ -70,7 +70,7 @@ function handleNewMasternodeFactory(
       documentsToCreate.push(transactionalDpp.document.create(
         dataContract,
         masternodeIdentityId,
-        'masternodeRewardShares.rewardShare',
+        'rewardShare',
         {
           payToId: operatorIdentityId,
           percentage: proRegTxPayload.operatorReward,

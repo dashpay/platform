@@ -95,7 +95,7 @@ describe('handleNewMasternodeFactory', () => {
     expect(transactionalDppMock.document.create).to.be.calledWithExactly(
       dataContractFixture,
       Identifier.from('xmdKYeUsEU49sncsu76TmtufyqwP1By92RX4e48oRUW'),
-      'masternodeRewardShares.rewardShare',
+      'rewardShare',
       {
         payToId: Identifier.from('F1Fggqney3rdpLc69pS6CJr1yUxwEsRwmnBsLLCMjFsC'),
         percentage: 1,
