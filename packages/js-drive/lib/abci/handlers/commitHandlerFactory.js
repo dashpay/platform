@@ -16,6 +16,7 @@ const {
  * @param {BaseLogger} logger
  * @param {LRUCache} dataContractCache
  * @param {GroveDBStore} groveDBStore
+ * @param {ExecutionTimer} executionTimer
  *
  * @return {commitHandler}
  */
@@ -29,6 +30,7 @@ function commitHandlerFactory(
   logger,
   dataContractCache,
   groveDBStore,
+  executionTimer,
 ) {
   /**
    * Commit ABCI Handler
@@ -48,6 +50,8 @@ function commitHandlerFactory(
     blockExecutionContext.setConsensusLogger(consensusLogger);
 
     consensusLogger.debug('Commit ABCI method requested');
+
+    executionTimer.startTimer('commit');
 
     // Store ST fees from the block to distribution pool
     creditsDistributionPool.incrementAmount(
@@ -91,6 +95,23 @@ function commitHandlerFactory(
         appHash: appHash.toString('hex').toUpperCase(),
       },
       `Block commit #${blockHeight} with appHash ${appHash.toString('hex').toUpperCase()}`,
+    );
+
+    const commitTimings = executionTimer.endTimer('commit');
+    const blockExecutionTimings = executionTimer.endTimer('blockExecution');
+
+    consensusLogger.debug(
+      {
+        timings: commitTimings,
+      },
+      `commit handler took ${commitTimings.seconds} seconds and ${commitTimings.nanoseconds} nanoseconds`,
+    );
+
+    consensusLogger.debug(
+      {
+        timings: blockExecutionTimings,
+      },
+      `block execution took ${blockExecutionTimings.seconds} seconds and ${blockExecutionTimings.nanoseconds} nanoseconds`,
     );
 
     return new ResponseCommit({

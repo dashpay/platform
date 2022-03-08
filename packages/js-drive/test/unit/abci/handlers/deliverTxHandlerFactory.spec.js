@@ -40,6 +40,7 @@ describe('deliverTxHandlerFactory', () => {
   let unserializeStateTransitionMock;
   let blockExecutionContextMock;
   let validationResult;
+  let executionTimerMock;
 
   beforeEach(async function beforeEach() {
     const dataContractFixture = getDataContractFixture();
@@ -89,11 +90,20 @@ describe('deliverTxHandlerFactory', () => {
 
     const loggerMock = new LoggerMock(this.sinon);
 
+    executionTimerMock = {
+      startTimer: this.sinon.stub(),
+      endTimer: this.sinon.stub().returns({
+        seconds: 1,
+        nanoseconds: 1,
+      }),
+    };
+
     deliverTxHandler = deliverTxHandlerFactory(
       unserializeStateTransitionMock,
       dppMock,
       blockExecutionContextMock,
       loggerMock,
+      executionTimerMock,
     );
   });
 

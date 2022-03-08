@@ -34,6 +34,7 @@ describe('beginBlockHandlerFactory', () => {
   let synchronizeMasternodeIdentitiesMock;
   let groveDBStoreMock;
   let blockExecutionContextStackMock;
+  let executionTimerMock;
 
   beforeEach(function beforeEach() {
     protocolVersion = Long.fromInt(1);
@@ -60,6 +61,11 @@ describe('beginBlockHandlerFactory', () => {
       getHeader: this.sinon.stub(),
     });
 
+    executionTimerMock = {
+      startTimer: this.sinon.stub(),
+      endTimer: this.sinon.stub(),
+    };
+
     beginBlockHandler = beginBlockHandlerFactory(
       groveDBStoreMock,
       blockExecutionContextMock,
@@ -71,6 +77,7 @@ describe('beginBlockHandlerFactory', () => {
       waitForChainLockedHeightMock,
       synchronizeMasternodeIdentitiesMock,
       loggerMock,
+      executionTimerMock,
     );
 
     blockHeight = 2;
