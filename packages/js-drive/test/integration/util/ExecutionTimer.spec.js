@@ -38,6 +38,6 @@ describe('ExecutionTimer', () => {
     await wait(1500);
     const timings = timer.endTimer('some');
 
-    expect(parseInt(timings)).to.equal(1);
+    expect(parseInt(timings, 10)).to.equal(1);
   });
 });
