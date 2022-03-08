@@ -101,7 +101,7 @@ function commitHandlerFactory(
       {
         timings: blockExecutionTimings,
       },
-      `Block #${blockHeight} execution took ${blockExecutionTimings.seconds} seconds`,
+      `Block #${blockHeight} execution took ${blockExecutionTimings} seconds`,
     );
 
     return new ResponseCommit({
