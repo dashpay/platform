@@ -2257,7 +2257,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           "packageDependencies": [
             ["@dashevo/abci", "https://github.com/dashevo/js-abci.git#commit=8806ff71cdac918f79920b1373824653f15698c5"],
             ["bl", "npm:1.2.3"],
-            ["protobufjs", "https://github.com/jawid-h/protobuf.js.git#commit=8b91c72dca68fd6c418078fd2358c4969425dcdc"],
+            ["protobufjs", "https://github.com/jawid-h/protobuf.js.git#commit=d13d5d5688052e366aa2e9169f50dfca376b32cf"],
             ["protocol-buffers-encodings", "npm:1.1.1"]
           ],
           "linkType": "HARD",
@@ -2365,6 +2365,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           "packageDependencies": [
             ["@dashevo/dapi-grpc", "workspace:packages/dapi-grpc"],
             ["@dashevo/grpc-common", "workspace:packages/js-grpc-common"],
+            ["@dashevo/protobufjs", "npm:6.10.5"],
             ["@grpc/grpc-js", "npm:1.4.4"],
             ["chai", "npm:4.3.4"],
             ["chai-as-promised", "virtual:595d7482cc8ddf98ee6aef33fc48b46393554ab5f17f851ef62e6e39315e53666c3e66226b978689aa0bc7f1e83a03081511a21db1c381362fe67614887077f9#npm:7.1.1"],
@@ -2377,7 +2378,6 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["long", "npm:5.2.0"],
             ["mocha", "npm:9.1.3"],
             ["mocha-sinon", "virtual:595d7482cc8ddf98ee6aef33fc48b46393554ab5f17f851ef62e6e39315e53666c3e66226b978689aa0bc7f1e83a03081511a21db1c381362fe67614887077f9#npm:2.1.2"],
-            ["protobufjs", "https://github.com/jawid-h/protobuf.js.git#commit=8b91c72dca68fd6c418078fd2358c4969425dcdc"],
             ["sinon", "npm:11.1.2"],
             ["sinon-chai", "virtual:595d7482cc8ddf98ee6aef33fc48b46393554ab5f17f851ef62e6e39315e53666c3e66226b978689aa0bc7f1e83a03081511a21db1c381362fe67614887077f9#npm:3.7.0"]
           ],
@@ -2584,7 +2584,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["@dashevo/feature-flags-contract", "workspace:packages/feature-flags-contract"],
             ["@dashevo/grpc-common", "workspace:packages/js-grpc-common"],
             ["@dashevo/masternode-reward-shares-contract", "workspace:packages/masternode-reward-shares-contract"],
-            ["@dashevo/rs-drive", "npm:0.22.0-dev.15"],
+            ["@dashevo/rs-drive", "npm:0.22.0-dev.16"],
             ["@types/pino", "npm:6.3.12"],
             ["ajv", "npm:8.8.1"],
             ["ajv-keywords", "virtual:34fbe5a7dba3086dcbcce8a7faed986b10f7a208f11db70499feb2c1afd76e24089e5b95f9e3b937e89512de1cf4937177cc2000303a1e908baefc73362a7d48#npm:5.0.0"],
@@ -2652,6 +2652,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           "packageLocation": "./packages/js-grpc-common/",
           "packageDependencies": [
             ["@dashevo/grpc-common", "workspace:packages/js-grpc-common"],
+            ["@dashevo/protobufjs", "npm:6.10.5"],
             ["@grpc/grpc-js", "npm:1.4.4"],
             ["@grpc/proto-loader", "npm:0.5.6"],
             ["cbor", "npm:8.1.0"],
@@ -2666,7 +2667,6 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["mocha", "npm:9.1.3"],
             ["mocha-sinon", "virtual:595d7482cc8ddf98ee6aef33fc48b46393554ab5f17f851ef62e6e39315e53666c3e66226b978689aa0bc7f1e83a03081511a21db1c381362fe67614887077f9#npm:2.1.2"],
             ["nyc", "npm:15.1.0"],
-            ["protobufjs", "https://github.com/jawid-h/protobuf.js.git#commit=8b91c72dca68fd6c418078fd2358c4969425dcdc"],
             ["semver", "npm:7.3.5"],
             ["sinon", "npm:11.1.2"],
             ["sinon-chai", "virtual:595d7482cc8ddf98ee6aef33fc48b46393554ab5f17f851ef62e6e39315e53666c3e66226b978689aa0bc7f1e83a03081511a21db1c381362fe67614887077f9#npm:3.7.0"]
@@ -2769,6 +2769,36 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           "linkType": "SOFT",
         }]
       ]],
+      ["@dashevo/protobufjs", [
+        ["npm:6.10.5", {
+          "packageLocation": "./.yarn/unplugged/@dashevo-protobufjs-npm-6.10.5-9ffa190993/node_modules/@dashevo/protobufjs/",
+          "packageDependencies": [
+            ["@dashevo/protobufjs", "npm:6.10.5"],
+            ["@protobufjs/aspromise", "npm:1.1.2"],
+            ["@protobufjs/base64", "npm:1.1.2"],
+            ["@protobufjs/codegen", "npm:2.0.4"],
+            ["@protobufjs/eventemitter", "npm:1.1.0"],
+            ["@protobufjs/fetch", "npm:1.1.0"],
+            ["@protobufjs/float", "npm:1.0.2"],
+            ["@protobufjs/inquire", "npm:1.1.0"],
+            ["@protobufjs/path", "npm:1.1.2"],
+            ["@protobufjs/pool", "npm:1.1.0"],
+            ["@protobufjs/utf8", "npm:1.1.0"],
+            ["@types/long", "npm:4.0.1"],
+            ["@types/node", "npm:13.13.52"],
+            ["chalk", "npm:3.0.0"],
+            ["escodegen", "npm:2.0.0"],
+            ["espree", "npm:9.1.0"],
+            ["estraverse", "npm:5.3.0"],
+            ["glob", "npm:7.2.0"],
+            ["long", "npm:4.0.0"],
+            ["minimist", "npm:1.2.5"],
+            ["semver", "npm:7.3.5"],
+            ["uglify-js", "npm:3.14.4"]
+          ],
+          "linkType": "HARD",
+        }]
+      ]],
       ["@dashevo/re2-wasm", [
         ["npm:1.0.4", {
           "packageLocation": "./.yarn/cache/@dashevo-re2-wasm-npm-1.0.4-89e4ca33d4-4f1fca10c5.zip/node_modules/@dashevo/re2-wasm/",
@@ -2779,10 +2809,10 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
         }]
       ]],
       ["@dashevo/rs-drive", [
-        ["npm:0.22.0-dev.15", {
-          "packageLocation": "./.yarn/unplugged/@dashevo-rs-drive-npm-0.22.0-dev.15-8e084ba226/node_modules/@dashevo/rs-drive/",
+        ["npm:0.22.0-dev.16", {
+          "packageLocation": "./.yarn/unplugged/@dashevo-rs-drive-npm-0.22.0-dev.16-e01fb22bf6/node_modules/@dashevo/rs-drive/",
           "packageDependencies": [
-            ["@dashevo/rs-drive", "npm:0.22.0-dev.15"],
+            ["@dashevo/rs-drive", "npm:0.22.0-dev.16"],
             ["@dashevo/dpp", "workspace:packages/js-dpp"],
             ["cargo-cp-artifact", "npm:0.1.6"],
             ["cbor", "npm:8.1.0"],
@@ -2907,7 +2937,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           "packageDependencies": [
             ["@grpc/proto-loader", "npm:0.5.6"],
             ["lodash.camelcase", "npm:4.3.0"],
-            ["protobufjs", "https://github.com/jawid-h/protobuf.js.git#commit=8b91c72dca68fd6c418078fd2358c4969425dcdc"]
+            ["protobufjs", "npm:6.11.2"]
           ],
           "linkType": "HARD",
         }],
@@ -2918,7 +2948,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["@types/long", "npm:4.0.1"],
             ["lodash.camelcase", "npm:4.3.0"],
             ["long", "npm:4.0.0"],
-            ["protobufjs", "https://github.com/jawid-h/protobuf.js.git#commit=8b91c72dca68fd6c418078fd2358c4969425dcdc"],
+            ["protobufjs", "npm:6.11.2"],
             ["yargs", "npm:16.2.0"]
           ],
           "linkType": "HARD",
@@ -3998,6 +4028,13 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           "packageLocation": "./.yarn/cache/@types-node-npm-16.11.9-fd7b539464-baec2e6471.zip/node_modules/@types/node/",
           "packageDependencies": [
             ["@types/node", "npm:16.11.9"]
+          ],
+          "linkType": "HARD",
+        }],
+        ["npm:17.0.21", {
+          "packageLocation": "./.yarn/cache/@types-node-npm-17.0.21-7d68eb6a13-89dcd2fe82.zip/node_modules/@types/node/",
+          "packageDependencies": [
+            ["@types/node", "npm:17.0.21"]
           ],
           "linkType": "HARD",
         }]
@@ -7560,7 +7597,6 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["pretty-bytes", "npm:5.6.0"],
             ["pretty-ms", "npm:7.0.1"],
             ["public-ip", "npm:4.0.4"],
-            ["rimraf", "npm:3.0.2"],
             ["rxjs", "npm:6.6.7"],
             ["semver", "npm:7.3.5"],
             ["strip-ansi", "npm:6.0.1"],
@@ -14775,10 +14811,10 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
         }]
       ]],
       ["protobufjs", [
-        ["https://github.com/jawid-h/protobuf.js.git#commit=8b91c72dca68fd6c418078fd2358c4969425dcdc", {
-          "packageLocation": "./.yarn/unplugged/protobufjs-https-58d0d695f1/node_modules/protobufjs/",
+        ["https://github.com/jawid-h/protobuf.js.git#commit=d13d5d5688052e366aa2e9169f50dfca376b32cf", {
+          "packageLocation": "./.yarn/unplugged/protobufjs-https-f7cc81dafb/node_modules/protobufjs/",
           "packageDependencies": [
-            ["protobufjs", "https://github.com/jawid-h/protobuf.js.git#commit=8b91c72dca68fd6c418078fd2358c4969425dcdc"],
+            ["protobufjs", "https://github.com/jawid-h/protobuf.js.git#commit=d13d5d5688052e366aa2e9169f50dfca376b32cf"],
             ["@protobufjs/aspromise", "npm:1.1.2"],
             ["@protobufjs/base64", "npm:1.1.2"],
             ["@protobufjs/codegen", "npm:2.0.4"],
@@ -14790,16 +14826,28 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["@protobufjs/pool", "npm:1.1.0"],
             ["@protobufjs/utf8", "npm:1.1.0"],
             ["@types/long", "npm:4.0.1"],
-            ["@types/node", "npm:13.13.52"],
-            ["chalk", "npm:3.0.0"],
-            ["escodegen", "npm:2.0.0"],
-            ["espree", "npm:9.1.0"],
-            ["estraverse", "npm:5.3.0"],
-            ["glob", "npm:7.2.0"],
-            ["long", "npm:4.0.0"],
-            ["minimist", "npm:1.2.5"],
-            ["semver", "npm:7.3.5"],
-            ["uglify-js", "npm:3.14.4"]
+            ["@types/node", "npm:17.0.21"],
+            ["long", "npm:4.0.0"]
+          ],
+          "linkType": "HARD",
+        }],
+        ["npm:6.11.2", {
+          "packageLocation": "./.yarn/unplugged/protobufjs-npm-6.11.2-9b422ce98e/node_modules/protobufjs/",
+          "packageDependencies": [
+            ["protobufjs", "npm:6.11.2"],
+            ["@protobufjs/aspromise", "npm:1.1.2"],
+            ["@protobufjs/base64", "npm:1.1.2"],
+            ["@protobufjs/codegen", "npm:2.0.4"],
+            ["@protobufjs/eventemitter", "npm:1.1.0"],
+            ["@protobufjs/fetch", "npm:1.1.0"],
+            ["@protobufjs/float", "npm:1.0.2"],
+            ["@protobufjs/inquire", "npm:1.1.0"],
+            ["@protobufjs/path", "npm:1.1.2"],
+            ["@protobufjs/pool", "npm:1.1.0"],
+            ["@protobufjs/utf8", "npm:1.1.0"],
+            ["@types/long", "npm:4.0.1"],
+            ["@types/node", "npm:17.0.21"],
+            ["long", "npm:4.0.0"]
           ],
           "linkType": "HARD",
         }]

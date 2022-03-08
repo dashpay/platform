@@ -35,7 +35,7 @@ export default async function createIdentityCreateTransition(platform : Platform
     // Create ST
     const identityCreateTransition = dpp.identity.createIdentityCreateTransition(identity);
 
-    identityCreateTransition.signByPrivateKey(assetLockPrivateKey);
+    await identityCreateTransition.signByPrivateKey(assetLockPrivateKey, IdentityPublicKey.TYPES.ECDSA_SECP256K1);
 
     const result = await dpp.stateTransition.validateBasic(identityCreateTransition);
 

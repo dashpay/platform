@@ -48,10 +48,10 @@ function getDocumentsHandlerFactory(driveClient) {
 
     // Where
 
-    const whereBinary = request.getWhere();
+    const whereBinary = request.getWhere_asU8();
 
     let where;
-    if (whereBinary && whereBinary.length > 0) {
+    if (whereBinary.length > 0) {
       where = cbor.decode(
         Buffer.from(whereBinary),
       );
@@ -59,10 +59,10 @@ function getDocumentsHandlerFactory(driveClient) {
 
     // Order by
 
-    const orderByBinary = request.getOrderBy();
+    const orderByBinary = request.getOrderBy_asU8();
 
     let orderBy;
-    if (orderByBinary && orderByBinary.length > 0) {
+    if (orderByBinary.length > 0) {
       orderBy = cbor.decode(
         Buffer.from(orderByBinary),
       );
@@ -70,29 +70,29 @@ function getDocumentsHandlerFactory(driveClient) {
 
     // Limit
 
-    const limitDefault = request.getLimit();
+    const limitOrDefault = request.getLimit();
 
     let limit;
-    if (limitDefault !== 0) {
-      limit = limitDefault;
+    if (limitOrDefault !== 0) {
+      limit = limitOrDefault;
     }
 
     // Start after
 
-    const startAfterDefault = request.getStartAfter();
+    const startAfterBinary = request.getStartAfter_asU8();
 
     let startAfter;
-    if (startAfterDefault) {
-      startAfter = startAfterDefault;
+    if (startAfterBinary.length > 0) {
+      startAfter = Buffer.from(startAfterBinary);
     }
 
     // Start at
 
-    const startAtDefault = request.getStartAt();
+    const startAtBinary = request.getStartAt_asU8();
 
     let startAt;
-    if (startAtDefault) {
-      startAt = startAtDefault;
+    if (startAtBinary.length > 0) {
+      startAt = Buffer.from(startAtBinary);
     }
 
     const options = {

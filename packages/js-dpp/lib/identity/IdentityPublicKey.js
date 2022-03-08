@@ -1,6 +1,7 @@
-const { PublicKey } = require('@dashevo/dashcore-lib');
+const { crypto: { Hash } } = require('@dashevo/dashcore-lib');
 
 const EmptyPublicKeyDataError = require('./errors/EmptyPublicKeyDataError');
+const InvalidIdentityPublicKeyTypeError = require('../stateTransition/errors/InvalidIdentityPublicKeyTypeError');
 
 class IdentityPublicKey {
   /**
@@ -168,15 +169,16 @@ class IdentityPublicKey {
       throw new EmptyPublicKeyDataError();
     }
 
-    if (this.getType() === IdentityPublicKey.TYPES.ECDSA_HASH160) {
-      return this.getData();
+    switch (this.getType()) {
+      case IdentityPublicKey.TYPES.BLS12_381:
+      case IdentityPublicKey.TYPES.ECDSA_SECP256K1: {
+        return Hash.sha256ripemd160(this.getData());
+      }
+      case IdentityPublicKey.TYPES.ECDSA_HASH160:
+        return this.getData();
+      default:
+        throw new InvalidIdentityPublicKeyTypeError(this.getType());
     }
-
-    const originalPublicKey = new PublicKey(
-      this.getData(),
-    );
-
-    return originalPublicKey.hash;
   }
 
   /**

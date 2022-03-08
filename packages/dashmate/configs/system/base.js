@@ -33,7 +33,7 @@ module.exports = {
   },
   core: {
     docker: {
-      image: 'dashpay/dashd:0.18.0.0-beta2',
+      image: 'dashpay/dashd:0.18.0.0-beta4',
     },
     p2p: {
       port: 20001,
@@ -104,11 +104,11 @@ module.exports = {
           },
           prettyFile: {
             level: 'silent',
-            path: path.join(HOME_DIR_PATH, 'base', 'logs', 'drive-pretty.log'),
+            path: path.join(HOME_DIR_PATH, 'logs', 'base', 'drive-pretty.log'),
           },
           jsonFile: {
             level: 'silent',
-            path: path.join(HOME_DIR_PATH, 'base', 'logs', 'drive-json.log'),
+            path: path.join(HOME_DIR_PATH, 'logs', 'base', 'drive-json.log'),
           },
         },
         validatorSet: {

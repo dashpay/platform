@@ -1,7 +1,7 @@
 {
   "name": "@dashevo/drive",
   "private": true,
-  "version": "0.22.0-dev.7.alpha.2",
+  "version": "0.22.0-dev.10",
   "description": "Replicated state machine for Dash Platform",
   "engines": {
     "node": ">=12"
@@ -75,7 +75,7 @@
     "@dashevo/feature-flags-contract": "workspace:~",
     "@dashevo/grpc-common": "workspace:~",
     "@dashevo/masternode-reward-shares-contract": "workspace:~",
-    "@dashevo/rs-drive": "~0.22.0-dev.15",
+    "@dashevo/rs-drive": "~0.22.0-dev.16",
     "ajv": "^8.6.0",
     "ajv-keywords": "^5.0.0",
     "awilix": "^4.2.6",

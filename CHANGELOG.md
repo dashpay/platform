@@ -1,3 +1,78 @@
+## [0.22.0-dev.10](https://github.com/dashevo/platform/compare/v0.22.0-dev.9...v0.22.0-dev.10) (2022-03-07)
+
+
+### Bug Fixes
+
+* **dpp:** Invalid DER format public key ([#275](https://github.com/dashevo/platform/issues/275))
+
+## [0.22.0-dev.9](https://github.com/dashevo/platform/compare/v0.22.0-dev.8...v0.22.0-dev.9) (2022-03-04)
+
+
+### ⚠ BREAKING CHANGES
+
+* **dpp:** lower indexed string properties constraints (#273)
+
+### Features
+
+* **dpp:** lower indexed string properties constraints ([#273](https://github.com/dashevo/platform/issues/273))
+
+
+### Bug Fixes
+
+* masternode reward shares ([#272](https://github.com/dashevo/platform/issues/272))
+
+## [0.22.0-dev.8](https://github.com/dashevo/platform/compare/v0.21.8...v0.22.0-dev.8) (2022-03-01)
+
+
+### ⚠ BREAKING CHANGES
+
+* New state is not compatible with previous versions
+* Document queries have limitations compared with previous versions
+* Proofs are temporary disabled
+
+### Features
+
+* **dapi-client:** get and verify block headers with dash-spv ([#211](https://github.com/dashevo/platform/issues/211))
+* **dapi-client:** handle asynchronous errors ([#233](https://github.com/dashevo/platform/issues/233))
+* **dashmate:** add an ability to configure node subnet mask ([#237](https://github.com/dashevo/platform/issues/237))
+* **dpp:** allow using BLS key to sign state transitions ([#268](https://github.com/dashevo/platform/issues/268))
+* **dpp:** do not allow to index array properties ([#225](https://github.com/dashevo/platform/issues/225))
+* **drive:** create/update identities based on SML changes ([#170](https://github.com/dashevo/platform/issues/170))
+* integrate RS Drive and GroveDB ([#177](https://github.com/dashevo/platform/issues/177))
+
+
+### Bug Fixes
+
+* **dashmate:** `group:status` command was missing a `format` flag ([#262](https://github.com/dashevo/platform/issues/262))
+* `startAt` and `startAfter` invalid decoding ([#255](https://github.com/dashevo/platform/issues/255))
+* **build:** `zeromq` build is not working on linux ([#236](https://github.com/dashevo/platform/issues/236))
+* cannot install `protobufjs` in some cases ([#266](https://github.com/dashevo/platform/issues/266))
+* **dashmate:** `rimraf` module could not remove config directory ([#248](https://github.com/dashevo/platform/issues/248))
+* **dashmate:** logs were incorrectly mounted ([#261](https://github.com/dashevo/platform/issues/261))
+* **dpp:** Identity public key `readOnly` flag was read as `undefined` instead of `false` ([#239](https://github.com/dashevo/platform/issues/239))
+* **drive:** unable to reconstruct SML ([#257](https://github.com/dashevo/platform/issues/257))
+* **drive:** invalid query errors are fatal ([#259](https://github.com/dashevo/platform/issues/259))
+* **sdk:** can't update cached data contract ([#223](https://github.com/dashevo/platform/issues/223))
+
+
+### Documentation
+
+* ignore folder with empty docs during build ([#212](https://github.com/dashevo/platform/issues/212))
+
+
+### Build System
+
+* `protobufjs` isn't installing from git sometimes ([#267](https://github.com/dashevo/platform/issues/267))
+
+
+### Miscellaneous Chores
+
+* **dashmate:** update Core to 0.18.0.0-beta4 ([#269](https://github.com/dashevo/platform/issues/269))
+* **release:** revert version back
+* update tenderdash and core images ([#252](https://github.com/dashevo/platform/issues/252))
+
+
+
 ## [0.21.8](https://github.com/dashevo/platform/compare/v0.21.7...v0.21.8) (2022-02-15)
 
 

@@ -38,8 +38,8 @@ function documentQueryHandlerFactory(
    * @param {string} [data.where]
    * @param {string} [data.orderBy]
    * @param {string} [data.limit]
-   * @param {string} [data.startAfter]
-   * @param {string} [data.startAt]
+   * @param {Buffer} [data.startAfter]
+   * @param {Buffer} [data.startAt]
    * @param {RequestQuery} request
    * @return {Promise<ResponseQuery>}
    */
@@ -80,8 +80,8 @@ function documentQueryHandlerFactory(
         where,
         orderBy,
         limit,
-        startAfter,
-        startAt,
+        startAfter: startAfter ? Buffer.from(startAfter) : startAfter,
+        startAt: startAt ? Buffer.from(startAt) : startAt,
       });
     } catch (e) {
       if (e instanceof InvalidQueryError) {
