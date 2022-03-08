@@ -51,8 +51,6 @@ function commitHandlerFactory(
 
     consensusLogger.debug('Commit ABCI method requested');
 
-    executionTimer.startTimer('commit');
-
     // Store ST fees from the block to distribution pool
     creditsDistributionPool.incrementAmount(
       blockExecutionContext.getCumulativeFees(),
@@ -97,21 +95,13 @@ function commitHandlerFactory(
       `Block commit #${blockHeight} with appHash ${appHash.toString('hex').toUpperCase()}`,
     );
 
-    const commitTimings = executionTimer.endTimer('commit');
     const blockExecutionTimings = executionTimer.endTimer('blockExecution');
 
-    consensusLogger.debug(
-      {
-        timings: commitTimings,
-      },
-      `commit handler took ${commitTimings.seconds} seconds and ${commitTimings.nanoseconds} nanoseconds`,
-    );
-
-    consensusLogger.debug(
+    consensusLogger.trace(
       {
         timings: blockExecutionTimings,
       },
-      `block execution took ${blockExecutionTimings.seconds} seconds and ${blockExecutionTimings.nanoseconds} nanoseconds`,
+      `Block #${blockHeight} execution took ${blockExecutionTimings.seconds} seconds and ${blockExecutionTimings.nanoseconds} nanoseconds`,
     );
 
     return new ResponseCommit({

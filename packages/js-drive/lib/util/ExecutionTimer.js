@@ -1,9 +1,7 @@
 const process = require('process');
 
 class ExecutionTimer {
-  constructor() {
-    this.timers = {};
-  }
+  #timers = {};
 
   /**
    * Start named timer
@@ -13,13 +11,11 @@ class ExecutionTimer {
    * @return {void}
    */
   startTimer(name) {
-    if (this.#isStarted(name)) {
+    if (this.isStarted(name)) {
       throw new Error(`${name} timer is already started`);
     }
 
-    const timer = process.hrtime();
-
-    this.timers[name] = timer;
+    this.#timers[name] = process.hrtime();
   }
 
   /**
@@ -30,13 +26,13 @@ class ExecutionTimer {
    * @return {{ seconds: number, nanoseconds: number }}
    */
   endTimer(name) {
-    if (!this.#isStarted(name)) {
+    if (!this.isStarted(name)) {
       throw new Error(`${name} timer is not started`);
     }
 
-    const timings = process.hrtime(this.timers[name]);
+    const timings = process.hrtime(this.#timers[name]);
 
-    delete this.timers[name];
+    delete this.#timers[name];
 
     return {
       seconds: timings[0],
@@ -44,8 +40,12 @@ class ExecutionTimer {
     };
   }
 
-  #isStarted(name) {
-    return this.timers[name] !== undefined;
+  /**
+   * @param {string} name
+   * @return {boolean}
+   */
+  isStarted(name) {
+    return this.#timers[name] !== undefined;
   }
 }
 

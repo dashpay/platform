@@ -64,6 +64,7 @@ describe('beginBlockHandlerFactory', () => {
     executionTimerMock = {
       startTimer: this.sinon.stub(),
       endTimer: this.sinon.stub(),
+      isStarted: this.sinon.stub(),
     };
 
     beginBlockHandler = beginBlockHandlerFactory(
