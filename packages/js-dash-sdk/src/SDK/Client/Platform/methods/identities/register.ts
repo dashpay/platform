@@ -36,10 +36,11 @@ export default async function register(
     await broadcastStateTransition(this, identityCreateTransition);
 
     // If state transition was broadcast without any errors, import identity to the account
-    account.storage.insertIdentityIdAtIndex(
-        account.walletId,
-        identity.getId().toString(),
-        identityIndex,
+   account.storage
+    .getWalletStore(account.walletId)
+    .insertIdentityIdAtIndex(
+      identity.getId().toString(),
+      identityIndex,
     );
 
     return identity;

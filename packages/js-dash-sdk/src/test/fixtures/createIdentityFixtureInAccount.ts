@@ -4,7 +4,7 @@ const getIdentityFixture = require('@dashevo/dpp/lib/test/fixtures/getIdentityFi
 
 export function createIdentityFixtureInAccount(account) {
     const identityFixture = getIdentityFixture();
-    const identityFixtureIndex = 10000;
+    const identityFixtureIndex = 0;
     const { privateKey: identityPrivateKey } = account.identities.getIdentityHDKeyByIndex(identityFixtureIndex, 0);
 
     identityFixture.publicKeys[0] = new IdentityPublicKey({
@@ -15,8 +15,9 @@ export function createIdentityFixtureInAccount(account) {
         securityLevel: IdentityPublicKey.SECURITY_LEVELS.MASTER
     });
 
-    account.storage.insertIdentityIdAtIndex(
-        account.walletId,
+    account.storage
+      .getWalletStore(account.walletId)
+      .insertIdentityIdAtIndex(
         identityFixture.getId().toString(),
         identityFixtureIndex,
     );

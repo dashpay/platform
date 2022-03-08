@@ -1,6 +1,6 @@
 /* eslint-disable no-continue, no-restricted-syntax */
 const { Address, Transaction } = require('@dashevo/dashcore-lib');
-const { WALLET_TYPES, COINBASE_MATURITY } = require('../../../CONSTANTS');
+const { COINBASE_MATURITY } = require('../../../CONSTANTS');
 
 /**
  * Return all the utxos
@@ -11,67 +11,60 @@ const { WALLET_TYPES, COINBASE_MATURITY } = require('../../../CONSTANTS');
 function getUTXOS(options = {
   coinbaseMaturity: COINBASE_MATURITY,
 }) {
-  const self = this;
   const {
     walletId,
     network,
-    BIP44PATH,
-    walletType,
   } = this;
 
   const utxos = [];
-  const isHDWallet = [WALLET_TYPES.HDPUBLIC, WALLET_TYPES.HDWALLET].includes(walletType);
 
-  const currentBlockHeight = this.store.chains[network].blockHeight;
+  const chainStore = this.storage.getChainStore(network);
+  const accountState = this.storage.getWalletStore(walletId).getPathState(this.accountPath);
+  const currentBlockHeight = chainStore.blockHeight;
 
-  for (const addressType in this.store.wallets[walletId].addresses) {
-    if (!addressType || !['external', 'internal', 'misc'].includes(addressType)) {
-      continue;
-    }
-    for (const path in self.store.wallets[walletId].addresses[addressType]) {
-      if (!path) continue;
-      const address = self.store.wallets[walletId].addresses[addressType][path];
+  Object.values(accountState.addresses).forEach((address) => {
+    const addressData = chainStore.getAddress(address);
+    const utxosKeys = Object.keys(addressData.utxos);
 
-      if (isHDWallet && !path.startsWith(BIP44PATH)) continue;
+    utxosKeys.forEach((utxoIdentifier) => {
+      let skipUtxo = false;
+      const [txid, outputIndex] = utxoIdentifier.split('-');
 
-      for (const identifier in address.utxos) {
-        if (!identifier) continue;
-        const [txid, outputIndex] = identifier.split('-');
-        const transaction = new Transaction(this.store.transactions[txid]);
+      const txInStore = chainStore.getTransaction(txid);
 
-        if (transaction.isCoinbase()) {
-          // If the transaction is not a special transaction, we can't check its
-          // maturity at the moment of writing this comment.
-          // The wallet library doesn't maintain the header chain and thus we can
-          // figure out the height only from the payload, but old coinbase transactions
-          // doesn't have a payload.
-          if (!transaction.isSpecialTransaction()) {
-            continue;
-          }
-
-          const transactionHeight = (this.store.transactionsMetadata[txid])
-            ? this.store.transactionsMetadata[txid].height
+      if (txInStore && txInStore.transaction.isCoinbase()) {
+        const { transaction, metadata } = txInStore;
+        // If the transaction is not a special transaction, we can't check its
+        // maturity at the moment of writing this comment.
+        // The wallet library doesn't maintain the header chain and thus we can
+        // figure out the height only from the payload, but old coinbase transactions
+        // doesn't have a payload.
+        if (transaction.isSpecialTransaction()) {
+          const transactionHeight = metadata
+            ? metadata.height
             : transaction.extraPayload.height;
 
           // We check maturity is at least 100 blocks.
           // another way is to just read _scriptBuffer height value.
           if (transactionHeight + options.coinbaseMaturity > currentBlockHeight) {
-            continue;
+            skipUtxo = true;
           }
         }
+      }
 
+      if (!skipUtxo) {
         utxos.push(new Transaction.UnspentOutput(
           {
             txId: txid,
             vout: parseInt(outputIndex, 10),
-            script: address.utxos[identifier].script,
-            satoshis: address.utxos[identifier].satoshis,
-            address: new Address(address.address, network),
+            script: addressData.utxos[utxoIdentifier].script,
+            satoshis: addressData.utxos[utxoIdentifier].satoshis,
+            address: new Address(addressData.address, network),
           },
         ));
       }
-    }
-  }
+    });
+  });
   return utxos.sort((a, b) => b.satoshis - a.satoshis);
 }
 

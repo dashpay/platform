@@ -15,10 +15,10 @@ const BalanceIsNotEnoughError = require('@dashevo/dpp/lib/errors/consensus/fee/B
 const DAPIClient = require('@dashevo/dapi-client/lib/DAPIClient');
 const { hash } = require('@dashevo/dpp/lib/util/hash');
 const Identifier = require('@dashevo/dpp/lib/identifier/Identifier');
+const Transaction = require('@dashevo/dashcore-lib/lib/transaction');
 const createClientWithFundedWallet = require('../../../lib/test/createClientWithFundedWallet');
 const wait = require('../../../lib/wait');
 const getDAPISeeds = require('../../../lib/test/getDAPISeeds');
-const Transaction = require('@dashevo/dashcore-lib/lib/transaction');
 
 describe('Platform', () => {
   describe('Identity', () => {
@@ -114,11 +114,12 @@ describe('Platform', () => {
         await wait(5000);
       }
 
-      walletAccount.storage.insertIdentityIdAtIndex(
-        walletAccount.walletId,
-        identityOne.getId().toString(),
-        identityOneIndex,
-      );
+      walletAccount.storage
+        .getWalletStore(walletAccount.walletId)
+        .insertIdentityIdAtIndex(
+          identityOne.getId().toString(),
+          identityOneIndex,
+        );
 
       // Creating transition that tries to spend the same transaction
       const {

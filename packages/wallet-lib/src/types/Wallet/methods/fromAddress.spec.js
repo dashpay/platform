@@ -18,18 +18,20 @@ describe('Wallet - fromAddress', function suite() {
     expect(self1.walletType).to.equal(WALLET_TYPES.ADDRESS);
     expect(self1.mnemonic).to.equal(null);
     expect(self1.address).to.equal(cR4t6ePublicKey.toAddress().toString());
-    expect(self1.keyChain.type).to.equal('address');
-    expect(self1.keyChain.address).to.equal(cR4t6ePublicKey.toAddress().toString());
-    expect(self1.keyChain.keys).to.deep.equal({});
+
+    const keyChain = self1.keyChainStore.getMasterKeyChain()
+    expect(keyChain.rootKeyType).to.equal('address');
+    expect(keyChain.rootKey).to.equal(cR4t6ePublicKey.toAddress().toString());
 
     const self2 = {};
     fromAddress.call(self2, cR4t6ePublicKey.toAddress().toString());
     expect(self2.walletType).to.equal(WALLET_TYPES.ADDRESS);
     expect(self2.mnemonic).to.equal(null);
     expect(self2.address).to.equal(cR4t6ePublicKey.toAddress().toString());
-    expect(self2.keyChain.type).to.equal('address');
-    expect(self2.keyChain.address).to.equal(cR4t6ePublicKey.toAddress().toString());
-    expect(self2.keyChain.keys).to.deep.equal({});
+
+    const keyChain2 = self2.keyChainStore.getMasterKeyChain()
+    expect(keyChain.rootKeyType).to.equal('address');
+    expect(keyChain.rootKey).to.equal(cR4t6ePublicKey.toAddress().toString());
   });
   it('should reject invalid mnemonic', () => {
     const invalidInputs = [

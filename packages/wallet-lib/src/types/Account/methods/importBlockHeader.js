@@ -1,5 +1,5 @@
 const logger = require('../../../logger');
-const { WALLET_TYPES } = require('../../../CONSTANTS');
+const EVENTS = require('../../../EVENTS');
 /**
  * Import transactions and always keep a number of unused addresses up to gap
  *
@@ -15,16 +15,14 @@ module.exports = async function importBlockHeader(blockHeader) {
   // knowing the following blockHeight blockheader's prevHash value
   // const previousHash = blockHeader.prevHash.reverse().toString('hex');
   const {
-    walletId, BIP44PATH, index, store, storage, walletType,
+    storage, network,
   } = this;
 
-  const localWalletStore = store.wallets[walletId];
-  const localAccountStore = ([WALLET_TYPES.HDPUBLIC, WALLET_TYPES.HDWALLET].includes(walletType))
-    ? localWalletStore.accounts[BIP44PATH.toString()]
-    : localWalletStore.accounts[index.toString()];
+  const applicationStore = storage.application;
+  const chainStore = storage.getChainStore(network);
+  applicationStore.blockHash = blockHeader.id;
 
-  localAccountStore.blockHash = blockHeader.id;
-
-  storage.importBlockHeader(blockHeader);
+  chainStore.importBlockHeader(blockHeader);
+  this.emit(EVENTS.BLOCKHEADER, { type: EVENTS.BLOCKHEADER, payload: blockHeader });
   logger.silly(`Account.importBlockHeader(${blockHeader.id})`);
 };

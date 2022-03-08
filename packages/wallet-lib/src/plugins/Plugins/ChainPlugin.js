@@ -33,15 +33,15 @@ class ChainPlugin extends StandardPlugin {
    */
   async execBlockListener() {
     const self = this;
-    const { network } = this.storage.store.wallets[this.walletId];
+    const { network } = this.storage.application;
+    const chainStore = this.storage.getChainStore(network);
 
     if (!this.isSubscribedToBlocks) {
       self.transport.on(EVENTS.BLOCK, async (ev) => {
-        // const { network } = self.storage.store.wallets[self.walletId];
         const { payload: block } = ev;
         this.parentEvents.emit(EVENTS.BLOCK, { type: EVENTS.BLOCK, payload: block });
         // We do not announce BLOCKHEADER as this is done by Storage
-        await self.storage.importBlockHeader(block.header);
+        await chainStore.importBlockHeader(block.header);
       });
       self.transport.on(EVENTS.BLOCKHEIGHT_CHANGED, async (ev) => {
         const { payload: blockheight } = ev;
@@ -50,7 +50,7 @@ class ChainPlugin extends StandardPlugin {
           type: EVENTS.BLOCKHEIGHT_CHANGED, payload: blockheight,
         });
 
-        this.storage.store.chains[network.toString()].blockHeight = blockheight;
+        chainStore.state.blockHeight = blockheight;
         logger.debug(`ChainPlugin - setting chain blockheight ${blockheight}`);
       });
       await self.transport.subscribeToBlocks();
@@ -69,20 +69,20 @@ class ChainPlugin extends StandardPlugin {
       return false;
     }
 
+    const { network } = this.storage.application;
+    const chainStore = this.storage.getChainStore(network);
     const { chain: { blocksCount: blocks }, network: { fee: { relay } } } = res;
-
-    const { network } = this.storage.store.wallets[this.walletId];
 
     logger.debug('ChainPlugin - Setting up starting blockHeight', blocks);
 
-    this.storage.store.chains[network.toString()].blockHeight = blocks;
+    chainStore.state.blockHeight = blocks;
 
     if (relay) {
-      this.storage.store.chains[network.toString()].fees.minRelay = dashToDuffs(relay);
+      chainStore.state.fees.minRelay = dashToDuffs(relay);
     }
 
     const bestBlock = await this.transport.getBlockHeaderByHeight(blocks);
-    await this.storage.importBlockHeader(bestBlock);
+    await chainStore.importBlockHeader(bestBlock);
 
     return true;
   }

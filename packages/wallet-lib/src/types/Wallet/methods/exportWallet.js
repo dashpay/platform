@@ -25,7 +25,7 @@ function exportAddressWallet(outputType = 'address') {
   }
 }
 
-function exportSingleAddressWallet(outputType = 'privateKey') {
+function exportPrivateKeyWallet(outputType = 'privateKey') {
   switch (outputType) {
     case 'privateKey':
       if (!this.privateKey) throw new Error('No PrivateKey to export');
@@ -81,7 +81,7 @@ module.exports = function exportWallet(outputType) {
   switch (this.walletType) {
     case WALLET_TYPES.PRIVATEKEY:
     case WALLET_TYPES.SINGLE_ADDRESS:
-      return exportSingleAddressWallet.call(this, outputType);
+      return exportPrivateKeyWallet.call(this, outputType);
     case WALLET_TYPES.ADDRESS:
       return exportAddressWallet.call(this, outputType);
     case WALLET_TYPES.PUBLICKEY:
