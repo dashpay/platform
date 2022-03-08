@@ -54,14 +54,6 @@ function beginBlockHandlerFactory(
       version,
     } = header;
 
-    const consensusLogger = logger.child({
-      height: height.toString(),
-      abciMethod: 'beginBlock',
-    });
-
-    consensusLogger.debug('BeginBlock ABCI method requested');
-    consensusLogger.trace({ abciRequest: request });
-
     // Start block execution timer
 
     if (executionTimer.isStarted('blockExecution')) {
@@ -69,6 +61,14 @@ function beginBlockHandlerFactory(
     }
 
     executionTimer.startTimer('blockExecution');
+
+    const consensusLogger = logger.child({
+      height: height.toString(),
+      abciMethod: 'beginBlock',
+    });
+
+    consensusLogger.debug('BeginBlock ABCI method requested');
+    consensusLogger.trace({ abciRequest: request });
 
     // Validate protocol version
 

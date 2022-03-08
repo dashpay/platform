@@ -53,6 +53,12 @@ function deliverTxHandlerFactory(
   async function deliverTxHandler({ tx: stateTransitionByteArray }) {
     const { height: blockHeight } = blockExecutionContext.getHeader();
 
+    // Start execution timer
+
+    if (executionTimer.isStarted('deliverTx')) {
+      executionTimer.endTimer('deliverTx');
+    }
+
     executionTimer.startTimer('deliverTx');
 
     const stHash = crypto
