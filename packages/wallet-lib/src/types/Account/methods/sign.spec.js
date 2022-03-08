@@ -18,7 +18,7 @@ describe('Account - sign', function suite() {
     wallet.disconnect();
   });
   it('should sign a transaction with a message', function () {
-    account.importTransactions(transactions);
+    account.importTransactions([[new Dashcore.Transaction(transactions["4e2a8b05a805fcee959b8ecfd5557e196a9b8490dd280d6f599b391d650407c8"])]]);
     const transaction = account.createTransaction({
       recipient: 'yNPbcFfabtNmmxKdGwhHomdYfVs6gikbPf', // Evonet faucet
       satoshis: 1000000, // 1 Dash

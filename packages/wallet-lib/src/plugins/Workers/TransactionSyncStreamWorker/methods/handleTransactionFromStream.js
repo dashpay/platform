@@ -77,8 +77,8 @@ async function handleTransactionFromStream(transaction) {
   const metadata = {
     blockHash: getTransactionResponse.blockHash,
     height: getTransactionResponse.height,
-    instantLocked: getTransactionResponse.instantLocked,
-    chainLocked: getTransactionResponse.chainLocked,
+    instantLocked: getTransactionResponse.isInstantLocked,
+    chainLocked: getTransactionResponse.isChainLocked,
   };
 
   delete this.pendingRequest[transactionHash];

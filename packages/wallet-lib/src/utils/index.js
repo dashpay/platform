@@ -1,6 +1,7 @@
 const extendTransactionsWithMetadata = require('./extendTransactionsWithMetadata');
 const calculateTransactionFees = require('./calculateTransactionFees');
 const categorizeTransactions = require('./categorizeTransactions');
+const calculateDuffBalance = require('./calculateDuffBalance');
 const filterTransactions = require('./filterTransactions');
 const { hash, doubleSha256, sha256 } = require('./crypto');
 const { varIntSizeBytesFromLength } = require('./varInt');
@@ -29,6 +30,7 @@ module.exports = {
   calculateTransactionFees,
   categorizeTransactions,
   mnemonicToHDPrivateKey,
+  calculateDuffBalance,
   generateNewMnemonic,
   seedToHDPrivateKey,
   mnemonicToWalletId,

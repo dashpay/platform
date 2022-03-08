@@ -9,6 +9,14 @@ export declare namespace DerivableKeyChain {
     }
 }
 
+type keyChainId = string;
+type rootKey = any;
+type firstUnusedAddress = {
+  path: string;
+  address: string
+}
+
+
 export declare class DerivableKeyChain {
     constructor(options?: DerivableKeyChain.IDerivableKeyChainOptions);
     network: Network;
@@ -18,17 +26,19 @@ export declare class DerivableKeyChain {
     HDPrivateKey?: HDPrivateKey;
     privateKey?: PrivateKey;
 
-    generateKeyForChild(index: number, type?: HDKeyTypesParam): HDPrivateKey|HDPublicKey;
-    generateKeyForPath(path: string, type?: HDKeyTypesParam): HDPrivateKey|HDPublicKey;
+    getForPath(path: string, opts: any): any;
+    getForAddress(address): any;
 
     getDIP15ExtendedKey(userUniqueId: string, contactUniqueId: string, index?: number, accountIndex?: number, type?: HDKeyTypesParam): HDKeyTypes;
-    getHardenedDIP15AccountKey(index?: number, type?: HDKeyTypesParam): HDKeyTypes;
+    getFirstUnusedAddress(): firstUnusedAddress;
     getHardenedBIP44HDKey(type?: HDKeyTypesParam): HDKeyTypes;
     getHardenedDIP9FeatureHDKey(type?: HDKeyTypesParam): HDKeyTypes;
-    getKeyForChild(index: number, type?: HDKeyTypesParam): HDKeyTypes;
-    getKeyForPath(path: string, type?: HDKeyTypesParam): HDKeyTypes;
-    getPrivateKey(): PrivateKey;
-
+    getHardenedDIP15AccountKey(index?: number, type?: HDKeyTypesParam): HDKeyTypes;
+    getRootKey(): rootKey;
+    getWatchedAddresses(): Array<any>;
+    getIssuedPaths(): Array<any>;
+    maybeLookAhead(): any;
+    markAddressAsUsed(address: string): any;
     sign(object: Transaction|any, privateKeys:[PrivateKey], sigType: number): any;
 }
 

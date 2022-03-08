@@ -46,7 +46,9 @@ const CONSTANTS = {
     PRIVATEKEY: 'privateKey',
     // TODO: DEPRECATE.
     SINGLE_ADDRESS: 'single_address',
+    // TODO: DEPRECATE.
     HDWALLET: 'hdwallet',
+    HDPRIVATE: 'hdprivate',
     HDPUBLIC: 'hdpublic',
   },
   // List of account function and properties that can be injected in a plugin
@@ -79,7 +81,6 @@ const CONSTANTS = {
     ],
     UNSAFE_PROPERTIES: [
       'storage',
-      'keyChain',
       'identities',
     ],
     SAFE_PROPERTIES: [

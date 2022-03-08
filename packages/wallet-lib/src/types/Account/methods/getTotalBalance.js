@@ -1,4 +1,4 @@
-const { duffsToDash } = require('../../../utils');
+const { duffsToDash, calculateDuffBalance } = require('../../../utils');
 
 /**
  * Return the total balance of an account (confirmed + unconfirmed).
@@ -7,9 +7,14 @@ const { duffsToDash } = require('../../../utils');
  */
 function getTotalBalance(displayDuffs = true) {
   const {
-    walletId, storage, index,
+    walletId, storage, accountPath, network,
   } = this;
-  const totalSat = storage.calculateDuffBalance(walletId, index, 'total');
+
+  const { addresses } = storage.getWalletStore(walletId).getPathState(accountPath);
+
+  const chainStore = storage.getChainStore(network);
+
+  const totalSat = (calculateDuffBalance(Object.values(addresses), chainStore, 'total'));
   return (displayDuffs) ? totalSat : duffsToDash(totalSat);
 }
 
