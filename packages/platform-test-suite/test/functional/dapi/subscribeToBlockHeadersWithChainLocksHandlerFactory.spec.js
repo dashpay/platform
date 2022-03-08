@@ -90,7 +90,7 @@ describe('subscribeToBlockHeadersWithChainLocksHandlerFactory', () => {
     expect(bestChainLock.height).to.exist();
   });
 
-  it('should respond with both new and historical data', async () => {
+  it.only('should respond with both new and historical data', async () => {
     let latestChainLock = null;
 
     const historicalBlocksToGet = 10;
@@ -130,6 +130,7 @@ describe('subscribeToBlockHeadersWithChainLocksHandlerFactory', () => {
         const rawChainLock = data.getChainLock();
         if (rawChainLock) {
           latestChainLock = new ChainLock(Buffer.from(rawChainLock));
+          console.log('rawchainlockddd', latestChainLock)
           stream.destroy();
           streamEnded = true;
         }
@@ -137,30 +138,37 @@ describe('subscribeToBlockHeadersWithChainLocksHandlerFactory', () => {
     });
 
     let streamError;
-    stream.on('error', (e) => {
+    stream.on('error', (e, e1) => {
+      console.error(e, e1)
       streamError = e;
     });
 
     stream.on('end', () => {
+      console.log('stream ended')
       streamEnded = true;
     });
+
+    console.log('before create transaction')
 
     // Create and broadcast transaction to produce fresh block
     const transaction = faucetWalletAccount.createTransaction({
       recipient: new PrivateKey().toAddress(process.env.NETWORK),
       satoshis: 10000,
     });
+    console.log('before broadcastTransaction')
 
-    await dapiClient.core.broadcastTransaction(transaction.toBuffer());
-
+   // await dapiClient.core.broadcastTransaction(transaction.toBuffer());
+    console.log('after broadcastTransaction')
     // Wait for stream ending
     while (!streamEnded) {
       if (streamError) {
+        console.error(streamError.stack)
         throw streamError;
       }
 
       await wait(1000);
     }
+    console.log('rot')
 
     // TODO: fetching blocks one by one takes too long. Implement getBlockHeaders in dapi-client
     const fetchedHistoricalBlocks = await Promise.all(
