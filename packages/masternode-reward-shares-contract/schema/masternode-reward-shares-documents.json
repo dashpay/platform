@@ -1,5 +1,5 @@
 {
-  "masternodeRewardShares": {
+  "rewardShare": {
     "description": "Share specified percentage of masternode rewards with identities",
     "type": "object",
     "indices": [
