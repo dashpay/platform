@@ -96,6 +96,7 @@ describe('deliverTxHandlerFactory', () => {
         seconds: 1,
         nanoseconds: 1,
       }),
+      isStarted: this.sinon.stub(),
     };
 
     deliverTxHandler = deliverTxHandlerFactory(
