@@ -59,10 +59,16 @@ function beginBlockHandlerFactory(
       abciMethod: 'beginBlock',
     });
 
-    executionTimer.startTimer('blockExecution');
-
     consensusLogger.debug('BeginBlock ABCI method requested');
     consensusLogger.trace({ abciRequest: request });
+
+    // Start block execution timer
+
+    if (executionTimer.isStarted('blockExecution')) {
+      executionTimer.endTimer('blockExecution');
+    }
+
+    executionTimer.startTimer('blockExecution');
 
     // Validate protocol version
 

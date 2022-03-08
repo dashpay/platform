@@ -185,11 +185,12 @@ function deliverTxHandlerFactory(
 
     const deliverTxTimings = executionTimer.endTimer('deliverTx');
 
-    logger.debug(
+    logger.trace(
       {
         timings: deliverTxTimings,
+        stateTransitionType: stateTransition.getType(),
       },
-      `deliverTx for state transition with hash ${stHash} and type ${stateTransition.getType()} took ${deliverTxTimings.seconds} seconds and ${deliverTxTimings.nanoseconds} nanoseconds`,
+      `${stateTransition.constructor.name} execution took ${deliverTxTimings.seconds} seconds and ${deliverTxTimings.nanoseconds} nanoseconds`,
     );
 
     return new ResponseDeliverTx();

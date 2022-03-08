@@ -8,12 +8,6 @@ describe('ExecutionTimer', () => {
     timer = new ExecutionTimer();
   });
 
-  describe('#constructor', () => {
-    it('should create an instance with empty timers', () => {
-      expect(timer.timers).to.deep.equal({});
-    });
-  });
-
   describe('#startTimer', () => {
     it('should throw an error if timer already started', () => {
       timer.startTimer('some');
