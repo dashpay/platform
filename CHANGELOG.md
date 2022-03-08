@@ -1,3 +1,20 @@
+## [0.22.0-dev.11](https://github.com/dashevo/platform/compare/v0.22.0-dev.10...v0.22.0-dev.11) (2022-03-08)
+
+
+### ⚠ BREAKING CHANGES
+
+* `in` query operator doesn't work with multiple values (#280)
+
+### Features
+
+* **drive:** add performance timers to measure block execution ([#281](https://github.com/dashevo/platform/issues/281))
+
+
+### Bug Fixes
+
+* `in` query operator doesn't work with multiple values ([#280](https://github.com/dashevo/platform/issues/280))
+* can't find masternode raward shares data contract ([#279](https://github.com/dashevo/platform/issues/279))
+
 ## [0.22.0-dev.10](https://github.com/dashevo/platform/compare/v0.22.0-dev.9...v0.22.0-dev.10) (2022-03-07)
 
 
