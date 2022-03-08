@@ -22,7 +22,7 @@ describe('Account - injectPlugin', function suite() {
     emit: emitter.emit,
   }
   it('should prevent sensible access', async function () {
-    const expectedException1 = 'Injection of plugin : storage Unallowed';
+    const expectedException1 = 'Injection of plugin : storage into WorkingWorker not allowed';
     await expectThrowsAsync(async () => await injectPlugin.call(mockedSelf, WorkingWorker), expectedException1);
   });
   it('should work', function (done) {
@@ -42,9 +42,9 @@ describe('Account - injectPlugin', function suite() {
   it('should handle faulty worker', async function () {
     const expectedException1 = 'Some reason.';
     await expectThrowsAsync(async () => await injectPlugin.call(mockedSelf, FaultyWorker, true), expectedException1);
-      expect(mockedSelf.plugins.workers['faultyworker']).to.exist;
-      expect(mockedSelf.plugins.workers['faultyworker'].worker).to.equal(null);
-      expect(mockedSelf.plugins.workers['faultyworker'].isWorkerRunning).to.equal(false);
-      expect(mockedSelf.plugins.workers['faultyworker'].state.started).to.equal(false);
+    expect(mockedSelf.plugins.workers['faultyworker']).to.exist;
+    expect(mockedSelf.plugins.workers['faultyworker'].worker).to.equal(null);
+    expect(mockedSelf.plugins.workers['faultyworker'].isWorkerRunning).to.equal(false);
+    expect(mockedSelf.plugins.workers['faultyworker'].state.started).to.equal(false);
   });
 });

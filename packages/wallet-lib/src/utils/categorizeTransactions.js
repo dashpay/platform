@@ -7,37 +7,52 @@ const { TRANSACTION_HISTORY_TYPES } = require('../CONSTANTS');
 //  and a sent transaction where our own address is a change...
 const determineType = (inputsDetection, outputsDetection) => {
   let type = TRANSACTION_HISTORY_TYPES.UNKNOWN;
-  if (inputsDetection.hasExternalAddress) {
-    type = TRANSACTION_HISTORY_TYPES.RECEIVED;
-  }
-  if (outputsDetection.hasExternalAddress) {
-    type = TRANSACTION_HISTORY_TYPES.RECEIVED;
-  }
-  if (
-    !outputsDetection.hasExternalAddress
-      && (inputsDetection.hasChangeAddress || inputsDetection.hasExternalAddress)
-  ) {
-    type = TRANSACTION_HISTORY_TYPES.SENT;
-  }
-  if (inputsDetection.hasExternalAddress && outputsDetection.hasExternalAddress) {
-    type = TRANSACTION_HISTORY_TYPES.ADDRESS_TRANSFER;
-  } else if (
-    (inputsDetection.hasExternalAddress && outputsDetection.hasOtherAccountAddress)
-      || (inputsDetection.hasOtherAccountAddress && outputsDetection.hasExternalAddress)
+
+  // We first discriminate with account transfer from or to another account
+  if (inputsDetection.hasOtherAccountAddress
+    && !inputsDetection.hasOwnAddress) {
+    type = TRANSACTION_HISTORY_TYPES.ACCOUNT_TRANSFER;
+  } else if (inputsDetection.hasOwnAddress
+    && outputsDetection.hasOtherAccountAddress
   ) {
     type = TRANSACTION_HISTORY_TYPES.ACCOUNT_TRANSFER;
+  } else if (inputsDetection.hasOwnAddress
+      && !outputsDetection.hasUnknownAddress
+      && !outputsDetection.hasOtherAccountAddress) {
+    // Detecting an address transfer is the second element we need to discriminate
+    type = TRANSACTION_HISTORY_TYPES.ADDRESS_TRANSFER;
+  } else {
+    if (inputsDetection.hasExternalAddress) {
+      type = TRANSACTION_HISTORY_TYPES.RECEIVED;
+    }
+    if (outputsDetection.hasExternalAddress && !inputsDetection.hasExternalAddress) {
+      type = TRANSACTION_HISTORY_TYPES.RECEIVED;
+    }
+    if (
+      outputsDetection.hasUnknownAddress
+        && (inputsDetection.hasOwnAddress)
+    ) {
+      type = TRANSACTION_HISTORY_TYPES.SENT;
+    }
   }
+
   return type;
 };
 
-function categorizeTransactions(transactionsWithMetadata, accountStore, accountIndex, walletType, network = 'testnet') {
+function categorizeTransactions(
+  transactionsWithMetadata,
+  walletStore,
+  accountIndex,
+  walletType,
+  network = 'testnet',
+) {
   const categorizedTransactions = [];
 
   const {
-    externalAddressList,
-    internalAddressList,
-    otherAccountAddressList,
-  } = classifyAddresses(accountStore.addresses, accountIndex, walletType);
+    externalAddressesList,
+    internalAddressesList,
+    otherAccountAddressesList,
+  } = classifyAddresses(walletStore, accountIndex, walletType, network);
 
   each(transactionsWithMetadata, (transactionWithMetadata) => {
     const [transaction, metadata] = transactionWithMetadata;
@@ -47,19 +62,29 @@ function categorizeTransactions(transactionsWithMetadata, accountStore, accountI
     let outputsHasChangeAddress = false;
     let outputsHasExternalAddress = false;
     let outputsHasOtherAccountAddress = false;
+    let outputsHasOwnAddress = false;
+    let outputsHasUnknownAddress = false;
 
     let inputsHasChangeAddress = false;
     let inputsHasExternalAddress = false;
     let inputsHasOtherAccountAddress = false;
+    let inputsHasOwnAddress = false;
+    let inputsHasUnknownAddress = false;
 
     // For each vout, we will look at matching known addresses
     transaction.outputs.forEach((vout) => {
       const { satoshis, script } = vout;
       const address = script.toAddress(network).toString();
       if (address) {
-        if (internalAddressList.includes(address)) outputsHasChangeAddress = true;
-        if (externalAddressList.includes(address)) outputsHasExternalAddress = true;
-        if (otherAccountAddressList.includes(address)) outputsHasOtherAccountAddress = true;
+        if (internalAddressesList.includes(address)) {
+          outputsHasChangeAddress = true;
+          outputsHasOwnAddress = true;
+        } else if (externalAddressesList.includes(address)) {
+          outputsHasExternalAddress = true;
+          outputsHasOwnAddress = true;
+        } else if (otherAccountAddressesList.includes(address)) {
+          outputsHasOtherAccountAddress = true;
+        } else outputsHasUnknownAddress = true;
         to.push({
           address,
           satoshis,
@@ -72,9 +97,15 @@ function categorizeTransactions(transactionsWithMetadata, accountStore, accountI
       const { script } = vin;
       const address = script.toAddress(network).toString();
       if (address) {
-        if (internalAddressList.includes(address)) inputsHasChangeAddress = true;
-        if (externalAddressList.includes(address)) inputsHasExternalAddress = true;
-        if (otherAccountAddressList.includes(address)) inputsHasOtherAccountAddress = true;
+        if (internalAddressesList.includes(address)) {
+          inputsHasChangeAddress = true;
+          inputsHasOwnAddress = true;
+        } else if (externalAddressesList.includes(address)) {
+          inputsHasExternalAddress = true;
+          inputsHasOwnAddress = true;
+        } else if (otherAccountAddressesList.includes(address)) {
+          inputsHasOtherAccountAddress = true;
+        } else inputsHasUnknownAddress = true;
         from.push({
           address,
         });
@@ -85,10 +116,14 @@ function categorizeTransactions(transactionsWithMetadata, accountStore, accountI
       hasChangeAddress: inputsHasChangeAddress,
       hasExternalAddress: inputsHasExternalAddress,
       hasOtherAccountAddress: inputsHasOtherAccountAddress,
+      hasOwnAddress: inputsHasOwnAddress,
+      hasUnknownAddress: inputsHasUnknownAddress,
     }, {
       hasChangeAddress: outputsHasChangeAddress,
       hasExternalAddress: outputsHasExternalAddress,
       hasOtherAccountAddress: outputsHasOtherAccountAddress,
+      hasOwnAddress: outputsHasOwnAddress,
+      hasUnknownAddress: outputsHasUnknownAddress,
     });
 
     const categorizedTransaction = {
@@ -98,8 +133,8 @@ function categorizeTransactions(transactionsWithMetadata, accountStore, accountI
       type,
       blockHash: metadata.blockHash,
       height: metadata.height,
-      isInstantLocked: metadata.instantLocked,
-      isChainLocked: metadata.chainLocked,
+      isInstantLocked: metadata.isInstantLocked,
+      isChainLocked: metadata.isChainLocked,
     };
     categorizedTransactions.push(categorizedTransaction);
   });

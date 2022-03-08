@@ -63,7 +63,7 @@ class StandardPlugin extends EventEmitter {
       // this.parentEvents = {on:obj.on, emit:obj.emit};
       this.parentEvents = obj;
     } else {
-      this.emit('error', new InjectionToPluginUnallowed(name), {
+      this.emit('error', new InjectionToPluginUnallowed(this.name, name), {
         type: 'plugin',
         pluginType: 'plugin',
         pluginName: this.name,

@@ -1,34 +1,49 @@
-const { map, filter, difference } = require('lodash');
-const { WALLET_TYPES } = require('../CONSTANTS');
+const { WALLET_TYPES, BIP44_LIVENET_ROOT_PATH, BIP44_TESTNET_ROOT_PATH } = require('../CONSTANTS');
 
-function classifyAddresses(addressStore, accountIndex, walletType) {
-  const { external, internal, misc } = addressStore;
+function classifyAddresses(walletStore, accountIndex, walletType, network = 'testnet') {
+  const externalAddressesList = [];
+  const internalAddressesList = [];
+  const otherAccountAddressesList = [];
+  const miscAddressesList = [];
 
-  // This will filter addresses to return only the one that are directly one the account manage.
-  // TODO: Computational improvement can be made by having accountIndex
-  //  member of the address info format and thus comparing only 2 numbers
-  const filterPathByAccount = (address) => (parseInt(address.path.split('/')[3], 10) === accountIndex);
-  const addressMappingPredicate = (addressInfo) => (addressInfo.address);
+  const rootPath = (network.toString() === 'testnet')
+    ? BIP44_TESTNET_ROOT_PATH
+    : BIP44_LIVENET_ROOT_PATH;
 
-  const externalAddressList = (walletType === WALLET_TYPES.HDWALLET)
-    ? map(filter(external, filterPathByAccount), addressMappingPredicate)
-    : map(misc, addressMappingPredicate);
+  const accountsPaths = [...walletStore.state.paths.keys()];
 
-  const internalAddressList = (walletType === WALLET_TYPES.HDWALLET)
-    ? map(filter(internal, filterPathByAccount), addressMappingPredicate)
-    : [];
+  const isHDWallet = [
+    WALLET_TYPES.HDWALLET,
+    WALLET_TYPES.HDPRIVATE,
+    WALLET_TYPES.HDPUBLIC].includes(walletType);
 
-  const otherAccountAddressList = (walletType === WALLET_TYPES.HDWALLET)
-    ? difference(
-      [...map(external, addressMappingPredicate), ...map(internal, addressMappingPredicate)],
-      [...externalAddressList, ...internalAddressList],
-    )
-    : [];
+  const currentAccountPath = (isHDWallet) ? `${rootPath}/${accountIndex}'` : `m/${accountIndex}`;
+
+  accountsPaths.forEach((accountPath) => {
+    const isCurrentAccountPath = accountPath === currentAccountPath;
+    const accountPaths = walletStore.getPathState(accountPath);
+
+    Object.entries(accountPaths.addresses)
+      .forEach(([path, address]) => {
+        if (isCurrentAccountPath) {
+          if (isHDWallet) {
+            if (path.startsWith('m/0')) externalAddressesList.push(address);
+            else if (path.startsWith('m/1')) internalAddressesList.push(address);
+            else miscAddressesList.push(address);
+          } else {
+            externalAddressesList.push(address);
+          }
+        } else {
+          otherAccountAddressesList.push(address);
+        }
+      });
+  });
 
   return {
-    externalAddressList,
-    internalAddressList,
-    otherAccountAddressList,
+    externalAddressesList,
+    internalAddressesList,
+    otherAccountAddressesList,
+    miscAddressesList,
   };
 }
 module.exports = classifyAddresses;
