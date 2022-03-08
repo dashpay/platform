@@ -198,7 +198,7 @@ describe('synchronizeMasternodeIdentitiesFactory', () => {
       { mnList: smlFixture.concat(newSmlFixture) },
     );
 
-    const newIdentities = { create: [documentsFixture[0]], delete: [] };
+    const newIdentities = { create: [documentsFixture[0]] };
 
     handleNewMasternodeMock.returns(newIdentities);
     splitDocumentsIntoChunksMock.returns([newIdentities]);
@@ -222,7 +222,6 @@ describe('synchronizeMasternodeIdentitiesFactory', () => {
     expect(handleUpdatedPubKeyOperatorMock).to.be.not.called();
     expect(stateRepositoryMock.fetchDocuments).to.be.not.called();
 
-    expect(splitDocumentsIntoChunksMock).to.be.calledWithExactly(newIdentities);
     expect(transactionalDppMock.document.createStateTransition)
       .to.be.calledWithExactly(newIdentities);
     expect(transactionalDppMock.stateTransition.apply).to.be.calledWithExactly(
