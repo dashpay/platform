@@ -30,7 +30,7 @@ describe('Masternode Reward Shares', () => {
       masternodeRewardSharesContractId,
     );
 
-    client.getApps().set('masternodeRewardShares', {
+    client.getApps().set('rewardShare', {
       contractId: masternodeRewardSharesContractId,
       contract: masternodeRewardSharesContract,
     });

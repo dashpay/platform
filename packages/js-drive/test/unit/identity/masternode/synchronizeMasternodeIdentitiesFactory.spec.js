@@ -245,7 +245,7 @@ describe('synchronizeMasternodeIdentitiesFactory', () => {
 
     expect(stateRepositoryMock.fetchDocuments).to.be.calledWithExactly(
       masternodeRewardSharesContractId,
-      'masternodeRewardShares',
+      'rewardShare',
       {
         where: [
           ['$ownerId', '==', Identifier.from('XzhK3k3wuKfEsR6PBFPKf9BRpzLrXKcRHGHs5G6xgho')],
@@ -269,7 +269,7 @@ describe('synchronizeMasternodeIdentitiesFactory', () => {
     expect(handleUpdatedPubKeyOperatorMock).to.be.not.called();
     expect(stateRepositoryMock.fetchDocuments).to.be.calledWithExactly(
       masternodeRewardSharesContractId,
-      'masternodeRewardShares',
+      'rewardShare',
       {
         where: [
           ['$ownerId', '==', Identifier.from('XzhK3k3wuKfEsR6PBFPKf9BRpzLrXKcRHGHs5G6xgho')],

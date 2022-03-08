@@ -45,7 +45,7 @@ describe('Masternode reward shares contract', () => {
       delete rewardShare.payToId;
 
       try {
-        dpp.document.create(contract, identityId, 'masternodeRewardShares', rewardShare);
+        dpp.document.create(contract, identityId, 'rewardShare', rewardShare);
 
         expect.fail('should throw error');
       } catch (e) {
@@ -64,7 +64,7 @@ describe('Masternode reward shares contract', () => {
       rewardShare.payToId = Buffer.alloc(31);
 
       try {
-        dpp.document.create(contract, identityId, 'masternodeRewardShares', rewardShare);
+        dpp.document.create(contract, identityId, 'rewardShare', rewardShare);
 
         expect.fail('should throw error');
       } catch (e) {
@@ -83,7 +83,7 @@ describe('Masternode reward shares contract', () => {
       rewardShare.payToId = Buffer.alloc(33);
 
       try {
-        dpp.document.create(contract, identityId, 'masternodeRewardShares', rewardShare);
+        dpp.document.create(contract, identityId, 'rewardShare', rewardShare);
 
         expect.fail('should throw error');
       } catch (e) {
@@ -104,7 +104,7 @@ describe('Masternode reward shares contract', () => {
       delete rewardShare.percentage;
 
       try {
-        dpp.document.create(contract, identityId, 'masternodeRewardShares', rewardShare);
+        dpp.document.create(contract, identityId, 'rewardShare', rewardShare);
 
         expect.fail('should throw error');
       } catch (e) {
@@ -123,7 +123,7 @@ describe('Masternode reward shares contract', () => {
       rewardShare.percentage = 0;
 
       try {
-        dpp.document.create(contract, identityId, 'masternodeRewardShares', rewardShare);
+        dpp.document.create(contract, identityId, 'rewardShare', rewardShare);
 
         expect.fail('should throw error');
       } catch (e) {
@@ -140,7 +140,7 @@ describe('Masternode reward shares contract', () => {
       rewardShare.percentage = 10001;
 
       try {
-        dpp.document.create(contract, identityId, 'masternodeRewardShares', rewardShare);
+        dpp.document.create(contract, identityId, 'rewardShare', rewardShare);
 
         expect.fail('should throw error');
       } catch (e) {
@@ -157,7 +157,7 @@ describe('Masternode reward shares contract', () => {
       rewardShare.percentage = '10';
 
       try {
-        dpp.document.create(contract, identityId, 'masternodeRewardShares', rewardShare);
+        dpp.document.create(contract, identityId, 'rewardShare', rewardShare);
 
         expect.fail('should throw error');
       } catch (e) {
@@ -176,7 +176,7 @@ describe('Masternode reward shares contract', () => {
     rewardShare.someOtherProperty = 42;
 
     try {
-      dpp.document.create(contract, identityId, 'masternodeRewardShares', rewardShare);
+      dpp.document.create(contract, identityId, 'rewardShare', rewardShare);
 
       expect.fail('should throw error');
     } catch (e) {

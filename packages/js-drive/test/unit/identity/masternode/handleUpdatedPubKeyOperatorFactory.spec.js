@@ -116,7 +116,7 @@ describe('handleUpdatedPubKeyOperatorFactory', () => {
     expect(transactionalDppMock.document.create).to.be.calledOnceWithExactly(
       dataContractFixture,
       Identifier.from('xmdKYeUsEU49sncsu76TmtufyqwP1By92RX4e48oRUW'),
-      'masternodeRewardShares',
+      'rewardShare',
       {
         payToId: Identifier.from('BWpTcdybaKcLLMXVErB8LJpEhp9XKDuaVsAjCxQkQXPd'),
         percentage: 1,
@@ -124,7 +124,7 @@ describe('handleUpdatedPubKeyOperatorFactory', () => {
     );
     expect(stateRepositoryMock.fetchDocuments).to.be.calledOnceWithExactly(
       masternodeRewardSharesContractId,
-      'masternodeRewardShares',
+      'rewardShare',
       {
         limit: 100,
         startAfter: undefined,
@@ -167,7 +167,7 @@ describe('handleUpdatedPubKeyOperatorFactory', () => {
     expect(transactionalDppMock.document.create).to.be.calledOnceWithExactly(
       dataContractFixture,
       Identifier.from('xmdKYeUsEU49sncsu76TmtufyqwP1By92RX4e48oRUW'),
-      'masternodeRewardShares',
+      'rewardShare',
       {
         payToId: Identifier.from('BWpTcdybaKcLLMXVErB8LJpEhp9XKDuaVsAjCxQkQXPd'),
         percentage: 1,
@@ -175,7 +175,7 @@ describe('handleUpdatedPubKeyOperatorFactory', () => {
     );
     expect(stateRepositoryMock.fetchDocuments).to.be.calledOnceWithExactly(
       masternodeRewardSharesContractId,
-      'masternodeRewardShares',
+      'rewardShare',
       {
         limit: 100,
         startAfter: undefined,
