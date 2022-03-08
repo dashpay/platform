@@ -6,7 +6,7 @@ async function getUnusedIdentityIndex() {
   // Force identities sync before return unused index
   await this.getWorker('IdentitySyncWorker').execWorker();
 
-  const identityIds = this.storage.getIndexedIdentityIds(this.walletId);
+  const identityIds = this.storage.getWalletStore(this.walletId).getIndexedIdentityIds();
 
   const firstMissingIndex = identityIds.findIndex((identityId) => !identityId);
 

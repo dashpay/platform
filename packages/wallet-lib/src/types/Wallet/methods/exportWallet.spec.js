@@ -11,9 +11,9 @@ const cR4t6ePublicKey = new PrivateKey(cR4t6eFixture.privateKey).toPublicKey();
 describe('Wallet - export Wallet', function suite() {
   this.timeout(10000);
   it('should indicate on missing data', () => {
-    const mockOpts1 = {};
-    const mockOpts2 = { walletType: WALLET_TYPES.SINGLE_ADDRESS };
-    const mockOpts3 = { walletType: WALLET_TYPES.HDWALLET };
+    const mockOpts1 = {  };
+    const mockOpts2 = {  walletType: WALLET_TYPES.PRIVATEKEY };
+    const mockOpts3 = {  walletType: WALLET_TYPES.HDWALLET };
 
     const exceptedException1 = 'Trying to export from an unknown wallet type';
     const exceptedException2 = 'No PrivateKey to export';

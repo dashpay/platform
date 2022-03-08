@@ -6,15 +6,14 @@ const EVENTS = require('../../../EVENTS');
  * @return {Promise<{metadata: TransactionMetaData|null, transaction: Transaction}>}
  */
 async function getTransaction(txid = null) {
-  const searchTransaction = await this.storage.searchTransaction(txid);
-  const searchTransactionMetadata = await this.storage.searchTransactionMetadata(txid);
-  if (searchTransaction.found) {
-    const searchResult = { transaction: searchTransaction.result, metadata: null };
-    if (searchTransactionMetadata.found) {
-      searchResult.metadata = searchTransactionMetadata.result;
-    }
-    return searchResult;
+  const { storage, network } = this;
+  const chainStore = storage.getChainStore(network);
+  const searchedTransaction = chainStore.getTransaction(txid);
+
+  if (searchedTransaction) {
+    return searchedTransaction;
   }
+
   const getTransactionResponse = await this.transport.getTransaction(txid);
   if (!getTransactionResponse) return null;
   const {

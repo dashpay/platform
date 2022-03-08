@@ -1,8 +1,8 @@
 const WalletLibError = require('./WalletLibError');
 
 class InjectionToPluginUnallowed extends WalletLibError {
-  constructor(pluginName) {
-    super(`Injection of plugin : ${pluginName} Unallowed`);
+  constructor(currentPluginName, injectingPluginName) {
+    super(`Injection of plugin : ${injectingPluginName} into ${currentPluginName} not allowed`);
   }
 }
 

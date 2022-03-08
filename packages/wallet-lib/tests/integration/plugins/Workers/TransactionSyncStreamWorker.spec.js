@@ -55,6 +55,7 @@ describe('TransactionSyncStreamWorker', function suite() {
       plugins: [worker],
       allowSensitiveOperations: true,
       HDPrivateKey: new HDPrivateKey(testHDKey),
+      network: 'mainnet'
     });
 
     ({ txStreamMock, transportMock } = await createAndAttachTransportMocksToWallet(wallet, this.sinonSandbox));
@@ -65,12 +66,11 @@ describe('TransactionSyncStreamWorker', function suite() {
     account = await wallet.getAccount();
 
     storage = account.storage;
-    walletId = Object.keys(storage.store.wallets)[0];
+    walletId = account.walletId;
 
     address = account.getAddress(0).address;
     addressAtIndex19 = account.getAddress(19).address;
   });
-
   afterEach(() => {
     worker.stopWorker();
   })
@@ -117,9 +117,8 @@ describe('TransactionSyncStreamWorker', function suite() {
 
       await worker.onStart();
 
-      const transactionsInStorage = Object
-          .values(storage.getStore().transactions)
-          .map((t) => t.toJSON());
+      const transactionsInStorage = Array.from(storage.getChainStore('livenet').state.transactions)
+          .map(([,t]) => t.transaction.toJSON());
 
       const expectedTransactions = transactionsSent
           .map((t) => t.toJSON());
@@ -128,7 +127,6 @@ describe('TransactionSyncStreamWorker', function suite() {
       expect(transactionsInStorage.length).to.be.equal(3);
       expect(transactionsInStorage).to.have.deep.members(expectedTransactions);
     });
-
     it('should reconnect to the historical stream when gap limit is filled', async function () {
       const lastSavedBlockHeight = 40;
       const bestBlockHeight = 42;
@@ -193,15 +191,17 @@ describe('TransactionSyncStreamWorker', function suite() {
 
       await worker.onStart();
 
-      const transactionsInStorage = Object
-          .values(storage.getStore().transactions)
-          .map((t) => t.toJSON());
+      const transactionsInStorage = Array.from(storage.getChainStore('livenet').state.transactions)
+        .map(([,t]) => t.transaction.toJSON());
 
       const expectedTransactions = transactionsSent
           .map((t) => t.toJSON());
 
+      const {addresses} = storage.getWalletStore(walletId).state.paths.get(`m/44'/5'/0'`);
 
-      const addressesInStorage = storage.store.wallets[walletId].addresses.external;
+      const addressesInStorage = Object.entries(addresses)
+        .filter(([path, address])=> path.includes('m/0'))
+        .map(([path, address])=> address);
       // We send transaction to index 19, so wallet should generate additional 20 addresses to keep the gap between
       // the last used address
       expect(Object.keys(addressesInStorage).length).to.be.equal(40);
@@ -218,6 +218,7 @@ describe('TransactionSyncStreamWorker', function suite() {
       expect(transactionsInStorage.length).to.be.equal(2);
       expect(transactionsInStorage).to.have.deep.members(expectedTransactions);
     });
+
     it('should reconnect to the historical stream if stream is closed due to operational GRPC error', async function () {
       const lastSavedBlockHeight = 40;
       const bestBlockHeight = 42;
@@ -242,7 +243,11 @@ describe('TransactionSyncStreamWorker', function suite() {
 
       await worker.onStart();
 
-      const addressesInStorage = storage.store.wallets[walletId].addresses.external;
+      const {addresses} = storage.getWalletStore(walletId).state.paths.get(`m/44'/5'/0'`);
+
+      const addressesInStorage = Object.entries(addresses)
+        .filter(([path, address])=> path.includes('m/0'))
+        .map(([path, address])=> address);
 
       expect(Object.keys(addressesInStorage).length).to.be.equal(20);
       // It should reconnect after because of the operational error
@@ -275,7 +280,11 @@ describe('TransactionSyncStreamWorker', function suite() {
 
       await expect(worker.onStart()).to.be.rejectedWith('Some random error');
 
-      const addressesInStorage = storage.store.wallets[walletId].addresses.external;
+      const {addresses} = storage.getWalletStore(walletId).state.paths.get(`m/44'/5'/0'`);
+
+      const addressesInStorage = Object.entries(addresses)
+        .filter(([path, address])=> path.includes('m/0'))
+        .map(([path, address])=> address);
 
       expect(Object.keys(addressesInStorage).length).to.be.equal(20);
       // Shouldn't try to reconnect
@@ -287,7 +296,6 @@ describe('TransactionSyncStreamWorker', function suite() {
       expect(worker.stream).to.be.null;
     });
   });
-
   describe("#execute", () => {
     it('should sync incoming transactions and save it to the storage', async function () {
       const lastSavedBlockHeight = 40;
@@ -330,9 +338,8 @@ describe('TransactionSyncStreamWorker', function suite() {
 
       await worker.onStop();
 
-      const transactionsInStorage = Object
-          .values(storage.getStore().transactions)
-          .map((t) => t.toJSON());
+      const transactionsInStorage = Array.from(storage.getChainStore('livenet').state.transactions)
+        .map(([,t]) => t.transaction.toJSON());
 
       const expectedTransactions = transactionsSent
           .map((t) => t.toJSON());
@@ -405,14 +412,17 @@ describe('TransactionSyncStreamWorker', function suite() {
 
       await worker.onStop();
 
-      const transactionsInStorage = Object
-          .values(storage.getStore().transactions)
-          .map((t) => t.toJSON());
+      const transactionsInStorage = Array.from(storage.getChainStore('livenet').state.transactions)
+        .map(([,t]) => t.transaction.toJSON());
 
       const expectedTransactions = transactionsSent
           .map((t) => t.toJSON());
 
-      const addressesInStorage = storage.store.wallets[walletId].addresses.external;
+      const {addresses} = storage.getWalletStore(walletId).state.paths.get(`m/44'/5'/0'`);
+
+      const addressesInStorage = Object.entries(addresses)
+        .filter(([path, address])=> path.includes('m/0'))
+        .map(([path, address])=> address);
       // We send transaction to index 19, so wallet should generate additional 20 addresses to keep the gap between
       // the last used address
       expect(Object.keys(addressesInStorage).length).to.be.equal(40);
@@ -453,7 +463,11 @@ describe('TransactionSyncStreamWorker', function suite() {
 
       await worker.onStop();
 
-      const addressesInStorage = storage.store.wallets[walletId].addresses.external;
+      const {addresses} = storage.getWalletStore(walletId).state.paths.get(`m/44'/5'/0'`);
+
+      const addressesInStorage = Object.entries(addresses)
+        .filter(([path, address])=> path.includes('m/0'))
+        .map(([path, address])=> address);
 
       expect(Object.keys(addressesInStorage).length).to.be.equal(20);
       // It should reconnect after the gap limit is reached
@@ -486,7 +500,11 @@ describe('TransactionSyncStreamWorker', function suite() {
 
       await worker.onStop();
 
-      const addressesInStorage = storage.store.wallets[walletId].addresses.external;
+      const {addresses} = storage.getWalletStore(walletId).state.paths.get(`m/44'/5'/0'`);
+
+      const addressesInStorage = Object.entries(addresses)
+        .filter(([path, address])=> path.includes('m/0'))
+        .map(([path, address])=> address);
 
       expect(Object.keys(addressesInStorage).length).to.be.equal(20);
       // It should reconnect if the server closes the stream
@@ -520,7 +538,11 @@ describe('TransactionSyncStreamWorker', function suite() {
 
       await expect(worker.incomingSyncPromise).to.be.rejectedWith('Some random error');
 
-      const addressesInStorage = storage.store.wallets[walletId].addresses.external;
+      const {addresses} = storage.getWalletStore(walletId).state.paths.get(`m/44'/5'/0'`);
+
+      const addressesInStorage = Object.entries(addresses)
+        .filter(([path, address])=> path.includes('m/0'))
+        .map(([path, address])=> address);
       expect(Object.keys(addressesInStorage).length).to.be.equal(20);
 
       // Shouldn't try to reconnect
@@ -648,17 +670,21 @@ describe('TransactionSyncStreamWorker', function suite() {
 
     await worker.onStop();
 
-    const transactionsInStorage = Object
-        .values(storage.getStore().transactions)
-        .map((t) => t.toJSON());
+    const transactionsInStorage = Array.from(storage.getChainStore('livenet').state.transactions)
+      .map(([,t]) => t.transaction.toJSON());
 
     const expectedTransactions = transactionsSent
         .map((t) => t.toJSON());
 
-    const {
-      external: externalAddressesInStorage,
-      internal: internalAddressesInStorage
-    } = storage.store.wallets[walletId].addresses
+    const {addresses} = storage.getWalletStore(walletId).state.paths.get(`m/44'/5'/0'`);
+
+    const externalAddressesInStorage = Object.entries(addresses)
+      .filter(([path, address])=> path.includes('m/0'))
+      .map(([path, address])=> address);
+
+    const internalAddressesInStorage = Object.entries(addresses)
+      .filter(([path, address])=> path.includes('m/1'))
+      .map(([path, address])=> address);
 
     // We send transaction to index 19, so wallet should generate additional 20 addresses to keep the gap between
     // the last used address
@@ -702,7 +728,7 @@ describe('TransactionSyncStreamWorker', function suite() {
 
     // Check that wait method throws if timeout has passed
     await expect(account.waitForInstantLock(transactions[2].hash, 1000)).to.eventually
-        .be.rejectedWith('InstantLock waiting period for transaction 256d5b3bf6d8869f5cc882ae070af9b648fa0f512bfa2b6f07b35d55e160a16c timed out');
+        .be.rejectedWith('InstantLock waiting period for transaction 823c272fc1694b571805d2bc2f8936597ee52de638a0ca5323233c239fd3e8c4 timed out');
   });
   it('should start from the height specified in `skipSynchronizationBeforeHeight` options', async function () {
     const bestBlockHeight = 42;

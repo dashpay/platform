@@ -1,6 +1,26 @@
 const { expect } = require('chai');
 const getAddressesToSync = require('./getAddressesToSync');
+const KeyChainStore = require("../../../../types/KeyChainStore/KeyChainStore");
+const DerivableKeyChain = require("../../../../types/DerivableKeyChain/DerivableKeyChain");
+const { HDPrivateKey, HDPublicKey, PrivateKey } = require("@dashevo/dashcore-lib");
 
+
+const privateKey = new PrivateKey('ee56be968a42e58fda23b83da17f90e002cafbe35a702c2f5598b13fdaa238db', 'testnet')
+const hdprivateKey1 = new HDPrivateKey("xprv9s21ZrQH143K39R9Ux28kCBUHcQFdBeVE2CXFVz6GnA2a6pqTsPhHR5QHtMP5ZTRpYkKqc9ifjkJ2V1h318qWsYgyxCBUurRdTNthjgwKMw", 'mainnet');
+const hdpublicKey1 = new HDPublicKey("xpub661MyMwAqRbcFhaucFQun3ivEyA5gy5NKnjr1xMUVkyqdF3VNNy3TLinwnYMSUye5FF5pDSrn2SPX3zvKRQGrpZ44VVUBeuxuzov7enWpkf",'mainnet');
+
+const keychainPrivate1 = new DerivableKeyChain({privateKey});
+const keychainHDPrivate1 = new DerivableKeyChain({HDPrivateKey: hdprivateKey1});
+const keychainHDPublic1 = new DerivableKeyChain({HDPublicKey: hdpublicKey1});
+
+const keychainStorePrivateKeyWallet = new KeyChainStore();
+keychainStorePrivateKeyWallet.addKeyChain(keychainPrivate1, { isMasterKeyChain: true});
+keychainPrivate1.getForPath(0, { isWatched: true })
+
+const keychainStoreHDPrivateKeyWallet = new KeyChainStore();
+keychainStoreHDPrivateKeyWallet.addKeyChain(keychainHDPrivate1, { isMasterKeyChain: true});
+keychainHDPrivate1.getForPath(`m/0/0`, { isWatched: true })
+keychainHDPrivate1.getForPath(`m/0/1`, { isWatched: true })
 const mockedStore1 = {
   wallets: {
     123456789: {
@@ -107,11 +127,13 @@ const mockedStore2 = {
 
 const mockSelfPrivateKeyType = {
   storage: { getStore:()=>mockedStore1 },
+  keyChainStore: keychainStorePrivateKeyWallet,
   walletId: '123456789',
   walletType: 'privateKey',
 }
 const mockSelfIndex0 = {
   storage: { getStore:()=>mockedStore2 },
+  keyChainStore: keychainStoreHDPrivateKeyWallet,
   walletId: '123456789',
   walletType: 'hdwallet',
   BIP44PATH: `m/44'/1'/0'`
@@ -125,13 +147,13 @@ const mockSelfIndex1 = {
 describe('TransactionSyncStreamWorker#getAddressesToSync', function suite() {
   it('should correctly fetch addresses to sync', async () => {
 
-    const addressesIndex0 = getAddressesToSync.call(mockSelfIndex0 );
-    expect(addressesIndex0).to.deep.equal(['yizmJb63ygipuJaRgYtpWCV2erQodmaZt8', 'yizmJb63ygipuJaRgYtpWCV2erQodmaZt9'])
-
-    const addressesIndex1 = getAddressesToSync.call(mockSelfIndex1 );
-    expect(addressesIndex1).to.deep.equal(['yQ5TfKcj3NHM4V4K5VBgoFJj9Q4LKX13gn'])
+    const addressesIndex0 = getAddressesToSync.call(mockSelfIndex0);
+    expect(addressesIndex0).to.deep.equal([
+        "Xpkr9M3DP8RgcWw4SHUW75PYtmU1Lh5Ss2",
+        "Xp1kwhXoUVHKRKmoXt3dB4i4KhryHSYjtW"
+    ])
 
     const addressesIndex2 = getAddressesToSync.call(mockSelfPrivateKeyType );
-    expect(addressesIndex2).to.deep.equal(['yizmJb63ygipuJaRgYtpWCV2erQodmaZt1'])
+    expect(addressesIndex2).to.deep.equal(['yZprpQkn7FYUHjqm3dY4sCs9SorMCi4oyR'])
   });
 });

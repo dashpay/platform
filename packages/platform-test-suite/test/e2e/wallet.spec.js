@@ -105,13 +105,17 @@ describe('e2e', () => {
 
         restoredAccount = await restoredWallet.getWalletAccount();
 
-        // Due to the limitations of DAPI, we need to wait for a block to be mined if we connected
-        // in the moment when transaction already entered the mempool, but haven't been mined yet
-        await new Promise((resolve) => restoredAccount.once(EVENTS.BLOCKHEADER, resolve));
+        let transactions = restoredAccount.getTransactions();
 
+        if (Object.keys(transactions).length === 0) {
+          // Due to the limitations of DAPI, we need to wait for a block to be mined if we connected
+          // in the moment when transaction already entered the mempool, but haven't been mined yet
+          await new Promise((resolve) => restoredAccount.once(EVENTS.BLOCKHEADER, resolve));
+          transactions = restoredAccount.getTransactions();
+        }
         await waitForBalanceToChange(restoredAccount);
 
-        const transactionIds = Object.keys(restoredAccount.getTransactions());
+        const transactionIds = Object.keys(transactions);
 
         expect(transactionIds).to.have.lengthOf(1);
 

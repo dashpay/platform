@@ -50,7 +50,8 @@ describe('Account', function suite() {
             plugins: [worker],
             allowSensitiveOperations: true,
             HDPrivateKey: new HDPrivateKey(testHDKey),
-            adapter: storageAdapterMock
+            adapter: storageAdapterMock,
+            network: 'livenet'
         });
 
         ({txStreamMock, transportMock} = await createAndAttachTransportMocksToWallet(wallet, this.sinonSandbox));
@@ -58,7 +59,7 @@ describe('Account', function suite() {
         account = await wallet.getAccount();
 
         storage = account.storage;
-        walletId = Object.keys(storage.store.wallets)[0];
+        walletId = account.walletId;
 
         address = account.getAddress(0).address;
         addressAtIndex19 = account.getAddress(19).address;
@@ -74,17 +75,16 @@ describe('Account', function suite() {
 
             // Saving state to restore it later
             await account.storage.saveState();
-
             // Restoring wallet from the saved state
             const restoredWallet = new Wallet({
                 offlineMode: true,
                 plugins: [worker],
                 allowSensitiveOperations: true,
                 HDPrivateKey: new HDPrivateKey(testHDKey),
-                adapter: storageAdapterMock
+                adapter: storageAdapterMock,
+                network: 'livenet'
             });
             const restoredAccount = await restoredWallet.getAccount();
-
             const utxos = await restoredAccount.getUTXOS();
 
             expect(utxos.length).to.be.equal(1);

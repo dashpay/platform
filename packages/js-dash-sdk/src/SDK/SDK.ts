@@ -6,7 +6,7 @@ import { default as _DAPIClient } from '@dashevo/dapi-client';
 import {
     Wallet as _Wallet,
     Account as _Account,
-    KeyChain as _KeyChain,
+    DerivableKeyChain as _KeyChain,
     CONSTANTS as _WalletLibCONSTANTS,
     EVENTS as _WalletLibEVENTS,
     utils as _WalletLibUtils,
