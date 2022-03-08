@@ -41,9 +41,9 @@ describe('ExecutionTimer', () => {
   it('should measure function execution time', async () => {
     // TODO: maybe there should be a better way to do it
     timer.startTimer('some');
-    await wait(500);
+    await wait(1500);
     const timings = timer.endTimer('some');
 
-    expect(parseInt(timings.nanoseconds / 1000 / 1000 / 100, 10)).to.equal(5);
+    expect(parseInt(timings)).to.equal(1);
   });
 });

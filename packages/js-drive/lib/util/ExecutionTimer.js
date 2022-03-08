@@ -27,7 +27,7 @@ class ExecutionTimer {
    *
    * @param {string} name
    *
-   * @return {{ seconds: number, nanoseconds: number }}
+   * @return {number}
    */
   endTimer(name) {
     if (!this.#isStarted(name)) {
@@ -38,10 +38,7 @@ class ExecutionTimer {
 
     delete this.timers[name];
 
-    return {
-      seconds: timings[0],
-      nanoseconds: timings[1],
-    };
+    return (parseFloat(timings[0]) + timings[1] / 1000000000).toFixed(3);
   }
 
   #isStarted(name) {
