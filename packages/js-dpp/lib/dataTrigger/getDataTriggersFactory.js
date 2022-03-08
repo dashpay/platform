@@ -108,13 +108,13 @@ function getDataTriggersFactory() {
     ),
     new DataTrigger(
       masternodeRewardSharesContractId,
-      'rewardShare',
+      'masternodeRewardShares',
       AbstractDocumentTransition.ACTIONS.CREATE,
       createMasternodeRewardSharesDataTrigger,
     ),
     new DataTrigger(
       masternodeRewardSharesContractId,
-      'rewardShare',
+      'masternodeRewardShares',
       AbstractDocumentTransition.ACTIONS.REPLACE,
       createMasternodeRewardSharesDataTrigger,
     ),

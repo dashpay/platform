@@ -98,7 +98,7 @@ function handleUpdatedPubKeyOperatorFactory(
       do {
         fetchedDocuments = await transactionalStateRepository.fetchDocuments(
           masternodeRewardSharesContractId,
-          'rewardShare',
+          'masternodeRewardShares',
           {
             limit,
             startAfter,

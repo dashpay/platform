@@ -124,7 +124,7 @@ describe('handleUpdatedPubKeyOperatorFactory', () => {
     );
     expect(stateRepositoryMock.fetchDocuments).to.be.calledOnceWithExactly(
       masternodeRewardSharesContractId,
-      'rewardShare',
+      'masternodeRewardShares',
       {
         limit: 100,
         startAfter: undefined,
@@ -175,7 +175,7 @@ describe('handleUpdatedPubKeyOperatorFactory', () => {
     );
     expect(stateRepositoryMock.fetchDocuments).to.be.calledOnceWithExactly(
       masternodeRewardSharesContractId,
-      'rewardShare',
+      'masternodeRewardShares',
       {
         limit: 100,
         startAfter: undefined,
