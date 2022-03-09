@@ -3,7 +3,10 @@ const {
 } = require('awilix');
 
 const SimplifiedMNListEntry = require('@dashevo/dashcore-lib/lib/deterministicmnlist/SimplifiedMNListEntry');
+const { hash } = require('@dashevo/dpp/lib/util/hash');
+const { contractId } = require('@dashevo/masternode-reward-shares-contract/lib/systemIds');
 const createTestDIContainer = require('../../../../lib/test/createTestDIContainer');
+const Identifier = require('@dashevo/dpp/lib/identifier/Identifier');
 
 describe('synchronizeMasternodeIdentitiesFactory', () => {
   let container;
@@ -15,10 +18,12 @@ describe('synchronizeMasternodeIdentitiesFactory', () => {
   let transaction1;
   let transaction2;
   let synchronizeMasternodeIdentities;
+  let identityRepository;
+  let documentRepository;
+  let dataContract;
+  let dataContractRepository;
 
   beforeEach(async function beforeEach() {
-
-
     // rawDiff = {
     //   baseBlockHash: '644bd9dcbc0537026af6d31181570f934d868f121c55513009bb36f509ec816e',
     //   blockHash: '23beac1b700c4a49855a9653e036219384ac2fab7eeba2ec45b3e2d0063d1285',
@@ -107,6 +112,11 @@ describe('synchronizeMasternodeIdentitiesFactory', () => {
     const masternodeRewardSharesOwnerId = container.resolve('masternodeRewardSharesOwnerId');
     const masternodeRewardSharesOwnerPublicKey = container.resolve('masternodeRewardSharesOwnerPublicKey');
     const masternodeRewardSharesDocuments = container.resolve('masternodeRewardSharesDocuments');
+    identityRepository = container.resolve('identityRepository');
+    documentRepository = container.resolve('documentRepository');
+    dataContractRepository = container.resolve('dataContractRepository');
+
+    dataContract = await dataContractRepository.fetch(Identifier.from(contractId));
 
     await registerSystemDataContract(
       masternodeRewardSharesOwnerId,
@@ -127,13 +137,68 @@ describe('synchronizeMasternodeIdentitiesFactory', () => {
   it('should create identities for all masternodes on the first sync', async () => {
     await synchronizeMasternodeIdentities(coreHeight);
 
-    // //simplifiedMasternodeList
-    // const firstIdentifier = hash(
-    //   Buffer.from(smlFixture[0].proRegTxHash, 'hex'),
-    // );
-    // let identity = await transactionalStateRepository.fetchIdentity();
-    //
-    // const secondIdentifier =
+    const firstIdentifier = hash(
+      Buffer.from(smlFixture[0].proRegTxHash, 'hex'),
+    );
+    const firstIdentity = await identityRepository.fetch(Identifier.from(firstIdentifier));
+
+    expect(firstIdentity).to.exist();
+
+    const secondIdentifier = hash(
+      Buffer.from(smlFixture[1].proRegTxHash, 'hex'),
+    );
+
+    const secondIdentity = await identityRepository.fetch(Identifier.from(secondIdentifier));
+
+    expect(secondIdentity).to.exist();
+
+    const firstOperatorPubKey = Buffer.from(smlFixture[0].pubKeyOperator, 'hex');
+
+    const firstOperatorIdentityId = hash(
+      Buffer.concat([
+        Buffer.from(smlFixture[0].proRegTxHash, 'hex'),
+        firstOperatorPubKey,
+      ]),
+    );
+
+    let documents = await documentRepository.find(
+      dataContract,
+      'rewardShare',
+      {
+        where: [
+          ['$ownerId', '==', firstIdentifier],
+          ['payToId', '==', firstOperatorIdentityId],
+        ],
+      },
+    );
+
+    expect(documents).to.have.lengthOf(1);
+
+    expect(documents[0].getOwnerId()).to.deep.equal(firstIdentifier);
+    expect(documents[0].getData().percentage).to.equal(100);
+    expect(documents[0].getData().payToId).to.deep.equal(firstOperatorIdentityId);
+
+    const secondOperatorPubKey = Buffer.from(smlFixture[1].pubKeyOperator, 'hex');
+
+    const secondOperatorIdentityId = hash(
+      Buffer.concat([
+        Buffer.from(smlFixture[1].proRegTxHash, 'hex'),
+        secondOperatorPubKey,
+      ]),
+    );
+
+    documents = await documentRepository.find(
+      dataContract,
+      'rewardShare',
+      {
+        where: [
+          ['$ownerId', '==', secondIdentifier],
+          ['payToId', '==', secondOperatorIdentityId],
+        ],
+      },
+    );
+
+    expect(documents).to.have.lengthOf(0);
   });
 
   it.skip('should sync identities if the gap between coreHeight and lastSyncedCoreHeight > smlMaxListsLimit', async () => {
@@ -187,6 +252,13 @@ describe('synchronizeMasternodeIdentitiesFactory', () => {
     // Second call
 
     await synchronizeMasternodeIdentities(coreHeight + 1);
+
+    const newIdentifier = hash(
+      Buffer.from(newSmlFixture.proRegTxHash, 'hex'),
+    );
+    const newIdentity = await transactionalStateRepository.fetchIdentity(newIdentifier);
+
+    expect(newIdentity).to.exist();
   });
 
   it('should remove reward shares if masternode disappeared', async () => {
@@ -205,6 +277,19 @@ describe('synchronizeMasternodeIdentitiesFactory', () => {
     // Second call
 
     await synchronizeMasternodeIdentities(coreHeight + 1);
+    const removedIdentifier = hash(
+      Buffer.from(smlFixture[0].proRegTxHash, 'hex'),
+    );
+    const removedIdentity = await transactionalStateRepository.fetchIdentity(removedIdentifier);
+
+    expect(removedIdentity).to.be.null();
+
+    const documents = await transactionalStateRepository.fetchDocuments(
+      contractId,
+      'rewardShare',
+      { where: [['$id', '==', rewardShare.getId()]] },
+    );
+
   });
 
   it('should remove reward shares if masternode is not valid', async () => {
@@ -224,6 +309,13 @@ describe('synchronizeMasternodeIdentitiesFactory', () => {
     // Second call
 
     await synchronizeMasternodeIdentities(coreHeight + 1);
+
+    const removedIdentifier = hash(
+      Buffer.from(smlFixture[0].proRegTxHash, 'hex'),
+    );
+    const removedIdentity = await transactionalStateRepository.fetchIdentity(removedIdentifier);
+
+    expect(removedIdentity).to.be.null();
   });
 
   it('should update create operator identity and reward shares if PubKeyOperator was changed', async () => {
@@ -241,5 +333,12 @@ describe('synchronizeMasternodeIdentitiesFactory', () => {
     smlFixture[1].pubKeyOperator = 'cca9789fab00deae1464ed80bda281fc833f85959b04201645e5fc25635e3e7ecda30d13d328b721af0809fca3bf3bcc'
 
     await synchronizeMasternodeIdentities(coreHeight + 1, false);
+
+    const removedIdentifier = hash(
+      Buffer.from(smlFixture[0].proRegTxHash, 'hex'),
+    );
+    const removedIdentity = await transactionalStateRepository.fetchIdentity(removedIdentifier);
+
+    expect(removedIdentity).to.be.null();
   });
 });
