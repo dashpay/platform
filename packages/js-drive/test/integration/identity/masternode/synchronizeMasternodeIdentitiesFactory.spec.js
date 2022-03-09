@@ -145,15 +145,15 @@ describe('synchronizeMasternodeIdentitiesFactory', () => {
       Identifier.from(firstMasternodeIdentifier),
     );
 
-    expect(firstIdentity).to.exist();
+    expect(firstMasternodeIdentity).to.exist();
 
-    expect(firstIdentity.getPublicKeys()).to.have.lengthOf(1);
+    expect(firstMasternodeIdentity.getPublicKeys()).to.have.lengthOf(1);
 
-    const firstMasternodePublicKey = firstIdentity.getPublicKeyById(0);
+    const firstMasternodePublicKey = firstMasternodeIdentity.getPublicKeyById(0);
     expect(firstMasternodePublicKey.getType()).to.equal(IdentityPublicKey.TYPES.ECDSA_HASH160);
     expect(firstMasternodePublicKey.getData()).to.deep.equal(Buffer.from(transaction1.extraPayload.keyIDOwner, 'hex'));
 
-    const secondIdentifier = hash(
+    const secondMasternodeIdentifier = hash(
       Buffer.from(smlFixture[1].proRegTxHash, 'hex'),
     );
 
@@ -163,13 +163,11 @@ describe('synchronizeMasternodeIdentitiesFactory', () => {
 
     expect(secondMasternodeIdentity).to.exist();
 
-    // TODO: validate public keys
-
     // Validate first operator identity
 
-    expect(secondIdentity.getPublicKeys()).to.have.lengthOf(1);
+    expect(secondMasternodeIdentity.getPublicKeys()).to.have.lengthOf(1);
 
-    const secondMasternodePublicKey = secondIdentity.getPublicKeyById(0);
+    const secondMasternodePublicKey = secondMasternodeIdentity.getPublicKeyById(0);
     expect(secondMasternodePublicKey.getType()).to.equal(IdentityPublicKey.TYPES.ECDSA_HASH160);
     expect(secondMasternodePublicKey.getData()).to.deep.equal(Buffer.from(transaction2.extraPayload.keyIDOwner, 'hex'));
 
@@ -181,8 +179,6 @@ describe('synchronizeMasternodeIdentitiesFactory', () => {
         firstOperatorPubKey,
       ]),
     );
-
-    // TODO check that identitiy is exist and keys are correct
 
     // Validate first masternode reward shares
 
@@ -206,7 +202,9 @@ describe('synchronizeMasternodeIdentitiesFactory', () => {
 
     // Validate second operator identity (shouldn't be created)
 
-    const firstOperatorIdentity = await identityRepository.fetch(Identifier.from(firstOperatorIdentityId));
+    const firstOperatorIdentity = await identityRepository.fetch(
+      Identifier.from(firstOperatorIdentityId),
+    );
 
     expect(firstOperatorIdentity).to.exist();
 
@@ -242,7 +240,9 @@ describe('synchronizeMasternodeIdentitiesFactory', () => {
 
     expect(documents).to.have.lengthOf(0);
 
-    const secondOperatorIdentity = await identityRepository.fetch(Identifier.from(secondOperatorIdentityId));
+    const secondOperatorIdentity = await identityRepository.fetch(
+      Identifier.from(secondOperatorIdentityId),
+    );
 
     expect(secondOperatorIdentity).to.be.null();
   });
