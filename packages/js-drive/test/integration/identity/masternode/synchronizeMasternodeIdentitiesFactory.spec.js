@@ -164,7 +164,7 @@ describe('synchronizeMasternodeIdentitiesFactory', () => {
         confirmedHash: '3be1884e4251cbf42a0f9f42666443c62d89b3bc1aae73fb1e9d753e0b27323b',
         service: '192.168.65.3:20201',
         pubKeyOperator: '3ba9789fab00deae1464ed80bda281fc833f85959b04201645e5fc25635e3e7ecda30d13d328b721af0809fca3bf3b3b',
-        votingAddress: 'yVRXh9Tgf9qt9tCbXmeX9FQsEYa526FM3b',
+        votingAddress: 'yVey9g4fsN3RY3ZjQ7HqiKEH2zEVAG95EN',
         isValid: true,
       }),
     ];
