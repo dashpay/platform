@@ -94,7 +94,7 @@ function handleUpdatedPubKeyOperatorFactory(
       'rewardShare',
       {
         where: [
-          ['$ownerId', '==', Identifier.from(proRegTxHash)],
+          ['$ownerId', '==', masternodeIdentityId],
           ['payToId', '==', previousOperatorIdentityId],
         ],
       },

@@ -540,29 +540,51 @@ describe('synchronizeMasternodeIdentitiesFactory', () => {
     expect(documents).to.have.lengthOf(0);
   });
 
-  it('should update create operator identity and reward shares if PubKeyOperator was changed', async () => {
+  it('should create operator identity and reward shares if PubKeyOperator was changed', async () => {
     // Initial sync
 
     await synchronizeMasternodeIdentities(coreHeight);
 
     // Mock SML
 
-    const changedSmlEntry = smlFixture[1].copy();
+    const changedSmlEntry = smlFixture[0].copy();
     changedSmlEntry.pubKeyOperator = '3ba9789fab00deae1464ed80bda281fc833f85959b04201645e5fc25635e3e7ecda30d13d328b721af0809fca3bf3b3b';
 
     smlStoreMock.getSMLbyHeight.withArgs(coreHeight + 1).returns(
-      { mnList: [smlFixture[0], changedSmlEntry] },
+      { mnList: [smlFixture[1], changedSmlEntry] },
     );
 
-    // smlFixture[1].pubKeyOperator = 'cca9789fab00deae1464ed80bda281fc833f85959b04201645e5fc25635e3e7ecda30d13d328b721af0809fca3bf3bcc'
+    const changedMasternodeIdentifier = hash(
+      Buffer.from(changedSmlEntry.proRegTxHash, 'hex'),
+    );
+
+    const changedMasternodeId = Identifier.from(changedMasternodeIdentifier);
 
     await synchronizeMasternodeIdentities(coreHeight + 1);
 
-    const removedIdentifier = hash(
-      Buffer.from(smlFixture[0].proRegTxHash, 'hex'),
-    );
-    const removedIdentity = await transactionalStateRepository.fetchIdentity(removedIdentifier);
+    // Validate masternode reward shares
 
-    expect(removedIdentity).to.be.null();
+    let documents = await documentRepository.find(
+      rewardsDataContract,
+      'rewardShare',
+      {
+        where: [
+          ['$ownerId', '==', changedMasternodeId],
+        ],
+      },
+    );
+
+    expect(documents).to.have.lengthOf(1);
+
+    const [document] = documents;
+
+    const newOperatorIdentityHash = hash(
+      Buffer.concat([
+        Buffer.from(changedSmlEntry.proRegTxHash, 'hex'),
+        Buffer.from(changedSmlEntry.pubKeyOperator, 'hex'),
+      ]),
+    );
+
+    expect(document.get('payToId')).to.deep.equal(Identifier.from(newOperatorIdentityHash));
   });
 });
