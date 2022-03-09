@@ -740,7 +740,7 @@ describe('DocumentRepository', function main() {
       expect(completelyRemovedDocument).to.have.lengthOf(0);
     });
 
-    it('should restore document if transaction aborted', async function () {
+    it('should restore document if transaction aborted', async function it() {
       this.timeout(0);
 
       await container.dispose();
@@ -793,8 +793,6 @@ describe('DocumentRepository', function main() {
         expect(restoredDocuments[0].toBuffer()).to.deep.equal(document.toBuffer());
 
         // ...
-
-        console.log('.');
 
         await container.dispose();
 

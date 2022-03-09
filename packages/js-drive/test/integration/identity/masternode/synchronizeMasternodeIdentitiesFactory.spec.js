@@ -527,7 +527,7 @@ describe('synchronizeMasternodeIdentitiesFactory', () => {
 
     // Validate masternode reward shares
 
-    let documents = await documentRepository.find(
+    const documents = await documentRepository.find(
       rewardsDataContract,
       'rewardShare',
       {
@@ -564,7 +564,7 @@ describe('synchronizeMasternodeIdentitiesFactory', () => {
 
     // Validate masternode reward shares
 
-    let documents = await documentRepository.find(
+    const documents = await documentRepository.find(
       rewardsDataContract,
       'rewardShare',
       {
