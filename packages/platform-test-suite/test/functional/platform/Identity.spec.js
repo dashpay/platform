@@ -509,7 +509,7 @@ describe('Platform', () => {
 
             const operatorIdentityHash = hash(
               Buffer.concat([
-                masternodeIdentityId.toBuffer(),
+                Buffer.from(masternodeEntry.proRegTxHash, 'hex'),
                 operatorPubKey,
               ]),
             );
