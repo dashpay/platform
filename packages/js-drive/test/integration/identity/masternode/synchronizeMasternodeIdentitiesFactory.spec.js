@@ -512,7 +512,7 @@ describe('synchronizeMasternodeIdentitiesFactory', () => {
     const invalidSmlEntry = smlFixture[0].copy();
     invalidSmlEntry.isValid = false;
 
-    smlStoreMock.getSMLbyHeight.withArgs(coreHeight + 1, false).returns(
+    smlStoreMock.getSMLbyHeight.withArgs(coreHeight + 1).returns(
       { mnList: [smlFixture[1], invalidSmlEntry] },
     );
 
@@ -537,9 +537,6 @@ describe('synchronizeMasternodeIdentitiesFactory', () => {
         ],
       },
     );
-
-    console.log(invalidMasternodeId.toString());
-    console.dir(Identifier.from(documents[0].ownerId).toString());
 
     expect(documents).to.have.lengthOf(0);
   });
