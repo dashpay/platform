@@ -135,6 +135,7 @@ const handleRemovedMasternodeFactory = require('./identity/masternode/handleRemo
 const DocumentRepository = require('./document/DocumentRepository');
 const ExecutionTimer = require('./util/ExecutionTimer');
 const noopLoggerInstance = require('./util/noopLogger');
+const fetchTransactionFactory = require('./core/fetchTransactionFactory');
 
 /**
  *
@@ -432,6 +433,18 @@ function createDIContainer(options) {
     ) => (
       new PublicKeyToIdentityIdStoreRepository(signedGroveDBStore)
     )).singleton(),
+
+    synchronizeMasternodeIdentities: asFunction(synchronizeMasternodeIdentitiesFactory).singleton(),
+
+    createMasternodeIdentity: asFunction(createMasternodeIdentityFactory).singleton(),
+
+    createRewardShareDocument: asFunction(createRewardShareDocumentFactory).singleton(),
+
+    handleNewMasternode: asFunction(handleNewMasternodeFactory).singleton(),
+
+    handleUpdatedPubKeyOperator: asFunction(handleUpdatedPubKeyOperatorFactory).singleton(),
+
+    handleRemovedMasternode: asFunction(handleRemovedMasternodeFactory).singleton(),
   });
 
   /**
@@ -665,17 +678,7 @@ function createDIContainer(options) {
 
     waitForCoreChainLockSync: asFunction(waitForCoreChainLockSyncFactory).singleton(),
 
-    synchronizeMasternodeIdentities: asFunction(synchronizeMasternodeIdentitiesFactory).singleton(),
-
-    createMasternodeIdentity: asFunction(createMasternodeIdentityFactory).singleton(),
-
-    createRewardShareDocument: asFunction(createRewardShareDocumentFactory).singleton(),
-
-    handleNewMasternode: asFunction(handleNewMasternodeFactory).singleton(),
-
-    handleUpdatedPubKeyOperator: asFunction(handleUpdatedPubKeyOperatorFactory).singleton(),
-
-    handleRemovedMasternode: asFunction(handleRemovedMasternodeFactory).singleton(),
+    fetchTransaction: asFunction(fetchTransactionFactory).singleton(),
   });
 
   /**

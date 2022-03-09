@@ -1,7 +1,6 @@
 const Identifier = require('@dashevo/dpp/lib/identifier/Identifier');
 const { hash } = require('@dashevo/dpp/lib/util/hash');
 const IdentityPublicKey = require('@dashevo/dpp/lib/identity/IdentityPublicKey');
-const Transaction = require('@dashevo/dashcore-lib/lib/transaction');
 
 /**
  *
@@ -9,6 +8,7 @@ const Transaction = require('@dashevo/dashcore-lib/lib/transaction');
  * @param {DriveStateRepository|CachedStateRepositoryDecorator} transactionalStateRepository
  * @param {createMasternodeIdentity} createMasternodeIdentity
  * @param {createRewardShareDocument} createRewardShareDocument
+ * @param {fetchTransaction} fetchTransaction
  * @return {handleNewMasternode}
  */
 function handleNewMasternodeFactory(
@@ -16,6 +16,7 @@ function handleNewMasternodeFactory(
   transactionalStateRepository,
   createMasternodeIdentity,
   createRewardShareDocument,
+  fetchTransaction,
 ) {
   /**
    * @typedef handleNewMasternode
@@ -23,10 +24,7 @@ function handleNewMasternodeFactory(
    * @param {DataContract} dataContract
    */
   async function handleNewMasternode(masternodeEntry, dataContract) {
-    const rawTransaction = await transactionalStateRepository
-      .fetchTransaction(masternodeEntry.proRegTxHash);
-
-    const { extraPayload: proRegTxPayload } = new Transaction(rawTransaction.data);
+    const { extraPayload: proRegTxPayload } = await fetchTransaction(masternodeEntry.proRegTxHash);
 
     const proRegTxHash = Buffer.from(masternodeEntry.proRegTxHash, 'hex');
 
@@ -46,7 +44,7 @@ function handleNewMasternodeFactory(
     // we need to crate reward shares only if it's enabled in proRegTx
 
     if (proRegTxPayload.operatorReward > 0) {
-      const operatorPubKey = Buffer.from(proRegTxPayload.pubKeyOperator, 'hex');
+      const operatorPubKey = Buffer.from(masternodeEntry.pubKeyOperator, 'hex');
 
       // Create an identity for operator
       const operatorIdentityHash = hash(

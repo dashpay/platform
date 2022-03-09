@@ -7,14 +7,14 @@ const createTestDIContainer = require('../../../../lib/test/createTestDIContaine
 
 describe('synchronizeMasternodeIdentitiesFactory', () => {
   let container;
-  let smlStoreMock;
   let coreHeight;
-  let smlFixture;
   let documentsFixture;
   let handleNewMasternodeMock;
   let splitDocumentsIntoChunksMock;
   let newSmlFixture;
   let rawDiff;
+  let fetchTransactionMock;
+  let smlStoreMock;
 
   beforeEach(async function beforeEach() {
 
@@ -44,30 +44,13 @@ describe('synchronizeMasternodeIdentitiesFactory', () => {
     coreHeight = 3;
 
     container = await createTestDIContainer();
-  });
 
-  it('should create identities for all masternodes on the first sync', async () => {
-    const smlFixture = [
-      new SimplifiedMNListEntry({
-        proRegTxHash: '954112bb018895896cfa3c3d00761a045fc16b22f2170c1fbb029a2936c68f16',
-        confirmedHash: '1de71625dbc973e2377ebd7da4fe6f8a8eb8af8c5a99373e36151a4fbe9947cc',
-        service: '192.168.65.2:20101',
-        pubKeyOperator: '8e4c8c144bd6c62640fe3ae295973d512f83f7f541525a5da3c91e77ec02ff4dcd214e7431b7d2cc28e420ebfeb612ee',
-        votingAddress: 'yfLLjdEynGQBdoPcCDUNAxu6pksYGzXKA4',
-        isValid: true,
-      }),
-      new SimplifiedMNListEntry({
-        proRegTxHash: '9673b21f45b216dce2b4ffb4a85e1471d57aed6bf8e34d961a48296fe9b7f51a',
-        confirmedHash: '25e1884e4251cbf42a0f9f42666443c62d89b3bc1aae73fb1e9d753e0b2732f4',
-        service: '192.168.65.2:20201',
-        pubKeyOperator: '06a9789fab00deae1464ed80bda281fc833f85959b04201645e5fc25635e3e7ecda30d13d328b721af0809fca3bf3b63',
-        votingAddress: 'yVRXh9Tgf9qt9tCbXmeX9FQsEYa526FMxR',
-        isValid: true,
-      }),
-    ];
+    fetchTransactionMock = this.sinon.stub();
 
-    const smlStoreMock = {
-      getSMLbyHeight: this.sinon.stub().returns({ mnList: smlFixture }),
+    container.register('fetchTransaction', asValue(fetchTransactionMock));
+
+    smlStoreMock = {
+      getSMLbyHeight: this.sinon.stub(),
     };
 
     const simplifiedMasternodeListMock = {
@@ -76,40 +59,26 @@ describe('synchronizeMasternodeIdentitiesFactory', () => {
 
     container.register('simplifiedMasternodeList', asValue(simplifiedMasternodeListMock));
 
-    // Mock Core RPC
+    const createInitialStateStructure = container.resolve('createInitialStateStructure');
+    await createInitialStateStructure();
 
-    const transaction = {
+    const registerSystemDataContract = container.resolve('registerSystemDataContract');
+    const masternodeRewardSharesContractId = container.resolve('masternodeRewardSharesContractId');
+    const masternodeRewardSharesOwnerId = container.resolve('masternodeRewardSharesOwnerId');
+    const masternodeRewardSharesOwnerPublicKey = container.resolve('masternodeRewardSharesOwnerPublicKey');
+    const masternodeRewardSharesDocuments = container.resolve('masternodeRewardSharesDocuments');
 
-    }
-
-    // const { result: transaction } = await this.coreRpcClient.getRawTransaction(id, 1);
-    //
-    // return {
-    //   data: Buffer.from(transaction.hex, 'hex'),
-    //   height: transaction.height,
-    // };
-
-    const rawTransaction = await transactionalStateRepository
-      .fetchTransaction(masternodeEntry.proRegTxHash);
-
-    const { extraPayload: proRegTxPayload } = new Transaction(rawTransaction.data);
-
-    coreRpcClientMock = {
-      getRawTransaction: this.sinon.stub().resolves({
-        result: rawDiff,
-      }),
-    };
-
-
-
-    const synchronizeMasternodeIdentities = container.resolve('synchronizeMasternodeIdentities');
-
-    await synchronizeMasternodeIdentities(coreHeight);
-
-    //simplifiedMasternodeList
+    await registerSystemDataContract(
+      masternodeRewardSharesOwnerId,
+      masternodeRewardSharesContractId,
+      masternodeRewardSharesOwnerPublicKey,
+      masternodeRewardSharesDocuments,
+    );
   });
 
-  it('should do nothing if nothing changed', async () => {
+  it('should create identities for all masternodes on the first sync', async function it() {
+    // Mock SML
+
     const smlFixture = [
       new SimplifiedMNListEntry({
         proRegTxHash: '954112bb018895896cfa3c3d00761a045fc16b22f2170c1fbb029a2936c68f16',
@@ -129,19 +98,38 @@ describe('synchronizeMasternodeIdentitiesFactory', () => {
       }),
     ];
 
-    const smlStoreMock = {
-      getSMLbyHeight: this.sinon.stub().returns({ mnList: smlFixture }),
+    smlStoreMock.getSMLbyHeight = this.sinon.stub().returns({ mnList: smlFixture });
+
+    // Mock Core RPC
+
+    const transaction1 = {
+      extraPayload: {
+        operatorReward: 100,
+        keyIDOwner: Buffer.alloc(20).fill('a').toString('hex'),
+      },
     };
 
-    const simplifiedMasternodeListMock = {
-      getStore: this.sinon.stub().returns(smlStoreMock),
+    const transaction2 = {
+      extraPayload: {
+        operatorReward: 0,
+        keyIDOwner: Buffer.alloc(20).fill('b').toString('hex'),
+      },
     };
+
+    fetchTransactionMock.withArgs('954112bb018895896cfa3c3d00761a045fc16b22f2170c1fbb029a2936c68f16').resolves(transaction1);
+    fetchTransactionMock.withArgs('9673b21f45b216dce2b4ffb4a85e1471d57aed6bf8e34d961a48296fe9b7f51a').resolves(transaction2);
+
+    const synchronizeMasternodeIdentities = container.resolve('synchronizeMasternodeIdentities');
 
     await synchronizeMasternodeIdentities(coreHeight);
 
-    await synchronizeMasternodeIdentities(coreHeight + 1);
-
-
+    // //simplifiedMasternodeList
+    // const firstIdentifier = hash(
+    //   Buffer.from(smlFixture[0].proRegTxHash, 'hex'),
+    // );
+    // let identity = await transactionalStateRepository.fetchIdentity();
+    //
+    // const secondIdentifier =
   });
 
   it('should sync identities if the gap between coreHeight and lastSyncedCoreHeight > smlMaxListsLimit', async () => {
