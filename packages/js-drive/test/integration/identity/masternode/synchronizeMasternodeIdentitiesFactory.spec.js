@@ -212,10 +212,19 @@ describe('synchronizeMasternodeIdentitiesFactory', () => {
 
     expect(documents).to.have.lengthOf(1);
 
+    const expectedDocumentId = Identifier.from(
+      hash(
+        Buffer.concat([
+          firstMasternodeIdentifier,
+          firstOperatorIdentityId,
+        ]),
+      ),
+    );
+
+    expect(documents[0].getId()).to.deep.equal(expectedDocumentId);
     expect(documents[0].getOwnerId()).to.deep.equal(firstMasternodeIdentifier);
     expect(documents[0].get('percentage')).to.equal(100);
     expect(documents[0].get('payToId')).to.deep.equal(firstOperatorIdentityId);
-    // TODO check ID is deterministic
 
     /**
      * Validate second masternode
