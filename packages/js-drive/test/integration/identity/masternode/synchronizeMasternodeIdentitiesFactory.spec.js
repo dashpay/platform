@@ -74,8 +74,16 @@ describe('synchronizeMasternodeIdentitiesFactory', () => {
 
     container.register('fetchTransaction', asValue(fetchTransactionMock));
 
-    // Mock SML
+    // Mock Core RPC
+    coreRpcClientMock = {
+      protx: this.sinon.stub().resolves({
+        result: rawDiff,
+      }),
+    };
 
+    container.register('coreRpcClient', asValue(coreRpcClientMock));
+
+    // Mock SML
     smlFixture = [
       new SimplifiedMNListEntry({
         proRegTxHash: '954112bb018895896cfa3c3d00761a045fc16b22f2170c1fbb029a2936c68f16',
@@ -268,18 +276,14 @@ describe('synchronizeMasternodeIdentitiesFactory', () => {
     expect(documents).to.have.lengthOf(0);
   });
 
-  it.skip('should sync identities if the gap between coreHeight and lastSyncedCoreHeight > smlMaxListsLimit', async () => {
-    // coreRpcClient
+  it('should sync identities if the gap between coreHeight and lastSyncedCoreHeight > smlMaxListsLimit', async () => {
+    await synchronizeMasternodeIdentities(coreHeight);
 
-    coreRpcClientMock = {
-      protx: this.sinon.stub().resolves({
-        result: rawDiff,
-      }),
-    };
+    coreHeight = 42;
 
     await synchronizeMasternodeIdentities(coreHeight);
 
-    await synchronizeMasternodeIdentities(coreHeight + smlMaxListsLimit + 1);
+    expect(coreRpcClientMock.protx).to.have.been.calledOnceWithExactly('diff', 1, 3);
   });
 
   it('should create masternode identities if new masternode appeared', async () => {
