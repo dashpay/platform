@@ -376,23 +376,39 @@ describe('synchronizeMasternodeIdentitiesFactory', () => {
 
     // Mock SML
 
-    const invalidSmlEntry = smlFixture[1].copy();
+    const invalidSmlEntry = smlFixture[0].copy();
     invalidSmlEntry.isValid = false;
 
     smlStoreMock.getSMLbyHeight.withArgs(coreHeight + 1, false).returns(
-      { mnList: [smlFixture[0], invalidSmlEntry] },
+      { mnList: [smlFixture[1], invalidSmlEntry] },
     );
 
     // Second call
 
     await synchronizeMasternodeIdentities(coreHeight + 1);
 
-    const removedIdentifier = hash(
-      Buffer.from(smlFixture[0].proRegTxHash, 'hex'),
+    const invalidMasternodeIdentifier = hash(
+      Buffer.from(invalidSmlEntry.proRegTxHash, 'hex'),
     );
-    const removedIdentity = await transactionalStateRepository.fetchIdentity(removedIdentifier);
 
-    expect(removedIdentity).to.be.null();
+    const invalidMasternodeId = Identifier.from(invalidMasternodeIdentifier);
+
+    // Validate masternode reward shares
+
+    let documents = await documentRepository.find(
+      rewardsDataContract,
+      'rewardShare',
+      {
+        where: [
+          ['$ownerId', '==', invalidMasternodeId],
+        ],
+      },
+    );
+
+    console.log(invalidMasternodeId.toString());
+    console.dir(Identifier.from(documents[0].ownerId).toString());
+
+    expect(documents).to.have.lengthOf(0);
   });
 
   it('should update create operator identity and reward shares if PubKeyOperator was changed', async () => {
