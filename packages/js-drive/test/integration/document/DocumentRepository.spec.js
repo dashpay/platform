@@ -745,7 +745,7 @@ describe('DocumentRepository', function main() {
 
       await container.dispose();
 
-      for (let i = 0; i <= 1000; i++) {
+      for (let i = 0; i <= 10; i++) {
         container = await createTestDIContainer();
 
         documentRepository = container.resolve('documentRepository');
