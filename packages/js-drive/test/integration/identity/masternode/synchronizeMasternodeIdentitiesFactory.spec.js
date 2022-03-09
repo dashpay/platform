@@ -175,6 +175,8 @@ describe('synchronizeMasternodeIdentitiesFactory', () => {
 
     // TODO check that identitiy is exist and keys are correct
 
+    // Validate first masternode reward shares
+
     let documents = await documentRepository.find(
       rewardsDataContract,
       'rewardShare',
@@ -191,6 +193,7 @@ describe('synchronizeMasternodeIdentitiesFactory', () => {
     expect(documents[0].getOwnerId()).to.deep.equal(firstMasternodeIdentifier);
     expect(documents[0].getData().percentage).to.equal(100);
     expect(documents[0].getData().payToId).to.deep.equal(firstOperatorIdentityId);
+    // TODO check ID is deterministic
 
     // Validate second operator identity (shouldn't be created)
 
@@ -204,6 +207,8 @@ describe('synchronizeMasternodeIdentitiesFactory', () => {
     );
 
     // TODO: Check identity not exists
+
+    // Validate second masternode reward shares
 
     documents = await documentRepository.find(
       rewardsDataContract,
