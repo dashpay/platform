@@ -11,6 +11,10 @@ describe('synchronizeMasternodeIdentitiesFactory', () => {
   let rawDiff;
   let fetchTransactionMock;
   let smlStoreMock;
+  let smlFixture;
+  let transaction1;
+  let transaction2;
+  let synchronizeMasternodeIdentities;
 
   beforeEach(async function beforeEach() {
 
@@ -41,12 +45,52 @@ describe('synchronizeMasternodeIdentitiesFactory', () => {
 
     container = await createTestDIContainer();
 
+    // Mock Core
+
     fetchTransactionMock = this.sinon.stub();
+
+    transaction1 = {
+      extraPayload: {
+        operatorReward: 100,
+        keyIDOwner: Buffer.alloc(20).fill('a').toString('hex'),
+      },
+    };
+
+    transaction2 = {
+      extraPayload: {
+        operatorReward: 0,
+        keyIDOwner: Buffer.alloc(20).fill('b').toString('hex'),
+      },
+    };
+
+    fetchTransactionMock.withArgs('954112bb018895896cfa3c3d00761a045fc16b22f2170c1fbb029a2936c68f16').resolves(transaction1);
+    fetchTransactionMock.withArgs('9673b21f45b216dce2b4ffb4a85e1471d57aed6bf8e34d961a48296fe9b7f51a').resolves(transaction2);
 
     container.register('fetchTransaction', asValue(fetchTransactionMock));
 
+    // Mock SML
+
+    smlFixture = [
+      new SimplifiedMNListEntry({
+        proRegTxHash: '954112bb018895896cfa3c3d00761a045fc16b22f2170c1fbb029a2936c68f16',
+        confirmedHash: '1de71625dbc973e2377ebd7da4fe6f8a8eb8af8c5a99373e36151a4fbe9947cc',
+        service: '192.168.65.2:20101',
+        pubKeyOperator: '8e4c8c144bd6c62640fe3ae295973d512f83f7f541525a5da3c91e77ec02ff4dcd214e7431b7d2cc28e420ebfeb612ee',
+        votingAddress: 'yfLLjdEynGQBdoPcCDUNAxu6pksYGzXKA4',
+        isValid: true,
+      }),
+      new SimplifiedMNListEntry({
+        proRegTxHash: '9673b21f45b216dce2b4ffb4a85e1471d57aed6bf8e34d961a48296fe9b7f51a',
+        confirmedHash: '25e1884e4251cbf42a0f9f42666443c62d89b3bc1aae73fb1e9d753e0b2732f4',
+        service: '192.168.65.2:20201',
+        pubKeyOperator: '06a9789fab00deae1464ed80bda281fc833f85959b04201645e5fc25635e3e7ecda30d13d328b721af0809fca3bf3b63',
+        votingAddress: 'yVRXh9Tgf9qt9tCbXmeX9FQsEYa526FMxR',
+        isValid: true,
+      }),
+    ];
+
     smlStoreMock = {
-      getSMLbyHeight: this.sinon.stub(),
+      getSMLbyHeight: this.sinon.stub().returns({ mnList: smlFixture }),
     };
 
     const simplifiedMasternodeListMock = {
@@ -70,54 +114,17 @@ describe('synchronizeMasternodeIdentitiesFactory', () => {
       masternodeRewardSharesOwnerPublicKey,
       masternodeRewardSharesDocuments,
     );
+
+    synchronizeMasternodeIdentities = container.resolve('synchronizeMasternodeIdentities');
   });
 
-  it('should create identities for all masternodes on the first sync', async function it() {
-    // Mock SML
+  afterEach(async () => {
+    if (container) {
+      await container.dispose();
+    }
+  });
 
-    const smlFixture = [
-      new SimplifiedMNListEntry({
-        proRegTxHash: '954112bb018895896cfa3c3d00761a045fc16b22f2170c1fbb029a2936c68f16',
-        confirmedHash: '1de71625dbc973e2377ebd7da4fe6f8a8eb8af8c5a99373e36151a4fbe9947cc',
-        service: '192.168.65.2:20101',
-        pubKeyOperator: '8e4c8c144bd6c62640fe3ae295973d512f83f7f541525a5da3c91e77ec02ff4dcd214e7431b7d2cc28e420ebfeb612ee',
-        votingAddress: 'yfLLjdEynGQBdoPcCDUNAxu6pksYGzXKA4',
-        isValid: true,
-      }),
-      new SimplifiedMNListEntry({
-        proRegTxHash: '9673b21f45b216dce2b4ffb4a85e1471d57aed6bf8e34d961a48296fe9b7f51a',
-        confirmedHash: '25e1884e4251cbf42a0f9f42666443c62d89b3bc1aae73fb1e9d753e0b2732f4',
-        service: '192.168.65.2:20201',
-        pubKeyOperator: '06a9789fab00deae1464ed80bda281fc833f85959b04201645e5fc25635e3e7ecda30d13d328b721af0809fca3bf3b63',
-        votingAddress: 'yVRXh9Tgf9qt9tCbXmeX9FQsEYa526FMxR',
-        isValid: true,
-      }),
-    ];
-
-    smlStoreMock.getSMLbyHeight = this.sinon.stub().returns({ mnList: smlFixture });
-
-    // Mock Core RPC
-
-    const transaction1 = {
-      extraPayload: {
-        operatorReward: 100,
-        keyIDOwner: Buffer.alloc(20).fill('a').toString('hex'),
-      },
-    };
-
-    const transaction2 = {
-      extraPayload: {
-        operatorReward: 0,
-        keyIDOwner: Buffer.alloc(20).fill('b').toString('hex'),
-      },
-    };
-
-    fetchTransactionMock.withArgs('954112bb018895896cfa3c3d00761a045fc16b22f2170c1fbb029a2936c68f16').resolves(transaction1);
-    fetchTransactionMock.withArgs('9673b21f45b216dce2b4ffb4a85e1471d57aed6bf8e34d961a48296fe9b7f51a').resolves(transaction2);
-
-    // First call
-
-    const synchronizeMasternodeIdentities = container.resolve('synchronizeMasternodeIdentities');
+  it('should create identities for all masternodes on the first sync', async () => {
     await synchronizeMasternodeIdentities(coreHeight);
 
     // //simplifiedMasternodeList
@@ -145,51 +152,8 @@ describe('synchronizeMasternodeIdentitiesFactory', () => {
   });
 
   it('should create masternode identities if new masternode appeared', async function it() {
-    // Mock SML
+    // Sync initial list
 
-    const smlFixture = [
-      new SimplifiedMNListEntry({
-        proRegTxHash: '954112bb018895896cfa3c3d00761a045fc16b22f2170c1fbb029a2936c68f16',
-        confirmedHash: '1de71625dbc973e2377ebd7da4fe6f8a8eb8af8c5a99373e36151a4fbe9947cc',
-        service: '192.168.65.2:20101',
-        pubKeyOperator: '8e4c8c144bd6c62640fe3ae295973d512f83f7f541525a5da3c91e77ec02ff4dcd214e7431b7d2cc28e420ebfeb612ee',
-        votingAddress: 'yfLLjdEynGQBdoPcCDUNAxu6pksYGzXKA4',
-        isValid: true,
-      }),
-      new SimplifiedMNListEntry({
-        proRegTxHash: '9673b21f45b216dce2b4ffb4a85e1471d57aed6bf8e34d961a48296fe9b7f51a',
-        confirmedHash: '25e1884e4251cbf42a0f9f42666443c62d89b3bc1aae73fb1e9d753e0b2732f4',
-        service: '192.168.65.2:20201',
-        pubKeyOperator: '06a9789fab00deae1464ed80bda281fc833f85959b04201645e5fc25635e3e7ecda30d13d328b721af0809fca3bf3b63',
-        votingAddress: 'yVRXh9Tgf9qt9tCbXmeX9FQsEYa526FMxR',
-        isValid: true,
-      }),
-    ];
-
-    smlStoreMock.getSMLbyHeight = this.sinon.stub().returns({ mnList: smlFixture });
-
-    // Mock Core RPC
-
-    const transaction1 = {
-      extraPayload: {
-        operatorReward: 100,
-        keyIDOwner: Buffer.alloc(20).fill('a').toString('hex'),
-      },
-    };
-
-    const transaction2 = {
-      extraPayload: {
-        operatorReward: 0,
-        keyIDOwner: Buffer.alloc(20).fill('b').toString('hex'),
-      },
-    };
-
-    fetchTransactionMock.withArgs('954112bb018895896cfa3c3d00761a045fc16b22f2170c1fbb029a2936c68f16').resolves(transaction1);
-    fetchTransactionMock.withArgs('9673b21f45b216dce2b4ffb4a85e1471d57aed6bf8e34d961a48296fe9b7f51a').resolves(transaction2);
-
-    // First call
-
-    const synchronizeMasternodeIdentities = container.resolve('synchronizeMasternodeIdentities');
     await synchronizeMasternodeIdentities(coreHeight);
 
     // Mock SML
@@ -226,75 +190,29 @@ describe('synchronizeMasternodeIdentitiesFactory', () => {
   });
 
   it('should remove reward shares if masternode disappeared', async () => {
-    const smlFixture = [
-      new SimplifiedMNListEntry({
-        proRegTxHash: '954112bb018895896cfa3c3d00761a045fc16b22f2170c1fbb029a2936c68f16',
-        confirmedHash: '1de71625dbc973e2377ebd7da4fe6f8a8eb8af8c5a99373e36151a4fbe9947cc',
-        service: '192.168.65.2:20101',
-        pubKeyOperator: '8e4c8c144bd6c62640fe3ae295973d512f83f7f541525a5da3c91e77ec02ff4dcd214e7431b7d2cc28e420ebfeb612ee',
-        votingAddress: 'yfLLjdEynGQBdoPcCDUNAxu6pksYGzXKA4',
-        isValid: true,
-      }),
-      new SimplifiedMNListEntry({
-        proRegTxHash: '9673b21f45b216dce2b4ffb4a85e1471d57aed6bf8e34d961a48296fe9b7f51a',
-        confirmedHash: '25e1884e4251cbf42a0f9f42666443c62d89b3bc1aae73fb1e9d753e0b2732f4',
-        service: '192.168.65.2:20201',
-        pubKeyOperator: '06a9789fab00deae1464ed80bda281fc833f85959b04201645e5fc25635e3e7ecda30d13d328b721af0809fca3bf3b63',
-        votingAddress: 'yVRXh9Tgf9qt9tCbXmeX9FQsEYa526FMxR',
-        isValid: true,
-      }),
-    ];
+    // Sync initial list
 
-    const smlStoreMock = {
-      getSMLbyHeight: this.sinon.stub().returns({ mnList: smlFixture }),
-    };
+    await synchronizeMasternodeIdentities(coreHeight);
 
-    const simplifiedMasternodeListMock = {
-      getStore: this.sinon.stub().returns(smlStoreMock),
-    };
-
-    await synchronizeMasternodeIdentities(coreHeight, true);
+    // Mock SML
 
     smlStoreMock.getSMLbyHeight.withArgs(coreHeight + 1).returns(
       { mnList: [smlFixture[0]] },
     );
 
-    delete smlFixture[1];
+    // delete smlFixture[1];
 
-    await synchronizeMasternodeIdentities(coreHeight + 1, true);
+    // Second call
 
-
+    await synchronizeMasternodeIdentities(coreHeight + 1);
   });
 
   it('should remove reward shares if masternode is not valid', async () => {
-    const smlFixture = [
-      new SimplifiedMNListEntry({
-        proRegTxHash: '954112bb018895896cfa3c3d00761a045fc16b22f2170c1fbb029a2936c68f16',
-        confirmedHash: '1de71625dbc973e2377ebd7da4fe6f8a8eb8af8c5a99373e36151a4fbe9947cc',
-        service: '192.168.65.2:20101',
-        pubKeyOperator: '8e4c8c144bd6c62640fe3ae295973d512f83f7f541525a5da3c91e77ec02ff4dcd214e7431b7d2cc28e420ebfeb612ee',
-        votingAddress: 'yfLLjdEynGQBdoPcCDUNAxu6pksYGzXKA4',
-        isValid: true,
-      }),
-      new SimplifiedMNListEntry({
-        proRegTxHash: '9673b21f45b216dce2b4ffb4a85e1471d57aed6bf8e34d961a48296fe9b7f51a',
-        confirmedHash: '25e1884e4251cbf42a0f9f42666443c62d89b3bc1aae73fb1e9d753e0b2732f4',
-        service: '192.168.65.2:20201',
-        pubKeyOperator: '06a9789fab00deae1464ed80bda281fc833f85959b04201645e5fc25635e3e7ecda30d13d328b721af0809fca3bf3b63',
-        votingAddress: 'yVRXh9Tgf9qt9tCbXmeX9FQsEYa526FMxR',
-        isValid: true,
-      }),
-    ];
+    // Sync initial list
 
-    const smlStoreMock = {
-      getSMLbyHeight: this.sinon.stub().returns({ mnList: smlFixture }),
-    };
+    await synchronizeMasternodeIdentities(coreHeight);
 
-    const simplifiedMasternodeListMock = {
-      getStore: this.sinon.stub().returns(smlStoreMock),
-    };
-
-    await synchronizeMasternodeIdentities(coreHeight, true);
+    // Mock SML
 
     const invalidSmlEntry = smlFixture[1];
     invalidSmlEntry.isValid = false;
@@ -303,40 +221,13 @@ describe('synchronizeMasternodeIdentitiesFactory', () => {
       { mnList: [smlFixture[0], invalidSmlEntry] },
     );
 
-    smlFixture[1].isValid = false;
+    // Second call
 
     await synchronizeMasternodeIdentities(coreHeight + 1);
-
-
   });
 
   it('should update create operator identity and reward shares if PubKeyOperator was changed', async () => {
-    const smlFixture = [
-      new SimplifiedMNListEntry({
-        proRegTxHash: '954112bb018895896cfa3c3d00761a045fc16b22f2170c1fbb029a2936c68f16',
-        confirmedHash: '1de71625dbc973e2377ebd7da4fe6f8a8eb8af8c5a99373e36151a4fbe9947cc',
-        service: '192.168.65.2:20101',
-        pubKeyOperator: '8e4c8c144bd6c62640fe3ae295973d512f83f7f541525a5da3c91e77ec02ff4dcd214e7431b7d2cc28e420ebfeb612ee',
-        votingAddress: 'yfLLjdEynGQBdoPcCDUNAxu6pksYGzXKA4',
-        isValid: true,
-      }),
-      new SimplifiedMNListEntry({
-        proRegTxHash: '9673b21f45b216dce2b4ffb4a85e1471d57aed6bf8e34d961a48296fe9b7f51a',
-        confirmedHash: '25e1884e4251cbf42a0f9f42666443c62d89b3bc1aae73fb1e9d753e0b2732f4',
-        service: '192.168.65.2:20201',
-        pubKeyOperator: '06a9789fab00deae1464ed80bda281fc833f85959b04201645e5fc25635e3e7ecda30d13d328b721af0809fca3bf3b63',
-        votingAddress: 'yVRXh9Tgf9qt9tCbXmeX9FQsEYa526FMxR',
-        isValid: true,
-      }),
-    ];
-
-    const smlStoreMock = {
-      getSMLbyHeight: this.sinon.stub().returns({ mnList: smlFixture }),
-    };
-
-    const simplifiedMasternodeListMock = {
-      getStore: this.sinon.stub().returns(smlStoreMock),
-    };
+    // Initial sync
 
     await synchronizeMasternodeIdentities(coreHeight, true);
 
@@ -350,7 +241,5 @@ describe('synchronizeMasternodeIdentitiesFactory', () => {
     smlFixture[1].pubKeyOperator = 'cca9789fab00deae1464ed80bda281fc833f85959b04201645e5fc25635e3e7ecda30d13d328b721af0809fca3bf3bcc'
 
     await synchronizeMasternodeIdentities(coreHeight + 1, false);
-
-
   });
 });
