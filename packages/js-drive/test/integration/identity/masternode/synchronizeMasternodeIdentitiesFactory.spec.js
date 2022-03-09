@@ -23,6 +23,7 @@ describe('synchronizeMasternodeIdentitiesFactory', () => {
   let rewardsDataContract;
   let identityRepository;
   let documentRepository;
+  let publicKeyToIdentityIdRepository;
 
   beforeEach(async function beforeEach() {
     // rawDiff = {
@@ -133,6 +134,7 @@ describe('synchronizeMasternodeIdentitiesFactory', () => {
 
     identityRepository = container.resolve('identityRepository');
     documentRepository = container.resolve('documentRepository');
+    publicKeyToIdentityIdRepository = container.resolve('publicKeyToIdentityIdRepository');
   });
 
   afterEach(async () => {
@@ -168,7 +170,12 @@ describe('synchronizeMasternodeIdentitiesFactory', () => {
     expect(firstMasternodePublicKey.getType()).to.equal(IdentityPublicKey.TYPES.ECDSA_HASH160);
     expect(firstMasternodePublicKey.getData()).to.deep.equal(Buffer.from(transaction1.extraPayload.keyIDOwner, 'hex'));
 
-    // TODO Fetch identity by key
+    const firstMasternodeIdentityByPublicKeyHash = await publicKeyToIdentityIdRepository
+      .fetch(firstMasternodePublicKey.hash());
+
+    expect(firstMasternodeIdentityByPublicKeyHash).to.have.lengthOf(1);
+    expect(firstMasternodeIdentityByPublicKeyHash[0].toBuffer())
+      .to.deep.equal(firstMasternodeIdentifier);
 
     // Validate operator identity
 
@@ -195,7 +202,12 @@ describe('synchronizeMasternodeIdentitiesFactory', () => {
     expect(firstOperatorMasternodePublicKey.getType()).to.equal(IdentityPublicKey.TYPES.BLS12_381);
     expect(firstOperatorMasternodePublicKey.getData()).to.deep.equal(firstOperatorPubKey);
 
-    // TODO Fetch identity by public key
+    const firstOperatorIdentityByPublicKeyHash = await publicKeyToIdentityIdRepository
+      .fetch(firstOperatorMasternodePublicKey.hash());
+
+    expect(firstOperatorIdentityByPublicKeyHash).to.have.lengthOf(1);
+    expect(firstOperatorIdentityByPublicKeyHash[0].toBuffer())
+      .to.deep.equal(firstOperatorIdentityId);
 
     // Validate masternode reward shares
 
@@ -241,7 +253,12 @@ describe('synchronizeMasternodeIdentitiesFactory', () => {
     expect(secondMasternodePublicKey.getType()).to.equal(IdentityPublicKey.TYPES.ECDSA_HASH160);
     expect(secondMasternodePublicKey.getData()).to.deep.equal(Buffer.from(transaction2.extraPayload.keyIDOwner, 'hex'));
 
-    // TODO Fetch identity by public key
+    const secondMasternodeIdentityByPublicKeyHash = await publicKeyToIdentityIdRepository
+      .fetch(secondMasternodePublicKey.hash());
+
+    expect(secondMasternodeIdentityByPublicKeyHash).to.have.lengthOf(1);
+    expect(secondMasternodeIdentityByPublicKeyHash[0].toBuffer())
+      .to.deep.equal(secondMasternodeIdentifier);
 
     // Validate operator identity (shouldn't be created)
 
