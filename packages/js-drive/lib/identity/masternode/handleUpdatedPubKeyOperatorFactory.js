@@ -38,78 +38,80 @@ function handleUpdatedPubKeyOperatorFactory(
     const { extraPayload: proRegTxPayload } = new Transaction(rawTransaction.data);
 
     // we need to crate reward shares only if it's enabled in proRegTx
-    if (proRegTxPayload.operatorReward > 0) {
-      const proRegTxHash = Buffer.from(masternodeEntry.proRegTxHash, 'hex');
-      const operatorPublicKey = Buffer.from(proRegTxPayload.pubKeyOperator, 'hex');
+    if (proRegTxPayload.operatorReward === 0) {
+      return;
+    }
 
-      const operatorIdentityHash = hash(
-        Buffer.concat([
-          proRegTxHash,
-          operatorPublicKey,
-        ]),
-      );
+    const proRegTxHash = Buffer.from(masternodeEntry.proRegTxHash, 'hex');
+    const operatorPublicKey = Buffer.from(proRegTxPayload.pubKeyOperator, 'hex');
 
-      const operatorIdentityId = Identifier.from(operatorIdentityHash);
+    const operatorIdentityHash = hash(
+      Buffer.concat([
+        proRegTxHash,
+        operatorPublicKey,
+      ]),
+    );
 
-      const operatorIdentity = await transactionalStateRepository.fetchIdentity(operatorIdentityId);
+    const operatorIdentityId = Identifier.from(operatorIdentityHash);
 
-      //  Create an identity for operator if there is no identity exist with the same ID
-      if (operatorIdentity === null) {
-        await createMasternodeIdentity(
-          operatorIdentityId,
-          operatorPublicKey,
-          IdentityPublicKey.TYPES.BLS12_381,
-        );
-      }
+    const operatorIdentity = await transactionalStateRepository.fetchIdentity(operatorIdentityId);
 
-      // Create a document in rewards data contract with percentage defined
-      // in corresponding ProRegTx
-
-      const masternodeIdentityId = Identifier.from(
-        hash(proRegTxHash),
-      );
-
-      await createRewardShareDocument(
-        dataContract,
-        masternodeIdentityId,
+    //  Create an identity for operator if there is no identity exist with the same ID
+    if (operatorIdentity === null) {
+      await createMasternodeIdentity(
         operatorIdentityId,
-        proRegTxPayload.operatorReward,
+        operatorPublicKey,
+        IdentityPublicKey.TYPES.BLS12_381,
       );
+    }
 
-      // Delete document from reward shares data contract with ID corresponding to the
-      // masternode identity (ownerId) and previous operator identity (payToId)
+    // Create a document in rewards data contract with percentage defined
+    // in corresponding ProRegTx
 
-      const previousOperatorIdentityHash = hash(
-        Buffer.concat([
-          proRegTxHash,
-          Buffer.from(previousMasternodeEntry.pubKeyOperator, 'hex'),
-        ]),
-      );
+    const masternodeIdentityId = Identifier.from(
+      hash(proRegTxHash),
+    );
 
-      const previousOperatorIdentityId = Identifier.from(previousOperatorIdentityHash);
+    await createRewardShareDocument(
+      dataContract,
+      masternodeIdentityId,
+      operatorIdentityId,
+      proRegTxPayload.operatorReward,
+    );
 
-      const previousDocuments = await documentRepository.find(
+    // Delete document from reward shares data contract with ID corresponding to the
+    // masternode identity (ownerId) and previous operator identity (payToId)
+
+    const previousOperatorIdentityHash = hash(
+      Buffer.concat([
+        proRegTxHash,
+        Buffer.from(previousMasternodeEntry.pubKeyOperator, 'hex'),
+      ]),
+    );
+
+    const previousOperatorIdentityId = Identifier.from(previousOperatorIdentityHash);
+
+    const previousDocuments = await documentRepository.find(
+      dataContract,
+      'rewardShare',
+      {
+        where: [
+          ['$ownerId', '==', Identifier.from(proRegTxHash)],
+          ['payToId', '==', previousOperatorIdentityId],
+        ],
+      },
+      true,
+    );
+
+    if (previousDocuments.length > 0) {
+      const [previousDocument] = previousDocuments;
+
+      await documentRepository.delete(
         dataContract,
         'rewardShare',
-        {
-          where: [
-            ['$ownerId', '==', Identifier.from(proRegTxHash)],
-            ['payToId', '==', previousOperatorIdentityId],
-          ],
-        },
+        previousDocument.getId(),
         true,
       );
-
-      if (previousDocuments.length > 0) {
-        const [previousDocument] = previousDocuments;
-
-        await documentRepository.delete(
-          dataContract,
-          'rewardShare',
-          previousDocument.getId(),
-          true,
-        );
-      }
     }
   }
 

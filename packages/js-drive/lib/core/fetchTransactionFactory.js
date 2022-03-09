@@ -1,0 +1,3 @@
+function fetchTransactionFactory() {
+  function fetchTransaction
+}
