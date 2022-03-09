@@ -331,12 +331,88 @@ describe('synchronizeMasternodeIdentitiesFactory', () => {
 
     await synchronizeMasternodeIdentities(coreHeight + 1);
 
-    const newIdentifier = hash(
-      Buffer.from(newSmlFixture.proRegTxHash, 'hex'),
+    const newMasternodeIdentifier = hash(
+      Buffer.from(newSmlFixture[0].proRegTxHash, 'hex'),
     );
-    const newIdentity = await transactionalStateRepository.fetchIdentity(newIdentifier);
+    const newMasternodeIdentity = await identityRepository.fetch(
+      Identifier.from(newMasternodeIdentifier),
+    );
 
-    expect(newIdentity).to.exist();
+    expect(newMasternodeIdentity).to.exist();
+
+    expect(newMasternodeIdentity.getPublicKeys()).to.have.lengthOf(1);
+
+    const newMasternodePublicKey = newMasternodeIdentity.getPublicKeyById(0);
+    expect(newMasternodePublicKey.getType()).to.equal(IdentityPublicKey.TYPES.ECDSA_HASH160);
+    expect(newMasternodePublicKey.getData()).to.deep.equal(Buffer.from(transaction3.extraPayload.keyIDOwner, 'hex'));
+
+    const newMasternodeIdentityByPublicKeyHash = await publicKeyToIdentityIdRepository
+      .fetch(newMasternodePublicKey.hash());
+
+    expect(newMasternodeIdentityByPublicKeyHash).to.have.lengthOf(1);
+    expect(newMasternodeIdentityByPublicKeyHash[0].toBuffer())
+      .to.deep.equal(newMasternodeIdentifier);
+
+    // Validate operator identity
+
+    const newOperatorPubKey = Buffer.from(newSmlFixture[0].pubKeyOperator, 'hex');
+
+    const newOperatorIdentityId = hash(
+      Buffer.concat([
+        Buffer.from(newSmlFixture[0].proRegTxHash, 'hex'),
+        newOperatorPubKey,
+      ]),
+    );
+
+    const firstOperatorIdentity = await identityRepository.fetch(
+      Identifier.from(newOperatorIdentityId),
+    );
+
+    expect(firstOperatorIdentity).to.exist();
+
+    // Validate operator public keys
+
+    expect(firstOperatorIdentity.getPublicKeys()).to.have.lengthOf(1);
+
+    const firstOperatorMasternodePublicKey = firstOperatorIdentity.getPublicKeyById(0);
+    expect(firstOperatorMasternodePublicKey.getType()).to.equal(IdentityPublicKey.TYPES.BLS12_381);
+    expect(firstOperatorMasternodePublicKey.getData()).to.deep.equal(newOperatorPubKey);
+
+    const firstOperatorIdentityByPublicKeyHash = await publicKeyToIdentityIdRepository
+      .fetch(firstOperatorMasternodePublicKey.hash());
+
+    expect(firstOperatorIdentityByPublicKeyHash).to.have.lengthOf(1);
+    expect(firstOperatorIdentityByPublicKeyHash[0].toBuffer())
+      .to.deep.equal(newOperatorIdentityId);
+
+    // Validate masternode reward shares
+
+    const documents = await documentRepository.find(
+      rewardsDataContract,
+      'rewardShare',
+      {
+        where: [
+          ['$ownerId', '==', newMasternodeIdentifier],
+          ['payToId', '==', newOperatorIdentityId],
+        ],
+      },
+    );
+
+    expect(documents).to.have.lengthOf(1);
+
+    const expectedDocumentId = Identifier.from(
+      hash(
+        Buffer.concat([
+          newMasternodeIdentifier,
+          newOperatorIdentityId,
+        ]),
+      ),
+    );
+
+    expect(documents[0].getId()).to.deep.equal(expectedDocumentId);
+    expect(documents[0].getOwnerId()).to.deep.equal(newMasternodeIdentifier);
+    expect(documents[0].get('percentage')).to.equal(200);
+    expect(documents[0].get('payToId')).to.deep.equal(newOperatorIdentityId);
   });
 
   it('should remove reward shares if masternode disappeared', async () => {
@@ -347,26 +423,83 @@ describe('synchronizeMasternodeIdentitiesFactory', () => {
     // Mock SML
 
     smlStoreMock.getSMLbyHeight.withArgs(coreHeight + 1).returns(
-      { mnList: [smlFixture[0]] },
+      { mnList: [smlFixture[1]] },
     );
-
-    // delete smlFixture[1];
 
     // Second call
 
     await synchronizeMasternodeIdentities(coreHeight + 1);
-    const removedIdentifier = hash(
+
+    const removedMasternodeIdentifier = hash(
       Buffer.from(smlFixture[0].proRegTxHash, 'hex'),
     );
-    const removedIdentity = await transactionalStateRepository.fetchIdentity(removedIdentifier);
 
-    expect(removedIdentity).to.be.null();
-
-    const documents = await transactionalStateRepository.fetchDocuments(
-      contractId,
-      'rewardShare',
-      { where: [['$id', '==', rewardShare.getId()]] },
+    const removedMasternodeIdentity = await identityRepository.fetch(
+      Identifier.from(removedMasternodeIdentifier),
     );
+
+    expect(removedMasternodeIdentity).to.exist();
+
+    // Validate masternode identity public keys
+
+    expect(removedMasternodeIdentity.getPublicKeys()).to.have.lengthOf(1);
+
+    const removedMasternodePublicKey = removedMasternodeIdentity.getPublicKeyById(0);
+    expect(removedMasternodePublicKey.getType()).to.equal(IdentityPublicKey.TYPES.ECDSA_HASH160);
+    expect(removedMasternodePublicKey.getData()).to.deep.equal(Buffer.from(transaction1.extraPayload.keyIDOwner, 'hex'));
+
+    const removedMasternodeIdentityByPublicKeyHash = await publicKeyToIdentityIdRepository
+      .fetch(removedMasternodePublicKey.hash());
+
+    expect(removedMasternodeIdentityByPublicKeyHash).to.have.lengthOf(1);
+    expect(removedMasternodeIdentityByPublicKeyHash[0].toBuffer())
+      .to.deep.equal(removedMasternodeIdentifier);
+
+    // Validate operator identity (shouldn't be created)
+
+    const operatorPubKey = Buffer.from(smlFixture[0].pubKeyOperator, 'hex');
+
+    const operatorIdentityId = hash(
+      Buffer.concat([
+        Buffer.from(smlFixture[0].proRegTxHash, 'hex'),
+        operatorPubKey,
+      ]),
+    );
+
+    const operatorIdentity = await identityRepository.fetch(
+      Identifier.from(operatorIdentityId),
+    );
+
+    expect(operatorIdentity).to.exist();
+
+    // Validate operator public keys
+
+    expect(operatorIdentity.getPublicKeys()).to.have.lengthOf(1);
+
+    const firstOperatorMasternodePublicKey = operatorIdentity.getPublicKeyById(0);
+    expect(firstOperatorMasternodePublicKey.getType()).to.equal(IdentityPublicKey.TYPES.BLS12_381);
+    expect(firstOperatorMasternodePublicKey.getData()).to.deep.equal(operatorPubKey);
+
+    const firstOperatorIdentityByPublicKeyHash = await publicKeyToIdentityIdRepository
+      .fetch(firstOperatorMasternodePublicKey.hash());
+
+    expect(firstOperatorIdentityByPublicKeyHash).to.have.lengthOf(1);
+    expect(firstOperatorIdentityByPublicKeyHash[0].toBuffer())
+      .to.deep.equal(operatorIdentityId);
+
+    // Validate masternode reward shares (shouldn't be created)
+
+    const documents = await documentRepository.find(
+      rewardsDataContract,
+      'rewardShare',
+      {
+        where: [
+          ['$ownerId', '==', removedMasternodeIdentifier],
+        ],
+      },
+    );
+
+    expect(documents).to.have.lengthOf(0);
   });
 
   it('should remove reward shares if masternode is not valid', async () => {
