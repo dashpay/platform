@@ -7,6 +7,7 @@
  * @param {string} ownerAddress
  * @param {string} operatorPublicKey
  * @param {string} fundSourceAddress
+ * @param {number} operatorReward
  * @param {Config} config
  * @return {Promise<string>}
  */
@@ -16,6 +17,7 @@ async function registerMasternode(
   ownerAddress,
   operatorPublicKey,
   fundSourceAddress,
+  operatorReward,
   config,
 ) {
   // get collateral index
@@ -33,7 +35,7 @@ async function registerMasternode(
     ownerAddress, // The new Dash address for the owner/voting address
     operatorPublicKey, // The Operator BLS public key
     ownerAddress, // The new Dash address, or the address of a delegate, used for proposal voting
-    0, // The percentage of the block reward allocated to the operator as payment
+    operatorReward, // The percentage of the block reward allocated to the operator as payment
     fundSourceAddress, // A new or existing Dash address to receive the owner’s masternode rewards
   );
 
