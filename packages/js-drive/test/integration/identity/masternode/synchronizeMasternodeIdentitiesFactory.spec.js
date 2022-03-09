@@ -495,7 +495,6 @@ describe('synchronizeMasternodeIdentitiesFactory', () => {
       {
         where: [
           ['$ownerId', '==', removedMasternodeIdentifier],
-          ['payToId', '==', operatorIdentityId],
         ],
       },
     );
