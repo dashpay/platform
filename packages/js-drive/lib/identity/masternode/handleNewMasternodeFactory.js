@@ -8,21 +8,19 @@ const Transaction = require('@dashevo/dashcore-lib/lib/transaction');
  * @param {DashPlatformProtocol} transactionalDpp
  * @param {DriveStateRepository|CachedStateRepositoryDecorator} transactionalStateRepository
  * @param {createMasternodeIdentity} createMasternodeIdentity
+ * @param {createRewardShareDocument} createRewardShareDocument
  * @return {handleNewMasternode}
  */
 function handleNewMasternodeFactory(
   transactionalDpp,
   transactionalStateRepository,
   createMasternodeIdentity,
+  createRewardShareDocument,
 ) {
   /**
    * @typedef handleNewMasternode
    * @param {SimplifiedMNListEntry} masternodeEntry
    * @param {DataContract} dataContract
-   * @return {Promise<{
-   *            create: Document[],
-   *            delete: Document[],
-   * }>}
    */
   async function handleNewMasternode(masternodeEntry, dataContract) {
     const rawTransaction = await transactionalStateRepository
@@ -30,22 +28,22 @@ function handleNewMasternodeFactory(
 
     const { extraPayload: proRegTxPayload } = new Transaction(rawTransaction.data);
 
+    const proRegTxHash = Buffer.from(masternodeEntry.proRegTxHash, 'hex');
+
     // Create a masternode identity
     const masternodeIdentityId = Identifier.from(
-      hash(
-        Buffer.from(masternodeEntry.proRegTxHash, 'hex'),
-      ),
+      hash(proRegTxHash),
     );
+
+    const publicKey = Buffer.from(proRegTxPayload.keyIDOwner, 'hex').reverse();
 
     await createMasternodeIdentity(
       masternodeIdentityId,
-      Buffer.from(proRegTxPayload.keyIDOwner, 'hex').reverse(),
+      publicKey,
       IdentityPublicKey.TYPES.ECDSA_HASH160,
     );
 
     // we need to crate reward shares only if it's enabled in proRegTx
-    const documentsToCreate = [];
-    const documentsToDelete = [];
 
     if (proRegTxPayload.operatorReward > 0) {
       const operatorPubKey = Buffer.from(proRegTxPayload.pubKeyOperator, 'hex');
@@ -53,7 +51,7 @@ function handleNewMasternodeFactory(
       // Create an identity for operator
       const operatorIdentityHash = hash(
         Buffer.concat([
-          masternodeIdentityId.toBuffer(),
+          proRegTxHash,
           operatorPubKey,
         ]),
       );
@@ -67,21 +65,13 @@ function handleNewMasternodeFactory(
       );
 
       // Create a document in rewards data contract with percentage
-      documentsToCreate.push(transactionalDpp.document.create(
+      await createRewardShareDocument(
         dataContract,
         masternodeIdentityId,
-        'rewardShare',
-        {
-          payToId: operatorIdentityId,
-          percentage: proRegTxPayload.operatorReward,
-        },
-      ));
+        operatorIdentityId,
+        proRegTxPayload.operatorReward,
+      );
     }
-
-    return {
-      create: documentsToCreate,
-      delete: documentsToDelete,
-    };
   }
 
   return handleNewMasternode;

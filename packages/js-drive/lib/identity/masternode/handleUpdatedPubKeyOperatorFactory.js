@@ -9,6 +9,8 @@ const Transaction = require('@dashevo/dashcore-lib/lib/transaction');
  * @param {DriveStateRepository|CachedStateRepositoryDecorator} transactionalStateRepository
  * @param {createMasternodeIdentity} createMasternodeIdentity
  * @param {Identifier} masternodeRewardSharesContractId
+ * @param {createRewardShareDocument} createRewardShareDocument
+ * @param {DocumentRepository} documentRepository
  * @return {handleUpdatedPubKeyOperator}
  */
 function handleUpdatedPubKeyOperatorFactory(
@@ -16,16 +18,14 @@ function handleUpdatedPubKeyOperatorFactory(
   transactionalStateRepository,
   createMasternodeIdentity,
   masternodeRewardSharesContractId,
+  createRewardShareDocument,
+  documentRepository,
 ) {
   /**
    * @typedef handleUpdatedPubKeyOperator
    * @param {SimplifiedMNListEntry} masternodeEntry
    * @param {SimplifiedMNListEntry} previousMasternodeEntry
    * @param {DataContract} dataContract
-   * @return {Promise<{
-   *            create: Document[],
-   *            delete: Document[],
-   * }>}
    */
   async function handleUpdatedPubKeyOperator(
     masternodeEntry,
@@ -38,17 +38,14 @@ function handleUpdatedPubKeyOperatorFactory(
     const { extraPayload: proRegTxPayload } = new Transaction(rawTransaction.data);
 
     // we need to crate reward shares only if it's enabled in proRegTx
-    const documentsToCreate = [];
-    let documentsToDelete = [];
-
     if (proRegTxPayload.operatorReward > 0) {
       const proRegTxHash = Buffer.from(masternodeEntry.proRegTxHash, 'hex');
-      const pubKeyOperator = Buffer.from(proRegTxPayload.pubKeyOperator, 'hex');
+      const operatorPublicKey = Buffer.from(proRegTxPayload.pubKeyOperator, 'hex');
 
       const operatorIdentityHash = hash(
         Buffer.concat([
           proRegTxHash,
-          pubKeyOperator,
+          operatorPublicKey,
         ]),
       );
 
@@ -60,24 +57,24 @@ function handleUpdatedPubKeyOperatorFactory(
       if (operatorIdentity === null) {
         await createMasternodeIdentity(
           operatorIdentityId,
-          pubKeyOperator,
+          operatorPublicKey,
           IdentityPublicKey.TYPES.BLS12_381,
         );
       }
 
       // Create a document in rewards data contract with percentage defined
       // in corresponding ProRegTx
-      documentsToCreate.push(transactionalDpp.document.create(
+
+      const masternodeIdentityId = Identifier.from(
+        hash(proRegTxHash),
+      );
+
+      await createRewardShareDocument(
         dataContract,
-        Identifier.from(
-          hash(proRegTxHash),
-        ),
-        'rewardShare',
-        {
-          payToId: operatorIdentityId,
-          percentage: proRegTxPayload.operatorReward,
-        },
-      ));
+        masternodeIdentityId,
+        operatorIdentityId,
+        proRegTxPayload.operatorReward,
+      );
 
       // Delete document from reward shares data contract with ID corresponding to the
       // masternode identity (ownerId) and previous operator identity (payToId)
@@ -91,33 +88,29 @@ function handleUpdatedPubKeyOperatorFactory(
 
       const previousOperatorIdentityId = Identifier.from(previousOperatorIdentityHash);
 
-      let startAfter;
-      let fetchedDocuments;
-      const limit = 100;
+      const previousDocuments = await documentRepository.find(
+        dataContract,
+        'rewardShare',
+        {
+          where: [
+            ['$ownerId', '==', Identifier.from(proRegTxHash)],
+            ['payToId', '==', previousOperatorIdentityId],
+          ],
+        },
+        true,
+      );
 
-      do {
-        fetchedDocuments = await transactionalStateRepository.fetchDocuments(
-          masternodeRewardSharesContractId,
+      if (previousDocuments.length > 0) {
+        const [previousDocument] = previousDocuments;
+
+        await documentRepository.delete(
+          dataContract,
           'rewardShare',
-          {
-            limit,
-            startAfter,
-            where: [
-              ['$ownerId', '==', Identifier.from(proRegTxHash)],
-              ['payToId', '==', previousOperatorIdentityId],
-            ],
-          },
+          previousDocument.getId(),
+          true,
         );
-        documentsToDelete = documentsToDelete.concat(fetchedDocuments);
-        startAfter = fetchedDocuments.length > 0
-          ? fetchedDocuments[fetchedDocuments.length - 1].id : undefined;
-      } while (fetchedDocuments.length === limit);
+      }
     }
-
-    return {
-      create: documentsToCreate,
-      delete: documentsToDelete,
-    };
   }
 
   return handleUpdatedPubKeyOperator;

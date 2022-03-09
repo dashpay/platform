@@ -101,7 +101,7 @@ class DocumentRepository {
    *
    * @throws InvalidQueryError
    *
-   * @returns {Document[]}
+   * @returns {Promise<Document[]>}
    */
   async find(dataContract, documentType, query = {}, useTransaction = false) {
     const documentSchema = dataContract.getDocumentSchema(documentType);
