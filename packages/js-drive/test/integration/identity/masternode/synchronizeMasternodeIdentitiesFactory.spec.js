@@ -8,10 +8,6 @@ const createTestDIContainer = require('../../../../lib/test/createTestDIContaine
 describe('synchronizeMasternodeIdentitiesFactory', () => {
   let container;
   let coreHeight;
-  let documentsFixture;
-  let handleNewMasternodeMock;
-  let splitDocumentsIntoChunksMock;
-  let newSmlFixture;
   let rawDiff;
   let fetchTransactionMock;
   let smlStoreMock;
@@ -119,8 +115,9 @@ describe('synchronizeMasternodeIdentitiesFactory', () => {
     fetchTransactionMock.withArgs('954112bb018895896cfa3c3d00761a045fc16b22f2170c1fbb029a2936c68f16').resolves(transaction1);
     fetchTransactionMock.withArgs('9673b21f45b216dce2b4ffb4a85e1471d57aed6bf8e34d961a48296fe9b7f51a').resolves(transaction2);
 
-    const synchronizeMasternodeIdentities = container.resolve('synchronizeMasternodeIdentities');
+    // First call
 
+    const synchronizeMasternodeIdentities = container.resolve('synchronizeMasternodeIdentities');
     await synchronizeMasternodeIdentities(coreHeight);
 
     // //simplifiedMasternodeList
@@ -132,7 +129,7 @@ describe('synchronizeMasternodeIdentitiesFactory', () => {
     // const secondIdentifier =
   });
 
-  it('should sync identities if the gap between coreHeight and lastSyncedCoreHeight > smlMaxListsLimit', async () => {
+  it.skip('should sync identities if the gap between coreHeight and lastSyncedCoreHeight > smlMaxListsLimit', async () => {
     //coreRpcClient
 
     coreRpcClientMock = {
@@ -147,7 +144,9 @@ describe('synchronizeMasternodeIdentitiesFactory', () => {
 
   });
 
-  it('should create masternode identities if new masternode appeared', async () => {
+  it('should create masternode identities if new masternode appeared', async function it() {
+    // Mock SML
+
     const smlFixture = [
       new SimplifiedMNListEntry({
         proRegTxHash: '954112bb018895896cfa3c3d00761a045fc16b22f2170c1fbb029a2936c68f16',
@@ -167,26 +166,35 @@ describe('synchronizeMasternodeIdentitiesFactory', () => {
       }),
     ];
 
-    const smlStoreMock = {
-      getSMLbyHeight: this.sinon.stub().returns({ mnList: smlFixture }),
+    smlStoreMock.getSMLbyHeight = this.sinon.stub().returns({ mnList: smlFixture });
+
+    // Mock Core RPC
+
+    const transaction1 = {
+      extraPayload: {
+        operatorReward: 100,
+        keyIDOwner: Buffer.alloc(20).fill('a').toString('hex'),
+      },
     };
 
-    const simplifiedMasternodeListMock = {
-      getStore: this.sinon.stub().returns(smlStoreMock),
+    const transaction2 = {
+      extraPayload: {
+        operatorReward: 0,
+        keyIDOwner: Buffer.alloc(20).fill('b').toString('hex'),
+      },
     };
 
+    fetchTransactionMock.withArgs('954112bb018895896cfa3c3d00761a045fc16b22f2170c1fbb029a2936c68f16').resolves(transaction1);
+    fetchTransactionMock.withArgs('9673b21f45b216dce2b4ffb4a85e1471d57aed6bf8e34d961a48296fe9b7f51a').resolves(transaction2);
+
+    // First call
+
+    const synchronizeMasternodeIdentities = container.resolve('synchronizeMasternodeIdentities');
     await synchronizeMasternodeIdentities(coreHeight);
 
-    smlStoreMock.getSMLbyHeight.withArgs(coreHeight + 1).returns(
-      { mnList: smlFixture.concat(newSmlFixture) },
-    );
+    // Mock SML
 
-    const newIdentities = { create: [documentsFixture[0]] };
-
-    handleNewMasternodeMock.returns(newIdentities);
-    splitDocumentsIntoChunksMock.returns([newIdentities]);
-
-    smlFixture.push(
+    const newSmlFixture = [
       new SimplifiedMNListEntry({
         proRegTxHash: '3b73b21f45b216dce2b4ffb4a85e1471d57aed6bf8e34d961a48296fe9b7f53b',
         confirmedHash: '3be1884e4251cbf42a0f9f42666443c62d89b3bc1aae73fb1e9d753e0b27323b',
@@ -195,7 +203,24 @@ describe('synchronizeMasternodeIdentitiesFactory', () => {
         votingAddress: 'yVRXh9Tgf9qt9tCbXmeX9FQsEYa526FM3b',
         isValid: true,
       }),
+    ];
+
+    smlStoreMock.getSMLbyHeight.withArgs(coreHeight + 1).returns(
+      { mnList: smlFixture.concat(newSmlFixture) },
     );
+
+    // Mock Core
+
+    const transaction3 = {
+      extraPayload: {
+        operatorReward: 200,
+        keyIDOwner: Buffer.alloc(20).fill('c').toString('hex'),
+      },
+    };
+
+    fetchTransactionMock.withArgs('3b73b21f45b216dce2b4ffb4a85e1471d57aed6bf8e34d961a48296fe9b7f53b').resolves(transaction3);
+
+    // Second call
 
     await synchronizeMasternodeIdentities(coreHeight + 1);
   });
