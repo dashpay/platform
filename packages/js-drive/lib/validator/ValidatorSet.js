@@ -142,16 +142,28 @@ class ValidatorSet {
       .getCurrentSML()
       .getValidMasternodesList();
 
-    this.validators = await Promise.all(quorumMembers
-      .filter((member) => member.valid)
-      .map(async (member) => {
-        const masternode = validMasternodesList
+    const masternodes = {};
+
+    this.validators = await Promise.all(
+      quorumMembers.filter((member) => {
+        // Ignore invalid quorum members
+        if (!member.valid) {
+          return false;
+        }
+
+        // Ignore members which are not part of SML
+        masternodes[member.proTxHash] = validMasternodesList
           .find((mnEntry) => mnEntry.proRegTxHash === member.proTxHash);
+
+        return Boolean(masternodes[member.proTxHash]);
+      }).map(async (member) => {
+        const masternode = masternodes[member.proTxHash];
 
         const networkInfo = new ValidatorNetworkInfo(masternode.getIp(), this.tenderdashP2pPort);
 
         return Validator.createFromQuorumMember(member, networkInfo, isThisNodeMember);
-      }));
+      }),
+    );
   }
 }
 
