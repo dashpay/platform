@@ -4,7 +4,6 @@ const {
 
 const SimplifiedMNListEntry = require('@dashevo/dashcore-lib/lib/deterministicmnlist/SimplifiedMNListEntry');
 const { hash } = require('@dashevo/dpp/lib/util/hash');
-const { contractId } = require('@dashevo/masternode-reward-shares-contract/lib/systemIds');
 const Identifier = require('@dashevo/dpp/lib/identifier/Identifier');
 const IdentityPublicKey = require('@dashevo/dpp/lib/identity/IdentityPublicKey');
 
