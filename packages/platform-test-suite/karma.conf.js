@@ -25,11 +25,11 @@ module.exports = (config) => {
     frameworks: ['mocha', 'chai', 'webpack'],
     files: [
       'lib/test/karma/loader.js',
-      './test/functional/core/broadcastTransaction.spec.js',
+      './test/**/*.spec.js',
     ],
     preprocessors: {
       'lib/test/karma/loader.js': ['webpack', 'sourcemap'],
-      './test/functional/core/broadcastTransaction.spec.js': ['webpack', 'sourcemap'],
+      './test/**/*.spec.js': ['webpack', 'sourcemap'],
     },
     webpack: {
       mode: 'development',
@@ -67,8 +67,8 @@ module.exports = (config) => {
     port: 9876,
     colors: true,
     logLevel: config.LOG_INFO,
-    browsers: ['Chrome'],
-    singleRun: false,
+    browsers: ['ChromeHeadless'],
+    singleRun: true,
     concurrency: 1,
     plugins: [
       karmaMocha,
