@@ -102,7 +102,7 @@ pub fn encode_document_field_type(
     };
 }
 
-fn encode_integer(val: i64) -> Result<Vec<u8>, Error> {
+pub fn encode_integer(val: i64) -> Result<Vec<u8>, Error> {
     // Positive integers are represented in binary with the signed bit set to 0
     // Negative integers are represented in 2's complement form
 
@@ -127,7 +127,7 @@ fn encode_integer(val: i64) -> Result<Vec<u8>, Error> {
     Ok(wtr)
 }
 
-fn encode_float(val: f64) -> Result<Vec<u8>, Error> {
+pub fn encode_float(val: f64) -> Result<Vec<u8>, Error> {
     // Floats are represented based on the  IEEE 754-2008 standard
     // [sign bit] [biased exponent] [mantissa]
 

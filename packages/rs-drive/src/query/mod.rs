@@ -188,7 +188,7 @@ pub struct WhereClause {
 
 impl<'a> WhereClause {
     pub fn is_identifier(&self) -> bool {
-        return self.field == "$id";
+        self.field == "$id"
     }
 
     pub fn from_components(clause_components: &'a [Value]) -> Result<Self, Error> {
@@ -201,25 +201,27 @@ impl<'a> WhereClause {
         let field_value = clause_components
             .get(0)
             .expect("check above enforces it exists");
-        let field_ref = field_value.as_text().ok_or_else(|| {
-            Error::InvalidQuery("first field of where component should be a string")
-        })?;
+        let field_ref = field_value.as_text().ok_or(Error::InvalidQuery(
+            "first field of where component should be a string",
+        ))?;
         let field = String::from(field_ref);
 
         let operator_value = clause_components
             .get(1)
             .expect("check above enforces it exists");
-        let operator_string = operator_value.as_text().ok_or_else(|| {
-            Error::InvalidQuery("second field of where component should be a string")
-        })?;
+        let operator_string = operator_value.as_text().ok_or(Error::InvalidQuery(
+            "second field of where component should be a string",
+        ))?;
 
-        let operator = operator_from_string(operator_string).ok_or_else(|| {
+        let operator = operator_from_string(operator_string).ok_or({
             Error::InvalidQuery("second field of where component should be a known operator")
         })?;
 
         let value = clause_components
             .get(2)
-            .ok_or_else(|| Error::InvalidQuery("third field of where component should exist"))?
+            .ok_or(Error::InvalidQuery(
+                "third field of where component should exist",
+            ))?
             .clone();
 
         Ok(WhereClause {
@@ -362,7 +364,7 @@ impl<'a> WhereClause {
             Value::Array(array) => Some(array),
             _ => None,
         }
-        .ok_or_else(|| {
+        .ok_or({
             Error::InvalidQuery(
                 "when using between operator you must provide a tuple array of values",
             )
@@ -684,7 +686,7 @@ impl<'a> WhereClause {
                 let left_key =
                     document_type.serialize_value_for_key(self.field.as_str(), &self.value)?;
                 let mut right_key = left_key.clone();
-                let last_char = right_key.last_mut().ok_or_else(|| {
+                let last_char = right_key.last_mut().ok_or({
                     Error::InvalidQuery("starts with must have at least one character")
                 })?;
                 *last_char += 1;
@@ -739,9 +741,9 @@ impl<'a> OrderClause {
         let field_value = clause_components
             .get(0)
             .expect("check above enforces it exists");
-        let field_ref = field_value.as_text().ok_or_else(|| {
-            Error::InvalidQuery("first field of where component should be a string")
-        })?;
+        let field_ref = field_value.as_text().ok_or(Error::InvalidQuery(
+            "first field of where component should be a string",
+        ))?;
         let field = String::from(field_ref);
 
         let asc_string_value = clause_components.get(1).unwrap();
@@ -749,7 +751,9 @@ impl<'a> OrderClause {
             Value::Text(asc_string) => Some(asc_string.as_str()),
             _ => None,
         }
-        .ok_or_else(|| Error::InvalidQuery("orderBy right component must be a string"))?;
+        .ok_or(Error::InvalidQuery(
+            "orderBy right component must be a string",
+        ))?;
         let ascending = match asc_string {
             "asc" => true,
             "desc" => false,
@@ -774,6 +778,7 @@ pub struct DriveQuery<'a> {
     pub order_by: IndexMap<String, OrderClause>,
     pub start_at: Option<Vec<u8>>,
     pub start_at_included: bool,
+    pub block_time: Option<f64>,
 }
 
 impl<'a> DriveQuery<'a> {
@@ -809,7 +814,19 @@ impl<'a> DriveQuery<'a> {
                     None
                 }
             })
-            .ok_or_else(|| Error::InvalidQuery("limit should be a integer from 1 to 100"))?;
+            .ok_or(Error::InvalidQuery(
+                "limit should be a integer from 1 to 100",
+            ))?;
+
+        let block_time: Option<f64> = query_document.get("blockTime").and_then(|id_cbor| {
+            if let CborValue::Float(b) = id_cbor {
+                Some(*b)
+            } else if let CborValue::Integer(b) = id_cbor {
+                Some(i128::from(*b) as f64)
+            } else {
+                None
+            }
+        });
 
         let all_where_clauses: Vec<WhereClause> =
             query_document.get("where").map_or(Ok(vec![]), |id_cbor| {
@@ -888,6 +905,7 @@ impl<'a> DriveQuery<'a> {
             order_by,
             start_at,
             start_at_included,
+            block_time,
         })
     }
 
@@ -899,20 +917,25 @@ impl<'a> DriveQuery<'a> {
         // Should ideally iterate over each statement
         let first_statement = statements
             .get(0)
-            .ok_or_else(|| Error::InvalidQuery("Issue parsing SQL"))?;
+            .ok_or(Error::InvalidQuery("Issue parsing SQL"))?;
 
         let query: &ast::Query = match first_statement {
             ast::Statement::Query(query_struct) => Some(query_struct),
             _ => None,
         }
-        .ok_or_else(|| Error::InvalidQuery("Issue parsing sql"))?;
+        .ok_or(Error::InvalidQuery("Issue parsing sql"))?;
 
-        let limit = if let Some(limit_expr) = &query.limit {
+        let limit: u16 = if let Some(limit_expr) = &query.limit {
             match limit_expr {
-                ast::Expr::Value(Number(num_string, _)) => num_string.parse::<u16>().ok(),
+                ast::Expr::Value(Number(num_string, _)) => {
+                    let cast_num_string: &String = num_string;
+                    cast_num_string.parse::<u16>().ok()
+                }
                 _ => None,
             }
-            .ok_or_else(|| Error::InvalidQuery("Issue parsing sql: invalid limit value"))?
+            .ok_or(Error::InvalidQuery(
+                "Issue parsing sql: invalid limit value",
+            ))?
         } else {
             defaults::DEFAULT_QUERY_LIMIT
         };
@@ -932,7 +955,7 @@ impl<'a> DriveQuery<'a> {
             ast::SetExpr::Select(select) => Some(select),
             _ => None,
         }
-        .ok_or_else(|| Error::InvalidQuery("Issue parsing sql"))?;
+        .ok_or(Error::InvalidQuery("Issue parsing sql"))?;
 
         // Get the document type from the 'from' section
         let document_type_name = match &select
@@ -949,7 +972,7 @@ impl<'a> DriveQuery<'a> {
             } => name.0.get(0).as_ref().map(|identifier| &identifier.value),
             _ => None,
         }
-        .ok_or_else(|| Error::InvalidQuery("Issue parsing sql: invalid from value"))?;
+        .ok_or(Error::InvalidQuery("Issue parsing sql: invalid from value"))?;
 
         let document_type = contract
             .document_types
@@ -1113,6 +1136,7 @@ impl<'a> DriveQuery<'a> {
             order_by,
             start_at,
             start_at_included,
+            block_time: None,
         })
     }
 
@@ -1238,14 +1262,28 @@ impl<'a> DriveQuery<'a> {
                 // First if we have a startAt or or startsAfter we must get the element
                 // from the backing store
 
-                let document_holding_path = self
-                    .contract
-                    .documents_primary_key_path(self.document_type.name.as_str());
+                let (start_at_document_path, start_at_document_key) =
+                    if self.document_type.documents_keep_history {
+                        let document_holding_path =
+                            self.contract.documents_with_history_primary_key_path(
+                                self.document_type.name.as_str(),
+                                starts_at,
+                            );
+                        (Vec::from(document_holding_path), vec![0])
+                    } else {
+                        let document_holding_path = self
+                            .contract
+                            .documents_primary_key_path(self.document_type.name.as_str());
+                        (
+                            Vec::from(document_holding_path.as_slice()),
+                            starts_at.clone(),
+                        )
+                    };
 
                 let start_at_document = grove
-                    .get(document_holding_path, starts_at, transaction)
+                    .get(start_at_document_path, &start_at_document_key, transaction)
                     .map_err(|e| match e {
-                        Error::PathKeyNotFound(_) => {
+                        Error::PathKeyNotFound(_) | Error::PathNotFound(_) => {
                             let error_message = if self.start_at_included {
                                 "startAt document not found"
                             } else {
@@ -1291,10 +1329,19 @@ impl<'a> DriveQuery<'a> {
                 .serialize_value_for_key("$id", &primary_key_equal_clause.value)?;
             query.insert_key(key);
 
-            Ok(PathQuery::new(
-                path,
-                SizedQuery::new(query, Some(self.limit), Some(self.offset)),
-            ))
+            if self.document_type.documents_keep_history {
+                // if the documents keep history then we should insert a subquery
+                if let Some(block_time) = self.block_time {
+                    let encoded_block_time = crate::contract::types::encode_float(block_time)?;
+                    let mut sub_query = Query::new_with_direction(false);
+                    sub_query.insert_range_to_inclusive(..=encoded_block_time);
+                    query.set_subquery(sub_query);
+                } else {
+                    query.set_subquery_key(vec![0]);
+                }
+            }
+
+            Ok(PathQuery::new(path, SizedQuery::new(query, Some(1), None)))
         } else {
             // This is for a range
             let left_to_right = if self.order_by.keys().len() == 1 {
@@ -1349,6 +1396,23 @@ impl<'a> DriveQuery<'a> {
                         }
                     }
                 }
+
+                if self.document_type.documents_keep_history {
+                    // if the documents keep history then we should insert a subquery
+                    if let Some(_block_time) = self.block_time {
+                        return Err(Error::InternalError("Not yet implemented"));
+                        // in order to be able to do this we would need limited subqueries
+                        // as we only want the first element before the block_time
+
+                        // let encoded_block_time = encode_float(block_time)?;
+                        // let mut sub_query = Query::new_with_direction(false);
+                        // sub_query.insert_range_to_inclusive(..=encoded_block_time);
+                        // query.set_subquery(sub_query);
+                    } else {
+                        query.set_subquery_key(vec![0]);
+                    }
+                }
+
                 Ok(PathQuery::new(
                     path,
                     SizedQuery::new(query, Some(self.limit), Some(self.offset)),
@@ -1370,6 +1434,23 @@ impl<'a> DriveQuery<'a> {
                         },
                     },
                 }
+
+                if self.document_type.documents_keep_history {
+                    // if the documents keep history then we should insert a subquery
+                    if let Some(_block_time) = self.block_time {
+                        return Err(Error::InternalError("Not yet implemented"));
+                        // in order to be able to do this we would need limited subqueries
+                        // as we only want the first element before the block_time
+
+                        // let encoded_block_time = encode_float(block_time)?;
+                        // let mut sub_query = Query::new_with_direction(false);
+                        // sub_query.insert_range_to_inclusive(..=encoded_block_time);
+                        // query.set_subquery(sub_query);
+                    } else {
+                        query.set_subquery_key(vec![0]);
+                    }
+                }
+
                 Ok(PathQuery::new(
                     path,
                     SizedQuery::new(query, Some(self.limit), Some(self.offset)),
@@ -1588,9 +1669,9 @@ impl<'a> DriveQuery<'a> {
             index.properties.split_at(intermediate_values.len());
 
         // Now we should construct the path
-        let last_index = last_indexes
-            .first()
-            .ok_or_else(|| Error::InvalidQuery("document query has no index with fields"))?;
+        let last_index = last_indexes.first().ok_or(Error::InvalidQuery(
+            "document query has no index with fields",
+        ))?;
 
         let mut path = document_type_path;
 

@@ -1,4 +1,5 @@
-mod types;
+mod defaults;
+pub mod types;
 
 use crate::drive::{Drive, RootTree};
 use ciborium::value::{Value as CborValue, Value};
@@ -19,8 +20,12 @@ use std::collections::{BTreeMap, HashMap};
 // Struct Definitions
 #[derive(Serialize, Deserialize, Debug, PartialEq)]
 pub struct Contract {
-    pub document_types: BTreeMap<String, DocumentType>,
     pub id: [u8; 32],
+    pub document_types: BTreeMap<String, DocumentType>,
+    pub keeps_history: bool,
+    pub readonly: bool,
+    pub documents_keep_history_contract_default: bool,
+    pub documents_mutable_contract_default: bool,
 }
 
 #[derive(Serialize, Deserialize, Debug, PartialEq)]
@@ -28,6 +33,8 @@ pub struct DocumentType {
     pub name: String,
     pub indices: Vec<Index>,
     pub properties: HashMap<String, types::DocumentFieldType>,
+    pub documents_keep_history: bool,
+    pub documents_mutable: bool,
 }
 
 #[derive(Serialize, Deserialize, Debug, PartialEq)]
@@ -146,6 +153,34 @@ impl Contract {
             .try_into()
             .map_err(|_| Error::CorruptedData(String::from("contract_id must be 32 bytes")))?;
 
+        // Does the contract keep history when the contract itself changes?
+        let keeps_history: bool = bool_for_system_value_from_hash_map(
+            &contract,
+            "keepsHistory",
+            crate::contract::defaults::DEFAULT_CONTRACT_KEEPS_HISTORY,
+        )?;
+
+        // Is the contract mutable?
+        let readonly: bool = bool_for_system_value_from_hash_map(
+            &contract,
+            "readOnly",
+            !crate::contract::defaults::DEFAULT_CONTRACT_MUTABILITY,
+        )?;
+
+        // Do documents in the contract keep history?
+        let documents_keep_history_contract_default: bool = bool_for_system_value_from_hash_map(
+            &contract,
+            "documentsKeepHistoryContractDefault",
+            crate::contract::defaults::DEFAULT_CONTRACT_DOCUMENTS_KEEPS_HISTORY,
+        )?;
+
+        // Are documents in the contract mutable?
+        let documents_mutable_contract_default: bool = bool_for_system_value_from_hash_map(
+            &contract,
+            "documentsMutableContractDefault",
+            crate::contract::defaults::DEFAULT_CONTRACT_DOCUMENT_MUTABILITY,
+        )?;
+
         let documents_cbor_value = contract
             .get("documents")
             .ok_or_else(|| Error::CorruptedData(String::from("unable to get documents")))?;
@@ -173,6 +208,8 @@ impl Contract {
             let document_type = DocumentType::from_cbor_value(
                 type_key_value.as_text().expect("confirmed as text"),
                 document_type_value.as_map().expect("confirmed as map"),
+                documents_keep_history_contract_default,
+                documents_mutable_contract_default,
             )?;
             contract_document_types.insert(
                 String::from(type_key_value.as_text().expect("confirmed as text")),
@@ -183,6 +220,10 @@ impl Contract {
         Ok(Contract {
             id: contract_id,
             document_types: contract_document_types,
+            keeps_history,
+            readonly,
+            documents_keep_history_contract_default,
+            documents_mutable_contract_default,
         })
     }
 
@@ -217,6 +258,21 @@ impl Contract {
             &[1],
             document_type_name.as_bytes(),
             &[0],
+        ]
+    }
+
+    pub fn documents_with_history_primary_key_path<'a>(
+        &'a self,
+        document_type_name: &'a str,
+        id: &'a Vec<u8>,
+    ) -> [&'a [u8]; 6] {
+        [
+            Into::<&[u8; 1]>::into(RootTree::ContractDocuments),
+            &self.id,
+            &[1],
+            document_type_name.as_bytes(),
+            &[0],
+            id,
         ]
     }
 }
@@ -267,8 +323,24 @@ impl DocumentType {
     pub fn from_cbor_value(
         name: &str,
         document_type_value_map: &[(Value, Value)],
+        default_keeps_history: bool,
+        default_mutability: bool,
     ) -> Result<Self, Error> {
         let mut document_properties: HashMap<String, types::DocumentFieldType> = HashMap::new();
+
+        // Do documents of this type keep history? (Overrides contract value)
+        let documents_keep_history: bool = cbor_inner_bool_value_with_default(
+            document_type_value_map,
+            "documentsKeepHistory",
+            default_keeps_history,
+        );
+
+        // Are documents of this type mutable? (Overrides contract value)
+        let documents_mutable: bool = cbor_inner_bool_value_with_default(
+            document_type_value_map,
+            "documentsMutable",
+            default_mutability,
+        );
 
         let index_values = match cbor_inner_array_value(document_type_value_map, "indices") {
             Some(index_values) => index_values,
@@ -277,6 +349,8 @@ impl DocumentType {
                     name: String::from(name),
                     indices: vec![],
                     properties: document_properties,
+                    documents_keep_history,
+                    documents_mutable,
                 })
             }
         };
@@ -389,6 +463,8 @@ impl DocumentType {
             name: String::from(name),
             indices,
             properties: document_properties,
+            documents_keep_history,
+            documents_mutable,
         })
     }
 
@@ -715,6 +791,14 @@ fn cbor_inner_bool_value(document_type: &[(Value, Value)], key: &str) -> Option<
     None
 }
 
+fn cbor_inner_bool_value_with_default(
+    document_type: &[(Value, Value)],
+    key: &str,
+    default: bool,
+) -> bool {
+    cbor_inner_bool_value(document_type, key).unwrap_or(default)
+}
+
 pub fn bytes_for_system_value(value: &Value) -> Result<Option<Vec<u8>>, Error> {
     match value {
         Value::Bytes(bytes) => Ok(Some(bytes.clone())),
@@ -747,10 +831,29 @@ fn bytes_for_system_value_from_hash_map(
     key: &str,
 ) -> Result<Option<Vec<u8>>, Error> {
     let value = document.get(key);
-    if value.is_some() {
-        bytes_for_system_value(value.unwrap())
+    if let Some(value) = value {
+        bytes_for_system_value(value)
     } else {
         Ok(None)
+    }
+}
+
+fn bool_for_system_value_from_hash_map(
+    document: &HashMap<String, CborValue>,
+    key: &str,
+    default: bool,
+) -> Result<bool, Error> {
+    let value = document.get(key);
+    if let Some(value) = value {
+        if let Value::Bool(bool_value) = value {
+            Ok(*bool_value)
+        } else {
+            Err(Error::CorruptedData(String::from(
+                "value is expected to be a boolean",
+            )))
+        }
+    } else {
+        Ok(default)
     }
 }
 
@@ -779,10 +882,35 @@ mod tests {
         );
         let contract = Contract::from_cbor(&dashpay_cbor).unwrap();
 
+        assert!(contract.documents_mutable_contract_default);
+        assert!(!contract.keeps_history);
+        assert!(!contract.readonly); // the contract shouldn't be readonly
+        assert!(!contract.documents_keep_history_contract_default);
         assert_eq!(contract.document_types.len(), 3);
         assert!(contract.document_types.get("profile").is_some());
+        assert!(
+            contract
+                .document_types
+                .get("profile")
+                .unwrap()
+                .documents_mutable
+        );
         assert!(contract.document_types.get("contactInfo").is_some());
+        assert!(
+            contract
+                .document_types
+                .get("contactInfo")
+                .unwrap()
+                .documents_mutable
+        );
         assert!(contract.document_types.get("contactRequest").is_some());
+        assert!(
+            !contract
+                .document_types
+                .get("contactRequest")
+                .unwrap()
+                .documents_mutable
+        );
         assert!(contract.document_types.get("non_existent_key").is_none());
 
         let contact_info_indices = &contract.document_types.get("contactInfo").unwrap().indices;

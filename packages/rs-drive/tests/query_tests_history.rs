@@ -7,7 +7,7 @@ use rs_drive::drive::Drive;
 use rs_drive::query::DriveQuery;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use tempdir::TempDir;
 
 #[derive(Serialize, Deserialize)]
@@ -20,18 +20,24 @@ struct Person {
     first_name: String,
     middle_name: String,
     last_name: String,
+    message: Option<String>,
     age: u8,
 }
 
 impl Person {
-    fn random_people(count: u32, seed: u64) -> Vec<Self> {
+    fn random_people_for_block_times(
+        count: u32,
+        seed: u64,
+        block_times: Vec<u64>,
+    ) -> BTreeMap<u64, Vec<Self>> {
         let first_names =
             common::text_file_strings("tests/supporting_files/contract/family/first-names.txt");
         let middle_names =
             common::text_file_strings("tests/supporting_files/contract/family/middle-names.txt");
         let last_names =
             common::text_file_strings("tests/supporting_files/contract/family/last-names.txt");
-        let mut vec: Vec<Person> = Vec::with_capacity(count as usize);
+        let quotes = common::text_file_strings("tests/supporting_files/contract/family/quotes.txt");
+        let mut people: Vec<Person> = Vec::with_capacity(count as usize);
 
         let mut rng = rand::rngs::StdRng::seed_from_u64(seed);
         for _ in 0..count {
@@ -41,11 +47,44 @@ impl Person {
                 first_name: first_names.choose(&mut rng).unwrap().clone(),
                 middle_name: middle_names.choose(&mut rng).unwrap().clone(),
                 last_name: last_names.choose(&mut rng).unwrap().clone(),
+                message: None,
                 age: rng.gen_range(0..85),
             };
-            vec.push(person);
+            people.push(person);
         }
-        vec
+
+        let mut people_for_blocks: BTreeMap<u64, Vec<Person>> = BTreeMap::new();
+
+        for block_time in block_times {
+            let block_vec: Vec<Person> = people
+                .iter()
+                .map(|person| {
+                    let mut quote = quotes.choose(&mut rng).unwrap().clone();
+                    if quote.len() > 128 {
+                        let quote_str = quote.as_str();
+                        let mut end: usize = 0;
+                        quote
+                            .chars()
+                            .into_iter()
+                            .take(128)
+                            .for_each(|x| end += x.len_utf8());
+                        let sub_quote = &quote_str[..end];
+                        quote = String::from(sub_quote);
+                    }
+                    Person {
+                        id: person.id.clone(),
+                        owner_id: person.owner_id.clone(),
+                        first_name: person.first_name.clone(),
+                        middle_name: person.middle_name.clone(),
+                        last_name: person.last_name.clone(),
+                        message: Some(quote),
+                        age: person.age + ((block_time / 100) as u8),
+                    }
+                })
+                .collect();
+            people_for_blocks.insert(block_time, block_vec);
+        }
+        people_for_blocks
     }
 }
 
@@ -67,29 +106,33 @@ pub fn setup(count: u32, seed: u64) -> (Drive, Contract, TempDir) {
     // setup code
     let contract = common::setup_contract(
         &mut drive,
-        "tests/supporting_files/contract/family/family-contract.json",
+        "tests/supporting_files/contract/family/family-contract-with-history.json",
         Some(&db_transaction),
     );
 
-    let people = Person::random_people(count, seed);
-    for person in people {
-        let value = serde_json::to_value(&person).expect("serialized person");
-        let document_cbor =
-            common::value_to_cbor(value, Some(rs_drive::drive::defaults::PROTOCOL_VERSION));
-        let document = Document::from_cbor(document_cbor.as_slice(), None, None)
-            .expect("document should be properly deserialized");
-        drive
-            .add_document_for_contract(
-                &document,
-                &document_cbor,
-                &contract,
-                "person",
-                None,
-                true,
-                0f64,
-                Some(&db_transaction),
-            )
-            .expect("document should be inserted");
+    let block_times: Vec<u64> = vec![0, 15, 100, 1000];
+
+    let people_at_block_times = Person::random_people_for_block_times(count, seed, block_times);
+    for (block_time, people) in people_at_block_times {
+        for person in people {
+            let value = serde_json::to_value(&person).expect("serialized person");
+            let document_cbor =
+                common::value_to_cbor(value, Some(rs_drive::drive::defaults::PROTOCOL_VERSION));
+            let document = Document::from_cbor(document_cbor.as_slice(), None, None)
+                .expect("document should be properly deserialized");
+            drive
+                .add_document_for_contract(
+                    &document,
+                    &document_cbor,
+                    &contract,
+                    "person",
+                    None,
+                    true,
+                    block_time as f64,
+                    Some(&db_transaction),
+                )
+                .expect("document should be inserted");
+        }
     }
     drive
         .grove
@@ -99,38 +142,7 @@ pub fn setup(count: u32, seed: u64) -> (Drive, Contract, TempDir) {
 }
 
 #[test]
-fn test_query_many() {
-    let (mut drive, contract, _tmp_dir) = setup(1600, 73509);
-    let storage = drive.grove.storage();
-    let db_transaction = storage.transaction();
-    let people = Person::random_people(10, 73409);
-    for person in people {
-        let value = serde_json::to_value(&person).expect("serialized person");
-        let document_cbor =
-            common::value_to_cbor(value, Some(rs_drive::drive::defaults::PROTOCOL_VERSION));
-        let document = Document::from_cbor(document_cbor.as_slice(), None, None)
-            .expect("document should be properly deserialized");
-        drive
-            .add_document_for_contract(
-                &document,
-                &document_cbor,
-                &contract,
-                "person",
-                None,
-                true,
-                0f64,
-                Some(&db_transaction),
-            )
-            .expect("document should be inserted");
-    }
-    drive
-        .grove
-        .commit_transaction(db_transaction)
-        .expect("transaction should be committed");
-}
-
-#[test]
-fn test_query() {
+fn test_query_historical() {
     let (mut drive, contract, _tmp_dir) = setup(10, 73509);
 
     let storage = drive.grove.storage();
@@ -147,8 +159,8 @@ fn test_query() {
     assert_eq!(
         root_hash.as_slice(),
         vec![
-            164, 56, 26, 188, 12, 251, 247, 43, 109, 153, 109, 110, 78, 131, 37, 79, 19, 178, 159,
-            69, 35, 250, 159, 210, 2, 125, 12, 103, 50, 40, 108, 114
+            125, 137, 75, 199, 156, 47, 45, 33, 28, 176, 102, 223, 138, 123, 160, 249, 12, 238,
+            111, 104, 25, 38, 11, 25, 64, 11, 66, 16, 39, 66, 53, 118
         ]
     );
 
@@ -821,7 +833,7 @@ fn test_query() {
         .get("Meta")
         .expect("we should be able to get Kevina as she is 48");
 
-    assert_eq!(*meta_age, 59);
+    assert_eq!(*meta_age, 69);
 
     // fetching by $id
     let mut rng = rand::rngs::StdRng::seed_from_u64(84594);
@@ -839,6 +851,7 @@ fn test_query() {
         first_name: String::from("Wisdom"),
         middle_name: String::from("Madabuchukwu"),
         last_name: String::from("Ogwu"),
+        message: Some(String::from("Oh no")),
         age: rng.gen_range(0..85),
     };
     let serialized_person = serde_json::to_value(&fixed_person).expect("serialized person");
@@ -874,6 +887,7 @@ fn test_query() {
         first_name: String::from("Wdskdfslgjfdlj"),
         middle_name: String::from("Mdsfdsgsdl"),
         last_name: String::from("dkfjghfdk"),
+        message: Some(String::from("Bad name")),
         age: rng.gen_range(0..85),
     };
     let serialized_person = serde_json::to_value(&next_person).expect("serialized person");
@@ -919,7 +933,55 @@ fn test_query() {
         )
         .expect("query should be executed");
 
-    // dbg!(&results);
+    assert_eq!(results.len(), 1);
+
+    let query_value = json!({
+        "where": [
+            ["$id", "==", "6A8SGgdmj2NtWCYoYDPDpbsYkq2MCbgi6Lx4ALLfF179"]
+        ]
+    });
+
+    let query_cbor = common::value_to_cbor(query_value, None);
+
+    let person_document_type = contract
+        .document_types
+        .get("person")
+        .expect("contract should have a person document type");
+
+    let (results, _) = drive
+        .query_documents_from_contract(
+            &contract,
+            person_document_type,
+            query_cbor.as_slice(),
+            Some(&db_transaction),
+        )
+        .expect("query should be executed");
+
+    assert_eq!(results.len(), 1);
+
+    let query_value = json!({
+        "where": [
+            ["$id", "==", "6A8SGgdmj2NtWCYoYDPDpbsYkq2MCbgi6Lx4ALLfF179"]
+        ],
+        "blockTime": 300
+    });
+
+    let query_cbor = common::value_to_cbor(query_value, None);
+
+    let person_document_type = contract
+        .document_types
+        .get("person")
+        .expect("contract should have a person document type");
+
+    let (results, _) = drive
+        .query_documents_from_contract(
+            &contract,
+            person_document_type,
+            query_cbor.as_slice(),
+            Some(&db_transaction),
+        )
+        .expect("query should be executed");
+
     assert_eq!(results.len(), 1);
 
     // fetching by $id with order by
@@ -1059,6 +1121,68 @@ fn test_query() {
         ]
         .as_slice()
     );
+
+    let message_value = last_person.properties.get("message").unwrap();
+
+    let message = message_value
+        .as_text()
+        .expect("the message should be a string")
+        .to_string();
+
+    assert_eq!(
+        message,
+        String::from("“Since it’s the customer that pays our salary, our responsibility is to make the product they want, when they want it, and deliv")
+    );
+
+    //
+    // // fetching with empty where and orderBy $id desc with a blockTime
+    //
+    let query_value = json!({
+        "orderBy": [["$id", "desc"]],
+        "blockTime": 300
+    });
+
+    let query_cbor = common::value_to_cbor(query_value, None);
+
+    let person_document_type = contract
+        .document_types
+        .get("person")
+        .expect("contract should have a person document type");
+
+    drive
+        .query_documents_from_contract(
+            &contract,
+            person_document_type,
+            query_cbor.as_slice(),
+            Some(&db_transaction),
+        )
+        .expect_err("not yet implemented");
+
+    // assert_eq!(results.len(), 12);
+    //
+    // let last_person = Document::from_cbor(results.first().unwrap().as_slice(), None, None)
+    //     .expect("we should be able to deserialize the cbor");
+    //
+    // assert_eq!(
+    //     last_person.id,
+    //     vec![
+    //         249, 170, 70, 122, 181, 31, 35, 176, 175, 131, 70, 150, 250, 223, 194, 203, 175, 200,
+    //         107, 252, 199, 227, 154, 105, 89, 57, 38, 85, 236, 192, 254, 88
+    //     ]
+    //         .as_slice()
+    // );
+    //
+    // let message_value = last_person.properties.get("message").unwrap();
+    //
+    // let message = message_value
+    //     .as_text()
+    //     .expect("the message should be a string")
+    //     .to_string();
+    //
+    // assert_eq!(
+    //     message,
+    //     String::from("“Since it’s the customer that pays our salary, our responsibility is to make the product they want, when they want it, and deliver quality that satisfies them.” Retired factory worker, Kiyoshi Tsutsumi (Osono et al 2008, 136)")
+    // );
 
     //
     // // fetching with ownerId in a set of values
@@ -1209,145 +1333,8 @@ fn test_query() {
     assert_eq!(
         root_hash.as_slice(),
         vec![
-            10, 188, 94, 203, 19, 207, 167, 237, 34, 159, 113, 240, 54, 221, 246, 234, 48, 238, 82,
-            222, 228, 119, 192, 92, 57, 3, 28, 78, 115, 35, 133, 50
+            221, 95, 96, 231, 160, 120, 76, 199, 100, 155, 238, 231, 184, 168, 157, 198, 13, 181,
+            98, 234, 67, 93, 211, 112, 14, 115, 235, 31, 184, 234, 157, 131
         ]
     );
-}
-
-#[test]
-fn test_sql_query() {
-    // These tests confirm that sql statements produce the same drive query
-    // as their json counterparts, tests above confirm that the json queries
-    // produce the correct result set
-    let (_, contract, _tmp_dir) = setup(10, 73509);
-    let person_document_type = contract
-        .document_types
-        .get("person")
-        .expect("contract should have a person document type");
-
-    // Empty where clause
-    let query_cbor = common::value_to_cbor(
-        json!({
-            "where": [],
-            "limit": 100,
-            "orderBy": [
-                ["firstName", "asc"]
-            ]
-        }),
-        None,
-    );
-    let query1 = DriveQuery::from_cbor(query_cbor.as_slice(), &contract, person_document_type)
-        .expect("should build query");
-
-    let sql_string = "select * from person order by firstName asc limit 100";
-    let query2 = DriveQuery::from_sql_expr(sql_string, &contract).expect("should build query");
-
-    assert_eq!(query1, query2);
-
-    // Equality clause
-    let query_cbor = common::value_to_cbor(
-        json!({
-            "where": [
-                ["firstName", "==", "Chris"]
-            ]
-        }),
-        None,
-    );
-    let query1 = DriveQuery::from_cbor(query_cbor.as_slice(), &contract, person_document_type)
-        .expect("should build query");
-
-    let sql_string = "select * from person where firstName = 'Chris'";
-    let query2 = DriveQuery::from_sql_expr(sql_string, &contract).expect("should build query");
-
-    assert_eq!(query1, query2);
-
-    // Less than
-    let query_cbor = common::value_to_cbor(
-        json!({
-            "where": [
-                ["firstName", "<", "Chris"]
-            ],
-            "limit": 100,
-            "orderBy": [
-                ["firstName", "asc"]
-            ]
-        }),
-        None,
-    );
-    let query1 = DriveQuery::from_cbor(query_cbor.as_slice(), &contract, person_document_type)
-        .expect("should build query");
-
-    let sql_string =
-        "select * from person where firstName < 'Chris' order by firstName asc limit 100";
-    let query2 = DriveQuery::from_sql_expr(sql_string, &contract).expect("should build query");
-
-    assert_eq!(query1, query2);
-
-    // Starts with
-    let query_cbor = common::value_to_cbor(
-        json!({
-            "where": [
-                ["firstName", "StartsWith", "C"]
-            ],
-            "limit": 100,
-            "orderBy": [
-                ["firstName", "asc"]
-            ]
-        }),
-        None,
-    );
-    let query1 = DriveQuery::from_cbor(query_cbor.as_slice(), &contract, person_document_type)
-        .expect("should build query");
-
-    let sql_string =
-        "select * from person where firstName like 'C%' order by firstName asc limit 100";
-    let query2 = DriveQuery::from_sql_expr(sql_string, &contract).expect("should build query");
-
-    assert_eq!(query1, query2);
-
-    // Range combination
-    let query_cbor = common::value_to_cbor(
-        json!({
-            "where": [
-                ["firstName", ">", "Chris"],
-                ["firstName", "<=", "Noellyn"]
-            ],
-            "limit": 100,
-            "orderBy": [
-                ["firstName", "asc"]
-            ]
-        }),
-        None,
-    );
-    let query1 = DriveQuery::from_cbor(query_cbor.as_slice(), &contract, person_document_type)
-        .expect("should build query");
-
-    let sql_string = "select * from person where firstName > 'Chris' and firstName <= 'Noellyn' order by firstName asc limit 100";
-    let query2 = DriveQuery::from_sql_expr(sql_string, &contract).expect("should build query");
-
-    assert_eq!(query1, query2);
-
-    // In clause
-    let names = vec![String::from("a"), String::from("b")];
-    let query_cbor = common::value_to_cbor(
-        json!({
-            "where": [
-                ["firstName", "in", names]
-            ],
-            "limit": 100,
-            "orderBy": [
-                ["firstName", "asc"]
-            ],
-        }),
-        None,
-    );
-    let query1 = DriveQuery::from_cbor(query_cbor.as_slice(), &contract, person_document_type)
-        .expect("should build query");
-
-    let sql_string =
-        "select * from person where firstName in ('a', 'b') order by firstName limit 100";
-    let query2 = DriveQuery::from_sql_expr(sql_string, &contract).expect("should build query");
-
-    assert_eq!(query1, query2);
 }
