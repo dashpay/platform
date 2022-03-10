@@ -131,7 +131,7 @@ function expectDeterministicAppHashFactory(groveDBStore) {
 
     const actualAppHashHex = actualAppHash.toString('hex');
 
-    expect(appHash).to.deep.equal(actualAppHashHex);
+    expect(actualAppHashHex).to.deep.equal(appHash);
   }
 
   return expectDeterministicAppHash;
@@ -159,7 +159,7 @@ describe('synchronizeMasternodeIdentitiesFactory', () => {
 
   beforeEach(async function beforeEach() {
     coreHeight = 3;
-    firstSyncAppHash = 'dee44cef32ed810e9a7e079e472ab5a4e44b6bca3e4c25290f8d8267b49f70a8';
+    firstSyncAppHash = '5f9981ea8bf69112408784c62ef079c19b9f57a275bf8b8df2b9b0f111cd8525';
 
     container = await createTestDIContainer();
 
@@ -382,6 +382,10 @@ describe('synchronizeMasternodeIdentitiesFactory', () => {
 
     await synchronizeMasternodeIdentities(coreHeight + 42);
 
+    // Nothing happened
+
+    await expectDeterministicAppHash(firstSyncAppHash);
+
     // Core RPC should be called
 
     expect(coreRpcClientMock.protx).to.have.been.calledOnceWithExactly('diff', 1, 3);
@@ -425,6 +429,8 @@ describe('synchronizeMasternodeIdentitiesFactory', () => {
     // Second call
 
     await synchronizeMasternodeIdentities(coreHeight + 1);
+
+    await expectDeterministicAppHash('dfbfb16e71f2537330aaf97c2c61d289e1691ff265a01ddd0e7e24c61504cd8f');
 
     // New masternode identity should be created
 
@@ -489,6 +495,8 @@ describe('synchronizeMasternodeIdentitiesFactory', () => {
 
     await synchronizeMasternodeIdentities(coreHeight + 1);
 
+    await expectDeterministicAppHash('7a1d4f66368234987edbb512ac21e7626011a201e21864e2eef0ed709dfc1e1a');
+
     // Masternode identity should stay
 
     await expectMasternodeIdentity(smlFixture[0], transaction1);
@@ -536,6 +544,8 @@ describe('synchronizeMasternodeIdentitiesFactory', () => {
 
     await synchronizeMasternodeIdentities(coreHeight + 1);
 
+    await expectDeterministicAppHash('7a1d4f66368234987edbb512ac21e7626011a201e21864e2eef0ed709dfc1e1a');
+
     const invalidMasternodeIdentifier = Identifier.from(
       hash(
         Buffer.from(invalidSmlEntry.proRegTxHash, 'hex'),
@@ -576,6 +586,8 @@ describe('synchronizeMasternodeIdentitiesFactory', () => {
     // Second call
 
     await synchronizeMasternodeIdentities(coreHeight + 1);
+
+    await expectDeterministicAppHash('bf9eb2635fb25baf803ef4d35323ad32789991a6836f883e9451b3f029bdbe4d');
 
     // Masternode identity should stay
 

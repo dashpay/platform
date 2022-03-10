@@ -19,7 +19,7 @@ class DataContractStoreRepository {
    *
    * @param {DataContract} dataContract
    * @param {boolean} [useTransaction=false]
-   * @return {number}
+   * @return {Promise<number>}
    */
   async store(dataContract, useTransaction = false) {
     try {
