@@ -128,13 +128,14 @@ const synchronizeMasternodeIdentitiesFactory = require('./identity/masternode/sy
 const createMasternodeIdentityFactory = require('./identity/masternode/createMasternodeIdentityFactory');
 const handleNewMasternodeFactory = require('./identity/masternode/handleNewMasternodeFactory');
 const handleUpdatedPubKeyOperatorFactory = require('./identity/masternode/handleUpdatedPubKeyOperatorFactory');
-const splitDocumentsIntoChunks = require('./identity/masternode/splitDocumentsIntoChunks');
 const registerSystemDataContractsFactory = require('./abci/handlers/state/registerSystemDataContractsFactory');
+const createRewardShareDocumentFactory = require('./identity/masternode/createRewardShareDocumentFactory');
+const handleRemovedMasternodeFactory = require('./identity/masternode/handleRemovedMasternodeFactory');
+
 const DocumentRepository = require('./document/DocumentRepository');
-
 const ExecutionTimer = require('./util/ExecutionTimer');
-
 const noopLoggerInstance = require('./util/noopLogger');
+const fetchTransactionFactory = require('./core/fetchTransactionFactory');
 
 /**
  *
@@ -432,6 +433,18 @@ function createDIContainer(options) {
     ) => (
       new PublicKeyToIdentityIdStoreRepository(signedGroveDBStore)
     )).singleton(),
+
+    synchronizeMasternodeIdentities: asFunction(synchronizeMasternodeIdentitiesFactory).singleton(),
+
+    createMasternodeIdentity: asFunction(createMasternodeIdentityFactory).singleton(),
+
+    createRewardShareDocument: asFunction(createRewardShareDocumentFactory).singleton(),
+
+    handleNewMasternode: asFunction(handleNewMasternodeFactory).singleton(),
+
+    handleUpdatedPubKeyOperator: asFunction(handleUpdatedPubKeyOperatorFactory).singleton(),
+
+    handleRemovedMasternode: asFunction(handleRemovedMasternodeFactory).singleton(),
   });
 
   /**
@@ -665,15 +678,7 @@ function createDIContainer(options) {
 
     waitForCoreChainLockSync: asFunction(waitForCoreChainLockSyncFactory).singleton(),
 
-    synchronizeMasternodeIdentities: asFunction(synchronizeMasternodeIdentitiesFactory).singleton(),
-
-    createMasternodeIdentity: asFunction(createMasternodeIdentityFactory).singleton(),
-
-    handleNewMasternode: asFunction(handleNewMasternodeFactory).singleton(),
-
-    handleUpdatedPubKeyOperator: asFunction(handleUpdatedPubKeyOperatorFactory).singleton(),
-
-    splitDocumentsIntoChunks: asValue(splitDocumentsIntoChunks),
+    fetchTransaction: asFunction(fetchTransactionFactory).singleton(),
   });
 
   /**
@@ -684,9 +689,6 @@ function createDIContainer(options) {
     registerSystemDataContract: asFunction(registerSystemDataContractFactory).singleton(),
     registerSystemDataContracts: asFunction(registerSystemDataContractsFactory).singleton(),
     registerTopLevelDomain: asFunction(registerTopLevelDomainFactory).singleton(),
-    // dashPreorderDocumentId: asValue(
-    //   Identifier.from('i8QZtAJ1WshunyZg64wGYcm3jASrpeSKAbAYVHTxvsL'),
-    // ),
     dashDomainDocumentId: asValue(
       Identifier.from('FXyN2NZAdRFADgBQfb1XM1Qq7pWoEcgSWj1GaiQJqcrS'),
     ),

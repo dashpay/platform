@@ -4,27 +4,23 @@ const SimplifiedMNList = require('@dashevo/dashcore-lib/lib/deterministicmnlist/
 
 /**
  *
- * @param {DashPlatformProtocol} transactionalDpp
- * @param {DriveStateRepository|CachedStateRepositoryDecorator} transactionalStateRepository
  * @param {DataContractStoreRepository} dataContractRepository
  * @param {SimplifiedMasternodeList} simplifiedMasternodeList
  * @param {Identifier} masternodeRewardSharesContractId
  * @param {handleNewMasternode} handleNewMasternode
  * @param {handleUpdatedPubKeyOperator} handleUpdatedPubKeyOperator
- * @param {splitDocumentsIntoChunks} splitDocumentsIntoChunks
+ * @param {handleRemovedMasternode} handleRemovedMasternode
  * @param {number} smlMaxListsLimit
  * @param {RpcClient} coreRpcClient
  * @return {synchronizeMasternodeIdentities}
  */
 function synchronizeMasternodeIdentitiesFactory(
-  transactionalDpp,
-  transactionalStateRepository,
   dataContractRepository,
   simplifiedMasternodeList,
   masternodeRewardSharesContractId,
   handleNewMasternode,
   handleUpdatedPubKeyOperator,
-  splitDocumentsIntoChunks,
+  handleRemovedMasternode,
   smlMaxListsLimit,
   coreRpcClient,
 ) {
@@ -36,17 +32,15 @@ function synchronizeMasternodeIdentitiesFactory(
    * @return Promise<void>
    */
   async function synchronizeMasternodeIdentities(coreHeight) {
-    let documentsToCreate = [];
-    let documentsToDelete = [];
-
     let newMasternodes = [];
-    let masternodesWithNewPubKeyOperator = [];
 
     let previousMNList = [];
 
     const currentMNList = simplifiedMasternodeList.getStore()
       .getSMLbyHeight(coreHeight)
       .mnList;
+
+    const dataContract = await dataContractRepository.fetch(masternodeRewardSharesContractId, true);
 
     if (lastSyncedCoreHeight === 0) {
       // Create identities for all masternodes on the first sync
@@ -71,48 +65,31 @@ function synchronizeMasternodeIdentitiesFactory(
         ))
       ));
 
-      masternodesWithNewPubKeyOperator = currentMNList.filter((currentMnListEntry) => (
-        previousMNList.find((previousMnListEntry) => (
-          previousMnListEntry.proRegTxHash === currentMnListEntry.proRegTxHash
-          && previousMnListEntry.pubKeyOperator !== currentMnListEntry.pubKeyOperator
-        ))
-      ));
-    }
+      // Update operator identities (PubKeyOperator is changed)
+      for (const mnEntry of currentMNList) {
+        const previousMnEntry = previousMNList.find((previousMnListEntry) => (
+          previousMnListEntry.proRegTxHash === mnEntry.proRegTxHash
+          && previousMnListEntry.pubKeyOperator !== mnEntry.pubKeyOperator
+        ));
 
-    const contract = await dataContractRepository.fetch(masternodeRewardSharesContractId, true);
+        if (previousMnEntry) {
+          await handleUpdatedPubKeyOperator(
+            mnEntry,
+            previousMnEntry,
+            dataContract,
+          );
+        }
+      }
+    }
 
     // Create identities and shares for new masternodes
-    const documentsToModify = [];
+
     for (const newMasternodeEntry of newMasternodes) {
-      const documents = await handleNewMasternode(newMasternodeEntry, contract);
-
-      documentsToModify.push(documents);
+      await handleNewMasternode(newMasternodeEntry, dataContract);
     }
-
-    // update operator identities (PubKeyOperator is changed)
-    for (const mnEntry of masternodesWithNewPubKeyOperator) {
-      const previousMnEntry = previousMNList.find((previousMnListEntry) => (
-        previousMnListEntry.proRegTxHash === mnEntry.proRegTxHash
-        && previousMnListEntry.pubKeyOperator !== mnEntry.pubKeyOperator
-      ));
-
-      const documents = handleUpdatedPubKeyOperator(
-        mnEntry,
-        previousMnEntry,
-        contract,
-      );
-
-      documentsToModify.push(documents);
-    }
-
-    documentsToModify.forEach((item) => {
-      documentsToCreate = documentsToCreate.concat(item.create);
-      documentsToDelete = documentsToDelete.concat(item.delete);
-    });
-
-    lastSyncedCoreHeight = coreHeight;
 
     // Remove masternode reward shares for invalid/removed masternodes
+
     const disappearedOrInvalidMasterNodes = previousMNList
       .filter((previousMnListEntry) =>
         // eslint-disable-next-line max-len,implicit-arrow-linebreak
@@ -120,39 +97,19 @@ function synchronizeMasternodeIdentitiesFactory(
       .concat(currentMNList.filter((currentMnListEntry) => !currentMnListEntry.isValid));
 
     for (const masternodeEntry of disappearedOrInvalidMasterNodes) {
-      const doubleSha256Hash = hash(Buffer.from(masternodeEntry.proRegTxHash, 'hex'));
+      const proRegTxHash = Buffer.from(masternodeEntry.proRegTxHash, 'hex');
 
-      //  Delete documents belongs to masternode identity (ownerId) from rewards contract
-      const documents = await transactionalStateRepository.fetchDocuments(
-        masternodeRewardSharesContractId,
-        'rewardShare',
-        {
-          where: [
-            ['$ownerId', '==', Identifier.from(doubleSha256Hash)],
-          ],
-        },
+      const masternodeIdentifier = Identifier.from(
+        hash(proRegTxHash),
       );
 
-      documentsToDelete = documentsToDelete.concat(documents);
+      await handleRemovedMasternode(
+        masternodeIdentifier,
+        dataContract,
+      );
     }
 
-    // Process masternode reward contract updates
-
-    for (const document of documentsToCreate) {
-      const documentsBatchTransition = transactionalDpp.document.createStateTransition({
-        create: [document],
-      });
-
-      await transactionalDpp.stateTransition.apply(documentsBatchTransition);
-    }
-
-    for (const document of documentsToDelete) {
-      const documentsBatchTransition = transactionalDpp.document.createStateTransition({
-        delete: [document],
-      });
-
-      await transactionalDpp.stateTransition.apply(documentsBatchTransition);
-    }
+    lastSyncedCoreHeight = coreHeight;
   }
 
   return synchronizeMasternodeIdentities;
