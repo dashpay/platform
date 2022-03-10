@@ -6,7 +6,6 @@ const {
     WaitForStateTransitionResultResponse,
     Proof,
     ResponseMetadata,
-    StoreTreeProofs,
   },
 } = require('@dashevo/dapi-grpc');
 const cbor = require('cbor');
@@ -69,14 +68,8 @@ describe('waitForStateTransitionResultFactory', () => {
 
   it('should return response with proof', async () => {
     const proof = new Proof();
-    const storeTreeProofs = new StoreTreeProofs();
 
-    storeTreeProofs.setIdentitiesProof(Buffer.from('identitiesProof'));
-    storeTreeProofs.setPublicKeyHashesToIdentityIdsProof(Buffer.from('publicKeyHashesToIdentityIdsProof'));
-    storeTreeProofs.setDataContractsProof(Buffer.from('dataContractsProof'));
-    storeTreeProofs.setDocumentsProof(Buffer.from('documentsProof'));
-    proof.setRootTreeProof(Buffer.from('rootTreeProof'));
-    proof.setStoreTreeProofs(storeTreeProofs);
+    proof.setMerkleProof(Buffer.from('merkleProof'));
     proof.setSignatureLlmqHash(Buffer.from('signatureLlmqHash'));
     proof.setSignature(Buffer.from('signature'));
 
@@ -89,24 +82,12 @@ describe('waitForStateTransitionResultFactory', () => {
     expect(result.getMetadata()).to.deep.equal(metadataFixture);
     expect(result.getError()).to.equal(undefined);
     expect(result.getProof()).to.be.deep.equal({
-      rootTreeProof: Buffer.from('rootTreeProof'),
-      storeTreeProofs: {
-        identitiesProof: Buffer.from('identitiesProof'),
-        publicKeyHashesToIdentityIdsProof: Buffer.from('publicKeyHashesToIdentityIdsProof'),
-        dataContractsProof: Buffer.from('dataContractsProof'),
-        documentsProof: Buffer.from('documentsProof'),
-      },
+      merkleProof: Buffer.from('merkleProof'),
       signatureLLMQHash: Buffer.from('signatureLlmqHash'),
       signature: Buffer.from('signature'),
     });
     expect(result.getProof().getSignature()).to.deep.equal(Buffer.from('signature'));
-    expect(result.getProof().getRootTreeProof()).to.deep.equal(Buffer.from('rootTreeProof'));
-    expect(result.getProof().getStoreTreeProofs()).to.deep.equal({
-      identitiesProof: Buffer.from('identitiesProof'),
-      publicKeyHashesToIdentityIdsProof: Buffer.from('publicKeyHashesToIdentityIdsProof'),
-      dataContractsProof: Buffer.from('dataContractsProof'),
-      documentsProof: Buffer.from('documentsProof'),
-    });
+    expect(result.getProof().getMerkleProof()).to.deep.equal(Buffer.from('merkleProof'));
     expect(result.getProof().getSignatureLLMQHash()).to.deep.equal(Buffer.from('signatureLlmqHash'));
 
     const request = new WaitForStateTransitionResultRequest();

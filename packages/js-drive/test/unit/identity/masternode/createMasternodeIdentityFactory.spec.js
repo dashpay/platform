@@ -11,19 +11,11 @@ describe('createMasternodeIdentityFactory', () => {
   let createMasternodeIdentity;
   let dppMock;
   let stateRepositoryMock;
-  let previousIdentityRepositoryMock;
-  let previousPublicKeyToIdentityIdRepositoryMock;
   let validationResult;
 
   beforeEach(function beforeEach() {
     dppMock = createDPPMock(this.sinon);
     stateRepositoryMock = createStateRepositoryMock(this.sinon);
-    previousIdentityRepositoryMock = {
-      store: this.sinon.stub(),
-    };
-    previousPublicKeyToIdentityIdRepositoryMock = {
-      store: this.sinon.stub(),
-    };
 
     validationResult = new ValidationResult();
 
@@ -32,8 +24,6 @@ describe('createMasternodeIdentityFactory', () => {
     createMasternodeIdentity = createMasternodeIdentityFactory(
       dppMock,
       stateRepositoryMock,
-      previousIdentityRepositoryMock,
-      previousPublicKeyToIdentityIdRepositoryMock,
     );
   });
 
@@ -71,8 +61,6 @@ describe('createMasternodeIdentityFactory', () => {
       publicKeyHashes,
     );
 
-    expect(previousIdentityRepositoryMock.store).to.be.not.called();
-    expect(previousPublicKeyToIdentityIdRepositoryMock.store).to.be.not.called();
     expect(dppMock.identity.validate).to.be.calledOnceWithExactly(identity);
   });
 
@@ -110,11 +98,6 @@ describe('createMasternodeIdentityFactory', () => {
       publicKeyHashes,
     );
 
-    expect(previousIdentityRepositoryMock.store).to.have.been.calledOnceWithExactly(identity);
-    expect(previousPublicKeyToIdentityIdRepositoryMock.store).to.have.been.calledOnceWithExactly(
-      publicKeyHashes[0],
-      identity.getId(),
-    );
     expect(dppMock.identity.validate).to.be.calledOnceWithExactly(identity);
   });
 

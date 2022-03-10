@@ -13,11 +13,11 @@ function getLatestFeatureFlagFactory(
    *
    * @param {string} flagType
    * @param {Long} blockHeight
-   * @param {DocumentsIndexedTransaction} [transaction]
+   * @param {boolean} [useTransaction=false]
    *
    * @return {Promise<Document|null>}
    */
-  async function getLatestFeatureFlag(flagType, blockHeight, transaction = undefined) {
+  async function getLatestFeatureFlag(flagType, blockHeight, useTransaction = false) {
     if (!featureFlagsContractId) {
       return null;
     }
@@ -36,7 +36,7 @@ function getLatestFeatureFlagFactory(
       featureFlagsContractId,
       flagType,
       query,
-      transaction,
+      useTransaction,
     );
 
     return document;
