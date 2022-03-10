@@ -5,7 +5,6 @@ const createTestDIContainer = require('../../../lib/test/createTestDIContainer')
 const createDocumentTypeTreePath = require('../../../lib/document/groveDB/createDocumentTreePath');
 const InvalidQueryError = require('../../../lib/document/errors/InvalidQueryError');
 const StartDocumentNotFoundError = require('../../../lib/document/query/errors/StartDocumentNotFoundError');
-const wait = require('../../../lib/util/wait');
 
 async function createDocuments(documentRepository, documents) {
   return Promise.all(
@@ -740,66 +739,41 @@ describe('DocumentRepository', function main() {
       expect(completelyRemovedDocument).to.have.lengthOf(0);
     });
 
-    it('should restore document if transaction aborted', async function it() {
-      this.timeout(0);
+    it('should restore document if transaction aborted', async () => {
+      await documentRepository
+        .storage
+        .startTransaction();
 
-      await container.dispose();
+      await documentRepository.delete(dataContract, document.getType(), document.getId(), true);
 
-      for (let i = 0; i <= 10; i++) {
-        container = await createTestDIContainer();
+      const query = {
+        where: [['$id', '==', document.getId()]],
+      };
 
-        documentRepository = container.resolve('documentRepository');
+      // Document should be removed in transaction
 
-        const createInitialStateStructure = container.resolve('createInitialStateStructure');
-        await createInitialStateStructure();
+      const removedDocuments = await documentRepository
+        .find(dataContract, document.getType(), query, true);
 
-        const dataContractRepository = container.resolve('dataContractRepository');
+      expect(removedDocuments).to.have.lengthOf(0);
 
-        await dataContractRepository.store(dataContract);
+      // But still exists in main database
 
-        await createDocuments(documentRepository, documents);
+      const removedDocumentsWithoutTransaction = await documentRepository
+        .find(dataContract, document.getType(), query);
 
-        // ...
+      expect(removedDocumentsWithoutTransaction).to.not.have.lengthOf(0);
+      expect(removedDocumentsWithoutTransaction[0].toBuffer()).to.deep.equal(document.toBuffer());
 
-        await documentRepository
-          .storage
-          .startTransaction();
+      await documentRepository
+        .storage
+        .abortTransaction();
 
-        await documentRepository.delete(dataContract, document.getType(), document.getId(), true);
+      const restoredDocuments = await documentRepository
+        .find(dataContract, document.getType(), query);
 
-        const query = {
-          where: [['$id', '==', document.getId()]],
-        };
-
-        const removedDocuments = await documentRepository
-          .find(dataContract, document.getType(), query, true);
-
-        expect(removedDocuments).to.have.lengthOf(0);
-
-        const notRemovedDocuments = await documentRepository
-          .find(dataContract, document.getType(), query);
-
-        expect(notRemovedDocuments).to.be.not.null();
-        expect(notRemovedDocuments[0].toBuffer()).to.deep.equal(document.toBuffer());
-
-        await documentRepository
-          .storage
-          .abortTransaction();
-
-        const restoredDocuments = await documentRepository
-          .find(dataContract, document.getType(), query);
-
-        expect(restoredDocuments).to.be.not.null();
-        expect(restoredDocuments[0].toBuffer()).to.deep.equal(document.toBuffer());
-
-        // ...
-
-        await container.dispose();
-
-        await wait(100);
-      }
-
-      container = null;
+      expect(restoredDocuments).to.not.have.lengthOf(0);
+      expect(restoredDocuments[0].toBuffer()).to.deep.equal(document.toBuffer());
     });
   });
 });
