@@ -1,26 +1,9 @@
 use crate::errors::ProtocolError;
+use anyhow::anyhow;
+use dashcore::PublicKey;
 use lazy_static::lazy_static;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
-use std::collections::HashMap;
-
-// TODO test how the enum will look from perspective JavaScript
-
-// TODO import from dashcore
-pub struct PublicKey {
-    pub hash: Vec<u8>,
-}
-
-// TODO import from dashcore
-impl<K> std::convert::From<K> for PublicKey
-where
-    K: AsRef<[u8]>,
-{
-    fn from(data: K) -> Self {
-        return PublicKey {
-            hash: Vec::from(data.as_ref()),
-        };
-    }
-}
+use std::{collections::HashMap, hash::Hash};
 
 pub type KeyID = i64;
 
@@ -110,7 +93,6 @@ impl std::convert::Into<JsonIdentityPublicKey> for &IdentityPublicKey {
     }
 }
 
-//TODO  toJSON() should be part of WASM interface - as rust natively support serialization
 impl IdentityPublicKey {
     /// Get key ID
     pub fn get_id(&self) -> KeyID {
@@ -188,8 +170,10 @@ impl IdentityPublicKey {
             return Ok(self.data.clone());
         }
 
-        let original_key = PublicKey::from(&self.data);
-        Ok(original_key.hash.clone())
+        // TODO create another error type
+        let original_key = PublicKey::from_slice(&self.data)
+            .map_err(|e| anyhow!("unable to create pub key - {}", e))?;
+        Ok(original_key.pubkey_hash().to_vec())
     }
 }
 
