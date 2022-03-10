@@ -1,7 +1,13 @@
+// use minicbor::{Decode, Encode};
 use serde::{Deserialize, Serialize};
 
 use super::{IdentityPublicKey, KeyID};
-use crate::identifier::Identifier;
+use crate::{
+    errors::ProtocolError,
+    identifier::Identifier,
+    metadata::Metadata,
+    util::{hash, serializer},
+};
 
 // TODO implement!
 type InstantAssetLockProof = String;
@@ -19,18 +25,39 @@ pub enum AssetLockProof {
 #[derive(Default, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Identity {
-    pub protocol_version: i32,
+    pub protocol_version: u32,
     pub id: Identifier,
     pub public_keys: Vec<IdentityPublicKey>,
     pub balance: i64,
     pub revision: i64,
     #[serde(skip)]
-    asset_lock_proof: Option<AssetLockProof>,
+    pub asset_lock_proof: Option<AssetLockProof>,
+    pub metadata: Option<Metadata>,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+struct IdentityForBuffer {
+    // TODO the struct probably should be made from references
+    id: Identifier,
+    public_keys: Vec<IdentityPublicKey>,
+    balance: i64,
+    revision: i64,
+}
+
+impl std::convert::From<&Identity> for IdentityForBuffer {
+    fn from(i: &Identity) -> Self {
+        return IdentityForBuffer {
+            id: i.id.clone(),
+            public_keys: i.public_keys.clone(),
+            balance: i.balance,
+            revision: i.revision,
+        };
+    }
 }
 
 impl Identity {
     /// Get Identity protocol version
-    pub fn get_protocol_version(&self) -> i32 {
+    pub fn get_protocol_version(&self) -> u32 {
         self.protocol_version
     }
 
@@ -100,14 +127,25 @@ impl Identity {
         self.revision
     }
 
-    // how to convert data to buffer
-    pub fn to_buffer() -> Vec<u8> {
-        /// first we need the implementation to_buffer
-        unimplemented!()
+    /// Get metadata
+    pub fn get_metadata(&self) -> Option<&Metadata> {
+        self.metadata.as_ref()
     }
 
-    pub fn hash() -> [u8; 32] {
-        unimplemented!()
+    /// Set metadata
+    pub fn set_metadata(mut self, m: Metadata) -> Self {
+        self.metadata = Some(m);
+        self
+    }
+
+    pub fn to_buffer(&self) -> Result<Vec<u8>, ProtocolError> {
+        let serde_value = serde_json::to_value(IdentityForBuffer::from(self)).unwrap();
+        let encoded = serializer::value_to_cbor(serde_value, Some(self.protocol_version))?;
+        Ok(encoded)
+    }
+
+    pub fn hash(&self) -> Result<Vec<u8>, ProtocolError> {
+        Ok(hash::sha(&self.to_buffer()?))
     }
 }
 

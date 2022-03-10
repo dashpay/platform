@@ -35,8 +35,11 @@ pub enum KeyType {
 #[repr(u8)]
 #[derive(Debug, PartialEq, Eq, Clone, Copy, Hash, Serialize, Deserialize)]
 pub enum Purpose {
+    /// at least one authentication key must be registered for all security levels
     AUTHENTICATION = 0,
+    /// this key cannot be used for signing documents
     ENCRYPTION = 1,
+    /// this key cannot be used for signing documents
     DECRYPTION = 2,
 }
 
@@ -67,7 +70,7 @@ lazy_static! {
     };
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct IdentityPublicKey {
     pub id: KeyID,

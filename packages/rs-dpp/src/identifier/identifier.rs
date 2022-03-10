@@ -5,7 +5,7 @@ use crate::errors::ProtocolError;
 use crate::util::string_encoding;
 use crate::util::string_encoding::Encoding;
 
-#[derive(Default, Debug, Serialize, Deserialize)]
+#[derive(Default, Debug, Serialize, Deserialize, Clone)]
 pub struct Identifier {
     buffer: [u8; 32],
 }

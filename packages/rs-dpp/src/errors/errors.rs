@@ -8,9 +8,10 @@ pub enum ProtocolError {
     StringDecodeError(String),
     #[error("Public key data is not set")]
     EmptyPublicKeyDataError,
-    // TODO implementing the payload
     #[error("Payload reached a {0}Kb limit")]
     MaxEncodedBytesReachedError(usize),
+    #[error("Encoding Error - {0}")]
+    EncodingError(String),
     #[error(transparent)]
     Error(#[from] anyhow::Error),
 }
