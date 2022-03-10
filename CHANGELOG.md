@@ -3,7 +3,7 @@
 
 ### ⚠ BREAKING CHANGES
 
-* **drive:** non-deterministic behaviour in masternode identities logic  (#287)
+* The fixed masternode identities logic breaks compatibility with previous invalid state.
 
 ### Bug Fixes
 
