@@ -1,6 +1,7 @@
 const Identifier = require('@dashevo/dpp/lib/identifier/Identifier');
 const { hash } = require('@dashevo/dpp/lib/util/hash');
 const IdentityPublicKey = require('@dashevo/dpp/lib/identity/IdentityPublicKey');
+const createOperatorIdentifier = require('./createOperatorIdentifier');
 
 /**
  *
@@ -29,14 +30,14 @@ function handleNewMasternodeFactory(
     const proRegTxHash = Buffer.from(masternodeEntry.proRegTxHash, 'hex');
 
     // Create a masternode identity
-    const masternodeIdentityId = Identifier.from(
+    const masternodeIdentifier = Identifier.from(
       hash(proRegTxHash),
     );
 
     const publicKey = Buffer.from(proRegTxPayload.keyIDOwner, 'hex').reverse();
 
     await createMasternodeIdentity(
-      masternodeIdentityId,
+      masternodeIdentifier,
       publicKey,
       IdentityPublicKey.TYPES.ECDSA_HASH160,
     );
@@ -46,18 +47,10 @@ function handleNewMasternodeFactory(
     if (proRegTxPayload.operatorReward > 0) {
       const operatorPubKey = Buffer.from(masternodeEntry.pubKeyOperator, 'hex');
 
-      // Create an identity for operator
-      const operatorIdentityHash = hash(
-        Buffer.concat([
-          proRegTxHash,
-          operatorPubKey,
-        ]),
-      );
-
-      const operatorIdentityId = Identifier.from(operatorIdentityHash);
+      const operatorIdentifier = createOperatorIdentifier(masternodeEntry);
 
       await createMasternodeIdentity(
-        operatorIdentityId,
+        operatorIdentifier,
         operatorPubKey,
         IdentityPublicKey.TYPES.BLS12_381,
       );
@@ -65,8 +58,8 @@ function handleNewMasternodeFactory(
       // Create a document in rewards data contract with percentage
       await createRewardShareDocument(
         dataContract,
-        masternodeIdentityId,
-        operatorIdentityId,
+        masternodeIdentifier,
+        operatorIdentifier,
         proRegTxPayload.operatorReward,
       );
     }

@@ -13,19 +13,19 @@ function createMasternodeIdentityFactory(
 ) {
   /**
    * @typedef createMasternodeIdentity
-   * @param {Identifier} identityId
+   * @param {Identifier} identifier
    * @param {Buffer} pubKeyData
    * @param {number} pubKeyType
    * @return {Promise<void>}
    */
   async function createMasternodeIdentity(
-    identityId,
+    identifier,
     pubKeyData,
     pubKeyType,
   ) {
     const identity = new Identity({
       protocolVersion: dpp.getProtocolVersion(),
-      id: identityId.toBuffer(),
+      id: identifier.toBuffer(),
       publicKeys: [{
         id: 0,
         type: pubKeyType,

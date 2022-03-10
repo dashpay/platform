@@ -8,7 +8,7 @@ function handleRemovedMasternodeFactory(
   /**
    * @typedef {handleRemovedMasternode}
    */
-  async function handleRemovedMasternode(masternodeOwnerId, dataContract) {
+  async function handleRemovedMasternode(masternodeIdentifier, dataContract) {
     //  Delete documents belongs to masternode identity (ownerId) from rewards contract
 
     let documentsToDelete = [];
@@ -25,7 +25,7 @@ function handleRemovedMasternodeFactory(
           limit,
           startAfter,
           where: [
-            ['$ownerId', '==', masternodeOwnerId],
+            ['$ownerId', '==', masternodeIdentifier],
           ],
         },
         true,

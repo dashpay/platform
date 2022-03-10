@@ -32,7 +32,7 @@ function synchronizeMasternodeIdentitiesFactory(
    * @return Promise<void>
    */
   async function synchronizeMasternodeIdentities(coreHeight) {
-    let newMasternodes = [];
+    let newMasternodes;
 
     let previousMNList = [];
 
@@ -99,12 +99,12 @@ function synchronizeMasternodeIdentitiesFactory(
     for (const masternodeEntry of disappearedOrInvalidMasterNodes) {
       const proRegTxHash = Buffer.from(masternodeEntry.proRegTxHash, 'hex');
 
-      const masternodeOwnerId = Identifier.from(
+      const masternodeIdentifier = Identifier.from(
         hash(proRegTxHash),
       );
 
       await handleRemovedMasternode(
-        masternodeOwnerId,
+        masternodeIdentifier,
         dataContract,
       );
     }

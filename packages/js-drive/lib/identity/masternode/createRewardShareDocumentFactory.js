@@ -13,15 +13,15 @@ function createRewardShareDocumentFactory(
   /**
    * @typedef {createRewardShareDocument}
    * @param {DataContract} dataContract
-   * @param {Identifier} masternodeIdentityId
-   * @param {Identifier} operatorIdentityId
+   * @param {Identifier} masternodeIdentifier
+   * @param {Identifier} operatorIdentifier
    * @param {number} percentage
    * @returns {Promise<boolean>}
    */
   async function createRewardShareDocument(
     dataContract,
-    masternodeIdentityId,
-    operatorIdentityId,
+    masternodeIdentifier,
+    operatorIdentifier,
     percentage,
   ) {
     const documents = await documentRepository.find(
@@ -29,8 +29,8 @@ function createRewardShareDocumentFactory(
       'rewardShare',
       {
         where: [
-          ['$ownerId', '==', masternodeIdentityId.toBuffer()],
-          ['payToId', '==', operatorIdentityId.toBuffer()],
+          ['$ownerId', '==', masternodeIdentifier.toBuffer()],
+          ['payToId', '==', operatorIdentifier.toBuffer()],
         ],
       },
       true,
@@ -43,10 +43,10 @@ function createRewardShareDocumentFactory(
 
     const rewardShareDocument = dpp.document.create(
       dataContract,
-      masternodeIdentityId,
+      masternodeIdentifier,
       'rewardShare',
       {
-        payToId: operatorIdentityId,
+        payToId: operatorIdentifier,
         percentage,
       },
     );
@@ -54,8 +54,8 @@ function createRewardShareDocumentFactory(
     // Create an identity for operator
     const rewardShareDocumentIdSeed = hash(
       Buffer.concat([
-        masternodeIdentityId.toBuffer(),
-        operatorIdentityId.toBuffer(),
+        masternodeIdentifier.toBuffer(),
+        operatorIdentifier.toBuffer(),
       ]),
     );
 
