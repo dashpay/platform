@@ -1,27 +1,28 @@
-const identityTopUpTransitionSchema = require('../../../../../../schema/identity/stateTransition/identityTopUp.json');
-
+const identityUpdateTransitionSchema = require('../../../../../../schema/identity/stateTransition/identityUpdate.json');
 const convertBuffersToArrays = require('../../../../../util/convertBuffersToArrays');
 
 /**
  * @param {JsonSchemaValidator} jsonSchemaValidator
  * @param {Object.<number, Function>} proofValidationFunctionsByType
  * @param {validateProtocolVersion} validateProtocolVersion
+ * @param {validatePublicKeys} validatePublicKeys
  *
- * @return {validateIdentityTopUpTransitionBasic}
+ * @return {validateIdentityUpdateTransitionBasic}
  */
-function validateIdentityTopUpTransitionBasicFactory(
+function validateIdentityUpdateTransitionBasicFactory(
   jsonSchemaValidator,
   proofValidationFunctionsByType,
   validateProtocolVersion,
+  validatePublicKeys,
 ) {
   /**
-   * @typedef {validateIdentityTopUpTransitionBasic}
-   * @param {RawIdentityTopUpTransition} rawStateTransition
+   * @typedef validateIdentityUpdateTransitionBasic
+   * @param {RawIdentityUpdateTransition} rawStateTransition
    * @return {Promise<ValidationResult>}
    */
-  async function validateIdentityTopUpTransitionBasic(rawStateTransition) {
+  async function validateIdentityUpdateTransitionBasic(rawStateTransition) {
     const result = jsonSchemaValidator.validate(
-      identityTopUpTransitionSchema,
+      identityUpdateTransitionSchema,
       convertBuffersToArrays(rawStateTransition),
     );
 
@@ -32,6 +33,16 @@ function validateIdentityTopUpTransitionBasicFactory(
     result.merge(
       validateProtocolVersion(rawStateTransition.protocolVersion),
     );
+
+    if (!result.isValid()) {
+      return result;
+    }
+
+    if (rawStateTransition.addPublicKeys) {
+      result.merge(
+        validatePublicKeys(rawStateTransition.addPublicKeys),
+      );
+    }
 
     if (!result.isValid()) {
       return result;
@@ -52,7 +63,7 @@ function validateIdentityTopUpTransitionBasicFactory(
     return result;
   }
 
-  return validateIdentityTopUpTransitionBasic;
+  return validateIdentityUpdateTransitionBasic;
 }
 
-module.exports = validateIdentityTopUpTransitionBasicFactory;
+module.exports = validateIdentityUpdateTransitionBasicFactory;

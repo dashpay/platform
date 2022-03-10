@@ -8,6 +8,7 @@ const stateTransitionTypes = require('./stateTransitionTypes');
  * @param {applyDocumentsBatchTransition} applyDocumentsBatchTransition
  * @param {applyIdentityCreateTransition} applyIdentityCreateTransition
  * @param {applyIdentityTopUpTransition} applyIdentityTopUpTransition
+ * @param {applyIdentityUpdateTransition} applyIdentityUpdateTransition
  *
  * @returns {applyStateTransition}
  */
@@ -17,6 +18,7 @@ function applyStateTransitionFactory(
   applyDocumentsBatchTransition,
   applyIdentityCreateTransition,
   applyIdentityTopUpTransition,
+  applyIdentityUpdateTransition,
 ) {
   /* map apply functions */
   const typesToFunction = {
@@ -25,6 +27,7 @@ function applyStateTransitionFactory(
     [stateTransitionTypes.DOCUMENTS_BATCH]: applyDocumentsBatchTransition,
     [stateTransitionTypes.IDENTITY_CREATE]: applyIdentityCreateTransition,
     [stateTransitionTypes.IDENTITY_TOP_UP]: applyIdentityTopUpTransition,
+    [stateTransitionTypes.IDENTITY_UPDATE]: applyIdentityUpdateTransition,
   };
 
   /**

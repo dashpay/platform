@@ -3,6 +3,7 @@ const IdentityPublicKey = require('./IdentityPublicKey');
 
 const IdentityCreateTransition = require('./stateTransition/IdentityCreateTransition/IdentityCreateTransition');
 const IdentityTopUpTransition = require('./stateTransition/IdentityTopUpTransition/IdentityTopUpTransition');
+const IdentityUpdateTransition = require('./stateTransition/IdentityUpdateTransition/IdentityUpdateTransition');
 
 const InvalidIdentityError = require('./errors/InvalidIdentityError');
 const InstantAssetLockProof = require('./stateTransition/assetLockProof/instant/InstantAssetLockProof');
@@ -174,6 +175,33 @@ class IdentityFactory {
       protocolVersion: this.dpp.getProtocolVersion(),
       identityId,
       assetLockProof: assetLockProof.toObject(),
+    });
+  }
+
+  /**
+   * Create identity update transition
+   *
+   * @param {Identifier|Buffer|string} identityId - identity to top up
+   * @param {number} revision
+   * @param {IdentityPublicKey[]} [addPublicKeys]
+   * @param {number[]} [disablePublicKeys]
+   * @param {number} [publicKeysDisabledAt]
+   * @return {IdentityUpdateTransition}
+   */
+  createIdentityUpdateTransition(
+    identityId,
+    revision,
+    addPublicKeys,
+    disablePublicKeys,
+    publicKeysDisabledAt,
+  ) {
+    return new IdentityUpdateTransition({
+      protocolVersion: this.dpp.getProtocolVersion(),
+      identityId,
+      revision,
+      addPublicKeys,
+      disablePublicKeys,
+      publicKeysDisabledAt,
     });
   }
 }

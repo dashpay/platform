@@ -31,6 +31,10 @@ class IdentityPublicKey {
     if (Object.prototype.hasOwnProperty.call(rawIdentityPublicKey, 'readOnly')) {
       this.setReadOnly(rawIdentityPublicKey.readOnly);
     }
+
+    if (Object.prototype.hasOwnProperty.call(rawIdentityPublicKey, 'disabledAt')) {
+      this.setDisabledAt(rawIdentityPublicKey.disabledAt);
+    }
   }
 
   /**
@@ -153,16 +157,37 @@ class IdentityPublicKey {
   /**
    * Get readOnly flag
    *
-   * @return boolean
+   * @return {boolean}
    */
   getReadOnly() {
     return this.readOnly;
   }
 
   /**
+   * Set disabledAt timestamp
+   *
+   * @param {number} disabledAt
+   * @return {IdentityPublicKey}
+   */
+  setDisabledAt(disabledAt) {
+    this.disabledAt = disabledAt;
+
+    return this;
+  }
+
+  /**
+   * Get disabledAt timestamp
+   *
+   * @return {number}
+   */
+  getDisabledAt() {
+    return this.disabledAt;
+  }
+
+  /**
    * Get the original public key hash
    *
-   * @returns {Buffer}
+   * @return {Buffer}
    */
   hash() {
     if (!this.getData()) {
@@ -194,6 +219,7 @@ class IdentityPublicKey {
       securityLevel: this.getSecurityLevel(),
       data: this.getData(),
       readOnly: this.getReadOnly(),
+      disabledAt: this.getDisabledAt(),
     };
   }
 
@@ -218,6 +244,7 @@ class IdentityPublicKey {
  * @property {number} securityLevel
  * @property {Buffer} data
  * @property {boolean} readOnly
+ * @property {number} [disabledAt]
  */
 
 /**
@@ -228,6 +255,7 @@ class IdentityPublicKey {
  * @property {number} type
  * @property {string} data
  * @property {boolean} readOnly
+ * @property {number} [disabledAt]
  */
 
 IdentityPublicKey.TYPES = {
