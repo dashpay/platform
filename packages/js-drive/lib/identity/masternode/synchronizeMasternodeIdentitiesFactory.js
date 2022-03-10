@@ -32,7 +32,7 @@ function synchronizeMasternodeIdentitiesFactory(
    * @return Promise<void>
    */
   async function synchronizeMasternodeIdentities(coreHeight) {
-    let newMasternodes;
+    let newMasternodes = [];
 
     let previousMNList = [];
 

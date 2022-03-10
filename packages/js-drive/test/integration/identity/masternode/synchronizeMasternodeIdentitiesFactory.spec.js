@@ -116,6 +116,27 @@ function expectMasternodeIdentityFactory(
   return expectMasternodeIdentity;
 }
 
+/**
+ * @param {GroveDBStore} groveDBStore
+ * @returns {expectDeterministicAppHash}
+ */
+function expectDeterministicAppHashFactory(groveDBStore) {
+  /**
+   * @typedef {expectDeterministicAppHash}
+   * @param {string} appHash
+   * @returns {Promise<void>}
+   */
+  async function expectDeterministicAppHash(appHash) {
+    const actualAppHash = await groveDBStore.getRootHash({ useTransaction: true });
+
+    const actualAppHashHex = actualAppHash.toString('hex');
+
+    expect(appHash).to.deep.equal(actualAppHashHex);
+  }
+
+  return expectDeterministicAppHash;
+}
+
 describe('synchronizeMasternodeIdentitiesFactory', () => {
   let container;
   let coreHeight;
@@ -133,9 +154,12 @@ describe('synchronizeMasternodeIdentitiesFactory', () => {
   let coreRpcClientMock;
   let expectOperatorIdentity;
   let expectMasternodeIdentity;
+  let expectDeterministicAppHash;
+  let firstSyncAppHash;
 
   beforeEach(async function beforeEach() {
     coreHeight = 3;
+    firstSyncAppHash = 'dee44cef32ed810e9a7e079e472ab5a4e44b6bca3e4c25290f8d8267b49f70a8';
 
     container = await createTestDIContainer();
 
@@ -173,6 +197,7 @@ describe('synchronizeMasternodeIdentitiesFactory', () => {
     container.register('coreRpcClient', asValue(coreRpcClientMock));
 
     // Mock SML
+
     smlFixture = [
       new SimplifiedMNListEntry({
         proRegTxHash: '954112bb018895896cfa3c3d00761a045fc16b22f2170c1fbb029a2936c68f16',
@@ -233,6 +258,10 @@ describe('synchronizeMasternodeIdentitiesFactory', () => {
       identityRepository,
       publicKeyToIdentityIdRepository,
     );
+
+    expectDeterministicAppHash = expectDeterministicAppHashFactory(
+      container.resolve('groveDBStore'),
+    );
   });
 
   afterEach(async () => {
@@ -243,6 +272,8 @@ describe('synchronizeMasternodeIdentitiesFactory', () => {
 
   it('should create identities for all masternodes on the first sync', async () => {
     await synchronizeMasternodeIdentities(coreHeight);
+
+    await expectDeterministicAppHash(firstSyncAppHash);
 
     /**
      * Validate first masternode
@@ -345,6 +376,8 @@ describe('synchronizeMasternodeIdentitiesFactory', () => {
 
     await synchronizeMasternodeIdentities(coreHeight);
 
+    await expectDeterministicAppHash(firstSyncAppHash);
+
     // Second call
 
     await synchronizeMasternodeIdentities(coreHeight + 42);
@@ -358,6 +391,8 @@ describe('synchronizeMasternodeIdentitiesFactory', () => {
     // Sync initial list
 
     await synchronizeMasternodeIdentities(coreHeight);
+
+    await expectDeterministicAppHash(firstSyncAppHash);
 
     // Mock SML
 
@@ -442,6 +477,8 @@ describe('synchronizeMasternodeIdentitiesFactory', () => {
 
     await synchronizeMasternodeIdentities(coreHeight);
 
+    await expectDeterministicAppHash(firstSyncAppHash);
+
     // Mock SML
 
     smlStoreMock.getSMLbyHeight.withArgs(coreHeight + 1).returns(
@@ -484,6 +521,8 @@ describe('synchronizeMasternodeIdentitiesFactory', () => {
 
     await synchronizeMasternodeIdentities(coreHeight);
 
+    await expectDeterministicAppHash(firstSyncAppHash);
+
     // Mock SML
 
     const invalidSmlEntry = smlFixture[0].copy();
@@ -522,6 +561,8 @@ describe('synchronizeMasternodeIdentitiesFactory', () => {
     // Initial sync
 
     await synchronizeMasternodeIdentities(coreHeight);
+
+    await expectDeterministicAppHash(firstSyncAppHash);
 
     // Mock SML
 
