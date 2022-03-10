@@ -38,9 +38,10 @@ function registerMasternodeTaskFactory(
   /**
    * @typedef {registerMasternodeTask}
    * @param {Config} config
+   * @param {number} operatorReward
    * @return {Listr}
    */
-  function registerMasternodeTask(config) {
+  function registerMasternodeTask(config, operatorReward = 0) {
     return new Listr([
       {
         title: 'Start Core',
@@ -221,11 +222,13 @@ function registerMasternodeTaskFactory(
             ctx.owner.address,
             ctx.operator.publicKey,
             ctx.reward.address,
+            operatorReward,
             config,
           );
 
           // eslint-disable-next-line no-param-reassign
-          task.output = `ProRegTx transaction ID: ${ctx.proTxHash}`;
+          task.output = `ProRegTx transaction ID: ${ctx.proTxHash}\n`
+          + `Owner Private Key: ${ctx.owner.privateKey}`;
         },
         options: { persistentOutput: true },
       },

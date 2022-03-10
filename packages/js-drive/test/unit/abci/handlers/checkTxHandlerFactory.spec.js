@@ -31,7 +31,7 @@ describe('checkTxHandlerFactory', () => {
     );
   });
 
-  it('should validate a State Transition and return response with code 0', async () => {
+  it('should validate a State Transition and return response', async () => {
     const response = await checkTxHandler(request);
 
     expect(response).to.be.an.instanceOf(ResponseCheckTx);

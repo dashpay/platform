@@ -30,6 +30,7 @@ function fetchDocumentsFactory(stateRepository) {
       .map((transitions) => {
         const options = {
           where: [['$id', 'in', transitions.map((t) => t.getId())]],
+          orderBy: [['$id', 'asc']],
         };
 
         return stateRepository.fetchDocuments(

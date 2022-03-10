@@ -16,7 +16,6 @@ const endBlockHandlerFactory = require('../../../../lib/abci/handlers/endBlockHa
 
 const BlockExecutionContextMock = require('../../../../lib/test/mock/BlockExecutionContextMock');
 const LoggerMock = require('../../../../lib/test/mock/LoggerMock');
-const BlockExecutionDBTransactionsMock = require('../../../../lib/test/mock/BlockExecutionStoreTransactionsMock');
 
 describe('endBlockHandlerFactory', () => {
   let endBlockHandler;
@@ -31,7 +30,6 @@ describe('endBlockHandlerFactory', () => {
   let chainLockMock;
   let validatorSetMock;
   let getFeatureFlagForHeightMock;
-  let blockExecutionStoreTransactionsMock;
 
   beforeEach(function beforeEach() {
     headerMock = {
@@ -72,8 +70,6 @@ describe('endBlockHandlerFactory', () => {
 
     createValidatorSetUpdateMock = this.sinon.stub();
 
-    blockExecutionStoreTransactionsMock = new BlockExecutionDBTransactionsMock(this.sinon);
-
     getFeatureFlagForHeightMock = this.sinon.stub().resolves(null);
 
     endBlockHandler = endBlockHandlerFactory(
@@ -83,7 +79,6 @@ describe('endBlockHandlerFactory', () => {
       createValidatorSetUpdateMock,
       loggerMock,
       getFeatureFlagForHeightMock,
-      blockExecutionStoreTransactionsMock,
     );
 
     requestMock = {
@@ -91,7 +86,7 @@ describe('endBlockHandlerFactory', () => {
     };
   });
 
-  it('should return a response', async () => {
+  it('should finalize a block', async () => {
     endBlockHandler = endBlockHandlerFactory(
       blockExecutionContextMock,
       latestCoreChainLockMock,
@@ -99,7 +94,6 @@ describe('endBlockHandlerFactory', () => {
       createValidatorSetUpdateMock,
       loggerMock,
       getFeatureFlagForHeightMock,
-      blockExecutionStoreTransactionsMock,
     );
 
     const response = await endBlockHandler(requestMock);
@@ -197,7 +191,6 @@ describe('endBlockHandlerFactory', () => {
       },
     });
 
-    expect(blockExecutionStoreTransactionsMock.getTransaction).to.be.calledOnce();
     expect(getFeatureFlagForHeightMock).to.be.calledOnce();
   });
 });

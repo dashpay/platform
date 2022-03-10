@@ -45,7 +45,7 @@ describe('getLatestFeatureFlagFactory', () => {
       featureFlagDataContractId,
       'someType',
       query,
-      undefined,
+      false,
     );
     expect(result).to.deep.equal(document);
   });

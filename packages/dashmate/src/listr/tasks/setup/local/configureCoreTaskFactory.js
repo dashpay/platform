@@ -141,7 +141,7 @@ function configureCoreTaskFactory(
               task: async () => {
                 const masternodeConfigs = configGroup.filter((config) => config.get('core.masternode.enable'));
 
-                const subTasks = masternodeConfigs.map((config) => ({
+                const subTasks = masternodeConfigs.map((config, masternodeNumber) => ({
                   title: `Register ${config.getName()} masternode`,
                   skip: () => {
                     if (config.get('core.masternode.operator.privateKey')) {
@@ -164,7 +164,8 @@ function configureCoreTaskFactory(
                       options: { persistentOutput: true },
                     },
                     {
-                      task: () => registerMasternodeTask(config),
+                      // first masternode has 10% operatorReward
+                      task: () => registerMasternodeTask(config, masternodeNumber === 0 ? 10 : 0),
                     },
                   ]),
                 }));

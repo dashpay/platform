@@ -1,3 +1,5 @@
+const baseDocumentSchema = require('../../schema/document/documentBase.json');
+
 /**
  * Get user property definition
  *
@@ -8,6 +10,11 @@
  * @return {Object}
  */
 function getPropertyDefinitionByPath(documentDefinition, path) {
+  // Return system properties schema
+  if (path.startsWith('$')) {
+    return baseDocumentSchema.properties[path];
+  }
+
   const [currentSegment, ...rest] = path.split('.');
 
   const { [currentSegment]: propertyDefinition } = (documentDefinition.properties || {});
