@@ -80,17 +80,21 @@ describe('subscribeToBlockHeadersWithChainLocksHandlerFactory', () => {
     expect(streamEnded).to.be.true();
 
     // TODO: fetching blocks one by one takes too long. Implement getBlockHeaders in dapi-client
-    const fetchedBlocks = await Promise.all(
-      Array.from({ length: headersAmount })
-        .map(async (_, index) => new Block(await dapiClient.core.getBlockByHeight(index + 1))),
-    );
+    const fetchedBlocks = []
+
+    for (let i = 1; i <= headersAmount; i++) {
+      const rawBlock = await dapiClient.core.getBlockByHeight(i)
+      const block = new Block(rawBlock)
+
+      fetchedBlocks.push(block)
+    }
 
     expect(historicalBlockHeaders.map((header) => header.hash))
       .to.deep.equal(fetchedBlocks.map((block) => block.header.hash));
     expect(bestChainLock.height).to.exist();
   });
 
-  it.only('should respond with both new and historical data', async () => {
+  it('should respond with both new and historical data', async () => {
     let latestChainLock = null;
 
     const historicalBlocksToGet = 10;
