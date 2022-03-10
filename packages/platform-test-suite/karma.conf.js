@@ -25,11 +25,11 @@ module.exports = (config) => {
     frameworks: ['mocha', 'chai', 'webpack'],
     files: [
       'lib/test/karma/loader.js',
-      './test/**/*.spec.js',
+      './test/**/!(proofs|waitForStateTransitionResult).spec.js',
     ],
     preprocessors: {
       'lib/test/karma/loader.js': ['webpack', 'sourcemap'],
-      './test/**/*.spec.js': ['webpack', 'sourcemap'],
+      './test/**/!(proofs|waitForStateTransitionResult).spec.js': ['webpack', 'sourcemap'],
     },
     webpack: {
       mode: 'development',
