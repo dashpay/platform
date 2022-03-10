@@ -38,9 +38,10 @@ function registerMasternodeTaskFactory(
   /**
    * @typedef {registerMasternodeTask}
    * @param {Config} config
+   * @param {number} operatorReward
    * @return {Listr}
    */
-  function registerMasternodeTask(config) {
+  function registerMasternodeTask(config, operatorReward = 0) {
     return new Listr([
       {
         title: 'Start Core',
@@ -221,6 +222,7 @@ function registerMasternodeTaskFactory(
             ctx.owner.address,
             ctx.operator.publicKey,
             ctx.reward.address,
+            operatorReward,
             config,
           );
 

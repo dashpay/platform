@@ -750,11 +750,20 @@ describe('DocumentRepository', function main() {
         where: [['$id', '==', document.getId()]],
       };
 
+      // Document should be removed in transaction
+
       const removedDocuments = await documentRepository
         .find(dataContract, document.getType(), query, true);
 
-      const notRemovedDocuments = await documentRepository
+      expect(removedDocuments).to.have.lengthOf(0);
+
+      // But still exists in main database
+
+      const removedDocumentsWithoutTransaction = await documentRepository
         .find(dataContract, document.getType(), query);
+
+      expect(removedDocumentsWithoutTransaction).to.not.have.lengthOf(0);
+      expect(removedDocumentsWithoutTransaction[0].toBuffer()).to.deep.equal(document.toBuffer());
 
       await documentRepository
         .storage
@@ -763,10 +772,7 @@ describe('DocumentRepository', function main() {
       const restoredDocuments = await documentRepository
         .find(dataContract, document.getType(), query);
 
-      expect(removedDocuments).to.have.lengthOf(0);
-      expect(notRemovedDocuments).to.be.not.null();
-      expect(notRemovedDocuments[0].toBuffer()).to.deep.equal(document.toBuffer());
-      expect(restoredDocuments).to.be.not.null();
+      expect(restoredDocuments).to.not.have.lengthOf(0);
       expect(restoredDocuments[0].toBuffer()).to.deep.equal(document.toBuffer());
     });
   });
