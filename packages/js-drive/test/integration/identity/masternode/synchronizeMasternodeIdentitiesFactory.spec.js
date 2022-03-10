@@ -429,6 +429,8 @@ describe('synchronizeMasternodeIdentitiesFactory', () => {
 
     await synchronizeMasternodeIdentities(coreHeight + 1);
 
+    // Validate masternode identity
+
     const removedMasternodeIdentifier = hash(
       Buffer.from(smlFixture[0].proRegTxHash, 'hex'),
     );
@@ -454,7 +456,7 @@ describe('synchronizeMasternodeIdentitiesFactory', () => {
     expect(removedMasternodeIdentityByPublicKeyHash[0].toBuffer())
       .to.deep.equal(removedMasternodeIdentifier);
 
-    // Validate operator identity (shouldn't be created)
+    // Validate operator identity
 
     const operatorPubKey = Buffer.from(smlFixture[0].pubKeyOperator, 'hex');
 
@@ -486,7 +488,7 @@ describe('synchronizeMasternodeIdentitiesFactory', () => {
     expect(firstOperatorIdentityByPublicKeyHash[0].toBuffer())
       .to.deep.equal(operatorIdentityId);
 
-    // Validate masternode reward shares (shouldn't be created)
+    // Validate masternode reward shares (should be removed)
 
     const documents = await documentRepository.find(
       rewardsDataContract,
@@ -554,15 +556,114 @@ describe('synchronizeMasternodeIdentitiesFactory', () => {
       { mnList: [smlFixture[1], changedSmlEntry] },
     );
 
+    // Second call
+
+    await synchronizeMasternodeIdentities(coreHeight + 1);
+
+    // Validate masternode identity
+
+    const masternodeIdentifier = hash(
+      Buffer.from(changedSmlEntry.proRegTxHash, 'hex'),
+    );
+
+    const masternodeIdentity = await identityRepository.fetch(
+      Identifier.from(masternodeIdentifier),
+    );
+
+    expect(masternodeIdentity).to.exist();
+
+    // Validate masternode identity public keys
+
+    expect(masternodeIdentity.getPublicKeys()).to.have.lengthOf(1);
+
+    const masternodePublicKey = masternodeIdentity.getPublicKeyById(0);
+    expect(masternodePublicKey.getType()).to.equal(IdentityPublicKey.TYPES.ECDSA_HASH160);
+    expect(masternodePublicKey.getData()).to.deep.equal(Buffer.from(transaction1.extraPayload.keyIDOwner, 'hex'));
+
+    const masternodeIdentityByPublicKeyHash = await publicKeyToIdentityIdRepository
+      .fetch(masternodePublicKey.hash());
+
+    expect(masternodeIdentityByPublicKeyHash).to.have.lengthOf(1);
+    expect(masternodeIdentityByPublicKeyHash[0].toBuffer())
+      .to.deep.equal(masternodeIdentifier);
+
+    /**
+     * Previous operator should exist
+     */
+
+    // Validate operator identity
+
+    const operatorPubKey = Buffer.from(smlFixture[0].pubKeyOperator, 'hex');
+
+    const operatorIdentityId = hash(
+      Buffer.concat([
+        Buffer.from(smlFixture[0].proRegTxHash, 'hex'),
+        operatorPubKey,
+      ]),
+    );
+
+    const operatorIdentity = await identityRepository.fetch(
+      Identifier.from(operatorIdentityId),
+    );
+
+    expect(operatorIdentity).to.exist();
+
+    // Validate operator public keys
+
+    expect(operatorIdentity.getPublicKeys()).to.have.lengthOf(1);
+
+    const firstOperatorMasternodePublicKey = operatorIdentity.getPublicKeyById(0);
+    expect(firstOperatorMasternodePublicKey.getType()).to.equal(IdentityPublicKey.TYPES.BLS12_381);
+    expect(firstOperatorMasternodePublicKey.getData()).to.deep.equal(operatorPubKey);
+
+    const firstOperatorIdentityByPublicKeyHash = await publicKeyToIdentityIdRepository
+      .fetch(firstOperatorMasternodePublicKey.hash());
+
+    expect(firstOperatorIdentityByPublicKeyHash).to.have.lengthOf(1);
+    expect(firstOperatorIdentityByPublicKeyHash[0].toBuffer())
+      .to.deep.equal(operatorIdentityId);
+
+    /**
+     * New operator should be created
+     */
+
+    const newOperatorPubKey = Buffer.from(smlFixture[0].pubKeyOperator, 'hex');
+
+    const newOperatorIdentityId = hash(
+      Buffer.concat([
+        Buffer.from(smlFixture[0].proRegTxHash, 'hex'),
+        newOperatorPubKey,
+      ]),
+    );
+
+    const newOperatorIdentity = await identityRepository.fetch(
+      Identifier.from(newOperatorIdentityId),
+    );
+
+    expect(newOperatorIdentity).to.exist();
+
+    // Validate operator public keys
+
+    expect(newOperatorIdentity.getPublicKeys()).to.have.lengthOf(1);
+
+    const newOperatorMasternodePublicKey = newOperatorIdentity.getPublicKeyById(0);
+    expect(newOperatorMasternodePublicKey.getType()).to.equal(IdentityPublicKey.TYPES.BLS12_381);
+    expect(newOperatorMasternodePublicKey.getData()).to.deep.equal(newOperatorPubKey);
+
+    const newOperatorIdentityByPublicKeyHash = await publicKeyToIdentityIdRepository
+      .fetch(newOperatorMasternodePublicKey.hash());
+
+    expect(newOperatorIdentityByPublicKeyHash).to.have.lengthOf(1);
+    expect(newOperatorIdentityByPublicKeyHash[0].toBuffer())
+      .to.deep.equal(operatorIdentityId);
+
+    // Validate masternode reward shares
+
     const changedMasternodeIdentifier = hash(
       Buffer.from(changedSmlEntry.proRegTxHash, 'hex'),
     );
 
     const changedMasternodeId = Identifier.from(changedMasternodeIdentifier);
-
-    await synchronizeMasternodeIdentities(coreHeight + 1);
-
-    // Validate masternode reward shares
 
     const documents = await documentRepository.find(
       rewardsDataContract,
