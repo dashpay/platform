@@ -48,7 +48,7 @@ describe('Platform', () => {
       expect(identity).to.exist();
     });
 
-    it('should fail to create an identity if instantLock is not valid', async () => {
+    it.skip('should fail to create an identity if instantLock is not valid', async () => {
       const {
         transaction,
         privateKey,
