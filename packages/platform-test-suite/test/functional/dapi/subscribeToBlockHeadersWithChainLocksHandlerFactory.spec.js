@@ -131,7 +131,7 @@ describe('subscribeToBlockHeadersWithChainLocksHandlerFactory', () => {
         if (rawChainLock) {
           latestChainLock = new ChainLock(Buffer.from(rawChainLock));
           console.log('rawchainlockddd', latestChainLock)
-          stream.destroy();
+          stream.cancel();
           streamEnded = true;
         }
       }
@@ -155,10 +155,8 @@ describe('subscribeToBlockHeadersWithChainLocksHandlerFactory', () => {
       recipient: new PrivateKey().toAddress(process.env.NETWORK),
       satoshis: 10000,
     });
-    console.log('before broadcastTransaction')
 
-   // await dapiClient.core.broadcastTransaction(transaction.toBuffer());
-    console.log('after broadcastTransaction')
+    await dapiClient.core.broadcastTransaction(transaction.toBuffer());
     // Wait for stream ending
     while (!streamEnded) {
       if (streamError) {
@@ -168,16 +166,17 @@ describe('subscribeToBlockHeadersWithChainLocksHandlerFactory', () => {
 
       await wait(1000);
     }
-    console.log('rot')
 
     // TODO: fetching blocks one by one takes too long. Implement getBlockHeaders in dapi-client
-    const fetchedHistoricalBlocks = await Promise.all(
-      Array.from({ length: historicalBlocksToGet })
-        .map(async (_, index) => {
-          const height = bestBlockHeight - historicalBlocksToGet + index + 1;
-          return new Block(await dapiClient.core.getBlockByHeight(height));
-        }),
-    );
+    const fetchedHistoricalBlocks = []
+
+    for (let i = bestBlockHeight - historicalBlocksToGet + 1;
+         i <= bestBlockHeight; i++) {
+      const rawBlock = await dapiClient.core.getBlockByHeight(i)
+      const block = new Block(rawBlock);
+
+      fetchedHistoricalBlocks.push(block)
+    }
 
     for (let i = 0; i < historicalBlocksToGet; i++) {
       expect(fetchedHistoricalBlocks[i].header.hash).to.equal(blockHeadersHashesFromStream[i]);
