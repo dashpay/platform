@@ -61,8 +61,6 @@ function createRewardShareDocumentFactory(
 
     rewardShareDocument.id = Identifier.from(rewardShareDocumentIdSeed);
 
-    console.log(rewardShareDocument.hash().toString('hex'));
-
     await documentRepository.store(rewardShareDocument, true);
 
     return true;
