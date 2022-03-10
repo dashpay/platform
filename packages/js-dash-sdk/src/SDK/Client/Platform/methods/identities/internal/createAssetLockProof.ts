@@ -24,8 +24,7 @@ export default async function createAssetLockProof(platform : Platform, assetLoc
     try {
         instantLock = await account.waitForInstantLock(assetLockTransaction.hash);
     } catch (e) {
-        // if block is mined before the transaction is instant locked or network is overloaded
-        // instant lock won't be sent
+        // if block is mined before the transaction is instant locked instant lock won't be sent
         if (!e.message || !e.message.startsWith('InstantLock waiting period for transaction')) {
           throw e;
         }
