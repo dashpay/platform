@@ -8,7 +8,7 @@
     "lint": "eslint .",
     "test:e2e": "NODE_ENV=test mocha 'test/e2e/**/*.spec.js'",
     "test:functional": "NODE_ENV=test mocha 'test/functional/**/*.spec.js'",
-    "test:browsers": "karma start ./karma.conf.js --log-level debug"
+    "test:browsers": "karma start ./karma.conf.js"
   },
   "repository": {
     "type": "git",
