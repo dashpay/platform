@@ -12,7 +12,6 @@ const {
   v0: {
     GetDocumentsResponse,
     Proof,
-    StoreTreeProofs,
   },
 } = require('@dashevo/dapi-grpc');
 
@@ -43,7 +42,6 @@ describe('getDocumentsHandlerFactory', () => {
   let proofFixture;
   let response;
   let proofMock;
-  let storeTreeProofs;
 
   beforeEach(function beforeEach() {
     dataContractId = generateRandomIdentifier();
@@ -51,17 +49,17 @@ describe('getDocumentsHandlerFactory', () => {
     where = [['name', '==', 'John']];
     orderBy = [{ order: 'asc' }];
     limit = 20;
-    startAfter = 1;
-    startAt = null;
+    startAfter = new Uint8Array(generateRandomIdentifier().toBuffer());
+    startAt = new Uint8Array([]);
 
     request = {
       getDataContractId: this.sinon.stub().returns(dataContractId),
       getDocumentType: this.sinon.stub().returns(documentType),
-      getWhere: this.sinon.stub().returns(new Uint8Array(cbor.encode(where))),
-      getOrderBy: this.sinon.stub().returns(new Uint8Array(cbor.encode(orderBy))),
+      getWhere_asU8: this.sinon.stub().returns(new Uint8Array(cbor.encode(where))),
+      getOrderBy_asU8: this.sinon.stub().returns(new Uint8Array(cbor.encode(orderBy))),
       getLimit: this.sinon.stub().returns(limit),
-      getStartAfter: this.sinon.stub().returns(startAfter),
-      getStartAt: this.sinon.stub().returns(startAt),
+      getStartAfter_asU8: this.sinon.stub().returns(startAfter),
+      getStartAt_asU8: this.sinon.stub().returns(startAt),
       getProve: this.sinon.stub().returns(false),
     };
 
@@ -73,16 +71,11 @@ describe('getDocumentsHandlerFactory', () => {
 
     documentsSerialized = documentsFixture.map((documentItem) => documentItem.toBuffer());
     proofFixture = {
-      rootTreeProof: Buffer.alloc(1, 1),
-      storeTreeProof: Buffer.alloc(1, 2),
+      merkleProof: Buffer.alloc(1, 1),
     };
 
-    storeTreeProofs = new StoreTreeProofs();
-    storeTreeProofs.setDataContractsProof(proofFixture.storeTreeProof);
-
     proofMock = new Proof();
-    proofMock.setRootTreeProof(proofFixture.rootTreeProof);
-    proofMock.setStoreTreeProofs(storeTreeProofs);
+    proofMock.setMerkleProof(proofFixture.merkleProof);
 
     response = new GetDocumentsResponse();
     response.setProof(proofMock);
@@ -117,7 +110,7 @@ describe('getDocumentsHandlerFactory', () => {
         where,
         orderBy,
         limit,
-        startAfter,
+        startAfter: Buffer.from(startAfter),
         startAt: undefined,
       },
       false,
@@ -144,7 +137,7 @@ describe('getDocumentsHandlerFactory', () => {
         where,
         orderBy,
         limit,
-        startAfter,
+        startAfter: Buffer.from(startAfter),
         startAt: undefined,
       },
       true,
@@ -153,11 +146,9 @@ describe('getDocumentsHandlerFactory', () => {
     const proof = result.getProof();
 
     expect(proof).to.be.an.instanceOf(Proof);
-    const rootTreeProof = proof.getRootTreeProof();
-    const resultStoreTreeProofs = proof.getStoreTreeProofs();
+    const merkleProof = proof.getMerkleProof();
 
-    expect(rootTreeProof).to.deep.equal(proofFixture.rootTreeProof);
-    expect(resultStoreTreeProofs).to.deep.equal(storeTreeProofs);
+    expect(merkleProof).to.deep.equal(proofFixture.merkleProof);
   });
 
   it('should throw InvalidArgumentGrpcError if dataContractId is not specified', async () => {

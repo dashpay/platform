@@ -157,7 +157,7 @@ class CachedStateRepositoryDecorator {
   }
 
   /**
-   * Fetch latest platform block header
+   * Fetch the latest platform block header
    *
    * @return {Promise<IHeader>}
    */
@@ -174,6 +174,15 @@ class CachedStateRepositoryDecorator {
    */
   async verifyInstantLock(instantLock) {
     return this.stateRepository.verifyInstantLock(instantLock);
+  }
+
+  /**
+   * Fetch Simplified Masternode List Store
+   *
+   * @return {Promise<SimplifiedMNListStore>}
+   */
+  async fetchSMLStore() {
+    return this.stateRepository.fetchSMLStore();
   }
 }
 

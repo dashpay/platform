@@ -5,12 +5,7 @@ const IdentityPublicKey = require('@dashevo/dpp/lib/identity/IdentityPublicKey')
  * @param {IdentityStoreRepository} identityRepository
  * @param {DataContractStoreRepository} dataContractRepository
  * @param {PublicKeyToIdentityIdStoreRepository} publicKeyToIdentityIdRepository
- * @param {RootTree} rootTree
  * @param {BlockExecutionContext} blockExecutionContext
- * @param {IdentityStoreRepository} previousIdentityRepository
- * @param {DataContractStoreRepository} previousDataContractRepository
- * @param {PublicKeyToIdentityIdStoreRepository} previousPublicKeyToIdentityIdRepository
- * @param {RootTree} previousRootTree
  * @param {LRUCache} dataContractCache
  *
  * @return {registerSystemDataContract}
@@ -20,12 +15,7 @@ function registerSystemDataContractFactory(
   identityRepository,
   dataContractRepository,
   publicKeyToIdentityIdRepository,
-  rootTree,
   blockExecutionContext,
-  previousIdentityRepository,
-  previousDataContractRepository,
-  previousPublicKeyToIdentityIdRepository,
-  previousRootTree,
   dataContractCache,
 ) {
   /**
@@ -55,11 +45,9 @@ function registerSystemDataContractFactory(
       }],
     );
 
-    await identityRepository.store(ownerIdentity);
-    await previousIdentityRepository.store(ownerIdentity);
+    await identityRepository.store(ownerIdentity, true);
 
-    await publicKeyToIdentityIdRepository.store(publicKey.hash, ownerId);
-    await previousPublicKeyToIdentityIdRepository.store(publicKey.hash, ownerId);
+    await publicKeyToIdentityIdRepository.store(publicKey.hash, ownerId, true);
 
     const dataContract = dpp.dataContract.create(
       ownerIdentity.getId(),
@@ -68,16 +56,10 @@ function registerSystemDataContractFactory(
 
     dataContract.id = contractId;
 
-    await dataContractRepository.store(dataContract);
-    await previousDataContractRepository.store(dataContract);
+    await dataContractRepository.store(dataContract, true);
 
     // Store data contract in the cache
     dataContractCache.set(dataContract.getId().toString(), dataContract);
-
-    // Rebuild root tree to accommodate for changes
-    // since we're inserting data directly
-    rootTree.rebuild();
-    previousRootTree.rebuild();
 
     return dataContract;
   }

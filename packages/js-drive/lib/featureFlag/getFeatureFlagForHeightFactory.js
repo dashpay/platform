@@ -13,11 +13,11 @@ function getFeatureFlagForHeightFactory(
    *
    * @param {string} flagType
    * @param {Long} blockHeight
-   * @param {DocumentsIndexedTransaction} [transaction]
+   * @param {boolean} [useTransaction=false]
    *
    * @return {Promise<Document|null>}
    */
-  async function getFeatureFlagForHeight(flagType, blockHeight, transaction = undefined) {
+  async function getFeatureFlagForHeight(flagType, blockHeight, useTransaction = false) {
     if (!featureFlagsContractId) {
       return null;
     }
@@ -32,7 +32,7 @@ function getFeatureFlagForHeightFactory(
       featureFlagsContractId,
       flagType,
       query,
-      transaction,
+      useTransaction,
     );
 
     return document;

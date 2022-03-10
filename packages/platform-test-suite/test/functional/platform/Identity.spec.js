@@ -16,6 +16,7 @@ const DAPIClient = require('@dashevo/dapi-client/lib/DAPIClient');
 const { hash } = require('@dashevo/dpp/lib/util/hash');
 const Identifier = require('@dashevo/dpp/lib/identifier/Identifier');
 const Transaction = require('@dashevo/dashcore-lib/lib/transaction');
+const IdentityPublicKey = require('@dashevo/dpp/lib/identity/IdentityPublicKey');
 const createClientWithFundedWallet = require('../../../lib/test/createClientWithFundedWallet');
 const wait = require('../../../lib/wait');
 const getDAPISeeds = require('../../../lib/test/getDAPISeeds');
@@ -351,8 +352,9 @@ describe('Platform', () => {
           outputIndex,
           assetLockProof,
         );
-        identityTopUpTransition.signByPrivateKey(
+        await identityTopUpTransition.signByPrivateKey(
           privateKey,
+          IdentityPublicKey.TYPES.ECDSA_SECP256K1,
         );
 
         let broadcastError;
@@ -508,7 +510,7 @@ describe('Platform', () => {
 
             const operatorIdentityHash = hash(
               Buffer.concat([
-                masternodeIdentityId.toBuffer(),
+                Buffer.from(masternodeEntry.proRegTxHash, 'hex'),
                 operatorPubKey,
               ]),
             );

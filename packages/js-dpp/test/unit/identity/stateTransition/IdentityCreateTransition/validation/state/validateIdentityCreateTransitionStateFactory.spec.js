@@ -13,13 +13,14 @@ const IdentityAlreadyExistsError = require(
 );
 
 const createStateRepositoryMock = require('../../../../../../../lib/test/mocks/createStateRepositoryMock');
+const IdentityPublicKey = require('../../../../../../../lib/identity/IdentityPublicKey');
 
 describe('validateIdentityCreateTransitionStateFactory', () => {
   let validateIdentityCreateTransitionState;
   let stateTransition;
   let stateRepositoryMock;
 
-  beforeEach(function beforeEach() {
+  beforeEach(async function beforeEach() {
     const privateKey = 'af432c476f65211f45f48f1d42c9c0b497e56696aa1736b40544ef1a496af837';
     stateRepositoryMock = createStateRepositoryMock(this.sinonSandbox);
 
@@ -29,7 +30,7 @@ describe('validateIdentityCreateTransitionStateFactory', () => {
 
     stateTransition = getIdentityCreateTransitionFixture();
 
-    stateTransition.signByPrivateKey(privateKey);
+    await stateTransition.signByPrivateKey(privateKey, IdentityPublicKey.TYPES.ECDSA_SECP256K1);
 
     const rawTransaction = '030000000137feb5676d0851337ea3c9a992496aab7a0b3eee60aeeb9774000b7f4bababa5000000006b483045022100d91557de37645c641b948c6cd03b4ae3791a63a650db3e2fee1dcf5185d1b10402200e8bd410bf516ca61715867666d31e44495428ce5c1090bf2294a829ebcfa4ef0121025c3cc7fbfc52f710c941497fd01876c189171ea227458f501afcb38a297d65b4ffffffff021027000000000000166a14152073ca2300a86b510fa2f123d3ea7da3af68dcf77cb0090a0000001976a914152073ca2300a86b510fa2f123d3ea7da3af68dc88ac00000000';
 

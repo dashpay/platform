@@ -2,6 +2,7 @@
 import DashPlatformProtocol from "@dashevo/dpp";
 
 import Client from "../Client";
+import { IStateTransitionResult } from './IStateTransitionResult';
 
 import broadcastDocument from "./methods/documents/broadcast";
 import createDocument from "./methods/documents/create";
@@ -21,7 +22,6 @@ import resolveName from "./methods/names/resolve";
 import resolveNameByRecord from "./methods/names/resolveByRecord";
 import searchName from "./methods/names/search";
 import broadcastStateTransition from "./broadcastStateTransition";
-import { IPlatformStateProof } from "./IPlatformStateProof";
 import StateRepository from './StateRepository';
 import { latestVersion as latestProtocolVersion } from "@dashevo/dpp/lib/version/protocolVersion";
 
@@ -107,7 +107,7 @@ export class Platform {
      * Broadcasts state transition
      * @param {Object} stateTransition
      */
-    public broadcastStateTransition(stateTransition: any): Promise<IPlatformStateProof|void> {
+    public broadcastStateTransition(stateTransition: any): Promise<IStateTransitionResult|void> {
         return broadcastStateTransition(this, stateTransition);
     };
 
