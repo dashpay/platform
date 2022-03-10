@@ -134,7 +134,6 @@ describe('subscribeToBlockHeadersWithChainLocksHandlerFactory', () => {
         const rawChainLock = data.getChainLock();
         if (rawChainLock) {
           latestChainLock = new ChainLock(Buffer.from(rawChainLock));
-          console.log('rawchainlockddd', latestChainLock)
           stream.cancel();
           streamEnded = true;
         }
@@ -151,8 +150,6 @@ describe('subscribeToBlockHeadersWithChainLocksHandlerFactory', () => {
       console.log('stream ended')
       streamEnded = true;
     });
-
-    console.log('before create transaction')
 
     // Create and broadcast transaction to produce fresh block
     const transaction = faucetWalletAccount.createTransaction({
