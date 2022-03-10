@@ -1,3 +1,14 @@
+## [0.22.0-dev.14](https://github.com/dashevo/platform/compare/v0.22.0-dev.13...v0.22.0-dev.14) (2022-03-10)
+
+
+### ⚠ BREAKING CHANGES
+
+* The fixed masternode identities logic breaks compatibility with previous invalid state.
+
+### Bug Fixes
+
+* **drive:** non-deterministic behaviour in masternode identities logic  ([#287](https://github.com/dashevo/platform/issues/287))
+
 ## [0.22.0-dev.13](https://github.com/dashevo/platform/compare/v0.22.0-dev.12...v0.22.0-dev.13) (2022-03-09)
 
 
