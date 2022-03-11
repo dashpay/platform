@@ -96,6 +96,9 @@ jobs:
       - name: Run test suite
         run: yarn test:suite
 
+      - name: Run tests in browser environment
+        run: yarn test:browsers
+
       - name: Show Docker logs
         if: ${{ failure() }}
         uses: jwalton/gh-docker-logs@v2
