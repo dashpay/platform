@@ -17,7 +17,6 @@ const createFaucetClient = require('./createFaucetClient');
  * @returns {Promise<Client>}
  */
 async function createClientWithFundedWallet(HDPrivateKey = undefined) {
-  const now = new Date()
   const seeds = getDAPISeeds();
 
   const clientOpts = {
@@ -56,8 +55,6 @@ async function createClientWithFundedWallet(HDPrivateKey = undefined) {
   const amount = 40000;
 
   await fundWallet(faucetClient.wallet, client.wallet, amount);
-
-  console.log('createClientWithFundedWallet', new Date() - now)
 
   return client;
 }
