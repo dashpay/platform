@@ -235,7 +235,7 @@ class Account extends EventEmitter {
    * @param {string} transactionHash
    * @param {function} callback
    */
-  subscribeToTransactionMetaData(transactionHash, callback) {
+  subscribeToTxMetadata(transactionHash, callback) {
     this.once(`${EVENTS.TX_METADATA}:${transactionHash}`, callback);
   }
 
@@ -288,7 +288,7 @@ class Account extends EventEmitter {
           return;
         }
 
-        this.subscribeToTransactionMetaData(transactionHash, (metadata) => {
+        this.subscribeToTxMetadata(transactionHash, (metadata) => {
           clearTimeout(rejectTimeout);
           resolve(metadata);
         });
