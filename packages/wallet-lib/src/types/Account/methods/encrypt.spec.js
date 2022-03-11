@@ -29,7 +29,7 @@ describe('Account - encrypt',  function suite() {
   const secret = 'secret';
 
   it('should encrypt extPubKey with aes', () => {
-    const extPubKey = account.keyChain.getKeyForPath(derivationPath, 'HDPublicKey').toString();
+    const extPubKey = account.keyChainStore.getMasterKeyChain().getForPath(derivationPath).key.toString();
     const encryptedExtPubKey = account.encrypt('aes', extPubKey, secret).toString();
     const bytes = CryptoJS.AES.decrypt(encryptedExtPubKey, secret);
     const decrypted = bytes.toString(CryptoJS.enc.Utf8);

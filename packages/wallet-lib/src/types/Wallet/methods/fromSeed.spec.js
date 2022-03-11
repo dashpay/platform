@@ -19,22 +19,22 @@ describe('Wallet - fromSeed', function suite() {
     expect(self1.walletType).to.equal(WALLET_TYPES.HDWALLET);
     expect(self1.mnemonic).to.equal(null);
     expect(self1.HDPrivateKey.toString()).to.equal(knifeFixture.HDRootPrivateKeyTestnet);
-    expect(self1.keyChain.type).to.equal('HDPrivateKey');
-    expect(self1.keyChain.HDPrivateKey.toString()).to.equal(knifeFixture.HDRootPrivateKeyTestnet);
-    expect(self1.keyChain.keys).to.deep.equal({});
+    const keyChain = self1.keyChainStore.getMasterKeyChain()
+    expect(keyChain.rootKeyType).to.equal('HDPrivateKey');
+    expect(keyChain.rootKey.toString()).to.equal(knifeFixture.HDRootPrivateKeyTestnet);
 
     const self2 = {
       fromHDPrivateKey,
       network: 'mainnet',
 
     };
-    fromSeed.call(self2, knifeFixture.seed);
+    fromSeed.call(self2, knifeFixture.seed, self2.network);
     expect(self2.walletType).to.equal(WALLET_TYPES.HDWALLET);
     expect(self2.mnemonic).to.equal(null);
     expect(self2.HDPrivateKey.toString()).to.equal(knifeFixture.HDRootPrivateKeyMainnet);
-    expect(self2.keyChain.type).to.equal('HDPrivateKey');
-    expect(self2.keyChain.HDPrivateKey.toString()).to.equal(knifeFixture.HDRootPrivateKeyMainnet);
-    expect(self2.keyChain.keys).to.deep.equal({});
+    const keyChain2 = self2.keyChainStore.getMasterKeyChain()
+    expect(keyChain2.rootKeyType).to.equal('HDPrivateKey');
+    expect(keyChain2.rootKey.toString()).to.equal(knifeFixture.HDRootPrivateKeyMainnet);
   });
   it('should reject invalid mnemonic', () => {
     const invalidInputs = [

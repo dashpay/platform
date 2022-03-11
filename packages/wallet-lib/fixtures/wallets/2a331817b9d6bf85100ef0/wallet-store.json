@@ -1,0 +1,15 @@
+{
+  "walletId": "6101b44d50",
+  "state": {
+    "mnemonic": null,
+    "paths": {
+      "m/0": {
+        "path": "m/0",
+        "addresses": {
+          "0": "ycDeuTfs4U77bTb5cq17dame28zdWHVYfk"
+        }
+      }
+    },
+    "identities": {}
+  }
+}

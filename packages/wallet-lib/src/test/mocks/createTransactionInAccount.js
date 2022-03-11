@@ -16,8 +16,8 @@ async function createTransactionInAccount(account) {
     }])
     .to(account.getAddress(10).address, 100000);
 
-  await account.importTransactions([walletTransaction.serialize(true)]);
-
+  await account.importTransactions([[walletTransaction.serialize(true)]]);
+  // console.log(account.storage.wallets.get('361032c8a0').state.paths)
   return walletTransaction;
 }
 
