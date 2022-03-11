@@ -1,3 +1,10 @@
+## [0.22.0-dev.15](https://github.com/dashevo/platform/compare/v0.22.0-dev.14...v0.22.0-dev.15) (2022-03-11)
+
+
+### Bug Fixes
+
+* InstantLock waiting period for transaction.. ([#293](https://github.com/dashevo/platform/issues/293))
+
 ## [0.22.0-dev.14](https://github.com/dashevo/platform/compare/v0.22.0-dev.13...v0.22.0-dev.14) (2022-03-10)
 
 
