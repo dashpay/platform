@@ -3,7 +3,6 @@ const convertBuffersToArrays = require('../../../../../util/convertBuffersToArra
 
 /**
  * @param {JsonSchemaValidator} jsonSchemaValidator
- * @param {Object.<number, Function>} proofValidationFunctionsByType
  * @param {validateProtocolVersion} validateProtocolVersion
  * @param {validatePublicKeys} validatePublicKeys
  *
@@ -11,7 +10,6 @@ const convertBuffersToArrays = require('../../../../../util/convertBuffersToArra
  */
 function validateIdentityUpdateTransitionBasicFactory(
   jsonSchemaValidator,
-  proofValidationFunctionsByType,
   validateProtocolVersion,
   validatePublicKeys,
 ) {
@@ -43,22 +41,6 @@ function validateIdentityUpdateTransitionBasicFactory(
         validatePublicKeys(rawStateTransition.addPublicKeys),
       );
     }
-
-    if (!result.isValid()) {
-      return result;
-    }
-
-    const proofValidationFunction = proofValidationFunctionsByType[
-      rawStateTransition.assetLockProof.type
-    ];
-
-    const assetLockProofValidationResult = await proofValidationFunction(
-      rawStateTransition.assetLockProof,
-    );
-
-    result.merge(
-      assetLockProofValidationResult,
-    );
 
     return result;
   }

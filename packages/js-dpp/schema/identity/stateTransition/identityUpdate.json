@@ -10,9 +10,6 @@
       "type": "integer",
       "const": 5
     },
-    "assetLockProof": {
-      "type": "object"
-    },
     "identityId": {
       "type": "array",
       "byteArray": true,
@@ -52,19 +49,14 @@
       "minimum": 0
     }
   },
-  "anyOf" : [
-    {
-      "not" : { "required" : ["disablePublicKeys", "publicKeysDisabledAt"] }
-    },
-    {
-      "required" : ["publicKeysDisabledAt", "disablePublicKeys"]
-    }
-  ],
+  "dependencies" : {
+    "disablePublicKeys" : ["publicKeysDisabledAt"]
+  },
   "additionalProperties": false,
   "required": [
     "protocolVersion",
     "type",
-    "assetLockProof",
+    "identityId",
     "signature",
     "revision"
   ]
