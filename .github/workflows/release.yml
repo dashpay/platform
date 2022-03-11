@@ -24,12 +24,11 @@ jobs:
             node_arch: x64
             compiler: musl
             platform: unknown-linux
-          # Disabled since there are issues with linker
-          # - os: ubuntu-latest
-          #   arch: aarch64
-          #   node_arch: arm64
-          #   compiler: gnu
-          #   platform: unknown-linux
+          - os: ubuntu-latest
+            arch: aarch64
+            node_arch: arm64
+            compiler: gnu
+            platform: unknown-linux
           - os: ubuntu-latest
             arch: aarch64
             node_arch: arm64
