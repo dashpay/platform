@@ -1,5 +1,5 @@
 {
-  "name": "@dashevo/rs-drive",
+  "name": "@strophy/rs-drive",
   "version": "0.22.0-dev.17",
   "description": "Node.JS binding for Rust Drive",
   "main": "node/Drive.js",
