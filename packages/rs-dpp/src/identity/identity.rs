@@ -32,6 +32,7 @@ pub struct Identity {
     pub revision: i64,
     #[serde(skip)]
     pub asset_lock_proof: Option<AssetLockProof>,
+    #[serde(skip)]
     pub metadata: Option<Metadata>,
 }
 
