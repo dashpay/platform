@@ -74,6 +74,7 @@ export declare class Account {
     injectPlugin(unsafePlugin: Plugins, allowSensitiveOperation?: boolean, awaitOnInjection?: boolean): Promise<any>;
     sign(object: Transaction, privateKeys: [PrivateKey], sigType?: number): Transaction;
     waitForInstantLock(transactionHash: string): Promise<InstantLock>;
+    waitForTxMetadata(transactionHash: string): Promise<any>;
 }
 
 export declare interface RecipientOptions {

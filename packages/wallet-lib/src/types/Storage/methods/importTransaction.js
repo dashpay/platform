@@ -1,7 +1,7 @@
 const { Transaction } = require('@dashevo/dashcore-lib');
 const { Output } = Transaction;
 const { InvalidDashcoreTransaction } = require('../../../errors');
-const { FETCHED_CONFIRMED_TRANSACTION } = require('../../../EVENTS');
+const { FETCHED_CONFIRMED_TRANSACTION, TX_METADATA } = require('../../../EVENTS');
 
 const parseStringifiedTransaction = (stringified) => new Transaction(stringified);
 /**
@@ -57,6 +57,8 @@ const importTransaction = function importTransaction(transaction, transactionMet
       } else {
         mappedTransactionsHeight[height] = ([mappedTransactionObject]);
       }
+
+      this.announce(TX_METADATA, { hash: transaction.hash, metadata: transactionMetadata });
     }
   }
 

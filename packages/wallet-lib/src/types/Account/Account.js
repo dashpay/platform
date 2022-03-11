@@ -66,6 +66,7 @@ class Account extends EventEmitter {
     // if (this.debug) process.env.LOG_LEVEL = 'debug';
 
     this.waitForInstantLockTimeout = wallet.waitForInstantLockTimeout;
+    this.waitForTxMetadataTimeout = wallet.waitForTxMetadataTimeout;
 
     this.walletType = wallet.walletType;
     this.offlineMode = wallet.offlineMode;
@@ -100,6 +101,9 @@ class Account extends EventEmitter {
     this.storage.on(EVENTS.FETCHED_CONFIRMED_TRANSACTION, (ev) => this.emit(ev.type, ev));
     this.storage.on(EVENTS.UNCONFIRMED_BALANCE_CHANGED, (ev) => this.emit(ev.type, ev));
     this.storage.on(EVENTS.CONFIRMED_BALANCE_CHANGED, (ev) => this.emit(ev.type, ev));
+    this.storage.on(EVENTS.TX_METADATA, (ev) => {
+      this.emit(`${ev.type}:${ev.payload.hash}`, ev.payload.metadata);
+    });
     this.storage.on(EVENTS.BLOCKHEADER, (ev) => this.emit(ev.type, ev));
     this.storage.on(EVENTS.BLOCKHEIGHT_CHANGED, (ev) => this.emit(ev.type, ev));
     this.storage.on(EVENTS.BLOCK, (ev) => this.emit(ev.type, ev));
@@ -228,6 +232,14 @@ class Account extends EventEmitter {
   }
 
   /**
+   * @param {string} transactionHash
+   * @param {function} callback
+   */
+  subscribeToTransactionMetaData(transactionHash, callback) {
+    this.once(`${EVENTS.TX_METADATA}:${transactionHash}`, callback);
+  }
+
+  /**
    * Waits for instant lock for a transaction or throws after a timeout
    * @param {string} transactionHash - instant lock to wait for
    * @param {number} timeout - in milliseconds before throwing an error if the lock didn't arrive
@@ -253,6 +265,37 @@ class Account extends EventEmitter {
       new Promise((resolve, reject) => {
         rejectTimeout = setTimeout(() => {
           reject(new Error(`InstantLock waiting period for transaction ${transactionHash} timed out`));
+        }, timeout);
+      }),
+    ]);
+  }
+
+  /**
+   * Waits for metadata of a transaction or throws an error after a timeout
+   * @param {string} transactionHash - metadata of tx to wait for
+   * @param {number} timeout - in ms before throwing an error if the metadata didn't arrive
+   * @return {Promise<Object>}
+   */
+  waitForTxMetadata(transactionHash, timeout = this.waitForTxMetadataTimeout) {
+    let rejectTimeout;
+
+    return Promise.race([
+      new Promise((resolve) => {
+        const { transactionsMetadata } = this.storage;
+        if (transactionsMetadata && transactionsMetadata[transactionHash]) {
+          clearTimeout(rejectTimeout);
+          resolve(transactionsMetadata[transactionHash]);
+          return;
+        }
+
+        this.subscribeToTransactionMetaData(transactionHash, (metadata) => {
+          clearTimeout(rejectTimeout);
+          resolve(metadata);
+        });
+      }),
+      new Promise((resolve, reject) => {
+        rejectTimeout = setTimeout(() => {
+          reject(new Error(`Metadata waiting period for transaction ${transactionHash} timed out`));
         }, timeout);
       }),
     ]);
