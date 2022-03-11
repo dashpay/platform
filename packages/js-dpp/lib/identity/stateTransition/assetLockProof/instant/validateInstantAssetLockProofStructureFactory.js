@@ -5,7 +5,6 @@ const instantAssetLockProofSchema = require('../../../../../schema/identity/stat
 const convertBuffersToArrays = require('../../../../util/convertBuffersToArrays');
 const InvalidInstantAssetLockProofError = require('../../../../errors/consensus/basic/identity/InvalidInstantAssetLockProofError');
 const IdentityAssetLockProofLockedTransactionMismatchError = require('../../../../errors/consensus/basic/identity/IdentityAssetLockProofLockedTransactionMismatchError');
-const InvalidIdentityAssetLockProofSignatureError = require('../../../../errors/consensus/basic/identity/InvalidInstantAssetLockProofSignatureError');
 
 /**
  * @param {JsonSchemaValidator} jsonSchemaValidator
@@ -49,11 +48,12 @@ function validateInstantAssetLockProofStructureFactory(
       return result;
     }
 
-    if (!await stateRepository.verifyInstantLock(instantLock)) {
-      result.addError(new InvalidIdentityAssetLockProofSignatureError());
-
-      return result;
-    }
+    // TODO: Uncomment when chainlock proofs will be implemented
+    // if (!await stateRepository.verifyInstantLock(instantLock)) {
+    //   result.addError(new InvalidIdentityAssetLockProofSignatureError());
+    //
+    //   return result;
+    // }
 
     const validateAssetLockTransactionResult = await validateAssetLockTransaction(
       rawAssetLockProof.transaction,
