@@ -141,13 +141,11 @@ describe('subscribeToBlockHeadersWithChainLocksHandlerFactory', () => {
     });
 
     let streamError;
-    stream.on('error', (e, e1) => {
-      console.error(e, e1)
+    stream.on('error', (e) => {
       streamError = e;
     });
 
     stream.on('end', () => {
-      console.log('stream ended')
       streamEnded = true;
     });
 
@@ -161,7 +159,6 @@ describe('subscribeToBlockHeadersWithChainLocksHandlerFactory', () => {
     // Wait for stream ending
     while (!streamEnded) {
       if (streamError) {
-        console.error(streamError.stack)
         throw streamError;
       }
 

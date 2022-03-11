@@ -1,4 +1,3 @@
-/* eslint-disable import/no-extraneous-dependencies */
 const webpack = require('webpack');
 const dotenvResult = require('dotenv-safe').config();
 
@@ -69,7 +68,7 @@ module.exports = (config) => {
     logLevel: config.LOG_INFO,
     browsers: ['ChromeHeadless'],
     singleRun: true,
-    concurrency: 1,
+    concurrency: Infinity,
     plugins: [
       karmaMocha,
       karmaMochaReporter,
