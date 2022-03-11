@@ -13,6 +13,10 @@ done
 ## Install multilib
 apt update
 apt install -y gcc-multilib
+if [[ $target = "aarch64-unknown-linux-gnu" ]]
+then
+    apt install -y gcc-aarch64-linux-gnu libstdc++-9-dev-arm64-cross
+fi
 
 ## Install Node.JS
 curl -fsSL https://deb.nodesource.com/setup_16.x | sudo -E bash -
