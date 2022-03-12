@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 
+set -ex
+
 CORE_PROTO_PATH="$PWD/protos/core/v0"
 CORE_CLIENTS_PATH="$PWD/clients/core/v0"
 
