@@ -2584,7 +2584,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["@dashevo/feature-flags-contract", "workspace:packages/feature-flags-contract"],
             ["@dashevo/grpc-common", "workspace:packages/js-grpc-common"],
             ["@dashevo/masternode-reward-shares-contract", "workspace:packages/masternode-reward-shares-contract"],
-            ["@dashevo/rs-drive", "npm:0.22.0-dev.17"],
+            ["@strophy/rs-drive", "npm:0.22.0-dev.18"],
             ["@types/pino", "npm:6.3.12"],
             ["ajv", "npm:8.8.1"],
             ["ajv-keywords", "virtual:34fbe5a7dba3086dcbcce8a7faed986b10f7a208f11db70499feb2c1afd76e24089e5b95f9e3b937e89512de1cf4937177cc2000303a1e908baefc73362a7d48#npm:5.0.0"],
@@ -2804,20 +2804,6 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           "packageLocation": "./.yarn/cache/@dashevo-re2-wasm-npm-1.0.4-89e4ca33d4-4f1fca10c5.zip/node_modules/@dashevo/re2-wasm/",
           "packageDependencies": [
             ["@dashevo/re2-wasm", "npm:1.0.4"]
-          ],
-          "linkType": "HARD",
-        }]
-      ]],
-      ["@dashevo/rs-drive", [
-        ["npm:0.22.0-dev.17", {
-          "packageLocation": "./.yarn/unplugged/@dashevo-rs-drive-npm-0.22.0-dev.17-8956445397/node_modules/@dashevo/rs-drive/",
-          "packageDependencies": [
-            ["@dashevo/rs-drive", "npm:0.22.0-dev.17"],
-            ["@dashevo/dpp", "workspace:packages/js-dpp"],
-            ["cargo-cp-artifact", "npm:0.1.6"],
-            ["cbor", "npm:8.1.0"],
-            ["neon-load-or-build", "npm:2.2.2"],
-            ["neon-tag-prebuild", "https://github.com/shumkov/neon-tag-prebuild.git#commit=a429834da27432b129eceb737e4d2b3f03fa5496"]
           ],
           "linkType": "HARD",
         }]
@@ -3682,6 +3668,20 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           "packageLocation": "./.yarn/cache/@sinonjs-text-encoding-npm-0.7.1-865b0079b5-130de0bb56.zip/node_modules/@sinonjs/text-encoding/",
           "packageDependencies": [
             ["@sinonjs/text-encoding", "npm:0.7.1"]
+          ],
+          "linkType": "HARD",
+        }]
+      ]],
+      ["@strophy/rs-drive", [
+        ["npm:0.22.0-dev.18", {
+          "packageLocation": "./.yarn/unplugged/@strophy-rs-drive-npm-0.22.0-dev.18-7f59e158cb/node_modules/@strophy/rs-drive/",
+          "packageDependencies": [
+            ["@strophy/rs-drive", "npm:0.22.0-dev.18"],
+            ["@dashevo/dpp", "workspace:packages/js-dpp"],
+            ["cargo-cp-artifact", "npm:0.1.6"],
+            ["cbor", "npm:8.1.0"],
+            ["neon-load-or-build", "npm:2.2.2"],
+            ["neon-tag-prebuild", "https://github.com/shumkov/neon-tag-prebuild.git#commit=a429834da27432b129eceb737e4d2b3f03fa5496"]
           ],
           "linkType": "HARD",
         }]
