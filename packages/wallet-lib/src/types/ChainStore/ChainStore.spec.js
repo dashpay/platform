@@ -81,21 +81,21 @@ describe('ChainStore - class', function suite() {
     const importedChainStore = new ChainStore();
     importedChainStore.importState(exportedState);
 
-    expect(importedChainStore.network).to.equal(testnetChainStore.network)
-    expect(importedChainStore.state.fees).to.deep.equal(testnetChainStore.state.fees)
-    expect(importedChainStore.state.blockHeight).to.deep.equal(testnetChainStore.state.blockHeight)
     expect(importedChainStore.state.blockHeaders).to.deep.equal(testnetChainStore.state.blockHeaders)
     expect(importedChainStore.state.instantLocks).to.deep.equal(testnetChainStore.state.instantLocks)
-    expect([...importedChainStore.state.addresses]).to.deep.equal([...testnetChainStore.state.addresses])
 
-    const importedTransactionsState = [...importedChainStore.state.transactions];
-    const exportedTransactionsState = exportedState.state.transactions;
+    const expectedTransactions = testnetChainStore.state.transactions;
+    const importedTransactions = importedChainStore.state.transactions;
 
-    importedTransactionsState.forEach(([hash, {transaction, metadata}]) => {
-      expect(exportedTransactionsState[hash]).to.deep.equal({
-        transaction: transaction.toString(),
-        metadata
-      })
+    expect(importedTransactions.size).to.equal(expectedTransactions.size)
+
+    Array.from(expectedTransactions.keys()).forEach(txHash => {
+      expect(importedTransactions.has(txHash)).to.equal(true)
+      expect(importedTransactions.get(txHash).transaction.toString())
+        .to.equal(expectedTransactions.get(txHash).transaction.toString())
+
+      expect(importedTransactions.get(txHash).metadata)
+        .to.deep.equal(expectedTransactions.get(txHash).metadata)
     })
   });
 });
