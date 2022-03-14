@@ -1,9 +1,7 @@
 class KeyChainStore {
   constructor() {
     this.keyChains = new Map();
-    this.walletKeyChainId = null;
     this.masterKeyChainId = null;
-    this.accountKeyChains = new Map();
   }
 }
 

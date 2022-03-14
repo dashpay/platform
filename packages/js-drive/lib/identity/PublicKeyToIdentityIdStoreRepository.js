@@ -5,10 +5,10 @@ const Identifier = require('@dashevo/dpp/lib/Identifier');
 class PublicKeyToIdentityIdStoreRepository {
   /**
    *
-   * @param {MerkDbStore} publicKeyToIdentityIdStore
+   * @param {GroveDBStore} groveDBStore
    */
-  constructor(publicKeyToIdentityIdStore) {
-    this.storage = publicKeyToIdentityIdStore;
+  constructor(groveDBStore) {
+    this.storage = groveDBStore;
   }
 
   /**
@@ -16,12 +16,12 @@ class PublicKeyToIdentityIdStoreRepository {
    *
    * @param {Buffer} publicKeyHash
    * @param {Identifier} identityId
-   * @param {MerkDbTransaction} [transaction]
+   * @param {boolean} [useTransaction=false]
    *
    * @return {Promise<PublicKeyToIdentityIdStoreRepository>}
    */
-  async store(publicKeyHash, identityId, transaction = undefined) {
-    const identityIdsSerialized = this.storage.get(publicKeyHash, transaction);
+  async store(publicKeyHash, identityId, useTransaction = false) {
+    const identityIdsSerialized = await this.fetchBuffer(publicKeyHash, useTransaction);
 
     let identityIds = [];
     if (identityIdsSerialized) {
@@ -31,13 +31,13 @@ class PublicKeyToIdentityIdStoreRepository {
     if (identityIds.find((id) => id.equals(identityId)) === undefined) {
       identityIds.push(identityId.toBuffer());
 
-      this.storage.put(
+      await this.storage.put(
+        PublicKeyToIdentityIdStoreRepository.TREE_PATH,
         publicKeyHash,
         cbor.encode(identityIds),
-        transaction,
+        { useTransaction },
       );
     }
-
     return this;
   }
 
@@ -45,24 +45,28 @@ class PublicKeyToIdentityIdStoreRepository {
    * Fetch serialized identity ids by public key hash from database
    *
    * @param {Buffer} publicKeyHash
-   * @param {MerkDbTransaction} [transaction]
+   * @param {boolean} [useTransaction=false]
    *
    * @return {Promise<Buffer|null>}
    */
-  async fetchBuffer(publicKeyHash, transaction = undefined) {
-    return this.storage.get(publicKeyHash, transaction);
+  async fetchBuffer(publicKeyHash, useTransaction = false) {
+    return this.storage.get(
+      PublicKeyToIdentityIdStoreRepository.TREE_PATH,
+      publicKeyHash,
+      { useTransaction },
+    );
   }
 
   /**
    * Fetch deserialized identity ids by public key hash from database
    *
    * @param {Buffer} publicKeyHash
-   * @param {MerkDbTransaction} [transaction]
+   * @param {boolean} [useTransaction=false]
    *
    * @return {Promise<Identifier[]>}
    */
-  async fetch(publicKeyHash, transaction = undefined) {
-    const identityIdsSerialized = this.storage.get(publicKeyHash, transaction);
+  async fetch(publicKeyHash, useTransaction = false) {
+    const identityIdsSerialized = await this.fetchBuffer(publicKeyHash, useTransaction);
 
     if (!identityIdsSerialized) {
       return [];
@@ -72,6 +76,21 @@ class PublicKeyToIdentityIdStoreRepository {
 
     return identityIds.map((id) => new Identifier(id));
   }
+
+  /**
+   * @param {Object} [options]
+   * @param {boolean} [options.useTransaction=false]
+   * @param {boolean} [options.skipIfExists]
+   *
+   * @return {Promise<PublicKeyToIdentityIdStoreRepository>}
+   */
+  async createTree(options = {}) {
+    await this.storage.createTree([], PublicKeyToIdentityIdStoreRepository.TREE_PATH[0], options);
+
+    return this;
+  }
 }
+
+PublicKeyToIdentityIdStoreRepository.TREE_PATH = [Buffer.from([2])];
 
 module.exports = PublicKeyToIdentityIdStoreRepository;

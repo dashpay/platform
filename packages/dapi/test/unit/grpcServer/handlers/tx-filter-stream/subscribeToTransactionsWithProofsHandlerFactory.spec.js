@@ -174,14 +174,14 @@ describe('subscribeToTransactionsWithProofsHandlerFactory', () => {
   it('should subscribe to new transactions if count is not specified', async function it() {
     const blockHash = Buffer.from('00000bafbc94add76cb75e2ec92894837288a481e5c005f6563d91623bf8bc2c', 'hex');
 
+    const writableStub = this.sinon.stub(AcknowledgingWritable.prototype, 'write');
+
     call.request.setFromBlockHash(blockHash);
     call.request.setCount(0);
 
     call.request = TransactionsWithProofsRequest.deserializeBinary(call.request.serializeBinary());
 
     call = new GrpcCallMock(this.sinon, call.request);
-
-    const writableStub = this.sinon.stub(AcknowledgingWritable.prototype, 'write');
 
     coreAPIMock.getBlockStats.resolves({ height: 1 });
     coreAPIMock.getBestBlockHeight.resolves(10);

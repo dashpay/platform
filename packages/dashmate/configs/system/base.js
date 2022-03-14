@@ -33,7 +33,7 @@ module.exports = {
   },
   core: {
     docker: {
-      image: 'dashpay/dashd:0.17',
+      image: 'dashpay/dashd:0.18.0.0-beta4',
     },
     p2p: {
       port: 20001,
@@ -89,19 +89,14 @@ module.exports = {
       },
       api: {
         docker: {
-          image: 'dashpay/dapi:0.21',
+          image: 'dashpay/dapi:0.22.0-dev.7',
         },
       },
     },
     drive: {
-      mongodb: {
-        docker: {
-          image: 'mongo:4.2',
-        },
-      },
       abci: {
         docker: {
-          image: 'dashpay/drive:0.21',
+          image: 'dashpay/drive:0.22.0-dev.7',
         },
         log: {
           stdout: {
@@ -109,11 +104,11 @@ module.exports = {
           },
           prettyFile: {
             level: 'silent',
-            path: path.join(HOME_DIR_PATH, 'base', 'logs', 'drive-pretty.log'),
+            path: path.join(HOME_DIR_PATH, 'logs', 'base', 'drive-pretty.log'),
           },
           jsonFile: {
             level: 'silent',
-            path: path.join(HOME_DIR_PATH, 'base', 'logs', 'drive-json.log'),
+            path: path.join(HOME_DIR_PATH, 'logs', 'base', 'drive-json.log'),
           },
         },
         validatorSet: {
@@ -122,7 +117,7 @@ module.exports = {
       },
       tenderdash: {
         docker: {
-          image: 'dashpay/tenderdash:0.7.0-dev',
+          image: 'dashpay/tenderdash:0.7',
         },
         p2p: {
           port: 26656,

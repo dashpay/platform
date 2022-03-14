@@ -11,7 +11,7 @@ export async function createTransactionInAccount(account) {
         }])
         .to(account.getAddress(10).address, 100000);
 
-    await account.importTransactions([walletTransaction.serialize(true)]);
+    await account.importTransactions([[walletTransaction.serialize(true)]]);
 
     return walletTransaction;
 }

@@ -6,10 +6,7 @@ const chalk = require('chalk');
 
 const ZMQClient = require('../lib/core/ZmqClient');
 
-const { init: initHashFunction } = require('../lib/rootTree/hashFunction');
-
 const createDIContainer = require('../lib/createDIContainer');
-const BlockExecutionContextRepository = require('../lib/blockExecution/BlockExecutionContextRepository');
 
 const { version: driveVersion } = require('../package.json');
 
@@ -25,16 +22,6 @@ const banner = '\n ____       ______      ____        __  __                 ___
 console.log(chalk.hex('#008de4')(banner));
 
 (async function main() {
-  /**
-   * Initialize hashFunction module
-   *
-   * It needs to be initialized prior to anything else - createDIContainer uses hashFunction,
-   * and it won't work if left uninitialized. This is workaround to blake3 causing a segfault
-   * on node14, and init function initializes WASM build instead of NEON, which is default behaviour
-   */
-
-  await initHashFunction();
-
   const container = createDIContainer(process.env);
   const logger = container.resolve('logger');
   const dpp = container.resolve('dpp');
@@ -69,47 +56,6 @@ console.log(chalk.hex('#008de4')(banner));
 
   await dpp.initialize();
   await transactionalDpp.initialize();
-
-  /**
-   * Initialize Block Execution Contexts
-   */
-  const blockExecutionContext = container.resolve('blockExecutionContext');
-  const previousBlockExecutionContext = container.resolve('previousBlockExecutionContext');
-  const blockExecutionContextRepository = container.resolve('blockExecutionContextRepository');
-
-  const persistedBlockExecutionContext = await blockExecutionContextRepository.fetch(
-    BlockExecutionContextRepository.KEY_PREFIX_CURRENT,
-  );
-
-  const persistedPreviousBlockExecutionContext = await blockExecutionContextRepository.fetch(
-    BlockExecutionContextRepository.KEY_PREFIX_PREVIOUS,
-  );
-
-  blockExecutionContext.populate(persistedBlockExecutionContext);
-  previousBlockExecutionContext.populate(persistedPreviousBlockExecutionContext);
-
-  /**
-   * Initialize Credits Distribution Pool
-   */
-
-  const creditsDistributionPoolRepository = container.resolve('creditsDistributionPoolRepository');
-  const creditsDistributionPool = container.resolve('creditsDistributionPool');
-
-  const fetchedCreditsDistributionPool = await creditsDistributionPoolRepository.fetch();
-  creditsDistributionPool.populate(fetchedCreditsDistributionPool.toJSON());
-
-  /**
-   * Make sure MongoDB is running
-   */
-
-  logger.info('Connecting to MongoDB...');
-
-  const waitReplicaSetInitialize = container.resolve('waitReplicaSetInitialize');
-  await waitReplicaSetInitialize((retry, maxRetries) => {
-    logger.info(
-      `waiting for replica set to be initialized ${retry}/${maxRetries}...`,
-    );
-  });
 
   /**
    * Make sure Core is synced

@@ -1,19 +1,24 @@
 const { expect } = require('chai');
 const mockedStore = require('../../../../fixtures/sirentonight-fullstore-snapshot-1562711703');
 const getIdentityIds = require('./getIdentityIds');
+const WalletStore = require("../../WalletStore/WalletStore");
 
 let mockedWallet;
 let fetchTransactionInfoCalledNb = 0;
 describe('Wallet#getIdentityIds', function suite() {
   this.timeout(10000);
   before(() => {
-    const storageHDW = {
-      store: mockedStore,
-      getStore: () => mockedStore,
-      mappedAddress: {},
-      getIndexedIdentityIds: () => mockedStore.wallets[Object.keys(mockedStore.wallets)].identityIds,
-    };
     const walletId = Object.keys(mockedStore.wallets)[0];
+    const walletStore = new WalletStore(walletId)
+    const identityIds = mockedStore.wallets[walletId].identityIds;
+    identityIds.forEach((id, i) => {
+      walletStore.insertIdentityIdAtIndex(id, i)
+    })
+
+    const storageHDW = {
+      getWalletStore: () => walletStore
+    };
+
     mockedWallet = {
       walletId,
       index: 0,

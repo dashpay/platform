@@ -5,9 +5,10 @@ const {WALLET_TYPES} = require('../CONSTANTS');
 
 const categorizeTransactions = require('./categorizeTransactions');
 const transactionsWithMetadataFixtures = require('../../fixtures/wallets/apart-trip-dignity/transactions-with-metadata.json');
-const addressesFixtures = require('../../fixtures/wallets/apart-trip-dignity/addresses.json');
-const walletFixtures = require('../../fixtures/wallets/apart-trip-dignity/wallet.json');
 const expectedResults = require('../../fixtures/wallets/apart-trip-dignity/categorizeTransactions.expectedResults');
+const getFixtureHDAccountWithStorage = require("../../fixtures/wallets/apart-trip-dignity/getFixtureAccountWithStorage");
+
+const mockedHDAccount = getFixtureHDAccountWithStorage();
 
 const prepareTransactionsWithMetadata = () => {
   const transactionsWithMetadata = [];
@@ -46,14 +47,7 @@ const normalizeResults = (results) =>{
 describe('Utils - categorizeTransactions', function suite() {
   const transactionsWithMetadata = prepareTransactionsWithMetadata();
 
-  const accountStore = {
-    accounts: walletFixtures.store.accounts,
-    network: walletFixtures.network,
-    mnemonic: null,
-    type: walletFixtures.type,
-    identityIds: walletFixtures.identityIds,
-    addresses: addressesFixtures
-  };
+  const accountStore = mockedHDAccount.storage.getWalletStore(mockedHDAccount.walletId);
   const accountIndex = 0;
   const walletType = WALLET_TYPES.HDWALLET;
 

@@ -24,6 +24,7 @@ const GrpcCallMock = require('../../../../../lib/test/mock/GrpcCallMock');
 const subscribeToBlockHeadersWithChainLocksHandlerFactory = require(
   '../../../../../lib/grpcServer/handlers/blockheaders-stream/subscribeToBlockHeadersWithChainLocksHandlerFactory',
 );
+const ChainDataProvider = require('../../../../../lib/chainDataProvider/ChainDataProvider');
 
 let coreAPIMock;
 let zmqClientMock;
@@ -33,11 +34,15 @@ describe('subscribeToBlockHeadersWithChainLocksHandlerFactory', () => {
   let subscribeToBlockHeadersWithChainLocksHandler;
   let getHistoricalBlockHeadersIteratorMock;
   let subscribeToNewBlockHeadersMock;
+  let chainDataProvider;
 
-  beforeEach(function () {
+  const blockHash = Buffer.from('00000bafbc94add76cb75e2ec92894837288a481e5c005f6563d91623bf8bc2c', 'hex');
+
+  beforeEach(function beforeEach() {
     coreAPIMock = {
       getBlock: this.sinon.stub(),
       getBlockStats: this.sinon.stub(),
+      getBlockHeaders: this.sinon.stub(),
       getBestBlockHeight: this.sinon.stub(),
       getBlockHash: this.sinon.stub(),
       getBestChainLock: this.sinon.stub(),
@@ -51,20 +56,21 @@ describe('subscribeToBlockHeadersWithChainLocksHandlerFactory', () => {
     getHistoricalBlockHeadersIteratorMock = () => asyncGenerator();
     zmqClientMock = { on: this.sinon.stub(), topics: { hashblock: 'fake' } };
 
+    chainDataProvider = new ChainDataProvider(coreAPIMock, zmqClientMock);
+
     // eslint-disable-next-line operator-linebreak
     subscribeToBlockHeadersWithChainLocksHandler =
       subscribeToBlockHeadersWithChainLocksHandlerFactory(
         getHistoricalBlockHeadersIteratorMock,
         coreAPIMock,
+        chainDataProvider,
         zmqClientMock,
         subscribeToNewBlockHeadersMock,
       );
   });
 
-  it('should subscribe to newBlockHeaders', async function () {
+  it('should subscribe to newBlockHeaders', async function it() {
     this.sinon.stub(AcknowledgingWritable.prototype, 'write');
-
-    const blockHash = Buffer.from('00000bafbc94add76cb75e2ec92894837288a481e5c005f6563d91623bf8bc2c', 'hex');
 
     let request = new BlockHeadersWithChainLocksRequest();
 
@@ -84,18 +90,14 @@ describe('subscribeToBlockHeadersWithChainLocksHandlerFactory', () => {
 
     await subscribeToBlockHeadersWithChainLocksHandler(call);
     expect(subscribeToNewBlockHeadersMock).to.have.been.called();
-    expect(coreAPIMock.getBlockStats).to.be.calledOnceWithExactly(
-      blockHash.toString('hex'),
-      ['height'],
-    );
+    expect(coreAPIMock.getBlockStats).to.be.calledOnceWithExactly(blockHash
+      .toString('hex'), ['height']);
   });
 
-  it('should subscribe from block hash', async function () {
+  it('should subscribe from block hash', async function it() {
     const writableStub = this.sinon.stub(AcknowledgingWritable.prototype, 'write');
-
-    const blockHash = Buffer.from('00000bafbc94add76cb75e2ec92894837288a481e5c005f6563d91623bf8bc2c', 'hex');
-
     let request = new BlockHeadersWithChainLocksRequest();
+
     request.setFromBlockHash(blockHash);
     request.setCount(0);
 
@@ -103,7 +105,8 @@ describe('subscribeToBlockHeadersWithChainLocksHandlerFactory', () => {
 
     call = new GrpcCallMock(this.sinon, request);
 
-    coreAPIMock.getBestChainLock.resolves({
+    // monkey-patching
+    chainDataProvider.chainLock = new ChainLock({
       height: 1,
       signature: Buffer.from('fakesig', 'hex'),
       blockHash: Buffer.from('fakeHash', 'hex'),
@@ -141,7 +144,7 @@ describe('subscribeToBlockHeadersWithChainLocksHandlerFactory', () => {
     );
   });
 
-  it('should subscribe from block height', async function () {
+  it('should subscribe from block height', async function it() {
     this.sinon.stub(AcknowledgingWritable.prototype, 'write');
 
     const blockHeight = 1;
@@ -173,11 +176,7 @@ describe('subscribeToBlockHeadersWithChainLocksHandlerFactory', () => {
     expect(subscribeToNewBlockHeadersMock).to.not.have.been.called();
   });
 
-  it('should handle getBlockStats RPC method errors', async function () {
-    this.sinon.stub(AcknowledgingWritable.prototype, 'write');
-
-    const blockHash = Buffer.from('00000bafbc94add76cb75e2ec92894837288a481e5c005f6563d91623bf8bc2c', 'hex');
-
+  it('should handle getBlockStats RPC method errors', async function it() {
     let request = new BlockHeadersWithChainLocksRequest();
 
     request.setFromBlockHash(blockHash);

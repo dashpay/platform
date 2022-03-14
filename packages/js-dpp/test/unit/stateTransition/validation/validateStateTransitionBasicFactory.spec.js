@@ -18,6 +18,7 @@ const MissingStateTransitionTypeError = require('../../../../lib/errors/consensu
 const InvalidStateTransitionTypeError = require('../../../../lib/errors/consensus/basic/stateTransition/InvalidStateTransitionTypeError');
 const createDPPMock = require('../../../../lib/test/mocks/createDPPMock');
 const SomeConsensusError = require('../../../../lib/test/mocks/SomeConsensusError');
+const IdentityPublicKey = require('../../../../lib/identity/IdentityPublicKey');
 
 describe('validateStateTransitionBasicFactory', () => {
   let validateStateTransitionBasic;
@@ -28,7 +29,7 @@ describe('validateStateTransitionBasicFactory', () => {
   let createStateTransitionMock;
   let stateTransition;
 
-  beforeEach(function beforeEach() {
+  beforeEach(async function beforeEach() {
     validationFunctionMock = this.sinonSandbox.stub();
 
     const validationFunctionsByType = {
@@ -42,7 +43,7 @@ describe('validateStateTransitionBasicFactory', () => {
     dataContractFactory = new DataContractFactory(createDPPMock(), undefined);
 
     stateTransition = dataContractFactory.createDataContractCreateTransition(dataContract);
-    stateTransition.signByPrivateKey(privateKey);
+    await stateTransition.signByPrivateKey(privateKey, IdentityPublicKey.TYPES.ECDSA_SECP256K1);
 
     rawStateTransition = stateTransition.toObject();
 

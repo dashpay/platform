@@ -1,5 +1,6 @@
 import {
     Transaction,
+    TransactionHistory,
     AddressObj,
     AddressInfo,
     AddressType,
@@ -9,9 +10,9 @@ import {
     Strategy,
     Network,
     broadcastTransactionOpts,
-    Plugins, RawTransaction, TransactionsMap, WalletObj, StatusInfo, TransactionsHistory
+    Plugins, RawTransaction, TransactionsMap, WalletObj, StatusInfo
 } from "../types";
-import { KeyChain } from "../KeyChain/KeyChain";
+import { DerivableKeyChain } from "../DerivableKeyChain/DerivableKeyChain";
 import { InstantLock } from "@dashevo/dashcore-lib";
 import { Identities, Wallet} from "../../index";
 import { Transport } from "../../transport/Transport";
@@ -30,7 +31,7 @@ export declare class Account {
     cacheBlockHeaders?: boolean;
     label?: string | null;
     strategy?: Strategy;
-    keyChain: KeyChain;
+    keyChainSore: KeyChainStore;
     state: any;
     storage: Storage;
     store: Storage.store;
@@ -62,7 +63,7 @@ export declare class Account {
     getPrivateKeys(addressList: [PublicAddress]): [PrivateKey];
     getTotalBalance(displayDuffs?: boolean): number;
     getTransaction(txid: transactionId): Transaction;
-    getTransactionHistory(): TransactionsHistory;
+    getTransactionHistory(): TransactionHistory;
     getTransactions(): [Transaction];
     getUTXOS(): [UnspentOutput];
     getUnconfirmedBalance(displayDuffs?: boolean): number;

@@ -12,36 +12,28 @@ const {
   v0: {
     GetIdentitiesByPublicKeyHashesResponse,
     ResponseMetadata,
-    StoreTreeProofs,
   },
 } = require('@dashevo/dapi-grpc');
 
 const Identifier = require('@dashevo/dpp/lib/identifier/Identifier');
 const InvalidArgumentAbciError = require('../../errors/InvalidArgumentAbciError');
+const UnimplementedAbciError = require('../../errors/UnimplementedAbciError');
 
 /**
  *
- * @param {PublicKeyToIdentityIdStoreRepository} previousPublicKeyToIdentityIdRepository
- * @param {IdentityStoreRepository} previousIdentityRepository
+ * @param {PublicKeyToIdentityIdStoreRepository} signedPublicKeyToIdentityIdRepository
+ * @param {IdentityStoreRepository} signedIdentityRepository
  * @param {number} maxIdentitiesPerRequest
- * @param {RootTree} previousRootTree
- * @param {IdentitiesStoreRootTreeLeaf} previousIdentitiesStoreRootTreeLeaf
- * @param {PublicKeyToIdentityIdStoreRootTreeLeaf} previousPublicKeyToIdentityIdStoreRootTreeLeaf
  * @param {createQueryResponse} createQueryResponse
- * @param {BlockExecutionContext} blockExecutionContext
- * @param {BlockExecutionContext} previousBlockExecutionContext
+ * @param {BlockExecutionContextStack} blockExecutionContextStack
  * @return {identitiesByPublicKeyHashesQueryHandler}
  */
 function identitiesByPublicKeyHashesQueryHandlerFactory(
-  previousPublicKeyToIdentityIdRepository,
-  previousIdentityRepository,
+  signedPublicKeyToIdentityIdRepository,
+  signedIdentityRepository,
   maxIdentitiesPerRequest,
-  previousRootTree,
-  previousIdentitiesStoreRootTreeLeaf,
-  previousPublicKeyToIdentityIdStoreRootTreeLeaf,
   createQueryResponse,
-  blockExecutionContext,
-  previousBlockExecutionContext,
+  blockExecutionContextStack,
 ) {
   /**
    * @typedef identitiesByPublicKeyHashesQueryHandler
@@ -60,8 +52,8 @@ function identitiesByPublicKeyHashesQueryHandlerFactory(
       );
     }
 
-    // There is no signed state (current committed block height less then 2)
-    if (blockExecutionContext.isEmpty() || previousBlockExecutionContext.isEmpty()) {
+    // There is no signed state (current committed block height less than 3)
+    if (!blockExecutionContextStack.getLast()) {
       const response = new GetIdentitiesByPublicKeyHashesResponse();
 
       response.setIdentitiesList(publicKeyHashes.map(() => cbor.encode([])));
@@ -72,22 +64,22 @@ function identitiesByPublicKeyHashesQueryHandlerFactory(
       });
     }
 
+    if (request.prove) {
+      throw new UnimplementedAbciError('Proofs are not implemented yet');
+    }
+
     const response = createQueryResponse(GetIdentitiesByPublicKeyHashesResponse, request.prove);
 
     const identityIds = await Promise.all(
       publicKeyHashes.map((publicKeyHash) => (
-        previousPublicKeyToIdentityIdRepository.fetchBuffer(publicKeyHash)
+        signedPublicKeyToIdentityIdRepository.fetchBuffer(publicKeyHash)
       )),
     );
 
-    const notFoundIdentityPublicKeyHashes = [];
     const foundIdentityIds = [];
 
     for (let i = 0; i < identityIds.length; i++) {
-      // If identity id was not found, we need to request non-inclusion proof by public key hash
-      if (!identityIds[i]) {
-        notFoundIdentityPublicKeyHashes.push(publicKeyHashes[i]);
-      } else {
+      if (identityIds[i]) {
         // If identity was found, we need to request ordinary identity proof by id
         const ids = cbor.decode(identityIds[i]);
 
@@ -95,53 +87,29 @@ function identitiesByPublicKeyHashesQueryHandlerFactory(
       }
     }
 
-    if (request.prove) {
-      const proof = response.getProof();
-      const storeTreeProofs = new StoreTreeProofs();
+    const identityBuffers = await Promise.all(
+      identityIds.map(async (serializedIds) => {
+        if (!serializedIds) {
+          return cbor.encode([]);
+        }
 
-      const identitiesStoreTreeProof = previousIdentitiesStoreRootTreeLeaf.getProof(
-        foundIdentityIds,
-      );
+        const ids = cbor.decode(serializedIds);
 
-      const publicKeyStoreTreeProof = previousPublicKeyToIdentityIdStoreRootTreeLeaf.getProof(
-        notFoundIdentityPublicKeyHashes,
-      );
+        const identities = await Promise.all(
+          ids.map(async (id) => {
+            const identity = await signedIdentityRepository.fetch(
+              Identifier.from(id),
+            );
 
-      const rootTreeProof = previousRootTree.getProof([
-        previousIdentitiesStoreRootTreeLeaf,
-        previousPublicKeyToIdentityIdStoreRootTreeLeaf,
-      ]);
+            return identity.toBuffer();
+          }),
+        );
 
-      storeTreeProofs.setIdentitiesProof(identitiesStoreTreeProof);
-      storeTreeProofs.setPublicKeyHashesToIdentityIdsProof(publicKeyStoreTreeProof);
+        return cbor.encode(identities);
+      }),
+    );
 
-      proof.setRootTreeProof(rootTreeProof);
-      proof.setStoreTreeProofs(storeTreeProofs);
-    } else {
-      const identityBuffers = await Promise.all(
-        identityIds.map(async (serializedIds) => {
-          if (!serializedIds) {
-            return cbor.encode([]);
-          }
-
-          const ids = cbor.decode(serializedIds);
-
-          const identities = await Promise.all(
-            ids.map(async (id) => {
-              const identity = await previousIdentityRepository.fetch(
-                Identifier.from(id),
-              );
-
-              return identity.toBuffer();
-            }),
-          );
-
-          return cbor.encode(identities);
-        }),
-      );
-
-      response.setIdentitiesList(identityBuffers);
-    }
+    response.setIdentitiesList(identityBuffers);
 
     return new ResponseQuery({
       value: response.serializeBinary(),
