@@ -33,7 +33,7 @@ class ChainDataProvider extends EventEmitter {
 
   /**
    * @private
-   * @param rawChainLock {Object} JSON-object from getBestChainLock
+   * @param rawChainLock {Object|ChainLock} JSON-object from getBestChainLock or ChainLock instance
    */
   chainLockHandler(rawChainLock) {
     const chainLock = new ChainLock(rawChainLock);
