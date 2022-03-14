@@ -1,3 +1,10 @@
+const SCHEMA = {
+  lastKnownBlock: {
+    height: 'number',
+    hash: 'string',
+  },
+};
+
 class WalletStore {
   constructor(walletId) {
     this.walletId = walletId;
@@ -9,6 +16,8 @@ class WalletStore {
     };
   }
 }
+
+WalletStore.SCHEMA = SCHEMA;
 
 WalletStore.prototype.createPathState = require('./methods/createPathState');
 WalletStore.prototype.exportState = require('./methods/exportState');
