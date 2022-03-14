@@ -226,79 +226,128 @@ class Account extends EventEmitter {
   /**
    * @param {string} transactionHash
    * @param {function} callback
+   * @returns {function} - cancel subscription
    */
   subscribeToTransactionInstantLock(transactionHash, callback) {
-    this.once(Account.getInstantLockTopicName(transactionHash), callback);
+    const eventName = Account.getInstantLockTopicName(transactionHash);
+
+    this.once(eventName, callback);
+
+    return () => {
+      this.removeListener(eventName, callback);
+    }
   }
 
   /**
    * @param {string} transactionHash
    * @param {function} callback
+   * @returns {function} - cancel subscription
    */
   subscribeToTxMetadata(transactionHash, callback) {
-    this.once(`${EVENTS.TX_METADATA}:${transactionHash}`, callback);
+    const eventName = `${EVENTS.TX_METADATA}:${transactionHash}`;
+
+    this.once(eventName, callback);
+
+    return () => {
+      this.removeListener(eventName, callback)
+    }
   }
 
   /**
    * Waits for instant lock for a transaction or throws after a timeout
    * @param {string} transactionHash - instant lock to wait for
    * @param {number} timeout - in milliseconds before throwing an error if the lock didn't arrive
-   * @return {Promise<InstantLock>}
+   * @return {{promise: Promise<InstantLock>, cancel: Function}}
    */
   waitForInstantLock(transactionHash, timeout = this.waitForInstantLockTimeout) {
+    // Return instant lock immediately if already exists
+    const instantLock = this.storage.getInstantLock(transactionHash);
+    if (instantLock != null) {
+      return {
+        promise: Promise.resolve(instantLock),
+        cancel: () => {},
+      };
+    }
+
     let rejectTimeout;
+    let cancelSubscription;
 
-    return Promise.race([
+    function cancel() {
+      cancelSubscription();
+      clearTimeout(rejectTimeout);
+    }
+
+    // Wait for upcoming instant lock
+
+    const promise = Promise.race([
       new Promise((resolve) => {
-        const instantLock = this.storage.getInstantLock(transactionHash);
-        if (instantLock != null) {
-          clearTimeout(rejectTimeout);
-          resolve(instantLock);
-          return;
-        }
-
-        this.subscribeToTransactionInstantLock(transactionHash, (instantLockData) => {
-          clearTimeout(rejectTimeout);
-          resolve(instantLockData);
-        });
+        cancelSubscription = this.subscribeToTransactionInstantLock(
+          transactionHash,
+          (instantLockData) => {
+            clearTimeout(rejectTimeout);
+            resolve(instantLockData);
+          },
+        );
       }),
       new Promise((resolve, reject) => {
         rejectTimeout = setTimeout(() => {
+          cancelSubscription();
           reject(new Error(`InstantLock waiting period for transaction ${transactionHash} timed out`));
         }, timeout);
       }),
     ]);
+
+    return {
+      promise,
+      cancel,
+    };
   }
 
   /**
    * Waits for metadata of a transaction or throws an error after a timeout
    * @param {string} transactionHash - metadata of tx to wait for
    * @param {number} timeout - in ms before throwing an error if the metadata didn't arrive
-   * @return {Promise<Object>}
+   * @return {{promise: Promise<InstantLock>, cancel: Function}}
    */
   waitForTxMetadata(transactionHash, timeout = this.waitForTxMetadataTimeout) {
+    // Return tx metadata immediately if already exists
+    const { transactionsMetadata } = this.storage;
+    if (transactionsMetadata && transactionsMetadata[transactionHash]) {
+      return {
+        promise: Promise.resolve(transactionsMetadata[transactionHash]),
+        cancel: () => {},
+      };
+    }
+
+    // Wait for upcoming metadata
+
     let rejectTimeout;
+    let cancelSubscription;
 
-    return Promise.race([
+    function cancel() {
+      cancelSubscription();
+      clearTimeout(rejectTimeout);
+    }
+
+    const promise = Promise.race([
       new Promise((resolve) => {
-        const { transactionsMetadata } = this.storage;
-        if (transactionsMetadata && transactionsMetadata[transactionHash]) {
-          clearTimeout(rejectTimeout);
-          resolve(transactionsMetadata[transactionHash]);
-          return;
-        }
-
-        this.subscribeToTxMetadata(transactionHash, (metadata) => {
+        cancelSubscription = this.subscribeToTxMetadata(transactionHash, (metadata) => {
           clearTimeout(rejectTimeout);
           resolve(metadata);
         });
       }),
       new Promise((resolve, reject) => {
         rejectTimeout = setTimeout(() => {
+          cancelSubscription();
           reject(new Error(`Metadata waiting period for transaction ${transactionHash} timed out`));
         }, timeout);
       }),
     ]);
+
+    return {
+      promise,
+      cancel,
+    };
   }
 }
 

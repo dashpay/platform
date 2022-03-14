@@ -19,10 +19,20 @@ export default async function createAssetLockProof(platform : Platform, assetLoc
 
     // Create poof that the transaction won't be double spend
 
+    const {
+      promise: instantLockPromise,
+      cancel: cancelInstantLock
+    } = account.waitForInstantLock(assetLockTransaction.hash);
+
+    const {
+      promise: txMetadataPromise,
+      cancel: cancelTxMetadata,
+    } = account.waitForTxMetadata(assetLockTransaction.hash);
+
     let instantLock;
 
     try {
-        instantLock = await account.waitForInstantLock(assetLockTransaction.hash);
+        instantLock = await ;
     } catch (e) {
         // if block is mined before the transaction is instant locked instant lock won't be sent
         if (!e.message || !e.message.startsWith('InstantLock waiting period for transaction')) {

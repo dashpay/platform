@@ -48,7 +48,7 @@ describe('Platform', () => {
       expect(identity).to.exist();
     });
 
-    it.skip('should fail to create an identity if instantLock is not valid', async () => {
+    it('should fail to create an identity if instantLock is not valid', async () => {
       const {
         transaction,
         privateKey,
@@ -198,10 +198,16 @@ describe('Platform', () => {
       expect(identityId).to.deep.equal(identity.getId());
     });
 
-    describe('chainLock', function describe() {
+    describe.only('chainLock', function describe() {
       let chainLockIdentity;
 
       this.timeout(850000);
+
+      it('should create an identity', async () => {
+        identity = await client.platform.identities.register(3);
+
+        expect(identity).to.exist();
+      });
 
       it('should create identity using chainLock', async () => {
         const {

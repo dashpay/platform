@@ -222,7 +222,7 @@ describe('validateInstantAssetLockProofStructureFactory', () => {
       expect(validateAssetLockTransactionMock).to.be.calledOnce();
     });
 
-    it.skip('should have valid signature', async () => {
+    it('should have valid signature', async () => {
       stateRepositoryMock.verifyInstantLock.resolves(false);
 
       const result = await validateInstantAssetLockProofStructure(rawProof);
