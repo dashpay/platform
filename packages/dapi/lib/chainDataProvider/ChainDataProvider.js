@@ -1,3 +1,4 @@
+const ChainLockSigMessage = require('@dashevo/dashcore-lib/lib/zmqMessages/ChainLockSigMessage');
 const { EventEmitter } = require('events');
 const { BlockHeader, ChainLock } = require('@dashevo/dashcore-lib');
 const log = require('../log');
@@ -32,7 +33,7 @@ class ChainDataProvider extends EventEmitter {
 
   /**
    * @private
-   * @param rawChainLock {Buffer|Object} could be Buffer, or JSON-object from getBestChainLock
+   * @param rawChainLock {Object} JSON-object from getBestChainLock
    */
   chainLockHandler(rawChainLock) {
     const chainLock = new ChainLock(rawChainLock);
@@ -40,6 +41,19 @@ class ChainDataProvider extends EventEmitter {
     this.chainLock = chainLock;
 
     this.emit(this.events.NEW_CHAIN_LOCK, chainLock);
+  }
+
+  /**
+   *
+   * @param {Buffer} rawChainLockSigBuffer
+   */
+  rawChainLockSigHandler(rawChainLockSigBuffer) {
+    try {
+      const { chainLock } = new ChainLockSigMessage(rawChainLockSigBuffer);
+
+      this.chainLockHandler(chainLock);
+    } catch (e) {
+    }
   }
 
   /**
@@ -59,8 +73,8 @@ class ChainDataProvider extends EventEmitter {
       }
     }
 
-    this.zmqClient.on(this.zmqClient.topics.rawchainlock,
-      (buffer) => this.chainLockHandler(buffer));
+    this.zmqClient.on(this.zmqClient.topics.rawchainlocksig,
+      (buffer) => this.rawChainLockSigHandler(buffer));
     this.zmqClient.on(this.zmqClient.topics.hashblock,
       (buffer) => this.blockHashHandler(buffer));
   }
