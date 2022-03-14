@@ -13,6 +13,10 @@ class WalletStore {
       mnemonic: null,
       paths: new Map(),
       identities: new Map(),
+      lastKnownBlock: {
+        height: 1,
+        hash: undefined,
+      },
     };
   }
 }
