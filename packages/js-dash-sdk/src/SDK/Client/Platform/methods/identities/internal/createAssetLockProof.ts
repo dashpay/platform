@@ -29,6 +29,14 @@ export default async function createAssetLockProof(platform : Platform, assetLoc
       cancel: cancelTxMetadata,
     } = account.waitForTxMetadata(assetLockTransaction.hash);
 
+    const = Promise.race([
+      instantLockPromise.catch((error) => {
+        if (error.message === '')
+      })
+    ]);
+
+
+
     let instantLock;
 
     try {

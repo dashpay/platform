@@ -6,6 +6,10 @@ const { is } = require('../../utils');
 const EVENTS = require('../../EVENTS');
 const Wallet = require('../Wallet/Wallet');
 const { simpleDescendingAccumulator } = require('../../utils/coinSelections/strategies');
+const {
+  TxMetadataTimeoutError,
+  InstantLockTimeoutError,
+} = require('../../errors');
 
 function getNextUnusedAccountIndexForWallet(wallet) {
   if (wallet && wallet.accounts) {
@@ -235,7 +239,7 @@ class Account extends EventEmitter {
 
     return () => {
       this.removeListener(eventName, callback);
-    }
+    };
   }
 
   /**
@@ -249,8 +253,8 @@ class Account extends EventEmitter {
     this.once(eventName, callback);
 
     return () => {
-      this.removeListener(eventName, callback)
-    }
+      this.removeListener(eventName, callback);
+    };
   }
 
   /**
@@ -292,7 +296,7 @@ class Account extends EventEmitter {
       new Promise((resolve, reject) => {
         rejectTimeout = setTimeout(() => {
           cancelSubscription();
-          reject(new Error(`InstantLock waiting period for transaction ${transactionHash} timed out`));
+          reject(new InstantLockTimeoutError(transactionHash));
         }, timeout);
       }),
     ]);
@@ -339,7 +343,7 @@ class Account extends EventEmitter {
       new Promise((resolve, reject) => {
         rejectTimeout = setTimeout(() => {
           cancelSubscription();
-          reject(new Error(`Metadata waiting period for transaction ${transactionHash} timed out`));
+          reject(new TxMetadataTimeoutError(transactionHash));
         }, timeout);
       }),
     ]);
