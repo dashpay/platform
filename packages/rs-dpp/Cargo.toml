@@ -18,4 +18,5 @@ serde_json = { version="1.0"}
 ciborium = { version="0.2"}
 byteorder = { version="1.4"}
 sha2  = { version="0.10"}
+jsonschema = { version="0.15.0" }
 

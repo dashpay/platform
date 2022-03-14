@@ -1,0 +1,1 @@
+pub fn validate_identity() {}
