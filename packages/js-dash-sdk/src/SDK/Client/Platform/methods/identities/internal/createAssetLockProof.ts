@@ -38,7 +38,7 @@ export default async function createAssetLockProof(platform : Platform, assetLoc
     // @ts-ignore
     const rejectionTimeout = account.waitForTxMetadataTimeout > account.waitForInstantLockTimeout
       // @ts-ignore
-      ? account.waitForTxMetadataTimeout + 360000 // wait platform to sync core chain locked height
+      ? account.waitForTxMetadataTimeout + 360000 // wait for platform to sync core chain locked height
       // @ts-ignore
       : account.waitForInstantLockTimeout;
 
