@@ -1,4 +1,4 @@
-const { WalletLibError } = require('./index');
+const WalletLibError = require('./WalletLibError');
 
 class TxMetadataTimeoutError extends WalletLibError {
   /**

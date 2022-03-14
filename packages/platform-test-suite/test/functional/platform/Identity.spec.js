@@ -6,6 +6,7 @@ const { default: createAssetLockProof } = require('dash/build/src/SDK/Client/Pla
 const { default: createIdentityCreateTransition } = require('dash/build/src/SDK/Client/Platform/methods/identities/internal/createIdentityCreateTransition');
 const { default: createIdentityTopUpTransition } = require('dash/build/src/SDK/Client/Platform/methods/identities/internal/createIdnetityTopUpTransition');
 const { default: createAssetLockTransaction } = require('dash/build/src/SDK/Client/Platform/createAssetLockTransaction');
+const { default: waitForCoreChainLockedHeight } = require('dash/build/src/SDK/Client/Platform/methods/identities/internal/waitForCoreChainLockedHeight');
 
 const { StateTransitionBroadcastError } = require('dash/build/src/errors/StateTransitionBroadcastError');
 const InvalidInstantAssetLockProofSignatureError = require('@dashevo/dpp/lib/errors/consensus/basic/identity/InvalidInstantAssetLockProofSignatureError');
@@ -17,6 +18,7 @@ const { hash } = require('@dashevo/dpp/lib/util/hash');
 const Identifier = require('@dashevo/dpp/lib/identifier/Identifier');
 const Transaction = require('@dashevo/dashcore-lib/lib/transaction');
 const IdentityPublicKey = require('@dashevo/dpp/lib/identity/IdentityPublicKey');
+
 const createClientWithFundedWallet = require('../../../lib/test/createClientWithFundedWallet');
 const wait = require('../../../lib/wait');
 const getDAPISeeds = require('../../../lib/test/getDAPISeeds');
@@ -198,16 +200,10 @@ describe('Platform', () => {
       expect(identityId).to.deep.equal(identity.getId());
     });
 
-    describe.only('chainLock', function describe() {
+    describe('chainLock', function describe() {
       let chainLockIdentity;
 
       this.timeout(850000);
-
-      it('should create an identity', async () => {
-        identity = await client.platform.identities.register(3);
-
-        expect(identity).to.exist();
-      });
 
       it('should create identity using chainLock', async () => {
         const {
@@ -221,18 +217,10 @@ describe('Platform', () => {
         // Broadcast Asset Lock transaction
         await client.getDAPIClient().core.broadcastTransaction(transaction.toBuffer());
 
-        // Wait for transaction to be mined anc chain locked
-        let transactionHeight = 0;
-        do {
-          ({ height: transactionHeight } = await client.getDAPIClient().core
-            .getTransaction(transaction.id));
+        // Wait for transaction to be mined and chain locked
+        const { promise: metadataPromise } = walletAccount.waitForTxMetadata(transaction.id);
 
-          if (transactionHeight > 0) {
-            break;
-          }
-
-          await wait(1000);
-        } while (!transactionHeight);
+        const { height: transactionHeight } = await metadataPromise;
 
         const outPoint = transaction.getOutPointBuffer(outputIndex);
         const assetLockProof = await dpp.identity.createChainAssetLockProof(
@@ -240,21 +228,12 @@ describe('Platform', () => {
           outPoint,
         );
 
-        let coreChainLockedHeight = 0;
-        while (coreChainLockedHeight < transactionHeight) {
-          const identityResponse = await client.platform.identities.get(identity.getId());
+        // Wait for platform chain to sync core height up to transaction height
+        const {
+          promise: coreHeightPromise,
+        } = await waitForCoreChainLockedHeight(client.platform, transactionHeight);
 
-          expect(identityResponse).to.exist();
-
-          const metadata = identityResponse.getMetadata();
-          coreChainLockedHeight = metadata.getCoreChainLockedHeight();
-
-          if (coreChainLockedHeight >= transactionHeight) {
-            break;
-          }
-
-          await wait(5000);
-        }
+        await coreHeightPromise;
 
         const identityCreateTransitionData = await createIdentityCreateTransition(
           client.platform, assetLockProof, privateKey,
