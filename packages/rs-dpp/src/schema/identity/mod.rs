@@ -1,46 +1,18 @@
-use serde::__private::de::Content::String;
-use serde_json::Value;
+mod identity;
+mod public_key;
 
-pub const IDENTITY_JSON_STRING: &'static str = r#"{
-  "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "type": "object",
-  "properties": {
-    "protocolVersion": {
-      "type": "integer",
-      "$comment": "Maximum is the latest protocol version"
-    },
-    "id": {
-      "type": "array",
-      "byteArray": true,
-      "minItems": 32,
-      "maxItems": 32,
-      "contentMediaType": "application/x.dash.dpp.identifier"
-    },
-    "publicKeys": {
-      "type": "array",
-      "minItems": 1,
-      "maxItems": 32,
-      "uniqueItems": true
-    },
-    "balance": {
-      "type": "integer",
-      "minimum": 0
-    },
-    "revision": {
-      "type": "integer",
-      "minimum": 0,
-      "description": "Identity update revision"
-  }
-},
-  "required": [
-    "protocolVersion",
-    "id",
-    "publicKeys",
-    "balance",
-    "revision"
-  ]
-}"#;
+#[derive(Debug)]
+pub struct IdentitySchemaJsons {
+    pub(crate) identity_json: serde_json::Value,
+    pub(crate) public_key_json: serde_json::Value,
+    //state_transition: IdentityStateTransitionSchemas,
+}
 
-pub fn identity_json() -> Result<Value, serde_json::Error> {
-    serde_json::from_str(IDENTITY_JSON_STRING)
+impl IdentitySchemaJsons {
+    pub fn new() -> Result<Self, serde_json::Error> {
+        Ok(Self {
+            identity_json: identity::identity_json()?,
+            public_key_json: public_key::public_key_json()?,
+        })
+    }
 }
