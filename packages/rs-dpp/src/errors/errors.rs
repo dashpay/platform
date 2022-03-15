@@ -12,6 +12,14 @@ pub enum ProtocolError {
     MaxEncodedBytesReachedError(usize),
     #[error("Encoding Error - {0}")]
     EncodingError(String),
+    #[error("Decoding Error - {0}")]
+    DecodingError(String),
+    #[error("Not included or invalid protocol version")]
+    NoProtocolVersionError,
+    #[error("Parsing error: {0}")]
+    ParsingError(String),
+    #[error(transparent)]
+    ParsingJsonError(#[from] serde_json::Error),
     #[error(transparent)]
     Error(#[from] anyhow::Error),
 }

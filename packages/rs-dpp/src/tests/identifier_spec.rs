@@ -1,6 +1,5 @@
 use crate::identifier::Identifier;
 use crate::util::string_encoding::Encoding;
-use anyhow::Error;
 
 #[test]
 pub fn from_string() {
