@@ -76,7 +76,7 @@ impl Document {
         Ok(document)
     }
 
-    fn to_buffer(&self) -> Result<Vec<u8>, ProtocolError> {
+    pub fn to_buffer(&self) -> Result<Vec<u8>, ProtocolError> {
         let protocol_version = self.protocol_version;
         let id: Vec<Value> = self
             .id
@@ -122,15 +122,15 @@ impl Document {
         serializer::value_to_cbor(json_value, Some(protocol_version))
     }
 
-    fn hash(&self) -> Result<Vec<u8>, ProtocolError> {
+    pub fn hash(&self) -> Result<Vec<u8>, ProtocolError> {
         Ok(sha(self.to_buffer()?))
     }
 
-    fn set_value(path: &str, value: Value) -> Result<(), ProtocolError> {
+    pub fn set_value(path: &str, value: Value) -> Result<(), ProtocolError> {
         unimplemented!()
     }
 
-    fn get(path: &str, value: Value) -> Option<&Value> {
+    pub fn get(path: &str, value: Value) -> Option<&Value> {
         unimplemented!()
     }
 }
@@ -138,6 +138,7 @@ impl Document {
 #[cfg(test)]
 mod test {
     use crate::tests::utils::generate_random_identifier;
+    use crate::util::string_encoding::Encoding;
 
     use super::*;
     use anyhow::Result;
