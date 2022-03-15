@@ -2,7 +2,9 @@ function exportState() {
   const { lastKnownBlock } = this.state;
 
   return {
-    lastKnownBlock,
+    lastKnownBlock: {
+      ...lastKnownBlock,
+    },
   };
 }
 module.exports = exportState;

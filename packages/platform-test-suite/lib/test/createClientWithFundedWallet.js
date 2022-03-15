@@ -13,10 +13,10 @@ const createFaucetClient = require('./createFaucetClient');
 /**
  * Create and fund DashJS client
  * @param {string} [HDPrivateKey]
- *
+ * @param {number} [amount] - amount of Duffs to fund wallet with
  * @returns {Promise<Client>}
  */
-async function createClientWithFundedWallet(HDPrivateKey = undefined) {
+async function createClientWithFundedWallet(HDPrivateKey = undefined, amount = 40000) {
   const seeds = getDAPISeeds();
 
   const clientOpts = {
@@ -51,8 +51,6 @@ async function createClientWithFundedWallet(HDPrivateKey = undefined) {
     ...clientOpts,
     wallet: walletOptions,
   });
-
-  const amount = 40000;
 
   await fundWallet(faucetClient.wallet, client.wallet, amount);
 

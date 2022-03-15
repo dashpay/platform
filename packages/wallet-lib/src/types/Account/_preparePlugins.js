@@ -3,7 +3,12 @@ const sortPlugins = require('./_sortPlugins');
 const preparePlugins = function preparePlugins(account, userUnsafePlugins) {
   function reducer(accumulatorPromise, [plugin, allowSensitiveOperation, awaitOnInjection]) {
     return accumulatorPromise
-      .then(() => account.injectPlugin(plugin, allowSensitiveOperation, awaitOnInjection));
+      .then(() => account.injectPlugin(
+        plugin,
+        allowSensitiveOperation,
+        awaitOnInjection,
+        userUnsafePlugins,
+      ));
   }
 
   return new Promise((resolve, reject) => {

@@ -20,6 +20,7 @@ class ChainPlugin extends StandardPlugin {
         'transport',
         'fetchStatus',
         'walletId',
+        'transactionsyncstreamworker',
       ],
     };
     super(Object.assign(params, opts));
@@ -35,13 +36,12 @@ class ChainPlugin extends StandardPlugin {
     const self = this;
     const { network } = this.storage.application;
     const chainStore = this.storage.getChainStore(network);
+    const walletStore = this.storage.getWalletStore(this.walletId);
 
     if (!this.isSubscribedToBlocks) {
       self.transport.on(EVENTS.BLOCK, async (ev) => {
         const { payload: block } = ev;
         this.parentEvents.emit(EVENTS.BLOCK, { type: EVENTS.BLOCK, payload: block });
-        // We do not announce BLOCKHEADER as this is done by Storage
-        await chainStore.importBlockHeader(block.header);
       });
       self.transport.on(EVENTS.BLOCKHEIGHT_CHANGED, async (ev) => {
         const { payload: blockheight } = ev;
@@ -51,6 +51,14 @@ class ChainPlugin extends StandardPlugin {
         });
 
         chainStore.state.blockHeight = blockheight;
+        // Update last known block for the wallet only if we are in the
+        // state of the incoming sync.
+        // (During the historical sync, its filled with TX metadata)
+
+        if (this.transactionsyncstreamworker.syncIncomingTransactions) {
+          walletStore.updateLastKnownBlock(blockheight);
+        }
+
         logger.debug(`ChainPlugin - setting chain blockheight ${blockheight}`);
       });
       await self.transport.subscribeToBlocks();
@@ -80,9 +88,6 @@ class ChainPlugin extends StandardPlugin {
     if (relay) {
       chainStore.state.fees.minRelay = dashToDuffs(relay);
     }
-
-    const bestBlock = await this.transport.getBlockHeaderByHeight(blocks);
-    await chainStore.importBlockHeader(bestBlock);
 
     return true;
   }

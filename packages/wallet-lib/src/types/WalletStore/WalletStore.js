@@ -15,9 +15,20 @@ class WalletStore {
       identities: new Map(),
       lastKnownBlock: {
         height: 1,
-        hash: undefined,
       },
     };
+  }
+
+  /**
+   * Updates last known block value
+   * @param height - height of a last known block
+   */
+  updateLastKnownBlock(height) {
+    if (this.state.lastKnownBlock.height >= height) {
+      return;
+    }
+
+    this.state.lastKnownBlock.height = height;
   }
 }
 

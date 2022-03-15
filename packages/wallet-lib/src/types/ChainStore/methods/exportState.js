@@ -18,7 +18,7 @@ function exportState() {
   });
 
   [...transactions.entries()].forEach(([transactionHash, { transaction, metadata }]) => {
-    if (metadata) {
+    if (metadata && metadata.height) {
       serializedState.transactions[transactionHash] = transaction.toString();
       serializedState.txMetadata[transactionHash] = metadata;
     }
