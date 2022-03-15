@@ -1,4 +1,3 @@
-// use minicbor::{Decode, Encode};
 use serde::{Deserialize, Serialize};
 
 use super::{IdentityPublicKey, KeyID};
