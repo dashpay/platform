@@ -3,8 +3,10 @@ const DashCoreLib = require('@dashevo/dashcore-lib');
 const instantAssetLockProofSchema = require('../../../../../schema/identity/stateTransition/assetLockProof/instantAssetLockProof.json');
 
 const convertBuffersToArrays = require('../../../../util/convertBuffersToArrays');
+
 const InvalidInstantAssetLockProofError = require('../../../../errors/consensus/basic/identity/InvalidInstantAssetLockProofError');
 const IdentityAssetLockProofLockedTransactionMismatchError = require('../../../../errors/consensus/basic/identity/IdentityAssetLockProofLockedTransactionMismatchError');
+const InvalidInstantAssetLockProofSignatureError = require('../../../../errors/consensus/basic/identity/InvalidInstantAssetLockProofSignatureError');
 
 /**
  * @param {JsonSchemaValidator} jsonSchemaValidator
@@ -48,12 +50,11 @@ function validateInstantAssetLockProofStructureFactory(
       return result;
     }
 
-    // TODO: Uncomment when chainlock proofs will be implemented
-    // if (!await stateRepository.verifyInstantLock(instantLock)) {
-    //   result.addError(new InvalidIdentityAssetLockProofSignatureError());
-    //
-    //   return result;
-    // }
+    if (!await stateRepository.verifyInstantLock(instantLock)) {
+      result.addError(new InvalidInstantAssetLockProofSignatureError());
+
+      return result;
+    }
 
     const validateAssetLockTransactionResult = await validateAssetLockTransaction(
       rawAssetLockProof.transaction,
