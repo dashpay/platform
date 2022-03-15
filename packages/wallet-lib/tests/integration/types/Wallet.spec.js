@@ -24,14 +24,14 @@ describe('Wallet', () => {
     let txStreamWorker;
     let chainPlugin;
     let transportMock;
-    // let tx
+    let storageAdapterMock;
 
     beforeEach(async function() {
       const testHDKey = "xprv9s21ZrQH143K4PgfRZPuYjYUWRZkGfEPuWTEUESMoEZLC274ntC4G49qxgZJEPgmujsmY52eVggtwZgJPrWTMXmbYgqDVySWg46XzbGXrSZ";
       txStreamWorker = new TransactionSyncStreamWorker({ executeOnStart: false });
       chainPlugin = new ChainPlugin({ executeOnStart: false });
 
-      const storageAdapterMock = new LocalForageAdapterMock();
+      storageAdapterMock = new LocalForageAdapterMock();
 
       wallet = new Wallet({
         offlineMode: true,
@@ -45,11 +45,6 @@ describe('Wallet', () => {
       ({ txStreamMock, transportMock } = await createAndAttachTransportMocksToWallet(wallet, this.sinonSandbox));
 
       await chainPlugin.onStart()
-      //
-      // const account = await wallet.getAccount();
-
-      // console.log(wallet.storage.getWalletStore(wallet.walletId).exportState())
-      // console.log(wallet.storage.getChainStore('livenet').exportState())
     })
 
     /**
@@ -105,7 +100,6 @@ describe('Wallet', () => {
        * Start transactions sync plugin
        */
       txStreamWorker.onStart();
-
       await sleepOneTick();
 
       /**
@@ -113,14 +107,22 @@ describe('Wallet', () => {
        */
       const { fundingTx } = scenario.transactions;
       txStreamMock.sendTransactions([fundingTx]);
+      await wallet.storage.saveState();
 
-      // Storage should not have transaction exported if it has no metadata yet
-      let chainStoreState = chainStore.exportState();
-      let walletStoreState = walletStore.exportState();
+      /**
+       * Ensure that storage has no items for transactions without the metadata
+       */
+      let chainStoreState = storageAdapterMock.getItem('chains')[wallet.network];
+      let walletStoreState = storageAdapterMock.getItem('wallets')[wallet.walletId]
       expect(chainStoreState.transactions).to.be.empty;
       expect(chainStoreState.txMetadata).to.be.empty;
       expect(chainStoreState.blockHeaders).to.be.empty;
       expect(walletStoreState.lastKnownBlock.height).to.equal(1)
+
+      /**
+       * Wait for transactions metadata
+       */
+      await sleepOneTick();
 
       /**
        * Simulate block height change to ensure that the value is not
@@ -134,29 +136,37 @@ describe('Wallet', () => {
       txStreamMock.finish();
 
       /**
-       * Start continuous sync
+       * Wait for blockheight propagates to the storage
        */
-      txStreamWorker.execute()
-
       await sleepOneTick();
 
-      chainStoreState = chainStore.exportState();
-      walletStoreState = walletStore.exportState();
+      await wallet.storage.saveState();
+
+      /**
+       * Ensure that chain items for fundingTx have been propagated
+       * alongside with the lastKnownBlock
+       */
+      chainStoreState = storageAdapterMock.getItem('chains')[wallet.network];
+      walletStoreState = storageAdapterMock.getItem('wallets')[wallet.walletId]
       expect(chainStoreState.transactions[fundingTx.hash]).to.exist;
       expect(chainStoreState.txMetadata[fundingTx.hash]).to.exist
       expect(chainStoreState.blockHeaders[scenario.blockHeaders[0].hash]).to.exist;
       expect(walletStoreState.lastKnownBlock.height).to.equal(10)
 
       /**
-       * Send transaction from the wallet
+       * Start continuous sync
+       */
+      txStreamWorker.execute()
+      await sleepOneTick();
+
+      /**
+       * Broadcast transaction from the wallet
        */
       const sendTx = account.createTransaction({
         recipient: new PrivateKey().toAddress(),
         satoshis: 1000
       });
-
       await account.broadcastTransaction(sendTx)
-
       txStreamMock.sendTransactions([sendTx]);
       Object.assign(scenario.metadata, {
         [sendTx.hash]: {
@@ -166,6 +176,9 @@ describe('Wallet', () => {
         }
       })
 
+      /**
+       * Wait for sendTx metadata arrives to the storage
+       */
       await sleepOneTick();
 
       /**
@@ -173,12 +186,17 @@ describe('Wallet', () => {
        * as WalletStore.state.lastKnownBlock
        */
       transportMock.emit(EVENTS.BLOCKHEIGHT_CHANGED, { payload: 44 })
-
       await sleepOneTick();
 
-      chainStoreState = chainStore.exportState();
-      walletStoreState = walletStore.exportState();
-      // Storage should contain both transactions, their metadata, and block headers
+      await wallet.storage.saveState();
+
+      chainStoreState = storageAdapterMock.getItem('chains')[wallet.network];
+      walletStoreState = storageAdapterMock.getItem('wallets')[wallet.walletId]
+
+      /**
+       * Ensure that storage have been updated with the latest
+       * transaction and relevant chain data
+       */
       expect(Object.keys(chainStoreState.transactions)).to.have.lengthOf(2)
       expect(Object.keys(chainStoreState.txMetadata)).to.have.lengthOf(2)
       expect(Object.keys(chainStoreState.blockHeaders)).to.have.lengthOf(2)
