@@ -50,12 +50,12 @@ pub struct Document {
 // per https://www.reddit.com/r/rust/comments/d7w6n7/is_it_idiomatic_to_write_setters_and_getters/
 // we don't want to use getters and setters
 impl Document {
-    fn to_json(&self) -> Result<Value, ProtocolError> {
+    pub fn to_json(&self) -> Result<Value, ProtocolError> {
         serde_json::to_value(&self)
             .map_err(|e| ProtocolError::EncodingError(format!("corrupted data - {}", e)))
     }
 
-    fn from_buffer(b: &[u8]) -> Result<Document, ProtocolError> {
+    pub fn from_buffer(b: &[u8]) -> Result<Document, ProtocolError> {
         let (protocol_bytes, document_bytes) = b.split_at(4);
 
         let json_value: Value = ciborium::de::from_reader(document_bytes)
