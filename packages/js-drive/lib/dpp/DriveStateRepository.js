@@ -256,6 +256,10 @@ class DriveStateRepository {
   async verifyInstantLock(instantLock) {
     const header = this.blockExecutionContext.getHeader();
 
+    if (header === null) {
+      return false;
+    }
+
     const {
       coreChainLockedHeight,
     } = header;
