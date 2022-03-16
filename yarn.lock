@@ -1756,9 +1756,6 @@ __metadata:
     semver: ^7.3.2
     tempfile: ^3.0.0
     ultra-runner: ^3.10.5
-  dependenciesMeta:
-    "@dashevo/wasm-re2@1.0.0":
-      unplugged: true
   languageName: unknown
   linkType: soft
 
