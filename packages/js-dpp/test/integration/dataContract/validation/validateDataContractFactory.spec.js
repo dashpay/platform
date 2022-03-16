@@ -1,4 +1,4 @@
-const { default: getRE2Class } = require('@dashevo/re2-wasm');
+const { getRE2Class } = require('@dashevo/wasm-re2');
 
 const $RefParser = require('@apidevtools/json-schema-ref-parser');
 
