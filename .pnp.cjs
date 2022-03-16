@@ -2512,7 +2512,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["@dashevo/dpns-contract", "workspace:packages/dpns-contract"],
             ["@dashevo/feature-flags-contract", "workspace:packages/feature-flags-contract"],
             ["@dashevo/masternode-reward-shares-contract", "workspace:packages/masternode-reward-shares-contract"],
-            ["@dashevo/re2-wasm", "npm:1.0.4"],
+            ["@dashevo/wasm-re2", "npm:1.0.2"],
             ["acorn", "npm:8.6.0"],
             ["ajv", "npm:8.8.1"],
             ["ajv-formats", "virtual:58fb68f2aed20e5e0f2e48520ab903ae9bb3440369bfd5e912034003cf27c5aae368649fc5620dd2acbed578131f3a0975e75b838d77d12335fb0412e24026c6#npm:2.1.1"],
@@ -2799,15 +2799,6 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           "linkType": "HARD",
         }]
       ]],
-      ["@dashevo/re2-wasm", [
-        ["npm:1.0.4", {
-          "packageLocation": "./.yarn/cache/@dashevo-re2-wasm-npm-1.0.4-89e4ca33d4-4f1fca10c5.zip/node_modules/@dashevo/re2-wasm/",
-          "packageDependencies": [
-            ["@dashevo/re2-wasm", "npm:1.0.4"]
-          ],
-          "linkType": "HARD",
-        }]
-      ]],
       ["@dashevo/rs-drive", [
         ["npm:0.22.0-dev.17", {
           "packageLocation": "./.yarn/unplugged/@dashevo-rs-drive-npm-0.22.0-dev.17-8956445397/node_modules/@dashevo/rs-drive/",
@@ -2873,6 +2864,15 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["winston", "npm:3.3.3"]
           ],
           "linkType": "SOFT",
+        }]
+      ]],
+      ["@dashevo/wasm-re2", [
+        ["npm:1.0.2", {
+          "packageLocation": "./.yarn/cache/@dashevo-wasm-re2-npm-1.0.2-50818efe42-3d54788e4e.zip/node_modules/@dashevo/wasm-re2/",
+          "packageDependencies": [
+            ["@dashevo/wasm-re2", "npm:1.0.2"]
+          ],
+          "linkType": "HARD",
         }]
       ]],
       ["@dashevo/x11-hash-js", [

@@ -1516,7 +1516,7 @@ __metadata:
     "@dashevo/dpns-contract": "workspace:~"
     "@dashevo/feature-flags-contract": "workspace:~"
     "@dashevo/masternode-reward-shares-contract": "workspace:~"
-    "@dashevo/re2-wasm": ~1.0.4
+    "@dashevo/wasm-re2": ~1.0.2
     acorn: ^8.5.0
     ajv: ^8.6.0
     ajv-formats: ^2.1.1
@@ -1783,13 +1783,6 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@dashevo/re2-wasm@npm:~1.0.4":
-  version: 1.0.4
-  resolution: "@dashevo/re2-wasm@npm:1.0.4"
-  checksum: 4f1fca10c5190387e5652a7f900de52b15e68c66ca81ac0db4f368f2cfc95335eb2c4c6ee74c7204869ad937da4a84565411fdf33d308af89eaf41fda766e7be
-  languageName: node
-  linkType: hard
-
 "@dashevo/rs-drive@npm:~0.22.0-dev.17":
   version: 0.22.0-dev.17
   resolution: "@dashevo/rs-drive@npm:0.22.0-dev.17"
@@ -1853,6 +1846,13 @@ __metadata:
     winston: ^3.2.1
   languageName: unknown
   linkType: soft
+
+"@dashevo/wasm-re2@npm:~1.0.2":
+  version: 1.0.2
+  resolution: "@dashevo/wasm-re2@npm:1.0.2"
+  checksum: 3d54788e4e133e0677e60c125550a1f81cc5d9ed742e7dfec936e4da7653bb17a43054db3fc1287074efdb05ebbef7625d19f1f3286662f135218fadc27e6818
+  languageName: node
+  linkType: hard
 
 "@dashevo/x11-hash-js@npm:^1.0.2":
   version: 1.0.2
