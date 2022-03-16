@@ -1,5 +1,7 @@
 use thiserror::Error;
 
+use crate::data_contract::{DataContract, DataContractError};
+
 #[derive(Error, Debug)]
 pub enum ProtocolError {
     #[error("Identifier Error: {0}")]
@@ -18,8 +20,12 @@ pub enum ProtocolError {
     NoProtocolVersionError,
     #[error("Parsing error: {0}")]
     ParsingError(String),
+
     #[error(transparent)]
     ParsingJsonError(#[from] serde_json::Error),
     #[error(transparent)]
     Error(#[from] anyhow::Error),
+
+    #[error(transparent)]
+    DataContractError(#[from] DataContractError),
 }
