@@ -1,6 +1,6 @@
 const crypto = require('crypto');
 
-const { default: getRE2Class } = require('@dashevo/re2-wasm');
+const { getRE2Class } = require('@dashevo/wasm-re2');
 
 const createAjv = require('../../../../../../../lib/ajv/createAjv');
 
