@@ -1516,7 +1516,7 @@ __metadata:
     "@dashevo/dpns-contract": "workspace:~"
     "@dashevo/feature-flags-contract": "workspace:~"
     "@dashevo/masternode-reward-shares-contract": "workspace:~"
-    "@dashevo/wasm-re2": ~1.0.0
+    "@dashevo/wasm-re2": ~1.0.1
     acorn: ^8.5.0
     ajv: ^8.6.0
     ajv-formats: ^2.1.1
@@ -1756,6 +1756,9 @@ __metadata:
     semver: ^7.3.2
     tempfile: ^3.0.0
     ultra-runner: ^3.10.5
+  dependenciesMeta:
+    "@dashevo/wasm-re2@1.0.0":
+      unplugged: true
   languageName: unknown
   linkType: soft
 
@@ -1847,10 +1850,10 @@ __metadata:
   languageName: unknown
   linkType: soft
 
-"@dashevo/wasm-re2@npm:~1.0.0":
-  version: 1.0.0
-  resolution: "@dashevo/wasm-re2@npm:1.0.0"
-  checksum: 0da548ef9892d49462a7d0c339b6f35efb4888b63e95fd0d8be1baf413e401394e33fa209d3da375d5c0d63adac939bc0af7574ffacf007864a2545c2a5d2734
+"@dashevo/wasm-re2@npm:~1.0.1":
+  version: 1.0.1
+  resolution: "@dashevo/wasm-re2@npm:1.0.1"
+  checksum: 0ffde074303c2b2d902d522b8de8a53406f96cebfc9180d804b09eec50d4be1434c51095322875e4fe7f238caf06f6e0ebcf303dd36bf5b2b8dde51fb81e53d4
   languageName: node
   linkType: hard
 
