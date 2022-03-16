@@ -2,6 +2,7 @@ const logger = require('../../logger');
 const { StandardPlugin } = require('..');
 const EVENTS = require('../../EVENTS');
 const { dashToDuffs } = require('../../utils');
+const ChainSyncMediator = require('../../types/Wallet/ChainSyncMediator');
 
 const defaultOpts = {
   firstExecutionRequired: true,
@@ -20,7 +21,7 @@ class ChainPlugin extends StandardPlugin {
         'transport',
         'fetchStatus',
         'walletId',
-        'transactionsyncstreamworker',
+        'chainSyncMediator',
       ],
     };
     super(Object.assign(params, opts));
@@ -51,12 +52,12 @@ class ChainPlugin extends StandardPlugin {
         });
 
         chainStore.state.blockHeight = blockheight;
-        // Update last known block for the wallet only if we are in the
-        // state of the incoming sync.
-        // (During the historical sync, its filled with TX metadata)
 
-        if (this.transactionsyncstreamworker.syncIncomingTransactions) {
+        // Update last known block for the wallet only if we are in the state of the incoming sync.
+        // (During the historical sync, it is populated from transactions metadata)
+        if (this.chainSyncMediator.state === ChainSyncMediator.STATES.CONTINUOUS_SYNC) {
           walletStore.updateLastKnownBlock(blockheight);
+          this.storage.scheduleStateSave();
         }
 
         logger.debug(`ChainPlugin - setting chain blockheight ${blockheight}`);
@@ -93,6 +94,7 @@ class ChainPlugin extends StandardPlugin {
   }
 
   async onStart() {
+    this.chainSyncMediator.state = ChainSyncMediator.STATES.CHAIN_STATUS_SYNC;
     await this.execStatusFetch();
     await this.execBlockListener();
   }

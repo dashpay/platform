@@ -29,6 +29,7 @@ const fromHDPrivateKey = require('./methods/fromHDPrivateKey');
 const generateNewWalletId = require('./methods/generateNewWalletId');
 
 const createTransportFromOptions = require('../../transport/createTransportFromOptions');
+const ChainSyncMediator = require('./ChainSyncMediator');
 
 /**
  * Instantiate a basic Wallet object,
@@ -114,13 +115,12 @@ class Wallet extends EventEmitter {
       autosave: true,
     });
 
+    this.storage.application.network = this.network;
     this.storage.configure({
       adapter: opts.adapter,
+      walletId: this.walletId,
+      network: this.network,
     });
-
-    this.storage.application.network = this.network;
-    this.storage.createWalletStore(this.walletId);
-    this.storage.createChainStore(this.network);
 
     if (createdFromNewMnemonic) {
       // As it is pretty complicated to pass any of wallet options
@@ -179,6 +179,8 @@ class Wallet extends EventEmitter {
     const Identities = require('../Identities/Identities');
     this.identities = new Identities(this);
     this.savedBackup = false; // TODO: When true, we delete mnemonic from internals
+
+    this.chainSyncMediator = new ChainSyncMediator();
   }
 }
 

@@ -1,14 +1,20 @@
 const sortPlugins = require('./_sortPlugins');
+const logger = require('../../logger');
 
 const preparePlugins = function preparePlugins(account, userUnsafePlugins) {
   function reducer(accumulatorPromise, [plugin, allowSensitiveOperation, awaitOnInjection]) {
     return accumulatorPromise
-      .then(() => account.injectPlugin(
-        plugin,
-        allowSensitiveOperation,
-        awaitOnInjection,
-        userUnsafePlugins,
-      ));
+      .then(async () => {
+        try {
+          await account.injectPlugin(
+            plugin,
+            allowSensitiveOperation,
+            awaitOnInjection,
+          );
+        } catch (e) {
+          logger.error('Error injecting plugin', e);
+        }
+      });
   }
 
   return new Promise((resolve, reject) => {

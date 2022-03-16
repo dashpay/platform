@@ -10,14 +10,12 @@ const logger = require('../../../logger');
  * @param {Plugin} UnsafePlugin - Either a child object, or it's parent class to inject
  * @param {Boolean} [allowSensitiveOperations=false] - forcing injection discarding unsafeOp checks.
  * @param {Boolean} [awaitOnInjection=true] - When true, wait for onInjected resolve first
- * @param {Plugin[]} [allPlugins] - Array of all plugins to conduct plugins injection
  * @return {Promise<*>} plugin - instance of the plugin
  */
 module.exports = async function injectPlugin(
   UnsafePlugin,
   allowSensitiveOperations = false,
   awaitOnInjection = true,
-  allPlugins = [],
 ) {
   // TODO : Only called internally, it might be worth to remove public access to it.
   // For now, it helps us on debugging
@@ -60,12 +58,7 @@ module.exports = async function injectPlugin(
       // Check for dependencies
       const deps = plugin.dependencies || [];
 
-      const injectedPlugins = Object.keys(allPlugins)
-        .reduce((acc, key) => {
-          acc[key.toLowerCase()] = allPlugins[key];
-          return acc;
-        }, {});
-
+      const injectedPlugins = Object.keys(this.plugins.standard).map((key) => key.toLowerCase());
       deps.forEach((dependencyName) => {
         if (_.has(self, dependencyName)) {
           plugin.inject(dependencyName, self[dependencyName], allowSensitiveOperations);
@@ -73,8 +66,8 @@ module.exports = async function injectPlugin(
           plugin.inject(dependencyName, self[dependencyName].bind(self), allowSensitiveOperations);
         } else {
           const loweredDependencyName = dependencyName.toLowerCase();
-          if (injectedPlugins[loweredDependencyName]) {
-            plugin.inject(dependencyName, injectedPlugins[loweredDependencyName], true);
+          if (injectedPlugins.includes(loweredDependencyName)) {
+            plugin.inject(dependencyName, this.plugins.standard[loweredDependencyName], true);
           } else reject(new InjectionErrorCannotInjectUnknownDep(pluginName, dependencyName));
         }
       });

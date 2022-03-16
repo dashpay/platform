@@ -54,8 +54,6 @@ describe('Wallet', () => {
     it.only('should fill the storage for a fresh wallet', async function() {
       const account = await wallet.getAccount();
       const { address: addressToFund } = account.getUnusedAddress();
-      const chainStore = wallet.storage.getChainStore(wallet.network);
-      const walletStore = wallet.storage.getWalletStore(wallet.walletId);
 
       /**
        * Define a scenario

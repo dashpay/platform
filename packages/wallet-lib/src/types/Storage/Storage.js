@@ -32,6 +32,11 @@ class Storage extends EventEmitter {
     this.lastRehydrate = null;
     this.lastSave = null;
     this.lastModified = null;
+    this.configured = false;
+  }
+
+  scheduleStateSave() {
+    this.lastModified = Date.now();
   }
 }
 

@@ -54,6 +54,7 @@ class Account extends EventEmitter {
     this.walletId = wallet.walletId;
 
     this.identities = wallet.identities;
+    this.chainSyncMediator = wallet.chainSyncMediator;
 
     this.state = {
       isInitialized: false,

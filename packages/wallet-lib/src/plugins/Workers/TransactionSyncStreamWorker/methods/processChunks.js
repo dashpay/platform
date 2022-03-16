@@ -53,6 +53,9 @@ async function processChunks(dataChunk) {
         await self.importTransactions(transactionsWithMetadata);
       });
 
+    // Schedule save state after all chain data has been imported
+    this.storage.scheduleStateSave();
+
     self.hasReachedGapLimit = self.hasReachedGapLimit || addressesGeneratedCount > 0;
 
     if (self.hasReachedGapLimit && self.stream) {

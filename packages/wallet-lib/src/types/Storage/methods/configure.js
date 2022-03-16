@@ -13,6 +13,9 @@ module.exports = async function configure(opts = {}) {
   this.autosave = has(opts, 'autosave') ? opts.autosave : this.autosave;
   this.adapter = await configureAdapter((opts.adapter) ? opts.adapter : await getDefaultAdapter());
 
+  this.createWalletStore(opts.walletId);
+  this.createChainStore(opts.network);
+
   if (this.rehydrate) {
     await this.rehydrateState();
   }
@@ -21,5 +24,6 @@ module.exports = async function configure(opts = {}) {
     this.startWorker();
   }
 
+  this.configured = true;
   this.emit(CONFIGURED, { type: CONFIGURED, payload: null });
 };
