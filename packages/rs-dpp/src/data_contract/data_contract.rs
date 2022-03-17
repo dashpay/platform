@@ -29,9 +29,9 @@ pub struct DataContract {
     pub version: u32,
     pub owner_id: Identifier,
     #[serde(rename = "documents")]
-    pub document_schemas: BTreeMap<String, JsonSchema>,
-    #[serde(rename = "$defs", skip_serializing_if = "is_empty")]
-    pub defs: BTreeMap<String, JsonSchema>,
+    pub documents: BTreeMap<String, JsonSchema>,
+    #[serde(rename = "$defs", skip_serializing_if = "Option::is_none")]
+    pub defs: Option<BTreeMap<String, JsonSchema>>,
     #[serde(skip)]
     pub metadata: Option<Metadata>,
     #[serde(skip)]
@@ -115,15 +115,15 @@ impl DataContract {
 
     /// Returns true if document type is defined
     pub fn is_document_defined(&self, doc_type: &str) -> bool {
-        self.document_schemas.contains_key(doc_type)
+        self.documents.contains_key(doc_type)
     }
 
     pub fn set_document_schema(&mut self, doc_type: String, schema: JsonSchema) {
-        self.document_schemas.insert(doc_type, schema);
+        self.documents.insert(doc_type, schema);
     }
 
     pub fn get_document_schema(&self, doc_type: &str) -> Result<&JsonSchema, ProtocolError> {
-        self.document_schemas.get(doc_type).ok_or(
+        self.documents.get(doc_type).ok_or(
             DataContractError::InvalidDocumentTypeError {
                 doc_type: doc_type.to_owned(),
                 data_contract: self.clone(),
@@ -168,11 +168,62 @@ impl TryFrom<&str> for DataContract {
     }
 }
 
-fn is_empty<K, V>(collection: &BTreeMap<K, V>) -> bool {
-    collection.len() == 0
-}
-
 #[cfg(test)]
 mod test {
     use super::*;
+    use crate::tests::utils::*;
+    use anyhow::Result;
+    use log::trace;
+
+    fn init() {
+        let _ = env_logger::builder()
+            .filter_level(log::LevelFilter::Trace)
+            .try_init();
+    }
+
+    #[test]
+    fn test_deserialize_contract() -> Result<()> {
+        init();
+
+        let string_contract = get_data_from_file("src/tests/payloads/contract_example.json")?;
+        trace!("the string contract is {}", string_contract);
+        let contract = DataContract::try_from(string_contract.as_str())?;
+        trace!("the parsed contract is {:#?}", contract);
+
+        assert_eq!(contract.protocol_version, 0);
+        assert_eq!(
+            contract.schema,
+            "https://schema.dash.org/dpp-0-4-0/meta/data-contract"
+        );
+        assert_eq!(contract.version, 5);
+        assert_eq!(
+            contract.id.to_string(Encoding::Base58),
+            "AoDzJxWSb1gUi2dSmvFeUFpSsjZQRJaqCpn7vCLkwwJj"
+        );
+        assert_eq!(
+            contract.documents["note"]["properties"]["message"]["type"],
+            "string"
+        );
+        assert!(contract.is_document_defined("note"));
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_serialize_contract_json() -> Result<()> {
+        init();
+
+        let mut string_contract = get_data_from_file("src/tests/payloads/contract_example.json")?;
+        string_contract.retain(|c| !c.is_whitespace());
+        trace!("the string contract is {}", string_contract);
+
+        let contract = DataContract::try_from(string_contract.as_str())?;
+        trace!("the parsed contract is {:#?}", contract);
+
+        let serialized_contract = serde_json::to_string(&contract.to_json()?)?;
+        trace!("serialized contract: {}", serialized_contract);
+
+        assert_eq!(serialized_contract, string_contract);
+        Ok(())
+    }
 }

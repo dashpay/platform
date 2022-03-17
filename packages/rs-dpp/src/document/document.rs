@@ -129,7 +129,7 @@ impl Document {
 
 #[cfg(test)]
 mod test {
-    use crate::tests::utils::generate_random_identifier;
+    use crate::tests::utils::*;
     use crate::util::string_encoding::Encoding;
 
     use super::*;
@@ -142,13 +142,6 @@ mod test {
         let _ = env_logger::builder()
             .filter_level(log::LevelFilter::Debug)
             .try_init();
-    }
-
-    fn get_data_from_file(file_path: &str) -> Result<String> {
-        let current_dir = std::env::current_dir()?;
-        let file_path = format!("{}/{}", current_dir.display(), file_path);
-        let d = std::fs::read_to_string(file_path)?;
-        Ok(d)
     }
 
     #[test]
