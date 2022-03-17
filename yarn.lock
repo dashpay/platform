@@ -1586,7 +1586,7 @@ __metadata:
     "@dashevo/feature-flags-contract": "workspace:~"
     "@dashevo/grpc-common": "workspace:~"
     "@dashevo/masternode-reward-shares-contract": "workspace:~"
-    "@dashevo/rs-drive": ~0.22.0-dev.17
+    "@dashevo/rs-drive": ~0.22.0-dev.18
     "@types/pino": ^6.3.0
     ajv: ^8.6.0
     ajv-keywords: ^5.0.0
@@ -1783,16 +1783,16 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@dashevo/rs-drive@npm:~0.22.0-dev.17":
-  version: 0.22.0-dev.17
-  resolution: "@dashevo/rs-drive@npm:0.22.0-dev.17"
+"@dashevo/rs-drive@npm:~0.22.0-dev.18":
+  version: 0.22.0-dev.18
+  resolution: "@dashevo/rs-drive@npm:0.22.0-dev.18"
   dependencies:
     "@dashevo/dpp": ~0.22.0-dev.7
     cargo-cp-artifact: ^0.1.6
     cbor: ^8.1.0
     neon-load-or-build: ^2.2.2
     neon-tag-prebuild: "github:shumkov/neon-tag-prebuild#patch-1"
-  checksum: 96f6c4823b81ee165dc09cb36d15839d46c0fb9c12b978fbf568eb734e0249e9f4e0284df477411941d9ef03ea000de15271834f8a57d541fc31e78bf8d78916
+  checksum: 8b036359d9831858fa38c8522f4dca3cfc9d0c1d0cff0773ede299676e29835c2d9b007f5b55f871a4b09ebf658a106b81bcb43ae5f4611a8042fcd7e1070a0e
   languageName: node
   linkType: hard
 
