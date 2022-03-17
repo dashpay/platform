@@ -72,6 +72,9 @@ jobs:
           install: true
           driver-opts: image=moby/buildkit:buildx-stable-1
 
+      - name: Setup firefox
+        uses: browser-actions/setup-firefox@latest
+
       - name: Enable buildkit cache
         uses: actions/cache@v2
         with:
