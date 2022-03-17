@@ -1,6 +1,9 @@
 mod identity;
 mod public_key;
 
+pub use identity::identity_json;
+pub use public_key::public_key_json;
+
 #[derive(Debug)]
 pub struct IdentitySchemaJsons {
     pub(crate) identity_json: serde_json::Value,

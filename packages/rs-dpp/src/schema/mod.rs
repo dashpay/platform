@@ -1,7 +1,7 @@
 pub mod data_contract;
 pub mod identity;
 
-use identity::IdentitySchemaJsons;
+pub use identity::IdentitySchemaJsons;
 
 #[derive(Debug)]
 pub struct SchemaJsons {

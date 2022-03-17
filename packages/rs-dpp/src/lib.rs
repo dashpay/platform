@@ -11,6 +11,7 @@ pub mod validation;
 mod dash_platform_protocol;
 
 pub use dash_platform_protocol::DashPlatformProtocol;
+pub use dash_platform_protocol::DashPlatformProtocolInitError;
 
 #[cfg(test)]
 mod tests;

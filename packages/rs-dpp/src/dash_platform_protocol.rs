@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use crate::identity::IdentityFacade;
 use crate::schema::identity::IdentitySchemaJsons;
 use jsonschema::{JSONSchema, ValidationError};
@@ -11,11 +12,28 @@ pub enum DashPlatformProtocolInitError {
     SchemaValidationError(SchemaCompilationError),
     #[error("Couldn't parse JSON")]
     SchemaDeserializationError(serde_json::Error),
+    #[error("Please fill me")]
+    ValidationError(ValidationError<'static>)
 }
 
-impl<'a> From<serde_json::Error> for DashPlatformProtocolInitError {
+fn into_owned(err: ValidationError) -> ValidationError<'static> {
+    ValidationError {
+        instance_path: err.instance_path.clone(),
+        instance: Cow::Owned(err.instance.into_owned()),
+        kind: err.kind,
+        schema_path: err.schema_path,
+    }
+}
+
+impl From<serde_json::Error> for DashPlatformProtocolInitError {
     fn from(error: serde_json::Error) -> Self {
         Self::SchemaDeserializationError(error)
+    }
+}
+
+impl<'a> From<ValidationError<'a>> for DashPlatformProtocolInitError {
+    fn from(err: ValidationError<'a>) -> Self {
+        Self::ValidationError(into_owned(err))
     }
 }
 
@@ -111,20 +129,15 @@ pub struct DashPlatformProtocol {
 }
 
 impl DashPlatformProtocol {
-    pub fn new<'a>() -> Result<Self, DashPlatformProtocolInitError> {
+    pub fn new() -> Result<Self, DashPlatformProtocolInitError> {
         let schema_jsons = SchemaJsons::new()?;
         let mut json_schemas = JsonSchemas::new(schema_jsons);
-        let res = json_schemas.compile();
+        json_schemas.compile()?;
 
-        match res {
-            Ok(_) => Ok(Self {
-                identities: IdentityFacade::new(),
-                json_schemas,
-            }),
-            Err(_) => Err(DashPlatformProtocolInitError::SchemaValidationError(
-                SchemaCompilationError::new(json_schemas),
-            )),
-        }
+        Ok(Self {
+            identities: IdentityFacade::new(),
+            json_schemas,
+        })
     }
 
     pub fn identities(&self) -> &IdentityFacade {
