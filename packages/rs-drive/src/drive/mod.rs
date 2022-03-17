@@ -3,9 +3,8 @@ pub mod defaults;
 use crate::contract::{Contract, Document, DocumentType};
 use crate::drive::defaults::CONTRACT_DOCUMENTS_PATH_HEIGHT;
 use crate::query::DriveQuery;
-use grovedb::{Element, Error, GroveDb};
+use grovedb::{Element, Error, GroveDb, TransactionArg};
 use std::path::Path;
-use storage::rocksdb_storage::OptimisticTransactionDBTransaction;
 
 pub struct Drive {
     pub grove: GroveDb,
@@ -175,10 +174,7 @@ impl Drive {
         }
     }
 
-    pub fn create_root_tree(
-        &mut self,
-        transaction: Option<&OptimisticTransactionDBTransaction>,
-    ) -> Result<(), Error> {
+    pub fn create_root_tree(&self, transaction: TransactionArg) -> Result<(), Error> {
         self.grove.insert(
             [],
             Into::<&[u8; 1]>::into(RootTree::Identities),
@@ -207,11 +203,11 @@ impl Drive {
     }
 
     fn add_contract_to_storage(
-        &mut self,
+        &self,
         contract_bytes: Element,
         contract: &Contract,
         block_time: f64,
-        transaction: Option<&OptimisticTransactionDBTransaction>,
+        transaction: TransactionArg,
     ) -> Result<u64, Error> {
         let contract_root_path = contract_root_path(&contract.id);
         if contract.keeps_history {
@@ -245,11 +241,11 @@ impl Drive {
     }
 
     fn insert_contract(
-        &mut self,
+        &self,
         contract_bytes: Element,
         contract: &Contract,
         block_time: f64,
-        transaction: Option<&OptimisticTransactionDBTransaction>,
+        transaction: TransactionArg,
     ) -> Result<u64, Error> {
         self.grove.insert(
             [Into::<&[u8; 1]>::into(RootTree::ContractDocuments).as_slice()],
@@ -311,12 +307,12 @@ impl Drive {
     }
 
     fn update_contract(
-        &mut self,
+        &self,
         contract_bytes: Element,
         contract: &Contract,
         original_contract: &Contract,
         block_time: f64,
-        transaction: Option<&OptimisticTransactionDBTransaction>,
+        transaction: TransactionArg,
     ) -> Result<u64, Error> {
         if original_contract.readonly {
             return Err(Error::InternalError("contract is readonly"));
@@ -427,10 +423,10 @@ impl Drive {
     }
 
     pub fn apply_contract(
-        &mut self,
+        &self,
         contract_cbor: Vec<u8>,
         block_time: f64,
-        transaction: Option<&OptimisticTransactionDBTransaction>,
+        transaction: TransactionArg,
     ) -> Result<u64, Error> {
         // first we need to deserialize the contract
         let contract = Contract::from_cbor(&contract_cbor)?;
@@ -478,14 +474,14 @@ impl Drive {
     }
 
     fn add_document_to_primary_storage(
-        &mut self,
+        &self,
         document_cbor: &[u8],
         document: &Document,
         document_type: &DocumentType,
         contract: &Contract,
         block_time: f64,
         insert_without_check: bool,
-        transaction: Option<&OptimisticTransactionDBTransaction>,
+        transaction: TransactionArg,
     ) -> Result<u64, Error> {
         let document_element = Element::Item(Vec::from(document_cbor));
         let primary_key_path =
@@ -547,19 +543,19 @@ impl Drive {
         Ok(0)
     }
 
-    pub fn add_document(&mut self, _document_cbor: &[u8]) -> Result<(), Error> {
+    pub fn add_document(&self, _document_cbor: &[u8]) -> Result<(), Error> {
         todo!()
     }
 
     pub fn add_document_for_contract_cbor(
-        &mut self,
+        &self,
         document_cbor: &[u8],
         contract_cbor: &[u8],
         document_type_name: &str,
         owner_id: Option<&[u8]>,
         override_document: bool,
         block_time: f64,
-        transaction: Option<&OptimisticTransactionDBTransaction>,
+        transaction: TransactionArg,
     ) -> Result<u64, Error> {
         let contract = Contract::from_cbor(contract_cbor)?;
 
@@ -578,14 +574,14 @@ impl Drive {
     }
 
     pub fn add_document_cbor_for_contract(
-        &mut self,
+        &self,
         document_cbor: &[u8],
         contract: &Contract,
         document_type_name: &str,
         owner_id: Option<&[u8]>,
         override_document: bool,
         block_time: f64,
-        transaction: Option<&OptimisticTransactionDBTransaction>,
+        transaction: TransactionArg,
     ) -> Result<u64, Error> {
         let document = Document::from_cbor(document_cbor, None, owner_id)?;
 
@@ -602,7 +598,7 @@ impl Drive {
     }
 
     pub fn add_document_for_contract(
-        &mut self,
+        &self,
         document: &Document,
         document_cbor: &[u8],
         contract: &Contract,
@@ -610,7 +606,7 @@ impl Drive {
         owner_id: Option<&[u8]>,
         override_document: bool,
         block_time: f64,
-        transaction: Option<&OptimisticTransactionDBTransaction>,
+        transaction: TransactionArg,
     ) -> Result<u64, Error> {
         // second we need to construct the path for documents on the contract
         // the path is
@@ -806,13 +802,13 @@ impl Drive {
     }
 
     pub fn update_document_for_contract_cbor(
-        &mut self,
+        &self,
         document_cbor: &[u8],
         contract_cbor: &[u8],
         document_type: &str,
         owner_id: Option<&[u8]>,
         block_time: f64,
-        transaction: Option<&OptimisticTransactionDBTransaction>,
+        transaction: TransactionArg,
     ) -> Result<u64, Error> {
         let contract = Contract::from_cbor(contract_cbor)?;
 
@@ -830,13 +826,13 @@ impl Drive {
     }
 
     pub fn update_document_cbor_for_contract(
-        &mut self,
+        &self,
         document_cbor: &[u8],
         contract: &Contract,
         document_type: &str,
         owner_id: Option<&[u8]>,
         block_time: f64,
-        transaction: Option<&OptimisticTransactionDBTransaction>,
+        transaction: TransactionArg,
     ) -> Result<u64, Error> {
         let document = Document::from_cbor(document_cbor, None, owner_id)?;
 
@@ -852,14 +848,14 @@ impl Drive {
     }
 
     pub fn update_document_for_contract(
-        &mut self,
+        &self,
         document: &Document,
         document_cbor: &[u8],
         contract: &Contract,
         document_type_name: &str,
         owner_id: Option<&[u8]>,
         block_time: f64,
-        transaction: Option<&OptimisticTransactionDBTransaction>,
+        transaction: TransactionArg,
     ) -> Result<u64, Error> {
         let document_type = contract
             .document_types
@@ -1143,12 +1139,12 @@ impl Drive {
     }
 
     pub fn delete_document_for_contract_cbor(
-        &mut self,
+        &self,
         document_id: &[u8],
         contract_cbor: &[u8],
         document_type_name: &str,
         owner_id: Option<&[u8]>,
-        transaction: Option<&OptimisticTransactionDBTransaction>,
+        transaction: TransactionArg,
     ) -> Result<u64, Error> {
         let contract = Contract::from_cbor(contract_cbor)?;
         self.delete_document_for_contract(
@@ -1161,12 +1157,12 @@ impl Drive {
     }
 
     pub fn delete_document_for_contract(
-        &mut self,
+        &self,
         document_id: &[u8],
         contract: &Contract,
         document_type_name: &str,
         owner_id: Option<&[u8]>,
-        transaction: Option<&OptimisticTransactionDBTransaction>,
+        transaction: TransactionArg,
     ) -> Result<u64, Error> {
         let document_type = contract
             .document_types
@@ -1300,11 +1296,11 @@ impl Drive {
     }
 
     pub fn query_documents_from_contract_cbor(
-        &mut self,
+        &self,
         contract_cbor: &[u8],
         document_type_name: String,
         query_cbor: &[u8],
-        transaction: Option<&OptimisticTransactionDBTransaction>,
+        transaction: TransactionArg,
     ) -> Result<(Vec<Vec<u8>>, u16), Error> {
         let contract = Contract::from_cbor(contract_cbor)?;
 
@@ -1314,15 +1310,15 @@ impl Drive {
     }
 
     pub fn query_documents_from_contract(
-        &mut self,
+        &self,
         contract: &Contract,
         document_type: &DocumentType,
         query_cbor: &[u8],
-        transaction: Option<&OptimisticTransactionDBTransaction>,
+        transaction: TransactionArg,
     ) -> Result<(Vec<Vec<u8>>, u16), Error> {
         let query = DriveQuery::from_cbor(query_cbor, contract, document_type)?;
 
-        query.execute_no_proof(&mut self.grove, transaction)
+        query.execute_no_proof(&self.grove, transaction)
     }
 }
 
@@ -1333,12 +1329,12 @@ mod tests {
     use crate::drive::Drive;
     use crate::query::DriveQuery;
     use rand::Rng;
-    use std::{collections::HashMap, fs::File, io::BufReader, path::Path};
-    use tempdir::TempDir;
+    use std::collections::HashMap;
+    use tempfile::TempDir;
 
     fn setup_dashpay(prefix: &str, mutable_contact_requests: bool) -> (Drive, Vec<u8>) {
-        let tmp_dir = TempDir::new(prefix).unwrap();
-        let mut drive: Drive = Drive::open(tmp_dir).expect("expected to open Drive successfully");
+        let tmp_dir = TempDir::new().unwrap();
+        let drive: Drive = Drive::open(tmp_dir).expect("expected to open Drive successfully");
 
         drive
             .create_root_tree(None)
@@ -1361,7 +1357,7 @@ mod tests {
 
     #[test]
     fn test_add_dashpay_documents_no_transaction() {
-        let (mut drive, dashpay_cbor) = setup_dashpay("add", true);
+        let (drive, dashpay_cbor) = setup_dashpay("add", true);
 
         let dashpay_cr_document_cbor = json_document_to_cbor(
             "tests/supporting_files/contract/dashpay/contact-request0.json",
@@ -1408,18 +1404,17 @@ mod tests {
 
     #[test]
     fn test_add_dashpay_documents() {
-        let tmp_dir = TempDir::new("add").unwrap();
-        let mut drive: Drive = Drive::open(tmp_dir).expect("expected to open Drive successfully");
+        let tmp_dir = TempDir::new().unwrap();
+        let drive: Drive = Drive::open(tmp_dir).expect("expected to open Drive successfully");
 
-        let storage = drive.grove.storage();
-        let db_transaction = storage.transaction();
+        let db_transaction = drive.grove.start_transaction();
 
         drive
             .create_root_tree(Some(&db_transaction))
             .expect("expected to create root tree successfully");
 
         let contract = setup_contract(
-            &mut drive,
+            &drive,
             "tests/supporting_files/contract/dashpay/dashpay-contract-all-mutable.json",
             Some(&db_transaction),
         );
@@ -1469,18 +1464,17 @@ mod tests {
 
     #[test]
     fn test_modify_dashpay_contact_request() {
-        let tmp_dir = TempDir::new("modify_contact_request").unwrap();
-        let mut drive: Drive = Drive::open(tmp_dir).expect("expected to open Drive successfully");
+        let tmp_dir = TempDir::new().unwrap();
+        let drive: Drive = Drive::open(tmp_dir).expect("expected to open Drive successfully");
 
-        let storage = drive.grove.storage();
-        let db_transaction = storage.transaction();
+        let db_transaction = drive.grove.start_transaction();
 
         drive
             .create_root_tree(Some(&db_transaction))
             .expect("expected to create root tree successfully");
 
         let contract = setup_contract(
-            &mut drive,
+            &drive,
             "tests/supporting_files/contract/dashpay/dashpay-contract.json",
             Some(&db_transaction),
         );
@@ -1529,18 +1523,17 @@ mod tests {
 
     #[test]
     fn test_update_dashpay_profile_with_history() {
-        let tmp_dir = TempDir::new("modify_contact_request").unwrap();
-        let mut drive: Drive = Drive::open(tmp_dir).expect("expected to open Drive successfully");
+        let tmp_dir = TempDir::new().unwrap();
+        let drive: Drive = Drive::open(tmp_dir).expect("expected to open Drive successfully");
 
-        let storage = drive.grove.storage();
-        let db_transaction = storage.transaction();
+        let db_transaction = drive.grove.start_transaction();
 
         drive
             .create_root_tree(Some(&db_transaction))
             .expect("expected to create root tree successfully");
 
         let contract = setup_contract(
-            &mut drive,
+            &drive,
             "tests/supporting_files/contract/dashpay/dashpay-contract-with-profile-history.json",
             Some(&db_transaction),
         );
@@ -1582,7 +1575,7 @@ mod tests {
 
     #[test]
     fn test_delete_dashpay_documents_no_transaction() {
-        let (mut drive, dashpay_cbor) = setup_dashpay("delete", false);
+        let (drive, dashpay_cbor) = setup_dashpay("delete", false);
 
         let dashpay_profile_document_cbor = json_document_to_cbor(
             "tests/supporting_files/contract/dashpay/profile0.json",
@@ -1619,18 +1612,17 @@ mod tests {
 
     #[test]
     fn test_delete_dashpay_documents() {
-        let tmp_dir = TempDir::new("delete").unwrap();
-        let mut drive: Drive = Drive::open(tmp_dir).expect("expected to open Drive successfully");
+        let tmp_dir = TempDir::new().unwrap();
+        let drive: Drive = Drive::open(tmp_dir).expect("expected to open Drive successfully");
 
-        let storage = drive.grove.storage();
-        let db_transaction = storage.transaction();
+        let db_transaction = drive.grove.start_transaction();
 
         drive
             .create_root_tree(Some(&db_transaction))
             .expect("expected to create root tree successfully");
 
         let contract = setup_contract(
-            &mut drive,
+            &drive,
             "tests/supporting_files/contract/dashpay/dashpay-contract.json",
             Some(&db_transaction),
         );
@@ -1670,18 +1662,17 @@ mod tests {
 
     #[test]
     fn test_add_dpns_documents() {
-        let tmp_dir = TempDir::new("dpns").unwrap();
-        let mut drive: Drive = Drive::open(tmp_dir).expect("expected to open Drive successfully");
+        let tmp_dir = TempDir::new().unwrap();
+        let drive: Drive = Drive::open(tmp_dir).expect("expected to open Drive successfully");
 
-        let storage = drive.grove.storage();
-        let db_transaction = storage.transaction();
+        let db_transaction = drive.grove.start_transaction();
 
         drive
             .create_root_tree(Some(&db_transaction))
             .expect("expected to create root tree successfully");
 
         let contract = setup_contract(
-            &mut drive,
+            &drive,
             "tests/supporting_files/contract/dpns/dpns-contract.json",
             Some(&db_transaction),
         );
@@ -1716,22 +1707,17 @@ mod tests {
 
     #[test]
     fn test_add_and_remove_family_one_document() {
-        let tmp_dir = TempDir::new("family").unwrap();
-        let mut drive: Drive = Drive::open(tmp_dir).expect("expected to open Drive successfully");
+        let tmp_dir = TempDir::new().unwrap();
+        let drive: Drive = Drive::open(tmp_dir).expect("expected to open Drive successfully");
 
-        let storage = drive.grove.storage();
-        let db_transaction = storage.transaction();
-        drive
-            .grove
-            .start_transaction()
-            .expect("expected to start transaction");
+        let db_transaction = drive.grove.start_transaction();
 
         drive
             .create_root_tree(Some(&db_transaction))
             .expect("expected to create root tree successfully");
 
         let contract = setup_contract(
-            &mut drive,
+            &drive,
             "tests/supporting_files/contract/family/family-contract-reduced.json",
             Some(&db_transaction),
         );
@@ -1769,19 +1755,15 @@ mod tests {
         let query = DriveQuery::from_sql_expr(sql_string, &contract).expect("should build query");
 
         let (results_no_transaction, _) = query
-            .execute_no_proof(&mut drive.grove, None)
+            .execute_no_proof(&drive.grove, None)
             .expect("expected to execute query");
 
         assert_eq!(results_no_transaction.len(), 1);
 
-        let db_transaction = storage.transaction();
-        drive
-            .grove
-            .start_transaction()
-            .expect("expected to start transaction");
+        let db_transaction = drive.grove.start_transaction();
 
         let (results_on_transaction, _) = query
-            .execute_no_proof(&mut drive.grove, Some(&db_transaction))
+            .execute_no_proof(&drive.grove, Some(&db_transaction))
             .expect("expected to execute query");
 
         assert_eq!(results_on_transaction.len(), 1);
@@ -1804,14 +1786,10 @@ mod tests {
             .commit_transaction(db_transaction)
             .expect("unable to commit transaction");
 
-        let db_transaction = storage.transaction();
-        drive
-            .grove
-            .start_transaction()
-            .expect("expected to start transaction");
+        let db_transaction = drive.grove.start_transaction();
 
         let (results_on_transaction, _) = query
-            .execute_no_proof(&mut drive.grove, Some(&db_transaction))
+            .execute_no_proof(&drive.grove, Some(&db_transaction))
             .expect("expected to execute query");
 
         assert_eq!(results_on_transaction.len(), 0);
@@ -1819,22 +1797,17 @@ mod tests {
 
     #[test]
     fn test_add_and_remove_family_documents() {
-        let tmp_dir = TempDir::new("family").unwrap();
-        let mut drive: Drive = Drive::open(tmp_dir).expect("expected to open Drive successfully");
+        let tmp_dir = TempDir::new().unwrap();
+        let drive: Drive = Drive::open(tmp_dir).expect("expected to open Drive successfully");
 
-        let storage = drive.grove.storage();
-        let db_transaction = storage.transaction();
-        drive
-            .grove
-            .start_transaction()
-            .expect("expected to start transaction");
+        let db_transaction = drive.grove.start_transaction();
 
         drive
             .create_root_tree(Some(&db_transaction))
             .expect("expected to create root tree successfully");
 
         let contract = setup_contract(
-            &mut drive,
+            &drive,
             "tests/supporting_files/contract/family/family-contract-reduced.json",
             Some(&db_transaction),
         );
@@ -1895,7 +1868,7 @@ mod tests {
         let query = DriveQuery::from_sql_expr(sql_string, &contract).expect("should build query");
 
         let (results_no_transaction, _) = query
-            .execute_no_proof(&mut drive.grove, None)
+            .execute_no_proof(&drive.grove, None)
             .expect("expected to execute query");
 
         assert_eq!(results_no_transaction.len(), 2);
@@ -1904,11 +1877,7 @@ mod tests {
             .into_vec()
             .expect("this should decode");
 
-        let db_transaction = storage.transaction();
-        drive
-            .grove
-            .start_transaction()
-            .expect("expected to start transaction");
+        let db_transaction = drive.grove.start_transaction();
 
         drive
             .delete_document_for_contract(
@@ -1930,7 +1899,7 @@ mod tests {
         let query = DriveQuery::from_sql_expr(sql_string, &contract).expect("should build query");
 
         let (results_no_transaction, _) = query
-            .execute_no_proof(&mut drive.grove, None)
+            .execute_no_proof(&drive.grove, None)
             .expect("expected to execute query");
 
         assert_eq!(results_no_transaction.len(), 1);
@@ -1939,11 +1908,7 @@ mod tests {
             .into_vec()
             .expect("this should decode");
 
-        let db_transaction = storage.transaction();
-        drive
-            .grove
-            .start_transaction()
-            .expect("expected to start transaction");
+        let db_transaction = drive.grove.start_transaction();
 
         drive
             .delete_document_for_contract(
@@ -1965,7 +1930,7 @@ mod tests {
         let query = DriveQuery::from_sql_expr(sql_string, &contract).expect("should build query");
 
         let (results_no_transaction, _) = query
-            .execute_no_proof(&mut drive.grove, None)
+            .execute_no_proof(&drive.grove, None)
             .expect("expected to execute query");
 
         assert_eq!(results_no_transaction.len(), 0);
@@ -1973,22 +1938,17 @@ mod tests {
 
     #[test]
     fn test_add_and_remove_family_documents_with_empty_fields() {
-        let tmp_dir = TempDir::new("family").unwrap();
-        let mut drive: Drive = Drive::open(tmp_dir).expect("expected to open Drive successfully");
+        let tmp_dir = TempDir::new().unwrap();
+        let drive: Drive = Drive::open(tmp_dir).expect("expected to open Drive successfully");
 
-        let storage = drive.grove.storage();
-        let db_transaction = storage.transaction();
-        drive
-            .grove
-            .start_transaction()
-            .expect("expected to start transaction");
+        let db_transaction = drive.grove.start_transaction();
 
         drive
             .create_root_tree(Some(&db_transaction))
             .expect("expected to create root tree successfully");
 
         let contract = setup_contract(
-            &mut drive,
+            &drive,
             "tests/supporting_files/contract/family/family-contract-reduced.json",
             Some(&db_transaction),
         );
@@ -2049,7 +2009,7 @@ mod tests {
         let query = DriveQuery::from_sql_expr(sql_string, &contract).expect("should build query");
 
         let (results_no_transaction, _) = query
-            .execute_no_proof(&mut drive.grove, None)
+            .execute_no_proof(&drive.grove, None)
             .expect("expected to execute query");
 
         assert_eq!(results_no_transaction.len(), 2);
@@ -2058,11 +2018,7 @@ mod tests {
             .into_vec()
             .expect("this should decode");
 
-        let db_transaction = storage.transaction();
-        drive
-            .grove
-            .start_transaction()
-            .expect("expected to start transaction");
+        let db_transaction = drive.grove.start_transaction();
 
         drive
             .delete_document_for_contract(
@@ -2081,11 +2037,7 @@ mod tests {
 
         // Let's try adding the document back after it was deleted
 
-        let db_transaction = storage.transaction();
-        drive
-            .grove
-            .start_transaction()
-            .expect("expected to start transaction");
+        let db_transaction = drive.grove.start_transaction();
 
         let document = Document::from_cbor(&person_document_cbor, None, Some(&random_owner_id))
             .expect("expected to deserialize the document");
@@ -2110,11 +2062,7 @@ mod tests {
 
         // Let's try removing all documents now
 
-        let db_transaction = storage.transaction();
-        drive
-            .grove
-            .start_transaction()
-            .expect("expected to start transaction");
+        let db_transaction = drive.grove.start_transaction();
 
         drive
             .delete_document_for_contract(
@@ -2150,7 +2098,7 @@ mod tests {
         let query = DriveQuery::from_sql_expr(sql_string, &contract).expect("should build query");
 
         let (results_no_transaction, _) = query
-            .execute_no_proof(&mut drive.grove, None)
+            .execute_no_proof(&drive.grove, None)
             .expect("expected to execute query");
 
         assert_eq!(results_no_transaction.len(), 0);
@@ -2158,7 +2106,7 @@ mod tests {
 
     #[test]
     fn test_add_dashpay_many_non_conflicting_documents() {
-        let (mut drive, dashpay_cbor) = setup_dashpay("add_no_conflict", true);
+        let (drive, dashpay_cbor) = setup_dashpay("add_no_conflict", true);
 
         let dashpay_cr_document_cbor_0 = json_document_to_cbor(
             "tests/supporting_files/contract/dashpay/contact-request0.json",
@@ -2213,7 +2161,7 @@ mod tests {
 
     #[test]
     fn test_add_dashpay_conflicting_unique_index_documents() {
-        let (mut drive, dashpay_cbor) = setup_dashpay("add_conflict", true);
+        let (drive, dashpay_cbor) = setup_dashpay("add_conflict", true);
 
         let dashpay_cr_document_cbor_0 = json_document_to_cbor(
             "tests/supporting_files/contract/dashpay/contact-request0.json",
@@ -2254,15 +2202,10 @@ mod tests {
 
     #[test]
     fn test_create_and_update_document_same_transaction() {
-        let tmp_dir = TempDir::new("alice_bob_contacts").unwrap();
-        let mut drive: Drive = Drive::open(tmp_dir).expect("expected to open Drive successfully");
+        let tmp_dir = TempDir::new().unwrap();
+        let drive: Drive = Drive::open(tmp_dir).expect("expected to open Drive successfully");
 
-        let storage = drive.grove.storage();
-        let db_transaction = storage.transaction();
-        drive
-            .grove
-            .start_transaction()
-            .expect("expected to start transaction");
+        let db_transaction = drive.grove.start_transaction();
 
         drive
             .create_root_tree(Some(&db_transaction))
@@ -2308,8 +2251,8 @@ mod tests {
 
     #[test]
     fn test_create_and_update_document_no_transactions() {
-        let tmp_dir = TempDir::new("alice_bob_contacts").unwrap();
-        let mut drive: Drive = Drive::open(tmp_dir).expect("expected to open Drive successfully");
+        let tmp_dir = TempDir::new().unwrap();
+        let drive: Drive = Drive::open(tmp_dir).expect("expected to open Drive successfully");
 
         drive
             .create_root_tree(None)
@@ -2346,7 +2289,7 @@ mod tests {
         let query = DriveQuery::from_sql_expr(sql_string, &contract).expect("should build query");
 
         let (results_no_transaction, _) = query
-            .execute_no_proof(&mut drive.grove, None)
+            .execute_no_proof(&drive.grove, None)
             .expect("expected to execute query");
 
         assert_eq!(results_no_transaction.len(), 1);
@@ -2367,7 +2310,7 @@ mod tests {
             .expect("should update alice profile");
 
         let (results_no_transaction, _) = query
-            .execute_no_proof(&mut drive.grove, None)
+            .execute_no_proof(&drive.grove, None)
             .expect("expected to execute query");
 
         assert_eq!(results_no_transaction.len(), 1);
@@ -2375,15 +2318,10 @@ mod tests {
 
     #[test]
     fn test_create_and_update_document_in_different_transactions() {
-        let tmp_dir = TempDir::new("alice_bob_contacts").unwrap();
-        let mut drive: Drive = Drive::open(tmp_dir).expect("expected to open Drive successfully");
+        let tmp_dir = TempDir::new().unwrap();
+        let drive: Drive = Drive::open(tmp_dir).expect("expected to open Drive successfully");
 
-        let storage = drive.grove.storage();
-        let db_transaction = storage.transaction();
-        drive
-            .grove
-            .start_transaction()
-            .expect("expected to start transaction");
+        let db_transaction = drive.grove.start_transaction();
 
         drive
             .create_root_tree(Some(&db_transaction))
@@ -2425,19 +2363,15 @@ mod tests {
         let query = DriveQuery::from_sql_expr(sql_string, &contract).expect("should build query");
 
         let (results_no_transaction, _) = query
-            .execute_no_proof(&mut drive.grove, None)
+            .execute_no_proof(&drive.grove, None)
             .expect("expected to execute query");
 
         assert_eq!(results_no_transaction.len(), 1);
 
-        let db_transaction = storage.transaction();
-        drive
-            .grove
-            .start_transaction()
-            .expect("expected to start transaction");
+        let db_transaction = drive.grove.start_transaction();
 
         let (results_on_transaction, _) = query
-            .execute_no_proof(&mut drive.grove, Some(&db_transaction))
+            .execute_no_proof(&drive.grove, Some(&db_transaction))
             .expect("expected to execute query");
 
         assert_eq!(results_on_transaction.len(), 1);
@@ -2458,7 +2392,7 @@ mod tests {
             .expect("should update alice profile");
 
         let (results_on_transaction, _) = query
-            .execute_no_proof(&mut drive.grove, Some(&db_transaction))
+            .execute_no_proof(&drive.grove, Some(&db_transaction))
             .expect("expected to execute query");
 
         assert_eq!(results_on_transaction.len(), 1);
@@ -2471,15 +2405,10 @@ mod tests {
 
     #[test]
     fn test_create_and_update_document_in_different_transactions_with_delete_rollback() {
-        let tmp_dir = TempDir::new("alice_bob_contacts").unwrap();
-        let mut drive: Drive = Drive::open(tmp_dir).expect("expected to open Drive successfully");
+        let tmp_dir = TempDir::new().unwrap();
+        let drive: Drive = Drive::open(tmp_dir).expect("expected to open Drive successfully");
 
-        let storage = drive.grove.storage();
-        let db_transaction = storage.transaction();
-        drive
-            .grove
-            .start_transaction()
-            .expect("expected to start transaction");
+        let db_transaction = drive.grove.start_transaction();
 
         drive
             .create_root_tree(Some(&db_transaction))
@@ -2521,19 +2450,15 @@ mod tests {
         let query = DriveQuery::from_sql_expr(sql_string, &contract).expect("should build query");
 
         let (results_no_transaction, _) = query
-            .execute_no_proof(&mut drive.grove, None)
+            .execute_no_proof(&drive.grove, None)
             .expect("expected to execute query");
 
         assert_eq!(results_no_transaction.len(), 1);
 
-        let db_transaction = storage.transaction();
-        drive
-            .grove
-            .start_transaction()
-            .expect("expected to start transaction");
+        let db_transaction = drive.grove.start_transaction();
 
         let (results_on_transaction, _) = query
-            .execute_no_proof(&mut drive.grove, Some(&db_transaction))
+            .execute_no_proof(&drive.grove, Some(&db_transaction))
             .expect("expected to execute query");
 
         assert_eq!(results_on_transaction.len(), 1);
@@ -2549,7 +2474,7 @@ mod tests {
             .expect("expected to delete document");
 
         let (results_on_transaction, _) = query
-            .execute_no_proof(&mut drive.grove, Some(&db_transaction))
+            .execute_no_proof(&drive.grove, Some(&db_transaction))
             .expect("expected to execute query");
 
         assert_eq!(results_on_transaction.len(), 0);
@@ -2560,7 +2485,7 @@ mod tests {
             .expect("expected to rollback transaction");
 
         let (results_on_transaction, _) = query
-            .execute_no_proof(&mut drive.grove, Some(&db_transaction))
+            .execute_no_proof(&drive.grove, Some(&db_transaction))
             .expect("expected to execute query");
 
         assert_eq!(results_on_transaction.len(), 1);
@@ -2583,15 +2508,10 @@ mod tests {
 
     #[test]
     fn test_create_two_documents_with_the_same_index_in_different_transactions() {
-        let tmp_dir = TempDir::new("dpns").unwrap();
-        let mut drive: Drive = Drive::open(tmp_dir).expect("expected to open Drive successfully");
+        let tmp_dir = TempDir::new().unwrap();
+        let drive: Drive = Drive::open(tmp_dir).expect("expected to open Drive successfully");
 
-        let storage = drive.grove.storage();
-        let db_transaction = storage.transaction();
-        drive
-            .grove
-            .start_transaction()
-            .expect("expected to start transaction");
+        let db_transaction = drive.grove.start_transaction();
 
         drive
             .create_root_tree(Some(&db_transaction))
@@ -2624,11 +2544,7 @@ mod tests {
             .commit_transaction(db_transaction)
             .expect("should commit transaction");
 
-        let db_transaction = storage.transaction();
-        drive
-            .grove
-            .start_transaction()
-            .expect("expected to start transaction");
+        let db_transaction = drive.grove.start_transaction();
 
         // add random TLD
 
@@ -2649,8 +2565,8 @@ mod tests {
 
     #[test]
     fn test_create_and_update_contract() {
-        let tmp_dir = TempDir::new("dpns").unwrap();
-        let mut drive: Drive = Drive::open(tmp_dir).expect("expected to open Drive successfully");
+        let tmp_dir = TempDir::new().unwrap();
+        let drive: Drive = Drive::open(tmp_dir).expect("expected to open Drive successfully");
 
         drive
             .create_root_tree(None)
@@ -2671,7 +2587,7 @@ mod tests {
 
     #[test]
     fn store_document_1() {
-        let tmp_dir = TempDir::new("db").unwrap();
+        let tmp_dir = TempDir::new().unwrap();
         let _drive = Drive::open(tmp_dir);
     }
 
@@ -2683,7 +2599,7 @@ mod tests {
         let document: HashMap<String, ciborium::value::Value> =
             ciborium::de::from_reader(read_document_cbor).expect("cannot deserialize cbor");
         assert!(document.get("a").is_some());
-        let tmp_dir = TempDir::new("db").unwrap();
+        let tmp_dir = TempDir::new().unwrap();
         let _drive = Drive::open(tmp_dir);
     }
 }

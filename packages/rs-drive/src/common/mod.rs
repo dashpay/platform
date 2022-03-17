@@ -5,13 +5,8 @@ use std::fs::File;
 use std::io;
 use std::io::{BufRead, BufReader};
 use std::path::Path;
-use storage::rocksdb_storage::OptimisticTransactionDBTransaction;
 
-pub fn setup_contract(
-    drive: &mut Drive,
-    path: &str,
-    transaction: Option<&OptimisticTransactionDBTransaction>,
-) -> Contract {
+pub fn setup_contract(drive: &Drive, path: &str, transaction: grovedb::TransactionArg) -> Contract {
     let contract_cbor = json_document_to_cbor(path, Some(crate::drive::defaults::PROTOCOL_VERSION));
     let contract = Contract::from_cbor(&contract_cbor).expect("contract should be deserialized");
     drive

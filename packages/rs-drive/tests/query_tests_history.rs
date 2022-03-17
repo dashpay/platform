@@ -8,7 +8,7 @@ use rs_drive::query::DriveQuery;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::collections::{BTreeMap, HashMap};
-use tempdir::TempDir;
+use tempfile::TempDir;
 
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -89,15 +89,10 @@ impl Person {
 }
 
 pub fn setup(count: u32, seed: u64) -> (Drive, Contract, TempDir) {
-    let tmp_dir = TempDir::new("family").unwrap();
-    let mut drive: Drive = Drive::open(&tmp_dir).expect("expected to open Drive successfully");
+    let tmp_dir = TempDir::new().unwrap();
+    let drive: Drive = Drive::open(&tmp_dir).expect("expected to open Drive successfully");
 
-    let storage = drive.grove.storage();
-    let db_transaction = storage.transaction();
-    drive
-        .grove
-        .start_transaction()
-        .expect("expected to start transaction successfully");
+    let db_transaction = drive.grove.start_transaction();
 
     drive
         .create_root_tree(Some(&db_transaction))
@@ -105,7 +100,7 @@ pub fn setup(count: u32, seed: u64) -> (Drive, Contract, TempDir) {
 
     // setup code
     let contract = common::setup_contract(
-        &mut drive,
+        &drive,
         "tests/supporting_files/contract/family/family-contract-with-history.json",
         Some(&db_transaction),
     );
@@ -143,21 +138,16 @@ pub fn setup(count: u32, seed: u64) -> (Drive, Contract, TempDir) {
 
 #[test]
 fn test_query_historical() {
-    let (mut drive, contract, _tmp_dir) = setup(10, 73509);
+    let (drive, contract, _tmp_dir) = setup(10, 73509);
 
-    let storage = drive.grove.storage();
-    let db_transaction = storage.transaction();
-    drive
-        .grove
-        .start_transaction()
-        .expect("expected to start transaction");
+    let db_transaction = drive.grove.start_transaction();
 
     let root_hash = drive
         .grove
         .root_hash(Some(&db_transaction))
         .expect("there is always a root hash");
     assert_eq!(
-        root_hash.as_slice(),
+        root_hash.expect("cannot get root hash").as_slice(),
         vec![
             125, 137, 75, 199, 156, 47, 45, 33, 28, 176, 102, 223, 138, 123, 160, 249, 12, 238,
             111, 104, 25, 38, 11, 25, 64, 11, 66, 16, 39, 66, 53, 118
@@ -195,7 +185,7 @@ fn test_query_historical() {
     let query = DriveQuery::from_cbor(where_cbor.as_slice(), &contract, &person_document_type)
         .expect("query should be built");
     let (results, _) = query
-        .execute_no_proof(&mut drive.grove, Some(&db_transaction))
+        .execute_no_proof(&drive.grove, Some(&db_transaction))
         .expect("proof should be executed");
     let names: Vec<String> = results
         .into_iter()
@@ -391,7 +381,7 @@ fn test_query_historical() {
     let query = DriveQuery::from_cbor(where_cbor.as_slice(), &contract, person_document_type)
         .expect("query should be built");
     let (results, _) = query
-        .execute_no_proof(&mut drive.grove, None)
+        .execute_no_proof(&drive.grove, None)
         .expect("proof should be executed");
     let names: Vec<String> = results
         .into_iter()
@@ -436,7 +426,7 @@ fn test_query_historical() {
     let query = DriveQuery::from_cbor(where_cbor.as_slice(), &contract, person_document_type)
         .expect("query should be built");
     let (results, _) = query
-        .execute_no_proof(&mut drive.grove, None)
+        .execute_no_proof(&drive.grove, None)
         .expect("proof should be executed");
     let names: Vec<String> = results
         .into_iter()
@@ -477,7 +467,7 @@ fn test_query_historical() {
     let query = DriveQuery::from_cbor(where_cbor.as_slice(), &contract, person_document_type)
         .expect("query should be built");
     let (results, _) = query
-        .execute_no_proof(&mut drive.grove, None)
+        .execute_no_proof(&drive.grove, None)
         .expect("proof should be executed");
     assert_eq!(results.len(), 5);
 
@@ -552,7 +542,7 @@ fn test_query_historical() {
     let query = DriveQuery::from_cbor(where_cbor.as_slice(), &contract, person_document_type)
         .expect("query should be built");
     let (results, _) = query
-        .execute_no_proof(&mut drive.grove, None)
+        .execute_no_proof(&drive.grove, None)
         .expect("proof should be executed");
     assert_eq!(results.len(), 3);
 
@@ -601,7 +591,7 @@ fn test_query_historical() {
     let query = DriveQuery::from_cbor(where_cbor.as_slice(), &contract, person_document_type)
         .expect("query should be built");
     let (results, _) = query
-        .execute_no_proof(&mut drive.grove, None)
+        .execute_no_proof(&drive.grove, None)
         .expect("proof should be executed");
     assert_eq!(results.len(), 2);
 
@@ -644,7 +634,7 @@ fn test_query_historical() {
     let query = DriveQuery::from_cbor(where_cbor.as_slice(), &contract, person_document_type)
         .expect("query should be built");
     let (results, _) = query
-        .execute_no_proof(&mut drive.grove, None)
+        .execute_no_proof(&drive.grove, None)
         .expect("proof should be executed");
     let names: Vec<String> = results
         .into_iter()
@@ -681,7 +671,7 @@ fn test_query_historical() {
     let query = DriveQuery::from_cbor(where_cbor.as_slice(), &contract, person_document_type)
         .expect("query should be built");
     let (results, _) = query
-        .execute_no_proof(&mut drive.grove, None)
+        .execute_no_proof(&drive.grove, None)
         .expect("proof should be executed");
     let names: Vec<String> = results
         .into_iter()
@@ -730,7 +720,7 @@ fn test_query_historical() {
     let query = DriveQuery::from_cbor(where_cbor.as_slice(), &contract, person_document_type)
         .expect("query should be built");
     let (results, _) = query
-        .execute_no_proof(&mut drive.grove, None)
+        .execute_no_proof(&drive.grove, None)
         .expect("proof should be executed");
     let names: Vec<String> = results
         .iter()
@@ -778,7 +768,7 @@ fn test_query_historical() {
     let query = DriveQuery::from_cbor(where_cbor.as_slice(), &contract, person_document_type)
         .expect("query should be built");
     let (results, _) = query
-        .execute_no_proof(&mut drive.grove, None)
+        .execute_no_proof(&drive.grove, None)
         .expect("proof should be executed");
     let names: Vec<String> = results
         .iter()
@@ -1331,7 +1321,7 @@ fn test_query_historical() {
         .root_hash(Some(&db_transaction))
         .expect("there is always a root hash");
     assert_eq!(
-        root_hash.as_slice(),
+        root_hash.expect("cannot get root hash").as_slice(),
         vec![
             221, 95, 96, 231, 160, 120, 76, 199, 100, 155, 238, 231, 184, 168, 157, 198, 13, 181,
             98, 234, 67, 93, 211, 112, 14, 115, 235, 31, 184, 234, 157, 131
