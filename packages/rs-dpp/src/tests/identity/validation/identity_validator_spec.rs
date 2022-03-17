@@ -1,16 +1,18 @@
+use std::process::id;
 use jsonschema::error::{TypeKind, ValidationErrorKind};
 use jsonschema::paths::PathChunk;
 use jsonschema::primitive_type::PrimitiveType::Integer;
+use serde_json::Value;
 use crate::errors::consensus::ConsensusError;
 use crate::identity::validation::IdentityValidator;
 
 #[test]
 pub fn balance_should_be_an_integer() {
     let mut identity = crate::tests::fixtures::identity_fixture_json();
-    //identity.balance = 1.2;
+    let map = identity.as_object_mut().expect("Expected value to be an JSON object");
+    map.insert("balance".parse().unwrap(), Value::from(1.2));
 
     let identity_validator = IdentityValidator::new().unwrap();
-
     let result = identity_validator.validate_identity(&identity);
 
     // expectJsonSchemaError(result);
@@ -29,11 +31,4 @@ pub fn balance_should_be_an_integer() {
         }
         _ => panic!("Expected JsonSchemaError")
     }
-
-    // expect(error.getKeyword()).to.equal('type');
-    // expect(error.getInstancePath()).to.equal('/balance');
-
-    //expect(error.getInstancePath()).to.equal('');
-    // expect(error.getParams().missingProperty).to.equal('id');
-    // expect(error.getKeyword()).to.equal('required');
 }
