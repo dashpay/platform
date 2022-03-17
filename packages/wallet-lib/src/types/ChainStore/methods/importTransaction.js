@@ -17,7 +17,8 @@ function importTransaction(transaction, metadata = {}) {
       isChainLocked: metadata.isChainLocked || null,
     },
   });
-  return this.considerTransaction(normalizedTransaction.hash);
+
+  return normalizedTransaction;
 }
 
 module.exports = importTransaction;

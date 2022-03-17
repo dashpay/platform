@@ -6,6 +6,9 @@ const sleepOneTick = () => new Promise((resolve) => {
   }
 });
 
+const sleep = (timeout) => new Promise(((resolve) => setTimeout(resolve, timeout)));
+
 module.exports = {
   sleepOneTick,
+  sleep,
 };

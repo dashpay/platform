@@ -11,20 +11,12 @@ module.exports = async function importTransactions(transactionsWithMayBeMetadata
     storage,
     network,
     walletId,
-    accountPath,
-    keyChainStore,
   } = this;
 
   let addressesGenerated = 0;
 
   const chainStore = storage.getChainStore(network);
   const walletStore = storage.getWalletStore(walletId);
-  const accountStore = storage
-    .getWalletStore(walletId)
-    .getPathState(accountPath);
-
-  const masterKeyChain = keyChainStore.getMasterKeyChain();
-  const keyChains = keyChainStore.getKeyChains();
 
   let mostRecentHeight = -1;
   transactionsWithMayBeMetadata.forEach((transactionWithMetadata) => {
@@ -36,26 +28,15 @@ module.exports = async function importTransactions(transactionsWithMayBeMetadata
       mostRecentHeight = metadata.height;
     }
 
+    const normalizedTransaction = chainStore.importTransaction(transaction, metadata);
     // Affected addresses might not be from our master keychain (account)
-    const affectedAddressesData = chainStore.importTransaction(transaction, metadata);
+    const affectedAddressesData = chainStore.considerTransaction(normalizedTransaction.hash);
     const affectedAddresses = Object.keys(affectedAddressesData);
     logger.silly(`Account.importTransactions - Import ${transaction.hash} to chainStore. ${affectedAddresses.length} addresses affected.`);
 
-    affectedAddresses.forEach((address) => {
-      keyChains.forEach((keyChain) => {
-        const issuedPaths = keyChain.markAddressAsUsed(address);
-        if (issuedPaths) {
-          addressesGenerated += issuedPaths.length;
-          issuedPaths.forEach((issuedPath) => {
-            if (keyChain.keyChainId === masterKeyChain.keyChainId) {
-              logger.silly(`Account.importTransactions - newly issued paths ${issuedPath.length}`);
-              accountStore.addresses[issuedPath.path] = issuedPath.address.toString();
-            }
-            chainStore.importAddress(issuedPath.address.toString());
-          });
-        }
-      });
-    });
+    const newPaths = this.generateNewPaths(affectedAddresses);
+    addressesGenerated += newPaths.length;
+    this.addPathsToStore(newPaths);
   });
 
   if (mostRecentHeight !== -1) {

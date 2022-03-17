@@ -59,6 +59,10 @@ class ChainStore extends EventEmitter {
       addresses: new Map(),
     };
   }
+
+  getTransactions() {
+    return this.state.transactions;
+  }
 }
 
 ChainStore.SCHEMA = SCHEMA;

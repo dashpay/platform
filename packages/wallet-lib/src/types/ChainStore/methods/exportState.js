@@ -3,7 +3,6 @@ function exportState() {
   const {
     blockHeaders,
     transactions,
-    instantLocks,
   } = state;
 
   const serializedState = {
@@ -22,10 +21,6 @@ function exportState() {
       serializedState.transactions[transactionHash] = transaction.toString();
       serializedState.txMetadata[transactionHash] = metadata;
     }
-  });
-
-  [...instantLocks.entries()].forEach(([transactionHash, instantLock]) => {
-    serializedState.instantLocks[transactionHash] = instantLock.toString();
   });
 
   return serializedState;
