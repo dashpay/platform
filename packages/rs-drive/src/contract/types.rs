@@ -41,7 +41,13 @@ pub fn encode_document_field_type(
     return match field_type {
         DocumentFieldType::String => {
             let value_as_text = value.as_text().ok_or_else(get_field_type_matching_error)?;
-            Ok(value_as_text.as_bytes().to_vec())
+            let vec = value_as_text.as_bytes().to_vec();
+            if vec.is_empty() {
+                // we don't want to collide with the definition of an empty string
+                Ok(vec![0])
+            } else {
+                Ok(vec)
+            }
         }
         DocumentFieldType::Date | DocumentFieldType::Integer => {
             let value_as_integer = value

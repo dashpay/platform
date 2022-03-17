@@ -2,12 +2,17 @@ use grovedb::Error;
 use rand::seq::SliceRandom;
 use rand::{Rng, SeedableRng};
 use rs_drive::common;
+use rs_drive::common::setup_contract;
 use rs_drive::contract::{Contract, Document};
 use rs_drive::drive::Drive;
 use rs_drive::query::DriveQuery;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::collections::HashMap;
+use std::fs::File;
+use std::io::{self, BufRead};
+use storage::rocksdb_storage::OptimisticTransactionDB;
+use storage::Transaction;
 use tempdir::TempDir;
 
 #[derive(Serialize, Deserialize)]
@@ -197,6 +202,64 @@ pub fn setup_dpns_tests(count: u32, seed: u64) -> (Drive, Contract, TempDir) {
     (drive, contract, tmp_dir)
 }
 
+pub fn setup_dpns_test_with_data(path: &str) -> (Drive, Contract, TempDir) {
+    let tmp_dir = TempDir::new("dpns_test").unwrap();
+    let mut drive: Drive = Drive::open(&tmp_dir).expect("expected to open Drive successfully");
+
+    let storage = drive.grove.storage();
+    let db_transaction = storage.transaction();
+    drive
+        .grove
+        .start_transaction()
+        .expect("expected to start transaction successfully");
+
+    drive
+        .create_root_tree(Some(&db_transaction))
+        .expect("expected to create root tree successfully");
+
+    let contract = setup_contract(
+        &mut drive,
+        "tests/supporting_files/contract/dpns/dpns-contract.json",
+        Some(&db_transaction),
+    );
+
+    let file = File::open(path).expect("should read domains from file");
+
+    for line in io::BufReader::new(file).lines() {
+        if let Ok(domain_json) = line {
+            let domain_json: serde_json::Value =
+                serde_json::from_str(&domain_json).expect("should parse json");
+
+            let domain_cbor = common::value_to_cbor(
+                domain_json,
+                Some(rs_drive::drive::defaults::PROTOCOL_VERSION),
+            );
+
+            let domain = Document::from_cbor(&domain_cbor, None, None)
+                .expect("expected to deserialize the document");
+
+            drive
+                .add_document_for_contract(
+                    &domain,
+                    &domain_cbor,
+                    &contract,
+                    "domain",
+                    None,
+                    false,
+                    Some(&db_transaction),
+                )
+                .expect("expected to insert a document successfully");
+
+            let id = bs58::encode(domain.id).into_string();
+        }
+    }
+    drive
+        .grove
+        .commit_transaction(db_transaction)
+        .expect("transaction should be committed");
+    (drive, contract, tmp_dir)
+}
+
 #[test]
 #[ignore]
 fn test_query_many() {
@@ -247,7 +310,7 @@ fn test_family_query() {
         root_hash.as_slice(),
         vec![
             164, 56, 26, 188, 12, 251, 247, 43, 109, 153, 109, 110, 78, 131, 37, 79, 19, 178, 159,
-            69, 35, 250, 159, 210, 2, 125, 12, 103, 50, 40, 108, 114
+            69, 35, 250, 159, 210, 2, 125, 12, 103, 50, 40, 108, 114,
         ]
     );
 
@@ -1056,7 +1119,6 @@ fn test_family_query() {
         )
         .expect("query should be executed");
 
-    // dbg!(&results);
     assert_eq!(results.len(), 1);
 
     // fetching by $id with order by
@@ -1093,7 +1155,7 @@ fn test_family_query() {
         last_person.id,
         vec![
             76, 161, 17, 201, 152, 232, 129, 48, 168, 13, 49, 10, 218, 53, 118, 136, 165, 198, 189,
-            116, 116, 22, 133, 92, 104, 165, 186, 249, 94, 81, 45, 20
+            116, 116, 22, 133, 92, 104, 165, 186, 249, 94, 81, 45, 20,
         ]
         .as_slice()
     );
@@ -1132,7 +1194,7 @@ fn test_family_query() {
         last_person.id,
         vec![
             140, 161, 17, 201, 152, 232, 129, 48, 168, 13, 49, 10, 218, 53, 118, 136, 165, 198,
-            189, 116, 116, 22, 133, 92, 104, 165, 186, 249, 94, 81, 45, 20
+            189, 116, 116, 22, 133, 92, 104, 165, 186, 249, 94, 81, 45, 20,
         ]
         .as_slice()
     );
@@ -1192,7 +1254,7 @@ fn test_family_query() {
         last_person.id,
         vec![
             249, 170, 70, 122, 181, 31, 35, 176, 175, 131, 70, 150, 250, 223, 194, 203, 175, 200,
-            107, 252, 199, 227, 154, 105, 89, 57, 38, 85, 236, 192, 254, 88
+            107, 252, 199, 227, 154, 105, 89, 57, 38, 85, 236, 192, 254, 88,
         ]
         .as_slice()
     );
@@ -1859,4 +1921,96 @@ fn test_dpns_query() {
     let a_names = ["minna".to_string(), "marilyn".to_string()];
 
     assert_eq!(names, a_names);
+
+    // A query getting all elements
+
+    let query_value = json!({
+        "orderBy": [
+            ["records.dashUniqueIdentityId", "desc"]
+        ]
+    });
+    let where_cbor = common::value_to_cbor(query_value, None);
+    let domain_document_type = contract
+        .document_types
+        .get("domain")
+        .expect("contract should have a domain document type");
+    let query = DriveQuery::from_cbor(where_cbor.as_slice(), &contract, &domain_document_type)
+        .expect("query should be built");
+    let (results, _) = query
+        .execute_no_proof(&mut drive.grove, Some(&db_transaction))
+        .expect("proof should be executed");
+
+    assert_eq!(results.len(), 10);
+}
+
+#[test]
+fn test_dpns_insertion_no_aliases() {
+    // using ascending order with rangeTo operators
+    let (mut drive, contract, _tmp_dir) =
+        setup_dpns_test_with_data("tests/supporting_files/contract/dpns/domains-no-alias.json");
+
+    let storage = drive.grove.storage();
+    let db_transaction = storage.transaction();
+    drive
+        .grove
+        .start_transaction()
+        .expect("expected to start transaction successfully");
+
+    let query_value = json!({
+        "orderBy": [["records.dashUniqueIdentityId", "desc"]],
+    });
+
+    let query_cbor = common::value_to_cbor(query_value, None);
+
+    let domain_document_type = contract
+        .document_types
+        .get("domain")
+        .expect("contract should have a domain document type");
+
+    let result = drive
+        .query_documents_from_contract(
+            &contract,
+            domain_document_type,
+            query_cbor.as_slice(),
+            Some(&db_transaction),
+        )
+        .expect("should perform query");
+
+    assert_eq!(result.0.len(), 15);
+}
+
+#[test]
+fn test_dpns_insertion_with_aliases() {
+    // using ascending order with rangeTo operators
+    let (mut drive, contract, _tmp_dir) =
+        setup_dpns_test_with_data("tests/supporting_files/contract/dpns/domains.json");
+
+    let storage = drive.grove.storage();
+    let db_transaction = storage.transaction();
+    drive
+        .grove
+        .start_transaction()
+        .expect("expected to start transaction successfully");
+
+    let query_value = json!({
+        "orderBy": [["records.dashUniqueIdentityId", "desc"]],
+    });
+
+    let query_cbor = common::value_to_cbor(query_value, None);
+
+    let domain_document_type = contract
+        .document_types
+        .get("domain")
+        .expect("contract should have a domain document type");
+
+    let result = drive
+        .query_documents_from_contract(
+            &contract,
+            domain_document_type,
+            query_cbor.as_slice(),
+            Some(&db_transaction),
+        )
+        .expect("should perform query");
+
+    assert_eq!(result.0.len(), 24);
 }
