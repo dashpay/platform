@@ -12,13 +12,10 @@ const TransactionSyncStreamWorker = require("../../../src/plugins/Workers/Transa
 const ChainPlugin = require("../../../src/plugins/Plugins/ChainPlugin");
 const LocalForageAdapterMock = require("../../../src/test/mocks/LocalForageAdapterMock");
 const createAndAttachTransportMocksToWallet = require("../../../src/test/mocks/createAndAttachTransportMocksToWallet");
-const TxStreamMock = require("../../../src/test/mocks/TxStreamMock");
 const {sleepOneTick} = require("../../../src/test/utils");
-const {txFilterStream} = require("../../../../dapi/lib/config");
-
 
 describe('Wallet', () => {
-  describe('Storage', () => {
+  describe.skip('Storage', () => {
     let wallet;
     let txStreamMock;
     let txStreamWorker;

@@ -174,7 +174,10 @@ class TransactionSyncStreamWorker extends Worker {
 
     this.chainSyncMediator.state = ChainSyncMediator.STATES.CONTINUOUS_SYNC;
     // noinspection ES6MissingAwait
-    this.incomingSyncPromise = this.startIncomingSync();
+    this.incomingSyncPromise = this.startIncomingSync().catch((e) => {
+      logger.error('Error syncing incoming transactions', e);
+      this.emit('error', e);
+    });
   }
 
   /**
