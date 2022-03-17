@@ -4,6 +4,7 @@ const dotenvResult = require('dotenv-safe').config();
 const karmaMocha = require('karma-mocha');
 const karmaMochaReporter = require('karma-mocha-reporter');
 const karmaChai = require('karma-chai');
+const karmaFirefoxLauncher = require('karma-firefox-launcher');
 const karmaChromeLauncher = require('karma-chrome-launcher');
 const karmaSourcemapLoader = require('karma-sourcemap-loader');
 const karmaWebpack = require('karma-webpack');
@@ -66,7 +67,7 @@ module.exports = (config) => {
     port: 9876,
     colors: true,
     logLevel: config.LOG_INFO,
-    browsers: ['ChromeHeadless'],
+    browsers: ['FirefoxHeadless'],
     singleRun: true,
     concurrency: Infinity,
     plugins: [
@@ -74,6 +75,7 @@ module.exports = (config) => {
       karmaMochaReporter,
       karmaChai,
       karmaChromeLauncher,
+      karmaFirefoxLauncher,
       karmaSourcemapLoader,
       karmaWebpack,
     ],
