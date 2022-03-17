@@ -199,8 +199,8 @@ fn js_object_to_query<'a, C: Context<'a>>(
     let left_to_right = js_value_to_option::<JsBoolean, _>(js_object.get(cx, "leftToRight")?, cx)?
         .map(|x| x.value(cx));
 
-    query.subquery_key = subquery_key;
-    query.subquery = subquery.map(Box::new);
+    query.default_subquery_branch.subquery_key = subquery_key;
+    query.default_subquery_branch.subquery = subquery.map(Box::new);
     query.left_to_right = left_to_right.unwrap_or(true);
 
     Ok(query)

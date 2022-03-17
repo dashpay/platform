@@ -740,7 +740,10 @@ fn contract_document_types(contract: &HashMap<String, CborValue>) -> Option<&Vec
     })
 }
 
-fn get_key_from_cbor_map<'a>(cbor_map: &'a [(Value, Value)], key: &'a str) -> Option<&'a Value> {
+pub fn get_key_from_cbor_map<'a>(
+    cbor_map: &'a [(Value, Value)],
+    key: &'a str,
+) -> Option<&'a Value> {
     for (cbor_key, cbor_value) in cbor_map.iter() {
         if !cbor_key.is_text() {
             continue;
@@ -753,7 +756,7 @@ fn get_key_from_cbor_map<'a>(cbor_map: &'a [(Value, Value)], key: &'a str) -> Op
     None
 }
 
-fn cbor_inner_array_value<'a>(
+pub fn cbor_inner_array_value<'a>(
     document_type: &'a [(Value, Value)],
     key: &'a str,
 ) -> Option<&'a Vec<Value>> {
@@ -764,7 +767,7 @@ fn cbor_inner_array_value<'a>(
     None
 }
 
-fn cbor_inner_map_value<'a>(
+pub fn cbor_inner_map_value<'a>(
     document_type: &'a [(Value, Value)],
     key: &'a str,
 ) -> Option<&'a Vec<(Value, Value)>> {
@@ -775,7 +778,10 @@ fn cbor_inner_map_value<'a>(
     None
 }
 
-fn cbor_inner_text_value<'a>(document_type: &'a [(Value, Value)], key: &'a str) -> Option<&'a str> {
+pub fn cbor_inner_text_value<'a>(
+    document_type: &'a [(Value, Value)],
+    key: &'a str,
+) -> Option<&'a str> {
     let key_value = get_key_from_cbor_map(document_type, key)?;
     if let Value::Text(string_value) = key_value {
         return Some(string_value);
@@ -783,7 +789,38 @@ fn cbor_inner_text_value<'a>(document_type: &'a [(Value, Value)], key: &'a str) 
     None
 }
 
-fn cbor_inner_bool_value(document_type: &[(Value, Value)], key: &str) -> Option<bool> {
+pub fn cbor_inner_bytes_value<'a>(
+    document_type: &'a [(Value, Value)],
+    key: &'a str,
+) -> Option<Vec<u8>> {
+    let key_value = get_key_from_cbor_map(document_type, key)?;
+    match key_value {
+        Value::Bytes(bytes) => Some(bytes.clone()),
+        Value::Array(array) => {
+            match array
+                .iter()
+                .map(|byte| match byte {
+                    Value::Integer(int) => {
+                        let value_as_u8: u8 = (*int)
+                            .try_into()
+                            .map_err(|_| Error::CorruptedData(String::from("expected u8 value")))?;
+                        Ok(value_as_u8)
+                    }
+                    _ => Err(Error::CorruptedData(String::from(
+                        "not an array of integers",
+                    ))),
+                })
+                .collect::<Result<Vec<u8>, Error>>()
+            {
+                Ok(bytes) => Some(bytes),
+                Err(_) => None,
+            }
+        }
+        _ => None,
+    }
+}
+
+pub fn cbor_inner_bool_value(document_type: &[(Value, Value)], key: &str) -> Option<bool> {
     let key_value = get_key_from_cbor_map(document_type, key)?;
     if let Value::Bool(bool_value) = key_value {
         return Some(*bool_value);
