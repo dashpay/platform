@@ -128,7 +128,7 @@ impl Domain {
         let mut vec: Vec<Domain> = Vec::with_capacity(count as usize);
 
         let mut rng = rand::rngs::StdRng::seed_from_u64(seed);
-        for i in 0..count {
+        for _i in 0..count {
             let label = first_names.choose(&mut rng).unwrap();
             let domain = Domain {
                 id: Vec::from(rng.gen::<[u8; 32]>()),
@@ -150,7 +150,7 @@ impl Domain {
 
 pub fn setup_dpns_tests(count: u32, seed: u64) -> (Drive, Contract, TempDir) {
     let tmp_dir = TempDir::new().unwrap();
-    let mut drive: Drive = Drive::open(&tmp_dir).expect("expected to open Drive successfully");
+    let drive: Drive = Drive::open(&tmp_dir).expect("expected to open Drive successfully");
 
     let db_transaction = drive.grove.start_transaction();
 
@@ -160,7 +160,7 @@ pub fn setup_dpns_tests(count: u32, seed: u64) -> (Drive, Contract, TempDir) {
 
     // setup code
     let contract = common::setup_contract(
-        &mut drive,
+        &drive,
         "tests/supporting_files/contract/dpns/dpns-contract.json",
         Some(&db_transaction),
     );
@@ -194,7 +194,7 @@ pub fn setup_dpns_tests(count: u32, seed: u64) -> (Drive, Contract, TempDir) {
 
 pub fn setup_dpns_test_with_data(path: &str) -> (Drive, Contract, TempDir) {
     let tmp_dir = TempDir::new().unwrap();
-    let mut drive: Drive = Drive::open(&tmp_dir).expect("expected to open Drive successfully");
+    let drive: Drive = Drive::open(&tmp_dir).expect("expected to open Drive successfully");
 
     let db_transaction = drive.grove.start_transaction();
 
@@ -203,7 +203,7 @@ pub fn setup_dpns_test_with_data(path: &str) -> (Drive, Contract, TempDir) {
         .expect("expected to create root tree successfully");
 
     let contract = setup_contract(
-        &mut drive,
+        &drive,
         "tests/supporting_files/contract/dpns/dpns-contract.json",
         Some(&db_transaction),
     );
@@ -235,8 +235,6 @@ pub fn setup_dpns_test_with_data(path: &str) -> (Drive, Contract, TempDir) {
                     Some(&db_transaction),
                 )
                 .expect("expected to insert a document successfully");
-
-            let id = bs58::encode(domain.id).into_string();
         }
     }
     drive
@@ -279,7 +277,7 @@ fn test_query_many() {
 
 #[test]
 fn test_family_query() {
-    let (mut drive, contract, _tmp_dir) = setup_family_tests(10, 73509);
+    let (drive, contract, _tmp_dir) = setup_family_tests(10, 73509);
 
     let db_transaction = drive.grove.start_transaction();
 
@@ -607,7 +605,7 @@ fn test_family_query() {
     let query = DriveQuery::from_cbor(where_cbor.as_slice(), &contract, person_document_type)
         .expect("query should be built");
     let (results, _) = query
-        .execute_no_proof(&mut drive.grove, None)
+        .execute_no_proof(&drive.grove, None)
         .expect("proof should be executed");
     let names: Vec<String> = results
         .into_iter()
@@ -1563,21 +1561,16 @@ fn test_sql_query() {
 
 #[test]
 fn test_dpns_query() {
-    let (mut drive, contract, tmp_dir) = setup_dpns_tests(10, 11456);
+    let (drive, contract, _tmp_dir) = setup_dpns_tests(10, 11456);
 
-    let storage = drive.grove.storage();
-    let db_transaction = storage.transaction();
-    drive
-        .grove
-        .start_transaction()
-        .expect("expected to start transaction");
+    let db_transaction = drive.grove.start_transaction();
 
     let root_hash = drive
         .grove
         .root_hash(Some(&db_transaction))
         .expect("there is always a root hash");
     assert_eq!(
-        root_hash.as_slice(),
+        root_hash.expect("cannot get root hash").as_slice(),
         vec![
             57, 11, 30, 250, 150, 197, 183, 79, 207, 232, 221, 217, 161, 151, 74, 66, 129, 31, 126,
             111, 232, 47, 94, 84, 246, 13, 195, 76, 72, 6, 229, 33
@@ -1616,7 +1609,7 @@ fn test_dpns_query() {
     let query = DriveQuery::from_cbor(where_cbor.as_slice(), &contract, &domain_document_type)
         .expect("query should be built");
     let (results, _) = query
-        .execute_no_proof(&mut drive.grove, Some(&db_transaction))
+        .execute_no_proof(&drive.grove, Some(&db_transaction))
         .expect("proof should be executed");
     let names: Vec<String> = results
         .into_iter()
@@ -1656,7 +1649,7 @@ fn test_dpns_query() {
     let query = DriveQuery::from_cbor(where_cbor.as_slice(), &contract, &domain_document_type)
         .expect("query should be built");
     let (results, _) = query
-        .execute_no_proof(&mut drive.grove, Some(&db_transaction))
+        .execute_no_proof(&drive.grove, Some(&db_transaction))
         .expect("proof should be executed");
     let names: Vec<String> = results
         .clone()
@@ -1725,7 +1718,7 @@ fn test_dpns_query() {
     let query = DriveQuery::from_cbor(where_cbor.as_slice(), &contract, &domain_document_type)
         .expect("query should be built");
     let (results, _) = query
-        .execute_no_proof(&mut drive.grove, Some(&db_transaction))
+        .execute_no_proof(&drive.grove, Some(&db_transaction))
         .expect("proof should be executed");
     let names: Vec<String> = results
         .into_iter()
@@ -1772,7 +1765,7 @@ fn test_dpns_query() {
     let query = DriveQuery::from_cbor(where_cbor.as_slice(), &contract, &domain_document_type)
         .expect("query should be built");
     let (results, _) = query
-        .execute_no_proof(&mut drive.grove, Some(&db_transaction))
+        .execute_no_proof(&drive.grove, Some(&db_transaction))
         .expect("proof should be executed");
     let names: Vec<String> = results
         .clone()
@@ -1838,7 +1831,7 @@ fn test_dpns_query() {
     let query = DriveQuery::from_cbor(where_cbor.as_slice(), &contract, &domain_document_type)
         .expect("query should be built");
     let (results, _) = query
-        .execute_no_proof(&mut drive.grove, Some(&db_transaction))
+        .execute_no_proof(&drive.grove, Some(&db_transaction))
         .expect("proof should be executed");
     let names: Vec<String> = results
         .into_iter()
@@ -1883,7 +1876,7 @@ fn test_dpns_query() {
     let query = DriveQuery::from_cbor(where_cbor.as_slice(), &contract, &domain_document_type)
         .expect("query should be built");
     let (results, _) = query
-        .execute_no_proof(&mut drive.grove, Some(&db_transaction))
+        .execute_no_proof(&drive.grove, Some(&db_transaction))
         .expect("proof should be executed");
     let names: Vec<String> = results
         .into_iter()
@@ -1920,7 +1913,7 @@ fn test_dpns_query() {
     let query = DriveQuery::from_cbor(where_cbor.as_slice(), &contract, &domain_document_type)
         .expect("query should be built");
     let (results, _) = query
-        .execute_no_proof(&mut drive.grove, Some(&db_transaction))
+        .execute_no_proof(&drive.grove, Some(&db_transaction))
         .expect("proof should be executed");
 
     assert_eq!(results.len(), 10);
@@ -1929,15 +1922,10 @@ fn test_dpns_query() {
 #[test]
 fn test_dpns_insertion_no_aliases() {
     // using ascending order with rangeTo operators
-    let (mut drive, contract, _tmp_dir) =
+    let (drive, contract, _tmp_dir) =
         setup_dpns_test_with_data("tests/supporting_files/contract/dpns/domains-no-alias.json");
 
-    let storage = drive.grove.storage();
-    let db_transaction = storage.transaction();
-    drive
-        .grove
-        .start_transaction()
-        .expect("expected to start transaction successfully");
+    let db_transaction = drive.grove.start_transaction();
 
     let query_value = json!({
         "orderBy": [["records.dashUniqueIdentityId", "desc"]],
@@ -1965,15 +1953,10 @@ fn test_dpns_insertion_no_aliases() {
 #[test]
 fn test_dpns_insertion_with_aliases() {
     // using ascending order with rangeTo operators
-    let (mut drive, contract, _tmp_dir) =
+    let (drive, contract, _tmp_dir) =
         setup_dpns_test_with_data("tests/supporting_files/contract/dpns/domains.json");
 
-    let storage = drive.grove.storage();
-    let db_transaction = storage.transaction();
-    drive
-        .grove
-        .start_transaction()
-        .expect("expected to start transaction successfully");
+    let db_transaction = drive.grove.start_transaction();
 
     let query_value = json!({
         "orderBy": [["records.dashUniqueIdentityId", "desc"]],
