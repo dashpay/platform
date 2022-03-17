@@ -9,9 +9,9 @@ use rs_drive::query::DriveQuery;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::collections::HashMap;
-use tempfile::TempDir;
 use std::fs::File;
 use std::io::{self, BufRead};
+use tempfile::TempDir;
 
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
