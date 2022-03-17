@@ -21,4 +21,8 @@ impl ValidationResult {
     pub fn add_errors(&mut self, mut errors: Vec<ConsensusError>) {
         self.errors.append(&mut errors)
     }
+
+    pub fn errors(&self) -> &Vec<ConsensusError> {
+        &self.errors
+    }
 }
