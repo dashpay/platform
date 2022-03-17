@@ -1332,7 +1332,8 @@ mod tests {
     use std::collections::HashMap;
     use tempfile::TempDir;
 
-    fn setup_dashpay(prefix: &str, mutable_contact_requests: bool) -> (Drive, Vec<u8>) {
+    fn setup_dashpay(_prefix: &str, mutable_contact_requests: bool) -> (Drive, Vec<u8>) {
+        // Todo: make TempDir based on _prefix
         let tmp_dir = TempDir::new().unwrap();
         let drive: Drive = Drive::open(tmp_dir).expect("expected to open Drive successfully");
 
