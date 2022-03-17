@@ -1,3 +1,5 @@
+extern crate core;
+
 pub mod document;
 pub mod identifier;
 pub mod identity;

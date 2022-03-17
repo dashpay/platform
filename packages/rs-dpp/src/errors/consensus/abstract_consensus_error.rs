@@ -17,3 +17,12 @@ impl<'a> From<ValidationError<'a>> for ConsensusError {
         Self::JsonSchemaError(JsonSchemaError::from(validation_error))
     }
 }
+
+impl ConsensusError {
+    pub fn json_schema_error(&self) -> Option<&JsonSchemaError> {
+        match self {
+            ConsensusError::JsonSchemaError(err) => { Some(err) }
+            _ => None
+        }
+    }
+}

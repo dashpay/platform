@@ -25,4 +25,8 @@ impl ValidationResult {
     pub fn errors(&self) -> &Vec<ConsensusError> {
         &self.errors
     }
+
+    pub fn is_valid(&self) -> bool {
+        self.errors().len() == 0
+    }
 }
