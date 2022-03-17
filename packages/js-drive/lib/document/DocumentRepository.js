@@ -40,10 +40,18 @@ class DocumentRepository {
       if (isExists) {
         method = 'updateDocument';
         result = await this.storage.getDrive()
-          .updateDocument(document, useTransaction);
+          .updateDocument(
+            document,
+            new Date(),
+            useTransaction,
+          );
       } else {
         result = await this.storage.getDrive()
-          .createDocument(document, useTransaction);
+          .createDocument(
+            document,
+            new Date(),
+            useTransaction,
+          );
       }
     } finally {
       if (this.logger) {

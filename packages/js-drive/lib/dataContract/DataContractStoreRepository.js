@@ -19,11 +19,15 @@ class DataContractStoreRepository {
    *
    * @param {DataContract} dataContract
    * @param {boolean} [useTransaction=false]
-   * @return {Promise<number>}
+   * @return {Promise<void>}
    */
   async store(dataContract, useTransaction = false) {
     try {
-      return await this.storage.getDrive().applyContract(dataContract, useTransaction);
+      return await this.storage.getDrive().applyContract(
+        dataContract,
+        new Date(),
+        useTransaction,
+      );
     } finally {
       if (this.logger) {
         this.logger.trace({
