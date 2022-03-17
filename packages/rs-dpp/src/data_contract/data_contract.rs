@@ -1,4 +1,5 @@
 use super::DataContractError;
+use crate::util::deserializer;
 use crate::util::string_encoding::Encoding;
 use crate::{
     errors::ProtocolError,
@@ -10,13 +11,14 @@ use anyhow::anyhow;
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 use std::collections::BTreeMap;
+use std::convert::TryFrom;
 
 // TODO probably this need to be changed
 pub type JsonSchema = JsonValue;
 
 pub const SCHEMA: &'static str = "https://schema.dash.org/dpp-0-4-0/meta/data-contract";
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct DataContract {
     pub protocol_version: u32,
@@ -33,12 +35,37 @@ pub struct DataContract {
     #[serde(skip)]
     pub metadata: Option<Metadata>,
     #[serde(skip)]
-    pub entropy: [u8; 32],
+    pub entropy: Option<[u8; 32]>,
     #[serde(skip)]
     pub binary_properties: BTreeMap<String, JsonSchema>,
 }
 
 impl DataContract {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn from_buffer(b: impl AsRef<[u8]>) -> Result<DataContract, ProtocolError> {
+        let (protocol_bytes, document_bytes) = b.as_ref().split_at(4);
+
+        let json_value: JsonValue = ciborium::de::from_reader(document_bytes)
+            .map_err(|e| ProtocolError::EncodingError(format!("{}", e)))?;
+
+        let mut json_map = if let JsonValue::Object(v) = json_value {
+            v
+        } else {
+            return Err(ProtocolError::EncodingError(String::from(
+                "input data cannot be parsed into the map",
+            )));
+        };
+
+        deserializer::parse_protocol_version(protocol_bytes, &mut json_map)?;
+        deserializer::parse_identities(&mut json_map, &["$id", "$ownerId"])?;
+
+        let data_contract: DataContract = serde_json::from_value(JsonValue::Object(json_map))?;
+        Ok(data_contract)
+    }
+
     pub fn to_object(&self, skip_identifiers_conversion: bool) -> Result<JsonValue, ProtocolError> {
         let mut json_object = serde_json::to_value(&self)?;
         if !json_object.is_object() {
@@ -121,8 +148,23 @@ impl DataContract {
         ));
     }
 
-    pub fn get_binary_properties() -> JsonValue {
+    // TODO
+    pub fn get_binary_properties(&self, doc_type: &str) -> JsonValue {
         unimplemented!()
+    }
+}
+
+impl TryFrom<JsonValue> for DataContract {
+    type Error = ProtocolError;
+    fn try_from(v: JsonValue) -> Result<Self, Self::Error> {
+        Ok(serde_json::from_value(v)?)
+    }
+}
+
+impl TryFrom<&str> for DataContract {
+    type Error = ProtocolError;
+    fn try_from(v: &str) -> Result<Self, Self::Error> {
+        Ok(serde_json::from_str(v)?)
     }
 }
 
