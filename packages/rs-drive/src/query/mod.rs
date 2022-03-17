@@ -6,7 +6,7 @@ use crate::query::WhereOperator::{
     GreaterThanOrEquals, In, LessThan, LessThanOrEquals, StartsWith,
 };
 use ciborium::value::{Integer, Value as CborValue, Value};
-use grovedb::{Element, Error, GroveDb, PathQuery, Query, SizedQuery, TransactionArg};
+use grovedb::{Element, Error, GroveDb, PathQuery, Query, QueryItem, SizedQuery, TransactionArg};
 use indexmap::IndexMap;
 use sqlparser::ast;
 use sqlparser::ast::TableFactor::Table;
@@ -1578,6 +1578,16 @@ impl<'a> DriveQuery<'a> {
                         match unique {
                             true => {
                                 query.set_subquery_key(vec![0]);
+
+                                // In the case things are NULL we allow to have multiple values
+                                let mut full_query = Query::new();
+                                full_query.insert_all();
+
+                                query.add_conditional_subquery(
+                                    QueryItem::Key(b"".to_vec()),
+                                    Some(vec![0]),
+                                    Some(full_query),
+                                );
                             }
                             false => {
                                 query.set_subquery_key(vec![0]);
