@@ -1,11 +1,11 @@
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::convert::TryInto;
 
 use crate::errors::ProtocolError;
 use crate::util::string_encoding;
 use crate::util::string_encoding::Encoding;
 
-#[derive(Default, Debug, Serialize, Deserialize, Clone)]
+#[derive(Default, Debug, Clone, PartialEq, Eq)]
 pub struct Identifier {
     buffer: [u8; 32],
 }
@@ -70,5 +70,28 @@ impl Identifier {
         let encoding = encoding_string_to_encoding(encoding_string);
 
         self.to_string(encoding)
+    }
+}
+
+impl Serialize for Identifier {
+    fn serialize<S>(self: &Identifier, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        // by default we use base58 as Identifier type should be encoded in that way
+        serializer.serialize_str(&self.to_string(Encoding::Base58))
+    }
+}
+// derive - implements the serializer and deserializer automatically for the data structre
+// so basically this is like that
+// -->
+
+impl<'de> Deserialize<'de> for Identifier {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Identifier, D::Error> {
+        let data: String = Deserialize::deserialize(d)?;
+
+        // by default we use base58 as Identifier type should be encoded in that way
+        Identifier::from_string_with_encoding_string(&data, Some("base58"))
+            .map_err(|e| serde::de::Error::custom(e.to_string()))
     }
 }

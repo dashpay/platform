@@ -1,4 +1,3 @@
-// use minicbor::{Decode, Encode};
 use serde::{Deserialize, Serialize};
 
 use super::{IdentityPublicKey, KeyID};
@@ -32,6 +31,7 @@ pub struct Identity {
     pub revision: i64,
     #[serde(skip)]
     pub asset_lock_proof: Option<AssetLockProof>,
+    #[serde(skip)]
     pub metadata: Option<Metadata>,
 }
 
