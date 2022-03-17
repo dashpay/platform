@@ -1,9 +1,8 @@
-use grovedb::Element;
+use grovedb::{Element, Transaction};
 use rs_drive::drive::{Drive, RootTree};
-use storage::rocksdb_storage::OptimisticTransactionDBTransaction;
-use tempdir::TempDir;
+use tempfile::TempDir;
 
-fn test_root_hash(drive: &mut Drive, db_transaction: &OptimisticTransactionDBTransaction) {
+fn test_root_hash(drive: &Drive, db_transaction: &Transaction) {
     // [1644293142180] INFO (35 on bf3bb2a2796a): createTree
     //     path: []
     //     pathHash: "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
@@ -28,6 +27,8 @@ fn test_root_hash(drive: &mut Drive, db_transaction: &OptimisticTransactionDBTra
     let app_hash = drive
         .grove
         .root_hash(Some(db_transaction))
+        .ok()
+        .flatten()
         .expect("should return app hash");
 
     assert_eq!(
@@ -59,6 +60,8 @@ fn test_root_hash(drive: &mut Drive, db_transaction: &OptimisticTransactionDBTra
     let app_hash = drive
         .grove
         .root_hash(Some(db_transaction))
+        .ok()
+        .flatten()
         .expect("should return app hash");
 
     assert_eq!(
@@ -90,6 +93,8 @@ fn test_root_hash(drive: &mut Drive, db_transaction: &OptimisticTransactionDBTra
     let app_hash = drive
         .grove
         .root_hash(Some(db_transaction))
+        .ok()
+        .flatten()
         .expect("should return app hash");
 
     assert_eq!(
@@ -121,6 +126,8 @@ fn test_root_hash(drive: &mut Drive, db_transaction: &OptimisticTransactionDBTra
     let app_hash = drive
         .grove
         .root_hash(Some(db_transaction))
+        .ok()
+        .flatten()
         .expect("should return app hash");
 
     assert_eq!(
@@ -154,6 +161,8 @@ fn test_root_hash(drive: &mut Drive, db_transaction: &OptimisticTransactionDBTra
     let app_hash = drive
         .grove
         .root_hash(Some(db_transaction))
+        .ok()
+        .flatten()
         .expect("should return app hash");
 
     assert_eq!(
@@ -184,6 +193,8 @@ fn test_root_hash(drive: &mut Drive, db_transaction: &OptimisticTransactionDBTra
     let app_hash = drive
         .grove
         .root_hash(Some(db_transaction))
+        .ok()
+        .flatten()
         .expect("should return app hash");
 
     assert_eq!(
@@ -224,6 +235,8 @@ fn test_root_hash(drive: &mut Drive, db_transaction: &OptimisticTransactionDBTra
     let app_hash = drive
         .grove
         .root_hash(Some(db_transaction))
+        .ok()
+        .flatten()
         .expect("should return app hash");
 
     assert_eq!(
@@ -240,6 +253,8 @@ fn test_root_hash(drive: &mut Drive, db_transaction: &OptimisticTransactionDBTra
     let app_hash = drive
         .grove
         .root_hash(Some(db_transaction))
+        .ok()
+        .flatten()
         .expect("should return app hash");
 
     assert_eq!(
@@ -250,19 +265,13 @@ fn test_root_hash(drive: &mut Drive, db_transaction: &OptimisticTransactionDBTra
 
 #[test]
 fn test_deterministic_root_hash() {
-    let tmp_dir = TempDir::new("family").unwrap();
-    let mut drive: Drive = Drive::open(tmp_dir).expect("expected to open Drive successfully");
+    let tmp_dir = TempDir::new().unwrap();
+    let drive: Drive = Drive::open(tmp_dir).expect("expected to open Drive successfully");
 
-    let storage = drive.grove.storage();
-    let db_transaction = storage.transaction();
-
-    drive
-        .grove
-        .start_transaction()
-        .expect("transaction should be started");
+    let db_transaction = drive.grove.start_transaction();
 
     for _ in 0..10 {
-        test_root_hash(&mut drive, &db_transaction);
+        test_root_hash(&drive, &db_transaction);
 
         drive
             .grove
