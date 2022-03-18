@@ -72,10 +72,11 @@ describe('DocumentRepository', () => {
         { useTransaction: false },
       );
 
-      expect(driveMock.createDocument).to.be.calledOnceWithExactly(
-        document,
-        false,
-      );
+      expect(driveMock.createDocument.getCall(0).args).to.have.lengthOf(3);
+
+      expect(driveMock.createDocument.getCall(0).args[0]).to.equals(document);
+      expect(driveMock.createDocument.getCall(0).args[1]).to.be.instanceOf(Date);
+      expect(driveMock.createDocument.getCall(0).args[2]).to.equals(false);
 
       expect(loggerMock.info).to.be.calledOnce();
     });
@@ -100,10 +101,11 @@ describe('DocumentRepository', () => {
         { useTransaction: true },
       );
 
-      expect(driveMock.updateDocument).to.be.calledOnceWithExactly(
-        document,
-        true,
-      );
+      expect(driveMock.updateDocument.getCall(0).args).to.have.lengthOf(3);
+
+      expect(driveMock.updateDocument.getCall(0).args[0]).to.equals(document);
+      expect(driveMock.updateDocument.getCall(0).args[1]).to.be.instanceOf(Date);
+      expect(driveMock.updateDocument.getCall(0).args[2]).to.equals(true);
     });
   });
 
