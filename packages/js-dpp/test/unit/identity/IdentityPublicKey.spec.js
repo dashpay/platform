@@ -124,6 +124,22 @@ describe('IdentityPublicKey', () => {
     });
   });
 
+  describe('#setDisabledAt', () => {
+    it('should set disabledAt', () => {
+      publicKey.setDisabledAt(123);
+
+      expect(publicKey.disabledAt).to.equal(123);
+    });
+  });
+
+  describe('#getDisabledAt', () => {
+    it('should return disabledAt', () => {
+      publicKey.disabledAt = 42;
+
+      expect(publicKey.getDisabledAt()).to.equal(42);
+    });
+  });
+
   describe('#hash', () => {
     it('should return original public key hash', () => {
       const result = publicKey.hash();
@@ -199,6 +215,22 @@ describe('IdentityPublicKey', () => {
         purpose: IdentityPublicKey.PURPOSES.AUTHENTICATION,
         securityLevel: IdentityPublicKey.SECURITY_LEVELS.MASTER,
         readOnly: false,
+      });
+    });
+
+    it('should return JSON representation with optional properties', () => {
+      publicKey.setDisabledAt(42);
+
+      const jsonPublicKey = publicKey.toJSON();
+
+      expect(jsonPublicKey).to.deep.equal({
+        id: 0,
+        type: IdentityPublicKey.TYPES.ECDSA_SECP256K1,
+        data: 'AkVuTKyF3YgKLAQlLEtaUL2HTditwGILfWUVqjzYnIgH',
+        purpose: IdentityPublicKey.PURPOSES.AUTHENTICATION,
+        securityLevel: IdentityPublicKey.SECURITY_LEVELS.MASTER,
+        readOnly: false,
+        disabledAt: 42,
       });
     });
   });

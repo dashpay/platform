@@ -212,15 +212,20 @@ class IdentityPublicKey {
    * @return {RawIdentityPublicKey}
    */
   toObject() {
-    return {
+    const result = {
       id: this.getId(),
       type: this.getType(),
       purpose: this.getPurpose(),
       securityLevel: this.getSecurityLevel(),
       data: this.getData(),
       readOnly: this.getReadOnly(),
-      disabledAt: this.getDisabledAt(),
     };
+
+    if (this.getDisabledAt() !== undefined) {
+      result.disabledAt = this.getDisabledAt();
+    }
+
+    return result;
   }
 
   /**

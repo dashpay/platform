@@ -27,8 +27,7 @@ class IdentityUpdateTransition extends AbstractStateTransition {
 
     if (Object.prototype.hasOwnProperty.call(rawStateTransition, 'disablePublicKeys')) {
       this.setDisablePublicKeys(
-        rawStateTransition.disablePublicKeys
-          .map((rawPublicKey) => new IdentityPublicKey(rawPublicKey)),
+        rawStateTransition.disablePublicKeys,
       );
     }
 

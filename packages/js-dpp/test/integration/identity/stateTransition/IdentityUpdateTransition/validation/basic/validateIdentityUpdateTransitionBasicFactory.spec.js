@@ -5,11 +5,10 @@ const validateIdentityUpdateTransitionBasicFactory = require(
 );
 const JsonSchemaValidator = require('../../../../../../../lib/validation/JsonSchemaValidator');
 const createAjv = require('../../../../../../../lib/ajv/createAjv');
-const InstantAssetLockProof = require('../../../../../../../lib/identity/stateTransition/assetLockProof/instant/InstantAssetLockProof');
 const ValidationResult = require('../../../../../../../lib/validation/ValidationResult');
 const IdentityPublicKey = require('../../../../../../../lib/identity/IdentityPublicKey');
 const getIdentityUpdateTransitionFixture = require('../../../../../../../lib/test/fixtures/getIdentityUpdateTransitionFixture');
-const { expectJsonSchemaError, expectValidationError} = require('../../../../../../../lib/test/expect/expectError');
+const { expectJsonSchemaError, expectValidationError } = require('../../../../../../../lib/test/expect/expectError');
 const SomeConsensusError = require('../../../../../../../lib/test/mocks/SomeConsensusError');
 
 describe('validateIdentityUpdateTransitionBasicFactory.spec', () => {
@@ -18,6 +17,7 @@ describe('validateIdentityUpdateTransitionBasicFactory.spec', () => {
   let validatePublicKeysMock;
   let rawStateTransition;
   let stateTransition;
+  let publicKey;
 
   beforeEach(async function beforeEach() {
     const RE2 = await getRE2Class();
@@ -42,6 +42,15 @@ describe('validateIdentityUpdateTransitionBasicFactory.spec', () => {
     await stateTransition.signByPrivateKey(privateKey, IdentityPublicKey.TYPES.ECDSA_SECP256K1);
 
     rawStateTransition = stateTransition.toObject();
+
+    publicKey = {
+      id: 0,
+      type: IdentityPublicKey.TYPES.ECDSA_SECP256K1,
+      data: Buffer.from('AuryIuMtRrl/VviQuyLD1l4nmxi9ogPzC9LT7tdpo0di', 'base64'),
+      purpose: IdentityPublicKey.PURPOSES.AUTHENTICATION,
+      securityLevel: IdentityPublicKey.SECURITY_LEVELS.MASTER,
+      readOnly: false,
+    };
   });
 
   describe('protocolVersion', () => {
@@ -290,58 +299,231 @@ describe('validateIdentityUpdateTransitionBasicFactory.spec', () => {
   });
 
   describe('addPublicKeys', async () => {
-    it('should not be empty', async () => {
+    beforeEach(() => {
+      delete rawStateTransition.disablePublicKeys;
+      delete rawStateTransition.publicKeysDisabledAt;
+    });
 
+    it('should return valid result', async () => {
+      rawStateTransition.addPublicKeys = [publicKey];
+
+      const result = await validateIdentityUpdateTransitionBasic(
+        rawStateTransition,
+      );
+
+      expect(result.isValid()).to.be.true();
+    });
+
+    it('should not be empty', async () => {
+      rawStateTransition.addPublicKeys = [];
+
+      const result = await validateIdentityUpdateTransitionBasic(rawStateTransition);
+
+      expectJsonSchemaError(result);
+
+      const [error] = result.getErrors();
+      expect(error.getKeyword()).to.equal('minItems');
+      expect(error.getInstancePath()).to.equal('/addPublicKeys');
     });
 
     it('should not have more than 10 items', async () => {
+      rawStateTransition.addPublicKeys = [];
 
+      for (let i = 0; i <= 10; i++) {
+        rawStateTransition.addPublicKeys.push(publicKey);
+      }
+
+      const result = await validateIdentityUpdateTransitionBasic(
+        rawStateTransition,
+      );
+
+      expectJsonSchemaError(result);
+
+      const [error] = result.getErrors();
+
+      expect(error.getKeyword()).to.equal('maxItems');
+      expect(error.getInstancePath()).to.equal('/addPublicKeys');
     });
 
     it('should be unique', async () => {
+      rawStateTransition.addPublicKeys = [publicKey, publicKey];
 
+      const result = await validateIdentityUpdateTransitionBasic(
+        rawStateTransition,
+      );
+
+      expectJsonSchemaError(result);
+
+      const [error] = result.getErrors();
+
+      expect(error.getKeyword()).to.equal('uniqueItems');
+      expect(error.getInstancePath()).to.equal('/addPublicKeys');
     });
 
     it('should be valid', async () => {
+      rawStateTransition.addPublicKeys = [publicKey];
 
+      const publicKeysError = new SomeConsensusError('test');
+      const publicKeysResult = new ValidationResult([
+        publicKeysError,
+      ]);
+
+      validatePublicKeysMock.returns(publicKeysResult);
+
+      const result = await validateIdentityUpdateTransitionBasic(
+        rawStateTransition,
+      );
+
+      expectValidationError(result);
+
+      const [error] = result.getErrors();
+
+      expect(error).to.equal(publicKeysError);
+
+      expect(validatePublicKeysMock).to.be.calledOnceWithExactly(rawStateTransition.addPublicKeys);
     });
-
-    // TODO master key ????
   });
 
   describe('disablePublicKeys', async () => {
-    it('should be valid', async () => {
-
-    });
-
-    it('should contain integers', async () => {
-
-    });
-
-    it('should not have more than 10 items', async () => {
-
-    });
-
-    it('should be unique', async () => {
-
+    beforeEach(() => {
+      delete rawStateTransition.addPublicKeys;
     });
 
     it('should be used only with publicKeysDisabledAt', async () => {
+      delete rawStateTransition.publicKeysDisabledAt;
 
+      const result = await validateIdentityUpdateTransitionBasic(
+        rawStateTransition,
+      );
+
+      expectJsonSchemaError(result);
+
+      const [error] = result.getErrors();
+      expect(error.getKeyword()).to.equal('dependencies');
+      expect(error.params.missingProperty).to.equal('publicKeysDisabledAt');
+    });
+
+    it('should be valid', async () => {
+      rawStateTransition.disablePublicKeys = [0];
+      rawStateTransition.publicKeysDisabledAt = 0;
+
+      const result = await validateIdentityUpdateTransitionBasic(
+        rawStateTransition,
+      );
+
+      expect(result.isValid()).to.be.true();
+    });
+
+    it('should contain numbers >= 0', async () => {
+      rawStateTransition.disablePublicKeys = [-1, 0];
+      rawStateTransition.publicKeysDisabledAt = 0;
+
+      const result = await validateIdentityUpdateTransitionBasic(
+        rawStateTransition,
+      );
+
+      expectJsonSchemaError(result);
+
+      const [error] = result.getErrors();
+
+      expect(error.getInstancePath()).to.equal('/disablePublicKeys/0');
+      expect(error.getKeyword()).to.equal('minimum');
+    });
+
+    it('should contain integers', async () => {
+      rawStateTransition.publicKeysDisabledAt = 0;
+      rawStateTransition.disablePublicKeys = [1.1];
+
+      const result = await validateIdentityUpdateTransitionBasic(
+        rawStateTransition,
+      );
+
+      expectJsonSchemaError(result);
+
+      const [error] = result.getErrors();
+
+      expect(error.getInstancePath()).to.equal('/disablePublicKeys/0');
+      expect(error.getKeyword()).to.equal('type');
+    });
+
+    it('should not have more than 10 items', async () => {
+      rawStateTransition.publicKeysDisabledAt = 0;
+      rawStateTransition.disablePublicKeys = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+
+      const result = await validateIdentityUpdateTransitionBasic(
+        rawStateTransition,
+      );
+
+      expectJsonSchemaError(result);
+
+      const [error] = result.getErrors();
+
+      expect(error.getKeyword()).to.equal('maxItems');
+      expect(error.getInstancePath()).to.equal('/disablePublicKeys');
+    });
+
+    it('should be unique', async () => {
+      rawStateTransition.publicKeysDisabledAt = 0;
+      rawStateTransition.disablePublicKeys = [0, 0];
+
+      const result = await validateIdentityUpdateTransitionBasic(
+        rawStateTransition,
+      );
+
+      expectJsonSchemaError(result);
+
+      const [error] = result.getErrors();
+
+      expect(error.getKeyword()).to.equal('uniqueItems');
+      expect(error.getInstancePath()).to.equal('/disablePublicKeys');
     });
   });
 
   describe('publicKeysDisabledAt', async () => {
-    it('should be integer', async () => {
-
-    });
-
-    it('should be valid', async () => {
-
-    });
-
     it('should be used only with disablePublicKeys', async () => {
+      delete rawStateTransition.disablePublicKeys;
 
+      const result = await validateIdentityUpdateTransitionBasic(
+        rawStateTransition,
+      );
+
+      expectJsonSchemaError(result);
+
+      const [error] = result.getErrors();
+      expect(error.getKeyword()).to.equal('dependencies');
+      expect(error.params.missingProperty).to.equal('disablePublicKeys');
+    });
+
+    it('should be integer', async () => {
+      rawStateTransition.publicKeysDisabledAt = 1.1;
+      rawStateTransition.disablePublicKeys = [0];
+
+      const result = await validateIdentityUpdateTransitionBasic(
+        rawStateTransition,
+      );
+
+      expectJsonSchemaError(result);
+
+      const [error] = result.getErrors();
+
+      expect(error.getInstancePath()).to.equal('/publicKeysDisabledAt');
+      expect(error.getKeyword()).to.equal('type');
+    });
+
+    it('should be >= 0', async () => {
+      rawStateTransition.publicKeysDisabledAt = -1;
+      rawStateTransition.disablePublicKeys = [0];
+
+      const result = await validateIdentityUpdateTransitionBasic(
+        rawStateTransition,
+      );
+
+      expectJsonSchemaError(result);
+
+      const [error] = result.getErrors();
+
+      expect(error.getInstancePath()).to.equal('/publicKeysDisabledAt');
+      expect(error.getKeyword()).to.equal('minimum');
     });
   });
 
@@ -350,9 +532,29 @@ describe('validateIdentityUpdateTransitionBasicFactory.spec', () => {
 
     expect(result.isValid()).to.be.true();
 
-    expect(proofValidationFunctionsByTypeMock[InstantAssetLockProof.type])
+    expect(validatePublicKeysMock)
       .to.be.calledOnceWithExactly(
-      rawStateTransition.assetLockProof,
-    );
+        rawStateTransition.addPublicKeys,
+      );
+  });
+
+  it('should have either addPublicKeys or disablePublicKeys', async () => {
+    delete rawStateTransition.disablePublicKeys;
+    delete rawStateTransition.addPublicKeys;
+    delete rawStateTransition.publicKeysDisabledAt;
+
+    const result = await validateIdentityUpdateTransitionBasic(rawStateTransition);
+
+    expectJsonSchemaError(result, 3);
+
+    const [addPublicKeysError, disablePublicKeysError, error] = result.getErrors();
+
+    expect(error.getKeyword()).to.equal('anyOf');
+
+    expect(disablePublicKeysError.schemaPath).to.equal('#/anyOf/1/required');
+    expect(disablePublicKeysError.getKeyword()).to.equal('required');
+
+    expect(addPublicKeysError.schemaPath).to.equal('#/anyOf/0/required');
+    expect(addPublicKeysError.getKeyword()).to.equal('required');
   });
 });

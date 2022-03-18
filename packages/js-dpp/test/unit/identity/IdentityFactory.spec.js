@@ -17,6 +17,8 @@ const getChainAssetLockProofFixture = require('../../../lib/test/fixtures/getCha
 const createDPPMock = require('../../../lib/test/mocks/createDPPMock');
 const SomeConsensusError = require('../../../lib/test/mocks/SomeConsensusError');
 const IdentityFactory = require('../../../lib/identity/IdentityFactory');
+const IdentityUpdateTransition = require('../../../lib/identity/stateTransition/IdentityUpdateTransition/IdentityUpdateTransition');
+const IdentityPublicKey = require('../../../lib/identity/IdentityPublicKey');
 
 describe('IdentityFactory', () => {
   let factory;
@@ -229,6 +231,38 @@ describe('IdentityFactory', () => {
       expect(stateTransition.getIdentityId()).to.deep.equal(identity.getId());
       expect(stateTransition.getAssetLockProof().toObject())
         .to.deep.equal(instantAssetLockProof.toObject());
+    });
+  });
+
+  describe('createIdentityUpdateTransition', () => {
+    it('should create IdentityUpdateTransition', () => {
+      const revision = 1;
+      const disablePublicKeys = [0];
+      const publicKeysDisabledAt = Math.round(new Date().getTime() / 1000);
+      const addPublicKeys = [{
+        id: 0,
+        type: IdentityPublicKey.TYPES.ECDSA_SECP256K1,
+        data: Buffer.from('AuryIuMtRrl/VviQuyLD1l4nmxi9ogPzC9LT7tdpo0di', 'base64'),
+        purpose: IdentityPublicKey.PURPOSES.AUTHENTICATION,
+        securityLevel: IdentityPublicKey.SECURITY_LEVELS.MASTER,
+        readOnly: false,
+      }];
+
+      const stateTransition = factory
+        .createIdentityUpdateTransition(
+          identity.getId(),
+          revision,
+          addPublicKeys,
+          disablePublicKeys,
+          publicKeysDisabledAt,
+        );
+
+      expect(stateTransition).to.be.instanceOf(IdentityUpdateTransition);
+      expect(stateTransition.getIdentityId()).to.deep.equal(identity.getId());
+      expect(stateTransition.getRevision()).to.deep.equal(revision);
+      expect(stateTransition.getAddPublicKeys()).to.deep.equal(addPublicKeys);
+      expect(stateTransition.getDisablePublicKeys()).to.deep.equal(disablePublicKeys);
+      expect(stateTransition.getPublicKeysDisabledAt()).to.deep.equal(publicKeysDisabledAt);
     });
   });
 });
