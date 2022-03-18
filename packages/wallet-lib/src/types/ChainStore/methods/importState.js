@@ -1,7 +1,6 @@
 const {
   BlockHeader,
   Transaction,
-  InstantLock,
 } = require('@dashevo/dashcore-lib');
 
 function importState(state) {

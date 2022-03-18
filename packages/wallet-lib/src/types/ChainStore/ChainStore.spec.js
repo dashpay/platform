@@ -71,6 +71,7 @@ describe('ChainStore - class', function suite() {
     const tx1 = new Transaction(transactions['47d13f7f713f4258953292c2298c1d91e2d6dee309d689f3c8b44ccf457bab52'].transaction);
     const meta1 = transactions['47d13f7f713f4258953292c2298c1d91e2d6dee309d689f3c8b44ccf457bab52'].metadata;
     testnetChainStore.importTransaction(tx1, meta1);
+    testnetChainStore.considerTransaction(tx1.hash);
 
     const addr = testnetChainStore.getAddress('ycDeuTfs4U77bTb5cq17dame28zdWHVYfk');
     expect(addr).to.deep.equal(addresses['ycDeuTfs4U77bTb5cq17dame28zdWHVYfk'])

@@ -2,7 +2,11 @@ const logger = require('../../../logger');
 
 function importAddress(address, reconsiderTransactions = true) {
   logger.silly(`ChainStore - import address ${address}`);
-  if (this.state.addresses.has(address.toString())) throw new Error('Address is already inserted');
+
+  if (this.state.addresses.has(address.toString())) {
+    return;
+  }
+
   this.state.addresses.set(address.toString(), {
     address: address.toString(),
     transactions: [],

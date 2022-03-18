@@ -2,67 +2,15 @@ const logger = require('../../logger');
 const EVENTS = require('../../EVENTS');
 const preparePlugins = require('./_preparePlugins');
 
-/**
- * Adds info about default derivation paths to the wallet and chain stores
- */
-const addDefaultPaths = (account) => {
-  const defaultPaths = account.keyChainStore
-    .getMasterKeyChain()
-    .getIssuedPaths();
-
-  // Add default keychain paths to the account and chain store
-  account.addPathsToStore(defaultPaths, false);
-};
-
-/**
- * Function goes through all transactions, and ensures address gap
- * having in mind addresses already used by the account.
- * @param {Account} account
- */
-const createPathsForTransactions = (account) => {
-  const chainStore = account.storage.getChainStore(account.network);
-  const transactions = chainStore.getTransactions();
-
-  const sortedTransactions = [...transactions.values()].sort((a, b) => {
-    const heightA = a.metadata.height;
-    const heightB = b.metadata.height;
-    return heightA - heightB;
-  });
-
-  sortedTransactions.forEach(({ transaction }, i, self) => {
-    // Update the state of UTXO for a given transaction
-    const { inputs, outputs } = transaction;
-
-    const affectedAddresses = [];
-    [...inputs, ...outputs].forEach((element) => {
-      if (element.script) {
-        const address = element.script.toAddress(account.network).toString();
-        if (chainStore.getAddress(address)) {
-          affectedAddresses.push(address);
-        }
-      }
-    });
-
-    // Generate new addresses in case the current set reached it's limit
-    // and add them to store
-    const paths = account.generateNewPaths(affectedAddresses);
-
-    if (paths) {
-      const refreshUTXOState = i === self.length - 1;
-      account.addPathsToStore(paths, refreshUTXOState);
-    }
-  });
-};
-
 // eslint-disable-next-line no-underscore-dangle
 async function _initializeAccount(account, userUnsafePlugins) {
   const self = account;
 
-  addDefaultPaths(account);
+  account.addDefaultPaths();
 
   // Issue additional derivation paths in case we have transactions in the store
   // at the moment of initialization (from persistent storage)
-  createPathsForTransactions(account);
+  account.createPathsForTransactions();
 
   // We run faster in offlineMode to speed up the process when less happens.
   const readinessIntervalTime = (account.offlineMode) ? 50 : 200;
