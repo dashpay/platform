@@ -42,14 +42,14 @@ class DocumentRepository {
         result = await this.storage.getDrive()
           .updateDocument(
             document,
-            new Date(),
+            new Date('2022-03-17T15:08:26.132Z'),
             useTransaction,
           );
       } else {
         result = await this.storage.getDrive()
           .createDocument(
             document,
-            new Date(),
+            new Date('2022-03-17T15:08:26.132Z'),
             useTransaction,
           );
       }

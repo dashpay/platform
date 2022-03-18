@@ -38,6 +38,8 @@ describe('Platform', () => {
 
       dataContractFixture = getDataContractFixture(identity.getId());
 
+      console.log(JSON.stringify(dataContractFixture.toJSON()));
+
       await client.platform.contracts.publish(dataContractFixture, identity);
 
       // Additional wait time to mitigate testnet latency
@@ -186,6 +188,8 @@ describe('Platform', () => {
         },
       );
 
+      console.log(JSON.stringify(document.toJSON()));
+
       await client.platform.documents.broadcast({
         create: [document],
       }, identity);
@@ -332,6 +336,8 @@ describe('Platform', () => {
       await client.platform.documents.broadcast({
         delete: [document],
       }, identity);
+
+      console.log(JSON.stringify(document.toJSON()));
 
       const [storedDocument] = await client.platform.documents.get(
         'customContracts.indexedDocument',

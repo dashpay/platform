@@ -25,7 +25,7 @@ class DataContractStoreRepository {
     try {
       return await this.storage.getDrive().applyContract(
         dataContract,
-        new Date(),
+        new Date('2022-03-17T15:08:26.132Z'),
         useTransaction,
       );
     } finally {

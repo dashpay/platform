@@ -16,7 +16,7 @@ describe('DataContractStoreRepository', () => {
 
   beforeEach(async () => {
     rsDrive = new Drive('./db/grovedb_test');
-    store = new GroveDBStore(rsDrive, noopLogger, 'testStore');
+    store = new GroveDBStore(rsDrive, noopLogger);
 
     decodeProtocolEntity = decodeProtocolEntityFactory();
 
