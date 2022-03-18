@@ -2,7 +2,7 @@ const featureFlagsSystemIds = require('@dashevo/feature-flags-contract/lib/syste
 
 const createClientWithFundedWallet = require('../../../lib/test/createClientWithFundedWallet');
 
-describe.only('Platform', () => {
+describe('Platform', () => {
   describe('Feature flags', function main() {
     this.timeout(900000);
 
@@ -17,22 +17,18 @@ describe.only('Platform', () => {
       let ownerId;
 
       before(async () => {
-        console.log('1')
         ownerClient = await createClientWithFundedWallet(
           process.env.FEATURE_FLAGS_OWNER_PRIVATE_KEY,
         );
 
-        console.log('2')
         await ownerClient.platform.identities.topUp(featureFlagsSystemIds.ownerId, 5000);
 
         ({ contractId, ownerId } = featureFlagsSystemIds);
 
-        console.log('3')
         const featureFlagContract = await ownerClient.platform.contracts.get(
           contractId,
         );
 
-        console.log('4')
         ownerClient.getApps().set('featureFlags', {
           contractId,
           contract: featureFlagContract,
