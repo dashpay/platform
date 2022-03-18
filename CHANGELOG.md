@@ -1,3 +1,22 @@
+## [0.22.0-dev.16](https://github.com/dashevo/platform/compare/v0.22.0-dev.15...v0.22.0-dev.16) (2022-03-18)
+
+
+### ⚠ BREAKING CHANGES
+
+* **drive:** document query and delete issues (#303)
+
+### Features
+
+* **dpp:** temporarily disable $refs in data contract definitions ([#300](https://github.com/dashevo/platform/issues/300))
+* fallback to chain asset lock proof ([#297](https://github.com/dashevo/platform/issues/297))
+
+
+### Bug Fixes
+
+* **dpp:** re2 memory leak ([#301](https://github.com/dashevo/platform/issues/301))
+* **drive:** document query and delete issues ([#303](https://github.com/dashevo/platform/issues/303))
+* **drive:** internal error on verify instant lock ([#295](https://github.com/dashevo/platform/issues/295))
+
 ## [0.22.0-dev.15](https://github.com/dashevo/platform/compare/v0.22.0-dev.14...v0.22.0-dev.15) (2022-03-11)
 
 
