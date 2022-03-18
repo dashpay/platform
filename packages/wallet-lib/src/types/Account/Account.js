@@ -6,6 +6,10 @@ const { is } = require('../../utils');
 const EVENTS = require('../../EVENTS');
 const Wallet = require('../Wallet/Wallet');
 const { simpleDescendingAccumulator } = require('../../utils/coinSelections/strategies');
+const {
+  TxMetadataTimeoutError,
+  InstantLockTimeoutError,
+} = require('../../errors');
 
 function getNextUnusedAccountIndexForWallet(wallet) {
   if (wallet && wallet.accounts) {
@@ -66,6 +70,7 @@ class Account extends EventEmitter {
     // if (this.debug) process.env.LOG_LEVEL = 'debug';
 
     this.waitForInstantLockTimeout = wallet.waitForInstantLockTimeout;
+    this.waitForTxMetadataTimeout = wallet.waitForTxMetadataTimeout;
 
     this.walletType = wallet.walletType;
     this.offlineMode = wallet.offlineMode;
@@ -100,6 +105,9 @@ class Account extends EventEmitter {
     this.storage.on(EVENTS.FETCHED_CONFIRMED_TRANSACTION, (ev) => this.emit(ev.type, ev));
     this.storage.on(EVENTS.UNCONFIRMED_BALANCE_CHANGED, (ev) => this.emit(ev.type, ev));
     this.storage.on(EVENTS.CONFIRMED_BALANCE_CHANGED, (ev) => this.emit(ev.type, ev));
+    this.storage.on(EVENTS.TX_METADATA, (ev) => {
+      this.emit(`${ev.type}:${ev.payload.hash}`, ev.payload.metadata);
+    });
     this.storage.on(EVENTS.BLOCKHEADER, (ev) => this.emit(ev.type, ev));
     this.storage.on(EVENTS.BLOCKHEIGHT_CHANGED, (ev) => this.emit(ev.type, ev));
     this.storage.on(EVENTS.BLOCK, (ev) => this.emit(ev.type, ev));
@@ -222,40 +230,128 @@ class Account extends EventEmitter {
   /**
    * @param {string} transactionHash
    * @param {function} callback
+   * @returns {function} - cancel subscription
    */
   subscribeToTransactionInstantLock(transactionHash, callback) {
-    this.once(Account.getInstantLockTopicName(transactionHash), callback);
+    const eventName = Account.getInstantLockTopicName(transactionHash);
+
+    this.once(eventName, callback);
+
+    return () => {
+      this.removeListener(eventName, callback);
+    };
+  }
+
+  /**
+   * @param {string} transactionHash
+   * @param {function} callback
+   * @returns {function} - cancel subscription
+   */
+  subscribeToTxMetadata(transactionHash, callback) {
+    const eventName = `${EVENTS.TX_METADATA}:${transactionHash}`;
+
+    this.once(eventName, callback);
+
+    return () => {
+      this.removeListener(eventName, callback);
+    };
   }
 
   /**
    * Waits for instant lock for a transaction or throws after a timeout
    * @param {string} transactionHash - instant lock to wait for
    * @param {number} timeout - in milliseconds before throwing an error if the lock didn't arrive
-   * @return {Promise<InstantLock>}
+   * @return {{promise: Promise<InstantLock>, cancel: Function}}
    */
   waitForInstantLock(transactionHash, timeout = this.waitForInstantLockTimeout) {
+    // Return instant lock immediately if already exists
+    const instantLock = this.storage.getInstantLock(transactionHash);
+    if (instantLock != null) {
+      return {
+        promise: Promise.resolve(instantLock),
+        cancel: () => {},
+      };
+    }
+
     let rejectTimeout;
+    let cancelSubscription;
 
-    return Promise.race([
+    function cancel() {
+      cancelSubscription();
+      clearTimeout(rejectTimeout);
+    }
+
+    // Wait for upcoming instant lock
+
+    const promise = Promise.race([
       new Promise((resolve) => {
-        const instantLock = this.storage.getInstantLock(transactionHash);
-        if (instantLock != null) {
-          clearTimeout(rejectTimeout);
-          resolve(instantLock);
-          return;
-        }
+        cancelSubscription = this.subscribeToTransactionInstantLock(
+          transactionHash,
+          (instantLockData) => {
+            clearTimeout(rejectTimeout);
+            resolve(instantLockData);
+          },
+        );
+      }),
+      new Promise((resolve, reject) => {
+        rejectTimeout = setTimeout(() => {
+          cancelSubscription();
+          reject(new InstantLockTimeoutError(transactionHash));
+        }, timeout);
+      }),
+    ]);
 
-        this.subscribeToTransactionInstantLock(transactionHash, (instantLockData) => {
+    return {
+      promise,
+      cancel,
+    };
+  }
+
+  /**
+   * Waits for metadata of a transaction or throws an error after a timeout
+   * @param {string} transactionHash - metadata of tx to wait for
+   * @param {number} timeout - in ms before throwing an error if the metadata didn't arrive
+   * @return {{promise: Promise<InstantLock>, cancel: Function}}
+   */
+  waitForTxMetadata(transactionHash, timeout = this.waitForTxMetadataTimeout) {
+    // Return tx metadata immediately if already exists
+    const { transactionsMetadata } = this.storage;
+    if (transactionsMetadata && transactionsMetadata[transactionHash]) {
+      return {
+        promise: Promise.resolve(transactionsMetadata[transactionHash]),
+        cancel: () => {},
+      };
+    }
+
+    // Wait for upcoming metadata
+
+    let rejectTimeout;
+    let cancelSubscription;
+
+    function cancel() {
+      cancelSubscription();
+      clearTimeout(rejectTimeout);
+    }
+
+    const promise = Promise.race([
+      new Promise((resolve) => {
+        cancelSubscription = this.subscribeToTxMetadata(transactionHash, (metadata) => {
           clearTimeout(rejectTimeout);
-          resolve(instantLockData);
+          resolve(metadata);
         });
       }),
       new Promise((resolve, reject) => {
         rejectTimeout = setTimeout(() => {
-          reject(new Error(`InstantLock waiting period for transaction ${transactionHash} timed out`));
+          cancelSubscription();
+          reject(new TxMetadataTimeoutError(transactionHash));
         }, timeout);
       }),
     ]);
+
+    return {
+      promise,
+      cancel,
+    };
   }
 }
 

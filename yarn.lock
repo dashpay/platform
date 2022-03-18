@@ -1516,7 +1516,7 @@ __metadata:
     "@dashevo/dpns-contract": "workspace:~"
     "@dashevo/feature-flags-contract": "workspace:~"
     "@dashevo/masternode-reward-shares-contract": "workspace:~"
-    "@dashevo/re2-wasm": ~1.0.4
+    "@dashevo/wasm-re2": ~1.0.2
     acorn: ^8.5.0
     ajv: ^8.6.0
     ajv-formats: ^2.1.1
@@ -1586,7 +1586,7 @@ __metadata:
     "@dashevo/feature-flags-contract": "workspace:~"
     "@dashevo/grpc-common": "workspace:~"
     "@dashevo/masternode-reward-shares-contract": "workspace:~"
-    "@dashevo/rs-drive": ~0.22.0-dev.16
+    "@dashevo/rs-drive": ~0.22.0-dev.19
     "@types/pino": ^6.3.0
     ajv: ^8.6.0
     ajv-keywords: ^5.0.0
@@ -1788,23 +1788,16 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@dashevo/re2-wasm@npm:~1.0.4":
-  version: 1.0.4
-  resolution: "@dashevo/re2-wasm@npm:1.0.4"
-  checksum: 4f1fca10c5190387e5652a7f900de52b15e68c66ca81ac0db4f368f2cfc95335eb2c4c6ee74c7204869ad937da4a84565411fdf33d308af89eaf41fda766e7be
-  languageName: node
-  linkType: hard
-
-"@dashevo/rs-drive@npm:~0.22.0-dev.16":
-  version: 0.22.0-dev.16
-  resolution: "@dashevo/rs-drive@npm:0.22.0-dev.16"
+"@dashevo/rs-drive@npm:~0.22.0-dev.19":
+  version: 0.22.0-dev.19
+  resolution: "@dashevo/rs-drive@npm:0.22.0-dev.19"
   dependencies:
     "@dashevo/dpp": ~0.22.0-dev.7
     cargo-cp-artifact: ^0.1.6
     cbor: ^8.1.0
     neon-load-or-build: ^2.2.2
     neon-tag-prebuild: "github:shumkov/neon-tag-prebuild#patch-1"
-  checksum: a15891dc0c58b298b9e45be8f7e455b39c7e6406a68f234cefcaebd2f732761b092b59cc3a371656b9f5e7d97cd44a1b1ef637c2e18e72e0450259ce405f6ed5
+  checksum: cdc9c6733735efa000f4abeee7905835382d500c5876bf38e255edc46a5f309cd527d5614caa1921c726833b45b5742bdb2e0e9b8ef066b3d6b9b14d72b6290d
   languageName: node
   linkType: hard
 
@@ -1858,6 +1851,13 @@ __metadata:
     winston: ^3.2.1
   languageName: unknown
   linkType: soft
+
+"@dashevo/wasm-re2@npm:~1.0.2":
+  version: 1.0.2
+  resolution: "@dashevo/wasm-re2@npm:1.0.2"
+  checksum: 3d54788e4e133e0677e60c125550a1f81cc5d9ed742e7dfec936e4da7653bb17a43054db3fc1287074efdb05ebbef7625d19f1f3286662f135218fadc27e6818
+  languageName: node
+  linkType: hard
 
 "@dashevo/x11-hash-js@npm:^1.0.2":
   version: 1.0.2

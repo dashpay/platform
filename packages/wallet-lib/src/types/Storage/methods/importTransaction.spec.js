@@ -381,7 +381,7 @@ describe('Storage - importTransaction', function suite() {
       lastModified: 0,
       announce: (annType) => {
         announceCalled += 1;
-        expect(annType).to.equal('FETCHED/CONFIRMED_TRANSACTION');
+        expect(annType).to.be.oneOf(['TX_METADATA', 'FETCHED/CONFIRMED_TRANSACTION']);
       },
     };
 

@@ -16,6 +16,7 @@ const {
  * @param {BaseLogger} logger
  * @param {LRUCache} dataContractCache
  * @param {GroveDBStore} groveDBStore
+ * @param {ExecutionTimer} executionTimer
  *
  * @return {commitHandler}
  */
@@ -29,6 +30,7 @@ function commitHandlerFactory(
   logger,
   dataContractCache,
   groveDBStore,
+  executionTimer,
 ) {
   /**
    * Commit ABCI Handler
@@ -91,6 +93,15 @@ function commitHandlerFactory(
         appHash: appHash.toString('hex').toUpperCase(),
       },
       `Block commit #${blockHeight} with appHash ${appHash.toString('hex').toUpperCase()}`,
+    );
+
+    const blockExecutionTimings = executionTimer.endTimer('blockExecution');
+
+    consensusLogger.trace(
+      {
+        timings: blockExecutionTimings,
+      },
+      `Block #${blockHeight} execution took ${blockExecutionTimings} seconds`,
     );
 
     return new ResponseCommit({

@@ -40,10 +40,18 @@ class DocumentRepository {
       if (isExists) {
         method = 'updateDocument';
         result = await this.storage.getDrive()
-          .updateDocument(document, useTransaction);
+          .updateDocument(
+            document,
+            new Date('2022-03-17T15:08:26.132Z'),
+            useTransaction,
+          );
       } else {
         result = await this.storage.getDrive()
-          .createDocument(document, useTransaction);
+          .createDocument(
+            document,
+            new Date('2022-03-17T15:08:26.132Z'),
+            useTransaction,
+          );
       }
     } finally {
       if (this.logger) {
@@ -101,7 +109,7 @@ class DocumentRepository {
    *
    * @throws InvalidQueryError
    *
-   * @returns {Document[]}
+   * @returns {Promise<Document[]>}
    */
   async find(dataContract, documentType, query = {}, useTransaction = false) {
     const documentSchema = dataContract.getDocumentSchema(documentType);

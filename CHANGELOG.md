@@ -1,3 +1,71 @@
+## [0.22.0-dev.16](https://github.com/dashevo/platform/compare/v0.22.0-dev.15...v0.22.0-dev.16) (2022-03-18)
+
+
+### ⚠ BREAKING CHANGES
+
+* previously created platform state might be not compatible
+
+### Features
+
+* **dpp:** temporarily disable $refs in data contract definitions ([#300](https://github.com/dashevo/platform/issues/300))
+* fallback to chain asset lock proof ([#297](https://github.com/dashevo/platform/issues/297))
+
+
+### Bug Fixes
+
+* **dpp:** re2 memory leak ([#301](https://github.com/dashevo/platform/issues/301))
+* **drive:** document query and delete issues ([#303](https://github.com/dashevo/platform/issues/303))
+* **drive:** internal error on verify instant lock ([#295](https://github.com/dashevo/platform/issues/295))
+
+## [0.22.0-dev.15](https://github.com/dashevo/platform/compare/v0.22.0-dev.14...v0.22.0-dev.15) (2022-03-11)
+
+
+### Bug Fixes
+
+* InstantLock waiting period for transaction.. ([#293](https://github.com/dashevo/platform/issues/293))
+
+## [0.22.0-dev.14](https://github.com/dashevo/platform/compare/v0.22.0-dev.13...v0.22.0-dev.14) (2022-03-10)
+
+
+### ⚠ BREAKING CHANGES
+
+* The fixed masternode identities logic breaks compatibility with previous invalid state.
+
+### Bug Fixes
+
+* **drive:** non-deterministic behaviour in masternode identities logic  ([#287](https://github.com/dashevo/platform/issues/287))
+
+## [0.22.0-dev.13](https://github.com/dashevo/platform/compare/v0.22.0-dev.12...v0.22.0-dev.13) (2022-03-09)
+
+
+### Bug Fixes
+
+* cannot read properties of undefined (reading 'getIp') ([#285](https://github.com/dashevo/platform/issues/285))
+
+## [0.22.0-dev.12](https://github.com/dashevo/platform/compare/v0.22.0-dev.11...v0.22.0-dev.12) (2022-03-08)
+
+
+### Bug Fixes
+
+* **drive:** documents have mixed owner ids ([#283](https://github.com/dashevo/platform/issues/283))
+
+## [0.22.0-dev.11](https://github.com/dashevo/platform/compare/v0.22.0-dev.10...v0.22.0-dev.11) (2022-03-08)
+
+
+### ⚠ BREAKING CHANGES
+
+* `in` query operator doesn't work with multiple values (#280)
+
+### Features
+
+* **drive:** add performance timers to measure block execution ([#281](https://github.com/dashevo/platform/issues/281))
+
+
+### Bug Fixes
+
+* `in` query operator doesn't work with multiple values ([#280](https://github.com/dashevo/platform/issues/280))
+* can't find masternode raward shares data contract ([#279](https://github.com/dashevo/platform/issues/279))
+
 ## [0.22.0-dev.10](https://github.com/dashevo/platform/compare/v0.22.0-dev.9...v0.22.0-dev.10) (2022-03-07)
 
 
