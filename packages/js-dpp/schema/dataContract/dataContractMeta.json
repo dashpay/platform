@@ -43,11 +43,6 @@
           "pattern": "^#",
           "minLength": 1
         },
-        "$ref": {
-          "type": "string",
-          "pattern": "^#",
-          "minLength": 1
-        },
         "$comment": {
           "$ref": "https://json-schema.org/draft/2020-12/meta/core#/properties/$comment"
         },
