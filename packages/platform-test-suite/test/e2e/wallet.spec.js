@@ -73,7 +73,6 @@ describe('e2e', () => {
 
       it('should receive a transaction when as it has been sent', async () => {
         fundedAccount = await fundedWallet.getWalletAccount();
-        emptyAccount = await emptyWallet.getWalletAccount();
 
         firstTransaction = await fundedAccount.createTransaction({
           recipient: emptyAccount.getUnusedAddress().address,
