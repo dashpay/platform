@@ -3,7 +3,7 @@
 
 ### ⚠ BREAKING CHANGES
 
-* **drive:** document query and delete issues (#303)
+* previously created platform state might be not compatible
 
 ### Features
 
