@@ -75,19 +75,24 @@ function categorizeTransactions(
     transaction.outputs.forEach((vout) => {
       const { satoshis, script } = vout;
       const address = script.toAddress(network).toString();
+      let addressType = 'unknown';
       if (address) {
         if (internalAddressesList.includes(address)) {
+          addressType = 'internal';
           outputsHasChangeAddress = true;
           outputsHasOwnAddress = true;
         } else if (externalAddressesList.includes(address)) {
+          addressType = 'external'
           outputsHasExternalAddress = true;
           outputsHasOwnAddress = true;
         } else if (otherAccountAddressesList.includes(address)) {
+          addressType = 'otherAccount'
           outputsHasOtherAccountAddress = true;
         } else outputsHasUnknownAddress = true;
         to.push({
           address,
           satoshis,
+          addressType
         });
       }
     });
@@ -96,18 +101,23 @@ function categorizeTransactions(
     transaction.inputs.forEach((vin) => {
       const { script } = vin;
       const address = script.toAddress(network).toString();
+      let addressType = 'unknown';
       if (address) {
         if (internalAddressesList.includes(address)) {
+          addressType = 'internal';
           inputsHasChangeAddress = true;
           inputsHasOwnAddress = true;
         } else if (externalAddressesList.includes(address)) {
+          addressType = 'external';
           inputsHasExternalAddress = true;
           inputsHasOwnAddress = true;
         } else if (otherAccountAddressesList.includes(address)) {
+          addressType = 'otherAccount';
           inputsHasOtherAccountAddress = true;
         } else inputsHasUnknownAddress = true;
         from.push({
           address,
+          addressType
         });
       }
     });
@@ -126,6 +136,32 @@ function categorizeTransactions(
       hasUnknownAddress: outputsHasUnknownAddress,
     });
 
+    // This allows to know what is the impact on the balance.
+    // In case of a change transaction or a transfert from own address to another owned address
+    // such impact would stay 0
+    let satoshisBalanceImpact = 0
+
+    if(type === 'received'){
+      to.forEach((output)=>{
+        if(['external', 'internal'].includes(output.addressType)){
+          satoshisBalanceImpact += output.satoshis
+        }
+      })
+    }
+    else if(type === 'sent'){
+      to.forEach((output)=>{
+        if(['unknown', 'otherAccount'].includes(output.addressType)){
+          satoshisBalanceImpact -= output.satoshis
+        }
+      })
+    } else if (type === 'account_transfer'){
+      to.forEach((output)=>{
+        if(['unknown', 'otherAccount'].includes(output.addressType)){
+          satoshisBalanceImpact -= output.satoshis
+        }
+      })
+    }
+
     const categorizedTransaction = {
       from,
       to,
@@ -135,6 +171,7 @@ function categorizeTransactions(
       height: metadata.height,
       isInstantLocked: metadata.isInstantLocked,
       isChainLocked: metadata.isChainLocked,
+      satoshisBalanceImpact
     };
     categorizedTransactions.push(categorizedTransaction);
   });
