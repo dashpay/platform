@@ -14,9 +14,9 @@ module.exports = function getIdentityUpdateTransitionFixture() {
     revision: 0,
     addPublicKeys: [
       {
-        id: 1,
+        id: 3,
         type: IdentityPublicKey.TYPES.ECDSA_SECP256K1,
-        data: Buffer.from('AuryIuMtRrl/VviQuyLD1l4nmxi9ogPzC9LT7tdpo0di', 'base64'),
+        data: Buffer.from('AkVuTKyF3YgKLAQlLEtaUL2HTditwGILfWUVqjzYnIgH', 'base64'),
         purpose: IdentityPublicKey.PURPOSES.AUTHENTICATION,
         securityLevel: IdentityPublicKey.SECURITY_LEVELS.MASTER,
         readOnly: false,

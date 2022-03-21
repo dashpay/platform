@@ -14,8 +14,6 @@ function applyIdentityUpdateTransitionFactory(
    * @returns {Promise<void>}
    */
   async function applyIdentityUpdateTransition(stateTransition) {
-    const outPoint = stateTransition.getAssetLockProof().getOutPoint();
-
     const identityId = stateTransition.getIdentityId();
 
     const identity = await stateRepository.fetchIdentity(identityId);
@@ -43,8 +41,6 @@ function applyIdentityUpdateTransitionFactory(
     }
 
     await stateRepository.storeIdentity(identity);
-
-    await stateRepository.markAssetLockTransactionOutPointAsUsed(outPoint);
   }
 
   return applyIdentityUpdateTransition;
