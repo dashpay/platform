@@ -1,3 +1,334 @@
+## [0.22.0](https://github.com/dashevo/platform/compare/v0.22.0-dev.16...v0.22.0) (2022-03-21)
+
+## [0.22.0-dev.16](https://github.com/dashevo/platform/compare/v0.22.0-dev.15...v0.22.0-dev.16) (2022-03-18)
+
+
+### ⚠ BREAKING CHANGES
+
+* **drive:** document query and delete issues (#303)
+
+### Features
+
+* **dpp:** temporarily disable $refs in data contract definitions ([#300](https://github.com/dashevo/platform/issues/300))
+* fallback to chain asset lock proof ([#297](https://github.com/dashevo/platform/issues/297))
+
+
+### Bug Fixes
+
+* **dpp:** re2 memory leak ([#301](https://github.com/dashevo/platform/issues/301))
+* **drive:** document query and delete issues ([#303](https://github.com/dashevo/platform/issues/303))
+* **drive:** internal error on verify instant lock ([#295](https://github.com/dashevo/platform/issues/295))
+
+
+### Miscellaneous Chores
+
+* **release:** update changelog and bump version to 0.22.0-dev.16 ([#304](https://github.com/dashevo/platform/issues/304))
+
+## [0.22.0-dev.15](https://github.com/dashevo/platform/compare/v0.22.0-dev.14...v0.22.0-dev.15) (2022-03-11)
+
+
+### Bug Fixes
+
+* InstantLock waiting period for transaction.. ([#293](https://github.com/dashevo/platform/issues/293))
+
+
+### Miscellaneous Chores
+
+* **release:** update changelog and version to 0.22.0-dev.15 ([#294](https://github.com/dashevo/platform/issues/294))
+
+## [0.22.0-dev.14](https://github.com/dashevo/platform/compare/v0.22.0-dev.13...v0.22.0-dev.14) (2022-03-10)
+
+
+### ⚠ BREAKING CHANGES
+
+* **drive:** non-deterministic behaviour in masternode identities logic  (#287)
+
+### Bug Fixes
+
+* **drive:** non-deterministic behaviour in masternode identities logic  ([#287](https://github.com/dashevo/platform/issues/287))
+
+
+### Miscellaneous Chores
+
+* **release:** update changelog and bump version to 0.22.0-dev.14 ([#288](https://github.com/dashevo/platform/issues/288))
+
+## [0.22.0-dev.13](https://github.com/dashevo/platform/compare/v0.22.0-dev.12...v0.22.0-dev.13) (2022-03-09)
+
+
+### Bug Fixes
+
+* cannot read properties of undefined (reading 'getIp') ([#285](https://github.com/dashevo/platform/issues/285))
+
+
+### Miscellaneous Chores
+
+* **release:** update changelog and version to 0.22.0-dev.13 ([#286](https://github.com/dashevo/platform/issues/286))
+
+## [0.22.0-dev.12](https://github.com/dashevo/platform/compare/v0.22.0-dev.11...v0.22.0-dev.12) (2022-03-08)
+
+
+### Bug Fixes
+
+* **drive:** documents have mixed owner ids ([#283](https://github.com/dashevo/platform/issues/283))
+
+
+### Miscellaneous Chores
+
+* **release:** update changelog and version to 0.22.0-dev.12 ([#284](https://github.com/dashevo/platform/issues/284))
+
+## [0.22.0-dev.11](https://github.com/dashevo/platform/compare/v0.22.0-dev.10...v0.22.0-dev.11) (2022-03-08)
+
+
+### ⚠ BREAKING CHANGES
+
+* `in` query operator doesn't work with multiple values (#280)
+
+### Features
+
+* **drive:** add performance timers to measure block execution ([#281](https://github.com/dashevo/platform/issues/281))
+
+
+### Bug Fixes
+
+* `in` query operator doesn't work with multiple values ([#280](https://github.com/dashevo/platform/issues/280))
+* can't find masternode raward shares data contract ([#279](https://github.com/dashevo/platform/issues/279))
+
+
+### Miscellaneous Chores
+
+* **release:** update changelog and version to 0.22.0-dev.11 ([#282](https://github.com/dashevo/platform/issues/282))
+
+## [0.22.0-dev.10](https://github.com/dashevo/platform/compare/v0.22.0-dev.9...v0.22.0-dev.10) (2022-03-07)
+
+
+### Bug Fixes
+
+* **dpp:** Invalid DER format public key ([#275](https://github.com/dashevo/platform/issues/275))
+
+
+### Miscellaneous Chores
+
+* **release:** update changelog and version to 0.22.0-dev.10 ([#277](https://github.com/dashevo/platform/issues/277))
+
+## [0.22.0-dev.9](https://github.com/dashevo/platform/compare/v0.22.0-dev.8...v0.22.0-dev.9) (2022-03-04)
+
+
+### ⚠ BREAKING CHANGES
+
+* **dpp:** lower indexed string properties constraints (#273)
+* **dpp:** do not allow to index array properties (#225)
+
+### Features
+
+* **dapi-client:** get and verify block headers with dash-spv ([#211](https://github.com/dashevo/platform/issues/211))
+* **dapi-client:** handle asynchronous errors ([#233](https://github.com/dashevo/platform/issues/233))
+* **dashmate:** add an ability to configure node subnet mask ([#237](https://github.com/dashevo/platform/issues/237))
+* **dpp:** allow using BLS key to sign state transitions ([#268](https://github.com/dashevo/platform/issues/268))
+* **dpp:** do not allow to index array properties ([#225](https://github.com/dashevo/platform/issues/225))
+* **dpp:** lower indexed string properties constraints ([#273](https://github.com/dashevo/platform/issues/273))
+* **drive:** create/update identities based on SML changes ([#170](https://github.com/dashevo/platform/issues/170))
+* integrate RS Drive and GroveDB ([#177](https://github.com/dashevo/platform/issues/177))
+
+
+### Bug Fixes
+
+* `group:status` command was missing a `format` flag ([#262](https://github.com/dashevo/platform/issues/262))
+* `startAt` and `startAfter` invalid decoding ([#255](https://github.com/dashevo/platform/issues/255))
+* `TransactionHistory` type is not defined ([#203](https://github.com/dashevo/platform/issues/203)), closes [#202](https://github.com/dashevo/platform/issues/202)
+* **build:** `zeromq` build is not working on linux ([#236](https://github.com/dashevo/platform/issues/236))
+* cannot install `protobufjs` in some cases ([#266](https://github.com/dashevo/platform/issues/266))
+* **dashmate:** `rimraf` module could not remove config directory ([#248](https://github.com/dashevo/platform/issues/248))
+* **dashmate:** logs were incorrectly mounted ([#261](https://github.com/dashevo/platform/issues/261))
+* **dpp:** Identity public key `readOnly` flag was read as `undefined` instead of `false` ([#239](https://github.com/dashevo/platform/issues/239))
+* **drive:** unable to reconstruct SML ([#257](https://github.com/dashevo/platform/issues/257))
+* invalid query errors are fatal ([#259](https://github.com/dashevo/platform/issues/259))
+* masternode reward shares ([#272](https://github.com/dashevo/platform/issues/272))
+* **sdk:** can't update cached data contract ([#223](https://github.com/dashevo/platform/issues/223))
+
+
+### Build System
+
+* `protobufjs` isn't installing from git sometimes ([#267](https://github.com/dashevo/platform/issues/267))
+
+
+### Documentation
+
+* ignore folder with empty docs during build ([#212](https://github.com/dashevo/platform/issues/212))
+* **sdk:** update topup identity doc ([#249](https://github.com/dashevo/platform/issues/249))
+
+
+### Miscellaneous Chores
+
+* **dashmate:** update Core to 0.18.0.0-beta4 ([#269](https://github.com/dashevo/platform/issues/269))
+* **release:** revert version back
+* **release:** update changelog and bump version to 0.22.0-dev.8 ([#271](https://github.com/dashevo/platform/issues/271))
+* **release:** update changelog and version to 0.22.0-dev.9 ([#274](https://github.com/dashevo/platform/issues/274))
+* update tenderdash and core images ([#252](https://github.com/dashevo/platform/issues/252))
+
+## [0.22.0-dev.7](https://github.com/dashevo/platform/compare/v0.21.7...v0.22.0-dev.7) (2022-01-21)
+
+
+### Features
+
+* added WalletStore ([#197](https://github.com/dashevo/platform/issues/197))
+* **drive:** allow using `in` and `startsWith` only in last `where` condition ([#201](https://github.com/dashevo/platform/issues/201))
+* **drive:** allow using `orderBy` for fields having `in` and `startsWith` in last `where` clause ([#199](https://github.com/dashevo/platform/issues/199))
+* register system contracts on `initChain` ([#182](https://github.com/dashevo/platform/issues/182))
+* **wallet-lib:** ChainStore ([#196](https://github.com/dashevo/platform/issues/196))
+
+
+### Bug Fixes
+
+* **sdk:** system contract ids were hardcoded in SDKs Client module ([#192](https://github.com/dashevo/platform/issues/192))
+
+
+### Build System
+
+* fix configure test suite script for grep 2.5.1 ([#187](https://github.com/dashevo/platform/issues/187))
+
+
+### Miscellaneous Chores
+
+* **dashmate:** update tenderdash to 0.7.0-dev ([#188](https://github.com/dashevo/platform/issues/188))
+* **release:** update changelog and bump version to 0.22.0-dev.7 ([#209](https://github.com/dashevo/platform/issues/209))
+* remove `fixCumulativeFeesBug` feature flag ([#191](https://github.com/dashevo/platform/issues/191))
+
+## [0.22.0-dev.6](https://github.com/dashevo/platform/compare/v0.22.0-dev.5...v0.22.0-dev.6) (2022-01-11)
+
+
+### ⚠ BREAKING CHANGES
+
+* **drive:** temporary restrictions for a document query (#77)
+
+### Features
+
+* **dapi:** `subscribeToBlockHeadersWithChainLocks` endpoint ([#153](https://github.com/dashevo/platform/issues/153))
+
+
+### Bug Fixes
+
+* **drive:** missed `nodeAddress` field on `EndBlock` ([#184](https://github.com/dashevo/platform/issues/184))
+
+
+### Build System
+
+* **test-suite:** docker image build doesn't work ([#172](https://github.com/dashevo/platform/issues/172))
+
+
+### Code Refactoring
+
+* **dapi:** rename tx-filter-stream.js to core-streams.js ([#169](https://github.com/dashevo/platform/issues/169))
+
+
+### Documentation
+
+* add readme to docs folder ([#175](https://github.com/dashevo/platform/issues/175))
+* indicate which network(s) this repo supports ([#174](https://github.com/dashevo/platform/issues/174))
+
+
+### Miscellaneous Chores
+
+* **drive:** temporary restrictions for a document query ([#77](https://github.com/dashevo/platform/issues/77))
+* **release:** update changelog and version to 0.22.0-dev.6 ([#185](https://github.com/dashevo/platform/issues/185))
+
+## [0.22.0-dev.5](https://github.com/dashevo/platform/compare/v0.22.0-dev.4...v0.22.0-dev.5) (2022-01-07)
+
+
+### ⚠ BREAKING CHANGES
+
+* **dpp:** `$id` can't be used in secondary indices
+* **dpp:** Indexed properties now require size constraints
+* allow using non-unique Identity public keys (#168)
+
+### Features
+
+* allow adding non-unique indices for newly defined properties ([#83](https://github.com/dashevo/platform/issues/83))
+* allow using non-unique Identity public keys ([#168](https://github.com/dashevo/platform/issues/168))
+* **dpp:** `$id` can't be used in secondary indices ([#178](https://github.com/dashevo/platform/issues/178))
+* **dpp:** size constraints for indexed properties ([#179](https://github.com/dashevo/platform/issues/179))
+* masternode reward shares contract ([#160](https://github.com/dashevo/platform/issues/160))
+
+
+### Bug Fixes
+
+* downgrade dash-core image to v0.17 ([#171](https://github.com/dashevo/platform/issues/171))
+
+
+### Documentation
+
+* minor Readme fixes ([#163](https://github.com/dashevo/platform/issues/163))
+
+
+### Miscellaneous Chores
+
+* **drive:** send initial core chain locked height on init chain ([#180](https://github.com/dashevo/platform/issues/180))
+* **release:** update changelog and version to 0.22.0-dev.5 ([#181](https://github.com/dashevo/platform/issues/181))
+* update to use current @oclif/core ([#154](https://github.com/dashevo/platform/issues/154))
+
+## [0.22.0-dev.4](https://github.com/dashevo/platform/compare/v0.22.0-dev.3...v0.22.0-dev.4) (2021-12-24)
+
+
+### Bug Fixes
+
+* **drive:** `ValidatorSetUpdate` doesn't contain `nodeAddress` ([#155](https://github.com/dashevo/platform/issues/155))
+
+
+### Continuous Integration
+
+* pass NPM token to `npm publish` command ([#151](https://github.com/dashevo/platform/issues/151))
+* set NPM token to `setup-node` action ([#150](https://github.com/dashevo/platform/issues/150))
+
+
+### Miscellaneous Chores
+
+* configure NPM registry ([#149](https://github.com/dashevo/platform/issues/149))
+* **release:** update changelog and bump version to 0.22.0-dev.4 ([#157](https://github.com/dashevo/platform/issues/157))
+* yarn abci cache ([#156](https://github.com/dashevo/platform/issues/156))
+
+## [0.22.0-dev.3](https://github.com/dashevo/platform/compare/v0.21.6...v0.22.0-dev.3) (2021-12-22)
+
+
+### ⚠ BREAKING CHANGES
+
+* add required `name` property to index definition (#74)
+* add an ability to update data contract (#52)
+* Identity public key now has two more fields, purpose and securityLevel, and keys without those fields won't be valid anymore
+
+### Features
+
+* add an ability to update data contract ([#52](https://github.com/dashevo/platform/issues/52))
+* add required `name` property to index definition ([#74](https://github.com/dashevo/platform/issues/74))
+* **dashmate:** json output for status commands ([#31](https://github.com/dashevo/platform/issues/31))
+* **dpp:** add `readOnly` flag to `IdentityPublicKey` ([#142](https://github.com/dashevo/platform/issues/142))
+* **dpp:** implement hashed ECDSA key type ([#141](https://github.com/dashevo/platform/issues/141))
+* **drive:** network address in `ValidatorUpdate` ABCI ([#140](https://github.com/dashevo/platform/issues/140))
+* enable mainnet for dashmate ([#2](https://github.com/dashevo/platform/issues/2))
+* identity public key purpose and security levels ([#46](https://github.com/dashevo/platform/issues/46))
+* **wallet-lib:** do not sync transactions if mnemonic is absent
+* **wallet-lib:** dump wallet storage ([#8](https://github.com/dashevo/platform/issues/8))
+
+
+### Bug Fixes
+
+* **dashmate:** `cannot read properties of undefined (reading 'dpns')` on reset ([#47](https://github.com/dashevo/platform/issues/47))
+
+
+### Documentation
+
+* improved sidebar and usage in DAPI client ([#3](https://github.com/dashevo/platform/issues/3))
+* provide getTransactionHistory ([#5](https://github.com/dashevo/platform/issues/5))
+
+
+### Tests
+
+* **wallet-lib:** enable skipped test after the fix for grpc-js lib ([#71](https://github.com/dashevo/platform/issues/71))
+
+
+### Miscellaneous Chores
+
+* **release:** update changelog and bump version to 0.22.0-dev.3 ([#147](https://github.com/dashevo/platform/issues/147))
+* **release:** update changelog and version to 0.22.0-dev.1 ([#146](https://github.com/dashevo/platform/issues/146))
+
 ## [0.22.0-dev.16](https://github.com/dashevo/platform/compare/v0.22.0-dev.15...v0.22.0-dev.16) (2022-03-18)
 
 
