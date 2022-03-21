@@ -1,4 +1,4 @@
-use super::DataContractError;
+use super::errors::*;
 use crate::util::deserializer;
 use crate::util::string_encoding::Encoding;
 use crate::{
@@ -123,13 +123,14 @@ impl DataContract {
     }
 
     pub fn get_document_schema(&self, doc_type: &str) -> Result<&JsonSchema, ProtocolError> {
-        self.documents.get(doc_type).ok_or(
-            DataContractError::InvalidDocumentTypeError {
-                doc_type: doc_type.to_owned(),
-                data_contract: self.clone(),
-            }
-            .into(),
-        )
+        let d =
+            self.documents
+                .get(doc_type)
+                .ok_or(DataContractError::InvalidDocumentTypeError {
+                    doc_type: doc_type.to_owned(),
+                    data_contract: self.clone(),
+                })?;
+        Ok(d)
     }
 
     pub fn get_document_schema_ref(&self, doc_type: &str) -> Result<String, ProtocolError> {
@@ -139,7 +140,7 @@ impl DataContract {
                 data_contract: self.clone(),
             }
             .into());
-        }
+        };
 
         return Ok(format!(
             "{}/#documents/{}",

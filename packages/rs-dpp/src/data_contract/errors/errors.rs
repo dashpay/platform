@@ -1,14 +1,15 @@
-use thiserror::Error;
-
 use crate::data_contract::DataContract;
+use crate::errors::AbstractConsensusErrorMock;
+use thiserror::Error;
 
 #[derive(Error, Debug)]
 pub enum DataContractError {
     #[error("Data contract already exists")]
     DataContractAlreadyExistsError,
+
     #[error("Invalid Data Contract: {errors:?}")]
     InvalidDataContractError {
-        errors: Vec<String>,
+        errors: Vec<AbstractConsensusErrorMock>,
         raw_data_contract: DataContract,
     },
 

@@ -1,6 +1,5 @@
+use crate::data_contract::errors::*;
 use thiserror::Error;
-
-use crate::data_contract::{DataContract, DataContractError};
 
 #[derive(Error, Debug)]
 pub enum ProtocolError {
@@ -27,5 +26,24 @@ pub enum ProtocolError {
     Error(#[from] anyhow::Error),
 
     #[error(transparent)]
-    DataContractError(#[from] DataContractError),
+    DataContractError(DataContractError),
+
+    #[error(transparent)]
+    AbstractConsensusError(AbstractConsensusErrorMock),
 }
+
+impl From<AbstractConsensusErrorMock> for ProtocolError {
+    fn from(e: AbstractConsensusErrorMock) -> Self {
+        ProtocolError::AbstractConsensusError(e)
+    }
+}
+
+impl From<DataContractError> for ProtocolError {
+    fn from(e: DataContractError) -> Self {
+        ProtocolError::DataContractError(e)
+    }
+}
+
+// TODO implement
+#[derive(Error, Debug)]
+pub enum AbstractConsensusErrorMock {}
