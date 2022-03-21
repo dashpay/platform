@@ -53,6 +53,7 @@ class ChainDataProvider extends EventEmitter {
 
       this.chainLockHandler(chainLock);
     } catch (e) {
+      // eslint-disable no-empty
     }
   }
 
