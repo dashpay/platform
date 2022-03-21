@@ -5,7 +5,6 @@ const stateTransitionTypes = require(
 );
 
 const protocolVersion = require('../../../../../lib/version/protocolVersion');
-const IdentityUpdateTransition = require('../../../../../lib/identity/stateTransition/IdentityUpdateTransition/IdentityUpdateTransition');
 const Identifier = require('../../../../../lib/identifier/Identifier');
 
 const getIdentityUpdateTransitionFixture = require('../../../../../lib/test/fixtures/getIdentityUpdateTransitionFixture');
