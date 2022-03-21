@@ -5,12 +5,19 @@ const IdentityPublicKey = require('../../../../IdentityPublicKey');
 const IdentityPublicKeyIsReadOnlyError = require('../../../../../errors/consensus/state/identity/IdentityPublicKeyIsReadOnlyError');
 const MissedSecurityLevelIdentityPublicKeyError = require('../../../../../errors/consensus/state/identity/MissedSecurityLevelIdentityPublicKeyError');
 
+// security levels which must have at least one key
+const SECURITY_LEVELS = [
+  IdentityPublicKey.SECURITY_LEVELS.MASTER,
+];
+
 /**
  * @param {StateRepository} stateRepository
+ * @param {validatePublicKeys} validatePublicKeys
  * @return {validateIdentityUpdateTransitionState}
  */
 function validateIdentityUpdateTransitionStateFactory(
   stateRepository,
+  validatePublicKeys,
 ) {
   /**
    * @typedef {validateIdentityUpdateTransitionState}
@@ -39,13 +46,16 @@ function validateIdentityUpdateTransitionStateFactory(
       );
     }
 
+    const addPublicKeys = stateTransition.getAddPublicKeys();
+    if (addPublicKeys) {
+      addPublicKeys.forEach((pk) => identity.getPublicKeys().push(pk));
+    }
+
     const disablePublicKeys = stateTransition.getDisablePublicKeys();
 
     if (disablePublicKeys) {
-      const identityPublicKeys = identity.getPublicKeys();
-
       disablePublicKeys.forEach((id) => {
-        if (identityPublicKeys[id].getReadOnly()) {
+        if (identity.getPublicKeyById(id).getReadOnly()) {
           result.addError(
             new IdentityPublicKeyIsReadOnlyError(id),
           );
@@ -58,31 +68,36 @@ function validateIdentityUpdateTransitionStateFactory(
 
       // Keys can only be disabled if another valid key is enabled in the same security level
       disablePublicKeys.forEach(
-        (id) => identityPublicKeys[id].setDisabledAt(stateTransition.getPublicKeysDisabledAt()),
+        (id) => identity.getPublicKeyById(id)
+          .setDisabledAt(stateTransition.getPublicKeysDisabledAt()),
       );
 
-      const addPublicKeys = stateTransition.addPublicKeys();
-      if (addPublicKeys) {
-        addPublicKeys.forEach((pk) => identityPublicKeys.push(pk));
-      }
+      const securityLevelsWithKeys = new Set();
 
-      const securityLevelsWithPublicKeys = {};
-
-      identityPublicKeys.forEach((pk) => {
-        const securityLevel = pk.getSecurityLevel();
-
-        securityLevelsWithPublicKeys[securityLevel] = true;
+      SECURITY_LEVELS.forEach((securityLevel) => {
+        identity.getPublicKeys()
+          .filter((pk) => pk.getSecurityLevel() === securityLevel)
+          .forEach((pk) => {
+            if (!pk.getDisabledAt()) {
+              securityLevelsWithKeys.add(securityLevel);
+            }
+          });
       });
 
-      const missedSecurityLevels = Object.values(IdentityPublicKey.SECURITY_LEVELS)
-        .filter((level) => !Object.keys(securityLevelsWithPublicKeys).includes(level));
+      SECURITY_LEVELS.forEach((securityLevel) => {
+        if (!securityLevelsWithKeys.has(securityLevel)) {
+          result.addError(new MissedSecurityLevelIdentityPublicKeyError(securityLevel));
+        }
+      });
 
-      if (missedSecurityLevels.length > 0) {
-        missedSecurityLevels.forEach((securityLevel) => result.addError(
-          new MissedSecurityLevelIdentityPublicKeyError(securityLevel),
-        ));
+      if (!result.isValid()) {
+        return result;
       }
     }
+
+    result.merge(
+      validatePublicKeys(identity.getPublicKeys().map((pk) => pk.toObject())),
+    );
 
     return result;
   }

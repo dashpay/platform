@@ -27,7 +27,8 @@ function applyIdentityUpdateTransitionFactory(
 
       stateTransition.getDisablePublicKeys()
         .forEach(
-          (id) => identityPublicKeys[id].setDisabledAt(stateTransition.getPublicKeysDisabledAt()),
+          (id) => identity.getPublicKeyById(id)
+            .setDisabledAt(stateTransition.getPublicKeysDisabledAt()),
         );
 
       identity.setPublicKeys(identityPublicKeys);
