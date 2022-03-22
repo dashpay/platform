@@ -55,7 +55,6 @@ describe('TransactionSyncStreamWorker', function suite() {
       plugins: [worker],
       allowSensitiveOperations: true,
       HDPrivateKey: new HDPrivateKey(testHDKey),
-      network: 'mainnet'
     });
 
     ({ txStreamMock, transportMock } = await createAndAttachTransportMocksToWallet(wallet, this.sinonSandbox));
@@ -702,8 +701,10 @@ describe('TransactionSyncStreamWorker', function suite() {
     expect(transactionsInStorage.length).to.be.equal(2);
     expect(transactionsInStorage).to.have.deep.members(expectedTransactions);
 
+    const { promise } = account.waitForInstantLock(transactions[1].hash, 10000);
+
     const [ actualLock ] = await Promise.all([
-      account.waitForInstantLock(transactions[1].hash, 10000),
+      promise,
       new Promise((resolve => {
         setImmediate(() => {
           txStreamMock.emit(
@@ -723,12 +724,16 @@ describe('TransactionSyncStreamWorker', function suite() {
     expect(receivedInstantLocks[1]).to.be.deep.equal(instantLock2);
 
     // Test that if instant lock was already imported previously wait method will return it
-    const firstISFromWait = await account.waitForInstantLock(transactions[0].hash);
+    const { promise: firstISFromWaitPromise } = account.waitForInstantLock(transactions[0].hash);
+    const firstISFromWait = await firstISFromWaitPromise;
     expect(firstISFromWait).to.be.deep.equal(instantLock1);
 
     // Check that wait method throws if timeout has passed
-    await expect(account.waitForInstantLock(transactions[2].hash, 1000)).to.eventually
-        .be.rejectedWith('InstantLock waiting period for transaction 823c272fc1694b571805d2bc2f8936597ee52de638a0ca5323233c239fd3e8c4 timed out');
+
+    const { promise: transaction2Promise } = account.waitForInstantLock(transactions[2].hash, 1000);
+
+    await expect(transaction2Promise).to.eventually
+        .be.rejectedWith('InstantLock waiting period for transaction 256d5b3bf6d8869f5cc882ae070af9b648fa0f512bfa2b6f07b35d55e160a16c timed out');
   });
   it('should start from the height specified in `skipSynchronizationBeforeHeight` options', async function () {
     const bestBlockHeight = 42;
