@@ -170,4 +170,3 @@ ChainDataProvider.prototype.events = {
 };
 
 module.exports = ChainDataProvider;
-
