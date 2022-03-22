@@ -80,10 +80,14 @@ describe('subscribeToBlockHeadersWithChainLocksHandlerFactory', () => {
     expect(streamEnded).to.be.true();
 
     // TODO: fetching blocks one by one takes too long. Implement getBlockHeaders in dapi-client
-    const fetchedBlocks = await Promise.all(
-      Array.from({ length: headersAmount })
-        .map(async (_, index) => new Block(await dapiClient.core.getBlockByHeight(index + 1))),
-    );
+    const fetchedBlocks = []
+
+    for (let i = 1; i <= headersAmount; i++) {
+      const rawBlock = await dapiClient.core.getBlockByHeight(i)
+      const block = new Block(rawBlock)
+
+      fetchedBlocks.push(block)
+    }
 
     expect(historicalBlockHeaders.map((header) => header.hash))
       .to.deep.equal(fetchedBlocks.map((block) => block.header.hash));
@@ -130,7 +134,7 @@ describe('subscribeToBlockHeadersWithChainLocksHandlerFactory', () => {
         const rawChainLock = data.getChainLock();
         if (rawChainLock) {
           latestChainLock = new ChainLock(Buffer.from(rawChainLock));
-          stream.destroy();
+          stream.cancel();
           streamEnded = true;
         }
       }
@@ -152,7 +156,6 @@ describe('subscribeToBlockHeadersWithChainLocksHandlerFactory', () => {
     });
 
     await dapiClient.core.broadcastTransaction(transaction.toBuffer());
-
     // Wait for stream ending
     while (!streamEnded) {
       if (streamError) {
@@ -163,13 +166,15 @@ describe('subscribeToBlockHeadersWithChainLocksHandlerFactory', () => {
     }
 
     // TODO: fetching blocks one by one takes too long. Implement getBlockHeaders in dapi-client
-    const fetchedHistoricalBlocks = await Promise.all(
-      Array.from({ length: historicalBlocksToGet })
-        .map(async (_, index) => {
-          const height = bestBlockHeight - historicalBlocksToGet + index + 1;
-          return new Block(await dapiClient.core.getBlockByHeight(height));
-        }),
-    );
+    const fetchedHistoricalBlocks = []
+
+    for (let i = bestBlockHeight - historicalBlocksToGet + 1;
+         i <= bestBlockHeight; i++) {
+      const rawBlock = await dapiClient.core.getBlockByHeight(i)
+      const block = new Block(rawBlock);
+
+      fetchedHistoricalBlocks.push(block)
+    }
 
     for (let i = 0; i < historicalBlocksToGet; i++) {
       expect(fetchedHistoricalBlocks[i].header.hash).to.equal(blockHeadersHashesFromStream[i]);
