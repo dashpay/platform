@@ -1,6 +1,7 @@
 // @ts-ignore
 import Identifier from "@dashevo/dpp/lib/Identifier";
-import {Platform} from "../../Platform";
+import { Platform } from "../../Platform";
+import IdentityPublicKey from "@dashevo/dpp/lib/identity/IdentityPublicKey"
 
 import createAssetLockTransaction from "../../createAssetLockTransaction";
 import createAssetLockProof from "./internal/createAssetLockProof";
@@ -12,10 +13,19 @@ import broadcastStateTransition from "../../broadcastStateTransition";
  *
  * @param {Platform} this - bound instance class
  * @param {Identifier|string} identityId - id of the identity to top up
- * @param {number} amount - amount to top up in duffs
+ * @param {IdentityPublicKey[]} addPublicKeys - public keys to add
+ * @param {number[]} disablePublicKeys - public key IDs to disable
+ * @param {number} publicKeysDisabledAt - timestamp to disable at
+ *
  * @returns {boolean}
  */
-export async function update(this: Platform, identityId: Identifier | string, amount: number): Promise<any> {
+export async function update(
+  this: Platform,
+  identityId: Identifier | string,
+  addPublicKeys?: IdentityPublicKey[],
+  disablePublicKeys?: number[],
+  publicKeysDisabledAt?: number,
+  ): Promise<any> {
   await this.initialize();
 
   const { client } = this;
@@ -24,16 +34,10 @@ export async function update(this: Platform, identityId: Identifier | string, am
 
   const account = await client.getWalletAccount();
 
-  const {
-    transaction: assetLockTransaction,
-    privateKey: assetLockPrivateKey,
-    outputIndex: assetLockOutputIndex
-  } = await createAssetLockTransaction(this, amount);
+  const identityIndex = await account.getUnusedIdentityIndex();
 
-  // Broadcast Asset Lock transaction
-  await account.broadcastTransaction(assetLockTransaction);
-  // Create a proof for the asset lock transaction
-  const assetLockProof = await createAssetLockProof(this, assetLockTransaction, assetLockOutputIndex);
+  // @ts-ignore
+  const { privateKey: identityPrivateKey } = account.identities.getIdentityHDKeyByIndex(identityIndex, 0);
 
   const identity = await this.identities.get(identityId);
 
@@ -42,7 +46,14 @@ export async function update(this: Platform, identityId: Identifier | string, am
   }
 
   // @ts-ignore
-  const identityTopUpTransition = await createIdentityUpdateTransition(this, assetLockProof, assetLockPrivateKey, identity);
+  const identityTopUpTransition = await createIdentityUpdateTransition(
+    this,
+    identityPrivateKey,
+    identity,
+    addPublicKeys,
+    disablePublicKeys,
+    publicKeysDisabledAt,
+  );
 
   // Broadcast ST
   await broadcastStateTransition(this, identityTopUpTransition);
