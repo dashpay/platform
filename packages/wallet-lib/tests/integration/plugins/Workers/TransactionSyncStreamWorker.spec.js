@@ -55,6 +55,7 @@ describe('TransactionSyncStreamWorker', function suite() {
       plugins: [worker],
       allowSensitiveOperations: true,
       HDPrivateKey: new HDPrivateKey(testHDKey),
+      network: 'mainnet'
     });
 
     ({ txStreamMock, transportMock } = await createAndAttachTransportMocksToWallet(wallet, this.sinonSandbox));
@@ -733,7 +734,7 @@ describe('TransactionSyncStreamWorker', function suite() {
     const { promise: transaction2Promise } = account.waitForInstantLock(transactions[2].hash, 1000);
 
     await expect(transaction2Promise).to.eventually
-        .be.rejectedWith('InstantLock waiting period for transaction 256d5b3bf6d8869f5cc882ae070af9b648fa0f512bfa2b6f07b35d55e160a16c timed out');
+        .be.rejectedWith('InstantLock waiting period for transaction 823c272fc1694b571805d2bc2f8936597ee52de638a0ca5323233c239fd3e8c4 timed out');
   });
   it('should start from the height specified in `skipSynchronizationBeforeHeight` options', async function () {
     const bestBlockHeight = 42;
