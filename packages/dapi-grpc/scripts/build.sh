@@ -95,7 +95,7 @@ docker run -v "$CORE_PROTO_PATH:$CORE_PROTO_PATH" \
            --plugin=protoc-gen-grpc=/usr/bin/protoc-gen-grpc-java \
            --grpc-java_out="$CORE_JAVA_OUT_PATH" \
            --proto_path="$CORE_PROTO_PATH" \
-           -I "$CORE_PROTO_PATH" \
+           -I="$CORE_PROTO_PATH" \
            "core.proto"
 
 #######################################
@@ -111,7 +111,7 @@ docker run -v "$PLATFORM_PROTO_PATH:$PLATFORM_PROTO_PATH" \
            --plugin=protoc-gen-grpc=/usr/bin/protoc-gen-grpc-java \
            --grpc-java_out="$PLATFORM_JAVA_OUT_PATH" \
            --proto_path="$PLATFORM_PROTO_PATH" \
-           -I "$PLATFORM_PROTO_PATH" \
+           -I="$PLATFORM_PROTO_PATH" \
            "platform.proto"
 
 ##########################################
@@ -128,7 +128,7 @@ docker run -v "$CORE_PROTO_PATH:$CORE_PROTO_PATH" \
            --objc_out="$CORE_OBJ_C_OUT_PATH" \
            --grpc_out="$CORE_OBJ_C_OUT_PATH" \
            --proto_path="$CORE_PROTO_PATH" \
-           -I "$CORE_PROTO_PATH" \
+           -I="$CORE_PROTO_PATH" \
            "core.proto"
 
 ##############################################
@@ -145,7 +145,7 @@ docker run -v "$PLATFORM_PROTO_PATH:$PLATFORM_PROTO_PATH" \
            --objc_out="$PLATFORM_OBJ_C_OUT_PATH" \
            --grpc_out="$PLATFORM_OBJ_C_OUT_PATH" \
            --proto_path="$PLATFORM_PROTO_PATH" \
-           -I "$PLATFORM_PROTO_PATH" \
+           -I="$PLATFORM_PROTO_PATH" \
            "platform.proto"
 
 #####################################
@@ -162,7 +162,7 @@ docker run -v "$CORE_PROTO_PATH:$CORE_PROTO_PATH" \
            --python_out="$CORE_PYTHON_OUT_PATH" \
            --grpc_out="$CORE_PYTHON_OUT_PATH" \
            --proto_path="$CORE_PROTO_PATH" \
-           -I "$CORE_PROTO_PATH" \
+           -I="$CORE_PROTO_PATH" \
            "core.proto"
 
 #########################################
@@ -179,5 +179,5 @@ docker run -v "$PLATFORM_PROTO_PATH:$PLATFORM_PROTO_PATH" \
           --python_out="$PLATFORM_PYTHON_OUT_PATH" \
           --grpc_out="$PLATFORM_PYTHON_OUT_PATH" \
           --proto_path="$PLATFORM_PROTO_PATH" \
-          -I "$PLATFORM_PROTO_PATH" \
+          -I="$PLATFORM_PROTO_PATH" \
           "platform.proto"
