@@ -72,6 +72,7 @@ export declare namespace Wallet {
         address?: Address | PublicAddress | string;
         unsafeOptions?: IWalletUnsafeOptions;
         waitForInstantLockTimeout?: number;
+        waitForTxMetadataTimeout?: number;
     }
 
     interface IWalletUnsafeOptions {

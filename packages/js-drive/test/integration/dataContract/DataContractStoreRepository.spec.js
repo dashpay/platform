@@ -16,7 +16,7 @@ describe('DataContractStoreRepository', () => {
 
   beforeEach(async () => {
     rsDrive = new Drive('./db/grovedb_test');
-    store = new GroveDBStore(rsDrive, noopLogger, 'testStore');
+    store = new GroveDBStore(rsDrive, noopLogger);
 
     decodeProtocolEntity = decodeProtocolEntityFactory();
 
@@ -108,7 +108,7 @@ describe('DataContractStoreRepository', () => {
     });
 
     it('should fetch Data Contract', async () => {
-      await store.getDrive().applyContract(dataContract, false);
+      await store.getDrive().applyContract(dataContract, new Date(), false);
 
       const storedDataContract = await repository.fetch(dataContract.getId());
 
@@ -119,7 +119,7 @@ describe('DataContractStoreRepository', () => {
     it('should fetch Data Contract using transaction', async () => {
       await store.startTransaction();
 
-      await store.getDrive().applyContract(dataContract, true);
+      await store.getDrive().applyContract(dataContract, new Date(), true);
 
       const notFoundDataContract = await repository.fetch(dataContract.getId(), false);
 
