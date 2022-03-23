@@ -17,6 +17,7 @@ mod dash_platform_protocol;
 
 pub use dash_platform_protocol::DashPlatformProtocol;
 pub use errors::*;
+pub mod mocks;
 
 #[cfg(test)]
 mod tests;
