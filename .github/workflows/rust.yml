@@ -5,6 +5,21 @@ on:
 name: rs-dpp
 
 jobs:
+  wasm-build:
+    name: WASM bindings build check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Cancel previous runs
+        uses: styfle/cancel-workflow-action@0.9.1
+        with:
+          access_token: ${{ github.token }}
+      - uses: actions/checkout@v2
+      - uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          target: wasm32-unknown-unknown
+      - run: cargo check --lib --release --target wasm32-unknown-unknown  -p js-binding
+
   test:
     name: Tests
     runs-on: ubuntu-latest
