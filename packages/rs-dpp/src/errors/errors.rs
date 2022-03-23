@@ -1,4 +1,5 @@
 use crate::data_contract::errors::*;
+use crate::document::errors::*;
 use thiserror::Error;
 
 #[derive(Error, Debug)]
@@ -30,6 +31,8 @@ pub enum ProtocolError {
 
     #[error(transparent)]
     AbstractConsensusError(AbstractConsensusErrorMock),
+    #[error(transparent)]
+    Document(Box<DocumentError>),
 }
 
 impl From<AbstractConsensusErrorMock> for ProtocolError {

@@ -118,11 +118,11 @@ impl Document {
         Ok(sha(self.to_buffer()?))
     }
 
-    pub fn set_value(path: &str, value: Value) -> Result<(), ProtocolError> {
+    pub fn set_value(_path: &str, _value: Value) -> Result<(), ProtocolError> {
         unimplemented!()
     }
 
-    pub fn get(path: &str, value: Value) -> Option<&Value> {
+    pub fn get(_path: &str, _value: Value) -> Option<&Value> {
         unimplemented!()
     }
 }
