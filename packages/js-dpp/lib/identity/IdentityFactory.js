@@ -181,27 +181,24 @@ class IdentityFactory {
   /**
    * Create identity update transition
    *
-   * @param {Identifier|Buffer|string} identityId - identity to top up
+   * @param {Identity} identity - identity to update
    * @param {number} revision
-   * @param {IdentityPublicKey[]} [addPublicKeys]
-   * @param {number[]} [disablePublicKeys]
-   * @param {number} [publicKeysDisabledAt]
+   * @param {{create: IdentityPublicKey[]; delete: IdentityPublicKey[]}} publicKeys - public
+   * keys to add or delete
    * @return {IdentityUpdateTransition}
    */
   createIdentityUpdateTransition(
-    identityId,
+    identity,
     revision,
-    addPublicKeys,
-    disablePublicKeys,
-    publicKeysDisabledAt,
+    publicKeys,
   ) {
     return new IdentityUpdateTransition({
       protocolVersion: this.dpp.getProtocolVersion(),
-      identityId,
-      revision,
-      addPublicKeys,
-      disablePublicKeys,
-      publicKeysDisabledAt,
+      identityId: identity.getId(),
+      revision: identity.getRevision() + 1,
+      addPublicKeys: publicKeys.create,
+      disablePublicKeys: publicKeys.delete.map((pk) => pk.getId()),
+      publicKeysDisabledAt: publicKeys.delete ? new Date().getTime() : undefined,
     });
   }
 }

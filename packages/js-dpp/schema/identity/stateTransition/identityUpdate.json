@@ -49,7 +49,7 @@
       }
     }
   },
-  "dependencies" : {
+  "dependentRequired" : {
     "disablePublicKeys": ["publicKeysDisabledAt"],
     "publicKeysDisabledAt": ["disablePublicKeys"]
   },

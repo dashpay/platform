@@ -30,12 +30,16 @@ describe('validateIdentityCreateTransitionBasicFactory', () => {
   let assetLockPublicKeyHash;
   let proofValidationFunctionsByTypeMock;
   let validateProtocolVersionMock;
+  let validatePublicKeysAreEnabledMock;
 
   beforeEach(async function beforeEach() {
     validatePublicKeysMock = this.sinonSandbox.stub()
       .returns(new ValidationResult());
 
     validatePublicKeysInIdentityCreateTransition = this.sinonSandbox.stub()
+      .returns(new ValidationResult());
+
+    validatePublicKeysAreEnabledMock = this.sinonSandbox.stub()
       .returns(new ValidationResult());
 
     assetLockPublicKeyHash = Buffer.alloc(20, 1);
@@ -63,6 +67,7 @@ describe('validateIdentityCreateTransitionBasicFactory', () => {
       jsonSchemaValidator,
       validatePublicKeysMock,
       validatePublicKeysInIdentityCreateTransition,
+      validatePublicKeysAreEnabledMock,
       proofValidationFunctionsByTypeMock,
       validateProtocolVersionMock,
     );
@@ -320,6 +325,29 @@ describe('validateIdentityCreateTransitionBasicFactory', () => {
 
       expect(validatePublicKeysInIdentityCreateTransition)
         .to.be.calledOnceWithExactly(rawStateTransition.publicKeys);
+    });
+
+    it('should be enabled', async () => {
+      const publicKeysError = new SomeConsensusError('test');
+      const publicKeysResult = new ValidationResult([
+        publicKeysError,
+      ]);
+
+      validatePublicKeysAreEnabledMock.returns(publicKeysResult);
+
+      const result = await validateIdentityCreateTransitionBasic(
+        rawStateTransition,
+      );
+
+      expectValidationError(result);
+
+      const [error] = result.getErrors();
+
+      expect(error).to.equal(publicKeysError);
+
+      expect(validatePublicKeysAreEnabledMock).to.be.calledOnceWithExactly(
+        rawStateTransition.publicKeys,
+      );
     });
   });
 

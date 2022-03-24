@@ -1,23 +1,29 @@
 const ValidationResult = require('../../../../../validation/ValidationResult');
-const IdentityNotFoundError = require('../../../../../errors/consensus/state/identity/IdentityNotFoundError');
 const InvalidIdentityRevisionError = require('../../../../../errors/consensus/state/identity/InvalidIdentityRevisionError');
 const IdentityPublicKey = require('../../../../IdentityPublicKey');
 const IdentityPublicKeyIsReadOnlyError = require('../../../../../errors/consensus/state/identity/IdentityPublicKeyIsReadOnlyError');
+const InvalidIdentityPublicKeyIdError = require('../../../../../errors/consensus/state/identity/InvalidIdentityPublicKeyIdError');
 const MissedSecurityLevelIdentityPublicKeyError = require('../../../../../errors/consensus/state/identity/MissedSecurityLevelIdentityPublicKeyError');
+const Identity = require('../../../../Identity');
+const IdentityPublicKeyDisabledAtWindowViolationError = require('../../../../../errors/consensus/state/identity/IdentityPublicKeyDisabledAtWindowViolationError');
 
 // security levels which must have at least one key
 const SECURITY_LEVELS = [
   IdentityPublicKey.SECURITY_LEVELS.MASTER,
 ];
 
+const BLOCK_TIME_WINDOW_MINUTES = 5;
+
 /**
  * @param {StateRepository} stateRepository
  * @param {validatePublicKeys} validatePublicKeys
+ * @param {validatePublicKeysAreEnabled} validatePublicKeysAreEnabled
  * @return {validateIdentityUpdateTransitionState}
  */
 function validateIdentityUpdateTransitionStateFactory(
   stateRepository,
   validatePublicKeys,
+  validatePublicKeysAreEnabled,
 ) {
   /**
    * @typedef {validateIdentityUpdateTransitionState}
@@ -29,15 +35,10 @@ function validateIdentityUpdateTransitionStateFactory(
     const result = new ValidationResult();
 
     const identityId = stateTransition.getIdentityId();
-    const identity = await stateRepository.fetchIdentity(identityId);
+    const storedIdentity = await stateRepository.fetchIdentity(identityId);
 
-    if (!identity) {
-      result.addError(
-        new IdentityNotFoundError(identityId.toBuffer()),
-      );
-
-      return result;
-    }
+    // copy identity
+    const identity = (new Identity(storedIdentity.toObject()));
 
     // Check revision
     if (identity.getRevision() !== stateTransition.getRevision() - 1) {
@@ -46,16 +47,15 @@ function validateIdentityUpdateTransitionStateFactory(
       );
     }
 
-    const addPublicKeys = stateTransition.getAddPublicKeys();
-    if (addPublicKeys) {
-      addPublicKeys.forEach((pk) => identity.getPublicKeys().push(pk));
-    }
-
-    const disablePublicKeys = stateTransition.getDisablePublicKeys();
+    const disablePublicKeys = stateTransition.getPublicKeyIdsToDisable();
 
     if (disablePublicKeys) {
       disablePublicKeys.forEach((id) => {
-        if (identity.getPublicKeyById(id).getReadOnly()) {
+        if (!identity.getPublicKeyById(id)) {
+          result.addError(
+            new InvalidIdentityPublicKeyIdError(id),
+          );
+        } else if (identity.getPublicKeyById(id).getReadOnly()) {
           result.addError(
             new IdentityPublicKeyIsReadOnlyError(id),
           );
@@ -93,6 +93,56 @@ function validateIdentityUpdateTransitionStateFactory(
       if (!result.isValid()) {
         return result;
       }
+
+      // Calculate time window for timestamps
+      const {
+        time: {
+          seconds: lastBlockHeaderTimeSeconds,
+        },
+      } = await stateRepository.fetchLatestPlatformBlockHeader();
+
+      // Get last block header time in milliseconds
+      const lastBlockHeaderTime = lastBlockHeaderTimeSeconds * 1000;
+
+      // Define time window
+      const timeWindowStart = new Date(lastBlockHeaderTime);
+      timeWindowStart.setMinutes(
+        timeWindowStart.getMinutes() - BLOCK_TIME_WINDOW_MINUTES,
+      );
+
+      const timeWindowEnd = new Date(lastBlockHeaderTime);
+      timeWindowEnd.setMinutes(
+        timeWindowEnd.getMinutes() + BLOCK_TIME_WINDOW_MINUTES,
+      );
+
+      const disabledAtTime = stateTransition.getPublicKeysDisabledAt();
+
+      if (disabledAtTime < timeWindowStart || disabledAtTime > timeWindowEnd) {
+        result.addError(
+          new IdentityPublicKeyDisabledAtWindowViolationError(
+            disabledAtTime,
+            timeWindowStart,
+            timeWindowEnd,
+          ),
+        );
+      }
+
+      if (!result.isValid()) {
+        return result;
+      }
+    }
+
+    const addPublicKeys = stateTransition.getPublicKeysToAdd();
+    if (addPublicKeys) {
+      result.merge(
+        validatePublicKeysAreEnabled(addPublicKeys.map((pk) => pk.toObject())),
+      );
+
+      if (!result.isValid()) {
+        return result;
+      }
+
+      addPublicKeys.forEach((pk) => identity.getPublicKeys().push(pk));
     }
 
     result.merge(

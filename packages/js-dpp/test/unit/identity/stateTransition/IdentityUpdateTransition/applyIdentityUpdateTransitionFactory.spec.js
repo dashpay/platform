@@ -27,9 +27,9 @@ describe('applyIdentityUpdateTransition', () => {
     expect(identity.getPublicKeys()).to.have.lengthOf(3);
 
     expect(identity.getPublicKeyById(3).toObject())
-      .to.deep.equal(stateTransition.getAddPublicKeys()[0]);
+      .to.deep.equal(stateTransition.getPublicKeysToAdd()[0]);
 
-    const [id] = stateTransition.getDisablePublicKeys();
+    const [id] = stateTransition.getPublicKeyIdsToDisable();
 
     expect(identity.getPublicKeyById(id).getDisabledAt())
       .to.equal(stateTransition.getPublicKeysDisabledAt());

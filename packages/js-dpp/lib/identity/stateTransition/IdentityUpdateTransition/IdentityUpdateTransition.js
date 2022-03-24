@@ -19,20 +19,20 @@ class IdentityUpdateTransition extends AbstractStateTransition {
     }
 
     if (Object.prototype.hasOwnProperty.call(rawStateTransition, 'addPublicKeys')) {
-      this.setAddPublicKeys(
+      this.setPublicKeysToAdd(
         rawStateTransition.addPublicKeys
           .map((rawPublicKey) => new IdentityPublicKey(rawPublicKey)),
       );
     }
 
     if (Object.prototype.hasOwnProperty.call(rawStateTransition, 'disablePublicKeys')) {
-      this.setDisablePublicKeys(
+      this.setPublicKeyIdsToDisable(
         rawStateTransition.disablePublicKeys,
       );
     }
 
     if (Object.prototype.hasOwnProperty.call(rawStateTransition, 'publicKeysDisabledAt')) {
-      this.setPublicKeysDisabledAt(rawStateTransition.publicKeysDisabledAt);
+      this.setPublicKeysDisabledAt(new Date(rawStateTransition.publicKeysDisabledAt));
     }
   }
 
@@ -101,7 +101,7 @@ class IdentityUpdateTransition extends AbstractStateTransition {
    *
    * @returns {IdentityPublicKey[]}
    */
-  getAddPublicKeys() {
+  getPublicKeysToAdd() {
     return this.addPublicKeys;
   }
 
@@ -111,7 +111,7 @@ class IdentityUpdateTransition extends AbstractStateTransition {
    * @param {IdentityPublicKey[]} publicKeys
    * @returns {IdentityUpdateTransition}
    */
-  setAddPublicKeys(publicKeys) {
+  setPublicKeysToAdd(publicKeys) {
     this.addPublicKeys = publicKeys;
 
     return this;
@@ -123,7 +123,7 @@ class IdentityUpdateTransition extends AbstractStateTransition {
    *
    * @returns {number[]}
    */
-  getDisablePublicKeys() {
+  getPublicKeyIdsToDisable() {
     return this.disablePublicKeys;
   }
 
@@ -131,10 +131,10 @@ class IdentityUpdateTransition extends AbstractStateTransition {
    *
    * Set Identity Public key IDs to disable for the Identity.
    *
-   * @param {number[]} publicKeys
+   * @param {number[]} publicKeyIds
    * @returns {IdentityUpdateTransition}
    */
-  setDisablePublicKeys(publicKeyIds) {
+  setPublicKeyIdsToDisable(publicKeyIds) {
     this.disablePublicKeys = publicKeyIds;
 
     return this;
@@ -143,7 +143,7 @@ class IdentityUpdateTransition extends AbstractStateTransition {
   /**
    * Get timestamp when keys were disabled.
    *
-   * @returns {number}
+   * @returns {Date}
    */
   getPublicKeysDisabledAt() {
     return this.publicKeysDisabledAt;
@@ -152,7 +152,7 @@ class IdentityUpdateTransition extends AbstractStateTransition {
   /**
    * Set timestamp when keys were disabled.
    *
-   * @param {number} publicKeysDisabledAt
+   * @param {Date} publicKeysDisabledAt
    * @returns {IdentityUpdateTransition}
    */
   setPublicKeysDisabledAt(publicKeysDisabledAt) {
@@ -186,16 +186,16 @@ class IdentityUpdateTransition extends AbstractStateTransition {
     };
 
     if (this.getPublicKeysDisabledAt()) {
-      rawStateTransition.publicKeysDisabledAt = this.getPublicKeysDisabledAt();
+      rawStateTransition.publicKeysDisabledAt = this.getPublicKeysDisabledAt().getTime();
     }
 
-    if (this.getAddPublicKeys()) {
-      rawStateTransition.addPublicKeys = this.getAddPublicKeys()
+    if (this.getPublicKeysToAdd()) {
+      rawStateTransition.addPublicKeys = this.getPublicKeysToAdd()
         .map((publicKey) => publicKey.toObject());
     }
 
-    if (this.getDisablePublicKeys()) {
-      rawStateTransition.disablePublicKeys = this.getDisablePublicKeys();
+    if (this.getPublicKeyIdsToDisable()) {
+      rawStateTransition.disablePublicKeys = this.getPublicKeyIdsToDisable();
     }
 
     if (!options.skipIdentifiersConversion) {
@@ -218,16 +218,16 @@ class IdentityUpdateTransition extends AbstractStateTransition {
     };
 
     if (this.getPublicKeysDisabledAt()) {
-      jsonStateTransition.publicKeysDisabledAt = this.getPublicKeysDisabledAt();
+      jsonStateTransition.publicKeysDisabledAt = this.getPublicKeysDisabledAt().getTime();
     }
 
-    if (this.getAddPublicKeys()) {
-      jsonStateTransition.addPublicKeys = this.getAddPublicKeys()
+    if (this.getPublicKeysToAdd()) {
+      jsonStateTransition.addPublicKeys = this.getPublicKeysToAdd()
         .map((publicKey) => publicKey.toJSON());
     }
 
-    if (this.getDisablePublicKeys()) {
-      jsonStateTransition.disablePublicKeys = this.getDisablePublicKeys();
+    if (this.getPublicKeyIdsToDisable()) {
+      jsonStateTransition.disablePublicKeys = this.getPublicKeyIdsToDisable();
     }
 
     return jsonStateTransition;

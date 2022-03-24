@@ -2,6 +2,8 @@ const IdentityPublicKey = require('../../identity/IdentityPublicKey');
 const InvalidIdentityPublicKeyTypeError = require('../../errors/consensus/signature/InvalidIdentityPublicKeyTypeError');
 const InvalidStateTransitionSignatureError = require('../../errors/consensus/signature/InvalidStateTransitionSignatureError');
 const MissingPublicKeyError = require('../../errors/consensus/signature/MissingPublicKeyError');
+const stateTransitionTypes = require('../stateTransitionTypes');
+const InvalidIdentityPublicKeySecurityLevelError = require('../../errors/consensus/signature/InvalidIdentityPublicKeySecurityLevelError');
 
 /**
  * Validate state transition signature
@@ -47,6 +49,17 @@ function validateStateTransitionIdentitySignatureFactory(
     ) {
       result.addError(
         new InvalidIdentityPublicKeyTypeError(publicKey.getType()),
+      );
+
+      return result;
+    }
+
+    // Identity can be updated only with master key
+    if (
+      stateTransition.getType() === stateTransitionTypes.IDENTITY_UPDATE
+      && publicKey.getSecurityLevel() !== IdentityPublicKey.SECURITY_LEVELS.MASTER) {
+      result.addError(
+        new InvalidIdentityPublicKeySecurityLevelError(publicKey.getSecurityLevel()),
       );
 
       return result;

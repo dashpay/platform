@@ -8,6 +8,8 @@ const generateRandomIdentifier = require('../../../../lib/test/utils/generateRan
 
 const { expectValidationError } = require('../../../../lib/test/expect/expectError');
 const SomeConsensusError = require('../../../../lib/test/mocks/SomeConsensusError');
+const stateTransitionTypes = require('../../../../lib/stateTransition/stateTransitionTypes');
+const InvalidIdentityPublicKeySecurityLevelError = require('../../../../lib/errors/consensus/signature/InvalidIdentityPublicKeySecurityLevelError');
 
 describe('validateStateTransitionIdentitySignatureFactory', () => {
   let validateStateTransitionIdentitySignature;
@@ -27,10 +29,12 @@ describe('validateStateTransitionIdentitySignatureFactory', () => {
       getSignaturePublicKeyId: this.sinonSandbox.stub().returns(publicKeyId),
       getSignature: this.sinonSandbox.stub(),
       getOwnerId: this.sinonSandbox.stub().returns(ownerId),
+      getType: this.sinonSandbox.stub().returns(stateTransitionTypes.IDENTITY_CREATE),
     };
 
     identityPublicKey = {
       getType: this.sinonSandbox.stub().returns(IdentityPublicKey.TYPES.ECDSA_SECP256K1),
+      getSecurityLevel: this.sinonSandbox.stub(),
     };
 
     const getPublicKeyById = this.sinonSandbox.stub().returns(identityPublicKey);
@@ -165,5 +169,24 @@ describe('validateStateTransitionIdentitySignatureFactory', () => {
     expect(identityPublicKey.getType).to.be.calledOnce();
     expect(stateTransition.getSignaturePublicKeyId).to.be.calledOnce();
     expect(stateTransition.verifySignature).to.be.calledOnceWithExactly(identityPublicKey);
+  });
+
+  it('should return InvalidIdentityPublicKeySecurityLevelError', async () => {
+    stateTransition.getType.returns(stateTransitionTypes.IDENTITY_UPDATE);
+    identityPublicKey.getSecurityLevel.returns(IdentityPublicKey.SECURITY_LEVELS.HIGH);
+
+    const result = await validateStateTransitionIdentitySignature(
+      stateTransition,
+    );
+
+    expect(result).to.be.instanceOf(ValidationResult);
+
+    expect(result.isValid()).to.be.false();
+    expect(result.getErrors()).to.be.an('array');
+    expect(result.getErrors()).to.have.lengthOf(1);
+
+    const [error] = result.getErrors();
+
+    expect(error).to.be.instanceOf(InvalidIdentityPublicKeySecurityLevelError);
   });
 });

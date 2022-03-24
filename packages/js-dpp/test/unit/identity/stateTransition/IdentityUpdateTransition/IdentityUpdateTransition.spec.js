@@ -63,15 +63,15 @@ describe('IdentityUpdateTransition', () => {
     });
   });
 
-  describe('#getAddPublicKeys', () => {
+  describe('#getPublicKeysToAdd', () => {
     it('should return public keys to add', () => {
-      expect(stateTransition.getAddPublicKeys()).to.deep.equal(
+      expect(stateTransition.getPublicKeysToAdd()).to.deep.equal(
         rawStateTransition.addPublicKeys.map((rawPublicKey) => new IdentityPublicKey(rawPublicKey)),
       );
     });
   });
 
-  describe('#setAddPublicKeys', () => {
+  describe('#setPublicKeysToAdd', () => {
     it('should set public keys to add', () => {
       const publicKeys = [new IdentityPublicKey({
         id: 0,
@@ -82,22 +82,22 @@ describe('IdentityUpdateTransition', () => {
         data: Buffer.from('01fac99ca2c8f39c286717c213e190aba4b7af76db320ec43f479b7d9a2012313a0ae59ca576edf801444bc694686694', 'hex'),
       })];
 
-      stateTransition.setAddPublicKeys(publicKeys);
+      stateTransition.setPublicKeysToAdd(publicKeys);
 
       expect(stateTransition.addPublicKeys).to.have.deep.members(publicKeys);
     });
   });
 
-  describe('#getDisablePublicKeys', () => {
+  describe('#getPublicKeyIdsToDisable', () => {
     it('should return public key ids to disable', () => {
-      expect(stateTransition.getDisablePublicKeys())
+      expect(stateTransition.getPublicKeyIdsToDisable())
         .to.deep.equal(stateTransition.disablePublicKeys);
     });
   });
 
-  describe('#setDisablePublicKeys', () => {
+  describe('#setPublicKeyIdsToDisable', () => {
     it('should set public key ids to disable', () => {
-      stateTransition.setDisablePublicKeys([1, 2]);
+      stateTransition.setPublicKeyIdsToDisable([1, 2]);
 
       expect(stateTransition.disablePublicKeys).to.deep.equal([1, 2]);
     });
@@ -106,15 +106,17 @@ describe('IdentityUpdateTransition', () => {
   describe('#getPublicKeysDisabledAt', () => {
     it('should return time to disable public keys', () => {
       expect(stateTransition.getPublicKeysDisabledAt())
-        .to.deep.equal(stateTransition.publicKeysDisabledAt);
+        .to.deep.equal(new Date(stateTransition.publicKeysDisabledAt));
     });
   });
 
   describe('#setPublicKeysDisabledAt', () => {
     it('should set time to disable public keys', () => {
-      stateTransition.setPublicKeysDisabledAt(42);
+      const now = new Date();
 
-      expect(stateTransition.publicKeysDisabledAt).to.equal(42);
+      stateTransition.setPublicKeysDisabledAt(now);
+
+      expect(stateTransition.publicKeysDisabledAt).to.deep.equal(new Date(now));
     });
   });
 
@@ -149,9 +151,9 @@ describe('IdentityUpdateTransition', () => {
     });
 
     it('should return raw state transition without optional properties', () => {
-      stateTransition.setDisablePublicKeys(undefined);
+      stateTransition.setPublicKeyIdsToDisable(undefined);
       stateTransition.setPublicKeysDisabledAt(undefined);
-      stateTransition.setAddPublicKeys(undefined);
+      stateTransition.setPublicKeysToAdd(undefined);
 
       rawStateTransition = stateTransition.toObject();
 
@@ -176,7 +178,7 @@ describe('IdentityUpdateTransition', () => {
         identityId: stateTransition.getIdentityId().toString(),
         revision: rawStateTransition.revision,
         publicKeysDisabledAt: rawStateTransition.publicKeysDisabledAt,
-        addPublicKeys: stateTransition.getAddPublicKeys().map((k) => k.toJSON()),
+        addPublicKeys: stateTransition.getPublicKeysToAdd().map((k) => k.toJSON()),
         disablePublicKeys: rawStateTransition.disablePublicKeys,
       });
     });

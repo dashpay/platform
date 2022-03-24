@@ -260,8 +260,8 @@ describe('IdentityFactory', () => {
       expect(stateTransition).to.be.instanceOf(IdentityUpdateTransition);
       expect(stateTransition.getIdentityId()).to.deep.equal(identity.getId());
       expect(stateTransition.getRevision()).to.deep.equal(revision);
-      expect(stateTransition.getAddPublicKeys()).to.deep.equal(addPublicKeys);
-      expect(stateTransition.getDisablePublicKeys()).to.deep.equal(disablePublicKeys);
+      expect(stateTransition.getPublicKeysToAdd()).to.deep.equal(addPublicKeys);
+      expect(stateTransition.getPublicKeyIdsToDisable()).to.deep.equal(disablePublicKeys);
       expect(stateTransition.getPublicKeysDisabledAt()).to.deep.equal(publicKeysDisabledAt);
     });
   });
