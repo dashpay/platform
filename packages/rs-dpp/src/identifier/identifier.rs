@@ -4,6 +4,7 @@ use std::convert::TryInto;
 use crate::errors::ProtocolError;
 use crate::util::string_encoding;
 use crate::util::string_encoding::Encoding;
+use serde_json::Value as JsonValue;
 
 #[derive(Default, Debug, Clone, PartialEq, Eq)]
 pub struct Identifier {
@@ -56,6 +57,13 @@ impl Identifier {
 
         // Since we checked that vector size is 32, we can use unwrap
         Ok(Identifier::new(bytes.try_into().unwrap()))
+    }
+
+    pub fn to_vec(&self) -> Vec<JsonValue> {
+        self.to_buffer()
+            .iter()
+            .map(|v| JsonValue::from(*v))
+            .collect()
     }
 
     pub fn to_buffer(&self) -> [u8; 32] {
