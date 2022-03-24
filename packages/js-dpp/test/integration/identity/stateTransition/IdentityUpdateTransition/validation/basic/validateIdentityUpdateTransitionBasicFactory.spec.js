@@ -399,7 +399,7 @@ describe('validateIdentityUpdateTransitionBasicFactory.spec', () => {
       expectJsonSchemaError(result);
 
       const [error] = result.getErrors();
-      expect(error.getKeyword()).to.equal('dependencies');
+      expect(error.getKeyword()).to.equal('dependentRequired');
       expect(error.params.missingProperty).to.equal('publicKeysDisabledAt');
     });
 
@@ -490,7 +490,7 @@ describe('validateIdentityUpdateTransitionBasicFactory.spec', () => {
       expectJsonSchemaError(result);
 
       const [error] = result.getErrors();
-      expect(error.getKeyword()).to.equal('dependencies');
+      expect(error.getKeyword()).to.equal('dependentRequired');
       expect(error.params.missingProperty).to.equal('disablePublicKeys');
     });
 
