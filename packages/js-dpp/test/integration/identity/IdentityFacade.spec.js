@@ -14,6 +14,8 @@ const InstantAssetLockProof = require('../../../lib/identity/stateTransition/ass
 const getInstantAssetLockProofFixture = require('../../../lib/test/fixtures/getInstantAssetLockProofFixture');
 const getChainAssetLockProofFixture = require('../../../lib/test/fixtures/getChainAssetLockProofFixture');
 const ChainAssetLockProof = require('../../../lib/identity/stateTransition/assetLockProof/chain/ChainAssetLockProof');
+const IdentityUpdateTransition = require('../../../lib/identity/stateTransition/IdentityUpdateTransition/IdentityUpdateTransition');
+const IdentityPublicKey = require('../../../lib/identity/IdentityPublicKey');
 
 describe('IdentityFacade', () => {
   let dpp;
@@ -148,6 +150,38 @@ describe('IdentityFacade', () => {
       expect(stateTransition.getAssetLockProof().toObject()).to.deep.equal(
         instantAssetLockProof.toObject(),
       );
+    });
+  });
+
+  describe('#createIdentityUpdateTransition', () => {
+    it('should create IdentityUpdateTransition from identity id and public keys', () => {
+      const publicKeys = {
+        create: [{
+          id: 3,
+          type: IdentityPublicKey.TYPES.ECDSA_SECP256K1,
+          data: Buffer.from('AuryIuMtRrl/VviQuyLD1l4nmxi9ogPzC9LT7tdpo0di', 'base64'),
+          purpose: IdentityPublicKey.PURPOSES.AUTHENTICATION,
+          securityLevel: IdentityPublicKey.SECURITY_LEVELS.CRITICAL,
+          readOnly: false,
+        }],
+      };
+
+      const stateTransition = dpp.identity
+        .createIdentityUpdateTransition(
+          identity,
+          publicKeys,
+        );
+
+      expect(stateTransition).to.be.instanceOf(IdentityUpdateTransition);
+      expect(stateTransition.getIdentityId()).to.be.deep.equal(identity.getId());
+      expect(stateTransition.getRevision()).to.equal(
+        identity.getRevision() + 1,
+      );
+      expect(
+        stateTransition.getPublicKeysToAdd().map((pk) => pk.toObject()),
+      ).to.deep.equal(publicKeys.create);
+      expect(stateTransition.getPublicKeyIdsToDisable()).to.equal(undefined);
+      expect(stateTransition.getPublicKeysDisabledAt()).to.equal(undefined);
     });
   });
 });
