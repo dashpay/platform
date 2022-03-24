@@ -5,6 +5,7 @@ const {
   InvalidRawTransaction,
   InvalidDashcoreTransaction,
 } = require('../../../errors');
+const EVENTS = require('../../../EVENTS');
 
 function impactAffectedInputs({ transaction, txid }) {
   const { inputs, changeIndex } = transaction.toObject();
@@ -115,27 +116,26 @@ async function _broadcastTransaction(transaction, options = {}) {
  * @param {Transaction|RawTransaction} transaction - A txobject or it's hexadecimal representation
  * @param {Object} [options]
  * @param {Boolean} [options.skipFeeValidation=false] - Allow to skip fee validation
- * @return {Promise<transactionId>}
+ * @return {Promise<string>}
  */
 async function broadcastTransaction(transaction, options = {}) {
-  if (!this.txISLockListener) {
-    const txId = await _broadcastTransaction.call(this, transaction, options);
-
-    this.txISLockListener = new Promise((resolve) => {
-      this.subscribeToTransactionInstantLock.call(this, txId, () => {
-        this.txISLockListener = null;
-        resolve();
+  if (!this.txFetchListener) {
+    // TODO: change event to FETCHED_UNCONFIRMED_TRANSACTION
+    this.txFetchListener = new Promise((resolve) => {
+      this.once(EVENTS.FETCHED_CONFIRMED_TRANSACTION, ({ payload }) => {
+        if (payload.transaction.hash === transaction.hash) {
+          this.txFetchListener = null;
+          resolve();
+        }
       });
-
-      // TODO: Also subscribe to FETCHED_CONFIRMED_TRANSACTION
-      // to use as a fallback to resolve the promise
-      // (blocked by https://github.com/dashevo/wallet-lib/pull/340)
     });
 
-    return txId;
+    await _broadcastTransaction.call(this, transaction, options);
+
+    return transaction.hash;
   }
 
-  await this.txISLockListener;
+  await this.txFetchListener;
 
   return broadcastTransaction.call(this, transaction, options);
 }
