@@ -144,6 +144,17 @@ class IdentityFacade {
       assetLockProof,
     );
   }
+
+  /**
+   * Create identity update transition
+   *
+   * @param {Identity} identity
+   * @param {{create: IdentityPublicKey[]; delete: IdentityPublicKey[]}} publicKeys
+   * @returns {IdentityUpdateTransition}
+   */
+  createIdentityUpdateTransition(identity, publicKeys) {
+    return this.factory.createIdentityUpdateTransition(identity, publicKeys);
+  }
 }
 
 module.exports = IdentityFacade;
