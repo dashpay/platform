@@ -1,17 +1,68 @@
+const EventEmitter = require('events');
 const DAPIClient = require('@dashevo/dapi-client');
 const {
   Block,
   BlockHeader,
-  PrivateKey,
   ChainLock,
 } = require('@dashevo/dashcore-lib');
 
 const getDAPISeeds = require('../../../lib/test/getDAPISeeds');
-const createFaucetClient = require('../../../lib/test/createFaucetClient');
+const createClientWithFundedWallet = require('../../../lib/test/createClientWithFundedWallet');
 
 const wait = (ms) => new Promise((resolve) => {
   setTimeout(resolve, ms);
 });
+
+const createRetryableStream = (dapiClient) => {
+  const streamMediator = new EventEmitter();
+
+  // The stream interrupts every minutes, so 2 retries
+  // (3 minutes = 1 first subscription + 2 retries)
+  // ie enough to ensure that the block have been mined
+  const maxRetries = 2;
+  let currentRetries = 0;
+
+  const createStream = async (fromBlockHeight, count = 0) => {
+    let streamError;
+    const stream = await dapiClient.core.subscribeToBlockHeadersWithChainLocks(
+      {
+        fromBlockHeight,
+        count,
+      },
+    );
+
+    streamMediator.cancel = stream.cancel;
+
+    stream.on('data', (data) => {
+      streamMediator.emit('data', data);
+    });
+
+    stream.on('error', (e) => {
+      streamError = e;
+      if (currentRetries === maxRetries) {
+        streamMediator.emit('error', e);
+        return;
+      }
+
+      createStream(fromBlockHeight, count)
+        .then(() => {
+          currentRetries++;
+        })
+        .catch((createStreamError) => {
+          streamMediator.emit('error', createStreamError);
+        });
+    });
+
+    stream.on('end', () => {
+      if (!streamError) {
+        streamMediator.emit('end');
+      }
+    });
+  };
+  streamMediator.init = createStream;
+
+  return streamMediator;
+};
 
 describe('subscribeToBlockHeadersWithChainLocksHandlerFactory', () => {
   let dapiClient;
@@ -38,10 +89,8 @@ describe('subscribeToBlockHeadersWithChainLocksHandlerFactory', () => {
     const historicalBlockHeaders = [];
     let bestChainLock = null;
 
-    const stream = await dapiClient.core.subscribeToBlockHeadersWithChainLocks({
-      fromBlockHeight: 1,
-      count: headersAmount,
-    });
+    const stream = createRetryableStream(dapiClient);
+    await stream.init(1, headersAmount);
 
     stream.on('data', (data) => {
       const blockHeaders = data.getBlockHeaders();
@@ -76,17 +125,17 @@ describe('subscribeToBlockHeadersWithChainLocksHandlerFactory', () => {
       }
       await wait(1000);
     }
-
+    expect(streamError).to.not.exist();
     expect(streamEnded).to.be.true();
 
     // TODO: fetching blocks one by one takes too long. Implement getBlockHeaders in dapi-client
-    const fetchedBlocks = []
+    const fetchedBlocks = [];
 
     for (let i = 1; i <= headersAmount; i++) {
-      const rawBlock = await dapiClient.core.getBlockByHeight(i)
-      const block = new Block(rawBlock)
+      const rawBlock = await dapiClient.core.getBlockByHeight(i);
+      const block = new Block(rawBlock);
 
-      fetchedBlocks.push(block)
+      fetchedBlocks.push(block);
     }
 
     expect(historicalBlockHeaders.map((header) => header.hash))
@@ -98,19 +147,16 @@ describe('subscribeToBlockHeadersWithChainLocksHandlerFactory', () => {
     let latestChainLock = null;
 
     const historicalBlocksToGet = 10;
-    const blockHeadersHashesFromStream = [];
+    const blockHeadersHashesFromStream = new Set();
 
     let obtainedFreshBlock = false;
 
-    const faucetClient = createFaucetClient();
-    const faucetWalletAccount = await faucetClient.getWalletAccount();
+    const client = await createClientWithFundedWallet();
+    const account = await client.getWalletAccount();
 
     // Connect to the stream
-    const stream = await dapiClient.core.subscribeToBlockHeadersWithChainLocks(
-      {
-        fromBlockHeight: bestBlockHeight - historicalBlocksToGet + 1,
-      },
-    );
+    const stream = createRetryableStream(dapiClient);
+    await stream.init(bestBlockHeight - historicalBlocksToGet + 1);
 
     let streamEnded = false;
     stream.on('data', (data) => {
@@ -120,23 +166,23 @@ describe('subscribeToBlockHeadersWithChainLocksHandlerFactory', () => {
         const list = blockHeaders.getHeadersList();
         list.forEach((headerBytes) => {
           const header = new BlockHeader(Buffer.from(headerBytes));
-          blockHeadersHashesFromStream.push(header.hash);
-
+          blockHeadersHashesFromStream.add(header.hash);
           // Once we've obtained a required amount of historical blocks,
           // we can consider the rest arriving as newly generated
-          if (blockHeadersHashesFromStream.length > historicalBlocksToGet) {
+          if (blockHeadersHashesFromStream.size > historicalBlocksToGet) {
             obtainedFreshBlock = true;
           }
         });
       }
 
-      if (obtainedFreshBlock) {
-        const rawChainLock = data.getChainLock();
-        if (rawChainLock) {
-          latestChainLock = new ChainLock(Buffer.from(rawChainLock));
-          stream.cancel();
-          streamEnded = true;
-        }
+      const rawChainLock = data.getChainLock();
+      if (rawChainLock) {
+        latestChainLock = new ChainLock(Buffer.from(rawChainLock));
+      }
+
+      if (obtainedFreshBlock && latestChainLock) {
+        stream.cancel();
+        streamEnded = true;
       }
     });
 
@@ -150,9 +196,9 @@ describe('subscribeToBlockHeadersWithChainLocksHandlerFactory', () => {
     });
 
     // Create and broadcast transaction to produce fresh block
-    const transaction = faucetWalletAccount.createTransaction({
-      recipient: new PrivateKey().toAddress(process.env.NETWORK),
-      satoshis: 10000,
+    const transaction = account.createTransaction({
+      recipient: account.getUnusedAddress().address,
+      satoshis: 1000,
     });
 
     await dapiClient.core.broadcastTransaction(transaction.toBuffer());
@@ -165,19 +211,20 @@ describe('subscribeToBlockHeadersWithChainLocksHandlerFactory', () => {
       await wait(1000);
     }
 
-    // TODO: fetching blocks one by one takes too long. Implement getBlockHeaders in dapi-client
-    const fetchedHistoricalBlocks = []
+    expect(streamError).to.not.exist();
 
-    for (let i = bestBlockHeight - historicalBlocksToGet + 1;
-         i <= bestBlockHeight; i++) {
-      const rawBlock = await dapiClient.core.getBlockByHeight(i)
+    // TODO: fetching blocks one by one takes too long. Implement getBlockHeaders in dapi-client
+    const fetchedHistoricalBlocks = [];
+
+    for (let i = bestBlockHeight - historicalBlocksToGet + 1; i <= bestBlockHeight; i++) {
+      const rawBlock = await dapiClient.core.getBlockByHeight(i);
       const block = new Block(rawBlock);
 
-      fetchedHistoricalBlocks.push(block)
+      fetchedHistoricalBlocks.push(block);
     }
 
     for (let i = 0; i < historicalBlocksToGet; i++) {
-      expect(fetchedHistoricalBlocks[i].header.hash).to.equal(blockHeadersHashesFromStream[i]);
+      expect(fetchedHistoricalBlocks[i].header.hash).to.equal([...blockHeadersHashesFromStream][i]);
     }
 
     expect(obtainedFreshBlock).to.be.true();
