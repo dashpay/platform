@@ -232,7 +232,13 @@ describe('BlockExecutionContext', () => {
     it('should populate instance from a plain object', () => {
       blockExecutionContext.fromObject(plainObject);
 
-      expect(blockExecutionContext.dataContracts).to.deep.equal([dataContract]);
+      if (blockExecutionContext.dataContracts[0].$defs === undefined) {
+        blockExecutionContext.dataContracts[0].$defs = {};
+      }
+
+      expect(blockExecutionContext.dataContracts).to.have.deep.members(
+        [dataContract],
+      );
       expect(blockExecutionContext.lastCommitInfo).to.deep.equal(lastCommitInfo);
       expect(blockExecutionContext.cumulativeFees).to.equal(cumulativeFees);
       expect(blockExecutionContext.header).to.deep.equal(header);

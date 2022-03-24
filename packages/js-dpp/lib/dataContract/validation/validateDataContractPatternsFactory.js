@@ -27,9 +27,9 @@ function validateDataContractPatternsFactory(
               // eslint-disable-next-line no-new
               new RE2(value, 'u');
             } catch (e) {
-              const consensusError = new IncompatibleRe2PatternError(value, path, e.message);
+              const consensusError = new IncompatibleRe2PatternError(value, path, e);
 
-              consensusError.setPatternError(e);
+              consensusError.setPatternError(new Error(e));
 
               result.addError(consensusError);
             }

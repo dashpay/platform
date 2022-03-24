@@ -3,9 +3,10 @@ const DashCoreLib = require('@dashevo/dashcore-lib');
 const instantAssetLockProofSchema = require('../../../../../schema/identity/stateTransition/assetLockProof/instantAssetLockProof.json');
 
 const convertBuffersToArrays = require('../../../../util/convertBuffersToArrays');
+
 const InvalidInstantAssetLockProofError = require('../../../../errors/consensus/basic/identity/InvalidInstantAssetLockProofError');
 const IdentityAssetLockProofLockedTransactionMismatchError = require('../../../../errors/consensus/basic/identity/IdentityAssetLockProofLockedTransactionMismatchError');
-const InvalidIdentityAssetLockProofSignatureError = require('../../../../errors/consensus/basic/identity/InvalidInstantAssetLockProofSignatureError');
+const InvalidInstantAssetLockProofSignatureError = require('../../../../errors/consensus/basic/identity/InvalidInstantAssetLockProofSignatureError');
 
 /**
  * @param {JsonSchemaValidator} jsonSchemaValidator
@@ -50,7 +51,7 @@ function validateInstantAssetLockProofStructureFactory(
     }
 
     if (!await stateRepository.verifyInstantLock(instantLock)) {
-      result.addError(new InvalidIdentityAssetLockProofSignatureError());
+      result.addError(new InvalidInstantAssetLockProofSignatureError());
 
       return result;
     }

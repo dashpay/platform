@@ -137,7 +137,7 @@ class IdentityFactory {
    *
    * @param {number} coreChainLockedHeight
    * @param {Buffer} outPoint
-   * @returns {InstantAssetLockProof}
+   * @returns {ChainAssetLockProof}
    */
   createChainAssetLockProof(coreChainLockedHeight, outPoint) {
     return new ChainAssetLockProof({
