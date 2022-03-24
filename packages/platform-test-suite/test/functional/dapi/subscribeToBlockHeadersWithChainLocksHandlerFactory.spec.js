@@ -13,13 +13,12 @@ const wait = (ms) => new Promise((resolve) => {
   setTimeout(resolve, ms);
 });
 
+// TODO: disconnect funded wallet after test is complete
+
 const createRetryableStream = (dapiClient) => {
   const streamMediator = new EventEmitter();
 
-  // The stream interrupts every minutes, so 2 retries
-  // (3 minutes = 1 first subscription + 2 retries)
-  // ie enough to ensure that the block have been mined
-  const maxRetries = 2;
+  const maxRetries = 5;
   let currentRetries = 0;
 
   const createStream = async (fromBlockHeight, count = 0) => {
