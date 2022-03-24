@@ -28,6 +28,7 @@ describe('IdentityFactory', () => {
   let instantAssetLockProof;
   let chainAssetLockProof;
   let dppMock;
+  let fakeTime;
 
   beforeEach(function beforeEach() {
     validateIdentityMock = this.sinonSandbox.stub();
@@ -48,6 +49,12 @@ describe('IdentityFactory', () => {
     identity.id = instantAssetLockProof.createIdentifier();
     identity.setAssetLockProof(instantAssetLockProof);
     identity.setBalance(0);
+
+    fakeTime = this.sinonSandbox.useFakeTimers(new Date());
+  });
+
+  afterEach(() => {
+    fakeTime.reset();
   });
 
   describe('#constructor', () => {
@@ -237,8 +244,7 @@ describe('IdentityFactory', () => {
   describe('createIdentityUpdateTransition', () => {
     it('should create IdentityUpdateTransition', () => {
       const revision = 1;
-      const disablePublicKeys = [0];
-      const publicKeysDisabledAt = Math.round(new Date().getTime() / 1000);
+      const disablePublicKeys = [identity.getPublicKeyById(0)];
       const addPublicKeys = [{
         id: 0,
         type: IdentityPublicKey.TYPES.ECDSA_SECP256K1,
@@ -250,19 +256,19 @@ describe('IdentityFactory', () => {
 
       const stateTransition = factory
         .createIdentityUpdateTransition(
-          identity.getId(),
-          revision,
-          addPublicKeys,
-          disablePublicKeys,
-          publicKeysDisabledAt,
+          identity,
+          {
+            create: addPublicKeys,
+            delete: disablePublicKeys,
+          },
         );
 
       expect(stateTransition).to.be.instanceOf(IdentityUpdateTransition);
       expect(stateTransition.getIdentityId()).to.deep.equal(identity.getId());
       expect(stateTransition.getRevision()).to.deep.equal(revision);
       expect(stateTransition.getPublicKeysToAdd()).to.deep.equal(addPublicKeys);
-      expect(stateTransition.getPublicKeyIdsToDisable()).to.deep.equal(disablePublicKeys);
-      expect(stateTransition.getPublicKeysDisabledAt()).to.deep.equal(publicKeysDisabledAt);
+      expect(stateTransition.getPublicKeyIdsToDisable()).to.deep.equal([0]);
+      expect(stateTransition.getPublicKeysDisabledAt()).to.deep.equal(new Date());
     });
   });
 });

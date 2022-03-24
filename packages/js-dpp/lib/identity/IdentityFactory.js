@@ -182,24 +182,32 @@ class IdentityFactory {
    * Create identity update transition
    *
    * @param {Identity} identity - identity to update
-   * @param {number} revision
    * @param {{create: IdentityPublicKey[]; delete: IdentityPublicKey[]}} publicKeys - public
    * keys to add or delete
    * @return {IdentityUpdateTransition}
    */
   createIdentityUpdateTransition(
     identity,
-    revision,
-    publicKeys,
+    publicKeys = {},
   ) {
-    return new IdentityUpdateTransition({
+    const rawStateTransition = {
       protocolVersion: this.dpp.getProtocolVersion(),
       identityId: identity.getId(),
       revision: identity.getRevision() + 1,
-      addPublicKeys: publicKeys.create,
-      disablePublicKeys: publicKeys.delete.map((pk) => pk.getId()),
-      publicKeysDisabledAt: publicKeys.delete ? new Date().getTime() : undefined,
-    });
+    };
+
+    if (publicKeys.create) {
+      rawStateTransition.addPublicKeys = publicKeys.create;
+    }
+
+    if (publicKeys.delete) {
+      const now = new Date().getTime();
+
+      rawStateTransition.disablePublicKeys = publicKeys.delete.map((pk) => pk.getId());
+      rawStateTransition.publicKeysDisabledAt = now;
+    }
+
+    return new IdentityUpdateTransition(rawStateTransition);
   }
 }
 
