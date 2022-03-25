@@ -23,6 +23,7 @@ pub enum ProtocolError {
 
     #[error(transparent)]
     ParsingJsonError(#[from] serde_json::Error),
+
     #[error(transparent)]
     Error(#[from] anyhow::Error),
 
@@ -33,6 +34,21 @@ pub enum ProtocolError {
     AbstractConsensusError(AbstractConsensusErrorMock),
     #[error(transparent)]
     Document(Box<DocumentError>),
+
+    #[error("Generic Error: {0}")]
+    Generic(String),
+}
+
+impl From<&str> for ProtocolError {
+    fn from(v: &str) -> ProtocolError {
+        ProtocolError::Generic(String::from(v))
+    }
+}
+
+impl From<String> for ProtocolError {
+    fn from(v: String) -> ProtocolError {
+        Self::from(v.as_str())
+    }
 }
 
 impl From<AbstractConsensusErrorMock> for ProtocolError {

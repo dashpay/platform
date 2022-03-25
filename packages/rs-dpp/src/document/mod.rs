@@ -1,3 +1,4 @@
+pub mod document_transition;
 pub mod errors;
 
 use crate::data_contract::DataContract;
