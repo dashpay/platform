@@ -1,3 +1,15 @@
+### [0.22.1](https://github.com/dashevo/platform/compare/v0.22.0...v0.22.1) (2022-03-25)
+
+
+### Bug Fixes
+
+* **dashmate:** cannot read properties of undefined (reading 'masternodeRewardShares’) ([#310](https://github.com/dashevo/platform/issues/310))
+
+
+### Tests
+
+* fix platform-test-suite-execution in browser environment ([#289](https://github.com/dashevo/platform/issues/289))
+
 ## [0.22.0](https://github.com/dashevo/platform/compare/v0.21.8...v0.22.0) (2022-03-21)
 
 ### ⚠ BREAKING CHANGES
