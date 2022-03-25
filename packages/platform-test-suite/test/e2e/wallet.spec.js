@@ -25,17 +25,18 @@ describe('e2e', () => {
 
     before(async () => {
       fundedWallet = await createClientWithFundedWallet();
+      const network = process.env.NETWORK;
       emptyWallet = new Dash.Client({
         seeds: getDAPISeeds(),
-        network: process.env.NETWORK,
+        network,
         wallet: {
           waitForInstantLockTimeout: 120000,
         },
       });
 
       mnemonic = emptyWallet.wallet.exportWallet();
-      emptyWalletHeight = fundedWallet
-        .wallet.storage.store.chains[fundedWallet.network].blockHeight;
+      const { storage } = fundedWallet.wallet;
+      emptyWalletHeight = storage.store.chains[storage.network].blockHeight;
     });
 
     // Skip test if any prior test in this describe failed
