@@ -258,8 +258,8 @@ describe('IdentityFactory', () => {
         .createIdentityUpdateTransition(
           identity,
           {
-            create: addPublicKeys,
-            delete: disablePublicKeys,
+            add: addPublicKeys,
+            disable: disablePublicKeys,
           },
         );
 

@@ -133,6 +133,7 @@ describe('IdentityUpdateTransition', () => {
         publicKeysDisabledAt: rawStateTransition.publicKeysDisabledAt,
         addPublicKeys: rawStateTransition.addPublicKeys,
         disablePublicKeys: rawStateTransition.disablePublicKeys,
+        signaturePublicKeyId: undefined,
       });
     });
 
@@ -163,6 +164,7 @@ describe('IdentityUpdateTransition', () => {
         signature: undefined,
         identityId: rawStateTransition.identityId,
         revision: rawStateTransition.revision,
+        signaturePublicKeyId: undefined,
       });
     });
   });
@@ -180,6 +182,7 @@ describe('IdentityUpdateTransition', () => {
         publicKeysDisabledAt: rawStateTransition.publicKeysDisabledAt,
         addPublicKeys: stateTransition.getPublicKeysToAdd().map((k) => k.toJSON()),
         disablePublicKeys: rawStateTransition.disablePublicKeys,
+        signaturePublicKeyId: undefined,
       });
     });
   });

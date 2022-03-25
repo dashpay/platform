@@ -1,5 +1,5 @@
 const { getRE2Class } = require('@dashevo/wasm-re2');
-
+const { PrivateKey } = require('@dashevo/dashcore-lib');
 const validateIdentityUpdateTransitionBasicFactory = require(
   '../../../../../../../lib/identity/stateTransition/IdentityUpdateTransition/validation/basic/validateIdentityUpdateTransitionBasicFactory',
 );
@@ -11,13 +11,13 @@ const getIdentityUpdateTransitionFixture = require('../../../../../../../lib/tes
 const { expectJsonSchemaError, expectValidationError } = require('../../../../../../../lib/test/expect/expectError');
 const SomeConsensusError = require('../../../../../../../lib/test/mocks/SomeConsensusError');
 
-describe('validateIdentityUpdateTransitionBasicFactory.spec', () => {
+describe('validateIdentityUpdateTransitionBasicFactory', () => {
   let validateIdentityUpdateTransitionBasic;
   let validateProtocolVersionMock;
   let validatePublicKeysMock;
   let rawStateTransition;
   let stateTransition;
-  let publicKey;
+  let publicKeyToAdd;
 
   beforeEach(async function beforeEach() {
     const RE2 = await getRE2Class();
@@ -37,13 +37,22 @@ describe('validateIdentityUpdateTransitionBasicFactory.spec', () => {
 
     stateTransition = getIdentityUpdateTransitionFixture();
 
-    const privateKey = '9b67f852093bc61cea0eeca38599dbfba0de28574d2ed9b99d10d33dc1bde7b2';
+    const privateKeyModel = new PrivateKey();
+    const privateKeyHex = privateKeyModel.toBuffer().toString('hex');
+    const publicKey = privateKeyModel.toPublicKey().toBuffer();
 
-    await stateTransition.signByPrivateKey(privateKey, IdentityPublicKey.TYPES.ECDSA_SECP256K1);
+    const identityPublicKey = new IdentityPublicKey()
+      .setId(1)
+      .setType(IdentityPublicKey.TYPES.ECDSA_SECP256K1)
+      .setData(publicKey)
+      .setSecurityLevel(IdentityPublicKey.SECURITY_LEVELS.MASTER)
+      .setPurpose(IdentityPublicKey.PURPOSES.AUTHENTICATION);
+
+    await stateTransition.sign(identityPublicKey, privateKeyHex);
 
     rawStateTransition = stateTransition.toObject();
 
-    publicKey = {
+    publicKeyToAdd = {
       id: 0,
       type: IdentityPublicKey.TYPES.ECDSA_SECP256K1,
       data: Buffer.from('AuryIuMtRrl/VviQuyLD1l4nmxi9ogPzC9LT7tdpo0di', 'base64'),
@@ -305,7 +314,7 @@ describe('validateIdentityUpdateTransitionBasicFactory.spec', () => {
     });
 
     it('should return valid result', async () => {
-      rawStateTransition.addPublicKeys = [publicKey];
+      rawStateTransition.addPublicKeys = [publicKeyToAdd];
 
       const result = await validateIdentityUpdateTransitionBasic(
         rawStateTransition,
@@ -330,7 +339,7 @@ describe('validateIdentityUpdateTransitionBasicFactory.spec', () => {
       rawStateTransition.addPublicKeys = [];
 
       for (let i = 0; i <= 10; i++) {
-        rawStateTransition.addPublicKeys.push(publicKey);
+        rawStateTransition.addPublicKeys.push(publicKeyToAdd);
       }
 
       const result = await validateIdentityUpdateTransitionBasic(
@@ -346,7 +355,7 @@ describe('validateIdentityUpdateTransitionBasicFactory.spec', () => {
     });
 
     it('should be unique', async () => {
-      rawStateTransition.addPublicKeys = [publicKey, publicKey];
+      rawStateTransition.addPublicKeys = [publicKeyToAdd, publicKeyToAdd];
 
       const result = await validateIdentityUpdateTransitionBasic(
         rawStateTransition,
@@ -361,7 +370,7 @@ describe('validateIdentityUpdateTransitionBasicFactory.spec', () => {
     });
 
     it('should be valid', async () => {
-      rawStateTransition.addPublicKeys = [publicKey];
+      rawStateTransition.addPublicKeys = [publicKeyToAdd];
 
       const publicKeysError = new SomeConsensusError('test');
       const publicKeysResult = new ValidationResult([
