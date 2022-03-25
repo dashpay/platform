@@ -18,7 +18,7 @@ const wait = (ms) => new Promise((resolve) => {
 const createRetryableStream = (dapiClient) => {
   const streamMediator = new EventEmitter();
 
-  const maxRetries = 5;
+  const maxRetries = 10;
   let currentRetries = 0;
 
   const createStream = async (fromBlockHeight, count = 0) => {
