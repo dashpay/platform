@@ -1,9 +1,9 @@
-const AbstractStateTransition = require('../../../stateTransition/AbstractStateTransition');
 const stateTransitionTypes = require('../../../stateTransition/stateTransitionTypes');
 const Identifier = require('../../../identifier/Identifier');
 const IdentityPublicKey = require('../../IdentityPublicKey');
+const AbstractStateTransitionIdentitySigned = require('../../../stateTransition/AbstractStateTransitionIdentitySigned');
 
-class IdentityUpdateTransition extends AbstractStateTransition {
+class IdentityUpdateTransition extends AbstractStateTransitionIdentitySigned {
   /**
    * @param {RawIdentityUpdateTransition} rawStateTransition
    */
@@ -240,6 +240,16 @@ class IdentityUpdateTransition extends AbstractStateTransition {
    */
   getModifiedDataIds() {
     return [this.getIdentityId()];
+  }
+
+  /**
+   * Returns minimal key security level that can be used to sign this ST
+   *
+   * @override
+   * @return {number}
+   */
+  getKeySecurityLevelRequirement() {
+    return IdentityPublicKey.SECURITY_LEVELS.MASTER;
   }
 }
 

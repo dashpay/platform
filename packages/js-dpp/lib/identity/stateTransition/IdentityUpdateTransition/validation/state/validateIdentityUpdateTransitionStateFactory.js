@@ -1,29 +1,22 @@
 const ValidationResult = require('../../../../../validation/ValidationResult');
 const InvalidIdentityRevisionError = require('../../../../../errors/consensus/state/identity/InvalidIdentityRevisionError');
-const IdentityPublicKey = require('../../../../IdentityPublicKey');
 const IdentityPublicKeyIsReadOnlyError = require('../../../../../errors/consensus/state/identity/IdentityPublicKeyIsReadOnlyError');
 const InvalidIdentityPublicKeyIdError = require('../../../../../errors/consensus/state/identity/InvalidIdentityPublicKeyIdError');
-const MissedSecurityLevelIdentityPublicKeyError = require('../../../../../errors/consensus/state/identity/MissedSecurityLevelIdentityPublicKeyError');
 const Identity = require('../../../../Identity');
 const IdentityPublicKeyDisabledAtWindowViolationError = require('../../../../../errors/consensus/state/identity/IdentityPublicKeyDisabledAtWindowViolationError');
-
-// security levels which must have at least one key
-const SECURITY_LEVELS = [
-  IdentityPublicKey.SECURITY_LEVELS.MASTER,
-];
 
 const BLOCK_TIME_WINDOW_MINUTES = 5;
 
 /**
  * @param {StateRepository} stateRepository
  * @param {validatePublicKeys} validatePublicKeys
- * @param {validatePublicKeysAreEnabled} validatePublicKeysAreEnabled
+ * @param {validateRequiredPurposeAndSecurityLevel} validateRequiredPurposeAndSecurityLevel
  * @return {validateIdentityUpdateTransitionState}
  */
 function validateIdentityUpdateTransitionStateFactory(
   stateRepository,
   validatePublicKeys,
-  validatePublicKeysAreEnabled,
+  validateRequiredPurposeAndSecurityLevel,
 ) {
   /**
    * @typedef {validateIdentityUpdateTransitionState}
@@ -72,28 +65,6 @@ function validateIdentityUpdateTransitionStateFactory(
           .setDisabledAt(stateTransition.getPublicKeysDisabledAt()),
       );
 
-      const securityLevelsWithKeys = new Set();
-
-      SECURITY_LEVELS.forEach((securityLevel) => {
-        identity.getPublicKeys()
-          .filter((pk) => pk.getSecurityLevel() === securityLevel)
-          .forEach((pk) => {
-            if (!pk.getDisabledAt()) {
-              securityLevelsWithKeys.add(securityLevel);
-            }
-          });
-      });
-
-      SECURITY_LEVELS.forEach((securityLevel) => {
-        if (!securityLevelsWithKeys.has(securityLevel)) {
-          result.addError(new MissedSecurityLevelIdentityPublicKeyError(securityLevel));
-        }
-      });
-
-      if (!result.isValid()) {
-        return result;
-      }
-
       // Calculate time window for timestamps
       const {
         time: {
@@ -134,15 +105,28 @@ function validateIdentityUpdateTransitionStateFactory(
 
     const addPublicKeys = stateTransition.getPublicKeysToAdd();
     if (addPublicKeys) {
+      // check that all adding public keys don't contain disabledAt field
       result.merge(
-        validatePublicKeysAreEnabled(addPublicKeys.map((pk) => pk.toObject())),
+        validatePublicKeys(addPublicKeys.map((pk) => pk.toObject()), true),
       );
 
       if (!result.isValid()) {
         return result;
       }
 
-      addPublicKeys.forEach((pk) => identity.getPublicKeys().push(pk));
+      const identityPublicKeys = identity.getPublicKeys();
+      addPublicKeys.forEach((pk) => identityPublicKeys.push(pk));
+      identity.setPublicKeys(identityPublicKeys);
+    }
+
+    identity.getPublicKeys().forEach((pk) => {
+      result.merge(
+        validateRequiredPurposeAndSecurityLevel(pk.toObject()),
+      );
+    });
+
+    if (!result.isValid()) {
+      return result;
     }
 
     result.merge(

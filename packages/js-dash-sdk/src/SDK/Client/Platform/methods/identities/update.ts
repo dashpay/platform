@@ -1,5 +1,4 @@
-// @ts-ignore
-import Identifier from "@dashevo/dpp/lib/Identifier";
+import Identity from "@dashevo/dpp/lib/identity/Identity";
 import { Platform } from "../../Platform";
 import IdentityPublicKey from "@dashevo/dpp/lib/identity/IdentityPublicKey"
 import { signStateTransition } from '../../signStateTransition';
@@ -10,27 +9,19 @@ import broadcastStateTransition from "../../broadcastStateTransition";
  * Update platform identities
  *
  * @param {Platform} this - bound instance class
- * @param {Identifier|string} identityId - id of the identity to top up
- * @param {{create: IdentityPublicKey[]; delete: IdentityPublicKey[]}} publicKeys - public keys to add
+ * @param {Identity} identity - identity to update
+ * @param {{add: IdentityPublicKey[]; disable: IdentityPublicKey[]}} publicKeys - public keys to add
  *
  * @returns {boolean}
  */
 export async function update(
   this: Platform,
-  identityId: Identifier | string,
-  publicKeys: { create?: IdentityPublicKey[]; delete?: IdentityPublicKey[] },
+  identity: Identity,
+  publicKeys: { add?: IdentityPublicKey[]; disable?: IdentityPublicKey[] },
   ): Promise<any> {
   await this.initialize();
 
   const { dpp } = this;
-
-  identityId = Identifier.from(identityId);
-
-  const identity = await this.identities.get(identityId);
-
-  if (identity === null) {
-    throw new Error(`Identity with ID ${identityId.toString()} not found`)
-  }
 
   const identityUpdateTransition = dpp.identity.createIdentityUpdateTransition(
     identity,

@@ -149,7 +149,7 @@ class IdentityFacade {
    * Create identity update transition
    *
    * @param {Identity} identity
-   * @param {{create: IdentityPublicKey[]; delete: IdentityPublicKey[]}} publicKeys
+   * @param {{add: IdentityPublicKey[]; disable: IdentityPublicKey[]}} publicKeys
    * @returns {IdentityUpdateTransition}
    */
   createIdentityUpdateTransition(identity, publicKeys) {

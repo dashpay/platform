@@ -7,7 +7,7 @@ class IdentityPublicKeyDisabledAtWindowViolationError extends AbstractStateError
    * @param {Date} timeWindowEnd
    */
   constructor(disabledAt, timeWindowStart, timeWindowEnd) {
-    super(`Identity public key disabledAt (${disabledAt}) is out of block time window from ${timeWindowStart} and ${timeWindowEnd}`);
+    super(`Identity public keys disabled time (${disabledAt}) is out of block time window from ${timeWindowStart} and ${timeWindowEnd}`);
 
     this.disabledAt = disabledAt;
     this.timeWindowStart = timeWindowStart;

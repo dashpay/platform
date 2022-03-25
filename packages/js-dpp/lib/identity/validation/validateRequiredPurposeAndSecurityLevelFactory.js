@@ -10,19 +10,19 @@ const MASTER_SECURITY_LEVEL = IdentityPublicKey.SECURITY_LEVELS.MASTER;
 /**
  * Validate public keys for the identity create ST (factory)
  *
- * @return {validatePublicKeysInIdentityCreateTransition}
+ * @return {validateRequiredPurposeAndSecurityLevel}
  */
-function validatePublicKeysInIdentityCreateTransitionFactory() {
+function validateRequiredPurposeAndSecurityLevelFactory() {
   /**
    * Validate public keys for a create identity transaction
    *
-   * @typedef validatePublicKeysInIdentityCreateTransition
+   * @typedef validateRequiredPurposeAndSecurityLevel
    *
    * @param {RawIdentityPublicKey[]} rawPublicKeys
    *
    * @return {ValidationResult}
    */
-  function validatePublicKeysInIdentityCreateTransition(rawPublicKeys) {
+  function validateRequiredPurposeAndSecurityLevel(rawPublicKeys) {
     const result = new ValidationResult();
 
     // Count how many purpose/security key combinations are here
@@ -45,7 +45,7 @@ function validatePublicKeysInIdentityCreateTransitionFactory() {
     return result;
   }
 
-  return validatePublicKeysInIdentityCreateTransition;
+  return validateRequiredPurposeAndSecurityLevel;
 }
 
-module.exports = validatePublicKeysInIdentityCreateTransitionFactory;
+module.exports = validateRequiredPurposeAndSecurityLevelFactory;

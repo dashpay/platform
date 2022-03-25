@@ -182,7 +182,7 @@ class IdentityFactory {
    * Create identity update transition
    *
    * @param {Identity} identity - identity to update
-   * @param {{create: IdentityPublicKey[]; delete: IdentityPublicKey[]}} publicKeys - public
+   * @param {{add: IdentityPublicKey[]; disable: IdentityPublicKey[]}} publicKeys - public
    * keys to add or delete
    * @return {IdentityUpdateTransition}
    */
@@ -196,14 +196,14 @@ class IdentityFactory {
       revision: identity.getRevision() + 1,
     };
 
-    if (publicKeys.create) {
-      rawStateTransition.addPublicKeys = publicKeys.create;
+    if (publicKeys.add) {
+      rawStateTransition.addPublicKeys = publicKeys.add;
     }
 
-    if (publicKeys.delete) {
+    if (publicKeys.disable) {
       const now = new Date().getTime();
 
-      rawStateTransition.disablePublicKeys = publicKeys.delete.map((pk) => pk.getId());
+      rawStateTransition.disablePublicKeys = publicKeys.disable.map((pk) => pk.getId());
       rawStateTransition.publicKeysDisabledAt = now;
     }
 

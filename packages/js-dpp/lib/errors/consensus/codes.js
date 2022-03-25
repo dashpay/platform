@@ -62,7 +62,7 @@ const InvalidJsonSchemaRefError = require('./basic/dataContract/InvalidJsonSchem
 const JsonSchemaCompilationError = require('./basic/JsonSchemaCompilationError');
 const DuplicateDocumentTransitionsWithIdsError = require('./basic/document/DuplicateDocumentTransitionsWithIdsError');
 const DuplicateDocumentTransitionsWithIndicesError = require('./basic/document/DuplicateDocumentTransitionsWithIndicesError');
-const InvalidAssetLockTransactionOutputReturnSize = require('./basic/identity/InvalidAssetLockTransactionOutputReturnSize');
+const InvalidAssetLockTransactionOutputReturnSizeError = require('./basic/identity/InvalidAssetLockTransactionOutputReturnSizeError');
 const InvalidInstantAssetLockProofError = require('./basic/identity/InvalidInstantAssetLockProofError');
 const InvalidInstantAssetLockProofSignatureError = require('./basic/identity/InvalidInstantAssetLockProofSignatureError');
 const IncompatibleRe2PatternError = require('./basic/dataContract/IncompatibleRe2PatternError');
@@ -71,6 +71,10 @@ const IncompatibleDataContractSchemaError = require('./basic/dataContract/Incomp
 const DataContractImmutablePropertiesUpdateError = require('./basic/dataContract/DataContractImmutablePropertiesUpdateError');
 const DataContractIndicesChangedError = require('./basic/dataContract/DataContractUniqueIndicesChangedError');
 const DuplicateIndexNameError = require('./basic/dataContract/DuplicateIndexNameError');
+const IdentityPublicKeyDisabledAtWindowViolationError = require('./state/identity/IdentityPublicKeyDisabledAtWindowViolationError');
+const IdentityPublicKeyIsReadOnlyError = require('./state/identity/IdentityPublicKeyIsReadOnlyError');
+const InvalidIdentityPublicKeyIdError = require('./state/identity/InvalidIdentityPublicKeyIdError');
+const InvalidIdentityRevisionError = require('./state/identity/InvalidIdentityRevisionError');
 
 const codes = {
   /**
@@ -124,7 +128,7 @@ const codes = {
   1034: IdentityAssetLockTransactionOutputNotFoundError,
   1035: InvalidAssetLockProofCoreChainHeightError,
   1036: InvalidAssetLockProofTransactionHeightError,
-  1037: InvalidAssetLockTransactionOutputReturnSize,
+  1037: InvalidAssetLockTransactionOutputReturnSizeError,
   1038: InvalidIdentityAssetLockTransactionError,
   1039: InvalidIdentityAssetLockTransactionOutputError,
   1040: InvalidIdentityPublicKeyDataError,
@@ -178,6 +182,10 @@ const codes = {
 
   // Identity
   4011: IdentityAlreadyExistsError,
+  4012: IdentityPublicKeyDisabledAtWindowViolationError,
+  4017: IdentityPublicKeyIsReadOnlyError,
+  4018: InvalidIdentityPublicKeyIdError,
+  4019: InvalidIdentityRevisionError,
 };
 
 module.exports = codes;

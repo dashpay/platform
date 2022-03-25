@@ -47,6 +47,10 @@
         "type": "integer",
         "minimum": 0
       }
+    },
+    "signaturePublicKeyId": {
+      "type": "integer",
+      "minimum": 0
     }
   },
   "dependentRequired" : {
@@ -75,6 +79,7 @@
     "type",
     "identityId",
     "signature",
-    "revision"
+    "revision",
+    "signaturePublicKeyId"
   ]
 }

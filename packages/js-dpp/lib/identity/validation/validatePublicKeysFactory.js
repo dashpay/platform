@@ -38,17 +38,24 @@ function validatePublicKeysFactory(validator, bls) {
    * @typedef validatePublicKeys
    *
    * @param {RawIdentityPublicKey[]} rawPublicKeys
+   * @param {boolean} [mustBeEnabled]
    *
    * @return {ValidationResult}
    */
-  function validatePublicKeys(rawPublicKeys) {
+  function validatePublicKeys(rawPublicKeys, mustBeEnabled = false) {
     const result = new ValidationResult();
+
+    const schemaToValidate = { ...publicKeySchema };
+
+    if (mustBeEnabled) {
+      delete schemaToValidate.properties.disabledAt;
+    }
 
     // Validate public key structure
     rawPublicKeys.forEach((rawPublicKey) => {
       result.merge(
         validator.validate(
-          publicKeySchema,
+          schemaToValidate,
           convertBuffersToArrays(rawPublicKey),
         ),
       );

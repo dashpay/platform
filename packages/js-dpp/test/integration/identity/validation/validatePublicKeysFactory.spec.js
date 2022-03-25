@@ -342,4 +342,27 @@ describe('validatePublicKeysFactory', () => {
     expect(error.getValidationError()).to.be.instanceOf(TypeError);
     expect(error.getValidationError().message).to.equal('Invalid public key');
   });
+
+  describe('disabledAt', () => {
+    beforeEach(() => {
+      rawPublicKeys[0].disabledAt = new Date().getTime();
+    });
+
+    it('should return invalid result if key has disabledAt property', () => {
+      const result = validatePublicKeys(rawPublicKeys, true);
+
+      expectJsonSchemaError(result);
+
+      const [error] = result.getErrors();
+
+      expect(error.getKeyword()).to.equal('additionalProperties');
+      expect(error.params.additionalProperty).to.equal('disabledAt');
+    });
+
+    it('should pass valid public keys', () => {
+      const result = validatePublicKeys(rawPublicKeys);
+
+      expect(result.isValid()).to.be.true();
+    });
+  });
 });

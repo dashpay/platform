@@ -6,9 +6,8 @@ const convertBuffersToArrays = require('../../../../../util/convertBuffersToArra
  * @param {JsonSchemaValidator} jsonSchemaValidator
  * @param {validatePublicKeys} validatePublicKeys
  * @param {
- *  validatePublicKeysInIdentityCreateTransition
- * } validatePublicKeysInIdentityCreateTransition
- * @param {validatePublicKeysAreEnabled} validatePublicKeysAreEnabled
+ *  validateRequiredPurposeAndSecurityLevel
+ * } validateRequiredPurposeAndSecurityLevel
  * @param {Object.<number, Function>} proofValidationFunctionsByType
  * @param {validateProtocolVersion} validateProtocolVersion
  *
@@ -17,8 +16,7 @@ const convertBuffersToArrays = require('../../../../../util/convertBuffersToArra
 function validateIdentityCreateTransitionBasicFactory(
   jsonSchemaValidator,
   validatePublicKeys,
-  validatePublicKeysInIdentityCreateTransition,
-  validatePublicKeysAreEnabled,
+  validateRequiredPurposeAndSecurityLevel,
   proofValidationFunctionsByType,
   validateProtocolVersion,
 ) {
@@ -47,15 +45,11 @@ function validateIdentityCreateTransitionBasicFactory(
     }
 
     result.merge(
-      validatePublicKeys(rawStateTransition.publicKeys),
+      validatePublicKeys(rawStateTransition.publicKeys, true),
     );
 
     result.merge(
-      validatePublicKeysAreEnabled(rawStateTransition.publicKeys),
-    );
-
-    result.merge(
-      validatePublicKeysInIdentityCreateTransition(rawStateTransition.publicKeys),
+      validateRequiredPurposeAndSecurityLevel(rawStateTransition.publicKeys),
     );
 
     if (!result.isValid()) {

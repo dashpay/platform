@@ -41,8 +41,7 @@ const getDataTriggersFactory = require('../dataTrigger/getDataTriggersFactory');
 const executeDataTriggersFactory = require('../document/stateTransition/DocumentsBatchTransition/validation/state/executeDataTriggersFactory');
 const validateIdentityExistenceFactory = require('../identity/validation/validateIdentityExistenceFactory');
 const validatePublicKeysFactory = require('../identity/validation/validatePublicKeysFactory');
-const validatePublicKeysAreEnabled = require('../identity/validation/validatePublicKeysAreEnabled');
-const validatePublicKeysInIdentityCreateTransitionFactory = require('../identity/validation/validatePublicKeysInIdentityCreateTransitionFactory');
+const validateRequiredPurposeAndSecurityLevelFactory = require('../identity/validation/validateRequiredPurposeAndSecurityLevelFactory');
 const validateDataContractMaxDepthFactory = require('../dataContract/validation/validateDataContractMaxDepthFactory');
 
 const applyStateTransitionFactory = require('./applyStateTransitionFactory');
@@ -194,16 +193,15 @@ class StateTransitionFacade {
       bls,
     );
 
-    const validatePublicKeysInIdentityCreateTransition = (
-      validatePublicKeysInIdentityCreateTransitionFactory()
+    const validateRequiredPurposeAndSecurityLevel = (
+      validateRequiredPurposeAndSecurityLevelFactory()
     );
 
     const validateIdentityCreateTransitionBasic = (
       validateIdentityCreateTransitionBasicFactory(
         validator,
         validatePublicKeys,
-        validatePublicKeysInIdentityCreateTransition,
-        validatePublicKeysAreEnabled,
+        validateRequiredPurposeAndSecurityLevel,
         proofValidationFunctionsByType,
         validateProtocolVersion,
       )
@@ -221,7 +219,6 @@ class StateTransitionFacade {
       validator,
       validateProtocolVersion,
       validatePublicKeys,
-      validatePublicKeysAreEnabled,
     );
 
     const validationFunctionsByType = {
@@ -258,6 +255,8 @@ class StateTransitionFacade {
 
     const validateIdentityUpdateTransitionState = validateIdentityUpdateTransitionStateFactory(
       this.stateRepository,
+      validatePublicKeys,
+      validateRequiredPurposeAndSecurityLevel,
     );
 
     const fetchDocuments = fetchDocumentsFactory(

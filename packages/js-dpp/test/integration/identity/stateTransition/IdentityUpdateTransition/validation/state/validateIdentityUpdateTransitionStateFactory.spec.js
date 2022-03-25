@@ -7,7 +7,6 @@ const ValidationResult = require('../../../../../../../lib/validation/Validation
 const { expectValidationError } = require('../../../../../../../lib/test/expect/expectError');
 const InvalidIdentityRevisionError = require('../../../../../../../lib/errors/consensus/state/identity/InvalidIdentityRevisionError');
 const IdentityPublicKeyIsReadOnlyError = require('../../../../../../../lib/errors/consensus/state/identity/IdentityPublicKeyIsReadOnlyError');
-const MissedSecurityLevelIdentityPublicKeyError = require('../../../../../../../lib/errors/consensus/state/identity/MissedSecurityLevelIdentityPublicKeyError');
 const IdentityPublicKeyDisabledAtWindowViolationError = require('../../../../../../../lib/errors/consensus/state/identity/IdentityPublicKeyDisabledAtWindowViolationError');
 const InvalidIdentityPublicKeyIdError = require('../../../../../../../lib/errors/consensus/state/identity/InvalidIdentityPublicKeyIdError');
 const SomeConsensusError = require('../../../../../../../lib/test/mocks/SomeConsensusError');
@@ -18,15 +17,15 @@ describe('validateIdentityUpdateTransitionStateFactory', () => {
   let stateTransition;
   let identity;
   let validatePublicKeysMock;
-  let validatePublicKeysAreEnabledMock;
   let fakeTime;
   let blockTime;
+  let validateRequiredPurposeAndSecurityLevelMock;
 
   beforeEach(async function beforeEach() {
     identity = getIdentityFixture();
     validatePublicKeysMock = this.sinonSandbox.stub()
       .returns(new ValidationResult());
-    validatePublicKeysAreEnabledMock = this.sinonSandbox.stub()
+    validateRequiredPurposeAndSecurityLevelMock = this.sinonSandbox.stub()
       .returns(new ValidationResult());
 
     stateRepositoryMock = createStateRepositoryMock(this.sinonSandbox);
@@ -45,7 +44,7 @@ describe('validateIdentityUpdateTransitionStateFactory', () => {
     validateIdentityUpdateTransitionState = validateIdentityUpdateTransitionStateFactory(
       stateRepositoryMock,
       validatePublicKeysMock,
-      validatePublicKeysAreEnabledMock,
+      validateRequiredPurposeAndSecurityLevelMock,
     );
 
     stateTransition = getIdentityUpdateTransitionFixture();
@@ -86,19 +85,6 @@ describe('validateIdentityUpdateTransitionStateFactory', () => {
 
     const [error] = result.getErrors();
     expect(error.getPublicKeyIndex()).to.equal(0);
-  });
-
-  it('should return MissedSecurityLevelIdentityPublicKeyError', async () => {
-    stateTransition.setPublicKeyIdsToDisable([0]);
-    stateTransition.setPublicKeysDisabledAt(new Date());
-    stateTransition.setPublicKeysToAdd(undefined);
-
-    const result = await validateIdentityUpdateTransitionState(stateTransition);
-
-    expectValidationError(result, MissedSecurityLevelIdentityPublicKeyError);
-
-    const [error] = result.getErrors();
-    expect(error.getSecurityLevel()).to.equal(identity.getPublicKeyById(0).getSecurityLevel());
   });
 
   it('should return invalid result if disabledAt have violated time window', async () => {
@@ -171,10 +157,20 @@ describe('validateIdentityUpdateTransitionStateFactory', () => {
     expect(stateRepositoryMock.fetchLatestPlatformBlockHeader)
       .to.not.be.called();
 
-    expect(validatePublicKeysMock)
-      .to.be.calledOnceWithExactly(
+    expect(validatePublicKeysMock).to.be.calledTwice();
+
+    expect(validatePublicKeysMock.getCall(0))
+      .to.be.calledWithExactly(
+        stateTransition.getPublicKeysToAdd()
+          .map((pk) => pk.toObject()),
+        true,
+      );
+
+    expect(validatePublicKeysMock.getCall(1))
+      .to.be.calledWithExactly(
         [...identity.getPublicKeys(), ...stateTransition.getPublicKeysToAdd()]
           .map((pk) => pk.toObject()),
+
       );
   });
 
@@ -196,26 +192,68 @@ describe('validateIdentityUpdateTransitionStateFactory', () => {
       .to.be.calledOnce();
   });
 
-  it('should not be able to add public key with disabledAt field', async () => {
+  it('should validate purpose and security level', async () => {
+    const now = new Date();
+
+    stateTransition.setPublicKeyIdsToDisable([1]);
+    stateTransition.setPublicKeysDisabledAt(now);
+
     const publicKeysError = new SomeConsensusError('test');
-    const publicKeysResult = new ValidationResult([
-      publicKeysError,
-    ]);
 
-    validatePublicKeysAreEnabledMock.returns(publicKeysResult);
+    validateRequiredPurposeAndSecurityLevelMock.onCall(0)
+      .returns(new ValidationResult([publicKeysError]));
 
-    const result = await validateIdentityUpdateTransitionState(
-      stateTransition,
+    const result = await validateIdentityUpdateTransitionState(stateTransition);
+
+    expectValidationError(result, SomeConsensusError);
+
+    expect(validateRequiredPurposeAndSecurityLevelMock).to.be.calledThrice();
+
+    expect(validateRequiredPurposeAndSecurityLevelMock.getCall(0))
+      .to.be.calledWithExactly(identity.getPublicKeys()[0].toObject());
+
+    expect(validateRequiredPurposeAndSecurityLevelMock.getCall(1))
+      .to.be.calledWithExactly({ ...identity.getPublicKeys()[1].toObject(), disabledAt: now });
+
+    expect(validateRequiredPurposeAndSecurityLevelMock.getCall(2))
+      .to.be.calledWithExactly(stateTransition.getPublicKeysToAdd()[0].toObject());
+  });
+
+  it('should validate public keys to add', async () => {
+    const publicKeysError = new SomeConsensusError('test');
+
+    validatePublicKeysMock.onCall(0).returns(new ValidationResult([publicKeysError]));
+
+    const result = await validateIdentityUpdateTransitionState(stateTransition);
+
+    expectValidationError(result, SomeConsensusError);
+
+    expect(validatePublicKeysMock).to.be.calledOnceWithExactly(
+      stateTransition.getPublicKeysToAdd().map((pk) => pk.toObject()),
+      true,
+    );
+  });
+
+  it('should validate resulting identity public keys', async () => {
+    const publicKeysError = new SomeConsensusError('test');
+
+    validatePublicKeysMock.onCall(1).returns(new ValidationResult([publicKeysError]));
+
+    const result = await validateIdentityUpdateTransitionState(stateTransition);
+
+    expectValidationError(result, SomeConsensusError);
+
+    expect(validatePublicKeysMock).to.be.calledTwice();
+
+    expect(validatePublicKeysMock.getCall(0)).to.be.calledWithExactly(
+      stateTransition.getPublicKeysToAdd().map((pk) => pk.toObject()),
+      true,
     );
 
-    expectValidationError(result);
+    const publicKeys = [...identity.getPublicKeys(), ...stateTransition.getPublicKeysToAdd()];
 
-    const [error] = result.getErrors();
-
-    expect(error).to.equal(publicKeysError);
-
-    expect(validatePublicKeysAreEnabledMock).to.be.calledOnceWithExactly(
-      stateTransition.addPublicKeys.map((pk) => pk.toObject()),
+    expect(validatePublicKeysMock.getCall(1)).to.be.calledWithExactly(
+      publicKeys.map((pk) => pk.toObject()),
     );
   });
 });
