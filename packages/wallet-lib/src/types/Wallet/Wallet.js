@@ -17,7 +17,7 @@ const defaultOptions = {
   allowSensitiveOperations: false,
   unsafeOptions: {},
   waitForInstantLockTimeout: 60000,
-  waitForTxMetadataTimeout: 180000,
+  waitForTxMetadataTimeout: 360000,
 };
 
 const fromMnemonic = require('./methods/fromMnemonic');
