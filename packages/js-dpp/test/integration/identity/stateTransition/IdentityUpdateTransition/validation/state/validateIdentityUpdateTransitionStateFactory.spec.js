@@ -207,16 +207,11 @@ describe('validateIdentityUpdateTransitionStateFactory', () => {
 
     expectValidationError(result, SomeConsensusError);
 
-    expect(validateRequiredPurposeAndSecurityLevelMock).to.be.calledThrice();
-
-    expect(validateRequiredPurposeAndSecurityLevelMock.getCall(0))
-      .to.be.calledWithExactly(identity.getPublicKeys()[0].toObject());
-
-    expect(validateRequiredPurposeAndSecurityLevelMock.getCall(1))
-      .to.be.calledWithExactly({ ...identity.getPublicKeys()[1].toObject(), disabledAt: now });
-
-    expect(validateRequiredPurposeAndSecurityLevelMock.getCall(2))
-      .to.be.calledWithExactly(stateTransition.getPublicKeysToAdd()[0].toObject());
+    expect(validateRequiredPurposeAndSecurityLevelMock).to.be.calledOnceWithExactly([
+      identity.getPublicKeys()[0].toObject(),
+      { ...identity.getPublicKeys()[1].toObject(), disabledAt: now.getTime() },
+      stateTransition.getPublicKeysToAdd()[0].toObject(),
+    ]);
   });
 
   it('should validate public keys to add', async () => {
