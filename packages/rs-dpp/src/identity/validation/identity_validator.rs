@@ -1,4 +1,4 @@
-use crate::dash_platform_protocol::JsonSchemas;
+use crate::dash_platform_protocol::{JsonSchemas};
 use crate::errors::consensus::basic::JsonSchemaError;
 use crate::errors::consensus::ConsensusError;
 use crate::schema::IdentitySchemaJsons;
@@ -24,83 +24,15 @@ impl IdentityValidator {
         };
 
         // BYTE_ARRAY META SCHEMA
-
-        let byte_array_meta = json!({
-            "$schema": "https://json-schema.org/draft/2020-12/schema",
-            "$id": "https://schema.dash.org/dpp-0-4-0/meta/byte-array",
-            "description": "Byte array keyword meta schema",
-            "type": "object",
-            "properties": {
-                "properties": {
-                    "type": "object",
-                    "additionalProperties": {
-                        "type": "object",
-                        "properties": {
-                            "byteArray": {
-                                "type": "boolean",
-                                "const": true
-                            }
-                        }
-                    },
-                    "dependentSchemas": {
-                        "byteArray": {
-                          "description": "should be used only with array type",
-                          "properties": {
-                            "type": {
-                              "type": "string",
-                              "const": "array"
-                            }
-                          },
-                          "not": {
-                            "properties": {
-                              "items": {
-                                "type": "array"
-                              }
-                            },
-                            "required": ["items"]
-                          }
-                        },
-                        "contentMediaType": {
-                          "if": {
-                            "properties": {
-                              "contentMediaType": {
-                                "const": "application/x.dash.dpp.identifier"
-                              }
-                            }
-                          },
-                          "then": {
-                            "properties": {
-                              "byteArray": {
-                                "const": true
-                              },
-                              "minItems": {
-                                "const": 32
-                              },
-                              "maxItems": {
-                                "const": 32
-                              }
-                            },
-                            "required": ["byteArray", "minItems", "maxItems"]
-                          }
-                        },
-                    }
-                }
-            }
-        });
-
-        let byte_array_meta_schema = JSONSchema::compile(&byte_array_meta)?;
         let identity_schema = &identity_validator.identity_schema_json.clone();
-        let res = byte_array_meta_schema.validate(&identity_schema);
-
-        //let res = byte_array_meta::validate(&identity_schema);
+        let res = byte_array_meta::validate(&identity_schema);
 
         match res {
             Ok(_) => {}
             Err(mut errors) => {
-                return Err(DashPlatformProtocolInitError::from(errors.nth(0).unwrap()));
+                return Err(DashPlatformProtocolInitError::from(errors.remove(0)));
             }
         }
-
         // BYTE_ARRAY META SCHEMA END
 
         let identity_schema = JSONSchema::options()
