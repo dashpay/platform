@@ -46,7 +46,7 @@ pub fn id_should_be_present() {
 pub fn id_should_be_a_byte_array() {
     let mut identity = crate::tests::fixtures::identity_fixture_json();
     let map = identity.as_object_mut().expect("Expected value to be an JSON object");
-    map.insert("id".parse().unwrap(), Value::from(vec!["string"; 32]));
+    map.insert("id".parse().unwrap(), Value::Array(vec![Value::from("string"); 32]));
 
     let identity_validator = IdentityValidator::new().unwrap();
     let result = identity_validator.validate_identity(&identity);
@@ -68,6 +68,15 @@ pub fn id_should_be_a_byte_array() {
 
     let err = byte_array_error.json_schema_error().expect("Expected to be a JsonSchemaError");
     assert_eq!(err.keyword(), Some("byteArray"))
+}
+
+#[test]
+pub fn id_should_not_be_less_than_32_bytes() {
+    assert!(false)
+}
+
+pub fn id_should_not_be_more_than_32_bytes() {
+    assert!(false);
 }
 
 // Balance tests

@@ -8,7 +8,7 @@ pub trait AbstractConsensusError {
 
 #[derive(Error, Debug)]
 pub enum ConsensusError {
-    #[error("Please implement me")]
+    #[error("`{0}`")]
     JsonSchemaError(JsonSchemaError)
 }
 

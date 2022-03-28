@@ -10,7 +10,7 @@ pub const IDENTITY_JSON_STRING: &'static str = r#"{
       "$comment": "Maximum is the latest protocol version"
     },
     "id": {
-      "type": "array",
+      "type": "number",
       "byteArray": true,
       "minItems": 32,
       "maxItems": 32,
@@ -30,8 +30,8 @@ pub const IDENTITY_JSON_STRING: &'static str = r#"{
       "type": "integer",
       "minimum": 0,
       "description": "Identity update revision"
-  }
-},
+    }
+  },
   "required": [
     "protocolVersion",
     "id",
