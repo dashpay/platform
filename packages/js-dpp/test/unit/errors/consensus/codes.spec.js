@@ -34,18 +34,20 @@ function isChildOf(classToCheck, parentClass) {
 }
 
 describe('consensusErrors', () => {
-  const normalizedPath = path.join(__dirname, '../../../../lib/errors/');
-  const allFiles = getAllFiles(normalizedPath);
-  allFiles.forEach((fileName) => {
-    // eslint-disable-next-line global-require,import/no-dynamic-require
-    const ErrorClass = require(fileName);
-    if (isChildOf(ErrorClass, AbstractStateError) && !ErrorClass.name.startsWith('Abstract')) {
-      it(`should contain code for consensus error class ${ErrorClass.name}`, () => {
-        const hasErrorCode = !!Object.values(codes)
-          .find((ErrorClassWithCode) => ErrorClassWithCode === ErrorClass);
+  if (global.window === undefined) {
+    const normalizedPath = path.join(__dirname, '../../../../lib/errors/');
+    const allFiles = getAllFiles(normalizedPath);
+    allFiles.forEach((fileName) => {
+      // eslint-disable-next-line global-require,import/no-dynamic-require
+      const ErrorClass = require(fileName);
+      if (isChildOf(ErrorClass, AbstractStateError) && !ErrorClass.name.startsWith('Abstract')) {
+        it(`should contain code for consensus error class ${ErrorClass.name}`, () => {
+          const hasErrorCode = !!Object.values(codes)
+            .find((ErrorClassWithCode) => ErrorClassWithCode === ErrorClass);
 
-        expect(hasErrorCode).to.be.true();
-      });
-    }
-  });
+          expect(hasErrorCode).to.be.true();
+        });
+      }
+    });
+  }
 });
