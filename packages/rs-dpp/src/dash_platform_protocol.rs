@@ -135,7 +135,7 @@ impl DashPlatformProtocol {
         json_schemas.compile()?;
 
         Ok(Self {
-            identities: IdentityFacade::new(),
+            identities: IdentityFacade::new()?,
             json_schemas,
         })
     }
