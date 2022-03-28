@@ -42,8 +42,8 @@ function applyIdentityUpdateTransitionFactory(
 
     await stateRepository.storeIdentity(identity);
 
-    const publicKeyHashes = identity
-      .getPublicKeys()
+    const publicKeyHashes = stateTransition
+      .getPublicKeysToAdd()
       .map((publicKey) => publicKey.hash());
 
     await stateRepository.storeIdentityPublicKeyHashes(
