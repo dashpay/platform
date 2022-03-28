@@ -62,7 +62,7 @@ function validateIdentityUpdateTransitionStateFactory(
       // Keys can only be disabled if another valid key is enabled in the same security level
       disablePublicKeys.forEach(
         (id) => identity.getPublicKeyById(id)
-          .setDisabledAt(stateTransition.getPublicKeysDisabledAt()),
+          .setDisabledAt(stateTransition.getPublicKeysDisabledAt().getTime()),
       );
 
       // Calculate time window for timestamps
@@ -88,7 +88,10 @@ function validateIdentityUpdateTransitionStateFactory(
 
       const disabledAtTime = stateTransition.getPublicKeysDisabledAt();
 
-      if (disabledAtTime < timeWindowStart || disabledAtTime > timeWindowEnd) {
+      if (
+        disabledAtTime.getTime() < timeWindowStart.getTime()
+        || disabledAtTime.getTime() > timeWindowEnd.getTime()
+      ) {
         result.addError(
           new IdentityPublicKeyDisabledAtWindowViolationError(
             disabledAtTime,
@@ -119,11 +122,11 @@ function validateIdentityUpdateTransitionStateFactory(
       identity.setPublicKeys(identityPublicKeys);
     }
 
-    identity.getPublicKeys().forEach((pk) => {
-      result.merge(
-        validateRequiredPurposeAndSecurityLevel(pk.toObject()),
-      );
-    });
+    const rawPublicKeys = identity.getPublicKeys().map((pk) => pk.toObject());
+
+    result.merge(
+      validateRequiredPurposeAndSecurityLevel(rawPublicKeys),
+    );
 
     if (!result.isValid()) {
       return result;

@@ -19,6 +19,7 @@ const Identifier = require('@dashevo/dpp/lib/identifier/Identifier');
 const Transaction = require('@dashevo/dashcore-lib/lib/transaction');
 const IdentityPublicKey = require('@dashevo/dpp/lib/identity/IdentityPublicKey');
 
+const Identity = require('@dashevo/dpp/lib/identity/Identity');
 const createClientWithFundedWallet = require('../../../lib/test/createClientWithFundedWallet');
 const wait = require('../../../lib/wait');
 const getDAPISeeds = require('../../../lib/test/getDAPISeeds');
@@ -451,7 +452,81 @@ describe('Platform', () => {
       });
     });
 
-    describe('Masternodes', () => {
+    describe('Update', () => {
+      it('should be able to add public key to the identity', async () => {
+        const identityBeforeUpdate = new Identity(identity.toJSON());
+
+        expect(identityBeforeUpdate.getPublicKeyById(2)).to.not.exist();
+
+        const account = await client.platform.client.getWalletAccount();
+        const identityIndex = await account.getUnusedIdentityIndex();
+
+        const { privateKey: identityPrivateKey } = account
+          .identities
+          .getIdentityHDKeyByIndex(identityIndex, 0);
+        const identityPublicKey = identityPrivateKey.toPublicKey().toBuffer();
+
+        const newPublicKey = new IdentityPublicKey(
+          {
+            id: 2,
+            type: IdentityPublicKey.TYPES.ECDSA_SECP256K1,
+            purpose: IdentityPublicKey.PURPOSES.AUTHENTICATION,
+            securityLevel: IdentityPublicKey.SECURITY_LEVELS.HIGH,
+            data: identityPublicKey,
+            readOnly: false,
+          },
+        );
+
+        const update = {
+          add: [newPublicKey],
+        };
+
+        await client.platform.identities.update(
+          identity,
+          update,
+        );
+
+        identity = await client.platform.identities.get(
+          identity.getId(),
+        );
+
+        expect(identity.getRevision()).to.equal(identityBeforeUpdate.getRevision() + 1);
+        expect(identity.getPublicKeyById(2)).to.exist();
+
+        expect(identity.getPublicKeyById(2).toJSON()).to.deep.equal(
+          newPublicKey.toJSON(),
+        );
+      });
+
+      it('should be able to disable public key of the identity', async () => {
+        const now = new Date().getTime();
+
+        const identityBeforeUpdate = new Identity(identity.toJSON());
+
+        const publicKeyToDisable = identityBeforeUpdate.getPublicKeyById(2);
+        const update = {
+          disable: [publicKeyToDisable],
+        };
+
+        await client.platform.identities.update(
+          identity,
+          update,
+        );
+
+        identity = await client.platform.identities.get(
+          identity.getId(),
+        );
+
+        expect(identity.getRevision()).to.equal(identityBeforeUpdate.getRevision() + 1);
+        expect(identity.getPublicKeyById(2)).to.exist();
+        expect(identity.getPublicKeyById(2).getDisabledAt()).to.be.at.least(now);
+
+        expect(identity.getPublicKeyById(0)).to.exist();
+        expect(identity.getPublicKeyById(0).getDisabledAt()).to.be.undefined();
+      });
+    });
+
+    describe.skip('Masternodes', () => {
       let dapiClient;
       const network = process.env.NETWORK;
 

@@ -33,8 +33,7 @@ function validateStateTransitionFeeFactory(
 
     switch (stateTransition.getType()) {
       case stateTransitionTypes.IDENTITY_TOP_UP:
-      case stateTransitionTypes.IDENTITY_CREATE:
-      case stateTransitionTypes.IDENTITY_UPDATE: {
+      case stateTransitionTypes.IDENTITY_CREATE: {
         const output = await fetchAssetLockTransactionOutput(stateTransition.getAssetLockProof());
 
         balance = convertSatoshiToCredits(output.satoshis);
@@ -49,7 +48,8 @@ function validateStateTransitionFeeFactory(
       }
       case stateTransitionTypes.DATA_CONTRACT_CREATE:
       case stateTransitionTypes.DATA_CONTRACT_UPDATE:
-      case stateTransitionTypes.DOCUMENTS_BATCH: {
+      case stateTransitionTypes.DOCUMENTS_BATCH:
+      case stateTransitionTypes.IDENTITY_UPDATE: {
         const identityId = stateTransition.getOwnerId();
         const identity = await stateRepository.fetchIdentity(identityId);
         balance = identity.getBalance();

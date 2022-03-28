@@ -26,7 +26,7 @@ function applyIdentityUpdateTransitionFactory(
       stateTransition.getPublicKeyIdsToDisable()
         .forEach(
           (id) => identity.getPublicKeyById(id)
-            .setDisabledAt(stateTransition.getPublicKeysDisabledAt()),
+            .setDisabledAt(stateTransition.getPublicKeysDisabledAt().getTime()),
         );
 
       identity.setPublicKeys(identityPublicKeys);
@@ -42,14 +42,16 @@ function applyIdentityUpdateTransitionFactory(
 
     await stateRepository.storeIdentity(identity);
 
-    const publicKeyHashes = stateTransition
-      .getPublicKeysToAdd()
-      .map((publicKey) => publicKey.hash());
+    if (stateTransition.getPublicKeysToAdd()) {
+      const publicKeyHashes = stateTransition
+        .getPublicKeysToAdd()
+        .map((publicKey) => publicKey.hash());
 
-    await stateRepository.storeIdentityPublicKeyHashes(
-      identity.getId(),
-      publicKeyHashes,
-    );
+      await stateRepository.storeIdentityPublicKeyHashes(
+        identity.getId(),
+        publicKeyHashes,
+      );
+    }
   }
 
   return applyIdentityUpdateTransition;
