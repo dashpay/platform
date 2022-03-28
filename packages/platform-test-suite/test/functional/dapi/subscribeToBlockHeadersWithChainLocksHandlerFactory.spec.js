@@ -28,7 +28,7 @@ const createRetryableStream = (dapiClient) => {
       },
     );
 
-    streamMediator.cancel = stream.cancel;
+    streamMediator.cancel = stream.cancel.bind(stream);
 
     stream.on('data', (data) => {
       streamMediator.emit('data', data);
