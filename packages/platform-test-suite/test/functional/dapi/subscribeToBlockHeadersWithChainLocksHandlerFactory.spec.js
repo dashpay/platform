@@ -13,8 +13,6 @@ const wait = (ms) => new Promise((resolve) => {
   setTimeout(resolve, ms);
 });
 
-// TODO: disconnect funded wallet after test is complete
-
 const createRetryableStream = (dapiClient) => {
   const streamMediator = new EventEmitter();
 
@@ -65,6 +63,7 @@ const createRetryableStream = (dapiClient) => {
 
 describe('subscribeToBlockHeadersWithChainLocksHandlerFactory', () => {
   let dapiClient;
+  let sdkClient;
   const network = process.env.NETWORK;
 
   let bestBlock;
@@ -81,6 +80,10 @@ describe('subscribeToBlockHeadersWithChainLocksHandlerFactory', () => {
       await dapiClient.core.getBlockByHash(bestBlockHash),
     );
     bestBlockHeight = bestBlock.transactions[0].extraPayload.height;
+  });
+
+  after(async () => {
+    await sdkClient.disconnect();
   });
 
   it('should respond with only historical data', async () => {
@@ -150,9 +153,8 @@ describe('subscribeToBlockHeadersWithChainLocksHandlerFactory', () => {
 
     let obtainedFreshBlock = false;
 
-    const client = await createClientWithFundedWallet();
-    const account = await client.getWalletAccount();
-
+    sdkClient = await createClientWithFundedWallet();
+    const account = await sdkClient.getWalletAccount();
     // Connect to the stream
     const stream = createRetryableStream(dapiClient);
     await stream.init(bestBlockHeight - historicalBlocksToGet + 1);
