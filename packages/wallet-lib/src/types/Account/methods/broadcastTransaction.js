@@ -120,7 +120,6 @@ async function _broadcastTransaction(transaction, options = {}) {
  */
 async function broadcastTransaction(transaction, options = {}) {
   if (!this.txFetchListener) {
-    // TODO: change event to FETCHED_UNCONFIRMED_TRANSACTION
     this.txFetchListener = new Promise((resolve) => {
       this.once(EVENTS.FETCHED_CONFIRMED_TRANSACTION, ({ payload }) => {
         if (payload.transaction.hash === transaction.hash) {
