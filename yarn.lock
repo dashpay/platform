@@ -1274,14 +1274,14 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@dashevo/abci@github:dashevo/js-abci#v0.22-dev":
+"@dashevo/abci@github:dashevo/js-abci#feat/tenderdash8":
   version: 0.20.0
-  resolution: "@dashevo/abci@https://github.com/dashevo/js-abci.git#commit=8806ff71cdac918f79920b1373824653f15698c5"
+  resolution: "@dashevo/abci@https://github.com/dashevo/js-abci.git#commit=8a49f83f0bc4061caa1e582213f05e959351aa8f"
   dependencies:
     bl: ^1.2.3
     protobufjs: "github:jawid-h/protobuf.js#fix/buffer-conversion"
     protocol-buffers-encodings: ^1.1.0
-  checksum: 1c8ba91935e9fb99d4e6ad234b299e4956f1486bb00ede8c06ecb5b38341b2042d7fa1a001a58441d7c98d42c14345b63108c607050f0dddc0fb19a64a46cb9f
+  checksum: d191f64a826adfa31fa6799855e45e68309b4c560045d3f9afda7d0e8ca4f1b32d887829a5c1573c8669fdf9446b9ba0c781727f6905270bd8f341f78a39fc0c
   languageName: node
   linkType: hard
 
@@ -1576,7 +1576,7 @@ __metadata:
   version: 0.0.0-use.local
   resolution: "@dashevo/drive@workspace:packages/js-drive"
   dependencies:
-    "@dashevo/abci": "github:dashevo/js-abci#v0.22-dev"
+    "@dashevo/abci": "github:dashevo/js-abci#feat/tenderdash8"
     "@dashevo/dapi-grpc": "workspace:~"
     "@dashevo/dashcore-lib": ~0.19.30
     "@dashevo/dashd-rpc": ^2.3.2
