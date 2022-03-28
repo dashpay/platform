@@ -6,6 +6,7 @@ const {
   ChainLock,
 } = require('@dashevo/dashcore-lib');
 
+const GrpcErrorCodes = require('@dashevo/grpc-common/lib/server/error/GrpcErrorCodes');
 const getDAPISeeds = require('../../../lib/test/getDAPISeeds');
 const createClientWithFundedWallet = require('../../../lib/test/createClientWithFundedWallet');
 
@@ -35,6 +36,11 @@ const createRetryableStream = (dapiClient) => {
     });
 
     stream.on('error', (e) => {
+      if (e.code === GrpcErrorCodes.CANCELLED) {
+        streamMediator.emit('end');
+        return;
+      }
+
       streamError = e;
       if (currentRetries === maxRetries) {
         streamMediator.emit('error', e);
