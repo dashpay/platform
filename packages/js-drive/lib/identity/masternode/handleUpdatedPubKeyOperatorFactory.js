@@ -61,7 +61,7 @@ function handleUpdatedPubKeyOperatorFactory(
     // in corresponding ProRegTx
 
     const masternodeIdentifier = Identifier.from(
-      hash(proRegTxHash),
+      proRegTxHash,
     );
 
     await createRewardShareDocument(

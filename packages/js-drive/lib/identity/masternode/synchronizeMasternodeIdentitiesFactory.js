@@ -97,10 +97,8 @@ function synchronizeMasternodeIdentitiesFactory(
       .concat(currentMNList.filter((currentMnListEntry) => !currentMnListEntry.isValid));
 
     for (const masternodeEntry of disappearedOrInvalidMasterNodes) {
-      const proRegTxHash = Buffer.from(masternodeEntry.proRegTxHash, 'hex');
-
       const masternodeIdentifier = Identifier.from(
-        hash(proRegTxHash),
+        Buffer.from(masternodeEntry.proRegTxHash, 'hex'),
       );
 
       await handleRemovedMasternode(

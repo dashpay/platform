@@ -31,7 +31,7 @@ function handleNewMasternodeFactory(
 
     // Create a masternode identity
     const masternodeIdentifier = Identifier.from(
-      hash(proRegTxHash),
+      proRegTxHash,
     );
 
     const publicKey = Buffer.from(proRegTxPayload.keyIDOwner, 'hex').reverse();
