@@ -1586,7 +1586,7 @@ __metadata:
     "@dashevo/feature-flags-contract": "workspace:~"
     "@dashevo/grpc-common": "workspace:~"
     "@dashevo/masternode-reward-shares-contract": "workspace:~"
-    "@strophy/rs-drive": ~0.22.0-dev.18
+    "@dashevo/rs-drive": ~0.22.0-dev.17
     "@types/pino": ^6.3.0
     ajv: ^8.6.0
     ajv-keywords: ^5.0.0
@@ -1787,6 +1787,19 @@ __metadata:
   version: 1.0.4
   resolution: "@dashevo/re2-wasm@npm:1.0.4"
   checksum: 4f1fca10c5190387e5652a7f900de52b15e68c66ca81ac0db4f368f2cfc95335eb2c4c6ee74c7204869ad937da4a84565411fdf33d308af89eaf41fda766e7be
+  languageName: node
+  linkType: hard
+
+"@dashevo/rs-drive@npm:~0.22.0-dev.17":
+  version: 0.22.0-dev.19
+  resolution: "@dashevo/rs-drive@npm:0.22.0-dev.19"
+  dependencies:
+    "@dashevo/dpp": ~0.22.0-dev.7
+    cargo-cp-artifact: ^0.1.6
+    cbor: ^8.1.0
+    neon-load-or-build: ^2.2.2
+    neon-tag-prebuild: "github:shumkov/neon-tag-prebuild#patch-1"
+  checksum: cdc9c6733735efa000f4abeee7905835382d500c5876bf38e255edc46a5f309cd527d5614caa1921c726833b45b5742bdb2e0e9b8ef066b3d6b9b14d72b6290d
   languageName: node
   linkType: hard
 
@@ -2529,19 +2542,6 @@ __metadata:
   version: 0.7.1
   resolution: "@sinonjs/text-encoding@npm:0.7.1"
   checksum: 130de0bb568c5f8a611ec21d1a4e3f80ab0c5ec333010f49cfc1adc5cba6d8808699c8a587a46b0f0b016a1f4c1389bc96141e773e8460fcbb441875b2e91ba7
-  languageName: node
-  linkType: hard
-
-"@strophy/rs-drive@npm:~0.22.0-dev.18":
-  version: 0.22.0-dev.18
-  resolution: "@strophy/rs-drive@npm:0.22.0-dev.18"
-  dependencies:
-    "@dashevo/dpp": ~0.22.0-dev.7
-    cargo-cp-artifact: ^0.1.6
-    cbor: ^8.1.0
-    neon-load-or-build: ^2.2.2
-    neon-tag-prebuild: "github:shumkov/neon-tag-prebuild#patch-1"
-  checksum: 829e4c29ed6a134ab6ebfb74995dbfdd4038ac7e94b2ecb9d448710b1ce4c5c1f1ab15f03563ac63ca3c5be3f8e3d76cc671c1969deb18f56249a1f4227e778a
   languageName: node
   linkType: hard
 
