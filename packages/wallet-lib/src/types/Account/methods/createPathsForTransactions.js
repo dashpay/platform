@@ -30,7 +30,7 @@ function createPathsForTransactions() {
     // and add them to store
     const paths = this.generateNewPaths(affectedAddresses);
 
-    if (paths) {
+    if (paths && paths.length) {
       const refreshUTXOState = i === self.length - 1;
       this.addPathsToStore(paths, refreshUTXOState);
     }
