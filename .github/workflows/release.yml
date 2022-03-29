@@ -62,7 +62,7 @@ jobs:
   release-drive-docker-image:
     name: Release Drive to Docker Hub
     runs-on: ubuntu-20.04
-    #needs: release-npm
+    needs: release-npm
     steps:
       - name: Check out repo
         uses: actions/checkout@v2
@@ -135,7 +135,7 @@ jobs:
         id: docker_meta
         uses: docker/metadata-action@v3
         with:
-          images: strophy/drive
+          images: dashpay/drive
           tags: |
             type=match,pattern=v(\d+),group=1
             type=match,pattern=v(\d+.\d+),group=1
@@ -159,7 +159,7 @@ jobs:
   release-dapi-docker-image:
     name: Release DAPI to Docker Hub
     runs-on: ubuntu-20.04
-    #needs: release-npm
+    needs: release-npm
     steps:
       - name: Check out repo
         uses: actions/checkout@v2
@@ -232,7 +232,7 @@ jobs:
         id: docker_meta
         uses: docker/metadata-action@v3
         with:
-          images: strophy/dapi
+          images: dashpay/dapi
           tags: |
             type=match,pattern=v(\d+),group=1
             type=match,pattern=v(\d+.\d+),group=1
@@ -256,7 +256,7 @@ jobs:
   release-test-suite-docker-image:
     name: Release Test Suite to Docker Hub
     runs-on: ubuntu-20.04
-    #needs: release-npm
+    needs: release-npm
     steps:
       - name: Check out repo
         uses: actions/checkout@v2
@@ -329,7 +329,7 @@ jobs:
         id: docker_meta
         uses: docker/metadata-action@v3
         with:
-          images: strophy/platform-test-suite
+          images: dashpay/platform-test-suite
           tags: |
             type=match,pattern=v(\d+),group=1
             type=match,pattern=v(\d+.\d+),group=1
