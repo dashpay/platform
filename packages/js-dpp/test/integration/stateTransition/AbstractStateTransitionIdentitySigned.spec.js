@@ -12,6 +12,7 @@ const WrongPublicKeyPurposeError = require('../../../lib/stateTransition/errors/
 const StateTransitionIsNotSignedError = require('../../../lib/stateTransition/errors/StateTransitionIsNotSignedError');
 const PublicKeyMismatchError = require('../../../lib/stateTransition/errors/PublicKeyMismatchError');
 const BlsSignatures = require('../../../lib/bls/bls');
+const PublicKeyIsDisabledError = require('../../../lib/stateTransition/errors/PublicKeyIsDisabledError');
 
 describe('AbstractStateTransitionIdentitySigned', () => {
   let stateTransition;
@@ -233,6 +234,19 @@ describe('AbstractStateTransitionIdentitySigned', () => {
 
       expect(isValid).to.be.true();
     });
+
+    it('should throw an error if public key is disabled', async () => {
+      identityPublicKey.setDisabledAt(new Date().getTime());
+
+      try {
+        await stateTransition.sign(identityPublicKey, blsPrivateKeyHex);
+
+        expect.fail('Should throw PublicKeyIsDisabledError');
+      } catch (e) {
+        expect(e).to.be.instanceOf(PublicKeyIsDisabledError);
+        expect(e.getPublicKey()).to.be.deep.equal(identityPublicKey);
+      }
+    });
   });
 
   describe('#signByPrivateKey', () => {
@@ -361,6 +375,19 @@ describe('AbstractStateTransitionIdentitySigned', () => {
       const isValid = await stateTransition.verifySignature(identityPublicKey);
 
       expect(isValid).to.be.true();
+    });
+
+    it('should throw PublicKeyIsDisabledError if public key is disabled', async () => {
+      identityPublicKey.setDisabledAt(new Date().getTime());
+
+      try {
+        await stateTransition.sign(identityPublicKey, privateKeyHex);
+
+        expect.fail('Should throw PublicKeyIsDisabledError');
+      } catch (e) {
+        expect(e).to.be.instanceOf(PublicKeyIsDisabledError);
+        expect(e.getPublicKey()).to.be.deep.equal(identityPublicKey);
+      }
     });
   });
 
