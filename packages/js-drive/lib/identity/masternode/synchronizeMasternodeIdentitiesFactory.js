@@ -1,5 +1,4 @@
 const Identifier = require('@dashevo/dpp/lib/identifier/Identifier');
-const { hash } = require('@dashevo/dpp/lib/util/hash');
 const SimplifiedMNList = require('@dashevo/dashcore-lib/lib/deterministicmnlist/SimplifiedMNList');
 
 /**

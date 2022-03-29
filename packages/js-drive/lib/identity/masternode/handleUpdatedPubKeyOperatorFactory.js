@@ -1,4 +1,3 @@
-const { hash } = require('@dashevo/dpp/lib/util/hash');
 const Identifier = require('@dashevo/dpp/lib/identifier/Identifier');
 const IdentityPublicKey = require('@dashevo/dpp/lib/identity/IdentityPublicKey');
 const createOperatorIdentifier = require('./createOperatorIdentifier');
