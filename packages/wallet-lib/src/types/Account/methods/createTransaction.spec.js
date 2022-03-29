@@ -3,15 +3,16 @@ const { expect } = require('chai');
 const { HDPrivateKey, Transaction } = require('@dashevo/dashcore-lib');
 
 const createTransaction = require('./createTransaction');
-const { mnemonic } = require('../../../../fixtures/wallets/mnemonics/during-develop-before');
 const FixtureTransport = require('../../../transport/FixtureTransport/FixtureTransport');
 
 const getUTXOS = require('./getUTXOS');
-const { simpleDescendingAccumulator } = require('../../../utils/coinSelections/strategies');
+const getPrivateKeys = require('./getPrivateKeys');
+const getUnusedAddress = require('./getUnusedAddress');
+
+const getFixtureHDAccountWithStorage = require('../../../../fixtures/wallets/apart-trip-dignity/getFixtureAccountWithStorage');
 
 const addressesFixtures = require('../../../../fixtures/addresses.json');
 const fixtureUTXOS = require('../../../transport/FixtureTransport/data/utxos/yQ1fb64aeLfgqFKyeV9Hg9KTaTq5ehHm22.json');
-const validStore = require('../../../../fixtures/walletStore').valid.orange.store;
 
 const craftedGenerousMinerStrategy = require('../../../../fixtures/strategies/craftedGenerousMinerStrategy');
 
@@ -20,13 +21,13 @@ describe('Account - createTransaction', function suite() {
   let mockWallet;
 
   it('sould warn on missing inputs', function () {
-    const self = {
-      store: validStore,
-      walletId: 'a3771aaf93',
-      getUTXOS,
-      network: 'testnet'
-    };
+    const self = getFixtureHDAccountWithStorage()
+    self.getUTXOS = getUTXOS;
+    self.getUnusedAddress = getUnusedAddress;
+    self.getPrivateKeys = getPrivateKeys;
 
+    const selfWithNoUTXOS = { ...self };
+    selfWithNoUTXOS.getUTXOS = () => { return []};
     const mockOpts1 = {};
     const mockOpts2 = {
       satoshis: 1000,
@@ -40,9 +41,8 @@ describe('Account - createTransaction', function suite() {
     const expectedException3 = 'Error: utxosList must contain at least 1 utxo';
     expect(() => createTransaction.call(self, mockOpts1)).to.throw(expectedException1);
     expect(() => createTransaction.call(self, mockOpts2)).to.throw(expectedException2);
-    expect(() => createTransaction.call(self, mockOpts3)).to.throw(expectedException3);
+    expect(() => createTransaction.call(selfWithNoUTXOS, mockOpts3)).to.throw(expectedException3);
   });
-
   it('should create valid and deterministic transactions', async function () {
     if(process.browser){
       // FixtureTransport relies heavily on fs.existSync and fs.readFile which are not available on browser
@@ -62,8 +62,12 @@ describe('Account - createTransaction', function suite() {
           return [new HDPrivateKey('tprv8jG3ctd1DEVADnLP3hwS1Gfzjxf5E4WL2UutfJkhAQs7rVu2b3Ryv4WQ46mddZyMbGaSUYnY9wFeuFRAejapjoB1LGzTfM55mxMhZ1X4eGX')]
         }
       },
-      keyChain: {
-        sign: (tx, privateKeys) => tx.sign(privateKeys),
+      keyChainStore: {
+        getMasterKeyChain:() => {
+          return {
+            sign: (tx, privateKeys) => tx.sign(privateKeys),
+          }
+        }
       },
       storage: {
         searchTransaction: (txId) => {

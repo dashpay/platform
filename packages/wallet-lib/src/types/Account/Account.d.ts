@@ -12,7 +12,7 @@ import {
     broadcastTransactionOpts,
     Plugins, RawTransaction, TransactionsMap, WalletObj, StatusInfo
 } from "../types";
-import { KeyChain } from "../KeyChain/KeyChain";
+import { DerivableKeyChain } from "../DerivableKeyChain/DerivableKeyChain";
 import { InstantLock } from "@dashevo/dashcore-lib";
 import { Identities, Wallet} from "../../index";
 import { Transport } from "../../transport/Transport";
@@ -31,7 +31,7 @@ export declare class Account {
     cacheBlockHeaders?: boolean;
     label?: string | null;
     strategy?: Strategy;
-    keyChain: KeyChain;
+    keyChainSore: KeyChainStore;
     state: any;
     storage: Storage;
     store: Storage.store;
@@ -73,7 +73,8 @@ export declare class Account {
     hasPlugins([Plugin]): {found:Boolean, results:[{name: string}]};
     injectPlugin(unsafePlugin: Plugins, allowSensitiveOperation?: boolean, awaitOnInjection?: boolean): Promise<any>;
     sign(object: Transaction, privateKeys: [PrivateKey], sigType?: number): Transaction;
-    waitForInstantLock(transactionHash: string): Promise<InstantLock>;
+    waitForInstantLock(transactionHash: string): { promise: Promise<InstantLock>, cancel: function };
+    waitForTxMetadata(transactionHash: string): { promise: Promise<Object>, cancel: function };
 }
 
 export declare interface RecipientOptions {

@@ -28,7 +28,7 @@ module.exports = function getDataContractFixture(ownerId = randomOwnerId) {
       type: 'object',
       properties: {
         lastName: {
-          $ref: '#/$defs/lastName',
+          type: 'string',
         },
       },
       required: ['lastName', '$updatedAt'],
@@ -238,11 +238,11 @@ module.exports = function getDataContractFixture(ownerId = randomOwnerId) {
 
   const dataContract = factory.create(ownerId, documents);
 
-  dataContract.setDefinitions({
-    lastName: {
-      type: 'string',
-    },
-  });
+  // dataContract.setDefinitions({
+  //   lastName: {
+  //     type: 'string',
+  //   },
+  // });
 
   return dataContract;
 };

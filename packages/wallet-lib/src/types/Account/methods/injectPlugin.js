@@ -90,9 +90,9 @@ module.exports = async function injectPlugin(
               const setReadyWatch = (_watcher) => _watcher.ready = true;
 
               const onStartedEvent = () => startWatcher(watcher)
-                  && logger.silly(`WORKER/${pluginName.toUpperCase()}/STARTED`);
+                && logger.silly(`WORKER/${pluginName.toUpperCase()}/STARTED`);
               const onExecuteEvent = () => setReadyWatch(watcher)
-                  && logger.silly(`WORKER/${pluginName.toUpperCase()}/EXECUTED`);
+                && logger.silly(`WORKER/${pluginName.toUpperCase()}/EXECUTED`);
 
               self.on(`WORKER/${pluginName.toUpperCase()}/STARTED`, onStartedEvent);
               self.on(`WORKER/${pluginName.toUpperCase()}/EXECUTED`, onExecuteEvent);

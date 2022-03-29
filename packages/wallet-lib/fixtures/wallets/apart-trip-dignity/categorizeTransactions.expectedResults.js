@@ -187,7 +187,7 @@ const expectedResultTx9 = {
     }
   ],
   transaction: transactionsWithMetadataFixtures[10][0],
-  type: 'unknown',
+  type: 'account_transfer',
   blockHash: '0000016fb685b4b1efed743d2263de34a9f8323ed75e732654b1b951c5cb4dde',
   height: 558236,
   isInstantLocked: true,

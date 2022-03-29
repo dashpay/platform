@@ -8,10 +8,9 @@ const saveState = async function saveState() {
   if (this.autosave && this.adapter && this.adapter.setItem) {
     const self = this;
     try {
-      await this.adapter.setItem('transactions', { ...self.store.transactions });
-      await this.adapter.setItem('wallets', { ...self.store.wallets });
-      await this.adapter.setItem('chains', { ...self.store.chains });
-      await this.adapter.setItem('instantLocks', { ...self.store.instantLocks });
+      await this.adapter.setItem('wallets', [...self.wallets].map(([, walletStore]) => walletStore.exportState()));
+      await this.adapter.setItem('chains', [...self.chains].map(([, chainStore]) => chainStore.exportState()));
+      await this.adapter.setItem('application', { ...self.application });
       this.lastSave = +new Date();
       this.emit(SAVE_STATE_SUCCESS, { type: SAVE_STATE_SUCCESS, payload: this.lastSave });
       return true;
