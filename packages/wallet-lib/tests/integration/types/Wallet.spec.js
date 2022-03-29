@@ -14,8 +14,8 @@ const LocalForageAdapterMock = require("../../../src/test/mocks/LocalForageAdapt
 const createAndAttachTransportMocksToWallet = require("../../../src/test/mocks/createAndAttachTransportMocksToWallet");
 const {sleepOneTick} = require("../../../src/test/utils");
 
-describe('Wallet', () => {
-  describe.skip('Storage', () => {
+describe.skip('Wallet', () => {
+  describe('Storage', () => {
     let wallet;
     let txStreamMock;
     let txStreamWorker;
@@ -48,7 +48,7 @@ describe('Wallet', () => {
      * In this scenario we have a fresh wallet that receives a funding transaction
      * and sends a transaction in his own
      */
-    it.only('should fill the storage for a fresh wallet', async function() {
+    it('should fill the storage for a fresh wallet', async function() {
       const account = await wallet.getAccount();
       const { address: addressToFund } = account.getUnusedAddress();
 
