@@ -85,7 +85,7 @@ function initializeTenderdashNodeFactory(dockerCompose, docker, dockerPull) {
     }
 
     let stringifiedJSON = writableStream.toString();
-    stringifiedJSON = stringifiedJSON.replace(/\r\n/g, '');
+    stringifiedJSON = stringifiedJSON.split('module=main').slice(-1).pop().replace(/\r\n/g, '');
 
     return JSON.parse(stringifiedJSON);
   }
