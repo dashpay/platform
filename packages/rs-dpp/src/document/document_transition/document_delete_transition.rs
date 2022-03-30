@@ -51,7 +51,7 @@ mod test {
         trace!("the parsed Document Delete Transition is {:#?}", cdt);
 
         assert_eq!(cdt.base.action, Action::Delete);
-        assert_eq!(cdt.base.transition_type, "note");
+        assert_eq!(cdt.base.document_type, "note");
 
         let mut json_no_whitespace = transition_json.to_string();
         json_no_whitespace.retain(|v| !v.is_whitespace());
