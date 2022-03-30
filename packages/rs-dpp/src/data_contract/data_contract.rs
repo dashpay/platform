@@ -10,7 +10,7 @@ use crate::{
 use anyhow::anyhow;
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 use std::convert::TryFrom;
 
 // TODO probably this need to be changed
@@ -147,7 +147,7 @@ impl DataContract {
     }
 
     // TODO
-    pub fn get_binary_properties(&self, doc_type: &str) -> JsonValue {
+    pub fn get_binary_properties(&self, doc_type: &str) -> HashMap<String, JsonValue> {
         unimplemented!()
     }
 }
