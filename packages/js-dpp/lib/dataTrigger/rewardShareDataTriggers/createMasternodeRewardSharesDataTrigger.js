@@ -1,6 +1,5 @@
 const DataTriggerConditionError = require('../../errors/consensus/state/dataContract/dataTrigger/DataTriggerConditionError');
 const DataTriggerExecutionResult = require('../DataTriggerExecutionResult');
-const { hash } = require('../../util/hash');
 
 const MAX_PERCENTAGE = 10000;
 
