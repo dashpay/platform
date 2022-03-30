@@ -226,8 +226,8 @@ impl<'a> TryFrom<JsonPathLiteral<'a>> for JsonPath {
 // try to parse indexed step path. i.e: "property_name[0]"
 fn try_parse_indexed_field(step: &str) -> Result<(String, usize), anyhow::Error> {
     let chars: Vec<char> = step.chars().collect();
-    let index_open = chars.iter().rev().position(|c| c == &'[');
-    let index_close = chars.iter().rev().position(|c| c == &']');
+    let index_open = chars.iter().position(|c| c == &'[');
+    let index_close = chars.iter().position(|c| c == &']');
 
     if index_open.is_none() {
         bail!("open index bracket not found");
@@ -238,7 +238,7 @@ fn try_parse_indexed_field(step: &str) -> Result<(String, usize), anyhow::Error>
     if index_open > index_close {
         bail!("open bracket is ahead of close bracket")
     }
-    if index_close.unwrap() != chars.len() {
+    if index_close.unwrap() != chars.len() - 1 {
         bail!("the close bracket must be the last character")
     }
 
@@ -261,4 +261,51 @@ fn identifier_filter(value: &JsonValue) -> bool {
         }
     }
     false
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn test_parse_indexed_field() {
+        let input = "data[1]";
+        let (key, index) = try_parse_indexed_field(input).unwrap();
+
+        assert_eq!("data", key);
+        assert_eq!(1, index);
+
+        let input = "数据[3]";
+        let (key, index) = try_parse_indexed_field(input).unwrap();
+
+        assert_eq!("数据", key);
+        assert_eq!(3, index);
+
+        let input = "data---__[1]";
+        let (key, index) = try_parse_indexed_field(input).unwrap();
+
+        assert_eq!("data---__", key);
+        assert_eq!(1, index);
+
+        let input = "";
+        assert!(try_parse_indexed_field(input).is_err());
+        assert_eq!(
+            try_parse_indexed_field(input).unwrap_err().to_string(),
+            "open index bracket not found"
+        );
+
+        let input = "da[0]ta";
+        assert!(try_parse_indexed_field(input).is_err());
+        assert_eq!(
+            try_parse_indexed_field(input).unwrap_err().to_string(),
+            "the close bracket must be the last character"
+        );
+
+        let input = "data[string]";
+        assert!(try_parse_indexed_field(input).is_err());
+        assert_eq!(
+            try_parse_indexed_field(input).unwrap_err().to_string(),
+            "unable to parse 'string' into usize: invalid digit found in string"
+        );
+    }
 }
