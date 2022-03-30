@@ -1,6 +1,8 @@
 use crate::{
-    data_contract::DataContract, document::document_transition::Action, errors::ProtocolError,
-    util::deserializer::parse_bytes,
+    data_contract::DataContract,
+    document::document_transition::Action,
+    errors::ProtocolError,
+    util::deserializer::{self, parse_bytes},
 };
 
 use super::DocumentBaseTransition;
@@ -52,6 +54,16 @@ impl DocumentCreateTransition {
         document.base.action = Action::Create;
         document.base.data_contract = data_contract;
 
+        if let Some(ref mut dynamic_data) = document.data {
+            deserializer::identifiers_to_base58(
+                &document
+                    .base
+                    .data_contract
+                    .get_binary_properties(&document.base.document_type),
+                dynamic_data,
+            );
+        }
+
         Ok(document)
     }
 
@@ -61,6 +73,14 @@ impl DocumentCreateTransition {
 
         let object_base_map = object_base.as_object().unwrap().to_owned();
         let entropy: Vec<JsonValue> = self.entropy.iter().map(|v| JsonValue::from(*v)).collect();
+
+        deserializer::identifiers_to_bytes(
+            &self
+                .base
+                .data_contract
+                .get_binary_properties(&self.base.document_type),
+            &mut object,
+        );
 
         match object {
             JsonValue::Object(ref mut o) => {
@@ -146,7 +166,7 @@ mod test {
         trace!("the parsed Document Create Transition is {:#?}", cdt);
 
         assert_eq!(cdt.base.action, Action::Create);
-        assert_eq!(cdt.base.transition_type, "note");
+        assert_eq!(cdt.base.document_type, "note");
         assert_eq!(cdt.entropy, expect_entropy);
         assert_eq!(cdt.data.as_ref().unwrap()["message"], "example_message");
 

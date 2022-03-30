@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 
-use crate::{data_contract::DataContract, errors::ProtocolError};
+use crate::{data_contract::DataContract, errors::ProtocolError, util::deserializer};
 
 use super::{Action, DocumentBaseTransition};
 
@@ -19,6 +19,7 @@ pub struct DocumentReplaceTransition {
 }
 
 impl DocumentReplaceTransition {
+    /// Creates the document transition from Raw Object
     pub fn from_raw_document(
         mut raw_transition: JsonValue,
         data_contract: DataContract,
@@ -29,14 +30,33 @@ impl DocumentReplaceTransition {
         document.base.action = Action::Replace;
         document.base.data_contract = data_contract;
 
+        if let Some(ref mut dynamic_data) = document.data {
+            deserializer::identifiers_to_base58(
+                &document
+                    .base
+                    .data_contract
+                    .get_binary_properties(&document.base.document_type),
+                dynamic_data,
+            );
+        }
+
         Ok(document)
     }
 
+    /// Object is an [`serde_json::Value`] instance that preserves the `Vec<u8>` representation
+    /// for Identifiers and binary data
     pub fn to_object(&self) -> Result<JsonValue, ProtocolError> {
         let object_base = self.base.to_object()?;
         let mut object = serde_json::to_value(&self)?;
-
         let object_base_map = object_base.as_object().unwrap().to_owned();
+
+        deserializer::identifiers_to_bytes(
+            &self
+                .base
+                .data_contract
+                .get_binary_properties(&self.base.document_type),
+            &mut object,
+        );
 
         match object {
             JsonValue::Object(ref mut o) => o.extend(object_base_map),
@@ -46,6 +66,9 @@ impl DocumentReplaceTransition {
         Ok(object)
     }
 
+    /// Object is an [`serde_json::Value`] instance that replaces the binary data with
+    ///  - base58 string for Identifiers
+    ///  - base64 string for other binary data
     pub fn to_json(&self) -> Result<JsonValue, ProtocolError> {
         let value = serde_json::to_value(&self)?;
         Ok(value)
@@ -70,10 +93,10 @@ mod test {
 
         let cdt: DocumentReplaceTransition =
             serde_json::from_str(transition_json).expect("no error");
-        trace!("the parsed Document Create Transition is {:#?}", cdt);
+        trace!("the parsed Document Transition is {:#?}", cdt);
 
         assert_eq!(cdt.base.action, Action::Replace);
-        assert_eq!(cdt.base.transition_type, "note");
+        assert_eq!(cdt.base.document_type, "note");
         assert_eq!(cdt.revision, 1);
         assert_eq!(
             cdt.data.as_ref().unwrap()["message"],
