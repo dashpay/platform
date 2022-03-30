@@ -5,7 +5,7 @@ use crate::{
     util::deserializer::{self, parse_bytes},
 };
 
-use super::DocumentBaseTransition;
+use super::{DocumentBaseTransition, DocumentTransitionObjectLike};
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 
@@ -43,7 +43,20 @@ pub struct DocumentCreateTransition {
 }
 
 impl DocumentCreateTransition {
-    pub fn from_raw_document(
+    pub fn bytes_to_strings(
+        raw_create_document_transition: &mut JsonValue,
+    ) -> Result<(), ProtocolError> {
+        if let JsonValue::Object(ref mut o) = raw_create_document_transition {
+            parse_bytes(o, &["$entropy"])?;
+        } else {
+            return Err("The raw_transition isn't an Object".into());
+        }
+        Ok(())
+    }
+}
+
+impl DocumentTransitionObjectLike for DocumentCreateTransition {
+    fn from_raw_document(
         mut raw_transition: JsonValue,
         data_contract: DataContract,
     ) -> Result<DocumentCreateTransition, ProtocolError> {
@@ -67,7 +80,7 @@ impl DocumentCreateTransition {
         Ok(document)
     }
 
-    pub fn to_object(&self) -> Result<JsonValue, ProtocolError> {
+    fn to_object(&self) -> Result<JsonValue, ProtocolError> {
         let object_base = self.base.to_object()?;
         let mut object = serde_json::to_value(&self)?;
 
@@ -93,20 +106,9 @@ impl DocumentCreateTransition {
         Ok(object)
     }
 
-    pub fn to_json(&self) -> Result<JsonValue, ProtocolError> {
+    fn to_json(&self) -> Result<JsonValue, ProtocolError> {
         let value = serde_json::to_value(&self)?;
         Ok(value)
-    }
-
-    pub fn bytes_to_strings(
-        raw_create_document_transition: &mut JsonValue,
-    ) -> Result<(), ProtocolError> {
-        if let JsonValue::Object(ref mut o) = raw_create_document_transition {
-            parse_bytes(o, &["$entropy"])?;
-        } else {
-            return Err("The raw_transition isn't an Object".into());
-        }
-        Ok(())
     }
 }
 
