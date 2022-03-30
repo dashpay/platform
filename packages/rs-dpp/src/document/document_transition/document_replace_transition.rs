@@ -3,7 +3,7 @@ use serde_json::Value as JsonValue;
 
 use crate::{data_contract::DataContract, errors::ProtocolError, util::deserializer};
 
-use super::{Action, DocumentBaseTransition};
+use super::{Action, DocumentBaseTransition, DocumentTransitionObjectLike};
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -18,9 +18,8 @@ pub struct DocumentReplaceTransition {
     data: Option<JsonValue>,
 }
 
-impl DocumentReplaceTransition {
-    /// Creates the document transition from Raw Object
-    pub fn from_raw_document(
+impl DocumentTransitionObjectLike for DocumentReplaceTransition {
+    fn from_raw_document(
         mut raw_transition: JsonValue,
         data_contract: DataContract,
     ) -> Result<DocumentReplaceTransition, ProtocolError> {
@@ -43,9 +42,7 @@ impl DocumentReplaceTransition {
         Ok(document)
     }
 
-    /// Object is an [`serde_json::Value`] instance that preserves the `Vec<u8>` representation
-    /// for Identifiers and binary data
-    pub fn to_object(&self) -> Result<JsonValue, ProtocolError> {
+    fn to_object(&self) -> Result<JsonValue, ProtocolError> {
         let object_base = self.base.to_object()?;
         let mut object = serde_json::to_value(&self)?;
         let object_base_map = object_base.as_object().unwrap().to_owned();
@@ -66,10 +63,7 @@ impl DocumentReplaceTransition {
         Ok(object)
     }
 
-    /// Object is an [`serde_json::Value`] instance that replaces the binary data with
-    ///  - base58 string for Identifiers
-    ///  - base64 string for other binary data
-    pub fn to_json(&self) -> Result<JsonValue, ProtocolError> {
+    fn to_json(&self) -> Result<JsonValue, ProtocolError> {
         let value = serde_json::to_value(&self)?;
         Ok(value)
     }

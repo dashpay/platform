@@ -3,7 +3,7 @@ use serde_json::Value as JsonValue;
 
 use crate::{data_contract::DataContract, errors::ProtocolError};
 
-use super::{Action, DocumentBaseTransition};
+use super::{Action, DocumentBaseTransition, DocumentTransitionObjectLike};
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct DocumentDeleteTransition {
@@ -11,8 +11,8 @@ pub struct DocumentDeleteTransition {
     base: DocumentBaseTransition,
 }
 
-impl DocumentDeleteTransition {
-    pub fn from_raw_document(
+impl DocumentTransitionObjectLike for DocumentDeleteTransition {
+    fn from_raw_document(
         raw_transition: JsonValue,
         data_contract: DataContract,
     ) -> Result<Self, ProtocolError> {
@@ -21,11 +21,11 @@ impl DocumentDeleteTransition {
         Ok(DocumentDeleteTransition { base })
     }
 
-    pub fn to_object(&self) -> Result<JsonValue, ProtocolError> {
+    fn to_object(&self) -> Result<JsonValue, ProtocolError> {
         self.base.to_object()
     }
 
-    pub fn to_json(&self) -> Result<JsonValue, ProtocolError> {
+    fn to_json(&self) -> Result<JsonValue, ProtocolError> {
         let value = serde_json::to_value(&self)?;
         Ok(value)
     }

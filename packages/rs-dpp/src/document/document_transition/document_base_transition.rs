@@ -70,7 +70,7 @@ pub struct DocumentBaseTransition {
     pub id: Identifier,
     #[serde(rename = "$type")]
     /// Name of document type found int the data contract associated with the `data_contract_id`
-    pub transition_type: String,
+    pub document_type: String,
     #[serde(rename = "$action")]
     /// Action the platform should take for the associated document
     pub action: Action,
@@ -82,7 +82,20 @@ pub struct DocumentBaseTransition {
 }
 
 impl DocumentBaseTransition {
-    pub fn from_raw_document(
+    pub fn identifiers_to_strings(
+        raw_document_transition: &mut JsonValue,
+    ) -> Result<(), ProtocolError> {
+        if let JsonValue::Object(ref mut o) = raw_document_transition {
+            deserializer::parse_identities(o, &["$id", "$dataContractId"])?;
+        } else {
+            return Err("The raw_transition isn't an Object".into());
+        }
+        Ok(())
+    }
+}
+
+impl DocumentTransitionObjectLike for DocumentBaseTransition {
+    fn from_raw_document(
         mut raw_transition: JsonValue,
         data_contract: DataContract,
     ) -> Result<DocumentBaseTransition, ProtocolError> {
@@ -93,7 +106,7 @@ impl DocumentBaseTransition {
         Ok(document)
     }
 
-    pub fn to_object(&self) -> Result<JsonValue, ProtocolError> {
+    fn to_object(&self) -> Result<JsonValue, ProtocolError> {
         let mut object = serde_json::to_value(&self)?;
         if !object.is_object() {
             return Err("The Document Base Transition isn't an Object".into());
@@ -111,19 +124,25 @@ impl DocumentBaseTransition {
         Ok(object)
     }
 
-    pub fn to_json(&self) -> Result<JsonValue, ProtocolError> {
+    fn to_json(&self) -> Result<JsonValue, ProtocolError> {
         let value = serde_json::to_value(&self)?;
         Ok(value)
     }
+}
 
-    pub fn identifiers_to_strings(
-        raw_document_transition: &mut JsonValue,
-    ) -> Result<(), ProtocolError> {
-        if let JsonValue::Object(ref mut o) = raw_document_transition {
-            deserializer::parse_identities(o, &["$id", "$dataContractId"])?;
-        } else {
-            return Err("The raw_transition isn't an Object".into());
-        }
-        Ok(())
-    }
+pub trait DocumentTransitionObjectLike {
+    /// Creates the document transition from Raw Object
+    fn from_raw_document(
+        raw_transition: JsonValue,
+        data_contract: DataContract,
+    ) -> Result<Self, ProtocolError>
+    where
+        Self: std::marker::Sized;
+    /// Object is an [`serde_json::Value`] instance that preserves the `Vec<u8>` representation
+    /// for Identifiers and binary data
+    fn to_object(&self) -> Result<JsonValue, ProtocolError>;
+    /// Object is an [`serde_json::Value`] instance that replaces the binary data with
+    ///  - base58 string for Identifiers
+    ///  - base64 string for other binary data
+    fn to_json(&self) -> Result<JsonValue, ProtocolError>;
 }
