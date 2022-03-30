@@ -27,7 +27,7 @@ async function createMasternodeRewardSharesDataTrigger(
   const validMasternodesList = smlStore.getCurrentSML().getValidMasternodesList();
 
   const ownerIdInSml = !!validMasternodesList.find(
-    (smlEntry) => Buffer.compare(ownerId, hash(Buffer.from(smlEntry.proRegTxHash, 'hex'))) === 0,
+    (smlEntry) => Buffer.compare(ownerId, Buffer.from(smlEntry.proRegTxHash, 'hex')) === 0,
   );
 
   if (!ownerIdInSml) {
