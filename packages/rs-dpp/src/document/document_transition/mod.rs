@@ -9,6 +9,3 @@ pub use document_delete_transition::*;
 
 mod document_replace_transition;
 pub use document_replace_transition::*;
-
-mod document_data_transition;
-pub use document_data_transition::*;
