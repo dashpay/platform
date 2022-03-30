@@ -44,13 +44,11 @@ async function _initializeAccount(account, userUnsafePlugins) {
         watchedPlugins.forEach((pluginName) => {
           const watchedPlugin = account.plugins.watchers[pluginName];
           if (watchedPlugin.ready === true && !watchedPlugin.announced) {
-            logger.debug(`Initializing - ${readyPlugins}/${watchedPlugins.length} plugins`);
             readyPlugins += 1;
             watchedPlugin.announced = true;
             logger.debug(`Initialized ${pluginName} - ${readyPlugins}/${watchedPlugins.length} plugins`);
           }
         });
-        logger.debug(`Initializing - ${readyPlugins}/${watchedPlugins.length} plugins`);
         if (readyPlugins === watchedPlugins.length) {
           // At this stage, our worker are initialized
           sendInitialized();
