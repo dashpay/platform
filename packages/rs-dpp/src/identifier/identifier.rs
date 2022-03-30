@@ -6,6 +6,8 @@ use crate::util::string_encoding;
 use crate::util::string_encoding::Encoding;
 use serde_json::Value as JsonValue;
 
+pub const MEDIA_TYPE: &str = "application/x.dash.dpp.identifier";
+
 #[derive(Default, Debug, Clone, PartialEq, Eq)]
 pub struct Identifier {
     buffer: [u8; 32],
