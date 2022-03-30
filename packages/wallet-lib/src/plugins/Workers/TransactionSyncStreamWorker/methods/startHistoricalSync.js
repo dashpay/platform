@@ -23,7 +23,7 @@ module.exports = async function startHistoricalSync(network) {
 
   try {
     const options = { count, network };
-    options.fromBlockHeight = lastSyncedBlockHeight;
+    options.fromBlockHeight = lastSyncedBlockHeight > 0 ? lastSyncedBlockHeight : 1;
 
     logger.debug(`TransactionSyncStreamWorker - HistoricalSync - Started from ${options.fromBlockHash || options.fromBlockHeight}, count: ${count}`);
     const gapLimitIsReached = await this.syncUpToTheGapLimit(options);

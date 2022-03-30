@@ -132,9 +132,6 @@ class TransactionSyncStreamWorker extends Worker {
   }
 
   async onStart() {
-    const { lastKnownBlock } = this.storage.getWalletStore(this.walletId).state;
-    this.setLastSyncedBlockHeight(lastKnownBlock.height);
-
     // Using sync options here to avoid
     // situation when plugin is injected directly
     // instead of usual injection process
@@ -150,10 +147,15 @@ class TransactionSyncStreamWorker extends Worker {
       return;
     }
 
-    if (skipSynchronizationBeforeHeight) {
+    const { lastKnownBlock } = this.storage.getWalletStore(this.walletId).state;
+
+    if (typeof skipSynchronizationBeforeHeight === 'number'
+        && skipSynchronizationBeforeHeight > lastKnownBlock.height) {
       this.setLastSyncedBlockHeight(
         skipSynchronizationBeforeHeight,
       );
+    } else if (lastKnownBlock.height !== -1) {
+      this.setLastSyncedBlockHeight(lastKnownBlock.height);
     }
 
     this.chainSyncMediator.state = ChainSyncMediator.STATES.HISTORICAL_SYNC;

@@ -33,7 +33,7 @@ async function processChunks(dataChunk) {
 
     // When a transaction exist, there is multiple things we need to do :
     // 1) The transaction itself needs to be imported
-    const addressesGeneratedCount = await self
+    const { addressesGenerated: addressesGeneratedCount } = await self
       .importTransactions(addressesTransactionsWithoutMetadata);
     // 2) Transaction metadata need to be fetched and imported as well.
     //    as such event might happen in the future
@@ -50,7 +50,14 @@ async function processChunks(dataChunk) {
       .all(awaitingMetadataPromises)
       .then(async (transactionsWithMetadata) => {
         // Import into account
-        await self.importTransactions(transactionsWithMetadata);
+        const { mostRecentHeight } = await self.importTransactions(transactionsWithMetadata);
+
+        if (mostRecentHeight !== -1) {
+          this.setLastSyncedBlockHeight(mostRecentHeight, true);
+        }
+      })
+      .catch((err) => {
+        logger.error('Error while importing transactions', err);
       });
 
     // Schedule save state after all chain data has been imported

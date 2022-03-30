@@ -17,7 +17,7 @@ module.exports = async function startIncomingSync() {
 
   try {
     const options = { count, network };
-    options.fromBlockHeight = lastSyncedBlockHeight;
+    options.fromBlockHeight = lastSyncedBlockHeight > 0 ? lastSyncedBlockHeight : 1;
 
     await this.syncUpToTheGapLimit(options);
     // The method above resolves only in two cases: the limit is reached or the server is closed.

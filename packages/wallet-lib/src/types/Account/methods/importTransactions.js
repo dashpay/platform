@@ -3,20 +3,18 @@ const logger = require('../../../logger');
 /**
  * Import transactions and always keep a number of unused addresses up to gap
  *
- * @param transactions
- * @returns {Promise<number>}
+ * @param transactionsWithMayBeMetadata
+ * @returns {Promise<{ addressesGenerated: number,  mostRecentHeight: number}>}
  */
 module.exports = async function importTransactions(transactionsWithMayBeMetadata) {
   const {
     storage,
     network,
-    walletId,
   } = this;
 
   let addressesGenerated = 0;
 
   const chainStore = storage.getChainStore(network);
-  const walletStore = storage.getWalletStore(walletId);
 
   let mostRecentHeight = -1;
   transactionsWithMayBeMetadata.forEach((transactionWithMetadata) => {
@@ -39,10 +37,6 @@ module.exports = async function importTransactions(transactionsWithMayBeMetadata
     this.addPathsToStore(newPaths);
   });
 
-  if (mostRecentHeight !== -1) {
-    walletStore.updateLastKnownBlock(mostRecentHeight);
-  }
-
   logger.silly(`Account.importTransactions(len: ${transactionsWithMayBeMetadata.length})`);
-  return addressesGenerated;
+  return { addressesGenerated, mostRecentHeight };
 };
