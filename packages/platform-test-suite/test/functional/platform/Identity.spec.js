@@ -548,9 +548,7 @@ describe('Platform', () => {
 
         for (const masternodeEntry of mnList) {
           const masternodeIdentityId = Identifier.from(
-            hash(
-              Buffer.from(masternodeEntry.proRegTxHash, 'hex'),
-            ),
+            Buffer.from(masternodeEntry.proRegTxHash, 'hex'),
           );
 
           let fetchedIdentity = await client.platform.identities.get(

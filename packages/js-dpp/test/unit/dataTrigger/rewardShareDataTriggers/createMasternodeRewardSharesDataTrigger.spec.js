@@ -6,7 +6,6 @@ const getDocumentTransitionsFixture = require('../../../../lib/test/fixtures/get
 const createRewardShareDataTrigger = require('../../../../lib/dataTrigger/rewardShareDataTriggers/createMasternodeRewardSharesDataTrigger');
 const DataTriggerExecutionResult = require('../../../../lib/dataTrigger/DataTriggerExecutionResult');
 const DataTriggerConditionError = require('../../../../lib/errors/consensus/state/dataContract/dataTrigger/DataTriggerConditionError');
-const { hash } = require('../../../../lib/util/hash');
 
 describe('createMasternodeRewardSharesDataTrigger', () => {
   let contextMock;
@@ -18,7 +17,7 @@ describe('createMasternodeRewardSharesDataTrigger', () => {
   let documentsFixture;
 
   beforeEach(function beforeEach() {
-    topLevelIdentityId = hash(Buffer.from('c286807d463b06c7aba3b9a60acf64c1fc03da8c1422005cd9b4293f08cf0562', 'hex'));
+    topLevelIdentityId = Buffer.from('c286807d463b06c7aba3b9a60acf64c1fc03da8c1422005cd9b4293f08cf0562', 'hex');
 
     smlMock = {
       getQuorum: this.sinonSandbox.stub(),
