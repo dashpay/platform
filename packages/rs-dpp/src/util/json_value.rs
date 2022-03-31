@@ -20,7 +20,43 @@ pub enum ReplaceWith {
     Base58,
 }
 
-pub fn replace_json_value_with(
+/// replaces the Identifiers specified in binary_properties with Bytes or Base58
+pub fn identifiers_to(
+    binary_properties: &HashMap<String, JsonValue>,
+    dynamic_data: &mut JsonValue,
+    to: ReplaceWith,
+) -> Result<(), ProtocolError> {
+    let identifier_paths = binary_properties
+        .iter()
+        .filter(|(_, p)| identifier_filter(p))
+        .map(|(name, _)| name.as_str());
+
+    replace_identifier_paths(identifier_paths, dynamic_data, to)?;
+    Ok(())
+}
+
+/// replaces the Identifiers given path paths with either the Bytes or Base58 form
+pub fn replace_identifier_paths<'a>(
+    paths: impl IntoIterator<Item = &'a str>,
+    value: &mut JsonValue,
+    with: ReplaceWith,
+) -> Result<(), ProtocolError> {
+    for raw_path in paths {
+        let mut to_replace = get_value_mut(raw_path, value);
+        match to_replace {
+            Some(ref mut v) => {
+                replace_identifier(v, with)?;
+            }
+            None => {
+                trace!("path '{}' is not found, replacing to {:?} ", raw_path, with)
+            }
+        }
+    }
+    Ok(())
+}
+
+/// replaces the Identifier wrapped in Json Value to either the Bytes or Base58 form
+pub fn replace_identifier(
     to_replace: &mut JsonValue,
     with: ReplaceWith,
 ) -> Result<(), ProtocolError> {
@@ -42,39 +78,6 @@ pub fn replace_json_value_with(
     Ok(())
 }
 
-pub fn replace_paths_with<'a>(
-    paths: impl IntoIterator<Item = &'a str>,
-    value: &mut JsonValue,
-    with: ReplaceWith,
-) -> Result<(), ProtocolError> {
-    for raw_path in paths {
-        let mut to_replace = get_value_mut(raw_path, value);
-        match to_replace {
-            Some(ref mut v) => {
-                replace_json_value_with(v, with)?;
-            }
-            None => {
-                trace!("path '{}' is not found, replacing to {:?} ", raw_path, with)
-            }
-        }
-    }
-    Ok(())
-}
-
-pub fn identifiers_to(
-    binary_properties: &HashMap<String, JsonValue>,
-    dynamic_data: &mut JsonValue,
-    to: ReplaceWith,
-) -> Result<(), ProtocolError> {
-    let identifier_paths = binary_properties
-        .iter()
-        .filter(|(_, p)| identifier_filter(p))
-        .map(|(name, _)| name.as_str());
-
-    replace_paths_with(identifier_paths, dynamic_data, to)?;
-    Ok(())
-}
-
 fn identifier_filter(value: &JsonValue) -> bool {
     if let JsonValue::Object(object) = value {
         if let Some(JsonValue::String(media_type)) = object.get(PROPERTY_CONTENT_MEDIA_TYPE) {
@@ -84,13 +87,15 @@ fn identifier_filter(value: &JsonValue) -> bool {
     false
 }
 
+/// returns the value from the JsonValue based on the path: i.e "root.data[0].id"
 pub fn get_value_mut<'a>(string_path: &str, value: &'a mut JsonValue) -> Option<&'a mut JsonValue> {
     let path_literal: JsonPathLiteral = string_path.into();
     let path: JsonPath = path_literal.try_into().unwrap();
-    get_value_from_path_mut(&path, value)
+    get_value_from_json_path_mut(&path, value)
 }
 
-pub fn get_value_from_path_mut<'a>(
+/// returns the value from the JsonValue based on the JsonPath
+pub fn get_value_from_json_path_mut<'a>(
     path: &[JsonPathStep],
     value: &'a mut JsonValue,
 ) -> Option<&'a mut JsonValue> {
