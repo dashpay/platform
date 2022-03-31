@@ -3,6 +3,7 @@ use crate::{
     document::document_transition::Action,
     errors::ProtocolError,
     util::deserializer::{self, parse_bytes},
+    util::json_value::{self, ReplaceWith},
 };
 
 use super::{DocumentBaseTransition, DocumentTransitionObjectLike};
@@ -68,13 +69,14 @@ impl DocumentTransitionObjectLike for DocumentCreateTransition {
         document.base.data_contract = data_contract;
 
         if let Some(ref mut dynamic_data) = document.data {
-            deserializer::identifiers_to_base58(
+            json_value::identifiers_to(
                 &document
                     .base
                     .data_contract
                     .get_binary_properties(&document.base.document_type),
                 dynamic_data,
-            );
+                ReplaceWith::Base58,
+            )?;
         }
 
         Ok(document)
@@ -87,13 +89,14 @@ impl DocumentTransitionObjectLike for DocumentCreateTransition {
         let object_base_map = object_base.as_object().unwrap().to_owned();
         let entropy: Vec<JsonValue> = self.entropy.iter().map(|v| JsonValue::from(*v)).collect();
 
-        deserializer::identifiers_to_bytes(
+        json_value::identifiers_to(
             &self
                 .base
                 .data_contract
                 .get_binary_properties(&self.base.document_type),
             &mut object,
-        );
+            ReplaceWith::Bytes,
+        )?;
 
         match object {
             JsonValue::Object(ref mut o) => {
