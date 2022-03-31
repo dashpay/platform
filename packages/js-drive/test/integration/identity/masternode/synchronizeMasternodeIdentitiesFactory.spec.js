@@ -86,9 +86,7 @@ function expectMasternodeIdentityFactory(
    */
   async function expectMasternodeIdentity(smlEntry, preRegTx) {
     const masternodeIdentifier = Identifier.from(
-      hash(
-        Buffer.from(smlEntry.proRegTxHash, 'hex'),
-      ),
+      Buffer.from(smlEntry.proRegTxHash, 'hex'),
     );
 
     const masternodeIdentity = await identityRepository.fetch(masternodeIdentifier);
@@ -159,7 +157,8 @@ describe('synchronizeMasternodeIdentitiesFactory', () => {
 
   beforeEach(async function beforeEach() {
     coreHeight = 3;
-    firstSyncAppHash = '5f9981ea8bf69112408784c62ef079c19b9f57a275bf8b8df2b9b0f111cd8525';
+    // firstSyncAppHash = '5f9981ea8bf69112408784c62ef079c19b9f57a275bf8b8df2b9b0f111cd8525';
+    firstSyncAppHash = 'c7cd0e7c892ecc38695208c6ee03a3d0fc8e8de915b25eb8e2cc15b556878076';
 
     container = await createTestDIContainer();
 
@@ -290,9 +289,7 @@ describe('synchronizeMasternodeIdentitiesFactory', () => {
     // Masternode reward shares should be created
 
     const firstMasternodeIdentifier = Identifier.from(
-      hash(
-        Buffer.from(smlFixture[0].proRegTxHash, 'hex'),
-      ),
+      Buffer.from(smlFixture[0].proRegTxHash, 'hex'),
     );
 
     const firstOperatorIdentifier = createOperatorIdentifier(smlFixture[0]);
@@ -352,9 +349,7 @@ describe('synchronizeMasternodeIdentitiesFactory', () => {
     // Masternode reward shares shouldn't be created
 
     const secondMasternodeIdentifier = Identifier.from(
-      hash(
-        Buffer.from(smlFixture[1].proRegTxHash, 'hex'),
-      ),
+      Buffer.from(smlFixture[1].proRegTxHash, 'hex'),
     );
 
     documents = await documentRepository.find(
@@ -430,7 +425,7 @@ describe('synchronizeMasternodeIdentitiesFactory', () => {
 
     await synchronizeMasternodeIdentities(coreHeight + 1);
 
-    await expectDeterministicAppHash('dfbfb16e71f2537330aaf97c2c61d289e1691ff265a01ddd0e7e24c61504cd8f');
+    await expectDeterministicAppHash('da4c450e65eb228b58753a472c55e9a96d7f6561c0cd55ea299cf1c9ba314c05');
 
     // New masternode identity should be created
 
@@ -443,9 +438,7 @@ describe('synchronizeMasternodeIdentitiesFactory', () => {
     // Masternode reward shares should be created
 
     const newMasternodeIdentifier = Identifier.from(
-      hash(
-        Buffer.from(newSmlFixture[0].proRegTxHash, 'hex'),
-      ),
+      Buffer.from(newSmlFixture[0].proRegTxHash, 'hex'),
     );
 
     const newOperatorIdentifier = createOperatorIdentifier(newSmlFixture[0]);
@@ -495,7 +488,7 @@ describe('synchronizeMasternodeIdentitiesFactory', () => {
 
     await synchronizeMasternodeIdentities(coreHeight + 1);
 
-    await expectDeterministicAppHash('7a1d4f66368234987edbb512ac21e7626011a201e21864e2eef0ed709dfc1e1a');
+    await expectDeterministicAppHash('76579edc4260d70f3616cb22f6589f195eeeb09ac73e4253493bd1200d1511bb');
 
     // Masternode identity should stay
 
@@ -507,9 +500,7 @@ describe('synchronizeMasternodeIdentitiesFactory', () => {
 
     // Masternode reward shares should be removed
 
-    const removedMasternodeIdentifier = hash(
-      Buffer.from(smlFixture[0].proRegTxHash, 'hex'),
-    );
+    const removedMasternodeIdentifier = Buffer.from(smlFixture[0].proRegTxHash, 'hex');
 
     const documents = await documentRepository.find(
       rewardsDataContract,
@@ -544,12 +535,10 @@ describe('synchronizeMasternodeIdentitiesFactory', () => {
 
     await synchronizeMasternodeIdentities(coreHeight + 1);
 
-    await expectDeterministicAppHash('7a1d4f66368234987edbb512ac21e7626011a201e21864e2eef0ed709dfc1e1a');
+    await expectDeterministicAppHash('76579edc4260d70f3616cb22f6589f195eeeb09ac73e4253493bd1200d1511bb');
 
     const invalidMasternodeIdentifier = Identifier.from(
-      hash(
-        Buffer.from(invalidSmlEntry.proRegTxHash, 'hex'),
-      ),
+      Buffer.from(invalidSmlEntry.proRegTxHash, 'hex'),
     );
 
     // Masternode reward shares should be removed
@@ -587,7 +576,7 @@ describe('synchronizeMasternodeIdentitiesFactory', () => {
 
     await synchronizeMasternodeIdentities(coreHeight + 1);
 
-    await expectDeterministicAppHash('bf9eb2635fb25baf803ef4d35323ad32789991a6836f883e9451b3f029bdbe4d');
+    await expectDeterministicAppHash('efe24642da50cafb3cef3976bfd62f7c38ba3c4800b74142c4f98ff1f2ece12b');
 
     // Masternode identity should stay
 
@@ -604,9 +593,7 @@ describe('synchronizeMasternodeIdentitiesFactory', () => {
     // Only new masternode reward shares should exist
 
     const changedMasternodeIdentifier = Identifier.from(
-      hash(
-        Buffer.from(changedSmlEntry.proRegTxHash, 'hex'),
-      ),
+      Buffer.from(changedSmlEntry.proRegTxHash, 'hex'),
     );
 
     const documents = await documentRepository.find(
