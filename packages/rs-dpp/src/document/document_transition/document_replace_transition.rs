@@ -1,7 +1,11 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 
-use crate::{data_contract::DataContract, errors::ProtocolError, util::deserializer};
+use crate::{
+    data_contract::DataContract,
+    errors::ProtocolError,
+    util::json_value::{self, ReplaceWith},
+};
 
 use super::{Action, DocumentBaseTransition, DocumentTransitionObjectLike};
 
@@ -30,13 +34,14 @@ impl DocumentTransitionObjectLike for DocumentReplaceTransition {
         document.base.data_contract = data_contract;
 
         if let Some(ref mut dynamic_data) = document.data {
-            deserializer::identifiers_to_base58(
+            json_value::identifiers_to(
                 &document
                     .base
                     .data_contract
                     .get_binary_properties(&document.base.document_type),
                 dynamic_data,
-            );
+                ReplaceWith::Base58,
+            )?;
         }
 
         Ok(document)
@@ -47,13 +52,14 @@ impl DocumentTransitionObjectLike for DocumentReplaceTransition {
         let mut object = serde_json::to_value(&self)?;
         let object_base_map = object_base.as_object().unwrap().to_owned();
 
-        deserializer::identifiers_to_bytes(
+        json_value::identifiers_to(
             &self
                 .base
                 .data_contract
                 .get_binary_properties(&self.base.document_type),
             &mut object,
-        );
+            ReplaceWith::Bytes,
+        )?;
 
         match object {
             JsonValue::Object(ref mut o) => o.extend(object_base_map),
