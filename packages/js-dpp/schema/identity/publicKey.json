@@ -23,9 +23,10 @@
       "enum": [
         0,
         1,
-        2
+        2,
+        3
       ],
-      "description": "Public key purpose. 0 - Authentication, 1 - Encryption, 2 - Decryption",
+      "description": "Public key purpose. 0 - Authentication, 1 - Encryption, 2 - Decryption, 3 - Withdraw",
       "$comment": "It can't be changed after adding a key"
     },
     "securityLevel": {
