@@ -55,13 +55,13 @@ async function processChunks(dataChunk) {
         if (mostRecentHeight !== -1) {
           this.setLastSyncedBlockHeight(mostRecentHeight, true);
         }
+
+        // Schedule save state after all chain data has been imported
+        this.storage.scheduleStateSave();
       })
       .catch((err) => {
         logger.error('Error while importing transactions', err);
       });
-
-    // Schedule save state after all chain data has been imported
-    this.storage.scheduleStateSave();
 
     self.hasReachedGapLimit = self.hasReachedGapLimit || addressesGeneratedCount > 0;
 

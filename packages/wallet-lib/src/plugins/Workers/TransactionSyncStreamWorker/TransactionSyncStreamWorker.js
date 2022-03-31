@@ -163,6 +163,7 @@ class TransactionSyncStreamWorker extends Worker {
     this.chainSyncMediator.state = ChainSyncMediator.STATES.HISTORICAL_SYNC;
     // We first need to sync up initial historical transactions
     await this.startHistoricalSync(this.network);
+    await this.storage.saveState();
   }
 
   /**
