@@ -17,8 +17,8 @@ const determineType = (inputsDetection, outputsDetection) => {
   ) {
     type = TRANSACTION_HISTORY_TYPES.ACCOUNT_TRANSFER;
   } else if (inputsDetection.hasOwnAddress
-      && !outputsDetection.hasUnknownAddress
-      && !outputsDetection.hasOtherAccountAddress) {
+    && !outputsDetection.hasUnknownAddress
+    && !outputsDetection.hasOtherAccountAddress) {
     // Detecting an address transfer is the second element we need to discriminate
     type = TRANSACTION_HISTORY_TYPES.ADDRESS_TRANSFER;
   } else {
@@ -30,7 +30,7 @@ const determineType = (inputsDetection, outputsDetection) => {
     }
     if (
       outputsDetection.hasUnknownAddress
-        && (inputsDetection.hasOwnAddress)
+      && (inputsDetection.hasOwnAddress)
     ) {
       type = TRANSACTION_HISTORY_TYPES.SENT;
     }
@@ -82,17 +82,17 @@ function categorizeTransactions(
           outputsHasChangeAddress = true;
           outputsHasOwnAddress = true;
         } else if (externalAddressesList.includes(address)) {
-          addressType = 'external'
+          addressType = 'external';
           outputsHasExternalAddress = true;
           outputsHasOwnAddress = true;
         } else if (otherAccountAddressesList.includes(address)) {
-          addressType = 'otherAccount'
+          addressType = 'otherAccount';
           outputsHasOtherAccountAddress = true;
         } else outputsHasUnknownAddress = true;
         to.push({
           address,
           satoshis,
-          addressType
+          addressType,
         });
       }
     });
@@ -117,7 +117,7 @@ function categorizeTransactions(
         } else inputsHasUnknownAddress = true;
         from.push({
           address,
-          addressType
+          addressType,
         });
       }
     });
@@ -139,27 +139,26 @@ function categorizeTransactions(
     // This allows to know what is the impact on the balance.
     // In case of a change transaction or a transfert from own address to another owned address
     // such impact would stay 0
-    let satoshisBalanceImpact = 0
+    let satoshisBalanceImpact = 0;
 
-    if(type === 'received'){
-      to.forEach((output)=>{
-        if(['external', 'internal'].includes(output.addressType)){
-          satoshisBalanceImpact += output.satoshis
+    if (type === 'received') {
+      to.forEach((output) => {
+        if (['external', 'internal'].includes(output.addressType)) {
+          satoshisBalanceImpact += output.satoshis;
         }
-      })
-    }
-    else if(type === 'sent'){
-      to.forEach((output)=>{
-        if(['unknown', 'otherAccount'].includes(output.addressType)){
-          satoshisBalanceImpact -= output.satoshis
+      });
+    } else if (type === 'sent') {
+      to.forEach((output) => {
+        if (['unknown', 'otherAccount'].includes(output.addressType)) {
+          satoshisBalanceImpact -= output.satoshis;
         }
-      })
-    } else if (type === 'account_transfer'){
-      to.forEach((output)=>{
-        if(['unknown', 'otherAccount'].includes(output.addressType)){
-          satoshisBalanceImpact -= output.satoshis
+      });
+    } else if (type === 'account_transfer') {
+      to.forEach((output) => {
+        if (['unknown', 'otherAccount'].includes(output.addressType)) {
+          satoshisBalanceImpact -= output.satoshis;
         }
-      })
+      });
     }
 
     const categorizedTransaction = {
@@ -171,7 +170,7 @@ function categorizeTransactions(
       height: metadata.height,
       isInstantLocked: metadata.isInstantLocked,
       isChainLocked: metadata.isChainLocked,
-      satoshisBalanceImpact
+      satoshisBalanceImpact,
     };
     categorizedTransactions.push(categorizedTransaction);
   });

@@ -74,7 +74,7 @@ function getTransactionHistory() {
       blockHash,
       isChainLocked,
       isInstantLocked,
-      satoshisBalanceImpact
+      satoshisBalanceImpact,
     };
 
     transactionHistory.push(normalizedTransactionHistory);
