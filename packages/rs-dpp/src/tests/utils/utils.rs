@@ -3,6 +3,8 @@ use getrandom::getrandom;
 use serde_json::Value;
 use std::num::ParseIntError;
 
+use crate::prelude::Identifier;
+
 pub fn generate_random_identifier() -> [u8; 32] {
     let mut buffer = [0u8; 32];
     let _ = getrandom(&mut buffer);
@@ -59,6 +61,12 @@ where
         .as_object_mut()
         .expect("Expected value to be an JSON object")
         .remove(&key.into());
+}
+
+pub fn generate_random_identifier_struct() -> Identifier {
+    let mut buffer = [0u8; 32];
+    let _ = getrandom(&mut buffer);
+    return Identifier::from_bytes(&buffer).unwrap();
 }
 
 pub fn get_data_from_file(file_path: &str) -> Result<String> {

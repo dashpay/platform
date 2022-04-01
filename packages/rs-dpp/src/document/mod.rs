@@ -1,5 +1,6 @@
 pub mod document_transition;
 pub mod errors;
+pub mod validation;
 
 use crate::data_contract::DataContract;
 use crate::errors::ProtocolError;
