@@ -8,7 +8,7 @@ use super::{Action, DocumentBaseTransition, DocumentTransitionObjectLike};
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct DocumentDeleteTransition {
     #[serde(flatten)]
-    base: DocumentBaseTransition,
+    pub base: DocumentBaseTransition,
 }
 
 impl DocumentTransitionObjectLike for DocumentDeleteTransition {

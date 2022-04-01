@@ -13,13 +13,13 @@ use super::{Action, DocumentBaseTransition, DocumentTransitionObjectLike};
 #[serde(rename_all = "camelCase")]
 pub struct DocumentReplaceTransition {
     #[serde(flatten)]
-    base: DocumentBaseTransition,
+    pub base: DocumentBaseTransition,
     #[serde(rename = "$revision")]
-    revision: u32,
+    pub revision: u32,
     #[serde(skip_serializing_if = "Option::is_none")]
-    updated_at: Option<i64>,
+    pub updated_at: Option<i64>,
     #[serde(flatten, skip_serializing_if = "Option::is_none")]
-    data: Option<JsonValue>,
+    pub data: Option<JsonValue>,
 }
 
 impl DocumentTransitionObjectLike for DocumentReplaceTransition {

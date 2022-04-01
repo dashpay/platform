@@ -9,3 +9,10 @@ pub use document_delete_transition::*;
 
 mod document_replace_transition;
 pub use document_replace_transition::*;
+
+#[derive(Debug, Clone)]
+pub enum DocumentTransition {
+    Create(DocumentCreateTransition),
+    Replace(DocumentReplaceTransition),
+    Delete(DocumentDeleteTransition),
+}
