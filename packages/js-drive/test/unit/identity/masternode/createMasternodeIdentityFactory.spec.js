@@ -32,7 +32,7 @@ describe('createMasternodeIdentityFactory', () => {
     const pubKeyData = Buffer.from([0]);
     const pubKeyType = IdentityPublicKey.TYPES.ECDSA_HASH160;
 
-    await createMasternodeIdentity(identityId, pubKeyData, pubKeyType, false);
+    await createMasternodeIdentity(identityId, pubKeyData, pubKeyType);
 
     const identity = new Identity({
       protocolVersion: dppMock.getProtocolVersion(),
@@ -69,7 +69,7 @@ describe('createMasternodeIdentityFactory', () => {
     const pubKeyData = Buffer.from([0]);
     const pubKeyType = IdentityPublicKey.TYPES.ECDSA_HASH160;
 
-    await createMasternodeIdentity(identityId, pubKeyData, pubKeyType, true);
+    await createMasternodeIdentity(identityId, pubKeyData, pubKeyType);
 
     const identity = new Identity({
       protocolVersion: dppMock.getProtocolVersion(),
@@ -111,7 +111,7 @@ describe('createMasternodeIdentityFactory', () => {
     const pubKeyType = IdentityPublicKey.TYPES.ECDSA_HASH160;
 
     try {
-      await createMasternodeIdentity(identityId, pubKeyData, pubKeyType, false);
+      await createMasternodeIdentity(identityId, pubKeyData, pubKeyType);
 
       expect.fail('should fail with an error');
     } catch (e) {

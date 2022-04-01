@@ -47,12 +47,15 @@ function handleUpdatedPubKeyOperatorFactory(
 
     const operatorIdentity = await transactionalStateRepository.fetchIdentity(operatorIdentifier);
 
+    const operatorPayoutPubKey = Buffer.from(masternodeEntry.scriptOperatorPayout, 'hex');
+
     //  Create an identity for operator if there is no identity exist with the same ID
     if (operatorIdentity === null) {
       await createMasternodeIdentity(
         operatorIdentifier,
         operatorPublicKey,
         IdentityPublicKey.TYPES.BLS12_381,
+        operatorPayoutPubKey,
       );
     }
 

@@ -1,5 +1,6 @@
 const Identifier = require('@dashevo/dpp/lib/identifier/Identifier');
 const SimplifiedMNList = require('@dashevo/dashcore-lib/lib/deterministicmnlist/SimplifiedMNList');
+const createOperatorIdentifier = require('./createOperatorIdentifier');
 
 /**
  *
@@ -9,6 +10,7 @@ const SimplifiedMNList = require('@dashevo/dashcore-lib/lib/deterministicmnlist/
  * @param {handleNewMasternode} handleNewMasternode
  * @param {handleUpdatedPubKeyOperator} handleUpdatedPubKeyOperator
  * @param {handleRemovedMasternode} handleRemovedMasternode
+ * @param {handleUpdatedScriptPayout} handleUpdatedScriptPayout
  * @param {number} smlMaxListsLimit
  * @param {RpcClient} coreRpcClient
  * @return {synchronizeMasternodeIdentities}
@@ -20,6 +22,7 @@ function synchronizeMasternodeIdentitiesFactory(
   handleNewMasternode,
   handleUpdatedPubKeyOperator,
   handleRemovedMasternode,
+  handleUpdatedScriptPayout,
   smlMaxListsLimit,
   coreRpcClient,
 ) {
@@ -76,6 +79,32 @@ function synchronizeMasternodeIdentitiesFactory(
             mnEntry,
             previousMnEntry,
             dataContract,
+          );
+        }
+
+        const scriptPayoutIsChanged = previousMNList.find((previousMnListEntry) => (
+          previousMnListEntry.proRegTxHash === mnEntry.proRegTxHash
+          && previousMnListEntry.scriptPayout !== mnEntry.scriptPayout
+        ));
+
+        if (scriptPayoutIsChanged) {
+          await handleUpdatedScriptPayout(
+            Identifier.from(Buffer.from(Identifier.proRegTxHash, 'hex')),
+            mnEntry.scriptPayout,
+            previousMnEntry.scriptPayout,
+          );
+        }
+
+        const scriptOperatorPayoutIsChanged = previousMNList.find((previousMnListEntry) => (
+          previousMnListEntry.proRegTxHash === mnEntry.proRegTxHash
+          && previousMnListEntry.scriptOperatorPayout !== mnEntry.scriptOperatorPayout
+        ));
+
+        if (scriptOperatorPayoutIsChanged) {
+          await handleUpdatedScriptPayout(
+            createOperatorIdentifier(mnEntry),
+            mnEntry.scriptOperatorPayout,
+            previousMnEntry.scriptOperatorPayout,
           );
         }
       }
