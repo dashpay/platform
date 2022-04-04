@@ -15,6 +15,7 @@ const getFixturePrivateAccountWithStorage = require('../../../../fixtures/wallet
 const normalizedHDStoreFixtures = require('../../../../fixtures/wallets/apart-trip-dignity/store.json');
 const normalizedPKStoreFixtures = require('../../../../fixtures/wallets/2a331817b9d6bf85100ef0/store.json');
 const CONSTANTS = require("../../../CONSTANTS");
+const getTotalBalance = require("./getTotalBalance");
 const normalizedStoreToStore = (normalizedStore) => {
   const store = {
     ...normalizedStore
@@ -94,6 +95,13 @@ describe('Account - getTransactionHistory', () => {
       address.balanceSat = 0;
     })
     const transactionHistoryHD = await getTransactionHistory.call(mockedHDSelf);
+    const balanceImpact = transactionHistoryHD.reduce((acc, item) => {
+      return acc + item.satoshisBalanceImpact - item.feeImpact
+    },0);
+
+    const balance = getTotalBalance.call(mockedHDSelf);
+    expect(balance).to.equal(balanceImpact)
+
     const expectedTransactionHistoryHD = [];
     expect(transactionHistoryHD).to.deep.equal(expectedTransactionHistoryHD);
   });
@@ -105,6 +113,15 @@ describe('Account - getTransactionHistory', () => {
     const transactionHistoryHD = await getTransactionHistory.call(mockedHDSelf);
     const timeendTs = +new Date();
     const calculationTime = timeendTs - timestartTs;
+
+    const balance = getTotalBalance.call(mockedHDSelf);
+
+    const balanceImpact = transactionHistoryHD.reduce((acc, item) => {
+      return acc + item.satoshisBalanceImpact - item.feeImpact
+    },0);
+
+    expect(balance).to.equal(balanceImpact)
+
     expect(calculationTime).to.be.below(60 * 1000);
 
     const expectedTransactionHistoryHD = [
@@ -137,7 +154,8 @@ describe('Account - getTransactionHistory', () => {
         blockHash: '000001f9c5de4d2b258a975bfbf7b9a3346890af6389512bea3cb6926b9be330',
         isChainLocked: true,
         isInstantLocked: true,
-        satoshisBalanceImpact:-1000000000
+        satoshisBalanceImpact:-1000000000,
+        feeImpact: 394
       },
       {
         from: [{address: 'yNCqctyQaq51WU1hN5aNwsgMsZ5fRiB7GY', addressType: 'otherAccount'}],
@@ -159,7 +177,8 @@ describe('Account - getTransactionHistory', () => {
         blockHash: '000000444b3f2f02085f8befe72da5442c865c290658766cf935e1a71a4f4ba7',
         isChainLocked: true,
         isInstantLocked: true,
-        satoshisBalanceImpact: -49999753
+        satoshisBalanceImpact: 1150000000,
+        feeImpact: 0
       },
       {
         from: [{
@@ -184,7 +203,8 @@ describe('Account - getTransactionHistory', () => {
         blockHash: '000000dffb05c071a8c05082a475b7ce9c1e403f3b89895a6c448fe08535a5f5',
         isChainLocked: true,
         isInstantLocked: true,
-        satoshisBalanceImpact: -1260000000
+        satoshisBalanceImpact: -1260000000,
+        feeImpact: 247
       },
       {
         from: [{
@@ -214,7 +234,8 @@ describe('Account - getTransactionHistory', () => {
         blockHash: '000001953ea0bbb8ad04a9a1a2a707fef207ad22a712d7d3c619f0f9b63fa98c',
         isChainLocked: true,
         isInstantLocked: true,
-        satoshisBalanceImpact: 0
+        satoshisBalanceImpact: 0,
+        feeImpact: 280
       },
 
       {
@@ -258,7 +279,8 @@ describe('Account - getTransactionHistory', () => {
         blockHash: '00000084b4d9e887a6ad3f37c576a17d79c35ec9301e55210eded519e8cdcd3a',
         isChainLocked: true,
         isInstantLocked: true,
-        satoshisBalanceImpact: 0
+        satoshisBalanceImpact: 0,
+        feeImpact: 830
       },
       {
         from: [{
@@ -283,7 +305,8 @@ describe('Account - getTransactionHistory', () => {
         blockHash: '00000c1e4556add15119392ed36ec6af2640569409abfa23a9972bc3be1b3717',
         isChainLocked: true,
         isInstantLocked: true,
-        satoshisBalanceImpact: 729210000
+        satoshisBalanceImpact: 729210000,
+        feeImpact: 0
       },
       {
         from: [{
@@ -312,7 +335,8 @@ describe('Account - getTransactionHistory', () => {
         type: "received",
         isChainLocked: true,
         isInstantLocked: true,
-        satoshisBalanceImpact: 840010000
+        satoshisBalanceImpact: 840010000,
+        feeImpact: 0
       },
       {
         from: [{
@@ -337,7 +361,8 @@ describe('Account - getTransactionHistory', () => {
         type: "received",
         isChainLocked: true,
         isInstantLocked: true,
-        satoshisBalanceImpact: 10000000
+        satoshisBalanceImpact: 10000000,
+        feeImpact: 0
       },
       {
         from: [{
@@ -362,7 +387,8 @@ describe('Account - getTransactionHistory', () => {
         blockHash: '000000b6006c758eda23ec7e2a640a0bf2c6a0c44827be216faff6bf4fd388e8',
         isChainLocked: true,
         isInstantLocked: true,
-        satoshisBalanceImpact: 10000000
+        satoshisBalanceImpact: 10000000,
+        feeImpact: 0
       },
       {
         from: [
@@ -413,7 +439,8 @@ describe('Account - getTransactionHistory', () => {
         blockHash: '000001deee9f99e8219a9abcaaea135dbaae8a9b0f1ea214e6b6a37a5c5b115d',
         isChainLocked: true,
         isInstantLocked: true,
-        satoshisBalanceImpact: 187980000
+        satoshisBalanceImpact: 187980000,
+        feeImpact: 0
       }
     ]
     expect(transactionHistoryHD).to.deep.equal(expectedTransactionHistoryHD);
@@ -425,7 +452,44 @@ describe('Account - getTransactionHistory', () => {
     mockedHDSelf.index = 1;
     mockedHDSelf.accountPath = `m/44'/1'/1'`;
     const transactionHistoryHD = await getTransactionHistory.call(mockedHDSelf);
+
+    const balance = getTotalBalance.call(mockedHDSelf);
+
+    const balanceImpact = transactionHistoryHD.reduce((acc, item) => {
+      return acc + item.satoshisBalanceImpact - item.feeImpact
+    },0);
+
+    expect(balance).to.equal(balanceImpact)
+
     const expectedTransactionHistoryHD = [
+      {
+        from: [
+          {
+            address: 'yYJmzWey5kNecAThet5BFxAga1F4b4DKQ2',
+            addressType: 'external',
+          },
+        ],
+        to: [
+          {
+            address: 'yNCqctyQaq51WU1hN5aNwsgMsZ5fRiB7GY',
+            satoshis: 1200000000,
+            addressType: 'external',
+          },
+          {
+            address: 'yXMrw79LPgu78EJsfGGYpm6fXKc1EMnQ49',
+            satoshis: 59999753,
+            addressType: 'internal',
+          },
+        ],
+        type: 'address_transfer',
+        time: 9999999999,
+        txId: '9cd3d44a87a7f99a33aebc6957105d5fb41698ef642189a36bac59ec0b5cd840',
+        blockHash: '0000016fb685b4b1efed743d2263de34a9f8323ed75e732654b1b951c5cb4dde',
+        isChainLocked: true,
+        isInstantLocked: true,
+        satoshisBalanceImpact: 0,
+        feeImpact: 247
+      },
       {
         from: [ { address: 'yNCqctyQaq51WU1hN5aNwsgMsZ5fRiB7GY', addressType: 'external' } ],
         to: [
@@ -446,7 +510,8 @@ describe('Account - getTransactionHistory', () => {
         blockHash: '000000444b3f2f02085f8befe72da5442c865c290658766cf935e1a71a4f4ba7',
         isChainLocked: true,
         isInstantLocked: true,
-        satoshisBalanceImpact: -1150000000
+        satoshisBalanceImpact: -1150000000,
+        feeImpact: 247
       },
       {
         from: [ { address: 'yj8rRKATAUHcAgXvNZekob58xKm2oNyvhv', addressType: 'otherAccount' } ],
@@ -468,7 +533,8 @@ describe('Account - getTransactionHistory', () => {
         blockHash: '000000dffb05c071a8c05082a475b7ce9c1e403f3b89895a6c448fe08535a5f5',
         isChainLocked: true,
         isInstantLocked: true,
-        satoshisBalanceImpact: -9999753
+        satoshisBalanceImpact: 1260000000,
+        feeImpact: 0
       }
     ]
     expect(transactionHistoryHD).to.deep.equal(expectedTransactionHistoryHD);
@@ -482,6 +548,13 @@ describe('Account - getTransactionHistory', () => {
     // mockedPKSelf.walletId = '6101b44d50';
 
     const transactionHistoryPK = await getTransactionHistory.call(mockedPKSelf);
+
+    const balanceImpact = transactionHistoryPK.reduce((acc, item) => {
+      return acc + item.satoshisBalanceImpact - item.feeImpact
+    },0);
+
+    const balance = getTotalBalance.call(mockedPKSelf);
+    expect(balance).to.equal(balanceImpact)
 
     const expectedTransactionHistoryPK = [
       {
@@ -507,7 +580,8 @@ describe('Account - getTransactionHistory', () => {
         blockHash: '0000007b7356e715b43ed7d5b7135fb9a2bf403e079bbcf7faec0f0da5c40117',
         isChainLocked: true,
         isInstantLocked: true,
-        satoshisBalanceImpact: -450000
+        satoshisBalanceImpact: -450000,
+        feeImpact: 247
       },
       {
         from: [ {
@@ -532,7 +606,8 @@ describe('Account - getTransactionHistory', () => {
         blockHash: '0000018b88fe43d07c3d63050aa82271698dc406dd08388529205dd837bf92dc',
         isChainLocked: true,
         isInstantLocked: true,
-        satoshisBalanceImpact: 0
+        satoshisBalanceImpact: 0,
+        feeImpact: 247
       },
       {
         from: [
@@ -563,7 +638,8 @@ describe('Account - getTransactionHistory', () => {
         blockHash: '000000299efeefa87dc15474fd0423c136798975b779a2bb8aa5bb2f50509afb',
         isChainLocked: true,
         isInstantLocked: true,
-        satoshisBalanceImpact: 709450000
+        satoshisBalanceImpact: 709450000,
+        feeImpact: 0
       }
     ]
 

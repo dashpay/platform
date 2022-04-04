@@ -53,6 +53,7 @@ function getTransactionHistory() {
       isChainLocked,
       isInstantLocked,
       satoshisBalanceImpact,
+      feeImpact,
     } = categorizedTransaction;
     const blockHash = categorizedTransaction.blockHash !== ''
       ? categorizedTransaction.blockHash
@@ -75,6 +76,7 @@ function getTransactionHistory() {
       isChainLocked,
       isInstantLocked,
       satoshisBalanceImpact,
+      feeImpact,
     };
 
     transactionHistory.push(normalizedTransactionHistory);

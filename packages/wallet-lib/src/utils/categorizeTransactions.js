@@ -71,9 +71,72 @@ function categorizeTransactions(
     let inputsHasOwnAddress = false;
     let inputsHasUnknownAddress = false;
 
+    /**
+     * Total duffs amount sent with current account (if any)
+     * @type {number}
+     */
+    let totalAccountInput = 0;
+
+    /**
+     * Total duffs amount within the tx outputs
+     * @type {number}
+     */
+    let totalTxOutput = 0;
+
+    /**
+     * Output balance impact
+     * @type {number}
+     */
+    let satoshisBalanceImpact = 0;
+
+    /**
+     * Fee balance impact (in case TX sent with the current account)
+     * @type {number}
+     */
+    let feeImpact = 0;
+
+    // For each vin, we will look at matching known addresses
+    // In order to know the value in, we would require fetching tx for output of vin info
+    transaction.inputs.forEach((vin) => {
+      const { script } = vin;
+      const address = script.toAddress(network).toString();
+      let addressType = 'unknown';
+      if (address) {
+        if (internalAddressesList.includes(address)) {
+          addressType = 'internal';
+          inputsHasChangeAddress = true;
+          inputsHasOwnAddress = true;
+        } else if (externalAddressesList.includes(address)) {
+          addressType = 'external';
+          inputsHasExternalAddress = true;
+          inputsHasOwnAddress = true;
+        } else if (otherAccountAddressesList.includes(address)) {
+          addressType = 'otherAccount';
+          inputsHasOtherAccountAddress = true;
+        } else inputsHasUnknownAddress = true;
+
+        from.push({
+          address,
+          addressType,
+        });
+
+        // Calculates total input amount coming from address belonging to the wallet account
+        const isSendTx = addressType === 'internal' || addressType === 'external';
+        if (isSendTx) {
+          const { prevTxId, outputIndex } = vin;
+          const prevTxHash = prevTxId.toString('hex');
+          const prevTx = transactionsWithMetadata.find(([tx]) => tx.hash === prevTxHash);
+
+          const inputAmount = prevTx[0].outputs[outputIndex].satoshis;
+          totalAccountInput += inputAmount;
+        }
+      }
+    });
+
     // For each vout, we will look at matching known addresses
     transaction.outputs.forEach((vout) => {
       const { satoshis, script } = vout;
+      totalTxOutput += satoshis;
       const address = script.toAddress(network).toString();
       let addressType = 'unknown';
       if (address) {
@@ -94,31 +157,16 @@ function categorizeTransactions(
           satoshis,
           addressType,
         });
-      }
-    });
-    // For each vin, we will look at matching known addresses
-    // In order to know the value in, we would require fetching tx for output of vin info
-    transaction.inputs.forEach((vin) => {
-      const { script } = vin;
-      const address = script.toAddress(network).toString();
-      let addressType = 'unknown';
-      if (address) {
-        if (internalAddressesList.includes(address)) {
-          addressType = 'internal';
-          inputsHasChangeAddress = true;
-          inputsHasOwnAddress = true;
-        } else if (externalAddressesList.includes(address)) {
-          addressType = 'external';
-          inputsHasExternalAddress = true;
-          inputsHasOwnAddress = true;
-        } else if (otherAccountAddressesList.includes(address)) {
-          addressType = 'otherAccount';
-          inputsHasOtherAccountAddress = true;
-        } else inputsHasUnknownAddress = true;
-        from.push({
-          address,
-          addressType,
-        });
+
+        const accountOutput = addressType === 'internal' || addressType === 'external';
+        const receivedFromUnknown = accountOutput && totalAccountInput === 0;
+        const sentToUnknown = !accountOutput && totalAccountInput > 0;
+
+        if (receivedFromUnknown) {
+          satoshisBalanceImpact += satoshis;
+        } else if (sentToUnknown) {
+          satoshisBalanceImpact -= satoshis;
+        }
       }
     });
 
@@ -136,29 +184,8 @@ function categorizeTransactions(
       hasUnknownAddress: outputsHasUnknownAddress,
     });
 
-    // This allows to know what is the impact on the balance.
-    // In case of a change transaction or a transfert from own address to another owned address
-    // such impact would stay 0
-    let satoshisBalanceImpact = 0;
-
-    if (type === 'received') {
-      to.forEach((output) => {
-        if (['external', 'internal'].includes(output.addressType)) {
-          satoshisBalanceImpact += output.satoshis;
-        }
-      });
-    } else if (type === 'sent') {
-      to.forEach((output) => {
-        if (['unknown', 'otherAccount'].includes(output.addressType)) {
-          satoshisBalanceImpact -= output.satoshis;
-        }
-      });
-    } else if (type === 'account_transfer') {
-      to.forEach((output) => {
-        if (['unknown', 'otherAccount'].includes(output.addressType)) {
-          satoshisBalanceImpact -= output.satoshis;
-        }
-      });
+    if (totalAccountInput > 0) {
+      feeImpact = totalAccountInput - totalTxOutput;
     }
 
     const categorizedTransaction = {
@@ -171,6 +198,7 @@ function categorizeTransactions(
       isInstantLocked: metadata.isInstantLocked,
       isChainLocked: metadata.isChainLocked,
       satoshisBalanceImpact,
+      feeImpact,
     };
     categorizedTransactions.push(categorizedTransaction);
   });
