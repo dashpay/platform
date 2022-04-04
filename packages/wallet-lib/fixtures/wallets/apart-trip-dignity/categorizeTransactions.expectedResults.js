@@ -206,9 +206,6 @@ const expectedResultTx8 = {
   satoshisBalanceImpact: -1260000000,
   feeImpact: 247
 };
-
-// TODO: investigate. Seems to be an invalid test case.
-// (all "from" and "to" are of type "otherAccount")
 const expectedResultTx9 = {
   from: [ { address: 'yYJmzWey5kNecAThet5BFxAga1F4b4DKQ2', addressType: 'otherAccount' } ],
   to: [
