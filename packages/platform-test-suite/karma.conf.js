@@ -17,6 +17,7 @@ module.exports = (config) => {
     client: {
       mocha: {
         timeout: 650000,
+        bail: true,
       },
     },
     browserNoActivityTimeout: 900000,
