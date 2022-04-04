@@ -28,6 +28,7 @@ const expectedResultTx1 = {
   isInstantLocked: true,
   isChainLocked: true,
   satoshisBalanceImpact: 187980000,
+  feeImpact: 0
 }
 const expectedResultTx2 = {
   from: [{address: 'yaLhoAZ4iex2zKmfvS9rvEmxXmRiPrjHdD', addressType: "unknown"}],
@@ -51,6 +52,7 @@ const expectedResultTx2 = {
   isInstantLocked: true,
   isChainLocked: true,
   satoshisBalanceImpact: 10000000,
+  feeImpact: 0
 }
 const expectedResultTx3 = {
   from: [ { address: 'yTcjWB7v7opDzpfYKpFdFEtEvSKFsh3bW3', addressType: "unknown" } ],
@@ -73,6 +75,7 @@ const expectedResultTx3 = {
   isInstantLocked: true,
   isChainLocked: true,
   satoshisBalanceImpact: 10000000,
+  feeImpact: 0
 }
 const expectedResultTx4 = {
   from: [
@@ -98,6 +101,7 @@ const expectedResultTx4 = {
   isInstantLocked: true,
   isChainLocked: true,
   satoshisBalanceImpact: 840010000,
+  feeImpact: 0
 }
 const expectedResultTx5 = {
   from: [{address: 'yP8A3cbdxRtLRduy5mXDsBnJtMzHWs6ZXr', addressType: 'unknown'}],
@@ -120,6 +124,7 @@ const expectedResultTx5 = {
   isInstantLocked: true,
   isChainLocked: true,
   satoshisBalanceImpact: 729210000,
+  feeImpact: 0
 };
 const expectedResultTx6 = {
   from: [
@@ -147,7 +152,8 @@ const expectedResultTx6 = {
   height: 558102,
   isInstantLocked: true,
   isChainLocked: true,
-  satoshisBalanceImpact: 0
+  satoshisBalanceImpact: 0,
+  feeImpact: 830
 };
 const expectedResultTx7 = {
   from: [ { address: 'yj8rRKATAUHcAgXvNZekob58xKm2oNyvhv', addressType: "external" } ],
@@ -174,7 +180,8 @@ const expectedResultTx7 = {
   height: 558229,
   isInstantLocked: true,
   isChainLocked: true,
-  satoshisBalanceImpact: 0
+  satoshisBalanceImpact: 0,
+  feeImpact: 280
 };
 const expectedResultTx8 = {
   from: [ { address: 'yj8rRKATAUHcAgXvNZekob58xKm2oNyvhv', addressType: 'external' } ],
@@ -196,8 +203,12 @@ const expectedResultTx8 = {
   height: 558230,
   isInstantLocked: true,
   isChainLocked: true,
-  satoshisBalanceImpact: -1260000000
+  satoshisBalanceImpact: -1260000000,
+  feeImpact: 247
 };
+
+// TODO: investigate. Seems to be an invalid test case.
+// (all "from" and "to" are of type "otherAccount")
 const expectedResultTx9 = {
   from: [ { address: 'yYJmzWey5kNecAThet5BFxAga1F4b4DKQ2', addressType: 'otherAccount' } ],
   to: [
@@ -218,7 +229,8 @@ const expectedResultTx9 = {
   height: 558236,
   isInstantLocked: true,
   isChainLocked: true,
-  satoshisBalanceImpact: -1259999753,
+  satoshisBalanceImpact: 0,
+  feeImpact: 0
 };
 const expectedResultTx10 = {
   from: [ { address: 'yNCqctyQaq51WU1hN5aNwsgMsZ5fRiB7GY', addressType: 'otherAccount' } ],
@@ -240,7 +252,8 @@ const expectedResultTx10 = {
   height: 558242,
   isInstantLocked: true,
   isChainLocked: true,
-  satoshisBalanceImpact: -49999753,
+  satoshisBalanceImpact: 1150000000,
+  feeImpact: 0
 };
 
 const expectedResultTx11 = {
@@ -266,7 +279,8 @@ const expectedResultTx11 = {
   height: 558246,
   isInstantLocked: true,
   isChainLocked: true,
-  satoshisBalanceImpact: -1000000000
+  satoshisBalanceImpact: -1000000000,
+  feeImpact: 394
 };
 
 module.exports = [

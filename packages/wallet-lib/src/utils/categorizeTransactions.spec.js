@@ -103,6 +103,8 @@ describe('Utils - categorizeTransactions', function suite() {
     const result8 = categorizeTransactions(set8, accountStore, accountIndex, walletType);
     expect(normalizeResults(result8)).to.deep.equal(expectedSetResult8)
 
+    // TODO: investigate. Seems to be an invalid test case.
+    // (Check comments to expectedSetResult9)
     const result9 = categorizeTransactions(set9, accountStore, accountIndex, walletType);
     expect(normalizeResults(result9)).to.deep.equal(expectedSetResult9)
 

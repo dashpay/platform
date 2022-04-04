@@ -99,6 +99,12 @@ function categorizeTransactions(
     // In order to know the value in, we would require fetching tx for output of vin info
     transaction.inputs.forEach((vin) => {
       const { script } = vin;
+
+      // Ignore coinbase inputs
+      if (!script) {
+        return;
+      }
+
       const address = script.toAddress(network).toString();
       let addressType = 'unknown';
       if (address) {
@@ -127,8 +133,11 @@ function categorizeTransactions(
           const prevTxHash = prevTxId.toString('hex');
           const prevTx = transactionsWithMetadata.find(([tx]) => tx.hash === prevTxHash);
 
-          const inputAmount = prevTx[0].outputs[outputIndex].satoshis;
-          totalAccountInput += inputAmount;
+          // Previous tx might not be in the app state because of
+          // `skipSynchronizationBeforeHeight` option
+          if (prevTx) {
+            totalAccountInput += prevTx[0].outputs[outputIndex].satoshis;
+          }
         }
       }
     });
