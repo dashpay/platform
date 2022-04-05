@@ -179,10 +179,10 @@ class Account extends EventEmitter {
     this.emit(EVENTS.CREATED, { type: EVENTS.CREATED, payload: null });
 
     /**
-     * Stores promise that waits for the IS lock of the particular transaction
+     * Stores promise that waits for the transaction FETCH event
      * @type {Promise<void>}
      */
-    this.txISLockListener = null;
+    this.txFetchListener = null;
 
     // Increases a limit of max listeners for transactions related events
     // 25 - mempool limit
