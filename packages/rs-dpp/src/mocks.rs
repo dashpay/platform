@@ -43,7 +43,7 @@ pub struct StateRepository {}
 #[async_trait]
 impl StateRepositoryLike for StateRepository {
     /// Fetch the Data Contract by ID
-    async fn fetch_data_contract(_data_contract_id: &Identifier) -> AnyResult<DataContract> {
+    async fn fetch_data_contract(_data_contract_id: &Identifier) -> AnyResult<JsonValue> {
         unimplemented!()
     }
 
@@ -80,7 +80,7 @@ impl StateRepositoryLike for StateRepository {
     }
 
     /// Fetch Identity by ID
-    async fn fetch_identity(_id: &Identifier) -> AnyResult<Identity> {
+    async fn fetch_identity(_id: &Identifier) -> AnyResult<JsonValue> {
         unimplemented!()
     }
 
@@ -100,7 +100,7 @@ impl StateRepositoryLike for StateRepository {
     }
 
     /// Fetch latest platform block header
-    async fn fetch_latest_platform_block_header() -> AnyResult<IHeader> {
+    async fn fetch_latest_platform_block_header() -> AnyResult<JsonValue> {
         unimplemented!()
     }
 
@@ -124,7 +124,7 @@ impl StateRepositoryLike for StateRepository {
     }
 
     /// Fetch Simplified Masternode List Store
-    async fn fetch_sml_store() -> AnyResult<SimplifiedSMListStore> {
+    async fn fetch_sml_store() -> AnyResult<JsonValue> {
         unimplemented!()
     }
 }
