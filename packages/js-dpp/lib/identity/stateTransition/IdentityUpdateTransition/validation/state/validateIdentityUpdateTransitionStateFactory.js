@@ -4,8 +4,8 @@ const IdentityPublicKeyIsReadOnlyError = require('../../../../../errors/consensu
 const InvalidIdentityPublicKeyIdError = require('../../../../../errors/consensus/state/identity/InvalidIdentityPublicKeyIdError');
 const Identity = require('../../../../Identity');
 const IdentityPublicKeyDisabledAtWindowViolationError = require('../../../../../errors/consensus/state/identity/IdentityPublicKeyDisabledAtWindowViolationError');
-
-const BLOCK_TIME_WINDOW_MINUTES = 5;
+const isTimeInBlockTimeWindow = require('../../../../../blockTimeWindow/isTimeInBlockTimeWindow');
+const getBlockTimeWindowRange = require('../../../../../blockTimeWindow/getBlockTimeWindowRange');
 
 /**
  * @param {StateRepository} stateRepository
@@ -31,7 +31,7 @@ function validateIdentityUpdateTransitionStateFactory(
     const storedIdentity = await stateRepository.fetchIdentity(identityId);
 
     // copy identity
-    const identity = (new Identity(storedIdentity.toObject()));
+    const identity = new Identity(storedIdentity.toObject());
 
     // Check revision
     if (identity.getRevision() !== stateTransition.getRevision() - 1) {
@@ -75,23 +75,11 @@ function validateIdentityUpdateTransitionStateFactory(
       // Get last block header time in milliseconds
       const lastBlockHeaderTime = lastBlockHeaderTimeSeconds * 1000;
 
-      // Define time window
-      const timeWindowStart = new Date(lastBlockHeaderTime);
-      timeWindowStart.setMinutes(
-        timeWindowStart.getMinutes() - BLOCK_TIME_WINDOW_MINUTES,
-      );
-
-      const timeWindowEnd = new Date(lastBlockHeaderTime);
-      timeWindowEnd.setMinutes(
-        timeWindowEnd.getMinutes() + BLOCK_TIME_WINDOW_MINUTES,
-      );
-
       const disabledAtTime = stateTransition.getPublicKeysDisabledAt();
 
-      if (
-        disabledAtTime.getTime() < timeWindowStart.getTime()
-        || disabledAtTime.getTime() > timeWindowEnd.getTime()
-      ) {
+      if (!isTimeInBlockTimeWindow(lastBlockHeaderTime, disabledAtTime.getTime())) {
+        const { timeWindowStart, timeWindowEnd } = getBlockTimeWindowRange(lastBlockHeaderTime);
+
         result.addError(
           new IdentityPublicKeyDisabledAtWindowViolationError(
             disabledAtTime,

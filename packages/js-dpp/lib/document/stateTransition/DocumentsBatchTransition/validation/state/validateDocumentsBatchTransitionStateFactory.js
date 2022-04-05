@@ -17,7 +17,8 @@ const DocumentTimestampsMismatchError = require(
 
 const AbstractDocumentTransition = require('../../documentTransition/AbstractDocumentTransition');
 
-const BLOCK_TIME_WINDOW_MINUTES = 5;
+const isTimeInBlockTimeWindow = require('../../../../../blockTimeWindow/isTimeInBlockTimeWindow');
+const getBlockTimeWindowRange = require('../../../../../blockTimeWindow/getBlockTimeWindowRange');
 
 /**
  *
@@ -69,15 +70,7 @@ function validateDocumentsBatchTransitionStateFactory(
     const lastBlockHeaderTime = lastBlockHeaderTimeSeconds * 1000;
 
     // Define time window
-    const timeWindowStart = new Date(lastBlockHeaderTime);
-    timeWindowStart.setMinutes(
-      timeWindowStart.getMinutes() - BLOCK_TIME_WINDOW_MINUTES,
-    );
-
-    const timeWindowEnd = new Date(lastBlockHeaderTime);
-    timeWindowEnd.setMinutes(
-      timeWindowEnd.getMinutes() + BLOCK_TIME_WINDOW_MINUTES,
-    );
+    const { timeWindowStart, timeWindowEnd } = getBlockTimeWindowRange(lastBlockHeaderTime);
 
     // Validate document action, ownerId, revision and timestamps
     documentTransitions
@@ -106,8 +99,7 @@ function validateDocumentsBatchTransitionStateFactory(
             if (documentTransition.getCreatedAt() !== undefined) {
               const createdAtTime = documentTransition.getCreatedAt().getTime();
 
-              // TODO: Why we comparing dates and numbers?
-              if (createdAtTime < timeWindowStart || createdAtTime > timeWindowEnd) {
+              if (!isTimeInBlockTimeWindow(lastBlockHeaderTime, createdAtTime)) {
                 result.addError(
                   new DocumentTimestampWindowViolationError(
                     'createdAt',
@@ -124,8 +116,7 @@ function validateDocumentsBatchTransitionStateFactory(
             if (documentTransition.getUpdatedAt() !== undefined) {
               const updatedAtTime = documentTransition.getUpdatedAt().getTime();
 
-              // TODO: Why we comparing dates and numbers?
-              if (updatedAtTime < timeWindowStart || updatedAtTime > timeWindowEnd) {
+              if (!isTimeInBlockTimeWindow(lastBlockHeaderTime, updatedAtTime)) {
                 result.addError(
                   new DocumentTimestampWindowViolationError(
                     'updatedAt',
@@ -149,7 +140,7 @@ function validateDocumentsBatchTransitionStateFactory(
             if (documentTransition.getUpdatedAt() !== undefined) {
               const updatedAtTime = documentTransition.getUpdatedAt().getTime();
 
-              if (updatedAtTime < timeWindowStart || updatedAtTime > timeWindowEnd) {
+              if (!isTimeInBlockTimeWindow(lastBlockHeaderTime, updatedAtTime)) {
                 result.addError(
                   new DocumentTimestampWindowViolationError(
                     'updatedAt',
