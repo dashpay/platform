@@ -62,7 +62,7 @@ module.exports = (config) => {
           bufferutil: require.resolve('bufferutil/'),
           tls: require.resolve('tls/'),
           net: require.resolve('net/'),
-          ['utf-8-validate']: require.resolve('utf-8-validate/'),
+          'utf-8-validate': require.resolve('utf-8-validate/'),
           string_decoder: require.resolve('string_decoder/'),
         },
         extensions: ['.ts', '.js', '.json'],
