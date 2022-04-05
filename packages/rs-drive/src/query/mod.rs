@@ -139,7 +139,7 @@ fn sql_value_to_cbor(sql_value: ast::Value) -> Option<CborValue> {
     }
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Default)]
 pub struct InternalClauses {
     primary_key_in_clause: Option<WhereClause>,
     primary_key_equal_clause: Option<WhereClause>,

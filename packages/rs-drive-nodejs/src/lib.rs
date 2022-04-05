@@ -267,8 +267,9 @@ impl DriveWrapper {
 
         drive
             .send_to_drive_thread(move |drive: &Drive, transaction, channel| {
-                let result = drive.apply_contract(
+                let result = drive.apply_contract_cbor(
                     contract_cbor,
+                    None,
                     block_time,
                     using_transaction.then(|| transaction).flatten(),
                 );
@@ -278,12 +279,20 @@ impl DriveWrapper {
                     let this = task_context.undefined();
 
                     let callback_arguments: Vec<Handle<JsValue>> = match result {
-                        Ok(score) => {
+                        Ok((storage_fee, processing_fee)) => {
+                            let js_array: Handle<JsArray> = task_context.empty_array();
+
+                            let storage_fee_value =
+                                task_context.number(storage_fee as f64).upcast::<JsValue>();
+                            let processing_fee_value = task_context
+                                .number(processing_fee as f64)
+                                .upcast::<JsValue>();
+
+                            js_array.set(&mut task_context, 0, storage_fee_value)?;
+                            js_array.set(&mut task_context, 1, processing_fee_value)?;
+
                             // First parameter of JS callbacks is error, which is null in this case
-                            vec![
-                                task_context.null().upcast(),
-                                task_context.number(score as f64).upcast(),
-                            ]
+                            vec![task_context.null().upcast(), js_array.upcast()]
                         }
 
                         // Convert the error to a JavaScript exception on failure
@@ -339,12 +348,20 @@ impl DriveWrapper {
                     let this = task_context.undefined();
 
                     let callback_arguments: Vec<Handle<JsValue>> = match result {
-                        Ok(score) => {
+                        Ok((storage_fee, processing_fee)) => {
+                            let js_array: Handle<JsArray> = task_context.empty_array();
+
+                            let storage_fee_value =
+                                task_context.number(storage_fee as f64).upcast::<JsValue>();
+                            let processing_fee_value = task_context
+                                .number(processing_fee as f64)
+                                .upcast::<JsValue>();
+
+                            js_array.set(&mut task_context, 0, storage_fee_value)?;
+                            js_array.set(&mut task_context, 1, processing_fee_value)?;
+
                             // First parameter of JS callbacks is error, which is null in this case
-                            vec![
-                                task_context.null().upcast(),
-                                task_context.number(score as f64).upcast(),
-                            ]
+                            vec![task_context.null().upcast(), js_array.upcast()]
                         }
 
                         // Convert the error to a JavaScript exception on failure
@@ -397,12 +414,20 @@ impl DriveWrapper {
                     let this = task_context.undefined();
 
                     let callback_arguments: Vec<Handle<JsValue>> = match result {
-                        Ok(score) => {
+                        Ok((storage_fee, processing_fee)) => {
+                            let js_array: Handle<JsArray> = task_context.empty_array();
+
+                            let storage_fee_value =
+                                task_context.number(storage_fee as f64).upcast::<JsValue>();
+                            let processing_fee_value = task_context
+                                .number(processing_fee as f64)
+                                .upcast::<JsValue>();
+
+                            js_array.set(&mut task_context, 0, storage_fee_value)?;
+                            js_array.set(&mut task_context, 1, processing_fee_value)?;
+
                             // First parameter of JS callbacks is error, which is null in this case
-                            vec![
-                                task_context.null().upcast(),
-                                task_context.number(score as f64).upcast(),
-                            ]
+                            vec![task_context.null().upcast(), js_array.upcast()]
                         }
 
                         // Convert the error to a JavaScript exception on failure
@@ -461,12 +486,20 @@ impl DriveWrapper {
                         let this = task_context.undefined();
 
                         let callback_arguments: Vec<Handle<JsValue>> = match result {
-                            Ok(score) => {
+                            Ok((storage_fee, processing_fee)) => {
+                                let js_array: Handle<JsArray> = task_context.empty_array();
+
+                                let storage_fee_value =
+                                    task_context.number(storage_fee as f64).upcast::<JsValue>();
+                                let processing_fee_value = task_context
+                                    .number(processing_fee as f64)
+                                    .upcast::<JsValue>();
+
+                                js_array.set(&mut task_context, 0, storage_fee_value)?;
+                                js_array.set(&mut task_context, 1, processing_fee_value)?;
+
                                 // First parameter of JS callbacks is error, which is null in this case
-                                vec![
-                                    task_context.null().upcast(),
-                                    task_context.number(score as f64).upcast(),
-                                ]
+                                vec![task_context.null().upcast(), js_array.upcast()]
                             }
 
                             // Convert the error to a JavaScript exception on failure

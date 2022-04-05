@@ -1,11 +1,16 @@
 mod defaults;
 pub mod types;
 
+use crate::drive::defaults::{DEFAULT_HASH_SIZE, PROTOCOL_VERSION};
 use crate::drive::{Drive, RootTree};
+use byteorder::{BigEndian, WriteBytesExt};
 use ciborium::value::{Value as CborValue, Value};
 use grovedb::Error;
+use rand::rngs::StdRng;
+use rand::{Rng, SeedableRng};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap};
+use std::fmt;
 
 // contract
 // - id
@@ -32,15 +37,18 @@ pub struct Contract {
 pub struct DocumentType {
     pub name: String,
     pub indices: Vec<Index>,
-    pub properties: HashMap<String, types::DocumentFieldType>,
+    pub properties: BTreeMap<String, types::DocumentFieldType>,
     pub documents_keep_history: bool,
     pub documents_mutable: bool,
 }
 
 #[derive(Serialize, Deserialize, Debug, PartialEq)]
 pub struct Document {
+    #[serde(rename = "$id")]
     pub id: [u8; 32],
-    pub properties: HashMap<String, CborValue>,
+    #[serde(flatten)]
+    pub properties: BTreeMap<String, CborValue>,
+    #[serde(rename = "$ownerId")]
     pub owner_id: [u8; 32],
 }
 
@@ -130,13 +138,13 @@ impl Index {
 
 #[derive(Clone, Serialize, Deserialize, Debug, PartialEq)]
 pub struct IndexProperty {
-    pub(crate) name: String,
-    pub(crate) ascending: bool,
+    pub name: String,
+    pub ascending: bool,
 }
 
 // Struct Implementations
 impl Contract {
-    pub fn from_cbor(contract_cbor: &[u8]) -> Result<Self, Error> {
+    pub fn from_cbor(contract_cbor: &[u8], contract_id: Option<[u8; 32]>) -> Result<Self, Error> {
         let (version, read_contract_cbor) = contract_cbor.split_at(4);
         if !Drive::check_protocol_version_bytes(version) {
             return Err(Error::CorruptedData(String::from(
@@ -144,42 +152,58 @@ impl Contract {
             )));
         }
         // Deserialize the contract
-        let contract: HashMap<String, CborValue> = ciborium::de::from_reader(read_contract_cbor)
-            .map_err(|_| Error::CorruptedData(String::from("unable to decode contract")))?;
+        let contract: BTreeMap<String, CborValue> =
+            ciborium::de::from_reader(read_contract_cbor)
+                .map_err(|_| Error::CorruptedData(String::from("unable to decode contract")))?;
 
         // Get the contract id
-        let contract_id: [u8; 32] = bytes_for_system_value_from_hash_map(&contract, "$id")?
-            .ok_or_else(|| Error::CorruptedData(String::from("unable to get contract id")))?
-            .try_into()
-            .map_err(|_| Error::CorruptedData(String::from("contract_id must be 32 bytes")))?;
+        let contract_id: [u8; 32] = if let Some(contract_id) = contract_id {
+            contract_id
+        } else {
+            bytes_for_system_value_from_tree_map(&contract, "$id")?
+                .ok_or_else(|| Error::CorruptedData(String::from("unable to get contract id")))?
+                .try_into()
+                .map_err(|_| Error::CorruptedData(String::from("contract_id must be 32 bytes")))?
+        };
 
         // Does the contract keep history when the contract itself changes?
-        let keeps_history: bool = bool_for_system_value_from_hash_map(
+        let keeps_history: bool = bool_for_system_value_from_tree_map(
             &contract,
             "keepsHistory",
             crate::contract::defaults::DEFAULT_CONTRACT_KEEPS_HISTORY,
         )?;
 
         // Is the contract mutable?
-        let readonly: bool = bool_for_system_value_from_hash_map(
+        let readonly: bool = bool_for_system_value_from_tree_map(
             &contract,
             "readOnly",
             !crate::contract::defaults::DEFAULT_CONTRACT_MUTABILITY,
         )?;
 
         // Do documents in the contract keep history?
-        let documents_keep_history_contract_default: bool = bool_for_system_value_from_hash_map(
+        let documents_keep_history_contract_default: bool = bool_for_system_value_from_tree_map(
             &contract,
             "documentsKeepHistoryContractDefault",
             crate::contract::defaults::DEFAULT_CONTRACT_DOCUMENTS_KEEPS_HISTORY,
         )?;
 
         // Are documents in the contract mutable?
-        let documents_mutable_contract_default: bool = bool_for_system_value_from_hash_map(
+        let documents_mutable_contract_default: bool = bool_for_system_value_from_tree_map(
             &contract,
             "documentsMutableContractDefault",
             crate::contract::defaults::DEFAULT_CONTRACT_DOCUMENT_MUTABILITY,
         )?;
+
+        let definition_references = match contract.get("$defs") {
+            None => BTreeMap::new(),
+            Some(definition_value) => {
+                let definition_map = definition_value.as_map();
+                match definition_map {
+                    None => BTreeMap::new(),
+                    Some(key_value) => cbor_map_to_btree_map(key_value),
+                }
+            }
+        };
 
         let documents_cbor_value = contract
             .get("documents")
@@ -208,6 +232,7 @@ impl Contract {
             let document_type = DocumentType::from_cbor_value(
                 type_key_value.as_text().expect("confirmed as text"),
                 document_type_value.as_map().expect("confirmed as map"),
+                &definition_references,
                 documents_keep_history_contract_default,
                 documents_mutable_contract_default,
             )?;
@@ -264,7 +289,7 @@ impl Contract {
     pub fn documents_with_history_primary_key_path<'a>(
         &'a self,
         document_type_name: &'a str,
-        id: &'a Vec<u8>,
+        id: &'a [u8],
     ) -> [&'a [u8]; 6] {
         [
             Into::<&[u8; 1]>::into(RootTree::ContractDocuments),
@@ -274,6 +299,12 @@ impl Contract {
             &[0],
             id,
         ]
+    }
+
+    pub fn document_type_for_name(&self, document_type_name: &str) -> Result<&DocumentType, Error> {
+        self.document_types.get(document_type_name).ok_or_else(|| {
+            Error::CorruptedData(String::from("can not get document type from contract"))
+        })
     }
 }
 
@@ -315,7 +346,7 @@ impl DocumentType {
                 let field_type = self.properties.get(key).ok_or_else(|| {
                     Error::CorruptedData(String::from("expected document to have field"))
                 })?;
-                types::encode_document_field_type(field_type, value)
+                field_type.encode_value(value)
             }
         }
     }
@@ -323,10 +354,11 @@ impl DocumentType {
     pub fn from_cbor_value(
         name: &str,
         document_type_value_map: &[(Value, Value)],
+        definition_references: &BTreeMap<String, &Value>,
         default_keeps_history: bool,
         default_mutability: bool,
     ) -> Result<Self, Error> {
-        let mut document_properties: HashMap<String, types::DocumentFieldType> = HashMap::new();
+        let mut document_properties: BTreeMap<String, types::DocumentFieldType> = BTreeMap::new();
 
         // Do documents of this type keep history? (Overrides contract value)
         let documents_keep_history: bool = cbor_inner_bool_value_with_default(
@@ -342,32 +374,29 @@ impl DocumentType {
             default_mutability,
         );
 
-        let index_values = match cbor_inner_array_value(document_type_value_map, "indices") {
-            Some(index_values) => index_values,
+        let index_values = cbor_inner_array_value(document_type_value_map, "indices");
+        let indices: Vec<Index> = match index_values {
             None => {
-                return Ok(DocumentType {
-                    name: String::from(name),
-                    indices: vec![],
-                    properties: document_properties,
-                    documents_keep_history,
-                    documents_mutable,
-                })
+                vec![]
+            }
+            Some(index_values) => {
+                let mut m_indexes = Vec::with_capacity(index_values.len());
+                for index_value in index_values {
+                    if !index_value.is_map() {
+                        return Err(Error::CorruptedData(String::from(
+                            "table document is not a map as expected",
+                        )));
+                    }
+                    let index =
+                        Index::from_cbor_value(index_value.as_map().expect("confirmed as map"))?;
+                    m_indexes.push(index);
+                }
+                m_indexes
             }
         };
 
-        let mut indices: Vec<Index> = Vec::with_capacity(index_values.len());
-        for index_value in index_values {
-            if !index_value.is_map() {
-                return Err(Error::CorruptedData(String::from(
-                    "table document is not a map as expected",
-                )));
-            }
-            let index = Index::from_cbor_value(index_value.as_map().expect("confirmed as map"))?;
-            indices.push(index);
-        }
-
         // Extract the properties
-        let property_values = cbor_inner_map_value(document_type_value_map, "properties")
+        let property_values = cbor_inner_btree_map(document_type_value_map, "properties")
             .ok_or_else(|| {
                 Error::CorruptedData(String::from(
                     "unable to get document properties from the contract",
@@ -375,25 +404,15 @@ impl DocumentType {
             })?;
 
         fn insert_values(
-            document_properties: &mut HashMap<String, types::DocumentFieldType>,
+            document_properties: &mut BTreeMap<String, types::DocumentFieldType>,
             prefix: Option<&str>,
-            property_key: &Value,
+            property_key: String,
             property_value: &Value,
+            definition_references: &BTreeMap<String, &Value>,
         ) -> Result<(), Error> {
-            if !property_key.is_text() {
-                return Err(Error::CorruptedData(String::from(
-                    "property key should be text",
-                )));
-            }
-
-            let property_key_string = property_key
-                .as_text()
-                .expect("confirmed as text")
-                .to_string();
-
             let prefixed_property_key = match prefix {
-                None => property_key_string,
-                Some(prefix) => [prefix, property_key_string.as_str()].join("."),
+                None => property_key,
+                Some(prefix) => [prefix, property_key.as_str()].join("."),
             };
 
             if !property_value.is_map() {
@@ -403,8 +422,36 @@ impl DocumentType {
             }
 
             let inner_property_values = property_value.as_map().expect("confirmed as map");
-            let type_value = cbor_inner_text_value(inner_property_values, "type")
-                .ok_or_else(|| Error::CorruptedData(String::from("cannot find type property")))?;
+            let base_inner_properties = cbor_map_to_btree_map(inner_property_values);
+
+            let type_value = cbor_inner_text_value(inner_property_values, "type");
+            let result: Result<(&str, BTreeMap<String, &Value>), Error> = match type_value {
+                None => {
+                    let ref_value = btree_map_inner_text_value(&base_inner_properties, "$ref")
+                        .ok_or_else(|| {
+                            Error::CorruptedData(String::from("cannot find type property"))
+                        })?;
+                    if !ref_value.starts_with("#/$defs/") {
+                        return Err(Error::CorruptedData(String::from("malformed reference")));
+                    }
+                    let ref_value = ref_value.split_at(8).1;
+                    let inner_properties_map =
+                        btree_map_inner_map_value(definition_references, ref_value).ok_or_else(
+                            || Error::CorruptedData(String::from("document reference not found")),
+                        )?;
+                    let type_value = cbor_inner_text_value(inner_properties_map, "type")
+                        .ok_or_else(|| {
+                            Error::CorruptedData(String::from(
+                                "cannot find type property on reference",
+                            ))
+                        })?;
+                    let inner_properties = cbor_map_to_btree_map(inner_properties_map);
+                    Ok((type_value, inner_properties))
+                }
+                Some(type_value) => Ok((type_value, base_inner_properties)),
+            };
+
+            let (type_value, inner_properties) = result?;
 
             let field_type: types::DocumentFieldType;
 
@@ -412,10 +459,13 @@ impl DocumentType {
                 "array" => {
                     // Only handling bytearrays for v1
                     // Return an error if it is not a byte array
-                    field_type = match cbor_inner_bool_value(inner_property_values, "byteArray") {
+                    field_type = match btree_map_inner_bool_value(&inner_properties, "byteArray") {
                         Some(inner_bool) => {
                             if inner_bool {
-                                types::DocumentFieldType::ByteArray
+                                types::DocumentFieldType::ByteArray(
+                                    btree_map_inner_size_value(&inner_properties, "minItems"),
+                                    btree_map_inner_size_value(&inner_properties, "maxItems"),
+                                )
                             } else {
                                 return Err(Error::CorruptedData(String::from("invalid type")));
                             }
@@ -426,20 +476,28 @@ impl DocumentType {
                     document_properties.insert(prefixed_property_key, field_type);
                 }
                 "object" => {
-                    let properties = cbor_inner_map_value(inner_property_values, "properties")
+                    let properties = btree_map_inner_btree_map(&inner_properties, "properties")
                         .ok_or_else(|| {
                             Error::CorruptedData(String::from(
                                 "cannot find byteArray property for array type",
                             ))
                         })?;
-                    for (object_property_key, object_property_value) in properties.iter() {
+                    for (object_property_key, object_property_value) in properties.into_iter() {
                         insert_values(
                             document_properties,
                             Some(&prefixed_property_key),
                             object_property_key,
                             object_property_value,
+                            definition_references,
                         )?
                     }
+                }
+                "string" => {
+                    field_type = types::DocumentFieldType::String(
+                        btree_map_inner_size_value(&inner_properties, "minLength"),
+                        btree_map_inner_size_value(&inner_properties, "maxLength"),
+                    );
+                    document_properties.insert(prefixed_property_key, field_type);
                 }
                 _ => {
                     field_type = types::string_to_field_type(type_value)
@@ -452,7 +510,13 @@ impl DocumentType {
 
         // Based on the property name, determine the type
         for (property_key, property_value) in property_values {
-            insert_values(&mut document_properties, None, property_key, property_value)?;
+            insert_values(
+                &mut document_properties,
+                None,
+                property_key,
+                property_value,
+                definition_references,
+            )?;
         }
 
         // Add system properties
@@ -468,6 +532,13 @@ impl DocumentType {
         })
     }
 
+    pub fn max_size(&self) -> usize {
+        self.properties
+            .iter()
+            .filter_map(|(_, document_field_type)| document_field_type.max_byte_size())
+            .sum()
+    }
+
     pub fn top_level_indices(&self) -> Result<Vec<&IndexProperty>, Error> {
         let mut index_properties: Vec<&IndexProperty> = Vec::with_capacity(self.indices.len());
         for index in &self.indices {
@@ -476,6 +547,80 @@ impl DocumentType {
             }
         }
         Ok(index_properties)
+    }
+
+    pub fn random_documents(&self, count: u32, seed: Option<u64>) -> Vec<Document> {
+        let mut rng = match seed {
+            None => rand::rngs::StdRng::from_entropy(),
+            Some(seed_value) => rand::rngs::StdRng::seed_from_u64(seed_value),
+        };
+        let mut vec: Vec<Document> = vec![];
+        for _i in 0..count {
+            vec.push(self.random_document_with_rng(&mut rng));
+        }
+        vec
+    }
+
+    pub fn random_document(&self, seed: Option<u64>) -> Document {
+        let mut rng = match seed {
+            None => rand::rngs::StdRng::from_entropy(),
+            Some(seed_value) => rand::rngs::StdRng::seed_from_u64(seed_value),
+        };
+        self.random_document_with_rng(&mut rng)
+    }
+
+    pub fn random_document_with_rng(&self, rng: &mut StdRng) -> Document {
+        let id = rng.gen::<[u8; 32]>();
+        let owner_id = rng.gen::<[u8; 32]>();
+        let properties = self
+            .properties
+            .iter()
+            .map(|(key, document_field_type)| (key.clone(), document_field_type.random_value(rng)))
+            .collect();
+
+        Document {
+            id,
+            properties,
+            owner_id,
+        }
+    }
+
+    pub fn random_filled_documents(&self, count: u32, seed: Option<u64>) -> Vec<Document> {
+        let mut rng = match seed {
+            None => rand::rngs::StdRng::from_entropy(),
+            Some(seed_value) => rand::rngs::StdRng::seed_from_u64(seed_value),
+        };
+        let mut vec: Vec<Document> = vec![];
+        for _i in 0..count {
+            vec.push(self.random_filled_document_with_rng(&mut rng));
+        }
+        vec
+    }
+
+    pub fn random_filled_document(&self, seed: Option<u64>) -> Document {
+        let mut rng = match seed {
+            None => rand::rngs::StdRng::from_entropy(),
+            Some(seed_value) => rand::rngs::StdRng::seed_from_u64(seed_value),
+        };
+        self.random_filled_document_with_rng(&mut rng)
+    }
+
+    pub fn random_filled_document_with_rng(&self, rng: &mut StdRng) -> Document {
+        let id = rng.gen::<[u8; 32]>();
+        let owner_id = rng.gen::<[u8; 32]>();
+        let properties = self
+            .properties
+            .iter()
+            .map(|(key, document_field_type)| {
+                (key.clone(), document_field_type.random_filled_value(rng))
+            })
+            .collect();
+
+        Document {
+            id,
+            properties,
+            owner_id,
+        }
     }
 }
 
@@ -493,14 +638,14 @@ impl Document {
         }
         // first we need to deserialize the document and contract indices
         // we would need dedicated deserialization functions based on the document type
-        let mut document: HashMap<String, CborValue> =
+        let mut document: BTreeMap<String, CborValue> =
             ciborium::de::from_reader(read_document_cbor)
                 .map_err(|_| Error::CorruptedData(String::from("unable to decode contract")))?;
 
         let owner_id: [u8; 32] = match owner_id {
             None => {
                 let owner_id: Vec<u8> =
-                    bytes_for_system_value_from_hash_map(&document, "$ownerId")?.ok_or_else(
+                    bytes_for_system_value_from_tree_map(&document, "$ownerId")?.ok_or_else(
                         || Error::CorruptedData(String::from("unable to get document $ownerId")),
                     )?;
                 document.remove("$ownerId");
@@ -521,7 +666,7 @@ impl Document {
 
         let id: [u8; 32] = match document_id {
             None => {
-                let document_id: Vec<u8> = bytes_for_system_value_from_hash_map(&document, "$id")?
+                let document_id: Vec<u8> = bytes_for_system_value_from_tree_map(&document, "$id")?
                     .ok_or_else(|| {
                         Error::CorruptedData(String::from("unable to get document $id"))
                     })?;
@@ -572,7 +717,7 @@ impl Document {
 
         // first we need to deserialize the document and contract indices
         // we would need dedicated deserialization functions based on the document type
-        let properties: HashMap<String, CborValue> = ciborium::de::from_reader(read_document_cbor)
+        let properties: BTreeMap<String, CborValue> = ciborium::de::from_reader(read_document_cbor)
             .map_err(|_| Error::CorruptedData(String::from("unable to decode contract")))?;
 
         // dev-note: properties is everything other than the id and owner id
@@ -585,6 +730,15 @@ impl Document {
                 .try_into()
                 .expect("try_into shouldn't fail, document_id must be 32 bytes"),
         })
+    }
+
+    pub fn to_cbor(&self) -> Vec<u8> {
+        let mut buffer: Vec<u8> = Vec::new();
+        buffer
+            .write_u32::<BigEndian>(PROTOCOL_VERSION)
+            .expect("writign protocol version caused error");
+        ciborium::ser::into_writer(&self, &mut buffer).expect("unable to serialize into cbor");
+        buffer
     }
 
     pub fn get_raw_for_document_type<'a>(
@@ -656,6 +810,51 @@ impl Document {
                 Error::CorruptedData(String::from("document type should exist for name"))
             })?;
         self.get_raw_for_document_type(key, document_type, owner_id)
+    }
+}
+
+fn reduced_value_string_representation(value: &Value) -> String {
+    match value {
+        Value::Integer(integer) => {
+            let i: i128 = (*integer).try_into().unwrap();
+            format!("{}", i)
+        }
+        Value::Bytes(bytes) => hex::encode(bytes),
+        Value::Float(float) => {
+            format!("{}", float)
+        }
+        Value::Text(text) => {
+            let len = text.len();
+            if len > 20 {
+                let first_text = text.split_at(20).0.to_string();
+                format!("{}[...({})]", first_text, len)
+            } else {
+                text.clone()
+            }
+        }
+        Value::Bool(b) => {
+            format!("{}", b)
+        }
+        Value::Null => "None".to_string(),
+        Value::Tag(_, _) => "Tag".to_string(),
+        Value::Array(_) => "Array".to_string(),
+        Value::Map(_) => "Map".to_string(),
+        _ => "".to_string(),
+    }
+}
+
+impl fmt::Display for Document {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "id:{} ", bs58::encode(self.id).into_string())?;
+        write!(f, "owner_id:{} ", bs58::encode(self.owner_id).into_string())?;
+        if self.properties.is_empty() {
+            write!(f, "no properties")?;
+        } else {
+            for (key, value) in self.properties.iter() {
+                write!(f, "{}:{} ", key, reduced_value_string_representation(value))?
+            }
+        }
+        Ok(())
     }
 }
 
@@ -756,6 +955,13 @@ pub fn get_key_from_cbor_map<'a>(
     None
 }
 
+pub fn cbor_map_to_btree_map(cbor_map: &[(Value, Value)]) -> BTreeMap<String, &Value> {
+    cbor_map
+        .iter()
+        .filter_map(|(key, value)| key.as_text().map(|key| (key.to_string(), value)))
+        .collect::<BTreeMap<String, &Value>>()
+}
+
 pub fn cbor_inner_array_value<'a>(
     document_type: &'a [(Value, Value)],
     key: &'a str,
@@ -778,11 +984,55 @@ pub fn cbor_inner_map_value<'a>(
     None
 }
 
+pub fn cbor_inner_btree_map<'a>(
+    document_type: &'a [(Value, Value)],
+    key: &'a str,
+) -> Option<BTreeMap<String, &'a Value>> {
+    let key_value = get_key_from_cbor_map(document_type, key)?;
+    if let Value::Map(map_value) = key_value {
+        return Some(cbor_map_to_btree_map(map_value));
+    }
+    None
+}
+
+pub fn btree_map_inner_btree_map<'a>(
+    document_type: &'a BTreeMap<String, &'a Value>,
+    key: &'a str,
+) -> Option<BTreeMap<String, &'a Value>> {
+    let key_value = document_type.get(key)?;
+    if let Value::Map(map_value) = key_value {
+        return Some(cbor_map_to_btree_map(map_value));
+    }
+    None
+}
+
+pub fn btree_map_inner_map_value<'a>(
+    document_type: &'a BTreeMap<String, &'a Value>,
+    key: &'a str,
+) -> Option<&'a Vec<(Value, Value)>> {
+    let key_value = document_type.get(key)?;
+    if let Value::Map(map_value) = key_value {
+        return Some(map_value);
+    }
+    None
+}
+
 pub fn cbor_inner_text_value<'a>(
     document_type: &'a [(Value, Value)],
     key: &'a str,
 ) -> Option<&'a str> {
     let key_value = get_key_from_cbor_map(document_type, key)?;
+    if let Value::Text(string_value) = key_value {
+        return Some(string_value);
+    }
+    None
+}
+
+pub fn btree_map_inner_text_value<'a>(
+    document_type: &'a BTreeMap<String, &'a Value>,
+    key: &'a str,
+) -> Option<&'a str> {
+    let key_value = document_type.get(key)?;
     if let Value::Text(string_value) = key_value {
         return Some(string_value);
     }
@@ -828,6 +1078,50 @@ pub fn cbor_inner_bool_value(document_type: &[(Value, Value)], key: &str) -> Opt
     None
 }
 
+pub fn btree_map_inner_bool_value(
+    document_type: &BTreeMap<String, &Value>,
+    key: &str,
+) -> Option<bool> {
+    let key_value = document_type.get(key)?;
+    if let Value::Bool(bool_value) = key_value {
+        return Some(*bool_value);
+    }
+    None
+}
+
+pub fn cbor_inner_size_value(document_type: &[(Value, Value)], key: &str) -> Option<usize> {
+    let key_value = get_key_from_cbor_map(document_type, key)?;
+    if let Value::Integer(integer) = key_value {
+        let value_as_usize: Result<usize, Error> = (*integer)
+            .try_into()
+            .map_err(|_| Error::CorruptedData(String::from("expected u8 value")));
+        match value_as_usize {
+            Ok(size) => Some(size),
+            Err(_) => None,
+        }
+    } else {
+        None
+    }
+}
+
+pub fn btree_map_inner_size_value(
+    document_type: &BTreeMap<String, &Value>,
+    key: &str,
+) -> Option<usize> {
+    let key_value = document_type.get(key)?;
+    if let Value::Integer(integer) = key_value {
+        let value_as_usize: Result<usize, Error> = (*integer)
+            .try_into()
+            .map_err(|_| Error::CorruptedData(String::from("expected u8 value")));
+        match value_as_usize {
+            Ok(size) => Some(size),
+            Err(_) => None,
+        }
+    } else {
+        None
+    }
+}
+
 fn cbor_inner_bool_value_with_default(
     document_type: &[(Value, Value)],
     key: &str,
@@ -863,8 +1157,8 @@ pub fn bytes_for_system_value(value: &Value) -> Result<Option<Vec<u8>>, Error> {
     }
 }
 
-fn bytes_for_system_value_from_hash_map(
-    document: &HashMap<String, CborValue>,
+fn bytes_for_system_value_from_tree_map(
+    document: &BTreeMap<String, CborValue>,
     key: &str,
 ) -> Result<Option<Vec<u8>>, Error> {
     let value = document.get(key);
@@ -875,8 +1169,8 @@ fn bytes_for_system_value_from_hash_map(
     }
 }
 
-fn bool_for_system_value_from_hash_map(
-    document: &HashMap<String, CborValue>,
+fn bool_for_system_value_from_tree_map(
+    document: &BTreeMap<String, CborValue>,
     key: &str,
     default: bool,
 ) -> Result<bool, Error> {
@@ -897,7 +1191,7 @@ fn bool_for_system_value_from_hash_map(
 #[cfg(test)]
 mod tests {
     use crate::common::json_document_to_cbor;
-    use crate::contract::Contract;
+    use crate::contract::{Contract, Document};
     use crate::drive::Drive;
     use std::collections::HashMap;
 
@@ -912,12 +1206,50 @@ mod tests {
     }
 
     #[test]
+    fn test_document_cbor_serialization() {
+        let dashpay_cbor = json_document_to_cbor(
+            "tests/supporting_files/contract/dashpay/dashpay-contract.json",
+            Some(1),
+        );
+        let contract = Contract::from_cbor(&dashpay_cbor, None).unwrap();
+
+        let document_type = contract
+            .document_type_for_name("profile")
+            .expect("expected to get profile document type");
+        let document = document_type.random_document(Some(3333));
+
+        let document_cbor = document.to_cbor();
+
+        let recovered_document = Document::from_cbor(document_cbor.as_slice(), None, None)
+            .expect("expected to get document");
+
+        assert_eq!(recovered_document, document);
+    }
+
+    #[test]
+    fn test_document_display() {
+        let dashpay_cbor = json_document_to_cbor(
+            "tests/supporting_files/contract/dashpay/dashpay-contract.json",
+            Some(1),
+        );
+        let contract = Contract::from_cbor(&dashpay_cbor, None).unwrap();
+
+        let document_type = contract
+            .document_type_for_name("profile")
+            .expect("expected to get profile document type");
+        let document = document_type.random_document(Some(3333));
+
+        let document_string = format!("{}", document);
+        assert_eq!(document_string.as_str(), "id:2vq574DjKi7ZD8kJ6dMHxT5wu6ZKD2bW5xKAyKAGW7qZ owner_id:ChTEGXJcpyknkADUC5s6tAzvPqVG7x6Lo1Nr5mFtj2mk $createdAt:1627081806.116 $updatedAt:1575820087.909 avatarUrl:W18RuyblDX7hxB38OJYt[...(894)] displayName:wvAD8Grs2h publicMessage:LdWpGtOzOkYXStdxU3G0[...(105)] ")
+    }
+
+    #[test]
     fn test_import_contract() {
         let dashpay_cbor = json_document_to_cbor(
             "tests/supporting_files/contract/dashpay/dashpay-contract.json",
             Some(1),
         );
-        let contract = Contract::from_cbor(&dashpay_cbor).unwrap();
+        let contract = Contract::from_cbor(&dashpay_cbor, None).unwrap();
 
         assert!(contract.documents_mutable_contract_default);
         assert!(!contract.keeps_history);

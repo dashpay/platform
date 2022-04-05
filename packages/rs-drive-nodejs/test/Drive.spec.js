@@ -48,7 +48,7 @@ describe('Drive', () => {
     it('should create contract if not exists', async () => {
       const result = await drive.applyContract(dataContract, blockTime);
       blockTime.setSeconds(blockTime.getSeconds() + 10);
-      expect(result).to.equals(0);
+      expect(result).to.have.deep.members([12345000, 25030]);
     });
 
     it('should update existing contract', async () => {
@@ -66,7 +66,7 @@ describe('Drive', () => {
       blockTime.setSeconds(blockTime.getSeconds() + 10);
       const result = await drive.applyContract(dataContract, blockTime);
 
-      expect(result).to.equals(0);
+      expect(result).to.have.deep.members([11455000, 31120]);
     });
   });
 
@@ -83,7 +83,7 @@ describe('Drive', () => {
 
         const result = await drive.createDocument(documentWithoutIndices, blockTime);
 
-        expect(result).to.equals(0);
+        expect(result).to.have.deep.members([1145000, 3080]);
       });
     });
 
@@ -93,7 +93,7 @@ describe('Drive', () => {
 
         const result = await drive.createDocument(documentWithIndices, blockTime);
 
-        expect(result).to.equals(0);
+        expect(result).to.have.deep.members([5015000, 25880]);
       });
     });
   });
@@ -117,7 +117,7 @@ describe('Drive', () => {
 
         const result = await drive.updateDocument(documentWithoutIndices, blockTime);
 
-        expect(result).to.equals(0);
+        expect(result).to.have.deep.members([1135000, 3060]);
       });
     });
 
@@ -133,7 +133,7 @@ describe('Drive', () => {
 
         const result = await drive.updateDocument(documentWithIndices, blockTime);
 
-        expect(result).to.equals(0);
+        expect(result).to.have.deep.members([1785000, 7400]);
       });
     });
   });
@@ -158,7 +158,7 @@ describe('Drive', () => {
           documentWithoutIndices.getId(),
         );
 
-        expect(result).to.equals(0);
+        expect(result).to.have.deep.members([0, 820]);
       });
     });
 
@@ -175,7 +175,7 @@ describe('Drive', () => {
           documentWithIndices.getId(),
         );
 
-        expect(result).to.equals(0);
+        expect(result).to.have.deep.members([0, 820]);
       });
     });
   });

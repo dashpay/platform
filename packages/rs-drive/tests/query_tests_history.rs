@@ -3,11 +3,14 @@ use rand::seq::SliceRandom;
 use rand::{Rng, SeedableRng};
 use rs_drive::common;
 use rs_drive::contract::{Contract, Document};
+use rs_drive::drive::object_size_info::DocumentAndContractInfo;
+use rs_drive::drive::object_size_info::DocumentInfo::DocumentAndSerialization;
 use rs_drive::drive::Drive;
 use rs_drive::query::DriveQuery;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::collections::{BTreeMap, HashMap};
+use std::option::Option::None;
 use tempfile::TempDir;
 
 #[derive(Serialize, Deserialize)]
@@ -102,6 +105,7 @@ pub fn setup(count: u32, seed: u64) -> (Drive, Contract, TempDir) {
     let contract = common::setup_contract(
         &drive,
         "tests/supporting_files/contract/family/family-contract-with-history.json",
+        None,
         Some(&db_transaction),
     );
 
@@ -115,13 +119,18 @@ pub fn setup(count: u32, seed: u64) -> (Drive, Contract, TempDir) {
                 common::value_to_cbor(value, Some(rs_drive::drive::defaults::PROTOCOL_VERSION));
             let document = Document::from_cbor(document_cbor.as_slice(), None, None)
                 .expect("document should be properly deserialized");
+            let document_type = contract
+                .document_type_for_name("person")
+                .expect("expected to get document type");
+
             drive
                 .add_document_for_contract(
-                    &document,
-                    &document_cbor,
-                    &contract,
-                    "person",
-                    None,
+                    DocumentAndContractInfo {
+                        document_info: DocumentAndSerialization((&document, &document_cbor)),
+                        contract: &contract,
+                        document_type,
+                        owner_id: None,
+                    },
                     true,
                     block_time as f64,
                     Some(&db_transaction),
@@ -149,8 +158,8 @@ fn test_query_historical() {
     assert_eq!(
         root_hash.expect("cannot get root hash").as_slice(),
         vec![
-            125, 137, 75, 199, 156, 47, 45, 33, 28, 176, 102, 223, 138, 123, 160, 249, 12, 238,
-            111, 104, 25, 38, 11, 25, 64, 11, 66, 16, 39, 66, 53, 118
+            137, 193, 34, 204, 185, 74, 170, 109, 71, 9, 110, 13, 159, 52, 138, 229, 181, 203, 88,
+            13, 184, 0, 246, 212, 248, 28, 19, 172, 70, 186, 15, 234
         ]
     );
 
@@ -674,6 +683,7 @@ fn test_query_historical() {
         .execute_no_proof(&drive.grove, None)
         .expect("proof should be executed");
     let names: Vec<String> = results
+        .clone()
         .into_iter()
         .map(|result| {
             let document = Document::from_cbor(result.as_slice(), None, None)
@@ -689,15 +699,37 @@ fn test_query_historical() {
         })
         .collect();
 
+    let ages: Vec<u64> = results
+        .into_iter()
+        .map(|result| {
+            let document = Document::from_cbor(result.as_slice(), None, None)
+                .expect("we should be able to deserialize the cbor");
+            let age_value = document
+                .properties
+                .get("age")
+                .expect("we should be able to get the age");
+            let age: u64 = age_value
+                .as_integer()
+                .expect("the age should be an integer")
+                .try_into()
+                .expect("the age should be put in an u64");
+            age
+        })
+        .collect();
+
     let expected_reversed_between_names = [
-        "Noellyn".to_string(),
-        "Meta".to_string(),
-        "Kevina".to_string(),
-        "Gilligan".to_string(),
-        "Dalia".to_string(),
+        "Noellyn".to_string(),  // 40
+        "Meta".to_string(),     // 69
+        "Kevina".to_string(),   // 58
+        "Gilligan".to_string(), // 59
+        "Dalia".to_string(),    // 78
     ];
 
     assert_eq!(names, expected_reversed_between_names);
+
+    let expected_ages = [40, 69, 58, 59, 78];
+
+    assert_eq!(ages, expected_ages);
 
     // A query getting back elements having specific names and over a certain age
 
@@ -738,6 +770,7 @@ fn test_query_historical() {
         })
         .collect();
 
+    // Kevina is 55, and is excluded from this test
     let expected_names_45_over = [
         "Dalia".to_string(),
         "Gilligan".to_string(),
@@ -752,7 +785,7 @@ fn test_query_historical() {
     let query_value = json!({
         "where": [
             ["firstName", "in", names],
-            ["age", ">", 48]
+            ["age", ">", 58]
         ],
         "limit": 100,
         "orderBy": [
@@ -852,13 +885,18 @@ fn test_query_historical() {
     let document = Document::from_cbor(person_cbor.as_slice(), None, None)
         .expect("document should be properly deserialized");
 
+    let document_type = contract
+        .document_type_for_name("person")
+        .expect("expected to get document type");
+
     drive
         .add_document_for_contract(
-            &document,
-            &person_cbor,
-            &contract,
-            "person",
-            None,
+            DocumentAndContractInfo {
+                document_info: DocumentAndSerialization((&document, &person_cbor)),
+                contract: &contract,
+                document_type,
+                owner_id: None,
+            },
             true,
             0f64,
             Some(&db_transaction),
@@ -888,13 +926,18 @@ fn test_query_historical() {
     let document = Document::from_cbor(person_cbor.as_slice(), None, None)
         .expect("document should be properly deserialized");
 
+    let document_type = contract
+        .document_type_for_name("person")
+        .expect("expected to get document type");
+
     drive
         .add_document_for_contract(
-            &document,
-            &person_cbor,
-            &contract,
-            "person",
-            None,
+            DocumentAndContractInfo {
+                document_info: DocumentAndSerialization((&document, &person_cbor)),
+                contract: &contract,
+                document_type,
+                owner_id: None,
+            },
             true,
             0f64,
             Some(&db_transaction),
@@ -1235,7 +1278,7 @@ fn test_query_historical() {
     let contract_cbor = hex::decode("01000000a5632469645820b0248cd9a27f86d05badf475dd9ff574d63219cd60c52e2be1e540c2fdd713336724736368656d61783468747470733a2f2f736368656d612e646173682e6f72672f6470702d302d342d302f6d6574612f646174612d636f6e7472616374676f776e6572496458204c9bf0db6ae315c85465e9ef26e6a006de9673731d08d14881945ddef1b5c5f26776657273696f6e0169646f63756d656e7473a267636f6e74616374a56474797065666f626a65637467696e646963657381a3646e616d656f6f6e7765724964546f55736572496466756e69717565f56a70726f7065727469657382a168246f776e6572496463617363a168746f557365724964636173636872657175697265648268746f557365724964697075626c69634b65796a70726f70657274696573a268746f557365724964a56474797065656172726179686d61784974656d731820686d696e4974656d73182069627974654172726179f570636f6e74656e744d656469615479706578216170706c69636174696f6e2f782e646173682e6470702e6964656e746966696572697075626c69634b6579a36474797065656172726179686d61784974656d73182169627974654172726179f5746164646974696f6e616c50726f70657274696573f46770726f66696c65a56474797065666f626a65637467696e646963657381a3646e616d65676f776e6572496466756e69717565f56a70726f7065727469657381a168246f776e6572496463617363687265717569726564826961766174617255726c6561626f75746a70726f70657274696573a26561626f7574a2647479706566737472696e67696d61784c656e67746818ff6961766174617255726ca3647479706566737472696e6766666f726d61746375726c696d61784c656e67746818ff746164646974696f6e616c50726f70657274696573f4").unwrap();
 
     drive
-        .apply_contract(contract_cbor.clone(), 0f64, Some(&db_transaction))
+        .apply_contract_cbor(contract_cbor.clone(), None, 0f64, Some(&db_transaction))
         .expect("expected to apply contract successfully");
 
     let query_value = json!({
@@ -1323,8 +1366,8 @@ fn test_query_historical() {
     assert_eq!(
         root_hash.expect("cannot get root hash").as_slice(),
         vec![
-            221, 95, 96, 231, 160, 120, 76, 199, 100, 155, 238, 231, 184, 168, 157, 198, 13, 181,
-            98, 234, 67, 93, 211, 112, 14, 115, 235, 31, 184, 234, 157, 131
+            17, 174, 123, 35, 185, 226, 133, 245, 130, 254, 27, 4, 102, 87, 63, 165, 251, 234, 214,
+            168, 120, 175, 145, 223, 214, 254, 175, 24, 54, 121, 66, 236
         ]
     );
 }
