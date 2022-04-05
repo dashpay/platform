@@ -95,12 +95,20 @@ impl DocumentBaseTransition {
 }
 
 impl DocumentTransitionObjectLike for DocumentBaseTransition {
+    fn from_json_str(json_str: &str, data_contract: DataContract) -> Result<Self, ProtocolError> {
+        let mut document: DocumentBaseTransition = serde_json::from_str(json_str)?;
+        document.data_contract_id = data_contract.id.clone();
+        document.data_contract = data_contract;
+        Ok(document)
+    }
+
     fn from_raw_document(
         mut raw_transition: JsonValue,
         data_contract: DataContract,
     ) -> Result<DocumentBaseTransition, ProtocolError> {
         Self::identifiers_to_strings(&mut raw_transition)?;
         let mut document: DocumentBaseTransition = serde_json::from_value(raw_transition)?;
+        document.data_contract_id = data_contract.id.clone();
         document.data_contract = data_contract;
 
         Ok(document)
@@ -131,6 +139,11 @@ impl DocumentTransitionObjectLike for DocumentBaseTransition {
 }
 
 pub trait DocumentTransitionObjectLike {
+    /// Creates the Document Transition from JSON representation. The JSON representation contains
+    /// binary data encoded in base64, Identifiers encoded in base58
+    fn from_json_str(json_str: &str, data_contract: DataContract) -> Result<Self, ProtocolError>
+    where
+        Self: std::marker::Sized;
     /// Creates the document transition from Raw Object
     fn from_raw_document(
         raw_transition: JsonValue,

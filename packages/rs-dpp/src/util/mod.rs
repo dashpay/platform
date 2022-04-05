@@ -1,4 +1,5 @@
 pub mod deserializer;
+pub mod entropy_generator;
 pub mod hash;
 pub mod json_path;
 pub mod json_schema;

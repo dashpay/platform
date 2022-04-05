@@ -9,6 +9,22 @@ use thiserror::Error;
 use crate::state_repository::StateRepositoryLike;
 
 #[derive(Debug, Clone)]
+pub struct DashPlatformProtocol {}
+impl DashPlatformProtocol {
+    pub fn get_protocol_version(&self) -> u32 {
+        unimplemented!()
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct ValidateDataContract {}
+impl ValidateDataContract {}
+
+#[derive(Debug, Clone)]
+pub struct DecodeProtocolIdentity {}
+impl DecodeProtocolIdentity {}
+
+#[derive(Debug, Clone)]
 pub struct DocumentTransition {
     pub action: String,
 }
