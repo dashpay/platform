@@ -1,0 +1,674 @@
+{
+  "$id": "9Lo6Fq1idp7YG3Egqf2YmQk4DQr9P8D543GwXyCJRyG",
+  "$defs": {"regex":{"type":"string","maxLength":63}},
+  "documents": {
+    "note": {
+      "type": "object",
+      "indices": [
+        {
+          "name": "unique0",
+          "properties": [
+            {
+              "abc0": "asc"
+            },
+            {
+              "abc1": "asc"
+            },
+            {
+              "abc2": "asc"
+            },
+            {
+              "abc3": "asc"
+            },
+            {
+              "abc4": "asc"
+            },
+            {
+              "abc5": "asc"
+            },
+            {
+              "abc6": "asc"
+            },
+            {
+              "abc7": "asc"
+            },
+            {
+              "abc8": "asc"
+            },
+            {
+              "abc9": "asc"
+            }
+          ],
+          "unique": true
+        },
+        {
+          "name": "unique1",
+          "properties": [
+            {
+              "abc10": "asc"
+            },
+            {
+              "abc11": "asc"
+            },
+            {
+              "abc12": "asc"
+            },
+            {
+              "abc13": "asc"
+            },
+            {
+              "abc14": "asc"
+            },
+            {
+              "abc15": "asc"
+            },
+            {
+              "abc16": "asc"
+            },
+            {
+              "abc17": "asc"
+            },
+            {
+              "abc18": "asc"
+            },
+            {
+              "abc19": "asc"
+            }
+          ],
+          "unique": true
+        },
+        {
+          "name": "unique2",
+          "properties": [
+            {
+              "abc20": "asc"
+            },
+            {
+              "abc21": "asc"
+            },
+            {
+              "abc22": "asc"
+            },
+            {
+              "abc23": "asc"
+            },
+            {
+              "abc24": "asc"
+            },
+            {
+              "abc25": "asc"
+            },
+            {
+              "abc26": "asc"
+            },
+            {
+              "abc27": "asc"
+            },
+            {
+              "abc28": "asc"
+            },
+            {
+              "abc29": "asc"
+            }
+          ],
+          "unique": true
+        },
+        {
+          "name": "non_unique0",
+          "properties": [
+            {
+              "abc30": "asc"
+            },
+            {
+              "abc31": "asc"
+            },
+            {
+              "abc32": "asc"
+            },
+            {
+              "abc33": "asc"
+            },
+            {
+              "abc34": "asc"
+            },
+            {
+              "abc35": "asc"
+            },
+            {
+              "abc36": "asc"
+            },
+            {
+              "abc37": "asc"
+            },
+            {
+              "abc38": "asc"
+            },
+            {
+              "abc39": "asc"
+            }
+          ],
+          "unique": false
+        },
+        {
+          "name": "non_unique1",
+          "properties": [
+            {
+              "abc40": "asc"
+            },
+            {
+              "abc41": "asc"
+            },
+            {
+              "abc42": "asc"
+            },
+            {
+              "abc43": "asc"
+            },
+            {
+              "abc44": "asc"
+            },
+            {
+              "abc45": "asc"
+            },
+            {
+              "abc46": "asc"
+            },
+            {
+              "abc47": "asc"
+            },
+            {
+              "abc48": "asc"
+            },
+            {
+              "abc49": "asc"
+            }
+          ],
+          "unique": false
+        },
+        {
+          "name": "non_unique2",
+          "properties": [
+            {
+              "abc50": "asc"
+            },
+            {
+              "abc51": "asc"
+            },
+            {
+              "abc52": "asc"
+            },
+            {
+              "abc53": "asc"
+            },
+            {
+              "abc54": "asc"
+            },
+            {
+              "abc55": "asc"
+            },
+            {
+              "abc56": "asc"
+            },
+            {
+              "abc57": "asc"
+            },
+            {
+              "abc58": "asc"
+            },
+            {
+              "abc59": "asc"
+            }
+          ],
+          "unique": false
+        },
+        {
+          "name": "non_unique3",
+          "properties": [
+            {
+              "abc60": "asc"
+            },
+            {
+              "abc61": "asc"
+            },
+            {
+              "abc62": "asc"
+            },
+            {
+              "abc63": "asc"
+            },
+            {
+              "abc64": "asc"
+            },
+            {
+              "abc65": "asc"
+            },
+            {
+              "abc66": "asc"
+            },
+            {
+              "abc67": "asc"
+            },
+            {
+              "abc68": "asc"
+            },
+            {
+              "abc69": "asc"
+            }
+          ],
+          "unique": false
+        },
+        {
+          "name": "non_unique4",
+          "properties": [
+            {
+              "abc70": "asc"
+            },
+            {
+              "abc71": "asc"
+            },
+            {
+              "abc72": "asc"
+            },
+            {
+              "abc73": "asc"
+            },
+            {
+              "abc74": "asc"
+            },
+            {
+              "abc75": "asc"
+            },
+            {
+              "abc76": "asc"
+            },
+            {
+              "abc77": "asc"
+            },
+            {
+              "abc78": "asc"
+            },
+            {
+              "abc79": "asc"
+            }
+          ],
+          "unique": false
+        },
+        {
+          "name": "non_unique5",
+          "properties": [
+            {
+              "abc80": "asc"
+            },
+            {
+              "abc81": "asc"
+            },
+            {
+              "abc82": "asc"
+            },
+            {
+              "abc83": "asc"
+            },
+            {
+              "abc84": "asc"
+            },
+            {
+              "abc85": "asc"
+            },
+            {
+              "abc86": "asc"
+            },
+            {
+              "abc87": "asc"
+            },
+            {
+              "abc88": "asc"
+            },
+            {
+              "abc89": "asc"
+            }
+          ],
+          "unique": false
+        },
+        {
+          "name": "non_unique6",
+          "properties": [
+            {
+              "abc90": "asc"
+            },
+            {
+              "abc91": "asc"
+            },
+            {
+              "abc92": "asc"
+            },
+            {
+              "abc93": "asc"
+            },
+            {
+              "abc94": "asc"
+            },
+            {
+              "abc95": "asc"
+            },
+            {
+              "abc96": "asc"
+            },
+            {
+              "abc97": "asc"
+            },
+            {
+              "abc98": "asc"
+            },
+            {
+              "abc99": "asc"
+            }
+          ],
+          "unique": false
+        }
+      ],
+      "properties": {
+        "abc0": {
+          "$ref": "#/$defs/regex"
+        },
+        "abc1": {
+          "$ref": "#/$defs/regex"
+        },
+        "abc2": {
+          "$ref": "#/$defs/regex"
+        },
+        "abc3": {
+          "$ref": "#/$defs/regex"
+        },
+        "abc4": {
+          "$ref": "#/$defs/regex"
+        },
+        "abc5": {
+          "$ref": "#/$defs/regex"
+        },
+        "abc6": {
+          "$ref": "#/$defs/regex"
+        },
+        "abc7": {
+          "$ref": "#/$defs/regex"
+        },
+        "abc8": {
+          "$ref": "#/$defs/regex"
+        },
+        "abc9": {
+          "$ref": "#/$defs/regex"
+        },
+        "abc10": {
+          "$ref": "#/$defs/regex"
+        },
+        "abc11": {
+          "$ref": "#/$defs/regex"
+        },
+        "abc12": {
+          "$ref": "#/$defs/regex"
+        },
+        "abc13": {
+          "$ref": "#/$defs/regex"
+        },
+        "abc14": {
+          "$ref": "#/$defs/regex"
+        },
+        "abc15": {
+          "$ref": "#/$defs/regex"
+        },
+        "abc16": {
+          "$ref": "#/$defs/regex"
+        },
+        "abc17": {
+          "$ref": "#/$defs/regex"
+        },
+        "abc18": {
+          "$ref": "#/$defs/regex"
+        },
+        "abc19": {
+          "$ref": "#/$defs/regex"
+        },
+        "abc20": {
+          "$ref": "#/$defs/regex"
+        },
+        "abc21": {
+          "$ref": "#/$defs/regex"
+        },
+        "abc22": {
+          "$ref": "#/$defs/regex"
+        },
+        "abc23": {
+          "$ref": "#/$defs/regex"
+        },
+        "abc24": {
+          "$ref": "#/$defs/regex"
+        },
+        "abc25": {
+          "$ref": "#/$defs/regex"
+        },
+        "abc26": {
+          "$ref": "#/$defs/regex"
+        },
+        "abc27": {
+          "$ref": "#/$defs/regex"
+        },
+        "abc28": {
+          "$ref": "#/$defs/regex"
+        },
+        "abc29": {
+          "$ref": "#/$defs/regex"
+        },
+        "abc30": {
+          "$ref": "#/$defs/regex"
+        },
+        "abc31": {
+          "$ref": "#/$defs/regex"
+        },
+        "abc32": {
+          "$ref": "#/$defs/regex"
+        },
+        "abc33": {
+          "$ref": "#/$defs/regex"
+        },
+        "abc34": {
+          "$ref": "#/$defs/regex"
+        },
+        "abc35": {
+          "$ref": "#/$defs/regex"
+        },
+        "abc36": {
+          "$ref": "#/$defs/regex"
+        },
+        "abc37": {
+          "$ref": "#/$defs/regex"
+        },
+        "abc38": {
+          "$ref": "#/$defs/regex"
+        },
+        "abc39": {
+          "$ref": "#/$defs/regex"
+        },
+        "abc40": {
+          "$ref": "#/$defs/regex"
+        },
+        "abc41": {
+          "$ref": "#/$defs/regex"
+        },
+        "abc42": {
+          "$ref": "#/$defs/regex"
+        },
+        "abc43": {
+          "$ref": "#/$defs/regex"
+        },
+        "abc44": {
+          "$ref": "#/$defs/regex"
+        },
+        "abc45": {
+          "$ref": "#/$defs/regex"
+        },
+        "abc46": {
+          "$ref": "#/$defs/regex"
+        },
+        "abc47": {
+          "$ref": "#/$defs/regex"
+        },
+        "abc48": {
+          "$ref": "#/$defs/regex"
+        },
+        "abc49": {
+          "$ref": "#/$defs/regex"
+        },
+        "abc50": {
+          "$ref": "#/$defs/regex"
+        },
+        "abc51": {
+          "$ref": "#/$defs/regex"
+        },
+        "abc52": {
+          "$ref": "#/$defs/regex"
+        },
+        "abc53": {
+          "$ref": "#/$defs/regex"
+        },
+        "abc54": {
+          "$ref": "#/$defs/regex"
+        },
+        "abc55": {
+          "$ref": "#/$defs/regex"
+        },
+        "abc56": {
+          "$ref": "#/$defs/regex"
+        },
+        "abc57": {
+          "$ref": "#/$defs/regex"
+        },
+        "abc58": {
+          "$ref": "#/$defs/regex"
+        },
+        "abc59": {
+          "$ref": "#/$defs/regex"
+        },
+        "abc60": {
+          "$ref": "#/$defs/regex"
+        },
+        "abc61": {
+          "$ref": "#/$defs/regex"
+        },
+        "abc62": {
+          "$ref": "#/$defs/regex"
+        },
+        "abc63": {
+          "$ref": "#/$defs/regex"
+        },
+        "abc64": {
+          "$ref": "#/$defs/regex"
+        },
+        "abc65": {
+          "$ref": "#/$defs/regex"
+        },
+        "abc66": {
+          "$ref": "#/$defs/regex"
+        },
+        "abc67": {
+          "$ref": "#/$defs/regex"
+        },
+        "abc68": {
+          "$ref": "#/$defs/regex"
+        },
+        "abc69": {
+          "$ref": "#/$defs/regex"
+        },
+        "abc70": {
+          "$ref": "#/$defs/regex"
+        },
+        "abc71": {
+          "$ref": "#/$defs/regex"
+        },
+        "abc72": {
+          "$ref": "#/$defs/regex"
+        },
+        "abc73": {
+          "$ref": "#/$defs/regex"
+        },
+        "abc74": {
+          "$ref": "#/$defs/regex"
+        },
+        "abc75": {
+          "$ref": "#/$defs/regex"
+        },
+        "abc76": {
+          "$ref": "#/$defs/regex"
+        },
+        "abc77": {
+          "$ref": "#/$defs/regex"
+        },
+        "abc78": {
+          "$ref": "#/$defs/regex"
+        },
+        "abc79": {
+          "$ref": "#/$defs/regex"
+        },
+        "abc80": {
+          "$ref": "#/$defs/regex"
+        },
+        "abc81": {
+          "$ref": "#/$defs/regex"
+        },
+        "abc82": {
+          "$ref": "#/$defs/regex"
+        },
+        "abc83": {
+          "$ref": "#/$defs/regex"
+        },
+        "abc84": {
+          "$ref": "#/$defs/regex"
+        },
+        "abc85": {
+          "$ref": "#/$defs/regex"
+        },
+        "abc86": {
+          "$ref": "#/$defs/regex"
+        },
+        "abc87": {
+          "$ref": "#/$defs/regex"
+        },
+        "abc88": {
+          "$ref": "#/$defs/regex"
+        },
+        "abc89": {
+          "$ref": "#/$defs/regex"
+        },
+        "abc90": {
+          "$ref": "#/$defs/regex"
+        },
+        "abc91": {
+          "$ref": "#/$defs/regex"
+        },
+        "abc92": {
+          "$ref": "#/$defs/regex"
+        },
+        "abc93": {
+          "$ref": "#/$defs/regex"
+        },
+        "abc94": {
+          "$ref": "#/$defs/regex"
+        },
+        "abc95": {
+          "$ref": "#/$defs/regex"
+        },
+        "abc96": {
+          "$ref": "#/$defs/regex"
+        },
+        "abc97": {
+          "$ref": "#/$defs/regex"
+        },
+        "abc98": {
+          "$ref": "#/$defs/regex"
+        },
+        "abc99": {
+          "$ref": "#/$defs/regex"
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}

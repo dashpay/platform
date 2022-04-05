@@ -1,7 +1,7 @@
 [package]
 name = "rs-drive"
 description = "Dash drive built on top of GroveDB"
-version = "0.23.0-dev.1"
+version = "0.23.0-dev.2"
 edition = "2021"
 license = "MIT"
 private = true
@@ -20,11 +20,12 @@ rand_distr = "0.4.3"
 tempfile = "3"
 serde_json = "1.0.73"
 sqlparser = "0.13.0"
+enum-map = "2.0.3"
 
 [dependencies.grovedb]
 git = "https://github.com/dashevo/grovedb"
-branch = "master"
+branch = "develop"
 
 [dependencies.storage]
 git = "https://github.com/dashevo/grovedb"
-branch = "master"
+branch = "develop"
