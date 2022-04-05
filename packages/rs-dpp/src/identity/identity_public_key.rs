@@ -1,9 +1,10 @@
 use crate::errors::ProtocolError;
 use anyhow::anyhow;
-use dashcore::PublicKey;
+use libsecp256k1::PublicKey;
 use lazy_static::lazy_static;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::{collections::HashMap, hash::Hash};
+use std::iter::FromIterator;
 
 pub type KeyID = i64;
 
@@ -171,10 +172,20 @@ impl IdentityPublicKey {
         }
 
         // TODO create another error type
-        let original_key = PublicKey::from_slice(&self.data)
+        let public_key = vec_to_array(&self.data);
+        let original_key = PublicKey::parse(&public_key)
             .map_err(|e| anyhow!("unable to create pub key - {}", e))?;
-        Ok(original_key.pubkey_hash().to_vec())
+        // TODO: hash the key
+        Ok(original_key.serialize().to_vec())
     }
+}
+
+fn vec_to_array(vec: &Vec<u8>) -> [u8; 65] {
+    let mut v: [u8; 65] = [0; 65];
+    for i in 0..65 {
+        v[i] = *vec.get(i).unwrap();
+    }
+    v
 }
 
 pub fn de_base64_to_vec<'de, D: Deserializer<'de>>(d: D) -> Result<Vec<u8>, D::Error> {
