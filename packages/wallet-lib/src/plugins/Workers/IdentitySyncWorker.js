@@ -26,7 +26,8 @@ class IdentitySyncWorker extends Worker {
   }
 
   async execute() {
-    const indexedIds = await this.storage.getIndexedIdentityIds(this.walletId);
+    const walletStore = this.storage.getWalletStore(this.walletId);
+    const indexedIds = await walletStore.getIndexedIdentityIds();
 
     // Add gaps to empty indices
     const unusedIndices = [];
@@ -100,11 +101,12 @@ class IdentitySyncWorker extends Worker {
       logger.silly(`IdentitySyncWorker - got ${Identifier.from(fetchedId)} at ${index}`);
 
       // eslint-disable-next-line no-await-in-loop
-      await this.storage.insertIdentityIdAtIndex(
-        this.walletId,
-        Identifier.from(fetchedId).toString(),
-        index,
-      );
+      await this.storage
+        .getWalletStore(this.walletId)
+        .insertIdentityIdAtIndex(
+          Identifier.from(fetchedId).toString(),
+          index,
+        );
     }
 
     logger.silly('IdentitySyncWorker - sync finished');

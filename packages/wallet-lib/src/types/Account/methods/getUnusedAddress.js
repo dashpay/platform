@@ -1,5 +1,3 @@
-const logger = require('../../../logger');
-
 /**
  * Get an unused address from the store
  * @param {AddressType} [type="external"] - Type of the requested usused address
@@ -10,27 +8,44 @@ function getUnusedAddress(type = 'external', skip = 0) {
   let unused = {
     address: '',
   };
-  let skipped = 0;
+  const skipped = 0;
   const { walletId } = this;
   const accountIndex = this.index;
-  const keys = Object.keys(this.store.wallets[walletId].addresses[type])
-  // We filter out other potential account
-    .filter((el) => parseInt(el.split('/')[3], 10) === accountIndex);
+
+  const { addresses } = this.storage.getWalletStore(walletId).getPathState(this.accountPath);
+
+  const chainStore = this.storage.getChainStore(this.network);
+
+  // We sort by type
+  const sortedAddresses = {
+    external: {},
+    internal: {},
+  };
+  Object
+    .keys(addresses)
+    .forEach((path) => {
+      const splittedPath = path.split('/');
+      let pathType = 'external';
+      if (splittedPath.length > 1) {
+        pathType = (splittedPath[splittedPath.length - 2] === '0') ? 'external' : 'internal';
+      }
+      sortedAddresses[pathType][path] = addresses[path];
+    });
+
+  const keys = Object.keys(sortedAddresses[type]);
 
   for (let i = 0; i < keys.length; i += 1) {
     const key = keys[i];
-    const el = (this.store.wallets[walletId].addresses[type][key]);
-
-    if (!el || !el.address || el.address === '') {
-      logger.warn('getUnusedAddress received an empty one.', el, i, skipped);
-    }
-    unused = el;
-    if (el.used === false) {
-      if (skipped < skip) {
-        skipped += 1;
-      } else {
-        break;
-      }
+    const address = (sortedAddresses[type][key]);
+    const addressState = chainStore.getAddress(address);
+    if (!addressState || addressState.transactions.length === 0) {
+      const keychainData = this.keyChainStore.getMasterKeyChain().getForPath(key);
+      unused = {
+        address: keychainData.address.toString(),
+        path: key,
+        index: parseInt(key.split('/').splice(-1)[0], 10),
+      };
+      break;
     }
   }
 
@@ -40,11 +55,6 @@ function getUnusedAddress(type = 'external', skip = 0) {
   if (unused.address === '') {
     return this.getAddress(accountIndex, type);
   }
-
-  if (!this.storage.mappedAddress[unused.address]) {
-    this.storage.mappedAddress[unused.address] = { walletId, type, path: unused.path };
-  }
-
   return unused;
 }
 

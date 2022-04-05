@@ -4,7 +4,7 @@ const sweepWallet = require('./sweepWallet');
 
 const paperWallet = {
   publicKey: 'ybvbBPisVjiemj4qSg1mzZAzTSAPk64Ppf',
-  privateKey: 'XE6ZTNwkjyuryGho75fAfCBBtL8rMy9ttLq1ANLF1TmMo2zwZXHq',
+  privateKey: '53d0f7df9103127f159f939438254011f6fa11df18a843d3962313e38938f020',
 };
 
 describe('Wallet - sweepWallet', function suite() {
@@ -12,11 +12,11 @@ describe('Wallet - sweepWallet', function suite() {
   let emptyWallet;
   let emptyAccount;
   const transportOpts = (process.env.DAPI_SEED)
-      ? {
-        seeds: process.env.DAPI_SEED
-            .split(',')
-      }
-      : {}
+    ? {
+      seeds: process.env.DAPI_SEED
+        .split(',')
+    }
+    : {}
   before(async () => {
     emptyWallet = new Wallet({
       privateKey: paperWallet.privateKey,

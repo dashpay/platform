@@ -110,8 +110,9 @@ describe('e2e', () => {
 
         let transactions = restoredAccount.getTransactions();
 
-        // Wait for new block if transaction has not been propagated yet
         if (Object.keys(transactions).length === 0) {
+          // Due to the limitations of DAPI, we need to wait for a block to be mined if we connected
+          // in the moment when transaction already entered the mempool, but haven't been mined yet
           await new Promise((resolve) => restoredAccount.once(EVENTS.BLOCKHEADER, resolve));
           transactions = restoredAccount.getTransactions();
         }

@@ -1,5 +1,4 @@
 const Identifier = require('@dashevo/dpp/lib/identifier/Identifier');
-const { hash } = require('@dashevo/dpp/lib/util/hash');
 const IdentityPublicKey = require('@dashevo/dpp/lib/identity/IdentityPublicKey');
 const createOperatorIdentifier = require('./createOperatorIdentifier');
 
@@ -31,7 +30,7 @@ function handleNewMasternodeFactory(
 
     // Create a masternode identity
     const masternodeIdentifier = Identifier.from(
-      hash(proRegTxHash),
+      proRegTxHash,
     );
 
     const publicKey = Buffer.from(proRegTxPayload.keyIDOwner, 'hex').reverse();

@@ -36,7 +36,7 @@ function importState(state) {
     this.importTransaction(new Transaction(Buffer.from(serializedTransaction, 'hex')), metadata);
   });
   Object.values(instantLocks).forEach((serializedInstantLock) => {
-    this.importTransaction(new InstantLock(Buffer.from(serializedInstantLock, 'hex')));
+    this.importInstantLock(new InstantLock(Buffer.from(serializedInstantLock, 'hex')));
   });
 }
 module.exports = importState;

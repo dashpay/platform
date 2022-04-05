@@ -4,7 +4,6 @@ const {
 } = require('@dashevo/masternode-reward-shares-contract/lib/systemIds');
 
 const generateRandomIdentifier = require('@dashevo/dpp/lib/test/utils/generateRandomIdentifier');
-const { hash } = require('@dashevo/dpp/lib/util/hash');
 
 const DashPlatformProtocol = require('@dashevo/dpp/lib/DashPlatformProtocol');
 const IdentityPublicKey = require('@dashevo/dpp/lib/identity/IdentityPublicKey');
@@ -81,9 +80,7 @@ describe('Masternode Reward Shares', () => {
         this.skip('masternode owner credentials are not set');
       }
 
-      const ownerIdentifier = hash(
-        Buffer.from(process.env.MASTERNODE_REWARD_SHARES_OWNER_PRO_REG_TX_HASH, 'hex'),
-      );
+      const ownerIdentifier = Buffer.from(process.env.MASTERNODE_REWARD_SHARES_OWNER_PRO_REG_TX_HASH, 'hex');
 
       masternodeIdentity = await client.platform.identities.get(ownerIdentifier);
 

@@ -1,6 +1,5 @@
 const DataTriggerConditionError = require('../../errors/consensus/state/dataContract/dataTrigger/DataTriggerConditionError');
 const DataTriggerExecutionResult = require('../DataTriggerExecutionResult');
-const { hash } = require('../../util/hash');
 
 const MAX_PERCENTAGE = 10000;
 
@@ -27,7 +26,7 @@ async function createMasternodeRewardSharesDataTrigger(
   const validMasternodesList = smlStore.getCurrentSML().getValidMasternodesList();
 
   const ownerIdInSml = !!validMasternodesList.find(
-    (smlEntry) => Buffer.compare(ownerId, hash(Buffer.from(smlEntry.proRegTxHash, 'hex'))) === 0,
+    (smlEntry) => Buffer.compare(ownerId, Buffer.from(smlEntry.proRegTxHash, 'hex')) === 0,
   );
 
   if (!ownerIdInSml) {

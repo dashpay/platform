@@ -117,11 +117,12 @@ describe('Platform', () => {
         await wait(5000);
       }
 
-      walletAccount.storage.insertIdentityIdAtIndex(
-        walletAccount.walletId,
-        identityOne.getId().toString(),
-        identityOneIndex,
-      );
+      walletAccount.storage
+        .getWalletStore(walletAccount.walletId)
+        .insertIdentityIdAtIndex(
+          identityOne.getId().toString(),
+          identityOneIndex,
+        );
 
       // Creating transition that tries to spend the same transaction
       const {
@@ -472,9 +473,7 @@ describe('Platform', () => {
 
         for (const masternodeEntry of mnList) {
           const masternodeIdentityId = Identifier.from(
-            hash(
-              Buffer.from(masternodeEntry.proRegTxHash, 'hex'),
-            ),
+            Buffer.from(masternodeEntry.proRegTxHash, 'hex'),
           );
 
           let fetchedIdentity = await client.platform.identities.get(

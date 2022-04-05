@@ -88,21 +88,21 @@ class Wallet extends EventEmitter {
         mnemonic = generateNewMnemonic();
         createdFromNewMnemonic = true;
       }
-      this.fromMnemonic(mnemonic);
+      this.fromMnemonic(mnemonic, this.network, this.passphrase);
     } else if ('seed' in opts) {
-      this.fromSeed(opts.seed);
+      this.fromSeed(opts.seed, this.network);
     } else if ('HDPrivateKey' in opts) {
       this.fromHDPrivateKey(opts.HDPrivateKey);
     } else if ('privateKey' in opts) {
       this.fromPrivateKey((opts.privateKey === null)
         ? new PrivateKey(network).toString()
-        : opts.privateKey);
+        : opts.privateKey, this.network);
     } else if ('publicKey' in opts) {
-      this.fromPublicKey(opts.publicKey);
+      this.fromPublicKey(opts.publicKey, this.network);
     } else if ('HDPublicKey' in opts) {
       this.fromHDPublicKey(opts.HDPublicKey);
     } else if ('address' in opts) {
-      this.fromAddress(opts.address);
+      this.fromAddress(opts.address, this.network);
     } else {
       this.fromMnemonic(generateNewMnemonic());
       createdFromNewMnemonic = true;
@@ -114,21 +114,22 @@ class Wallet extends EventEmitter {
     this.storage = new Storage({
       rehydrate: true,
       autosave: true,
-      network,
     });
 
     this.storage.configure({
       adapter: opts.adapter,
     });
 
-    this.store = this.storage.store;
+    this.storage.application.network = this.network;
+    this.storage.createWalletStore(this.walletId);
+    this.storage.createChainStore(this.network);
 
     if (createdFromNewMnemonic) {
       // As it is pretty complicated to pass any of wallet options
       // to a specific plugin, using `store` as an options mediator
       // is easier.
 
-      this.store.syncOptions = {
+      this.storage.application.syncOptions = {
         skipSynchronization: true,
       };
 
@@ -137,7 +138,7 @@ class Wallet extends EventEmitter {
           + ' created from the new mnemonic');
       }
     } else if (this.unsafeOptions.skipSynchronizationBeforeHeight) {
-      this.store.syncOptions = {
+      this.storage.application.syncOptions = {
         skipSynchronizationBeforeHeight: this.unsafeOptions.skipSynchronizationBeforeHeight,
       };
     }
@@ -175,7 +176,6 @@ class Wallet extends EventEmitter {
 
     this.accounts = [];
     this.interface = opts.interface;
-
     // Suppressed global require to avoid cyclic dependencies
     // eslint-disable-next-line global-require
     const Identities = require('../Identities/Identities');
