@@ -12,6 +12,12 @@ pub struct DocumentDeleteTransition {
 }
 
 impl DocumentTransitionObjectLike for DocumentDeleteTransition {
+    fn from_json_str(json_str: &str, data_contract: DataContract) -> Result<Self, ProtocolError> {
+        let mut base = DocumentBaseTransition::from_json_str(json_str, data_contract)?;
+        base.action = Action::Delete;
+        Ok(DocumentDeleteTransition { base })
+    }
+
     fn from_raw_document(
         raw_transition: JsonValue,
         data_contract: DataContract,

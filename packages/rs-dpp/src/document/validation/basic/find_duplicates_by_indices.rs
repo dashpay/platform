@@ -8,6 +8,7 @@ use crate::{
     util::json_schema::{get_indices_from_json_schema, Index},
 };
 
+#[macro_export]
 macro_rules! get {
     ($document_transition:ident, $property:ident) => {
         match $document_transition {
@@ -22,6 +23,7 @@ pub fn find_duplicates_by_indices<'a>(
     document_transitions: &'a [DocumentTransition],
     data_contract: &'a DataContract,
 ) -> Vec<&'a DocumentTransition> {
+    #[derive(Debug)]
     struct Group<'a> {
         transitions: Vec<&'a DocumentTransition>,
         indices: Vec<Index>,
@@ -47,7 +49,9 @@ pub fn find_duplicates_by_indices<'a>(
     let mut found_group_duplicates: Vec<&'a DocumentTransition> = vec![];
     for (_, group) in groups
         .iter()
+        // Filter out groups without unique indices
         .filter(|(_, group)| !group.indices.is_empty())
+        // Filter out group with only one object
         .filter(|(_, group)| group.transitions.len() > 1)
     {
         for transition in group.transitions.as_slice() {
@@ -55,6 +59,7 @@ pub fn find_duplicates_by_indices<'a>(
             for transition_to_check in group
                 .transitions
                 .iter()
+                // Exclude current transition from search
                 .filter(|t| get!(t, id) != get!(transition, id))
             {
                 if is_duplicate_by_indices(transition, transition_to_check, &group.indices) {
@@ -86,16 +91,18 @@ fn is_duplicate_by_indices(
                 get_data_property(transition_to_check, property_name)
             ));
         }
-        if original_hash != hash_to_check {
-            return false;
+        println!("{} vs {}", original_hash, hash_to_check);
+        if original_hash == hash_to_check {
+            return true;
         }
     }
-    true
+    false
 }
 
 fn get_unique_indices(document_type: &str, data_contract: &DataContract) -> Vec<Index> {
     let indices =
         get_indices_from_json_schema(data_contract.get_document_schema(document_type).unwrap());
+    println!("indices: {:?}", indices);
     indices
         .expect("error while getting indices from json schema")
         .into_iter()
@@ -120,5 +127,91 @@ fn get_data_property(document_transition: &DocumentTransition, property_name: &s
                 .unwrap_or(&Value::String(String::from("")))
                 .to_string(),
         },
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use serde_json::json;
+
+    use crate::{
+        document::document_transition::{
+            DocumentCreateTransition, DocumentTransition, DocumentTransitionObjectLike,
+        },
+        prelude::*,
+    };
+
+    use super::find_duplicates_by_indices;
+
+    #[test]
+    fn test_find_duplicates_by_indices() {
+        let document_def = json!(                {
+                            "indices": [
+                              {
+                                "name": "ownerIdLastName",
+                                "properties": {
+                                  "$ownerId": "asc",
+                                  "lastName": "asc",
+                                },
+                                "unique": true,
+                              },
+                            ],
+                            "properties": {
+                              "firstName": {
+                                "type": "string",
+                              },
+                              "lastName": {
+                                "type": "string",
+                              },
+                            },
+                            "required": ["lastName"],
+                            "additionalProperties": false,
+                          }
+        );
+
+        let mut data_contract = DataContract::default();
+        data_contract.set_document_schema("indexedDocument".to_string(), document_def.clone());
+        data_contract.set_document_schema("singleDocument".to_string(), document_def);
+
+        let doc_create_transition = DocumentCreateTransition::from_json_str(
+            &json!(
+                {
+                    "$id": "AoqSTh5Bg6Fo26NaCRVoPP1FiDQ1ycihLkjQ75MYJziV",
+                    "$type": "indexedDocument",
+                    "$action": 0,
+                    "$dataContractId": "F719NPkos8a2VqxSPv4co4F8owh9qBbYEMJ1gzyLANtg",
+                    "name": "Leon",
+                    "lastName": "Birkin",
+                    "$entropy": "hxlmtQ34oR/lkql7AUQ13P5kS8OaX2BheksnPBIpxLc=",
+                  }
+            )
+            .to_string(),
+            data_contract.clone(),
+        )
+        .unwrap();
+        let document_create_transition_2 = DocumentCreateTransition::from_json_str(
+            &json!(
+                {
+                    "$id": "3GDfArJJdHMviaRd5ta4F2EB7LN9RgbMKLAfjAxZEaUG",
+                    "$type": "indexedDocument",
+                    "$action": 0,
+                    "$dataContractId": "F719NPkos8a2VqxSPv4co4F8owh9qBbYEMJ1gzyLANtg",
+                    "name": "William",
+                    "lastName": "Birkin",
+                    "$entropy": "hxlmtQ34oR/lkql7AUQ13P5kS8OaX2BheksnPBIpxLc=",
+                  }
+            )
+            .to_string(),
+            data_contract.clone(),
+        )
+        .unwrap();
+
+        let transitions: Vec<DocumentTransition> = vec![
+            DocumentTransition::Create(doc_create_transition),
+            DocumentTransition::Create(document_create_transition_2),
+        ];
+
+        let duplicates = find_duplicates_by_indices(&transitions, &data_contract);
+        assert!(duplicates.len() == 2);
     }
 }

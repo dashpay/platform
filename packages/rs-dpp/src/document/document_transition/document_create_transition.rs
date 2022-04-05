@@ -57,6 +57,14 @@ impl DocumentCreateTransition {
 }
 
 impl DocumentTransitionObjectLike for DocumentCreateTransition {
+    fn from_json_str(json_str: &str, data_contract: DataContract) -> Result<Self, ProtocolError> {
+        let mut document: DocumentCreateTransition = serde_json::from_str(json_str)?;
+        document.base.action = Action::Create;
+        document.base.data_contract_id = data_contract.id.clone();
+        document.base.data_contract = data_contract;
+        Ok(document)
+    }
+
     fn from_raw_document(
         mut raw_transition: JsonValue,
         data_contract: DataContract,
@@ -66,6 +74,7 @@ impl DocumentTransitionObjectLike for DocumentCreateTransition {
 
         let mut document: DocumentCreateTransition = serde_json::from_value(raw_transition)?;
         document.base.action = Action::Create;
+        document.base.data_contract_id = data_contract.id.clone();
         document.base.data_contract = data_contract;
 
         if let Some(ref mut dynamic_data) = document.data {

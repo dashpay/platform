@@ -35,7 +35,7 @@ pub struct DataContract {
     #[serde(skip)]
     pub metadata: Option<Metadata>,
     #[serde(skip)]
-    pub entropy: Option<[u8; 32]>,
+    pub entropy: [u8; 32],
     #[serde(skip)]
     pub binary_properties: BTreeMap<String, JsonSchema>,
 }

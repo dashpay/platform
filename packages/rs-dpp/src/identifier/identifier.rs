@@ -68,6 +68,7 @@ impl Identifier {
             .collect()
     }
 
+    // TODO - consider to change the name to 'asBuffer`
     pub fn to_buffer(&self) -> [u8; 32] {
         self.buffer
     }
