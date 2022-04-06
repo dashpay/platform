@@ -9,7 +9,8 @@ use crate::{
 };
 
 #[macro_export]
-macro_rules! get {
+/// Getter of Document Transition Base properties
+macro_rules! get_from_transition {
     ($document_transition:ident, $property:ident) => {
         match $document_transition {
             DocumentTransition::Create(d) => &d.base.$property,
@@ -19,6 +20,7 @@ macro_rules! get {
     };
 }
 
+/// Finds duplicates of indices in Document Transitions.
 pub fn find_duplicates_by_indices<'a>(
     document_transitions: &'a [DocumentTransition],
     data_contract: &'a DataContract,
@@ -31,7 +33,7 @@ pub fn find_duplicates_by_indices<'a>(
     let mut groups: HashMap<&'a str, Group> = HashMap::new();
 
     for dt in document_transitions {
-        let dt_type = get!(dt, document_type);
+        let dt_type = get_from_transition!(dt, document_type);
 
         match groups.entry(dt_type) {
             Entry::Occupied(mut o) => {
@@ -60,7 +62,7 @@ pub fn find_duplicates_by_indices<'a>(
                 .transitions
                 .iter()
                 // Exclude current transition from search
-                .filter(|t| get!(t, id) != get!(transition, id))
+                .filter(|t| get_from_transition!(t, id) != get_from_transition!(transition, id))
             {
                 if is_duplicate_by_indices(transition, transition_to_check, &group.indices) {
                     found_duplicates.push(transition_to_check)
