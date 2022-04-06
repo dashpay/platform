@@ -3,6 +3,7 @@ use thiserror::Error;
 
 #[derive(Error, Clone, Debug)]
 pub enum StateError {
+    // Document Errors
     #[error("Document {document_id} is already present")]
     DocumentAlreadyPresentError { document_id: Identifier },
 
@@ -41,4 +42,7 @@ pub enum StateError {
         document_id: Identifier,
         current_revision: u32,
     },
+
+    #[error("Data Contract {data_contract_id} is already present")]
+    DataContractAlreadyPresentError { data_contract_id: Identifier },
 }
