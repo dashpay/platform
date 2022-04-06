@@ -2,25 +2,22 @@ pub mod defaults;
 pub mod object_size_info;
 
 use crate::contract::{Contract, Document, DocumentType};
-use crate::drive::defaults::{CONTRACT_DOCUMENTS_PATH_HEIGHT, DEFAULT_HASH_SIZE};
-use crate::drive::object_size_info::DocumentInfo::{DocumentAndSerialization, DocumentSize};
-use crate::drive::object_size_info::KeyElementInfo::{KeyElement, KeyElementSize};
-use crate::drive::object_size_info::KeyInfo::{Key, KeyRef, KeySize};
-use crate::drive::object_size_info::PathInfo::PathSize;
-use crate::drive::object_size_info::PathKeyElementInfo::{
-    PathFixedSizeKeyElement, PathKeyElement, PathKeyElementSize,
-};
-use crate::drive::object_size_info::PathKeyInfo::{PathFixedSizeKeyRef, PathKeyRef, PathKeySize};
-use crate::drive::object_size_info::{
-    DocumentAndContractInfo, DocumentInfo, KeyElementInfo, KeyInfo, PathInfo, PathKeyElementInfo,
-    PathKeyInfo,
-};
 use crate::fee::calculate_fee;
 use crate::fee::op::{BaseOp, DeleteOperation, InsertOperation, QueryOperation};
 use crate::query::DriveQuery;
-use enum_map::EnumMap;
+use defaults::{CONTRACT_DOCUMENTS_PATH_HEIGHT, DEFAULT_HASH_SIZE};
 use grovedb::{Element, Error, GroveDb, TransactionArg};
-use std::collections::HashMap;
+use object_size_info::DocumentInfo::{DocumentAndSerialization, DocumentSize};
+use object_size_info::KeyElementInfo::{KeyElement, KeyElementSize};
+use object_size_info::KeyInfo::{Key, KeyRef, KeySize};
+use object_size_info::PathKeyElementInfo::{
+    PathFixedSizeKeyElement, PathKeyElement, PathKeyElementSize,
+};
+use object_size_info::PathKeyInfo::{PathFixedSizeKeyRef, PathKeyRef, PathKeySize};
+use object_size_info::{
+    DocumentAndContractInfo, DocumentInfo, KeyElementInfo, KeyInfo, PathInfo, PathKeyElementInfo,
+    PathKeyInfo,
+};
 use std::path::Path;
 
 pub struct Drive {
@@ -1832,7 +1829,6 @@ mod tests {
     use crate::drive::{defaults, Drive};
     use crate::query::DriveQuery;
     use rand::Rng;
-    use serde::de::Unexpected::Option;
     use serde_json::json;
     use std::collections::HashMap;
     use std::option::Option::None;
