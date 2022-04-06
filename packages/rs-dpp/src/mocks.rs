@@ -42,6 +42,11 @@ pub type SimplifiedSMListStore = String;
 
 pub struct StateRepository {}
 
+#[derive(Debug, Clone)]
+pub struct JsonSchemaValidator {}
+
+pub trait JsonSchemaValidatorLike {}
+
 #[async_trait]
 impl StateRepositoryLike for StateRepository {
     /// Fetch the Data Contract by ID
