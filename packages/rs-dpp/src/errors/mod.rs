@@ -14,3 +14,8 @@ pub use invalid_vector_size_error::*;
 pub use non_consensus_error::*;
 pub use public_key_validation_error::*;
 pub use serde_parsing_error::*;
+
+mod abstract_state_error;
+pub use abstract_state_error::*;
+
+pub mod codes;
