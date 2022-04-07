@@ -159,7 +159,7 @@ class IdentityPublicKey {
    *
    * @return {boolean}
    */
-  getReadOnly() {
+  isReadOnly() {
     return this.readOnly;
   }
 
@@ -218,7 +218,7 @@ class IdentityPublicKey {
       purpose: this.getPurpose(),
       securityLevel: this.getSecurityLevel(),
       data: this.getData(),
-      readOnly: this.getReadOnly(),
+      readOnly: this.isReadOnly(),
     };
 
     if (this.getDisabledAt() !== undefined) {

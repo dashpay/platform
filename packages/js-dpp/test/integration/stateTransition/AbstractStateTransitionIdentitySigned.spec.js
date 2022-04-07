@@ -235,7 +235,7 @@ describe('AbstractStateTransitionIdentitySigned', () => {
       expect(isValid).to.be.true();
     });
 
-    it('should throw an error if public key is disabled', async () => {
+    it('should throw PublicKeyIsDisabledError if public key is disabled', async () => {
       identityPublicKey.setDisabledAt(new Date().getTime());
 
       try {

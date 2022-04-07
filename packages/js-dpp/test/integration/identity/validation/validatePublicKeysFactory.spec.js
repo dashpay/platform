@@ -37,6 +37,9 @@ const IdentityPublicKey = require(
 );
 const BlsSignatures = require('../../../../lib/bls/bls');
 
+const identitySchema = require('../../../../schema/identity/identity.json');
+const MaxIdentityPublicKeyLimitReachedError = require('../../../../lib/errors/consensus/basic/identity/MaxIdentityPublicKeyLimitReachedError');
+
 describe('validatePublicKeysFactory', () => {
   let rawPublicKeys;
   let validatePublicKeys;
@@ -364,5 +367,21 @@ describe('validatePublicKeysFactory', () => {
 
       expect(result.isValid()).to.be.true();
     });
+  });
+
+  it('should return invalid result if number of public keys is bigger than 32', () => {
+    const { maxItems } = identitySchema.properties.publicKeys;
+    const numToAdd = maxItems - rawPublicKeys.length;
+
+    for (let i = 0; i <= numToAdd; ++i) {
+      rawPublicKeys.push(rawPublicKeys[0]);
+    }
+
+    const result = validatePublicKeys(rawPublicKeys);
+
+    expectValidationError(result, MaxIdentityPublicKeyLimitReachedError);
+
+    const [error] = result.getErrors();
+    expect(error.geMaxItems()).to.equal(maxItems);
   });
 });

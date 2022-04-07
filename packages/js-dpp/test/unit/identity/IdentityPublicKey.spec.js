@@ -110,9 +110,9 @@ describe('IdentityPublicKey', () => {
     });
   });
 
-  describe('#getReadOnly', () => {
+  describe('#isReadOnly', () => {
     it('should return readOnly', () => {
-      expect(publicKey.getReadOnly()).to.equal(rawPublicKey.readOnly);
+      expect(publicKey.isReadOnly()).to.equal(rawPublicKey.readOnly);
     });
   });
 
