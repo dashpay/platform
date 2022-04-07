@@ -49,7 +49,7 @@ function validateIdentityUpdateTransitionStateFactory(
           result.addError(
             new InvalidIdentityPublicKeyIdError(id),
           );
-        } else if (identity.getPublicKeyById(id).getReadOnly()) {
+        } else if (identity.getPublicKeyById(id).isReadOnly()) {
           result.addError(
             new IdentityPublicKeyIsReadOnlyError(id),
           );

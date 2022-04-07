@@ -7,6 +7,7 @@ const ValidationResult = require('../../validation/ValidationResult');
 const convertBuffersToArrays = require('../../util/convertBuffersToArrays');
 
 const publicKeySchema = require('../../../schema/identity/publicKey.json');
+const identitySchema = require('../../../schema/identity/identity.json');
 
 const InvalidIdentityPublicKeyDataError = require(
   '../../errors/consensus/basic/identity/InvalidIdentityPublicKeyDataError',
@@ -24,6 +25,10 @@ const InvalidIdentityPublicKeySecurityLevelError = require(
 );
 
 const IdentityPublicKey = require('../IdentityPublicKey');
+const MaxIdentityPublicKeyLimitReachedError = require('../../errors/consensus/basic/identity/MaxIdentityPublicKeyLimitReachedError');
+
+const publicKeyEnabledSchema = lodashCloneDeep(publicKeySchema);
+delete publicKeyEnabledSchema.properties.disabledAt;
 
 /**
  * Validate public keys (factory)
@@ -47,14 +52,20 @@ function validatePublicKeysFactory(validator, bls) {
   function validatePublicKeys(rawPublicKeys, options = {}) {
     const result = new ValidationResult();
 
+    if (rawPublicKeys.length > identitySchema.properties.publicKeys.maxItems) {
+      result.addError(
+        new MaxIdentityPublicKeyLimitReachedError(identitySchema.properties.publicKeys.maxItems),
+      );
+
+      return result;
+    }
+
     const { mustBeEnabled } = options;
 
     let schemaToValidate = publicKeySchema;
 
     if (mustBeEnabled) {
-      schemaToValidate = lodashCloneDeep(publicKeySchema);
-
-      delete schemaToValidate.properties.disabledAt;
+      schemaToValidate = publicKeyEnabledSchema;
     }
 
     // Validate public key structure
