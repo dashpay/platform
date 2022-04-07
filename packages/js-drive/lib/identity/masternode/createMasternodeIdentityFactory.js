@@ -2,6 +2,7 @@ const IdentityPublicKey = require('@dashevo/dpp/lib/identity/IdentityPublicKey')
 const Identity = require('@dashevo/dpp/lib/identity/Identity');
 const Script = require('@dashevo/dashcore-lib/lib/script');
 const InvalidMasternodeIdentityError = require('./errors/InvalidMasternodeIdentityError');
+const InvalidPayoutScriptError = require('./errors/InvalidPayoutScriptError');
 
 /**
  * @param {DashPlatformProtocol} dpp
@@ -19,19 +20,25 @@ function createMasternodeIdentityFactory(
    * @param {Identifier} identifier
    * @param {Buffer} pubKeyData
    * @param {number} pubKeyType
-   * @param {Buffer} withdrawPubKeyData
+   * @param {Buffer} payoutScript
    * @return {Promise<void>}
    */
   async function createMasternodeIdentity(
     identifier,
     pubKeyData,
     pubKeyType,
-    withdrawPubKeyData,
+    payoutScript,
   ) {
-    const script = new Script(withdrawPubKeyData);
-    const withdrawPubKeyType = script.toAddress(network).isPayToScriptHash()
-      ? IdentityPublicKey.TYPES.BIP13_SCRIPT_HASH
-      : IdentityPublicKey.TYPES.ECDSA_HASH160;
+    const address = new Script(payoutScript).toAddress(network);
+
+    let withdrawPubKeyType;
+    if (address.isPayToScriptHash()) {
+      withdrawPubKeyType = IdentityPublicKey.TYPES.BIP13_SCRIPT_HASH;
+    } else if (address.isPayToPublicKeyHash()) {
+      withdrawPubKeyType = IdentityPublicKey.TYPES.ECDSA_HASH160;
+    } else {
+      throw new InvalidPayoutScriptError(payoutScript);
+    }
 
     const identity = new Identity({
       protocolVersion: dpp.getProtocolVersion(),
@@ -48,9 +55,9 @@ function createMasternodeIdentityFactory(
         id: 1,
         type: withdrawPubKeyType,
         purpose: IdentityPublicKey.PURPOSES.WITHDRAW,
-        securityLevel: IdentityPublicKey.SECURITY_LEVELS.MASTER,
-        readonly: false,
-        data: Buffer.from(withdrawPubKeyData),
+        securityLevel: IdentityPublicKey.SECURITY_LEVELS.MEDIUM,
+        readOnly: false,
+        data: Buffer.from(payoutScript),
       }],
       balance: 0,
       revision: 0,
