@@ -33,21 +33,26 @@ function isChildOf(classToCheck, parentClass) {
   return isChildOf(classToCheck.prototype, parentClass);
 }
 
-describe('consensusErrors', () => {
-  if (global.window === undefined) {
-    const normalizedPath = path.join(__dirname, '../../../../lib/errors/');
-    const allFiles = getAllFiles(normalizedPath);
-    allFiles.forEach((fileName) => {
-      // eslint-disable-next-line global-require,import/no-dynamic-require
-      const ErrorClass = require(fileName);
-      if (isChildOf(ErrorClass, AbstractStateError) && !ErrorClass.name.startsWith('Abstract')) {
-        it(`should contain code for consensus error class ${ErrorClass.name}`, () => {
-          const hasErrorCode = !!Object.values(codes)
-            .find((ErrorClassWithCode) => ErrorClassWithCode === ErrorClass);
-
-          expect(hasErrorCode).to.be.true();
-        });
-      }
-    });
+describe.only('Consensus error codes', () => {
+  // Skip the tests for browsers
+  if (global.window !== undefined) {
+    return;
   }
+
+  const normalizedPath = path.join(__dirname, '../../../../lib/errors/');
+  const allFiles = getAllFiles(normalizedPath);
+
+  allFiles.forEach((fileName) => {
+    // eslint-disable-next-line global-require,import/no-dynamic-require
+    const ErrorClass = require(fileName);
+
+    if (isChildOf(ErrorClass, AbstractStateError) && !ErrorClass.name.startsWith('Abstract')) {
+      it(`should have error code defined for ${ErrorClass.name} `, () => {
+        const hasErrorCode = !!Object.values(codes)
+          .find((ErrorClassWithCode) => ErrorClassWithCode === ErrorClass);
+
+        expect(hasErrorCode).to.be.true();
+      });
+    }
+  });
 });
