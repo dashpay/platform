@@ -33,7 +33,7 @@ function isChildOf(classToCheck, parentClass) {
   return isChildOf(classToCheck.prototype, parentClass);
 }
 
-describe.only('Consensus error codes', () => {
+describe('Consensus error codes', () => {
   // Skip the tests for browsers
   if (global.window !== undefined) {
     return;
