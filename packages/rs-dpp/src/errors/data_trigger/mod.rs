@@ -21,7 +21,7 @@ pub enum DataTriggerError {
         document_transition_id: Identifier,
         message: String,
         // ? maybe we should replace with source
-        execution_error: Box<dyn Error>,
+        execution_error: anyhow::Error,
     },
 
     #[error("Data trigger have not returned any result")]
