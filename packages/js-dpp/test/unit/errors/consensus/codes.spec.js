@@ -1,6 +1,7 @@
 const path = require('path');
 const fs = require('fs');
 const AbstractStateError = require('../../../../lib/errors/consensus/state/AbstractStateError');
+const AbstractBasicError = require('../../../../lib/errors/consensus/basic/AbstractBasicError');
 const codes = require('../../../../lib/errors/consensus/codes');
 
 const getAllFiles = (dirPath, arrayOfFiles) => {
@@ -40,8 +41,13 @@ describe('consensusErrors', () => {
     allFiles.forEach((fileName) => {
       // eslint-disable-next-line global-require,import/no-dynamic-require
       const ErrorClass = require(fileName);
-      if (isChildOf(ErrorClass, AbstractStateError) && !ErrorClass.name.startsWith('Abstract')) {
+
+      if (
+        (isChildOf(ErrorClass, AbstractStateError) || (isChildOf(ErrorClass, AbstractBasicError)))
+        && !ErrorClass.name.startsWith('Abstract')
+      ) {
         it(`should contain code for consensus error class ${ErrorClass.name}`, () => {
+
           const hasErrorCode = !!Object.values(codes)
             .find((ErrorClassWithCode) => ErrorClassWithCode === ErrorClass);
 

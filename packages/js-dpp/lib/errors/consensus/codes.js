@@ -71,10 +71,13 @@ const IncompatibleDataContractSchemaError = require('./basic/dataContract/Incomp
 const DataContractImmutablePropertiesUpdateError = require('./basic/dataContract/DataContractImmutablePropertiesUpdateError');
 const DataContractIndicesChangedError = require('./basic/dataContract/DataContractUniqueIndicesChangedError');
 const DuplicateIndexNameError = require('./basic/dataContract/DuplicateIndexNameError');
+const DataContractInvalidIndexDefinitionUpdateError = require('./basic/dataContract/DataContractInvalidIndexDefinitionUpdateError');
+const DataContractHaveNewUniqueIndexError = require('./basic/dataContract/DataContractHaveNewUniqueIndexError');
 const IdentityPublicKeyDisabledAtWindowViolationError = require('./state/identity/IdentityPublicKeyDisabledAtWindowViolationError');
 const IdentityPublicKeyIsReadOnlyError = require('./state/identity/IdentityPublicKeyIsReadOnlyError');
 const InvalidIdentityPublicKeyIdError = require('./state/identity/InvalidIdentityPublicKeyIdError');
 const InvalidIdentityRevisionError = require('./state/identity/InvalidIdentityRevisionError');
+const MaxIdentityPublicKeyLimitReachedError = require('./basic/identity/MaxIdentityPublicKeyLimitReachedError');
 
 const codes = {
   /**
@@ -170,6 +173,8 @@ const codes = {
   4014: IncompatibleDataContractSchemaError,
   4015: DataContractImmutablePropertiesUpdateError,
   4016: DataContractIndicesChangedError,
+  4021: DataContractInvalidIndexDefinitionUpdateError,
+  4022: DataContractHaveNewUniqueIndexError,
 
   // Document
   4004: DocumentAlreadyPresentError,
@@ -186,6 +191,7 @@ const codes = {
   4017: IdentityPublicKeyIsReadOnlyError,
   4018: InvalidIdentityPublicKeyIdError,
   4019: InvalidIdentityRevisionError,
+  4020: MaxIdentityPublicKeyLimitReachedError,
 };
 
 module.exports = codes;
