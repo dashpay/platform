@@ -369,7 +369,7 @@ describe('validateIdentityFactory', () => {
   });
 
   it('should return valid result if an identity model is valid', () => {
-    const result = validateIdentity(rawIdentity);
+    const result = validateIdentity(identity);
 
     expect(validatePublicKeysMock).to.be.calledOnceWithExactly(rawIdentity.publicKeys);
 
