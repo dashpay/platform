@@ -91,11 +91,10 @@ describe('deliverTxHandlerFactory', () => {
     const loggerMock = new LoggerMock(this.sinon);
 
     executionTimerMock = {
+      clearTimer: this.sinon.stub(),
+      getTimer: this.sinon.stub(),
       startTimer: this.sinon.stub(),
-      endTimer: this.sinon.stub().returns({
-        seconds: 1,
-        nanoseconds: 1,
-      }),
+      stopTimer: this.sinon.stub(),
       isStarted: this.sinon.stub(),
     };
 

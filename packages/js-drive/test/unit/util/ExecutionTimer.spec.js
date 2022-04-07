@@ -21,10 +21,10 @@ describe('ExecutionTimer', () => {
     });
   });
 
-  describe('#endTimer', () => {
+  describe('#stopTimer', () => {
     it('should throw an error if timer has not been started', () => {
       try {
-        timer.endTimer('some');
+        timer.stopTimer('some');
         expect.fail('An error was not thrown');
       } catch (e) {
         expect(e.message).to.equal('some timer is not started');
@@ -36,7 +36,7 @@ describe('ExecutionTimer', () => {
     // TODO: maybe there should be a better way to do it
     timer.startTimer('some');
     await wait(1500);
-    const timings = timer.endTimer('some');
+    const timings = timer.stopTimer('some');
 
     expect(parseInt(timings, 10)).to.equal(1);
   });
