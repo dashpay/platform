@@ -1,7 +1,9 @@
-use crate::prelude::Identifier;
+use crate::prelude::{DataContract, Identifier};
 use thiserror::Error;
 
-#[derive(Error, Clone, Debug)]
+use super::DataTriggerError;
+
+#[derive(Error, Debug)]
 pub enum StateError {
     // Document Errors
     #[error("Document {document_id} is already present")]
@@ -45,4 +47,13 @@ pub enum StateError {
 
     #[error("Data Contract {data_contract_id} is already present")]
     DataContractAlreadyPresentError { data_contract_id: Identifier },
+
+    #[error(transparent)]
+    DataTriggerError(DataTriggerError),
+}
+
+impl From<DataTriggerError> for StateError {
+    fn from(v: DataTriggerError) -> Self {
+        StateError::DataTriggerError(v)
+    }
 }
