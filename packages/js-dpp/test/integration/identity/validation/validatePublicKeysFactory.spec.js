@@ -349,7 +349,7 @@ describe('validatePublicKeysFactory', () => {
     });
 
     it('should return invalid result if key has disabledAt property', () => {
-      const result = validatePublicKeys(rawPublicKeys, true);
+      const result = validatePublicKeys(rawPublicKeys, { mustBeEnabled: true });
 
       expectJsonSchemaError(result);
 

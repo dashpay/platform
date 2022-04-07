@@ -389,7 +389,10 @@ describe('validateIdentityUpdateTransitionBasicFactory', () => {
 
       expect(error).to.equal(publicKeysError);
 
-      expect(validatePublicKeysMock).to.be.calledOnceWithExactly(rawStateTransition.addPublicKeys);
+      expect(validatePublicKeysMock).to.be.calledOnceWithExactly(
+        rawStateTransition.addPublicKeys,
+        { mustBeEnabled: true },
+      );
     });
   });
 
@@ -544,6 +547,7 @@ describe('validateIdentityUpdateTransitionBasicFactory', () => {
     expect(validatePublicKeysMock)
       .to.be.calledOnceWithExactly(
         rawStateTransition.addPublicKeys,
+        { mustBeEnabled: true },
       );
   });
 

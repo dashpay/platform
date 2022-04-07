@@ -526,7 +526,7 @@ describe('Platform', () => {
       });
     });
 
-    describe.skip('Masternodes', () => {
+    describe('Masternodes', () => {
       let dapiClient;
       const network = process.env.NETWORK;
 

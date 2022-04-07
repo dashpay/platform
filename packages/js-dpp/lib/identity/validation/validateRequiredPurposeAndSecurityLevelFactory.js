@@ -34,9 +34,11 @@ function validateRequiredPurposeAndSecurityLevelFactory() {
       });
     });
 
-    rawPublicKeys.forEach((rawPublicKey) => {
-      keyPurposesAndLevelsCount[rawPublicKey.purpose][rawPublicKey.securityLevel] += 1;
-    });
+    rawPublicKeys
+      .filter((rawPublicKey) => rawPublicKey.disabledAt === undefined)
+      .forEach((rawPublicKey) => {
+        keyPurposesAndLevelsCount[rawPublicKey.purpose][rawPublicKey.securityLevel] += 1;
+      });
 
     if (keyPurposesAndLevelsCount[MASTER_PURPOSE][MASTER_SECURITY_LEVEL] === 0) {
       result.addError(new MissingMasterPublicKeyError());

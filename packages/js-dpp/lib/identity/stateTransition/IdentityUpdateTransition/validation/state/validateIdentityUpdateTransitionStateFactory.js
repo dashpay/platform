@@ -4,8 +4,7 @@ const IdentityPublicKeyIsReadOnlyError = require('../../../../../errors/consensu
 const InvalidIdentityPublicKeyIdError = require('../../../../../errors/consensus/state/identity/InvalidIdentityPublicKeyIdError');
 const Identity = require('../../../../Identity');
 const IdentityPublicKeyDisabledAtWindowViolationError = require('../../../../../errors/consensus/state/identity/IdentityPublicKeyDisabledAtWindowViolationError');
-
-const BLOCK_TIME_WINDOW_MINUTES = 5;
+const validateTimeInBlockTimeWindow = require('../../../../../blockTimeWindow/validateTimeInBlockTimeWindow');
 
 /**
  * @param {StateRepository} stateRepository
@@ -31,19 +30,21 @@ function validateIdentityUpdateTransitionStateFactory(
     const storedIdentity = await stateRepository.fetchIdentity(identityId);
 
     // copy identity
-    const identity = (new Identity(storedIdentity.toObject()));
+    const identity = new Identity(storedIdentity.toObject());
 
     // Check revision
     if (identity.getRevision() !== stateTransition.getRevision() - 1) {
       result.addError(
         new InvalidIdentityRevisionError(identityId.toBuffer(), identity.getRevision()),
       );
+
+      return result;
     }
 
-    const disablePublicKeys = stateTransition.getPublicKeyIdsToDisable();
+    const publicKeyIdsToDisable = stateTransition.getPublicKeyIdsToDisable();
 
-    if (disablePublicKeys) {
-      disablePublicKeys.forEach((id) => {
+    if (publicKeyIdsToDisable) {
+      publicKeyIdsToDisable.forEach((id) => {
         if (!identity.getPublicKeyById(id)) {
           result.addError(
             new InvalidIdentityPublicKeyIdError(id),
@@ -60,7 +61,7 @@ function validateIdentityUpdateTransitionStateFactory(
       }
 
       // Keys can only be disabled if another valid key is enabled in the same security level
-      disablePublicKeys.forEach(
+      publicKeyIdsToDisable.forEach(
         (id) => identity.getPublicKeyById(id)
           .setDisabledAt(stateTransition.getPublicKeysDisabledAt().getTime()),
       );
@@ -75,65 +76,51 @@ function validateIdentityUpdateTransitionStateFactory(
       // Get last block header time in milliseconds
       const lastBlockHeaderTime = lastBlockHeaderTimeSeconds * 1000;
 
-      // Define time window
-      const timeWindowStart = new Date(lastBlockHeaderTime);
-      timeWindowStart.setMinutes(
-        timeWindowStart.getMinutes() - BLOCK_TIME_WINDOW_MINUTES,
-      );
-
-      const timeWindowEnd = new Date(lastBlockHeaderTime);
-      timeWindowEnd.setMinutes(
-        timeWindowEnd.getMinutes() + BLOCK_TIME_WINDOW_MINUTES,
-      );
-
       const disabledAtTime = stateTransition.getPublicKeysDisabledAt();
 
-      if (
-        disabledAtTime.getTime() < timeWindowStart.getTime()
-        || disabledAtTime.getTime() > timeWindowEnd.getTime()
-      ) {
+      const validateTimeWindowResult = validateTimeInBlockTimeWindow(
+        lastBlockHeaderTime,
+        disabledAtTime.getTime(),
+      );
+
+      if (!validateTimeWindowResult.isValid()) {
         result.addError(
           new IdentityPublicKeyDisabledAtWindowViolationError(
             disabledAtTime,
-            timeWindowStart,
-            timeWindowEnd,
+            validateTimeWindowResult.getTimeWindowStart(),
+            validateTimeWindowResult.getTimeWindowEnd(),
           ),
         );
-      }
 
-      if (!result.isValid()) {
         return result;
       }
     }
 
-    const addPublicKeys = stateTransition.getPublicKeysToAdd();
-    if (addPublicKeys) {
-      // check that all adding public keys don't contain disabledAt field
+    const publicKeysToAdd = stateTransition.getPublicKeysToAdd();
+    if (publicKeysToAdd) {
+      const identityPublicKeys = identity.getPublicKeys();
+
+      publicKeysToAdd.forEach((pk) => identityPublicKeys.push(pk));
+
+      identity.setPublicKeys(identityPublicKeys);
+
+      // validate new fields with existing once to make sure that keys are unique and so on
       result.merge(
-        validatePublicKeys(addPublicKeys.map((pk) => pk.toObject()), true),
+        validatePublicKeys(
+          identity.getPublicKeys().map((pk) => pk.toObject()),
+          { mustBeEnabled: true },
+        ),
       );
 
       if (!result.isValid()) {
         return result;
       }
-
-      const identityPublicKeys = identity.getPublicKeys();
-      addPublicKeys.forEach((pk) => identityPublicKeys.push(pk));
-      identity.setPublicKeys(identityPublicKeys);
     }
 
     const rawPublicKeys = identity.getPublicKeys().map((pk) => pk.toObject());
 
     result.merge(
       validateRequiredPurposeAndSecurityLevel(rawPublicKeys),
-    );
-
-    if (!result.isValid()) {
-      return result;
-    }
-
-    result.merge(
-      validatePublicKeys(identity.getPublicKeys().map((pk) => pk.toObject())),
     );
 
     return result;

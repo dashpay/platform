@@ -38,11 +38,7 @@ function applyIdentityUpdateTransitionFactory(
         .concat(stateTransition.getPublicKeysToAdd());
 
       identity.setPublicKeys(identityPublicKeys);
-    }
 
-    await stateRepository.storeIdentity(identity);
-
-    if (stateTransition.getPublicKeysToAdd()) {
       const publicKeyHashes = stateTransition
         .getPublicKeysToAdd()
         .map((publicKey) => publicKey.hash());
@@ -52,6 +48,8 @@ function applyIdentityUpdateTransitionFactory(
         publicKeyHashes,
       );
     }
+
+    await stateRepository.storeIdentity(identity);
   }
 
   return applyIdentityUpdateTransition;

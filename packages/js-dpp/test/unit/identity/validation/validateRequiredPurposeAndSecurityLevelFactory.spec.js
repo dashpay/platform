@@ -21,6 +21,11 @@ describe('validateRequiredPurposeAndSecurityLevel', () => {
     const result = await validateRequiredPurposeAndSecurityLevel([{
       purpose: IdentityPublicKey.PURPOSES.AUTHENTICATION,
       securityLevel: IdentityPublicKey.SECURITY_LEVELS.CRITICAL,
+    }, {
+      // this key must be filtered out
+      purpose: IdentityPublicKey.PURPOSES.AUTHENTICATION,
+      securityLevel: IdentityPublicKey.SECURITY_LEVELS.MASTER,
+      disabledAt: 42,
     }]);
 
     expectValidationError(result, MissingMasterPublicKeyError);
