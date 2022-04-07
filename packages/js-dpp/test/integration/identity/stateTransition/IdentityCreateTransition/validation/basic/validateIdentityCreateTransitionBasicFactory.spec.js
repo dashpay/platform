@@ -298,7 +298,7 @@ describe('validateIdentityCreateTransitionBasicFactory', () => {
       expect(error).to.equal(publicKeysError);
 
       expect(validatePublicKeysMock)
-        .to.be.calledOnceWithExactly(rawStateTransition.publicKeys, true);
+        .to.be.calledOnceWithExactly(rawStateTransition.publicKeys, { mustBeEnabled: true });
     });
 
     it('should have at least 1 master key', async () => {
@@ -388,7 +388,7 @@ describe('validateIdentityCreateTransitionBasicFactory', () => {
 
     expect(validatePublicKeysMock).to.be.calledOnceWithExactly(
       rawStateTransition.publicKeys,
-      true,
+      { mustBeEnabled: true },
     );
   });
 });

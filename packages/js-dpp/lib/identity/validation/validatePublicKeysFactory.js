@@ -40,24 +40,28 @@ function validatePublicKeysFactory(validator, bls) {
    * @typedef validatePublicKeys
    *
    * @param {RawIdentityPublicKey[]} rawPublicKeys
-   * @param {boolean} [mustBeEnabled]
+   * @param {{mustBeEnabled: boolean}} [options]
    *
    * @return {ValidationResult}
    */
-  function validatePublicKeys(rawPublicKeys, mustBeEnabled = false) {
+  function validatePublicKeys(rawPublicKeys, options = {}) {
     const result = new ValidationResult();
 
-    const clonedSchema = lodashCloneDeep(publicKeySchema);
+    const { mustBeEnabled } = options;
+
+    let schemaToValidate = publicKeySchema;
 
     if (mustBeEnabled) {
-      delete clonedSchema.properties.disabledAt;
+      schemaToValidate = lodashCloneDeep(publicKeySchema);
+
+      delete schemaToValidate.properties.disabledAt;
     }
 
     // Validate public key structure
     rawPublicKeys.forEach((rawPublicKey) => {
       result.merge(
         validator.validate(
-          clonedSchema,
+          schemaToValidate,
           convertBuffersToArrays(rawPublicKey),
         ),
       );

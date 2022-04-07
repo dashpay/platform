@@ -17,8 +17,7 @@ const DocumentTimestampsMismatchError = require(
 
 const AbstractDocumentTransition = require('../../documentTransition/AbstractDocumentTransition');
 
-const isTimeInBlockTimeWindow = require('../../../../../blockTimeWindow/isTimeInBlockTimeWindow');
-const getBlockTimeWindowRange = require('../../../../../blockTimeWindow/getBlockTimeWindowRange');
+const validateTimeInBlockTimeWindow = require('../../../../../blockTimeWindow/validateTimeInBlockTimeWindow');
 
 /**
  *
@@ -69,9 +68,6 @@ function validateDocumentsBatchTransitionStateFactory(
     // Get last block header time in milliseconds
     const lastBlockHeaderTime = lastBlockHeaderTimeSeconds * 1000;
 
-    // Define time window
-    const { timeWindowStart, timeWindowEnd } = getBlockTimeWindowRange(lastBlockHeaderTime);
-
     // Validate document action, ownerId, revision and timestamps
     documentTransitions
       .forEach((documentTransition) => {
@@ -99,14 +95,18 @@ function validateDocumentsBatchTransitionStateFactory(
             if (documentTransition.getCreatedAt() !== undefined) {
               const createdAtTime = documentTransition.getCreatedAt().getTime();
 
-              if (!isTimeInBlockTimeWindow(lastBlockHeaderTime, createdAtTime)) {
+              const validateTimeWindowResult = validateTimeInBlockTimeWindow(
+                lastBlockHeaderTime,
+                createdAtTime,
+              );
+              if (!validateTimeWindowResult.isValid()) {
                 result.addError(
                   new DocumentTimestampWindowViolationError(
                     'createdAt',
                     documentTransition.getId().toBuffer(),
                     documentTransition.getCreatedAt(),
-                    timeWindowStart,
-                    timeWindowEnd,
+                    validateTimeWindowResult.getTimeWindowStart(),
+                    validateTimeWindowResult.getTimeWindowEnd(),
                   ),
                 );
               }
@@ -115,15 +115,19 @@ function validateDocumentsBatchTransitionStateFactory(
             // Check updatedAt is within a block time window
             if (documentTransition.getUpdatedAt() !== undefined) {
               const updatedAtTime = documentTransition.getUpdatedAt().getTime();
+              const validateTimeWindowResult = validateTimeInBlockTimeWindow(
+                lastBlockHeaderTime,
+                updatedAtTime,
+              );
 
-              if (!isTimeInBlockTimeWindow(lastBlockHeaderTime, updatedAtTime)) {
+              if (!validateTimeWindowResult.isValid()) {
                 result.addError(
                   new DocumentTimestampWindowViolationError(
                     'updatedAt',
                     documentTransition.getId().toBuffer(),
                     documentTransition.getUpdatedAt(),
-                    timeWindowStart,
-                    timeWindowEnd,
+                    validateTimeWindowResult.getTimeWindowStart(),
+                    validateTimeWindowResult.getTimeWindowEnd(),
                   ),
                 );
               }
@@ -140,14 +144,19 @@ function validateDocumentsBatchTransitionStateFactory(
             if (documentTransition.getUpdatedAt() !== undefined) {
               const updatedAtTime = documentTransition.getUpdatedAt().getTime();
 
-              if (!isTimeInBlockTimeWindow(lastBlockHeaderTime, updatedAtTime)) {
+              const validateTimeWindowResult = validateTimeInBlockTimeWindow(
+                lastBlockHeaderTime,
+                updatedAtTime,
+              );
+
+              if (!validateTimeWindowResult.isValid()) {
                 result.addError(
                   new DocumentTimestampWindowViolationError(
                     'updatedAt',
                     documentTransition.getId().toBuffer(),
                     documentTransition.getUpdatedAt(),
-                    timeWindowStart,
-                    timeWindowEnd,
+                    validateTimeWindowResult.getTimeWindowStart(),
+                    validateTimeWindowResult.getTimeWindowEnd(),
                   ),
                 );
               }

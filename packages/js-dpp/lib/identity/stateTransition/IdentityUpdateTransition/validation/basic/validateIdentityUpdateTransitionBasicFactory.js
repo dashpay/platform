@@ -38,7 +38,7 @@ function validateIdentityUpdateTransitionBasicFactory(
 
     if (rawStateTransition.addPublicKeys) {
       result.merge(
-        validatePublicKeys(rawStateTransition.addPublicKeys),
+        validatePublicKeys(rawStateTransition.addPublicKeys, { mustBeEnabled: true }),
       );
     }
 

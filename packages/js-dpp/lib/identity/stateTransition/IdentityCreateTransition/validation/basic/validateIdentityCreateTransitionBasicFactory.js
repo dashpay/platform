@@ -45,7 +45,7 @@ function validateIdentityCreateTransitionBasicFactory(
     }
 
     result.merge(
-      validatePublicKeys(rawStateTransition.publicKeys, true),
+      validatePublicKeys(rawStateTransition.publicKeys, { mustBeEnabled: true }),
     );
 
     result.merge(

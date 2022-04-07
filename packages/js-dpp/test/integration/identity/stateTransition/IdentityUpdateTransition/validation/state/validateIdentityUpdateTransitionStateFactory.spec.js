@@ -157,21 +157,12 @@ describe('validateIdentityUpdateTransitionStateFactory', () => {
     expect(stateRepositoryMock.fetchLatestPlatformBlockHeader)
       .to.not.be.called();
 
-    expect(validatePublicKeysMock).to.be.calledTwice();
-
-    expect(validatePublicKeysMock.getCall(0))
-      .to.be.calledWithExactly(
-        stateTransition.getPublicKeysToAdd()
-          .map((pk) => pk.toObject()),
-        true,
-      );
-
-    expect(validatePublicKeysMock.getCall(1))
-      .to.be.calledWithExactly(
-        [...identity.getPublicKeys(), ...stateTransition.getPublicKeysToAdd()]
-          .map((pk) => pk.toObject()),
-
-      );
+    expect(validatePublicKeysMock).to.be.calledOnceWithExactly(
+      [...identity.getPublicKeys(), ...stateTransition.getPublicKeysToAdd()].map(
+        (pk) => pk.toObject(),
+      ),
+      { mustBeEnabled: true },
+    );
   });
 
   it('should pass when add and disable public keys', async () => {
@@ -224,8 +215,9 @@ describe('validateIdentityUpdateTransitionStateFactory', () => {
     expectValidationError(result, SomeConsensusError);
 
     expect(validatePublicKeysMock).to.be.calledOnceWithExactly(
-      stateTransition.getPublicKeysToAdd().map((pk) => pk.toObject()),
-      true,
+      [...identity.getPublicKeys(), ...stateTransition.getPublicKeysToAdd()]
+        .map((pk) => pk.toObject()),
+      { mustBeEnabled: true },
     );
   });
 
