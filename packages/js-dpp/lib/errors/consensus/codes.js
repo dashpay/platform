@@ -38,14 +38,11 @@ const InvalidIdentityPublicKeySecurityLevelError = require('./basic/identity/Inv
 const InvalidStateTransitionTypeError = require('./basic/stateTransition/InvalidStateTransitionTypeError');
 const MissingStateTransitionTypeError = require('./basic/stateTransition/MissingStateTransitionTypeError');
 const StateTransitionMaxSizeExceededError = require('./basic/stateTransition/StateTransitionMaxSizeExceededError');
-
 const IdentityNotFoundError = require('./signature/IdentityNotFoundError');
 const InvalidIdentityPublicKeyTypeError = require('./signature/InvalidIdentityPublicKeyTypeError');
 const InvalidStateTransitionSignatureError = require('./signature/InvalidStateTransitionSignatureError');
 const MissingPublicKeyError = require('./signature/MissingPublicKeyError');
-
 const BalanceIsNotEnoughError = require('./fee/BalanceIsNotEnoughError');
-
 const DataContractAlreadyPresentError = require('./state/dataContract/DataContractAlreadyPresentError');
 const DataTriggerConditionError = require('./state/dataContract/dataTrigger/DataTriggerConditionError');
 const DataTriggerExecutionError = require('./state/dataContract/dataTrigger/DataTriggerExecutionError');
