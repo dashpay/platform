@@ -1,8 +1,11 @@
 const path = require('path');
 const fs = require('fs');
-const AbstractStateError = require('../../../../lib/errors/consensus/state/AbstractStateError');
-const AbstractBasicError = require('../../../../lib/errors/consensus/basic/AbstractBasicError');
 const codes = require('../../../../lib/errors/consensus/codes');
+const AbstractConsensusError = require('../../../../lib/errors/consensus/AbstractConsensusError');
+const AbstractBasicError = require('../../../../lib/errors/consensus/basic/AbstractBasicError');
+const AbstractSignatureError = require('../../../../lib/errors/consensus/signature/AbstractSignatureError');
+const AbstractFeeError = require('../../../../lib/errors/consensus/fee/AbstractFeeError');
+const AbstractStateError = require('../../../../lib/errors/consensus/state/AbstractStateError');
 
 const getAllFiles = (dirPath, arrayOfFiles) => {
   const files = fs.readdirSync(dirPath);
@@ -48,14 +51,30 @@ describe('Consensus error codes', () => {
     const ErrorClass = require(fileName);
 
     if (
-      (isChildOf(ErrorClass, AbstractStateError) || (isChildOf(ErrorClass, AbstractBasicError)))
-      && !ErrorClass.name.startsWith('Abstract')
+      (isChildOf(ErrorClass, AbstractConsensusError)) && !ErrorClass.name.startsWith('Abstract')
     ) {
       it(`should have error code defined for ${ErrorClass.name}`, () => {
-        const hasErrorCode = !!Object.values(codes)
-          .find((ErrorClassWithCode) => ErrorClassWithCode === ErrorClass);
+        const result = Object.entries(codes)
+          .find(([, ErrorClassWithCode]) => ErrorClassWithCode === ErrorClass);
 
-        expect(hasErrorCode).to.be.true();
+        expect(result).to.exist();
+
+        // Check code range
+        const code = Number(result[0]);
+
+        if (isChildOf(ErrorClass, AbstractBasicError)) {
+          expect(code).to.be.above(999);
+          expect(code).to.be.below(2000);
+        } else if (isChildOf(ErrorClass, AbstractSignatureError)) {
+          expect(code).to.be.above(1999);
+          expect(code).to.be.below(3000);
+        } else if (isChildOf(ErrorClass, AbstractFeeError)) {
+          expect(code).to.be.above(2999);
+          expect(code).to.be.below(4000);
+        } else if (isChildOf(ErrorClass, AbstractStateError)) {
+          expect(code).to.be.above(3999);
+          expect(code).to.be.below(5000);
+        }
       });
     }
   });

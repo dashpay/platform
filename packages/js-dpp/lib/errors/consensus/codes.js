@@ -75,6 +75,9 @@ const IdentityPublicKeyIsReadOnlyError = require('./state/identity/IdentityPubli
 const InvalidIdentityPublicKeyIdError = require('./state/identity/InvalidIdentityPublicKeyIdError');
 const InvalidIdentityRevisionError = require('./state/identity/InvalidIdentityRevisionError');
 const MaxIdentityPublicKeyLimitReachedError = require('./basic/identity/MaxIdentityPublicKeyLimitReachedError');
+const StateMaxIdentityPublicKeyLimitReachedError = require('./state/identity/MaxIdentityPublicKeyLimitReachedError');
+const StateDuplicatedIdentityPublicKeyError = require('./state/identity/DuplicatedIdentityPublicKeyError');
+const StateDuplicatedIdentityPublicKeyIdError = require('./state/identity/DuplicatedIdentityPublicKeyIdError');
 
 const codes = {
   /**
@@ -105,6 +108,12 @@ const codes = {
   1016: UndefinedIndexPropertyError,
   1017: UniqueIndicesLimitReachedError,
   1048: DuplicateIndexNameError,
+  1050: InvalidDataContractVersionError,
+  1051: IncompatibleDataContractSchemaError,
+  1052: DataContractImmutablePropertiesUpdateError,
+  1053: DataContractIndicesChangedError,
+  1054: DataContractInvalidIndexDefinitionUpdateError,
+  1055: DataContractHaveNewUniqueIndexError,
 
   // Document
   1018: DataContractNotPresentError,
@@ -136,6 +145,7 @@ const codes = {
   1042: InvalidInstantAssetLockProofSignatureError,
   1046: MissingMasterPublicKeyError,
   1047: InvalidIdentityPublicKeySecurityLevelError,
+  1049: MaxIdentityPublicKeyLimitReachedError,
 
   // State Transition
   1043: InvalidStateTransitionTypeError,
@@ -166,12 +176,6 @@ const codes = {
   4001: DataTriggerConditionError,
   4002: DataTriggerExecutionError,
   4003: DataTriggerInvalidResultError,
-  4013: InvalidDataContractVersionError,
-  4014: IncompatibleDataContractSchemaError,
-  4015: DataContractImmutablePropertiesUpdateError,
-  4016: DataContractIndicesChangedError,
-  4021: DataContractInvalidIndexDefinitionUpdateError,
-  4022: DataContractHaveNewUniqueIndexError,
 
   // Document
   4004: DocumentAlreadyPresentError,
@@ -188,7 +192,9 @@ const codes = {
   4017: IdentityPublicKeyIsReadOnlyError,
   4018: InvalidIdentityPublicKeyIdError,
   4019: InvalidIdentityRevisionError,
-  4020: MaxIdentityPublicKeyLimitReachedError,
+  4020: StateMaxIdentityPublicKeyLimitReachedError,
+  4021: StateDuplicatedIdentityPublicKeyError,
+  4022: StateDuplicatedIdentityPublicKeyIdError,
 };
 
 module.exports = codes;

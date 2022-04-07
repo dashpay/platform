@@ -382,6 +382,7 @@ describe('validatePublicKeysFactory', () => {
     expectValidationError(result, MaxIdentityPublicKeyLimitReachedError);
 
     const [error] = result.getErrors();
+    expect(error.getCode()).to.equal(1049);
     expect(error.geMaxItems()).to.equal(maxItems);
   });
 });
