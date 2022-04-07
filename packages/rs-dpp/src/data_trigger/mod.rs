@@ -15,7 +15,7 @@ use crate::{
     state_repository::StateRepositoryLike,
 };
 
-use super::document_transition::{Action, DocumentTransition};
+use crate::document::document_transition::{Action, DocumentTransition};
 
 pub type Trigger<SR> =
     fn(
