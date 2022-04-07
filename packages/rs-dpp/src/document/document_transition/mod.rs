@@ -16,3 +16,28 @@ pub enum DocumentTransition {
     Replace(DocumentReplaceTransition),
     Delete(DocumentDeleteTransition),
 }
+
+impl DocumentTransition {
+    pub fn as_transition_create(&self) -> Option<&DocumentCreateTransition> {
+        if let Self::Create(ref t) = self {
+            Some(t)
+        } else {
+            None
+        }
+    }
+    pub fn as_transition_replace(&self) -> Option<&DocumentReplaceTransition> {
+        if let Self::Replace(ref t) = self {
+            Some(t)
+        } else {
+            None
+        }
+    }
+
+    pub fn as_transition_delete(&self) -> Option<&DocumentDeleteTransition> {
+        if let Self::Delete(ref t) = self {
+            Some(t)
+        } else {
+            None
+        }
+    }
+}
