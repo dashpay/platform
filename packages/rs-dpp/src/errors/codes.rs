@@ -17,6 +17,7 @@ impl ErrorWithCode for StateError {
             Self::InvalidDocumentRevisionError { .. } => Some(4010),
             // Data contract
             Self::DataContractAlreadyPresentError { .. } => Some(4000),
+            Self::DataTriggerError(ref e) => e.get_code(),
         }
     }
 }
