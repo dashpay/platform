@@ -1,18 +1,16 @@
+const sortTransactions = require('../../../utils/sortTransactions');
+
 /**
  * Function goes through all transactions, and ensures address gap
  * having in mind addresses already used by the account.
  */
 function createPathsForTransactions() {
   const chainStore = this.storage.getChainStore(this.network);
-  const transactions = chainStore.getTransactions();
+  const transactions = [...chainStore.getTransactions().values()];
 
-  const sortedTransactions = [...transactions.values()].sort((a, b) => {
-    const heightA = a.metadata.height;
-    const heightB = b.metadata.height;
-    return heightA - heightB;
-  });
+  const sortedTransactions = sortTransactions(transactions);
 
-  sortedTransactions.forEach(({ transaction }, i, self) => {
+  sortedTransactions.forEach((transaction, i, self) => {
     // Update the state of UTXO for a given transaction
     const { inputs, outputs } = transaction;
 
