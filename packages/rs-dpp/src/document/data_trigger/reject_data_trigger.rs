@@ -5,8 +5,8 @@ use crate::{
 
 use super::{DataTriggerExecutionContext, DataTriggerExecutionResult};
 
-async fn reject_data_trigger<SR>(
-    document_transition: DocumentTransition,
+pub async fn reject_data_trigger<SR>(
+    document_transition: &DocumentTransition,
     context: DataTriggerExecutionContext<SR>,
 ) where
     SR: StateRepositoryLike,
@@ -15,8 +15,8 @@ async fn reject_data_trigger<SR>(
 
     result.add_error(
         DataTriggerError::DataTriggerConditionError {
-            data_contract_id: context.data_contract.id.clone(),
-            document_transition_id: get_from_transition!(document_transition, id).clone(),
+            data_contract_id: context.data_contract.id,
+            document_transition_id: get_from_transition!(document_transition, id).to_owned(),
             message: String::from("Action is not allowed"),
         }
         .into(),
