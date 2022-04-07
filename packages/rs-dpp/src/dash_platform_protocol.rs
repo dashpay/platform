@@ -37,20 +37,8 @@ impl<'a> From<ValidationError<'a>> for DashPlatformProtocolInitError {
     }
 }
 
-struct AssetLockProofStateTransitionsSchema {
-    chain_asset_lock_proof_json: serde_json::Value,
-    instant_asset_lock_proof_json: serde_json::Value,
-}
-
-struct IdentityStateTransitionSchemas {
-    asset_lock_proof: AssetLockProofStateTransitionsSchema,
-    identity_create_json: serde_json::Value,
-    identity_top_up_json: serde_json::Value,
-}
-
 #[derive(Debug)]
 pub struct IdentitySchemas {
-    identity: JSONSchema,
     public_key: JSONSchema,
 }
 
@@ -60,7 +48,6 @@ impl<'a> IdentitySchemas {
         public_key_json: &'a serde_json::Value,
     ) -> Result<Self, ValidationError<'a>> {
         Ok(Self {
-            identity: JSONSchema::compile(identity_json)?,
             public_key: JSONSchema::compile(public_key_json)?,
         })
     }
@@ -117,10 +104,6 @@ impl JsonSchemas {
             Err(err) => Some(err),
         }
     }
-}
-
-pub struct JsonSchemasBuilder {
-    schema_jsons: Option<SchemaJsons>,
 }
 
 pub struct DashPlatformProtocol {

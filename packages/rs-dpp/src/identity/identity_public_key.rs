@@ -4,7 +4,6 @@ use libsecp256k1::PublicKey;
 use lazy_static::lazy_static;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::{collections::HashMap, hash::Hash};
-use std::iter::FromIterator;
 
 pub type KeyID = i64;
 

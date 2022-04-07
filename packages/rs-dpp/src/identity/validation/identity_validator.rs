@@ -1,5 +1,3 @@
-use crate::dash_platform_protocol::{JsonSchemas};
-use crate::errors::consensus::basic::JsonSchemaError;
 use crate::errors::consensus::ConsensusError;
 use crate::schema::IdentitySchemaJsons;
 use crate::validation::{byte_array_meta, ValidationResult};
@@ -72,4 +70,6 @@ impl IdentityValidator {
     }
 
     pub fn validate_public_keys() {}
+
+    pub fn validate_public_keys_in_identity_create_transition() {}
 }

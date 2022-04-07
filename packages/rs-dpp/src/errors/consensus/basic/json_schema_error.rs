@@ -5,15 +5,6 @@ use jsonschema::paths::{JSONPointer, PathChunk};
 use jsonschema::ValidationError;
 use thiserror::Error;
 
-fn into_owned(err: ValidationError) -> ValidationError<'static> {
-    ValidationError {
-        instance_path: err.instance_path.clone(),
-        instance: Cow::Owned(err.instance.into_owned()),
-        kind: err.kind,
-        schema_path: err.schema_path,
-    }
-}
-
 #[derive(Error, Debug)]
 #[error("JsonSchemaError: {message:?}, kind: {kind:?}, instance_path: {instance_path:?}, schema_path:{schema_path:?}")]
 pub struct JsonSchemaError {
