@@ -49,6 +49,7 @@
   },
   "workspaces": [
     "packages/js-grpc-common",
+    "packages/bench-suite",
     "packages/dapi-grpc",
     "packages/js-abci",
     "packages/js-dpp",

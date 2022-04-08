@@ -23,6 +23,10 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
         "reference": "workspace:."
       },
       {
+        "name": "@dashevo/bench-suite",
+        "reference": "workspace:packages/bench-suite"
+      },
+      {
         "name": "@dashevo/dapi",
         "reference": "workspace:packages/dapi"
       },
@@ -82,6 +86,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
     "enableTopLevelFallback": true,
     "ignorePatternData": "(^(?:\\.yarn\\/sdks(?:\\/(?!\\.{1,2}(?:\\/|$))(?:(?:(?!(?:^|\\/)\\.{1,2}(?:\\/|$)).)*?)|$))$)",
     "fallbackExclusionList": [
+      ["@dashevo/bench-suite", ["workspace:packages/bench-suite"]],
       ["@dashevo/dapi", ["workspace:packages/dapi"]],
       ["@dashevo/dapi-client", ["workspace:packages/js-dapi-client"]],
       ["@dashevo/dapi-grpc", ["workspace:packages/dapi-grpc"]],
@@ -2263,6 +2268,20 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           "linkType": "HARD",
         }]
       ]],
+      ["@dashevo/bench-suite", [
+        ["workspace:packages/bench-suite", {
+          "packageLocation": "./packages/bench-suite/",
+          "packageDependencies": [
+            ["@dashevo/bench-suite", "workspace:packages/bench-suite"],
+            ["dash", "workspace:packages/js-dash-sdk"],
+            ["eslint", "npm:7.32.0"],
+            ["eslint-config-airbnb-base", "virtual:595d7482cc8ddf98ee6aef33fc48b46393554ab5f17f851ef62e6e39315e53666c3e66226b978689aa0bc7f1e83a03081511a21db1c381362fe67614887077f9#npm:14.2.1"],
+            ["eslint-plugin-import", "virtual:595d7482cc8ddf98ee6aef33fc48b46393554ab5f17f851ef62e6e39315e53666c3e66226b978689aa0bc7f1e83a03081511a21db1c381362fe67614887077f9#npm:2.25.3"],
+            ["mocha", "npm:9.2.2"]
+          ],
+          "linkType": "SOFT",
+        }]
+      ]],
       ["@dashevo/dapi", [
         ["workspace:packages/dapi", {
           "packageLocation": "./packages/dapi/",
@@ -3284,7 +3303,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["chalk", "npm:4.1.2"],
             ["clean-stack", "npm:3.0.1"],
             ["cli-progress", "npm:3.10.0"],
-            ["debug", "virtual:e0bcdb30fd626f99ea6779721a0a71e37a1e0c50c9b9efdc8c529c07facadd7c604bf4988d80d980de298e61ede04b9695580df0baa812da80a4ce3b8a002d33#npm:4.3.3"],
+            ["debug", "virtual:f7735febb87b1fbb8215178a6f0b0bc1e3e251c18455c0481843aea1b7aa4c7d6fbdbd3eeee04078e2e2e368e4d4b513dd87411eb2f12aa6ea556f640295bc68#npm:4.3.3"],
             ["ejs", "npm:3.1.6"],
             ["fs-extra", "npm:9.1.0"],
             ["get-package-type", "npm:0.1.0"],
@@ -6494,6 +6513,21 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["readdirp", "npm:3.6.0"]
           ],
           "linkType": "HARD",
+        }],
+        ["npm:3.5.3", {
+          "packageLocation": "./.yarn/cache/chokidar-npm-3.5.3-c5f9b0a56a-b49fcde401.zip/node_modules/chokidar/",
+          "packageDependencies": [
+            ["chokidar", "npm:3.5.3"],
+            ["anymatch", "npm:3.1.2"],
+            ["braces", "npm:3.0.2"],
+            ["fsevents", "patch:fsevents@npm%3A2.3.2#~builtin<compat/fsevents>::version=2.3.2&hash=18f3a7"],
+            ["glob-parent", "npm:5.1.2"],
+            ["is-binary-path", "npm:2.1.0"],
+            ["is-glob", "npm:4.0.3"],
+            ["normalize-path", "npm:3.0.0"],
+            ["readdirp", "npm:3.6.0"]
+          ],
+          "linkType": "HARD",
         }]
       ]],
       ["chownr", [
@@ -7746,10 +7780,10 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           ],
           "linkType": "HARD",
         }],
-        ["virtual:e0bcdb30fd626f99ea6779721a0a71e37a1e0c50c9b9efdc8c529c07facadd7c604bf4988d80d980de298e61ede04b9695580df0baa812da80a4ce3b8a002d33#npm:4.3.3", {
-          "packageLocation": "./.yarn/__virtual__/debug-virtual-da65a63157/0/cache/debug-npm-4.3.3-710fd4cc7f-14472d56fe.zip/node_modules/debug/",
+        ["virtual:f7735febb87b1fbb8215178a6f0b0bc1e3e251c18455c0481843aea1b7aa4c7d6fbdbd3eeee04078e2e2e368e4d4b513dd87411eb2f12aa6ea556f640295bc68#npm:4.3.3", {
+          "packageLocation": "./.yarn/__virtual__/debug-virtual-0dd0b2b0b9/0/cache/debug-npm-4.3.3-710fd4cc7f-14472d56fe.zip/node_modules/debug/",
           "packageDependencies": [
-            ["debug", "virtual:e0bcdb30fd626f99ea6779721a0a71e37a1e0c50c9b9efdc8c529c07facadd7c604bf4988d80d980de298e61ede04b9695580df0baa812da80a4ce3b8a002d33#npm:4.3.3"],
+            ["debug", "virtual:f7735febb87b1fbb8215178a6f0b0bc1e3e251c18455c0481843aea1b7aa4c7d6fbdbd3eeee04078e2e2e368e4d4b513dd87411eb2f12aa6ea556f640295bc68#npm:4.3.3"],
             ["@types/supports-color", null],
             ["ms", "npm:2.1.2"],
             ["supports-color", "npm:8.1.1"]
@@ -12953,6 +12987,14 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           ],
           "linkType": "HARD",
         }],
+        ["npm:4.2.1", {
+          "packageLocation": "./.yarn/cache/minimatch-npm-4.2.1-558ec7f418-2b1514e3d0.zip/node_modules/minimatch/",
+          "packageDependencies": [
+            ["minimatch", "npm:4.2.1"],
+            ["brace-expansion", "npm:1.1.11"]
+          ],
+          "linkType": "HARD",
+        }],
         ["npm:5.0.0", {
           "packageLocation": "./.yarn/cache/minimatch-npm-5.0.0-969101c1d1-810d4165fa.zip/node_modules/minimatch/",
           "packageDependencies": [
@@ -13132,6 +13174,37 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["supports-color", "npm:8.1.1"],
             ["which", "npm:2.0.2"],
             ["workerpool", "npm:6.1.5"],
+            ["yargs", "npm:16.2.0"],
+            ["yargs-parser", "npm:20.2.4"],
+            ["yargs-unparser", "npm:2.0.0"]
+          ],
+          "linkType": "HARD",
+        }],
+        ["npm:9.2.2", {
+          "packageLocation": "./.yarn/cache/mocha-npm-9.2.2-f7735febb8-4d5ca4ce33.zip/node_modules/mocha/",
+          "packageDependencies": [
+            ["mocha", "npm:9.2.2"],
+            ["@ungap/promise-all-settled", "npm:1.1.2"],
+            ["ansi-colors", "npm:4.1.1"],
+            ["browser-stdout", "npm:1.3.1"],
+            ["chokidar", "npm:3.5.3"],
+            ["debug", "virtual:f7735febb87b1fbb8215178a6f0b0bc1e3e251c18455c0481843aea1b7aa4c7d6fbdbd3eeee04078e2e2e368e4d4b513dd87411eb2f12aa6ea556f640295bc68#npm:4.3.3"],
+            ["diff", "npm:5.0.0"],
+            ["escape-string-regexp", "npm:4.0.0"],
+            ["find-up", "npm:5.0.0"],
+            ["glob", "npm:7.2.0"],
+            ["growl", "npm:1.10.5"],
+            ["he", "npm:1.2.0"],
+            ["js-yaml", "npm:4.1.0"],
+            ["log-symbols", "npm:4.1.0"],
+            ["minimatch", "npm:4.2.1"],
+            ["ms", "npm:2.1.3"],
+            ["nanoid", "npm:3.3.1"],
+            ["serialize-javascript", "npm:6.0.0"],
+            ["strip-json-comments", "npm:3.1.1"],
+            ["supports-color", "npm:8.1.1"],
+            ["which", "npm:2.0.2"],
+            ["workerpool", "npm:6.2.0"],
             ["yargs", "npm:16.2.0"],
             ["yargs-parser", "npm:20.2.4"],
             ["yargs-unparser", "npm:2.0.0"]
@@ -13324,6 +13397,13 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           "packageLocation": "./.yarn/cache/nanoid-npm-3.1.25-c8f62ce160-e2353828c7.zip/node_modules/nanoid/",
           "packageDependencies": [
             ["nanoid", "npm:3.1.25"]
+          ],
+          "linkType": "HARD",
+        }],
+        ["npm:3.3.1", {
+          "packageLocation": "./.yarn/cache/nanoid-npm-3.3.1-bdd760bee0-4ef0969e1b.zip/node_modules/nanoid/",
+          "packageDependencies": [
+            ["nanoid", "npm:3.3.1"]
           ],
           "linkType": "HARD",
         }]
@@ -18790,6 +18870,13 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           "packageLocation": "./.yarn/cache/workerpool-npm-6.1.5-61adb98c59-5defea1fd3.zip/node_modules/workerpool/",
           "packageDependencies": [
             ["workerpool", "npm:6.1.5"]
+          ],
+          "linkType": "HARD",
+        }],
+        ["npm:6.2.0", {
+          "packageLocation": "./.yarn/cache/workerpool-npm-6.2.0-d2a722f6bb-3493b4f0ef.zip/node_modules/workerpool/",
+          "packageDependencies": [
+            ["workerpool", "npm:6.2.0"]
           ],
           "linkType": "HARD",
         }]
