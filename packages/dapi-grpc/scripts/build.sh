@@ -18,6 +18,8 @@ PLATFORM_OBJ_C_OUT_PATH="$PLATFORM_CLIENTS_PATH/objective-c"
 CORE_PYTHON_OUT_PATH="$CORE_CLIENTS_PATH/python"
 PLATFORM_PYTHON_OUT_PATH="$PLATFORM_CLIENTS_PATH/python"
 
+GRPC_WEB_COMMON_IMAGE="strophy/grpc-web-common:1.3.2"
+PROTOC_IMAGE="strophy/protoc:3.3.2"
 
 #################################################
 # Generate JavaScript client for `Core` service #
@@ -28,7 +30,7 @@ rm -rf "$CORE_WEB_OUT_PATH/*"
 docker run -v "$CORE_PROTO_PATH:$CORE_PROTO_PATH" \
            -v "$CORE_WEB_OUT_PATH:$CORE_WEB_OUT_PATH" \
            --rm \
-           dashpay/grpc-web-common \
+           "$GRPC_WEB_COMMON_IMAGE" \
            protoc -I="$CORE_PROTO_PATH" "core.proto" \
                    --js_out="import_style=commonjs:$CORE_WEB_OUT_PATH" \
                    --grpc-web_out="import_style=commonjs,mode=grpcwebtext:$CORE_WEB_OUT_PATH"
@@ -59,7 +61,7 @@ rm -rf "$PLATFORM_WEB_OUT_PATH/*"
 docker run -v "$PLATFORM_PROTO_PATH:$PLATFORM_PROTO_PATH" \
            -v "$PLATFORM_WEB_OUT_PATH:$PLATFORM_WEB_OUT_PATH" \
            --rm \
-           dashpay/grpc-web-common \
+           "$GRPC_WEB_COMMON_IMAGE" \
            protoc -I="$PLATFORM_PROTO_PATH" "platform.proto" \
                    --js_out="import_style=commonjs:$PLATFORM_WEB_OUT_PATH" \
                    --grpc-web_out="import_style=commonjs,mode=grpcwebtext:$PLATFORM_WEB_OUT_PATH"
@@ -89,11 +91,11 @@ rm -rf "$CORE_JAVA_OUT_PATH/*"
 docker run -v "$CORE_PROTO_PATH:$CORE_PROTO_PATH" \
            -v "$CORE_JAVA_OUT_PATH:$CORE_JAVA_OUT_PATH" \
            --rm \
-           znly/protoc \
+           "$PROTOC_IMAGE" \
            --plugin=protoc-gen-grpc=/usr/bin/protoc-gen-grpc-java \
            --grpc-java_out="$CORE_JAVA_OUT_PATH" \
            --proto_path="$CORE_PROTO_PATH" \
-           -I "$CORE_PROTO_PATH" \
+           -I="$CORE_PROTO_PATH" \
            "core.proto"
 
 #######################################
@@ -105,11 +107,11 @@ rm -rf "$PLATFORM_JAVA_OUT_PATH/*"
 docker run -v "$PLATFORM_PROTO_PATH:$PLATFORM_PROTO_PATH" \
            -v "$PLATFORM_JAVA_OUT_PATH:$PLATFORM_JAVA_OUT_PATH" \
            --rm \
-           znly/protoc \
+           "$PROTOC_IMAGE" \
            --plugin=protoc-gen-grpc=/usr/bin/protoc-gen-grpc-java \
            --grpc-java_out="$PLATFORM_JAVA_OUT_PATH" \
            --proto_path="$PLATFORM_PROTO_PATH" \
-           -I "$PLATFORM_PROTO_PATH" \
+           -I="$PLATFORM_PROTO_PATH" \
            "platform.proto"
 
 ##########################################
@@ -121,12 +123,12 @@ rm -rf "$CORE_OBJ_C_OUT_PATH/*"
 docker run -v "$CORE_PROTO_PATH:$CORE_PROTO_PATH" \
            -v "$CORE_OBJ_C_OUT_PATH:$CORE_OBJ_C_OUT_PATH" \
            --rm \
-           znly/protoc \
+           "$PROTOC_IMAGE" \
            --plugin=protoc-gen-grpc=/usr/bin/grpc_objective_c_plugin \
            --objc_out="$CORE_OBJ_C_OUT_PATH" \
            --grpc_out="$CORE_OBJ_C_OUT_PATH" \
            --proto_path="$CORE_PROTO_PATH" \
-           -I "$CORE_PROTO_PATH" \
+           -I="$CORE_PROTO_PATH" \
            "core.proto"
 
 ##############################################
@@ -138,12 +140,12 @@ rm -rf "$PLATFORM_OBJ_C_OUT_PATH/*"
 docker run -v "$PLATFORM_PROTO_PATH:$PLATFORM_PROTO_PATH" \
            -v "$PLATFORM_OBJ_C_OUT_PATH:$PLATFORM_OBJ_C_OUT_PATH" \
            --rm \
-           znly/protoc \
+           "$PROTOC_IMAGE" \
            --plugin=protoc-gen-grpc=/usr/bin/grpc_objective_c_plugin \
            --objc_out="$PLATFORM_OBJ_C_OUT_PATH" \
            --grpc_out="$PLATFORM_OBJ_C_OUT_PATH" \
            --proto_path="$PLATFORM_PROTO_PATH" \
-           -I "$PLATFORM_PROTO_PATH" \
+           -I="$PLATFORM_PROTO_PATH" \
            "platform.proto"
 
 #####################################
@@ -155,12 +157,12 @@ rm -rf "$CORE_PYTHON_OUT_PATH/*"
 docker run -v "$CORE_PROTO_PATH:$CORE_PROTO_PATH" \
            -v "$CORE_PYTHON_OUT_PATH:$CORE_PYTHON_OUT_PATH" \
            --rm \
-           znly/protoc \
+           "$PROTOC_IMAGE" \
            --plugin=protoc-gen-grpc=/usr/bin/grpc_python_plugin \
            --python_out="$CORE_PYTHON_OUT_PATH" \
            --grpc_out="$CORE_PYTHON_OUT_PATH" \
            --proto_path="$CORE_PROTO_PATH" \
-           -I "$CORE_PROTO_PATH" \
+           -I="$CORE_PROTO_PATH" \
            "core.proto"
 
 #########################################
@@ -172,10 +174,10 @@ rm -rf "$PLATFORM_PYTHON_OUT_PATH/*"
 docker run -v "$PLATFORM_PROTO_PATH:$PLATFORM_PROTO_PATH" \
           -v "$PLATFORM_PYTHON_OUT_PATH:$PLATFORM_PYTHON_OUT_PATH" \
           --rm \
-          znly/protoc \
+          "$PROTOC_IMAGE" \
           --plugin=protoc-gen-grpc=/usr/bin/grpc_python_plugin \
           --python_out="$PLATFORM_PYTHON_OUT_PATH" \
           --grpc_out="$PLATFORM_PYTHON_OUT_PATH" \
           --proto_path="$PLATFORM_PROTO_PATH" \
-          -I "$PLATFORM_PROTO_PATH" \
+          -I="$PLATFORM_PROTO_PATH" \
           "platform.proto"

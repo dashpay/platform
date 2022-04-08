@@ -410,6 +410,14 @@ describe('DriveStateRepository', () => {
       );
       expect(instantLockMock.verify).to.have.not.been.called();
     });
+
+    it('should return false if header is null', async () => {
+      blockExecutionContextMock.getHeader.returns(null);
+
+      const result = await stateRepository.verifyInstantLock(instantLockMock);
+
+      expect(result).to.be.false();
+    });
   });
 
   describe('#fetchSMLStore', () => {

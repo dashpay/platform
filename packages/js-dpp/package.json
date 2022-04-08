@@ -1,6 +1,6 @@
 {
   "name": "@dashevo/dpp",
-  "version": "0.22.0-dev.14",
+  "version": "0.22.0",
   "description": "The JavaScript implementation of the Dash Platform Protocol",
   "scripts": {
     "lint": "eslint .",
@@ -88,7 +88,7 @@
     "@dashevo/dpns-contract": "workspace:~",
     "@dashevo/feature-flags-contract": "workspace:~",
     "@dashevo/masternode-reward-shares-contract": "workspace:~",
-    "@dashevo/re2-wasm": "~1.0.4",
+    "@dashevo/wasm-re2": "~1.0.2",
     "ajv": "^8.6.0",
     "ajv-formats": "^2.1.1",
     "bignumber.js": "^9.0.1",

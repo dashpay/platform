@@ -8,7 +8,7 @@ const getDAPISeeds = require('./getDAPISeeds');
 let faucetClient;
 
 const forage = new NodeForage({ name: 'faucet-wallet' });
-
+console.log(process.env);
 function createFaucetClient() {
   const seeds = getDAPISeeds();
 
