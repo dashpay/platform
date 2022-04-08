@@ -2756,6 +2756,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["karma-mocha-reporter", "virtual:58fb68f2aed20e5e0f2e48520ab903ae9bb3440369bfd5e912034003cf27c5aae368649fc5620dd2acbed578131f3a0975e75b838d77d12335fb0412e24026c6#npm:2.2.5"],
             ["karma-webpack", "virtual:01938c2be4835443e5a304e2b117c575220e96e8b7cedeb0f48d79264590b4c4babc6d1fea6367f522b1ca0149d795b42f2ab89c34a6ffe3c20f0a8cbb8b4453#npm:5.0.0"],
             ["mocha", "npm:9.1.3"],
+            ["nodeforage", "npm:1.1.1"],
             ["os-browserify", "npm:0.3.0"],
             ["path-browserify", "npm:1.0.1"],
             ["process", "npm:0.11.10"],
@@ -10033,6 +10034,13 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
         }]
       ]],
       ["graceful-fs", [
+        ["npm:4.2.10", {
+          "packageLocation": "./.yarn/cache/graceful-fs-npm-4.2.10-79c70989ca-3f109d70ae.zip/node_modules/graceful-fs/",
+          "packageDependencies": [
+            ["graceful-fs", "npm:4.2.10"]
+          ],
+          "linkType": "HARD",
+        }],
         ["npm:4.2.9", {
           "packageLocation": "./.yarn/cache/graceful-fs-npm-4.2.9-ee48e00aaa-68ea4e07ff.zip/node_modules/graceful-fs/",
           "packageDependencies": [
@@ -12378,6 +12386,15 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           "linkType": "HARD",
         }]
       ]],
+      ["lodash.find", [
+        ["npm:4.6.0", {
+          "packageLocation": "./.yarn/cache/lodash.find-npm-4.6.0-dd2db8c53f-b737f849a4.zip/node_modules/lodash.find/",
+          "packageDependencies": [
+            ["lodash.find", "npm:4.6.0"]
+          ],
+          "linkType": "HARD",
+        }]
+      ]],
       ["lodash.flattendeep", [
         ["npm:4.4.0", {
           "packageLocation": "./.yarn/cache/lodash.flattendeep-npm-4.4.0-26b2b4cbd7-8521c919ac.zip/node_modules/lodash.flattendeep/",
@@ -13536,6 +13553,20 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           "packageLocation": "./.yarn/cache/node-releases-npm-2.0.1-77b8e327f7-b20dd8d4bc.zip/node_modules/node-releases/",
           "packageDependencies": [
             ["node-releases", "npm:2.0.1"]
+          ],
+          "linkType": "HARD",
+        }]
+      ]],
+      ["nodeforage", [
+        ["npm:1.1.1", {
+          "packageLocation": "./.yarn/cache/nodeforage-npm-1.1.1-88cd0e2f0f-0cb4e4aa85.zip/node_modules/nodeforage/",
+          "packageDependencies": [
+            ["nodeforage", "npm:1.1.1"],
+            ["lodash.find", "npm:4.6.0"],
+            ["lodash.ismatch", "npm:4.4.0"],
+            ["lodash.merge", "npm:4.6.2"],
+            ["proper-lockfile", "npm:3.2.0"],
+            ["slocket", "npm:1.0.5"]
           ],
           "linkType": "HARD",
         }]
@@ -14807,6 +14838,18 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["promise-retry", "npm:2.0.1"],
             ["err-code", "npm:2.0.3"],
             ["retry", "npm:0.12.0"]
+          ],
+          "linkType": "HARD",
+        }]
+      ]],
+      ["proper-lockfile", [
+        ["npm:3.2.0", {
+          "packageLocation": "./.yarn/cache/proper-lockfile-npm-3.2.0-4c500143f0-1be1bb702b.zip/node_modules/proper-lockfile/",
+          "packageDependencies": [
+            ["proper-lockfile", "npm:3.2.0"],
+            ["graceful-fs", "npm:4.2.10"],
+            ["retry", "npm:0.12.0"],
+            ["signal-exit", "npm:3.0.7"]
           ],
           "linkType": "HARD",
         }]
@@ -16170,6 +16213,18 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["ansi-styles", "npm:4.3.0"],
             ["astral-regex", "npm:2.0.0"],
             ["is-fullwidth-code-point", "npm:3.0.0"]
+          ],
+          "linkType": "HARD",
+        }]
+      ]],
+      ["slocket", [
+        ["npm:1.0.5", {
+          "packageLocation": "./.yarn/cache/slocket-npm-1.0.5-6a604ece59-4ea3cba56c.zip/node_modules/slocket/",
+          "packageDependencies": [
+            ["slocket", "npm:1.0.5"],
+            ["bluebird", "npm:3.7.2"],
+            ["rimraf", "npm:2.7.1"],
+            ["signal-exit", "npm:3.0.7"]
           ],
           "linkType": "HARD",
         }]

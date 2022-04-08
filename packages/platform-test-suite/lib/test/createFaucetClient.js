@@ -1,4 +1,5 @@
 const Dash = require('dash');
+const { NodeForage } = require('nodeforage');
 
 const { contractId } = require('@dashevo/dpns-contract/lib/systemIds');
 
@@ -6,11 +7,9 @@ const getDAPISeeds = require('./getDAPISeeds');
 
 let faucetClient;
 
-function createFaucetClient() {
-  if (faucetClient) {
-    return faucetClient;
-  }
+const forage = new NodeForage({ name: 'faucet-wallet' });
 
+function createFaucetClient() {
   const seeds = getDAPISeeds();
 
   const clientOpts = {
@@ -23,8 +22,10 @@ function createFaucetClient() {
     },
   };
 
+  // TODO: Consider implementing .env flag that will enable/disable storage adapter
   const walletOptions = {
     privateKey: process.env.FAUCET_PRIVATE_KEY,
+    adapter: forage,
   };
 
   if (process.env.SKIP_SYNC_BEFORE_HEIGHT) {
