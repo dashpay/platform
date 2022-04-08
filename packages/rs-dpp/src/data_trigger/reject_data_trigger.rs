@@ -18,6 +18,8 @@ pub async fn reject_data_trigger<SR>(
             data_contract_id: context.data_contract.id,
             document_transition_id: get_from_transition!(document_transition, id).to_owned(),
             message: String::from("Action is not allowed"),
+            document_transition: None,
+            owner_id: None,
         }
         .into(),
     );

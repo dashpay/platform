@@ -5,7 +5,10 @@ use crate::{
 
 // TODO consider using the reference to the StateRepository instance
 #[derive(Clone, Debug)]
-pub struct DataTriggerExecutionContext<SR> {
+pub struct DataTriggerExecutionContext<SR>
+where
+    SR: StateRepositoryLike,
+{
     pub state_repository: SR,
     pub owner_id: Identifier,
     pub data_contract: DataContract,

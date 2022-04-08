@@ -1,4 +1,3 @@
-pub mod data_trigger;
 pub mod document_transition;
 pub mod errors;
 pub mod validation;
