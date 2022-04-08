@@ -25,6 +25,9 @@ const InvalidIdentityPublicKeySecurityLevelError = require(
 
 const IdentityPublicKey = require('../IdentityPublicKey');
 
+const publicKeyEnabledSchema = lodashCloneDeep(publicKeySchema);
+delete publicKeyEnabledSchema.properties.disabledAt;
+
 /**
  * Validate public keys (factory)
  *
@@ -52,16 +55,14 @@ function validatePublicKeysFactory(validator, bls) {
     let schemaToValidate = publicKeySchema;
 
     if (mustBeEnabled) {
-      schemaToValidate = lodashCloneDeep(publicKeySchema);
-
-      delete schemaToValidate.properties.disabledAt;
+      schemaToValidate = publicKeyEnabledSchema;
     }
 
     // Validate public key structure
     rawPublicKeys.forEach((rawPublicKey) => {
       result.merge(
         validator.validate(
-          schemaToValidate,
+          publicKeySchema,
           convertBuffersToArrays(rawPublicKey),
         ),
       );

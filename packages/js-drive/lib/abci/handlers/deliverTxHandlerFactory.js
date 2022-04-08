@@ -26,6 +26,8 @@ const DATA_CONTRACT_ACTION_DESCRIPTIONS = {
   [stateTransitionTypes.DATA_CONTRACT_UPDATE]: 'updated',
 };
 
+const TIMERS = require('./timers');
+
 /**
  * @param {unserializeStateTransition} transactionalUnserializeStateTransition
  * @param {DashPlatformProtocol} transactionalDpp
@@ -55,11 +57,14 @@ function deliverTxHandlerFactory(
 
     // Start execution timer
 
-    if (executionTimer.isStarted('deliverTx')) {
-      executionTimer.endTimer('deliverTx');
-    }
+    executionTimer.clearTimer(TIMERS.DELIVER_TX.OVERALL);
+    executionTimer.clearTimer(TIMERS.DELIVER_TX.VALIDATE_BASIC);
+    executionTimer.clearTimer(TIMERS.DELIVER_TX.VALIDATE_FEE);
+    executionTimer.clearTimer(TIMERS.DELIVER_TX.VALIDATE_SIGNATURE);
+    executionTimer.clearTimer(TIMERS.DELIVER_TX.VALIDATE_STATE);
+    executionTimer.clearTimer(TIMERS.DELIVER_TX.APPLY);
 
-    executionTimer.startTimer('deliverTx');
+    executionTimer.startTimer(TIMERS.DELIVER_TX.OVERALL);
 
     const stHash = crypto
       .createHash('sha256')
@@ -84,6 +89,7 @@ function deliverTxHandlerFactory(
         stateTransitionByteArray,
         {
           logger: consensusLogger,
+          executionTimer,
         },
       );
     } catch (e) {
@@ -91,6 +97,8 @@ function deliverTxHandlerFactory(
 
       throw e;
     }
+
+    executionTimer.startTimer(TIMERS.DELIVER_TX.VALIDATE_STATE);
 
     const result = await transactionalDpp.stateTransition.validateState(stateTransition);
 
@@ -108,8 +116,14 @@ function deliverTxHandlerFactory(
       throw new DPPValidationAbciError(message, result.getFirstError());
     }
 
+    executionTimer.stopTimer(TIMERS.DELIVER_TX.VALIDATE_STATE, true);
+
+    executionTimer.startTimer(TIMERS.DELIVER_TX.APPLY);
+
     // Apply state transition to the state
     await transactionalDpp.stateTransition.apply(stateTransition);
+
+    executionTimer.stopTimer(TIMERS.DELIVER_TX.APPLY, true);
 
     blockExecutionContext.incrementValidTxCount();
 
@@ -200,14 +214,21 @@ function deliverTxHandlerFactory(
         break;
     }
 
-    const deliverTxTimings = executionTimer.endTimer('deliverTx');
+    const deliverTxTiming = executionTimer.stopTimer(TIMERS.DELIVER_TX.OVERALL);
 
     logger.trace(
       {
-        timings: deliverTxTimings,
+        timings: {
+          overall: deliverTxTiming,
+          validateBasic: executionTimer.getTimer(TIMERS.DELIVER_TX.VALIDATE_BASIC, true),
+          validateFee: executionTimer.getTimer(TIMERS.DELIVER_TX.VALIDATE_FEE, true),
+          validateSignature: executionTimer.getTimer(TIMERS.DELIVER_TX.VALIDATE_SIGNATURE, true),
+          validateState: executionTimer.getTimer(TIMERS.DELIVER_TX.VALIDATE_STATE, true),
+          apply: executionTimer.getTimer(TIMERS.DELIVER_TX.APPLY, true),
+        },
         stateTransitionType: stateTransition.getType(),
       },
-      `${stateTransition.constructor.name} execution took ${deliverTxTimings} seconds`,
+      `${stateTransition.constructor.name} execution took ${deliverTxTiming} seconds`,
     );
 
     return new ResponseDeliverTx();
