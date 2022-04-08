@@ -50,17 +50,18 @@ pub trait JsonSchemaValidatorLike {}
 #[async_trait]
 impl StateRepositoryLike for StateRepository {
     /// Fetch the Data Contract by ID
-    async fn fetch_data_contract(_data_contract_id: &Identifier) -> AnyResult<JsonValue> {
+    async fn fetch_data_contract(&self, _data_contract_id: &Identifier) -> AnyResult<JsonValue> {
         unimplemented!()
     }
 
     /// Store Data Contract
-    async fn store_data_contract(_data_contract: DataContract) -> AnyResult<()> {
+    async fn store_data_contract(&self, _data_contract: DataContract) -> AnyResult<()> {
         unimplemented!()
     }
 
     /// Fetch Documents by Data Contract Id and type
     async fn fetch_documents(
+        &self,
         _contract_id: &Identifier,
         _data_contract_type: &str,
     ) -> AnyResult<Vec<Document>> {
@@ -68,12 +69,13 @@ impl StateRepositoryLike for StateRepository {
     }
 
     /// Store Document
-    async fn store_document(_document: &Document) -> AnyResult<()> {
+    async fn store_document(&self, _document: &Document) -> AnyResult<()> {
         unimplemented!()
     }
 
     /// Remove Document
     async fn remove_document(
+        &self,
         _contract_id: &Identifier,
         _data_contract_type: &str,
         _document_id: &Identifier,
@@ -82,17 +84,18 @@ impl StateRepositoryLike for StateRepository {
     }
 
     /// Fetch transaction by ID
-    async fn fetch_transaction(_id: &str) -> AnyResult<JsonValue> {
+    async fn fetch_transaction(&self, _id: &str) -> AnyResult<JsonValue> {
         unimplemented!()
     }
 
     /// Fetch Identity by ID
-    async fn fetch_identity(_id: &Identifier) -> AnyResult<JsonValue> {
+    async fn fetch_identity(&self, _id: &Identifier) -> AnyResult<JsonValue> {
         unimplemented!()
     }
 
     /// Store Public Key hashes and Identity id pair
     async fn store_identity_public_key_hashes(
+        &self,
         _identity_id: &Identifier,
         _public_key_hashes: Vec<Vec<u8>>,
     ) -> AnyResult<()> {
@@ -101,23 +104,25 @@ impl StateRepositoryLike for StateRepository {
 
     /// Fetch Identity Ids by Public Key hashes
     async fn fetch_identity_by_public_key_hashes(
+        &self,
         _public_key_hashed: &[&[u8]],
     ) -> AnyResult<Vec<Identifier>> {
         unimplemented!()
     }
 
     /// Fetch latest platform block header
-    async fn fetch_latest_platform_block_header() -> AnyResult<JsonValue> {
+    async fn fetch_latest_platform_block_header(&self) -> AnyResult<JsonValue> {
         unimplemented!()
     }
 
     /// Verify Instant Lock
-    async fn verify_instant_lock(_instant_lock: &InstantLock) -> AnyResult<bool> {
+    async fn verify_instant_lock(&self, _instant_lock: &InstantLock) -> AnyResult<bool> {
         unimplemented!()
     }
 
     /// Check if AssetLock Transaction outPoint exists in spent list
     async fn is_asset_lock_transaction_out_point_already_used(
+        &self,
         _out_point_buffer: &[u8],
     ) -> AnyResult<bool> {
         unimplemented!()
@@ -125,13 +130,14 @@ impl StateRepositoryLike for StateRepository {
 
     /// Store AssetLock Transaction outPoint in spent list
     async fn mark_asset_lock_transaction_out_point_as_used(
+        &self,
         _out_point_buffer: &[u8],
     ) -> AnyResult<()> {
         unimplemented!()
     }
 
     /// Fetch Simplified Masternode List Store
-    async fn fetch_sml_store() -> AnyResult<JsonValue> {
+    async fn fetch_sml_store(&self) -> AnyResult<JsonValue> {
         unimplemented!()
     }
 }
