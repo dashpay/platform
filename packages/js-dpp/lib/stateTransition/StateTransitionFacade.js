@@ -41,6 +41,7 @@ const getDataTriggersFactory = require('../dataTrigger/getDataTriggersFactory');
 const executeDataTriggersFactory = require('../document/stateTransition/DocumentsBatchTransition/validation/state/executeDataTriggersFactory');
 const validateIdentityExistenceFactory = require('../identity/validation/validateIdentityExistenceFactory');
 const validatePublicKeysFactory = require('../identity/validation/validatePublicKeysFactory');
+const validatePublicKeysState = require('../identity/stateTransition/IdentityUpdateTransition/validation/state/validatePublicKeys');
 const validateRequiredPurposeAndSecurityLevelFactory = require('../identity/validation/validateRequiredPurposeAndSecurityLevelFactory');
 const validateDataContractMaxDepthFactory = require('../dataContract/validation/validateDataContractMaxDepthFactory');
 
@@ -188,7 +189,7 @@ class StateTransitionFacade {
       [ChainAssetLockProof.type]: validateChainAssetLockProofStructure,
     };
 
-    const validatePublicKeys = validatePublicKeysFactory(
+    const validatePublicKeysBasic = validatePublicKeysFactory(
       validator,
       bls,
     );
@@ -200,7 +201,7 @@ class StateTransitionFacade {
     const validateIdentityCreateTransitionBasic = (
       validateIdentityCreateTransitionBasicFactory(
         validator,
-        validatePublicKeys,
+        validatePublicKeysBasic,
         validateRequiredPurposeAndSecurityLevel,
         proofValidationFunctionsByType,
         validateProtocolVersion,
@@ -218,7 +219,7 @@ class StateTransitionFacade {
     const validateIdentityUpdateTransitionBasic = validateIdentityUpdateTransitionBasicFactory(
       validator,
       validateProtocolVersion,
-      validatePublicKeys,
+      validatePublicKeysBasic,
     );
 
     const validationFunctionsByType = {
@@ -255,7 +256,7 @@ class StateTransitionFacade {
 
     const validateIdentityUpdateTransitionState = validateIdentityUpdateTransitionStateFactory(
       this.stateRepository,
-      validatePublicKeys,
+      validatePublicKeysState,
       validateRequiredPurposeAndSecurityLevel,
     );
 

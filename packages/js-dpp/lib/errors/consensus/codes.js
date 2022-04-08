@@ -74,10 +74,9 @@ const IdentityPublicKeyDisabledAtWindowViolationError = require('./state/identit
 const IdentityPublicKeyIsReadOnlyError = require('./state/identity/IdentityPublicKeyIsReadOnlyError');
 const InvalidIdentityPublicKeyIdError = require('./state/identity/InvalidIdentityPublicKeyIdError');
 const InvalidIdentityRevisionError = require('./state/identity/InvalidIdentityRevisionError');
-const MaxIdentityPublicKeyLimitReachedError = require('./basic/identity/MaxIdentityPublicKeyLimitReachedError');
 const StateMaxIdentityPublicKeyLimitReachedError = require('./state/identity/MaxIdentityPublicKeyLimitReachedError');
-const StateDuplicatedIdentityPublicKeyError = require('./state/identity/DuplicatedIdentityPublicKeyError');
-const StateDuplicatedIdentityPublicKeyIdError = require('./state/identity/DuplicatedIdentityPublicKeyIdError');
+const DuplicatedIdentityPublicKeyStateError = require('./state/identity/DuplicatedIdentityPublicKeyError');
+const DuplicatedIdentityPublicKeyIdStateError = require('./state/identity/DuplicatedIdentityPublicKeyIdError');
 
 const codes = {
   /**
@@ -145,7 +144,6 @@ const codes = {
   1042: InvalidInstantAssetLockProofSignatureError,
   1046: MissingMasterPublicKeyError,
   1047: InvalidIdentityPublicKeySecurityLevelError,
-  1049: MaxIdentityPublicKeyLimitReachedError,
 
   // State Transition
   1043: InvalidStateTransitionTypeError,
@@ -193,8 +191,8 @@ const codes = {
   4018: InvalidIdentityPublicKeyIdError,
   4019: InvalidIdentityRevisionError,
   4020: StateMaxIdentityPublicKeyLimitReachedError,
-  4021: StateDuplicatedIdentityPublicKeyError,
-  4022: StateDuplicatedIdentityPublicKeyIdError,
+  4021: DuplicatedIdentityPublicKeyStateError,
+  4022: DuplicatedIdentityPublicKeyIdStateError,
 };
 
 module.exports = codes;

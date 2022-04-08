@@ -1,14 +1,14 @@
-const validateUpdatedPublicKeys = require(
-  '../../../../lib/identity/validation/validateUpdatedPublicKeys',
+const validatePublicKeys = require(
+  '../../../../../../../lib/identity/stateTransition/IdentityUpdateTransition/validation/state/validatePublicKeys',
 );
-const { expectValidationError } = require('../../../../lib/test/expect/expectError');
-const DuplicatedIdentityPublicKeyIdError = require('../../../../lib/errors/consensus/state/identity/DuplicatedIdentityPublicKeyIdError');
-const DuplicatedIdentityPublicKeyError = require('../../../../lib/errors/consensus/state/identity/DuplicatedIdentityPublicKeyError');
-const identitySchema = require('../../../../schema/identity/identity.json');
-const MaxIdentityPublicKeyLimitReachedError = require('../../../../lib/errors/consensus/state/identity/MaxIdentityPublicKeyLimitReachedError');
-const getIdentityFixture = require('../../../../lib/test/fixtures/getIdentityFixture');
+const { expectValidationError } = require('../../../../../../../lib/test/expect/expectError');
+const DuplicatedIdentityPublicKeyIdError = require('../../../../../../../lib/errors/consensus/state/identity/DuplicatedIdentityPublicKeyIdError');
+const DuplicatedIdentityPublicKeyError = require('../../../../../../../lib/errors/consensus/state/identity/DuplicatedIdentityPublicKeyError');
+const identitySchema = require('../../../../../../../schema/identity/identity.json');
+const MaxIdentityPublicKeyLimitReachedError = require('../../../../../../../lib/errors/consensus/state/identity/MaxIdentityPublicKeyLimitReachedError');
+const getIdentityFixture = require('../../../../../../../lib/test/fixtures/getIdentityFixture');
 
-describe('validateUpdatedPublicKeys', () => {
+describe('validatePublicKeys', () => {
   let rawPublicKeys;
 
   beforeEach(() => {
@@ -18,7 +18,7 @@ describe('validateUpdatedPublicKeys', () => {
   it('should return invalid result if there are duplicate key ids', () => {
     rawPublicKeys[1].id = rawPublicKeys[0].id;
 
-    const result = validateUpdatedPublicKeys(rawPublicKeys);
+    const result = validatePublicKeys(rawPublicKeys);
 
     expectValidationError(result, DuplicatedIdentityPublicKeyIdError);
 
@@ -31,7 +31,7 @@ describe('validateUpdatedPublicKeys', () => {
   it('should return invalid result if there are duplicate keys', () => {
     rawPublicKeys[1].data = rawPublicKeys[0].data;
 
-    const result = validateUpdatedPublicKeys(rawPublicKeys);
+    const result = validatePublicKeys(rawPublicKeys);
 
     expectValidationError(result, DuplicatedIdentityPublicKeyError);
 
@@ -42,7 +42,7 @@ describe('validateUpdatedPublicKeys', () => {
   });
 
   it('should pass valid public keys', () => {
-    const result = validateUpdatedPublicKeys(rawPublicKeys);
+    const result = validatePublicKeys(rawPublicKeys);
 
     expect(result.isValid()).to.be.true();
   });
@@ -55,7 +55,7 @@ describe('validateUpdatedPublicKeys', () => {
       rawPublicKeys.push(rawPublicKeys[0]);
     }
 
-    const result = validateUpdatedPublicKeys(rawPublicKeys);
+    const result = validatePublicKeys(rawPublicKeys);
 
     expectValidationError(result, MaxIdentityPublicKeyLimitReachedError);
 

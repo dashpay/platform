@@ -1,26 +1,28 @@
-const ValidationResult = require('../../validation/ValidationResult');
+const ValidationResult = require('../../../../../validation/ValidationResult');
 
-const identitySchema = require('../../../schema/identity/identity.json');
+const identitySchema = require('../../../../../../schema/identity/identity.json');
 
 const DuplicatedIdentityPublicKeyError = require(
-  '../../errors/consensus/state/identity/DuplicatedIdentityPublicKeyError',
+  '../../../../../errors/consensus/state/identity/DuplicatedIdentityPublicKeyError',
 );
 const DuplicatedIdentityPublicKeyIdError = require(
-  '../../errors/consensus/state/identity/DuplicatedIdentityPublicKeyIdError',
+  '../../../../../errors/consensus/state/identity/DuplicatedIdentityPublicKeyIdError',
 );
 
-const MaxIdentityPublicKeyLimitReachedError = require('../../errors/consensus/state/identity/MaxIdentityPublicKeyLimitReachedError');
+const MaxIdentityPublicKeyLimitReachedError = require(
+  '../../../../../errors/consensus/state/identity/MaxIdentityPublicKeyLimitReachedError',
+);
 
 /**
    * Validate public keys
    *
-   * @typedef validateUpdatedPublicKeys
+   * @typedef validatePublicKeys
    *
    * @param {RawIdentityPublicKey[]} rawPublicKeys
    *
    * @return {ValidationResult}
    */
-function validateUpdatedPublicKeys(rawPublicKeys) {
+function validatePublicKeys(rawPublicKeys) {
   const result = new ValidationResult();
 
   if (rawPublicKeys.length > identitySchema.properties.publicKeys.maxItems) {
@@ -51,16 +53,18 @@ function validateUpdatedPublicKeys(rawPublicKeys) {
   // Check that there's no duplicated keys
   const keysCount = {};
   const duplicatedKeyIds = [];
-  rawPublicKeys.forEach((rawPublicKey) => {
-    const dataHex = rawPublicKey.data.toString('hex');
+  rawPublicKeys
+    .filter((rawPublicKey) => rawPublicKey.disabledAt === undefined)
+    .forEach((rawPublicKey) => {
+      const dataHex = rawPublicKey.data.toString('hex');
 
-    keysCount[dataHex] = !keysCount[dataHex]
-      ? 1 : keysCount[dataHex] + 1;
+      keysCount[dataHex] = !keysCount[dataHex]
+        ? 1 : keysCount[dataHex] + 1;
 
-    if (keysCount[dataHex] > 1) {
-      duplicatedKeyIds.push(rawPublicKey.id);
-    }
-  });
+      if (keysCount[dataHex] > 1) {
+        duplicatedKeyIds.push(rawPublicKey.id);
+      }
+    });
 
   if (duplicatedKeyIds.length > 0) {
     result.addError(
@@ -71,4 +75,4 @@ function validateUpdatedPublicKeys(rawPublicKeys) {
   return result;
 }
 
-module.exports = validateUpdatedPublicKeys;
+module.exports = validatePublicKeys;

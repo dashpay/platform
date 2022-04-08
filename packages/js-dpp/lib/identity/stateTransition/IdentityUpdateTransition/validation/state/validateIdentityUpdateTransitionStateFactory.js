@@ -8,13 +8,13 @@ const validateTimeInBlockTimeWindow = require('../../../../../blockTimeWindow/va
 
 /**
  * @param {StateRepository} stateRepository
- * @param {validateUpdatedPublicKeys} validateUpdatedPublicKeys
+ * @param {validatePublicKeys} validatePublicKeys
  * @param {validateRequiredPurposeAndSecurityLevel} validateRequiredPurposeAndSecurityLevel
  * @return {validateIdentityUpdateTransitionState}
  */
 function validateIdentityUpdateTransitionStateFactory(
   stateRepository,
-  validateUpdatedPublicKeys,
+  validatePublicKeys,
   validateRequiredPurposeAndSecurityLevel,
 ) {
   /**
@@ -106,7 +106,7 @@ function validateIdentityUpdateTransitionStateFactory(
 
       // validate new fields with existing once to make sure that keys are unique and so on
       result.merge(
-        validateUpdatedPublicKeys(
+        validatePublicKeys(
           identity.getPublicKeys().map((pk) => pk.toObject()),
         ),
       );
