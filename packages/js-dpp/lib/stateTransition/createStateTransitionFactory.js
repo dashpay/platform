@@ -4,6 +4,7 @@ const DocumentsBatchTransition = require('../document/stateTransition/DocumentsB
 const DataContractCreateTransition = require('../dataContract/stateTransition/DataContractCreateTransition/DataContractCreateTransition');
 const IdentityCreateTransition = require('../identity/stateTransition/IdentityCreateTransition/IdentityCreateTransition');
 const IdentityTopUpTransition = require('../identity/stateTransition/IdentityTopUpTransition/IdentityTopUpTransition');
+const IdentityUpdateTransition = require('../identity/stateTransition/IdentityUpdateTransition/IdentityUpdateTransition');
 
 const InvalidStateTransitionTypeError = require('./errors/InvalidStateTransitionTypeError');
 const DataContractNotPresentError = require('../errors/DataContractNotPresentError');
@@ -18,6 +19,7 @@ const typesToClasses = {
   [types.DOCUMENTS_BATCH]: DocumentsBatchTransition,
   [types.IDENTITY_CREATE]: IdentityCreateTransition,
   [types.IDENTITY_TOP_UP]: IdentityTopUpTransition,
+  [types.IDENTITY_UPDATE]: IdentityUpdateTransition,
 };
 
 /**

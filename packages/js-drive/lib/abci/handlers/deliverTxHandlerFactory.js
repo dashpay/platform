@@ -185,6 +185,17 @@ function deliverTxHandlerFactory(
 
         break;
       }
+      case stateTransitionTypes.IDENTITY_UPDATE: {
+        const identityId = stateTransition.getIdentityId();
+
+        consensusLogger.info(
+          {
+            identityId: identityId.toString(),
+          },
+          `Identity updated with id: ${identityId}`,
+        );
+        break;
+      }
       case stateTransitionTypes.DOCUMENTS_BATCH: {
         stateTransition.getTransitions().forEach((transition) => {
           const description = DOCUMENT_ACTION_DESCRIPTIONS[transition.getAction()];
