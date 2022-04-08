@@ -14,8 +14,8 @@ impl ValidationResult {
         }
     }
 
-    pub fn add_error(&mut self, ) {
-
+    pub fn add_error<T>(&mut self, error: T) where T: Into<ConsensusError> {
+        self.errors.push(error.into())
     }
 
     pub fn add_errors(&mut self, mut errors: Vec<ConsensusError>) {

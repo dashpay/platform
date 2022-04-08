@@ -4,6 +4,7 @@ use jsonschema::error::ValidationErrorKind;
 use jsonschema::paths::{JSONPointer, PathChunk};
 use jsonschema::ValidationError;
 use thiserror::Error;
+use crate::errors::consensus::{AbstractConsensusError, ConsensusError};
 
 #[derive(Error, Debug)]
 #[error("JsonSchemaError: {message:?}, kind: {kind:?}, instance_path: {instance_path:?}, schema_path:{schema_path:?}")]
@@ -17,6 +18,8 @@ pub struct JsonSchemaError {
     // this.params = params;
     // this.propertyName = propertyName;
 }
+
+impl AbstractConsensusError for JsonSchemaError {}
 
 impl<'a> From<ValidationError<'a>> for JsonSchemaError {
     fn from(validation_error: ValidationError<'a>) -> Self {

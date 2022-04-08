@@ -18,3 +18,4 @@ pub use dash_platform_protocol::DashPlatformProtocolInitError;
 
 #[cfg(test)]
 mod tests;
+pub mod version;

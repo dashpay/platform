@@ -7,6 +7,7 @@ use jsonschema::primitive_type::PrimitiveType::Integer;
 use log::error;
 use serde::de::Unexpected::Option;
 use serde_json::Value;
+use crate::version::COMPATIBILITY_MAP;
 
 fn setup_test() -> (Value, IdentityValidator) {
     (
