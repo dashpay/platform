@@ -25,6 +25,9 @@ pub enum ReplaceWith {
 pub trait JsonValueExt {
     fn get_string(&self, property_name: &str) -> Result<&String, anyhow::Error>;
     fn get_i64(&self, property_name: &str) -> Result<i64, anyhow::Error>;
+    fn get_bytes(&self, property_name: &str) -> Result<Vec<u8>, anyhow::Error>;
+    fn get_value_mut(&mut self, string_path: &str) -> Option<&mut JsonValue>;
+    fn get_value(&self, string_path: &str) -> Option<&JsonValue>;
 }
 
 impl JsonValueExt for JsonValue {
@@ -50,6 +53,33 @@ impl JsonValueExt for JsonValue {
                 .ok_or_else(|| anyhow!("unable convert {} to i64", s))?);
         }
         bail!("{:?} isn't a string", property_value);
+    }
+
+    // TODO this method has an additional allocation which should be avoided
+    fn get_bytes(&self, property_name: &str) -> Result<Vec<u8>, anyhow::Error> {
+        let property_value = self
+            .get(property_name)
+            .ok_or_else(|| anyhow!("the property {} doesn't exist in Json Value", property_name))?;
+
+        if let JsonValue::Array(s) = property_value {
+            let data = serde_json::to_vec(s)?;
+            return Ok(data);
+        }
+        bail!("{:?} isn't a string", property_value);
+    }
+
+    /// returns the value from the JsonValue based on the path: i.e "root.data[0].id"
+    fn get_value_mut(&mut self, string_path: &str) -> Option<&mut JsonValue> {
+        let path_literal: JsonPathLiteral = string_path.into();
+        let path: JsonPath = path_literal.try_into().unwrap();
+        get_value_from_json_path_mut(&path, self)
+    }
+
+    /// returns the value from the JsonValue based on the path: i.e "root.data[0].id"
+    fn get_value(&self, string_path: &str) -> Option<&JsonValue> {
+        let path_literal: JsonPathLiteral = string_path.into();
+        let path: JsonPath = path_literal.try_into().unwrap();
+        get_value_from_json_path(&path, self)
     }
 }
 
@@ -142,6 +172,26 @@ pub fn get_value_from_json_path_mut<'a>(
 
             JsonPathStep::Key(key) => {
                 last_ptr = last_ptr.get_mut(key)?;
+            }
+        }
+    }
+    Some(last_ptr)
+}
+
+/// returns the value from the JsonValue based on the JsonPath
+pub fn get_value_from_json_path<'a>(
+    path: &[JsonPathStep],
+    value: &'a JsonValue,
+) -> Option<&'a JsonValue> {
+    let mut last_ptr: &JsonValue = value;
+
+    for step in path {
+        match step {
+            JsonPathStep::Index(index) => {
+                last_ptr = last_ptr.get(index)?;
+            }
+            JsonPathStep::Key(key) => {
+                last_ptr = last_ptr.get(key)?;
             }
         }
     }
