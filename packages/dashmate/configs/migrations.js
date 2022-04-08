@@ -299,17 +299,17 @@ module.exports = {
   '0.22.0': (configFile) => {
     Object.entries(configFile.configs)
       .forEach(([, config]) => {
-        if (!config.platform.masternodeRewardShares) {
-          config.platform.masternodeRewardShares = systemConfigs.base.platform
-            .masternodeRewardShares;
-        }
-
         config.docker = systemConfigs[config.group || 'base'].docker;
 
         // Update images
         config.core.docker.image = systemConfigs.base.core.docker.image;
 
         if (config.platform) {
+          if (!config.platform.masternodeRewardShares) {
+            config.platform.masternodeRewardShares = systemConfigs.base.platform
+              .masternodeRewardShares;
+          }
+
           config.platform.drive.tenderdash.docker.image = systemConfigs.base.platform
             .drive.tenderdash.docker.image;
 
@@ -328,13 +328,12 @@ module.exports = {
     configFile.testnet.docker = systemConfigs.testnet.docker;
     configFile.mainnet.docker = systemConfigs.mainnet.docker;
 
-    // Update contracts
+    // Update testnet contracts
     configFile.configs.testnet.platform.drive.tenderdash.genesis = systemConfigs.testnet.platform
       .drive.tenderdash.genesis;
     configFile.configs.testnet.platform.dpns = systemConfigs.testnet.platform.dpns;
     configFile.configs.testnet.platform.dashpay = systemConfigs.testnet.platform.dashpay;
     configFile.configs.testnet.platform.featureFlags = systemConfigs.testnet.platform.featureFlags;
-
     configFile.configs.testnet.platform.masternodeRewardShares = systemConfigs.testnet.platform
       .masternodeRewardShares;
   },

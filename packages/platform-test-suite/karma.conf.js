@@ -1,74 +1,87 @@
 const webpack = require('webpack');
-const dotenvSafe = require('dotenv-safe');
-const path = require('path');
+const dotenvResult = require('dotenv-safe').config();
 
-// Set env variables
-const { parsed: envs } = dotenvSafe.config({
-  path: path.resolve(__dirname, '.env'),
-});
+const karmaMocha = require('karma-mocha');
+const karmaMochaReporter = require('karma-mocha-reporter');
+const karmaChai = require('karma-chai');
+const karmaChromeLauncher = require('karma-chrome-launcher');
+const karmaSourcemapLoader = require('karma-sourcemap-loader');
+const karmaWebpack = require('karma-webpack');
+
+if (dotenvResult.error) {
+  throw dotenvResult.error;
+}
 
 module.exports = (config) => {
   config.set({
     client: {
       mocha: {
         timeout: 650000,
+        bail: true,
       },
     },
-    frameworks: ['mocha', 'chai'],
+    browserNoActivityTimeout: 900000,
+    browserDisconnectTimeout: 900000,
+    frameworks: ['mocha', 'chai', 'webpack'],
     files: [
       'lib/test/karma/loader.js',
+      './test/**/!(proofs|waitForStateTransitionResult).spec.js',
     ],
     preprocessors: {
-      'lib/test/karma/loader.js': ['webpack'],
+      'lib/test/karma/loader.js': ['webpack', 'sourcemap'],
+      './test/**/!(proofs|waitForStateTransitionResult).spec.js': ['webpack', 'sourcemap'],
     },
     webpack: {
       mode: 'development',
+      devtool: 'inline-source-map',
+      plugins: [
+        new webpack.ProvidePlugin({
+          Buffer: [require.resolve('buffer/'), 'Buffer'],
+          process: require.resolve('process/browser'),
+        }),
+        new webpack.EnvironmentPlugin(
+          dotenvResult.parsed,
+        ),
+      ],
       resolve: {
         fallback: {
           fs: false,
-          http: require.resolve('stream-http'),
-          https: require.resolve('https-browserify'),
           crypto: require.resolve('crypto-browserify'),
           buffer: require.resolve('buffer/'),
-          assert: require.resolve('assert-browserify'),
-          stream: require.resolve('stream-browserify'),
-          path: require.resolve('path-browserify'),
+          assert: require.resolve('assert/'),
           url: require.resolve('url/'),
+          path: require.resolve('path-browserify'),
+          http: require.resolve('stream-http'),
+          https: require.resolve('https-browserify'),
+          stream: require.resolve('stream-browserify'),
+          util: require.resolve('util/'),
           os: require.resolve('os-browserify/browser'),
           zlib: require.resolve('browserify-zlib'),
+          events: require.resolve('events/'),
+          ws: require.resolve('ws/'),
+          bufferutil: require.resolve('bufferutil/'),
+          tls: require.resolve('tls/'),
+          net: require.resolve('net/'),
+          'utf-8-validate': require.resolve('utf-8-validate/'),
+          string_decoder: require.resolve('string_decoder/'),
         },
+        extensions: ['.ts', '.js', '.json'],
       },
-      plugins: [
-        new webpack.ProvidePlugin({
-          Buffer: ['buffer', 'Buffer'],
-          process: 'process/browser',
-        }),
-        new webpack.EnvironmentPlugin(Object.keys(envs)),
-      ],
     },
     reporters: ['mocha'],
     port: 9876,
     colors: true,
     logLevel: config.LOG_INFO,
-    autoWatch: false,
-    browsers: ['ChromeHeadless', 'FirefoxHeadless'],
-    singleRun: false,
+    browsers: ['ChromeHeadless'],
+    singleRun: true,
     concurrency: Infinity,
-    browserNoActivityTimeout: 900000,
-    browserDisconnectTimeout: 900000,
     plugins: [
-      'karma-mocha',
-      'karma-mocha-reporter',
-      'karma-chai',
-      'karma-chrome-launcher',
-      'karma-firefox-launcher',
-      'karma-webpack',
+      karmaMocha,
+      karmaMochaReporter,
+      karmaChai,
+      karmaChromeLauncher,
+      karmaSourcemapLoader,
+      karmaWebpack,
     ],
-    customLaunchers: {
-      FirefoxHeadless: {
-        base: 'Firefox',
-        flags: ['-headless'],
-      },
-    },
   });
 };
