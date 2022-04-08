@@ -1,3 +1,4 @@
+use anyhow::{anyhow, bail};
 use std::{collections::HashMap, convert::TryInto};
 
 use log::trace;
@@ -18,6 +19,38 @@ const PROPERTY_CONTENT_MEDIA_TYPE: &str = "contentMediaType";
 pub enum ReplaceWith {
     Bytes,
     Base58,
+}
+
+/// JsonValueExt contains a set of helper methods that simplify work with JsonValue
+pub trait JsonValueExt {
+    fn get_string(&self, property_name: &str) -> Result<&String, anyhow::Error>;
+    fn get_i64(&self, property_name: &str) -> Result<i64, anyhow::Error>;
+}
+
+impl JsonValueExt for JsonValue {
+    fn get_string(&self, property_name: &str) -> Result<&String, anyhow::Error> {
+        let property_value = self
+            .get(property_name)
+            .ok_or_else(|| anyhow!("the property {} doesn't exist in Json Value", property_name))?;
+
+        if let JsonValue::String(s) = property_value {
+            return Ok(s);
+        }
+        bail!("{:?} isn't a string", property_value);
+    }
+
+    fn get_i64(&self, property_name: &str) -> Result<i64, anyhow::Error> {
+        let property_value = self
+            .get(property_name)
+            .ok_or_else(|| anyhow!("the property {} doesn't exist in Json Value", property_name))?;
+
+        if let JsonValue::Number(s) = property_value {
+            return Ok(s
+                .as_i64()
+                .ok_or_else(|| anyhow!("unable convert {} to i64", s))?);
+        }
+        bail!("{:?} isn't a string", property_value);
+    }
 }
 
 /// replaces the Identifiers specified in binary_properties with Bytes or Base58
