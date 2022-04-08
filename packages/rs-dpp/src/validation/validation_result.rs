@@ -29,4 +29,8 @@ impl ValidationResult {
     pub fn is_valid(&self) -> bool {
         self.errors().len() == 0
     }
+
+    pub fn first_error(&self) -> Option<&ConsensusError> {
+        self.errors.first()
+    }
 }

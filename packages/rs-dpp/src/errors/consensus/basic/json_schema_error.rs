@@ -1,4 +1,3 @@
-use std::borrow::Cow;
 use std::path::{Display, Path};
 use jsonschema::error::ValidationErrorKind;
 use jsonschema::paths::{JSONPointer, PathChunk};
@@ -18,6 +17,61 @@ pub struct JsonSchemaError {
     // this.params = params;
     // this.propertyName = propertyName;
 }
+
+// fn weired_clone(kind: &ValidationErrorKind) -> ValidationErrorKind {
+//     match kind {
+//         ValidationErrorKind::AdditionalItems { limit } => { ValidationErrorKind::AdditionalItems { limit: *limit } }
+//         ValidationErrorKind::AdditionalProperties { .. } => {ValidationErrorKind::AdditionalProperties}
+//         ValidationErrorKind::AnyOf => {ValidationErrorKind::AnyOf}
+//         ValidationErrorKind::BacktrackLimitExceeded { .. } => {ValidationErrorKind::BacktrackLimitExceeded}
+//         ValidationErrorKind::Constant { .. } => {ValidationErrorKind::Constant}
+//         ValidationErrorKind::Contains => {ValidationErrorKind::Contains}
+//         ValidationErrorKind::ContentEncoding { .. } => {ValidationErrorKind::ContentEncoding}
+//         ValidationErrorKind::ContentMediaType { .. } => {ValidationErrorKind::ContentMediaType}
+//         ValidationErrorKind::Enum { .. } => {ValidationErrorKind::Enum}
+//         ValidationErrorKind::ExclusiveMaximum { .. } => {ValidationErrorKind::ExclusiveMaximum}
+//         ValidationErrorKind::ExclusiveMinimum { .. } => {ValidationErrorKind::ExclusiveMinimum}
+//         ValidationErrorKind::FalseSchema => {ValidationErrorKind::FalseSchema}
+//         ValidationErrorKind::FileNotFound { .. } => {ValidationErrorKind::FileNotFound}
+//         ValidationErrorKind::Format { .. } => {ValidationErrorKind::Format}
+//         ValidationErrorKind::FromUtf8 { .. } => {ValidationErrorKind::FromUtf8}
+//         ValidationErrorKind::Utf8 { .. } => {ValidationErrorKind::Utf8}
+//         ValidationErrorKind::JSONParse { .. } => {ValidationErrorKind::JSONParse}
+//         ValidationErrorKind::InvalidReference { .. } => {ValidationErrorKind::InvalidReference}
+//         ValidationErrorKind::InvalidURL { .. } => {ValidationErrorKind::InvalidURL}
+//         ValidationErrorKind::MaxItems { .. } => {ValidationErrorKind::MaxItems}
+//         ValidationErrorKind::Maximum { .. } => {ValidationErrorKind::Maximum}
+//         ValidationErrorKind::MaxLength { .. } => {ValidationErrorKind::MaxLength}
+//         ValidationErrorKind::MaxProperties { .. } => {ValidationErrorKind::MaxProperties}
+//         ValidationErrorKind::MinItems { .. } => {ValidationErrorKind::MinItems}
+//         ValidationErrorKind::Minimum { .. } => {ValidationErrorKind::Minimum}
+//         ValidationErrorKind::MinLength { .. } => {ValidationErrorKind::MinLength}
+//         ValidationErrorKind::MinProperties { .. } => {ValidationErrorKind::MinProperties}
+//         ValidationErrorKind::MultipleOf { .. } => {ValidationErrorKind::MultipleOf}
+//         ValidationErrorKind::Not { .. } => {ValidationErrorKind::Not}
+//         ValidationErrorKind::OneOfMultipleValid => { ValidationErrorKind::OneOfMultipleValid }
+//         ValidationErrorKind::OneOfNotValid => { ValidationErrorKind::OneOfNotValid }
+//         ValidationErrorKind::Pattern { .. } => { ValidationErrorKind::Pattern }
+//         ValidationErrorKind::PropertyNames { .. } => { ValidationErrorKind::PropertyNames }
+//         ValidationErrorKind::Required { .. } => { ValidationErrorKind::Required }
+//         ValidationErrorKind::Schema => { ValidationErrorKind::Schema }
+//         ValidationErrorKind::Type { .. } => { ValidationErrorKind::Type }
+//         ValidationErrorKind::UniqueItems => { ValidationErrorKind::UniqueItems }
+//         ValidationErrorKind::UnknownReferenceScheme { .. } => { ValidationErrorKind::UnknownReferenceScheme }
+//         ValidationErrorKind::Resolver { .. } => { ValidationErrorKind::Resolver }
+//     }
+// }
+
+// impl Clone for JsonSchemaError {
+//     fn clone(&self) -> Self {
+//         Self {
+//             message: self.message.clone(),
+//             kind: self.kind.clone(),
+//             instance_path: self.instance_path.clone(),
+//             schema_path: self.schema_path.clone()
+//         }
+//     }
+// }
 
 impl AbstractConsensusError for JsonSchemaError {}
 

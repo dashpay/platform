@@ -1,3 +1,4 @@
+use std::sync::Arc;
 use crate::errors::consensus::ConsensusError;
 use crate::identity::validation::IdentityValidator;
 use crate::tests::utils::{assert_json_schema_error, serde_remove, serde_set};
@@ -7,12 +8,13 @@ use jsonschema::primitive_type::PrimitiveType::Integer;
 use log::error;
 use serde::de::Unexpected::Option;
 use serde_json::Value;
-use crate::version::COMPATIBILITY_MAP;
+use crate::version::{COMPATIBILITY_MAP, ProtocolVersionValidator};
 
 fn setup_test() -> (Value, IdentityValidator) {
+    let protocol_version_validator = ProtocolVersionValidator::default();
     (
         crate::tests::fixtures::identity_fixture_json(),
-        IdentityValidator::new().unwrap(),
+        IdentityValidator::new(Arc::new(protocol_version_validator)).unwrap(),
     )
 }
 
@@ -324,8 +326,7 @@ pub fn revision_should_be_present() {
 
 #[test]
 pub fn revision_should_be_an_integer() {
-    let mut identity = crate::tests::fixtures::identity_fixture_json();
-    let identity_validator = IdentityValidator::new().unwrap();
+    let (mut identity, identity_validator) = setup_test();
 
     identity = serde_set(identity, "revision", 1.2);
 
@@ -342,8 +343,7 @@ pub fn revision_should_be_an_integer() {
 
 #[test]
 pub fn revision_should_should_be_greater_or_equal_0() {
-    let mut identity = crate::tests::fixtures::identity_fixture_json();
-    let identity_validator = IdentityValidator::new().unwrap();
+    let (mut identity, identity_validator) = setup_test();
 
     identity = serde_set(identity, "revision", -1);
 
@@ -373,9 +373,4 @@ pub fn should_return_valid_result_if_a_raw_identity_is_valid() {
     assert_json_schema_error(&result, 0);
 
     assert!(result.is_valid());
-}
-
-#[test]
-pub fn should_return_valid_result_if_an_identity_model_is_valid() {
-    assert!(false);
 }

@@ -12,3 +12,5 @@ lazy_static! {
         m
     };
 }
+
+pub use protocol_version_validator::ProtocolVersionValidator;

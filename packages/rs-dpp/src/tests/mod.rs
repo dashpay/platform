@@ -3,3 +3,4 @@ pub mod utils;
 
 mod identity;
 mod fixtures;
+mod version;

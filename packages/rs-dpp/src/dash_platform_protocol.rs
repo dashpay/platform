@@ -1,10 +1,12 @@
-use std::borrow::Cow;
 use crate::identity::IdentityFacade;
 use crate::schema::identity::IdentitySchemaJsons;
+use crate::schema::SchemaJsons;
+use crate::version::{ProtocolVersionValidator, COMPATIBILITY_MAP, LATEST_VERSION};
 use jsonschema::{JSONSchema, ValidationError};
 use serde_json;
+use std::borrow::Cow;
+use std::sync::Arc;
 use thiserror::Error;
-use crate::schema::SchemaJsons;
 
 #[derive(Error, Debug)]
 pub enum DashPlatformProtocolInitError {
@@ -13,7 +15,7 @@ pub enum DashPlatformProtocolInitError {
     #[error("Couldn't parse JSON")]
     SchemaDeserializationError(serde_json::Error),
     #[error("Please fill me")]
-    ValidationError(ValidationError<'static>)
+    ValidationError(ValidationError<'static>),
 }
 
 fn into_owned(err: ValidationError) -> ValidationError<'static> {
@@ -107,19 +109,47 @@ impl JsonSchemas {
 }
 
 pub struct DashPlatformProtocol {
+    protocol_version_validator: ProtocolVersionValidator,
     json_schemas: JsonSchemas,
-    identities: IdentityFacade,
+
+    pub identities: IdentityFacade,
+}
+
+pub struct DPPOPtions {
+    current_protocol_version: Option<u32>,
+}
+
+impl Default for DPPOPtions {
+    fn default() -> Self {
+        Self {
+            current_protocol_version: None,
+        }
+    }
 }
 
 impl DashPlatformProtocol {
-    pub fn new() -> Result<Self, DashPlatformProtocolInitError> {
+    pub fn new(options: DPPOPtions) -> Result<Self, DashPlatformProtocolInitError> {
         let schema_jsons = SchemaJsons::new()?;
         let mut json_schemas = JsonSchemas::new(schema_jsons);
         json_schemas.compile()?;
 
+        let current_protocol_version = options.current_protocol_version.unwrap_or(LATEST_VERSION);
+
+        let protocol_version_validator = ProtocolVersionValidator::new(
+            current_protocol_version,
+            LATEST_VERSION,
+            COMPATIBILITY_MAP.clone(),
+        );
+        let rc = Arc::new(protocol_version_validator);
+
         Ok(Self {
-            identities: IdentityFacade::new()?,
             json_schemas,
+            protocol_version_validator: ProtocolVersionValidator::new(
+                current_protocol_version,
+                LATEST_VERSION,
+                COMPATIBILITY_MAP.clone(),
+            ),
+            identities: IdentityFacade::new(rc.clone())?,
         })
     }
 

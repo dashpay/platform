@@ -1,7 +1,7 @@
 use thiserror::Error;
 use crate::errors::consensus::AbstractConsensusError;
 
-#[derive(Error, Debug)]
+#[derive(Error, Debug, Clone)]
 #[error("Protocol version {parsed_protocol_version:?} is not supported. Minimal supported protocol version is {minimal_protocol_version:?}")]
 pub struct IncompatibleProtocolVersionError {
     parsed_protocol_version: u32,

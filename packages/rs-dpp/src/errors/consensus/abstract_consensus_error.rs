@@ -2,20 +2,7 @@ use jsonschema::ValidationError;
 use thiserror::Error;
 use crate::errors::consensus::basic::{IncompatibleProtocolVersionError, JsonSchemaError, UnsupportedProtocolVersionError};
 
-// TODO: move this to a separate get codes function, as it's done in js dpp
-fn get_error_code(error: ConsensusError) -> u32 {
-    match error {
-        ConsensusError::JsonSchemaError(_) => { 1005 }
-        ConsensusError::UnsupportedProtocolVersionError(_) => { 1002 }
-        ConsensusError::IncompatibleProtocolVersionError(_) => { 1003 }
-    }
-}
-
-pub trait AbstractConsensusError: Into<ConsensusError> {
-    fn get_code(&self, error: Self) -> u32 {
-        get_error_code(error.into())
-    }
-}
+pub trait AbstractConsensusError: Into<ConsensusError> {}
 
 #[derive(Error, Debug)]
 #[error("`{0}`")]
@@ -26,6 +13,23 @@ pub enum ConsensusError {
     UnsupportedProtocolVersionError(UnsupportedProtocolVersionError),
     #[error("`{0}`")]
     IncompatibleProtocolVersionError(IncompatibleProtocolVersionError),
+}
+
+impl ConsensusError {
+    pub fn json_schema_error(&self) -> Option<&JsonSchemaError> {
+        match self {
+            ConsensusError::JsonSchemaError(err) => { Some(err) }
+            _ => None
+        }
+    }
+
+    pub fn code(&self) -> u32 {
+        match self {
+            ConsensusError::JsonSchemaError(_) => { 1005 }
+            ConsensusError::UnsupportedProtocolVersionError(_) => { 1002 }
+            ConsensusError::IncompatibleProtocolVersionError(_) => { 1003 }
+        }
+    }
 }
 
 impl<'a> From<ValidationError<'a>> for ConsensusError {
@@ -49,14 +53,5 @@ impl From<UnsupportedProtocolVersionError> for ConsensusError {
 impl From<IncompatibleProtocolVersionError> for ConsensusError {
     fn from(error: IncompatibleProtocolVersionError) -> Self {
         Self::IncompatibleProtocolVersionError(error)
-    }
-}
-
-impl ConsensusError {
-    pub fn json_schema_error(&self) -> Option<&JsonSchemaError> {
-        match self {
-            ConsensusError::JsonSchemaError(err) => { Some(err) }
-            _ => None
-        }
     }
 }
