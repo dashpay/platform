@@ -2912,7 +2912,6 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["karma-mocha-reporter", "virtual:58fb68f2aed20e5e0f2e48520ab903ae9bb3440369bfd5e912034003cf27c5aae368649fc5620dd2acbed578131f3a0975e75b838d77d12335fb0412e24026c6#npm:2.2.5"],
             ["karma-sourcemap-loader", "npm:0.3.8"],
             ["karma-webpack", "virtual:45f214395bc38640da4dc5e940482d5df0572c5384e0262802601d1973e71077ec8bbd76b77eafa4c0550b706b664abd84d63fd67a5897139f0b2675530fc84f#npm:5.0.0"],
-            ["localforage", "npm:1.10.0"],
             ["lodash", "npm:4.17.21"],
             ["mocha", "npm:9.1.3"],
             ["node-inspect-extracted", "npm:1.0.8"],
