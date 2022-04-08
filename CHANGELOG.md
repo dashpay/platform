@@ -3,8 +3,8 @@
 
 ### ⚠ BREAKING CHANGES
 
-* do not hash proRegTx for masternode identifier (#318)
-* **wallet-lib:** storage layer refactoring (#232)
+* masternode identity identifier (#318)
+* wallet storage layer (#232)
 
 ### Features
 
@@ -16,14 +16,13 @@
 
 ### Bug Fixes
 
-* **dapi:** fix parsing chainlocks received via ZMQ ([#296](https://github.com/dashevo/platform/issues/296))
 * **dashmate:** config/core/miner must have required property 'interval' ([#311](https://github.com/dashevo/platform/issues/311))
 * do not hash proRegTx for masternode identifier ([#318](https://github.com/dashevo/platform/issues/318))
 
 
 ### Performance Improvements
 
-* **dapi:** cache block headers and chainlocks ([#235](https://github.com/dashevo/platform/issues/235))
+* **dapi:** cache block headers and chainlocks ([#235](https://github.com/dashevo/platform/issues/235), [#296](https://github.com/dashevo/platform/issues/296))
 * **dapi:** remove unnecessary Core RPC calls for core streams ([#194](https://github.com/dashevo/platform/issues/194))
 
 
