@@ -2451,6 +2451,13 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
         }]
       ]],
       ["@dashevo/dashpay-contract", [
+        ["npm:0.22.1", {
+          "packageLocation": "./.yarn/cache/@dashevo-dashpay-contract-npm-0.22.1-2aded78119-cff4700aaf.zip/node_modules/@dashevo/dashpay-contract/",
+          "packageDependencies": [
+            ["@dashevo/dashpay-contract", "npm:0.22.1"]
+          ],
+          "linkType": "HARD",
+        }],
         ["workspace:packages/dashpay-contract", {
           "packageLocation": "./packages/dashpay-contract/",
           "packageDependencies": [
@@ -2483,6 +2490,13 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
         }]
       ]],
       ["@dashevo/dpns-contract", [
+        ["npm:0.22.1", {
+          "packageLocation": "./.yarn/cache/@dashevo-dpns-contract-npm-0.22.1-013d358290-d96f91f8ee.zip/node_modules/@dashevo/dpns-contract/",
+          "packageDependencies": [
+            ["@dashevo/dpns-contract", "npm:0.22.1"]
+          ],
+          "linkType": "HARD",
+        }],
         ["workspace:packages/dpns-contract", {
           "packageLocation": "./packages/dpns-contract/",
           "packageDependencies": [
@@ -2501,6 +2515,34 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
         }]
       ]],
       ["@dashevo/dpp", [
+        ["npm:0.22.1", {
+          "packageLocation": "./.yarn/cache/@dashevo-dpp-npm-0.22.1-65dac58df1-ae3d2e1c9f.zip/node_modules/@dashevo/dpp/",
+          "packageDependencies": [
+            ["@dashevo/dpp", "npm:0.22.1"],
+            ["@apidevtools/json-schema-ref-parser", "npm:8.0.0"],
+            ["@dashevo/dashcore-lib", "npm:0.19.30"],
+            ["@dashevo/dashpay-contract", "npm:0.22.1"],
+            ["@dashevo/dpns-contract", "npm:0.22.1"],
+            ["@dashevo/feature-flags-contract", "npm:0.22.1"],
+            ["@dashevo/masternode-reward-shares-contract", "npm:0.22.1"],
+            ["@dashevo/wasm-re2", "npm:1.0.2"],
+            ["ajv", "npm:8.8.1"],
+            ["ajv-formats", "virtual:58fb68f2aed20e5e0f2e48520ab903ae9bb3440369bfd5e912034003cf27c5aae368649fc5620dd2acbed578131f3a0975e75b838d77d12335fb0412e24026c6#npm:2.1.1"],
+            ["bignumber.js", "npm:9.0.1"],
+            ["bls-signatures", "npm:0.2.5"],
+            ["bs58", "npm:4.0.1"],
+            ["cbor", "npm:8.1.0"],
+            ["fast-json-patch", "npm:3.1.0"],
+            ["json-schema-diff-validator", "npm:0.4.1"],
+            ["json-schema-traverse", "npm:1.0.0"],
+            ["lodash.clonedeep", "npm:4.5.0"],
+            ["lodash.clonedeepwith", "npm:4.5.0"],
+            ["lodash.get", "npm:4.4.2"],
+            ["lodash.set", "npm:4.3.2"],
+            ["long", "npm:5.2.0"]
+          ],
+          "linkType": "HARD",
+        }],
         ["workspace:packages/js-dpp", {
           "packageLocation": "./packages/js-dpp/",
           "packageDependencies": [
@@ -2631,6 +2673,13 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
         }]
       ]],
       ["@dashevo/feature-flags-contract", [
+        ["npm:0.22.1", {
+          "packageLocation": "./.yarn/cache/@dashevo-feature-flags-contract-npm-0.22.1-9357800b5c-6590ea68bb.zip/node_modules/@dashevo/feature-flags-contract/",
+          "packageDependencies": [
+            ["@dashevo/feature-flags-contract", "npm:0.22.1"]
+          ],
+          "linkType": "HARD",
+        }],
         ["workspace:packages/feature-flags-contract", {
           "packageLocation": "./packages/feature-flags-contract/",
           "packageDependencies": [
@@ -2676,6 +2725,13 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
         }]
       ]],
       ["@dashevo/masternode-reward-shares-contract", [
+        ["npm:0.22.1", {
+          "packageLocation": "./.yarn/cache/@dashevo-masternode-reward-shares-contract-npm-0.22.1-9cfbca722e-577a40876b.zip/node_modules/@dashevo/masternode-reward-shares-contract/",
+          "packageDependencies": [
+            ["@dashevo/masternode-reward-shares-contract", "npm:0.22.1"]
+          ],
+          "linkType": "HARD",
+        }],
         ["workspace:packages/masternode-reward-shares-contract", {
           "packageLocation": "./packages/masternode-reward-shares-contract/",
           "packageDependencies": [
@@ -2805,7 +2861,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           "packageLocation": "./.yarn/unplugged/@dashevo-rs-drive-npm-0.22.0-dev.19-9bbfd43a2e/node_modules/@dashevo/rs-drive/",
           "packageDependencies": [
             ["@dashevo/rs-drive", "npm:0.22.0-dev.19"],
-            ["@dashevo/dpp", "workspace:packages/js-dpp"],
+            ["@dashevo/dpp", "npm:0.22.1"],
             ["cargo-cp-artifact", "npm:0.1.6"],
             ["cbor", "npm:8.1.0"],
             ["neon-load-or-build", "npm:2.2.2"],
