@@ -1,7 +1,7 @@
 const {expect} = require('chai');
 const getTransactions = require('./getTransactions');
 const getTransactionHistory = require('./getTransactionHistory');
-
+const getTotalBalance = require('./getTotalBalance');
 
 const getFixtureHDAccountWithStorage = require('../../../../fixtures/wallets/apart-trip-dignity/getFixtureAccountWithStorage');
 const getFixturePrivateAccountWithStorage = require('../../../../fixtures/wallets/2a331817b9d6bf85100ef0/getFixtureAccountWithStorage');
