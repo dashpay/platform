@@ -53,28 +53,40 @@ describe('Consensus error codes', () => {
     if (
       (isChildOf(ErrorClass, AbstractConsensusError)) && !ErrorClass.name.startsWith('Abstract')
     ) {
-      it(`should have error code defined for ${ErrorClass.name}`, () => {
-        const result = Object.entries(codes)
-          .find(([, ErrorClassWithCode]) => ErrorClassWithCode === ErrorClass);
+      context(ErrorClass.name, () => {
+        let code;
+        let AssignedErrorClass;
 
-        expect(result).to.exist();
+        beforeEach(() => {
+          const result = Object.entries(codes)
+            .find(([, ErrorClassWithCode]) => ErrorClassWithCode === ErrorClass);
 
-        // Check code range
-        const code = Number(result[0]);
+          if (result) {
+            code = Number(result[0]);
+            // eslint-disable-next-line prefer-destructuring
+            AssignedErrorClass = result[1];
+          }
+        });
 
-        if (isChildOf(ErrorClass, AbstractBasicError)) {
-          expect(code).to.be.above(999);
-          expect(code).to.be.below(2000);
-        } else if (isChildOf(ErrorClass, AbstractSignatureError)) {
-          expect(code).to.be.above(1999);
-          expect(code).to.be.below(3000);
-        } else if (isChildOf(ErrorClass, AbstractFeeError)) {
-          expect(code).to.be.above(2999);
-          expect(code).to.be.below(4000);
-        } else if (isChildOf(ErrorClass, AbstractStateError)) {
-          expect(code).to.be.above(3999);
-          expect(code).to.be.below(5000);
-        }
+        it('should have error code defined', () => {
+          expect(AssignedErrorClass).to.exist();
+        });
+
+        it('should have been define in the correct code range', () => {
+          if (isChildOf(ErrorClass, AbstractBasicError)) {
+            expect(code).to.be.above(999);
+            expect(code).to.be.below(2000);
+          } else if (isChildOf(ErrorClass, AbstractSignatureError)) {
+            expect(code).to.be.above(1999);
+            expect(code).to.be.below(3000);
+          } else if (isChildOf(ErrorClass, AbstractFeeError)) {
+            expect(code).to.be.above(2999);
+            expect(code).to.be.below(4000);
+          } else if (isChildOf(ErrorClass, AbstractStateError)) {
+            expect(code).to.be.above(3999);
+            expect(code).to.be.below(5000);
+          }
+        });
       });
     }
   });
