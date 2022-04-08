@@ -3,6 +3,7 @@ const IdentityPublicKey = require('./IdentityPublicKey');
 
 const IdentityCreateTransition = require('./stateTransition/IdentityCreateTransition/IdentityCreateTransition');
 const IdentityTopUpTransition = require('./stateTransition/IdentityTopUpTransition/IdentityTopUpTransition');
+const IdentityUpdateTransition = require('./stateTransition/IdentityUpdateTransition/IdentityUpdateTransition');
 
 const InvalidIdentityError = require('./errors/InvalidIdentityError');
 const InstantAssetLockProof = require('./stateTransition/assetLockProof/instant/InstantAssetLockProof');
@@ -175,6 +176,38 @@ class IdentityFactory {
       identityId,
       assetLockProof: assetLockProof.toObject(),
     });
+  }
+
+  /**
+   * Create identity update transition
+   *
+   * @param {Identity} identity - identity to update
+   * @param {{add: IdentityPublicKey[]; disable: IdentityPublicKey[]}} publicKeys - public
+   * keys to add or delete
+   * @return {IdentityUpdateTransition}
+   */
+  createIdentityUpdateTransition(
+    identity,
+    publicKeys = {},
+  ) {
+    const rawStateTransition = {
+      protocolVersion: this.dpp.getProtocolVersion(),
+      identityId: identity.getId(),
+      revision: identity.getRevision() + 1,
+    };
+
+    if (publicKeys.add) {
+      rawStateTransition.addPublicKeys = publicKeys.add;
+    }
+
+    if (publicKeys.disable) {
+      const now = new Date().getTime();
+
+      rawStateTransition.disablePublicKeys = publicKeys.disable.map((pk) => pk.getId());
+      rawStateTransition.publicKeysDisabledAt = now;
+    }
+
+    return new IdentityUpdateTransition(rawStateTransition);
   }
 }
 

@@ -1,6 +1,6 @@
 const IdentityPublicKey = require('../../../../lib/identity/IdentityPublicKey');
 
-const validatePublicKeysInIdentityCreateTransitionFactory = require('../../../../lib/identity/validation/validatePublicKeysInIdentityCreateTransitionFactory');
+const validateRequiredPurposeAndSecurityLevelFactory = require('../../../../lib/identity/validation/validateRequiredPurposeAndSecurityLevelFactory');
 
 const { expectValidationError } = require('../../../../lib/test/expect/expectError');
 
@@ -8,19 +8,24 @@ const ValidationResult = require('../../../../lib/validation/ValidationResult');
 
 const MissingMasterPublicKeyError = require('../../../../lib/errors/consensus/basic/identity/MissingMasterPublicKeyError');
 
-describe('validatePublicKeysInIdentityCreateTransitionFactory', () => {
-  let validatePublicKeysInIdentityCreateTransition;
+describe('validateRequiredPurposeAndSecurityLevel', () => {
+  let validateRequiredPurposeAndSecurityLevel;
 
   beforeEach(() => {
-    validatePublicKeysInIdentityCreateTransition = (
-      validatePublicKeysInIdentityCreateTransitionFactory()
+    validateRequiredPurposeAndSecurityLevel = (
+      validateRequiredPurposeAndSecurityLevelFactory()
     );
   });
 
   it('should return invalid result if the state transition does not contain master key', async () => {
-    const result = await validatePublicKeysInIdentityCreateTransition([{
+    const result = await validateRequiredPurposeAndSecurityLevel([{
       purpose: IdentityPublicKey.PURPOSES.AUTHENTICATION,
       securityLevel: IdentityPublicKey.SECURITY_LEVELS.CRITICAL,
+    }, {
+      // this key must be filtered out
+      purpose: IdentityPublicKey.PURPOSES.AUTHENTICATION,
+      securityLevel: IdentityPublicKey.SECURITY_LEVELS.MASTER,
+      disabledAt: 42,
     }]);
 
     expectValidationError(result, MissingMasterPublicKeyError);
@@ -31,7 +36,7 @@ describe('validatePublicKeysInIdentityCreateTransitionFactory', () => {
   });
 
   it('should return valid result', async () => {
-    const result = await validatePublicKeysInIdentityCreateTransition([{
+    const result = await validateRequiredPurposeAndSecurityLevel([{
       purpose: IdentityPublicKey.PURPOSES.AUTHENTICATION,
       securityLevel: IdentityPublicKey.SECURITY_LEVELS.MASTER,
     }]);

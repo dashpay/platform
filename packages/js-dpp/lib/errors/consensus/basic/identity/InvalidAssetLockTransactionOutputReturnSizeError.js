@@ -1,6 +1,6 @@
 const AbstractBasicError = require('../AbstractBasicError');
 
-class InvalidAssetLockTransactionOutputReturnSize extends AbstractBasicError {
+class InvalidAssetLockTransactionOutputReturnSizeError extends AbstractBasicError {
   /**
    * @param {number} outputIndex
    */
@@ -23,4 +23,4 @@ class InvalidAssetLockTransactionOutputReturnSize extends AbstractBasicError {
   }
 }
 
-module.exports = InvalidAssetLockTransactionOutputReturnSize;
+module.exports = InvalidAssetLockTransactionOutputReturnSizeError;

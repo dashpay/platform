@@ -58,15 +58,8 @@ describe('validateDocumentsBatchTransitionStateFactory', () => {
       transitions: documentTransitions.map((t) => t.toObject()),
     }, [dataContract]);
 
-    const timeInSeconds = Math.ceil(new Date().getTime() / 1000);
-
     stateRepositoryMock = createStateRepositoryMock(this.sinonSandbox);
     stateRepositoryMock.fetchDataContract.resolves(dataContract);
-    stateRepositoryMock.fetchLatestPlatformBlockHeader.resolves({
-      time: {
-        seconds: timeInSeconds,
-      },
-    });
 
     blockTime = new Date().getTime() / 1000;
 

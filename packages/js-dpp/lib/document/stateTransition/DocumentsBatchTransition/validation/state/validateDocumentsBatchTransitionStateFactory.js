@@ -17,7 +17,7 @@ const DocumentTimestampsMismatchError = require(
 
 const AbstractDocumentTransition = require('../../documentTransition/AbstractDocumentTransition');
 
-const BLOCK_TIME_WINDOW_MINUTES = 5;
+const validateTimeInBlockTimeWindow = require('../../../../../blockTimeWindow/validateTimeInBlockTimeWindow');
 
 /**
  *
@@ -68,17 +68,6 @@ function validateDocumentsBatchTransitionStateFactory(
     // Get last block header time in milliseconds
     const lastBlockHeaderTime = lastBlockHeaderTimeSeconds * 1000;
 
-    // Define time window
-    const timeWindowStart = new Date(lastBlockHeaderTime);
-    timeWindowStart.setMinutes(
-      timeWindowStart.getMinutes() - BLOCK_TIME_WINDOW_MINUTES,
-    );
-
-    const timeWindowEnd = new Date(lastBlockHeaderTime);
-    timeWindowEnd.setMinutes(
-      timeWindowEnd.getMinutes() + BLOCK_TIME_WINDOW_MINUTES,
-    );
-
     // Validate document action, ownerId, revision and timestamps
     documentTransitions
       .forEach((documentTransition) => {
@@ -106,15 +95,18 @@ function validateDocumentsBatchTransitionStateFactory(
             if (documentTransition.getCreatedAt() !== undefined) {
               const createdAtTime = documentTransition.getCreatedAt().getTime();
 
-              // TODO: Why we comparing dates and numbers?
-              if (createdAtTime < timeWindowStart || createdAtTime > timeWindowEnd) {
+              const validateTimeWindowResult = validateTimeInBlockTimeWindow(
+                lastBlockHeaderTime,
+                createdAtTime,
+              );
+              if (!validateTimeWindowResult.isValid()) {
                 result.addError(
                   new DocumentTimestampWindowViolationError(
                     'createdAt',
                     documentTransition.getId().toBuffer(),
                     documentTransition.getCreatedAt(),
-                    timeWindowStart,
-                    timeWindowEnd,
+                    validateTimeWindowResult.getTimeWindowStart(),
+                    validateTimeWindowResult.getTimeWindowEnd(),
                   ),
                 );
               }
@@ -123,16 +115,19 @@ function validateDocumentsBatchTransitionStateFactory(
             // Check updatedAt is within a block time window
             if (documentTransition.getUpdatedAt() !== undefined) {
               const updatedAtTime = documentTransition.getUpdatedAt().getTime();
+              const validateTimeWindowResult = validateTimeInBlockTimeWindow(
+                lastBlockHeaderTime,
+                updatedAtTime,
+              );
 
-              // TODO: Why we comparing dates and numbers?
-              if (updatedAtTime < timeWindowStart || updatedAtTime > timeWindowEnd) {
+              if (!validateTimeWindowResult.isValid()) {
                 result.addError(
                   new DocumentTimestampWindowViolationError(
                     'updatedAt',
                     documentTransition.getId().toBuffer(),
                     documentTransition.getUpdatedAt(),
-                    timeWindowStart,
-                    timeWindowEnd,
+                    validateTimeWindowResult.getTimeWindowStart(),
+                    validateTimeWindowResult.getTimeWindowEnd(),
                   ),
                 );
               }
@@ -149,14 +144,19 @@ function validateDocumentsBatchTransitionStateFactory(
             if (documentTransition.getUpdatedAt() !== undefined) {
               const updatedAtTime = documentTransition.getUpdatedAt().getTime();
 
-              if (updatedAtTime < timeWindowStart || updatedAtTime > timeWindowEnd) {
+              const validateTimeWindowResult = validateTimeInBlockTimeWindow(
+                lastBlockHeaderTime,
+                updatedAtTime,
+              );
+
+              if (!validateTimeWindowResult.isValid()) {
                 result.addError(
                   new DocumentTimestampWindowViolationError(
                     'updatedAt',
                     documentTransition.getId().toBuffer(),
                     documentTransition.getUpdatedAt(),
-                    timeWindowStart,
-                    timeWindowEnd,
+                    validateTimeWindowResult.getTimeWindowStart(),
+                    validateTimeWindowResult.getTimeWindowEnd(),
                   ),
                 );
               }
