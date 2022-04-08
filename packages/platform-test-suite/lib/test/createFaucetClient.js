@@ -1,5 +1,15 @@
 const Dash = require('dash');
-const { NodeForage } = require('nodeforage');
+
+let storageAdapter;
+
+if (typeof window === 'undefined') {
+  // eslint-disable-next-line global-require
+  const { NodeForage } = require('nodeforage');
+  storageAdapter = new NodeForage({ name: 'faucet-wallet' });
+} else {
+  // eslint-disable-next-line global-require
+  storageAdapter = require('localforage');
+}
 
 const { contractId } = require('@dashevo/dpns-contract/lib/systemIds');
 
@@ -7,8 +17,6 @@ const getDAPISeeds = require('./getDAPISeeds');
 
 let faucetClient;
 
-const forage = new NodeForage({ name: 'faucet-wallet' });
-console.log(process.env);
 function createFaucetClient() {
   const seeds = getDAPISeeds();
 
@@ -25,7 +33,7 @@ function createFaucetClient() {
   // TODO: Consider implementing .env flag that will enable/disable storage adapter
   const walletOptions = {
     privateKey: process.env.FAUCET_PRIVATE_KEY,
-    adapter: forage,
+    adapter: storageAdapter,
   };
 
   if (process.env.SKIP_SYNC_BEFORE_HEIGHT) {
