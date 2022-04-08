@@ -161,7 +161,6 @@ describe('validateIdentityUpdateTransitionStateFactory', () => {
       [...identity.getPublicKeys(), ...stateTransition.getPublicKeysToAdd()].map(
         (pk) => pk.toObject(),
       ),
-      { mustBeEnabled: true },
     );
   });
 
@@ -217,7 +216,6 @@ describe('validateIdentityUpdateTransitionStateFactory', () => {
     expect(validatePublicKeysMock).to.be.calledOnceWithExactly(
       [...identity.getPublicKeys(), ...stateTransition.getPublicKeysToAdd()]
         .map((pk) => pk.toObject()),
-      { mustBeEnabled: true },
     );
   });
 
@@ -236,7 +234,6 @@ describe('validateIdentityUpdateTransitionStateFactory', () => {
 
     expect(validatePublicKeysMock).to.be.calledWithExactly(
       publicKeys.map((pk) => pk.toObject()),
-      { mustBeEnabled: true },
     );
   });
 });
