@@ -1,3 +1,4 @@
+use anyhow::Result;
 use getrandom::getrandom;
 use crate::errors::consensus::basic::JsonSchemaError;
 use crate::errors::consensus::ConsensusError;
@@ -5,7 +6,7 @@ use crate::validation::ValidationResult;
 
 pub fn generate_random_identifier() -> [u8; 32] {
     let mut buffer = [0u8; 32];
-    getrandom(&mut buffer);
+    let _ = getrandom(&mut buffer);
     buffer
 }
 
@@ -50,4 +51,10 @@ pub fn serde_remove<T>(mut object: serde_json::Value, key: T) -> serde_json::Val
     map.remove(&key.into());
 
     object
+}
+pub fn get_data_from_file(file_path: &str) -> Result<String> {
+    let current_dir = std::env::current_dir()?;
+    let file_path = format!("{}/{}", current_dir.display(), file_path);
+    let d = std::fs::read_to_string(file_path)?;
+    Ok(d)
 }

@@ -1,3 +1,4 @@
+use crate::data_contract::DataContract;
 use crate::errors::ProtocolError;
 use crate::identifier::Identifier;
 use crate::metadata::Metadata;
@@ -6,15 +7,6 @@ use crate::util::hash::sha;
 use crate::util::serializer;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-
-// TODO implement data contract
-#[derive(Serialize, Deserialize, Debug, Default, Clone)]
-pub struct DataContract {}
-impl DataContract {
-    fn get_data_contract_id(&self) -> Identifier {
-        unimplemented!()
-    }
-}
 
 /// The document object represents the data provided by the platform in response to a query.
 /// The example of document object:
@@ -55,8 +47,8 @@ impl Document {
             .map_err(|e| ProtocolError::EncodingError(format!("corrupted data - {}", e)))
     }
 
-    pub fn from_buffer(b: &[u8]) -> Result<Document, ProtocolError> {
-        let (protocol_bytes, document_bytes) = b.split_at(4);
+    pub fn from_buffer(b: impl AsRef<[u8]>) -> Result<Document, ProtocolError> {
+        let (protocol_bytes, document_bytes) = b.as_ref().split_at(4);
 
         let json_value: Value = ciborium::de::from_reader(document_bytes)
             .map_err(|e| ProtocolError::EncodingError(format!("{}", e)))?;
@@ -137,7 +129,7 @@ impl Document {
 
 #[cfg(test)]
 mod test {
-    use crate::tests::utils::generate_random_identifier;
+    use crate::tests::utils::*;
     use crate::util::string_encoding::Encoding;
 
     use super::*;
@@ -150,13 +142,6 @@ mod test {
         let _ = env_logger::builder()
             .filter_level(log::LevelFilter::Debug)
             .try_init();
-    }
-
-    fn get_data_from_file(file_path: &str) -> Result<String> {
-        let current_dir = std::env::current_dir()?;
-        let file_path = format!("{}/{}", current_dir.display(), file_path);
-        let d = std::fs::read_to_string(file_path)?;
-        Ok(d)
     }
 
     #[test]

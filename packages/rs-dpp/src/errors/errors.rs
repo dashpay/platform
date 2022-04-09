@@ -1,3 +1,4 @@
+use crate::data_contract::errors::*;
 use thiserror::Error;
 
 #[derive(Error, Debug)]
@@ -18,8 +19,31 @@ pub enum ProtocolError {
     NoProtocolVersionError,
     #[error("Parsing error: {0}")]
     ParsingError(String),
+
     #[error(transparent)]
     ParsingJsonError(#[from] serde_json::Error),
     #[error(transparent)]
     Error(#[from] anyhow::Error),
+
+    #[error(transparent)]
+    DataContractError(DataContractError),
+
+    #[error(transparent)]
+    AbstractConsensusError(AbstractConsensusErrorMock),
 }
+
+impl From<AbstractConsensusErrorMock> for ProtocolError {
+    fn from(e: AbstractConsensusErrorMock) -> Self {
+        ProtocolError::AbstractConsensusError(e)
+    }
+}
+
+impl From<DataContractError> for ProtocolError {
+    fn from(e: DataContractError) -> Self {
+        ProtocolError::DataContractError(e)
+    }
+}
+
+// TODO implement
+#[derive(Error, Debug)]
+pub enum AbstractConsensusErrorMock {}
