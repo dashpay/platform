@@ -1,3 +1,4 @@
+pub mod data_contract;
 extern crate core;
 
 pub mod document;
