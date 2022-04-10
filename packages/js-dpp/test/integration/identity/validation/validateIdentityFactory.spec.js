@@ -367,12 +367,4 @@ describe('validateIdentityFactory', () => {
 
     expect(result.isValid()).to.be.true();
   });
-
-  it('should return valid result if an identity model is valid', () => {
-    const result = validateIdentity(identity);
-
-    expect(validatePublicKeysMock).to.be.calledOnceWithExactly(identity.publicKeys);
-
-    expect(result.isValid()).to.be.true();
-  });
 });
