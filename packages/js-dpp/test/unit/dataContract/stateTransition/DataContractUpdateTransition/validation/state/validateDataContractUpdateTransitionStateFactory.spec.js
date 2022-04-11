@@ -62,7 +62,7 @@ describe('validateDataContractUpdateTransitionStateFactory', () => {
 
     const [error] = result.getErrors();
 
-    expect(error.getCode()).to.equal(4013);
+    expect(error.getCode()).to.equal(1050);
 
     expect(stateRepositoryMock.fetchDataContract).to.be.calledOnceWithExactly(dataContract.getId());
   });

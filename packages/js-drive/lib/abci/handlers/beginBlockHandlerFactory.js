@@ -55,10 +55,7 @@ function beginBlockHandlerFactory(
     } = header;
 
     // Start block execution timer
-
-    if (executionTimer.isStarted('blockExecution')) {
-      executionTimer.endTimer('blockExecution');
-    }
+    executionTimer.clearTimer('blockExecution');
 
     executionTimer.startTimer('blockExecution');
 

@@ -13,6 +13,7 @@ const commonJSConfig = {
   resolve: {
     fallback: {
       fs: false,
+      ws: false,
       crypto: require.resolve('crypto-browserify'),
       http: require.resolve('stream-http'),
       https: require.resolve('https-browserify'),

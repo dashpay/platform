@@ -327,6 +327,7 @@ AbstractStateTransition.documentTransitionTypes = [
 AbstractStateTransition.identityTransitionTypes = [
   stateTransitionTypes.IDENTITY_CREATE,
   stateTransitionTypes.IDENTITY_TOP_UP,
+  stateTransitionTypes.IDENTITY_UPDATE,
 ];
 AbstractStateTransition.dataContractTransitionTypes = [
   stateTransitionTypes.DATA_CONTRACT_CREATE,

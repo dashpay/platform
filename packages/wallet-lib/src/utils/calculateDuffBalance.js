@@ -10,6 +10,10 @@ module.exports = function calculateDuffBalance(addresses, chainStore, type = 'to
 
   addresses.forEach((address) => {
     const addressData = chainStore.getAddress(address);
+    if (!addressData) {
+      return;
+    }
+
     switch (type) {
       case 'total':
         totalSat += addressData.balanceSat + addressData.unconfirmedBalanceSat;

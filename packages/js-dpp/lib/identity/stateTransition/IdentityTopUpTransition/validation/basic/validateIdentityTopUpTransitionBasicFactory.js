@@ -17,7 +17,7 @@ function validateIdentityTopUpTransitionBasicFactory(
   /**
    * @typedef {validateIdentityTopUpTransitionBasic}
    * @param {RawIdentityTopUpTransition} rawStateTransition
-   * @return {ValidationResult}
+   * @return {Promise<ValidationResult>}
    */
   async function validateIdentityTopUpTransitionBasic(rawStateTransition) {
     const result = jsonSchemaValidator.validate(
