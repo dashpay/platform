@@ -1,6 +1,5 @@
 use enum_map::{enum_map, Enum, EnumMap};
-use grovedb::{Element, Error};
-use std::iter::Sum;
+use grovedb::{Element, PathQuery};
 
 pub(crate) const STORAGE_CREDIT_PER_BYTE: u64 = 5000;
 pub(crate) const STORAGE_PROCESSING_CREDIT_PER_BYTE: u64 = 10;
@@ -104,8 +103,68 @@ impl QueryOperation {
         }
     }
 
+    pub fn for_value_retrieval_in_path<'a: 'b, 'b, 'c, P>(
+        key_len: usize,
+        path: P,
+        value_len: usize,
+    ) -> Self
+    where
+        P: IntoIterator<Item = &'c [u8]>,
+        <P as IntoIterator>::IntoIter: ExactSizeIterator + DoubleEndedIterator + Clone,
+    {
+        let path_size: u32 = path
+            .into_iter()
+            .map(|inner: &[u8]| inner.len() as u32)
+            .sum();
+        QueryOperation {
+            key_size: key_len as u32,
+            path_size,
+            value_size: value_len as u32,
+        }
+    }
+
+    pub fn for_value_retrieval_with_path_length(
+        key_len: usize,
+        path_len: usize,
+        value_len: usize,
+    ) -> Self {
+        QueryOperation {
+            key_size: key_len as u32,
+            path_size: path_len as u32,
+            value_size: value_len as u32,
+        }
+    }
+
+    pub fn for_path_query(path_query: &PathQuery, returned_values: &[Vec<u8>]) -> Self {
+        QueryOperation {
+            key_size: path_query
+                .query
+                .query
+                .items
+                .iter()
+                .map(|query_item| query_item.processing_footprint())
+                .sum(),
+            path_size: path_query.path.len() as u32,
+            value_size: returned_values.iter().map(|v| v.len() as u32).sum(),
+        }
+    }
+
+    pub fn for_empty_path_query(path_query: &PathQuery) -> Self {
+        QueryOperation {
+            key_size: path_query
+                .query
+                .query
+                .items
+                .iter()
+                .map(|query_item| query_item.processing_footprint())
+                .sum(),
+            path_size: path_query.path.len() as u32,
+            value_size: 0,
+        }
+    }
+
     pub fn data_size(&self) -> u32 {
-        self.path_size + self.key_size as u32
+        self.path_size + self.key_size + self.value_size as u32
     }
 
     pub fn ephemeral_cost(&self) -> u64 {

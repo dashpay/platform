@@ -15,6 +15,7 @@ const {
   driveUpdateDocument,
   driveDeleteDocument,
   driveQueryDocuments,
+  driveInsertIdentity,
 } = require('neon-load-or-build')({
   dir: pathJoin(__dirname, '..'),
 });
@@ -33,6 +34,7 @@ const driveCreateDocumentAsync = appendStack(promisify(driveCreateDocument));
 const driveUpdateDocumentAsync = appendStack(promisify(driveUpdateDocument));
 const driveDeleteDocumentAsync = appendStack(promisify(driveDeleteDocument));
 const driveQueryDocumentsAsync = appendStack(promisify(driveQueryDocuments));
+const driveInsertIdentityAsync = appendStack(promisify(driveInsertIdentity));
 
 // Wrapper class for the boxed `Drive` for idiomatic JavaScript usage
 class Drive {
@@ -159,7 +161,7 @@ class Drive {
     const [encodedDocuments] = await driveQueryDocumentsAsync.call(
       this.drive,
       encodedQuery,
-      dataContract.toBuffer(),
+      dataContract.id.toBuffer(),
       documentType,
       useTransaction,
     );
@@ -171,6 +173,20 @@ class Drive {
 
       return new Document(rawDocument, dataContract);
     });
+  }
+
+  /**
+   * @param {DataContract} dataContract
+   * @param {boolean} [useTransaction=false]
+   * @returns {Promise<void>}
+   */
+  async insertIdentity(identity, useTransaction = false) {
+    return driveInsertIdentityAsync.call(
+      this.drive,
+      identity.id.toBuffer(),
+      identity.toBuffer(),
+      useTransaction,
+    );
   }
 }
 

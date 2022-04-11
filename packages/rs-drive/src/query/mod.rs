@@ -1,14 +1,26 @@
 pub mod conditions;
 mod defaults;
 pub mod ordering;
+mod test_index;
 
-use crate::contract::{bytes_for_system_value, Contract, Document, DocumentType, IndexProperty};
-use ciborium::value::{Value as CborValue, Value};
+use crate::common::bytes_for_system_value;
+use crate::contract::{Contract, Document, DocumentType, Index, IndexProperty};
+use crate::drive::object_size_info::KeyValueInfo;
+use crate::drive::Drive;
+use crate::error::drive::DriveError;
+use crate::error::query::QueryError;
+use crate::error::structure::StructureError;
+use crate::error::Error;
+use crate::fee::calculate_fee;
+use crate::fee::op::QueryOperation;
+use ciborium::value::Value;
 use conditions::WhereOperator::{Equal, In};
-use conditions::{WhereClause, WhereOperator};
-use grovedb::{Element, Error, GroveDb, PathQuery, Query, QueryItem, SizedQuery, TransactionArg};
+pub use conditions::{WhereClause, WhereOperator};
+pub use grovedb::{
+    Element, Error as GroveError, GroveDb, PathQuery, Query, QueryItem, SizedQuery, TransactionArg,
+};
 use indexmap::IndexMap;
-use ordering::OrderClause;
+pub use ordering::OrderClause;
 use sqlparser::ast;
 use sqlparser::ast::TableFactor::Table;
 use sqlparser::ast::Value::Number;
@@ -55,6 +67,78 @@ impl InternalClauses {
             && self.primary_key_in_clause.is_none()
             && self.primary_key_equal_clause.is_none()
     }
+
+    fn extract_from_clauses(all_where_clauses: Vec<WhereClause>) -> Result<Self, Error> {
+        let primary_key_equal_clauses_array = all_where_clauses
+            .iter()
+            .filter_map(|where_clause| match where_clause.operator {
+                Equal => match where_clause.is_identifier() {
+                    true => Some(where_clause.clone()),
+                    false => None,
+                },
+                _ => None,
+            })
+            .collect::<Vec<WhereClause>>();
+
+        let primary_key_in_clauses_array = all_where_clauses
+            .iter()
+            .filter_map(|where_clause| match where_clause.operator {
+                In => match where_clause.is_identifier() {
+                    true => Some(where_clause.clone()),
+                    false => None,
+                },
+                _ => None,
+            })
+            .collect::<Vec<WhereClause>>();
+
+        let (equal_clauses, range_clause, in_clause) =
+            WhereClause::group_clauses(&all_where_clauses)?;
+
+        let primary_key_equal_clause = match primary_key_equal_clauses_array.len() {
+            0 => Ok(None),
+            1 => Ok(Some(
+                primary_key_equal_clauses_array
+                    .get(0)
+                    .expect("there must be a value")
+                    .clone(),
+            )),
+            _ => Err(Error::Query(
+                QueryError::DuplicateNonGroupableClauseSameField(
+                    "There should only be one equal clause for the primary key",
+                ),
+            )),
+        }?;
+
+        let primary_key_in_clause = match primary_key_in_clauses_array.len() {
+            0 => Ok(None),
+            1 => Ok(Some(
+                primary_key_in_clauses_array
+                    .get(0)
+                    .expect("there must be a value")
+                    .clone(),
+            )),
+            _ => Err(Error::Query(
+                QueryError::DuplicateNonGroupableClauseSameField(
+                    "There should only be one in clause for the primary key",
+                ),
+            )),
+        }?;
+
+        let internal_clauses = InternalClauses {
+            primary_key_equal_clause,
+            primary_key_in_clause,
+            in_clause,
+            range_clause,
+            equal_clauses,
+        };
+
+        match internal_clauses.verify() {
+            true => Ok(internal_clauses),
+            false => Err(Error::Query(QueryError::InvalidWhereClauseComponents(
+                "Query has invalid where clauses",
+            ))),
+        }
+    }
 }
 
 #[derive(Debug, PartialEq)]
@@ -91,26 +175,26 @@ impl<'a> DriveQuery<'a> {
         contract: &'a Contract,
         document_type: &'a DocumentType,
     ) -> Result<Self, Error> {
-        let query_document: HashMap<String, CborValue> = ciborium::de::from_reader(query_cbor)
-            .map_err(|_| Error::InvalidQuery("unable to decode query"))?;
+        let query_document: HashMap<String, Value> = ciborium::de::from_reader(query_cbor)
+            .map_err(|_| Error::Structure(StructureError::InvalidCBOR("unable to decode query")))?;
 
         let limit: u16 = query_document
             .get("limit")
             .map_or(Some(defaults::DEFAULT_QUERY_LIMIT), |id_cbor| {
-                if let CborValue::Integer(b) = id_cbor {
+                if let Value::Integer(b) = id_cbor {
                     Some(i128::from(*b) as u16)
                 } else {
                     None
                 }
             })
-            .ok_or(Error::InvalidQuery(
+            .ok_or(Error::Query(QueryError::InvalidLimit(
                 "limit should be a integer from 1 to 100",
-            ))?;
+            )))?;
 
         let block_time: Option<f64> = query_document.get("blockTime").and_then(|id_cbor| {
-            if let CborValue::Float(b) = id_cbor {
+            if let Value::Float(b) = id_cbor {
                 Some(*b)
-            } else if let CborValue::Integer(b) = id_cbor {
+            } else if let Value::Integer(b) = id_cbor {
                 Some(i128::from(*b) as f64)
             } else {
                 None
@@ -119,30 +203,34 @@ impl<'a> DriveQuery<'a> {
 
         let all_where_clauses: Vec<WhereClause> =
             query_document.get("where").map_or(Ok(vec![]), |id_cbor| {
-                if let CborValue::Array(clauses) = id_cbor {
+                if let Value::Array(clauses) = id_cbor {
                     clauses
                         .iter()
                         .map(|where_clause| {
-                            if let CborValue::Array(clauses_components) = where_clause {
+                            if let Value::Array(clauses_components) = where_clause {
                                 WhereClause::from_components(clauses_components)
                             } else {
-                                Err(Error::InvalidQuery("where clause must be an array"))
+                                Err(Error::Query(QueryError::InvalidFormatWhereClause(
+                                    "where clause must be an array",
+                                )))
                             }
                         })
                         .collect::<Result<Vec<WhereClause>, Error>>()
                 } else {
-                    Err(Error::InvalidQuery("where clause must be an array"))
+                    Err(Error::Query(QueryError::InvalidFormatWhereClause(
+                        "where clause must be an array",
+                    )))
                 }
             })?;
 
-        let internal_clauses = Self::extract_clauses(all_where_clauses)?;
+        let internal_clauses = InternalClauses::extract_from_clauses(all_where_clauses)?;
 
         let start_at_option = query_document.get("startAt");
         let start_after_option = query_document.get("startAfter");
         if start_after_option.is_some() && start_at_option.is_some() {
-            return Err(Error::InvalidQuery(
+            return Err(Error::Query(QueryError::DuplicateStartConditions(
                 "only one of startAt or startAfter should be provided",
-            ));
+            )));
         }
 
         let mut start_at_included = true;
@@ -166,11 +254,11 @@ impl<'a> DriveQuery<'a> {
         let order_by: IndexMap<String, OrderClause> = query_document
             .get("orderBy")
             .map_or(vec![], |id_cbor| {
-                if let CborValue::Array(clauses) = id_cbor {
+                if let Value::Array(clauses) = id_cbor {
                     clauses
                         .iter()
                         .filter_map(|order_clause| {
-                            if let CborValue::Array(clauses_components) = order_clause {
+                            if let Value::Array(clauses_components) = order_clause {
                                 OrderClause::from_components(clauses_components).ok()
                             } else {
                                 None
@@ -201,18 +289,18 @@ impl<'a> DriveQuery<'a> {
     pub fn from_sql_expr(sql_string: &str, contract: &'a Contract) -> Result<Self, Error> {
         let dialect: GenericDialect = sqlparser::dialect::GenericDialect {};
         let statements: Vec<Statement> = Parser::parse_sql(&dialect, sql_string)
-            .map_err(|_| Error::InvalidQuery("Issue parsing sql"))?;
+            .map_err(|_| Error::Query(QueryError::InvalidSQL("Issue parsing sql")))?;
 
         // Should ideally iterate over each statement
         let first_statement = statements
             .get(0)
-            .ok_or(Error::InvalidQuery("Issue parsing SQL"))?;
+            .ok_or(Error::Query(QueryError::InvalidSQL("Issue parsing sql")))?;
 
         let query: &ast::Query = match first_statement {
             ast::Statement::Query(query_struct) => Some(query_struct),
             _ => None,
         }
-        .ok_or(Error::InvalidQuery("Issue parsing sql"))?;
+        .ok_or(Error::Query(QueryError::InvalidSQL("Issue parsing sql")))?;
 
         let limit: u16 = if let Some(limit_expr) = &query.limit {
             match limit_expr {
@@ -222,9 +310,9 @@ impl<'a> DriveQuery<'a> {
                 }
                 _ => None,
             }
-            .ok_or(Error::InvalidQuery(
+            .ok_or(Error::Query(QueryError::InvalidLimit(
                 "Issue parsing sql: invalid limit value",
-            ))?
+            )))?
         } else {
             defaults::DEFAULT_QUERY_LIMIT
         };
@@ -244,13 +332,15 @@ impl<'a> DriveQuery<'a> {
             ast::SetExpr::Select(select) => Some(select),
             _ => None,
         }
-        .ok_or(Error::InvalidQuery("Issue parsing sql"))?;
+        .ok_or(Error::Query(QueryError::InvalidSQL("Issue parsing sql")))?;
 
         // Get the document type from the 'from' section
         let document_type_name = match &select
             .from
             .get(0)
-            .ok_or(Error::InvalidQuery("Invalid query: missing from section"))?
+            .ok_or(Error::Query(QueryError::InvalidSQL(
+                "Invalid query: missing from section",
+            )))?
             .relation
         {
             Table {
@@ -261,12 +351,16 @@ impl<'a> DriveQuery<'a> {
             } => name.0.get(0).as_ref().map(|identifier| &identifier.value),
             _ => None,
         }
-        .ok_or(Error::InvalidQuery("Issue parsing sql: invalid from value"))?;
+        .ok_or(Error::Query(QueryError::InvalidSQL(
+            "Issue parsing sql: invalid from value",
+        )))?;
 
         let document_type = contract
             .document_types
             .get(document_type_name)
-            .ok_or(Error::InvalidQuery("document type not found in contract"))?;
+            .ok_or(Error::Query(QueryError::DocumentTypeNotFound(
+                "document type not found in contract",
+            )))?;
 
         // Restrictions
         // only binary where clauses are supported
@@ -288,7 +382,7 @@ impl<'a> DriveQuery<'a> {
             )?;
         }
 
-        let internal_clauses = Self::extract_clauses(all_where_clauses)?;
+        let internal_clauses = InternalClauses::extract_from_clauses(all_where_clauses)?;
 
         let start_at_option = None;
         let start_at_included = true;
@@ -311,113 +405,11 @@ impl<'a> DriveQuery<'a> {
         })
     }
 
-    fn extract_clauses(all_where_clauses: Vec<WhereClause>) -> Result<InternalClauses, Error> {
-        let primary_key_equal_clauses_array = all_where_clauses
-            .iter()
-            .filter_map(|where_clause| match where_clause.operator {
-                Equal => match where_clause.is_identifier() {
-                    true => Some(where_clause.clone()),
-                    false => None,
-                },
-                _ => None,
-            })
-            .collect::<Vec<WhereClause>>();
-
-        let primary_key_in_clauses_array = all_where_clauses
-            .iter()
-            .filter_map(|where_clause| match where_clause.operator {
-                In => match where_clause.is_identifier() {
-                    true => Some(where_clause.clone()),
-                    false => None,
-                },
-                _ => None,
-            })
-            .collect::<Vec<WhereClause>>();
-
-        let range_clause = WhereClause::group_range_clauses(&all_where_clauses)?;
-
-        let equal_clauses_array =
-            all_where_clauses
-                .iter()
-                .filter_map(|where_clause| match where_clause.operator {
-                    Equal => match where_clause.is_identifier() {
-                        true => None,
-                        false => Some(where_clause.clone()),
-                    },
-                    _ => None,
-                });
-
-        let in_clauses_array = all_where_clauses
-            .iter()
-            .filter_map(|where_clause| match where_clause.operator {
-                WhereOperator::In => match where_clause.is_identifier() {
-                    true => None,
-                    false => Some(where_clause.clone()),
-                },
-                _ => None,
-            })
-            .collect::<Vec<WhereClause>>();
-
-        let primary_key_equal_clause = match primary_key_equal_clauses_array.len() {
-            0 => Ok(None),
-            1 => Ok(Some(
-                primary_key_equal_clauses_array
-                    .get(0)
-                    .expect("there must be a value")
-                    .clone(),
-            )),
-            _ => Err(Error::InvalidQuery(
-                "There should only be one equal clause for the primary key",
-            )),
-        }?;
-
-        let primary_key_in_clause = match primary_key_in_clauses_array.len() {
-            0 => Ok(None),
-            1 => Ok(Some(
-                primary_key_in_clauses_array
-                    .get(0)
-                    .expect("there must be a value")
-                    .clone(),
-            )),
-            _ => Err(Error::InvalidQuery(
-                "There should only be one in clause for the primary key",
-            )),
-        }?;
-
-        let in_clause = match in_clauses_array.len() {
-            0 => Ok(None),
-            1 => Ok(Some(
-                in_clauses_array
-                    .get(0)
-                    .expect("there must be a value")
-                    .clone(),
-            )),
-            _ => Err(Error::InvalidQuery("There should only be one in clause")),
-        }?;
-
-        let equal_clauses: HashMap<String, WhereClause> = equal_clauses_array
-            .into_iter()
-            .map(|where_clause| (where_clause.field.clone(), where_clause))
-            .collect();
-
-        let internal_clauses = InternalClauses {
-            primary_key_equal_clause,
-            primary_key_in_clause,
-            in_clause,
-            range_clause,
-            equal_clauses,
-        };
-
-        match internal_clauses.verify() {
-            true => Ok(internal_clauses),
-            false => Err(Error::InvalidQuery("Query has invalid where clauses")),
-        }
-    }
-
-    pub fn construct_path_query(
+    pub fn construct_path_query_operations(
         &self,
-        grove: &GroveDb,
+        drive: &Drive,
         transaction: TransactionArg,
+        query_operations: &mut Vec<QueryOperation>,
     ) -> Result<PathQuery, Error> {
         // First we should get the overall document_type_path
         let document_type_path = self
@@ -451,26 +443,35 @@ impl<'a> DriveQuery<'a> {
                         )
                     };
 
-                let start_at_document = grove
-                    .get(start_at_document_path, &start_at_document_key, transaction)
+                let start_at_document = drive
+                    .grove_get(
+                        start_at_document_path,
+                        KeyValueInfo::KeyRefRequest(&start_at_document_key),
+                        transaction,
+                        query_operations,
+                    )
                     .map_err(|e| match e {
-                        Error::PathKeyNotFound(_) | Error::PathNotFound(_) => {
+                        Error::GroveDB(GroveError::PathKeyNotFound(_))
+                        | Error::GroveDB(GroveError::PathNotFound(_)) => {
                             let error_message = if self.start_at_included {
                                 "startAt document not found"
                             } else {
                                 "startAfter document not found"
                             };
 
-                            Error::InvalidQuery(error_message)
+                            Error::Query(QueryError::StartDocumentNotFound(error_message))
                         }
                         _ => e,
-                    })?;
+                    })?
+                    .ok_or(Error::Drive(DriveError::CorruptedCodeExecution(
+                        "expected a value",
+                    )))?;
 
                 if let Element::Item(item) = start_at_document {
                     let document = Document::from_cbor(item.as_slice(), None, None)?;
                     Ok(Some((document, self.start_at_included)))
                 } else {
-                    Err(Error::CorruptedData(String::from(
+                    Err(Error::Drive(DriveError::CorruptedDocumentPath(
                         "Holding paths should only have items",
                     )))
                 }
@@ -517,7 +518,9 @@ impl<'a> DriveQuery<'a> {
             // This is for a range
             let left_to_right = if self.order_by.keys().len() == 1 {
                 if self.order_by.keys().next().unwrap() != "$id" {
-                    return Err(Error::InvalidQuery("order by should include $id only"));
+                    return Err(Error::Query(QueryError::InvalidOrderByProperties(
+                        "order by should include $id only",
+                    )));
                 }
 
                 let order_clause = self.order_by.get("$id").unwrap();
@@ -543,9 +546,9 @@ impl<'a> DriveQuery<'a> {
             if let Some(primary_key_in_clause) = &self.internal_clauses.primary_key_in_clause {
                 let in_values = match &primary_key_in_clause.value {
                     Value::Array(array) => Ok(array),
-                    _ => Err(Error::InvalidQuery(
+                    _ => Err(Error::Query(QueryError::InvalidInClause(
                         "when using in operator you must provide an array of values",
-                    )),
+                    ))),
                 }?;
                 match starts_at_key_option {
                     None => {
@@ -571,7 +574,8 @@ impl<'a> DriveQuery<'a> {
                 if self.document_type.documents_keep_history {
                     // if the documents keep history then we should insert a subquery
                     if let Some(_block_time) = self.block_time {
-                        return Err(Error::InternalError("Not yet implemented"));
+                        //todo
+                        return Err(Error::Query(QueryError::Unsupported("Not yet implemented")));
                         // in order to be able to do this we would need limited subqueries
                         // as we only want the first element before the block_time
 
@@ -609,7 +613,7 @@ impl<'a> DriveQuery<'a> {
                 if self.document_type.documents_keep_history {
                     // if the documents keep history then we should insert a subquery
                     if let Some(_block_time) = self.block_time {
-                        return Err(Error::InternalError("Not yet implemented"));
+                        return Err(Error::Query(QueryError::Unsupported("Not yet implemented")));
                         // in order to be able to do this we would need limited subqueries
                         // as we only want the first element before the block_time
 
@@ -630,11 +634,7 @@ impl<'a> DriveQuery<'a> {
         }
     }
 
-    pub fn get_non_primary_key_path_query(
-        &self,
-        document_type_path: Vec<Vec<u8>>,
-        starts_at_document: Option<(Document, bool)>,
-    ) -> Result<PathQuery, Error> {
+    pub fn find_best_index(&self) -> Result<&Index, Error> {
         let equal_fields = self
             .internal_clauses
             .equal_clauses
@@ -675,13 +675,23 @@ impl<'a> DriveQuery<'a> {
         let (index, difference) = self
             .document_type
             .index_for_types(fields.as_slice(), in_field, order_by_keys.as_slice())
-            .ok_or(Error::InvalidQuery("query must be for valid indexes"))?;
+            .ok_or(Error::Query(QueryError::WhereClauseOnNonIndexedProperty(
+                "query must be for valid indexes",
+            )))?;
         if difference > defaults::MAX_INDEX_DIFFERENCE {
-            return Err(Error::InvalidQuery(
+            return Err(Error::Query(QueryError::QueryTooFarFromIndex(
                 "query must better match an existing index",
-            ));
+            )));
         }
+        Ok(index)
+    }
 
+    pub fn get_non_primary_key_path_query(
+        &self,
+        document_type_path: Vec<Vec<u8>>,
+        starts_at_document: Option<(Document, bool)>,
+    ) -> Result<PathQuery, Error> {
+        let index = self.find_best_index()?;
         let ordered_clauses: Vec<&WhereClause> = index
             .properties
             .iter()
@@ -796,9 +806,9 @@ impl<'a> DriveQuery<'a> {
                     let order_clause: &OrderClause = self
                         .order_by
                         .get(where_clause.field.as_str())
-                        .ok_or(Error::InvalidQuery(
+                        .ok_or(Error::Query(QueryError::MissingOrderByForRange(
                             "query must have an orderBy field for each range element",
-                        ))?;
+                        )))?;
 
                     order_clause.ascending
                 } else {
@@ -823,9 +833,9 @@ impl<'a> DriveQuery<'a> {
                         let order_clause: &OrderClause = self
                             .order_by
                             .get(where_clause.field.as_str())
-                            .ok_or(Error::InvalidQuery(
+                            .ok_or(Error::Query(QueryError::MissingOrderByForRange(
                                 "query must have an orderBy field for each range element",
-                            ))?;
+                            )))?;
                         let mut subquery = where_clause.to_path_query(
                             self.document_type,
                             &starts_at_document,
@@ -850,8 +860,8 @@ impl<'a> DriveQuery<'a> {
             index.properties.split_at(intermediate_values.len());
 
         // Now we should construct the path
-        let last_index = last_indexes.first().ok_or(Error::InvalidQuery(
-            "document query has no index with fields",
+        let last_index = last_indexes.first().ok_or(Error::Query(
+            QueryError::QueryOnDocumentTypeWithNoIndexes("document query has no index with fields"),
         ))?;
 
         let mut path = document_type_path;
@@ -881,15 +891,59 @@ impl<'a> DriveQuery<'a> {
 
     pub fn execute_no_proof(
         &self,
-        grove: &GroveDb,
+        drive: &Drive,
         transaction: TransactionArg,
-    ) -> Result<(Vec<Vec<u8>>, u16), Error> {
-        let path_query = self.construct_path_query(grove, transaction)?;
-
-        let query_result = grove.get_path_query(&path_query, transaction);
+    ) -> Result<(Vec<Vec<u8>>, u16, u64), Error> {
+        let mut query_operations: Vec<QueryOperation> = vec![];
+        let path_query =
+            self.construct_path_query_operations(drive, transaction, &mut query_operations)?;
+        let query_result = drive.grove.get_path_query(&path_query, transaction);
         match query_result {
-            Err(Error::PathKeyNotFound(_)) | Err(Error::PathNotFound(_)) => Ok((Vec::new(), 0)),
-            _ => query_result,
+            Err(GroveError::PathKeyNotFound(_)) | Err(GroveError::PathNotFound(_)) => {
+                let path_query_operations = QueryOperation::for_empty_path_query(&path_query);
+                query_operations.push(path_query_operations);
+                let (_, processing_fee) = calculate_fee(None, Some(query_operations), None, None)?;
+                Ok((Vec::new(), 0, processing_fee))
+            }
+            _ => {
+                let (data, skipped) = query_result?;
+                {
+                    let path_query_operations = QueryOperation::for_path_query(&path_query, &data);
+                    query_operations.push(path_query_operations);
+                    let (_, processing_fee) =
+                        calculate_fee(None, Some(query_operations), None, None)?;
+                    Ok((data, skipped, processing_fee))
+                }
+            }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::common;
+    use crate::contract::{Contract, DocumentType};
+    use crate::query::DriveQuery;
+    use serde_json::json;
+
+    #[test]
+    fn test_invalid_query() {
+        let query_value = json!({
+            "where": [
+                ["firstName", "<", "Gilligan"],
+                ["lastName", "<", "Michelle"],
+            ],
+            "limit": 100,
+            "orderBy": [
+                ["firstName", "asc"],
+                ["lastName", "asc"],
+            ]
+        });
+        let contract = Contract::default();
+        let document_type = DocumentType::default();
+
+        let where_cbor = common::value_to_cbor(query_value, None);
+        DriveQuery::from_cbor(where_cbor.as_slice(), &contract, &document_type)
+            .expect_err("all ranges must be on same field");
     }
 }

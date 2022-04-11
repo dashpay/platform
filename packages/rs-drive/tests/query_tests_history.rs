@@ -1,4 +1,3 @@
-use grovedb::Error;
 use rand::seq::SliceRandom;
 use rand::{Rng, SeedableRng};
 use rs_drive::common;
@@ -6,6 +5,7 @@ use rs_drive::contract::{Contract, Document};
 use rs_drive::drive::object_size_info::DocumentAndContractInfo;
 use rs_drive::drive::object_size_info::DocumentInfo::DocumentAndSerialization;
 use rs_drive::drive::Drive;
+use rs_drive::error::{query::QueryError, Error};
 use rs_drive::query::DriveQuery;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -193,8 +193,8 @@ fn test_query_historical() {
         .expect("contract should have a person document type");
     let query = DriveQuery::from_cbor(where_cbor.as_slice(), &contract, &person_document_type)
         .expect("query should be built");
-    let (results, _) = query
-        .execute_no_proof(&drive.grove, Some(&db_transaction))
+    let (results, _, _) = query
+        .execute_no_proof(&drive, Some(&db_transaction))
         .expect("proof should be executed");
     let names: Vec<String> = results
         .into_iter()
@@ -229,7 +229,7 @@ fn test_query_historical() {
         .get("person")
         .expect("contract should have a person document type");
 
-    let (results, _) = drive
+    let (results, _, _) = drive
         .query_documents_from_contract(&contract, person_document_type, query_cbor.as_slice(), None)
         .expect("query should be executed");
 
@@ -251,7 +251,7 @@ fn test_query_historical() {
         .get("person")
         .expect("contract should have a person document type");
 
-    let (results, _) = drive
+    let (results, _, _) = drive
         .query_documents_from_contract(&contract, person_document_type, query_cbor.as_slice(), None)
         .expect("query should be executed");
 
@@ -288,7 +288,7 @@ fn test_query_historical() {
         .get("person")
         .expect("contract should have a person document type");
 
-    let (results, _) = drive
+    let (results, _, _) = drive
         .query_documents_from_contract(&contract, person_document_type, query_cbor.as_slice(), None)
         .expect("query should be executed");
 
@@ -312,7 +312,7 @@ fn test_query_historical() {
         .get("person")
         .expect("contract should have a person document type");
 
-    let (results, _) = drive
+    let (results, _, _) = drive
         .query_documents_from_contract(&contract, person_document_type, query_cbor.as_slice(), None)
         .expect("query should be executed");
 
@@ -344,7 +344,7 @@ fn test_query_historical() {
         .get("person")
         .expect("contract should have a person document type");
 
-    let (results, _) = drive
+    let (results, _, _) = drive
         .query_documents_from_contract(&contract, person_document_type, query_cbor.as_slice(), None)
         .expect("query should be executed");
 
@@ -365,7 +365,7 @@ fn test_query_historical() {
         .get("person")
         .expect("contract should have a person document type");
 
-    let (results, _) = drive
+    let (results, _, _) = drive
         .query_documents_from_contract(&contract, person_document_type, query_cbor.as_slice(), None)
         .expect("query should be executed");
 
@@ -389,8 +389,8 @@ fn test_query_historical() {
         .expect("contract should have a person document type");
     let query = DriveQuery::from_cbor(where_cbor.as_slice(), &contract, person_document_type)
         .expect("query should be built");
-    let (results, _) = query
-        .execute_no_proof(&drive.grove, None)
+    let (results, _, _) = query
+        .execute_no_proof(&drive, None)
         .expect("proof should be executed");
     let names: Vec<String> = results
         .into_iter()
@@ -434,8 +434,8 @@ fn test_query_historical() {
         .expect("contract should have a person document type");
     let query = DriveQuery::from_cbor(where_cbor.as_slice(), &contract, person_document_type)
         .expect("query should be built");
-    let (results, _) = query
-        .execute_no_proof(&drive.grove, None)
+    let (results, _, _) = query
+        .execute_no_proof(&drive, None)
         .expect("proof should be executed");
     let names: Vec<String> = results
         .into_iter()
@@ -475,8 +475,8 @@ fn test_query_historical() {
         .expect("contract should have a person document type");
     let query = DriveQuery::from_cbor(where_cbor.as_slice(), &contract, person_document_type)
         .expect("query should be built");
-    let (results, _) = query
-        .execute_no_proof(&drive.grove, None)
+    let (results, _, _) = query
+        .execute_no_proof(&drive, None)
         .expect("proof should be executed");
     assert_eq!(results.len(), 5);
 
@@ -550,8 +550,8 @@ fn test_query_historical() {
         .expect("contract should have a person document type");
     let query = DriveQuery::from_cbor(where_cbor.as_slice(), &contract, person_document_type)
         .expect("query should be built");
-    let (results, _) = query
-        .execute_no_proof(&drive.grove, None)
+    let (results, _, _) = query
+        .execute_no_proof(&drive, None)
         .expect("proof should be executed");
     assert_eq!(results.len(), 3);
 
@@ -599,8 +599,8 @@ fn test_query_historical() {
         .expect("contract should have a person document type");
     let query = DriveQuery::from_cbor(where_cbor.as_slice(), &contract, person_document_type)
         .expect("query should be built");
-    let (results, _) = query
-        .execute_no_proof(&drive.grove, None)
+    let (results, _, _) = query
+        .execute_no_proof(&drive, None)
         .expect("proof should be executed");
     assert_eq!(results.len(), 2);
 
@@ -642,8 +642,8 @@ fn test_query_historical() {
         .expect("contract should have a person document type");
     let query = DriveQuery::from_cbor(where_cbor.as_slice(), &contract, person_document_type)
         .expect("query should be built");
-    let (results, _) = query
-        .execute_no_proof(&drive.grove, None)
+    let (results, _, _) = query
+        .execute_no_proof(&drive, None)
         .expect("proof should be executed");
     let names: Vec<String> = results
         .into_iter()
@@ -679,8 +679,8 @@ fn test_query_historical() {
         .expect("contract should have a person document type");
     let query = DriveQuery::from_cbor(where_cbor.as_slice(), &contract, person_document_type)
         .expect("query should be built");
-    let (results, _) = query
-        .execute_no_proof(&drive.grove, None)
+    let (results, _, _) = query
+        .execute_no_proof(&drive, None)
         .expect("proof should be executed");
     let names: Vec<String> = results
         .clone()
@@ -751,8 +751,8 @@ fn test_query_historical() {
         .expect("contract should have a person document type");
     let query = DriveQuery::from_cbor(where_cbor.as_slice(), &contract, person_document_type)
         .expect("query should be built");
-    let (results, _) = query
-        .execute_no_proof(&drive.grove, None)
+    let (results, _, _) = query
+        .execute_no_proof(&drive, None)
         .expect("proof should be executed");
     let names: Vec<String> = results
         .iter()
@@ -800,8 +800,8 @@ fn test_query_historical() {
         .expect("contract should have a person document type");
     let query = DriveQuery::from_cbor(where_cbor.as_slice(), &contract, person_document_type)
         .expect("query should be built");
-    let (results, _) = query
-        .execute_no_proof(&drive.grove, None)
+    let (results, _, _) = query
+        .execute_no_proof(&drive, None)
         .expect("proof should be executed");
     let names: Vec<String> = results
         .iter()
@@ -957,7 +957,7 @@ fn test_query_historical() {
         .get("person")
         .expect("contract should have a person document type");
 
-    let (results, _) = drive
+    let (results, _, _) = drive
         .query_documents_from_contract(
             &contract,
             person_document_type,
@@ -981,7 +981,7 @@ fn test_query_historical() {
         .get("person")
         .expect("contract should have a person document type");
 
-    let (results, _) = drive
+    let (results, _, _) = drive
         .query_documents_from_contract(
             &contract,
             person_document_type,
@@ -1006,7 +1006,7 @@ fn test_query_historical() {
         .get("person")
         .expect("contract should have a person document type");
 
-    let (results, _) = drive
+    let (results, _, _) = drive
         .query_documents_from_contract(
             &contract,
             person_document_type,
@@ -1033,7 +1033,7 @@ fn test_query_historical() {
         .get("person")
         .expect("contract should have a person document type");
 
-    let (results, _) = drive
+    let (results, _, _) = drive
         .query_documents_from_contract(
             &contract,
             person_document_type,
@@ -1072,7 +1072,7 @@ fn test_query_historical() {
         .get("person")
         .expect("contract should have a person document type");
 
-    let (results, _) = drive
+    let (results, _, _) = drive
         .query_documents_from_contract(
             &contract,
             person_document_type,
@@ -1107,7 +1107,7 @@ fn test_query_historical() {
         .get("person")
         .expect("contract should have a person document type");
 
-    let (results, _) = drive
+    let (results, _, _) = drive
         .query_documents_from_contract(
             &contract,
             person_document_type,
@@ -1132,7 +1132,7 @@ fn test_query_historical() {
         .get("person")
         .expect("contract should have a person document type");
 
-    let (results, _) = drive
+    let (results, _, _) = drive
         .query_documents_from_contract(
             &contract,
             person_document_type,
@@ -1234,7 +1234,7 @@ fn test_query_historical() {
         .get("person")
         .expect("contract should have a person document type");
 
-    let (results, _) = drive
+    let (results, _, _) = drive
         .query_documents_from_contract(
             &contract,
             person_document_type,
@@ -1262,7 +1262,7 @@ fn test_query_historical() {
         .get("person")
         .expect("contract should have a person document type");
 
-    let (results, _) = drive
+    let (results, _, _) = drive
         .query_documents_from_contract(
             &contract,
             person_document_type,
@@ -1290,7 +1290,7 @@ fn test_query_historical() {
 
     let query_cbor = common::value_to_cbor(query_value, None);
 
-    let (results, _) = drive
+    let (results, _, _) = drive
         .query_documents_from_contract_cbor(
             contract_cbor.as_slice(),
             String::from("contact"),
@@ -1326,7 +1326,7 @@ fn test_query_historical() {
     );
 
     assert!(
-        matches!(result, Err(Error::InvalidQuery(message)) if message == "startAt document not found")
+        matches!(result, Err(Error::Query(QueryError::StartDocumentNotFound(message))) if message == "startAt document not found")
     );
 
     // using non existing document in startAfter
@@ -1354,7 +1354,7 @@ fn test_query_historical() {
     );
 
     assert!(
-        matches!(result, Err(Error::InvalidQuery(message)) if message == "startAfter document not found")
+        matches!(result, Err(Error::Query(QueryError::StartDocumentNotFound(message))) if message == "startAfter document not found")
     );
 
     // validate eventual root hash

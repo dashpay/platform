@@ -1,10 +1,12 @@
+use crate::error::contract::ContractError;
+use crate::error::Error;
 use byteorder::{BigEndian, WriteBytesExt};
 use ciborium::value::{Integer, Value};
-use grovedb::Error;
-use rand::distributions::{Alphanumeric, Standard, Uniform};
+use rand::distributions::{Alphanumeric, Standard};
 use rand::rngs::StdRng;
 use rand::Rng;
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 use std::fmt;
 
 #[derive(Serialize, Deserialize, Debug, PartialEq)]
@@ -15,7 +17,7 @@ pub enum DocumentFieldType {
     ByteArray(Option<usize>, Option<usize>),
     Boolean,
     Date,
-    Object,
+    Object(BTreeMap<String, DocumentFieldType>),
     Array,
 }
 
@@ -34,7 +36,10 @@ impl DocumentFieldType {
             },
             DocumentFieldType::Boolean => Some(1),
             DocumentFieldType::Date => Some(8),
-            DocumentFieldType::Object => None,
+            DocumentFieldType::Object(sub_fields) => sub_fields
+                .iter()
+                .map(|(_, sub_field)| sub_field.min_size())
+                .sum(),
             DocumentFieldType::Array => None,
         }
     }
@@ -53,7 +58,10 @@ impl DocumentFieldType {
             },
             DocumentFieldType::Boolean => Some(1),
             DocumentFieldType::Date => Some(8),
-            DocumentFieldType::Object => None,
+            DocumentFieldType::Object(sub_fields) => sub_fields
+                .iter()
+                .map(|(_, sub_field)| sub_field.min_byte_size())
+                .sum(),
             DocumentFieldType::Array => None,
         }
     }
@@ -72,7 +80,10 @@ impl DocumentFieldType {
             },
             DocumentFieldType::Boolean => Some(1),
             DocumentFieldType::Date => Some(8),
-            DocumentFieldType::Object => None,
+            DocumentFieldType::Object(sub_fields) => sub_fields
+                .iter()
+                .map(|(_, sub_field)| sub_field.max_byte_size())
+                .sum(),
             DocumentFieldType::Array => None,
         }
     }
@@ -91,7 +102,10 @@ impl DocumentFieldType {
             },
             DocumentFieldType::Boolean => Some(1),
             DocumentFieldType::Date => Some(8),
-            DocumentFieldType::Object => None,
+            DocumentFieldType::Object(sub_fields) => sub_fields
+                .iter()
+                .map(|(_, sub_field)| sub_field.max_size())
+                .sum(),
             DocumentFieldType::Array => None,
         }
     }
@@ -126,7 +140,15 @@ impl DocumentFieldType {
                 let f: f64 = rng.gen_range(1548910575000.0..1648910575000.0);
                 Value::Float(f.round() / 1000.0)
             }
-            DocumentFieldType::Object => Value::Null,
+            DocumentFieldType::Object(sub_fields) => {
+                let value_vec = sub_fields
+                    .iter()
+                    .map(|(string, field_type)| {
+                        (Value::Text(string.clone()), field_type.random_value(rng))
+                    })
+                    .collect();
+                Value::Map(value_vec)
+            }
             DocumentFieldType::Array => Value::Null,
         }
     }
@@ -155,7 +177,18 @@ impl DocumentFieldType {
                 let f: f64 = rng.gen_range(1548910575000.0..1648910575000.0);
                 Value::Float(f.round() / 1000.0)
             }
-            DocumentFieldType::Object => Value::Null,
+            DocumentFieldType::Object(sub_fields) => {
+                let value_vec = sub_fields
+                    .iter()
+                    .map(|(string, field_type)| {
+                        (
+                            Value::Text(string.clone()),
+                            field_type.random_filled_value(rng),
+                        )
+                    })
+                    .collect();
+                Value::Map(value_vec)
+            }
             DocumentFieldType::Array => Value::Null,
         }
     }
@@ -179,7 +212,7 @@ impl DocumentFieldType {
             DocumentFieldType::Date => match *value {
                 Value::Integer(value_as_integer) => {
                     let value_as_i128: i128 = value_as_integer.try_into().map_err(|_| {
-                        Error::CorruptedData(String::from("expected integer value"))
+                        Error::Contract(ContractError::ValueWrongType("expected integer value"))
                     })?;
                     let value_as_f64: f64 = value_as_i128 as f64;
 
@@ -193,9 +226,9 @@ impl DocumentFieldType {
                     .as_integer()
                     .ok_or_else(get_field_type_matching_error)?;
 
-                let value_as_i64: i64 = value_as_integer
-                    .try_into()
-                    .map_err(|_| Error::CorruptedData(String::from("expected integer value")))?;
+                let value_as_i64: i64 = value_as_integer.try_into().map_err(|_| {
+                    Error::Contract(ContractError::ValueWrongType("expected integer value"))
+                })?;
 
                 encode_signed_integer(value_as_i64)
             }
@@ -205,9 +238,9 @@ impl DocumentFieldType {
                         .as_integer()
                         .ok_or_else(get_field_type_matching_error)?;
 
-                    let value_as_i64: i64 = value_as_integer
-                        .try_into()
-                        .map_err(|_| Error::CorruptedData(String::from("expected number value")))?;
+                    let value_as_i64: i64 = value_as_integer.try_into().map_err(|_| {
+                        Error::Contract(ContractError::ValueWrongType("expected number value"))
+                    })?;
 
                     value_as_i64 as f64
                 } else {
@@ -220,7 +253,9 @@ impl DocumentFieldType {
                 Value::Bytes(bytes) => Ok(bytes.clone()),
                 Value::Text(text) => {
                     let value_as_bytes = base64::decode(text).map_err(|_| {
-                        Error::CorruptedData(String::from("bytearray: invalid base64 value"))
+                        Error::Contract(ContractError::ValueDecodingError(
+                            "bytearray: invalid base64 value",
+                        ))
                     })?;
                     Ok(value_as_bytes)
                 }
@@ -229,11 +264,11 @@ impl DocumentFieldType {
                     .map(|byte| match byte {
                         Value::Integer(int) => {
                             let value_as_u8: u8 = (*int).try_into().map_err(|_| {
-                                Error::CorruptedData(String::from("expected u8 value"))
+                                Error::Contract(ContractError::ValueWrongType("expected u8 value"))
                             })?;
                             Ok(value_as_u8)
                         }
-                        _ => Err(Error::CorruptedData(String::from(
+                        _ => Err(Error::Contract(ContractError::ValueWrongType(
                             "not an array of integers",
                         ))),
                     })
@@ -248,12 +283,16 @@ impl DocumentFieldType {
                     Ok(vec![0])
                 }
             }
-            DocumentFieldType::Object => Err(Error::CorruptedData(String::from(
-                "we should never try encoding an object",
-            ))),
-            DocumentFieldType::Array => Err(Error::CorruptedData(String::from(
-                "we should never try encoding an array",
-            ))),
+            DocumentFieldType::Object(_) => Err(Error::Contract(
+                ContractError::EncodingDataStructureNotSupported(
+                    "we should never try encoding an object",
+                ),
+            )),
+            DocumentFieldType::Array => Err(Error::Contract(
+                ContractError::EncodingDataStructureNotSupported(
+                    "we should never try encoding an array",
+                ),
+            )),
         };
     }
 
@@ -263,12 +302,16 @@ impl DocumentFieldType {
             DocumentFieldType::String(min, max) => {
                 if let Some(min) = min {
                     if str.len() < *min {
-                        return Err(Error::InternalError("string is too small"));
+                        return Err(Error::Contract(ContractError::FieldRequirementUnmet(
+                            "string is too small",
+                        )));
                     }
                 }
                 if let Some(max) = max {
                     if str.len() > *max {
-                        return Err(Error::InternalError("string is too big"));
+                        return Err(Error::Contract(ContractError::FieldRequirementUnmet(
+                            "string is too big",
+                        )));
                     }
                 }
                 Ok(Value::Text(str.to_string()))
@@ -276,24 +319,33 @@ impl DocumentFieldType {
             DocumentFieldType::Integer => str
                 .parse::<i128>()
                 .map(|f| Value::Integer(Integer::try_from(f).unwrap()))
-                .map_err(|_| Error::CorruptedData(String::from("value is not an integer"))),
-            DocumentFieldType::Number | DocumentFieldType::Date => str
-                .parse::<f64>()
-                .map(Value::Float)
-                .map_err(|_| Error::CorruptedData(String::from("value is not a float"))),
+                .map_err(|_| {
+                    Error::Contract(ContractError::ValueWrongType("value is not an integer"))
+                }),
+            DocumentFieldType::Number | DocumentFieldType::Date => {
+                str.parse::<f64>().map(Value::Float).map_err(|_| {
+                    Error::Contract(ContractError::ValueWrongType("value is not a float"))
+                })
+            }
             DocumentFieldType::ByteArray(min, max) => {
                 if let Some(min) = min {
                     if str.len() / 2 < *min {
-                        return Err(Error::InternalError("byte array is too small"));
+                        return Err(Error::Contract(ContractError::FieldRequirementUnmet(
+                            "byte array is too small",
+                        )));
                     }
                 }
                 if let Some(max) = max {
                     if str.len() / 2 > *max {
-                        return Err(Error::InternalError("byte array  is too big"));
+                        return Err(Error::Contract(ContractError::FieldRequirementUnmet(
+                            "byte array  is too big",
+                        )));
                     }
                 }
                 Ok(Value::Bytes(hex::decode(str).map_err(|_| {
-                    Error::CorruptedData(String::from("could not parse hex bytes"))
+                    Error::Contract(ContractError::ValueDecodingError(
+                        "could not parse hex bytes",
+                    ))
                 })?))
             }
             DocumentFieldType::Boolean => {
@@ -302,13 +354,21 @@ impl DocumentFieldType {
                 } else if str.to_lowercase().as_str() == "false" {
                     Ok(Value::Bool(false))
                 } else {
-                    Err(Error::CorruptedData(String::from(
+                    Err(Error::Contract(ContractError::ValueDecodingError(
                         "could not parse a boolean to a value",
                     )))
                 }
             }
-            DocumentFieldType::Object => Err(Error::InternalError("objects not supported")),
-            DocumentFieldType::Array => Err(Error::InternalError("arrays not supported")),
+            DocumentFieldType::Object(_) => Err(Error::Contract(
+                ContractError::EncodingDataStructureNotSupported(
+                    "we should never try encoding an object",
+                ),
+            )),
+            DocumentFieldType::Array => Err(Error::Contract(
+                ContractError::EncodingDataStructureNotSupported(
+                    "we should never try encoding an array",
+                ),
+            )),
         };
     }
 }
@@ -346,7 +406,16 @@ impl fmt::Display for DocumentFieldType {
             }
             DocumentFieldType::Boolean => "bool".to_string(),
             DocumentFieldType::Date => "date".to_string(),
-            DocumentFieldType::Object => "object".to_string(),
+            DocumentFieldType::Object(sub_fields) => {
+                let object_rep = sub_fields
+                    .iter()
+                    .map(|(string, document_field_type)| {
+                        format!("{} : {}", string, document_field_type)
+                    })
+                    .collect::<Vec<String>>()
+                    .join(" | ");
+                format!("object: {{ {} }}", object_rep)
+            }
             DocumentFieldType::Array => "array".to_string(),
         };
         write!(f, "{}", text.as_str())
@@ -364,7 +433,7 @@ pub fn string_to_field_type(field_type_name: &str) -> Option<DocumentFieldType> 
 }
 
 fn get_field_type_matching_error() -> Error {
-    Error::CorruptedData(String::from(
+    Error::Contract(ContractError::ValueWrongType(
         "document field type doesn't match document value",
     ))
 }
@@ -458,9 +527,11 @@ pub fn encode_float(val: f64) -> Result<Vec<u8>, Error> {
     Ok(wtr)
 }
 
+#[cfg(test)]
 mod tests {
     use crate::contract::types::DocumentFieldType;
     use ciborium::value::{Integer, Value};
+    use std::collections::BTreeMap;
 
     #[test]
     fn test_successful_encode() {
@@ -641,7 +712,8 @@ mod tests {
 
         let object_value = Value::Map(vec![(smallest_positive_float, integer1)]);
 
-        let encoded_object = &DocumentFieldType::Object.encode_value(&object_value);
+        let encoded_object =
+            &DocumentFieldType::Object(BTreeMap::new()).encode_value(&object_value);
 
         assert!(encoded_object.is_err());
     }
