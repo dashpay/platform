@@ -2,6 +2,7 @@ use anyhow::Context;
 use anyhow::{anyhow, bail};
 use serde_json::{json, Value as JsonValue};
 
+use crate::mocks::{SMLStoreLike, SimplifiedMNListLike};
 use crate::util::hash::hash;
 use crate::util::string_encoding::Encoding;
 use crate::{
@@ -21,13 +22,15 @@ const PROPERTY_RECORDS: &str = "records";
 const PROPERTY_DASH_UNIQUE_IDENTITY_ID: &str = "dashUniqueIdentityId";
 const PROPERTY_DASH_ALIAS_IDENTITY_ID: &str = "dashAliasIdentityId";
 
-pub async fn create_domain_data_trigger<SR>(
+pub async fn create_domain_data_trigger<SR, S, L>(
     document_transition: &DocumentTransition,
-    context: &DataTriggerExecutionContext<SR>,
+    context: &DataTriggerExecutionContext<SR, S, L>,
     top_level_identity: Option<&Identifier>,
 ) -> Result<DataTriggerExecutionResult, anyhow::Error>
 where
-    SR: StateRepositoryLike,
+    L: SimplifiedMNListLike,
+    S: SMLStoreLike<L>,
+    SR: StateRepositoryLike<S, L>,
 {
     let dt_create = match document_transition {
         DocumentTransition::Create(d) => d,
