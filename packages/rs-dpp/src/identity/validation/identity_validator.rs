@@ -54,12 +54,17 @@ impl IdentityValidator {
         Ok(identity_validator)
     }
 
-    pub fn validate_identity(&self, identity_json: &serde_json::Value) -> Result<ValidationResult, NonConsensusError> {
+    pub fn validate_identity(
+        &self,
+        identity_json: &serde_json::Value,
+    ) -> Result<ValidationResult, NonConsensusError> {
         // TODO: create better error messages
         let res = self
             .identity_schema
             .as_ref()
-            .ok_or(SerdeParsingError::new("Expected identity schema to be initialized"))?
+            .ok_or(SerdeParsingError::new(
+                "Expected identity schema to be initialized",
+            ))?
             .validate(&identity_json);
 
         let mut validation_result = ValidationResult::new(None);
@@ -74,14 +79,22 @@ impl IdentityValidator {
             }
         }
 
-        let identity_map = identity_json.as_object().ok_or(SerdeParsingError::new("Expected identity to be a json object"))?;
+        let identity_map = identity_json.as_object().ok_or(SerdeParsingError::new(
+            "Expected identity to be a json object",
+        ))?;
+
         let protocol_version = identity_map
             .get("protocolVersion")
-            .ok_or(SerdeParsingError::new("Expected identity to have protocolVersion"))?
+            .ok_or(SerdeParsingError::new(
+                "Expected identity to have protocolVersion",
+            ))?
             .as_u64()
-            .ok_or(SerdeParsingError::new("Expected protocolVersion to be a uint"))?;
+            .ok_or(SerdeParsingError::new(
+                "Expected protocolVersion to be a uint",
+            ))?;
 
-        let version_validation_result = self.protocol_version_validator.validate(protocol_version)?;
+        let version_validation_result =
+            self.protocol_version_validator.validate(protocol_version)?;
 
         validation_result.merge(version_validation_result);
 
