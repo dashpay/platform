@@ -88,10 +88,7 @@ describe('commitHandlerFactory', () => {
 
     executionTimerMock = {
       startTimer: this.sinon.stub(),
-      endTimer: this.sinon.stub().returns({
-        seconds: 1,
-        nanoseconds: 1,
-      }),
+      stopTimer: this.sinon.stub(),
     };
 
     commitHandler = commitHandlerFactory(

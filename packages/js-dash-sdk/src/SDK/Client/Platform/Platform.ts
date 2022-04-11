@@ -16,6 +16,7 @@ import getContract from "./methods/contracts/get";
 import getIdentity from "./methods/identities/get";
 import registerIdentity from "./methods/identities/register";
 import topUpIdentity from "./methods/identities/topUp";
+import updateIdentity from "./methods/identities/update";
 
 import registerName from "./methods/names/register";
 import resolveName from "./methods/names/resolve";
@@ -65,6 +66,7 @@ interface Identities {
     get: Function,
     register: Function,
     topUp: Function,
+    update: Function,
 }
 
 interface DataContracts {
@@ -144,6 +146,7 @@ export class Platform {
             register: registerIdentity.bind(this),
             get: getIdentity.bind(this),
             topUp: topUpIdentity.bind(this),
+            update: updateIdentity.bind(this),
         };
 
         this.client = options.client;

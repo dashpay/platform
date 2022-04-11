@@ -1,3 +1,5 @@
+const lodashCloneDeep = require('lodash.clonedeep');
+
 const { PublicKey } = require('@dashevo/dashcore-lib');
 
 const ValidationResult = require('../../validation/ValidationResult');
@@ -23,6 +25,9 @@ const InvalidIdentityPublicKeySecurityLevelError = require(
 
 const IdentityPublicKey = require('../IdentityPublicKey');
 
+const publicKeyEnabledSchema = lodashCloneDeep(publicKeySchema);
+delete publicKeyEnabledSchema.properties.disabledAt;
+
 /**
  * Validate public keys (factory)
  *
@@ -38,17 +43,26 @@ function validatePublicKeysFactory(validator, bls) {
    * @typedef validatePublicKeys
    *
    * @param {RawIdentityPublicKey[]} rawPublicKeys
+   * @param {{mustBeEnabled: boolean}} [options]
    *
    * @return {ValidationResult}
    */
-  function validatePublicKeys(rawPublicKeys) {
+  function validatePublicKeys(rawPublicKeys, options = {}) {
     const result = new ValidationResult();
+
+    const { mustBeEnabled } = options;
+
+    let schemaToValidate = publicKeySchema;
+
+    if (mustBeEnabled) {
+      schemaToValidate = publicKeyEnabledSchema;
+    }
 
     // Validate public key structure
     rawPublicKeys.forEach((rawPublicKey) => {
       result.merge(
         validator.validate(
-          publicKeySchema,
+          schemaToValidate,
           convertBuffersToArrays(rawPublicKey),
         ),
       );

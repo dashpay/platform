@@ -1,7 +1,3 @@
-const {
-  Mnemonic,
-} = require('@dashevo/dashcore-lib');
-
 const Dash = require('dash');
 
 const getDAPISeeds = require('../../lib/test/getDAPISeeds');
@@ -19,6 +15,7 @@ describe('e2e', () => {
     let fundedWallet;
     let fundedAccount;
     let emptyWallet;
+    let emptyWalletHeight;
     let emptyAccount;
     let restoredWallet;
     let restoredAccount;
@@ -27,16 +24,19 @@ describe('e2e', () => {
     let secondTransaction;
 
     before(async () => {
-      mnemonic = new Mnemonic();
       fundedWallet = await createClientWithFundedWallet();
+      const network = process.env.NETWORK;
       emptyWallet = new Dash.Client({
         seeds: getDAPISeeds(),
-        network: process.env.NETWORK,
+        network,
         wallet: {
-          mnemonic,
           waitForInstantLockTimeout: 120000,
         },
       });
+
+      mnemonic = emptyWallet.wallet.exportWallet();
+      const { storage } = fundedWallet.wallet;
+      emptyWalletHeight = storage.getChainStore(storage.application.network).state.blockHeight;
     });
 
     // Skip test if any prior test in this describe failed
@@ -98,6 +98,9 @@ describe('e2e', () => {
           wallet: {
             mnemonic,
             waitForInstantLockTimeout: 120000,
+            unsafeOptions: {
+              skipSynchronizationBeforeHeight: emptyWalletHeight,
+            },
           },
           seeds: getDAPISeeds(),
           network: process.env.NETWORK,
@@ -107,12 +110,12 @@ describe('e2e', () => {
 
         let transactions = restoredAccount.getTransactions();
 
+        // Wait for new block if transaction has not been propagated yet
         if (Object.keys(transactions).length === 0) {
-          // Due to the limitations of DAPI, we need to wait for a block to be mined if we connected
-          // in the moment when transaction already entered the mempool, but haven't been mined yet
           await new Promise((resolve) => restoredAccount.once(EVENTS.BLOCKHEADER, resolve));
           transactions = restoredAccount.getTransactions();
         }
+
         await waitForBalanceToChange(restoredAccount);
 
         const transactionIds = Object.keys(transactions);
@@ -145,8 +148,14 @@ describe('e2e', () => {
     });
 
     describe('empty wallet', () => {
-      it('should receive a transaction when as it has been sent to restored wallet', () => {
-        const transactionIds = Object.keys(emptyAccount.getTransactions());
+      it('should receive a transaction when as it has been sent to restored wallet', async () => {
+        let transactionIds = Object.keys(emptyAccount.getTransactions());
+
+        if (transactionIds.length < 2) {
+          await waitForBalanceToChange(emptyAccount);
+        }
+
+        transactionIds = Object.keys(emptyAccount.getTransactions());
 
         expect(transactionIds).to.have.lengthOf(2);
 

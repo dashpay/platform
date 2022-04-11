@@ -2470,6 +2470,13 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
         }]
       ]],
       ["@dashevo/dashpay-contract", [
+        ["npm:0.22.1", {
+          "packageLocation": "./.yarn/cache/@dashevo-dashpay-contract-npm-0.22.1-2aded78119-cff4700aaf.zip/node_modules/@dashevo/dashpay-contract/",
+          "packageDependencies": [
+            ["@dashevo/dashpay-contract", "npm:0.22.1"]
+          ],
+          "linkType": "HARD",
+        }],
         ["workspace:packages/dashpay-contract", {
           "packageLocation": "./packages/dashpay-contract/",
           "packageDependencies": [
@@ -2502,6 +2509,13 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
         }]
       ]],
       ["@dashevo/dpns-contract", [
+        ["npm:0.22.1", {
+          "packageLocation": "./.yarn/cache/@dashevo-dpns-contract-npm-0.22.1-013d358290-d96f91f8ee.zip/node_modules/@dashevo/dpns-contract/",
+          "packageDependencies": [
+            ["@dashevo/dpns-contract", "npm:0.22.1"]
+          ],
+          "linkType": "HARD",
+        }],
         ["workspace:packages/dpns-contract", {
           "packageLocation": "./packages/dpns-contract/",
           "packageDependencies": [
@@ -2520,6 +2534,34 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
         }]
       ]],
       ["@dashevo/dpp", [
+        ["npm:0.22.1", {
+          "packageLocation": "./.yarn/cache/@dashevo-dpp-npm-0.22.1-65dac58df1-ae3d2e1c9f.zip/node_modules/@dashevo/dpp/",
+          "packageDependencies": [
+            ["@dashevo/dpp", "npm:0.22.1"],
+            ["@apidevtools/json-schema-ref-parser", "npm:8.0.0"],
+            ["@dashevo/dashcore-lib", "npm:0.19.30"],
+            ["@dashevo/dashpay-contract", "npm:0.22.1"],
+            ["@dashevo/dpns-contract", "npm:0.22.1"],
+            ["@dashevo/feature-flags-contract", "npm:0.22.1"],
+            ["@dashevo/masternode-reward-shares-contract", "npm:0.22.1"],
+            ["@dashevo/wasm-re2", "npm:1.0.2"],
+            ["ajv", "npm:8.8.1"],
+            ["ajv-formats", "virtual:58fb68f2aed20e5e0f2e48520ab903ae9bb3440369bfd5e912034003cf27c5aae368649fc5620dd2acbed578131f3a0975e75b838d77d12335fb0412e24026c6#npm:2.1.1"],
+            ["bignumber.js", "npm:9.0.1"],
+            ["bls-signatures", "npm:0.2.5"],
+            ["bs58", "npm:4.0.1"],
+            ["cbor", "npm:8.1.0"],
+            ["fast-json-patch", "npm:3.1.0"],
+            ["json-schema-diff-validator", "npm:0.4.1"],
+            ["json-schema-traverse", "npm:1.0.0"],
+            ["lodash.clonedeep", "npm:4.5.0"],
+            ["lodash.clonedeepwith", "npm:4.5.0"],
+            ["lodash.get", "npm:4.4.2"],
+            ["lodash.set", "npm:4.3.2"],
+            ["long", "npm:5.2.0"]
+          ],
+          "linkType": "HARD",
+        }],
         ["workspace:packages/js-dpp", {
           "packageLocation": "./packages/js-dpp/",
           "packageDependencies": [
@@ -2650,6 +2692,13 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
         }]
       ]],
       ["@dashevo/feature-flags-contract", [
+        ["npm:0.22.1", {
+          "packageLocation": "./.yarn/cache/@dashevo-feature-flags-contract-npm-0.22.1-9357800b5c-6590ea68bb.zip/node_modules/@dashevo/feature-flags-contract/",
+          "packageDependencies": [
+            ["@dashevo/feature-flags-contract", "npm:0.22.1"]
+          ],
+          "linkType": "HARD",
+        }],
         ["workspace:packages/feature-flags-contract", {
           "packageLocation": "./packages/feature-flags-contract/",
           "packageDependencies": [
@@ -2695,6 +2744,13 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
         }]
       ]],
       ["@dashevo/masternode-reward-shares-contract", [
+        ["npm:0.22.1", {
+          "packageLocation": "./.yarn/cache/@dashevo-masternode-reward-shares-contract-npm-0.22.1-9cfbca722e-577a40876b.zip/node_modules/@dashevo/masternode-reward-shares-contract/",
+          "packageDependencies": [
+            ["@dashevo/masternode-reward-shares-contract", "npm:0.22.1"]
+          ],
+          "linkType": "HARD",
+        }],
         ["workspace:packages/masternode-reward-shares-contract", {
           "packageLocation": "./packages/masternode-reward-shares-contract/",
           "packageDependencies": [
@@ -2751,10 +2807,12 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["@dashevo/masternode-reward-shares-contract", "workspace:packages/masternode-reward-shares-contract"],
             ["@dashevo/merk", "https://github.com/dashevo/node-merk.git#commit=eb37003300d22c6c04604463bcd7e861dd07000f"],
             ["@dashevo/wallet-lib", "workspace:packages/wallet-lib"],
+            ["assert", "npm:2.0.0"],
             ["assert-browserify", "npm:2.0.0"],
             ["blake3", "npm:2.1.7"],
             ["browserify-zlib", "npm:0.2.0"],
             ["buffer", "npm:6.0.3"],
+            ["bufferutil", "npm:4.0.6"],
             ["chai", "npm:4.3.4"],
             ["chai-as-promised", "virtual:595d7482cc8ddf98ee6aef33fc48b46393554ab5f17f851ef62e6e39315e53666c3e66226b978689aa0bc7f1e83a03081511a21db1c381362fe67614887077f9#npm:7.1.1"],
             ["crypto-browserify", "npm:3.12.0"],
@@ -2764,6 +2822,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["eslint", "npm:7.32.0"],
             ["eslint-config-airbnb-base", "virtual:595d7482cc8ddf98ee6aef33fc48b46393554ab5f17f851ef62e6e39315e53666c3e66226b978689aa0bc7f1e83a03081511a21db1c381362fe67614887077f9#npm:14.2.1"],
             ["eslint-plugin-import", "virtual:595d7482cc8ddf98ee6aef33fc48b46393554ab5f17f851ef62e6e39315e53666c3e66226b978689aa0bc7f1e83a03081511a21db1c381362fe67614887077f9#npm:2.25.3"],
+            ["events", "npm:3.3.0"],
             ["github-api", "npm:3.4.0"],
             ["https-browserify", "npm:1.0.0"],
             ["js-merkle", "npm:0.1.5"],
@@ -2773,8 +2832,10 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["karma-firefox-launcher", "npm:2.1.2"],
             ["karma-mocha", "npm:2.0.1"],
             ["karma-mocha-reporter", "virtual:58fb68f2aed20e5e0f2e48520ab903ae9bb3440369bfd5e912034003cf27c5aae368649fc5620dd2acbed578131f3a0975e75b838d77d12335fb0412e24026c6#npm:2.2.5"],
+            ["karma-sourcemap-loader", "npm:0.3.8"],
             ["karma-webpack", "virtual:01938c2be4835443e5a304e2b117c575220e96e8b7cedeb0f48d79264590b4c4babc6d1fea6367f522b1ca0149d795b42f2ab89c34a6ffe3c20f0a8cbb8b4453#npm:5.0.0"],
             ["mocha", "npm:9.1.3"],
+            ["net", "npm:1.0.2"],
             ["os-browserify", "npm:0.3.0"],
             ["path-browserify", "npm:1.0.1"],
             ["process", "npm:0.11.10"],
@@ -2783,8 +2844,13 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["sinon-chai", "virtual:595d7482cc8ddf98ee6aef33fc48b46393554ab5f17f851ef62e6e39315e53666c3e66226b978689aa0bc7f1e83a03081511a21db1c381362fe67614887077f9#npm:3.7.0"],
             ["stream-browserify", "npm:3.0.0"],
             ["stream-http", "npm:3.2.0"],
+            ["string_decoder", "npm:1.3.0"],
+            ["tls", "npm:0.0.1"],
             ["url", "npm:0.11.0"],
-            ["webpack", "virtual:01938c2be4835443e5a304e2b117c575220e96e8b7cedeb0f48d79264590b4c4babc6d1fea6367f522b1ca0149d795b42f2ab89c34a6ffe3c20f0a8cbb8b4453#npm:5.64.1"]
+            ["utf-8-validate", "npm:5.0.9"],
+            ["util", "npm:0.12.4"],
+            ["webpack", "virtual:01938c2be4835443e5a304e2b117c575220e96e8b7cedeb0f48d79264590b4c4babc6d1fea6367f522b1ca0149d795b42f2ab89c34a6ffe3c20f0a8cbb8b4453#npm:5.64.1"],
+            ["ws", "virtual:01938c2be4835443e5a304e2b117c575220e96e8b7cedeb0f48d79264590b4c4babc6d1fea6367f522b1ca0149d795b42f2ab89c34a6ffe3c20f0a8cbb8b4453#npm:7.5.5"]
           ],
           "linkType": "SOFT",
         }]
@@ -2824,7 +2890,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           "packageLocation": "./.yarn/unplugged/@dashevo-rs-drive-npm-0.22.0-dev.19-9bbfd43a2e/node_modules/@dashevo/rs-drive/",
           "packageDependencies": [
             ["@dashevo/rs-drive", "npm:0.22.0-dev.19"],
-            ["@dashevo/dpp", "workspace:packages/js-dpp"],
+            ["@dashevo/dpp", "npm:0.22.1"],
             ["cargo-cp-artifact", "npm:0.1.6"],
             ["cbor", "npm:8.1.0"],
             ["neon-load-or-build", "npm:2.2.2"],
@@ -6127,6 +6193,17 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           "packageLocation": "./.yarn/cache/buffer-xor-npm-1.0.3-56bb81b0dd-10c520df29.zip/node_modules/buffer-xor/",
           "packageDependencies": [
             ["buffer-xor", "npm:1.0.3"]
+          ],
+          "linkType": "HARD",
+        }]
+      ]],
+      ["bufferutil", [
+        ["npm:4.0.6", {
+          "packageLocation": "./.yarn/unplugged/bufferutil-npm-4.0.6-b93c8a5e05/node_modules/bufferutil/",
+          "packageDependencies": [
+            ["bufferutil", "npm:4.0.6"],
+            ["node-gyp", "npm:8.4.0"],
+            ["node-gyp-build", "npm:4.3.0"]
           ],
           "linkType": "HARD",
         }]
@@ -13471,6 +13548,15 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           "linkType": "HARD",
         }]
       ]],
+      ["net", [
+        ["npm:1.0.2", {
+          "packageLocation": "./.yarn/cache/net-npm-1.0.2-1d5514df5b-d97e215d92.zip/node_modules/net/",
+          "packageDependencies": [
+            ["net", "npm:1.0.2"]
+          ],
+          "linkType": "HARD",
+        }]
+      ]],
       ["nice-try", [
         ["npm:1.0.5", {
           "packageLocation": "./.yarn/cache/nice-try-npm-1.0.5-963856b16f-0b4af3b5bb.zip/node_modules/nice-try/",
@@ -17369,6 +17455,15 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           "linkType": "HARD",
         }]
       ]],
+      ["tls", [
+        ["npm:0.0.1", {
+          "packageLocation": "./.yarn/cache/tls-npm-0.0.1-d44eeeb72e-b0205b0efb.zip/node_modules/tls/",
+          "packageDependencies": [
+            ["tls", "npm:0.0.1"]
+          ],
+          "linkType": "HARD",
+        }]
+      ]],
       ["tmp", [
         ["npm:0.0.33", {
           "packageLocation": "./.yarn/cache/tmp-npm-0.0.33-bcbf65df2a-902d7aceb7.zip/node_modules/tmp/",
@@ -18075,6 +18170,17 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           "packageDependencies": [
             ["url-parse-lax", "npm:3.0.0"],
             ["prepend-http", "npm:2.0.0"]
+          ],
+          "linkType": "HARD",
+        }]
+      ]],
+      ["utf-8-validate", [
+        ["npm:5.0.9", {
+          "packageLocation": "./.yarn/unplugged/utf-8-validate-npm-5.0.9-ed88df348e/node_modules/utf-8-validate/",
+          "packageDependencies": [
+            ["utf-8-validate", "npm:5.0.9"],
+            ["node-gyp", "npm:8.4.0"],
+            ["node-gyp-build", "npm:4.3.0"]
           ],
           "linkType": "HARD",
         }]
@@ -18972,6 +19078,23 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["ws", "npm:8.2.3"]
           ],
           "linkType": "SOFT",
+        }],
+        ["virtual:01938c2be4835443e5a304e2b117c575220e96e8b7cedeb0f48d79264590b4c4babc6d1fea6367f522b1ca0149d795b42f2ab89c34a6ffe3c20f0a8cbb8b4453#npm:7.5.5", {
+          "packageLocation": "./.yarn/__virtual__/ws-virtual-49f0813c39/0/cache/ws-npm-7.5.5-8f4a2a84a8-bd2b437256.zip/node_modules/ws/",
+          "packageDependencies": [
+            ["ws", "virtual:01938c2be4835443e5a304e2b117c575220e96e8b7cedeb0f48d79264590b4c4babc6d1fea6367f522b1ca0149d795b42f2ab89c34a6ffe3c20f0a8cbb8b4453#npm:7.5.5"],
+            ["@types/bufferutil", null],
+            ["@types/utf-8-validate", null],
+            ["bufferutil", "npm:4.0.6"],
+            ["utf-8-validate", "npm:5.0.9"]
+          ],
+          "packagePeers": [
+            "@types/bufferutil",
+            "@types/utf-8-validate",
+            "bufferutil",
+            "utf-8-validate"
+          ],
+          "linkType": "HARD",
         }],
         ["virtual:2fd01a647a5c8b340dd0adae82833428da22baa88327826cc44910efed2d9ad403a63cf3d639ef91449c9c952ea1afcdd4379371f5022db3053206940836b879#npm:7.5.5", {
           "packageLocation": "./.yarn/__virtual__/ws-virtual-fca14c3640/0/cache/ws-npm-7.5.5-8f4a2a84a8-bd2b437256.zip/node_modules/ws/",
