@@ -1,16 +1,14 @@
 use crate::contract::{Contract, Document, DocumentType};
 use crate::drive::defaults::DEFAULT_HASH_SIZE;
-use crate::drive::object_size_info::KeyInfo::{Key, KeyRef, KeySize};
-use crate::drive::object_size_info::PathInfo::{PathFixedSizeIterator, PathIterator, PathSize};
-use crate::drive::object_size_info::PathKeyElementInfo::{
-    PathFixedSizeKeyElement, PathKeyElement, PathKeyElementSize,
-};
-use crate::drive::object_size_info::PathKeyInfo::{
-    PathFixedSizeKey, PathFixedSizeKeyRef, PathKey, PathKeyRef, PathKeySize,
-};
-use grovedb::{Element, Error};
-use std::array::TryFromSliceError;
-use std::borrow::{Borrow, BorrowMut};
+use crate::error::contract::ContractError;
+use crate::error::drive::DriveError;
+use crate::error::Error;
+use grovedb::Element;
+use KeyInfo::{Key, KeyRef, KeySize};
+use KeyValueInfo::{KeyRefRequest, KeyValueMaxSize};
+use PathInfo::{PathFixedSizeIterator, PathIterator, PathSize};
+use PathKeyElementInfo::{PathFixedSizeKeyElement, PathKeyElement, PathKeyElementSize};
+use PathKeyInfo::{PathFixedSizeKey, PathFixedSizeKeyRef, PathKey, PathKeyRef, PathKeySize};
 
 #[derive(Clone)]
 pub enum PathInfo<'a, const N: usize> {
@@ -48,15 +46,15 @@ impl<'a, const N: usize> PathInfo<'a, N> {
     pub fn push(&mut self, key_info: KeyInfo<'a>) -> Result<(), Error> {
         match self {
             PathFixedSizeIterator(_) => {
-                return Err(Error::CorruptedData(String::from(
+                return Err(Error::Drive(DriveError::CorruptedCodeExecution(
                     "can not add a key to a fixed size path iterator",
                 )))
             }
             PathIterator(path_iterator) => match key_info {
                 Key(key) => path_iterator.push(key),
                 KeyRef(key_ref) => path_iterator.push(key_ref.to_vec()),
-                KeySize(key_size) => {
-                    return Err(Error::CorruptedData(String::from(
+                KeySize(_) => {
+                    return Err(Error::Drive(DriveError::CorruptedCodeExecution(
                         "can not add a key size to path iterator",
                     )))
                 }
@@ -232,9 +230,9 @@ impl<'a, const N: usize> PathKeyElementInfo<'a, N> {
                 KeyElementInfo::KeyElement((key, element)) => {
                     Ok(PathKeyElement((path_interator, key, element)))
                 }
-                KeyElementInfo::KeyElementSize(_) => Err(Error::CorruptedData(String::from(
-                    "path matched with key element size",
-                ))),
+                KeyElementInfo::KeyElementSize(_) => Err(Error::Drive(
+                    DriveError::CorruptedCodeExecution("path matched with key element size"),
+                )),
             },
             PathSize(path_size) => match key_element {
                 KeyElementInfo::KeyElement((key, element)) => Ok(PathKeyElementSize((
@@ -250,9 +248,9 @@ impl<'a, const N: usize> PathKeyElementInfo<'a, N> {
                 KeyElementInfo::KeyElement((key, element)) => {
                     Ok(PathFixedSizeKeyElement((path_interator, key, element)))
                 }
-                KeyElementInfo::KeyElementSize(_) => Err(Error::CorruptedData(String::from(
-                    "path matched with key element size",
-                ))),
+                KeyElementInfo::KeyElementSize(_) => Err(Error::Drive(
+                    DriveError::CorruptedCodeExecution("path matched with key element size"),
+                )),
             },
         }
     }
@@ -265,9 +263,9 @@ impl<'a, const N: usize> PathKeyElementInfo<'a, N> {
             KeyElementInfo::KeyElement((key, element)) => {
                 Ok(PathFixedSizeKeyElement((path, key, element)))
             }
-            KeyElementInfo::KeyElementSize(_) => Err(Error::CorruptedData(String::from(
-                "path matched with key element size",
-            ))),
+            KeyElementInfo::KeyElementSize(_) => Err(Error::Drive(
+                DriveError::CorruptedCodeExecution("path matched with key element size"),
+            )),
         }
     }
 
@@ -277,9 +275,9 @@ impl<'a, const N: usize> PathKeyElementInfo<'a, N> {
     ) -> Result<Self, Error> {
         match key_element {
             KeyElementInfo::KeyElement((key, element)) => Ok(PathKeyElement((path, key, element))),
-            KeyElementInfo::KeyElementSize(_) => Err(Error::CorruptedData(String::from(
-                "path matched with key element size",
-            ))),
+            KeyElementInfo::KeyElementSize(_) => Err(Error::Drive(
+                DriveError::CorruptedCodeExecution("path matched with key element size"),
+            )),
         }
     }
 
@@ -318,12 +316,14 @@ impl<'a> DocumentInfo<'a> {
         }
     }
 
-    pub fn id_key_info(&self) -> KeyInfo {
+    pub fn id_key_value_info(&self) -> KeyValueInfo {
         match self {
             DocumentInfo::DocumentAndSerialization((document, _)) => {
-                KeyInfo::KeyRef(document.id.as_slice())
+                KeyValueInfo::KeyRefRequest(document.id.as_slice())
             }
-            DocumentInfo::DocumentSize(_) => KeyInfo::KeySize(32),
+            DocumentInfo::DocumentSize(document_max_size) => {
+                KeyValueInfo::KeyValueMaxSize((32, *document_max_size))
+            }
         }
     }
 
@@ -345,18 +345,36 @@ impl<'a> DocumentInfo<'a> {
             DocumentInfo::DocumentSize(_) => match key_path {
                 "$ownerId" | "$id" => Ok(Some(KeySize(DEFAULT_HASH_SIZE))),
                 _ => {
-                    let document_field_type =
-                        document_type.properties.get(key_path).ok_or_else(|| {
-                            Error::CorruptedData(String::from(
-                                "incorrect key path for document type",
-                            ))
-                        })?;
-                    let max_size = document_field_type.max_byte_size().ok_or_else(|| {
-                        Error::CorruptedData(String::from("document type must have a max size"))
+                    let document_field_type = document_type.properties.get(key_path).ok_or({
+                        Error::Contract(ContractError::DocumentTypeFieldNotFound(
+                            "incorrect key path for document type",
+                        ))
+                    })?;
+                    let max_size = document_field_type.max_byte_size().ok_or({
+                        Error::Drive(DriveError::CorruptedCodeExecution(
+                            "document type must have a max size",
+                        ))
                     })?;
                     Ok(Some(KeySize(max_size)))
                 }
             },
+        }
+    }
+}
+
+#[derive(Clone)]
+pub enum KeyValueInfo<'a> {
+    /// A key by reference
+    KeyRefRequest(&'a [u8]),
+    /// Max size possible for value
+    KeyValueMaxSize((usize, usize)),
+}
+
+impl<'a> KeyValueInfo<'a> {
+    pub fn key_len(&'a self) -> usize {
+        match self {
+            KeyRefRequest(key) => key.len(),
+            KeyValueMaxSize((key_size, _)) => *key_size,
         }
     }
 }

@@ -1,27 +1,36 @@
 pub mod defaults;
+pub mod identity;
 pub mod object_size_info;
 
 use crate::contract::{Contract, Document, DocumentType};
+use crate::error::drive::DriveError;
+use crate::error::query::QueryError;
+use crate::error::Error;
 use crate::fee::calculate_fee;
-use crate::fee::op::{BaseOp, DeleteOperation, InsertOperation, QueryOperation};
+use crate::fee::op::{DeleteOperation, InsertOperation, QueryOperation};
 use crate::query::DriveQuery;
 use defaults::{CONTRACT_DOCUMENTS_PATH_HEIGHT, DEFAULT_HASH_SIZE};
-use grovedb::{Element, Error, GroveDb, TransactionArg};
+use grovedb::{Element, GroveDb, TransactionArg};
+use moka::sync::Cache;
 use object_size_info::DocumentInfo::{DocumentAndSerialization, DocumentSize};
 use object_size_info::KeyElementInfo::{KeyElement, KeyElementSize};
-use object_size_info::KeyInfo::{Key, KeyRef, KeySize};
+use object_size_info::KeyInfo::{Key, KeyRef};
+use object_size_info::KeyValueInfo::KeyRefRequest;
 use object_size_info::PathKeyElementInfo::{
     PathFixedSizeKeyElement, PathKeyElement, PathKeyElementSize,
 };
-use object_size_info::PathKeyInfo::{PathFixedSizeKeyRef, PathKeyRef, PathKeySize};
+use object_size_info::PathKeyInfo::{PathFixedSizeKeyRef, PathKeySize};
 use object_size_info::{
-    DocumentAndContractInfo, DocumentInfo, KeyElementInfo, KeyInfo, PathInfo, PathKeyElementInfo,
+    DocumentAndContractInfo, DocumentInfo, KeyInfo, KeyValueInfo, PathInfo, PathKeyElementInfo,
     PathKeyInfo,
 };
+use std::cell::RefCell;
 use std::path::Path;
+use std::sync::Arc;
 
 pub struct Drive {
     pub grove: GroveDb,
+    pub cached_contracts: RefCell<Cache<[u8; 32], Arc<Contract>>>, //HashMap<[u8; 32], Rc<Contract>>>,
 }
 
 #[repr(u8)]
@@ -166,8 +175,11 @@ fn contract_documents_keeping_history_storage_time_reference_path_size(
 impl Drive {
     pub fn open<P: AsRef<Path>>(path: P) -> Result<Self, Error> {
         match GroveDb::open(path) {
-            Ok(grove) => Ok(Drive { grove }),
-            Err(e) => Err(e),
+            Ok(grove) => Ok(Drive {
+                grove,
+                cached_contracts: RefCell::new(Cache::new(200)),
+            }),
+            Err(e) => Err(Error::GroveDB(e)),
         }
     }
 
@@ -232,14 +244,15 @@ impl Drive {
                 insert_operations.push(InsertOperation::for_empty_tree(key.len()));
                 self.grove
                     .insert(path, key, Element::empty_tree(), transaction)
+                    .map_err(Error::GroveDB)
             }
             KeyInfo::KeySize(key_max_length) => {
                 insert_operations.push(InsertOperation::for_empty_tree(key_max_length));
                 Ok(())
             }
-            KeyInfo::Key(key) => Err(Error::InternalError(
+            KeyInfo::Key(_) => Err(Error::Drive(DriveError::GroveDBInsertion(
                 "only a key ref can be inserted into groveDB",
-            )),
+            ))),
         }
     }
 
@@ -328,9 +341,11 @@ impl Drive {
             PathKeyElement((path, key, element)) => {
                 let path = path.iter().map(|x| x.as_slice());
                 insert_operations.push(InsertOperation::for_key_value(key.len(), &element));
-                self.grove.insert(path, key, element, transaction)
+                self.grove
+                    .insert(path, key, element, transaction)
+                    .map_err(Error::GroveDB)
             }
-            PathKeyElementSize((path_max_length, key_max_length, element_max_size)) => {
+            PathKeyElementSize((_path_max_length, key_max_length, element_max_size)) => {
                 insert_operations.push(InsertOperation::for_key_value_size(
                     key_max_length,
                     element_max_size,
@@ -339,7 +354,9 @@ impl Drive {
             }
             PathFixedSizeKeyElement((path, key, element)) => {
                 insert_operations.push(InsertOperation::for_key_value(key.len(), &element));
-                self.grove.insert(path, key, element, transaction)
+                self.grove
+                    .insert(path, key, element, transaction)
+                    .map_err(Error::GroveDB)
             }
         }
     }
@@ -392,10 +409,10 @@ impl Drive {
         }
     }
 
-    fn grove_get<'a, 'c, P>(
+    pub(crate) fn grove_get<'a, 'c, P>(
         &'a self,
         path: P,
-        key_info: KeyInfo<'c>,
+        key_value_info: KeyValueInfo<'c>,
         transaction: TransactionArg,
         query_operations: &mut Vec<QueryOperation>,
     ) -> Result<Option<Element>, Error>
@@ -404,14 +421,22 @@ impl Drive {
         <P as IntoIterator>::IntoIter: ExactSizeIterator + DoubleEndedIterator + Clone,
     {
         let path_iter = path.into_iter();
-        query_operations.push(QueryOperation::for_key_check_in_path(
-            key_info.len(),
-            path_iter.clone(),
-        ));
-        if let KeyRef(key) = key_info {
-            Ok(Some(self.grove.get(path_iter, key, transaction)?))
-        } else {
-            Ok(None)
+        match key_value_info {
+            KeyValueInfo::KeyRefRequest(key) => {
+                let item = self.grove.get(path_iter.clone(), key, transaction)?;
+                query_operations.push(QueryOperation::for_value_retrieval_in_path(
+                    key.len(),
+                    path_iter,
+                    item.serialized_byte_size(),
+                ));
+                Ok(Some(item))
+            }
+            KeyValueInfo::KeyValueMaxSize((key_size, value_size)) => {
+                query_operations.push(QueryOperation::for_value_retrieval_in_path(
+                    key_size, path_iter, value_size,
+                ));
+                Ok(None)
+            }
         }
     }
 
@@ -548,34 +573,40 @@ impl Drive {
         insert_operations: &mut Vec<InsertOperation>,
     ) -> Result<(), Error> {
         if original_contract.readonly {
-            return Err(Error::InternalError("contract is readonly"));
+            return Err(Error::Drive(DriveError::UpdatingReadOnlyImmutableContract(
+                "contract is readonly",
+            )));
         }
 
         if contract.readonly {
-            return Err(Error::InternalError(
+            return Err(Error::Drive(DriveError::ChangingContractToReadOnly(
                 "contract can not be changed to readonly",
-            ));
+            )));
         }
 
         if contract.keeps_history ^ original_contract.keeps_history {
-            return Err(Error::InternalError(
+            return Err(Error::Drive(DriveError::ChangingContractKeepsHistory(
                 "contract can not change whether it keeps history",
-            ));
+            )));
         }
 
         if contract.documents_keep_history_contract_default
             ^ original_contract.documents_keep_history_contract_default
         {
-            return Err(Error::InternalError(
-                "contract can not change the default of whether documents keeps history",
+            return Err(Error::Drive(
+                DriveError::ChangingContractDocumentsKeepsHistoryDefault(
+                    "contract can not change the default of whether documents keeps history",
+                ),
             ));
         }
 
         if contract.documents_mutable_contract_default
             ^ original_contract.documents_mutable_contract_default
         {
-            return Err(Error::InternalError(
-                "contract can not change the default of whether documents are mutable",
+            return Err(Error::Drive(
+                DriveError::ChangingContractDocumentsMutabilityDefault(
+                    "contract can not change the default of whether documents are mutable",
+                ),
             ));
         }
 
@@ -593,16 +624,16 @@ impl Drive {
             let original_document_type = &original_contract.document_types.get(type_key);
             if let Some(original_document_type) = original_document_type {
                 if original_document_type.documents_mutable ^ document_type.documents_mutable {
-                    return Err(Error::InternalError(
+                    return Err(Error::Drive(DriveError::ChangingDocumentTypeMutability(
                         "contract can not change whether a specific document type is mutable",
-                    ));
+                    )));
                 }
                 if original_document_type.documents_keep_history
                     ^ document_type.documents_keep_history
                 {
-                    return Err(Error::InternalError(
+                    return Err(Error::Drive(DriveError::ChangingDocumentTypeKeepsHistory(
                         "contract can not change whether a specific document type keeps history",
-                    ));
+                    )));
                 }
 
                 let type_path = [
@@ -674,6 +705,55 @@ impl Drive {
         self.apply_contract(&contract, contract_cbor, block_time, transaction)
     }
 
+    pub fn get_contract(
+        &self,
+        contract_id: [u8; 32],
+        transaction: TransactionArg,
+    ) -> Result<Option<Arc<Contract>>, Error> {
+        let cached_contracts = self.cached_contracts.borrow();
+        match cached_contracts.get(&contract_id) {
+            None => self.fetch_contract(contract_id, transaction),
+            Some(contract) => {
+                let contract_ref = Arc::clone(&contract);
+                Ok(Some(contract_ref))
+            }
+        }
+    }
+
+    pub fn get_cached_contract(
+        &self,
+        contract_id: [u8; 32],
+    ) -> Result<Option<Arc<Contract>>, Error> {
+        let cached_contracts = self.cached_contracts.borrow();
+        match cached_contracts.get(&contract_id) {
+            None => Ok(None),
+            Some(contract) => {
+                let contract_ref = Arc::clone(&contract);
+                Ok(Some(contract_ref))
+            }
+        }
+    }
+
+    pub fn fetch_contract(
+        &self,
+        contract_id: [u8; 32],
+        transaction: TransactionArg,
+    ) -> Result<Option<Arc<Contract>>, Error> {
+        let stored_element = self
+            .grove
+            .get(contract_root_path(&contract_id), &[0], transaction)?;
+        if let Element::Item(stored_contract_bytes) = stored_element {
+            let contract = Arc::new(Contract::from_cbor(&stored_contract_bytes, None)?);
+            let cached_contracts = self.cached_contracts.borrow();
+            cached_contracts.insert(contract_id, Arc::clone(&contract));
+            Ok(Some(Arc::clone(&contract)))
+        } else {
+            Err(Error::Drive(DriveError::CorruptedContractPath(
+                "contract path did not refer to a contract element",
+            )))
+        }
+    }
+
     pub fn apply_contract(
         &self,
         contract: &Contract,
@@ -690,7 +770,7 @@ impl Drive {
 
         if let Ok(Some(stored_element)) = self.grove_get(
             contract_root_path(&contract.id),
-            KeyRef(&[0]),
+            KeyRefRequest(&[0]),
             transaction,
             &mut query_operations,
         ) {
@@ -868,7 +948,9 @@ impl Drive {
                 insert_operations,
             )?;
             if !inserted {
-                return Err(Error::CorruptedData(String::from("item already exists")));
+                return Err(Error::Drive(DriveError::CorruptedDocumentAlreadyExists(
+                    "item already exists",
+                )));
             }
         }
         Ok(())
@@ -986,7 +1068,7 @@ impl Drive {
             && self
                 .grove_get(
                     primary_key_path,
-                    document_and_contract_info.document_info.id_key_info(),
+                    document_and_contract_info.document_info.id_key_value_info(),
                     transaction,
                     query_operations,
                 )
@@ -1023,10 +1105,11 @@ impl Drive {
                 .iter()
                 .map(|&x| Vec::from(x))
                 .collect();
-            let top_index_property = index
-                .properties
-                .get(0)
-                .ok_or_else(|| Error::CorruptedData(String::from("invalid contract indices")))?;
+            let top_index_property = index.properties.get(0).ok_or({
+                Error::Drive(DriveError::CorruptedContractIndexes(
+                    "invalid contract indices",
+                ))
+            })?;
             index_path.push(Vec::from(top_index_property.name.as_bytes()));
 
             // with the example of the dashpay contract's first index
@@ -1067,9 +1150,9 @@ impl Drive {
             // the index path is now something like Contracts/ContractID/Documents(1)/$ownerId/<ownerId>
 
             for i in 1..index.properties.len() {
-                let index_property = index.properties.get(i).ok_or_else(|| {
-                    Error::CorruptedData(String::from("invalid contract indices"))
-                })?;
+                let index_property = index.properties.get(i).ok_or(Error::Drive(
+                    DriveError::CorruptedContractIndexes("invalid contract indices"),
+                ))?;
 
                 let index_property_key = KeyRef(index_property.name.as_bytes());
 
@@ -1197,7 +1280,9 @@ impl Drive {
                     insert_operations,
                 )?;
                 if !inserted {
-                    return Err(Error::CorruptedData(String::from("index already exists")));
+                    return Err(Error::Drive(DriveError::CorruptedContractIndexes(
+                        "index already exists",
+                    )));
                 }
             }
         }
@@ -1290,9 +1375,9 @@ impl Drive {
         insert_operations: &mut Vec<InsertOperation>,
     ) -> Result<(), Error> {
         if !document_and_contract_info.document_type.documents_mutable {
-            return Err(Error::InternalError(
+            return Err(Error::Drive(DriveError::UpdatingReadOnlyImmutableDocument(
                 "documents for this contract are not mutable",
-            ));
+            )));
         }
 
         if !document_and_contract_info
@@ -1315,7 +1400,7 @@ impl Drive {
         let document_type = document_and_contract_info.document_type;
         let owner_id = document_and_contract_info.owner_id;
 
-        if let DocumentAndSerialization((document, document_cbor)) =
+        if let DocumentAndSerialization((document, _document_cbor)) =
             document_and_contract_info.document_info
         {
             // we need to construct the path for documents on the contract
@@ -1351,14 +1436,14 @@ impl Drive {
                     );
                 self.grove_get(
                     contract_documents_keeping_history_primary_key_path_for_document_id,
-                    KeyRef(&[0]),
+                    KeyRefRequest(&[0]),
                     transaction,
                     query_operations,
                 )?
             } else {
                 self.grove_get(
                     contract_documents_primary_key_path,
-                    KeyRef(document.id.as_slice()),
+                    KeyRefRequest(document.id.as_slice()),
                     transaction,
                     query_operations,
                 )?
@@ -1383,7 +1468,7 @@ impl Drive {
                     owner_id,
                 )?)
             } else {
-                Err(Error::CorruptedData(String::from(
+                Err(Error::Drive(DriveError::CorruptedDocumentNotItem(
                     "old document is not an item",
                 )))
             }?;
@@ -1397,9 +1482,9 @@ impl Drive {
                     .iter()
                     .map(|&x| Vec::from(x))
                     .collect();
-                let top_index_property = index.properties.get(0).ok_or_else(|| {
-                    Error::CorruptedData(String::from("invalid contract indices"))
-                })?;
+                let top_index_property = index.properties.get(0).ok_or(Error::Drive(
+                    DriveError::CorruptedContractIndexes("invalid contract indices"),
+                ))?;
                 index_path.push(Vec::from(top_index_property.name.as_bytes()));
 
                 // with the example of the dashpay contract's first index
@@ -1447,9 +1532,9 @@ impl Drive {
                 old_index_path.push(old_document_top_field);
 
                 for i in 1..index.properties.len() {
-                    let index_property = index.properties.get(i).ok_or_else(|| {
-                        Error::CorruptedData(String::from("invalid contract indices"))
-                    })?;
+                    let index_property = index.properties.get(i).ok_or(Error::Drive(
+                        DriveError::CorruptedContractIndexes("invalid contract indices"),
+                    ))?;
 
                     let document_index_field = document
                         .get_raw_for_contract(
@@ -1554,9 +1639,6 @@ impl Drive {
                         )?;
                         index_path.push(vec![0]);
 
-                        let index_path_slices: Vec<&[u8]> =
-                            index_path.iter().map(|x| x.as_slice()).collect();
-
                         // here we should return an error if the element already exists
                         self.grove_insert(
                             PathKeyElement::<0>((
@@ -1568,9 +1650,6 @@ impl Drive {
                             insert_operations,
                         )?;
                     } else {
-                        let index_path_slices: Vec<&[u8]> =
-                            index_path.iter().map(|x| x.as_slice()).collect();
-
                         // here we should return an error if the element already exists
                         let inserted = self.grove_insert_if_not_exists(
                             PathKeyElement::<0>((index_path, &[0], document_reference.clone())),
@@ -1579,7 +1658,9 @@ impl Drive {
                             insert_operations,
                         )?;
                         if !inserted {
-                            return Err(Error::CorruptedData(String::from("index already exists")));
+                            return Err(Error::Drive(DriveError::CorruptedContractIndexes(
+                                "index already exists",
+                            )));
                         }
                     }
                 }
@@ -1642,9 +1723,9 @@ impl Drive {
         let document_type = contract.document_type_for_name(document_type_name)?;
 
         if !document_type.documents_mutable {
-            return Err(Error::InternalError(
+            return Err(Error::Drive(DriveError::UpdatingReadOnlyImmutableDocument(
                 "documents for this contract are not mutable",
-            ));
+            )));
         }
 
         // first we need to construct the path for documents on the contract
@@ -1658,15 +1739,15 @@ impl Drive {
         // next we need to get the document from storage
         let document_element: Option<Element> = self.grove_get(
             contract_documents_primary_key_path,
-            KeyRef(document_id),
+            KeyRefRequest(document_id),
             transaction,
             query_operations,
         )?;
 
         if document_element.is_none() {
-            return Err(Error::InternalError(
+            return Err(Error::Drive(DriveError::DeletingDocumentThatDoesNotExist(
                 "document being deleted does not exist",
-            ));
+            )));
         }
 
         let document_bytes: Vec<u8> = match document_element.unwrap() {
@@ -1696,10 +1777,9 @@ impl Drive {
                 .iter()
                 .map(|&x| Vec::from(x))
                 .collect();
-            let top_index_property = index
-                .properties
-                .get(0)
-                .ok_or_else(|| Error::CorruptedData(String::from("invalid contract indices")))?;
+            let top_index_property = index.properties.get(0).ok_or(Error::Drive(
+                DriveError::CorruptedContractIndexes("invalid contract indices"),
+            ))?;
             index_path.push(Vec::from(top_index_property.name.as_bytes()));
 
             // with the example of the dashpay contract's first index
@@ -1718,9 +1798,9 @@ impl Drive {
             // the index path is now something like Contracts/ContractID/Documents(1)/$ownerId/<ownerId>
 
             for i in 1..index.properties.len() {
-                let index_property = index.properties.get(i).ok_or_else(|| {
-                    Error::CorruptedData(String::from("invalid contract indices"))
-                })?;
+                let index_property = index.properties.get(i).ok_or(Error::Drive(
+                    DriveError::CorruptedContractIndexes("invalid contract indices"),
+                ))?;
 
                 index_path.push(Vec::from(index_property.name.as_bytes()));
                 // Iteration 1. the index path is now something like Contracts/ContractID/Documents(1)/$ownerId/<ownerId>/toUserId
@@ -1772,13 +1852,29 @@ impl Drive {
         Ok(())
     }
 
+    pub fn query_documents(
+        &self,
+        query_cbor: &[u8],
+        contract_id: [u8; 32],
+        document_type_name: &str,
+        transaction: TransactionArg,
+    ) -> Result<(Vec<Vec<u8>>, u16, u64), Error> {
+        let contract = self
+            .get_contract(contract_id, transaction)?
+            .ok_or(Error::Query(QueryError::ContractNotFound(
+                "contract not found",
+            )))?;
+        let document_type = contract.document_type_for_name(document_type_name)?;
+        self.query_documents_from_contract(&contract, document_type, query_cbor, transaction)
+    }
+
     pub fn query_documents_from_contract_cbor(
         &self,
         contract_cbor: &[u8],
         document_type_name: String,
         query_cbor: &[u8],
         transaction: TransactionArg,
-    ) -> Result<(Vec<Vec<u8>>, u16), Error> {
+    ) -> Result<(Vec<Vec<u8>>, u16, u64), Error> {
         let contract = Contract::from_cbor(contract_cbor, None)?;
 
         let document_type = contract.document_type_for_name(document_type_name.as_str())?;
@@ -1792,10 +1888,10 @@ impl Drive {
         document_type: &DocumentType,
         query_cbor: &[u8],
         transaction: TransactionArg,
-    ) -> Result<(Vec<Vec<u8>>, u16), Error> {
+    ) -> Result<(Vec<Vec<u8>>, u16, u64), Error> {
         let query = DriveQuery::from_cbor(query_cbor, contract, document_type)?;
 
-        query.execute_no_proof(&self.grove, transaction)
+        query.execute_no_proof(self, transaction)
     }
 
     pub fn worst_case_fee_for_document_type_with_name(
@@ -2336,7 +2432,7 @@ mod tests {
             .commit_transaction(db_transaction)
             .expect("unable to commit transaction");
 
-        let (results, _) = drive
+        let (results, _, _) = drive
             .query_documents_from_contract(
                 &contract,
                 contract.document_types.get("niceDocument").unwrap(),
@@ -2367,7 +2463,7 @@ mod tests {
 
         let query_cbor = value_to_cbor(query_json, None);
 
-        let (results, _) = drive
+        let (results, _, _) = drive
             .query_documents_from_contract(
                 &contract,
                 contract.document_types.get("niceDocument").unwrap(),
@@ -2437,16 +2533,16 @@ mod tests {
             "select * from person where firstName = 'Samuel' order by firstName asc limit 100";
         let query = DriveQuery::from_sql_expr(sql_string, &contract).expect("should build query");
 
-        let (results_no_transaction, _) = query
-            .execute_no_proof(&drive.grove, None)
+        let (results_no_transaction, _, _) = query
+            .execute_no_proof(&drive, None)
             .expect("expected to execute query");
 
         assert_eq!(results_no_transaction.len(), 1);
 
         let db_transaction = drive.grove.start_transaction();
 
-        let (results_on_transaction, _) = query
-            .execute_no_proof(&drive.grove, Some(&db_transaction))
+        let (results_on_transaction, _, _) = query
+            .execute_no_proof(&drive, Some(&db_transaction))
             .expect("expected to execute query");
 
         assert_eq!(results_on_transaction.len(), 1);
@@ -2471,8 +2567,8 @@ mod tests {
 
         let db_transaction = drive.grove.start_transaction();
 
-        let (results_on_transaction, _) = query
-            .execute_no_proof(&drive.grove, Some(&db_transaction))
+        let (results_on_transaction, _, _) = query
+            .execute_no_proof(&drive, Some(&db_transaction))
             .expect("expected to execute query");
 
         assert_eq!(results_on_transaction.len(), 0);
@@ -2567,8 +2663,8 @@ mod tests {
             "select * from person where firstName > 'A' order by firstName asc limit 5";
         let query = DriveQuery::from_sql_expr(sql_string, &contract).expect("should build query");
 
-        let (results_no_transaction, _) = query
-            .execute_no_proof(&drive.grove, None)
+        let (results_no_transaction, _, _) = query
+            .execute_no_proof(&drive, None)
             .expect("expected to execute query");
 
         assert_eq!(results_no_transaction.len(), 2);
@@ -2598,8 +2694,8 @@ mod tests {
             "select * from person where firstName > 'A' order by firstName asc limit 5";
         let query = DriveQuery::from_sql_expr(sql_string, &contract).expect("should build query");
 
-        let (results_no_transaction, _) = query
-            .execute_no_proof(&drive.grove, None)
+        let (results_no_transaction, _, _) = query
+            .execute_no_proof(&drive, None)
             .expect("expected to execute query");
 
         assert_eq!(results_no_transaction.len(), 1);
@@ -2629,8 +2725,8 @@ mod tests {
             "select * from person where firstName > 'A' order by firstName asc limit 5";
         let query = DriveQuery::from_sql_expr(sql_string, &contract).expect("should build query");
 
-        let (results_no_transaction, _) = query
-            .execute_no_proof(&drive.grove, None)
+        let (results_no_transaction, _, _) = query
+            .execute_no_proof(&drive, None)
             .expect("expected to execute query");
 
         assert_eq!(results_no_transaction.len(), 0);
@@ -2725,8 +2821,8 @@ mod tests {
             "select * from person where firstName > 'A' order by firstName asc limit 5";
         let query = DriveQuery::from_sql_expr(sql_string, &contract).expect("should build query");
 
-        let (results_no_transaction, _) = query
-            .execute_no_proof(&drive.grove, None)
+        let (results_no_transaction, _, _) = query
+            .execute_no_proof(&drive, None)
             .expect("expected to execute query");
 
         assert_eq!(results_no_transaction.len(), 2);
@@ -2818,8 +2914,8 @@ mod tests {
             "select * from person where firstName > 'A' order by firstName asc limit 5";
         let query = DriveQuery::from_sql_expr(sql_string, &contract).expect("should build query");
 
-        let (results_no_transaction, _) = query
-            .execute_no_proof(&drive.grove, None)
+        let (results_no_transaction, _, _) = query
+            .execute_no_proof(&drive, None)
             .expect("expected to execute query");
 
         assert_eq!(results_no_transaction.len(), 0);
@@ -3018,8 +3114,8 @@ mod tests {
         let sql_string = "select * from profile";
         let query = DriveQuery::from_sql_expr(sql_string, &contract).expect("should build query");
 
-        let (results_no_transaction, _) = query
-            .execute_no_proof(&drive.grove, None)
+        let (results_no_transaction, _, _) = query
+            .execute_no_proof(&drive, None)
             .expect("expected to execute query");
 
         assert_eq!(results_no_transaction.len(), 1);
@@ -3039,8 +3135,8 @@ mod tests {
             )
             .expect("should update alice profile");
 
-        let (results_no_transaction, _) = query
-            .execute_no_proof(&drive.grove, None)
+        let (results_no_transaction, _, _) = query
+            .execute_no_proof(&drive, None)
             .expect("expected to execute query");
 
         assert_eq!(results_no_transaction.len(), 1);
@@ -3101,16 +3197,16 @@ mod tests {
         let sql_string = "select * from profile";
         let query = DriveQuery::from_sql_expr(sql_string, &contract).expect("should build query");
 
-        let (results_no_transaction, _) = query
-            .execute_no_proof(&drive.grove, None)
+        let (results_no_transaction, _, _) = query
+            .execute_no_proof(&drive, None)
             .expect("expected to execute query");
 
         assert_eq!(results_no_transaction.len(), 1);
 
         let db_transaction = drive.grove.start_transaction();
 
-        let (results_on_transaction, _) = query
-            .execute_no_proof(&drive.grove, Some(&db_transaction))
+        let (results_on_transaction, _, _) = query
+            .execute_no_proof(&drive, Some(&db_transaction))
             .expect("expected to execute query");
 
         assert_eq!(results_on_transaction.len(), 1);
@@ -3130,8 +3226,8 @@ mod tests {
             )
             .expect("should update alice profile");
 
-        let (results_on_transaction, _) = query
-            .execute_no_proof(&drive.grove, Some(&db_transaction))
+        let (results_on_transaction, _, _) = query
+            .execute_no_proof(&drive, Some(&db_transaction))
             .expect("expected to execute query");
 
         assert_eq!(results_on_transaction.len(), 1);
@@ -3197,16 +3293,16 @@ mod tests {
         let sql_string = "select * from profile";
         let query = DriveQuery::from_sql_expr(sql_string, &contract).expect("should build query");
 
-        let (results_no_transaction, _) = query
-            .execute_no_proof(&drive.grove, None)
+        let (results_no_transaction, _, _) = query
+            .execute_no_proof(&drive, None)
             .expect("expected to execute query");
 
         assert_eq!(results_no_transaction.len(), 1);
 
         let db_transaction = drive.grove.start_transaction();
 
-        let (results_on_transaction, _) = query
-            .execute_no_proof(&drive.grove, Some(&db_transaction))
+        let (results_on_transaction, _, _) = query
+            .execute_no_proof(&drive, Some(&db_transaction))
             .expect("expected to execute query");
 
         assert_eq!(results_on_transaction.len(), 1);
@@ -3221,8 +3317,8 @@ mod tests {
             )
             .expect("expected to delete document");
 
-        let (results_on_transaction, _) = query
-            .execute_no_proof(&drive.grove, Some(&db_transaction))
+        let (results_on_transaction, _, _) = query
+            .execute_no_proof(&drive, Some(&db_transaction))
             .expect("expected to execute query");
 
         assert_eq!(results_on_transaction.len(), 0);
@@ -3232,8 +3328,8 @@ mod tests {
             .rollback_transaction(&db_transaction)
             .expect("expected to rollback transaction");
 
-        let (results_on_transaction, _) = query
-            .execute_no_proof(&drive.grove, Some(&db_transaction))
+        let (results_on_transaction, _, _) = query
+            .execute_no_proof(&drive, Some(&db_transaction))
             .expect("expected to execute query");
 
         assert_eq!(results_on_transaction.len(), 1);
@@ -3335,7 +3431,7 @@ mod tests {
 
     #[test]
     fn test_create_deep_nested_contract_50() {
-        let (drive, contract, contract_cbor) = setup_deep_nested_contract();
+        let (drive, contract, _contract_cbor) = setup_deep_nested_contract();
 
         let document_type = contract
             .document_type_for_name("nest")
@@ -3368,7 +3464,7 @@ mod tests {
 
     #[test]
     fn test_create_reference_contract() {
-        let (drive, contract, contract_cbor) = setup_reference_contract();
+        let (drive, contract, _contract_cbor) = setup_reference_contract();
 
         let document_type = contract
             .document_type_for_name("note")

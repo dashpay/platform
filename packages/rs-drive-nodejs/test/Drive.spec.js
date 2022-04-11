@@ -6,6 +6,7 @@ const Document = require('@dashevo/dpp/lib/document/Document');
 
 const getDataContractFixture = require('@dashevo/dpp/lib/test/fixtures/getDataContractFixture');
 const getDocumentsFixture = require('@dashevo/dpp/lib/test/fixtures/getDocumentsFixture');
+const getIdentityFixture = require('@dashevo/dpp/lib/test/fixtures/getIdentityFixture');
 
 const Drive = require('../Drive');
 
@@ -14,6 +15,7 @@ const TEST_DATA_PATH = './test_data';
 describe('Drive', () => {
   let drive;
   let dataContract;
+  let identity;
   let blockTime;
   let documents;
 
@@ -21,6 +23,7 @@ describe('Drive', () => {
     drive = new Drive(TEST_DATA_PATH);
 
     dataContract = getDataContractFixture();
+    identity = getIdentityFixture();
     blockTime = new Date();
     documents = getDocumentsFixture(dataContract);
   });
@@ -48,7 +51,7 @@ describe('Drive', () => {
     it('should create contract if not exists', async () => {
       const result = await drive.applyContract(dataContract, blockTime);
       blockTime.setSeconds(blockTime.getSeconds() + 10);
-      expect(result).to.have.deep.members([12345000, 25030]);
+      expect(result).to.have.deep.members([12345000, 24690]);
     });
 
     it('should update existing contract', async () => {
@@ -66,7 +69,7 @@ describe('Drive', () => {
       blockTime.setSeconds(blockTime.getSeconds() + 10);
       const result = await drive.applyContract(dataContract, blockTime);
 
-      expect(result).to.have.deep.members([11455000, 31120]);
+      expect(result).to.have.deep.members([11455000, 53010]);
     });
   });
 
@@ -83,7 +86,7 @@ describe('Drive', () => {
 
         const result = await drive.createDocument(documentWithoutIndices, blockTime);
 
-        expect(result).to.have.deep.members([1145000, 3080]);
+        expect(result).to.have.deep.members([1145000, 2290]);
       });
     });
 
@@ -93,7 +96,7 @@ describe('Drive', () => {
 
         const result = await drive.createDocument(documentWithIndices, blockTime);
 
-        expect(result).to.have.deep.members([5015000, 25880]);
+        expect(result).to.have.deep.members([5015000, 25060]);
       });
     });
   });
@@ -117,7 +120,7 @@ describe('Drive', () => {
 
         const result = await drive.updateDocument(documentWithoutIndices, blockTime);
 
-        expect(result).to.have.deep.members([1135000, 3060]);
+        expect(result).to.have.deep.members([1135000, 5060]);
       });
     });
 
@@ -133,7 +136,7 @@ describe('Drive', () => {
 
         const result = await drive.updateDocument(documentWithIndices, blockTime);
 
-        expect(result).to.have.deep.members([1785000, 7400]);
+        expect(result).to.have.deep.members([1785000, 9860]);
       });
     });
   });
@@ -158,7 +161,7 @@ describe('Drive', () => {
           documentWithoutIndices.getId(),
         );
 
-        expect(result).to.have.deep.members([0, 820]);
+        expect(result).to.have.deep.members([0, 3280]);
       });
     });
 
@@ -175,7 +178,7 @@ describe('Drive', () => {
           documentWithIndices.getId(),
         );
 
-        expect(result).to.have.deep.members([0, 820]);
+        expect(result).to.have.deep.members([0, 3280]);
       });
     });
   });
@@ -192,7 +195,20 @@ describe('Drive', () => {
       await Promise.all(
         documents.map((document) => drive.createDocument(document, blockTime)),
       );
+      const fetchedDocuments = await drive.queryDocuments(dataContract, 'indexedDocument', {
+        where: [['lastName', '==', 'Kennedy']],
+      });
 
+      expect(fetchedDocuments).to.have.lengthOf(1);
+      expect(fetchedDocuments[0]).to.be.an.instanceOf(Document);
+      expect(fetchedDocuments[0].toObject()).to.deep.equal(documents[4].toObject());
+    });
+
+    it('should query existing documents again', async () => {
+      // Create documents
+      await Promise.all(
+        documents.map((document) => drive.createDocument(document, blockTime)),
+      );
       const fetchedDocuments = await drive.queryDocuments(dataContract, 'indexedDocument', {
         where: [['lastName', '==', 'Kennedy']],
       });
@@ -208,6 +224,17 @@ describe('Drive', () => {
       });
 
       expect(fetchedDocuments).to.have.lengthOf(0);
+    });
+  });
+
+  describe('#insertIdentity', () => {
+    beforeEach(async () => {
+      await drive.createRootTree();
+    });
+    it('should create identity if not exists', async () => {
+      const result = await drive.insertIdentity(identity);
+      blockTime.setSeconds(blockTime.getSeconds() + 10);
+      expect(result).to.have.deep.members([1375000, 2750]);
     });
   });
 
