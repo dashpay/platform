@@ -1,7 +1,7 @@
 use crate::errors::consensus::ConsensusError;
 use crate::validation::{byte_array_meta, ValidationResult};
 use crate::version::ProtocolVersionValidator;
-use crate::DashPlatformProtocolInitError;
+use crate::{DashPlatformProtocolInitError, NonConsensusError, SerdeParsingError};
 use jsonschema::{JSONSchema, KeywordDefinition};
 use serde_json::json;
 use serde_json::Value as JsonValue;
@@ -54,27 +54,38 @@ impl IdentityValidator {
         Ok(identity_validator)
     }
 
-    pub fn validate_identity(&self, identity_json: &serde_json::Value) -> ValidationResult {
-        // Validator.validate(schema, identity_json, None) should be here
+    pub fn validate_identity(&self, identity_json: &serde_json::Value) -> Result<ValidationResult, NonConsensusError> {
+        // TODO: create better error messages
         let res = self
             .identity_schema
             .as_ref()
-            .unwrap()
+            .ok_or(SerdeParsingError::new("Expected identity schema to be initialized"))?
             .validate(&identity_json);
+
         let mut validation_result = ValidationResult::new(None);
+
         match res {
             Ok(_) => {}
             Err(validation_errors) => {
                 let errors: Vec<ConsensusError> =
                     validation_errors.map(|e| ConsensusError::from(e)).collect();
                 validation_result.add_errors(errors);
-                return validation_result;
+                return Ok(validation_result);
             }
         }
 
-        let identity_map = identity_json.as_object();
+        let identity_map = identity_json.as_object().ok_or(SerdeParsingError::new("Expected identity to be a json object"))?;
+        let protocol_version = identity_map
+            .get("protocolVersion")
+            .ok_or(SerdeParsingError::new("Expected identity to have protocolVersion"))?
+            .as_u64()
+            .ok_or(SerdeParsingError::new("Expected protocolVersion to be a uint"))?;
 
-        validation_result
+        let version_validation_result = self.protocol_version_validator.validate(protocol_version)?;
+
+        validation_result.merge(version_validation_result);
+
+        Ok(validation_result)
     }
 
     pub fn validate_public_keys() {}
