@@ -36,8 +36,8 @@ const sortTransactions = (txsWithMetadata) => {
             prevTxHashBuffer = input.prevTxId;
           }
         });
-        const prevTxHash = prevTxHashBuffer.toString('hex');
-        if (a.hash === prevTxHash) {
+
+        if (prevTxHashBuffer && a.hash === prevTxHashBuffer.toString('hex')) {
           return -1;
         }
         return 0;
