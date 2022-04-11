@@ -1,7 +1,3 @@
-use crate::validation::ValidationResult;
-use jsonschema::JSONSchema;
-use serde_json::Value as JsonValue;
-
 // pub struct KeywordDefinition {
 //     keyword: String,
 //     validation: dyn Fn(JSONSchema, JSONSchema) -> Result<bool, JsonSchemaError>
