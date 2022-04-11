@@ -2,7 +2,7 @@ use crate::errors::consensus::ConsensusError;
 use crate::validation::{byte_array_meta, ValidationResult};
 use crate::version::ProtocolVersionValidator;
 use crate::DashPlatformProtocolInitError;
-use jsonschema::{JSONSchema, KeywordDefinition, ValidationError};
+use jsonschema::{JSONSchema, KeywordDefinition};
 use serde_json::json;
 use serde_json::Value as JsonValue;
 use std::sync::Arc;
@@ -73,6 +73,8 @@ impl IdentityValidator {
         }
 
         let identity_map = identity_json.as_object();
+
+        validation_result
     }
 
     pub fn validate_public_keys() {}

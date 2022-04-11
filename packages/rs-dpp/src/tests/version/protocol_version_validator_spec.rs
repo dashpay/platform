@@ -1,6 +1,5 @@
 use std::collections::HashMap;
-use crate::errors::CompatibleProtocolVersionIsNotDefinedError;
-use crate::errors::consensus::{AbstractConsensusError, ConsensusError};
+use crate::errors::consensus::{ConsensusError};
 use crate::version::{ProtocolVersionValidator};
 
 pub fn setup_test() -> (u32, u32, HashMap<u32, u32>) {

@@ -2,13 +2,9 @@ use std::sync::Arc;
 use crate::errors::consensus::ConsensusError;
 use crate::identity::validation::IdentityValidator;
 use crate::tests::utils::{assert_json_schema_error, serde_remove, serde_set};
-use jsonschema::error::{TypeKind, ValidationErrorKind};
-use jsonschema::paths::PathChunk;
-use jsonschema::primitive_type::PrimitiveType::Integer;
-use log::error;
-use serde::de::Unexpected::Option;
+use jsonschema::error::{ValidationErrorKind};
 use serde_json::Value;
-use crate::version::{COMPATIBILITY_MAP, ProtocolVersionValidator};
+use crate::version::{ProtocolVersionValidator};
 
 fn setup_test() -> (Value, IdentityValidator) {
     let protocol_version_validator = ProtocolVersionValidator::default();
@@ -367,7 +363,7 @@ pub fn revision_should_should_be_greater_or_equal_0() {
 // general tests
 #[test]
 pub fn should_return_valid_result_if_a_raw_identity_is_valid() {
-    let (mut identity, identity_validator) = setup_test();
+    let (identity, identity_validator) = setup_test();
 
     let result = identity_validator.validate_identity(&identity);
     assert_json_schema_error(&result, 0);
