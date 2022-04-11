@@ -5,15 +5,11 @@ use serde_json::{json, Value as JsonValue};
 use crate::util::hash::hash;
 use crate::util::string_encoding::Encoding;
 use crate::{
-    document::document_transition::{DocumentCreateTransition, DocumentTransition},
-    errors::DataTriggerError,
-    get_from_transition,
-    prelude::Identifier,
-    state_repository::StateRepositoryLike,
-    util::json_value::JsonValueExt,
+    document::document_transition::DocumentTransition, get_from_transition, prelude::Identifier,
+    state_repository::StateRepositoryLike, util::json_value::JsonValueExt,
 };
 
-use super::{DataTriggerExecutionContext, DataTriggerExecutionResult};
+use super::{new_error, DataTriggerExecutionContext, DataTriggerExecutionResult};
 
 const MAX_PRINTABLE_DOMAIN_NAME_LENGTH: usize = 253;
 const PROPERTY_LABEL: &str = "label";
@@ -210,21 +206,4 @@ where
     }
 
     Ok(result)
-}
-
-fn new_error<SR>(
-    context: &DataTriggerExecutionContext<SR>,
-    dt_create: &DocumentCreateTransition,
-    msg: String,
-) -> DataTriggerError
-where
-    SR: StateRepositoryLike,
-{
-    DataTriggerError::DataTriggerConditionError {
-        data_contract_id: context.data_contract.id.clone(),
-        document_transition_id: dt_create.base.id.clone(),
-        message: msg,
-        owner_id: Some(context.owner_id.clone()),
-        document_transition: Some(DocumentTransition::Create(dt_create.clone())),
-    }
 }
