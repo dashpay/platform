@@ -7,9 +7,9 @@ use crate::version::{COMPATIBILITY_MAP, LATEST_VERSION};
 
 #[derive(Clone)]
 pub struct ProtocolVersionValidator {
-    current_protocol_version: u32,
-    latest_protocol_version: u32,
-    compatibility_map: HashMap<u32, u32>
+    current_protocol_version: u64,
+    latest_protocol_version: u64,
+    compatibility_map: HashMap<u64, u64>
 }
 
 impl Default for ProtocolVersionValidator {
@@ -23,11 +23,11 @@ impl Default for ProtocolVersionValidator {
 }
 
 impl ProtocolVersionValidator {
-    pub fn new(current_protocol_version: u32, latest_protocol_version: u32, compatibility_map: HashMap<u32, u32>) -> Self {
+    pub fn new(current_protocol_version: u64, latest_protocol_version: u64, compatibility_map: HashMap<u64, u64>) -> Self {
         Self { current_protocol_version, latest_protocol_version, compatibility_map }
     }
 
-    pub fn validate(&self, protocol_version: u32) -> Result<ValidationResult, CompatibleProtocolVersionIsNotDefinedError> {
+    pub fn validate(&self, protocol_version: u64) -> Result<ValidationResult, CompatibleProtocolVersionIsNotDefinedError> {
         let mut result = ValidationResult::new(None);
 
         // Parsed protocol version must be equal or lower than latest protocol version
@@ -70,7 +70,7 @@ impl ProtocolVersionValidator {
         return Ok(result);
     }
 
-    pub fn protocol_version(&self) -> u32 {
+    pub fn protocol_version(&self) -> u64 {
         self.current_protocol_version
     }
 }

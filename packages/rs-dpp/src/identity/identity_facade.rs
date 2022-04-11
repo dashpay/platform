@@ -1,5 +1,5 @@
 use std::sync::Arc;
-use crate::DashPlatformProtocolInitError;
+use crate::{DashPlatformProtocolInitError, NonConsensusError};
 use crate::identity::validation::IdentityValidator;
 use crate::validation::ValidationResult;
 use crate::version::ProtocolVersionValidator;
@@ -15,7 +15,7 @@ impl IdentityFacade {
         })
     }
 
-    pub fn validate(&self, identity_json: serde_json::Value) -> ValidationResult {
+    pub fn validate(&self, identity_json: serde_json::Value) -> Result<ValidationResult, NonConsensusError> {
         self.identity_validator.validate_identity(&identity_json)
     }
 }

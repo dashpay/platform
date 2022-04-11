@@ -22,8 +22,16 @@ impl ValidationResult {
         self.errors.append(&mut errors)
     }
 
+    pub fn merge(&mut self, mut other: ValidationResult) {
+        self.errors.append(other.errors_mut());
+    }
+
     pub fn errors(&self) -> &Vec<ConsensusError> {
         &self.errors
+    }
+
+    pub fn errors_mut(&mut self) -> &mut Vec<ConsensusError> {
+        &mut self.errors
     }
 
     pub fn is_valid(&self) -> bool {
