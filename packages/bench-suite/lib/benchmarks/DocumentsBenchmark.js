@@ -1,17 +1,17 @@
 const { Suite, Test } = require('mocha');
 
-class DocumentsBenchmark {
-  /**
-   * @type {Object}
-   */
-  #config;
+const { printTable } = require('console-table-printer');
 
+const crypto = require('crypto');
+
+const AbstractBenchmark = require('./AbstractBenchmark');
+const Match = require('../metrics/Match');
+
+class DocumentsBenchmark extends AbstractBenchmark {
   /**
-   * @param {Object} config
+   * @type {Object[]}
    */
-  constructor(config) {
-    this.#config = config;
-  }
+  #metrics = [];
 
   /**
    * @param {Context} context
@@ -20,11 +20,11 @@ class DocumentsBenchmark {
    * @returns {Mocha.Suite}
    */
   createMochaTestSuite(context) {
-    const suite = new Suite(this.#config.title, context);
+    const suite = new Suite(this.config.title, context);
 
     suite.timeout(650000);
 
-    const documentTypes = this.#config.documentTypes();
+    const documentTypes = this.config.documentTypes();
 
     suite.addTest(new Test('Publish Data Contract', async () => {
       const dataContract = await context.dash.platform.contracts.create(
@@ -37,7 +37,7 @@ class DocumentsBenchmark {
         context.identity,
       );
 
-      context.dash.getApps().set(this.#config.title, {
+      context.dash.getApps().set(this.config.title, {
         contractId: dataContract.getId(),
         contract: dataContract,
       });
@@ -46,17 +46,34 @@ class DocumentsBenchmark {
     for (const documentType of Object.keys(documentTypes)) {
       const documentTypeSuite = new Suite(documentType, suite.ctx);
 
-      for (const documentProperties of this.#config.documents(documentType)) {
+      for (const documentProperties of this.config.documents(documentType)) {
         suite.addTest(new Test(`Create document ${documentType}`, async () => {
           const document = await context.dash.platform.documents.create(
-            `${this.#config.title}.${documentType}`,
+            `${this.config.title}.${documentType}`,
             context.identity,
             documentProperties,
           );
 
-          await context.dash.platform.documents.broadcast({
+          const stateTransition = await context.dash.platform.documents.broadcast({
             create: [document],
           }, context.identity);
+
+          const stHash = crypto
+            .createHash('sha256')
+            .update(stateTransition.toBuffer())
+            .digest()
+            .toString('hex')
+            .toUpperCase();
+
+          const match = new Match({
+            txId: stHash,
+            txType: stateTransition.getType(),
+            abciMethod: 'deliverTx',
+          }, (data) => {
+            this.#metrics.push(data.timings);
+          });
+
+          this.matches.push(match);
         }));
       }
 
@@ -66,8 +83,14 @@ class DocumentsBenchmark {
     return suite;
   }
 
-  getRequiredCredits() {
-    return this.#config.requiredCredits;
+  /**
+   * Print metrics
+   */
+  printMetrics() {
+    // eslint-disable-next-line no-console
+    console.log(`\n\n${this.config.title}`);
+
+    printTable(this.#metrics);
   }
 }
 

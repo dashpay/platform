@@ -11,9 +11,11 @@
     "@dashevo/dpns-contract": "workspace:~",
     "@dashevo/dpp": "workspace:~",
     "@dashevo/wallet-lib": "workspace:~",
+    "console-table-printer": "^2.11.0",
     "dash": "workspace:~",
     "dotenv-safe": "^8.2.0",
     "lodash.clone": "~4.5.0",
+    "lodash.matches": "^4.6.0",
     "mocha": "^9.1.2"
   },
   "devDependencies": {

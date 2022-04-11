@@ -2277,12 +2277,14 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["@dashevo/dpp", "workspace:packages/js-dpp"],
             ["@dashevo/wallet-lib", "workspace:packages/wallet-lib"],
             ["babel-eslint", "virtual:27dae49067a60fa65fec6e1c3adad1497d0dda3f71eda711624109131ff3b7d1061a20f55e89b5a0a219da1f7a0a1a0a76bc414d36870315bd60acf5bdcb7f55#npm:10.1.0"],
+            ["console-table-printer", "npm:2.11.0"],
             ["dash", "workspace:packages/js-dash-sdk"],
             ["dotenv-safe", "npm:8.2.0"],
             ["eslint", "npm:7.32.0"],
             ["eslint-config-airbnb-base", "virtual:12a596dc9572e25ce715d3736dc74b317c5ca5cfb3b4f67864b1e76b3a401006f84d381aaf975bb5b4da9cafac5125e6869fc78d5202f4c95780c81479112f32#npm:14.2.1"],
             ["eslint-plugin-import", "virtual:12a596dc9572e25ce715d3736dc74b317c5ca5cfb3b4f67864b1e76b3a401006f84d381aaf975bb5b4da9cafac5125e6869fc78d5202f4c95780c81479112f32#npm:2.25.3"],
             ["lodash.clone", "npm:4.5.0"],
+            ["lodash.matches", "npm:4.6.0"],
             ["mocha", "npm:9.1.3"]
           ],
           "linkType": "SOFT",
@@ -7135,6 +7137,16 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           "packageLocation": "./.yarn/cache/console-control-strings-npm-1.1.0-e3160e5275-8755d76787.zip/node_modules/console-control-strings/",
           "packageDependencies": [
             ["console-control-strings", "npm:1.1.0"]
+          ],
+          "linkType": "HARD",
+        }]
+      ]],
+      ["console-table-printer", [
+        ["npm:2.11.0", {
+          "packageLocation": "./.yarn/cache/console-table-printer-npm-2.11.0-5c300077b5-125797e3b9.zip/node_modules/console-table-printer/",
+          "packageDependencies": [
+            ["console-table-printer", "npm:2.11.0"],
+            ["simple-wcswidth", "npm:1.0.1"]
           ],
           "linkType": "HARD",
         }]
@@ -12525,6 +12537,15 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           "linkType": "HARD",
         }]
       ]],
+      ["lodash.matches", [
+        ["npm:4.6.0", {
+          "packageLocation": "./.yarn/cache/lodash.matches-npm-4.6.0-4ac5f4f696-002617abb6.zip/node_modules/lodash.matches/",
+          "packageDependencies": [
+            ["lodash.matches", "npm:4.6.0"]
+          ],
+          "linkType": "HARD",
+        }]
+      ]],
       ["lodash.memoize", [
         ["npm:3.0.4", {
           "packageLocation": "./.yarn/cache/lodash.memoize-npm-3.0.4-40c36c3de4-fc52e0916b.zip/node_modules/lodash.memoize/",
@@ -16191,6 +16212,15 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           "packageDependencies": [
             ["simple-swizzle", "npm:0.2.2"],
             ["is-arrayish", "npm:0.3.2"]
+          ],
+          "linkType": "HARD",
+        }]
+      ]],
+      ["simple-wcswidth", [
+        ["npm:1.0.1", {
+          "packageLocation": "./.yarn/cache/simple-wcswidth-npm-1.0.1-ac1dd0a592-dc5bf4cb13.zip/node_modules/simple-wcswidth/",
+          "packageDependencies": [
+            ["simple-wcswidth", "npm:1.0.1"]
           ],
           "linkType": "HARD",
         }]

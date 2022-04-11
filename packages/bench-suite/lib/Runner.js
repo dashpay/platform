@@ -2,6 +2,8 @@ const Mocha = require('mocha');
 
 const { convertCreditsToSatoshi } = require('@dashevo/dpp/lib/identity/creditsConverter');
 
+const MetricsCollector = require('./metrics/MetricsCollector');
+
 const BENCHMARKS = require('./benchmarks');
 
 const createClientWithFundedWallet = require('./client/createClientWithFundedWallet');
@@ -23,7 +25,19 @@ class Runner {
   #options;
 
   /**
-   * @param {Object} [options]
+   * @type {MetricsCollector}
+   */
+  #metricsCollector;
+
+  /**
+   * @type {AbstractBenchmark[]}
+   */
+  #benchmarks = [];
+
+  /**
+   * @param {Object} options
+   * @param {string} options.driveLogPath
+   * @param {boolean} [options.verbose=false]
    */
   constructor(options = {}) {
     this.#options = options;
@@ -32,8 +46,9 @@ class Runner {
       reporter: options.verbose ? 'spec' : 'nyan',
       timeout: 650000,
       bail: true,
-      exit: true,
     });
+
+    this.#metricsCollector = new MetricsCollector(options.driveLogPath);
   }
 
   /**
@@ -50,13 +65,15 @@ class Runner {
         throw new Error(`Invalid benchmark type ${benchmarkConfig.type}`);
       }
 
-      const benchmark = new BenchmarkClass(benchmarkConfig);
+      const benchmark = new BenchmarkClass(benchmarkConfig, this.#metricsCollector);
 
       this.#mocha.suite.addSuite(
         benchmark.createMochaTestSuite(this.#mocha.suite.ctx),
       );
 
       this.#requiredCredits += benchmark.getRequiredCredits();
+
+      this.#benchmarks.push(benchmark);
     }
   }
 
@@ -66,7 +83,24 @@ class Runner {
   run() {
     this.#initializeContext();
 
-    this.#mocha.run();
+    this.#mocha.run(async (failures) => {
+      if (failures) {
+        process.exitCode = 1;
+
+        return;
+      }
+
+      // Print metrics
+      this.#benchmarks.forEach((benchmark) => {
+        this.#metricsCollector.addMatches(benchmark.getMetricMatches());
+      });
+
+      await this.#metricsCollector.collect();
+
+      this.#benchmarks.forEach((benchmark) => {
+        benchmark.printMetrics();
+      });
+    });
   }
 
   /**

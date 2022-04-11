@@ -1293,12 +1293,14 @@ __metadata:
     "@dashevo/dpp": "workspace:~"
     "@dashevo/wallet-lib": "workspace:~"
     babel-eslint: ^10.1.0
+    console-table-printer: ^2.11.0
     dash: "workspace:~"
     dotenv-safe: ^8.2.0
     eslint: ^7.32.0
     eslint-config-airbnb-base: ^14.2.1
     eslint-plugin-import: ^2.24.2
     lodash.clone: ~4.5.0
+    lodash.matches: ^4.6.0
     mocha: ^9.1.2
   languageName: unknown
   linkType: soft
@@ -5313,6 +5315,15 @@ __metadata:
   version: 1.1.0
   resolution: "console-control-strings@npm:1.1.0"
   checksum: 8755d76787f94e6cf79ce4666f0c5519906d7f5b02d4b884cf41e11dcd759ed69c57da0670afd9236d229a46e0f9cf519db0cd829c6dca820bb5a5c3def584ed
+  languageName: node
+  linkType: hard
+
+"console-table-printer@npm:^2.11.0":
+  version: 2.11.0
+  resolution: "console-table-printer@npm:2.11.0"
+  dependencies:
+    simple-wcswidth: ^1.0.1
+  checksum: 125797e3b936eb08182cc704eb8d6aaa6ab82c6fb1f739afad3dd06847b8a89227fe80f84ed105accfa6f4487ff12821f931727624bfda67d8a8ebdc1314f168
   languageName: node
   linkType: hard
 
@@ -9917,6 +9928,13 @@ fsevents@~2.3.2:
   languageName: node
   linkType: hard
 
+"lodash.matches@npm:^4.6.0":
+  version: 4.6.0
+  resolution: "lodash.matches@npm:4.6.0"
+  checksum: 002617abb63d3735d8600e5e74d499a02edbef090c33acf1198f46b3ec924752729bbac2eb4f26ec00b0ce3b382fd03fdf25d19cfff08ec735180fcb36cd3fe4
+  languageName: node
+  linkType: hard
+
 "lodash.memoize@npm:~3.0.3":
   version: 3.0.4
   resolution: "lodash.memoize@npm:3.0.4"
@@ -13210,6 +13228,13 @@ fsevents@~2.3.2:
   dependencies:
     is-arrayish: ^0.3.1
   checksum: a7f3f2ab5c76c4472d5c578df892e857323e452d9f392e1b5cf74b74db66e6294a1e1b8b390b519fa1b96b5b613f2a37db6cffef52c3f1f8f3c5ea64eb2d54c0
+  languageName: node
+  linkType: hard
+
+"simple-wcswidth@npm:^1.0.1":
+  version: 1.0.1
+  resolution: "simple-wcswidth@npm:1.0.1"
+  checksum: dc5bf4cb131d9c386825d1355add2b1ecc408b37dc2c2334edd7a1a4c9f527e6b594dedcdbf6d949bce2740c3a332e39af1183072a2d068e40d9e9146067a37f
   languageName: node
   linkType: hard
 

@@ -1,3 +1,5 @@
+const crypto = require('crypto');
+
 const TYPES = require('../../lib/benchmarks/types');
 
 module.exports = {
@@ -27,13 +29,13 @@ module.exports = {
       return [];
     }
 
-    return new Array(10).map(() => {
+    return new Array(100).map(() => {
       const properties = {};
 
       for (let i = 0; i <= 100; i++) {
         const name = `property${i}`;
 
-        properties[name] = 'Hello!';
+        properties[name] = crypto.randomBytes(20).toString('hex');
       }
 
       return properties;

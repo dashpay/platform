@@ -8,10 +8,13 @@ dotenvSafe.config({
 
 const Runner = require('../lib/Runner');
 
-const runner = new Runner();
+const runner = new Runner({
+  driveLogPath: process.env.DRIVE_LOG_PATH,
+  verbose: process.env.VERBOSE === '1' || process.env.VERBOSE === 'true',
+});
 
 const benchmarksPath = path.join(__dirname, '..', 'benchmarks', 'index.js');
 
 runner.loadBenchmarks(benchmarksPath);
 
-runner.run(process.env);
+runner.run();
