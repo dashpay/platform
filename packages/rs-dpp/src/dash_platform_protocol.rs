@@ -10,11 +10,11 @@ use thiserror::Error;
 
 #[derive(Error, Debug)]
 pub enum DashPlatformProtocolInitError {
-    #[error("Schema is invalid")]
+    #[error("{0}")]
     SchemaValidationError(SchemaCompilationError),
-    #[error("Couldn't parse JSON")]
+    #[error("{0}")]
     SchemaDeserializationError(serde_json::Error),
-    #[error("Please fill me")]
+    #[error("{0}")]
     ValidationError(ValidationError<'static>),
 }
 
@@ -55,7 +55,8 @@ impl<'a> IdentitySchemas {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Error)]
+#[error("{json_schemas:?}")]
 pub struct SchemaCompilationError {
     json_schemas: JsonSchemas,
 }
@@ -115,11 +116,11 @@ pub struct DashPlatformProtocol {
     pub identities: IdentityFacade,
 }
 
-pub struct DPPOPtions {
+pub struct DPPOptions {
     current_protocol_version: Option<u32>,
 }
 
-impl Default for DPPOPtions {
+impl Default for DPPOptions {
     fn default() -> Self {
         Self {
             current_protocol_version: None,
@@ -128,7 +129,7 @@ impl Default for DPPOPtions {
 }
 
 impl DashPlatformProtocol {
-    pub fn new(options: DPPOPtions) -> Result<Self, DashPlatformProtocolInitError> {
+    pub fn new(options: DPPOptions) -> Result<Self, DashPlatformProtocolInitError> {
         let schema_jsons = SchemaJsons::new()?;
         let mut json_schemas = JsonSchemas::new(schema_jsons);
         json_schemas.compile()?;
