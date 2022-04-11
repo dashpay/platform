@@ -21,7 +21,7 @@ const transactionHistory = account.getTransactionHistory();
         }
       ],
       type: 'sent',
-      time: 1634325172,
+      time: 2021-10-15T19:12:52.000Z,
       txId: '97932c88eda0423578f26d32a0a1ba21b5792721f345c135bc8eb2cb4864184c',
       blockHash: '000000f3a03c0c7c89dcd089f87edcb18bdd95051e85bc27e7de73666a071698',
       isChainLocked: true,
