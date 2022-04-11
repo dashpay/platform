@@ -1,4 +1,3 @@
-use serde::__private::de::Content::String;
 use serde_json::Value;
 
 pub const PUBLIC_KEY_JSON_STRING: &'static str = r#"{

@@ -1,8 +1,7 @@
-use jsonschema::{ErrorIterator, JSONSchema, ValidationError};
+use jsonschema::{JSONSchema, ValidationError};
 use serde_json::json;
 use serde_json::Value as JsonValue;
 use std::borrow::Cow;
-use std::iter::once;
 
 pub(crate) fn error(instance: ValidationError) -> Vec<ValidationError> {
     vec![instance]

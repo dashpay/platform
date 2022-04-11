@@ -1,16 +1,16 @@
-use crate::errors::consensus::{AbstractConsensusError, ConsensusError};
+use crate::errors::consensus::{ConsensusError};
 
 pub struct ValidationResult {
     errors: Vec<ConsensusError>,
     // TODO: data can be anything, figure out what to do with it
-    data: Option<ConsensusError>
+    // data: Option<ConsensusError>
 }
 
 impl ValidationResult {
     pub fn new(errors: Option<Vec<ConsensusError>>) -> Self {
         Self {
             errors: errors.unwrap_or_else(|| Vec::new()),
-            data: None
+            // data: None
         }
     }
 

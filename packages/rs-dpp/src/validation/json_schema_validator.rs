@@ -1,8 +1,6 @@
-use std::collections::HashMap;
 use crate::validation::ValidationResult;
 use jsonschema::JSONSchema;
 use serde_json::Value as JsonValue;
-use crate::errors::consensus::basic::JsonSchemaError;
 
 // pub struct KeywordDefinition {
 //     keyword: String,
@@ -20,9 +18,9 @@ impl JsonSchemaValidator {
         }
     }
 
-    pub fn validate(schema: JSONSchema, object: JsonValue, additional_schemas: Option<Vec<JSONSchema>>) -> ValidationResult {
-        ValidationResult::new(None)
-    }
+    // pub fn validate(schema: JSONSchema, object: JsonValue, additional_schemas: Option<Vec<JSONSchema>>) -> ValidationResult {
+    //     ValidationResult::new(None)
+    // }
 
     // pub fn add_keyword(&mut self, keyword_definition: Box<KeywordDefinition>) {
     //
