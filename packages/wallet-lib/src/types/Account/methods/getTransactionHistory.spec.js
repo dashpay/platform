@@ -482,7 +482,7 @@ describe('Account - getTransactionHistory', () => {
           },
         ],
         type: 'address_transfer',
-        time: 9999999999,
+        time: new Date(9999999999*1e3),
         txId: '9cd3d44a87a7f99a33aebc6957105d5fb41698ef642189a36bac59ec0b5cd840',
         blockHash: '0000016fb685b4b1efed743d2263de34a9f8323ed75e732654b1b951c5cb4dde',
         isChainLocked: true,
