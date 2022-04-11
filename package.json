@@ -33,7 +33,8 @@
     "clean:data": "yarn run dashmate group reset --verbose --group=local --hard",
     "clean": "yarn run clean:data && yarn run build",
     "dashmate": "yarn exec packages/dashmate/bin/dashmate",
-    "release": "yarn exec ./scripts/release/release.sh"
+    "release": "yarn exec ./scripts/release/release.sh",
+    "bench": "yarn workspace @dashevo/bench-suite bench"
   },
   "packageManager": "yarn@3.1.0",
   "ultra": {
