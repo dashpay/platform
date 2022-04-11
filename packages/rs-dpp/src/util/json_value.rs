@@ -26,8 +26,8 @@ pub trait JsonValueExt {
     fn get_string(&self, property_name: &str) -> Result<&String, anyhow::Error>;
     fn get_i64(&self, property_name: &str) -> Result<i64, anyhow::Error>;
     fn get_bytes(&self, property_name: &str) -> Result<Vec<u8>, anyhow::Error>;
-    fn get_value_mut(&mut self, string_path: &str) -> Option<&mut JsonValue>;
-    fn get_value(&self, string_path: &str) -> Option<&JsonValue>;
+    fn get_value_mut(&mut self, string_path: &str) -> Result<&mut JsonValue, anyhow::Error>;
+    fn get_value(&self, string_path: &str) -> Result<&JsonValue, anyhow::Error>;
 }
 
 impl JsonValueExt for JsonValue {
@@ -69,17 +69,19 @@ impl JsonValueExt for JsonValue {
     }
 
     /// returns the value from the JsonValue based on the path: i.e "root.data[0].id"
-    fn get_value_mut(&mut self, string_path: &str) -> Option<&mut JsonValue> {
+    fn get_value_mut(&mut self, string_path: &str) -> Result<&mut JsonValue, anyhow::Error> {
         let path_literal: JsonPathLiteral = string_path.into();
         let path: JsonPath = path_literal.try_into().unwrap();
         get_value_from_json_path_mut(&path, self)
+            .ok_or_else(|| anyhow!("the property '{}' not found", string_path))
     }
 
     /// returns the value from the JsonValue based on the path: i.e "root.data[0].id"
-    fn get_value(&self, string_path: &str) -> Option<&JsonValue> {
+    fn get_value(&self, string_path: &str) -> Result<&JsonValue, anyhow::Error> {
         let path_literal: JsonPathLiteral = string_path.into();
         let path: JsonPath = path_literal.try_into().unwrap();
         get_value_from_json_path(&path, self)
+            .ok_or_else(|| anyhow!("the property '{}' not found", string_path))
     }
 }
 

@@ -7,7 +7,7 @@ use crate::errors::ProtocolError;
 use crate::identifier::Identifier;
 use crate::metadata::Metadata;
 use crate::util::deserializer;
-use crate::util::hash::sha;
+use crate::util::hash::hash;
 use crate::util::serializer;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -118,7 +118,7 @@ impl Document {
     }
 
     pub fn hash(&self) -> Result<Vec<u8>, ProtocolError> {
-        Ok(sha(self.to_buffer()?))
+        Ok(hash(self.to_buffer()?))
     }
 
     pub fn set_value(_path: &str, _value: Value) -> Result<(), ProtocolError> {

@@ -24,6 +24,7 @@ pub trait StateRepositoryLike {
         &self,
         contract_id: &Identifier,
         data_contract_type: &str,
+        where_query: JsonValue,
     ) -> AnyResult<Vec<Document>>;
 
     /// Store Document
