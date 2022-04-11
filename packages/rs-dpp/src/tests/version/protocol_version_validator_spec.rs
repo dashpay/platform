@@ -41,7 +41,7 @@ pub fn should_throw_compatible_protocol_version_is_not_defined_error_if_compatib
     let protocol_version = current_protocol_version;
 
     let err = validator.validate(protocol_version).err().expect("should return CompatibleProtocolVersionIsNotDefinedError");
-    assert_eq!(err.current_protocol_version(), 1)
+    assert_eq!(err.current_protocol_version(), current_protocol_version)
 }
 
 #[test]
