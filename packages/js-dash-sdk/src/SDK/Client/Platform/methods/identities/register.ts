@@ -48,8 +48,8 @@ export default async function register(
 
     // We cannot just return registeredIdentity as we want to
     // keep additional information (assetLockProof and transaction) instance
-    identity.balance = registeredIdentity.balance;
-    identity.metadata = registeredIdentity.metadata;
+    identity.setMetadata(registeredIdentity.metadata);
+    identity.setBalance(registeredIdentity.balance);
 
     return identity;
 }
