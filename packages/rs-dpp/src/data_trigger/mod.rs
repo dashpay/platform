@@ -2,9 +2,11 @@ mod data_trigger_execution_context;
 use std::future::Future;
 use std::pin::Pin;
 
+pub mod create_feature_flag_data_trigger;
 pub mod dashpay_data_triggers;
-mod data_trigger_execution_result;
 pub mod dpns_triggers;
+
+mod data_trigger_execution_result;
 mod reject_data_trigger;
 
 pub use data_trigger_execution_context::*;
@@ -16,7 +18,7 @@ use crate::{
     state_repository::StateRepositoryLike,
 };
 
-use crate::document::document_transition::{Action, DocumentTransition};
+use crate::document::document_transition::{Action, DocumentCreateTransition, DocumentTransition};
 
 pub type Trigger<SR> =
     fn(
@@ -84,5 +86,22 @@ where
         }
 
         result
+    }
+}
+
+pub fn new_error<SR>(
+    context: &DataTriggerExecutionContext<SR>,
+    dt_create: &DocumentCreateTransition,
+    msg: String,
+) -> DataTriggerError
+where
+    SR: StateRepositoryLike,
+{
+    DataTriggerError::DataTriggerConditionError {
+        data_contract_id: context.data_contract.id.clone(),
+        document_transition_id: dt_create.base.id.clone(),
+        message: msg,
+        owner_id: Some(context.owner_id.clone()),
+        document_transition: Some(DocumentTransition::Create(dt_create.clone())),
     }
 }
