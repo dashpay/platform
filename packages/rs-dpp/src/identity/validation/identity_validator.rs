@@ -1,13 +1,11 @@
-use std::sync::Arc;
 use crate::errors::consensus::ConsensusError;
-use crate::schema::IdentitySchemaJsons;
 use crate::validation::{byte_array_meta, ValidationResult};
+use crate::version::ProtocolVersionValidator;
 use crate::DashPlatformProtocolInitError;
-use jsonschema::{ErrorIterator, JSONSchema, KeywordDefinition, ValidationError};
+use jsonschema::{JSONSchema, KeywordDefinition, ValidationError};
 use serde_json::json;
 use serde_json::Value as JsonValue;
-use thiserror::Error;
-use crate::version::ProtocolVersionValidator;
+use std::sync::Arc;
 
 pub struct IdentityValidator {
     identity_schema_json: JsonValue,
@@ -16,13 +14,15 @@ pub struct IdentityValidator {
 }
 
 impl IdentityValidator {
-    pub fn new(protocol_version_validator: Arc<ProtocolVersionValidator>) -> Result<Self, DashPlatformProtocolInitError> {
+    pub fn new(
+        protocol_version_validator: Arc<ProtocolVersionValidator>,
+    ) -> Result<Self, DashPlatformProtocolInitError> {
         let identity_schema_json = crate::schema::identity::identity_json()?;
 
         let mut identity_validator = Self {
             identity_schema_json,
             identity_schema: None,
-            protocol_version_validator
+            protocol_version_validator,
         };
 
         // BYTE_ARRAY META SCHEMA
@@ -68,9 +68,11 @@ impl IdentityValidator {
                 let errors: Vec<ConsensusError> =
                     validation_errors.map(|e| ConsensusError::from(e)).collect();
                 validation_result.add_errors(errors);
+                return validation_result;
             }
         }
-        validation_result
+
+        let identity_map = identity_json.as_object();
     }
 
     pub fn validate_public_keys() {}

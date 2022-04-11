@@ -1,9 +1,8 @@
-use std::path::{Display, Path};
 use jsonschema::error::ValidationErrorKind;
 use jsonschema::paths::{JSONPointer, PathChunk};
 use jsonschema::ValidationError;
 use thiserror::Error;
-use crate::errors::consensus::{AbstractConsensusError, ConsensusError};
+use crate::errors::consensus::{AbstractConsensusError};
 
 #[derive(Error, Debug)]
 #[error("JsonSchemaError: {message:?}, kind: {kind:?}, instance_path: {instance_path:?}, schema_path:{schema_path:?}")]

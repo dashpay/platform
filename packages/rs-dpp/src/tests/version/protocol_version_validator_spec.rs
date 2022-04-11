@@ -1,8 +1,7 @@
 use std::collections::HashMap;
 use crate::errors::CompatibleProtocolVersionIsNotDefinedError;
 use crate::errors::consensus::{AbstractConsensusError, ConsensusError};
-use crate::validation::ValidationResult;
-use crate::version::{ProtocolVersionValidator, LATEST_VERSION};
+use crate::version::{ProtocolVersionValidator};
 
 pub fn setup_test() -> (u32, u32, HashMap<u32, u32>) {
     let current_protocol_version = 1;
@@ -42,7 +41,8 @@ pub fn should_throw_compatible_protocol_version_is_not_defined_error_if_compatib
     let validator = ProtocolVersionValidator::new(current_protocol_version, latest_protocol_version, version_compatibility_map);
     let protocol_version = current_protocol_version;
 
-    validator.validate(protocol_version).err().expect("should return CompatibleProtocolVersionIsNotDefinedError");
+    let err = validator.validate(protocol_version).err().expect("should return CompatibleProtocolVersionIsNotDefinedError");
+    assert_eq!(err.current_protocol_version(), 1)
 }
 
 #[test]
