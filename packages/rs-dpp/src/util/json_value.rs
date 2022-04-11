@@ -25,6 +25,7 @@ pub enum ReplaceWith {
 pub trait JsonValueExt {
     fn get_string(&self, property_name: &str) -> Result<&String, anyhow::Error>;
     fn get_i64(&self, property_name: &str) -> Result<i64, anyhow::Error>;
+    fn get_f64(&self, property_name: &str) -> Result<f64, anyhow::Error>;
     fn get_bytes(&self, property_name: &str) -> Result<Vec<u8>, anyhow::Error>;
     fn get_value_mut(&mut self, string_path: &str) -> Result<&mut JsonValue, anyhow::Error>;
     fn get_value(&self, string_path: &str) -> Result<&JsonValue, anyhow::Error>;
@@ -52,7 +53,20 @@ impl JsonValueExt for JsonValue {
                 .as_i64()
                 .ok_or_else(|| anyhow!("unable convert {} to i64", s))?);
         }
-        bail!("{:?} isn't a string", property_value);
+        bail!("{:?} isn't a number", property_value);
+    }
+
+    fn get_f64(&self, property_name: &str) -> Result<f64, anyhow::Error> {
+        let property_value = self
+            .get(property_name)
+            .ok_or_else(|| anyhow!("the property {} doesn't exist in Json Value", property_name))?;
+
+        if let JsonValue::Number(s) = property_value {
+            return Ok(s
+                .as_f64()
+                .ok_or_else(|| anyhow!("unable convert {} to f64", s))?);
+        }
+        bail!("{:?} isn't a number", property_value);
     }
 
     // TODO this method has an additional allocation which should be avoided
@@ -65,7 +79,7 @@ impl JsonValueExt for JsonValue {
             let data = serde_json::to_vec(s)?;
             return Ok(data);
         }
-        bail!("{:?} isn't a string", property_value);
+        bail!("{:?} isn't an array", property_value);
     }
 
     /// returns the value from the JsonValue based on the path: i.e "root.data[0].id"
