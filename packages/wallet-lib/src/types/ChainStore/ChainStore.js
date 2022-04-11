@@ -1,7 +1,7 @@
 const EventEmitter = require('events');
 
 const {
-  InstantLock, Transaction, BlockHeader, MerkleBlock,
+  Transaction, BlockHeader,
 } = require('@dashevo/dashcore-lib');
 
 const SCHEMA = {
@@ -9,30 +9,13 @@ const SCHEMA = {
     blockHeaders: {
       '*': BlockHeader,
     },
-    merkleBlocks: {
-      '*': MerkleBlock,
-    },
     transactions: {
       '*': Transaction,
-    },
-    instantLocks: {
-      '*': InstantLock,
     },
     txMetadata: {
       '*': {
         blockHash: 'string',
         height: 'number',
-      },
-    },
-    usedAddresses: {
-      '*': {
-        transactions: {
-          '*': 'string',
-        },
-        utxos: {
-          '*': Transaction.Output,
-        },
-        balance: 'number',
       },
     },
   },
