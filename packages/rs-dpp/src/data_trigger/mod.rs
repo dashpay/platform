@@ -4,6 +4,7 @@ use std::pin::Pin;
 
 pub mod dashpay_data_triggers;
 mod data_trigger_execution_result;
+pub mod dpns_triggers;
 mod reject_data_trigger;
 
 pub use data_trigger_execution_context::*;

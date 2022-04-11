@@ -5,7 +5,7 @@ use crate::{
     errors::ProtocolError,
     identifier::Identifier,
     metadata::Metadata,
-    util::{hash::sha, serializer},
+    util::{hash::hash, serializer},
 };
 use anyhow::anyhow;
 use serde::{Deserialize, Serialize};
@@ -102,7 +102,7 @@ impl DataContract {
 
     // Returns hash from Data Contract
     pub fn hash(&self) -> Result<Vec<u8>, ProtocolError> {
-        Ok(sha(self.to_buffer()?))
+        Ok(hash(self.to_buffer()?))
     }
 
     /// Increments version of Data Contract

@@ -1,6 +1,6 @@
 //! This module contains data structures that are left to be implemented
 
-use crate::prelude::*;
+use crate::{prelude::*, util::json_value::JsonValueExt};
 
 use anyhow::Result as AnyResult;
 use serde_json::Value as JsonValue;
@@ -64,6 +64,7 @@ impl StateRepositoryLike for StateRepository {
         &self,
         _contract_id: &Identifier,
         _data_contract_type: &str,
+        _where_query: JsonValue,
     ) -> AnyResult<Vec<Document>> {
         unimplemented!()
     }

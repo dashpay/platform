@@ -2,7 +2,8 @@ use anyhow::{anyhow, bail};
 
 use crate::{
     document::document_transition::DocumentTransition, errors::DataTriggerError,
-    get_from_transition, state_repository::StateRepositoryLike, util::json_value::JsonValueExt,
+    get_from_transition, prelude::Identifier, state_repository::StateRepositoryLike,
+    util::json_value::JsonValueExt,
 };
 
 use super::{DataTriggerExecutionContext, DataTriggerExecutionResult};
@@ -14,6 +15,7 @@ const PROPERTY_CORE_CHAIN_LOCKED_HEIGHT: &str = "coreChainLockedHeight";
 pub async fn create_contract_request_data_trigger<SR>(
     document_transition: &DocumentTransition,
     context: &DataTriggerExecutionContext<SR>,
+    _: Option<&Identifier>,
 ) -> Result<DataTriggerExecutionResult, anyhow::Error>
 where
     SR: StateRepositoryLike,
