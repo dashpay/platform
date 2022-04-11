@@ -59,7 +59,7 @@ function getTransactionHistory() {
     // To get time of block, let's find the blockheader.
     const blockHeader = blockHeaders.get(blockHash);
     // If it's unconfirmed, we won't have a blockHeader nor it's time.
-    const time = blockHeader ? new Date(blockHeader.time*1e3) : new Date(9999999999*1e3);
+    const time = blockHeader ? new Date(blockHeader.time * 1e3) : new Date(9999999999 * 1e3);
 
     const normalizedTransactionHistory = {
       // Would require knowing the vout of this vin to determinate inputAmount.
