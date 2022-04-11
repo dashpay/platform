@@ -2,6 +2,7 @@ use crate::{
     data_trigger::new_error,
     document::document_transition::DocumentTransition,
     get_from_transition,
+    mocks::{SMLStoreLike, SimplifiedMNListLike},
     prelude::Identifier,
     state_repository::StateRepositoryLike,
     util::{json_value::JsonValueExt, string_encoding::Encoding},
@@ -13,13 +14,15 @@ use anyhow::{anyhow, bail, Context};
 const PROPERTY_BLOCK_HEIGHT: &str = "height";
 const PROPERTY_ENABLE_AT_HEIGHT: &str = "enableAtHeight";
 
-pub async fn create_features_flag_data_trigger<ST>(
+pub async fn create_feature_flag_data_trigger<SR, S, L>(
     document_transition: &DocumentTransition,
-    context: &DataTriggerExecutionContext<ST>,
+    context: &DataTriggerExecutionContext<SR, S, L>,
     top_level_identity: Option<&Identifier>,
 ) -> Result<DataTriggerExecutionResult, anyhow::Error>
 where
-    ST: StateRepositoryLike,
+    L: SimplifiedMNListLike,
+    S: SMLStoreLike<L>,
+    SR: StateRepositoryLike<S, L>,
 {
     let mut result = DataTriggerExecutionResult::default();
     let top_level_identity = top_level_identity.context("Top Level Identity must be defined")?;

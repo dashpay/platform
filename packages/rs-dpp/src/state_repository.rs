@@ -6,13 +6,17 @@ use crate::{
     document::Document,
     identifier::Identifier,
     identity::{Identity, JsonIdentityPublicKey},
-    mocks,
+    mocks::{self, SMLStoreLike, SimplifiedMNListLike},
 };
 
 use anyhow::Result as AnyResult;
 
 #[async_trait]
-pub trait StateRepositoryLike {
+pub trait StateRepositoryLike<S, L>
+where
+    L: SimplifiedMNListLike,
+    S: SMLStoreLike<L>,
+{
     /// Fetch the Data Contract by ID
     async fn fetch_data_contract(&self, data_contract_id: &Identifier) -> AnyResult<JsonValue>;
 
@@ -75,5 +79,5 @@ pub trait StateRepositoryLike {
     ) -> AnyResult<()>;
 
     /// Fetch Simplified Masternode List Store
-    async fn fetch_sml_store(&self) -> AnyResult<JsonValue>;
+    async fn fetch_sml_store(&self) -> AnyResult<S>;
 }

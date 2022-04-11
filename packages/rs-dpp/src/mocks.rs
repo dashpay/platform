@@ -48,7 +48,11 @@ pub struct JsonSchemaValidator {}
 pub trait JsonSchemaValidatorLike {}
 
 #[async_trait]
-impl StateRepositoryLike for StateRepository {
+impl<S, L> StateRepositoryLike<S, L> for StateRepository
+where
+    L: SimplifiedMNListLike,
+    S: SMLStoreLike<L>,
+{
     /// Fetch the Data Contract by ID
     async fn fetch_data_contract(&self, _data_contract_id: &Identifier) -> AnyResult<JsonValue> {
         unimplemented!()
@@ -138,7 +142,43 @@ impl StateRepositoryLike for StateRepository {
     }
 
     /// Fetch Simplified Masternode List Store
-    async fn fetch_sml_store(&self) -> AnyResult<JsonValue> {
+    async fn fetch_sml_store(&self) -> AnyResult<S> {
         unimplemented!()
     }
 }
+
+pub trait SMLStoreLike<L>
+where
+    L: SimplifiedMNListLike,
+{
+    fn get_sml_by_height(&self) -> AnyResult<L> {
+        unimplemented!()
+    }
+
+    fn get_current_sml(&self) -> AnyResult<L> {
+        unimplemented!()
+    }
+}
+
+pub struct SMLEntry {
+    pub pro_reg_tx_hash: String,
+    pub confirmed_hash: String,
+    pub service: String,
+    pub pub_key_operator: String,
+    pub voting_address: String,
+    pub is_valid: bool,
+}
+
+pub trait SimplifiedMNListLike {
+    fn get_valid_master_nodes(&self) -> Vec<SMLEntry> {
+        unimplemented!()
+    }
+}
+
+pub struct SimplifiedMNListMock {}
+
+impl SimplifiedMNListLike for SimplifiedMNListMock {}
+
+pub struct SMLStoreMock {}
+
+impl<L> SMLStoreLike<L> for SMLStoreMock where L: SimplifiedMNListLike {}

@@ -1,8 +1,12 @@
 use anyhow::{anyhow, bail};
 
 use crate::{
-    document::document_transition::DocumentTransition, errors::DataTriggerError,
-    get_from_transition, prelude::Identifier, state_repository::StateRepositoryLike,
+    document::document_transition::DocumentTransition,
+    errors::DataTriggerError,
+    get_from_transition,
+    mocks::{SMLStoreLike, SimplifiedMNListLike},
+    prelude::Identifier,
+    state_repository::StateRepositoryLike,
     util::json_value::JsonValueExt,
 };
 
@@ -12,13 +16,15 @@ const BLOCKS_SIZE_WINDOW: i64 = 8;
 const PROPERTY_CORE_HEIGHT_CREATED_AT: &str = "coreHeightCreatedAt";
 const PROPERTY_CORE_CHAIN_LOCKED_HEIGHT: &str = "coreChainLockedHeight";
 
-pub async fn create_contract_request_data_trigger<SR>(
+pub async fn create_contract_request_data_trigger<SR, S, L>(
     document_transition: &DocumentTransition,
-    context: &DataTriggerExecutionContext<SR>,
+    context: &DataTriggerExecutionContext<SR, S, L>,
     _: Option<&Identifier>,
 ) -> Result<DataTriggerExecutionResult, anyhow::Error>
 where
-    SR: StateRepositoryLike,
+    L: SimplifiedMNListLike,
+    S: SMLStoreLike<L>,
+    SR: StateRepositoryLike<S, L>,
 {
     let dt_create = match document_transition {
         DocumentTransition::Create(d) => d,

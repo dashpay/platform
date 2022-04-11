@@ -1,15 +1,20 @@
 use crate::{
-    document::document_transition::DocumentTransition, errors::DataTriggerError,
-    get_from_transition, state_repository::StateRepositoryLike,
+    document::document_transition::DocumentTransition,
+    errors::DataTriggerError,
+    get_from_transition,
+    mocks::{SMLStoreLike, SimplifiedMNListLike},
+    state_repository::StateRepositoryLike,
 };
 
 use super::{DataTriggerExecutionContext, DataTriggerExecutionResult};
 
-pub async fn reject_data_trigger<SR>(
+pub async fn reject_data_trigger<SR, S, L>(
     document_transition: &DocumentTransition,
-    context: DataTriggerExecutionContext<SR>,
+    context: DataTriggerExecutionContext<SR, S, L>,
 ) where
-    SR: StateRepositoryLike,
+    L: SimplifiedMNListLike,
+    S: SMLStoreLike<L>,
+    SR: StateRepositoryLike<S, L>,
 {
     let mut result = DataTriggerExecutionResult::default();
 
