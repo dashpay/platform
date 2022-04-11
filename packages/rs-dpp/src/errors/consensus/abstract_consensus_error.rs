@@ -1,18 +1,21 @@
 use jsonschema::ValidationError;
 use thiserror::Error;
+use crate::consensus::basic::identity::DuplicatedIdentityPublicKeyIdError;
 use crate::errors::consensus::basic::{IncompatibleProtocolVersionError, JsonSchemaError, UnsupportedProtocolVersionError};
 
 pub trait AbstractConsensusError: Into<ConsensusError> {}
 
 #[derive(Error, Debug)]
-#[error("`{0}`")]
+#[error("{0}")]
 pub enum ConsensusError {
-    #[error("`{0}`")]
+    #[error("{0}")]
     JsonSchemaError(JsonSchemaError),
-    #[error("`{0}`")]
+    #[error("{0}")]
     UnsupportedProtocolVersionError(UnsupportedProtocolVersionError),
-    #[error("`{0}`")]
+    #[error("{0}")]
     IncompatibleProtocolVersionError(IncompatibleProtocolVersionError),
+    #[error("{0}")]
+    DuplicatedIdentityPublicKeyIdError(DuplicatedIdentityPublicKeyIdError),
 }
 
 impl ConsensusError {
@@ -28,6 +31,9 @@ impl ConsensusError {
             ConsensusError::JsonSchemaError(_) => { 1005 }
             ConsensusError::UnsupportedProtocolVersionError(_) => { 1002 }
             ConsensusError::IncompatibleProtocolVersionError(_) => { 1003 }
+
+            // Identity
+            ConsensusError::DuplicatedIdentityPublicKeyIdError(_) => { 1030 }
         }
     }
 }
@@ -53,5 +59,11 @@ impl From<UnsupportedProtocolVersionError> for ConsensusError {
 impl From<IncompatibleProtocolVersionError> for ConsensusError {
     fn from(error: IncompatibleProtocolVersionError) -> Self {
         Self::IncompatibleProtocolVersionError(error)
+    }
+}
+
+impl From<DuplicatedIdentityPublicKeyIdError> for ConsensusError {
+    fn from(error: DuplicatedIdentityPublicKeyIdError) -> Self {
+        Self::DuplicatedIdentityPublicKeyIdError(error)
     }
 }
