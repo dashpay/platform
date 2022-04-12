@@ -213,6 +213,29 @@ class AbstractStateTransition {
   }
 
   /**
+   * @protected
+   * @param {Buffer} scriptHash
+   * @return {boolean}
+   */
+  verifyBIP13ScriptHashSignatureByPublicKeyHash(scriptHash) {
+    const signature = this.getSignature();
+    if (!signature) {
+      throw new StateTransitionIsNotSignedError(this);
+    }
+
+    const hash = this.hash({ skipSignature: true });
+
+    let isSignatureVerified;
+    try {
+      isSignatureVerified = verifyHashSignature(hash, signature, scriptHash);
+    } catch (e) {
+      isSignatureVerified = false;
+    }
+
+    return isSignatureVerified;
+  }
+
+  /**
    * Verify signature with public key
    * @protected
    * @param {string|Buffer|Uint8Array|PublicKey} publicKey string must be hex or base58

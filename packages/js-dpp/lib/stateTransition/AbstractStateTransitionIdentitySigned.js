@@ -170,8 +170,9 @@ class AbstractStateTransitionIdentitySigned extends AbstractStateTransition {
 
     switch (publicKey.getType()) {
       case IdentityPublicKey.TYPES.ECDSA_HASH160:
-      case IdentityPublicKey.TYPES.BIP13_SCRIPT_HASH:
         return this.verifyESDSAHash160SignatureByPublicKeyHash(publicKeyBuffer);
+      case IdentityPublicKey.TYPES.BIP13_SCRIPT_HASH:
+        return this.verifyBIP13ScriptHashSignatureByPublicKeyHash(publicKeyBuffer);
       case IdentityPublicKey.TYPES.ECDSA_SECP256K1:
         return this.verifyECDSASignatureByPublicKey(PublicKey.fromBuffer(publicKeyBuffer));
       case IdentityPublicKey.TYPES.BLS12_381: {
