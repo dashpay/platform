@@ -5,7 +5,7 @@ use lazy_static::lazy_static;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::{collections::HashMap, hash::Hash};
 
-pub type KeyID = i64;
+pub type KeyID = u64;
 
 #[repr(u8)]
 #[derive(Debug, PartialEq, Eq, Clone, Copy, Serialize, Deserialize)]
@@ -36,7 +36,7 @@ pub enum SecurityLevel {
 }
 
 lazy_static! {
-    static ref ALLOWED_SECURITY_LEVELS: HashMap<Purpose, Vec<SecurityLevel>> = {
+    pub static ref ALLOWED_SECURITY_LEVELS: HashMap<Purpose, Vec<SecurityLevel>> = {
         let mut m = HashMap::new();
         m.insert(
             Purpose::AUTHENTICATION,
@@ -177,6 +177,10 @@ impl IdentityPublicKey {
         // TODO: hash the key
         Ok(original_key.serialize().to_vec())
     }
+
+    pub fn data_as_arr_33(&self) -> Result<[u8; 33], ArrayConversionError> {
+        vec_to_array_33(&self.data)
+    }
 }
 
 fn vec_to_array(vec: &Vec<u8>) -> [u8; 65] {
@@ -185,6 +189,40 @@ fn vec_to_array(vec: &Vec<u8>) -> [u8; 65] {
         v[i] = *vec.get(i).unwrap();
     }
     v
+}
+
+pub struct ArrayConversionError {
+    expected_size: usize,
+    actual_size: usize,
+}
+
+impl ArrayConversionError {
+    pub fn new(expected_size: usize, actual_size: usize) -> Self {
+        Self { expected_size, actual_size }
+    }
+
+    pub fn expected_size(&self) -> usize {
+        self.expected_size
+    }
+
+    pub fn actual_size(&self) -> usize {
+        self.actual_size
+    }
+}
+
+fn vec_to_array_33(vec: &Vec<u8>) -> Result<[u8; 33], ArrayConversionError> {
+    if vec.len() != 33 {
+        return Err(ArrayConversionError::new(33, vec.len()));
+    }
+    let mut v: [u8; 33] = [0; 33];
+    for i in 0..33 {
+        if let Some(n) = vec.get(i) {
+            v[i] = *n;
+        } else {
+            return Err(ArrayConversionError::new(33, vec.len()));
+        }
+    }
+    Ok(v)
 }
 
 pub fn de_base64_to_vec<'de, D: Deserializer<'de>>(d: D) -> Result<Vec<u8>, D::Error> {
