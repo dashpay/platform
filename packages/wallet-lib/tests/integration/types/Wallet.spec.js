@@ -14,7 +14,7 @@ const LocalForageAdapterMock = require("../../../src/test/mocks/LocalForageAdapt
 const createAndAttachTransportMocksToWallet = require("../../../src/test/mocks/createAndAttachTransportMocksToWallet");
 const {sleepOneTick} = require("../../../src/test/utils");
 
-describe.skip('Wallet', () => {
+describe('Wallet', () => {
   describe('Storage', () => {
     let wallet;
     let txStreamMock;
@@ -46,15 +46,13 @@ describe.skip('Wallet', () => {
 
     /**
      * In this scenario we have a fresh wallet that receives a funding transaction
-     * and sends a transaction in his own
+     * and sends a transaction on his own
      */
     it('should fill the storage for a fresh wallet', async function() {
       const account = await wallet.getAccount();
       const { address: addressToFund } = account.getUnusedAddress();
 
-      /**
-       * Define a scenario
-       */
+      /** Define a scenario */
       const scenario = {
         transactions: {
           fundingTx: new Transaction().to(addressToFund, 10000),
@@ -91,32 +89,24 @@ describe.skip('Wallet', () => {
         }
       })
 
-      /**
-       * Start transactions sync plugin
-       */
+      /** Start transactions sync plugin */
       txStreamWorker.onStart();
       await sleepOneTick();
 
-      /**
-       * Send funding transaction to the wallet
-       */
+      /** Send funding transaction to the wallet */
       const { fundingTx } = scenario.transactions;
       txStreamMock.sendTransactions([fundingTx]);
       await wallet.storage.saveState();
 
-      /**
-       * Ensure that storage has no items for transactions without the metadata
-       */
+      /** Ensure that storage has no items for transactions without the metadata */
       let chainStoreState = storageAdapterMock.getItem('chains')[wallet.network];
       let walletStoreState = storageAdapterMock.getItem('wallets')[wallet.walletId]
       expect(chainStoreState.transactions).to.be.empty;
       expect(chainStoreState.txMetadata).to.be.empty;
       expect(chainStoreState.blockHeaders).to.be.empty;
-      expect(walletStoreState.lastKnownBlock.height).to.equal(1)
+      expect(walletStoreState.lastKnownBlock.height).to.equal(-1)
 
-      /**
-       * Wait for transactions metadata
-       */
+      /** Wait for transactions metadata */
       await sleepOneTick();
 
       /**
@@ -125,14 +115,7 @@ describe.skip('Wallet', () => {
        */
       transportMock.emit(EVENTS.BLOCKHEIGHT_CHANGED, { payload: 43 })
 
-      /**
-       * End historical sync
-       */
-      txStreamMock.finish();
-
-      /**
-       * Wait for blockheight propagates to the storage
-       */
+      /** Wait for blockheight propagates to the storage */
       await sleepOneTick();
 
       await wallet.storage.saveState();
@@ -148,20 +131,26 @@ describe.skip('Wallet', () => {
       expect(chainStoreState.blockHeaders[scenario.blockHeaders[0].hash]).to.exist;
       expect(walletStoreState.lastKnownBlock.height).to.equal(10)
 
-      /**
-       * Start continuous sync
-       */
+      /** End historical sync */
+      txStreamMock.finish();
+      await sleepOneTick();
+
+      /** Ensure that best block is set as last known block */
+      await wallet.storage.saveState();
+      walletStoreState = storageAdapterMock.getItem('wallets')[wallet.walletId]
+      expect(walletStoreState.lastKnownBlock.height).to.equal(42)
+
+      /** Start continuous sync */
       txStreamWorker.execute()
       await sleepOneTick();
 
-      /**
-       * Broadcast transaction from the wallet
-       */
+      /** Broadcast transaction from the wallet */
       const sendTx = account.createTransaction({
         recipient: new PrivateKey().toAddress(),
         satoshis: 1000
       });
       await account.broadcastTransaction(sendTx)
+
       txStreamMock.sendTransactions([sendTx]);
       Object.assign(scenario.metadata, {
         [sendTx.hash]: {
@@ -171,10 +160,13 @@ describe.skip('Wallet', () => {
         }
       })
 
-      /**
-       * Wait for sendTx metadata arrives to the storage
-       */
+      /** Wait for sendTx metadata arrives to the storage */
       await sleepOneTick();
+
+      /** Ensure that sendTx height is set as last known block height */
+      await wallet.storage.saveState();
+      walletStoreState = storageAdapterMock.getItem('wallets')[wallet.walletId]
+      expect(walletStoreState.lastKnownBlock.height).to.equal(43)
 
       /**
        * Emit one more BLOCKHEIGHT_CHANGE event to ensure that it's value will be saved
@@ -184,7 +176,6 @@ describe.skip('Wallet', () => {
       await sleepOneTick();
 
       await wallet.storage.saveState();
-
       chainStoreState = storageAdapterMock.getItem('chains')[wallet.network];
       walletStoreState = storageAdapterMock.getItem('wallets')[wallet.walletId]
 
@@ -196,12 +187,6 @@ describe.skip('Wallet', () => {
       expect(Object.keys(chainStoreState.txMetadata)).to.have.lengthOf(2)
       expect(Object.keys(chainStoreState.blockHeaders)).to.have.lengthOf(2)
       expect(walletStoreState.lastKnownBlock.height).to.equal(44)
-
-
-      // Ensure:
-      // - transactions without metadata are not saved
-      // - last known block equals to chain height
-      // - make sure storage integrity is intact
     })
 
     it('should fill storage for imported wallet', ()  => {
