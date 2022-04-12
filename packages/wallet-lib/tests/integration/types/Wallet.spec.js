@@ -44,7 +44,9 @@ describe('Wallet', () => {
 
     /**
      * In this scenario we have a fresh wallet that receives a funding transaction
-     * and sends a transaction on his own
+     * and sends a transaction on his own.
+     * Points to check:
+     * - subscr
      */
     it('should fill the storage for a fresh wallet', async function() {
       const account = await wallet.getAccount();
@@ -58,16 +60,16 @@ describe('Wallet', () => {
         blockHeaders: [
           new BlockHeader({
             version: 1,
-            prevHash: '0x0000000000000000000000000000000000000000000000000000000000000000',
-            merkleRoot: '0x0000000000000000000000000000000000000000000000000000000000000000',
+            prevHash: '0000000000000000000000000000000000000000000000000000000000000000',
+            merkleRoot: '0000000000000000000000000000000000000000000000000000000000000000',
             time: Date.now() / 1000,
             bits: 0,
             nonce: 0,
           }),
           new BlockHeader({
             version: 1,
-            prevHash: '0x0000000000000000000000000000000000000000000000000000000000000001',
-            merkleRoot: '0x0000000000000000000000000000000000000000000000000000000000000000',
+            prevHash: '0000000000000000000000000000000000000000000000000000000000000001',
+            merkleRoot: '0000000000000000000000000000000000000000000000000000000000000000',
             time: Date.now() / 1000,
             bits: 1,
             nonce: 1,
@@ -76,6 +78,7 @@ describe('Wallet', () => {
         metadata: {}
       }
 
+      transportMock.getBestBlockHeight.returns(42);
       transportMock.getTransaction.callsFake(async (hash) => scenario.metadata[hash])
       transportMock.getBlockHeaderByHash.callsFake(async hash => scenario.blockHeaders.find(header => header.hash === hash))
 
@@ -195,39 +198,97 @@ describe('Wallet', () => {
       expect(walletStoreState.lastKnownBlock.height).to.equal(44)
     })
 
-    it('should fill storage for imported wallet', ()  => {
-      // Import mnemonic to the wallet
-      //
-      // Wait for historical sync completes
-      //
-      // Ensure:
-      // - storage integrity intact
-      // - last known block equals to the chain height on the startup
-    })
+    /**
+     * In this scenario we have a wallet that picks part of the data from the storage
+     * and then sends a new transaction to the network
+     */
+    it('should ensure synchronization from last known block for wallet with storage', async ()  => {
+      const scenario = {
+        blockHeaders: [
+          new BlockHeader({
+            version: 1,
+            prevHash: '0000000000000000000000000000000000000000000000000000000000000002',
+            merkleRoot: '0000000000000000000000000000000000000000000000000000000000000000',
+            time: Date.now() / 1000,
+            bits: 0,
+            nonce: 0,
+          }),
+        ],
+        metadata: {}
+      }
 
-    it('should fill storage for imported wallet and emit couple of transactions', () => {
-      // Import mnemomic to the wallet
-      //
-      // Wait for historical sync completes
-      //
-      // Start continuous sync
-      //
-      // Ensure:
-      // - storage integrity
-      // - Calls to corresponding save state with the required arguments:
-      //    - During the historical sync, only with TX metadata values
-      //    - During the continuous sync, with chain height
-    })
+      transportMock.getTransaction.callsFake(async (hash) => scenario.metadata[hash])
+      transportMock.getBestBlockHeight.returns(50);
+      transportMock.getBlockHeaderByHash
+        .callsFake(async hash => scenario.blockHeaders.find(header => header.hash === hash))
 
-    it('should do sync from the last known block', () => {
-      // Have a storage with data prior to the last known block
-      // Ensure it's integrity
-      //
-      // Start downloading new blocks
-      //
-      // Wait for finish
-      //
-      // Ensure that integrity is intact
+      /** Initialize account */
+      const account = await wallet.getAccount();
+
+      const walletStore = account.storage.getWalletStore(wallet.walletId);
+      const chainStore = account.storage.getChainStore(wallet.network);
+
+      /** Ensure that storage contains transaction and relevant chain data */
+      expect(chainStore.state.transactions.size).to.equal(2);
+      expect(chainStore.state.blockHeaders.size).to.equal(2)
+      expect(walletStore.state.lastKnownBlock.height).to.equal(44)
+
+      /** Start transactions sync plugin */
+      txStreamWorker.onStart();
+      await sleepOneTick();
+
+      /** Ensure that historical synchronization starts from last known block */
+      expect(transportMock.subscribeToTransactionsWithProofs.lastCall.args[1])
+        .to.deep.equal({ fromBlockHeight: 44, count: 6 });
+
+      /** End historical sync */
+      txStreamMock.finish();
+      await sleepOneTick();
+
+      /** Ensure that best block is set as last known block */
+      await wallet.storage.saveState();
+      let walletStoreState = storageAdapterMock.getItem('wallets')[wallet.walletId]
+      expect(walletStoreState.lastKnownBlock.height).to.equal(50)
+
+      /** Start continuous sync */
+      txStreamWorker.execute()
+      await sleepOneTick();
+
+      /** Ensure proper transport arguments */
+      expect(transportMock.subscribeToTransactionsWithProofs.lastCall.args[1])
+        .to.deep.equal({ fromBlockHeight: 50, count: 0 });
+
+      /** Broadcast transaction from the wallet */
+      const sendTx = account.createTransaction({
+        recipient: new PrivateKey().toAddress(),
+        satoshis: 1000
+      });
+      await account.broadcastTransaction(sendTx)
+
+      txStreamMock.sendTransactions([sendTx]);
+      Object.assign(scenario.metadata, {
+        [sendTx.hash]: {
+          transaction: sendTx,
+          height: 51,
+          blockHash: scenario.blockHeaders[0].hash
+        }
+      })
+
+      /** Wait for sendTx metadata arrives to the storage */
+      await sleepOneTick();
+
+      /**
+       * Ensure that storage have been updated with the latest
+       * transaction and relevant chain data
+       */
+      await wallet.storage.saveState();
+      walletStoreState = storageAdapterMock.getItem('wallets')[wallet.walletId]
+      const chainStoreState = storageAdapterMock.getItem('chains')[wallet.network];
+
+      expect(Object.keys(chainStoreState.transactions)).to.have.lengthOf(3)
+      expect(Object.keys(chainStoreState.txMetadata)).to.have.lengthOf(3)
+      expect(Object.keys(chainStoreState.blockHeaders)).to.have.lengthOf(3)
+      expect(walletStoreState.lastKnownBlock.height).to.equal(51)
     })
   })
 })
