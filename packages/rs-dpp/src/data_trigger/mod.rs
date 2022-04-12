@@ -14,10 +14,11 @@ pub use data_trigger_execution_context::*;
 pub use data_trigger_execution_result::*;
 pub use reject_data_trigger::*;
 
-use crate::mocks::{SMLStoreLike, SimplifiedMNListLike};
 use crate::{
-    errors::DataTriggerError, get_from_transition, prelude::Identifier,
-    state_repository::StateRepositoryLike,
+    errors::DataTriggerError,
+    get_from_transition,
+    prelude::Identifier,
+    state_repository::{SMLStoreLike, SimplifiedMNListLike, StateRepositoryLike},
 };
 
 use crate::document::document_transition::{Action, DocumentCreateTransition, DocumentTransition};

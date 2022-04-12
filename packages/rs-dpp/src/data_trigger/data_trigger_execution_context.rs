@@ -1,9 +1,8 @@
 use std::marker::PhantomData;
 
 use crate::{
-    mocks::{SMLStoreLike, SimplifiedMNListLike},
     prelude::{DataContract, Identifier},
-    state_repository::StateRepositoryLike,
+    state_repository::{SMLStoreLike, SimplifiedMNListLike, StateRepositoryLike},
 };
 
 // TODO consider using the reference to the StateRepository instance

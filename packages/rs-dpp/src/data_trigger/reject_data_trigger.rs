@@ -2,8 +2,7 @@ use crate::{
     document::document_transition::DocumentTransition,
     errors::DataTriggerError,
     get_from_transition,
-    mocks::{SMLStoreLike, SimplifiedMNListLike},
-    state_repository::StateRepositoryLike,
+    state_repository::{SMLStoreLike, SimplifiedMNListLike, StateRepositoryLike},
 };
 
 use super::{DataTriggerExecutionContext, DataTriggerExecutionResult};
