@@ -21,14 +21,12 @@ describe('Wallet', () => {
     let txStreamWorker;
     let chainPlugin;
     let transportMock;
-    let storageAdapterMock;
+    let storageAdapterMock = new LocalForageAdapterMock();;
 
     beforeEach(async function() {
       const testHDKey = "xprv9s21ZrQH143K4PgfRZPuYjYUWRZkGfEPuWTEUESMoEZLC274ntC4G49qxgZJEPgmujsmY52eVggtwZgJPrWTMXmbYgqDVySWg46XzbGXrSZ";
       txStreamWorker = new TransactionSyncStreamWorker({ executeOnStart: false });
       chainPlugin = new ChainPlugin({ executeOnStart: false });
-
-      storageAdapterMock = new LocalForageAdapterMock();
 
       wallet = new Wallet({
         offlineMode: true,
@@ -93,6 +91,10 @@ describe('Wallet', () => {
       txStreamWorker.onStart();
       await sleepOneTick();
 
+      /** Ensure proper transport arguments */
+      expect(transportMock.subscribeToTransactionsWithProofs.firstCall.args[1])
+        .to.deep.equal({ fromBlockHeight: 1, count: 41 });
+
       /** Send funding transaction to the wallet */
       const { fundingTx } = scenario.transactions;
       txStreamMock.sendTransactions([fundingTx]);
@@ -143,6 +145,10 @@ describe('Wallet', () => {
       /** Start continuous sync */
       txStreamWorker.execute()
       await sleepOneTick();
+
+      /** Ensure proper transport arguments */
+      expect(transportMock.subscribeToTransactionsWithProofs.lastCall.args[1])
+        .to.deep.equal({ fromBlockHeight: 42, count: 0 });
 
       /** Broadcast transaction from the wallet */
       const sendTx = account.createTransaction({
