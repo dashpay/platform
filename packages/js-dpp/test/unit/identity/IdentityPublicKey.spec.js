@@ -185,6 +185,24 @@ describe('IdentityPublicKey', () => {
       expect(result).to.deep.equal(expectedHash);
     });
 
+    it('should return data in case BIP13_SCRIPT_HASH', () => {
+      rawPublicKey = {
+        id: 0,
+        type: IdentityPublicKey.TYPES.BIP13_SCRIPT_HASH,
+        data: Buffer.from('54c557e07dde5bb6cb791c7a540e0a4796f5e97e', 'hex'),
+        purpose: IdentityPublicKey.PURPOSES.AUTHENTICATION,
+        securityLevel: IdentityPublicKey.SECURITY_LEVELS.MASTER,
+      };
+
+      publicKey = new IdentityPublicKey(rawPublicKey);
+
+      const result = publicKey.hash();
+
+      const expectedHash = Buffer.from('54c557e07dde5bb6cb791c7a540e0a4796f5e97e', 'hex');
+
+      expect(result).to.deep.equal(expectedHash);
+    });
+
     it('should throw invalid argument error if data was not originally provided', async () => {
       publicKey = new IdentityPublicKey({
         id: 0,

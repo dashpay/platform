@@ -1,3 +1,5 @@
+const crypto = require('crypto');
+
 const {
   PublicKey,
   PrivateKey,
@@ -167,7 +169,8 @@ class AbstractStateTransition {
 
     switch (keyType) {
       case IdentityPublicKey.TYPES.ECDSA_SECP256K1:
-      case IdentityPublicKey.TYPES.ECDSA_HASH160: {
+      case IdentityPublicKey.TYPES.ECDSA_HASH160:
+      case IdentityPublicKey.TYPES.BIP13_SCRIPT_HASH: {
         const privateKeyModel = new PrivateKey(privateKey);
 
         this.setSignature(sign(data, privateKeyModel));

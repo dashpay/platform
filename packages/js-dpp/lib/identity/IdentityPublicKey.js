@@ -200,6 +200,7 @@ class IdentityPublicKey {
         return Hash.sha256ripemd160(this.getData());
       }
       case IdentityPublicKey.TYPES.ECDSA_HASH160:
+      case IdentityPublicKey.TYPES.BIP13_SCRIPT_HASH:
         return this.getData();
       default:
         throw new InvalidIdentityPublicKeyTypeError(this.getType());
@@ -267,6 +268,7 @@ IdentityPublicKey.TYPES = {
   ECDSA_SECP256K1: 0,
   BLS12_381: 1,
   ECDSA_HASH160: 2,
+  BIP13_SCRIPT_HASH: 3,
 };
 
 IdentityPublicKey.PURPOSES = {

@@ -226,6 +226,66 @@ describe('validatePublicKeysFactory', () => {
         expect(error.getKeyword()).to.equal('maxItems');
       });
     });
+
+    describe('ECDSA_HASH160', () => {
+      it('should be no less than 20 bytes', () => {
+        rawPublicKeys[1].data = Buffer.alloc(19);
+        rawPublicKeys[1].type = 2;
+
+        const result = validatePublicKeys(rawPublicKeys);
+
+        expectJsonSchemaError(result);
+
+        const [error] = result.getErrors();
+
+        expect(error.getInstancePath()).to.equal('/data');
+        expect(error.getKeyword()).to.equal('minItems');
+      });
+
+      it('should be no longer than 20 bytes', () => {
+        rawPublicKeys[1].data = Buffer.alloc(21);
+        rawPublicKeys[1].type = 2;
+
+        const result = validatePublicKeys(rawPublicKeys);
+
+        expectJsonSchemaError(result);
+
+        const [error] = result.getErrors();
+
+        expect(error.getInstancePath()).to.equal('/data');
+        expect(error.getKeyword()).to.equal('maxItems');
+      });
+    });
+
+    describe('BIP13_SCRIPT_HASH', () => {
+      it('should be no less than 20 bytes', () => {
+        rawPublicKeys[1].data = Buffer.alloc(19);
+        rawPublicKeys[1].type = 3;
+
+        const result = validatePublicKeys(rawPublicKeys);
+
+        expectJsonSchemaError(result);
+
+        const [error] = result.getErrors();
+
+        expect(error.getInstancePath()).to.equal('/data');
+        expect(error.getKeyword()).to.equal('minItems');
+      });
+
+      it('should be no longer than 20 bytes', () => {
+        rawPublicKeys[1].data = Buffer.alloc(21);
+        rawPublicKeys[1].type = 3;
+
+        const result = validatePublicKeys(rawPublicKeys);
+
+        expectJsonSchemaError(result);
+
+        const [error] = result.getErrors();
+
+        expect(error.getInstancePath()).to.equal('/data');
+        expect(error.getKeyword()).to.equal('maxItems');
+      });
+    });
   });
 
   it('should return invalid result if there are duplicate key ids', () => {
@@ -314,6 +374,21 @@ describe('validatePublicKeysFactory', () => {
       securityLevel: 0,
       readOnly: true,
       data: Buffer.from('6086389d3fa4773aa950b8de18c5bd6d8f2b73bc', 'hex'),
+    }];
+
+    const result = validatePublicKeys(rawPublicKeys);
+
+    expect(result.isValid()).to.be.true();
+  });
+
+  it('should pass valid BIP13_SCRIPT_HASH public key', () => {
+    rawPublicKeys = [{
+      id: 0,
+      type: IdentityPublicKey.TYPES.BIP13_SCRIPT_HASH,
+      purpose: 0,
+      securityLevel: 0,
+      readOnly: true,
+      data: Buffer.from('54c557e07dde5bb6cb791c7a540e0a4796f5e97e', 'hex'),
     }];
 
     const result = validatePublicKeys(rawPublicKeys);

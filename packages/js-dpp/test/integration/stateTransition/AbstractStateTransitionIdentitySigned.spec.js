@@ -157,6 +157,21 @@ describe('AbstractStateTransitionIdentitySigned', () => {
       expect(isValid).to.be.true();
     });
 
+    it('should sign data and validate signature with BIP13_SCRIPT_HASH identityPublicKey', async () => {
+      identityPublicKey.setType(IdentityPublicKey.TYPES.BIP13_SCRIPT_HASH);
+      identityPublicKey.setData(
+        Hash.sha256ripemd160(identityPublicKey.getData()),
+      );
+
+      await stateTransition.sign(identityPublicKey, privateKeyHex);
+
+      expect(stateTransition.signature).to.be.an.instanceOf(Buffer);
+
+      const isValid = await stateTransition.verifySignature(identityPublicKey);
+
+      expect(isValid).to.be.true();
+    });
+
     it('should throw an error if we try to sign with wrong public key', async () => {
       const publicKey = new PrivateKey()
         .toPublicKey()
