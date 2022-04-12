@@ -4,7 +4,7 @@
 
 ### Benchmarks
 
-Benchmark configs are located in `benchmarks` directory. New benchmarks can be easily added to `benchmarks/index.js`
+Benchmark configs are located in [benchmarks](./benchmarks) directory. New benchmarks can be easily added to [benchmarks/index.js](./benchmarks/index.js)
 
 At this moment only one type of benchmark is implemented - Documents.
 
