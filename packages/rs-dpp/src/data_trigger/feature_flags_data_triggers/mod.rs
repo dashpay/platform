@@ -4,7 +4,7 @@ use crate::{
     get_from_transition,
     prelude::Identifier,
     state_repository::{SMLStoreLike, SimplifiedMNListLike, StateRepositoryLike},
-    util::{json_value::JsonValueExt, string_encoding::Encoding},
+    util::json_value::JsonValueExt,
 };
 
 use super::{DataTriggerExecutionContext, DataTriggerExecutionResult};
