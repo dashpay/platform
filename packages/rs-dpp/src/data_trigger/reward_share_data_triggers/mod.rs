@@ -1,16 +1,18 @@
 use crate::{
+    data_trigger::new_error,
     document::document_transition::DocumentTransition,
     get_from_transition,
     mocks::{SMLStoreLike, SimplifiedMNListLike},
     prelude::Identifier,
     state_repository::StateRepositoryLike,
-    util::json_value::JsonValueExt,
+    util::{json_value::JsonValueExt, string_encoding::Encoding},
 };
 
 use super::{DataTriggerExecutionContext, DataTriggerExecutionResult};
 use anyhow::{anyhow, bail};
+use serde_json::json;
 
-const MAX_PERCENTAGE: i64 = 10000;
+const MAX_PERCENTAGE: u64 = 10000;
 const PROPERTY_PAY_TO_ID: &str = "payToId";
 const PROPERTY_PERCENTAGE: &str = "percentage";
 
@@ -24,7 +26,9 @@ where
     S: SMLStoreLike<L>,
     SR: StateRepositoryLike<S, L>,
 {
-    let result = DataTriggerExecutionResult::default();
+    let mut result = DataTriggerExecutionResult::default();
+    let owner_id = context.owner_id.to_string(Encoding::Base58);
+
     let dt_create = match document_transition {
         DocumentTransition::Create(d) => d,
         _ => bail!(
@@ -40,12 +44,57 @@ where
     })?;
 
     let pay_to_id = data.get_string(PROPERTY_PAY_TO_ID)?;
-    //TODO? should this be a float or integer
-    let percentage = data.get_i64(PROPERTY_PERCENTAGE)?;
+    let percentage = data.get_u64(PROPERTY_PERCENTAGE)?;
 
     // Do not allow creating document if ownerId is not in SML
     let sml_store = context.state_repository.fetch_sml_store().await?;
     let valid_master_nodes_list = sml_store.get_current_sml()?.get_valid_master_nodes();
 
-    unimplemented!()
+    let owner_id_in_sml = valid_master_nodes_list.iter().any(|entry| {
+        hex::decode(&entry.pro_reg_tx_hash).expect("invalid hex value")
+            == context.owner_id.to_buffer()
+    });
+
+    if !owner_id_in_sml {
+        let err = new_error(
+            context,
+            dt_create,
+            "Only masternode identities can share rewards".to_string(),
+        );
+        result.add_error(err.into());
+    }
+
+    // payToId identity exists
+    let pay_to_identifier = Identifier::from_string(pay_to_id, Encoding::Base58)?;
+    context
+        .state_repository
+        .fetch_identity(&pay_to_identifier)
+        .await?;
+
+    let documents = context
+        .state_repository
+        .fetch_documents(
+            &context.data_contract.id,
+            &dt_create.base.document_type,
+            json!({
+                "where" : [ [ "$owner_id", "==", owner_id ]]
+            }),
+        )
+        .await?;
+
+    let mut total_percent: u64 = percentage;
+    for d in documents.iter() {
+        total_percent += d.data.get_u64(PROPERTY_PERCENTAGE)?;
+    }
+
+    if total_percent > MAX_PERCENTAGE {
+        let err = new_error(
+            context,
+            dt_create,
+            format!("Percentage can not be more than {}", MAX_PERCENTAGE),
+        );
+        result.add_error(err.into());
+    }
+
+    Ok(result)
 }
