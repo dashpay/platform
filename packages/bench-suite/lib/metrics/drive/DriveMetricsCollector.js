@@ -2,7 +2,7 @@ const readline = require('readline');
 const events = require('events');
 const fs = require('fs');
 
-class MetricsCollector extends events.EventEmitter {
+class DriveMetricsCollector extends events.EventEmitter {
   /**
    * @type {string}
    */
@@ -67,4 +67,4 @@ class MetricsCollector extends events.EventEmitter {
   }
 }
 
-module.exports = MetricsCollector;
+module.exports = DriveMetricsCollector;

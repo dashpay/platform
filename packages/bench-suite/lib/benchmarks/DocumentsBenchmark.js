@@ -88,7 +88,7 @@ class DocumentsBenchmark extends AbstractBenchmark {
   /**
    * Print metrics
    */
-  printMetrics() {
+  printResults() {
     const overall = [];
     const validateBasic = [];
     const validateFee = [];

@@ -45,7 +45,7 @@ class AbstractBenchmark {
   /**
    * @abstract
    */
-  printMetrics() {
+  printResults() {
 
   }
 }

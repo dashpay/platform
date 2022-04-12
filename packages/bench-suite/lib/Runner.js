@@ -2,7 +2,7 @@ const Mocha = require('mocha');
 
 const setupContext = require('./setupContext');
 
-const MetricsCollector = require('./metrics/MetricsCollector');
+const DriveMetricsCollector = require('./metrics/drive/DriveMetricsCollector');
 
 const BENCHMARKS = require('./benchmarks');
 
@@ -18,9 +18,9 @@ class Runner {
   #options;
 
   /**
-   * @type {MetricsCollector}
+   * @type {DriveMetricsCollector}
    */
-  #metricsCollector;
+  #driveMetricsCollector;
 
   /**
    * @type {AbstractBenchmark[]}
@@ -41,7 +41,7 @@ class Runner {
       bail: true,
     });
 
-    this.#metricsCollector = new MetricsCollector(options.driveLogPath);
+    this.#driveMetricsCollector = new DriveMetricsCollector(options.driveLogPath);
   }
 
   /**
@@ -58,7 +58,7 @@ class Runner {
         throw new Error(`Invalid benchmark type ${benchmarkConfig.type}`);
       }
 
-      const benchmark = new BenchmarkClass(benchmarkConfig, this.#metricsCollector);
+      const benchmark = new BenchmarkClass(benchmarkConfig, this.#driveMetricsCollector);
 
       this.#mocha.suite.addSuite(
         benchmark.createMochaTestSuite(this.#mocha.suite.ctx),
@@ -81,15 +81,18 @@ class Runner {
         return;
       }
 
-      // Print metrics
+      // Collect metrics from Drive logs
       this.#benchmarks.forEach((benchmark) => {
-        this.#metricsCollector.addMatches(benchmark.getMetricMatches());
+        if (benchmark.getMetricMatches) {
+          this.#driveMetricsCollector.addMatches(benchmark.getMetricMatches());
+        }
       });
 
-      await this.#metricsCollector.collect();
+      await this.#driveMetricsCollector.collect();
 
+      // Print results
       this.#benchmarks.forEach((benchmark) => {
-        benchmark.printMetrics();
+        benchmark.printResults();
       });
     });
   }

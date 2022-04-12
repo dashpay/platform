@@ -47,7 +47,7 @@ module.exports = {
     });
   },
 
-  requiredCredits: 100000,
+  requiredCredits: 50000,
 
   // https://mathjs.org/docs/reference/functions.html#statistics-functions
   avgFunction: 'mean',
