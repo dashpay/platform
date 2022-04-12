@@ -19,7 +19,7 @@ module.exports = async function startHistoricalSync(network) {
   const bestBlockHeight = await this.getBestBlockHeightFromTransport();
   const lastSyncedBlockHeight = await this.getLastSyncedBlockHeight();
   const fromBlockHeight = lastSyncedBlockHeight > 0 ? lastSyncedBlockHeight : 1;
-  const count = bestBlockHeight - fromBlockHeight;
+  const count = bestBlockHeight - fromBlockHeight || 1;
   const start = +new Date();
 
   try {
@@ -54,7 +54,7 @@ module.exports = async function startHistoricalSync(network) {
       pluginName: this.name,
     });
   }
-
+  console.log('[Historical sync] Finished in', +new Date() - start, 'ms');
   this.setLastSyncedBlockHeight(bestBlockHeight, true);
 
   logger.debug(`TransactionSyncStreamWorker - HistoricalSync - Synchronized ${count} in ${+new Date() - start}ms`);
