@@ -147,15 +147,6 @@ where
     }
 }
 
-pub struct SMLEntry {
-    pub pro_reg_tx_hash: String,
-    pub confirmed_hash: String,
-    pub service: String,
-    pub pub_key_operator: String,
-    pub voting_address: String,
-    pub is_valid: bool,
-}
-
 pub struct SimplifiedMNListMock {}
 
 impl SimplifiedMNListLike for SimplifiedMNListMock {}
