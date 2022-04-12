@@ -1,15 +1,15 @@
 const IdentityPublicKey = require('@dashevo/dpp/lib/identity/IdentityPublicKey');
-const Script = require('@dashevo/dashcore-lib/lib/script');
+const identitySchema = require('@dashevo/dpp/schema/identity/identity.json');
 
 /**
  *
  * @param {DriveStateRepository|CachedStateRepositoryDecorator} transactionalStateRepository
- * @param {string} network
+ * @param {getWithdrawPubKeyTypeFromPayoutScript} getWithdrawPubKeyTypeFromPayoutScript
  * @returns {handleUpdatedScriptPayout}
  */
 function handleUpdatedScriptPayoutFactory(
   transactionalStateRepository,
-  network,
+  getWithdrawPubKeyTypeFromPayoutScript,
 ) {
   /**
    * @typedef handleUpdatedScriptPayout
@@ -24,13 +24,16 @@ function handleUpdatedScriptPayoutFactory(
     previousPubKeyData,
   ) {
     const identity = await transactionalStateRepository.fetchIdentity(identityId);
-    identity.setRevision(identity.getRevision() + 1); // ????
+    identity.setRevision(identity.getRevision() + 1);
     let identityPublicKeys = identity
       .getPublicKeys();
 
-    const maxId = identityPublicKeys.reduce(
-      (result, pk) => (result > pk.getId() ? result : pk.getId()), 0,
-    );
+    if (identityPublicKeys.length === identitySchema.properties.publicKeys.maxItems) {
+      // do not add new public key
+      return;
+    }
+
+    const maxId = identity.getPublicKeyById();
 
     // disable previous
     identityPublicKeys = identityPublicKeys.map((pk) => {
@@ -42,11 +45,7 @@ function handleUpdatedScriptPayoutFactory(
     });
 
     // add new
-    const script = new Script(newPubKeyData);
-
-    const withdrawPubKeyType = script.toAddress(network).isPayToScriptHash()
-      ? IdentityPublicKey.TYPES.BIP13_SCRIPT_HASH
-      : IdentityPublicKey.TYPES.ECDSA_HASH160;
+    const withdrawPubKeyType = getWithdrawPubKeyTypeFromPayoutScript(newPubKeyData);
 
     const newWithdrawalIdentityPublicKey = new IdentityPublicKey()
       .setId(maxId + 1)

@@ -1,19 +1,17 @@
 const IdentityPublicKey = require('@dashevo/dpp/lib/identity/IdentityPublicKey');
 const Identity = require('@dashevo/dpp/lib/identity/Identity');
-const Script = require('@dashevo/dashcore-lib/lib/script');
 const InvalidMasternodeIdentityError = require('./errors/InvalidMasternodeIdentityError');
-const InvalidPayoutScriptError = require('./errors/InvalidPayoutScriptError');
 
 /**
  * @param {DashPlatformProtocol} dpp
  * @param {DriveStateRepository|CachedStateRepositoryDecorator} transactionalStateRepository
- * @param {string} network
+ * @param {getWithdrawPubKeyTypeFromPayoutScript} getWithdrawPubKeyTypeFromPayoutScript
  * @return {createMasternodeIdentity}
  */
 function createMasternodeIdentityFactory(
   dpp,
   transactionalStateRepository,
-  network,
+  getWithdrawPubKeyTypeFromPayoutScript,
 ) {
   /**
    * @typedef createMasternodeIdentity
@@ -29,16 +27,7 @@ function createMasternodeIdentityFactory(
     pubKeyType,
     payoutScript,
   ) {
-    const address = new Script(payoutScript).toAddress(network);
-
-    let withdrawPubKeyType;
-    if (address.isPayToScriptHash()) {
-      withdrawPubKeyType = IdentityPublicKey.TYPES.BIP13_SCRIPT_HASH;
-    } else if (address.isPayToPublicKeyHash()) {
-      withdrawPubKeyType = IdentityPublicKey.TYPES.ECDSA_HASH160;
-    } else {
-      throw new InvalidPayoutScriptError(payoutScript);
-    }
+    const withdrawPubKeyType = getWithdrawPubKeyTypeFromPayoutScript(payoutScript);
 
     const identity = new Identity({
       protocolVersion: dpp.getProtocolVersion(),

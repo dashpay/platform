@@ -211,4 +211,34 @@ describe('Identity', () => {
       expect(identity.getMetadata()).to.deep.equal(metadataFixture);
     });
   });
+
+  describe('#getPublicKeyMaxId', () => {
+    it('should get the biggest public key ID', () => {
+      identity.publicKeys.push(
+        new IdentityPublicKey({
+          id: 99,
+          type: IdentityPublicKey.TYPES.ECDSA_SECP256K1,
+          data: Buffer.alloc(36).fill('a'),
+          purpose: IdentityPublicKey.PURPOSES.AUTHENTICATION,
+          securityLevel: IdentityPublicKey.SECURITY_LEVELS.MASTER,
+          readOnly: false,
+        }),
+        new IdentityPublicKey({
+          id: 50,
+          type: IdentityPublicKey.TYPES.ECDSA_SECP256K1,
+          data: Buffer.alloc(36).fill('a'),
+          purpose: IdentityPublicKey.PURPOSES.AUTHENTICATION,
+          securityLevel: IdentityPublicKey.SECURITY_LEVELS.MASTER,
+          readOnly: false,
+        }),
+      );
+
+      const maxId = identity.getPublicKeyMaxId();
+
+      const publicKeyIds = identity.getPublicKeys().map((publicKey) => publicKey.getId());
+
+
+      expect(Math.max(...publicKeyIds)).to.equal(maxId);
+    });
+  });
 });
