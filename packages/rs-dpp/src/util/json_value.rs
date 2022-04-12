@@ -26,6 +26,7 @@ pub trait JsonValueExt {
     fn get_string(&self, property_name: &str) -> Result<&String, anyhow::Error>;
     fn get_i64(&self, property_name: &str) -> Result<i64, anyhow::Error>;
     fn get_f64(&self, property_name: &str) -> Result<f64, anyhow::Error>;
+    fn get_u64(&self, property_name: &str) -> Result<u64, anyhow::Error>;
     fn get_bytes(&self, property_name: &str) -> Result<Vec<u8>, anyhow::Error>;
     fn get_value_mut(&mut self, string_path: &str) -> Result<&mut JsonValue, anyhow::Error>;
     fn get_value(&self, string_path: &str) -> Result<&JsonValue, anyhow::Error>;
@@ -41,6 +42,19 @@ impl JsonValueExt for JsonValue {
             return Ok(s);
         }
         bail!("{:?} isn't a string", property_value);
+    }
+
+    fn get_u64(&self, property_name: &str) -> Result<u64, anyhow::Error> {
+        let property_value = self
+            .get(property_name)
+            .ok_or_else(|| anyhow!("the property {} doesn't exist in Json Value", property_name))?;
+
+        if let JsonValue::Number(s) = property_value {
+            return Ok(s
+                .as_u64()
+                .ok_or_else(|| anyhow!("unable convert {} to u32", s))?);
+        }
+        bail!("{:?} isn't a number", property_value);
     }
 
     fn get_i64(&self, property_name: &str) -> Result<i64, anyhow::Error> {
