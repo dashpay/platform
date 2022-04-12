@@ -22,7 +22,7 @@ module.exports = {
   documentTypes: {
     plain: {
       type: 'object',
-      properties: createProperties(10, {
+      properties: createProperties(100, {
         type: 'string',
         maxLength: 63,
       }),
@@ -30,7 +30,7 @@ module.exports = {
     },
     regexp: {
       type: 'object',
-      properties: createProperties(10, {
+      properties: createProperties(100, {
         type: 'string',
         pattern: '^[a-zA-Z0-9][a-zA-Z0-9-]{0,61}[a-zA-Z0-9]$',
         maxLength: 63,
@@ -39,8 +39,8 @@ module.exports = {
     },
     indices: {
       type: 'object',
-      indices: createIndices(10),
-      properties: createProperties(10, {
+      indices: createIndices(100),
+      properties: createProperties(100, {
         type: 'string',
         maxLength: 63,
       }),
@@ -48,8 +48,8 @@ module.exports = {
     },
     uniqueIndices: {
       type: 'object',
-      indices: createIndices(10, true),
-      properties: createProperties(10, {
+      indices: createIndices(100, true),
+      properties: createProperties(100, {
         type: 'string',
         maxLength: 63,
       }),
