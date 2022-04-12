@@ -132,7 +132,7 @@ class DocumentsBenchmark extends AbstractBenchmark {
     });
 
     // eslint-disable-next-line no-console
-    console.log(`\n\n${this.#documentCounts[documentType]} "${documentType}" documents:`);
+    console.log(`\n\n${this.#documentCounts[documentType]} "${documentType}" documents published and ${metrics.length} metrics collected:`);
 
     const table = new Table({
       columns: [
@@ -145,7 +145,16 @@ class DocumentsBenchmark extends AbstractBenchmark {
       ],
     });
 
-    if (!this.config.avgOnly) {
+    if (this.config.avgOnly) {
+      table.addRow({
+        overall: '...',
+        validateBasic: '...',
+        validateFee: '...',
+        validateSignature: '...',
+        validateState: '...',
+        apply: '...',
+      });
+    } else {
       table.addRows(metrics);
     }
 
