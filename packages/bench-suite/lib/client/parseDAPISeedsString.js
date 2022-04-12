@@ -1,6 +1,6 @@
 /**
  * @param {string} seedsString
- * @returns {*}
+ * @returns {{host: string, httpPort: string, grpcPort: string}[]}
  */
 function parseDAPISeedsString(seedsString) {
   return seedsString
