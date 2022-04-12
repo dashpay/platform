@@ -2,12 +2,13 @@ const crypto = require('crypto');
 
 const TYPES = require('../../lib/benchmarks/types');
 
+const createIndices = require('../../lib/util/createIndices');
 const createProperties = require('../../lib/util/createProperties');
 
 let documents;
 
 module.exports = {
-  title: '100 Strings',
+  title: '100 Indices',
 
   type: TYPES.DOCUMENTS,
 
@@ -21,16 +22,35 @@ module.exports = {
   documentTypes: {
     plain: {
       type: 'object',
-      properties: createProperties(100, {
+      properties: createProperties(10, {
         type: 'string',
+        maxLength: 63,
       }),
       additionalProperties: false,
     },
-    regexps100: {
+    regexp: {
       type: 'object',
-      properties: createProperties(100, {
+      properties: createProperties(10, {
         type: 'string',
         pattern: '^[a-zA-Z0-9][a-zA-Z0-9-]{0,61}[a-zA-Z0-9]$',
+        maxLength: 63,
+      }),
+      additionalProperties: false,
+    },
+    indices: {
+      type: 'object',
+      indices: createIndices(10),
+      properties: createProperties(10, {
+        type: 'string',
+        maxLength: 63,
+      }),
+      additionalProperties: false,
+    },
+    uniqueIndices: {
+      type: 'object',
+      indices: createIndices(10, true),
+      properties: createProperties(10, {
+        type: 'string',
         maxLength: 63,
       }),
       additionalProperties: false,

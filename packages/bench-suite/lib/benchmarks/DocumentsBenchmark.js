@@ -11,9 +11,9 @@ const Match = require('../metrics/Match');
 
 class DocumentsBenchmark extends AbstractBenchmark {
   /**
-   * @type {Object[]}
+   * @type {Object}
    */
-  #metrics = [];
+  #metrics = {};
 
   /**
    * @param {Context} context
@@ -26,7 +26,9 @@ class DocumentsBenchmark extends AbstractBenchmark {
 
     suite.timeout(650000);
 
-    const documentTypes = this.config.documentTypes();
+    const documentTypes = typeof this.config.documentTypes === 'function'
+      ? this.config.documentTypes()
+      : this.config.documentTypes;
 
     suite.beforeAll('Publish Data Contract', async () => {
       const dataContract = await context.dash.platform.contracts.create(
@@ -72,7 +74,11 @@ class DocumentsBenchmark extends AbstractBenchmark {
             txType: stateTransition.getType(),
             abciMethod: 'deliverTx',
           }, (data) => {
-            this.#metrics.push(data.timings);
+            if (!this.#metrics[documentType]) {
+              this.#metrics[documentType] = [];
+            }
+
+            this.#metrics[documentType].push(data.timings);
           });
 
           this.matches.push(match);
@@ -89,6 +95,15 @@ class DocumentsBenchmark extends AbstractBenchmark {
    * Print metrics
    */
   printResults() {
+    // eslint-disable-next-line no-console
+    console.log(`\n\n${this.config.title}\n${'-'.repeat(this.config.title.length)}`);
+
+    Object.entries(this.#metrics).forEach(([documentType, metrics]) => {
+      this.#printDocumentTypeMetrics(documentType, metrics);
+    });
+  }
+
+  #printDocumentTypeMetrics(documentType, metrics) {
     const overall = [];
     const validateBasic = [];
     const validateFee = [];
@@ -96,7 +111,7 @@ class DocumentsBenchmark extends AbstractBenchmark {
     const validateState = [];
     const apply = [];
 
-    this.#metrics.forEach((metric) => {
+    metrics.forEach((metric) => {
       overall.push(metric.overall);
       validateBasic.push(metric.validateBasic);
       validateFee.push(metric.validateFee);
@@ -106,7 +121,7 @@ class DocumentsBenchmark extends AbstractBenchmark {
     });
 
     // eslint-disable-next-line no-console
-    console.log(`\n\n${this.config.title}`);
+    console.log(`\n\n${metrics.length} "${documentType}" documents:`);
 
     const table = new Table({
       columns: [
@@ -119,7 +134,9 @@ class DocumentsBenchmark extends AbstractBenchmark {
       ],
     });
 
-    table.addRows(this.#metrics);
+    if (!this.config.avgOnly) {
+      table.addRows(metrics);
+    }
 
     const avgFunction = mathjs[this.config.avgFunction];
 
