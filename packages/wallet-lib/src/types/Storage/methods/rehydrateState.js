@@ -21,6 +21,7 @@ const castItemTypes = (item, schema) => {
         }
 
         // eslint-disable-next-line no-param-reassign
+        // todo typeof
         if (!(['string', 'number'].includes(schemaValue))) {
           item[schemaKey] = new Clazz(item[schemaKey]);
         }
@@ -45,9 +46,9 @@ const rehydrateState = async function rehydrateState() {
       if (this.adapter && hasMethod(this.adapter, 'getItem')) {
         const wallets = await this.adapter.getItem('wallets');
         if (wallets) {
-          Object.keys(wallets).forEach((walletId) => {
-            castItemTypes(wallets[walletId], WalletStore.SCHEMA)
+          castItemTypes(wallets, WalletStore.SCHEMA)
 
+          Object.keys(wallets).forEach((walletId) => {
             const walletStore = this.getWalletStore(walletId);
             if (walletStore) {
               walletStore.importState(wallets[walletId]);
@@ -57,9 +58,9 @@ const rehydrateState = async function rehydrateState() {
 
         const chains = await this.adapter.getItem('chains');
         if (chains) {
-          Object.keys(chains).forEach((chainNetwork) => {
-            castItemTypes(chains[chainNetwork], ChainStore.SCHEMA)
+          castItemTypes(chains, ChainStore.SCHEMA)
 
+          Object.keys(chains).forEach((chainNetwork) => {
             const chainStore = this.getChainStore(chainNetwork);
             if (chainStore) {
               chainStore.importState(chains[chainNetwork]);
