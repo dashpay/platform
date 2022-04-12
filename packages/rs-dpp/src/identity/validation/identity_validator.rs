@@ -1,5 +1,5 @@
 use crate::errors::consensus::ConsensusError;
-use crate::validation::{byte_array_meta, ValidationResult};
+use crate::validation::{byte_array_meta, JsonSchemaValidator, ValidationResult};
 use crate::version::ProtocolVersionValidator;
 use crate::{DashPlatformProtocolInitError, NonConsensusError, SerdeParsingError};
 use jsonschema::{JSONSchema, KeywordDefinition};
@@ -8,48 +8,20 @@ use serde_json::Value as JsonValue;
 use std::sync::Arc;
 
 pub struct IdentityValidator {
-    identity_schema_json: JsonValue,
-    identity_schema: Option<JSONSchema>,
     protocol_version_validator: Arc<ProtocolVersionValidator>,
+    json_schema_validator: JsonSchemaValidator,
 }
 
 impl IdentityValidator {
     pub fn new(
         protocol_version_validator: Arc<ProtocolVersionValidator>,
     ) -> Result<Self, DashPlatformProtocolInitError> {
-        let identity_schema_json = crate::schema::identity::identity_json()?;
+        let json_schema_validator = JsonSchemaValidator::new(crate::schema::identity::identity_json()?)?;
 
         let mut identity_validator = Self {
-            identity_schema_json,
-            identity_schema: None,
             protocol_version_validator,
+            json_schema_validator
         };
-
-        // BYTE_ARRAY META SCHEMA
-        let identity_schema = &identity_validator.identity_schema_json.clone();
-        let res = byte_array_meta::validate(&identity_schema);
-
-        match res {
-            Ok(_) => {}
-            Err(mut errors) => {
-                return Err(DashPlatformProtocolInitError::from(errors.remove(0)));
-            }
-        }
-        // BYTE_ARRAY META SCHEMA END
-
-        let identity_schema = JSONSchema::options()
-            .add_keyword(
-                "byteArray",
-                KeywordDefinition::Schema(json!({
-                    "items": {
-                        "type": "integer",
-                        "minimum": 0,
-                        "maximum": 255,
-                    },
-                })),
-            )
-            .compile(&identity_validator.identity_schema_json)?;
-        identity_validator.identity_schema = Some(identity_schema);
 
         Ok(identity_validator)
     }
@@ -58,25 +30,10 @@ impl IdentityValidator {
         &self,
         identity_json: &serde_json::Value,
     ) -> Result<ValidationResult, NonConsensusError> {
-        // TODO: create better error messages
-        let res = self
-            .identity_schema
-            .as_ref()
-            .ok_or(SerdeParsingError::new(
-                "Expected identity schema to be initialized",
-            ))?
-            .validate(&identity_json);
+        let mut validation_result = self.json_schema_validator.validate(&identity_json)?;
 
-        let mut validation_result = ValidationResult::new(None);
-
-        match res {
-            Ok(_) => {}
-            Err(validation_errors) => {
-                let errors: Vec<ConsensusError> =
-                    validation_errors.map(|e| ConsensusError::from(e)).collect();
-                validation_result.add_errors(errors);
-                return Ok(validation_result);
-            }
+        if !validation_result.is_valid() {
+            return Ok(validation_result);
         }
 
         let identity_map = identity_json.as_object().ok_or(SerdeParsingError::new(
