@@ -16,6 +16,11 @@ class DocumentsBenchmark extends AbstractBenchmark {
   #metrics = {};
 
   /**
+   * @type {Object}
+   */
+  #documentCounts = {}
+
+  /**
    * @param {Context} context
    * @param {Client} context.dash
    * @param {Identity} context.identity
@@ -83,6 +88,12 @@ class DocumentsBenchmark extends AbstractBenchmark {
 
           this.matches.push(match);
         }));
+
+        if (!this.#documentCounts[documentType]) {
+          this.#documentCounts[documentType] = 0;
+        }
+
+        this.#documentCounts[documentType] += 1;
       }
 
       suite.addSuite(documentTypeSuite);
@@ -121,7 +132,7 @@ class DocumentsBenchmark extends AbstractBenchmark {
     });
 
     // eslint-disable-next-line no-console
-    console.log(`\n\n${metrics.length} "${documentType}" documents:`);
+    console.log(`\n\n${this.#documentCounts[documentType]} "${documentType}" documents:`);
 
     const table = new Table({
       columns: [
