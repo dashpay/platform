@@ -1,3 +1,4 @@
+use serde_json::Error;
 use thiserror::Error;
 use crate::{CompatibleProtocolVersionIsNotDefinedError, SerdeParsingError};
 
@@ -7,6 +8,8 @@ pub enum NonConsensusError {
     SerdeParsingError(SerdeParsingError),
     #[error("{0}")]
     CompatibleProtocolVersionIsNotDefinedError(CompatibleProtocolVersionIsNotDefinedError),
+    #[error("{0}")]
+    SerdeJsonError(serde_json::Error)
 }
 
 impl From<SerdeParsingError> for NonConsensusError {
@@ -18,5 +21,11 @@ impl From<SerdeParsingError> for NonConsensusError {
 impl From<CompatibleProtocolVersionIsNotDefinedError> for NonConsensusError {
     fn from(err: CompatibleProtocolVersionIsNotDefinedError) -> Self {
         Self::CompatibleProtocolVersionIsNotDefinedError(err)
+    }
+}
+
+impl From<serde_json::Error> for NonConsensusError {
+    fn from(err: serde_json::Error) -> Self {
+        Self::SerdeJsonError(err)
     }
 }

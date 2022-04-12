@@ -16,11 +16,12 @@ impl IdentityValidator {
     pub fn new(
         protocol_version_validator: Arc<ProtocolVersionValidator>,
     ) -> Result<Self, DashPlatformProtocolInitError> {
-        let json_schema_validator = JsonSchemaValidator::new(crate::schema::identity::identity_json()?)?;
+        let json_schema_validator =
+            JsonSchemaValidator::new(crate::schema::identity::identity_json()?)?;
 
         let mut identity_validator = Self {
             protocol_version_validator,
-            json_schema_validator
+            json_schema_validator,
         };
 
         Ok(identity_validator)
@@ -57,8 +58,4 @@ impl IdentityValidator {
 
         Ok(validation_result)
     }
-
-    pub fn validate_public_keys() {}
-
-    pub fn validate_public_keys_in_identity_create_transition() {}
 }
