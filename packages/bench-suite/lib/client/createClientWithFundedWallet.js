@@ -4,29 +4,32 @@ const clone = require('lodash.clone');
 
 const fundWallet = require('@dashevo/wallet-lib/src/utils/fundWallet');
 
-const getDAPISeeds = require('./getDAPISeeds');
-
 /**
  * Create and fund DashJS client
  *
+ * @param {number} amount
+ * @param {Object} config
+ * @param {{host, port}[]} config.seeds
+ * @param {string} config.network
+ * @param {string} config.faucetPrivateKey
+ * @param {number} [config.skipSyncBeforeHeight]
+ *
  * @returns {Promise<Client>}
  */
-async function createClientWithFundedWallet(amount) {
-  const seeds = getDAPISeeds();
-
+async function createClientWithFundedWallet(amount, config) {
   let walletOptions = {
     waitForInstantLockTimeout: 120000,
   };
 
-  if (process.env.SKIP_SYNC_BEFORE_HEIGHT) {
+  if (config.skipSyncBeforeHeight) {
     walletOptions.unsafeOptions = {
-      skipSynchronizationBeforeHeight: process.env.SKIP_SYNC_BEFORE_HEIGHT,
+      skipSynchronizationBeforeHeight: config.skipSyncBeforeHeight,
     };
   }
 
   const clientOpts = {
-    seeds,
-    network: process.env.NETWORK,
+    seeds: config.seeds,
+    network: config.network,
     wallet: walletOptions,
   };
 
@@ -34,7 +37,7 @@ async function createClientWithFundedWallet(amount) {
     ...clientOpts,
     wallet: {
       ...walletOptions,
-      privateKey: process.env.FAUCET_PRIVATE_KEY,
+      privateKey: config.faucetPrivateKey,
     },
   });
 

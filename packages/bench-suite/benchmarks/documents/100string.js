@@ -4,7 +4,9 @@ const TYPES = require('../../lib/benchmarks/types');
 
 module.exports = {
   title: '100 Strings',
+
   type: TYPES.DOCUMENTS,
+
   documentTypes: () => {
     const properties = {};
 
@@ -24,12 +26,15 @@ module.exports = {
       },
     };
   },
+
   documents: (type) => {
     if (type !== 'test') {
       return [];
     }
 
-    return new Array(100).map(() => {
+    // you will get x3 results running against local network
+    // since metrics are gathering from all 3 nodes
+    return new Array(35).map(() => {
       const properties = {};
 
       for (let i = 0; i <= 100; i++) {
@@ -41,5 +46,9 @@ module.exports = {
       return properties;
     });
   },
+
   requiredCredits: 100000,
+
+  // https://mathjs.org/docs/reference/functions.html#statistics-functions
+  avgFunction: 'mean',
 };

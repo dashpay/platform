@@ -1,23 +1,16 @@
 const Mocha = require('mocha');
 
-const { convertCreditsToSatoshi } = require('@dashevo/dpp/lib/identity/creditsConverter');
+const setupContext = require('./setupContext');
 
 const MetricsCollector = require('./metrics/MetricsCollector');
 
 const BENCHMARKS = require('./benchmarks');
-
-const createClientWithFundedWallet = require('./client/createClientWithFundedWallet');
 
 class Runner {
   /**
    * @type {Mocha}
    */
   #mocha;
-
-  /**
-   * @type {number}
-   */
-  #requiredCredits = 0;
 
   /**
    * @type {Object}
@@ -71,8 +64,6 @@ class Runner {
         benchmark.createMochaTestSuite(this.#mocha.suite.ctx),
       );
 
-      this.#requiredCredits += benchmark.getRequiredCredits();
-
       this.#benchmarks.push(benchmark);
     }
   }
@@ -81,7 +72,7 @@ class Runner {
    * Run benchmarks
    */
   run() {
-    this.#initializeContext();
+    setupContext(this.#mocha, this.#benchmarks, this.#options);
 
     this.#mocha.run(async (failures) => {
       if (failures) {
@@ -100,33 +91,6 @@ class Runner {
       this.#benchmarks.forEach((benchmark) => {
         benchmark.printMetrics();
       });
-    });
-  }
-
-  /**
-   * @returns {void}
-   */
-  #initializeContext() {
-    const context = this.#mocha.suite.ctx;
-
-    let satoshis = convertCreditsToSatoshi(this.#requiredCredits);
-
-    if (satoshis < 10000) {
-      satoshis = 10000;
-    }
-
-    this.#mocha.suite.beforeAll('Create and connect client', async () => {
-      context.dash = await createClientWithFundedWallet(satoshis + 5000);
-    });
-
-    this.#mocha.suite.beforeAll('Create identity', async () => {
-      context.identity = await context.dash.platform.identities.register(satoshis);
-    });
-
-    this.#mocha.suite.afterAll('Disconnect client', async () => {
-      if (context.dash) {
-        await context.dash.disconnect();
-      }
     });
   }
 }

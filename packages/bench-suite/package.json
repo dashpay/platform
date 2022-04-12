@@ -16,6 +16,7 @@
     "dotenv-safe": "^8.2.0",
     "lodash.clone": "~4.5.0",
     "lodash.matches": "^4.6.0",
+    "mathjs": "^10.4.3",
     "mocha": "^9.1.2"
   },
   "devDependencies": {

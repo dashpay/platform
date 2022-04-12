@@ -2181,6 +2181,14 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["regenerator-runtime", "npm:0.13.9"]
           ],
           "linkType": "HARD",
+        }],
+        ["npm:7.17.9", {
+          "packageLocation": "./.yarn/cache/@babel-runtime-npm-7.17.9-c52a5e9d27-4d56bdb828.zip/node_modules/@babel/runtime/",
+          "packageDependencies": [
+            ["@babel/runtime", "npm:7.17.9"],
+            ["regenerator-runtime", "npm:0.13.9"]
+          ],
+          "linkType": "HARD",
         }]
       ]],
       ["@babel/template", [
@@ -2285,6 +2293,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["eslint-plugin-import", "virtual:12a596dc9572e25ce715d3736dc74b317c5ca5cfb3b4f67864b1e76b3a401006f84d381aaf975bb5b4da9cafac5125e6869fc78d5202f4c95780c81479112f32#npm:2.25.3"],
             ["lodash.clone", "npm:4.5.0"],
             ["lodash.matches", "npm:4.6.0"],
+            ["mathjs", "npm:10.4.3"],
             ["mocha", "npm:9.1.3"]
           ],
           "linkType": "SOFT",
@@ -7038,6 +7047,15 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           "linkType": "HARD",
         }]
       ]],
+      ["complex.js", [
+        ["npm:2.1.0", {
+          "packageLocation": "./.yarn/cache/complex.js-npm-2.1.0-6d9742b352-8a31a0d819.zip/node_modules/complex.js/",
+          "packageDependencies": [
+            ["complex.js", "npm:2.1.0"]
+          ],
+          "linkType": "HARD",
+        }]
+      ]],
       ["component-emitter", [
         ["npm:1.3.0", {
           "packageLocation": "./.yarn/cache/component-emitter-npm-1.3.0-4b848565b9-b3c46de38f.zip/node_modules/component-emitter/",
@@ -7911,6 +7929,15 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           "linkType": "HARD",
         }]
       ]],
+      ["decimal.js", [
+        ["npm:10.3.1", {
+          "packageLocation": "./.yarn/cache/decimal.js-npm-10.3.1-797c736b6c-0351ac9f05.zip/node_modules/decimal.js/",
+          "packageDependencies": [
+            ["decimal.js", "npm:10.3.1"]
+          ],
+          "linkType": "HARD",
+        }]
+      ]],
       ["decompress-response", [
         ["npm:3.3.0", {
           "packageLocation": "./.yarn/cache/decompress-response-npm-3.3.0-6e7b6375c3-952552ac3b.zip/node_modules/decompress-response/",
@@ -8728,6 +8755,15 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           "packageLocation": "./.yarn/cache/escape-html-npm-1.0.3-376c22ee74-6213ca9ae0.zip/node_modules/escape-html/",
           "packageDependencies": [
             ["escape-html", "npm:1.0.3"]
+          ],
+          "linkType": "HARD",
+        }]
+      ]],
+      ["escape-latex", [
+        ["npm:1.2.0", {
+          "packageLocation": "./.yarn/cache/escape-latex-npm-1.2.0-1481ca81a7-73a787319f.zip/node_modules/escape-latex/",
+          "packageDependencies": [
+            ["escape-latex", "npm:1.2.0"]
           ],
           "linkType": "HARD",
         }]
@@ -9628,6 +9664,15 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["asynckit", "npm:0.4.0"],
             ["combined-stream", "npm:1.0.8"],
             ["mime-types", "npm:2.1.34"]
+          ],
+          "linkType": "HARD",
+        }]
+      ]],
+      ["fraction.js", [
+        ["npm:4.2.0", {
+          "packageLocation": "./.yarn/cache/fraction.js-npm-4.2.0-28efe4afc7-8c76a6e21d.zip/node_modules/fraction.js/",
+          "packageDependencies": [
+            ["fraction.js", "npm:4.2.0"]
           ],
           "linkType": "HARD",
         }]
@@ -11484,6 +11529,15 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           "linkType": "HARD",
         }]
       ]],
+      ["javascript-natural-sort", [
+        ["npm:0.7.1", {
+          "packageLocation": "./.yarn/cache/javascript-natural-sort-npm-0.7.1-9018625996-161e2c512c.zip/node_modules/javascript-natural-sort/",
+          "packageDependencies": [
+            ["javascript-natural-sort", "npm:0.7.1"]
+          ],
+          "linkType": "HARD",
+        }]
+      ]],
       ["jayson", [
         ["npm:2.1.2", {
           "packageLocation": "./.yarn/cache/jayson-npm-2.1.2-f9240aab4b-7d66d37ea0.zip/node_modules/jayson/",
@@ -12806,6 +12860,24 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           "packageLocation": "./.yarn/cache/map-obj-npm-4.3.0-d53e32935d-fbc554934d.zip/node_modules/map-obj/",
           "packageDependencies": [
             ["map-obj", "npm:4.3.0"]
+          ],
+          "linkType": "HARD",
+        }]
+      ]],
+      ["mathjs", [
+        ["npm:10.4.3", {
+          "packageLocation": "./.yarn/cache/mathjs-npm-10.4.3-9f80458c54-ed2343b2ab.zip/node_modules/mathjs/",
+          "packageDependencies": [
+            ["mathjs", "npm:10.4.3"],
+            ["@babel/runtime", "npm:7.17.9"],
+            ["complex.js", "npm:2.1.0"],
+            ["decimal.js", "npm:10.3.1"],
+            ["escape-latex", "npm:1.2.0"],
+            ["fraction.js", "npm:4.2.0"],
+            ["javascript-natural-sort", "npm:0.7.1"],
+            ["seedrandom", "npm:3.0.5"],
+            ["tiny-emitter", "npm:2.1.0"],
+            ["typed-function", "npm:2.1.0"]
           ],
           "linkType": "HARD",
         }]
@@ -15973,6 +16045,15 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           "linkType": "HARD",
         }]
       ]],
+      ["seedrandom", [
+        ["npm:3.0.5", {
+          "packageLocation": "./.yarn/cache/seedrandom-npm-3.0.5-6946e8f8db-728b56bc3b.zip/node_modules/seedrandom/",
+          "packageDependencies": [
+            ["seedrandom", "npm:3.0.5"]
+          ],
+          "linkType": "HARD",
+        }]
+      ]],
       ["semver", [
         ["npm:5.7.1", {
           "packageLocation": "./.yarn/cache/semver-npm-5.7.1-40bcea106b-57fd0acfd0.zip/node_modules/semver/",
@@ -17439,6 +17520,15 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           "linkType": "HARD",
         }]
       ]],
+      ["tiny-emitter", [
+        ["npm:2.1.0", {
+          "packageLocation": "./.yarn/cache/tiny-emitter-npm-2.1.0-2a4d94f487-fbcfb51457.zip/node_modules/tiny-emitter/",
+          "packageDependencies": [
+            ["tiny-emitter", "npm:2.1.0"]
+          ],
+          "linkType": "HARD",
+        }]
+      ]],
       ["tls", [
         ["npm:0.0.1", {
           "packageLocation": "./.yarn/cache/tls-npm-0.0.1-d44eeeb72e-b0205b0efb.zip/node_modules/tls/",
@@ -17853,6 +17943,15 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["type-is", "npm:1.6.18"],
             ["media-typer", "npm:0.3.0"],
             ["mime-types", "npm:2.1.34"]
+          ],
+          "linkType": "HARD",
+        }]
+      ]],
+      ["typed-function", [
+        ["npm:2.1.0", {
+          "packageLocation": "./.yarn/cache/typed-function-npm-2.1.0-de442ec721-168c2c8f76.zip/node_modules/typed-function/",
+          "packageDependencies": [
+            ["typed-function", "npm:2.1.0"]
           ],
           "linkType": "HARD",
         }]

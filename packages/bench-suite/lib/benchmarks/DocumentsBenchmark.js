@@ -1,6 +1,8 @@
 const { Suite, Test } = require('mocha');
 
-const { printTable } = require('console-table-printer');
+const { Table } = require('console-table-printer');
+
+const mathjs = require('mathjs');
 
 const crypto = require('crypto');
 
@@ -26,7 +28,7 @@ class DocumentsBenchmark extends AbstractBenchmark {
 
     const documentTypes = this.config.documentTypes();
 
-    suite.addTest(new Test('Publish Data Contract', async () => {
+    suite.beforeAll('Publish Data Contract', async () => {
       const dataContract = await context.dash.platform.contracts.create(
         documentTypes,
         context.identity,
@@ -41,7 +43,7 @@ class DocumentsBenchmark extends AbstractBenchmark {
         contractId: dataContract.getId(),
         contract: dataContract,
       });
-    }));
+    });
 
     for (const documentType of Object.keys(documentTypes)) {
       const documentTypeSuite = new Suite(documentType, suite.ctx);
@@ -87,10 +89,50 @@ class DocumentsBenchmark extends AbstractBenchmark {
    * Print metrics
    */
   printMetrics() {
+    const overall = [];
+    const validateBasic = [];
+    const validateFee = [];
+    const validateSignature = [];
+    const validateState = [];
+    const apply = [];
+
+    this.#metrics.forEach((metric) => {
+      overall.push(metric.overall);
+      validateBasic.push(metric.validateBasic);
+      validateFee.push(metric.validateFee);
+      validateSignature.push(metric.validateSignature);
+      validateState.push(metric.validateState);
+      apply.push(metric.apply);
+    });
+
     // eslint-disable-next-line no-console
     console.log(`\n\n${this.config.title}`);
 
-    printTable(this.#metrics);
+    const table = new Table({
+      columns: [
+        { name: 'overall' },
+        { name: 'validateBasic' },
+        { name: 'validateFee' },
+        { name: 'validateSignature' },
+        { name: 'validateState' },
+        { name: 'apply' },
+      ],
+    });
+
+    table.addRows(this.#metrics);
+
+    const avgFunction = mathjs[this.config.avgFunction];
+
+    table.addRow({
+      overall: avgFunction(overall).toFixed(3),
+      validateBasic: avgFunction(validateBasic).toFixed(3),
+      validateFee: avgFunction(validateFee).toFixed(3),
+      validateSignature: avgFunction(validateSignature).toFixed(3),
+      validateState: avgFunction(validateState).toFixed(3),
+      apply: avgFunction(apply).toFixed(3),
+    }, { color: 'white_bold', separator: true });
+
+    table.printTable();
   }
 }
 
