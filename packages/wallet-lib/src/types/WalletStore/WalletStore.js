@@ -1,8 +1,9 @@
 const SCHEMA = {
-  lastKnownBlock: {
-    height: 'number',
-    hash: 'string',
-  },
+  '*': {
+    lastKnownBlock: {
+      height: 'number'
+    },
+  }
 };
 
 class WalletStore {
