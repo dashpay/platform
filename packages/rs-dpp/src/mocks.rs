@@ -8,7 +8,7 @@ use serde_json::Value as JsonValue;
 use async_trait::async_trait;
 use thiserror::Error;
 
-use crate::state_repository::StateRepositoryLike;
+use crate::state_repository::{SMLStoreLike, SimplifiedMNListLike, StateRepositoryLike};
 
 #[derive(Debug, Clone)]
 pub struct DashPlatformProtocol {}
@@ -147,19 +147,6 @@ where
     }
 }
 
-pub trait SMLStoreLike<L>
-where
-    L: SimplifiedMNListLike,
-{
-    fn get_sml_by_height(&self) -> AnyResult<L> {
-        unimplemented!()
-    }
-
-    fn get_current_sml(&self) -> AnyResult<L> {
-        unimplemented!()
-    }
-}
-
 pub struct SMLEntry {
     pub pro_reg_tx_hash: String,
     pub confirmed_hash: String,
@@ -167,12 +154,6 @@ pub struct SMLEntry {
     pub pub_key_operator: String,
     pub voting_address: String,
     pub is_valid: bool,
-}
-
-pub trait SimplifiedMNListLike {
-    fn get_valid_master_nodes(&self) -> Vec<SMLEntry> {
-        unimplemented!()
-    }
 }
 
 pub struct SimplifiedMNListMock {}

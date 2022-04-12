@@ -1,7 +1,7 @@
 use crate::{
     errors::ProtocolError,
-    mocks::{JsonSchemaValidatorLike, SMLStoreLike, SimplifiedMNListLike},
-    state_repository::StateRepositoryLike,
+    mocks::JsonSchemaValidatorLike,
+    state_repository::{SMLStoreLike, SimplifiedMNListLike, StateRepositoryLike},
 };
 use async_trait::async_trait;
 

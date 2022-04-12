@@ -2,9 +2,8 @@ use crate::{
     data_trigger::new_error,
     document::document_transition::DocumentTransition,
     get_from_transition,
-    mocks::{SMLStoreLike, SimplifiedMNListLike},
     prelude::Identifier,
-    state_repository::StateRepositoryLike,
+    state_repository::{SMLStoreLike, SimplifiedMNListLike, StateRepositoryLike},
     util::{json_value::JsonValueExt, string_encoding::Encoding},
 };
 

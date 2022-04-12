@@ -1,13 +1,7 @@
 use async_trait::async_trait;
 use serde_json::Value as JsonValue;
 
-use crate::{
-    data_contract::DataContract,
-    document::Document,
-    identifier::Identifier,
-    identity::{Identity, JsonIdentityPublicKey},
-    mocks::{self, SMLStoreLike, SimplifiedMNListLike},
-};
+use crate::{data_contract::DataContract, document::Document, identifier::Identifier, mocks};
 
 use anyhow::Result as AnyResult;
 
@@ -80,4 +74,32 @@ where
 
     /// Fetch Simplified Masternode List Store
     async fn fetch_sml_store(&self) -> AnyResult<S>;
+}
+
+pub trait SMLStoreLike<L>
+where
+    L: SimplifiedMNListLike,
+{
+    fn get_sml_by_height(&self) -> AnyResult<L> {
+        unimplemented!()
+    }
+
+    fn get_current_sml(&self) -> AnyResult<L> {
+        unimplemented!()
+    }
+}
+
+pub trait SimplifiedMNListLike {
+    fn get_valid_master_nodes(&self) -> Vec<SMLEntry> {
+        unimplemented!()
+    }
+}
+
+pub struct SMLEntry {
+    pub pro_reg_tx_hash: String,
+    pub confirmed_hash: String,
+    pub service: String,
+    pub pub_key_operator: String,
+    pub voting_address: String,
+    pub is_valid: bool,
 }
