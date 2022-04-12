@@ -1,0 +1,59 @@
+{
+  "name": "@dashevo/bench-suite",
+  "private": true,
+  "version": "0.23.0-dev.1",
+  "description": "Dash Platform benchmark tool",
+  "scripts": {
+    "bench": "node ./bin/bench.js",
+    "lint": "eslint ."
+  },
+  "dependencies": {
+    "@dashevo/dpns-contract": "workspace:~",
+    "@dashevo/dpp": "workspace:~",
+    "@dashevo/wallet-lib": "workspace:~",
+    "console-table-printer": "^2.11.0",
+    "dash": "workspace:~",
+    "dotenv-safe": "^8.2.0",
+    "lodash.clone": "~4.5.0",
+    "lodash.matches": "^4.6.0",
+    "mathjs": "^10.4.3",
+    "mocha": "^9.1.2"
+  },
+  "devDependencies": {
+    "babel-eslint": "^10.1.0",
+    "eslint": "^7.32.0",
+    "eslint-config-airbnb-base": "^14.2.1",
+    "eslint-plugin-import": "^2.24.2"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/dashevo/dapi.git"
+  },
+  "contributors": [
+    {
+      "name": "Ivan Shumkov",
+      "email": "ivan@shumkov.ru",
+      "url": "https://github.com/shumkov"
+    },
+    {
+      "name": "Djavid Gabibiyan",
+      "email": "djavid@dash.org",
+      "url": "https://github.com/jawid-h"
+    },
+    {
+      "name": "Anton Suprunchuk",
+      "email": "anton.suprunchuk@dash.org",
+      "url": "https://github.com/antouhou"
+    },
+    {
+      "name": "Konstantin Shuplenkov",
+      "email": "konstantin.shuplenkov@dash.org",
+      "url": "https://github.com/shuplenkov"
+    }
+  ],
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/dashevo/platform/issues"
+  },
+  "homepage": "https://github.com/dashevo/platform#readme"
+}

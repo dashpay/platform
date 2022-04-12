@@ -216,7 +216,7 @@ function deliverTxHandlerFactory(
 
     const deliverTxTiming = executionTimer.stopTimer(TIMERS.DELIVER_TX.OVERALL);
 
-    logger.trace(
+    consensusLogger.trace(
       {
         timings: {
           overall: deliverTxTiming,
@@ -226,7 +226,7 @@ function deliverTxHandlerFactory(
           validateState: executionTimer.getTimer(TIMERS.DELIVER_TX.VALIDATE_STATE, true),
           apply: executionTimer.getTimer(TIMERS.DELIVER_TX.APPLY, true),
         },
-        stateTransitionType: stateTransition.getType(),
+        txType: stateTransition.getType(),
       },
       `${stateTransition.constructor.name} execution took ${deliverTxTiming} seconds`,
     );
