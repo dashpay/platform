@@ -18,7 +18,7 @@ module.exports = async function configure(opts = {}) {
 
   const version = await this.adapter.getItem('version');
 
-  if (version) {
+  if (!version) {
     await this.adapter.setItem('version', CURRENT_VERSION);
   } else if (version !== CURRENT_VERSION) {
     logger.warn('Storage validation error: schema mismatch: unknown version');
