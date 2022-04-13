@@ -86,6 +86,23 @@ module.exports = {
     group: {
       type: ['string', 'null'],
     },
+    docker: {
+      type: 'object',
+      properties: {
+        network: {
+          type: 'object',
+          properties: {
+            subnet: {
+              type: 'string',
+            },
+          },
+          additionalProperties: false,
+          required: ['subnet'],
+        },
+      },
+      additionalProperties: false,
+      required: ['network'],
+    },
     core: {
       type: 'object',
       properties: {
@@ -275,7 +292,7 @@ module.exports = {
               type: 'object',
               properties: {
                 docker: {
-                  $ref: '#/definitions/dockerBuild',
+                  $ref: '#/definitions/docker',
                 },
               },
               required: ['docker'],
@@ -288,21 +305,11 @@ module.exports = {
         drive: {
           type: 'object',
           properties: {
-            mongodb: {
-              type: 'object',
-              properties: {
-                docker: {
-                  $ref: '#/definitions/docker',
-                },
-              },
-              required: ['docker'],
-              additionalProperties: false,
-            },
             abci: {
               type: 'object',
               properties: {
                 docker: {
-                  $ref: '#/definitions/dockerBuild',
+                  $ref: '#/definitions/docker',
                 },
                 log: {
                   type: 'object',
@@ -457,7 +464,7 @@ module.exports = {
               additionalProperties: false,
             },
           },
-          required: ['mongodb', 'abci', 'tenderdash'],
+          required: ['abci', 'tenderdash'],
           additionalProperties: false,
         },
         dpns: {
@@ -470,20 +477,20 @@ module.exports = {
                   type: ['string', 'null'],
                   minLength: 1,
                 },
-                blockHeight: {
-                  type: ['integer', 'null'],
-                  minimum: 1,
-                },
               },
-              required: ['id', 'blockHeight'],
+              required: ['id'],
               additionalProperties: false,
             },
             ownerId: {
               type: ['string', 'null'],
               minLength: 1,
             },
+            masterPublicKey: {
+              type: ['string', 'null'],
+              minLength: 1,
+            },
           },
-          required: ['contract', 'ownerId'],
+          required: ['contract', 'ownerId', 'masterPublicKey'],
           additionalProperties: false,
         },
         dashpay: {
@@ -496,16 +503,16 @@ module.exports = {
                   type: ['string', 'null'],
                   minLength: 1,
                 },
-                blockHeight: {
-                  type: ['integer', 'null'],
-                  minimum: 1,
-                },
               },
-              required: ['id', 'blockHeight'],
+              required: ['id'],
               additionalProperties: false,
             },
+            masterPublicKey: {
+              type: ['string', 'null'],
+              minLength: 1,
+            },
           },
-          required: ['contract'],
+          required: ['contract', 'masterPublicKey'],
           additionalProperties: false,
         },
         featureFlags: {
@@ -518,24 +525,50 @@ module.exports = {
                   type: ['string', 'null'],
                   minLength: 1,
                 },
-                blockHeight: {
-                  type: ['integer', 'null'],
-                  minimum: 1,
-                },
               },
-              required: ['id', 'blockHeight'],
+              required: ['id'],
               additionalProperties: false,
             },
             ownerId: {
               type: ['string', 'null'],
               minLength: 1,
             },
+            masterPublicKey: {
+              type: ['string', 'null'],
+              minLength: 1,
+            },
           },
-          required: ['contract', 'ownerId'],
+          required: ['contract', 'ownerId', 'masterPublicKey'],
+          additionalProperties: false,
+        },
+        sourcePath: {
+          type: ['string', 'null'],
+          minLength: 1,
+        },
+        masternodeRewardShares: {
+          type: 'object',
+          properties: {
+            contract: {
+              type: 'object',
+              properties: {
+                id: {
+                  type: ['string', 'null'],
+                  minLength: 1,
+                },
+              },
+              required: ['id'],
+              additionalProperties: false,
+            },
+            masterPublicKey: {
+              type: ['string', 'null'],
+              minLength: 1,
+            },
+          },
+          required: ['contract', 'masterPublicKey'],
           additionalProperties: false,
         },
       },
-      required: ['dapi', 'drive', 'dpns', 'dashpay', 'featureFlags'],
+      required: ['dapi', 'drive', 'dpns', 'dashpay', 'featureFlags', 'sourcePath', 'masternodeRewardShares'],
       additionalProperties: false,
     },
     externalIp: {

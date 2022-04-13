@@ -62,7 +62,7 @@ describe('DataContractFactory', () => {
 
       const result = await factory.createFromObject(rawDataContract);
 
-      expect(result).excluding('entropy').to.deep.equal(dataContract);
+      expect(result.toObject()).excluding('entropy').to.deep.equal(rawDataContract);
 
       expect(validateDataContractMock).to.have.been.calledOnceWith(rawDataContract);
     });
@@ -70,7 +70,7 @@ describe('DataContractFactory', () => {
     it('should return new Data Contract without validation if "skipValidation" option is passed', async () => {
       const result = await factory.createFromObject(rawDataContract, { skipValidation: true });
 
-      expect(result).excluding('entropy').to.deep.equal(dataContract);
+      expect(result.toObject()).excluding('entropy').to.deep.equal(rawDataContract);
 
       expect(validateDataContractMock).to.have.not.been.called();
     });
@@ -164,9 +164,9 @@ describe('DataContractFactory', () => {
     });
   });
 
-  describe('createStateTransition', () => {
+  describe('createDataContractCreateTransition', () => {
     it('should return new DataContractCreateTransition with passed DataContract', () => {
-      const result = factory.createStateTransition(dataContract);
+      const result = factory.createDataContractCreateTransition(dataContract);
 
       expect(result).to.be.an.instanceOf(DataContractCreateTransition);
 

@@ -25,7 +25,7 @@ describe('validateStateTransitionStateFactory', () => {
     const dataContractFactory = new DataContractFactory(createDPPMock(), undefined);
 
     const dataContract = getDataContractFixture();
-    stateTransition = dataContractFactory.createStateTransition(dataContract);
+    stateTransition = dataContractFactory.createDataContractCreateTransition(dataContract);
 
     validateStateTransitionState = validateStateTransitionStateFactory({
       [stateTransitionTypes.DATA_CONTRACT_CREATE]: validateDataContractSTDataMock,

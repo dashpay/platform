@@ -42,14 +42,16 @@ export declare type TransactionHistory<T extends object = object> = T & {
         address: string,
         satoshis: number,
     }],
-    time: number,
     to: [{
         address: string,
         satoshis: number
     }],
     type: TransactionHistoryType
+    time: number,
     txId: string,
-    blockHash: string
+    blockHash: string,
+    isChainLocked: boolean,
+    isInstantLocked: boolean
 }
 
 export declare type TransactionsHistory = [TransactionHistory]|[];

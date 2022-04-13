@@ -332,6 +332,8 @@ version = "v0"
 
 wal_file = "data/cs.wal/wal"
 
+# How many blocks are inspected in order to determine if we need to create an additional proof block.
+create_proof_block_range = 1
 # How long we wait for a proposal block before prevoting nil
 timeout_propose = "3s"
 # How much timeout_propose increases with each round

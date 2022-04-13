@@ -17,6 +17,7 @@ const defaultOptions = {
   allowSensitiveOperations: false,
   unsafeOptions: {},
   waitForInstantLockTimeout: 60000,
+  waitForTxMetadataTimeout: 540000,
 };
 
 const fromMnemonic = require('./methods/fromMnemonic');
@@ -68,6 +69,7 @@ class Wallet extends EventEmitter {
     this.injectDefaultPlugins = _.has(opts, 'injectDefaultPlugins') ? opts.injectDefaultPlugins : defaultOptions.injectDefaultPlugins;
     this.unsafeOptions = _.has(opts, 'unsafeOptions') ? opts.unsafeOptions : defaultOptions.unsafeOptions;
     this.waitForInstantLockTimeout = _.has(opts, 'waitForInstantLockTimeout') ? opts.waitForInstantLockTimeout : defaultOptions.waitForInstantLockTimeout;
+    this.waitForTxMetadataTimeout = _.has(opts, 'waitForTxMetadataTimeout') ? opts.waitForTxMetadataTimeout : defaultOptions.waitForTxMetadataTimeout;
 
     // Validate network
     const networkName = _.has(opts, 'network') ? opts.network.toString() : defaultOptions.network;
@@ -188,5 +190,6 @@ Wallet.prototype.getAccount = require('./methods/getAccount');
 Wallet.prototype.generateNewWalletId = generateNewWalletId;
 Wallet.prototype.exportWallet = require('./methods/exportWallet');
 Wallet.prototype.sweepWallet = require('./methods/sweepWallet');
+Wallet.prototype.dumpStorage = require('./methods/dumpStorage');
 
 module.exports = Wallet;

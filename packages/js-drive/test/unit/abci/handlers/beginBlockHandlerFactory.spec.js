@@ -10,11 +10,12 @@ const {
 
 const beginBlockHandlerFactory = require('../../../../lib/abci/handlers/beginBlockHandlerFactory');
 
-const BlockExecutionDBTransactionsMock = require('../../../../lib/test/mock/BlockExecutionStoreTransactionsMock');
 const BlockExecutionContextMock = require('../../../../lib/test/mock/BlockExecutionContextMock');
 const LoggerMock = require('../../../../lib/test/mock/LoggerMock');
-const NotSupportedNetworkProtocolVersionError = require('../../../../lib/abci/handlers/errors/NotSupportedProtocolVersionError');
+const NotSupportedNetworkProtocolVersionError = require('../../../../lib/abci/handlers/errors/NotSupportedNetworkProtocolVersionError');
 const NetworkProtocolVersionIsNotSetError = require('../../../../lib/abci/handlers/errors/NetworkProtocolVersionIsNotSetError');
+const GroveDBStoreMock = require('../../../../lib/test/mock/GroveDBStoreMock');
+const BlockExecutionContextStackMock = require('../../../../lib/test/mock/BlockExecutionContextStackMock');
 
 describe('beginBlockHandlerFactory', () => {
   let protocolVersion;
@@ -22,9 +23,7 @@ describe('beginBlockHandlerFactory', () => {
   let request;
   let blockHeight;
   let coreChainLockedHeight;
-  let blockExecutionDBTransactionsMock;
   let blockExecutionContextMock;
-  let previousBlockExecutionContextMock;
   let header;
   let updateSimplifiedMasternodeListMock;
   let waitForChainLockedHeightMock;
@@ -32,14 +31,15 @@ describe('beginBlockHandlerFactory', () => {
   let lastCommitInfo;
   let dppMock;
   let transactionalDppMock;
+  let synchronizeMasternodeIdentitiesMock;
+  let groveDBStoreMock;
+  let blockExecutionContextStackMock;
+  let executionTimerMock;
 
   beforeEach(function beforeEach() {
     protocolVersion = Long.fromInt(1);
 
-    blockExecutionDBTransactionsMock = new BlockExecutionDBTransactionsMock(this.sinon);
-
     blockExecutionContextMock = new BlockExecutionContextMock(this.sinon);
-    previousBlockExecutionContextMock = new BlockExecutionContextMock(this.sinon);
 
     loggerMock = new LoggerMock(this.sinon);
 
@@ -50,19 +50,35 @@ describe('beginBlockHandlerFactory', () => {
       setProtocolVersion: this.sinon.stub(),
     };
 
-    updateSimplifiedMasternodeListMock = this.sinon.stub();
+    updateSimplifiedMasternodeListMock = this.sinon.stub().resolves(false);
     waitForChainLockedHeightMock = this.sinon.stub();
+    synchronizeMasternodeIdentitiesMock = this.sinon.stub();
+
+    groveDBStoreMock = new GroveDBStoreMock(this.sinon);
+    blockExecutionContextStackMock = new BlockExecutionContextStackMock(this.sinon);
+
+    blockExecutionContextStackMock.getLatest.returns({
+      getHeader: this.sinon.stub(),
+    });
+
+    executionTimerMock = {
+      startTimer: this.sinon.stub(),
+      endTimer: this.sinon.stub(),
+      isStarted: this.sinon.stub(),
+    };
 
     beginBlockHandler = beginBlockHandlerFactory(
-      blockExecutionDBTransactionsMock,
+      groveDBStoreMock,
       blockExecutionContextMock,
-      previousBlockExecutionContextMock,
+      blockExecutionContextStackMock,
       protocolVersion,
       dppMock,
       transactionalDppMock,
       updateSimplifiedMasternodeListMock,
       waitForChainLockedHeightMock,
+      synchronizeMasternodeIdentitiesMock,
       loggerMock,
+      executionTimerMock,
     );
 
     blockHeight = 2;
@@ -87,42 +103,58 @@ describe('beginBlockHandlerFactory', () => {
     };
   });
 
-  it('should update height, start transactions return ResponseBeginBlock', async () => {
+  it('should reset previous block state and prepare everything for for a next one', async () => {
     const response = await beginBlockHandler(request);
 
     expect(response).to.be.an.instanceOf(ResponseBeginBlock);
 
-    expect(blockExecutionDBTransactionsMock.start).to.be.calledOnceWithExactly();
+    // Wait for chain locked core block height
+    expect(waitForChainLockedHeightMock).to.be.calledOnceWithExactly(coreChainLockedHeight);
 
-    expect(previousBlockExecutionContextMock.reset).to.be.calledOnceWithExactly();
-    expect(previousBlockExecutionContextMock.populate).to.be.calledOnceWithExactly(
-      blockExecutionContextMock,
-    );
-
+    // Reset block execution context
+    expect(blockExecutionContextMock.getHeader).to.be.calledOnceWithExactly();
     expect(blockExecutionContextMock.reset).to.be.calledOnceWithExactly();
     expect(blockExecutionContextMock.setHeader).to.be.calledOnceWithExactly(header);
     expect(blockExecutionContextMock.setLastCommitInfo).to.be.calledOnceWithExactly(lastCommitInfo);
 
-    expect(updateSimplifiedMasternodeListMock).to.be.calledOnceWithExactly(
-      coreChainLockedHeight, { logger: loggerMock },
-    );
-    expect(waitForChainLockedHeightMock).to.be.calledOnceWithExactly(coreChainLockedHeight);
-    expect(blockExecutionDBTransactionsMock.abort).to.be.not.called();
+    // Set current protocol version
     expect(dppMock.setProtocolVersion).to.have.been.calledOnceWithExactly(
       protocolVersion.toNumber(),
     );
     expect(transactionalDppMock.setProtocolVersion).to.have.been.calledOnceWithExactly(
       protocolVersion.toNumber(),
     );
+
+    // Start new transaction
+    expect(groveDBStoreMock.startTransaction).to.be.calledOnceWithExactly();
+
+    // Update SML
+    expect(updateSimplifiedMasternodeListMock).to.be.calledOnceWithExactly(
+      coreChainLockedHeight, { logger: loggerMock },
+    );
+
+    expect(synchronizeMasternodeIdentitiesMock).to.not.been.called();
   });
 
-  it('should throw NotSupportedProtocolVersionError if protocol version is not supported', async () => {
+  it('should synchronize masternode identities if SML is updated', async () => {
+    updateSimplifiedMasternodeListMock.resolves(true);
+
+    const response = await beginBlockHandler(request);
+
+    expect(response).to.be.an.instanceOf(ResponseBeginBlock);
+
+    expect(synchronizeMasternodeIdentitiesMock).to.have.been.calledOnceWithExactly(
+      coreChainLockedHeight,
+    );
+  });
+
+  it('should throw NotSupportedNetworkProtocolVersionError if protocol version is not supported', async () => {
     request.header.version.app = Long.fromInt(42);
 
     try {
       await beginBlockHandler(request);
 
-      expect.fail('should throw NotSupportedProtocolVersionError');
+      expect.fail('should throw NotSupportedNetworkProtocolVersionError');
     } catch (e) {
       expect(e).to.be.instanceOf(NotSupportedNetworkProtocolVersionError);
       expect(e.getNetworkProtocolVersion()).to.equal(request.header.version.app);
@@ -142,19 +174,31 @@ describe('beginBlockHandlerFactory', () => {
     }
   });
 
-  it('should abort already started transactions', async () => {
-    blockExecutionDBTransactionsMock.isStarted.returns(true);
+  it('should abort db transaction and reset previous execution context if previous block failed', async function it() {
+    blockExecutionContextMock.getHeader.returns({
+      height: {
+        equals: this.sinon.stub().returns(true),
+      },
+    });
+
+    blockExecutionContextStackMock.getLatest.returns({
+      getHeader: this.sinon.stub().returns(
+        {
+          height: {
+            equals: this.sinon.stub().returns(true),
+          },
+        },
+      ),
+    });
+
+    groveDBStoreMock.isTransactionStarted.resolves(true);
 
     const response = await beginBlockHandler(request);
 
     expect(response).to.be.an.instanceOf(ResponseBeginBlock);
 
-    expect(blockExecutionDBTransactionsMock.start).to.be.calledOnceWithExactly();
-
-    expect(previousBlockExecutionContextMock.reset).to.be.calledOnceWithExactly();
-    expect(previousBlockExecutionContextMock.populate).to.be.calledOnceWithExactly(
-      blockExecutionContextMock,
-    );
+    expect(groveDBStoreMock.abortTransaction).to.be.calledOnceWithExactly();
+    expect(blockExecutionContextStackMock.removeLatest).to.be.calledOnceWithExactly();
 
     expect(blockExecutionContextMock.reset).to.be.calledOnceWithExactly();
     expect(blockExecutionContextMock.setHeader).to.be.calledOnceWithExactly(header);
@@ -165,6 +209,6 @@ describe('beginBlockHandlerFactory', () => {
     );
 
     expect(waitForChainLockedHeightMock).to.be.calledOnceWithExactly(coreChainLockedHeight);
-    expect(blockExecutionDBTransactionsMock.abort).to.be.calledOnce();
+    expect(synchronizeMasternodeIdentitiesMock).to.have.not.been.called();
   });
 });

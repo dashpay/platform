@@ -1,12 +1,12 @@
 {
   "name": "@dashevo/platform",
-  "version": "0.21.6",
+  "version": "0.22.1",
   "private": true,
   "scripts": {
     "setup": "yarn install && yarn run build && yarn run configure",
-    "start": "yarn run dashmate group:start --verbose -w",
-    "restart": "yarn run dashmate group:restart --verbose",
-    "stop": "yarn run dashmate group:stop --verbose",
+    "start": "yarn run dashmate group start --verbose -w",
+    "restart": "yarn run dashmate group restart --verbose",
+    "stop": "yarn run dashmate group stop --verbose",
     "reset": "yarn run clean:data --force && yarn run setup",
     "test": "ultra -r $* test",
     "test:dapi": "ultra -r --filter \"packages/@(dapi|platform-test-suite)\" test",
@@ -19,7 +19,9 @@
     "test:dpp": "ultra -r test",
     "test:drive": "ultra -r --filter \"packages/@(js-drive|platform-test-suite)\" test",
     "test:grpc-common": "ultra -r --filter \"packages/@(js-grpc-common|dapi-grpc|dapi|js-dapi-client|js-dash-sdk|js-drive|wallet-lib|platform-test-suite)\" test",
-    "test:suite": "ultra -r --filter '@dashevo/platform-test-suite' test",
+    "test:browsers": "ultra -r --filter '@dashevo/platform-test-suite' test:browsers",
+    "test:suite": "yarn workspace @dashevo/platform-test-suite test",
+    "test:suite:browsers": "yarn workspace @dashevo/platform-test-suite test:browsers",
     "test:wallet-lib": "ultra -r --filter \"packages/@(wallet-lib|js-dash-sdk|platform-test-suite)\" test",
     "build": "ultra --recursive $* --build",
     "lint": "ultra --recursive $* lint",
@@ -28,7 +30,7 @@
     "configure:tests": "yarn exec ./scripts/configure_test_suite.sh",
     "configure:dotenv": "yarn exec ./scripts/configure_dotenv.sh",
     "configure": "yarn run configure:dashmate && yarn run configure:network && yarn run configure:tests && yarn run configure:dotenv",
-    "clean:data": "yarn run dashmate group:reset --verbose --group=local --hard",
+    "clean:data": "yarn run dashmate group reset --verbose --group=local --hard",
     "clean": "yarn run clean:data && yarn run build",
     "dashmate": "yarn exec packages/dashmate/bin/dashmate",
     "release": "yarn exec ./scripts/release/release.sh"
@@ -61,10 +63,10 @@
     "packages/dapi",
     "packages/js-drive",
     "packages/dashmate",
-    "packages/platform-test-suite"
+    "packages/platform-test-suite",
+    "packages/masternode-reward-shares-contract"
   ],
   "resolutions": {
-    "protobufjs": "github:jawid-h/protobuf.js#fix/buffer-conversion",
     "elliptic": "6.5.3",
     "bn.js": "4.12.0"
   }

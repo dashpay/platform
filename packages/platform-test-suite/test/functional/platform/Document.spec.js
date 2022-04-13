@@ -38,7 +38,7 @@ describe('Platform', () => {
 
       dataContractFixture = getDataContractFixture(identity.getId());
 
-      await client.platform.contracts.broadcast(dataContractFixture, identity);
+      await client.platform.contracts.publish(dataContractFixture, identity);
 
       // Additional wait time to mitigate testnet latency
       if (process.env.NETWORK === 'testnet') {
@@ -245,7 +245,7 @@ describe('Platform', () => {
         .to.be.greaterThan(fetchedDocument.getCreatedAt().getTime());
     });
 
-    it('should be able to prove that a document was updated', async () => {
+    it.skip('should be able to prove that a document was updated', async () => {
       const [storedDocument] = await client.platform.documents.get(
         'customContracts.indexedDocument',
         { where: [['$id', '==', document.getId()]] },
@@ -326,6 +326,19 @@ describe('Platform', () => {
       expect(broadcastError).to.exist();
       expect(/Document \w* updatedAt timestamp .* are out of block time window from .* and .*/.test(broadcastError.message)).to.be.true();
       expect(broadcastError.code).to.be.equal(4008);
+    });
+
+    it('should be able to delete a document', async () => {
+      await client.platform.documents.broadcast({
+        delete: [document],
+      }, identity);
+
+      const [storedDocument] = await client.platform.documents.get(
+        'customContracts.indexedDocument',
+        { where: [['$id', '==', document.getId()]] },
+      );
+
+      expect(storedDocument).to.not.exist();
     });
 
     it('should fail to create a new document with timestamp in violated time frame', async () => {

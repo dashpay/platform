@@ -1,18 +1,24 @@
 - Getting started
     - [Quick start](getting-started/quickstart.md)
 - Usage
-    - Application
-        - [`.applyStateTransition()`](usage/application/applyStateTransition.md)
-        - [`.getDataContract()`](usage/application/getDataContract.md)
-        - [`.getDocuments()`](usage/application/getDocuments.md)
-        - [`.getIdentity()`](usage/application/getIdentity.md)
-        - [`.getIdentityByFirstPublicKey()`](usage/application/getIdentityByFirstPublicKey.md)
-        - [`.getIdentityIdByFirstPublicKey()`](usage/application/getIdentityIdByFirstPublicKey.md)
-    - Payment
-        - [`.getBestBlockHash()`](usage/payment/getBestBlockHash.md)
-        - [`.getBlockHash()`](usage/payment/getBlockHash.md)
-        - [`.getUTXO()`](usage/payment/getUTXO.md)
-   - Utilities
-        - [`.getMnListDiff()`](usage/utils/getMnListDiff.md)
-        - [`.subscribeToTransactionsWithProofs()`](usage/utils/subscribeToTransactionsWithProofs.md)
+    - DAPIClient
+        - [new DAPIClient()](usage/application/DAPIClient.md)
+            - Core
+                - [.broadcastTransaction()](usage/application/core/broadcastTransaction.md)
+                - [.generateToAddress()](usage/application/core/generateToAddress.md)
+                - [.getBestBlockHash()](usage/application/core/getBestBlockHash.md)
+                - [.getBlockByHash()](usage/application/core/getBlockByHash.md)
+                - [.getBlockByHeight()](usage/application/core/getBlockByHeight.md)
+                - [.getBlockHash()](usage/application/core/getBlockHash.md)
+                - [.getMnListDiff()](usage/application/core/getMnListDiff.md)
+                - [.getStatus()](usage/application/core/getStatus.md)
+                - [.getTransaction()](usage/application/core/getTransaction.md)
+                - [.subscribeToTransactionsWithProofs()](usage/application/core/subscribeToTransactionsWithProofs.md)
+            - Platform 
+                - [.broadcastStateTransition()](usage/application/platform/broadcastStateTransition.md)
+                - [.getDataContract()](usage/application/platform/getDataContract.md)
+                - [.getDocuments()](usage/application/platform/getDocuments.md)
+                - [.getIdentityByFirstPublicKey()](usage/application/platform/getIdentityByFirstPublicKey.md)
+                - [.getIdentity()](usage/application/platform/getIdentity.md)
+                - [.getIdentityIdByFirstPublicKey()](usage/application/platform/getIdentityIdByFirstPublicKey.md)
 - [License](https://github.com/dashevo/dapi-client/blob/master/LICENSE)

@@ -1,11 +1,11 @@
 ## dpp.dataContract.create(ownerId, documents)
 
-**Description**: Instantiate a new Data Contract.   
-This method will generate the entropy and dataContractId for the user. 
+**Description**: Instantiate a new Data Contract.
+This method will generate the entropy and dataContractId for the user.
 
 **Parameters**:
 
-| parameters                   | type            | required  | Description                                            |  
+| parameters                   | type            | required  | Description                                            |
 |------------------------------|-----------------|-----------| -------------------------------------------------------|
 | **ownerId**                  | Buffer          | yes       |                                                        |
 | **documents**                | Object          | yes       |                                                        |
@@ -14,12 +14,12 @@ Returns : {[DataContract](../primitives/DataContract.md)}
 
 ## dpp.dataContract.createFromObject(rawDataContract, options)
 
-**Description**: Instantiate a new Data Contract from plain object representation.   
-By default, the provided rawDataContract will be validated. 
+**Description**: Instantiate a new Data Contract from plain object representation.
+By default, the provided rawDataContract will be validated.
 
 **Parameters**:
 
-| parameters                   | type            | required | Description                                             |  
+| parameters                   | type            | required | Description                                             |
 |------------------------------|-----------------|----------| --------------------------------------------------------|
 | **rawDataContract**          | RawDataContract | yes      |                                                         |
 | **options**                  | Object          | no       |                                                         |
@@ -33,7 +33,7 @@ Returns : {Promise<[DataContract](../primitives/DataContract.md)>}
 
 **Parameters**:
 
-| parameters                   | type            | required | Description                                             |  
+| parameters                   | type            | required | Description                                             |
 |------------------------------|-----------------|----------| --------------------------------------------------------|
 | **buffer**                   | Buffer          | yes      |                                                         |
 | **options**                  | Object          | no       |                                                         |
@@ -41,13 +41,13 @@ Returns : {Promise<[DataContract](../primitives/DataContract.md)>}
 
 Returns : {Promise<[DataContract](../primitives/DataContract.md)>}
 
-## dpp.dataContract.createStateTransition(dataContract)
+## dpp.dataContract.createDataContractCreateTransition(dataContract)
 
 **Description**: Create a new Data Contract State Transition
 
 **Parameters**:
 
-| parameters                   | type            | required | Description                                             |  
+| parameters                   | type            | required | Description                                             |
 |------------------------------|-----------------|----------| --------------------------------------------------------|
 | **dataContract**             | DataContract    | yes      |                                                         |
 
@@ -59,7 +59,7 @@ Returns : {DataContractCreateTransition}
 
 **Parameters**:
 
-| parameters                   | type                         | required | Description                                             |  
+| parameters                   | type                         | required | Description                                             |
 |------------------------------|------------------------------|----------| --------------------------------------------------------|
 | **dataContract**             | DataContract/RawDataContract | yes      |                                                         |
 

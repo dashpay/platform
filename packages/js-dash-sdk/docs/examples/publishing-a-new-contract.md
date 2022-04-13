@@ -4,10 +4,10 @@ Right now, Evonet does not support publishing a public contract. You will have t
 
 For now you can try your luck using the [Dash Network Deploy tool](https://github.com/dashevo/dash-network-deploy) and refer to [how to use a local evonet](../examples/use-local-evonet.md).
 
-## Create your contract 
+## Create your contract
 
-After having [registered an identity](https://dashplatform.readme.io/docs/tutorial-register-an-identity) 
-and [attached to a name](https://dashplatform.readme.io/docs/tutorial-register-a-name-for-an-identity) crafted your schema (you can see how on [about schemas](getting-started/about-schemas.md) and read the [DPNS schema](https://github.com/dashevo/dpns-contract/blob/v0.2-dev/src/schema/dpns-documents.json) as an example), you then can perform the below actions : 
+After having [registered an identity](https://dashplatform.readme.io/docs/tutorial-register-an-identity)
+and [attached to a name](https://dashplatform.readme.io/docs/tutorial-register-a-name-for-an-identity) crafted your schema (you can see how on [about schemas](getting-started/about-schemas.md) and read the [DPNS schema](https://github.com/dashevo/dpns-contract/blob/v0.2-dev/src/schema/dpns-documents.json) as an example), you then can perform the below actions :
 
 ```js
 const schema = {};// You JSON schema defining the app.
@@ -31,11 +31,11 @@ async function registerContract() {
     const {platform} = client;
     const identity = await getIdentity(appName);
     const contract = platform.contracts.create(schema, identity)
-    const contractId = await platform.contracts.broadcast(contract, identity);
+    const contractId = await platform.contracts.publish(contract, identity);
 }
 ```
 
-## Fetch or publish documents on your app 
+## Fetch or publish documents on your app
 
 ```js
 const schema = {};// You JSON schema defining the app.
@@ -47,7 +47,7 @@ const client = new Dash.Client({
   },
   apps:{
     myapp:{
-      contractId:""// The registered contract id    
+      contractId:""// The registered contract id
     }
   }
 });

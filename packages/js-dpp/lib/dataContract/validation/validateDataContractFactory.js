@@ -13,22 +13,23 @@ const UniqueIndicesLimitReachedError = require('../../errors/consensus/basic/dat
 const InvalidIndexedPropertyConstraintError = require('../../errors/consensus/basic/dataContract/InvalidIndexedPropertyConstraintError');
 const InvalidCompoundIndexError = require('../../errors/consensus/basic/dataContract/InvalidCompoundIndexError');
 
-const getPropertyDefinitionByPathFactory = require('../getPropertyDefinitionByPathFactory');
-
 const convertBuffersToArrays = require('../../util/convertBuffersToArrays');
+const DuplicateIndexNameError = require('../../errors/consensus/basic/dataContract/DuplicateIndexNameError');
 
-const allowedSystemProperties = ['$id', '$ownerId', '$createdAt', '$updatedAt'];
-const prebuiltIndices = ['$id'];
+const allowedIndexSystemProperties = ['$ownerId', '$createdAt', '$updatedAt'];
+const notAllowedIndexProperties = ['$id'];
 
-const MAX_INDEXED_STRING_PROPERTY_LENGTH = 1024;
+const MAX_INDEXED_STRING_PROPERTY_LENGTH = 63;
+const MAX_INDEXED_BYTE_ARRAY_PROPERTY_LENGTH = 255;
+const MAX_INDEXED_ARRAY_ITEMS = 1024;
 
 /**
  * @param {JsonSchemaValidator} jsonSchemaValidator
  * @param {validateDataContractMaxDepth} validateDataContractMaxDepth
  * @param {enrichDataContractWithBaseSchema} enrichDataContractWithBaseSchema
  * @param {validateDataContractPatterns} validateDataContractPatterns
- * @param {RE2} RE2
  * @param {validateProtocolVersion} validateProtocolVersion
+ * @param {getPropertyDefinitionByPath} getPropertyDefinitionByPath
  * @return {validateDataContract}
  */
 module.exports = function validateDataContractFactory(
@@ -36,8 +37,8 @@ module.exports = function validateDataContractFactory(
   validateDataContractMaxDepth,
   enrichDataContractWithBaseSchema,
   validateDataContractPatterns,
-  RE2,
   validateProtocolVersion,
+  getPropertyDefinitionByPath,
 ) {
   /**
    * @typedef validateDataContract
@@ -117,6 +118,19 @@ module.exports = function validateDataContractFactory(
         let uniqueIndexCount = 0;
         let isUniqueIndexLimitReached = false;
 
+        // Ensure index names are unique
+        const indexNames = documentSchema.indices.map((indexDefinition) => indexDefinition.name);
+        const [nonUniqueIndexName] = indexNames.filter(
+          (indexName, i) => indexNames.indexOf(indexName) !== i,
+        );
+
+        if (nonUniqueIndexName !== undefined) {
+          result.addError(new DuplicateIndexNameError(
+            documentType,
+            nonUniqueIndexName,
+          ));
+        }
+
         documentSchema.indices.forEach((indexDefinition) => {
           const indexPropertyNames = indexDefinition.properties
             .map((property) => Object.keys(property)[0]);
@@ -135,12 +149,9 @@ module.exports = function validateDataContractFactory(
           }
 
           // Ensure there are no duplicate system indices
-          prebuiltIndices
+          notAllowedIndexProperties
             .forEach((propertyName) => {
-              const isSingleIndex = indexPropertyNames.length === 1
-                    && indexPropertyNames[0] === propertyName;
-
-              if (isSingleIndex) {
+              if (indexPropertyNames.includes(propertyName)) {
                 result.addError(new SystemPropertyIndexAlreadyPresentError(
                   documentType,
                   indexDefinition,
@@ -151,8 +162,7 @@ module.exports = function validateDataContractFactory(
 
           // Ensure index properties are defined in the document
           const userDefinedProperties = indexPropertyNames
-            .filter((name) => !allowedSystemProperties.includes(name));
-          const getPropertyDefinitionByPath = getPropertyDefinitionByPathFactory(RE2);
+            .filter((name) => !allowedIndexSystemProperties.includes(name));
 
           const propertyDefinitionEntities = userDefinedProperties
             .map((propertyName) => (
@@ -194,20 +204,24 @@ module.exports = function validateDataContractFactory(
               invalidPropertyType = 'object';
             }
 
+            // const { items, prefixItems } = propertyDefinition;
+
+            // Validate arrays contain scalar values or have the same types
             if (propertyType === 'array' && !isByteArray) {
-              const { items, prefixItems } = propertyDefinition;
+              invalidPropertyType = 'array';
 
-              const isInvalidPrefixItems = prefixItems
-                && (
-                  prefixItems.some((prefixItem) => prefixItem.type === 'object' || prefixItem.type === 'array')
-                  || !prefixItems.every((prefixItem) => prefixItem.type === prefixItems[0].type)
-                );
-
-              const isInvalidItemTypes = items.type === 'object' || items.type === 'array';
-
-              if (isInvalidPrefixItems || isInvalidItemTypes) {
-                invalidPropertyType = 'array';
-              }
+            // const isInvalidPrefixItems = prefixItems
+            //   && (
+            // prefixItems.some((prefixItem) =>
+              // prefixItem.type === 'object' || prefixItem.type === 'array')
+            //     || !prefixItems.every((prefixItem) => prefixItem.type === prefixItems[0].type)
+            //   );
+            //
+            // const isInvalidItemTypes = items.type === 'object' || items.type === 'array';
+            //
+            // if (isInvalidPrefixItems || isInvalidItemTypes) {
+            //   invalidPropertyType = 'array';
+            // }
             }
 
             if (invalidPropertyType) {
@@ -219,22 +233,59 @@ module.exports = function validateDataContractFactory(
               ));
             }
 
-            if (propertyType === 'string') {
-              const { maxLength } = propertyDefinition;
+            // Validate sting length inside arrays
+            // if (!invalidPropertyType && propertyType === 'array' && !isByteArray) {
+            //   const isInvalidPrefixItems = prefixItems && prefixItems.some((prefixItem) => (
+            //     prefixItem.type === 'string'
+            //     && (
+            // !prefixItem.maxLength || prefixItem.maxLength > MAX_INDEXED_STRING_PROPERTY_LENGTH
+            //     )
+            //   ));
+            //
+            //   const isInvalidItemTypes = items.type === 'string' && (
+            //     !items.maxLength || items.maxLength > MAX_INDEXED_STRING_PROPERTY_LENGTH
+            //   );
+            //
+            //   if (isInvalidPrefixItems || isInvalidItemTypes) {
+            //     result.addError(
+            //       new InvalidIndexedPropertyConstraintError(
+            //         documentType,
+            //         indexDefinition,
+            //         propertyName,
+            //         'maxLength',
+            //         `should be less or equal ${MAX_INDEXED_STRING_PROPERTY_LENGTH}`,
+            //       ),
+            //     );
+            //   }
+            // }
+            //
+            if (!invalidPropertyType && propertyType === 'array') {
+              const { maxItems } = propertyDefinition;
 
-              if (maxLength === undefined) {
+              let maxLimit;
+              if (isByteArray) {
+                maxLimit = MAX_INDEXED_BYTE_ARRAY_PROPERTY_LENGTH;
+              } else {
+                maxLimit = MAX_INDEXED_ARRAY_ITEMS;
+              }
+
+              if ((maxItems === undefined || maxItems > maxLimit)) {
                 result.addError(
                   new InvalidIndexedPropertyConstraintError(
                     documentType,
                     indexDefinition,
                     propertyName,
-                    'maxLength',
-                    'should be set',
+                    'maxItems',
+                    `should be less or equal ${maxLimit}`,
                   ),
                 );
               }
+            }
 
-              if (maxLength !== undefined && maxLength > MAX_INDEXED_STRING_PROPERTY_LENGTH) {
+            if (propertyType === 'string') {
+              const { maxLength } = propertyDefinition;
+
+              if (maxLength === undefined || maxLength > MAX_INDEXED_STRING_PROPERTY_LENGTH) {
                 result.addError(
                   new InvalidIndexedPropertyConstraintError(
                     documentType,

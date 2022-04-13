@@ -12,38 +12,25 @@ const {
 
 const featureFlagTypes = require('@dashevo/feature-flags-contract/lib/featureFlagTypes');
 
-const NoDPNSContractFoundError = require('./errors/NoDPNSContractFoundError');
-const NoDashpayContractFoundError = require('./errors/NoDashpayContractFoundError');
-
 /**
  * Begin block ABCI handler
  *
  * @param {BlockExecutionContext} blockExecutionContext
- * @param {number|undefined} dpnsContractBlockHeight
- * @param {Identifier|undefined} dpnsContractId
- * @param {number|undefined} dashpayContractBlockHeight
- * @param {Identifier|undefined} dashpayContractId
  * @param {LatestCoreChainLock} latestCoreChainLock
  * @param {ValidatorSet} validatorSet
  * @param {createValidatorSetUpdate} createValidatorSetUpdate
  * @param {BaseLogger} logger
  * @param {getFeatureFlagForHeight} getFeatureFlagForHeight
- * @param {BlockExecutionStoreTransactions} blockExecutionStoreTransactions
  *
  * @return {endBlockHandler}
  */
 function endBlockHandlerFactory(
   blockExecutionContext,
-  dpnsContractBlockHeight,
-  dpnsContractId,
-  dashpayContractBlockHeight,
-  dashpayContractId,
   latestCoreChainLock,
   validatorSet,
   createValidatorSetUpdate,
   logger,
   getFeatureFlagForHeight,
-  blockExecutionStoreTransactions,
 ) {
   /**
    * @typedef endBlockHandler
@@ -62,18 +49,6 @@ function endBlockHandlerFactory(
     consensusLogger.debug('EndBlock ABCI method requested');
 
     blockExecutionContext.setConsensusLogger(consensusLogger);
-
-    if (dpnsContractId && height === dpnsContractBlockHeight) {
-      if (!blockExecutionContext.hasDataContract(dpnsContractId)) {
-        throw new NoDPNSContractFoundError(dpnsContractId, dpnsContractBlockHeight);
-      }
-    }
-
-    if (dashpayContractId && height === dashpayContractBlockHeight) {
-      if (!blockExecutionContext.hasDataContract(dashpayContractId)) {
-        throw new NoDashpayContractFoundError(dashpayContractId, dashpayContractBlockHeight);
-      }
-    }
 
     const header = blockExecutionContext.getHeader();
     const lastCommitInfo = blockExecutionContext.getLastCommitInfo();
@@ -115,10 +90,11 @@ function endBlockHandlerFactory(
     }
 
     // Update consensus params feature flag
-    const documentsTransaction = blockExecutionStoreTransactions.getTransaction('documents');
 
     const updateConsensusParamsFeatureFlag = await getFeatureFlagForHeight(
-      featureFlagTypes.UPDATE_CONSENSUS_PARAMS, height, documentsTransaction,
+      featureFlagTypes.UPDATE_CONSENSUS_PARAMS,
+      height,
+      true,
     );
 
     let consensusParamUpdates;

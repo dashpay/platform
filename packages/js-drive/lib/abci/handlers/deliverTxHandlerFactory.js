@@ -15,10 +15,15 @@ const AbstractDocumentTransition = require(
 
 const DPPValidationAbciError = require('../errors/DPPValidationAbciError');
 
-const DOCUMENT_ACTION_DESCRIPTONS = {
+const DOCUMENT_ACTION_DESCRIPTIONS = {
   [AbstractDocumentTransition.ACTIONS.CREATE]: 'created',
   [AbstractDocumentTransition.ACTIONS.REPLACE]: 'replaced',
   [AbstractDocumentTransition.ACTIONS.DELETE]: 'deleted',
+};
+
+const DATA_CONTRACT_ACTION_DESCRIPTIONS = {
+  [stateTransitionTypes.DATA_CONTRACT_CREATE]: 'created',
+  [stateTransitionTypes.DATA_CONTRACT_UPDATE]: 'updated',
 };
 
 /**
@@ -26,6 +31,7 @@ const DOCUMENT_ACTION_DESCRIPTONS = {
  * @param {DashPlatformProtocol} transactionalDpp
  * @param {BlockExecutionContext} blockExecutionContext
  * @param {BaseLogger} logger
+ * @param {ExecutionTimer} executionTimer
  *
  * @return {deliverTxHandler}
  */
@@ -34,6 +40,7 @@ function deliverTxHandlerFactory(
   transactionalDpp,
   blockExecutionContext,
   logger,
+  executionTimer,
 ) {
   /**
    * DeliverTx ABCI Handler
@@ -45,6 +52,14 @@ function deliverTxHandlerFactory(
    */
   async function deliverTxHandler({ tx: stateTransitionByteArray }) {
     const { height: blockHeight } = blockExecutionContext.getHeader();
+
+    // Start execution timer
+
+    if (executionTimer.isStarted('deliverTx')) {
+      executionTimer.endTimer('deliverTx');
+    }
+
+    executionTimer.startTimer('deliverTx');
 
     const stHash = crypto
       .createHash('sha256')
@@ -114,17 +129,20 @@ function deliverTxHandlerFactory(
 
     // Logging
     switch (stateTransition.getType()) {
+      case stateTransitionTypes.DATA_CONTRACT_UPDATE:
       case stateTransitionTypes.DATA_CONTRACT_CREATE: {
         const dataContract = stateTransition.getDataContract();
 
         // Save data contracts in order to create databases for documents on block commit
         blockExecutionContext.addDataContract(dataContract);
 
+        const description = DATA_CONTRACT_ACTION_DESCRIPTIONS[stateTransition.getType()];
+
         consensusLogger.info(
           {
             dataContractId: dataContract.getId().toString(),
           },
-          `Data contract created with id: ${dataContract.getId()}`,
+          `Data contract ${description} with id: ${dataContract.getId()}`,
         );
 
         break;
@@ -155,7 +173,7 @@ function deliverTxHandlerFactory(
       }
       case stateTransitionTypes.DOCUMENTS_BATCH: {
         stateTransition.getTransitions().forEach((transition) => {
-          const description = DOCUMENT_ACTION_DESCRIPTONS[transition.getAction()];
+          const description = DOCUMENT_ACTION_DESCRIPTIONS[transition.getAction()];
 
           consensusLogger.info(
             {
@@ -170,6 +188,16 @@ function deliverTxHandlerFactory(
       default:
         break;
     }
+
+    const deliverTxTimings = executionTimer.endTimer('deliverTx');
+
+    logger.trace(
+      {
+        timings: deliverTxTimings,
+        stateTransitionType: stateTransition.getType(),
+      },
+      `${stateTransition.constructor.name} execution took ${deliverTxTimings} seconds`,
+    );
 
     return new ResponseDeliverTx();
   }

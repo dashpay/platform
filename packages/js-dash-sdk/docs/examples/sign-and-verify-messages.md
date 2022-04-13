@@ -11,4 +11,4 @@ const signed = account.sign(message, pk);
 const verify = message.verify(pk.toAddress().toString(), signed.toString());
 ```
 
-See [code snippet](https://github.com/dashevo/DashJS/blob/master/examples/node/sign-and-verify-messages.js).
+See [code snippet](https://github.com/dashevo/platform/blob/master/packages/js-dash-sdk/examples/node/sign-and-verify-messages.js).

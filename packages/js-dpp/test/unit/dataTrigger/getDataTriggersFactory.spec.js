@@ -1,3 +1,8 @@
+const {
+  contractId: dpnsContractId,
+  ownerId: dpnsOwnerId,
+} = require('@dashevo/dpns-contract/lib/systemIds');
+
 const AbstractDocumentTransition = require('../../../lib/document/stateTransition/DocumentsBatchTransition/documentTransition/AbstractDocumentTransition');
 
 const getDataTriggersFactory = require('../../../lib/dataTrigger/getDataTriggersFactory');
@@ -8,8 +13,7 @@ const DataTrigger = require('../../../lib/dataTrigger/DataTrigger');
 
 const createDomainDataTrigger = require('../../../lib/dataTrigger/dpnsTriggers/createDomainDataTrigger');
 const rejectDataTrigger = require('../../../lib/dataTrigger/rejectDataTrigger');
-
-const generateRandomIdentifier = require('../../../lib/test/utils/generateRandomIdentifier');
+const Identifier = require('../../../lib/identifier/Identifier');
 
 describe('getDataTriggers', () => {
   let getDataTriggers;
@@ -36,8 +40,8 @@ describe('getDataTriggers', () => {
     deleteDocument = getDpnsDocumentFixture.getChildDocumentFixture();
     deleteDocument.data = {};
 
-    dataContractId = getDpnsDocumentFixture.dataContract.getId();
-    topLevelIdentity = generateRandomIdentifier().toBuffer();
+    dataContractId = Identifier.from(dpnsContractId);
+    topLevelIdentity = Identifier.from(dpnsOwnerId);
 
     createTrigger = new DataTrigger(
       dataContractId, 'domain', AbstractDocumentTransition.ACTIONS.CREATE, createDomainDataTrigger, topLevelIdentity,

@@ -27,7 +27,7 @@ const getDataContractFixture = require('@dashevo/dpp/lib/test/fixtures/getDataCo
  *   header: Object,
  *   validTxs: number,
  *   cumulativeFees: number,
- *   consensusLogger: (Logger)
+ *   consensusLogger: Logger,
  * }}
  */
 function getBlockExecutionContextObjectFixture(dataContract = getDataContractFixture()) {

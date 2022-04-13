@@ -48,7 +48,7 @@ static_resources:
                 - name: dapi_services
                   domains: ["*"]
                   routes:
-                    # subscription endpoint configuration
+                    # tx subscription endpoint configuration
                     - match:
                         prefix: "/org.dash.platform.dapi.v0.Core/subscribeToTransactionsWithProofs"
                         headers:
@@ -58,6 +58,18 @@ static_resources:
                               regex: "GET|POST|OPTIONS"
                       route:
                         cluster: tx_filter_stream
+                        timeout: 0s
+                    # block headers subscription endpoint configuration
+                    - match:
+                        prefix: "/org.dash.platform.dapi.v0.Core/subscribeToBlockHeadersWithChainLocks"
+                        headers:
+                          - name: ":method"
+                            safe_regex_match:
+                              google_re2: {}
+                              regex: "GET|POST|OPTIONS"
+                      route:
+                        cluster: tx_filter_stream
+                        timeout: 0s
                     # core endpoint configutration
                     - match:
                         prefix: "/org.dash.platform.dapi.v0.Core"
@@ -210,11 +222,18 @@ static_resources:
                     - name: dapi_services
                       domains: ["*"]
                       routes:
-                        # subscription endpoint configuration
+                        # tx subscription endpoint configuration
                         - match:
                             prefix: "/org.dash.platform.dapi.v0.Core/subscribeToTransactionsWithProofs"
                           route:
                             cluster: tx_filter_stream
+                            timeout: 0s
+                        # block headers subscription endpoint configuration
+                        - match:
+                            prefix: "/org.dash.platform.dapi.v0.Core/subscribeToBlockHeadersWithChainLocks"
+                          route:
+                            cluster: tx_filter_stream
+                            timeout: 0s
                         - match:
                             prefix: "/org.dash.platform.dapi.v0.Core"
                           route:

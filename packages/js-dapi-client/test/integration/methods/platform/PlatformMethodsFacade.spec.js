@@ -35,7 +35,9 @@ describe('PlatformMethodsFacade', () => {
 
       const dpp = new DashPlatformProtocol();
       await dpp.initialize();
-      const stateTransition = dpp.dataContract.createStateTransition(getDataContractFixture());
+      const stateTransition = dpp.dataContract.createDataContractCreateTransition(
+        getDataContractFixture(),
+      );
 
       await platformMethods.broadcastStateTransition(stateTransition);
 

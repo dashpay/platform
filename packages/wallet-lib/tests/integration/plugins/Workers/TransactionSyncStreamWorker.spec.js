@@ -501,8 +501,7 @@ describe('TransactionSyncStreamWorker', function suite() {
       expect(worker.stream).to.be.null;
     });
 
-    // TODO: enable once we figure out what is the source of the problem
-    it.skip('should not reconnect to the incoming stream if stream in case of any other error', async function () {
+    it('should not reconnect to the incoming stream if stream in case of any other error', async function () {
       const lastSavedBlockHeight = 40;
       const bestBlockHeight = 42;
 
@@ -677,8 +676,10 @@ describe('TransactionSyncStreamWorker', function suite() {
     expect(transactionsInStorage.length).to.be.equal(2);
     expect(transactionsInStorage).to.have.deep.members(expectedTransactions);
 
+    const { promise } = account.waitForInstantLock(transactions[1].hash, 10000);
+
     const [ actualLock ] = await Promise.all([
-      account.waitForInstantLock(transactions[1].hash, 10000),
+      promise,
       new Promise((resolve => {
         setImmediate(() => {
           txStreamMock.emit(
@@ -698,11 +699,15 @@ describe('TransactionSyncStreamWorker', function suite() {
     expect(receivedInstantLocks[1]).to.be.deep.equal(instantLock2);
 
     // Test that if instant lock was already imported previously wait method will return it
-    const firstISFromWait = await account.waitForInstantLock(transactions[0].hash);
+    const { promise: firstISFromWaitPromise } = account.waitForInstantLock(transactions[0].hash);
+    const firstISFromWait = await firstISFromWaitPromise;
     expect(firstISFromWait).to.be.deep.equal(instantLock1);
 
     // Check that wait method throws if timeout has passed
-    await expect(account.waitForInstantLock(transactions[2].hash, 1000)).to.eventually
+
+    const { promise: transaction2Promise } = account.waitForInstantLock(transactions[2].hash, 1000);
+
+    await expect(transaction2Promise).to.eventually
         .be.rejectedWith('InstantLock waiting period for transaction 256d5b3bf6d8869f5cc882ae070af9b648fa0f512bfa2b6f07b35d55e160a16c timed out');
   });
   it('should start from the height specified in `skipSynchronizationBeforeHeight` options', async function () {

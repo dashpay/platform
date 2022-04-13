@@ -8,12 +8,12 @@ const {
     GetDocumentsResponse,
     ResponseMetadata,
     Proof: ProofResponse,
-    StoreTreeProofs,
   },
 } = require('@dashevo/dapi-grpc');
 
 const getDocumentsFixture = require('@dashevo/dpp/lib/test/fixtures/getDocumentsFixture');
 
+const generateRandomIdentifier = require('@dashevo/dpp/lib/test/utils/generateRandomIdentifier');
 const getDocumentsFactory = require('../../../../../lib/methods/platform/getDocuments/getDocumentsFactory');
 const getMetadataFixture = require('../../../../../lib/test/fixtures/getMetadataFixture');
 const getProofFixture = require('../../../../../lib/test/fixtures/getProofFixture');
@@ -32,7 +32,6 @@ describe('getDocumentsFactory', () => {
   let proofFixture;
   let proofResponse;
   let response;
-  let storeTreeProofsProto;
 
   beforeEach(function beforeEach() {
     type = 'niceDocument';
@@ -47,9 +46,9 @@ describe('getDocumentsFactory', () => {
       orderBy: [
         ['order', 'asc'],
       ],
-      startAt: 1,
+      startAt: generateRandomIdentifier(),
       where: [['lastName', '==', 'unknown']],
-      startAfter: 10,
+      startAfter: generateRandomIdentifier(),
     };
 
     documentsFixture = getDocumentsFixture();
@@ -71,17 +70,9 @@ describe('getDocumentsFactory', () => {
     getDocuments = getDocumentsFactory(grpcTransportMock);
 
     proofResponse = new ProofResponse();
-    storeTreeProofsProto = new StoreTreeProofs();
-    storeTreeProofsProto.setIdentitiesProof(proofFixture.storeTreeProofs.identitiesProof);
-    storeTreeProofsProto.setPublicKeyHashesToIdentityIdsProof(
-      proofFixture.storeTreeProofs.publicKeyHashesToIdentityIdsProof,
-    );
-    storeTreeProofsProto.setDataContractsProof(proofFixture.storeTreeProofs.dataContractsProof);
-    storeTreeProofsProto.setDocumentsProof(proofFixture.storeTreeProofs.documentsProof);
     proofResponse.setSignatureLlmqHash(proofFixture.signatureLLMQHash);
     proofResponse.setSignature(proofFixture.signature);
-    proofResponse.setRootTreeProof(proofFixture.rootTreeProof);
-    proofResponse.setStoreTreeProofs(storeTreeProofsProto);
+    proofResponse.setMerkleProof(proofFixture.merkleProof);
   });
 
   it('should return documents when contract id is buffer', async () => {
@@ -137,8 +128,7 @@ describe('getDocumentsFactory', () => {
     expect(result.getMetadata()).to.deep.equal(metadataFixture);
 
     expect(result.getProof()).to.be.an.instanceOf(Proof);
-    expect(result.getProof().getRootTreeProof()).to.deep.equal(proofFixture.rootTreeProof);
-    expect(result.getProof().getStoreTreeProofs()).to.deep.equal(proofFixture.storeTreeProofs);
+    expect(result.getProof().getMerkleProof()).to.deep.equal(proofFixture.merkleProof);
     expect(result.getProof().getSignatureLLMQHash()).to.deep.equal(proofFixture.signatureLLMQHash);
     expect(result.getProof().getSignature()).to.deep.equal(proofFixture.signature);
     expect(result.getMetadata()).to.deep.equal(metadataFixture);

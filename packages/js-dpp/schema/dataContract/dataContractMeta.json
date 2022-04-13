@@ -43,11 +43,6 @@
           "pattern": "^#",
           "minLength": 1
         },
-        "$ref": {
-          "type": "string",
-          "pattern": "^#",
-          "minLength": 1
-        },
         "$comment": {
           "$ref": "https://json-schema.org/draft/2020-12/meta/core#/properties/$comment"
         },
@@ -350,6 +345,10 @@
       "maxItems": 32,
       "contentMediaType": "application/x.dash.dpp.identifier"
     },
+    "version": {
+      "type": "integer",
+      "minimum": 1
+    },
     "ownerId":{
       "type": "array",
       "byteArray": true,
@@ -372,6 +371,11 @@
                 "items": {
                   "type": "object",
                   "properties": {
+                    "name": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 32
+                    },
                     "properties": {
                       "type": "array",
                       "items": {
@@ -393,7 +397,7 @@
                       "type": "boolean"
                     }
                   },
-                  "required": ["properties"],
+                  "required": ["properties", "name"],
                   "additionalProperties": false
                 },
                 "minItems": 1,
@@ -401,6 +405,16 @@
               },
               "type": {
                 "const": "object"
+              },
+              "signatureSecurityLevelRequirement": {
+                "type": "integer",
+                "enum": [
+                  0,
+                  1,
+                  2,
+                  3
+                ],
+                "description": "Public key security level. 0 - Master, 1 - Critical, 2 - High, 3 - Medium. If none specified, High level is used"
               }
             }
           },
@@ -421,6 +435,7 @@
     "protocolVersion",
     "$schema",
     "$id",
+    "version",
     "ownerId",
     "documents"
   ],

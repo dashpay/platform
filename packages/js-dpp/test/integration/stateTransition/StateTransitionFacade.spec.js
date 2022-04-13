@@ -38,21 +38,25 @@ describe('StateTransitionFacade', () => {
     identityPublicKey = new IdentityPublicKey()
       .setId(publicKeyId)
       .setType(IdentityPublicKey.TYPES.ECDSA_SECP256K1)
-      .setData(publicKey);
+      .setData(publicKey)
+      .setPurpose(IdentityPublicKey.PURPOSES.AUTHENTICATION)
+      .setSecurityLevel(IdentityPublicKey.PURPOSES.MASTER);
 
     dataContract = getDataContractFixture();
 
     const dataContractFactory = new DataContractFactory(createDPPMock(), undefined);
 
-    dataContractCreateTransition = dataContractFactory.createStateTransition(dataContract);
-    dataContractCreateTransition.sign(identityPublicKey, privateKey);
+    dataContractCreateTransition = dataContractFactory.createDataContractCreateTransition(
+      dataContract,
+    );
+    await dataContractCreateTransition.sign(identityPublicKey, privateKey);
 
     const documentFactory = new DocumentFactory(createDPPMock(), undefined, undefined);
 
     documentsBatchTransition = documentFactory.createStateTransition({
       create: getDocumentsFixture(dataContract),
     });
-    documentsBatchTransition.sign(identityPublicKey, privateKey);
+    await documentsBatchTransition.sign(identityPublicKey, privateKey);
 
     const getPublicKeyById = this.sinonSandbox.stub().returns(identityPublicKey);
     const getBalance = this.sinonSandbox.stub().returns(10000);
@@ -344,7 +348,10 @@ describe('StateTransitionFacade', () => {
 
       const identityCreateTransition = getIdentityCreateTransitionFixture(oneTimePrivateKey);
 
-      identityCreateTransition.signByPrivateKey(oneTimePrivateKey);
+      await identityCreateTransition.signByPrivateKey(
+        oneTimePrivateKey,
+        IdentityPublicKey.TYPES.ECDSA_SECP256K1,
+      );
 
       const result = await dpp.stateTransition.validateSignature(
         identityCreateTransition,

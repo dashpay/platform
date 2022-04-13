@@ -11,9 +11,9 @@ const sortByHeightDescending = (a, b) => (b.height - a.height);
 
 /**
  * Get all the transaction history already formated
- * @return {Promise<TransactionsHistory>}
+ * @return {TransactionsHistory}
  */
-async function getTransactionHistory() {
+function getTransactionHistory() {
   const transactionHistory = [];
 
   const {
@@ -72,7 +72,7 @@ async function getTransactionHistory() {
     const blockHeader = blockHeaders[blockHash];
 
     // If it's unconfirmed, we won't have a blockHeader nor it's time.
-    const time = blockHeader ? blockHeader.time : -1;
+    const time = blockHeader ? blockHeader.time : 9999999999;
 
     const normalizedTransactionHistory = {
       // Would require knowing the vout of this vin to determinate inputAmount.

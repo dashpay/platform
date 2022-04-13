@@ -24,6 +24,7 @@ const MissingDocumentTransitionTypeError = require('./basic/document/MissingDocu
 const MissingDocumentTypeError = require('./basic/document/MissingDocumentTypeError');
 const DuplicatedIdentityPublicKeyError = require('./basic/identity/DuplicatedIdentityPublicKeyError');
 const DuplicatedIdentityPublicKeyIdError = require('./basic/identity/DuplicatedIdentityPublicKeyIdError');
+const MissingMasterPublicKeyError = require('./basic/identity/MissingMasterPublicKeyError');
 const IdentityAssetLockProofLockedTransactionMismatchError = require('./basic/identity/IdentityAssetLockProofLockedTransactionMismatchError');
 const IdentityAssetLockTransactionIsNotFoundError = require('./basic/identity/IdentityAssetLockTransactionIsNotFoundError');
 const IdentityAssetLockTransactionOutPointAlreadyExistsError = require('./basic/identity/IdentityAssetLockTransactionOutPointAlreadyExistsError');
@@ -33,6 +34,7 @@ const InvalidAssetLockProofTransactionHeightError = require('./basic/identity/In
 const InvalidIdentityAssetLockTransactionError = require('./basic/identity/InvalidIdentityAssetLockTransactionError');
 const InvalidIdentityAssetLockTransactionOutputError = require('./basic/identity/InvalidIdentityAssetLockTransactionOutputError');
 const InvalidIdentityPublicKeyDataError = require('./basic/identity/InvalidIdentityPublicKeyDataError');
+const InvalidIdentityPublicKeySecurityLevelError = require('./basic/identity/InvalidIdentityPublicKeySecurityLevelError');
 const InvalidStateTransitionTypeError = require('./basic/stateTransition/InvalidStateTransitionTypeError');
 const MissingStateTransitionTypeError = require('./basic/stateTransition/MissingStateTransitionTypeError');
 const StateTransitionMaxSizeExceededError = require('./basic/stateTransition/StateTransitionMaxSizeExceededError');
@@ -56,7 +58,6 @@ const DocumentTimestampWindowViolationError = require('./state/document/Document
 const DuplicateUniqueIndexError = require('./state/document/DuplicateUniqueIndexError');
 const InvalidDocumentRevisionError = require('./state/document/InvalidDocumentRevisionError');
 const IdentityAlreadyExistsError = require('./state/identity/IdentityAlreadyExistsError');
-const IdentityPublicKeyAlreadyExistsError = require('./state/identity/IdentityPublicKeyAlreadyExistsError');
 const InvalidJsonSchemaRefError = require('./basic/dataContract/InvalidJsonSchemaRefError');
 const JsonSchemaCompilationError = require('./basic/JsonSchemaCompilationError');
 const DuplicateDocumentTransitionsWithIdsError = require('./basic/document/DuplicateDocumentTransitionsWithIdsError');
@@ -65,6 +66,11 @@ const InvalidAssetLockTransactionOutputReturnSize = require('./basic/identity/In
 const InvalidInstantAssetLockProofError = require('./basic/identity/InvalidInstantAssetLockProofError');
 const InvalidInstantAssetLockProofSignatureError = require('./basic/identity/InvalidInstantAssetLockProofSignatureError');
 const IncompatibleRe2PatternError = require('./basic/dataContract/IncompatibleRe2PatternError');
+const InvalidDataContractVersionError = require('./basic/dataContract/InvalidDataContractVersionError');
+const IncompatibleDataContractSchemaError = require('./basic/dataContract/IncompatibleDataContractSchemaError');
+const DataContractImmutablePropertiesUpdateError = require('./basic/dataContract/DataContractImmutablePropertiesUpdateError');
+const DataContractIndicesChangedError = require('./basic/dataContract/DataContractUniqueIndicesChangedError');
+const DuplicateIndexNameError = require('./basic/dataContract/DuplicateIndexNameError');
 
 const codes = {
   /**
@@ -94,6 +100,7 @@ const codes = {
   1015: SystemPropertyIndexAlreadyPresentError,
   1016: UndefinedIndexPropertyError,
   1017: UniqueIndicesLimitReachedError,
+  1048: DuplicateIndexNameError,
 
   // Document
   1018: DataContractNotPresentError,
@@ -123,6 +130,8 @@ const codes = {
   1040: InvalidIdentityPublicKeyDataError,
   1041: InvalidInstantAssetLockProofError,
   1042: InvalidInstantAssetLockProofSignatureError,
+  1046: MissingMasterPublicKeyError,
+  1047: InvalidIdentityPublicKeySecurityLevelError,
 
   // State Transition
   1043: InvalidStateTransitionTypeError,
@@ -153,6 +162,10 @@ const codes = {
   4001: DataTriggerConditionError,
   4002: DataTriggerExecutionError,
   4003: DataTriggerInvalidResultError,
+  4013: InvalidDataContractVersionError,
+  4014: IncompatibleDataContractSchemaError,
+  4015: DataContractImmutablePropertiesUpdateError,
+  4016: DataContractIndicesChangedError,
 
   // Document
   4004: DocumentAlreadyPresentError,
@@ -165,7 +178,6 @@ const codes = {
 
   // Identity
   4011: IdentityAlreadyExistsError,
-  4012: IdentityPublicKeyAlreadyExistsError,
 };
 
 module.exports = codes;

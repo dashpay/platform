@@ -11,17 +11,17 @@ const {
  * @param {ConfigFile} configFile
  * @param {configureCoreTask} configureCoreTask
  * @param {configureTenderdashTask} configureTenderdashTask
- * @param {initializePlatformTask} initializePlatformTask
  * @param {resolveDockerHostIp} resolveDockerHostIp
  * @param {configFileRepository} configFileRepository
+ * @param {generateHDPrivateKeys} generateHDPrivateKeys
  */
 function setupLocalPresetTaskFactory(
   configFile,
   configureCoreTask,
   configureTenderdashTask,
-  initializePlatformTask,
   resolveDockerHostIp,
   configFileRepository,
+  generateHDPrivateKeys,
 ) {
   /**
    * @typedef {setupLocalPresetTask}
@@ -31,7 +31,7 @@ function setupLocalPresetTaskFactory(
     return new Listr([
       {
         title: 'Set the number of nodes',
-        enabled: (ctx) => ctx.nodeCount === null,
+        enabled: (ctx) => ctx.nodeCount === undefined,
         task: async (ctx, task) => {
           ctx.nodeCount = await task.prompt({
             type: 'Numeral',
@@ -51,7 +51,7 @@ function setupLocalPresetTaskFactory(
       },
       {
         title: 'Enable debug logs',
-        enabled: (ctx) => ctx.debugLogs === null,
+        enabled: (ctx) => ctx.debugLogs === undefined,
         task: async (ctx, task) => {
           ctx.debugLogs = await task.prompt({
             type: 'Toggle',
@@ -64,7 +64,7 @@ function setupLocalPresetTaskFactory(
       },
       {
         title: 'Set the core miner interval',
-        enabled: (ctx) => ctx.minerInterval === null,
+        enabled: (ctx) => ctx.minerInterval === undefined,
         task: async (ctx, task) => {
           ctx.minerInterval = await task.prompt({
             type: 'input',
@@ -82,7 +82,7 @@ function setupLocalPresetTaskFactory(
       },
       {
         title: 'Create local group configs',
-        task: async (ctx) => {
+        task: async (ctx, task) => {
           ctx.configGroup = new Array(ctx.nodeCount)
             .fill(undefined)
             .map((value, i) => `local_${i + 1}`)
@@ -96,6 +96,40 @@ function setupLocalPresetTaskFactory(
 
           const hostDockerInternalIp = await resolveDockerHostIp();
 
+          const network = ctx.configGroup[0].get('network');
+
+          const {
+            hdPrivateKey: dpnsPrivateKey,
+            derivedPrivateKey: dpnsDerivedPrivateKey,
+          } = await generateHDPrivateKeys(network);
+
+          const {
+            hdPrivateKey: featureFlagsPrivateKey,
+            derivedPrivateKey: featureFlagsDerivedPrivateKey,
+          } = await generateHDPrivateKeys(network);
+
+          const {
+            hdPrivateKey: dashpayPrivateKey,
+            derivedPrivateKey: dashpayDerivedPrivateKey,
+          } = await generateHDPrivateKeys(network);
+
+          const {
+            hdPrivateKey: masternodeRewardSharesPrivateKey,
+            derivedPrivateKey: masternodeRewardSharesDerivedPrivateKey,
+          } = await generateHDPrivateKeys(network);
+
+          // eslint-disable-next-line no-param-reassign
+          task.output = `DPNS Private Key: ${dpnsPrivateKey.toString()}`;
+
+          // eslint-disable-next-line no-param-reassign
+          task.output = `Feature Flags Private Key: ${featureFlagsPrivateKey.toString()}`;
+
+          // eslint-disable-next-line no-param-reassign
+          task.output = `Dashpay Private Key: ${dashpayPrivateKey.toString()}`;
+
+          // eslint-disable-next-line no-param-reassign
+          task.output = `Masternode Reward Shares Private Key: ${masternodeRewardSharesPrivateKey.toString()}`;
+
           const subTasks = ctx.configGroup.map((config, i) => (
             {
               title: `Create ${config.getName()} config`,
@@ -106,6 +140,8 @@ function setupLocalPresetTaskFactory(
                 config.set('core.p2p.port', 20001 + (i * 100));
                 config.set('core.rpc.port', 20002 + (i * 100));
                 config.set('externalIp', hostDockerInternalIp);
+
+                config.set('docker.network.subnet', `172.24.${nodeIndex}.0/24`);
 
                 // Setup Core debug logs
                 if (ctx.debugLogs) {
@@ -145,12 +181,23 @@ function setupLocalPresetTaskFactory(
                     });
                   }
 
-                  const drivePrettyLogFile = path.join(HOME_DIR_PATH, config.getName(), 'logs', 'drive_pretty.log');
-                  const driveJsonLogFile = path.join(HOME_DIR_PATH, config.getName(), 'logs', 'drive_json.log');
+                  const drivePrettyLogFile = path.join(HOME_DIR_PATH, 'logs', config.getName(), 'drive_pretty.log');
+                  const driveJsonLogFile = path.join(HOME_DIR_PATH, 'logs', config.getName(), 'drive_json.log');
 
                   config.set('platform.drive.abci.log.prettyFile.path', drivePrettyLogFile);
                   config.set('platform.drive.abci.log.jsonFile.path', driveJsonLogFile);
+
+                  config.set('platform.dpns.masterPublicKey', dpnsDerivedPrivateKey.privateKey.toPublicKey().toString());
+                  config.set('platform.featureFlags.masterPublicKey', featureFlagsDerivedPrivateKey.privateKey.toPublicKey().toString());
+                  config.set('platform.dashpay.masterPublicKey', dashpayDerivedPrivateKey.privateKey.toPublicKey().toString());
+                  config.set(
+                    'platform.masternodeRewardShares.masterPublicKey',
+                    masternodeRewardSharesDerivedPrivateKey.privateKey.toPublicKey().toString(),
+                  );
                 }
+              },
+              options: {
+                persistentOutput: true,
               },
             }
           ));
@@ -167,6 +214,9 @@ function setupLocalPresetTaskFactory(
 
           return new Listr(subTasks);
         },
+        options: {
+          persistentOutput: true,
+        },
       },
       {
         title: 'Configure Core nodes',
@@ -175,10 +225,6 @@ function setupLocalPresetTaskFactory(
       {
         title: 'Configure Tenderdash nodes',
         task: (ctx) => configureTenderdashTask(ctx.configGroup),
-      },
-      {
-        title: 'Initialize Platform',
-        task: (ctx) => initializePlatformTask(ctx.configGroup),
       },
     ]);
   }

@@ -18,9 +18,12 @@ const {
 function createValidatorSetUpdate(validatorSet) {
   const validatorUpdates = validatorSet.getValidators()
     .map((validator) => {
+      const networkInfo = validator.getNetworkInfo();
+
       const validatorUpdate = new ValidatorUpdate({
         power: validator.getVotingPower(),
         proTxHash: validator.getProTxHash(),
+        nodeAddress: `tcp://${networkInfo.getHost()}:${networkInfo.getPort()}`,
       });
 
       if (validator.getPublicKeyShare()) {

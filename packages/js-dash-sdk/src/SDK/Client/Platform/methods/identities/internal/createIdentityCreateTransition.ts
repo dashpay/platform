@@ -1,5 +1,6 @@
 import { PrivateKey } from "@dashevo/dashcore-lib";
 import { Platform } from "../../../Platform";
+import IdentityPublicKey from "@dashevo/dpp/lib/identity/IdentityPublicKey"
 
 /**
  * Creates a funding transaction for the platform identity and returns one-time key to sign the state transition
@@ -24,13 +25,17 @@ export default async function createIdentityCreateTransition(platform : Platform
     // Create Identity
     // @ts-ignore
     const identity = dpp.identity.create(
-        assetLockProof, [identityPublicKey]
+        assetLockProof, [{
+          key: identityPublicKey,
+          purpose: IdentityPublicKey.PURPOSES.AUTHENTICATION,
+          securityLevel: IdentityPublicKey.SECURITY_LEVELS.MASTER
+        }]
     );
 
     // Create ST
     const identityCreateTransition = dpp.identity.createIdentityCreateTransition(identity);
 
-    identityCreateTransition.signByPrivateKey(assetLockPrivateKey);
+    await identityCreateTransition.signByPrivateKey(assetLockPrivateKey, IdentityPublicKey.TYPES.ECDSA_SECP256K1);
 
     const result = await dpp.stateTransition.validateBasic(identityCreateTransition);
 

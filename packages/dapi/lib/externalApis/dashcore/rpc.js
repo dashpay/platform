@@ -45,6 +45,16 @@ const getBestBlockHeight = () => new Promise((resolve, reject) => {
   });
 });
 
+const getBestChainLock = () => new Promise((resolve, reject) => {
+  client.getbestchainlock((err, r) => {
+    if (err) {
+      reject(new DashCoreRpcError(err.message, null, err.code));
+    } else {
+      resolve(r.result);
+    }
+  });
+});
+
 const getBlock = (hash, isParsed = 1) => new Promise((resolve, reject) => {
   client.getblock(hash, isParsed, (err, r) => {
     if (err) {
@@ -65,8 +75,8 @@ const getBlockHash = (index) => new Promise((resolve, reject) => {
   });
 });
 
-const getBlockHeader = (blockHash) => new Promise((resolve, reject) => {
-  client.getblockheader(blockHash, (err, r) => {
+const getBlockHeader = (blockHash, verbose = false) => new Promise((resolve, reject) => {
+  client.getblockheader(blockHash, verbose, (err, r) => {
     if (err) {
       reject(new DashCoreRpcError(err.message, null, err.code));
     } else {
@@ -75,8 +85,12 @@ const getBlockHeader = (blockHash) => new Promise((resolve, reject) => {
   });
 });
 
-const getBlockHeaders = (offset, limit = 1, verbose = false) => new Promise((resolve, reject) => {
-  client.getblockheaders(offset, limit, verbose, (err, r) => {
+const getBlockHeaders = (
+  fromBlockHash,
+  limit = 1,
+  verbose = false,
+) => new Promise((resolve, reject) => {
+  client.getblockheaders(fromBlockHash, limit, verbose, (err, r) => {
     if (err) {
       reject(new DashCoreRpcError(err.message, null, err.code));
     } else {
@@ -294,6 +308,7 @@ const getBlockchainInfo = () => new Promise((resolve, reject) => {
  * getUTXO: (function(*=): Promise<any>),
  * getBlockHash: (function(*=): Promise<any>),
  * getBestBlockHash: (function(): Promise<any>),
+ * getBestChainLock: (function(): Promise<any>),
  * getMnListDiff: (function(*=, *=): Promise<any>),
  * getMnSync: (function(*=, *=): Promise<any>),
  * getMasternode: (function(*=, *=): Promise<any>),
@@ -317,6 +332,7 @@ module.exports = {
   generateToAddress,
   getBestBlockHash,
   getBestBlockHeight,
+  getBestChainLock,
   getBlockHash,
   getBlock,
   getBlockHeader,

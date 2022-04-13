@@ -47,6 +47,7 @@ function validateStateTransitionFeeFactory(
         break;
       }
       case stateTransitionTypes.DATA_CONTRACT_CREATE:
+      case stateTransitionTypes.DATA_CONTRACT_UPDATE:
       case stateTransitionTypes.DOCUMENTS_BATCH: {
         const identityId = stateTransition.getOwnerId();
         const identity = await stateRepository.fetchIdentity(identityId);

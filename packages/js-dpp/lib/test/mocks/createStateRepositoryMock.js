@@ -10,6 +10,7 @@
  *   fetchIdentity: *,
  *   storeIdentity: *,
  *   verifyInstantLock: *,
+ *   fetchSMLStore: *,
  * }}
  */
 module.exports = function createStateRepositoryMock(sinonSandbox) {
@@ -29,5 +30,6 @@ module.exports = function createStateRepositoryMock(sinonSandbox) {
     markAssetLockTransactionOutPointAsUsed: sinonSandbox.stub(),
     verifyChainLockHeight: sinonSandbox.stub(),
     isAssetLockTransactionOutPointAlreadyUsed: sinonSandbox.stub(),
+    fetchSMLStore: sinonSandbox.stub(),
   };
 };

@@ -1,7 +1,7 @@
 ## About DAPI
 
 DAPI (Decentralized API) is a distributed and decentralized endpoints provided by the Masternode Network.  
-You can learn more about DAPI on the [DAPI-Client documentation](https://dashevo.github.io/dapi-client/#/).
+You can learn more about DAPI on the [DAPI-Client documentation](https://dashevo.github.io/platform/DAPI-Client/).
 
 ## Get the DAPI-Client instance
 

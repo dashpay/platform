@@ -2,12 +2,14 @@
 import DashPlatformProtocol from "@dashevo/dpp";
 
 import Client from "../Client";
+import { IStateTransitionResult } from './IStateTransitionResult';
 
 import broadcastDocument from "./methods/documents/broadcast";
 import createDocument from "./methods/documents/create";
 import getDocument from "./methods/documents/get";
 
-import broadcastContract from "./methods/contracts/broadcast";
+import publishContract from "./methods/contracts/publish";
+import updateContract from "./methods/contracts/update";
 import createContract from "./methods/contracts/create";
 import getContract from "./methods/contracts/get";
 
@@ -20,7 +22,6 @@ import resolveName from "./methods/names/resolve";
 import resolveNameByRecord from "./methods/names/resolveByRecord";
 import searchName from "./methods/names/search";
 import broadcastStateTransition from "./broadcastStateTransition";
-import { IPlatformStateProof } from "./IPlatformStateProof";
 import StateRepository from './StateRepository';
 import { latestVersion as latestProtocolVersion } from "@dashevo/dpp/lib/version/protocolVersion";
 
@@ -66,6 +67,13 @@ interface Identities {
     topUp: Function,
 }
 
+interface DataContracts {
+    update: Function,
+    publish: Function,
+    create: Function,
+    get: Function,
+}
+
 /**
  * Class for Dash Platform
  *
@@ -93,13 +101,13 @@ export class Platform {
      * @param {Function} create - create contracts which can be broadcasted
      * @param {Function} register - register contracts on the platform
      */
-    public contracts: Records;
+    public contracts: DataContracts;
 
     /**
      * Broadcasts state transition
      * @param {Object} stateTransition
      */
-    public broadcastStateTransition(stateTransition: any): Promise<IPlatformStateProof|void> {
+    public broadcastStateTransition(stateTransition: any): Promise<IStateTransitionResult|void> {
         return broadcastStateTransition(this, stateTransition);
     };
 
@@ -121,7 +129,8 @@ export class Platform {
             get: getDocument.bind(this),
         };
         this.contracts = {
-            broadcast: broadcastContract.bind(this),
+            publish: publishContract.bind(this),
+            update: updateContract.bind(this),
             create: createContract.bind(this),
             get: getContract.bind(this),
         };

@@ -8,6 +8,7 @@ const getMnListDiffFactory = require('./getMnListDiffFactory');
 const getStatusFactory = require('./getStatusFactory');
 const getTransactionFactory = require('./getTransaction/getTransactionFactory');
 const subscribeToTransactionsWithProofsFactory = require('./subscribeToTransactionsWithProofsFactory');
+const subscribeToBlockHeadersWithChainLocksFactory = require('./subscribeToBlockHeadersWithChainLocksFactory');
 
 class CoreMethodsFacade {
   /**
@@ -25,6 +26,9 @@ class CoreMethodsFacade {
     this.getStatus = getStatusFactory(grpcTransport);
     this.getTransaction = getTransactionFactory(grpcTransport);
     this.subscribeToTransactionsWithProofs = subscribeToTransactionsWithProofsFactory(
+      grpcTransport,
+    );
+    this.subscribeToBlockHeadersWithChainLocks = subscribeToBlockHeadersWithChainLocksFactory(
       grpcTransport,
     );
   }

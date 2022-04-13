@@ -1178,12 +1178,12 @@ void BlockHeadersWithChainLocksRequest_ClearFromBlockOneOfCase(BlockHeadersWithC
 
 @dynamic responsesOneOfCase;
 @dynamic blockHeaders;
-@dynamic chainLockSignatureMessages;
+@dynamic chainLock;
 
 typedef struct BlockHeadersWithChainLocksResponse__storage_ {
   uint32_t _has_storage_[2];
   BlockHeaders *blockHeaders;
-  ChainLockSignatureMessages *chainLockSignatureMessages;
+  NSData *chainLock;
 } BlockHeadersWithChainLocksResponse__storage_;
 
 // This method is threadsafe because it is initially called
@@ -1202,13 +1202,13 @@ typedef struct BlockHeadersWithChainLocksResponse__storage_ {
         .dataType = GPBDataTypeMessage,
       },
       {
-        .name = "chainLockSignatureMessages",
-        .dataTypeSpecific.className = GPBStringifySymbol(ChainLockSignatureMessages),
-        .number = BlockHeadersWithChainLocksResponse_FieldNumber_ChainLockSignatureMessages,
+        .name = "chainLock",
+        .dataTypeSpecific.className = NULL,
+        .number = BlockHeadersWithChainLocksResponse_FieldNumber_ChainLock,
         .hasIndex = -1,
-        .offset = (uint32_t)offsetof(BlockHeadersWithChainLocksResponse__storage_, chainLockSignatureMessages),
+        .offset = (uint32_t)offsetof(BlockHeadersWithChainLocksResponse__storage_, chainLock),
         .flags = GPBFieldOptional,
-        .dataType = GPBDataTypeMessage,
+        .dataType = GPBDataTypeBytes,
       },
     };
     GPBDescriptor *localDescriptor =
@@ -1272,49 +1272,6 @@ typedef struct BlockHeaders__storage_ {
                                         fields:fields
                                     fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
                                    storageSize:sizeof(BlockHeaders__storage_)
-                                         flags:GPBDescriptorInitializationFlag_None];
-    NSAssert(descriptor == nil, @"Startup recursed!");
-    descriptor = localDescriptor;
-  }
-  return descriptor;
-}
-
-@end
-
-#pragma mark - ChainLockSignatureMessages
-
-@implementation ChainLockSignatureMessages
-
-@dynamic messagesArray, messagesArray_Count;
-
-typedef struct ChainLockSignatureMessages__storage_ {
-  uint32_t _has_storage_[1];
-  NSMutableArray *messagesArray;
-} ChainLockSignatureMessages__storage_;
-
-// This method is threadsafe because it is initially called
-// in +initialize for each subclass.
-+ (GPBDescriptor *)descriptor {
-  static GPBDescriptor *descriptor = nil;
-  if (!descriptor) {
-    static GPBMessageFieldDescription fields[] = {
-      {
-        .name = "messagesArray",
-        .dataTypeSpecific.className = NULL,
-        .number = ChainLockSignatureMessages_FieldNumber_MessagesArray,
-        .hasIndex = GPBNoHasBit,
-        .offset = (uint32_t)offsetof(ChainLockSignatureMessages__storage_, messagesArray),
-        .flags = GPBFieldRepeated,
-        .dataType = GPBDataTypeBytes,
-      },
-    };
-    GPBDescriptor *localDescriptor =
-        [GPBDescriptor allocDescriptorForClass:[ChainLockSignatureMessages class]
-                                     rootClass:[CoreRoot class]
-                                          file:CoreRoot_FileDescriptor()
-                                        fields:fields
-                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
-                                   storageSize:sizeof(ChainLockSignatureMessages__storage_)
                                          flags:GPBDescriptorInitializationFlag_None];
     NSAssert(descriptor == nil, @"Startup recursed!");
     descriptor = localDescriptor;

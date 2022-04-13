@@ -25,7 +25,11 @@ describe('e2e', () => {
         profile: {
           type: 'object',
           indices: [
-            { properties: [{ $ownerId: 'asc' }], unique: true },
+            {
+              name: 'ownerId',
+              properties: [{ $ownerId: 'asc' }],
+              unique: true,
+            },
           ],
           properties: {
             avatarUrl: {
@@ -44,7 +48,14 @@ describe('e2e', () => {
         contact: {
           type: 'object',
           indices: [
-            { properties: [{ $ownerId: 'asc' }, { toUserId: 'asc' }], unique: true },
+            {
+              name: 'onwerIdToUserId',
+              properties: [
+                { $ownerId: 'asc' },
+                { toUserId: 'asc' },
+              ],
+              unique: true,
+            },
           ],
           properties: {
             toUserId: {
@@ -97,7 +108,7 @@ describe('e2e', () => {
           dataContractDocumentSchemas, bobIdentity,
         );
 
-        await bobClient.platform.contracts.broadcast(dataContract, bobIdentity);
+        await bobClient.platform.contracts.publish(dataContract, bobIdentity);
 
         // Additional wait time to mitigate testnet latency
         if (process.env.NETWORK === 'testnet') {

@@ -1,0 +1,3 @@
+module.exports = {
+  NEW_BLOCK_HEADERS_PROPAGATE_INTERVAL: 1000,
+};

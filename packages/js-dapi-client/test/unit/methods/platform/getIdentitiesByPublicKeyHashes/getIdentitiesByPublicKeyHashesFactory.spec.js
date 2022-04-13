@@ -5,9 +5,10 @@ const {
     GetIdentitiesByPublicKeyHashesResponse,
     ResponseMetadata,
     Proof: ProofResponse,
-    StoreTreeProofs,
   },
 } = require('@dashevo/dapi-grpc');
+
+const cbor = require('cbor');
 
 const getIdentityFixture = require('@dashevo/dpp/lib/test/fixtures/getIdentityFixture');
 const getMetadataFixture = require('../../../../../lib/test/fixtures/getMetadataFixture');
@@ -28,7 +29,6 @@ describe('getIdentitiesByPublicKeyHashesFactory', () => {
   let metadataFixture;
   let proofFixture;
   let proofResponse;
-  let storeTreeProofsProto;
 
   beforeEach(function beforeEach() {
     identityFixture = getIdentityFixture();
@@ -41,22 +41,15 @@ describe('getIdentitiesByPublicKeyHashesFactory', () => {
 
     response = new GetIdentitiesByPublicKeyHashesResponse();
     response.setIdentitiesList(
-      [identityFixture.toBuffer()],
+      [cbor.encode([identityFixture.toBuffer()])],
     );
     response.setMetadata(metadata);
 
     proofResponse = new ProofResponse();
-    storeTreeProofsProto = new StoreTreeProofs();
-    storeTreeProofsProto.setIdentitiesProof(proofFixture.storeTreeProofs.identitiesProof);
-    storeTreeProofsProto.setPublicKeyHashesToIdentityIdsProof(
-      proofFixture.storeTreeProofs.publicKeyHashesToIdentityIdsProof,
-    );
-    storeTreeProofsProto.setDataContractsProof(proofFixture.storeTreeProofs.dataContractsProof);
-    storeTreeProofsProto.setDocumentsProof(proofFixture.storeTreeProofs.documentsProof);
+
     proofResponse.setSignatureLlmqHash(proofFixture.signatureLLMQHash);
     proofResponse.setSignature(proofFixture.signature);
-    proofResponse.setRootTreeProof(proofFixture.rootTreeProof);
-    proofResponse.setStoreTreeProofs(storeTreeProofsProto);
+    proofResponse.setMerkleProof(proofFixture.merkleProof);
 
     publicKeyHash = identityFixture.getPublicKeyById(1).hash();
 
@@ -84,7 +77,7 @@ describe('getIdentitiesByPublicKeyHashesFactory', () => {
       request,
       options,
     );
-    expect(result.getIdentities()).to.have.deep.members([identityFixture.toBuffer()]);
+    expect(result.getIdentities()).to.have.deep.members([[identityFixture.toBuffer()]]);
     expect(result.getMetadata()).to.deep.equal(metadataFixture);
     expect(result.getProof()).to.equal(undefined);
   });
@@ -111,8 +104,7 @@ describe('getIdentitiesByPublicKeyHashesFactory', () => {
     expect(result.getMetadata()).to.deep.equal(metadataFixture);
 
     expect(result.getProof()).to.be.an.instanceOf(Proof);
-    expect(result.getProof().getRootTreeProof()).to.deep.equal(proofFixture.rootTreeProof);
-    expect(result.getProof().getStoreTreeProofs()).to.deep.equal(proofFixture.storeTreeProofs);
+    expect(result.getProof().getMerkleProof()).to.deep.equal(proofFixture.merkleProof);
     expect(result.getProof().getSignatureLLMQHash()).to.deep.equal(proofFixture.signatureLLMQHash);
     expect(result.getProof().getSignature()).to.deep.equal(proofFixture.signature);
     expect(result.getMetadata()).to.deep.equal(metadataFixture);

@@ -8,6 +8,7 @@ const {
 const { expect } = require('chai');
 
 const createValidatorSetUpdate = require('../../../../../lib/abci/handlers/validator/createValidatorSetUpdate');
+const ValidatorNetworkInfo = require('../../../../../lib/validator/ValidatorNetworkInfo');
 
 describe('createValidatorSetUpdate', () => {
   let validatorSetMock;
@@ -20,10 +21,12 @@ describe('createValidatorSetUpdate', () => {
       getPublicKeyShare: this.sinon.stub(),
       getVotingPower: this.sinon.stub(),
       getProTxHash: this.sinon.stub(),
+      getNetworkInfo: this.sinon.stub(),
     };
 
     validatorMock.getVotingPower.returns(Buffer.alloc(2, 32));
     validatorMock.getProTxHash.returns(Buffer.alloc(3, 32));
+    validatorMock.getNetworkInfo.returns(new ValidatorNetworkInfo('192.168.65.2', 26656));
 
     validatorSetMock = {
       getValidators: this.sinon.stub(),

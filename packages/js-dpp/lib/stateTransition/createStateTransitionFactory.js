@@ -10,9 +10,11 @@ const DataContractNotPresentError = require('../errors/DataContractNotPresentErr
 const MissingDataContractIdError = require('./errors/MissingDataContractIdError');
 
 const Identifier = require('../identifier/Identifier');
+const DataContractUpdateTransition = require('../dataContract/stateTransition/DataContractUpdateTransition/DataContractUpdateTransition');
 
 const typesToClasses = {
   [types.DATA_CONTRACT_CREATE]: DataContractCreateTransition,
+  [types.DATA_CONTRACT_UPDATE]: DataContractUpdateTransition,
   [types.DOCUMENTS_BATCH]: DocumentsBatchTransition,
   [types.IDENTITY_CREATE]: IdentityCreateTransition,
   [types.IDENTITY_TOP_UP]: IdentityTopUpTransition,

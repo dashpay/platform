@@ -1,6 +1,6 @@
 const { Listr } = require('listr2');
 
-const { flags: flagTypes } = require('@oclif/command');
+const { Flags } = require('@oclif/core');
 
 const ConfigBaseCommand = require('../../oclif/command/ConfigBaseCommand');
 const MuteOneLineError = require('../../oclif/errors/MuteOneLineError');
@@ -66,7 +66,7 @@ Mint specified amount of dash to a new address or specified one
 
 MintCommand.flags = {
   ...ConfigBaseCommand.flags,
-  address: flagTypes.string({ char: 'a', description: 'recipient address instead of a new one', default: null }),
+  address: Flags.string({ char: 'a', description: 'recipient address instead of a new one', default: null }),
 };
 
 MintCommand.args = [{

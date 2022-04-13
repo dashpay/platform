@@ -19,7 +19,7 @@ function getFeatureFlagsDocumentsFixture() {
   );
 
   return [
-    factory.create(dataContract, ownerId, 'fixCumulativeFeesBug', {
+    factory.create(dataContract, ownerId, 'updateConsensusParams', {
       enabled: true,
       enableAtHeight: 77,
     }),

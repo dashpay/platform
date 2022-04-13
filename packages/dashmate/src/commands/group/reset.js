@@ -1,8 +1,6 @@
 const { Listr } = require('listr2');
 
-const { flags: flagTypes } = require('@oclif/command');
-
-const baseConfig = require('../../../configs/system/base');
+const { Flags } = require('@oclif/core');
 
 const GroupBaseCommand = require('../../oclif/command/GroupBaseCommand');
 const MuteOneLineError = require('../../oclif/errors/MuteOneLineError');
@@ -16,9 +14,9 @@ class GroupResetCommand extends GroupBaseCommand {
    * @param {Config[]} configGroup
    * @param {configureCoreTask} configureCoreTask
    * @param {configureTenderdashTask} configureTenderdashTask
-   * @param {initializePlatformTask} initializePlatformTask
    * @param {generateToAddressTask} generateToAddressTask
    * @param {ConfigFile} configFile
+   * @param {Object[]} systemConfigs
    * @return {Promise<void>}
    */
   async runWithDependencies(
@@ -34,15 +32,17 @@ class GroupResetCommand extends GroupBaseCommand {
     configGroup,
     configureCoreTask,
     configureTenderdashTask,
-    initializePlatformTask,
     generateToAddressTask,
     configFile,
+    systemConfigs,
   ) {
     const groupName = configGroup[0].get('group');
 
     if (isHardReset && !isSystemConfig(groupName)) {
       throw new Error(`Cannot hard reset non-system config group "${configGroup[0].get('group')}"`);
     }
+
+    const baseConfig = systemConfigs.base;
 
     const amount = 100;
 
@@ -59,6 +59,7 @@ class GroupResetCommand extends GroupBaseCommand {
                 config.set('platform.dpns', baseConfig.platform.dpns);
                 config.set('platform.dashpay', baseConfig.platform.dashpay);
                 config.set('platform.featureFlags', baseConfig.platform.featureFlags);
+                config.set('platform.masternodeRewardShares', baseConfig.platform.masternodeRewardShares);
 
                 // TODO: Should stay the same
                 config.set('platform.drive.tenderdash.nodeId', baseConfig.platform.drive.tenderdash.nodeId);
@@ -98,11 +99,6 @@ class GroupResetCommand extends GroupBaseCommand {
           skip: (ctx) => !!ctx.fundingPrivateKeyString,
           task: () => generateToAddressTask(configGroup[0], amount),
         },
-        {
-          enabled: (ctx) => !ctx.isHardReset,
-          title: 'Initialize Platform',
-          task: () => initializePlatformTask(configGroup),
-        },
       ],
       {
         renderer: isVerbose ? 'verbose' : 'default',
@@ -132,16 +128,16 @@ GroupResetCommand.description = 'Reset group nodes';
 
 GroupResetCommand.flags = {
   ...GroupBaseCommand.flags,
-  hard: flagTypes.boolean({
+  hard: Flags.boolean({
     description: 'reset config as well as data',
     default: false,
   }),
-  force: flagTypes.boolean({
+  force: Flags.boolean({
     char: 'f',
     description: 'reset even running node',
     default: false,
   }),
-  'platform-only': flagTypes.boolean({
+  'platform-only': Flags.boolean({
     char: 'p',
     description: 'reset platform data only',
     default: false,

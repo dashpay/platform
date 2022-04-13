@@ -1,9 +1,13 @@
-const { table } = require('table');
 const chalk = require('chalk');
 
-const ContainerIsNotPresentError = require('../../docker/errors/ContainerIsNotPresentError');
+const { Flags } = require('@oclif/core');
+const { OUTPUT_FORMATS } = require('../../constants');
+
+const printArrayOfObjects = require('../../printers/printArrayOfObjects');
 
 const ConfigBaseCommand = require('../../oclif/command/ConfigBaseCommand');
+
+const ContainerIsNotPresentError = require('../../docker/errors/ContainerIsNotPresentError');
 
 class ServicesStatusCommand extends ConfigBaseCommand {
   /**
@@ -31,7 +35,6 @@ class ServicesStatusCommand extends ConfigBaseCommand {
 
     if (config.get('network') !== 'mainnet') {
       Object.assign(serviceHumanNames, {
-        drive_mongodb: 'Drive MongoDB',
         drive_abci: 'Drive ABCI',
         drive_tenderdash: 'Drive Tenderdash',
         dapi_api: 'DAPI API',
@@ -40,9 +43,7 @@ class ServicesStatusCommand extends ConfigBaseCommand {
       });
     }
 
-    const tableRows = [
-      ['Service', 'Container ID', 'Image', 'Status'],
-    ];
+    const outputRows = [];
 
     for (const [serviceName, serviceDescription] of Object.entries(serviceHumanNames)) {
       let containerId;
@@ -70,23 +71,15 @@ class ServicesStatusCommand extends ConfigBaseCommand {
         statusText = (status === 'running' ? chalk.green : chalk.red)(status);
       }
 
-      tableRows.push([
-        serviceDescription,
-        containerId ? containerId.slice(0, 12) : undefined,
-        image,
-        statusText,
-      ]);
+      outputRows.push({
+        Service: serviceDescription,
+        'Container ID': containerId ? containerId.slice(0, 12) : undefined,
+        Image: image,
+        Status: statusText,
+      });
     }
 
-    const tableConfig = {
-      // singleLine: true,
-      drawHorizontalLine: (index, size) => index === 0 || index === 1 || index === size,
-    };
-
-    const tableOutput = table(tableRows, tableConfig);
-
-    // eslint-disable-next-line no-console
-    console.log(tableOutput);
+    printArrayOfObjects(outputRows, flags.format);
   }
 }
 
@@ -94,6 +87,11 @@ ServicesStatusCommand.description = 'Show service status details';
 
 ServicesStatusCommand.flags = {
   ...ConfigBaseCommand.flags,
+  format: Flags.string({
+    description: 'display output format',
+    default: OUTPUT_FORMATS.PLAIN,
+    options: Object.values(OUTPUT_FORMATS),
+  }),
 };
 
 module.exports = ServicesStatusCommand;

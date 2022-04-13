@@ -12,7 +12,7 @@ Platform via the decentralized API ([DAPI](https://github.com/dashevo/dapi))
 hosted on Dash masternodes.
 
  - `DAPI-Client` provides automatic server (masternode) discovery using either a default seed node or a user-supplied one
- - `DAPI-Client` maps to DAPI's [RPC](https://github.com/dashevo/dapi/tree/master/lib/rpcServer/commands) and [gRPC](https://github.com/dashevo/dapi/tree/master/lib/grpcServer/handlers) endpoints
+ - `DAPI-Client` maps to DAPI's [RPC](https://github.com/dashevo/platform/tree/master/packages/dapi/lib/rpcServer/commands) and [gRPC](https://github.com/dashevo/platform/tree/master/packages/dapi/lib/grpcServer/handlers) endpoints
 
 ## Table of Contents
 - [Install](#install)
@@ -101,12 +101,12 @@ client.core.getBestBlockHash(options).then((r) => {
 
 ## Documentation
 
-More extensive documentation available at https://dashevo.github.io/js-dapi-client/.
+More extensive documentation available at https://dashevo.github.io/platform/DAPI-Client/.
 
 
 ## Contributing
 
-Feel free to dive in! [Open an issue](https://github.com/dashevo/js-dapi-client/issues/new/choose) or submit PRs.
+Feel free to dive in! [Open an issue](https://github.com/dashevo/platform/issues/new/choose) or submit PRs.
 
 ## License
 

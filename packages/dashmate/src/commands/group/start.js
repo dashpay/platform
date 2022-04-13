@@ -1,6 +1,6 @@
 const { Listr } = require('listr2');
 
-const { flags: flagTypes } = require('@oclif/command');
+const { Flags } = require('@oclif/core');
 
 const GroupBaseCommand = require('../../oclif/command/GroupBaseCommand');
 const MuteOneLineError = require('../../oclif/errors/MuteOneLineError');
@@ -61,7 +61,7 @@ GroupStartCommand.description = 'Start group nodes';
 
 GroupStartCommand.flags = {
   ...GroupBaseCommand.flags,
-  'wait-for-readiness': flagTypes.boolean({ char: 'w', description: 'wait for nodes to be ready', default: false }),
+  'wait-for-readiness': Flags.boolean({ char: 'w', description: 'wait for nodes to be ready', default: false }),
 };
 
 module.exports = GroupStartCommand;

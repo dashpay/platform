@@ -2,6 +2,7 @@ const Long = require('long');
 
 const QuorumEntry = require('@dashevo/dashcore-lib/lib/deterministicmnlist/QuorumEntry');
 
+const SimplifiedMNListEntry = require('@dashevo/dashcore-lib/lib/deterministicmnlist/SimplifiedMNListEntry');
 const ValidatorSet = require('../../../lib/validator/ValidatorSet');
 const getSmlFixture = require('../../../lib/test/fixtures/getSmlFixture');
 const ValidatorSetIsNotInitializedError = require('../../../lib/validator/errors/ValidatorSetIsNotInitializedError');
@@ -18,6 +19,7 @@ describe('ValidatorSet', () => {
   let quorumEntry;
   let coreHeight;
   let coreRpcClientMock;
+  let validatorNetworkPort;
 
   let validatorSetLLMQType;
 
@@ -42,6 +44,24 @@ describe('ValidatorSet', () => {
       getQuorumsOfType: this.sinon.stub().returns(
         getSmlFixture()[0].newQuorums.filter((quorum) => quorum.llmqType === 1),
       ),
+      getValidMasternodesList: this.sinon.stub().returns([
+        new SimplifiedMNListEntry({
+          proRegTxHash: 'c286807d463b06c7aba3b9a60acf64c1fc03da8c1422005cd9b4293f08cf0562',
+          confirmedHash: '4eb56228c535db3b234907113fd41d57bcc7cdcb8e0e00e57590af27ee88c119',
+          service: '192.168.65.2:20101',
+          pubKeyOperator: '809519c5f6f3be1c08782ac42ae9a83b6c7205eba43f9a96a4f032ec7a73f1a7c25fa78cce0d6d9c135f7e2c28527179',
+          votingAddress: 'yXmprXYP51uzfMyndtWwxz96MnkCKkFc9x',
+          isValid: true,
+        }),
+        new SimplifiedMNListEntry({
+          proRegTxHash: 'a3e1edc6bd352eeaf0ae58e30781ef4b127854241a3fe7fddf36d5b7e1dc2b3f',
+          confirmedHash: '27a0b637b56af038c45e2fd1f06c2401c8dadfa28ca5e0d19ca836cc984a8378',
+          service: '192.168.65.2:20201',
+          pubKeyOperator: '987a4873caba62cd45a2f7d4aa6d94519ee6753e9bef777c927cb94ade768a542b0ff34a93231d3a92b4e75ffdaa366e',
+          votingAddress: 'ycL7L4mhYoaZdm9TH85svvpfeKtdfo249u',
+          isValid: true,
+        }),
+      ]),
     };
 
     smlStoreMock = {
@@ -86,12 +106,15 @@ describe('ValidatorSet', () => {
       masternode: this.sinon.stub().throws(notMasternodeError),
     };
 
+    validatorNetworkPort = 26656;
+
     validatorSet = new ValidatorSet(
       simplifiedMasternodeListMock,
       getRandomQuorumMock,
       fetchQuorumMembersMock,
       validatorSetLLMQType,
       coreRpcClientMock,
+      validatorNetworkPort,
     );
   });
 
@@ -111,6 +134,8 @@ describe('ValidatorSet', () => {
         validatorSetLLMQType,
         quorumEntry.quorumHash,
       );
+
+      expect(smlStoreMock.getCurrentSML().getValidMasternodesList).to.be.calledOnce();
     });
 
     it('should throw an error if the node is a quorum member and doesn\'t receive public key shares', async () => {
@@ -157,6 +182,8 @@ describe('ValidatorSet', () => {
         validatorSetLLMQType,
         quorumEntry.quorumHash,
       );
+
+      expect(smlStoreMock.getCurrentSML().getValidMasternodesList).to.be.calledOnce();
     });
 
     it('should not rotate validator set if height not divisible by ROTATION_BLOCK_INTERVAL', async () => {

@@ -17,6 +17,9 @@ export async function search(this: Platform, labelPrefix: string, parentDomainNa
             ['normalizedParentDomainName', '==', normalizedParentDomainName],
             ['normalizedLabel', 'startsWith', normalizedLabelPrefix],
         ],
+        orderBy: [
+          ['normalizedLabel', 'asc']
+        ]
     });
 
     return documents;

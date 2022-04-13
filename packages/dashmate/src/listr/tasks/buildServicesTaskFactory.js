@@ -19,19 +19,7 @@ function buildServicesTaskFactory(
       task: async (ctx, task) => {
         const envs = config.toEnvs();
 
-        const doDriveBuild = config.get('platform.drive.abci.docker.build.path');
-        const doDAPIBuild = config.get('platform.dapi.api.docker.build.path');
-
-        let serviceName;
-        if (doDriveBuild && doDAPIBuild) {
-          serviceName = null;
-        } else if (!doDriveBuild) {
-          serviceName = 'dapi_api';
-        } else if (!doDAPIBuild) {
-          serviceName = 'drive_abci';
-        }
-
-        const buildProcess = await dockerCompose.build(envs, serviceName);
+        const buildProcess = await dockerCompose.build(envs);
 
         if (ctx.isVerbose) {
           buildProcess.stdout.pipe(task.stdout());

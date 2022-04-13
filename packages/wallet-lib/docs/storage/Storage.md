@@ -8,7 +8,7 @@ Parameters:
 
 | parameters                         | type            | required       | Description                                                                                                                                                                    |  
 |------------------------------------|-----------------|----------------| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| **opts.network**                   | Network|String  | no (testnet)   | The network to use for the Storage instance                                                          |
+| **opts.network**                   | Network\|String  | no (testnet)   | The network to use for the Storage instance                                                          |
 | **opts.rehydrate**                 | Boolean         | no (true)      | If data should be autoloaded from the adapter                                                        |
 | **opts.autosave**                  | Boolean         | no (true)      | If set at true, will autosave the storage to adapter at an autosaveIntervalTime                      |
 | **opts.autosaveIntervalTime**      | Number          | no (10sec)     | If millisecond, the interval time at which the adapter should persist the data                       |

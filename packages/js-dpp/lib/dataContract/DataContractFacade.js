@@ -10,6 +10,7 @@ const decodeProtocolEntityFactory = require('../decodeProtocolEntityFactory');
 
 const protocolVersion = require('../version/protocolVersion');
 const validateProtocolVersionFactory = require('../version/validateProtocolVersionFactory');
+const getPropertyDefinitionByPath = require('./getPropertyDefinitionByPath');
 
 class DataContractFacade {
   /**
@@ -31,8 +32,8 @@ class DataContractFacade {
       validateDataContractMaxDepth,
       enrichDataContractWithBaseSchema,
       validateDataContractPatterns,
-      RE2,
       validateProtocolVersion,
+      getPropertyDefinitionByPath,
     );
 
     const decodeProtocolEntity = decodeProtocolEntityFactory();
@@ -47,7 +48,7 @@ class DataContractFacade {
   /**
    * Create Data Contract
    *
-   * @param {Buffer} ownerId
+   * @param {Identifier|Buffer} ownerId
    * @param {Object} documents
    * @return {DataContract}
    */
@@ -80,13 +81,23 @@ class DataContractFacade {
   }
 
   /**
-   * Create Data Contract State Transition
+   * Create Data Contract Create State Transition
    *
    * @param {DataContract} dataContract
    * @return {DataContractCreateTransition}
    */
-  createStateTransition(dataContract) {
-    return this.factory.createStateTransition(dataContract);
+  createDataContractCreateTransition(dataContract) {
+    return this.factory.createDataContractCreateTransition(dataContract);
+  }
+
+  /**
+   * Create Data Contract Update State Transition
+   *
+   * @param {DataContract} dataContract
+   * @return {DataContractUpdateTransition}
+   */
+  createDataContractUpdateTransition(dataContract) {
+    return this.factory.createDataContractUpdateTransition(dataContract);
   }
 
   /**

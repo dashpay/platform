@@ -29,7 +29,6 @@ CF_EXTERN_C_BEGIN
 
 @class BlockHeaders;
 @class BloomFilter;
-@class ChainLockSignatureMessages;
 @class GetStatusResponse_Chain;
 @class GetStatusResponse_Masternode;
 @class GetStatusResponse_Network;
@@ -445,13 +444,13 @@ void BlockHeadersWithChainLocksRequest_ClearFromBlockOneOfCase(BlockHeadersWithC
 
 typedef GPB_ENUM(BlockHeadersWithChainLocksResponse_FieldNumber) {
   BlockHeadersWithChainLocksResponse_FieldNumber_BlockHeaders = 1,
-  BlockHeadersWithChainLocksResponse_FieldNumber_ChainLockSignatureMessages = 2,
+  BlockHeadersWithChainLocksResponse_FieldNumber_ChainLock = 2,
 };
 
 typedef GPB_ENUM(BlockHeadersWithChainLocksResponse_Responses_OneOfCase) {
   BlockHeadersWithChainLocksResponse_Responses_OneOfCase_GPBUnsetOneOfCase = 0,
   BlockHeadersWithChainLocksResponse_Responses_OneOfCase_BlockHeaders = 1,
-  BlockHeadersWithChainLocksResponse_Responses_OneOfCase_ChainLockSignatureMessages = 2,
+  BlockHeadersWithChainLocksResponse_Responses_OneOfCase_ChainLock = 2,
 };
 
 @interface BlockHeadersWithChainLocksResponse : GPBMessage
@@ -460,7 +459,7 @@ typedef GPB_ENUM(BlockHeadersWithChainLocksResponse_Responses_OneOfCase) {
 
 @property(nonatomic, readwrite, strong, null_resettable) BlockHeaders *blockHeaders;
 
-@property(nonatomic, readwrite, strong, null_resettable) ChainLockSignatureMessages *chainLockSignatureMessages;
+@property(nonatomic, readwrite, copy, null_resettable) NSData *chainLock;
 
 @end
 
@@ -480,20 +479,6 @@ typedef GPB_ENUM(BlockHeaders_FieldNumber) {
 @property(nonatomic, readwrite, strong, null_resettable) NSMutableArray<NSData*> *headersArray;
 /** The number of items in @c headersArray without causing the array to be created. */
 @property(nonatomic, readonly) NSUInteger headersArray_Count;
-
-@end
-
-#pragma mark - ChainLockSignatureMessages
-
-typedef GPB_ENUM(ChainLockSignatureMessages_FieldNumber) {
-  ChainLockSignatureMessages_FieldNumber_MessagesArray = 1,
-};
-
-@interface ChainLockSignatureMessages : GPBMessage
-
-@property(nonatomic, readwrite, strong, null_resettable) NSMutableArray<NSData*> *messagesArray;
-/** The number of items in @c messagesArray without causing the array to be created. */
-@property(nonatomic, readonly) NSUInteger messagesArray_Count;
 
 @end
 

@@ -1,6 +1,6 @@
 const Identity = require('./Identity');
-
 const IdentityPublicKey = require('./IdentityPublicKey');
+
 const IdentityCreateTransition = require('./stateTransition/IdentityCreateTransition/IdentityCreateTransition');
 const IdentityTopUpTransition = require('./stateTransition/IdentityTopUpTransition/IdentityTopUpTransition');
 
@@ -29,19 +29,33 @@ class IdentityFactory {
    * Create Identity
    *
    * @param {InstantAssetLockProof} assetLockProof
-   * @param {PublicKey[]} publicKeys
+   * @param {PublicKeyConfig[]} publicKeyConfigs
    * @return {Identity}
    */
-  create(assetLockProof, publicKeys) {
+  create(assetLockProof, publicKeyConfigs) {
     const identity = new Identity({
       protocolVersion: this.dpp.getProtocolVersion(),
       id: assetLockProof.createIdentifier(),
       balance: 0,
-      publicKeys: publicKeys.map((publicKey, i) => ({
-        id: i,
-        type: IdentityPublicKey.TYPES.ECDSA_SECP256K1,
-        data: publicKey.toBuffer(),
-      })),
+      publicKeys: publicKeyConfigs.map((publicKey, i) => {
+        const result = {
+          id: publicKey.id == null ? i : publicKey.id,
+          type: publicKey.type == null ? IdentityPublicKey.TYPES.ECDSA_SECP256K1 : publicKey.type,
+          purpose: publicKey.purpose == null ? IdentityPublicKey.PURPOSES.AUTHENTICATION
+            : publicKey.purpose,
+          securityLevel: publicKey.securityLevel == null
+            ? IdentityPublicKey.SECURITY_LEVELS.CRITICAL : publicKey.securityLevel,
+          // Copy data buffer
+          data: publicKey.key.toBuffer(),
+          readOnly: Boolean(publicKey.readOnly),
+        };
+
+        if (publicKey.readOnly) {
+          result.readOnly = publicKey.readOnly;
+        }
+
+        return result;
+      }),
       revision: 0,
     });
 
@@ -122,7 +136,7 @@ class IdentityFactory {
    *
    * @param {number} coreChainLockedHeight
    * @param {Buffer} outPoint
-   * @returns {InstantAssetLockProof}
+   * @returns {ChainAssetLockProof}
    */
   createChainAssetLockProof(coreChainLockedHeight, outPoint) {
     return new ChainAssetLockProof({
@@ -163,5 +177,14 @@ class IdentityFactory {
     });
   }
 }
+
+/**
+ * @typedef {Object} PublicKeyConfig
+ * @property [number|undefined] id
+ * @property [number|undefined] type
+ * @property [number|undefined] purpose
+ * @property [number|undefined] securityLevel
+ * @property {PublicKey} key
+ */
 
 module.exports = IdentityFactory;

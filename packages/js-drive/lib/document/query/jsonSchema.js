@@ -114,80 +114,6 @@ module.exports = {
             minItems: 3,
             maxItems: 3,
           },
-          // elementMatch
-          {
-            prefixItems: [
-              {
-                $ref: 'field',
-              },
-              {
-                type: 'string',
-                const: 'elementMatch',
-              },
-              {
-                allOf: [
-                  {
-                    $ref: 'where',
-                  },
-                  {
-                    type: 'array',
-                    minItems: 2,
-                  },
-                ],
-              },
-            ],
-            minItems: 3,
-            maxItems: 3,
-          },
-          // length
-          {
-            prefixItems: [
-              {
-                $ref: 'field',
-              },
-              {
-                type: 'string',
-                const: 'length',
-              },
-              {
-                type: 'number',
-                minimum: 0,
-                multipleOf: 1.0,
-              },
-            ],
-            minItems: 3,
-            maxItems: 3,
-          },
-          // contains
-          {
-            prefixItems: [
-              {
-                $ref: 'field',
-              },
-              {
-                type: 'string',
-                const: 'contains',
-              },
-              {
-                oneOf: [
-                  {
-                    $ref: 'scalarTypes',
-                  },
-                  {
-                    type: 'array',
-                    items: {
-                      $ref: 'scalarTypes',
-                    },
-                    uniqueItems: true,
-                    minItems: 1,
-                    maxItems: 100,
-                  },
-                ],
-              },
-            ],
-            minItems: 3,
-            maxItems: 3,
-          },
         ],
       },
       minItems: 1,
@@ -220,19 +146,15 @@ module.exports = {
         items: false,
       },
       minItems: 1,
-      maxItems: 2,
+      maxItems: 255,
     },
     startAfter: {
-      type: 'number',
-      minimum: 1,
-      maximum: 20000,
-      multipleOf: 1.0,
+      type: 'object',
+      instanceof: 'Buffer',
     },
     startAt: {
-      type: 'number',
-      minimum: 1,
-      maximum: 20000,
-      multipleOf: 1.0,
+      type: 'object',
+      instanceof: 'Buffer',
     },
   },
   dependentSchemas: {

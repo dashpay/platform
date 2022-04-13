@@ -1,5 +1,10 @@
 const crypto = require('crypto');
 
+const {
+  contractId: dpnsContractId,
+  ownerId: dpnsOwnerId,
+} = require('@dashevo/dpns-contract/lib/systemIds');
+
 const createClientWithFundedWallet = require('../../lib/test/createClientWithFundedWallet');
 
 const wait = require('../../lib/wait');
@@ -29,6 +34,8 @@ describe('DPNS', () => {
     topLevelDomain = 'dash';
     secondLevelDomain = getRandomDomain();
     client = await createClientWithFundedWallet();
+
+    await client.platform.identities.topUp(dpnsOwnerId, 5);
   });
 
   after(async () => {
@@ -37,10 +44,10 @@ describe('DPNS', () => {
 
   describe('Data contract', () => {
     it('should exists', async () => {
-      const createdDataContract = await client.platform.contracts.get(process.env.DPNS_CONTRACT_ID);
+      const createdDataContract = await client.platform.contracts.get(dpnsContractId);
 
       expect(createdDataContract).to.exist();
-      expect(createdDataContract.getId().toString()).to.equal(process.env.DPNS_CONTRACT_ID);
+      expect(createdDataContract.getId().toString()).to.equal(dpnsContractId);
     });
   });
 
@@ -51,14 +58,14 @@ describe('DPNS', () => {
 
     before(async () => {
       ownerClient = await createClientWithFundedWallet(
-        process.env.DPNS_TOP_LEVEL_IDENTITY_PRIVATE_KEY,
+        process.env.DPNS_OWNER_PRIVATE_KEY,
       );
 
       newTopLevelDomain = getRandomDomain();
-      identity = await ownerClient.platform.identities.get(process.env.DPNS_TOP_LEVEL_IDENTITY_ID);
+      identity = await ownerClient.platform.identities.get(dpnsOwnerId);
 
       expect(identity).to.exist();
-      await ownerClient.platform.identities.topUp(process.env.DPNS_TOP_LEVEL_IDENTITY_ID, 5);
+      await ownerClient.platform.identities.topUp(dpnsOwnerId, 5);
     });
 
     after(async () => {

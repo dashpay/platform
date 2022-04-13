@@ -26,17 +26,19 @@ externalip={{=it.externalIp}}
 whitelist={{=it.externalIp}}
 {{?}}
 
-# Indices
+{{? it.network !== 'mainnet'}}# Indices
 txindex=1
 addressindex=1
 timestampindex=1
 spentindex=1
+{{?}}
 
 # ZeroMQ notifications
 zmqpubrawtx=tcp://0.0.0.0:29998
 zmqpubrawtxlock=tcp://0.0.0.0:29998
 zmqpubhashblock=tcp://0.0.0.0:29998
 zmqpubrawchainlocksig=tcp://0.0.0.0:29998
+zmqpubrawchainlock=tcp://0.0.0.0:29998
 zmqpubrawtxlocksig=tcp://0.0.0.0:29998
 
 {{? it.network === 'testnet'}}testnet=1

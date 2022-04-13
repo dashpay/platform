@@ -1,6 +1,6 @@
 # Quick start
 
-### ES5/ES6 via NPM
+## ES5/ES6 via NPM
 
 In order to use this library in Node, you will need to add it to your project as a dependency.
 
@@ -10,13 +10,15 @@ Having [NodeJS](https://nodejs.org/) installed, just type in your terminal :
 npm install @dashevo/dapi-client
 ```
 
-### CDN Standalone
+## CDN Standalone
 
 For browser usage, you can also directly rely on unpkg :
 
 ```
 <script src="https://unpkg.com/@dashevo/dapi-client"></script>
 ```
+
+You can see an [example usage here](https://github.com/dashevo/js-dapi-client/blob/master/examples/web/web.usage.html) 
 
 ## Initialization
 

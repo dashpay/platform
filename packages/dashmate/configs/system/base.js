@@ -1,6 +1,24 @@
 const path = require('path');
 
 const {
+  contractId: dpnsContractId,
+  ownerId: dpnsOwnerId,
+} = require('@dashevo/dpns-contract/lib/systemIds');
+
+const {
+  contractId: dashpayContractId,
+} = require('@dashevo/dashpay-contract/lib/systemIds');
+
+const {
+  contractId: featureFlagsContractId,
+  ownerId: featureFlagsOwnerId,
+} = require('@dashevo/feature-flags-contract/lib/systemIds');
+
+const {
+  contractId: masternodeRewardSharesContractId,
+} = require('@dashevo/masternode-reward-shares-contract/lib/systemIds');
+
+const {
   NETWORK_TESTNET,
   HOME_DIR_PATH,
 } = require('../../src/constants');
@@ -8,9 +26,14 @@ const {
 module.exports = {
   description: 'base config for use as template',
   group: null,
+  docker: {
+    network: {
+      subnet: '172.24.24.0/24',
+    },
+  },
   core: {
     docker: {
-      image: 'dashpay/dashd:0.18.0.0-beta1',
+      image: 'dashpay/dashd:0.18.0.0-beta4',
     },
     p2p: {
       port: 20001,
@@ -66,25 +89,14 @@ module.exports = {
       },
       api: {
         docker: {
-          image: 'dashpay/dapi:0.21',
-          build: {
-            path: null,
-          },
+          image: 'dashpay/dapi:0.22.0-dev.7',
         },
       },
     },
     drive: {
-      mongodb: {
-        docker: {
-          image: 'mongo:4.2',
-        },
-      },
       abci: {
         docker: {
-          image: 'dashpay/drive:0.21',
-          build: {
-            path: null,
-          },
+          image: 'dashpay/drive:0.22.0-dev.7',
         },
         log: {
           stdout: {
@@ -92,11 +104,11 @@ module.exports = {
           },
           prettyFile: {
             level: 'silent',
-            path: path.join(HOME_DIR_PATH, 'base', 'logs', 'drive-pretty.log'),
+            path: path.join(HOME_DIR_PATH, 'logs', 'base', 'drive-pretty.log'),
           },
           jsonFile: {
             level: 'silent',
-            path: path.join(HOME_DIR_PATH, 'base', 'logs', 'drive-json.log'),
+            path: path.join(HOME_DIR_PATH, 'logs', 'base', 'drive-json.log'),
           },
         },
         validatorSet: {
@@ -105,7 +117,7 @@ module.exports = {
       },
       tenderdash: {
         docker: {
-          image: 'dashpay/tenderdash:0.6.0',
+          image: 'dashpay/tenderdash:0.7',
         },
         p2p: {
           port: 26656,
@@ -139,23 +151,30 @@ module.exports = {
     },
     dpns: {
       contract: {
-        id: null,
-        blockHeight: null,
+        id: dpnsContractId,
       },
-      ownerId: null,
+      ownerId: dpnsOwnerId,
+      masterPublicKey: null,
     },
     dashpay: {
       contract: {
-        id: null,
-        blockHeight: null,
+        id: dashpayContractId,
       },
+      masterPublicKey: null,
     },
     featureFlags: {
       contract: {
-        id: null,
-        blockHeight: null,
+        id: featureFlagsContractId,
       },
-      ownerId: null,
+      ownerId: featureFlagsOwnerId,
+      masterPublicKey: null,
+    },
+    sourcePath: null,
+    masternodeRewardShares: {
+      contract: {
+        id: masternodeRewardSharesContractId,
+      },
+      masterPublicKey: null,
     },
   },
   externalIp: null,

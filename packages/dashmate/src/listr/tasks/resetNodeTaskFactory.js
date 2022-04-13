@@ -4,7 +4,6 @@ const { Listr } = require('listr2');
  * @param {DockerCompose} dockerCompose
  * @param {Docker} docker
  * @param {tenderdashInitTask} tenderdashInitTask
- * @param {initTask} initTask
  * @param {startNodeTask} startNodeTask
  * @param {generateToAddressTask} generateToAddressTask
  * @param {systemConfigs} systemConfigs
@@ -14,7 +13,6 @@ function resetNodeTaskFactory(
   dockerCompose,
   docker,
   tenderdashInitTask,
-  initTask,
   startNodeTask,
   generateToAddressTask,
   systemConfigs,

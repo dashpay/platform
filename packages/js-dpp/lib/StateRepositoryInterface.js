@@ -149,3 +149,12 @@
  * @param {Buffer} outPointBuffer
  * @returns {Promise<void>}
  */
+
+/**
+ * Fetch Simplified Masternode List Store
+ *
+ * @async
+ * @method
+ * @name StateRepository#fetchSMLStore
+ * @returns {Promise<SimplifiedMNListStore>}
+ */

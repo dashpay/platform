@@ -1,5 +1,7 @@
 const Ajv = require('ajv');
 
+const nodePath = require('path');
+
 const lodashGet = require('lodash.get');
 const lodashSet = require('lodash.set');
 const lodashCloneDeep = require('lodash.clonedeep');
@@ -77,7 +79,7 @@ class Config {
   set(path, value) {
     const clonedOptions = lodashCloneDeep(this.options);
 
-    lodashSet(clonedOptions, path, value);
+    lodashSet(clonedOptions, path, lodashCloneDeep(value));
 
     const isValid = Config.ajv.validate(configJsonSchema, clonedOptions);
 
@@ -151,16 +153,12 @@ class Config {
     if (this.has('platform')) {
       dockerComposeFiles.push('docker-compose.platform.yml');
 
-      if (this.get('platform.drive.abci.docker.build.path') !== null) {
-        dockerComposeFiles.push('docker-compose.platform.build-drive.yml');
-      }
-
-      if (this.get('platform.dapi.api.docker.build.path') !== null) {
-        dockerComposeFiles.push('docker-compose.platform.build-dapi.yml');
+      if (this.get('platform.sourcePath') !== null) {
+        dockerComposeFiles.push('docker-compose.platform.build.yml');
       }
     }
 
-    return {
+    let envs = {
       CONFIG_NAME: this.getName(),
       COMPOSE_PROJECT_NAME: `dash_masternode_${this.getName()}`,
       COMPOSE_FILE: dockerComposeFiles.join(':'),
@@ -169,6 +167,30 @@ class Config {
       DOCKER_BUILDKIT: 1,
       ...convertObjectToEnvs(this.getOptions()),
     };
+
+    if (this.has('platform')) {
+      envs = {
+        ...envs,
+
+        PLATFORM_DRIVE_ABCI_LOG_PRETTY_DIRECTORY_PATH: nodePath.dirname(
+          this.get('platform.drive.abci.log.prettyFile.path'),
+        ),
+
+        PLATFORM_DRIVE_ABCI_LOG_JSON_DIRECTORY_PATH: nodePath.dirname(
+          this.get('platform.drive.abci.log.jsonFile.path'),
+        ),
+
+        PLATFORM_DRIVE_ABCI_LOG_PRETTY_FILE_NAME: nodePath.basename(
+          this.get('platform.drive.abci.log.prettyFile.path'),
+        ),
+
+        PLATFORM_DRIVE_ABCI_LOG_JSON_FILE_NAME: nodePath.basename(
+          this.get('platform.drive.abci.log.jsonFile.path'),
+        ),
+      };
+    }
+
+    return envs;
   }
 }
 

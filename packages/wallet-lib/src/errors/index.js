@@ -30,6 +30,8 @@ const ValidTransportLayerRequired = require('./ValidTransportLayerRequired');
 const WalletLibError = require('./WalletLibError');
 
 const PluginInjectionError = require('./PluginInjectionError');
+const InstantLockTimeoutError = require('./InstantLockTimeoutError');
+const TxMetadataTimeoutError = require('./TxMetadataTimeoutError');
 
 module.exports = {
   BlockHeaderNotInStore,
@@ -58,4 +60,6 @@ module.exports = {
   ValidTransportLayerRequired,
   WalletLibError,
   PluginInjectionError,
+  InstantLockTimeoutError,
+  TxMetadataTimeoutError,
 };

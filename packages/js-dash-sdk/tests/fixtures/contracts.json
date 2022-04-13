@@ -14,6 +14,7 @@
         },
         "indices": [
           {
+            "name": "rating",
             "properties": [
               {
                 "rating": "desc"
@@ -24,6 +25,7 @@
         "additionalProperties": false
       }
     },
-    "protocolVersion": 0
+    "protocolVersion": 0,
+    "version": 1
   }
 }

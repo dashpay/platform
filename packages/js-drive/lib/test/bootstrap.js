@@ -15,9 +15,23 @@ use(dirtyChai);
 
 process.env.NODE_ENV = 'test';
 
+const testPublicKey = '029470f30d543c500558080bf953f96f4beda8ce3c7e00965891913e586f682bb4';
+
 // Workaround for dotenv-safe
 if (process.env.INITIAL_CORE_CHAINLOCKED_HEIGHT === undefined) {
-  process.env.INITIAL_CORE_CHAINLOCKED_HEIGHT = 1;
+  process.env.INITIAL_CORE_CHAINLOCKED_HEIGHT = testPublicKey;
+}
+if (process.env.DPNS_MASTER_PUBLIC_KEY === undefined) {
+  process.env.DPNS_MASTER_PUBLIC_KEY = testPublicKey;
+}
+if (process.env.DASHPAY_MASTER_PUBLIC_KEY === undefined) {
+  process.env.DASHPAY_MASTER_PUBLIC_KEY = testPublicKey;
+}
+if (process.env.FEATURE_FLAGS_MASTER_PUBLIC_KEY === undefined) {
+  process.env.FEATURE_FLAGS_MASTER_PUBLIC_KEY = testPublicKey;
+}
+if (process.env.MASTERNODE_REWARD_SHARES_MASTER_PUBLIC_KEY === undefined) {
+  process.env.MASTERNODE_REWARD_SHARES_MASTER_PUBLIC_KEY = testPublicKey;
 }
 
 const dotenvConfig = dotenvSafe.config({

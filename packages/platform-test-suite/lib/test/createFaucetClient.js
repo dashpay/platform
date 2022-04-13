@@ -1,5 +1,7 @@
 const Dash = require('dash');
 
+const { contractId } = require('@dashevo/dpns-contract/lib/systemIds');
+
 const getDAPISeeds = require('./getDAPISeeds');
 
 let faucetClient;
@@ -16,7 +18,7 @@ function createFaucetClient() {
     network: process.env.NETWORK,
     apps: {
       dpns: {
-        contractId: process.env.DPNS_CONTRACT_ID,
+        contractId,
       },
     },
   };
