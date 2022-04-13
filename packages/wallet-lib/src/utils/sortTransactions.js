@@ -30,14 +30,14 @@ const sortTransactions = (txsWithMetadata) => {
     .reduce((acc, height) => {
       transactionsByHeight[height].sort((a, b) => {
         // const prevTxHashBuffer = Buffer.alloc(32);
-        let prevTxHashBuffer = null;
+        const prevTxHashes = new Set();
         b.inputs.forEach((input) => {
           if (input.prevTxId.readUInt32BE() !== 0) {
-            prevTxHashBuffer = input.prevTxId;
+            prevTxHashes.add(input.prevTxId.toString('hex'));
           }
         });
 
-        if (prevTxHashBuffer && a.hash === prevTxHashBuffer.toString('hex')) {
+        if (prevTxHashes.has(a.hash)) {
           return -1;
         }
         return 0;
