@@ -1,11 +1,10 @@
-const {has} = require('lodash');
+const { has } = require('lodash');
 const configureAdapter = require('../_configureAdapter');
 const getDefaultAdapter = require('../_getDefaultAdapter');
-const {CONFIGURED} = require('../../../EVENTS');
-const logger = require('../../../logger')
+const { CONFIGURED } = require('../../../EVENTS');
+const logger = require('../../../logger');
 
-const CURRENT_VERSION = 1
-
+const CURRENT_VERSION = 1;
 
 /**
  * To be called after instantialization as it contains all the async logic / test of adapters
@@ -20,13 +19,13 @@ module.exports = async function configure(opts = {}) {
   const version = await this.adapter.getItem('version');
 
   if (version) {
-    await this.adapter.setItem('version', CURRENT_VERSION)
+    await this.adapter.setItem('version', CURRENT_VERSION);
   } else if (version !== CURRENT_VERSION) {
-    logger.warn('Storage validation error: schema mismatch: unknown version')
-    await this.adapter.setItem('wallets', null)
-    await this.adapter.setItem('chains', null)
+    logger.warn('Storage validation error: schema mismatch: unknown version');
+    await this.adapter.setItem('wallets', null);
+    await this.adapter.setItem('chains', null);
 
-    await this.adapter.setItem('version', CURRENT_VERSION)
+    await this.adapter.setItem('version', CURRENT_VERSION);
   }
 
   this.createWalletStore(opts.walletId);
@@ -41,5 +40,5 @@ module.exports = async function configure(opts = {}) {
   }
 
   this.configured = true;
-  this.emit(CONFIGURED, {type: CONFIGURED, payload: null});
+  this.emit(CONFIGURED, { type: CONFIGURED, payload: null });
 };

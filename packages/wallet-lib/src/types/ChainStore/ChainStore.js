@@ -7,7 +7,7 @@ const {
 const SCHEMA = {
   '*': {
     blockHeaders: {
-      '*': function (hex) { return new BlockHeader(Buffer.from(hex, 'hex'))},
+      '*': function (hex) { return new BlockHeader(Buffer.from(hex, 'hex')); },
     },
     transactions: {
       '*': Transaction,

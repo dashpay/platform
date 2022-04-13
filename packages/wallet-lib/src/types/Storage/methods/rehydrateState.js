@@ -3,8 +3,8 @@ const { hasMethod } = require('../../../utils');
 const { REHYDRATE_STATE_FAILED, REHYDRATE_STATE_SUCCESS } = require('../../../EVENTS');
 
 const logger = require('../../../logger');
-const WalletStore = require("../../WalletStore/WalletStore");
-const ChainStore = require("../../ChainStore/ChainStore");
+const WalletStore = require('../../WalletStore/WalletStore');
+const ChainStore = require('../../ChainStore/ChainStore');
 
 const castItemTypes = (item, schema) => {
   Object.entries(schema).forEach(([schemaKey, schemaValue]) => {
@@ -12,7 +12,7 @@ const castItemTypes = (item, schema) => {
       const Clazz = schemaValue;
       if (schemaKey === '*') {
         Object.keys(item).forEach((itemKey) => {
-          // eslint-disable-next-line no-param-reassign2
+          // eslint-disable-next-line no-param-reassign
           item[itemKey] = new Clazz(item[itemKey]);
         });
       } else {
@@ -20,9 +20,9 @@ const castItemTypes = (item, schema) => {
           throw new Error(`No schema key "${schemaKey}" found for item ${JSON.stringify(item)}`);
         }
 
-        // eslint-disable-next-line no-param-reassign
         // todo typeof
         if (!(['string', 'number'].includes(schemaValue))) {
+          // eslint-disable-next-line no-param-reassign
           item[schemaKey] = new Clazz(item[schemaKey]);
         }
       }
@@ -46,7 +46,11 @@ const rehydrateState = async function rehydrateState() {
       if (this.adapter && hasMethod(this.adapter, 'getItem')) {
         const wallets = await this.adapter.getItem('wallets');
         if (wallets) {
-          castItemTypes(wallets, WalletStore.SCHEMA)
+          try {
+            castItemTypes(wallets, WalletStore.SCHEMA);
+          } catch (e) {
+            this.adapter.setItem('wallets', null);
+          }
 
           Object.keys(wallets).forEach((walletId) => {
             const walletStore = this.getWalletStore(walletId);
@@ -58,7 +62,11 @@ const rehydrateState = async function rehydrateState() {
 
         const chains = await this.adapter.getItem('chains');
         if (chains) {
-          castItemTypes(chains, ChainStore.SCHEMA)
+          try {
+            castItemTypes(chains, ChainStore.SCHEMA);
+          } catch (e) {
+            this.adapter.setItem('chains', null);
+          }
 
           Object.keys(chains).forEach((chainNetwork) => {
             const chainStore = this.getChainStore(chainNetwork);
