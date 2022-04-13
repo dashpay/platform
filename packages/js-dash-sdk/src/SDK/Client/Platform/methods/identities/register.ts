@@ -43,5 +43,13 @@ export default async function register(
       identityIndex,
     );
 
+    // Current identity object will not have metadata or balance information
+    const registeredIdentity = await this.identities.get(identity.id.toString());
+
+    // We cannot just return registeredIdentity as we want to
+    // keep additional information (assetLockProof and transaction) instance
+    identity.setMetadata(registeredIdentity.metadata);
+    identity.setBalance(registeredIdentity.balance);
+
     return identity;
 }
