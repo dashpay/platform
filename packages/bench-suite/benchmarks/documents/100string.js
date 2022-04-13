@@ -42,7 +42,7 @@ module.exports = {
    *
    * this function calling for each document type
    *
-   * @param type
+   * @param {string} type
    * @returns {Object[]}
    */
   // eslint-disable-next-line no-unused-vars
@@ -54,10 +54,10 @@ module.exports = {
 
     // We get 35x3 results running against local network
     // since metrics are gathering from all 3 nodes
-    documents = new Array(35).map(() => {
+    documents = new Array(35).fill(null).map(() => {
       const properties = {};
 
-      for (let i = 0; i <= 100; i++) {
+      for (let i = 0; i < 100; i++) {
         const name = `property${i}`;
 
         properties[name] = crypto.randomBytes(20)

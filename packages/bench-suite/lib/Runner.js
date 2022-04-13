@@ -58,7 +58,7 @@ class Runner {
         throw new Error(`Invalid benchmark type ${benchmarkConfig.type}`);
       }
 
-      const benchmark = new BenchmarkClass(benchmarkConfig, this.#driveMetricsCollector);
+      const benchmark = new BenchmarkClass(benchmarkConfig, this.#options);
 
       this.#mocha.suite.addSuite(
         benchmark.createMochaTestSuite(this.#mocha.suite.ctx),

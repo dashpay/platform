@@ -10,10 +10,17 @@ class AbstractBenchmark {
   matches = [];
 
   /**
-   * @param {Object} config
+   * @type {Object}
    */
-  constructor(config) {
+  runnerOptions;
+
+  /**
+   * @param {Object} config
+   * @param {Object} runnerOptions
+   */
+  constructor(config, runnerOptions) {
     this.config = config;
+    this.runnerOptions = runnerOptions;
   }
 
   /**
