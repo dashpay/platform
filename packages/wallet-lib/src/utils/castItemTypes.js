@@ -12,8 +12,11 @@ const castItemTypes = (item, schema) => {
           throw new Error(`No schema key "${schemaKey}" found for item ${JSON.stringify(item)}`);
         }
 
-        // todo typeof
-        if (!(['string', 'number'].includes(schemaValue))) {
+        if (typeof schemaValue === 'string') {
+          if (typeof item[schemaKey] !== schemaValue) {
+            throw new Error(`Invalid schema type for key "${schemaKey}" in item ${JSON.stringify(item)}`);
+          }
+        } else {
           // eslint-disable-next-line no-param-reassign
           item[schemaKey] = new Clazz(item[schemaKey]);
         }
