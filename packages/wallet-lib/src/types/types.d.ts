@@ -47,7 +47,7 @@ export declare type TransactionHistory<T extends object = object> = T & {
         satoshis: number
     }],
     type: TransactionHistoryType
-    time: number,
+    time: Date,
     txId: string,
     blockHash: string,
     isChainLocked: boolean,
