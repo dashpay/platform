@@ -44,8 +44,8 @@ describe('ChainStore - class', () => {
     expect(storedTransactionData.metadata).to.deep.equal({
       blockHash: null,
       height: null,
-      isInstantLocked: null,
-      isChainLocked: null,
+      isInstantLocked: false,
+      isChainLocked: false,
     });
   });
   it('should update metadata', () => {

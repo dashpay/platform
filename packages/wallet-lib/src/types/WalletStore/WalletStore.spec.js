@@ -7,7 +7,6 @@ describe('WalletStore - Class', ()=> {
     it('should create a walletStore', function () {
       walletStore = new WalletStore('squawk7700');
       walletStore.state.lastKnownBlock.height = 100;
-      walletStore.state.lastKnownBlock.hash = '0x123456789';
 
       expect(walletStore.walletId).to.equal('squawk7700');
     });

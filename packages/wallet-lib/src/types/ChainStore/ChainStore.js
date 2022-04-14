@@ -5,18 +5,20 @@ const {
 } = require('@dashevo/dashcore-lib');
 
 const SCHEMA = {
-  '*': {
-    blockHeaders: {
-      '*': BlockHeader,
+  blockHeaders: {
+    '*': function (hex) {
+      return new BlockHeader(Buffer.from(hex, 'hex'));
     },
-    transactions: {
-      '*': Transaction,
-    },
-    txMetadata: {
-      '*': {
-        blockHash: 'string',
-        height: 'number',
-      },
+  },
+  transactions: {
+    '*': Transaction,
+  },
+  txMetadata: {
+    '*': {
+      blockHash: 'string',
+      height: 'number',
+      isChainLocked: 'boolean',
+      isInstantLocked: 'boolean',
     },
   },
 };
@@ -48,7 +50,7 @@ class ChainStore extends EventEmitter {
   }
 }
 
-ChainStore.SCHEMA = SCHEMA;
+ChainStore.prototype.SCHEMA = SCHEMA;
 
 ChainStore.prototype.considerTransaction = require('./methods/considerTransaction');
 

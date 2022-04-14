@@ -1,23 +1,23 @@
-const {
-  BlockHeader,
-  Transaction,
-} = require('@dashevo/dashcore-lib');
+const castStorageItemsTypes = require('../../../utils/castStorageItemsTypes');
 
-function importState(state) {
+function importState(rawState) {
+  const state = castStorageItemsTypes(rawState, this.SCHEMA);
+
   const {
     blockHeaders,
     transactions,
     txMetadata,
   } = state;
 
-  Object.values(blockHeaders).forEach((serializedBlockHeader) => {
-    this.importBlockHeader(new BlockHeader(Buffer.from(serializedBlockHeader, 'hex')));
+  Object.values(blockHeaders).forEach((blockHeader) => {
+    this.importBlockHeader(blockHeader);
   });
 
   Object.keys(transactions).forEach((hash) => {
-    const tx = new Transaction(Buffer.from(transactions[hash], 'hex'));
+    const tx = transactions[hash];
     const metadata = txMetadata[hash];
     this.importTransaction(tx, metadata);
   });
 }
+
 module.exports = importState;

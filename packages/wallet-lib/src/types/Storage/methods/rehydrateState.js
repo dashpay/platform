@@ -14,22 +14,38 @@ const rehydrateState = async function rehydrateState() {
       if (this.adapter && hasMethod(this.adapter, 'getItem')) {
         const wallets = await this.adapter.getItem('wallets');
         if (wallets) {
-          Object.keys(wallets).forEach((walletId) => {
-            const walletStore = this.getWalletStore(walletId);
-            if (walletStore) {
-              walletStore.importState(wallets[walletId]);
-            }
-          });
+          try {
+            Object.keys(wallets).forEach((walletId) => {
+              const walletStore = this.getWalletStore(walletId);
+
+              if (walletStore) {
+                walletStore.importState(wallets[walletId]);
+              }
+            });
+          } catch (e) {
+            logger.error('Error importing wallets storage, resyncing from start', e);
+
+            this.adapter.setItem('wallets', null);
+            this.adapter.setItem('chains˚', null);
+          }
         }
 
         const chains = await this.adapter.getItem('chains');
         if (chains) {
-          Object.keys(chains).forEach((chainNetwork) => {
-            const chainStore = this.getChainStore(chainNetwork);
-            if (chainStore) {
-              chainStore.importState(chains[chainNetwork]);
-            }
-          });
+          try {
+            Object.keys(chains).forEach((chainNetwork) => {
+              const chainStore = this.getChainStore(chainNetwork);
+
+              if (chainStore) {
+                chainStore.importState(chains[chainNetwork]);
+              }
+            });
+          } catch (e) {
+            logger.error('Error importing chains storage, resyncing from start', e);
+
+            this.adapter.setItem('wallets', null);
+            this.adapter.setItem('chains', null);
+          }
         }
       }
 
