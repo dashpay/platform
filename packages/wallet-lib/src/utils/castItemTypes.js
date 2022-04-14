@@ -1,34 +1,43 @@
-const castItemTypes = (item, schema) => {
-  Object.entries(schema).forEach(([schemaKey, schemaValue]) => {
-    if (schemaValue.constructor.name !== 'Object') {
-      const Clazz = schemaValue;
-      if (schemaKey === '*') {
-        Object.keys(item).forEach((itemKey) => {
-          // eslint-disable-next-line no-param-reassign
-          item[itemKey] = new Clazz(item[itemKey]);
-        });
-      } else {
-        if (!item[schemaKey]) {
-          throw new Error(`No schema key "${schemaKey}" found for item ${JSON.stringify(item)}`);
-        }
+const castItemTypes = (originalItem, schema) =>
+  Object.entries(schema).reduce((acc, next) => {
+  const [schemaKey, schemaValue] = next;
 
-        if (typeof schemaValue === 'string') {
-          if (typeof item[schemaKey] !== schemaValue) {
-            throw new Error(`Invalid schema type for key "${schemaKey}" in item ${JSON.stringify(item)}`);
-          }
-        } else {
-          // eslint-disable-next-line no-param-reassign
-          item[schemaKey] = new Clazz(item[schemaKey]);
-        }
-      }
-    } else if (schemaKey === '*') {
-      Object.values(item).forEach((itemValue) => castItemTypes(itemValue, schemaValue));
+  const item = originalItem[schemaKey];
+  const result = {};
+
+  if (schemaValue.constructor.name !== 'Object') {
+    const Clazz = schemaValue;
+    if (schemaKey === '*') {
+      Object.keys(originalItem).forEach((itemKey) => {
+        result[itemKey] = new Clazz(originalItem[itemKey]);
+      });
     } else {
-      castItemTypes(item[schemaKey], schemaValue);
+      if (!item) {
+        throw new Error(`No schema key "${schemaKey}" found for item ${JSON.stringify(originalItem)}`);
+      }
+
+      if (typeof schemaValue === 'string') {
+        // eslint-disable-next-line valid-typeof
+        if (typeof item !== schemaValue) {
+          throw new Error(`Invalid schema type for key "${schemaKey}" in item ${JSON.stringify(originalItem)}`);
+        }
+
+        result[schemaKey] = item;
+      } else {
+        result[schemaKey] = new Clazz(item);
+      }
     }
-  });
+  } else if (schemaKey === '*') {
+    Object
+      .entries(originalItem)
+      .forEach(([key, value]) => {
+        result[key] = castItemTypes(value, schemaValue);
+      }, {});
+  } else {
+    result[schemaKey] = castItemTypes(item, schemaValue);
+  }
 
-  return item;
-};
+  return { ...acc, ...result };
+}, {});
 
-module.exports = castItemTypes
+module.exports = castItemTypes;

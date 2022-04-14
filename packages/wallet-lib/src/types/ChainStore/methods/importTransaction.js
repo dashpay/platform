@@ -13,8 +13,8 @@ function importTransaction(transaction, metadata = {}) {
     metadata: {
       blockHash: metadata.blockHash || null,
       height: metadata.height || null,
-      isInstantLocked: metadata.isInstantLocked || null,
-      isChainLocked: metadata.isChainLocked || null,
+      isInstantLocked: metadata.isInstantLocked || false,
+      isChainLocked: metadata.isChainLocked || false,
     },
   });
 

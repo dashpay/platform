@@ -1,11 +1,8 @@
-const {hasMethod} = require('../../../utils');
+const { hasMethod } = require('../../../utils');
 
-const {REHYDRATE_STATE_FAILED, REHYDRATE_STATE_SUCCESS} = require('../../../EVENTS');
+const { REHYDRATE_STATE_FAILED, REHYDRATE_STATE_SUCCESS } = require('../../../EVENTS');
 
 const logger = require('../../../logger');
-const WalletStore = require('../../WalletStore/WalletStore');
-const ChainStore = require('../../ChainStore/ChainStore');
-
 
 /**
  * Fetch the state from the persistence adapter
@@ -20,7 +17,11 @@ const rehydrateState = async function rehydrateState() {
           Object.keys(wallets).forEach((walletId) => {
             const walletStore = this.getWalletStore(walletId);
             if (walletStore) {
-              walletStore.importState(wallets[walletId]);
+              try {
+                walletStore.importState(wallets[walletId]);
+              } catch (e) {
+                this.adapter.setItem('wallets', null);
+              }
             }
           });
         }
@@ -30,7 +31,11 @@ const rehydrateState = async function rehydrateState() {
           Object.keys(chains).forEach((chainNetwork) => {
             const chainStore = this.getChainStore(chainNetwork);
             if (chainStore) {
-              chainStore.importState(chains[chainNetwork]);
+              try {
+                chainStore.importState(chains[chainNetwork]);
+              } catch (e) {
+                this.adapter.setItem('chains', null);
+              }
             }
           });
         }

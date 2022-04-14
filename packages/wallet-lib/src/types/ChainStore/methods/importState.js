@@ -1,29 +1,7 @@
-const {BlockHeader, Transaction} = require('@dashevo/dashcore-lib')
-const castItemTypes = require('../../../utils/castItemTypes')
+const castItemTypes = require('../../../utils/castItemTypes');
 
-const SCHEMA = {
-  blockHeaders: {
-    '*': function (hex) {
-      return new BlockHeader(Buffer.from(hex, 'hex'));
-    },
-  },
-  transactions: {
-    '*': Transaction,
-  },
-  txMetadata: {
-    '*': {
-      blockHash: 'string',
-      height: 'number',
-    },
-  },
-};
-
-function importState(state) {
-  try {
-    castItemTypes(state, SCHEMA)
-  } catch (e) {
-    console.error(e)
-  }
+function importState(rawState) {
+  const state = castItemTypes(rawState, this.SCHEMA);
 
   const {
     blockHeaders,

@@ -1,20 +1,9 @@
-const castItemTypes = require('../../../utils/castItemTypes')
+const castItemTypes = require('../../../utils/castItemTypes');
 
-const SCHEMA = {
-  lastKnownBlock: {
-    height: 'number',
-  },
-};
-
-function importState(state) {
-  try {
-    castItemTypes(state, SCHEMA)
-  } catch (e) {
-    console.error(e)
-  }
+function importState(rawState) {
+  const state = castItemTypes(rawState, this.SCHEMA);
 
   this.state.lastKnownBlock = state.lastKnownBlock;
 }
 
 module.exports = importState;
-

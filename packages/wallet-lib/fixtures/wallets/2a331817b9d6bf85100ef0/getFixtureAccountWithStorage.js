@@ -1,4 +1,3 @@
-const _ = require('lodash')
 const walletStoreMock = require('./wallet-store.json');
 const chainStoreMock = require('./chain-store.json');
 const Storage = require('../../../src/types/Storage/Storage');
@@ -9,8 +8,7 @@ const generateNewPaths = require("../../../src/types/Account/methods/generateNew
 const addDefaultPaths = require("../../../src/types/Account/methods/addDefaultPaths");
 
 module.exports = (opts = {}) => {
-  const _walletStoreMock = _.cloneDeep(walletStoreMock)
-  const { walletId } = _walletStoreMock;
+  const { walletId } = walletStoreMock;
 
     const mockedAccount = {
         walletId,
@@ -29,7 +27,7 @@ module.exports = (opts = {}) => {
     mockedAccount.storage.createChainStore('testnet');
 
     const walletStore = mockedAccount.storage.getWalletStore(walletId);
-    walletStore.importState(_walletStoreMock);
+    walletStore.importState(walletStoreMock);
     walletStore.createPathState(mockedAccount.accountPath);
 
     mockedAccount.storage.getChainStore('testnet').importState(chainStoreMock);
