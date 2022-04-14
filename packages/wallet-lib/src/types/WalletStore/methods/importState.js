@@ -1,7 +1,7 @@
-const castItemTypes = require('../../../utils/castItemTypes');
+const castStorageItemsTypes = require('../../../utils/castStorageItemsTypes');
 
 function importState(rawState) {
-  const state = castItemTypes(rawState, this.SCHEMA);
+  const state = castStorageItemsTypes(rawState, this.SCHEMA);
 
   this.state.lastKnownBlock = state.lastKnownBlock;
 }

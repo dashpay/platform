@@ -21,7 +21,7 @@ module.exports = async function configure(opts = {}) {
   if (!version) {
     await this.adapter.setItem('version', CURRENT_VERSION);
   } else if (version !== CURRENT_VERSION) {
-    logger.warn('Storage validation error: schema mismatch: unknown version');
+    logger.warn('Storage version mismatch, resyncing from start');
     await this.adapter.setItem('wallets', null);
     await this.adapter.setItem('chains', null);
 
