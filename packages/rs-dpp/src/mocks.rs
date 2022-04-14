@@ -38,8 +38,6 @@ pub type IHeader = String;
 
 pub type InstantLock = String;
 
-pub type SimplifiedSMListStore = String;
-
 pub struct StateRepository {}
 
 #[derive(Debug, Clone)]

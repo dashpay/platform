@@ -6,7 +6,7 @@ use crate::{data_contract::DataContract, document::Document, identifier::Identif
 use anyhow::Result as AnyResult;
 
 #[async_trait]
-pub trait StateRepositoryLike<S, L>
+pub trait StateRepositoryLike<S, L>: Send
 where
     L: SimplifiedMNListLike,
     S: SMLStoreLike<L>,
@@ -76,9 +76,9 @@ where
     async fn fetch_sml_store(&self) -> AnyResult<S>;
 }
 
-pub trait SMLStoreLike<L>
+pub trait SMLStoreLike<L>: Send
 where
-    L: SimplifiedMNListLike,
+    L: SimplifiedMNListLike + Send,
 {
     fn get_sml_by_height(&self) -> AnyResult<L> {
         unimplemented!()
@@ -89,7 +89,7 @@ where
     }
 }
 
-pub trait SimplifiedMNListLike {
+pub trait SimplifiedMNListLike: Send {
     fn get_valid_master_nodes(&self) -> Vec<SMLEntry> {
         unimplemented!()
     }
