@@ -8,7 +8,7 @@ const generateNewPaths = require("../../../src/types/Account/methods/generateNew
 const addDefaultPaths = require("../../../src/types/Account/methods/addDefaultPaths");
 
 module.exports = (opts = {}) => {
-  const { walletId } = walletStoreMock;
+    const { walletId } = walletStoreMock;
 
     const mockedAccount = {
         walletId,
