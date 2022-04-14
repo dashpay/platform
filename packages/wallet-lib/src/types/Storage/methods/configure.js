@@ -16,6 +16,9 @@ module.exports = async function configure(opts = {}) {
   this.createWalletStore(opts.walletId);
   this.createChainStore(opts.network);
 
+  this.currentWalletId = opts.walletId;
+  this.currentNetwork = opts.network;
+
   if (this.rehydrate) {
     await this.rehydrateState();
   }

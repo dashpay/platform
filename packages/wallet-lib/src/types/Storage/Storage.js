@@ -17,6 +17,8 @@ const defaultOpts = {
 class Storage extends EventEmitter {
   constructor(opts = {}) {
     super();
+    this.currentWalletId = '';
+    this.currentNetwork = '';
     this.wallets = new Map();
     this.chains = new Map();
     this.application = {

@@ -8,8 +8,19 @@ const saveState = async function saveState() {
   if (this.autosave && this.adapter && this.adapter.setItem) {
     const self = this;
     try {
+      const currentChainHeight = this.getChainStore(this.currentNetwork).state.blockHeight;
+
       const serializedWallets = [...self.wallets].reduce((acc, [walletId, walletStore]) => {
-        acc[walletId] = walletStore.exportState();
+        let walletStoreState;
+        if (walletId === this.currentWalletId) {
+          // For current wallet we need to take into account the current chain height
+          walletStoreState = walletStore.exportState(currentChainHeight);
+        } else {
+          // Others stay unaffected
+          walletStoreState = walletStore.exportState();
+        }
+
+        acc[walletId] = walletStoreState;
         return acc;
       }, {});
 
