@@ -94,6 +94,8 @@ class Runner {
       this.#benchmarks.forEach((benchmark) => {
         benchmark.printResults();
       });
+
+      process.exit(0);
     });
   }
 }
