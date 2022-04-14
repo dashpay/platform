@@ -11,7 +11,7 @@ use crate::{
 #[macro_export]
 /// Getter of Document Transition Base properties
 macro_rules! get_from_transition {
-    ($document_transition:ident, $property:ident) => {
+    ($document_transition:expr, $property:ident) => {
         match $document_transition {
             DocumentTransition::Create(d) => &d.base.$property,
             DocumentTransition::Delete(d) => &d.base.$property,
