@@ -1,10 +1,13 @@
-mod data_trigger_execution_context;
-use std::future::Future;
 use std::pin::Pin;
+
+use futures::future::LocalBoxFuture;
+use futures::Future;
+mod data_trigger_execution_context;
 
 pub mod dashpay_data_triggers;
 pub mod dpns_triggers;
 pub mod feature_flags_data_triggers;
+pub mod get_data_triggers_factory;
 pub mod reward_share_data_triggers;
 
 mod data_trigger_execution_result;
@@ -14,6 +17,7 @@ pub use data_trigger_execution_context::*;
 pub use data_trigger_execution_result::*;
 pub use reject_data_trigger::*;
 
+use crate::document::document_transition::{Action, DocumentCreateTransition, DocumentTransition};
 use crate::{
     errors::DataTriggerError,
     get_from_transition,
@@ -21,16 +25,15 @@ use crate::{
     state_repository::{SMLStoreLike, SimplifiedMNListLike, StateRepositoryLike},
 };
 
-use crate::document::document_transition::{Action, DocumentCreateTransition, DocumentTransition};
+pub type BoxedTrigger<'a, SR, S, L> = Box<Trigger<'a, SR, S, L>>;
+pub type Trigger<'a, SR, S, L> =
+    dyn Fn(
+        &'a DocumentTransition,
+        &'a DataTriggerExecutionContext<SR, S, L>,
+        Option<&'a Identifier>,
+    ) -> LocalBoxFuture<'a, Result<DataTriggerExecutionResult, anyhow::Error>>;
 
-pub type Trigger<SR, S, L> =
-    fn(
-        &DocumentTransition,
-        &DataTriggerExecutionContext<SR, S, L>,
-        Option<&Identifier>,
-    ) -> Pin<Box<dyn Future<Output = Result<DataTriggerExecutionResult, anyhow::Error>>>>;
-
-pub struct DataTrigger<SR, S, L>
+pub struct DataTrigger<'a, SR, S, L>
 where
     L: SimplifiedMNListLike,
     S: SMLStoreLike<L>,
@@ -38,12 +41,12 @@ where
 {
     pub data_contract_id: Identifier,
     pub document_type: String,
-    pub trigger: Trigger<SR, S, L>,
+    pub trigger: BoxedTrigger<'a, SR, S, L>,
     pub transition_action: Action,
     pub top_level_identity: Option<Identifier>,
 }
 
-impl<SR, S, L> DataTrigger<SR, S, L>
+impl<'a, SR, S, L> DataTrigger<'a, SR, S, L>
 where
     L: SimplifiedMNListLike,
     S: SMLStoreLike<L>,
@@ -52,19 +55,19 @@ where
     /// Check this trigger is matching for specified data
     pub fn is_matching_trigger_for_data(
         &self,
-        data_contract_id: Identifier,
-        document_type: String,
+        data_contract_id: &Identifier,
+        document_type: &str,
         transition_action: Action,
     ) -> bool {
-        self.data_contract_id == data_contract_id
+        &self.data_contract_id == data_contract_id
             && self.document_type == document_type
             && self.transition_action == transition_action
     }
 
     pub async fn execute(
-        &self,
-        document_transition: &DocumentTransition,
-        context: &DataTriggerExecutionContext<SR, S, L>,
+        &'a self,
+        document_transition: &'a DocumentTransition,
+        context: &'a DataTriggerExecutionContext<SR, S, L>,
     ) -> DataTriggerExecutionResult
     where
         L: SimplifiedMNListLike,
