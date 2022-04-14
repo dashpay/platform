@@ -12,7 +12,7 @@ const castStorageItemsTypes = (originalItem, schema) => Object.entries(schema).r
         result[itemKey] = new Clazz(originalItem[itemKey]);
       });
     } else {
-      if (!item) {
+      if (item === undefined) {
         throw new Error(`No schema key "${schemaKey}" found for item ${JSON.stringify(originalItem)}`);
       }
 
