@@ -1,4 +1,4 @@
-use crate::errors::ProtocolError;
+use crate::errors::{ProtocolError, InvalidVectorSizeError};
 use anyhow::anyhow;
 use libsecp256k1::PublicKey;
 use lazy_static::lazy_static;
@@ -178,7 +178,7 @@ impl IdentityPublicKey {
         Ok(original_key.serialize().to_vec())
     }
 
-    pub fn data_as_arr_33(&self) -> Result<[u8; 33], ArrayConversionError> {
+    pub fn data_as_arr_33(&self) -> Result<[u8; 33], InvalidVectorSizeError> {
         vec_to_array_33(&self.data)
     }
 }
@@ -191,35 +191,16 @@ fn vec_to_array(vec: &Vec<u8>) -> [u8; 65] {
     v
 }
 
-pub struct ArrayConversionError {
-    expected_size: usize,
-    actual_size: usize,
-}
-
-impl ArrayConversionError {
-    pub fn new(expected_size: usize, actual_size: usize) -> Self {
-        Self { expected_size, actual_size }
-    }
-
-    pub fn expected_size(&self) -> usize {
-        self.expected_size
-    }
-
-    pub fn actual_size(&self) -> usize {
-        self.actual_size
-    }
-}
-
-fn vec_to_array_33(vec: &Vec<u8>) -> Result<[u8; 33], ArrayConversionError> {
+fn vec_to_array_33(vec: &Vec<u8>) -> Result<[u8; 33], InvalidVectorSizeError> {
     if vec.len() != 33 {
-        return Err(ArrayConversionError::new(33, vec.len()));
+        return Err(InvalidVectorSizeError::new(33, vec.len()));
     }
     let mut v: [u8; 33] = [0; 33];
     for i in 0..33 {
         if let Some(n) = vec.get(i) {
             v[i] = *n;
         } else {
-            return Err(ArrayConversionError::new(33, vec.len()));
+            return Err(InvalidVectorSizeError::new(33, vec.len()));
         }
     }
     Ok(v)

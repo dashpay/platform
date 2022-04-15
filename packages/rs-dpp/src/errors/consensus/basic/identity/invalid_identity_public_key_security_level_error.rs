@@ -18,9 +18,8 @@ impl InvalidIdentityPublicKeySecurityLevelError {
             public_key_id,
             purpose,
             security_level,
-            allowed_security_levels: allowed_security_levels.map_or("".into_string(), |levels| {
+            allowed_security_levels: allowed_security_levels.map_or(String::from(""), |levels| {
                 format!("{:?}", levels)
-                // levels.iter().fold(String::new(), |mut sum, val| { sum.push_str(format!("{}", val.to_s)) })
             })
         }
     }
