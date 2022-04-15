@@ -1,5 +1,5 @@
-use thiserror::Error;
 use crate::errors::consensus::AbstractConsensusError;
+use thiserror::Error;
 
 #[derive(Error, Debug, Clone)]
 #[error("Protocol version {parsed_protocol_version:?} is not supported. Latest supported version is {latest_version:?}")]

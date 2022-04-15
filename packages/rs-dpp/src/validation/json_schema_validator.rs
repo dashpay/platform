@@ -1,12 +1,12 @@
-use jsonschema::{JSONSchema, KeywordDefinition};
-use serde_json::{json, Value};
-use crate::{DashPlatformProtocolInitError, NonConsensusError, SerdeParsingError};
 use crate::consensus::ConsensusError;
 use crate::validation::{byte_array_meta, ValidationResult};
+use crate::{DashPlatformProtocolInitError, NonConsensusError, SerdeParsingError};
+use jsonschema::{JSONSchema, KeywordDefinition};
+use serde_json::{json, Value};
 
 pub struct JsonSchemaValidator {
     raw_schema_json: Value,
-    schema: Option<JSONSchema>
+    schema: Option<JSONSchema>,
 }
 
 impl JsonSchemaValidator {
@@ -67,13 +67,13 @@ impl JsonSchemaValidator {
         let mut validation_result = ValidationResult::new(None);
 
         return match res {
-            Ok(_) => { Ok(validation_result) }
+            Ok(_) => Ok(validation_result),
             Err(validation_errors) => {
                 let errors: Vec<ConsensusError> =
                     validation_errors.map(|e| ConsensusError::from(e)).collect();
                 validation_result.add_errors(errors);
                 Ok(validation_result)
             }
-        }
+        };
     }
 }

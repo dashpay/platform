@@ -1,4 +1,4 @@
-use crate::errors::consensus::{ConsensusError};
+use crate::errors::consensus::ConsensusError;
 
 pub struct ValidationResult {
     errors: Vec<ConsensusError>,
@@ -14,7 +14,10 @@ impl ValidationResult {
         }
     }
 
-    pub fn add_error<T>(&mut self, error: T) where T: Into<ConsensusError> {
+    pub fn add_error<T>(&mut self, error: T)
+    where
+        T: Into<ConsensusError>,
+    {
         self.errors.push(error.into())
     }
 

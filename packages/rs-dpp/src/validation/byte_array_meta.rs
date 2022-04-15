@@ -89,13 +89,9 @@ pub fn validate(json_schema: &JsonValue) -> Result<(), Vec<ValidationError>> {
         })
     })?;
 
-    byte_array_meta_schema
-        .validate(json_schema)
-        .map_err(|err| {
-            let errors: Vec<ValidationError> = err
-                .map(into_owned)
-                .collect();
+    byte_array_meta_schema.validate(json_schema).map_err(|err| {
+        let errors: Vec<ValidationError> = err.map(into_owned).collect();
 
-            errors
-        })
+        errors
+    })
 }
