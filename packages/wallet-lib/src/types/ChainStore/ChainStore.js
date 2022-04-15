@@ -21,6 +21,9 @@ const SCHEMA = {
       isInstantLocked: 'boolean',
     },
   },
+  fees: {
+    minRelay: 'number'
+  }
 };
 
 /**
