@@ -19,7 +19,7 @@ let faucetClient;
  * @returns {Promise<Client>}
  */
 async function createClientWithFundedWallet(HDPrivateKey = undefined, amount = 40000) {
-  const useFaucetWalletStorage = Boolean(process.env.FAUCET_WALLET_USE_STORAGE)
+  const useFaucetWalletStorage = process.env.FAUCET_WALLET_USE_STORAGE === "true"
   const seeds = getDAPISeeds();
 
   const clientOpts = {
