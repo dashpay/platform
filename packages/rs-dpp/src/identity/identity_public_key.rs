@@ -4,11 +4,12 @@ use libsecp256k1::PublicKey;
 use lazy_static::lazy_static;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::{collections::HashMap, hash::Hash};
+use serde_repr::{Serialize_repr, Deserialize_repr};
 
 pub type KeyID = u64;
 
 #[repr(u8)]
-#[derive(Debug, PartialEq, Eq, Clone, Copy, Serialize, Deserialize)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy, Serialize_repr, Deserialize_repr)]
 pub enum KeyType {
     ECDSA_SECP256K1 = 0,
     BLS12_381 = 1,
@@ -16,7 +17,7 @@ pub enum KeyType {
 }
 
 #[repr(u8)]
-#[derive(Debug, PartialEq, Eq, Clone, Copy, Hash, Serialize, Deserialize)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy, Hash, Serialize_repr, Deserialize_repr)]
 pub enum Purpose {
     /// at least one authentication key must be registered for all security levels
     AUTHENTICATION = 0,
@@ -27,7 +28,7 @@ pub enum Purpose {
 }
 
 #[repr(u8)]
-#[derive(Debug, PartialEq, Eq, Clone, Copy, Serialize, Deserialize)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy, Serialize_repr, Deserialize_repr)]
 pub enum SecurityLevel {
     MASTER = 0,
     CRITICAL = 1,
@@ -61,10 +62,10 @@ pub struct IdentityPublicKey {
     pub security_level: SecurityLevel,
     #[serde(rename = "type")]
     pub key_type: KeyType,
-    #[serde(
-        serialize_with = "se_vec_to_base64",
-        deserialize_with = "de_base64_to_vec"
-    )]
+    // #[serde(
+    //     serialize_with = "se_vec_to_base64",
+    //     deserialize_with = "de_base64_to_vec"
+    // )]
     pub data: Vec<u8>,
     pub read_only: bool,
 }

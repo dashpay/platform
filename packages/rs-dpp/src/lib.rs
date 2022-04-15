@@ -6,6 +6,7 @@ pub mod identifier;
 pub mod identity;
 pub mod metadata;
 pub mod util;
+pub mod version;
 
 pub mod errors;
 
@@ -19,4 +20,3 @@ pub use errors::*;
 
 #[cfg(test)]
 mod tests;
-pub mod version;
