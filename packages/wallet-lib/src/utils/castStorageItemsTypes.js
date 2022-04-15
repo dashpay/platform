@@ -16,6 +16,7 @@ const castStorageItemsTypes = (originalItem, schema) => Object.entries(schema).r
         result[itemKey] = new Clazz(originalItem[itemKey]);
       });
     } else {
+      // eslint-disable-next-line no-lonely-if
       if (typeof schemaValue === 'string') {
         // eslint-disable-next-line valid-typeof
         if (typeof item !== schemaValue) {
