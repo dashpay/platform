@@ -9,6 +9,7 @@ pub mod identifier;
 pub mod identity;
 pub mod metadata;
 pub mod state_repository;
+pub mod state_transition;
 pub mod util;
 pub mod version;
 

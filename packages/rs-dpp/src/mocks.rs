@@ -156,3 +156,5 @@ impl<L> SMLStoreLike<L> for SMLStoreMock where L: SimplifiedMNListLike {}
 pub struct StateTransition {
     pub data_contract: DataContract,
 }
+
+pub struct DocumentsBatchTransition {}
