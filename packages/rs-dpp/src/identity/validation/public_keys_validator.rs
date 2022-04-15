@@ -1,11 +1,14 @@
-use crate::consensus::basic::identity::{DuplicatedIdentityPublicKeyError, DuplicatedIdentityPublicKeyIdError, InvalidIdentityPublicKeyDataError, InvalidIdentityPublicKeySecurityLevelError};
-use crate::identity::{ALLOWED_SECURITY_LEVELS, IdentityPublicKey, KeyType, Purpose};
+use crate::errors::consensus::basic::identity::{
+    DuplicatedIdentityPublicKeyError, DuplicatedIdentityPublicKeyIdError,
+    InvalidIdentityPublicKeyDataError, InvalidIdentityPublicKeySecurityLevelError,
+};
+use crate::identity::{IdentityPublicKey, KeyType, Purpose, ALLOWED_SECURITY_LEVELS};
 use crate::validation::{JsonSchemaValidator, ValidationResult};
 use crate::{DashPlatformProtocolInitError, NonConsensusError, PublicKeyValidationError};
+use bls_signatures::{PublicKey as BlsPublicKey, Serialize};
 use libsecp256k1::PublicKey;
 use serde_json::{json, Value};
 use std::collections::HashMap;
-use bls_signatures::{PublicKey as BlsPublicKey, Serialize};
 
 pub struct PublicKeysValidator {
     public_key_schema_validator: JsonSchemaValidator,
@@ -93,18 +96,14 @@ impl PublicKeysValidator {
         let mut duplicated_ids = duplicated_key_ids(&public_keys);
 
         if duplicated_ids.len() > 0 {
-            result.add_error(
-                DuplicatedIdentityPublicKeyIdError::new(duplicated_ids),
-            );
+            result.add_error(DuplicatedIdentityPublicKeyIdError::new(duplicated_ids));
         }
 
         // Check that there's no duplicated keys
         let mut duplicated_key_ids = duplicated_keys(&public_keys);
 
         if duplicated_key_ids.len() > 0 {
-            result.add_error(
-                DuplicatedIdentityPublicKeyError::new(duplicated_key_ids),
-            );
+            result.add_error(DuplicatedIdentityPublicKeyError::new(duplicated_key_ids));
         }
 
         let mut validation_error: Option<PublicKeyValidationError> = None;
@@ -118,11 +117,9 @@ impl PublicKeysValidator {
                         Err(e) => Some(PublicKeyValidationError::new(e.to_string())),
                     }
                 }
-                KeyType::BLS12_381 => {
-                    match BlsPublicKey::from_bytes(&public_key.data) {
-                        Ok(_) => None,
-                        Err(e) => Some(PublicKeyValidationError::new(e.to_string())),
-                    }
+                KeyType::BLS12_381 => match BlsPublicKey::from_bytes(&public_key.data) {
+                    Ok(_) => None,
+                    Err(e) => Some(PublicKeyValidationError::new(e.to_string())),
                 },
                 // Do nothing
                 KeyType::ECDSA_HASH160 => None,
@@ -132,54 +129,10 @@ impl PublicKeysValidator {
                 result.add_error(InvalidIdentityPublicKeyDataError::new(
                     public_key.id,
                     error.to_string(),
-                    Some(error)
+                    Some(error),
                 ));
             }
         }
-
-        // // validate key data
-        // // raw_public_keys
-        // //     .forEach((rawPublicKey) => {
-        // //         let validationError;
-        // //
-        // //         switch (rawPublicKey.type) {
-        // //             case IdentityPublicKey.TYPES.ECDSA_SECP256K1: {
-        // //                 const dataHex = rawPublicKey.data.toString('hex');
-        // //
-        // //                 if (!PublicKey.isValid(dataHex)) {
-        // //                     validationError = PublicKey.getValidationError(dataHex);
-        // //                 }
-        // //                 break;
-        // //             }
-        // //             case IdentityPublicKey.TYPES.BLS12_381: {
-        // //                 try {
-        // //                     bls.PublicKey.fromBytes(
-        // //                         Uint8Array.from(rawPublicKey.data),
-        // //                     );
-        // //                 } catch (e) {
-        // //                     validationError = new TypeError('Invalid public key');
-        // //                 }
-        // //                 break;
-        // //             }
-        // //             case IdentityPublicKey.TYPES.ECDSA_HASH160:
-        // //             // Do nothing
-        // //             break;
-        // //             default:
-        // //                 throw new TypeError(`Unknown public key type: ${rawPublicKey.type}`);
-        // //         }
-        // //
-        // //         if (validationError !== undefined) {
-        // //             const consensusError = new InvalidIdentityPublicKeyDataError(
-        // //                 rawPublicKey.id,
-        // //                 validationError.message,
-        // //             );
-        // //
-        // //             consensusError.setValidationError(validationError);
-        // //
-        // //             result.addError(consensusError);
-        // //         }
-        // //     });
-        //
 
         // Validate that public keys have correct purpose and security level
         for raw_public_key in public_keys.iter() {
