@@ -15,7 +15,11 @@ function exportState() {
     fees: {},
   };
 
-  const reorgSafeHeight = blockHeight - 6;
+  let reorgSafeHeight = Infinity;
+
+  if (blockHeight) {
+    reorgSafeHeight = blockHeight - 6;
+  }
 
   [...blockHeaders.entries()].forEach(([blockHeaderHash, blockHeader]) => {
     serializedState.blockHeaders[blockHeaderHash] = blockHeader.toString();
