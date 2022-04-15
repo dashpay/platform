@@ -87,12 +87,12 @@ module.exports = {
    *
    * @type {string}
    */
-  avgFunction: 'mean',
+  avgFunction: 'median',
 
   /**
    * Show all or only statistic result
    *
    * @type {boolean}
    */
-  avgOnly: true,
+  avgOnly: false,
 };

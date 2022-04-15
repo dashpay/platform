@@ -43,6 +43,9 @@ class DocumentsBenchmark extends AbstractBenchmark {
 
       if (this.runnerOptions.verbose) {
         // eslint-disable-next-line no-console
+        console.dir(context.identity.toJSON(), { depth: Infinity });
+
+        // eslint-disable-next-line no-console
         console.dir(dataContract.toJSON(), { depth: Infinity });
       }
 
@@ -122,6 +125,13 @@ class DocumentsBenchmark extends AbstractBenchmark {
     Object.entries(this.#metrics).forEach(([documentType, metrics]) => {
       this.#printDocumentTypeMetrics(documentType, metrics);
     });
+  }
+
+  /**
+   * @returns {number}
+   */
+  getRequiredCredits() {
+    return this.config.requiredCredits;
   }
 
   /**

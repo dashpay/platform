@@ -27,7 +27,7 @@ class AbstractBenchmark {
    * @returns {number}
    */
   getRequiredCredits() {
-    return this.config.requiredCredits;
+    return 0;
   }
 
   /**
