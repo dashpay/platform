@@ -1,13 +1,50 @@
-use crate::consensus::basic::identity::{InvalidIdentityPublicKeyDataError, InvalidIdentityPublicKeySecurityLevelError};
-use crate::identity::{ALLOWED_SECURITY_LEVELS, IdentityPublicKey, KeyType};
+use crate::consensus::basic::identity::{DuplicatedIdentityPublicKeyError, DuplicatedIdentityPublicKeyIdError, InvalidIdentityPublicKeyDataError, InvalidIdentityPublicKeySecurityLevelError};
+use crate::identity::{ALLOWED_SECURITY_LEVELS, IdentityPublicKey, KeyType, Purpose};
 use crate::validation::{JsonSchemaValidator, ValidationResult};
 use crate::{DashPlatformProtocolInitError, NonConsensusError, PublicKeyValidationError};
 use libsecp256k1::PublicKey;
-use serde_json::{Value};
+use serde_json::{json, Value};
 use std::collections::HashMap;
+use bls_signatures::{PublicKey as BlsPublicKey, Serialize};
 
 pub struct PublicKeysValidator {
     public_key_schema_validator: JsonSchemaValidator,
+}
+
+fn duplicated_key_ids(public_keys: &Vec<IdentityPublicKey>) -> Vec<u64> {
+    let mut duplicated_ids = Vec::<u64>::new();
+    let mut ids_count = HashMap::<u64, usize>::new();
+
+    for public_key in public_keys.iter() {
+        let id = public_key.id;
+        let count = *ids_count.get(&id).unwrap_or(&(0 as usize));
+        let count = count + 1;
+        ids_count.insert(id.into(), count);
+
+        if count > 1 {
+            duplicated_ids.push(id);
+        }
+    }
+
+    duplicated_ids
+}
+
+fn duplicated_keys(public_keys: &Vec<IdentityPublicKey>) -> Vec<u64> {
+    let mut keys_count = HashMap::<Vec<u8>, usize>::new();
+    let mut duplicated_key_ids = vec![];
+
+    for public_key in public_keys.iter() {
+        let data = &public_key.data;
+        let count = *keys_count.get(&data.clone()).unwrap_or(&(0 as usize));
+        let count = count + 1;
+        keys_count.insert(data.clone(), count);
+
+        if count > 1 {
+            duplicated_key_ids.push(public_key.id);
+        }
+    }
+
+    duplicated_key_ids
 }
 
 impl PublicKeysValidator {
@@ -45,79 +82,34 @@ impl PublicKeysValidator {
             return Ok(result);
         }
 
-        let mut pks = Vec::<IdentityPublicKey>::with_capacity(raw_public_keys.capacity());
-        for rpk in raw_public_keys {
-            let pk: IdentityPublicKey = serde_json::from_value(rpk.clone())?;
-            pks.push(pk);
+        // Public keys already passed json schema validation at this point
+        let mut public_keys = Vec::<IdentityPublicKey>::with_capacity(raw_public_keys.capacity());
+        for raw_public_key in raw_public_keys {
+            let pk: IdentityPublicKey = serde_json::from_value(raw_public_key.clone())?;
+            public_keys.push(pk);
         }
 
-        // // Public keys already passed json schema validation at this point
-        // let public_keys: Vec<IdentityPublicKey> = raw_public_keys.iter().map(|raw_public_key| {
-        //     let pk: IdentityPublicKey = serde_json::from_value(raw_public_key.clone())?;
-        //     pk
-        // }).collect();
-
         // Check that there's no duplicated key ids in the state transition
-        let mut duplicated_ids = Vec::<u64>::new();
-        let mut ids_count = HashMap::<u64, u32>::new();
+        let mut duplicated_ids = duplicated_key_ids(&public_keys);
 
-        // for raw_public_key in raw_public_keys {
-        //     let id = raw_public_key.as_object().unwrap().get("id").unwrap();
-        //     let count = ids_count.get(id.into()).unwrap_or(0);
-        //     let count = count + 1;
-        //     ids_count.insert(id.into(), count);
-        //
-        //     if count > 1 {
-        //         duplicated_ids.push(id);
-        //     }
-        // }
-        //
-        // // raw_public_keys.forEach((rawPublicKey) => {
-        // //     ids_count[rawPublicKey.id] = !ids_count[rawPublicKey.id] ? 1 : idsCount[rawPublicKey.id] + 1;
-        // //     if (ids_count[rawPublicKey.id] > 1) {
-        // //         duplicated_ids.push(rawPublicKey.id);
-        // //     }
-        // // });
-        //
-        // if duplicated_ids.len() > 0 {
-        //     result.add_error(
-        //         DuplicatedIdentityPublicKeyIdError::new(duplicated_ids),
-        //     );
-        // }
-        //
-        // // Check that there's no duplicated keys
-        // let keys_count = {};
-        // let duplicated_key_ids = [];
-        //
-        // for raw_public_key in raw_public_keys {
-        //     let data_hex = raw_public_key.data.toString("hex");
-        //
-        //     keys_count[data_hex] = if !keys_count[data_hex] { 1 } else { keysCount[data_hex] + 1 };
-        //
-        //     if keys_count[data_hex] > 1 {
-        //         duplicated_key_ids.push(rawPublicKey.id);
-        //     }
-        // }
-        // // raw_public_keys.forEach((rawPublicKey) => {
-        // //     let data_hex = rawPublicKey.data.toString('hex');
-        // //
-        // //     keys_count[data_hex] = !keys_count[data_hex]
-        // //         ? 1 : keysCount[data_hex] + 1;
-        // //
-        // //     if (keys_count[data_hex] > 1) {
-        // //         duplicated_key_ids.push(rawPublicKey.id);
-        // //     }
-        // // });
-        //
-        // if duplicated_key_ids.length > 0 {
-        //     result.add_error(
-        //         DuplicatedIdentityPublicKeyError::new(duplicated_key_ids),
-        //     );
-        // }
+        if duplicated_ids.len() > 0 {
+            result.add_error(
+                DuplicatedIdentityPublicKeyIdError::new(duplicated_ids),
+            );
+        }
+
+        // Check that there's no duplicated keys
+        let mut duplicated_key_ids = duplicated_keys(&public_keys);
+
+        if duplicated_key_ids.len() > 0 {
+            result.add_error(
+                DuplicatedIdentityPublicKeyError::new(duplicated_key_ids),
+            );
+        }
 
         let mut validation_error: Option<PublicKeyValidationError> = None;
 
-        for public_key in pks.iter() {
+        for public_key in public_keys.iter() {
             validation_error = match public_key.key_type {
                 KeyType::ECDSA_SECP256K1 => {
                     let key_bytes = &public_key.data_as_arr_33()?;
@@ -126,8 +118,14 @@ impl PublicKeysValidator {
                         Err(e) => Some(PublicKeyValidationError::new(e.to_string())),
                     }
                 }
-                KeyType::BLS12_381 => Some(PublicKeyValidationError::new("Not implemented")),
-                KeyType::ECDSA_HASH160 => Some(PublicKeyValidationError::new("Not implemented")),
+                KeyType::BLS12_381 => {
+                    match BlsPublicKey::from_bytes(&public_key.data) {
+                        Ok(_) => None,
+                        Err(e) => Some(PublicKeyValidationError::new(e.to_string())),
+                    }
+                },
+                // Do nothing
+                KeyType::ECDSA_HASH160 => None,
             };
 
             if let Some(error) = validation_error {
@@ -184,7 +182,7 @@ impl PublicKeysValidator {
         //
 
         // Validate that public keys have correct purpose and security level
-        for raw_public_key in pks.iter() {
+        for raw_public_key in public_keys.iter() {
             let key_purpose = raw_public_key.purpose;
             let allowed_security_levels = ALLOWED_SECURITY_LEVELS.get(&key_purpose);
 

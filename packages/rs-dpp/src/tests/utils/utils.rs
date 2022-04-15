@@ -12,25 +12,6 @@ pub fn generate_random_identifier() -> [u8; 32] {
     buffer
 }
 
-/// Checks the variant of all errors in the array, asserts error count and
-/// returns unwrapped errors
-pub fn assert_json_schema_error(result: &ValidationResult, expected_errors_count: usize) -> Vec<&JsonSchemaError> {
-    let error_count = result.errors().len();
-
-    assert_eq!(error_count, expected_errors_count);
-
-    let mut errors: Vec<&JsonSchemaError> = Vec::new();
-
-    for error in result.errors() {
-        match error {
-            ConsensusError::JsonSchemaError(err) => { errors.push(err) }
-            _ => panic!("Expected JsonSchemaError")
-        }
-    }
-
-    errors
-}
-
 /// Sets a key value pair in serde_json object, returns the modified object
 pub fn serde_set<T, S>(mut object: serde_json::Value, key: T, value: S) -> serde_json::Value
     where T: Into<String>, S: Into<serde_json::Value>, serde_json::Value: From<S>
@@ -95,6 +76,12 @@ pub fn decode_hex(s: &str) -> Result<Vec<u8>, ParseIntError> {
 macro_rules! assert_consensus_errors {
     ($validation_result: expr, $variant:path, $expected_errors_count: expr) => {
         {
+            if $validation_result.errors().len() != $expected_errors_count {
+                for error in $validation_result.errors().iter() {
+                    println!("{:?}", error);
+                }
+            }
+
             assert_eq!($validation_result.errors().len(), $expected_errors_count);
 
             let mut errors = Vec::new();
@@ -109,4 +96,10 @@ macro_rules! assert_consensus_errors {
             errors
         }
     };
+}
+
+/// Checks the variant of all errors in the array, asserts error count and
+/// returns unwrapped errors
+pub fn assert_json_schema_error(result: &ValidationResult, expected_errors_count: usize) -> Vec<&JsonSchemaError> {
+    assert_consensus_errors!(result, ConsensusError::JsonSchemaError, expected_errors_count)
 }
