@@ -4,6 +4,7 @@ function exportState() {
     blockHeaders,
     transactions,
     blockHeight,
+    fees,
   } = state;
 
   const serializedState = {
@@ -11,6 +12,7 @@ function exportState() {
     transactions: {},
     instantLocks: {},
     txMetadata: {},
+    fees: {},
   };
 
   const reorgSafeHeight = blockHeight - 6;
@@ -25,6 +27,8 @@ function exportState() {
       serializedState.txMetadata[transactionHash] = metadata;
     }
   });
+
+  serializedState.fees.minRelay = fees.minRelay;
 
   return serializedState;
 }
