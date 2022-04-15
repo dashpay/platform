@@ -7,8 +7,6 @@ const {
 } = require('../../../errors');
 const EVENTS = require('../../../EVENTS');
 
-const MEMPOOL_PROPAGATION_TIMEOUT = 60000;
-
 function impactAffectedInputs({ transaction }) {
   const {
     storage, network,
@@ -119,40 +117,24 @@ async function _broadcastTransaction(transaction, options = {}) {
  * @return {Promise<string>}
  */
 async function broadcastTransaction(transaction, options = {}) {
-  let rejectTimeout;
-  let cancelMempoolPropagationListener;
+  if (!this.txFetchListener) {
+    this.txFetchListener = new Promise((resolve) => {
+      this.once(EVENTS.FETCHED_CONFIRMED_TRANSACTION, ({ payload }) => {
+        if (payload.transaction.hash === transaction.hash) {
+          this.txFetchListener = null;
+          resolve();
+        }
+      });
+    });
 
-  const mempoolPropagationPromise = new Promise((resolve) => {
-    const listener = ({ payload }) => {
-      if (payload.transaction.hash === transaction.hash) {
-        clearTimeout(rejectTimeout);
-        resolve();
-      }
-    };
+    await _broadcastTransaction.call(this, transaction, options);
 
-    cancelMempoolPropagationListener = this.removeListener(
-      EVENTS.FETCHED_CONFIRMED_TRANSACTION,
-      listener,
-    );
+    return transaction.hash;
+  }
 
-    this.once(EVENTS.FETCHED_CONFIRMED_TRANSACTION, listener);
-  });
+  await this.txFetchListener;
 
-  const rejectPromise = new Promise((resolve, reject) => {
-    rejectTimeout = setTimeout(() => {
-      cancelMempoolPropagationListener();
-      reject(new Error(`Transaction ${transaction.hash} mempool propagation timeout`));
-    }, MEMPOOL_PROPAGATION_TIMEOUT);
-  });
-
-  await _broadcastTransaction.call(this, transaction, options);
-
-  await Promise.race([
-    mempoolPropagationPromise,
-    rejectPromise,
-  ]);
-
-  return transaction.hash;
+  return broadcastTransaction.call(this, transaction, options);
 }
 
 module.exports = broadcastTransaction;
