@@ -136,6 +136,7 @@ const DocumentRepository = require('./document/DocumentRepository');
 const ExecutionTimer = require('./util/ExecutionTimer');
 const noopLoggerInstance = require('./util/noopLogger');
 const fetchTransactionFactory = require('./core/fetchTransactionFactory');
+const FeeCalculationRepositoryDecorator = require('./dpp/FeeCalculationRepositoryDecorator');
 
 /**
  *
@@ -612,8 +613,10 @@ function createDIContainer(options) {
         },
       );
 
+      const feeCalculationRepository = new FeeCalculationRepositoryDecorator(stateRepository);
+
       const cachedRepository = new CachedStateRepositoryDecorator(
-        stateRepository, dataContractCache,
+        feeCalculationRepository, dataContractCache,
       );
 
       if (!logStateRepository) {
