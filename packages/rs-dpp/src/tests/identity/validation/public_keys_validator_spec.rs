@@ -25,11 +25,11 @@ fn setup_test() -> (Vec<Value>, PublicKeysValidator) {
 }
 
 pub mod id {
+    use crate::assert_consensus_errors;
+    use crate::errors::consensus::ConsensusError;
     use crate::tests::identity::validation::public_keys_validator_spec::setup_test;
     use crate::tests::utils::{assert_json_schema_error, serde_remove_ref, serde_set_ref};
     use jsonschema::error::ValidationErrorKind;
-    use crate::errors::consensus::ConsensusError;
-    use crate::assert_consensus_errors;
 
     #[test]
     pub fn should_be_present() {
@@ -93,9 +93,9 @@ pub mod id {
 
 pub mod key_type {
     use crate::assert_consensus_errors;
+    use crate::errors::consensus::ConsensusError;
     use crate::tests::identity::validation::public_keys_validator_spec::setup_test;
     use crate::tests::utils::{assert_json_schema_error, serde_remove_ref, serde_set_ref};
-    use crate::errors::consensus::ConsensusError;
 
     #[test]
     pub fn should_be_present() {
@@ -127,11 +127,11 @@ pub mod key_type {
 }
 
 pub mod data {
+    use crate::assert_consensus_errors;
+    use crate::errors::consensus::ConsensusError;
     use crate::tests::identity::validation::public_keys_validator_spec::setup_test;
     use crate::tests::utils::{assert_json_schema_error, serde_remove_ref, serde_set_ref};
     use jsonschema::error::ValidationErrorKind;
-    use crate::errors::consensus::ConsensusError;
-    use crate::assert_consensus_errors;
 
     #[test]
     pub fn should_be_present() {
@@ -156,7 +156,11 @@ pub mod data {
     #[test]
     pub fn should_be_a_byte_array() {
         let (mut raw_public_keys, validator) = setup_test();
-        serde_set_ref(raw_public_keys.get_mut(1).unwrap(), "data", vec!["string"; 33]);
+        serde_set_ref(
+            raw_public_keys.get_mut(1).unwrap(),
+            "data",
+            vec!["string"; 33],
+        );
 
         let result = validator.validate_keys(&raw_public_keys).unwrap();
 

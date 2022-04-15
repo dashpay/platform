@@ -1,8 +1,8 @@
+use crate::errors::consensus::AbstractConsensusError;
 use jsonschema::error::ValidationErrorKind;
 use jsonschema::paths::{JSONPointer, PathChunk};
 use jsonschema::ValidationError;
 use thiserror::Error;
-use crate::errors::consensus::{AbstractConsensusError};
 
 #[derive(Error, Debug)]
 #[error("JsonSchemaError: {message:?}, kind: {kind:?}, instance_path: {instance_path:?}, schema_path:{schema_path:?}")]
@@ -81,7 +81,7 @@ impl<'a> From<ValidationError<'a>> for JsonSchemaError {
             message: String::new(),
             kind: validation_error.kind,
             instance_path: validation_error.instance_path,
-            schema_path: validation_error.schema_path
+            schema_path: validation_error.schema_path,
         }
     }
 }
@@ -106,9 +106,9 @@ impl JsonSchemaError {
     pub fn keyword(&self) -> Option<&str> {
         let chunk = self.schema_path.last()?;
         match chunk {
-            PathChunk::Property(_) => { None }
-            PathChunk::Index(_) => { None }
-            PathChunk::Keyword(keyword) => {Some(keyword)}
+            PathChunk::Property(_) => None,
+            PathChunk::Index(_) => None,
+            PathChunk::Keyword(keyword) => Some(keyword),
         }
     }
 

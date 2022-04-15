@@ -1,10 +1,10 @@
-use crate::errors::{ProtocolError, InvalidVectorSizeError};
+use crate::errors::{InvalidVectorSizeError, ProtocolError};
 use anyhow::anyhow;
-use libsecp256k1::PublicKey;
 use lazy_static::lazy_static;
+use libsecp256k1::PublicKey;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use serde_repr::{Deserialize_repr, Serialize_repr};
 use std::{collections::HashMap, hash::Hash};
-use serde_repr::{Serialize_repr, Deserialize_repr};
 
 pub type KeyID = u64;
 

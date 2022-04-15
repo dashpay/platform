@@ -1,5 +1,7 @@
+use crate::{
+    CompatibleProtocolVersionIsNotDefinedError, InvalidVectorSizeError, SerdeParsingError,
+};
 use thiserror::Error;
-use crate::{CompatibleProtocolVersionIsNotDefinedError, InvalidVectorSizeError, SerdeParsingError};
 
 #[derive(Debug, Error)]
 pub enum NonConsensusError {
@@ -10,7 +12,7 @@ pub enum NonConsensusError {
     #[error("{0}")]
     SerdeJsonError(serde_json::Error),
     #[error("{0}")]
-    InvalidVectorSizeError(InvalidVectorSizeError)
+    InvalidVectorSizeError(InvalidVectorSizeError),
 }
 
 impl From<SerdeParsingError> for NonConsensusError {

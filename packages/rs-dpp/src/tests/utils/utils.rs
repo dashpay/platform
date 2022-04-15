@@ -1,10 +1,10 @@
-use std::num::ParseIntError;
-use anyhow::Result;
-use getrandom::getrandom;
-use serde_json::Value;
 use crate::errors::consensus::basic::JsonSchemaError;
 use crate::errors::consensus::ConsensusError;
 use crate::validation::ValidationResult;
+use anyhow::Result;
+use getrandom::getrandom;
+use serde_json::Value;
+use std::num::ParseIntError;
 
 pub fn generate_random_identifier() -> [u8; 32] {
     let mut buffer = [0u8; 32];
@@ -14,7 +14,10 @@ pub fn generate_random_identifier() -> [u8; 32] {
 
 /// Sets a key value pair in serde_json object, returns the modified object
 pub fn serde_set<T, S>(mut object: serde_json::Value, key: T, value: S) -> serde_json::Value
-    where T: Into<String>, S: Into<serde_json::Value>, serde_json::Value: From<S>
+where
+    T: Into<String>,
+    S: Into<serde_json::Value>,
+    serde_json::Value: From<S>,
 {
     let map = object
         .as_object_mut()
@@ -26,7 +29,10 @@ pub fn serde_set<T, S>(mut object: serde_json::Value, key: T, value: S) -> serde
 
 /// Sets a key value pair in serde_json object, returns the modified object
 pub fn serde_set_ref<T, S>(object: &mut Value, key: T, value: S)
-    where T: Into<String>, S: Into<serde_json::Value>, serde_json::Value: From<S>
+where
+    T: Into<String>,
+    S: Into<serde_json::Value>,
+    serde_json::Value: From<S>,
 {
     let map = object
         .as_object_mut()
@@ -36,7 +42,8 @@ pub fn serde_set_ref<T, S>(object: &mut Value, key: T, value: S)
 
 /// Removes a key value pair in serde_json object, returns the modified object
 pub fn serde_remove<T>(mut object: serde_json::Value, key: T) -> serde_json::Value
-    where T: Into<String>
+where
+    T: Into<String>,
 {
     let map = object
         .as_object_mut()
@@ -48,7 +55,8 @@ pub fn serde_remove<T>(mut object: serde_json::Value, key: T) -> serde_json::Val
 
 /// Removes a key value pair in serde_json object, returns the modified object
 pub fn serde_remove_ref<T>(object: &mut Value, key: T)
-    where T: Into<String>
+where
+    T: Into<String>,
 {
     object
         .as_object_mut()
@@ -74,32 +82,37 @@ pub fn decode_hex(s: &str) -> Result<Vec<u8>, ParseIntError> {
 /// extracts all the errors from enum to a vector
 #[macro_export]
 macro_rules! assert_consensus_errors {
-    ($validation_result: expr, $variant:path, $expected_errors_count: expr) => {
-        {
-            if $validation_result.errors().len() != $expected_errors_count {
-                for error in $validation_result.errors().iter() {
-                    println!("{:?}", error);
-                }
+    ($validation_result: expr, $variant:path, $expected_errors_count: expr) => {{
+        if $validation_result.errors().len() != $expected_errors_count {
+            for error in $validation_result.errors().iter() {
+                println!("{:?}", error);
             }
-
-            assert_eq!($validation_result.errors().len(), $expected_errors_count);
-
-            let mut errors = Vec::new();
-
-            for error in $validation_result.errors() {
-                match error {
-                   $variant(err) => { errors.push(err) }
-                    _ => panic!("Expected $variant")
-                }
-            }
-
-            errors
         }
-    };
+
+        assert_eq!($validation_result.errors().len(), $expected_errors_count);
+
+        let mut errors = Vec::new();
+
+        for error in $validation_result.errors() {
+            match error {
+                $variant(err) => errors.push(err),
+                _ => panic!("Expected $variant"),
+            }
+        }
+
+        errors
+    }};
 }
 
 /// Checks the variant of all errors in the array, asserts error count and
 /// returns unwrapped errors
-pub fn assert_json_schema_error(result: &ValidationResult, expected_errors_count: usize) -> Vec<&JsonSchemaError> {
-    assert_consensus_errors!(result, ConsensusError::JsonSchemaError, expected_errors_count)
+pub fn assert_json_schema_error(
+    result: &ValidationResult,
+    expected_errors_count: usize,
+) -> Vec<&JsonSchemaError> {
+    assert_consensus_errors!(
+        result,
+        ConsensusError::JsonSchemaError,
+        expected_errors_count
+    )
 }

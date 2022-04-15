@@ -1,7 +1,12 @@
+use crate::consensus::basic::identity::{
+    DuplicatedIdentityPublicKeyError, DuplicatedIdentityPublicKeyIdError,
+    InvalidIdentityPublicKeyDataError, InvalidIdentityPublicKeySecurityLevelError,
+};
+use crate::errors::consensus::basic::{
+    IncompatibleProtocolVersionError, JsonSchemaError, UnsupportedProtocolVersionError,
+};
 use jsonschema::ValidationError;
 use thiserror::Error;
-use crate::consensus::basic::identity::{DuplicatedIdentityPublicKeyError, DuplicatedIdentityPublicKeyIdError, InvalidIdentityPublicKeyDataError, InvalidIdentityPublicKeySecurityLevelError};
-use crate::errors::consensus::basic::{IncompatibleProtocolVersionError, JsonSchemaError, UnsupportedProtocolVersionError};
 
 pub trait AbstractConsensusError: Into<ConsensusError> {}
 
@@ -27,22 +32,22 @@ pub enum ConsensusError {
 impl ConsensusError {
     pub fn json_schema_error(&self) -> Option<&JsonSchemaError> {
         match self {
-            ConsensusError::JsonSchemaError(err) => { Some(err) }
-            _ => None
+            ConsensusError::JsonSchemaError(err) => Some(err),
+            _ => None,
         }
     }
 
     pub fn code(&self) -> u32 {
         match self {
-            ConsensusError::JsonSchemaError(_) => { 1005 }
-            ConsensusError::UnsupportedProtocolVersionError(_) => { 1002 }
-            ConsensusError::IncompatibleProtocolVersionError(_) => { 1003 }
+            ConsensusError::JsonSchemaError(_) => 1005,
+            ConsensusError::UnsupportedProtocolVersionError(_) => 1002,
+            ConsensusError::IncompatibleProtocolVersionError(_) => 1003,
 
             // Identity
-            ConsensusError::DuplicatedIdentityPublicKeyError(_) => { 1029 }
-            ConsensusError::DuplicatedIdentityPublicKeyIdError(_) => { 1030 }
-            ConsensusError::InvalidIdentityPublicKeyDataError(_) => { 1040 }
-            ConsensusError::InvalidIdentityPublicKeySecurityLevelError(_) => { 1047 }
+            ConsensusError::DuplicatedIdentityPublicKeyError(_) => 1029,
+            ConsensusError::DuplicatedIdentityPublicKeyIdError(_) => 1030,
+            ConsensusError::InvalidIdentityPublicKeyDataError(_) => 1040,
+            ConsensusError::InvalidIdentityPublicKeySecurityLevelError(_) => 1047,
         }
     }
 }

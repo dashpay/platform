@@ -1,6 +1,6 @@
 mod identifier_spec;
 pub mod utils;
 
-mod identity;
 mod fixtures;
+mod identity;
 mod version;

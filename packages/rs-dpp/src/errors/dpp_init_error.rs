@@ -1,5 +1,5 @@
-use std::borrow::Cow;
 use jsonschema::ValidationError;
+use std::borrow::Cow;
 use thiserror::Error;
 
 #[derive(Error, Debug)]

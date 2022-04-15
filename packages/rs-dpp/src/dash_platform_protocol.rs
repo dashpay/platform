@@ -1,7 +1,7 @@
+use crate::errors::DashPlatformProtocolInitError;
 use crate::identity::IdentityFacade;
 use crate::version::{ProtocolVersionValidator, COMPATIBILITY_MAP, LATEST_VERSION};
 use std::sync::Arc;
-use crate::errors::DashPlatformProtocolInitError;
 
 pub struct DashPlatformProtocol {
     // Public facing facades to interact with the library

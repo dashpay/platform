@@ -8,9 +8,7 @@ pub struct DuplicatedIdentityPublicKeyError {
 
 impl DuplicatedIdentityPublicKeyError {
     pub fn new(duplicated_ids: Vec<u64>) -> Self {
-        Self {
-            duplicated_ids,
-        }
+        Self { duplicated_ids }
     }
 
     pub fn duplicated_public_keys_ids(&self) -> &Vec<u64> {
