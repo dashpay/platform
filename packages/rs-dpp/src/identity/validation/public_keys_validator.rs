@@ -1,10 +1,9 @@
-use crate::consensus::basic::identity::{DuplicatedIdentityPublicKeyIdError, InvalidIdentityPublicKeyDataError, InvalidIdentityPublicKeySecurityLevelError};
+use crate::consensus::basic::identity::{InvalidIdentityPublicKeyDataError, InvalidIdentityPublicKeySecurityLevelError};
 use crate::identity::{ALLOWED_SECURITY_LEVELS, IdentityPublicKey, KeyType};
-use crate::validation::{byte_array_meta, JsonSchemaValidator, ValidationResult};
+use crate::validation::{JsonSchemaValidator, ValidationResult};
 use crate::{DashPlatformProtocolInitError, NonConsensusError, PublicKeyValidationError};
-use jsonschema::{JSONSchema, KeywordDefinition};
 use libsecp256k1::PublicKey;
-use serde_json::{json, Value};
+use serde_json::{Value};
 use std::collections::HashMap;
 
 pub struct PublicKeysValidator {
@@ -16,7 +15,7 @@ impl PublicKeysValidator {
         let public_key_schema_validator =
             JsonSchemaValidator::new(crate::schema::identity::public_key_json()?)?;
 
-        let mut public_keys_validator = Self {
+        let public_keys_validator = Self {
             public_key_schema_validator,
         };
 

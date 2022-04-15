@@ -1,7 +1,5 @@
 use thiserror::Error;
-use crate::errors::consensus::AbstractConsensusError;
 use crate::identity::{Purpose, SecurityLevel};
-use crate::PublicKeyValidationError;
 
 #[derive(Error, Debug, Clone)]
 #[error("Invalid identity public key {public_key_id:?} security level: purpose {purpose:?} allows only for {allowed_security_levels:?} security levels, but got {security_level:?}")]

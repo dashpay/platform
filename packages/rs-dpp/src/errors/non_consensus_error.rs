@@ -1,4 +1,3 @@
-use serde_json::Error;
 use thiserror::Error;
 use crate::{CompatibleProtocolVersionIsNotDefinedError, InvalidVectorSizeError, SerdeParsingError};
 

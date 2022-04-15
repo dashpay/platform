@@ -31,23 +31,6 @@ pub fn assert_json_schema_error(result: &ValidationResult, expected_errors_count
     errors
 }
 
-pub fn assert_validation_error(result: &ValidationResult, error_to_match: ConsensusError, expected_errors_count: usize) -> Vec<&ConsensusError> {
-    let error_count = result.errors().len();
-
-    assert_eq!(error_count, expected_errors_count);
-
-    let mut errors: Vec<&ConsensusError> = Vec::new();
-
-    for error in result.errors() {
-        match error {
-            error_to_match => { errors.push(error.into()) }
-            _ => panic!("Expected JsonSchemaError")
-        }
-    }
-
-    errors
-}
-
 /// Sets a key value pair in serde_json object, returns the modified object
 pub fn serde_set<T, S>(mut object: serde_json::Value, key: T, value: S) -> serde_json::Value
     where T: Into<String>, S: Into<serde_json::Value>, serde_json::Value: From<S>
@@ -106,6 +89,8 @@ pub fn decode_hex(s: &str) -> Result<Vec<u8>, ParseIntError> {
         .collect()
 }
 
+/// Assert that all validation error belong to a certain enum variant and
+/// extracts all the errors from enum to a vector
 #[macro_export]
 macro_rules! assert_consensus_errors {
     ($validation_result: expr, $variant:path, $expected_errors_count: expr) => {
