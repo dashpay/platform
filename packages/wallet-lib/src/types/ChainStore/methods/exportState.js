@@ -3,6 +3,7 @@ function exportState() {
   const {
     blockHeaders,
     transactions,
+    fees,
   } = state;
 
   const serializedState = {
@@ -10,6 +11,7 @@ function exportState() {
     transactions: {},
     instantLocks: {},
     txMetadata: {},
+    fees: {},
   };
 
   [...blockHeaders.entries()].forEach(([blockHeaderHash, blockHeader]) => {
@@ -22,6 +24,8 @@ function exportState() {
       serializedState.txMetadata[transactionHash] = metadata;
     }
   });
+
+  serializedState.fees.minRelay = fees.minRelay
 
   return serializedState;
 }

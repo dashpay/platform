@@ -93,5 +93,8 @@
       "isInstantLocked": true,
       "isChainLocked": true
     }
+  },
+  "fees": {
+    "minRelay": -1
   }
 }
