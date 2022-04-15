@@ -105,3 +105,23 @@ pub fn decode_hex(s: &str) -> Result<Vec<u8>, ParseIntError> {
         .map(|i| u8::from_str_radix(&s[i..i + 2], 16))
         .collect()
 }
+
+#[macro_export]
+macro_rules! assert_consensus_errors {
+    ($validation_result: expr, $variant:path, $expected_errors_count: expr) => {
+        {
+            assert_eq!($validation_result.errors().len(), $expected_errors_count);
+
+            let mut errors = Vec::new();
+
+            for error in $validation_result.errors() {
+                match error {
+                   $variant(err) => { errors.push(err) }
+                    _ => panic!("Expected $variant")
+                }
+            }
+
+            errors
+        }
+    };
+}

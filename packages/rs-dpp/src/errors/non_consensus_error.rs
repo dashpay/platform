@@ -1,6 +1,6 @@
 use serde_json::Error;
 use thiserror::Error;
-use crate::{CompatibleProtocolVersionIsNotDefinedError, SerdeParsingError};
+use crate::{CompatibleProtocolVersionIsNotDefinedError, InvalidVectorSizeError, SerdeParsingError};
 
 #[derive(Debug, Error)]
 pub enum NonConsensusError {
@@ -9,7 +9,9 @@ pub enum NonConsensusError {
     #[error("{0}")]
     CompatibleProtocolVersionIsNotDefinedError(CompatibleProtocolVersionIsNotDefinedError),
     #[error("{0}")]
-    SerdeJsonError(serde_json::Error)
+    SerdeJsonError(serde_json::Error),
+    #[error("{0}")]
+    InvalidVectorSizeError(InvalidVectorSizeError)
 }
 
 impl From<SerdeParsingError> for NonConsensusError {
@@ -27,5 +29,11 @@ impl From<CompatibleProtocolVersionIsNotDefinedError> for NonConsensusError {
 impl From<serde_json::Error> for NonConsensusError {
     fn from(err: serde_json::Error) -> Self {
         Self::SerdeJsonError(err)
+    }
+}
+
+impl From<InvalidVectorSizeError> for NonConsensusError {
+    fn from(err: InvalidVectorSizeError) -> Self {
+        Self::InvalidVectorSizeError(err)
     }
 }

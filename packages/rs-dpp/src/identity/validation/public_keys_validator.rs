@@ -195,7 +195,7 @@ impl PublicKeysValidator {
                         raw_public_key.id,
                         raw_public_key.purpose,
                         raw_public_key.security_level,
-                        allowed_security_levels,
+                        Some(levels.clone()),
                     );
 
                     result.add_error(error);
@@ -205,7 +205,7 @@ impl PublicKeysValidator {
                     raw_public_key.id,
                     raw_public_key.purpose,
                     raw_public_key.security_level,
-                    allowed_security_levels,
+                    None,
                 );
 
                 result.add_error(error);

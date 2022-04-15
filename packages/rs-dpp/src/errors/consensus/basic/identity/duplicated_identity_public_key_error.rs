@@ -2,19 +2,19 @@ use thiserror::Error;
 use crate::errors::consensus::AbstractConsensusError;
 
 #[derive(Error, Debug, Clone)]
-#[error("Duplicated public key ids ${duplicated_ids:?} found")]
-pub struct DuplicatedIdentityPublicKeyIdError {
+#[error("Duplicated public keys ${duplicated_ids:?} found")]
+pub struct DuplicatedIdentityPublicKeyError {
     duplicated_ids: Vec<u64>,
 }
 
-impl DuplicatedIdentityPublicKeyIdError {
+impl DuplicatedIdentityPublicKeyError {
     pub fn new(duplicated_ids: Vec<u64>) -> Self {
         Self {
             duplicated_ids,
         }
     }
 
-    pub fn duplicated_ids(&self) -> &Vec<u64> {
+    pub fn duplicated_public_keys_ids(&self) -> &Vec<u64> {
         &self.duplicated_ids
     }
 }
