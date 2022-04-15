@@ -1,5 +1,7 @@
 const identityUpdateTransitionSchema = require('../../../../../../schema/identity/stateTransition/identityUpdate.json');
 const convertBuffersToArrays = require('../../../../../util/convertBuffersToArrays');
+const Script = require('@dashevo/dashcore-lib/lib/script');
+const InvalidSignatureScriptError = require('../../../../../errors/consensus/basic/stateTransition/InvalidSignatureScriptError');
 
 /**
  * @param {JsonSchemaValidator} jsonSchemaValidator
@@ -42,11 +44,19 @@ function validateIdentityUpdateTransitionBasicFactory(
       );
     }
 
-    if (rawStateTransition.script) {
-      // signature_script (or signature or signature_script)
-      // bip16_script
-      // check key + script field
-      // check script is valid
+    if (!result.isValid()) {
+      return result;
+    }
+
+    if (rawStateTransition.signatureScript) {
+      const signatureScript = new Script(rawStateTransition.signatureScript);
+      const address = signatureScript.toAddress();
+
+      if (!address || !address.isPayToScriptHash()) {
+        result.addError(
+          new InvalidSignatureScriptError(rawStateTransition.signatureScript),
+        );
+      }
     }
 
     return result;

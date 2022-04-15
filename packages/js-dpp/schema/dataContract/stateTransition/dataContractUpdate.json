@@ -23,19 +23,34 @@
       "minItems": 65,
       "maxItems": 65
     },
-    "script": {
+    "signatureScript": {
       "type": "array",
       "byteArray": true,
       "minItems": 1,
       "maxItems": 10000
     }
   },
+  "anyOf": [
+    {
+      "type": "object",
+      "required": ["signature"],
+      "properties": {
+        "signature": true
+      }
+    },
+    {
+      "type": "object",
+      "required": ["signatureScript"],
+      "properties": {
+        "signatureScript": true
+      }
+    }
+  ],
   "additionalProperties": false,
   "required": [
     "protocolVersion",
     "type",
     "dataContract",
-    "signaturePublicKeyId",
-    "signature"
+    "signaturePublicKeyId"
   ]
 }

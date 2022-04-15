@@ -229,7 +229,6 @@ class AbstractStateTransition {
       scriptPubkey,
       undefined,
       undefined,
-      undefined,
       flags,
     );
   }
@@ -335,6 +334,7 @@ class AbstractStateTransition {
  * @property {number} protocolVersion
  * @property {number} type
  * @property {Buffer} [signature]
+ * @property {Buffer} [signatureScript]
  */
 
 /**
@@ -342,6 +342,7 @@ class AbstractStateTransition {
  * @property {number} protocolVersion
  * @property {number} type
  * @property {string} [signature]
+ * @property {string} [signatureScript]
  */
 
 AbstractStateTransition.documentTransitionTypes = [

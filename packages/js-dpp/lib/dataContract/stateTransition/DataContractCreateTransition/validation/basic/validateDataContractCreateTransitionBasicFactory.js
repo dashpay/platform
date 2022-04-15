@@ -1,3 +1,4 @@
+const Script = require('@dashevo/dashcore-lib/lib/script');
 const InvalidDataContractIdError = require('../../../../../errors/consensus/basic/dataContract/InvalidDataContractIdError');
 
 const generateDataContractId = require('../../../../generateDataContractId');
@@ -5,6 +6,7 @@ const generateDataContractId = require('../../../../generateDataContractId');
 const convertBuffersToArrays = require('../../../../../util/convertBuffersToArrays');
 
 const dataContractCreateTransitionSchema = require('../../../../../../schema/dataContract/stateTransition/dataContractCreate.json');
+const InvalidSignatureScriptError = require('../../../../../errors/consensus/basic/stateTransition/InvalidSignatureScriptError');
 
 /**
  * @param {JsonSchemaValidator} jsonSchemaValidator
@@ -61,6 +63,21 @@ function validateDataContractCreateTransitionBasicFactory(
       result.addError(
         new InvalidDataContractIdError(generatedId, rawDataContract.$id),
       );
+    }
+
+    if (!result.isValid()) {
+      return result;
+    }
+
+    if (rawStateTransition.signatureScript) {
+      const signatureScript = new Script(rawStateTransition.signatureScript);
+      const address = signatureScript.toAddress();
+
+      if (!address || !address.isPayToScriptHash()) {
+        result.addError(
+          new InvalidSignatureScriptError(rawStateTransition.signatureScript),
+        );
+      }
     }
 
     return result;

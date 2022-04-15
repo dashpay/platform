@@ -18,6 +18,9 @@ const DocumentTimestampsMismatchError = require(
 const AbstractDocumentTransition = require('../../documentTransition/AbstractDocumentTransition');
 
 const validateTimeInBlockTimeWindow = require('../../../../../blockTimeWindow/validateTimeInBlockTimeWindow');
+const Identity = require('../../../../../identity/Identity');
+const IdentityPublicKey = require('../../../../../identity/IdentityPublicKey');
+const InvalidSignaturePublicKeyIdError = require('../../../../../errors/consensus/state/identity/InvalidSignaturePublicKeyIdError');
 
 /**
  *
@@ -276,6 +279,27 @@ function validateDocumentsBatchTransitionStateFactory(
 
     const documentTransitionResults = await Promise.all(documentTransitionResultsPromises);
     documentTransitionResults.forEach(result.merge.bind(result));
+
+    if (!result.isValid()) {
+      return result;
+    }
+
+    const identityId = stateTransition.getIdentityId();
+    const storedIdentity = await stateRepository.fetchIdentity(identityId);
+
+    // copy identity
+    const identity = new Identity(storedIdentity.toObject());
+
+    if (stateTransition.getBIP16Script()) {
+      const publicKey = identity.getPublicKeyById(stateTransition.getSignaturePublicKeyId());
+      if (publicKey.getType() !== IdentityPublicKey.TYPES.BIP13_SCRIPT_HASH) {
+        result.addError(
+          new InvalidSignaturePublicKeyIdError(stateTransition.getSignaturePublicKeyId()),
+        );
+
+        return result;
+      }
+    }
 
     return result;
   }

@@ -1,5 +1,6 @@
 const lodashClone = require('lodash.clonedeep');
 
+const Script = require('@dashevo/dashcore-lib/lib/script');
 const convertBuffersToArrays = require('../../../../../util/convertBuffersToArrays');
 
 const dataContractUpdateTransitionSchema = require('../../../../../../schema/dataContract/stateTransition/dataContractUpdate.json');
@@ -10,6 +11,7 @@ const InvalidDataContractVersionError = require('../../../../../errors/consensus
 const DataContractNotPresentError = require('../../../../../errors/consensus/basic/document/DataContractNotPresentError');
 
 const Identifier = require('../../../../../identifier/Identifier');
+const InvalidSignatureScriptError = require('../../../../../errors/consensus/basic/stateTransition/InvalidSignatureScriptError');
 
 /**
  * @param {JsonSchemaValidator} jsonSchemaValidator
@@ -49,6 +51,21 @@ function validateDataContractUpdateTransitionBasicFactory(
     result.merge(
       validateProtocolVersion(rawStateTransition.protocolVersion),
     );
+
+    if (!result.isValid()) {
+      return result;
+    }
+
+    if (rawStateTransition.signatureScript) {
+      const signatureScript = new Script(rawStateTransition.signatureScript);
+      const address = signatureScript.toAddress();
+
+      if (!address || !address.isPayToScriptHash()) {
+        result.addError(
+          new InvalidSignatureScriptError(rawStateTransition.signatureScript),
+        );
+      }
+    }
 
     if (!result.isValid()) {
       return result;

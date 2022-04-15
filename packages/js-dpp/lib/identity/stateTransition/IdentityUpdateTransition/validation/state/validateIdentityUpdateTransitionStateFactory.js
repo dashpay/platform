@@ -5,6 +5,8 @@ const InvalidIdentityPublicKeyIdError = require('../../../../../errors/consensus
 const Identity = require('../../../../Identity');
 const IdentityPublicKeyDisabledAtWindowViolationError = require('../../../../../errors/consensus/state/identity/IdentityPublicKeyDisabledAtWindowViolationError');
 const validateTimeInBlockTimeWindow = require('../../../../../blockTimeWindow/validateTimeInBlockTimeWindow');
+const IdentityPublicKey = require('../../../../IdentityPublicKey');
+const InvalidSignaturePublicKeyIdError = require('../../../../../errors/consensus/state/identity/InvalidSignaturePublicKeyIdError');
 
 /**
  * @param {StateRepository} stateRepository
@@ -31,6 +33,17 @@ function validateIdentityUpdateTransitionStateFactory(
 
     // copy identity
     const identity = new Identity(storedIdentity.toObject());
+
+    if (stateTransition.getBIP16Script()) {
+      const publicKey = identity.getPublicKeyById(stateTransition.getSignaturePublicKeyId());
+      if (publicKey.getType() !== IdentityPublicKey.TYPES.BIP13_SCRIPT_HASH) {
+        result.addError(
+          new InvalidSignaturePublicKeyIdError(stateTransition.getSignaturePublicKeyId()),
+        );
+
+        return result;
+      }
+    }
 
     // Check revision
     if (identity.getRevision() !== stateTransition.getRevision() - 1) {

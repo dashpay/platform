@@ -1,3 +1,4 @@
+const Script = require('@dashevo/dashcore-lib/lib/script');
 const ValidationResult = require('../../../../../validation/ValidationResult');
 
 const AbstractDocumentTransition = require('../../documentTransition/AbstractDocumentTransition');
@@ -22,6 +23,7 @@ const convertBuffersToArrays = require('../../../../../util/convertBuffersToArra
 const documentsBatchTransitionSchema = require('../../../../../../schema/document/stateTransition/documentsBatch.json');
 const createAndValidateIdentifier = require('../../../../../identifier/createAndValidateIdentifier');
 const DuplicateDocumentTransitionsWithIndicesError = require('../../../../../errors/consensus/basic/document/DuplicateDocumentTransitionsWithIndicesError');
+const InvalidSignatureScriptError = require('../../../../../errors/consensus/basic/stateTransition/InvalidSignatureScriptError');
 
 /**
  * @param {findDuplicatesById} findDuplicatesById
@@ -58,10 +60,6 @@ function validateDocumentsBatchTransitionBasicFactory(
    */
   async function validateDocumentTransitions(dataContract, ownerId, rawDocumentTransitions) {
     const result = new ValidationResult();
-
-    if (!result.isValid()) {
-      return result;
-    }
 
     const enrichedBaseDataContract = enrichDataContractWithBaseSchema(
       dataContract,
@@ -248,6 +246,21 @@ function validateDocumentsBatchTransitionBasicFactory(
     result.merge(
       validateProtocolVersion(rawStateTransition.protocolVersion),
     );
+
+    if (!result.isValid()) {
+      return result;
+    }
+
+    if (rawStateTransition.signatureScript) {
+      const signatureScript = new Script(rawStateTransition.signatureScript);
+      const address = signatureScript.toAddress();
+
+      if (!address || !address.isPayToScriptHash()) {
+        result.addError(
+          new InvalidSignatureScriptError(rawStateTransition.signatureScript),
+        );
+      }
+    }
 
     if (!result.isValid()) {
       return result;

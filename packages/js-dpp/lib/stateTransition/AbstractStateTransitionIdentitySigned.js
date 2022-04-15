@@ -37,8 +37,8 @@ class AbstractStateTransitionIdentitySigned extends AbstractStateTransition {
       this.signaturePublicKeyId = rawStateTransition.signaturePublicKeyId;
     }
 
-    if (Object.prototype.hasOwnProperty.call(rawStateTransition, 'script')) {
-      this.script = new Script(rawStateTransition.script);
+    if (Object.prototype.hasOwnProperty.call(rawStateTransition, 'bip16Script')) {
+      this.setBIP16Script(rawStateTransition.bip16Script);
     }
   }
 
@@ -180,7 +180,7 @@ class AbstractStateTransitionIdentitySigned extends AbstractStateTransition {
         return this.verifyESDSAHash160SignatureByPublicKeyHash(publicKeyBuffer);
       case IdentityPublicKey.TYPES.BIP13_SCRIPT_HASH:
         return this.verifyBIP13ScriptHashSignatureByScriptHash(
-          this.getScript(),
+          this.getBIP16Script(),
           new Script(publicKeyBuffer),
         );
       case IdentityPublicKey.TYPES.ECDSA_SECP256K1:
@@ -261,28 +261,28 @@ class AbstractStateTransitionIdentitySigned extends AbstractStateTransition {
    *
    * @returns {Script}
    */
-  getScript() {
-    return this.script;
+  getBIP16Script() {
+    return this.bip16Script;
   }
 
   /**
-   * @param {Script} script
+   * @param {Script|Buffer} bip16Script
    */
-  setScript(script) {
-    this.script = new Script(script);
+  setBIP16Script(bip16Script) {
+    this.bip16Script = new Script(bip16Script);
   }
 }
 
 /**
  * @typedef {RawStateTransition & Object} RawStateTransitionIdentitySigned
  * @property {Buffer} [signaturePublicKeyId]
- * @property {Buffer} [script]
+ * @property {Buffer} [bip16Script]
  */
 
 /**
  * @typedef {JsonStateTransition & Object} JsonStateTransitionIdentitySigned
  * @property {string} [signaturePublicKeyId]
- * @property {string} [script]
+ * @property {string} [bip16Script]
  */
 
 module.exports = AbstractStateTransitionIdentitySigned;
