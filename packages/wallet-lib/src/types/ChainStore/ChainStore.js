@@ -22,8 +22,8 @@ const SCHEMA = {
     },
   },
   fees: {
-    minRelay: 'number'
-  }
+    minRelay: 'number',
+  },
 };
 
 /**

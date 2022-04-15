@@ -28,7 +28,7 @@ function exportState() {
     }
   });
 
-  serializedState.fees.minRelay = fees.minRelay
+  serializedState.fees.minRelay = fees.minRelay;
 
   return serializedState;
 }
