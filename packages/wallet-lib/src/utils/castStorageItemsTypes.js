@@ -5,6 +5,10 @@ const castStorageItemsTypes = (originalItem, schema) => Object.entries(schema).r
   const item = originalItem[schemaKey];
   const result = {};
 
+  if (schemaKey !== '*' && item === undefined) {
+    throw new Error(`No schema found for key "${schemaKey}" in item ${JSON.stringify(originalItem)}`);
+  }
+
   if (schemaValue.constructor.name !== 'Object') {
     const Clazz = schemaValue;
     if (schemaKey === '*') {
@@ -12,10 +16,6 @@ const castStorageItemsTypes = (originalItem, schema) => Object.entries(schema).r
         result[itemKey] = new Clazz(originalItem[itemKey]);
       });
     } else {
-      if (item === undefined) {
-        throw new Error(`No schema key "${schemaKey}" found for item ${JSON.stringify(originalItem)}`);
-      }
-
       if (typeof schemaValue === 'string') {
         // eslint-disable-next-line valid-typeof
         if (typeof item !== schemaValue) {
