@@ -1,10 +1,6 @@
-use crate::errors::consensus::ConsensusError;
-use crate::validation::{byte_array_meta, JsonSchemaValidator, ValidationResult};
+use crate::validation::{JsonSchemaValidator, ValidationResult};
 use crate::version::ProtocolVersionValidator;
 use crate::{DashPlatformProtocolInitError, NonConsensusError, SerdeParsingError};
-use jsonschema::{JSONSchema, KeywordDefinition};
-use serde_json::json;
-use serde_json::Value as JsonValue;
 use std::sync::Arc;
 
 pub struct IdentityValidator {
@@ -19,7 +15,7 @@ impl IdentityValidator {
         let json_schema_validator =
             JsonSchemaValidator::new(crate::schema::identity::identity_json()?)?;
 
-        let mut identity_validator = Self {
+        let identity_validator = Self {
             protocol_version_validator,
             json_schema_validator,
         };

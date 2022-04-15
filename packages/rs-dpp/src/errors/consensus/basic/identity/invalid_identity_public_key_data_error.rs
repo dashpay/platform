@@ -1,5 +1,4 @@
 use thiserror::Error;
-use crate::errors::consensus::AbstractConsensusError;
 use crate::PublicKeyValidationError;
 
 #[derive(Error, Debug, Clone)]

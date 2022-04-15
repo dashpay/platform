@@ -1,5 +1,4 @@
 use thiserror::Error;
-use crate::errors::consensus::AbstractConsensusError;
 
 #[derive(Error, Debug, Clone)]
 #[error("Duplicated public keys ${duplicated_ids:?} found")]

@@ -1,6 +1,6 @@
 use crate::identity::validation::PublicKeysValidator;
 use crate::identity::{KeyType, Purpose, SecurityLevel};
-use crate::tests::utils::{assert_json_schema_error, assert_validation_error, decode_hex, serde_remove, serde_remove_ref, serde_set_ref};
+use crate::tests::utils::{assert_json_schema_error, decode_hex, serde_remove, serde_remove_ref, serde_set_ref};
 use jsonschema::error::ValidationErrorKind;
 use serde_json::{json, Value};
 use crate::assert_consensus_errors;
@@ -303,7 +303,7 @@ pub fn should_return_invalid_result_if_key_has_an_invalid_combination_of_purpose
 
 #[test]
 pub fn should_pass_valid_public_keys() {
-    let (mut raw_public_keys, validator) = setup_test();
+    let (raw_public_keys, validator) = setup_test();
     let result = validator.validate_keys(&raw_public_keys).unwrap();
 
     assert!(result.is_valid());
@@ -311,7 +311,7 @@ pub fn should_pass_valid_public_keys() {
 
 #[test]
 pub fn should_pass_valid_bls12_381_public_key() {
-    let (mut raw_public_keys, validator) = setup_test();
+    let (_, validator) = setup_test();
     let raw_public_keys_json = json!([{
         "id": 0,
         "type": KeyType::BLS12_381 as u64,
@@ -328,7 +328,7 @@ pub fn should_pass_valid_bls12_381_public_key() {
 
 #[test]
 pub fn should_pass_valid_ecdsa_hash160_public_key() {
-    let (mut raw_public_keys, validator) = setup_test();
+    let (raw_public_keys, validator) = setup_test();
     let raw_public_keys_json = json!([{
         "id": 0,
         "type": KeyType::ECDSA_HASH160,
@@ -346,7 +346,7 @@ pub fn should_pass_valid_ecdsa_hash160_public_key() {
 
 #[test]
 pub fn should_return_invalid_result_if_bls12_381_public_key_is_invalid() {
-    let (mut raw_public_keys, validator) = setup_test();
+    let (_, validator) = setup_test();
     let raw_public_keys_json = json!([{
         "id": 0,
         "type": KeyType::BLS12_381,
