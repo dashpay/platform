@@ -30,10 +30,9 @@ function createFaucetClient() {
     },
   };
 
-  // TODO: Consider implementing .env flag that will enable/disable storage adapter
   const walletOptions = {
     privateKey: process.env.FAUCET_PRIVATE_KEY,
-    adapter: storageAdapter,
+    adapter: Boolean(process.env.FAUCET_WALLET_USE_STORAGE) ? storageAdapter : false,
   };
 
   if (process.env.SKIP_SYNC_BEFORE_HEIGHT) {
