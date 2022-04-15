@@ -51,6 +51,12 @@
     "signaturePublicKeyId": {
       "type": "integer",
       "minimum": 0
+    },
+    "script": {
+      "type": "array",
+      "byteArray": true,
+      "minItems": 1,
+      "maxItems": 10000
     }
   },
   "dependentRequired" : {

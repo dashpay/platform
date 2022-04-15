@@ -4,6 +4,8 @@ const {
   Signer: { sign, verifySignature, verifyHashSignature },
 } = require('@dashevo/dashcore-lib');
 
+const Interpreter = require('@dashevo/dashcore-lib/lib/script/interpreter');
+
 const StateTransitionIsNotSignedError = require(
   './errors/StateTransitionIsNotSignedError',
 );
@@ -214,25 +216,22 @@ class AbstractStateTransition {
 
   /**
    * @protected
-   * @param {Buffer} scriptHash
+   * @param {Script} scriptSig
+   * @param {Script} scriptPubkey
    * @return {boolean}
    */
-  verifyBIP13ScriptHashSignatureByPublicKeyHash(scriptHash) {
-    const signature = this.getSignature();
-    if (!signature) {
-      throw new StateTransitionIsNotSignedError(this);
-    }
+  verifyBIP13ScriptHashSignatureByScriptHash(scriptSig, scriptPubkey) {
+    // eslint-disable-next-line no-bitwise
+    const flags = Interpreter.SCRIPT_VERIFY_P2SH | Interpreter.SCRIPT_VERIFY_STRICTENC;
 
-    const hash = this.hash({ skipSignature: true });
-
-    let isSignatureVerified;
-    try {
-      isSignatureVerified = verifyHashSignature(hash, signature, scriptHash);
-    } catch (e) {
-      isSignatureVerified = false;
-    }
-
-    return isSignatureVerified;
+    return new Interpreter().verify(
+      scriptSig,
+      scriptPubkey,
+      undefined,
+      undefined,
+      undefined,
+      flags,
+    );
   }
 
   /**

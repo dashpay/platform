@@ -4,6 +4,7 @@ const {
   crypto: { Hash },
 } = require('@dashevo/dashcore-lib');
 
+const Script = require('@dashevo/dashcore-lib/lib/script');
 const AbstractStateTransition = require('./AbstractStateTransition');
 
 const IdentityPublicKey = require('../identity/IdentityPublicKey');
@@ -24,7 +25,9 @@ class AbstractStateTransitionIdentitySigned extends AbstractStateTransition {
   /**
    * @param {
    * RawDataContractCreateTransition|
-   * RawDocumentsBatchTransition
+   * RawDocumentsBatchTransition|
+   * RawDataContractUpdateTransition|
+   * RawIdentityUpdateTransition
    * } [rawStateTransition]
    */
   constructor(rawStateTransition = {}) {
@@ -32,6 +35,10 @@ class AbstractStateTransitionIdentitySigned extends AbstractStateTransition {
 
     if (Object.prototype.hasOwnProperty.call(rawStateTransition, 'signaturePublicKeyId')) {
       this.signaturePublicKeyId = rawStateTransition.signaturePublicKeyId;
+    }
+
+    if (Object.prototype.hasOwnProperty.call(rawStateTransition, 'script')) {
+      this.script = new Script(rawStateTransition.script);
     }
   }
 
@@ -77,8 +84,7 @@ class AbstractStateTransitionIdentitySigned extends AbstractStateTransition {
 
         await this.signByPrivateKey(privateKeyModel, identityPublicKey.getType());
         break;
-      case IdentityPublicKey.TYPES.ECDSA_HASH160:
-      case IdentityPublicKey.TYPES.BIP13_SCRIPT_HASH: {
+      case IdentityPublicKey.TYPES.ECDSA_HASH160: {
         privateKeyModel = new PrivateKey(privateKey);
         pubKeyBase = new PublicKey({
           ...privateKeyModel.toPublicKey().toObject(),
@@ -105,6 +111,7 @@ class AbstractStateTransitionIdentitySigned extends AbstractStateTransition {
 
         await this.signByPrivateKey(privateKeyModel, identityPublicKey.getType());
         break;
+      case IdentityPublicKey.TYPES.BIP13_SCRIPT_HASH:
       default:
         throw new InvalidIdentityPublicKeyTypeError(identityPublicKey.getType());
     }
@@ -172,7 +179,10 @@ class AbstractStateTransitionIdentitySigned extends AbstractStateTransition {
       case IdentityPublicKey.TYPES.ECDSA_HASH160:
         return this.verifyESDSAHash160SignatureByPublicKeyHash(publicKeyBuffer);
       case IdentityPublicKey.TYPES.BIP13_SCRIPT_HASH:
-        return this.verifyBIP13ScriptHashSignatureByPublicKeyHash(publicKeyBuffer);
+        return this.verifyBIP13ScriptHashSignatureByScriptHash(
+          this.getScript(),
+          new Script(publicKeyBuffer),
+        );
       case IdentityPublicKey.TYPES.ECDSA_SECP256K1:
         return this.verifyECDSASignatureByPublicKey(PublicKey.fromBuffer(publicKeyBuffer));
       case IdentityPublicKey.TYPES.BLS12_381: {
@@ -213,7 +223,28 @@ class AbstractStateTransitionIdentitySigned extends AbstractStateTransition {
       rawStateTransition.signaturePublicKeyId = this.getSignaturePublicKeyId();
     }
 
+    if (this.script) {
+      rawStateTransition.script = this.script.toBuffer();
+    }
+
     return rawStateTransition;
+  }
+
+  /**
+   * Get state transition as JSON
+   *
+   * @return {JsonStateTransition}
+   */
+  toJSON() {
+    const jsonStateTransition = {
+      ...super.toJSON(),
+    };
+
+    if (this.getScript()) {
+      jsonStateTransition.script = this.getScript().toHex();
+    }
+
+    return jsonStateTransition;
   }
 
   /**
@@ -225,16 +256,33 @@ class AbstractStateTransitionIdentitySigned extends AbstractStateTransition {
   getKeySecurityLevelRequirement() {
     return IdentityPublicKey.SECURITY_LEVELS.MASTER;
   }
+
+  /**
+   *
+   * @returns {Script}
+   */
+  getScript() {
+    return this.script;
+  }
+
+  /**
+   * @param {Script} script
+   */
+  setScript(script) {
+    this.script = new Script(script);
+  }
 }
 
 /**
  * @typedef {RawStateTransition & Object} RawStateTransitionIdentitySigned
  * @property {Buffer} [signaturePublicKeyId]
+ * @property {Buffer} [script]
  */
 
 /**
  * @typedef {JsonStateTransition & Object} JsonStateTransitionIdentitySigned
  * @property {string} [signaturePublicKeyId]
+ * @property {string} [script]
  */
 
 module.exports = AbstractStateTransitionIdentitySigned;

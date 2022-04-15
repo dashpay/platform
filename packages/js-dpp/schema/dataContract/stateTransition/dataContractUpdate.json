@@ -22,6 +22,12 @@
       "byteArray": true,
       "minItems": 65,
       "maxItems": 65
+    },
+    "script": {
+      "type": "array",
+      "byteArray": true,
+      "minItems": 1,
+      "maxItems": 10000
     }
   },
   "additionalProperties": false,

@@ -42,6 +42,13 @@ function validateIdentityUpdateTransitionBasicFactory(
       );
     }
 
+    if (rawStateTransition.script) {
+      // signature_script (or signature or signature_script)
+      // bip16_script
+      // check key + script field
+      // check script is valid
+    }
+
     return result;
   }
 
