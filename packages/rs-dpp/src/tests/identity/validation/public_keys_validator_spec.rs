@@ -2,6 +2,7 @@ use crate::assert_consensus_errors;
 use crate::consensus::basic::identity::InvalidIdentityPublicKeyDataError;
 use crate::consensus::ConsensusError;
 use crate::identity::validation::PublicKeysValidator;
+use crate::identity::validation::TPublicKeysValidator;
 use crate::identity::{KeyType, Purpose, SecurityLevel};
 use crate::tests::utils::{
     assert_json_schema_error, decode_hex, serde_remove, serde_remove_ref, serde_set_ref,
@@ -29,6 +30,7 @@ pub mod id {
     use crate::errors::consensus::ConsensusError;
     use crate::tests::identity::validation::public_keys_validator_spec::setup_test;
     use crate::tests::utils::{assert_json_schema_error, serde_remove_ref, serde_set_ref};
+    use crate::identity::validation::TPublicKeysValidator;
     use jsonschema::error::ValidationErrorKind;
 
     #[test]
@@ -96,6 +98,7 @@ pub mod key_type {
     use crate::errors::consensus::ConsensusError;
     use crate::tests::identity::validation::public_keys_validator_spec::setup_test;
     use crate::tests::utils::{assert_json_schema_error, serde_remove_ref, serde_set_ref};
+    use crate::identity::validation::TPublicKeysValidator;
 
     #[test]
     pub fn should_be_present() {
@@ -132,6 +135,7 @@ pub mod data {
     use crate::tests::identity::validation::public_keys_validator_spec::setup_test;
     use crate::tests::utils::{assert_json_schema_error, serde_remove_ref, serde_set_ref};
     use jsonschema::error::ValidationErrorKind;
+    use crate::identity::validation::TPublicKeysValidator;
 
     #[test]
     pub fn should_be_present() {
@@ -179,6 +183,7 @@ pub mod data {
     }
 
     pub mod ecdsa_secp256k1 {
+        use crate::identity::validation::TPublicKeysValidator;
         use crate::tests::identity::validation::public_keys_validator_spec::setup_test;
         use crate::tests::utils::{assert_json_schema_error, serde_set_ref};
 
@@ -210,6 +215,7 @@ pub mod data {
     }
 
     pub mod bls12_381 {
+        use crate::identity::validation::TPublicKeysValidator;
         use crate::tests::identity::validation::public_keys_validator_spec::setup_test;
         use crate::tests::utils::{assert_json_schema_error, serde_set_ref};
 

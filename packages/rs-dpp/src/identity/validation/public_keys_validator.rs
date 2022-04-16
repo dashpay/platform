@@ -10,6 +10,10 @@ use libsecp256k1::PublicKey;
 use serde_json::{json, Value};
 use std::collections::HashMap;
 
+pub trait TPublicKeysValidator {
+    fn validate_keys(&self, raw_public_keys: &Vec<Value>) -> Result<ValidationResult, NonConsensusError>;
+}
+
 pub struct PublicKeysValidator {
     public_key_schema_validator: JsonSchemaValidator,
 }
@@ -32,44 +36,8 @@ fn duplicated_key_ids(public_keys: &Vec<IdentityPublicKey>) -> Vec<u64> {
     duplicated_ids
 }
 
-fn duplicated_keys(public_keys: &Vec<IdentityPublicKey>) -> Vec<u64> {
-    let mut keys_count = HashMap::<Vec<u8>, usize>::new();
-    let mut duplicated_key_ids = vec![];
-
-    for public_key in public_keys.iter() {
-        let data = &public_key.data;
-        let count = *keys_count.get(&data.clone()).unwrap_or(&(0 as usize));
-        let count = count + 1;
-        keys_count.insert(data.clone(), count);
-
-        if count > 1 {
-            duplicated_key_ids.push(public_key.id);
-        }
-    }
-
-    duplicated_key_ids
-}
-
-impl PublicKeysValidator {
-    pub fn new() -> Result<Self, DashPlatformProtocolInitError> {
-        let public_key_schema_validator =
-            JsonSchemaValidator::new(crate::schema::identity::public_key_json()?)?;
-
-        let public_keys_validator = Self {
-            public_key_schema_validator,
-        };
-
-        Ok(public_keys_validator)
-    }
-
-    pub fn validate_public_key_structure(
-        &self,
-        public_key: &Value,
-    ) -> Result<ValidationResult, NonConsensusError> {
-        self.public_key_schema_validator.validate(public_key)
-    }
-
-    pub fn validate_keys(
+impl TPublicKeysValidator for PublicKeysValidator {
+    fn validate_keys(
         &self,
         raw_public_keys: &Vec<Value>,
     ) -> Result<ValidationResult, NonConsensusError> {
@@ -163,5 +131,43 @@ impl PublicKeysValidator {
         }
 
         return Ok(result);
+    }
+}
+
+fn duplicated_keys(public_keys: &Vec<IdentityPublicKey>) -> Vec<u64> {
+    let mut keys_count = HashMap::<Vec<u8>, usize>::new();
+    let mut duplicated_key_ids = vec![];
+
+    for public_key in public_keys.iter() {
+        let data = &public_key.data;
+        let count = *keys_count.get(&data.clone()).unwrap_or(&(0 as usize));
+        let count = count + 1;
+        keys_count.insert(data.clone(), count);
+
+        if count > 1 {
+            duplicated_key_ids.push(public_key.id);
+        }
+    }
+
+    duplicated_key_ids
+}
+
+impl PublicKeysValidator {
+    pub fn new() -> Result<Self, DashPlatformProtocolInitError> {
+        let public_key_schema_validator =
+            JsonSchemaValidator::new(crate::schema::identity::public_key_json()?)?;
+
+        let public_keys_validator = Self {
+            public_key_schema_validator,
+        };
+
+        Ok(public_keys_validator)
+    }
+
+    pub fn validate_public_key_structure(
+        &self,
+        public_key: &Value,
+    ) -> Result<ValidationResult, NonConsensusError> {
+        self.public_key_schema_validator.validate(public_key)
     }
 }
