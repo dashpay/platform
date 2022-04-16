@@ -14,7 +14,10 @@ impl IdentityFacade {
         public_keys_validator: Arc<PublicKeysValidator>,
     ) -> Result<Self, DashPlatformProtocolInitError> {
         Ok(Self {
-            identity_validator: IdentityValidator::new(protocol_version_validator, public_keys_validator)?,
+            identity_validator: IdentityValidator::new(
+                protocol_version_validator,
+                public_keys_validator,
+            )?,
         })
     }
 

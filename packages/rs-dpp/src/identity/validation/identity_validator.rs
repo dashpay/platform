@@ -1,31 +1,14 @@
+use crate::identity::validation::TPublicKeysValidator;
 use crate::validation::{JsonSchemaValidator, ValidationResult};
 use crate::version::ProtocolVersionValidator;
 use crate::{DashPlatformProtocolInitError, NonConsensusError, SerdeParsingError};
-use std::sync::Arc;
 use serde_json::{Map, Value};
-use crate::identity::validation::TPublicKeysValidator;
+use std::sync::Arc;
 
 pub struct IdentityValidator<TPublicKeyValidator> {
     protocol_version_validator: Arc<ProtocolVersionValidator>,
     json_schema_validator: JsonSchemaValidator,
-    public_keys_validator: Arc<TPublicKeyValidator>
-}
-
-fn get_protocol_version(identity_map: &Map<String, Value>) -> Result<u64, SerdeParsingError> {
-    Ok(identity_map
-        .get("protocolVersion")
-        .ok_or(SerdeParsingError::new("Expected identity to have protocolVersion"))?
-        .as_u64()
-        .ok_or(SerdeParsingError::new("Expected protocolVersion to be a uint", ))?
-    )
-}
-
-fn get_raw_public_keys(identity_map: &Map<String, Value>) -> Result<&Vec<Value>, SerdeParsingError> {
-    identity_map
-        .get("publicKeys")
-        .ok_or(SerdeParsingError::new("Expected identity.publicKeys to exist"))?
-        .as_array()
-        .ok_or(SerdeParsingError::new("Expected identity.publicKeys to be an array"))
+    public_keys_validator: Arc<TPublicKeyValidator>,
 }
 
 impl<T: TPublicKeysValidator> IdentityValidator<T> {
@@ -60,19 +43,41 @@ impl<T: TPublicKeysValidator> IdentityValidator<T> {
         ))?;
 
         let protocol_version = get_protocol_version(identity_map)?;
-        validation_result.merge(
-            self.protocol_version_validator.validate(protocol_version)?
-        );
+        validation_result.merge(self.protocol_version_validator.validate(protocol_version)?);
 
         if !validation_result.is_valid() {
             return Ok(validation_result);
         }
 
         let raw_public_keys = get_raw_public_keys(identity_map)?;
-        validation_result.merge(
-            self.public_keys_validator.validate_keys(raw_public_keys)?
-        );
+        validation_result.merge(self.public_keys_validator.validate_keys(raw_public_keys)?);
 
         Ok(validation_result)
     }
+}
+
+fn get_protocol_version(identity_map: &Map<String, Value>) -> Result<u64, SerdeParsingError> {
+    Ok(identity_map
+        .get("protocolVersion")
+        .ok_or(SerdeParsingError::new(
+            "Expected identity to have protocolVersion",
+        ))?
+        .as_u64()
+        .ok_or(SerdeParsingError::new(
+            "Expected protocolVersion to be a uint",
+        ))?)
+}
+
+fn get_raw_public_keys(
+    identity_map: &Map<String, Value>,
+) -> Result<&Vec<Value>, SerdeParsingError> {
+    identity_map
+        .get("publicKeys")
+        .ok_or(SerdeParsingError::new(
+            "Expected identity.publicKeys to exist",
+        ))?
+        .as_array()
+        .ok_or(SerdeParsingError::new(
+            "Expected identity.publicKeys to be an array",
+        ))
 }

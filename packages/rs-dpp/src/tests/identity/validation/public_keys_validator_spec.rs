@@ -1,13 +1,11 @@
 use crate::assert_consensus_errors;
-use crate::consensus::basic::identity::InvalidIdentityPublicKeyDataError;
 use crate::consensus::ConsensusError;
 use crate::identity::validation::PublicKeysValidator;
 use crate::identity::validation::TPublicKeysValidator;
 use crate::identity::{KeyType, Purpose, SecurityLevel};
 use crate::tests::utils::{
-    assert_json_schema_error, decode_hex, serde_remove, serde_remove_ref, serde_set_ref,
+    decode_hex, serde_set_ref,
 };
-use jsonschema::error::ValidationErrorKind;
 use serde_json::{json, Value};
 
 fn setup_test() -> (Vec<Value>, PublicKeysValidator) {
@@ -28,9 +26,9 @@ fn setup_test() -> (Vec<Value>, PublicKeysValidator) {
 pub mod id {
     use crate::assert_consensus_errors;
     use crate::errors::consensus::ConsensusError;
+    use crate::identity::validation::TPublicKeysValidator;
     use crate::tests::identity::validation::public_keys_validator_spec::setup_test;
     use crate::tests::utils::{assert_json_schema_error, serde_remove_ref, serde_set_ref};
-    use crate::identity::validation::TPublicKeysValidator;
     use jsonschema::error::ValidationErrorKind;
 
     #[test]
@@ -96,9 +94,9 @@ pub mod id {
 pub mod key_type {
     use crate::assert_consensus_errors;
     use crate::errors::consensus::ConsensusError;
-    use crate::tests::identity::validation::public_keys_validator_spec::setup_test;
-    use crate::tests::utils::{assert_json_schema_error, serde_remove_ref, serde_set_ref};
     use crate::identity::validation::TPublicKeysValidator;
+    use crate::tests::identity::validation::public_keys_validator_spec::setup_test;
+    use crate::tests::utils::{serde_remove_ref, serde_set_ref};
 
     #[test]
     pub fn should_be_present() {
@@ -132,10 +130,10 @@ pub mod key_type {
 pub mod data {
     use crate::assert_consensus_errors;
     use crate::errors::consensus::ConsensusError;
-    use crate::tests::identity::validation::public_keys_validator_spec::setup_test;
-    use crate::tests::utils::{assert_json_schema_error, serde_remove_ref, serde_set_ref};
-    use jsonschema::error::ValidationErrorKind;
     use crate::identity::validation::TPublicKeysValidator;
+    use crate::tests::identity::validation::public_keys_validator_spec::setup_test;
+    use crate::tests::utils::{serde_remove_ref, serde_set_ref};
+    use jsonschema::error::ValidationErrorKind;
 
     #[test]
     pub fn should_be_present() {
@@ -170,7 +168,6 @@ pub mod data {
 
         let errors = assert_consensus_errors!(&result, ConsensusError::JsonSchemaError, 33);
 
-        let error = errors.first().unwrap();
         let byte_array_error = errors.last().unwrap();
 
         for (i, err) in errors.iter().enumerate() {
@@ -416,7 +413,7 @@ pub fn should_pass_valid_bls12_381_public_key() {
 
 #[test]
 pub fn should_pass_valid_ecdsa_hash160_public_key() {
-    let (raw_public_keys, validator) = setup_test();
+    let (_, validator) = setup_test();
     let raw_public_keys_json = json!([{
         "id": 0,
         "type": KeyType::ECDSA_HASH160 as u64,
