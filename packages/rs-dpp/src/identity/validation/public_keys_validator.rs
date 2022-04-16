@@ -2,38 +2,23 @@ use crate::errors::consensus::basic::identity::{
     DuplicatedIdentityPublicKeyError, DuplicatedIdentityPublicKeyIdError,
     InvalidIdentityPublicKeyDataError, InvalidIdentityPublicKeySecurityLevelError,
 };
-use crate::identity::{IdentityPublicKey, KeyType, Purpose, ALLOWED_SECURITY_LEVELS};
+use crate::identity::{IdentityPublicKey, KeyType, ALLOWED_SECURITY_LEVELS};
 use crate::validation::{JsonSchemaValidator, ValidationResult};
 use crate::{DashPlatformProtocolInitError, NonConsensusError, PublicKeyValidationError};
 use bls_signatures::{PublicKey as BlsPublicKey, Serialize};
 use libsecp256k1::PublicKey;
-use serde_json::{json, Value};
+use serde_json::{Value};
 use std::collections::HashMap;
 
 pub trait TPublicKeysValidator {
-    fn validate_keys(&self, raw_public_keys: &Vec<Value>) -> Result<ValidationResult, NonConsensusError>;
+    fn validate_keys(
+        &self,
+        raw_public_keys: &Vec<Value>,
+    ) -> Result<ValidationResult, NonConsensusError>;
 }
 
 pub struct PublicKeysValidator {
     public_key_schema_validator: JsonSchemaValidator,
-}
-
-fn duplicated_key_ids(public_keys: &Vec<IdentityPublicKey>) -> Vec<u64> {
-    let mut duplicated_ids = Vec::<u64>::new();
-    let mut ids_count = HashMap::<u64, usize>::new();
-
-    for public_key in public_keys.iter() {
-        let id = public_key.id;
-        let count = *ids_count.get(&id).unwrap_or(&(0 as usize));
-        let count = count + 1;
-        ids_count.insert(id.into(), count);
-
-        if count > 1 {
-            duplicated_ids.push(id);
-        }
-    }
-
-    duplicated_ids
 }
 
 impl TPublicKeysValidator for PublicKeysValidator {
@@ -61,20 +46,20 @@ impl TPublicKeysValidator for PublicKeysValidator {
         }
 
         // Check that there's no duplicated key ids in the state transition
-        let mut duplicated_ids = duplicated_key_ids(&public_keys);
+        let duplicated_ids = duplicated_key_ids(&public_keys);
 
         if duplicated_ids.len() > 0 {
             result.add_error(DuplicatedIdentityPublicKeyIdError::new(duplicated_ids));
         }
 
         // Check that there's no duplicated keys
-        let mut duplicated_key_ids = duplicated_keys(&public_keys);
+        let duplicated_key_ids = duplicated_keys(&public_keys);
 
         if duplicated_key_ids.len() > 0 {
             result.add_error(DuplicatedIdentityPublicKeyError::new(duplicated_key_ids));
         }
 
-        let mut validation_error: Option<PublicKeyValidationError> = None;
+        let mut validation_error: Option<PublicKeyValidationError>;
 
         for public_key in public_keys.iter() {
             validation_error = match public_key.key_type {
@@ -134,24 +119,6 @@ impl TPublicKeysValidator for PublicKeysValidator {
     }
 }
 
-fn duplicated_keys(public_keys: &Vec<IdentityPublicKey>) -> Vec<u64> {
-    let mut keys_count = HashMap::<Vec<u8>, usize>::new();
-    let mut duplicated_key_ids = vec![];
-
-    for public_key in public_keys.iter() {
-        let data = &public_key.data;
-        let count = *keys_count.get(&data.clone()).unwrap_or(&(0 as usize));
-        let count = count + 1;
-        keys_count.insert(data.clone(), count);
-
-        if count > 1 {
-            duplicated_key_ids.push(public_key.id);
-        }
-    }
-
-    duplicated_key_ids
-}
-
 impl PublicKeysValidator {
     pub fn new() -> Result<Self, DashPlatformProtocolInitError> {
         let public_key_schema_validator =
@@ -170,4 +137,40 @@ impl PublicKeysValidator {
     ) -> Result<ValidationResult, NonConsensusError> {
         self.public_key_schema_validator.validate(public_key)
     }
+}
+
+fn duplicated_keys(public_keys: &Vec<IdentityPublicKey>) -> Vec<u64> {
+    let mut keys_count = HashMap::<Vec<u8>, usize>::new();
+    let mut duplicated_key_ids = vec![];
+
+    for public_key in public_keys.iter() {
+        let data = &public_key.data;
+        let count = *keys_count.get(&data.clone()).unwrap_or(&(0 as usize));
+        let count = count + 1;
+        keys_count.insert(data.clone(), count);
+
+        if count > 1 {
+            duplicated_key_ids.push(public_key.id);
+        }
+    }
+
+    duplicated_key_ids
+}
+
+fn duplicated_key_ids(public_keys: &Vec<IdentityPublicKey>) -> Vec<u64> {
+    let mut duplicated_ids = Vec::<u64>::new();
+    let mut ids_count = HashMap::<u64, usize>::new();
+
+    for public_key in public_keys.iter() {
+        let id = public_key.id;
+        let count = *ids_count.get(&id).unwrap_or(&(0 as usize));
+        let count = count + 1;
+        ids_count.insert(id.into(), count);
+
+        if count > 1 {
+            duplicated_ids.push(id);
+        }
+    }
+
+    duplicated_ids
 }

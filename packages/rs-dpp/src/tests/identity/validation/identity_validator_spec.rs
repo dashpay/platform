@@ -1,4 +1,4 @@
-use crate::identity::validation::{IdentityValidator, PublicKeysValidator, TPublicKeysValidator};
+use crate::identity::validation::{IdentityValidator, PublicKeysValidator};
 use crate::tests::utils::assert_json_schema_error;
 use crate::version::ProtocolVersionValidator;
 use serde_json::Value;
@@ -11,8 +11,9 @@ fn setup_test() -> (Value, IdentityValidator<PublicKeysValidator>) {
         crate::tests::fixtures::identity_fixture_json(),
         IdentityValidator::new(
             Arc::new(protocol_version_validator),
-            Arc::new(public_keys_validator)
-        ).unwrap(),
+            Arc::new(public_keys_validator),
+        )
+        .unwrap(),
     )
 }
 

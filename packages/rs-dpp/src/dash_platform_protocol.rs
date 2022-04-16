@@ -1,8 +1,8 @@
 use crate::errors::DashPlatformProtocolInitError;
+use crate::identity::validation::{PublicKeysValidator};
 use crate::identity::IdentityFacade;
 use crate::version::{ProtocolVersionValidator, COMPATIBILITY_MAP, LATEST_VERSION};
 use std::sync::Arc;
-use crate::identity::validation::{PublicKeysValidator, TPublicKeysValidator};
 
 pub struct DashPlatformProtocol {
     // Public facing facades to interact with the library
@@ -20,13 +20,14 @@ impl DashPlatformProtocol {
             LATEST_VERSION,
             COMPATIBILITY_MAP.clone(),
         ));
-        
-        let public_keys_validator = Arc::new(
-            PublicKeysValidator::new()?
-        );
+
+        let public_keys_validator = Arc::new(PublicKeysValidator::new()?);
 
         Ok(Self {
-            identities: IdentityFacade::new(protocol_version_validator.clone(), public_keys_validator.clone())?,
+            identities: IdentityFacade::new(
+                protocol_version_validator.clone(),
+                public_keys_validator.clone(),
+            )?,
         })
     }
 
