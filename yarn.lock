@@ -1199,6 +1199,15 @@ __metadata:
   languageName: node
   linkType: hard
 
+"@babel/runtime@npm:^7.17.8":
+  version: 7.17.9
+  resolution: "@babel/runtime@npm:7.17.9"
+  dependencies:
+    regenerator-runtime: ^0.13.4
+  checksum: 4d56bdb82890f386d5a57c40ef985a0ed7f0a78f789377a2d0c3e8826819e0f7f16ba0fe906d9b2241c5f7ca56630ef0653f5bb99f03771f7b87ff8af4bf5fe3
+  languageName: node
+  linkType: hard
+
 "@babel/runtime@npm:^7.8.4":
   version: 7.16.3
   resolution: "@babel/runtime@npm:7.16.3"
@@ -1284,6 +1293,28 @@ __metadata:
   checksum: 1c8ba91935e9fb99d4e6ad234b299e4956f1486bb00ede8c06ecb5b38341b2042d7fa1a001a58441d7c98d42c14345b63108c607050f0dddc0fb19a64a46cb9f
   languageName: node
   linkType: hard
+
+"@dashevo/bench-suite@workspace:packages/bench-suite":
+  version: 0.0.0-use.local
+  resolution: "@dashevo/bench-suite@workspace:packages/bench-suite"
+  dependencies:
+    "@dashevo/dashcore-lib": ~0.19.30
+    "@dashevo/dpns-contract": "workspace:~"
+    "@dashevo/dpp": "workspace:~"
+    "@dashevo/wallet-lib": "workspace:~"
+    babel-eslint: ^10.1.0
+    console-table-printer: ^2.11.0
+    dash: "workspace:~"
+    dotenv-safe: ^8.2.0
+    eslint: ^7.32.0
+    eslint-config-airbnb-base: ^14.2.1
+    eslint-plugin-import: ^2.24.2
+    lodash.clone: ~4.5.0
+    lodash.matches: ^4.6.0
+    mathjs: ^10.4.3
+    mocha: ^9.1.2
+  languageName: unknown
+  linkType: soft
 
 "@dashevo/dapi-client@workspace:packages/js-dapi-client, @dashevo/dapi-client@workspace:~":
   version: 0.0.0-use.local
@@ -5209,6 +5240,13 @@ __metadata:
   languageName: node
   linkType: hard
 
+"complex.js@npm:^2.1.0":
+  version: 2.1.0
+  resolution: "complex.js@npm:2.1.0"
+  checksum: 8a31a0d8191d793e08c8bac5065b8146f2243d8f15b81736c07211f7e2b73e5d71c5d010ed38525985d83ac37027d66dbe51704e8070a59df6cf8130d55562b7
+  languageName: node
+  linkType: hard
+
 "component-emitter@npm:~1.3.0":
   version: 1.3.0
   resolution: "component-emitter@npm:1.3.0"
@@ -5297,6 +5335,15 @@ __metadata:
   version: 1.1.0
   resolution: "console-control-strings@npm:1.1.0"
   checksum: 8755d76787f94e6cf79ce4666f0c5519906d7f5b02d4b884cf41e11dcd759ed69c57da0670afd9236d229a46e0f9cf519db0cd829c6dca820bb5a5c3def584ed
+  languageName: node
+  linkType: hard
+
+"console-table-printer@npm:^2.11.0":
+  version: 2.11.0
+  resolution: "console-table-printer@npm:2.11.0"
+  dependencies:
+    simple-wcswidth: ^1.0.1
+  checksum: 125797e3b936eb08182cc704eb8d6aaa6ab82c6fb1f739afad3dd06847b8a89227fe80f84ed105accfa6f4487ff12821f931727624bfda67d8a8ebdc1314f168
   languageName: node
   linkType: hard
 
@@ -5928,6 +5975,13 @@ __metadata:
   version: 4.0.0
   resolution: "decamelize@npm:4.0.0"
   checksum: b7d09b82652c39eead4d6678bb578e3bebd848add894b76d0f6b395bc45b2d692fb88d977e7cfb93c4ed6c119b05a1347cef261174916c2e75c0a8ca57da1809
+  languageName: node
+  linkType: hard
+
+"decimal.js@npm:^10.3.1":
+  version: 10.3.1
+  resolution: "decimal.js@npm:10.3.1"
+  checksum: 0351ac9f05fe050f23227aa6a4573bee2d58fa7378fcf28d969a8c789525032effb488a90320fd3fe86a66e17b4bc507d811b15eada5b7f0e7ec5d2af4c24a59
   languageName: node
   linkType: hard
 
@@ -6626,6 +6680,13 @@ __metadata:
   version: 1.0.3
   resolution: "escape-html@npm:1.0.3"
   checksum: 6213ca9ae00d0ab8bccb6d8d4e0a98e76237b2410302cf7df70aaa6591d509a2a37ce8998008cbecae8fc8ffaadf3fb0229535e6a145f3ce0b211d060decbb24
+  languageName: node
+  linkType: hard
+
+"escape-latex@npm:^1.2.0":
+  version: 1.2.0
+  resolution: "escape-latex@npm:1.2.0"
+  checksum: 73a787319f0965ecb8244bb38bf3a3cba872f0b9a5d3da8821140e9f39fe977045dc953a62b1a2bed4d12bfccbe75a7d8ec786412bf00739eaa2f627d0a8e0d6
   languageName: node
   linkType: hard
 
@@ -7400,6 +7461,13 @@ __metadata:
     combined-stream: ^1.0.6
     mime-types: ^2.1.12
   checksum: 10c1780fa13dbe1ff3100114c2ce1f9307f8be10b14bf16e103815356ff567b6be39d70fc4a40f8990b9660012dc24b0f5e1dde1b6426166eb23a445ba068ca3
+  languageName: node
+  linkType: hard
+
+"fraction.js@npm:^4.2.0":
+  version: 4.2.0
+  resolution: "fraction.js@npm:4.2.0"
+  checksum: 8c76a6e21dedea87109d6171a0ac77afa14205794a565d71cb10d2925f629a3922da61bf45ea52dbc30bce4d8636dc0a27213a88cbd600eab047d82f9a3a94c5
   languageName: node
   linkType: hard
 
@@ -9066,6 +9134,13 @@ fsevents@~2.3.2:
   languageName: node
   linkType: hard
 
+"javascript-natural-sort@npm:^0.7.1":
+  version: 0.7.1
+  resolution: "javascript-natural-sort@npm:0.7.1"
+  checksum: 161e2c512cc7884bc055a582c6645d9032cab88497a76123d73cb23bfb03d97a04cf7772ecdb8bd3366fc07192c2f996366f479f725c23ef073fffe03d6a586a
+  languageName: node
+  linkType: hard
+
 "jayson@npm:^2.1.0":
   version: 2.1.2
   resolution: "jayson@npm:2.1.2"
@@ -9852,6 +9927,13 @@ fsevents@~2.3.2:
   languageName: node
   linkType: hard
 
+"lodash.clone@npm:~4.5.0":
+  version: 4.5.0
+  resolution: "lodash.clone@npm:4.5.0"
+  checksum: 5839f22acf3a43c026ac4325f7bcd378f34967415cd0b9fd7efa9bbbf38dc665900d36e040944c5afab94a51ff8a24f6cfc3781fe439705cbad5c722e9506b16
+  languageName: node
+  linkType: hard
+
 "lodash.clonedeep@npm:^4.5.0":
   version: 4.5.0
   resolution: "lodash.clonedeep@npm:4.5.0"
@@ -9905,6 +9987,13 @@ fsevents@~2.3.2:
   version: 4.4.0
   resolution: "lodash.ismatch@npm:4.4.0"
   checksum: a393917578842705c7fc1a30fb80613d1ac42d20b67eb26a2a6004d6d61ee90b419f9eb320508ddcd608e328d91eeaa2651411727eaa9a12534ed6ccb02fc705
+  languageName: node
+  linkType: hard
+
+"lodash.matches@npm:^4.6.0":
+  version: 4.6.0
+  resolution: "lodash.matches@npm:4.6.0"
+  checksum: 002617abb63d3735d8600e5e74d499a02edbef090c33acf1198f46b3ec924752729bbac2eb4f26ec00b0ce3b382fd03fdf25d19cfff08ec735180fcb36cd3fe4
   languageName: node
   linkType: hard
 
@@ -10151,6 +10240,25 @@ fsevents@~2.3.2:
   version: 4.3.0
   resolution: "map-obj@npm:4.3.0"
   checksum: fbc554934d1a27a1910e842bc87b177b1a556609dd803747c85ece420692380827c6ae94a95cce4407c054fa0964be3bf8226f7f2cb2e9eeee432c7c1985684e
+  languageName: node
+  linkType: hard
+
+"mathjs@npm:^10.4.3":
+  version: 10.4.3
+  resolution: "mathjs@npm:10.4.3"
+  dependencies:
+    "@babel/runtime": ^7.17.8
+    complex.js: ^2.1.0
+    decimal.js: ^10.3.1
+    escape-latex: ^1.2.0
+    fraction.js: ^4.2.0
+    javascript-natural-sort: ^0.7.1
+    seedrandom: ^3.0.5
+    tiny-emitter: ^2.1.0
+    typed-function: ^2.1.0
+  bin:
+    mathjs: bin/cli.js
+  checksum: ed2343b2ab41c5638d54b04cecfb815069ea6508629b18bd1cc519711560ee43412cae82d17cfb5ed8e55ba2a8f3a90999bdd23457be6703157113de74c285fd
   languageName: node
   linkType: hard
 
@@ -13002,6 +13110,13 @@ fsevents@~2.3.2:
   languageName: node
   linkType: hard
 
+"seedrandom@npm:^3.0.5":
+  version: 3.0.5
+  resolution: "seedrandom@npm:3.0.5"
+  checksum: 728b56bc3bc1b9ddeabd381e449b51cb31bdc0aa86e27fcd0190cea8c44613d5bcb2f6bb63ed79f78180cbe791c20b8ec31a9627f7b7fc7f476fd2bdb7e2da9f
+  languageName: node
+  linkType: hard
+
 "semver-diff@npm:^3.1.1":
   version: 3.1.1
   resolution: "semver-diff@npm:3.1.1"
@@ -13225,6 +13340,13 @@ fsevents@~2.3.2:
   dependencies:
     is-arrayish: ^0.3.1
   checksum: a7f3f2ab5c76c4472d5c578df892e857323e452d9f392e1b5cf74b74db66e6294a1e1b8b390b519fa1b96b5b613f2a37db6cffef52c3f1f8f3c5ea64eb2d54c0
+  languageName: node
+  linkType: hard
+
+"simple-wcswidth@npm:^1.0.1":
+  version: 1.0.1
+  resolution: "simple-wcswidth@npm:1.0.1"
+  checksum: dc5bf4cb131d9c386825d1355add2b1ecc408b37dc2c2334edd7a1a4c9f527e6b594dedcdbf6d949bce2740c3a332e39af1183072a2d068e40d9e9146067a37f
   languageName: node
   linkType: hard
 
@@ -14208,6 +14330,13 @@ fsevents@~2.3.2:
   languageName: node
   linkType: hard
 
+"tiny-emitter@npm:^2.1.0":
+  version: 2.1.0
+  resolution: "tiny-emitter@npm:2.1.0"
+  checksum: fbcfb5145751a0e3b109507a828eb6d6d4501352ab7bb33eccef46e22e9d9ad3953158870a6966a59e57ab7c3f9cfac7cab8521db4de6a5e757012f4677df2dd
+  languageName: node
+  linkType: hard
+
 "tls@npm:^0.0.1":
   version: 0.0.1
   resolution: "tls@npm:0.0.1"
@@ -14550,6 +14679,13 @@ fsevents@~2.3.2:
     media-typer: 0.3.0
     mime-types: ~2.1.24
   checksum: 2c8e47675d55f8b4e404bcf529abdf5036c537a04c2b20177bcf78c9e3c1da69da3942b1346e6edb09e823228c0ee656ef0e033765ec39a70d496ef601a0c657
+  languageName: node
+  linkType: hard
+
+"typed-function@npm:^2.1.0":
+  version: 2.1.0
+  resolution: "typed-function@npm:2.1.0"
+  checksum: 168c2c8f765fbecc842521a5fb62a5800958f9fcb0ce78d69c38a5e96c81fe133f853256ec8ee245ee2fc42b4c9342b5ba754c732189550c64c12e758892dc43
   languageName: node
   linkType: hard
 
