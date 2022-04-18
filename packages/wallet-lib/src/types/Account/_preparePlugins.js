@@ -13,6 +13,11 @@ const preparePlugins = function preparePlugins(account, userUnsafePlugins) {
           );
         } catch (e) {
           logger.error('Error injecting plugin', e);
+          this.emit('error', e, {
+            type: 'plugin',
+            pluginType: 'plugin',
+            pluginName: plugin.name,
+          });
         }
       });
   }
