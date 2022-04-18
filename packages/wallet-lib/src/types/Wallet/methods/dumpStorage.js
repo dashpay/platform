@@ -17,21 +17,22 @@ function dumpStorage(options) {
 
   const storage = { chains: {}, wallets: {} };
 
-  this.storage.wallets.forEach(([id, walletStore]) => {
-    storage.wallets[id] = walletStore.state;
+  this.storage.wallets.forEach((wallet) => {
+    storage.wallets[wallet.walletId] = wallet.state;
   });
 
-  this.storage.chains.forEach(([id, chainStore]) => {
-    storage.chains[id] = chainStore.state;
+  this.storage.chains.forEach((chain) => {
+    storage.chains[chain.network] = chain.state;
   });
 
   const storageDump = JSON.stringify(storage, (jsonKey, jsonValue) => {
     if (jsonValue instanceof Map) {
       const object = {};
 
-      jsonValue.entries().forEach(([key, value]) => {
+      // eslint-disable-next-line no-restricted-syntax
+      for (const [key, value] of jsonValue.entries()) {
         object[key] = value;
-      });
+      }
 
       return object;
     }
