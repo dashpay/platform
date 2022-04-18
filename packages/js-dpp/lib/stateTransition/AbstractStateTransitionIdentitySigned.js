@@ -164,11 +164,6 @@ class AbstractStateTransitionIdentitySigned extends AbstractStateTransition {
     this.verifyPublicKeyLevelAndPurpose(publicKey);
     this.verifyPublicKeyIsEnabled(publicKey);
 
-    const signature = this.getSignature();
-    if (!signature) {
-      throw new StateTransitionIsNotSignedError(this);
-    }
-
     if (this.getSignaturePublicKeyId() !== publicKey.getId()) {
       throw new PublicKeyMismatchError(publicKey);
     }
@@ -177,7 +172,7 @@ class AbstractStateTransitionIdentitySigned extends AbstractStateTransition {
 
     switch (publicKey.getType()) {
       case IdentityPublicKey.TYPES.ECDSA_HASH160:
-        return this.verifyESDSAHash160SignatureByPublicKeyHash(publicKeyBuffer);
+         return this.verifyESDSAHash160SignatureByPublicKeyHash(publicKeyBuffer);
       case IdentityPublicKey.TYPES.BIP13_SCRIPT_HASH:
         return this.verifyBIP13ScriptHashSignatureByScriptHash(
           this.getBIP16Script(),

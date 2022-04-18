@@ -1,6 +1,6 @@
-const AbstractBasicError = require('../AbstractBasicError');
+const AbstractSignatureError = require('./AbstractSignatureError');
 
-class InvalidSignatureScriptError extends AbstractBasicError {
+class InvalidSignatureScriptError extends AbstractSignatureError {
   /**
    * @param {Buffer} signatureScript
    */

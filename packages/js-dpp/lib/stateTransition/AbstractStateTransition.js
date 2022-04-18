@@ -217,16 +217,16 @@ class AbstractStateTransition {
   /**
    * @protected
    * @param {Script} scriptSig
-   * @param {Script} scriptPubkey
+   * @param {Script} scriptPublicKey
    * @return {boolean}
    */
-  verifyBIP13ScriptHashSignatureByScriptHash(scriptSig, scriptPubkey) {
+  verifyBIP13ScriptHashSignatureByScriptHash(scriptSig, scriptPublicKey) {
     // eslint-disable-next-line no-bitwise
     const flags = Interpreter.SCRIPT_VERIFY_P2SH | Interpreter.SCRIPT_VERIFY_STRICTENC;
 
     return new Interpreter().verify(
       scriptSig,
-      scriptPubkey,
+      scriptPublicKey,
       undefined,
       undefined,
       flags,

@@ -23,7 +23,7 @@ const convertBuffersToArrays = require('../../../../../util/convertBuffersToArra
 const documentsBatchTransitionSchema = require('../../../../../../schema/document/stateTransition/documentsBatch.json');
 const createAndValidateIdentifier = require('../../../../../identifier/createAndValidateIdentifier');
 const DuplicateDocumentTransitionsWithIndicesError = require('../../../../../errors/consensus/basic/document/DuplicateDocumentTransitionsWithIndicesError');
-const InvalidSignatureScriptError = require('../../../../../errors/consensus/basic/stateTransition/InvalidSignatureScriptError');
+const InvalidSignatureScriptError = require('../../../../../errors/consensus/signature/InvalidSignatureScriptError');
 
 /**
  * @param {findDuplicatesById} findDuplicatesById

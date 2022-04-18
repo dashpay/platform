@@ -2,6 +2,11 @@ const IdentityPublicKey = require('../../identity/IdentityPublicKey');
 const InvalidIdentityPublicKeyTypeError = require('../../errors/consensus/signature/InvalidIdentityPublicKeyTypeError');
 const InvalidStateTransitionSignatureError = require('../../errors/consensus/signature/InvalidStateTransitionSignatureError');
 const MissingPublicKeyError = require('../../errors/consensus/signature/MissingPublicKeyError');
+const PublicKeySecurityLevelNotMetError = require('../errors/PublicKeySecurityLevelNotMetError');
+const WrongPublicKeyPurposeError = require('../errors/WrongPublicKeyPurposeError');
+const PublicKeyIsDisabledError = require('../errors/PublicKeyIsDisabledError');
+const Script = require('@dashevo/dashcore-lib/lib/script');
+const InvalidSignatureScriptError = require('../../errors/consensus/signature/InvalidSignatureScriptError');
 
 /**
  * Validate state transition signature
@@ -41,15 +46,56 @@ function validateStateTransitionIdentitySignatureFactory(
       return result;
     }
 
-    if (
-      publicKey.getType() !== IdentityPublicKey.TYPES.ECDSA_SECP256K1
-      && publicKey.getType() !== IdentityPublicKey.TYPES.ECDSA_HASH160
-    ) {
-      result.addError(
-        new InvalidIdentityPublicKeyTypeError(publicKey.getType()),
-      );
+    try {
+      stateTransition.verifyPublicKeyLevelAndPurpose(publicKey);
+    } catch (e) {
+      // TODO PublicKeySecurityLevelNotMetError
 
-      return result;
+      // TODO WrongPublicKeyPurposeError
+    }
+
+    try {
+      stateTransition.verifyPublicKeyIsEnabled(publicKey);
+    } catch (e) {
+      // TODO PublicKeyIsDisabledError
+    }
+
+    if (publicKey.getType() === IdentityPublicKey.TYPES.BIP13_SCRIPT_HASH) {
+      const rawSignatureScript = stateTransition.getSignatureScript();
+
+      if (!rawSignatureScript || rawSignatureScript.length === 0) {
+        // TODO Not present
+
+
+        return result;
+      }
+
+      let signatureScript;
+      try {
+        signatureScript = new Script(rawSignatureScript);
+      } catch (e) {
+        result.addError(
+          new InvalidSignatureScriptError(rawSignatureScript),
+        )
+      }
+
+      if (!result.isValid()) {
+        return result;
+      }
+
+      const address = signatureScript.toAddress();
+
+      if (!address || !address.isPayToScriptHash()) {
+        result.addError(
+          new InvalidSignatureScriptError(rawSignatureScript),
+        );
+      }
+    } else {
+      const signature = stateTransition.getSignature();
+
+      if (!signature || signature.length === 0) {
+        // TODO Not present
+      }
     }
 
     const signatureIsValid = await stateTransition.verifySignature(publicKey);

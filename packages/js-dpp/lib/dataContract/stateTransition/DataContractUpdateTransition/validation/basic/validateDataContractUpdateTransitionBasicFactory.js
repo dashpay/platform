@@ -11,7 +11,7 @@ const InvalidDataContractVersionError = require('../../../../../errors/consensus
 const DataContractNotPresentError = require('../../../../../errors/consensus/basic/document/DataContractNotPresentError');
 
 const Identifier = require('../../../../../identifier/Identifier');
-const InvalidSignatureScriptError = require('../../../../../errors/consensus/basic/stateTransition/InvalidSignatureScriptError');
+const InvalidSignatureScriptError = require('../../../../../errors/consensus/signature/InvalidSignatureScriptError');
 
 /**
  * @param {JsonSchemaValidator} jsonSchemaValidator

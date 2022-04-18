@@ -4,6 +4,7 @@ const MissingStateTransitionTypeError = require('../../errors/consensus/basic/st
 const InvalidStateTransitionTypeError = require('../../errors/consensus/basic/stateTransition/InvalidStateTransitionTypeError');
 const StateTransitionMaxSizeExceededError = require('../../errors/consensus/basic/stateTransition/StateTransitionMaxSizeExceededError');
 const MaxEncodedBytesReachedError = require('../../util/errors/MaxEncodedBytesReachedError');
+const AbstractStateTransitionIdentitySigned = require('../AbstractStateTransitionIdentitySigned');
 
 /**
  * @param {Object.<number, Function>} validationFunctionsByType

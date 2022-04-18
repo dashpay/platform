@@ -1,7 +1,7 @@
 const identityUpdateTransitionSchema = require('../../../../../../schema/identity/stateTransition/identityUpdate.json');
 const convertBuffersToArrays = require('../../../../../util/convertBuffersToArrays');
 const Script = require('@dashevo/dashcore-lib/lib/script');
-const InvalidSignatureScriptError = require('../../../../../errors/consensus/basic/stateTransition/InvalidSignatureScriptError');
+const InvalidSignatureScriptError = require('../../../../../errors/consensus/signature/InvalidSignatureScriptError');
 
 /**
  * @param {JsonSchemaValidator} jsonSchemaValidator
