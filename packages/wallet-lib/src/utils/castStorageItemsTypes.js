@@ -5,11 +5,9 @@ const castStorageItemsTypes = (originalItem, schema) => {
 
   return Object.entries(schema).reduce((acc, next) => {
     const [schemaKey, schemaValue] = next;
-
-    const item = originalItem[schemaKey];
     const result = {};
 
-    if (schemaKey !== '*' && item === undefined) {
+    if (schemaKey !== '*' && originalItem[schemaKey] === undefined) {
       throw new Error(`No item found for schema key "${schemaKey}" in item ${JSON.stringify(originalItem)}`);
     }
 
@@ -38,7 +36,7 @@ const castStorageItemsTypes = (originalItem, schema) => {
           result[itemKey] = castItem(originalItem[itemKey]);
         });
       } else {
-        result[schemaKey] = castItem(item);
+        result[schemaKey] = castItem(originalItem[schemaKey]);
       }
     } else if (schemaKey === '*') {
       Object
@@ -47,7 +45,7 @@ const castStorageItemsTypes = (originalItem, schema) => {
           result[key] = castStorageItemsTypes(value, schemaValue);
         }, {});
     } else {
-      result[schemaKey] = castStorageItemsTypes(item, schemaValue);
+      result[schemaKey] = castStorageItemsTypes(originalItem[schemaKey], schemaValue);
     }
 
     return { ...acc, ...result };

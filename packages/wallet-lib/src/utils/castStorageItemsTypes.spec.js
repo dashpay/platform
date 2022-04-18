@@ -32,48 +32,59 @@ const mockWalletStorage = {
   }
 }
 
-describe('Utils - castItemTypes', function suite() {
-    it('should proceed with valid schema', function () {
-      const chainSchema = castItemTypes(mockChainStorage, ChainStore.prototype.SCHEMA)
+describe('Utils - castStorageItemsTypes', function suite() {
+  it('should proceed with valid schema', function () {
+    const chainStore = castItemTypes(mockChainStorage, ChainStore.prototype.SCHEMA)
 
-      expect(chainSchema.blockHeaders.fakeBlockHash instanceof BlockHeader).to.be.true
-      expect(chainSchema.transactions.fakeTxHash instanceof Transaction).to.be.true
-      expect(chainSchema.txMetadata.fakeTxHash.isInstantLocked).to.be.true
-      expect(chainSchema.txMetadata.fakeTxHash.isChainLocked).to.be.true
-      expect(typeof chainSchema.txMetadata.fakeTxHash.height).to.be.equal('number')
+    expect(chainStore.blockHeaders.fakeBlockHash instanceof BlockHeader).to.be.true
+    expect(chainStore.transactions.fakeTxHash instanceof Transaction).to.be.true
+    expect(chainStore.txMetadata.fakeTxHash.isInstantLocked).to.be.true
+    expect(chainStore.txMetadata.fakeTxHash.isChainLocked).to.be.true
+    expect(typeof chainStore.txMetadata.fakeTxHash.height).to.be.equal('number')
 
-      const walletSchema = castItemTypes(mockWalletStorage, WalletStore.prototype.SCHEMA)
+    const walletStore = castItemTypes(mockWalletStorage, WalletStore.prototype.SCHEMA)
 
-      expect(walletSchema.lastKnownBlock.height).to.be.equal(11703)
-    });
+    expect(walletStore.lastKnownBlock.height).to.be.equal(11703)
+  });
 
-    it('should omit unknown keys in storage data', function () {
-      const mockChainStorageWithUnknownKeys = _.cloneDeep(mockChainStorage)
-      mockChainStorageWithUnknownKeys.txMetadata.unknownKey = true
+  it('should throw if no schema passed', function () {
+    expect(() => castItemTypes(mockChainStorage, null))
+      .to.throw(Error, 'Schema is undefined')
+  });
 
-      const schema = castItemTypes(mockChainStorage, ChainStore.prototype.SCHEMA);
+  it('should throw if invalid primitive value passed', function () {
+    const mockWalletStorageWithWrongType = _.cloneDeep(mockWalletStorage)
+    mockWalletStorageWithWrongType.lastKnownBlock.height = '11703'
+    expect(() => castItemTypes(mockWalletStorageWithWrongType, WalletStore.prototype.SCHEMA))
+      .to.throw(Error, 'Value "11703" is not of type "number"');
+  });
 
-      expect(schema.txMetadata.unknownKey).to.be.equal(undefined)
-    });
+  it('should throw if invalid object value passed', function () {
+    const mockChainStorageWithUnknownKeys = _.cloneDeep(mockChainStorage)
+    mockChainStorageWithUnknownKeys.txMetadata.unknownKey = true
 
-    it('should throw if no schema passed', function () {
-      expect(() => castItemTypes(mockChainStorage, null))
-        .to.throw(Error, 'Schema is undefined')
-    });
+    expect(() => castItemTypes(mockChainStorageWithUnknownKeys, ChainStore.prototype.SCHEMA))
+      .to.throw('No item found for schema key "blockHash" in item true')
+  });
 
-    it('should throw if some of the keys contains wrong type', function () {
-      const mockWalletStorageWithWrongType = _.cloneDeep(mockWalletStorage)
-      mockWalletStorageWithWrongType.lastKnownBlock.height = '11703'
-      expect(() => castItemTypes(mockWalletStorageWithWrongType, WalletStore.prototype.SCHEMA))
-        .to.throw(Error, 'Value "11703" is not of type "number"');
-    });
+  it('should throw if invalid uniform object with primitives passed', function () {
+    const schema = {
+      '*': 'boolean'
+    }
+    const items = {
+      '1': true,
+      '2': 'false'
+    }
 
-    it('should throw if some of the keys are missing from the storage', function () {
-      const mockWalletChainStorageWithMissingKeys = _.cloneDeep(mockChainStorage)
-      mockWalletChainStorageWithMissingKeys.txMetadata = undefined
+    expect(() => castItemTypes(items, schema))
+      .to.throw(Error, 'Value "false" is not of type "boolean"');
+  });
 
-      expect(() => castItemTypes(mockWalletChainStorageWithMissingKeys, ChainStore.prototype.SCHEMA))
-        .to.throw(Error, 'No item found for schema key "txMetadata" in item');
-    });
-  }
-);
+  it('should throw if some of the keys are missing from the storage', function () {
+    const mockWalletChainStorageWithMissingKeys = _.cloneDeep(mockChainStorage)
+    mockWalletChainStorageWithMissingKeys.txMetadata = undefined
+
+    expect(() => castItemTypes(mockWalletChainStorageWithMissingKeys, ChainStore.prototype.SCHEMA))
+      .to.throw(Error, 'No item found for schema key "txMetadata" in item');
+  });
+});
