@@ -1,4 +1,3 @@
-// eslint-disable-next-line max-len
 const castStorageItemsTypes = (originalItem, schema) => {
   if (!schema) {
     throw new Error('Schema is undefined');
@@ -15,19 +14,31 @@ const castStorageItemsTypes = (originalItem, schema) => {
     }
 
     if (schemaValue.constructor.name !== 'Object') {
-      const Clazz = schemaValue;
+      let castItem;
+
+      if (typeof schemaValue === 'string') {
+        castItem = (itemToCast) => {
+          // eslint-disable-next-line valid-typeof
+          if (typeof itemToCast !== schemaValue) {
+            throw new Error(`Value "${itemToCast}" is not of type "${schemaValue}"`);
+          }
+          return itemToCast;
+        };
+      } else if (typeof schemaValue === 'function') {
+        castItem = schemaValue;
+      } else {
+        castItem = (itemToCast) => {
+          const Clazz = schemaValue;
+          return new Clazz(itemToCast);
+        };
+      }
 
       if (schemaKey === '*') {
         Object.keys(originalItem).forEach((itemKey) => {
-          result[itemKey] = new Clazz(originalItem[itemKey]);
+          result[itemKey] = castItem(originalItem[itemKey]);
         });
       } else {
-        // eslint-disable-next-line valid-typeof
-        if (typeof schemaValue === 'string' && typeof item !== schemaValue) {
-          throw new Error(`Invalid schema type for key "${schemaKey}" in item ${JSON.stringify(originalItem)}`);
-        }
-
-        result[schemaKey] = typeof schemaValue === 'string' ? item : new Clazz(item);
+        result[schemaKey] = castItem(item);
       }
     } else if (schemaKey === '*') {
       Object

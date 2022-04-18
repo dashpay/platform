@@ -57,39 +57,23 @@ describe('Utils - castItemTypes', function suite() {
     });
 
     it('should throw if no schema passed', function () {
-      try {
-        castItemTypes(mockChainStorage, null)
-
-        expect.fail('should throw an error');
-      } catch (e) {
-        expect(e.message).to.be.equal("Schema is undefined");
-      }
+      expect(() => castItemTypes(mockChainStorage, null))
+        .to.throw(Error, 'Schema is undefined')
     });
 
     it('should throw if some of the keys contains wrong type', function () {
-      try {
-        const mockWalletStorageWithWrongType = _.cloneDeep(mockWalletStorage)
-        mockWalletStorageWithWrongType.lastKnownBlock.height = '11703'
-
-        castItemTypes(mockWalletStorageWithWrongType, WalletStore.prototype.SCHEMA)
-
-        expect.fail('should throw an error');
-      } catch (e) {
-        expect(e.message.startsWith('Invalid schema type for key "height" in item')).to.be.true;
-      }
+      const mockWalletStorageWithWrongType = _.cloneDeep(mockWalletStorage)
+      mockWalletStorageWithWrongType.lastKnownBlock.height = '11703'
+      expect(() => castItemTypes(mockWalletStorageWithWrongType, WalletStore.prototype.SCHEMA))
+        .to.throw(Error, 'Value "11703" is not of type "number"');
     });
 
     it('should throw if some of the keys are missing from the storage', function () {
-      try {
-        const mockWalletChainStorageWithMissingKeys = _.cloneDeep(mockChainStorage)
-        mockWalletChainStorageWithMissingKeys.txMetadata = undefined
+      const mockWalletChainStorageWithMissingKeys = _.cloneDeep(mockChainStorage)
+      mockWalletChainStorageWithMissingKeys.txMetadata = undefined
 
-        castItemTypes(mockWalletChainStorageWithMissingKeys, ChainStore.prototype.SCHEMA)
-
-        expect.fail('should throw an error');
-      } catch (e) {
-        expect(e.message.startsWith('No item found for schema key "txMetadata" in item')).to.be.true;
-      }
+      expect(() => castItemTypes(mockWalletChainStorageWithMissingKeys, ChainStore.prototype.SCHEMA))
+        .to.throw(Error, 'No item found for schema key "txMetadata" in item');
     });
   }
 );
