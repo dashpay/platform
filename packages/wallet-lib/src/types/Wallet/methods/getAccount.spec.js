@@ -13,7 +13,9 @@ describe('Wallet - getAccount', function suite() {
     let timesAttachEventsCalled = 0;
     const mockOpts = {
       accounts: [],
-      storage: {},
+      storage: {
+        configured: true
+      },
       walletType: WALLET_TYPES.HDWALLET,
       createAccount: (opts = { index: 0 }) => {
         timesCreateAccountCalled += 1;
@@ -33,7 +35,9 @@ describe('Wallet - getAccount', function suite() {
     let timesCreateAccountCalled = 0;
     const mockOpts1 = {
       accounts: [],
-      storage: {},
+      storage: {
+        configured: true
+      },
       walletType: WALLET_TYPES.HDWALLET,
       createAccount: (opts = { index: 0 }) => {
         timesCreateAccountCalled += 1;

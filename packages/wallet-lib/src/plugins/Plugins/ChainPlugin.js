@@ -2,6 +2,7 @@ const logger = require('../../logger');
 const { StandardPlugin } = require('..');
 const EVENTS = require('../../EVENTS');
 const { dashToDuffs } = require('../../utils');
+const ChainSyncMediator = require('../../types/Wallet/ChainSyncMediator');
 
 const defaultOpts = {
   firstExecutionRequired: true,
@@ -20,6 +21,7 @@ class ChainPlugin extends StandardPlugin {
         'transport',
         'fetchStatus',
         'walletId',
+        'chainSyncMediator',
       ],
     };
     super(Object.assign(params, opts));
@@ -35,13 +37,12 @@ class ChainPlugin extends StandardPlugin {
     const self = this;
     const { network } = this.storage.application;
     const chainStore = this.storage.getChainStore(network);
+    const walletStore = this.storage.getWalletStore(this.walletId);
 
     if (!this.isSubscribedToBlocks) {
       self.transport.on(EVENTS.BLOCK, async (ev) => {
         const { payload: block } = ev;
         this.parentEvents.emit(EVENTS.BLOCK, { type: EVENTS.BLOCK, payload: block });
-        // We do not announce BLOCKHEADER as this is done by Storage
-        await chainStore.importBlockHeader(block.header);
       });
       self.transport.on(EVENTS.BLOCKHEIGHT_CHANGED, async (ev) => {
         const { payload: blockheight } = ev;
@@ -51,6 +52,14 @@ class ChainPlugin extends StandardPlugin {
         });
 
         chainStore.state.blockHeight = blockheight;
+
+        // Update last known block for the wallet only if we are in the state of the incoming sync.
+        // (During the historical sync, it is populated from transactions metadata)
+        if (this.chainSyncMediator.state === ChainSyncMediator.STATES.CONTINUOUS_SYNC) {
+          walletStore.updateLastKnownBlock(blockheight);
+          this.storage.scheduleStateSave();
+        }
+
         logger.debug(`ChainPlugin - setting chain blockheight ${blockheight}`);
       });
       await self.transport.subscribeToBlocks();
@@ -81,13 +90,11 @@ class ChainPlugin extends StandardPlugin {
       chainStore.state.fees.minRelay = dashToDuffs(relay);
     }
 
-    const bestBlock = await this.transport.getBlockHeaderByHeight(blocks);
-    await chainStore.importBlockHeader(bestBlock);
-
     return true;
   }
 
   async onStart() {
+    this.chainSyncMediator.state = ChainSyncMediator.STATES.CHAIN_STATUS_SYNC;
     await this.execStatusFetch();
     await this.execBlockListener();
   }

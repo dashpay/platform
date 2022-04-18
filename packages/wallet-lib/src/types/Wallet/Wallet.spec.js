@@ -220,7 +220,7 @@ describe('Wallet - Get/Create Account',  function suite() {
       walletTestnet.disconnect();
     });
   });
-  it('should be able to create an account at a specific index', (done) => {
+  it('should be able to create an account at a specific index', async () => {
     const network = Dashcore.Networks.testnet.toString();
     const passphrase = 'Evolution';
     const config = {
@@ -230,18 +230,18 @@ describe('Wallet - Get/Create Account',  function suite() {
     };
     const walletTestnet = new Wallet(Object.assign(config, mocks));
 
-    walletTestnet.createAccount().then(async (account)=>{
-      // eslint-disable-next-line no-unused-expressions
-      expect(account).to.exist;
-      expect(account.BIP44PATH.split('/')[3]).to.equal('0\'');
-      expect(account.index).to.equal(0);
+    const account = await walletTestnet.createAccount();
 
-      const accountSpecificIndex = await walletTestnet.createAccount({ index: 42 });
-      expect(accountSpecificIndex.BIP44PATH.split('/')[3]).to.equal('42\'');
-      expect(accountSpecificIndex.index).to.equal(42);
-      walletTestnet.disconnect();
-      done();
-    })
+    // eslint-disable-next-line no-unused-expressions
+    expect(account).to.exist;
+    expect(account.BIP44PATH.split('/')[3]).to.equal('0\'');
+    expect(account.index).to.equal(0);
+
+    const accountSpecificIndex = await walletTestnet.createAccount({ index: 42 });
+
+    expect(accountSpecificIndex.BIP44PATH.split('/')[3]).to.equal('42\'');
+    expect(accountSpecificIndex.index).to.equal(42);
+    walletTestnet.disconnect();
   });
   it('should not leak', () => {
     const mockOpts1 = { };
