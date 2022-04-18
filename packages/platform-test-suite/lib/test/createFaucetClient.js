@@ -32,8 +32,11 @@ function createFaucetClient() {
 
   const walletOptions = {
     privateKey: process.env.FAUCET_PRIVATE_KEY,
-    adapter: process.env.FAUCET_WALLET_USE_STORAGE === "true" ? storageAdapter : false,
   };
+
+  if (process.env.FAUCET_WALLET_USE_STORAGE === "true") {
+    walletOptions.adapter = storageAdapter;
+  }
 
   if (process.env.SKIP_SYNC_BEFORE_HEIGHT) {
     walletOptions.unsafeOptions = {
