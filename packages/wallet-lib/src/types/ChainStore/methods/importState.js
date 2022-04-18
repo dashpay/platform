@@ -1,42 +1,23 @@
-const {
-  BlockHeader,
-  Transaction,
-  InstantLock,
-} = require('@dashevo/dashcore-lib');
+const castStorageItemsTypes = require('../../../utils/castStorageItemsTypes');
 
-function importState(state) {
+function importState(rawState) {
+  const state = castStorageItemsTypes(rawState, this.SCHEMA);
+
   const {
-    network,
-    state: {
-      fees,
-      blockHeight,
-      blockHeaders,
-      transactions,
-      instantLocks,
-      addresses,
-    },
+    blockHeaders,
+    transactions,
+    txMetadata,
   } = state;
 
-  this.network = network;
-
-  this.state.fees = fees;
-  this.state.blockHeight = blockHeight;
-
-  // We actually do not import address state, but import the address itself
-  // Which will force processing tx for each added address, therefore we might want to do
-  // import address as the first process done
-  Object.values(addresses).forEach(({ address }) => {
-    this.importAddress(address);
+  Object.values(blockHeaders).forEach((blockHeader) => {
+    this.importBlockHeader(blockHeader);
   });
 
-  Object.values(blockHeaders).forEach((serializedBlockHeader) => {
-    this.importBlockHeader(new BlockHeader(Buffer.from(serializedBlockHeader, 'hex')));
-  });
-  Object.values(transactions).forEach(({ transaction: serializedTransaction, metadata }) => {
-    this.importTransaction(new Transaction(Buffer.from(serializedTransaction, 'hex')), metadata);
-  });
-  Object.values(instantLocks).forEach((serializedInstantLock) => {
-    this.importInstantLock(new InstantLock(Buffer.from(serializedInstantLock, 'hex')));
+  Object.keys(transactions).forEach((hash) => {
+    const tx = transactions[hash];
+    const metadata = txMetadata[hash];
+    this.importTransaction(tx, metadata);
   });
 }
+
 module.exports = importState;

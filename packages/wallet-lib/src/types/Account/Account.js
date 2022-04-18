@@ -58,6 +58,7 @@ class Account extends EventEmitter {
     this.walletId = wallet.walletId;
 
     this.identities = wallet.identities;
+    this.chainSyncMediator = wallet.chainSyncMediator;
 
     this.state = {
       isInitialized: false,
@@ -396,7 +397,10 @@ Account.prototype.hasPlugins = require('./methods/hasPlugins');
 Account.prototype.injectPlugin = require('./methods/injectPlugin');
 Account.prototype.importTransactions = require('./methods/importTransactions');
 Account.prototype.importBlockHeader = require('./methods/importBlockHeader');
-
+Account.prototype.createPathsForTransactions = require('./methods/createPathsForTransactions');
+Account.prototype.generateNewPaths = require('./methods/generateNewPaths');
+Account.prototype.addPathsToStore = require('./methods/addPathsToStore');
+Account.prototype.addDefaultPaths = require('./methods/addDefaultPaths');
 Account.prototype.sign = require('./methods/sign');
 
 module.exports = Account;

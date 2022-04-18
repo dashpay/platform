@@ -1,8 +1,13 @@
 const logger = require('../../../logger');
+const sortTransactions = require('../../../utils/sortTransactions');
 
-function importAddress(address) {
+function importAddress(address, reconsiderTransactions = true) {
   logger.silly(`ChainStore - import address ${address}`);
-  if (this.state.addresses.has(address.toString())) throw new Error('Address is already inserted');
+
+  if (this.state.addresses.has(address.toString())) {
+    return;
+  }
+
   this.state.addresses.set(address.toString(), {
     address: address.toString(),
     transactions: [],
@@ -11,17 +16,20 @@ function importAddress(address) {
     unconfirmedBalanceSat: 0,
   });
 
-  // We need to consider all previous transactions
-  const transactions = [...this.state.transactions];
-  const sortedTransactions = transactions.sort((a, b) => {
-    const heightA = a[1].metadata.height;
-    const heightB = b[1].metadata.height;
-    return heightA - heightB;
-  });
+  // TODO: Consider refactoring
+  // this code might engage into a cyclic recursive chain of side effects
+  // of uncertain complexity
+  // (importAddress -> considerTransaction -> importAddress -> ...)
+  if (reconsiderTransactions) {
+    // We need to consider all previous transactions
+    const transactions = [...this.state.transactions.values()];
 
-  sortedTransactions.forEach(([transactionHash]) => {
-    this.considerTransaction(transactionHash);
-  });
+    const sortedTransactions = sortTransactions(transactions);
+
+    sortedTransactions.forEach((transaction) => {
+      this.considerTransaction(transaction.hash);
+    });
+  }
 }
 
 module.exports = importAddress;
