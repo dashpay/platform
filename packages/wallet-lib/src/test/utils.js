@@ -1,4 +1,4 @@
-const sleepOneTick = () => new Promise((resolve) => {
+const waitOneTick = () => new Promise((resolve) => {
   if (typeof setImmediate === 'undefined') {
     setTimeout(resolve, 10);
   } else {
@@ -6,9 +6,9 @@ const sleepOneTick = () => new Promise((resolve) => {
   }
 });
 
-const sleep = (timeout) => new Promise(((resolve) => setTimeout(resolve, timeout)));
+const wait = (timeout) => new Promise(((resolve) => setTimeout(resolve, timeout)));
 
 module.exports = {
-  sleepOneTick,
-  sleep,
+  waitOneTick,
+  wait,
 };

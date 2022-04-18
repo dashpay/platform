@@ -12,7 +12,7 @@ const TransactionSyncStreamWorker = require("../../../src/plugins/Workers/Transa
 const ChainPlugin = require("../../../src/plugins/Plugins/ChainPlugin");
 const LocalForageAdapterMock = require("../../../src/test/mocks/LocalForageAdapterMock");
 const createAndAttachTransportMocksToWallet = require("../../../src/test/mocks/createAndAttachTransportMocksToWallet");
-const {sleepOneTick} = require("../../../src/test/utils");
+const {waitOneTick} = require("../../../src/test/utils");
 
 describe('Wallet', () => {
   describe('Storage', () => {
@@ -102,7 +102,7 @@ describe('Wallet', () => {
 
       /** Start transactions sync plugin */
       txStreamWorker.onStart();
-      await sleepOneTick();
+      await waitOneTick();
 
       /** Ensure proper transport arguments */
       expect(transportMock.subscribeToTransactionsWithProofs.firstCall.args[1])
@@ -122,14 +122,14 @@ describe('Wallet', () => {
       expect(walletStoreState.lastKnownBlock.height).to.equal(-1)
 
       /** Wait for transactions metadata */
-      await sleepOneTick();
+      await waitOneTick();
 
       /**
        * Simulate block height change to ensure that this value is not
        * affecting WalletStore.state.lastKnownBlock, because we still in the phase of historical sync
        */
       transportMock.emit(EVENTS.BLOCKHEIGHT_CHANGED, { payload: (bestBlockHeight = 43) })
-      await sleepOneTick();
+      await waitOneTick();
       await wallet.storage.saveState();
 
       /**
@@ -145,7 +145,7 @@ describe('Wallet', () => {
 
       /** End historical sync */
       txStreamMock.finish();
-      await sleepOneTick();
+      await waitOneTick();
 
       /**
        * Ensure that reorg safe height (chain height - 6) is set as last known block
@@ -157,7 +157,7 @@ describe('Wallet', () => {
 
       /** Start continuous sync */
       txStreamWorker.execute()
-      await sleepOneTick();
+      await waitOneTick();
 
       /** Ensure proper transport arguments */
       expect(transportMock.subscribeToTransactionsWithProofs.lastCall.args[1])
@@ -179,7 +179,7 @@ describe('Wallet', () => {
       })
 
       transportMock.emit(EVENTS.BLOCKHEIGHT_CHANGED, { payload: (bestBlockHeight = 44) })
-      await sleepOneTick();
+      await waitOneTick();
 
       /**
        * Ensure that reorg safe height (chain height - 6) is set as last known block height
@@ -197,7 +197,7 @@ describe('Wallet', () => {
        * reorg unsafe items were saved
        */
       transportMock.emit(EVENTS.BLOCKHEIGHT_CHANGED, { payload: (bestBlockHeight = 50) })
-      await sleepOneTick();
+      await waitOneTick();
 
       await wallet.storage.saveState();
       chainStoreState = storageAdapterMock.getItem('chains')[wallet.network];
@@ -253,7 +253,7 @@ describe('Wallet', () => {
 
       /** Start transactions sync plugin */
       txStreamWorker.onStart();
-      await sleepOneTick();
+      await waitOneTick();
 
       /** Ensure that historical synchronization starts from last known block */
       expect(transportMock.subscribeToTransactionsWithProofs.lastCall.args[1])
@@ -261,7 +261,7 @@ describe('Wallet', () => {
 
       /** End historical sync */
       txStreamMock.finish();
-      await sleepOneTick();
+      await waitOneTick();
 
       /** Ensure that reorg-safe block set as last known block */
       await wallet.storage.saveState();
@@ -270,7 +270,7 @@ describe('Wallet', () => {
 
       /** Start continuous sync */
       txStreamWorker.execute()
-      await sleepOneTick();
+      await waitOneTick();
 
       /** Ensure proper transport arguments */
       expect(transportMock.subscribeToTransactionsWithProofs.lastCall.args[1])
@@ -292,7 +292,7 @@ describe('Wallet', () => {
       })
 
       /** Wait for sendTx metadata arrives to the storage */
-      await sleepOneTick();
+      await waitOneTick();
 
       /**
        * Ensure that storage still in reorg-safe state
@@ -312,7 +312,7 @@ describe('Wallet', () => {
        * reorg unsafe items were saved
        */
       transportMock.emit(EVENTS.BLOCKHEIGHT_CHANGED, { payload: (bestBlockHeight = 59) })
-      await sleepOneTick();
+      await waitOneTick();
 
       await wallet.storage.saveState();
       chainStoreState = storageAdapterMock.getItem('chains')[wallet.network];

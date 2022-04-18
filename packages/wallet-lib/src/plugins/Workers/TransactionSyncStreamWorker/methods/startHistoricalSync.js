@@ -54,7 +54,7 @@ module.exports = async function startHistoricalSync(network) {
       pluginName: this.name,
     });
   }
-  console.log('[Historical sync] Finished in', +new Date() - start, 'ms');
+
   this.setLastSyncedBlockHeight(bestBlockHeight, true);
 
   logger.debug(`TransactionSyncStreamWorker - HistoricalSync - Synchronized ${count} in ${+new Date() - start}ms`);

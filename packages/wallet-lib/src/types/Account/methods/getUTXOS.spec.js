@@ -61,14 +61,5 @@ describe('Account - getUTXOS', function suite() {
       expect(utxo).to.be.instanceOf(Dashcore.Transaction.UnspentOutput);
       expect(utxo.toObject()).to.be.deep.equal(expectedUtxos[i]);
     })
-    // expect(utxos).to.be.deep.equal([new Dashcore.Transaction.UnspentOutput(
-    //   {
-    //     address: new Dashcore.Address('yMEnFG5TBqEZXYXTg3PhENtZgGbwhw6qbX'),
-    //     txId: '33b14c6bc960c5717d734d5a15dc86b2060bf6e746cc509863344204d356cee4',
-    //     outputIndex: 1,
-    //     script: new Dashcore.Script('76a9140a163cfcba43b87e58b1996f61376d7bd8d9805288ac'),
-    //     satoshis: 224108673,
-    //   },
-    // )]);
   });
 });
