@@ -6,11 +6,15 @@
 
 Benchmark configs are located in [benchmarks](./benchmarks) directory. New benchmarks can be easily added to [benchmarks/index.js](./benchmarks/index.js)
 
-At this moment only one type of benchmark is implemented - Documents.
+At this moment two types of benchmark are implemented: documents and function benchmarks.
 
 #### Documents
 
 This benchmark publishes a data contract and documents defined in configuration and collects timings from Drive logs.
+
+### Function
+
+Function benchmark allow to call a function or functions and collect metrics using [performance tools](https://nodejs.org/docs/latest-v16.x/api/perf_hooks.html).
 
 ### Running benchmarks
 
