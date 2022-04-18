@@ -10,7 +10,6 @@ function exportState() {
   const serializedState = {
     blockHeaders: {},
     transactions: {},
-    instantLocks: {},
     txMetadata: {},
     fees: {},
   };
