@@ -15,28 +15,28 @@ function dumpStorage(options) {
     ? Object.assign(defaultOptions, options)
     : defaultOptions;
 
-  const storage = {chains: {}, wallets: {}}
+  const storage = { chains: {}, wallets: {} };
 
-  for (const [id, walletStore] of this.storage.wallets) {
-    storage.wallets[id] = walletStore.state
-  }
+  this.storage.wallets.forEach(([id, walletStore]) => {
+    storage.wallets[id] = walletStore.state;
+  });
 
-  for (const [id, chainStore] of this.storage.chains) {
-    storage.chains[id] = chainStore.state
-  }
+  this.storage.chains.forEach(([id, chainStore]) => {
+    storage.chains[id] = chainStore.state;
+  });
 
   const storageDump = JSON.stringify(storage, (jsonKey, jsonValue) => {
     if (jsonValue instanceof Map) {
-      const object = {}
+      const object = {};
 
-      for(const [key, value] of jsonValue.entries()) {
-        object[key] = value
-      }
+      jsonValue.entries().forEach(([key, value]) => {
+        object[key] = value;
+      });
 
-      return object
+      return object;
     }
 
-    return jsonValue
+    return jsonValue;
   });
 
   if (dumpOptions.log) {
