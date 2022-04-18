@@ -1298,6 +1298,7 @@ __metadata:
   version: 0.0.0-use.local
   resolution: "@dashevo/bench-suite@workspace:packages/bench-suite"
   dependencies:
+    "@dashevo/dashcore-lib": ~0.19.30
     "@dashevo/dpns-contract": "workspace:~"
     "@dashevo/dpp": "workspace:~"
     "@dashevo/wallet-lib": "workspace:~"

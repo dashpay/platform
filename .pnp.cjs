@@ -2281,6 +2281,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           "packageLocation": "./packages/bench-suite/",
           "packageDependencies": [
             ["@dashevo/bench-suite", "workspace:packages/bench-suite"],
+            ["@dashevo/dashcore-lib", "npm:0.19.30"],
             ["@dashevo/dpns-contract", "workspace:packages/dpns-contract"],
             ["@dashevo/dpp", "workspace:packages/js-dpp"],
             ["@dashevo/wallet-lib", "workspace:packages/wallet-lib"],
