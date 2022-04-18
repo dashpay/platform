@@ -1,78 +1,11 @@
 const {expect} = require('chai');
-const {Transaction, BlockHeader} = require('@dashevo/dashcore-lib');
-const {WALLET_TYPES} = require('../../../CONSTANTS');
 const getTransactions = require('./getTransactions');
 const getTransactionHistory = require('./getTransactionHistory');
-const mockedStoreHDWallet = require('../../../../fixtures/duringdevelop-fullstore-snapshot-1548538361');
-const mockedStoreSingleAddress = require('../../../../fixtures/da07-fullstore-snapshot-1548533266');
-
+const getTotalBalance = require('./getTotalBalance');
 
 const getFixtureHDAccountWithStorage = require('../../../../fixtures/wallets/apart-trip-dignity/getFixtureAccountWithStorage');
 const getFixturePrivateAccountWithStorage = require('../../../../fixtures/wallets/2a331817b9d6bf85100ef0/getFixtureAccountWithStorage');
 
-
-
-const normalizedHDStoreFixtures = require('../../../../fixtures/wallets/apart-trip-dignity/store.json');
-const normalizedPKStoreFixtures = require('../../../../fixtures/wallets/2a331817b9d6bf85100ef0/store.json');
-const CONSTANTS = require("../../../CONSTANTS");
-const getTotalBalance = require("./getTotalBalance");
-const normalizedStoreToStore = (normalizedStore) => {
-  const store = {
-    ...normalizedStore
-  };
-
-  for (let walletId in store.wallets) {
-    for (let addressType in store.wallets[walletId].addresses) {
-      for (let path in store.wallets[walletId].addresses[addressType]) {
-        for (let utxo in store.wallets[walletId].addresses[addressType][path].utxos) {
-          store.wallets[walletId].addresses[addressType][path].utxos[utxo] = new Transaction.Output(store.wallets[walletId].addresses[addressType][path].utxos[utxo]);
-        }
-      }
-    }
-  }
-
-  for (let transactionHash in store.transactions) {
-    store.transactions[transactionHash] = new Transaction(store.transactions[transactionHash]);
-  }
-
-  for (let blockHeaderHash in store.chains['testnet'].blockHeaders) {
-    store.chains['testnet'].blockHeaders[blockHeaderHash] = new BlockHeader(store.chains['testnet'].blockHeaders[blockHeaderHash])
-  }
-  return store;
-}
-const mockedEmptySelf = {
-  getTransactions,
-  network: 'testnet',
-  walletId: 'd6143ef4e6',
-  walletType: CONSTANTS.WALLET_TYPES.HDWALLET,
-  index: 0,
-  storage: {
-    store: {
-      transactions: {},
-      wallets: {
-        'd6143ef4e6': {
-          "addresses": {
-            "external": {},
-            "internal": {},
-            "misc": {}
-          }
-
-        }
-      },
-      "chains": {
-        "testnet": {
-          name: "testnet",
-          blockHeaders: {},
-          mappedBlockHeaderHeights: {},
-          blockHeight: 0
-        }
-      },
-    },
-    getStore: () => {
-      return mockedSelf.storage.store;
-    }
-  }
-}
 
 const mockedHDAccount = getFixtureHDAccountWithStorage();
 mockedHDAccount.getTransactions = getTransactions;
@@ -83,7 +16,7 @@ mockedPKAccount.getTransactions = getTransactions;
 describe('Account - getTransactionHistory', () => {
   it('should return empty array on no transaction history', async function () {
     const mockedHDSelf = {
-      ...getFixtureHDAccountWithStorage(),
+      ...getFixtureHDAccountWithStorage()
     }
     mockedHDSelf.getTransactions = getTransactions;
     const chainStore = mockedHDSelf.storage.getChainStore('testnet')
@@ -105,6 +38,7 @@ describe('Account - getTransactionHistory', () => {
     const expectedTransactionHistoryHD = [];
     expect(transactionHistoryHD).to.deep.equal(expectedTransactionHistoryHD);
   });
+
   it('should return valid transaction for HDWallet', async function () {
     const mockedHDSelf = {
       ...mockedHDAccount
@@ -539,13 +473,10 @@ describe('Account - getTransactionHistory', () => {
     ]
     expect(transactionHistoryHD).to.deep.equal(expectedTransactionHistoryHD);
   });
-  it('should correctly compute transaction history for private key based wallet', async function (){
+  it('should correctly compute transaction history for single address based wallet', async function (){
     const mockedPKSelf = {
       ...mockedPKAccount
     }
-    // mockedPKSelf.storage.store = normalizedStoreToStore(normalizedPKStoreFixtures)
-    // mockedPKSelf.walletType = 'single_address';
-    // mockedPKSelf.walletId = '6101b44d50';
 
     const transactionHistoryPK = await getTransactionHistory.call(mockedPKSelf);
 
