@@ -18,9 +18,7 @@ module.exports = async function configure(opts = {}) {
 
   const version = await this.adapter.getItem('version');
 
-  if (!version) {
-    await this.adapter.setItem('version', CURRENT_VERSION);
-  } else if (version !== CURRENT_VERSION) {
+  if (version !== CURRENT_VERSION) {
     logger.warn('Storage version mismatch, resyncing from start');
     await this.adapter.setItem('wallets', null);
     await this.adapter.setItem('chains', null);
