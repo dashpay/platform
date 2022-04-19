@@ -22,6 +22,8 @@ module.exports = async function configure(opts = {}) {
     logger.warn('Storage version mismatch, resyncing from start');
     await this.adapter.setItem('wallets', null);
     await this.adapter.setItem('chains', null);
+    await this.adapter.setItem('transactions', null);
+    await this.adapter.setItem('instantLocks', null);
 
     await this.adapter.setItem('version', CURRENT_VERSION);
   }
