@@ -26,7 +26,9 @@ const rehydrateState = async function rehydrateState() {
             logger.error('Error importing wallets storage, resyncing from start', e);
 
             this.adapter.setItem('wallets', null);
-            this.adapter.setItem('chains˚', null);
+            this.adapter.setItem('chains', null);
+            this.adapter.setItem('transactions', null);
+            this.adapter.setItem('instantLocks', null);
           }
         }
 
@@ -45,6 +47,8 @@ const rehydrateState = async function rehydrateState() {
 
             this.adapter.setItem('wallets', null);
             this.adapter.setItem('chains', null);
+            this.adapter.setItem('transactions', null);
+            this.adapter.setItem('instantLocks', null);
           }
         }
       }
