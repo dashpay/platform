@@ -18,6 +18,7 @@ describe('validateIdentityUpdateTransitionBasicFactory', () => {
   let rawStateTransition;
   let stateTransition;
   let publicKeyToAdd;
+  let validatePublicKeySignaturesMock;
 
   beforeEach(async function beforeEach() {
     const RE2 = await getRE2Class();
@@ -29,10 +30,14 @@ describe('validateIdentityUpdateTransitionBasicFactory', () => {
     validatePublicKeysMock = this.sinonSandbox.stub()
       .returns(new ValidationResult());
 
+    validatePublicKeySignaturesMock = this.sinonSandbox.stub()
+      .returns(new ValidationResult());
+
     validateIdentityUpdateTransitionBasic = validateIdentityUpdateTransitionBasicFactory(
       jsonSchemaValidator,
       validateProtocolVersionMock,
       validatePublicKeysMock,
+      validatePublicKeySignaturesMock,
     );
 
     stateTransition = getIdentityUpdateTransitionFixture();
@@ -391,8 +396,26 @@ describe('validateIdentityUpdateTransitionBasicFactory', () => {
 
       expect(validatePublicKeysMock).to.be.calledOnceWithExactly(
         rawStateTransition.addPublicKeys,
-        { mustBeEnabled: true },
       );
+    });
+
+    it('should have valid signatures', async () => {
+      const publicKeysError = new SomeConsensusError('test');
+      const publicKeysResult = new ValidationResult([
+        publicKeysError,
+      ]);
+
+      validatePublicKeySignaturesMock.resolves(publicKeysResult);
+
+      const result = await validateIdentityUpdateTransitionBasic(
+        rawStateTransition,
+      );
+
+      expectValidationError(result);
+
+      const [error] = result.getErrors();
+
+      expect(error).to.equal(publicKeysError);
     });
   });
 
@@ -547,7 +570,6 @@ describe('validateIdentityUpdateTransitionBasicFactory', () => {
     expect(validatePublicKeysMock)
       .to.be.calledOnceWithExactly(
         rawStateTransition.addPublicKeys,
-        { mustBeEnabled: true },
       );
   });
 

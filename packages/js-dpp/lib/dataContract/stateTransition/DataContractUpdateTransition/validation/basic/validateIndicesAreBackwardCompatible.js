@@ -170,6 +170,7 @@ function getWronglyConstructedNewIndex(documentType, existingSchema, newDocument
 /**
  * Validate indices have not been changed
  *
+ * @typedef {validateIndicesAreBackwardCompatible}
  * @param {Object} existingDocumentDefinitions
  * @param {Object} newDocumentDefinitions
  *

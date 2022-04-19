@@ -11,7 +11,6 @@ import { StateTransitionBroadcastError } from '../../errors/StateTransitionBroad
 const getDocumentsFixture = require('@dashevo/dpp/lib/test/fixtures/getDocumentsFixture');
 // @ts-ignore
 const getDataContractFixture = require('@dashevo/dpp/lib/test/fixtures/getDataContractFixture');
-const GetIdentityResponse = require("@dashevo/dapi-client/lib/methods/platform/getIdentity/GetIdentityResponse");
 const GetDataContractResponse = require("@dashevo/dapi-client/lib/methods/platform/getDataContract/GetDataContractResponse");
 
 import { createIdentityFixtureInAccount } from '../../test/fixtures/createIdentityFixtureInAccount';
@@ -68,7 +67,6 @@ describe('Dash - Client', function suite() {
     transportMock.getBlockHeaderByHash
         .returns(BlockHeader.fromString(blockHeaderFixture));
 
-    dapiClientMock.platform.getIdentity.resolves(new GetIdentityResponse(identityFixture.toBuffer(), getResponseMetadataFixture()));
     dapiClientMock.platform.getDataContract.resolves(new GetDataContractResponse(dataContractFixture.toBuffer(), getResponseMetadataFixture()));
   });
 

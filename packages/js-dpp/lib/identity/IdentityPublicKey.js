@@ -35,6 +35,10 @@ class IdentityPublicKey {
     if (Object.prototype.hasOwnProperty.call(rawIdentityPublicKey, 'disabledAt')) {
       this.setDisabledAt(rawIdentityPublicKey.disabledAt);
     }
+
+    if (Object.prototype.hasOwnProperty.call(rawIdentityPublicKey, 'signature')) {
+      this.setSignature(rawIdentityPublicKey.signature);
+    }
   }
 
   /**
@@ -185,6 +189,27 @@ class IdentityPublicKey {
   }
 
   /**
+   * Set signature
+   *
+   * @param {Buffer} signature
+   * @returns {IdentityPublicKey}
+   */
+  setSignature(signature) {
+    this.signature = signature;
+
+    return this;
+  }
+
+  /**
+   * Get signature
+   *
+   * @returns {Buffer}
+   */
+  getSignature() {
+    return this.signature;
+  }
+
+  /**
    * Get the original public key hash
    *
    * @return {Buffer}
@@ -209,9 +234,12 @@ class IdentityPublicKey {
   /**
    * Get a plain object representation
    *
+   * @param {Object} [options]
+   * @param {Object} [options.skipSignature=false]
+   *
    * @return {RawIdentityPublicKey}
    */
-  toObject() {
+  toObject(options = {}) {
     const result = {
       id: this.getId(),
       type: this.getType(),
@@ -225,6 +253,10 @@ class IdentityPublicKey {
       result.disabledAt = this.getDisabledAt();
     }
 
+    if (!options.skipSignature && this.signature !== undefined) {
+      result.signature = this.signature;
+    }
+
     return result;
   }
 
@@ -234,10 +266,16 @@ class IdentityPublicKey {
    * @return {JsonIdentityPublicKey}
    */
   toJSON() {
-    return {
+    const result = {
       ...this.toObject(),
       data: this.getData().toString('base64'),
     };
+
+    if (this.signature) {
+      result.signature = this.signature.toString('base64');
+    }
+
+    return result;
   }
 }
 
@@ -250,6 +288,7 @@ class IdentityPublicKey {
  * @property {Buffer} data
  * @property {boolean} readOnly
  * @property {number} [disabledAt]
+ * @property {Buffer} [signature]
  */
 
 /**
@@ -261,6 +300,7 @@ class IdentityPublicKey {
  * @property {string} data
  * @property {boolean} readOnly
  * @property {number} [disabledAt]
+ * @property {string} [signature]
  */
 
 IdentityPublicKey.TYPES = {

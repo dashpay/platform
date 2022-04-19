@@ -130,7 +130,7 @@ describe('IdentityFacade', () => {
       const stateTransition = dpp.identity.createIdentityCreateTransition(identity);
 
       expect(stateTransition).to.be.instanceOf(IdentityCreateTransition);
-      expect(stateTransition.getPublicKeys()).to.equal(identity.getPublicKeys());
+      expect(stateTransition.getPublicKeys()).to.deep.equal(identity.getPublicKeys());
       expect(stateTransition.getAssetLockProof().toObject()).to.deep.equal(
         instantAssetLockProof.toObject(),
       );
@@ -156,14 +156,14 @@ describe('IdentityFacade', () => {
   describe('#createIdentityUpdateTransition', () => {
     it('should create IdentityUpdateTransition from identity id and public keys', () => {
       const publicKeys = {
-        add: [{
+        add: [new IdentityPublicKey({
           id: 3,
           type: IdentityPublicKey.TYPES.ECDSA_SECP256K1,
           data: Buffer.from('AuryIuMtRrl/VviQuyLD1l4nmxi9ogPzC9LT7tdpo0di', 'base64'),
           purpose: IdentityPublicKey.PURPOSES.AUTHENTICATION,
           securityLevel: IdentityPublicKey.SECURITY_LEVELS.CRITICAL,
           readOnly: false,
-        }],
+        })],
       };
 
       const stateTransition = dpp.identity

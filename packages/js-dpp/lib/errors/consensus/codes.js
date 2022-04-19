@@ -77,6 +77,7 @@ const InvalidIdentityRevisionError = require('./state/identity/InvalidIdentityRe
 const StateMaxIdentityPublicKeyLimitReachedError = require('./state/identity/MaxIdentityPublicKeyLimitReachedError');
 const DuplicatedIdentityPublicKeyStateError = require('./state/identity/DuplicatedIdentityPublicKeyError');
 const DuplicatedIdentityPublicKeyIdStateError = require('./state/identity/DuplicatedIdentityPublicKeyIdError');
+const InvalidIdentityKeySignatureError = require('./basic/identity/InvalidIdentityKeySignatureError');
 
 const codes = {
   /**
@@ -144,6 +145,7 @@ const codes = {
   1042: InvalidInstantAssetLockProofSignatureError,
   1046: MissingMasterPublicKeyError,
   1047: InvalidIdentityPublicKeySecurityLevelError,
+  1056: InvalidIdentityKeySignatureError,
 
   // State Transition
   1043: InvalidStateTransitionTypeError,

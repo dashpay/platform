@@ -58,7 +58,7 @@ function makeGetIdentityRespondWithIdentity(client, dapiClientMock) {
             let identityToResolve = new Identity({
                 protocolVersion: interceptedIdentityStateTransition.getProtocolVersion(),
                 id: interceptedIdentityStateTransition.getIdentityId().toBuffer(),
-                publicKeys: interceptedIdentityStateTransition.getPublicKeys().map((key) => key.toObject()),
+                publicKeys: interceptedIdentityStateTransition.getPublicKeys().map((key) => key.toObject({ skipSignature: true })),
                 balance: interceptedIdentityStateTransition.getAssetLockProof().getOutput().satoshis,
                 revision: 0,
             });
