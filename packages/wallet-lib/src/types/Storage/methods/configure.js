@@ -1,8 +1,8 @@
+const { has } = require('lodash');
 const InMem = require('../../../adapters/InMem');
-const {has} = require('lodash');
 const configureAdapter = require('../_configureAdapter');
 const getDefaultAdapter = require('../_getDefaultAdapter');
-const {CONFIGURED} = require('../../../EVENTS');
+const { CONFIGURED } = require('../../../EVENTS');
 const logger = require('../../../logger');
 
 const CURRENT_VERSION = 1;
@@ -45,5 +45,5 @@ module.exports = async function configure(opts = {}) {
   }
 
   this.configured = true;
-  this.emit(CONFIGURED, {type: CONFIGURED, payload: null});
+  this.emit(CONFIGURED, { type: CONFIGURED, payload: null });
 };
