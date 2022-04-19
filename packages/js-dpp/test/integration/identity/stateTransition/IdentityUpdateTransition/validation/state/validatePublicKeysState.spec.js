@@ -1,5 +1,5 @@
 const validatePublicKeys = require(
-  '../../../../../../../lib/identity/stateTransition/IdentityUpdateTransition/validation/state/validatePublicKeys',
+  '../../../../../../../lib/identity/stateTransition/IdentityUpdateTransition/validation/state/validatePublicKeysState',
 );
 const { expectValidationError } = require('../../../../../../../lib/test/expect/expectError');
 const DuplicatedIdentityPublicKeyIdError = require('../../../../../../../lib/errors/consensus/state/identity/DuplicatedIdentityPublicKeyIdError');
@@ -8,7 +8,7 @@ const identitySchema = require('../../../../../../../schema/identity/identity.js
 const MaxIdentityPublicKeyLimitReachedError = require('../../../../../../../lib/errors/consensus/state/identity/MaxIdentityPublicKeyLimitReachedError');
 const getIdentityFixture = require('../../../../../../../lib/test/fixtures/getIdentityFixture');
 
-describe('validatePublicKeys', () => {
+describe('validatePublicKeysState', () => {
   let rawPublicKeys;
 
   beforeEach(() => {

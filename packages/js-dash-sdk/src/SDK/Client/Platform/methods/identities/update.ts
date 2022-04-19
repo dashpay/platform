@@ -11,6 +11,7 @@ import broadcastStateTransition from "../../broadcastStateTransition";
  * @param {Platform} this - bound instance class
  * @param {Identity} identity - identity to update
  * @param {{add: IdentityPublicKey[]; disable: IdentityPublicKey[]}} publicKeys - public keys to add
+ * @param {Object<string, any>} privateKeys - public keys to add
  *
  * @returns {boolean}
  */
@@ -18,6 +19,7 @@ export async function update(
   this: Platform,
   identity: Identity,
   publicKeys: { add?: IdentityPublicKey[]; disable?: IdentityPublicKey[] },
+  privateKeys: { string, any },
   ): Promise<any> {
   await this.initialize();
 
@@ -28,7 +30,33 @@ export async function update(
     publicKeys,
   );
 
-  await signStateTransition(this, identityUpdateTransition, identity);
+  const signerKeyIndex = 0;
+
+  // Create key proofs
+  if (identityUpdateTransition.getPublicKeysToAdd()) {
+    const signerKey = identity.getPublicKeys()[signerKeyIndex];
+
+    const promises = identityUpdateTransition.getPublicKeysToAdd().map(async (publicKey) => {
+      const privateKey = privateKeys[publicKey.getId()];
+
+      if (!privateKey) {
+        throw new Error(`Private key for key ${publicKey.getId()} not found`);
+      }
+
+      identityUpdateTransition.setSignaturePublicKeyId(signerKey.getId());
+
+      await identityUpdateTransition.signByPrivateKey(privateKey, publicKey.getType());
+
+      publicKey.setSignature(identityUpdateTransition.getSignature());
+
+      identityUpdateTransition.setSignature(undefined);
+      identityUpdateTransition.setSignaturePublicKeyId(undefined);
+    })
+
+    await Promise.all(promises);
+  }
+
+  await signStateTransition(this, identityUpdateTransition, identity, signerKeyIndex);
 
   const result = await dpp.stateTransition.validateBasic(identityUpdateTransition);
 
