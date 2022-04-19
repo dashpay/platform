@@ -17,6 +17,8 @@ const defaultOpts = {
 class Storage extends EventEmitter {
   constructor(opts = {}) {
     super();
+    this.currentWalletId = '';
+    this.currentNetwork = '';
     this.wallets = new Map();
     this.chains = new Map();
     this.application = {
@@ -32,6 +34,11 @@ class Storage extends EventEmitter {
     this.lastRehydrate = null;
     this.lastSave = null;
     this.lastModified = null;
+    this.configured = false;
+  }
+
+  scheduleStateSave() {
+    this.lastModified = Date.now();
   }
 }
 

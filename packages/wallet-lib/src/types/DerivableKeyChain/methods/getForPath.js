@@ -30,7 +30,7 @@ function getForPath(path, opts = {}) {
     key,
     isUsed,
     isWatched,
-    address: key.publicKey.toAddress(this.network),
+    address: this.rootKeyType === 'address' ? key : key.publicKey.toAddress(this.network),
     issuedTime: +new Date(),
   };
 

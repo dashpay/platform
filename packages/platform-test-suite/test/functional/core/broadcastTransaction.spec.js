@@ -2,25 +2,29 @@ const {
   PrivateKey,
 } = require('@dashevo/dashcore-lib');
 
-const createFaucetClient = require('../../../lib/test/createFaucetClient');
+const createClientWithFundedWallet = require('../../../lib/test/createClientWithFundedWallet');
 
 describe('Core', () => {
   describe('broadcastTransaction', () => {
-    let faucetClient;
+    let client;
 
-    before(() => {
-      faucetClient = createFaucetClient();
+    before(async () => {
+      client = await createClientWithFundedWallet();
+    });
+
+    after(async () => {
+      await client.disconnect();
     });
 
     it('should sent transaction and return transaction ID', async () => {
-      const faucetWalletAccount = await faucetClient.getWalletAccount();
+      const account = await client.getWalletAccount();
 
-      const transaction = faucetWalletAccount.createTransaction({
+      const transaction = account.createTransaction({
         recipient: new PrivateKey().toAddress(process.env.NETWORK),
         satoshis: 10000,
       });
 
-      const dapiClient = faucetClient.getDAPIClient();
+      const dapiClient = client.getDAPIClient();
 
       const transactionId = await dapiClient.core.broadcastTransaction(transaction.toBuffer());
 
