@@ -17,7 +17,7 @@ module.exports = async function configure(opts = {}) {
   this.autosave = has(opts, 'autosave') ? opts.autosave : this.autosave;
   this.adapter = await configureAdapter((opts.adapter) ? opts.adapter : await getDefaultAdapter());
 
-  const version = await this.adapter.getItem('chains');
+  const version = await this.adapter.getItem('version');
 
   if (!(this.adapter instanceof InMem) && version !== CURRENT_VERSION) {
     logger.warn('Storage version mismatch, resyncing from start');
