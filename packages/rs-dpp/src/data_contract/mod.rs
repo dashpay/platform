@@ -8,3 +8,5 @@ pub use generate_data_contract::*;
 
 mod data_contract_factory;
 pub use data_contract_factory::*;
+
+pub mod get_binary_properties_from_schema;
