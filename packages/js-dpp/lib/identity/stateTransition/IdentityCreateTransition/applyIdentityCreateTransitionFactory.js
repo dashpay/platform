@@ -30,7 +30,8 @@ function applyIdentityCreateTransitionFactory(
     const identity = new Identity({
       protocolVersion: stateTransition.getProtocolVersion(),
       id: stateTransition.getIdentityId().toBuffer(),
-      publicKeys: stateTransition.getPublicKeys().map((key) => key.toObject()),
+      publicKeys: stateTransition.getPublicKeys()
+        .map((key) => key.toObject({ skipSignature: true })),
       balance: creditsAmount,
       revision: 0,
     });

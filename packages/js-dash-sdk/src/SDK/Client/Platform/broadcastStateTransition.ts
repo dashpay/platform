@@ -12,21 +12,30 @@ const GrpcError = require('@dashevo/grpc-common/lib/server/error/GrpcError');
 
 /**
  * @param {Platform} platform
+ * @param {Object} [options]
+ * @param {boolean} [options.skipValidation=false]
+ *
  * @param stateTransition
  */
-export default async function broadcastStateTransition(platform: Platform, stateTransition: any): Promise<IStateTransitionResult|void> {
+export default async function broadcastStateTransition(
+  platform: Platform,
+  stateTransition: any,
+  options: { skipValidation?: boolean; } = {},
+): Promise<IStateTransitionResult|void> {
     const { client, dpp } = platform;
 
-    const result = await dpp.stateTransition.validateBasic(stateTransition);
+    if (!options.skipValidation) {
+      const result = await dpp.stateTransition.validateBasic(stateTransition);
 
-    if (!result.isValid()) {
+      if (!result.isValid()) {
         const consensusError = result.getFirstError();
 
         throw new StateTransitionBroadcastError(
-            consensusError.getCode(),
-            consensusError.message,
-            consensusError,
+          consensusError.getCode(),
+          consensusError.message,
+          consensusError,
         );
+      }
     }
 
     // Subscribing to future result

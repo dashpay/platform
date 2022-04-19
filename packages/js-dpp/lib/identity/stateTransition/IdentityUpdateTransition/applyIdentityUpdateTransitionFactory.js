@@ -3,6 +3,8 @@
  *
  * @returns {applyIdentityUpdateTransition}
  */
+const IdentityPublicKey = require('../../IdentityPublicKey');
+
 function applyIdentityUpdateTransitionFactory(
   stateRepository,
 ) {
@@ -33,9 +35,16 @@ function applyIdentityUpdateTransitionFactory(
     }
 
     if (stateTransition.getPublicKeysToAdd()) {
+      const publicKeysToAdd = stateTransition.getPublicKeysToAdd()
+        .map((publicKey) => {
+          const rawPublicKey = publicKey.toObject({ skipSignature: true });
+
+          return new IdentityPublicKey(rawPublicKey);
+        });
+
       const identityPublicKeys = identity
         .getPublicKeys()
-        .concat(stateTransition.getPublicKeysToAdd());
+        .concat(publicKeysToAdd);
 
       identity.setPublicKeys(identityPublicKeys);
 
