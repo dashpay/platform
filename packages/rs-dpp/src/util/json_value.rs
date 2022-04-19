@@ -1,5 +1,8 @@
 use anyhow::{anyhow, bail};
-use std::{collections::HashMap, convert::TryInto};
+use std::{
+    collections::HashMap,
+    convert::{TryFrom, TryInto},
+};
 
 use log::trace;
 use serde_json::Value as JsonValue;
@@ -19,6 +22,44 @@ const PROPERTY_CONTENT_MEDIA_TYPE: &str = "contentMediaType";
 pub enum ReplaceWith {
     Bytes,
     Base58,
+}
+
+pub trait JsonValueSchemaExt {
+    /// returns true if json value contains property 'type`, and it equals 'object'
+    fn is_type_of_object(&self) -> bool;
+    /// returns true if json value contains property 'type`, and it equals 'array'
+    fn is_type_of_array(&self) -> bool;
+    /// returns true if json value contains property `byteArray` and it equals true
+    fn is_byte_array(&self) -> bool;
+}
+
+impl JsonValueSchemaExt for JsonValue {
+    fn is_type_of_object(&self) -> bool {
+        if let JsonValue::Object(ref map) = self {
+            if let Some(JsonValue::String(schema_type)) = map.get("type") {
+                return schema_type == "object";
+            }
+        }
+        false
+    }
+
+    fn is_type_of_array(&self) -> bool {
+        if let JsonValue::Object(ref map) = self {
+            if let Some(JsonValue::String(schema_type)) = map.get("type") {
+                return schema_type == "array";
+            }
+        }
+        false
+    }
+
+    fn is_byte_array(&self) -> bool {
+        if let JsonValue::Object(ref map) = self {
+            if let Some(JsonValue::Bool(is_byte_array)) = map.get("byteArray") {
+                return *is_byte_array;
+            }
+        }
+        false
+    }
 }
 
 /// JsonValueExt contains a set of helper methods that simplify work with JsonValue
