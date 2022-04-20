@@ -12,7 +12,7 @@ where
     S: SMLStoreLike<L>,
 {
     /// Fetch the Data Contract by ID
-    async fn fetch_data_contract(&self, data_contract_id: &Identifier) -> AnyResult<JsonValue>;
+    async fn fetch_data_contract(&self, data_contract_id: &Identifier) -> AnyResult<Vec<u8>>;
 
     /// Store Data Contract
     async fn store_data_contract(&self, data_contract: DataContract) -> AnyResult<()>;
@@ -36,10 +36,10 @@ where
         document_id: &Identifier,
     ) -> AnyResult<()>;
 
-    async fn fetch_transaction(&self, id: &str) -> AnyResult<JsonValue>;
+    async fn fetch_transaction(&self, id: &str) -> AnyResult<Vec<u8>>;
 
     /// Fetch Identity by ID
-    async fn fetch_identity(&self, id: &Identifier) -> AnyResult<JsonValue>;
+    async fn fetch_identity(&self, id: &Identifier) -> AnyResult<Vec<u8>>;
 
     /// Store Public Key hashes and Identity id pair
     async fn store_identity_public_key_hashes(
@@ -52,10 +52,10 @@ where
     async fn fetch_identity_by_public_key_hashes(
         &self,
         public_key_hashed: &[&[u8]],
-    ) -> AnyResult<Vec<Identifier>>;
+    ) -> AnyResult<Vec<Vec<u8>>>;
 
     /// Fetch latest platform block header
-    async fn fetch_latest_platform_block_header(&self) -> AnyResult<JsonValue>;
+    async fn fetch_latest_platform_block_header(&self) -> AnyResult<Vec<u8>>;
 
     /// Verify Instant Lock
     async fn verify_instant_lock(&self, instant_lock: &mocks::InstantLock) -> AnyResult<bool>;

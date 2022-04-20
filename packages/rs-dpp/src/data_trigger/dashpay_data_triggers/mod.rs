@@ -1,4 +1,5 @@
 use anyhow::{anyhow, bail};
+use serde_json::Value as JsonValue;
 
 use crate::{
     document::document_transition::DocumentTransition,
@@ -41,11 +42,15 @@ where
 
     let core_height_created_at = data.get_i64(PROPERTY_CORE_HEIGHT_CREATED_AT)?;
 
-    let core_chain_locked_height = context
-        .state_repository
-        .fetch_latest_platform_block_header()
-        .await?
-        .get_i64(PROPERTY_CORE_CHAIN_LOCKED_HEIGHT)?;
+    let latest_block_header: JsonValue = serde_json::from_slice(
+        &context
+            .state_repository
+            .fetch_latest_platform_block_header()
+            .await?,
+    )?;
+
+    let core_chain_locked_height =
+        latest_block_header.get_i64(PROPERTY_CORE_CHAIN_LOCKED_HEIGHT)?;
 
     let height_window_start = core_chain_locked_height - BLOCKS_SIZE_WINDOW;
     let height_window_end = core_chain_locked_height + BLOCKS_SIZE_WINDOW;
