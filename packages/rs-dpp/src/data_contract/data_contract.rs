@@ -1,4 +1,5 @@
 use super::errors::*;
+use crate::data_contract::get_binary_properties_from_schema::get_binary_properties;
 use crate::util::deserializer;
 use crate::util::string_encoding::Encoding;
 use crate::{
@@ -10,11 +11,13 @@ use crate::{
 use anyhow::anyhow;
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
-use std::collections::{BTreeMap, HashMap};
+use std::collections::BTreeMap;
 use std::convert::TryFrom;
 
 // TODO probably this need to be changed
 pub type JsonSchema = JsonValue;
+type DocumentType = String;
+type PropertyPath = String;
 
 pub const SCHEMA: &str = "https://schema.dash.org/dpp-0-4-0/meta/data-contract";
 
@@ -29,15 +32,15 @@ pub struct DataContract {
     pub version: u32,
     pub owner_id: Identifier,
     #[serde(rename = "documents")]
-    pub documents: BTreeMap<String, JsonSchema>,
+    pub documents: BTreeMap<DocumentType, JsonSchema>,
     #[serde(rename = "$defs", skip_serializing_if = "Option::is_none")]
-    pub defs: Option<BTreeMap<String, JsonSchema>>,
+    pub defs: Option<BTreeMap<DocumentType, JsonSchema>>,
     #[serde(skip)]
     pub metadata: Option<Metadata>,
     #[serde(skip)]
     pub entropy: [u8; 32],
     #[serde(skip)]
-    pub binary_properties: BTreeMap<String, JsonSchema>,
+    pub binary_properties: BTreeMap<DocumentType, BTreeMap<PropertyPath, JsonValue>>,
 }
 
 impl DataContract {
@@ -62,7 +65,8 @@ impl DataContract {
         deserializer::parse_protocol_version(protocol_bytes, &mut json_map)?;
         deserializer::parse_identities(&mut json_map, &["$id", "$ownerId"])?;
 
-        let data_contract: DataContract = serde_json::from_value(JsonValue::Object(json_map))?;
+        let mut data_contract: DataContract = serde_json::from_value(JsonValue::Object(json_map))?;
+        data_contract.generate_binary_properties();
         Ok(data_contract)
     }
 
@@ -116,7 +120,9 @@ impl DataContract {
     }
 
     pub fn set_document_schema(&mut self, doc_type: String, schema: JsonSchema) {
-        self.documents.insert(doc_type, schema);
+        let binary_properties = get_binary_properties(&schema);
+        self.documents.insert(doc_type.clone(), schema);
+        self.binary_properties.insert(doc_type, binary_properties);
     }
 
     pub fn get_document_schema(&self, doc_type: &str) -> Result<&JsonSchema, ProtocolError> {
@@ -146,9 +152,42 @@ impl DataContract {
         ));
     }
 
-    // TODO
-    pub fn get_binary_properties(&self, doc_type: &str) -> HashMap<String, JsonValue> {
-        unimplemented!()
+    /// Returns the binary properties for the given document type
+    /// Comparing to JS version of DPP, the binary_properties are not generated automatically
+    /// if they're not present. It is up to the developer to use proper methods like ['DataContract::set_document_schema'] which
+    /// automatically generates binary properties when setting the Json Schema
+    pub fn get_binary_properties(
+        &self,
+        doc_type: &str,
+    ) -> Result<&BTreeMap<String, JsonValue>, ProtocolError> {
+        if !self.is_document_defined(doc_type) {
+            return Err(DataContractError::InvalidDocumentTypeError {
+                doc_type: doc_type.to_owned(),
+                data_contract: self.clone(),
+            }
+            .into());
+        }
+
+        // The rust implementation doesn't set the value if it is not present in `binary_properties`. The difference is caused by
+        // required `mut` annotation. As `get_binary_properties` is reused in many other read-only methods, the mutation would require
+        // propagating the `mut` to other getters which by the definition shouldn't be mutable.
+        self.binary_properties.get(doc_type).ok_or_else(|| {
+            {
+                anyhow::anyhow!(
+                    "document '{}' has not generated binary_properties",
+                    doc_type
+                )
+            }
+            .into()
+        })
+    }
+
+    fn generate_binary_properties(&mut self) {
+        self.binary_properties = self
+            .documents
+            .iter()
+            .map(|(doc_type, schema)| (String::from(doc_type), get_binary_properties(schema)))
+            .collect();
     }
 }
 

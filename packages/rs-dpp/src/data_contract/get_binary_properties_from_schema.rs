@@ -9,8 +9,8 @@ const PROPERTY_ITEMS: &str = "items";
 const PROPERTY_TYPE: &str = "type";
 
 ///  Construct and get all properties with `contentEncoding` keyword
-pub fn get_binary_properties(schema: &JsonValue) -> BTreeMap<String, &JsonValue> {
-    let mut binary_properties: BTreeMap<String, &JsonValue> = BTreeMap::new();
+pub fn get_binary_properties(schema: &JsonValue) -> BTreeMap<String, JsonValue> {
+    let mut binary_properties: BTreeMap<String, JsonValue> = BTreeMap::new();
     if let Some(JsonValue::Object(schema_properties)) = schema.get(PROPERTY_PROPERTIES) {
         for (property_name, property_value) in schema_properties {
             build_binary_properties_map(
@@ -26,7 +26,7 @@ pub fn get_binary_properties(schema: &JsonValue) -> BTreeMap<String, &JsonValue>
 fn build_binary_properties_map<'a>(
     schema: &'a JsonValue,
     property_path: Option<String>,
-    binary_paths: &mut BTreeMap<String, &'a JsonValue>,
+    binary_paths: &mut BTreeMap<String, JsonValue>,
 ) {
     if let JsonValue::Object(map) = schema {
         match get_schema_property_type(map) {
@@ -47,14 +47,17 @@ fn build_binary_properties_map<'a>(
         }
     }
     if schema.is_byte_array() {
-        binary_paths.insert(property_path.unwrap_or_else(|| String::from("")), schema);
+        binary_paths.insert(
+            property_path.unwrap_or_else(|| String::from("")),
+            schema.clone(),
+        );
     }
 }
 
 fn visit_array<'a>(
     array: &'a [JsonValue],
     property_path: Option<&String>,
-    binary_paths: &mut BTreeMap<String, &'a JsonValue>,
+    binary_paths: &mut BTreeMap<String, JsonValue>,
 ) {
     for (index, v) in array.iter().enumerate() {
         let property_path = if let Some(ref path) = property_path {
@@ -69,7 +72,7 @@ fn visit_array<'a>(
 fn visit_map<'a>(
     map: &'a Map<String, JsonValue>,
     property_path: Option<&String>,
-    binary_paths: &mut BTreeMap<String, &'a JsonValue>,
+    binary_paths: &mut BTreeMap<String, JsonValue>,
 ) {
     if let Some(JsonValue::Object(properties)) = map.get(PROPERTY_PROPERTIES) {
         for (key, v) in properties {
@@ -105,7 +108,7 @@ mod test {
             "byteArray" : true
         });
 
-        let mut expected_result: BTreeMap<String, &JsonValue> = BTreeMap::new();
+        let mut expected_result: BTreeMap<String, JsonValue> = BTreeMap::new();
         let expected_paths = &[
             "arrayOfObject.withByteArray",
             "arrayOfObjects[0].withByteArray",
@@ -114,7 +117,7 @@ mod test {
             "withByteArray",
         ];
         for path in expected_paths {
-            expected_result.insert(path.to_string(), &content);
+            expected_result.insert(path.to_string(), content.clone());
         }
 
         let result = get_binary_properties(&schema);
