@@ -1,6 +1,6 @@
 use anyhow::{anyhow, bail};
 use std::{
-    collections::HashMap,
+    collections::{BTreeMap, HashMap},
     convert::{TryFrom, TryInto},
 };
 
@@ -156,7 +156,7 @@ impl JsonValueExt for JsonValue {
 
 /// replaces the Identifiers specified in binary_properties with Bytes or Base58
 pub fn identifiers_to(
-    binary_properties: &HashMap<String, JsonValue>,
+    binary_properties: &BTreeMap<String, JsonValue>,
     dynamic_data: &mut JsonValue,
     to: ReplaceWith,
 ) -> Result<(), ProtocolError> {
@@ -309,7 +309,7 @@ mod test {
         assert!(document["root"]["transactions"][1]["id"].is_string());
         assert!(document["root"]["transactions"][1]["inner"]["document_id"].is_string());
 
-        let mut binary_properties: HashMap<String, JsonValue> = HashMap::new();
+        let mut binary_properties: BTreeMap<String, JsonValue> = Default::default();
         let paths = vec![
             "root.from.id",
             "root.to.id",
@@ -354,7 +354,7 @@ mod test {
 
         assert!(document["root"]["from"]["id"].is_string());
 
-        let mut binary_properties: HashMap<String, JsonValue> = HashMap::new();
+        let mut binary_properties: BTreeMap<String, JsonValue> = BTreeMap::new();
         binary_properties.insert(
             "root.from.id".to_string(),
             json!({ "contentMediaType": "application/x.dash.dpp.identifier"}),

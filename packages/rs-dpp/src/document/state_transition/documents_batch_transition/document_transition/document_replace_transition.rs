@@ -43,10 +43,10 @@ impl DocumentTransitionObjectLike for DocumentReplaceTransition {
 
         if let Some(ref mut dynamic_data) = document.data {
             json_value::identifiers_to(
-                &document
+                document
                     .base
                     .data_contract
-                    .get_binary_properties(&document.base.document_type),
+                    .get_binary_properties(&document.base.document_type)?,
                 dynamic_data,
                 ReplaceWith::Base58,
             )?;
@@ -61,10 +61,9 @@ impl DocumentTransitionObjectLike for DocumentReplaceTransition {
         let object_base_map = object_base.as_object().unwrap().to_owned();
 
         json_value::identifiers_to(
-            &self
-                .base
+            self.base
                 .data_contract
-                .get_binary_properties(&self.base.document_type),
+                .get_binary_properties(&self.base.document_type)?,
             &mut object,
             ReplaceWith::Bytes,
         )?;
