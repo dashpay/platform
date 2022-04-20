@@ -6,6 +6,7 @@ use crate::{
     state_repository::{SMLStoreLike, SimplifiedMNListLike, StateRepositoryLike},
     util::json_value::JsonValueExt,
 };
+use serde_json::Value as JsonValue;
 
 use super::{DataTriggerExecutionContext, DataTriggerExecutionResult};
 use anyhow::{anyhow, bail, Context};
@@ -40,11 +41,14 @@ where
         )
     })?;
 
-    let block_height = context
-        .state_repository
-        .fetch_latest_platform_block_header()
-        .await?
-        .get_i64(PROPERTY_BLOCK_HEIGHT)?;
+    let latest_block_header: JsonValue = serde_json::from_slice(
+        &context
+            .state_repository
+            .fetch_latest_platform_block_header()
+            .await?,
+    )?;
+
+    let block_height = latest_block_header.get_i64(PROPERTY_BLOCK_HEIGHT)?;
     let enable_at_height = data.get_i64(PROPERTY_ENABLE_AT_HEIGHT)?;
 
     if enable_at_height < block_height {

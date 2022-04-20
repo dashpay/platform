@@ -1,6 +1,6 @@
 //! This module contains data structures that are left to be implemented
 
-use crate::{prelude::*, util::json_value::JsonValueExt};
+use crate::prelude::*;
 
 use anyhow::Result as AnyResult;
 use serde_json::Value as JsonValue;
@@ -52,7 +52,7 @@ where
     S: SMLStoreLike<L>,
 {
     /// Fetch the Data Contract by ID
-    async fn fetch_data_contract(&self, _data_contract_id: &Identifier) -> AnyResult<JsonValue> {
+    async fn fetch_data_contract(&self, _data_contract_id: &Identifier) -> AnyResult<Vec<u8>> {
         unimplemented!()
     }
 
@@ -87,12 +87,12 @@ where
     }
 
     /// Fetch transaction by ID
-    async fn fetch_transaction(&self, _id: &str) -> AnyResult<JsonValue> {
+    async fn fetch_transaction(&self, _id: &str) -> AnyResult<Vec<u8>> {
         unimplemented!()
     }
 
     /// Fetch Identity by ID
-    async fn fetch_identity(&self, _id: &Identifier) -> AnyResult<JsonValue> {
+    async fn fetch_identity(&self, _id: &Identifier) -> AnyResult<Vec<u8>> {
         unimplemented!()
     }
 
@@ -106,15 +106,16 @@ where
     }
 
     /// Fetch Identity Ids by Public Key hashes
+    /// Return the array of Identities
     async fn fetch_identity_by_public_key_hashes(
         &self,
         _public_key_hashed: &[&[u8]],
-    ) -> AnyResult<Vec<Identifier>> {
+    ) -> AnyResult<Vec<Vec<u8>>> {
         unimplemented!()
     }
 
     /// Fetch latest platform block header
-    async fn fetch_latest_platform_block_header(&self) -> AnyResult<JsonValue> {
+    async fn fetch_latest_platform_block_header(&self) -> AnyResult<Vec<u8>> {
         unimplemented!()
     }
 
