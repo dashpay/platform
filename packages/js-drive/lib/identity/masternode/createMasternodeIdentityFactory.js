@@ -44,7 +44,7 @@ function createMasternodeIdentityFactory(
         id: 1,
         type: withdrawPubKeyType,
         purpose: IdentityPublicKey.PURPOSES.WITHDRAW,
-        securityLevel: IdentityPublicKey.SECURITY_LEVELS.MEDIUM,
+        securityLevel: IdentityPublicKey.SECURITY_LEVELS.CRITICAL,
         readOnly: false,
         data: Buffer.from(payoutScript),
       }],
