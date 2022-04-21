@@ -121,8 +121,8 @@ describe('validateStateTransitionIdentitySignatureFactory', () => {
     expect(error.getPublicKeyId()).to.equal(publicKeyId);
   });
 
-  it('should return InvalidIdentityPublicKeyTypeError if type is not ECDSA_SECP256K1 and not ECDSA_HASH160', async () => {
-    const type = IdentityPublicKey.TYPES.ECDSA_HASH160 + 1;
+  it('should return InvalidIdentityPublicKeyTypeError if type is not exist', async () => {
+    const type = Math.max(...Object.values(IdentityPublicKey.TYPES)) + 1;
     identityPublicKey.getType.returns(type);
 
     const result = await validateStateTransitionIdentitySignature(
