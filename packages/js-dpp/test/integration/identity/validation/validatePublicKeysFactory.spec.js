@@ -389,21 +389,6 @@ describe('validatePublicKeysFactory', () => {
     expect(result.isValid()).to.be.true();
   });
 
-  it('should pass valid BIP13_SCRIPT_HASH public key', () => {
-    rawPublicKeys = [{
-      id: 0,
-      type: IdentityPublicKey.TYPES.BIP13_SCRIPT_HASH,
-      purpose: 0,
-      securityLevel: 0,
-      readOnly: true,
-      data: Buffer.from('54c557e07dde5bb6cb791c7a540e0a4796f5e97e', 'hex'),
-    }];
-
-    const result = validatePublicKeys(rawPublicKeys);
-
-    expect(result.isValid()).to.be.true();
-  });
-
   it('should return invalid result if BLS12_381 public key is invalid', () => {
     rawPublicKeys = [{
       id: 0,
