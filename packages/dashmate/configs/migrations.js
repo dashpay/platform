@@ -188,6 +188,7 @@ module.exports = {
         if (config.platform) {
           // Set empty block interval back to 3
           if (config.platform.drive.tenderdash.consensus.createEmptyBlocks.createEmptyBlocksInterval === '10s') {
+            // noinspection JSPrimitiveTypeWrapperUsage
             config.platform.drive.tenderdash.consensus.createEmptyBlocks.createEmptyBlocksInterval = '3m';
           }
 
@@ -298,8 +299,8 @@ module.exports = {
   },
   '0.22.0': (configFile) => {
     Object.entries(configFile.configs)
-      .forEach(([, config]) => {
-        config.docker = systemConfigs[config.group || 'base'].docker;
+      .forEach(([name, config]) => {
+        config.docker = systemConfigs[config.group || name].docker;
 
         // Update images
         config.core.docker.image = systemConfigs.base.core.docker.image;
@@ -323,11 +324,6 @@ module.exports = {
         }
       });
 
-    // Update docker subnet settings
-    configFile.base.docker = systemConfigs.base.docker;
-    configFile.testnet.docker = systemConfigs.testnet.docker;
-    configFile.mainnet.docker = systemConfigs.mainnet.docker;
-
     // Update testnet contracts
     configFile.configs.testnet.platform.drive.tenderdash.genesis = systemConfigs.testnet.platform
       .drive.tenderdash.genesis;
@@ -336,5 +332,11 @@ module.exports = {
     configFile.configs.testnet.platform.featureFlags = systemConfigs.testnet.platform.featureFlags;
     configFile.configs.testnet.platform.masternodeRewardShares = systemConfigs.testnet.platform
       .masternodeRewardShares;
+  },
+  '0.22.2': (configFile) => {
+    Object.entries(configFile.configs)
+      .forEach(([, config]) => {
+        config.core.docker.image = systemConfigs.base.core.docker.image;
+      });
   },
 };
