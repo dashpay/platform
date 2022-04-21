@@ -31,7 +31,7 @@ function setupLocalPresetTaskFactory(
     return new Listr([
       {
         title: 'Set the number of nodes',
-        enabled: (ctx) => ctx.nodeCount === null,
+        enabled: (ctx) => ctx.nodeCount === undefined,
         task: async (ctx, task) => {
           ctx.nodeCount = await task.prompt({
             type: 'Numeral',
@@ -51,7 +51,7 @@ function setupLocalPresetTaskFactory(
       },
       {
         title: 'Enable debug logs',
-        enabled: (ctx) => ctx.debugLogs === null,
+        enabled: (ctx) => ctx.debugLogs === undefined,
         task: async (ctx, task) => {
           ctx.debugLogs = await task.prompt({
             type: 'Toggle',
@@ -64,7 +64,7 @@ function setupLocalPresetTaskFactory(
       },
       {
         title: 'Set the core miner interval',
-        enabled: (ctx) => ctx.minerInterval === null,
+        enabled: (ctx) => ctx.minerInterval === undefined,
         task: async (ctx, task) => {
           ctx.minerInterval = await task.prompt({
             type: 'input',
