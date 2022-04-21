@@ -1,3 +1,21 @@
+### [0.22.2](https://github.com/dashevo/platform/compare/v0.22.1...v0.22.2) (2022-04-21)
+
+
+### Bug Fixes
+
+* docker-test-suite missing test files
+
+
+### Tests
+
+* **dpp:** double test in identity validation ([#330](https://github.com/dashevo/platform/issues/330))
+* fixes sdk timeouts in platform test suite ([#309](https://github.com/dashevo/platform/issues/309))
+
+
+### Miscellaneous Chores
+
+* update Core to v0.18.0.0-rc1 ([#351](https://github.com/dashevo/platform/issues/351))
+
 ### [0.22.1](https://github.com/dashevo/platform/compare/v0.22.0...v0.22.1) (2022-03-25)
 
 
