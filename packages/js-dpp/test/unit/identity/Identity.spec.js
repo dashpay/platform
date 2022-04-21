@@ -237,7 +237,6 @@ describe('Identity', () => {
 
       const publicKeyIds = identity.getPublicKeys().map((publicKey) => publicKey.getId());
 
-
       expect(Math.max(...publicKeyIds)).to.equal(maxId);
     });
   });
