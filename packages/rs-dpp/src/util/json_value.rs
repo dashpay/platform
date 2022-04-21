@@ -1,8 +1,5 @@
 use anyhow::{anyhow, bail};
-use std::{
-    collections::{BTreeMap, HashMap},
-    convert::{TryFrom, TryInto},
-};
+use std::{collections::BTreeMap, convert::TryInto};
 
 use log::trace;
 use serde_json::Value as JsonValue;
@@ -31,6 +28,8 @@ pub trait JsonValueSchemaExt {
     fn is_type_of_array(&self) -> bool;
     /// returns true if json value contains property `byteArray` and it equals true
     fn is_byte_array(&self) -> bool;
+    /// returns the properties of Json Schema object
+    fn get_schema_properties(&self) -> Result<&JsonValue, anyhow::Error>;
 }
 
 impl JsonValueSchemaExt for JsonValue {
@@ -60,21 +59,35 @@ impl JsonValueSchemaExt for JsonValue {
         }
         false
     }
+
+    fn get_schema_properties(&self) -> Result<&JsonValue, anyhow::Error> {
+        if let JsonValue::Object(ref map) = self {
+            return map
+                .get("properties")
+                .ok_or_else(|| anyhow!("Couldn't find 'properties' in '{:?}'", map));
+        }
+        bail!("the {:?} isn't an map", self);
+    }
 }
 
 /// JsonValueExt contains a set of helper methods that simplify work with JsonValue
 pub trait JsonValueExt {
-    fn get_string(&self, property_name: &str) -> Result<&String, anyhow::Error>;
+    fn get_string(&self, property_name: &str) -> Result<&str, anyhow::Error>;
     fn get_i64(&self, property_name: &str) -> Result<i64, anyhow::Error>;
     fn get_f64(&self, property_name: &str) -> Result<f64, anyhow::Error>;
     fn get_u64(&self, property_name: &str) -> Result<u64, anyhow::Error>;
     fn get_bytes(&self, property_name: &str) -> Result<Vec<u8>, anyhow::Error>;
     fn get_value_mut(&mut self, string_path: &str) -> Result<&mut JsonValue, anyhow::Error>;
     fn get_value(&self, string_path: &str) -> Result<&JsonValue, anyhow::Error>;
+    fn get_value_by_path(&self, path: &[JsonPathStep]) -> Result<&JsonValue, anyhow::Error>;
+    fn get_value_by_path_mut(
+        &mut self,
+        path: &[JsonPathStep],
+    ) -> Result<&mut JsonValue, anyhow::Error>;
 }
 
 impl JsonValueExt for JsonValue {
-    fn get_string(&self, property_name: &str) -> Result<&String, anyhow::Error> {
+    fn get_string(&self, property_name: &str) -> Result<&str, anyhow::Error> {
         let property_value = self
             .get(property_name)
             .ok_or_else(|| anyhow!("the property {} doesn't exist in Json Value", property_name))?;
@@ -151,6 +164,20 @@ impl JsonValueExt for JsonValue {
         let path: JsonPath = path_literal.try_into().unwrap();
         get_value_from_json_path(&path, self)
             .ok_or_else(|| anyhow!("the property '{}' not found", string_path))
+    }
+
+    /// returns the value from the JsonValue based on the path: i.e "root.data[0].id"
+    fn get_value_by_path(&self, path: &[JsonPathStep]) -> Result<&JsonValue, anyhow::Error> {
+        get_value_from_json_path(path, self)
+            .ok_or_else(|| anyhow!("the property '{:?}' not found", path))
+    }
+
+    fn get_value_by_path_mut(
+        &mut self,
+        path: &[JsonPathStep],
+    ) -> Result<&mut JsonValue, anyhow::Error> {
+        get_value_from_json_path_mut(path, self)
+            .ok_or_else(|| anyhow!("the property '{:?}' not found", path))
     }
 }
 

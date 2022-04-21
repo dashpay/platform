@@ -3,6 +3,7 @@ use std::convert::TryFrom;
 
 use crate::errors::ProtocolError;
 
+// TODO To reduce memory allocation, the String should be replaced with the &str
 #[derive(Debug, Clone)]
 pub enum JsonPathStep {
     Key(String),
