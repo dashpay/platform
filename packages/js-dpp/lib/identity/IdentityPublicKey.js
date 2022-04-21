@@ -339,7 +339,7 @@ IdentityPublicKey.ALLOWED_SECURITY_LEVELS[IdentityPublicKey.PURPOSES.DECRYPTION]
   IdentityPublicKey.SECURITY_LEVELS.MEDIUM,
 ];
 IdentityPublicKey.ALLOWED_SECURITY_LEVELS[IdentityPublicKey.PURPOSES.WITHDRAW] = [
-  IdentityPublicKey.SECURITY_LEVELS.MEDIUM,
+  IdentityPublicKey.SECURITY_LEVELS.CRITICAL,
 ];
 
 module.exports = IdentityPublicKey;
