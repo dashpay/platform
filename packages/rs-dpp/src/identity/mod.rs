@@ -7,3 +7,6 @@ pub mod validation;
 
 pub use identity_facade::*;
 pub use identity_public_key::*;
+
+mod credits_converter;
+pub use credits_converter::*;
