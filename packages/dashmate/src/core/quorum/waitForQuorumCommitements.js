@@ -1,6 +1,6 @@
 const wait = require('../../util/wait');
 
-const { LLMQ_TYPE_TEST } = require('../../constants');
+const { QUORUM_TYPES } = require('../../constants');
 
 /**
  *
@@ -12,11 +12,8 @@ async function checkDKGSessionCommitments(quorumHash, rpcClients) {
   for (const rpc of rpcClients) {
     const { result: dkgStatus } = await rpc.quorum('dkgstatus');
 
-    if (!dkgStatus.minableCommitments) {
-      return false;
-    }
-
-    const testQuorumCommitment = dkgStatus.minableCommitments[LLMQ_TYPE_TEST];
+    const testQuorumCommitment = dkgStatus.minableCommitments
+      .find((commitment) => commitment.llmqType === QUORUM_TYPES.LLMQ_TYPE_TEST);
 
     if (!testQuorumCommitment) {
       return false;
