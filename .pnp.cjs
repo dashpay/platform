@@ -2270,7 +2270,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["@dashevo/dapi", "workspace:packages/dapi"],
             ["@dashevo/dapi-client", "workspace:packages/js-dapi-client"],
             ["@dashevo/dapi-grpc", "workspace:packages/dapi-grpc"],
-            ["@dashevo/dashcore-lib", "npm:0.19.30"],
+            ["@dashevo/dashcore-lib", "npm:0.19.31"],
             ["@dashevo/dashd-rpc", "npm:2.3.1"],
             ["@dashevo/dp-services-ctl", "https://github.com/dashevo/js-dp-services-ctl.git#commit=3976076b0018c5b4632ceda4c752fc597f27a640"],
             ["@dashevo/dpp", "workspace:packages/js-dpp"],
@@ -2313,7 +2313,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["@babel/core", "npm:7.16.0"],
             ["@dashevo/dapi-grpc", "workspace:packages/dapi-grpc"],
             ["@dashevo/dash-spv", "https://github.com/dashevo/dash-spv.git#commit=3eeb01ed5d0636c949cf3ca2e495c4fe3d1b74ce"],
-            ["@dashevo/dashcore-lib", "npm:0.19.30"],
+            ["@dashevo/dashcore-lib", "npm:0.19.31"],
             ["@dashevo/dpp", "workspace:packages/js-dpp"],
             ["@dashevo/grpc-common", "workspace:packages/js-grpc-common"],
             ["@grpc/grpc-js", "npm:1.4.4"],
@@ -2400,7 +2400,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["@dashevo/dash-spv", "https://github.com/dashevo/dash-spv.git#commit=3eeb01ed5d0636c949cf3ca2e495c4fe3d1b74ce"],
             ["@dashevo/dark-gravity-wave", "npm:1.1.1"],
             ["@dashevo/dash-util", "npm:2.0.3"],
-            ["@dashevo/dashcore-lib", "npm:0.19.30"],
+            ["@dashevo/dashcore-lib", "npm:0.19.31"],
             ["levelup", "npm:4.4.0"],
             ["memdown", "npm:3.0.0"]
           ],
@@ -2419,10 +2419,10 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
         }]
       ]],
       ["@dashevo/dashcore-lib", [
-        ["npm:0.19.30", {
-          "packageLocation": "./.yarn/cache/@dashevo-dashcore-lib-npm-0.19.30-41c2a346a3-a88e393468.zip/node_modules/@dashevo/dashcore-lib/",
+        ["npm:0.19.31", {
+          "packageLocation": "./.yarn/cache/@dashevo-dashcore-lib-npm-0.19.31-c668356a19-67ba5b44f2.zip/node_modules/@dashevo/dashcore-lib/",
           "packageDependencies": [
-            ["@dashevo/dashcore-lib", "npm:0.19.30"],
+            ["@dashevo/dashcore-lib", "npm:0.19.31"],
             ["@dashevo/x11-hash-js", "npm:1.0.2"],
             ["@types/node", "npm:12.20.37"],
             ["bloom-filter", "npm:0.2.0"],
@@ -2430,7 +2430,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["bn.js", "npm:4.12.0"],
             ["bs58", "npm:4.0.1"],
             ["elliptic", "npm:6.5.3"],
-            ["eslint-config-prettier", "virtual:41c2a346a3ec88342f22311862b46bde642065bcf5beeb40cb33ff341953aa895341d515fe836c33d1afc3e4b563c41506a5d6e8b8120ea538bf5d74be201dbe#npm:8.3.0"],
+            ["eslint-config-prettier", "virtual:c668356a197bf2ed4bc725a38de59d68626229b251aad69fbe946cba44fbe44efcaf5cb05fbc479ca5662855b063190ed54d382446369b50d6c7ad4bf37e3bab#npm:8.3.0"],
             ["inherits", "npm:2.0.1"],
             ["lodash", "npm:4.17.21"],
             ["unorm", "npm:1.6.0"]
@@ -2507,7 +2507,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["@apidevtools/json-schema-ref-parser", "npm:8.0.0"],
             ["@babel/core", "npm:7.16.0"],
             ["@babel/preset-env", "virtual:58fb68f2aed20e5e0f2e48520ab903ae9bb3440369bfd5e912034003cf27c5aae368649fc5620dd2acbed578131f3a0975e75b838d77d12335fb0412e24026c6#npm:7.16.4"],
-            ["@dashevo/dashcore-lib", "npm:0.19.30"],
+            ["@dashevo/dashcore-lib", "npm:0.19.31"],
             ["@dashevo/dashpay-contract", "workspace:packages/dashpay-contract"],
             ["@dashevo/dpns-contract", "workspace:packages/dpns-contract"],
             ["@dashevo/feature-flags-contract", "workspace:packages/feature-flags-contract"],
@@ -2575,7 +2575,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["@dashevo/drive", "workspace:packages/js-drive"],
             ["@dashevo/abci", "https://github.com/dashevo/js-abci.git#commit=8806ff71cdac918f79920b1373824653f15698c5"],
             ["@dashevo/dapi-grpc", "workspace:packages/dapi-grpc"],
-            ["@dashevo/dashcore-lib", "npm:0.19.30"],
+            ["@dashevo/dashcore-lib", "npm:0.19.31"],
             ["@dashevo/dashd-rpc", "npm:2.3.1"],
             ["@dashevo/dashpay-contract", "workspace:packages/dashpay-contract"],
             ["@dashevo/dp-services-ctl", "https://github.com/dashevo/js-dp-services-ctl.git#commit=3976076b0018c5b4632ceda4c752fc597f27a640"],
@@ -2723,7 +2723,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           "packageDependencies": [
             ["@dashevo/platform-test-suite", "workspace:packages/platform-test-suite"],
             ["@dashevo/dapi-client", "workspace:packages/js-dapi-client"],
-            ["@dashevo/dashcore-lib", "npm:0.19.30"],
+            ["@dashevo/dashcore-lib", "npm:0.19.31"],
             ["@dashevo/dpns-contract", "workspace:packages/dpns-contract"],
             ["@dashevo/dpp", "workspace:packages/js-dpp"],
             ["@dashevo/feature-flags-contract", "workspace:packages/feature-flags-contract"],
@@ -2819,7 +2819,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           "packageDependencies": [
             ["@dashevo/wallet-lib", "workspace:packages/wallet-lib"],
             ["@dashevo/dapi-client", "workspace:packages/js-dapi-client"],
-            ["@dashevo/dashcore-lib", "npm:0.19.30"],
+            ["@dashevo/dashcore-lib", "npm:0.19.31"],
             ["@dashevo/dpp", "workspace:packages/js-dpp"],
             ["@dashevo/grpc-common", "workspace:packages/js-grpc-common"],
             ["assert", "npm:2.0.0"],
@@ -2926,7 +2926,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           "packageDependencies": [
             ["@grpc/grpc-js", "npm:1.4.4"],
             ["@grpc/proto-loader", "npm:0.6.7"],
-            ["@types/node", "npm:16.11.9"]
+            ["@types/node", "npm:17.0.21"]
           ],
           "linkType": "HARD",
         }]
@@ -3032,7 +3032,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["@jest/types", "npm:27.2.5"],
             ["@types/istanbul-lib-coverage", "npm:2.0.3"],
             ["@types/istanbul-reports", "npm:3.0.1"],
-            ["@types/node", "npm:16.11.9"],
+            ["@types/node", "npm:17.0.21"],
             ["@types/yargs", "npm:16.0.4"],
             ["chalk", "npm:4.1.2"]
           ],
@@ -3781,7 +3781,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           "packageLocation": "./.yarn/cache/@types-connect-npm-3.4.35-7337eee0a3-fe81351470.zip/node_modules/@types/connect/",
           "packageDependencies": [
             ["@types/connect", "npm:3.4.35"],
-            ["@types/node", "npm:16.11.9"]
+            ["@types/node", "npm:17.0.21"]
           ],
           "linkType": "HARD",
         }]
@@ -3868,7 +3868,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           "packageLocation": "./.yarn/cache/@types-express-serve-static-core-npm-4.17.25-77a729b982-a60d44676d.zip/node_modules/@types/express-serve-static-core/",
           "packageDependencies": [
             ["@types/express-serve-static-core", "npm:4.17.25"],
-            ["@types/node", "npm:16.11.9"],
+            ["@types/node", "npm:17.0.21"],
             ["@types/qs", "npm:6.9.7"],
             ["@types/range-parser", "npm:1.2.4"]
           ],
@@ -3881,7 +3881,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           "packageDependencies": [
             ["@types/glob", "npm:7.2.0"],
             ["@types/minimatch", "npm:3.0.5"],
-            ["@types/node", "npm:16.11.9"]
+            ["@types/node", "npm:17.0.21"]
           ],
           "linkType": "HARD",
         }]
@@ -3938,7 +3938,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           "packageLocation": "./.yarn/cache/@types-keyv-npm-3.1.3-8864e3cbf3-b5f8aa592c.zip/node_modules/@types/keyv/",
           "packageDependencies": [
             ["@types/keyv", "npm:3.1.3"],
-            ["@types/node", "npm:16.11.9"]
+            ["@types/node", "npm:17.0.21"]
           ],
           "linkType": "HARD",
         }]
@@ -4024,13 +4024,6 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           ],
           "linkType": "HARD",
         }],
-        ["npm:16.11.9", {
-          "packageLocation": "./.yarn/cache/@types-node-npm-16.11.9-fd7b539464-baec2e6471.zip/node_modules/@types/node/",
-          "packageDependencies": [
-            ["@types/node", "npm:16.11.9"]
-          ],
-          "linkType": "HARD",
-        }],
         ["npm:17.0.21", {
           "packageLocation": "./.yarn/cache/@types-node-npm-17.0.21-7d68eb6a13-89dcd2fe82.zip/node_modules/@types/node/",
           "packageDependencies": [
@@ -4053,7 +4046,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           "packageLocation": "./.yarn/cache/@types-pino-npm-6.3.12-19c7982858-8017351466.zip/node_modules/@types/pino/",
           "packageDependencies": [
             ["@types/pino", "npm:6.3.12"],
-            ["@types/node", "npm:16.11.9"],
+            ["@types/node", "npm:17.0.21"],
             ["@types/pino-pretty", "npm:4.7.3"],
             ["@types/pino-std-serializers", "npm:2.4.1"],
             ["sonic-boom", "npm:2.3.1"]
@@ -4066,7 +4059,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           "packageLocation": "./.yarn/cache/@types-pino-pretty-npm-4.7.3-5ebf57cfd2-40fe67e73d.zip/node_modules/@types/pino-pretty/",
           "packageDependencies": [
             ["@types/pino-pretty", "npm:4.7.3"],
-            ["@types/node", "npm:16.11.9"],
+            ["@types/node", "npm:17.0.21"],
             ["@types/pino", "npm:6.3.12"]
           ],
           "linkType": "HARD",
@@ -4077,7 +4070,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           "packageLocation": "./.yarn/cache/@types-pino-std-serializers-npm-2.4.1-e7c36178c0-a156e25882.zip/node_modules/@types/pino-std-serializers/",
           "packageDependencies": [
             ["@types/pino-std-serializers", "npm:2.4.1"],
-            ["@types/node", "npm:16.11.9"]
+            ["@types/node", "npm:17.0.21"]
           ],
           "linkType": "HARD",
         }]
@@ -4105,7 +4098,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           "packageLocation": "./.yarn/cache/@types-responselike-npm-1.0.0-85dd08af42-e99fc7cc62.zip/node_modules/@types/responselike/",
           "packageDependencies": [
             ["@types/responselike", "npm:1.0.0"],
-            ["@types/node", "npm:16.11.9"]
+            ["@types/node", "npm:17.0.21"]
           ],
           "linkType": "HARD",
         }]
@@ -4163,7 +4156,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           "packageDependencies": [
             ["@types/vinyl", "npm:2.0.6"],
             ["@types/expect", "npm:1.20.4"],
-            ["@types/node", "npm:16.11.9"]
+            ["@types/node", "npm:17.0.21"]
           ],
           "linkType": "HARD",
         }]
@@ -4173,7 +4166,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           "packageLocation": "./.yarn/cache/@types-ws-npm-7.4.7-d0c95c0958-b4c9b8ad20.zip/node_modules/@types/ws/",
           "packageDependencies": [
             ["@types/ws", "npm:7.4.7"],
-            ["@types/node", "npm:16.11.9"]
+            ["@types/node", "npm:17.0.21"]
           ],
           "linkType": "HARD",
         }]
@@ -7475,7 +7468,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           "packageDependencies": [
             ["dash", "workspace:packages/js-dash-sdk"],
             ["@dashevo/dapi-client", "workspace:packages/js-dapi-client"],
-            ["@dashevo/dashcore-lib", "npm:0.19.30"],
+            ["@dashevo/dashcore-lib", "npm:0.19.31"],
             ["@dashevo/dashpay-contract", "workspace:packages/dashpay-contract"],
             ["@dashevo/dpns-contract", "workspace:packages/dpns-contract"],
             ["@dashevo/dpp", "workspace:packages/js-dpp"],
@@ -7556,7 +7549,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           "packageLocation": "./packages/dashmate/",
           "packageDependencies": [
             ["dashmate", "workspace:packages/dashmate"],
-            ["@dashevo/dashcore-lib", "npm:0.19.30"],
+            ["@dashevo/dashcore-lib", "npm:0.19.31"],
             ["@dashevo/dashd-rpc", "npm:2.3.1"],
             ["@dashevo/dashpay-contract", "workspace:packages/dashpay-contract"],
             ["@dashevo/dpns-contract", "workspace:packages/dpns-contract"],
@@ -8385,7 +8378,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["engine.io", "npm:6.1.0"],
             ["@types/cookie", "npm:0.4.1"],
             ["@types/cors", "npm:2.8.12"],
-            ["@types/node", "npm:16.11.9"],
+            ["@types/node", "npm:17.0.21"],
             ["accepts", "npm:1.3.7"],
             ["base64id", "npm:2.0.0"],
             ["cookie", "npm:0.4.1"],
@@ -8740,10 +8733,10 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           ],
           "linkType": "SOFT",
         }],
-        ["virtual:41c2a346a3ec88342f22311862b46bde642065bcf5beeb40cb33ff341953aa895341d515fe836c33d1afc3e4b563c41506a5d6e8b8120ea538bf5d74be201dbe#npm:8.3.0", {
-          "packageLocation": "./.yarn/__virtual__/eslint-config-prettier-virtual-e9eb8a17cf/0/cache/eslint-config-prettier-npm-8.3.0-f540cd1f53-df4cea3032.zip/node_modules/eslint-config-prettier/",
+        ["virtual:c668356a197bf2ed4bc725a38de59d68626229b251aad69fbe946cba44fbe44efcaf5cb05fbc479ca5662855b063190ed54d382446369b50d6c7ad4bf37e3bab#npm:8.3.0", {
+          "packageLocation": "./.yarn/__virtual__/eslint-config-prettier-virtual-32ee760f5b/0/cache/eslint-config-prettier-npm-8.3.0-f540cd1f53-df4cea3032.zip/node_modules/eslint-config-prettier/",
           "packageDependencies": [
-            ["eslint-config-prettier", "virtual:41c2a346a3ec88342f22311862b46bde642065bcf5beeb40cb33ff341953aa895341d515fe836c33d1afc3e4b563c41506a5d6e8b8120ea538bf5d74be201dbe#npm:8.3.0"],
+            ["eslint-config-prettier", "virtual:c668356a197bf2ed4bc725a38de59d68626229b251aad69fbe946cba44fbe44efcaf5cb05fbc479ca5662855b063190ed54d382446369b50d6c7ad4bf37e3bab#npm:8.3.0"],
             ["@types/eslint", null],
             ["eslint", null]
           ],
@@ -11475,7 +11468,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           "packageLocation": "./.yarn/cache/jest-worker-npm-27.3.1-21ad1addc5-125d46939d.zip/node_modules/jest-worker/",
           "packageDependencies": [
             ["jest-worker", "npm:27.3.1"],
-            ["@types/node", "npm:16.11.9"],
+            ["@types/node", "npm:17.0.21"],
             ["merge-stream", "npm:2.0.0"],
             ["supports-color", "npm:8.1.1"]
           ],
