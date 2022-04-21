@@ -234,6 +234,36 @@ describe('validatePublicKeysFactory', () => {
         expect(error.getKeyword()).to.equal('maxItems');
       });
     });
+
+    describe('BIP13_SCRIPT_HASH', () => {
+      it('should be no less than 20 bytes', () => {
+        rawPublicKeys[1].data = Buffer.alloc(19);
+        rawPublicKeys[1].type = 3;
+
+        const result = validatePublicKeys(rawPublicKeys);
+
+        expectJsonSchemaError(result);
+
+        const [error] = result.getErrors();
+
+        expect(error.getInstancePath()).to.equal('/data');
+        expect(error.getKeyword()).to.equal('minItems');
+      });
+
+      it('should be no longer than 20 bytes', () => {
+        rawPublicKeys[1].data = Buffer.alloc(21);
+        rawPublicKeys[1].type = 3;
+
+        const result = validatePublicKeys(rawPublicKeys);
+
+        expectJsonSchemaError(result);
+
+        const [error] = result.getErrors();
+
+        expect(error.getInstancePath()).to.equal('/data');
+        expect(error.getKeyword()).to.equal('maxItems');
+      });
+    });
   });
 
   it('should return invalid result if there are duplicate key ids', () => {
