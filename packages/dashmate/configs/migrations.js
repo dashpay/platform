@@ -332,11 +332,15 @@ module.exports = {
     configFile.configs.testnet.platform.featureFlags = systemConfigs.testnet.platform.featureFlags;
     configFile.configs.testnet.platform.masternodeRewardShares = systemConfigs.testnet.platform
       .masternodeRewardShares;
+
+    return configFile;
   },
   '0.22.2': (configFile) => {
     Object.entries(configFile.configs)
       .forEach(([, config]) => {
         config.core.docker.image = systemConfigs.base.core.docker.image;
       });
+
+    return configFile;
   },
 };
