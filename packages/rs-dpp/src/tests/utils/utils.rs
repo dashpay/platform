@@ -5,6 +5,27 @@ use std::num::ParseIntError;
 
 use crate::prelude::Identifier;
 
+#[cfg(test)]
+#[macro_export]
+macro_rules! assert_error_contains {
+    ($result:ident, $contains:expr) => {
+        match $result {
+            Ok(o) => {
+                panic!("expected error, but returned: {:?}", o);
+            }
+            Err(e) => {
+                let string_error = e.to_string();
+                if !string_error.contains($contains) {
+                    panic!(
+                        "assertion error: '{}' hasn't been found in '{}'",
+                        $contains, string_error
+                    );
+                }
+            }
+        }
+    };
+}
+
 pub fn generate_random_identifier() -> [u8; 32] {
     let mut buffer = [0u8; 32];
     let _ = getrandom(&mut buffer);
