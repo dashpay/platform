@@ -20,19 +20,22 @@ async function checkProbes(rpcClients, bumpMockTime) {
   masternodes = masternodes.filter((entry) => !entry.status);
 
   for (const { rpc, status } of masternodes) {
-    const { result: { session, quorumConnections } } = await rpc.quorum('dkgstatus');
+    const { result: { session, quorumConnections } } = await rpc.quorum('dkgstatus', 2);
 
-    if (Object.keys(session).length === 0) {
+    if (session.length === 0) {
       continue;
     }
 
-    if (!quorumConnections || !quorumConnections[LLMQ_TYPE_TEST]) {
+    const llmqConnection = quorumConnections
+      .find((connection) => connection.llmqType === LLMQ_TYPE_TEST);
+
+    if (!llmqConnection) {
       await bumpMockTime();
 
       return false;
     }
 
-    for (const connection of quorumConnections[LLMQ_TYPE_TEST]) {
+    for (const connection of llmqConnection.quorumConnections) {
       if (connection.proTxHash === status.proTxHash) {
         continue;
       }

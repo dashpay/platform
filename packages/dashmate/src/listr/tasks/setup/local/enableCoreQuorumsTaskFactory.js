@@ -35,6 +35,10 @@ function enableCoreQuorumsTaskFactory(generateBlocks) {
           ctx.expectedContributions = 3;
           ctx.expectedJustifications = 0;
           ctx.expectedComplaints = 0;
+
+          ctx.masternodeRpcClients = ctx.coreServices
+            .filter((coreService) => coreService.getConfig().getName() !== 'local_seed')
+            .map((coreService) => coreService.getRpcClient());
         },
       },
       {
@@ -72,14 +76,14 @@ function enableCoreQuorumsTaskFactory(generateBlocks) {
           ctx.quorumHash = quorumHash;
 
           await waitForQuorumPhase(
-            ctx.rpcClients,
+            ctx.masternodeRpcClients,
             ctx.quorumHash,
             1,
             ctx.expectedMembers,
           );
 
           await waitForQuorumConnections(
-            ctx.rpcClients,
+            ctx.masternodeRpcClients,
             ctx.expectedConnections,
             ctx.bumpMockTime,
           );
@@ -89,7 +93,7 @@ function enableCoreQuorumsTaskFactory(generateBlocks) {
 
           if (isSpork21Active) {
             await waitForMasternodeProbes(
-              ctx.rpcClients,
+              ctx.masternodeRpcClients,
               ctx.bumpMockTime,
             );
           }
@@ -112,7 +116,7 @@ function enableCoreQuorumsTaskFactory(generateBlocks) {
         title: 'Waiting for phase 2 (contribute)',
         task: async (ctx) => {
           await waitForQuorumPhase(
-            ctx.rpcClients,
+            ctx.masternodeRpcClients,
             ctx.quorumHash,
             2,
             ctx.expectedMembers,
@@ -136,7 +140,7 @@ function enableCoreQuorumsTaskFactory(generateBlocks) {
         title: 'Waiting for phase 3 (complain)',
         task: async (ctx) => {
           await waitForQuorumPhase(
-            ctx.rpcClients,
+            ctx.masternodeRpcClients,
             ctx.quorumHash,
             3,
             ctx.expectedMembers,
@@ -162,7 +166,7 @@ function enableCoreQuorumsTaskFactory(generateBlocks) {
         title: 'Waiting for phase 4 (justify)',
         task: async (ctx) => {
           await waitForQuorumPhase(
-            ctx.rpcClients,
+            ctx.masternodeRpcClients,
             ctx.quorumHash,
             4,
             ctx.expectedMembers,
@@ -188,7 +192,7 @@ function enableCoreQuorumsTaskFactory(generateBlocks) {
         title: 'Waiting for phase 5 (commit)',
         task: async (ctx) => {
           await waitForQuorumPhase(
-            ctx.rpcClients,
+            ctx.masternodeRpcClients,
             ctx.quorumHash,
             5,
             ctx.expectedMembers,
@@ -214,7 +218,7 @@ function enableCoreQuorumsTaskFactory(generateBlocks) {
         title: 'Waiting for phase 6 (mining)',
         task: async (ctx) => {
           await waitForQuorumPhase(
-            ctx.rpcClients,
+            ctx.masternodeRpcClients,
             ctx.quorumHash,
             6,
             ctx.expectedMembers,
@@ -224,7 +228,7 @@ function enableCoreQuorumsTaskFactory(generateBlocks) {
       {
         title: 'Waiting final commitment',
         task: (ctx) => waitForQuorumCommitments(
-          ctx.rpcClients,
+          ctx.masternodeRpcClients,
           ctx.quorumHash,
         ),
       },
