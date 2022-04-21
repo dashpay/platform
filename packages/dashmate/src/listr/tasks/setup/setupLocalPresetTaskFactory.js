@@ -181,11 +181,15 @@ function setupLocalPresetTaskFactory(
                     });
                   }
 
-                  const drivePrettyLogFile = path.join(HOME_DIR_PATH, 'logs', config.getName(), 'drive_pretty.log');
-                  const driveJsonLogFile = path.join(HOME_DIR_PATH, 'logs', config.getName(), 'drive_json.log');
+                  if (!config.get('platform.drive.abci.log.prettyFile.path')) {
+                    const drivePrettyLogFile = path.join(HOME_DIR_PATH, 'logs', config.getName(), 'drive_pretty.log');
+                    config.set('platform.drive.abci.log.prettyFile.path', drivePrettyLogFile);
+                  }
 
-                  config.set('platform.drive.abci.log.prettyFile.path', drivePrettyLogFile);
-                  config.set('platform.drive.abci.log.jsonFile.path', driveJsonLogFile);
+                  if (!config.get('platform.drive.abci.log.jsonFile.path')) {
+                    const driveJsonLogFile = path.join(HOME_DIR_PATH, 'logs', config.getName(), 'drive_json.log');
+                    config.set('platform.drive.abci.log.jsonFile.path', driveJsonLogFile);
+                  }
 
                   config.set('platform.dpns.masterPublicKey', dpnsDerivedPrivateKey.privateKey.toPublicKey().toString());
                   config.set('platform.featureFlags.masterPublicKey', featureFlagsDerivedPrivateKey.privateKey.toPublicKey().toString());

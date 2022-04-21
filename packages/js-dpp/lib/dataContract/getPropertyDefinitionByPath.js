@@ -3,7 +3,7 @@ const baseDocumentSchema = require('../../schema/document/documentBase.json');
 /**
  * Get user property definition
  *
- * @typeof getPropertyDefinitionByPath
+ * @typeof {getPropertyDefinitionByPath}
  * @param {Object} documentDefinition
  * @param {string} path
  *

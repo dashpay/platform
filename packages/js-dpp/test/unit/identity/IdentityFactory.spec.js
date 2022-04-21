@@ -204,7 +204,7 @@ describe('IdentityFactory', () => {
       const stateTransition = factory.createIdentityCreateTransition(identity);
 
       expect(stateTransition).to.be.instanceOf(IdentityCreateTransition);
-      expect(stateTransition.getPublicKeys()).to.equal(identity.getPublicKeys());
+      expect(stateTransition.getPublicKeys()).to.deep.equal(identity.getPublicKeys());
       expect(stateTransition.getAssetLockProof().toObject())
         .to.deep.equal(instantAssetLockProof.toObject());
     });
@@ -220,7 +220,7 @@ describe('IdentityFactory', () => {
       const stateTransition = factory.createIdentityCreateTransition(identity);
 
       expect(stateTransition).to.be.instanceOf(IdentityCreateTransition);
-      expect(stateTransition.getPublicKeys()).to.equal(identity.getPublicKeys());
+      expect(stateTransition.getPublicKeys()).deep.to.equal(identity.getPublicKeys());
       expect(stateTransition.getAssetLockProof().toObject())
         .to.deep.equal(chainAssetLockProof.toObject());
     });
@@ -245,14 +245,14 @@ describe('IdentityFactory', () => {
     it('should create IdentityUpdateTransition', () => {
       const revision = 1;
       const disablePublicKeys = [identity.getPublicKeyById(0)];
-      const addPublicKeys = [{
+      const addPublicKeys = [new IdentityPublicKey({
         id: 0,
         type: IdentityPublicKey.TYPES.ECDSA_SECP256K1,
         data: Buffer.from('AuryIuMtRrl/VviQuyLD1l4nmxi9ogPzC9LT7tdpo0di', 'base64'),
         purpose: IdentityPublicKey.PURPOSES.AUTHENTICATION,
         securityLevel: IdentityPublicKey.SECURITY_LEVELS.MASTER,
         readOnly: false,
-      }];
+      })];
 
       const stateTransition = factory
         .createIdentityUpdateTransition(

@@ -33,6 +33,8 @@ export default async function register(
     const { identity, identityCreateTransition, identityIndex } = await createIdentityCreateTransition(
         this, assetLockProof, assetLockPrivateKey
     );
+
+
     await broadcastStateTransition(this, identityCreateTransition);
 
     // If state transition was broadcast without any errors, import identity to the account
@@ -42,6 +44,15 @@ export default async function register(
       identity.getId().toString(),
       identityIndex,
     );
+
+    // Current identity object will not have metadata or balance information
+    const registeredIdentity = await this.identities.get(identity.getId().toString());
+
+    // We cannot just return registeredIdentity as we want to
+    // keep additional information (assetLockProof and transaction) instance
+    identity.setMetadata(registeredIdentity.getMetadata());
+    identity.setBalance(registeredIdentity.getBalance());
+    identity.setPublicKeys(registeredIdentity.getPublicKeys());
 
     return identity;
 }

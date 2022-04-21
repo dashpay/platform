@@ -10,6 +10,7 @@ const convertBuffersToArrays = require('../../../../../util/convertBuffersToArra
  * } validateRequiredPurposeAndSecurityLevel
  * @param {Object.<number, Function>} proofValidationFunctionsByType
  * @param {validateProtocolVersion} validateProtocolVersion
+ * @param {validatePublicKeySignatures} validatePublicKeySignatures
  *
  * @return {validateIdentityCreateTransitionBasic}
  */
@@ -19,6 +20,7 @@ function validateIdentityCreateTransitionBasicFactory(
   validateRequiredPurposeAndSecurityLevel,
   proofValidationFunctionsByType,
   validateProtocolVersion,
+  validatePublicKeySignatures,
 ) {
   /**
    * @typedef validateIdentityCreateTransitionBasic
@@ -45,8 +47,20 @@ function validateIdentityCreateTransitionBasicFactory(
     }
 
     result.merge(
-      validatePublicKeys(rawStateTransition.publicKeys, { mustBeEnabled: true }),
+      validatePublicKeys(rawStateTransition.publicKeys),
     );
+
+    if (!result.isValid()) {
+      return result;
+    }
+
+    result.merge(
+      await validatePublicKeySignatures(rawStateTransition, rawStateTransition.publicKeys),
+    );
+
+    if (!result.isValid()) {
+      return result;
+    }
 
     result.merge(
       validateRequiredPurposeAndSecurityLevel(rawStateTransition.publicKeys),

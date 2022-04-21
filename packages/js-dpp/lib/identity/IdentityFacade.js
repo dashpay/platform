@@ -5,6 +5,8 @@ const validateIdentityFactory = require('./validation/validateIdentityFactory');
 const validatePublicKeysFactory = require('./validation/validatePublicKeysFactory');
 const decodeProtocolEntityFactory = require('../decodeProtocolEntityFactory');
 
+const publicKeyJsonSchema = require('../../schema/identity/publicKey.json');
+
 const protocolVersion = require('../version/protocolVersion');
 const validateProtocolVersionFactory = require('../version/validateProtocolVersionFactory');
 
@@ -20,6 +22,7 @@ class IdentityFacade {
   constructor(dpp, bls) {
     const validatePublicKeys = validatePublicKeysFactory(
       dpp.getJsonSchemaValidator(),
+      publicKeyJsonSchema,
       bls,
     );
 

@@ -191,7 +191,7 @@ class IdentityUpdateTransition extends AbstractStateTransitionIdentitySigned {
 
     if (this.getPublicKeysToAdd()) {
       rawStateTransition.addPublicKeys = this.getPublicKeysToAdd()
-        .map((publicKey) => publicKey.toObject());
+        .map((publicKey) => publicKey.toObject(options));
     }
 
     if (this.getPublicKeyIdsToDisable()) {
