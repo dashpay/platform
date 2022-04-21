@@ -10,3 +10,4 @@ mod data_contract_factory;
 pub use data_contract_factory::*;
 
 pub mod get_binary_properties_from_schema;
+pub mod get_property_definition_by_path;

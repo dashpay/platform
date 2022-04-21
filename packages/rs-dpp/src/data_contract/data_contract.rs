@@ -14,7 +14,6 @@ use serde_json::Value as JsonValue;
 use std::collections::BTreeMap;
 use std::convert::TryFrom;
 
-// TODO probably this need to be changed
 pub type JsonSchema = JsonValue;
 type DocumentType = String;
 type PropertyPath = String;
