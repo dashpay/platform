@@ -114,16 +114,3 @@ macro_rules! assert_consensus_errors {
         errors
     }};
 }
-
-/// Checks the variant of all errors in the array, asserts error count and
-/// returns unwrapped errors
-pub fn assert_json_schema_error(
-    result: &ValidationResult,
-    expected_errors_count: usize,
-) -> Vec<&JsonSchemaError> {
-    assert_consensus_errors!(
-        result,
-        ConsensusError::JsonSchemaError,
-        expected_errors_count
-    )
-}

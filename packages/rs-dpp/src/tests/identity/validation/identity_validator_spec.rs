@@ -1,8 +1,9 @@
 use crate::identity::validation::{IdentityValidator, PublicKeysValidator};
-use crate::tests::utils::assert_json_schema_error;
 use crate::version::ProtocolVersionValidator;
 use serde_json::Value;
 use std::sync::Arc;
+use crate::assert_consensus_errors;
+use crate::errors::consensus::ConsensusError;
 
 fn setup_test() -> (Value, IdentityValidator<PublicKeysValidator>) {
     let protocol_version_validator = ProtocolVersionValidator::default();
@@ -19,8 +20,10 @@ fn setup_test() -> (Value, IdentityValidator<PublicKeysValidator>) {
 
 pub mod protocol_version {
     use crate::tests::identity::validation::identity_validator_spec::setup_test;
-    use crate::tests::utils::{assert_json_schema_error, serde_remove, serde_set};
+    use crate::tests::utils::{serde_remove, serde_set};
     use jsonschema::error::ValidationErrorKind;
+    use crate::assert_consensus_errors;
+    use crate::consensus::ConsensusError;
 
     #[test]
     pub fn should_be_present() {
@@ -29,7 +32,7 @@ pub mod protocol_version {
 
         let result = identity_validator.validate_identity(&identity).unwrap();
 
-        let errors = assert_json_schema_error(&result, 1);
+        let errors = assert_consensus_errors!(&result, ConsensusError::JsonSchemaError, 1);
         let error = errors.first().unwrap();
 
         assert_eq!(error.keyword().unwrap(), "required");
@@ -50,7 +53,7 @@ pub mod protocol_version {
 
         let result = identity_validator.validate_identity(&identity).unwrap();
 
-        let errors = assert_json_schema_error(&result, 1);
+        let errors = assert_consensus_errors!(&result, ConsensusError::JsonSchemaError, 1);
         let error = errors.first().unwrap();
 
         assert_eq!(error.keyword().unwrap(), "type");
@@ -64,7 +67,7 @@ pub mod protocol_version {
 
         let result = identity_validator.validate_identity(&identity).unwrap();
 
-        let errors = assert_json_schema_error(&result, 1);
+        let errors = assert_consensus_errors!(&result, ConsensusError::JsonSchemaError, 1);
         let error = errors.first().unwrap();
 
         assert_eq!(error.keyword().unwrap(), "minimum");
@@ -75,7 +78,7 @@ pub mod protocol_version {
 pub mod id {
     use crate::consensus::ConsensusError;
     use crate::tests::identity::validation::identity_validator_spec::setup_test;
-    use crate::tests::utils::{assert_json_schema_error, serde_remove, serde_set};
+    use crate::tests::utils::{serde_remove, serde_set};
     use jsonschema::error::ValidationErrorKind;
     use serde_json::Value;
     use crate::assert_consensus_errors;
@@ -87,7 +90,7 @@ pub mod id {
 
         let result = identity_validator.validate_identity(&identity).unwrap();
 
-        let errors = assert_json_schema_error(&result, 1);
+        let errors = assert_consensus_errors!(&result, ConsensusError::JsonSchemaError, 1);
         let error = errors.first().unwrap();
 
         assert_eq!(error.keyword().unwrap(), "required");
@@ -122,7 +125,7 @@ pub mod id {
 
         let result = identity_validator.validate_identity(&identity).unwrap();
 
-        let errors = assert_json_schema_error(&result, 1);
+        let errors = assert_consensus_errors!(&result, ConsensusError::JsonSchemaError, 1);
         let error = errors.first().unwrap();
 
         assert_eq!(error.keyword().unwrap(), "minItems");
@@ -136,7 +139,7 @@ pub mod id {
 
         let result = identity_validator.validate_identity(&identity).unwrap();
 
-        let errors = assert_json_schema_error(&result, 1);
+        let errors = assert_consensus_errors!(&result, ConsensusError::JsonSchemaError, 1);
         let error = errors.first().unwrap();
 
         assert_eq!(error.keyword().unwrap(), "maxItems");
@@ -146,8 +149,10 @@ pub mod id {
 
 pub mod balance {
     use crate::tests::identity::validation::identity_validator_spec::setup_test;
-    use crate::tests::utils::{assert_json_schema_error, serde_remove, serde_set};
+    use crate::tests::utils::{serde_remove, serde_set};
     use jsonschema::error::ValidationErrorKind;
+    use crate::assert_consensus_errors;
+    use crate::errors::consensus::ConsensusError;
 
     #[test]
     pub fn should_be_present() {
@@ -156,7 +161,7 @@ pub mod balance {
 
         let result = identity_validator.validate_identity(&identity).unwrap();
 
-        let errors = assert_json_schema_error(&result, 1);
+        let errors = assert_consensus_errors!(&result, ConsensusError::JsonSchemaError, 1);
         let error = errors.first().unwrap();
 
         assert_eq!(error.keyword().unwrap(), "required");
@@ -177,7 +182,7 @@ pub mod balance {
 
         let result = identity_validator.validate_identity(&identity).unwrap();
 
-        let errors = assert_json_schema_error(&result, 1);
+        let errors = assert_consensus_errors!(&result, ConsensusError::JsonSchemaError, 1);
         let error = errors.first().unwrap();
 
         assert_eq!(error.keyword().unwrap(), "type");
@@ -191,7 +196,7 @@ pub mod balance {
 
         let result = identity_validator.validate_identity(&identity).unwrap();
 
-        let errors = assert_json_schema_error(&result, 1);
+        let errors = assert_consensus_errors!(&result, ConsensusError::JsonSchemaError, 1);
         let error = errors.first().unwrap();
 
         assert_eq!(error.keyword().unwrap(), "minimum");
@@ -206,9 +211,11 @@ pub mod balance {
 
 pub mod public_keys {
     use crate::tests::identity::validation::identity_validator_spec::setup_test;
-    use crate::tests::utils::{assert_json_schema_error, serde_remove, serde_set};
+    use crate::tests::utils::{serde_remove, serde_set};
     use jsonschema::error::ValidationErrorKind;
     use serde_json::Value;
+    use crate::assert_consensus_errors;
+    use crate::errors::consensus::ConsensusError;
 
     #[test]
     pub fn should_be_present() {
@@ -217,7 +224,7 @@ pub mod public_keys {
 
         let result = identity_validator.validate_identity(&identity).unwrap();
 
-        let errors = assert_json_schema_error(&result, 1);
+        let errors = assert_consensus_errors!(&result, ConsensusError::JsonSchemaError, 1);
         let error = errors.first().unwrap();
 
         assert_eq!(error.keyword().unwrap(), "required");
@@ -238,7 +245,7 @@ pub mod public_keys {
 
         let result = identity_validator.validate_identity(&identity).unwrap();
 
-        let errors = assert_json_schema_error(&result, 1);
+        let errors = assert_consensus_errors!(&result, ConsensusError::JsonSchemaError, 1);
         let error = errors.first().unwrap();
 
         assert_eq!(error.keyword().unwrap(), "type");
@@ -252,7 +259,7 @@ pub mod public_keys {
 
         let result = identity_validator.validate_identity(&identity).unwrap();
 
-        let errors = assert_json_schema_error(&result, 1);
+        let errors = assert_consensus_errors!(&result, ConsensusError::JsonSchemaError, 1);
         let error = errors.first().unwrap();
 
         assert_eq!(error.keyword().unwrap(), "minItems");
@@ -280,7 +287,7 @@ pub mod public_keys {
 
         let result = identity_validator.validate_identity(&identity).unwrap();
 
-        let errors = assert_json_schema_error(&result, 1);
+        let errors = assert_consensus_errors!(&result, ConsensusError::JsonSchemaError, 1);
         let error = errors.first().unwrap();
 
         assert_eq!(error.keyword().unwrap(), "uniqueItems");
@@ -308,7 +315,7 @@ pub mod public_keys {
 
         let result = identity_validator.validate_identity(&identity).unwrap();
 
-        let errors = assert_json_schema_error(&result, 2);
+        let errors = assert_consensus_errors!(&result, ConsensusError::JsonSchemaError, 2);
         let error = errors.first().unwrap();
 
         assert_eq!(error.keyword().unwrap(), "maxItems");
@@ -318,8 +325,10 @@ pub mod public_keys {
 
 pub mod revision {
     use crate::tests::identity::validation::identity_validator_spec::setup_test;
-    use crate::tests::utils::{assert_json_schema_error, serde_remove, serde_set};
+    use crate::tests::utils::{serde_remove, serde_set};
     use jsonschema::error::ValidationErrorKind;
+    use crate::assert_consensus_errors;
+    use crate::errors::consensus::ConsensusError;
 
     // revision tests
     #[test]
@@ -329,7 +338,7 @@ pub mod revision {
 
         let result = identity_validator.validate_identity(&identity).unwrap();
 
-        let errors = assert_json_schema_error(&result, 1);
+        let errors = assert_consensus_errors!(&result, ConsensusError::JsonSchemaError, 1);
         let error = errors.first().unwrap();
 
         assert_eq!(error.keyword().unwrap(), "required");
@@ -350,7 +359,7 @@ pub mod revision {
         identity = serde_set(identity, "revision", 1.2);
 
         let result = identity_validator.validate_identity(&identity).unwrap();
-        let errors = assert_json_schema_error(&result, 1);
+        let errors = assert_consensus_errors!(&result, ConsensusError::JsonSchemaError, 1);
 
         let error = errors
             .first()
@@ -367,7 +376,7 @@ pub mod revision {
         identity = serde_set(identity, "revision", -1);
 
         let result = identity_validator.validate_identity(&identity).unwrap();
-        let errors = assert_json_schema_error(&result, 1);
+        let errors = assert_consensus_errors!(&result, ConsensusError::JsonSchemaError, 1);
 
         let error = errors
             .first()
@@ -389,7 +398,7 @@ pub fn should_return_valid_result_if_a_raw_identity_is_valid() {
     let (identity, identity_validator) = setup_test();
 
     let result = identity_validator.validate_identity(&identity).unwrap();
-    assert_json_schema_error(&result, 0);
+    assert_consensus_errors!(&result, ConsensusError::JsonSchemaError, 0);
 
     assert!(result.is_valid());
 }
