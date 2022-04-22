@@ -1,5 +1,6 @@
 use anyhow::{anyhow, bail};
-use std::{collections::BTreeMap, convert::TryInto};
+use chrono::format::Item;
+use std::{collections::BTreeMap, convert::TryInto, ops::BitOrAssign};
 
 use log::trace;
 use serde_json::Value as JsonValue;
@@ -30,9 +31,29 @@ pub trait JsonValueSchemaExt {
     fn is_byte_array(&self) -> bool;
     /// returns the properties of Json Schema object
     fn get_schema_properties(&self) -> Result<&JsonValue, anyhow::Error>;
+    /// returns the required fields of Json Schema object
+    fn get_schema_required_fields(&self) -> Result<Vec<&str>, anyhow::Error>;
 }
 
 impl JsonValueSchemaExt for JsonValue {
+    fn get_schema_required_fields(&self) -> Result<Vec<&str>, anyhow::Error> {
+        if let JsonValue::Object(ref map) = self {
+            let required = map.get("required");
+            if required.is_none() {
+                return Ok(vec![]);
+            }
+            if let JsonValue::Array(required_list) = required.unwrap() {
+                return required_list
+                    .iter()
+                    .map(|v| v.as_str())
+                    .collect::<Option<Vec<&str>>>()
+                    .ok_or_else(|| anyhow!("unable to convert list of required fields to string"));
+            }
+            bail!("the 'required' property is not array");
+        }
+        bail!("the json value is not a map");
+    }
+
     fn is_type_of_object(&self) -> bool {
         if let JsonValue::Object(ref map) = self {
             if let Some(JsonValue::String(schema_type)) = map.get("type") {
