@@ -16,13 +16,9 @@ impl JsonSchemaValidator {
             schema: None,
         };
 
-        println!("1");
-
         // BYTE_ARRAY META SCHEMA
         // let schema_clone = &json_schema_validator.raw_schema_json.clone();
         // let res = byte_array_meta::validate(&schema_clone);
-        //
-        // println!("2");
         //
         // match res {
         //     Ok(_) => {}
@@ -31,8 +27,6 @@ impl JsonSchemaValidator {
         //     }
         // }
         // BYTE_ARRAY META SCHEMA END
-
-        println!("3");
 
         let json_schema = JSONSchema::options()
             .add_keyword(
@@ -46,8 +40,6 @@ impl JsonSchemaValidator {
                 })),
             )
             .compile(&json_schema_validator.raw_schema_json)?;
-
-        println!("4");
 
         json_schema_validator.schema = Some(json_schema);
 
