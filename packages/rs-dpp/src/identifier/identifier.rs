@@ -10,7 +10,7 @@ pub const MEDIA_TYPE: &str = "application/x.dash.dpp.identifier";
 
 #[derive(Default, Debug, Clone, PartialEq, Eq)]
 pub struct Identifier {
-    buffer: [u8; 32],
+    pub buffer: [u8; 32],
 }
 
 fn encoding_string_to_encoding(encoding_string: Option<&str>) -> Encoding {
