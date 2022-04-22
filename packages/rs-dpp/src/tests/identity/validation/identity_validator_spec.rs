@@ -78,6 +78,7 @@ pub mod id {
     use crate::tests::utils::{assert_json_schema_error, serde_remove, serde_set};
     use jsonschema::error::ValidationErrorKind;
     use serde_json::Value;
+    use crate::assert_consensus_errors;
 
     #[test]
     pub fn should_be_present() {
@@ -102,38 +103,16 @@ pub mod id {
 
     #[test]
     pub fn should_be_a_byte_array() {
-        // TODO: fix this test
         let (mut identity, identity_validator) = setup_test();
         identity = serde_set(identity, "id", vec![Value::from("string"); 32]);
 
-        let result = identity_validator.validate_identity(&identity);
+        let result = identity_validator.validate_identity(&identity).unwrap();
+        let errors = assert_consensus_errors!(&result, ConsensusError::JsonSchemaError, 32);
 
-        //assert_json_schema_error(&result, 2);
-
-        let validation_result = result.unwrap();
-
-        let error = validation_result
-            .errors()
-            .first()
-            .expect("Expected to be at least one validation error");
-        let byte_array_error = validation_result.errors().last().unwrap();
-
-        match error {
-            ConsensusError::JsonSchemaError(error) => {
-                let keyword = error.keyword().expect("Expected to have a keyword");
-
-                assert_eq!(keyword, "type");
-                assert_eq!(error.instance_path().to_string(), "/id/0");
-            }
-            _ => {
-                panic!("Expected JSON schema error")
-            }
+        for (i, err) in errors.iter().enumerate() {
+            assert_eq!(err.instance_path().to_string(), format!("/id/{}", i));
+            assert_eq!(err.keyword().unwrap(), "type");
         }
-
-        let err = byte_array_error
-            .json_schema_error()
-            .expect("Expected to be a JsonSchemaError");
-        assert_eq!(err.keyword(), Some("byteArray"))
     }
 
     #[test]

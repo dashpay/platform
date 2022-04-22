@@ -78,6 +78,17 @@ pub fn decode_hex(s: &str) -> Result<Vec<u8>, ParseIntError> {
         .collect()
 }
 
+fn byte_to_hex(byte: &u8) -> String {
+    format!("{:02x}", byte)
+}
+
+/// Serializes bytes into a hex string
+pub fn encode_hex<T: Clone + Into<Vec<u8>>>(bytes: &T) -> String {
+    let hex_vec: Vec<String> = bytes.clone().into().iter().map(byte_to_hex).collect();
+
+    hex_vec.join("")
+}
+
 /// Assert that all validation error belong to a certain enum variant and
 /// extracts all the errors from enum to a vector
 #[macro_export]
