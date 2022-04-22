@@ -3,9 +3,7 @@ use crate::consensus::ConsensusError;
 use crate::identity::validation::PublicKeysValidator;
 use crate::identity::validation::TPublicKeysValidator;
 use crate::identity::{KeyType, Purpose, SecurityLevel};
-use crate::tests::utils::{
-    decode_hex, serde_set_ref,
-};
+use crate::tests::utils::{decode_hex, serde_set_ref};
 use serde_json::{json, Value};
 
 fn setup_test() -> (Vec<Value>, PublicKeysValidator) {
@@ -181,10 +179,10 @@ pub mod data {
 
     pub mod ecdsa_secp256k1 {
         use crate::assert_consensus_errors;
+        use crate::errors::consensus::ConsensusError;
         use crate::identity::validation::TPublicKeysValidator;
         use crate::tests::identity::validation::public_keys_validator_spec::setup_test;
-        use crate::tests::utils::{serde_set_ref};
-        use crate::errors::consensus::ConsensusError;
+        use crate::tests::utils::serde_set_ref;
 
         #[test]
         pub fn should_be_no_less_than_33_bytes() {
@@ -215,10 +213,10 @@ pub mod data {
 
     pub mod bls12_381 {
         use crate::assert_consensus_errors;
+        use crate::errors::consensus::ConsensusError;
         use crate::identity::validation::TPublicKeysValidator;
         use crate::tests::identity::validation::public_keys_validator_spec::setup_test;
-        use crate::tests::utils::{serde_set_ref};
-        use crate::errors::consensus::ConsensusError;
+        use crate::tests::utils::serde_set_ref;
 
         #[test]
         pub fn should_be_no_less_than_48_bytes() {
