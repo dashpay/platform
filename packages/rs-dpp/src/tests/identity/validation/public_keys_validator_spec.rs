@@ -28,7 +28,7 @@ pub mod id {
     use crate::errors::consensus::ConsensusError;
     use crate::identity::validation::TPublicKeysValidator;
     use crate::tests::identity::validation::public_keys_validator_spec::setup_test;
-    use crate::tests::utils::{assert_json_schema_error, serde_remove_ref, serde_set_ref};
+    use crate::tests::utils::{serde_remove_ref, serde_set_ref};
     use jsonschema::error::ValidationErrorKind;
 
     #[test]
@@ -57,7 +57,7 @@ pub mod id {
         serde_set_ref(raw_public_keys.get_mut(1).unwrap(), "id", "string");
 
         let result = validator.validate_keys(&raw_public_keys).unwrap();
-        let errors = assert_json_schema_error(&result, 1);
+        let errors = assert_consensus_errors!(&result, ConsensusError::JsonSchemaError, 1);
         let error = errors.get(0).unwrap();
 
         assert_eq!(error.instance_path().to_string(), "/id");
@@ -70,7 +70,7 @@ pub mod id {
         serde_set_ref(raw_public_keys.get_mut(1).unwrap(), "id", 1.1);
 
         let result = validator.validate_keys(&raw_public_keys).unwrap();
-        let errors = assert_json_schema_error(&result, 1);
+        let errors = assert_consensus_errors!(&result, ConsensusError::JsonSchemaError, 1);
         let error = errors.get(0).unwrap();
 
         assert_eq!(error.instance_path().to_string(), "/id");
@@ -83,7 +83,7 @@ pub mod id {
         serde_set_ref(raw_public_keys.get_mut(1).unwrap(), "id", -1);
 
         let result = validator.validate_keys(&raw_public_keys).unwrap();
-        let errors = assert_json_schema_error(&result, 1);
+        let errors = assert_consensus_errors!(&result, ConsensusError::JsonSchemaError, 1);
         let error = errors.get(0).unwrap();
 
         assert_eq!(error.instance_path().to_string(), "/id");
@@ -180,9 +180,11 @@ pub mod data {
     }
 
     pub mod ecdsa_secp256k1 {
+        use crate::assert_consensus_errors;
         use crate::identity::validation::TPublicKeysValidator;
         use crate::tests::identity::validation::public_keys_validator_spec::setup_test;
-        use crate::tests::utils::{assert_json_schema_error, serde_set_ref};
+        use crate::tests::utils::{serde_set_ref};
+        use crate::errors::consensus::ConsensusError;
 
         #[test]
         pub fn should_be_no_less_than_33_bytes() {
@@ -190,7 +192,7 @@ pub mod data {
             serde_set_ref(raw_public_keys.get_mut(1).unwrap(), "data", vec![0; 32]);
 
             let result = validator.validate_keys(&raw_public_keys).unwrap();
-            let errors = assert_json_schema_error(&result, 1);
+            let errors = assert_consensus_errors!(&result, ConsensusError::JsonSchemaError, 1);
             let error = errors.get(0).unwrap();
 
             assert_eq!(error.instance_path().to_string(), "/data");
@@ -203,7 +205,7 @@ pub mod data {
             serde_set_ref(raw_public_keys.get_mut(1).unwrap(), "data", vec![0; 34]);
 
             let result = validator.validate_keys(&raw_public_keys).unwrap();
-            let errors = assert_json_schema_error(&result, 1);
+            let errors = assert_consensus_errors!(&result, ConsensusError::JsonSchemaError, 1);
             let error = errors.get(0).unwrap();
 
             assert_eq!(error.instance_path().to_string(), "/data");
@@ -212,9 +214,11 @@ pub mod data {
     }
 
     pub mod bls12_381 {
+        use crate::assert_consensus_errors;
         use crate::identity::validation::TPublicKeysValidator;
         use crate::tests::identity::validation::public_keys_validator_spec::setup_test;
-        use crate::tests::utils::{assert_json_schema_error, serde_set_ref};
+        use crate::tests::utils::{serde_set_ref};
+        use crate::errors::consensus::ConsensusError;
 
         #[test]
         pub fn should_be_no_less_than_48_bytes() {
@@ -223,7 +227,7 @@ pub mod data {
             serde_set_ref(raw_public_keys.get_mut(1).unwrap(), "type", 1);
 
             let result = validator.validate_keys(&raw_public_keys).unwrap();
-            let errors = assert_json_schema_error(&result, 1);
+            let errors = assert_consensus_errors!(&result, ConsensusError::JsonSchemaError, 1);
             let error = errors.get(0).unwrap();
 
             assert_eq!(error.instance_path().to_string(), "/data");
@@ -237,7 +241,7 @@ pub mod data {
             serde_set_ref(raw_public_keys.get_mut(1).unwrap(), "type", 1);
 
             let result = validator.validate_keys(&raw_public_keys).unwrap();
-            let errors = assert_json_schema_error(&result, 1);
+            let errors = assert_consensus_errors!(&result, ConsensusError::JsonSchemaError, 1);
             let error = errors.get(0).unwrap();
 
             assert_eq!(error.instance_path().to_string(), "/data");
