@@ -6,6 +6,7 @@ pub const IDENTITY_JSON_STRING: &'static str = r#"{
   "properties": {
     "protocolVersion": {
       "type": "integer",
+      "minimum": 0,
       "$comment": "Maximum is the latest protocol version"
     },
     "id": {

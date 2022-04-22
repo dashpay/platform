@@ -67,7 +67,7 @@ pub mod protocol_version {
         let errors = assert_json_schema_error(&result, 1);
         let error = errors.first().unwrap();
 
-        assert_eq!(error.keyword().unwrap(), "type");
+        assert_eq!(error.keyword().unwrap(), "minimum");
         assert_eq!(error.instance_path().to_string(), "/protocolVersion");
     }
 }
