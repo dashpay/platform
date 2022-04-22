@@ -7,7 +7,7 @@ use crate::validation::{JsonSchemaValidator, ValidationResult};
 use crate::{DashPlatformProtocolInitError, NonConsensusError, PublicKeyValidationError};
 use bls_signatures::{PublicKey as BlsPublicKey, Serialize};
 use libsecp256k1::PublicKey;
-use serde_json::{Value};
+use serde_json::Value;
 use std::collections::HashMap;
 
 pub trait TPublicKeysValidator {
@@ -72,9 +72,7 @@ impl TPublicKeysValidator for PublicKeysValidator {
                 }
                 KeyType::BLS12_381 => match BlsPublicKey::from_bytes(&public_key.data) {
                     Ok(_) => None,
-                    Err(e) => {
-                        Some(PublicKeyValidationError::new(e.to_string()))
-                    },
+                    Err(e) => Some(PublicKeyValidationError::new(e.to_string())),
                 },
                 // Do nothing
                 KeyType::ECDSA_HASH160 => None,
