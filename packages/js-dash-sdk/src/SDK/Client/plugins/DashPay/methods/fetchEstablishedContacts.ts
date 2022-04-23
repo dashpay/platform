@@ -1,6 +1,6 @@
 import { Contact } from "../types/Contact";
 import { HDPublicKey } from "@dashevo/dashcore-lib";
-import {KeyChain} from "@dashevo/wallet-lib";
+import {DerivableKeyChain} from "@dashevo/wallet-lib";
 
 /**
  * Fetch establish contact from a specific timestamp
@@ -102,9 +102,9 @@ export async function fetchEstablishedContacts(this: any, fromTimestamp = 0) {
         isWatched: true
       }
       //@ts-ignore
-      const sendingKeyChain = new KeyChain({HDPublicKey: receivedContactPublicKey, lookAheadOpts });
+      const sendingKeyChain = new DerivableKeyChain({HDPublicKey: receivedContactPublicKey, lookAheadOpts });
       //@ts-ignore
-      const receivingKeyChain = new KeyChain({HDPublicKey: extendedPrivateKey, lookAheadOpts });
+      const receivingKeyChain = new DerivableKeyChain({HDPublicKey: extendedPrivateKey, lookAheadOpts });
       //@ts-ignore
       const issuedSendingKeyChainPaths = sendingKeyChain.getIssuedPaths();
       //@ts-ignore

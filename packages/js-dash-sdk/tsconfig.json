@@ -1,6 +1,6 @@
 {
+  "//": "ES2017 from es5 is required in order to have usage of super().",
   "compilerOptions": {
-    "//": "ES2017 from es5 is required in order to have usage of super().",
     "target": "es2017",
     "module": "commonjs",
     "lib": ["es6"],

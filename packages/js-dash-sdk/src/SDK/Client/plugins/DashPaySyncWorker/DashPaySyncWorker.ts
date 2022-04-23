@@ -1,4 +1,4 @@
-import {KeyChain, plugins} from "@dashevo/wallet-lib"
+import { plugins} from "@dashevo/wallet-lib"
 
 export class DashPaySyncWorker extends plugins.Worker {
   private fromTimestamp: number;

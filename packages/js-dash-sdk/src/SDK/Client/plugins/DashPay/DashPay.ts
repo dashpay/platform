@@ -11,6 +11,7 @@ import { fetchEstablishedContacts } from "./methods/fetchEstablishedContacts";
 import { fetchProfile } from "./methods/fetchProfile";
 import { fetchReceivedContactRequests } from "./methods/fetchReceivedContactRequests";
 import { fetchSentContactRequests } from "./methods/fetchSentContactRequests";
+import { getTransactionHistory } from "./methods/getTransactionHistory";
 import { sendContactRequest } from "./methods/sendContactRequest";
 
 export class DashPay extends plugins.StandardPlugin {
@@ -25,6 +26,7 @@ export class DashPay extends plugins.StandardPlugin {
   fetchProfile: any;
   fetchReceivedContactRequests: any;
   fetchSentContactRequests: any;
+  getTransactionHistory: any;
   sendContactRequest: any;
   private contacts: any[];
   constructor() {
@@ -51,6 +53,7 @@ export class DashPay extends plugins.StandardPlugin {
     this.contacts = []
   }
 }
+
 DashPay.prototype.acceptContactRequest = acceptContactRequest;
 DashPay.prototype.createAccountReference = createAccountReference;
 DashPay.prototype.decryptAccountLabel = decryptAccountLabel;
@@ -62,4 +65,5 @@ DashPay.prototype.fetchEstablishedContacts = fetchEstablishedContacts;
 DashPay.prototype.fetchProfile = fetchProfile;
 DashPay.prototype.fetchReceivedContactRequests = fetchReceivedContactRequests;
 DashPay.prototype.fetchSentContactRequests = fetchSentContactRequests;
+DashPay.prototype.getTransactionHistory = getTransactionHistory;
 DashPay.prototype.sendContactRequest = sendContactRequest;
