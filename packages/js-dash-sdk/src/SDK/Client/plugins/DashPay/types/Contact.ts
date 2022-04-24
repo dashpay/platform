@@ -42,4 +42,9 @@ export class Contact {
     const keychain = this.keychains[type];
     return keychain.getFirstUnusedAddress();
   }
+  getWatchedAddresses(type = 'receiving'){
+    const keychain = this.keychains[type];
+    return keychain.getWatchedAddresses();
+  }
+
 }
