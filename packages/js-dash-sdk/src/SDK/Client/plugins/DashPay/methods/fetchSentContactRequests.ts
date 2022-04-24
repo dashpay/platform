@@ -13,7 +13,8 @@ export async function fetchSentContactRequests(this: any, fromTimestamp = 0){
   return this.platform.documents.get('dashpay.contactRequest', {
     where: [
       ['$ownerId', '==', senderIdentity.getId()],
-      ['$createdAt', '>', fromTimestamp]
+      // FIXME: #177 disabled this
+      // ['$createdAt', '>', fromTimestamp]
     ],
   });
 }
