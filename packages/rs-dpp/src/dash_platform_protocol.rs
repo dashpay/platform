@@ -37,7 +37,7 @@ impl DashPlatformProtocol {
 }
 
 pub struct DPPOptions {
-    current_protocol_version: Option<u64>,
+    pub current_protocol_version: Option<u64>,
 }
 
 impl Default for DPPOptions {
