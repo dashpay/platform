@@ -12,10 +12,15 @@ const baseConfig = {
       },
     ],
   },
+  externals: {
+    '@dashevo/wasm-re2' :'require("@dashevo/wasm-re2")'
+  },
   resolve: {
     extensions: ['.ts', '.js', '.json'],
     fallback: {
       fs: false,
+      // or require.resolve("console-browserify") } if wanted
+      console: false,
       util: require.resolve('util/'),
       crypto: require.resolve('crypto-browserify'),
       http: require.resolve('stream-http'),
