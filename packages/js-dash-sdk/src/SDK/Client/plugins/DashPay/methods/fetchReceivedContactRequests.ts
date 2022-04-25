@@ -13,8 +13,10 @@ export async function fetchReceivedContactRequests(this: any, fromTimestamp = 0)
   return this.platform.documents.get('dashpay.contactRequest', {
     where: [
       ['toUserId', '==', receiverIdentity.getId()],
-      // FIXME: #177 disabled this
-      // ['$createdAt', '>', fromTimestamp]
+      ['$createdAt', '>', fromTimestamp]
     ],
+    orderBy:[
+      ['$createdAt', 'asc']
+    ]
   });
 }

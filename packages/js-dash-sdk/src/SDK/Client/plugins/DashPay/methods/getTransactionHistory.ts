@@ -8,26 +8,25 @@ export async function getTransactionHistory(this: any){
     const receivingAddresses = contact.getWatchedAddresses('receiving');
     const sendingAddresses = contact.getWatchedAddresses('sending');
 
-    // TODO: Not for prod, only for draft purpose.
     transactionHistory.forEach((transactionItem)=>{
       transactionItem.from.forEach((fromItem)=>{
         if(receivingAddresses.includes(fromItem.address)){
-          transactionItem.addressType = 'external'
-          transactionItem.contact = contact;
+          fromItem.addressType = 'external'
+          fromItem.contact = contact;
         }
         if(sendingAddresses.includes(fromItem.address)){
-          transactionItem.addressType = 'contact'
-          transactionItem.contact = contact;
+          fromItem.addressType = 'contact'
+          fromItem.contact = contact;
         }
       })
       transactionItem.to.forEach((toItem)=>{
         if(receivingAddresses.includes(toItem.address)){
-          transactionItem.addressType = 'contact'
-          transactionItem.contact = contact;
+          toItem.addressType = 'contact'
+          toItem.contact = contact;
         }
         if(sendingAddresses.includes(toItem.address)){
-          transactionItem.addressType = 'contact'
-          transactionItem.contact = contact;
+          toItem.addressType = 'contact'
+          toItem.contact = contact;
         }
       })
     })

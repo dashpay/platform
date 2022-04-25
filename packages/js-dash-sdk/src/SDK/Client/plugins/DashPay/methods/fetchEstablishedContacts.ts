@@ -116,10 +116,20 @@ export async function fetchEstablishedContacts(this: any, fromTimestamp = 0) {
       const chainStore = this.storage.getChainStore(this.network);
 
       issuedReceivingKeyChainPaths.forEach((issuedPath) => {
-        chainStore.importAddress(issuedPath.address.toString());
+        try {
+          chainStore.importAddress(issuedPath.address.toString());
+        } catch (e) {
+          //FIXME: Address is already inserted issue to be fixed
+          console.error(e);
+        }
       });
       issuedSendingKeyChainPaths.forEach((issuedPath) => {
-        chainStore.importAddress(issuedPath.address.toString());
+        try {
+          chainStore.importAddress(issuedPath.address.toString());
+        } catch (e) {
+          //FIXME: Address is already inserted issue to be fixed
+          console.error(e);
+        }
       });
     })
   return establishedContacts;
