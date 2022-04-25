@@ -1,7 +1,7 @@
 use thiserror::Error;
 
 #[derive(Error, Debug)]
-#[error("Compatible version is not defined for protocol version {current_protocol_version:?}")]
+#[error("Compatible version is not defined for protocol version {current_protocol_version}")]
 pub struct CompatibleProtocolVersionIsNotDefinedError {
     current_protocol_version: u64,
 }
