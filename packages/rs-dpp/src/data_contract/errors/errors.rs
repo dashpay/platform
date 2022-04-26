@@ -4,7 +4,7 @@ use thiserror::Error;
 
 #[derive(Error, Debug)]
 pub enum DataContractError {
-    #[error("Data contract already exists")]
+    #[error("Data Contract already exists")]
     DataContractAlreadyExistsError,
 
     #[error("Invalid Data Contract: {errors:?}")]
