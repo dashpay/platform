@@ -1,9 +1,6 @@
 use crate::{
-    data_trigger::new_error,
-    document::document_transition::DocumentTransition,
-    get_from_transition,
-    prelude::Identifier,
-    state_repository::{SMLStoreLike, SimplifiedMNListLike, StateRepositoryLike},
+    data_trigger::new_error, document::document_transition::DocumentTransition,
+    get_from_transition, prelude::Identifier, state_repository::StateRepositoryLike,
     util::json_value::JsonValueExt,
 };
 use serde_json::Value as JsonValue;
@@ -14,15 +11,13 @@ use anyhow::{anyhow, bail, Context};
 const PROPERTY_BLOCK_HEIGHT: &str = "height";
 const PROPERTY_ENABLE_AT_HEIGHT: &str = "enableAtHeight";
 
-pub async fn create_feature_flag_data_trigger<SR, S, L>(
+pub async fn create_feature_flag_data_trigger<SR>(
     document_transition: &DocumentTransition,
-    context: &DataTriggerExecutionContext<SR, S, L>,
+    context: &DataTriggerExecutionContext<SR>,
     top_level_identity: Option<&Identifier>,
 ) -> Result<DataTriggerExecutionResult, anyhow::Error>
 where
-    L: SimplifiedMNListLike,
-    S: SMLStoreLike<L>,
-    SR: StateRepositoryLike<S, L>,
+    SR: StateRepositoryLike,
 {
     let mut result = DataTriggerExecutionResult::default();
     let top_level_identity = top_level_identity.context("Top Level Identity must be defined")?;

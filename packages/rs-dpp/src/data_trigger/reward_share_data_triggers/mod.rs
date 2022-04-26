@@ -1,9 +1,10 @@
 use crate::{
     data_trigger::new_error,
-    document::document_transition::DocumentTransition,
+    document::{document_transition::DocumentTransition, Document},
     get_from_transition,
+    mocks::SMLStore,
     prelude::Identifier,
-    state_repository::{SMLStoreLike, SimplifiedMNListLike, StateRepositoryLike},
+    state_repository::StateRepositoryLike,
     util::{json_value::JsonValueExt, string_encoding::Encoding},
 };
 
@@ -15,15 +16,13 @@ const MAX_PERCENTAGE: u64 = 10000;
 const PROPERTY_PAY_TO_ID: &str = "payToId";
 const PROPERTY_PERCENTAGE: &str = "percentage";
 
-pub async fn create_masternode_reward_shares_data_trigger<SR, S, L>(
+pub async fn create_masternode_reward_shares_data_trigger<SR>(
     document_transition: &DocumentTransition,
-    context: &DataTriggerExecutionContext<SR, S, L>,
+    context: &DataTriggerExecutionContext<SR>,
     _top_level_identity: Option<&Identifier>,
 ) -> Result<DataTriggerExecutionResult, anyhow::Error>
 where
-    L: SimplifiedMNListLike,
-    S: SMLStoreLike<L>,
-    SR: StateRepositoryLike<S, L>,
+    SR: StateRepositoryLike,
 {
     let mut result = DataTriggerExecutionResult::default();
     let owner_id = context.owner_id.to_string(Encoding::Base58);
@@ -46,8 +45,11 @@ where
     let percentage = data.get_u64(PROPERTY_PERCENTAGE)?;
 
     // Do not allow creating document if ownerId is not in SML
-    let sml_store = context.state_repository.fetch_sml_store().await?;
+    let sml_store: SMLStore = context.state_repository.fetch_sml_store().await?;
+    // it shouldn't be a JSON
+
     let valid_master_nodes_list = sml_store.get_current_sml()?.get_valid_master_nodes();
+    // we need to serialize the data
 
     let owner_id_in_sml = valid_master_nodes_list.iter().any(|entry| {
         hex::decode(&entry.pro_reg_tx_hash).expect("invalid hex value")
@@ -70,7 +72,7 @@ where
         .fetch_identity(&pay_to_identifier)
         .await?;
 
-    let documents = context
+    let documents: Vec<Document> = context
         .state_repository
         .fetch_documents(
             &context.data_contract.id,

@@ -6,11 +6,7 @@ use crate::{data_contract::DataContract, document::Document, identifier::Identif
 use anyhow::Result as AnyResult;
 
 #[async_trait]
-pub trait StateRepositoryLike<S, L>: Send
-where
-    L: SimplifiedMNListLike,
-    S: SMLStoreLike<L>,
-{
+pub trait StateRepositoryLike: Send + Sync {
     /// Fetch the Data Contract by ID
     async fn fetch_data_contract(&self, data_contract_id: &Identifier) -> AnyResult<Vec<u8>>;
 
@@ -18,12 +14,14 @@ where
     async fn store_data_contract(&self, data_contract: DataContract) -> AnyResult<()>;
 
     /// Fetch Documents by Data Contract Id and type
-    async fn fetch_documents(
+    async fn fetch_documents<D>(
         &self,
         contract_id: &Identifier,
         data_contract_type: &str,
         where_query: JsonValue,
-    ) -> AnyResult<Vec<Document>>;
+    ) -> AnyResult<Vec<D>>
+    where
+        D: for<'de> serde::de::Deserialize<'de>;
 
     /// Store Document
     async fn store_document(&self, document: &Document) -> AnyResult<()>;
@@ -51,7 +49,7 @@ where
     /// Fetch Identity Ids by Public Key hashes
     async fn fetch_identity_by_public_key_hashes(
         &self,
-        public_key_hashed: &[&[u8]],
+        public_key_hashed: Vec<Vec<u8>>,
     ) -> AnyResult<Vec<Vec<u8>>>;
 
     /// Fetch latest platform block header
@@ -73,33 +71,7 @@ where
     ) -> AnyResult<()>;
 
     /// Fetch Simplified Masternode List Store
-    async fn fetch_sml_store(&self) -> AnyResult<S>;
-}
-
-pub trait SMLStoreLike<L>: Send
-where
-    L: SimplifiedMNListLike + Send,
-{
-    fn get_sml_by_height(&self) -> AnyResult<L> {
-        unimplemented!()
-    }
-
-    fn get_current_sml(&self) -> AnyResult<L> {
-        unimplemented!()
-    }
-}
-
-pub trait SimplifiedMNListLike: Send {
-    fn get_valid_master_nodes(&self) -> Vec<SMLEntry> {
-        unimplemented!()
-    }
-}
-
-pub struct SMLEntry {
-    pub pro_reg_tx_hash: String,
-    pub confirmed_hash: String,
-    pub service: String,
-    pub pub_key_operator: String,
-    pub voting_address: String,
-    pub is_valid: bool,
+    async fn fetch_sml_store<T>(&self) -> AnyResult<T>
+    where
+        T: for<'de> serde::de::Deserialize<'de>;
 }

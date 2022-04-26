@@ -14,7 +14,7 @@ use crate::{
     document::document_transition::Action,
     errors::ProtocolError,
     prelude::Identifier,
-    state_repository::{SMLStoreLike, SimplifiedMNListLike, StateRepositoryLike},
+    state_repository::StateRepositoryLike,
     util::string_encoding::Encoding,
 };
 
@@ -24,7 +24,7 @@ macro_rules! to_boxed_data_trigger {
     ($e:expr) => {
         Box::new(
             |document_transition,
-             data_trigger_exec_context: &DataTriggerExecutionContext<SR, S, L>,
+             data_trigger_exec_context: &DataTriggerExecutionContext<SR>,
              top_level_identity| {
                 $e(
                     document_transition,
@@ -37,15 +37,13 @@ macro_rules! to_boxed_data_trigger {
     };
 }
 
-pub fn get_data_triggers<'a, SR, S, L>(
+pub fn get_data_triggers<'a, SR>(
     data_contract_id: &Identifier,
     document_type: &str,
     transition_action: Action,
-) -> Result<Vec<DataTrigger<'a, SR, S, L>>, ProtocolError>
+) -> Result<Vec<DataTrigger<'a, SR>>, ProtocolError>
 where
-    L: SimplifiedMNListLike,
-    S: SMLStoreLike<L>,
-    SR: StateRepositoryLike<S, L>,
+    SR: StateRepositoryLike,
 {
     let data_triggers = get_data_triggers_factory()?;
     Ok(data_triggers
@@ -56,12 +54,9 @@ where
         .collect())
 }
 
-pub fn get_data_triggers_factory<'a, SR, S, L>(
-) -> Result<Vec<DataTrigger<'a, SR, S, L>>, ProtocolError>
+pub fn get_data_triggers_factory<'a, SR>() -> Result<Vec<DataTrigger<'a, SR>>, ProtocolError>
 where
-    L: SimplifiedMNListLike,
-    S: SMLStoreLike<L>,
-    SR: StateRepositoryLike<S, L>,
+    SR: StateRepositoryLike,
 {
     let dpns_data_contract_id =
         Identifier::from_string(&dpns_contract::system_ids().contract_id, Encoding::Base58)?;

@@ -1,7 +1,4 @@
-use std::pin::Pin;
-
 use futures::future::LocalBoxFuture;
-use futures::Future;
 mod data_trigger_execution_context;
 
 pub mod dashpay_data_triggers;
@@ -19,38 +16,32 @@ pub use reject_data_trigger::*;
 
 use crate::document::document_transition::{Action, DocumentCreateTransition, DocumentTransition};
 use crate::{
-    errors::DataTriggerError,
-    get_from_transition,
-    prelude::Identifier,
-    state_repository::{SMLStoreLike, SimplifiedMNListLike, StateRepositoryLike},
+    errors::DataTriggerError, get_from_transition, prelude::Identifier,
+    state_repository::StateRepositoryLike,
 };
 
-pub type BoxedTrigger<'a, SR, S, L> = Box<Trigger<'a, SR, S, L>>;
-pub type Trigger<'a, SR, S, L> =
+pub type BoxedTrigger<'a, SR> = Box<Trigger<'a, SR>>;
+pub type Trigger<'a, SR> =
     dyn Fn(
         &'a DocumentTransition,
-        &'a DataTriggerExecutionContext<SR, S, L>,
+        &'a DataTriggerExecutionContext<SR>,
         Option<&'a Identifier>,
     ) -> LocalBoxFuture<'a, Result<DataTriggerExecutionResult, anyhow::Error>>;
 
-pub struct DataTrigger<'a, SR, S, L>
+pub struct DataTrigger<'a, SR>
 where
-    L: SimplifiedMNListLike,
-    S: SMLStoreLike<L>,
-    SR: StateRepositoryLike<S, L>,
+    SR: StateRepositoryLike,
 {
     pub data_contract_id: Identifier,
     pub document_type: String,
-    pub trigger: BoxedTrigger<'a, SR, S, L>,
+    pub trigger: BoxedTrigger<'a, SR>,
     pub transition_action: Action,
     pub top_level_identity: Option<Identifier>,
 }
 
-impl<'a, SR, S, L> DataTrigger<'a, SR, S, L>
+impl<'a, SR> DataTrigger<'a, SR>
 where
-    L: SimplifiedMNListLike,
-    S: SMLStoreLike<L>,
-    SR: StateRepositoryLike<S, L>,
+    SR: StateRepositoryLike,
 {
     /// Check this trigger is matching for specified data
     pub fn is_matching_trigger_for_data(
@@ -67,16 +58,12 @@ where
     pub async fn execute(
         &'a self,
         document_transition: &'a DocumentTransition,
-        context: &'a DataTriggerExecutionContext<SR, S, L>,
+        context: &'a DataTriggerExecutionContext<SR>,
     ) -> DataTriggerExecutionResult
     where
-        L: SimplifiedMNListLike,
-        S: SMLStoreLike<L>,
-        SR: StateRepositoryLike<S, L>,
+        SR: StateRepositoryLike,
     {
-        // not sure what the function may contain
         let mut result = DataTriggerExecutionResult::default();
-
         let execution_result = (self.trigger)(
             document_transition,
             context,
@@ -101,15 +88,13 @@ where
     }
 }
 
-pub fn new_error<SR, S, L>(
-    context: &DataTriggerExecutionContext<SR, S, L>,
+pub fn new_error<SR>(
+    context: &DataTriggerExecutionContext<SR>,
     dt_create: &DocumentCreateTransition,
     msg: String,
 ) -> DataTriggerError
 where
-    L: SimplifiedMNListLike,
-    S: SMLStoreLike<L>,
-    SR: StateRepositoryLike<S, L>,
+    SR: StateRepositoryLike,
 {
     DataTriggerError::DataTriggerConditionError {
         data_contract_id: context.data_contract.id.clone(),
