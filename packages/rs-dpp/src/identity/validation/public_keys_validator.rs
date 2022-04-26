@@ -6,7 +6,7 @@ use crate::identity::{IdentityPublicKey, KeyType, ALLOWED_SECURITY_LEVELS};
 use crate::validation::{JsonSchemaValidator, ValidationResult};
 use crate::{DashPlatformProtocolInitError, NonConsensusError, PublicKeyValidationError};
 use bls_signatures::{PublicKey as BlsPublicKey, Serialize};
-use libsecp256k1::PublicKey;
+use bitcoin::PublicKey;
 use serde_json::Value;
 use std::collections::HashMap;
 
@@ -65,7 +65,7 @@ impl TPublicKeysValidator for PublicKeysValidator {
             validation_error = match public_key.key_type {
                 KeyType::ECDSA_SECP256K1 => {
                     let key_bytes = &public_key.data_as_arr_33()?;
-                    match PublicKey::parse_compressed(key_bytes) {
+                    match PublicKey::from_slice(key_bytes) {
                         Ok(_) => None,
                         Err(e) => Some(PublicKeyValidationError::new(e.to_string())),
                     }
