@@ -4,44 +4,29 @@ use serde_json::json;
 use crate::{
     document::{document_transition::DocumentTransition, Document},
     get_from_transition,
-    state_repository::{SMLStoreLike, SimplifiedMNListLike, StateRepositoryLike},
+    state_repository::StateRepositoryLike,
     util::string_encoding::Encoding,
 };
 
-use std::{
-    collections::hash_map::{Entry, HashMap},
-    marker::PhantomData,
-};
+use std::collections::hash_map::{Entry, HashMap};
 
-pub struct FetchDocumentsFactory<SR, S, L>
+pub struct FetchDocumentsFactory<SR>
 where
-    L: SimplifiedMNListLike,
-    S: SMLStoreLike<L>,
-    SR: StateRepositoryLike<S, L>,
+    SR: StateRepositoryLike,
 {
     state_repository: SR,
-    _phantom_l: PhantomData<L>,
-    _phantom_s: PhantomData<S>,
 }
 
-pub fn fetch_documents_factory<SR, S, L>(state_repository: SR) -> FetchDocumentsFactory<SR, S, L>
+pub fn fetch_documents_factory<SR>(state_repository: SR) -> FetchDocumentsFactory<SR>
 where
-    L: SimplifiedMNListLike,
-    S: SMLStoreLike<L>,
-    SR: StateRepositoryLike<S, L>,
+    SR: StateRepositoryLike,
 {
-    FetchDocumentsFactory {
-        state_repository,
-        _phantom_l: PhantomData,
-        _phantom_s: PhantomData,
-    }
+    FetchDocumentsFactory { state_repository }
 }
 
-impl<SR, S, L> FetchDocumentsFactory<SR, S, L>
+impl<SR> FetchDocumentsFactory<SR>
 where
-    L: SimplifiedMNListLike,
-    S: SMLStoreLike<L>,
-    SR: StateRepositoryLike<S, L>,
+    SR: StateRepositoryLike,
 {
     pub async fn fetch_documents(
         &self,
