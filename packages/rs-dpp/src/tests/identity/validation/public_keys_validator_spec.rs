@@ -166,7 +166,7 @@ pub mod data {
 
         let errors = assert_consensus_errors!(&result, ConsensusError::JsonSchemaError, 33);
 
-        let byte_array_error = errors.last().unwrap();
+        // let byte_array_error = errors.last().unwrap();
 
         for (i, err) in errors.iter().enumerate() {
             assert_eq!(err.instance_path().to_string(), format!("/data/{}", i));
@@ -397,23 +397,23 @@ pub fn should_pass_valid_bls12_381_public_key() {
     //TODO: this test is broken due to the legacy key format that is used in the test.
     // needs reevaluation once v19 is released.
     return;
-    let (_, validator) = setup_test();
-    let raw_public_keys_json = json!([{
-        "id": 0,
-        "type": KeyType::BLS12_381 as u64,
-        "purpose": 0,
-        "securityLevel": 0,
-        "readOnly": true,
-        "data": decode_hex("01fac99ca2c8f39c286717c213e190aba4b7af76db320ec43f479b7d9a2012313a0ae59ca576edf801444bc694686694").unwrap(),
-    }]);
-    let raw_public_keys = raw_public_keys_json.as_array().unwrap();
-    let result = validator.validate_keys(raw_public_keys).unwrap();
-
-    for err in result.errors() {
-        println!("{:?}", err);
-    }
-
-    assert!(result.is_valid());
+    // let (_, validator) = setup_test();
+    // let raw_public_keys_json = json!([{
+    //     "id": 0,
+    //     "type": KeyType::BLS12_381 as u64,
+    //     "purpose": 0,
+    //     "securityLevel": 0,
+    //     "readOnly": true,
+    //     "data": decode_hex("01fac99ca2c8f39c286717c213e190aba4b7af76db320ec43f479b7d9a2012313a0ae59ca576edf801444bc694686694").unwrap(),
+    // }]);
+    // let raw_public_keys = raw_public_keys_json.as_array().unwrap();
+    // let result = validator.validate_keys(raw_public_keys).unwrap();
+    //
+    // for err in result.errors() {
+    //     println!("{:?}", err);
+    // }
+    //
+    // assert!(result.is_valid());
 }
 
 #[test]

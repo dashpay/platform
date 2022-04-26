@@ -8,8 +8,6 @@ use crate::errors::consensus::basic::{
 use jsonschema::ValidationError;
 use thiserror::Error;
 
-pub trait AbstractConsensusError: Into<ConsensusError> {}
-
 #[derive(Error, Debug)]
 #[error("{0}")]
 pub enum ConsensusError {

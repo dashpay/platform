@@ -1,5 +1,5 @@
 use crate::consensus::ConsensusError;
-use crate::validation::{byte_array_meta, ValidationResult};
+use crate::validation::{ValidationResult};
 use crate::{DashPlatformProtocolInitError, NonConsensusError, SerdeParsingError};
 use jsonschema::{JSONSchema, KeywordDefinition};
 use serde_json::{json, Value};
