@@ -1,10 +1,10 @@
 use crate::errors::{InvalidVectorSizeError, ProtocolError};
 use anyhow::anyhow;
 use lazy_static::lazy_static;
-use libsecp256k1::PublicKey;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use serde_repr::{Deserialize_repr, Serialize_repr};
 use std::{collections::HashMap, hash::Hash};
+use bitcoin::PublicKey;
 
 pub type KeyID = u64;
 
@@ -171,12 +171,10 @@ impl IdentityPublicKey {
             return Ok(self.data.clone());
         }
 
-        // TODO create another error type
         let public_key = vec_to_array(&self.data);
-        let original_key = PublicKey::parse(&public_key)
+        let original_key = PublicKey::from_slice(&public_key)
             .map_err(|e| anyhow!("unable to create pub key - {}", e))?;
-        // TODO: hash the key
-        Ok(original_key.serialize().to_vec())
+        Ok(original_key.pubkey_hash().to_vec())
     }
 
     pub fn data_as_arr_33(&self) -> Result<[u8; 33], InvalidVectorSizeError> {

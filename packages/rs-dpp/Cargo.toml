@@ -13,7 +13,7 @@ anyhow = { version = "1.0"}
 thiserror = { version = "1.0"}
 lazy_static = { version ="1.4"}
 serde = { version="1.0", features=["derive"]}
-libsecp256k1 = { version = "0.7.0" }
+bitcoin = { git="https://github.com/dashevo/rust-dashcore", tag="0.28.0", features=["no-std"] }
 serde_json = { version="1.0", features=["preserve_order"]}
 ciborium = { version="0.2"}
 byteorder = { version="1.4"}
