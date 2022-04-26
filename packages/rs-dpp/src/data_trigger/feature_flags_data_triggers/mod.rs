@@ -36,12 +36,10 @@ where
         )
     })?;
 
-    let latest_block_header: JsonValue = serde_json::from_slice(
-        &context
-            .state_repository
-            .fetch_latest_platform_block_header()
-            .await?,
-    )?;
+    let latest_block_header: JsonValue = context
+        .state_repository
+        .fetch_latest_platform_block_header()
+        .await?;
 
     let block_height = latest_block_header.get_i64(PROPERTY_BLOCK_HEIGHT)?;
     let enable_at_height = data.get_i64(PROPERTY_ENABLE_AT_HEIGHT)?;

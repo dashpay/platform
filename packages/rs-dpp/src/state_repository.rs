@@ -1,27 +1,32 @@
 use async_trait::async_trait;
 use serde_json::Value as JsonValue;
 
-use crate::{data_contract::DataContract, document::Document, identifier::Identifier, mocks};
+use crate::mocks;
+use crate::prelude::*;
 
 use anyhow::Result as AnyResult;
 
 #[async_trait]
 pub trait StateRepositoryLike: Send + Sync {
     /// Fetch the Data Contract by ID
-    async fn fetch_data_contract(&self, data_contract_id: &Identifier) -> AnyResult<Vec<u8>>;
+    /// By default, the method should return data as bytes (`Vec<u8>`), but the deserialization to [`DataContract`] should be also possible
+    async fn fetch_data_contract<T>(&self, data_contract_id: &Identifier) -> AnyResult<T>
+    where
+        T: for<'de> serde::de::Deserialize<'de>;
 
     /// Store Data Contract
     async fn store_data_contract(&self, data_contract: DataContract) -> AnyResult<()>;
 
     /// Fetch Documents by Data Contract Id and type
-    async fn fetch_documents<D>(
+    /// By default, the method should return data as bytes (`Vec<u8>`), but the deserialization to [`Document`] should be also possible
+    async fn fetch_documents<T>(
         &self,
         contract_id: &Identifier,
         data_contract_type: &str,
         where_query: JsonValue,
-    ) -> AnyResult<Vec<D>>
+    ) -> AnyResult<Vec<T>>
     where
-        D: for<'de> serde::de::Deserialize<'de>;
+        T: for<'de> serde::de::Deserialize<'de>;
 
     /// Store Document
     async fn store_document(&self, document: &Document) -> AnyResult<()>;
@@ -34,10 +39,14 @@ pub trait StateRepositoryLike: Send + Sync {
         document_id: &Identifier,
     ) -> AnyResult<()>;
 
+    // Fetch the Transaction
     async fn fetch_transaction(&self, id: &str) -> AnyResult<Vec<u8>>;
 
     /// Fetch Identity by ID
-    async fn fetch_identity(&self, id: &Identifier) -> AnyResult<Vec<u8>>;
+    /// By default, the method should return data as bytes (`Vec<u8>`), but the deserialization to [`Identity`] should be also possible
+    async fn fetch_identity<T>(&self, id: &Identifier) -> AnyResult<T>
+    where
+        T: for<'de> serde::de::Deserialize<'de>;
 
     /// Store Public Key hashes and Identity id pair
     async fn store_identity_public_key_hashes(
@@ -47,13 +56,19 @@ pub trait StateRepositoryLike: Send + Sync {
     ) -> AnyResult<()>;
 
     /// Fetch Identity Ids by Public Key hashes
-    async fn fetch_identity_by_public_key_hashes(
+    /// By default, the method should return data as bytes (`Vec<u8>`), but the deserialization to [`Identity`] should be also possible
+    async fn fetch_identity_by_public_key_hashes<T>(
         &self,
         public_key_hashed: Vec<Vec<u8>>,
-    ) -> AnyResult<Vec<Vec<u8>>>;
+    ) -> AnyResult<Vec<T>>
+    where
+        T: for<'de> serde::de::Deserialize<'de>;
 
     /// Fetch latest platform block header
-    async fn fetch_latest_platform_block_header(&self) -> AnyResult<Vec<u8>>;
+    /// By default, the method should return data as bytes (`Vec<u8>`), but the deserialization to [`serde_json::Value`] should be also possible
+    async fn fetch_latest_platform_block_header<T>(&self) -> AnyResult<T>
+    where
+        T: for<'de> serde::de::Deserialize<'de>;
 
     /// Verify Instant Lock
     async fn verify_instant_lock(&self, instant_lock: &mocks::InstantLock) -> AnyResult<bool>;
@@ -71,6 +86,7 @@ pub trait StateRepositoryLike: Send + Sync {
     ) -> AnyResult<()>;
 
     /// Fetch Simplified Masternode List Store
+    /// By default, the method should return data as bytes (`Vec<u8>`), but the deserialization to [`mocks::SMLStore`] should be also possible
     async fn fetch_sml_store<T>(&self) -> AnyResult<T>
     where
         T: for<'de> serde::de::Deserialize<'de>;
