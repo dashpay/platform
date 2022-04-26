@@ -6,7 +6,7 @@ use crate::identity::{IdentityPublicKey, KeyType, ALLOWED_SECURITY_LEVELS};
 use crate::validation::{JsonSchemaValidator, ValidationResult};
 use crate::{DashPlatformProtocolInitError, NonConsensusError, PublicKeyValidationError};
 use bls_signatures::{PublicKey as BlsPublicKey, Serialize};
-use bitcoin::PublicKey;
+use dashcore::PublicKey;
 use serde_json::Value;
 use std::collections::HashMap;
 
