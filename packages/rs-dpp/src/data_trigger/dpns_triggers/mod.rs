@@ -2,14 +2,12 @@ use anyhow::Context;
 use anyhow::{anyhow, bail};
 use serde_json::{json, Value as JsonValue};
 
+use crate::document::Document;
 use crate::util::hash::hash;
 use crate::util::string_encoding::Encoding;
 use crate::{
-    document::document_transition::DocumentTransition,
-    get_from_transition,
-    prelude::Identifier,
-    state_repository::{SMLStoreLike, SimplifiedMNListLike, StateRepositoryLike},
-    util::json_value::JsonValueExt,
+    document::document_transition::DocumentTransition, get_from_transition, prelude::Identifier,
+    state_repository::StateRepositoryLike, util::json_value::JsonValueExt,
 };
 
 use super::{new_error, DataTriggerExecutionContext, DataTriggerExecutionResult};
@@ -24,15 +22,13 @@ const PROPERTY_RECORDS: &str = "records";
 const PROPERTY_DASH_UNIQUE_IDENTITY_ID: &str = "dashUniqueIdentityId";
 const PROPERTY_DASH_ALIAS_IDENTITY_ID: &str = "dashAliasIdentityId";
 
-pub async fn create_domain_data_trigger<SR, S, L>(
+pub async fn create_domain_data_trigger<SR>(
     document_transition: &DocumentTransition,
-    context: &DataTriggerExecutionContext<SR, S, L>,
+    context: &DataTriggerExecutionContext<SR>,
     top_level_identity: Option<&Identifier>,
 ) -> Result<DataTriggerExecutionResult, anyhow::Error>
 where
-    L: SimplifiedMNListLike,
-    S: SMLStoreLike<L>,
-    SR: StateRepositoryLike<S, L>,
+    SR: StateRepositoryLike,
 {
     let dt_create = match document_transition {
         DocumentTransition::Create(d) => d,
@@ -133,7 +129,7 @@ where
         let parent_domain_label = parent_domain_segments.next().unwrap().to_string();
         let grand_parent_domain_name = parent_domain_segments.collect::<Vec<&str>>().join(".");
 
-        let documents = context
+        let documents: Vec<Document> = context
             .state_repository
             .fetch_documents(
                 &context.data_contract.id,
@@ -189,7 +185,7 @@ where
 
     let salted_domain_hash = hash(salted_domain_buffer);
 
-    let preorder_documents = context
+    let preorder_documents: Vec<Document> = context
         .state_repository
         .fetch_documents(
             &context.data_contract.id,

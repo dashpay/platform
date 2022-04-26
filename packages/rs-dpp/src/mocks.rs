@@ -3,12 +3,13 @@
 use crate::prelude::*;
 
 use anyhow::Result as AnyResult;
+use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 
 use async_trait::async_trait;
 use thiserror::Error;
 
-use crate::state_repository::{SMLStoreLike, SimplifiedMNListLike, StateRepositoryLike};
+use crate::state_repository::StateRepositoryLike;
 
 #[derive(Debug, Clone)]
 pub struct DashPlatformProtocol {}
@@ -46,11 +47,7 @@ pub struct JsonSchemaValidator {}
 pub trait JsonSchemaValidatorLike {}
 
 #[async_trait]
-impl<S, L> StateRepositoryLike<S, L> for StateRepository
-where
-    L: SimplifiedMNListLike,
-    S: SMLStoreLike<L>,
-{
+impl StateRepositoryLike for StateRepository {
     /// Fetch the Data Contract by ID
     async fn fetch_data_contract(&self, _data_contract_id: &Identifier) -> AnyResult<Vec<u8>> {
         unimplemented!()
@@ -62,12 +59,12 @@ where
     }
 
     /// Fetch Documents by Data Contract Id and type
-    async fn fetch_documents(
+    async fn fetch_documents<T>(
         &self,
         _contract_id: &Identifier,
         _data_contract_type: &str,
         _where_query: JsonValue,
-    ) -> AnyResult<Vec<Document>> {
+    ) -> AnyResult<Vec<T>> {
         unimplemented!()
     }
 
@@ -109,7 +106,7 @@ where
     /// Return the array of Identities
     async fn fetch_identity_by_public_key_hashes(
         &self,
-        _public_key_hashed: &[&[u8]],
+        _public_key_hashed: Vec<Vec<u8>>,
     ) -> AnyResult<Vec<Vec<u8>>> {
         unimplemented!()
     }
@@ -141,21 +138,42 @@ where
     }
 
     /// Fetch Simplified Masternode List Store
-    async fn fetch_sml_store(&self) -> AnyResult<S> {
+    async fn fetch_sml_store<T>(&self) -> AnyResult<T> {
         unimplemented!()
     }
 }
-
-pub struct SimplifiedMNListMock {}
-
-impl SimplifiedMNListLike for SimplifiedMNListMock {}
-
-pub struct SMLStoreMock {}
-
-impl<L> SMLStoreLike<L> for SMLStoreMock where L: SimplifiedMNListLike {}
 
 pub struct StateTransition {
     pub data_contract: DataContract,
 }
 
 pub struct DocumentsBatchTransition {}
+
+pub struct SimplifiedMNList {}
+impl SimplifiedMNList {
+    pub fn get_valid_master_nodes(&self) -> Vec<SMLEntry> {
+        unimplemented!()
+    }
+}
+
+pub struct SMLEntry {
+    pub pro_reg_tx_hash: String,
+    pub confirmed_hash: String,
+    pub service: String,
+    pub pub_key_operator: String,
+    pub voting_address: String,
+    pub is_valid: bool,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct SMLStore {}
+
+impl SMLStore {
+    pub fn get_sml_by_height(&self) -> AnyResult<SimplifiedMNList> {
+        unimplemented!()
+    }
+
+    pub fn get_current_sml(&self) -> AnyResult<SimplifiedMNList> {
+        unimplemented!()
+    }
+}

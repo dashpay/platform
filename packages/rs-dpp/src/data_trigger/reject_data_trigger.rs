@@ -1,22 +1,17 @@
 use crate::{
-    document::document_transition::DocumentTransition,
-    errors::DataTriggerError,
-    get_from_transition,
-    prelude::Identifier,
-    state_repository::{SMLStoreLike, SimplifiedMNListLike, StateRepositoryLike},
+    document::document_transition::DocumentTransition, errors::DataTriggerError,
+    get_from_transition, prelude::Identifier, state_repository::StateRepositoryLike,
 };
 
 use super::{DataTriggerExecutionContext, DataTriggerExecutionResult};
 
-pub async fn reject_data_trigger<SR, S, L>(
+pub async fn reject_data_trigger<SR>(
     document_transition: &DocumentTransition,
-    context: &DataTriggerExecutionContext<SR, S, L>,
+    context: &DataTriggerExecutionContext<SR>,
     _top_level_identity: Option<&Identifier>,
 ) -> Result<DataTriggerExecutionResult, anyhow::Error>
 where
-    L: SimplifiedMNListLike,
-    S: SMLStoreLike<L>,
-    SR: StateRepositoryLike<S, L>,
+    SR: StateRepositoryLike,
 {
     let mut result = DataTriggerExecutionResult::default();
 
