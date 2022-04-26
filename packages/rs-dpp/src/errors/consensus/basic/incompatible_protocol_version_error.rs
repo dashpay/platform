@@ -1,4 +1,3 @@
-use crate::errors::consensus::AbstractConsensusError;
 use thiserror::Error;
 
 #[derive(Error, Debug, Clone)]
@@ -7,8 +6,6 @@ pub struct IncompatibleProtocolVersionError {
     parsed_protocol_version: u64,
     minimal_protocol_version: u64,
 }
-
-impl AbstractConsensusError for IncompatibleProtocolVersionError {}
 
 impl IncompatibleProtocolVersionError {
     pub fn new(parsed_protocol_version: u64, minimal_protocol_version: u64) -> Self {
