@@ -49,7 +49,7 @@ pub trait JsonSchemaValidatorLike {}
 #[async_trait]
 impl StateRepositoryLike for StateRepository {
     /// Fetch the Data Contract by ID
-    async fn fetch_data_contract(&self, _data_contract_id: &Identifier) -> AnyResult<Vec<u8>> {
+    async fn fetch_data_contract<T>(&self, _data_contract_id: &Identifier) -> AnyResult<T> {
         unimplemented!()
     }
 
@@ -89,7 +89,7 @@ impl StateRepositoryLike for StateRepository {
     }
 
     /// Fetch Identity by ID
-    async fn fetch_identity(&self, _id: &Identifier) -> AnyResult<Vec<u8>> {
+    async fn fetch_identity<T>(&self, _id: &Identifier) -> AnyResult<T> {
         unimplemented!()
     }
 
@@ -104,15 +104,15 @@ impl StateRepositoryLike for StateRepository {
 
     /// Fetch Identity Ids by Public Key hashes
     /// Return the array of Identities
-    async fn fetch_identity_by_public_key_hashes(
+    async fn fetch_identity_by_public_key_hashes<T>(
         &self,
         _public_key_hashed: Vec<Vec<u8>>,
-    ) -> AnyResult<Vec<Vec<u8>>> {
+    ) -> AnyResult<Vec<T>> {
         unimplemented!()
     }
 
     /// Fetch latest platform block header
-    async fn fetch_latest_platform_block_header(&self) -> AnyResult<Vec<u8>> {
+    async fn fetch_latest_platform_block_header<T>(&self) -> AnyResult<T> {
         unimplemented!()
     }
 

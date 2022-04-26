@@ -37,12 +37,10 @@ where
 
     let core_height_created_at = data.get_i64(PROPERTY_CORE_HEIGHT_CREATED_AT)?;
 
-    let latest_block_header: JsonValue = serde_json::from_slice(
-        &context
-            .state_repository
-            .fetch_latest_platform_block_header()
-            .await?,
-    )?;
+    let latest_block_header: JsonValue = context
+        .state_repository
+        .fetch_latest_platform_block_header()
+        .await?;
 
     let core_chain_locked_height =
         latest_block_header.get_i64(PROPERTY_CORE_CHAIN_LOCKED_HEIGHT)?;
