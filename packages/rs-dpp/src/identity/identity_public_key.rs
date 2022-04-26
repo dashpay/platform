@@ -4,7 +4,7 @@ use lazy_static::lazy_static;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use serde_repr::{Deserialize_repr, Serialize_repr};
 use std::{collections::HashMap, hash::Hash};
-use bitcoin::PublicKey;
+use dashcore::PublicKey;
 
 pub type KeyID = u64;
 
