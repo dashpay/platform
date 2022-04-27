@@ -9,7 +9,7 @@ pub struct ValidationResult {
 impl ValidationResult {
     pub fn new(errors: Option<Vec<ConsensusError>>) -> Self {
         Self {
-            errors: errors.unwrap_or_else(|| Vec::new()),
+            errors: errors.unwrap_or_default(),
             // data: None
         }
     }
@@ -38,7 +38,7 @@ impl ValidationResult {
     }
 
     pub fn is_valid(&self) -> bool {
-        self.errors().len() == 0
+        self.errors().is_empty()
     }
 
     pub fn first_error(&self) -> Option<&ConsensusError> {

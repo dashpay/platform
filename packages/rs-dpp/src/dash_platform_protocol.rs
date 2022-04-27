@@ -24,10 +24,7 @@ impl DashPlatformProtocol {
         let public_keys_validator = Arc::new(PublicKeysValidator::new()?);
 
         Ok(Self {
-            identities: IdentityFacade::new(
-                protocol_version_validator.clone(),
-                public_keys_validator.clone(),
-            )?,
+            identities: IdentityFacade::new(protocol_version_validator, public_keys_validator)?,
         })
     }
 
@@ -36,14 +33,7 @@ impl DashPlatformProtocol {
     }
 }
 
+#[derive(Default)]
 pub struct DPPOptions {
     pub current_protocol_version: Option<u64>,
-}
-
-impl Default for DPPOptions {
-    fn default() -> Self {
-        Self {
-            current_protocol_version: None,
-        }
-    }
 }

@@ -1,10 +1,10 @@
 use crate::errors::{InvalidVectorSizeError, ProtocolError};
 use anyhow::anyhow;
+use dashcore::PublicKey;
 use lazy_static::lazy_static;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use serde_repr::{Deserialize_repr, Serialize_repr};
 use std::{collections::HashMap, hash::Hash};
-use dashcore::PublicKey;
 
 pub type KeyID = u64;
 
@@ -82,7 +82,7 @@ pub struct JsonIdentityPublicKey {
 }
 
 impl std::convert::Into<JsonIdentityPublicKey> for &IdentityPublicKey {
-    fn into(self: Self) -> JsonIdentityPublicKey {
+    fn into(self) -> JsonIdentityPublicKey {
         JsonIdentityPublicKey {
             id: self.id,
             purpose: self.purpose,
@@ -164,7 +164,7 @@ impl IdentityPublicKey {
 
     /// Get the original public key hash
     pub fn hash(&self) -> Result<Vec<u8>, ProtocolError> {
-        if self.data.len() == 0 {
+        if self.data.is_empty() {
             return Err(ProtocolError::EmptyPublicKeyDataError);
         }
         if self.key_type == KeyType::ECDSA_HASH160 {
@@ -182,7 +182,7 @@ impl IdentityPublicKey {
     }
 }
 
-fn vec_to_array(vec: &Vec<u8>) -> [u8; 65] {
+fn vec_to_array(vec: &[u8]) -> [u8; 65] {
     let mut v: [u8; 65] = [0; 65];
     for i in 0..65 {
         v[i] = *vec.get(i).unwrap();
@@ -190,7 +190,7 @@ fn vec_to_array(vec: &Vec<u8>) -> [u8; 65] {
     v
 }
 
-fn vec_to_array_33(vec: &Vec<u8>) -> Result<[u8; 33], InvalidVectorSizeError> {
+fn vec_to_array_33(vec: &[u8]) -> Result<[u8; 33], InvalidVectorSizeError> {
     if vec.len() != 33 {
         return Err(InvalidVectorSizeError::new(33, vec.len()));
     }
