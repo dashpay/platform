@@ -1,5 +1,5 @@
 use crate::consensus::ConsensusError;
-use crate::validation::{ValidationResult};
+use crate::validation::ValidationResult;
 use crate::{DashPlatformProtocolInitError, NonConsensusError, SerdeParsingError};
 use jsonschema::{JSONSchema, KeywordDefinition};
 use serde_json::{json, Value};
@@ -51,21 +51,19 @@ impl JsonSchemaValidator {
         let res = self
             .schema
             .as_ref()
-            .ok_or(SerdeParsingError::new(
-                "Expected identity schema to be initialized",
-            ))?
-            .validate(&object);
+            .ok_or_else(|| SerdeParsingError::new("Expected identity schema to be initialized"))?
+            .validate(object);
 
         let mut validation_result = ValidationResult::new(None);
 
-        return match res {
+        match res {
             Ok(_) => Ok(validation_result),
             Err(validation_errors) => {
                 let errors: Vec<ConsensusError> =
-                    validation_errors.map(|e| ConsensusError::from(e)).collect();
+                    validation_errors.map(ConsensusError::from).collect();
                 validation_result.add_errors(errors);
                 Ok(validation_result)
             }
-        };
+        }
     }
 }

@@ -25,6 +25,6 @@ impl IdentityFacade {
         &self,
         identity_json: &serde_json::Value,
     ) -> Result<ValidationResult, NonConsensusError> {
-        self.identity_validator.validate_identity(&identity_json)
+        self.identity_validator.validate_identity(identity_json)
     }
 }

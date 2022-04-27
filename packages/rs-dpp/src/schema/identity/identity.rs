@@ -1,6 +1,6 @@
 use serde_json::Value;
 
-pub const IDENTITY_JSON_STRING: &'static str = r#"{
+pub const IDENTITY_JSON_STRING: &str = r#"{
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "type": "object",
   "properties": {

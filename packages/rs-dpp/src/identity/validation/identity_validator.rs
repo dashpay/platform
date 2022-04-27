@@ -32,15 +32,15 @@ impl<T: TPublicKeysValidator> IdentityValidator<T> {
         &self,
         identity_json: &serde_json::Value,
     ) -> Result<ValidationResult, NonConsensusError> {
-        let mut validation_result = self.json_schema_validator.validate(&identity_json)?;
+        let mut validation_result = self.json_schema_validator.validate(identity_json)?;
 
         if !validation_result.is_valid() {
             return Ok(validation_result);
         }
 
-        let identity_map = identity_json.as_object().ok_or(SerdeParsingError::new(
-            "Expected identity to be a json object",
-        ))?;
+        let identity_map = identity_json
+            .as_object()
+            .ok_or_else(|| SerdeParsingError::new("Expected identity to be a json object"))?;
 
         let protocol_version = get_protocol_version(identity_map)?;
         validation_result.merge(self.protocol_version_validator.validate(protocol_version)?);
@@ -57,15 +57,11 @@ impl<T: TPublicKeysValidator> IdentityValidator<T> {
 }
 
 fn get_protocol_version(identity_map: &Map<String, Value>) -> Result<u64, SerdeParsingError> {
-    Ok(identity_map
+    identity_map
         .get("protocolVersion")
-        .ok_or(SerdeParsingError::new(
-            "Expected identity to have protocolVersion",
-        ))?
+        .ok_or_else(|| SerdeParsingError::new("Expected identity to have protocolVersion"))?
         .as_u64()
-        .ok_or(SerdeParsingError::new(
-            "Expected protocolVersion to be a uint",
-        ))?)
+        .ok_or_else(|| SerdeParsingError::new("Expected protocolVersion to be a uint"))
 }
 
 fn get_raw_public_keys(
@@ -73,11 +69,7 @@ fn get_raw_public_keys(
 ) -> Result<&Vec<Value>, SerdeParsingError> {
     identity_map
         .get("publicKeys")
-        .ok_or(SerdeParsingError::new(
-            "Expected identity.publicKeys to exist",
-        ))?
+        .ok_or_else(|| SerdeParsingError::new("Expected identity.publicKeys to exist"))?
         .as_array()
-        .ok_or(SerdeParsingError::new(
-            "Expected identity.publicKeys to be an array",
-        ))
+        .ok_or_else(|| SerdeParsingError::new("Expected identity.publicKeys to be an array"))
 }

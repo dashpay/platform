@@ -80,7 +80,7 @@ impl ProtocolVersionValidator {
             ));
         }
 
-        return Ok(result);
+        Ok(result)
     }
 
     pub fn protocol_version(&self) -> u64 {
