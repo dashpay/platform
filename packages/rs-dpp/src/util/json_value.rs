@@ -105,6 +105,11 @@ pub trait JsonValueExt {
         &mut self,
         path: &[JsonPathStep],
     ) -> Result<&mut JsonValue, anyhow::Error>;
+    fn replace_identifier_paths<'a>(
+        &mut self,
+        paths: impl IntoIterator<Item = &'a str>,
+        with: ReplaceWith,
+    ) -> Result<(), anyhow::Error>;
 }
 
 impl JsonValueExt for JsonValue {
@@ -200,6 +205,26 @@ impl JsonValueExt for JsonValue {
         get_value_from_json_path_mut(path, self)
             .ok_or_else(|| anyhow!("the property '{:?}' not found", path))
     }
+
+    /// replaces the Identifiers given path paths with either the Bytes or Base58 form
+    fn replace_identifier_paths<'a>(
+        &mut self,
+        paths: impl IntoIterator<Item = &'a str>,
+        with: ReplaceWith,
+    ) -> Result<(), anyhow::Error> {
+        for raw_path in paths {
+            let mut to_replace = get_value_mut(raw_path, self);
+            match to_replace {
+                Some(ref mut v) => {
+                    replace_identifier(v, with)?;
+                }
+                None => {
+                    trace!("path '{}' is not found, replacing to {:?} ", raw_path, with)
+                }
+            }
+        }
+        Ok(())
+    }
 }
 
 /// replaces the Identifiers specified in binary_properties with Bytes or Base58
@@ -213,27 +238,7 @@ pub fn identifiers_to(
         .filter(|(_, p)| identifier_filter(p))
         .map(|(name, _)| name.as_str());
 
-    replace_identifier_paths(identifier_paths, dynamic_data, to)?;
-    Ok(())
-}
-
-/// replaces the Identifiers given path paths with either the Bytes or Base58 form
-pub fn replace_identifier_paths<'a>(
-    paths: impl IntoIterator<Item = &'a str>,
-    value: &mut JsonValue,
-    with: ReplaceWith,
-) -> Result<(), ProtocolError> {
-    for raw_path in paths {
-        let mut to_replace = get_value_mut(raw_path, value);
-        match to_replace {
-            Some(ref mut v) => {
-                replace_identifier(v, with)?;
-            }
-            None => {
-                trace!("path '{}' is not found, replacing to {:?} ", raw_path, with)
-            }
-        }
-    }
+    dynamic_data.replace_identifier_paths(identifier_paths, to)?;
     Ok(())
 }
 
