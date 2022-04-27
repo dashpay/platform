@@ -3,6 +3,7 @@ pub mod data_contract;
 extern crate core;
 
 pub mod data_trigger;
+pub mod decode_protocol_entity_factory;
 pub mod document;
 pub mod dpp;
 pub mod identifier;

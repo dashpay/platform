@@ -1,16 +1,18 @@
-use crate::errors::ProtocolError;
 use crate::identifier::Identifier;
 use crate::util::string_encoding::Encoding;
+use crate::{errors::ProtocolError, mocks::ConsensusError};
+use anyhow::anyhow;
 use serde_json::{Map, Number, Value as JsonValue};
 use std::convert::TryInto;
 
 pub fn get_protocol_version(version_bytes: &[u8]) -> Result<u32, ProtocolError> {
     Ok(if version_bytes.len() != 4 {
-        return Err(ProtocolError::NoProtocolVersionError);
+        return Err(ConsensusError::ProtocolVersionParsingError {
+            parsing_error: anyhow!("length is not 4 bytes"),
+        }
+        .into());
     } else {
-        let version_set_bytes: [u8; 4] = version_bytes
-            .try_into()
-            .map_err(|_| ProtocolError::NoProtocolVersionError)?;
+        let version_set_bytes: [u8; 4] = version_bytes.try_into().unwrap();
         u32::from_be_bytes(version_set_bytes)
     })
 }
@@ -70,6 +72,7 @@ pub fn parse_protocol_version(
     json_map: &mut Map<String, JsonValue>,
 ) -> Result<(), ProtocolError> {
     let protocol_version = get_protocol_version(protocol_bytes)?;
+
     json_map.insert(
         String::from("$protocolVersion"),
         JsonValue::Number(Number::from(protocol_version)),

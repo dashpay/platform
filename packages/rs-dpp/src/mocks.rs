@@ -18,13 +18,17 @@ use crate::state_repository::StateRepositoryLike;
 pub struct DashPlatformProtocol {}
 impl DashPlatformProtocol {
     pub fn get_protocol_version(&self) -> u32 {
-        unimplemented!()
+        1
     }
 }
 
 #[derive(Debug, Clone)]
 pub struct ValidateDataContract {}
-impl ValidateDataContract {}
+impl ValidateDataContract {
+    pub async fn validate_data_contract(&self, raw_data_contract: &JsonValue) -> ValidationResult {
+        ValidationResult {}
+    }
+}
 
 #[derive(Debug, Clone)]
 pub struct DecodeProtocolIdentity {}
@@ -41,6 +45,12 @@ pub enum ConsensusError {
     StateError(Box<StateError>),
     #[error(transparent)]
     BasicError(Box<BasicError>),
+
+    #[error("Parsing of serialized object failed due to: {parsing_error}")]
+    SerializedObjectParsingError { parsing_error: anyhow::Error },
+
+    #[error("Can't read protocol version from serialized object: {parsing_error}")]
+    ProtocolVersionParsingError { parsing_error: anyhow::Error },
 }
 
 impl From<StateError> for ConsensusError {
@@ -203,4 +213,10 @@ pub struct ValidationResult {}
 
 impl ValidationResult {
     pub fn add_error(&mut self, _: impl Into<ConsensusError>) {}
+    pub fn get_errors(&self) -> Vec<ConsensusError> {
+        unimplemented!()
+    }
+    pub fn is_valid(&self) -> bool {
+        true
+    }
 }
