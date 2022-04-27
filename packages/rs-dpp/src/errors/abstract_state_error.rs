@@ -49,11 +49,11 @@ pub enum StateError {
     DataContractAlreadyPresentError { data_contract_id: Identifier },
 
     #[error(transparent)]
-    DataTriggerError(DataTriggerError),
+    DataTriggerError(Box<DataTriggerError>),
 }
 
 impl From<DataTriggerError> for StateError {
     fn from(v: DataTriggerError) -> Self {
-        StateError::DataTriggerError(v)
+        StateError::DataTriggerError(Box::new(v))
     }
 }

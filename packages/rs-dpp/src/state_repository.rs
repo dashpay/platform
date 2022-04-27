@@ -10,7 +10,7 @@ use anyhow::Result as AnyResult;
 pub trait StateRepositoryLike: Send + Sync {
     /// Fetch the Data Contract by ID
     /// By default, the method should return data as bytes (`Vec<u8>`), but the deserialization to [`DataContract`] should be also possible
-    async fn fetch_data_contract<T>(&self, data_contract_id: &Identifier) -> AnyResult<T>
+    async fn fetch_data_contract<T>(&self, data_contract_id: &Identifier) -> AnyResult<Option<T>>
     where
         T: for<'de> serde::de::Deserialize<'de>;
 
@@ -39,12 +39,15 @@ pub trait StateRepositoryLike: Send + Sync {
         document_id: &Identifier,
     ) -> AnyResult<()>;
 
-    // Fetch the Transaction
-    async fn fetch_transaction(&self, id: &str) -> AnyResult<Vec<u8>>;
+    /// Fetch the Transaction
+    /// By default, the method should return data as bytes (`Vec<u8>`), but the deserialization to [`Transaction`] should be also possible
+    async fn fetch_transaction<T>(&self, id: &str) -> AnyResult<Option<T>>
+    where
+        T: for<'de> serde::de::Deserialize<'de>;
 
     /// Fetch Identity by ID
     /// By default, the method should return data as bytes (`Vec<u8>`), but the deserialization to [`Identity`] should be also possible
-    async fn fetch_identity<T>(&self, id: &Identifier) -> AnyResult<T>
+    async fn fetch_identity<T>(&self, id: &Identifier) -> AnyResult<Option<T>>
     where
         T: for<'de> serde::de::Deserialize<'de>;
 

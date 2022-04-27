@@ -1,4 +1,4 @@
-use super::{abstract_state_error::StateError, DataTriggerError};
+use super::{abstract_state_error::StateError, consensus::basic::BasicError, DataTriggerError};
 pub trait ErrorWithCode {
     // Returns the Error Code
     fn get_code(&self) -> u32;
@@ -29,6 +29,17 @@ impl ErrorWithCode for DataTriggerError {
             Self::DataTriggerConditionError { .. } => 4001,
             Self::DataTriggerExecutionError { .. } => 4002,
             Self::DataTriggerInvalidResultError { .. } => 4003,
+        }
+    }
+}
+
+impl ErrorWithCode for BasicError {
+    fn get_code(&self) -> u32 {
+        match *self {
+            // Document
+            Self::DataContractContPresent { .. } => 1018,
+            // Data contract
+            Self::InvalidDataContractVersionError { .. } => 4013,
         }
     }
 }

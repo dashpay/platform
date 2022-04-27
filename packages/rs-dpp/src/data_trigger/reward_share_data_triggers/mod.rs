@@ -67,10 +67,19 @@ where
 
     // payToId identity exists
     let pay_to_identifier = Identifier::from_string(pay_to_id, Encoding::Base58)?;
-    context
+    let maybe_identifier: Option<Vec<u8>> = context
         .state_repository
         .fetch_identity(&pay_to_identifier)
         .await?;
+
+    if maybe_identifier.is_none() {
+        let err = new_error(
+            context,
+            dt_create,
+            format!("Identifier '{}' doesn't exists", pay_to_id),
+        );
+        result.add_error(err.into())
+    }
 
     let documents: Vec<Document> = context
         .state_repository
