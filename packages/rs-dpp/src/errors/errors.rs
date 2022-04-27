@@ -1,5 +1,6 @@
 use crate::data_contract::errors::*;
 use crate::document::errors::*;
+use crate::mocks;
 use thiserror::Error;
 
 #[derive(Error, Debug)]
@@ -31,12 +32,19 @@ pub enum ProtocolError {
     DataContractError(DataContractError),
 
     #[error(transparent)]
-    AbstractConsensusError(AbstractConsensusErrorMock),
+    AbstractConsensusError(Box<mocks::ConsensusError>),
+
     #[error(transparent)]
     Document(Box<DocumentError>),
 
     #[error("Generic Error: {0}")]
     Generic(String),
+
+    #[error("Invalid Data Contract: {errors:?}")]
+    InvalidDataContractError {
+        errors: Vec<mocks::ConsensusError>,
+        raw_data_contract: serde_json::Value,
+    },
 }
 
 impl From<&str> for ProtocolError {
@@ -51,8 +59,8 @@ impl From<String> for ProtocolError {
     }
 }
 
-impl From<AbstractConsensusErrorMock> for ProtocolError {
-    fn from(e: AbstractConsensusErrorMock) -> Self {
+impl From<mocks::ConsensusError> for ProtocolError {
+    fn from(e: mocks::ConsensusError) -> Self {
         ProtocolError::AbstractConsensusError(e)
     }
 }
@@ -62,7 +70,3 @@ impl From<DataContractError> for ProtocolError {
         ProtocolError::DataContractError(e)
     }
 }
-
-// TODO implement
-#[derive(Error, Debug)]
-pub enum AbstractConsensusErrorMock {}
