@@ -54,7 +54,7 @@ log-format = "{{=it.platform.drive.tenderdash.log.format}}"
 genesis-file = "config/genesis.json"
 
 # Set to whether we are a masternode or not
-is-masternode = {{?it.core.masternode.enable}}true{{??}}false{{?}}
+mode = {{?it.core.masternode.enable}}"validator"{{??}}"full"{{?}}
 
 # Path to the JSON file containing the private key to use for node authentication in the p2p protocol
 node-key-file = "config/node_key.json"
