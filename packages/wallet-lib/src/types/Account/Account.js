@@ -277,7 +277,8 @@ class Account extends EventEmitter {
    */
   waitForInstantLock(transactionHash, timeout = this.waitForInstantLockTimeout) {
     // Return instant lock immediately if already exists
-    const instantLock = this.storage.getInstantLock(transactionHash);
+    const chainStore = this.storage.getChainStore(this.network);
+    const instantLock = chainStore.getInstantLock(transactionHash);
     if (instantLock != null) {
       return {
         promise: Promise.resolve(instantLock),
@@ -327,10 +328,12 @@ class Account extends EventEmitter {
    */
   waitForTxMetadata(transactionHash, timeout = this.waitForTxMetadataTimeout) {
     // Return tx metadata immediately if already exists
-    const { transactionsMetadata } = this.storage;
-    if (transactionsMetadata && transactionsMetadata[transactionHash]) {
+    const chainStore = this.storage.getChainStore(this.network);
+    const txWithMetadata = chainStore.getTransaction(transactionHash);
+
+    if (txWithMetadata && txWithMetadata.metadata && txWithMetadata.metadata.height) {
       return {
-        promise: Promise.resolve(transactionsMetadata[transactionHash]),
+        promise: Promise.resolve(txWithMetadata.metadata),
         cancel: () => {},
       };
     }

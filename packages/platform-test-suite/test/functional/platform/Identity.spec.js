@@ -117,11 +117,12 @@ describe('Platform', () => {
         await wait(5000);
       }
 
-      walletAccount.storage.insertIdentityIdAtIndex(
-        walletAccount.walletId,
-        identityOne.getId().toString(),
-        identityOneIndex,
-      );
+      walletAccount.storage
+        .getWalletStore(walletAccount.walletId)
+        .insertIdentityIdAtIndex(
+          identityOne.getId().toString(),
+          identityOneIndex,
+        );
 
       // Creating transition that tries to spend the same transaction
       const {
