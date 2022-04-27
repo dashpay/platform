@@ -84,6 +84,7 @@ function considerTransaction(transactionHash) {
           }
         });
       });
+    this.emit(EVENTS.TX_METADATA, { hash: transaction.hash, metadata });
   }
 
   // TODO: restore EVENTS.FETCHED_UNCONFIRMED_TRANSACTION
