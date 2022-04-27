@@ -3,6 +3,7 @@ const EVENTS = require('../../../EVENTS');
 
 const EVENTS_TO_FORWARD = [
   EVENTS.FETCHED_CONFIRMED_TRANSACTION,
+  EVENTS.TX_METADATA,
 ];
 
 /**
