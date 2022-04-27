@@ -1,6 +1,7 @@
 use super::errors::*;
 use crate::data_contract::get_binary_properties_from_schema::get_binary_properties;
 use crate::util::deserializer;
+use crate::util::json_value::{JsonValueExt, ReplaceWith};
 use crate::util::string_encoding::Encoding;
 use crate::{
     errors::ProtocolError,
@@ -19,6 +20,8 @@ type DocumentType = String;
 type PropertyPath = String;
 
 pub const SCHEMA: &str = "https://schema.dash.org/dpp-0-4-0/meta/data-contract";
+
+pub const IDENTIFIER_FIELDS: [&str; 2] = ["$id", "ownerId"];
 
 #[derive(Serialize, Deserialize, Debug, Clone, Default)]
 #[serde(rename_all = "camelCase")]
@@ -62,7 +65,7 @@ impl DataContract {
         };
 
         deserializer::parse_protocol_version(protocol_bytes, &mut json_map)?;
-        deserializer::parse_identities(&mut json_map, &["$id", "$ownerId"])?;
+        deserializer::parse_identities(&mut json_map, &IDENTIFIER_FIELDS)?;
 
         let mut data_contract: DataContract = serde_json::from_value(JsonValue::Object(json_map))?;
         data_contract.generate_binary_properties();
@@ -76,12 +79,7 @@ impl DataContract {
         }
 
         if !skip_identifiers_conversion {
-            let id = self.id.to_vec();
-            let owner_id = self.owner_id.to_vec();
-            if let JsonValue::Object(ref mut o) = json_object {
-                o.insert(String::from("$id"), JsonValue::Array(id));
-                o.insert(String::from("$ownerId"), JsonValue::Array(owner_id));
-            }
+            json_object.replace_identifier_paths(IDENTIFIER_FIELDS, ReplaceWith::Bytes)?;
         }
         Ok(json_object)
     }
@@ -193,6 +191,8 @@ impl DataContract {
 impl TryFrom<JsonValue> for DataContract {
     type Error = ProtocolError;
     fn try_from(v: JsonValue) -> Result<Self, Self::Error> {
+        let mut v = v;
+        v.replace_identifier_paths(IDENTIFIER_FIELDS, ReplaceWith::Base58)?;
         Ok(serde_json::from_value(v)?)
     }
 }
@@ -207,7 +207,7 @@ impl TryFrom<&str> for DataContract {
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::tests::utils::*;
+    use crate::{assert_error_contains, tests::utils::*};
     use anyhow::Result;
     use log::trace;
 
@@ -218,7 +218,7 @@ mod test {
     }
 
     #[test]
-    fn test_deserialize_contract() -> Result<()> {
+    fn test_deserialize_contract_from_string() -> Result<()> {
         init();
 
         let string_contract = get_data_from_file("src/tests/payloads/contract_example.json")?;
@@ -260,6 +260,75 @@ mod test {
         trace!("serialized contract: {}", serialized_contract);
 
         assert_eq!(serialized_contract, string_contract);
+        Ok(())
+    }
+
+    #[test]
+    fn test_serialize_to_object() -> Result<()> {
+        let string_contract = get_data_from_file("src/tests/payloads/contract_example.json")?;
+        let data_contract: DataContract = serde_json::from_str(&string_contract)?;
+
+        let raw_data_contract = data_contract.to_object(false)?;
+        for path in IDENTIFIER_FIELDS {
+            assert!(raw_data_contract
+                .get(path)
+                .expect("the path should exist")
+                .is_array())
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn test_deserialize_contract_from_raw() -> Result<()> {
+        init();
+
+        let string_contract = get_data_from_file("src/tests/payloads/contract_example.json")?;
+        let mut raw_contract: JsonValue = serde_json::from_str(&string_contract)?;
+        raw_contract.replace_identifier_paths(IDENTIFIER_FIELDS, ReplaceWith::Bytes)?;
+
+        for path in IDENTIFIER_FIELDS {
+            assert!(raw_contract
+                .get(path)
+                .expect("the path should exist")
+                .is_array())
+        }
+
+        let data_contract_from_raw = DataContract::try_from(raw_contract)?;
+        assert_eq!(data_contract_from_raw.protocol_version, 0);
+        assert_eq!(
+            data_contract_from_raw.schema,
+            "https://schema.dash.org/dpp-0-4-0/meta/data-contract"
+        );
+        assert_eq!(data_contract_from_raw.version, 5);
+        assert_eq!(
+            data_contract_from_raw.id.to_string(Encoding::Base58),
+            "AoDzJxWSb1gUi2dSmvFeUFpSsjZQRJaqCpn7vCLkwwJj"
+        );
+        assert_eq!(
+            data_contract_from_raw.documents["note"]["properties"]["message"]["type"],
+            "string"
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn deserialize_contract_from_invalid_raw_object() -> Result<()> {
+        init();
+
+        let string_contract = get_data_from_file("src/tests/payloads/contract_example.json")?;
+
+        let invalid_raw_contract: JsonValue = serde_json::from_str(&string_contract)?;
+        // The identifiers are strings but they should be arrays of bytes
+        for path in IDENTIFIER_FIELDS {
+            assert!(invalid_raw_contract
+                .get(path)
+                .expect("the path should exist")
+                .is_string())
+        }
+
+        let result = DataContract::try_from(invalid_raw_contract);
+        assert_error_contains!(result, "expected a sequence");
         Ok(())
     }
 }
