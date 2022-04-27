@@ -1,6 +1,9 @@
 //! This module contains data structures that are left to be implemented
 
-use crate::prelude::*;
+use crate::{
+    errors::{consensus::basic::BasicError, StateError},
+    prelude::*,
+};
 
 use anyhow::Result as AnyResult;
 use serde::{Deserialize, Serialize};
@@ -32,8 +35,25 @@ pub struct DocumentTransition {
     pub action: String,
 }
 
-#[derive(Error, Debug, Clone)]
-pub enum ConsensusError {}
+#[derive(Error, Debug)]
+pub enum ConsensusError {
+    #[error(transparent)]
+    StateError(Box<StateError>),
+    #[error(transparent)]
+    BasicError(Box<BasicError>),
+}
+
+impl From<StateError> for ConsensusError {
+    fn from(se: StateError) -> Self {
+        ConsensusError::StateError(Box::new(se))
+    }
+}
+
+impl From<BasicError> for ConsensusError {
+    fn from(se: BasicError) -> Self {
+        ConsensusError::BasicError(Box::new(se))
+    }
+}
 
 pub type IHeader = String;
 
@@ -49,7 +69,7 @@ pub trait JsonSchemaValidatorLike {}
 #[async_trait]
 impl StateRepositoryLike for StateRepository {
     /// Fetch the Data Contract by ID
-    async fn fetch_data_contract<T>(&self, _data_contract_id: &Identifier) -> AnyResult<T> {
+    async fn fetch_data_contract<T>(&self, _data_contract_id: &Identifier) -> AnyResult<Option<T>> {
         unimplemented!()
     }
 
@@ -84,12 +104,12 @@ impl StateRepositoryLike for StateRepository {
     }
 
     /// Fetch transaction by ID
-    async fn fetch_transaction(&self, _id: &str) -> AnyResult<Vec<u8>> {
+    async fn fetch_transaction<T>(&self, _id: &str) -> AnyResult<Option<T>> {
         unimplemented!()
     }
 
     /// Fetch Identity by ID
-    async fn fetch_identity<T>(&self, _id: &Identifier) -> AnyResult<T> {
+    async fn fetch_identity<T>(&self, _id: &Identifier) -> AnyResult<Option<T>> {
         unimplemented!()
     }
 
@@ -176,4 +196,11 @@ impl SMLStore {
     pub fn get_current_sml(&self) -> AnyResult<SimplifiedMNList> {
         unimplemented!()
     }
+}
+
+#[derive(Default)]
+pub struct ValidationResult {}
+
+impl ValidationResult {
+    pub fn add_error(&mut self, _: impl Into<ConsensusError>) {}
 }
