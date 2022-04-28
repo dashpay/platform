@@ -8,3 +8,6 @@ pub use get_documents_fixture::*;
 
 mod get_dashpay_document_fixture;
 pub use get_dashpay_document_fixture::*;
+
+mod get_dpp;
+pub use get_dpp::*;
