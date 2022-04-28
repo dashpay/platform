@@ -98,12 +98,16 @@ impl Document {
         Ok(hash(self.to_buffer()?))
     }
 
-    pub fn set_value(_path: &str, _value: JsonValue) -> Result<(), ProtocolError> {
+    pub fn set_value(&self, _path: &str, _value: JsonValue) -> Result<(), ProtocolError> {
         unimplemented!()
     }
 
-    pub fn get(_path: &str, _value: JsonValue) -> Option<&JsonValue> {
-        unimplemented!()
+    /// Retrieves field specified by path
+    pub fn get(&self, path: &str) -> Option<&JsonValue> {
+        match self.data.get_value(path) {
+            Ok(v) => Some(v),
+            Err(_) => None,
+        }
     }
 }
 
