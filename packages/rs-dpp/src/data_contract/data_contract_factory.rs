@@ -1,9 +1,10 @@
-use std::collections::BTreeMap;
-
 use serde_json::Value as JsonValue;
+use std::collections::BTreeMap;
+use std::convert::TryFrom;
 
 use crate::{
     data_contract::{self, generate_data_contract_id},
+    decode_protocol_entity_factory::DecodeProtocolEntityFactory,
     errors::ProtocolError,
     mocks,
     prelude::Identifier,
@@ -15,22 +16,23 @@ use super::DataContract;
 pub struct DataContractFactory {
     dpp: mocks::DashPlatformProtocol,
     _validate_data_contract: mocks::ValidateDataContract,
-    _decode_protocol_entity: mocks::DecodeProtocolIdentity,
+    decode_protocol_entity: DecodeProtocolEntityFactory,
 }
 
 impl DataContractFactory {
     pub fn new(
         dpp: mocks::DashPlatformProtocol,
         _validate_data_contract: mocks::ValidateDataContract,
-        _decode_protocol_entity: mocks::DecodeProtocolIdentity,
+        decode_protocol_entity: DecodeProtocolEntityFactory,
     ) -> Self {
         Self {
             dpp,
             _validate_data_contract,
-            _decode_protocol_entity,
+            decode_protocol_entity,
         }
     }
 
+    /// Create Data Contract
     pub fn create(
         &self,
         owner_id: Identifier,
@@ -45,7 +47,7 @@ impl DataContractFactory {
             for (document_name, value) in documents {
                 documents_map.insert(document_name, value);
             }
-        } else {
+
             return Err(ProtocolError::Generic(String::from(
                 "attached documents are not in form a map",
             )));
@@ -66,5 +68,65 @@ impl DataContractFactory {
         Ok(data_contract)
     }
 
-    // TODO  implement the rest of the constructors
+    /// Create Data Contract from plain object
+    pub async fn create_from_object(
+        &self,
+        raw_data_contract: JsonValue,
+        skip_validation: bool,
+    ) -> Result<DataContract, ProtocolError> {
+        if !skip_validation {
+            let result = self
+                ._validate_data_contract
+                .validate_data_contract(&raw_data_contract)
+                .await;
+            if !result.is_valid() {
+                return Err(ProtocolError::InvalidDataContractError {
+                    errors: result.get_errors(),
+                    raw_data_contract,
+                });
+            }
+        }
+        DataContract::try_from(raw_data_contract)
+    }
+
+    /// Create Data Contract from buffer
+    pub async fn create_from_buffer(
+        &self,
+        buffer: Vec<u8>,
+        skip_validation: bool,
+    ) -> Result<DataContract, ProtocolError> {
+        let (protocol_version, raw_data_contract) =
+            self.decode_protocol_entity.decode_protocol_entity(buffer)?;
+
+        self.create_from_object(raw_data_contract, skip_validation)
+            .await
+    }
+
+    // TODO
+    //   /**
+    //    * Create Data Contract Create State Transition
+    //    *
+    //    * @param {DataContract} dataContract
+    //    * @return {DataContractCreateTransition}
+    //    */
+    //   createDataContractCreateTransition(dataContract) {
+    //     return new DataContractCreateTransition({
+    //       protocolVersion: this.dpp.getProtocolVersion(),
+    //       dataContract: dataContract.toObject(),
+    //       entropy: dataContract.getEntropy(),
+    //     });
+    //   }
+
+    //   /**
+    //    * Create Data Contract Update State Transition
+    //    *
+    //    * @param {DataContract} dataContract
+    //    * @return {DataContractUpdateTransition}
+    //    */
+    //   createDataContractUpdateTransition(dataContract) {
+    //     return new DataContractUpdateTransition({
+    //       protocolVersion: this.dpp.getProtocolVersion(),
+    //       dataContract: dataContract.toObject(),
+    //     });
+    //   }
 }
