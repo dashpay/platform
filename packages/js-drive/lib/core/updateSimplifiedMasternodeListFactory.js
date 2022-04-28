@@ -81,6 +81,21 @@ function updateSimplifiedMasternodeListFactory(
         ...await fetchDiffsPerBlock(startHeight, coreHeight),
       ];
 
+      const diffs = [];
+
+      for (let height = startHeight; height < coreHeight; height += 1) {
+        const { result: rawDiffNew } = await coreRpcClient.protx('diff', height, height + 1);
+
+        diffs.push(rawDiffNew);
+      }
+
+      console.log('initialSmlDiffs', JSON.stringify(
+        [
+          rawDiff,
+          ...diffs,
+        ], null, 2,
+      ));
+
       simplifiedMasternodeList.applyDiffs(initialSmlDiffs);
 
       latestRequestedHeight = coreHeight;

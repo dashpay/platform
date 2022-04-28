@@ -1,5 +1,7 @@
 const Identifier = require('@dashevo/dpp/lib/identifier/Identifier');
 const SimplifiedMNList = require('@dashevo/dashcore-lib/lib/deterministicmnlist/SimplifiedMNList');
+const Address = require('@dashevo/dashcore-lib/lib/address');
+const Script = require('@dashevo/dashcore-lib/lib/script');
 const createOperatorIdentifier = require('./createOperatorIdentifier');
 
 /**
@@ -82,29 +84,39 @@ function synchronizeMasternodeIdentitiesFactory(
           );
         }
 
-        const scriptPayoutIsChanged = previousMNList.find((previousMnListEntry) => (
+        const payoutAddressIsChanged = previousMNList.find((previousMnListEntry) => (
           previousMnListEntry.proRegTxHash === mnEntry.proRegTxHash
-          && previousMnListEntry.scriptPayout !== mnEntry.scriptPayout
+          && previousMnListEntry.payoutAddress !== mnEntry.payoutAddress
         ));
 
-        if (scriptPayoutIsChanged) {
+        if (payoutAddressIsChanged) {
+          const newPayoutAddress = Address.fromString(mnEntry.scriptPayout);
+          const previousPayoutAddress = Address.fromString(previousMnEntry.payoutAddress);
+
           await handleUpdatedScriptPayout(
             Identifier.from(Buffer.from(Identifier.proRegTxHash, 'hex')),
-            mnEntry.scriptPayout,
-            previousMnEntry.scriptPayout,
+            new Script(newPayoutAddress).toBuffer(),
+            new Script(previousPayoutAddress).toBuffer(),
           );
         }
 
-        const scriptOperatorPayoutIsChanged = previousMNList.find((previousMnListEntry) => (
+        const operatorPayoutAddressIsChanged = previousMNList.find((previousMnListEntry) => (
           previousMnListEntry.proRegTxHash === mnEntry.proRegTxHash
-          && previousMnListEntry.scriptOperatorPayout !== mnEntry.scriptOperatorPayout
+          && previousMnListEntry.operatorPayoutAddress !== mnEntry.operatorPayoutAddress
         ));
 
-        if (scriptOperatorPayoutIsChanged) {
+        if (operatorPayoutAddressIsChanged) {
+          const newOperatorPayoutAddress = Address.fromString(
+            previousMnEntry.operatorPayoutAddress,
+          );
+          const previousOperatorPayoutAddress = Address.fromString(
+            mnEntry.operatorPayoutAddress,
+          );
+
           await handleUpdatedScriptPayout(
             createOperatorIdentifier(mnEntry),
-            mnEntry.scriptOperatorPayout,
-            previousMnEntry.scriptOperatorPayout,
+            new Script(newOperatorPayoutAddress).toBuffer(),
+            new Script(previousOperatorPayoutAddress).toBuffer(),
           );
         }
       }

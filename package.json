@@ -70,5 +70,10 @@
   "resolutions": {
     "elliptic": "6.5.3",
     "bn.js": "4.12.0"
+  },
+  "dependenciesMeta": {
+    "@dashevo/dashcore-lib@0.19.31": {
+      "unplugged": true
+    }
   }
 }

@@ -450,7 +450,8 @@ function createDIContainer(options) {
 
     handleUpdatedScriptPayout: asFunction(handleUpdatedScriptPayoutFactory).singleton(),
 
-    getWithdrawPubKeyTypeFromPayoutScript: asFunction(getWithdrawPubKeyTypeFromPayoutScriptFactory).singleton(),
+    getWithdrawPubKeyTypeFromPayoutScript: asFunction(getWithdrawPubKeyTypeFromPayoutScriptFactory)
+      .singleton(),
   });
 
   /**

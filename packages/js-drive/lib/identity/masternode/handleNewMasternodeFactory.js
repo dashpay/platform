@@ -1,5 +1,7 @@
 const Identifier = require('@dashevo/dpp/lib/identifier/Identifier');
 const IdentityPublicKey = require('@dashevo/dpp/lib/identity/IdentityPublicKey');
+const Address = require('@dashevo/dashcore-lib/lib/address');
+const Script = require('@dashevo/dashcore-lib/lib/script');
 const createOperatorIdentifier = require('./createOperatorIdentifier');
 
 /**
@@ -27,7 +29,8 @@ function handleNewMasternodeFactory(
     const { extraPayload: proRegTxPayload } = await fetchTransaction(masternodeEntry.proRegTxHash);
 
     const proRegTxHash = Buffer.from(masternodeEntry.proRegTxHash, 'hex');
-    const payoutPubKey = Buffer.from(masternodeEntry.scriptPayout, 'hex');
+    const payoutAddress = Address.fromString(masternodeEntry.operatorPayoutAddress);
+    const payoutPubKey = new Script(payoutAddress).toBuffer();
 
     // Create a masternode identity
     const masternodeIdentifier = Identifier.from(
@@ -47,7 +50,8 @@ function handleNewMasternodeFactory(
 
     if (proRegTxPayload.operatorReward > 0) {
       const operatorPubKey = Buffer.from(masternodeEntry.pubKeyOperator, 'hex');
-      const operatorPayoutPubKey = Buffer.from(masternodeEntry.scriptOperatorPayout, 'hex');
+      const operatorPayoutAddress = Address.fromString(masternodeEntry.operatorPayoutAddress);
+      const operatorPayoutPubKey = new Script(operatorPayoutAddress).toBuffer();
 
       const operatorIdentifier = createOperatorIdentifier(masternodeEntry);
 
