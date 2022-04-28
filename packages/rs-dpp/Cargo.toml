@@ -13,13 +13,17 @@ anyhow = { version = "1.0"}
 thiserror = { version = "1.0"}
 lazy_static = { version ="1.4"}
 serde = { version="1.0", features=["derive"]}
-dashcore = { git = "https://github.com/dashevo/rust-dashcore", features=["no-std"], default-features = false }
+dashcore = { git="https://github.com/dashevo/rust-dashcore", features=["no-std"], default-features = false }
 serde_json = { version="1.0", features=["preserve_order"]}
 ciborium = { version="0.2"}
 byteorder = { version="1.4"}
 sha2  = { version="0.10"}
+jsonschema = { git="https://github.com/antouhou/jsonschema-rs", branch="feat-custom-keywords", default-features=false }
 chrono = { version="0.4", features=["wasmbind", "serde"]}
 env_logger = { version="0.9"}
 log = { version="0.4"}
 getrandom= { version="0.2", features=["js"]}
+serde_repr = { version = "0.1.7" }
+bls-signatures = { version = "0.11.3" }
+
 

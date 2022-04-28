@@ -1,14 +1,15 @@
-use crate::errors::ProtocolError;
+use crate::errors::{InvalidVectorSizeError, ProtocolError};
 use anyhow::anyhow;
 use dashcore::PublicKey;
 use lazy_static::lazy_static;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use serde_repr::{Deserialize_repr, Serialize_repr};
 use std::{collections::HashMap, hash::Hash};
 
-pub type KeyID = i64;
+pub type KeyID = u64;
 
 #[repr(u8)]
-#[derive(Debug, PartialEq, Eq, Clone, Copy, Serialize, Deserialize)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy, Serialize_repr, Deserialize_repr)]
 pub enum KeyType {
     ECDSA_SECP256K1 = 0,
     BLS12_381 = 1,
@@ -16,7 +17,7 @@ pub enum KeyType {
 }
 
 #[repr(u8)]
-#[derive(Debug, PartialEq, Eq, Clone, Copy, Hash, Serialize, Deserialize)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy, Hash, Serialize_repr, Deserialize_repr)]
 pub enum Purpose {
     /// at least one authentication key must be registered for all security levels
     AUTHENTICATION = 0,
@@ -27,7 +28,7 @@ pub enum Purpose {
 }
 
 #[repr(u8)]
-#[derive(Debug, PartialEq, Eq, Clone, Copy, Serialize, Deserialize)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy, Serialize_repr, Deserialize_repr)]
 pub enum SecurityLevel {
     MASTER = 0,
     CRITICAL = 1,
@@ -36,7 +37,7 @@ pub enum SecurityLevel {
 }
 
 lazy_static! {
-    static ref ALLOWED_SECURITY_LEVELS: HashMap<Purpose, Vec<SecurityLevel>> = {
+    pub static ref ALLOWED_SECURITY_LEVELS: HashMap<Purpose, Vec<SecurityLevel>> = {
         let mut m = HashMap::new();
         m.insert(
             Purpose::AUTHENTICATION,
@@ -61,10 +62,10 @@ pub struct IdentityPublicKey {
     pub security_level: SecurityLevel,
     #[serde(rename = "type")]
     pub key_type: KeyType,
-    #[serde(
-        serialize_with = "se_vec_to_base64",
-        deserialize_with = "de_base64_to_vec"
-    )]
+    // #[serde(
+    //     serialize_with = "se_vec_to_base64",
+    //     deserialize_with = "de_base64_to_vec"
+    // )]
     pub data: Vec<u8>,
     pub read_only: bool,
 }
@@ -81,7 +82,7 @@ pub struct JsonIdentityPublicKey {
 }
 
 impl std::convert::Into<JsonIdentityPublicKey> for &IdentityPublicKey {
-    fn into(self: Self) -> JsonIdentityPublicKey {
+    fn into(self) -> JsonIdentityPublicKey {
         JsonIdentityPublicKey {
             id: self.id,
             purpose: self.purpose,
@@ -163,18 +164,45 @@ impl IdentityPublicKey {
 
     /// Get the original public key hash
     pub fn hash(&self) -> Result<Vec<u8>, ProtocolError> {
-        if self.data.len() == 0 {
+        if self.data.is_empty() {
             return Err(ProtocolError::EmptyPublicKeyDataError);
         }
         if self.key_type == KeyType::ECDSA_HASH160 {
             return Ok(self.data.clone());
         }
 
-        // TODO create another error type
-        let original_key = PublicKey::from_slice(&self.data)
+        let public_key = vec_to_array(&self.data);
+        let original_key = PublicKey::from_slice(&public_key)
             .map_err(|e| anyhow!("unable to create pub key - {}", e))?;
         Ok(original_key.pubkey_hash().to_vec())
     }
+
+    pub fn data_as_arr_33(&self) -> Result<[u8; 33], InvalidVectorSizeError> {
+        vec_to_array_33(&self.data)
+    }
+}
+
+fn vec_to_array(vec: &[u8]) -> [u8; 65] {
+    let mut v: [u8; 65] = [0; 65];
+    for i in 0..65 {
+        v[i] = *vec.get(i).unwrap();
+    }
+    v
+}
+
+fn vec_to_array_33(vec: &[u8]) -> Result<[u8; 33], InvalidVectorSizeError> {
+    if vec.len() != 33 {
+        return Err(InvalidVectorSizeError::new(33, vec.len()));
+    }
+    let mut v: [u8; 33] = [0; 33];
+    for i in 0..33 {
+        if let Some(n) = vec.get(i) {
+            v[i] = *n;
+        } else {
+            return Err(InvalidVectorSizeError::new(33, vec.len()));
+        }
+    }
+    Ok(v)
 }
 
 pub fn de_base64_to_vec<'de, D: Deserializer<'de>>(d: D) -> Result<Vec<u8>, D::Error> {

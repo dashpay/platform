@@ -16,7 +16,7 @@ use std::convert::TryFrom;
 // TODO probably this need to be changed
 pub type JsonSchema = JsonValue;
 
-pub const SCHEMA: &'static str = "https://schema.dash.org/dpp-0-4-0/meta/data-contract";
+pub const SCHEMA: &str = "https://schema.dash.org/dpp-0-4-0/meta/data-contract";
 
 #[derive(Serialize, Deserialize, Debug, Clone, Default)]
 #[serde(rename_all = "camelCase")]
@@ -97,10 +97,7 @@ impl DataContract {
             o.remove("protocolVersion");
         };
 
-        Ok(serializer::value_to_cbor(
-            json_object,
-            Some(protocol_version),
-        )?)
+        serializer::value_to_cbor(json_object, Some(protocol_version))
     }
 
     // Returns hash from Data Contract
