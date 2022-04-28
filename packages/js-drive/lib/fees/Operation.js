@@ -29,6 +29,7 @@ Operation.TYPES = {
   WRITE: 'write',
   READ: 'read',
   DELETE: 'delete',
+  PRE_CALCULATED: 'preCalculated',
 };
 
 module.exports = Operation;

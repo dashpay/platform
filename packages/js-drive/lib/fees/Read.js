@@ -6,7 +6,7 @@ class Read extends Operation {
    * @param {number} pathSize
    * @param {number} valueSize 
    */
-   constructor(keySize, valueSize) {
+   constructor(keySize, pathSize, valueSize) {
     this.keySize = keySize;
     this.pathSize = pathSize;
     this.valueSize = valueSize;

@@ -25,7 +25,7 @@ class Delete extends Operation {
    * @returns {number}
    */
   getStorageCost() {
-    return (this.keySize + this.valueSize) * Operation.STORAGE_CREDIT_PER_BYTE;
+    return -((this.keySize + this.valueSize) * Operation.STORAGE_CREDIT_PER_BYTE);
   }
   
   /**

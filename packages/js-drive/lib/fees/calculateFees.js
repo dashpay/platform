@@ -3,20 +3,22 @@
  * 
  * @param {Operation[]} operations 
  * 
- * @returns {Object}
+ * @returns {number}
  */
 function calculateFees(operations) {
-  const fees = {
+  const costs = {
     storageCost: 0.0,
     cpuCost: 0.0,
   };
 
   for (const operation of operations) {
-    fees.cpuCost += operation.getCpuCost();
-    fees.storageCost += operation.getStorageCost();
+    costs.cpuCost += operation.getCpuCost();
+    costs.storageCost += operation.getStorageCost();
   }
 
-  return fees;
+  // TODO: calculate using formula
+
+  return 0.0;
 }
 
 module.exports = calculateFees;
