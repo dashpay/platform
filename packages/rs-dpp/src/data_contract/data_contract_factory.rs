@@ -1,4 +1,5 @@
-use serde_json::Value as JsonValue;
+use anyhow::anyhow;
+use serde_json::{Number, Value as JsonValue};
 use std::collections::BTreeMap;
 use std::convert::TryFrom;
 
@@ -6,22 +7,22 @@ use crate::{
     data_contract::{self, generate_data_contract_id},
     decode_protocol_entity_factory::DecodeProtocolEntityFactory,
     errors::ProtocolError,
-    mocks,
+    mocks::{self, ConsensusError},
     prelude::Identifier,
     util::entropy_generator,
 };
 
 use super::DataContract;
 
-pub struct DataContractFactory {
-    dpp: mocks::DashPlatformProtocol,
+pub struct DataContractFactory<SR> {
+    dpp: mocks::DashPlatformProtocol<SR>,
     _validate_data_contract: mocks::ValidateDataContract,
     decode_protocol_entity: DecodeProtocolEntityFactory,
 }
 
-impl DataContractFactory {
+impl<SR> DataContractFactory<SR> {
     pub fn new(
-        dpp: mocks::DashPlatformProtocol,
+        dpp: mocks::DashPlatformProtocol<SR>,
         _validate_data_contract: mocks::ValidateDataContract,
         decode_protocol_entity: DecodeProtocolEntityFactory,
     ) -> Self {
@@ -47,7 +48,7 @@ impl DataContractFactory {
             for (document_name, value) in documents {
                 documents_map.insert(document_name, value);
             }
-
+        } else {
             return Err(ProtocolError::Generic(String::from(
                 "attached documents are not in form a map",
             )));
@@ -60,7 +61,7 @@ impl DataContractFactory {
             version: 1,
             owner_id,
             documents: documents_map,
-            defs: None,
+            defs: BTreeMap::new(),
             entropy,
 
             ..Default::default()
@@ -95,8 +96,21 @@ impl DataContractFactory {
         buffer: Vec<u8>,
         skip_validation: bool,
     ) -> Result<DataContract, ProtocolError> {
-        let (protocol_version, raw_data_contract) =
+        let (protocol_version, mut raw_data_contract) =
             self.decode_protocol_entity.decode_protocol_entity(buffer)?;
+
+        match raw_data_contract {
+            JsonValue::Object(ref mut m) => m.insert(
+                String::from("protocolVersion"),
+                JsonValue::Number(Number::from(protocol_version)),
+            ),
+            _ => {
+                return Err(ConsensusError::SerializedObjectParsingError {
+                    parsing_error: anyhow!("the '{:?}' is not a map", raw_data_contract),
+                }
+                .into())
+            }
+        };
 
         self.create_from_object(raw_data_contract, skip_validation)
             .await

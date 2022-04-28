@@ -61,7 +61,7 @@ impl From<String> for ProtocolError {
 
 impl From<mocks::ConsensusError> for ProtocolError {
     fn from(e: mocks::ConsensusError) -> Self {
-        ProtocolError::AbstractConsensusError(e)
+        ProtocolError::AbstractConsensusError(Box::new(e))
     }
 }
 
