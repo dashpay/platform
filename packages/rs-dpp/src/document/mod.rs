@@ -10,9 +10,12 @@ use crate::identifier::Identifier;
 use crate::metadata::Metadata;
 use crate::util::deserializer;
 use crate::util::hash::hash;
+use crate::util::json_value::{JsonValueExt, ReplaceWith};
 use crate::util::serializer;
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
+use serde_json::Value as JsonValue;
+
+const IDENTIFIER_FIELDS: [&str; 3] = ["$id", "$dataContractId", "$ownerId"];
 
 /// The document object represents the data provided by the platform in response to a query.
 #[derive(Serialize, Deserialize, Debug, Clone, Default)]
@@ -35,7 +38,7 @@ pub struct Document {
     pub updated_at: Option<i64>,
     // the serde_json::Value preserves the order (see .toml file)
     #[serde(flatten)]
-    pub data: serde_json::Value,
+    pub data: JsonValue,
     #[serde(skip)]
     pub data_contract: DataContract,
     #[serde(skip)]
@@ -47,18 +50,17 @@ pub struct Document {
 // per https://www.reddit.com/r/rust/comments/d7w6n7/is_it_idiomatic_to_write_setters_and_getters/
 // we don't want to use getters and setters
 impl Document {
-    pub fn to_json(&self) -> Result<Value, ProtocolError> {
-        serde_json::to_value(&self)
-            .map_err(|e| ProtocolError::EncodingError(format!("corrupted data - {}", e)))
+    pub fn to_json(&self) -> Result<JsonValue, ProtocolError> {
+        Ok(serde_json::to_value(&self)?)
     }
 
     pub fn from_buffer(b: impl AsRef<[u8]>) -> Result<Document, ProtocolError> {
         let (protocol_bytes, document_bytes) = b.as_ref().split_at(4);
 
-        let json_value: Value = ciborium::de::from_reader(document_bytes)
+        let json_value: JsonValue = ciborium::de::from_reader(document_bytes)
             .map_err(|e| ProtocolError::EncodingError(format!("{}", e)))?;
 
-        let mut json_map = if let Value::Object(v) = json_value {
+        let mut json_map = if let JsonValue::Object(v) = json_value {
             v
         } else {
             return Err(ProtocolError::EncodingError(String::from(
@@ -67,67 +69,40 @@ impl Document {
         };
 
         deserializer::parse_protocol_version(protocol_bytes, &mut json_map)?;
-        deserializer::parse_identities(&mut json_map, &["$id", "$dataContractId", "$ownerId"])?;
+        deserializer::parse_identities(&mut json_map, &IDENTIFIER_FIELDS)?;
 
-        let document: Document = serde_json::from_value(Value::Object(json_map))?;
+        let document: Document = serde_json::from_value(JsonValue::Object(json_map))?;
         Ok(document)
+    }
+
+    pub fn to_object(&self, skip_identifiers_conversion: bool) -> Result<JsonValue, ProtocolError> {
+        let mut json_object = serde_json::to_value(&self)?;
+        if !skip_identifiers_conversion {
+            json_object.replace_identifier_paths(IDENTIFIER_FIELDS, ReplaceWith::Bytes)?;
+        }
+        Ok(json_object)
     }
 
     pub fn to_buffer(&self) -> Result<Vec<u8>, ProtocolError> {
         let protocol_version = self.protocol_version;
-        let id: Vec<Value> = self
-            .id
-            .to_buffer()
-            .iter()
-            .map(|v| Value::from(*v))
-            .collect();
+        let mut json_object = self.to_object(false)?;
 
-        let data_contract_id: Vec<Value> = self
-            .data_contract_id
-            .to_buffer()
-            .iter()
-            .map(|v| Value::from(*v))
-            .collect();
-
-        let owner_id: Vec<Value> = self
-            .owner_id
-            .to_buffer()
-            .iter()
-            .map(|v| Value::from(*v))
-            .collect();
-
-        let mut json_value = serde_json::to_value(&self)
-            .map_err(|e| ProtocolError::EncodingError(format!("corrupted data - {}", e)))?;
-
-        match json_value {
-            Value::Object(ref mut o) => {
-                o.insert(String::from("$id"), Value::Array(id));
-                o.insert(
-                    String::from("$dataContractId"),
-                    Value::Array(data_contract_id),
-                );
-                o.insert(String::from("$ownerId"), Value::Array(owner_id));
-                o.remove("$protocolVersion");
-            }
-            _ => {
-                return Err(ProtocolError::EncodingError(String::from(
-                    "corrupted data: document is not an object",
-                )))
-            }
+        if let JsonValue::Object(ref mut o) = json_object {
+            o.remove("$protocolVersion");
         };
 
-        serializer::value_to_cbor(json_value, Some(protocol_version))
+        serializer::value_to_cbor(json_object, Some(protocol_version))
     }
 
     pub fn hash(&self) -> Result<Vec<u8>, ProtocolError> {
         Ok(hash(self.to_buffer()?))
     }
 
-    pub fn set_value(_path: &str, _value: Value) -> Result<(), ProtocolError> {
+    pub fn set_value(_path: &str, _value: JsonValue) -> Result<(), ProtocolError> {
         unimplemented!()
     }
 
-    pub fn get(_path: &str, _value: Value) -> Option<&Value> {
+    pub fn get(_path: &str, _value: JsonValue) -> Option<&JsonValue> {
         unimplemented!()
     }
 }
@@ -140,12 +115,11 @@ mod test {
     use super::*;
     use anyhow::Result;
     use chrono::Utc;
-    use log::debug;
     use serde_json::Value;
 
     fn init() {
         let _ = env_logger::builder()
-            .filter_level(log::LevelFilter::Debug)
+            .filter_level(log::LevelFilter::Trace)
             .try_init();
     }
 
@@ -175,7 +149,6 @@ mod test {
             .to_buffer()
         );
 
-        debug!("the dynamic data is {:?}", doc.data);
         assert_eq!(doc.data["label"], Value::String("user-9999".to_string()));
         assert_eq!(
             doc.data["records"]["dashUniqueIdentityId"],
@@ -212,9 +185,7 @@ mod test {
         let document_json = get_data_from_file("src/tests/payloads/document_dpns.json")?;
         let document = serde_json::from_str::<Document>(&document_json)?;
 
-        let json = serde_json::to_string(&document)?;
-        debug!("serialized document: {}", json);
-
+        serde_json::to_string(&document)?;
         Ok(())
     }
 
@@ -223,9 +194,7 @@ mod test {
         init();
 
         let document_json = get_data_from_file("src/tests/payloads/document_dpns.json")?;
-        let document: Document = serde_json::from_str::<Document>(&document_json)?;
-
-        debug!("{:?}", document.to_buffer());
+        serde_json::from_str::<Document>(&document_json)?;
         Ok(())
     }
 
