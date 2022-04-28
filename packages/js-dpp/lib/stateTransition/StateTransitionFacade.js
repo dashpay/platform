@@ -41,7 +41,7 @@ const getDataTriggersFactory = require('../dataTrigger/getDataTriggersFactory');
 const executeDataTriggersFactory = require('../document/stateTransition/DocumentsBatchTransition/validation/state/executeDataTriggersFactory');
 const validateIdentityExistenceFactory = require('../identity/validation/validateIdentityExistenceFactory');
 const validatePublicKeysFactory = require('../identity/validation/validatePublicKeysFactory');
-const validatePublicKeysState = require('../identity/stateTransition/IdentityUpdateTransition/validation/state/validatePublicKeys');
+const validatePublicKeysState = require('../identity/stateTransition/IdentityUpdateTransition/validation/state/validatePublicKeysState');
 const validateRequiredPurposeAndSecurityLevelFactory = require('../identity/validation/validateRequiredPurposeAndSecurityLevelFactory');
 const validateDataContractMaxDepthFactory = require('../dataContract/validation/validateDataContractMaxDepthFactory');
 
@@ -91,6 +91,9 @@ const validateDataContractUpdateTransitionStateFactory = require('../dataContrac
 const validateIndicesAreBackwardCompatible = require('../dataContract/stateTransition/DataContractUpdateTransition/validation/basic/validateIndicesAreBackwardCompatible');
 const getPropertyDefinitionByPath = require('../dataContract/getPropertyDefinitionByPath');
 
+const identityJsonSchema = require('../../schema/identity/stateTransition/publicKey.json');
+const validatePublicKeySignaturesFactory = require('../identity/stateTransition/validatePublicKeySignaturesFactory');
+
 class StateTransitionFacade {
   /**
    * @param {DashPlatformProtocol} dpp
@@ -109,7 +112,6 @@ class StateTransitionFacade {
       dpp,
       protocolVersion.compatibility,
     );
-
     const validateDataContract = validateDataContractFactory(
       validator,
       validateDataContractMaxDepth,
@@ -189,8 +191,9 @@ class StateTransitionFacade {
       [ChainAssetLockProof.type]: validateChainAssetLockProofStructure,
     };
 
-    const validatePublicKeysBasic = validatePublicKeysFactory(
+    const validatePublicKeys = validatePublicKeysFactory(
       validator,
+      identityJsonSchema,
       bls,
     );
 
@@ -198,13 +201,18 @@ class StateTransitionFacade {
       validateRequiredPurposeAndSecurityLevelFactory()
     );
 
+    const validatePublicKeySignatures = validatePublicKeySignaturesFactory(
+      this.createStateTransition,
+    );
+
     const validateIdentityCreateTransitionBasic = (
       validateIdentityCreateTransitionBasicFactory(
         validator,
-        validatePublicKeysBasic,
+        validatePublicKeys,
         validateRequiredPurposeAndSecurityLevel,
         proofValidationFunctionsByType,
         validateProtocolVersion,
+        validatePublicKeySignatures,
       )
     );
 
@@ -219,7 +227,8 @@ class StateTransitionFacade {
     const validateIdentityUpdateTransitionBasic = validateIdentityUpdateTransitionBasicFactory(
       validator,
       validateProtocolVersion,
-      validatePublicKeysBasic,
+      validatePublicKeys,
+      validatePublicKeySignatures,
     );
 
     const validationFunctionsByType = {

@@ -1,5 +1,7 @@
 const { getRE2Class } = require('@dashevo/wasm-re2');
 
+const crypto = require('crypto');
+
 const createAjv = require('../../../../lib/ajv/createAjv');
 
 const JsonSchemaValidator = require(
@@ -37,21 +39,27 @@ const IdentityPublicKey = require(
 );
 const BlsSignatures = require('../../../../lib/bls/bls');
 
+const identityPublicKeySchema = require('../../../../schema/identity/publicKey.json');
+const stateTransitionPublicKeySchema = require('../../../../schema/identity/stateTransition/publicKey.json');
+
 describe('validatePublicKeysFactory', () => {
   let rawPublicKeys;
   let validatePublicKeys;
+  let validator;
+  let bls;
 
   beforeEach(async () => {
     ({ publicKeys: rawPublicKeys } = getIdentityFixture().toObject());
 
     const RE2 = await getRE2Class();
     const ajv = createAjv(RE2);
-    const bls = await BlsSignatures.getInstance();
+    bls = await BlsSignatures.getInstance();
 
-    const validator = new JsonSchemaValidator(ajv);
+    validator = new JsonSchemaValidator(ajv);
 
     validatePublicKeys = validatePublicKeysFactory(
       validator,
+      identityPublicKeySchema,
       bls,
     );
   });
@@ -226,6 +234,36 @@ describe('validatePublicKeysFactory', () => {
         expect(error.getKeyword()).to.equal('maxItems');
       });
     });
+
+    describe('BIP13_SCRIPT_HASH', () => {
+      it('should be no less than 20 bytes', () => {
+        rawPublicKeys[1].data = Buffer.alloc(19);
+        rawPublicKeys[1].type = 3;
+
+        const result = validatePublicKeys(rawPublicKeys);
+
+        expectJsonSchemaError(result);
+
+        const [error] = result.getErrors();
+
+        expect(error.getInstancePath()).to.equal('/data');
+        expect(error.getKeyword()).to.equal('minItems');
+      });
+
+      it('should be no longer than 20 bytes', () => {
+        rawPublicKeys[1].data = Buffer.alloc(21);
+        rawPublicKeys[1].type = 3;
+
+        const result = validatePublicKeys(rawPublicKeys);
+
+        expectJsonSchemaError(result);
+
+        const [error] = result.getErrors();
+
+        expect(error.getInstancePath()).to.equal('/data');
+        expect(error.getKeyword()).to.equal('maxItems');
+      });
+    });
   });
 
   it('should return invalid result if there are duplicate key ids', () => {
@@ -343,26 +381,87 @@ describe('validatePublicKeysFactory', () => {
     expect(error.getValidationError().message).to.equal('Invalid public key');
   });
 
-  describe('disabledAt', () => {
+  describe('Identity Schema', () => {
     beforeEach(() => {
       rawPublicKeys[0].disabledAt = new Date().getTime();
     });
 
-    it('should return invalid result if key has disabledAt property', () => {
-      const result = validatePublicKeys(rawPublicKeys, { mustBeEnabled: true });
+    describe('disabledAt', () => {
+      it('should be an integer');
 
-      expectJsonSchemaError(result);
+      it('should be greater than 0');
+    });
+  });
 
-      const [error] = result.getErrors();
+  describe('State Transition Schema', () => {
+    beforeEach(() => {
+      validatePublicKeys = validatePublicKeysFactory(
+        validator,
+        stateTransitionPublicKeySchema,
+        bls,
+      );
 
-      expect(error.getKeyword()).to.equal('additionalProperties');
-      expect(error.params.additionalProperty).to.equal('disabledAt');
+      rawPublicKeys.forEach((rawPublicKey) => {
+        // eslint-disable-next-line no-param-reassign
+        rawPublicKey.signature = crypto.randomBytes(65);
+      });
     });
 
-    it('should pass valid public keys', () => {
-      const result = validatePublicKeys(rawPublicKeys);
+    describe('signature', () => {
+      it('should be present', () => {
+        delete rawPublicKeys[0].signature;
 
-      expect(result.isValid()).to.be.true();
+        const result = validatePublicKeys(rawPublicKeys);
+
+        expectJsonSchemaError(result);
+
+        const [error] = result.getErrors();
+
+        expect(error.instancePath).to.equal('');
+        expect(error.getKeyword()).to.equal('required');
+        expect(error.getParams().missingProperty).to.equal('signature');
+      });
+
+      it('should be a byte array', async () => {
+        rawPublicKeys[0].signature = new Array(65).fill('string');
+
+        const result = validatePublicKeys(rawPublicKeys);
+
+        expectJsonSchemaError(result, 2);
+
+        const [error, byteArrayError] = result.getErrors();
+
+        expect(error.instancePath).to.equal('/signature/0');
+        expect(error.getKeyword()).to.equal('type');
+
+        expect(byteArrayError.getKeyword()).to.equal('byteArray');
+      });
+
+      it('should be not shorter than 65 bytes', () => {
+        rawPublicKeys[0].signature = Buffer.alloc(64);
+
+        const result = validatePublicKeys(rawPublicKeys);
+
+        expectJsonSchemaError(result);
+
+        const [error] = result.getErrors();
+
+        expect(error.instancePath).to.equal('/signature');
+        expect(error.getKeyword()).to.equal('minItems');
+      });
+
+      it('should be not longer than 65 bytes', () => {
+        rawPublicKeys[0].signature = Buffer.alloc(66);
+
+        const result = validatePublicKeys(rawPublicKeys);
+
+        expectJsonSchemaError(result);
+
+        const [error] = result.getErrors();
+
+        expect(error.instancePath).to.equal('/signature');
+        expect(error.getKeyword()).to.equal('maxItems');
+      });
     });
   });
 });

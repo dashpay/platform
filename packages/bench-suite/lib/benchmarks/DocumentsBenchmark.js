@@ -41,6 +41,14 @@ class DocumentsBenchmark extends AbstractBenchmark {
         context.identity,
       );
 
+      if (this.runnerOptions.verbose) {
+        // eslint-disable-next-line no-console
+        console.dir(context.identity.toJSON(), { depth: Infinity });
+
+        // eslint-disable-next-line no-console
+        console.dir(dataContract.toJSON(), { depth: Infinity });
+      }
+
       await context.dash.platform.contracts.publish(
         dataContract,
         context.identity,
@@ -62,6 +70,11 @@ class DocumentsBenchmark extends AbstractBenchmark {
             context.identity,
             documentProperties,
           );
+
+          if (this.runnerOptions.verbose) {
+            // eslint-disable-next-line no-console
+            console.dir(document.toJSON(), { depth: Infinity });
+          }
 
           const stateTransition = await context.dash.platform.documents.broadcast({
             create: [document],
@@ -114,6 +127,18 @@ class DocumentsBenchmark extends AbstractBenchmark {
     });
   }
 
+  /**
+   * @returns {number}
+   */
+  getRequiredCredits() {
+    return this.config.requiredCredits;
+  }
+
+  /**
+   * @private
+   * @param {string} documentType
+   * @param {Object[]} metrics
+   */
   #printDocumentTypeMetrics(documentType, metrics) {
     const overall = [];
     const validateBasic = [];

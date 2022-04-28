@@ -1,15 +1,17 @@
-const { cloneDeep } = require('lodash');
+function exportState(chainHeight) {
+  let { lastKnownBlock: { height } } = this.state;
 
-function exportState() {
-  const { walletId } = this;
-  const { mnemonic, paths, identities } = this.state;
+  /*
+   * If we have chain height provided, we must set last known block to
+   * chainHeight - 6 to avoid reorgs
+   */
+  if (chainHeight && height > chainHeight - 6) {
+    height = chainHeight - 6;
+  }
 
   return {
-    walletId,
-    state: {
-      mnemonic,
-      paths: cloneDeep(Object.fromEntries(paths)),
-      identities: cloneDeep(Object.fromEntries(identities)),
+    lastKnownBlock: {
+      height,
     },
   };
 }

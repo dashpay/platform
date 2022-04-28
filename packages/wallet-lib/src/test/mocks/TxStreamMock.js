@@ -1,4 +1,5 @@
 const EventEmitter = require('events');
+const TxStreamDataResponseMock = require('./TxStreamDataResponseMock');
 
 class TxStreamMock extends EventEmitter {
   constructor() {
@@ -19,6 +20,16 @@ class TxStreamMock extends EventEmitter {
   end() {
     this.emit('end');
     this.removeAllListeners();
+  }
+
+  sendTransactions(transactions) {
+    this.emit(TxStreamMock.EVENTS.data, new TxStreamDataResponseMock({
+      rawTransactions: transactions.map((tx) => tx.toBuffer()),
+    }));
+  }
+
+  finish() {
+    this.emit(TxStreamMock.EVENTS.end);
   }
 }
 

@@ -1,10 +1,8 @@
-const { merge } = require('lodash');
 const { hasMethod } = require('../../../utils');
 
-const mergeHelper = (initial = {}, additional = {}) => merge(initial, additional);
 const { REHYDRATE_STATE_FAILED, REHYDRATE_STATE_SUCCESS } = require('../../../EVENTS');
-const WalletStore = require('../../WalletStore/WalletStore');
-const ChainStore = require('../../ChainStore/ChainStore');
+
+const logger = require('../../../logger');
 
 /**
  * Fetch the state from the persistence adapter
@@ -16,27 +14,49 @@ const rehydrateState = async function rehydrateState() {
       if (this.adapter && hasMethod(this.adapter, 'getItem')) {
         const wallets = await this.adapter.getItem('wallets');
         if (wallets) {
-          wallets.forEach((walletState) => {
-            const walletStore = new WalletStore();
-            walletStore.importState(walletState);
-            this.wallets.set(walletStore.walletId, walletStore);
-          });
+          try {
+            Object.keys(wallets).forEach((walletId) => {
+              const walletStore = this.getWalletStore(walletId);
+
+              if (walletStore) {
+                walletStore.importState(wallets[walletId]);
+              }
+            });
+          } catch (e) {
+            logger.error('Error importing wallets storage, resyncing from start', e);
+
+            this.adapter.setItem('wallets', null);
+            this.adapter.setItem('chains', null);
+            this.adapter.setItem('transactions', null);
+            this.adapter.setItem('instantLocks', null);
+          }
         }
 
         const chains = await this.adapter.getItem('chains');
         if (chains) {
-          chains.forEach((chainState) => {
-            const chainStore = new ChainStore();
-            chainStore.importState(chainState);
-            this.chains.set(chainStore.network, chainStore);
-          });
+          try {
+            Object.keys(chains).forEach((chainNetwork) => {
+              const chainStore = this.getChainStore(chainNetwork);
+
+              if (chainStore) {
+                chainStore.importState(chains[chainNetwork]);
+              }
+            });
+          } catch (e) {
+            logger.error('Error importing chains storage, resyncing from start', e);
+
+            this.adapter.setItem('wallets', null);
+            this.adapter.setItem('chains', null);
+            this.adapter.setItem('transactions', null);
+            this.adapter.setItem('instantLocks', null);
+          }
         }
-        this.application = mergeHelper(this.application, await this.adapter.getItem('application'));
       }
 
       this.lastRehydrate = +new Date();
       this.emit(REHYDRATE_STATE_SUCCESS, { type: REHYDRATE_STATE_SUCCESS, payload: null });
     } catch (e) {
+      logger.error('Error rehydrating storage state', e);
       this.emit(REHYDRATE_STATE_FAILED, { type: REHYDRATE_STATE_FAILED, payload: e });
       throw e;
     }

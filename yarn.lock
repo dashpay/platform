@@ -1199,21 +1199,12 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@babel/runtime@npm:^7.17.8":
+"@babel/runtime@npm:^7.17.8, @babel/runtime@npm:^7.8.4":
   version: 7.17.9
   resolution: "@babel/runtime@npm:7.17.9"
   dependencies:
     regenerator-runtime: ^0.13.4
   checksum: 4d56bdb82890f386d5a57c40ef985a0ed7f0a78f789377a2d0c3e8826819e0f7f16ba0fe906d9b2241c5f7ca56630ef0653f5bb99f03771f7b87ff8af4bf5fe3
-  languageName: node
-  linkType: hard
-
-"@babel/runtime@npm:^7.8.4":
-  version: 7.16.3
-  resolution: "@babel/runtime@npm:7.16.3"
-  dependencies:
-    regenerator-runtime: ^0.13.4
-  checksum: ab8ac887096d76185ddbf291d28fb976cd32473696dc497ad4905b784acbd5aa462533ad83a5c5104e10ead28c2e0e119840ee28ed8eff90dcdde9d57f916eda
   languageName: node
   linkType: hard
 
@@ -1298,6 +1289,7 @@ __metadata:
   version: 0.0.0-use.local
   resolution: "@dashevo/bench-suite@workspace:packages/bench-suite"
   dependencies:
+    "@dashevo/dashcore-lib": ~0.19.30
     "@dashevo/dpns-contract": "workspace:~"
     "@dashevo/dpp": "workspace:~"
     "@dashevo/wallet-lib": "workspace:~"
@@ -1322,7 +1314,7 @@ __metadata:
     "@babel/core": ^7.15.5
     "@dashevo/dapi-grpc": "workspace:~"
     "@dashevo/dash-spv": "github:dashevo/dash-spv"
-    "@dashevo/dashcore-lib": ~0.19.30
+    "@dashevo/dashcore-lib": ~0.19.31
     "@dashevo/dpp": "workspace:~"
     "@dashevo/grpc-common": "workspace:~"
     "@grpc/grpc-js": ^1.3.7
@@ -1396,7 +1388,7 @@ __metadata:
   dependencies:
     "@dashevo/dapi-client": "workspace:~"
     "@dashevo/dapi-grpc": "workspace:~"
-    "@dashevo/dashcore-lib": ~0.19.30
+    "@dashevo/dashcore-lib": ~0.19.31
     "@dashevo/dashd-rpc": ^2.3.2
     "@dashevo/dp-services-ctl": "github:dashevo/js-dp-services-ctl#v0.19-dev"
     "@dashevo/dpp": "workspace:~"
@@ -1461,9 +1453,9 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@dashevo/dashcore-lib@npm:^0.19.29, @dashevo/dashcore-lib@npm:~0.19.30":
-  version: 0.19.30
-  resolution: "@dashevo/dashcore-lib@npm:0.19.30"
+"@dashevo/dashcore-lib@npm:^0.19.29, @dashevo/dashcore-lib@npm:~0.19.30, @dashevo/dashcore-lib@npm:~0.19.31":
+  version: 0.19.31
+  resolution: "@dashevo/dashcore-lib@npm:0.19.31"
   dependencies:
     "@dashevo/x11-hash-js": ^1.0.2
     "@types/node": ^12.12.47
@@ -1476,7 +1468,7 @@ __metadata:
     inherits: =2.0.1
     lodash: ^4.17.20
     unorm: ^1.6.0
-  checksum: a88e393468843b21f38134977ed6e1ef4441f7cb64f9520797bf2ef16048c2ba67fdd1e3f99725e4871047cb378c0fbbe5406dc94eca79ab77ff9468901d6872
+  checksum: 67ba5b44f22e40af56caea21fcd97760e9e07e79509ae6b2841eb7419abdd64377e80556ed7af30f3a10652fa38c88d8972b16ab52847c00aa618331fd328208
   languageName: node
   linkType: hard
 
@@ -1585,7 +1577,7 @@ __metadata:
     "@apidevtools/json-schema-ref-parser": ^8.0.0
     "@babel/core": ^7.15.5
     "@babel/preset-env": ^7.15.4
-    "@dashevo/dashcore-lib": ~0.19.30
+    "@dashevo/dashcore-lib": ~0.19.31
     "@dashevo/dashpay-contract": "workspace:~"
     "@dashevo/dpns-contract": "workspace:~"
     "@dashevo/feature-flags-contract": "workspace:~"
@@ -1651,7 +1643,7 @@ __metadata:
   dependencies:
     "@dashevo/abci": "github:dashevo/js-abci#v0.22-dev"
     "@dashevo/dapi-grpc": "workspace:~"
-    "@dashevo/dashcore-lib": ~0.19.30
+    "@dashevo/dashcore-lib": ~0.19.31
     "@dashevo/dashd-rpc": ^2.3.2
     "@dashevo/dashpay-contract": "workspace:~"
     "@dashevo/dp-services-ctl": "github:dashevo/js-dp-services-ctl#v0.19-dev"
@@ -1789,7 +1781,7 @@ __metadata:
   resolution: "@dashevo/platform-test-suite@workspace:packages/platform-test-suite"
   dependencies:
     "@dashevo/dapi-client": "workspace:~"
-    "@dashevo/dashcore-lib": ~0.19.30
+    "@dashevo/dashcore-lib": ~0.19.31
     "@dashevo/dpns-contract": "workspace:~"
     "@dashevo/dpp": "workspace:~"
     "@dashevo/feature-flags-contract": "workspace:~"
@@ -1824,8 +1816,10 @@ __metadata:
     karma-mocha-reporter: ^2.2.5
     karma-sourcemap-loader: ^0.3.7
     karma-webpack: ^5.0.0
+    localforage: ^1.10.0
     mocha: ^9.1.2
     net: ^1.0.2
+    nodeforage: ^1.1.1
     os-browserify: ^0.3.0
     path-browserify: ^1.0.1
     process: ^0.11.10
@@ -1899,7 +1893,7 @@ __metadata:
   resolution: "@dashevo/wallet-lib@workspace:packages/wallet-lib"
   dependencies:
     "@dashevo/dapi-client": "workspace:~"
-    "@dashevo/dashcore-lib": ~0.19.30
+    "@dashevo/dashcore-lib": ~0.19.31
     "@dashevo/dpp": "workspace:~"
     "@dashevo/grpc-common": "workspace:~"
     assert: ^2.0.0
@@ -1923,7 +1917,6 @@ __metadata:
     karma-mocha-reporter: ^2.2.5
     karma-sourcemap-loader: ^0.3.7
     karma-webpack: ^5.0.0
-    localforage: ^1.7.3
     lodash: ^4.17.19
     mocha: ^9.1.2
     node-inspect-extracted: ^1.0.8
@@ -1934,6 +1927,7 @@ __metadata:
     process: ^0.11.10
     setimmediate: ^1.0.5
     sinon: ^11.1.2
+    sinon-chai: ^3.7.0
     stream-browserify: ^3.0.0
     stream-http: ^3.2.0
     string_decoder: ^1.3.0
@@ -2897,14 +2891,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@types/node@npm:*, @types/node@npm:>=10.0.0, @types/node@npm:>=12.12.47":
-  version: 16.11.9
-  resolution: "@types/node@npm:16.11.9"
-  checksum: baec2e6471ee58fd1e9874e6f47ab95a918a0f46b42424392e4c13e3e07f078f8b72b6b48073b0b14f710ed66c5f1b2e497df43f28151000f11f5f299382cfe2
-  languageName: node
-  linkType: hard
-
-"@types/node@npm:>=13.7.0":
+"@types/node@npm:*, @types/node@npm:>=10.0.0, @types/node@npm:>=12.12.47, @types/node@npm:>=13.7.0":
   version: 17.0.21
   resolution: "@types/node@npm:17.0.21"
   checksum: 89dcd2fe82f21d3634266f8384e9c865cf8af49685639fbdbd799bdd1040480fb1e8eeda2d3b9fce41edbe704d2a4be9f427118c4ae872e8d9bb7cbeb3c41a94
@@ -4180,7 +4167,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"bluebird@npm:^3.7.2":
+"bluebird@npm:^3.4.7, bluebird@npm:^3.7.2":
   version: 3.7.2
   resolution: "bluebird@npm:3.7.2"
   checksum: 869417503c722e7dc54ca46715f70e15f4d9c602a423a02c825570862d12935be59ed9c7ba34a9b31f186c017c23cac6b54e35446f8353059c101da73eac22ef
@@ -5748,7 +5735,7 @@ __metadata:
   resolution: "dash@workspace:packages/js-dash-sdk"
   dependencies:
     "@dashevo/dapi-client": "workspace:~"
-    "@dashevo/dashcore-lib": ~0.19.30
+    "@dashevo/dashcore-lib": ~0.19.31
     "@dashevo/dashpay-contract": "workspace:~"
     "@dashevo/dpns-contract": "workspace:~"
     "@dashevo/dpp": "workspace:~"
@@ -5817,7 +5804,7 @@ __metadata:
   version: 0.0.0-use.local
   resolution: "dashmate@workspace:packages/dashmate"
   dependencies:
-    "@dashevo/dashcore-lib": ~0.19.30
+    "@dashevo/dashcore-lib": ~0.19.31
     "@dashevo/dashd-rpc": ^2.3.2
     "@dashevo/dashpay-contract": "workspace:~"
     "@dashevo/dpns-contract": "workspace:~"
@@ -7953,10 +7940,10 @@ fsevents@~2.3.2:
   languageName: node
   linkType: hard
 
-"graceful-fs@npm:^4.1.15, graceful-fs@npm:^4.1.2, graceful-fs@npm:^4.1.5, graceful-fs@npm:^4.1.6, graceful-fs@npm:^4.2.0, graceful-fs@npm:^4.2.4, graceful-fs@npm:^4.2.6":
-  version: 4.2.9
-  resolution: "graceful-fs@npm:4.2.9"
-  checksum: 68ea4e07ff2c041ada184f9278b830375f8e0b75154e3f080af6b70f66172fabb4108d19b3863a96b53fc068a310b9b6493d86d1291acc5f3861eb4b79d26ad6
+"graceful-fs@npm:^4.1.11, graceful-fs@npm:^4.1.15, graceful-fs@npm:^4.1.2, graceful-fs@npm:^4.1.5, graceful-fs@npm:^4.1.6, graceful-fs@npm:^4.2.0, graceful-fs@npm:^4.2.4, graceful-fs@npm:^4.2.6":
+  version: 4.2.10
+  resolution: "graceful-fs@npm:4.2.10"
+  checksum: 3f109d70ae123951905d85032ebeae3c2a5a7a997430df00ea30df0e3a6c60cf6689b109654d6fdacd28810a053348c4d14642da1d075049e6be1ba5216218da
   languageName: node
   linkType: hard
 
@@ -9873,7 +9860,7 @@ fsevents@~2.3.2:
   languageName: node
   linkType: hard
 
-"localforage@npm:^1.7.3":
+"localforage@npm:^1.10.0":
   version: 1.10.0
   resolution: "localforage@npm:1.10.0"
   dependencies:
@@ -9945,6 +9932,13 @@ fsevents@~2.3.2:
   languageName: node
   linkType: hard
 
+"lodash.find@npm:^4.6.0":
+  version: 4.6.0
+  resolution: "lodash.find@npm:4.6.0"
+  checksum: b737f849a4fe36f5c3664ea636780dda2fde18335021faf80cdfdcb300ed75441da6f55cfd6de119092d8bb2ddbc4433f4a8de4b99c0b9c8640465b0901c717c
+  languageName: node
+  linkType: hard
+
 "lodash.flattendeep@npm:^4.4.0":
   version: 4.4.0
   resolution: "lodash.flattendeep@npm:4.4.0"
@@ -9987,7 +9981,7 @@ fsevents@~2.3.2:
   languageName: node
   linkType: hard
 
-"lodash.merge@npm:^4.6.2":
+"lodash.merge@npm:^4.6.1, lodash.merge@npm:^4.6.2":
   version: 4.6.2
   resolution: "lodash.merge@npm:4.6.2"
   checksum: ad580b4bdbb7ca1f7abf7e1bce63a9a0b98e370cf40194b03380a46b4ed799c9573029599caebc1b14e3f24b111aef72b96674a56cfa105e0f5ac70546cdc005
@@ -11006,6 +11000,19 @@ fsevents@~2.3.2:
   version: 2.0.1
   resolution: "node-releases@npm:2.0.1"
   checksum: b20dd8d4bced11f75060f0387e05e76b9dc4a0451f7bb3516eade6f50499ea7768ba95d8a60d520c193402df1e58cb3fe301510cc1c1ad68949c3d57b5149866
+  languageName: node
+  linkType: hard
+
+"nodeforage@npm:^1.1.1":
+  version: 1.1.1
+  resolution: "nodeforage@npm:1.1.1"
+  dependencies:
+    lodash.find: ^4.6.0
+    lodash.ismatch: ^4.4.0
+    lodash.merge: ^4.6.1
+    proper-lockfile: ^3.2.0
+    slocket: ^1.0.5
+  checksum: 0cb4e4aa853cb9cd81ec2c3aabb2a9032b68ec067cef0bc31b7f7b70522a0081983f730fecc9053d6911cb0114edc2d54201c296b5acf9ea85bf96cc016cbb22
   languageName: node
   linkType: hard
 
@@ -12155,6 +12162,17 @@ fsevents@~2.3.2:
   languageName: node
   linkType: hard
 
+"proper-lockfile@npm:^3.2.0":
+  version: 3.2.0
+  resolution: "proper-lockfile@npm:3.2.0"
+  dependencies:
+    graceful-fs: ^4.1.11
+    retry: ^0.12.0
+    signal-exit: ^3.0.2
+  checksum: 1be1bb702b9d47bdf18d75f22578f51370781feba7d2617f70ff8c66a86bcfa6e55b4f69c57fc326380110f2d1ffdb6e54a4900814bf156c04ee4eb2d3c065aa
+  languageName: node
+  linkType: hard
+
 "protobufjs@github:jawid-h/protobuf.js#fix/buffer-conversion":
   version: 6.10.2
   resolution: "protobufjs@https://github.com/jawid-h/protobuf.js.git#commit=d13d5d5688052e366aa2e9169f50dfca376b32cf"
@@ -12914,7 +12932,7 @@ fsevents@~2.3.2:
   languageName: node
   linkType: hard
 
-"rimraf@npm:^2.6.3":
+"rimraf@npm:^2.5.4, rimraf@npm:^2.6.3":
   version: 2.7.1
   resolution: "rimraf@npm:2.7.1"
   dependencies:
@@ -13370,6 +13388,17 @@ fsevents@~2.3.2:
     astral-regex: ^2.0.0
     is-fullwidth-code-point: ^3.0.0
   checksum: 4a82d7f085b0e1b070e004941ada3c40d3818563ac44766cca4ceadd2080427d337554f9f99a13aaeb3b4a94d9964d9466c807b3d7b7541d1ec37ee32d308756
+  languageName: node
+  linkType: hard
+
+"slocket@npm:^1.0.5":
+  version: 1.0.5
+  resolution: "slocket@npm:1.0.5"
+  dependencies:
+    bluebird: ^3.4.7
+    rimraf: ^2.5.4
+    signal-exit: ^3.0.2
+  checksum: 4ea3cba56c38325ce190ffa96ef0122ede78846ce12b82c810b247fd52549cfb962fe10bcc629ee14be315db085ff5ebb1059c3ccd1e52251a5b0be66f0cf0d7
   languageName: node
   linkType: hard
 
