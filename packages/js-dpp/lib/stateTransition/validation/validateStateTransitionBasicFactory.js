@@ -17,8 +17,9 @@ function validateStateTransitionBasicFactory(
   /**
    * @typedef validateStateTransitionBasic
    * @param {RawStateTransition} rawStateTransition
+   * @param {ExecutionContext} executionContext
    */
-  async function validateStateTransitionBasic(rawStateTransition) {
+  async function validateStateTransitionBasic(rawStateTransition, executionContext) {
     const result = new ValidationResult();
 
     if (!Object.prototype.hasOwnProperty.call(rawStateTransition, 'type')) {
@@ -40,14 +41,14 @@ function validateStateTransitionBasicFactory(
     const validationFunction = validationFunctionsByType[rawStateTransition.type];
 
     result.merge(
-      await validationFunction(rawStateTransition),
+      await validationFunction(rawStateTransition, executionContext),
     );
 
     if (!result.isValid()) {
       return result;
     }
 
-    const stateTransition = await createStateTransition(rawStateTransition);
+    const stateTransition = await createStateTransition(rawStateTransition, executionContext);
 
     try {
       stateTransition.toBuffer();

@@ -17,9 +17,10 @@ function validateIdentityTopUpTransitionBasicFactory(
   /**
    * @typedef {validateIdentityTopUpTransitionBasic}
    * @param {RawIdentityTopUpTransition} rawStateTransition
+   * @param {ExecutionContext} executionContext
    * @return {Promise<ValidationResult>}
    */
-  async function validateIdentityTopUpTransitionBasic(rawStateTransition) {
+  async function validateIdentityTopUpTransitionBasic(rawStateTransition, executionContext) {
     const result = jsonSchemaValidator.validate(
       identityTopUpTransitionSchema,
       convertBuffersToArrays(rawStateTransition),
@@ -43,6 +44,7 @@ function validateIdentityTopUpTransitionBasicFactory(
 
     const assetLockProofValidationResult = await proofValidationFunction(
       rawStateTransition.assetLockProof,
+      executionContext,
     );
 
     result.merge(

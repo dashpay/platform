@@ -25,9 +25,11 @@ function validateIdentityCreateTransitionBasicFactory(
   /**
    * @typedef validateIdentityCreateTransitionBasic
    * @param {RawIdentityCreateTransition} rawStateTransition
+   * @param {ExecutionContext} executionContext
    * @return {Promise<ValidationResult>}
    */
-  async function validateIdentityCreateTransitionBasic(rawStateTransition) {
+  // eslint-disable-next-line no-unused-vars
+  async function validateIdentityCreateTransitionBasic(rawStateTransition, executionContext) {
     // Validate state transition against JSON Schema
     const result = jsonSchemaValidator.validate(
       identityCreateTransitionSchema,

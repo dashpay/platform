@@ -9,12 +9,13 @@ function validateIdentityExistenceFactory(stateRepository) {
   /**
    * @typedef {validateIdentityExistence}
    * @param {Identifier} identityId
+   * @param {ExecutionContext} executionContext
    * @return {Promise<ValidationResult>}
    */
-  async function validateIdentityExistence(identityId) {
+  async function validateIdentityExistence(identityId, executionContext) {
     const result = new ValidationResult();
 
-    const identity = await stateRepository.fetchIdentity(identityId);
+    const identity = await stateRepository.fetchIdentity(identityId, executionContext);
 
     if (!identity) {
       result.addError(new IdentityNotFoundError(identityId.toBuffer()));

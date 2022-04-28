@@ -34,9 +34,10 @@ function validateDataContractUpdateTransitionBasicFactory(
   /**
    * @typedef validateDataContractUpdateTransitionBasic
    * @param {RawDataContractUpdateTransition} rawStateTransition
+   * @param {ExecutionContext} executionContext
    * @return {Promise<ValidationResult>}
    */
-  async function validateDataContractUpdateTransitionBasic(rawStateTransition) {
+  async function validateDataContractUpdateTransitionBasic(rawStateTransition, executionContext) {
     const result = jsonSchemaValidator.validate(
       dataContractUpdateTransitionSchema,
       convertBuffersToArrays(rawStateTransition),
@@ -68,7 +69,10 @@ function validateDataContractUpdateTransitionBasicFactory(
     const dataContractId = Identifier.from(rawDataContract.$id);
 
     // Data contract should exist
-    const existingDataContract = await stateRepository.fetchDataContract(dataContractId);
+    const existingDataContract = await stateRepository.fetchDataContract(
+      dataContractId,
+      executionContext,
+    );
 
     if (!existingDataContract) {
       result.addError(

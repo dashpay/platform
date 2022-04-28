@@ -1,5 +1,5 @@
-const Delete = require("../fees/Delete");
-const Write = require("../fees/Write");
+const Delete = require('@dashevo/dpp/lib/stateTransition/fees/operations/DeleteOperation');
+const Write = require('@dashevo/dpp/lib/stateTransition/fees/operations/WriteOperation');
 
 class FeeCalculationRepositoryDecorator {
   /**
@@ -21,7 +21,7 @@ class FeeCalculationRepositoryDecorator {
 
   /**
    * Get current operations
-   * 
+   *
    * @returns {Operation[]}
    */
   getOperations() {
@@ -36,7 +36,7 @@ class FeeCalculationRepositoryDecorator {
    * @return {Promise<Identity|null>}
    */
   async fetchIdentity(id) {
-    return this.stateRepository.fetchIdentity(id);;
+    return this.stateRepository.fetchIdentity(id);
   }
 
   /**
@@ -48,12 +48,12 @@ class FeeCalculationRepositoryDecorator {
   async storeIdentity(identity) {
     this.operations.push(
       new Write(
-        identity.getId().length, 
+        identity.getId().length,
         identity.toBuffer().length,
       ),
     );
 
-    return this.stateRepository.storeIdentity(identity);;
+    return this.stateRepository.storeIdentity(identity);
   }
 
   /**
@@ -124,7 +124,7 @@ class FeeCalculationRepositoryDecorator {
   async storeDataContract(dataContract) {
     this.operations.push(
       new Write(
-        dataContract.getId().length, 
+        dataContract.getId().length,
         dataContract.toBuffer().length,
       ),
     );
@@ -153,7 +153,7 @@ class FeeCalculationRepositoryDecorator {
   async storeDocument(document) {
     this.operations.push(
       new Write(
-        document.getId().length, 
+        document.getId().length,
         document.toBuffer().length,
       ),
     );
@@ -176,7 +176,7 @@ class FeeCalculationRepositoryDecorator {
 
     this.operations.push(
       new Delete(
-        contractId.length, 
+        contractId.length,
         dataContract.toBuffer().length,
       ),
     );

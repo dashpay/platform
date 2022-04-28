@@ -16,11 +16,15 @@ function validateDataContractCreateTransitionStateFactory(stateRepository) {
   async function validateDataContractCreateTransitionState(stateTransition) {
     const result = new ValidationResult();
 
+    const executionContext = stateTransition.getExecutionContext();
     const dataContract = stateTransition.getDataContract();
     const dataContractId = dataContract.getId();
 
     // Data contract shouldn't exist
-    const existingDataContract = await stateRepository.fetchDataContract(dataContractId);
+    const existingDataContract = await stateRepository.fetchDataContract(
+      dataContractId,
+      executionContext,
+    );
 
     if (existingDataContract) {
       result.addError(

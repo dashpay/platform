@@ -40,13 +40,19 @@ function validateDocumentsBatchTransitionStateFactory(
    * @param {DocumentCreateTransition[]
    *        |DocumentReplaceTransition[]
    *        |DocumentDeleteTransition[]} documentTransitions
+   * @param {ExecutionContext} executionContext
    * @return {Promise<ValidationResult>}
    */
-  async function validateDocumentTransitions(dataContractId, ownerId, documentTransitions) {
+  async function validateDocumentTransitions(
+    dataContractId,
+    ownerId,
+    documentTransitions,
+    executionContext,
+  ) {
     const result = new ValidationResult();
 
     // Data contract must exist
-    const dataContract = await stateRepository.fetchDataContract(dataContractId);
+    const dataContract = await stateRepository.fetchDataContract(dataContractId, executionContext);
 
     if (!dataContract) {
       throw new DataContractNotPresentError(dataContractId);
@@ -56,7 +62,7 @@ function validateDocumentsBatchTransitionStateFactory(
       return result;
     }
 
-    const fetchedDocuments = await fetchDocuments(documentTransitions);
+    const fetchedDocuments = await fetchDocuments(documentTransitions, executionContext);
 
     // Calculate time window for timestamps
     const {
@@ -251,6 +257,7 @@ function validateDocumentsBatchTransitionStateFactory(
   async function validateDocumentsBatchTransitionState(stateTransition) {
     const result = new ValidationResult();
 
+    const executionContext = stateTransition.getExecutionContext();
     const ownerId = stateTransition.getOwnerId();
 
     // Group document transitions by data contracts
@@ -271,7 +278,7 @@ function validateDocumentsBatchTransitionStateFactory(
 
     const documentTransitionResultsPromises = Object.entries(documentTransitionsByContracts)
       .map(([, { dataContractId, documentTransitions }]) => (
-        validateDocumentTransitions(dataContractId, ownerId, documentTransitions)
+        validateDocumentTransitions(dataContractId, ownerId, documentTransitions, executionContext)
       ));
 
     const documentTransitionResults = await Promise.all(documentTransitionResultsPromises);

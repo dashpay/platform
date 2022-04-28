@@ -17,10 +17,10 @@ function validateAssetLockTransactionFactory(stateRepository) {
    * @typedef validateAssetLockTransaction
    * @param {Buffer} rawTransaction
    * @param {number} outputIndex
+   * @param {ExecutionContext} executionContext
    * @returns {Promise<ValidationResult>}
    */
-
-  async function validateAssetLockTransaction(rawTransaction, outputIndex) {
+  async function validateAssetLockTransaction(rawTransaction, outputIndex, executionContext) {
     const result = new ValidationResult();
     const { Transaction } = DashCoreLib;
 
@@ -71,6 +71,7 @@ function validateAssetLockTransactionFactory(stateRepository) {
     const outPointBuffer = transaction.getOutPointBuffer(outputIndex);
     const outPointIsUsed = await stateRepository.isAssetLockTransactionOutPointAlreadyUsed(
       outPointBuffer,
+      executionContext,
     );
 
     if (outPointIsUsed) {

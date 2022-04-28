@@ -326,6 +326,24 @@ class AbstractStateTransition {
   isIdentityStateTransition() {
     return AbstractStateTransition.identityTransitionTypes.includes(this.getType());
   }
+
+  /**
+   * Set state transition execution context
+   *
+   * @param {ExecutionContext} executionContext
+   */
+  setExecutionContext(executionContext) {
+    this.executionContext = executionContext;
+  }
+
+  /**
+   * Get state transtion execution context
+   *
+   * @return {ExecutionContext}
+   */
+  getExecutionContext() {
+    return this.executionContext;
+  }
 }
 
 /**

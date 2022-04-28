@@ -1,5 +1,9 @@
-class Operation {
+/**
+ * @abstract
+ */
+class AbstractOperation {
   /**
+   * @abstract
    * @returns {number}
    */
   getCpuCost() {
@@ -7,6 +11,7 @@ class Operation {
   }
 
   /**
+   * @abstract
    * @returns {number}
    */
   getStorageCost() {
@@ -14,6 +19,7 @@ class Operation {
   }
 
   /**
+   * @abstract
    * @return {string}
    */
   getType() {
@@ -21,15 +27,15 @@ class Operation {
   }
 }
 
-Operation.STORAGE_CREDIT_PER_BYTE = 5000;
-Operation.STORAGE_PROCESSING_CREDIT_PER_BYTE = 10;
-Operation.QUERY_CREDIT_PER_BYTE = 10;
+AbstractOperation.STORAGE_CREDIT_PER_BYTE = 5000;
+AbstractOperation.STORAGE_PROCESSING_CREDIT_PER_BYTE = 10;
+AbstractOperation.QUERY_CREDIT_PER_BYTE = 10;
 
-Operation.TYPES = {
+AbstractOperation.TYPES = {
   WRITE: 'write',
   READ: 'read',
   DELETE: 'delete',
   PRE_CALCULATED: 'preCalculated',
 };
 
-module.exports = Operation;
+module.exports = AbstractOperation;

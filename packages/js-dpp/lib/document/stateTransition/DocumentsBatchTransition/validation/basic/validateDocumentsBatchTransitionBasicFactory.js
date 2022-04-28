@@ -233,9 +233,10 @@ function validateDocumentsBatchTransitionBasicFactory(
   /**
    * @typedef validateDocumentsBatchTransitionBasic
    * @param {RawDocumentsBatchTransition} rawStateTransition
+   * @param {ExecutionContext} executionContext
    * @return {ValidationResult}
    */
-  async function validateDocumentsBatchTransitionBasic(rawStateTransition) {
+  async function validateDocumentsBatchTransitionBasic(rawStateTransition, executionContext) {
     const result = jsonSchemaValidator.validate(
       documentsBatchTransitionSchema,
       convertBuffersToArrays(rawStateTransition),
@@ -290,11 +291,14 @@ function validateDocumentsBatchTransitionBasicFactory(
 
         const dataContractId = Identifier.from(dataContractIdString);
 
-        const dataContract = await stateRepository.fetchDataContract(dataContractId);
+        const dataContract = await stateRepository.fetchDataContract(
+          dataContractId,
+          executionContext,
+        );
 
         if (!dataContract) {
           perDocumentResult.addError(
-            new DataContractNotPresentError(dataContractId),
+            new DataContractNotPresentError(dataContractId.toBuffer()),
           );
         }
 

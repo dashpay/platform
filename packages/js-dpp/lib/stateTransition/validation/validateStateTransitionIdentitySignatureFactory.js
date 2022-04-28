@@ -21,8 +21,13 @@ function validateStateTransitionIdentitySignatureFactory(
    * @returns {Promise<ValidationResult>}
    */
   async function validateStateTransitionIdentitySignature(stateTransition) {
+    const executionContext = stateTransition.getExecutionContext();
+
     // Owner must exist
-    const result = await validateIdentityExistence(stateTransition.getOwnerId());
+    const result = await validateIdentityExistence(
+      stateTransition.getOwnerId(),
+      executionContext,
+    );
 
     if (!result.isValid()) {
       return result;

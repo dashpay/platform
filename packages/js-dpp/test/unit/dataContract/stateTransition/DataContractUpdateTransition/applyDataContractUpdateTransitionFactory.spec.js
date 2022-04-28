@@ -9,12 +9,14 @@ const applyDataContractUpdateTransitionFactory = require(
 );
 
 const createStateRepositoryMock = require('../../../../../lib/test/mocks/createStateRepositoryMock');
+const ExecutionContext = require('../../../../../lib/stateTransition/ExecutionContext');
 
 describe('applyDataContractUpdateTransitionFactory', () => {
   let stateTransition;
   let dataContract;
   let stateRepositoryMock;
   let applyDataContractUpdateTransition;
+  let executionContext;
 
   beforeEach(function beforeEach() {
     dataContract = getDataContractFixture();
@@ -22,6 +24,10 @@ describe('applyDataContractUpdateTransitionFactory', () => {
     stateTransition = new DataContractUpdateTransition({
       dataContract: dataContract.toObject(),
     });
+
+    executionContext = new ExecutionContext();
+
+    stateTransition.setExecutionContext(executionContext);
 
     stateRepositoryMock = createStateRepositoryMock(this.sinonSandbox);
 
@@ -35,6 +41,7 @@ describe('applyDataContractUpdateTransitionFactory', () => {
 
     expect(stateRepositoryMock.storeDataContract).to.have.been.calledOnceWithExactly(
       stateTransition.getDataContract(),
+      executionContext,
     );
   });
 });
