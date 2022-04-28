@@ -35,8 +35,8 @@ pub struct DataContract {
     pub owner_id: Identifier,
     #[serde(rename = "documents")]
     pub documents: BTreeMap<DocumentType, JsonSchema>,
-    #[serde(rename = "$defs", skip_serializing_if = "Option::is_none")]
-    pub defs: Option<BTreeMap<DocumentType, JsonSchema>>,
+    #[serde(rename = "$defs", default)]
+    pub defs: BTreeMap<DocumentType, JsonSchema>,
     #[serde(skip)]
     pub metadata: Option<Metadata>,
     #[serde(skip)]

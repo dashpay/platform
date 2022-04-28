@@ -1,6 +1,12 @@
+use crate::data_contract::DataContractFactory;
+use crate::decode_protocol_entity_factory::DecodeProtocolEntityFactory;
+use crate::mocks;
+use crate::prelude::*;
+use crate::tests::fixtures::get_dpp;
+use crate::tests::utils::generate_random_identifier_struct;
 use serde_json::json;
 
-pub fn get_data_contract_fixture() {
+pub fn get_data_contract_fixture(owner_id: Option<Identifier>) -> DataContract {
     let documents = json!(
     {
         "niceDocument": {
@@ -253,4 +259,21 @@ pub fn get_data_contract_fixture() {
             "additionalProperties": false
         }
     });
+
+    let factory = DataContractFactory::new(
+        get_dpp(),
+        mocks::ValidateDataContract::default(),
+        DecodeProtocolEntityFactory::default(),
+    );
+
+    let owner_id = owner_id.unwrap_or_else(generate_random_identifier_struct);
+    let mut data_contract = factory
+        .create(owner_id, documents)
+        .expect("data in fixture should be correct");
+
+    data_contract
+        .defs
+        .insert(String::from("lastName"), json!({ "type" : "string"}));
+
+    data_contract
 }

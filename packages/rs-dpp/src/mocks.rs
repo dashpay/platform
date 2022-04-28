@@ -15,14 +15,24 @@ use thiserror::Error;
 use crate::state_repository::StateRepositoryLike;
 
 #[derive(Debug, Clone)]
-pub struct DashPlatformProtocol {}
-impl DashPlatformProtocol {
+pub struct DashPlatformProtocol<SR> {
+    pub state_repository: SR,
+}
+impl<SR> DashPlatformProtocol<SR> {
+    pub fn new(state_repository: SR) -> Self {
+        DashPlatformProtocol { state_repository }
+    }
+
     pub fn get_protocol_version(&self) -> u32 {
         1
     }
+
+    pub fn get_state_repository(&self) -> &SR {
+        &self.state_repository
+    }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct ValidateDataContract {}
 impl ValidateDataContract {
     pub async fn validate_data_contract(&self, raw_data_contract: &JsonValue) -> ValidationResult {
