@@ -1,8 +1,8 @@
 # Drive
 
-[![Latest Release](https://img.shields.io/github/v/release/dashevo/js-drive-abci)](https://github.com/dashevo/js-drive-abci/releases/latest)
-[![Build Status](https://github.com/dashevo/js-drive/actions/workflows/test_and_release.yml/badge.svg)](https://github.com/dashevo/js-drive/actions/workflows/test_and_release.yml)
-[![Release Date](https://img.shields.io/github/release-date/dashevo/js-drive-abci)](https://img.shields.io/github/release-date/dashevo/js-drive-abci)
+[![Latest Release](https://img.shields.io/github/v/release/dashevo/platform)](https://github.com/dashevo/platform/releases/latest)
+[![Build Status](https://github.com/dashevo/platform/actions/workflows/release.yml/badge.svg)](https://github.com/dashevo/platform/actions/workflows/release.yml)
+[![Release Date](https://img.shields.io/github/release-date/dashevo/platform)](https://github.com/dashevo/platform/releases/latest)
 [![standard-readme compliant](https://img.shields.io/badge/readme%20style-standard-brightgreen)](https://github.com/RichardLitt/standard-readme)
 
 Replicated state machine for Dash Platform

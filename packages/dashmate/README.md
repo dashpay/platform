@@ -1,7 +1,7 @@
 # Dashmate
 
-[![GitHub release (latest by date)](https://img.shields.io/github/v/release/dashevo/dashmate)](https://github.com/dashevo/dashmate/releases)
-[![Release Date](https://img.shields.io/github/release-date/dashevo/dashmate)](https://github.com/dashevo/dashmate/releases/latest)
+[![Build Status](https://github.com/dashevo/platform/actions/workflows/release.yml/badge.svg)](https://github.com/dashevo/platform/actions/workflows/release.yml)
+[![Release Date](https://img.shields.io/github/release-date/dashevo/platform)](https://github.com/dashevo/platform/releases/latest)
 [![standard-readme compliant](https://img.shields.io/badge/readme%20style-standard-brightgreen.svg)](https://github.com/RichardLitt/standard-readme)
 
 Distribution package for Dash Masternode installation
