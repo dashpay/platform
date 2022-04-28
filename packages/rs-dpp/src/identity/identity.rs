@@ -46,12 +46,12 @@ struct IdentityForBuffer {
 
 impl std::convert::From<&Identity> for IdentityForBuffer {
     fn from(i: &Identity) -> Self {
-        return IdentityForBuffer {
+        IdentityForBuffer {
             id: i.id.clone(),
             public_keys: i.public_keys.clone(),
             balance: i.balance,
             revision: i.revision,
-        };
+        }
     }
 }
 
