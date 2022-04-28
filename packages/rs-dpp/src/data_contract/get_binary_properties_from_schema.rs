@@ -23,8 +23,8 @@ pub fn get_binary_properties(schema: &JsonValue) -> BTreeMap<String, JsonValue> 
     binary_properties
 }
 /// Recursively build properties map
-fn build_binary_properties_map<'a>(
-    schema: &'a JsonValue,
+fn build_binary_properties_map(
+    schema: &JsonValue,
     property_path: Option<String>,
     binary_paths: &mut BTreeMap<String, JsonValue>,
 ) {
