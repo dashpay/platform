@@ -1,3 +1,37 @@
+### [0.22.4](https://github.com/dashevo/platform/compare/v0.22.3...v0.22.4) (2022-04-29)
+
+
+### ⚠ BREAKING CHANGES
+
+* Core v0.17 is not supported anymore
+
+### Bug Fixes
+
+* invalid `merkleRootQuorums` calculation ([#362](https://github.com/dashevo/platform/issues/362))
+
+### [0.22.3](https://github.com/dashevo/platform/compare/v0.22.2...v0.22.3) (2022-04-27)
+
+
+### ⚠ BREAKING CHANGES
+
+* **wallet-lib:** storage layer refactoring (#232)
+
+### Features
+
+* **wallet-lib:** adds balance and metadata information from registered identity ([#337](https://github.com/dashevo/platform/issues/337))
+* **wallet-lib:** provide transaction history item as a date object ([#336](https://github.com/dashevo/platform/issues/336))
+* **wallet-lib:** rework storage for multiple key chains ([#231](https://github.com/dashevo/platform/issues/231))
+* **wallet-lib:** satoshisBalanceImpact in transaction history ([#319](https://github.com/dashevo/platform/issues/319))
+* **wallet-lib:** storage layer refactoring ([#232](https://github.com/dashevo/platform/issues/232))
+
+
+### Bug Fixes
+
+* **dashmate:** broken migrations ([#355](https://github.com/dashevo/platform/issues/355))
+* **wallet-lib:** optimize storage version check ([#348](https://github.com/dashevo/platform/issues/348))
+* **wallet-lib:** persistent storage regression ([#302](https://github.com/dashevo/platform/issues/302))
+
+
 ### [0.22.2](https://github.com/dashevo/platform/compare/v0.22.1...v0.22.2) (2022-04-21)
 
 

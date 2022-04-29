@@ -34,7 +34,6 @@ export default async function register(
         this, assetLockProof, assetLockPrivateKey
     );
 
-
     await broadcastStateTransition(this, identityCreateTransition);
 
     // If state transition was broadcast without any errors, import identity to the account
