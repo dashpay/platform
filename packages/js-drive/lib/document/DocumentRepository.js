@@ -1,11 +1,11 @@
 const { createHash } = require('crypto');
 
 const PreCalculatedOperation = require('@dashevo/dpp/lib/stateTransition/fees/operations/PreCalculatedOperation');
-const Read = require('@dashevo/dpp/lib/stateTransition/fees/operations/ReadOperation');
 const createDocumentTypeTreePath = require('./groveDB/createDocumentTreePath');
 const InvalidQueryError = require('./errors/InvalidQueryError');
 const StartDocumentNotFoundError = require('./query/errors/StartDocumentNotFoundError');
 const ValidationError = require('./query/errors/ValidationError');
+const RepositoryResult = require('../storage/RepositoryResult');
 
 class DocumentRepository {
   /**
@@ -30,27 +30,27 @@ class DocumentRepository {
    * @param {DataContract} document
    * @param {Document} document
    * @param {boolean} [useTransaction=false]
-   * @return {Promise<number>}
+   * @return {Promise<RepositoryResult<void>>}
    */
   async store(document, useTransaction = false) {
-    const isExists = await this.isExist(document, useTransaction);
+    const isExistsResult = await this.isExist(document, useTransaction);
 
-    let result;
     let cpuCost;
     let storageCost;
+
     let method = 'createDocument';
 
     try {
-      if (isExists) {
+      if (isExistsResult.getResult()) {
         method = 'updateDocument';
-        ([result, cpuCost, storageCost] = await this.storage.getDrive()
+        ([storageCost, cpuCost] = await this.storage.getDrive()
           .updateDocument(
             document,
             new Date('2022-03-17T15:08:26.132Z'),
             useTransaction,
           ));
       } else {
-        ([result, cpuCost, storageCost] = await this.storage.getDrive()
+        ([storageCost, cpuCost] = await this.storage.getDrive()
           .createDocument(
             document,
             new Date('2022-03-17T15:08:26.132Z'),
@@ -71,20 +71,19 @@ class DocumentRepository {
       }
     }
 
-    return {
-      result,
-      operations: [
-        new PreCalculatedOperation(
-          cpuCost, storageCost,
-        ),
+    return new RepositoryResult(
+      undefined,
+      [
+        ...isExistsResult.getOperations(),
+        new PreCalculatedOperation(storageCost, cpuCost),
       ],
-    };
+    );
   }
 
   /**
    * @param {Document} document
    * @param {boolean} [useTransaction=false]
-   * @return {Promise<boolean>}
+   * @return {Promise<RepositoryResult<boolean>>}
    */
   async isExist(document, useTransaction = false) {
     const documentTypeTreePath = createDocumentTypeTreePath(
@@ -96,22 +95,16 @@ class DocumentRepository {
       [Buffer.from([0])],
     );
 
-    const fetchedDocument = await this.storage.get(
+    const fetchedDocumentResult = await this.storage.get(
       documentTreePath,
       document.getId().toBuffer(),
       { useTransaction },
     );
 
-    return {
-      result: Boolean(fetchedDocument),
-      operations: [
-        new Read(
-          document.getId().toBuffer().length,
-          documentTreePath.reduce((size, pathItem) => size + pathItem.length, 0),
-          fetchedDocument.toBuffer().length,
-        ),
-      ],
-    };
+    return new RepositoryResult(
+      Boolean(fetchedDocumentResult.getResult()),
+      fetchedDocumentResult.getOperations(),
+    );
   }
 
   /**
@@ -129,7 +122,7 @@ class DocumentRepository {
    *
    * @throws InvalidQueryError
    *
-   * @returns {Promise<Document[]>}
+   * @returns {Promise<RepositoryResult<Document[]>>}
    */
   async find(dataContract, documentType, query = {}, useTransaction = false) {
     const documentSchema = dataContract.getDocumentSchema(documentType);
@@ -150,7 +143,7 @@ class DocumentRepository {
       });
 
     try {
-      const [documents, cpuCost, storageCost] = await this.storage.getDrive()
+      const [documents, storageCost, cpuCost] = await this.storage.getDrive()
         .queryDocuments(
           dataContract,
           documentType,
@@ -158,12 +151,12 @@ class DocumentRepository {
           useTransaction,
         );
 
-      return {
-        result: documents,
-        operations: [
-          new PreCalculatedOperation(cpuCost, storageCost),
+      return new RepositoryResult(
+        documents,
+        [
+          new PreCalculatedOperation(storageCost, cpuCost),
         ],
-      };
+      );
     } catch (e) {
       const invalidQueryMessagePrefix = 'invalid query: ';
 
@@ -196,23 +189,24 @@ class DocumentRepository {
    * @param {string} documentType
    * @param {Identifier} id
    * @param {boolean} useTransaction
-   * @return {Promise<void>}
+   * @return {Promise<RepositoryResult<void>>}
    */
   async delete(dataContract, documentType, id, useTransaction = false) {
     try {
-      const [cpuCost, storageCost] = await this.storage.getDrive()
+      const [storageCost, cpuCost] = await this.storage.getDrive()
         .deleteDocument(
           dataContract,
           documentType,
           id,
           useTransaction,
         );
-      return {
-        result: this,
-        operations: [
-          new PreCalculatedOperation(cpuCost, storageCost),
+
+      return new RepositoryResult(
+        undefined,
+        [
+          new PreCalculatedOperation(storageCost, cpuCost),
         ],
-      };
+      );
     } finally {
       if (this.logger) {
         this.logger.info({

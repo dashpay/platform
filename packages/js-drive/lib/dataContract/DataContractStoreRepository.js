@@ -1,9 +1,8 @@
 const DataContract = require('@dashevo/dpp/lib/dataContract/DataContract');
 const { createHash } = require('crypto');
 
-const Write = require('@dashevo/dpp/lib/stateTransition/fees/operations/WriteOperation');
-const Read = require('@dashevo/dpp/lib/stateTransition/fees/operations/ReadOperation');
 const PreCalculatedOperation = require('@dashevo/dpp/lib/stateTransition/fees/operations/PreCalculatedOperation');
+const RepositoryResult = require('../storage/RepositoryResult');
 
 class DataContractStoreRepository {
   /**
@@ -23,24 +22,25 @@ class DataContractStoreRepository {
    *
    * @param {DataContract} dataContract
    * @param {boolean} [useTransaction=false]
-   * @return {Promise<void>}
+   * @return {Promise<RepositoryResult<void>>}
    */
   async store(dataContract, useTransaction = false) {
     try {
-      const [cpuCost, storageCost] = await this.storage.getDrive().applyContract(
+      const [storageCost, cpuCost] = await this.storage.getDrive().applyContract(
         dataContract,
         new Date('2022-03-17T15:08:26.132Z'),
         useTransaction,
       );
-      return {
-        result: this,
-        operations: [
+
+      return new RepositoryResult(
+        undefined,
+        [
           new PreCalculatedOperation(
-            cpuCost,
             storageCost,
+            cpuCost,
           ),
         ],
-      };
+      );
     } finally {
       if (this.logger) {
         this.logger.trace({
@@ -61,46 +61,32 @@ class DataContractStoreRepository {
    *
    * @param {Identifier} id
    * @param {boolean} [useTransaction=false]
-   * @return {Promise<null|DataContract>}
+   * @return {Promise<RepositoryResult<null|DataContract>>}
    */
   async fetch(id, useTransaction = false) {
-    const encodedDataContract = await this.storage.get(
+    const encodedDataContractResult = await this.storage.get(
       DataContractStoreRepository.TREE_PATH.concat([id.toBuffer()]),
       DataContractStoreRepository.DATA_CONTRACT_KEY,
       { useTransaction },
     );
 
-    if (!encodedDataContract) {
-      return {
-        result: null,
-        operations: [
-          new Read(
-            DataContractStoreRepository.DATA_CONTRACT_KEY.length,
-            DataContractStoreRepository.TREE_PATH.concat([id.toBuffer()]).reduce(
-              (size, pathItem) => size + pathItem.length, 0,
-            ).length,
-            0,
-          ),
-        ],
-      };
+    if (!encodedDataContractResult.getResult()) {
+      return new RepositoryResult(
+        null,
+        encodedDataContractResult.getOperations(),
+      );
     }
 
-    const [protocolVersion, rawDataContract] = this.decodeProtocolEntity(encodedDataContract);
+    const [protocolVersion, rawDataContract] = this.decodeProtocolEntity(
+      encodedDataContractResult.getResult(),
+    );
 
     rawDataContract.protocolVersion = protocolVersion;
 
-    return {
-      result: new DataContract(rawDataContract),
-      operations: [
-        new Read(
-          DataContractStoreRepository.DATA_CONTRACT_KEY.length,
-          DataContractStoreRepository.TREE_PATH.concat([id.toBuffer()]).reduce(
-            (size, pathItem) => size + pathItem.length, 0,
-          ).length,
-          encodedDataContract.length,
-        ),
-      ],
-    };
+    return new RepositoryResult(
+      new DataContract(rawDataContract),
+      encodedDataContractResult.getOperations(),
+    );
   }
 
   /**
@@ -108,20 +94,19 @@ class DataContractStoreRepository {
    * @param {boolean} [options.useTransaction=false]
    * @param {boolean} [options.skipIfExists]
    *
-   * @return {Promise<DataContractStoreRepository>}
+   * @return {Promise<RepositoryResult<void>>}
    */
   async createTree(options = {}) {
-    await this.storage.createTree([], DataContractStoreRepository.TREE_PATH[0], options);
+    const createTreeResult = await this.storage.createTree(
+      [],
+      DataContractStoreRepository.TREE_PATH[0],
+      options,
+    );
 
-    return {
-      result: this,
-      operations: [
-        new Write(
-          DataContractStoreRepository.TREE_PATH[0].length,
-          32,
-        ),
-      ],
-    };
+    return new RepositoryResult(
+      undefined,
+      createTreeResult.getOperations(),
+    );
   }
 }
 

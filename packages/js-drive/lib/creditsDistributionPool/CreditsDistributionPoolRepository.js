@@ -1,9 +1,7 @@
 const cbor = require('cbor');
 
-const Write = require('@dashevo/dpp/lib/stateTransition/fees/operations/WriteOperation');
-const Read = require('@dashevo/dpp/lib/stateTransition/fees/operations/ReadOperation');
-
 const CreditsDistributionPool = require('./CreditsDistributionPool');
+const RepositoryResult = require('../storage/RepositoryResult');
 
 class CreditsDistributionPoolRepository {
   /**
@@ -19,73 +17,52 @@ class CreditsDistributionPoolRepository {
    *
    * @param {CreditsDistributionPool} creditsDistributionPool
    * @param {boolean} [useTransaction=false]
-   * @return {this}
+   * @return {Promise<RepositoryResult<void>>}
    */
   async store(creditsDistributionPool, useTransaction = false) {
     const encodedCreditsDistributionPool = cbor.encodeCanonical(
       creditsDistributionPool.toJSON(),
     );
 
-    await this.storage.put(
+    const result = await this.storage.put(
       CreditsDistributionPoolRepository.PATH,
       CreditsDistributionPoolRepository.KEY,
       encodedCreditsDistributionPool,
       { useTransaction },
     );
 
-    return {
-      result: this,
-      operations: [
-        new Write(
-          CreditsDistributionPoolRepository.KEY.length,
-          encodedCreditsDistributionPool.length,
-        ),
-      ],
-    };
+    return new RepositoryResult(
+      undefined,
+      result.getOperations(),
+    );
   }
 
   /**
    * Fetch Credits Distribution Pool
    *
    * @param {boolean} [useTransaction=false]
-   * @return {CreditsDistributionPool}
+   * @return {Promise<RepositoryResult<CreditsDistributionPool>>}
    */
   async fetch(useTransaction = false) {
-    const creditsDistributionPoolEncoded = await this.storage.get(
+    const creditsDistributionPoolEncodedResult = await this.storage.get(
       CreditsDistributionPoolRepository.PATH,
       CreditsDistributionPoolRepository.KEY,
       { useTransaction },
     );
 
-    if (!creditsDistributionPoolEncoded) {
-      return {
-        result: new CreditsDistributionPool(),
-        operations: [
-          new Read(
-            CreditsDistributionPoolRepository.KEY.length,
-            CreditsDistributionPoolRepository.PATH.reduce(
-              (size, pathItem) => size + pathItem.length, 0,
-            ).length,
-            0,
-          ),
-        ],
-      };
+    if (!creditsDistributionPoolEncodedResult.getResult()) {
+      return new RepositoryResult(
+        new CreditsDistributionPool(),
+        creditsDistributionPoolEncodedResult.getOperations(),
+      );
     }
 
-    const { amount } = cbor.decode(creditsDistributionPoolEncoded);
+    const { amount } = cbor.decode(creditsDistributionPoolEncodedResult.getResult());
 
-    return {
-      result: new CreditsDistributionPool(amount),
-      operations: [
-        new Read(
-          CreditsDistributionPoolRepository.KEY.length,
-          CreditsDistributionPoolRepository.PATH.reduce(
-            (size, pathItem) => size + pathItem.length, 0,
-          ).length,
-          creditsDistributionPoolEncoded.length,
-        ),
-      ],
-    };
+    return new RepositoryResult(
+      new CreditsDistributionPool(amount),
+      creditsDistributionPoolEncodedResult.getOperations(),
+    );
   }
 }
 

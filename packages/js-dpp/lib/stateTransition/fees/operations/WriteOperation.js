@@ -18,7 +18,8 @@ class WriteOperation extends AbstractOperation {
    * @returns {number}
    */
   getCpuCost() {
-    return (this.keySize + this.valueSize) * AbstractOperation.STORAGE_PROCESSING_CREDIT_PER_BYTE;
+    return ((this.keySize + this.valueSize) * AbstractOperation.STORAGE_PROCESSING_CREDIT_PER_BYTE)
+      + WriteOperation.BASE_PROCESSING_COST;
   }
 
   /**
@@ -39,5 +40,7 @@ class WriteOperation extends AbstractOperation {
     return AbstractOperation.TYPES.WRITE;
   }
 }
+
+WriteOperation.BASE_PROCESSING_COST = 60000;
 
 module.exports = WriteOperation;

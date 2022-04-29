@@ -1,7 +1,6 @@
 const Identity = require('@dashevo/dpp/lib/identity/Identity');
 
-const Read = require('@dashevo/dpp/lib/stateTransition/fees/operations/ReadOperation');
-const Write = require('@dashevo/dpp/lib/stateTransition/fees/operations/WriteOperation');
+const RepositoryResult = require('../storage/RepositoryResult');
 
 class IdentityStoreRepository {
   /**
@@ -19,25 +18,23 @@ class IdentityStoreRepository {
    *
    * @param {Identity} identity
    * @param {boolean} [useTransaction=false]
-   * @return {Promise<IdentityStoreRepository>}
+   * @return {Promise<RepositoryResult<void>>}
    */
   async store(identity, useTransaction = false) {
-    await this.storage.put(
+    const key = identity.getId().toBuffer();
+    const value = identity.toBuffer();
+
+    const result = await this.storage.put(
       IdentityStoreRepository.TREE_PATH,
-      identity.getId().toBuffer(),
-      identity.toBuffer(),
+      key,
+      value,
       { useTransaction },
     );
 
-    return {
-      result: this,
-      operations: [
-        new Write(
-          identity.getId().length,
-          identity.toBuffer().length,
-        ),
-      ],
-    };
+    return new RepositoryResult(
+      undefined,
+      result.getOperations(),
+    );
   }
 
   /**
@@ -45,42 +42,32 @@ class IdentityStoreRepository {
    *
    * @param {Identifier} id
    * @param {boolean} [useTransaction=false]
-   * @return {Promise<null|Identity>}
+   * @return {Promise<RepositoryResult<null|Identity>>}
    */
   async fetch(id, useTransaction = false) {
-    const encodedIdentity = await this.storage.get(
+    const encodedIdentityResult = await this.storage.get(
       IdentityStoreRepository.TREE_PATH,
       id.toBuffer(),
       { useTransaction },
     );
 
-    if (!encodedIdentity) {
-      return {
-        result: null,
-        operations: [
-          new Read(
-            id.length,
-            IdentityStoreRepository.TREE_PATH.reduce((size, pathItem) => size + pathItem.length, 0),
-            0,
-          ),
-        ],
-      };
+    if (!encodedIdentityResult.getResult()) {
+      return new RepositoryResult(
+        null,
+        encodedIdentityResult.getOperations(),
+      );
     }
 
-    const [protocolVersion, rawIdentity] = this.decodeProtocolEntity(encodedIdentity);
+    const [protocolVersion, rawIdentity] = this.decodeProtocolEntity(
+      encodedIdentityResult.getResult(),
+    );
 
     rawIdentity.protocolVersion = protocolVersion;
 
-    return {
-      result: new Identity(rawIdentity),
-      operations: [
-        new Read(
-          id.length,
-          IdentityStoreRepository.TREE_PATH.reduce((size, pathItem) => size + pathItem.length, 0),
-          encodedIdentity.length,
-        ),
-      ],
-    };
+    return new RepositoryResult(
+      new Identity(rawIdentity),
+      encodedIdentityResult.getOperations(),
+    );
   }
 
   /**
@@ -88,20 +75,19 @@ class IdentityStoreRepository {
    * @param {boolean} [options.useTransaction=false]
    * @param {boolean} [options.skipIfExists]
    *
-   * @return {Promise<IdentityStoreRepository>}
+   * @return {Promise<RepositoryResult<void>>}
    */
   async createTree(options = {}) {
-    await this.storage.createTree([], IdentityStoreRepository.TREE_PATH[0], options);
+    const result = await this.storage.createTree(
+      [],
+      IdentityStoreRepository.TREE_PATH[0],
+      options,
+    );
 
-    return {
-      result: this,
-      operations: [
-        new Write(
-          IdentityStoreRepository.TREE_PATH[0].length,
-          32,
-        ),
-      ],
-    };
+    return new RepositoryResult(
+      undefined,
+      result.getOperations(),
+    );
   }
 }
 

@@ -2,15 +2,11 @@ const AbstractOperation = require('./AbstractOperation');
 
 class ReadOperation extends AbstractOperation {
   /**
-   * @param {number} keySize
-   * @param {number} pathSize
    * @param {number} valueSize
    */
-  constructor(keySize, pathSize, valueSize) {
+  constructor(valueSize) {
     super();
 
-    this.keySize = keySize;
-    this.pathSize = pathSize;
     this.valueSize = valueSize;
   }
 
@@ -20,8 +16,7 @@ class ReadOperation extends AbstractOperation {
    * @returns {number}
    */
   getCpuCost() {
-    return (this.keySize + this.pathSize + this.valueSize)
-      * AbstractOperation.QUERY_CREDIT_PER_BYTE;
+    return ReadOperation.BASE_PROCESSING_COST + this.valueSize * ReadOperation.CREDIT_PER_BYTE;
   }
 
   /**
@@ -42,5 +37,8 @@ class ReadOperation extends AbstractOperation {
     return AbstractOperation.TYPES.READ;
   }
 }
+
+ReadOperation.CREDIT_PER_BYTE = 12;
+ReadOperation.BASE_PROCESSING_COST = 8400;
 
 module.exports = ReadOperation;

@@ -2,14 +2,14 @@ const AbstractOperation = require('./AbstractOperation');
 
 class PreCalculatedOperation extends AbstractOperation {
   /**
-   * @param {number} cpuCost
    * @param {number} storageCost
+   * @param {number} cpuCost
    */
-  constructor(cpuCost, storageCost) {
+  constructor(storageCost, cpuCost) {
     super();
 
-    this.cpuCost = cpuCost;
     this.storageCost = storageCost;
+    this.cpuCost = cpuCost;
   }
 
   /**

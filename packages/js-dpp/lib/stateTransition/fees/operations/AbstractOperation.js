@@ -29,7 +29,6 @@ class AbstractOperation {
 
 AbstractOperation.STORAGE_CREDIT_PER_BYTE = 5000;
 AbstractOperation.STORAGE_PROCESSING_CREDIT_PER_BYTE = 10;
-AbstractOperation.QUERY_CREDIT_PER_BYTE = 10;
 
 AbstractOperation.TYPES = {
   WRITE: 'write',
