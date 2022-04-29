@@ -15,7 +15,7 @@ function getExistingTransactionResultFactory(rpcClient) {
   async function getExistingTransactionResult(hashString) {
     const hash = Buffer.from(hashString, 'hex');
 
-    const params = { hash: hash.toString('base64') };
+    const params = { hash: hashString };
 
     const { result, error } = await rpcClient.request('tx', params);
 
