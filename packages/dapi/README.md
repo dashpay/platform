@@ -56,7 +56,7 @@ Note that you always need to specify an id, otherwise the server will respond wi
 
 ## API Reference
 
-A list of all available RPC commands, along with their various arguments and expected responses can be found [here](doc/REFERENCE.md)
+A list of all available RPC commands, along with their various arguments and expected responses can be found [here](https://dashplatform.readme.io/docs/reference-dapi-endpoints)
 
 Implementation of these commands can be viewed [here](lib/rpcServer/commands).
 
