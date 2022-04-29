@@ -1,7 +1,8 @@
 use crate::errors::consensus::ConsensusError;
 
+#[derive(Default)]
 pub struct ValidationResult {
-    errors: Vec<ConsensusError>,
+    pub errors: Vec<ConsensusError>,
     // TODO: data can be anything, figure out what to do with it
     // data: Option<ConsensusError>
 }

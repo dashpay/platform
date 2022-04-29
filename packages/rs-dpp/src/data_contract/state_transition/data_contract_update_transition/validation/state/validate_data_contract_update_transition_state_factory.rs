@@ -1,6 +1,6 @@
 use crate::{
     data_contract::DataContract, errors::consensus::basic::BasicError, mocks,
-    state_repository::StateRepositoryLike,
+    state_repository::StateRepositoryLike, validation::ValidationResult,
 };
 use anyhow::Result;
 
@@ -31,8 +31,8 @@ where
     pub async fn validate_data_contract_update_transition_state(
         &self,
         state_transition: mocks::StateTransition,
-    ) -> mocks::ValidationResult {
-        let mut result = mocks::ValidationResult::default();
+    ) -> ValidationResult {
+        let mut result = ValidationResult::default();
 
         // Data contract should exist
         let maybe_existing_data_contract: Result<Option<DataContract>> = self

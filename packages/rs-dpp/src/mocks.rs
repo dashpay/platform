@@ -5,6 +5,7 @@ use crate::{
     prelude::*,
 };
 
+use crate::validation::ValidationResult;
 use anyhow::Result as AnyResult;
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
@@ -36,7 +37,7 @@ impl<SR> DashPlatformProtocol<SR> {
 pub struct ValidateDataContract {}
 impl ValidateDataContract {
     pub async fn validate_data_contract(&self, raw_data_contract: &JsonValue) -> ValidationResult {
-        ValidationResult {}
+        ValidationResult::default()
     }
 }
 
@@ -79,109 +80,10 @@ pub type IHeader = String;
 
 pub type InstantLock = String;
 
-pub struct StateRepository {}
-
 #[derive(Debug, Clone)]
 pub struct JsonSchemaValidator {}
 
 pub trait JsonSchemaValidatorLike {}
-
-#[async_trait]
-impl StateRepositoryLike for StateRepository {
-    /// Fetch the Data Contract by ID
-    async fn fetch_data_contract<T>(&self, _data_contract_id: &Identifier) -> AnyResult<Option<T>> {
-        unimplemented!()
-    }
-
-    /// Store Data Contract
-    async fn store_data_contract(&self, _data_contract: DataContract) -> AnyResult<()> {
-        unimplemented!()
-    }
-
-    /// Fetch Documents by Data Contract Id and type
-    async fn fetch_documents<T>(
-        &self,
-        _contract_id: &Identifier,
-        _data_contract_type: &str,
-        _where_query: JsonValue,
-    ) -> AnyResult<Vec<T>> {
-        unimplemented!()
-    }
-
-    /// Store Document
-    async fn store_document(&self, _document: &Document) -> AnyResult<()> {
-        unimplemented!()
-    }
-
-    /// Remove Document
-    async fn remove_document(
-        &self,
-        _contract_id: &Identifier,
-        _data_contract_type: &str,
-        _document_id: &Identifier,
-    ) -> AnyResult<()> {
-        unimplemented!()
-    }
-
-    /// Fetch transaction by ID
-    async fn fetch_transaction<T>(&self, _id: &str) -> AnyResult<Option<T>> {
-        unimplemented!()
-    }
-
-    /// Fetch Identity by ID
-    async fn fetch_identity<T>(&self, _id: &Identifier) -> AnyResult<Option<T>> {
-        unimplemented!()
-    }
-
-    /// Store Public Key hashes and Identity id pair
-    async fn store_identity_public_key_hashes(
-        &self,
-        _identity_id: &Identifier,
-        _public_key_hashes: Vec<Vec<u8>>,
-    ) -> AnyResult<()> {
-        unimplemented!()
-    }
-
-    /// Fetch Identity Ids by Public Key hashes
-    /// Return the array of Identities
-    async fn fetch_identity_by_public_key_hashes<T>(
-        &self,
-        _public_key_hashed: Vec<Vec<u8>>,
-    ) -> AnyResult<Vec<T>> {
-        unimplemented!()
-    }
-
-    /// Fetch latest platform block header
-    async fn fetch_latest_platform_block_header<T>(&self) -> AnyResult<T> {
-        unimplemented!()
-    }
-
-    /// Verify Instant Lock
-    async fn verify_instant_lock(&self, _instant_lock: &InstantLock) -> AnyResult<bool> {
-        unimplemented!()
-    }
-
-    /// Check if AssetLock Transaction outPoint exists in spent list
-    async fn is_asset_lock_transaction_out_point_already_used(
-        &self,
-        _out_point_buffer: &[u8],
-    ) -> AnyResult<bool> {
-        unimplemented!()
-    }
-
-    /// Store AssetLock Transaction outPoint in spent list
-    async fn mark_asset_lock_transaction_out_point_as_used(
-        &self,
-        _out_point_buffer: &[u8],
-    ) -> AnyResult<()> {
-        unimplemented!()
-    }
-
-    /// Fetch Simplified Masternode List Store
-    async fn fetch_sml_store<T>(&self) -> AnyResult<T> {
-        unimplemented!()
-    }
-}
 
 pub struct StateTransition {
     pub data_contract: DataContract,
@@ -215,18 +117,5 @@ impl SMLStore {
 
     pub fn get_current_sml(&self) -> AnyResult<SimplifiedMNList> {
         unimplemented!()
-    }
-}
-
-#[derive(Default)]
-pub struct ValidationResult {}
-
-impl ValidationResult {
-    pub fn add_error(&mut self, _: impl Into<ConsensusError>) {}
-    pub fn get_errors(&self) -> Vec<ConsensusError> {
-        unimplemented!()
-    }
-    pub fn is_valid(&self) -> bool {
-        true
     }
 }

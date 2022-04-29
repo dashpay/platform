@@ -82,7 +82,7 @@ impl<SR> DataContractFactory<SR> {
                 .await;
             if !result.is_valid() {
                 return Err(ProtocolError::InvalidDataContractError {
-                    errors: result.get_errors(),
+                    errors: result.errors,
                     raw_data_contract,
                 });
             }
