@@ -11,7 +11,7 @@ const InvalidPayoutScriptError = require('./errors/InvalidPayoutScriptError');
 function getWithdrawPubKeyTypeFromPayoutScriptFactory(network) {
   /**
    * @typedef getWithdrawPubKeyTypeFromPayoutScript
-   * @param payoutScript
+   * @param {string|Buffer} payoutScript
    * @returns {number}
    */
   function getWithdrawPubKeyTypeFromPayoutScript(payoutScript) {

@@ -80,6 +80,7 @@ function updateSimplifiedMasternodeListFactory(
         new SimplifiedMNListDiff(rawDiff, network),
         ...await fetchDiffsPerBlock(startHeight, coreHeight),
       ];
+
       simplifiedMasternodeList.applyDiffs(initialSmlDiffs);
 
       latestRequestedHeight = coreHeight;

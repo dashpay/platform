@@ -157,7 +157,6 @@ describe('synchronizeMasternodeIdentitiesFactory', () => {
 
   beforeEach(async function beforeEach() {
     coreHeight = 3;
-    // firstSyncAppHash = '5f9981ea8bf69112408784c62ef079c19b9f57a275bf8b8df2b9b0f111cd8525';
     firstSyncAppHash = 'c7cd0e7c892ecc38695208c6ee03a3d0fc8e8de915b25eb8e2cc15b556878076';
 
     container = await createTestDIContainer();
@@ -406,6 +405,8 @@ describe('synchronizeMasternodeIdentitiesFactory', () => {
         pubKeyOperator: '3ba9789fab00deae1464ed80bda281fc833f85959b04201645e5fc25635e3e7ecda30d13d328b721af0809fca3bf3b3b',
         votingAddress: 'yVey9g4fsN3RY3ZjQ7HqiKEH2zEVAG95EN',
         isValid: true,
+        payoutAddress: '7UkJidhNjEPJCQnCTXeaJKbJmL4JuyV66w',
+        payoutOperatorAddress: 'yPDBTHAjPwJfZSSQYczccA78XRS2tZ5fZF',
       }),
     ];
 
