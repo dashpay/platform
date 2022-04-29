@@ -1,3 +1,14 @@
+### [0.22.4](https://github.com/dashevo/platform/compare/v0.22.3...v0.22.4) (2022-04-29)
+
+
+### ⚠ BREAKING CHANGES
+
+* Core v0.17 is not supported anymore
+
+### Bug Fixes
+
+* invalid `merkleRootQuorums` calculation ([#362](https://github.com/dashevo/platform/issues/362))
+
 ### [0.22.3](https://github.com/dashevo/platform/compare/v0.22.2...v0.22.3) (2022-04-27)
 
 
