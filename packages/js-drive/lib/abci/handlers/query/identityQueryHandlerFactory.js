@@ -64,13 +64,13 @@ function identityQueryHandlerFactory(
 
     const response = createQueryResponse(GetIdentityResponse, request.prove);
 
-    const identity = await signedIdentityRepository.fetch(identifier);
+    const identityResult = await signedIdentityRepository.fetch(identifier);
 
-    if (!identity) {
+    if (identityResult.isNull()) {
       throw new NotFoundAbciError('Identity not found');
     }
 
-    response.setIdentity(identity.toBuffer());
+    response.setIdentity(identityResult.getValue().toBuffer());
 
     return new ResponseQuery({
       value: response.serializeBinary(),

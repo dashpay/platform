@@ -64,11 +64,11 @@ function dataContractQueryHandlerFactory(
 
     const dataContract = await signedDataContractRepository.fetch(contractIdIdentifier);
 
-    if (!dataContract) {
+    if (dataContract.isNull()) {
       throw new NotFoundAbciError('Data Contract not found');
     }
 
-    response.setDataContract(dataContract.toBuffer());
+    response.setDataContract(dataContract.getValue().toBuffer());
 
     return new ResponseQuery({
       value: response.serializeBinary(),
