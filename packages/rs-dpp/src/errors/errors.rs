@@ -1,3 +1,4 @@
+use crate::consensus::ConsensusError;
 use crate::data_contract::errors::*;
 use crate::document::errors::*;
 use crate::mocks;
@@ -42,7 +43,7 @@ pub enum ProtocolError {
 
     #[error("Invalid Data Contract: {errors:?}")]
     InvalidDataContractError {
-        errors: Vec<mocks::ConsensusError>,
+        errors: Vec<ConsensusError>,
         raw_data_contract: serde_json::Value,
     },
 }

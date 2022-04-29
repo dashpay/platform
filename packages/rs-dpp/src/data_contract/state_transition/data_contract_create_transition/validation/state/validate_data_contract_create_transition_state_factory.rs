@@ -1,4 +1,6 @@
-use crate::{errors::StateError, mocks, state_repository::StateRepositoryLike};
+use crate::{
+    errors::StateError, mocks, state_repository::StateRepositoryLike, validation::ValidationResult,
+};
 use anyhow::Result;
 
 pub struct ValidateDataContractCreateTransitionStateFactory<SR>
@@ -24,8 +26,8 @@ where
     pub async fn validate_data_contract_create_transition_state(
         &self,
         state_transition: mocks::StateTransition,
-    ) -> mocks::ValidationResult {
-        let mut result = mocks::ValidationResult::default();
+    ) -> ValidationResult {
+        let mut result = ValidationResult::default();
 
         // Data contract shouldn't exist
         let maybe_existing_data_contract: Result<Option<Vec<u8>>> = self

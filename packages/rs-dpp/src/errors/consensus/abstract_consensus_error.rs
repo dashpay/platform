@@ -1,15 +1,16 @@
+use crate::codes::ErrorWithCode;
 use crate::consensus::basic::identity::{
     DuplicatedIdentityPublicKeyError, DuplicatedIdentityPublicKeyIdError,
     InvalidIdentityPublicKeyDataError, InvalidIdentityPublicKeySecurityLevelError,
 };
 use crate::errors::consensus::basic::{
-    IncompatibleProtocolVersionError, JsonSchemaError, UnsupportedProtocolVersionError,
+    BasicError, IncompatibleProtocolVersionError, JsonSchemaError, UnsupportedProtocolVersionError,
 };
+use crate::errors::StateError;
 use jsonschema::ValidationError;
 use thiserror::Error;
 
 #[derive(Error, Debug)]
-#[error("{0}")]
 pub enum ConsensusError {
     #[error("{0}")]
     JsonSchemaError(JsonSchemaError),
@@ -25,6 +26,18 @@ pub enum ConsensusError {
     InvalidIdentityPublicKeySecurityLevelError(InvalidIdentityPublicKeySecurityLevelError),
     #[error("{0}")]
     DuplicatedIdentityPublicKeyError(DuplicatedIdentityPublicKeyError),
+
+    #[error(transparent)]
+    StateError(Box<StateError>),
+
+    #[error(transparent)]
+    BasicError(Box<BasicError>),
+
+    #[error("Parsing of serialized object failed due to: {parsing_error}")]
+    SerializedObjectParsingError { parsing_error: anyhow::Error },
+
+    #[error("Can't read protocol version from serialized object: {parsing_error}")]
+    ProtocolVersionParsingError { parsing_error: anyhow::Error },
 }
 
 impl ConsensusError {
@@ -37,6 +50,10 @@ impl ConsensusError {
 
     pub fn code(&self) -> u32 {
         match self {
+            // Decoding
+            ConsensusError::ProtocolVersionParsingError { .. } => 1000,
+            ConsensusError::SerializedObjectParsingError { .. } => 1001,
+
             ConsensusError::JsonSchemaError(_) => 1005,
             ConsensusError::UnsupportedProtocolVersionError(_) => 1002,
             ConsensusError::IncompatibleProtocolVersionError(_) => 1003,
@@ -46,6 +63,9 @@ impl ConsensusError {
             ConsensusError::DuplicatedIdentityPublicKeyIdError(_) => 1030,
             ConsensusError::InvalidIdentityPublicKeyDataError(_) => 1040,
             ConsensusError::InvalidIdentityPublicKeySecurityLevelError(_) => 1047,
+
+            ConsensusError::StateError(e) => e.get_code(),
+            ConsensusError::BasicError(e) => e.get_code(),
         }
     }
 }
@@ -95,5 +115,17 @@ impl From<InvalidIdentityPublicKeySecurityLevelError> for ConsensusError {
 impl From<DuplicatedIdentityPublicKeyError> for ConsensusError {
     fn from(error: DuplicatedIdentityPublicKeyError) -> Self {
         Self::DuplicatedIdentityPublicKeyError(error)
+    }
+}
+
+impl From<StateError> for ConsensusError {
+    fn from(se: StateError) -> Self {
+        ConsensusError::StateError(Box::new(se))
+    }
+}
+
+impl From<BasicError> for ConsensusError {
+    fn from(se: BasicError) -> Self {
+        ConsensusError::BasicError(Box::new(se))
     }
 }
