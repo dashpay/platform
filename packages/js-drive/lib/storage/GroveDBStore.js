@@ -203,7 +203,10 @@ class GroveDBStore {
       ));
     } catch (e) {
       if (e.message.startsWith('path key not found') || e.message.startsWith('path not found')) {
-        return null;
+        return new StorageResult(
+          null,
+          [new ReadOperation(0)],
+        );
       }
 
       throw e;
@@ -212,9 +215,7 @@ class GroveDBStore {
     if (type === undefined) {
       return new StorageResult(
         null,
-        [
-          new ReadOperation(0),
-        ],
+        [new ReadOperation(0)],
       );
     }
 
@@ -224,9 +225,7 @@ class GroveDBStore {
 
     return new StorageResult(
       value,
-      [
-        new ReadOperation(value.length),
-      ],
+      [new ReadOperation(value.length)],
     );
   }
 
@@ -264,9 +263,7 @@ class GroveDBStore {
 
     return new StorageResult(
       undefined,
-      [
-        new DeleteOperation(key.length, 0),
-      ],
+      [new DeleteOperation(key.length, 0)],
     );
   }
 
@@ -287,7 +284,12 @@ class GroveDBStore {
       );
     } catch (e) {
       if (e.message.startsWith('path key not found')) {
-        return null;
+        return new StorageResult(
+          null,
+          [
+            new ReadOperation(result ? result.length : 0),
+          ],
+        );
       }
 
       throw e;

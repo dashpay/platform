@@ -6,6 +6,7 @@ const Identity = require('@dashevo/dpp/lib/identity/Identity');
 const GroveDBStore = require('../../../lib/storage/GroveDBStore');
 const IdentityStoreRepository = require('../../../lib/identity/IdentityStoreRepository');
 const logger = require('../../../lib/util/noopLogger');
+const StorageResult = require('../../../lib/storage/StorageResult');
 
 describe('IdentityStoreRepository', () => {
   let rsDrive;
@@ -39,18 +40,23 @@ describe('IdentityStoreRepository', () => {
         identity,
       );
 
-      expect(result).to.be.equal(repository);
+      expect(result).to.be.instanceOf(StorageResult);
+      expect(result.getOperations().length).to.be.greaterThan(0);
 
-      const encodedIdentity = await store.get(
+      const encodedIdentityResult = await store.get(
         IdentityStoreRepository.TREE_PATH,
         identity.getId().toBuffer(),
       );
 
-      const [protocolVersion, rawIdentity] = decodeProtocolEntity(encodedIdentity);
+      const [protocolVersion, rawIdentity] = decodeProtocolEntity(
+        encodedIdentityResult.getResult(),
+      );
 
       rawIdentity.protocolVersion = protocolVersion;
 
-      expect(identity.toJSON()).to.deep.equal(new Identity(rawIdentity).toJSON());
+      const fetchedIdentity = new Identity(rawIdentity);
+
+      expect(fetchedIdentity.toObject()).to.deep.equal(identity.toObject());
     });
 
     it('should store identity using transaction', async () => {
@@ -61,39 +67,45 @@ describe('IdentityStoreRepository', () => {
         true,
       );
 
-      const notFoundIdentity = await store.get(
+      const notFoundIdentityResult = await store.get(
         IdentityStoreRepository.TREE_PATH,
         identity.getId().toBuffer(),
         { useTransaction: false },
       );
 
-      expect(notFoundIdentity).to.be.null();
+      expect(notFoundIdentityResult.getResult()).to.be.null();
 
-      const identityTransaction = await store.get(
+      const identityTransactionResult = await store.get(
         IdentityStoreRepository.TREE_PATH,
         identity.getId().toBuffer(),
         { useTransaction: true },
       );
 
-      let [protocolVersion, rawIdentity] = decodeProtocolEntity(identityTransaction);
+      let [protocolVersion, rawIdentity] = decodeProtocolEntity(
+        identityTransactionResult.getResult(),
+      );
 
       rawIdentity.protocolVersion = protocolVersion;
 
-      expect(identity.toJSON()).to.deep.equal(new Identity(rawIdentity).toJSON());
+      let fetchedIdentity = new Identity(rawIdentity);
+
+      expect(fetchedIdentity.toObject()).to.deep.equal(identity.toObject());
 
       await store.commitTransaction();
 
-      const committedIdentity = await store.get(
+      const committedIdentityResult = await store.get(
         IdentityStoreRepository.TREE_PATH,
         identity.getId().toBuffer(),
         { useTransaction: true },
       );
 
-      [protocolVersion, rawIdentity] = decodeProtocolEntity(committedIdentity);
+      [protocolVersion, rawIdentity] = decodeProtocolEntity(committedIdentityResult.getResult());
 
       rawIdentity.protocolVersion = protocolVersion;
 
-      expect(identity.toJSON()).to.deep.equal(new Identity(rawIdentity).toJSON());
+      fetchedIdentity = new Identity(rawIdentity);
+
+      expect(fetchedIdentity.toObject()).to.deep.equal(identity.toObject());
     });
   });
 
@@ -105,7 +117,10 @@ describe('IdentityStoreRepository', () => {
     it('should fetch null if identity not found', async () => {
       const result = await repository.fetch(identity.getId());
 
-      expect(result).to.be.null();
+      expect(result).to.be.instanceOf(StorageResult);
+      expect(result.getOperations().length).to.be.greaterThan(0);
+
+      expect(result.getResult()).to.be.null();
     });
 
     it('should fetch an identity', async () => {
@@ -115,10 +130,15 @@ describe('IdentityStoreRepository', () => {
         identity.toBuffer(),
       );
 
-      const storedIdentity = await repository.fetch(identity.getId());
+      const result = await repository.fetch(identity.getId());
+
+      expect(result).to.be.instanceOf(StorageResult);
+      expect(result.getOperations().length).to.be.greaterThan(0);
+
+      const storedIdentity = result.getResult();
 
       expect(storedIdentity).to.be.an.instanceof(Identity);
-      expect(storedIdentity.toJSON()).to.deep.equal(identity.toJSON());
+      expect(storedIdentity.toObject()).to.deep.equal(identity.toObject());
     });
 
     it('should fetch an identity using transaction', async () => {
@@ -131,21 +151,25 @@ describe('IdentityStoreRepository', () => {
         { useTransaction: true },
       );
 
-      const notFoundIdentity = await repository.fetch(identity.getId(), false);
+      const notFoundIdentityResult = await repository.fetch(identity.getId(), false);
 
-      expect(notFoundIdentity).to.be.null();
+      expect(notFoundIdentityResult.getResult()).to.be.null();
 
-      const transactionalIdentity = await repository.fetch(identity.getId(), true);
+      const transactionalIdentityResult = await repository.fetch(identity.getId(), true);
+
+      const transactionalIdentity = transactionalIdentityResult.getResult();
 
       expect(transactionalIdentity).to.be.an.instanceof(Identity);
-      expect(transactionalIdentity.toJSON()).to.deep.equal(identity.toJSON());
+      expect(transactionalIdentity.toObject()).to.deep.equal(identity.toObject());
 
       await store.commitTransaction();
 
-      const storedIdentity = await repository.fetch(identity.getId());
+      const storedIdentityResult = await repository.fetch(identity.getId());
+
+      const storedIdentity = storedIdentityResult.getResult();
 
       expect(storedIdentity).to.be.an.instanceof(Identity);
-      expect(storedIdentity.toJSON()).to.deep.equal(identity.toJSON());
+      expect(storedIdentity.toObject()).to.deep.equal(identity.toObject());
     });
   });
 
@@ -153,7 +177,8 @@ describe('IdentityStoreRepository', () => {
     it('should create a tree', async () => {
       const result = await repository.createTree();
 
-      expect(result).to.equal(repository);
+      expect(result).to.be.instanceOf(StorageResult);
+      expect(result.getOperations().length).to.be.greaterThan(0);
 
       const data = await store.db.get(
         [],

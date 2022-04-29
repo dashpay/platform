@@ -5,7 +5,7 @@ const createDocumentTypeTreePath = require('./groveDB/createDocumentTreePath');
 const InvalidQueryError = require('./errors/InvalidQueryError');
 const StartDocumentNotFoundError = require('./query/errors/StartDocumentNotFoundError');
 const ValidationError = require('./query/errors/ValidationError');
-const RepositoryResult = require('../storage/RepositoryResult');
+const StorageResult = require('../storage/StorageResult');
 
 class DocumentRepository {
   /**
@@ -30,7 +30,7 @@ class DocumentRepository {
    * @param {DataContract} document
    * @param {Document} document
    * @param {boolean} [useTransaction=false]
-   * @return {Promise<RepositoryResult<void>>}
+   * @return {Promise<StorageResult<void>>}
    */
   async store(document, useTransaction = false) {
     const isExistsResult = await this.isExist(document, useTransaction);
@@ -71,7 +71,7 @@ class DocumentRepository {
       }
     }
 
-    return new RepositoryResult(
+    return new StorageResult(
       undefined,
       [
         ...isExistsResult.getOperations(),
@@ -83,7 +83,7 @@ class DocumentRepository {
   /**
    * @param {Document} document
    * @param {boolean} [useTransaction=false]
-   * @return {Promise<RepositoryResult<boolean>>}
+   * @return {Promise<StorageResult<boolean>>}
    */
   async isExist(document, useTransaction = false) {
     const documentTypeTreePath = createDocumentTypeTreePath(
@@ -95,15 +95,15 @@ class DocumentRepository {
       [Buffer.from([0])],
     );
 
-    const fetchedDocumentResult = await this.storage.get(
+    const result = await this.storage.get(
       documentTreePath,
       document.getId().toBuffer(),
       { useTransaction },
     );
 
-    return new RepositoryResult(
-      Boolean(fetchedDocumentResult.getResult()),
-      fetchedDocumentResult.getOperations(),
+    return new StorageResult(
+      Boolean(result.getResult()),
+      result.getOperations(),
     );
   }
 
@@ -122,7 +122,7 @@ class DocumentRepository {
    *
    * @throws InvalidQueryError
    *
-   * @returns {Promise<RepositoryResult<Document[]>>}
+   * @returns {Promise<StorageResult<Document[]>>}
    */
   async find(dataContract, documentType, query = {}, useTransaction = false) {
     const documentSchema = dataContract.getDocumentSchema(documentType);
@@ -143,7 +143,7 @@ class DocumentRepository {
       });
 
     try {
-      const [documents, storageCost, cpuCost] = await this.storage.getDrive()
+      const [documents, , cpuCost] = await this.storage.getDrive()
         .queryDocuments(
           dataContract,
           documentType,
@@ -151,10 +151,10 @@ class DocumentRepository {
           useTransaction,
         );
 
-      return new RepositoryResult(
+      return new StorageResult(
         documents,
         [
-          new PreCalculatedOperation(storageCost, cpuCost),
+          new PreCalculatedOperation(0, cpuCost),
         ],
       );
     } catch (e) {
@@ -189,7 +189,7 @@ class DocumentRepository {
    * @param {string} documentType
    * @param {Identifier} id
    * @param {boolean} useTransaction
-   * @return {Promise<RepositoryResult<void>>}
+   * @return {Promise<StorageResult<void>>}
    */
   async delete(dataContract, documentType, id, useTransaction = false) {
     try {
@@ -201,7 +201,7 @@ class DocumentRepository {
           useTransaction,
         );
 
-      return new RepositoryResult(
+      return new StorageResult(
         undefined,
         [
           new PreCalculatedOperation(storageCost, cpuCost),

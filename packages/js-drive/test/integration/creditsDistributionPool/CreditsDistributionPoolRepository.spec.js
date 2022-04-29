@@ -1,10 +1,11 @@
-const rimraf = require('rimraf');
+const fs = require('fs');
 const cbor = require('cbor');
 const Drive = require('@dashevo/rs-drive');
 const GroveDBStore = require('../../../lib/storage/GroveDBStore');
 const CreditsDistributionPoolRepository = require('../../../lib/creditsDistributionPool/CreditsDistributionPoolRepository');
 const CreditsDistributionPool = require('../../../lib/creditsDistributionPool/CreditsDistributionPool');
 const logger = require('../../../lib/util/noopLogger');
+const StorageResult = require('../../../lib/storage/StorageResult');
 
 describe('CreditsDistributionPoolRepository', () => {
   let rsDrive;
@@ -28,22 +29,31 @@ describe('CreditsDistributionPoolRepository', () => {
 
   afterEach(async () => {
     await rsDrive.close();
-    rimraf.sync('./db/grovedb_test');
+
+    fs.rmSync('./db/grovedb_test', { recursive: true });
   });
 
   describe('#store', () => {
     it('should store creditsDistributionPool', async () => {
       const result = await repository.store(creditsDistributionPool);
 
-      expect(result).to.equal(repository);
+      expect(result).to.be.instanceOf(StorageResult);
 
-      const storedCreditsDistributionPoolBuffer = await store.get(
+      expect(result.getOperations().length).to.be.greaterThan(0);
+
+      const storedCreditsDistributionPoolBufferResult = await store.get(
         CreditsDistributionPoolRepository.PATH,
         CreditsDistributionPoolRepository.KEY,
       );
 
+      const storedCreditsDistributionPoolBuffer = storedCreditsDistributionPoolBufferResult
+        .getResult();
+
       expect(storedCreditsDistributionPoolBuffer).to.be.instanceOf(Buffer);
-      const storedCreditsDistributionPool = cbor.decode(storedCreditsDistributionPoolBuffer);
+
+      const storedCreditsDistributionPool = cbor.decode(
+        storedCreditsDistributionPoolBuffer,
+      );
 
       expect(storedCreditsDistributionPool.amount).to.equal(amount);
     });
@@ -53,40 +63,55 @@ describe('CreditsDistributionPoolRepository', () => {
 
       const result = await repository.store(creditsDistributionPool, true);
 
-      expect(result).to.equal(repository);
+      expect(result).to.be.instanceOf(StorageResult);
 
-      const notFoundData = await store.get(
+      expect(result.getOperations().length).to.be.greaterThan(0);
+
+      const notFoundDataResult = await store.get(
         CreditsDistributionPoolRepository.PATH,
         CreditsDistributionPoolRepository.KEY,
       );
 
-      expect(notFoundData).to.be.null();
+      expect(notFoundDataResult.getResult()).to.be.null();
 
-      const dataFromTransaction = await store.get(
+      const dataFromTransactionResult = await store.get(
         CreditsDistributionPoolRepository.PATH,
         CreditsDistributionPoolRepository.KEY,
         { useTransaction: true },
       );
 
-      expect(cbor.decode(dataFromTransaction).amount).to.equal(amount);
+      const dataFromTransaction = cbor.decode(dataFromTransactionResult.getResult());
+
+      expect(dataFromTransaction.amount).to.equal(amount);
 
       await store.commitTransaction();
 
-      const committedData = await store.get(
+      const committedDataResult = await store.get(
         CreditsDistributionPoolRepository.PATH,
         CreditsDistributionPoolRepository.KEY,
       );
 
-      expect(cbor.decode(committedData).amount).to.equal(amount);
+      const committedData = cbor.decode(committedDataResult.getResult());
+
+      expect(committedData.amount).to.equal(amount);
     });
   });
 
   describe('#fetch', () => {
     it('should fetch empty CreditsDistributionPool', async () => {
-      const storedCreditsDistributionPool = await repository.fetch();
+      const result = await repository.fetch();
 
-      expect(storedCreditsDistributionPool).to.be.instanceOf(CreditsDistributionPool);
-      expect(storedCreditsDistributionPool.getAmount()).to.equals(0);
+      expect(result).to.be.instanceOf(StorageResult);
+
+      expect(result.getOperations().length).to.be.greaterThan(0);
+
+      const fetchedCreditsDistributionPool = result.getResult();
+
+      expect(fetchedCreditsDistributionPool).to.be.instanceOf(
+        CreditsDistributionPool,
+      );
+
+      expect(fetchedCreditsDistributionPool.getAmount()).to.equals(0);
     });
 
     it('should fetch stored CreditsDistributionPool', async () => {
@@ -98,7 +123,14 @@ describe('CreditsDistributionPoolRepository', () => {
         ),
       );
 
-      const storedCreditsDistributionPool = await repository.fetch();
+      const result = await repository.fetch();
+
+      expect(result).to.be.instanceOf(StorageResult);
+
+      expect(result.getOperations().length).to.be.greaterThan(0);
+
+      const storedCreditsDistributionPool = result.getResult();
+
       expect(storedCreditsDistributionPool).to.be.instanceOf(CreditsDistributionPool);
       expect(storedCreditsDistributionPool.getAmount()).to.equals(amount);
     });
@@ -115,22 +147,35 @@ describe('CreditsDistributionPoolRepository', () => {
         { useTransaction: true },
       );
 
-      const emptyCreditsDistributionPool = await repository.fetch(false);
+      // Nothing without transaction
+      const emptyResult = await repository.fetch(false);
 
-      expect(emptyCreditsDistributionPool).to.be.instanceOf(CreditsDistributionPool);
-      expect(emptyCreditsDistributionPool.getAmount()).to.equals(0);
+      expect(emptyResult).to.be.instanceOf(StorageResult);
 
-      const transactionalCreditsDistributionPool = await repository.fetch(true);
+      expect(emptyResult.getOperations().length).to.be.greaterThan(0);
 
-      expect(transactionalCreditsDistributionPool).to.be.instanceOf(CreditsDistributionPool);
-      expect(transactionalCreditsDistributionPool.getAmount()).to.equals(amount);
+      const emptyPool = emptyResult.getResult();
+
+      expect(emptyPool).to.be.instanceOf(CreditsDistributionPool);
+      expect(emptyPool.getAmount()).to.equals(0);
+
+      // Actual amount in transactions
+      const transactionalResult = await repository.fetch(true);
+
+      const transactionalPool = transactionalResult.getResult();
+
+      expect(transactionalPool).to.be.instanceOf(CreditsDistributionPool);
+      expect(transactionalPool.getAmount()).to.equals(amount);
 
       await store.commitTransaction();
 
-      const committedCreditsDistributionPool = await repository.fetch(false);
+      // Actual amount without transaction
+      const committedResults = await repository.fetch(false);
 
-      expect(committedCreditsDistributionPool).to.be.instanceOf(CreditsDistributionPool);
-      expect(committedCreditsDistributionPool.getAmount()).to.equals(amount);
+      const committedPool = committedResults.getResult();
+
+      expect(committedPool).to.be.instanceOf(CreditsDistributionPool);
+      expect(committedPool.getAmount()).to.equals(amount);
     });
   });
 });

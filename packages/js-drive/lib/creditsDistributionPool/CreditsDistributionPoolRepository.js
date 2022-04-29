@@ -1,7 +1,7 @@
 const cbor = require('cbor');
 
 const CreditsDistributionPool = require('./CreditsDistributionPool');
-const RepositoryResult = require('../storage/RepositoryResult');
+const StorageResult = require('../storage/StorageResult');
 
 class CreditsDistributionPoolRepository {
   /**
@@ -17,7 +17,7 @@ class CreditsDistributionPoolRepository {
    *
    * @param {CreditsDistributionPool} creditsDistributionPool
    * @param {boolean} [useTransaction=false]
-   * @return {Promise<RepositoryResult<void>>}
+   * @return {Promise<StorageResult<void>>}
    */
   async store(creditsDistributionPool, useTransaction = false) {
     const encodedCreditsDistributionPool = cbor.encodeCanonical(
@@ -31,37 +31,36 @@ class CreditsDistributionPoolRepository {
       { useTransaction },
     );
 
-    return new RepositoryResult(
-      undefined,
-      result.getOperations(),
-    );
+    result.setValue(undefined);
+
+    return result;
   }
 
   /**
    * Fetch Credits Distribution Pool
    *
    * @param {boolean} [useTransaction=false]
-   * @return {Promise<RepositoryResult<CreditsDistributionPool>>}
+   * @return {Promise<StorageResult<CreditsDistributionPool>>}
    */
   async fetch(useTransaction = false) {
-    const creditsDistributionPoolEncodedResult = await this.storage.get(
+    const result = await this.storage.get(
       CreditsDistributionPoolRepository.PATH,
       CreditsDistributionPoolRepository.KEY,
       { useTransaction },
     );
 
-    if (!creditsDistributionPoolEncodedResult.getResult()) {
-      return new RepositoryResult(
+    if (result.isEmpty()) {
+      return new StorageResult(
         new CreditsDistributionPool(),
-        creditsDistributionPoolEncodedResult.getOperations(),
+        result.getOperations(),
       );
     }
 
-    const { amount } = cbor.decode(creditsDistributionPoolEncodedResult.getResult());
+    const { amount } = cbor.decode(result.getResult());
 
-    return new RepositoryResult(
+    return new StorageResult(
       new CreditsDistributionPool(amount),
-      creditsDistributionPoolEncodedResult.getOperations(),
+      result.getOperations(),
     );
   }
 }

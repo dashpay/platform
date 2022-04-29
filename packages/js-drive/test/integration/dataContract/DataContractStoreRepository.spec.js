@@ -6,6 +6,7 @@ const DataContract = require('@dashevo/dpp/lib/dataContract/DataContract');
 const GroveDBStore = require('../../../lib/storage/GroveDBStore');
 const DataContractStoreRepository = require('../../../lib/dataContract/DataContractStoreRepository');
 const noopLogger = require('../../../lib/util/noopLogger');
+const StorageResult = require('../../../lib/storage/StorageResult');
 
 describe('DataContractStoreRepository', () => {
   let rsDrive;
@@ -36,63 +37,79 @@ describe('DataContractStoreRepository', () => {
     });
 
     it('should store Data Contract', async () => {
-      await repository.store(
+      const result = await repository.store(
         dataContract,
       );
 
-      const encodedDataContract = await store.get(
+      expect(result).to.be.instanceOf(StorageResult);
+      expect(result.getOperations().length).to.be.greaterThan(0);
+
+      const encodedDataContractResult = await store.get(
         DataContractStoreRepository.TREE_PATH.concat([dataContract.getId().toBuffer()]),
         DataContractStoreRepository.DATA_CONTRACT_KEY,
       );
 
-      const [protocolVersion, rawDataContract] = decodeProtocolEntity(encodedDataContract);
+      const [protocolVersion, rawDataContract] = decodeProtocolEntity(
+        encodedDataContractResult.getResult(),
+      );
 
       rawDataContract.protocolVersion = protocolVersion;
 
-      expect(dataContract.toJSON()).to.deep.equal(new DataContract(rawDataContract).toJSON());
+      const fetchedDataContract = new DataContract(rawDataContract);
+
+      expect(dataContract.toObject()).to.deep.equal(fetchedDataContract.toObject());
     });
 
     it('should store Data Contract using transaction', async () => {
       await store.startTransaction();
 
-      await repository.store(
+      const result = await repository.store(
         dataContract,
         true,
       );
 
-      const notFoundDataContract = await store.get(
+      expect(result).to.be.instanceOf(StorageResult);
+      expect(result.getOperations().length).to.be.greaterThan(0);
+
+      const notFoundDataContractResult = await store.get(
         DataContractStoreRepository.TREE_PATH.concat([dataContract.getId().toBuffer()]),
         DataContractStoreRepository.DATA_CONTRACT_KEY,
         { useTransaction: false },
       );
 
-      expect(notFoundDataContract).to.be.null();
+      expect(notFoundDataContractResult.getResult()).to.be.null();
 
-      const dataFromTransaction = await store.get(
+      const dataFromTransactionResult = await store.get(
         DataContractStoreRepository.TREE_PATH.concat([dataContract.getId().toBuffer()]),
         DataContractStoreRepository.DATA_CONTRACT_KEY,
         { useTransaction: true },
       );
 
-      let [protocolVersion, rawDataContract] = decodeProtocolEntity(dataFromTransaction);
+      let [protocolVersion, rawDataContract] = decodeProtocolEntity(
+        dataFromTransactionResult.getResult(),
+      );
 
       rawDataContract.protocolVersion = protocolVersion;
 
-      expect(dataContract.toJSON()).to.deep.equal(new DataContract(rawDataContract).toJSON());
+      const fetchedDataContract = new DataContract(rawDataContract);
+
+      expect(dataContract.toObject()).to.deep.equal(fetchedDataContract.toObject());
 
       await store.commitTransaction();
 
-      const committedData = await store.get(
+      const committedDataResult = await store.get(
         DataContractStoreRepository.TREE_PATH.concat([dataContract.getId().toBuffer()]),
         DataContractStoreRepository.DATA_CONTRACT_KEY,
         { useTransaction: true },
       );
 
-      [protocolVersion, rawDataContract] = decodeProtocolEntity(committedData);
+      [protocolVersion, rawDataContract] = decodeProtocolEntity(committedDataResult.getResult());
 
       rawDataContract.protocolVersion = protocolVersion;
 
-      expect(dataContract.toJSON()).to.deep.equal(new DataContract(rawDataContract).toJSON());
+      const fetchedOneMoreDataContract = new DataContract(rawDataContract);
+
+      expect(dataContract.toObject()).to.deep.equal(fetchedOneMoreDataContract.toObject());
     });
   });
 
@@ -102,18 +119,26 @@ describe('DataContractStoreRepository', () => {
     });
 
     it('should should fetch null if Data Contract not found', async () => {
-      const storedDataContract = await repository.fetch(dataContract.getId());
+      const result = await repository.fetch(dataContract.getId());
 
-      expect(storedDataContract).to.be.null();
+      expect(result).to.be.instanceOf(StorageResult);
+      expect(result.getOperations().length).to.be.greaterThan(0);
+
+      expect(result.getResult()).to.be.null();
     });
 
     it('should fetch Data Contract', async () => {
       await store.getDrive().applyContract(dataContract, new Date(), false);
 
-      const storedDataContract = await repository.fetch(dataContract.getId());
+      const result = await repository.fetch(dataContract.getId());
+
+      expect(result).to.be.instanceOf(StorageResult);
+      expect(result.getOperations().length).to.be.greaterThan(0);
+
+      const storedDataContract = result.getResult();
 
       expect(storedDataContract).to.be.an.instanceof(DataContract);
-      expect(storedDataContract.toJSON()).to.deep.equal(dataContract.toJSON());
+      expect(storedDataContract.toObject()).to.deep.equal(storedDataContract.toObject());
     });
 
     it('should fetch Data Contract using transaction', async () => {
@@ -121,21 +146,25 @@ describe('DataContractStoreRepository', () => {
 
       await store.getDrive().applyContract(dataContract, new Date(), true);
 
-      const notFoundDataContract = await repository.fetch(dataContract.getId(), false);
+      const notFoundDataContractResult = await repository.fetch(dataContract.getId(), false);
 
-      expect(notFoundDataContract).to.be.null();
+      expect(notFoundDataContractResult.getResult()).to.be.null();
 
-      const transactionalDataContract = await repository.fetch(dataContract.getId(), true);
+      const transactionalDataContractResult = await repository.fetch(dataContract.getId(), true);
+
+      const transactionalDataContract = transactionalDataContractResult.getResult();
 
       expect(transactionalDataContract).to.be.an.instanceof(DataContract);
-      expect(transactionalDataContract.toJSON()).to.deep.equal(dataContract.toJSON());
+      expect(transactionalDataContract.toObject()).to.deep.equal(dataContract.toObject());
 
       await store.commitTransaction();
 
-      const storedDataContract = await repository.fetch(dataContract.getId());
+      const storedDataContractResult = await repository.fetch(dataContract.getId());
+
+      const storedDataContract = storedDataContractResult.getResult();
 
       expect(storedDataContract).to.be.an.instanceof(DataContract);
-      expect(storedDataContract.toJSON()).to.deep.equal(dataContract.toJSON());
+      expect(storedDataContract.toObject()).to.deep.equal(dataContract.toObject());
     });
   });
 
@@ -143,7 +172,8 @@ describe('DataContractStoreRepository', () => {
     it('should create a tree', async () => {
       const result = await repository.createTree();
 
-      expect(result).to.equal(repository);
+      expect(result).to.be.instanceOf(StorageResult);
+      expect(result.getOperations().length).to.be.greaterThan(0);
 
       const data = await store.db.get(
         [],

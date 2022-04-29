@@ -1,6 +1,6 @@
 const Identity = require('@dashevo/dpp/lib/identity/Identity');
 
-const RepositoryResult = require('../storage/RepositoryResult');
+const StorageResult = require('../storage/StorageResult');
 
 class IdentityStoreRepository {
   /**
@@ -18,7 +18,7 @@ class IdentityStoreRepository {
    *
    * @param {Identity} identity
    * @param {boolean} [useTransaction=false]
-   * @return {Promise<RepositoryResult<void>>}
+   * @return {Promise<StorageResult<void>>}
    */
   async store(identity, useTransaction = false) {
     const key = identity.getId().toBuffer();
@@ -31,10 +31,9 @@ class IdentityStoreRepository {
       { useTransaction },
     );
 
-    return new RepositoryResult(
-      undefined,
-      result.getOperations(),
-    );
+    result.setValue(undefined);
+
+    return result;
   }
 
   /**
@@ -42,7 +41,7 @@ class IdentityStoreRepository {
    *
    * @param {Identifier} id
    * @param {boolean} [useTransaction=false]
-   * @return {Promise<RepositoryResult<null|Identity>>}
+   * @return {Promise<StorageResult<null|Identity>>}
    */
   async fetch(id, useTransaction = false) {
     const encodedIdentityResult = await this.storage.get(
@@ -51,11 +50,8 @@ class IdentityStoreRepository {
       { useTransaction },
     );
 
-    if (!encodedIdentityResult.getResult()) {
-      return new RepositoryResult(
-        null,
-        encodedIdentityResult.getOperations(),
-      );
+    if (encodedIdentityResult.isNull()) {
+      return encodedIdentityResult;
     }
 
     const [protocolVersion, rawIdentity] = this.decodeProtocolEntity(
@@ -64,7 +60,7 @@ class IdentityStoreRepository {
 
     rawIdentity.protocolVersion = protocolVersion;
 
-    return new RepositoryResult(
+    return new StorageResult(
       new Identity(rawIdentity),
       encodedIdentityResult.getOperations(),
     );
@@ -75,18 +71,13 @@ class IdentityStoreRepository {
    * @param {boolean} [options.useTransaction=false]
    * @param {boolean} [options.skipIfExists]
    *
-   * @return {Promise<RepositoryResult<void>>}
+   * @return {Promise<StorageResult<void>>}
    */
   async createTree(options = {}) {
-    const result = await this.storage.createTree(
+    return this.storage.createTree(
       [],
       IdentityStoreRepository.TREE_PATH[0],
       options,
-    );
-
-    return new RepositoryResult(
-      undefined,
-      result.getOperations(),
     );
   }
 }
