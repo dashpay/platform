@@ -38,7 +38,7 @@ function waitForTransactionToBeProvableFactory(
         return result;
       }).catch((error) => {
         // Do not resolve promise and wait for results if transaction is not found
-        if (error.code === -32603 && error.data === `tx (${hashString}) not found`) {
+        if (error.code === -32603 && error.data === `tx (${hashString}) not found, err: %!w(<nil>)`) {
           return new Promise(() => {});
         }
 
