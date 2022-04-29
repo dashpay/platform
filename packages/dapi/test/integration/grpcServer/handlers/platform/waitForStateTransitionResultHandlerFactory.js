@@ -154,7 +154,7 @@ describe('waitForStateTransitionResultHandlerFactory', () => {
     transactionNotFoundError = new Error();
 
     transactionNotFoundError.code = -32603;
-    transactionNotFoundError.data = `tx (${hashString}) not found`;
+    transactionNotFoundError.data = `tx (${hashString}) not found, err: %!w(<nil>)`;
 
     const getExistingTransactionResult = this.sinon.stub().rejects(transactionNotFoundError);
 
@@ -291,7 +291,7 @@ describe('waitForStateTransitionResultHandlerFactory', () => {
 
     request.setStateTransitionHash(stHash);
 
-    transactionNotFoundError.data = `tx (${hashString}) not found`;
+    transactionNotFoundError.data = `tx (${hashString}) not found, err: %!w(<nil>)`;
 
     call.request = WaitForStateTransitionResultRequest.deserializeBinary(request.serializeBinary());
 
