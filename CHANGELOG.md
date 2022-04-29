@@ -3,7 +3,7 @@
 
 ### ⚠ BREAKING CHANGES
 
-* invalid `merkleRootQuorums` calculation (#362)
+* Core v0.17 is not supported anymore
 
 ### Bug Fixes
 
