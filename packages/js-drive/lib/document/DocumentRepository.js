@@ -108,7 +108,7 @@ class DocumentRepository {
       operations: [
         new Read(
           document.getId().toBuffer().length,
-          documentTreePath.reduce((size, pathItem) => size += pathItem.length, 0),
+          documentTreePath.reduce((size, pathItem) => size + pathItem.length, 0),
           fetchedDocument.toBuffer().length,
         ),
       ],

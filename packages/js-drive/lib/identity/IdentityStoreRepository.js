@@ -60,7 +60,7 @@ class IdentityStoreRepository {
         operations: [
           new Read(
             id.length, 
-            IdentityStoreRepository.TREE_PATH.reduce((size, pathItem) => size += pathItem.length, 0),
+            IdentityStoreRepository.TREE_PATH.reduce((size, pathItem) => size + pathItem.length, 0),
             0,
           )
         ],
@@ -76,7 +76,7 @@ class IdentityStoreRepository {
       operations: [
         new Read(
           id.length, 
-          IdentityStoreRepository.TREE_PATH.reduce((size, pathItem) => size += pathItem.length, 0),
+          IdentityStoreRepository.TREE_PATH.reduce((size, pathItem) => size + pathItem.length, 0),
           encodedIdentity.length,
         )
       ],

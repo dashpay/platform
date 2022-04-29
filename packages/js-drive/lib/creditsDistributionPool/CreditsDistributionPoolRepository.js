@@ -1,8 +1,9 @@
 const cbor = require('cbor');
-const CreditsDistributionPool = require('./CreditsDistributionPool');
 
 const Write = require('@dashevo/dpp/lib/stateTransition/fees/operations/WriteOperation');
 const Read = require('@dashevo/dpp/lib/stateTransition/fees/operations/ReadOperation');
+
+const CreditsDistributionPool = require('./CreditsDistributionPool');
 
 class CreditsDistributionPoolRepository {
   /**
@@ -62,10 +63,12 @@ class CreditsDistributionPoolRepository {
         operations: [
           new Read(
             CreditsDistributionPoolRepository.KEY.length,
-            CreditsDistributionPoolRepository.PATH.reduce((size, pathItem) => size += pathItem.length, 0).length,
+            CreditsDistributionPoolRepository.PATH.reduce(
+              (size, pathItem) => size + pathItem.length, 0,
+            ).length,
             0,
           ),
-        ]
+        ],
       };
     }
 
@@ -76,7 +79,9 @@ class CreditsDistributionPoolRepository {
       operations: [
         new Read(
           CreditsDistributionPoolRepository.KEY.length,
-          CreditsDistributionPoolRepository.PATH.reduce((size, pathItem) => size += pathItem.length, 0).length,
+          CreditsDistributionPoolRepository.PATH.reduce(
+            (size, pathItem) => size + pathItem.length, 0,
+          ).length,
           creditsDistributionPoolEncoded.length,
         ),
       ],

@@ -58,7 +58,7 @@ class SpentAssetLockTransactionsRepository {
       operations: [
         new Read(
           outPointBuffer.length,
-          SpentAssetLockTransactionsRepository.TREE_PATH.reduce((size, pathItem) => size += pathItem.length, 0),
+          SpentAssetLockTransactionsRepository.TREE_PATH.reduce((size, pathItem) => size + pathItem.length, 0),
           result.length,
         ),
       ],

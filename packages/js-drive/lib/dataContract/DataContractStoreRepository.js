@@ -76,7 +76,7 @@ class DataContractStoreRepository {
         operations: [
           new Read(
             DataContractStoreRepository.DATA_CONTRACT_KEY.length,
-            DataContractStoreRepository.TREE_PATH.concat([id.toBuffer()]).reduce((size, pathItem) => size += pathItem.length, 0).length,
+            DataContractStoreRepository.TREE_PATH.concat([id.toBuffer()]).reduce((size, pathItem) => size + pathItem.length, 0).length,
             0,
           ),
         ],
@@ -92,7 +92,7 @@ class DataContractStoreRepository {
       operations: [
         new Read(
           DataContractStoreRepository.DATA_CONTRACT_KEY.length,
-          DataContractStoreRepository.TREE_PATH.concat([id.toBuffer()]).reduce((size, pathItem) => size += pathItem.length, 0).length,
+          DataContractStoreRepository.TREE_PATH.concat([id.toBuffer()]).reduce((size, pathItem) => size + pathItem.length, 0).length,
           encodedDataContract.length,
         ),
       ],

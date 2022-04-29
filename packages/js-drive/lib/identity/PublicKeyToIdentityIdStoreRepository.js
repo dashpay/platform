@@ -49,7 +49,7 @@ class PublicKeyToIdentityIdStoreRepository {
 
       operations.push(
         new Write(
-          PublicKeyToIdentityIdStoreRepository.TREE_PATH.reduce((size, pathItem) => size += pathItem.length, 0) + publicKeyHash.length,
+          PublicKeyToIdentityIdStoreRepository.TREE_PATH.reduce((size, pathItem) => size + pathItem.length, 0) + publicKeyHash.length,
           data.length,
         ),
       );
@@ -79,7 +79,7 @@ class PublicKeyToIdentityIdStoreRepository {
     const operations = [
       new Read(
         publicKeyHash.length,
-        PublicKeyToIdentityIdStoreRepository.TREE_PATH.reduce((size, pathItem) => size += pathItem.length, 0),
+        PublicKeyToIdentityIdStoreRepository.TREE_PATH.reduce((size, pathItem) => size + pathItem.length, 0),
         result.reduce((size, id) => size += id.length, 0),
       ),
     ];
