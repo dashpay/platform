@@ -189,6 +189,27 @@ class AbstractStateTransition {
   }
 
   /**
+   * Verify signature by public key
+   *
+   * @param {Buffer} publicKey
+   * @param publicKeyType
+   *
+   * @returns {Promise<boolean>}
+   */
+  async verifyByPublicKey(publicKey, publicKeyType) {
+    switch (publicKeyType) {
+      case IdentityPublicKey.TYPES.ECDSA_SECP256K1:
+        return this.verifyECDSASignatureByPublicKey(publicKey);
+      case IdentityPublicKey.TYPES.ECDSA_HASH160:
+        return this.verifyESDSAHash160SignatureByPublicKeyHash(publicKey);
+      case IdentityPublicKey.TYPES.BLS12_381:
+        return this.verifyBLSSignatureByPublicKey(publicKey);
+      default:
+        throw new InvalidIdentityPublicKeyTypeError(publicKeyType);
+    }
+  }
+
+  /**
    * @protected
    * @param {Buffer} publicKeyHash
    * @return {boolean}
@@ -304,6 +325,24 @@ class AbstractStateTransition {
    */
   isIdentityStateTransition() {
     return AbstractStateTransition.identityTransitionTypes.includes(this.getType());
+  }
+
+  /**
+   * Set state transition execution context
+   *
+   * @param {StateTransitionExecutionContext} executionContext
+   */
+  setExecutionContext(executionContext) {
+    this.executionContext = executionContext;
+  }
+
+  /**
+   * Get state transtion execution context
+   *
+   * @return {StateTransitionExecutionContext}
+   */
+  getExecutionContext() {
+    return this.executionContext;
   }
 }
 

@@ -1,44 +1,37 @@
 function exportState() {
-  const { network, state } = this;
+  const { state } = this;
   const {
-    fees,
-    blockHeight,
     blockHeaders,
     transactions,
-    instantLocks,
-    addresses,
+    blockHeight,
+    fees,
   } = state;
 
   const serializedState = {
-    network,
-    state: {
-      fees,
-      blockHeight,
-      blockHeaders: {},
-      transactions: {},
-      instantLocks: {},
-      addresses: {},
-    },
+    blockHeaders: {},
+    transactions: {},
+    txMetadata: {},
+    fees: {},
   };
 
+  let reorgSafeHeight = Infinity;
+
+  if (blockHeight) {
+    reorgSafeHeight = blockHeight - 6;
+  }
+
   [...blockHeaders.entries()].forEach(([blockHeaderHash, blockHeader]) => {
-    serializedState.state.blockHeaders[blockHeaderHash] = blockHeader.toString();
+    serializedState.blockHeaders[blockHeaderHash] = blockHeader.toString();
   });
 
   [...transactions.entries()].forEach(([transactionHash, { transaction, metadata }]) => {
-    serializedState.state.transactions[transactionHash] = {
-      transaction: transaction.toString(),
-      metadata,
-    };
+    if (metadata && metadata.height && metadata.height <= reorgSafeHeight) {
+      serializedState.transactions[transactionHash] = transaction.toString();
+      serializedState.txMetadata[transactionHash] = metadata;
+    }
   });
 
-  [...instantLocks.entries()].forEach(([transactionHash, instantLock]) => {
-    serializedState.state.instantLocks[transactionHash] = instantLock.toString();
-  });
-
-  [...addresses.entries()].forEach(([address, addressObj]) => {
-    serializedState.state.addresses[address] = addressObj;
-  });
+  serializedState.fees.minRelay = fees.minRelay;
 
   return serializedState;
 }

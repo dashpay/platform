@@ -20,27 +20,10 @@ module.exports = {
    * @type {Object|Function}
    */
   documentTypes: {
-    plain: {
-      type: 'object',
-      properties: createProperties(10, {
-        type: 'string',
-        maxLength: 63,
-      }),
-      additionalProperties: false,
-    },
-    regexp: {
-      type: 'object',
-      properties: createProperties(10, {
-        type: 'string',
-        pattern: '^[a-zA-Z0-9][a-zA-Z0-9-]{0,61}[a-zA-Z0-9]$',
-        maxLength: 63,
-      }),
-      additionalProperties: false,
-    },
     indices: {
       type: 'object',
-      indices: createIndices(10),
-      properties: createProperties(10, {
+      indices: createIndices(100),
+      properties: createProperties(100, {
         type: 'string',
         maxLength: 63,
       }),
@@ -48,8 +31,8 @@ module.exports = {
     },
     uniqueIndices: {
       type: 'object',
-      indices: createIndices(10, true),
-      properties: createProperties(10, {
+      indices: createIndices(100, true),
+      properties: createProperties(100, {
         type: 'string',
         maxLength: 63,
       }),
@@ -62,7 +45,7 @@ module.exports = {
    *
    * this function calling for each document type
    *
-   * @param type
+   * @param {string} type
    * @returns {Object[]}
    */
   // eslint-disable-next-line no-unused-vars
@@ -74,10 +57,10 @@ module.exports = {
 
     // We get 35x3 results running against local network
     // since metrics are gathering from all 3 nodes
-    documents = new Array(35).map(() => {
+    documents = new Array(35).fill(null).map(() => {
       const properties = {};
 
-      for (let i = 0; i <= 100; i++) {
+      for (let i = 0; i < 100; i++) {
         const name = `property${i}`;
 
         properties[name] = crypto.randomBytes(20)
@@ -104,12 +87,12 @@ module.exports = {
    *
    * @type {string}
    */
-  avgFunction: 'mean',
+  avgFunction: 'median',
 
   /**
    * Show all or only statistic result
    *
    * @type {boolean}
    */
-  avgOnly: true,
+  avgOnly: false,
 };

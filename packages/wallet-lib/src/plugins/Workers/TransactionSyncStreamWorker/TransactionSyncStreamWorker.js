@@ -9,6 +9,7 @@ const Worker = require('../../Worker');
 const isBrowser = require('../../../utils/isBrowser');
 
 const logger = require('../../../logger');
+const ChainSyncMediator = require('../../../types/Wallet/ChainSyncMediator');
 
 class TransactionSyncStreamWorker extends Worker {
   constructor(options) {
@@ -32,6 +33,7 @@ class TransactionSyncStreamWorker extends Worker {
         'index',
         'BIP44PATH',
         'walletType',
+        'chainSyncMediator',
       ],
       ...options,
     });
@@ -41,6 +43,7 @@ class TransactionSyncStreamWorker extends Worker {
     this.incomingSyncPromise = null;
     this.pendingRequest = {};
     this.delayedRequests = {};
+    this.lastSyncedBlockHeight = -1;
   }
 
   /**
@@ -140,18 +143,27 @@ class TransactionSyncStreamWorker extends Worker {
     if (skipSynchronization) {
       logger.debug('TransactionSyncStreamWorker - Wallet created from a new mnemonic. Sync from the best block height.');
       const bestBlockHeight = this.storage.getChainStore(this.network.toString()).state.blockHeight;
-      this.setLastSyncedBlockHeight(bestBlockHeight);
+      this.setLastSyncedBlockHeight(bestBlockHeight, true);
       return;
     }
 
-    if (skipSynchronizationBeforeHeight) {
+    const { lastKnownBlock } = this.storage.getWalletStore(this.walletId).state;
+    const skipSyncBefore = typeof skipSynchronizationBeforeHeight === 'number'
+      ? skipSynchronizationBeforeHeight
+      : parseInt(skipSynchronizationBeforeHeight, 10);
+
+    if (skipSyncBefore > lastKnownBlock.height) {
       this.setLastSyncedBlockHeight(
         skipSynchronizationBeforeHeight,
       );
+    } else if (lastKnownBlock.height !== -1) {
+      this.setLastSyncedBlockHeight(lastKnownBlock.height);
     }
 
+    this.chainSyncMediator.state = ChainSyncMediator.STATES.HISTORICAL_SYNC;
     // We first need to sync up initial historical transactions
     await this.startHistoricalSync(this.network);
+    await this.storage.saveState();
   }
 
   /**
@@ -165,8 +177,12 @@ class TransactionSyncStreamWorker extends Worker {
     // We shouldn't block workers execution process with transaction syncing
     // it should proceed in background
 
+    this.chainSyncMediator.state = ChainSyncMediator.STATES.CONTINUOUS_SYNC;
     // noinspection ES6MissingAwait
-    this.incomingSyncPromise = this.startIncomingSync();
+    this.incomingSyncPromise = this.startIncomingSync().catch((e) => {
+      logger.error('Error syncing incoming transactions', e);
+      this.emit('error', e);
+    });
   }
 
   /**

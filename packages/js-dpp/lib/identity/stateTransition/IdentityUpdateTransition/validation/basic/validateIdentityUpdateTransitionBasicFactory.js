@@ -5,6 +5,7 @@ const convertBuffersToArrays = require('../../../../../util/convertBuffersToArra
  * @param {JsonSchemaValidator} jsonSchemaValidator
  * @param {validateProtocolVersion} validateProtocolVersion
  * @param {validatePublicKeys} validatePublicKeys
+ * @param {validatePublicKeySignatures} validatePublicKeySignatures
  *
  * @return {validateIdentityUpdateTransitionBasic}
  */
@@ -12,13 +13,16 @@ function validateIdentityUpdateTransitionBasicFactory(
   jsonSchemaValidator,
   validateProtocolVersion,
   validatePublicKeys,
+  validatePublicKeySignatures,
 ) {
   /**
    * @typedef validateIdentityUpdateTransitionBasic
    * @param {RawIdentityUpdateTransition} rawStateTransition
+   * @param {StateTransitionExecutionContext} executionContext
    * @return {Promise<ValidationResult>}
    */
-  async function validateIdentityUpdateTransitionBasic(rawStateTransition) {
+  // eslint-disable-next-line no-unused-vars
+  async function validateIdentityUpdateTransitionBasic(rawStateTransition, executionContext) {
     const result = jsonSchemaValidator.validate(
       identityUpdateTransitionSchema,
       convertBuffersToArrays(rawStateTransition),
@@ -38,7 +42,15 @@ function validateIdentityUpdateTransitionBasicFactory(
 
     if (rawStateTransition.addPublicKeys) {
       result.merge(
-        validatePublicKeys(rawStateTransition.addPublicKeys, { mustBeEnabled: true }),
+        validatePublicKeys(rawStateTransition.addPublicKeys),
+      );
+
+      if (!result.isValid()) {
+        return result;
+      }
+
+      result.merge(
+        await validatePublicKeySignatures(rawStateTransition, rawStateTransition.addPublicKeys),
       );
     }
 

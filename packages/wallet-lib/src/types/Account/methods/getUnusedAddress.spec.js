@@ -14,13 +14,13 @@ describe('Account - getUnusedAddress', function suite() {
     const unusedAddressInternal = getUnusedAddress.call(mockedHDSelf, 'internal');
 
     expect(unusedAddressExternal).to.be.deep.equal({
-      address: 'yTrBDbJ6635RuBMRYGvUs2s68jwhpSMyQD',
+      address: 'ybuL6rM6dgrKzCg8s99f3jxGuv5oz5JcDA',
       index: 3,
       path: 'm/0/3'
     });
 
     expect(unusedAddressInternal).to.be.deep.equal({
-      address: 'ycxSmwSVQsRmuq2ivzU6NowuB11Wi9kioj',
+      address: 'yYwKP1FQae5kbjXkmuirGx6Xzf8NzHpLqW',
       path: 'm/1/4',
       index: 4
     });

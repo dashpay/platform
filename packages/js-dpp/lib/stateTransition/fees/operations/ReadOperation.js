@@ -1,12 +1,14 @@
-const Operation = require("./Operation");
+const AbstractOperation = require('./AbstractOperation');
 
-class Read extends Operation {
+class ReadOperation extends AbstractOperation {
   /**
-   * @param {number} keySize 
+   * @param {number} keySize
    * @param {number} pathSize
-   * @param {number} valueSize 
+   * @param {number} valueSize
    */
-   constructor(keySize, pathSize, valueSize) {
+  constructor(keySize, pathSize, valueSize) {
+    super();
+
     this.keySize = keySize;
     this.pathSize = pathSize;
     this.valueSize = valueSize;
@@ -14,29 +16,31 @@ class Read extends Operation {
 
   /**
    * Get CPU cost of the operation
-   * 
+   *
    * @returns {number}
    */
   getCpuCost() {
-    return (this.keySize + this.pathSize + this.valueSize) * Operation.QUERY_CREDIT_PER_BYTE;
+    return (this.keySize + this.pathSize + this.valueSize)
+      * AbstractOperation.QUERY_CREDIT_PER_BYTE;
   }
 
   /**
    * Get storage cost of the operation
-   * 
+   *
    * @returns {number}
    */
   getStorageCost() {
     return 0;
   }
+
   /**
    * Get operation type
-   * 
+   *
    * @returns {string}
    */
   getType() {
-    return Operation.TYPES.READ;
+    return AbstractOperation.TYPES.READ;
   }
 }
 
-module.exports = Read;
+module.exports = ReadOperation;

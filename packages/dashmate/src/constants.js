@@ -19,8 +19,12 @@ const nodeTypes = {
   NODE_TYPE_FULLNODE: 'fullnode',
 };
 
-const quorumTypes = {
+const quorumNames = {
   LLMQ_TYPE_TEST: 'llmq_test',
+};
+
+const quorumTypes = {
+  LLMQ_TYPE_TEST: 100,
 };
 
 const MASTERNODE_DASH_AMOUNT = 1000;
@@ -39,11 +43,12 @@ module.exports = {
   ...networks,
   ...presets,
   ...nodeTypes,
-  ...quorumTypes,
+  ...quorumNames,
   NETWORKS: Object.values(networks),
   PRESETS: Object.values(presets),
   NODE_TYPES: Object.values(nodeTypes),
-  QUORUM_TYPES: Object.values(quorumTypes),
+  QUORUM_NAMES: Object.values(quorumNames),
+  QUORUM_TYPES: quorumTypes,
   MASTERNODE_DASH_AMOUNT,
   HOME_DIR_PATH,
   CONFIG_FILE_PATH,

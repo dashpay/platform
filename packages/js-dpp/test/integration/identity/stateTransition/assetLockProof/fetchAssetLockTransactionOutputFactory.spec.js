@@ -7,14 +7,18 @@ const createStateRepositoryMock = require('../../../../../lib/test/mocks/createS
 
 const UnknownAssetLockProofError = require('../../../../../lib/identity/errors/UnknownAssetLockProofTypeError');
 const AssetLockTransactionIsNotFoundError = require('../../../../../lib/identity/errors/AssetLockTransactionIsNotFoundError');
+const StateTransitionExecutionContext = require('../../../../../lib/stateTransition/StateTransitionExecutionContext');
 
 describe('fetchAssetLockTransactionOutputFactory', () => {
   let fetchAssetLockTransactionOutput;
   let stateRepositoryMock;
+  let executionContext;
 
   beforeEach(function beforeEach() {
     stateRepositoryMock = createStateRepositoryMock(this.sinonSandbox);
     fetchAssetLockTransactionOutput = fetchAssetLockTransactionOutputFactory(stateRepositoryMock);
+
+    executionContext = new StateTransitionExecutionContext();
   });
 
   describe('InstantAssetLockProof', () => {
@@ -27,6 +31,7 @@ describe('fetchAssetLockTransactionOutputFactory', () => {
     it('should return asset lock output', async () => {
       const assetLockTransactionOutput = await fetchAssetLockTransactionOutput(
         assetLockProofFixture,
+        executionContext,
       );
 
       expect(assetLockTransactionOutput).to.deep.equal(assetLockProofFixture.getOutput());
@@ -57,11 +62,15 @@ describe('fetchAssetLockTransactionOutputFactory', () => {
     it('should fetch output from state repository', async () => {
       const assetLockTransactionOutput = await fetchAssetLockTransactionOutput(
         assetLockProofFixture,
+        executionContext,
       );
 
       expect(assetLockTransactionOutput).to.deep.equal(output);
 
-      expect(stateRepositoryMock.fetchTransaction).to.be.calledOnceWithExactly(transactionHash);
+      expect(stateRepositoryMock.fetchTransaction).to.be.calledOnceWithExactly(
+        transactionHash,
+        executionContext,
+      );
     });
 
     it('should throw IdentityAssetLockTransactionIsNotFoundError when transaction is not found', async () => {
@@ -70,6 +79,7 @@ describe('fetchAssetLockTransactionOutputFactory', () => {
       try {
         await fetchAssetLockTransactionOutput(
           assetLockProofFixture,
+          executionContext,
         );
 
         expect.fail('should throw IdentityAssetLockTransactionIsNotFoundError');
@@ -90,6 +100,7 @@ describe('fetchAssetLockTransactionOutputFactory', () => {
     try {
       await fetchAssetLockTransactionOutput(
         assetLockProofFixture,
+        executionContext,
       );
 
       expect.fail('should throw UnknownAssetLockProofError');

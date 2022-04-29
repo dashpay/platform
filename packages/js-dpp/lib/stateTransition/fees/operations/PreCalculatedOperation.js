@@ -1,40 +1,42 @@
-const Operation = require("./Operation");
+const AbstractOperation = require('./AbstractOperation');
 
-class PreCalculatedOperation extends Operation {
+class PreCalculatedOperation extends AbstractOperation {
   /**
-   * @param {number} cpuCost 
-   * @param {number} storageCost 
+   * @param {number} cpuCost
+   * @param {number} storageCost
    */
   constructor(cpuCost, storageCost) {
+    super();
+
     this.cpuCost = cpuCost;
     this.storageCost = storageCost;
   }
 
   /**
    * Get CPU cost of the operation
-   * 
+   *
    * @returns {number}
    */
-   getCpuCost() {
+  getCpuCost() {
     return this.cpuCost;
   }
 
   /**
    * Get storage cost of the operation
-   * 
+   *
    * @returns {number}
    */
   getStorageCost() {
     return this.storageCost;
   }
-  
+
   /**
    * Get operation type
-   * 
+   *
    * @returns {string}
    */
   getType() {
-    return Operation.TYPES.PRE_CALCULATED;
+    return AbstractOperation.TYPES.PRE_CALCULATED;
   }
 }
 

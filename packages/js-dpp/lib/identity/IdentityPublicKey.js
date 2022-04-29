@@ -35,6 +35,10 @@ class IdentityPublicKey {
     if (Object.prototype.hasOwnProperty.call(rawIdentityPublicKey, 'disabledAt')) {
       this.setDisabledAt(rawIdentityPublicKey.disabledAt);
     }
+
+    if (Object.prototype.hasOwnProperty.call(rawIdentityPublicKey, 'signature')) {
+      this.setSignature(rawIdentityPublicKey.signature);
+    }
   }
 
   /**
@@ -185,6 +189,27 @@ class IdentityPublicKey {
   }
 
   /**
+   * Set signature
+   *
+   * @param {Buffer} signature
+   * @returns {IdentityPublicKey}
+   */
+  setSignature(signature) {
+    this.signature = signature;
+
+    return this;
+  }
+
+  /**
+   * Get signature
+   *
+   * @returns {Buffer}
+   */
+  getSignature() {
+    return this.signature;
+  }
+
+  /**
    * Get the original public key hash
    *
    * @return {Buffer}
@@ -200,6 +225,7 @@ class IdentityPublicKey {
         return Hash.sha256ripemd160(this.getData());
       }
       case IdentityPublicKey.TYPES.ECDSA_HASH160:
+      case IdentityPublicKey.TYPES.BIP13_SCRIPT_HASH:
         return this.getData();
       default:
         throw new InvalidIdentityPublicKeyTypeError(this.getType());
@@ -209,9 +235,12 @@ class IdentityPublicKey {
   /**
    * Get a plain object representation
    *
+   * @param {Object} [options]
+   * @param {Object} [options.skipSignature=false]
+   *
    * @return {RawIdentityPublicKey}
    */
-  toObject() {
+  toObject(options = {}) {
     const result = {
       id: this.getId(),
       type: this.getType(),
@@ -225,6 +254,10 @@ class IdentityPublicKey {
       result.disabledAt = this.getDisabledAt();
     }
 
+    if (!options.skipSignature && this.signature !== undefined) {
+      result.signature = this.signature;
+    }
+
     return result;
   }
 
@@ -234,10 +267,16 @@ class IdentityPublicKey {
    * @return {JsonIdentityPublicKey}
    */
   toJSON() {
-    return {
+    const result = {
       ...this.toObject(),
       data: this.getData().toString('base64'),
     };
+
+    if (this.signature) {
+      result.signature = this.signature.toString('base64');
+    }
+
+    return result;
   }
 }
 
@@ -250,6 +289,7 @@ class IdentityPublicKey {
  * @property {Buffer} data
  * @property {boolean} readOnly
  * @property {number} [disabledAt]
+ * @property {Buffer} [signature]
  */
 
 /**
@@ -261,12 +301,14 @@ class IdentityPublicKey {
  * @property {string} data
  * @property {boolean} readOnly
  * @property {number} [disabledAt]
+ * @property {string} [signature]
  */
 
 IdentityPublicKey.TYPES = {
   ECDSA_SECP256K1: 0,
   BLS12_381: 1,
   ECDSA_HASH160: 2,
+  BIP13_SCRIPT_HASH: 3,
 };
 
 IdentityPublicKey.PURPOSES = {
@@ -297,7 +339,7 @@ IdentityPublicKey.ALLOWED_SECURITY_LEVELS[IdentityPublicKey.PURPOSES.DECRYPTION]
   IdentityPublicKey.SECURITY_LEVELS.MEDIUM,
 ];
 IdentityPublicKey.ALLOWED_SECURITY_LEVELS[IdentityPublicKey.PURPOSES.WITHDRAW] = [
-  IdentityPublicKey.SECURITY_LEVELS.MEDIUM,
+  IdentityPublicKey.SECURITY_LEVELS.CRITICAL,
 ];
 
 module.exports = IdentityPublicKey;

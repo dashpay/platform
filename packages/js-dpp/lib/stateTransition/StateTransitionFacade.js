@@ -41,7 +41,7 @@ const getDataTriggersFactory = require('../dataTrigger/getDataTriggersFactory');
 const executeDataTriggersFactory = require('../document/stateTransition/DocumentsBatchTransition/validation/state/executeDataTriggersFactory');
 const validateIdentityExistenceFactory = require('../identity/validation/validateIdentityExistenceFactory');
 const validatePublicKeysFactory = require('../identity/validation/validatePublicKeysFactory');
-const validatePublicKeysState = require('../identity/stateTransition/IdentityUpdateTransition/validation/state/validatePublicKeys');
+const validatePublicKeysState = require('../identity/stateTransition/IdentityUpdateTransition/validation/state/validatePublicKeysState');
 const validateRequiredPurposeAndSecurityLevelFactory = require('../identity/validation/validateRequiredPurposeAndSecurityLevelFactory');
 const validateDataContractMaxDepthFactory = require('../dataContract/validation/validateDataContractMaxDepthFactory');
 
@@ -91,6 +91,10 @@ const validateDataContractUpdateTransitionStateFactory = require('../dataContrac
 const validateIndicesAreBackwardCompatible = require('../dataContract/stateTransition/DataContractUpdateTransition/validation/basic/validateIndicesAreBackwardCompatible');
 const getPropertyDefinitionByPath = require('../dataContract/getPropertyDefinitionByPath');
 
+const identityJsonSchema = require('../../schema/identity/stateTransition/publicKey.json');
+const validatePublicKeySignaturesFactory = require('../identity/stateTransition/validatePublicKeySignaturesFactory');
+const StateTransitionExecutionContext = require('./StateTransitionExecutionContext');
+
 class StateTransitionFacade {
   /**
    * @param {DashPlatformProtocol} dpp
@@ -109,7 +113,6 @@ class StateTransitionFacade {
       dpp,
       protocolVersion.compatibility,
     );
-
     const validateDataContract = validateDataContractFactory(
       validator,
       validateDataContractMaxDepth,
@@ -189,8 +192,9 @@ class StateTransitionFacade {
       [ChainAssetLockProof.type]: validateChainAssetLockProofStructure,
     };
 
-    const validatePublicKeysBasic = validatePublicKeysFactory(
+    const validatePublicKeys = validatePublicKeysFactory(
       validator,
+      identityJsonSchema,
       bls,
     );
 
@@ -198,13 +202,18 @@ class StateTransitionFacade {
       validateRequiredPurposeAndSecurityLevelFactory()
     );
 
+    const validatePublicKeySignatures = validatePublicKeySignaturesFactory(
+      this.createStateTransition,
+    );
+
     const validateIdentityCreateTransitionBasic = (
       validateIdentityCreateTransitionBasicFactory(
         validator,
-        validatePublicKeysBasic,
+        validatePublicKeys,
         validateRequiredPurposeAndSecurityLevel,
         proofValidationFunctionsByType,
         validateProtocolVersion,
+        validatePublicKeySignatures,
       )
     );
 
@@ -219,7 +228,8 @@ class StateTransitionFacade {
     const validateIdentityUpdateTransitionBasic = validateIdentityUpdateTransitionBasicFactory(
       validator,
       validateProtocolVersion,
-      validatePublicKeysBasic,
+      validatePublicKeys,
+      validatePublicKeySignatures,
     );
 
     const validationFunctionsByType = {
@@ -346,7 +356,7 @@ class StateTransitionFacade {
    * Create State Transition from plain object
    *
    * @param {RawDataContractCreateTransition|RawDocumentsBatchTransition} rawStateTransition
-   * @param {Object} options
+   * @param {Object} [options]
    * @param {boolean} [options.skipValidation=false]
    * @return {DataContractCreateTransition|DocumentsBatchTransition}
    */
@@ -366,7 +376,7 @@ class StateTransitionFacade {
    * Create State Transition from buffer
    *
    * @param {Buffer} buffer
-   * @param {Object} options
+   * @param {Object} [options]
    * @param {boolean} [options.skipValidation=false]
    * @return {DataContractCreateTransition|DocumentsBatchTransition}
    */
@@ -411,6 +421,7 @@ class StateTransitionFacade {
       );
     }
 
+    // Convert raw state transition to the model
     let stateTransitionModel = stateTransition;
 
     if (!(stateTransition instanceof AbstractStateTransition)) {
@@ -478,19 +489,26 @@ class StateTransitionFacade {
     }
 
     let rawStateTransition;
+    let executionContext;
+
     if (stateTransition instanceof AbstractStateTransition) {
       rawStateTransition = stateTransition.toObject();
+      executionContext = stateTransition.getExecutionContext();
     } else {
       rawStateTransition = stateTransition;
     }
 
-    return this.validateStateTransitionBasic(rawStateTransition);
+    return this.validateStateTransitionBasic(
+      rawStateTransition,
+      executionContext || new StateTransitionExecutionContext(),
+    );
   }
 
   /**
    * Validate State Transition signature and ownership
    *
    * @param {AbstractStateTransition} stateTransition
+   *
    * @return {Promise<ValidationResult>}
    */
   async validateSignature(stateTransition) {
@@ -513,6 +531,7 @@ class StateTransitionFacade {
    * Validate State Transition fee
    *
    * @param {AbstractStateTransition} stateTransition
+   *
    * @return {Promise<ValidationResult>}
    */
   async validateFee(stateTransition) {
@@ -531,6 +550,7 @@ class StateTransitionFacade {
    * Validate State Transition against existing state
    *
    * @param {AbstractStateTransition} stateTransition
+   *
    * @return {Promise<ValidationResult>}
    */
   async validateState(stateTransition) {
