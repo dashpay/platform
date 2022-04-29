@@ -6,8 +6,8 @@ use std::convert::TryFrom;
 use crate::{
     data_contract::{self, generate_data_contract_id},
     decode_protocol_entity_factory::DecodeProtocolEntityFactory,
-    errors::ProtocolError,
-    mocks::{self, ConsensusError},
+    errors::{consensus::ConsensusError, ProtocolError},
+    mocks,
     prelude::Identifier,
     util::entropy_generator,
 };

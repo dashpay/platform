@@ -2,7 +2,8 @@ use anyhow::anyhow;
 use serde_json::Value as JsonValue;
 
 use crate::{
-    errors::ProtocolError, mocks::ConsensusError, util::deserializer::get_protocol_version,
+    errors::consensus::ConsensusError, errors::ProtocolError,
+    util::deserializer::get_protocol_version,
 };
 
 #[derive(Default)]

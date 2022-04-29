@@ -1,5 +1,5 @@
 use crate::data_contract::DataContract;
-use crate::mocks;
+use crate::errors::consensus::ConsensusError;
 use thiserror::Error;
 
 #[derive(Error, Debug)]
@@ -9,7 +9,7 @@ pub enum DataContractError {
 
     #[error("Invalid Data Contract: {errors:?}")]
     InvalidDataContractError {
-        errors: Vec<mocks::ConsensusError>,
+        errors: Vec<ConsensusError>,
         raw_data_contract: DataContract,
     },
 

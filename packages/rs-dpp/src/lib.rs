@@ -31,6 +31,7 @@ mod tests;
 mod prelude {
     pub use crate::data_contract::DataContract;
     pub use crate::data_trigger::DataTrigger;
+    pub use crate::document::document_transition::DocumentTransition;
     pub use crate::document::Document;
     pub use crate::dpp::DashPlatformProtocolLike;
     pub use crate::identifier::Identifier;

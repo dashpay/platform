@@ -1,6 +1,6 @@
 use crate::identifier::Identifier;
 use crate::util::string_encoding::Encoding;
-use crate::{errors::ProtocolError, mocks::ConsensusError};
+use crate::{errors::consensus::ConsensusError, errors::ProtocolError};
 use anyhow::anyhow;
 use serde_json::{Map, Number, Value as JsonValue};
 use std::convert::TryInto;
