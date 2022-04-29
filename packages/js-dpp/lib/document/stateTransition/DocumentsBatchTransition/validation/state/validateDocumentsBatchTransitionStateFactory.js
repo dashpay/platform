@@ -40,7 +40,7 @@ function validateDocumentsBatchTransitionStateFactory(
    * @param {DocumentCreateTransition[]
    *        |DocumentReplaceTransition[]
    *        |DocumentDeleteTransition[]} documentTransitions
-   * @param {ExecutionContext} executionContext
+   * @param {StateTransitionExecutionContext} executionContext
    * @return {Promise<ValidationResult>}
    */
   async function validateDocumentTransitions(
@@ -221,6 +221,7 @@ function validateDocumentsBatchTransitionStateFactory(
           ownerId,
           nonDeleteDocumentTransitions,
           dataContract,
+          executionContext,
         ),
       );
 
@@ -234,6 +235,7 @@ function validateDocumentsBatchTransitionStateFactory(
       stateRepository,
       ownerId,
       dataContract,
+      executionContext,
     );
 
     const dataTriggersExecutionResults = await executeDataTriggers(

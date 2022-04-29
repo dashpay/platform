@@ -20,7 +20,7 @@ function validateChainAssetLockProofStructureFactory(
   /**
    * @typedef {validateChainAssetLockProofStructure}
    * @param {RawChainAssetLockProof} rawAssetLockProof
-   * @param {ExecutionContext} executionContext
+   * @param {StateTransitionExecutionContext} executionContext
    * @returns {ValidationResult}
    */
   async function validateChainAssetLockProofStructure(

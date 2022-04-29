@@ -21,7 +21,7 @@ function validateDataContractCreateTransitionBasicFactory(
   /**
    * @typedef validateDataContractCreateTransitionBasic
    * @param {RawDataContractCreateTransition} rawStateTransition
-   * @param {ExecutionContext} executionContext
+   * @param {StateTransitionExecutionContext} executionContext
    * @return {ValidationResult}
    */
   // eslint-disable-next-line no-unused-vars

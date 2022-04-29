@@ -18,7 +18,7 @@ function validateIdentityUpdateTransitionBasicFactory(
   /**
    * @typedef validateIdentityUpdateTransitionBasic
    * @param {RawIdentityUpdateTransition} rawStateTransition
-   * @param {ExecutionContext} executionContext
+   * @param {StateTransitionExecutionContext} executionContext
    * @return {Promise<ValidationResult>}
    */
   // eslint-disable-next-line no-unused-vars

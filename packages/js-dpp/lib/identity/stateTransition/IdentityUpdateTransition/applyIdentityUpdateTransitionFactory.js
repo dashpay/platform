@@ -60,7 +60,7 @@ function applyIdentityUpdateTransitionFactory(
       );
     }
 
-    await stateRepository.storeIdentity(identity);
+    await stateRepository.storeIdentity(identity, executionContext);
   }
 
   return applyIdentityUpdateTransition;

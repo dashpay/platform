@@ -2,17 +2,23 @@ const applyIdentityUpdateTransitionFactory = require('../../../../../lib/identit
 const createStateRepositoryMock = require('../../../../../lib/test/mocks/createStateRepositoryMock');
 const getIdentityUpdateTransitionFixture = require('../../../../../lib/test/fixtures/getIdentityUpdateTransitionFixture');
 const getIdentityFixture = require('../../../../../lib/test/fixtures/getIdentityFixture');
+const StateTransitionExecutionContext = require('../../../../../lib/stateTransition/StateTransitionExecutionContext');
 
 describe('applyIdentityUpdateTransition', () => {
   let applyIdentityUpdateTransition;
   let stateRepositoryMock;
   let stateTransition;
   let identity;
+  let executionContext;
 
   beforeEach(function beforeEach() {
     stateTransition = getIdentityUpdateTransitionFixture();
     stateTransition.setRevision(stateTransition.getRevision() + 1);
     identity = getIdentityFixture();
+
+    executionContext = new StateTransitionExecutionContext();
+
+    stateTransition.setExecutionContext(executionContext);
 
     stateRepositoryMock = createStateRepositoryMock(this.sinonSandbox);
     stateRepositoryMock.fetchIdentity.resolves(identity);
@@ -35,10 +41,12 @@ describe('applyIdentityUpdateTransition', () => {
 
     expect(stateRepositoryMock.fetchIdentity).to.be.calledOnceWithExactly(
       stateTransition.getIdentityId(),
+      executionContext,
     );
 
     expect(stateRepositoryMock.storeIdentity).to.be.calledOnceWithExactly(
       identity,
+      executionContext,
     );
 
     const publicKeyHashes = stateTransition.getPublicKeysToAdd()
@@ -47,6 +55,7 @@ describe('applyIdentityUpdateTransition', () => {
     expect(stateRepositoryMock.storeIdentityPublicKeyHashes).to.be.calledOnceWithExactly(
       identity.getId(),
       publicKeyHashes,
+      executionContext,
     );
 
     expect(identity.getRevision()).to.equal(stateTransition.getRevision());
@@ -59,12 +68,14 @@ describe('applyIdentityUpdateTransition', () => {
 
     expect(stateRepositoryMock.fetchIdentity).to.be.calledOnceWithExactly(
       stateTransition.getIdentityId(),
+      executionContext,
     );
 
     expect(stateRepositoryMock.storeIdentityPublicKeyHashes).to.not.be.called();
 
     expect(stateRepositoryMock.storeIdentity).to.be.calledOnceWithExactly(
       identity,
+      executionContext,
     );
 
     const [id] = stateTransition.getPublicKeyIdsToDisable();

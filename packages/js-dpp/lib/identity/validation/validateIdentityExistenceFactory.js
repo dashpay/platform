@@ -9,7 +9,7 @@ function validateIdentityExistenceFactory(stateRepository) {
   /**
    * @typedef {validateIdentityExistence}
    * @param {Identifier} identityId
-   * @param {ExecutionContext} executionContext
+   * @param {StateTransitionExecutionContext} executionContext
    * @return {Promise<ValidationResult>}
    */
   async function validateIdentityExistence(identityId, executionContext) {

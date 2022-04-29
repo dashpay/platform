@@ -34,7 +34,7 @@ function validateDataContractUpdateTransitionBasicFactory(
   /**
    * @typedef validateDataContractUpdateTransitionBasic
    * @param {RawDataContractUpdateTransition} rawStateTransition
-   * @param {ExecutionContext} executionContext
+   * @param {StateTransitionExecutionContext} executionContext
    * @return {Promise<ValidationResult>}
    */
   async function validateDataContractUpdateTransitionBasic(rawStateTransition, executionContext) {

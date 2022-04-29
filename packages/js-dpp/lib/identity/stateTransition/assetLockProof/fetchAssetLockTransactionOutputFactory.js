@@ -17,7 +17,7 @@ function fetchAssetLockTransactionOutputFactory(
    *
    * @typedef fetchAssetLockTransactionOutput
    * @param {InstantAssetLockProof|ChainAssetLockProof} assetLockProof
-   * @param {ExecutionContext} executionContext
+   * @param {StateTransitionExecutionContext} executionContext
    * @returns {Promise<Output>}
    */
   async function fetchAssetLockTransactionOutput(assetLockProof, executionContext) {

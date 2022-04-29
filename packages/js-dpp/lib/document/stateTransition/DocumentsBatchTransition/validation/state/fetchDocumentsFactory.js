@@ -8,7 +8,7 @@ function fetchDocumentsFactory(stateRepository) {
    * @param {DocumentCreateTransition[]
    *        |DocumentReplaceTransition[]
    *        |DocumentDeleteTransition[]} documentTransitions
-   * @param {ExecutionContext} executionContext
+   * @param {StateTransitionExecutionContext} executionContext
    * @return {Promise<Document[]>}
    */
   async function fetchDocuments(documentTransitions, executionContext) {

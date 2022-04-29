@@ -1,4 +1,4 @@
-class ExecutionContext {
+class StateTransitionExecutionContext {
   constructor() {
     /**
      * @type {AbstractOperation[]}
@@ -25,4 +25,4 @@ class ExecutionContext {
   }
 }
 
-module.exports = ExecutionContext;
+module.exports = StateTransitionExecutionContext;

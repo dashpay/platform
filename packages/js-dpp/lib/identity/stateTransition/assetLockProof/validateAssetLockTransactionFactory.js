@@ -17,7 +17,7 @@ function validateAssetLockTransactionFactory(stateRepository) {
    * @typedef validateAssetLockTransaction
    * @param {Buffer} rawTransaction
    * @param {number} outputIndex
-   * @param {ExecutionContext} executionContext
+   * @param {StateTransitionExecutionContext} executionContext
    * @returns {Promise<ValidationResult>}
    */
   async function validateAssetLockTransaction(rawTransaction, outputIndex, executionContext) {

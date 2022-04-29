@@ -12,7 +12,7 @@ const MissingDataContractIdError = require('./errors/MissingDataContractIdError'
 
 const Identifier = require('../identifier/Identifier');
 const DataContractUpdateTransition = require('../dataContract/stateTransition/DataContractUpdateTransition/DataContractUpdateTransition');
-const ExecutionContext = require('./ExecutionContext');
+const StateTransitionExecutionContext = require('./StateTransitionExecutionContext');
 
 const typesToClasses = {
   [types.DATA_CONTRACT_CREATE]: DataContractCreateTransition,
@@ -31,7 +31,7 @@ function createStateTransitionFactory(stateRepository) {
   /**
    * @typedef {createStateTransition}
    * @param {RawStateTransition} rawStateTransition
-   * @param {ExecutionContext} [executionContext]
+   * @param {StateTransitionExecutionContext} [executionContext]
    * @return {Promise<AbstractStateTransition>}
    */
   async function createStateTransition(rawStateTransition, executionContext) {
@@ -41,7 +41,7 @@ function createStateTransitionFactory(stateRepository) {
 
     if (!executionContext) {
       // eslint-disable-next-line no-param-reassign
-      executionContext = new ExecutionContext();
+      executionContext = new StateTransitionExecutionContext();
     }
 
     if (rawStateTransition.type === types.DOCUMENTS_BATCH) {

@@ -25,7 +25,7 @@ function validateIdentityCreateTransitionBasicFactory(
   /**
    * @typedef validateIdentityCreateTransitionBasic
    * @param {RawIdentityCreateTransition} rawStateTransition
-   * @param {ExecutionContext} executionContext
+   * @param {StateTransitionExecutionContext} executionContext
    * @return {Promise<ValidationResult>}
    */
   // eslint-disable-next-line no-unused-vars

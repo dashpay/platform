@@ -9,7 +9,7 @@ const applyDataContractCreateTransitionFactory = require(
 );
 
 const createStateRepositoryMock = require('../../../../../lib/test/mocks/createStateRepositoryMock');
-const ExecutionContext = require('../../../../../lib/stateTransition/ExecutionContext');
+const StateTransitionExecutionContext = require('../../../../../lib/stateTransition/StateTransitionExecutionContext');
 
 describe('applyDataContractCreateTransitionFactory', () => {
   let stateTransition;
@@ -26,7 +26,7 @@ describe('applyDataContractCreateTransitionFactory', () => {
       entropy: Buffer.alloc(32),
     });
 
-    executionContext = new ExecutionContext();
+    executionContext = new StateTransitionExecutionContext();
 
     stateTransition.setExecutionContext(executionContext);
 

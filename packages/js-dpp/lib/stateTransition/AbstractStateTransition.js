@@ -330,7 +330,7 @@ class AbstractStateTransition {
   /**
    * Set state transition execution context
    *
-   * @param {ExecutionContext} executionContext
+   * @param {StateTransitionExecutionContext} executionContext
    */
   setExecutionContext(executionContext) {
     this.executionContext = executionContext;
@@ -339,7 +339,7 @@ class AbstractStateTransition {
   /**
    * Get state transtion execution context
    *
-   * @return {ExecutionContext}
+   * @return {StateTransitionExecutionContext}
    */
   getExecutionContext() {
     return this.executionContext;

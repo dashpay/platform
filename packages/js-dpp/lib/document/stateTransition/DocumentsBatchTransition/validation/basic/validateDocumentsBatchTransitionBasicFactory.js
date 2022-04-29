@@ -233,7 +233,7 @@ function validateDocumentsBatchTransitionBasicFactory(
   /**
    * @typedef validateDocumentsBatchTransitionBasic
    * @param {RawDocumentsBatchTransition} rawStateTransition
-   * @param {ExecutionContext} executionContext
+   * @param {StateTransitionExecutionContext} executionContext
    * @return {ValidationResult}
    */
   async function validateDocumentsBatchTransitionBasic(rawStateTransition, executionContext) {

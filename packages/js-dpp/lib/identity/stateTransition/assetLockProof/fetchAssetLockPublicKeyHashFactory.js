@@ -8,7 +8,7 @@ function fetchAssetLockPublicKeyHashFactory(fetchAssetLockTransactionOutput) {
   /**
    * @typedef {fetchAssetLockPublicKeyHash}
    * @param {InstantAssetLockProof|ChainAssetLockProof} assetLockProof
-   * @param {ExecutionContext} executionContext
+   * @param {StateTransitionExecutionContext} executionContext
    * @return {Promise<Buffer>}
    */
   async function fetchAssetLockPublicKeyHash(assetLockProof, executionContext) {

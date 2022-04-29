@@ -17,7 +17,7 @@ function validateStateTransitionBasicFactory(
   /**
    * @typedef validateStateTransitionBasic
    * @param {RawStateTransition} rawStateTransition
-   * @param {ExecutionContext} executionContext
+   * @param {StateTransitionExecutionContext} executionContext
    */
   async function validateStateTransitionBasic(rawStateTransition, executionContext) {
     const result = new ValidationResult();

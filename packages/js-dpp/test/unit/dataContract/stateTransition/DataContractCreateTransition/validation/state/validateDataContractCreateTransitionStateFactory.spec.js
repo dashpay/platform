@@ -9,7 +9,7 @@ const { expectValidationError } = require('../../../../../../../lib/test/expect/
 const ValidationResult = require('../../../../../../../lib/validation/ValidationResult');
 
 const DataContractAlreadyPresentError = require('../../../../../../../lib/errors/consensus/state/dataContract/DataContractAlreadyPresentError');
-const ExecutionContext = require('../../../../../../../lib/stateTransition/ExecutionContext');
+const StateTransitionExecutionContext = require('../../../../../../../lib/stateTransition/StateTransitionExecutionContext');
 
 describe('validateDataContractCreateTransitionStateFactory', () => {
   let validateDataContractCreateTransitionState;
@@ -27,7 +27,7 @@ describe('validateDataContractCreateTransitionStateFactory', () => {
       entropy: dataContract.getEntropy(),
     });
 
-    executionContext = new ExecutionContext();
+    executionContext = new StateTransitionExecutionContext();
 
     stateTransition.setExecutionContext(executionContext);
 

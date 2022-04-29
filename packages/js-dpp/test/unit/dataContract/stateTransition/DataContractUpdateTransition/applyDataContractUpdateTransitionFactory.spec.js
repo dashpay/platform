@@ -9,7 +9,7 @@ const applyDataContractUpdateTransitionFactory = require(
 );
 
 const createStateRepositoryMock = require('../../../../../lib/test/mocks/createStateRepositoryMock');
-const ExecutionContext = require('../../../../../lib/stateTransition/ExecutionContext');
+const StateTransitionExecutionContext = require('../../../../../lib/stateTransition/StateTransitionExecutionContext');
 
 describe('applyDataContractUpdateTransitionFactory', () => {
   let stateTransition;
@@ -25,7 +25,7 @@ describe('applyDataContractUpdateTransitionFactory', () => {
       dataContract: dataContract.toObject(),
     });
 
-    executionContext = new ExecutionContext();
+    executionContext = new StateTransitionExecutionContext();
 
     stateTransition.setExecutionContext(executionContext);
 

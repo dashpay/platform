@@ -17,7 +17,7 @@ function validateIdentityTopUpTransitionBasicFactory(
   /**
    * @typedef {validateIdentityTopUpTransitionBasic}
    * @param {RawIdentityTopUpTransition} rawStateTransition
-   * @param {ExecutionContext} executionContext
+   * @param {StateTransitionExecutionContext} executionContext
    * @return {Promise<ValidationResult>}
    */
   async function validateIdentityTopUpTransitionBasic(rawStateTransition, executionContext) {

@@ -1,6 +1,6 @@
 const InvalidStateTransitionError = require('./errors/InvalidStateTransitionError');
 const AbstractConsensusError = require('../errors/consensus/AbstractConsensusError');
-const ExecutionContext = require('./ExecutionContext');
+const StateTransitionExecutionContext = require('./StateTransitionExecutionContext');
 
 class StateTransitionFactory {
   /**
@@ -32,7 +32,7 @@ class StateTransitionFactory {
   async createFromObject(rawStateTransition, options = {}) {
     const opts = { skipValidation: false, ...options };
 
-    const executionContext = new ExecutionContext();
+    const executionContext = new StateTransitionExecutionContext();
 
     if (!opts.skipValidation) {
       const result = await this.validateStateTransitionBasic(rawStateTransition, executionContext);

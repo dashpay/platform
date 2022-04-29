@@ -93,7 +93,7 @@ const getPropertyDefinitionByPath = require('../dataContract/getPropertyDefiniti
 
 const identityJsonSchema = require('../../schema/identity/stateTransition/publicKey.json');
 const validatePublicKeySignaturesFactory = require('../identity/stateTransition/validatePublicKeySignaturesFactory');
-const ExecutionContext = require('./ExecutionContext');
+const StateTransitionExecutionContext = require('./StateTransitionExecutionContext');
 
 class StateTransitionFacade {
   /**
@@ -500,7 +500,7 @@ class StateTransitionFacade {
 
     return this.validateStateTransitionBasic(
       rawStateTransition,
-      executionContext || new ExecutionContext(),
+      executionContext || new StateTransitionExecutionContext(),
     );
   }
 
