@@ -17,6 +17,10 @@ function getWithdrawPubKeyTypeFromPayoutScriptFactory(network) {
   function getWithdrawPubKeyTypeFromPayoutScript(payoutScript) {
     const address = new Script(payoutScript).toAddress(network);
 
+    if (address === false) {
+      throw new InvalidPayoutScriptError(payoutScript);
+    }
+
     let withdrawPubKeyType;
     if (address.isPayToScriptHash()) {
       withdrawPubKeyType = IdentityPublicKey.TYPES.BIP13_SCRIPT_HASH;
