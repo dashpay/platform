@@ -1,3 +1,10 @@
+### [0.22.5](https://github.com/dashevo/platform/compare/v0.22.4...v0.22.5) (2022-04-29)
+
+
+### Bug Fixes
+
+* broken QuorumEntry unserialization ([#366](https://github.com/dashevo/platform/issues/366))
+
 ### [0.22.4](https://github.com/dashevo/platform/compare/v0.22.3...v0.22.4) (2022-04-29)
 
 
