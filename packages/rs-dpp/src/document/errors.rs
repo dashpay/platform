@@ -1,5 +1,6 @@
+use super::document_transition::DocumentTransition;
 use super::Document;
-use crate::mocks::*;
+use crate::errors::consensus::ConsensusError;
 use thiserror::Error;
 
 #[derive(Error, Debug)]
@@ -14,7 +15,7 @@ pub enum DocumentError {
     },
     #[error("Invalid Document action submitted")]
     InvalidActionName { actions: Vec<String> },
-    #[error("Invalid Document action '{}'", document_transition.action)]
+    #[error("Invalid Document action '{}'", document_transition.base().action)]
     InvalidDocumentAction {
         document_transition: DocumentTransition,
     },

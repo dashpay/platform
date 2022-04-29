@@ -23,6 +23,12 @@ impl Default for Action {
     }
 }
 
+impl std::fmt::Display for Action {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:?}", self)
+    }
+}
+
 impl TryFrom<&str> for Action {
     // TODO  - use error from https://github.com/dashevo/rust-dpp/pull/6
     type Error = anyhow::Error;

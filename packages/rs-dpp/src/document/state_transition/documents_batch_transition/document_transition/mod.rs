@@ -18,6 +18,14 @@ pub enum DocumentTransition {
 }
 
 impl DocumentTransition {
+    pub fn base(&self) -> &DocumentBaseTransition {
+        match self {
+            DocumentTransition::Create(d) => &d.base,
+            DocumentTransition::Delete(d) => &d.base,
+            DocumentTransition::Replace(d) => &d.base,
+        }
+    }
+
     pub fn as_transition_create(&self) -> Option<&DocumentCreateTransition> {
         if let Self::Create(ref t) = self {
             Some(t)
