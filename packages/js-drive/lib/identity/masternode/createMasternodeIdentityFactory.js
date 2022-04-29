@@ -18,7 +18,7 @@ function createMasternodeIdentityFactory(
    * @param {Identifier} identifier
    * @param {Buffer} pubKeyData
    * @param {number} pubKeyType
-   * @param {Buffer} payoutScript
+   * @param {Buffer} [payoutScript]
    * @return {Promise<void>}
    */
   async function createMasternodeIdentity(
@@ -27,27 +27,33 @@ function createMasternodeIdentityFactory(
     pubKeyType,
     payoutScript,
   ) {
-    const withdrawPubKeyType = getWithdrawPubKeyTypeFromPayoutScript(payoutScript);
+    const publicKeys = [{
+      id: 0,
+      type: pubKeyType,
+      purpose: IdentityPublicKey.PURPOSES.AUTHENTICATION,
+      securityLevel: IdentityPublicKey.SECURITY_LEVELS.MASTER,
+      readOnly: true,
+      // Copy data buffer
+      data: Buffer.from(pubKeyData),
+    }];
 
-    const identity = new Identity({
-      protocolVersion: dpp.getProtocolVersion(),
-      id: identifier.toBuffer(),
-      publicKeys: [{
-        id: 0,
-        type: pubKeyType,
-        purpose: IdentityPublicKey.PURPOSES.AUTHENTICATION,
-        securityLevel: IdentityPublicKey.SECURITY_LEVELS.MASTER,
-        readOnly: true,
-        // Copy data buffer
-        data: Buffer.from(pubKeyData),
-      }, {
+    if (payoutScript) {
+      const withdrawPubKeyType = getWithdrawPubKeyTypeFromPayoutScript(payoutScript);
+
+      publicKeys.push({
         id: 1,
         type: withdrawPubKeyType,
         purpose: IdentityPublicKey.PURPOSES.WITHDRAW,
         securityLevel: IdentityPublicKey.SECURITY_LEVELS.CRITICAL,
         readOnly: false,
         data: Buffer.from(payoutScript),
-      }],
+      });
+    }
+
+    const identity = new Identity({
+      protocolVersion: dpp.getProtocolVersion(),
+      id: identifier.toBuffer(),
+      publicKeys,
       balance: 0,
       revision: 0,
     });

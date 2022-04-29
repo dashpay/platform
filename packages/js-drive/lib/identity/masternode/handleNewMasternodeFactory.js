@@ -29,8 +29,13 @@ function handleNewMasternodeFactory(
     const { extraPayload: proRegTxPayload } = await fetchTransaction(masternodeEntry.proRegTxHash);
 
     const proRegTxHash = Buffer.from(masternodeEntry.proRegTxHash, 'hex');
-    const payoutAddress = Address.fromString(masternodeEntry.operatorPayoutAddress);
-    const payoutPubKey = new Script(payoutAddress).toBuffer();
+
+    let payoutPubKey;
+
+    if (masternodeEntry.operatorPayoutAddress) {
+      const payoutAddress = Address.fromString(masternodeEntry.operatorPayoutAddress);
+      payoutPubKey = new Script(payoutAddress).toBuffer();
+    }
 
     // Create a masternode identity
     const masternodeIdentifier = Identifier.from(
@@ -50,8 +55,12 @@ function handleNewMasternodeFactory(
 
     if (proRegTxPayload.operatorReward > 0) {
       const operatorPubKey = Buffer.from(masternodeEntry.pubKeyOperator, 'hex');
-      const operatorPayoutAddress = Address.fromString(masternodeEntry.operatorPayoutAddress);
-      const operatorPayoutPubKey = new Script(operatorPayoutAddress).toBuffer();
+
+      let operatorPayoutPubKey;
+      if (masternodeEntry.operatorPayoutAddress) {
+        const operatorPayoutAddress = Address.fromString(masternodeEntry.operatorPayoutAddress);
+        operatorPayoutPubKey = new Script(operatorPayoutAddress).toBuffer();
+      }
 
       const operatorIdentifier = createOperatorIdentifier(masternodeEntry);
 

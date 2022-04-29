@@ -49,8 +49,11 @@ function handleUpdatedPubKeyOperatorFactory(
 
     const operatorIdentity = await transactionalStateRepository.fetchIdentity(operatorIdentifier);
 
-    const operatorPayoutAddress = Address.fromString(masternodeEntry.operatorPayoutAddress);
-    const operatorPayoutPubKey = new Script(operatorPayoutAddress).toBuffer();
+    let operatorPayoutPubKey;
+    if (masternodeEntry.operatorPayoutAddress) {
+      const operatorPayoutAddress = Address.fromString(masternodeEntry.operatorPayoutAddress);
+      operatorPayoutPubKey = new Script(operatorPayoutAddress).toBuffer();
+    }
 
     //  Create an identity for operator if there is no identity exist with the same ID
     if (operatorIdentity === null) {
