@@ -1,12 +1,11 @@
 const { createHash } = require('crypto');
 
+const PreCalculatedOperation = require('@dashevo/dpp/lib/stateTransition/fees/operations/PreCalculatedOperation');
+const Read = require('@dashevo/dpp/lib/stateTransition/fees/operations/ReadOperation');
 const createDocumentTypeTreePath = require('./groveDB/createDocumentTreePath');
 const InvalidQueryError = require('./errors/InvalidQueryError');
 const StartDocumentNotFoundError = require('./query/errors/StartDocumentNotFoundError');
 const ValidationError = require('./query/errors/ValidationError');
-
-const PreCalculatedOperation = require('@dashevo/dpp/lib/stateTransition/fees/operations/PreCalculatedOperation');
-const Read = require('@dashevo/dpp/lib/stateTransition/fees/operations/ReadOperation');
 
 class DocumentRepository {
   /**

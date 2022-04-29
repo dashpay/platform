@@ -62,7 +62,7 @@ class SpentAssetLockTransactionsRepository {
           result.length,
         ),
       ],
-    }
+    };
   }
 
   /**

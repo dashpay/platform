@@ -80,7 +80,7 @@ class PublicKeyToIdentityIdStoreRepository {
       new Read(
         publicKeyHash.length,
         PublicKeyToIdentityIdStoreRepository.TREE_PATH.reduce((size, pathItem) => size + pathItem.length, 0),
-        result.reduce((size, id) => size += id.length, 0),
+        result.reduce((size, id) => size + id.length, 0),
       ),
     ];
 
@@ -130,7 +130,7 @@ class PublicKeyToIdentityIdStoreRepository {
       result: this,
       operations: [
         new Write(PublicKeyToIdentityIdStoreRepository.TREE_PATH[0].length, 32),
-      ]
+      ],
     };
   }
 }

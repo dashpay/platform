@@ -59,10 +59,10 @@ class IdentityStoreRepository {
         result: null,
         operations: [
           new Read(
-            id.length, 
+            id.length,
             IdentityStoreRepository.TREE_PATH.reduce((size, pathItem) => size + pathItem.length, 0),
             0,
-          )
+          ),
         ],
       };
     }
@@ -75,10 +75,10 @@ class IdentityStoreRepository {
       result: new Identity(rawIdentity),
       operations: [
         new Read(
-          id.length, 
+          id.length,
           IdentityStoreRepository.TREE_PATH.reduce((size, pathItem) => size + pathItem.length, 0),
           encodedIdentity.length,
-        )
+        ),
       ],
     };
   }
@@ -97,7 +97,7 @@ class IdentityStoreRepository {
       result: this,
       operations: [
         new Write(
-          IdentityStoreRepository.TREE_PATH[0].length, 
+          IdentityStoreRepository.TREE_PATH[0].length,
           32,
         ),
       ],
