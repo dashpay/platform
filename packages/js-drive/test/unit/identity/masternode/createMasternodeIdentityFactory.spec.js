@@ -19,8 +19,7 @@ describe('createMasternodeIdentityFactory', () => {
   beforeEach(function beforeEach() {
     dppMock = createDPPMock(this.sinon);
     stateRepositoryMock = createStateRepositoryMock(this.sinon);
-    getWithdrawPubKeyTypeFromPayoutScriptMock =
-      this.sinon.stub().returns(IdentityPublicKey.TYPES.BIP13_SCRIPT_HASH);
+    getWithdrawPubKeyTypeFromPayoutScriptMock = this.sinon.stub().returns(IdentityPublicKey.TYPES.BIP13_SCRIPT_HASH);
 
     validationResult = new ValidationResult();
 
