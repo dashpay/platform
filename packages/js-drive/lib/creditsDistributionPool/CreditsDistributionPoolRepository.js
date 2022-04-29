@@ -56,7 +56,7 @@ class CreditsDistributionPoolRepository {
       );
     }
 
-    const { amount } = cbor.decode(result.getResult());
+    const { amount } = cbor.decode(result.getValue());
 
     return new StorageResult(
       new CreditsDistributionPool(amount),

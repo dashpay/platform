@@ -5,7 +5,7 @@ class StorageResult {
   /**
    * @type {T}
    */
-  #result;
+  #value;
 
   /**
    * @type {AbstractOperation[]}
@@ -14,26 +14,26 @@ class StorageResult {
 
   /**
    * @template T
-   * @param {T} result
+   * @param {T} value
    * @param {AbstractOperation[]} operations
    */
-  constructor(result, operations = []) {
-    this.#result = result;
+  constructor(value, operations = []) {
+    this.#value = value;
     this.#operations = operations;
   }
 
   /**
    * @return {T}
    */
-  getResult() {
-    return this.#result;
+  getValue() {
+    return this.#value;
   }
 
   /**
    * @param {T} value
    */
   setValue(value) {
-    this.#result = value;
+    this.#value = value;
   }
 
   /**
@@ -47,14 +47,14 @@ class StorageResult {
    * @return {boolean}
    */
   isNull() {
-    return this.#result === null || this.#result === undefined;
+    return this.#value === null || this.#value === undefined;
   }
 
   /**
    * @return {boolean}
    */
   isEmpty() {
-    return this.isNull() || (Array.isArray(this.#result) && this.#result.length === 0);
+    return this.isNull() || (Array.isArray(this.#value) && this.#value.length === 0);
   }
 
   /**

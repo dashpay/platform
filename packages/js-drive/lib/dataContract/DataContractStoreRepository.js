@@ -75,7 +75,7 @@ class DataContractStoreRepository {
     }
 
     const [protocolVersion, rawDataContract] = this.decodeProtocolEntity(
-      result.getResult(),
+      result.getValue(),
     );
 
     rawDataContract.protocolVersion = protocolVersion;

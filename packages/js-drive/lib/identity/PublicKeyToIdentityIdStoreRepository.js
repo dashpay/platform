@@ -26,8 +26,8 @@ class PublicKeyToIdentityIdStoreRepository {
     const existingIdsResult = await this.fetchBuffer(publicKeyHash, useTransaction);
 
     let identityIds = [];
-    if (existingIdsResult.getResult()) {
-      identityIds = cbor.decode(existingIdsResult.getResult());
+    if (existingIdsResult.getValue()) {
+      identityIds = cbor.decode(existingIdsResult.getValue());
     }
 
     let operations = existingIdsResult.getOperations();
@@ -66,7 +66,7 @@ class PublicKeyToIdentityIdStoreRepository {
     );
 
     return new StorageResult(
-      result.getResult(),
+      result.getValue(),
       result.getOperations(),
     );
   }
@@ -91,7 +91,7 @@ class PublicKeyToIdentityIdStoreRepository {
       );
     }
 
-    const identityIds = cbor.decode(existingIdsResult.getResult());
+    const identityIds = cbor.decode(existingIdsResult.getValue());
 
     return new StorageResult(
       identityIds.map((id) => new Identifier(id)),

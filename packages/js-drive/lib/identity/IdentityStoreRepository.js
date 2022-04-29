@@ -55,7 +55,7 @@ class IdentityStoreRepository {
     }
 
     const [protocolVersion, rawIdentity] = this.decodeProtocolEntity(
-      encodedIdentityResult.getResult(),
+      encodedIdentityResult.getValue(),
     );
 
     rawIdentity.protocolVersion = protocolVersion;

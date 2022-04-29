@@ -41,7 +41,7 @@ class DocumentRepository {
     let method = 'createDocument';
 
     try {
-      if (isExistsResult.getResult()) {
+      if (isExistsResult.getValue()) {
         method = 'updateDocument';
         ([storageCost, cpuCost] = await this.storage.getDrive()
           .updateDocument(
@@ -102,7 +102,7 @@ class DocumentRepository {
     );
 
     return new StorageResult(
-      Boolean(result.getResult()),
+      Boolean(result.getValue()),
       result.getOperations(),
     );
   }

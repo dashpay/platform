@@ -3,6 +3,7 @@ const rimraf = require('rimraf');
 const Drive = require('@dashevo/rs-drive/node/Drive');
 const GroveDBStore = require('../../../lib/storage/GroveDBStore');
 const logger = require('../../../lib/util/noopLogger');
+const StorageResult = require('../../../lib/storage/StorageResult');
 
 describe('GroveDBStore', () => {
   let rsDrive;
@@ -36,7 +37,8 @@ describe('GroveDBStore', () => {
     it('should store value', async () => {
       const result = await store.put(testTreePath, key, value);
 
-      expect(result).to.be.instanceOf(GroveDBStore);
+      expect(result).to.be.instanceOf(StorageResult);
+      expect(result.getOperations().length).to.be.greaterThan(0);
 
       const actualValue = await rsDrive.getGroveDB().get(testTreePath, key);
 
@@ -64,16 +66,19 @@ describe('GroveDBStore', () => {
       }
 
       // check we can't fetch data without transaction
-      const notFoundValue = await store.get(testTreePath, key);
+      const notFoundValueResult = await store.get(testTreePath, key);
 
-      expect(notFoundValue).to.be.null();
+      expect(notFoundValueResult.getValue()).to.be.null();
 
       // check we can fetch data inside transaction
-      const valueFromTransaction = await store.get(testTreePath, key, {
+      const valueFromTransactionResult = await store.get(testTreePath, key, {
         useTransaction: true,
       });
 
-      expect(valueFromTransaction).to.deep.equal(value);
+      expect(valueFromTransactionResult).to.be.instanceOf(StorageResult);
+      expect(valueFromTransactionResult.getOperations().length).to.be.greaterThan(0);
+
+      expect(valueFromTransactionResult.getValue()).to.deep.equal(value);
 
       await store.commitTransaction();
 
@@ -91,7 +96,10 @@ describe('GroveDBStore', () => {
     it('should return null if key was not found', async () => {
       const result = await store.get(testTreePath, key);
 
-      expect(result).to.be.null();
+      expect(result).to.be.instanceOf(StorageResult);
+      expect(result.getOperations().length).to.be.greaterThan(0);
+
+      expect(result.getValue()).to.be.null();
     });
 
     it('should return stored value', async () => {
@@ -104,7 +112,10 @@ describe('GroveDBStore', () => {
 
       const result = await store.get(testTreePath, key);
 
-      expect(result).to.deep.equal(value);
+      expect(result).to.be.instanceOf(StorageResult);
+      expect(result.getOperations().length).to.be.greaterThan(0);
+
+      expect(result.getValue()).to.deep.equal(value);
     });
 
     it('should return stored value with transaction', async () => {
@@ -116,7 +127,10 @@ describe('GroveDBStore', () => {
         useTransaction: true,
       });
 
-      expect(result).to.deep.equal(value);
+      expect(result).to.be.instanceOf(StorageResult);
+      expect(result.getOperations().length).to.be.greaterThan(0);
+
+      expect(result.getValue()).to.deep.equal(value);
     });
   });
 
@@ -124,11 +138,14 @@ describe('GroveDBStore', () => {
     it('should put an item by reference', async () => {
       await store.put(otherTreePath, key, value);
 
-      await store.putReference(testTreePath, key, [otherTreePath[0], key]);
+      const result = await store.putReference(testTreePath, key, [otherTreePath[0], key]);
 
-      const result = await store.get(testTreePath, key);
+      expect(result).to.be.instanceOf(StorageResult);
+      expect(result.getOperations().length).to.be.greaterThan(0);
 
-      expect(result).to.deep.equal(value);
+      const getResult = await store.get(testTreePath, key);
+
+      expect(getResult.getValue()).to.deep.equal(value);
     });
 
     it('should put an item by reference in transaction', async () => {
@@ -136,19 +153,22 @@ describe('GroveDBStore', () => {
 
       await store.startTransaction();
 
-      await store.putReference(testTreePath, key, [otherTreePath[0], key], {
+      const result = await store.putReference(testTreePath, key, [otherTreePath[0], key], {
         useTransaction: true,
       });
 
+      expect(result).to.be.instanceOf(StorageResult);
+      expect(result.getOperations().length).to.be.greaterThan(0);
+
       const nonTxResult = await store.get(testTreePath, key);
 
-      expect(nonTxResult).to.be.null();
+      expect(nonTxResult.getValue()).to.be.null();
 
       const txResult = await store.get(testTreePath, key, {
         useTransaction: true,
       });
 
-      expect(txResult).to.deep.equal(value);
+      expect(txResult.getValue()).to.deep.equal(value);
     });
   });
 
@@ -156,7 +176,10 @@ describe('GroveDBStore', () => {
     it('should delete value', async () => {
       await store.put(testTreePath, key, value);
 
-      await store.delete(testTreePath, key);
+      const result = await store.delete(testTreePath, key);
+
+      expect(result).to.be.instanceOf(StorageResult);
+      expect(result.getOperations().length).to.be.greaterThan(0);
 
       try {
         await rsDrive.getGroveDB().get(testTreePath, key);
@@ -173,25 +196,29 @@ describe('GroveDBStore', () => {
       await store.startTransaction();
 
       // Delete a value from transaction
-      await store.delete(testTreePath, key, {
+      const result = await store.delete(testTreePath, key, {
         useTransaction: true,
       });
+
+      expect(result).to.be.instanceOf(StorageResult);
+      expect(result.getOperations().length).to.be.greaterThan(0);
 
       // Now it should be absent there
-      const valueFromTransaction = await store.get(testTreePath, key, {
+      const valueFromTransactionResult = await store.get(testTreePath, key, {
         useTransaction: true,
       });
-      expect(valueFromTransaction).to.be.null();
+
+      expect(valueFromTransactionResult.getValue()).to.be.null();
 
       // But should be still present in store
-      const valueFromStore = await store.get(testTreePath, key);
-      expect(valueFromStore).to.deep.equal(value);
+      const valueFromStoreResult = await store.get(testTreePath, key);
+      expect(valueFromStoreResult.getValue()).to.deep.equal(value);
 
       await store.commitTransaction();
 
       // When we commit transaction this key should disappear from store too
-      const valueFromStoreAfterCommit = await store.get(testTreePath, key);
-      expect(valueFromStoreAfterCommit).to.be.null();
+      const valueFromStoreAfterCommitResult = await store.get(testTreePath, key);
+      expect(valueFromStoreAfterCommitResult.getValue()).to.be.null();
     });
   });
 
@@ -201,7 +228,10 @@ describe('GroveDBStore', () => {
 
       const result = await store.getAux(key);
 
-      expect(result).to.deep.equal(value);
+      expect(result).to.be.instanceOf(StorageResult);
+      expect(result.getOperations().length).to.be.greaterThan(0);
+
+      expect(result.getValue()).to.deep.equal(value);
     });
 
     it('should get an auxiliary data from db with transaction', async () => {
@@ -213,7 +243,10 @@ describe('GroveDBStore', () => {
         useTransaction: true,
       });
 
-      expect(result).to.deep.equal(value);
+      expect(result).to.be.instanceOf(StorageResult);
+      expect(result.getOperations().length).to.be.greaterThan(0);
+
+      expect(result.getValue()).to.deep.equal(value);
     });
   });
 
@@ -247,15 +280,18 @@ describe('GroveDBStore', () => {
     it('should delete an auxiliary data', async () => {
       await store.putAux(key, value);
 
-      let result = await store.getAux(key);
+      const getResult = await store.getAux(key);
 
-      expect(result).to.deep.equal(value);
+      expect(getResult.getValue()).to.deep.equal(value);
 
-      await store.deleteAux(key);
+      const deleteResult = await store.deleteAux(key);
 
-      result = await rsDrive.getGroveDB().getAux(key);
+      expect(deleteResult).to.be.instanceOf(StorageResult);
+      expect(deleteResult.getOperations().length).to.be.greaterThan(0);
 
-      expect(result).to.be.null();
+      const deletedValue = await rsDrive.getGroveDB().getAux(key);
+
+      expect(deletedValue).to.be.null();
     });
 
     it('should delete an auxiliary data within transaction', async () => {
@@ -263,19 +299,22 @@ describe('GroveDBStore', () => {
 
       await store.startTransaction();
 
-      await store.deleteAux(key, {
+      const deleteResult = await store.deleteAux(key, {
         useTransaction: true,
       });
 
+      expect(deleteResult).to.be.instanceOf(StorageResult);
+      expect(deleteResult.getOperations().length).to.be.greaterThan(0);
+
       const nonTxResult = await store.getAux(key);
 
-      expect(nonTxResult).to.deep.equal(value);
+      expect(nonTxResult.getValue()).to.deep.equal(value);
 
       const txResult = await store.getAux(key, {
         useTransaction: true,
       });
 
-      expect(txResult).to.be.null();
+      expect(txResult.getValue()).to.be.null();
     });
   });
 
@@ -296,7 +335,7 @@ describe('GroveDBStore', () => {
     it('should return a root hash for store with value', async () => {
       await store.put(testTreePath, key, value);
 
-      const valueHash = Buffer.from('c490ae30ef9508de2ff7c79f53efb2901ce7cc3b74ee1d02a14c697c2900687b', 'hex');
+      const valueHash = Buffer.from('2c83b6d9650234c474d492be0043d08ff1f588742c23e172be37e459cba9fd10', 'hex');
 
       const result = await store.getRootHash();
 

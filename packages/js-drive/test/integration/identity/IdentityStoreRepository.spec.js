@@ -49,7 +49,7 @@ describe('IdentityStoreRepository', () => {
       );
 
       const [protocolVersion, rawIdentity] = decodeProtocolEntity(
-        encodedIdentityResult.getResult(),
+        encodedIdentityResult.getValue(),
       );
 
       rawIdentity.protocolVersion = protocolVersion;
@@ -73,7 +73,7 @@ describe('IdentityStoreRepository', () => {
         { useTransaction: false },
       );
 
-      expect(notFoundIdentityResult.getResult()).to.be.null();
+      expect(notFoundIdentityResult.getValue()).to.be.null();
 
       const identityTransactionResult = await store.get(
         IdentityStoreRepository.TREE_PATH,
@@ -82,7 +82,7 @@ describe('IdentityStoreRepository', () => {
       );
 
       let [protocolVersion, rawIdentity] = decodeProtocolEntity(
-        identityTransactionResult.getResult(),
+        identityTransactionResult.getValue(),
       );
 
       rawIdentity.protocolVersion = protocolVersion;
@@ -99,7 +99,7 @@ describe('IdentityStoreRepository', () => {
         { useTransaction: true },
       );
 
-      [protocolVersion, rawIdentity] = decodeProtocolEntity(committedIdentityResult.getResult());
+      [protocolVersion, rawIdentity] = decodeProtocolEntity(committedIdentityResult.getValue());
 
       rawIdentity.protocolVersion = protocolVersion;
 
@@ -120,7 +120,7 @@ describe('IdentityStoreRepository', () => {
       expect(result).to.be.instanceOf(StorageResult);
       expect(result.getOperations().length).to.be.greaterThan(0);
 
-      expect(result.getResult()).to.be.null();
+      expect(result.getValue()).to.be.null();
     });
 
     it('should fetch an identity', async () => {
@@ -135,7 +135,7 @@ describe('IdentityStoreRepository', () => {
       expect(result).to.be.instanceOf(StorageResult);
       expect(result.getOperations().length).to.be.greaterThan(0);
 
-      const storedIdentity = result.getResult();
+      const storedIdentity = result.getValue();
 
       expect(storedIdentity).to.be.an.instanceof(Identity);
       expect(storedIdentity.toObject()).to.deep.equal(identity.toObject());
@@ -153,11 +153,11 @@ describe('IdentityStoreRepository', () => {
 
       const notFoundIdentityResult = await repository.fetch(identity.getId(), false);
 
-      expect(notFoundIdentityResult.getResult()).to.be.null();
+      expect(notFoundIdentityResult.getValue()).to.be.null();
 
       const transactionalIdentityResult = await repository.fetch(identity.getId(), true);
 
-      const transactionalIdentity = transactionalIdentityResult.getResult();
+      const transactionalIdentity = transactionalIdentityResult.getValue();
 
       expect(transactionalIdentity).to.be.an.instanceof(Identity);
       expect(transactionalIdentity.toObject()).to.deep.equal(identity.toObject());
@@ -166,7 +166,7 @@ describe('IdentityStoreRepository', () => {
 
       const storedIdentityResult = await repository.fetch(identity.getId());
 
-      const storedIdentity = storedIdentityResult.getResult();
+      const storedIdentity = storedIdentityResult.getValue();
 
       expect(storedIdentity).to.be.an.instanceof(Identity);
       expect(storedIdentity.toObject()).to.deep.equal(identity.toObject());

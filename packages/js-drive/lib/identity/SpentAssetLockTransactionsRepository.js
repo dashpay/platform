@@ -48,7 +48,7 @@ class SpentAssetLockTransactionsRepository {
     );
 
     return new StorageResult(
-      result.getResult(),
+      result.getValue(),
       result.getOperations(),
     );
   }

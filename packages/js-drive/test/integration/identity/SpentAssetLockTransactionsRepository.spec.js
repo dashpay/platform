@@ -44,7 +44,7 @@ describe('SpentAssetLockTransactionsRepository', () => {
         outPointBuffer,
       );
 
-      expect(placeholderResult.getResult()).to.deep.equal(Buffer.from([0]));
+      expect(placeholderResult.getValue()).to.deep.equal(Buffer.from([0]));
     });
   });
 
@@ -55,7 +55,7 @@ describe('SpentAssetLockTransactionsRepository', () => {
       expect(result).to.be.instanceOf(StorageResult);
       expect(result.getOperations().length).to.be.greaterThan(0);
 
-      expect(result.getResult()).to.be.null();
+      expect(result.getValue()).to.be.null();
     });
 
     it('should return buffer containing [0]', async () => {
@@ -70,7 +70,7 @@ describe('SpentAssetLockTransactionsRepository', () => {
       expect(result).to.be.instanceOf(StorageResult);
       expect(result.getOperations().length).to.be.greaterThan(0);
 
-      expect(result.getResult()).to.be.deep.equal(Buffer.from([0]));
+      expect(result.getValue()).to.be.deep.equal(Buffer.from([0]));
     });
   });
 });
