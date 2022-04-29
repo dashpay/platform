@@ -195,13 +195,16 @@ describe('Drive', () => {
       await Promise.all(
         documents.map((document) => drive.createDocument(document, blockTime)),
       );
-      const fetchedDocuments = await drive.queryDocuments(dataContract, 'indexedDocument', {
+
+      const [fetchedDocuments, processingCost] = await drive.queryDocuments(dataContract, 'indexedDocument', {
         where: [['lastName', '==', 'Kennedy']],
       });
 
       expect(fetchedDocuments).to.have.lengthOf(1);
       expect(fetchedDocuments[0]).to.be.an.instanceOf(Document);
       expect(fetchedDocuments[0].toObject()).to.deep.equal(documents[4].toObject());
+
+      expect(processingCost).to.be.greaterThan(0);
     });
 
     it('should query existing documents again', async () => {
@@ -209,21 +212,25 @@ describe('Drive', () => {
       await Promise.all(
         documents.map((document) => drive.createDocument(document, blockTime)),
       );
-      const fetchedDocuments = await drive.queryDocuments(dataContract, 'indexedDocument', {
+
+      const [fetchedDocuments, processingCost] = await drive.queryDocuments(dataContract, 'indexedDocument', {
         where: [['lastName', '==', 'Kennedy']],
       });
 
       expect(fetchedDocuments).to.have.lengthOf(1);
       expect(fetchedDocuments[0]).to.be.an.instanceOf(Document);
       expect(fetchedDocuments[0].toObject()).to.deep.equal(documents[4].toObject());
+
+      expect(processingCost).to.be.greaterThan(0);
     });
 
     it('should return empty array if documents are not exist', async () => {
-      const fetchedDocuments = await drive.queryDocuments(dataContract, 'indexedDocument', {
+      const [fetchedDocuments, processingCost] = await drive.queryDocuments(dataContract, 'indexedDocument', {
         where: [['lastName', '==', 'Kennedy']],
       });
 
       expect(fetchedDocuments).to.have.lengthOf(0);
+      expect(processingCost).to.be.greaterThan(0);
     });
   });
 
