@@ -1,7 +1,7 @@
 const Identity = require('@dashevo/dpp/lib/identity/Identity');
 
-const Read = require('../fees/Read');
-const Write = require('../fees/Write');
+const Read = require('@dashevo/dpp/lib/stateTransition/fees/operations/ReadOperation');
+const Write = require('@dashevo/dpp/lib/stateTransition/fees/operations/WriteOperation');
 
 class IdentityStoreRepository {
   /**

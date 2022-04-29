@@ -1,9 +1,9 @@
 const DataContract = require('@dashevo/dpp/lib/dataContract/DataContract');
 const { createHash } = require('crypto');
 
-const Write = require('../fees/Write');
-const Read = require('../fees/Read');
-const PreCalculatedOperation = require('../fees/PreCalculatedOperation');
+const Write = require('@dashevo/dpp/lib/stateTransition/fees/operations/WriteOperation');
+const Read = require('@dashevo/dpp/lib/stateTransition/fees/operations/ReadOperation');
+const PreCalculatedOperation = require('@dashevo/dpp/lib/stateTransition/fees/operations/PreCalculatedOperation');
 
 class DataContractStoreRepository {
   /**

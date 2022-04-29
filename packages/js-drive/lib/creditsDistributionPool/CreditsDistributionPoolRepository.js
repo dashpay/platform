@@ -1,8 +1,8 @@
 const cbor = require('cbor');
 const CreditsDistributionPool = require('./CreditsDistributionPool');
 
-const Write = require('../fees/Write');
-const Read = require('../fees/Read');
+const Write = require('@dashevo/dpp/lib/stateTransition/fees/operations/WriteOperation');
+const Read = require('@dashevo/dpp/lib/stateTransition/fees/operations/ReadOperation');
 
 class CreditsDistributionPoolRepository {
   /**

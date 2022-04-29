@@ -4,8 +4,9 @@ const createDocumentTypeTreePath = require('./groveDB/createDocumentTreePath');
 const InvalidQueryError = require('./errors/InvalidQueryError');
 const StartDocumentNotFoundError = require('./query/errors/StartDocumentNotFoundError');
 const ValidationError = require('./query/errors/ValidationError');
-const PreCalculatedOperation = require('../fees/PreCalculatedOperation');
-const Read = require('../fees/Read');
+
+const PreCalculatedOperation = require('@dashevo/dpp/lib/stateTransition/fees/operations/PreCalculatedOperation');
+const Read = require('@dashevo/dpp/lib/stateTransition/fees/operations/ReadOperation');
 
 class DocumentRepository {
   /**
