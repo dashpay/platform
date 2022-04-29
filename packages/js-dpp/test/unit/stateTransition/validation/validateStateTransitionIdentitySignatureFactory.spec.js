@@ -8,6 +8,7 @@ const generateRandomIdentifier = require('../../../../lib/test/utils/generateRan
 
 const { expectValidationError } = require('../../../../lib/test/expect/expectError');
 const SomeConsensusError = require('../../../../lib/test/mocks/SomeConsensusError');
+const stateTransitionTypes = require('../../../../lib/stateTransition/stateTransitionTypes');
 
 describe('validateStateTransitionIdentitySignatureFactory', () => {
   let validateStateTransitionIdentitySignature;
@@ -27,10 +28,12 @@ describe('validateStateTransitionIdentitySignatureFactory', () => {
       getSignaturePublicKeyId: this.sinonSandbox.stub().returns(publicKeyId),
       getSignature: this.sinonSandbox.stub(),
       getOwnerId: this.sinonSandbox.stub().returns(ownerId),
+      getType: this.sinonSandbox.stub().returns(stateTransitionTypes.IDENTITY_CREATE),
     };
 
     identityPublicKey = {
       getType: this.sinonSandbox.stub().returns(IdentityPublicKey.TYPES.ECDSA_SECP256K1),
+      getSecurityLevel: this.sinonSandbox.stub(),
     };
 
     const getPublicKeyById = this.sinonSandbox.stub().returns(identityPublicKey);
@@ -118,8 +121,8 @@ describe('validateStateTransitionIdentitySignatureFactory', () => {
     expect(error.getPublicKeyId()).to.equal(publicKeyId);
   });
 
-  it('should return InvalidIdentityPublicKeyTypeError if type is not ECDSA_SECP256K1 and not ECDSA_HASH160', async () => {
-    const type = IdentityPublicKey.TYPES.ECDSA_HASH160 + 1;
+  it('should return InvalidIdentityPublicKeyTypeError if type is not exist', async () => {
+    const type = Math.max(...Object.values(IdentityPublicKey.TYPES)) + 1;
     identityPublicKey.getType.returns(type);
 
     const result = await validateStateTransitionIdentitySignature(

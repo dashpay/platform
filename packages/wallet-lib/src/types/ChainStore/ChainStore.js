@@ -1,5 +1,29 @@
 const EventEmitter = require('events');
 
+const {
+  Transaction, BlockHeader,
+} = require('@dashevo/dashcore-lib');
+
+const SCHEMA = {
+  blockHeaders: {
+    '*': (hex) => new BlockHeader(Buffer.from(hex, 'hex')),
+  },
+  transactions: {
+    '*': Transaction,
+  },
+  txMetadata: {
+    '*': {
+      blockHash: 'string',
+      height: 'number',
+      isChainLocked: 'boolean',
+      isInstantLocked: 'boolean',
+    },
+  },
+  fees: {
+    minRelay: 'number',
+  },
+};
+
 /**
  * ChainStore holds any information that is relatives to a specific network.
  * Information such as blockHeaders, transactions, instantLocks.
@@ -21,7 +45,13 @@ class ChainStore extends EventEmitter {
       addresses: new Map(),
     };
   }
+
+  getTransactions() {
+    return this.state.transactions;
+  }
 }
+
+ChainStore.prototype.SCHEMA = SCHEMA;
 
 ChainStore.prototype.considerTransaction = require('./methods/considerTransaction');
 

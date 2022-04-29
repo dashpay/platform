@@ -6,19 +6,21 @@ const convertBuffersToArrays = require('../../../../../util/convertBuffersToArra
  * @param {JsonSchemaValidator} jsonSchemaValidator
  * @param {validatePublicKeys} validatePublicKeys
  * @param {
- *  validatePublicKeysInIdentityCreateTransition
- * } validatePublicKeysInIdentityCreateTransition
+ *  validateRequiredPurposeAndSecurityLevel
+ * } validateRequiredPurposeAndSecurityLevel
  * @param {Object.<number, Function>} proofValidationFunctionsByType
  * @param {validateProtocolVersion} validateProtocolVersion
+ * @param {validatePublicKeySignatures} validatePublicKeySignatures
  *
  * @return {validateIdentityCreateTransitionBasic}
  */
 function validateIdentityCreateTransitionBasicFactory(
   jsonSchemaValidator,
   validatePublicKeys,
-  validatePublicKeysInIdentityCreateTransition,
+  validateRequiredPurposeAndSecurityLevel,
   proofValidationFunctionsByType,
   validateProtocolVersion,
+  validatePublicKeySignatures,
 ) {
   /**
    * @typedef validateIdentityCreateTransitionBasic
@@ -48,8 +50,20 @@ function validateIdentityCreateTransitionBasicFactory(
       validatePublicKeys(rawStateTransition.publicKeys),
     );
 
+    if (!result.isValid()) {
+      return result;
+    }
+
     result.merge(
-      validatePublicKeysInIdentityCreateTransition(rawStateTransition.publicKeys),
+      await validatePublicKeySignatures(rawStateTransition, rawStateTransition.publicKeys),
+    );
+
+    if (!result.isValid()) {
+      return result;
+    }
+
+    result.merge(
+      validateRequiredPurposeAndSecurityLevel(rawStateTransition.publicKeys),
     );
 
     if (!result.isValid()) {

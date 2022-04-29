@@ -4,8 +4,6 @@ const ValidationResult = require('../../validation/ValidationResult');
 
 const convertBuffersToArrays = require('../../util/convertBuffersToArrays');
 
-const publicKeySchema = require('../../../schema/identity/publicKey.json');
-
 const InvalidIdentityPublicKeyDataError = require(
   '../../errors/consensus/basic/identity/InvalidIdentityPublicKeyDataError',
 );
@@ -27,11 +25,12 @@ const IdentityPublicKey = require('../IdentityPublicKey');
  * Validate public keys (factory)
  *
  * @param {JsonSchemaValidator} validator
+ * @param {Object} jsonSchema
  * @param {BlsSignatures} bls
  *
  * @return {validatePublicKeys}
  */
-function validatePublicKeysFactory(validator, bls) {
+function validatePublicKeysFactory(validator, jsonSchema, bls) {
   /**
    * Validate public keys
    *
@@ -48,7 +47,7 @@ function validatePublicKeysFactory(validator, bls) {
     rawPublicKeys.forEach((rawPublicKey) => {
       result.merge(
         validator.validate(
-          publicKeySchema,
+          jsonSchema,
           convertBuffersToArrays(rawPublicKey),
         ),
       );

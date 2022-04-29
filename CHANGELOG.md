@@ -1,3 +1,113 @@
+### [0.22.4](https://github.com/dashevo/platform/compare/v0.22.3...v0.22.4) (2022-04-29)
+
+
+### ⚠ BREAKING CHANGES
+
+* Core v0.17 is not supported anymore
+
+### Bug Fixes
+
+* invalid `merkleRootQuorums` calculation ([#362](https://github.com/dashevo/platform/issues/362))
+
+### [0.22.3](https://github.com/dashevo/platform/compare/v0.22.2...v0.22.3) (2022-04-27)
+
+
+### ⚠ BREAKING CHANGES
+
+* **wallet-lib:** storage layer refactoring (#232)
+
+### Features
+
+* **wallet-lib:** adds balance and metadata information from registered identity ([#337](https://github.com/dashevo/platform/issues/337))
+* **wallet-lib:** provide transaction history item as a date object ([#336](https://github.com/dashevo/platform/issues/336))
+* **wallet-lib:** rework storage for multiple key chains ([#231](https://github.com/dashevo/platform/issues/231))
+* **wallet-lib:** satoshisBalanceImpact in transaction history ([#319](https://github.com/dashevo/platform/issues/319))
+* **wallet-lib:** storage layer refactoring ([#232](https://github.com/dashevo/platform/issues/232))
+
+
+### Bug Fixes
+
+* **dashmate:** broken migrations ([#355](https://github.com/dashevo/platform/issues/355))
+* **wallet-lib:** optimize storage version check ([#348](https://github.com/dashevo/platform/issues/348))
+* **wallet-lib:** persistent storage regression ([#302](https://github.com/dashevo/platform/issues/302))
+
+
+### [0.22.2](https://github.com/dashevo/platform/compare/v0.22.1...v0.22.2) (2022-04-21)
+
+
+### Bug Fixes
+
+* docker-test-suite missing test files
+
+
+### Tests
+
+* **dpp:** double test in identity validation ([#330](https://github.com/dashevo/platform/issues/330))
+* fixes sdk timeouts in platform test suite ([#309](https://github.com/dashevo/platform/issues/309))
+
+
+### Miscellaneous Chores
+
+* update Core to v0.18.0.0-rc1 ([#351](https://github.com/dashevo/platform/issues/351))
+
+
+## [0.23.0-dev.1](https://github.com/dashevo/platform/compare/v0.22.0...v0.23.0-dev.1) (2022-04-08)
+
+
+### ⚠ BREAKING CHANGES
+
+* plain proRegTx for masternode identifier (#318)
+* **wallet-lib:** storage layer refactoring (#232)
+
+### Features
+
+* **dpp:** add `withdraw` purpose for `IdentityPublicKey` ([#317](https://github.com/dashevo/platform/issues/317))
+* update identity ([#292](https://github.com/dashevo/platform/issues/292))
+* **wallet-lib:** rework storage for multiple key chains ([#231](https://github.com/dashevo/platform/issues/231))
+* **wallet-lib:** satoshisBalanceImpact in transaction history ([#319](https://github.com/dashevo/platform/issues/319))
+* **wallet-lib:** storage layer refactoring ([#232](https://github.com/dashevo/platform/issues/232))
+
+
+### Bug Fixes
+
+* **dashmate:** config/core/miner must have required property 'interval' ([#311](https://github.com/dashevo/platform/issues/311))
+* do not hash proRegTx for masternode identifier ([#318](https://github.com/dashevo/platform/issues/318))
+
+
+### Performance Improvements
+
+* **dapi:** cache block headers and chainlocks ([#235](https://github.com/dashevo/platform/issues/235), [#296](https://github.com/dashevo/platform/issues/296))
+* **dapi:** remove unnecessary Core RPC calls for core streams ([#194](https://github.com/dashevo/platform/issues/194))
+
+
+### Continuous Integration
+
+* enable multiarch builds ([#316](https://github.com/dashevo/platform/issues/316))
+
+
+### Miscellaneous Chores
+
+* **drive:** add more block execution timers ([#329](https://github.com/dashevo/platform/issues/329))
+
+
+### Tests
+
+* fixes wallet.spec.js
+
+### [0.22.1](https://github.com/dashevo/platform/compare/v0.22.0...v0.22.1) (2022-03-25)
+
+
+### Bug Fixes
+
+* **dashmate:** cannot read properties of undefined (reading 'masternodeRewardShares’) ([#310](https://github.com/dashevo/platform/issues/310))
+* **dashmate:** config/core/miner must have required property 'interval' ([#311](https://github.com/dashevo/platform/issues/311))
+
+
+### Tests
+
+* fix platform-test-suite-execution in browser environment ([#289](https://github.com/dashevo/platform/issues/289))
+
+
 ## [0.22.0](https://github.com/dashevo/platform/compare/v0.21.8...v0.22.0) (2022-03-21)
 
 ### ⚠ BREAKING CHANGES

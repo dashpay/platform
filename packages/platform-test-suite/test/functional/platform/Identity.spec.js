@@ -1,3 +1,5 @@
+const crypto = require('crypto');
+
 const DashPlatformProtocol = require('@dashevo/dpp');
 const getDataContractFixture = require('@dashevo/dpp/lib/test/fixtures/getDataContractFixture');
 
@@ -13,12 +15,15 @@ const InvalidInstantAssetLockProofSignatureError = require('@dashevo/dpp/lib/err
 const IdentityAssetLockTransactionOutPointAlreadyExistsError = require('@dashevo/dpp/lib/errors/consensus/basic/identity/IdentityAssetLockTransactionOutPointAlreadyExistsError');
 const BalanceIsNotEnoughError = require('@dashevo/dpp/lib/errors/consensus/fee/BalanceIsNotEnoughError');
 
+const InvalidIdentityKeySignatureError = require('@dashevo/dpp/lib/errors/consensus/basic/identity/InvalidIdentityKeySignatureError');
+
 const DAPIClient = require('@dashevo/dapi-client/lib/DAPIClient');
 const { hash } = require('@dashevo/dpp/lib/util/hash');
 const Identifier = require('@dashevo/dpp/lib/identifier/Identifier');
 const Transaction = require('@dashevo/dashcore-lib/lib/transaction');
-const IdentityPublicKey = require('@dashevo/dpp/lib/identity/IdentityPublicKey');
 
+const IdentityPublicKey = require('@dashevo/dpp/lib/identity/IdentityPublicKey');
+const Identity = require('@dashevo/dpp/lib/identity/Identity');
 const createClientWithFundedWallet = require('../../../lib/test/createClientWithFundedWallet');
 const wait = require('../../../lib/wait');
 const getDAPISeeds = require('../../../lib/test/getDAPISeeds');
@@ -147,6 +152,48 @@ describe('Platform', () => {
       );
     });
 
+    it('should not be able to create an identity without key proof', async () => {
+      const {
+        transaction,
+        privateKey,
+        outputIndex,
+      } = await createAssetLockTransaction({ client }, 1);
+
+      await client.getDAPIClient().core.broadcastTransaction(transaction.toBuffer());
+
+      const assetLockProof = await createAssetLockProof(client.platform, transaction, outputIndex);
+
+      // Creating normal transition
+      const {
+        identityCreateTransition,
+      } = await createIdentityCreateTransition(
+        client.platform, assetLockProof, privateKey,
+      );
+
+      // Remove signature
+
+      const [masterKey] = identityCreateTransition.getPublicKeys();
+      masterKey.setSignature(crypto.randomBytes(65));
+
+      // Broadcast
+
+      let broadcastError;
+
+      try {
+        await client.platform.broadcastStateTransition(
+          identityCreateTransition,
+          { skipValidation: true },
+        );
+      } catch (e) {
+        broadcastError = e;
+      }
+
+      expect(broadcastError).to.be.an.instanceOf(StateTransitionBroadcastError);
+      expect(broadcastError.getCause()).to.be.an.instanceOf(
+        InvalidIdentityKeySignatureError,
+      );
+    });
+
     it('should be able to get newly created identity', async () => {
       const fetchedIdentity = await client.platform.identities.get(
         identity.getId(),
@@ -263,10 +310,10 @@ describe('Platform', () => {
 
         expect(fetchedIdentity).to.be.not.null();
 
-        const fetchedIdentityWithoutBalance = fetchedIdentity.toJSON();
+        const fetchedIdentityWithoutBalance = fetchedIdentity.toObject();
         delete fetchedIdentityWithoutBalance.balance;
 
-        const localIdentityWithoutBalance = chainLockIdentity.toJSON();
+        const localIdentityWithoutBalance = chainLockIdentity.toObject();
         delete localIdentityWithoutBalance.balance;
 
         expect(fetchedIdentityWithoutBalance).to.deep.equal(localIdentityWithoutBalance);
@@ -448,6 +495,84 @@ describe('Platform', () => {
         expect(broadcastError.getCause()).to.be.an.instanceOf(
           IdentityAssetLockTransactionOutPointAlreadyExistsError,
         );
+      });
+    });
+
+    describe('Update', () => {
+      it('should be able to add public key to the identity', async () => {
+        const identityBeforeUpdate = new Identity(identity.toObject());
+
+        expect(identityBeforeUpdate.getPublicKeyById(2)).to.not.exist();
+
+        const account = await client.platform.client.getWalletAccount();
+        const identityIndex = await account.getUnusedIdentityIndex();
+
+        const { privateKey: identityPrivateKey } = account
+          .identities
+          .getIdentityHDKeyByIndex(identityIndex, 0);
+
+        const identityPublicKey = identityPrivateKey.toPublicKey().toBuffer();
+
+        const newPublicKey = new IdentityPublicKey(
+          {
+            id: 2,
+            type: IdentityPublicKey.TYPES.ECDSA_SECP256K1,
+            purpose: IdentityPublicKey.PURPOSES.AUTHENTICATION,
+            securityLevel: IdentityPublicKey.SECURITY_LEVELS.HIGH,
+            data: identityPublicKey,
+            readOnly: false,
+          },
+        );
+
+        const update = {
+          add: [newPublicKey],
+        };
+
+        await client.platform.identities.update(
+          identity,
+          update,
+          {
+            [newPublicKey.getId()]: identityPrivateKey,
+          },
+        );
+
+        identity = await client.platform.identities.get(
+          identity.getId(),
+        );
+
+        expect(identity.getRevision()).to.equal(identityBeforeUpdate.getRevision() + 1);
+        expect(identity.getPublicKeyById(2)).to.exist();
+
+        expect(identity.getPublicKeyById(2).toObject()).to.deep.equal(
+          newPublicKey.toObject(),
+        );
+      });
+
+      it('should be able to disable public key of the identity', async () => {
+        const now = new Date().getTime();
+
+        const identityBeforeUpdate = new Identity(identity.toObject());
+
+        const publicKeyToDisable = identityBeforeUpdate.getPublicKeyById(2);
+        const update = {
+          disable: [publicKeyToDisable],
+        };
+
+        await client.platform.identities.update(
+          identity,
+          update,
+        );
+
+        identity = await client.platform.identities.get(
+          identity.getId(),
+        );
+
+        expect(identity.getRevision()).to.equal(identityBeforeUpdate.getRevision() + 1);
+        expect(identity.getPublicKeyById(2)).to.exist();
+        expect(identity.getPublicKeyById(2).getDisabledAt()).to.be.at.least(now);
+
+        expect(identity.getPublicKeyById(0)).to.exist();
+        expect(identity.getPublicKeyById(0).getDisabledAt()).to.be.undefined();
       });
     });
 

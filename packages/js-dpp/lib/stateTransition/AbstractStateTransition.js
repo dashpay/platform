@@ -189,6 +189,27 @@ class AbstractStateTransition {
   }
 
   /**
+   * Verify signature by public key
+   *
+   * @param {Buffer} publicKey
+   * @param publicKeyType
+   *
+   * @returns {Promise<boolean>}
+   */
+  async verifyByPublicKey(publicKey, publicKeyType) {
+    switch (publicKeyType) {
+      case IdentityPublicKey.TYPES.ECDSA_SECP256K1:
+        return this.verifyECDSASignatureByPublicKey(publicKey);
+      case IdentityPublicKey.TYPES.ECDSA_HASH160:
+        return this.verifyESDSAHash160SignatureByPublicKeyHash(publicKey);
+      case IdentityPublicKey.TYPES.BLS12_381:
+        return this.verifyBLSSignatureByPublicKey(publicKey);
+      default:
+        throw new InvalidIdentityPublicKeyTypeError(publicKeyType);
+    }
+  }
+
+  /**
    * @protected
    * @param {Buffer} publicKeyHash
    * @return {boolean}
@@ -327,6 +348,7 @@ AbstractStateTransition.documentTransitionTypes = [
 AbstractStateTransition.identityTransitionTypes = [
   stateTransitionTypes.IDENTITY_CREATE,
   stateTransitionTypes.IDENTITY_TOP_UP,
+  stateTransitionTypes.IDENTITY_UPDATE,
 ];
 AbstractStateTransition.dataContractTransitionTypes = [
   stateTransitionTypes.DATA_CONTRACT_CREATE,

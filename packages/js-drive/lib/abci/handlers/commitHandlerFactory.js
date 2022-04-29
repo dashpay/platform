@@ -95,7 +95,7 @@ function commitHandlerFactory(
       `Block commit #${blockHeight} with appHash ${appHash.toString('hex').toUpperCase()}`,
     );
 
-    const blockExecutionTimings = executionTimer.endTimer('blockExecution');
+    const blockExecutionTimings = executionTimer.stopTimer('blockExecution');
 
     consensusLogger.trace(
       {

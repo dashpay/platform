@@ -17,7 +17,7 @@ const Identifier = require('../../../../../identifier/Identifier');
  * @param {validateProtocolVersion} validateProtocolVersion
  * @param {StateRepository} stateRepository
  * @param {DiffValidator} diffValidator
- * @param {validateIndicesAreNotChanged} validateIndicesAreNotChanged
+ * @param {validateIndicesAreBackwardCompatible} validateIndicesAreBackwardCompatible
  * @param {JsonPatch} jsonPatch
  *
  * @return {validateDataContractUpdateTransitionBasic}
@@ -28,13 +28,13 @@ function validateDataContractUpdateTransitionBasicFactory(
   validateProtocolVersion,
   stateRepository,
   diffValidator,
-  validateIndicesAreNotChanged,
+  validateIndicesAreBackwardCompatible,
   jsonPatch,
 ) {
   /**
    * @typedef validateDataContractUpdateTransitionBasic
    * @param {RawDataContractUpdateTransition} rawStateTransition
-   * @return {ValidationResult}
+   * @return {Promise<ValidationResult>}
    */
   async function validateDataContractUpdateTransitionBasic(rawStateTransition) {
     const result = jsonSchemaValidator.validate(
@@ -129,7 +129,7 @@ function validateDataContractUpdateTransitionBasicFactory(
 
     // check indices are not changed
     result.merge(
-      validateIndicesAreNotChanged(
+      validateIndicesAreBackwardCompatible(
         existingDataContract.getDocuments(),
         rawDataContract.documents,
       ),

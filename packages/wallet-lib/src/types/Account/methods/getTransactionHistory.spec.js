@@ -1,78 +1,11 @@
 const {expect} = require('chai');
-const {Transaction, BlockHeader} = require('@dashevo/dashcore-lib');
-const {WALLET_TYPES} = require('../../../CONSTANTS');
 const getTransactions = require('./getTransactions');
 const getTransactionHistory = require('./getTransactionHistory');
-const mockedStoreHDWallet = require('../../../../fixtures/duringdevelop-fullstore-snapshot-1548538361');
-const mockedStoreSingleAddress = require('../../../../fixtures/da07-fullstore-snapshot-1548533266');
-
+const getTotalBalance = require('./getTotalBalance');
 
 const getFixtureHDAccountWithStorage = require('../../../../fixtures/wallets/apart-trip-dignity/getFixtureAccountWithStorage');
 const getFixturePrivateAccountWithStorage = require('../../../../fixtures/wallets/2a331817b9d6bf85100ef0/getFixtureAccountWithStorage');
 
-
-
-const normalizedHDStoreFixtures = require('../../../../fixtures/wallets/apart-trip-dignity/store.json');
-const normalizedPKStoreFixtures = require('../../../../fixtures/wallets/2a331817b9d6bf85100ef0/store.json');
-const CONSTANTS = require("../../../CONSTANTS");
-const getTotalBalance = require("./getTotalBalance");
-const normalizedStoreToStore = (normalizedStore) => {
-  const store = {
-    ...normalizedStore
-  };
-
-  for (let walletId in store.wallets) {
-    for (let addressType in store.wallets[walletId].addresses) {
-      for (let path in store.wallets[walletId].addresses[addressType]) {
-        for (let utxo in store.wallets[walletId].addresses[addressType][path].utxos) {
-          store.wallets[walletId].addresses[addressType][path].utxos[utxo] = new Transaction.Output(store.wallets[walletId].addresses[addressType][path].utxos[utxo]);
-        }
-      }
-    }
-  }
-
-  for (let transactionHash in store.transactions) {
-    store.transactions[transactionHash] = new Transaction(store.transactions[transactionHash]);
-  }
-
-  for (let blockHeaderHash in store.chains['testnet'].blockHeaders) {
-    store.chains['testnet'].blockHeaders[blockHeaderHash] = new BlockHeader(store.chains['testnet'].blockHeaders[blockHeaderHash])
-  }
-  return store;
-}
-const mockedEmptySelf = {
-  getTransactions,
-  network: 'testnet',
-  walletId: 'd6143ef4e6',
-  walletType: CONSTANTS.WALLET_TYPES.HDWALLET,
-  index: 0,
-  storage: {
-    store: {
-      transactions: {},
-      wallets: {
-        'd6143ef4e6': {
-          "addresses": {
-            "external": {},
-            "internal": {},
-            "misc": {}
-          }
-
-        }
-      },
-      "chains": {
-        "testnet": {
-          name: "testnet",
-          blockHeaders: {},
-          mappedBlockHeaderHeights: {},
-          blockHeight: 0
-        }
-      },
-    },
-    getStore: () => {
-      return mockedSelf.storage.store;
-    }
-  }
-}
 
 const mockedHDAccount = getFixtureHDAccountWithStorage();
 mockedHDAccount.getTransactions = getTransactions;
@@ -83,7 +16,7 @@ mockedPKAccount.getTransactions = getTransactions;
 describe('Account - getTransactionHistory', () => {
   it('should return empty array on no transaction history', async function () {
     const mockedHDSelf = {
-      ...getFixtureHDAccountWithStorage(),
+      ...getFixtureHDAccountWithStorage()
     }
     mockedHDSelf.getTransactions = getTransactions;
     const chainStore = mockedHDSelf.storage.getChainStore('testnet')
@@ -105,6 +38,7 @@ describe('Account - getTransactionHistory', () => {
     const expectedTransactionHistoryHD = [];
     expect(transactionHistoryHD).to.deep.equal(expectedTransactionHistoryHD);
   });
+
   it('should return valid transaction for HDWallet', async function () {
     const mockedHDSelf = {
       ...mockedHDAccount
@@ -149,7 +83,7 @@ describe('Account - getTransactionHistory', () => {
           }
         ],
         type: 'sent',
-        time: 1629237076,
+        time: new Date(1629237076*1e3),
         txId: 'e6b6f85a18d77974f376f05d6c96d0fdde990e733664248b1a00391565af6841',
         blockHash: '000001f9c5de4d2b258a975bfbf7b9a3346890af6389512bea3cb6926b9be330',
         isChainLocked: true,
@@ -172,7 +106,7 @@ describe('Account - getTransactionHistory', () => {
           }
         ],
         type: 'account_transfer',
-        time: 1629236158,
+        time: new Date(1629236158*1e3),
         txId: '6f76ca8038c6cb1b373bbbf80698afdc0d638e4a223be12a4feb5fd8e1801135',
         blockHash: '000000444b3f2f02085f8befe72da5442c865c290658766cf935e1a71a4f4ba7',
         isChainLocked: true,
@@ -198,7 +132,7 @@ describe('Account - getTransactionHistory', () => {
           }
         ],
         type: 'account_transfer',
-        time: 1629234873,
+        time: new Date(1629234873*1e3),
         txId: '6f37b0d6284aab627c31c50e1c9d7cce39912dd4f2393f91734f794bc6408533',
         blockHash: '000000dffb05c071a8c05082a475b7ce9c1e403f3b89895a6c448fe08535a5f5',
         isChainLocked: true,
@@ -229,7 +163,7 @@ describe('Account - getTransactionHistory', () => {
           }
         ],
         type: 'address_transfer',
-        time: 1629234474,
+        time: new Date(1629234474*1e3),
         txId: 'c3fb3620ebd1c7678879b40df1495cc86a179b5a6f9e48ce0b687a5c6f5a1db5',
         blockHash: '000001953ea0bbb8ad04a9a1a2a707fef207ad22a712d7d3c619f0f9b63fa98c',
         isChainLocked: true,
@@ -274,7 +208,7 @@ describe('Account - getTransactionHistory', () => {
           }
         ],
         type: 'address_transfer',
-        time: 1629216608,
+        time: new Date(1629216608*1e3),
         txId: 'f230a9414bf577d93d6f7f2515d9b549ede78cfba4168920892970fa8aa1eef8',
         blockHash: '00000084b4d9e887a6ad3f37c576a17d79c35ec9301e55210eded519e8cdcd3a',
         isChainLocked: true,
@@ -300,7 +234,7 @@ describe('Account - getTransactionHistory', () => {
           }
         ],
         type: 'received',
-        time: 1629207543,
+        time: new Date(1629207543*1e3),
         txId: '1cbb35edc105918b956838570f122d6f3a1fba2b67467e643e901d09f5f8ac1b',
         blockHash: '00000c1e4556add15119392ed36ec6af2640569409abfa23a9972bc3be1b3717',
         isChainLocked: true,
@@ -329,7 +263,7 @@ describe('Account - getTransactionHistory', () => {
             addressType: "external"
           }
         ],
-        time: 1629126597,
+        time: new Date(1629126597*1e3),
         txId: "eb1a7fc8e3b43d3021653b1176f8f9b41e9667d05b65ee225d14c149a5b14f77",
         blockHash: "00000221952c2a60adcb929de837f659308cb5c6bb7783016479381fb550fbad",
         type: "received",
@@ -355,7 +289,7 @@ describe('Account - getTransactionHistory', () => {
             addressType: "unknown"
           }
         ],
-        time: 1628846998,
+        time: new Date(1628846998*1e3),
         txId: "7d1b78157f9f2238669f260d95af03aeefc99577ff0cddb91b3e518ee557a2fd",
         blockHash: "0000012cf6377c6cf2b317a4deed46573c09f04f6880dca731cc9ccea6691e19",
         type: "received",
@@ -382,7 +316,7 @@ describe('Account - getTransactionHistory', () => {
           }
         ],
         type: 'received',
-        time: 1628846768,
+        time: new Date(1628846768*1e3),
         txId: 'd37b6c7dd449d605bea9997af8bbeed2f3fbbcb23a4068b1f1ad694db801912d',
         blockHash: '000000b6006c758eda23ec7e2a640a0bf2c6a0c44827be216faff6bf4fd388e8',
         isChainLocked: true,
@@ -434,7 +368,7 @@ describe('Account - getTransactionHistory', () => {
           }
         ],
         type: 'received',
-        time: 1628846677,
+        time: new Date(1628846677*1e3),
         txId: 'a43845e580ad01f31bc06ce47ab39674e40316c4c6b765b6e54d6d35777ef456',
         blockHash: '000001deee9f99e8219a9abcaaea135dbaae8a9b0f1ea214e6b6a37a5c5b115d',
         isChainLocked: true,
@@ -482,7 +416,7 @@ describe('Account - getTransactionHistory', () => {
           },
         ],
         type: 'address_transfer',
-        time: 9999999999,
+        time: new Date(9999999999*1e3),
         txId: '9cd3d44a87a7f99a33aebc6957105d5fb41698ef642189a36bac59ec0b5cd840',
         blockHash: '0000016fb685b4b1efed743d2263de34a9f8323ed75e732654b1b951c5cb4dde',
         isChainLocked: true,
@@ -505,7 +439,7 @@ describe('Account - getTransactionHistory', () => {
           }
         ],
         type: 'account_transfer',
-        time: 1629236158,
+        time: new Date(1629236158*1e3),
         txId: '6f76ca8038c6cb1b373bbbf80698afdc0d638e4a223be12a4feb5fd8e1801135',
         blockHash: '000000444b3f2f02085f8befe72da5442c865c290658766cf935e1a71a4f4ba7',
         isChainLocked: true,
@@ -528,7 +462,7 @@ describe('Account - getTransactionHistory', () => {
           }
         ],
         type: 'account_transfer',
-        time: 1629234873,
+        time: new Date(1629234873*1e3),
         txId: '6f37b0d6284aab627c31c50e1c9d7cce39912dd4f2393f91734f794bc6408533',
         blockHash: '000000dffb05c071a8c05082a475b7ce9c1e403f3b89895a6c448fe08535a5f5',
         isChainLocked: true,
@@ -539,13 +473,10 @@ describe('Account - getTransactionHistory', () => {
     ]
     expect(transactionHistoryHD).to.deep.equal(expectedTransactionHistoryHD);
   });
-  it('should correctly compute transaction history for private key based wallet', async function (){
+  it('should correctly compute transaction history for single address based wallet', async function (){
     const mockedPKSelf = {
       ...mockedPKAccount
     }
-    // mockedPKSelf.storage.store = normalizedStoreToStore(normalizedPKStoreFixtures)
-    // mockedPKSelf.walletType = 'single_address';
-    // mockedPKSelf.walletId = '6101b44d50';
 
     const transactionHistoryPK = await getTransactionHistory.call(mockedPKSelf);
 
@@ -575,7 +506,7 @@ describe('Account - getTransactionHistory', () => {
           }
         ],
         type: 'sent',
-        time: 1629510092,
+        time: new Date(1629510092*1e3),
         txId: '47d13f7f713f4258953292c2298c1d91e2d6dee309d689f3c8b44ccf457bab52',
         blockHash: '0000007b7356e715b43ed7d5b7135fb9a2bf403e079bbcf7faec0f0da5c40117',
         isChainLocked: true,
@@ -601,7 +532,7 @@ describe('Account - getTransactionHistory', () => {
           }
         ],
         type: 'address_transfer',
-        time: 1629509216,
+        time: new Date(1629509216*1e3),
         txId: 'd48f415f08fb795d43b216cf56e9ef10e059d4009cfc8fc90edfc0d3850813af',
         blockHash: '0000018b88fe43d07c3d63050aa82271698dc406dd08388529205dd837bf92dc',
         isChainLocked: true,
@@ -633,7 +564,7 @@ describe('Account - getTransactionHistory', () => {
           }
         ],
         type: 'received',
-        time: 1629503698,
+        time: new Date(1629503698*1e3),
         txId: '0dcdaa9bf5b3596be1bcf22113e39026fd49d24b47190e2c7423be936cb116a7',
         blockHash: '000000299efeefa87dc15474fd0423c136798975b779a2bb8aa5bb2f50509afb',
         isChainLocked: true,

@@ -212,7 +212,7 @@ describe('TransactionSyncStreamWorker', function suite() {
       expect(account.transport.subscribeToTransactionsWithProofs.firstCall.args[1]).to.be.deep.equal({ fromBlockHeight: 40, count: 2});
       // 20 more of external, since the last address is used.
       expect(account.transport.subscribeToTransactionsWithProofs.secondCall.args[0].length).to.be.equal(60);
-      expect(account.transport.subscribeToTransactionsWithProofs.secondCall.args[1]).to.be.deep.equal({ fromBlockHash: '0000025d24ebe65454bd51a61bab94095a6ad1df996be387e31495f764d8e2d9', count: 2});
+      expect(account.transport.subscribeToTransactionsWithProofs.secondCall.args[1]).to.be.deep.equal({ fromBlockHeight: 42, count: 1});
 
       expect(worker.stream).to.be.null;
       expect(transactionsInStorage.length).to.be.equal(2);
@@ -433,7 +433,7 @@ describe('TransactionSyncStreamWorker', function suite() {
       expect(account.transport.subscribeToTransactionsWithProofs.firstCall.args[1]).to.be.deep.equal({ fromBlockHeight: 40, count: 0});
       // 20 more of external, since the last address is used.
       expect(account.transport.subscribeToTransactionsWithProofs.secondCall.args[0].length).to.be.equal(60);
-      expect(account.transport.subscribeToTransactionsWithProofs.secondCall.args[1]).to.be.deep.equal({ fromBlockHash: '0000025d24ebe65454bd51a61bab94095a6ad1df996be387e31495f764d8e2d9', count: 0});
+      expect(account.transport.subscribeToTransactionsWithProofs.secondCall.args[1]).to.be.deep.equal({ fromBlockHeight: 42, count: 0});
 
       expect(worker.stream).to.be.null;
       expect(transactionsInStorage.length).to.be.equal(2);
@@ -697,7 +697,7 @@ describe('TransactionSyncStreamWorker', function suite() {
     expect(account.transport.subscribeToTransactionsWithProofs.firstCall.args[0].length).to.be.equal(40);
     // 20 more of external, since the last address is used, Merkle Block received
     expect(account.transport.subscribeToTransactionsWithProofs.secondCall.args[0].length).to.be.equal(60);
-    expect(account.transport.subscribeToTransactionsWithProofs.secondCall.args[1]).to.be.deep.equal({ fromBlockHash: '0000025d24ebe65454bd51a61bab94095a6ad1df996be387e31495f764d8e2d9', count: 0});
+    expect(account.transport.subscribeToTransactionsWithProofs.secondCall.args[1]).to.be.deep.equal({ fromBlockHeight: 42, count: 0});
     expect(worker.stream).to.be.null;
     expect(transactionsInStorage.length).to.be.equal(2);
     expect(transactionsInStorage).to.have.deep.members(expectedTransactions);

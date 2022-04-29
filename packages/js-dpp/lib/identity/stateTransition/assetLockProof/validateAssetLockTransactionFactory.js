@@ -5,7 +5,7 @@ const IdentityAssetLockTransactionOutputNotFoundError = require('../../../errors
 const InvalidIdentityAssetLockTransactionOutputError = require('../../../errors/consensus/basic/identity/InvalidIdentityAssetLockTransactionOutputError');
 const ValidationResult = require('../../../validation/ValidationResult');
 const IdentityAssetLockTransactionOutPointAlreadyExistsError = require('../../../errors/consensus/basic/identity/IdentityAssetLockTransactionOutPointAlreadyExistsError');
-const InvalidAssetLockTransactionOutputReturnSize = require('../../../errors/consensus/basic/identity/InvalidAssetLockTransactionOutputReturnSize');
+const InvalidAssetLockTransactionOutputReturnSizeError = require('../../../errors/consensus/basic/identity/InvalidAssetLockTransactionOutputReturnSizeError');
 
 /**
  *
@@ -62,7 +62,7 @@ function validateAssetLockTransactionFactory(stateRepository) {
 
     if (publicKeyHash.length !== 20) {
       result.addError(
-        new InvalidAssetLockTransactionOutputReturnSize(outputIndex),
+        new InvalidAssetLockTransactionOutputReturnSizeError(outputIndex),
       );
 
       return result;

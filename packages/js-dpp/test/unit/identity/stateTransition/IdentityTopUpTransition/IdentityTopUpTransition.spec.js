@@ -29,7 +29,7 @@ describe('IdentityTopUpTransition', () => {
   });
 
   describe('#getType', () => {
-    it('should return IDENTITY_CREATE type', () => {
+    it('should return IDENTITY_TOP_UP type', () => {
       expect(stateTransition.getType()).to.equal(stateTransitionTypes.IDENTITY_TOP_UP);
     });
   });

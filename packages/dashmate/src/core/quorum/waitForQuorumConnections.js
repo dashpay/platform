@@ -10,18 +10,18 @@ const { LLMQ_TYPE_TEST } = require('../../constants');
 async function checkQuorumConnections(rpcClient, expectedConnectionsCount) {
   const { result: dkgStatus } = await rpcClient.quorum('dkgstatus');
 
-  if (Object.keys(dkgStatus.session).length === 0) {
+  if (dkgStatus.session.length === 0) {
     return false;
   }
 
-  const noConnections = dkgStatus.quorumConnections == null;
-  const llmqConnections = dkgStatus.quorumConnections;
+  const llmqConnection = dkgStatus.quorumConnections
+    .find((connection) => connection.llmqType === LLMQ_TYPE_TEST);
 
-  if (noConnections || llmqConnections[LLMQ_TYPE_TEST] == null) {
+  if (!llmqConnection) {
     return false;
   }
 
-  const connectionsCount = llmqConnections[LLMQ_TYPE_TEST]
+  const connectionsCount = llmqConnection.quorumConnections
     .filter((connection) => connection.connected)
     .length;
 
