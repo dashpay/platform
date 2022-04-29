@@ -33,11 +33,9 @@ function handleUpdatedScriptPayoutFactory(
       return;
     }
 
-    const maxId = identity.getPublicKeyById();
-
     // disable previous
     identityPublicKeys = identityPublicKeys.map((pk) => {
-      if (Buffer.compare(pk.getData(), previousPubKeyData)) {
+      if (Buffer.compare(pk.getData(), previousPubKeyData) === 0) {
         pk.setDisabledAt(new Date().getTime());
       }
 
@@ -48,11 +46,11 @@ function handleUpdatedScriptPayoutFactory(
     const withdrawPubKeyType = getWithdrawPubKeyTypeFromPayoutScript(newPubKeyData);
 
     const newWithdrawalIdentityPublicKey = new IdentityPublicKey()
-      .setId(maxId + 1)
+      .setId(identity.getPublicKeyMaxId() + 1)
       .setType(withdrawPubKeyType)
       .setData(Buffer.from(newPubKeyData))
       .setPurpose(IdentityPublicKey.PURPOSES.WITHDRAW)
-      .setSecurityLevel(IdentityPublicKey.PURPOSES.MASTER);
+      .setSecurityLevel(IdentityPublicKey.SECURITY_LEVELS.MASTER);
 
     identityPublicKeys.push(
       newWithdrawalIdentityPublicKey,
