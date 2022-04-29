@@ -89,13 +89,6 @@ function updateSimplifiedMasternodeListFactory(
         diffs.push(rawDiffNew);
       }
 
-      console.log('initialSmlDiffs', JSON.stringify(
-        [
-          rawDiff,
-          ...diffs,
-        ], null, 2,
-      ));
-
       simplifiedMasternodeList.applyDiffs(initialSmlDiffs);
 
       latestRequestedHeight = coreHeight;

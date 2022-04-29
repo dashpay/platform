@@ -3718,5 +3718,5 @@ module.exports = function getSmlFixture() {
       merkleRootMNList: '9e339c535b53edcd1881a85a22980db0565ffe2c8a5b9e7e516a2dd54a23b57f',
       merkleRootQuorums: 'd97f162dcbb481ad5cbab241c6b3c19ff45b39137b621092febd3643c01cfc53',
     },
-  ]
+  ];
 };
