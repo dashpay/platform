@@ -1,5 +1,8 @@
 const Identity = require('@dashevo/dpp/lib/identity/Identity');
 
+const Read = require('../fees/Read');
+const Write = require('../fees/Write');
+
 class IdentityStoreRepository {
   /**
    *
@@ -26,7 +29,15 @@ class IdentityStoreRepository {
       { useTransaction },
     );
 
-    return this;
+    return {
+      result: this,
+      operations: [
+        new Write(
+          identity.getId().length,
+          identity.toBuffer().length,
+        ),
+      ],
+    };
   }
 
   /**
@@ -44,14 +55,32 @@ class IdentityStoreRepository {
     );
 
     if (!encodedIdentity) {
-      return null;
+      return {
+        result: null,
+        operations: [
+          new Read(
+            id.length, 
+            IdentityStoreRepository.TREE_PATH.reduce((size, pathItem) => size += pathItem.length, 0),
+            0,
+          )
+        ],
+      };
     }
 
     const [protocolVersion, rawIdentity] = this.decodeProtocolEntity(encodedIdentity);
 
     rawIdentity.protocolVersion = protocolVersion;
 
-    return new Identity(rawIdentity);
+    return {
+      result: new Identity(rawIdentity),
+      operations: [
+        new Read(
+          id.length, 
+          IdentityStoreRepository.TREE_PATH.reduce((size, pathItem) => size += pathItem.length, 0),
+          encodedIdentity.length,
+        )
+      ],
+    };
   }
 
   /**
@@ -64,7 +93,15 @@ class IdentityStoreRepository {
   async createTree(options = {}) {
     await this.storage.createTree([], IdentityStoreRepository.TREE_PATH[0], options);
 
-    return this;
+    return {
+      result: this,
+      operations: [
+        new Write(
+          IdentityStoreRepository.TREE_PATH[0].length, 
+          32,
+        ),
+      ],
+    };
   }
 }
 

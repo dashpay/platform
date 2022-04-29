@@ -1,3 +1,6 @@
+const Write = require('../fees/Write');
+const Read = require('../fees/Read');
+
 class SpentAssetLockTransactionsRepository {
   /**
    * @param {GroveDBStore} groveDBStore
@@ -24,7 +27,15 @@ class SpentAssetLockTransactionsRepository {
       { useTransaction },
     );
 
-    return this;
+    return {
+      result: this,
+      operations: [
+        new Write(
+          outPointBuffer.length,
+          emptyValue.length,
+        ),
+      ],
+    };
   }
 
   /**
@@ -36,11 +47,22 @@ class SpentAssetLockTransactionsRepository {
    * @return {null|Buffer}
    */
   async fetch(outPointBuffer, useTransaction = false) {
-    return this.storage.get(
+    const result = await this.storage.get(
       SpentAssetLockTransactionsRepository.TREE_PATH,
       outPointBuffer,
       { useTransaction },
     );
+
+    return {
+      result,
+      operations: [
+        new Read(
+          outPointBuffer.length,
+          SpentAssetLockTransactionsRepository.TREE_PATH.reduce((size, pathItem) => size += pathItem.length, 0),
+          result.length,
+        ),
+      ],
+    }
   }
 
   /**
@@ -51,13 +73,24 @@ class SpentAssetLockTransactionsRepository {
    * @return {Promise<SpentAssetLockTransactionsRepository>}
    */
   async createTree(options = {}) {
+    const rootTreePath = [SpentAssetLockTransactionsRepository.TREE_PATH[0]];
+    const treePath = SpentAssetLockTransactionsRepository.TREE_PATH[1];
+
     await this.storage.createTree(
-      [SpentAssetLockTransactionsRepository.TREE_PATH[0]],
-      SpentAssetLockTransactionsRepository.TREE_PATH[1],
+      rootTreePath,
+      treePath,
       options,
     );
 
-    return this;
+    return {
+      result: this,
+      operations: [
+        new Write(
+          treePath.length,
+          32,
+        ),
+      ],
+    };
   }
 }
 

@@ -1,6 +1,9 @@
 const cbor = require('cbor');
 const CreditsDistributionPool = require('./CreditsDistributionPool');
 
+const Write = require('../fees/Write');
+const Read = require('../fees/Read');
+
 class CreditsDistributionPoolRepository {
   /**
    *
@@ -29,7 +32,15 @@ class CreditsDistributionPoolRepository {
       { useTransaction },
     );
 
-    return this;
+    return {
+      result: this,
+      operations: [
+        new Write(
+          CreditsDistributionPoolRepository.KEY.length,
+          encodedCreditsDistributionPool.length,
+        ),
+      ],
+    };
   }
 
   /**
@@ -46,12 +57,30 @@ class CreditsDistributionPoolRepository {
     );
 
     if (!creditsDistributionPoolEncoded) {
-      return new CreditsDistributionPool();
+      return {
+        result: new CreditsDistributionPool(),
+        operations: [
+          new Read(
+            CreditsDistributionPoolRepository.KEY.length,
+            CreditsDistributionPoolRepository.PATH.reduce((size, pathItem) => size += pathItem.length, 0).length,
+            0,
+          ),
+        ]
+      };
     }
 
     const { amount } = cbor.decode(creditsDistributionPoolEncoded);
 
-    return new CreditsDistributionPool(amount);
+    return {
+      result: new CreditsDistributionPool(amount),
+      operations: [
+        new Read(
+          CreditsDistributionPoolRepository.KEY.length,
+          CreditsDistributionPoolRepository.PATH.reduce((size, pathItem) => size += pathItem.length, 0).length,
+          creditsDistributionPoolEncoded.length,
+        ),
+      ],
+    };
   }
 }
 

@@ -1,6 +1,10 @@
 const DataContract = require('@dashevo/dpp/lib/dataContract/DataContract');
 const { createHash } = require('crypto');
 
+const Write = require('../fees/Write');
+const Read = require('../fees/Read');
+const PreCalculatedOperation = require('../fees/PreCalculatedOperation');
+
 class DataContractStoreRepository {
   /**
    *
@@ -23,11 +27,20 @@ class DataContractStoreRepository {
    */
   async store(dataContract, useTransaction = false) {
     try {
-      return await this.storage.getDrive().applyContract(
+      const [cpuCost, storageCost] = await this.storage.getDrive().applyContract(
         dataContract,
         new Date('2022-03-17T15:08:26.132Z'),
         useTransaction,
       );
+      return {
+        result: this,
+        operations: [
+          new PreCalculatedOperation(
+            cpuCost,
+            storageCost,
+          ),
+        ],
+      };
     } finally {
       if (this.logger) {
         this.logger.trace({
@@ -58,14 +71,32 @@ class DataContractStoreRepository {
     );
 
     if (!encodedDataContract) {
-      return null;
+      return {
+        result: null,
+        operations: [
+          new Read(
+            DataContractStoreRepository.DATA_CONTRACT_KEY.length,
+            DataContractStoreRepository.TREE_PATH.concat([id.toBuffer()]).reduce((size, pathItem) => size += pathItem.length, 0).length,
+            0,
+          ),
+        ],
+      };
     }
 
     const [protocolVersion, rawDataContract] = this.decodeProtocolEntity(encodedDataContract);
 
     rawDataContract.protocolVersion = protocolVersion;
 
-    return new DataContract(rawDataContract);
+    return {
+      result: new DataContract(rawDataContract),
+      operations: [
+        new Read(
+          DataContractStoreRepository.DATA_CONTRACT_KEY.length,
+          DataContractStoreRepository.TREE_PATH.concat([id.toBuffer()]).reduce((size, pathItem) => size += pathItem.length, 0).length,
+          encodedDataContract.length,
+        ),
+      ],
+    };
   }
 
   /**
@@ -78,7 +109,15 @@ class DataContractStoreRepository {
   async createTree(options = {}) {
     await this.storage.createTree([], DataContractStoreRepository.TREE_PATH[0], options);
 
-    return this;
+    return {
+      result: this,
+      operations: [
+        new Write(
+          DataContractStoreRepository.TREE_PATH[0].length,
+          32,
+        ),
+      ],
+    };
   }
 }
 

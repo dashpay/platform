@@ -4,6 +4,8 @@ const createDocumentTypeTreePath = require('./groveDB/createDocumentTreePath');
 const InvalidQueryError = require('./errors/InvalidQueryError');
 const StartDocumentNotFoundError = require('./query/errors/StartDocumentNotFoundError');
 const ValidationError = require('./query/errors/ValidationError');
+const PreCalculatedOperation = require('../fees/PreCalculatedOperation');
+const Read = require('../fees/Read');
 
 class DocumentRepository {
   /**
@@ -34,24 +36,26 @@ class DocumentRepository {
     const isExists = await this.isExist(document, useTransaction);
 
     let result;
+    let cpuCost;
+    let storageCost;
     let method = 'createDocument';
 
     try {
       if (isExists) {
         method = 'updateDocument';
-        result = await this.storage.getDrive()
+        ([result, cpuCost, storageCost] = await this.storage.getDrive()
           .updateDocument(
             document,
             new Date('2022-03-17T15:08:26.132Z'),
             useTransaction,
-          );
+          ));
       } else {
-        result = await this.storage.getDrive()
+        ([result, cpuCost, storageCost] = await this.storage.getDrive()
           .createDocument(
             document,
             new Date('2022-03-17T15:08:26.132Z'),
             useTransaction,
-          );
+          ));
       }
     } finally {
       if (this.logger) {
@@ -67,7 +71,14 @@ class DocumentRepository {
       }
     }
 
-    return result;
+    return {
+      result,
+      operations: [
+        new PreCalculatedOperation(
+          cpuCost, storageCost,
+        ),
+      ],
+    };
   }
 
   /**
@@ -91,7 +102,16 @@ class DocumentRepository {
       { useTransaction },
     );
 
-    return Boolean(fetchedDocument);
+    return {
+      result: Boolean(fetchedDocument),
+      operations: [
+        new Read(
+          document.getId().toBuffer().length,
+          documentTreePath.reduce((size, pathItem) => size += pathItem.length, 0),
+          fetchedDocument.toBuffer().length,
+        ),
+      ],
+    };
   }
 
   /**
@@ -130,13 +150,20 @@ class DocumentRepository {
       });
 
     try {
-      return await this.storage.getDrive()
+      const [result, cpuCost, storageCost] = await this.storage.getDrive()
         .queryDocuments(
           dataContract,
           documentType,
           query,
           useTransaction,
         );
+
+      return {
+        result,
+        operations: [
+          new PreCalculatedOperation(cpuCost, storageCost),
+        ],
+      };
     } catch (e) {
       const invalidQueryMessagePrefix = 'invalid query: ';
 
@@ -173,13 +200,19 @@ class DocumentRepository {
    */
   async delete(dataContract, documentType, id, useTransaction = false) {
     try {
-      await this.storage.getDrive()
+      const [cpuCost, storageCost] = await this.storage.getDrive()
         .deleteDocument(
           dataContract,
           documentType,
           id,
           useTransaction,
         );
+      return {
+        result: this,
+        operations: [
+          new PreCalculatedOperation(cpuCost, storageCost),
+        ],
+      };
     } finally {
       if (this.logger) {
         this.logger.info({

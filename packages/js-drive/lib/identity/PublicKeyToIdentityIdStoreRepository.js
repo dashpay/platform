@@ -2,6 +2,9 @@ const cbor = require('cbor');
 
 const Identifier = require('@dashevo/dpp/lib/Identifier');
 
+const Write = require('../fees/Write');
+const Read = require('../fees/Read');
+
 class PublicKeyToIdentityIdStoreRepository {
   /**
    *
@@ -21,24 +24,41 @@ class PublicKeyToIdentityIdStoreRepository {
    * @return {Promise<PublicKeyToIdentityIdStoreRepository>}
    */
   async store(publicKeyHash, identityId, useTransaction = false) {
-    const identityIdsSerialized = await this.fetchBuffer(publicKeyHash, useTransaction);
+    const { result: identityIdsSerialized, operations: ops } = await this.fetchBuffer(publicKeyHash, useTransaction);
 
     let identityIds = [];
     if (identityIdsSerialized) {
       identityIds = cbor.decode(identityIdsSerialized);
     }
 
+    const operations = [
+      ...ops,
+    ];
+
     if (identityIds.find((id) => id.equals(identityId)) === undefined) {
       identityIds.push(identityId.toBuffer());
+
+      const data = cbor.encode(identityIds);
 
       await this.storage.put(
         PublicKeyToIdentityIdStoreRepository.TREE_PATH,
         publicKeyHash,
-        cbor.encode(identityIds),
+        data,
         { useTransaction },
       );
+
+      operations.push(
+        new Write(
+          PublicKeyToIdentityIdStoreRepository.TREE_PATH.reduce((size, pathItem) => size += pathItem.length, 0) + publicKeyHash.length,
+          data.length,
+        ),
+      );
     }
-    return this;
+
+    return {
+      result: this,
+      operations,
+    };
   }
 
   /**
@@ -50,11 +70,24 @@ class PublicKeyToIdentityIdStoreRepository {
    * @return {Promise<Buffer|null>}
    */
   async fetchBuffer(publicKeyHash, useTransaction = false) {
-    return this.storage.get(
+    const result = await this.storage.get(
       PublicKeyToIdentityIdStoreRepository.TREE_PATH,
       publicKeyHash,
       { useTransaction },
     );
+
+    const operations = [
+      new Read(
+        publicKeyHash.length,
+        PublicKeyToIdentityIdStoreRepository.TREE_PATH.reduce((size, pathItem) => size += pathItem.length, 0),
+        result.reduce((size, id) => size += id.length, 0),
+      ),
+    ];
+
+    return {
+      result,
+      operations,
+    };
   }
 
   /**
@@ -66,15 +99,21 @@ class PublicKeyToIdentityIdStoreRepository {
    * @return {Promise<Identifier[]>}
    */
   async fetch(publicKeyHash, useTransaction = false) {
-    const identityIdsSerialized = await this.fetchBuffer(publicKeyHash, useTransaction);
+    const { result: identityIdsSerialized, operations } = await this.fetchBuffer(publicKeyHash, useTransaction);
 
     if (!identityIdsSerialized) {
-      return [];
+      return {
+        result: [],
+        operations,
+      };
     }
 
     const identityIds = cbor.decode(identityIdsSerialized);
 
-    return identityIds.map((id) => new Identifier(id));
+    return {
+      result: identityIds.map((id) => new Identifier(id)),
+      operations,
+    };
   }
 
   /**
@@ -87,7 +126,12 @@ class PublicKeyToIdentityIdStoreRepository {
   async createTree(options = {}) {
     await this.storage.createTree([], PublicKeyToIdentityIdStoreRepository.TREE_PATH[0], options);
 
-    return this;
+    return {
+      result: this,
+      operations: [
+        new Write(PublicKeyToIdentityIdStoreRepository.TREE_PATH[0].length, 32),
+      ]
+    };
   }
 }
 
