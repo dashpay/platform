@@ -13,7 +13,7 @@ function getExistingTransactionResultFactory(rpcClient) {
    * @return {Promise<TransactionOkResult|TransactionErrorResult>}
    */
   async function getExistingTransactionResult(hashString) {
-    const params = { hash: hashString };
+    const params = { hash: `0x${hashString}` };
 
     const { result, error } = await rpcClient.request('tx', params);
 
