@@ -150,7 +150,7 @@ class DocumentRepository {
       });
 
     try {
-      const [result, cpuCost, storageCost] = await this.storage.getDrive()
+      const [documents, cpuCost, storageCost] = await this.storage.getDrive()
         .queryDocuments(
           dataContract,
           documentType,
@@ -159,7 +159,7 @@ class DocumentRepository {
         );
 
       return {
-        result,
+        result: documents,
         operations: [
           new PreCalculatedOperation(cpuCost, storageCost),
         ],

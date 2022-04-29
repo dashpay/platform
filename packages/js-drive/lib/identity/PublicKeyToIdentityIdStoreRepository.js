@@ -24,7 +24,9 @@ class PublicKeyToIdentityIdStoreRepository {
    * @return {Promise<PublicKeyToIdentityIdStoreRepository>}
    */
   async store(publicKeyHash, identityId, useTransaction = false) {
-    const { result: identityIdsSerialized, operations: ops } = await this.fetchBuffer(publicKeyHash, useTransaction);
+    const { result: identityIdsSerialized, operations: ops } = await this.fetchBuffer(
+      publicKeyHash, useTransaction,
+    );
 
     let identityIds = [];
     if (identityIdsSerialized) {
@@ -49,7 +51,9 @@ class PublicKeyToIdentityIdStoreRepository {
 
       operations.push(
         new Write(
-          PublicKeyToIdentityIdStoreRepository.TREE_PATH.reduce((size, pathItem) => size + pathItem.length, 0) + publicKeyHash.length,
+          PublicKeyToIdentityIdStoreRepository.TREE_PATH.reduce(
+            (size, pathItem) => size + pathItem.length, 0,
+          ) + publicKeyHash.length,
           data.length,
         ),
       );
@@ -79,7 +83,9 @@ class PublicKeyToIdentityIdStoreRepository {
     const operations = [
       new Read(
         publicKeyHash.length,
-        PublicKeyToIdentityIdStoreRepository.TREE_PATH.reduce((size, pathItem) => size + pathItem.length, 0),
+        PublicKeyToIdentityIdStoreRepository.TREE_PATH.reduce(
+          (size, pathItem) => size + pathItem.length, 0,
+        ),
         result.reduce((size, id) => size + id.length, 0),
       ),
     ];
@@ -99,7 +105,9 @@ class PublicKeyToIdentityIdStoreRepository {
    * @return {Promise<Identifier[]>}
    */
   async fetch(publicKeyHash, useTransaction = false) {
-    const { result: identityIdsSerialized, operations } = await this.fetchBuffer(publicKeyHash, useTransaction);
+    const { result: identityIdsSerialized, operations } = await this.fetchBuffer(
+      publicKeyHash, useTransaction,
+    );
 
     if (!identityIdsSerialized) {
       return {
