@@ -15,7 +15,7 @@ class ReadOperation extends AbstractOperation {
    *
    * @returns {number}
    */
-  getCpuCost() {
+  getProcessingCost() {
     return ReadOperation.BASE_PROCESSING_COST + this.valueSize * ReadOperation.CREDIT_PER_BYTE;
   }
 

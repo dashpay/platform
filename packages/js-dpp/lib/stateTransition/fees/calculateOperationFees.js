@@ -1,18 +1,18 @@
 /**
- * Calculate cpu and storage fees based on operations
+ * Calculate processing and storage fees based on operations
  *
  * @param {AbstractOperation[]} operations
  *
- * @returns {{ storageCost: number, cpuCost: number }}
+ * @returns {{ storageCost: number, processingCost: number }}
  */
 function calculateOperationFees(operations) {
   const costs = {
     storageCost: 0.0,
-    cpuCost: 0.0,
+    processingCost: 0.0,
   };
 
   operations.forEach((operation) => {
-    costs.cpuCost += operation.getCpuCost();
+    costs.processingCost += operation.getProcessingCost();
     costs.storageCost += operation.getStorageCost();
   });
 

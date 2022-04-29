@@ -17,7 +17,7 @@ class DeleteOperation extends AbstractOperation {
    *
    * @returns {number}
    */
-  getCpuCost() {
+  getProcessingCost() {
     return ((this.keySize + this.valueSize) * AbstractOperation.STORAGE_PROCESSING_CREDIT_PER_BYTE)
       + DeleteOperation.BASE_PROCESSING_COST;
   }

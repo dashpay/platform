@@ -6,7 +6,7 @@ class AbstractOperation {
    * @abstract
    * @returns {number}
    */
-  getCpuCost() {
+  getProcessingCost() {
     throw new Error('Not implemented');
   }
 

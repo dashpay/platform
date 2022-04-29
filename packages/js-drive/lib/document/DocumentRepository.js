@@ -35,7 +35,7 @@ class DocumentRepository {
   async store(document, useTransaction = false) {
     const isExistsResult = await this.isExist(document, useTransaction);
 
-    let cpuCost;
+    let processingCost;
     let storageCost;
 
     let method = 'createDocument';
@@ -43,14 +43,14 @@ class DocumentRepository {
     try {
       if (isExistsResult.getValue()) {
         method = 'updateDocument';
-        ([storageCost, cpuCost] = await this.storage.getDrive()
+        ([storageCost, processingCost] = await this.storage.getDrive()
           .updateDocument(
             document,
             new Date('2022-03-17T15:08:26.132Z'),
             useTransaction,
           ));
       } else {
-        ([storageCost, cpuCost] = await this.storage.getDrive()
+        ([storageCost, processingCost] = await this.storage.getDrive()
           .createDocument(
             document,
             new Date('2022-03-17T15:08:26.132Z'),
@@ -75,7 +75,7 @@ class DocumentRepository {
       undefined,
       [
         ...isExistsResult.getOperations(),
-        new PreCalculatedOperation(storageCost, cpuCost),
+        new PreCalculatedOperation(storageCost, processingCost),
       ],
     );
   }
@@ -143,7 +143,7 @@ class DocumentRepository {
       });
 
     try {
-      const [documents, , cpuCost] = await this.storage.getDrive()
+      const [documents, , processingCost] = await this.storage.getDrive()
         .queryDocuments(
           dataContract,
           documentType,
@@ -154,7 +154,7 @@ class DocumentRepository {
       return new StorageResult(
         documents,
         [
-          new PreCalculatedOperation(0, cpuCost),
+          new PreCalculatedOperation(0, processingCost),
         ],
       );
     } catch (e) {
@@ -193,7 +193,7 @@ class DocumentRepository {
    */
   async delete(dataContract, documentType, id, useTransaction = false) {
     try {
-      const [storageCost, cpuCost] = await this.storage.getDrive()
+      const [storageCost, processingCost] = await this.storage.getDrive()
         .deleteDocument(
           dataContract,
           documentType,
@@ -204,7 +204,7 @@ class DocumentRepository {
       return new StorageResult(
         undefined,
         [
-          new PreCalculatedOperation(storageCost, cpuCost),
+          new PreCalculatedOperation(storageCost, processingCost),
         ],
       );
     } finally {

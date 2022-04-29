@@ -3,13 +3,13 @@ const AbstractOperation = require('./AbstractOperation');
 class PreCalculatedOperation extends AbstractOperation {
   /**
    * @param {number} storageCost
-   * @param {number} cpuCost
+   * @param {number} processingCost
    */
-  constructor(storageCost, cpuCost) {
+  constructor(storageCost, processingCost) {
     super();
 
     this.storageCost = storageCost;
-    this.cpuCost = cpuCost;
+    this.processingCost = processingCost;
   }
 
   /**
@@ -17,8 +17,8 @@ class PreCalculatedOperation extends AbstractOperation {
    *
    * @returns {number}
    */
-  getCpuCost() {
-    return this.cpuCost;
+  getProcessingCost() {
+    return this.processingCost;
   }
 
   /**

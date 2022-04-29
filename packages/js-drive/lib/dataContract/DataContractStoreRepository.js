@@ -26,7 +26,7 @@ class DataContractStoreRepository {
    */
   async store(dataContract, useTransaction = false) {
     try {
-      const [storageCost, cpuCost] = await this.storage.getDrive().applyContract(
+      const [storageCost, processingCost] = await this.storage.getDrive().applyContract(
         dataContract,
         new Date('2022-03-17T15:08:26.132Z'),
         useTransaction,
@@ -37,7 +37,7 @@ class DataContractStoreRepository {
         [
           new PreCalculatedOperation(
             storageCost,
-            cpuCost,
+            processingCost,
           ),
         ],
       );
