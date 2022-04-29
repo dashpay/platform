@@ -2468,7 +2468,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           "linkType": "HARD",
         }],
         ["npm:0.19.31", {
-          "packageLocation": "./.yarn/unplugged/@dashevo-dashcore-lib-npm-0.19.31-c668356a19/node_modules/@dashevo/dashcore-lib/",
+          "packageLocation": "./.yarn/cache/@dashevo-dashcore-lib-npm-0.19.31-c668356a19-67ba5b44f2.zip/node_modules/@dashevo/dashcore-lib/",
           "packageDependencies": [
             ["@dashevo/dashcore-lib", "npm:0.19.31"],
             ["@dashevo/x11-hash-js", "npm:1.0.2"],

@@ -1867,9 +1867,6 @@ __metadata:
     semver: ^7.3.2
     tempfile: ^3.0.0
     ultra-runner: ^3.10.5
-  dependenciesMeta:
-    "@dashevo/dashcore-lib@0.19.31":
-      unplugged: true
   languageName: unknown
   linkType: soft
 
