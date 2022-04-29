@@ -1,7 +1,6 @@
 use crate::consensus::ConsensusError;
 use crate::data_contract::errors::*;
 use crate::document::errors::*;
-use crate::mocks;
 use thiserror::Error;
 
 #[derive(Error, Debug)]
@@ -33,7 +32,7 @@ pub enum ProtocolError {
     DataContractError(DataContractError),
 
     #[error(transparent)]
-    AbstractConsensusError(Box<mocks::ConsensusError>),
+    AbstractConsensusError(Box<ConsensusError>),
 
     #[error(transparent)]
     Document(Box<DocumentError>),
@@ -60,8 +59,8 @@ impl From<String> for ProtocolError {
     }
 }
 
-impl From<mocks::ConsensusError> for ProtocolError {
-    fn from(e: mocks::ConsensusError) -> Self {
+impl From<ConsensusError> for ProtocolError {
+    fn from(e: ConsensusError) -> Self {
         ProtocolError::AbstractConsensusError(Box::new(e))
     }
 }

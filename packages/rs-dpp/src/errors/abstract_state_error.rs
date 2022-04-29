@@ -1,4 +1,4 @@
-use crate::prelude::{DataContract, Identifier};
+use crate::prelude::Identifier;
 use thiserror::Error;
 
 use super::DataTriggerError;

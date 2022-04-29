@@ -1,19 +1,11 @@
 //! This module contains data structures that are left to be implemented
 
-use crate::{
-    errors::{consensus::basic::BasicError, StateError},
-    prelude::*,
-};
+use crate::prelude::*;
 
 use crate::validation::ValidationResult;
 use anyhow::Result as AnyResult;
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
-
-use async_trait::async_trait;
-use thiserror::Error;
-
-use crate::state_repository::StateRepositoryLike;
 
 #[derive(Debug, Clone)]
 pub struct DashPlatformProtocol<SR> {
@@ -36,7 +28,7 @@ impl<SR> DashPlatformProtocol<SR> {
 #[derive(Debug, Clone, Default)]
 pub struct ValidateDataContract {}
 impl ValidateDataContract {
-    pub async fn validate_data_contract(&self, raw_data_contract: &JsonValue) -> ValidationResult {
+    pub async fn validate_data_contract(&self, _raw_data_contract: &JsonValue) -> ValidationResult {
         ValidationResult::default()
     }
 }
@@ -44,37 +36,6 @@ impl ValidateDataContract {
 #[derive(Debug, Clone)]
 pub struct DecodeProtocolIdentity {}
 impl DecodeProtocolIdentity {}
-
-#[derive(Debug, Clone)]
-pub struct DocumentTransition {
-    pub action: String,
-}
-
-#[derive(Error, Debug)]
-pub enum ConsensusError {
-    #[error(transparent)]
-    StateError(Box<StateError>),
-    #[error(transparent)]
-    BasicError(Box<BasicError>),
-
-    #[error("Parsing of serialized object failed due to: {parsing_error}")]
-    SerializedObjectParsingError { parsing_error: anyhow::Error },
-
-    #[error("Can't read protocol version from serialized object: {parsing_error}")]
-    ProtocolVersionParsingError { parsing_error: anyhow::Error },
-}
-
-impl From<StateError> for ConsensusError {
-    fn from(se: StateError) -> Self {
-        ConsensusError::StateError(Box::new(se))
-    }
-}
-
-impl From<BasicError> for ConsensusError {
-    fn from(se: BasicError) -> Self {
-        ConsensusError::BasicError(Box::new(se))
-    }
-}
 
 pub type IHeader = String;
 
