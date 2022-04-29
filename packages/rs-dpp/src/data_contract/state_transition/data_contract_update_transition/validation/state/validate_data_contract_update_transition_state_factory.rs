@@ -11,19 +11,23 @@ where
     state_repository: SR,
 }
 
-pub fn validate_data_contract_update_transition_state_factory<SR>(
-    state_repository: SR,
-) -> ValidateDataContractUpdateTransitionStateFactory<SR>
-where
-    SR: StateRepositoryLike,
-{
-    ValidateDataContractUpdateTransitionStateFactory { state_repository }
-}
+// pub fn validate_data_contract_update_transition_state_factory<SR>(
+//     state_repository: SR,
+// ) -> ValidateDataContractUpdateTransitionStateFactory<SR>
+// where
+//     SR: StateRepositoryLike,
+// {
+//     ValidateDataContractUpdateTransitionStateFactory { state_repository }
+// }
 
 impl<SR> ValidateDataContractUpdateTransitionStateFactory<SR>
 where
     SR: StateRepositoryLike,
 {
+    pub fn new(state_repository: SR) -> Self {
+        ValidateDataContractUpdateTransitionStateFactory { state_repository }
+    }
+
     pub async fn validate_data_contract_update_transition_state(
         &self,
         state_transition: mocks::StateTransition,
