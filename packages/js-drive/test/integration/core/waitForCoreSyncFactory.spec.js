@@ -7,7 +7,6 @@ describe('waitForCoreSyncFactory', function main() {
 
   let firstDashCore;
   let secondDashCore;
-  let thirdDashCore;
   let container;
   let waitForCoreSync;
 
@@ -18,10 +17,6 @@ describe('waitForCoreSyncFactory', function main() {
 
     if (secondDashCore) {
       await secondDashCore.remove();
-    }
-
-    if (thirdDashCore) {
-      await thirdDashCore.remove();
     }
   });
 
@@ -34,7 +29,7 @@ describe('waitForCoreSyncFactory', function main() {
   it('should wait until Dash Core in regtest mode with peers is synced', async () => {
     firstDashCore = await startDashCore();
     const { result: randomAddress } = await firstDashCore.getApi().getNewAddress();
-    await firstDashCore.getApi().generateToAddress(900, randomAddress);
+    await firstDashCore.getApi().generateToAddress(1000, randomAddress);
 
     secondDashCore = await startDashCore();
     await secondDashCore.connect(firstDashCore);
@@ -53,7 +48,7 @@ describe('waitForCoreSyncFactory', function main() {
       },
     } = await secondApi.getBlockchainInfo();
 
-    expect(currentBlockHeight).to.equal(900);
-    expect(currentHeadersNumber).to.equal(900);
+    expect(currentHeadersNumber).to.equal(1000);
+    expect(currentBlockHeight).to.equal(1000);
   });
 });
