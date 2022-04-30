@@ -32,28 +32,6 @@ class StateTransitionExecutionContext {
   getOperations() {
     return this.operations;
   }
-
-  /**
-   * Merge too contexts
-   *
-   * @param context
-   */
-  merge(context) {
-    this.operations.concat(context.operations);
-  }
-
-  /**
-   * Clone context
-   *
-   * @return {StateTransitionExecutionContext}
-   */
-  clone() {
-    const context = new StateTransitionExecutionContext();
-
-    context.setOperations([...this.getOperations()]);
-
-    return context;
-  }
 }
 
 module.exports = StateTransitionExecutionContext;

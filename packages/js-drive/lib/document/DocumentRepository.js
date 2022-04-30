@@ -158,7 +158,7 @@ class DocumentRepository {
         ],
       );
     } catch (e) {
-      const invalidQueryMessagePrefix = 'invalid query: ';
+      const invalidQueryMessagePrefix = 'query: start document not found error: ';
 
       if (e.message.startsWith(invalidQueryMessagePrefix)) {
         let validationError;

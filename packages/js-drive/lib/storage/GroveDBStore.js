@@ -202,7 +202,10 @@ class GroveDBStore {
         options.useTransaction || false,
       ));
     } catch (e) {
-      if (e.message.startsWith('path key not found') || e.message.startsWith('path not found')) {
+      if (
+        e.message.startsWith('path key not found')
+        || e.message.startsWith('path not found')
+      ) {
         return new StorageResult(
           null,
           [new ReadOperation(0)],
@@ -273,7 +276,7 @@ class GroveDBStore {
    * @param {Buffer} key
    * @param {Object} [options]
    * @param {boolean} [options.useTransaction=false]
-   * @return {Promise<StorageResult<void>>}
+   * @return {Promise<StorageResult<Buffer|null>>}
    */
   async getAux(key, options = {}) {
     let result;

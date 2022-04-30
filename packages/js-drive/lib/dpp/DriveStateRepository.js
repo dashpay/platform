@@ -1,3 +1,5 @@
+const ReadOperation = require('@dashevo/dpp/lib/stateTransition/fees/operations/ReadOperation');
+
 class DriveStateRepository {
   #options = {};
 
@@ -50,21 +52,37 @@ class DriveStateRepository {
    * Fetch Identity by ID
    *
    * @param {Identifier} id
+   * @param {StateTransitionExecutionContext} [executionContext]
    *
    * @return {Promise<Identity|null>}
    */
-  async fetchIdentity(id) {
-    return this.identityRepository.fetch(id, this.#options.useTransaction || false);
+  async fetchIdentity(id, executionContext = undefined) {
+    const result = await this.identityRepository.fetch(id, this.#options.useTransaction || false);
+
+    if (executionContext) {
+      executionContext.addOperation(...result.getOperations());
+    }
+
+    return result.getValue();
   }
 
   /**
    * Store identity
    *
    * @param {Identity} identity
+   * @param {StateTransitionExecutionContext} [executionContext]
+   *
    * @returns {Promise<void>}
    */
-  async storeIdentity(identity) {
-    await this.identityRepository.store(identity, this.#options.useTransaction || false);
+  async storeIdentity(identity, executionContext = undefined) {
+    const result = await this.identityRepository.store(
+      identity,
+      this.#options.useTransaction || false,
+    );
+
+    if (executionContext) {
+      executionContext.addOperation(...result.getOperations());
+    }
   }
 
   /**
@@ -72,14 +90,19 @@ class DriveStateRepository {
    *
    * @param {Identifier} identityId
    * @param {Buffer[]} publicKeyHashes
+   * @param {StateTransitionExecutionContext} [executionContext]
    *
    * @returns {Promise<void>}
    */
-  async storeIdentityPublicKeyHashes(identityId, publicKeyHashes) {
+  async storeIdentityPublicKeyHashes(identityId, publicKeyHashes, executionContext = undefined) {
     for (const publicKeyHash of publicKeyHashes) {
-      await this.publicKeyToIdentityIdRepository.store(
+      const result = await this.publicKeyToIdentityIdRepository.store(
         publicKeyHash, identityId, this.#options.useTransaction || false,
       );
+
+      if (executionContext) {
+        executionContext.addOperation(...result.getOperations());
+      }
     }
   }
 
@@ -87,43 +110,54 @@ class DriveStateRepository {
    * Store spent asset lock transaction
    *
    * @param {Buffer} outPointBuffer
+   * @param {StateTransitionExecutionContext} [executionContext]
    *
    * @return {Promise<void>}
    */
-  async markAssetLockTransactionOutPointAsUsed(outPointBuffer) {
-    await this.spentAssetLockTransactionsRepository.store(
+  async markAssetLockTransactionOutPointAsUsed(outPointBuffer, executionContext = undefined) {
+    const result = await this.spentAssetLockTransactionsRepository.store(
       outPointBuffer,
       this.#options.useTransaction || false,
     );
+
+    if (executionContext) {
+      executionContext.addOperation(...result.getOperations());
+    }
   }
 
   /**
    * Check if spent asset lock transaction is stored
    *
    * @param {Buffer} outPointBuffer
+   * @param {StateTransitionExecutionContext} [executionContext]
    *
    * @return {Promise<boolean>}
    */
-  async isAssetLockTransactionOutPointAlreadyUsed(outPointBuffer) {
+  async isAssetLockTransactionOutPointAlreadyUsed(outPointBuffer, executionContext = undefined) {
     const result = await this.spentAssetLockTransactionsRepository.fetch(
       outPointBuffer,
       this.#options.useTransaction || false,
     );
 
-    return result !== null;
+    if (executionContext) {
+      executionContext.addOperation(...result.getOperations());
+    }
+
+    return !result.isNull();
   }
 
   /**
    * Fetch identity ids by related public key hashes
    *
    * @param {Buffer[]} publicKeyHashes
+   * @param {StateTransitionExecutionContext} [executionContext]
    *
    * @returns {Promise<Array<Identifier[]>>}
    */
-  async fetchIdentityIdsByPublicKeyHashes(publicKeyHashes) {
+  async fetchIdentityIdsByPublicKeyHashes(publicKeyHashes, executionContext = undefined) {
     // Keep await here.
     // noinspection UnnecessaryLocalVariableJS
-    const identityIds = await Promise.all(
+    const results = await Promise.all(
       publicKeyHashes.map(async (publicKeyHash) => (
         this.publicKeyToIdentityIdRepository.fetch(
           publicKeyHash, this.#options.useTransaction || false,
@@ -131,30 +165,53 @@ class DriveStateRepository {
       )),
     );
 
-    return identityIds;
+    return results.map((result) => {
+      if (executionContext) {
+        executionContext.addOperation(...result.getOperations());
+      }
+
+      return result.getValue();
+    });
   }
 
   /**
    * Fetch Data Contract by ID
    *
    * @param {Identifier} id
+   * @param {StateTransitionExecutionContext} [executionContext]
+   *
    * @returns {Promise<DataContract|null>}
    */
-  async fetchDataContract(id) {
+  async fetchDataContract(id, executionContext = undefined) {
     // Data Contracts should be already committed before use
     // so we don't need transaction here
 
-    return this.dataContractRepository.fetch(id);
+    const result = await this.dataContractRepository.fetch(id);
+
+    if (executionContext) {
+      executionContext.addOperation(...result.getOperations());
+    }
+
+    return result.getValue();
   }
 
   /**
    * Store Data Contract
    *
    * @param {DataContract} dataContract
+   * @param {StateTransitionExecutionContext} [executionContext]
+   *
    * @returns {Promise<void>}
    */
-  async storeDataContract(dataContract) {
-    await this.dataContractRepository.store(dataContract, this.#options.useTransaction || false);
+  async storeDataContract(dataContract, executionContext = undefined) {
+    const result = await this.dataContractRepository.store(
+      dataContract,
+      this.#options.useTransaction || false,
+    );
+
+    if (executionContext) {
+      executionContext.addOperation(...result.getOperations());
+    }
   }
 
   /**
@@ -163,25 +220,42 @@ class DriveStateRepository {
    * @param {Identifier} contractId
    * @param {string} type
    * @param {{ where: Object }} [options]
+   * @param {StateTransitionExecutionContext} [executionContext]
+   *
    * @returns {Promise<Document[]>}
    */
-  async fetchDocuments(contractId, type, options = {}) {
-    return this.fetchDocumentsFunction(
+  async fetchDocuments(contractId, type, options = {}, executionContext = undefined) {
+    const result = await this.fetchDocumentsFunction(
       contractId,
       type,
       options,
       this.#options.useTransaction || false,
     );
+
+    if (executionContext) {
+      executionContext.addOperation(...result.getOperations());
+    }
+
+    return result.getValue();
   }
 
   /**
    * Store document
    *
    * @param {Document} document
+   * @param {StateTransitionExecutionContext} [executionContext]
+   *
    * @returns {Promise<void>}
    */
-  async storeDocument(document) {
-    await this.documentRepository.store(document, this.#options.useTransaction || false);
+  async storeDocument(document, executionContext = undefined) {
+    const result = await this.documentRepository.store(
+      document,
+      this.#options.useTransaction || false,
+    );
+
+    if (executionContext) {
+      executionContext.addOperation(...result.getOperations());
+    }
   }
 
   /**
@@ -190,9 +264,11 @@ class DriveStateRepository {
    * @param {Identifier} contractId
    * @param {string} type
    * @param {Identifier} id
+   * @param {StateTransitionExecutionContext} [executionContext]
+   *
    * @returns {Promise<void>}
    */
-  async removeDocument(contractId, type, id) {
+  async removeDocument(contractId, type, id, executionContext = undefined) {
     const contractIdString = contractId.toString();
 
     // TODO: This is not very clean approach since we have already cached decorator
@@ -200,31 +276,45 @@ class DriveStateRepository {
     let dataContract = this.#dataContractCache.get(contractIdString);
 
     if (!dataContract) {
-      dataContract = await this.fetchDataContract(contractId);
+      dataContract = await this.fetchDataContract(contractId, executionContext);
 
       this.#dataContractCache.set(contractIdString, dataContract);
     }
 
-    await this.documentRepository.delete(
+    const result = await this.documentRepository.delete(
       dataContract,
       type,
       id,
       this.#options.useTransaction || false,
     );
+
+    if (executionContext) {
+      executionContext.addOperation(...result.getOperations());
+    }
   }
 
   /**
    * Fetch Core transaction by ID
    *
    * @param {string} id - Transaction ID hex
+   * @param {StateTransitionExecutionContext} [executionContext]
+   *
    * @returns {Promise<Object|null>}
    */
-  async fetchTransaction(id) {
+  async fetchTransaction(id, executionContext = undefined) {
     try {
       const { result: transaction } = await this.coreRpcClient.getRawTransaction(id, 1);
 
+      const data = Buffer.from(transaction.hex, 'hex');
+
+      if (executionContext) {
+        executionContext.addOperation(
+          new ReadOperation(data.length),
+        );
+      }
+
       return {
-        data: Buffer.from(transaction.hex, 'hex'),
+        data,
         height: transaction.height,
       };
     } catch (e) {
@@ -250,10 +340,12 @@ class DriveStateRepository {
    * Verify instant lock
    *
    * @param {InstantLock} instantLock
+   * @param {StateTransitionExecutionContext} [executionContext]
    *
    * @return {Promise<boolean>}
    */
-  async verifyInstantLock(instantLock) {
+  // eslint-disable-next-line no-unused-vars
+  async verifyInstantLock(instantLock, executionContext = undefined) {
     const header = this.blockExecutionContext.getHeader();
 
     if (header === null) {
