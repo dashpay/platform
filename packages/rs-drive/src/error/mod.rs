@@ -13,18 +13,18 @@ pub mod structure;
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
-    #[error(transparent)]
+    #[error("query: {0}")]
     Query(#[from] QueryError),
-    #[error(transparent)]
+    #[error("drive: {0}")]
     Drive(#[from] DriveError),
-    #[error(transparent)]
+    #[error("grovedb: {0}")]
     GroveDB(#[from] grovedb::Error),
-    #[error(transparent)]
+    #[error("contract: {0}")]
     Contract(#[from] ContractError),
-    #[error(transparent)]
+    #[error("identity: {0}")]
     Identity(#[from] IdentityError),
-    #[error(transparent)]
+    #[error("structure: {0}")]
     Structure(#[from] StructureError),
-    #[error(transparent)]
+    #[error("fee: {0}")]
     Fee(#[from] FeeError),
 }
