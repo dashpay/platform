@@ -18,6 +18,7 @@ const DocumentNotProvidedError = require('../../../../../lib/document/errors/Doc
 const createStateRepositoryMock = require('../../../../../lib/test/mocks/createStateRepositoryMock');
 
 const protocolVersion = require('../../../../../lib/version/protocolVersion');
+const StateTransitionExecutionContext = require('../../../../../lib/stateTransition/StateTransitionExecutionContext');
 
 describe('applyDocumentsBatchTransitionFactory', () => {
   let documents;
@@ -30,6 +31,7 @@ describe('applyDocumentsBatchTransitionFactory', () => {
   let applyDocumentsBatchTransition;
   let stateRepositoryMock;
   let fetchDocumentsMock;
+  let executionContext;
 
   beforeEach(function beforeEach() {
     dataContract = getDataContractFixture();
@@ -56,6 +58,10 @@ describe('applyDocumentsBatchTransitionFactory', () => {
       transitions: documentTransitions.map((t) => t.toObject()),
     }, [dataContract]);
 
+    executionContext = new StateTransitionExecutionContext();
+
+    stateTransition.setExecutionContext(executionContext);
+
     stateRepositoryMock = createStateRepositoryMock(this.sinonSandbox);
     stateRepositoryMock.fetchDataContract.resolves(dataContract);
 
@@ -77,6 +83,7 @@ describe('applyDocumentsBatchTransitionFactory', () => {
 
     expect(fetchDocumentsMock).to.have.been.calledOnceWithExactly(
       [replaceDocumentTransition],
+      executionContext,
     );
 
     expect(stateRepositoryMock.storeDocument).to.have.been.calledTwice();
@@ -89,12 +96,15 @@ describe('applyDocumentsBatchTransitionFactory', () => {
     expect(callsArgs).to.have.deep.members([
       documentsFixture[0],
       documents[0],
+      executionContext,
+      executionContext,
     ]);
 
     expect(stateRepositoryMock.removeDocument).to.have.been.calledOnceWithExactly(
       documentTransitions[2].getDataContractId(),
       documentTransitions[2].getType(),
       documentTransitions[2].getId(),
+      executionContext,
     );
   });
 

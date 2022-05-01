@@ -9,6 +9,7 @@ const generateRandomIdentifier = require('../../../../lib/test/utils/generateRan
 const { expectValidationError } = require('../../../../lib/test/expect/expectError');
 const SomeConsensusError = require('../../../../lib/test/mocks/SomeConsensusError');
 const stateTransitionTypes = require('../../../../lib/stateTransition/stateTransitionTypes');
+const StateTransitionExecutionContext = require('../../../../lib/stateTransition/StateTransitionExecutionContext');
 
 describe('validateStateTransitionIdentitySignatureFactory', () => {
   let validateStateTransitionIdentitySignature;
@@ -19,8 +20,11 @@ describe('validateStateTransitionIdentitySignatureFactory', () => {
   let publicKeyId;
   let validateIdentityExistenceResult;
   let validateIdentityExistenceMock;
+  let executionContext;
 
   beforeEach(function beforeEach() {
+    executionContext = new StateTransitionExecutionContext();
+
     ownerId = generateRandomIdentifier();
     publicKeyId = 1;
     stateTransition = {
@@ -29,6 +33,7 @@ describe('validateStateTransitionIdentitySignatureFactory', () => {
       getSignature: this.sinonSandbox.stub(),
       getOwnerId: this.sinonSandbox.stub().returns(ownerId),
       getType: this.sinonSandbox.stub().returns(stateTransitionTypes.IDENTITY_CREATE),
+      getExecutionContext: this.sinonSandbox.stub().returns(executionContext),
     };
 
     identityPublicKey = {
@@ -65,7 +70,7 @@ describe('validateStateTransitionIdentitySignatureFactory', () => {
     expect(result.getErrors()).to.be.an('array');
     expect(result.getErrors()).to.be.empty();
 
-    expect(validateIdentityExistenceMock).to.be.calledOnceWithExactly(ownerId);
+    expect(validateIdentityExistenceMock).to.be.calledOnceWithExactly(ownerId, executionContext);
     expect(identity.getPublicKeyById).to.be.calledOnceWithExactly(publicKeyId);
     expect(identityPublicKey.getType).to.be.calledOnce();
     expect(stateTransition.getSignaturePublicKeyId).to.be.calledOnce();
@@ -88,7 +93,7 @@ describe('validateStateTransitionIdentitySignatureFactory', () => {
 
     expect(error).to.equal(consensusError);
 
-    expect(validateIdentityExistenceMock).to.be.calledOnceWithExactly(ownerId);
+    expect(validateIdentityExistenceMock).to.be.calledOnceWithExactly(ownerId, executionContext);
     expect(identity.getPublicKeyById).to.not.be.called();
     expect(identityPublicKey.getType).to.not.be.called();
     expect(stateTransition.getSignaturePublicKeyId).to.not.be.called();
@@ -107,7 +112,7 @@ describe('validateStateTransitionIdentitySignatureFactory', () => {
 
     expect(result).to.be.instanceOf(ValidationResult);
     expect(result.isValid()).to.be.false();
-    expect(validateIdentityExistenceMock).to.be.calledOnceWithExactly(ownerId);
+    expect(validateIdentityExistenceMock).to.be.calledOnceWithExactly(ownerId, executionContext);
     expect(identity.getPublicKeyById).to.be.calledOnceWithExactly(publicKeyId);
     expect(stateTransition.getSignaturePublicKeyId).to.be.calledTwice();
     expect(stateTransition.verifySignature).to.not.be.called();
@@ -131,7 +136,7 @@ describe('validateStateTransitionIdentitySignatureFactory', () => {
 
     expect(result).to.be.instanceOf(ValidationResult);
     expect(result.isValid()).to.be.false();
-    expect(validateIdentityExistenceMock).to.be.calledOnceWithExactly(ownerId);
+    expect(validateIdentityExistenceMock).to.be.calledOnceWithExactly(ownerId, executionContext);
     expect(identity.getPublicKeyById).to.be.calledOnceWithExactly(publicKeyId);
     expect(identityPublicKey.getType).to.be.calledThrice();
     expect(stateTransition.getSignaturePublicKeyId).to.be.calledOnce();
@@ -163,7 +168,7 @@ describe('validateStateTransitionIdentitySignatureFactory', () => {
 
     expect(error).to.be.instanceOf(InvalidStateTransitionSignatureError);
 
-    expect(validateIdentityExistenceMock).to.be.calledOnceWithExactly(ownerId);
+    expect(validateIdentityExistenceMock).to.be.calledOnceWithExactly(ownerId, executionContext);
     expect(identity.getPublicKeyById).to.be.calledOnceWithExactly(publicKeyId);
     expect(identityPublicKey.getType).to.be.calledOnce();
     expect(stateTransition.getSignaturePublicKeyId).to.be.calledOnce();

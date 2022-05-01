@@ -22,9 +22,12 @@ function validateInstantAssetLockProofStructureFactory(
   /**
    * @typedef {validateInstantAssetLockProofStructure}
    * @param {RawInstantAssetLockProof} rawAssetLockProof
+   * @param {StateTransitionExecutionContext} executionContext
+   * @returns {Promise<ValidationResult>}
    */
   async function validateInstantAssetLockProofStructure(
     rawAssetLockProof,
+    executionContext,
   ) {
     const result = jsonSchemaValidator.validate(
       instantAssetLockProofSchema,
@@ -50,7 +53,9 @@ function validateInstantAssetLockProofStructureFactory(
       return result;
     }
 
-    if (!await stateRepository.verifyInstantLock(instantLock)) {
+    const isValid = await stateRepository.verifyInstantLock(instantLock, executionContext);
+
+    if (!isValid) {
       result.addError(new InvalidInstantAssetLockProofSignatureError());
 
       return result;
@@ -59,6 +64,7 @@ function validateInstantAssetLockProofStructureFactory(
     const validateAssetLockTransactionResult = await validateAssetLockTransaction(
       rawAssetLockProof.transaction,
       rawAssetLockProof.outputIndex,
+      executionContext,
     );
 
     result.merge(validateAssetLockTransactionResult);
