@@ -39,7 +39,12 @@ function synchronizeMasternodeIdentitiesFactory(
       .getSMLbyHeight(coreHeight)
       .mnList;
 
-    const dataContract = await dataContractRepository.fetch(masternodeRewardSharesContractId, true);
+    const dataContractResult = await dataContractRepository.fetch(
+      masternodeRewardSharesContractId,
+      true,
+    );
+
+    const dataContract = dataContractResult.getValue();
 
     if (lastSyncedCoreHeight === 0) {
       // Create identities for all masternodes on the first sync

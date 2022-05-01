@@ -27,6 +27,7 @@ const UnavailableAbciError = require('../../../../../lib/abci/errors/Unavailable
 const InvalidArgumentAbciError = require('../../../../../lib/abci/errors/InvalidArgumentAbciError');
 const BlockExecutionContextStackMock = require('../../../../../lib/test/mock/BlockExecutionContextStackMock');
 const UnimplementedAbciError = require('../../../../../lib/abci/errors/UnimplementedAbciError');
+const StorageResult = require('../../../../../lib/storage/StorageResult');
 
 describe('documentQueryHandlerFactory', () => {
   let documentQueryHandler;
@@ -96,7 +97,9 @@ describe('documentQueryHandlerFactory', () => {
   });
 
   it('should return serialized documents', async () => {
-    fetchSignedDocumentsMock.resolves(documents);
+    fetchSignedDocumentsMock.resolves(
+      new StorageResult(documents),
+    );
 
     const result = await documentQueryHandler(params, data, {});
 
