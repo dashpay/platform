@@ -11,14 +11,15 @@ function applyIdentityUpdateTransitionFactory(
   /**
    * Apply identity state transition
    *
-   * @typedef applyIdentityUpdateTransition
+   * @typedef {applyIdentityUpdateTransition}
    * @param {IdentityUpdateTransition} stateTransition
    * @returns {Promise<void>}
    */
   async function applyIdentityUpdateTransition(stateTransition) {
     const identityId = stateTransition.getIdentityId();
+    const executionContext = stateTransition.getExecutionContext();
 
-    const identity = await stateRepository.fetchIdentity(identityId);
+    const identity = await stateRepository.fetchIdentity(identityId, executionContext);
 
     identity.setRevision(stateTransition.getRevision());
 
@@ -55,10 +56,11 @@ function applyIdentityUpdateTransitionFactory(
       await stateRepository.storeIdentityPublicKeyHashes(
         identity.getId(),
         publicKeyHashes,
+        executionContext,
       );
     }
 
-    await stateRepository.storeIdentity(identity);
+    await stateRepository.storeIdentity(identity, executionContext);
   }
 
   return applyIdentityUpdateTransition;

@@ -20,10 +20,12 @@ function validateChainAssetLockProofStructureFactory(
   /**
    * @typedef {validateChainAssetLockProofStructure}
    * @param {RawChainAssetLockProof} rawAssetLockProof
+   * @param {StateTransitionExecutionContext} executionContext
    * @returns {ValidationResult}
    */
   async function validateChainAssetLockProofStructure(
     rawAssetLockProof,
+    executionContext,
   ) {
     const result = jsonSchemaValidator.validate(
       chainAssetLockProofSchema,
@@ -57,7 +59,10 @@ function validateChainAssetLockProofStructureFactory(
     const outPoint = Transaction.parseOutPointBuffer(outPointBuffer);
     const { outputIndex, transactionHash } = outPoint;
 
-    const rawTransaction = await stateRepository.fetchTransaction(transactionHash);
+    const rawTransaction = await stateRepository.fetchTransaction(
+      transactionHash,
+      executionContext,
+    );
 
     if (rawTransaction === null) {
       result.addError(
@@ -83,6 +88,7 @@ function validateChainAssetLockProofStructureFactory(
     const validateAssetLockTransactionResult = await validateAssetLockTransaction(
       rawTransaction.data,
       outputIndex,
+      executionContext,
     );
 
     result.merge(validateAssetLockTransactionResult);

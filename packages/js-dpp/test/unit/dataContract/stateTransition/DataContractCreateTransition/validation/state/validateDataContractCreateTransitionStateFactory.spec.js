@@ -9,12 +9,14 @@ const { expectValidationError } = require('../../../../../../../lib/test/expect/
 const ValidationResult = require('../../../../../../../lib/validation/ValidationResult');
 
 const DataContractAlreadyPresentError = require('../../../../../../../lib/errors/consensus/state/dataContract/DataContractAlreadyPresentError');
+const StateTransitionExecutionContext = require('../../../../../../../lib/stateTransition/StateTransitionExecutionContext');
 
 describe('validateDataContractCreateTransitionStateFactory', () => {
   let validateDataContractCreateTransitionState;
   let dataContract;
   let stateTransition;
   let stateRepositoryMock;
+  let executionContext;
 
   beforeEach(function beforeEach() {
     stateRepositoryMock = createStateRepositoryMock(this.sinonSandbox);
@@ -24,6 +26,10 @@ describe('validateDataContractCreateTransitionStateFactory', () => {
       dataContract: dataContract.toObject(),
       entropy: dataContract.getEntropy(),
     });
+
+    executionContext = new StateTransitionExecutionContext();
+
+    stateTransition.setExecutionContext(executionContext);
 
     validateDataContractCreateTransitionState = validateDataContractCreateTransitionStateFactory(
       stateRepositoryMock,
@@ -43,7 +49,10 @@ describe('validateDataContractCreateTransitionStateFactory', () => {
     expect(Buffer.isBuffer(error.getDataContractId())).to.be.true();
     expect(error.getDataContractId()).to.deep.equal(dataContract.getId().toBuffer());
 
-    expect(stateRepositoryMock.fetchDataContract).to.be.calledOnceWithExactly(dataContract.getId());
+    expect(stateRepositoryMock.fetchDataContract).to.be.calledOnceWithExactly(
+      dataContract.getId(),
+      executionContext,
+    );
   });
 
   it('should return valid result', async () => {
@@ -52,6 +61,9 @@ describe('validateDataContractCreateTransitionStateFactory', () => {
     expect(result).to.be.an.instanceOf(ValidationResult);
     expect(result.isValid()).to.be.true();
 
-    expect(stateRepositoryMock.fetchDataContract).to.be.calledOnceWithExactly(dataContract.getId());
+    expect(stateRepositoryMock.fetchDataContract).to.be.calledOnceWithExactly(
+      dataContract.getId(),
+      executionContext,
+    );
   });
 });
