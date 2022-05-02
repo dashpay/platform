@@ -2,7 +2,8 @@ use crate::{
     data_contract::DataContract,
     document::document_transition::Action,
     errors::ProtocolError,
-    util::deserializer::{self, parse_bytes},
+    util::deserializer,
+    util::json_value::JsonValueExt,
     util::json_value::{self, ReplaceWith},
 };
 
@@ -11,6 +12,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 
 pub const INITIAL_REVISION: usize = 1;
+pub const BINARY_FIELDS: [&str; 1] = ["$entropy"];
 
 /**
  * @typedef {RawDocumentTransition & Object} RawDocumentCreateTransition
@@ -47,11 +49,7 @@ impl DocumentCreateTransition {
     pub fn bytes_to_strings(
         raw_create_document_transition: &mut JsonValue,
     ) -> Result<(), ProtocolError> {
-        if let JsonValue::Object(ref mut o) = raw_create_document_transition {
-            parse_bytes(o, &["$entropy"])?;
-        } else {
-            return Err("The raw_transition isn't an Object".into());
-        }
+        raw_create_document_transition.replace_binary_paths(BINARY_FIELDS, ReplaceWith::Base64)?;
         Ok(())
     }
 }
@@ -125,7 +123,6 @@ impl DocumentTransitionObjectLike for DocumentCreateTransition {
 
 #[cfg(test)]
 mod test {
-    use log::trace;
     use std::convert::TryInto;
 
     use super::*;
