@@ -1,6 +1,5 @@
 use super::errors::*;
 use crate::data_contract::get_binary_properties_from_schema::get_binary_properties;
-use crate::util::deserializer;
 use crate::util::json_value::{JsonValueExt, ReplaceWith};
 use crate::util::string_encoding::Encoding;
 use crate::{

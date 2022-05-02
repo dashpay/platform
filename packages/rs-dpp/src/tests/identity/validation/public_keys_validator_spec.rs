@@ -447,7 +447,7 @@ pub fn should_return_invalid_result_if_bls12_381_public_key_is_invalid() {
     }]);
     let raw_public_keys = raw_public_keys_json.as_array().unwrap();
 
-    let result = validator.validate_keys(&raw_public_keys).unwrap();
+    let result = validator.validate_keys(raw_public_keys).unwrap();
 
     let errors = assert_consensus_errors!(
         &result,

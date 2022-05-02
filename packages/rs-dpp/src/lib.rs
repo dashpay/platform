@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 mod contracts;
 pub mod data_contract;
 extern crate core;
