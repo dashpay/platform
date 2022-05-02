@@ -27,6 +27,7 @@ const DATA_CONTRACT_ACTION_DESCRIPTIONS = {
 };
 
 const TIMERS = require('./timers');
+const NegativeBalanceError = require('./errors/NegativeBalanceError');
 
 /**
  * @param {unserializeStateTransition} transactionalUnserializeStateTransition
@@ -135,7 +136,11 @@ function deliverTxHandlerFactory(
       stateTransition.getOwnerId(),
     );
 
-    identity.reduceBalance(stateTransitionFee);
+    const updatedBalance = identity.reduceBalance(stateTransitionFee);
+
+    if (updatedBalance <= 0) {
+      throw new NegativeBalanceError(identity);
+    }
 
     await transactionalDpp.getStateRepository().storeIdentity(identity);
 

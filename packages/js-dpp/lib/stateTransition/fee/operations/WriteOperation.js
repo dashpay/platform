@@ -1,5 +1,11 @@
 const AbstractOperation = require('./AbstractOperation');
 
+const {
+  WRITE_BASE_PROCESSING_COST,
+  PROCESSING_CREDIT_PER_BYTE,
+  STORAGE_CREDIT_PER_BYTE,
+} = require('../constants');
+
 class WriteOperation extends AbstractOperation {
   /**
    * @param {number} keySize
@@ -18,8 +24,8 @@ class WriteOperation extends AbstractOperation {
    * @returns {number}
    */
   getProcessingCost() {
-    return ((this.keySize + this.valueSize) * AbstractOperation.STORAGE_PROCESSING_CREDIT_PER_BYTE)
-      + WriteOperation.BASE_PROCESSING_COST;
+    return ((this.keySize + this.valueSize) * PROCESSING_CREDIT_PER_BYTE)
+      + WRITE_BASE_PROCESSING_COST;
   }
 
   /**
@@ -28,19 +34,8 @@ class WriteOperation extends AbstractOperation {
    * @returns {number}
    */
   getStorageCost() {
-    return (this.keySize + this.valueSize) * AbstractOperation.STORAGE_CREDIT_PER_BYTE;
-  }
-
-  /**
-   * Get operation type
-   *
-   * @returns {string}
-   */
-  getType() {
-    return AbstractOperation.TYPES.WRITE;
+    return (this.keySize + this.valueSize) * STORAGE_CREDIT_PER_BYTE;
   }
 }
-
-WriteOperation.BASE_PROCESSING_COST = 60000;
 
 module.exports = WriteOperation;

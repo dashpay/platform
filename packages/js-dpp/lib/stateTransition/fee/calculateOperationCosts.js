@@ -5,7 +5,7 @@
  *
  * @returns {{ storageCost: number, processingCost: number }}
  */
-function calculateOperationFees(operations) {
+function calculateOperationCosts(operations) {
   const costs = {
     storageCost: 0.0,
     processingCost: 0.0,
@@ -19,4 +19,4 @@ function calculateOperationFees(operations) {
   return costs;
 }
 
-module.exports = calculateOperationFees;
+module.exports = calculateOperationCosts;
