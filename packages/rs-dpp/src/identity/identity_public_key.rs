@@ -10,6 +10,7 @@ use std::{collections::HashMap, hash::Hash};
 
 pub type KeyID = u64;
 
+#[allow(non_camel_case_types)]
 #[repr(u8)]
 #[derive(Debug, PartialEq, Eq, Clone, Copy, Serialize_repr, Deserialize_repr)]
 pub enum KeyType {

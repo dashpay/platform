@@ -202,7 +202,6 @@ mod test {
     use super::*;
     use crate::{assert_error_contains, tests::utils::*};
     use anyhow::Result;
-    use log::trace;
 
     fn init() {
         let _ = env_logger::builder()
