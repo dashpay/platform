@@ -24,7 +24,7 @@ function createRewardShareDocumentFactory(
     operatorIdentifier,
     percentage,
   ) {
-    const documents = await documentRepository.find(
+    const documentsResult = await documentRepository.find(
       dataContract,
       'rewardShare',
       {
@@ -37,7 +37,7 @@ function createRewardShareDocumentFactory(
     );
 
     // Reward share for this operator is already exists
-    if (documents.length > 0) {
+    if (!documentsResult.isEmpty()) {
       return false;
     }
 

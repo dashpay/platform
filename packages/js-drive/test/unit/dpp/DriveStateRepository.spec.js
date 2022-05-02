@@ -3,7 +3,11 @@ const getIdentityFixture = require('@dashevo/dpp/lib/test/fixtures/getIdentityFi
 const getDataContractFixture = require('@dashevo/dpp/lib/test/fixtures/getDataContractFixture');
 const generateRandomIdentifier = require('@dashevo/dpp/lib/test/utils/generateRandomIdentifier');
 
+const ReadOperation = require('@dashevo/dpp/lib/stateTransition/fees/operations/ReadOperation');
+const StateTransitionExecutionContext = require('@dashevo/dpp/lib/stateTransition/StateTransitionExecutionContext');
+
 const DriveStateRepository = require('../../../lib/dpp/DriveStateRepository');
+const StorageResult = require('../../../lib/storage/StorageResult');
 
 describe('DriveStateRepository', () => {
   let stateRepository;
@@ -23,6 +27,8 @@ describe('DriveStateRepository', () => {
   let instantLockMock;
   let dataContractCacheMock;
   let repositoryOptions;
+  let executionContext;
+  let operations;
 
   beforeEach(function beforeEach() {
     identity = getIdentityFixture();
@@ -99,41 +105,59 @@ describe('DriveStateRepository', () => {
       signature: 'signature',
       verify: this.sinon.stub(),
     };
+
+    executionContext = new StateTransitionExecutionContext();
+    operations = [new ReadOperation(1)];
   });
 
   describe('#fetchIdentity', () => {
     it('should fetch identity from repository', async () => {
-      identityRepositoryMock.fetch.resolves(identity);
+      identityRepositoryMock.fetch.resolves(
+        new StorageResult(identity, operations),
+      );
 
-      const result = await stateRepository.fetchIdentity(id);
+      const result = await stateRepository.fetchIdentity(id, executionContext);
 
       expect(result).to.equal(identity);
       expect(identityRepositoryMock.fetch).to.be.calledOnceWith(
         id,
         repositoryOptions.useTransaction,
       );
+
+      expect(executionContext.getOperations()).to.deep.equals(operations);
     });
   });
 
   describe('#storeIdentity', () => {
     it('should store identity to repository', async () => {
-      await stateRepository.storeIdentity(identity);
+      identityRepositoryMock.store.resolves(
+        new StorageResult(undefined, operations),
+      );
+
+      await stateRepository.storeIdentity(identity, executionContext);
 
       expect(identityRepositoryMock.store).to.be.calledOnceWith(
         identity,
         repositoryOptions.useTransaction,
       );
+
+      expect(executionContext.getOperations()).to.deep.equals(operations);
     });
   });
 
   describe('#storeIdentityPublicKeyHashes', () => {
     it('should store public key hashes for an identity id to repository', async () => {
+      publicKeyIdentityIdRepositoryMock.store.resolves(
+        new StorageResult(undefined, operations),
+      );
+
       await stateRepository.storeIdentityPublicKeyHashes(
         identity.getId(),
         [
           identity.getPublicKeyById(0).hash(),
           identity.getPublicKeyById(1).hash(),
         ],
+        executionContext,
       );
 
       expect(publicKeyIdentityIdRepositoryMock.store).to.have.been.calledTwice();
@@ -147,6 +171,8 @@ describe('DriveStateRepository', () => {
         identity.getId(),
         repositoryOptions.useTransaction,
       ]);
+
+      expect(executionContext.getOperations()).to.deep.equals(operations.concat(operations));
     });
   });
 
@@ -160,21 +186,24 @@ describe('DriveStateRepository', () => {
       publicKeyIdentityIdRepositoryMock
         .fetch
         .withArgs(publicKeyHashes[0])
-        .resolves(identity.getId());
+        .resolves(new StorageResult(identity.getId(), operations));
 
       publicKeyIdentityIdRepositoryMock
         .fetch
         .withArgs(publicKeyHashes[1])
-        .resolves(identity.getId());
+        .resolves(new StorageResult(identity.getId(), operations));
 
       const result = await stateRepository.fetchIdentityIdsByPublicKeyHashes(
         publicKeyHashes,
+        executionContext,
       );
 
       expect(result).to.have.deep.members([
         identity.getId(),
         identity.getId(),
       ]);
+
+      expect(executionContext.getOperations()).to.deep.equals(operations.concat(operations));
     });
 
     it('should have null as value if pair was not found', async () => {
@@ -186,43 +215,56 @@ describe('DriveStateRepository', () => {
       publicKeyIdentityIdRepositoryMock
         .fetch
         .withArgs(publicKeyHashes[0])
-        .resolves(identity.getId());
+        .resolves(new StorageResult(identity.getId(), operations));
 
       publicKeyIdentityIdRepositoryMock
         .fetch
         .withArgs(publicKeyHashes[1])
-        .resolves(null);
+        .resolves(new StorageResult(null, operations));
 
       const result = await stateRepository.fetchIdentityIdsByPublicKeyHashes(
         publicKeyHashes,
+        executionContext,
       );
 
       expect(result).to.have.deep.members([
         identity.getId(),
         null,
       ]);
+
+      expect(executionContext.getOperations()).to.deep.equals(operations.concat(operations));
     });
   });
 
   describe('#fetchDataContract', () => {
     it('should fetch data contract from repository', async () => {
-      dataContractRepositoryMock.fetch.resolves(dataContract);
+      dataContractRepositoryMock.fetch.resolves(
+        new StorageResult(dataContract, operations),
+      );
 
-      const result = await stateRepository.fetchDataContract(id);
+      const result = await stateRepository.fetchDataContract(id, executionContext);
 
       expect(result).to.equal(dataContract);
       expect(dataContractRepositoryMock.fetch).to.be.calledOnceWith(id);
+
+      expect(executionContext.getOperations()).to.deep.equals(operations);
     });
   });
 
   describe('#storeDataContract', () => {
     it('should store data contract to repository', async () => {
-      await stateRepository.storeDataContract(dataContract);
+      dataContractRepositoryMock.store.resolves(
+        new StorageResult(undefined, operations),
+      );
+
+      await stateRepository.storeDataContract(dataContract, executionContext);
 
       expect(dataContractRepositoryMock.store).to.be.calledOnceWith(
         dataContract,
         repositoryOptions.useTransaction,
       );
+
+      expect(executionContext.getOperations()).to.deep.equals(operations);
     });
   });
 
@@ -231,9 +273,16 @@ describe('DriveStateRepository', () => {
       const type = 'documentType';
       const options = {};
 
-      fetchDocumentsMock.resolves(documents);
+      fetchDocumentsMock.resolves(
+        new StorageResult(documents, operations),
+      );
 
-      const result = await stateRepository.fetchDocuments(id, type, options);
+      const result = await stateRepository.fetchDocuments(
+        id,
+        type,
+        options,
+        executionContext,
+      );
 
       expect(result).to.equal(documents);
       expect(fetchDocumentsMock).to.be.calledOnceWith(
@@ -242,30 +291,44 @@ describe('DriveStateRepository', () => {
         options,
         repositoryOptions.useTransaction,
       );
+
+      expect(executionContext.getOperations()).to.deep.equals(operations);
     });
   });
 
   describe('#storeDocument', () => {
     it('should store document in repository', async () => {
+      documentsRepositoryMock.store.resolves(
+        new StorageResult(undefined, operations),
+      );
+
       const [document] = documents;
-      await stateRepository.storeDocument(document);
+
+      await stateRepository.storeDocument(document, executionContext);
 
       expect(documentsRepositoryMock.store).to.be.calledOnceWith(
         document,
         repositoryOptions.useTransaction,
       );
+
+      expect(executionContext.getOperations()).to.deep.equals(operations);
     });
   });
 
   describe('#removeDocument', () => {
     it('should delete document from repository', async () => {
       dataContractCacheMock.get.returns(null);
-      dataContractRepositoryMock.fetch.resolves(dataContract);
+      dataContractRepositoryMock.fetch.resolves(
+        new StorageResult(dataContract, operations),
+      );
+      documentsRepositoryMock.delete.resolves(
+        new StorageResult(undefined, operations),
+      );
 
       const contractId = generateRandomIdentifier();
       const type = 'documentType';
 
-      await stateRepository.removeDocument(contractId, type, id);
+      await stateRepository.removeDocument(contractId, type, id, executionContext);
 
       expect(dataContractRepositoryMock.fetch).to.be.calledOnceWithExactly(contractId);
       expect(dataContractCacheMock.set).to.be.calledOnceWithExactly(
@@ -279,6 +342,8 @@ describe('DriveStateRepository', () => {
         id,
         repositoryOptions.useTransaction,
       );
+
+      expect(executionContext.getOperations()).to.deep.equals(operations.concat(operations));
     });
   });
 
@@ -291,13 +356,18 @@ describe('DriveStateRepository', () => {
 
       coreRpcClientMock.getRawTransaction.resolves({ result: rawTransaction });
 
-      const result = await stateRepository.fetchTransaction(id);
+      const result = await stateRepository.fetchTransaction(id, executionContext);
 
       expect(result).to.deep.equal({
         data: Buffer.from(rawTransaction.hex, 'hex'),
         height: rawTransaction.height,
       });
+
       expect(coreRpcClientMock.getRawTransaction).to.be.calledOnceWithExactly(id, 1);
+
+      const operation = new ReadOperation(Buffer.from(rawTransaction.hex, 'hex').length);
+
+      expect(executionContext.getOperations()).to.deep.equals([operation]);
     });
 
     it('should return null if core throws Invalid address or key error', async () => {

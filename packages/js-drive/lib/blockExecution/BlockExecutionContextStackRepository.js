@@ -42,10 +42,12 @@ class BlockExecutionContextStackRepository {
    * @return {BlockExecutionContextStack}
    */
   async fetch(useTransaction = false) {
-    const blockExecutionContextsEncoded = await this.db.getAux(
+    const blockExecutionContextsEncodedResult = await this.db.getAux(
       BlockExecutionContextStackRepository.EXTERNAL_STORE_KEY_NAME,
       { useTransaction },
     );
+
+    const blockExecutionContextsEncoded = blockExecutionContextsEncodedResult.getValue();
 
     const blockExecutionContextStack = new BlockExecutionContextStack();
 

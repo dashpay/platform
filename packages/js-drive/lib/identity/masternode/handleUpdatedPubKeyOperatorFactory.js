@@ -75,7 +75,7 @@ function handleUpdatedPubKeyOperatorFactory(
 
     const previousOperatorIdentifier = createOperatorIdentifier(previousMasternodeEntry);
 
-    const previousDocuments = await documentRepository.find(
+    const previousDocumentsResult = await documentRepository.find(
       dataContract,
       'rewardShare',
       {
@@ -87,8 +87,8 @@ function handleUpdatedPubKeyOperatorFactory(
       true,
     );
 
-    if (previousDocuments.length > 0) {
-      const [previousDocument] = previousDocuments;
+    if (!previousDocumentsResult.isEmpty()) {
+      const [previousDocument] = previousDocumentsResult.getValue();
 
       await documentRepository.delete(
         dataContract,
