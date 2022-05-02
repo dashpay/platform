@@ -84,34 +84,38 @@ function synchronizeMasternodeIdentitiesFactory(
           );
         }
 
-        const payoutAddressIsChanged = previousMNList.find((previousMnListEntry) => (
+        const mnEntryWithChangedPayoutAddress = previousMNList.find((previousMnListEntry) => (
           previousMnListEntry.proRegTxHash === mnEntry.proRegTxHash
           && previousMnListEntry.payoutAddress !== mnEntry.payoutAddress
         ));
 
-        if (payoutAddressIsChanged) {
-          const newPayoutAddress = Address.fromString(mnEntry.scriptPayout);
-          const previousPayoutAddress = Address.fromString(previousMnEntry.payoutAddress);
+        if (mnEntryWithChangedPayoutAddress) {
+          const newPayoutAddress = Address.fromString(mnEntry.payoutAddress);
+          const previousPayoutAddress = mnEntryWithChangedPayoutAddress.payoutAddress
+            ? Address.fromString(mnEntryWithChangedPayoutAddress.payoutAddress)
+            : undefined;
 
           await handleUpdatedScriptPayout(
-            Identifier.from(Buffer.from(Identifier.proRegTxHash, 'hex')),
+            Identifier.from(Buffer.from(mnEntry.proRegTxHash, 'hex')),
             new Script(newPayoutAddress).toBuffer(),
             new Script(previousPayoutAddress).toBuffer(),
           );
         }
 
-        const operatorPayoutAddressIsChanged = previousMNList.find((previousMnListEntry) => (
-          previousMnListEntry.proRegTxHash === mnEntry.proRegTxHash
-          && previousMnListEntry.operatorPayoutAddress !== mnEntry.operatorPayoutAddress
-        ));
+        const mnEntryWithChangedOperatorPayoutAddress = previousMNList
+          .find((previousMnListEntry) => (
+            previousMnListEntry.proRegTxHash === mnEntry.proRegTxHash
+            && previousMnListEntry.operatorPayoutAddress !== mnEntry.operatorPayoutAddress
+          ));
 
-        if (operatorPayoutAddressIsChanged) {
-          const newOperatorPayoutAddress = Address.fromString(
-            previousMnEntry.operatorPayoutAddress,
-          );
-          const previousOperatorPayoutAddress = Address.fromString(
-            mnEntry.operatorPayoutAddress,
-          );
+        if (mnEntryWithChangedOperatorPayoutAddress) {
+          const newOperatorPayoutAddress = Address.fromString(mnEntry.operatorPayoutAddress);
+
+          const { operatorPayoutAddress } = mnEntryWithChangedOperatorPayoutAddress;
+
+          const previousOperatorPayoutAddress = operatorPayoutAddress
+            ? Address.fromString(operatorPayoutAddress)
+            : undefined;
 
           await handleUpdatedScriptPayout(
             createOperatorIdentifier(mnEntry),

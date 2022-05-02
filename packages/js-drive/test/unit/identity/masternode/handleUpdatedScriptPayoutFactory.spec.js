@@ -2,6 +2,7 @@ const createStateRepositoryMock = require('@dashevo/dpp/lib/test/mocks/createSta
 const IdentityPublicKey = require('@dashevo/dpp/lib/identity/IdentityPublicKey');
 const getIdentityFixture = require('@dashevo/dpp/lib/test/fixtures/getIdentityFixture');
 const Identity = require('@dashevo/dpp/lib/identity/Identity');
+const Script = require('@dashevo/dashcore-lib/lib/script');
 const identitySchema = require('@dashevo/dpp/schema/identity/identity.json');
 const handleUpdatedScriptPayoutFactory = require('../../../../lib/identity/masternode/handleUpdatedScriptPayoutFactory');
 
@@ -71,6 +72,35 @@ describe('handleUpdatedScriptPayoutFactory', () => {
     const identityToStore = new Identity(identity.toObject());
 
     identityPublicKeys[0].disabledAt = fakeTimeDate.getTime();
+
+    const newWithdrawalIdentityPublicKey = new IdentityPublicKey()
+      .setId(2)
+      .setType(IdentityPublicKey.TYPES.ECDSA_HASH160)
+      .setData(Buffer.from(newPubKeyData))
+      .setPurpose(IdentityPublicKey.PURPOSES.WITHDRAW)
+      .setSecurityLevel(IdentityPublicKey.SECURITY_LEVELS.MASTER);
+
+    identityPublicKeys.push(newWithdrawalIdentityPublicKey);
+    identityToStore.setPublicKeys(identityPublicKeys);
+
+    expect(stateRepositoryMock.storeIdentity).to.be.calledOnceWithExactly(identityToStore);
+    expect(stateRepositoryMock.storeIdentityPublicKeyHashes).to.be.calledOnceWithExactly(
+      identity.getId(),
+      [newPubKeyData],
+    );
+  });
+
+  it('should store add public keys to the stored identity', async () => {
+    const newPubKeyData = Buffer.alloc(20, '0');
+    const identityPublicKeys = identity.getPublicKeys();
+
+    await handleUpdatedScriptPayout(
+      identity.getId(),
+      newPubKeyData,
+      new Script().toBuffer(),
+    );
+
+    const identityToStore = new Identity(identity.toObject());
 
     const newWithdrawalIdentityPublicKey = new IdentityPublicKey()
       .setId(2)
