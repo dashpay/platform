@@ -32,7 +32,7 @@ pub struct DocumentCreateTransition {
     #[serde(flatten)]
     /// Document Base Transition
     pub base: DocumentBaseTransition,
-    #[serde(rename = "$entropy", with = "entropy_serde")]
+    #[serde(rename = "$entropy", with = "deserializer::serde_entropy")]
     /// Entropy ised in creating the Document ID.
     pub entropy: [u8; 32],
     #[serde(rename = "$createdAt", skip_serializing_if = "Option::is_none")]
@@ -123,42 +123,21 @@ impl DocumentTransitionObjectLike for DocumentCreateTransition {
     }
 }
 
-mod entropy_serde {
-    use std::convert::TryInto;
-
-    use serde::{Deserialize, Deserializer, Serializer};
-    pub fn deserialize<'de, D: Deserializer<'de>>(d: D) -> Result<[u8; 32], D::Error> {
-        let data: String = Deserialize::deserialize(d)?;
-        base64::decode(&data)
-            .map_err(|e| {
-                serde::de::Error::custom(format!("Unable to decode {}' with base64 - {}", data, e))
-            })?
-            .try_into()
-            .map_err(|_| {
-                serde::de::Error::custom(format!(
-                    "Unable to convert the '{:?}' into 32 bytes array",
-                    data
-                ))
-            })
-    }
-
-    pub fn serialize<S>(buffer: &[u8], serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        serializer.serialize_str(&base64::encode(&buffer))
-    }
-}
-
 #[cfg(test)]
 mod test {
     use log::trace;
     use std::convert::TryInto;
 
     use super::*;
+    fn init() {
+        let _ = env_logger::builder()
+            .filter_level(log::LevelFilter::Debug)
+            .try_init();
+    }
 
     #[test]
     fn test_deserialize_serialize_to_json() {
+        init();
         let transition_json = r#"{
 					"$id": "6oCKUeLVgjr7VZCyn1LdGbrepqKLmoabaff5WQqyTKYP",
 					"$type": "note",
@@ -176,7 +155,6 @@ mod test {
 
         let cdt: DocumentCreateTransition =
             serde_json::from_str(transition_json).expect("no error");
-        trace!("the parsed Document Create Transition is {:#?}", cdt);
 
         assert_eq!(cdt.base.action, Action::Create);
         assert_eq!(cdt.base.document_type, "note");

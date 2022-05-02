@@ -85,10 +85,16 @@ impl DocumentTransitionObjectLike for DocumentReplaceTransition {
 #[cfg(test)]
 mod test {
     use super::*;
-    use log::trace;
+
+    fn init() {
+        let _ = env_logger::builder()
+            .filter_level(log::LevelFilter::Debug)
+            .try_init();
+    }
 
     #[test]
     fn test_deserialize_serialize_to_json() {
+        init();
         let transition_json = r#"{
 					"$id": "6oCKUeLVgjr7VZCyn1LdGbrepqKLmoabaff5WQqyTKYP",
 					"$type": "note",
@@ -100,7 +106,6 @@ mod test {
 
         let cdt: DocumentReplaceTransition =
             serde_json::from_str(transition_json).expect("no error");
-        trace!("the parsed Document Transition is {:#?}", cdt);
 
         assert_eq!(cdt.base.action, Action::Replace);
         assert_eq!(cdt.base.document_type, "note");

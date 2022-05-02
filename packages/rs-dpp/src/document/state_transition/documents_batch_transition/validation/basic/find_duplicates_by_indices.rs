@@ -5,7 +5,7 @@ use serde_json::Value;
 use crate::{
     document::document_transition::DocumentTransition,
     prelude::DataContract,
-    util::json_schema::{get_indices_from_json_schema, Index},
+    util::json_schema::{Index, JsonSchemaExt},
 };
 
 #[macro_export]
@@ -102,10 +102,12 @@ fn is_duplicate_by_indices(
 }
 
 fn get_unique_indices(document_type: &str, data_contract: &DataContract) -> Vec<Index> {
-    let indices =
-        get_indices_from_json_schema(data_contract.get_document_schema(document_type).unwrap());
-    println!("indices: {:?}", indices);
+    let indices = data_contract
+        .get_document_schema(document_type)
+        .unwrap()
+        .get_indices();
     indices
+        // TODO should we panic or we should return and error or empty vector
         .expect("error while getting indices from json schema")
         .into_iter()
         .filter(|i| i.unique)

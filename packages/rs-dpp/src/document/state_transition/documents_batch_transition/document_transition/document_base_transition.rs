@@ -1,5 +1,9 @@
 use crate::{
-    data_contract::DataContract, errors::ProtocolError, identifier::Identifier, util::deserializer,
+    data_contract::DataContract,
+    errors::ProtocolError,
+    identifier::Identifier,
+    util::deserializer,
+    util::json_value::{JsonValueExt, ReplaceWith},
 };
 use anyhow::bail;
 use serde::{Deserialize, Serialize};
@@ -7,6 +11,8 @@ use serde_repr::*;
 use std::convert::TryFrom;
 
 pub use serde_json::Value as JsonValue;
+
+const IDENTIFIER_FIELDS: [&str; 2] = ["$id", "$dataContractId"];
 
 #[derive(Debug, Serialize_repr, Deserialize_repr, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
@@ -52,22 +58,6 @@ impl TryFrom<String> for Action {
     }
 }
 
-/**
- * @typedef {Object} RawDocumentTransition
- * @property {Buffer} $id
- * @property {string} $type
- * @property {number} $action
- * @property {Buffer} $dataContractId
- */
-
-/**
- * @typedef {Object} JsonDocumentTransition
- * @property {string} $id
- * @property {string} $type
- * @property {number} $action
- * @property {string} $dataContractId
- */
-
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct DocumentBaseTransition {
@@ -91,11 +81,7 @@ impl DocumentBaseTransition {
     pub fn identifiers_to_strings(
         raw_document_transition: &mut JsonValue,
     ) -> Result<(), ProtocolError> {
-        if let JsonValue::Object(ref mut o) = raw_document_transition {
-            deserializer::parse_identities(o, &["$id", "$dataContractId"])?;
-        } else {
-            return Err("The raw_transition isn't an Object".into());
-        }
+        raw_document_transition.replace_identifier_paths(IDENTIFIER_FIELDS, ReplaceWith::Base58)?;
         Ok(())
     }
 }
@@ -122,19 +108,8 @@ impl DocumentTransitionObjectLike for DocumentBaseTransition {
 
     fn to_object(&self) -> Result<JsonValue, ProtocolError> {
         let mut object = serde_json::to_value(&self)?;
-        if !object.is_object() {
-            return Err("The Document Base Transition isn't an Object".into());
-        }
 
-        let id = self.id.to_vec();
-        let data_contract_id = self.data_contract_id.to_vec();
-        if let JsonValue::Object(ref mut o) = object {
-            o.insert(String::from("$id"), JsonValue::Array(id));
-            o.insert(
-                String::from("$dataContractId"),
-                JsonValue::Array(data_contract_id),
-            );
-        }
+        object.replace_identifier_paths(IDENTIFIER_FIELDS, ReplaceWith::Bytes)?;
         Ok(object)
     }
 

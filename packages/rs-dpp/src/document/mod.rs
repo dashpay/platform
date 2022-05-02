@@ -8,7 +8,6 @@ use crate::data_contract::DataContract;
 use crate::errors::ProtocolError;
 use crate::identifier::Identifier;
 use crate::metadata::Metadata;
-use crate::util::deserializer;
 use crate::util::hash::hash;
 use crate::util::json_value::{JsonValueExt, ReplaceWith};
 use crate::util::serializer;
@@ -47,8 +46,6 @@ pub struct Document {
     pub entropy: Option<[u8; 32]>,
 }
 
-// per https://www.reddit.com/r/rust/comments/d7w6n7/is_it_idiomatic_to_write_setters_and_getters/
-// we don't want to use getters and setters
 impl Document {
     pub fn to_json(&self) -> Result<JsonValue, ProtocolError> {
         Ok(serde_json::to_value(&self)?)
@@ -57,21 +54,13 @@ impl Document {
     pub fn from_buffer(b: impl AsRef<[u8]>) -> Result<Document, ProtocolError> {
         let (protocol_bytes, document_bytes) = b.as_ref().split_at(4);
 
-        let json_value: JsonValue = ciborium::de::from_reader(document_bytes)
+        let mut json_value: JsonValue = ciborium::de::from_reader(document_bytes)
             .map_err(|e| ProtocolError::EncodingError(format!("{}", e)))?;
 
-        let mut json_map = if let JsonValue::Object(v) = json_value {
-            v
-        } else {
-            return Err(ProtocolError::EncodingError(String::from(
-                "input data cannot be parsed into the map",
-            )));
-        };
+        json_value.parse_and_add_protocol_version(protocol_bytes)?;
+        json_value.replace_identifier_paths(IDENTIFIER_FIELDS, ReplaceWith::Base58)?;
 
-        deserializer::parse_protocol_version(protocol_bytes, &mut json_map)?;
-        deserializer::parse_identities(&mut json_map, &IDENTIFIER_FIELDS)?;
-
-        let document: Document = serde_json::from_value(JsonValue::Object(json_map))?;
+        let document: Document = serde_json::from_value(json_value)?;
         Ok(document)
     }
 

@@ -1,8 +1,9 @@
+use crate::util::deserializer;
 use anyhow::{anyhow, bail};
 use std::{collections::BTreeMap, convert::TryInto};
 
 use log::trace;
-use serde_json::Value as JsonValue;
+use serde_json::{Number, Value as JsonValue};
 
 use super::{
     json_path::{JsonPath, JsonPathLiteral, JsonPathStep},
@@ -21,75 +22,6 @@ pub enum ReplaceWith {
     Base58,
 }
 
-pub trait JsonValueSchemaExt {
-    /// returns true if json value contains property 'type`, and it equals 'object'
-    fn is_type_of_object(&self) -> bool;
-    /// returns true if json value contains property 'type`, and it equals 'array'
-    fn is_type_of_array(&self) -> bool;
-    /// returns true if json value contains property `byteArray` and it equals true
-    fn is_byte_array(&self) -> bool;
-    /// returns the properties of Json Schema object
-    fn get_schema_properties(&self) -> Result<&JsonValue, anyhow::Error>;
-    /// returns the required fields of Json Schema object
-    fn get_schema_required_fields(&self) -> Result<Vec<&str>, anyhow::Error>;
-}
-
-impl JsonValueSchemaExt for JsonValue {
-    fn get_schema_required_fields(&self) -> Result<Vec<&str>, anyhow::Error> {
-        if let JsonValue::Object(ref map) = self {
-            let required = map.get("required");
-            if required.is_none() {
-                return Ok(vec![]);
-            }
-            if let JsonValue::Array(required_list) = required.unwrap() {
-                return required_list
-                    .iter()
-                    .map(|v| v.as_str())
-                    .collect::<Option<Vec<&str>>>()
-                    .ok_or_else(|| anyhow!("unable to convert list of required fields to string"));
-            }
-            bail!("the 'required' property is not array");
-        }
-        bail!("the json value is not a map");
-    }
-
-    fn is_type_of_object(&self) -> bool {
-        if let JsonValue::Object(ref map) = self {
-            if let Some(JsonValue::String(schema_type)) = map.get("type") {
-                return schema_type == "object";
-            }
-        }
-        false
-    }
-
-    fn is_type_of_array(&self) -> bool {
-        if let JsonValue::Object(ref map) = self {
-            if let Some(JsonValue::String(schema_type)) = map.get("type") {
-                return schema_type == "array";
-            }
-        }
-        false
-    }
-
-    fn is_byte_array(&self) -> bool {
-        if let JsonValue::Object(ref map) = self {
-            if let Some(JsonValue::Bool(is_byte_array)) = map.get("byteArray") {
-                return *is_byte_array;
-            }
-        }
-        false
-    }
-
-    fn get_schema_properties(&self) -> Result<&JsonValue, anyhow::Error> {
-        if let JsonValue::Object(ref map) = self {
-            return map
-                .get("properties")
-                .ok_or_else(|| anyhow!("Couldn't find 'properties' in '{:?}'", map));
-        }
-        bail!("the {:?} isn't an map", self);
-    }
-}
-
 /// JsonValueExt contains a set of helper methods that simplify work with JsonValue
 pub trait JsonValueExt {
     fn get_string(&self, property_name: &str) -> Result<&str, anyhow::Error>;
@@ -97,18 +29,28 @@ pub trait JsonValueExt {
     fn get_f64(&self, property_name: &str) -> Result<f64, anyhow::Error>;
     fn get_u64(&self, property_name: &str) -> Result<u64, anyhow::Error>;
     fn get_bytes(&self, property_name: &str) -> Result<Vec<u8>, anyhow::Error>;
+    /// returns the the mutable JsonValue from provided path. The path is dot-separated string. i.e `properties.id`
     fn get_value_mut(&mut self, string_path: &str) -> Result<&mut JsonValue, anyhow::Error>;
+    /// returns the the JsonValue from provided path. The path is dot-separated string. i.e `properties[0].id`
     fn get_value(&self, string_path: &str) -> Result<&JsonValue, anyhow::Error>;
+    /// return  the JsonValue from from provided path. The path is a slice of [`JsonPathStep`]
     fn get_value_by_path(&self, path: &[JsonPathStep]) -> Result<&JsonValue, anyhow::Error>;
+    /// return  the mutable JsonValue from from provided path. The path is a slice of [`JsonPathStep`]
     fn get_value_by_path_mut(
         &mut self,
         path: &[JsonPathStep],
     ) -> Result<&mut JsonValue, anyhow::Error>;
+    /// replaces Identifiers specified by path with either the Bytes format or Base58-encoded string format
     fn replace_identifier_paths<'a>(
         &mut self,
         paths: impl IntoIterator<Item = &'a str>,
         with: ReplaceWith,
     ) -> Result<(), anyhow::Error>;
+
+    fn parse_and_add_protocol_version(
+        &mut self,
+        protocol_bytes: &[u8],
+    ) -> Result<(), ProtocolError>;
 }
 
 impl JsonValueExt for JsonValue {
@@ -129,9 +71,9 @@ impl JsonValueExt for JsonValue {
             .ok_or_else(|| anyhow!("the property {} doesn't exist in Json Value", property_name))?;
 
         if let JsonValue::Number(s) = property_value {
-            return Ok(s
+            return s
                 .as_u64()
-                .ok_or_else(|| anyhow!("unable convert {} to u32", s))?);
+                .ok_or_else(|| anyhow!("unable convert {} to u64", s));
         }
         bail!("{:?} isn't a number", property_value);
     }
@@ -142,9 +84,9 @@ impl JsonValueExt for JsonValue {
             .ok_or_else(|| anyhow!("the property {} doesn't exist in Json Value", property_name))?;
 
         if let JsonValue::Number(s) = property_value {
-            return Ok(s
+            return s
                 .as_i64()
-                .ok_or_else(|| anyhow!("unable convert {} to i64", s))?);
+                .ok_or_else(|| anyhow!("unable convert {} to i64", s));
         }
         bail!("{:?} isn't a number", property_value);
     }
@@ -155,9 +97,9 @@ impl JsonValueExt for JsonValue {
             .ok_or_else(|| anyhow!("the property {} doesn't exist in Json Value", property_name))?;
 
         if let JsonValue::Number(s) = property_value {
-            return Ok(s
+            return s
                 .as_f64()
-                .ok_or_else(|| anyhow!("unable convert {} to f64", s))?);
+                .ok_or_else(|| anyhow!("unable convert {} to f64", s));
         }
         bail!("{:?} isn't a number", property_value);
     }
@@ -205,7 +147,6 @@ impl JsonValueExt for JsonValue {
             .ok_or_else(|| anyhow!("the property '{:?}' not found", path))
     }
 
-    /// replaces the Identifiers given path paths with either the Bytes or Base58 form
     fn replace_identifier_paths<'a>(
         &mut self,
         paths: impl IntoIterator<Item = &'a str>,
@@ -222,6 +163,24 @@ impl JsonValueExt for JsonValue {
                 }
             }
         }
+        Ok(())
+    }
+
+    fn parse_and_add_protocol_version<'a>(
+        &mut self,
+        protocol_bytes: &[u8],
+    ) -> Result<(), ProtocolError> {
+        let protocol_version = deserializer::get_protocol_version(protocol_bytes)?;
+        match self {
+            JsonValue::Object(ref mut m) => {
+                m.insert(
+                    String::from("$protocolVersion"),
+                    JsonValue::Number(Number::from(protocol_version)),
+                );
+            }
+            _ => return Err(anyhow!("The '{:?}' isn't a map", self).into()),
+        }
+
         Ok(())
     }
 }

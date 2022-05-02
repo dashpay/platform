@@ -1,4 +1,4 @@
-use crate::util::{json_value::JsonValueExt, json_value::JsonValueSchemaExt};
+use crate::util::{json_schema::JsonSchemaExt, json_value::JsonValueExt};
 use anyhow::anyhow;
 use lazy_static::lazy_static;
 use serde_json::Value as JsonValue;

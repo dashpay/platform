@@ -53,21 +53,15 @@ impl DataContract {
     pub fn from_buffer(b: impl AsRef<[u8]>) -> Result<DataContract, ProtocolError> {
         let (protocol_bytes, document_bytes) = b.as_ref().split_at(4);
 
-        let json_value: JsonValue = ciborium::de::from_reader(document_bytes)
+        let mut json_value: JsonValue = ciborium::de::from_reader(document_bytes)
             .map_err(|e| ProtocolError::EncodingError(format!("{}", e)))?;
 
-        let mut json_map = if let JsonValue::Object(v) = json_value {
-            v
-        } else {
-            return Err(ProtocolError::EncodingError(String::from(
-                "input data cannot be parsed into the map",
-            )));
-        };
+        json_value.parse_and_add_protocol_version(protocol_bytes)?;
 
-        deserializer::parse_protocol_version(protocol_bytes, &mut json_map)?;
-        deserializer::parse_identities(&mut json_map, &IDENTIFIER_FIELDS)?;
+        // Identifiers fields should be replaced with the string format to deserialize Data Contract
+        json_value.replace_identifier_paths(IDENTIFIER_FIELDS, ReplaceWith::Base58)?;
 
-        let mut data_contract: DataContract = serde_json::from_value(JsonValue::Object(json_map))?;
+        let mut data_contract: DataContract = serde_json::from_value(json_value)?;
         data_contract.generate_binary_properties();
         Ok(data_contract)
     }
@@ -222,9 +216,7 @@ mod test {
         init();
 
         let string_contract = get_data_from_file("src/tests/payloads/contract_example.json")?;
-        trace!("the string contract is {}", string_contract);
         let contract = DataContract::try_from(string_contract.as_str())?;
-        trace!("the parsed contract is {:#?}", contract);
 
         assert_eq!(contract.protocol_version, 0);
         assert_eq!(
