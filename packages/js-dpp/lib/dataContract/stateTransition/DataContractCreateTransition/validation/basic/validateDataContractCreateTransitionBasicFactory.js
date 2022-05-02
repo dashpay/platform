@@ -21,9 +21,11 @@ function validateDataContractCreateTransitionBasicFactory(
   /**
    * @typedef validateDataContractCreateTransitionBasic
    * @param {RawDataContractCreateTransition} rawStateTransition
+   * @param {StateTransitionExecutionContext} executionContext
    * @return {ValidationResult}
    */
-  async function validateDataContractCreateTransitionBasic(rawStateTransition) {
+  // eslint-disable-next-line no-unused-vars
+  async function validateDataContractCreateTransitionBasic(rawStateTransition, executionContext) {
     const result = jsonSchemaValidator.validate(
       dataContractCreateTransitionSchema,
       convertBuffersToArrays(rawStateTransition),

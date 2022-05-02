@@ -115,6 +115,7 @@ async function createDomainDataTrigger(documentTransition, context, topLevelIden
           ['normalizedLabel', '==', parentDomainLabel],
         ],
       },
+      context.getStateTransitionExecutionContext(),
     );
 
     if (!parentDomain) {
@@ -173,6 +174,7 @@ async function createDomainDataTrigger(documentTransition, context, topLevelIden
       context.getDataContract().getId(),
       'preorder',
       { where: [['saltedDomainHash', '==', saltedDomainHash]] },
+      context.getStateTransitionExecutionContext(),
     );
 
   if (!preorderDocument) {

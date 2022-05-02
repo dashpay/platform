@@ -19,8 +19,14 @@ function validateStateTransitionKeySignatureFactory(
   async function validateStateTransitionKeySignature(stateTransition) {
     const result = new ValidationResult();
 
+    const executionContext = stateTransition.getExecutionContext();
+
     const stateTransitionHash = stateTransition.hash({ skipSignature: true });
-    const publicKeyHash = await fetchAssetLockPublicKeyHash(stateTransition.getAssetLockProof());
+
+    const publicKeyHash = await fetchAssetLockPublicKeyHash(
+      stateTransition.getAssetLockProof(),
+      executionContext,
+    );
 
     let signatureIsVerified;
 

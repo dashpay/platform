@@ -26,8 +26,10 @@ function validateIdentityUpdateTransitionStateFactory(
   async function validateIdentityUpdateTransitionState(stateTransition) {
     const result = new ValidationResult();
 
+    const executionContext = stateTransition.getExecutionContext();
     const identityId = stateTransition.getIdentityId();
-    const storedIdentity = await stateRepository.fetchIdentity(identityId);
+
+    const storedIdentity = await stateRepository.fetchIdentity(identityId, executionContext);
 
     // copy identity
     const identity = new Identity(storedIdentity.toObject());
