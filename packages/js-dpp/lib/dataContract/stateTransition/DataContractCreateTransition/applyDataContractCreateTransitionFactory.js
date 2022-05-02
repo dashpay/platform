@@ -16,8 +16,11 @@ function applyDataContractCreateTransitionFactory(stateRepository) {
    * @return {Promise<void>}
    */
   async function applyDataContractCreateTransition(stateTransition) {
+    const executionContext = stateTransition.getExecutionContext();
+
     await stateRepository.storeDataContract(
       stateTransition.getDataContract(),
+      executionContext,
     );
   }
 

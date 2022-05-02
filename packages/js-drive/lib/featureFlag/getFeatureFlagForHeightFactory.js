@@ -28,12 +28,14 @@ function getFeatureFlagForHeightFactory(
       ],
     };
 
-    const [document] = await fetchDocuments(
+    const result = await fetchDocuments(
       featureFlagsContractId,
       flagType,
       query,
       useTransaction,
     );
+
+    const [document] = result.getValue();
 
     return document;
   }

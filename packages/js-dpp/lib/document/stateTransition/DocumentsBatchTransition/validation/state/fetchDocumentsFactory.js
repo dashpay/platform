@@ -8,9 +8,10 @@ function fetchDocumentsFactory(stateRepository) {
    * @param {DocumentCreateTransition[]
    *        |DocumentReplaceTransition[]
    *        |DocumentDeleteTransition[]} documentTransitions
+   * @param {StateTransitionExecutionContext} executionContext
    * @return {Promise<Document[]>}
    */
-  async function fetchDocuments(documentTransitions) {
+  async function fetchDocuments(documentTransitions, executionContext) {
     // Group document transitions by contracts and types
     const transitionsByContractsAndTypes = documentTransitions.reduce((obj, dt) => {
       const uniqueKey = `${dt.getDataContractId()}${dt.getType()}`;
@@ -37,6 +38,7 @@ function fetchDocumentsFactory(stateRepository) {
           transitions[0].getDataContractId(),
           transitions[0].getType(),
           options,
+          executionContext,
         );
       });
 

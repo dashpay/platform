@@ -10,12 +10,14 @@ const ValidationResult = require('../../../../../../../lib/validation/Validation
 
 const DataContractNotPresentError = require('../../../../../../../lib/errors/consensus/basic/document/DataContractNotPresentError');
 const InvalidDataContractVersionError = require('../../../../../../../lib/errors/consensus/basic/dataContract/InvalidDataContractVersionError');
+const StateTransitionExecutionContext = require('../../../../../../../lib/stateTransition/StateTransitionExecutionContext');
 
 describe('validateDataContractUpdateTransitionStateFactory', () => {
   let validateDataContractUpdateTransitionState;
   let dataContract;
   let stateTransition;
   let stateRepositoryMock;
+  let executionContext;
 
   beforeEach(function beforeEach() {
     stateRepositoryMock = createStateRepositoryMock(this.sinonSandbox);
@@ -29,6 +31,10 @@ describe('validateDataContractUpdateTransitionStateFactory', () => {
     stateTransition = new DataContractUpdateTransition({
       dataContract: updatedRawDataContract,
     });
+
+    executionContext = new StateTransitionExecutionContext();
+
+    stateTransition.setExecutionContext(executionContext);
 
     stateRepositoryMock.fetchDataContract.resolves(dataContract);
 
@@ -50,7 +56,10 @@ describe('validateDataContractUpdateTransitionStateFactory', () => {
     expect(Buffer.isBuffer(error.getDataContractId())).to.be.true();
     expect(error.getDataContractId()).to.deep.equal(dataContract.getId().toBuffer());
 
-    expect(stateRepositoryMock.fetchDataContract).to.be.calledOnceWithExactly(dataContract.getId());
+    expect(stateRepositoryMock.fetchDataContract).to.be.calledOnceWithExactly(
+      dataContract.getId(),
+      executionContext,
+    );
   });
 
   it('should return invalid result if Data Contract version is not larger by 1', async () => {
@@ -64,7 +73,10 @@ describe('validateDataContractUpdateTransitionStateFactory', () => {
 
     expect(error.getCode()).to.equal(1050);
 
-    expect(stateRepositoryMock.fetchDataContract).to.be.calledOnceWithExactly(dataContract.getId());
+    expect(stateRepositoryMock.fetchDataContract).to.be.calledOnceWithExactly(
+      dataContract.getId(),
+      executionContext,
+    );
   });
 
   it('should return valid result', async () => {
@@ -73,6 +85,9 @@ describe('validateDataContractUpdateTransitionStateFactory', () => {
     expect(result).to.be.an.instanceOf(ValidationResult);
     expect(result.isValid()).to.be.true();
 
-    expect(stateRepositoryMock.fetchDataContract).to.be.calledOnceWithExactly(dataContract.getId());
+    expect(stateRepositoryMock.fetchDataContract).to.be.calledOnceWithExactly(
+      dataContract.getId(),
+      executionContext,
+    );
   });
 });

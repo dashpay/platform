@@ -21,10 +21,11 @@ const BlockExecutionContextMock = require('../../../../../lib/test/mock/BlockExe
 const NotFoundAbciError = require('../../../../../lib/abci/errors/NotFoundAbciError');
 const BlockExecutionContextStackMock = require('../../../../../lib/test/mock/BlockExecutionContextStackMock');
 const UnimplementedAbciError = require('../../../../../lib/abci/errors/UnimplementedAbciError');
+const StorageResult = require('../../../../../lib/storage/StorageResult');
 
 describe('identityQueryHandlerFactory', () => {
   let identityQueryHandler;
-  let signedIdentityRepository;
+  let signedIdentityRepositoryMock;
   let identity;
   let params;
   let data;
@@ -34,7 +35,7 @@ describe('identityQueryHandlerFactory', () => {
   let blockExecutionContextStackMock;
 
   beforeEach(function beforeEach() {
-    signedIdentityRepository = {
+    signedIdentityRepositoryMock = {
       fetch: this.sinon.stub(),
     };
 
@@ -50,7 +51,7 @@ describe('identityQueryHandlerFactory', () => {
     blockExecutionContextStackMock.getLast.returns(true);
 
     identityQueryHandler = identityQueryHandlerFactory(
-      signedIdentityRepository,
+      signedIdentityRepositoryMock,
       createQueryResponseMock,
       blockExecutionContextMock,
       blockExecutionContextStackMock,
@@ -77,17 +78,23 @@ describe('identityQueryHandlerFactory', () => {
   });
 
   it('should return serialized identity', async () => {
-    signedIdentityRepository.fetch.resolves(identity);
+    signedIdentityRepositoryMock.fetch.resolves(
+      new StorageResult(identity),
+    );
 
     const result = await identityQueryHandler(params, data, {});
 
-    expect(signedIdentityRepository.fetch).to.be.calledOnceWith(data.id);
+    expect(signedIdentityRepositoryMock.fetch).to.be.calledOnceWith(data.id);
     expect(result).to.be.an.instanceof(ResponseQuery);
     expect(result.code).to.equal(0);
     expect(result.value).to.deep.equal(responseMock.serializeBinary());
   });
 
   it('should throw NotFoundAbciError if identity not found', async () => {
+    signedIdentityRepositoryMock.fetch.resolves(
+      new StorageResult(null),
+    );
+
     try {
       await identityQueryHandler(params, data, {});
 
@@ -96,7 +103,7 @@ describe('identityQueryHandlerFactory', () => {
       expect(e).to.be.an.instanceof(NotFoundAbciError);
       expect(e.getCode()).to.equal(GrpcErrorCodes.NOT_FOUND);
       expect(e.message).to.equal('Identity not found');
-      expect(signedIdentityRepository.fetch).to.be.calledOnceWith(data.id);
+      expect(signedIdentityRepositoryMock.fetch).to.be.calledOnceWith(data.id);
     }
   });
 

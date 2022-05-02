@@ -2,6 +2,8 @@ const cbor = require('cbor');
 
 const Identifier = require('@dashevo/dpp/lib/Identifier');
 
+const StorageResult = require('../storage/StorageResult');
+
 class PublicKeyToIdentityIdStoreRepository {
   /**
    *
@@ -18,27 +20,34 @@ class PublicKeyToIdentityIdStoreRepository {
    * @param {Identifier} identityId
    * @param {boolean} [useTransaction=false]
    *
-   * @return {Promise<PublicKeyToIdentityIdStoreRepository>}
+   * @return {Promise<StorageResult<void>>}
    */
   async store(publicKeyHash, identityId, useTransaction = false) {
-    const identityIdsSerialized = await this.fetchBuffer(publicKeyHash, useTransaction);
+    const existingIdsResult = await this.fetchBuffer(publicKeyHash, useTransaction);
 
     let identityIds = [];
-    if (identityIdsSerialized) {
-      identityIds = cbor.decode(identityIdsSerialized);
+    if (existingIdsResult.getValue()) {
+      identityIds = cbor.decode(existingIdsResult.getValue());
     }
+
+    let operations = existingIdsResult.getOperations();
 
     if (identityIds.find((id) => id.equals(identityId)) === undefined) {
       identityIds.push(identityId.toBuffer());
 
-      await this.storage.put(
+      const data = cbor.encode(identityIds);
+
+      const result = await this.storage.put(
         PublicKeyToIdentityIdStoreRepository.TREE_PATH,
         publicKeyHash,
-        cbor.encode(identityIds),
+        data,
         { useTransaction },
       );
+
+      operations = operations.concat(result.getOperations());
     }
-    return this;
+
+    return new StorageResult(undefined, operations);
   }
 
   /**
@@ -47,13 +56,18 @@ class PublicKeyToIdentityIdStoreRepository {
    * @param {Buffer} publicKeyHash
    * @param {boolean} [useTransaction=false]
    *
-   * @return {Promise<Buffer|null>}
+   * @return {Promise<StorageResult<Buffer|null>>}
    */
   async fetchBuffer(publicKeyHash, useTransaction = false) {
-    return this.storage.get(
+    const result = await this.storage.get(
       PublicKeyToIdentityIdStoreRepository.TREE_PATH,
       publicKeyHash,
       { useTransaction },
+    );
+
+    return new StorageResult(
+      result.getValue(),
+      result.getOperations(),
     );
   }
 
@@ -63,18 +77,26 @@ class PublicKeyToIdentityIdStoreRepository {
    * @param {Buffer} publicKeyHash
    * @param {boolean} [useTransaction=false]
    *
-   * @return {Promise<Identifier[]>}
+   * @return {Promise<StorageResult<Identifier[]>>}
    */
   async fetch(publicKeyHash, useTransaction = false) {
-    const identityIdsSerialized = await this.fetchBuffer(publicKeyHash, useTransaction);
+    const existingIdsResult = await this.fetchBuffer(
+      publicKeyHash, useTransaction,
+    );
 
-    if (!identityIdsSerialized) {
-      return [];
+    if (existingIdsResult.isNull()) {
+      return new StorageResult(
+        [],
+        existingIdsResult.getOperations(),
+      );
     }
 
-    const identityIds = cbor.decode(identityIdsSerialized);
+    const identityIds = cbor.decode(existingIdsResult.getValue());
 
-    return identityIds.map((id) => new Identifier(id));
+    return new StorageResult(
+      identityIds.map((id) => new Identifier(id)),
+      existingIdsResult.getOperations(),
+    );
   }
 
   /**
@@ -82,12 +104,14 @@ class PublicKeyToIdentityIdStoreRepository {
    * @param {boolean} [options.useTransaction=false]
    * @param {boolean} [options.skipIfExists]
    *
-   * @return {Promise<PublicKeyToIdentityIdStoreRepository>}
+   * @return {Promise<StorageResult<void>>}
    */
   async createTree(options = {}) {
-    await this.storage.createTree([], PublicKeyToIdentityIdStoreRepository.TREE_PATH[0], options);
-
-    return this;
+    return this.storage.createTree(
+      [],
+      PublicKeyToIdentityIdStoreRepository.TREE_PATH[0],
+      options,
+    );
   }
 }
 

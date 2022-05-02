@@ -45,7 +45,11 @@ async function createMasternodeRewardSharesDataTrigger(
   }
 
   // payToId identity exists
-  const identity = await context.getStateRepository().fetchIdentity(payToId);
+  const identity = await context.getStateRepository().fetchIdentity(
+    payToId,
+    context.getStateTransitionExecutionContext(),
+  );
+
   if (identity === null) {
     const error = new DataTriggerConditionError(
       context.getDataContract().getId().toBuffer(),
@@ -70,6 +74,7 @@ async function createMasternodeRewardSharesDataTrigger(
         ['$ownerId', '==', ownerId],
       ],
     },
+    context.getStateTransitionExecutionContext(),
   );
 
   const totalPercent = documents

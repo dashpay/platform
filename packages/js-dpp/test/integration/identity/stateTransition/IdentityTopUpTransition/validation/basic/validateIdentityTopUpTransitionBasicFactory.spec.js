@@ -21,6 +21,7 @@ const ChainAssetLockProof = require('../../../../../../../lib/identity/stateTran
 const InstantAssetLockProof = require('../../../../../../../lib/identity/stateTransition/assetLockProof/instant/InstantAssetLockProof');
 const SomeConsensusError = require('../../../../../../../lib/test/mocks/SomeConsensusError');
 const IdentityPublicKey = require('../../../../../../../lib/identity/IdentityPublicKey');
+const StateTransitionExecutionContext = require('../../../../../../../lib/stateTransition/StateTransitionExecutionContext');
 
 describe('validateIdentityTopUpTransitionBasicFactory', () => {
   let rawStateTransition;
@@ -29,6 +30,7 @@ describe('validateIdentityTopUpTransitionBasicFactory', () => {
   let validateIdentityTopUpTransitionBasic;
   let proofValidationFunctionsByTypeMock;
   let validateProtocolVersionMock;
+  let executionContext;
 
   beforeEach(async function beforeEach() {
     assetLockPublicKeyHash = Buffer.alloc(20, 1);
@@ -53,6 +55,8 @@ describe('validateIdentityTopUpTransitionBasicFactory', () => {
       proofValidationFunctionsByTypeMock,
       validateProtocolVersionMock,
     );
+
+    executionContext = new StateTransitionExecutionContext();
 
     stateTransition = getIdentityTopUpTransitionFixture();
 
@@ -185,6 +189,7 @@ describe('validateIdentityTopUpTransitionBasicFactory', () => {
 
       const result = await validateIdentityTopUpTransitionBasic(
         rawStateTransition,
+        executionContext,
       );
 
       expectValidationError(result);
@@ -196,6 +201,7 @@ describe('validateIdentityTopUpTransitionBasicFactory', () => {
       expect(proofValidationFunctionsByTypeMock[InstantAssetLockProof.type])
         .to.be.calledOnceWithExactly(
           rawStateTransition.assetLockProof,
+          executionContext,
         );
     });
   });
@@ -206,6 +212,7 @@ describe('validateIdentityTopUpTransitionBasicFactory', () => {
 
       const result = await validateIdentityTopUpTransitionBasic(
         rawStateTransition,
+        executionContext,
       );
 
       expectJsonSchemaError(result);
@@ -222,6 +229,7 @@ describe('validateIdentityTopUpTransitionBasicFactory', () => {
 
       const result = await validateIdentityTopUpTransitionBasic(
         rawStateTransition,
+        executionContext,
       );
 
       expectJsonSchemaError(result, 2);
@@ -239,6 +247,7 @@ describe('validateIdentityTopUpTransitionBasicFactory', () => {
 
       const result = await validateIdentityTopUpTransitionBasic(
         rawStateTransition,
+        executionContext,
       );
 
       expectJsonSchemaError(result);
@@ -254,6 +263,7 @@ describe('validateIdentityTopUpTransitionBasicFactory', () => {
 
       const result = await validateIdentityTopUpTransitionBasic(
         rawStateTransition,
+        executionContext,
       );
 
       expectJsonSchemaError(result);
@@ -269,7 +279,10 @@ describe('validateIdentityTopUpTransitionBasicFactory', () => {
     it('should be present', async () => {
       delete rawStateTransition.signature;
 
-      const result = await validateIdentityTopUpTransitionBasic(rawStateTransition);
+      const result = await validateIdentityTopUpTransitionBasic(
+        rawStateTransition,
+        executionContext,
+      );
 
       expectJsonSchemaError(result);
 
@@ -283,7 +296,10 @@ describe('validateIdentityTopUpTransitionBasicFactory', () => {
     it('should be a byte array', async () => {
       rawStateTransition.signature = new Array(65).fill('string');
 
-      const result = await validateIdentityTopUpTransitionBasic(rawStateTransition);
+      const result = await validateIdentityTopUpTransitionBasic(
+        rawStateTransition,
+        executionContext,
+      );
 
       expectJsonSchemaError(result, 2);
 
@@ -298,7 +314,10 @@ describe('validateIdentityTopUpTransitionBasicFactory', () => {
     it('should be not shorter than 65 bytes', async () => {
       rawStateTransition.signature = Buffer.alloc(64);
 
-      const result = await validateIdentityTopUpTransitionBasic(rawStateTransition);
+      const result = await validateIdentityTopUpTransitionBasic(
+        rawStateTransition,
+        executionContext,
+      );
 
       expectJsonSchemaError(result);
 
@@ -311,7 +330,10 @@ describe('validateIdentityTopUpTransitionBasicFactory', () => {
     it('should be not longer than 65 bytes', async () => {
       rawStateTransition.signature = Buffer.alloc(66);
 
-      const result = await validateIdentityTopUpTransitionBasic(rawStateTransition);
+      const result = await validateIdentityTopUpTransitionBasic(
+        rawStateTransition,
+        executionContext,
+      );
 
       expectJsonSchemaError(result);
 
@@ -323,13 +345,17 @@ describe('validateIdentityTopUpTransitionBasicFactory', () => {
   });
 
   it('should return valid result', async () => {
-    const result = await validateIdentityTopUpTransitionBasic(rawStateTransition);
+    const result = await validateIdentityTopUpTransitionBasic(
+      rawStateTransition,
+      executionContext,
+    );
 
     expect(result.isValid()).to.be.true();
 
     expect(proofValidationFunctionsByTypeMock[InstantAssetLockProof.type])
       .to.be.calledOnceWithExactly(
         rawStateTransition.assetLockProof,
+        executionContext,
       );
   });
 });

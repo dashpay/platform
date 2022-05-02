@@ -33,14 +33,15 @@ class LoggedStateRepositoryDecorator {
    * Fetch Identity by ID
    *
    * @param {Identifier} id
+   * @param {StateTransitionExecutionContext} [executionContext]
    *
    * @return {Promise<Identity|null>}
    */
-  async fetchIdentity(id) {
+  async fetchIdentity(id, executionContext = undefined) {
     let response;
 
     try {
-      response = await this.stateRepository.fetchIdentity(id);
+      response = await this.stateRepository.fetchIdentity(id, executionContext);
     } finally {
       this.log(
         'fetchIdentity',
@@ -58,13 +59,15 @@ class LoggedStateRepositoryDecorator {
    * Store identity
    *
    * @param {Identity} identity
+   * @param {StateTransitionExecutionContext} [executionContext]
+   *
    * @returns {Promise<void>}
    */
-  async storeIdentity(identity) {
+  async storeIdentity(identity, executionContext = undefined) {
     let response;
 
     try {
-      response = await this.stateRepository.storeIdentity(identity);
+      response = await this.stateRepository.storeIdentity(identity, executionContext);
     } finally {
       this.log(
         'storeIdentity',
@@ -83,15 +86,16 @@ class LoggedStateRepositoryDecorator {
    *
    * @param {Identifier} identityId
    * @param {Buffer[]} publicKeyHashes
+   * @param {StateTransitionExecutionContext} [executionContext]
    *
    * @returns {Promise<void>}
    */
-  async storeIdentityPublicKeyHashes(identityId, publicKeyHashes) {
+  async storeIdentityPublicKeyHashes(identityId, publicKeyHashes, executionContext = undefined) {
     let response;
 
     try {
       response = await this.stateRepository
-        .storeIdentityPublicKeyHashes(identityId, publicKeyHashes);
+        .storeIdentityPublicKeyHashes(identityId, publicKeyHashes, executionContext);
     } finally {
       this.log(
         'storeIdentityPublicKeyHashes',
@@ -111,14 +115,18 @@ class LoggedStateRepositoryDecorator {
    * using public key hashes
    *
    * @param {Buffer[]} publicKeyHashes
+   * @param {StateTransitionExecutionContext} [executionContext]
    *
    * @returns {Promise<Array<Identifier[]>>}
    */
-  async fetchIdentityIdsByPublicKeyHashes(publicKeyHashes) {
+  async fetchIdentityIdsByPublicKeyHashes(publicKeyHashes, executionContext = undefined) {
     let response;
 
     try {
-      response = await this.stateRepository.fetchIdentityIdsByPublicKeyHashes(publicKeyHashes);
+      response = await this.stateRepository.fetchIdentityIdsByPublicKeyHashes(
+        publicKeyHashes,
+        executionContext,
+      );
     } finally {
       this.log(
         'fetchIdentityIdsByPublicKeyHashes',
@@ -136,14 +144,18 @@ class LoggedStateRepositoryDecorator {
    * Store spent asset lock transaction
    *
    * @param {Buffer} outPointBuffer
+   * @param {StateTransitionExecutionContext} [executionContext]
    *
    * @return {Promise<void>}
    */
-  async markAssetLockTransactionOutPointAsUsed(outPointBuffer) {
+  async markAssetLockTransactionOutPointAsUsed(outPointBuffer, executionContext = undefined) {
     let response;
 
     try {
-      response = await this.stateRepository.markAssetLockTransactionOutPointAsUsed(outPointBuffer);
+      response = await this.stateRepository.markAssetLockTransactionOutPointAsUsed(
+        outPointBuffer,
+        executionContext,
+      );
     } finally {
       this.log(
         'markAssetLockTransactionOutPointAsUsed',
@@ -161,15 +173,17 @@ class LoggedStateRepositoryDecorator {
    * Check if spent asset lock transaction is stored
    *
    * @param {Buffer} outPointBuffer
+   * @param {StateTransitionExecutionContext} [executionContext]
    *
    * @return {Promise<boolean>}
    */
-  async isAssetLockTransactionOutPointAlreadyUsed(outPointBuffer) {
+  async isAssetLockTransactionOutPointAlreadyUsed(outPointBuffer, executionContext = undefined) {
     let response;
 
     try {
       response = await this.stateRepository.isAssetLockTransactionOutPointAlreadyUsed(
         outPointBuffer,
+        executionContext,
       );
     } finally {
       this.log(
@@ -188,13 +202,15 @@ class LoggedStateRepositoryDecorator {
    * Fetch Data Contract by ID
    *
    * @param {Identifier} id
+   * @param {StateTransitionExecutionContext} [executionContext]
+   *
    * @returns {Promise<DataContract|null>}
    */
-  async fetchDataContract(id) {
+  async fetchDataContract(id, executionContext = undefined) {
     let response;
 
     try {
-      response = await this.stateRepository.fetchDataContract(id);
+      response = await this.stateRepository.fetchDataContract(id, executionContext);
     } finally {
       this.log(
         'fetchDataContract',
@@ -212,13 +228,15 @@ class LoggedStateRepositoryDecorator {
    * Store Data Contract
    *
    * @param {DataContract} dataContract
+   * @param {StateTransitionExecutionContext} [executionContext]
+   *
    * @returns {Promise<void>}
    */
-  async storeDataContract(dataContract) {
+  async storeDataContract(dataContract, executionContext = undefined) {
     let response;
 
     try {
-      response = await this.stateRepository.storeDataContract(dataContract);
+      response = await this.stateRepository.storeDataContract(dataContract, executionContext);
     } finally {
       this.log('storeDataContract', { dataContract }, response);
     }
@@ -232,13 +250,20 @@ class LoggedStateRepositoryDecorator {
    * @param {Identifier} contractId
    * @param {string} type
    * @param {{ where: Object }} [options]
+   * @param {StateTransitionExecutionContext} [executionContext]
+   *
    * @returns {Promise<Document[]>}
    */
-  async fetchDocuments(contractId, type, options = {}) {
+  async fetchDocuments(contractId, type, options = {}, executionContext = undefined) {
     let response;
 
     try {
-      response = await this.stateRepository.fetchDocuments(contractId, type, options);
+      response = await this.stateRepository.fetchDocuments(
+        contractId,
+        type,
+        options,
+        executionContext,
+      );
     } finally {
       this.log(
         'fetchDocuments',
@@ -258,13 +283,15 @@ class LoggedStateRepositoryDecorator {
    * Store document
    *
    * @param {Document} document
+   * @param {StateTransitionExecutionContext} [executionContext]
+   *
    * @returns {Promise<void>}
    */
-  async storeDocument(document) {
+  async storeDocument(document, executionContext = undefined) {
     let response;
 
     try {
-      response = await this.stateRepository.storeDocument(document);
+      response = await this.stateRepository.storeDocument(document, executionContext);
     } finally {
       this.log(
         'storeDocument',
@@ -284,13 +311,15 @@ class LoggedStateRepositoryDecorator {
    * @param {Identifier} contractId
    * @param {string} type
    * @param {Identifier} id
+   * @param {StateTransitionExecutionContext} [executionContext]
+   *
    * @returns {Promise<void>}
    */
-  async removeDocument(contractId, type, id) {
+  async removeDocument(contractId, type, id, executionContext = undefined) {
     let response;
 
     try {
-      response = await this.stateRepository.removeDocument(contractId, type, id);
+      response = await this.stateRepository.removeDocument(contractId, type, id, executionContext);
     } finally {
       this.log(
         'removeDocument',
@@ -310,13 +339,15 @@ class LoggedStateRepositoryDecorator {
    * Fetch transaction by ID
    *
    * @param {string} id
+   * @param {StateTransitionExecutionContext} [executionContext]
+   *
    * @returns {Promise<Object|null>}
    */
-  async fetchTransaction(id) {
+  async fetchTransaction(id, executionContext = undefined) {
     let response;
 
     try {
-      response = await this.stateRepository.fetchTransaction(id);
+      response = await this.stateRepository.fetchTransaction(id, executionContext);
     } finally {
       this.log(
         'fetchTransaction',
@@ -351,14 +382,15 @@ class LoggedStateRepositoryDecorator {
    * Verify instant lock
    *
    * @param {InstantLock} instantLock
+   * @param {StateTransitionExecutionContext} [executionContext]
    *
    * @return {Promise<boolean>}
    */
-  async verifyInstantLock(instantLock) {
+  async verifyInstantLock(instantLock, executionContext = undefined) {
     let response;
 
     try {
-      response = await this.stateRepository.verifyInstantLock(instantLock);
+      response = await this.stateRepository.verifyInstantLock(instantLock, executionContext);
     } finally {
       this.log('verifyInstantLock', { instantLock }, response);
     }
