@@ -337,6 +337,8 @@ pub fn get_value_from_json_path<'a>(
 mod test {
     use serde_json::json;
 
+    use crate::assert_error_contains;
+
     use super::*;
 
     #[test]
@@ -423,16 +425,7 @@ mod test {
             "root.from.id".to_string(),
             json!({ "contentMediaType": "application/x.dash.dpp.identifier"}),
         );
-        binary_properties.insert(
-            "root.to.id".to_string(),
-            json!({ "contentMediaType": "application/x.dash.dpp.identifier"}),
-        );
-
-        match identifiers_to(&binary_properties, &mut document, ReplaceWith::Bytes) {
-            Err(ProtocolError::IdentifierError(_)) => {}
-            v => {
-                panic!("unexpected returned value: {:?}", v)
-            }
-        }
+        let result = identifiers_to(&binary_properties, &mut document, ReplaceWith::Bytes);
+        assert_error_contains!(result, "Identifier must be 32 bytes long");
     }
 }
