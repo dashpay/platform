@@ -20,6 +20,7 @@ const PROPERTY_CONTENT_MEDIA_TYPE: &str = "contentMediaType";
 pub enum ReplaceWith {
     Bytes,
     Base58,
+    Base64,
 }
 
 /// JsonValueExt contains a set of helper methods that simplify work with JsonValue
@@ -40,8 +41,15 @@ pub trait JsonValueExt {
         &mut self,
         path: &[JsonPathStep],
     ) -> Result<&mut JsonValue, anyhow::Error>;
-    /// replaces Identifiers specified by path with either the Bytes format or Base58-encoded string format
+    /// replaces Identifiers specified by path with either the Bytes format or string format (base58 or base64)
     fn replace_identifier_paths<'a>(
+        &mut self,
+        paths: impl IntoIterator<Item = &'a str>,
+        with: ReplaceWith,
+    ) -> Result<(), anyhow::Error>;
+
+    /// replaces binary data specified by path with either the Bytes format or string format (base58 or base64)
+    fn replace_binary_paths<'a>(
         &mut self,
         paths: impl IntoIterator<Item = &'a str>,
         with: ReplaceWith,
@@ -166,6 +174,26 @@ impl JsonValueExt for JsonValue {
         Ok(())
     }
 
+    /// replaces binary data specified by path with either the Bytes format or string format (base58 or base64)
+    fn replace_binary_paths<'a>(
+        &mut self,
+        paths: impl IntoIterator<Item = &'a str>,
+        with: ReplaceWith,
+    ) -> Result<(), anyhow::Error> {
+        for raw_path in paths {
+            let mut to_replace = get_value_mut(raw_path, self);
+            match to_replace {
+                Some(ref mut v) => {
+                    replace_identifier(v, with)?;
+                }
+                None => {
+                    trace!("path '{}' is not found, replacing to {:?} ", raw_path, with)
+                }
+            }
+        }
+        Ok(())
+    }
+
     fn parse_and_add_protocol_version<'a>(
         &mut self,
         protocol_bytes: &[u8],
@@ -210,9 +238,34 @@ pub fn replace_identifier(
     match with {
         ReplaceWith::Base58 => {
             let data_bytes: Vec<u8> = serde_json::from_value(json_value)?;
-
             let identifier = Identifier::from_bytes(&data_bytes)?;
             *to_replace = JsonValue::String(identifier.to_string(Encoding::Base58));
+        }
+        ReplaceWith::Base64 => {
+            let data_bytes: Vec<u8> = serde_json::from_value(json_value)?;
+            let identifier = Identifier::from_bytes(&data_bytes)?;
+            *to_replace = JsonValue::String(identifier.to_string(Encoding::Base64));
+        }
+        ReplaceWith::Bytes => {
+            let data_string: String = serde_json::from_value(json_value)?;
+            let identifier = Identifier::from_string(&data_string, Encoding::Base58)?.to_vec();
+            *to_replace = JsonValue::Array(identifier);
+        }
+    }
+    Ok(())
+}
+
+pub fn replace_binary(to_replace: &mut JsonValue, with: ReplaceWith) -> Result<(), ProtocolError> {
+    let mut json_value = JsonValue::Null;
+    std::mem::swap(to_replace, &mut json_value);
+    match with {
+        ReplaceWith::Base58 => {
+            let data_bytes: Vec<u8> = serde_json::from_value(json_value)?;
+            *to_replace = JsonValue::String(bs58::encode(data_bytes).into_string());
+        }
+        ReplaceWith::Base64 => {
+            let data_bytes: Vec<u8> = serde_json::from_value(json_value)?;
+            *to_replace = JsonValue::String(base64::encode(data_bytes));
         }
         ReplaceWith::Bytes => {
             let data_string: String = serde_json::from_value(json_value)?;

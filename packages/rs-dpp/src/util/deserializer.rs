@@ -3,31 +3,6 @@ use anyhow::anyhow;
 use serde_json::{Map, Number, Value as JsonValue};
 use std::convert::TryInto;
 
-// replaces field names of type JsonValue::Vec<u8> with JsonValue::String().
-// The base64 is used for conversion
-pub fn parse_bytes(
-    json_map: &mut Map<String, JsonValue>,
-    field_names: &[&str],
-) -> Result<(), ProtocolError> {
-    for field in field_names {
-        if let Some(v) = json_map.get_mut(*field) {
-            let mut json_value = JsonValue::Null;
-            std::mem::swap(v, &mut json_value);
-            let data_bytes: Vec<u8> = serde_json::from_value(json_value).map_err(|e| {
-                ProtocolError::DecodingError(format!("unable to decode '{}'  - {:?}", field, e))
-            })?;
-
-            *v = JsonValue::String(base64::encode(data_bytes));
-        } else {
-            return Err(ProtocolError::ParsingError(format!(
-                "unable to find '{}'",
-                field
-            )));
-        };
-    }
-    Ok(())
-}
-
 pub fn parse_protocol_version(
     protocol_bytes: &[u8],
     json_map: &mut Map<String, JsonValue>,
