@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 
 use serde_json::{Map, Value as JsonValue};
 
-use crate::util::json_value::JsonValueSchemaExt;
+use crate::util::json_schema::JsonSchemaExt;
 
 const PROPERTY_PROPERTIES: &str = "properties";
 const PROPERTY_ITEMS: &str = "items";
@@ -46,7 +46,7 @@ fn build_binary_properties_map(
             _ => {}
         }
     }
-    if schema.is_byte_array() {
+    if schema.is_type_of_byte_array() {
         binary_paths.insert(
             property_path.unwrap_or_else(|| String::from("")),
             schema.clone(),

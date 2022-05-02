@@ -1,4 +1,4 @@
-use crate::{errors::ProtocolError, util::json_value::JsonValueSchemaExt};
+use crate::{errors::ProtocolError, util::json_schema::JsonSchemaExt};
 
 use super::DataContract;
 use anyhow::anyhow;
