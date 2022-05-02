@@ -84,8 +84,11 @@ function expectOperatorIdentityFactory(
         .deep
         .equal(new Script(operatorPayoutAddress).toBuffer());
 
-      const secondOperatorIdentityByPublicKeyHash = await publicKeyToIdentityIdRepository
+      const secondOperatorIdentityByPublicKeyHashResult = await publicKeyToIdentityIdRepository
         .fetch(secondOperatorMasternodePublicKey.hash());
+
+      const secondOperatorIdentityByPublicKeyHash = secondOperatorIdentityByPublicKeyHashResult
+        .getValue();
 
       expect(secondOperatorIdentityByPublicKeyHash)
         .to
@@ -155,8 +158,10 @@ function expectMasternodeIdentityFactory(
         new Script(payoutAddress).toBuffer(),
       );
 
-      const secondIdentityByPublicKeyHash = await publicKeyToIdentityIdRepository
+      const secondIdentityByPublicKeyHashResult = await publicKeyToIdentityIdRepository
         .fetch(secondPublicKey.hash());
+
+      const secondIdentityByPublicKeyHash = secondIdentityByPublicKeyHashResult.getValue();
 
       expect(secondIdentityByPublicKeyHash).to.have.lengthOf(1);
       expect(secondIdentityByPublicKeyHash[0].toBuffer())
@@ -665,7 +670,7 @@ describe('synchronizeMasternodeIdentitiesFactory', () => {
       Buffer.from(changedSmlEntry.proRegTxHash, 'hex'),
     );
 
-    const documents = await documentRepository.find(
+    const documentsResult = await documentRepository.find(
       rewardsDataContract,
       'rewardShare',
       {
@@ -674,6 +679,8 @@ describe('synchronizeMasternodeIdentitiesFactory', () => {
         ],
       },
     );
+
+    const documents = documentsResult.getValue();
 
     expect(documents).to.have.lengthOf(1);
 
@@ -717,7 +724,7 @@ describe('synchronizeMasternodeIdentitiesFactory', () => {
 
     await synchronizeMasternodeIdentities(coreHeight + 1);
 
-    await expectDeterministicAppHash('8fad9922dfb44e1bd7606737e8e1d127b696fdffc625a69fa4bcb5d1e04ea0a3');
+    await expectDeterministicAppHash('372114ed4751a315a24afbc599495119aa94a699af76fb6972e28ddbabee4ca3');
 
     // Masternode identity should contain new public key
 
