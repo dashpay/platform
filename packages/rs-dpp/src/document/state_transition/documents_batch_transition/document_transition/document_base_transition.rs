@@ -2,7 +2,6 @@ use crate::{
     data_contract::DataContract,
     errors::ProtocolError,
     identifier::Identifier,
-    util::deserializer,
     util::json_value::{JsonValueExt, ReplaceWith},
 };
 use anyhow::bail;
@@ -36,7 +35,6 @@ impl std::fmt::Display for Action {
 }
 
 impl TryFrom<&str> for Action {
-    // TODO  - use error from https://github.com/dashevo/rust-dpp/pull/6
     type Error = anyhow::Error;
 
     fn try_from(name: &str) -> Result<Action, Self::Error> {
