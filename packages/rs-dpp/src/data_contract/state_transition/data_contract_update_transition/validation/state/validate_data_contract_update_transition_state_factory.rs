@@ -11,15 +11,6 @@ where
     state_repository: SR,
 }
 
-// pub fn validate_data_contract_update_transition_state_factory<SR>(
-//     state_repository: SR,
-// ) -> ValidateDataContractUpdateTransitionStateFactory<SR>
-// where
-//     SR: StateRepositoryLike,
-// {
-//     ValidateDataContractUpdateTransitionStateFactory { state_repository }
-// }
-
 impl<SR> ValidateDataContractUpdateTransitionStateFactory<SR>
 where
     SR: StateRepositoryLike,

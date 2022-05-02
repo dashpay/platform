@@ -1,8 +1,3 @@
-// Every DataTriggerError should contain:
-// data_contract_id, document_transition_id, message
-
-use std::error::Error;
-
 use crate::{document::document_transition::DocumentTransition, prelude::Identifier};
 use thiserror::Error;
 

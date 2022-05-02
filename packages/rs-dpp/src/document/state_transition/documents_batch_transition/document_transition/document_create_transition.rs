@@ -14,20 +14,6 @@ use serde_json::Value as JsonValue;
 pub const INITIAL_REVISION: usize = 1;
 pub const BINARY_FIELDS: [&str; 1] = ["$entropy"];
 
-/**
- * @typedef {RawDocumentTransition & Object} RawDocumentCreateTransition
- * @property {Buffer} $entropy
- * @property {number} [$createdAt]
- * @property {number} [$updatedAt]
- */
-
-/**
- * @typedef {JsonDocumentTransition & Object} JsonDocumentCreateTransition
- * @property {string} $entropy
- * @property {number} [$createdAt]
- * @property {number} [$updatedAt]
- */
-
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DocumentCreateTransition {

@@ -80,8 +80,6 @@ where
         Encoding::Base58,
     )?;
 
-    // create_domain_data_trigger(document_transition, context, top_level_identity)
-
     let data_triggers = vec![
         DataTrigger {
             data_contract_id: dpns_data_contract_id.clone(),
@@ -177,5 +175,3 @@ where
     ];
     Ok(data_triggers)
 }
-
-// we need a 3 elements

@@ -35,7 +35,6 @@ pub fn get_property_definition_by_path<'a>(
     })?;
 
     for path in path_components {
-        // so we should rather use match
         let schema_type = current_value.get_string("type");
         match schema_type {
             Ok("object") => {

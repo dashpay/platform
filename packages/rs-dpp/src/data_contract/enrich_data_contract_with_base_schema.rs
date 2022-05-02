@@ -16,7 +16,6 @@ pub fn enrich_data_contract_with_base_schema(
     let mut cloned_data_contract = data_contract.clone();
     cloned_data_contract.schema = String::from("");
 
-    // should we really transform it into the btree map??? - and use collect???
     let base_properties = base_schema
         .get_schema_properties()?
         .as_object()
@@ -51,7 +50,7 @@ pub fn enrich_data_contract_with_base_schema(
         }
     }
 
-    // TODO - decided if this is necessary
+    // TODO - decide if this is necessary
     // Ajv caches schemas using $id internally
     // so we can't pass two different schemas with the same $id.
     // Hacky solution for that is to replace first four bytes

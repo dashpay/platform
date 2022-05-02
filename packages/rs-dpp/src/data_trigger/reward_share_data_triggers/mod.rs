@@ -46,10 +46,8 @@ where
 
     // Do not allow creating document if ownerId is not in SML
     let sml_store: SMLStore = context.state_repository.fetch_sml_store().await?;
-    // it shouldn't be a JSON
 
     let valid_master_nodes_list = sml_store.get_current_sml()?.get_valid_master_nodes();
-    // we need to serialize the data
 
     let owner_id_in_sml = valid_master_nodes_list.iter().any(|entry| {
         hex::decode(&entry.pro_reg_tx_hash).expect("invalid hex value")
