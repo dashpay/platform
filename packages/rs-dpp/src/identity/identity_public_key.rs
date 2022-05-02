@@ -1,3 +1,5 @@
+#![allow(clippy::from_over_into)]
+
 use crate::errors::{InvalidVectorSizeError, ProtocolError};
 use anyhow::anyhow;
 use dashcore::PublicKey;

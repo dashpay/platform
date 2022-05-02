@@ -77,7 +77,7 @@ where
         result.add_error(err.into())
     }
 
-    if normalized_label != &label.to_lowercase() {
+    if normalized_label != label.to_lowercase() {
         let err = new_error(
             context,
             dt_create,
