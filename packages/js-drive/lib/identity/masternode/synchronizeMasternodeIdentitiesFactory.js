@@ -89,44 +89,48 @@ function synchronizeMasternodeIdentitiesFactory(
           );
         }
 
-        const mnEntryWithChangedPayoutAddress = previousMNList.find((previousMnListEntry) => (
-          previousMnListEntry.proRegTxHash === mnEntry.proRegTxHash
-          && previousMnListEntry.payoutAddress !== mnEntry.payoutAddress
-        ));
-
-        if (mnEntryWithChangedPayoutAddress) {
-          const newPayoutAddress = Address.fromString(mnEntry.payoutAddress);
-          const previousPayoutAddress = mnEntryWithChangedPayoutAddress.payoutAddress
-            ? Address.fromString(mnEntryWithChangedPayoutAddress.payoutAddress)
-            : undefined;
-
-          await handleUpdatedScriptPayout(
-            Identifier.from(Buffer.from(mnEntry.proRegTxHash, 'hex')),
-            new Script(newPayoutAddress).toBuffer(),
-            new Script(previousPayoutAddress).toBuffer(),
-          );
-        }
-
-        const mnEntryWithChangedOperatorPayoutAddress = previousMNList
-          .find((previousMnListEntry) => (
+        if (mnEntry.payoutAddress) {
+          const mnEntryWithChangedPayoutAddress = previousMNList.find((previousMnListEntry) => (
             previousMnListEntry.proRegTxHash === mnEntry.proRegTxHash
-            && previousMnListEntry.operatorPayoutAddress !== mnEntry.operatorPayoutAddress
+            && previousMnListEntry.payoutAddress !== mnEntry.payoutAddress
           ));
 
-        if (mnEntryWithChangedOperatorPayoutAddress) {
-          const newOperatorPayoutAddress = Address.fromString(mnEntry.operatorPayoutAddress);
+          if (mnEntryWithChangedPayoutAddress) {
+            const newPayoutAddress = Address.fromString(mnEntry.payoutAddress);
+            const previousPayoutAddress = mnEntryWithChangedPayoutAddress.payoutAddress
+              ? Address.fromString(mnEntryWithChangedPayoutAddress.payoutAddress)
+              : undefined;
 
-          const { operatorPayoutAddress } = mnEntryWithChangedOperatorPayoutAddress;
+            await handleUpdatedScriptPayout(
+              Identifier.from(Buffer.from(mnEntry.proRegTxHash, 'hex')),
+              new Script(newPayoutAddress).toBuffer(),
+              new Script(previousPayoutAddress).toBuffer(),
+            );
+          }
+        }
 
-          const previousOperatorPayoutAddress = operatorPayoutAddress
-            ? Address.fromString(operatorPayoutAddress)
-            : undefined;
+        if (mnEntry.operatorPayoutAddress) {
+          const mnEntryWithChangedOperatorPayoutAddress = previousMNList
+            .find((previousMnListEntry) => (
+              previousMnListEntry.proRegTxHash === mnEntry.proRegTxHash
+              && previousMnListEntry.operatorPayoutAddress !== mnEntry.operatorPayoutAddress
+            ));
 
-          await handleUpdatedScriptPayout(
-            createOperatorIdentifier(mnEntry),
-            new Script(newOperatorPayoutAddress).toBuffer(),
-            new Script(previousOperatorPayoutAddress).toBuffer(),
-          );
+          if (mnEntryWithChangedOperatorPayoutAddress) {
+            const newOperatorPayoutAddress = Address.fromString(mnEntry.operatorPayoutAddress);
+
+            const { operatorPayoutAddress } = mnEntryWithChangedOperatorPayoutAddress;
+
+            const previousOperatorPayoutAddress = operatorPayoutAddress
+              ? Address.fromString(operatorPayoutAddress)
+              : undefined;
+
+            await handleUpdatedScriptPayout(
+              createOperatorIdentifier(mnEntry),
+              new Script(newOperatorPayoutAddress).toBuffer(),
+              new Script(previousOperatorPayoutAddress).toBuffer(),
+            );
+          }
         }
       }
     }
