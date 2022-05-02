@@ -5,7 +5,6 @@ extern crate core;
 pub mod data_trigger;
 pub mod decode_protocol_entity_factory;
 pub mod document;
-pub mod dpp;
 pub mod identifier;
 pub mod identity;
 pub mod metadata;
@@ -33,7 +32,6 @@ mod prelude {
     pub use crate::data_trigger::DataTrigger;
     pub use crate::document::document_transition::DocumentTransition;
     pub use crate::document::Document;
-    pub use crate::dpp::DashPlatformProtocolLike;
     pub use crate::identifier::Identifier;
     pub use crate::identity::Identity;
 }
