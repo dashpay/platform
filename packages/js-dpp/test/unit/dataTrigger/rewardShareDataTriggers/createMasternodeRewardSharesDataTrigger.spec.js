@@ -15,6 +15,7 @@ describe('createMasternodeRewardSharesDataTrigger', () => {
   let smlStoreMock;
   let smlMock;
   let documentsFixture;
+  let executionContext;
 
   beforeEach(function beforeEach() {
     topLevelIdentityId = Buffer.from('c286807d463b06c7aba3b9a60acf64c1fc03da8c1422005cd9b4293f08cf0562', 'hex');
@@ -65,6 +66,7 @@ describe('createMasternodeRewardSharesDataTrigger', () => {
       getStateRepository: () => stateRepositoryMock,
       getOwnerId: this.sinonSandbox.stub(),
       getDataContract: () => getMasternodeRewardShareDocumentsFixture.dataContract,
+      getStateTransitionExecutionContext: () => executionContext,
     };
     contextMock.getOwnerId.returns(topLevelIdentityId);
   });
@@ -89,6 +91,7 @@ describe('createMasternodeRewardSharesDataTrigger', () => {
     expect(stateRepositoryMock.fetchSMLStore).to.be.calledOnce();
     expect(stateRepositoryMock.fetchIdentity).to.be.calledOnceWithExactly(
       documentTransition.data.payToId,
+      executionContext,
     );
   });
 
@@ -110,6 +113,7 @@ describe('createMasternodeRewardSharesDataTrigger', () => {
     expect(stateRepositoryMock.fetchSMLStore).to.be.calledOnce();
     expect(stateRepositoryMock.fetchIdentity).to.be.calledOnceWithExactly(
       documentTransition.data.payToId,
+      executionContext,
     );
   });
 
@@ -143,6 +147,7 @@ describe('createMasternodeRewardSharesDataTrigger', () => {
     expect(stateRepositoryMock.fetchSMLStore).to.be.calledOnce();
     expect(stateRepositoryMock.fetchIdentity).to.be.calledOnceWithExactly(
       documentTransition.data.payToId,
+      executionContext,
     );
   });
 });

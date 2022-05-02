@@ -30,11 +30,13 @@ function applyDocumentsBatchTransitionFactory(
    * @return {Promise<*>}
    */
   async function applyDocumentsBatchTransition(stateTransition) {
+    const executionContext = stateTransition.getExecutionContext();
+
     // Fetch documents for replace transitions
     const replaceTransitions = stateTransition.getTransitions()
       .filter((dt) => dt.getAction() === AbstractDocumentTransition.ACTIONS.REPLACE);
 
-    const fetchedDocuments = await fetchDocuments(replaceTransitions);
+    const fetchedDocuments = await fetchDocuments(replaceTransitions, executionContext);
 
     const fetchedDocumentsById = fetchedDocuments.reduce((result, document) => (
       {
@@ -55,6 +57,7 @@ function applyDocumentsBatchTransitionFactory(
           case AbstractDocumentTransition.ACTIONS.CREATE: {
             const dataContract = await stateRepository.fetchDataContract(
               documentTransition.getDataContractId(),
+              executionContext,
             );
 
             if (!dataContract) {
@@ -83,7 +86,7 @@ function applyDocumentsBatchTransitionFactory(
             newDocument.setEntropy(documentTransition.getEntropy());
             newDocument.setRevision(DocumentCreateTransition.INITIAL_REVISION);
 
-            return stateRepository.storeDocument(newDocument);
+            return stateRepository.storeDocument(newDocument, executionContext);
           }
           case AbstractDocumentTransition.ACTIONS.REPLACE: {
             const document = fetchedDocumentsById[documentTransition.getId()];
@@ -99,13 +102,14 @@ function applyDocumentsBatchTransitionFactory(
               document.setUpdatedAt(documentTransition.getUpdatedAt());
             }
 
-            return stateRepository.storeDocument(document);
+            return stateRepository.storeDocument(document, executionContext);
           }
           case AbstractDocumentTransition.ACTIONS.DELETE: {
             return stateRepository.removeDocument(
               documentTransition.getDataContractId(),
               documentTransition.getType(),
               documentTransition.getId(),
+              executionContext,
             );
           }
           default:
