@@ -6,7 +6,7 @@ const InvalidPayoutScriptError = require('./errors/InvalidPayoutScriptError');
 /**
  *
  * @param {string} network
- * @returns {function(*): number}
+ * @returns {getWithdrawPubKeyTypeFromPayoutScript}
  */
 function getWithdrawPubKeyTypeFromPayoutScriptFactory(network) {
   /**

@@ -15,12 +15,17 @@ describe('createMasternodeIdentityFactory', () => {
   let stateRepositoryMock;
   let validationResult;
   let getWithdrawPubKeyTypeFromPayoutScriptMock;
+  let getPublicKeyFromPayoutScriptMock;
 
   beforeEach(function beforeEach() {
     dppMock = createDPPMock(this.sinon);
     stateRepositoryMock = createStateRepositoryMock(this.sinon);
     getWithdrawPubKeyTypeFromPayoutScriptMock = this.sinon.stub().returns(
       IdentityPublicKey.TYPES.BIP13_SCRIPT_HASH,
+    );
+
+    getPublicKeyFromPayoutScriptMock = this.sinon.stub().returns(
+      Buffer.alloc(20, 1),
     );
 
     validationResult = new ValidationResult();
@@ -31,6 +36,7 @@ describe('createMasternodeIdentityFactory', () => {
       dppMock,
       stateRepositoryMock,
       getWithdrawPubKeyTypeFromPayoutScriptMock,
+      getPublicKeyFromPayoutScriptMock,
     );
   });
 
@@ -59,6 +65,7 @@ describe('createMasternodeIdentityFactory', () => {
 
     expect(stateRepositoryMock.storeIdentity).to.have.been.calledOnceWithExactly(identity);
     expect(getWithdrawPubKeyTypeFromPayoutScriptMock).to.not.be.called();
+    expect(getPublicKeyFromPayoutScriptMock).to.not.be.called();
 
     const publicKeyHashes = identity
       .getPublicKeys()
@@ -133,7 +140,7 @@ describe('createMasternodeIdentityFactory', () => {
     const identityId = generateRandomIdentifier();
     const pubKeyData = Buffer.from([0]);
     const pubKeyType = IdentityPublicKey.TYPES.ECDSA_HASH160;
-    const payoutScript = Script(Address.fromString('yR843jN58m5dubmQjfUmKDDJMJzNatFV9M')).toBuffer();
+    const payoutScript = Script(Address.fromString('7UkJidhNjEPJCQnCTXeaJKbJmL4JuyV66w')).toBuffer();
 
     await createMasternodeIdentity(identityId, pubKeyData, pubKeyType, payoutScript);
 
@@ -146,7 +153,6 @@ describe('createMasternodeIdentityFactory', () => {
         purpose: IdentityPublicKey.PURPOSES.AUTHENTICATION,
         securityLevel: IdentityPublicKey.SECURITY_LEVELS.MASTER,
         readOnly: true,
-        // Copy data buffer
         data: Buffer.from([0]),
       }, {
         id: 1,
@@ -154,8 +160,7 @@ describe('createMasternodeIdentityFactory', () => {
         purpose: IdentityPublicKey.PURPOSES.WITHDRAW,
         securityLevel: IdentityPublicKey.SECURITY_LEVELS.CRITICAL,
         readOnly: false,
-        // Copy data buffer
-        data: Buffer.from(payoutScript),
+        data: Buffer.alloc(20, 1),
       }],
       balance: 0,
       revision: 0,
@@ -163,6 +168,7 @@ describe('createMasternodeIdentityFactory', () => {
 
     expect(stateRepositoryMock.storeIdentity).to.have.been.calledOnceWithExactly(identity);
     expect(getWithdrawPubKeyTypeFromPayoutScriptMock).to.be.calledOnce();
+    expect(getPublicKeyFromPayoutScriptMock).to.be.calledOnce();
 
     const publicKeyHashes = identity
       .getPublicKeys()

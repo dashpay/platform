@@ -133,6 +133,7 @@ const createRewardShareDocumentFactory = require('./identity/masternode/createRe
 const handleRemovedMasternodeFactory = require('./identity/masternode/handleRemovedMasternodeFactory');
 const handleUpdatedScriptPayoutFactory = require('./identity/masternode/handleUpdatedScriptPayoutFactory');
 const getWithdrawPubKeyTypeFromPayoutScriptFactory = require('./identity/masternode/getWithdrawPubKeyTypeFromPayoutScriptFactory');
+const getPublicKeyFromPayoutScript = require('./identity/masternode/getPublicKeyFromPayoutScript');
 
 const DocumentRepository = require('./document/DocumentRepository');
 const ExecutionTimer = require('./util/ExecutionTimer');
@@ -452,6 +453,8 @@ function createDIContainer(options) {
 
     getWithdrawPubKeyTypeFromPayoutScript: asFunction(getWithdrawPubKeyTypeFromPayoutScriptFactory)
       .singleton(),
+
+    getPublicKeyFromPayoutScript: asValue(getPublicKeyFromPayoutScript),
   });
 
   /**
