@@ -7,7 +7,7 @@ use crate::prelude::*;
 use anyhow::Result as AnyResult;
 
 #[cfg(test)]
-use mockall::{automock, mock, predicate::*};
+use mockall::{automock, predicate::*};
 
 #[cfg_attr(test, automock)]
 #[async_trait]
