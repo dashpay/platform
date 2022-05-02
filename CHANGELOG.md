@@ -1,3 +1,10 @@
+### [0.22.6](https://github.com/dashevo/platform/compare/v0.22.5...v0.22.6) (2022-05-02)
+
+
+### Bug Fixes
+
+* can't parse `CommitmentTxPayload` ([#371](https://github.com/dashevo/platform/issues/371))
+
 ### [0.22.5](https://github.com/dashevo/platform/compare/v0.22.4...v0.22.5) (2022-04-29)
 
 
