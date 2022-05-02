@@ -242,13 +242,9 @@ mod test {
 
         let mut string_contract = get_data_from_file("src/tests/payloads/contract_example.json")?;
         string_contract.retain(|c| !c.is_whitespace());
-        trace!("the string contract is {}", string_contract);
 
         let contract = DataContract::try_from(string_contract.as_str())?;
-        trace!("the parsed contract is {:#?}", contract);
-
         let serialized_contract = serde_json::to_string(&contract.to_json()?)?;
-        trace!("serialized contract: {}", serialized_contract);
 
         assert_eq!(serialized_contract, string_contract);
         Ok(())
