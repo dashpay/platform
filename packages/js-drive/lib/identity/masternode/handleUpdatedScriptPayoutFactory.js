@@ -35,7 +35,7 @@ function handleUpdatedScriptPayoutFactory(
 
     // disable previous
     identityPublicKeys = identityPublicKeys.map((pk) => {
-      if (Buffer.compare(pk.getData(), previousPubKeyData) === 0) {
+      if (pk.getData().equals(previousPubKeyData)) {
         pk.setDisabledAt(new Date().getTime());
       }
 
