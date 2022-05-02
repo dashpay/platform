@@ -49,6 +49,8 @@ describe('handleNewMasternodeFactory', () => {
   });
 
   it('should create masternode identity', async () => {
+    masternodeEntry.payoutAddress = 'yRRwW957BJwL6SVVh3s8ASQYa2qXnduyfx';
+
     await handleNewMasternode(masternodeEntry, dataContract);
 
     expect(fetchTransactionMock).to.be.calledOnceWithExactly(masternodeEntry.proRegTxHash);
@@ -56,7 +58,7 @@ describe('handleNewMasternodeFactory', () => {
       Identifier.from('6k8jXHFuno3vqpfrQ36CaxrGi4SupdTJcGNeZLPioxQo'),
       Buffer.from('6161616161616161616161616161616161616161', 'hex'),
       IdentityPublicKey.TYPES.ECDSA_HASH160,
-      Buffer.from('76a9144b682e8847992b8e9a2531cef5a3169ea5b80c5888ac', 'hex'),
+      Buffer.from('76a91438130b3e02c119f53aba29a12de6be40f0c6596f88ac', 'hex'),
     );
     expect(createRewardShareDocumentMock).to.not.be.called();
   });
@@ -72,7 +74,7 @@ describe('handleNewMasternodeFactory', () => {
       Identifier.from('6k8jXHFuno3vqpfrQ36CaxrGi4SupdTJcGNeZLPioxQo'),
       Buffer.from('6161616161616161616161616161616161616161', 'hex'),
       IdentityPublicKey.TYPES.ECDSA_HASH160,
-      Buffer.from('76a9144b682e8847992b8e9a2531cef5a3169ea5b80c5888ac', 'hex'),
+      undefined,
     );
     expect(createMasternodeIdentityMock.getCall(1)).to.be.calledWith(
       Identifier.from('EwLi1FgGwvmLQ9nkfnttpXzv4SfC7XGBvs61QBCtnHEL'),

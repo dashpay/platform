@@ -32,8 +32,8 @@ function handleNewMasternodeFactory(
 
     let payoutPubKey;
 
-    if (masternodeEntry.operatorPayoutAddress) {
-      const payoutAddress = Address.fromString(masternodeEntry.operatorPayoutAddress);
+    if (masternodeEntry.payoutAddress) {
+      const payoutAddress = Address.fromString(masternodeEntry.payoutAddress);
       payoutPubKey = new Script(payoutAddress).toBuffer();
     }
 
