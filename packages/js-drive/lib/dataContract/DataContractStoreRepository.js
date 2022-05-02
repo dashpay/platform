@@ -1,6 +1,9 @@
 const DataContract = require('@dashevo/dpp/lib/dataContract/DataContract');
 const { createHash } = require('crypto');
 
+const PreCalculatedOperation = require('@dashevo/dpp/lib/stateTransition/fees/operations/PreCalculatedOperation');
+const StorageResult = require('../storage/StorageResult');
+
 class DataContractStoreRepository {
   /**
    *
@@ -19,14 +22,24 @@ class DataContractStoreRepository {
    *
    * @param {DataContract} dataContract
    * @param {boolean} [useTransaction=false]
-   * @return {Promise<void>}
+   * @return {Promise<StorageResult<void>>}
    */
   async store(dataContract, useTransaction = false) {
     try {
-      return await this.storage.getDrive().applyContract(
+      const [storageCost, processingCost] = await this.storage.getDrive().applyContract(
         dataContract,
         new Date('2022-03-17T15:08:26.132Z'),
         useTransaction,
+      );
+
+      return new StorageResult(
+        undefined,
+        [
+          new PreCalculatedOperation(
+            storageCost,
+            processingCost,
+          ),
+        ],
       );
     } finally {
       if (this.logger) {
@@ -48,24 +61,29 @@ class DataContractStoreRepository {
    *
    * @param {Identifier} id
    * @param {boolean} [useTransaction=false]
-   * @return {Promise<null|DataContract>}
+   * @return {Promise<StorageResult<null|DataContract>>}
    */
   async fetch(id, useTransaction = false) {
-    const encodedDataContract = await this.storage.get(
+    const result = await this.storage.get(
       DataContractStoreRepository.TREE_PATH.concat([id.toBuffer()]),
       DataContractStoreRepository.DATA_CONTRACT_KEY,
       { useTransaction },
     );
 
-    if (!encodedDataContract) {
-      return null;
+    if (result.isNull()) {
+      return result;
     }
 
-    const [protocolVersion, rawDataContract] = this.decodeProtocolEntity(encodedDataContract);
+    const [protocolVersion, rawDataContract] = this.decodeProtocolEntity(
+      result.getValue(),
+    );
 
     rawDataContract.protocolVersion = protocolVersion;
 
-    return new DataContract(rawDataContract);
+    return new StorageResult(
+      new DataContract(rawDataContract),
+      result.getOperations(),
+    );
   }
 
   /**
@@ -73,12 +91,14 @@ class DataContractStoreRepository {
    * @param {boolean} [options.useTransaction=false]
    * @param {boolean} [options.skipIfExists]
    *
-   * @return {Promise<DataContractStoreRepository>}
+   * @return {Promise<StorageResult<void>>}
    */
   async createTree(options = {}) {
-    await this.storage.createTree([], DataContractStoreRepository.TREE_PATH[0], options);
-
-    return this;
+    return this.storage.createTree(
+      [],
+      DataContractStoreRepository.TREE_PATH[0],
+      options,
+    );
   }
 }
 

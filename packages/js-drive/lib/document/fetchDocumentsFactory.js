@@ -43,14 +43,19 @@ function fetchDocumentsFactory(
 
     let dataContract = dataContractCache.get(contractIdString);
 
-    if (!dataContract) {
-      dataContract = await dataContractRepository.fetch(contractIdIdentifier);
+    let operations = [];
 
-      if (!dataContract) {
+    if (!dataContract) {
+      const dataContractResult = await dataContractRepository.fetch(contractIdIdentifier);
+
+      if (dataContractResult.isNull()) {
         const error = new InvalidContractIdError(contractIdIdentifier);
 
         throw new InvalidQueryError([error]);
       }
+
+      dataContract = dataContractResult.getValue();
+      operations = dataContractResult.getOperations();
 
       dataContractCache.set(contractIdString, dataContract);
     }
@@ -61,12 +66,16 @@ function fetchDocumentsFactory(
       throw new InvalidQueryError([error]);
     }
 
-    return documentRepository.find(
+    const result = await documentRepository.find(
       dataContract,
       type,
       options,
       useTransaction,
     );
+
+    result.addOperation(...operations);
+
+    return result;
   }
 
   return fetchDocuments;

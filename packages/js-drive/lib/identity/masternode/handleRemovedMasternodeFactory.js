@@ -18,7 +18,7 @@ function handleRemovedMasternodeFactory(
     const limit = 100;
 
     do {
-      fetchedDocuments = await documentRepository.find(
+      const fetchedDocumentsResult = await documentRepository.find(
         dataContract,
         'rewardShare',
         {
@@ -30,6 +30,8 @@ function handleRemovedMasternodeFactory(
         },
         true,
       );
+
+      fetchedDocuments = fetchedDocumentsResult.getValue();
 
       documentsToDelete = documentsToDelete.concat(fetchedDocuments);
 

@@ -5,10 +5,16 @@ const createTestDIContainer = require('../../../lib/test/createTestDIContainer')
 const createDocumentTypeTreePath = require('../../../lib/document/groveDB/createDocumentTreePath');
 const InvalidQueryError = require('../../../lib/document/errors/InvalidQueryError');
 const StartDocumentNotFoundError = require('../../../lib/document/query/errors/StartDocumentNotFoundError');
+const StorageResult = require('../../../lib/storage/StorageResult');
 
 async function createDocuments(documentRepository, documents) {
   return Promise.all(
-    documents.map((o) => documentRepository.store(o)),
+    documents.map(async (o) => {
+      const result = await documentRepository.store(o);
+
+      expect(result).to.be.instanceOf(StorageResult);
+      expect(result.getOperations().length).to.be.greaterThan(0);
+    }),
   );
 }
 
@@ -199,7 +205,7 @@ describe('DocumentRepository', function main() {
 
         expect.fail('should fail with NotFoundError error');
       } catch (e) {
-        expect(e.message.indexOf('path key not found: key not found in Merk') !== -1).to.be.true();
+        expect(e.message.startsWith('path key not found: key not found in Merk')).to.be.true();
       }
 
       await documentRepository.storage.commitTransaction();
@@ -220,7 +226,12 @@ describe('DocumentRepository', function main() {
     });
 
     it('should find Documents', async () => {
-      const foundDocuments = await documentRepository.find(dataContract, document.getType());
+      const result = await documentRepository.find(dataContract, document.getType());
+
+      expect(result).to.be.instanceOf(StorageResult);
+      expect(result.getOperations().length).to.be.greaterThan(0);
+
+      const foundDocuments = result.getValue();
 
       expect(foundDocuments).to.be.an('array');
       expect(foundDocuments).to.have.lengthOf(documents.length);
@@ -235,8 +246,13 @@ describe('DocumentRepository', function main() {
         .storage
         .startTransaction();
 
-      const foundDocuments = await documentRepository
+      const foundDocumentsResult = await documentRepository
         .find(dataContract, document.getType(), {}, true);
+
+      expect(foundDocumentsResult).to.be.instanceOf(StorageResult);
+      expect(foundDocumentsResult.getOperations().length).to.be.greaterThan(0);
+
+      const foundDocuments = foundDocumentsResult.getValue();
 
       await documentRepository.storage.commitTransaction();
 
@@ -271,10 +287,15 @@ describe('DocumentRepository', function main() {
 
         const result = await documentRepository.find(dataContract, document.getType(), query);
 
-        expect(result).to.be.an('array');
-        expect(result).to.be.lengthOf(1);
+        expect(result).to.be.instanceOf(StorageResult);
+        expect(result.getOperations().length).to.be.greaterThan(0);
 
-        const [expectedDocument] = result;
+        const foundDocuments = result.getValue();
+
+        expect(foundDocuments).to.be.an('array');
+        expect(foundDocuments).to.be.lengthOf(1);
+
+        const [expectedDocument] = foundDocuments;
 
         expect(expectedDocument.toBuffer()).to.deep.equal(documents[0].toBuffer());
       });
@@ -287,12 +308,17 @@ describe('DocumentRepository', function main() {
 
         const result = await documentRepository.find(dataContract, document.getType(), query);
 
-        expect(result).to.be.an('array');
-        expect(result).to.be.lengthOf(2);
+        expect(result).to.be.instanceOf(StorageResult);
+        expect(result.getOperations().length).to.be.greaterThan(0);
+
+        const foundDocuments = result.getValue();
+
+        expect(foundDocuments).to.be.an('array');
+        expect(foundDocuments).to.be.lengthOf(2);
 
         const expectedDocuments = documents.slice(0, 2).map((doc) => doc.toBuffer());
 
-        expect(result.map((doc) => doc.toBuffer())).to.deep.members(expectedDocuments);
+        expect(foundDocuments.map((doc) => doc.toBuffer())).to.deep.members(expectedDocuments);
       });
 
       it('should find Documents using "==" operator', async () => {
@@ -302,10 +328,15 @@ describe('DocumentRepository', function main() {
 
         const result = await documentRepository.find(dataContract, document.getType(), query);
 
-        expect(result).to.be.an('array');
-        expect(result).to.be.lengthOf(1);
+        expect(result).to.be.instanceOf(StorageResult);
+        expect(result.getOperations().length).to.be.greaterThan(0);
 
-        const [expectedDocument] = result;
+        const foundDocuments = result.getValue();
+
+        expect(foundDocuments).to.be.an('array');
+        expect(foundDocuments).to.be.lengthOf(1);
+
+        const [expectedDocument] = foundDocuments;
 
         expect(expectedDocument.toBuffer()).to.deep.equal(document.toBuffer());
       });
@@ -318,14 +349,19 @@ describe('DocumentRepository', function main() {
 
         const result = await documentRepository.find(dataContract, document.getType(), query);
 
-        expect(result).to.be.an('array');
-        expect(result).to.be.lengthOf(documents.length - 2);
+        expect(result).to.be.instanceOf(StorageResult);
+        expect(result.getOperations().length).to.be.greaterThan(0);
+
+        const foundDocuments = result.getValue();
+
+        expect(foundDocuments).to.be.an('array');
+        expect(foundDocuments).to.be.lengthOf(documents.length - 2);
 
         const expectedDocuments = documents
           .splice(2, documents.length)
           .map((doc) => doc.toBuffer());
 
-        expect(result.map((doc) => doc.toBuffer())).to.deep.members(expectedDocuments);
+        expect(foundDocuments.map((doc) => doc.toBuffer())).to.deep.members(expectedDocuments);
       });
 
       it('should find Documents using ">=" operator', async () => {
@@ -336,14 +372,19 @@ describe('DocumentRepository', function main() {
 
         const result = await documentRepository.find(dataContract, document.getType(), query);
 
-        expect(result).to.be.an('array');
-        expect(result).to.be.lengthOf(documents.length - 1);
+        expect(result).to.be.instanceOf(StorageResult);
+        expect(result.getOperations().length).to.be.greaterThan(0);
+
+        const foundDocuments = result.getValue();
+
+        expect(foundDocuments).to.be.an('array');
+        expect(foundDocuments).to.be.lengthOf(documents.length - 1);
 
         documents.shift();
         const expectedDocuments = documents
           .map((doc) => doc.toBuffer());
 
-        expect(result.map((doc) => doc.toBuffer())).to.deep.members(expectedDocuments);
+        expect(foundDocuments.map((doc) => doc.toBuffer())).to.deep.members(expectedDocuments);
       });
 
       it('should find Documents using "in" operator', async () => {
@@ -359,12 +400,17 @@ describe('DocumentRepository', function main() {
 
         const result = await documentRepository.find(dataContract, document.getType(), query);
 
-        expect(result).to.be.an('array');
-        expect(result).to.be.lengthOf(2);
+        expect(result).to.be.instanceOf(StorageResult);
+        expect(result.getOperations().length).to.be.greaterThan(0);
+
+        const foundDocuments = result.getValue();
+
+        expect(foundDocuments).to.be.an('array');
+        expect(foundDocuments).to.be.lengthOf(2);
 
         const expectedDocuments = documents.slice(0, 2).map((doc) => doc.toBuffer());
 
-        expect(result.map((doc) => doc.toBuffer())).to.deep.members(expectedDocuments);
+        expect(foundDocuments.map((doc) => doc.toBuffer())).to.deep.members(expectedDocuments);
       });
 
       it.skip('should find Documents using "length" operator', async () => {
@@ -374,10 +420,15 @@ describe('DocumentRepository', function main() {
 
         const result = await documentRepository.find(dataContract, document.getType(), query);
 
-        expect(result).to.be.an('array');
-        expect(result).to.be.lengthOf(1);
+        expect(result).to.be.instanceOf(StorageResult);
+        expect(result.getOperations().length).to.be.greaterThan(0);
 
-        const [expectedDocument] = result;
+        const foundDocuments = result.getValue();
+
+        expect(foundDocuments).to.be.an('array');
+        expect(foundDocuments).to.be.lengthOf(1);
+
+        const [expectedDocument] = foundDocuments;
 
         expect(expectedDocument.toBuffer()).to.deep.equal(documents[1].toBuffer());
       });
@@ -390,10 +441,15 @@ describe('DocumentRepository', function main() {
 
         const result = await documentRepository.find(dataContract, document.getType(), query);
 
-        expect(result).to.be.an('array');
-        expect(result).to.be.lengthOf(1);
+        expect(result).to.be.instanceOf(StorageResult);
+        expect(result.getOperations().length).to.be.greaterThan(0);
 
-        const [expectedDocument] = result;
+        const foundDocuments = result.getValue();
+
+        expect(foundDocuments).to.be.an('array');
+        expect(foundDocuments).to.be.lengthOf(1);
+
+        const [expectedDocument] = foundDocuments;
 
         expect(expectedDocument.toBuffer()).to.deep.equal(documents[2].toBuffer());
       });
@@ -409,10 +465,15 @@ describe('DocumentRepository', function main() {
 
         const result = await documentRepository.find(dataContract, document.getType(), query);
 
-        expect(result).to.be.an('array');
-        expect(result).to.be.lengthOf(1);
+        expect(result).to.be.instanceOf(StorageResult);
+        expect(result.getOperations().length).to.be.greaterThan(0);
 
-        const [expectedDocument] = result;
+        const foundDocuments = result.getValue();
+
+        expect(foundDocuments).to.be.an('array');
+        expect(foundDocuments).to.be.lengthOf(1);
+
+        const [expectedDocument] = foundDocuments;
 
         expect(expectedDocument.toBuffer()).to.deep.equal(documents[1].toBuffer());
       });
@@ -426,10 +487,15 @@ describe('DocumentRepository', function main() {
 
         const result = await documentRepository.find(dataContract, document.getType(), query);
 
-        expect(result).to.be.an('array');
-        expect(result).to.be.lengthOf(1);
+        expect(result).to.be.instanceOf(StorageResult);
+        expect(result.getOperations().length).to.be.greaterThan(0);
 
-        const [expectedDocument] = result;
+        const foundDocuments = result.getValue();
+
+        expect(foundDocuments).to.be.an('array');
+        expect(foundDocuments).to.be.lengthOf(1);
+
+        const [expectedDocument] = foundDocuments;
 
         expect(expectedDocument.toBuffer()).to.deep.equal(documents[2].toBuffer());
       });
@@ -443,12 +509,17 @@ describe('DocumentRepository', function main() {
 
         const result = await documentRepository.find(dataContract, document.getType(), query);
 
-        expect(result).to.be.an('array');
-        expect(result).to.be.lengthOf(2);
+        expect(result).to.be.instanceOf(StorageResult);
+        expect(result.getOperations().length).to.be.greaterThan(0);
+
+        const foundDocuments = result.getValue();
+
+        expect(foundDocuments).to.be.an('array');
+        expect(foundDocuments).to.be.lengthOf(2);
 
         const expectedDocuments = documents.slice(1, 3).map((doc) => doc.toBuffer());
 
-        expect(result.map((doc) => doc.toBuffer())).to.deep.members(expectedDocuments);
+        expect(foundDocuments.map((doc) => doc.toBuffer())).to.deep.members(expectedDocuments);
       });
 
       it('should return empty array if where clause conditions do not match', async () => {
@@ -458,7 +529,12 @@ describe('DocumentRepository', function main() {
 
         const result = await documentRepository.find(dataContract, document.getType(), query);
 
-        expect(result).to.have.lengthOf(0);
+        expect(result).to.be.instanceOf(StorageResult);
+        expect(result.getOperations().length).to.be.greaterThan(0);
+
+        const foundDocuments = result.getValue();
+
+        expect(foundDocuments).to.have.lengthOf(0);
       });
 
       it.skip('should find Documents by nested object fields', async () => {
@@ -504,8 +580,13 @@ describe('DocumentRepository', function main() {
 
           const result = await documentRepository.find(dataContract, document.getType(), options);
 
-          expect(result).to.be.an('array');
-          expect(result).to.have.lengthOf(1);
+          expect(result).to.be.instanceOf(StorageResult);
+          expect(result.getOperations().length).to.be.greaterThan(0);
+
+          const foundDocuments = result.getValue();
+
+          expect(foundDocuments).to.be.an('array');
+          expect(foundDocuments).to.have.lengthOf(1);
         });
 
         it('should limit result to 100 Documents if limit is not set', async () => {
@@ -518,8 +599,14 @@ describe('DocumentRepository', function main() {
           }
 
           const result = await documentRepository.find(dataContract, document.getType());
-          expect(result).to.be.an('array');
-          expect(result).to.have.lengthOf(100);
+
+          expect(result).to.be.instanceOf(StorageResult);
+          expect(result.getOperations().length).to.be.greaterThan(0);
+
+          const foundDocuments = result.getValue();
+
+          expect(foundDocuments).to.be.an('array');
+          expect(foundDocuments).to.have.lengthOf(100);
         });
       });
 
@@ -537,11 +624,16 @@ describe('DocumentRepository', function main() {
 
           const result = await documentRepository.find(dataContract, document.getType(), query);
 
-          expect(result).to.be.an('array');
+          expect(result).to.be.instanceOf(StorageResult);
+          expect(result.getOperations().length).to.be.greaterThan(0);
+
+          const foundDocuments = result.getValue();
+
+          expect(foundDocuments).to.be.an('array');
 
           const expectedDocuments = documents.splice(1).map((doc) => doc.toBuffer());
 
-          expect(result.map((doc) => doc.toBuffer())).to.deep.members(expectedDocuments);
+          expect(foundDocuments.map((doc) => doc.toBuffer())).to.deep.members(expectedDocuments);
         });
 
         it('should throw InvalidQuery if document not found', async () => {
@@ -579,11 +671,16 @@ describe('DocumentRepository', function main() {
 
           const result = await documentRepository.find(dataContract, document.getType(), options);
 
-          expect(result).to.be.an('array');
+          expect(result).to.be.instanceOf(StorageResult);
+          expect(result.getOperations().length).to.be.greaterThan(0);
+
+          const foundDocuments = result.getValue();
+
+          expect(foundDocuments).to.be.an('array');
 
           const expectedDocuments = documents.splice(1).map((doc) => doc.toBuffer());
 
-          expect(result.map((doc) => doc.toBuffer())).to.deep.members(expectedDocuments);
+          expect(foundDocuments.map((doc) => doc.toBuffer())).to.deep.members(expectedDocuments);
         });
 
         it('should throw InvalidQuery if document not found', async () => {
@@ -620,11 +717,16 @@ describe('DocumentRepository', function main() {
 
           const result = await documentRepository.find(dataContract, document.getType(), query);
 
-          expect(result).to.be.an('array');
+          expect(result).to.be.instanceOf(StorageResult);
+          expect(result.getOperations().length).to.be.greaterThan(0);
+
+          const foundDocuments = result.getValue();
+
+          expect(foundDocuments).to.be.an('array');
 
           const expectedDocuments = documents.reverse().map((doc) => doc.toBuffer());
 
-          expect(result.map((doc) => doc.toBuffer())).to.deep.equal(expectedDocuments);
+          expect(foundDocuments.map((doc) => doc.toBuffer())).to.deep.equal(expectedDocuments);
         });
 
         it('should sort Documents in ascending order', async () => {
@@ -639,11 +741,16 @@ describe('DocumentRepository', function main() {
 
           const result = await documentRepository.find(dataContract, document.getType(), query);
 
-          expect(result).to.be.an('array');
+          expect(result).to.be.instanceOf(StorageResult);
+          expect(result.getOperations().length).to.be.greaterThan(0);
+
+          const foundDocuments = result.getValue();
+
+          expect(foundDocuments).to.be.an('array');
 
           const expectedDocuments = documents.map((doc) => doc.toBuffer());
 
-          expect(result.map((doc) => doc.toBuffer())).to.deep.equal(expectedDocuments);
+          expect(foundDocuments.map((doc) => doc.toBuffer())).to.deep.equal(expectedDocuments);
         });
 
         it('should sort Documents by $id', async () => {
@@ -672,14 +779,19 @@ describe('DocumentRepository', function main() {
 
           const result = await documentRepository.find(dataContract, document.getType(), query);
 
-          expect(result).to.be.an('array');
-          expect(result).to.be.lengthOf(documents.length);
+          expect(result).to.be.instanceOf(StorageResult);
+          expect(result.getOperations().length).to.be.greaterThan(0);
 
-          expect(result[0].getId()).to.deep.equal(createdIds[4]);
-          expect(result[1].getId()).to.deep.equal(createdIds[3]);
-          expect(result[2].getId()).to.deep.equal(createdIds[2]);
-          expect(result[3].getId()).to.deep.equal(createdIds[1]);
-          expect(result[4].getId()).to.deep.equal(createdIds[0]);
+          const foundDocuments = result.getValue();
+
+          expect(foundDocuments).to.be.an('array');
+          expect(foundDocuments).to.be.lengthOf(documents.length);
+
+          expect(foundDocuments[0].getId()).to.deep.equal(createdIds[4]);
+          expect(foundDocuments[1].getId()).to.deep.equal(createdIds[3]);
+          expect(foundDocuments[2].getId()).to.deep.equal(createdIds[2]);
+          expect(foundDocuments[3].getId()).to.deep.equal(createdIds[1]);
+          expect(foundDocuments[4].getId()).to.deep.equal(createdIds[0]);
         });
       });
     });
@@ -691,13 +803,25 @@ describe('DocumentRepository', function main() {
     });
 
     it('should delete Document', async () => {
-      await documentRepository.delete(dataContract, document.getType(), document.getId());
+      let result = await documentRepository.delete(
+        dataContract,
+        document.getType(),
+        document.getId(),
+      );
 
-      const result = await documentRepository.find(dataContract, document.getType(), {
+      expect(result).to.be.instanceOf(StorageResult);
+      expect(result.getOperations().length).to.be.greaterThan(0);
+
+      result = await documentRepository.find(dataContract, document.getType(), {
         where: [['$id', '==', document.getId()]],
       });
 
-      expect(result).to.have.lengthOf(0);
+      expect(result).to.be.instanceOf(StorageResult);
+      expect(result.getOperations().length).to.be.greaterThan(0);
+
+      const foundDocuments = result.getValue();
+
+      expect(foundDocuments).to.have.lengthOf(0);
     });
 
     it('should delete Document in transaction', async () => {
@@ -705,18 +829,21 @@ describe('DocumentRepository', function main() {
         .storage
         .startTransaction();
 
-      await documentRepository.delete(
+      const result = await documentRepository.delete(
         dataContract,
         document.getType(),
         document.getId(),
         true,
       );
 
+      expect(result).to.be.instanceOf(StorageResult);
+      expect(result.getOperations().length).to.be.greaterThan(0);
+
       const query = {
         where: [['$id', '==', document.getId()]],
       };
 
-      const removedDocument = await documentRepository
+      const removedDocumentResult = await documentRepository
         .find(
           dataContract,
           document.getType(),
@@ -724,14 +851,20 @@ describe('DocumentRepository', function main() {
           true,
         );
 
-      const notRemovedDocuments = await documentRepository
+      const removedDocument = removedDocumentResult.getValue();
+
+      const notRemovedDocumentsResult = await documentRepository
         .find(dataContract, document.getType(), query);
+
+      const notRemovedDocuments = notRemovedDocumentsResult.getValue();
 
       await documentRepository
         .storage.commitTransaction();
 
-      const completelyRemovedDocument = await documentRepository
+      const completelyRemovedDocumentResult = await documentRepository
         .find(dataContract, document.getType(), query);
+
+      const completelyRemovedDocument = completelyRemovedDocumentResult.getValue();
 
       expect(removedDocument).to.have.lengthOf(0);
       expect(notRemovedDocuments).to.be.not.null();
@@ -752,15 +885,20 @@ describe('DocumentRepository', function main() {
 
       // Document should be removed in transaction
 
-      const removedDocuments = await documentRepository
+      const removedDocumentsResult = await documentRepository
         .find(dataContract, document.getType(), query, true);
+
+      const removedDocuments = removedDocumentsResult.getValue();
 
       expect(removedDocuments).to.have.lengthOf(0);
 
       // But still exists in main database
 
-      const removedDocumentsWithoutTransaction = await documentRepository
+      const removedDocumentsWithoutTransactionResult = await documentRepository
         .find(dataContract, document.getType(), query);
+
+      const removedDocumentsWithoutTransaction = removedDocumentsWithoutTransactionResult
+        .getValue();
 
       expect(removedDocumentsWithoutTransaction).to.not.have.lengthOf(0);
       expect(removedDocumentsWithoutTransaction[0].toBuffer()).to.deep.equal(document.toBuffer());
@@ -769,8 +907,10 @@ describe('DocumentRepository', function main() {
         .storage
         .abortTransaction();
 
-      const restoredDocuments = await documentRepository
+      const restoredDocumentsResult = await documentRepository
         .find(dataContract, document.getType(), query);
+
+      const restoredDocuments = restoredDocumentsResult.getValue();
 
       expect(restoredDocuments).to.not.have.lengthOf(0);
       expect(restoredDocuments[0].toBuffer()).to.deep.equal(document.toBuffer());

@@ -24,6 +24,7 @@ const identitiesByPublicKeyHashesQueryHandlerFactory = require(
 const InvalidArgumentAbciError = require('../../../../../lib/abci/errors/InvalidArgumentAbciError');
 const BlockExecutionContextStackMock = require('../../../../../lib/test/mock/BlockExecutionContextStackMock');
 const UnimplementedAbciError = require('../../../../../lib/abci/errors/UnimplementedAbciError');
+const StorageResult = require('../../../../../lib/storage/StorageResult');
 
 describe('identitiesByPublicKeyHashesQueryHandlerFactory', () => {
   let identitiesByPublicKeyHashesQueryHandler;
@@ -86,22 +87,25 @@ describe('identitiesByPublicKeyHashesQueryHandlerFactory', () => {
     ];
 
     signedPublicKeyToIdentityIdRepositoryMock
+      .fetchBuffer.resolves(new StorageResult(null));
+
+    signedPublicKeyToIdentityIdRepositoryMock
       .fetchBuffer
       .withArgs(publicKeyHashes[0])
-      .resolves(cbor.encode([identities[0].getId()]));
+      .resolves(new StorageResult(cbor.encode([identities[0].getId()])));
 
     signedPublicKeyToIdentityIdRepositoryMock
       .fetchBuffer
       .withArgs(publicKeyHashes[1])
-      .resolves(cbor.encode([identities[1].getId()]));
+      .resolves(new StorageResult(cbor.encode([identities[1].getId()])));
 
     signedIdentityRepositoryMock.fetch
       .withArgs(identities[0].getId())
-      .resolves(identities[0]);
+      .resolves(new StorageResult(identities[0]));
 
     signedIdentityRepositoryMock.fetch
-      .withArgs(identities[0].getId())
-      .resolves(identities[1]);
+      .withArgs(identities[1].getId())
+      .resolves(new StorageResult(identities[1]));
 
     params = {};
     data = { publicKeyHashes };

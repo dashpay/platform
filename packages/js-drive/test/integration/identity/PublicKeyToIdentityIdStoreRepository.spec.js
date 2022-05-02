@@ -6,6 +6,7 @@ const cbor = require('cbor');
 const PublicKeyToIdentityIdStoreRepository = require('../../../lib/identity/PublicKeyToIdentityIdStoreRepository');
 const GroveDBStore = require('../../../lib/storage/GroveDBStore');
 const logger = require('../../../lib/util/noopLogger');
+const StorageResult = require('../../../lib/storage/StorageResult');
 
 describe('PublicKeyToIdentityIdStoreRepository', () => {
   let rsDrive;
@@ -40,17 +41,21 @@ describe('PublicKeyToIdentityIdStoreRepository', () => {
         identity.getId(),
       );
 
-      expect(result).to.equal(repository);
+      expect(result).to.be.instanceOf(StorageResult);
+      expect(result.getOperations().length).to.be.greaterThan(0);
 
-      const identityIdsSerialized = await store.get(
+      const identityIdsSerializedResult = await store.get(
         PublicKeyToIdentityIdStoreRepository.TREE_PATH,
         publicKeyHash,
       );
 
-      const identityIds = cbor.decode(identityIdsSerialized);
+      const identityIds = cbor.decode(identityIdsSerializedResult.getValue());
 
       expect(identityIds).to.have.lengthOf(1);
-      expect(new Identifier(identityIds[0])).to.deep.equal(identity.getId());
+
+      const identifier = new Identifier(identityIds[0]);
+
+      expect(identifier).to.deep.equal(identity.getId());
     });
 
     it('should store public key to identity ids map using transaction', async () => {
@@ -62,35 +67,41 @@ describe('PublicKeyToIdentityIdStoreRepository', () => {
         true,
       );
 
-      const emptyIds = await store.get(
+      const emptyIdsResult = await store.get(
         PublicKeyToIdentityIdStoreRepository.TREE_PATH,
         publicKeyHash,
       );
 
-      expect(emptyIds).to.be.null();
+      expect(emptyIdsResult.getValue()).to.be.null();
 
-      const transactionalIdsEncoded = await store.get(
+      const transactionalIdsEncodedResult = await store.get(
         PublicKeyToIdentityIdStoreRepository.TREE_PATH,
         publicKeyHash,
         { useTransaction: true },
       );
 
-      const transactionalIds = cbor.decode(transactionalIdsEncoded);
+      const transactionalIds = cbor.decode(transactionalIdsEncodedResult.getValue());
 
       expect(transactionalIds).to.have.lengthOf(1);
-      expect(new Identifier(transactionalIds[0])).to.deep.equal(identity.getId());
+
+      let identifier = new Identifier(transactionalIds[0]);
+
+      expect(identifier).to.deep.equal(identity.getId());
 
       await store.commitTransaction();
 
-      const committedIdsEncoded = await store.get(
+      const committedIdsEncodedResult = await store.get(
         PublicKeyToIdentityIdStoreRepository.TREE_PATH,
         publicKeyHash,
       );
 
-      const committedIds = cbor.decode(committedIdsEncoded);
+      const committedIds = cbor.decode(committedIdsEncodedResult.getValue());
 
       expect(committedIds).to.have.lengthOf(1);
-      expect(new Identifier(committedIds[0])).to.deep.equal(identity.getId());
+
+      identifier = new Identifier(committedIds[0]);
+
+      expect(identifier).to.deep.equal(identity.getId());
     });
   });
 
@@ -114,10 +125,18 @@ describe('PublicKeyToIdentityIdStoreRepository', () => {
         cbor.encode(identityIds),
       );
 
-      const storedIds = await repository.fetch(publicKeyHash);
+      const result = await repository.fetch(publicKeyHash);
 
-      expect(storedIds).to.deep.have.lengthOf(1);
-      expect(new Identifier(storedIds[0])).to.deep.equal(identity.getId());
+      expect(result).to.be.instanceOf(StorageResult);
+      expect(result.getOperations().length).to.be.greaterThan(0);
+
+      const fetchedIdentityIds = result.getValue();
+
+      expect(fetchedIdentityIds).to.deep.have.lengthOf(1);
+
+      const identifier = new Identifier(fetchedIdentityIds[0]);
+
+      expect(identifier).to.deep.equal(identity.getId());
     });
 
     it('should fetch an public key to identity ids map using transaction', async () => {
@@ -132,19 +151,19 @@ describe('PublicKeyToIdentityIdStoreRepository', () => {
         { useTransaction: true },
       );
 
-      const emptyIds = await repository.fetch(publicKeyHash, false);
+      const emptyIdsResult = await repository.fetch(publicKeyHash, false);
 
-      expect(emptyIds).to.be.empty();
+      expect(emptyIdsResult.getValue()).to.be.empty();
 
-      const transactionalIds = await repository.fetch(publicKeyHash, true);
+      const transactionalIdsResult = await repository.fetch(publicKeyHash, true);
 
-      expect(transactionalIds).to.deep.equal(identityIds);
+      expect(transactionalIdsResult.getValue()).to.deep.equal(identityIds);
 
       await store.commitTransaction();
 
-      const storedIds = await repository.fetch(publicKeyHash);
+      const storedIdsResult = await repository.fetch(publicKeyHash);
 
-      expect(storedIds).to.deep.equal(identityIds);
+      expect(storedIdsResult.getValue()).to.deep.equal(identityIds);
     });
   });
 
@@ -162,11 +181,20 @@ describe('PublicKeyToIdentityIdStoreRepository', () => {
         cbor.encode(identityIds),
       );
 
-      const encodedIds = await repository.fetchBuffer(publicKeyHash);
-      const storedIds = cbor.decode(encodedIds).map((id) => new Identifier(id));
+      const result = await repository.fetchBuffer(publicKeyHash);
+
+      expect(result).to.be.instanceOf(StorageResult);
+      expect(result.getOperations().length).to.be.greaterThan(0);
+
+      const storedIdsEncoded = result.getValue();
+
+      const storedIds = cbor.decode(storedIdsEncoded).map((id) => new Identifier(id));
 
       expect(storedIds).to.deep.have.lengthOf(1);
-      expect(new Identifier(storedIds[0])).to.deep.equal(identity.getId());
+
+      const identifier = new Identifier(storedIds[0]);
+
+      expect(identifier).to.deep.equal(identity.getId());
     });
 
     it('should fetch serialized identity ids by public key hash in transaction', async () => {
@@ -181,18 +209,22 @@ describe('PublicKeyToIdentityIdStoreRepository', () => {
         { useTransaction: true },
       );
 
-      const emptyIds = await repository.fetchBuffer(publicKeyHash, false);
+      const emptyIdsResult = await repository.fetchBuffer(publicKeyHash, false);
 
-      expect(emptyIds).to.be.null();
+      expect(emptyIdsResult.getValue()).to.be.null();
 
-      const transactionalIdsEncoded = await repository.fetchBuffer(publicKeyHash, true);
+      const transactionalIdsEncodedResult = await repository.fetchBuffer(publicKeyHash, true);
+
+      const transactionalIdsEncoded = transactionalIdsEncodedResult.getValue();
 
       const transactionalIds = cbor.decode(transactionalIdsEncoded).map((id) => new Identifier(id));
       expect(transactionalIds).to.deep.equal(identityIds);
 
       await store.commitTransaction();
 
-      const storedIdsEncoded = await repository.fetchBuffer(publicKeyHash);
+      const storedIdsEncodedResult = await repository.fetchBuffer(publicKeyHash);
+
+      const storedIdsEncoded = storedIdsEncodedResult.getValue();
 
       const storedIds = cbor.decode(storedIdsEncoded).map((id) => new Identifier(id));
 
@@ -204,7 +236,8 @@ describe('PublicKeyToIdentityIdStoreRepository', () => {
     it('should create a tree', async () => {
       const result = await repository.createTree();
 
-      expect(result).to.equal(repository);
+      expect(result).to.be.instanceOf(StorageResult);
+      expect(result.getOperations().length).to.be.greaterThan(0);
 
       const data = await store.db.get(
         [],
