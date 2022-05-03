@@ -17,7 +17,7 @@ function handleUpdatedScriptPayoutFactory(
    * @typedef handleUpdatedScriptPayout
    * @param {Identifier} identityId
    * @param {Script} newPayoutScript
-   * @param {Script} previousPayoutScript
+   * @param {Script} [previousPayoutScript]
    * @returns {Promise<void>}
    */
   async function handleUpdatedScriptPayout(
@@ -36,19 +36,21 @@ function handleUpdatedScriptPayoutFactory(
     }
 
     // disable previous
-    const previousPubKeyType = getWithdrawPubKeyTypeFromPayoutScript(previousPayoutScript);
-    const previousPubKeyData = getPublicKeyFromPayoutScript(
-      previousPayoutScript,
-      previousPubKeyType,
-    );
+    if (previousPayoutScript) {
+      const previousPubKeyType = getWithdrawPubKeyTypeFromPayoutScript(previousPayoutScript);
+      const previousPubKeyData = getPublicKeyFromPayoutScript(
+        previousPayoutScript,
+        previousPubKeyType,
+      );
 
-    identityPublicKeys = identityPublicKeys.map((pk) => {
-      if (pk.getData().equals(previousPubKeyData)) {
-        pk.setDisabledAt(new Date().getTime());
-      }
+      identityPublicKeys = identityPublicKeys.map((pk) => {
+        if (pk.getData().equals(previousPubKeyData)) {
+          pk.setDisabledAt(new Date().getTime());
+        }
 
-      return pk;
-    });
+        return pk;
+      });
+    }
 
     // add new
     const withdrawPubKeyType = getWithdrawPubKeyTypeFromPayoutScript(newPayoutScript);

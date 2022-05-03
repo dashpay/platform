@@ -97,14 +97,14 @@ function synchronizeMasternodeIdentitiesFactory(
 
           if (mnEntryWithChangedPayoutAddress) {
             const newPayoutAddress = Address.fromString(mnEntry.payoutAddress);
-            const previousPayoutAddress = mnEntryWithChangedPayoutAddress.payoutAddress
-              ? Address.fromString(mnEntryWithChangedPayoutAddress.payoutAddress)
+            const previousPayoutScript = mnEntryWithChangedPayoutAddress.payoutAddress
+              ? new Script(Address.fromString(mnEntryWithChangedPayoutAddress.payoutAddress))
               : undefined;
 
             await handleUpdatedScriptPayout(
               Identifier.from(Buffer.from(mnEntry.proRegTxHash, 'hex')),
               new Script(newPayoutAddress),
-              new Script(previousPayoutAddress),
+              previousPayoutScript,
             );
           }
         }
@@ -121,14 +121,14 @@ function synchronizeMasternodeIdentitiesFactory(
 
             const { operatorPayoutAddress } = mnEntryWithChangedOperatorPayoutAddress;
 
-            const previousOperatorPayoutAddress = operatorPayoutAddress
-              ? Address.fromString(operatorPayoutAddress)
+            const previousOperatorPayoutScript = operatorPayoutAddress
+              ? new Script(Address.fromString(operatorPayoutAddress))
               : undefined;
 
             await handleUpdatedScriptPayout(
               createOperatorIdentifier(mnEntry),
               new Script(newOperatorPayoutAddress),
-              new Script(previousOperatorPayoutAddress),
+              previousOperatorPayoutScript,
             );
           }
         }
