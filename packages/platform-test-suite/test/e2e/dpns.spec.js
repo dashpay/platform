@@ -35,7 +35,7 @@ describe('DPNS', () => {
     secondLevelDomain = getRandomDomain();
     client = await createClientWithFundedWallet();
 
-    await client.platform.identities.topUp(dpnsOwnerId, 5);
+    await client.platform.identities.topUp(dpnsOwnerId, 50);
   });
 
   after(async () => {

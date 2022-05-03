@@ -50,7 +50,7 @@ describe('Platform', () => {
     });
 
     it('should create an identity', async () => {
-      identity = await client.platform.identities.register(30);
+      identity = await client.platform.identities.register(50);
 
       expect(identity).to.exist();
     });
@@ -260,7 +260,7 @@ describe('Platform', () => {
           outputIndex,
         } = await createAssetLockTransaction({
           client,
-        }, 1);
+        }, 100);
 
         // Broadcast Asset Lock transaction
         await client.getDAPIClient().core.broadcastTransaction(transaction.toBuffer());
@@ -426,7 +426,11 @@ describe('Platform', () => {
         );
 
         expect(identityAfterTopUp.getBalance()).to.be.greaterThan(balanceBeforeTopUp);
-        expect(identityAfterTopUp.getBalance()).to.be.lessThan(balanceBeforeTopUp + topUpCredits);
+
+        // TODO: Temporary changed to equal since we are not deducting fees from balance atm
+        // expect(identityAfterTopUp.getBalance()).to.be
+        //   .lessThan(balanceBeforeTopUp + topUpCredits);
+        expect(identityAfterTopUp.getBalance()).to.be.equal(balanceBeforeTopUp + topUpCredits);
       });
 
       it('should be able to create more documents after the top-up', async () => {
