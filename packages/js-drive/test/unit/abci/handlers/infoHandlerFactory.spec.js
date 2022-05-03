@@ -19,6 +19,7 @@ const BlockExecutionContextStackMock = require('../../../../lib/test/mock/BlockE
 const BlockExecutionContextStackRepositoryMock = require('../../../../lib/test/mock/BlockExecutionContextStackRepositoryMock');
 const CreditsDistributionPoolRepositoryMock = require('../../../../lib/test/mock/CreditsDistributionPoolRepositoryMock');
 const CreditsDistributionPoolMock = require('../../../../lib/test/mock/CreditsDistributionPoolMock');
+const StorageResult = require('../../../../lib/storage/StorageResult');
 
 describe('infoHandlerFactory', () => {
   let protocolVersion;
@@ -58,9 +59,11 @@ describe('infoHandlerFactory', () => {
       getContexts: this.sinon.stub(),
     });
 
-    creditsDistributionPoolRepositoryMock.fetch.resolves({
-      toJSON: this.sinon.stub().returns('json'),
-    });
+    creditsDistributionPoolRepositoryMock.fetch.resolves(
+      new StorageResult({
+        toJSON: this.sinon.stub().returns('json'),
+      }),
+    );
 
     groveDBStoreMock.getRootHash.resolves(lastBlockAppHash);
 

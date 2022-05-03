@@ -30,6 +30,7 @@ function applyIdentityTopUpTransitionFactory(
     const outPoint = stateTransition.getAssetLockProof().getOutPoint();
 
     const creditsAmount = convertSatoshiToCredits(output.satoshis);
+
     const identityId = stateTransition.getIdentityId();
 
     const identity = await stateRepository.fetchIdentity(identityId, executionContext);

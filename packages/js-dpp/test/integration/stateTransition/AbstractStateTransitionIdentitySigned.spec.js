@@ -1,7 +1,7 @@
 const { PrivateKey, crypto: { Hash } } = require('@dashevo/dashcore-lib');
 
 const crypto = require('crypto');
-const calculateStateTransitionFee = require('../../../lib/stateTransition/calculateStateTransitionFee');
+const calculateStateTransitionFee = require('../../../lib/stateTransition/fee/calculateStateTransitionFee');
 
 const StateTransitionMock = require('../../../lib/test/mocks/StateTransitionMock');
 const IdentityPublicKey = require('../../../lib/identity/IdentityPublicKey');

@@ -65,7 +65,10 @@ function infoHandlerFactory(
     // Initialize Credits Distribution Pool
 
     if (latestContext) {
-      const fetchedCreditsDistributionPool = await creditsDistributionPoolRepository.fetch();
+      const fetchedCreditsDistributionPoolResult = await creditsDistributionPoolRepository.fetch();
+
+      const fetchedCreditsDistributionPool = fetchedCreditsDistributionPoolResult.getValue();
+
       creditsDistributionPool.populate(fetchedCreditsDistributionPool.toJSON());
     }
 
