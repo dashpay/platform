@@ -1,7 +1,7 @@
 const { createHash } = require('crypto');
-const WriteOperation = require('@dashevo/dpp/lib/stateTransition/fees/operations/WriteOperation');
-const ReadOperation = require('@dashevo/dpp/lib/stateTransition/fees/operations/ReadOperation');
-const DeleteOperation = require('@dashevo/dpp/lib/stateTransition/fees/operations/DeleteOperation');
+const WriteOperation = require('@dashevo/dpp/lib/stateTransition/fee/operations/WriteOperation');
+const ReadOperation = require('@dashevo/dpp/lib/stateTransition/fee/operations/ReadOperation');
+const DeleteOperation = require('@dashevo/dpp/lib/stateTransition/fee/operations/DeleteOperation');
 const StorageResult = require('./StorageResult');
 
 class GroveDBStore {

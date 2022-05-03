@@ -1,5 +1,11 @@
 const AbstractOperation = require('./AbstractOperation');
 
+const {
+  DELETE_BASE_PROCESSING_COST,
+  PROCESSING_CREDIT_PER_BYTE,
+  STORAGE_CREDIT_PER_BYTE,
+} = require('../constants');
+
 class DeleteOperation extends AbstractOperation {
   /**
    * @param {number} keySize
@@ -18,8 +24,8 @@ class DeleteOperation extends AbstractOperation {
    * @returns {number}
    */
   getProcessingCost() {
-    return ((this.keySize + this.valueSize) * AbstractOperation.STORAGE_PROCESSING_CREDIT_PER_BYTE)
-      + DeleteOperation.BASE_PROCESSING_COST;
+    return ((this.keySize + this.valueSize) * PROCESSING_CREDIT_PER_BYTE)
+      + DELETE_BASE_PROCESSING_COST;
   }
 
   /**
@@ -28,19 +34,8 @@ class DeleteOperation extends AbstractOperation {
    * @returns {number}
    */
   getStorageCost() {
-    return -((this.keySize + this.valueSize) * AbstractOperation.STORAGE_CREDIT_PER_BYTE);
-  }
-
-  /**
-   * Get operation type
-   *
-   * @returns {string}
-   */
-  getType() {
-    return AbstractOperation.TYPES.DELETE;
+    return -((this.keySize + this.valueSize) * STORAGE_CREDIT_PER_BYTE);
   }
 }
-
-DeleteOperation.BASE_PROCESSING_COST = 20000;
 
 module.exports = DeleteOperation;

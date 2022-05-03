@@ -12,6 +12,7 @@ const createStateRepositoryMock = require('../../../../../lib/test/mocks/createS
 
 const protocolVersion = require('../../../../../lib/version/protocolVersion');
 const StateTransitionExecutionContext = require('../../../../../lib/stateTransition/StateTransitionExecutionContext');
+const ReadOperation = require('../../../../../lib/stateTransition/fee/operations/ReadOperation');
 
 describe('applyIdentityCreateTransitionFactory', () => {
   let stateTransition;
@@ -41,6 +42,10 @@ describe('applyIdentityCreateTransitionFactory', () => {
   });
 
   it('should store identity created from state transition', async () => {
+    executionContext.addOperation(
+      new ReadOperation(1),
+    );
+
     await applyIdentityCreateTransition(stateTransition);
 
     const balance = convertSatoshiToCredits(

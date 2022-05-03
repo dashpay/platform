@@ -93,7 +93,7 @@ describe('Masternode Reward Shares', () => {
     });
 
     it('should be able to create reward shares with existing identity', async () => {
-      anotherIdentity = await client.platform.identities.register(5);
+      anotherIdentity = await client.platform.identities.register(50);
 
       rewardShare = await client.platform.documents.create(
         'masternodeRewardShares.rewardShare',
@@ -221,7 +221,7 @@ describe('Masternode Reward Shares', () => {
     });
 
     it('should not be able to share more than 100% of rewards', async () => {
-      anotherIdentity = await client.platform.identities.register(5);
+      anotherIdentity = await client.platform.identities.register(50);
 
       anotherRewardShare = await client.platform.documents.create(
         'masternodeRewardShares.rewardShare',
@@ -284,7 +284,7 @@ describe('Masternode Reward Shares', () => {
     let identity;
 
     before(async () => {
-      identity = await client.platform.identities.register(5);
+      identity = await client.platform.identities.register(50);
     });
 
     it('should not be able to share rewards', async () => {

@@ -70,7 +70,7 @@ const applyIdentityUpdateTransitionFactory = require(
   '../identity/stateTransition/IdentityUpdateTransition/applyIdentityUpdateTransitionFactory',
 );
 const validateInstantAssetLockProofStructureFactory = require('../identity/stateTransition/assetLockProof/instant/validateInstantAssetLockProofStructureFactory');
-const calculateStateTransitionFee = require('./calculateStateTransitionFee');
+const calculateStateTransitionFee = require('./fee/calculateStateTransitionFee');
 const InstantAssetLockProof = require('../identity/stateTransition/assetLockProof/instant/InstantAssetLockProof');
 const ChainAssetLockProof = require('../identity/stateTransition/assetLockProof/chain/ChainAssetLockProof');
 const validateChainAssetLockProofStructureFactory = require('../identity/stateTransition/assetLockProof/chain/validateChainAssetLockProofStructureFactory');

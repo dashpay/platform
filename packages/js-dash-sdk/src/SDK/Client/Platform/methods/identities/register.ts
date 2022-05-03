@@ -12,7 +12,7 @@ import broadcastStateTransition from "../../broadcastStateTransition";
  */
 export default async function register(
   this: Platform,
-  fundingAmount : number = 10000
+  fundingAmount : number = 100000
 ): Promise<any> {
     await this.initialize();
 
