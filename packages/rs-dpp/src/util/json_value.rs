@@ -15,6 +15,7 @@ use crate::{
 };
 
 const PROPERTY_CONTENT_MEDIA_TYPE: &str = "contentMediaType";
+const PROPERTY_PROTOCOL_VERSION: &str = "protocolVersion";
 
 #[derive(Debug, Clone, Copy)]
 pub enum ReplaceWith {
@@ -41,6 +42,10 @@ pub trait JsonValueExt {
         &mut self,
         path: &[JsonPathStep],
     ) -> Result<&mut JsonValue, anyhow::Error>;
+
+    /// assumes that the JsonValue is a Map and tries to remove the u32
+    fn remove_u32(&mut self, property_name: &str) -> Result<u32, anyhow::Error>;
+
     /// replaces Identifiers specified by path with either the Bytes format or string format (base58 or base64)
     fn replace_identifier_paths<'a>(
         &mut self,
@@ -184,7 +189,7 @@ impl JsonValueExt for JsonValue {
             let mut to_replace = get_value_mut(raw_path, self);
             match to_replace {
                 Some(ref mut v) => {
-                    replace_identifier(v, with)?;
+                    replace_binary(v, with)?;
                 }
                 None => {
                     trace!("path '{}' is not found, replacing to {:?} ", raw_path, with)
@@ -210,6 +215,20 @@ impl JsonValueExt for JsonValue {
         }
 
         Ok(())
+    }
+
+    fn remove_u32(&mut self, property_name: &str) -> Result<u32, anyhow::Error> {
+        match self {
+            JsonValue::Object(ref mut m) => match m.remove(property_name) {
+                Some(JsonValue::Number(number)) => Ok(number.as_u64().ok_or_else(|| {
+                    anyhow!("unable to convert '{}' into unsigned integer", number)
+                })? as u32),
+                _ => {
+                    bail!("Unable to find '{}' in '{}'", property_name, self)
+                }
+            },
+            _ => bail!("the Json Value isn't a map: {:?}", self),
+        }
     }
 }
 
