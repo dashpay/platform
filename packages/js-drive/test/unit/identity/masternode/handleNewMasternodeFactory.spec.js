@@ -3,8 +3,11 @@ const createStateRepositoryMock = require('@dashevo/dpp/lib/test/mocks/createSta
 const getDataContractFixture = require('@dashevo/dpp/lib/test/fixtures/getDataContractFixture');
 const Identifier = require('@dashevo/dpp/lib/identifier/Identifier');
 const IdentityPublicKey = require('@dashevo/dpp/lib/identity/IdentityPublicKey');
+const Address = require('@dashevo/dashcore-lib/lib/address');
+const Script = require('@dashevo/dashcore-lib/lib/script');
 const handleNewMasternodeFactory = require('../../../../lib/identity/masternode/handleNewMasternodeFactory');
 const getSmlFixture = require('../../../../lib/test/fixtures/getSmlFixture');
+const createOperatorIdentifier = require('../../../../lib/identity/masternode/createOperatorIdentifier');
 
 describe('handleNewMasternodeFactory', () => {
   let handleNewMasternode;
@@ -51,6 +54,9 @@ describe('handleNewMasternodeFactory', () => {
   it('should create masternode identity', async () => {
     masternodeEntry.payoutAddress = 'yRRwW957BJwL6SVVh3s8ASQYa2qXnduyfx';
 
+    const payoutAddress = Address.fromString(masternodeEntry.payoutAddress);
+    const payoutScript = new Script(payoutAddress);
+
     await handleNewMasternode(masternodeEntry, dataContract);
 
     expect(fetchTransactionMock).to.be.calledOnceWithExactly(masternodeEntry.proRegTxHash);
@@ -58,7 +64,7 @@ describe('handleNewMasternodeFactory', () => {
       Identifier.from('6k8jXHFuno3vqpfrQ36CaxrGi4SupdTJcGNeZLPioxQo'),
       Buffer.from('6161616161616161616161616161616161616161', 'hex'),
       IdentityPublicKey.TYPES.ECDSA_HASH160,
-      Buffer.from('76a91438130b3e02c119f53aba29a12de6be40f0c6596f88ac', 'hex'),
+      payoutScript,
     );
     expect(createRewardShareDocumentMock).to.not.be.called();
   });
@@ -67,6 +73,10 @@ describe('handleNewMasternodeFactory', () => {
     transactionFixture.extraPayload.operatorReward = 10;
 
     await handleNewMasternode(masternodeEntry, dataContract);
+
+    const operatorIdentifier = createOperatorIdentifier(masternodeEntry);
+    const operatorPayoutAddress = Address.fromString(masternodeEntry.operatorPayoutAddress);
+    const operatorPayoutScript = new Script(operatorPayoutAddress);
 
     expect(fetchTransactionMock).to.be.calledOnceWithExactly(masternodeEntry.proRegTxHash);
     expect(createMasternodeIdentityMock).to.be.calledTwice();
@@ -77,10 +87,10 @@ describe('handleNewMasternodeFactory', () => {
       undefined,
     );
     expect(createMasternodeIdentityMock.getCall(1)).to.be.calledWith(
-      Identifier.from('EwLi1FgGwvmLQ9nkfnttpXzv4SfC7XGBvs61QBCtnHEL'),
+      operatorIdentifier,
       Buffer.from('08b66151b81bd6a08bad2e68810ea07014012d6d804859219958a7fbc293689aa902bd0cd6db7a4699c9e88a4ae8c2c0', 'hex'),
       IdentityPublicKey.TYPES.BLS12_381,
-      Buffer.from('76a9144b682e8847992b8e9a2531cef5a3169ea5b80c5888ac', 'hex'),
+      operatorPayoutScript,
     );
 
     expect(createRewardShareDocumentMock).to.be.calledOnceWithExactly(

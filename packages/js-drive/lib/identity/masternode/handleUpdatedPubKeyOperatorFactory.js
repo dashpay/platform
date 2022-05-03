@@ -52,7 +52,7 @@ function handleUpdatedPubKeyOperatorFactory(
     let operatorPayoutPubKey;
     if (masternodeEntry.operatorPayoutAddress) {
       const operatorPayoutAddress = Address.fromString(masternodeEntry.operatorPayoutAddress);
-      operatorPayoutPubKey = new Script(operatorPayoutAddress).toBuffer();
+      operatorPayoutPubKey = new Script(operatorPayoutAddress);
     }
 
     //  Create an identity for operator if there is no identity exist with the same ID

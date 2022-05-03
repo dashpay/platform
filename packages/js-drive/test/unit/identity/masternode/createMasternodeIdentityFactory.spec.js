@@ -140,7 +140,7 @@ describe('createMasternodeIdentityFactory', () => {
     const identityId = generateRandomIdentifier();
     const pubKeyData = Buffer.from([0]);
     const pubKeyType = IdentityPublicKey.TYPES.ECDSA_HASH160;
-    const payoutScript = Script(Address.fromString('7UkJidhNjEPJCQnCTXeaJKbJmL4JuyV66w')).toBuffer();
+    const payoutScript = new Script(Address.fromString('7UkJidhNjEPJCQnCTXeaJKbJmL4JuyV66w'));
 
     await createMasternodeIdentity(identityId, pubKeyData, pubKeyType, payoutScript);
 

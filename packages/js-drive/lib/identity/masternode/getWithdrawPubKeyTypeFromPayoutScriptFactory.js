@@ -1,5 +1,4 @@
 const IdentityPublicKey = require('@dashevo/dpp/lib/identity/IdentityPublicKey');
-const Script = require('@dashevo/dashcore-lib/lib/script');
 
 const InvalidPayoutScriptError = require('./errors/InvalidPayoutScriptError');
 
@@ -11,11 +10,11 @@ const InvalidPayoutScriptError = require('./errors/InvalidPayoutScriptError');
 function getWithdrawPubKeyTypeFromPayoutScriptFactory(network) {
   /**
    * @typedef getWithdrawPubKeyTypeFromPayoutScript
-   * @param {string|Buffer} payoutScript
+   * @param {Script} payoutScript
    * @returns {number}
    */
   function getWithdrawPubKeyTypeFromPayoutScript(payoutScript) {
-    const address = new Script(payoutScript).toAddress(network);
+    const address = payoutScript.toAddress(network);
 
     if (address === false) {
       throw new InvalidPayoutScriptError(payoutScript);

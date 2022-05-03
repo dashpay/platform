@@ -5,23 +5,25 @@ const identitySchema = require('@dashevo/dpp/schema/identity/identity.json');
  *
  * @param {DriveStateRepository|CachedStateRepositoryDecorator} transactionalStateRepository
  * @param {getWithdrawPubKeyTypeFromPayoutScript} getWithdrawPubKeyTypeFromPayoutScript
+ * @param {getPublicKeyFromPayoutScript} getPublicKeyFromPayoutScript
  * @returns {handleUpdatedScriptPayout}
  */
 function handleUpdatedScriptPayoutFactory(
   transactionalStateRepository,
   getWithdrawPubKeyTypeFromPayoutScript,
+  getPublicKeyFromPayoutScript,
 ) {
   /**
    * @typedef handleUpdatedScriptPayout
    * @param {Identifier} identityId
-   * @param {Buffer} newPubKeyData
-   * @param {Buffer} previousPubKeyData
+   * @param {Script} newPayoutScript
+   * @param {Script} previousPayoutScript
    * @returns {Promise<void>}
    */
   async function handleUpdatedScriptPayout(
     identityId,
-    newPubKeyData,
-    previousPubKeyData,
+    newPayoutScript,
+    previousPayoutScript,
   ) {
     const identity = await transactionalStateRepository.fetchIdentity(identityId);
     identity.setRevision(identity.getRevision() + 1);
@@ -34,6 +36,12 @@ function handleUpdatedScriptPayoutFactory(
     }
 
     // disable previous
+    const previousPubKeyType = getWithdrawPubKeyTypeFromPayoutScript(previousPayoutScript);
+    const previousPubKeyData = getPublicKeyFromPayoutScript(
+      previousPayoutScript,
+      previousPubKeyType,
+    );
+
     identityPublicKeys = identityPublicKeys.map((pk) => {
       if (pk.getData().equals(previousPubKeyData)) {
         pk.setDisabledAt(new Date().getTime());
@@ -43,12 +51,13 @@ function handleUpdatedScriptPayoutFactory(
     });
 
     // add new
-    const withdrawPubKeyType = getWithdrawPubKeyTypeFromPayoutScript(newPubKeyData);
+    const withdrawPubKeyType = getWithdrawPubKeyTypeFromPayoutScript(newPayoutScript);
+    const pubKeyData = getPublicKeyFromPayoutScript(newPayoutScript, withdrawPubKeyType);
 
     const newWithdrawalIdentityPublicKey = new IdentityPublicKey()
       .setId(identity.getPublicKeyMaxId() + 1)
       .setType(withdrawPubKeyType)
-      .setData(Buffer.from(newPubKeyData))
+      .setData(pubKeyData)
       .setPurpose(IdentityPublicKey.PURPOSES.WITHDRAW)
       .setSecurityLevel(IdentityPublicKey.SECURITY_LEVELS.MASTER);
 

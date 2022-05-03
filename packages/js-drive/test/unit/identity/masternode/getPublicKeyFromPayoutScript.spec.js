@@ -7,7 +7,7 @@ const getPublicKeyFromPayoutScript = require('../../../../lib/identity/masternod
 describe('getPublicKeyFromPayoutScript', () => {
   it('should return public key for ECDSA_HASH160 script', () => {
     const payoutAddress = Address.fromString('yLceJztHVZFbeqE9v86sLD9bDKFBmNqHQD');
-    const scriptBuffer = new Script(payoutAddress).toBuffer();
+    const scriptBuffer = new Script(payoutAddress);
 
     const type = IdentityPublicKey.TYPES.ECDSA_HASH160;
 
@@ -18,7 +18,7 @@ describe('getPublicKeyFromPayoutScript', () => {
 
   it('should return public key for BIP13_SCRIPT_HASH script', () => {
     const payoutAddress = Address.fromString('7UkJidhNjEPJCQnCTXeaJKbJmL4JuyV66w');
-    const scriptBuffer = new Script(payoutAddress).toBuffer();
+    const scriptBuffer = new Script(payoutAddress);
 
     const type = IdentityPublicKey.TYPES.BIP13_SCRIPT_HASH;
 
@@ -29,7 +29,7 @@ describe('getPublicKeyFromPayoutScript', () => {
 
   it('should throw InvalidIdentityPublicKeyTypeError if type is unknown', () => {
     const payoutAddress = Address.fromString('7UkJidhNjEPJCQnCTXeaJKbJmL4JuyV66w');
-    const scriptBuffer = new Script(payoutAddress).toBuffer();
+    const scriptBuffer = new Script(payoutAddress);
 
     try {
       getPublicKeyFromPayoutScript(scriptBuffer, -1);

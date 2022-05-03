@@ -30,11 +30,11 @@ function handleNewMasternodeFactory(
 
     const proRegTxHash = Buffer.from(masternodeEntry.proRegTxHash, 'hex');
 
-    let payoutPubKey;
+    let payoutScript;
 
     if (masternodeEntry.payoutAddress) {
       const payoutAddress = Address.fromString(masternodeEntry.payoutAddress);
-      payoutPubKey = new Script(payoutAddress).toBuffer();
+      payoutScript = new Script(payoutAddress);
     }
 
     // Create a masternode identity
@@ -48,7 +48,7 @@ function handleNewMasternodeFactory(
       masternodeIdentifier,
       publicKey,
       IdentityPublicKey.TYPES.ECDSA_HASH160,
-      payoutPubKey,
+      payoutScript,
     );
 
     // we need to crate reward shares only if it's enabled in proRegTx
@@ -56,10 +56,10 @@ function handleNewMasternodeFactory(
     if (proRegTxPayload.operatorReward > 0) {
       const operatorPubKey = Buffer.from(masternodeEntry.pubKeyOperator, 'hex');
 
-      let operatorPayoutPubKey;
+      let operatorPayoutScript;
       if (masternodeEntry.operatorPayoutAddress) {
         const operatorPayoutAddress = Address.fromString(masternodeEntry.operatorPayoutAddress);
-        operatorPayoutPubKey = new Script(operatorPayoutAddress).toBuffer();
+        operatorPayoutScript = new Script(operatorPayoutAddress);
       }
 
       const operatorIdentifier = createOperatorIdentifier(masternodeEntry);
@@ -68,7 +68,7 @@ function handleNewMasternodeFactory(
         operatorIdentifier,
         operatorPubKey,
         IdentityPublicKey.TYPES.BLS12_381,
-        operatorPayoutPubKey,
+        operatorPayoutScript,
       );
 
       // Create a document in rewards data contract with percentage

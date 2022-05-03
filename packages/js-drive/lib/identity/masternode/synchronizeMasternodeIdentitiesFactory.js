@@ -103,8 +103,8 @@ function synchronizeMasternodeIdentitiesFactory(
 
             await handleUpdatedScriptPayout(
               Identifier.from(Buffer.from(mnEntry.proRegTxHash, 'hex')),
-              new Script(newPayoutAddress).toBuffer(),
-              new Script(previousPayoutAddress).toBuffer(),
+              new Script(newPayoutAddress),
+              new Script(previousPayoutAddress),
             );
           }
         }
@@ -127,8 +127,8 @@ function synchronizeMasternodeIdentitiesFactory(
 
             await handleUpdatedScriptPayout(
               createOperatorIdentifier(mnEntry),
-              new Script(newOperatorPayoutAddress).toBuffer(),
-              new Script(previousOperatorPayoutAddress).toBuffer(),
+              new Script(newOperatorPayoutAddress),
+              new Script(previousOperatorPayoutAddress),
             );
           }
         }

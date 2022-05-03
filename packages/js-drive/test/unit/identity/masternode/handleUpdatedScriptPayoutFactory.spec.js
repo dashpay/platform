@@ -10,6 +10,7 @@ describe('handleUpdatedScriptPayoutFactory', () => {
   let handleUpdatedScriptPayout;
   let stateRepositoryMock;
   let getWithdrawPubKeyTypeFromPayoutScriptMock;
+  let getPublicKeyFromPayoutScriptMock;
   let identity;
   let fakeTimeDate;
   let fakeTime;
@@ -26,9 +27,12 @@ describe('handleUpdatedScriptPayoutFactory', () => {
       IdentityPublicKey.TYPES.ECDSA_HASH160,
     );
 
+    getPublicKeyFromPayoutScriptMock = this.sinon.stub().returns(Buffer.alloc(20, '0'));
+
     handleUpdatedScriptPayout = handleUpdatedScriptPayoutFactory(
       stateRepositoryMock,
       getWithdrawPubKeyTypeFromPayoutScriptMock,
+      getPublicKeyFromPayoutScriptMock,
     );
 
     fakeTimeDate = new Date();
@@ -97,7 +101,7 @@ describe('handleUpdatedScriptPayoutFactory', () => {
     await handleUpdatedScriptPayout(
       identity.getId(),
       newPubKeyData,
-      new Script().toBuffer(),
+      new Script(),
     );
 
     const identityToStore = new Identity(identity.toObject());
