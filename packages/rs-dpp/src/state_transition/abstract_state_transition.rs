@@ -1,4 +1,5 @@
 use crate::{
+    identity::KeyType,
     prelude::ProtocolError,
     util::{hash, json_value::ReplaceWith, serializer},
 };
@@ -97,4 +98,33 @@ pub trait StateTransitionConvert {
     fn hash(&self) -> Result<Vec<u8>, ProtocolError> {
         unimplemented!()
     }
+}
+
+pub trait StateTransitionLike {
+    fn get_protocol_version(&self) -> u32;
+    fn get_type(&self) -> StateTransitionType;
+    fn get_signature(&self) -> &Vec<u8>;
+    fn set_signature(&mut self, signature: Vec<u8>);
+
+    /// Signs data with the private key
+    fn sign_by_private_key(
+        &mut self,
+        private_key: &[u8],
+        key_type: KeyType,
+    ) -> Result<(), ProtocolError>;
+
+    fn verify_ecdsa_hash_160_signature_by_public_key_hash(
+        &self,
+        private_key: &[u8],
+        key_type: KeyType,
+    ) -> bool;
+
+    /// Verifies an ECDSA signature with the public key
+    fn verify_ecdsa_signature_by_public_key(&self, public_key: &[u8]) -> bool;
+
+    /// Verifies a BLS signature with the public key
+    fn verify_bls_signature_by_public_key(&self, public_key: &[u8]) -> bool;
+
+    /// Calculates the ST fee in credits
+    fn calculate_fee(&self) -> u64;
 }

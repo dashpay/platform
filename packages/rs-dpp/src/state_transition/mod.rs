@@ -38,6 +38,8 @@ pub enum StateTransition {
     IdentityTopUp(mocks::IdentityTopUpTransition),
 }
 
+impl StateTransition {}
+
 impl StateTransitionConvert for StateTransition {
     fn hash(&self) -> Result<Vec<u8>, crate::ProtocolError> {
         call_method!(self, hash)
