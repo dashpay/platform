@@ -1,3 +1,24 @@
+### [0.22.7](https://github.com/dashevo/platform/compare/v0.22.6...v0.22.7) (2022-05-02)
+
+
+### Bug Fixes
+
+* invalid version to parse `CommitmentTxPayload` ([#373](https://github.com/dashevo/platform/issues/373))
+
+### [0.22.6](https://github.com/dashevo/platform/compare/v0.22.5...v0.22.6) (2022-05-02)
+
+
+### Bug Fixes
+
+* can't parse `CommitmentTxPayload` ([#371](https://github.com/dashevo/platform/issues/371))
+
+### [0.22.5](https://github.com/dashevo/platform/compare/v0.22.4...v0.22.5) (2022-04-29)
+
+
+### Bug Fixes
+
+* broken QuorumEntry unserialization ([#366](https://github.com/dashevo/platform/issues/366))
+
 ### [0.22.4](https://github.com/dashevo/platform/compare/v0.22.3...v0.22.4) (2022-04-29)
 
 
