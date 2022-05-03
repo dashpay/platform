@@ -135,7 +135,12 @@ function deliverTxHandlerFactory(
       stateTransition.getOwnerId(),
     );
 
-    identity.reduceBalance(stateTransitionFee);
+    // TODO: Temporary disabled until we calculate fee for validate state and apply functions
+    // const updatedBalance = identity.reduceBalance(stateTransitionFee);
+
+    // if (updatedBalance <= 0) {
+    //   throw new NegativeBalanceError(identity);
+    // }
 
     await transactionalDpp.getStateRepository().storeIdentity(identity);
 

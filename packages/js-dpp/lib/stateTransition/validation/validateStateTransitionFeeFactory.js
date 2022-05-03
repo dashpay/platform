@@ -27,20 +27,24 @@ function validateStateTransitionFeeFactory(
   async function validateStateTransitionFee(stateTransition) {
     const result = new ValidationResult();
 
-    const feeSize = calculateStateTransitionFee(stateTransition);
+    const executionContext = stateTransition.getExecutionContext();
 
     let balance;
-
     switch (stateTransition.getType()) {
       case stateTransitionTypes.IDENTITY_TOP_UP:
       case stateTransitionTypes.IDENTITY_CREATE: {
-        const output = await fetchAssetLockTransactionOutput(stateTransition.getAssetLockProof());
+        const output = await fetchAssetLockTransactionOutput(
+          stateTransition.getAssetLockProof(),
+          executionContext,
+        );
 
         balance = convertSatoshiToCredits(output.satoshis);
 
         if (stateTransition.getType() === stateTransitionTypes.IDENTITY_TOP_UP) {
           const identityId = stateTransition.getOwnerId();
-          const identity = await stateRepository.fetchIdentity(identityId);
+
+          const identity = await stateRepository.fetchIdentity(identityId, executionContext);
+
           balance += identity.getBalance();
         }
 
@@ -51,7 +55,9 @@ function validateStateTransitionFeeFactory(
       case stateTransitionTypes.DOCUMENTS_BATCH:
       case stateTransitionTypes.IDENTITY_UPDATE: {
         const identityId = stateTransition.getOwnerId();
-        const identity = await stateRepository.fetchIdentity(identityId);
+
+        const identity = await stateRepository.fetchIdentity(identityId, executionContext);
+
         balance = identity.getBalance();
 
         break;
@@ -60,9 +66,13 @@ function validateStateTransitionFeeFactory(
         throw new InvalidStateTransitionTypeError(stateTransition.getType());
     }
 
-    if (balance < feeSize) {
+    // We could use `stateTransition.calculateFee()` but
+    // `calculateStateTransitionFee` is easier to mock in test
+    const fee = calculateStateTransitionFee(stateTransition);
+
+    if (balance < fee) {
       result.addError(
-        new BalanceIsNotEnoughError(balance, feeSize),
+        new BalanceIsNotEnoughError(balance, fee),
       );
     }
 

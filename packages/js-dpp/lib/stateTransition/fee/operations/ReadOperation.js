@@ -1,5 +1,10 @@
 const AbstractOperation = require('./AbstractOperation');
 
+const {
+  READ_BASE_PROCESSING_COST,
+  PROCESSING_CREDIT_PER_BYTE,
+} = require('../constants');
+
 class ReadOperation extends AbstractOperation {
   /**
    * @param {number} valueSize
@@ -16,7 +21,7 @@ class ReadOperation extends AbstractOperation {
    * @returns {number}
    */
   getProcessingCost() {
-    return ReadOperation.BASE_PROCESSING_COST + this.valueSize * ReadOperation.CREDIT_PER_BYTE;
+    return READ_BASE_PROCESSING_COST + this.valueSize * PROCESSING_CREDIT_PER_BYTE;
   }
 
   /**
@@ -27,18 +32,6 @@ class ReadOperation extends AbstractOperation {
   getStorageCost() {
     return 0;
   }
-
-  /**
-   * Get operation type
-   *
-   * @returns {string}
-   */
-  getType() {
-    return AbstractOperation.TYPES.READ;
-  }
 }
-
-ReadOperation.CREDIT_PER_BYTE = 12;
-ReadOperation.BASE_PROCESSING_COST = 8400;
 
 module.exports = ReadOperation;

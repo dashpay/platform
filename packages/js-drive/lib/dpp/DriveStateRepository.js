@@ -1,4 +1,4 @@
-const ReadOperation = require('@dashevo/dpp/lib/stateTransition/fees/operations/ReadOperation');
+const ReadOperation = require('@dashevo/dpp/lib/stateTransition/fee/operations/ReadOperation');
 
 class DriveStateRepository {
   #options = {};
