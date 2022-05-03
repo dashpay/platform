@@ -57,7 +57,7 @@ module.exports = {
 
     // We get 35x3 results running against local network
     // since metrics are gathering from all 3 nodes
-    documents = new Array(35).fill(null).map(() => {
+    documents = new Array(5).fill(null).map(() => {
       const properties = {};
 
       for (let i = 0; i < 100; i++) {

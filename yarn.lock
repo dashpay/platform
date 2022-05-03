@@ -1453,26 +1453,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@dashevo/dashcore-lib@npm:^0.19.29, @dashevo/dashcore-lib@npm:~0.19.30, @dashevo/dashcore-lib@npm:~0.19.32":
-  version: 0.19.32
-  resolution: "@dashevo/dashcore-lib@npm:0.19.32"
-  dependencies:
-    "@dashevo/x11-hash-js": ^1.0.2
-    "@types/node": ^12.12.47
-    bloom-filter: ^0.2.0
-    bls-signatures: ^0.2.5
-    bn.js: =4.11.8
-    bs58: =4.0.1
-    elliptic: 6.5.3
-    eslint-config-prettier: ^8.3.0
-    inherits: =2.0.1
-    lodash: ^4.17.20
-    unorm: ^1.6.0
-  checksum: 5a21b2c7fe3e6019566b5685b4e6ad28db589f22730abb959c77dc75e8e5db502b13c34aa7382de3ecaa4c994c8c62de9f6022a510b1ffde71d9eaa71e336784
-  languageName: node
-  linkType: hard
-
-"@dashevo/dashcore-lib@npm:~0.19.35":
+"@dashevo/dashcore-lib@npm:^0.19.29, @dashevo/dashcore-lib@npm:~0.19.30, @dashevo/dashcore-lib@npm:~0.19.32, @dashevo/dashcore-lib@npm:~0.19.35":
   version: 0.19.35
   resolution: "@dashevo/dashcore-lib@npm:0.19.35"
   dependencies:
