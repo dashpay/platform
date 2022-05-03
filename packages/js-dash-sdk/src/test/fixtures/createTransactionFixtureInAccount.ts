@@ -13,7 +13,5 @@ export async function createTransactionInAccount(account) {
 
     await account.importTransactions([[walletTransaction.serialize(true)]]);
 
-    console.log(account.getTotalBalance());
-
     return walletTransaction;
 }
