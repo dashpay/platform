@@ -47,9 +47,7 @@ struct StateTransitionBase {
     pub transition_type: StateTransitionType,
 }
 
-impl StateTransitionBase {
-    /// Object is an [`serde_json::Value`] instance that preserves the `Vec<u8>` representation
-    /// for Identifiers and binary data
+impl StateTransitionConvert for StateTransitionBase {
     fn to_object(&self, skip_signature: bool) -> Result<JsonValue, ProtocolError> {
         let mut json_value: JsonValue = serde_json::to_value(self)?;
         if skip_signature {
@@ -60,16 +58,12 @@ impl StateTransitionBase {
         Ok(json_value)
     }
 
-    /// Object is an [`serde_json::Value`] instance that replaces the binary data with
-    ///  - base58 string for Identifiers
-    ///  - base64 string for other binary data
     fn to_json(&self) -> Result<JsonValue, ProtocolError> {
         let mut json_value: JsonValue = serde_json::to_value(self)?;
         json_value.replace_binary_paths([PROPERTY_SIGNATURE], ReplaceWith::Base64)?;
         Ok(json_value)
     }
 
-    // returns the byte-array representation. It is prefixed by 4 bytes of ProtocolVersion and encoded by CBOR
     fn to_buffer(&self, skip_signature: bool) -> Result<Vec<u8>, ProtocolError> {
         let mut json_value = self.to_object(skip_signature)?;
         let protocol_version = json_value.remove_u32(PROPERTY_PROTOCOL_VERSION)?;
@@ -77,8 +71,30 @@ impl StateTransitionBase {
         serializer::value_to_cbor(json_value, Some(protocol_version))
     }
 
-    // hash function is applied to byte-array representation of structure
     fn hash(&self) -> Result<Vec<u8>, ProtocolError> {
         Ok(hash::hash(self.to_buffer(false)?))
+    }
+}
+
+// TODO remove 'unimplemented' when get rid of state transition mocks
+pub trait StateTransitionConvert {
+    /// Object is an [`serde_json::Value`] instance that preserves the `Vec<u8>` representation
+    /// for Identifiers and binary data
+    fn to_object(&self, _skip_signature: bool) -> Result<JsonValue, ProtocolError> {
+        unimplemented!()
+    }
+    /// Object is an [`serde_json::Value`] instance that replaces the binary data with
+    ///  - base58 string for Identifiers
+    ///  - base64 string for other binary data
+    fn to_json(&self) -> Result<JsonValue, ProtocolError> {
+        unimplemented!()
+    }
+    // returns the byte-array representation. It is prefixed by 4 bytes of ProtocolVersion and encoded by CBOR
+    fn to_buffer(&self, _skip_signature: bool) -> Result<Vec<u8>, ProtocolError> {
+        unimplemented!()
+    }
+    // hash function is applied to byte-array representation of structure
+    fn hash(&self) -> Result<Vec<u8>, ProtocolError> {
+        unimplemented!()
     }
 }

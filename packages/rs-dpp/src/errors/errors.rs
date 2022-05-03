@@ -45,6 +45,10 @@ pub enum ProtocolError {
         errors: Vec<ConsensusError>,
         raw_data_contract: serde_json::Value,
     },
+
+    // State Transition Errors
+    #[error("Invalid signature type")]
+    InvalidIdentityPublicKeyTypeError { public_key_type: u32 },
 }
 
 impl From<&str> for ProtocolError {
