@@ -30,6 +30,6 @@ describe('calculateStateTransitionFee', () => {
 
     const result = calculateStateTransitionFee(stateTransition);
 
-    expect(result).to.equal(157616);
+    expect(result).to.equal(13616);
   });
 });
