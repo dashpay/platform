@@ -96,14 +96,14 @@ function synchronizeMasternodeIdentitiesFactory(
           ));
 
           if (mnEntryWithChangedPayoutAddress) {
-            const newPayoutAddress = Address.fromString(mnEntry.payoutAddress);
+            const newPayoutScript = new Script(Address.fromString(mnEntry.payoutAddress));
             const previousPayoutScript = mnEntryWithChangedPayoutAddress.payoutAddress
               ? new Script(Address.fromString(mnEntryWithChangedPayoutAddress.payoutAddress))
               : undefined;
 
             await handleUpdatedScriptPayout(
               Identifier.from(Buffer.from(mnEntry.proRegTxHash, 'hex')),
-              new Script(newPayoutAddress),
+              newPayoutScript,
               previousPayoutScript,
             );
           }

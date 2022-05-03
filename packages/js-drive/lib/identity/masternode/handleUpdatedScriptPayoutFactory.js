@@ -4,12 +4,14 @@ const identitySchema = require('@dashevo/dpp/schema/identity/identity.json');
 /**
  *
  * @param {DriveStateRepository|CachedStateRepositoryDecorator} transactionalStateRepository
+ * @param {BlockExecutionContext} blockExecutionContext
  * @param {getWithdrawPubKeyTypeFromPayoutScript} getWithdrawPubKeyTypeFromPayoutScript
  * @param {getPublicKeyFromPayoutScript} getPublicKeyFromPayoutScript
  * @returns {handleUpdatedScriptPayout}
  */
 function handleUpdatedScriptPayoutFactory(
   transactionalStateRepository,
+  blockExecutionContext,
   getWithdrawPubKeyTypeFromPayoutScript,
   getPublicKeyFromPayoutScript,
 ) {
@@ -42,10 +44,13 @@ function handleUpdatedScriptPayoutFactory(
         previousPayoutScript,
         previousPubKeyType,
       );
+      const { time } = blockExecutionContext.getHeader();
 
       identityPublicKeys = identityPublicKeys.map((pk) => {
         if (pk.getData().equals(previousPubKeyData)) {
-          pk.setDisabledAt(new Date().getTime());
+          pk.setDisabledAt(
+            time.seconds * 1000,
+          );
         }
 
         return pk;

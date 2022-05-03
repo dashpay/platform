@@ -5,18 +5,24 @@ const Identity = require('@dashevo/dpp/lib/identity/Identity');
 const Script = require('@dashevo/dashcore-lib/lib/script');
 const identitySchema = require('@dashevo/dpp/schema/identity/identity.json');
 const handleUpdatedScriptPayoutFactory = require('../../../../lib/identity/masternode/handleUpdatedScriptPayoutFactory');
+const BlockExecutionContextMock = require('../../../../lib/test/mock/BlockExecutionContextMock');
 
 describe('handleUpdatedScriptPayoutFactory', () => {
   let handleUpdatedScriptPayout;
   let stateRepositoryMock;
   let getWithdrawPubKeyTypeFromPayoutScriptMock;
   let getPublicKeyFromPayoutScriptMock;
+  let blockExecutionContextMock;
   let identity;
-  let fakeTimeDate;
-  let fakeTime;
+  let time;
 
   beforeEach(function beforeEach() {
     identity = getIdentityFixture();
+
+    time = new Date().getTime();
+
+    blockExecutionContextMock = new BlockExecutionContextMock(this.sinon);
+    blockExecutionContextMock.getHeader.returns({ time: { seconds: Math.ceil(time / 1000) } });
 
     stateRepositoryMock = createStateRepositoryMock(this.sinon);
     stateRepositoryMock.fetchIdentity.resolves(
@@ -31,16 +37,10 @@ describe('handleUpdatedScriptPayoutFactory', () => {
 
     handleUpdatedScriptPayout = handleUpdatedScriptPayoutFactory(
       stateRepositoryMock,
+      blockExecutionContextMock,
       getWithdrawPubKeyTypeFromPayoutScriptMock,
       getPublicKeyFromPayoutScriptMock,
     );
-
-    fakeTimeDate = new Date();
-    fakeTime = this.sinon.useFakeTimers(fakeTimeDate);
-  });
-
-  afterEach(() => {
-    fakeTime.reset();
   });
 
   it('should not update identity if identityPublicKeys max length was reached', async () => {
@@ -75,7 +75,7 @@ describe('handleUpdatedScriptPayoutFactory', () => {
 
     const identityToStore = new Identity(identity.toObject());
 
-    identityPublicKeys[0].disabledAt = fakeTimeDate.getTime();
+    identityPublicKeys[0].disabledAt = time;
 
     const newWithdrawalIdentityPublicKey = new IdentityPublicKey()
       .setId(2)
