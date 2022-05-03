@@ -299,11 +299,10 @@ describe('synchronizeMasternodeIdentitiesFactory', () => {
     firstSyncAppHash = '2b2e9bacfe397b9882b98d1ffac81a81cba8746cbba06b47c858f39db33d189d';
 
     container = await createTestDIContainer();
-    const time = new Date('2000/01/01').getTime();
 
     const blockExecutionContext = container.resolve('blockExecutionContext');
     blockExecutionContext.getHeader = this.sinon.stub().returns(
-      { time: { seconds: Math.ceil(time / 1000) } },
+      { time: { seconds: 1651585250 } },
     );
 
     // Mock fetchTransaction
@@ -827,7 +826,7 @@ describe('synchronizeMasternodeIdentitiesFactory', () => {
 
     await synchronizeMasternodeIdentities(coreHeight + 1);
 
-    await expectDeterministicAppHash('3cd7a97c698ac03054cba0c271693ae2d645abd83d9db55306b7096a025a694f');
+    await expectDeterministicAppHash('c80a4deeb549a03cabf3b04506a5d4eb6d115de451f87b3e31755b99304281d7');
 
     // Masternode identity should contain new public key
 
