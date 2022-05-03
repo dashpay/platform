@@ -1,6 +1,6 @@
 //! This module contains data structures that are left to be implemented
 
-use crate::prelude::*;
+use crate::{prelude::*, state_transition::StateTransitionConvert};
 
 use crate::validation::ValidationResult;
 use anyhow::Result as AnyResult;
@@ -50,8 +50,6 @@ pub struct StateTransition {
     pub data_contract: DataContract,
 }
 
-pub struct DocumentsBatchTransition {}
-
 pub struct SimplifiedMNList {}
 impl SimplifiedMNList {
     pub fn get_valid_master_nodes(&self) -> Vec<SMLEntry> {
@@ -80,3 +78,21 @@ impl SMLStore {
         unimplemented!()
     }
 }
+
+// State Transitions mocks:
+
+pub struct DataContractCreateTransition {}
+
+impl StateTransitionConvert for DataContractCreateTransition {}
+
+pub struct DataContractUpdateTransition {}
+impl StateTransitionConvert for DataContractUpdateTransition {}
+
+pub struct IdentityCreateTransition {}
+impl StateTransitionConvert for IdentityCreateTransition {}
+
+pub struct IdentityTopUpTransition {}
+impl StateTransitionConvert for IdentityTopUpTransition {}
+
+pub struct DocumentsBatchTransition {}
+impl StateTransitionConvert for DocumentsBatchTransition {}
