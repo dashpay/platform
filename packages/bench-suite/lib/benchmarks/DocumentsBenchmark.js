@@ -96,7 +96,10 @@ class DocumentsBenchmark extends AbstractBenchmark {
               this.#metrics[documentType] = [];
             }
 
-            this.#metrics[documentType].push(data.timings);
+            this.#metrics[documentType].push({
+              timings: data.timings,
+              fees: data.fees,
+            });
           });
 
           this.matches.push(match);
@@ -137,7 +140,7 @@ class DocumentsBenchmark extends AbstractBenchmark {
   /**
    * @private
    * @param {string} documentType
-   * @param {Object[]} metrics
+   * @param {{fees: Object, timings: Object}[]} metrics
    */
   #printDocumentTypeMetrics(documentType, metrics) {
     const overall = [];
@@ -148,18 +151,18 @@ class DocumentsBenchmark extends AbstractBenchmark {
     const apply = [];
 
     metrics.forEach((metric) => {
-      overall.push(metric.overall);
-      validateBasic.push(metric.validateBasic);
-      validateFee.push(metric.validateFee);
-      validateSignature.push(metric.validateSignature);
-      validateState.push(metric.validateState);
-      apply.push(metric.apply);
+      overall.push(metric.timings.overall);
+      validateBasic.push(metric.timings.validateBasic);
+      validateFee.push(metric.timings.validateFee);
+      validateSignature.push(metric.timings.validateSignature);
+      validateState.push(metric.timings.validateState);
+      apply.push(metric.timings.apply);
     });
 
     // eslint-disable-next-line no-console
     console.log(`\n\n${this.#documentCounts[documentType]} "${documentType}" documents published and ${metrics.length} metrics collected:`);
 
-    const table = new Table({
+    const timingTable = new Table({
       columns: [
         { name: 'overall' },
         { name: 'validateBasic' },
@@ -171,7 +174,7 @@ class DocumentsBenchmark extends AbstractBenchmark {
     });
 
     if (this.config.avgOnly) {
-      table.addRow({
+      timingTable.addRow({
         overall: '...',
         validateBasic: '...',
         validateFee: '...',
@@ -180,12 +183,14 @@ class DocumentsBenchmark extends AbstractBenchmark {
         apply: '...',
       });
     } else {
-      table.addRows(metrics);
+      timingTable.addRows(
+        metrics.map((metric) => metric.timings),
+      );
     }
 
     const avgFunction = mathjs[this.config.avgFunction];
 
-    table.addRow({
+    timingTable.addRow({
       overall: avgFunction(overall).toFixed(3),
       validateBasic: avgFunction(validateBasic).toFixed(3),
       validateFee: avgFunction(validateFee).toFixed(3),
@@ -194,7 +199,34 @@ class DocumentsBenchmark extends AbstractBenchmark {
       apply: avgFunction(apply).toFixed(3),
     }, { color: 'white_bold', separator: true });
 
-    table.printTable();
+    timingTable.printTable();
+
+    // eslint-disable-next-line no-console
+    console.log(`\n\n"${documentType}" fees:`);
+
+    const feeTable = new Table({
+      columns: [
+        { name: 'storage' },
+        { name: 'processing' },
+        { name: 'final' },
+      ],
+    });
+
+    feeTable.addRow({
+      storage: metrics[0].fees.storage,
+      processing: metrics[0].fees.processing,
+      final: metrics[0].fees.final,
+    });
+
+    feeTable.printTable();
+
+    // eslint-disable-next-line no-console
+    console.log(`\n\n"${documentType}" fee operations:\n`);
+
+    metrics[0].fees.operations.forEach((operation) => {
+      // eslint-disable-next-line no-console
+      console.log(operation);
+    });
   }
 }
 

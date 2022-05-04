@@ -36,6 +36,25 @@ class WriteOperation extends AbstractOperation {
   getStorageCost() {
     return (this.keySize + this.valueSize) * STORAGE_CREDIT_PER_BYTE;
   }
+
+  /**
+   * @return {{valueSize: number, type: string, keySize: number}}
+   */
+  toJSON() {
+    return {
+      type: 'write',
+      keySize: this.keySize,
+      valueSize: this.valueSize,
+    };
+  }
+
+  /**
+   * @param {{keySize: number, type: string, valueSize: number}} json
+   * @return {WriteOperation}
+   */
+  static fromJSON(json) {
+    return new WriteOperation(json.keySize, json.valueSize);
+  }
 }
 
 module.exports = WriteOperation;

@@ -13,6 +13,8 @@ const AbstractDocumentTransition = require(
   '@dashevo/dpp/lib/document/stateTransition/DocumentsBatchTransition/documentTransition/AbstractDocumentTransition',
 );
 
+const calculateOperationCosts = require('@dashevo/dpp/lib/stateTransition/fee/calculateOperationCosts');
+
 const DPPValidationAbciError = require('../errors/DPPValidationAbciError');
 
 const DOCUMENT_ACTION_DESCRIPTIONS = {
@@ -221,6 +223,13 @@ function deliverTxHandlerFactory(
 
     const deliverTxTiming = executionTimer.stopTimer(TIMERS.DELIVER_TX.OVERALL);
 
+    const stateTransitionOperations = stateTransition.getExecutionContext().getOperations();
+
+    const {
+      storageCost,
+      processingCost,
+    } = calculateOperationCosts(stateTransitionOperations);
+
     consensusLogger.trace(
       {
         timings: {
@@ -231,9 +240,15 @@ function deliverTxHandlerFactory(
           validateState: executionTimer.getTimer(TIMERS.DELIVER_TX.VALIDATE_STATE, true),
           apply: executionTimer.getTimer(TIMERS.DELIVER_TX.APPLY, true),
         },
+        fees: {
+          storage: storageCost,
+          processing: processingCost,
+          final: stateTransitionFee,
+          operations: stateTransitionOperations.map((operation) => operation.toJSON()),
+        },
         txType: stateTransition.getType(),
       },
-      `${stateTransition.constructor.name} execution took ${deliverTxTiming} seconds`,
+      `${stateTransition.constructor.name} execution took ${deliverTxTiming} seconds and cost ${stateTransitionFee} credits`,
     );
 
     return new ResponseDeliverTx();
