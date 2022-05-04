@@ -32,6 +32,24 @@ class ReadOperation extends AbstractOperation {
   getStorageCost() {
     return 0;
   }
+
+  /**
+   * @return {{valueSize: number, type: string}}
+   */
+  toJSON() {
+    return {
+      type: 'read',
+      valueSize: this.valueSize,
+    };
+  }
+
+  /**
+   * @param {{type: string, valueSize: number}} json
+   * @return {ReadOperation}
+   */
+  static fromJSON(json) {
+    return new ReadOperation(json.valueSize);
+  }
 }
 
 module.exports = ReadOperation;

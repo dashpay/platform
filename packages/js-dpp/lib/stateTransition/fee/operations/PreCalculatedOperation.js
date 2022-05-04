@@ -8,8 +8,8 @@ class PreCalculatedOperation extends AbstractOperation {
   constructor(storageCost, processingCost) {
     super();
 
-    this.storageCost = storageCost;
-    this.processingCost = processingCost;
+    this.storageCost = storageCost || 0;
+    this.processingCost = processingCost || 0;
   }
 
   /**
@@ -31,12 +31,22 @@ class PreCalculatedOperation extends AbstractOperation {
   }
 
   /**
-   * Get operation type
-   *
-   * @returns {string}
+   * @return {{processingCost: number, type: string, storageCost: number}}
    */
-  getType() {
-    return AbstractOperation.TYPES.PRE_CALCULATED;
+  toJSON() {
+    return {
+      type: 'preCalculated',
+      storageCost: this.getStorageCost(),
+      processingCost: this.getProcessingCost(),
+    };
+  }
+
+  /**
+   * @param {{storageCost: number, type: string, processingCost: number}} json
+   * @return {PreCalculatedOperation}
+   */
+  static fromJSON(json) {
+    return new PreCalculatedOperation(json.storageCost, json.processingCost);
   }
 }
 

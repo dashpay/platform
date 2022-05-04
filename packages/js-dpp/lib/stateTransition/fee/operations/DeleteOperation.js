@@ -36,6 +36,25 @@ class DeleteOperation extends AbstractOperation {
   getStorageCost() {
     return -((this.keySize + this.valueSize) * STORAGE_CREDIT_PER_BYTE);
   }
+
+  /**
+   * @return {{keySize: number, type: string, valueSize: number}}
+   */
+  toJSON() {
+    return {
+      type: 'delete',
+      keySize: this.keySize,
+      valueSize: this.valueSize,
+    };
+  }
+
+  /**
+   * @param {{keySize: number, type: string, valueSize: number}} json
+   * @return {DeleteOperation}
+   */
+  static fromJSON(json) {
+    return new DeleteOperation(json.keySize, json.valueSize);
+  }
 }
 
 module.exports = DeleteOperation;

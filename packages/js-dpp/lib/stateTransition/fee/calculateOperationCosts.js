@@ -7,8 +7,8 @@
  */
 function calculateOperationCosts(operations) {
   const costs = {
-    storageCost: 0.0,
-    processingCost: 0.0,
+    storageCost: 0,
+    processingCost: 0,
   };
 
   operations.forEach((operation) => {
