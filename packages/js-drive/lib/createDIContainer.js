@@ -131,6 +131,9 @@ const handleUpdatedPubKeyOperatorFactory = require('./identity/masternode/handle
 const registerSystemDataContractsFactory = require('./abci/handlers/state/registerSystemDataContractsFactory');
 const createRewardShareDocumentFactory = require('./identity/masternode/createRewardShareDocumentFactory');
 const handleRemovedMasternodeFactory = require('./identity/masternode/handleRemovedMasternodeFactory');
+const handleUpdatedScriptPayoutFactory = require('./identity/masternode/handleUpdatedScriptPayoutFactory');
+const getWithdrawPubKeyTypeFromPayoutScriptFactory = require('./identity/masternode/getWithdrawPubKeyTypeFromPayoutScriptFactory');
+const getPublicKeyFromPayoutScript = require('./identity/masternode/getPublicKeyFromPayoutScript');
 
 const DocumentRepository = require('./document/DocumentRepository');
 const ExecutionTimer = require('./util/ExecutionTimer');
@@ -445,6 +448,13 @@ function createDIContainer(options) {
     handleUpdatedPubKeyOperator: asFunction(handleUpdatedPubKeyOperatorFactory).singleton(),
 
     handleRemovedMasternode: asFunction(handleRemovedMasternodeFactory).singleton(),
+
+    handleUpdatedScriptPayout: asFunction(handleUpdatedScriptPayoutFactory).singleton(),
+
+    getWithdrawPubKeyTypeFromPayoutScript: asFunction(getWithdrawPubKeyTypeFromPayoutScriptFactory)
+      .singleton(),
+
+    getPublicKeyFromPayoutScript: asValue(getPublicKeyFromPayoutScript),
   });
 
   /**

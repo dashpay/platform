@@ -21,7 +21,7 @@
   "homepage": "https://github.com/dashevo/platform-test-suite#readme",
   "dependencies": {
     "@dashevo/dapi-client": "workspace:~",
-    "@dashevo/dashcore-lib": "~0.19.35",
+    "@dashevo/dashcore-lib": "github:dashevo/dashcore-lib#abda555010353b6180cba22ece6a846c9b5b8220",
     "@dashevo/dpns-contract": "workspace:~",
     "@dashevo/dpp": "workspace:~",
     "@dashevo/feature-flags-contract": "workspace:~",
