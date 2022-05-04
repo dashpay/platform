@@ -1,5 +1,7 @@
 const Identifier = require('@dashevo/dpp/lib/identifier/Identifier');
 const IdentityPublicKey = require('@dashevo/dpp/lib/identity/IdentityPublicKey');
+const Address = require('@dashevo/dashcore-lib/lib/address');
+const Script = require('@dashevo/dashcore-lib/lib/script');
 const createOperatorIdentifier = require('./createOperatorIdentifier');
 
 /**
@@ -47,12 +49,19 @@ function handleUpdatedPubKeyOperatorFactory(
 
     const operatorIdentity = await transactionalStateRepository.fetchIdentity(operatorIdentifier);
 
+    let operatorPayoutPubKey;
+    if (masternodeEntry.operatorPayoutAddress) {
+      const operatorPayoutAddress = Address.fromString(masternodeEntry.operatorPayoutAddress);
+      operatorPayoutPubKey = new Script(operatorPayoutAddress);
+    }
+
     //  Create an identity for operator if there is no identity exist with the same ID
     if (operatorIdentity === null) {
       await createMasternodeIdentity(
         operatorIdentifier,
         operatorPublicKey,
         IdentityPublicKey.TYPES.BLS12_381,
+        operatorPayoutPubKey,
       );
     }
 

@@ -234,19 +234,6 @@ describe('AbstractStateTransitionIdentitySigned', () => {
 
       expect(isValid).to.be.true();
     });
-
-    it('should throw PublicKeyIsDisabledError if public key is disabled', async () => {
-      identityPublicKey.setDisabledAt(new Date().getTime());
-
-      try {
-        await stateTransition.sign(identityPublicKey, blsPrivateKeyHex);
-
-        expect.fail('Should throw PublicKeyIsDisabledError');
-      } catch (e) {
-        expect(e).to.be.instanceOf(PublicKeyIsDisabledError);
-        expect(e.getPublicKey()).to.be.deep.equal(identityPublicKey);
-      }
-    });
   });
 
   describe('#signByPrivateKey', () => {

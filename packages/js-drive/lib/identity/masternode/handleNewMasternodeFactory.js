@@ -1,5 +1,7 @@
 const Identifier = require('@dashevo/dpp/lib/identifier/Identifier');
 const IdentityPublicKey = require('@dashevo/dpp/lib/identity/IdentityPublicKey');
+const Address = require('@dashevo/dashcore-lib/lib/address');
+const Script = require('@dashevo/dashcore-lib/lib/script');
 const createOperatorIdentifier = require('./createOperatorIdentifier');
 
 /**
@@ -28,6 +30,13 @@ function handleNewMasternodeFactory(
 
     const proRegTxHash = Buffer.from(masternodeEntry.proRegTxHash, 'hex');
 
+    let payoutScript;
+
+    if (masternodeEntry.payoutAddress) {
+      const payoutAddress = Address.fromString(masternodeEntry.payoutAddress);
+      payoutScript = new Script(payoutAddress);
+    }
+
     // Create a masternode identity
     const masternodeIdentifier = Identifier.from(
       proRegTxHash,
@@ -39,6 +48,7 @@ function handleNewMasternodeFactory(
       masternodeIdentifier,
       publicKey,
       IdentityPublicKey.TYPES.ECDSA_HASH160,
+      payoutScript,
     );
 
     // we need to crate reward shares only if it's enabled in proRegTx
@@ -46,12 +56,19 @@ function handleNewMasternodeFactory(
     if (proRegTxPayload.operatorReward > 0) {
       const operatorPubKey = Buffer.from(masternodeEntry.pubKeyOperator, 'hex');
 
+      let operatorPayoutScript;
+      if (masternodeEntry.operatorPayoutAddress) {
+        const operatorPayoutAddress = Address.fromString(masternodeEntry.operatorPayoutAddress);
+        operatorPayoutScript = new Script(operatorPayoutAddress);
+      }
+
       const operatorIdentifier = createOperatorIdentifier(masternodeEntry);
 
       await createMasternodeIdentity(
         operatorIdentifier,
         operatorPubKey,
         IdentityPublicKey.TYPES.BLS12_381,
+        operatorPayoutScript,
       );
 
       // Create a document in rewards data contract with percentage
