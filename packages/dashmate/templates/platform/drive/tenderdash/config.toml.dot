@@ -69,7 +69,7 @@ filter-peers = false
 [priv-validator]
 
 # Path to the JSON file containing the private key to use as a validator in the consensus protocol
-key-file = "config/priv_validator_key.json"
+key-file = "data/priv_validator_key.json"
 
 # Path to the JSON file containing the last sign state of a validator
 state-file = "data/priv_validator_state.json"
