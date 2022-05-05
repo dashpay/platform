@@ -67,7 +67,7 @@
   "dependencies": {
     "@dashevo/abci": "github:dashevo/js-abci#846513634aada436d7c07fdc0472eb700df03013",
     "@dashevo/dapi-grpc": "workspace:~",
-    "@dashevo/dashcore-lib": "~0.19.32",
+    "@dashevo/dashcore-lib": "github:dashevo/dashcore-lib#abda555010353b6180cba22ece6a846c9b5b8220",
     "@dashevo/dashd-rpc": "^2.3.2",
     "@dashevo/dashpay-contract": "workspace:~",
     "@dashevo/dpns-contract": "workspace:~",
@@ -75,7 +75,7 @@
     "@dashevo/feature-flags-contract": "workspace:~",
     "@dashevo/grpc-common": "workspace:~",
     "@dashevo/masternode-reward-shares-contract": "workspace:~",
-    "@dashevo/rs-drive": "~0.22.0-dev.19",
+    "@dashevo/rs-drive": "~0.23.0-dev.3",
     "ajv": "^8.6.0",
     "ajv-keywords": "^5.0.0",
     "awilix": "^4.2.6",

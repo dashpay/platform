@@ -203,7 +203,7 @@ describe('validateQueryFactory', () => {
   });
 
   invalidQueries.forEach(({ query, errorClass }) => {
-    it(`should return invalid result with "${errorClass}" error for query "${JSON.stringify(query)}"`, () => {
+    it(`should return invalid result with "${errorClass.name}" error for query "${JSON.stringify(query)}"`, () => {
       const result = validateQuery(query, documentSchema);
 
       expect(result.isValid()).to.be.false();

@@ -73,10 +73,10 @@ function documentQueryHandlerFactory(
       throw new UnimplementedAbciError('Proofs are not implemented yet');
     }
 
-    let documents;
+    let documentsResult;
 
     try {
-      documents = await fetchSignedDocuments(contractId, type, {
+      documentsResult = await fetchSignedDocuments(contractId, type, {
         where,
         orderBy,
         limit,
@@ -93,6 +93,8 @@ function documentQueryHandlerFactory(
 
       throw e;
     }
+
+    const documents = documentsResult.getValue();
 
     response.setDocumentsList(
       documents.map((document) => document.toBuffer()),

@@ -92,7 +92,7 @@ describe('e2e', () => {
         // Create Bob wallet
         bobClient = await createClientWithFundedWallet();
 
-        bobIdentity = await bobClient.platform.identities.register(10);
+        bobIdentity = await bobClient.platform.identities.register(100);
 
         // Additional wait time to mitigate testnet latency
         if (process.env.NETWORK === 'testnet') {
@@ -164,7 +164,7 @@ describe('e2e', () => {
           contract: dataContract,
         });
 
-        aliceIdentity = await aliceClient.platform.identities.register(10);
+        aliceIdentity = await aliceClient.platform.identities.register(100);
 
         // Additional wait time to mitigate testnet latency
         if (process.env.NETWORK === 'testnet') {

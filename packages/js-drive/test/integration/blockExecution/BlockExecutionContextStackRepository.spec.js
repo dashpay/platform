@@ -65,9 +65,11 @@ describe('BlockExecutionContextStackRepository', () => {
 
       expect(result).to.equal(repository);
 
-      const storedContextsBuffer = await store.getAux(
+      const storedContextsBufferResult = await store.getAux(
         BlockExecutionContextStackRepository.EXTERNAL_STORE_KEY_NAME,
       );
+
+      const storedContextsBuffer = storedContextsBufferResult.getValue();
 
       expect(storedContextsBuffer).to.be.instanceOf(Buffer);
 
@@ -85,24 +87,26 @@ describe('BlockExecutionContextStackRepository', () => {
     it('should store block execution context stack using transaction', async () => {
       await store.startTransaction();
 
-      const result = await repository.store(
+      await repository.store(
         blockExecutionContextStack,
         true,
       );
 
-      expect(result).to.equal(repository);
-
-      const notFoundData = await store.getAux(
+      const notFoundDataResult = await store.getAux(
         BlockExecutionContextStackRepository.EXTERNAL_STORE_KEY_NAME,
         { useTransaction: false },
       );
 
+      const notFoundData = notFoundDataResult.getValue();
+
       expect(notFoundData).to.be.null();
 
-      const dataFromTransaction = await store.getAux(
+      const dataFromTransactionResult = await store.getAux(
         BlockExecutionContextStackRepository.EXTERNAL_STORE_KEY_NAME,
         { useTransaction: true },
       );
+
+      const dataFromTransaction = dataFromTransactionResult.getValue();
 
       expect(dataFromTransaction).to.be.instanceOf(Buffer);
 
@@ -118,9 +122,11 @@ describe('BlockExecutionContextStackRepository', () => {
 
       await store.commitTransaction();
 
-      const committedData = await store.getAux(
+      const committedDataResult = await store.getAux(
         BlockExecutionContextStackRepository.EXTERNAL_STORE_KEY_NAME,
       );
+
+      const committedData = committedDataResult.getValue();
 
       expect(committedData).to.be.instanceOf(Buffer);
 

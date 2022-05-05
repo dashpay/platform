@@ -22,8 +22,12 @@ function applyIdentityCreateTransitionFactory(
    * @return {Promise<void>}
    */
   async function applyIdentityCreateTransition(stateTransition) {
-    const output = await fetchAssetLockTransactionOutput(stateTransition.getAssetLockProof());
-    const outPoint = stateTransition.getAssetLockProof().getOutPoint();
+    const executionContext = stateTransition.getExecutionContext();
+
+    const output = await fetchAssetLockTransactionOutput(
+      stateTransition.getAssetLockProof(),
+      executionContext,
+    );
 
     const creditsAmount = convertSatoshiToCredits(output.satoshis);
 
@@ -36,7 +40,7 @@ function applyIdentityCreateTransitionFactory(
       revision: 0,
     });
 
-    await stateRepository.storeIdentity(identity);
+    await stateRepository.storeIdentity(identity, executionContext);
 
     const publicKeyHashes = identity
       .getPublicKeys()
@@ -45,9 +49,12 @@ function applyIdentityCreateTransitionFactory(
     await stateRepository.storeIdentityPublicKeyHashes(
       identity.getId(),
       publicKeyHashes,
+      executionContext,
     );
 
-    await stateRepository.markAssetLockTransactionOutPointAsUsed(outPoint);
+    const outPoint = stateTransition.getAssetLockProof().getOutPoint();
+
+    await stateRepository.markAssetLockTransactionOutPointAsUsed(outPoint, executionContext);
   }
 
   return applyIdentityCreateTransition;

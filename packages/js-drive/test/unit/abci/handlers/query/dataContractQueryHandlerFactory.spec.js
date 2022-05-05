@@ -22,6 +22,7 @@ const StoreRepositoryMock = require('../../../../../lib/test/mock/StoreRepositor
 const BlockExecutionContextStackMock = require('../../../../../lib/test/mock/BlockExecutionContextStackMock');
 const InvalidArgumentAbciError = require('../../../../../lib/abci/errors/InvalidArgumentAbciError');
 const UnimplementedAbciError = require('../../../../../lib/abci/errors/UnimplementedAbciError');
+const StorageResult = require('../../../../../lib/storage/StorageResult');
 
 describe('dataContractQueryHandlerFactory', () => {
   let dataContractQueryHandler;
@@ -77,7 +78,9 @@ describe('dataContractQueryHandlerFactory', () => {
   });
 
   it('should throw NotFoundAbciError if Data Contract not found', async () => {
-    signedDataContractRepositoryMock.fetch.resolves(null);
+    signedDataContractRepositoryMock.fetch.resolves(
+      new StorageResult(null),
+    );
 
     try {
       await dataContractQueryHandler(params, data, {});
@@ -91,7 +94,9 @@ describe('dataContractQueryHandlerFactory', () => {
   });
 
   it('should return data contract', async () => {
-    signedDataContractRepositoryMock.fetch.resolves(dataContract);
+    signedDataContractRepositoryMock.fetch.resolves(
+      new StorageResult(dataContract),
+    );
 
     const result = await dataContractQueryHandler(params, data, {});
 

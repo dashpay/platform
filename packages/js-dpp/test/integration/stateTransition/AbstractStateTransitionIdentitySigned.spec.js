@@ -1,7 +1,7 @@
 const { PrivateKey, crypto: { Hash } } = require('@dashevo/dashcore-lib');
 
 const crypto = require('crypto');
-const calculateStateTransitionFee = require('../../../lib/stateTransition/calculateStateTransitionFee');
+const calculateStateTransitionFee = require('../../../lib/stateTransition/fee/calculateStateTransitionFee');
 
 const StateTransitionMock = require('../../../lib/test/mocks/StateTransitionMock');
 const IdentityPublicKey = require('../../../lib/identity/IdentityPublicKey');
@@ -233,19 +233,6 @@ describe('AbstractStateTransitionIdentitySigned', () => {
       const isValid = await stateTransition.verifySignature(identityPublicKey);
 
       expect(isValid).to.be.true();
-    });
-
-    it('should throw PublicKeyIsDisabledError if public key is disabled', async () => {
-      identityPublicKey.setDisabledAt(new Date().getTime());
-
-      try {
-        await stateTransition.sign(identityPublicKey, blsPrivateKeyHex);
-
-        expect.fail('Should throw PublicKeyIsDisabledError');
-      } catch (e) {
-        expect(e).to.be.instanceOf(PublicKeyIsDisabledError);
-        expect(e.getPublicKey()).to.be.deep.equal(identityPublicKey);
-      }
     });
   });
 

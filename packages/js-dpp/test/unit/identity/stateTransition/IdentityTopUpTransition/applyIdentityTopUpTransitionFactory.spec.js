@@ -8,6 +8,7 @@ const getIdentityTopUpTransitionFixture = require('../../../../../lib/test/fixtu
 const { convertSatoshiToCredits } = require('../../../../../lib/identity/creditsConverter');
 
 const createStateRepositoryMock = require('../../../../../lib/test/mocks/createStateRepositoryMock');
+const StateTransitionExecutionContext = require('../../../../../lib/stateTransition/StateTransitionExecutionContext');
 
 describe('applyIdentityTopUpTransitionFactory', () => {
   let stateTransition;
@@ -15,6 +16,7 @@ describe('applyIdentityTopUpTransitionFactory', () => {
   let stateRepositoryMock;
   let identity;
   let fetchAssetLockTransactionOutputMock;
+  let executionContext;
 
   beforeEach(function beforeEach() {
     identity = getIdentityFixture();
@@ -23,6 +25,10 @@ describe('applyIdentityTopUpTransitionFactory', () => {
     stateRepositoryMock.fetchIdentity.resolves(identity);
 
     stateTransition = getIdentityTopUpTransitionFixture();
+
+    executionContext = new StateTransitionExecutionContext();
+
+    stateTransition.setExecutionContext(executionContext);
 
     const output = stateTransition.getAssetLockProof().getOutput();
 
@@ -48,14 +54,19 @@ describe('applyIdentityTopUpTransitionFactory', () => {
 
     expect(stateRepositoryMock.storeIdentity).to.have.been.calledOnceWithExactly(
       identity,
+      executionContext,
     );
 
     expect(stateRepositoryMock.markAssetLockTransactionOutPointAsUsed).to.have.been
       .calledOnceWithExactly(
         stateTransition.getAssetLockProof().getOutPoint(),
+        executionContext,
       );
 
     expect(fetchAssetLockTransactionOutputMock)
-      .to.be.calledOnceWithExactly(stateTransition.getAssetLockProof());
+      .to.be.calledOnceWithExactly(
+        stateTransition.getAssetLockProof(),
+        executionContext,
+      );
   });
 });

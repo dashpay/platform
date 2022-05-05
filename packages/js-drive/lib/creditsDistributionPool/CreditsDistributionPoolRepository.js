@@ -1,5 +1,7 @@
 const cbor = require('cbor');
+
 const CreditsDistributionPool = require('./CreditsDistributionPool');
+const StorageResult = require('../storage/StorageResult');
 
 class CreditsDistributionPoolRepository {
   /**
@@ -15,43 +17,51 @@ class CreditsDistributionPoolRepository {
    *
    * @param {CreditsDistributionPool} creditsDistributionPool
    * @param {boolean} [useTransaction=false]
-   * @return {this}
+   * @return {Promise<StorageResult<void>>}
    */
   async store(creditsDistributionPool, useTransaction = false) {
     const encodedCreditsDistributionPool = cbor.encodeCanonical(
       creditsDistributionPool.toJSON(),
     );
 
-    await this.storage.put(
+    const result = await this.storage.put(
       CreditsDistributionPoolRepository.PATH,
       CreditsDistributionPoolRepository.KEY,
       encodedCreditsDistributionPool,
       { useTransaction },
     );
 
-    return this;
+    result.setValue(undefined);
+
+    return result;
   }
 
   /**
    * Fetch Credits Distribution Pool
    *
    * @param {boolean} [useTransaction=false]
-   * @return {CreditsDistributionPool}
+   * @return {Promise<StorageResult<CreditsDistributionPool>>}
    */
   async fetch(useTransaction = false) {
-    const creditsDistributionPoolEncoded = await this.storage.get(
+    const result = await this.storage.get(
       CreditsDistributionPoolRepository.PATH,
       CreditsDistributionPoolRepository.KEY,
       { useTransaction },
     );
 
-    if (!creditsDistributionPoolEncoded) {
-      return new CreditsDistributionPool();
+    if (result.isEmpty()) {
+      return new StorageResult(
+        new CreditsDistributionPool(),
+        result.getOperations(),
+      );
     }
 
-    const { amount } = cbor.decode(creditsDistributionPoolEncoded);
+    const { amount } = cbor.decode(result.getValue());
 
-    return new CreditsDistributionPool(amount);
+    return new StorageResult(
+      new CreditsDistributionPool(amount),
+      result.getOperations(),
+    );
   }
 }
 

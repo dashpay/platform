@@ -10,6 +10,7 @@ const IdentityPublicKeyIsReadOnlyError = require('../../../../../../../lib/error
 const IdentityPublicKeyDisabledAtWindowViolationError = require('../../../../../../../lib/errors/consensus/state/identity/IdentityPublicKeyDisabledAtWindowViolationError');
 const InvalidIdentityPublicKeyIdError = require('../../../../../../../lib/errors/consensus/state/identity/InvalidIdentityPublicKeyIdError');
 const SomeConsensusError = require('../../../../../../../lib/test/mocks/SomeConsensusError');
+const StateTransitionExecutionContext = require('../../../../../../../lib/stateTransition/StateTransitionExecutionContext');
 
 describe('validateIdentityUpdateTransitionStateFactory', () => {
   let validateIdentityUpdateTransitionState;
@@ -20,6 +21,7 @@ describe('validateIdentityUpdateTransitionStateFactory', () => {
   let fakeTime;
   let blockTime;
   let validateRequiredPurposeAndSecurityLevelMock;
+  let executionContext;
 
   beforeEach(async function beforeEach() {
     identity = getIdentityFixture();
@@ -51,6 +53,10 @@ describe('validateIdentityUpdateTransitionStateFactory', () => {
     stateTransition.setRevision(identity.getRevision() + 1);
     stateTransition.setPublicKeyIdsToDisable(undefined);
     stateTransition.setPublicKeysDisabledAt(undefined);
+
+    executionContext = new StateTransitionExecutionContext();
+
+    stateTransition.setExecutionContext(executionContext);
 
     const privateKey = '9b67f852093bc61cea0eeca38599dbfba0de28574d2ed9b99d10d33dc1bde7b2';
 
@@ -137,7 +143,10 @@ describe('validateIdentityUpdateTransitionStateFactory', () => {
     expect(result.isValid()).to.be.true();
 
     expect(stateRepositoryMock.fetchIdentity)
-      .to.be.calledOnceWithExactly(stateTransition.getIdentityId());
+      .to.be.calledOnceWithExactly(
+        stateTransition.getIdentityId(),
+        executionContext,
+      );
 
     expect(stateRepositoryMock.fetchLatestPlatformBlockHeader)
       .to.be.calledOnce();
@@ -152,7 +161,10 @@ describe('validateIdentityUpdateTransitionStateFactory', () => {
     expect(result.isValid()).to.be.true();
 
     expect(stateRepositoryMock.fetchIdentity)
-      .to.be.calledOnceWithExactly(stateTransition.getIdentityId());
+      .to.be.calledOnceWithExactly(
+        stateTransition.getIdentityId(),
+        executionContext,
+      );
 
     expect(stateRepositoryMock.fetchLatestPlatformBlockHeader)
       .to.not.be.called();
@@ -173,7 +185,10 @@ describe('validateIdentityUpdateTransitionStateFactory', () => {
     expect(result.isValid()).to.be.true();
 
     expect(stateRepositoryMock.fetchIdentity)
-      .to.be.calledOnceWithExactly(stateTransition.getIdentityId());
+      .to.be.calledOnceWithExactly(
+        stateTransition.getIdentityId(),
+        executionContext,
+      );
 
     expect(stateRepositoryMock.fetchLatestPlatformBlockHeader)
       .to.be.calledOnce();

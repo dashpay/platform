@@ -119,6 +119,7 @@ function validatePublicKeysFactory(validator, jsonSchema, bls) {
             break;
           }
           case IdentityPublicKey.TYPES.ECDSA_HASH160:
+          case IdentityPublicKey.TYPES.BIP13_SCRIPT_HASH:
           // Do nothing
             break;
           default:

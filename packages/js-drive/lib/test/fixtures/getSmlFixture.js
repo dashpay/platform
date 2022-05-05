@@ -4,9 +4,32 @@ module.exports = function getSmlFixture() {
       baseBlockHash: '0000047d24635e347be3aaaeb66c26be94901a2f962feccd4f95090191f208c1',
       blockHash: '00000ac05a06682172d8b49be7c9ddc4189126d7200ebf0fc074c433ae74b596',
       cbTxMerkleTree: '01000000013ea54aa6ca7985a23943b7b1ac2cfb168516cfb1f5fe0f2f876a470dc7f526fc0101',
-      cbTx: '03000500010000000000000000000000000000000000000000000000000000000000000000ffffffff0603d803060108ffffffff02eefccf31000000001976a9141ec5c66e9789c655ae068d35088b4073345fe0b088ac65fbb74a000000001976a9140424c6fa140348b7a72fad83400a8b08f5bffaca88ac00000000460200d803060076f0fa94a217a4b87c23a4db952c583472964b6a2e894e8305a67f9ea575f8ff0f5943a9c52d6ff829b170022a954b952a4542d8bebd94dc2a025f1d1969a27c',
-      deletedMNs: [
-      ],
+      cbTx: {
+        hash: '4966c16cdd7e8d2a0082c827a11097841417e8e13eb53f5ca543143dd204c5a2',
+        version: 3,
+        inputs: [
+          {
+            prevTxId: '0000000000000000000000000000000000000000000000000000000000000000',
+            outputIndex: 4294967295,
+            sequenceNumber: 4294967295,
+            script: '03d803060108',
+          },
+        ],
+        outputs: [
+          {
+            satoshis: 835714286,
+            script: '76a9141ec5c66e9789c655ae068d35088b4073345fe0b088ac',
+          },
+          {
+            satoshis: 1253571429,
+            script: '76a9140424c6fa140348b7a72fad83400a8b08f5bffaca88ac',
+          },
+        ],
+        nLockTime: 0,
+        type: 5,
+        extraPayload: '0200d80306007fb5234ad52d6a517e9e5b8a2cfe5f56b00d98225aa88118cded535b539c339e0f5943a9c52d6ff829b170022a954b952a4542d8bebd94dc2a025f1d1969a27c',
+      },
+      deletedMNs: [],
       mnList: [
         {
           proRegTxHash: '5557273f5922d9925e2327908ddb128bcf8e055a04d86e23431809bedd077060',
@@ -2713,8 +2736,7 @@ module.exports = function getSmlFixture() {
           isValid: false,
         },
       ],
-      deletedQuorums: [
-      ],
+      deletedQuorums: [],
       newQuorums: [
         {
           version: 1,
@@ -3094,178 +3116,404 @@ module.exports = function getSmlFixture() {
           membersSig: '975134cdfffcfcdd4d349b4b5f70bfc06f04de05f70b5bd9c7447342a2ea048bf160b1cc7a54aa12e8a100516ded0c7e06b04211fb1433c153d27d6755974ebdad61329e9345e8530f51a0c80f4246ef35951a05331b10a4204b1157eb817431',
         },
       ],
-      merkleRootMNList: 'fff875a59e7fa605834e892e6a4b967234582c95dba4237cb8a417a294faf076',
+      merkleRootMNList: '9e339c535b53edcd1881a85a22980db0565ffe2c8a5b9e7e516a2dd54a23b57f',
       merkleRootQuorums: '7ca269191d5f022adc94bdbed842452a954b952a0270b129f86f2dc5a943590f',
     },
     {
       baseBlockHash: '00000ac05a06682172d8b49be7c9ddc4189126d7200ebf0fc074c433ae74b596',
       blockHash: '00000167c955d38f2dd08951df73cc95873d550a024168dca77a7667914a624c',
       cbTxMerkleTree: '01000000015163cac4fb1087525db72d3a1ce8284e354287ac1f5f72ea90a234b4a0d706490101',
-      cbTx: '03000500010000000000000000000000000000000000000000000000000000000000000000ffffffff0603d90306010cffffffff02eefccf31000000001976a9141ec5c66e9789c655ae068d35088b4073345fe0b088ac65fbb74a000000001976a914970ee41ee261dbf2c421764c2d2df654a57a91be88ac00000000460200d903060076f0fa94a217a4b87c23a4db952c583472964b6a2e894e8305a67f9ea575f8ff0f5943a9c52d6ff829b170022a954b952a4542d8bebd94dc2a025f1d1969a27c',
-      deletedMNs: [
-      ],
-      mnList: [
-      ],
-      deletedQuorums: [
-      ],
-      newQuorums: [
-      ],
-      merkleRootMNList: 'fff875a59e7fa605834e892e6a4b967234582c95dba4237cb8a417a294faf076',
+      cbTx: {
+        hash: '188ebb23a8df6af3488acd8608ed1edb586817f1d74bf9e3830cc0a5671c0ce3',
+        version: 3,
+        inputs: [
+          {
+            prevTxId: '0000000000000000000000000000000000000000000000000000000000000000',
+            outputIndex: 4294967295,
+            sequenceNumber: 4294967295,
+            script: '03d90306010c',
+          },
+        ],
+        outputs: [
+          {
+            satoshis: 835714286,
+            script: '76a9141ec5c66e9789c655ae068d35088b4073345fe0b088ac',
+          },
+          {
+            satoshis: 1253571429,
+            script: '76a914970ee41ee261dbf2c421764c2d2df654a57a91be88ac',
+          },
+        ],
+        nLockTime: 0,
+        type: 5,
+        extraPayload: '0200d90306007fb5234ad52d6a517e9e5b8a2cfe5f56b00d98225aa88118cded535b539c339e0f5943a9c52d6ff829b170022a954b952a4542d8bebd94dc2a025f1d1969a27c',
+      },
+      deletedMNs: [],
+      mnList: [],
+      deletedQuorums: [],
+      newQuorums: [],
+      merkleRootMNList: '9e339c535b53edcd1881a85a22980db0565ffe2c8a5b9e7e516a2dd54a23b57f',
       merkleRootQuorums: '7ca269191d5f022adc94bdbed842452a954b952a0270b129f86f2dc5a943590f',
     },
     {
       baseBlockHash: '00000167c955d38f2dd08951df73cc95873d550a024168dca77a7667914a624c',
       blockHash: '00000b0f913fdfa0f5cebcf2d31b3acf14650b5c3ca11041ec08760af786f2aa',
       cbTxMerkleTree: '0300000003691d2a2b5e18a01ca66c8e01bb70a558a015f0d11b0550ec4e6f41ddfe24b2088850a773f73862ff6e339fdd802db1ad7a8a08c2d7da93e39817020d2c7273bd647077761e96fe000f4d5655929f685bbd406b07034b1725bd3e2de9e80bbdde0107',
-      cbTx: '03000500010000000000000000000000000000000000000000000000000000000000000000ffffffff0603da03060109ffffffff027c00d031000000001976a9141ec5c66e9789c655ae068d35088b4073345fe0b088acba00b84a000000001976a9145615f5efe0555e81f7799ff3e1017eed0f5d816088ac00000000460200da03060076f0fa94a217a4b87c23a4db952c583472964b6a2e894e8305a67f9ea575f8ff0f5943a9c52d6ff829b170022a954b952a4542d8bebd94dc2a025f1d1969a27c',
-      deletedMNs: [
-      ],
-      mnList: [
-      ],
-      deletedQuorums: [
-      ],
-      newQuorums: [
-      ],
-      merkleRootMNList: 'fff875a59e7fa605834e892e6a4b967234582c95dba4237cb8a417a294faf076',
+      cbTx: {
+        hash: '387dc1e271251d0bcaeb54976110bb6b19b760998bab80d637f60f69e423675b',
+        version: 3,
+        inputs: [
+          {
+            prevTxId: '0000000000000000000000000000000000000000000000000000000000000000',
+            outputIndex: 4294967295,
+            sequenceNumber: 4294967295,
+            script: '03da03060109',
+          },
+        ],
+        outputs: [
+          {
+            satoshis: 835715196,
+            script: '76a9141ec5c66e9789c655ae068d35088b4073345fe0b088ac',
+          },
+          {
+            satoshis: 1253572794,
+            script: '76a9145615f5efe0555e81f7799ff3e1017eed0f5d816088ac',
+          },
+        ],
+        nLockTime: 0,
+        type: 5,
+        extraPayload: '0200da0306007fb5234ad52d6a517e9e5b8a2cfe5f56b00d98225aa88118cded535b539c339e0f5943a9c52d6ff829b170022a954b952a4542d8bebd94dc2a025f1d1969a27c',
+      },
+      deletedMNs: [],
+      mnList: [],
+      deletedQuorums: [],
+      newQuorums: [],
+      merkleRootMNList: '9e339c535b53edcd1881a85a22980db0565ffe2c8a5b9e7e516a2dd54a23b57f',
       merkleRootQuorums: '7ca269191d5f022adc94bdbed842452a954b952a0270b129f86f2dc5a943590f',
     },
     {
       baseBlockHash: '00000b0f913fdfa0f5cebcf2d31b3acf14650b5c3ca11041ec08760af786f2aa',
       blockHash: '000001e91e9f80460aea8911aaf2d67875de215556f320eaf042c85ed46e238b',
       cbTxMerkleTree: '0200000002c36f7014dc07d788eed3c31c91733bffdb62fe8df53e94add889d192898ff888813917b7b1e3106b38d05534109db40f4e96cc9b0da9a2b6b8e7d9cf368bac310103',
-      cbTx: '03000500010000000000000000000000000000000000000000000000000000000000000000ffffffff0603db03060106ffffffff03aefecf31000000001976a9140ddfb51fd90bb8449574852c471fa838c16d275788ac5bb6f849000000001976a9140d5bcbeeb459af40f97fcb4a98e9d1ed13e904c888aca847bf00000000001976a914c623e2d926af5eb52dcc2b931993d3e52714511888ac00000000460200db03060076f0fa94a217a4b87c23a4db952c583472964b6a2e894e8305a67f9ea575f8ff0f5943a9c52d6ff829b170022a954b952a4542d8bebd94dc2a025f1d1969a27c',
-      deletedMNs: [
-      ],
-      mnList: [
-      ],
-      deletedQuorums: [
-      ],
-      newQuorums: [
-      ],
-      merkleRootMNList: 'fff875a59e7fa605834e892e6a4b967234582c95dba4237cb8a417a294faf076',
+      cbTx: {
+        hash: 'ccd3e0d83749c28393dc119ce2b97d7cc4cc92e5b59a8522ec27e68e855cae12',
+        version: 3,
+        inputs: [
+          {
+            prevTxId: '0000000000000000000000000000000000000000000000000000000000000000',
+            outputIndex: 4294967295,
+            sequenceNumber: 4294967295,
+            script: '03db03060106',
+          },
+        ],
+        outputs: [
+          {
+            satoshis: 835714734,
+            script: '76a9140ddfb51fd90bb8449574852c471fa838c16d275788ac',
+          },
+          {
+            satoshis: 1241036379,
+            script: '76a9140d5bcbeeb459af40f97fcb4a98e9d1ed13e904c888ac',
+          },
+          {
+            satoshis: 12535720,
+            script: '76a914c623e2d926af5eb52dcc2b931993d3e52714511888ac',
+          },
+        ],
+        nLockTime: 0,
+        type: 5,
+        extraPayload: '0200db0306007fb5234ad52d6a517e9e5b8a2cfe5f56b00d98225aa88118cded535b539c339e0f5943a9c52d6ff829b170022a954b952a4542d8bebd94dc2a025f1d1969a27c',
+      },
+      deletedMNs: [],
+      mnList: [],
+      deletedQuorums: [],
+      newQuorums: [],
+      merkleRootMNList: '9e339c535b53edcd1881a85a22980db0565ffe2c8a5b9e7e516a2dd54a23b57f',
       merkleRootQuorums: '7ca269191d5f022adc94bdbed842452a954b952a0270b129f86f2dc5a943590f',
     },
     {
       baseBlockHash: '000001e91e9f80460aea8911aaf2d67875de215556f320eaf042c85ed46e238b',
       blockHash: '000006efc67c6cd75552cfb24fcc9bfe2d91eb669e17f70268e3ababcc96a4d2',
       cbTxMerkleTree: '010000000106bd16a9555fbb7b58b8671243a0b6a3a496a3eeab105d5c98e16621741b3d1c0101',
-      cbTx: '03000500010000000000000000000000000000000000000000000000000000000000000000ffffffff0603dc03060108ffffffff02eefccf31000000001976a9141ec5c66e9789c655ae068d35088b4073345fe0b088ac65fbb74a000000001976a914379812a735584751c27ae8d47205e7048ad8afb788ac00000000460200dc03060076f0fa94a217a4b87c23a4db952c583472964b6a2e894e8305a67f9ea575f8ff0f5943a9c52d6ff829b170022a954b952a4542d8bebd94dc2a025f1d1969a27c',
-      deletedMNs: [
-      ],
-      mnList: [
-      ],
-      deletedQuorums: [
-      ],
-      newQuorums: [
-      ],
-      merkleRootMNList: 'fff875a59e7fa605834e892e6a4b967234582c95dba4237cb8a417a294faf076',
+      cbTx: {
+        hash: 'fdbc20c164c434742c3f3569ae4cb10f0ed808358edfef66e59222ed67857c5e',
+        version: 3,
+        inputs: [
+          {
+            prevTxId: '0000000000000000000000000000000000000000000000000000000000000000',
+            outputIndex: 4294967295,
+            sequenceNumber: 4294967295,
+            script: '03dc03060108',
+          },
+        ],
+        outputs: [
+          {
+            satoshis: 835714286,
+            script: '76a9141ec5c66e9789c655ae068d35088b4073345fe0b088ac',
+          },
+          {
+            satoshis: 1253571429,
+            script: '76a914379812a735584751c27ae8d47205e7048ad8afb788ac',
+          },
+        ],
+        nLockTime: 0,
+        type: 5,
+        extraPayload: '0200dc0306007fb5234ad52d6a517e9e5b8a2cfe5f56b00d98225aa88118cded535b539c339e0f5943a9c52d6ff829b170022a954b952a4542d8bebd94dc2a025f1d1969a27c',
+      },
+      deletedMNs: [],
+      mnList: [],
+      deletedQuorums: [],
+      newQuorums: [],
+      merkleRootMNList: '9e339c535b53edcd1881a85a22980db0565ffe2c8a5b9e7e516a2dd54a23b57f',
       merkleRootQuorums: '7ca269191d5f022adc94bdbed842452a954b952a0270b129f86f2dc5a943590f',
     },
     {
       baseBlockHash: '000006efc67c6cd75552cfb24fcc9bfe2d91eb669e17f70268e3ababcc96a4d2',
       blockHash: '00000e32f3ab6259ca5bb79fbfdc42d6fb7c6ffb2de0a82f6698a7ee1f5f6589',
       cbTxMerkleTree: '0200000002f4027ce1b98ef4c88b37963edcbe7d4bfcef2f8fe9bbdd37f60452501b2dec3fef683084b2f24e3f5023abaf870b44871d73d0620dd5f82fa6ab3864072a319c0103',
-      cbTx: '03000500010000000000000000000000000000000000000000000000000000000000000000ffffffff0603dd03060102ffffffff023312d031000000001976a9141ec5c66e9789c655ae068d35088b4073345fe0b088ac4c1bb84a000000001976a9147770d9914a34f8d7b8d2eaa9fa20699e79b1c82188ac00000000460200dd03060076f0fa94a217a4b87c23a4db952c583472964b6a2e894e8305a67f9ea575f8ff0f5943a9c52d6ff829b170022a954b952a4542d8bebd94dc2a025f1d1969a27c',
-      deletedMNs: [
-      ],
-      mnList: [
-      ],
-      deletedQuorums: [
-      ],
-      newQuorums: [
-      ],
-      merkleRootMNList: 'fff875a59e7fa605834e892e6a4b967234582c95dba4237cb8a417a294faf076',
+      cbTx: {
+        hash: 'e21450e0794f284507a883baa59dc8e27880399b4ad9da207fb99280bf9f6b9d',
+        version: 3,
+        inputs: [
+          {
+            prevTxId: '0000000000000000000000000000000000000000000000000000000000000000',
+            outputIndex: 4294967295,
+            sequenceNumber: 4294967295,
+            script: '03dd03060102',
+          },
+        ],
+        outputs: [
+          {
+            satoshis: 835719731,
+            script: '76a9141ec5c66e9789c655ae068d35088b4073345fe0b088ac',
+          },
+          {
+            satoshis: 1253579596,
+            script: '76a9147770d9914a34f8d7b8d2eaa9fa20699e79b1c82188ac',
+          },
+        ],
+        nLockTime: 0,
+        type: 5,
+        extraPayload: '0200dd0306007fb5234ad52d6a517e9e5b8a2cfe5f56b00d98225aa88118cded535b539c339e0f5943a9c52d6ff829b170022a954b952a4542d8bebd94dc2a025f1d1969a27c',
+      },
+      deletedMNs: [],
+      mnList: [],
+      deletedQuorums: [],
+      newQuorums: [],
+      merkleRootMNList: '9e339c535b53edcd1881a85a22980db0565ffe2c8a5b9e7e516a2dd54a23b57f',
       merkleRootQuorums: '7ca269191d5f022adc94bdbed842452a954b952a0270b129f86f2dc5a943590f',
     },
     {
       baseBlockHash: '00000e32f3ab6259ca5bb79fbfdc42d6fb7c6ffb2de0a82f6698a7ee1f5f6589',
       blockHash: '00000a4cba0496c348de03c53c3a396add2b0db3d1b845dd6ca258e4c46cfc4d',
       cbTxMerkleTree: '0c0000000542059a9791d05526b82c0de465da6683b4ad7f73e3713362ef8571fcace7d8300c267f8580aa00608eb7b38109f85ff1d0644ac7be6ea2750c9155e7b8a22184ab767ae473e6bc9294e0dc993738890dcf427cd1e4e684c77a33ff86addb24ba34d6a9352bcef6ad8e5d3efaf02bb71cc9003e9b5e19673ef693dba7b8cd30fa6efff530fa9a08fc084aa14c1a0bde489ce9ff0e7775d8c8c34ce2033e0d6de5021f00',
-      cbTx: '03000500010000000000000000000000000000000000000000000000000000000000000000ffffffff0603de03060107ffffffff02d100d031000000001976a9140ddfb51fd90bb8449574852c471fa838c16d275788ac3801b84a000000001976a914703c4c06da3612cc2309e93d40d4e5e739f1333a88ac00000000460200de03060076f0fa94a217a4b87c23a4db952c583472964b6a2e894e8305a67f9ea575f8ff0f5943a9c52d6ff829b170022a954b952a4542d8bebd94dc2a025f1d1969a27c',
-      deletedMNs: [
-      ],
-      mnList: [
-      ],
-      deletedQuorums: [
-      ],
-      newQuorums: [
-      ],
-      merkleRootMNList: 'fff875a59e7fa605834e892e6a4b967234582c95dba4237cb8a417a294faf076',
+      cbTx: {
+        hash: '37af62a93a8b02f8e244c0e45fd21abda88f6b62bc37978741ca146a4afcd201',
+        version: 3,
+        inputs: [
+          {
+            prevTxId: '0000000000000000000000000000000000000000000000000000000000000000',
+            outputIndex: 4294967295,
+            sequenceNumber: 4294967295,
+            script: '03de03060107',
+          },
+        ],
+        outputs: [
+          {
+            satoshis: 835715281,
+            script: '76a9140ddfb51fd90bb8449574852c471fa838c16d275788ac',
+          },
+          {
+            satoshis: 1253572920,
+            script: '76a914703c4c06da3612cc2309e93d40d4e5e739f1333a88ac',
+          },
+        ],
+        nLockTime: 0,
+        type: 5,
+        extraPayload: '0200de0306007fb5234ad52d6a517e9e5b8a2cfe5f56b00d98225aa88118cded535b539c339e0f5943a9c52d6ff829b170022a954b952a4542d8bebd94dc2a025f1d1969a27c',
+      },
+      deletedMNs: [],
+      mnList: [],
+      deletedQuorums: [],
+      newQuorums: [],
+      merkleRootMNList: '9e339c535b53edcd1881a85a22980db0565ffe2c8a5b9e7e516a2dd54a23b57f',
       merkleRootQuorums: '7ca269191d5f022adc94bdbed842452a954b952a0270b129f86f2dc5a943590f',
     },
     {
       baseBlockHash: '00000a4cba0496c348de03c53c3a396add2b0db3d1b845dd6ca258e4c46cfc4d',
       blockHash: '0000078d232cfdd02334828b4f9f9daadcae3525e05612c26e0b5d3980d0eddb',
       cbTxMerkleTree: '05000000049796d61a3b99b7ce47c01fdf22f36d05d868078cb0e989a30b0394f1798d63f94c1db4c620384dfc752d27caf28ee40ee2ffe3fea32e0f9b1062a6d9c3319ae27ba0e140e1c0c3cbe67513742e142830904e5e86d2be173972fa9fc6a92f24a14777a1c955aa48fb68f58235d64d8f517f21cfb52fdd895247bee8d8c8228865010f',
-      cbTx: '03000500010000000000000000000000000000000000000000000000000000000000000000ffffffff0603df03060101ffffffff0258fecf31000000001976a9141ec5c66e9789c655ae068d35088b4073345fe0b088ac83fdb74a000000001976a9142b2fa71a36eac313219822b700ee2f11f48d7ca688ac00000000460200df03060076f0fa94a217a4b87c23a4db952c583472964b6a2e894e8305a67f9ea575f8ff0f5943a9c52d6ff829b170022a954b952a4542d8bebd94dc2a025f1d1969a27c',
-      deletedMNs: [
-      ],
-      mnList: [
-      ],
-      deletedQuorums: [
-      ],
-      newQuorums: [
-      ],
-      merkleRootMNList: 'fff875a59e7fa605834e892e6a4b967234582c95dba4237cb8a417a294faf076',
+      cbTx: {
+        hash: '7480ee6b23a360dc5a814dd6eed07d9a9b3dd9b3a39f905a93cfc06a2807649a',
+        version: 3,
+        inputs: [
+          {
+            prevTxId: '0000000000000000000000000000000000000000000000000000000000000000',
+            outputIndex: 4294967295,
+            sequenceNumber: 4294967295,
+            script: '03df03060101',
+          },
+        ],
+        outputs: [
+          {
+            satoshis: 835714648,
+            script: '76a9141ec5c66e9789c655ae068d35088b4073345fe0b088ac',
+          },
+          {
+            satoshis: 1253571971,
+            script: '76a9142b2fa71a36eac313219822b700ee2f11f48d7ca688ac',
+          },
+        ],
+        nLockTime: 0,
+        type: 5,
+        extraPayload: '0200df0306007fb5234ad52d6a517e9e5b8a2cfe5f56b00d98225aa88118cded535b539c339e0f5943a9c52d6ff829b170022a954b952a4542d8bebd94dc2a025f1d1969a27c',
+      },
+      deletedMNs: [],
+      mnList: [],
+      deletedQuorums: [],
+      newQuorums: [],
+      merkleRootMNList: '9e339c535b53edcd1881a85a22980db0565ffe2c8a5b9e7e516a2dd54a23b57f',
       merkleRootQuorums: '7ca269191d5f022adc94bdbed842452a954b952a0270b129f86f2dc5a943590f',
     },
     {
       baseBlockHash: '0000078d232cfdd02334828b4f9f9daadcae3525e05612c26e0b5d3980d0eddb',
       blockHash: '000005f462b40eb3db5e9c1fa7de7258366922ba52f30482ad24bbf9518222dd',
       cbTxMerkleTree: '0a00000005b80e262c9958870882c4076430d0aa935d9e4f1d1a8fec2c6061d0f40d0c2260bcada7828d61588d357bd25514232b161b15123a9fb880aca76f5d52f6591e9da512eccd56a4cff0577c979b05bf9a378a97fb29bee597f310eeffb300e0d4a23f7828bb4f1f192153c6f45103de6163117b69c9e7a04474792bdc99f969c0e0d13df433a7aa95bf8c2c9f8a4c63b0e7e68b69b5428f703afe27b8a99c78ba4e021f00',
-      cbTx: '03000500010000000000000000000000000000000000000000000000000000000000000000ffffffff0603e003060109ffffffff021c00d031000000001976a9141ec5c66e9789c655ae068d35088b4073345fe0b088ac2900b84a000000001976a914b13fea72c981e82080e3016efb9345aea570803d88ac00000000460200e003060076f0fa94a217a4b87c23a4db952c583472964b6a2e894e8305a67f9ea575f8ff0f5943a9c52d6ff829b170022a954b952a4542d8bebd94dc2a025f1d1969a27c',
-      deletedMNs: [
-      ],
-      mnList: [
-      ],
-      deletedQuorums: [
-      ],
-      newQuorums: [
-      ],
-      merkleRootMNList: 'fff875a59e7fa605834e892e6a4b967234582c95dba4237cb8a417a294faf076',
+      cbTx: {
+        hash: 'bfa55e0a9613d9c2b15659d4d42decc0b74898ab9d229a76793455e68aa1010f',
+        version: 3,
+        inputs: [
+          {
+            prevTxId: '0000000000000000000000000000000000000000000000000000000000000000',
+            outputIndex: 4294967295,
+            sequenceNumber: 4294967295,
+            script: '03e003060109',
+          },
+        ],
+        outputs: [
+          {
+            satoshis: 835715100,
+            script: '76a9141ec5c66e9789c655ae068d35088b4073345fe0b088ac',
+          },
+          {
+            satoshis: 1253572649,
+            script: '76a914b13fea72c981e82080e3016efb9345aea570803d88ac',
+          },
+        ],
+        nLockTime: 0,
+        type: 5,
+        extraPayload: '0200e00306007fb5234ad52d6a517e9e5b8a2cfe5f56b00d98225aa88118cded535b539c339e0f5943a9c52d6ff829b170022a954b952a4542d8bebd94dc2a025f1d1969a27c',
+      },
+      deletedMNs: [],
+      mnList: [],
+      deletedQuorums: [],
+      newQuorums: [],
+      merkleRootMNList: '9e339c535b53edcd1881a85a22980db0565ffe2c8a5b9e7e516a2dd54a23b57f',
       merkleRootQuorums: '7ca269191d5f022adc94bdbed842452a954b952a0270b129f86f2dc5a943590f',
     },
     {
       baseBlockHash: '000005f462b40eb3db5e9c1fa7de7258366922ba52f30482ad24bbf9518222dd',
       blockHash: '000000615db85d7b2bac04b9c852d6ca9ffec16d24c2ea816e28ec1acb5dcf22',
       cbTxMerkleTree: '050000000406667e560db292cfed37a306d108713939145c66c1547757a539d0fb4ddf5d374084b87a357aa9d92bd59143239dbea73399bc19c2ca046f7fb00b5d3e2d7aa272b2695673919541d892f1ac9850f71d15402cc570bdc3ab7b0e5095ad80bb4d1cdf1bedc39cc78bee2a44e66aebaacf3312330ee713ecf907db491ce4539290010f',
-      cbTx: '03000500010000000000000000000000000000000000000000000000000000000000000000ffffffff0603e103060106ffffffff0258fecf31000000001976a9140ddfb51fd90bb8449574852c471fa838c16d275788ac83fdb74a000000001976a9141f72c30a78380bd3494f87188578b8faf116e38c88ac00000000460200e103060076f0fa94a217a4b87c23a4db952c583472964b6a2e894e8305a67f9ea575f8ff0f5943a9c52d6ff829b170022a954b952a4542d8bebd94dc2a025f1d1969a27c',
-      deletedMNs: [
-      ],
-      mnList: [
-      ],
-      deletedQuorums: [
-      ],
-      newQuorums: [
-      ],
-      merkleRootMNList: 'fff875a59e7fa605834e892e6a4b967234582c95dba4237cb8a417a294faf076',
+      cbTx: {
+        hash: '6b4118162c84cf687f156d9d8c2ee0b5e7323c5cdba2d5058037294e7066426a',
+        version: 3,
+        inputs: [
+          {
+            prevTxId: '0000000000000000000000000000000000000000000000000000000000000000',
+            outputIndex: 4294967295,
+            sequenceNumber: 4294967295,
+            script: '03e103060106',
+          },
+        ],
+        outputs: [
+          {
+            satoshis: 835714648,
+            script: '76a9140ddfb51fd90bb8449574852c471fa838c16d275788ac',
+          },
+          {
+            satoshis: 1253571971,
+            script: '76a9141f72c30a78380bd3494f87188578b8faf116e38c88ac',
+          },
+        ],
+        nLockTime: 0,
+        type: 5,
+        extraPayload: '0200e10306007fb5234ad52d6a517e9e5b8a2cfe5f56b00d98225aa88118cded535b539c339e0f5943a9c52d6ff829b170022a954b952a4542d8bebd94dc2a025f1d1969a27c',
+      },
+      deletedMNs: [],
+      mnList: [],
+      deletedQuorums: [],
+      newQuorums: [],
+      merkleRootMNList: '9e339c535b53edcd1881a85a22980db0565ffe2c8a5b9e7e516a2dd54a23b57f',
       merkleRootQuorums: '7ca269191d5f022adc94bdbed842452a954b952a0270b129f86f2dc5a943590f',
     },
     {
       baseBlockHash: '000000615db85d7b2bac04b9c852d6ca9ffec16d24c2ea816e28ec1acb5dcf22',
       blockHash: '000005d7bead3943423f8f58afd6994d93384d9ebcd2bc8840b6c633750fb67b',
       cbTxMerkleTree: '0300000003dc151704d8057576356882243288ef1abeb4a5510a46dba43d434cae27f1d285e5109c5e639227d7fb9d4368f42e82963df649a7079b6bfac528a4d5424c152d8878bb5f4b1ec9606d0087331974fbfa477f1639d2ec384b24b960b74468ca690107',
-      cbTx: '03000500010000000000000000000000000000000000000000000000000000000000000000ffffffff0603e203060102ffffffff0249fdcf31000000001976a9140ddfb51fd90bb8449574852c471fa838c16d275788acecfbb74a000000001976a9141f72c30a78380bd3494f87188578b8faf116e38c88ac00000000460200e203060076f0fa94a217a4b87c23a4db952c583472964b6a2e894e8305a67f9ea575f8ff0f5943a9c52d6ff829b170022a954b952a4542d8bebd94dc2a025f1d1969a27c',
-      deletedMNs: [
-      ],
-      mnList: [
-      ],
-      deletedQuorums: [
-      ],
-      newQuorums: [
-      ],
-      merkleRootMNList: 'fff875a59e7fa605834e892e6a4b967234582c95dba4237cb8a417a294faf076',
+      cbTx: {
+        hash: 'ac4b9edb293340ac23c3fc10280050841a5b9627182eed7d296346784ba85670',
+        version: 3,
+        inputs: [
+          {
+            prevTxId: '0000000000000000000000000000000000000000000000000000000000000000',
+            outputIndex: 4294967295,
+            sequenceNumber: 4294967295,
+            script: '03e203060102',
+          },
+        ],
+        outputs: [
+          {
+            satoshis: 835714377,
+            script: '76a9140ddfb51fd90bb8449574852c471fa838c16d275788ac',
+          },
+          {
+            satoshis: 1253571564,
+            script: '76a9141f72c30a78380bd3494f87188578b8faf116e38c88ac',
+          },
+        ],
+        nLockTime: 0,
+        type: 5,
+        extraPayload: '0200e20306007fb5234ad52d6a517e9e5b8a2cfe5f56b00d98225aa88118cded535b539c339e0f5943a9c52d6ff829b170022a954b952a4542d8bebd94dc2a025f1d1969a27c',
+      },
+      deletedMNs: [],
+      mnList: [],
+      deletedQuorums: [],
+      newQuorums: [],
+      merkleRootMNList: '9e339c535b53edcd1881a85a22980db0565ffe2c8a5b9e7e516a2dd54a23b57f',
       merkleRootQuorums: '7ca269191d5f022adc94bdbed842452a954b952a0270b129f86f2dc5a943590f',
     },
     {
       baseBlockHash: '000005d7bead3943423f8f58afd6994d93384d9ebcd2bc8840b6c633750fb67b',
       blockHash: '00000317ef5e5b10cec94d864c40222b5c946a101ac88324b780de84b4b600a6',
       cbTxMerkleTree: '0200000002edb89a1f21bdf55fe2fd4dca0bee62d1a7979437ead7c267cb6e2fa8af21b00016265ecd36ae5d07092f494826f929947f7771e72d474e7d9a373bf17daedb810103',
-      cbTx: '03000500010000000000000000000000000000000000000000000000000000000000000000ffffffff0603e30306010cffffffff02eefccf31000000001976a9141ec5c66e9789c655ae068d35088b4073345fe0b088ac65fbb74a000000001976a914374a35e55d7d04519fe282556ebbd649b384656888ac00000000460200e303060076f0fa94a217a4b87c23a4db952c583472964b6a2e894e8305a67f9ea575f8ff53fc1cc04336bdfe9210627b13395bf49fc1b3c641b2ba5cad81b4cb2d167fd9',
-      deletedMNs: [
-      ],
-      mnList: [
-      ],
+      cbTx: {
+        hash: '9db27e028e70239a64ebae894abfad473f09904f285420c87b53b889b663e7b8',
+        version: 3,
+        inputs: [
+          {
+            prevTxId: '0000000000000000000000000000000000000000000000000000000000000000',
+            outputIndex: 4294967295,
+            sequenceNumber: 4294967295,
+            script: '03e30306010c',
+          },
+        ],
+        outputs: [
+          {
+            satoshis: 835714286,
+            script: '76a9141ec5c66e9789c655ae068d35088b4073345fe0b088ac',
+          },
+          {
+            satoshis: 1253571429,
+            script: '76a914374a35e55d7d04519fe282556ebbd649b384656888ac',
+          },
+        ],
+        nLockTime: 0,
+        type: 5,
+        extraPayload: '0200e30306007fb5234ad52d6a517e9e5b8a2cfe5f56b00d98225aa88118cded535b539c339e53fc1cc04336bdfe9210627b13395bf49fc1b3c641b2ba5cad81b4cb2d167fd9',
+      },
+      deletedMNs: [],
+      mnList: [],
       deletedQuorums: [
         {
           llmqType: 1,
@@ -3287,87 +3535,187 @@ module.exports = function getSmlFixture() {
           membersSig: '90113a8851adead9266e9ee4fccde54067e1c6c4dea05e67e32fa438f0d3e45756fb6576ccd1aa968fc3133f0b276c1d0bcb44f0fe2e9da92e952827af1c196e303e99bae8eeae0fcada1578b89599ac6eae5e8b144d40b9a9346ff12e9e226a',
         },
       ],
-      merkleRootMNList: 'fff875a59e7fa605834e892e6a4b967234582c95dba4237cb8a417a294faf076',
+      merkleRootMNList: '9e339c535b53edcd1881a85a22980db0565ffe2c8a5b9e7e516a2dd54a23b57f',
       merkleRootQuorums: 'd97f162dcbb481ad5cbab241c6b3c19ff45b39137b621092febd3643c01cfc53',
     },
     {
       baseBlockHash: '00000317ef5e5b10cec94d864c40222b5c946a101ac88324b780de84b4b600a6',
       blockHash: '00000c22544f8d3d460a76c62f76ad6482d087d03e60412c7bdcf42cc1153505',
       cbTxMerkleTree: '0200000002eafbbaa300ec1af7f0c019178966609ea093baaaf263a64d9e76aec2e7975d1c72a7f74a70d5602fbc67a8c27639c29d3cedef7535b57c852bcf69c6c87e4c570103',
-      cbTx: '03000500010000000000000000000000000000000000000000000000000000000000000000ffffffff0603e403060107ffffffff0249fdcf31000000001976a9141ec5c66e9789c655ae068d35088b4073345fe0b088acecfbb74a000000001976a914f32bb66d6fdcd07b1268d21a3e021c9c9544529388ac00000000460200e403060076f0fa94a217a4b87c23a4db952c583472964b6a2e894e8305a67f9ea575f8ff53fc1cc04336bdfe9210627b13395bf49fc1b3c641b2ba5cad81b4cb2d167fd9',
-      deletedMNs: [
-      ],
-      mnList: [
-      ],
-      deletedQuorums: [
-      ],
-      newQuorums: [
-      ],
-      merkleRootMNList: 'fff875a59e7fa605834e892e6a4b967234582c95dba4237cb8a417a294faf076',
+      cbTx: {
+        hash: '255340b03968b80e6152dac7b87fea12e433a3b481d588ea53f3e6fd6db1888e',
+        version: 3,
+        inputs: [
+          {
+            prevTxId: '0000000000000000000000000000000000000000000000000000000000000000',
+            outputIndex: 4294967295,
+            sequenceNumber: 4294967295,
+            script: '03e403060107',
+          },
+        ],
+        outputs: [
+          {
+            satoshis: 835714377,
+            script: '76a9141ec5c66e9789c655ae068d35088b4073345fe0b088ac',
+          },
+          {
+            satoshis: 1253571564,
+            script: '76a914f32bb66d6fdcd07b1268d21a3e021c9c9544529388ac',
+          },
+        ],
+        nLockTime: 0,
+        type: 5,
+        extraPayload: '0200e40306007fb5234ad52d6a517e9e5b8a2cfe5f56b00d98225aa88118cded535b539c339e53fc1cc04336bdfe9210627b13395bf49fc1b3c641b2ba5cad81b4cb2d167fd9',
+      },
+      deletedMNs: [],
+      mnList: [],
+      deletedQuorums: [],
+      newQuorums: [],
+      merkleRootMNList: '9e339c535b53edcd1881a85a22980db0565ffe2c8a5b9e7e516a2dd54a23b57f',
       merkleRootQuorums: 'd97f162dcbb481ad5cbab241c6b3c19ff45b39137b621092febd3643c01cfc53',
     },
     {
       baseBlockHash: '00000c22544f8d3d460a76c62f76ad6482d087d03e60412c7bdcf42cc1153505',
       blockHash: '000006675beb0bbf5e399c933cebc589dffe93712b20af63ef0bceef8818fc77',
       cbTxMerkleTree: '01000000010df7d1c2a5b4b1be63abab5d74dadb4e7237725e13b84d3095c4ec151dfb71160101',
-      cbTx: '03000500010000000000000000000000000000000000000000000000000000000000000000ffffffff0603e50306010affffffff02eefccf31000000001976a9141ec5c66e9789c655ae068d35088b4073345fe0b088ac65fbb74a000000001976a914f32bb66d6fdcd07b1268d21a3e021c9c9544529388ac00000000460200e503060076f0fa94a217a4b87c23a4db952c583472964b6a2e894e8305a67f9ea575f8ff53fc1cc04336bdfe9210627b13395bf49fc1b3c641b2ba5cad81b4cb2d167fd9',
-      deletedMNs: [
-      ],
-      mnList: [
-      ],
-      deletedQuorums: [
-      ],
-      newQuorums: [
-      ],
-      merkleRootMNList: 'fff875a59e7fa605834e892e6a4b967234582c95dba4237cb8a417a294faf076',
+      cbTx: {
+        hash: 'e9ba04da4a104213ae3f8aa734ca4c622930d96121141592bcfe2d3fc5b056e8',
+        version: 3,
+        inputs: [
+          {
+            prevTxId: '0000000000000000000000000000000000000000000000000000000000000000',
+            outputIndex: 4294967295,
+            sequenceNumber: 4294967295,
+            script: '03e50306010a',
+          },
+        ],
+        outputs: [
+          {
+            satoshis: 835714286,
+            script: '76a9141ec5c66e9789c655ae068d35088b4073345fe0b088ac',
+          },
+          {
+            satoshis: 1253571429,
+            script: '76a914f32bb66d6fdcd07b1268d21a3e021c9c9544529388ac',
+          },
+        ],
+        nLockTime: 0,
+        type: 5,
+        extraPayload: '0200e50306007fb5234ad52d6a517e9e5b8a2cfe5f56b00d98225aa88118cded535b539c339e53fc1cc04336bdfe9210627b13395bf49fc1b3c641b2ba5cad81b4cb2d167fd9',
+      },
+      deletedMNs: [],
+      mnList: [],
+      deletedQuorums: [],
+      newQuorums: [],
+      merkleRootMNList: '9e339c535b53edcd1881a85a22980db0565ffe2c8a5b9e7e516a2dd54a23b57f',
       merkleRootQuorums: 'd97f162dcbb481ad5cbab241c6b3c19ff45b39137b621092febd3643c01cfc53',
     },
     {
       baseBlockHash: '000006675beb0bbf5e399c933cebc589dffe93712b20af63ef0bceef8818fc77',
       blockHash: '00000e2fd05526d6c535664db8e4bb9dcacbd6fe383a47e402914d5a109d25a9',
       cbTxMerkleTree: '010000000106c6600e6f28bf7ee5617a47ee2000c38f7bd2ae146f929f0d47391e3b6916930101',
-      cbTx: '03000500010000000000000000000000000000000000000000000000000000000000000000ffffffff0603e603060104ffffffff02eefccf31000000001976a9140ddfb51fd90bb8449574852c471fa838c16d275788ac65fbb74a000000001976a9145a375814e9caf5b8575a8221be246457e5c5c28d88ac00000000460200e603060076f0fa94a217a4b87c23a4db952c583472964b6a2e894e8305a67f9ea575f8ff53fc1cc04336bdfe9210627b13395bf49fc1b3c641b2ba5cad81b4cb2d167fd9',
-      deletedMNs: [
-      ],
-      mnList: [
-      ],
-      deletedQuorums: [
-      ],
-      newQuorums: [
-      ],
-      merkleRootMNList: 'fff875a59e7fa605834e892e6a4b967234582c95dba4237cb8a417a294faf076',
+      cbTx: {
+        hash: '986bc385cb78119000af1c878d83551d3dcda59b74680025574d7750ea2b0cf8',
+        version: 3,
+        inputs: [
+          {
+            prevTxId: '0000000000000000000000000000000000000000000000000000000000000000',
+            outputIndex: 4294967295,
+            sequenceNumber: 4294967295,
+            script: '03e603060104',
+          },
+        ],
+        outputs: [
+          {
+            satoshis: 835714286,
+            script: '76a9140ddfb51fd90bb8449574852c471fa838c16d275788ac',
+          },
+          {
+            satoshis: 1253571429,
+            script: '76a9145a375814e9caf5b8575a8221be246457e5c5c28d88ac',
+          },
+        ],
+        nLockTime: 0,
+        type: 5,
+        extraPayload: '0200e60306007fb5234ad52d6a517e9e5b8a2cfe5f56b00d98225aa88118cded535b539c339e53fc1cc04336bdfe9210627b13395bf49fc1b3c641b2ba5cad81b4cb2d167fd9',
+      },
+      deletedMNs: [],
+      mnList: [],
+      deletedQuorums: [],
+      newQuorums: [],
+      merkleRootMNList: '9e339c535b53edcd1881a85a22980db0565ffe2c8a5b9e7e516a2dd54a23b57f',
       merkleRootQuorums: 'd97f162dcbb481ad5cbab241c6b3c19ff45b39137b621092febd3643c01cfc53',
     },
     {
       baseBlockHash: '00000e2fd05526d6c535664db8e4bb9dcacbd6fe383a47e402914d5a109d25a9',
       blockHash: '00000fd124de645de51fb535fd52aaea58e871dc4511cae344ae8b3b7dd63b33',
       cbTxMerkleTree: '010000000185e84cd8b25052843319a95d34d78b0381c7f20f707c6ca0b2df719520426f580101',
-      cbTx: '03000500010000000000000000000000000000000000000000000000000000000000000000ffffffff0603e703060102ffffffff02eefccf31000000001976a9141ec5c66e9789c655ae068d35088b4073345fe0b088ac65fbb74a000000001976a914288e0340106fb37e4cba12e21c2af87e965ebb8b88ac00000000460200e703060076f0fa94a217a4b87c23a4db952c583472964b6a2e894e8305a67f9ea575f8ff53fc1cc04336bdfe9210627b13395bf49fc1b3c641b2ba5cad81b4cb2d167fd9',
-      deletedMNs: [
-      ],
-      mnList: [
-      ],
-      deletedQuorums: [
-      ],
-      newQuorums: [
-      ],
-      merkleRootMNList: 'fff875a59e7fa605834e892e6a4b967234582c95dba4237cb8a417a294faf076',
+      cbTx: {
+        hash: 'f304e62fe5f33c3d87788d3e782c5fac7252f112c74f1e2f377ba4f1c659b4f1',
+        version: 3,
+        inputs: [
+          {
+            prevTxId: '0000000000000000000000000000000000000000000000000000000000000000',
+            outputIndex: 4294967295,
+            sequenceNumber: 4294967295,
+            script: '03e703060102',
+          },
+        ],
+        outputs: [
+          {
+            satoshis: 835714286,
+            script: '76a9141ec5c66e9789c655ae068d35088b4073345fe0b088ac',
+          },
+          {
+            satoshis: 1253571429,
+            script: '76a914288e0340106fb37e4cba12e21c2af87e965ebb8b88ac',
+          },
+        ],
+        nLockTime: 0,
+        type: 5,
+        extraPayload: '0200e70306007fb5234ad52d6a517e9e5b8a2cfe5f56b00d98225aa88118cded535b539c339e53fc1cc04336bdfe9210627b13395bf49fc1b3c641b2ba5cad81b4cb2d167fd9',
+      },
+      deletedMNs: [],
+      mnList: [],
+      deletedQuorums: [],
+      newQuorums: [],
+      merkleRootMNList: '9e339c535b53edcd1881a85a22980db0565ffe2c8a5b9e7e516a2dd54a23b57f',
       merkleRootQuorums: 'd97f162dcbb481ad5cbab241c6b3c19ff45b39137b621092febd3643c01cfc53',
     },
     {
       baseBlockHash: '00000fd124de645de51fb535fd52aaea58e871dc4511cae344ae8b3b7dd63b33',
       blockHash: '000008cc02119a783921e214f358c72eb42941d1f972e0111da5037f5007270b',
       cbTxMerkleTree: '01000000016b19957f4fcdf44574c3cff3f1bcc4e62f2f75a96f20dbace2600d52a601e0ec0101',
-      cbTx: '03000500010000000000000000000000000000000000000000000000000000000000000000ffffffff0603e803060101ffffffff02eefccf31000000001976a9140ddfb51fd90bb8449574852c471fa838c16d275788ac65fbb74a000000001976a914253cae727106faa4bf76b0b4f8375091889f671588ac00000000460200e803060076f0fa94a217a4b87c23a4db952c583472964b6a2e894e8305a67f9ea575f8ff53fc1cc04336bdfe9210627b13395bf49fc1b3c641b2ba5cad81b4cb2d167fd9',
-      deletedMNs: [
-      ],
-      mnList: [
-      ],
-      deletedQuorums: [
-      ],
-      newQuorums: [
-      ],
-      merkleRootMNList: 'fff875a59e7fa605834e892e6a4b967234582c95dba4237cb8a417a294faf076',
+      cbTx: {
+        hash: '3da46bbc700d9104dc2eaffd3244e4fba4a4055b5e069d9b8270c6bd42fa6eb8',
+        version: 3,
+        inputs: [
+          {
+            prevTxId: '0000000000000000000000000000000000000000000000000000000000000000',
+            outputIndex: 4294967295,
+            sequenceNumber: 4294967295,
+            script: '03e803060101',
+          },
+        ],
+        outputs: [
+          {
+            satoshis: 835714286,
+            script: '76a9140ddfb51fd90bb8449574852c471fa838c16d275788ac',
+          },
+          {
+            satoshis: 1253571429,
+            script: '76a914253cae727106faa4bf76b0b4f8375091889f671588ac',
+          },
+        ],
+        nLockTime: 0,
+        type: 5,
+        extraPayload: '0200e80306007fb5234ad52d6a517e9e5b8a2cfe5f56b00d98225aa88118cded535b539c339e53fc1cc04336bdfe9210627b13395bf49fc1b3c641b2ba5cad81b4cb2d167fd9',
+      },
+      deletedMNs: [],
+      mnList: [],
+      deletedQuorums: [],
+      newQuorums: [],
+      merkleRootMNList: '9e339c535b53edcd1881a85a22980db0565ffe2c8a5b9e7e516a2dd54a23b57f',
       merkleRootQuorums: 'd97f162dcbb481ad5cbab241c6b3c19ff45b39137b621092febd3643c01cfc53',
     },
   ];

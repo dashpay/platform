@@ -17,17 +17,24 @@ function fetchAssetLockTransactionOutputFactory(
    *
    * @typedef fetchAssetLockTransactionOutput
    * @param {InstantAssetLockProof|ChainAssetLockProof} assetLockProof
+   * @param {StateTransitionExecutionContext} executionContext
    * @returns {Promise<Output>}
    */
-  async function fetchAssetLockTransactionOutput(assetLockProof) {
+  async function fetchAssetLockTransactionOutput(assetLockProof, executionContext) {
     if (assetLockProof.getType() === InstantAssetLockProof.type) {
       return assetLockProof.getOutput();
     }
 
     if (assetLockProof.getType() === ChainAssetLockProof.type) {
       const outPoint = Transaction.parseOutPointBuffer(assetLockProof.getOutPoint());
+
       const { outputIndex, transactionHash } = outPoint;
-      const rawTransaction = await stateRepository.fetchTransaction(transactionHash);
+
+      const rawTransaction = await stateRepository.fetchTransaction(
+        transactionHash,
+        executionContext,
+      );
+
       if (rawTransaction === null) {
         throw new AssetLockTransactionIsNotFoundError(transactionHash);
       }

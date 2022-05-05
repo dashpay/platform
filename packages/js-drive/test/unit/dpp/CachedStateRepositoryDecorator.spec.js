@@ -71,7 +71,7 @@ describe('CachedStateRepositoryDecorator', () => {
       );
 
       expect(stateRepositoryMock.storeIdentityPublicKeyHashes).to.be.calledOnceWithExactly(
-        identity.getId(), publicKeyHashes,
+        identity.getId(), publicKeyHashes, undefined,
       );
     });
   });
@@ -91,6 +91,7 @@ describe('CachedStateRepositoryDecorator', () => {
 
       expect(stateRepositoryMock.fetchIdentityIdsByPublicKeyHashes).to.be.calledOnceWithExactly(
         publicKeys.map((pk) => pk.hash()),
+        undefined,
       );
       expect(result).to.deep.equal({
         [publicKeys[0].hash()]: identity.getId(),

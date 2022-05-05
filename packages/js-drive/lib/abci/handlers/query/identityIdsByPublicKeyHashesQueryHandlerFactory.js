@@ -67,11 +67,11 @@ function identityIdsByPublicKeyHashesQueryHandlerFactory(
 
     const response = createQueryResponse(GetIdentityIdsByPublicKeyHashesResponse, request.prove);
 
-    const identityIds = await Promise.all(
+    const identityIds = (await Promise.all(
       publicKeyHashes.map(async (publicKeyHash) => (
         signedPublicKeyToIdentityIdRepository.fetchBuffer(publicKeyHash)
       )),
-    );
+    )).map((result) => result.getValue());
 
     const idsList = identityIds.map((ids) => {
       if (!ids) {

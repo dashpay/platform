@@ -70,7 +70,7 @@ const applyIdentityUpdateTransitionFactory = require(
   '../identity/stateTransition/IdentityUpdateTransition/applyIdentityUpdateTransitionFactory',
 );
 const validateInstantAssetLockProofStructureFactory = require('../identity/stateTransition/assetLockProof/instant/validateInstantAssetLockProofStructureFactory');
-const calculateStateTransitionFee = require('./calculateStateTransitionFee');
+const calculateStateTransitionFee = require('./fee/calculateStateTransitionFee');
 const InstantAssetLockProof = require('../identity/stateTransition/assetLockProof/instant/InstantAssetLockProof');
 const ChainAssetLockProof = require('../identity/stateTransition/assetLockProof/chain/ChainAssetLockProof');
 const validateChainAssetLockProofStructureFactory = require('../identity/stateTransition/assetLockProof/chain/validateChainAssetLockProofStructureFactory');
@@ -93,6 +93,7 @@ const getPropertyDefinitionByPath = require('../dataContract/getPropertyDefiniti
 
 const identityJsonSchema = require('../../schema/identity/stateTransition/publicKey.json');
 const validatePublicKeySignaturesFactory = require('../identity/stateTransition/validatePublicKeySignaturesFactory');
+const StateTransitionExecutionContext = require('./StateTransitionExecutionContext');
 
 class StateTransitionFacade {
   /**
@@ -355,7 +356,7 @@ class StateTransitionFacade {
    * Create State Transition from plain object
    *
    * @param {RawDataContractCreateTransition|RawDocumentsBatchTransition} rawStateTransition
-   * @param {Object} options
+   * @param {Object} [options]
    * @param {boolean} [options.skipValidation=false]
    * @return {DataContractCreateTransition|DocumentsBatchTransition}
    */
@@ -375,7 +376,7 @@ class StateTransitionFacade {
    * Create State Transition from buffer
    *
    * @param {Buffer} buffer
-   * @param {Object} options
+   * @param {Object} [options]
    * @param {boolean} [options.skipValidation=false]
    * @return {DataContractCreateTransition|DocumentsBatchTransition}
    */
@@ -420,6 +421,7 @@ class StateTransitionFacade {
       );
     }
 
+    // Convert raw state transition to the model
     let stateTransitionModel = stateTransition;
 
     if (!(stateTransition instanceof AbstractStateTransition)) {
@@ -487,19 +489,26 @@ class StateTransitionFacade {
     }
 
     let rawStateTransition;
+    let executionContext;
+
     if (stateTransition instanceof AbstractStateTransition) {
       rawStateTransition = stateTransition.toObject();
+      executionContext = stateTransition.getExecutionContext();
     } else {
       rawStateTransition = stateTransition;
     }
 
-    return this.validateStateTransitionBasic(rawStateTransition);
+    return this.validateStateTransitionBasic(
+      rawStateTransition,
+      executionContext || new StateTransitionExecutionContext(),
+    );
   }
 
   /**
    * Validate State Transition signature and ownership
    *
    * @param {AbstractStateTransition} stateTransition
+   *
    * @return {Promise<ValidationResult>}
    */
   async validateSignature(stateTransition) {
@@ -522,6 +531,7 @@ class StateTransitionFacade {
    * Validate State Transition fee
    *
    * @param {AbstractStateTransition} stateTransition
+   *
    * @return {Promise<ValidationResult>}
    */
   async validateFee(stateTransition) {
@@ -540,6 +550,7 @@ class StateTransitionFacade {
    * Validate State Transition against existing state
    *
    * @param {AbstractStateTransition} stateTransition
+   *
    * @return {Promise<ValidationResult>}
    */
   async validateState(stateTransition) {
