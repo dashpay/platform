@@ -30,6 +30,7 @@ macro_rules! call_method {
     };
 }
 
+#[derive(Debug)]
 pub enum StateTransition {
     DataContractCreate(mocks::DataContractCreateTransition),
     DataContractUpdate(mocks::DataContractUpdateTransition),
@@ -38,11 +39,9 @@ pub enum StateTransition {
     IdentityTopUp(mocks::IdentityTopUpTransition),
 }
 
-impl StateTransition {}
-
 impl StateTransitionConvert for StateTransition {
-    fn hash(&self) -> Result<Vec<u8>, crate::ProtocolError> {
-        call_method!(self, hash)
+    fn hash(&self, skip_signature: bool) -> Result<Vec<u8>, crate::ProtocolError> {
+        call_method!(self, hash, skip_signature)
     }
     fn to_buffer(&self, _skip_signature: bool) -> Result<Vec<u8>, crate::ProtocolError> {
         call_method!(self, to_buffer, true)

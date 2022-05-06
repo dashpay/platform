@@ -81,18 +81,23 @@ impl SMLStore {
 
 // State Transitions mocks:
 
+#[derive(Debug)]
 pub struct DataContractCreateTransition {}
 
 impl StateTransitionConvert for DataContractCreateTransition {}
 
+#[derive(Debug)]
 pub struct DataContractUpdateTransition {}
 impl StateTransitionConvert for DataContractUpdateTransition {}
 
+#[derive(Debug)]
 pub struct IdentityCreateTransition {}
 impl StateTransitionConvert for IdentityCreateTransition {}
 
+#[derive(Debug)]
 pub struct IdentityTopUpTransition {}
 impl StateTransitionConvert for IdentityTopUpTransition {}
 
+#[derive(Debug)]
 pub struct DocumentsBatchTransition {}
 impl StateTransitionConvert for DocumentsBatchTransition {}
