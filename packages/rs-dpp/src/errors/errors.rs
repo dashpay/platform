@@ -1,6 +1,7 @@
 use crate::consensus::ConsensusError;
 use crate::data_contract::errors::*;
 use crate::document::errors::*;
+use crate::state_transition::StateTransition;
 use thiserror::Error;
 
 #[derive(Error, Debug)]
@@ -49,6 +50,8 @@ pub enum ProtocolError {
     // State Transition Errors
     #[error("Invalid signature type")]
     InvalidIdentityPublicKeyTypeError { public_key_type: u32 },
+    #[error("State Transition is not signed")]
+    StateTransitionIsNotIsSignedError { state_transition: StateTransition },
 }
 
 impl From<&str> for ProtocolError {

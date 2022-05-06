@@ -1,7 +1,7 @@
 pub const PRICE_PER_BYTE: u64 = 1;
 use crate::prelude::ProtocolError;
 
-use super::{StateTransition, StateTransitionConvert};
+use super::StateTransitionLike;
 
 /**
  * Get State Transition fee size
@@ -12,8 +12,9 @@ use super::{StateTransition, StateTransitionConvert};
  * IdentityCreateTransition} stateTransition
  * @return {number}
  */
-fn calculate_state_transition_fee(state_transition: StateTransition) -> Result<u64, ProtocolError> {
-    // TODO  should we allow calculate Fee for DataContractUpdate or  IdentityTopUp
+pub fn calculate_state_transition_fee(
+    state_transition: &impl StateTransitionLike,
+) -> Result<u64, ProtocolError> {
     let serialized_state_transition = state_transition.to_buffer(true)?;
     Ok(serialized_state_transition.len() as u64 * PRICE_PER_BYTE)
 }

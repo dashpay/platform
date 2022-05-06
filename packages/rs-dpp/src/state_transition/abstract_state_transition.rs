@@ -1,14 +1,32 @@
+use anyhow::{anyhow, bail};
+use std::{cell::RefCell, convert::TryFrom, fmt::Debug};
+
 use crate::{
     identity::KeyType,
     prelude::ProtocolError,
     util::{hash, json_value::ReplaceWith, serializer},
 };
 use serde_json::Value as JsonValue;
+use std::convert::TryInto;
 
 use serde::{Deserialize, Serialize};
 
-use super::StateTransitionType;
+use super::{
+    calculate_state_transition_fee::calculate_state_transition_fee, StateTransition,
+    StateTransitionType,
+};
 use crate::util::json_value::JsonValueExt;
+use bls_signatures::{
+    verify as bls_verify, verify_messages, PrivateKey as BLSPrivateKey, PublicKey as BLSPublicKey,
+    Serialize as BLSSerialize,
+};
+use dashcore::{
+    secp256k1::{
+        ecdsa::{RecoverableSignature, Signature},
+        Message, Secp256k1, Verification, VerifyOnly,
+    },
+    PrivateKey as ECDSAPrivateKey, PubkeyHash, PublicKey as ECDSAPublicKey,
+};
 
 pub const DOCUMENT_TRANSITION_TYPES: [StateTransitionType; 1] =
     [StateTransitionType::DocumentsBatch];
@@ -72,12 +90,128 @@ impl StateTransitionConvert for StateTransitionBase {
         serializer::value_to_cbor(json_value, Some(protocol_version))
     }
 
-    fn hash(&self) -> Result<Vec<u8>, ProtocolError> {
-        Ok(hash::hash(self.to_buffer(false)?))
+    fn hash(&self, skip_signature: bool) -> Result<Vec<u8>, ProtocolError> {
+        Ok(hash::hash(self.to_buffer(skip_signature)?))
     }
+}
+/// The StateTransitionLike represents set of methods that are shared for all types of State Transition.
+/// Every type of state transition should also implement Debug, Clone, and support conversion to compounded [`StateTransition`]
+pub trait StateTransitionLike:
+    StateTransitionConvert + Clone + Debug + Into<StateTransition>
+{
+    /// returns the protocol version
+    fn get_protocol_version(&self) -> u32;
+    /// returns the type of State Transition
+    fn get_type(&self) -> StateTransitionType;
+    /// returns the signature as a byte-array
+    fn get_signature(&self) -> &Vec<u8>;
+    /// set a new signature
+    fn set_signature(&mut self, signature: Vec<u8>);
+
+    /// Signs data with the private key
+    fn sign_by_private_key(
+        &mut self,
+        private_key: &[u8],
+        key_type: KeyType,
+    ) -> Result<(), ProtocolError> {
+        let data = self.to_buffer(true)?;
+        match key_type {
+            KeyType::BLS12_381 => {
+                let fixed_len_key: [u8; 32] = private_key
+                    .try_into()
+                    .map_err(|_| anyhow!("the BLS private key must be 32 bytes long"))?;
+                let pk = BLSPrivateKey::new(fixed_len_key);
+                self.set_signature(pk.sign(data).as_bytes())
+            }
+
+            KeyType::ECDSA_SECP256K1 => {
+                let data_hash = hash::hash(data);
+                let pk = dashcore::secp256k1::SecretKey::from_slice(private_key)
+                    .map_err(|e| anyhow!("Invalid ECDSA private key: {}", e))?;
+
+                // TODO enable support for features in rust-dpp and allow to use global objects (SECP256K1)
+                let secp = dashcore::secp256k1::Secp256k1::new();
+                let msg = Message::from_slice(&data_hash).map_err(anyhow::Error::msg)?;
+                let signature = secp.sign_ecdsa(&msg, &pk);
+                self.set_signature(signature.serialize_compact().to_vec());
+            }
+
+            KeyType::ECDSA_HASH160 => {
+                return Err(anyhow!("Invalid key type of private key: {:?}", key_type).into())
+            }
+        };
+        Ok(())
+    }
+
+    fn verify_ecdsa_hash_160_signature_by_public_key_hash(
+        &self,
+        public_key_hash: &[u8],
+    ) -> Result<bool, ProtocolError> {
+        if self.get_signature().is_empty() {
+            return Err(ProtocolError::StateTransitionIsNotIsSignedError {
+                state_transition: self.clone().into(),
+            });
+        }
+        let data_hash = self.hash(true)?;
+        let secp = dashcore::secp256k1::Secp256k1::new();
+
+        let msg = Message::from_slice(&data_hash).map_err(anyhow::Error::msg)?;
+        let sig = Signature::from_compact(self.get_signature()).unwrap();
+
+        // ! the stored signature should be recoverable
+        unimplemented!();
+    }
+
+    /// Verifies an ECDSA signature with the public key
+    fn verify_ecdsa_signature_by_public_key(
+        &self,
+        public_key: &[u8],
+    ) -> Result<bool, ProtocolError> {
+        if self.get_signature().is_empty() {
+            return Err(ProtocolError::StateTransitionIsNotIsSignedError {
+                state_transition: self.clone().into(),
+            });
+        }
+        let data_hash = self.hash(true)?;
+
+        let msg = Message::from_slice(&data_hash).map_err(anyhow::Error::msg)?;
+        let sig = Signature::from_compact(self.get_signature()).map_err(anyhow::Error::msg)?;
+        let pub_key = ECDSAPublicKey::from_slice(public_key).map_err(anyhow::Error::msg)?;
+        let secp = dashcore::secp256k1::Secp256k1::new();
+
+        match secp.verify_ecdsa(&msg, &sig, &pub_key.inner) {
+            Ok(_) => Ok(true),
+            Err(_) => Ok(false),
+        }
+    }
+
+    /// Verifies a BLS signature with the public key
+    fn verify_bls_signature_by_public_key(&self, public_key: &[u8]) -> Result<bool, ProtocolError> {
+        if self.get_signature().is_empty() {
+            return Err(ProtocolError::StateTransitionIsNotIsSignedError {
+                state_transition: self.clone().into(),
+            });
+        }
+
+        let data = self.to_buffer(true)?;
+        let pk = BLSPublicKey::from_bytes(public_key).map_err(anyhow::Error::msg)?;
+        let signature = bls_signatures::Signature::from_bytes(self.get_signature())
+            .map_err(anyhow::Error::msg)?;
+
+        Ok(verify_messages(&signature, &[&data], &[pk]))
+    }
+
+    /// Calculates the ST fee in credits
+    fn calculate_fee(&self) -> Result<u64, ProtocolError>;
+
+    //? why are these methods propagated to more specialized classes?
+    fn is_document_state_transition(&self) -> bool;
+    fn is_data_contract_state_transition(&self) -> bool;
+    fn is_identity_state_transition(&self) -> bool;
 }
 
 // TODO remove 'unimplemented' when get rid of state transition mocks
+/// The trait contains methods related to conversion of StateTransition into different formats
 pub trait StateTransitionConvert {
     /// Object is an [`serde_json::Value`] instance that preserves the `Vec<u8>` representation
     /// for Identifiers and binary data
@@ -95,36 +229,7 @@ pub trait StateTransitionConvert {
         unimplemented!()
     }
     // hash function is applied to byte-array representation of structure
-    fn hash(&self) -> Result<Vec<u8>, ProtocolError> {
+    fn hash(&self, _skip_signature: bool) -> Result<Vec<u8>, ProtocolError> {
         unimplemented!()
     }
-}
-
-pub trait StateTransitionLike {
-    fn get_protocol_version(&self) -> u32;
-    fn get_type(&self) -> StateTransitionType;
-    fn get_signature(&self) -> &Vec<u8>;
-    fn set_signature(&mut self, signature: Vec<u8>);
-
-    /// Signs data with the private key
-    fn sign_by_private_key(
-        &mut self,
-        private_key: &[u8],
-        key_type: KeyType,
-    ) -> Result<(), ProtocolError>;
-
-    fn verify_ecdsa_hash_160_signature_by_public_key_hash(
-        &self,
-        private_key: &[u8],
-        key_type: KeyType,
-    ) -> bool;
-
-    /// Verifies an ECDSA signature with the public key
-    fn verify_ecdsa_signature_by_public_key(&self, public_key: &[u8]) -> bool;
-
-    /// Verifies a BLS signature with the public key
-    fn verify_bls_signature_by_public_key(&self, public_key: &[u8]) -> bool;
-
-    /// Calculates the ST fee in credits
-    fn calculate_fee(&self) -> u64;
 }
