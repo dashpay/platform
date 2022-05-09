@@ -1,5 +1,6 @@
-use anyhow::{anyhow, bail};
-use std::{cell::RefCell, convert::TryFrom, fmt::Debug};
+use super::signer;
+use anyhow::anyhow;
+use std::fmt::Debug;
 
 use crate::{
     identity::KeyType,
@@ -11,21 +12,11 @@ use std::convert::TryInto;
 
 use serde::{Deserialize, Serialize};
 
-use super::{
-    calculate_state_transition_fee::calculate_state_transition_fee, StateTransition,
-    StateTransitionType,
-};
+use super::{StateTransition, StateTransitionType};
 use crate::util::json_value::JsonValueExt;
 use bls_signatures::{
-    verify as bls_verify, verify_messages, PrivateKey as BLSPrivateKey, PublicKey as BLSPublicKey,
+    verify_messages, PrivateKey as BLSPrivateKey, PublicKey as BLSPublicKey,
     Serialize as BLSSerialize,
-};
-use dashcore::{
-    secp256k1::{
-        ecdsa::{RecoverableSignature, Signature},
-        Message, Secp256k1, Verification, VerifyOnly,
-    },
-    PrivateKey as ECDSAPrivateKey, PubkeyHash, PublicKey as ECDSAPublicKey,
 };
 
 pub const DOCUMENT_TRANSITION_TYPES: [StateTransitionType; 1] =
@@ -125,15 +116,8 @@ pub trait StateTransitionLike:
             }
 
             KeyType::ECDSA_SECP256K1 => {
-                let data_hash = hash::hash(data);
-                let pk = dashcore::secp256k1::SecretKey::from_slice(private_key)
-                    .map_err(|e| anyhow!("Invalid ECDSA private key: {}", e))?;
-
-                // TODO enable support for features in rust-dpp and allow to use global objects (SECP256K1)
-                let secp = dashcore::secp256k1::Secp256k1::new();
-                let msg = Message::from_slice(&data_hash).map_err(anyhow::Error::msg)?;
-                let signature = secp.sign_ecdsa(&msg, &pk);
-                self.set_signature(signature.serialize_compact().to_vec());
+                let signature = signer::sign(&data, private_key)?;
+                self.set_signature(signature);
             }
 
             KeyType::ECDSA_HASH160 => {
@@ -146,43 +130,34 @@ pub trait StateTransitionLike:
     fn verify_ecdsa_hash_160_signature_by_public_key_hash(
         &self,
         public_key_hash: &[u8],
-    ) -> Result<bool, ProtocolError> {
+    ) -> Result<(), ProtocolError> {
         if self.get_signature().is_empty() {
             return Err(ProtocolError::StateTransitionIsNotIsSignedError {
                 state_transition: self.clone().into(),
             });
         }
         let data_hash = self.hash(true)?;
-        let secp = dashcore::secp256k1::Secp256k1::new();
-
-        let msg = Message::from_slice(&data_hash).map_err(anyhow::Error::msg)?;
-        let sig = Signature::from_compact(self.get_signature()).unwrap();
-
-        // ! the stored signature should be recoverable
-        unimplemented!();
+        Ok(signer::verify_hash_signature(
+            &data_hash,
+            self.get_signature(),
+            public_key_hash,
+        )?)
     }
 
     /// Verifies an ECDSA signature with the public key
-    fn verify_ecdsa_signature_by_public_key(
-        &self,
-        public_key: &[u8],
-    ) -> Result<bool, ProtocolError> {
+    fn verify_ecdsa_signature_by_public_key(&self, public_key: &[u8]) -> Result<(), ProtocolError> {
         if self.get_signature().is_empty() {
             return Err(ProtocolError::StateTransitionIsNotIsSignedError {
                 state_transition: self.clone().into(),
             });
         }
-        let data_hash = self.hash(true)?;
+        let data = self.to_buffer(true)?;
 
-        let msg = Message::from_slice(&data_hash).map_err(anyhow::Error::msg)?;
-        let sig = Signature::from_compact(self.get_signature()).map_err(anyhow::Error::msg)?;
-        let pub_key = ECDSAPublicKey::from_slice(public_key).map_err(anyhow::Error::msg)?;
-        let secp = dashcore::secp256k1::Secp256k1::new();
-
-        match secp.verify_ecdsa(&msg, &sig, &pub_key.inner) {
-            Ok(_) => Ok(true),
-            Err(_) => Ok(false),
-        }
+        Ok(signer::verify_signature(
+            &data,
+            self.get_signature(),
+            public_key,
+        )?)
     }
 
     /// Verifies a BLS signature with the public key
@@ -204,10 +179,18 @@ pub trait StateTransitionLike:
     /// Calculates the ST fee in credits
     fn calculate_fee(&self) -> Result<u64, ProtocolError>;
 
-    //? why are these methods propagated to more specialized classes?
-    fn is_document_state_transition(&self) -> bool;
-    fn is_data_contract_state_transition(&self) -> bool;
-    fn is_identity_state_transition(&self) -> bool;
+    /// returns true if state transition is a document state transition
+    fn is_document_state_transition(&self) -> bool {
+        DOCUMENT_TRANSITION_TYPES.contains(&self.get_type())
+    }
+    /// returns true if state transition is a data contract state transition
+    fn is_data_contract_state_transition(&self) -> bool {
+        DATA_CONTRACT_TRANSITION_TYPES.contains(&self.get_type())
+    }
+    /// return true if state transition is an identity state transition
+    fn is_identity_state_transition(&self) -> bool {
+        IDENTITY_TRANSITION_TYPE.contains(&self.get_type())
+    }
 }
 
 // TODO remove 'unimplemented' when get rid of state transition mocks
