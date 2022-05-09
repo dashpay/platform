@@ -1,5 +1,6 @@
 //! This module contains data structures that are left to be implemented
 
+use crate::state_transition::{StateTransitionLike, StateTransitionType};
 use crate::{prelude::*, state_transition::StateTransitionConvert};
 
 use crate::validation::ValidationResult;
@@ -81,23 +82,124 @@ impl SMLStore {
 
 // State Transitions mocks:
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct DataContractCreateTransition {}
 
 impl StateTransitionConvert for DataContractCreateTransition {}
+impl StateTransitionLike for DataContractCreateTransition {
+    fn get_protocol_version(&self) -> u32 {
+        unimplemented!()
+    }
+    /// returns the type of State Transition
+    fn get_type(&self) -> StateTransitionType {
+        unimplemented!()
+    }
+    /// returns the signature as a byte-array
+    fn get_signature(&self) -> &Vec<u8> {
+        unimplemented!()
+    }
+    /// set a new signature
+    fn set_signature(&mut self, _signature: Vec<u8>) {
+        unimplemented!()
+    }
+    fn calculate_fee(&self) -> Result<u64, ProtocolError> {
+        unimplemented!()
+    }
+}
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct DataContractUpdateTransition {}
 impl StateTransitionConvert for DataContractUpdateTransition {}
+impl StateTransitionLike for DataContractUpdateTransition {
+    fn get_protocol_version(&self) -> u32 {
+        unimplemented!()
+    }
+    /// returns the type of State Transition
+    fn get_type(&self) -> StateTransitionType {
+        unimplemented!()
+    }
+    /// returns the signature as a byte-array
+    fn get_signature(&self) -> &Vec<u8> {
+        unimplemented!()
+    }
+    /// set a new signature
+    fn set_signature(&mut self, _signature: Vec<u8>) {
+        unimplemented!()
+    }
+    fn calculate_fee(&self) -> Result<u64, ProtocolError> {
+        unimplemented!()
+    }
+}
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct IdentityCreateTransition {}
 impl StateTransitionConvert for IdentityCreateTransition {}
+impl StateTransitionLike for IdentityCreateTransition {
+    fn get_protocol_version(&self) -> u32 {
+        unimplemented!()
+    }
+    /// returns the type of State Transition
+    fn get_type(&self) -> StateTransitionType {
+        unimplemented!()
+    }
+    /// returns the signature as a byte-array
+    fn get_signature(&self) -> &Vec<u8> {
+        unimplemented!()
+    }
+    /// set a new signature
+    fn set_signature(&mut self, _signature: Vec<u8>) {
+        unimplemented!()
+    }
+    fn calculate_fee(&self) -> Result<u64, ProtocolError> {
+        unimplemented!()
+    }
+}
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct IdentityTopUpTransition {}
 impl StateTransitionConvert for IdentityTopUpTransition {}
 
-#[derive(Debug)]
+impl StateTransitionLike for IdentityTopUpTransition {
+    fn get_protocol_version(&self) -> u32 {
+        unimplemented!()
+    }
+    /// returns the type of State Transition
+    fn get_type(&self) -> StateTransitionType {
+        unimplemented!()
+    }
+    /// returns the signature as a byte-array
+    fn get_signature(&self) -> &Vec<u8> {
+        unimplemented!()
+    }
+    /// set a new signature
+    fn set_signature(&mut self, _signature: Vec<u8>) {
+        unimplemented!()
+    }
+    fn calculate_fee(&self) -> Result<u64, ProtocolError> {
+        unimplemented!()
+    }
+}
+
+#[derive(Debug, Clone)]
 pub struct DocumentsBatchTransition {}
 impl StateTransitionConvert for DocumentsBatchTransition {}
+impl StateTransitionLike for DocumentsBatchTransition {
+    fn get_protocol_version(&self) -> u32 {
+        unimplemented!()
+    }
+    /// returns the type of State Transition
+    fn get_type(&self) -> StateTransitionType {
+        unimplemented!()
+    }
+    /// returns the signature as a byte-array
+    fn get_signature(&self) -> &Vec<u8> {
+        unimplemented!()
+    }
+    /// set a new signature
+    fn set_signature(&mut self, _signature: Vec<u8>) {
+        unimplemented!()
+    }
+    fn calculate_fee(&self) -> Result<u64, ProtocolError> {
+        unimplemented!()
+    }
+}
