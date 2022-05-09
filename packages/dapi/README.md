@@ -1,6 +1,6 @@
 # DAPI
 
-[![Build Status](https://github.com/dashevo/dapi/actions/workflows/test_and_release.yml/badge.svg)](https://github.com/dashevo/dapi/actions/workflows/test_and_release.yml)
+[![Build Status](https://github.com/dashevo/platform/actions/workflows/release.yml/badge.svg)](https://github.com/dashevo/platform/actions/workflows/release.yml)
 [![API stability](https://img.shields.io/badge/stability-stable-green.svg)](https://nodejs.org/api/documentation.html#documentation_stability_index)
 
 A decentralized API for the Dash network
