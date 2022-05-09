@@ -3,6 +3,7 @@ pub use state_transition_types::*;
 
 mod abstract_state_transition;
 pub use abstract_state_transition::*;
+mod signer;
 
 mod calculate_state_transition_fee;
 
@@ -55,3 +56,5 @@ impl StateTransitionConvert for StateTransition {
         call_method!(self, to_object, skip_signature)
     }
 }
+
+impl StateRepositoryLike for StateTransition {}
