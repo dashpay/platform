@@ -142,8 +142,7 @@ jobs:
             type=match,pattern=v(\d+.\d+.\d+),group=1
             type=match,pattern=v(.*),group=1,suffix=,enable=${{ contains(github.event.release.tag_name, '-dev') }}
           flavor: |
-            latest=${{ !contains(github.event.release.tag_name, '-dev') }}
-            suffix=${{ steps.suffix.outputs.result }}
+            suffix=${{ steps.suffix.outputs.result }},onlatest=true
 
       - name: Build and push Docker image for Drive
         uses: docker/build-push-action@v2
@@ -239,8 +238,7 @@ jobs:
             type=match,pattern=v(\d+.\d+.\d+),group=1
             type=match,pattern=v(.*),group=1,suffix=,enable=${{ contains(github.event.release.tag_name, '-dev') }}
           flavor: |
-            latest=${{ !contains(github.event.release.tag_name, '-dev') }}
-            suffix=${{ steps.suffix.outputs.result }}
+            suffix=${{ steps.suffix.outputs.result }},onlatest=true
 
       - name: Build and push Docker image
         uses: docker/build-push-action@v2
@@ -336,8 +334,7 @@ jobs:
             type=match,pattern=v(\d+.\d+.\d+),group=1
             type=match,pattern=v(.*),group=1,suffix=,enable=${{ contains(github.event.release.tag_name, '-dev') }}
           flavor: |
-            latest=${{ !contains(github.event.release.tag_name, '-dev') }}
-            suffix=${{ steps.suffix.outputs.result }}
+            suffix=${{ steps.suffix.outputs.result }},onlatest=true
 
       - name: Build and push Docker image
         uses: docker/build-push-action@v2
