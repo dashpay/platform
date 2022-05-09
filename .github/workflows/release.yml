@@ -133,7 +133,7 @@ jobs:
 
       - name: Set Docker tags and labels
         id: docker_meta
-        uses: docker/metadata-action@v3
+        uses: docker/metadata-action@v4
         with:
           images: dashpay/drive
           tags: |
@@ -229,7 +229,7 @@ jobs:
 
       - name: Set Docker tags and labels
         id: docker_meta
-        uses: docker/metadata-action@v3
+        uses: docker/metadata-action@v4
         with:
           images: dashpay/dapi
           tags: |
@@ -325,7 +325,7 @@ jobs:
 
       - name: Set Docker tags and labels
         id: docker_meta
-        uses: docker/metadata-action@v3
+        uses: docker/metadata-action@v4
         with:
           images: dashpay/platform-test-suite
           tags: |
