@@ -147,7 +147,6 @@ const codes = {
   1046: MissingMasterPublicKeyError,
   1047: InvalidIdentityPublicKeySecurityLevelError,
   1056: InvalidIdentityKeySignatureError,
-  1057: MasterPublicKeySecurityLevelIsNotAllowedError,
 
   // State Transition
   1043: InvalidStateTransitionTypeError,
@@ -162,6 +161,7 @@ const codes = {
   2001: InvalidIdentityPublicKeyTypeError,
   2002: InvalidStateTransitionSignatureError,
   2003: MissingPublicKeyError,
+  2004: MasterPublicKeySecurityLevelIsNotAllowedError,
 
   /**
    * Fee

@@ -53,7 +53,7 @@ describe('AbstractStateTransitionIdentitySigned', () => {
       .setId(publicKeyId)
       .setType(IdentityPublicKey.TYPES.ECDSA_SECP256K1)
       .setData(publicKey)
-      .setSecurityLevel(IdentityPublicKey.SECURITY_LEVELS.MASTER)
+      .setSecurityLevel(IdentityPublicKey.SECURITY_LEVELS.HIGH)
       .setPurpose(IdentityPublicKey.PURPOSES.AUTHENTICATION);
   });
 
@@ -205,7 +205,7 @@ describe('AbstractStateTransitionIdentitySigned', () => {
         expect(e.getPublicKeySecurityLevel())
           .to.be.deep.equal(identityPublicKey.getSecurityLevel());
         expect(e.getKeySecurityLevelRequirement())
-          .to.be.deep.equal(IdentityPublicKey.SECURITY_LEVELS.MASTER);
+          .to.be.deep.equal(IdentityPublicKey.SECURITY_LEVELS.HIGH);
       }
     });
 
@@ -331,7 +331,7 @@ describe('AbstractStateTransitionIdentitySigned', () => {
         expect(e.getPublicKeySecurityLevel())
           .to.be.deep.equal(identityPublicKey.getSecurityLevel());
         expect(e.getKeySecurityLevelRequirement())
-          .to.be.deep.equal(IdentityPublicKey.SECURITY_LEVELS.MASTER);
+          .to.be.deep.equal(IdentityPublicKey.SECURITY_LEVELS.HIGH);
       }
     });
 
@@ -381,6 +381,7 @@ describe('AbstractStateTransitionIdentitySigned', () => {
 
     it('should throw InvalidSignaturePublicKeySecurityLevelError if public key with master level is using to sign non update state transition', async () => {
       stateTransition.type = stateTransitionTypes.DATA_CONTRACT_CREATE;
+      identityPublicKey.setSecurityLevel(IdentityPublicKey.SECURITY_LEVELS.MASTER);
 
       try {
         await stateTransition.sign(identityPublicKey, blsPrivateKeyHex);
