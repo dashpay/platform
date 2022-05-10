@@ -296,7 +296,7 @@ describe('synchronizeMasternodeIdentitiesFactory', () => {
 
   beforeEach(async function beforeEach() {
     coreHeight = 3;
-    firstSyncAppHash = '2b2e9bacfe397b9882b98d1ffac81a81cba8746cbba06b47c858f39db33d189d';
+    firstSyncAppHash = '401bd11b196fc470275c14d28d2e76f764434c92af4af09ebad040a8fb51ca74';
 
     container = await createTestDIContainer();
 
@@ -378,13 +378,15 @@ describe('synchronizeMasternodeIdentitiesFactory', () => {
     const registerSystemDataContract = container.resolve('registerSystemDataContract');
     const masternodeRewardSharesContractId = container.resolve('masternodeRewardSharesContractId');
     const masternodeRewardSharesOwnerId = container.resolve('masternodeRewardSharesOwnerId');
-    const masternodeRewardSharesOwnerPublicKey = container.resolve('masternodeRewardSharesOwnerPublicKey');
+    const masternodeRewardSharesOwnerMasterPublicKey = container.resolve('masternodeRewardSharesOwnerMasterPublicKey');
+    const masternodeRewardSharesOwnerHighPublicKey = container.resolve('masternodeRewardSharesOwnerHighPublicKey');
     const masternodeRewardSharesDocuments = container.resolve('masternodeRewardSharesDocuments');
 
     rewardsDataContract = await registerSystemDataContract(
       masternodeRewardSharesOwnerId,
       masternodeRewardSharesContractId,
-      masternodeRewardSharesOwnerPublicKey,
+      masternodeRewardSharesOwnerMasterPublicKey,
+      masternodeRewardSharesOwnerHighPublicKey,
       masternodeRewardSharesDocuments,
     );
 
@@ -594,7 +596,7 @@ describe('synchronizeMasternodeIdentitiesFactory', () => {
 
     await synchronizeMasternodeIdentities(coreHeight + 1);
 
-    await expectDeterministicAppHash('d2ab2ff479e06e25562158c74f0ee6de2b0795e2173207522ef09de059450f34');
+    await expectDeterministicAppHash('5e4c517df4e8bdfb2ac742fe1a9d76a61cb231f86f311019bd87a26034951594');
 
     // New masternode identity should be created
 
@@ -664,7 +666,7 @@ describe('synchronizeMasternodeIdentitiesFactory', () => {
 
     await synchronizeMasternodeIdentities(coreHeight + 1);
 
-    await expectDeterministicAppHash('a15a5ccaa4389644296dd071328c17e5019d0f7a6399f061d13040278be9cb3e');
+    await expectDeterministicAppHash('6d73ee5a56bfdeddfb6479b41011d14e6454f265c5ac7c9a58e813b865d07714');
 
     // Masternode identity should stay
 
@@ -717,7 +719,7 @@ describe('synchronizeMasternodeIdentitiesFactory', () => {
 
     await synchronizeMasternodeIdentities(coreHeight + 1);
 
-    await expectDeterministicAppHash('a15a5ccaa4389644296dd071328c17e5019d0f7a6399f061d13040278be9cb3e');
+    await expectDeterministicAppHash('6d73ee5a56bfdeddfb6479b41011d14e6454f265c5ac7c9a58e813b865d07714');
 
     const invalidMasternodeIdentifier = Identifier.from(
       Buffer.from(invalidSmlEntry.proRegTxHash, 'hex'),
@@ -760,7 +762,7 @@ describe('synchronizeMasternodeIdentitiesFactory', () => {
 
     await synchronizeMasternodeIdentities(coreHeight + 1);
 
-    await expectDeterministicAppHash('eadf3a88d833138ccbef88b806e6f62430bcbd947417c1319fa95cb9ecbfb37e');
+    await expectDeterministicAppHash('62edcc5cf98ba354382b64995012f4ca391b5e77d519099aed91d0e40c7f660a');
 
     // Masternode identity should stay
 
@@ -826,7 +828,7 @@ describe('synchronizeMasternodeIdentitiesFactory', () => {
 
     await synchronizeMasternodeIdentities(coreHeight + 1);
 
-    await expectDeterministicAppHash('c80a4deeb549a03cabf3b04506a5d4eb6d115de451f87b3e31755b99304281d7');
+    await expectDeterministicAppHash('a750d62ba04e5a0771ca9d84524d8e57e835a3be4422b745d279031b6c4fc108');
 
     // Masternode identity should contain new public key
 
