@@ -15,7 +15,9 @@ export function createIdentityFixtureInAccount(account) {
         purpose: IdentityPublicKey.PURPOSES.AUTHENTICATION,
         securityLevel: IdentityPublicKey.SECURITY_LEVELS.MASTER,
         readOnly: false,
-    }, {
+    });
+
+  identityFixture.publicKeys[1] = new IdentityPublicKey({
       id: 1,
       type: IdentityPublicKey.TYPES.ECDSA_SECP256K1,
       data: identityPrivateKeyHigh.toPublicKey().toBuffer(),
