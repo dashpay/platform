@@ -50,7 +50,6 @@ function start_multipass {
 
     multipass transfer "$0" "${VMNAME}:/home/ubuntu/setup-multipass.sh"
     multipass exec "${VMNAME}" -- /bin/bash /home/ubuntu/setup-multipass.sh --mode 'local' --name "${VMNAME}"
-    multipass purge
 }
 
 function cleanup_multipass {
