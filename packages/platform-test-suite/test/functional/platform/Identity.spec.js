@@ -40,6 +40,14 @@ describe('Platform', () => {
       await dpp.initialize();
 
       client = await createClientWithFundedWallet();
+
+      const account = await client.platform.client.getWalletAccount();
+      const identityIndex = await account.getUnusedIdentityIndex();
+
+      const { privateKey: identityPrivateKey } = account
+        .identities
+        .getIdentityHDKeyByIndex(identityIndex, 1);
+
       walletAccount = await client.getWalletAccount();
     });
 
@@ -513,7 +521,7 @@ describe('Platform', () => {
 
         const { privateKey: identityPrivateKey } = account
           .identities
-          .getIdentityHDKeyByIndex(identityIndex, 0);
+          .getIdentityHDKeyByIndex(identityIndex, 1);
 
         const identityPublicKey = identityPrivateKey.toPublicKey().toBuffer();
 

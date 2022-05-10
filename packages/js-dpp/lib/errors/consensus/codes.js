@@ -78,6 +78,7 @@ const StateMaxIdentityPublicKeyLimitReachedError = require('./state/identity/Max
 const DuplicatedIdentityPublicKeyStateError = require('./state/identity/DuplicatedIdentityPublicKeyError');
 const DuplicatedIdentityPublicKeyIdStateError = require('./state/identity/DuplicatedIdentityPublicKeyIdError');
 const InvalidIdentityKeySignatureError = require('./basic/identity/InvalidIdentityKeySignatureError');
+const MasterPublicKeySecurityLevelIsNotAllowedError = require('./signature/MasterPublicKeySecurityLevelIsNotAllowedError');
 
 const codes = {
   /**
@@ -146,6 +147,7 @@ const codes = {
   1046: MissingMasterPublicKeyError,
   1047: InvalidIdentityPublicKeySecurityLevelError,
   1056: InvalidIdentityKeySignatureError,
+  1057: MasterPublicKeySecurityLevelIsNotAllowedError,
 
   // State Transition
   1043: InvalidStateTransitionTypeError,

@@ -10,6 +10,7 @@ const { expectValidationError } = require('../../../../lib/test/expect/expectErr
 const SomeConsensusError = require('../../../../lib/test/mocks/SomeConsensusError');
 const stateTransitionTypes = require('../../../../lib/stateTransition/stateTransitionTypes');
 const StateTransitionExecutionContext = require('../../../../lib/stateTransition/StateTransitionExecutionContext');
+const MasterPublicKeySecurityLevelIsNotAllowedError = require('../../../../lib/errors/consensus/signature/MasterPublicKeySecurityLevelIsNotAllowedError');
 
 describe('validateStateTransitionIdentitySignatureFactory', () => {
   let validateStateTransitionIdentitySignature;
@@ -39,6 +40,7 @@ describe('validateStateTransitionIdentitySignatureFactory', () => {
     identityPublicKey = {
       getType: this.sinonSandbox.stub().returns(IdentityPublicKey.TYPES.ECDSA_SECP256K1),
       getSecurityLevel: this.sinonSandbox.stub(),
+      isMaster: this.sinonSandbox.stub().returns(false),
     };
 
     const getPublicKeyById = this.sinonSandbox.stub().returns(identityPublicKey);
@@ -76,6 +78,7 @@ describe('validateStateTransitionIdentitySignatureFactory', () => {
     expect(stateTransition.getSignaturePublicKeyId).to.be.calledOnce();
     expect(stateTransition.verifySignature).to.be.calledOnceWithExactly(identityPublicKey);
     expect(stateTransition.getOwnerId).to.be.calledOnceWithExactly();
+    expect(identityPublicKey.isMaster).to.be.calledOnce();
   });
 
   it('should return invalid result if owner id doesn\'t exist', async () => {
@@ -99,6 +102,7 @@ describe('validateStateTransitionIdentitySignatureFactory', () => {
     expect(stateTransition.getSignaturePublicKeyId).to.not.be.called();
     expect(stateTransition.verifySignature).to.not.be.called();
     expect(stateTransition.getOwnerId).to.be.calledOnceWithExactly();
+    expect(identityPublicKey.isMaster).to.not.be.called();
   });
 
   it("should return MissingPublicKeyError if the identity doesn't have a matching public key", async () => {
@@ -124,6 +128,7 @@ describe('validateStateTransitionIdentitySignatureFactory', () => {
 
     expect(error).to.be.instanceOf(MissingPublicKeyError);
     expect(error.getPublicKeyId()).to.equal(publicKeyId);
+    expect(identityPublicKey.isMaster).to.not.be.called();
   });
 
   it('should return InvalidIdentityPublicKeyTypeError if type is not exist', async () => {
@@ -149,6 +154,7 @@ describe('validateStateTransitionIdentitySignatureFactory', () => {
 
     expect(error).to.be.instanceOf(InvalidIdentityPublicKeyTypeError);
     expect(error.getType()).to.equal(type);
+    expect(identityPublicKey.isMaster).to.not.be.called();
   });
 
   it('should return InvalidStateTransitionSignatureError if signature is invalid', async () => {
@@ -173,5 +179,31 @@ describe('validateStateTransitionIdentitySignatureFactory', () => {
     expect(identityPublicKey.getType).to.be.calledOnce();
     expect(stateTransition.getSignaturePublicKeyId).to.be.calledOnce();
     expect(stateTransition.verifySignature).to.be.calledOnceWithExactly(identityPublicKey);
+    expect(identityPublicKey.isMaster).to.be.calledOnce();
+  });
+
+  it('should return InvalidIdentityPublicKeySecurityLevelError if master key is used with non Identity update transition', async () => {
+    identityPublicKey.isMaster.returns(true);
+
+    const result = await validateStateTransitionIdentitySignature(
+      stateTransition,
+    );
+
+    expect(result).to.be.instanceOf(ValidationResult);
+
+    expect(result.isValid()).to.be.false();
+    expect(result.getErrors()).to.be.an('array');
+    expect(result.getErrors()).to.have.lengthOf(1);
+
+    const [error] = result.getErrors();
+
+    expect(error).to.be.instanceOf(MasterPublicKeySecurityLevelIsNotAllowedError);
+
+    expect(validateIdentityExistenceMock).to.be.calledOnceWithExactly(ownerId, executionContext);
+    expect(identity.getPublicKeyById).to.be.calledOnceWithExactly(publicKeyId);
+    expect(identityPublicKey.getType).to.be.calledOnce();
+    expect(stateTransition.getSignaturePublicKeyId).to.be.calledOnce();
+    expect(stateTransition.verifySignature).to.not.be.called();
+    expect(identityPublicKey.isMaster).to.be.calledOnce();
   });
 });

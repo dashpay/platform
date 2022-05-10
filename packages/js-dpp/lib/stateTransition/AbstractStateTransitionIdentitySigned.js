@@ -16,6 +16,8 @@ const InvalidIdentityPublicKeyTypeError = require('./errors/InvalidIdentityPubli
 const blsPrivateKeyFactory = require('../bls/blsPrivateKeyFactory');
 const blsPublicKeyFactory = require('../bls/blsPublicKeyFactory');
 const PublicKeyIsDisabledError = require('./errors/PublicKeyIsDisabledError');
+const stateTransitionTypes = require('./stateTransitionTypes');
+const InvalidSignaturePublicKeySecurityLevelError = require('./errors/InvalidSignaturePublicKeySecurityLevelError');
 
 /**
  * @abstract
@@ -134,6 +136,10 @@ class AbstractStateTransitionIdentitySigned extends AbstractStateTransition {
         IdentityPublicKey.PURPOSES.AUTHENTICATION,
       );
     }
+
+    if (this.getType() !== stateTransitionTypes.IDENTITY_UPDATE && publicKey.isMaster()) {
+      throw new InvalidSignaturePublicKeySecurityLevelError(publicKey.getSecurityLevel());
+    }
   }
 
   /**
@@ -220,18 +226,18 @@ class AbstractStateTransitionIdentitySigned extends AbstractStateTransition {
    * @return {number}
    */
   getKeySecurityLevelRequirement() {
-    return IdentityPublicKey.SECURITY_LEVELS.MASTER;
+    return IdentityPublicKey.SECURITY_LEVELS.HIGH;
   }
 }
 
 /**
  * @typedef {RawStateTransition & Object} RawStateTransitionIdentitySigned
- * @property {Buffer} [signaturePublicKeyId]
+ * @property {number} [signaturePublicKeyId]
  */
 
 /**
  * @typedef {JsonStateTransition & Object} JsonStateTransitionIdentitySigned
- * @property {string} [signaturePublicKeyId]
+ * @property {number} [signaturePublicKeyId]
  */
 
 module.exports = AbstractStateTransitionIdentitySigned;

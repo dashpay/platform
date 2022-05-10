@@ -157,9 +157,13 @@ const fetchTransactionFactory = require('./core/fetchTransactionFactory');
  * @param {string} options.CORE_ZMQ_CONNECTION_RETRIES
  * @param {string} options.NETWORK
  * @param {string} options.DPNS_MASTER_PUBLIC_KEY
+ * @param {string} options.DPNS_HIGH_PUBLIC_KEY
  * @param {string} options.DASHPAY_MASTER_PUBLIC_KEY
+ * @param {string} options.DASHPAY_HIGH_PUBLIC_KEY
  * @param {string} options.FEATURE_FLAGS_MASTER_PUBLIC_KEY
+ * @param {string} options.FEATURE_FLAGS_HIGH_PUBLIC_KEY
  * @param {string} options.MASTERNODE_REWARD_SHARES_MASTER_PUBLIC_KEY
+ * @param {string} options.MASTERNODE_REWARD_SHARES_HIGH_PUBLIC_KEY
  * @param {string} options.INITIAL_CORE_CHAINLOCKED_HEIGHT
  * @param {string} options.VALIDATOR_SET_LLMQ_TYPE
  * @param {string} options.TENDERDASH_P2P_PORT
@@ -177,17 +181,32 @@ function createDIContainer(options) {
   if (!options.DPNS_MASTER_PUBLIC_KEY) {
     throw new Error('DPNS_MASTER_PUBLIC_KEY must be set');
   }
+  if (!options.DPNS_HIGH_PUBLIC_KEY) {
+    throw new Error('DPNS_HIGH_PUBLIC_KEY must be set');
+  }
 
   if (!options.DASHPAY_MASTER_PUBLIC_KEY) {
     throw new Error('DASHPAY_MASTER_PUBLIC_KEY must be set');
+  }
+
+  if (!options.DASHPAY_HIGH_PUBLIC_KEY) {
+    throw new Error('DASHPAY_HIGH_PUBLIC_KEY must be set');
   }
 
   if (!options.FEATURE_FLAGS_MASTER_PUBLIC_KEY) {
     throw new Error('FEATURE_FLAGS_MASTER_PUBLIC_KEY must be set');
   }
 
+  if (!options.FEATURE_FLAGS_HIGH_PUBLIC_KEY) {
+    throw new Error('FEATURE_FLAGS_HIGH_PUBLIC_KEY must be set');
+  }
+
   if (!options.MASTERNODE_REWARD_SHARES_MASTER_PUBLIC_KEY) {
     throw new Error('MASTERNODE_REWARD_SHARES_MASTER_PUBLIC_KEY must be set');
+  }
+
+  if (!options.MASTERNODE_REWARD_SHARES_HIGH_PUBLIC_KEY) {
+    throw new Error('MASTERNODE_REWARD_SHARES_HIGH_PUBLIC_KEY must be set');
   }
 
   const container = createAwilixContainer({
@@ -252,9 +271,14 @@ function createDIContainer(options) {
     masternodeRewardSharesOwnerId: asValue(
       Identifier.from(masternodeRewardsSystemIds.ownerId),
     ),
-    masternodeRewardSharesOwnerPublicKey: asValue(
+    masternodeRewardSharesOwnerMasterPublicKey: asValue(
       PublicKey.fromString(
         options.MASTERNODE_REWARD_SHARES_MASTER_PUBLIC_KEY,
+      ),
+    ),
+    masternodeRewardSharesOwnerHighPublicKey: asValue(
+      PublicKey.fromString(
+        options.MASTERNODE_REWARD_SHARES_HIGH_PUBLIC_KEY,
       ),
     ),
     masternodeRewardSharesDocuments: asValue(
@@ -266,25 +290,40 @@ function createDIContainer(options) {
     featureFlagsOwnerId: asValue(
       Identifier.from(featureFlagsSystemIds.ownerId),
     ),
-    featureFlagsOwnerPublicKey: asValue(
+    featureFlagsOwnerMasterPublicKey: asValue(
       PublicKey.fromString(
         options.FEATURE_FLAGS_MASTER_PUBLIC_KEY,
+      ),
+    ),
+    featureFlagsOwnerHighPublicKey: asValue(
+      PublicKey.fromString(
+        options.FEATURE_FLAGS_HIGH_PUBLIC_KEY,
       ),
     ),
     featureFlagsDocuments: asValue(featureFlagsDocuments),
     dpnsContractId: asValue(Identifier.from(dpnsSystemIds.contractId)),
     dpnsOwnerId: asValue(Identifier.from(dpnsSystemIds.ownerId)),
-    dpnsOwnerPublicKey: asValue(
+    dpnsOwnerMasterPublicKey: asValue(
       PublicKey.fromString(
         options.DPNS_MASTER_PUBLIC_KEY,
+      ),
+    ),
+    dpnsOwnerHighPublicKey: asValue(
+      PublicKey.fromString(
+        options.DPNS_HIGH_PUBLIC_KEY,
       ),
     ),
     dpnsDocuments: asValue(dpnsDocuments),
     dashpayContractId: asValue(Identifier.from(dashpaySystemIds.contractId)),
     dashpayOwnerId: asValue(Identifier.from(dashpaySystemIds.ownerId)),
-    dashpayOwnerPublicKey: asValue(
+    dashpayOwnerMasterPublicKey: asValue(
       PublicKey.fromString(
         options.DASHPAY_MASTER_PUBLIC_KEY,
+      ),
+    ),
+    dashpayOwnerHighPublicKey: asValue(
+      PublicKey.fromString(
+        options.DASHPAY_HIGH_PUBLIC_KEY,
       ),
     ),
     dashpayDocuments: asValue(dashpayDocuments),

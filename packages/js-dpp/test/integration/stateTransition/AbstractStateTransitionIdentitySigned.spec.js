@@ -13,6 +13,8 @@ const StateTransitionIsNotSignedError = require('../../../lib/stateTransition/er
 const PublicKeyMismatchError = require('../../../lib/stateTransition/errors/PublicKeyMismatchError');
 const BlsSignatures = require('../../../lib/bls/bls');
 const PublicKeyIsDisabledError = require('../../../lib/stateTransition/errors/PublicKeyIsDisabledError');
+const InvalidSignaturePublicKeySecurityLevelError = require('../../../lib/stateTransition/errors/InvalidSignaturePublicKeySecurityLevelError');
+const stateTransitionTypes = require('../../../lib/stateTransition/stateTransitionTypes');
 
 describe('AbstractStateTransitionIdentitySigned', () => {
   let stateTransition;
@@ -374,6 +376,19 @@ describe('AbstractStateTransitionIdentitySigned', () => {
       } catch (e) {
         expect(e).to.be.instanceOf(PublicKeyIsDisabledError);
         expect(e.getPublicKey()).to.be.deep.equal(identityPublicKey);
+      }
+    });
+
+    it('should throw InvalidSignaturePublicKeySecurityLevelError if public key with master level is using to sign non update state transition', async () => {
+      stateTransition.type = stateTransitionTypes.DATA_CONTRACT_CREATE;
+
+      try {
+        await stateTransition.sign(identityPublicKey, blsPrivateKeyHex);
+
+        expect.fail('Should throw PublicKeyIsDisabledError');
+      } catch (e) {
+        expect(e).to.be.instanceOf(InvalidSignaturePublicKeySecurityLevelError);
+        expect(e.getSecurityLevel()).to.be.deep.equal(IdentityPublicKey.SECURITY_LEVELS.MASTER);
       }
     });
   });

@@ -278,6 +278,15 @@ class IdentityPublicKey {
 
     return result;
   }
+
+  /**
+   * Check if public ket security level is MASTER
+   *
+   * @returns {boolean}
+   */
+  isMaster() {
+    return this.getSecurityLevel() === IdentityPublicKey.SECURITY_LEVELS.MASTER;
+  }
 }
 
 /**
