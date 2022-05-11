@@ -489,12 +489,12 @@ module.exports = {
               type: ['string', 'null'],
               minLength: 1,
             },
-            highPublicKey: {
+            secondPublicKey: {
               type: ['string', 'null'],
               minLength: 1,
             },
           },
-          required: ['contract', 'ownerId', 'masterPublicKey', 'highPublicKey'],
+          required: ['contract', 'ownerId', 'masterPublicKey', 'secondPublicKey'],
           additionalProperties: false,
         },
         dashpay: {
@@ -515,12 +515,12 @@ module.exports = {
               type: ['string', 'null'],
               minLength: 1,
             },
-            highPublicKey: {
+            secondPublicKey: {
               type: ['string', 'null'],
               minLength: 1,
             },
           },
-          required: ['contract', 'masterPublicKey', 'highPublicKey'],
+          required: ['contract', 'masterPublicKey', 'secondPublicKey'],
           additionalProperties: false,
         },
         featureFlags: {
@@ -545,12 +545,12 @@ module.exports = {
               type: ['string', 'null'],
               minLength: 1,
             },
-            highPublicKey: {
+            secondPublicKey: {
               type: ['string', 'null'],
               minLength: 1,
             },
           },
-          required: ['contract', 'ownerId', 'masterPublicKey', 'highPublicKey'],
+          required: ['contract', 'ownerId', 'masterPublicKey', 'secondPublicKey'],
           additionalProperties: false,
         },
         sourcePath: {
@@ -575,12 +575,12 @@ module.exports = {
               type: ['string', 'null'],
               minLength: 1,
             },
-            highPublicKey: {
+            secondPublicKey: {
               type: ['string', 'null'],
               minLength: 1,
             },
           },
-          required: ['contract', 'masterPublicKey', 'highPublicKey'],
+          required: ['contract', 'masterPublicKey', 'secondPublicKey'],
           additionalProperties: false,
         },
       },

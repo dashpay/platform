@@ -16,7 +16,6 @@ const InvalidIdentityPublicKeyTypeError = require('./errors/InvalidIdentityPubli
 const blsPrivateKeyFactory = require('../bls/blsPrivateKeyFactory');
 const blsPublicKeyFactory = require('../bls/blsPublicKeyFactory');
 const PublicKeyIsDisabledError = require('./errors/PublicKeyIsDisabledError');
-const stateTransitionTypes = require('./stateTransitionTypes');
 const InvalidSignaturePublicKeySecurityLevelError = require('./errors/InvalidSignaturePublicKeySecurityLevelError');
 
 /**
@@ -123,6 +122,13 @@ class AbstractStateTransitionIdentitySigned extends AbstractStateTransition {
    * and purpose to sign this state transition
    */
   verifyPublicKeyLevelAndPurpose(publicKey) {
+    if (
+      publicKey.isMaster()
+      && publicKey.getSecurityLevel() !== IdentityPublicKey.SECURITY_LEVELS.MASTER
+    ) {
+      throw new InvalidSignaturePublicKeySecurityLevelError(publicKey.getSecurityLevel());
+    }
+
     if (this.getKeySecurityLevelRequirement() < publicKey.getSecurityLevel()) {
       throw new PublicKeySecurityLevelNotMetError(
         publicKey.getSecurityLevel(),
@@ -135,10 +141,6 @@ class AbstractStateTransitionIdentitySigned extends AbstractStateTransition {
         publicKey.getPurpose(),
         IdentityPublicKey.PURPOSES.AUTHENTICATION,
       );
-    }
-
-    if (this.getType() !== stateTransitionTypes.IDENTITY_UPDATE && publicKey.isMaster()) {
-      throw new InvalidSignaturePublicKeySecurityLevelError(publicKey.getSecurityLevel());
     }
   }
 

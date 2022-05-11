@@ -19,22 +19,22 @@ export default async function createIdentityCreateTransition(platform : Platform
     const identityIndex = await account.getUnusedIdentityIndex();
 
     // @ts-ignore
-    const { privateKey: identityPrivateKeyMaster } = account.identities.getIdentityHDKeyByIndex(identityIndex, 0);
-    const identityPublicKeyMaster = identityPrivateKeyMaster.toPublicKey();
+    const { privateKey: identityMasterPrivateKey } = account.identities.getIdentityHDKeyByIndex(identityIndex, 0);
+    const identityMasterPublicKey = identityMasterPrivateKey.toPublicKey();
 
-    const { privateKey: identityPrivateKeyHigh } = account.identities.getIdentityHDKeyByIndex(identityIndex, 1);
-    const identityPublicKeyHigh = identityPrivateKeyHigh.toPublicKey();
+    const { privateKey: identitySecondPrivateKey } = account.identities.getIdentityHDKeyByIndex(identityIndex, 1);
+    const identitySecondPublicKey = identitySecondPrivateKey.toPublicKey();
 
     // Create Identity
     // @ts-ignore
     const identity = dpp.identity.create(
         assetLockProof, [{
-          key: identityPublicKeyMaster,
+          key: identityMasterPublicKey,
           purpose: IdentityPublicKey.PURPOSES.AUTHENTICATION,
           securityLevel: IdentityPublicKey.SECURITY_LEVELS.MASTER
         },
         {
-          key: identityPublicKeyHigh,
+          key: identitySecondPublicKey,
           purpose: IdentityPublicKey.PURPOSES.AUTHENTICATION,
           securityLevel: IdentityPublicKey.SECURITY_LEVELS.HIGH
       }
@@ -46,17 +46,17 @@ export default async function createIdentityCreateTransition(platform : Platform
 
     // Create key proofs
 
-    const [masterKey, highKey] = identityCreateTransition.getPublicKeys();
+    const [masterKey, secondKey] = identityCreateTransition.getPublicKeys();
 
-    await identityCreateTransition.signByPrivateKey(identityPrivateKeyMaster, IdentityPublicKey.TYPES.ECDSA_SECP256K1);
+    await identityCreateTransition.signByPrivateKey(identityMasterPrivateKey, IdentityPublicKey.TYPES.ECDSA_SECP256K1);
 
     masterKey.setSignature(identityCreateTransition.getSignature());
 
     identityCreateTransition.setSignature(undefined);
 
-  await identityCreateTransition.signByPrivateKey(identityPrivateKeyHigh, IdentityPublicKey.TYPES.ECDSA_SECP256K1);
+  await identityCreateTransition.signByPrivateKey(identitySecondPrivateKey, IdentityPublicKey.TYPES.ECDSA_SECP256K1);
 
-  highKey.setSignature(identityCreateTransition.getSignature());
+  secondKey.setSignature(identityCreateTransition.getSignature());
 
   identityCreateTransition.setSignature(undefined);
 

@@ -101,32 +101,32 @@ function setupLocalPresetTaskFactory(
           const {
             hdPrivateKey: dpnsPrivateKey,
             derivedPrivateKeys: [
-              dpnsDerivedPrivateKeyMaster,
-              dpnsDerivedPrivateKeyHigh,
+              dpnsDerivedMasterPrivateKey,
+              dpnsDerivedSecondPrivateKey,
             ],
           } = await generateHDPrivateKeys(network, [0, 1]);
 
           const {
             hdPrivateKey: featureFlagsPrivateKey,
             derivedPrivateKeys: [
-              featureFlagsDerivedPrivateKeyMaster,
-              featureFlagsDerivedPrivateKeyHigh,
+              featureFlagsDerivedMasterPrivateKey,
+              featureFlagsDerivedSecondPrivateKey,
             ],
           } = await generateHDPrivateKeys(network, [0, 1]);
 
           const {
             hdPrivateKey: dashpayPrivateKey,
             derivedPrivateKeys: [
-              dashpayDerivedPrivateKeyMaster,
-              dashpayDerivedPrivateKeyHigh,
+              dashpayDerivedMasterPrivateKey,
+              dashpayDerivedSecondPrivateKey,
             ],
           } = await generateHDPrivateKeys(network, [0, 1]);
 
           const {
             hdPrivateKey: masternodeRewardSharesPrivateKey,
             derivedPrivateKeys: [
-              masternodeRewardSharesDerivedPrivateKeyMaster,
-              masternodeRewardSharesDerivedPrivateKeyHigh,
+              masternodeRewardSharesDerivedMasterPrivateKey,
+              masternodeRewardSharesDerivedSecondPrivateKey,
             ],
           } = await generateHDPrivateKeys(network, [0, 1]);
 
@@ -203,22 +203,22 @@ function setupLocalPresetTaskFactory(
                     config.set('platform.drive.abci.log.jsonFile.path', driveJsonLogFile);
                   }
 
-                  config.set('platform.dpns.masterPublicKey', dpnsDerivedPrivateKeyMaster.privateKey.toPublicKey().toString());
-                  config.set('platform.dpns.highPublicKey', dpnsDerivedPrivateKeyHigh.privateKey.toPublicKey().toString());
+                  config.set('platform.dpns.masterPublicKey', dpnsDerivedMasterPrivateKey.privateKey.toPublicKey().toString());
+                  config.set('platform.dpns.secondPublicKey', dpnsDerivedSecondPrivateKey.privateKey.toPublicKey().toString());
 
-                  config.set('platform.featureFlags.masterPublicKey', featureFlagsDerivedPrivateKeyMaster.privateKey.toPublicKey().toString());
-                  config.set('platform.featureFlags.highPublicKey', featureFlagsDerivedPrivateKeyHigh.privateKey.toPublicKey().toString());
+                  config.set('platform.featureFlags.masterPublicKey', featureFlagsDerivedMasterPrivateKey.privateKey.toPublicKey().toString());
+                  config.set('platform.featureFlags.secondPublicKey', featureFlagsDerivedSecondPrivateKey.privateKey.toPublicKey().toString());
 
-                  config.set('platform.dashpay.masterPublicKey', dashpayDerivedPrivateKeyMaster.privateKey.toPublicKey().toString());
-                  config.set('platform.dashpay.highPublicKey', dashpayDerivedPrivateKeyHigh.privateKey.toPublicKey().toString());
+                  config.set('platform.dashpay.masterPublicKey', dashpayDerivedMasterPrivateKey.privateKey.toPublicKey().toString());
+                  config.set('platform.dashpay.secondPublicKey', dashpayDerivedSecondPrivateKey.privateKey.toPublicKey().toString());
 
                   config.set(
                     'platform.masternodeRewardShares.masterPublicKey',
-                    masternodeRewardSharesDerivedPrivateKeyMaster.privateKey
+                    masternodeRewardSharesDerivedMasterPrivateKey.privateKey
                       .toPublicKey().toString(),
                   ); config.set(
-                    'platform.masternodeRewardShares.highPublicKey',
-                    masternodeRewardSharesDerivedPrivateKeyHigh.privateKey
+                    'platform.masternodeRewardShares.secondPublicKey',
+                    masternodeRewardSharesDerivedSecondPrivateKey.privateKey
                       .toPublicKey().toString(),
                   );
                 }

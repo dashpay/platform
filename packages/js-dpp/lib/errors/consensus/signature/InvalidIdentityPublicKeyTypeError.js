@@ -2,24 +2,20 @@ const AbstractSignatureError = require('./AbstractSignatureError');
 
 class InvalidIdentityPublicKeyTypeError extends AbstractSignatureError {
   /**
-   * @param {number} type
+   *
+   * @param {number} publicKeyType
    */
-  constructor(type) {
-    super(`Invalid identity public key type ${type}`);
+  constructor(publicKeyType) {
+    super('Invalid signature type');
 
-    this.type = type;
-
-    // eslint-disable-next-line prefer-rest-params
-    this.setConstructorArguments(arguments);
+    this.publicKeyType = publicKeyType;
   }
 
   /**
-   * Get identity public key type
-   *
-   * @return {number}
+   * @returns {number}
    */
-  getType() {
-    return this.type;
+  getPublicKeyType() {
+    return this.publicKeyType;
   }
 }
 

@@ -24,7 +24,7 @@ function registerSystemDataContractFactory(
    * @param {Identifier} ownerId
    * @param {Identifier} contractId
    * @param {PublicKey} masterPublicKey
-   * @param {PublicKey} highPublicKey
+   * @param {PublicKey} secondPublicKey
    * @param {Object} documentDefinitions
    *
    * @returns {Promise<DataContract>}
@@ -33,7 +33,7 @@ function registerSystemDataContractFactory(
     ownerId,
     contractId,
     masterPublicKey,
-    highPublicKey,
+    secondPublicKey,
     documentDefinitions,
   ) {
     const ownerIdentity = dpp.identity.create(
@@ -45,7 +45,7 @@ function registerSystemDataContractFactory(
         purpose: IdentityPublicKey.PURPOSES.AUTHENTICATION,
         securityLevel: IdentityPublicKey.SECURITY_LEVELS.MASTER,
       }, {
-        key: highPublicKey,
+        key: secondPublicKey,
         purpose: IdentityPublicKey.PURPOSES.AUTHENTICATION,
         securityLevel: IdentityPublicKey.SECURITY_LEVELS.HIGH,
       }],
@@ -54,7 +54,7 @@ function registerSystemDataContractFactory(
     await identityRepository.store(ownerIdentity, true);
 
     await publicKeyToIdentityIdRepository.store(masterPublicKey.hash, ownerId, true);
-    await publicKeyToIdentityIdRepository.store(highPublicKey.hash, ownerId, true);
+    await publicKeyToIdentityIdRepository.store(secondPublicKey.hash, ownerId, true);
 
     const dataContract = dpp.dataContract.create(
       ownerIdentity.getId(),

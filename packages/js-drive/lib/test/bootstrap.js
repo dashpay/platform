@@ -24,26 +24,26 @@ if (process.env.INITIAL_CORE_CHAINLOCKED_HEIGHT === undefined) {
 if (process.env.DPNS_MASTER_PUBLIC_KEY === undefined) {
   process.env.DPNS_MASTER_PUBLIC_KEY = testPublicKey;
 }
-if (process.env.DPNS_HIGH_PUBLIC_KEY === undefined) {
-  process.env.DPNS_HIGH_PUBLIC_KEY = testPublicKey;
+if (process.env.DPNS_SECOND_PUBLIC_KEY === undefined) {
+  process.env.DPNS_SECOND_PUBLIC_KEY = testPublicKey;
 }
 if (process.env.DASHPAY_MASTER_PUBLIC_KEY === undefined) {
   process.env.DASHPAY_MASTER_PUBLIC_KEY = testPublicKey;
 }
-if (process.env.DASHPAY_HIGH_PUBLIC_KEY === undefined) {
-  process.env.DASHPAY_HIGH_PUBLIC_KEY = testPublicKey;
+if (process.env.DASHPAY_SECOND_PUBLIC_KEY === undefined) {
+  process.env.DASHPAY_SECOND_PUBLIC_KEY = testPublicKey;
 }
 if (process.env.FEATURE_FLAGS_MASTER_PUBLIC_KEY === undefined) {
   process.env.FEATURE_FLAGS_MASTER_PUBLIC_KEY = testPublicKey;
 }
-if (process.env.FEATURE_FLAGS_HIGH_PUBLIC_KEY === undefined) {
-  process.env.FEATURE_FLAGS_HIGH_PUBLIC_KEY = testPublicKey;
+if (process.env.FEATURE_FLAGS_SECOND_PUBLIC_KEY === undefined) {
+  process.env.FEATURE_FLAGS_SECOND_PUBLIC_KEY = testPublicKey;
 }
 if (process.env.MASTERNODE_REWARD_SHARES_MASTER_PUBLIC_KEY === undefined) {
   process.env.MASTERNODE_REWARD_SHARES_MASTER_PUBLIC_KEY = testPublicKey;
 }
-if (process.env.MASTERNODE_REWARD_SHARES_HIGH_PUBLIC_KEY === undefined) {
-  process.env.MASTERNODE_REWARD_SHARES_HIGH_PUBLIC_KEY = testPublicKey;
+if (process.env.MASTERNODE_REWARD_SHARES_SECOND_PUBLIC_KEY === undefined) {
+  process.env.MASTERNODE_REWARD_SHARES_SECOND_PUBLIC_KEY = testPublicKey;
 }
 
 const dotenvConfig = dotenvSafe.config({

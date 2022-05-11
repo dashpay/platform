@@ -379,14 +379,14 @@ describe('synchronizeMasternodeIdentitiesFactory', () => {
     const masternodeRewardSharesContractId = container.resolve('masternodeRewardSharesContractId');
     const masternodeRewardSharesOwnerId = container.resolve('masternodeRewardSharesOwnerId');
     const masternodeRewardSharesOwnerMasterPublicKey = container.resolve('masternodeRewardSharesOwnerMasterPublicKey');
-    const masternodeRewardSharesOwnerHighPublicKey = container.resolve('masternodeRewardSharesOwnerHighPublicKey');
+    const masternodeRewardSharesOwnerSecondPublicKey = container.resolve('masternodeRewardSharesOwnerSecondPublicKey');
     const masternodeRewardSharesDocuments = container.resolve('masternodeRewardSharesDocuments');
 
     rewardsDataContract = await registerSystemDataContract(
       masternodeRewardSharesOwnerId,
       masternodeRewardSharesContractId,
       masternodeRewardSharesOwnerMasterPublicKey,
-      masternodeRewardSharesOwnerHighPublicKey,
+      masternodeRewardSharesOwnerSecondPublicKey,
       masternodeRewardSharesDocuments,
     );
 
