@@ -295,7 +295,7 @@ function createDIContainer(options) {
         options.FEATURE_FLAGS_MASTER_PUBLIC_KEY,
       ),
     ),
-    featureFlagsOwnerSeconsPublicKey: asValue(
+    featureFlagsOwnerSecondPublicKey: asValue(
       PublicKey.fromString(
         options.FEATURE_FLAGS_SECOND_PUBLIC_KEY,
       ),
