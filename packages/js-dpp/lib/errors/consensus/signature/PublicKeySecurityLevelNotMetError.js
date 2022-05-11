@@ -1,6 +1,6 @@
 const AbstractSignatureError = require('./AbstractSignatureError');
 
-class InvalidStateTransitionSignatureError extends AbstractSignatureError {
+class PublicKeySecurityLevelNotMetError extends AbstractSignatureError {
   /**
    *
    * @param {number} publicKeySecurityLevel
@@ -32,4 +32,4 @@ class InvalidStateTransitionSignatureError extends AbstractSignatureError {
   }
 }
 
-module.exports = InvalidStateTransitionSignatureError;
+module.exports = PublicKeySecurityLevelNotMetError;

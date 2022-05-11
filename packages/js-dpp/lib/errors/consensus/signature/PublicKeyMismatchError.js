@@ -1,6 +1,6 @@
 const AbstractSignatureError = require('./AbstractSignatureError');
 
-class InvalidStateTransitionSignatureError extends AbstractSignatureError {
+class PublicKeyMismatchError extends AbstractSignatureError {
   /**
    *
    * @param {IdentityPublicKey} publicKey
@@ -21,4 +21,4 @@ class InvalidStateTransitionSignatureError extends AbstractSignatureError {
   }
 }
 
-module.exports = InvalidStateTransitionSignatureError;
+module.exports = PublicKeyMismatchError;

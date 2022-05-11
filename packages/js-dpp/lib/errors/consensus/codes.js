@@ -79,6 +79,12 @@ const DuplicatedIdentityPublicKeyStateError = require('./state/identity/Duplicat
 const DuplicatedIdentityPublicKeyIdStateError = require('./state/identity/DuplicatedIdentityPublicKeyIdError');
 const InvalidIdentityKeySignatureError = require('./basic/identity/InvalidIdentityKeySignatureError');
 const MasterPublicKeySecurityLevelIsNotAllowedError = require('./signature/MasterPublicKeySecurityLevelIsNotAllowedError');
+const InvalidSignaturePublicKeySecurityLevelError = require('./signature/InvalidSignaturePublicKeySecurityLevelError');
+const PublicKeyIsDisabledError = require('./signature/PublicKeyIsDisabledError');
+const PublicKeyMismatchError = require('./signature/PublicKeyMismatchError');
+const PublicKeySecurityLevelNotMetError = require('./signature/PublicKeySecurityLevelNotMetError');
+const StateTransitionIsNotSignedError = require('./signature/StateTransitionIsNotSignedError');
+const WrongPublicKeyPurposeError = require('./signature/WrongPublicKeyPurposeError');
 
 const codes = {
   /**
@@ -162,6 +168,13 @@ const codes = {
   2002: InvalidStateTransitionSignatureError,
   2003: MissingPublicKeyError,
   2004: MasterPublicKeySecurityLevelIsNotAllowedError,
+  2005: InvalidSignaturePublicKeySecurityLevelError,
+  2006: InvalidStateTransitionSignatureError,
+  2007: PublicKeyIsDisabledError,
+  2008: PublicKeyMismatchError,
+  2009: PublicKeySecurityLevelNotMetError,
+  2010: StateTransitionIsNotSignedError,
+  2011: WrongPublicKeyPurposeError,
 
   /**
    * Fee

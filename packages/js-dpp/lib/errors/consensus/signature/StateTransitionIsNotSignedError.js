@@ -1,6 +1,6 @@
 const AbstractSignatureError = require('./AbstractSignatureError');
 
-class InvalidStateTransitionSignatureError extends AbstractSignatureError {
+class StateTransitionIsNotSignedError extends AbstractSignatureError {
   /**
    *
    * @param {AbstractStateTransition} stateTransition
@@ -21,4 +21,4 @@ class InvalidStateTransitionSignatureError extends AbstractSignatureError {
   }
 }
 
-module.exports = InvalidStateTransitionSignatureError;
+module.exports = StateTransitionIsNotSignedError;
