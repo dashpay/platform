@@ -1,6 +1,8 @@
 const InvalidStateTransitionSignatureError = require('../../errors/consensus/signature/InvalidStateTransitionSignatureError');
 
 const ValidationResult = require('../../validation/ValidationResult');
+const VerifySignatureOperation = require('../fee/operations/VerifySignatureOperation');
+const { TYPES } = require('../../identity/IdentityPublicKey');
 
 /**
  * @param {Function} verifyHashSignature
@@ -27,6 +29,10 @@ function validateStateTransitionKeySignatureFactory(
       stateTransition.getAssetLockProof(),
       executionContext,
     );
+
+    const operation = new VerifySignatureOperation(TYPES.ECDSA_SECP256K1);
+
+    executionContext.addOperation(operation);
 
     let signatureIsVerified;
 

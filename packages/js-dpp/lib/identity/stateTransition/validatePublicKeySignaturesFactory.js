@@ -5,17 +5,28 @@
  */
 const ValidationResult = require('../../validation/ValidationResult');
 const InvalidIdentityKeySignatureError = require('../../errors/consensus/basic/identity/InvalidIdentityKeySignatureError');
+const VerifySignatureOperation = require('../../stateTransition/fee/operations/VerifySignatureOperation');
 
 /**
  * @param {IdentityCreateTransition|IdentityUpdateTransition} stateTransition
  * @param {RawIdentityPublicKey[]} rawPublicKeys
+ * @param {StateTransitionExecutionContext} executionContext
  * @param {number} [i=0]
  * @returns {Promise<RawIdentityPublicKey>}
  */
-async function verifyPublicKeysSequentially(stateTransition, rawPublicKeys, i = 0) {
+async function verifyPublicKeysSequentially(
+  stateTransition,
+  rawPublicKeys,
+  executionContext,
+  i = 0,
+) {
   const rawPublicKey = rawPublicKeys[i];
 
   stateTransition.setSignature(rawPublicKey.signature);
+
+  const operation = new VerifySignatureOperation(rawPublicKey.type);
+
+  executionContext.addOperation(operation);
 
   const result = await stateTransition.verifyByPublicKey(
     rawPublicKey.data,
@@ -28,7 +39,7 @@ async function verifyPublicKeysSequentially(stateTransition, rawPublicKeys, i = 
 
   // eslint-disable-next-line no-param-reassign
   if (rawPublicKeys.length > ++i) {
-    return verifyPublicKeysSequentially(stateTransition, rawPublicKeys, i);
+    return verifyPublicKeysSequentially(stateTransition, rawPublicKeys, executionContext, i);
   }
 
   return undefined;
@@ -39,14 +50,19 @@ function validatePublicKeySignaturesFactory(createStateTransition) {
    * @typedef {validatePublicKeySignatures}
    * @param {RawStateTransition} rawStateTransition
    * @param {RawIdentityPublicKey[]} rawPublicKeys
+   * @param {StateTransitionExecutionContext} executionContext
    * @returns {Promise<ValidationResult>}
    */
-  async function validatePublicKeySignatures(rawStateTransition, rawPublicKeys) {
+  async function validatePublicKeySignatures(rawStateTransition, rawPublicKeys, executionContext) {
     const stateTransition = await createStateTransition(rawStateTransition);
 
     const result = new ValidationResult();
 
-    const invalidRawPublicKey = await verifyPublicKeysSequentially(stateTransition, rawPublicKeys);
+    const invalidRawPublicKey = await verifyPublicKeysSequentially(
+      stateTransition,
+      rawPublicKeys,
+      executionContext,
+    );
 
     if (invalidRawPublicKey) {
       result.addError(

@@ -72,7 +72,7 @@ describe('validateStateTransitionIdentitySignatureFactory', () => {
 
     expect(validateIdentityExistenceMock).to.be.calledOnceWithExactly(ownerId, executionContext);
     expect(identity.getPublicKeyById).to.be.calledOnceWithExactly(publicKeyId);
-    expect(identityPublicKey.getType).to.be.calledOnce();
+    expect(identityPublicKey.getType).to.be.calledTwice();
     expect(stateTransition.getSignaturePublicKeyId).to.be.calledOnce();
     expect(stateTransition.verifySignature).to.be.calledOnceWithExactly(identityPublicKey);
     expect(stateTransition.getOwnerId).to.be.calledOnceWithExactly();
@@ -170,7 +170,7 @@ describe('validateStateTransitionIdentitySignatureFactory', () => {
 
     expect(validateIdentityExistenceMock).to.be.calledOnceWithExactly(ownerId, executionContext);
     expect(identity.getPublicKeyById).to.be.calledOnceWithExactly(publicKeyId);
-    expect(identityPublicKey.getType).to.be.calledOnce();
+    expect(identityPublicKey.getType).to.be.calledTwice();
     expect(stateTransition.getSignaturePublicKeyId).to.be.calledOnce();
     expect(stateTransition.verifySignature).to.be.calledOnceWithExactly(identityPublicKey);
   });
