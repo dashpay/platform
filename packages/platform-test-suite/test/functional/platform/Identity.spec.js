@@ -98,7 +98,7 @@ describe('Platform', () => {
         transaction,
         privateKey,
         outputIndex,
-      } = await createAssetLockTransaction({ client }, 1);
+      } = await createAssetLockTransaction({ client }, 15);
 
       await client.getDAPIClient().core.broadcastTransaction(transaction.toBuffer());
 
@@ -157,7 +157,7 @@ describe('Platform', () => {
         transaction,
         privateKey,
         outputIndex,
-      } = await createAssetLockTransaction({ client }, 1);
+      } = await createAssetLockTransaction({ client }, 15);
 
       await client.getDAPIClient().core.broadcastTransaction(transaction.toBuffer());
 
@@ -260,7 +260,7 @@ describe('Platform', () => {
           outputIndex,
         } = await createAssetLockTransaction({
           client,
-        }, 100);
+        }, 150);
 
         // Broadcast Asset Lock transaction
         await client.getDAPIClient().core.broadcastTransaction(transaction.toBuffer());
@@ -373,7 +373,7 @@ describe('Platform', () => {
           outputIndex,
         } = await createAssetLockTransaction({
           client,
-        }, 1);
+        }, 15);
 
         const instantLock = createFakeInstantLock(transaction.hash);
         const assetLockProof = await dpp.identity.createInstantAssetLockProof(instantLock);
