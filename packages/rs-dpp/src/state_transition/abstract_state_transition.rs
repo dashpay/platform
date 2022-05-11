@@ -117,7 +117,7 @@ pub trait StateTransitionLike:
 
             KeyType::ECDSA_SECP256K1 => {
                 let signature = signer::sign(&data, private_key)?;
-                self.set_signature(signature);
+                self.set_signature(signature.to_vec());
             }
 
             KeyType::ECDSA_HASH160 => {
@@ -152,8 +152,7 @@ pub trait StateTransitionLike:
             });
         }
         let data = self.to_buffer(true)?;
-
-        Ok(signer::verify_signature(
+        Ok(signer::verify_data_signature(
             &data,
             self.get_signature(),
             public_key,
