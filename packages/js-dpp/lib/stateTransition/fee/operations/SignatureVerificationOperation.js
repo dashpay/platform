@@ -6,7 +6,7 @@ const {
   VERIFY_SIGNATURE_COSTS,
 } = require('../constants');
 
-class VerifySignatureOperation extends AbstractOperation {
+class SignatureVerificationOperation extends AbstractOperation {
   /**
    * @param {number} signatureType
    */
@@ -43,18 +43,18 @@ class VerifySignatureOperation extends AbstractOperation {
    */
   toJSON() {
     return {
-      type: 'verifySignature',
+      type: 'signatureVerification',
       signatureType: this.signatureType,
     };
   }
 
   /**
    * @param {{signatureType: number, type: string}} json
-   * @return {VerifySignatureOperation}
+   * @return {SignatureVerificationOperation}
    */
   static fromJSON(json) {
-    return new VerifySignatureOperation(json.signatureType);
+    return new SignatureVerificationOperation(json.signatureType);
   }
 }
 
-module.exports = VerifySignatureOperation;
+module.exports = SignatureVerificationOperation;

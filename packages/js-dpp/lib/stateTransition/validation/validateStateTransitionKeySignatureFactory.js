@@ -1,7 +1,7 @@
 const InvalidStateTransitionSignatureError = require('../../errors/consensus/signature/InvalidStateTransitionSignatureError');
 
 const ValidationResult = require('../../validation/ValidationResult');
-const VerifySignatureOperation = require('../fee/operations/VerifySignatureOperation');
+const SignatureVerificationOperation = require('../fee/operations/SignatureVerificationOperation');
 const { TYPES } = require('../../identity/IdentityPublicKey');
 
 /**
@@ -30,7 +30,7 @@ function validateStateTransitionKeySignatureFactory(
       executionContext,
     );
 
-    const operation = new VerifySignatureOperation(TYPES.ECDSA_SECP256K1);
+    const operation = new SignatureVerificationOperation(TYPES.ECDSA_SECP256K1);
 
     executionContext.addOperation(operation);
 

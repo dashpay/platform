@@ -2,7 +2,7 @@ const IdentityPublicKey = require('../../identity/IdentityPublicKey');
 const InvalidIdentityPublicKeyTypeError = require('../../errors/consensus/signature/InvalidIdentityPublicKeyTypeError');
 const InvalidStateTransitionSignatureError = require('../../errors/consensus/signature/InvalidStateTransitionSignatureError');
 const MissingPublicKeyError = require('../../errors/consensus/signature/MissingPublicKeyError');
-const VerifySignatureOperation = require('../fee/operations/VerifySignatureOperation');
+const SignatureVerificationOperation = require('../fee/operations/SignatureVerificationOperation');
 
 /**
  * Validate state transition signature
@@ -58,7 +58,7 @@ function validateStateTransitionIdentitySignatureFactory(
       return result;
     }
 
-    const operation = new VerifySignatureOperation(publicKey.getType());
+    const operation = new SignatureVerificationOperation(publicKey.getType());
 
     executionContext.addOperation(operation);
 

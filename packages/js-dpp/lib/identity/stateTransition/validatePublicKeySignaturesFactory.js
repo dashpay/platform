@@ -5,7 +5,7 @@
  */
 const ValidationResult = require('../../validation/ValidationResult');
 const InvalidIdentityKeySignatureError = require('../../errors/consensus/basic/identity/InvalidIdentityKeySignatureError');
-const VerifySignatureOperation = require('../../stateTransition/fee/operations/VerifySignatureOperation');
+const SignatureVerificationOperation = require('../../stateTransition/fee/operations/SignatureVerificationOperation');
 
 /**
  * @param {IdentityCreateTransition|IdentityUpdateTransition} stateTransition
@@ -24,7 +24,7 @@ async function verifyPublicKeysSequentially(
 
   stateTransition.setSignature(rawPublicKey.signature);
 
-  const operation = new VerifySignatureOperation(rawPublicKey.type);
+  const operation = new SignatureVerificationOperation(rawPublicKey.type);
 
   executionContext.addOperation(operation);
 
