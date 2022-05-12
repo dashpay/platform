@@ -107,7 +107,7 @@ function validateStateTransitionIdentitySignatureFactory(
         );
       } else if (e instanceof DPPError) {
         result.addError(
-          new InvalidStateTransitionSignatureConsensusError(stateTransition),
+          new InvalidStateTransitionSignatureConsensusError(),
         );
       } else {
         throw e;
