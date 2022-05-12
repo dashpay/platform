@@ -9,7 +9,7 @@ const EVENTS = require('../../../EVENTS');
 const MempoolPropagationTimeoutError = require('../../../errors/MempoolPropagationTimeoutError');
 const logger = require('../../../logger');
 
-const MEMPOOL_PROPAGATION_TIMEOUT = 60000;
+const MEMPOOL_PROPAGATION_TIMEOUT = 360000;
 
 function impactAffectedInputs({ transaction }) {
   const {
