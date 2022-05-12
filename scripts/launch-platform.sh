@@ -91,7 +91,7 @@ function parse_args {
             ;;
         --repo)
             shift
-            REPO="$1"
+            REPO="$(realpath "$1")"
             shift
             ;;
 
