@@ -170,25 +170,6 @@ async function broadcastTransaction(transaction, options = {
   }
 
   return transaction.hash;
-
-  // if (!this.txFetchListener) {
-  //   this.txFetchListener = new Promise((resolve) => {
-  //     this.once(EVENTS.FETCHED_CONFIRMED_TRANSACTION, ({ payload }) => {
-  //       if (payload.transaction.hash === transaction.hash) {
-  //         this.txFetchListener = null;
-  //         resolve();
-  //       }
-  //     });
-  //   });
-  //
-  //   await _broadcastTransaction.call(this, transaction, options);
-  //
-  //   return transaction.hash;
-  // }
-
-  // await this.txFetchListener;
-
-  // return broadcastTransaction.call(this, transaction, options);
 }
 
 module.exports = broadcastTransaction;
