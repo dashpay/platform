@@ -103,7 +103,7 @@ function validateStateTransitionIdentitySignatureFactory(
         );
       } else if (e instanceof PublicKeyIsDisabledError) {
         result.addError(
-          new PublicKeyIsDisabledConsensusError(e.getPublicKey()),
+          new PublicKeyIsDisabledConsensusError(e.getPublicKey().getId()),
         );
       } else if (e instanceof DPPError) {
         result.addError(
