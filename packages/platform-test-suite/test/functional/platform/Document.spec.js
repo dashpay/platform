@@ -29,7 +29,7 @@ describe('Platform', () => {
     before(async () => {
       client = await createClientWithFundedWallet();
 
-      identity = await client.platform.identities.register(100);
+      identity = await client.platform.identities.register(150);
 
       // Additional wait time to mitigate testnet latency
       if (process.env.NETWORK === 'testnet') {

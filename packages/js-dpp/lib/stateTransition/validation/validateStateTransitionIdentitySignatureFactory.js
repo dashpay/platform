@@ -11,6 +11,7 @@ const InvalidSignaturePublicKeySecurityLevelError = require('../errors/InvalidSi
 const PublicKeySecurityLevelNotMetError = require('../errors/PublicKeySecurityLevelNotMetError');
 const WrongPublicKeyPurposeError = require('../errors/WrongPublicKeyPurposeError');
 const PublicKeyIsDisabledError = require('../errors/PublicKeyIsDisabledError');
+const SignatureVerificationOperation = require('../fee/operations/SignatureVerificationOperation');
 
 /**
  * Validate state transition signature
@@ -65,6 +66,10 @@ function validateStateTransitionIdentitySignatureFactory(
 
       return result;
     }
+
+    const operation = new SignatureVerificationOperation(publicKey.getType());
+
+    executionContext.addOperation(operation);
 
     try {
       const signatureIsValid = await stateTransition.verifySignature(publicKey);
