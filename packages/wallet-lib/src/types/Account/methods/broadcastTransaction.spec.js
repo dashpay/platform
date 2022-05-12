@@ -1,7 +1,7 @@
-const chai = require('chai');
+const { expect } = require('chai');
 const EventEmitter = require('events');
 const Dashcore = require('@dashevo/dashcore-lib');
-const chaiAsPromised = require('chai-as-promised');
+
 const broadcastTransaction = require('./broadcastTransaction');
 const EVENTS = require('../../../EVENTS');
 const validRawTxs = require('../../../../fixtures/rawtx').valid;
@@ -9,9 +9,6 @@ const invalidRawTxs = require('../../../../fixtures/rawtx').invalid;
 const MempoolPropagationTimeoutError = require('../../../errors/MempoolPropagationTimeoutError');
 const ChainStore = require('../../ChainStore/ChainStore');
 const { PrivateKey } = Dashcore;
-
-chai.use(chaiAsPromised);
-const { expect } = chai;
 
 describe('Account - broadcastTransaction', function suite() {
   this.timeout(10000);
