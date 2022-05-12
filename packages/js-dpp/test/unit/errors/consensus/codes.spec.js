@@ -37,6 +37,11 @@ function isChildOf(classToCheck, parentClass) {
   return isChildOf(classToCheck.prototype, parentClass);
 }
 
+const errorClasses = Object.values(codes).map((ErrorClass) => ErrorClass);
+const errorClassDuplicates = errorClasses.filter((item, index) => (
+  errorClasses.indexOf(item) !== index
+));
+
 describe('Consensus error codes', () => {
   // Skip the tests for browsers
   if (global.window !== undefined) {
@@ -87,18 +92,11 @@ describe('Consensus error codes', () => {
             expect(code).to.be.below(5000);
           }
         });
+
+        it('should not have duplicates', () => {
+          expect(errorClassDuplicates).to.not.include(ErrorClass);
+        });
       });
     }
-  });
-
-  it('should have no duplicate classes', () => {
-    const classes = Object.values(codes).map((ErrorClass) => ErrorClass);
-
-    const duplicates = classes.filter((item, index) => classes.indexOf(item) !== index);
-
-    duplicates.forEach((item) => {
-      // to show duplicate class name
-      expect(item).to.not.exist();
-    });
   });
 });
