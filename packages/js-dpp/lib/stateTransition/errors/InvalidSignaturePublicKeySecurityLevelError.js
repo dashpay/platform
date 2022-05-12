@@ -7,7 +7,7 @@ class InvalidSignaturePublicKeySecurityLevelError extends DPPError {
    * @param {number} requiredSecurityLevel
    */
   constructor(publicKeySecurityLevel, requiredSecurityLevel) {
-    super(`Invalid public key security level: ${publicKeySecurityLevel}. Needs: ${requiredSecurityLevel}.`);
+    super(`Invalid public key security level ${publicKeySecurityLevel}. This state transition requires ${requiredSecurityLevel}.`);
 
     this.publicKeySecurityLevel = publicKeySecurityLevel;
     this.requiredSecurityLevel = requiredSecurityLevel;

@@ -122,16 +122,18 @@ class AbstractStateTransitionIdentitySigned extends AbstractStateTransition {
    * and purpose to sign this state transition
    */
   verifyPublicKeyLevelAndPurpose(publicKey) {
+    // If state transition requires MASTER security level it must be sign only with MASTER key
     if (
       publicKey.isMaster()
       && this.getKeySecurityLevelRequirement() !== IdentityPublicKey.SECURITY_LEVELS.MASTER
     ) {
       throw new InvalidSignaturePublicKeySecurityLevelError(
-        this.getKeySecurityLevelRequirement(),
         IdentityPublicKey.SECURITY_LEVELS.MASTER,
+        this.getKeySecurityLevelRequirement(),
       );
     }
 
+    // Otherwise, key security level should be less than MASTER but more or equal than required
     if (this.getKeySecurityLevelRequirement() < publicKey.getSecurityLevel()) {
       throw new PublicKeySecurityLevelNotMetError(
         publicKey.getSecurityLevel(),
