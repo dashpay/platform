@@ -41,13 +41,6 @@ describe('Platform', () => {
 
       client = await createClientWithFundedWallet();
 
-      const account = await client.platform.client.getWalletAccount();
-      const identityIndex = await account.getUnusedIdentityIndex();
-
-      const { privateKey: identityPrivateKey } = account
-        .identities
-        .getIdentityHDKeyByIndex(identityIndex, 1);
-
       walletAccount = await client.getWalletAccount();
     });
 
@@ -58,7 +51,7 @@ describe('Platform', () => {
     });
 
     it('should create an identity', async () => {
-      identity = await client.platform.identities.register(100);
+      identity = await client.platform.identities.register(200);
 
       expect(identity).to.exist();
     });
