@@ -99,7 +99,7 @@ describe('Platform', () => {
         transaction,
         privateKey,
         outputIndex,
-      } = await createAssetLockTransaction({ client }, 15);
+      } = await createAssetLockTransaction({ client }, 20);
 
       await client.getDAPIClient().core.broadcastTransaction(transaction.toBuffer());
 
