@@ -16,7 +16,7 @@ class PublicKeyIsDisabledError extends AbstractSignatureError {
    *
    * @return {number}
    */
-  getPublicKey() {
+  getPublicKeyId() {
     return this.publicKeyId;
   }
 }

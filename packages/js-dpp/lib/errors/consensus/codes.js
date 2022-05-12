@@ -78,7 +78,6 @@ const StateMaxIdentityPublicKeyLimitReachedError = require('./state/identity/Max
 const DuplicatedIdentityPublicKeyStateError = require('./state/identity/DuplicatedIdentityPublicKeyError');
 const DuplicatedIdentityPublicKeyIdStateError = require('./state/identity/DuplicatedIdentityPublicKeyIdError');
 const InvalidIdentityKeySignatureError = require('./basic/identity/InvalidIdentityKeySignatureError');
-const MasterPublicKeySecurityLevelIsNotAllowedError = require('./signature/MasterPublicKeySecurityLevelIsNotAllowedError');
 const InvalidSignaturePublicKeySecurityLevelError = require('./signature/InvalidSignaturePublicKeySecurityLevelError');
 const PublicKeyIsDisabledError = require('./signature/PublicKeyIsDisabledError');
 const PublicKeySecurityLevelNotMetError = require('./signature/PublicKeySecurityLevelNotMetError');
@@ -165,11 +164,10 @@ const codes = {
   2001: InvalidIdentityPublicKeyTypeError,
   2002: InvalidStateTransitionSignatureError,
   2003: MissingPublicKeyError,
-  2004: MasterPublicKeySecurityLevelIsNotAllowedError,
-  2005: InvalidSignaturePublicKeySecurityLevelError,
-  2006: WrongPublicKeyPurposeError,
-  2007: PublicKeyIsDisabledError,
-  2008: PublicKeySecurityLevelNotMetError,
+  2004: InvalidSignaturePublicKeySecurityLevelError,
+  2005: WrongPublicKeyPurposeError,
+  2006: PublicKeyIsDisabledError,
+  2007: PublicKeySecurityLevelNotMetError,
 
   /**
    * Fee

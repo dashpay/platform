@@ -48,6 +48,7 @@ describe('validateStateTransitionIdentitySignatureFactory', () => {
     identityPublicKey = {
       getType: this.sinonSandbox.stub().returns(IdentityPublicKey.TYPES.ECDSA_SECP256K1),
       getSecurityLevel: this.sinonSandbox.stub(),
+      getId: this.sinonSandbox.stub().returns(publicKeyId),
     };
 
     const getPublicKeyById = this.sinonSandbox.stub().returns(identityPublicKey);
@@ -266,7 +267,7 @@ describe('validateStateTransitionIdentitySignatureFactory', () => {
 
       const [error] = result.getErrors();
       expect(error).to.be.instanceOf(PublicKeyIsDisabledConsensusError);
-      expect(error.getPublicKey()).to.deep.equal(identityPublicKey);
+      expect(error.getPublicKeyId()).to.deep.equal(publicKeyId);
     });
 
     it('should return InvalidStateTransitionSignatureError if DPPError was thrown', async () => {
