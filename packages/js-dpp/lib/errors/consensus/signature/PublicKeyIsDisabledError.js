@@ -3,21 +3,21 @@ const AbstractSignatureError = require('./AbstractSignatureError');
 class PublicKeyIsDisabledError extends AbstractSignatureError {
   /**
    *
-   * @param {IdentityPublicKey} publicKey
+   * @param {number} publicKeyId
    */
-  constructor(publicKey) {
+  constructor(publicKeyId) {
     super('Public key is disabled');
 
-    this.publicKey = publicKey;
+    this.publicKeyId = publicKeyId;
   }
 
   /**
-   * Get disabled public key
+   * Get disabled public key ID
    *
-   * @return {IdentityPublicKey}
+   * @return {number}
    */
   getPublicKey() {
-    return this.publicKey;
+    return this.publicKeyId;
   }
 }
 
