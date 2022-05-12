@@ -2,20 +2,15 @@ const IdentityPublicKey = require('../../identity/IdentityPublicKey');
 const InvalidIdentityPublicKeyTypeConsensusError = require('../../errors/consensus/signature/InvalidIdentityPublicKeyTypeError');
 const InvalidStateTransitionSignatureConsensusError = require('../../errors/consensus/signature/InvalidStateTransitionSignatureError');
 const MissingPublicKeyConsensusError = require('../../errors/consensus/signature/MissingPublicKeyError');
-const StateTransitionIsNotSignedConsensusError = require('../../errors/consensus/signature/StateTransitionIsNotSignedError');
-const PublicKeyMismatchConsensusError = require('../../errors/consensus/signature/PublicKeyMismatchError');
 const InvalidSignaturePublicKeySecurityLevelConsensusError = require('../../errors/consensus/signature/InvalidSignaturePublicKeySecurityLevelError');
 const PublicKeySecurityLevelNotMetConsensusError = require('../../errors/consensus/signature/PublicKeySecurityLevelNotMetError');
 const WrongPublicKeyPurposeConsensusError = require('../../errors/consensus/signature/WrongPublicKeyPurposeError');
 const PublicKeyIsDisabledConsensusError = require('../../errors/consensus/signature/PublicKeyIsDisabledError');
 const DPPError = require('../../errors/DPPError');
-const StateTransitionIsNotSignedError = require('../errors/StateTransitionIsNotSignedError');
-const PublicKeyMismatchError = require('../errors/PublicKeyMismatchError');
 const InvalidSignaturePublicKeySecurityLevelError = require('../errors/InvalidSignaturePublicKeySecurityLevelError');
 const PublicKeySecurityLevelNotMetError = require('../errors/PublicKeySecurityLevelNotMetError');
 const WrongPublicKeyPurposeError = require('../errors/WrongPublicKeyPurposeError');
 const PublicKeyIsDisabledError = require('../errors/PublicKeyIsDisabledError');
-const InvalidIdentityPublicKeyTypeError = require('../errors/InvalidIdentityPublicKeyTypeError');
 
 /**
  * Validate state transition signature
@@ -80,21 +75,12 @@ function validateStateTransitionIdentitySignatureFactory(
         );
       }
     } catch (e) {
-      if (e instanceof StateTransitionIsNotSignedError) {
+      if (e instanceof InvalidSignaturePublicKeySecurityLevelError) {
         result.addError(
-          new StateTransitionIsNotSignedConsensusError(stateTransition),
-        );
-      } else if (e instanceof PublicKeyMismatchError) {
-        result.addError(
-          new PublicKeyMismatchConsensusError(e.getPublicKey()),
-        );
-      } else if (e instanceof InvalidIdentityPublicKeyTypeError) {
-        result.addError(
-          new InvalidIdentityPublicKeyTypeConsensusError(e.getPublicKeyType()),
-        );
-      } else if (e instanceof InvalidSignaturePublicKeySecurityLevelError) {
-        result.addError(
-          new InvalidSignaturePublicKeySecurityLevelConsensusError(e.getSecurityLevel()),
+          new InvalidSignaturePublicKeySecurityLevelConsensusError(
+            e.getPublicKeySecurityLevel(),
+            e.getKeySecurityLevelRequirement(),
+          ),
         );
       } else if (e instanceof PublicKeySecurityLevelNotMetError) {
         result.addError(

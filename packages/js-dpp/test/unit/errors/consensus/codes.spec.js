@@ -90,4 +90,15 @@ describe('Consensus error codes', () => {
       });
     }
   });
+
+  it('should have no duplicate classes', () => {
+    const classes = Object.values(codes).map((ErrorClass) => ErrorClass);
+
+    const duplicates = classes.filter((item, index) => classes.indexOf(item) !== index);
+
+    duplicates.forEach((item) => {
+      // to show duplicate class name
+      expect(item).to.not.exist();
+    });
+  });
 });

@@ -389,7 +389,10 @@ describe('AbstractStateTransitionIdentitySigned', () => {
         expect.fail('Should throw PublicKeyIsDisabledError');
       } catch (e) {
         expect(e).to.be.instanceOf(InvalidSignaturePublicKeySecurityLevelError);
-        expect(e.getSecurityLevel()).to.be.deep.equal(IdentityPublicKey.SECURITY_LEVELS.MASTER);
+        expect(e.getPublicKeySecurityLevel()).to.equal(IdentityPublicKey.SECURITY_LEVELS.HIGH);
+        expect(e.getKeySecurityLevelRequirement()).to.equal(
+          IdentityPublicKey.SECURITY_LEVELS.MASTER,
+        );
       }
     });
   });

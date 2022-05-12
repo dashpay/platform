@@ -126,7 +126,10 @@ class AbstractStateTransitionIdentitySigned extends AbstractStateTransition {
       publicKey.isMaster()
       && this.getKeySecurityLevelRequirement() !== IdentityPublicKey.SECURITY_LEVELS.MASTER
     ) {
-      throw new InvalidSignaturePublicKeySecurityLevelError(publicKey.getSecurityLevel());
+      throw new InvalidSignaturePublicKeySecurityLevelError(
+        this.getKeySecurityLevelRequirement(),
+        IdentityPublicKey.SECURITY_LEVELS.MASTER,
+      );
     }
 
     if (this.getKeySecurityLevelRequirement() < publicKey.getSecurityLevel()) {

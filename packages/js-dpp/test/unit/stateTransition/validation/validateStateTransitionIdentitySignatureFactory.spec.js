@@ -9,21 +9,16 @@ const { expectValidationError } = require('../../../../lib/test/expect/expectErr
 const SomeConsensusError = require('../../../../lib/test/mocks/SomeConsensusError');
 const stateTransitionTypes = require('../../../../lib/stateTransition/stateTransitionTypes');
 const StateTransitionExecutionContext = require('../../../../lib/stateTransition/StateTransitionExecutionContext');
-const StateTransitionIsNotSignedError = require('../../../../lib/stateTransition/errors/StateTransitionIsNotSignedError');
-const StateTransitionIsNotSignedConsensusError = require('../../../../lib/errors/consensus/signature/StateTransitionIsNotSignedError');
 const PublicKeyIsDisabledConsensusError = require('../../../../lib/errors/consensus/signature/PublicKeyIsDisabledError');
 const WrongPublicKeyPurposeConsensusError = require('../../../../lib/errors/consensus/signature/WrongPublicKeyPurposeError');
 const PublicKeySecurityLevelNotMetConsensusError = require('../../../../lib/errors/consensus/signature/PublicKeySecurityLevelNotMetError');
 const InvalidSignaturePublicKeySecurityLevelConsensusError = require('../../../../lib/errors/consensus/signature/InvalidSignaturePublicKeySecurityLevelError');
 const InvalidIdentityPublicKeyTypeConsensusError = require('../../../../lib/errors/consensus/signature/InvalidIdentityPublicKeyTypeError');
-const PublicKeyMismatchConsensusError = require('../../../../lib/errors/consensus/signature/PublicKeyMismatchError');
-const PublicKeyMismatchError = require('../../../../lib/stateTransition/errors/PublicKeyMismatchError');
 const InvalidSignaturePublicKeySecurityLevelError = require('../../../../lib/stateTransition/errors/InvalidSignaturePublicKeySecurityLevelError');
 const PublicKeySecurityLevelNotMetError = require('../../../../lib/stateTransition/errors/PublicKeySecurityLevelNotMetError');
 const WrongPublicKeyPurposeError = require('../../../../lib/stateTransition/errors/WrongPublicKeyPurposeError');
 const PublicKeyIsDisabledError = require('../../../../lib/stateTransition/errors/PublicKeyIsDisabledError');
 const DPPError = require('../../../../lib/errors/DPPError');
-const InvalidIdentityPublicKeyTypeError = require('../../../../lib/stateTransition/errors/InvalidIdentityPublicKeyTypeError');
 
 describe('validateStateTransitionIdentitySignatureFactory', () => {
   let validateStateTransitionIdentitySignature;
@@ -190,67 +185,8 @@ describe('validateStateTransitionIdentitySignatureFactory', () => {
   });
 
   describe('Consensus errors', () => {
-    it('should return StateTransitionIsNotSignedConsensusError if StateTransitionIsNotSignedError was thrown', async () => {
-      const e = new StateTransitionIsNotSignedError(stateTransition);
-
-      stateTransition.verifySignature.throws(e);
-
-      const result = await validateStateTransitionIdentitySignature(
-        stateTransition,
-      );
-
-      expect(result).to.be.instanceOf(ValidationResult);
-
-      expect(result.isValid()).to.be.false();
-      expect(result.getErrors()).to.be.an('array');
-      expect(result.getErrors()).to.have.lengthOf(1);
-
-      const [error] = result.getErrors();
-      expect(error).to.be.instanceOf(StateTransitionIsNotSignedConsensusError);
-    });
-
-    it('should return PublicKeyMismatchConsensusError if PublicKeyMismatchError was thrown', async () => {
-      const e = new PublicKeyMismatchError(identityPublicKey);
-
-      stateTransition.verifySignature.throws(e);
-
-      const result = await validateStateTransitionIdentitySignature(
-        stateTransition,
-      );
-
-      expect(result).to.be.instanceOf(ValidationResult);
-
-      expect(result.isValid()).to.be.false();
-      expect(result.getErrors()).to.be.an('array');
-      expect(result.getErrors()).to.have.lengthOf(1);
-
-      const [error] = result.getErrors();
-      expect(error).to.be.instanceOf(PublicKeyMismatchConsensusError);
-      expect(error.getPublicKey()).to.deep.equal(identityPublicKey);
-    });
-
-    it('should return InvalidIdentityPublicKeyTypeConsensusError if InvalidIdentityPublicKeyTypeError was thrown', async () => {
-      const e = new InvalidIdentityPublicKeyTypeError(1);
-
-      stateTransition.verifySignature.throws(e);
-
-      const result = await validateStateTransitionIdentitySignature(
-        stateTransition,
-      );
-
-      expect(result).to.be.instanceOf(ValidationResult);
-
-      expect(result.isValid()).to.be.false();
-      expect(result.getErrors()).to.be.an('array');
-      expect(result.getErrors()).to.have.lengthOf(1);
-
-      const [error] = result.getErrors();
-      expect(error).to.be.instanceOf(InvalidIdentityPublicKeyTypeConsensusError);
-      expect(error.getPublicKeyType()).to.equal(1);
-    });
-
     it('should return InvalidSignaturePublicKeySecurityLevelConsensusError if InvalidSignaturePublicKeySecurityLevelError was thrown', async () => {
-      const e = new InvalidSignaturePublicKeySecurityLevelError(1);
+      const e = new InvalidSignaturePublicKeySecurityLevelError(1, 0);
 
       stateTransition.verifySignature.throws(e);
 
@@ -266,7 +202,8 @@ describe('validateStateTransitionIdentitySignatureFactory', () => {
 
       const [error] = result.getErrors();
       expect(error).to.be.instanceOf(InvalidSignaturePublicKeySecurityLevelConsensusError);
-      expect(error.getSecurityLevel()).to.equal(1);
+      expect(error.getPublicKeySecurityLevel()).to.equal(1);
+      expect(error.getKeySecurityLevelRequirement()).to.equal(0);
     });
 
     it('should return PublicKeySecurityLevelNotMetConsensusError if PublicKeySecurityLevelNotMetError was thrown', async () => {

@@ -3,20 +3,32 @@ const DPPError = require('../../errors/DPPError');
 class InvalidSignaturePublicKeySecurityLevelError extends DPPError {
   /**
    *
-   * @param {number} securityLevel
+   * @param {number} publicKeySecurityLevel
+   * @param {number} requiredSecurityLevel
    */
-  constructor(securityLevel) {
-    super('Invalid public key security level');
+  constructor(publicKeySecurityLevel, requiredSecurityLevel) {
+    super(`Invalid public key security level: ${publicKeySecurityLevel}. Needs: ${requiredSecurityLevel}.`);
 
-    this.securityLevel = securityLevel;
+    this.publicKeySecurityLevel = publicKeySecurityLevel;
+    this.requiredSecurityLevel = requiredSecurityLevel;
   }
 
   /**
+   * Get mismatched public key
+   *
+   * @return {number}
+   */
+  getPublicKeySecurityLevel() {
+    return this.publicKeySecurityLevel;
+  }
+
+  /**
+   * Get required key security level
    *
    * @returns {number}
    */
-  getSecurityLevel() {
-    return this.securityLevel;
+  getKeySecurityLevelRequirement() {
+    return this.requiredSecurityLevel;
   }
 }
 
