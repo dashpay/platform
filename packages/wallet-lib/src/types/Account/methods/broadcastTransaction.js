@@ -6,6 +6,10 @@ const {
   InvalidDashcoreTransaction,
 } = require('../../../errors');
 const EVENTS = require('../../../EVENTS');
+const MempoolPropagationTimeoutError = require('../../../errors/MempoolPropagationTimeoutError');
+const logger = require('../../../logger');
+
+const MEMPOOL_PROPAGATION_TIMEOUT = 60000;
 
 function impactAffectedInputs({ transaction }) {
   const {
@@ -114,27 +118,73 @@ async function _broadcastTransaction(transaction, options = {}) {
  * @param {Transaction|RawTransaction} transaction - A txobject or it's hexadecimal representation
  * @param {Object} [options]
  * @param {Boolean} [options.skipFeeValidation=false] - Allow to skip fee validation
+ * @param {Number} [options.mempoolPropagationTimeout=60000] - Time to wait for mempool propagation
  * @return {Promise<string>}
  */
-async function broadcastTransaction(transaction, options = {}) {
-  if (!this.txFetchListener) {
-    this.txFetchListener = new Promise((resolve) => {
-      this.once(EVENTS.FETCHED_CONFIRMED_TRANSACTION, ({ payload }) => {
-        if (payload.transaction.hash === transaction.hash) {
-          this.txFetchListener = null;
-          resolve();
-        }
-      });
-    });
+async function broadcastTransaction(transaction, options = {
+  mempoolPropagationTimeout: MEMPOOL_PROPAGATION_TIMEOUT,
+}) {
+  let rejectTimeout;
+  let cancelMempoolSubscription;
 
-    await _broadcastTransaction.call(this, transaction, options);
+  const mempoolPropagationPromise = new Promise((resolve) => {
+    const listener = ({ payload }) => {
+      if (payload.transaction.hash === transaction.hash) {
+        logger.debug(`broadcastTransaction - received from mempool TX "${transaction.hash}"`);
+        clearTimeout(rejectTimeout);
+        resolve();
+      }
+    };
+    this.once(EVENTS.FETCHED_CONFIRMED_TRANSACTION, listener);
+    cancelMempoolSubscription = () => {
+      logger.debug(`broadcastTransaction - canceled mempool subscription for TX "${transaction.hash}"`);
+      this.removeListener(EVENTS.FETCHED_CONFIRMED_TRANSACTION, listener);
+    };
+  });
 
-    return transaction.hash;
+  const rejectPromise = new Promise((_, reject) => {
+    rejectTimeout = setTimeout(() => {
+      reject(new MempoolPropagationTimeoutError(transaction.hash));
+    }, options.mempoolPropagationTimeout);
+  });
+
+  logger.debug(`broadcastTransaction - subscribe to mempool for TX "${transaction.hash}"`);
+  const mempoolPropagationRace = Promise.race([
+    mempoolPropagationPromise, rejectPromise,
+  ]);
+
+  try {
+    await Promise.all([
+      mempoolPropagationRace,
+      _broadcastTransaction.call(this, transaction, options).then((hash) => {
+        logger.debug(`broadcastTransaction - broadcasted TX "${hash}"`);
+      }),
+    ]);
+  } catch (error) {
+    cancelMempoolSubscription();
+    throw error;
   }
 
-  await this.txFetchListener;
+  return transaction.hash;
 
-  return broadcastTransaction.call(this, transaction, options);
+  // if (!this.txFetchListener) {
+  //   this.txFetchListener = new Promise((resolve) => {
+  //     this.once(EVENTS.FETCHED_CONFIRMED_TRANSACTION, ({ payload }) => {
+  //       if (payload.transaction.hash === transaction.hash) {
+  //         this.txFetchListener = null;
+  //         resolve();
+  //       }
+  //     });
+  //   });
+  //
+  //   await _broadcastTransaction.call(this, transaction, options);
+  //
+  //   return transaction.hash;
+  // }
+
+  // await this.txFetchListener;
+
+  // return broadcastTransaction.call(this, transaction, options);
 }
 
 module.exports = broadcastTransaction;
