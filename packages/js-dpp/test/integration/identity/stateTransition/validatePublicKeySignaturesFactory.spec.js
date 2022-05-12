@@ -104,6 +104,7 @@ describe('validatePublicKeySignaturesFactory', () => {
     const result = await validatePublicKeySignatures(
       rawIdentityCreateTransition,
       rawIdentityCreateTransition.publicKeys,
+      identityCreateTransition.getExecutionContext(),
     );
 
     expectValidationError(result, InvalidIdentityKeySignatureError);
@@ -117,6 +118,7 @@ describe('validatePublicKeySignaturesFactory', () => {
     const result = await validatePublicKeySignatures(
       rawIdentityCreateTransition,
       rawIdentityCreateTransition.publicKeys,
+      identityCreateTransition.getExecutionContext(),
     );
 
     expect(result).to.be.instanceOf(ValidationResult);
