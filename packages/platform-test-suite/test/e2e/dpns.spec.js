@@ -127,7 +127,7 @@ describe('DPNS', () => {
 
   describe('Any Identity', () => {
     before(async () => {
-      identity = await client.platform.identities.register(50);
+      identity = await client.platform.identities.register(100);
     });
 
     after(async () => {
