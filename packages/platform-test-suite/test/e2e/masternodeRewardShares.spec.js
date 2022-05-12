@@ -348,7 +348,7 @@ describe('Masternode Reward Shares', () => {
     let identity;
 
     before(async () => {
-      identity = await client.platform.identities.register(50);
+      identity = await client.platform.identities.register(100);
     });
 
     it('should not be able to share rewards', async () => {
