@@ -129,12 +129,16 @@ async function broadcastTransaction(transaction, options = {
 
   const mempoolPropagationPromise = new Promise((resolve) => {
     const listener = ({ payload }) => {
+      // TODO: consider reworking to use inputs/outputs comparison
+      // to ensure that TX malleability is not a problem
+      // https://dashcore.readme.io/v18.0.0/docs/core-guide-transactions-transaction-malleability
       if (payload.transaction.hash === transaction.hash) {
         logger.debug(`broadcastTransaction - received from mempool TX "${transaction.hash}"`);
         clearTimeout(rejectTimeout);
         resolve();
       }
     };
+    // TODO: change to FETCHED_UNCONFIRMED_TRANSACTION once this event is restored
     this.once(EVENTS.FETCHED_CONFIRMED_TRANSACTION, listener);
     cancelMempoolSubscription = () => {
       logger.debug(`broadcastTransaction - canceled mempool subscription for TX "${transaction.hash}"`);
