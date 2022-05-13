@@ -6,7 +6,7 @@ class PublicKeyIsDisabledError extends AbstractSignatureError {
    * @param {number} publicKeyId
    */
   constructor(publicKeyId) {
-    super('Public key is disabled');
+    super(`Identity key ${publicKeyId} is disabled`);
 
     this.publicKeyId = publicKeyId;
   }
