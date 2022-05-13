@@ -92,9 +92,10 @@ describe('Masternode Reward Shares', () => {
       expect(masternodeIdentity).to.exist();
 
       await client.platform.identities.topUp(masternodeIdentity.getId(), 7000);
-    });
 
-    it('should add high security level public key', async () => {
+      // Since we cannot create "High" level key for masternode Identities automatically,
+      // (this key is used to sign state transitions, other than "update")
+      // we add this key here
       const account = await client.platform.client.getWalletAccount();
 
       const identityIndex = await account.getUnusedIdentityIndex();
