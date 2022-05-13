@@ -57,7 +57,11 @@ function validateIdentityCreateTransitionBasicFactory(
     }
 
     result.merge(
-      await validatePublicKeySignatures(rawStateTransition, rawStateTransition.publicKeys),
+      await validatePublicKeySignatures(
+        rawStateTransition,
+        rawStateTransition.publicKeys,
+        executionContext,
+      ),
     );
 
     if (!result.isValid()) {
