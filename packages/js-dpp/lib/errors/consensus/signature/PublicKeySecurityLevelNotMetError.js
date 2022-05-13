@@ -1,6 +1,6 @@
-const DPPError = require('../../errors/DPPError');
+const AbstractSignatureError = require('./AbstractSignatureError');
 
-class PublicKeySecurityLevelNotMetError extends DPPError {
+class PublicKeySecurityLevelNotMetError extends AbstractSignatureError {
   /**
    *
    * @param {number} publicKeySecurityLevel

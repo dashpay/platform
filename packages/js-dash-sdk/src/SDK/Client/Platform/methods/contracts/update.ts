@@ -24,7 +24,7 @@ export default async function update(this: Platform, dataContract: any, identity
 
   const dataContractUpdateTransition = dpp.dataContract.createDataContractUpdateTransition(updatedDataContract);
 
-  await signStateTransition(this, dataContractUpdateTransition, identity);
+  await signStateTransition(this, dataContractUpdateTransition, identity, 1);
   await broadcastStateTransition(this, dataContractUpdateTransition);
 
   // Update app with updated data contract if available

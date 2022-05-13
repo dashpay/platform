@@ -13,6 +13,8 @@ const StateTransitionIsNotSignedError = require('../../../lib/stateTransition/er
 const PublicKeyMismatchError = require('../../../lib/stateTransition/errors/PublicKeyMismatchError');
 const BlsSignatures = require('../../../lib/bls/bls');
 const PublicKeyIsDisabledError = require('../../../lib/stateTransition/errors/PublicKeyIsDisabledError');
+const InvalidSignaturePublicKeySecurityLevelError = require('../../../lib/stateTransition/errors/InvalidSignaturePublicKeySecurityLevelError');
+const stateTransitionTypes = require('../../../lib/stateTransition/stateTransitionTypes');
 
 describe('AbstractStateTransitionIdentitySigned', () => {
   let stateTransition;
@@ -51,7 +53,7 @@ describe('AbstractStateTransitionIdentitySigned', () => {
       .setId(publicKeyId)
       .setType(IdentityPublicKey.TYPES.ECDSA_SECP256K1)
       .setData(publicKey)
-      .setSecurityLevel(IdentityPublicKey.SECURITY_LEVELS.MASTER)
+      .setSecurityLevel(IdentityPublicKey.SECURITY_LEVELS.HIGH)
       .setPurpose(IdentityPublicKey.PURPOSES.AUTHENTICATION);
   });
 
@@ -203,7 +205,7 @@ describe('AbstractStateTransitionIdentitySigned', () => {
         expect(e.getPublicKeySecurityLevel())
           .to.be.deep.equal(identityPublicKey.getSecurityLevel());
         expect(e.getKeySecurityLevelRequirement())
-          .to.be.deep.equal(IdentityPublicKey.SECURITY_LEVELS.MASTER);
+          .to.be.deep.equal(IdentityPublicKey.SECURITY_LEVELS.HIGH);
       }
     });
 
@@ -329,7 +331,7 @@ describe('AbstractStateTransitionIdentitySigned', () => {
         expect(e.getPublicKeySecurityLevel())
           .to.be.deep.equal(identityPublicKey.getSecurityLevel());
         expect(e.getKeySecurityLevelRequirement())
-          .to.be.deep.equal(IdentityPublicKey.SECURITY_LEVELS.MASTER);
+          .to.be.deep.equal(IdentityPublicKey.SECURITY_LEVELS.HIGH);
       }
     });
 
@@ -374,6 +376,23 @@ describe('AbstractStateTransitionIdentitySigned', () => {
       } catch (e) {
         expect(e).to.be.instanceOf(PublicKeyIsDisabledError);
         expect(e.getPublicKey()).to.be.deep.equal(identityPublicKey);
+      }
+    });
+
+    it('should throw InvalidSignaturePublicKeySecurityLevelError if public key with master level is using to sign non update state transition', async () => {
+      stateTransition.type = stateTransitionTypes.DATA_CONTRACT_CREATE;
+      identityPublicKey.setSecurityLevel(IdentityPublicKey.SECURITY_LEVELS.MASTER);
+
+      try {
+        await stateTransition.sign(identityPublicKey, blsPrivateKeyHex);
+
+        expect.fail('Should throw PublicKeyIsDisabledError');
+      } catch (e) {
+        expect(e).to.be.instanceOf(InvalidSignaturePublicKeySecurityLevelError);
+        expect(e.getPublicKeySecurityLevel()).to.equal(IdentityPublicKey.SECURITY_LEVELS.MASTER);
+        expect(e.getKeySecurityLevelRequirement()).to.equal(
+          IdentityPublicKey.SECURITY_LEVELS.HIGH,
+        );
       }
     });
   });

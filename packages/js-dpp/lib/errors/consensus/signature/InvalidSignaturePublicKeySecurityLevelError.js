@@ -1,13 +1,13 @@
-const DPPError = require('../../errors/DPPError');
+const AbstractSignatureError = require('./AbstractSignatureError');
 
-class PublicKeySecurityLevelNotMetError extends DPPError {
+class InvalidSignaturePublicKeySecurityLevelError extends AbstractSignatureError {
   /**
    *
    * @param {number} publicKeySecurityLevel
    * @param {number} requiredSecurityLevel
    */
   constructor(publicKeySecurityLevel, requiredSecurityLevel) {
-    super(`Invalid key security level ${publicKeySecurityLevel}. This state transition requires at least ${requiredSecurityLevel}`);
+    super(`Invalid public key security level ${publicKeySecurityLevel}. This state transition requires ${requiredSecurityLevel}.`);
 
     this.publicKeySecurityLevel = publicKeySecurityLevel;
     this.requiredSecurityLevel = requiredSecurityLevel;
@@ -23,7 +23,7 @@ class PublicKeySecurityLevelNotMetError extends DPPError {
   }
 
   /**
-   * Get minimal required key security level
+   * Get required key security level
    *
    * @returns {number}
    */
@@ -32,4 +32,4 @@ class PublicKeySecurityLevelNotMetError extends DPPError {
   }
 }
 
-module.exports = PublicKeySecurityLevelNotMetError;
+module.exports = InvalidSignaturePublicKeySecurityLevelError;

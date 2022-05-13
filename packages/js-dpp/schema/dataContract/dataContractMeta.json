@@ -409,12 +409,11 @@
               "signatureSecurityLevelRequirement": {
                 "type": "integer",
                 "enum": [
-                  0,
                   1,
                   2,
                   3
                 ],
-                "description": "Public key security level. 0 - Master, 1 - Critical, 2 - High, 3 - Medium. If none specified, High level is used"
+                "description": "Public key security level. 1 - Critical, 2 - High, 3 - Medium. If none specified, High level is used"
               }
             }
           },
