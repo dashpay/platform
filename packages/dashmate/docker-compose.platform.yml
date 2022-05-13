@@ -101,6 +101,11 @@ services:
       - dapi_tx_filter_stream
     volumes:
       - ${DASHMATE_HOME_DIR:?err}/${CONFIG_NAME:?err}/platform/dapi/envoy/envoy.yaml:/etc/envoy/envoy.yaml
+    command: 
+      - "-c"
+      - "/etc/envoy/envoy.yaml"
+      - "-l"
+      - "debug"
 
 volumes:
   drive_abci_data:
