@@ -489,8 +489,12 @@ module.exports = {
               type: ['string', 'null'],
               minLength: 1,
             },
+            secondPublicKey: {
+              type: ['string', 'null'],
+              minLength: 1,
+            },
           },
-          required: ['contract', 'ownerId', 'masterPublicKey'],
+          required: ['contract', 'ownerId', 'masterPublicKey', 'secondPublicKey'],
           additionalProperties: false,
         },
         dashpay: {
@@ -511,8 +515,12 @@ module.exports = {
               type: ['string', 'null'],
               minLength: 1,
             },
+            secondPublicKey: {
+              type: ['string', 'null'],
+              minLength: 1,
+            },
           },
-          required: ['contract', 'masterPublicKey'],
+          required: ['contract', 'masterPublicKey', 'secondPublicKey'],
           additionalProperties: false,
         },
         featureFlags: {
@@ -537,8 +545,12 @@ module.exports = {
               type: ['string', 'null'],
               minLength: 1,
             },
+            secondPublicKey: {
+              type: ['string', 'null'],
+              minLength: 1,
+            },
           },
-          required: ['contract', 'ownerId', 'masterPublicKey'],
+          required: ['contract', 'ownerId', 'masterPublicKey', 'secondPublicKey'],
           additionalProperties: false,
         },
         sourcePath: {
@@ -563,8 +575,12 @@ module.exports = {
               type: ['string', 'null'],
               minLength: 1,
             },
+            secondPublicKey: {
+              type: ['string', 'null'],
+              minLength: 1,
+            },
           },
-          required: ['contract', 'masterPublicKey'],
+          required: ['contract', 'masterPublicKey', 'secondPublicKey'],
           additionalProperties: false,
         },
       },

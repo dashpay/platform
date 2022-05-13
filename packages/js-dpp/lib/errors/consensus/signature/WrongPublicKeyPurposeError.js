@@ -1,6 +1,6 @@
-const DPPError = require('../../errors/DPPError');
+const AbstractSignatureError = require('./AbstractSignatureError');
 
-class WrongPublicKeyPurposeError extends DPPError {
+class WrongPublicKeyPurposeError extends AbstractSignatureError {
   /**
    *
    * @param {number} publicKeyPurpose

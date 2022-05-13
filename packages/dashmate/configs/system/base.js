@@ -155,12 +155,14 @@ module.exports = {
       },
       ownerId: dpnsOwnerId,
       masterPublicKey: null,
+      secondPublicKey: null,
     },
     dashpay: {
       contract: {
         id: dashpayContractId,
       },
       masterPublicKey: null,
+      secondPublicKey: null,
     },
     featureFlags: {
       contract: {
@@ -168,6 +170,7 @@ module.exports = {
       },
       ownerId: featureFlagsOwnerId,
       masterPublicKey: null,
+      secondPublicKey: null,
     },
     sourcePath: null,
     masternodeRewardShares: {
@@ -175,6 +178,7 @@ module.exports = {
         id: masternodeRewardSharesContractId,
       },
       masterPublicKey: null,
+      secondPublicKey: null,
     },
   },
   externalIp: null,
