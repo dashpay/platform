@@ -31,6 +31,10 @@ function validateIdentityCreateTransitionStateFactory(
     const identityId = stateTransition.getIdentityId();
     const identity = await stateRepository.fetchIdentity(identityId, executionContext);
 
+    if (executionContext.isDryRun()) {
+      return result;
+    }
+
     if (identity) {
       result.addError(
         new IdentityAlreadyExistsError(identityId.toBuffer()),

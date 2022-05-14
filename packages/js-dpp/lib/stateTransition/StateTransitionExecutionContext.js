@@ -4,6 +4,7 @@ class StateTransitionExecutionContext {
      * @type {AbstractOperation[]}
      */
     this.operations = [];
+    this.dryRun = false;
   }
 
   /**
@@ -31,6 +32,28 @@ class StateTransitionExecutionContext {
    */
   getOperations() {
     return this.operations;
+  }
+
+  /**
+   * Enable dry run
+   *
+   * Count only operations
+   */
+  enableDryRun() {
+    this.dryRun = true;
+  }
+
+  /**
+   * Disable dry run
+   *
+   * Execute state transition
+   */
+  disableDryRun() {
+    this.dryRun = false;
+  }
+
+  isDryRun() {
+    return this.dryRun;
   }
 }
 

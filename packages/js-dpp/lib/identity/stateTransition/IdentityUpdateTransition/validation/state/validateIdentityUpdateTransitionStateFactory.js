@@ -31,6 +31,10 @@ function validateIdentityUpdateTransitionStateFactory(
 
     const storedIdentity = await stateRepository.fetchIdentity(identityId, executionContext);
 
+    if (executionContext.isDryRun()) {
+      return result;
+    }
+
     // copy identity
     const identity = new Identity(storedIdentity.toObject());
 

@@ -21,27 +21,36 @@ async function createMasternodeRewardSharesDataTrigger(
 
   const result = new DataTriggerExecutionResult();
 
-  // Do not allow creating document if ownerId is not in SML
-  const smlStore = await context.getStateRepository().fetchSMLStore();
-  const validMasternodesList = smlStore.getCurrentSML().getValidMasternodesList();
+  const isDryRun = context.getStateTransitionExecutionContext().isDryRun();
 
-  const ownerIdInSml = !!validMasternodesList.find(
-    (smlEntry) => Buffer.compare(ownerId, Buffer.from(smlEntry.proRegTxHash, 'hex')) === 0,
-  );
+  if (!isDryRun) {
+    // Do not allow creating document if ownerId is not in SML
+    const smlStore = await context.getStateRepository()
+      .fetchSMLStore();
+    const validMasternodesList = smlStore.getCurrentSML()
+      .getValidMasternodesList();
 
-  if (!ownerIdInSml) {
-    const error = new DataTriggerConditionError(
-      context.getDataContract().getId().toBuffer(),
-      documentTransition.getId().toBuffer(),
-      'Only masternode identities can share rewards',
+    const ownerIdInSml = !!validMasternodesList.find(
+      (smlEntry) => Buffer.compare(ownerId, Buffer.from(smlEntry.proRegTxHash, 'hex')) === 0,
     );
 
-    error.setOwnerId(ownerId);
-    error.setDocumentTransition(documentTransition);
+    if (!ownerIdInSml) {
+      const error = new DataTriggerConditionError(
+        context.getDataContract()
+          .getId()
+          .toBuffer(),
+        documentTransition.getId()
+          .toBuffer(),
+        'Only masternode identities can share rewards',
+      );
 
-    result.addError(error);
+      error.setOwnerId(ownerId);
+      error.setDocumentTransition(documentTransition);
 
-    return result;
+      result.addError(error);
+
+      return result;
+    }
   }
 
   // payToId identity exists
@@ -50,19 +59,24 @@ async function createMasternodeRewardSharesDataTrigger(
     context.getStateTransitionExecutionContext(),
   );
 
-  if (identity === null) {
-    const error = new DataTriggerConditionError(
-      context.getDataContract().getId().toBuffer(),
-      documentTransition.getId().toBuffer(),
-      `Identity ${payToId.toString()} doesn't exist`,
-    );
+  if (!isDryRun) {
+    if (identity === null) {
+      const error = new DataTriggerConditionError(
+        context.getDataContract()
+          .getId()
+          .toBuffer(),
+        documentTransition.getId()
+          .toBuffer(),
+        `Identity ${payToId.toString()} doesn't exist`,
+      );
 
-    error.setOwnerId(ownerId);
-    error.setDocumentTransition(documentTransition);
+      error.setOwnerId(ownerId);
+      error.setDocumentTransition(documentTransition);
 
-    result.addError(error);
+      result.addError(error);
 
-    return result;
+      return result;
+    }
   }
 
   // The overall percentage for ownerId is not more than 10000
@@ -76,6 +90,10 @@ async function createMasternodeRewardSharesDataTrigger(
     },
     context.getStateTransitionExecutionContext(),
   );
+
+  if (isDryRun) {
+    return result;
+  }
 
   const totalPercent = documents
     .reduce((prevValue, document) => prevValue + document.data.percentage, percentage);

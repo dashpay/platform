@@ -26,6 +26,10 @@ function validateDataContractCreateTransitionStateFactory(stateRepository) {
       executionContext,
     );
 
+    if (executionContext.isDryRun()) {
+      return result;
+    }
+
     if (existingDataContract) {
       result.addError(
         new DataContractAlreadyPresentError(dataContractId.toBuffer()),
