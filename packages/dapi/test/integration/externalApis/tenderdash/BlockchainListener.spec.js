@@ -29,16 +29,38 @@ describe('BlockchainListener', () => {
       .toString('hex');
 
     txQueryMessageMock = {
-      events: {
-        tx: {
+      events: [
+        {
+          type: 'tm',
+          attributes: [
+            {
+              key: 'event',
+              value: 'Tx',
+              index: false,
+            },
+          ],
+        },
+        {
+          type: 'tx',
           attributes: [
             {
               key: 'hash',
               value: transactionHash,
+              index: false,
             },
           ],
         },
-      },
+        {
+          type: 'tx',
+          attributes: [
+            {
+              key: 'height',
+              value: '38',
+              index: false,
+            },
+          ],
+        },
+      ],
     };
 
     blockMessageMock = {

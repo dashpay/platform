@@ -74,17 +74,38 @@ describe('waitForStateTransitionResultHandlerFactory', () => {
             },
           },
         },
-        events: {
-          'tx.hash': [
-            '56458F2D8A8617EA322931B72C103CDD93820004E534295183A6EF215B93C76E',
-          ],
-          'tx.height': [
-            '145',
-          ],
-          'tm.event': [
-            'Tx',
-          ],
-        },
+        events: [
+          {
+            type: 'tm',
+            attributes: [
+              {
+                key: 'event',
+                value: 'Tx',
+                index: false,
+              },
+            ],
+          },
+          {
+            type: 'tx',
+            attributes: [
+              {
+                key: 'hash',
+                value: '56458F2D8A8617EA322931B72C103CDD93820004E534295183A6EF215B93C76E',
+                index: false,
+              },
+            ],
+          },
+          {
+            type: 'tx',
+            attributes: [
+              {
+                key: 'height',
+                value: '145',
+                index: false,
+              },
+            ],
+          },
+        ],
       },
       error: {
         query: "tm.event = 'Tx'",
@@ -101,17 +122,39 @@ describe('waitForStateTransitionResultHandlerFactory', () => {
             },
           },
         },
-        events: {
-          'tm.event': [
-            'Tx',
+        events:
+          [
+            {
+              type: 'tm',
+              attributes: [
+                {
+                  key: 'event',
+                  value: 'Tx',
+                  index: false,
+                },
+              ],
+            },
+            {
+              type: 'tx',
+              attributes: [
+                {
+                  key: 'hash',
+                  value: '56458F2D8A8617EA322931B72C103CDD93820004E534295183A6EF215B93C76E',
+                  index: false,
+                },
+              ],
+            },
+            {
+              type: 'tx',
+              attributes: [
+                {
+                  key: 'height',
+                  value: '135',
+                  index: false,
+                },
+              ],
+            },
           ],
-          'tx.hash': [
-            '56458F2D8A8617EA322931B72C103CDD93820004E534295183A6EF215B93C76E',
-          ],
-          'tx.height': [
-            '135',
-          ],
-        },
       },
     };
 
