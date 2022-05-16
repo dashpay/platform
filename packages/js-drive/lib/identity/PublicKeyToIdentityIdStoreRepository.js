@@ -18,12 +18,13 @@ class PublicKeyToIdentityIdStoreRepository {
    *
    * @param {Buffer} publicKeyHash
    * @param {Identifier} identityId
-   * @param {boolean} [useTransaction=false]
+   * @param {Object} [options]
+   * @param {boolean} [options.useTransaction=false]
    *
    * @return {Promise<StorageResult<void>>}
    */
-  async store(publicKeyHash, identityId, useTransaction = false) {
-    const existingIdsResult = await this.fetchBuffer(publicKeyHash, useTransaction);
+  async store(publicKeyHash, identityId, options = {}) {
+    const existingIdsResult = await this.fetchBuffer(publicKeyHash, options);
 
     let identityIds = [];
     if (existingIdsResult.getValue()) {
@@ -41,7 +42,7 @@ class PublicKeyToIdentityIdStoreRepository {
         PublicKeyToIdentityIdStoreRepository.TREE_PATH,
         publicKeyHash,
         data,
-        { useTransaction },
+        options,
       );
 
       operations = operations.concat(result.getOperations());
@@ -54,15 +55,16 @@ class PublicKeyToIdentityIdStoreRepository {
    * Fetch serialized identity ids by public key hash from database
    *
    * @param {Buffer} publicKeyHash
-   * @param {boolean} [useTransaction=false]
+   * @param {Object} [options]
+   * @param {boolean} [options.useTransaction=false]
    *
    * @return {Promise<StorageResult<Buffer|null>>}
    */
-  async fetchBuffer(publicKeyHash, useTransaction = false) {
+  async fetchBuffer(publicKeyHash, options = {}) {
     const result = await this.storage.get(
       PublicKeyToIdentityIdStoreRepository.TREE_PATH,
       publicKeyHash,
-      { useTransaction },
+      options,
     );
 
     return new StorageResult(
@@ -75,13 +77,14 @@ class PublicKeyToIdentityIdStoreRepository {
    * Fetch deserialized identity ids by public key hash from database
    *
    * @param {Buffer} publicKeyHash
-   * @param {boolean} [useTransaction=false]
+   * @param {Object} [options]
+   * @param {boolean} [options.useTransaction=false]
    *
    * @return {Promise<StorageResult<Identifier[]>>}
    */
-  async fetch(publicKeyHash, useTransaction = false) {
+  async fetch(publicKeyHash, options = {}) {
     const existingIdsResult = await this.fetchBuffer(
-      publicKeyHash, useTransaction,
+      publicKeyHash, options,
     );
 
     if (existingIdsResult.isNull()) {

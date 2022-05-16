@@ -1,4 +1,7 @@
+const { TYPES } = require('@dashevo/dpp/lib/identity/IdentityPublicKey');
+
 const ReadOperation = require('@dashevo/dpp/lib/stateTransition/fee/operations/ReadOperation');
+const SignatureVerificationOperation = require('@dashevo/dpp/lib/stateTransition/fee/operations/SignatureVerificationOperation');
 
 class DriveStateRepository {
   #options = {};
@@ -191,7 +194,12 @@ class DriveStateRepository {
   async fetchDataContract(id, executionContext = undefined) {
     const result = await this.dataContractRepository.fetch(
       id,
-      this.#createRepositoryOptions(executionContext),
+      {
+        dryRun: executionContext ? executionContext.isDryRun() : false,
+        // Transaction is not using since Data Contract
+        // should be always committed to use
+        useTransaction: false,
+      },
     );
 
     if (executionContext) {
@@ -310,6 +318,17 @@ class DriveStateRepository {
    * @returns {Promise<Object|null>}
    */
   async fetchTransaction(id, executionContext = undefined) {
+    if (executionContext && executionContext.isDryRun()) {
+      executionContext.addOperation(
+        new ReadOperation(512),
+      );
+
+      return {
+        data: Buffer.alloc(0),
+        height: 1,
+      };
+    }
+
     try {
       const { result: transaction } = await this.coreRpcClient.getRawTransaction(id, 1);
 
@@ -358,6 +377,16 @@ class DriveStateRepository {
 
     if (header === null) {
       return false;
+    }
+
+    if (executionContext) {
+      executionContext.addOperation(
+        new SignatureVerificationOperation(TYPES.ECDSA_SECP256K1),
+      );
+
+      if (executionContext.isDryRun()) {
+        return true;
+      }
     }
 
     const {

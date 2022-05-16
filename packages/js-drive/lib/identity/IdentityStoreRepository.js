@@ -17,10 +17,11 @@ class IdentityStoreRepository {
    * Store identity into database
    *
    * @param {Identity} identity
-   * @param {boolean} [useTransaction=false]
+   * @param {Object} [options]
+   * @param {boolean} [options.useTransaction=false]
    * @return {Promise<StorageResult<void>>}
    */
-  async store(identity, useTransaction = false) {
+  async store(identity, options = {}) {
     const key = identity.getId().toBuffer();
     const value = identity.toBuffer();
 
@@ -28,7 +29,7 @@ class IdentityStoreRepository {
       IdentityStoreRepository.TREE_PATH,
       key,
       value,
-      { useTransaction },
+      options,
     );
 
     result.setValue(undefined);
@@ -40,14 +41,15 @@ class IdentityStoreRepository {
    * Fetch identity by id from database
    *
    * @param {Identifier} id
-   * @param {boolean} [useTransaction=false]
+   * @param {Object} [options]
+   * @param {boolean} [options.useTransaction=false]
    * @return {Promise<StorageResult<null|Identity>>}
    */
-  async fetch(id, useTransaction = false) {
+  async fetch(id, options = { }) {
     const encodedIdentityResult = await this.storage.get(
       IdentityStoreRepository.TREE_PATH,
       id.toBuffer(),
-      { useTransaction },
+      options,
     );
 
     if (encodedIdentityResult.isNull()) {
