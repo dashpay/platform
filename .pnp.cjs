@@ -2258,7 +2258,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
       ]],
       ["@dashevo/abci", [
         ["https://github.com/dashevo/js-abci.git#commit=846513634aada436d7c07fdc0472eb700df03013", {
-          "packageLocation": "./.yarn/unplugged/@dashevo-abci-https-e93ab2f03e/node_modules/@dashevo/abci/",
+          "packageLocation": "./.yarn/cache/@dashevo-abci-https-e93ab2f03e-40c1b3d8b1.zip/node_modules/@dashevo/abci/",
           "packageDependencies": [
             ["@dashevo/abci", "https://github.com/dashevo/js-abci.git#commit=846513634aada436d7c07fdc0472eb700df03013"],
             ["bl", "npm:1.2.3"],

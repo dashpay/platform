@@ -70,10 +70,5 @@
   "resolutions": {
     "elliptic": "6.5.3",
     "bn.js": "4.12.0"
-  },
-  "dependenciesMeta": {
-    "@dashevo/abci@0.20.0": {
-      "unplugged": true
-    }
   }
 }
