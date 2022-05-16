@@ -1,5 +1,5 @@
-use super::signer;
 use anyhow::anyhow;
+use dashcore::signer;
 use std::fmt::Debug;
 
 use crate::{
