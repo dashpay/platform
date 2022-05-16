@@ -34,14 +34,14 @@ class BlockchainListener extends EventEmitter {
     this.wsClient.on(TX_QUERY, (message) => {
       const [hashString] = (message.events || []).map((event) => {
         const hashAttribute = event.attributes.find((attribute) => attribute.key === 'hash');
-      
+
         if (!hashAttribute) {
-          return null; 
+          return null;
         }
-      
+
         return hashAttribute.value;
       }).filter((hash) => hash !== null);
-      
+
       if (!hashString) {
         return;
       }

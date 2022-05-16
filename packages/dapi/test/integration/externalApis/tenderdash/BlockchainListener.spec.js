@@ -30,7 +30,7 @@ describe('BlockchainListener', () => {
 
     txQueryMessageMock = {
       events: {
-        'tx': {
+        tx: {
           attributes: [
             {
               key: 'hash',
