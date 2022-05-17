@@ -343,4 +343,12 @@ module.exports = {
 
     return configFile;
   },
+  '0.22.8': (configFile) => {
+    Object.entries(configFile.configs)
+      .forEach(([, config]) => {
+        config.core.docker.image = systemConfigs.base.core.docker.image;
+      });
+
+    return configFile;
+  },
 };
