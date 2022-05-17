@@ -136,6 +136,7 @@ class DocumentRepository {
 
     const { useTransaction } = query;
     delete query.useTransaction;
+    delete query.dryRun;
 
     const result = this.validateQuery(query, documentSchema);
 
@@ -146,9 +147,9 @@ class DocumentRepository {
     // Remove undefined options before we pass them to RS Drive
     Object.keys(query)
       .forEach((queryOption) => {
-        if (options[queryOption] === undefined) {
+        if (query[queryOption] === undefined) {
           // eslint-disable-next-line no-param-reassign
-          delete options[queryOption];
+          delete query[queryOption];
         }
       });
 

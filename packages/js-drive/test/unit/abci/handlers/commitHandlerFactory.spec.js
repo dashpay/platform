@@ -119,7 +119,9 @@ describe('commitHandlerFactory', () => {
 
     expect(creditsDistributionPoolRepositoryMock.store).to.be.calledOnceWith(
       creditsDistributionPoolMock,
-      true,
+      {
+        useTransaction: true,
+      },
     );
 
     expect(blockExecutionContextStackMock.add).to.be.calledOnceWith(
@@ -128,7 +130,9 @@ describe('commitHandlerFactory', () => {
 
     expect(blockExecutionContextStackRepositoryMock.store).to.be.calledOnceWith(
       blockExecutionContextStackMock,
-      true,
+      {
+        useTransaction: true,
+      },
     );
 
     expect(groveDBStoreMock.commitTransaction).to.be.calledOnce();

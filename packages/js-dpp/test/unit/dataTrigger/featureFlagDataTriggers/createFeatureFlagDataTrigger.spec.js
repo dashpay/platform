@@ -9,6 +9,7 @@ const createStateRepositoryMock = require('../../../../lib/test/mocks/createStat
 const DataTriggerExecutionResult = require('../../../../lib/dataTrigger/DataTriggerExecutionResult');
 const DataTriggerConditionError = require('../../../../lib/errors/consensus/state/dataContract/dataTrigger/DataTriggerConditionError');
 const Identifier = require('../../../../lib/identifier/Identifier');
+const StateTransitionExecutionContext = require('../../../../lib/stateTransition/StateTransitionExecutionContext');
 
 describe('createFeatureFlagDataTrigger', () => {
   let contextMock;
@@ -34,6 +35,7 @@ describe('createFeatureFlagDataTrigger', () => {
       getStateRepository: () => stateRepositoryMock,
       getOwnerId: this.sinonSandbox.stub(),
       getDataContract: () => getFeatureFlagsDocumentsFixture.dataContract,
+      getStateTransitionExecutionContext: () => new StateTransitionExecutionContext(),
     };
     contextMock.getOwnerId.returns(topLevelIdentityId);
   });

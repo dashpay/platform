@@ -10,6 +10,7 @@ const createStateRepositoryMock = require('../../../../../../../lib/test/mocks/c
 const ValidationResult = require('../../../../../../../lib/validation/ValidationResult');
 
 const DuplicateUniqueIndexError = require('../../../../../../../lib/errors/consensus/state/document/DuplicateUniqueIndexError');
+const StateTransitionExecutionContext = require('../../../../../../../lib/stateTransition/StateTransitionExecutionContext');
 
 describe('validateDocumentsUniquenessByIndices', () => {
   let stateRepositoryMock;
@@ -18,6 +19,7 @@ describe('validateDocumentsUniquenessByIndices', () => {
   let documentTransitions;
   let dataContract;
   let ownerId;
+  let executionContext;
 
   beforeEach(function beforeEach() {
     ({ ownerId } = getDocumentsFixture);
@@ -31,6 +33,8 @@ describe('validateDocumentsUniquenessByIndices', () => {
     stateRepositoryMock = createStateRepositoryMock(this.sinonSandbox);
     stateRepositoryMock.fetchDocuments.resolves([]);
 
+    executionContext = new StateTransitionExecutionContext();
+
     validateDocumentsUniquenessByIndices = verifyDocumentsUniquenessByIndicesFactory(
       stateRepositoryMock,
     );
@@ -43,7 +47,10 @@ describe('validateDocumentsUniquenessByIndices', () => {
     });
 
     const result = await validateDocumentsUniquenessByIndices(
-      ownerId, noIndexDocumentTransitions, dataContract,
+      ownerId,
+      noIndexDocumentTransitions,
+      dataContract,
+      executionContext,
     );
 
     expect(result).to.be.an.instanceOf(ValidationResult);
@@ -81,7 +88,10 @@ describe('validateDocumentsUniquenessByIndices', () => {
       .resolves([william]);
 
     const result = await validateDocumentsUniquenessByIndices(
-      ownerId, documentTransitions, dataContract,
+      ownerId,
+      documentTransitions,
+      dataContract,
+      executionContext,
     );
 
     expect(result).to.be.an.instanceOf(ValidationResult);
@@ -146,7 +156,10 @@ describe('validateDocumentsUniquenessByIndices', () => {
       .resolves([william]);
 
     const result = await validateDocumentsUniquenessByIndices(
-      ownerId, documentTransitions, dataContract,
+      ownerId,
+      documentTransitions,
+      dataContract,
+      executionContext,
     );
 
     expectValidationError(result, DuplicateUniqueIndexError, 4);
@@ -204,7 +217,10 @@ describe('validateDocumentsUniquenessByIndices', () => {
       .resolves([indexedDocument]);
 
     const result = await validateDocumentsUniquenessByIndices(
-      ownerId, indexedDocumentTransitions, dataContract,
+      ownerId,
+      indexedDocumentTransitions,
+      dataContract,
+      executionContext,
     );
 
     expect(result).to.be.an.instanceOf(ValidationResult);
@@ -231,7 +247,10 @@ describe('validateDocumentsUniquenessByIndices', () => {
       .resolves([uniqueDatesDocument]);
 
     const result = await validateDocumentsUniquenessByIndices(
-      ownerId, uniqueDatesDocumentTransitions, dataContract,
+      ownerId,
+      uniqueDatesDocumentTransitions,
+      dataContract,
+      executionContext,
     );
 
     expect(result.isValid()).to.be.true();

@@ -181,7 +181,9 @@ describe('DocumentRepository', function main() {
         .storage
         .startTransaction();
 
-      await documentRepository.store(document, true);
+      await documentRepository.store(document, {
+        useTransaction: true,
+      });
 
       const documentTypeTreePath = createDocumentTypeTreePath(
         document.getDataContract(),
@@ -247,7 +249,9 @@ describe('DocumentRepository', function main() {
         .startTransaction();
 
       const foundDocumentsResult = await documentRepository
-        .find(dataContract, document.getType(), {}, true);
+        .find(dataContract, document.getType(), {
+          useTransaction: true,
+        });
 
       expect(foundDocumentsResult).to.be.instanceOf(StorageResult);
       expect(foundDocumentsResult.getOperations().length).to.be.greaterThan(0);
@@ -833,7 +837,9 @@ describe('DocumentRepository', function main() {
         dataContract,
         document.getType(),
         document.getId(),
-        true,
+        {
+          useTransaction: true,
+        },
       );
 
       expect(result).to.be.instanceOf(StorageResult);
@@ -847,8 +853,10 @@ describe('DocumentRepository', function main() {
         .find(
           dataContract,
           document.getType(),
-          query,
-          true,
+          {
+            ...query,
+            useTransaction: true,
+          },
         );
 
       const removedDocument = removedDocumentResult.getValue();
@@ -877,7 +885,14 @@ describe('DocumentRepository', function main() {
         .storage
         .startTransaction();
 
-      await documentRepository.delete(dataContract, document.getType(), document.getId(), true);
+      await documentRepository.delete(
+        dataContract,
+        document.getType(),
+        document.getId(),
+        {
+          useTransaction: true,
+        },
+      );
 
       const query = {
         where: [['$id', '==', document.getId()]],
@@ -885,8 +900,14 @@ describe('DocumentRepository', function main() {
 
       // Document should be removed in transaction
 
-      const removedDocumentsResult = await documentRepository
-        .find(dataContract, document.getType(), query, true);
+      const removedDocumentsResult = await documentRepository.find(
+        dataContract,
+        document.getType(),
+        {
+          ...query,
+          useTransaction: true,
+        },
+      );
 
       const removedDocuments = removedDocumentsResult.getValue();
 

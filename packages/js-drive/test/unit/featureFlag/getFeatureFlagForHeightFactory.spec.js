@@ -43,8 +43,10 @@ describe('getFeatureFlagForHeightFactory', () => {
     expect(fetchDocumentsMock).to.have.been.calledOnceWithExactly(
       featureFlagDataContractId,
       'someType',
-      query,
-      false,
+      {
+        ...query,
+        useTransaction: false,
+      },
     );
     expect(result).to.deep.equal(document);
   });

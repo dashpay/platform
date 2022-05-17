@@ -6,6 +6,7 @@ const getDocumentTransitionsFixture = require('../../../../lib/test/fixtures/get
 const createRewardShareDataTrigger = require('../../../../lib/dataTrigger/rewardShareDataTriggers/createMasternodeRewardSharesDataTrigger');
 const DataTriggerExecutionResult = require('../../../../lib/dataTrigger/DataTriggerExecutionResult');
 const DataTriggerConditionError = require('../../../../lib/errors/consensus/state/dataContract/dataTrigger/DataTriggerConditionError');
+const StateTransitionExecutionContext = require('../../../../lib/stateTransition/StateTransitionExecutionContext');
 
 describe('createMasternodeRewardSharesDataTrigger', () => {
   let contextMock;
@@ -61,6 +62,8 @@ describe('createMasternodeRewardSharesDataTrigger', () => {
     [documentTransition] = getDocumentTransitionsFixture({
       create: [document],
     });
+
+    executionContext = new StateTransitionExecutionContext();
 
     contextMock = {
       getStateRepository: () => stateRepositoryMock,

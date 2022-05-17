@@ -46,7 +46,9 @@ function synchronizeMasternodeIdentitiesFactory(
 
     const dataContractResult = await dataContractRepository.fetch(
       masternodeRewardSharesContractId,
-      true,
+      {
+        useTransaction: true,
+      },
     );
 
     const dataContract = dataContractResult.getValue();

@@ -40,13 +40,13 @@ describe('getLatestFeatureFlagFactory', () => {
         ['enableAtHeight', 'desc'],
       ],
       limit: 1,
+      useTransaction: false,
     };
 
     expect(fetchDocumentsMock).to.have.been.calledOnceWithExactly(
       featureFlagDataContractId,
       'someType',
       query,
-      false,
     );
     expect(result).to.deep.equal(document);
   });

@@ -31,8 +31,10 @@ function getFeatureFlagForHeightFactory(
     const result = await fetchDocuments(
       featureFlagsContractId,
       flagType,
-      query,
-      useTransaction,
+      {
+        ...query,
+        useTransaction,
+      },
     );
 
     const [document] = result.getValue();
