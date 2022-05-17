@@ -34,7 +34,9 @@ describe('SpentAssetLockTransactionsRepository', () => {
 
   describe('#store', () => {
     it('should store outpoint', async () => {
-      const result = await repository.store(outPointBuffer, true);
+      const result = await repository.store(outPointBuffer, {
+        useTransaction: true,
+      });
 
       expect(result).to.be.instanceOf(StorageResult);
       expect(result.getOperations().length).to.be.greaterThan(0);

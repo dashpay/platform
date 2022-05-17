@@ -9,6 +9,7 @@ const getDocumentTransitionFixture = require('../../../../lib/test/fixtures/getD
 
 const getDashPayContractFixture = require('../../../../lib/test/fixtures/getDashPayContractFixture');
 const { getContactRequestDocumentFixture } = require('../../../../lib/test/fixtures/getDashPayDocumentFixture');
+const StateTransitionExecutionContext = require('../../../../lib/stateTransition/StateTransitionExecutionContext');
 
 describe('createContactRequestDataTrigger', () => {
   let context;
@@ -35,6 +36,7 @@ describe('createContactRequestDataTrigger', () => {
       stateRepositoryMock,
       contactRequestDocument.getOwnerId(),
       dataContract,
+      new StateTransitionExecutionContext(),
     );
 
     dashPayIdentity = context.getOwnerId();

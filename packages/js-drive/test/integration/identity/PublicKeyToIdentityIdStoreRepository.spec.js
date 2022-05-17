@@ -64,7 +64,7 @@ describe('PublicKeyToIdentityIdStoreRepository', () => {
       await repository.store(
         publicKeyHash,
         identity.getId(),
-        true,
+        { useTransaction: true },
       );
 
       const emptyIdsResult = await store.get(
@@ -151,11 +151,15 @@ describe('PublicKeyToIdentityIdStoreRepository', () => {
         { useTransaction: true },
       );
 
-      const emptyIdsResult = await repository.fetch(publicKeyHash, false);
+      const emptyIdsResult = await repository.fetch(publicKeyHash, {
+        useTransaction: false,
+      });
 
       expect(emptyIdsResult.getValue()).to.be.empty();
 
-      const transactionalIdsResult = await repository.fetch(publicKeyHash, true);
+      const transactionalIdsResult = await repository.fetch(publicKeyHash, {
+        useTransaction: true,
+      });
 
       expect(transactionalIdsResult.getValue()).to.deep.equal(identityIds);
 
@@ -209,11 +213,15 @@ describe('PublicKeyToIdentityIdStoreRepository', () => {
         { useTransaction: true },
       );
 
-      const emptyIdsResult = await repository.fetchBuffer(publicKeyHash, false);
+      const emptyIdsResult = await repository.fetchBuffer(publicKeyHash, {
+        useTransaction: false,
+      });
 
       expect(emptyIdsResult.getValue()).to.be.null();
 
-      const transactionalIdsEncodedResult = await repository.fetchBuffer(publicKeyHash, true);
+      const transactionalIdsEncodedResult = await repository.fetchBuffer(publicKeyHash, {
+        useTransaction: true,
+      });
 
       const transactionalIdsEncoded = transactionalIdsEncodedResult.getValue();
 

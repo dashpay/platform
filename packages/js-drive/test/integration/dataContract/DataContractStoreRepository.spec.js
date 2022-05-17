@@ -65,7 +65,7 @@ describe('DataContractStoreRepository', () => {
 
       const result = await repository.store(
         dataContract,
-        true,
+        { useTransaction: true },
       );
 
       expect(result).to.be.instanceOf(StorageResult);
@@ -146,11 +146,15 @@ describe('DataContractStoreRepository', () => {
 
       await store.getDrive().applyContract(dataContract, new Date(), true);
 
-      const notFoundDataContractResult = await repository.fetch(dataContract.getId(), false);
+      const notFoundDataContractResult = await repository.fetch(dataContract.getId(), {
+        useTransaction: false,
+      });
 
       expect(notFoundDataContractResult.getValue()).to.be.null();
 
-      const transactionalDataContractResult = await repository.fetch(dataContract.getId(), true);
+      const transactionalDataContractResult = await repository.fetch(dataContract.getId(), {
+        useTransaction: true,
+      });
 
       const transactionalDataContract = transactionalDataContractResult.getValue();
 

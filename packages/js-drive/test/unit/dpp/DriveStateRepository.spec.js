@@ -121,7 +121,10 @@ describe('DriveStateRepository', () => {
       expect(result).to.equal(identity);
       expect(identityRepositoryMock.fetch).to.be.calledOnceWith(
         id,
-        repositoryOptions.useTransaction,
+        {
+          useTransaction: repositoryOptions.useTransaction,
+          dryRun: false,
+        },
       );
 
       expect(executionContext.getOperations()).to.deep.equals(operations);
@@ -138,7 +141,10 @@ describe('DriveStateRepository', () => {
 
       expect(identityRepositoryMock.store).to.be.calledOnceWith(
         identity,
-        repositoryOptions.useTransaction,
+        {
+          useTransaction: repositoryOptions.useTransaction,
+          dryRun: false,
+        },
       );
 
       expect(executionContext.getOperations()).to.deep.equals(operations);
@@ -164,12 +170,18 @@ describe('DriveStateRepository', () => {
       expect(publicKeyIdentityIdRepositoryMock.store.getCall(0).args).to.have.deep.members([
         identity.getPublicKeyById(0).hash(),
         identity.getId(),
-        repositoryOptions.useTransaction,
+        {
+          useTransaction: repositoryOptions.useTransaction,
+          dryRun: false,
+        },
       ]);
       expect(publicKeyIdentityIdRepositoryMock.store.getCall(1).args).to.have.deep.members([
         identity.getPublicKeyById(1).hash(),
         identity.getId(),
-        repositoryOptions.useTransaction,
+        {
+          useTransaction: repositoryOptions.useTransaction,
+          dryRun: false,
+        },
       ]);
 
       expect(executionContext.getOperations()).to.deep.equals(operations.concat(operations));
@@ -261,7 +273,10 @@ describe('DriveStateRepository', () => {
 
       expect(dataContractRepositoryMock.store).to.be.calledOnceWith(
         dataContract,
-        repositoryOptions.useTransaction,
+        {
+          useTransaction: repositoryOptions.useTransaction,
+          dryRun: false,
+        },
       );
 
       expect(executionContext.getOperations()).to.deep.equals(operations);
@@ -288,8 +303,11 @@ describe('DriveStateRepository', () => {
       expect(fetchDocumentsMock).to.be.calledOnceWith(
         id,
         type,
-        options,
-        repositoryOptions.useTransaction,
+        {
+          ...options,
+          useTransaction: repositoryOptions.useTransaction,
+          dryRun: false,
+        },
       );
 
       expect(executionContext.getOperations()).to.deep.equals(operations);
@@ -308,7 +326,10 @@ describe('DriveStateRepository', () => {
 
       expect(documentsRepositoryMock.store).to.be.calledOnceWith(
         document,
-        repositoryOptions.useTransaction,
+        {
+          useTransaction: repositoryOptions.useTransaction,
+          dryRun: false,
+        },
       );
 
       expect(executionContext.getOperations()).to.deep.equals(operations);
@@ -330,7 +351,10 @@ describe('DriveStateRepository', () => {
 
       await stateRepository.removeDocument(contractId, type, id, executionContext);
 
-      expect(dataContractRepositoryMock.fetch).to.be.calledOnceWithExactly(contractId);
+      expect(dataContractRepositoryMock.fetch).to.be.calledOnceWithExactly(contractId, {
+        useTransaction: false,
+        dryRun: false,
+      });
       expect(dataContractCacheMock.set).to.be.calledOnceWithExactly(
         contractId.toString(),
         dataContract,
@@ -340,7 +364,10 @@ describe('DriveStateRepository', () => {
         dataContract,
         type,
         id,
-        repositoryOptions.useTransaction,
+        {
+          useTransaction: repositoryOptions.useTransaction,
+          dryRun: false,
+        },
       );
 
       expect(executionContext.getOperations()).to.deep.equals(operations.concat(operations));
