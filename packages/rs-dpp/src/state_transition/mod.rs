@@ -6,6 +6,7 @@ pub use abstract_state_transition::{StateTransitionConvert, StateTransitionLike}
 
 mod calculate_state_transition_fee;
 
+mod example;
 use crate::mocks;
 /// Methods dispatcher for Static Transition
 macro_rules! call_method {
