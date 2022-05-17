@@ -2257,12 +2257,12 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
         }]
       ]],
       ["@dashevo/abci", [
-        ["https://github.com/dashevo/js-abci.git#commit=846513634aada436d7c07fdc0472eb700df03013", {
-          "packageLocation": "./.yarn/cache/@dashevo-abci-https-e93ab2f03e-40c1b3d8b1.zip/node_modules/@dashevo/abci/",
+        ["npm:0.23.0-dev.1", {
+          "packageLocation": "./.yarn/cache/@dashevo-abci-npm-0.23.0-dev.1-4b76d57180-6a7cf16ed9.zip/node_modules/@dashevo/abci/",
           "packageDependencies": [
-            ["@dashevo/abci", "https://github.com/dashevo/js-abci.git#commit=846513634aada436d7c07fdc0472eb700df03013"],
+            ["@dashevo/abci", "npm:0.23.0-dev.1"],
+            ["@dashevo/protobufjs", "npm:6.10.5"],
             ["bl", "npm:1.2.3"],
-            ["protobufjs", "https://github.com/jawid-h/protobuf.js.git#commit=d13d5d5688052e366aa2e9169f50dfca376b32cf"],
             ["protocol-buffers-encodings", "npm:1.1.1"]
           ],
           "linkType": "HARD",
@@ -2663,7 +2663,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           "packageLocation": "./packages/js-drive/",
           "packageDependencies": [
             ["@dashevo/drive", "workspace:packages/js-drive"],
-            ["@dashevo/abci", "https://github.com/dashevo/js-abci.git#commit=846513634aada436d7c07fdc0472eb700df03013"],
+            ["@dashevo/abci", "npm:0.23.0-dev.1"],
             ["@dashevo/dapi-grpc", "workspace:packages/dapi-grpc"],
             ["@dashevo/dashcore-lib", "https://github.com/dashevo/dashcore-lib.git#commit=abda555010353b6180cba22ece6a846c9b5b8220"],
             ["@dashevo/dashd-rpc", "npm:2.3.2"],
@@ -15066,26 +15066,6 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
         }]
       ]],
       ["protobufjs", [
-        ["https://github.com/jawid-h/protobuf.js.git#commit=d13d5d5688052e366aa2e9169f50dfca376b32cf", {
-          "packageLocation": "./.yarn/unplugged/protobufjs-https-f7cc81dafb/node_modules/protobufjs/",
-          "packageDependencies": [
-            ["protobufjs", "https://github.com/jawid-h/protobuf.js.git#commit=d13d5d5688052e366aa2e9169f50dfca376b32cf"],
-            ["@protobufjs/aspromise", "npm:1.1.2"],
-            ["@protobufjs/base64", "npm:1.1.2"],
-            ["@protobufjs/codegen", "npm:2.0.4"],
-            ["@protobufjs/eventemitter", "npm:1.1.0"],
-            ["@protobufjs/fetch", "npm:1.1.0"],
-            ["@protobufjs/float", "npm:1.0.2"],
-            ["@protobufjs/inquire", "npm:1.1.0"],
-            ["@protobufjs/path", "npm:1.1.2"],
-            ["@protobufjs/pool", "npm:1.1.0"],
-            ["@protobufjs/utf8", "npm:1.1.0"],
-            ["@types/long", "npm:4.0.1"],
-            ["@types/node", "npm:17.0.21"],
-            ["long", "npm:4.0.0"]
-          ],
-          "linkType": "HARD",
-        }],
         ["npm:6.11.2", {
           "packageLocation": "./.yarn/unplugged/protobufjs-npm-6.11.2-9b422ce98e/node_modules/protobufjs/",
           "packageDependencies": [
