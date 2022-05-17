@@ -2,10 +2,10 @@ const {
   tendermint: {
     abci: {
       ResponseEndBlock,
-      ConsensusParams,
     },
     types: {
       CoreChainLock,
+      ConsensusParams,
     },
   },
 } = require('@dashevo/abci/types');
