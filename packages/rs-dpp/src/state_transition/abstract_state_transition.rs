@@ -2,18 +2,11 @@ use anyhow::anyhow;
 use dashcore::signer;
 use std::fmt::Debug;
 
-use crate::{
-    identity::KeyType,
-    prelude::ProtocolError,
-    util::{hash, json_value::ReplaceWith, serializer},
-};
+use crate::{identity::KeyType, prelude::ProtocolError};
 use serde_json::Value as JsonValue;
 use std::convert::TryInto;
 
-use serde::{Deserialize, Serialize};
-
 use super::{StateTransition, StateTransitionType};
-use crate::util::json_value::JsonValueExt;
 use bls_signatures::{
     verify_messages, PrivateKey as BLSPrivateKey, PublicKey as BLSPublicKey,
     Serialize as BLSSerialize,
@@ -32,59 +25,6 @@ pub const DATA_CONTRACT_TRANSITION_TYPES: [StateTransitionType; 2] = [
     StateTransitionType::DataContractUpdate,
 ];
 
-const PROPERTY_SIGNATURE: &str = "signature";
-const PROPERTY_PROTOCOL_VERSION: &str = "protocolVersion";
-
-/**
- * @typedef RawStateTransition
- * @property {number} protocolVersion
- * @property {number} type
- * @property {Buffer} [signature]
- */
-
-/**
- * @typedef JsonStateTransition
- * @property {number} protocolVersion
- * @property {number} type
- * @property {string} [signature]
- */
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct StateTransitionBase {
-    pub protocol_version: u32,
-    pub signature: Vec<u8>,
-    pub transition_type: StateTransitionType,
-}
-
-impl StateTransitionConvert for StateTransitionBase {
-    fn to_object(&self, skip_signature: bool) -> Result<JsonValue, ProtocolError> {
-        let mut json_value: JsonValue = serde_json::to_value(self)?;
-        if skip_signature {
-            if let JsonValue::Object(ref mut o) = json_value {
-                o.remove(PROPERTY_SIGNATURE);
-            }
-        }
-        Ok(json_value)
-    }
-
-    fn to_json(&self) -> Result<JsonValue, ProtocolError> {
-        let mut json_value: JsonValue = serde_json::to_value(self)?;
-        json_value.replace_binary_paths([PROPERTY_SIGNATURE], ReplaceWith::Base64)?;
-        Ok(json_value)
-    }
-
-    fn to_buffer(&self, skip_signature: bool) -> Result<Vec<u8>, ProtocolError> {
-        let mut json_value = self.to_object(skip_signature)?;
-        let protocol_version = json_value.remove_u32(PROPERTY_PROTOCOL_VERSION)?;
-
-        serializer::value_to_cbor(json_value, Some(protocol_version))
-    }
-
-    fn hash(&self, skip_signature: bool) -> Result<Vec<u8>, ProtocolError> {
-        Ok(hash::hash(self.to_buffer(skip_signature)?))
-    }
-}
 /// The StateTransitionLike represents set of methods that are shared for all types of State Transition.
 /// Every type of state transition should also implement Debug, Clone, and support conversion to compounded [`StateTransition`]
 pub trait StateTransitionLike:
@@ -98,6 +38,8 @@ pub trait StateTransitionLike:
     fn get_signature(&self) -> &Vec<u8>;
     /// set a new signature
     fn set_signature(&mut self, signature: Vec<u8>);
+    /// Calculates the ST fee in credits
+    fn calculate_fee(&self) -> Result<u64, ProtocolError>;
 
     /// Signs data with the private key
     fn sign_by_private_key(
@@ -174,9 +116,6 @@ pub trait StateTransitionLike:
 
         Ok(verify_messages(&signature, &[&data], &[pk]))
     }
-
-    /// Calculates the ST fee in credits
-    fn calculate_fee(&self) -> Result<u64, ProtocolError>;
 
     /// returns true if state transition is a document state transition
     fn is_document_state_transition(&self) -> bool {
