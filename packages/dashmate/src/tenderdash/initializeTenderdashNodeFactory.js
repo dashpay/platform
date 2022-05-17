@@ -49,7 +49,7 @@ function initializeTenderdashNodeFactory(dockerCompose, docker, dockerPull) {
     const writableStream = new WritableStream();
 
     const command = [
-      '/usr/bin/tenderdash init > /dev/null',
+      '/usr/bin/tenderdash init validator> /dev/null',
       'echo "["',
       'cat $TMHOME/config/node_key.json',
       'echo ","',
@@ -85,7 +85,7 @@ function initializeTenderdashNodeFactory(dockerCompose, docker, dockerPull) {
     }
 
     let stringifiedJSON = writableStream.toString();
-    stringifiedJSON = stringifiedJSON.replace(/\r\n/g, '');
+    stringifiedJSON = stringifiedJSON.split('module=main').slice(-1).pop().replace(/\r\n/g, '');
 
     return JSON.parse(stringifiedJSON);
   }

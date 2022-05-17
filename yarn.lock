@@ -1274,14 +1274,14 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@dashevo/abci@github:dashevo/js-abci#v0.22-dev":
-  version: 0.20.0
-  resolution: "@dashevo/abci@https://github.com/dashevo/js-abci.git#commit=8806ff71cdac918f79920b1373824653f15698c5"
+"@dashevo/abci@npm:~0.23.0-dev.1":
+  version: 0.23.0-dev.1
+  resolution: "@dashevo/abci@npm:0.23.0-dev.1"
   dependencies:
+    "@dashevo/protobufjs": 6.10.5
     bl: ^1.2.3
-    protobufjs: "github:jawid-h/protobuf.js#fix/buffer-conversion"
     protocol-buffers-encodings: ^1.1.0
-  checksum: 1c8ba91935e9fb99d4e6ad234b299e4956f1486bb00ede8c06ecb5b38341b2042d7fa1a001a58441d7c98d42c14345b63108c607050f0dddc0fb19a64a46cb9f
+  checksum: 6a7cf16ed9b460c027a4122980d37783e12ab34886b34a3b4a77d001824ebe15e87e5f2267898820e0b9e5d8caeb236f10460e9c771fce6117b6b14b6f7e9e4a
   languageName: node
   linkType: hard
 
@@ -1660,7 +1660,7 @@ __metadata:
   version: 0.0.0-use.local
   resolution: "@dashevo/drive@workspace:packages/js-drive"
   dependencies:
-    "@dashevo/abci": "github:dashevo/js-abci#v0.22-dev"
+    "@dashevo/abci": ~0.23.0-dev.1
     "@dashevo/dapi-grpc": "workspace:~"
     "@dashevo/dashcore-lib": "github:dashevo/dashcore-lib#abda555010353b6180cba22ece6a846c9b5b8220"
     "@dashevo/dashd-rpc": ^2.3.2
@@ -12189,27 +12189,6 @@ fsevents@~2.3.2:
     retry: ^0.12.0
     signal-exit: ^3.0.2
   checksum: 1be1bb702b9d47bdf18d75f22578f51370781feba7d2617f70ff8c66a86bcfa6e55b4f69c57fc326380110f2d1ffdb6e54a4900814bf156c04ee4eb2d3c065aa
-  languageName: node
-  linkType: hard
-
-"protobufjs@github:jawid-h/protobuf.js#fix/buffer-conversion":
-  version: 6.10.2
-  resolution: "protobufjs@https://github.com/jawid-h/protobuf.js.git#commit=d13d5d5688052e366aa2e9169f50dfca376b32cf"
-  dependencies:
-    "@protobufjs/aspromise": ^1.1.2
-    "@protobufjs/base64": ^1.1.2
-    "@protobufjs/codegen": ^2.0.4
-    "@protobufjs/eventemitter": ^1.1.0
-    "@protobufjs/fetch": ^1.1.0
-    "@protobufjs/float": ^1.0.2
-    "@protobufjs/inquire": ^1.1.0
-    "@protobufjs/path": ^1.1.2
-    "@protobufjs/pool": ^1.1.0
-    "@protobufjs/utf8": ^1.1.0
-    "@types/long": ^4.0.1
-    "@types/node": ">=13.7.0"
-    long: ^4.0.0
-  checksum: cd8c6fa49f03c4516ce17addaba2fde6b5c500b59d02c260e64b25179ec38c1e149ca6a8a96d90216ea02a41a6dba3f6fe6ce35e5edd143de76157d9b8b30903
   languageName: node
   linkType: hard
 
