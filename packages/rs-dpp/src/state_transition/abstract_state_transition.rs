@@ -53,7 +53,7 @@ pub trait StateTransitionLike:
                 let fixed_len_key: [u8; 32] = private_key
                     .try_into()
                     .map_err(|_| anyhow!("the BLS private key must be 32 bytes long"))?;
-                let pk = BLSPrivateKey::new(fixed_len_key);
+                let pk = BLSPrivateKey::from_bytes(&fixed_len_key).map_err(anyhow::Error::msg)?;
                 self.set_signature(pk.sign(data).as_bytes())
             }
 
