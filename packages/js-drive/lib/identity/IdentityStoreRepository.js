@@ -1,6 +1,10 @@
 const Identity = require('@dashevo/dpp/lib/identity/Identity');
 
+const getBiggestPossibleIdentity = require('@dashevo/dpp/lib/identity/getBiggestPossibleIdentity');
+
 const StorageResult = require('../storage/StorageResult');
+
+const MAX_IDENTITY_SIZE = getBiggestPossibleIdentity().toBuffer().length;
 
 class IdentityStoreRepository {
   /**
@@ -19,6 +23,7 @@ class IdentityStoreRepository {
    * @param {Identity} identity
    * @param {Object} [options]
    * @param {boolean} [options.useTransaction=false]
+   * @param {boolean} [options.dryRun=false]
    * @return {Promise<StorageResult<void>>}
    */
   async store(identity, options = {}) {
@@ -43,13 +48,17 @@ class IdentityStoreRepository {
    * @param {Identifier} id
    * @param {Object} [options]
    * @param {boolean} [options.useTransaction=false]
+   * @param {boolean} [options.dryRun=false]
    * @return {Promise<StorageResult<null|Identity>>}
    */
   async fetch(id, options = { }) {
     const encodedIdentityResult = await this.storage.get(
       IdentityStoreRepository.TREE_PATH,
       id.toBuffer(),
-      options,
+      {
+        ...options,
+        predictedValueSize: MAX_IDENTITY_SIZE,
+      },
     );
 
     if (encodedIdentityResult.isNull()) {
@@ -71,7 +80,8 @@ class IdentityStoreRepository {
   /**
    * @param {Object} [options]
    * @param {boolean} [options.useTransaction=false]
-   * @param {boolean} [options.skipIfExists]
+   * @param {boolean} [options.skipIfExists=false]
+   * @param {boolean} [options.dryRun=false]
    *
    * @return {Promise<StorageResult<void>>}
    */

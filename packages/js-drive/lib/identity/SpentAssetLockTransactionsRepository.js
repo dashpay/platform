@@ -14,6 +14,7 @@ class SpentAssetLockTransactionsRepository {
    * @param {Buffer} outPointBuffer
    * @param {Object} [options]
    * @param {boolean} [options.useTransaction=false]
+   * @param {boolean} [options.dryRun=false]
    *
    * @return {Promise<StorageResult<void>>}
    */
@@ -39,6 +40,7 @@ class SpentAssetLockTransactionsRepository {
    * @param {Buffer} outPointBuffer
    * @param {Object} [options]
    * @param {boolean} [options.useTransaction=false]
+   * @param {boolean} [options.dryTun=false]
    *
    * @return {Promise<StorageResult<null|Buffer>>}
    */
@@ -58,7 +60,8 @@ class SpentAssetLockTransactionsRepository {
   /**
    * @param {Object} [options]
    * @param {boolean} [options.useTransaction=false]
-   * @param {boolean} [options.skipIfExists]
+   * @param {boolean} [options.skipIfExists=false]
+   * @param {boolean} [options.dryRun=false]
    *
    * @return {Promise<StorageResult<void>>}
    */

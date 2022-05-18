@@ -2,6 +2,8 @@ const cbor = require('cbor');
 
 const Identifier = require('@dashevo/dpp/lib/Identifier');
 
+const ReadOperation = require('@dashevo/dpp/lib/stateTransition/fee/operations/ReadOperation');
+
 const StorageResult = require('../storage/StorageResult');
 
 class PublicKeyToIdentityIdStoreRepository {
@@ -20,6 +22,7 @@ class PublicKeyToIdentityIdStoreRepository {
    * @param {Identifier} identityId
    * @param {Object} [options]
    * @param {boolean} [options.useTransaction=false]
+   * @param {boolean} [options.dryRun=false]
    *
    * @return {Promise<StorageResult<void>>}
    */
@@ -57,6 +60,7 @@ class PublicKeyToIdentityIdStoreRepository {
    * @param {Buffer} publicKeyHash
    * @param {Object} [options]
    * @param {boolean} [options.useTransaction=false]
+   * @param {boolean} [options.dryRun=false]
    *
    * @return {Promise<StorageResult<Buffer|null>>}
    */
@@ -67,9 +71,13 @@ class PublicKeyToIdentityIdStoreRepository {
       options,
     );
 
+    // There is no way to predict, how many identities could have the same
+    // keys so as the simple solution we won't count value size for this
+    // operation at all
+
     return new StorageResult(
       result.getValue(),
-      result.getOperations(),
+      [new ReadOperation(0)],
     );
   }
 
@@ -79,6 +87,7 @@ class PublicKeyToIdentityIdStoreRepository {
    * @param {Buffer} publicKeyHash
    * @param {Object} [options]
    * @param {boolean} [options.useTransaction=false]
+   * @param {boolean} [options.dryRun=false]
    *
    * @return {Promise<StorageResult<Identifier[]>>}
    */
@@ -105,7 +114,8 @@ class PublicKeyToIdentityIdStoreRepository {
   /**
    * @param {Object} [options]
    * @param {boolean} [options.useTransaction=false]
-   * @param {boolean} [options.skipIfExists]
+   * @param {boolean} [options.skipIfExists=false]
+   * @param {boolean} [options.dryRun=false]
    *
    * @return {Promise<StorageResult<void>>}
    */

@@ -90,6 +90,7 @@ async function createMasternodeRewardSharesDataTrigger(
     },
     context.getStateTransitionExecutionContext(),
   );
+  // TODO: Not gonna work in case of more than 100 docs
 
   if (isDryRun) {
     return result;

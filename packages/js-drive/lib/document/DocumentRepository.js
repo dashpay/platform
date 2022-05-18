@@ -33,6 +33,7 @@ class DocumentRepository {
    * @param {Document} document
    * @param {Object} [options]
    * @param {boolean} [options.useTransaction=false]
+   * @param {boolean} [options.dryRun=false]
    *
    * @return {Promise<StorageResult<void>>}
    */
@@ -88,6 +89,8 @@ class DocumentRepository {
    * @param {Document} document
    * @param {Object} [options]
    * @param {boolean} [options.useTransaction=false]
+   * @param {boolean} [options.dryRun=false]
+   *
    * @return {Promise<StorageResult<boolean>>}
    */
   async isExist(document, options = { }) {
@@ -124,6 +127,7 @@ class DocumentRepository {
    * @param {Buffer} [options.startAfter]
    * @param {Array} [options.orderBy]
    * @param {boolean} [options.useTransaction=false]
+   * @param {boolean} [options.dryRun=false]
    *
    * @throws InvalidQueryError
    *

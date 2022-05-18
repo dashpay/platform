@@ -13,12 +13,11 @@ const getDocumentTransitionsFixture = require(
   '../../../../../lib/test/fixtures/getDocumentTransitionsFixture',
 );
 
-const DocumentNotProvidedError = require('../../../../../lib/document/errors/DocumentNotProvidedError');
-
 const createStateRepositoryMock = require('../../../../../lib/test/mocks/createStateRepositoryMock');
 
 const protocolVersion = require('../../../../../lib/version/protocolVersion');
 const StateTransitionExecutionContext = require('../../../../../lib/stateTransition/StateTransitionExecutionContext');
+const DocumentNotProvidedError = require('../../../../../lib/document/errors/DocumentNotProvidedError');
 
 describe('applyDocumentsBatchTransitionFactory', () => {
   let documents;

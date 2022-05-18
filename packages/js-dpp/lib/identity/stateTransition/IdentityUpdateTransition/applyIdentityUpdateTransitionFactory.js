@@ -4,6 +4,7 @@
  * @returns {applyIdentityUpdateTransition}
  */
 const IdentityPublicKey = require('../../IdentityPublicKey');
+const getBiggestPossibleIdentity = require('../../getBiggestPossibleIdentity');
 
 function applyIdentityUpdateTransitionFactory(
   stateRepository,
@@ -19,11 +20,15 @@ function applyIdentityUpdateTransitionFactory(
     const identityId = stateTransition.getIdentityId();
     const executionContext = stateTransition.getExecutionContext();
 
-    const identity = await stateRepository.fetchIdentity(identityId, executionContext);
+    let identity = await stateRepository.fetchIdentity(identityId, executionContext);
+
+    if (executionContext.isDryRun()) {
+      identity = getBiggestPossibleIdentity();
+    }
 
     identity.setRevision(stateTransition.getRevision());
 
-    if (stateTransition.getPublicKeyIdsToDisable()) {
+    if (!executionContext.isDryRun() && stateTransition.getPublicKeyIdsToDisable()) {
       const identityPublicKeys = identity.getPublicKeys();
 
       stateTransition.getPublicKeyIdsToDisable()
@@ -43,11 +48,14 @@ function applyIdentityUpdateTransitionFactory(
           return new IdentityPublicKey(rawPublicKey);
         });
 
-      const identityPublicKeys = identity
-        .getPublicKeys()
-        .concat(publicKeysToAdd);
+      if (!executionContext.isDryRun()) {
+        // Add public keys to identity
+        const identityPublicKeys = identity
+          .getPublicKeys()
+          .concat(publicKeysToAdd);
 
-      identity.setPublicKeys(identityPublicKeys);
+        identity.setPublicKeys(identityPublicKeys);
+      }
 
       const publicKeyHashes = stateTransition
         .getPublicKeysToAdd()

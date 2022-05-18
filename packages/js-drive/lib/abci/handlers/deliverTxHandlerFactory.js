@@ -100,6 +100,14 @@ function deliverTxHandlerFactory(
       throw e;
     }
 
+    // Keep only actual operations
+    const stateTransitionExecutionContext = stateTransition.getExecutionContext();
+
+    const predictedStateTransitionFee = stateTransition.calculateFee();
+    const predictedStateTransitionOperations = stateTransitionExecutionContext.getOperations();
+
+    stateTransitionExecutionContext.clearDryOperations();
+
     executionTimer.startTimer(TIMERS.DELIVER_TX.VALIDATE_STATE);
 
     const result = await transactionalDpp.stateTransition.validateState(stateTransition);
@@ -131,11 +139,13 @@ function deliverTxHandlerFactory(
 
     // Reduce an identity balance and accumulate fees for all STs in the block
     // in order to store them in credits distribution pool
-    const stateTransitionFee = stateTransition.calculateFee();
+    const actualStateTransitionFee = stateTransition.calculateFee();
 
     const identity = await transactionalDpp.getStateRepository().fetchIdentity(
       stateTransition.getOwnerId(),
     );
+
+    // TODO: We need to handle situation when predicted fee is lower then actual fee
 
     // TODO: Temporary disabled until we calculate fee for validate state and apply functions
     // const updatedBalance = identity.reduceBalance(stateTransitionFee);
@@ -146,7 +156,7 @@ function deliverTxHandlerFactory(
 
     await transactionalDpp.getStateRepository().storeIdentity(identity);
 
-    blockExecutionContext.incrementCumulativeFees(stateTransitionFee);
+    blockExecutionContext.incrementCumulativeFees(actualStateTransitionFee);
 
     // Logging
     switch (stateTransition.getType()) {
@@ -223,12 +233,17 @@ function deliverTxHandlerFactory(
 
     const deliverTxTiming = executionTimer.stopTimer(TIMERS.DELIVER_TX.OVERALL);
 
-    const stateTransitionOperations = stateTransition.getExecutionContext().getOperations();
+    const actualStateTransitionOperations = stateTransition.getExecutionContext().getOperations();
 
     const {
-      storageCost,
-      processingCost,
-    } = calculateOperationCosts(stateTransitionOperations);
+      storageCost: actualStorageCost,
+      processingCost: actualProcessingCost,
+    } = calculateOperationCosts(actualStateTransitionOperations);
+
+    const {
+      storageCost: predictedStorageCost,
+      processingCost: predictedProcessingCost,
+    } = calculateOperationCosts(predictedStateTransitionOperations);
 
     consensusLogger.trace(
       {
@@ -241,14 +256,22 @@ function deliverTxHandlerFactory(
           apply: executionTimer.getTimer(TIMERS.DELIVER_TX.APPLY, true),
         },
         fees: {
-          storage: storageCost,
-          processing: processingCost,
-          final: stateTransitionFee,
-          operations: stateTransitionOperations.map((operation) => operation.toJSON()),
+          predicted: {
+            storage: predictedStorageCost,
+            processing: predictedProcessingCost,
+            final: predictedStateTransitionFee,
+            operations: predictedStateTransitionOperations.map((operation) => operation.toJSON()),
+          },
+          actual: {
+            storage: actualStorageCost,
+            processing: actualProcessingCost,
+            final: actualStateTransitionFee,
+            operations: actualStateTransitionOperations.map((operation) => operation.toJSON()),
+          },
         },
         txType: stateTransition.getType(),
       },
-      `${stateTransition.constructor.name} execution took ${deliverTxTiming} seconds and cost ${stateTransitionFee} credits`,
+      `${stateTransition.constructor.name} execution took ${deliverTxTiming} seconds and cost ${actualStateTransitionFee} credits`,
     );
 
     return new ResponseDeliverTx();

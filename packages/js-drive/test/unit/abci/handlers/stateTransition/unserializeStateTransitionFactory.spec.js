@@ -18,9 +18,11 @@ describe('unserializeStateTransitionFactory', () => {
   let stateTransitionFixture;
   let dppMock;
   let noopLoggerMock;
+  let stateTransition;
 
   beforeEach(function beforeEach() {
-    stateTransitionFixture = getIdentityCreateTransitionFixture().toBuffer();
+    stateTransition = getIdentityCreateTransitionFixture();
+    stateTransitionFixture = stateTransition.toBuffer();
 
     dppMock = {
       dispose: this.sinon.stub(),
@@ -28,6 +30,8 @@ describe('unserializeStateTransitionFactory', () => {
         createFromBuffer: this.sinon.stub(),
         validateFee: this.sinon.stub(),
         validateSignature: this.sinon.stub(),
+        validateState: this.sinon.stub(),
+        apply: this.sinon.stub(),
       },
     };
 
@@ -102,6 +106,8 @@ describe('unserializeStateTransitionFactory', () => {
       new ValidatorResult([error]),
     );
 
+    dppMock.stateTransition.createFromBuffer.resolves(stateTransition);
+
     try {
       await unserializeStateTransition(stateTransitionFixture);
 
@@ -143,8 +149,6 @@ describe('unserializeStateTransitionFactory', () => {
   });
 
   it('should return stateTransition', async () => {
-    const stateTransition = getIdentityCreateTransitionFixture();
-
     dppMock.stateTransition.createFromBuffer.resolves(stateTransition);
 
     dppMock.stateTransition.validateFee.resolves(new ValidatorResult());
@@ -162,6 +166,8 @@ describe('unserializeStateTransitionFactory', () => {
     const balance = 1000;
     const fee = 1000;
     const error = new BalanceNotEnoughError(balance, fee);
+
+    dppMock.stateTransition.createFromBuffer.resolves(stateTransition);
 
     dppMock.stateTransition.validateFee.resolves(
       new ValidatorResult([error]),

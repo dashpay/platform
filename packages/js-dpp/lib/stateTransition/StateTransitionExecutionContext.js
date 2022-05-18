@@ -3,7 +3,11 @@ class StateTransitionExecutionContext {
     /**
      * @type {AbstractOperation[]}
      */
-    this.operations = [];
+    this.actualOperations = [];
+    /**
+     * @type {AbstractOperation[]}
+     */
+    this.dryOperations = [];
     this.dryRun = false;
   }
 
@@ -13,16 +17,11 @@ class StateTransitionExecutionContext {
    * @param {AbstractOperation} operation
    */
   addOperation(...operation) {
-    this.operations.push(...operation);
-  }
-
-  /**
-   * Set operations into context
-   *
-   * @param {AbstractOperation[]} operations
-   */
-  setOperations(operations) {
-    this.operations = operations;
+    if (this.isDryRun()) {
+      this.dryOperations.push(...operation);
+    } else {
+      this.actualOperations.push(...operation);
+    }
   }
 
   /**
@@ -31,7 +30,16 @@ class StateTransitionExecutionContext {
    * @return {AbstractOperation[]}
    */
   getOperations() {
-    return this.operations;
+    return this.actualOperations.concat(this.dryOperations);
+  }
+
+  /**
+   * Clear dry operations
+   *
+   * @return {AbstractOperation[]}
+   */
+  clearDryOperations() {
+    this.dryOperations = [];
   }
 
   /**
@@ -52,6 +60,9 @@ class StateTransitionExecutionContext {
     this.dryRun = false;
   }
 
+  /**
+   * @return {boolean}
+   */
   isDryRun() {
     return this.dryRun;
   }

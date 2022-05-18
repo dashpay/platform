@@ -23,6 +23,7 @@ class DataContractStoreRepository {
    * @param {DataContract} dataContract
    * @param {Object} [options]
    * @param {boolean} [options.useTransaction=false]
+   * @param {boolean} [options.dryRun=false]
    *
    * @return {Promise<StorageResult<void>>}
    */
@@ -32,6 +33,7 @@ class DataContractStoreRepository {
         dataContract,
         new Date('2022-03-17T15:08:26.132Z'),
         Boolean(options.useTransaction),
+        Boolean(options.dryRun),
       );
 
       return new StorageResult(
@@ -64,6 +66,7 @@ class DataContractStoreRepository {
    * @param {Identifier} id
    * @param {Object} [options]
    * @param {boolean} [options.useTransaction=false]
+   * @param {boolean} [options.dryRun=false]
    *
    * @return {Promise<StorageResult<null|DataContract>>}
    */
@@ -71,7 +74,10 @@ class DataContractStoreRepository {
     const result = await this.storage.get(
       DataContractStoreRepository.TREE_PATH.concat([id.toBuffer()]),
       DataContractStoreRepository.DATA_CONTRACT_KEY,
-      options,
+      {
+        ...options,
+        predictedValueSize: 16 * 1024, // Max size of State Transition
+      },
     );
 
     if (result.isNull()) {
@@ -94,6 +100,7 @@ class DataContractStoreRepository {
    * @param {Object} [options]
    * @param {boolean} [options.useTransaction=false]
    * @param {boolean} [options.skipIfExists]
+   * @param {boolean} [options.dryRun=false]
    *
    * @return {Promise<StorageResult<void>>}
    */

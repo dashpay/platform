@@ -92,7 +92,7 @@ describe('e2e', () => {
         // Create Bob wallet
         bobClient = await createClientWithFundedWallet();
 
-        bobIdentity = await bobClient.platform.identities.register(100);
+        bobIdentity = await bobClient.platform.identities.register(10000);
 
         // Additional wait time to mitigate testnet latency
         if (process.env.NETWORK === 'testnet') {
