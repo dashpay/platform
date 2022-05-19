@@ -44,6 +44,8 @@ impl StateTransitionLike for ExampleStateTransition {
     }
 }
 
+/// To implement the StateTransitionConvert is enough to implement the _property_paths methods
+/// The rest of the methods will be automatically implemented as in the blanked implementation
 impl StateTransitionConvert for ExampleStateTransition {
     fn signature_property_paths() -> Vec<&'static str> {
         vec![]
