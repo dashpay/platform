@@ -9,7 +9,7 @@ mod calculate_state_transition_fee;
 
 mod example;
 use crate::mocks;
-/// Methods dispatcher for Static Transition
+
 macro_rules! call_method {
     ($state_transition:expr, $method:ident, $args:tt ) => {
         match $state_transition {
@@ -71,18 +71,6 @@ impl StateTransition {
 }
 
 impl StateTransitionConvert for StateTransition {
-    fn signature_property_paths() -> Vec<&'static str> {
-        panic!("Static call is not supported")
-    }
-
-    fn identifiers_property_paths() -> Vec<&'static str> {
-        panic!("Static call is not supported")
-    }
-
-    fn binary_property_paths() -> Vec<&'static str> {
-        panic!("Static call is not supported")
-    }
-
     fn hash(&self, skip_signature: bool) -> Result<Vec<u8>, crate::ProtocolError> {
         call_method!(self, hash, skip_signature)
     }
@@ -97,6 +85,18 @@ impl StateTransitionConvert for StateTransition {
 
     fn to_object(&self, skip_signature: bool) -> Result<serde_json::Value, crate::ProtocolError> {
         call_method!(self, to_object, skip_signature)
+    }
+
+    fn signature_property_paths() -> Vec<&'static str> {
+        panic!("Static call is not supported")
+    }
+
+    fn identifiers_property_paths() -> Vec<&'static str> {
+        panic!("Static call is not supported")
+    }
+
+    fn binary_property_paths() -> Vec<&'static str> {
+        panic!("Static call is not supported")
     }
 }
 
