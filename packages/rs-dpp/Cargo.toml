@@ -19,7 +19,6 @@ ciborium = { version="0.2"}
 byteorder = { version="1.4"}
 sha2  = { version="0.10"}
 jsonschema = { git="https://github.com/antouhou/jsonschema-rs", branch="feat-custom-keywords", default-features=false }
-chrono = { version="0.4", features=["wasmbind", "serde"]}
 env_logger = { version="0.9"}
 log = { version="0.4"}
 getrandom= { version="0.2", features=["js"]}
