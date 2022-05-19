@@ -1,4 +1,5 @@
 mod state_transition_types;
+use serde::{Deserialize, Serialize};
 pub use state_transition_types::*;
 
 mod abstract_state_transition;
@@ -30,7 +31,23 @@ macro_rules! call_method {
     };
 }
 
-#[derive(Debug, Clone)]
+macro_rules! call_static_method {
+    ($state_transition:expr, $method:ident ) => {
+        match $state_transition {
+            StateTransition::DataContractCreate(_) => {
+                mocks::DataContractCreateTransition::$method()
+            }
+            StateTransition::DataContractUpdate(_) => {
+                mocks::DataContractUpdateTransition::$method()
+            }
+            StateTransition::DocumentsBatch(_) => mocks::DocumentsBatchTransition::$method(),
+            StateTransition::IdentityCreate(_) => mocks::IdentityCreateTransition::$method(),
+            StateTransition::IdentityTopUp(_) => mocks::IdentityTopUpTransition::$method(),
+        }
+    };
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum StateTransition {
     DataContractCreate(mocks::DataContractCreateTransition),
     DataContractUpdate(mocks::DataContractUpdateTransition),
@@ -39,10 +56,37 @@ pub enum StateTransition {
     IdentityTopUp(mocks::IdentityTopUpTransition),
 }
 
+impl StateTransition {
+    fn signature_property_paths(&self) -> Vec<&'static str> {
+        call_static_method!(self, signature_property_paths)
+    }
+
+    fn identifiers_property_paths(&self) -> Vec<&'static str> {
+        call_static_method!(self, identifiers_property_paths)
+    }
+
+    fn binary_property_paths(&self) -> Vec<&'static str> {
+        call_static_method!(self, binary_property_paths)
+    }
+}
+
 impl StateTransitionConvert for StateTransition {
+    fn signature_property_paths() -> Vec<&'static str> {
+        panic!("Static call is not supported")
+    }
+
+    fn identifiers_property_paths() -> Vec<&'static str> {
+        panic!("Static call is not supported")
+    }
+
+    fn binary_property_paths() -> Vec<&'static str> {
+        panic!("Static call is not supported")
+    }
+
     fn hash(&self, skip_signature: bool) -> Result<Vec<u8>, crate::ProtocolError> {
         call_method!(self, hash, skip_signature)
     }
+
     fn to_buffer(&self, _skip_signature: bool) -> Result<Vec<u8>, crate::ProtocolError> {
         call_method!(self, to_buffer, true)
     }
