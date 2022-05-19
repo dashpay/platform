@@ -107,7 +107,6 @@ mod test {
 
     use super::*;
     use anyhow::Result;
-    use chrono::Utc;
     use serde_json::Value;
 
     fn init() {
@@ -196,8 +195,8 @@ mod test {
             id: Identifier::from_bytes(&generate_random_identifier()).unwrap(),
             owner_id: Identifier::from_bytes(&generate_random_identifier()).unwrap(),
             data_contract_id: Identifier::from_bytes(&generate_random_identifier()).unwrap(),
-            created_at: Some(Utc::now().timestamp_millis()),
-            updated_at: Some(Utc::now().timestamp_millis()),
+            created_at: Some(1648013404492),
+            updated_at: Some(1648013404492),
             ..Default::default()
         }
     }
