@@ -1,6 +1,7 @@
 use crate::consensus::ConsensusError;
 use crate::data_contract::errors::*;
 use crate::document::errors::*;
+use crate::identity::{IdentityPublicKey, Purpose, SecurityLevel};
 use crate::state_transition::StateTransition;
 use thiserror::Error;
 
@@ -52,6 +53,23 @@ pub enum ProtocolError {
     InvalidIdentityPublicKeyTypeError { public_key_type: u32 },
     #[error("State Transition is not signed")]
     StateTransitionIsNotIsSignedError { state_transition: StateTransition },
+    #[error(
+        "State transition is signed with a key with security level '{public_key_security_level}', but expected at leas '{required_security_level}'"
+    )]
+    PublicKeySecurityLevelNotMetError {
+        public_key_security_level: SecurityLevel,
+        required_security_level: SecurityLevel,
+    },
+    #[error("State transition must be signed with a key that has purpose '{key_purpose_requirement}' but got '{public_key_purpose}'")]
+    WrongPublicKeyPurposeError {
+        public_key_purpose: Purpose,
+        key_purpose_requirement: Purpose,
+    },
+    #[error("Public key mismatched")]
+    PublicKeyMismatchError { public_key: IdentityPublicKey },
+
+    #[error("Invalid signature public key")]
+    InvalidSignaturePublicKeyError { public_key: Vec<u8> },
 }
 
 impl From<&str> for ProtocolError {

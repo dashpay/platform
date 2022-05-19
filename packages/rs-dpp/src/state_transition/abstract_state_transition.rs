@@ -113,7 +113,7 @@ pub trait StateTransitionLike:
     }
 
     /// Verifies a BLS signature with the public key
-    fn verify_bls_signature_by_public_key(&self, public_key: &[u8]) -> Result<bool, ProtocolError> {
+    fn verify_bls_signature_by_public_key(&self, public_key: &[u8]) -> Result<(), ProtocolError> {
         if self.get_signature().is_empty() {
             return Err(ProtocolError::StateTransitionIsNotIsSignedError {
                 state_transition: self.clone().into(),
@@ -124,8 +124,11 @@ pub trait StateTransitionLike:
         let pk = BLSPublicKey::from_bytes(public_key).map_err(anyhow::Error::msg)?;
         let signature = bls_signatures::Signature::from_bytes(self.get_signature())
             .map_err(anyhow::Error::msg)?;
-
-        Ok(verify_messages(&signature, &[&data], &[pk]))
+        match verify_messages(&signature, &[&data], &[pk]) {
+            true => Ok(()),
+            // TODO change to specific error type
+            false => Err(anyhow!("Verification failed").into()),
+        }
     }
 
     /// returns true if state transition is a document state transition
