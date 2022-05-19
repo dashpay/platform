@@ -82,10 +82,20 @@ impl SMLStore {
 
 // State Transitions mocks:
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DataContractCreateTransition {}
 
-impl StateTransitionConvert for DataContractCreateTransition {}
+impl StateTransitionConvert for DataContractCreateTransition {
+    fn signature_property_paths() -> Vec<&'static str> {
+        unimplemented!()
+    }
+    fn identifiers_property_paths() -> Vec<&'static str> {
+        unimplemented!()
+    }
+    fn binary_property_paths() -> Vec<&'static str> {
+        unimplemented!()
+    }
+}
 impl StateTransitionLike for DataContractCreateTransition {
     fn get_protocol_version(&self) -> u32 {
         unimplemented!()
@@ -107,9 +117,19 @@ impl StateTransitionLike for DataContractCreateTransition {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DataContractUpdateTransition {}
-impl StateTransitionConvert for DataContractUpdateTransition {}
+impl StateTransitionConvert for DataContractUpdateTransition {
+    fn signature_property_paths() -> Vec<&'static str> {
+        unimplemented!()
+    }
+    fn identifiers_property_paths() -> Vec<&'static str> {
+        unimplemented!()
+    }
+    fn binary_property_paths() -> Vec<&'static str> {
+        unimplemented!()
+    }
+}
 impl StateTransitionLike for DataContractUpdateTransition {
     fn get_protocol_version(&self) -> u32 {
         unimplemented!()
@@ -131,9 +151,19 @@ impl StateTransitionLike for DataContractUpdateTransition {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct IdentityCreateTransition {}
-impl StateTransitionConvert for IdentityCreateTransition {}
+impl StateTransitionConvert for IdentityCreateTransition {
+    fn signature_property_paths() -> Vec<&'static str> {
+        unimplemented!()
+    }
+    fn identifiers_property_paths() -> Vec<&'static str> {
+        unimplemented!()
+    }
+    fn binary_property_paths() -> Vec<&'static str> {
+        unimplemented!()
+    }
+}
 impl StateTransitionLike for IdentityCreateTransition {
     fn get_protocol_version(&self) -> u32 {
         unimplemented!()
@@ -155,9 +185,19 @@ impl StateTransitionLike for IdentityCreateTransition {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct IdentityTopUpTransition {}
-impl StateTransitionConvert for IdentityTopUpTransition {}
+impl StateTransitionConvert for IdentityTopUpTransition {
+    fn signature_property_paths() -> Vec<&'static str> {
+        unimplemented!()
+    }
+    fn identifiers_property_paths() -> Vec<&'static str> {
+        unimplemented!()
+    }
+    fn binary_property_paths() -> Vec<&'static str> {
+        unimplemented!()
+    }
+}
 
 impl StateTransitionLike for IdentityTopUpTransition {
     fn get_protocol_version(&self) -> u32 {
@@ -180,9 +220,19 @@ impl StateTransitionLike for IdentityTopUpTransition {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DocumentsBatchTransition {}
-impl StateTransitionConvert for DocumentsBatchTransition {}
+impl StateTransitionConvert for DocumentsBatchTransition {
+    fn signature_property_paths() -> Vec<&'static str> {
+        unimplemented!()
+    }
+    fn identifiers_property_paths() -> Vec<&'static str> {
+        unimplemented!()
+    }
+    fn binary_property_paths() -> Vec<&'static str> {
+        unimplemented!()
+    }
+}
 impl StateTransitionLike for DocumentsBatchTransition {
     fn get_protocol_version(&self) -> u32 {
         unimplemented!()

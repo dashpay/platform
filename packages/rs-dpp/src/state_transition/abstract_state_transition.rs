@@ -1,8 +1,17 @@
 use anyhow::anyhow;
 use dashcore::signer;
+use serde::Serialize;
 use std::fmt::Debug;
 
-use crate::{identity::KeyType, prelude::ProtocolError};
+use crate::{
+    identity::KeyType,
+    prelude::ProtocolError,
+    util::{
+        hash,
+        json_value::{JsonValueExt, ReplaceWith},
+        serializer,
+    },
+};
 use serde_json::Value as JsonValue;
 use std::convert::TryInto;
 
@@ -11,6 +20,8 @@ use bls_signatures::{
     verify_messages, PrivateKey as BLSPrivateKey, PublicKey as BLSPublicKey,
     Serialize as BLSSerialize,
 };
+
+const PROPERTY_PROTOCOL_VERSION: &str = "protocolVersion";
 
 pub const DOCUMENT_TRANSITION_TYPES: [StateTransitionType; 1] =
     [StateTransitionType::DocumentsBatch];
@@ -133,24 +144,45 @@ pub trait StateTransitionLike:
 
 // TODO remove 'unimplemented' when get rid of state transition mocks
 /// The trait contains methods related to conversion of StateTransition into different formats
-pub trait StateTransitionConvert {
-    /// Object is an [`serde_json::Value`] instance that preserves the `Vec<u8>` representation
+pub trait StateTransitionConvert: Serialize {
+    fn signature_property_paths() -> Vec<&'static str>;
+    fn identifiers_property_paths() -> Vec<&'static str>;
+    fn binary_property_paths() -> Vec<&'static str>;
+
+    /// Returns the [`serde_json::Value`] instance that preserves the `Vec<u8>` representation
     /// for Identifiers and binary data
-    fn to_object(&self, _skip_signature: bool) -> Result<JsonValue, ProtocolError> {
-        unimplemented!()
+    fn to_object(&self, skip_signature: bool) -> Result<JsonValue, ProtocolError> {
+        let mut json_value: JsonValue = serde_json::to_value(self)?;
+        if skip_signature {
+            if let JsonValue::Object(ref mut o) = json_value {
+                for path in Self::signature_property_paths() {
+                    o.remove(path);
+                }
+            }
+        }
+        Ok(json_value)
     }
-    /// Object is an [`serde_json::Value`] instance that replaces the binary data with
-    ///  - base58 string for Identifiers
-    ///  - base64 string for other binary data
+    /// Returns the [`serde_json::Value`] instance that encodes:
+    ///  - Identifiers  - with base58
+    ///  - Binary data  - with base64
     fn to_json(&self) -> Result<JsonValue, ProtocolError> {
-        unimplemented!()
+        let mut json_value: JsonValue = serde_json::to_value(self)?;
+        json_value.replace_binary_paths(Self::binary_property_paths(), ReplaceWith::Base64)?;
+        json_value
+            .replace_identifier_paths(Self::identifiers_property_paths(), ReplaceWith::Base58)?;
+
+        Ok(json_value)
     }
-    // returns the byte-array representation. It is prefixed by 4 bytes of ProtocolVersion and encoded by CBOR
-    fn to_buffer(&self, _skip_signature: bool) -> Result<Vec<u8>, ProtocolError> {
-        unimplemented!()
+
+    // Returns the cibor-encoded bytes representation of the object. The data is  prefixed by 4 bytes containing the Protocol Version
+    fn to_buffer(&self, skip_signature: bool) -> Result<Vec<u8>, ProtocolError> {
+        let mut json_value = self.to_object(skip_signature)?;
+        let protocol_version = json_value.remove_u32(PROPERTY_PROTOCOL_VERSION)?;
+        serializer::value_to_cbor(json_value, Some(protocol_version))
     }
-    // hash function is applied to byte-array representation of structure
-    fn hash(&self, _skip_signature: bool) -> Result<Vec<u8>, ProtocolError> {
-        unimplemented!()
+
+    // Returns the hash of cibor-encoded bytes representation of the object
+    fn hash(&self, skip_signature: bool) -> Result<Vec<u8>, ProtocolError> {
+        Ok(hash::hash(self.to_buffer(skip_signature)?))
     }
 }

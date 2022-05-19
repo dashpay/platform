@@ -1,9 +1,6 @@
 use super::{StateTransition, StateTransitionConvert, StateTransitionLike, StateTransitionType};
-use crate::util::json_value::JsonValueExt;
-use crate::util::{hash, serializer};
-use crate::{prelude::ProtocolError, util::json_value::ReplaceWith};
+use crate::prelude::ProtocolError;
 use serde::{Deserialize, Serialize};
-use serde_json::Value as JsonValue;
 
 const PROPERTY_SIGNATURE: &str = "signature";
 const PROPERTY_PROTOCOL_VERSION: &str = "protocolVersion";
@@ -48,30 +45,13 @@ impl StateTransitionLike for ExampleStateTransition {
 }
 
 impl StateTransitionConvert for ExampleStateTransition {
-    fn to_object(&self, skip_signature: bool) -> Result<JsonValue, ProtocolError> {
-        let mut json_value: JsonValue = serde_json::to_value(self)?;
-        if skip_signature {
-            if let JsonValue::Object(ref mut o) = json_value {
-                o.remove(PROPERTY_SIGNATURE);
-            }
-        }
-        Ok(json_value)
+    fn signature_property_paths() -> Vec<&'static str> {
+        vec![]
     }
-
-    fn to_json(&self) -> Result<JsonValue, ProtocolError> {
-        let mut json_value: JsonValue = serde_json::to_value(self)?;
-        json_value.replace_binary_paths([PROPERTY_SIGNATURE], ReplaceWith::Base64)?;
-        Ok(json_value)
+    fn identifiers_property_paths() -> Vec<&'static str> {
+        vec![]
     }
-
-    fn to_buffer(&self, skip_signature: bool) -> Result<Vec<u8>, ProtocolError> {
-        let mut json_value = self.to_object(skip_signature)?;
-        let protocol_version = json_value.remove_u32(PROPERTY_PROTOCOL_VERSION)?;
-
-        serializer::value_to_cbor(json_value, Some(protocol_version))
-    }
-
-    fn hash(&self, skip_signature: bool) -> Result<Vec<u8>, ProtocolError> {
-        Ok(hash::hash(self.to_buffer(skip_signature)?))
+    fn binary_property_paths() -> Vec<&'static str> {
+        vec![]
     }
 }
