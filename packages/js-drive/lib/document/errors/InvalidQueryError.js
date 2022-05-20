@@ -1,24 +1,13 @@
 class InvalidQueryError extends Error {
   /**
-   * @param {ValidationError[]} errors
+   * @param {string} message
    */
-  constructor(errors) {
-    super('Invalid query');
+  constructor(message) {
+    super(`Invalid query: ${message}`);
 
     this.name = this.constructor.name;
 
     Error.captureStackTrace(this, this.constructor);
-
-    this.errors = errors;
-  }
-
-  /**
-   * Get validation errors
-   *
-   * @return {ValidationError[]}
-   */
-  getErrors() {
-    return this.errors;
   }
 }
 

@@ -64,7 +64,6 @@ const findConflictingConditions = require('./document/query/findConflictingCondi
 const findThreesomeOfIndexedProperties = require('./document/query/findThreesomeOfIndexedProperties');
 const sortWhereClausesAccordingToIndex = require('./document/query/sortWhereClausesAccordingToIndex');
 const findIndexedPropertiesSince = require('./document/query/findIndexedPropertiesSince');
-const validateQueryFactory = require('./document/query/validateQueryFactory');
 
 const fetchDocumentsFactory = require('./document/fetchDocumentsFactory');
 const BlockExecutionContext = require('./blockExecution/BlockExecutionContext');
@@ -541,21 +540,17 @@ function createDIContainer(options) {
 
     documentRepository: asFunction((
       groveDBStore,
-      validateQuery,
-    ) => new DocumentRepository(groveDBStore, validateQuery)).singleton(),
+    ) => new DocumentRepository(groveDBStore)).singleton(),
 
     signedDocumentRepository: asFunction((
       signedGroveDBStore,
-      validateQuery,
     ) => (new DocumentRepository(
       signedGroveDBStore,
-      validateQuery,
     ))).singleton(),
 
     findConflictingConditions: asValue(findConflictingConditions),
     findThreesomeOfIndexedProperties: asValue(findThreesomeOfIndexedProperties),
     findIndexedPropertiesSince: asValue(findIndexedPropertiesSince),
-    validateQuery: asFunction(validateQueryFactory).singleton(),
 
     fetchDocuments: asFunction(fetchDocumentsFactory).singleton(),
 

@@ -6,21 +6,21 @@ const InvalidQueryError = require('./errors/InvalidQueryError');
 const StartDocumentNotFoundError = require('./query/errors/StartDocumentNotFoundError');
 const ValidationError = require('./query/errors/ValidationError');
 const StorageResult = require('../storage/StorageResult');
+const NotIndexedPropertiesInWhereConditionsError = require('./query/errors/NotIndexedPropertiesInWhereConditionsError');
+const MultipleRangeOperatorsError = require('./query/errors/MultipleRangeOperatorsError');
+const RangePropertyDoesNotHaveOrderByError = require('./query/errors/RangePropertyDoesNotHaveOrderByError');
 
 class DocumentRepository {
   /**
    *
    * @param {GroveDBStore} groveDBStore
-   * @param {validateQuery} validateQuery
    * @param {BaseLogger} [logger]
    */
   constructor(
     groveDBStore,
-    validateQuery,
     logger = undefined,
   ) {
     this.storage = groveDBStore;
-    this.validateQuery = validateQuery;
     this.logger = logger;
   }
 
@@ -125,14 +125,6 @@ class DocumentRepository {
    * @returns {Promise<StorageResult<Document[]>>}
    */
   async find(dataContract, documentType, query = {}, useTransaction = false) {
-    const documentSchema = dataContract.getDocumentSchema(documentType);
-
-    const result = this.validateQuery(query, documentSchema);
-
-    if (!result.isValid()) {
-      throw new InvalidQueryError(result.getErrors());
-    }
-
     // Remove undefined options before we pass them to RS Drive
     Object.keys(query)
       .forEach((queryOption) => {
@@ -158,26 +150,8 @@ class DocumentRepository {
         ],
       );
     } catch (e) {
-      const invalidQueryMessagePrefix = 'query: start document not found error: ';
-
-      if (e.message.startsWith(invalidQueryMessagePrefix)) {
-        let validationError;
-
-        if (e.message === `${invalidQueryMessagePrefix}startAt document not found`) {
-          validationError = new StartDocumentNotFoundError('startAt');
-        }
-
-        if (e.message === `${invalidQueryMessagePrefix}startAfter document not found`) {
-          validationError = new StartDocumentNotFoundError('startAfter');
-        }
-
-        if (!validationError) {
-          validationError = new ValidationError(
-            e.message.substring(invalidQueryMessagePrefix.length),
-          );
-        }
-
-        throw new InvalidQueryError([validationError]);
+      if (e.message.startsWith('query:')) {
+        throw new InvalidQueryError(e.message.replace('query: ', ''));
       }
 
       throw e;
