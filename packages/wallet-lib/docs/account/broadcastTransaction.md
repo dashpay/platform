@@ -4,12 +4,12 @@
 
 Parameters: 
 
-| parameters                        | type               | required       | Description                                                                                      |  
-|-----------------------------------|--------------------|----------------| ------------------------------------------------------------------------------------------------ |
-| **transaction**                   | Transaction/String | yes            | A valid [created transaction](../account/createTransaction.md) or it's hexadecimal raw representation |
-| **options**                       | Object             | no             | |
-| **options.skipFeeValidation**     | Boolean            | no             | When set to true, and min relay fee is not met, will still try to broadcast a transaction        |
-
+| parameters                            | type               | required | Description                                                                                           |
+|---------------------------------------|--------------------|----------|-------------------------------------------------------------------------------------------------------|
+| **transaction**                       | Transaction/String | yes      | A valid [created transaction](../account/createTransaction.md) or it's hexadecimal raw representation |
+| **options**                           | Object             | no       |                                                                                                       |
+| **options.skipFeeValidation**         | Boolean            | no       | When set to true, and min relay fee is not met, will still try to broadcast a transaction             |
+| **options.mempoolPropagationTimeout** | Number             | no       | The amount of milliseconds to wait for transaction mempool propagation                                |
 Returns : transactionId (string).
 
 N.B : The TransactionID provided is subject to [transaction malleability](https://dashcore.readme.io/docs/core-guide-transactions-transaction-malleability), and is not a source of truth (the transaction might be included in a block with a different txid).

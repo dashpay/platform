@@ -3,8 +3,10 @@ const path = require('path');
 const dotenvSafe = require('dotenv-safe');
 const sinon = require('sinon');
 const sinonChai = require('sinon-chai');
+const chaiAsPromised = require('chai-as-promised');
 
 use(sinonChai);
+use(chaiAsPromised);
 
 dotenvSafe.config({
   path: path.resolve(__dirname, '..', '..', '.env'),
