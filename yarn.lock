@@ -1459,6 +1459,13 @@ __metadata:
   languageName: node
   linkType: hard
 
+"@dashevo/dashpay-contract@npm:~0.22.8":
+  version: 0.22.8
+  resolution: "@dashevo/dashpay-contract@npm:0.22.8"
+  checksum: e85105a17ef65414683d7418ea1501f604db73051f54d6c58e88205b5ef341966268eac72a0c626d6ad6bc1fdf064607de007023aa51ce114d6d49a0350a7bef
+  languageName: node
+  linkType: hard
+
 "@dashevo/dashpay-contract@workspace:packages/dashpay-contract, @dashevo/dashpay-contract@workspace:~":
   version: 0.0.0-use.local
   resolution: "@dashevo/dashpay-contract@workspace:packages/dashpay-contract"
@@ -1488,6 +1495,13 @@ __metadata:
   languageName: node
   linkType: hard
 
+"@dashevo/dpns-contract@npm:~0.22.8":
+  version: 0.22.8
+  resolution: "@dashevo/dpns-contract@npm:0.22.8"
+  checksum: 0546b2dcf73370d3f75cfd4ec9f3d6f126adc1534466f093b220218e97be22affb762a95f276faadcf54d7ff9f5dea5cbd5265dad7842991156f069ad982cf2b
+  languageName: node
+  linkType: hard
+
 "@dashevo/dpns-contract@workspace:packages/dpns-contract, @dashevo/dpns-contract@workspace:~":
   version: 0.0.0-use.local
   resolution: "@dashevo/dpns-contract@workspace:packages/dpns-contract"
@@ -1504,7 +1518,36 @@ __metadata:
   languageName: unknown
   linkType: soft
 
-"@dashevo/dpp@workspace:packages/js-dpp, @dashevo/dpp@workspace:~, @dashevo/dpp@~0.22.0-dev.7":
+"@dashevo/dpp@npm:~0.22.0-dev.7":
+  version: 0.22.8
+  resolution: "@dashevo/dpp@npm:0.22.8"
+  dependencies:
+    "@apidevtools/json-schema-ref-parser": ^8.0.0
+    "@dashevo/dashcore-lib": ~0.19.35
+    "@dashevo/dashpay-contract": ~0.22.8
+    "@dashevo/dpns-contract": ~0.22.8
+    "@dashevo/feature-flags-contract": ~0.22.8
+    "@dashevo/masternode-reward-shares-contract": ~0.22.8
+    "@dashevo/wasm-re2": ~1.0.2
+    ajv: ^8.6.0
+    ajv-formats: ^2.1.1
+    bignumber.js: ^9.0.1
+    bls-signatures: ^0.2.5
+    bs58: ^4.0.1
+    cbor: ^8.0.0
+    fast-json-patch: ^3.1.0
+    json-schema-diff-validator: ^0.4.1
+    json-schema-traverse: ^1.0.0
+    lodash.clonedeep: ^4.5.0
+    lodash.clonedeepwith: ^4.5.0
+    lodash.get: ^4.4.2
+    lodash.set: ^4.3.2
+    long: ^5.2.0
+  checksum: 8d294a2f1863c40310c2a058f8eefbb0aedab3ae01eddcf7ea1775867d76d43b093e1a809c2ad1f0cbaff0a926be33c381f6f6d210f6529b17710a4831bb8095
+  languageName: node
+  linkType: hard
+
+"@dashevo/dpp@workspace:packages/js-dpp, @dashevo/dpp@workspace:~":
   version: 0.0.0-use.local
   resolution: "@dashevo/dpp@workspace:packages/js-dpp"
   dependencies:
@@ -1630,6 +1673,13 @@ __metadata:
   languageName: unknown
   linkType: soft
 
+"@dashevo/feature-flags-contract@npm:~0.22.8":
+  version: 0.22.8
+  resolution: "@dashevo/feature-flags-contract@npm:0.22.8"
+  checksum: 448f1b579ff51d3ec613c2ba3eddd624edfd96cfb167b2521b2c086e941a8abfd7068b467bccc744475581becc4e13861a0097359a8ebed0c199b636d8a7177b
+  languageName: node
+  linkType: hard
+
 "@dashevo/feature-flags-contract@workspace:packages/feature-flags-contract, @dashevo/feature-flags-contract@workspace:~":
   version: 0.0.0-use.local
   resolution: "@dashevo/feature-flags-contract@workspace:packages/feature-flags-contract"
@@ -1670,6 +1720,13 @@ __metadata:
     sinon-chai: ^3.7.0
   languageName: unknown
   linkType: soft
+
+"@dashevo/masternode-reward-shares-contract@npm:~0.22.8":
+  version: 0.22.8
+  resolution: "@dashevo/masternode-reward-shares-contract@npm:0.22.8"
+  checksum: d4b8eaa6a5503bcc54036b87d73f3e8f6b3cc55d6e03262cb9862ec0d07e8fe1aefd723e8e2d9c165a78f1b203e72c44ea30b0d32bba22bd4d3ad04541eb5b1b
+  languageName: node
+  linkType: hard
 
 "@dashevo/masternode-reward-shares-contract@workspace:packages/masternode-reward-shares-contract, @dashevo/masternode-reward-shares-contract@workspace:~":
   version: 0.0.0-use.local
