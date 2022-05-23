@@ -15,7 +15,7 @@ const RSDrive = require('@dashevo/rs-drive');
 const LRUCache = require('lru-cache');
 const RpcClient = require('@dashevo/dashd-rpc/promise');
 
-const { PublicKey } = require('@dashevo/dashcore-lib');
+const { PublicKey, QuorumEntity } = require('@dashevo/dashcore-lib');
 
 const DashPlatformProtocol = require('@dashevo/dpp');
 
@@ -171,6 +171,9 @@ const fetchTransactionFactory = require('./core/fetchTransactionFactory');
  * @return {AwilixContainer}
  */
 function createDIContainer(options) {
+  //TODO: Testing beta4 compat for sangsom
+  QuorumEntity.isCore17 = true;
+
   if (!options.DPNS_MASTER_PUBLIC_KEY) {
     throw new Error('DPNS_MASTER_PUBLIC_KEY must be set');
   }
