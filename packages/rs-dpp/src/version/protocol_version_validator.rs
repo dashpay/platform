@@ -9,9 +9,9 @@ use std::collections::HashMap;
 
 #[derive(Clone)]
 pub struct ProtocolVersionValidator {
-    current_protocol_version: u64,
-    latest_protocol_version: u64,
-    compatibility_map: HashMap<u64, u64>,
+    current_protocol_version: u32,
+    latest_protocol_version: u32,
+    compatibility_map: HashMap<u32, u32>,
 }
 
 impl Default for ProtocolVersionValidator {
@@ -26,9 +26,9 @@ impl Default for ProtocolVersionValidator {
 
 impl ProtocolVersionValidator {
     pub fn new(
-        current_protocol_version: u64,
-        latest_protocol_version: u64,
-        compatibility_map: HashMap<u64, u64>,
+        current_protocol_version: u32,
+        latest_protocol_version: u32,
+        compatibility_map: HashMap<u32, u32>,
     ) -> Self {
         Self {
             current_protocol_version,
@@ -39,7 +39,7 @@ impl ProtocolVersionValidator {
 
     pub fn validate(
         &self,
-        protocol_version: u64,
+        protocol_version: u32,
     ) -> Result<ValidationResult, CompatibleProtocolVersionIsNotDefinedError> {
         let mut result = ValidationResult::new(None);
 
@@ -83,7 +83,7 @@ impl ProtocolVersionValidator {
         Ok(result)
     }
 
-    pub fn protocol_version(&self) -> u64 {
+    pub fn protocol_version(&self) -> u32 {
         self.current_protocol_version
     }
 }

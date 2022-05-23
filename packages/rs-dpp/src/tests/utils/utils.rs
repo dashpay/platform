@@ -3,6 +3,29 @@ use getrandom::getrandom;
 use serde_json::Value;
 use std::num::ParseIntError;
 
+use crate::prelude::Identifier;
+
+#[cfg(test)]
+#[macro_export]
+macro_rules! assert_error_contains {
+    ($result:ident, $contains:expr) => {
+        match $result {
+            Ok(o) => {
+                panic!("expected error, but returned: {:?}", o);
+            }
+            Err(e) => {
+                let string_error = e.to_string();
+                if !string_error.contains($contains) {
+                    panic!(
+                        "assertion error: '{}' hasn't been found in '{}'",
+                        $contains, string_error
+                    );
+                }
+            }
+        }
+    };
+}
+
 pub fn generate_random_identifier() -> [u8; 32] {
     let mut buffer = [0u8; 32];
     let _ = getrandom(&mut buffer);
@@ -59,6 +82,12 @@ where
         .as_object_mut()
         .expect("Expected value to be an JSON object")
         .remove(&key.into());
+}
+
+pub fn generate_random_identifier_struct() -> Identifier {
+    let mut buffer = [0u8; 32];
+    let _ = getrandom(&mut buffer);
+    return Identifier::from_bytes(&buffer).unwrap();
 }
 
 pub fn get_data_from_file(file_path: &str) -> Result<String> {

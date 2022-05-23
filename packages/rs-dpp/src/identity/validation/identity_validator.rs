@@ -56,12 +56,13 @@ impl<T: TPublicKeysValidator> IdentityValidator<T> {
     }
 }
 
-fn get_protocol_version(identity_map: &Map<String, Value>) -> Result<u64, SerdeParsingError> {
-    identity_map
+fn get_protocol_version(identity_map: &Map<String, Value>) -> Result<u32, SerdeParsingError> {
+    Ok(identity_map
         .get("protocolVersion")
         .ok_or_else(|| SerdeParsingError::new("Expected identity to have protocolVersion"))?
         .as_u64()
-        .ok_or_else(|| SerdeParsingError::new("Expected protocolVersion to be a uint"))
+        .ok_or_else(|| SerdeParsingError::new("Expected protocolVersion to be a uint"))?
+        as u32)
 }
 
 fn get_raw_public_keys(

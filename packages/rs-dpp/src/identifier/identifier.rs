@@ -6,9 +6,11 @@ use crate::util::string_encoding;
 use crate::util::string_encoding::Encoding;
 use serde_json::Value as JsonValue;
 
+pub const MEDIA_TYPE: &str = "application/x.dash.dpp.identifier";
+
 #[derive(Default, Debug, Clone, PartialEq, Eq)]
 pub struct Identifier {
-    buffer: [u8; 32],
+    pub buffer: [u8; 32],
 }
 
 fn encoding_string_to_encoding(encoding_string: Option<&str>) -> Encoding {
@@ -66,6 +68,7 @@ impl Identifier {
             .collect()
     }
 
+    // TODO - consider to change the name to 'asBuffer`
     pub fn to_buffer(&self) -> [u8; 32] {
         self.buffer
     }
@@ -101,5 +104,11 @@ impl<'de> Deserialize<'de> for Identifier {
         // by default we use base58 as Identifier type should be encoded in that way
         Identifier::from_string_with_encoding_string(&data, Some("base58"))
             .map_err(|e| serde::de::Error::custom(e.to_string()))
+    }
+}
+
+impl std::fmt::Display for Identifier {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.to_string(Encoding::Base58))
     }
 }
