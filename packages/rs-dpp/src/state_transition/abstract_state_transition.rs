@@ -68,14 +68,12 @@ pub trait StateTransitionLike:
                 self.set_signature(pk.sign(data).as_bytes())
             }
 
-            KeyType::ECDSA_SECP256K1 => {
+            // https://github.com/dashevo/platform/blob/9c8e6a3b6afbc330a6ab551a689de8ccd63f9120/packages/js-dpp/lib/stateTransition/AbstractStateTransition.js#L169
+            KeyType::ECDSA_SECP256K1 | KeyType::ECDSA_HASH160 => {
                 let signature = signer::sign(&data, private_key)?;
                 self.set_signature(signature.to_vec());
             }
 
-            KeyType::ECDSA_HASH160 => {
-                return Err(anyhow!("Invalid key type of private key: {:?}", key_type).into())
-            }
         };
         Ok(())
     }
