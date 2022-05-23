@@ -523,7 +523,7 @@ describe('validate RS Drive query', () => {
 
     it('should return invalid result if "where" contains conflicting conditions', async () => {
       try {
-        await documentRepository.find(dataContract, 'documentLumber', {
+        await documentRepository.find(dataContract, 'documentNumber', {
           where: [
             ['a', '<', 1],
             ['a', '>', 1],
@@ -694,7 +694,7 @@ describe('validate RS Drive query', () => {
             await Promise.all(promises);
 
             try {
-              await documentRepository.find(dataContract, 'documentLumber', { where: [['a', '===', '1']] });
+              await documentRepository.find(dataContract, 'documentString', { where: [['a', '===', '1']] });
 
               expect.fail('should throw an error');
             } catch (e) {
@@ -704,7 +704,7 @@ describe('validate RS Drive query', () => {
           });
 
           it('should return valid result if "<" operator used with a numeric value', async () => {
-            const result = await documentRepository.find(dataContract, 'documentLumber', { where: [['a', '<', 1]], orderBy: [['a', 'asc']] });
+            const result = await documentRepository.find(dataContract, 'documentNumber', { where: [['a', '<', 1]], orderBy: [['a', 'asc']] });
 
             expect(result).to.be.instanceOf(StorageResult);
           });
@@ -719,7 +719,7 @@ describe('validate RS Drive query', () => {
             const longString = 't'.repeat(1024);
 
             try {
-              await documentRepository.find(dataContract, 'documentLumber', { where: [['a', '<', longString]] });
+              await documentRepository.find(dataContract, 'documentString', { where: [['a', '<', longString]] });
 
               expect.fail('should throw an error');
             } catch (e) {
@@ -729,7 +729,7 @@ describe('validate RS Drive query', () => {
             const veryLongString = 't'.repeat(1025);
 
             try {
-              await documentRepository.find(dataContract, 'documentLumber', { where: [['a', '<', veryLongString]] });
+              await documentRepository.find(dataContract, 'documentString', { where: [['a', '<', veryLongString]] });
 
               expect.fail('should throw an error');
             } catch (e) {
@@ -747,7 +747,7 @@ describe('validate RS Drive query', () => {
           nonScalarTestCases.forEach(({ type, value }) => {
             it(`should return invalid result if "<" operator used with a not scalar value, but ${type}`, async () => {
               try {
-                await documentRepository.find(dataContract, 'documentLumber', { where: [['a', '<', value]], orderBy: [['a', 'asc']] });
+                await documentRepository.find(dataContract, 'documentNumber', { where: [['a', '<', value]], orderBy: [['a', 'asc']] });
 
                 expect.fail('should throw an error');
               } catch (e) {
@@ -801,7 +801,7 @@ describe('validate RS Drive query', () => {
           ['>', '<', '<=', '>='].forEach((operator) => {
             it(`should return invalid results if "${operator}" used not in the last 2 where conditions`, async () => {
               try {
-                await documentRepository.find(dataContract, 'documentLumber', {
+                await documentRepository.find(dataContract, 'documentNumber', {
                   where: [
                     ['a', operator, 1],
                     ['a', 'startsWith', 'rt-'],
@@ -944,7 +944,7 @@ describe('validate RS Drive query', () => {
 
         describe('in', () => {
           it('should return valid result if "in" operator used with an array value', async () => {
-            const result = await documentRepository.find(dataContract, 'documentLumber', { where: [['a', 'in', [1, 2]]], orderBy: [['a', 'asc']] });
+            const result = await documentRepository.find(dataContract, 'documentNumber', { where: [['a', 'in', [1, 2]]], orderBy: [['a', 'asc']] });
 
             expect(result).to.be.instanceOf(StorageResult);
           });
@@ -952,7 +952,7 @@ describe('validate RS Drive query', () => {
           notArrayTestCases.forEach(({ type, value }) => {
             it(`should return invalid result if "in" operator used with not an array value, but ${type}`, async () => {
               try {
-                await documentRepository.find(dataContract, 'documentLumber', { where: [['a', 'in', value]], orderBy: [['a', 'asc']] });
+                await documentRepository.find(dataContract, 'documentNumber', { where: [['a', 'in', value]], orderBy: [['a', 'asc']] });
 
                 expect.fail('should throw an error');
               } catch (e) {
@@ -964,7 +964,7 @@ describe('validate RS Drive query', () => {
 
           it('should return invalid result if "in" operator used with an empty array value', async () => {
             try {
-              await documentRepository.find(dataContract, 'documentLumber', { where: [['a', 'in', []]], orderBy: [['a', 'asc']] });
+              await documentRepository.find(dataContract, 'documentNumber', { where: [['a', 'in', []]], orderBy: [['a', 'asc']] });
 
               expect.fail('should throw an error');
             } catch (e) {
@@ -980,14 +980,14 @@ describe('validate RS Drive query', () => {
               arr.push(i);
             }
 
-            const result = await documentRepository.find(dataContract, 'documentLumber', { where: [['a', 'in', arr]], orderBy: [['a', 'asc']] });
+            const result = await documentRepository.find(dataContract, 'documentNumber', { where: [['a', 'in', arr]], orderBy: [['a', 'asc']] });
 
             expect(result).to.be.instanceOf(StorageResult);
 
             arr.push(101);
 
             try {
-              documentRepository.find(dataContract, 'documentLumber', { where: [['a', 'in', arr]] });
+              documentRepository.find(dataContract, 'documentNumber', { where: [['a', 'in', arr]] });
 
               expect.fail('should throw an error');
             } catch (e) {
@@ -999,7 +999,7 @@ describe('validate RS Drive query', () => {
           it('should return invalid result if "in" operator used with an array which contains not unique elements', async () => {
             const arr = [1, 1];
             try {
-              await documentRepository.find(dataContract, 'documentLumber', { where: [['a', 'in', arr]], orderBy: [['a', 'asc']] });
+              await documentRepository.find(dataContract, 'documentNumber', { where: [['a', 'in', arr]], orderBy: [['a', 'asc']] });
 
               expect.fail('should throw an error');
             } catch (e) {
@@ -1011,7 +1011,7 @@ describe('validate RS Drive query', () => {
           it('should return invalid results if condition contains empty arrays', async () => {
             const arr = [[], []];
             try {
-              await documentRepository.find(dataContract, 'documentLumber', { where: [['a', 'in', arr]], orderBy: [['a', 'asc']] });
+              await documentRepository.find(dataContract, 'documentNumber', { where: [['a', 'in', arr]], orderBy: [['a', 'asc']] });
 
               expect.fail('should throw an error');
             } catch (e) {
@@ -1408,7 +1408,7 @@ describe('validate RS Drive query', () => {
 
   describe('limit', () => {
     it('should return valid result if "limit" is a number', async () => {
-      const result = await documentRepository.find(dataContract, 'documentLumber', {
+      const result = await documentRepository.find(dataContract, 'documentNumber', {
         where: [
           ['a', '>', 1],
         ],
@@ -1425,7 +1425,7 @@ describe('validate RS Drive query', () => {
       ];
 
       try {
-        await documentRepository.find(dataContract, 'documentLumber', { where, limit: 0, orderBy: [['a', 'asc']] });
+        await documentRepository.find(dataContract, 'documentNumber', { where, limit: 0, orderBy: [['a', 'asc']] });
 
         expect.fail('should throw an error');
       } catch (e) {
@@ -1434,7 +1434,7 @@ describe('validate RS Drive query', () => {
       }
 
       try {
-        await documentRepository.find(dataContract, 'documentLumber', { where, limit: -1, orderBy: [['a', 'asc']] });
+        await documentRepository.find(dataContract, 'documentNumber', { where, limit: -1, orderBy: [['a', 'asc']] });
 
         expect.fail('should throw an error');
       } catch (e) {
@@ -1448,12 +1448,12 @@ describe('validate RS Drive query', () => {
         ['a', '>', 1],
       ];
 
-      const result = await documentRepository.find(dataContract, 'documentLumber', { where, limit: 100, orderBy: [['a', 'asc']] });
+      const result = await documentRepository.find(dataContract, 'documentNumber', { where, limit: 100, orderBy: [['a', 'asc']] });
 
       expect(result).to.be.instanceOf(StorageResult);
 
       try {
-        await documentRepository.find(dataContract, 'documentLumber', { where, limit: 101, orderBy: [['a', 'asc']] });
+        await documentRepository.find(dataContract, 'documentNumber', { where, limit: 101, orderBy: [['a', 'asc']] });
 
         expect.fail('should throw an error');
       } catch (e) {
@@ -1468,7 +1468,7 @@ describe('validate RS Drive query', () => {
       ];
 
       try {
-        await documentRepository.find(dataContract, 'documentLumber', { where, limit: 1.5, orderBy: [['a', 'asc']] });
+        await documentRepository.find(dataContract, 'documentNumber', { where, limit: 1.5, orderBy: [['a', 'asc']] });
 
         expect.fail('should throw an error');
       } catch (e) {
@@ -1480,7 +1480,7 @@ describe('validate RS Drive query', () => {
     nonNumberAndUndefinedTestCases.forEach(({ type, value }) => {
       it(`should return invalid result if "limit" is not a number, but ${type}`, async () => {
         try {
-          await documentRepository.find(dataContract, 'documentLumber', {
+          await documentRepository.find(dataContract, 'documentNumber', {
             where: [
               ['a', '>', 1],
             ],
@@ -1499,7 +1499,7 @@ describe('validate RS Drive query', () => {
 
   describe('orderBy', () => {
     it('should return valid result if "orderBy" contains 1 sorting field', async () => {
-      const result = await documentRepository.find(dataContract, 'documentLumber', {
+      const result = await documentRepository.find(dataContract, 'documentNumber', {
         where: [
           ['a', '>', 1],
         ],
@@ -1527,7 +1527,7 @@ describe('validate RS Drive query', () => {
 
     it('should return invalid result if "orderBy" is an empty array', async () => {
       try {
-        await documentRepository.find(dataContract, 'documentLumber', {
+        await documentRepository.find(dataContract, 'documentNumber', {
           where: [
             ['a', '>', 1],
           ],
@@ -1557,7 +1557,7 @@ describe('validate RS Drive query', () => {
 
     it('should return invalid result if there is no where conditions', async () => {
       try {
-        await documentRepository.find(dataContract, 'documentLumber', {
+        await documentRepository.find(dataContract, 'documentNumber', {
           orderBy: [['a', 'asc']],
         });
 
@@ -1570,7 +1570,7 @@ describe('validate RS Drive query', () => {
 
     it('should return invalid result if the field inside an "orderBy" is an empty array', async () => {
       try {
-        await documentRepository.find(dataContract, 'documentLumber', {
+        await documentRepository.find(dataContract, 'documentNumber', {
           where: [
             ['a', '>', 1],
           ],
@@ -1720,7 +1720,7 @@ describe('validate RS Drive query', () => {
 
     it('should return invalid result if "orderBy" has wrong direction', async () => {
       try {
-        await documentRepository.find(dataContract, 'documentLumber', {
+        await documentRepository.find(dataContract, 'documentNumber', {
           where: [
             ['a', '>', 1],
           ],
@@ -1736,7 +1736,7 @@ describe('validate RS Drive query', () => {
 
     it('should return invalid result if "orderBy" field array has less than 2 elements (field, direction)', async () => {
       try {
-        await documentRepository.find(dataContract, 'documentLumber', {
+        await documentRepository.find(dataContract, 'documentNumber', {
           where: [
             ['a', '>', 1],
           ],
@@ -1752,7 +1752,7 @@ describe('validate RS Drive query', () => {
 
     it('should return invalid result if "orderBy" field array has more than 2 elements (field, direction)', async () => {
       try {
-        await documentRepository.find(dataContract, 'documentLumber', {
+        await documentRepository.find(dataContract, 'documentNumber', {
           where: [
             ['a', '>', 1],
           ],
@@ -1768,7 +1768,7 @@ describe('validate RS Drive query', () => {
 
     Object.keys(validOrderByOperators).forEach((operator) => {
       it(`should return valid result if "orderBy" has valid field with valid operator in "where" clause - "${operator}"`, async () => {
-        const result = await documentRepository.find(dataContract, 'documentLumber', {
+        const result = await documentRepository.find(dataContract, 'documentNumber', {
           where: [
             ['a', operator, validOrderByOperators[operator].value],
           ],
@@ -1834,10 +1834,10 @@ describe('validate RS Drive query', () => {
       );
 
       const ownerId = generateRandomIdentifier();
-      const doc = documentFactory.create(dataContract, ownerId, 'documentLumber', { a: 2 });
+      const doc = documentFactory.create(dataContract, ownerId, 'documentNumber', { a: 2 });
       await documentRepository.store(doc);
 
-      const storedDoc = await documentRepository.find(dataContract, 'documentLumber', {
+      const storedDoc = await documentRepository.find(dataContract, 'documentNumber', {
         where: [[
           'a', '==', 2,
         ]],
@@ -1853,7 +1853,7 @@ describe('validate RS Drive query', () => {
         }
 
         try {
-          await documentRepository.find(dataContract, 'documentLumber', {
+          await documentRepository.find(dataContract, 'documentNumber', {
             startAt: value,
           });
 
@@ -1867,7 +1867,7 @@ describe('validate RS Drive query', () => {
     });
 
     it('should return valid result if "startAt" is an Identifier', async () => {
-      const result = await documentRepository.find(dataContract, 'documentLumber', {
+      const result = await documentRepository.find(dataContract, 'documentNumber', {
         startAt: id,
       });
 
@@ -1888,10 +1888,10 @@ describe('validate RS Drive query', () => {
       );
 
       const ownerId = generateRandomIdentifier();
-      const doc = documentFactory.create(dataContract, ownerId, 'documentLumber', { a: 1 });
+      const doc = documentFactory.create(dataContract, ownerId, 'documentNumber', { a: 1 });
       await documentRepository.store(doc);
 
-      const storedDoc = await documentRepository.find(dataContract, 'documentLumber', {
+      const storedDoc = await documentRepository.find(dataContract, 'documentNumber', {
         where: [[
           'a', '==', 1,
         ]],
@@ -1902,7 +1902,7 @@ describe('validate RS Drive query', () => {
 
     it('should return invalid result if both "startAt" and "startAfter" are present', async () => {
       try {
-        await documentRepository.find(dataContract, 'documentLumber', {
+        await documentRepository.find(dataContract, 'documentNumber', {
           startAfter: id,
           startAt: id,
         });
@@ -1921,7 +1921,7 @@ describe('validate RS Drive query', () => {
         }
 
         try {
-          await documentRepository.find(dataContract, 'documentLumber', {
+          await documentRepository.find(dataContract, 'documentNumber', {
             startAfter: value,
           });
 
@@ -1935,7 +1935,7 @@ describe('validate RS Drive query', () => {
     });
 
     it('should return valid result if "startAfter" is an Identifier', async () => {
-      const result = await documentRepository.find(dataContract, 'documentLumber', {
+      const result = await documentRepository.find(dataContract, 'documentNumber', {
         startAfter: id,
       });
 
