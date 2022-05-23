@@ -14,7 +14,7 @@ const DataContractFactory = require('@dashevo/dpp/lib/dataContract/DataContractF
 const createDPPMock = require('@dashevo/dpp/lib/test/mocks/createDPPMock');
 const createTestDIContainer = require('../../../lib/test/createTestDIContainer');
 
-describe('createIdentityFee', () => {
+describe('checkFeePrediction', () => {
   let dpp;
   let container;
   let stateRepository;
