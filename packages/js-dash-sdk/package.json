@@ -4,18 +4,18 @@
   "description": "Dash library for JavaScript/TypeScript ecosystem (Wallet, DAPI, Primitives, BLS, ...)",
   "main": "build/src/index.js",
   "unpkg": "dist/dash.min.js",
+  "browser": "dist/dash.min.js",
   "types": "dist/src/index.d.ts",
   "scripts": {
     "start:dev": "nodemon --exec 'yarn run build && yarn run test:unit'",
-    "build": "yarn run build:ts",
-    "build:web": "yarn run build:ts && webpack --stats-error-details",
+    "build": "yarn run build:ts && webpack --stats-error-details",
     "build:ts": "tsc",
     "lint": "",
     "test": "yarn run test:unit && yarn run test:functional && yarn run test:browsers",
     "test:browsers": "karma start ./karma.conf.js --single-run",
     "test:unit": "TS_NODE_COMPILER_OPTIONS={\"target\":\"es6\"} ts-mocha \"src/**/*.spec.ts\"",
     "test:functional": "yarn run build && mocha --recursive tests/functional/**/*.js",
-    "prepublishOnly": "yarn run build:web",
+    "prepublishOnly": "yarn run build",
     "prepare": "yarn run build"
   },
   "ultra": {
