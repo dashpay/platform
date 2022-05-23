@@ -29,6 +29,9 @@ const baseConfig = {
       zlib: require.resolve('browserify-zlib'),
       events: require.resolve('events/'),
       string_decoder: require.resolve('string_decoder/'),
+      ws: require.resolve('ws/'),
+      tls: require.resolve('tls/'),
+      net: require.resolve('net/'),
     },
   },
   plugins: [
