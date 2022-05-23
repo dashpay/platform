@@ -54,9 +54,9 @@ function waitForCoreChainLockSyncFactory(
       latestCoreChainLock.update(chainLock);
 
       logger.trace(
-        { 
-          rawChainLockMessage: rawChainLockMessage.toString('hex'), 
-        }, 
+        {
+          rawChainLockMessage: rawChainLockMessage.toString('hex'),
+        },
         `Updated latestCoreChainLock for core height ${chainLock.height}`,
       );
 

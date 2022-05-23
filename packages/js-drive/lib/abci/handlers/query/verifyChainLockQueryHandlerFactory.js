@@ -64,7 +64,7 @@ function verifyChainLockQueryHandlerFactory(
           {
             err: e,
             chainLock: data.toString('hex'),
-          }, 
+          },
           `Chainlock verification failed using verifyChainLock method: ${e.message}`,
         );
 
