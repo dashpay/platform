@@ -145,7 +145,7 @@ impl Identity {
     }
 
     pub fn hash(&self) -> Result<Vec<u8>, ProtocolError> {
-        Ok(hash::sha(&self.to_buffer()?))
+        Ok(hash::hash(&self.to_buffer()?))
     }
 }
 

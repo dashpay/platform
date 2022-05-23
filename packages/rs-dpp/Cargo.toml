@@ -24,5 +24,11 @@ log = { version="0.4"}
 getrandom= { version="0.2", features=["js"]}
 serde_repr = { version = "0.1.7" }
 bls-signatures = { version = "0.11.3" }
+async-trait = { version = "0.1"}
+hex = { version = "0.4"}
+futures = { version ="0.3"}
 
 
+[dev-dependencies]
+mockall= { version ="0.11"}
+tokio = { version ="1.17",  features=["full"]}
