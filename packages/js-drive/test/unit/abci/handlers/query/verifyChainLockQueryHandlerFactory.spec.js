@@ -121,7 +121,10 @@ describe('verifyChainLockQueryHandlerFactory', () => {
 
     const result = await verifyChainLockQueryHandler(params, encodedChainLock);
 
-    expect(result).to.be.equal(false);
+    expect(result).to.deep.equal(new ResponseQuery({
+      code: -32700,
+      log: 'Chainlock verification failed using verifyChainLock method: ',
+    }));
 
     expect(decodeChainLockMock).to.be.calledOnceWithExactly(encodedChainLock);
     expect(coreRpcClientMock.verifyChainLock).to.be.calledOnceWithExactly(
@@ -139,7 +142,10 @@ describe('verifyChainLockQueryHandlerFactory', () => {
 
     const result = await verifyChainLockQueryHandler(params, encodedChainLock);
 
-    expect(result).to.be.equal(false);
+    expect(result).to.deep.equal(new ResponseQuery({
+      code: -8,
+      log: 'Chainlock verification failed using verifyChainLock method: ',
+    }));
 
     expect(decodeChainLockMock).to.be.calledOnceWithExactly(encodedChainLock);
     expect(coreRpcClientMock.verifyChainLock).to.be.calledOnceWithExactly(
