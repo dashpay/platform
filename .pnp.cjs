@@ -7509,6 +7509,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["browserify-zlib", "npm:0.2.0"],
             ["bs58", "npm:4.0.1"],
             ["buffer", "npm:6.0.3"],
+            ["bufferutil", "npm:4.0.6"],
             ["chai", "npm:4.3.4"],
             ["chance", "npm:1.1.8"],
             ["crypto-browserify", "npm:3.12.0"],
@@ -7543,6 +7544,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["ts-node", "virtual:ad53cff31b1dbd4927a99e71702e3b8b10338636eaff010987c27c9ccea2d52af36900a9e36a4231cbb6e5464248ccc9c1da5d1d24d9b0f4f95660296b1060a6#npm:10.4.0"],
             ["typescript", "patch:typescript@npm%3A3.9.10#~builtin<compat/typescript>::version=3.9.10&hash=ddd1e8"],
             ["url", "npm:0.11.0"],
+            ["utf-8-validate", "npm:5.0.9"],
             ["util", "npm:0.12.4"],
             ["webpack", "virtual:ad53cff31b1dbd4927a99e71702e3b8b10338636eaff010987c27c9ccea2d52af36900a9e36a4231cbb6e5464248ccc9c1da5d1d24d9b0f4f95660296b1060a6#npm:5.64.1"],
             ["webpack-cli", "virtual:ad53cff31b1dbd4927a99e71702e3b8b10338636eaff010987c27c9ccea2d52af36900a9e36a4231cbb6e5464248ccc9c1da5d1d24d9b0f4f95660296b1060a6#npm:4.9.1"],
@@ -19027,8 +19029,8 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["ws", "virtual:ad53cff31b1dbd4927a99e71702e3b8b10338636eaff010987c27c9ccea2d52af36900a9e36a4231cbb6e5464248ccc9c1da5d1d24d9b0f4f95660296b1060a6#npm:8.6.0"],
             ["@types/bufferutil", null],
             ["@types/utf-8-validate", null],
-            ["bufferutil", null],
-            ["utf-8-validate", null]
+            ["bufferutil", "npm:4.0.6"],
+            ["utf-8-validate", "npm:5.0.9"]
           ],
           "packagePeers": [
             "@types/bufferutil",

@@ -32,6 +32,8 @@ const baseConfig = {
       ws: require.resolve('ws/'),
       tls: require.resolve('tls/'),
       net: require.resolve('net/'),
+      bufferutil: require.resolve('bufferutil/'),
+      'utf-8-validate': require.resolve('utf-8-validate/'),
     },
   },
   plugins: [

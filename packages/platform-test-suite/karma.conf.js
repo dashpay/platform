@@ -8,6 +8,8 @@ const karmaChromeLauncher = require('karma-chrome-launcher');
 const karmaSourcemapLoader = require('karma-sourcemap-loader');
 const karmaWebpack = require('karma-webpack');
 
+const sdkWebpackConfig = require('../js-dash-sdk/webpack.base.config');
+
 if (dotenvResult.error) {
   throw dotenvResult.error;
 }
@@ -35,36 +37,13 @@ module.exports = (config) => {
       mode: 'development',
       devtool: 'inline-source-map',
       plugins: [
-        new webpack.ProvidePlugin({
-          Buffer: [require.resolve('buffer/'), 'Buffer'],
-          process: require.resolve('process/browser'),
-        }),
+        ...sdkWebpackConfig.plugins,
         new webpack.EnvironmentPlugin(
           dotenvResult.parsed,
         ),
       ],
       resolve: {
-        fallback: {
-          fs: false,
-          crypto: require.resolve('crypto-browserify'),
-          buffer: require.resolve('buffer/'),
-          assert: require.resolve('assert/'),
-          url: require.resolve('url/'),
-          path: require.resolve('path-browserify'),
-          http: require.resolve('stream-http'),
-          https: require.resolve('https-browserify'),
-          stream: require.resolve('stream-browserify'),
-          util: require.resolve('util/'),
-          os: require.resolve('os-browserify/browser'),
-          zlib: require.resolve('browserify-zlib'),
-          events: require.resolve('events/'),
-          ws: require.resolve('ws/'),
-          bufferutil: require.resolve('bufferutil/'),
-          tls: require.resolve('tls/'),
-          net: require.resolve('net/'),
-          'utf-8-validate': require.resolve('utf-8-validate/'),
-          string_decoder: require.resolve('string_decoder/'),
-        },
+        fallback: sdkWebpackConfig.resolve.fallback,
         extensions: ['.ts', '.js', '.json'],
       },
     },
