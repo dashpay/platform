@@ -3,12 +3,7 @@ const { createHash } = require('crypto');
 const PreCalculatedOperation = require('@dashevo/dpp/lib/stateTransition/fee/operations/PreCalculatedOperation');
 const createDocumentTypeTreePath = require('./groveDB/createDocumentTreePath');
 const InvalidQueryError = require('./errors/InvalidQueryError');
-const StartDocumentNotFoundError = require('./query/errors/StartDocumentNotFoundError');
-const ValidationError = require('./query/errors/ValidationError');
 const StorageResult = require('../storage/StorageResult');
-const NotIndexedPropertiesInWhereConditionsError = require('./query/errors/NotIndexedPropertiesInWhereConditionsError');
-const MultipleRangeOperatorsError = require('./query/errors/MultipleRangeOperatorsError');
-const RangePropertyDoesNotHaveOrderByError = require('./query/errors/RangePropertyDoesNotHaveOrderByError');
 
 class DocumentRepository {
   /**
