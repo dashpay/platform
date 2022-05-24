@@ -12,7 +12,7 @@ const rehydrateState = async function rehydrateState(walletId) {
   if (this.rehydrate && this.lastRehydrate === null) {
     try {
       if (this.adapter && hasMethod(this.adapter, 'getItem')) {
-        const wallet = await this.adapter.getItem('wallet_' + walletId);
+        const wallet = await this.adapter.getItem(`wallet_${walletId}`);
 
         if (wallet) {
           try {
@@ -24,7 +24,7 @@ const rehydrateState = async function rehydrateState(walletId) {
           } catch (e) {
             logger.error('Error importing wallets storage, resyncing from start', e);
 
-            this.adapter.setItem('wallet_' + walletId, null);
+            this.adapter.setItem(`wallet_${walletId}`, null);
             this.adapter.setItem('wallets', null);
             this.adapter.setItem('chains', null);
             this.adapter.setItem('transactions', null);
@@ -47,7 +47,7 @@ const rehydrateState = async function rehydrateState(walletId) {
           } catch (e) {
             logger.error('Error importing chains storage, resyncing from start', e);
 
-            this.adapter.setItem('wallet_' + walletId, null);
+            this.adapter.setItem(`wallet_${walletId}`, null);
             this.adapter.setItem('wallets', null);
             this.adapter.setItem('chains', null);
             this.adapter.setItem('transactions', null);
