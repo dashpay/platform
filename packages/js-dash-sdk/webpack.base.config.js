@@ -3,6 +3,7 @@ const webpack = require('webpack');
 
 const baseConfig = {
   entry: './src/index.ts',
+  devtool: 'eval',
   module: {
     rules: [
       {
@@ -29,11 +30,10 @@ const baseConfig = {
       zlib: require.resolve('browserify-zlib'),
       events: require.resolve('events/'),
       string_decoder: require.resolve('string_decoder/'),
-      ws: require.resolve('ws/'),
       tls: require.resolve('tls/'),
       net: require.resolve('net/'),
-      bufferutil: require.resolve('bufferutil/'),
-      'utf-8-validate': require.resolve('utf-8-validate/'),
+      // Browser build have to use native WebSocket
+      ws: require.resolve('./build-utils/ws'),
     },
   },
   plugins: [

@@ -4,6 +4,7 @@ const webpackBaseConfig = require("./webpack.base.config");
 const webConfig =  {
   ...webpackBaseConfig,
   entry: './build/src/index.js',
+  devtool: 'source-map',
   mode: 'production',
   output: {
     path: path.resolve(__dirname, 'dist'),
