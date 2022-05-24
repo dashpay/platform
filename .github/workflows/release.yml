@@ -4,11 +4,17 @@ on:
   release:
     types:
       - published
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Docker tag'
+        required: true
 
 jobs:
   release-npm:
     name: Release NPM packages
     runs-on: ubuntu-20.04
+    if: ${{ github.event_name != workflow_dispatch }}
     steps:
       - name: Check out repo
         uses: actions/checkout@v2
@@ -139,7 +145,7 @@ jobs:
             type=match,pattern=v(\d+),group=1
             type=match,pattern=v(\d+.\d+),group=1
             type=match,pattern=v(\d+.\d+.\d+),group=1
-            type=match,pattern=v(.*),group=1,suffix=,enable=${{ contains(github.event.release.tag_name, '-dev') }}
+            type=match,pattern=v(.*),group=1,suffix=,enable=${{ contains(github.event.release.tag_name, '-dev') || github.event_name == workflow_dispatch }}
           flavor: |
             latest=${{ !contains(github.event.release.tag_name, '-dev') }}
             suffix=${{ steps.suffix.outputs.result }}
@@ -235,7 +241,7 @@ jobs:
             type=match,pattern=v(\d+),group=1
             type=match,pattern=v(\d+.\d+),group=1
             type=match,pattern=v(\d+.\d+.\d+),group=1
-            type=match,pattern=v(.*),group=1,suffix=,enable=${{ contains(github.event.release.tag_name, '-dev') }}
+            type=match,pattern=v(.*),group=1,suffix=,enable=${{ contains(github.event.release.tag_name, '-dev') || github.event_name == workflow_dispatch }}
           flavor: |
             latest=${{ !contains(github.event.release.tag_name, '-dev') }}
             suffix=${{ steps.suffix.outputs.result }}
@@ -331,7 +337,7 @@ jobs:
             type=match,pattern=v(\d+),group=1
             type=match,pattern=v(\d+.\d+),group=1
             type=match,pattern=v(\d+.\d+.\d+),group=1
-            type=match,pattern=v(.*),group=1,suffix=,enable=${{ contains(github.event.release.tag_name, '-dev') }}
+            type=match,pattern=v(.*),group=1,suffix=,enable=${{ contains(github.event.release.tag_name, '-dev') || github.event_name == workflow_dispatch }}
           flavor: |
             latest=${{ !contains(github.event.release.tag_name, '-dev') }}
             suffix=${{ steps.suffix.outputs.result }}
