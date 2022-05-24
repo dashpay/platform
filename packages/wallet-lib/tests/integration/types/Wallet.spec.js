@@ -221,7 +221,7 @@ describe('Wallet', () => {
      * In this scenario we have a wallet that picks part of the data from the storage
      * and then sends a new transaction to the network
      */
-    it.only('should ensure synchronization from last known block for wallet with storage', async ()  => {
+    it('should ensure synchronization from last known block for wallet with storage', async ()  => {
       const scenario = {
         blockHeaders: [
           new BlockHeader({
