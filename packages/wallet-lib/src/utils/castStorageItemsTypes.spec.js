@@ -27,6 +27,7 @@ const mockChainStorage = {
 }
 
 const mockWalletStorage = {
+  "walletId": "fakeWalletId",
   "lastKnownBlock": {
     "height": 11703
   }
