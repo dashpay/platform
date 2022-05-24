@@ -146,7 +146,7 @@ class DocumentRepository {
       );
     } catch (e) {
       if (e.message.startsWith('query:')) {
-        throw new InvalidQueryError(e.message.replace('query: ', ''));
+        throw new InvalidQueryError(e.message.substring(7, e.message.length));
       }
 
       throw e;
