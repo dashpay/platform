@@ -62,7 +62,6 @@ jobs:
   release-drive-docker-image:
     name: Release Drive to Docker Hub
     runs-on: ubuntu-20.04
-    needs: release-npm
     steps:
       - name: Check out repo
         uses: actions/checkout@v2
@@ -159,7 +158,6 @@ jobs:
   release-dapi-docker-image:
     name: Release DAPI to Docker Hub
     runs-on: ubuntu-20.04
-    needs: release-npm
     steps:
       - name: Check out repo
         uses: actions/checkout@v2
@@ -256,7 +254,6 @@ jobs:
   release-test-suite-docker-image:
     name: Release Test Suite to Docker Hub
     runs-on: ubuntu-20.04
-    needs: release-npm
     steps:
       - name: Check out repo
         uses: actions/checkout@v2
