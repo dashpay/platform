@@ -115,10 +115,11 @@ describe('Wallet', () => {
 
       /** Ensure that storage has no items for transactions without the metadata */
       let chainStoreState = storageAdapterMock.getItem('chains')[wallet.network];
-      let walletStoreState = storageAdapterMock.getItem('wallets')[wallet.walletId]
+      let walletStoreState = storageAdapterMock.getItem(`wallet_${wallet.walletId}`)
       expect(chainStoreState.transactions).to.be.empty;
       expect(chainStoreState.txMetadata).to.be.empty;
       expect(chainStoreState.blockHeaders).to.be.empty;
+      expect(walletStoreState.walletId).to.equal(wallet.walletId)
       expect(walletStoreState.lastKnownBlock.height).to.equal(-1)
 
       /** Wait for transactions metadata */
@@ -137,7 +138,7 @@ describe('Wallet', () => {
        * alongside with the lastKnownBlock
        */
       chainStoreState = storageAdapterMock.getItem('chains')[wallet.network];
-      walletStoreState = storageAdapterMock.getItem('wallets')[wallet.walletId]
+      walletStoreState = storageAdapterMock.getItem(`wallet_${wallet.walletId}`)
       expect(chainStoreState.transactions[fundingTx.hash]).to.exist;
       expect(chainStoreState.txMetadata[fundingTx.hash]).to.exist
       expect(chainStoreState.blockHeaders[scenario.blockHeaders[0].hash]).to.exist;
@@ -220,7 +221,7 @@ describe('Wallet', () => {
      * In this scenario we have a wallet that picks part of the data from the storage
      * and then sends a new transaction to the network
      */
-    it('should ensure synchronization from last known block for wallet with storage', async ()  => {
+    it.only('should ensure synchronization from last known block for wallet with storage', async ()  => {
       const scenario = {
         blockHeaders: [
           new BlockHeader({
