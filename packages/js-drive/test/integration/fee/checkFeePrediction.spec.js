@@ -2,17 +2,54 @@ const getIdentityFixture = require('@dashevo/dpp/lib/test/fixtures/getIdentityFi
 const getInstantAssetLockProofFixture = require('@dashevo/dpp/lib/test/fixtures/getInstantAssetLockProofFixture');
 const IdentityPublicKey = require('@dashevo/dpp/lib/identity/IdentityPublicKey');
 const PrivateKey = require('@dashevo/dashcore-lib/lib/privatekey');
-const getDocumentsFixture = require('@dashevo/dpp/lib/test/fixtures/getDocumentsFixture');
-const getDataContractFixture = require('@dashevo/dpp/lib/test/fixtures/getDataContractFixture');
 const identityCreateTransitionSchema = require('@dashevo/dpp/schema/identity/stateTransition/identityCreate.json');
 const identityTopUpTransitionSchema = require('@dashevo/dpp/schema/identity/stateTransition/identityTopUp.json');
 const identityUpdateTransitionSchema = require('@dashevo/dpp/schema/identity/stateTransition/identityUpdate.json');
 const dataContractCreateTransitionSchema = require('@dashevo/dpp/schema/dataContract/stateTransition/dataContractCreate.json');
 const documentsBatchTransitionSchema = require('@dashevo/dpp/schema/document/stateTransition/documentsBatch.json');
 const dataContractMetaSchema = require('@dashevo/dpp/schema/dataContract/dataContractMeta.json');
-const DataContractFactory = require('@dashevo/dpp/lib/dataContract/DataContractFactory');
-const createDPPMock = require('@dashevo/dpp/lib/test/mocks/createDPPMock');
 const createTestDIContainer = require('../../../lib/test/createTestDIContainer');
+
+function createDataContractDocuments() {
+  const name = new Array(62).fill('a').join('');
+  // const description = '1'; // new Array(4294967295).fill('d').join('');
+
+  const properties = {};
+  for (let i = 0; i < dataContractMetaSchema.$defs.documentProperties.maxProperties / 20; i++) {
+    properties[`${i}${name}`.slice(0, 62)] = {
+      type: 'string',
+      // additionalProperties: false,
+      // uniqueItems: false,
+      // maxLength: Number.MAX_VALUE,
+      // minLength: Number.MAX_VALUE,
+      // minimum: Number.MAX_VALUE,
+      // maximum: Number.MAX_VALUE,
+      // description,
+      // $comment: description,
+      // pattern: description,
+    };
+  }
+
+  const documents = {};
+
+  for (let i = 0; i < dataContractMetaSchema.properties.documents.maxProperties / 20; i++) {
+    const indices = Object.keys(properties).map((propertyName) => ({
+      properties: [{ [propertyName]: 'asc' },
+      ],
+      unique: false,
+    }));
+
+    documents[`${i}${name}`.slice(0, 62)] = {
+      type: 'object',
+      properties,
+      // required: Object.keys(properties),
+      additionalProperties: false,
+      indices,
+    };
+  }
+
+  return documents;
+}
 
 describe('checkFeePrediction', () => {
   let dpp;
@@ -170,38 +207,9 @@ describe('checkFeePrediction', () => {
     let dataContract;
 
     beforeEach(async () => {
-      const name = new Array(62).fill('a').join('');
-      const description = '1'; // new Array(4294967295).fill('d').join('');
+      const documents = createDataContractDocuments();
 
-      const properties = {};
-      for (let i = 0; i < dataContractMetaSchema.$defs.documentProperties.maxProperties / 10; i++) {
-        properties[`${i}${name}`.slice(0, 62)] = {
-          type: 'string',
-          additionalProperties: false,
-          // uniqueItems: false,
-          // maxLength: Number.MAX_VALUE,
-          // minLength: Number.MAX_VALUE,
-          // minimum: Number.MAX_VALUE,
-          // maximum: Number.MAX_VALUE,
-          // description,
-          // $comment: description,
-          // pattern: description,
-        };
-      }
-
-      const documents = {};
-
-      for (let i = 0; i < dataContractMetaSchema.properties.documents.maxProperties / 10; i++) {
-        documents[`${i}${name}`.slice(0, 62)] = {
-          type: 'object',
-          properties,
-          // required: Object.keys(properties),
-          additionalProperties: false,
-        };
-      }
-
-      const factory = new DataContractFactory(createDPPMock(), () => {});
-      dataContract = factory.create(identity.getId(), documents);
+      dataContract = dpp.dataContract.create(identity.getId(), documents);
     });
 
     it('should check that DataContractCreate predicted fee > real fee', async () => {
@@ -253,8 +261,35 @@ describe('checkFeePrediction', () => {
     let dataContract;
 
     beforeEach(async () => {
-      dataContract = getDataContractFixture(identity.getId());
-      documents = getDocumentsFixture(dataContract);
+      const dataContractDocuments = createDataContractDocuments();
+      dataContract = dpp.dataContract.create(identity.getId(), dataContractDocuments);
+      documents = [];
+
+      let i = 0;
+      for (const documentType of Object.keys(dataContractDocuments)) {
+        const data = {};
+
+        for (const propertyName of Object.keys(dataContractDocuments[documentType].properties)) {
+          data[propertyName] = new Array(63).fill('d').join('');
+        }
+
+        console.log(documentType, data);
+
+        const document = dpp.document.create(
+          dataContract,
+          identity.getId(),
+          documentType,
+          data,
+        );
+
+        documents.push(document);
+
+        i += 1;
+
+        if (i === 10) {
+          break;
+        }
+      }
     });
 
     it('should check that DocumentsBatchTransition create predicted fee > real fee', async () => {
