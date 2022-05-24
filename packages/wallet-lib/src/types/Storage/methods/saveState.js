@@ -29,7 +29,10 @@ const saveState = async function saveState() {
         return acc;
       }, {});
 
-      await this.adapter.setItem('wallets', serializedWallets);
+      for (const walletId of Object.keys(serializedWallets)) {
+        this.adapter.setItem('wallet_' + walletId, serializedWallets[walletId])
+      }
+
       await this.adapter.setItem('chains', serializedChains);
 
       this.lastSave = +new Date();

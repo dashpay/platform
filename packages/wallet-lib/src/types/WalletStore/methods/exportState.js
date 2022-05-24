@@ -1,5 +1,5 @@
 function exportState(chainHeight) {
-  let { lastKnownBlock: { height } } = this.state;
+  let { lastKnownBlock: { height }, walletId } = this.state;
 
   /*
    * If we have chain height provided, we must set last known block to
@@ -10,6 +10,7 @@ function exportState(chainHeight) {
   }
 
   return {
+    walletId,
     lastKnownBlock: {
       height,
     },

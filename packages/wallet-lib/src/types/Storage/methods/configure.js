@@ -39,7 +39,7 @@ module.exports = async function configure(opts = {}) {
   this.currentNetwork = opts.network;
 
   if (this.rehydrate) {
-    await this.rehydrateState();
+    await this.rehydrateState(opts.walletId);
   }
 
   if (this.autosave) {

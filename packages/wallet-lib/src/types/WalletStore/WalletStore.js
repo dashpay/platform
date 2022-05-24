@@ -1,4 +1,5 @@
 const SCHEMA = {
+  walletId: 'string',
   lastKnownBlock: {
     height: 'number',
   },
@@ -9,6 +10,7 @@ class WalletStore {
     this.walletId = walletId;
 
     this.state = {
+      walletId: walletId,
       mnemonic: null,
       paths: new Map(),
       identities: new Map(),

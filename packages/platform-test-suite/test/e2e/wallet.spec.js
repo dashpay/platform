@@ -4,6 +4,9 @@ const getDAPISeeds = require('../../lib/test/getDAPISeeds');
 
 const createClientWithFundedWallet = require('../../lib/test/createClientWithFundedWallet');
 const waitForBalanceToChange = require('../../lib/test/waitForBalanceToChange');
+const InMem = require('../../../wallet-lib/src/adapters/InMem');
+
+const walletStoreFixture = require('../../../wallet-lib/fixtures/wallets/2a331817b9d6bf85100ef0/wallet-store.json')
 
 const { EVENTS } = Dash.WalletLib;
 
@@ -163,6 +166,42 @@ describe('e2e', () => {
           firstTransaction.id,
           secondTransaction.id,
         ]);
+      });
+    });
+
+    describe('wallet storage', () => {
+      it('should init two wallet and save them in the storage under different keys', async () => {
+        const adapter = new InMem()
+
+        adapter.setItem('wallets', {
+          [walletStoreFixture.walletId]: walletStoreFixture
+        })
+
+        const firstWallet = new Dash.Wallet({
+          network: process.env.NETWORK,
+          transport: {
+            seeds: getDAPISeeds()
+          },
+          adapter
+        });
+
+        await firstWallet.getAccount()
+        await firstWallet.disconnect()
+
+        const secondWallet = new Dash.Wallet({
+          network: process.env.NETWORK,
+          transport: {
+            seeds: getDAPISeeds()
+          },
+          adapter
+        });
+
+        await secondWallet.getAccount()
+        await secondWallet.disconnect()
+
+        expect(adapter.getItem('wallets')).to.be.equal(null)
+        expect(adapter.getItem('wallet_' + firstWallet.walletId).walletId).to.be.equal(firstWallet.walletId)
+        expect(adapter.getItem('wallet_' + secondWallet.walletId).walletId).to.be.equal(secondWallet.walletId)
       });
     });
   });
