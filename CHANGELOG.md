@@ -1,3 +1,10 @@
+### [0.22.9](https://github.com/dashevo/platform/compare/v0.22.8...v0.22.9) (2022-05-24)
+
+
+### Bug Fixes
+
+* incorrect parsing of commitment payload ([#408](https://github.com/dashevo/platform/issues/408))
+
 ### [0.22.8](https://github.com/dashevo/platform/compare/v0.22.7...v0.22.8) (2022-05-23)
 
 
