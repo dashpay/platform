@@ -1,5 +1,6 @@
 const path = require('path');
 const webpack = require('webpack');
+const UglifyJsPlugin = require('uglifyjs-webpack-plugin');
 
 const baseConfig = {
   entry: './src/index.ts',
@@ -12,6 +13,15 @@ const baseConfig = {
         exclude: /node_modules/,
       },
     ],
+  },
+  optimization: {
+    minimizer: [
+      new UglifyJsPlugin({
+        uglifyOptions: {
+          keep_fnames: true
+        }
+      }
+    )],
   },
   resolve: {
     extensions: ['.ts', '.js', '.json'],
