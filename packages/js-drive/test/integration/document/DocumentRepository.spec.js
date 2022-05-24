@@ -149,7 +149,7 @@ const validOrderByOperators = {
   },
 };
 
-const documentSchema = {
+const testDocumentSchema = {
   documentA: {
     type: 'object',
     properties: {
@@ -376,7 +376,7 @@ const documentSchema = {
 };
 
 for (const fieldName of validFieldNameTestCases) {
-  documentSchema[`document${fieldName}`] = {
+  testDocumentSchema[`document${fieldName}`] = {
     type: 'object',
     properties: {
       [fieldName]: {
@@ -405,7 +405,7 @@ for (const type of ['number', 'string', 'boolean', 'buffer']) {
     properties.a.byteaArray = true;
   }
 
-  documentSchema[`document${ucFirst(type)}`] = {
+  testDocumentSchema[`document${ucFirst(type)}`] = {
     type: 'object',
     properties,
     additionalProperties: false,
@@ -418,7 +418,7 @@ for (const type of ['number', 'string', 'boolean', 'buffer']) {
   };
 }
 
-documentSchema.documentBig = {
+testDocumentSchema.documentBig = {
   type: 'object',
   properties: Array(256).fill().map((v, i) => `a${i}`).reduce((res, key) => {
     res[key] = {
@@ -1481,7 +1481,7 @@ describe('DocumentRepository', function main() {
     let dataContract;
     let documentRepository;
 
-    before(async () => {
+    beforeEach(async () => {
       container = await createTestDIContainer();
 
       const rawDocuments = {
@@ -1547,7 +1547,7 @@ describe('DocumentRepository', function main() {
       await dataContractRepository.store(dataContract);
     });
 
-    after(async () => {
+    afterEach(async () => {
       if (container) {
         await container.dispose();
       }
@@ -1564,8 +1564,8 @@ describe('DocumentRepository', function main() {
     });
 
     describe('invalid queries', () => {
-      invalidQueries.forEach(({ query, errorClass }) => {
-        it(`should return invalid result with "${errorClass.name}" error for query "${JSON.stringify(query)}"`, async () => {
+      invalidQueries.forEach(({ query }) => {
+        it(`should return throw InvalidQueryError for query "${JSON.stringify(query)}"`, async () => {
           try {
             await documentRepository.find(dataContract, 'testDocument', query);
 
@@ -1602,7 +1602,7 @@ describe('DocumentRepository', function main() {
     let documentRepository;
     let dataContractRepository;
 
-    before(async () => {
+    beforeEach(async () => {
       container = await createTestDIContainer();
 
       documentRepository = container.resolve('documentRepository');
@@ -1616,11 +1616,11 @@ describe('DocumentRepository', function main() {
 
       const factory = new DataContractFactory(createDPPMock(), () => {});
       const ownerId = generateRandomIdentifier();
-      dataContract = factory.create(ownerId, documentSchema);
+      dataContract = factory.create(ownerId, testDocumentSchema);
       await dataContractRepository.store(dataContract);
     });
 
-    after(async () => {
+    afterEach(async () => {
       if (container) {
         await container.dispose();
       }
@@ -1996,7 +1996,8 @@ describe('DocumentRepository', function main() {
                       expect.fail('should throw an error');
                     } catch (e) {
                       expect(e).to.be.instanceOf(InvalidQueryError);
-                      // expect(e.message).to.equal('Invalid query: multiple range clauses error: all ranges must be on same field');
+                      // expect(e.message).to.equal('Invalid query: multiple range clauses
+                      // error: all ranges must be on same field');
                     }
                   });
 
@@ -2769,7 +2770,7 @@ describe('DocumentRepository', function main() {
       });
 
       it('should return invalid result if order of three of two properties after indexed one is not preserved', async () => {
-        // documentSchema = {
+        // testDocumentSchema = {
         //   indices: [
         //     {
         //       name: 'index1',
@@ -2808,7 +2809,7 @@ describe('DocumentRepository', function main() {
       });
 
       it('should return invalid result if order of properties does not match index', async () => {
-        // documentSchema = {
+        // testDocumentSchema = {
         //   indices: [
         //     {
         //       name: 'index1',
@@ -2991,7 +2992,7 @@ describe('DocumentRepository', function main() {
     describe('startAt', () => {
       let id;
 
-      before(async () => {
+      beforeEach(async () => {
         const documentFactory = new DocumentFactory(
           createDPPMock(),
           () => ({
@@ -3045,7 +3046,7 @@ describe('DocumentRepository', function main() {
     describe('startAfter', () => {
       let id;
 
-      before(async () => {
+      beforeEach(async () => {
         const documentFactory = new DocumentFactory(
           createDPPMock(),
           () => ({
@@ -3108,6 +3109,91 @@ describe('DocumentRepository', function main() {
 
         expect(result).to.be.instanceOf(StorageResult);
       });
+    });
+
+    it('should return valid result if data contract has only system properties', async () => {
+      const schema = {
+        chat: {
+          type: 'object',
+          indices: [
+            {
+              name: 'createdAt',
+              properties: [
+                {
+                  $createdAt: 'asc',
+                },
+              ],
+            },
+            {
+              name: '$ownerId',
+              properties: [
+                {
+                  $ownerId: 'asc',
+                },
+              ],
+            },
+          ],
+        },
+      };
+
+      const factory = new DataContractFactory(createDPPMock(), () => {});
+      const ownerId = generateRandomIdentifier();
+      const myDataContract = factory.create(ownerId, schema);
+      await dataContractRepository.store(myDataContract);
+
+      const result = await documentRepository.find(myDataContract, 'chat', {
+        where: [
+          ['$ownerId', '==', ownerId],
+          ['$createdAt', '>', new Date().getTime()],
+        ],
+        orderBy: [['$createdAt', 'asc']],
+      });
+
+      expect(result).to.be.instanceOf(StorageResult);
+    });
+
+    it('should return valid result for DPNS contract', async () => {
+      const schema = {
+        label: {
+          type: 'object',
+          properties: {
+            normalizedLabel: {
+              type: 'string',
+            },
+            normalizedParentDomainName: {
+              type: 'string',
+            },
+          },
+          indices: [
+            {
+              name: 'index1',
+              properties: [
+                {
+                  normalizedParentDomainName: 'asc',
+                },
+                {
+                  normalizedLabel: 'asc',
+                },
+              ],
+              unique: true,
+            },
+          ],
+        },
+      };
+
+      const factory = new DataContractFactory(createDPPMock(), () => {});
+      const ownerId = generateRandomIdentifier();
+      const myDataContract = factory.create(ownerId, schema);
+      await dataContractRepository.store(myDataContract);
+
+      const result = await documentRepository.find(myDataContract, 'label', {
+        where: [
+          ['normalizedParentDomainName', '==', 'dash'],
+        ],
+        orderBy: [['normalizedLabel', 'asc']],
+      });
+
+      expect(result).to.be.instanceOf(StorageResult);
     });
   });
 });
