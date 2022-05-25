@@ -3,6 +3,7 @@ pub mod generate_document_id;
 mod state_transition;
 pub use state_transition::documents_batch_transition::document_transition;
 pub use state_transition::documents_batch_transition::validation;
+pub use state_transition::documents_batch_transition::DocumentsBatchTransition;
 
 use crate::data_contract::DataContract;
 use crate::errors::ProtocolError;

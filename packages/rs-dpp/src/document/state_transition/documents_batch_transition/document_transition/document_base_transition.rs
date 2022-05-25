@@ -22,6 +22,19 @@ pub enum Action {
     Delete = 3,
 }
 
+impl TryFrom<u8> for Action {
+    type Error = anyhow::Error;
+    fn try_from(value: u8) -> Result<Self, Self::Error> {
+        match value {
+            0 => Ok(Action::Create),
+            1 => Ok(Action::Replace),
+            3 => Ok(Action::Delete),
+            v => bail!("unknown document transition action: '{}'",v)
+        }
+    }
+
+}
+
 impl Default for Action {
     fn default() -> Action {
         Action::Create

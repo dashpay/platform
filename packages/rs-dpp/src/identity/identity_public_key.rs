@@ -1,12 +1,12 @@
 #![allow(clippy::from_over_into)]
 
 use crate::errors::{InvalidVectorSizeError, ProtocolError};
-use anyhow::anyhow;
+use anyhow::{anyhow, bail};
 use dashcore::PublicKey;
 use lazy_static::lazy_static;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use serde_repr::{Deserialize_repr, Serialize_repr};
-use std::{collections::HashMap, hash::Hash};
+use std::{collections::HashMap, hash::Hash, convert::TryFrom};
 
 pub type KeyID = u64;
 
@@ -30,6 +30,7 @@ pub enum Purpose {
     DECRYPTION = 2,
 }
 
+
 impl std::fmt::Display for Purpose {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{:?}", self)
@@ -43,6 +44,28 @@ pub enum SecurityLevel {
     CRITICAL = 1,
     HIGH = 2,
     MEDIUM = 3,
+}
+
+impl TryFrom<usize> for SecurityLevel {
+    type Error =  anyhow::Error;
+    fn try_from(value: usize) -> Result<Self, Self::Error> {
+        match value {
+            0 => Ok(Self::MASTER),
+            1 => Ok(Self::CRITICAL),
+            2 => Ok(Self::HIGH),
+            3 => Ok(Self::MEDIUM),
+            value => bail!("unrecognized security level: {}", value)
+        }
+    }
+}
+
+impl SecurityLevel {
+    pub  fn lowest_level() -> SecurityLevel {
+        Self::MEDIUM
+    }
+    pub fn highest_level() -> SecurityLevel {
+        Self::MASTER
+    }
 }
 
 impl std::fmt::Display for SecurityLevel {
