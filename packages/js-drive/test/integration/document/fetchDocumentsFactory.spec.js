@@ -5,7 +5,6 @@ const generateRandomIdentifier = require('@dashevo/dpp/lib/test/utils/generateRa
 const InvalidQueryError = require('../../../lib/document/errors/InvalidQueryError');
 
 const createTestDIContainer = require('../../../lib/test/createTestDIContainer');
-const NotIndexedPropertiesInWhereConditionsError = require('../../../lib/document/query/errors/NotIndexedPropertiesInWhereConditionsError');
 const StorageResult = require('../../../lib/storage/StorageResult');
 
 describe('fetchDocumentsFactory', () => {
@@ -256,12 +255,6 @@ describe('fetchDocumentsFactory', () => {
       expect.fail('should throw InvalidQueryError');
     } catch (e) {
       expect(e).to.be.instanceOf(InvalidQueryError);
-      expect(e.getErrors()).to.be.an('array');
-      expect(e.getErrors()).to.have.lengthOf(1);
-
-      const [error] = e.getErrors();
-
-      expect(error).to.be.instanceOf(NotIndexedPropertiesInWhereConditionsError);
     }
   });
 });
