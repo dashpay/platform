@@ -1,6 +1,4 @@
-use dashcore::{
-    secp256k1::{PublicKey as RawPublicKey, SecretKey as RawSecretKey},
-};
+use dashcore::secp256k1::{PublicKey as RawPublicKey, SecretKey as RawSecretKey};
 
 use anyhow::anyhow;
 use bls_signatures::Serialize;
@@ -8,7 +6,8 @@ use std::convert::TryInto;
 
 use crate::{
     identity::{IdentityPublicKey, KeyID, KeyType, Purpose, SecurityLevel},
-    prelude::*, util::hash::ripemd160_sha256,
+    prelude::*,
+    util::hash::ripemd160_sha256,
 };
 
 use super::StateTransitionLike;
@@ -89,9 +88,7 @@ where
                 self.verify_ecdsa_hash_160_signature_by_public_key_hash(public_key_bytes)
             }
 
-            KeyType::ECDSA_SECP256K1 => {
-                self.verify_ecdsa_signature_by_public_key(public_key_bytes)
-            }
+            KeyType::ECDSA_SECP256K1 => self.verify_ecdsa_signature_by_public_key(public_key_bytes),
 
             KeyType::BLS12_381 => self.verify_bls_signature_by_public_key(public_key_bytes),
         }
@@ -99,7 +96,8 @@ where
 
     /// Verifies that the supplied public key has the correct security level
     /// and purpose to sign the state transition
-    fn verify_public_key_level_and_purpose(&self,
+    fn verify_public_key_level_and_purpose(
+        &self,
         public_key: &IdentityPublicKey,
     ) -> Result<(), ProtocolError> {
         if self.get_security_level_requirement() < public_key.get_security_level() {
@@ -146,14 +144,17 @@ mod test {
     use super::*;
     use crate::document::DocumentsBatchTransition;
     use crate::{
+        assert_error_contains,
         identity::{KeyID, SecurityLevel},
+        mocks,
         state_transition::{
             StateTransition, StateTransitionConvert, StateTransitionLike, StateTransitionType,
-        }, util::hash::ripemd160_sha256, assert_error_contains, mocks,
+        },
+        util::hash::ripemd160_sha256,
     };
+    use bls_signatures::Serialize as BlsSerialize;
     use serde::{Deserialize, Serialize};
     use serde_json::json;
-    use bls_signatures::Serialize as BlsSerialize;
 
     use super::StateTransitionIdentitySigned;
 
@@ -226,57 +227,52 @@ mod test {
         }
     }
 
-    struct Keys  {
-        pub ec_private : Vec<u8>,
-        pub ec_public_compressed : Vec<u8>,
-        pub ec_public_uncompressed : Vec<u8>,
-        pub bls_private : Vec<u8>,
-        pub bls_public  : Vec<u8>,
-        pub identity_public_key : IdentityPublicKey,
-        pub public_key_id : u64,
-
+    struct Keys {
+        pub ec_private: Vec<u8>,
+        pub ec_public_compressed: Vec<u8>,
+        pub ec_public_uncompressed: Vec<u8>,
+        pub bls_private: Vec<u8>,
+        pub bls_public: Vec<u8>,
+        pub identity_public_key: IdentityPublicKey,
+        pub public_key_id: u64,
     }
 
-
-    fn get_test_keys() -> Keys   {
+    fn get_test_keys() -> Keys {
         let secp = dashcore::secp256k1::Secp256k1::new();
         let mut rng = dashcore::secp256k1::rand::thread_rng();
         let (private_key, public_key) = secp.generate_keypair(&mut rng);
 
         let public_key_id = 1;
-        let ec_private_key_bytes  = private_key.secret_bytes();
-        let ec_public_compressed_bytes  =  public_key.serialize();
-        let ec_public_uncompressed_bytes  =  public_key.serialize_uncompressed();
-
+        let ec_private_key_bytes = private_key.secret_bytes();
+        let ec_public_compressed_bytes = public_key.serialize();
+        let ec_public_uncompressed_bytes = public_key.serialize_uncompressed();
 
         let mut buffer = [0u8; 32];
         let _ = getrandom::getrandom(&mut buffer);
         let bls_private = bls_signatures::PrivateKey::new(buffer);
         let bls_public = bls_private.public_key();
-        let bls_private_bytes =  bls_private.as_bytes();
-        let bls_public_bytes =  bls_public.as_bytes();
+        let bls_private_bytes = bls_private.as_bytes();
+        let bls_public_bytes = bls_public.as_bytes();
 
         let identity_public_key = IdentityPublicKey {
-            id : public_key_id,
-            key_type : KeyType::ECDSA_SECP256K1,
+            id: public_key_id,
+            key_type: KeyType::ECDSA_SECP256K1,
             purpose: Purpose::AUTHENTICATION,
             security_level: SecurityLevel::MASTER,
             data: ec_public_compressed_bytes.try_into().unwrap(),
-            read_only: false
+            read_only: false,
         };
 
         Keys {
             ec_private: ec_private_key_bytes.to_vec(),
-            ec_public_compressed : ec_public_compressed_bytes.to_vec(),
-            ec_public_uncompressed : ec_public_uncompressed_bytes.to_vec(),
-            bls_private : bls_private_bytes,
-            bls_public : bls_public_bytes,
+            ec_public_compressed: ec_public_compressed_bytes.to_vec(),
+            ec_public_uncompressed: ec_public_uncompressed_bytes.to_vec(),
+            bls_private: bls_private_bytes,
+            bls_public: bls_public_bytes,
             identity_public_key,
             public_key_id,
         }
     }
-
-
 
     #[test]
     fn to_object_with_signature() {
@@ -329,23 +325,21 @@ mod test {
     fn to_buffer() {
         let st = get_mock_state_transition();
         let hash = st.to_buffer(false).unwrap();
-        let result =  hex::encode(hash);
+        let result = hex::encode(hash);
 
         assert_eq!(108, result.len());
-        assert!(result.starts_with("01000000")
-        )
+        assert!(result.starts_with("01000000"))
     }
 
     #[test]
     fn to_buffer_no_signature() {
         let st = get_mock_state_transition();
         let hash = st.to_buffer(true).unwrap();
-        let result =  hex::encode(hash);
+        let result = hex::encode(hash);
 
         assert_eq!(42, result.len());
         assert_eq!("01000000a16e7472616e736974696f6e5479706501", result);
     }
-
 
     #[test]
     fn get_signature_public_key_id() {
@@ -354,14 +348,15 @@ mod test {
         assert_eq!(keys.public_key_id, st.get_signature_public_key_id())
     }
 
-
     #[test]
     fn sign_validate_with_private_key() {
         let mut st = get_mock_state_transition();
         let keys = get_test_keys();
 
-        st.sign(&keys.identity_public_key, &keys.ec_private).unwrap();
-        st.verify_signature(&keys.identity_public_key).expect("the verification shouldn't fail");
+        st.sign(&keys.identity_public_key, &keys.ec_private)
+            .unwrap();
+        st.verify_signature(&keys.identity_public_key)
+            .expect("the verification shouldn't fail");
     }
 
     #[test]
@@ -371,13 +366,14 @@ mod test {
         keys.identity_public_key.key_type = KeyType::ECDSA_HASH160;
         keys.identity_public_key.data = ripemd160_sha256(&keys.identity_public_key.data);
 
-        st.sign(&keys.identity_public_key, &keys.ec_private).unwrap();
-        st.verify_signature(&keys.identity_public_key).expect("the verification shouldn't fail");
+        st.sign(&keys.identity_public_key, &keys.ec_private)
+            .unwrap();
+        st.verify_signature(&keys.identity_public_key)
+            .expect("the verification shouldn't fail");
     }
 
-
     #[test]
-    fn error_when_sign_with_wrong_public_key()  {
+    fn error_when_sign_with_wrong_public_key() {
         let mut st = get_mock_state_transition();
         let mut keys = get_test_keys();
 
@@ -391,110 +387,106 @@ mod test {
         assert_error_contains!(sign_result, "Invalid signature public key");
     }
 
-
     #[test]
     fn error_if_security_level_is_not_met() {
         let mut st = get_mock_state_transition();
         let mut keys = get_test_keys();
         keys.identity_public_key.security_level = SecurityLevel::MEDIUM;
 
-        let sign_error = st.sign(&keys.identity_public_key, &keys.ec_private).unwrap_err();
+        let sign_error = st
+            .sign(&keys.identity_public_key, &keys.ec_private)
+            .unwrap_err();
         match sign_error {
-            ProtocolError::PublicKeySecurityLevelNotMetError { public_key_security_level: sec_level, required_security_level: req_sec_level } =>  {
+            ProtocolError::PublicKeySecurityLevelNotMetError {
+                public_key_security_level: sec_level,
+                required_security_level: req_sec_level,
+            } => {
                 assert_eq!(SecurityLevel::MEDIUM, sec_level);
                 assert_eq!(SecurityLevel::MASTER, req_sec_level);
             }
             error => {
                 panic!("invalid error type: {}", error)
             }
-
         };
-     }
+    }
 
-
-     #[test]
-     fn error_if_key_purpose_not_authenticated() {
+    #[test]
+    fn error_if_key_purpose_not_authenticated() {
         let mut st = get_mock_state_transition();
         let mut keys = get_test_keys();
-        keys.identity_public_key.purpose  = Purpose::ENCRYPTION;
+        keys.identity_public_key.purpose = Purpose::ENCRYPTION;
 
-        let sign_error = st.sign(&keys.identity_public_key, &keys.ec_private).unwrap_err();
+        let sign_error = st
+            .sign(&keys.identity_public_key, &keys.ec_private)
+            .unwrap_err();
         match sign_error {
-            ProtocolError::WrongPublicKeyPurposeError { public_key_purpose: purpose, key_purpose_requirement: req_purpose } =>  {
+            ProtocolError::WrongPublicKeyPurposeError {
+                public_key_purpose: purpose,
+                key_purpose_requirement: req_purpose,
+            } => {
                 assert_eq!(Purpose::ENCRYPTION, purpose);
                 assert_eq!(Purpose::AUTHENTICATION, req_purpose);
             }
             error => {
                 panic!("invalid error type: {}", error)
             }
-
         };
+    }
 
-     }
-
-
-     #[test]
-     fn should_sign_validate_with_bls_signature() {
+    #[test]
+    fn should_sign_validate_with_bls_signature() {
         let mut st = get_mock_state_transition();
         let mut keys = get_test_keys();
         keys.identity_public_key.key_type = KeyType::BLS12_381;
         keys.identity_public_key.data = keys.bls_public.clone();
 
-        st.sign(&keys.identity_public_key, &keys.bls_private).expect("validation should be successful");
-     }
+        st.sign(&keys.identity_public_key, &keys.bls_private)
+            .expect("validation should be successful");
+    }
 
-
-     #[test]
-     fn error_if_transition_is_not_signed_ecdsa()  {
-        let  st = get_mock_state_transition();
-        let  keys = get_test_keys();
+    #[test]
+    fn error_if_transition_is_not_signed_ecdsa() {
+        let st = get_mock_state_transition();
+        let keys = get_test_keys();
 
         let verify_error = st.verify_signature(&keys.identity_public_key).unwrap_err();
         match verify_error {
-            ProtocolError::StateTransitionIsNotIsSignedError {..} =>  {
-            }
+            ProtocolError::StateTransitionIsNotIsSignedError { .. } => {}
             error => {
                 panic!("invalid error type: {}", error)
             }
         };
-     }
+    }
 
-     #[test]
-     fn error_if_transition_is_not_signed_bls()  {
-        let   st = get_mock_state_transition();
-        let  mut keys = get_test_keys();
+    #[test]
+    fn error_if_transition_is_not_signed_bls() {
+        let st = get_mock_state_transition();
+        let mut keys = get_test_keys();
         keys.identity_public_key.key_type = KeyType::BLS12_381;
         keys.identity_public_key.data = keys.bls_public.clone();
 
         let verify_error = st.verify_signature(&keys.identity_public_key).unwrap_err();
         match verify_error {
-            ProtocolError::StateTransitionIsNotIsSignedError {..} =>  {
-            }
+            ProtocolError::StateTransitionIsNotIsSignedError { .. } => {}
             error => {
                 panic!("invalid error type: {}", error)
             }
         };
-     }
+    }
 
-     #[test]
-     fn set_signature() {
-        let   mut st = get_mock_state_transition();
+    #[test]
+    fn set_signature() {
+        let mut st = get_mock_state_transition();
         let signature = "some_signature";
         st.set_signature(signature.as_bytes().to_owned());
         assert_eq!(signature.as_bytes(), st.get_signature());
-     }
+    }
 
-     #[test]
-     fn set_signature_public_key_id() {
-        let   mut st = get_mock_state_transition();
+    #[test]
+    fn set_signature_public_key_id() {
+        let mut st = get_mock_state_transition();
         let public_key_id = 2;
         st.set_signature_public_key_id(public_key_id);
         assert_eq!(public_key_id, st.get_signature_public_key_id());
-     }
-
+    }
 }
-
-
-
-
-
