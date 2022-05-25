@@ -15,11 +15,11 @@ const rehydrateState = async function rehydrateState(walletId) {
         const storage = await this.adapter.getItem(`wallet_${walletId}`);
 
         if (storage) {
-          const chains = Object.keys(storage)
+          const chains = Object.keys(storage);
 
           try {
             chains.forEach((chainNetwork) => {
-              const {chain, wallet} = storage[chainNetwork]
+              const { chain, wallet } = storage[chainNetwork];
 
               const chainStore = this.getChainStore(chainNetwork);
 

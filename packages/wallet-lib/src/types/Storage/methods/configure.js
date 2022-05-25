@@ -18,7 +18,7 @@ module.exports = async function configure(opts = {}) {
   this.adapter = await configureAdapter((opts.adapter) ? opts.adapter : await getDefaultAdapter());
 
   const storage = await this.adapter.getItem(`wallet_${opts.walletId}`);
-  const storageVersion = storage && storage.version
+  const storageVersion = storage && storage.version;
 
   if (!(this.adapter instanceof InMem) && storageVersion !== CURRENT_VERSION) {
     if (typeof version === 'number') {
