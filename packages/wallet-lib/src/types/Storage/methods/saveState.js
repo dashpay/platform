@@ -30,10 +30,17 @@ const saveState = async function saveState() {
       }, {});
 
       Object.keys(serializedWallets).forEach((walletId) => {
-        this.adapter.setItem(`wallet_${walletId}`, serializedWallets[walletId]);
-      });
+        const storage = {}
 
-      await this.adapter.setItem('chains', serializedChains);
+        Object.keys(serializedChains).forEach((chainNetwork) => {
+          const chain = serializedChains[chainNetwork]
+          const wallet = serializedWallets[walletId]
+
+          storage[chainNetwork] = {chain, wallet}
+        })
+
+        this.adapter.setItem(`wallet_${walletId}`, storage);
+      });
 
       this.lastSave = +new Date();
       this.emit(SAVE_STATE_SUCCESS, { type: SAVE_STATE_SUCCESS, payload: this.lastSave });

@@ -5,7 +5,7 @@ const getDefaultAdapter = require('../_getDefaultAdapter');
 const { CONFIGURED } = require('../../../EVENTS');
 const logger = require('../../../logger');
 
-const CURRENT_VERSION = 1;
+const CURRENT_VERSION = 2;
 
 /**
  * To be called after instantialization as it contains all the async logic / test of adapters
@@ -17,9 +17,10 @@ module.exports = async function configure(opts = {}) {
   this.autosave = has(opts, 'autosave') ? opts.autosave : this.autosave;
   this.adapter = await configureAdapter((opts.adapter) ? opts.adapter : await getDefaultAdapter());
 
-  const version = await this.adapter.getItem('version');
+  const storage = await this.adapter.getItem(`wallet_${opts.walletId}`);
+  const storageVersion = storage && storage.version
 
-  if (!(this.adapter instanceof InMem) && version !== CURRENT_VERSION) {
+  if (!(this.adapter instanceof InMem) && storageVersion !== CURRENT_VERSION) {
     if (typeof version === 'number') {
       logger.warn('Storage version mismatch, resyncing from start');
     }

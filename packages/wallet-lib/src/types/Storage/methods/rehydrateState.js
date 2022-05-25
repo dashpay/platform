@@ -12,46 +12,37 @@ const rehydrateState = async function rehydrateState(walletId) {
   if (this.rehydrate && this.lastRehydrate === null) {
     try {
       if (this.adapter && hasMethod(this.adapter, 'getItem')) {
-        const wallet = await this.adapter.getItem(`wallet_${walletId}`);
+        const storage = await this.adapter.getItem(`wallet_${walletId}`);
 
-        if (wallet) {
+        if (storage) {
+          const chains = Object.keys(storage)
+
           try {
-            const walletStore = this.getWalletStore(walletId);
+            chains.forEach((chainNetwork) => {
+              const {chain, wallet} = storage[chainNetwork]
 
-            if (walletStore) {
-              walletStore.importState(wallet);
-            }
-          } catch (e) {
-            logger.error('Error importing wallets storage, resyncing from start', e);
-
-            this.adapter.setItem(`wallet_${walletId}`, null);
-            this.adapter.setItem('wallets', null);
-            this.adapter.setItem('chains', null);
-            this.adapter.setItem('transactions', null);
-            this.adapter.setItem('instantLocks', null);
-          }
-        }
-
-        this.adapter.setItem('wallets', null);
-
-        const chains = await this.adapter.getItem('chains');
-        if (chains) {
-          try {
-            Object.keys(chains).forEach((chainNetwork) => {
               const chainStore = this.getChainStore(chainNetwork);
 
               if (chainStore) {
-                chainStore.importState(chains[chainNetwork]);
+                chainStore.importState(chain);
+              }
+
+              try {
+                const walletStore = this.getWalletStore(walletId);
+
+                if (walletStore) {
+                  walletStore.importState(wallet);
+                }
+              } catch (e) {
+                logger.error('Error importing wallets storage, resyncing from start', e);
+
+                this.adapter.setItem(`wallet_${walletId}`, null);
               }
             });
           } catch (e) {
             logger.error('Error importing chains storage, resyncing from start', e);
 
             this.adapter.setItem(`wallet_${walletId}`, null);
-            this.adapter.setItem('wallets', null);
-            this.adapter.setItem('chains', null);
-            this.adapter.setItem('transactions', null);
-            this.adapter.setItem('instantLocks', null);
           }
         }
       }
