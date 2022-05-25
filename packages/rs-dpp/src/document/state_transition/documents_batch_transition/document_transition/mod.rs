@@ -1,7 +1,6 @@
 use std::convert::TryFrom;
 
 use serde::{Serialize, Deserialize};
-use anyhow::{anyhow};
 
 mod document_base_transition;
 pub use document_base_transition::*;
@@ -27,10 +26,48 @@ pub enum DocumentTransition {
     Delete(DocumentDeleteTransition),
 }
 
+macro_rules! call_method {
+    ($state_transition:expr, $method:ident, $args:tt ) => {
+        match $state_transition {
+            DocumentTransition::Create(st) => st.$method($args),
+            DocumentTransition::Replace(st) => st.$method($args),
+            DocumentTransition::Delete(st) => st.$method($args),
+        }
+    };
+    ($state_transition:expr, $method:ident ) => {
+        match $state_transition {
+            DocumentTransition::Create(st) => st.$method(),
+            DocumentTransition::Replace(st) => st.$method(),
+            DocumentTransition::Delete(st) => st.$method(),
+        }
+    };
+}
 
+// macro_rules! call_static_method {
+//     ($state_transition:expr, $method:ident ) => {
+//         match $state_transition {
+//             DocumentTransition::Create(_) => {
+//                 DocumentTran::$method()
+//             }
+//             DocumentTransition::Replace(_) => {
+//                 mocks::DataContractUpdateTransition::$method()
+//             }
+//             DocumentTransition::Modify(_) => DocumentsBatchTransition::$method(),
+//         }
+//     };
+// }
 
-impl DocumentTransition {
-    pub fn from_raw_document(raw_transition : JsonValue, data_contract : DataContract ) ->  Result<Self, ProtocolError> {
+impl DocumentTransitionObjectLike for DocumentTransition {
+    fn from_json_str(json_str: &str, data_contract: DataContract) -> Result<Self, ProtocolError>
+    where
+            Self: Sized {
+                todo!()
+
+    }
+
+    fn from_raw_document(raw_transition: JsonValue, data_contract: DataContract) -> Result<Self, ProtocolError>
+    where
+            Self: Sized {
         let action : Action = TryFrom::try_from(raw_transition.get_u64(PROPERTY_ACTION)? as u8)?;
         Ok(match action  {
             Action::Create => DocumentTransition::Create(DocumentCreateTransition::from_raw_document(raw_transition, data_contract)?),
@@ -39,6 +76,17 @@ impl DocumentTransition {
         })
     }
 
+    fn to_json(&self) -> Result<JsonValue, ProtocolError> {
+        call_method!(self, to_json)
+
+    }
+
+    fn to_object(&self) -> Result<JsonValue, ProtocolError> {
+        call_method!(self, to_json)
+    }
+ }
+
+impl DocumentTransition {
     pub fn base(&self) -> &DocumentBaseTransition {
         match self {
             DocumentTransition::Create(d) => &d.base,

@@ -175,6 +175,7 @@ pub trait StateTransitionConvert: Serialize {
         Ok(json_value)
     }
 
+
     // Returns the cibor-encoded bytes representation of the object. The data is  prefixed by 4 bytes containing the Protocol Version
     fn to_buffer(&self, skip_signature: bool) -> Result<Vec<u8>, ProtocolError> {
         let mut json_value = self.to_object(skip_signature)?;

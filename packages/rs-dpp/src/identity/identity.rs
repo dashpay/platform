@@ -21,7 +21,7 @@ pub enum AssetLockProof {
 
 /// Implement the Identity. Identity is a low-level construct that provides the foundation
 /// for user-facing functionality on the platform
-#[derive(Default, Debug, Serialize, Deserialize)]
+#[derive(Default, Debug, Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct Identity {
     pub protocol_version: u32,
