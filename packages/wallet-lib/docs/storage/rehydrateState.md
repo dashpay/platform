@@ -1,11 +1,12 @@
-**Usage**: async `storage.rehydrateState()`     
+**Usage**: async `storage.rehydrateState(walletId)`     
 **Description**: Used to fetch the state from the persistence adapter    
 **Notes**: Three items are fetch (`adapter.getItem`) : transactions, wallets and chains data.   
 
 Parameters: 
 
-| parameters             | type              | required       | Description                                                            |  
-|------------------------|-------------------|----------------| -----------------------------------------------------------------------|
+| parameters   | type   | required       | Description     |  
+|--------------|--------|----------------|-----------------|
+| **walletId** | String | yes            | Unique walletId |
 
 
 Returns: Void   
