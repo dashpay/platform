@@ -91,7 +91,6 @@ impl StateTransitionConvert for StateTransition {
         call_method!(self, to_object, skip_signature)
     }
 
-
     fn signature_property_paths() -> Vec<&'static str> {
         panic!("Static call is not supported")
     }

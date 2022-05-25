@@ -1,6 +1,6 @@
 use std::convert::TryFrom;
 
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 
 mod document_base_transition;
 pub use document_base_transition::*;
@@ -14,10 +14,9 @@ pub use document_delete_transition::*;
 mod document_replace_transition;
 pub use document_replace_transition::*;
 
-use crate::{data_contract::DataContract, ProtocolError, util::json_value::JsonValueExt};
+use crate::{data_contract::DataContract, util::json_value::JsonValueExt, ProtocolError};
 
-pub const PROPERTY_ACTION : &str = "$action";
-
+pub const PROPERTY_ACTION: &str = "$action";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum DocumentTransition {
@@ -43,48 +42,43 @@ macro_rules! call_method {
     };
 }
 
-// macro_rules! call_static_method {
-//     ($state_transition:expr, $method:ident ) => {
-//         match $state_transition {
-//             DocumentTransition::Create(_) => {
-//                 DocumentTran::$method()
-//             }
-//             DocumentTransition::Replace(_) => {
-//                 mocks::DataContractUpdateTransition::$method()
-//             }
-//             DocumentTransition::Modify(_) => DocumentsBatchTransition::$method(),
-//         }
-//     };
-// }
-
 impl DocumentTransitionObjectLike for DocumentTransition {
     fn from_json_str(json_str: &str, data_contract: DataContract) -> Result<Self, ProtocolError>
     where
-            Self: Sized {
-                todo!()
-
+        Self: Sized,
+    {
+        todo!()
     }
 
-    fn from_raw_document(raw_transition: JsonValue, data_contract: DataContract) -> Result<Self, ProtocolError>
+    fn from_raw_document(
+        raw_transition: JsonValue,
+        data_contract: DataContract,
+    ) -> Result<Self, ProtocolError>
     where
-            Self: Sized {
-        let action : Action = TryFrom::try_from(raw_transition.get_u64(PROPERTY_ACTION)? as u8)?;
-        Ok(match action  {
-            Action::Create => DocumentTransition::Create(DocumentCreateTransition::from_raw_document(raw_transition, data_contract)?),
-            Action::Replace => DocumentTransition::Replace(DocumentReplaceTransition::from_raw_document(raw_transition, data_contract)?),
-            Action::Delete => DocumentTransition::Delete(DocumentDeleteTransition::from_raw_document(raw_transition, data_contract)?),
+        Self: Sized,
+    {
+        let action: Action = TryFrom::try_from(raw_transition.get_u64(PROPERTY_ACTION)? as u8)?;
+        Ok(match action {
+            Action::Create => DocumentTransition::Create(
+                DocumentCreateTransition::from_raw_document(raw_transition, data_contract)?,
+            ),
+            Action::Replace => DocumentTransition::Replace(
+                DocumentReplaceTransition::from_raw_document(raw_transition, data_contract)?,
+            ),
+            Action::Delete => DocumentTransition::Delete(
+                DocumentDeleteTransition::from_raw_document(raw_transition, data_contract)?,
+            ),
         })
     }
 
     fn to_json(&self) -> Result<JsonValue, ProtocolError> {
         call_method!(self, to_json)
-
     }
 
     fn to_object(&self) -> Result<JsonValue, ProtocolError> {
         call_method!(self, to_json)
     }
- }
+}
 
 impl DocumentTransition {
     pub fn base(&self) -> &DocumentBaseTransition {

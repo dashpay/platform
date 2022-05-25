@@ -29,10 +29,9 @@ impl TryFrom<u8> for Action {
             0 => Ok(Action::Create),
             1 => Ok(Action::Replace),
             3 => Ok(Action::Delete),
-            v => bail!("unknown document transition action: '{}'",v)
+            v => bail!("unknown document transition action: '{}'", v),
         }
     }
-
 }
 
 impl Default for Action {

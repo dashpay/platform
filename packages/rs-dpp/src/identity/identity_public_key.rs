@@ -6,7 +6,7 @@ use dashcore::PublicKey;
 use lazy_static::lazy_static;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use serde_repr::{Deserialize_repr, Serialize_repr};
-use std::{collections::HashMap, hash::Hash, convert::TryFrom};
+use std::{collections::HashMap, convert::TryFrom, hash::Hash};
 
 pub type KeyID = u64;
 
@@ -30,7 +30,6 @@ pub enum Purpose {
     DECRYPTION = 2,
 }
 
-
 impl std::fmt::Display for Purpose {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{:?}", self)
@@ -47,20 +46,20 @@ pub enum SecurityLevel {
 }
 
 impl TryFrom<usize> for SecurityLevel {
-    type Error =  anyhow::Error;
+    type Error = anyhow::Error;
     fn try_from(value: usize) -> Result<Self, Self::Error> {
         match value {
             0 => Ok(Self::MASTER),
             1 => Ok(Self::CRITICAL),
             2 => Ok(Self::HIGH),
             3 => Ok(Self::MEDIUM),
-            value => bail!("unrecognized security level: {}", value)
+            value => bail!("unrecognized security level: {}", value),
         }
     }
 }
 
 impl SecurityLevel {
-    pub  fn lowest_level() -> SecurityLevel {
+    pub fn lowest_level() -> SecurityLevel {
         Self::MEDIUM
     }
     pub fn highest_level() -> SecurityLevel {

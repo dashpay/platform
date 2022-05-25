@@ -10,9 +10,8 @@ pub enum StateTransitionType {
     DataContractUpdate = 4,
 }
 
-
 impl std::default::Default for StateTransitionType {
     fn default() -> Self {
-         StateTransitionType::DataContractCreate
+        StateTransitionType::DataContractCreate
     }
 }

@@ -73,7 +73,6 @@ pub trait StateTransitionLike:
                 let signature = signer::sign(&data, private_key)?;
                 self.set_signature(signature.to_vec());
             }
-
         };
         Ok(())
     }
@@ -174,7 +173,6 @@ pub trait StateTransitionConvert: Serialize {
 
         Ok(json_value)
     }
-
 
     // Returns the cibor-encoded bytes representation of the object. The data is  prefixed by 4 bytes containing the Protocol Version
     fn to_buffer(&self, skip_signature: bool) -> Result<Vec<u8>, ProtocolError> {
