@@ -31,11 +31,13 @@ describe('createFeatureFlagDataTrigger', () => {
       create: [document],
     });
 
+    const context = new StateTransitionExecutionContext();
+
     contextMock = {
       getStateRepository: () => stateRepositoryMock,
       getOwnerId: this.sinonSandbox.stub(),
       getDataContract: () => getFeatureFlagsDocumentsFixture.dataContract,
-      getStateTransitionExecutionContext: () => new StateTransitionExecutionContext(),
+      getStateTransitionExecutionContext: () => context,
     };
     contextMock.getOwnerId.returns(topLevelIdentityId);
   });
@@ -79,5 +81,21 @@ describe('createFeatureFlagDataTrigger', () => {
 
     expect(result).to.be.an.instanceOf(DataTriggerExecutionResult);
     expect(result.isOk()).to.be.true();
+  });
+
+  it('should pass on dry run', async () => {
+    contextMock.getStateTransitionExecutionContext().enableDryRun();
+
+    const result = await createFeatureFlagDataTrigger(
+      documentTransition, contextMock, topLevelIdentityId,
+    );
+
+    contextMock.getStateTransitionExecutionContext().disableDryRun();
+
+    expect(result).to.be.an.instanceOf(DataTriggerExecutionResult);
+    expect(result.isOk()).to.be.true();
+
+    expect(contextMock.getOwnerId).to.not.be.called();
+    expect(stateRepositoryMock.fetchLatestPlatformBlockHeader).to.not.be.called();
   });
 });

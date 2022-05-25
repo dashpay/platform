@@ -153,4 +153,23 @@ describe('createMasternodeRewardSharesDataTrigger', () => {
       executionContext,
     );
   });
+
+  it('should pass on dry run', async () => {
+    stateRepositoryMock.fetchIdentity.resolves(null);
+
+    executionContext.enableDryRun();
+
+    const result = await createRewardShareDataTrigger(
+      documentTransition, contextMock,
+    );
+    executionContext.disableDryRun();
+
+    expect(result).to.be.an.instanceOf(DataTriggerExecutionResult);
+    expect(result.isOk()).to.be.true();
+    expect(stateRepositoryMock.fetchSMLStore).to.not.be.called();
+    expect(stateRepositoryMock.fetchIdentity).to.be.calledOnceWithExactly(
+      documentTransition.data.payToId,
+      executionContext,
+    );
+  });
 });
