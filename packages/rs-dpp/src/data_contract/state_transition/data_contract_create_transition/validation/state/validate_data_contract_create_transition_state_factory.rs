@@ -3,7 +3,7 @@ use crate::{
 };
 use anyhow::Result;
 
-pub struct ValidateDataContractCreateTransitionStateFactory<SR>
+pub struct DataContractCreateTransitionStateValidator<SR>
 where
     SR: StateRepositoryLike,
 {
@@ -12,14 +12,14 @@ where
 
 pub fn fetch_documents_factory<SR>(
     state_repository: SR,
-) -> ValidateDataContractCreateTransitionStateFactory<SR>
+) -> DataContractCreateTransitionStateValidator<SR>
 where
     SR: StateRepositoryLike,
 {
-    ValidateDataContractCreateTransitionStateFactory { state_repository }
+    DataContractCreateTransitionStateValidator { state_repository }
 }
 
-impl<SR> ValidateDataContractCreateTransitionStateFactory<SR>
+impl<SR> DataContractCreateTransitionStateValidator<SR>
 where
     SR: StateRepositoryLike,
 {

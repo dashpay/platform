@@ -1,23 +1,21 @@
 use crate::{mocks, state_repository::StateRepositoryLike};
 use anyhow::Result;
 
-pub struct ApplyDataContractCreateTransitionFactory<SR>
+pub struct ApplyDataContractCreateTransition<SR>
 where
     SR: StateRepositoryLike,
 {
     state_repository: SR,
 }
 
-pub fn fetch_documents_factory<SR>(
-    state_repository: SR,
-) -> ApplyDataContractCreateTransitionFactory<SR>
+pub fn fetch_documents_factory<SR>(state_repository: SR) -> ApplyDataContractCreateTransition<SR>
 where
     SR: StateRepositoryLike,
 {
-    ApplyDataContractCreateTransitionFactory { state_repository }
+    ApplyDataContractCreateTransition { state_repository }
 }
 
-impl<SR> ApplyDataContractCreateTransitionFactory<SR>
+impl<SR> ApplyDataContractCreateTransition<SR>
 where
     SR: StateRepositoryLike,
 {
