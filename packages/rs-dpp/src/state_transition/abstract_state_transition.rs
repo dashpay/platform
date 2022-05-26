@@ -73,7 +73,6 @@ pub trait StateTransitionLike:
                 let signature = signer::sign(&data, private_key)?;
                 self.set_signature(signature.to_vec());
             }
-
         };
         Ok(())
     }
