@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: 'Docker tag'
+        description: 'Version (i.e. v0.22.3-pre.2)'
         required: true
 
 jobs:
