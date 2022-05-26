@@ -2299,7 +2299,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["@dashevo/dapi", "workspace:packages/dapi"],
             ["@dashevo/dapi-client", "workspace:packages/js-dapi-client"],
             ["@dashevo/dapi-grpc", "workspace:packages/dapi-grpc"],
-            ["@dashevo/dashcore-lib", "https://github.com/dashevo/dashcore-lib.git#commit=abda555010353b6180cba22ece6a846c9b5b8220"],
+            ["@dashevo/dashcore-lib", "npm:0.19.38"],
             ["@dashevo/dashd-rpc", "npm:2.3.2"],
             ["@dashevo/dp-services-ctl", "https://github.com/dashevo/js-dp-services-ctl.git#commit=3976076b0018c5b4632ceda4c752fc597f27a640"],
             ["@dashevo/dpp", "workspace:packages/js-dpp"],
@@ -2343,7 +2343,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["@babel/core", "npm:7.16.0"],
             ["@dashevo/dapi-grpc", "workspace:packages/dapi-grpc"],
             ["@dashevo/dash-spv", "https://github.com/dashevo/dash-spv.git#commit=3eeb01ed5d0636c949cf3ca2e495c4fe3d1b74ce"],
-            ["@dashevo/dashcore-lib", "https://github.com/dashevo/dashcore-lib.git#commit=abda555010353b6180cba22ece6a846c9b5b8220"],
+            ["@dashevo/dashcore-lib", "npm:0.19.38"],
             ["@dashevo/dpp", "workspace:packages/js-dpp"],
             ["@dashevo/grpc-common", "workspace:packages/js-grpc-common"],
             ["@grpc/grpc-js", "npm:1.4.4"],
@@ -2484,6 +2484,24 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["unorm", "npm:1.6.0"]
           ],
           "linkType": "HARD",
+        }],
+        ["npm:0.19.38", {
+          "packageLocation": "./.yarn/cache/@dashevo-dashcore-lib-npm-0.19.38-d11cd3f7ec-13998e3b15.zip/node_modules/@dashevo/dashcore-lib/",
+          "packageDependencies": [
+            ["@dashevo/dashcore-lib", "npm:0.19.38"],
+            ["@dashevo/x11-hash-js", "npm:1.0.2"],
+            ["@types/node", "npm:12.20.37"],
+            ["bloom-filter", "npm:0.2.0"],
+            ["bls-signatures", "npm:0.2.5"],
+            ["bn.js", "npm:4.12.0"],
+            ["bs58", "npm:4.0.1"],
+            ["elliptic", "npm:6.5.3"],
+            ["eslint-config-prettier", "virtual:e7b97a90adbf42c5705581be09038f66351eac3fdab439c195d3c172e2c9ce8a50f307f2e1756726e89fbd4a7691e6704d566c57ec6955c17da6b15af99cd5db#npm:8.3.0"],
+            ["inherits", "npm:2.0.1"],
+            ["lodash", "npm:4.17.21"],
+            ["unorm", "npm:1.6.0"]
+          ],
+          "linkType": "HARD",
         }]
       ]],
       ["@dashevo/dashd-rpc", [
@@ -2597,7 +2615,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["@apidevtools/json-schema-ref-parser", "npm:8.0.0"],
             ["@babel/core", "npm:7.16.0"],
             ["@babel/preset-env", "virtual:58fb68f2aed20e5e0f2e48520ab903ae9bb3440369bfd5e912034003cf27c5aae368649fc5620dd2acbed578131f3a0975e75b838d77d12335fb0412e24026c6#npm:7.16.4"],
-            ["@dashevo/dashcore-lib", "https://github.com/dashevo/dashcore-lib.git#commit=abda555010353b6180cba22ece6a846c9b5b8220"],
+            ["@dashevo/dashcore-lib", "npm:0.19.38"],
             ["@dashevo/dashpay-contract", "workspace:packages/dashpay-contract"],
             ["@dashevo/dpns-contract", "workspace:packages/dpns-contract"],
             ["@dashevo/feature-flags-contract", "workspace:packages/feature-flags-contract"],
@@ -2665,7 +2683,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["@dashevo/drive", "workspace:packages/js-drive"],
             ["@dashevo/abci", "npm:0.23.0-dev.1"],
             ["@dashevo/dapi-grpc", "workspace:packages/dapi-grpc"],
-            ["@dashevo/dashcore-lib", "https://github.com/dashevo/dashcore-lib.git#commit=abda555010353b6180cba22ece6a846c9b5b8220"],
+            ["@dashevo/dashcore-lib", "npm:0.19.38"],
             ["@dashevo/dashd-rpc", "npm:2.3.2"],
             ["@dashevo/dashpay-contract", "workspace:packages/dashpay-contract"],
             ["@dashevo/dp-services-ctl", "https://github.com/dashevo/js-dp-services-ctl.git#commit=3976076b0018c5b4632ceda4c752fc597f27a640"],
@@ -2827,7 +2845,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           "packageDependencies": [
             ["@dashevo/platform-test-suite", "workspace:packages/platform-test-suite"],
             ["@dashevo/dapi-client", "workspace:packages/js-dapi-client"],
-            ["@dashevo/dashcore-lib", "https://github.com/dashevo/dashcore-lib.git#commit=abda555010353b6180cba22ece6a846c9b5b8220"],
+            ["@dashevo/dashcore-lib", "npm:0.19.38"],
             ["@dashevo/dpns-contract", "workspace:packages/dpns-contract"],
             ["@dashevo/dpp", "workspace:packages/js-dpp"],
             ["@dashevo/feature-flags-contract", "workspace:packages/feature-flags-contract"],
@@ -2935,7 +2953,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           "packageDependencies": [
             ["@dashevo/wallet-lib", "workspace:packages/wallet-lib"],
             ["@dashevo/dapi-client", "workspace:packages/js-dapi-client"],
-            ["@dashevo/dashcore-lib", "https://github.com/dashevo/dashcore-lib.git#commit=abda555010353b6180cba22ece6a846c9b5b8220"],
+            ["@dashevo/dashcore-lib", "npm:0.19.38"],
             ["@dashevo/dpp", "workspace:packages/js-dpp"],
             ["@dashevo/grpc-common", "workspace:packages/js-grpc-common"],
             ["assert", "npm:2.0.0"],
@@ -7614,7 +7632,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           "packageDependencies": [
             ["dash", "workspace:packages/js-dash-sdk"],
             ["@dashevo/dapi-client", "workspace:packages/js-dapi-client"],
-            ["@dashevo/dashcore-lib", "https://github.com/dashevo/dashcore-lib.git#commit=abda555010353b6180cba22ece6a846c9b5b8220"],
+            ["@dashevo/dashcore-lib", "npm:0.19.38"],
             ["@dashevo/dashpay-contract", "workspace:packages/dashpay-contract"],
             ["@dashevo/dpns-contract", "workspace:packages/dpns-contract"],
             ["@dashevo/dpp", "workspace:packages/js-dpp"],
@@ -7695,7 +7713,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           "packageLocation": "./packages/dashmate/",
           "packageDependencies": [
             ["dashmate", "workspace:packages/dashmate"],
-            ["@dashevo/dashcore-lib", "https://github.com/dashevo/dashcore-lib.git#commit=abda555010353b6180cba22ece6a846c9b5b8220"],
+            ["@dashevo/dashcore-lib", "npm:0.19.38"],
             ["@dashevo/dashd-rpc", "npm:2.3.2"],
             ["@dashevo/dashpay-contract", "workspace:packages/dashpay-contract"],
             ["@dashevo/dpns-contract", "workspace:packages/dpns-contract"],

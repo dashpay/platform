@@ -4,11 +4,17 @@ on:
   release:
     types:
       - published
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Docker tag'
+        required: true
 
 jobs:
   release-npm:
     name: Release NPM packages
     runs-on: ubuntu-20.04
+    if: github.event_name != 'workflow_dispatch'
     steps:
       - name: Check out repo
         uses: actions/checkout@v2
@@ -62,7 +68,6 @@ jobs:
   release-drive-docker-image:
     name: Release Drive to Docker Hub
     runs-on: ubuntu-20.04
-    needs: release-npm
     steps:
       - name: Check out repo
         uses: actions/checkout@v2
@@ -127,6 +132,7 @@ jobs:
       - name: Set suffix to Docker tags
         uses: actions/github-script@v5
         id: suffix
+        if: github.event_name != 'workflow_dispatch'
         with:
           result-encoding: string
           script: "return (context.payload.release.tag_name.includes('-dev') ? '-dev' : '');"
@@ -137,12 +143,14 @@ jobs:
         with:
           images: dashpay/drive
           tags: |
-            type=match,pattern=v(\d+),group=1
-            type=match,pattern=v(\d+.\d+),group=1
-            type=match,pattern=v(\d+.\d+.\d+),group=1
+            type=match,pattern=v(\d+),group=1,enable=${{github.event_name == 'release'}}
+            type=match,pattern=v(\d+.\d+),group=1,enable=${{github.event_name == 'release'}}
+            type=match,pattern=v(\d+.\d+.\d+),group=1,enable=${{github.event_name == 'release'}}
             type=match,pattern=v(.*),group=1,suffix=,enable=${{ contains(github.event.release.tag_name, '-dev') }}
+            type=match,pattern=v(.*),value=${{ github.event.inputs.tag }},enable=${{github.event_name == 'workflow_dispatch'}}
           flavor: |
             suffix=${{ steps.suffix.outputs.result }},onlatest=true
+            latest=${{ github.event_name == 'release' }}
 
       - name: Build and push Docker image for Drive
         uses: docker/build-push-action@v2
@@ -158,7 +166,6 @@ jobs:
   release-dapi-docker-image:
     name: Release DAPI to Docker Hub
     runs-on: ubuntu-20.04
-    needs: release-npm
     steps:
       - name: Check out repo
         uses: actions/checkout@v2
@@ -223,6 +230,7 @@ jobs:
       - name: Set suffix to Docker tags
         uses: actions/github-script@v5
         id: suffix
+        if: github.event_name != 'workflow_dispatch'
         with:
           result-encoding: string
           script: "return (context.payload.release.tag_name.includes('-dev') ? '-dev' : '');"
@@ -233,12 +241,14 @@ jobs:
         with:
           images: dashpay/dapi
           tags: |
-            type=match,pattern=v(\d+),group=1
-            type=match,pattern=v(\d+.\d+),group=1
-            type=match,pattern=v(\d+.\d+.\d+),group=1
+            type=match,pattern=v(\d+),group=1,enable=${{github.event_name == 'release'}}
+            type=match,pattern=v(\d+.\d+),group=1,enable=${{github.event_name == 'release'}}
+            type=match,pattern=v(\d+.\d+.\d+),group=1,enable=${{github.event_name == 'release'}}
             type=match,pattern=v(.*),group=1,suffix=,enable=${{ contains(github.event.release.tag_name, '-dev') }}
+            type=match,pattern=v(.*),value=${{ github.event.inputs.tag }},enable=${{github.event_name == 'workflow_dispatch'}}
           flavor: |
             suffix=${{ steps.suffix.outputs.result }},onlatest=true
+            latest=${{ github.event_name == 'release' }}
 
       - name: Build and push Docker image
         uses: docker/build-push-action@v2
@@ -254,7 +264,6 @@ jobs:
   release-test-suite-docker-image:
     name: Release Test Suite to Docker Hub
     runs-on: ubuntu-20.04
-    needs: release-npm
     steps:
       - name: Check out repo
         uses: actions/checkout@v2
@@ -319,6 +328,7 @@ jobs:
       - name: Set suffix to Docker tags
         uses: actions/github-script@v5
         id: suffix
+        if: github.event_name != 'workflow_dispatch'
         with:
           result-encoding: string
           script: "return (context.payload.release.tag_name.includes('-dev') ? '-dev' : '');"
@@ -329,12 +339,14 @@ jobs:
         with:
           images: dashpay/platform-test-suite
           tags: |
-            type=match,pattern=v(\d+),group=1
-            type=match,pattern=v(\d+.\d+),group=1
-            type=match,pattern=v(\d+.\d+.\d+),group=1
+            type=match,pattern=v(\d+),group=1,enable=${{github.event_name == 'release'}}
+            type=match,pattern=v(\d+.\d+),group=1,enable=${{github.event_name == 'release'}}
+            type=match,pattern=v(\d+.\d+.\d+),group=1,enable=${{github.event_name == 'release'}}
             type=match,pattern=v(.*),group=1,suffix=,enable=${{ contains(github.event.release.tag_name, '-dev') }}
+            type=match,pattern=v(.*),value=${{ github.event.inputs.tag }},enable=${{github.event_name == 'workflow_dispatch'}}
           flavor: |
             suffix=${{ steps.suffix.outputs.result }},onlatest=true
+            latest=${{ github.event_name == 'release' }}
 
       - name: Build and push Docker image
         uses: docker/build-push-action@v2
