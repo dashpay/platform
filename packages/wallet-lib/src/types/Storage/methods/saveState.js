@@ -31,7 +31,7 @@ const saveState = async function saveState() {
       }, {});
 
       Object.keys(serializedWallets).forEach((walletId) => {
-        const storage = { version: CONSTANTS.storage.version, chains: {} };
+        const storage = { version: CONSTANTS.STORAGE.version, chains: {} };
 
         Object.keys(serializedChains).forEach((chainNetwork) => {
           const chain = serializedChains[chainNetwork];

@@ -19,7 +19,7 @@ module.exports = async function configure(opts = {}) {
   const storage = await this.adapter.getItem(`wallet_${opts.walletId}`);
   const storageVersion = storage && storage.version;
 
-  if (!(this.adapter instanceof InMem) && storageVersion !== CONSTANTS.storage.version) {
+  if (!(this.adapter instanceof InMem) && storageVersion !== CONSTANTS.STORAGE.version) {
     if (typeof version === 'number') {
       logger.warn('Storage version mismatch, resyncing from start');
     }
