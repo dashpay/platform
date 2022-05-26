@@ -168,41 +168,5 @@ describe('e2e', () => {
         ]);
       });
     });
-
-    describe('wallet storage', () => {
-      it('should init two wallet and save them in the storage under different keys', async () => {
-        const adapter = new InMem()
-
-        adapter.setItem('wallets', {
-          [walletStoreFixture.walletId]: walletStoreFixture
-        })
-
-        const firstWallet = new Dash.Wallet({
-          network: process.env.NETWORK,
-          transport: {
-            seeds: getDAPISeeds()
-          },
-          adapter
-        });
-
-        await firstWallet.getAccount()
-        await firstWallet.disconnect()
-
-        const secondWallet = new Dash.Wallet({
-          network: process.env.NETWORK,
-          transport: {
-            seeds: getDAPISeeds()
-          },
-          adapter
-        });
-
-        await secondWallet.getAccount()
-        await secondWallet.disconnect()
-
-        expect(adapter.getItem('wallets')).to.be.equal(null)
-        expect(adapter.getItem('wallet_' + firstWallet.walletId).walletId).to.be.equal(firstWallet.walletId)
-        expect(adapter.getItem('wallet_' + secondWallet.walletId).walletId).to.be.equal(secondWallet.walletId)
-      });
-    });
   });
 });

@@ -14,31 +14,34 @@ const rehydrateState = async function rehydrateState(walletId) {
       if (this.adapter && hasMethod(this.adapter, 'getItem')) {
         const storage = await this.adapter.getItem(`wallet_${walletId}`);
 
-        if (storage) {
-          const chains = Object.keys(storage);
-
+        if (storage && storage.wallets) {
           try {
-            chains.forEach((chainNetwork) => {
-              const { chain, wallet } = storage[chainNetwork];
+            const { wallets } = storage
 
-              const chainStore = this.getChainStore(chainNetwork);
+            Object.keys(wallets).forEach((walletId) => {
 
-              if (chainStore) {
-                chainStore.importState(chain);
-              }
+              Object.keys(wallets[walletId]).forEach((chainNetwork) => {
+                const { chain, wallet } = storage.wallets[walletId][chainNetwork];
 
-              try {
-                const walletStore = this.getWalletStore(walletId);
+                const chainStore = this.getChainStore(chainNetwork);
 
-                if (walletStore) {
-                  walletStore.importState(wallet);
+                if (chainStore) {
+                  chainStore.importState(chain);
                 }
-              } catch (e) {
-                logger.error('Error importing wallets storage, resyncing from start', e);
 
-                this.adapter.setItem(`wallet_${walletId}`, null);
-              }
-            });
+                try {
+                  const walletStore = this.getWalletStore(walletId);
+
+                  if (walletStore) {
+                    walletStore.importState(wallet);
+                  }
+                } catch (e) {
+                  logger.error('Error importing wallets storage, resyncing from start', e);
+
+                  this.adapter.setItem(`wallet_${walletId}`, null);
+                }
+              });
+            })
           } catch (e) {
             logger.error('Error importing chains storage, resyncing from start', e);
 
