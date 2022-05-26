@@ -1,4 +1,5 @@
 const { SAVE_STATE_SUCCESS, SAVE_STATE_FAILED } = require('../../../EVENTS');
+const { CONSTANTS } = require('../../../index');
 
 /**
  * Force persistence of the state to the adapter
@@ -30,7 +31,7 @@ const saveState = async function saveState() {
       }, {});
 
       Object.keys(serializedWallets).forEach((walletId) => {
-        const storage = { version: 2, chains: {} };
+        const storage = { version: CONSTANTS.storage.version, chains: {} };
 
         Object.keys(serializedChains).forEach((chainNetwork) => {
           const chain = serializedChains[chainNetwork];

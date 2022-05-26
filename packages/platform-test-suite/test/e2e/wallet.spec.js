@@ -4,9 +4,6 @@ const getDAPISeeds = require('../../lib/test/getDAPISeeds');
 
 const createClientWithFundedWallet = require('../../lib/test/createClientWithFundedWallet');
 const waitForBalanceToChange = require('../../lib/test/waitForBalanceToChange');
-const InMem = require('../../../wallet-lib/src/adapters/InMem');
-
-const walletStoreFixture = require('../../../wallet-lib/fixtures/wallets/2a331817b9d6bf85100ef0/wallet-store.json')
 
 const { EVENTS } = Dash.WalletLib;
 
