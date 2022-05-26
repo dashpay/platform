@@ -35,9 +35,12 @@ function getUTXOS(options = {
       if (txInStore && txInStore.transaction.isCoinbase()) {
         const { transaction, metadata } = txInStore;
 
-        const transactionHeight = metadata
-          ? metadata.height
-          : transaction.extraPayload.height;
+        let transactionHeight;
+        if (metadata) {
+          transactionHeight = metadata.height;
+        } else if (transaction.extraPayload) {
+          transactionHeight = transaction.extraPayload.height;
+        }
 
         // We check maturity is at least 100 blocks.
         // another way is to just read _scriptBuffer height value.
