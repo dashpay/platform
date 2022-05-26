@@ -115,8 +115,8 @@ describe('Wallet', () => {
 
       /** Ensure that storage has no items for transactions without the metadata */
       let storage = storageAdapterMock.getItem(`wallet_${wallet.walletId}`)
-      let chainStoreState = storage.wallets[wallet.walletId][wallet.network].chain;
-      let walletStoreState = storage.wallets[wallet.walletId][wallet.network].wallet;
+      let chainStoreState = storage.chains[wallet.network].chain;
+      let walletStoreState = storage.chains[wallet.network].wallet;
       expect(chainStoreState.transactions).to.be.empty;
       expect(chainStoreState.txMetadata).to.be.empty;
       expect(chainStoreState.blockHeaders).to.be.empty;
@@ -139,8 +139,8 @@ describe('Wallet', () => {
        * alongside with the lastKnownBlock
        */
       storage = storageAdapterMock.getItem(`wallet_${wallet.walletId}`)
-      chainStoreState = storage.wallets[wallet.walletId][wallet.network].chain;
-      walletStoreState = storage.wallets[wallet.walletId][wallet.network].wallet;
+      chainStoreState = storage.chains[wallet.network].chain;
+      walletStoreState = storage.chains[wallet.network].wallet;
       expect(chainStoreState.transactions[fundingTx.hash]).to.exist;
       expect(chainStoreState.txMetadata[fundingTx.hash]).to.exist
       expect(chainStoreState.blockHeaders[scenario.blockHeaders[0].hash]).to.exist;
@@ -156,7 +156,7 @@ describe('Wallet', () => {
        */
       await wallet.storage.saveState();
       storage = storageAdapterMock.getItem(`wallet_${wallet.walletId}`)
-      walletStoreState = storage.wallets[wallet.walletId][wallet.network].wallet;
+      walletStoreState = storage.chains[wallet.network].wallet;
       expect(walletStoreState.lastKnownBlock.height).to.equal(37)
 
       /** Start continuous sync */
@@ -191,7 +191,7 @@ describe('Wallet', () => {
        * */
       await wallet.storage.saveState();
       storage = storageAdapterMock.getItem(`wallet_${wallet.walletId}`)
-      walletStoreState = storage.wallets[wallet.walletId][wallet.network].wallet;
+      walletStoreState = storage.chains[wallet.network].wallet;
       expect(Object.keys(chainStoreState.transactions)).to.have.lengthOf(1)
       expect(Object.keys(chainStoreState.txMetadata)).to.have.lengthOf(1)
       expect(Object.keys(chainStoreState.blockHeaders)).to.have.lengthOf(1)
@@ -206,8 +206,8 @@ describe('Wallet', () => {
 
       await wallet.storage.saveState();
       storage = storageAdapterMock.getItem(`wallet_${wallet.walletId}`)
-      chainStoreState = storage.wallets[wallet.walletId][wallet.network].chain;
-      walletStoreState = storage.wallets[wallet.walletId][wallet.network].wallet;
+      chainStoreState = storage.chains[wallet.network].chain;
+      walletStoreState = storage.chains[wallet.network].wallet;
 
       /**
        * Ensure that storage have been updated with the latest
@@ -272,7 +272,7 @@ describe('Wallet', () => {
       /** Ensure that reorg-safe block set as last known block */
       await wallet.storage.saveState();
       let storage = storageAdapterMock.getItem(`wallet_${wallet.walletId}`)
-      let walletStoreState = storage.wallets[wallet.walletId][wallet.network].wallet
+      let walletStoreState = storage.chains[wallet.network].wallet
       expect(walletStoreState.lastKnownBlock.height).to.equal(46)
 
       /** Start continuous sync */
@@ -306,8 +306,8 @@ describe('Wallet', () => {
        */
       await wallet.storage.saveState();
       storage = storageAdapterMock.getItem(`wallet_${wallet.walletId}`)
-      let chainStoreState = storage.wallets[wallet.walletId][wallet.network].chain
-      walletStoreState = storage.wallets[wallet.walletId][wallet.network].wallet
+      let chainStoreState = storage.chains[wallet.network].chain
+      walletStoreState = storage.chains[wallet.network].wallet
 
       expect(Object.keys(chainStoreState.transactions)).to.have.lengthOf(2)
       expect(Object.keys(chainStoreState.txMetadata)).to.have.lengthOf(2)
@@ -324,8 +324,8 @@ describe('Wallet', () => {
 
       await wallet.storage.saveState();
       storage = storageAdapterMock.getItem(`wallet_${wallet.walletId}`)
-      chainStoreState = storage.wallets[wallet.walletId][wallet.network].chain
-      walletStoreState = storage.wallets[wallet.walletId][wallet.network].wallet
+      chainStoreState = storage.chains[wallet.network].chain
+      walletStoreState = storage.chains[wallet.network].wallet
 
       /**
        * Ensure that storage have been updated with the latest

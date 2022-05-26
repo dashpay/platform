@@ -30,23 +30,23 @@ const saveState = async function saveState() {
       }, {});
 
       Object.keys(serializedWallets).forEach((walletId) => {
-        const storage = {version: 2, wallets: {}};
+        const storage = { version: 2, chains: {} };
 
         Object.keys(serializedChains).forEach((chainNetwork) => {
           const chain = serializedChains[chainNetwork];
           const wallet = serializedWallets[walletId];
 
-          storage.wallets[walletId] = {[chainNetwork]: {chain, wallet}};
+          storage.chains[chainNetwork] = { chain, wallet };
         });
 
         this.adapter.setItem(`wallet_${walletId}`, storage);
       });
 
       this.lastSave = +new Date();
-      this.emit(SAVE_STATE_SUCCESS, {type: SAVE_STATE_SUCCESS, payload: this.lastSave});
+      this.emit(SAVE_STATE_SUCCESS, { type: SAVE_STATE_SUCCESS, payload: this.lastSave });
       return true;
     } catch (err) {
-      this.emit(SAVE_STATE_FAILED, {type: SAVE_STATE_FAILED, payload: err});
+      this.emit(SAVE_STATE_FAILED, { type: SAVE_STATE_FAILED, payload: err });
       throw err;
     }
   }

@@ -1,6 +1,6 @@
-const { hasMethod } = require('../../../utils');
+const {hasMethod} = require('../../../utils');
 
-const { REHYDRATE_STATE_FAILED, REHYDRATE_STATE_SUCCESS } = require('../../../EVENTS');
+const {REHYDRATE_STATE_FAILED, REHYDRATE_STATE_SUCCESS} = require('../../../EVENTS');
 
 const logger = require('../../../logger');
 
@@ -14,36 +14,27 @@ const rehydrateState = async function rehydrateState(walletId) {
       if (this.adapter && hasMethod(this.adapter, 'getItem')) {
         const storage = await this.adapter.getItem(`wallet_${walletId}`);
 
-        if (storage && storage.wallets) {
+        if (storage) {
           try {
-            const { wallets } = storage
+            const {chains} = storage;
 
-            Object.keys(wallets).forEach((walletId) => {
+            Object.keys(chains).forEach((chainNetwork) => {
+              const {chain, wallet} = storage.chains[chainNetwork];
 
-              Object.keys(wallets[walletId]).forEach((chainNetwork) => {
-                const { chain, wallet } = storage.wallets[walletId][chainNetwork];
+              const chainStore = this.getChainStore(chainNetwork);
 
-                const chainStore = this.getChainStore(chainNetwork);
+              if (chainStore) {
+                chainStore.importState(chain);
+              }
 
-                if (chainStore) {
-                  chainStore.importState(chain);
-                }
+              const walletStore = this.getWalletStore(walletId);
 
-                try {
-                  const walletStore = this.getWalletStore(walletId);
-
-                  if (walletStore) {
-                    walletStore.importState(wallet);
-                  }
-                } catch (e) {
-                  logger.error('Error importing wallets storage, resyncing from start', e);
-
-                  this.adapter.setItem(`wallet_${walletId}`, null);
-                }
-              });
-            })
+              if (walletStore) {
+                walletStore.importState(wallet);
+              }
+            });
           } catch (e) {
-            logger.error('Error importing chains storage, resyncing from start', e);
+            logger.error('Error importing persistence storage, resyncing from start', e);
 
             this.adapter.setItem(`wallet_${walletId}`, null);
           }
@@ -51,10 +42,10 @@ const rehydrateState = async function rehydrateState(walletId) {
       }
 
       this.lastRehydrate = +new Date();
-      this.emit(REHYDRATE_STATE_SUCCESS, { type: REHYDRATE_STATE_SUCCESS, payload: null });
+      this.emit(REHYDRATE_STATE_SUCCESS, {type: REHYDRATE_STATE_SUCCESS, payload: null});
     } catch (e) {
       logger.error('Error rehydrating storage state', e);
-      this.emit(REHYDRATE_STATE_FAILED, { type: REHYDRATE_STATE_FAILED, payload: e });
+      this.emit(REHYDRATE_STATE_FAILED, {type: REHYDRATE_STATE_FAILED, payload: e});
       throw e;
     }
   }
