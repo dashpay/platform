@@ -1,6 +1,6 @@
 {
   "name": "dash",
-  "version": "3.22.8-pr.405.2",
+  "version": "3.23.0-pr.405",
   "description": "Dash library for JavaScript/TypeScript ecosystem (Wallet, DAPI, Primitives, BLS, ...)",
   "main": "build/src/index.js",
   "unpkg": "dist/dash.min.js",
@@ -35,7 +35,7 @@
   "homepage": "https://github.com/dashevo/DashJS#readme",
   "dependencies": {
     "@dashevo/dapi-client": "workspace:~",
-    "@dashevo/dashcore-lib": "~0.19.37",
+    "@dashevo/dashcore-lib": "~0.19.38",
     "@dashevo/dashpay-contract": "workspace:~",
     "@dashevo/dpns-contract": "workspace:~",
     "@dashevo/dpp": "workspace:~",
