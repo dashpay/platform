@@ -1,3 +1,15 @@
+### [0.22.10](https://github.com/dashevo/platform/compare/v0.22.9...v0.22.10) (2022-05-26)
+
+
+### Bug Fixes
+
+* CommitmentTxPayload#toBuffer method was using version instead of qfcVersion for serialization ([#410](https://github.com/dashevo/platform/issues/410))
+
+
+### Continuous Integration
+
+* dispatch trigger and parallelization ([#406](https://github.com/dashevo/platform/issues/406))
+
 ### [0.22.9](https://github.com/dashevo/platform/compare/v0.22.8...v0.22.9) (2022-05-24)
 
 
