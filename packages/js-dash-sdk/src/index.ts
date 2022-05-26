@@ -1,6 +1,6 @@
-import QuorumEntity from '@dashevo/dashcore-lib';
+import QuorumEntry from '@dashevo/dashcore-lib';
 
-QuorumEntity.isCore17 = true;
+QuorumEntry.isCore17 = true;
 
 import SDK from './SDK'
 export = SDK;

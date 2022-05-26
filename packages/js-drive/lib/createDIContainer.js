@@ -15,7 +15,7 @@ const RSDrive = require('@dashevo/rs-drive');
 const LRUCache = require('lru-cache');
 const RpcClient = require('@dashevo/dashd-rpc/promise');
 
-const { PublicKey, QuorumEntity } = require('@dashevo/dashcore-lib');
+const { PublicKey, QuorumEntry } = require('@dashevo/dashcore-lib');
 
 const DashPlatformProtocol = require('@dashevo/dpp');
 
@@ -172,7 +172,7 @@ const fetchTransactionFactory = require('./core/fetchTransactionFactory');
  */
 function createDIContainer(options) {
   //TODO: Testing beta4 compat for sangsom
-  QuorumEntity.isCore17 = true;
+  QuorumEntry.isCore17 = true;
 
   if (!options.DPNS_MASTER_PUBLIC_KEY) {
     throw new Error('DPNS_MASTER_PUBLIC_KEY must be set');
