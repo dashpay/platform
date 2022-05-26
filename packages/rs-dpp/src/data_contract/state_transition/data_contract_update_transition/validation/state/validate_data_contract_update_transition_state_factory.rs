@@ -4,19 +4,19 @@ use crate::{
 };
 use anyhow::Result;
 
-pub struct ValidateDataContractUpdateTransitionStateFactory<SR>
+pub struct DataContractUpdateTransitionStateValidator<SR>
 where
     SR: StateRepositoryLike,
 {
     state_repository: SR,
 }
 
-impl<SR> ValidateDataContractUpdateTransitionStateFactory<SR>
+impl<SR> DataContractUpdateTransitionStateValidator<SR>
 where
     SR: StateRepositoryLike,
 {
     pub fn new(state_repository: SR) -> Self {
-        ValidateDataContractUpdateTransitionStateFactory { state_repository }
+        DataContractUpdateTransitionStateValidator { state_repository }
     }
 
     pub async fn validate_data_contract_update_transition_state(

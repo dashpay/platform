@@ -2,7 +2,6 @@ use crate::data_contract::DataContractFactory;
 use crate::decode_protocol_entity_factory::DecodeProtocolEntityFactory;
 use crate::mocks;
 use crate::prelude::*;
-use crate::tests::fixtures::get_dpp;
 use crate::tests::utils::generate_random_identifier_struct;
 use serde_json::json;
 
@@ -261,7 +260,7 @@ pub fn get_data_contract_fixture(owner_id: Option<Identifier>) -> DataContract {
     });
 
     let factory = DataContractFactory::new(
-        get_dpp(),
+        0,
         mocks::ValidateDataContract::default(),
         DecodeProtocolEntityFactory::default(),
     );

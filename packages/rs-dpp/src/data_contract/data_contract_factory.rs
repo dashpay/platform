@@ -10,25 +10,24 @@ use crate::{
     mocks,
     prelude::Identifier,
     util::entropy_generator,
-    DashPlatformProtocol,
 };
 
 use super::DataContract;
 
-pub struct DataContractFactory<SR> {
-    dpp: DashPlatformProtocol<SR>,
+pub struct DataContractFactory {
+    protocol_version: u32,
     _validate_data_contract: mocks::ValidateDataContract,
     decode_protocol_entity: DecodeProtocolEntityFactory,
 }
 
-impl<SR> DataContractFactory<SR> {
+impl DataContractFactory {
     pub fn new(
-        dpp: DashPlatformProtocol<SR>,
+        protocol_version: u32,
         _validate_data_contract: mocks::ValidateDataContract,
         decode_protocol_entity: DecodeProtocolEntityFactory,
     ) -> Self {
         Self {
-            dpp,
+            protocol_version,
             _validate_data_contract,
             decode_protocol_entity,
         }
@@ -56,7 +55,7 @@ impl<SR> DataContractFactory<SR> {
         }
 
         let data_contract = DataContract {
-            protocol_version: self.dpp.protocol_version,
+            protocol_version: self.protocol_version,
             schema: String::from(data_contract::SCHEMA),
             id: data_contract_id,
             version: 1,
