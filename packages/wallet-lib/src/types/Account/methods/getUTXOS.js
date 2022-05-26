@@ -34,7 +34,7 @@ function getUTXOS(options = {
 
       if (txInStore && txInStore.transaction.isCoinbase()) {
         const { transaction, metadata } = txInStore;
-        
+
         const transactionHeight = metadata
           ? metadata.height
           : transaction.extraPayload.height;
