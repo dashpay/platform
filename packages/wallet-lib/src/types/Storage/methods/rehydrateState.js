@@ -1,6 +1,6 @@
-const {hasMethod} = require('../../../utils');
+const { hasMethod } = require('../../../utils');
 
-const {REHYDRATE_STATE_FAILED, REHYDRATE_STATE_SUCCESS} = require('../../../EVENTS');
+const { REHYDRATE_STATE_FAILED, REHYDRATE_STATE_SUCCESS } = require('../../../EVENTS');
 
 const logger = require('../../../logger');
 
@@ -16,10 +16,10 @@ const rehydrateState = async function rehydrateState(walletId) {
 
         if (storage) {
           try {
-            const {chains} = storage;
+            const { chains } = storage;
 
             Object.keys(chains).forEach((chainNetwork) => {
-              const {chain, wallet} = storage.chains[chainNetwork];
+              const { chain, wallet } = storage.chains[chainNetwork];
 
               const chainStore = this.getChainStore(chainNetwork);
 
@@ -42,10 +42,10 @@ const rehydrateState = async function rehydrateState(walletId) {
       }
 
       this.lastRehydrate = +new Date();
-      this.emit(REHYDRATE_STATE_SUCCESS, {type: REHYDRATE_STATE_SUCCESS, payload: null});
+      this.emit(REHYDRATE_STATE_SUCCESS, { type: REHYDRATE_STATE_SUCCESS, payload: null });
     } catch (e) {
       logger.error('Error rehydrating storage state', e);
-      this.emit(REHYDRATE_STATE_FAILED, {type: REHYDRATE_STATE_FAILED, payload: e});
+      this.emit(REHYDRATE_STATE_FAILED, { type: REHYDRATE_STATE_FAILED, payload: e });
       throw e;
     }
   }
