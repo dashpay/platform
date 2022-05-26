@@ -10,21 +10,21 @@ use crate::{
 
 use std::collections::hash_map::{Entry, HashMap};
 
-pub struct FetchDocumentsFactory<SR>
+pub struct DocumentsRepository<SR>
 where
     SR: StateRepositoryLike,
 {
     state_repository: SR,
 }
 
-pub fn fetch_documents_factory<SR>(state_repository: SR) -> FetchDocumentsFactory<SR>
+pub fn fetch_documents_factory<SR>(state_repository: SR) -> DocumentsRepository<SR>
 where
     SR: StateRepositoryLike,
 {
-    FetchDocumentsFactory { state_repository }
+    DocumentsRepository { state_repository }
 }
 
-impl<SR> FetchDocumentsFactory<SR>
+impl<SR> DocumentsRepository<SR>
 where
     SR: StateRepositoryLike,
 {
