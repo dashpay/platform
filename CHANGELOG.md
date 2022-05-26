@@ -1,3 +1,32 @@
+### [0.22.10](https://github.com/dashevo/platform/compare/v0.22.9...v0.22.10) (2022-05-26)
+
+
+### Bug Fixes
+
+* CommitmentTxPayload#toBuffer method was using version instead of qfcVersion for serialization ([#410](https://github.com/dashevo/platform/issues/410))
+
+
+### Continuous Integration
+
+* dispatch trigger and parallelization ([#406](https://github.com/dashevo/platform/issues/406))
+
+### [0.22.9](https://github.com/dashevo/platform/compare/v0.22.8...v0.22.9) (2022-05-24)
+
+
+### Bug Fixes
+
+* incorrect parsing of commitment payload ([#408](https://github.com/dashevo/platform/issues/408))
+
+### [0.22.8](https://github.com/dashevo/platform/compare/v0.22.7...v0.22.8) (2022-05-23)
+
+
+### Bug Fixes
+
+* `verifyChainLock` was returning `false` instead of `ResponseQuery` ([#402](https://github.com/dashevo/platform/issues/402))
+* **dashmate:** switch `drive` and `dapi` to stable versions ([#381](https://github.com/dashevo/platform/issues/381))
+* **wallet-lib:** hook tx chain broadcast on mempool response ([#388](https://github.com/dashevo/platform/issues/388))
+
+
 ## [0.23.0-dev.2](https://github.com/dashevo/platform/compare/v0.23.0-dev.1...v0.23.0-dev.2) (2022-05-20)
 
 
@@ -44,50 +73,6 @@
 
 * **dashmate:** use 0.23-dev images
 
-## [0.23.0-dev.1](https://github.com/dashevo/platform/compare/v0.22.7...v0.23.0-dev.1) (2022-04-08)
-
-
-### ⚠ BREAKING CHANGES
-
-* do not hash proRegTx for masternode identifier (#318)
-* **wallet-lib:** storage layer refactoring (#232)
-
-### Features
-
-* **dpp:** add `withdraw` purpose for `IdentityPublicKey` ([#317](https://github.com/dashevo/platform/issues/317))
-* update identity ([#292](https://github.com/dashevo/platform/issues/292))
-* **wallet-lib:** rework storage for multiple key chains ([#231](https://github.com/dashevo/platform/issues/231))
-* **wallet-lib:** satoshisBalanceImpact in transaction history ([#319](https://github.com/dashevo/platform/issues/319))
-* **wallet-lib:** storage layer refactoring ([#232](https://github.com/dashevo/platform/issues/232))
-
-
-### Bug Fixes
-
-* **dapi:** fix parsing chainlocks received via ZMQ ([#296](https://github.com/dashevo/platform/issues/296))
-* **dashmate:** config/core/miner must have required property 'interval' ([#311](https://github.com/dashevo/platform/issues/311))
-* do not hash proRegTx for masternode identifier ([#318](https://github.com/dashevo/platform/issues/318))
-
-
-### Performance Improvements
-
-* **dapi:** cache block headers and chainlocks ([#235](https://github.com/dashevo/platform/issues/235))
-* **dapi:** remove unnecessary Core RPC calls for core streams ([#194](https://github.com/dashevo/platform/issues/194))
-
-
-### Continuous Integration
-
-* enable multiarch builds ([#316](https://github.com/dashevo/platform/issues/316))
-
-
-### Tests
-
-* fixes wallet.spec.js
-
-
-### Miscellaneous Chores
-
-* **drive:** add more block execution timers ([#329](https://github.com/dashevo/platform/issues/329))
-* **release:** update changelog and bump version to 0.23.0-dev.1 ([#334](https://github.com/dashevo/platform/issues/334))
 
 ### [0.22.7](https://github.com/dashevo/platform/compare/v0.22.6...v0.22.7) (2022-05-02)
 
