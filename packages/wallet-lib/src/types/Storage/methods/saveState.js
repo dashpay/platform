@@ -1,5 +1,5 @@
 const { SAVE_STATE_SUCCESS, SAVE_STATE_FAILED } = require('../../../EVENTS');
-const { CONSTANTS } = require('../../../index');
+const CONSTANTS = require('../../../CONSTANTS');
 
 /**
  * Force persistence of the state to the adapter

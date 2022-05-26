@@ -4,7 +4,7 @@ const configureAdapter = require('../_configureAdapter');
 const getDefaultAdapter = require('../_getDefaultAdapter');
 const { CONFIGURED } = require('../../../EVENTS');
 const logger = require('../../../logger');
-const { CONSTANTS } = require('../../../index');
+const CONSTANTS = require('../../../CONSTANTS');
 
 /**
  * To be called after instantialization as it contains all the async logic / test of adapters
