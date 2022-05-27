@@ -1,3 +1,4 @@
+pub mod document_factory;
 pub mod errors;
 pub mod generate_document_id;
 mod state_transition;
