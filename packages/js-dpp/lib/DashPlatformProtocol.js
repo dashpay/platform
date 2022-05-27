@@ -12,6 +12,10 @@ const StateTransitionFacade = require('./stateTransition/StateTransitionFacade')
 
 const IdentityFacade = require('./identity/IdentityFacade');
 
+const Identity = require('./identity/Identity');
+const IdentityPublicKey = require('./identity/IdentityPublicKey');
+const Identifier = require('./identifier/Identifier');
+
 /**
  * @class DashPlatformProtocol
  */
@@ -116,5 +120,9 @@ class DashPlatformProtocol {
     this.protocolVersion = version;
   }
 }
+
+DashPlatformProtocol.Identity = Identity;
+DashPlatformProtocol.IdentityPublicKey = IdentityPublicKey;
+DashPlatformProtocol.Identifier = Identifier;
 
 module.exports = DashPlatformProtocol;

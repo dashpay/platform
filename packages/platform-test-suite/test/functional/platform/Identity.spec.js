@@ -1,4 +1,4 @@
-const DashPlatformProtocol = require('@dashevo/dpp');
+const Dash = require('dash');
 const getDataContractFixture = require('@dashevo/dpp/lib/test/fixtures/getDataContractFixture');
 
 const { createFakeInstantLock } = require('dash/build/src/utils/createFakeIntantLock');
@@ -31,7 +31,7 @@ describe('Platform', () => {
     let walletAccount;
 
     before(async () => {
-      dpp = new DashPlatformProtocol();
+      dpp = new Dash.PlatformProtocol();
       await dpp.initialize();
 
       client = await createClientWithFundedWallet();

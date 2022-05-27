@@ -1,14 +1,17 @@
+const Dash = require('dash');
+
 const {
   contractId: masternodeRewardSharesContractId,
   ownerId: masternodeRewardSharesOwnerId,
 } = require('@dashevo/masternode-reward-shares-contract/lib/systemIds');
 
-const generateRandomIdentifier = require('@dashevo/dpp/lib/test/utils/generateRandomIdentifier');
 const { hash } = require('@dashevo/dpp/lib/util/hash');
+const generateRandomIdentifier = require('../../lib/test/utils/generateRandomIdentifier');
 
-const IdentityPublicKey = require('@dashevo/dpp/lib/identity/IdentityPublicKey');
 const createClientWithFundedWallet = require('../../lib/test/createClientWithFundedWallet');
 const wait = require('../../lib/wait');
+
+const { PlatformProtocol: { IdentityPublicKey } } = Dash;
 
 describe('Masternode Reward Shares', () => {
   let failed = false;
@@ -16,12 +19,12 @@ describe('Masternode Reward Shares', () => {
   let dpp;
 
   before(async () => {
+    dpp = new Dash.PlatformProtocol();
+    await dpp.initialize();
+
     client = await createClientWithFundedWallet(
       process.env.MASTERNODE_REWARD_SHARES_OWNER_PRIVATE_KEY,
     );
-
-    ({ dpp } = client.platform);
-    await dpp.initialize();
 
     await client.platform.identities.topUp(masternodeRewardSharesOwnerId, 5000);
 

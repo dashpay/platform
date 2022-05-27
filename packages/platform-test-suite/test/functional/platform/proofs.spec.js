@@ -7,8 +7,8 @@ const {
   ownerId: dpnsOwnerId,
 } = require('@dashevo/dpns-contract/lib/systemIds');
 
-const generateRandomIdentifier = require('@dashevo/dpp/lib/test/utils/generateRandomIdentifier');
 const cbor = require('@dashevo/dpp/lib/util/serializer');
+const generateRandomIdentifier = require('../../../lib/test/utils/generateRandomIdentifier');
 const hashFunction = require('../../../lib/proofHashFunction');
 const testProofStructure = require('../../../lib/test/testProofStructure');
 const parseStoreTreeProof = require('../../../lib/parseStoreTreeProof');
