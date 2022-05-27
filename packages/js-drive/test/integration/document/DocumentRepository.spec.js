@@ -1490,27 +1490,51 @@ describe('DocumentRepository', function main() {
               });
 
               describe('ranges', () => {
-                ['>', '<', '<=', '>='].forEach((firstOperator) => {
-                  ['>', '<', '>=', '<=', 'startsWith'].forEach((secondOperator) => {
-                    it(`should return invalid result if ${firstOperator} operator used with ${secondOperator} operator`, async () => {
-                      const query = { where: [['a', firstOperator, '1'], ['b', secondOperator, 'a']] };
+                describe('multiple ranges', () => {
+                  ['>', '<', '<=', '>='].forEach((firstOperator) => {
+                    ['>', '<', '>=', '<=', 'startsWith'].forEach((secondOperator) => {
+                      it(`should return invalid result if ${firstOperator} operator used with ${secondOperator} operator`, async () => {
+                        const query = { where: [['a', firstOperator, '1'], ['b', secondOperator, 'a']] };
 
-                      try {
-                        await documentRepository.find(queryDataContract, 'documentE', query);
+                        try {
+                          await documentRepository.find(queryDataContract, 'documentE', query);
 
-                        expect.fail('should throw an error');
-                      } catch (e) {
-                        expect(e).to.be.instanceOf(InvalidQueryError);
-                        expect(e.message).to.equal('Invalid query: multiple range clauses error: all ranges must be on same field');
-                      }
+                          expect.fail('should throw an error');
+                        } catch (e) {
+                          expect(e).to.be.instanceOf(InvalidQueryError);
+                          expect(e.message).to.equal('Invalid query: multiple range clauses error: all ranges must be on same field');
+                        }
+                      });
                     });
                   });
                 });
 
-                ['>', '<', '<=', '>='].forEach((firstOperator) => {
-                  ['>', '<', '>=', '<=', 'startsWith'].forEach((secondOperator) => {
-                    it(`should return invalid result if ${firstOperator} operator used with ${secondOperator} operator on different fields`, async () => {
-                      const query = { where: [['a', firstOperator, '1'], ['a', secondOperator, 'a']] };
+                describe('conflicting operators', () => {
+                  const conflictingOperators = [
+                    {
+                      operators: ['>', '>'],
+                      errorMessage: 'Invalid query: multiple range clauses error: there can only at most one range clause with a lower bound',
+                    },
+                    {
+                      operators: ['>', '=>'],
+                      errorMessage: 'Invalid query: invalid where clause components error: second field of where component should be a known operator',
+                    },
+                    {
+                      operators: ['<', '<'],
+                      errorMessage: 'Invalid query: range clauses not groupable error: lower and upper bounds must be passed if providing 2 ranges',
+                    },
+                    {
+                      operators: ['<', '<='],
+                      errorMessage: 'Invalid query: range clauses not groupable error: lower and upper bounds must be passed if providing 2 ranges',
+                    },
+                  ];
+
+                  conflictingOperators.forEach(({ errorMessage, operators }) => {
+                    it(`should return invalid result if ${operators[0]} operator used with ${operators[1]} operator`, async () => {
+                      const query = {
+                        where: [['a', operators[0], '1'], ['a', operators[1], 'a']],
+                        orderBy: [['a', 'asc']],
+                      };
 
                       try {
                         await documentRepository.find(queryDataContract, 'documentE', query);
@@ -1518,7 +1542,7 @@ describe('DocumentRepository', function main() {
                         expect.fail('should throw an error');
                       } catch (e) {
                         expect(e).to.be.instanceOf(InvalidQueryError);
-                        expect(e.message).to.equal('Invalid query: range clauses not groupable error: clauses are not groupable');
+                        expect(e.message).to.equal(errorMessage);
                       }
                     });
                   });
@@ -1767,8 +1791,8 @@ describe('DocumentRepository', function main() {
                 }
               });
 
-              it('should return invalid result if "startsWith" operator used with a string value which is more than 255 chars long', async () => {
-                const value = 'b'.repeat(256);
+              it('should return invalid result if "startsWith" operator used with a string value which is more than 64 chars long', async () => {
+                const value = 'b'.repeat(65);
                 try {
                   await documentRepository.find(queryDataContract, 'documentString', { where: [['a', 'startsWith', value]], orderBy: [['a', 'asc']] });
 
@@ -2558,7 +2582,7 @@ describe('DocumentRepository', function main() {
         });
 
         it('should return valid result if "orderBy" contains 1 sorting field', async () => {
-          const result = await documentRepository.find(dataContract, 'documentNumber', {
+          const result = await documentRepository.find(queryDataContract, 'documentNumber', {
             where: [
               ['a', '>', 1],
             ],
@@ -2823,7 +2847,7 @@ describe('DocumentRepository', function main() {
         });
 
         Object.keys(validOrderByOperators).forEach((operator) => {
-          it(`should return valid result if "orderBy" has valid field with valid operator in "where" clause - "${operator}"`, async () => {
+          it(`should return valid result if "orderBy" has valid field with valid operator (${operator}) and value (${validOrderByOperators[operator].value})" in "where" clause`, async () => {
             const result = await documentRepository.find(queryDataContract, 'documentNumber', {
               where: [
                 ['a', operator, validOrderByOperators[operator].value],
