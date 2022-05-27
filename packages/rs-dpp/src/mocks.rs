@@ -219,3 +219,16 @@ impl StateTransitionLike for IdentityTopUpTransition {
         unimplemented!()
     }
 }
+
+pub struct DocumentValidator {}
+impl DocumentValidator {
+    pub fn validate_document(
+        &self,
+        _raw_document: &Document,
+        _data_contract: &DataContract,
+    ) -> ValidationResult {
+        ValidationResult::default()
+    }
+}
+
+pub struct FetchAndValidateDataContract {}
