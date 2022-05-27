@@ -268,6 +268,31 @@ describe('DocumentRepository', function main() {
       expect(foundDocumentsBuffers).to.have.deep.members(documents.map((doc) => doc.toBuffer()));
     });
 
+    it('should fetch Documents with dry run', async () => {
+      await documentRepository
+        .storage
+        .startTransaction();
+
+      const foundDocumentsResult = await documentRepository
+        .find(dataContract, document.getType(), {
+          dryRun: true,
+        });
+
+      expect(foundDocumentsResult).to.be.instanceOf(StorageResult);
+      expect(foundDocumentsResult.getOperations().length).to.be.greaterThan(0);
+
+      const foundDocuments = foundDocumentsResult.getValue();
+
+      await documentRepository.storage.commitTransaction();
+
+      expect(foundDocuments).to.be.an('array');
+      expect(foundDocuments).to.have.lengthOf(documents.length);
+
+      const foundDocumentsBuffers = foundDocuments.map((doc) => doc.toBuffer());
+
+      expect(foundDocumentsBuffers).to.have.deep.members(documents.map((doc) => doc.toBuffer()));
+    });
+
     it('should throw InvalidQueryError if query is not valid', async () => {
       const invalidQuery = { invalid: 'query' };
 

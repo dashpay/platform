@@ -158,6 +158,8 @@ describe('unserializeStateTransitionFactory', () => {
     expect(result).to.deep.equal(stateTransition);
 
     expect(dppMock.stateTransition.validateFee).to.be.calledOnceWith(stateTransition);
+    expect(dppMock.stateTransition.validateState).to.be.calledOnceWithExactly(stateTransition);
+    expect(dppMock.stateTransition.apply).to.be.calledOnceWithExactly(stateTransition);
   });
 
   it('should use provided logger', async function it() {
