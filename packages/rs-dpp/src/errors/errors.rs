@@ -1,6 +1,6 @@
 use crate::consensus::ConsensusError;
-use crate::data_contract::errors::*;
-use crate::document::errors::*;
+use crate::data_contract::{errors::*, DataContract};
+use crate::document::{errors::*, Document};
 use crate::identity::{IdentityPublicKey, Purpose, SecurityLevel};
 use crate::state_transition::StateTransition;
 use thiserror::Error;
@@ -70,6 +70,19 @@ pub enum ProtocolError {
 
     #[error("Invalid signature public key")]
     InvalidSignaturePublicKeyError { public_key: Vec<u8> },
+
+    // Documents
+    #[error("Data Contract doesn't define document wit type '{document_type}'")]
+    InvalidDocumentTypeError {
+        document_type: String,
+        data_contract: DataContract,
+    },
+
+    #[error("Invalid Document: {errors:?}")]
+    InvalidDocumentError {
+        errors: Vec<ConsensusError>,
+        document: Document,
+    },
 }
 
 impl From<&str> for ProtocolError {
