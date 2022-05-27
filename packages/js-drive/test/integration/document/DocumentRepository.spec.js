@@ -571,7 +571,6 @@ const invalidQueries = [
 
 const malformedQueries = [
   'abc',
-  {},
   [],
   { where: [1, 2, 3] },
   { invalid: 'query' },

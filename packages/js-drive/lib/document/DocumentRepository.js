@@ -153,6 +153,10 @@ class DocumentRepository {
         throw new InvalidQueryError(e.message.substring(10, e.message.length));
       }
 
+      if (e.message.startsWith('contract:')) {
+        throw new InvalidQueryError(e.message.substring(9, e.message.length));
+      }
+
       throw e;
     }
   }
