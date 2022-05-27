@@ -4,6 +4,8 @@ import { Platform as _Platform } from './Platform';
 import { default as _DAPIClient } from '@dashevo/dapi-client';
 import { default as _DashPlatformProtocol } from '@dashevo/dpp';
 
+import { StateTransitionBroadcastError } from '../errors/StateTransitionBroadcastError'
+
 import {
   Wallet as _Wallet,
   Account as _Account,
@@ -37,6 +39,10 @@ export namespace SDK {
 
   export let Essentials = {
     Buffer,
+  }
+
+  export let Errors = {
+    StateTransitionBroadcastError
   }
 }
 export { SDK as default };

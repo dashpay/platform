@@ -1,16 +1,27 @@
+const Dash = require('dash');
+
 const getDataContractFixture = require(
   '@dashevo/dpp/lib/test/fixtures/getDataContractFixture',
 );
 
-const IdentityNotFoundError = require('@dashevo/dpp/lib/errors/consensus/signature/IdentityNotFoundError');
-const { StateTransitionBroadcastError } = require('dash/build/src/errors/StateTransitionBroadcastError');
-
-const InvalidDataContractVersionError = require('@dashevo/dpp/lib/errors/consensus/basic/dataContract/InvalidDataContractVersionError');
-const IncompatibleDataContractSchemaError = require('@dashevo/dpp/lib/errors/consensus/basic/dataContract/IncompatibleDataContractSchemaError');
-
 const wait = require('../../../lib/wait');
 
 const createClientWithFundedWallet = require('../../../lib/test/createClientWithFundedWallet');
+
+const getRandomIdentifier = require('../../../lib/test/utils/generateRandomIdentifier');
+
+const {
+  Errors: {
+    StateTransitionBroadcastError,
+  },
+  PlatformProtocol: {
+    Errors: {
+      IdentityNotFoundError,
+      InvalidDataContractVersionError,
+      IncompatibleDataContractSchemaError,
+    },
+  },
+} = Dash;
 
 describe('Platform', () => {
   describe('Data Contract', function main() {
@@ -35,7 +46,10 @@ describe('Platform', () => {
     it('should fail to create new data contract with unknown owner', async () => {
       // if no identity is specified
       // random is generated within the function
-      dataContractFixture = getDataContractFixture();
+      dataContractFixture = getDataContractFixture(
+        getRandomIdentifier(),
+        Dash.PlatformProtocol.DataContractFactory,
+      );
 
       let broadcastError;
 
@@ -50,7 +64,10 @@ describe('Platform', () => {
     });
 
     it('should create new data contract with previously created identity as an owner', async () => {
-      dataContractFixture = getDataContractFixture(identity.getId());
+      dataContractFixture = getDataContractFixture(
+        identity.getId(),
+        Dash.PlatformProtocol.DataContractFactory,
+      );
 
       await client.platform.contracts.publish(dataContractFixture, identity);
     });

@@ -1,6 +1,6 @@
 const generateRandomIdentifier = require('../utils/generateRandomIdentifier');
 
-const DataContractFactory = require('../../dataContract/DataContractFactory');
+const _DataContractFactory = require('../../dataContract/DataContractFactory');
 
 const randomOwnerId = generateRandomIdentifier();
 
@@ -10,9 +10,13 @@ const createDPPMock = require('../mocks/createDPPMock');
 /**
  *
  * @param {Buffer} [ownerId]
+ * @param {DataContractFactory} [DataContractFactory]
  * @return {DataContract}
  */
-module.exports = function getDataContractFixture(ownerId = randomOwnerId) {
+module.exports = function getDataContractFixture(
+  ownerId = randomOwnerId,
+  DataContractFactory = _DataContractFactory,
+) {
   const documents = {
     niceDocument: {
       type: 'object',

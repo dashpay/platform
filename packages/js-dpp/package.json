@@ -16,7 +16,7 @@
       "test"
     ]
   },
-  "main": "lib/DashPlatformProtocol.js",
+  "main": "lib/index.js",
   "contributors": [
     {
       "name": "Ivan Shumkov",
