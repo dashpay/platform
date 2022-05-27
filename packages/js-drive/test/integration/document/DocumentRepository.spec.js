@@ -1006,7 +1006,7 @@ describe('DocumentRepository', function main() {
       });
 
       describe('invalid queries', () => {
-          invalidQueries.forEach(({ query, error}) => {
+        invalidQueries.forEach(({ query, error }) => {
           it(`should return throw InvalidQueryError for query "${JSON.stringify(query)}"`, async () => {
             try {
               await documentRepository.find(queryDataContract, 'testDocument', query);
