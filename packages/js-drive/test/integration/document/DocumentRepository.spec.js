@@ -148,7 +148,53 @@ const validOrderByOperators = {
   },
 };
 
-const testDocumentSchema = {
+const queryDocumentSchema = {
+  testDocument: {
+    type: 'object',
+    properties: {
+      firstName: {
+        type: 'string',
+      },
+      lastName: {
+        type: 'string',
+      },
+      a: {
+        type: 'integer',
+      },
+      b: {
+        type: 'integer',
+      },
+      c: {
+        type: 'integer',
+      },
+      d: {
+        type: 'integer',
+      },
+      e: {
+        type: 'integer',
+      },
+    },
+    required: ['$createdAt'],
+    additionalProperties: false,
+    indices: [
+      {
+        name: 'one',
+        properties: [
+          { firstName: 'asc' },
+        ],
+      },
+      {
+        name: 'two',
+        properties: [
+          { a: 'asc' },
+          { b: 'asc' },
+          { c: 'asc' },
+          { d: 'asc' },
+          { e: 'asc' },
+        ],
+      },
+    ],
+  },
   documentA: {
     type: 'object',
     properties: {
@@ -375,7 +421,7 @@ const testDocumentSchema = {
 };
 
 for (const fieldName of validFieldNameTestCases) {
-  testDocumentSchema[`document${fieldName}`] = {
+  queryDocumentSchema[`document${fieldName}`] = {
     type: 'object',
     properties: {
       [fieldName]: {
@@ -404,7 +450,7 @@ for (const type of ['number', 'string', 'boolean', 'buffer']) {
     properties.a.byteaArray = true;
   }
 
-  testDocumentSchema[`document${ucFirst(type)}`] = {
+  queryDocumentSchema[`document${ucFirst(type)}`] = {
     type: 'object',
     properties,
     additionalProperties: false,
@@ -417,7 +463,7 @@ for (const type of ['number', 'string', 'boolean', 'buffer']) {
   };
 }
 
-testDocumentSchema.documentBig = {
+queryDocumentSchema.documentBig = {
   type: 'object',
   properties: Array(256).fill().map((v, i) => `a${i}`).reduce((res, key) => {
     res[key] = {
@@ -577,6 +623,7 @@ describe('DocumentRepository', function main() {
   let dataContractRepository;
   let container;
   let dataContract;
+  let queryDataContract;
   let documents;
   let document;
   let documentSchema;
@@ -688,6 +735,9 @@ describe('DocumentRepository', function main() {
       },
     ]);
 
+    const dpp = container.resolve('dpp');
+    queryDataContract = dpp.dataContract.create(generateRandomIdentifier(), queryDocumentSchema);
+
     documentRepository = container.resolve('documentRepository');
 
     const createInitialStateStructure = container.resolve('createInitialStateStructure');
@@ -696,6 +746,7 @@ describe('DocumentRepository', function main() {
     dataContractRepository = container.resolve('dataContractRepository');
 
     await dataContractRepository.store(dataContract);
+    await dataContractRepository.store(queryDataContract);
   });
 
   afterEach(async () => {
@@ -818,68 +869,10 @@ describe('DocumentRepository', function main() {
     });
 
     describe('queries', () => {
-      beforeEach(async () => {
-        const rawDocuments = {
-          testDocument: {
-            type: 'object',
-            properties: {
-              firstName: {
-                type: 'string',
-              },
-              lastName: {
-                type: 'string',
-              },
-              a: {
-                type: 'integer',
-              },
-              b: {
-                type: 'integer',
-              },
-              c: {
-                type: 'integer',
-              },
-              d: {
-                type: 'integer',
-              },
-              e: {
-                type: 'integer',
-              },
-            },
-            required: ['$createdAt'],
-            additionalProperties: false,
-            indices: [
-              {
-                name: 'one',
-                properties: [
-                  { firstName: 'asc' },
-                ],
-              },
-              {
-                name: 'two',
-                properties: [
-                  { a: 'asc' },
-                  { b: 'asc' },
-                  { c: 'asc' },
-                  { d: 'asc' },
-                  { e: 'asc' },
-                ],
-              },
-            ],
-          },
-        };
-
-        const factory = new DataContractFactory(createDPPMock(), () => {});
-
-        const ownerId = generateRandomIdentifier();
-        dataContract = factory.create(ownerId, rawDocuments);
-
-        await dataContractRepository.store(dataContract);
-      });
-
       describe('valid queries', () => {
         validQueries.forEach((query) => {
           it(`should return valid result for query "${JSON.stringify(query)}"`, async () => {
-            const result = await documentRepository.find(dataContract, 'testDocument', query);
+            const result = await documentRepository.find(queryDataContract, 'testDocument', query);
 
             expect(result).to.be.instanceOf(StorageResult);
           });
@@ -980,11 +973,14 @@ describe('DocumentRepository', function main() {
         invalidQueries.forEach((query) => {
           it(`should return throw InvalidQueryError for query "${JSON.stringify(query)}"`, async () => {
             try {
-              await documentRepository.find(dataContract, 'testDocument', query);
+              await documentRepository.find(queryDataContract, 'testDocument', query);
 
               expect.fail('should throw an error');
             } catch (e) {
               expect(e).to.be.instanceOf(InvalidQueryError);
+              expect(e.message).to.equal(
+                'Invalid query: query is too far from index: query must better match an existing index',
+              );
             }
           });
         });
@@ -992,11 +988,12 @@ describe('DocumentRepository', function main() {
         notObjectTestCases.forEach(({ type, value: query }) => {
           it(`should return invalid result if query is a ${type}`, async () => {
             try {
-              await documentRepository.find(dataContract, 'documentA', query);
+              await documentRepository.find(queryDataContract, 'documentA', query);
 
               expect.fail('should throw an error');
             } catch (e) {
               expect(e).to.be.instanceOf(InvalidQueryError);
+              expect(e.message).to.equal('Invalid query: invalid cbor error: unable to decode query');
             }
           });
         });
@@ -1056,18 +1053,19 @@ describe('DocumentRepository', function main() {
         notArrayTestCases.forEach(({ type, value: query }) => {
           it(`should return invalid result if "where" is not an array, but ${type}`, async () => {
             try {
-              await documentRepository.find(dataContract, 'documentA', { where: query });
+              await documentRepository.find(queryDataContract, 'documentA', { where: query });
 
               expect.fail('should throw an error');
             } catch (e) {
               expect(e).to.be.instanceOf(InvalidQueryError);
+              expect(e.message).to.equal('Invalid query: query is too far from index: query must better match an existing index');
             }
           });
         });
 
         it('should return invalid result if "where" is an empty array', async () => {
           try {
-            await documentRepository.find(dataContract, 'documentA', { where: [] });
+            await documentRepository.find(queryDataContract, 'documentA', { where: [] });
 
             expect.fail('should throw an error');
           } catch (e) {
@@ -1078,7 +1076,7 @@ describe('DocumentRepository', function main() {
         it('should return invalid result if "where" contains more than 10 conditions', async () => {
           const where = Array(11).fill(['a', '<', 1]);
           try {
-            await documentRepository.find(dataContract, 'documentA', { where });
+            await documentRepository.find(queryDataContract, 'documentA', { where });
 
             expect.fail('should throw an error');
           } catch (e) {
@@ -1089,7 +1087,7 @@ describe('DocumentRepository', function main() {
 
         it('should return invalid result if "where" contains conflicting conditions', async () => {
           try {
-            await documentRepository.find(dataContract, 'documentNumber', {
+            await documentRepository.find(queryDataContract, 'documentNumber', {
               where: [
                 ['a', '<', 1],
                 ['a', '>', 1],
@@ -1105,7 +1103,7 @@ describe('DocumentRepository', function main() {
 
         it('should return invalid result if number of properties queried does not match number of indexed ones minus 2', async () => {
           try {
-            await documentRepository.find(dataContract, 'documentL', {
+            await documentRepository.find(queryDataContract, 'documentL', {
               where: [
                 ['a', '==', 1],
               ],
@@ -1121,7 +1119,7 @@ describe('DocumentRepository', function main() {
         describe('condition', () => {
           describe('property', () => {
             it('should return valid result if condition contains "$id" field', async () => {
-              const result = await documentRepository.find(dataContract, 'documentB', {
+              const result = await documentRepository.find(queryDataContract, 'documentB', {
                 where:
                   [['$id', '==', generateRandomIdentifier()]],
               });
@@ -1131,7 +1129,7 @@ describe('DocumentRepository', function main() {
             });
 
             it('should return valid result if condition contains top-level field', async () => {
-              const result = await documentRepository.find(dataContract, 'documentE', {
+              const result = await documentRepository.find(queryDataContract, 'documentE', {
                 where: [
                   ['a', '==', '1'],
                 ],
@@ -1142,7 +1140,7 @@ describe('DocumentRepository', function main() {
             });
 
             it.skip('should return valid result if condition contains nested path field', async () => {
-              const result = await documentRepository.find(dataContract, 'documentD', {
+              const result = await documentRepository.find(queryDataContract, 'documentD', {
                 where:
                   [['a.b', '==', '1']],
               });
@@ -1152,7 +1150,7 @@ describe('DocumentRepository', function main() {
 
             it('should return invalid result if property is not specified in document indices', async () => {
               try {
-                await documentRepository.find(dataContract, 'documentD', {
+                await documentRepository.find(queryDataContract, 'documentD', {
                   where: [
                     ['a', '==', '1'],
                   ],
@@ -1168,7 +1166,7 @@ describe('DocumentRepository', function main() {
 
           it('should return invalid result if condition array has less than 3 elements (field, operator, value)', async () => {
             try {
-              await documentRepository.find(dataContract, 'documentA', {
+              await documentRepository.find(queryDataContract, 'documentA', {
                 where:
                   [['a', '==']],
 
@@ -1183,7 +1181,7 @@ describe('DocumentRepository', function main() {
 
           it('should return invalid result if condition array has more than 3 elements (field, operator, value)', async () => {
             try {
-              await documentRepository.find(dataContract, 'documentA', {
+              await documentRepository.find(queryDataContract, 'documentA', {
                 where: [
                   [['a', '==', '1', '2']],
                 ],
@@ -1206,11 +1204,12 @@ describe('DocumentRepository', function main() {
                   }
 
                   try {
-                    await documentRepository.find(dataContract, 'documentE', query);
+                    await documentRepository.find(queryDataContract, 'documentE', query);
 
                     expect.fail('should throw an error');
                   } catch (e) {
                     expect(e).to.be.instanceOf(InvalidQueryError);
+                    expect(e.message).to.equal('Invalid query: invalid where clause components error: second field of where component should be a known operator');
                   }
                 });
               });
@@ -1245,7 +1244,7 @@ describe('DocumentRepository', function main() {
                   const longString = 't'.repeat(64);
 
                   try {
-                    await documentRepository.find(dataContract, 'documentString', { where: [['a', '<', longString]] });
+                    await documentRepository.find(queryDataContract, 'documentString', { where: [['a', '<', longString]], orderBy: [['a', 'asc']] });
 
                     expect.fail('should throw an error');
                   } catch (e) {
@@ -1255,7 +1254,7 @@ describe('DocumentRepository', function main() {
                   const veryLongString = 't'.repeat(65);
 
                   try {
-                    await documentRepository.find(dataContract, 'documentString', { where: [['a', '<', veryLongString]] });
+                    await documentRepository.find(queryDataContract, 'documentString', { where: [['a', '<', veryLongString]], orderBy: [['a', 'asc']] });
 
                     expect.fail('should throw an error');
                   } catch (e) {
@@ -1267,11 +1266,12 @@ describe('DocumentRepository', function main() {
                 nonScalarTestCases.forEach(({ type, value }) => {
                   it(`should return invalid result if "<" operator used with a not scalar value, but ${type}`, async () => {
                     try {
-                      await documentRepository.find(dataContract, 'documentNumber', { where: [['a', '<', value]], orderBy: [['a', 'asc']] });
+                      await documentRepository.find(queryDataContract, 'documentNumber', { where: [['a', '<', value]], orderBy: [['a', 'asc']] });
 
                       expect.fail('should throw an error');
                     } catch (e) {
                       expect(e).to.be.instanceOf(InvalidQueryError);
+                      expect(e.message).to.equal('Invalid query: value wrong type error: document field type doesn\'t match document value');
                     }
                   });
                 });
@@ -1280,7 +1280,7 @@ describe('DocumentRepository', function main() {
                   it(`should return valid result if "<" operator used with a scalar value ${type}`, async () => {
                     const docType = `document${ucFirst(type)}`;
 
-                    const result = await documentRepository.find(dataContract, docType, { where: [['a', '<', value]], orderBy: [['a', 'asc']] });
+                    const result = await documentRepository.find(queryDataContract, docType, { where: [['a', '<', value]], orderBy: [['a', 'asc']] });
 
                     expect(result).to.be.instanceOf(StorageResult);
                   });
@@ -1290,7 +1290,7 @@ describe('DocumentRepository', function main() {
               describe('<=', () => {
                 scalarTestCases.forEach(({ type, value }) => {
                   it(`should return valid result if "<=" operator used with a scalar value ${type}`, async () => {
-                    const result = await documentRepository.find(dataContract, `document${ucFirst(type)}`, { where: [['a', '<=', value]], orderBy: [['a', 'asc']] });
+                    const result = await documentRepository.find(queryDataContract, `document${ucFirst(type)}`, { where: [['a', '<=', value]], orderBy: [['a', 'asc']] });
 
                     expect(result).to.be.instanceOf(StorageResult);
                   });
@@ -1351,7 +1351,7 @@ describe('DocumentRepository', function main() {
 
                 scalarTestCases.forEach(({ type, value }) => {
                   it(`should return valid result if "==" operator used with a scalar value ${type}`, async () => {
-                    const result = await documentRepository.find(dataContract, `document${ucFirst(type)}`, { where: [['a', '==', value]] });
+                    const result = await documentRepository.find(queryDataContract, `document${ucFirst(type)}`, { where: [['a', '==', value]] });
 
                     expect(result).to.be.instanceOf(StorageResult);
                   });
@@ -1390,7 +1390,7 @@ describe('DocumentRepository', function main() {
 
                 scalarTestCases.forEach(({ type, value }) => {
                   it(`should return valid result if ">=" operator used with a scalar value ${type}`, async () => {
-                    const result = await documentRepository.find(dataContract, `document${ucFirst(type)}`, { where: [['a', '>=', value]], orderBy: [['a', 'asc']] });
+                    const result = await documentRepository.find(queryDataContract, `document${ucFirst(type)}`, { where: [['a', '>=', value]], orderBy: [['a', 'asc']] });
 
                     expect(result).to.be.instanceOf(StorageResult);
                   });
@@ -1429,7 +1429,7 @@ describe('DocumentRepository', function main() {
 
                 scalarTestCases.forEach(({ type, value }) => {
                   it(`should return valid result if ">" operator used with a scalar value ${type}`, async () => {
-                    const result = await documentRepository.find(dataContract, `document${ucFirst(type)}`, { where: [['a', '>', value]], orderBy: [['a', 'asc']] });
+                    const result = await documentRepository.find(queryDataContract, `document${ucFirst(type)}`, { where: [['a', '>', value]], orderBy: [['a', 'asc']] });
 
                     expect(result).to.be.instanceOf(StorageResult);
                   });
@@ -1439,7 +1439,7 @@ describe('DocumentRepository', function main() {
               ['>', '<', '<=', '>='].forEach((operator) => {
                 it(`should return invalid results if "${operator}" used not in the last 2 where conditions`, async () => {
                   try {
-                    await documentRepository.find(dataContract, 'documentNumber', {
+                    await documentRepository.find(queryDataContract, 'documentNumber', {
                       where: [
                         ['a', operator, 1],
                         ['a', 'startsWith', 'rt-'],
@@ -1462,13 +1462,12 @@ describe('DocumentRepository', function main() {
                       const query = { where: [['a', operator, '1'], ['b', additionalOperator, 'a']] };
 
                       try {
-                        await documentRepository.find(dataContract, 'documentE', query);
+                        await documentRepository.find(queryDataContract, 'documentE', query);
 
                         expect.fail('should throw an error');
                       } catch (e) {
                         expect(e).to.be.instanceOf(InvalidQueryError);
-                        // expect(e.message).to.equal('Invalid query: multiple range clauses
-                        // error: all ranges must be on same field');
+                        expect(e.message).to.equal('Invalid query: multiple range clauses error: all ranges must be on same field');
                       }
                     });
 
@@ -1480,7 +1479,7 @@ describe('DocumentRepository', function main() {
                   const query = { where: [['a', 'in', [1, 2]]] };
 
                   try {
-                    await documentRepository.find(dataContract, 'documentF', query);
+                    await documentRepository.find(queryDataContract, 'documentF', query);
 
                     expect.fail('should throw an error');
                   } catch (e) {
@@ -1495,7 +1494,7 @@ describe('DocumentRepository', function main() {
                     const query = { where: [['a', operator, 2], ['b', '==', 1]], orderBy: [['a', 'asc']] };
 
                     try {
-                      await documentRepository.find(dataContract, 'documentF', query);
+                      await documentRepository.find(queryDataContract, 'documentF', query);
                       expect.fail('should throw an error');
                     } catch (e) {
                       expect(e).to.be.instanceOf(InvalidQueryError);
@@ -1510,7 +1509,7 @@ describe('DocumentRepository', function main() {
                     const query = { where: [['a', operator, 2], ['b', 'in', [1, 2]]], orderBy: [['a', 'asc'], ['b', 'asc']] };
 
                     try {
-                      await documentRepository.find(dataContract, 'documentG', query);
+                      await documentRepository.find(queryDataContract, 'documentG', query);
                       expect.fail('should throw an error');
                     } catch (e) {
                       expect(e).to.be.instanceOf(InvalidQueryError);
@@ -1530,7 +1529,7 @@ describe('DocumentRepository', function main() {
                   delete query.orderBy;
 
                   try {
-                    await documentRepository.find(dataContract, 'documentF', query);
+                    await documentRepository.find(queryDataContract, 'documentF', query);
                     expect.fail('should throw an error');
                   } catch (e) {
                     expect(e).to.be.instanceOf(InvalidQueryError);
@@ -1544,11 +1543,12 @@ describe('DocumentRepository', function main() {
               nonNumberTestCases.forEach(({ type, value }) => {
                 it(`should return invalid result if $createdAt timestamp used with ${type} value`, async () => {
                   try {
-                    await documentRepository.find(dataContract, 'documentI', { where: [['$createdAt', '>', value]], orderBy: [['$createdAt', 'asc']] });
+                    await documentRepository.find(queryDataContract, 'documentI', { where: [['$createdAt', '>', value]], orderBy: [['$createdAt', 'asc']] });
 
                     expect.fail('should throw an error');
                   } catch (e) {
                     expect(e).to.be.instanceOf(InvalidQueryError);
+                    expect(e.message).to.equal('Invalid query: value wrong type error: document field type doesn\'t match document value');
                   }
                 });
               });
@@ -1556,23 +1556,26 @@ describe('DocumentRepository', function main() {
               nonNumberTestCases.forEach(({ type, value }) => {
                 it(`should return invalid result if $updatedAt timestamp used with ${type} value`, async () => {
                   try {
-                    await documentRepository.find(dataContract, 'documentH', { where: [['$updatedAt', '>', value]], orderBy: [['$updatedAt', 'asc']] });
+                    await documentRepository.find(queryDataContract, 'documentH', { where: [['$updatedAt', '>', value]], orderBy: [['$updatedAt', 'asc']] });
 
                     expect.fail('should throw an error');
                   } catch (e) {
                     expect(e).to.be.instanceOf(InvalidQueryError);
+                    expect(e.message).to.equal(
+                      'Invalid query: value wrong type error: document field type doesn\'t match document value',
+                    );
                   }
                 });
               });
 
               it('should return valid result if condition contains "$createdAt" field', async () => {
-                const result = await documentRepository.find(dataContract, 'documentI', { where: [['$createdAt', '==', Date.now()]] });
+                const result = await documentRepository.find(queryDataContract, 'documentI', { where: [['$createdAt', '==', Date.now()]] });
 
                 expect(result).to.be.instanceOf(StorageResult);
               });
 
               it('should return valid result if condition contains "$updatedAt" field', async () => {
-                const result = await documentRepository.find(dataContract, 'documentH', { where: [['$updatedAt', '==', Date.now()]] });
+                const result = await documentRepository.find(queryDataContract, 'documentH', { where: [['$updatedAt', '==', Date.now()]] });
 
                 expect(result).to.be.instanceOf(StorageResult);
               });
@@ -1614,7 +1617,7 @@ describe('DocumentRepository', function main() {
               notArrayTestCases.forEach(({ type, value }) => {
                 it(`should return invalid result if "in" operator used with not an array value, but ${type}`, async () => {
                   try {
-                    await documentRepository.find(dataContract, 'documentNumber', { where: [['a', 'in', value]], orderBy: [['a', 'asc']] });
+                    await documentRepository.find(queryDataContract, 'documentNumber', { where: [['a', 'in', value]], orderBy: [['a', 'asc']] });
 
                     expect.fail('should throw an error');
                   } catch (e) {
@@ -1625,7 +1628,7 @@ describe('DocumentRepository', function main() {
 
               it('should return invalid result if "in" operator used with an empty array value', async () => {
                 try {
-                  await documentRepository.find(dataContract, 'documentNumber', { where: [['a', 'in', []]], orderBy: [['a', 'asc']] });
+                  await documentRepository.find(queryDataContract, 'documentNumber', { where: [['a', 'in', []]], orderBy: [['a', 'asc']] });
 
                   expect.fail('should throw an error');
                 } catch (e) {
@@ -1640,14 +1643,14 @@ describe('DocumentRepository', function main() {
                   arr.push(i);
                 }
 
-                const result = await documentRepository.find(dataContract, 'documentNumber', { where: [['a', 'in', arr]], orderBy: [['a', 'asc']] });
+                const result = await documentRepository.find(queryDataContract, 'documentNumber', { where: [['a', 'in', arr]], orderBy: [['a', 'asc']] });
 
                 expect(result).to.be.instanceOf(StorageResult);
 
                 arr.push(101);
 
                 try {
-                  documentRepository.find(dataContract, 'documentNumber', { where: [['a', 'in', arr]] });
+                  documentRepository.find(queryDataContract, 'documentNumber', { where: [['a', 'in', arr]] });
 
                   expect.fail('should throw an error');
                 } catch (e) {
@@ -1658,7 +1661,7 @@ describe('DocumentRepository', function main() {
               it('should return invalid result if "in" operator used with an array which contains not unique elements', async () => {
                 const arr = [1, 1];
                 try {
-                  await documentRepository.find(dataContract, 'documentNumber', { where: [['a', 'in', arr]], orderBy: [['a', 'asc']] });
+                  await documentRepository.find(queryDataContract, 'documentNumber', { where: [['a', 'in', arr]], orderBy: [['a', 'asc']] });
 
                   expect.fail('should throw an error');
                 } catch (e) {
@@ -1669,11 +1672,12 @@ describe('DocumentRepository', function main() {
               it('should return invalid results if condition contains empty arrays', async () => {
                 const arr = [[], []];
                 try {
-                  await documentRepository.find(dataContract, 'documentNumber', { where: [['a', 'in', arr]], orderBy: [['a', 'asc']] });
+                  await documentRepository.find(queryDataContract, 'documentNumber', { where: [['a', 'in', arr]], orderBy: [['a', 'asc']] });
 
                   expect.fail('should throw an error');
                 } catch (e) {
                   expect(e).to.be.instanceOf(InvalidQueryError);
+                  expect(e.message).to.equal('Invalid query: value wrong type error: document field type doesn\'t match document value');
                 }
               });
             });
@@ -1706,7 +1710,7 @@ describe('DocumentRepository', function main() {
 
               it('should return invalid result if "startsWith" operator used with an empty string value', async () => {
                 try {
-                  await documentRepository.find(dataContract, 'documentString', { where: [['a', 'startsWith', '']], orderBy: [['a', 'asc']] });
+                  await documentRepository.find(queryDataContract, 'documentString', { where: [['a', 'startsWith', '']], orderBy: [['a', 'asc']] });
 
                   expect.fail('should throw an error');
                 } catch (e) {
@@ -1717,7 +1721,7 @@ describe('DocumentRepository', function main() {
               it('should return invalid result if "startsWith" operator used with a string value which is more than 255 chars long', async () => {
                 const value = 'b'.repeat(256);
                 try {
-                  await documentRepository.find(dataContract, 'documentString', { where: [['a', 'startsWith', value]], orderBy: [['a', 'asc']] });
+                  await documentRepository.find(queryDataContract, 'documentString', { where: [['a', 'startsWith', value]], orderBy: [['a', 'asc']] });
 
                   expect.fail('should throw an error');
                 } catch (e) {
@@ -1728,10 +1732,11 @@ describe('DocumentRepository', function main() {
               nonStringTestCases.forEach(({ type, value }) => {
                 it(`should return invalid result if "startWith" operator used with a not string value, but ${type}`, async () => {
                   try {
-                    await documentRepository.find(dataContract, 'documentString', { where: [['a', 'startsWith', value]], orderBy: [['a', 'asc']] });
+                    await documentRepository.find(queryDataContract, 'documentString', { where: [['a', 'startsWith', value]], orderBy: [['a', 'asc']] });
                     expect.fail('should throw an error');
                   } catch (e) {
                     expect(e).to.be.instanceOf(InvalidQueryError);
+                    expect(e.message).to.equal('Invalid query: value wrong type error: document field type doesn\'t match document value');
                   }
                 });
               });
@@ -1776,7 +1781,7 @@ describe('DocumentRepository', function main() {
                 };
 
                 try {
-                  await documentRepository.find(dataContract, 'document', query);
+                  await documentRepository.find(queryDataContract, 'document', query);
 
                   expect.fail('should throw an error');
                 } catch (e) {
@@ -1794,7 +1799,7 @@ describe('DocumentRepository', function main() {
                 };
 
                 try {
-                  await documentRepository.find(dataContract, 'document', query);
+                  await documentRepository.find(queryDataContract, 'document', query);
 
                   expect.fail('should throw an error');
                 } catch (e) {
@@ -1812,7 +1817,7 @@ describe('DocumentRepository', function main() {
                 };
 
                 try {
-                  await documentRepository.find(dataContract, 'document', query);
+                  await documentRepository.find(queryDataContract, 'document', query);
 
                   expect.fail('should throw an error');
                 } catch (e) {
@@ -1830,7 +1835,7 @@ describe('DocumentRepository', function main() {
                 };
 
                 try {
-                  await documentRepository.find(dataContract, 'document', query);
+                  await documentRepository.find(queryDataContract, 'document', query);
 
                   expect.fail('should throw an error');
                 } catch (e) {
@@ -1848,7 +1853,7 @@ describe('DocumentRepository', function main() {
                 };
 
                 try {
-                  await documentRepository.find(dataContract, 'document', query);
+                  await documentRepository.find(queryDataContract, 'document', query);
 
                   expect.fail('should throw an error');
                 } catch (e) {
@@ -1868,7 +1873,7 @@ describe('DocumentRepository', function main() {
                 };
 
                 try {
-                  await documentRepository.find(dataContract, 'document', query);
+                  await documentRepository.find(queryDataContract, 'document', query);
 
                   expect.fail('should throw an error');
                 } catch (e) {
@@ -1903,7 +1908,7 @@ describe('DocumentRepository', function main() {
               });
 
               it('should return valid result if "length" operator used with zero', async () => {
-                const result = await documentRepository.find(dataContract, 'document', {
+                const result = await documentRepository.find(queryDataContract, 'document', {
                   where: [
                     ['arr', 'length', 0],
                   ],
@@ -1914,7 +1919,7 @@ describe('DocumentRepository', function main() {
 
               it('should return invalid result if "length" operator used with a float numeric value', async () => {
                 try {
-                  await documentRepository.find(dataContract, 'document', {
+                  await documentRepository.find(queryDataContract, 'document', {
                     where: [
                       ['arr', 'length', 1.2],
                     ],
@@ -1928,7 +1933,7 @@ describe('DocumentRepository', function main() {
 
               it('should return invalid result if "length" operator used with a NaN', async () => {
                 try {
-                  await documentRepository.find(dataContract, 'document', {
+                  await documentRepository.find(queryDataContract, 'document', {
                     where: [
                       ['arr', 'length', NaN],
                     ],
@@ -1942,7 +1947,7 @@ describe('DocumentRepository', function main() {
 
               it('should return invalid result if "length" operator used with a numeric value which is less than 0', async () => {
                 try {
-                  await documentRepository.find(dataContract, 'document', {
+                  await documentRepository.find(queryDataContract, 'document', {
                     where: [
                       ['arr', 'length', -1],
                     ],
@@ -1957,7 +1962,7 @@ describe('DocumentRepository', function main() {
               nonNumberTestCases.forEach(({ type, value }) => {
                 it(`should return invalid result if "length" operator used with a ${type} instead of numeric value`, async () => {
                   try {
-                    await documentRepository.find(dataContract, 'document', {
+                    await documentRepository.find(queryDataContract, 'document', {
                       where: [
                         ['arr', 'length', value],
                       ],
@@ -2028,7 +2033,7 @@ describe('DocumentRepository', function main() {
 
               scalarTestCases.forEach(({ type, value }) => {
                 it(`should return valid result if "contains" operator used with a scalar value ${type}`, async () => {
-                  const result = await documentRepository.find(dataContract, 'document', {
+                  const result = await documentRepository.find(queryDataContract, 'document', {
                     where: [
                       ['arr', 'contains', value],
                     ],
@@ -2040,7 +2045,7 @@ describe('DocumentRepository', function main() {
 
               scalarTestCases.forEach(({ type, value }) => {
                 it(`should return valid result if "contains" operator used with an array of scalar values ${type}`, async () => {
-                  const result = await documentRepository.find(dataContract, 'document', {
+                  const result = await documentRepository.find(queryDataContract, 'document', {
                     where: [
                       ['arr', 'contains', [value]],
                     ],
@@ -2057,7 +2062,7 @@ describe('DocumentRepository', function main() {
                   arr.push(i);
                 }
 
-                const result = await documentRepository.find(dataContract, 'document', {
+                const result = await documentRepository.find(queryDataContract, 'document', {
                   where: [
                     ['arr', 'contains', arr],
                   ],
@@ -2068,7 +2073,7 @@ describe('DocumentRepository', function main() {
                 arr.push(101);
 
                 try {
-                  await documentRepository.find(dataContract, 'document', {
+                  await documentRepository.find(queryDataContract, 'document', {
                     where: [
                       ['arr', 'contains', arr],
                     ],
@@ -2082,7 +2087,7 @@ describe('DocumentRepository', function main() {
 
               it('should return invalid result if "contains" operator used with an empty array', async () => {
                 try {
-                  await documentRepository.find(dataContract, 'document', {
+                  await documentRepository.find(queryDataContract, 'document', {
                     where: [
                       ['arr', 'contains', []],
                     ],
@@ -2097,7 +2102,7 @@ describe('DocumentRepository', function main() {
               it('should return invalid result if "contains" operator used with an array which contains not unique'
                 + ' elements', async () => {
                 try {
-                  await documentRepository.find(dataContract, 'document', {
+                  await documentRepository.find(queryDataContract, 'document', {
                     where: [
                       ['arr', 'contains', [1, 1]],
                     ],
@@ -2112,7 +2117,7 @@ describe('DocumentRepository', function main() {
               nonScalarTestCases.forEach(({ type, value }) => {
                 it(`should return invalid result if used with non-scalar value ${type}`, async () => {
                   try {
-                    await documentRepository.find(dataContract, 'document', {
+                    await documentRepository.find(queryDataContract, 'document', {
                       where: [
                         ['arr', 'contains', value],
                       ],
@@ -2128,7 +2133,7 @@ describe('DocumentRepository', function main() {
               nonScalarTestCases.forEach(({ type, value }) => {
                 it(`should return invalid result if used with an array of non-scalar values ${type}`, async () => {
                   try {
-                    await documentRepository.find(dataContract, 'document', {
+                    await documentRepository.find(queryDataContract, 'document', {
                       where: [
                         ['arr', 'contains', [value]],
 
@@ -2184,7 +2189,7 @@ describe('DocumentRepository', function main() {
         });
 
         it('should return valid result if "limit" is a number', async () => {
-          const result = await documentRepository.find(dataContract, 'documentNumber', {
+          const result = await documentRepository.find(queryDataContract, 'documentNumber', {
             where: [
               ['a', '>', 1],
             ],
@@ -2200,16 +2205,20 @@ describe('DocumentRepository', function main() {
             ['a', '>', 1],
           ];
 
-          try {
-            await documentRepository.find(dataContract, 'documentNumber', { where, limit: 0, orderBy: [['a', 'asc']] });
+          // try {
+          //   await documentRepository.find(queryDataContract, 'documentNumber', {
+          //    where,
+          //    limit: 0,
+          //    orderBy: [['a', 'asc']],
+          //   });
+          //
+          //   expect.fail('should throw an error');
+          // } catch (e) {
+          //   expect(e).to.be.instanceOf(InvalidQueryError);
+          // }
 
-            expect.fail('should throw an error');
-          } catch (e) {
-            expect(e).to.be.instanceOf(InvalidQueryError);
-          }
-
           try {
-            await documentRepository.find(dataContract, 'documentNumber', { where, limit: -1, orderBy: [['a', 'asc']] });
+            await documentRepository.find(queryDataContract, 'documentNumber', { where, limit: -1, orderBy: [['a', 'asc']] });
 
             expect.fail('should throw an error');
           } catch (e) {
@@ -2222,12 +2231,12 @@ describe('DocumentRepository', function main() {
             ['a', '>', 1],
           ];
 
-          const result = await documentRepository.find(dataContract, 'documentNumber', { where, limit: 100, orderBy: [['a', 'asc']] });
+          const result = await documentRepository.find(queryDataContract, 'documentNumber', { where, limit: 100, orderBy: [['a', 'asc']] });
 
           expect(result).to.be.instanceOf(StorageResult);
 
           try {
-            await documentRepository.find(dataContract, 'documentNumber', { where, limit: 101, orderBy: [['a', 'asc']] });
+            await documentRepository.find(queryDataContract, 'documentNumber', { where, limit: 101, orderBy: [['a', 'asc']] });
 
             expect.fail('should throw an error');
           } catch (e) {
@@ -2241,7 +2250,7 @@ describe('DocumentRepository', function main() {
           ];
 
           try {
-            await documentRepository.find(dataContract, 'documentNumber', { where, limit: 1.5, orderBy: [['a', 'asc']] });
+            await documentRepository.find(queryDataContract, 'documentNumber', { where, limit: 1.5, orderBy: [['a', 'asc']] });
 
             expect.fail('should throw an error');
           } catch (e) {
@@ -2253,7 +2262,7 @@ describe('DocumentRepository', function main() {
         nonNumberAndUndefinedTestCases.forEach(({ type, value }) => {
           it(`should return invalid result if "limit" is not a number, but ${type}`, async () => {
             try {
-              await documentRepository.find(dataContract, 'documentNumber', {
+              await documentRepository.find(queryDataContract, 'documentNumber', {
                 where: [
                   ['a', '>', 1],
                 ],
@@ -2282,7 +2291,11 @@ describe('DocumentRepository', function main() {
             startAt: documents[1].id,
           };
 
-          const result = await documentRepository.find(dataContract, document.getType(), query);
+          const result = await documentRepository.find(
+            queryDataContract,
+            document.getType(),
+            query,
+          );
 
           expect(result).to.be.instanceOf(StorageResult);
           expect(result.getOperations().length).to.be.greaterThan(0);
@@ -2307,6 +2320,7 @@ describe('DocumentRepository', function main() {
             expect.fail('should throw InvalidQueryError');
           } catch (e) {
             expect(e).to.be.an.instanceOf(InvalidQueryError);
+            expect(e.message).to.equal('Invalid query: start document not found error: startAt document not found');
           }
         });
 
@@ -2317,7 +2331,7 @@ describe('DocumentRepository', function main() {
             }
 
             try {
-              await documentRepository.find(dataContract, 'documentNumber', {
+              await documentRepository.find(queryDataContract, 'documentNumber', {
                 startAt: value,
               });
 
@@ -2366,12 +2380,13 @@ describe('DocumentRepository', function main() {
             expect.fail('should throw InvalidQueryError');
           } catch (e) {
             expect(e).to.be.an.instanceOf(InvalidQueryError);
+            expect(e.message).to.equal('Invalid query: start document not found error: startAfter document not found');
           }
         });
 
         it('should return invalid result if both "startAt" and "startAfter" are present', async () => {
           try {
-            await documentRepository.find(dataContract, 'documentNumber', {
+            await documentRepository.find(queryDataContract, 'documentNumber', {
               startAfter: documents[1].getId(),
               startAt: documents[1].getId(),
             });
@@ -2390,13 +2405,14 @@ describe('DocumentRepository', function main() {
             }
 
             try {
-              await documentRepository.find(dataContract, 'documentNumber', {
+              await documentRepository.find(queryDataContract, 'documentNumber', {
                 startAfter: value,
               });
 
               expect.fail('should throw an error');
             } catch (e) {
               expect(e).to.be.instanceOf(InvalidQueryError);
+              expect(e.message).to.equal('Invalid query: value wrong type error: system value is incorrect type');
             }
           });
         });
@@ -2505,7 +2521,7 @@ describe('DocumentRepository', function main() {
 
         it('should return invalid result if "orderBy" contains 2 sorting fields', async () => {
           try {
-            await documentRepository.find(dataContract, 'documentC', {
+            await documentRepository.find(queryDataContract, 'documentC', {
               where: [
                 ['a', '>', 1],
               ],
@@ -2520,7 +2536,7 @@ describe('DocumentRepository', function main() {
 
         it('should return invalid result if "orderBy" is an empty array', async () => {
           try {
-            await documentRepository.find(dataContract, 'documentNumber', {
+            await documentRepository.find(queryDataContract, 'documentNumber', {
               where: [
                 ['a', '>', 1],
               ],
@@ -2536,7 +2552,7 @@ describe('DocumentRepository', function main() {
 
         it('should return invalid result if sorting applied to not range condition', async () => {
           try {
-            await documentRepository.find(dataContract, 'documentString', {
+            await documentRepository.find(queryDataContract, 'documentString', {
               where: [['a', '==', 'b']],
               orderBy: [['a', 'asc']],
             });
@@ -2549,7 +2565,7 @@ describe('DocumentRepository', function main() {
 
         it('should return invalid result if there is no where conditions', async () => {
           try {
-            await documentRepository.find(dataContract, 'documentNumber', {
+            await documentRepository.find(queryDataContract, 'documentNumber', {
               orderBy: [['a', 'asc']],
             });
 
@@ -2561,7 +2577,7 @@ describe('DocumentRepository', function main() {
 
         it('should return invalid result if the field inside an "orderBy" is an empty array', async () => {
           try {
-            await documentRepository.find(dataContract, 'documentNumber', {
+            await documentRepository.find(queryDataContract, 'documentNumber', {
               where: [
                 ['a', '>', 1],
               ],
@@ -2577,7 +2593,7 @@ describe('DocumentRepository', function main() {
 
         it('should return invalid result if "orderBy" has more than 255 sorting fields', async () => {
           try {
-            await documentRepository.find(dataContract, 'documentBig', {
+            await documentRepository.find(queryDataContract, 'documentBig', {
               where: [
                 ['a', '>', 1],
               ],
@@ -2617,7 +2633,7 @@ describe('DocumentRepository', function main() {
           //
 
           try {
-            await documentRepository.find(dataContract, 'documentL', {
+            await documentRepository.find(queryDataContract, 'documentL', {
               where: [
                 ['b', '>', 1],
               ],
@@ -2655,7 +2671,7 @@ describe('DocumentRepository', function main() {
           // });
 
           try {
-            await documentRepository.find(dataContract, 'documentJ', {
+            await documentRepository.find(queryDataContract, 'documentJ', {
               where: [
                 ['b', '>', 1],
               ],
@@ -2671,7 +2687,7 @@ describe('DocumentRepository', function main() {
 
         validFieldNameTestCases.forEach((fieldName) => {
           it(`should return valid result if "orderBy" has valid field format, ${fieldName}`, async () => {
-            const result = await documentRepository.find(dataContract, `document${fieldName}`, {
+            const result = await documentRepository.find(queryDataContract, `document${fieldName}`, {
               where: [
                 [fieldName, '>', fieldName.startsWith('$') && !fieldName.endsWith('At') ? generateRandomIdentifier() : 1],
               ],
@@ -2694,7 +2710,7 @@ describe('DocumentRepository', function main() {
             //
 
             try {
-              await documentRepository.find(dataContract, 'document', {
+              await documentRepository.find(queryDataContract, 'documentNumber', {
                 where: [
                   ['a', '>', 1],
                 ],
@@ -2704,13 +2720,14 @@ describe('DocumentRepository', function main() {
               expect.fail('should throw an error');
             } catch (e) {
               expect(e).to.be.instanceOf(InvalidQueryError);
+              expect(e.message).to.equal('Invalid query: where clause on non indexed property error: query must be for valid indexes');
             }
           });
         });
 
         it('should return invalid result if "orderBy" has wrong direction', async () => {
           try {
-            await documentRepository.find(dataContract, 'documentNumber', {
+            await documentRepository.find(queryDataContract, 'documentNumber', {
               where: [
                 ['a', '>', 1],
               ],
@@ -2726,7 +2743,7 @@ describe('DocumentRepository', function main() {
 
         it('should return invalid result if "orderBy" field array has less than 2 elements (field, direction)', async () => {
           try {
-            await documentRepository.find(dataContract, 'documentNumber', {
+            await documentRepository.find(queryDataContract, 'documentNumber', {
               where: [
                 ['a', '>', 1],
               ],
@@ -2742,7 +2759,7 @@ describe('DocumentRepository', function main() {
 
         it('should return invalid result if "orderBy" field array has more than 2 elements (field, direction)', async () => {
           try {
-            await documentRepository.find(dataContract, 'documentNumber', {
+            await documentRepository.find(queryDataContract, 'documentNumber', {
               where: [
                 ['a', '>', 1],
               ],
@@ -2758,7 +2775,7 @@ describe('DocumentRepository', function main() {
 
         Object.keys(validOrderByOperators).forEach((operator) => {
           it(`should return valid result if "orderBy" has valid field with valid operator in "where" clause - "${operator}"`, async () => {
-            const result = await documentRepository.find(dataContract, 'documentNumber', {
+            const result = await documentRepository.find(queryDataContract, 'documentNumber', {
               where: [
                 ['a', operator, validOrderByOperators[operator].value],
               ],
@@ -2775,7 +2792,7 @@ describe('DocumentRepository', function main() {
           };
 
           try {
-            await documentRepository.find(dataContract, 'documentK', query);
+            await documentRepository.find(queryDataContract, 'documentK', query);
 
             expect.fail('should throw an error');
           } catch (e) {
@@ -2785,11 +2802,12 @@ describe('DocumentRepository', function main() {
           query.where = [['a', '==', 1]];
 
           try {
-            await documentRepository.find(dataContract, 'documentK', query);
+            await documentRepository.find(queryDataContract, 'documentK', query);
 
             expect.fail('should throw an error');
           } catch (e) {
             expect(e).to.be.instanceOf(InvalidQueryError);
+            expect(e.message).to.equal('Invalid query: where clause on non indexed property error: query must be for valid indexes');
           }
 
           const promises = ['>', '<', '>=', '<=', 'startsWith', 'in'].map(async (operator) => {
@@ -2800,7 +2818,7 @@ describe('DocumentRepository', function main() {
 
             query.where = [['b', operator, value]];
 
-            const result = await documentRepository.find(dataContract, 'documentK', query);
+            const result = await documentRepository.find(queryDataContract, 'documentK', query);
 
             expect(result).to.be.instanceOf(StorageResult);
           });
@@ -2931,96 +2949,3 @@ describe('DocumentRepository', function main() {
     });
   });
 });
-//
-//   describe('RS Drive query errors', () => {
-//     let container;
-//     let dataContract;
-//     let documentRepository;
-//     let dataContractRepository;
-//
-//     beforeEach(async () => {
-//       const factory = new DataContractFactory(createDPPMock(), () => {});
-//       const ownerId = generateRandomIdentifier();
-//       dataContract = factory.create(ownerId, testDocumentSchema);
-//       await dataContractRepository.store(dataContract);
-//     });
-//
-//     afterEach(async () => {
-//       if (container) {
-//         await container.dispose();
-//       }
-//     });
-//
-//
-//
-//     describe('where', () => {
-//
-//     });
-//
-//     describe('limit', () => {
-//
-//     });
-//
-//     describe('orderBy', () => {
-//
-//     });
-//
-//     describe('startAt', () => {
-//       let id;
-//
-//       beforeEach(async () => {
-//         const documentFactory = new DocumentFactory(
-//           createDPPMock(),
-//           () => ({
-//             isValid: () => true,
-//           }),
-//           () => {},
-//         );
-//
-//         const ownerId = generateRandomIdentifier();
-//         const doc = documentFactory.create(dataContract, ownerId, 'documentNumber', { a: 2 });
-//         await documentRepository.store(doc);
-//
-//         const storedDoc = await documentRepository.find(dataContract, 'documentNumber', {
-//           where: [[
-//             'a', '==', 2,
-//           ]],
-//         });
-//
-//         id = storedDoc.getValue()[0].getId();
-//       });
-//
-//
-//     });
-//
-//     describe('startAfter', () => {
-//       let id;
-//
-//       beforeEach(async () => {
-//         const documentFactory = new DocumentFactory(
-//           createDPPMock(),
-//           () => ({
-//             isValid: () => true,
-//           }),
-//           () => {},
-//         );
-//
-//         const ownerId = generateRandomIdentifier();
-//         const doc = documentFactory.create(dataContract, ownerId, 'documentNumber', { a: 1 });
-//         await documentRepository.store(doc);
-//
-//         const storedDoc = await documentRepository.find(dataContract, 'documentNumber', {
-//           where: [[
-//             'a', '==', 1,
-//           ]],
-//         });
-//
-//         id = storedDoc.getValue()[0].getId();
-//       });
-//
-//
-//     });
-//
-//
-//   });
-// });
