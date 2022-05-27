@@ -5,7 +5,7 @@ use std::convert::TryFrom;
 
 use crate::{
     data_contract::{self, generate_data_contract_id},
-    decode_protocol_entity_factory::DecodeProtocolEntityFactory,
+    decode_protocol_entity_factory::DecodeProtocolEntity,
     errors::{consensus::ConsensusError, ProtocolError},
     mocks,
     prelude::Identifier,
@@ -17,14 +17,15 @@ use super::DataContract;
 pub struct DataContractFactory {
     protocol_version: u32,
     _validate_data_contract: mocks::ValidateDataContract,
-    decode_protocol_entity: DecodeProtocolEntityFactory,
+    // TODO remove dependency on decode_protocol_entity
+    decode_protocol_entity: DecodeProtocolEntity,
 }
 
 impl DataContractFactory {
     pub fn new(
         protocol_version: u32,
         _validate_data_contract: mocks::ValidateDataContract,
-        decode_protocol_entity: DecodeProtocolEntityFactory,
+        decode_protocol_entity: DecodeProtocolEntity,
     ) -> Self {
         Self {
             protocol_version,
@@ -97,7 +98,7 @@ impl DataContractFactory {
         skip_validation: bool,
     ) -> Result<DataContract, ProtocolError> {
         let (protocol_version, mut raw_data_contract) =
-            self.decode_protocol_entity.decode_protocol_entity(buffer)?;
+            DecodeProtocolEntity::decode_protocol_entity(buffer)?;
 
         match raw_data_contract {
             JsonValue::Object(ref mut m) => m.insert(
