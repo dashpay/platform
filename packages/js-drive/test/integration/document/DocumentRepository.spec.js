@@ -526,81 +526,117 @@ const validQueries = [
 
 const invalidQueries = [
   {
-    where: [
-      ['a', '==', 1],
-      ['b', '==', 2],
-    ],
+    query: {
+      where: [
+        ['a', '==', 1],
+        ['b', '==', 2],
+      ],
+    },
+    error: 'Invalid query: query is too far from index: query must better match an existing index',
   },
   {
-    where: [
-      ['a', '==', 1],
-      ['b', '==', 2],
-      ['c', 'in', [1, 2]],
-    ],
-    orderBy: [
-      ['c', 'desc'],
-    ],
+    query: {
+      where: [
+        ['a', '==', 1],
+        ['b', '==', 2],
+        ['c', 'in', [1, 2]],
+      ],
+      orderBy: [
+        ['c', 'desc'],
+      ],
+    },
+    error: 'Invalid query: where clause on non indexed property error: query must be for valid indexes',
   },
   {
-    where: [
-      ['a', '==', 1],
-      ['b', '==', 2],
-      ['b', 'in', [1, 2]],
-    ],
-    orderBy: [
-      ['b', 'desc'],
-    ],
+    query: {
+      where: [
+        ['a', '==', 1],
+        ['b', '==', 2],
+        ['b', 'in', [1, 2]],
+      ],
+      orderBy: [
+        ['b', 'desc'],
+      ],
+    },
+    error: 'Invalid query: duplicate non groupable clause on same field error: in clause has same field as an equality clause',
   },
   {
-    where: [
-      ['z', '==', 1],
-    ],
+    query: {
+      where: [
+        ['z', '==', 1],
+      ],
+    },
+    error: 'Invalid query: where clause on non indexed property error: query must be for valid indexes',
   },
   {
-    where: [
-      ['a', '==', 1],
-      ['b', '==', 2],
-      ['c', '>', 3],
-      ['d', 'in', [1, 2]],
-      ['e', '>', 3],
-    ],
+    query: {
+      where: [
+        ['a', '==', 1],
+        ['b', '==', 2],
+        ['c', '>', 3],
+        ['d', 'in', [1, 2]],
+        ['e', '>', 3],
+      ],
+    },
+    error: 'Invalid query: multiple range clauses error: all ranges must be on same field',
   },
   {
-    where: [
-      ['a', '==', 1],
-      ['b', '==', 2],
-      ['c', '>', 3],
-      ['d', '>', 3],
-    ],
-    orderBy: [
-      ['c', 'asc'],
-      ['d', 'desc'],
-    ],
+    query: {
+      where: [
+        ['a', '==', 1],
+        ['b', '==', 2],
+        ['c', '>', 3],
+        ['d', '>', 3],
+      ],
+      orderBy: [
+        ['c', 'asc'],
+        ['d', 'desc'],
+      ],
+    },
+    error: 'Invalid query: multiple range clauses error: all ranges must be on same field',
   },
   {
-    where: [
-      ['a', '==', 3],
-      ['b', '==', 2],
-      ['c', '>', 1],
-    ],
+    query: {
+      where: [
+        ['a', '==', 3],
+        ['b', '==', 2],
+        ['c', '>', 1],
+      ],
+    },
+    error: 'Invalid query: missing order by for range error: query must have an orderBy field for each range element',
   },
   {
-    where: [
-      ['a', '==', 3],
-      ['b', '==', 2],
-      ['c', '==', 3],
-      ['d', 'in', [1, 2]],
-      ['e', '<', 1],
-    ],
-    orderBy: [
-      ['e', 'asc'],
-      ['d', 'asc'],
-    ],
+    query: {
+      where: [
+        ['a', '==', 3],
+        ['b', '==', 2],
+        ['c', '==', 3],
+        ['d', 'in', [1, 2]],
+        ['e', '<', 1],
+      ],
+      orderBy: [
+        ['e', 'asc'],
+        ['d', 'asc'],
+      ],
+    },
+    error: 'Invalid query: where clause on non indexed property error: query must be for valid indexes',
   },
-  'abc',
-  [],
-  { where: [1, 2, 3] },
-  { invalid: 'query' },
+  {
+    query: 'abc',
+    error: 'Invalid query: invalid cbor error: unable to decode query',
+  },
+  {
+    query: [],
+    error: 'Invalid query: invalid cbor error: unable to decode query',
+  },
+  {
+    query: { where: [1, 2, 3] },
+    error: 'Invalid query: query invalid format for where clause error: where clause must be an array',
+  },
+  {
+    query: { invalid: 'query' },
+    error: '',
+  },
 ];
 
 const invalidOperators = ['<<', '<==', '===', '!>', '>>='];
@@ -970,7 +1006,7 @@ describe('DocumentRepository', function main() {
       });
 
       describe('invalid queries', () => {
-        invalidQueries.forEach((query) => {
+        invalidQueries.forEach(({ query, error }) => {
           it(`should return throw InvalidQueryError for query "${JSON.stringify(query)}"`, async () => {
             try {
               await documentRepository.find(queryDataContract, 'testDocument', query);
@@ -978,9 +1014,7 @@ describe('DocumentRepository', function main() {
               expect.fail('should throw an error');
             } catch (e) {
               expect(e).to.be.instanceOf(InvalidQueryError);
-              expect(e.message).to.equal(
-                'Invalid query: query is too far from index: query must better match an existing index',
-              );
+              expect(e.message).to.equal(error);
             }
           });
         });
