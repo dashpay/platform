@@ -145,16 +145,16 @@ class DocumentRepository {
         ],
       );
     } catch (e) {
-      if (e.message.startsWith('query:')) {
+      if (e.message.startsWith('query: ')) {
         throw new InvalidQueryError(e.message.substring(7, e.message.length));
       }
 
-      if (e.message.startsWith('structure:')) {
-        throw new InvalidQueryError(e.message.substring(10, e.message.length));
+      if (e.message.startsWith('structure: ')) {
+        throw new InvalidQueryError(e.message.substring(11, e.message.length));
       }
 
-      if (e.message.startsWith('contract:')) {
-        throw new InvalidQueryError(e.message.substring(9, e.message.length));
+      if (e.message.startsWith('contract: ')) {
+        throw new InvalidQueryError(e.message.substring(10, e.message.length));
       }
 
       throw e;
