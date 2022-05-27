@@ -2400,7 +2400,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["@dashevo/dash-spv", "https://github.com/dashevo/dash-spv.git#commit=3eeb01ed5d0636c949cf3ca2e495c4fe3d1b74ce"],
             ["@dashevo/dark-gravity-wave", "npm:1.1.1"],
             ["@dashevo/dash-util", "npm:2.0.3"],
-            ["@dashevo/dashcore-lib", "npm:0.19.35"],
+            ["@dashevo/dashcore-lib", "npm:0.19.38"],
             ["levelup", "npm:4.4.0"],
             ["memdown", "npm:3.0.0"]
           ],
@@ -2419,24 +2419,6 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
         }]
       ]],
       ["@dashevo/dashcore-lib", [
-        ["npm:0.19.35", {
-          "packageLocation": "./.yarn/cache/@dashevo-dashcore-lib-npm-0.19.35-6cae95f09f-66cf453c47.zip/node_modules/@dashevo/dashcore-lib/",
-          "packageDependencies": [
-            ["@dashevo/dashcore-lib", "npm:0.19.35"],
-            ["@dashevo/x11-hash-js", "npm:1.0.2"],
-            ["@types/node", "npm:12.20.37"],
-            ["bloom-filter", "npm:0.2.0"],
-            ["bls-signatures", "npm:0.2.5"],
-            ["bn.js", "npm:4.12.0"],
-            ["bs58", "npm:4.0.1"],
-            ["elliptic", "npm:6.5.3"],
-            ["eslint-config-prettier", "virtual:6cae95f09f6b196dc45a87cc20461777b6a9d31181c7109b593a7561e3bc439173af074677327dedc33e6b03a409544fa8c17df61e1d90a82d2e4316210696c2#npm:8.3.0"],
-            ["inherits", "npm:2.0.1"],
-            ["lodash", "npm:4.17.21"],
-            ["unorm", "npm:1.6.0"]
-          ],
-          "linkType": "HARD",
-        }],
         ["npm:0.19.38", {
           "packageLocation": "./.yarn/cache/@dashevo-dashcore-lib-npm-0.19.38-d11cd3f7ec-13998e3b15.zip/node_modules/@dashevo/dashcore-lib/",
           "packageDependencies": [
@@ -2448,7 +2430,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["bn.js", "npm:4.12.0"],
             ["bs58", "npm:4.0.1"],
             ["elliptic", "npm:6.5.3"],
-            ["eslint-config-prettier", "virtual:6cae95f09f6b196dc45a87cc20461777b6a9d31181c7109b593a7561e3bc439173af074677327dedc33e6b03a409544fa8c17df61e1d90a82d2e4316210696c2#npm:8.3.0"],
+            ["eslint-config-prettier", "virtual:d11cd3f7eccb3b3ae2a3b86b0161755c351d304567c53cf8dbb8f81774e1b55947955083203dfeccfd266ac367e0e7dd90ebe073d970b4337b33f83b0f95eb6d#npm:8.3.0"],
             ["inherits", "npm:2.0.1"],
             ["lodash", "npm:4.17.21"],
             ["unorm", "npm:1.6.0"]
@@ -2537,7 +2519,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           "packageDependencies": [
             ["@dashevo/dpp", "npm:0.22.8"],
             ["@apidevtools/json-schema-ref-parser", "npm:8.0.0"],
-            ["@dashevo/dashcore-lib", "npm:0.19.35"],
+            ["@dashevo/dashcore-lib", "npm:0.19.38"],
             ["@dashevo/dashpay-contract", "npm:0.22.8"],
             ["@dashevo/dpns-contract", "npm:0.22.8"],
             ["@dashevo/feature-flags-contract", "npm:0.22.8"],
@@ -8830,10 +8812,10 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           ],
           "linkType": "SOFT",
         }],
-        ["virtual:6cae95f09f6b196dc45a87cc20461777b6a9d31181c7109b593a7561e3bc439173af074677327dedc33e6b03a409544fa8c17df61e1d90a82d2e4316210696c2#npm:8.3.0", {
-          "packageLocation": "./.yarn/__virtual__/eslint-config-prettier-virtual-07c63fac1d/0/cache/eslint-config-prettier-npm-8.3.0-f540cd1f53-df4cea3032.zip/node_modules/eslint-config-prettier/",
+        ["virtual:d11cd3f7eccb3b3ae2a3b86b0161755c351d304567c53cf8dbb8f81774e1b55947955083203dfeccfd266ac367e0e7dd90ebe073d970b4337b33f83b0f95eb6d#npm:8.3.0", {
+          "packageLocation": "./.yarn/__virtual__/eslint-config-prettier-virtual-29b266bfb7/0/cache/eslint-config-prettier-npm-8.3.0-f540cd1f53-df4cea3032.zip/node_modules/eslint-config-prettier/",
           "packageDependencies": [
-            ["eslint-config-prettier", "virtual:6cae95f09f6b196dc45a87cc20461777b6a9d31181c7109b593a7561e3bc439173af074677327dedc33e6b03a409544fa8c17df61e1d90a82d2e4316210696c2#npm:8.3.0"],
+            ["eslint-config-prettier", "virtual:d11cd3f7eccb3b3ae2a3b86b0161755c351d304567c53cf8dbb8f81774e1b55947955083203dfeccfd266ac367e0e7dd90ebe073d970b4337b33f83b0f95eb6d#npm:8.3.0"],
             ["@types/eslint", null],
             ["eslint", null]
           ],
