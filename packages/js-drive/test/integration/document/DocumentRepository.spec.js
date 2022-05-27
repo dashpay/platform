@@ -1058,7 +1058,7 @@ describe('DocumentRepository', function main() {
               expect.fail('should throw an error');
             } catch (e) {
               expect(e).to.be.instanceOf(InvalidQueryError);
-              expect(e.message).to.equal('Invalid query: query is too far from index: query must better match an existing index');
+              expect(e.message).to.equal('Invalid query: query invalid format for where clause error: where clause must be an array');
             }
           });
         });
@@ -1456,10 +1456,10 @@ describe('DocumentRepository', function main() {
               });
 
               describe('ranges', () => {
-                ['>', '<', '<=', '>='].forEach((operator) => {
-                  it(`should return invalid result if ${operator} operator used with another range operator`, async () => {
-                    const promises = ['>', '<', '>=', '<=', 'startsWith'].map(async (additionalOperator) => {
-                      const query = { where: [['a', operator, '1'], ['b', additionalOperator, 'a']] };
+                ['>', '<', '<=', '>='].forEach((firstOperator) => {
+                  ['>', '<', '>=', '<=', 'startsWith'].forEach((secondOperator) => {
+                    it(`should return invalid result if ${firstOperator} operator used with ${secondOperator} operator`, async () => {
+                      const query = { where: [['a', firstOperator, '1'], ['b', secondOperator, 'a']] };
 
                       try {
                         await documentRepository.find(queryDataContract, 'documentE', query);
@@ -1470,8 +1470,23 @@ describe('DocumentRepository', function main() {
                         expect(e.message).to.equal('Invalid query: multiple range clauses error: all ranges must be on same field');
                       }
                     });
+                  });
+                });
 
-                    await Promise.all(promises);
+                ['>', '<', '<=', '>='].forEach((firstOperator) => {
+                  ['>', '<', '>=', '<=', 'startsWith'].forEach((secondOperator) => {
+                    it(`should return invalid result if ${firstOperator} operator used with ${secondOperator} operator on different fields`, async () => {
+                      const query = { where: [['a', firstOperator, '1'], ['a', secondOperator, 'a']] };
+
+                      try {
+                        await documentRepository.find(queryDataContract, 'documentE', query);
+
+                        expect.fail('should throw an error');
+                      } catch (e) {
+                        expect(e).to.be.instanceOf(InvalidQueryError);
+                        expect(e.message).to.equal('Invalid query: range clauses not groupable error: clauses are not groupable');
+                      }
+                    });
                   });
                 });
 
