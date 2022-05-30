@@ -1,5 +1,4 @@
 const SCHEMA = {
-  walletId: 'string',
   lastKnownBlock: {
     height: 'number',
   },
