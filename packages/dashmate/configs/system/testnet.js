@@ -64,47 +64,47 @@ module.exports = lodashMerge({}, baseConfig, {
           ],
         },
         genesis: {
-          genesis_time: "2021-07-22T12:57:05.429Z",
-          chain_id: "dash-testnet-8",
-          initial_height: "0",
+          genesis_time: '2021-07-22T12:57:05.429Z',
+          chain_id: 'dash-testnet-8',
+          initial_height: '0',
           initial_core_chain_locked_height: 542300,
           initial_proposal_core_chain_lock: null,
           consensus_params: {
             block: {
-              max_bytes: "22020096",
-              max_gas: "-1",
-              time_iota_ms: "5000"
+              max_bytes: '22020096',
+              max_gas: '-1',
+              time_iota_ms: '5000'
             },
             evidence: {
-              max_age: "100000",
-              max_age_num_blocks: "100000",
-              max_age_duration: "172800000000000"
+              max_age: '100000',
+              max_age_num_blocks: '100000',
+              max_age_duration: '172800000000000'
             },
             validator: {
               pub_key_types: [
-                "bls12381"
+                'bls12381'
               ],
             },
             version: {},
           },
           threshold_public_key: null,
-          quorum_type: "4",
+          quorum_type: '4',
           quorum_hash: null,
-          app_hash: ""
+          app_hash: ''
         },
       },
     },
     dpns: {
-      masterPublicKey: "022a5ffc9f92e005a02401c375f575b3aed5606fb24ddef5b3a05d55c66ba2a2f6",
+      masterPublicKey: '022a5ffc9f92e005a02401c375f575b3aed5606fb24ddef5b3a05d55c66ba2a2f6',
     },
     dashpay: {
-      masterPublicKey: "02c6bf10f8cc078866ed5466a0b5ea3a4e8db2a764ea5aa9cb75f22658664eb149",
+      masterPublicKey: '02c6bf10f8cc078866ed5466a0b5ea3a4e8db2a764ea5aa9cb75f22658664eb149',
     },
     featureFlags: {
-      masterPublicKey: "033d57d03ba602acecfb6fd4ad66c5fdb9a739e163faefa901926bdf28063f9251",
+      masterPublicKey: '033d57d03ba602acecfb6fd4ad66c5fdb9a739e163faefa901926bdf28063f9251',
     },
     masternodeRewardShares: {
-      masterPublicKey: "02182c19827a5e3151feb965b2c6e6bbe57bb1f2fe7579595d76b672966da4e8e6",
+      masterPublicKey: '02182c19827a5e3151feb965b2c6e6bbe57bb1f2fe7579595d76b672966da4e8e6',
     },
   },
   network: NETWORK_TESTNET,
