@@ -10,7 +10,6 @@ class WalletStore {
     this.walletId = walletId;
 
     this.state = {
-      walletId,
       mnemonic: null,
       paths: new Map(),
       identities: new Map(),

@@ -1,5 +1,4 @@
 function exportState(chainHeight) {
-  const { walletId } = this.state;
   let { lastKnownBlock: { height } } = this.state;
 
   /*
@@ -11,7 +10,6 @@ function exportState(chainHeight) {
   }
 
   return {
-    walletId,
     lastKnownBlock: {
       height,
     },

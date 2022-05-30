@@ -25,11 +25,6 @@ module.exports = async function configure(opts = {}) {
     }
 
     await this.adapter.setItem(`wallet_${opts.walletId}`, null);
-    await this.adapter.setItem('wallets', null);
-    await this.adapter.setItem('chains', null);
-    await this.adapter.setItem('transactions', null);
-    await this.adapter.setItem('instantLocks', null);
-    await this.adapter.setItem('version', null);
   }
 
   this.createWalletStore(opts.walletId);
