@@ -34,10 +34,6 @@ const typesTestCases = {
     type: 'undefined',
     value: undefined,
   },
-  function: {
-    type: 'function',
-    value: () => {},
-  },
   object: {
     type: 'object',
     value: {},
@@ -53,8 +49,6 @@ const notObjectTestCases = [
   typesTestCases.boolean,
   typesTestCases.string,
   typesTestCases.null,
-  typesTestCases.undefined,
-  typesTestCases.function,
 ];
 
 const notArrayTestCases = [
@@ -63,14 +57,12 @@ const notArrayTestCases = [
   typesTestCases.string,
   typesTestCases.null,
   typesTestCases.object,
-  typesTestCases.function,
   typesTestCases.buffer,
 ];
 
 const nonScalarTestCases = [
   typesTestCases.null,
   typesTestCases.undefined,
-  typesTestCases.function,
   typesTestCases.object,
 ];
 
@@ -81,23 +73,12 @@ const scalarTestCases = [
   typesTestCases.buffer,
 ];
 
-const nonStringTestCases = [
-  typesTestCases.number,
-  typesTestCases.boolean,
-  typesTestCases.null,
-  typesTestCases.undefined,
-  typesTestCases.object,
-  typesTestCases.function,
-  typesTestCases.buffer,
-];
-
 const nonNumberTestCases = [
   typesTestCases.string,
   typesTestCases.boolean,
   typesTestCases.null,
   typesTestCases.undefined,
   typesTestCases.object,
-  typesTestCases.function,
   typesTestCases.buffer,
 ];
 
@@ -106,7 +87,6 @@ const nonNumberAndUndefinedTestCases = [
   typesTestCases.boolean,
   typesTestCases.null,
   typesTestCases.object,
-  typesTestCases.function,
   typesTestCases.buffer,
 ];
 
@@ -447,7 +427,7 @@ for (const type of ['number', 'string', 'boolean', 'buffer']) {
 
   if (type === 'buffer') {
     properties.a.type = 'array';
-    properties.a.byteaArray = true;
+    properties.a.byteArray = true;
   }
 
   queryDocumentSchema[`document${ucFirst(type)}`] = {
@@ -920,24 +900,21 @@ describe('DocumentRepository', function main() {
               type: 'object',
               indices: [
                 {
-                  name: 'createdAt',
+                  name: 'ownerAndCreatedAt',
                   properties: [
+                    {
+                      $ownerId: 'asc',
+                    },
                     {
                       $createdAt: 'asc',
                     },
                   ],
                 },
-                {
-                  name: '$ownerId',
-                  properties: [
-                    {
-                      $ownerId: 'asc',
-                    },
-                  ],
-                },
               ],
               properties: {
-                type: 'object',
+                test: {
+                  type: 'string',
+                },
               },
               required: ['$createdAt'],
               additionalProperties: false,
@@ -1095,16 +1072,6 @@ describe('DocumentRepository', function main() {
               expect(e.message).to.equal('Invalid query: query invalid format for where clause error: where clause must be an array');
             }
           });
-        });
-
-        it('should return invalid result if "where" is an empty array', async () => {
-          try {
-            await documentRepository.find(queryDataContract, 'documentA', { where: [] });
-
-            expect.fail('should throw an error');
-          } catch (e) {
-            expect(e).to.be.instanceOf(InvalidQueryError);
-          }
         });
 
         it('should return invalid result if "where" contains more than 10 conditions', async () => {
@@ -1274,21 +1241,31 @@ describe('DocumentRepository', function main() {
                   expect(expectedDocument.toBuffer()).to.deep.equal(documents[0].toBuffer());
                 });
 
-                it('should return invalid result if "<" operator used with a string value longer than 64 chars', async () => {
-                  const longString = 't'.repeat(64);
+                it('should return invalid result if "<" operator used with a string value longer than 255 bytes', async () => {
+                  const longString = 't'.repeat(255);
+
+                  const result = await documentRepository.find(
+                    queryDataContract,
+                    'documentString',
+                    {
+                      where: [['a', '<', longString]],
+                      orderBy: [['a', 'asc']],
+                    },
+                  );
+
+                  expect(result).to.be.instanceOf(StorageResult);
+
+                  const veryLongString = 't'.repeat(256);
 
                   try {
-                    await documentRepository.find(queryDataContract, 'documentString', { where: [['a', '<', longString]], orderBy: [['a', 'asc']] });
-
-                    expect.fail('should throw an error');
-                  } catch (e) {
-                    expect(e).to.be.instanceOf(InvalidQueryError);
-                  }
-
-                  const veryLongString = 't'.repeat(65);
-
-                  try {
-                    await documentRepository.find(queryDataContract, 'documentString', { where: [['a', '<', veryLongString]], orderBy: [['a', 'asc']] });
+                    await documentRepository.find(
+                      queryDataContract,
+                      'documentString',
+                      {
+                        where: [['a', '<', veryLongString]],
+                        orderBy: [['a', 'asc']],
+                      },
+                    );
 
                     expect.fail('should throw an error');
                   } catch (e) {
@@ -1492,7 +1469,7 @@ describe('DocumentRepository', function main() {
               describe('ranges', () => {
                 describe('multiple ranges', () => {
                   ['>', '<', '<=', '>='].forEach((firstOperator) => {
-                    ['>', '<', '>=', '<=', 'startsWith'].forEach((secondOperator) => {
+                    ['>', '<', '>=', '<='].forEach((secondOperator) => {
                       it(`should return invalid result if ${firstOperator} operator used with ${secondOperator} operator`, async () => {
                         const query = { where: [['a', firstOperator, '1'], ['b', secondOperator, 'a']] };
 
@@ -1506,6 +1483,34 @@ describe('DocumentRepository', function main() {
                         }
                       });
                     });
+                  });
+
+                  ['>', '<', '<=', '>='].forEach((firstOperator) => {
+                    it(`should return invalid result if ${firstOperator} operator used with startsWith operator`, async () => {
+                      const query = { where: [['a', firstOperator, '1'], ['b', 'startsWith', 'a']] };
+
+                      try {
+                        await documentRepository.find(queryDataContract, 'documentE', query);
+
+                        expect.fail('should throw an error');
+                      } catch (e) {
+                        expect(e).to.be.instanceOf(InvalidQueryError);
+                        expect(e.message).to.equal('Invalid query: range clauses not groupable error: clauses are not groupable');
+                      }
+                    });
+                  });
+
+                  it('should return invalid result if startsWith operator used with startsWith operator', async () => {
+                    const query = { where: [['a', 'startsWith', '1'], ['b', 'startsWith', 'a']] };
+
+                    try {
+                      await documentRepository.find(queryDataContract, 'documentE', query);
+
+                      expect.fail('should throw an error');
+                    } catch (e) {
+                      expect(e).to.be.instanceOf(InvalidQueryError);
+                      expect(e.message).to.equal('Invalid query: multiple range clauses error: there can not be more than 1 non groupable range clause');
+                    }
                   });
                 });
 
@@ -1578,15 +1583,12 @@ describe('DocumentRepository', function main() {
                 });
 
                 ['>', '<', '>=', '<='].forEach((operator) => {
-                  it(`should return invalid result if ${operator} operator is used before "in"`, async () => {
+                  it(`should return valid result if ${operator} operator is used before "in"`, async () => {
                     const query = { where: [['a', operator, 2], ['b', 'in', [1, 2]]], orderBy: [['a', 'asc'], ['b', 'asc']] };
 
-                    try {
-                      await documentRepository.find(queryDataContract, 'documentG', query);
-                      expect.fail('should throw an error');
-                    } catch (e) {
-                      expect(e).to.be.instanceOf(InvalidQueryError);
-                    }
+                    const result = await documentRepository.find(queryDataContract, 'documentG', query);
+
+                    expect(result).to.be.instanceOf(StorageResult);
                   });
                 });
 
@@ -1791,8 +1793,8 @@ describe('DocumentRepository', function main() {
                 }
               });
 
-              it('should return invalid result if "startsWith" operator used with a string value which is more than 64 chars long', async () => {
-                const value = 'b'.repeat(65);
+              it('should return invalid result if "startsWith" operator used with a string value which is more than 255 bytes long', async () => {
+                const value = 'b'.repeat(256);
                 try {
                   await documentRepository.find(queryDataContract, 'documentString', { where: [['a', 'startsWith', value]], orderBy: [['a', 'asc']] });
 
@@ -1802,7 +1804,12 @@ describe('DocumentRepository', function main() {
                 }
               });
 
-              nonStringTestCases.forEach(({ type, value }) => {
+              [
+                typesTestCases.number,
+                typesTestCases.boolean,
+                typesTestCases.object,
+                typesTestCases.buffer,
+              ].forEach(({ type, value }) => {
                 it(`should return invalid result if "startWith" operator used with a not string value, but ${type}`, async () => {
                   try {
                     await documentRepository.find(queryDataContract, 'documentString', { where: [['a', 'startsWith', value]], orderBy: [['a', 'asc']] });
@@ -1810,6 +1817,21 @@ describe('DocumentRepository', function main() {
                   } catch (e) {
                     expect(e).to.be.instanceOf(InvalidQueryError);
                     expect(e.message).to.equal('Invalid query: value wrong type error: document field type doesn\'t match document value');
+                  }
+                });
+              });
+
+              [
+                typesTestCases.null,
+                typesTestCases.undefined,
+              ].forEach(({ type, value }) => {
+                it(`should return invalid result if "startWith" operator used with a not string value, but ${type}`, async () => {
+                  try {
+                    await documentRepository.find(queryDataContract, 'documentString', { where: [['a', 'startsWith', value]], orderBy: [['a', 'asc']] });
+                    expect.fail('should throw an error');
+                  } catch (e) {
+                    expect(e).to.be.instanceOf(InvalidQueryError);
+                    expect(e.message).to.equal('Invalid query: invalid STARTSWITH clause error: starts with must have at least one character');
                   }
                 });
               });
@@ -2353,7 +2375,7 @@ describe('DocumentRepository', function main() {
       });
 
       describe('startAt', () => {
-        it('should return Documents from 2 document', async () => {
+        it('should return the second document', async () => {
           const query = {
             where: [
               ['order', '>=', 0],

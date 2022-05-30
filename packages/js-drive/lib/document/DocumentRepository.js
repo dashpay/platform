@@ -121,13 +121,15 @@ class DocumentRepository {
    */
   async find(dataContract, documentType, query = {}, useTransaction = false) {
     // Remove undefined options before we pass them to RS Drive
-    Object.keys(query)
-      .forEach((queryOption) => {
-        if (query[queryOption] === undefined) {
-          // eslint-disable-next-line no-param-reassign
-          delete query[queryOption];
-        }
-      });
+    if (typeof query === 'object' && !Array.isArray(query) && query !== null) {
+      Object.keys(query)
+        .forEach((queryOption) => {
+          if (query[queryOption] === undefined) {
+            // eslint-disable-next-line no-param-reassign
+            delete query[queryOption];
+          }
+        });
+    }
 
     try {
       const [documents, , processingCost] = await this.storage.getDrive()
