@@ -120,7 +120,6 @@ describe('Wallet', () => {
       expect(chainStoreState.transactions).to.be.empty;
       expect(chainStoreState.txMetadata).to.be.empty;
       expect(chainStoreState.blockHeaders).to.be.empty;
-      expect(walletStoreState.walletId).to.equal(wallet.walletId)
       expect(walletStoreState.lastKnownBlock.height).to.equal(-1)
 
       /** Wait for transactions metadata */
