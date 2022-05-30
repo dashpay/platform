@@ -30,14 +30,14 @@ module.exports = lodashMerge({}, baseConfig, {
     dapi: {
       api: {
         docker: {
-          image: 'dashpay/drive:0.22.0',
+          image: 'dashpay/drive:0.22',
         },
       },
     },
     drive: {
       abci: {
         docker: {
-          image: 'dashpay/drive:0.22.0',
+          image: 'dashpay/drive:0.22',
         },
         log: {
           prettyFile: {
