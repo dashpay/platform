@@ -111,6 +111,7 @@ impl<'de> Deserialize<'de> for Identifier {
 
 impl std::fmt::Display for Identifier {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        // changing default serialization to bytes
         write!(f, "{}", self.to_string(Encoding::Base58))
     }
 }
