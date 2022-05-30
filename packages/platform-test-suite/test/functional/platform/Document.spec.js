@@ -1,21 +1,29 @@
+const Dash = require('dash');
 const { expect } = require('chai');
 
 const getDataContractFixture = require(
   '@dashevo/dpp/lib/test/fixtures/getDataContractFixture',
 );
-
 const getIdentityFixture = require(
   '@dashevo/dpp/lib/test/fixtures/getIdentityFixture',
 );
 
 const { signStateTransition } = require('dash/build/src/SDK/Client/Platform/signStateTransition');
-
-const InvalidDocumentTypeError = require('@dashevo/dpp/lib/errors/consensus/basic/document/InvalidDocumentTypeError');
-const { StateTransitionBroadcastError } = require('dash/build/src/errors/StateTransitionBroadcastError');
-
 const wait = require('../../../lib/wait');
+const generateRandomIdentifier = require('../../../lib/test/utils/generateRandomIdentifier');
 
 const createClientWithFundedWallet = require('../../../lib/test/createClientWithFundedWallet');
+
+const {
+  Errors: {
+    StateTransitionBroadcastError,
+  },
+  PlatformProtocol: {
+    Errors: {
+      InvalidDocumentTypeError,
+    },
+  },
+} = Dash;
 
 describe('Platform', () => {
   describe('Document', function main() {
@@ -36,7 +44,10 @@ describe('Platform', () => {
         await wait(5000);
       }
 
-      dataContractFixture = getDataContractFixture(identity.getId());
+      dataContractFixture = getDataContractFixture(
+        identity.getId(),
+        Dash.PlatformProtocol.DataContractFactory,
+      );
 
       await client.platform.contracts.publish(dataContractFixture, identity);
 
@@ -52,7 +63,10 @@ describe('Platform', () => {
     });
 
     beforeEach(() => {
-      dataContractFixture = getDataContractFixture(identity.getId());
+      dataContractFixture = getDataContractFixture(
+        identity.getId(),
+        Dash.PlatformProtocol.DataContractFactory,
+      );
     });
 
     after(async () => {
@@ -103,7 +117,11 @@ describe('Platform', () => {
     });
 
     it('should fail to create a new document with an unknown owner', async () => {
-      const unknownIdentity = getIdentityFixture();
+      const unknownIdentity = getIdentityFixture(
+        generateRandomIdentifier(),
+        Dash.PlatformProtocol.Identity,
+        Dash.PlatformProtocol.IdentityPublicKey,
+      );
 
       document = await client.platform.documents.create(
         'customContracts.niceDocument',

@@ -8,6 +8,7 @@ const DataContractFactory = require('./dataContract/DataContractFactory');
 
 const InvalidDataContractVersionError = require('./errors/consensus/basic/dataContract/InvalidDataContractVersionError');
 const IncompatibleDataContractSchemaError = require('./errors/consensus/basic/dataContract/IncompatibleDataContractSchemaError');
+const InvalidDocumentTypeError = require('./errors/consensus/basic/document/InvalidDocumentTypeError');
 const IdentityNotFoundError = require('./errors/consensus/signature/IdentityNotFoundError');
 
 DashPlatformProtocol.DataContractFactory = DataContractFactory;
@@ -20,6 +21,7 @@ DashPlatformProtocol.Errors = {
   IncompatibleDataContractSchemaError,
   IdentityNotFoundError,
   InvalidDataContractVersionError,
+  InvalidDocumentTypeError,
 };
 
 module.exports = DashPlatformProtocol;
