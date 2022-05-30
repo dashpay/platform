@@ -21,6 +21,7 @@ const PROPERTY_ACTION: &str = "$action";
 const PROPERTY_OWNER_ID: &str = "ownerId";
 const PROPERTY_TYPE: &str = "$type";
 const PROPERTY_ID: &str = "$id";
+const PROPERTY_TRANSITIONS: &str = "transitions";
 const PROPERTY_DATA_CONTRACT_ID: &str = "$dataContractId";
 const PROPERTY_REVISION: &str = "$revision";
 const PROPERTY_CREATED_AT: &str = "$createdAt";
@@ -150,9 +151,9 @@ impl DocumentFactory {
         }
 
         let raw_batch_transition = json!({
-            "protocolVersion": self.protocol_version,
-            "ownerId" : raw_documents_transitions[0].get_bytes("ownerId")?,
-            "transitions": raw_documents_transitions,
+            PROPERTY_PROTOCOL_VERSION: self.protocol_version,
+            PROPERTY_OWNER_ID : raw_documents_transitions[0].get_bytes("ownerId")?,
+            PROPERTY_TRANSITIONS: raw_documents_transitions,
         });
 
         DocumentsBatchTransition::from_raw_object(raw_batch_transition, data_contracts)
