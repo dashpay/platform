@@ -12,7 +12,7 @@ const rehydrateState = async function rehydrateState() {
   if (this.rehydrate && this.lastRehydrate === null) {
     try {
       if (this.adapter && hasMethod(this.adapter, 'getItem')) {
-        const walletId = this.currentWalletId
+        const walletId = this.currentWalletId;
         const storage = await this.adapter.getItem(`wallet_${walletId}`);
 
         if (storage) {
