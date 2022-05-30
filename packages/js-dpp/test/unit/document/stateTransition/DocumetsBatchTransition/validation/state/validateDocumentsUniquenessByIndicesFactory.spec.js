@@ -255,4 +255,25 @@ describe('validateDocumentsUniquenessByIndices', () => {
 
     expect(result.isValid()).to.be.true();
   });
+
+  it('should return invalid result on dry run', async () => {
+    const [niceDocument] = documents;
+    const noIndexDocumentTransitions = getDocumentTransitionsFixture({
+      create: [niceDocument],
+    });
+
+    executionContext.enableDryRun();
+
+    const result = await validateDocumentsUniquenessByIndices(
+      ownerId,
+      noIndexDocumentTransitions,
+      dataContract,
+      executionContext,
+    );
+    executionContext.disableDryRun();
+
+    expect(result).to.be.an.instanceOf(ValidationResult);
+    expect(result.isValid()).to.be.true();
+    expect(stateRepositoryMock.fetchDocuments).to.have.not.been.called();
+  });
 });

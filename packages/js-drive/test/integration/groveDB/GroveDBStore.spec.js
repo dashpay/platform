@@ -90,6 +90,21 @@ describe('GroveDBStore', () => {
         value,
       });
     });
+
+    it('should not store value on dry run', async () => {
+      const result = await store.put(testTreePath, key, value, { dryRun: true });
+
+      expect(result).to.be.instanceOf(StorageResult);
+      expect(result.getOperations().length).to.be.greaterThan(0);
+
+      try {
+        await rsDrive.getGroveDB().get(testTreePath, key);
+
+        expect.fail('should with NotFoundError error');
+      } catch (e) {
+        expect(e.message.startsWith('path key not found: key not found in Merk')).to.be.true();
+      }
+    });
   });
 
   describe('#get', () => {
@@ -132,6 +147,22 @@ describe('GroveDBStore', () => {
 
       expect(result.getValue()).to.deep.equal(value);
     });
+
+    it('should return null on dry run', async () => {
+      await rsDrive.getGroveDB().insert(
+        testTreePath,
+        key,
+        { type: 'item', value },
+        false,
+      );
+
+      const result = await store.get(testTreePath, key, { dryRun: true });
+
+      expect(result).to.be.instanceOf(StorageResult);
+      expect(result.getOperations().length).to.be.greaterThan(0);
+
+      expect(result.getValue()).to.be.null();
+    });
   });
 
   describe('#putReference', () => {
@@ -169,6 +200,19 @@ describe('GroveDBStore', () => {
       });
 
       expect(txResult.getValue()).to.deep.equal(value);
+    });
+
+    it('should not put an item by reference on dry run', async () => {
+      await store.put(otherTreePath, key, value, { dryRun: true });
+
+      const result = await store.putReference(testTreePath, key, [otherTreePath[0], key]);
+
+      expect(result).to.be.instanceOf(StorageResult);
+      expect(result.getOperations().length).to.be.greaterThan(0);
+
+      const getResult = await store.get(testTreePath, key);
+
+      expect(getResult.getValue()).to.be.null();
     });
   });
 
@@ -220,6 +264,22 @@ describe('GroveDBStore', () => {
       const valueFromStoreAfterCommitResult = await store.get(testTreePath, key);
       expect(valueFromStoreAfterCommitResult.getValue()).to.be.null();
     });
+
+    it('should not delete value on dry run', async () => {
+      await store.put(testTreePath, key, value);
+
+      const result = await store.delete(testTreePath, key, { dryRun: true });
+
+      expect(result).to.be.instanceOf(StorageResult);
+      expect(result.getOperations().length).to.be.greaterThan(0);
+
+      const storedValue = await rsDrive.getGroveDB().get(testTreePath, key);
+
+      expect(storedValue).to.deep.equal({
+        type: 'item',
+        value,
+      });
+    });
   });
 
   describe('#getAux', () => {
@@ -248,6 +308,17 @@ describe('GroveDBStore', () => {
 
       expect(result.getValue()).to.deep.equal(value);
     });
+
+    it('should return null on dry run', async () => {
+      await rsDrive.getGroveDB().putAux(key, value);
+
+      const result = await store.getAux(key, { dryRun: true });
+
+      expect(result).to.be.instanceOf(StorageResult);
+      expect(result.getOperations().length).to.be.greaterThan(0);
+
+      expect(result.getValue()).to.be.null(value);
+    });
   });
 
   describe('#putAux', () => {
@@ -273,6 +344,14 @@ describe('GroveDBStore', () => {
       const txResult = await rsDrive.getGroveDB().getAux(key, true);
 
       expect(txResult).to.deep.equal(value);
+    });
+
+    it('should not put an auxiliary data on dry run', async () => {
+      await store.putAux(key, value, { dryRun: true });
+
+      const result = await rsDrive.getGroveDB().getAux(key);
+
+      expect(result).to.be.null();
     });
   });
 
@@ -315,6 +394,23 @@ describe('GroveDBStore', () => {
       });
 
       expect(txResult.getValue()).to.be.null();
+    });
+
+    it('should not delete an auxiliary data on dry run', async () => {
+      await store.putAux(key, value);
+
+      const getResult = await store.getAux(key);
+
+      expect(getResult.getValue()).to.deep.equal(value);
+
+      const deleteResult = await store.deleteAux(key, { dryRun: true });
+
+      expect(deleteResult).to.be.instanceOf(StorageResult);
+      expect(deleteResult.getOperations().length).to.be.greaterThan(0);
+
+      const deletedValue = await rsDrive.getGroveDB().getAux(key);
+
+      expect(deletedValue).to.deep.equal(value);
     });
   });
 

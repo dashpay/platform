@@ -257,7 +257,13 @@ describe('DriveStateRepository', () => {
       const result = await stateRepository.fetchDataContract(id, executionContext);
 
       expect(result).to.equal(dataContract);
-      expect(dataContractRepositoryMock.fetch).to.be.calledOnceWith(id);
+      expect(dataContractRepositoryMock.fetch).to.be.calledOnceWithExactly(
+        id,
+        {
+          dryRun: false,
+          useTransaction: false,
+        },
+      );
 
       expect(executionContext.getOperations()).to.deep.equals(operations);
     });
@@ -423,6 +429,21 @@ describe('DriveStateRepository', () => {
         expect(coreRpcClientMock.getRawTransaction).to.be.calledOnceWith(id);
       }
     });
+
+    it('should return mocked transaction on dry run', async () => {
+      executionContext.enableDryRun();
+
+      const result = await stateRepository.fetchTransaction(id, executionContext);
+
+      executionContext.disableDryRun();
+
+      expect(result).to.deep.equal({
+        data: Buffer.alloc(0),
+        height: 1,
+      });
+
+      expect(coreRpcClientMock.getRawTransaction).to.not.be.called(id);
+    });
   });
 
   describe('#fetchLatestPlatformBlockHeader', () => {
@@ -514,6 +535,23 @@ describe('DriveStateRepository', () => {
       const result = await stateRepository.verifyInstantLock(instantLockMock);
 
       expect(result).to.be.false();
+    });
+
+    it('should return true on dry run', async () => {
+      const error = new Error('Some error');
+      error.code = -5;
+
+      coreRpcClientMock.verifyIsLock.throws(error);
+
+      executionContext.enableDryRun();
+
+      const result = await stateRepository.verifyInstantLock(instantLockMock, executionContext);
+
+      executionContext.disableDryRun();
+
+      expect(result).to.be.true();
+      expect(instantLockMock.verify).to.have.not.been.called();
+      expect(coreRpcClientMock.verifyIsLock).to.have.not.been.called();
     });
   });
 

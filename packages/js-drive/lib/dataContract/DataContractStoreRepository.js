@@ -33,7 +33,7 @@ class DataContractStoreRepository {
         dataContract,
         new Date('2022-03-17T15:08:26.132Z'),
         Boolean(options.useTransaction),
-        Boolean(options.dryRun),
+        Boolean(options.dryRun), // TODO rs-drive doesn't support this
       );
 
       return new StorageResult(

@@ -63,6 +63,11 @@ describe('applyDocumentsBatchTransitionFactory', () => {
 
     stateRepositoryMock = createStateRepositoryMock(this.sinonSandbox);
     stateRepositoryMock.fetchDataContract.resolves(dataContract);
+    stateRepositoryMock.fetchLatestPlatformBlockHeader.resolves({
+      time: {
+        seconds: 86400,
+      },
+    });
 
     fetchDocumentsMock = this.sinonSandbox.stub();
     fetchDocumentsMock.resolves([
@@ -119,5 +124,47 @@ describe('applyDocumentsBatchTransitionFactory', () => {
       expect(e).to.be.an.instanceOf(DocumentNotProvidedError);
       expect(e.getDocumentTransition()).to.deep.equal(replaceDocumentTransition);
     }
+  });
+
+  it('should call `replace` functions on dry run', async () => {
+    documentTransitions = getDocumentTransitionsFixture({
+      create: [],
+      replace: [documents[0]],
+      delete: [],
+    });
+
+    stateTransition = new DocumentsBatchTransition({
+      protocolVersion: protocolVersion.latestVersion,
+      ownerId,
+      transitions: documentTransitions.map((t) => t.toObject()),
+    }, [dataContract]);
+
+    stateTransition.getExecutionContext().enableDryRun();
+
+    await applyDocumentsBatchTransition(stateTransition);
+
+    stateTransition.getExecutionContext().disableDryRun();
+
+    expect(stateRepositoryMock.fetchLatestPlatformBlockHeader).to.have.been.calledOnceWith();
+
+    const [documentTransition] = stateTransition.getTransitions();
+    const newDocument = new Document({
+      $protocolVersion: stateTransition.getProtocolVersion(),
+      $id: documentTransition.getId(),
+      $type: documentTransition.getType(),
+      $dataContractId: documentTransition.getDataContractId(),
+      $ownerId: stateTransition.getOwnerId(),
+      $createdAt: 86400 * 1000,
+      ...documentTransition.getData(),
+    }, documentTransition.getDataContract());
+
+    newDocument.setRevision(documentTransition.getRevision());
+    newDocument.setData(documentTransition.getData());
+    newDocument.setUpdatedAt(documentTransition.getUpdatedAt());
+
+    expect(stateRepositoryMock.storeDocument).to.have.been.calledOnceWithExactly(
+      newDocument,
+      executionContext,
+    );
   });
 });

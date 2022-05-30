@@ -111,6 +111,31 @@ describe('DataContractStoreRepository', () => {
 
       expect(dataContract.toObject()).to.deep.equal(fetchedOneMoreDataContract.toObject());
     });
+
+    it('should store Data Contract with dry run', async () => {
+      const result = await repository.store(
+        dataContract,
+        { dryRun: true },
+      );
+
+      expect(result).to.be.instanceOf(StorageResult);
+      expect(result.getOperations().length).to.be.greaterThan(0);
+
+      const encodedDataContractResult = await store.get(
+        DataContractStoreRepository.TREE_PATH.concat([dataContract.getId().toBuffer()]),
+        DataContractStoreRepository.DATA_CONTRACT_KEY,
+      );
+
+      const [protocolVersion, rawDataContract] = decodeProtocolEntity(
+        encodedDataContractResult.getValue(),
+      );
+
+      rawDataContract.protocolVersion = protocolVersion;
+
+      const fetchedDataContract = new DataContract(rawDataContract);
+
+      expect(dataContract.toObject()).to.deep.equal(fetchedDataContract.toObject());
+    });
   });
 
   describe('#fetch', () => {
@@ -169,6 +194,20 @@ describe('DataContractStoreRepository', () => {
 
       expect(storedDataContract).to.be.an.instanceof(DataContract);
       expect(storedDataContract.toObject()).to.deep.equal(dataContract.toObject());
+    });
+
+    it('should fetch null on dry run', async () => {
+      await store.getDrive().applyContract(dataContract, new Date(), false);
+
+      const result = await repository.fetch(dataContract.getId(), { dryRun: true });
+
+      expect(result).to.be.instanceOf(StorageResult);
+      expect(result.getOperations().length).to.be.greaterThan(0);
+
+      const storedDataContract = result.getValue();
+
+      expect(storedDataContract).to.be.an.instanceof(DataContract);
+      expect(storedDataContract.toObject()).to.deep.equal(storedDataContract.toObject());
     });
   });
 

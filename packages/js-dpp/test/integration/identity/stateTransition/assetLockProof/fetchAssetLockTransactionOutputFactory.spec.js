@@ -1,4 +1,5 @@
-const { Transaction } = require('@dashevo/dashcore-lib');
+const { Transaction, Script } = require('@dashevo/dashcore-lib');
+const Output = require('@dashevo/dashcore-lib/lib/transaction/output');
 
 const fetchAssetLockTransactionOutputFactory = require('../../../../../lib/identity/stateTransition/assetLockProof/fetchAssetLockTransactionOutputFactory');
 const getChainAssetLockFixture = require('../../../../../lib/test/fixtures/getChainAssetLockProofFixture');
@@ -87,6 +88,27 @@ describe('fetchAssetLockTransactionOutputFactory', () => {
         expect(e).to.be.an.instanceOf(AssetLockTransactionIsNotFoundError);
         expect(e.getTransactionId()).to.deep.equal(transactionHash);
       }
+    });
+
+    it('should return mocked output on dry run', async () => {
+      executionContext.enableDryRun();
+
+      const result = await fetchAssetLockTransactionOutput(
+        assetLockProofFixture,
+        executionContext,
+      );
+
+      executionContext.disableDryRun();
+
+      expect(result).to.deep.equal(new Output({
+        satoshis: 1000,
+        script: new Script(),
+      }));
+
+      expect(stateRepositoryMock.fetchTransaction).to.be.calledOnceWithExactly(
+        transactionHash,
+        executionContext,
+      );
     });
   });
 

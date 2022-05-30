@@ -165,6 +165,10 @@ describe('deliverTxHandlerFactory', () => {
     expect(blockExecutionContextMock.incrementCumulativeFees).to.be.calledOnceWith(
       dataContractCreateTransitionFixture.calculateFee(),
     );
+
+    expect(
+      dataContractCreateTransitionFixture.getExecutionContext().dryOperations,
+    ).to.have.length(0);
   });
 
   it('should throw DPPValidationAbciError if a state transition is invalid against state', async () => {

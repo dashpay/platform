@@ -303,7 +303,8 @@ class GroveDBStore {
    * @return {Promise<StorageResult<Buffer|null>>}
    */
   async getAux(key, options = {}) {
-    let result;
+    let result = null;
+
     try {
       if (!options.dryRun) {
         result = await this.db.getAux(
