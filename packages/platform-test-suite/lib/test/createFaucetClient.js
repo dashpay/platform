@@ -5,7 +5,7 @@ let storageAdapter;
 if (typeof window === 'undefined') {
   // eslint-disable-next-line global-require
   const { NodeForage } = require('nodeforage');
-  storageAdapter = new NodeForage({ name: `faucet-wallet-${process.env.FAUCET_ADDRESS}` });
+  storageAdapter = new NodeForage({ name: `../../db/faucet-wallet-${process.env.FAUCET_ADDRESS}` });
 } else {
   // eslint-disable-next-line global-require
   storageAdapter = require('localforage');

@@ -16,6 +16,7 @@
 node_modules
 
 *.log
+db/*
 
 # Ultra runner build cache
 .ultra.cache.json
