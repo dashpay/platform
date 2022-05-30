@@ -173,6 +173,23 @@ mod test {
     }
 
     #[test]
+    fn test_to_object() {
+        init();
+        let document_json = get_data_from_file("src/tests/payloads/document_dpns.json").unwrap();
+        let document = serde_json::from_str::<Document>(&document_json).unwrap();
+        let document_object = document.to_object(false).unwrap();
+
+        for property in IDENTIFIER_FIELDS {
+            let id = document_object
+                .get(property)
+                .unwrap()
+                .as_array()
+                .expect("the property must be an array");
+            assert_eq!(32, id.len())
+        }
+    }
+
+    #[test]
     fn test_json_serialize() -> Result<()> {
         init();
 
