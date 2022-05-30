@@ -53,6 +53,7 @@ class DocumentRepository {
             document,
             new Date('2022-03-17T15:08:26.132Z'),
             Boolean(options.useTransaction),
+            Boolean(options.dryRun),
           ));
       } else {
         ([storageCost, processingCost] = await this.storage.getDrive()
@@ -60,6 +61,7 @@ class DocumentRepository {
             document,
             new Date('2022-03-17T15:08:26.132Z'),
             Boolean(options.useTransaction),
+            Boolean(options.dryRun),
           ));
       }
     } finally {
@@ -205,6 +207,7 @@ class DocumentRepository {
    * @param {Identifier} id
    * @param {Object} [options]
    * @param {boolean} [options.useTransaction=false]
+   * @param {boolean} [options.dryRun=false]
    * @return {Promise<StorageResult<void>>}
    */
   async delete(dataContract, documentType, id, options = { }) {
@@ -215,6 +218,7 @@ class DocumentRepository {
           documentType,
           id,
           Boolean(options.useTransaction),
+          Boolean(options.dryRun),
         );
 
       return new StorageResult(

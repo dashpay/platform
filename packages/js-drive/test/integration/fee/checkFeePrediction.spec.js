@@ -1,4 +1,3 @@
-const getIdentityFixture = require('@dashevo/dpp/lib/test/fixtures/getIdentityFixture');
 const getInstantAssetLockProofFixture = require('@dashevo/dpp/lib/test/fixtures/getInstantAssetLockProofFixture');
 const IdentityPublicKey = require('@dashevo/dpp/lib/identity/IdentityPublicKey');
 const PrivateKey = require('@dashevo/dashcore-lib/lib/privatekey');
@@ -8,25 +7,16 @@ const identityUpdateTransitionSchema = require('@dashevo/dpp/schema/identity/sta
 const dataContractCreateTransitionSchema = require('@dashevo/dpp/schema/dataContract/stateTransition/dataContractCreate.json');
 const documentsBatchTransitionSchema = require('@dashevo/dpp/schema/document/stateTransition/documentsBatch.json');
 const dataContractMetaSchema = require('@dashevo/dpp/schema/dataContract/dataContractMeta.json');
+const getBiggestPossibleIdentity = require('@dashevo/dpp/lib/identity/getBiggestPossibleIdentity');
 const createTestDIContainer = require('../../../lib/test/createTestDIContainer');
 
 function createDataContractDocuments() {
   const name = new Array(62).fill('a').join('');
-  // const description = '1'; // new Array(4294967295).fill('d').join('');
 
   const properties = {};
   for (let i = 0; i < dataContractMetaSchema.$defs.documentProperties.maxProperties / 20; i++) {
     properties[`${i}${name}`.slice(0, 62)] = {
       type: 'string',
-      // additionalProperties: false,
-      // uniqueItems: false,
-      // maxLength: Number.MAX_VALUE,
-      // minLength: Number.MAX_VALUE,
-      // minimum: Number.MAX_VALUE,
-      // maximum: Number.MAX_VALUE,
-      // description,
-      // $comment: description,
-      // pattern: description,
     };
   }
 
@@ -42,7 +32,6 @@ function createDataContractDocuments() {
     documents[`${i}${name}`.slice(0, 62)] = {
       type: 'object',
       properties,
-      // required: Object.keys(properties),
       additionalProperties: false,
       indices,
     };
@@ -57,6 +46,8 @@ describe('checkFeePrediction', () => {
   let stateRepository;
   let instantAssetLockProof;
   let identity;
+  let groveDBStore;
+  let initialAppHash;
 
   beforeEach(async function beforeEach() {
     container = await createTestDIContainer();
@@ -69,6 +60,7 @@ describe('checkFeePrediction', () => {
     dpp = container.resolve('dpp');
 
     stateRepository = container.resolve('stateRepository');
+    groveDBStore = container.resolve('groveDBStore');
 
     const createInitialStateStructure = container.resolve('createInitialStateStructure');
     await createInitialStateStructure();
@@ -87,12 +79,12 @@ describe('checkFeePrediction', () => {
       }));
     }
 
-    identity = getIdentityFixture();
+    identity = getBiggestPossibleIdentity();
     identity.id = instantAssetLockProof.createIdentifier();
     identity.setAssetLockProof(instantAssetLockProof);
-    identity.setBalance(Number.MAX_VALUE);
-    identity.setRevision(Number.MAX_VALUE);
     identity.setPublicKeys(publicKeys);
+
+    initialAppHash = await groveDBStore.getRootHash();
   });
 
   afterEach(async () => {
@@ -113,20 +105,30 @@ describe('checkFeePrediction', () => {
       executionContext.enableDryRun();
 
       await dpp.stateTransition.validateState(stateTransition);
+
       await dpp.stateTransition.apply(stateTransition);
+
       const predictedStateTransitionFee = stateTransition.calculateFee();
 
       executionContext.disableDryRun();
 
+      executionContext.clearDryOperations();
+
+      const appHash = await groveDBStore.getRootHash();
+
       await dpp.stateTransition.validateState(stateTransition);
       await dpp.stateTransition.apply(stateTransition);
       const realStateTransitionFee = stateTransition.calculateFee();
+
+      expect(initialAppHash).to.deep.equal(appHash);
 
       expect(predictedStateTransitionFee).to.be.greaterThan(realStateTransitionFee);
     });
 
     it('should check that IdentityTopUpTransition predicted fee > real fee', async () => {
       await stateRepository.storeIdentity(identity);
+
+      initialAppHash = await groveDBStore.getRootHash();
 
       const stateTransition = dpp.identity.createIdentityTopUpTransition(
         identity.getId(),
@@ -145,6 +147,11 @@ describe('checkFeePrediction', () => {
       const predictedStateTransitionFee = stateTransition.calculateFee();
 
       executionContext.disableDryRun();
+      executionContext.clearDryOperations();
+
+      const appHash = await groveDBStore.getRootHash();
+
+      expect(initialAppHash).to.deep.equal(appHash);
 
       await dpp.stateTransition.validateState(stateTransition);
       await dpp.stateTransition.apply(stateTransition);
@@ -155,6 +162,8 @@ describe('checkFeePrediction', () => {
 
     it('should check that IdentityUpdateTransition predicted fee > real fee', async () => {
       await stateRepository.storeIdentity(identity);
+
+      initialAppHash = await groveDBStore.getRootHash();
 
       const newPublicKeys = [];
 
@@ -179,10 +188,9 @@ describe('checkFeePrediction', () => {
         },
       );
 
-      const signature = Buffer.alloc(identityTopUpTransitionSchema.properties.signature.maxItems, '1');
+      const signature = Buffer.alloc(identityTopUpTransitionSchema.properties.signature.maxItems, '255');
       stateTransition.setSignature(signature);
       stateTransition.setSignaturePublicKeyId(Number.MAX_VALUE);
-
       stateTransition.setPublicKeysDisabledAt(new Date(Number.MAX_VALUE));
 
       const executionContext = stateTransition.getExecutionContext();
@@ -194,6 +202,10 @@ describe('checkFeePrediction', () => {
       const predictedStateTransitionFee = stateTransition.calculateFee();
 
       executionContext.disableDryRun();
+      executionContext.clearDryOperations();
+
+      const appHash = await groveDBStore.getRootHash();
+      expect(initialAppHash).to.deep.equal(appHash);
 
       await dpp.stateTransition.validateState(stateTransition);
       await dpp.stateTransition.apply(stateTransition);
@@ -228,6 +240,10 @@ describe('checkFeePrediction', () => {
       const predictedStateTransitionFee = stateTransition.calculateFee();
 
       executionContext.disableDryRun();
+      executionContext.clearDryOperations();
+
+      const appHash = await groveDBStore.getRootHash();
+      expect(initialAppHash).to.deep.equal(appHash);
 
       await dpp.stateTransition.validateState(stateTransition);
       await dpp.stateTransition.apply(stateTransition);
@@ -247,6 +263,10 @@ describe('checkFeePrediction', () => {
       const predictedStateTransitionFee = stateTransition.calculateFee();
 
       executionContext.disableDryRun();
+      executionContext.clearDryOperations();
+
+      const appHash = await groveDBStore.getRootHash();
+      expect(initialAppHash).to.deep.equal(appHash);
 
       await dpp.stateTransition.validateState(stateTransition);
       await dpp.stateTransition.apply(stateTransition);
@@ -272,8 +292,6 @@ describe('checkFeePrediction', () => {
         for (const propertyName of Object.keys(dataContractDocuments[documentType].properties)) {
           data[propertyName] = new Array(63).fill('d').join('');
         }
-
-        console.log(documentType, data);
 
         const document = dpp.document.create(
           dataContract,
@@ -301,35 +319,10 @@ describe('checkFeePrediction', () => {
       const signature = Buffer.alloc(documentsBatchTransitionSchema.properties.signature.maxItems, '1');
       stateTransition.setSignature(signature);
 
-      //
-      // const executionContext = stateTransition.getExecutionContext();
-      // await stateRepository.storeDataContract(dataContract, executionContext);
-      //
-      // executionContext.enableDryRun();
-      //
-      // await dpp.stateTransition.validateState(stateTransition);
-      // await dpp.stateTransition.apply(stateTransition);
-      // const predictedStateTransitionFee = stateTransition.calculateFee();
-      //
-      // executionContext.disableDryRun();
-      //
-      // await dpp.stateTransition.validateState(stateTransition);
-      // await dpp.stateTransition.apply(stateTransition);
-      // const realStateTransitionFee = stateTransition.calculateFee();
-      //
-      // expect(predictedStateTransitionFee).to.be.greaterThan(realStateTransitionFee);
-    });
-
-    it('should check that DocumentsBatchTransition update predicted fee > real fee', async () => {
-      // const documentToReplace = documents[0];
-      // documentToReplace.setData({ name: 'newName' });
-
-      const stateTransition = dpp.document.createStateTransition({
-        replace: documents,
-      });
-
       const executionContext = stateTransition.getExecutionContext();
       await stateRepository.storeDataContract(dataContract, executionContext);
+
+      initialAppHash = await groveDBStore.getRootHash();
 
       executionContext.enableDryRun();
 
@@ -338,6 +331,11 @@ describe('checkFeePrediction', () => {
       const predictedStateTransitionFee = stateTransition.calculateFee();
 
       executionContext.disableDryRun();
+      executionContext.clearDryOperations();
+
+      const appHash = await groveDBStore.getRootHash();
+
+      expect(initialAppHash).to.deep.equal(appHash);
 
       await dpp.stateTransition.validateState(stateTransition);
       await dpp.stateTransition.apply(stateTransition);
@@ -346,13 +344,25 @@ describe('checkFeePrediction', () => {
       expect(predictedStateTransitionFee).to.be.greaterThan(realStateTransitionFee);
     });
 
-    it('should check that DocumentsBatchTransition create predicted fee > real fee', async () => {
+    it('should check that DocumentsBatchTransition update predicted fee > real fee', async () => {
+      // const documentToReplace = documents[0];
+      // documentToReplace.setData({ name: 'newName' });
+
+      const createStateTransition = dpp.document.createStateTransition({
+        create: documents,
+      });
+
       const stateTransition = dpp.document.createStateTransition({
-        delete: documents,
+        replace: documents,
       });
 
       const executionContext = stateTransition.getExecutionContext();
       await stateRepository.storeDataContract(dataContract, executionContext);
+
+      await dpp.stateTransition.validateState(createStateTransition);
+      await dpp.stateTransition.apply(createStateTransition);
+
+      initialAppHash = await groveDBStore.getRootHash();
 
       executionContext.enableDryRun();
 
@@ -361,6 +371,48 @@ describe('checkFeePrediction', () => {
       const predictedStateTransitionFee = stateTransition.calculateFee();
 
       executionContext.disableDryRun();
+      executionContext.clearDryOperations();
+
+      const appHash = await groveDBStore.getRootHash();
+
+      expect(initialAppHash).to.deep.equal(appHash);
+
+      await dpp.stateTransition.validateState(stateTransition);
+      await dpp.stateTransition.apply(stateTransition);
+      const realStateTransitionFee = stateTransition.calculateFee();
+
+      expect(predictedStateTransitionFee).to.be.greaterThan(realStateTransitionFee);
+    });
+
+    it('should check that DocumentsBatchTransition delete predicted fee > real fee', async () => {
+      const createStateTransition = dpp.document.createStateTransition({
+        create: documents,
+      });
+
+      const stateTransition = dpp.document.createStateTransition({
+        delete: documents,
+      });
+
+      const executionContext = stateTransition.getExecutionContext();
+      await stateRepository.storeDataContract(dataContract, executionContext);
+
+      await dpp.stateTransition.validateState(createStateTransition);
+      await dpp.stateTransition.apply(createStateTransition);
+
+      initialAppHash = await groveDBStore.getRootHash();
+
+      executionContext.enableDryRun();
+
+      await dpp.stateTransition.validateState(stateTransition);
+      await dpp.stateTransition.apply(stateTransition);
+      const predictedStateTransitionFee = stateTransition.calculateFee();
+
+      executionContext.disableDryRun();
+      executionContext.clearDryOperations();
+
+      const appHash = await groveDBStore.getRootHash();
+
+      expect(initialAppHash).to.deep.equal(appHash);
 
       await dpp.stateTransition.validateState(stateTransition);
       await dpp.stateTransition.apply(stateTransition);

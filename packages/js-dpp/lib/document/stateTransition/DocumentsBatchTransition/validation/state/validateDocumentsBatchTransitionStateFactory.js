@@ -52,7 +52,7 @@ function validateDocumentsBatchTransitionStateFactory(
     const result = new ValidationResult();
 
     // Data contract must exist
-    const dataContract = await stateRepository.fetchDataContract(dataContractId, executionContext);
+    const dataContract = await stateRepository.fetchDataContract(dataContractId);
 
     if (!dataContract) {
       throw new DataContractNotPresentError(dataContractId);

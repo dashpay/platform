@@ -220,6 +220,34 @@ describe('DocumentRepository', function main() {
       expect(document.toBuffer()).to.deep.equal(transactionDocument.value);
       expect(document.toBuffer()).to.deep.equal(createdDocument.value);
     });
+
+    it('should not store Document on dry run', async () => {
+      await documentRepository.delete(dataContract, document.getType(), document.getId());
+
+      await documentRepository.store(document, {
+        dryRun: true,
+      });
+
+      const documentTypeTreePath = createDocumentTypeTreePath(
+        document.getDataContract(),
+        document.getType(),
+      );
+
+      const documentTreePath = documentTypeTreePath.concat(
+        [Buffer.from([0])],
+      );
+
+      try {
+        await documentRepository
+          .storage
+          .db
+          .get(documentTreePath, document.getId().toBuffer());
+
+        expect.fail('should fail with NotFoundError error');
+      } catch (e) {
+        expect(e.message.startsWith('path key not found: key not found in Merk')).to.be.true();
+      }
+    });
   });
 
   describe('#find', () => {
@@ -960,6 +988,33 @@ describe('DocumentRepository', function main() {
 
       expect(restoredDocuments).to.not.have.lengthOf(0);
       expect(restoredDocuments[0].toBuffer()).to.deep.equal(document.toBuffer());
+    });
+
+    it('should not delete Document on dry run', async () => {
+      const result = await documentRepository.delete(
+        dataContract,
+        document.getType(),
+        document.getId(),
+        {
+          dryRun: true,
+        },
+      );
+
+      expect(result).to.be.instanceOf(StorageResult);
+      expect(result.getOperations().length).to.be.greaterThan(0);
+
+      const query = {
+        where: [['$id', '==', document.getId()]],
+      };
+
+      const removedDocumentsResult = await documentRepository
+        .find(dataContract, document.getType(), query);
+
+      const removedDocuments = removedDocumentsResult
+        .getValue();
+
+      expect(removedDocuments).to.not.have.lengthOf(0);
+      expect(removedDocuments[0].toBuffer()).to.deep.equal(document.toBuffer());
     });
   });
 });
