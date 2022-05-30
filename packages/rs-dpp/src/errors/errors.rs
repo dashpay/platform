@@ -83,6 +83,9 @@ pub enum ProtocolError {
         errors: Vec<ConsensusError>,
         document: Document,
     },
+
+    #[error("No documents were supplied to state transition")]
+    NoDocumentsSuppliedError,
 }
 
 impl From<&str> for ProtocolError {
