@@ -600,6 +600,68 @@ describe('validateDocumentsBatchTransitionStateFactory', () => {
         expect(error.getTimeWindowStart()).to.deep.equal(timeWindowStart);
         expect(error.getTimeWindowEnd()).to.deep.equal(timeWindowEnd);
       });
+
+      it('should not validate time in block window on dry run', async () => {
+        documentTransitions = getDocumentTransitionsFixture({
+          create: [documents[1]],
+        });
+
+        executeDataTriggersMock.resolves([
+          new DataTriggerExecutionResult(),
+        ]);
+
+        stateTransition = new DocumentsBatchTransition({
+          ownerId,
+          contractId: dataContract.getId(),
+          transitions: documentTransitions.map((t) => t.toObject()),
+        }, [dataContract]);
+
+        stateTransition.transitions.forEach((t) => {
+          // eslint-disable-next-line no-param-reassign
+          t.updatedAt.setMinutes(t.updatedAt.getMinutes() - 6);
+          // eslint-disable-next-line no-param-reassign
+          t.createdAt.setMinutes(t.createdAt.getMinutes() - 6);
+        });
+
+        stateTransition.getExecutionContext().enableDryRun();
+
+        const result = await validateDocumentsBatchTransitionState(stateTransition);
+
+        stateTransition.getExecutionContext().disableDryRun();
+
+        expect(result).to.be.an.instanceOf(ValidationResult);
+        expect(result.isValid()).to.be.true();
+      });
+
+      it('should return valid result if timestamps mismatch on dry run', async () => {
+        documentTransitions = getDocumentTransitionsFixture({
+          create: [documents[0]],
+        });
+
+        executeDataTriggersMock.resolves([
+          new DataTriggerExecutionResult(),
+        ]);
+
+        stateTransition = new DocumentsBatchTransition({
+          ownerId,
+          contractId: dataContract.getId(),
+          transitions: documentTransitions.map((t) => t.toObject()),
+        }, [dataContract]);
+
+        stateTransition.transitions.forEach((t) => {
+          // eslint-disable-next-line no-param-reassign
+          t.updatedAt = new Date();
+        });
+
+        stateTransition.getExecutionContext().enableDryRun();
+
+        const result = await validateDocumentsBatchTransitionState(stateTransition);
+
+        stateTransition.getExecutionContext().disableDryRun();
+
+        expect(result).to.be.an.instanceOf(ValidationResult);
+        expect(result.isValid()).to.be.true();
+      });
     });
 
     describe('REPLACE transition', () => {
@@ -644,6 +706,43 @@ describe('validateDocumentsBatchTransitionStateFactory', () => {
         expect(error.getTimestamp()).to.deep.equal(documentTransitions[0].updatedAt);
         expect(error.getTimeWindowStart()).to.deep.equal(timeWindowStart);
         expect(error.getTimeWindowEnd()).to.deep.equal(timeWindowEnd);
+      });
+
+      it('should return valid result if documents with action "replace" have violated time window on dry run', async () => {
+        executeDataTriggersMock.resolves([
+          new DataTriggerExecutionResult(),
+        ]);
+
+        documentTransitions = getDocumentTransitionsFixture({
+          create: [],
+          replace: [documents[1]],
+        });
+
+        stateTransition = new DocumentsBatchTransition({
+          ownerId,
+          contractId: dataContract.getId(),
+          transitions: documentTransitions.map((t) => t.toObject()),
+        }, [dataContract]);
+
+        documents[1].updatedAt.setMinutes(
+          documents[1].updatedAt.getMinutes() - 6,
+        );
+
+        fetchDocumentsMock.resolves([documents[1]]);
+
+        stateTransition.transitions.forEach((t) => {
+          // eslint-disable-next-line no-param-reassign
+          t.updatedAt.setMinutes(t.updatedAt.getMinutes() - 6);
+        });
+
+        stateTransition.getExecutionContext().enableDryRun();
+
+        const result = await validateDocumentsBatchTransitionState(stateTransition);
+
+        stateTransition.getExecutionContext().disableDryRun();
+
+        expect(result).to.be.an.instanceOf(ValidationResult);
+        expect(result.isValid()).to.be.true();
       });
     });
   });
