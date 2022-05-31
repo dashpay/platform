@@ -60,16 +60,16 @@ module.exports = lodashMerge({}, baseConfig, {
             block: {
               max_bytes: '22020096',
               max_gas: '-1',
-              time_iota_ms: '5000'
+              time_iota_ms: '5000',
             },
             evidence: {
               max_age: '100000',
               max_age_num_blocks: '100000',
-              max_age_duration: '172800000000000'
+              max_age_duration: '172800000000000',
             },
             validator: {
               pub_key_types: [
-                'bls12381'
+                'bls12381',
               ],
             },
             version: {},
@@ -77,7 +77,7 @@ module.exports = lodashMerge({}, baseConfig, {
           threshold_public_key: null,
           quorum_type: '4',
           quorum_hash: null,
-          app_hash: ''
+          app_hash: '',
         },
       },
     },
