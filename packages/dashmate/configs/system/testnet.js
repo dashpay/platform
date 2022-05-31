@@ -16,9 +16,6 @@ module.exports = lodashMerge({}, baseConfig, {
     },
   },
   core: {
-    docker: {
-      image: 'dashpay/dashd:18.0.0-rc4',
-    },
     p2p: {
       port: 19999,
     },
@@ -27,18 +24,8 @@ module.exports = lodashMerge({}, baseConfig, {
     },
   },
   platform: {
-    dapi: {
-      api: {
-        docker: {
-          image: 'dashpay/drive:0.22',
-        },
-      },
-    },
     drive: {
       abci: {
-        docker: {
-          image: 'dashpay/drive:0.22',
-        },
         log: {
           prettyFile: {
             path: path.join(HOME_DIR_PATH, 'logs', 'testnet', 'drive-pretty.log'),
