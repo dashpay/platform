@@ -5,6 +5,8 @@ pub use state_transition_types::*;
 mod abstract_state_transition;
 pub use abstract_state_transition::{StateTransitionConvert, StateTransitionLike};
 
+mod abstract_state_transition_identity_signed;
+
 mod calculate_state_transition_fee;
 
 mod example;

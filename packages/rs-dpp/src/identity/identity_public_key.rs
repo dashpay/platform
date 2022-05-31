@@ -30,13 +30,25 @@ pub enum Purpose {
     DECRYPTION = 2,
 }
 
+impl std::fmt::Display for Purpose {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:?}", self)
+    }
+}
+
 #[repr(u8)]
-#[derive(Debug, PartialEq, Eq, Clone, Copy, Serialize_repr, Deserialize_repr)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy, Serialize_repr, Deserialize_repr, PartialOrd, Ord)]
 pub enum SecurityLevel {
     MASTER = 0,
     CRITICAL = 1,
     HIGH = 2,
     MEDIUM = 3,
+}
+
+impl std::fmt::Display for SecurityLevel {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:?}", self)
+    }
 }
 
 lazy_static! {

@@ -37,4 +37,5 @@ mod prelude {
     pub use crate::errors::ProtocolError;
     pub use crate::identifier::Identifier;
     pub use crate::identity::Identity;
+    pub use crate::identity::IdentityPublicKey;
 }
