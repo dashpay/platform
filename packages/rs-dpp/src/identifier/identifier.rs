@@ -85,6 +85,7 @@ impl Identifier {
     }
 }
 
+// TODO change default serialization to bytes
 impl Serialize for Identifier {
     fn serialize<S>(self: &Identifier, serializer: S) -> Result<S::Ok, S::Error>
     where
@@ -94,10 +95,6 @@ impl Serialize for Identifier {
         serializer.serialize_str(&self.to_string(Encoding::Base58))
     }
 }
-
-// derive - implements the serializer and deserializer automatically for the data structre
-// so basically this is like that
-// -->
 
 impl<'de> Deserialize<'de> for Identifier {
     fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Identifier, D::Error> {
@@ -111,7 +108,6 @@ impl<'de> Deserialize<'de> for Identifier {
 
 impl std::fmt::Display for Identifier {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        // changing default serialization to bytes
         write!(f, "{}", self.to_string(Encoding::Base58))
     }
 }
