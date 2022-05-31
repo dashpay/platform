@@ -224,7 +224,7 @@ pub struct DocumentValidator {}
 impl DocumentValidator {
     pub fn validate_document(
         &self,
-        _raw_document: &Document,
+        _raw_document: &JsonValue,
         _data_contract: &DataContract,
     ) -> ValidationResult {
         ValidationResult::default()
