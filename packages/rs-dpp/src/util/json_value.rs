@@ -26,6 +26,10 @@ pub enum ReplaceWith {
 
 /// JsonValueExt contains a set of helper methods that simplify work with JsonValue
 pub trait JsonValueExt {
+    /// assumes the Json Value is a map and tries to remove the given property
+    fn remove(&mut self, property_name: &str) -> Result<JsonValue, anyhow::Error>;
+    /// assumes the Json Value is a map and tries to insert the given value under given property
+    fn insert(&mut self, property_name: String, value: JsonValue) -> Result<(), anyhow::Error>;
     fn get_string(&self, property_name: &str) -> Result<&str, anyhow::Error>;
     fn get_i64(&self, property_name: &str) -> Result<i64, anyhow::Error>;
     fn get_f64(&self, property_name: &str) -> Result<f64, anyhow::Error>;
@@ -67,10 +71,37 @@ pub trait JsonValueExt {
 }
 
 impl JsonValueExt for JsonValue {
+    fn insert(&mut self, property_name: String, value: JsonValue) -> Result<(), anyhow::Error> {
+        match self.as_object_mut() {
+            Some(map) => {
+                map.insert(property_name, value);
+                Ok(())
+            }
+            None => bail!("the property '{}' isn't a map: '{:?}'", property_name, self),
+        }
+    }
+
+    fn remove(&mut self, property_name: &str) -> Result<JsonValue, anyhow::Error> {
+        match self.as_object_mut() {
+            Some(map) => map.remove(property_name).ok_or_else(|| {
+                anyhow!(
+                    "the property '{}' doesn't exists in '{:?}'",
+                    property_name,
+                    self
+                )
+            }),
+            None => bail!("the property '{}' isn't a map: '{:?}'", property_name, self),
+        }
+    }
+
     fn get_string(&self, property_name: &str) -> Result<&str, anyhow::Error> {
-        let property_value = self
-            .get(property_name)
-            .ok_or_else(|| anyhow!("the property {} doesn't exist in Json Value", property_name))?;
+        let property_value = self.get(property_name).ok_or_else(|| {
+            anyhow!(
+                "the property '{}' doesn't exist in {:?}",
+                property_name,
+                self
+            )
+        })?;
 
         if let JsonValue::String(s) = property_value {
             return Ok(s);
@@ -79,9 +110,13 @@ impl JsonValueExt for JsonValue {
     }
 
     fn get_u64(&self, property_name: &str) -> Result<u64, anyhow::Error> {
-        let property_value = self
-            .get(property_name)
-            .ok_or_else(|| anyhow!("the property {} doesn't exist in Json Value", property_name))?;
+        let property_value = self.get(property_name).ok_or_else(|| {
+            anyhow!(
+                "the property '{}' doesn't exist in '{:?}'",
+                property_name,
+                self
+            )
+        })?;
 
         if let JsonValue::Number(s) = property_value {
             return s
@@ -92,9 +127,13 @@ impl JsonValueExt for JsonValue {
     }
 
     fn get_i64(&self, property_name: &str) -> Result<i64, anyhow::Error> {
-        let property_value = self
-            .get(property_name)
-            .ok_or_else(|| anyhow!("the property {} doesn't exist in Json Value", property_name))?;
+        let property_value = self.get(property_name).ok_or_else(|| {
+            anyhow!(
+                "the property '{}' doesn't exist in '{:?}'",
+                property_name,
+                self
+            )
+        })?;
 
         if let JsonValue::Number(s) = property_value {
             return s
@@ -105,9 +144,13 @@ impl JsonValueExt for JsonValue {
     }
 
     fn get_f64(&self, property_name: &str) -> Result<f64, anyhow::Error> {
-        let property_value = self
-            .get(property_name)
-            .ok_or_else(|| anyhow!("the property {} doesn't exist in Json Value", property_name))?;
+        let property_value = self.get(property_name).ok_or_else(|| {
+            anyhow!(
+                "the property '{}' doesn't exist in '{:?}'",
+                property_name,
+                self
+            )
+        })?;
 
         if let JsonValue::Number(s) = property_value {
             return s
@@ -119,15 +162,15 @@ impl JsonValueExt for JsonValue {
 
     // TODO this method has an additional allocation which should be avoided
     fn get_bytes(&self, property_name: &str) -> Result<Vec<u8>, anyhow::Error> {
-        let property_value = self
-            .get(property_name)
-            .ok_or_else(|| anyhow!("the property {} doesn't exist in Json Value", property_name))?;
+        let property_value = self.get(property_name).ok_or_else(|| {
+            anyhow!(
+                "the property '{}' doesn't exist in '{:?}'",
+                property_name,
+                self
+            )
+        })?;
 
-        if let JsonValue::Array(s) = property_value {
-            let data = serde_json::to_vec(s)?;
-            return Ok(data);
-        }
-        bail!("{:?} isn't an array", property_value);
+        Ok(serde_json::from_value(property_value.clone())?)
     }
 
     /// returns the value from the JsonValue based on the path: i.e "root.data[0].id"

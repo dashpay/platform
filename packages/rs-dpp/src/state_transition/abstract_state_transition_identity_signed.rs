@@ -24,7 +24,7 @@ where
         identity_public_key: &IdentityPublicKey,
         private_key: &[u8],
     ) -> Result<(), ProtocolError> {
-        Self::verify_public_key_level_and_purpose(identity_public_key)?;
+        self.verify_public_key_level_and_purpose(identity_public_key)?;
 
         match identity_public_key.get_type() {
             KeyType::ECDSA_SECP256K1 => {
@@ -67,7 +67,7 @@ where
     }
 
     fn verify_signature(&self, public_key: &IdentityPublicKey) -> Result<(), ProtocolError> {
-        Self::verify_public_key_level_and_purpose(public_key)?;
+        self.verify_public_key_level_and_purpose(public_key)?;
 
         let signature = self.get_signature();
         if signature.is_empty() {
@@ -97,12 +97,13 @@ where
     /// Verifies that the supplied public key has the correct security level
     /// and purpose to sign the state transition
     fn verify_public_key_level_and_purpose(
+        &self,
         public_key: &IdentityPublicKey,
     ) -> Result<(), ProtocolError> {
-        if Self::get_security_level_requirement() < public_key.get_security_level() {
+        if self.get_security_level_requirement() < public_key.get_security_level() {
             return Err(ProtocolError::PublicKeySecurityLevelNotMetError {
                 public_key_security_level: public_key.get_security_level(),
-                required_security_level: Self::get_security_level_requirement(),
+                required_security_level: self.get_security_level_requirement(),
             });
         }
 
@@ -115,7 +116,7 @@ where
         Ok(())
     }
 
-    fn get_security_level_requirement() -> SecurityLevel {
+    fn get_security_level_requirement(&self) -> SecurityLevel {
         SecurityLevel::MASTER
     }
 }
@@ -141,6 +142,7 @@ pub fn get_public_bls_key(private_key: &[u8]) -> Result<Vec<u8>, ProtocolError> 
 #[cfg(test)]
 mod test {
     use super::*;
+    use crate::document::DocumentsBatchTransition;
     use crate::{
         assert_error_contains,
         identity::{KeyID, SecurityLevel},
@@ -179,7 +181,7 @@ mod test {
 
     impl Into<StateTransition> for ExampleStateTransition {
         fn into(self) -> StateTransition {
-            let st = mocks::DocumentsBatchTransition {};
+            let st = DocumentsBatchTransition::default();
             StateTransition::DocumentsBatch(st)
         }
     }
@@ -203,7 +205,7 @@ mod test {
     }
 
     impl StateTransitionIdentitySigned for ExampleStateTransition {
-        fn get_security_level_requirement() -> SecurityLevel {
+        fn get_security_level_requirement(&self) -> SecurityLevel {
             SecurityLevel::MASTER
         }
 

@@ -1,8 +1,9 @@
 use crate::consensus::ConsensusError;
-use crate::data_contract::errors::*;
-use crate::document::errors::*;
+use crate::data_contract::{errors::*, DataContract};
+use crate::document::{errors::*, Document};
 use crate::identity::{IdentityPublicKey, Purpose, SecurityLevel};
 use crate::state_transition::StateTransition;
+use serde_json::Value as JsonValue;
 use thiserror::Error;
 
 #[derive(Error, Debug)]
@@ -70,6 +71,28 @@ pub enum ProtocolError {
 
     #[error("Invalid signature public key")]
     InvalidSignaturePublicKeyError { public_key: Vec<u8> },
+
+    // Documents
+    #[error("Data Contract doesn't define document wit type '{document_type}'")]
+    InvalidDocumentTypeError {
+        document_type: String,
+        data_contract: DataContract,
+    },
+
+    #[error("Invalid Document: {errors:?}")]
+    InvalidDocumentError {
+        errors: Vec<ConsensusError>,
+        raw_document: JsonValue,
+    },
+
+    #[error("No documents were supplied to state transition")]
+    NoDocumentsSuppliedError,
+
+    #[error("Documents have mixed owner ids")]
+    MismatchOwnerIdsError { documents: Vec<Document> },
+
+    #[error("Invalid Document initial revision {}", document.revision)]
+    InvalidInitialRevisionError { document: Document },
 }
 
 impl From<&str> for ProtocolError {

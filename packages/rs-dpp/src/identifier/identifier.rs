@@ -8,7 +8,7 @@ use serde_json::Value as JsonValue;
 
 pub const MEDIA_TYPE: &str = "application/x.dash.dpp.identifier";
 
-#[derive(Default, Debug, Clone, PartialEq, Eq)]
+#[derive(Default, Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Identifier {
     pub buffer: [u8; 32],
 }
@@ -50,6 +50,7 @@ impl Identifier {
         Identifier::from_string(encoded_value, encoding)
     }
 
+    // TODO the constructor "From" shouldn't use the reference to collection
     pub fn from_bytes(bytes: &[u8]) -> Result<Identifier, ProtocolError> {
         if bytes.len() != 32 {
             return Err(ProtocolError::IdentifierError(String::from(
@@ -84,6 +85,7 @@ impl Identifier {
     }
 }
 
+// TODO change default serialization to bytes
 impl Serialize for Identifier {
     fn serialize<S>(self: &Identifier, serializer: S) -> Result<S::Ok, S::Error>
     where
@@ -93,9 +95,6 @@ impl Serialize for Identifier {
         serializer.serialize_str(&self.to_string(Encoding::Base58))
     }
 }
-// derive - implements the serializer and deserializer automatically for the data structre
-// so basically this is like that
-// -->
 
 impl<'de> Deserialize<'de> for Identifier {
     fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Identifier, D::Error> {

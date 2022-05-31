@@ -9,3 +9,9 @@ pub enum StateTransitionType {
     IdentityTopUp = 3,
     DataContractUpdate = 4,
 }
+
+impl std::default::Default for StateTransitionType {
+    fn default() -> Self {
+        StateTransitionType::DataContractCreate
+    }
+}
