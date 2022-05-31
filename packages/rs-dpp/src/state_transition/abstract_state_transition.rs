@@ -68,13 +68,10 @@ pub trait StateTransitionLike:
                 self.set_signature(pk.sign(data).as_bytes())
             }
 
-            KeyType::ECDSA_SECP256K1 => {
+            // https://github.com/dashevo/platform/blob/9c8e6a3b6afbc330a6ab551a689de8ccd63f9120/packages/js-dpp/lib/stateTransition/AbstractStateTransition.js#L169
+            KeyType::ECDSA_SECP256K1 | KeyType::ECDSA_HASH160 => {
                 let signature = signer::sign(&data, private_key)?;
                 self.set_signature(signature.to_vec());
-            }
-
-            KeyType::ECDSA_HASH160 => {
-                return Err(anyhow!("Invalid key type of private key: {:?}", key_type).into())
             }
         };
         Ok(())
@@ -113,7 +110,7 @@ pub trait StateTransitionLike:
     }
 
     /// Verifies a BLS signature with the public key
-    fn verify_bls_signature_by_public_key(&self, public_key: &[u8]) -> Result<bool, ProtocolError> {
+    fn verify_bls_signature_by_public_key(&self, public_key: &[u8]) -> Result<(), ProtocolError> {
         if self.get_signature().is_empty() {
             return Err(ProtocolError::StateTransitionIsNotIsSignedError {
                 state_transition: self.clone().into(),
@@ -124,8 +121,11 @@ pub trait StateTransitionLike:
         let pk = BLSPublicKey::from_bytes(public_key).map_err(anyhow::Error::msg)?;
         let signature = bls_signatures::Signature::from_bytes(self.get_signature())
             .map_err(anyhow::Error::msg)?;
-
-        Ok(verify_messages(&signature, &[&data], &[pk]))
+        match verify_messages(&signature, &[&data], &[pk]) {
+            true => Ok(()),
+            // TODO change to specific error type
+            false => Err(anyhow!("Verification failed").into()),
+        }
     }
 
     /// returns true if state transition is a document state transition
