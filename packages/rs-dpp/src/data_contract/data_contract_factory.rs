@@ -44,10 +44,21 @@ impl DataContractFactory {
         let data_contract_id =
             Identifier::from_bytes(&generate_data_contract_id(owner_id.to_buffer(), entropy))?;
 
-        let mut documents_map: BTreeMap<String, JsonValue> = BTreeMap::new();
+        let mut data_contract = DataContract {
+            protocol_version: self.protocol_version,
+            schema: String::from(data_contract::SCHEMA),
+            id: data_contract_id,
+            version: 1,
+            owner_id,
+            defs: BTreeMap::new(),
+            entropy,
+
+            ..Default::default()
+        };
+
         if let JsonValue::Object(documents) = documents {
             for (document_name, value) in documents {
-                documents_map.insert(document_name, value);
+                data_contract.set_document_schema(document_name, value);
             }
         } else {
             return Err(ProtocolError::Generic(String::from(
@@ -55,18 +66,6 @@ impl DataContractFactory {
             )));
         }
 
-        let data_contract = DataContract {
-            protocol_version: self.protocol_version,
-            schema: String::from(data_contract::SCHEMA),
-            id: data_contract_id,
-            version: 1,
-            owner_id,
-            documents: documents_map,
-            defs: BTreeMap::new(),
-            entropy,
-
-            ..Default::default()
-        };
         Ok(data_contract)
     }
 
