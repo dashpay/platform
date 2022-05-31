@@ -232,3 +232,91 @@ pub fn get_security_level_requirement(v: &JsonValue, default: SecurityLevel) -> 
         Err(_) => default,
     }
 }
+
+#[cfg(test)]
+mod test {
+    use serde_json::json;
+
+    use super::{document_transition::Action, *};
+    use crate::{
+        document::document_factory::DocumentFactory,
+        mocks,
+        tests::fixtures::{get_data_contract_fixture, get_documents_fixture},
+    };
+
+    #[test]
+    fn should_return_highest_sec_level_for_all_transitions() {
+        let mut data_contract = get_data_contract_fixture(None);
+        data_contract
+            .documents
+            .get_mut("niceDocument")
+            .unwrap()
+            .insert(
+                PROPERTY_SECURITY_LEVEL_REQUIREMENT.to_string(),
+                json!(SecurityLevel::MEDIUM),
+            )
+            .unwrap();
+        data_contract
+            .documents
+            .get_mut("prettyDocument")
+            .unwrap()
+            .insert(
+                PROPERTY_SECURITY_LEVEL_REQUIREMENT.to_string(),
+                json!(SecurityLevel::MASTER),
+            )
+            .unwrap();
+
+        // 0 is niceDocument,
+        // 1 and 2 are pretty documents,
+        // 3 and 4 are indexed documents that do not have security level specified
+        let documents = get_documents_fixture(data_contract).unwrap();
+        let medium_security_document = documents.get(0).unwrap();
+        let master_security_document = documents.get(1).unwrap();
+        let no_security_level_document = documents.get(3).unwrap();
+
+        let document_factory = DocumentFactory::new(
+            1,
+            mocks::DocumentValidator {},
+            mocks::FetchAndValidateDataContract {},
+        );
+
+        let batch_transition = document_factory
+            .create_state_transition(vec![(
+                Action::Create,
+                vec![medium_security_document.to_owned()],
+            )])
+            .expect("batch transition should be created");
+
+        assert_eq!(
+            SecurityLevel::MEDIUM,
+            batch_transition.get_security_level_requirement()
+        );
+
+        let batch_transition = document_factory
+            .create_state_transition(vec![(
+                Action::Create,
+                vec![
+                    medium_security_document.to_owned(),
+                    master_security_document.to_owned(),
+                ],
+            )])
+            .expect("batch transition should be created");
+
+        assert_eq!(
+            SecurityLevel::MASTER,
+            batch_transition.get_security_level_requirement()
+        );
+
+        let batch_transition = document_factory
+            .create_state_transition(vec![(
+                Action::Create,
+                vec![no_security_level_document.to_owned()],
+            )])
+            .expect("batch transition should be created");
+
+        assert_eq!(
+            SecurityLevel::HIGH,
+            batch_transition.get_security_level_requirement()
+        );
+    }
+}
