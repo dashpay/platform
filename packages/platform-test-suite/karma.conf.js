@@ -8,8 +8,6 @@ const karmaChromeLauncher = require('karma-chrome-launcher');
 const karmaSourcemapLoader = require('karma-sourcemap-loader');
 const karmaWebpack = require('karma-webpack');
 
-const sdkWebpackConfig = require('../js-dash-sdk/webpack.base.config');
-
 if (dotenvResult.error) {
   throw dotenvResult.error;
 }
@@ -37,13 +35,29 @@ module.exports = (config) => {
       mode: 'development',
       devtool: 'inline-source-map',
       plugins: [
-        ...sdkWebpackConfig.plugins,
+        new webpack.ProvidePlugin({
+          Buffer: [require.resolve('buffer/'), 'Buffer'],
+          process: require.resolve('process/browser'),
+        }),
         new webpack.EnvironmentPlugin(
           dotenvResult.parsed,
         ),
       ],
       resolve: {
-        fallback: sdkWebpackConfig.resolve.fallback,
+        fallback: {
+          fs: false,
+          path: false,
+          util: false,
+          assert: false,
+          net: false,
+          os: false,
+          http: false,
+          https: false,
+          stream: require.resolve('stream-browserify'),
+          buffer: require.resolve('buffer/'),
+          crypto: require.resolve('crypto-browserify'),
+          events: require.resolve('events/'),
+        },
         extensions: ['.ts', '.js', '.json'],
       },
     },

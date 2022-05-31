@@ -1,7 +1,6 @@
-const Identifier = require('@dashevo/dpp/lib/Identifier');
+const Dash = require('dash');
 const { MerkleProof, MerkleTree } = require('js-merkle');
 const { executeProof, verifyProof } = require('@dashevo/merk');
-const { PrivateKey } = require('@dashevo/dashcore-lib');
 const {
   contractId: dpnsContractId,
   ownerId: dpnsOwnerId,
@@ -13,6 +12,15 @@ const hashFunction = require('../../../lib/proofHashFunction');
 const testProofStructure = require('../../../lib/test/testProofStructure');
 const parseStoreTreeProof = require('../../../lib/parseStoreTreeProof');
 const createClientWithFundedWallet = require('../../../lib/test/createClientWithFundedWallet');
+
+const {
+  Core: {
+    PrivateKey,
+  },
+  PlatformProtocol: {
+    Identifier,
+  },
+} = Dash;
 
 describe.skip('Platform', () => {
   describe('Proofs', () => {
