@@ -50,7 +50,7 @@ describe('Platform', () => {
     });
 
     it('should create an identity', async () => {
-      identity = await client.platform.identities.register(100);
+      identity = await client.platform.identities.register(50000);
 
       expect(identity).to.exist();
     });
@@ -98,7 +98,7 @@ describe('Platform', () => {
         transaction,
         privateKey,
         outputIndex,
-      } = await createAssetLockTransaction({ client }, 15);
+      } = await createAssetLockTransaction({ client }, 5000);
 
       await client.getDAPIClient().core.broadcastTransaction(transaction.toBuffer());
 
@@ -260,7 +260,7 @@ describe('Platform', () => {
           outputIndex,
         } = await createAssetLockTransaction({
           client,
-        }, 150);
+        }, 3090);
 
         // Broadcast Asset Lock transaction
         await client.getDAPIClient().core.broadcastTransaction(transaction.toBuffer());
