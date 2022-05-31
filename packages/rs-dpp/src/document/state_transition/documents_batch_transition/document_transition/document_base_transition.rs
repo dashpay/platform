@@ -136,6 +136,7 @@ pub trait DocumentTransitionObjectLike {
     where
         Self: std::marker::Sized;
     /// Creates the document transition from Raw Object
+    // TODO change the name to from_raw_object
     fn from_raw_document(
         raw_transition: JsonValue,
         data_contract: DataContract,
