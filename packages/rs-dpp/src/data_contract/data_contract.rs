@@ -185,6 +185,7 @@ impl TryFrom<JsonValue> for DataContract {
     type Error = ProtocolError;
     fn try_from(v: JsonValue) -> Result<Self, Self::Error> {
         let mut v = v;
+        // TODO add binary_properties regeneration
         v.replace_identifier_paths(IDENTIFIER_FIELDS, ReplaceWith::Base58)?;
         Ok(serde_json::from_value(v)?)
     }

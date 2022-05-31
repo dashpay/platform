@@ -1,5 +1,5 @@
 use crate::data_contract::DataContractFactory;
-use crate::decode_protocol_entity_factory::DecodeProtocolEntityFactory;
+use crate::decode_protocol_entity_factory::DecodeProtocolEntity;
 use crate::mocks;
 use crate::prelude::*;
 use crate::tests::utils::generate_random_identifier_struct;
@@ -262,7 +262,7 @@ pub fn get_data_contract_fixture(owner_id: Option<Identifier>) -> DataContract {
     let factory = DataContractFactory::new(
         0,
         mocks::ValidateDataContract::default(),
-        DecodeProtocolEntityFactory::default(),
+        DecodeProtocolEntity::default(),
     );
 
     let owner_id = owner_id.unwrap_or_else(generate_random_identifier_struct);

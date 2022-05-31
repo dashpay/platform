@@ -5,7 +5,7 @@ use std::convert::TryFrom;
 
 use crate::{
     data_contract::{self, generate_data_contract_id},
-    decode_protocol_entity_factory::DecodeProtocolEntityFactory,
+    decode_protocol_entity_factory::DecodeProtocolEntity,
     errors::{consensus::ConsensusError, ProtocolError},
     mocks,
     prelude::Identifier,
@@ -17,14 +17,15 @@ use super::DataContract;
 pub struct DataContractFactory {
     protocol_version: u32,
     _validate_data_contract: mocks::ValidateDataContract,
-    decode_protocol_entity: DecodeProtocolEntityFactory,
+    // TODO remove dependency on decode_protocol_entity
+    decode_protocol_entity: DecodeProtocolEntity,
 }
 
 impl DataContractFactory {
     pub fn new(
         protocol_version: u32,
         _validate_data_contract: mocks::ValidateDataContract,
-        decode_protocol_entity: DecodeProtocolEntityFactory,
+        decode_protocol_entity: DecodeProtocolEntity,
     ) -> Self {
         Self {
             protocol_version,
@@ -43,10 +44,21 @@ impl DataContractFactory {
         let data_contract_id =
             Identifier::from_bytes(&generate_data_contract_id(owner_id.to_buffer(), entropy))?;
 
-        let mut documents_map: BTreeMap<String, JsonValue> = BTreeMap::new();
+        let mut data_contract = DataContract {
+            protocol_version: self.protocol_version,
+            schema: String::from(data_contract::SCHEMA),
+            id: data_contract_id,
+            version: 1,
+            owner_id,
+            defs: BTreeMap::new(),
+            entropy,
+
+            ..Default::default()
+        };
+
         if let JsonValue::Object(documents) = documents {
             for (document_name, value) in documents {
-                documents_map.insert(document_name, value);
+                data_contract.set_document_schema(document_name, value);
             }
         } else {
             return Err(ProtocolError::Generic(String::from(
@@ -54,18 +66,6 @@ impl DataContractFactory {
             )));
         }
 
-        let data_contract = DataContract {
-            protocol_version: self.protocol_version,
-            schema: String::from(data_contract::SCHEMA),
-            id: data_contract_id,
-            version: 1,
-            owner_id,
-            documents: documents_map,
-            defs: BTreeMap::new(),
-            entropy,
-
-            ..Default::default()
-        };
         Ok(data_contract)
     }
 
@@ -97,7 +97,7 @@ impl DataContractFactory {
         skip_validation: bool,
     ) -> Result<DataContract, ProtocolError> {
         let (protocol_version, mut raw_data_contract) =
-            self.decode_protocol_entity.decode_protocol_entity(buffer)?;
+            DecodeProtocolEntity::decode_protocol_entity(buffer)?;
 
         match raw_data_contract {
             JsonValue::Object(ref mut m) => m.insert(

@@ -1,8 +1,10 @@
+pub mod document_factory;
 pub mod errors;
 pub mod generate_document_id;
 mod state_transition;
 pub use state_transition::documents_batch_transition::document_transition;
 pub use state_transition::documents_batch_transition::validation;
+pub use state_transition::documents_batch_transition::DocumentsBatchTransition;
 
 use crate::data_contract::DataContract;
 use crate::errors::ProtocolError;
@@ -43,10 +45,51 @@ pub struct Document {
     #[serde(skip)]
     pub metadata: Option<Metadata>,
     #[serde(skip)]
-    pub entropy: Option<[u8; 32]>,
+    pub entropy: [u8; 32],
 }
 
 impl Document {
+    pub fn from_raw_document(
+        mut raw_document: JsonValue,
+        data_contract: DataContract,
+    ) -> Result<Document, ProtocolError> {
+        let mut document = Document {
+            data_contract,
+            ..Default::default()
+        };
+
+        if let Ok(value) = raw_document.remove("$protocolVersion") {
+            document.protocol_version = serde_json::from_value(value)?
+        }
+        if let Ok(value) = raw_document.remove("$id") {
+            let identifier_bytes: Vec<u8> = serde_json::from_value(value)?;
+            document.id = Identifier::from_bytes(&identifier_bytes)?
+        }
+        if let Ok(value) = raw_document.remove("$type") {
+            document.document_type = serde_json::from_value(value)?
+        }
+        if let Ok(value) = raw_document.remove("$dataContractId") {
+            let identifier_bytes: Vec<u8> = serde_json::from_value(value)?;
+            document.data_contract_id = Identifier::from_bytes(&identifier_bytes)?
+        }
+        if let Ok(value) = raw_document.remove("$ownerId") {
+            let identifier_bytes: Vec<u8> = serde_json::from_value(value)?;
+            document.owner_id = Identifier::from_bytes(&identifier_bytes)?
+        }
+        if let Ok(value) = raw_document.remove("$revision") {
+            document.revision = serde_json::from_value(value)?
+        }
+        if let Ok(value) = raw_document.remove("$createdAt") {
+            document.created_at = serde_json::from_value(value)?
+        }
+        if let Ok(value) = raw_document.remove("$updatedAt") {
+            document.updated_at = serde_json::from_value(value)?
+        }
+
+        document.data = raw_document;
+        Ok(document)
+    }
+
     pub fn to_json(&self) -> Result<JsonValue, ProtocolError> {
         Ok(serde_json::to_value(&self)?)
     }
@@ -58,6 +101,7 @@ impl Document {
             .map_err(|e| ProtocolError::EncodingError(format!("{}", e)))?;
 
         json_value.parse_and_add_protocol_version(protocol_bytes)?;
+        // TODO identifiers and binary data for dynamic values
         json_value.replace_identifier_paths(IDENTIFIER_FIELDS, ReplaceWith::Base58)?;
 
         let document: Document = serde_json::from_value(json_value)?;
@@ -67,6 +111,7 @@ impl Document {
     pub fn to_object(&self, skip_identifiers_conversion: bool) -> Result<JsonValue, ProtocolError> {
         let mut json_object = serde_json::to_value(&self)?;
         if !skip_identifiers_conversion {
+            // TODO identifiers and binary data for dynamic values
             json_object.replace_identifier_paths(IDENTIFIER_FIELDS, ReplaceWith::Bytes)?;
         }
         Ok(json_object)
@@ -87,8 +132,8 @@ impl Document {
         Ok(hash(self.to_buffer()?))
     }
 
-    pub fn set_value(&self, _path: &str, _value: JsonValue) -> Result<(), ProtocolError> {
-        unimplemented!()
+    pub fn set_value(&mut self, property: &str, value: JsonValue) -> Result<(), ProtocolError> {
+        Ok(self.data.insert(property.to_string(), value)?)
     }
 
     /// Retrieves field specified by path
@@ -168,6 +213,23 @@ mod test {
         assert_eq!(init_doc.owner_id, doc.owner_id);
 
         Ok(())
+    }
+
+    #[test]
+    fn test_to_object() {
+        init();
+        let document_json = get_data_from_file("src/tests/payloads/document_dpns.json").unwrap();
+        let document = serde_json::from_str::<Document>(&document_json).unwrap();
+        let document_object = document.to_object(false).unwrap();
+
+        for property in IDENTIFIER_FIELDS {
+            let id = document_object
+                .get(property)
+                .unwrap()
+                .as_array()
+                .expect("the property must be an array");
+            assert_eq!(32, id.len())
+        }
     }
 
     #[test]
