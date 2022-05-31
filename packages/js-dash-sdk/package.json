@@ -8,6 +8,7 @@
   "types": "dist/src/index.d.ts",
   "scripts": {
     "start:dev": "nodemon --exec 'yarn run build && yarn run test:unit'",
+    "start:ts": "tsc --watch",
     "build": "yarn run build:ts && webpack --stats-error-details",
     "build:ts": "tsc",
     "lint": "",

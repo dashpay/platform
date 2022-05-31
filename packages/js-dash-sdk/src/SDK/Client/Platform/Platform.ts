@@ -4,6 +4,8 @@ import DashPlatformProtocol from "@dashevo/dpp";
 import Client from "../Client";
 import { IStateTransitionResult } from './IStateTransitionResult';
 
+import createAssetLockTransaction from "./createAssetLockTransaction";
+
 import broadcastDocument from "./methods/documents/broadcast";
 import createDocument from "./methods/documents/create";
 import getDocument from "./methods/documents/get";
@@ -16,6 +18,10 @@ import getContract from "./methods/contracts/get";
 import getIdentity from "./methods/identities/get";
 import registerIdentity from "./methods/identities/register";
 import topUpIdentity from "./methods/identities/topUp";
+import createIdentityCreateTransition from "./methods/identities/internal/createIdentityCreateTransition";
+import createIdentityTopUpTransition from "./methods/identities/internal/createIdnetityTopUpTransition";
+import createAssetLockProof from "./methods/identities/internal/createAssetLockProof";
+import waitForCoreChainLockedHeight from "./methods/identities/internal/waitForCoreChainLockedHeight";
 
 import registerName from "./methods/names/register";
 import resolveName from "./methods/names/resolve";
@@ -65,6 +71,14 @@ interface Identities {
     get: Function,
     register: Function,
     topUp: Function,
+}
+
+interface Internal {
+  createAssetLockTransaction: Function
+  createAssetLockProof: Function
+  createIdentityCreateTransition: Function
+  createIdentityTopUpTransition: Function
+  waitForCoreChainLockedHeight: Function
 }
 
 interface DataContracts {
@@ -118,6 +132,12 @@ export class Platform {
     ]);
 
     /**
+     * A set of internal functions used for essential Platform interactions
+     * @private
+     */
+    protected internal: Internal;
+
+    /**
      * Construct some instance of Platform
      *
      * @param {PlatformOpts} options - options for Platform
@@ -146,6 +166,14 @@ export class Platform {
             topUp: topUpIdentity.bind(this),
         };
 
+        this.internal = {
+          createAssetLockProof: createAssetLockProof.bind(this),
+          createAssetLockTransaction: createAssetLockTransaction.bind(this),
+          createIdentityCreateTransition: createIdentityCreateTransition.bind(this),
+          createIdentityTopUpTransition: createIdentityTopUpTransition.bind(this),
+          waitForCoreChainLockedHeight: waitForCoreChainLockedHeight.bind(this),
+        }
+
         this.client = options.client;
 
         const mappedProtocolVersion = Platform.networkToProtocolVersion.get(
@@ -172,3 +200,4 @@ export class Platform {
         await this.dpp.initialize();
     }
 }
+

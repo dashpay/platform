@@ -8,8 +8,11 @@ const DataContractFactory = require('./dataContract/DataContractFactory');
 
 const InvalidDataContractVersionError = require('./errors/consensus/basic/dataContract/InvalidDataContractVersionError');
 const IncompatibleDataContractSchemaError = require('./errors/consensus/basic/dataContract/IncompatibleDataContractSchemaError');
+const InvalidInstantAssetLockProofSignatureError = require('./errors/consensus/basic/identity/InvalidInstantAssetLockProofSignatureError');
+const IdentityAssetLockTransactionOutPointAlreadyExistsError = require('./errors/consensus/basic/identity/IdentityAssetLockTransactionOutPointAlreadyExistsError');
 const InvalidDocumentTypeError = require('./errors/consensus/basic/document/InvalidDocumentTypeError');
 const IdentityNotFoundError = require('./errors/consensus/signature/IdentityNotFoundError');
+const BalanceIsNotEnoughError = require('./errors/consensus/fee/BalanceIsNotEnoughError');
 
 DashPlatformProtocol.DataContractFactory = DataContractFactory;
 
@@ -18,10 +21,13 @@ DashPlatformProtocol.IdentityPublicKey = IdentityPublicKey;
 DashPlatformProtocol.Identifier = Identifier;
 
 DashPlatformProtocol.Errors = {
+  BalanceIsNotEnoughError,
   IncompatibleDataContractSchemaError,
   IdentityNotFoundError,
   InvalidDataContractVersionError,
   InvalidDocumentTypeError,
+  InvalidInstantAssetLockProofSignatureError,
+  IdentityAssetLockTransactionOutPointAlreadyExistsError,
 };
 
 module.exports = DashPlatformProtocol;

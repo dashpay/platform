@@ -1,7 +1,4 @@
 import { Platform } from "../../Platform";
-import createAssetLockTransaction from "../../createAssetLockTransaction";
-import createIdentityCreateTransition from "./internal/createIdentityCreateTransition";
-import createAssetLockProof from "./internal/createAssetLockProof";
 import broadcastStateTransition from "../../broadcastStateTransition";
 
 /**
@@ -24,15 +21,17 @@ export default async function register(
         transaction: assetLockTransaction,
         privateKey: assetLockPrivateKey,
         outputIndex: assetLockOutputIndex
-    } = await createAssetLockTransaction(this, fundingAmount);
+    } = await this.internal.createAssetLockTransaction(fundingAmount);
 
     // Broadcast Asset Lock transaction
     await account.broadcastTransaction(assetLockTransaction);
-    const assetLockProof = await createAssetLockProof(this, assetLockTransaction, assetLockOutputIndex);
 
-    const { identity, identityCreateTransition, identityIndex } = await createIdentityCreateTransition(
-        this, assetLockProof, assetLockPrivateKey
-    );
+    const assetLockProof = await this.internal
+      .createAssetLockProof(assetLockTransaction, assetLockOutputIndex);
+
+    const { identity, identityCreateTransition, identityIndex } = await this.internal
+      .createIdentityCreateTransition(assetLockProof, assetLockPrivateKey);
+
     await broadcastStateTransition(this, identityCreateTransition);
 
     // If state transition was broadcast without any errors, import identity to the account
