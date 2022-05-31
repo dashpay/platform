@@ -28,7 +28,7 @@ function applyIdentityUpdateTransitionFactory(
 
     identity.setRevision(stateTransition.getRevision());
 
-    if (/* !executionContext.isDryRun() && */ stateTransition.getPublicKeyIdsToDisable()) {
+    if (stateTransition.getPublicKeyIdsToDisable()) {
       const identityPublicKeys = identity.getPublicKeys();
 
       stateTransition.getPublicKeyIdsToDisable()
@@ -48,14 +48,12 @@ function applyIdentityUpdateTransitionFactory(
           return new IdentityPublicKey(rawPublicKey);
         });
 
-      // if (!executionContext.isDryRun()) {
       // Add public keys to identity
       const identityPublicKeys = identity
         .getPublicKeys()
         .concat(publicKeysToAdd);
 
       identity.setPublicKeys(identityPublicKeys);
-      // }
 
       const publicKeyHashes = stateTransition
         .getPublicKeysToAdd()

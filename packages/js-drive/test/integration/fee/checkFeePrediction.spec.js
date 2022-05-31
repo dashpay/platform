@@ -109,6 +109,7 @@ describe('checkFeePrediction', () => {
       await dpp.stateTransition.apply(stateTransition);
 
       const predictedStateTransitionFee = stateTransition.calculateFee();
+      const dryRunOperations = executionContext.getOperations();
 
       executionContext.disableDryRun();
 
@@ -119,10 +120,20 @@ describe('checkFeePrediction', () => {
       await dpp.stateTransition.validateState(stateTransition);
       await dpp.stateTransition.apply(stateTransition);
       const realStateTransitionFee = stateTransition.calculateFee();
+      const actualOperations = executionContext.getOperations();
 
       expect(initialAppHash).to.deep.equal(appHash);
 
       expect(predictedStateTransitionFee).to.be.greaterThan(realStateTransitionFee);
+
+      expect(dryRunOperations.length).to.be.equal(actualOperations.length);
+
+      dryRunOperations.forEach((dryRunOperation, i) => {
+        expect(dryRunOperation.valueSize || 0).to.be.gte(actualOperations[i].valueSize || 0);
+        expect(dryRunOperation.storageCost || 0).to.be.gte(actualOperations[i].storageCost || 0);
+        expect(dryRunOperation.processingCost || 0)
+          .to.be.gte(actualOperations[i].processingCost || 0);
+      });
     });
 
     it('should check that IdentityTopUpTransition predicted fee > real fee', async () => {
@@ -145,6 +156,7 @@ describe('checkFeePrediction', () => {
       await dpp.stateTransition.validateState(stateTransition);
       await dpp.stateTransition.apply(stateTransition);
       const predictedStateTransitionFee = stateTransition.calculateFee();
+      const dryRunOperations = executionContext.getOperations();
 
       executionContext.disableDryRun();
       executionContext.clearDryOperations();
@@ -156,8 +168,18 @@ describe('checkFeePrediction', () => {
       await dpp.stateTransition.validateState(stateTransition);
       await dpp.stateTransition.apply(stateTransition);
       const realStateTransitionFee = stateTransition.calculateFee();
+      const actualOperations = executionContext.getOperations();
 
       expect(predictedStateTransitionFee).to.be.greaterThan(realStateTransitionFee);
+
+      expect(dryRunOperations.length).to.be.equal(actualOperations.length);
+
+      dryRunOperations.forEach((dryRunOperation, i) => {
+        expect(dryRunOperation.valueSize || 0).to.be.gte(actualOperations[i].valueSize || 0);
+        expect(dryRunOperation.storageCost || 0).to.be.gte(actualOperations[i].storageCost || 0);
+        expect(dryRunOperation.processingCost || 0)
+          .to.be.gte(actualOperations[i].processingCost || 0);
+      });
     });
 
     it('should check that IdentityUpdateTransition predicted fee > real fee', async () => {
@@ -200,6 +222,7 @@ describe('checkFeePrediction', () => {
       await dpp.stateTransition.validateState(stateTransition);
       await dpp.stateTransition.apply(stateTransition);
       const predictedStateTransitionFee = stateTransition.calculateFee();
+      const dryRunOperations = executionContext.getOperations();
 
       executionContext.disableDryRun();
       executionContext.clearDryOperations();
@@ -210,8 +233,18 @@ describe('checkFeePrediction', () => {
       await dpp.stateTransition.validateState(stateTransition);
       await dpp.stateTransition.apply(stateTransition);
       const realStateTransitionFee = stateTransition.calculateFee();
+      const actualOperations = executionContext.getOperations();
 
       expect(predictedStateTransitionFee).to.be.greaterThan(realStateTransitionFee);
+
+      expect(dryRunOperations.length).to.be.equal(actualOperations.length);
+
+      dryRunOperations.forEach((dryRunOperation, i) => {
+        expect(dryRunOperation.valueSize || 0).to.be.gte(actualOperations[i].valueSize || 0);
+        expect(dryRunOperation.storageCost || 0).to.be.gte(actualOperations[i].storageCost || 0);
+        expect(dryRunOperation.processingCost || 0)
+          .to.be.gte(actualOperations[i].processingCost || 0);
+      });
     });
   });
 
@@ -238,6 +271,7 @@ describe('checkFeePrediction', () => {
       await dpp.stateTransition.validateState(stateTransition);
       await dpp.stateTransition.apply(stateTransition);
       const predictedStateTransitionFee = stateTransition.calculateFee();
+      const dryRunOperations = executionContext.getOperations();
 
       executionContext.disableDryRun();
       executionContext.clearDryOperations();
@@ -248,8 +282,18 @@ describe('checkFeePrediction', () => {
       await dpp.stateTransition.validateState(stateTransition);
       await dpp.stateTransition.apply(stateTransition);
       const realStateTransitionFee = stateTransition.calculateFee();
+      const actualOperations = executionContext.getOperations();
 
       expect(predictedStateTransitionFee).to.be.greaterThan(realStateTransitionFee);
+
+      expect(dryRunOperations.length).to.be.equal(actualOperations.length);
+
+      dryRunOperations.forEach((dryRunOperation, i) => {
+        expect(dryRunOperation.valueSize || 0).to.be.gte(actualOperations[i].valueSize || 0);
+        expect(dryRunOperation.storageCost || 0).to.be.gte(actualOperations[i].storageCost || 0);
+        expect(dryRunOperation.processingCost || 0)
+          .to.be.gte(actualOperations[i].processingCost || 0);
+      });
     });
 
     it('should check that DataContractUpdate predicted fee > real fee', async () => {
@@ -261,6 +305,7 @@ describe('checkFeePrediction', () => {
       await dpp.stateTransition.validateState(stateTransition);
       await dpp.stateTransition.apply(stateTransition);
       const predictedStateTransitionFee = stateTransition.calculateFee();
+      const dryRunOperations = executionContext.getOperations();
 
       executionContext.disableDryRun();
       executionContext.clearDryOperations();
@@ -271,8 +316,18 @@ describe('checkFeePrediction', () => {
       await dpp.stateTransition.validateState(stateTransition);
       await dpp.stateTransition.apply(stateTransition);
       const realStateTransitionFee = stateTransition.calculateFee();
+      const actualOperations = executionContext.getOperations();
 
       expect(predictedStateTransitionFee).to.be.greaterThan(realStateTransitionFee);
+
+      expect(dryRunOperations.length).to.be.equal(actualOperations.length);
+
+      dryRunOperations.forEach((dryRunOperation, i) => {
+        expect(dryRunOperation.valueSize || 0).to.be.gte(actualOperations[i].valueSize || 0);
+        expect(dryRunOperation.storageCost || 0).to.be.gte(actualOperations[i].storageCost || 0);
+        expect(dryRunOperation.processingCost || 0)
+          .to.be.gte(actualOperations[i].processingCost || 0);
+      });
     });
   });
 
@@ -281,6 +336,7 @@ describe('checkFeePrediction', () => {
     let dataContract;
 
     beforeEach(async () => {
+      // в 1 индекс все поля(100 штук) уникальные
       const dataContractDocuments = createDataContractDocuments();
       dataContract = dpp.dataContract.create(identity.getId(), dataContractDocuments);
       documents = [];
@@ -329,6 +385,7 @@ describe('checkFeePrediction', () => {
       await dpp.stateTransition.validateState(stateTransition);
       await dpp.stateTransition.apply(stateTransition);
       const predictedStateTransitionFee = stateTransition.calculateFee();
+      const dryRunOperations = executionContext.getOperations();
 
       executionContext.disableDryRun();
       executionContext.clearDryOperations();
@@ -340,8 +397,18 @@ describe('checkFeePrediction', () => {
       await dpp.stateTransition.validateState(stateTransition);
       await dpp.stateTransition.apply(stateTransition);
       const realStateTransitionFee = stateTransition.calculateFee();
+      const actualOperations = executionContext.getOperations();
 
       expect(predictedStateTransitionFee).to.be.greaterThan(realStateTransitionFee);
+
+      expect(dryRunOperations.length).to.be.equal(actualOperations.length);
+
+      dryRunOperations.forEach((dryRunOperation, i) => {
+        expect(dryRunOperation.valueSize || 0).to.be.gte(actualOperations[i].valueSize || 0);
+        expect(dryRunOperation.storageCost || 0).to.be.gte(actualOperations[i].storageCost || 0);
+        expect(dryRunOperation.processingCost || 0)
+          .to.be.gte(actualOperations[i].processingCost || 0);
+      });
     });
 
     it('should check that DocumentsBatchTransition update predicted fee > real fee', async () => {
@@ -369,6 +436,7 @@ describe('checkFeePrediction', () => {
       await dpp.stateTransition.validateState(stateTransition);
       await dpp.stateTransition.apply(stateTransition);
       const predictedStateTransitionFee = stateTransition.calculateFee();
+      const dryRunOperations = executionContext.getOperations();
 
       executionContext.disableDryRun();
       executionContext.clearDryOperations();
@@ -380,8 +448,18 @@ describe('checkFeePrediction', () => {
       await dpp.stateTransition.validateState(stateTransition);
       await dpp.stateTransition.apply(stateTransition);
       const realStateTransitionFee = stateTransition.calculateFee();
+      const actualOperations = executionContext.getOperations();
 
       expect(predictedStateTransitionFee).to.be.greaterThan(realStateTransitionFee);
+
+      expect(dryRunOperations.length).to.be.equal(actualOperations.length);
+
+      dryRunOperations.forEach((dryRunOperation, i) => {
+        expect(dryRunOperation.valueSize || 0).to.be.gte(actualOperations[i].valueSize || 0);
+        expect(dryRunOperation.storageCost || 0).to.be.gte(actualOperations[i].storageCost || 0);
+        expect(dryRunOperation.processingCost || 0)
+          .to.be.gte(actualOperations[i].processingCost || 0);
+      });
     });
 
     it('should check that DocumentsBatchTransition delete predicted fee > real fee', async () => {
@@ -406,6 +484,7 @@ describe('checkFeePrediction', () => {
       await dpp.stateTransition.validateState(stateTransition);
       await dpp.stateTransition.apply(stateTransition);
       const predictedStateTransitionFee = stateTransition.calculateFee();
+      const dryRunOperations = executionContext.getOperations();
 
       executionContext.disableDryRun();
       executionContext.clearDryOperations();
@@ -417,8 +496,18 @@ describe('checkFeePrediction', () => {
       await dpp.stateTransition.validateState(stateTransition);
       await dpp.stateTransition.apply(stateTransition);
       const realStateTransitionFee = stateTransition.calculateFee();
+      const actualOperations = executionContext.getOperations();
 
       expect(predictedStateTransitionFee).to.be.greaterThan(realStateTransitionFee);
+
+      expect(dryRunOperations.length).to.be.equal(actualOperations.length);
+
+      dryRunOperations.forEach((dryRunOperation, i) => {
+        expect(dryRunOperation.valueSize || 0).to.be.gte(actualOperations[i].valueSize || 0);
+        expect(dryRunOperation.storageCost || 0).to.be.gte(actualOperations[i].storageCost || 0);
+        expect(dryRunOperation.processingCost || 0)
+          .to.be.gte(actualOperations[i].processingCost || 0);
+      });
     });
   });
 });
