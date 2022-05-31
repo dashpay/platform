@@ -615,7 +615,7 @@ const invalidQueries = [
   },
   {
     query: { invalid: 'query' },
-    error: '',
+    error: 'Invalid query: unsupported error: unsupported syntax in where clause',
   },
 ];
 
@@ -1270,7 +1270,7 @@ describe('DocumentRepository', function main() {
                     expect.fail('should throw an error');
                   } catch (e) {
                     expect(e).to.be.instanceOf(InvalidQueryError);
-                    expect(e.message).to.equal('Invalid query: where clause on non indexed property error: query must be for valid indexes');
+                    expect(e.message).to.equal('Invalid query: field requirement unmet: value must be less than 256 bytes long');
                   }
                 });
 
@@ -1745,7 +1745,7 @@ describe('DocumentRepository', function main() {
               });
 
               it('should return invalid results if condition contains empty arrays', async () => {
-                const arr = [[], []];
+                const arr = [[]];
                 try {
                   await documentRepository.find(queryDataContract, 'documentNumber', { where: [['a', 'in', arr]], orderBy: [['a', 'asc']] });
 
