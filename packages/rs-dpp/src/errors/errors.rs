@@ -3,6 +3,7 @@ use crate::data_contract::{errors::*, DataContract};
 use crate::document::{errors::*, Document};
 use crate::identity::{IdentityPublicKey, Purpose, SecurityLevel};
 use crate::state_transition::StateTransition;
+use serde_json::Value as JsonValue;
 use thiserror::Error;
 
 #[derive(Error, Debug)]
@@ -81,11 +82,17 @@ pub enum ProtocolError {
     #[error("Invalid Document: {errors:?}")]
     InvalidDocumentError {
         errors: Vec<ConsensusError>,
-        document: Document,
+        raw_document: JsonValue,
     },
 
     #[error("No documents were supplied to state transition")]
     NoDocumentsSuppliedError,
+
+    #[error("Documents have mixed owner ids")]
+    MismatchOwnerIdsError { documents: Vec<Document> },
+
+    #[error("Invalid Document initial revision {}", document.revision)]
+    InvalidInitialRevisionError { document: Document },
 }
 
 impl From<&str> for ProtocolError {
