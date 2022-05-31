@@ -21,6 +21,7 @@ export namespace SDK {
   export let Client = _Client;
 
   export let Core = _Core;
+  // TODO: consider marking as DEPRECATED and use PlatformProtocol below instead
   export let Platform = _Platform;
 
   // Wallet-lib primitives
@@ -28,6 +29,7 @@ export namespace SDK {
   export let Account = _Account;
   export let KeyChain = _KeyChain;
 
+  // TODO: consider merging into Wallet above and mark as DEPRECATED
   export let WalletLib = {
     CONSTANTS: _WalletLibCONSTANTS,
     EVENTS: _WalletLibEVENTS,
