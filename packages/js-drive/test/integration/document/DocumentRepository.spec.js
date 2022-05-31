@@ -90,6 +90,13 @@ const nonNumberAndUndefinedTestCases = [
   typesTestCases.buffer,
 ];
 
+const nonNumberNullAndUndefinedTestCases = [
+  typesTestCases.string,
+  typesTestCases.boolean,
+  typesTestCases.object,
+  typesTestCases.buffer,
+];
+
 const validFieldNameTestCases = [
   'a',
   'a.b',
@@ -113,20 +120,28 @@ const invalidFieldNameTestCases = [
   'a.b.c.',
 ];
 
-const validOrderByOperators = {
-  '>': {
+const validOrderByOperators = [
+  {
+    operator: '>',
     value: 42,
+    documentType: 'documentNumber',
   },
-  '<': {
+  {
+    operator: '<',
     value: 42,
+    documentType: 'documentNumber',
   },
-  startsWith: {
+  {
+    operator: 'startsWith',
     value: 'rt-',
+    documentType: 'documentString',
   },
-  in: {
-    value: ['a', 'b'],
+  {
+    operator: 'in',
+    value: [1, 2],
+    documentType: 'documentNumber',
   },
-};
+];
 
 const queryDocumentSchema = {
   testDocument: {
@@ -1275,7 +1290,11 @@ describe('DocumentRepository', function main() {
                 });
 
                 nonScalarTestCases.forEach(({ type, value }) => {
-                  it(`should return invalid result if "<" operator used with a not scalar value, but ${type}`, async () => {
+                  it(`should return invalid result if "<" operator used with a not scalar value, but ${type}`, async function it() {
+                    if ((typeof value === 'object' && value === null) || typeof value === 'undefined') {
+                      this.skip('will be implemented later');
+                    }
+
                     try {
                       await documentRepository.find(queryDataContract, 'documentNumber', { where: [['a', '<', value]], orderBy: [['a', 'asc']] });
 
@@ -1615,7 +1634,7 @@ describe('DocumentRepository', function main() {
             });
 
             describe('timestamps', () => {
-              nonNumberTestCases.forEach(({ type, value }) => {
+              nonNumberNullAndUndefinedTestCases.forEach(({ type, value }) => {
                 it(`should return invalid result if $createdAt timestamp used with ${type} value`, async () => {
                   try {
                     await documentRepository.find(queryDataContract, 'documentI', { where: [['$createdAt', '>', value]], orderBy: [['$createdAt', 'asc']] });
@@ -1628,7 +1647,7 @@ describe('DocumentRepository', function main() {
                 });
               });
 
-              nonNumberTestCases.forEach(({ type, value }) => {
+              nonNumberNullAndUndefinedTestCases.forEach(({ type, value }) => {
                 it(`should return invalid result if $updatedAt timestamp used with ${type} value`, async () => {
                   try {
                     await documentRepository.find(queryDataContract, 'documentH', { where: [['$updatedAt', '>', value]], orderBy: [['$updatedAt', 'asc']] });
@@ -1697,6 +1716,7 @@ describe('DocumentRepository', function main() {
                     expect.fail('should throw an error');
                   } catch (e) {
                     expect(e).to.be.instanceOf(InvalidQueryError);
+                    expect(e.message).to.equal('Invalid query: invalid IN clause error: when using in operator you must provide an array of values');
                   }
                 });
               });
@@ -1708,6 +1728,7 @@ describe('DocumentRepository', function main() {
                   expect.fail('should throw an error');
                 } catch (e) {
                   expect(e).to.be.instanceOf(InvalidQueryError);
+                  expect(e.message).to.equal('Invalid query: invalid IN clause error: in clause must at least 1 value');
                 }
               });
 
@@ -1725,11 +1746,12 @@ describe('DocumentRepository', function main() {
                 arr.push(101);
 
                 try {
-                  documentRepository.find(queryDataContract, 'documentNumber', { where: [['a', 'in', arr]] });
+                  await documentRepository.find(queryDataContract, 'documentNumber', { where: [['a', 'in', arr]], orderBy: [['a', 'asc']] });
 
                   expect.fail('should throw an error');
                 } catch (e) {
                   expect(e).to.be.instanceOf(InvalidQueryError);
+                  expect(e.message).to.equal('Invalid query: invalid IN clause error: in clause must at most 100 values');
                 }
               });
 
@@ -1741,13 +1763,13 @@ describe('DocumentRepository', function main() {
                   expect.fail('should throw an error');
                 } catch (e) {
                   expect(e).to.be.instanceOf(InvalidQueryError);
+                  expect(e.message).to.equal('Invalid query: invalid IN clause error: there should be no duplicates values for In query');
                 }
               });
 
-              it('should return invalid results if condition contains empty arrays', async () => {
-                const arr = [[]];
+              it('should return invalid results if "in" condition contains an array as an element', async () => {
                 try {
-                  await documentRepository.find(queryDataContract, 'documentNumber', { where: [['a', 'in', arr]], orderBy: [['a', 'asc']] });
+                  await documentRepository.find(queryDataContract, 'documentNumber', { where: [['a', 'in', [[]]]], orderBy: [['a', 'asc']] });
 
                   expect.fail('should throw an error');
                 } catch (e) {
@@ -1790,6 +1812,7 @@ describe('DocumentRepository', function main() {
                   expect.fail('should throw an error');
                 } catch (e) {
                   expect(e).to.be.instanceOf(InvalidQueryError);
+                  expect(e.message).to.equal('');
                 }
               });
 
@@ -1801,6 +1824,7 @@ describe('DocumentRepository', function main() {
                   expect.fail('should throw an error');
                 } catch (e) {
                   expect(e).to.be.instanceOf(InvalidQueryError);
+                  expect(e.message).to.equal('Invalid query: field requirement unmet: value must be less than 256 bytes long');
                 }
               });
 
@@ -1881,6 +1905,7 @@ describe('DocumentRepository', function main() {
                   expect.fail('should throw an error');
                 } catch (e) {
                   expect(e).to.be.instanceOf(InvalidQueryError);
+                  expect(e.message).to.equal('');
                 }
               });
 
@@ -1899,6 +1924,7 @@ describe('DocumentRepository', function main() {
                   expect.fail('should throw an error');
                 } catch (e) {
                   expect(e).to.be.instanceOf(InvalidQueryError);
+                  expect(e.message).to.equal('');
                 }
               });
 
@@ -1917,6 +1943,7 @@ describe('DocumentRepository', function main() {
                   expect.fail('should throw an error');
                 } catch (e) {
                   expect(e).to.be.instanceOf(InvalidQueryError);
+                  expect(e.message).to.equal('');
                 }
               });
 
@@ -1935,6 +1962,7 @@ describe('DocumentRepository', function main() {
                   expect.fail('should throw an error');
                 } catch (e) {
                   expect(e).to.be.instanceOf(InvalidQueryError);
+                  expect(e.message).to.equal('');
                 }
               });
 
@@ -1953,6 +1981,7 @@ describe('DocumentRepository', function main() {
                   expect.fail('should throw an error');
                 } catch (e) {
                   expect(e).to.be.instanceOf(InvalidQueryError);
+                  expect(e.message).to.equal('');
                 }
               });
 
@@ -1973,6 +2002,7 @@ describe('DocumentRepository', function main() {
                   expect.fail('should throw an error');
                 } catch (e) {
                   expect(e).to.be.instanceOf(InvalidQueryError);
+                  expect(e.message).to.equal('');
                 }
               });
             });
@@ -2023,6 +2053,7 @@ describe('DocumentRepository', function main() {
                   expect.fail('should throw an error');
                 } catch (e) {
                   expect(e).to.be.instanceOf(InvalidQueryError);
+                  expect(e.message).to.equal('');
                 }
               });
 
@@ -2037,6 +2068,7 @@ describe('DocumentRepository', function main() {
                   expect.fail('should throw an error');
                 } catch (e) {
                   expect(e).to.be.instanceOf(InvalidQueryError);
+                  expect(e.message).to.equal('');
                 }
               });
 
@@ -2051,6 +2083,7 @@ describe('DocumentRepository', function main() {
                   expect.fail('should throw an error');
                 } catch (e) {
                   expect(e).to.be.instanceOf(InvalidQueryError);
+                  expect(e.message).to.equal('');
                 }
               });
 
@@ -2066,6 +2099,7 @@ describe('DocumentRepository', function main() {
                     expect.fail('should throw an error');
                   } catch (e) {
                     expect(e).to.be.instanceOf(InvalidQueryError);
+                    expect(e.message).to.equal('');
                   }
                 });
               });
@@ -2177,6 +2211,7 @@ describe('DocumentRepository', function main() {
                   expect.fail('should throw an error');
                 } catch (e) {
                   expect(e).to.be.instanceOf(InvalidQueryError);
+                  expect(e.message).to.equal('');
                 }
               });
 
@@ -2191,6 +2226,7 @@ describe('DocumentRepository', function main() {
                   expect.fail('should throw an error');
                 } catch (e) {
                   expect(e).to.be.instanceOf(InvalidQueryError);
+                  expect(e.message).to.equal('');
                 }
               });
 
@@ -2206,6 +2242,7 @@ describe('DocumentRepository', function main() {
                   expect.fail('should throw an error');
                 } catch (e) {
                   expect(e).to.be.instanceOf(InvalidQueryError);
+                  expect(e.message).to.equal('');
                 }
               });
 
@@ -2221,6 +2258,7 @@ describe('DocumentRepository', function main() {
                     expect.fail('should throw an error');
                   } catch (e) {
                     expect(e).to.be.instanceOf(InvalidQueryError);
+                    expect(e.message).to.equal('');
                   }
                 });
               });
@@ -2238,6 +2276,7 @@ describe('DocumentRepository', function main() {
                     expect.fail('should throw an error');
                   } catch (e) {
                     expect(e).to.be.instanceOf(InvalidQueryError);
+                    expect(e.message).to.equal('');
                   }
                 });
               });
@@ -2295,22 +2334,10 @@ describe('DocumentRepository', function main() {
           expect(result).to.be.instanceOf(StorageResult);
         });
 
-        it('should return invalid result if "limit" is less than 1', async () => {
+        it('should return invalid result if "limit" is less than 0', async () => {
           const where = [
             ['a', '>', 1],
           ];
-
-          // try {
-          //   await documentRepository.find(queryDataContract, 'documentNumber', {
-          //    where,
-          //    limit: 0,
-          //    orderBy: [['a', 'asc']],
-          //   });
-          //
-          //   expect.fail('should throw an error');
-          // } catch (e) {
-          //   expect(e).to.be.instanceOf(InvalidQueryError);
-          // }
 
           try {
             await documentRepository.find(queryDataContract, 'documentNumber', { where, limit: -1, orderBy: [['a', 'asc']] });
@@ -2318,6 +2345,22 @@ describe('DocumentRepository', function main() {
             expect.fail('should throw an error');
           } catch (e) {
             expect(e).to.be.instanceOf(InvalidQueryError);
+            expect(e.message).to.equal('');
+          }
+        });
+
+        it('should return invalid result if "limit" is 0', async () => {
+          const where = [
+            ['a', '>', 1],
+          ];
+
+          try {
+            await documentRepository.find(queryDataContract, 'documentNumber', { where, limit: 0, orderBy: [['a', 'asc']] });
+
+            expect.fail('should throw an error');
+          } catch (e) {
+            expect(e).to.be.instanceOf(InvalidQueryError);
+            expect(e.message).to.equal('');
           }
         });
 
@@ -2336,6 +2379,7 @@ describe('DocumentRepository', function main() {
             expect.fail('should throw an error');
           } catch (e) {
             expect(e).to.be.instanceOf(InvalidQueryError);
+            expect(e.message).to.equal('');
           }
         });
 
@@ -2375,7 +2419,7 @@ describe('DocumentRepository', function main() {
       });
 
       describe('startAt', () => {
-        it('should return the second document', async () => {
+        it('should return the second document using identifier', async () => {
           const query = {
             where: [
               ['order', '>=', 0],
@@ -2383,11 +2427,40 @@ describe('DocumentRepository', function main() {
             orderBy: [
               ['order', 'asc'],
             ],
-            startAt: documents[1].id,
+            startAt: documents[1].getId(),
           };
 
           const result = await documentRepository.find(
-            queryDataContract,
+            dataContract,
+            document.getType(),
+            query,
+          );
+
+          expect(result).to.be.instanceOf(StorageResult);
+          expect(result.getOperations().length).to.be.greaterThan(0);
+
+          const foundDocuments = result.getValue();
+
+          expect(foundDocuments).to.be.an('array');
+
+          const expectedDocuments = documents.splice(1).map((doc) => doc.toBuffer());
+
+          expect(foundDocuments.map((doc) => doc.toBuffer())).to.deep.members(expectedDocuments);
+        });
+
+        it('should return the second document using base58', async () => {
+          const query = {
+            where: [
+              ['order', '>=', 0],
+            ],
+            orderBy: [
+              ['order', 'asc'],
+            ],
+            startAt: documents[1].getId().toString(),
+          };
+
+          const result = await documentRepository.find(
+            dataContract,
             document.getType(),
             query,
           );
@@ -2419,8 +2492,13 @@ describe('DocumentRepository', function main() {
           }
         });
 
-        [...nonNumberAndUndefinedTestCases, typesTestCases.number].forEach(({ type, value }) => {
-          it(`should return invalid result if "startAt" is not a number, but ${type}`, async function it() {
+        [
+          typesTestCases.boolean,
+          typesTestCases.null,
+          typesTestCases.object,
+          typesTestCases.number,
+        ].forEach(({ type, value }) => {
+          it(`should return invalid result if "startAt" is not a buffer, but ${type}`, async function it() {
             if (type === 'buffer') {
               this.skip();
             }
@@ -2493,12 +2571,13 @@ describe('DocumentRepository', function main() {
           }
         });
 
-        [...nonNumberAndUndefinedTestCases, typesTestCases.number].forEach(({ type, value }) => {
-          it(`should return invalid result if "startAfter" is not a number, but ${type}`, async function it() {
-            if (type === 'buffer') {
-              this.skip();
-            }
-
+        [
+          typesTestCases.boolean,
+          typesTestCases.null,
+          typesTestCases.object,
+          typesTestCases.number,
+        ].forEach(({ type, value }) => {
+          it(`should return invalid result if "startAfter" is not a buffer, but ${type}`, async () => {
             try {
               await documentRepository.find(queryDataContract, 'documentNumber', {
                 startAfter: value,
@@ -2614,19 +2693,15 @@ describe('DocumentRepository', function main() {
           expect(result).to.be.instanceOf(StorageResult);
         });
 
-        it('should return invalid result if "orderBy" contains 2 sorting fields', async () => {
-          try {
-            await documentRepository.find(queryDataContract, 'documentC', {
-              where: [
-                ['a', '>', 1],
-              ],
-              orderBy: [['a', 'asc'], ['b', 'desc']],
-            });
+        it('should return valid result if "orderBy" contains a second fields not used in where clause', async () => {
+          const result = await documentRepository.find(queryDataContract, 'documentC', {
+            where: [
+              ['a', '>', 1],
+            ],
+            orderBy: [['a', 'asc'], ['b', 'desc']],
+          });
 
-            expect.fail('should throw an error');
-          } catch (e) {
-            expect(e).to.be.instanceOf(InvalidQueryError);
-          }
+          expect(result).to.be.an.instanceOf(StorageResult);
         });
 
         it('should return invalid result if "orderBy" is an empty array', async () => {
@@ -2658,16 +2733,12 @@ describe('DocumentRepository', function main() {
           }
         });
 
-        it('should return invalid result if there is no where conditions', async () => {
-          try {
-            await documentRepository.find(queryDataContract, 'documentNumber', {
-              orderBy: [['a', 'asc']],
-            });
+        it('should return valid result if there is no where conditions', async () => {
+          const result = await documentRepository.find(queryDataContract, 'documentNumber', {
+            orderBy: [['a', 'asc']],
+          });
 
-            expect.fail('should throw an error');
-          } catch (e) {
-            expect(e).to.be.instanceOf(InvalidQueryError);
-          }
+          expect(result).to.be.instanceOf(StorageResult);
         });
 
         it('should return invalid result if the field inside an "orderBy" is an empty array', async () => {
@@ -2686,47 +2757,7 @@ describe('DocumentRepository', function main() {
           }
         });
 
-        it('should return invalid result if "orderBy" has more than 255 sorting fields', async () => {
-          try {
-            await documentRepository.find(queryDataContract, 'documentBig', {
-              where: [
-                ['a', '>', 1],
-              ],
-              orderBy: Array(256).fill().map((v, i) => [`a${i}`, 'asc']),
-            });
-
-            expect.fail('should throw an error');
-          } catch (e) {
-            expect(e).to.be.instanceOf(InvalidQueryError);
-            // TODO is it correct?
-            expect(e.message).to.equal('Invalid query: where clause on non indexed property error: query must be for valid indexes');
-          }
-        });
-
         it('should return invalid result if order of three of two properties after indexed one is not preserved', async () => {
-          // testDocumentSchema = {
-          //   indices: [
-          //     {
-          //       name: 'index1',
-          //       properties: [
-          //         { a: 'asc' },
-          //         { b: 'desc' },
-          //         { c: 'desc' },
-          //         { d: 'desc' },
-          //         { e: 'desc' },
-          //       ],
-          //       unique: true,
-          //     },
-          //   ],
-          // };
-          //
-          // findThreesomeOfIndexedPropertiesStub.returns([['b', 'c', 'd']]);
-          // findIndexedPropertiesSinceStub.returns([['b', 'c']]);
-          // findAppropriateIndexStub.returns({
-          //   properties: ['b', 'c'],
-          // });
-          //
-
           try {
             await documentRepository.find(queryDataContract, 'documentL', {
               where: [
@@ -2743,28 +2774,6 @@ describe('DocumentRepository', function main() {
         });
 
         it('should return invalid result if order of properties does not match index', async () => {
-          // testDocumentSchema = {
-          //   indices: [
-          //     {
-          //       name: 'index1',
-          //       properties: [
-          //         { a: 'asc' },
-          //         { b: 'desc' },
-          //         { c: 'desc' },
-          //         { d: 'desc' },
-          //         { e: 'desc' },
-          //       ],
-          //       unique: true,
-          //     },
-          //   ],
-          // };
-          //
-          // findThreesomeOfIndexedPropertiesStub.returns([['b', 'c', 'd']]);
-          // findIndexedPropertiesSinceStub.returns([['b', 'c']]);
-          // findAppropriateIndexStub.returns({
-          //   properties: ['b', 'c'],
-          // });
-
           try {
             await documentRepository.find(queryDataContract, 'documentJ', {
               where: [
@@ -2795,15 +2804,6 @@ describe('DocumentRepository', function main() {
 
         invalidFieldNameTestCases.forEach((fieldName) => {
           it(`should return invalid result if "orderBy" has invalid field format, ${fieldName}`, async () => {
-            // documentSchema = {
-            //   indices: [
-            //     {
-            //       properties: [{ [fieldName]: 'asc' }],
-            //     },
-            //   ],
-            // };
-            //
-
             try {
               await documentRepository.find(queryDataContract, 'documentNumber', {
                 where: [
@@ -2868,11 +2868,11 @@ describe('DocumentRepository', function main() {
           }
         });
 
-        Object.keys(validOrderByOperators).forEach((operator) => {
-          it(`should return valid result if "orderBy" has valid field with valid operator (${operator}) and value (${validOrderByOperators[operator].value})" in "where" clause`, async () => {
-            const result = await documentRepository.find(queryDataContract, 'documentNumber', {
+        validOrderByOperators.forEach(({ operator, value, documentType }) => {
+          it(`should return valid result if "orderBy" has valid field with valid operator (${operator}) and value (${value})" in "where" clause`, async () => {
+            const result = await documentRepository.find(queryDataContract, documentType, {
               where: [
-                ['a', operator, validOrderByOperators[operator].value],
+                ['a', operator, value],
               ],
               orderBy: [['a', 'asc']],
             });
@@ -2883,6 +2883,7 @@ describe('DocumentRepository', function main() {
 
         it('should return invalid result if "orderBy" was not used with range operator', async () => {
           const query = {
+            where: [['a', '==', 1]],
             orderBy: [['b', 'asc']],
           };
 
@@ -2892,33 +2893,8 @@ describe('DocumentRepository', function main() {
             expect.fail('should throw an error');
           } catch (e) {
             expect(e).to.be.instanceOf(InvalidQueryError);
-          }
-
-          query.where = [['a', '==', 1]];
-
-          try {
-            await documentRepository.find(queryDataContract, 'documentK', query);
-
-            expect.fail('should throw an error');
-          } catch (e) {
-            expect(e).to.be.instanceOf(InvalidQueryError);
             expect(e.message).to.equal('Invalid query: where clause on non indexed property error: query must be for valid indexes');
           }
-
-          const promises = ['>', '<', '>=', '<=', 'startsWith', 'in'].map(async (operator) => {
-            let value = '1';
-            if (operator === 'in') {
-              value = [1];
-            }
-
-            query.where = [['b', operator, value]];
-
-            const result = await documentRepository.find(queryDataContract, 'documentK', query);
-
-            expect(result).to.be.instanceOf(StorageResult);
-          });
-
-          await Promise.all(promises);
         });
       });
     });
