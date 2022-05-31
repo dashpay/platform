@@ -35,7 +35,7 @@ const rehydrateState = async function rehydrateState() {
               }
             });
           } catch (e) {
-            logger.error('Error importing persistent storage, resyncing from start', e);
+            logger.warn('Error importing persistent storage, resyncing from start', e);
 
             this.adapter.setItem(`wallet_${walletId}`, null);
           }
