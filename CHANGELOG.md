@@ -1,3 +1,10 @@
+### [0.22.11](https://github.com/dashevo/platform/compare/v0.22.10...v0.22.11) (2022-05-31)
+
+
+### Bug Fixes
+
+* incorrect image versions and variables for testnet config ([#415](https://github.com/dashevo/platform/issues/415))
+
 ### [0.22.10](https://github.com/dashevo/platform/compare/v0.22.9...v0.22.10) (2022-05-26)
 
 

@@ -1,6 +1,6 @@
 {
   "name": "dashmate",
-  "version": "0.22.10",
+  "version": "0.22.11",
   "description": "Distribution package for Dash Masternode installation",
   "main": "src/index.js",
   "scripts": {
