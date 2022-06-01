@@ -703,16 +703,16 @@ describe('DocumentRepository', function main() {
 
     dataContract.documents[document.getType()].properties = {
       ...dataContract.documents[document.getType()].properties,
-      // name: {
-      //   type: 'string',
-      //   // maxLength: 1024,
-      // },
+      name: {
+        type: 'string',
+        maxLength: 255,
+      },
       order: {
         type: 'number',
       },
       lastName: {
         type: 'string',
-        // maxLength: 1024,
+        maxLength: 255,
       },
       // arrayWithScalar: {
       //   type: 'array',
@@ -3213,6 +3213,10 @@ describe('DocumentRepository', function main() {
     });
 
     it('should not delete Document on dry run', async () => {
+      console.log(
+        JSON.stringify(document.toObject(), null, 2),
+      );
+
       const result = await documentRepository.delete(
         dataContract,
         document.getType(),
