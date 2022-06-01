@@ -541,7 +541,7 @@ const invalidQueries = [
         ['b', '==', 2],
       ],
     },
-    error: 'Invalid query: query is too far from index: query must better match an existing index',
+    error: 'query is too far from index: query must better match an existing index',
   },
   {
     query: {
@@ -554,7 +554,7 @@ const invalidQueries = [
         ['c', 'desc'],
       ],
     },
-    error: 'Invalid query: where clause on non indexed property error: query must be for valid indexes',
+    error: 'where clause on non indexed property error: query must be for valid indexes',
   },
   {
     query: {
@@ -567,7 +567,7 @@ const invalidQueries = [
         ['b', 'desc'],
       ],
     },
-    error: 'Invalid query: duplicate non groupable clause on same field error: in clause has same field as an equality clause',
+    error: 'duplicate non groupable clause on same field error: in clause has same field as an equality clause',
   },
   {
     query: {
@@ -575,7 +575,7 @@ const invalidQueries = [
         ['z', '==', 1],
       ],
     },
-    error: 'Invalid query: where clause on non indexed property error: query must be for valid indexes',
+    error: 'where clause on non indexed property error: query must be for valid indexes',
   },
   {
     query: {
@@ -587,7 +587,7 @@ const invalidQueries = [
         ['e', '>', 3],
       ],
     },
-    error: 'Invalid query: multiple range clauses error: all ranges must be on same field',
+    error: 'multiple range clauses error: all ranges must be on same field',
   },
   {
     query: {
@@ -602,7 +602,7 @@ const invalidQueries = [
         ['d', 'desc'],
       ],
     },
-    error: 'Invalid query: multiple range clauses error: all ranges must be on same field',
+    error: 'multiple range clauses error: all ranges must be on same field',
   },
   {
     query: {
@@ -612,7 +612,7 @@ const invalidQueries = [
         ['c', '>', 1],
       ],
     },
-    error: 'Invalid query: missing order by for range error: query must have an orderBy field for each range element',
+    error: 'missing order by for range error: query must have an orderBy field for each range element',
   },
   {
     query: {
@@ -628,23 +628,23 @@ const invalidQueries = [
         ['d', 'asc'],
       ],
     },
-    error: 'Invalid query: where clause on non indexed property error: query must be for valid indexes',
+    error: 'where clause on non indexed property error: query must be for valid indexes',
   },
   {
     query: 'abc',
-    error: 'Invalid query: invalid cbor error: unable to decode query',
+    error: 'invalid cbor error: unable to decode query',
   },
   {
     query: [],
-    error: 'Invalid query: invalid cbor error: unable to decode query',
+    error: 'invalid cbor error: unable to decode query',
   },
   {
     query: { where: [1, 2, 3] },
-    error: 'Invalid query: query invalid format for where clause error: where clause must be an array',
+    error: 'query invalid format for where clause error: where clause must be an array',
   },
   {
     query: { invalid: 'query' },
-    error: 'Invalid query: unsupported error: unsupported syntax in where clause',
+    error: 'unsupported error: unsupported syntax in where clause',
   },
 ];
 
@@ -1033,7 +1033,7 @@ describe('DocumentRepository', function main() {
               expect.fail('should throw an error');
             } catch (e) {
               expect(e).to.be.instanceOf(InvalidQueryError);
-              expect(e.message).to.equal('Invalid query: invalid cbor error: unable to decode query');
+              expect(e.message).to.equal('invalid cbor error: unable to decode query');
             }
           });
         });
@@ -1098,7 +1098,7 @@ describe('DocumentRepository', function main() {
               expect.fail('should throw an error');
             } catch (e) {
               expect(e).to.be.instanceOf(InvalidQueryError);
-              expect(e.message).to.equal('Invalid query: query invalid format for where clause error: where clause must be an array');
+              expect(e.message).to.equal('query invalid format for where clause error: where clause must be an array');
             }
           });
         });
@@ -1111,7 +1111,7 @@ describe('DocumentRepository', function main() {
             expect.fail('should throw an error');
           } catch (e) {
             expect(e).to.be.instanceOf(InvalidQueryError);
-            expect(e.message).to.equal('Invalid query: multiple range clauses error: there can only be at most 2 range clauses that must be on the same field');
+            expect(e.message).to.equal('multiple range clauses error: there can only be at most 2 range clauses that must be on the same field');
           }
         });
 
@@ -1142,7 +1142,7 @@ describe('DocumentRepository', function main() {
             expect.fail('should throw an error');
           } catch (e) {
             expect(e).to.be.instanceOf(InvalidQueryError);
-            expect(e.message).to.equal('Invalid query: query is too far from index: query must better match an existing index');
+            expect(e.message).to.equal('query is too far from index: query must better match an existing index');
           }
         });
 
@@ -1189,7 +1189,7 @@ describe('DocumentRepository', function main() {
                 expect.fail('should throw an error');
               } catch (e) {
                 expect(e).to.be.instanceOf(InvalidQueryError);
-                expect(e.message).to.equal('Invalid query: where clause on non indexed property error: query must be for valid indexes');
+                expect(e.message).to.equal('where clause on non indexed property error: query must be for valid indexes');
               }
             });
           });
@@ -1205,7 +1205,7 @@ describe('DocumentRepository', function main() {
               expect.fail('should throw an error');
             } catch (e) {
               expect(e).to.be.instanceOf(InvalidQueryError);
-              expect(e.message).to.equal('Invalid query: invalid where clause components error: where clauses should have at most 3 components');
+              expect(e.message).to.equal('invalid where clause components error: where clauses should have at most 3 components');
             }
           });
 
@@ -1220,7 +1220,7 @@ describe('DocumentRepository', function main() {
               expect.fail('should throw an error');
             } catch (e) {
               expect(e).to.be.instanceOf(InvalidQueryError);
-              expect(e.message).to.equal('Invalid query: invalid where clause components error: where clauses should have at most 3 components');
+              expect(e.message).to.equal('invalid where clause components error: where clauses should have at most 3 components');
             }
           });
 
@@ -1239,7 +1239,7 @@ describe('DocumentRepository', function main() {
                     expect.fail('should throw an error');
                   } catch (e) {
                     expect(e).to.be.instanceOf(InvalidQueryError);
-                    expect(e.message).to.equal('Invalid query: invalid where clause components error: second field of where component should be a known operator');
+                    expect(e.message).to.equal('invalid where clause components error: second field of where component should be a known operator');
                   }
                 });
               });
@@ -1299,7 +1299,7 @@ describe('DocumentRepository', function main() {
                     expect.fail('should throw an error');
                   } catch (e) {
                     expect(e).to.be.instanceOf(InvalidQueryError);
-                    expect(e.message).to.equal('Invalid query: field requirement unmet: value must be less than 256 bytes long');
+                    expect(e.message).to.equal('field requirement unmet: value must be less than 256 bytes long');
                   }
                 });
 
@@ -1315,7 +1315,7 @@ describe('DocumentRepository', function main() {
                       expect.fail('should throw an error');
                     } catch (e) {
                       expect(e).to.be.instanceOf(InvalidQueryError);
-                      expect(e.message).to.equal('Invalid query: value wrong type error: document field type doesn\'t match document value');
+                      expect(e.message).to.equal('value wrong type error: document field type doesn\'t match document value');
                     }
                   });
                 });
@@ -1494,7 +1494,7 @@ describe('DocumentRepository', function main() {
                     expect.fail('should throw an error');
                   } catch (e) {
                     expect(e).to.be.instanceOf(InvalidQueryError);
-                    expect(e.message).to.equal('Invalid query: range clauses not groupable error: clauses are not groupable');
+                    expect(e.message).to.equal('range clauses not groupable error: clauses are not groupable');
                   }
                 });
               });
@@ -1512,7 +1512,7 @@ describe('DocumentRepository', function main() {
                           expect.fail('should throw an error');
                         } catch (e) {
                           expect(e).to.be.instanceOf(InvalidQueryError);
-                          expect(e.message).to.equal('Invalid query: multiple range clauses error: all ranges must be on same field');
+                          expect(e.message).to.equal('multiple range clauses error: all ranges must be on same field');
                         }
                       });
                     });
@@ -1528,7 +1528,7 @@ describe('DocumentRepository', function main() {
                         expect.fail('should throw an error');
                       } catch (e) {
                         expect(e).to.be.instanceOf(InvalidQueryError);
-                        expect(e.message).to.equal('Invalid query: range clauses not groupable error: clauses are not groupable');
+                        expect(e.message).to.equal('range clauses not groupable error: clauses are not groupable');
                       }
                     });
                   });
@@ -1542,7 +1542,7 @@ describe('DocumentRepository', function main() {
                       expect.fail('should throw an error');
                     } catch (e) {
                       expect(e).to.be.instanceOf(InvalidQueryError);
-                      expect(e.message).to.equal('Invalid query: multiple range clauses error: there can not be more than 1 non groupable range clause');
+                      expect(e.message).to.equal('multiple range clauses error: there can not be more than 1 non groupable range clause');
                     }
                   });
                 });
@@ -1551,19 +1551,19 @@ describe('DocumentRepository', function main() {
                   const conflictingOperators = [
                     {
                       operators: ['>', '>'],
-                      errorMessage: 'Invalid query: multiple range clauses error: there can only at most one range clause with a lower bound',
+                      errorMessage: 'multiple range clauses error: there can only at most one range clause with a lower bound',
                     },
                     {
                       operators: ['>', '=>'],
-                      errorMessage: 'Invalid query: invalid where clause components error: second field of where component should be a known operator',
+                      errorMessage: 'invalid where clause components error: second field of where component should be a known operator',
                     },
                     {
                       operators: ['<', '<'],
-                      errorMessage: 'Invalid query: range clauses not groupable error: lower and upper bounds must be passed if providing 2 ranges',
+                      errorMessage: 'range clauses not groupable error: lower and upper bounds must be passed if providing 2 ranges',
                     },
                     {
                       operators: ['<', '<='],
-                      errorMessage: 'Invalid query: range clauses not groupable error: lower and upper bounds must be passed if providing 2 ranges',
+                      errorMessage: 'range clauses not groupable error: lower and upper bounds must be passed if providing 2 ranges',
                     },
                   ];
 
@@ -1596,7 +1596,7 @@ describe('DocumentRepository', function main() {
                   } catch (e) {
                     expect(e).to.be.instanceOf(InvalidQueryError);
                     // TODO is it correct ??????
-                    expect(e.message).to.equal('Invalid query: where clause on non indexed property error: query must be for valid indexes');
+                    expect(e.message).to.equal('where clause on non indexed property error: query must be for valid indexes');
                   }
                 });
 
@@ -1610,7 +1610,7 @@ describe('DocumentRepository', function main() {
                     } catch (e) {
                       expect(e).to.be.instanceOf(InvalidQueryError);
                       // TODO is it correct?
-                      expect(e.message).to.equal('Invalid query: where clause on non indexed property error: query must be for valid indexes');
+                      expect(e.message).to.equal('where clause on non indexed property error: query must be for valid indexes');
                     }
                   });
                 });
@@ -1641,7 +1641,7 @@ describe('DocumentRepository', function main() {
                     expect.fail('should throw an error');
                   } catch (e) {
                     expect(e).to.be.instanceOf(InvalidQueryError);
-                    expect(e.message).to.equal('Invalid query: missing order by for range error: query must have an orderBy field for each range element');
+                    expect(e.message).to.equal('missing order by for range error: query must have an orderBy field for each range element');
                   }
                 });
               });
@@ -1656,7 +1656,7 @@ describe('DocumentRepository', function main() {
                     expect.fail('should throw an error');
                   } catch (e) {
                     expect(e).to.be.instanceOf(InvalidQueryError);
-                    expect(e.message).to.equal('Invalid query: value wrong type error: document field type doesn\'t match document value');
+                    expect(e.message).to.equal('value wrong type error: document field type doesn\'t match document value');
                   }
                 });
               });
@@ -1670,7 +1670,7 @@ describe('DocumentRepository', function main() {
                   } catch (e) {
                     expect(e).to.be.instanceOf(InvalidQueryError);
                     expect(e.message).to.equal(
-                      'Invalid query: value wrong type error: document field type doesn\'t match document value',
+                      'value wrong type error: document field type doesn\'t match document value',
                     );
                   }
                 });
@@ -1730,7 +1730,7 @@ describe('DocumentRepository', function main() {
                     expect.fail('should throw an error');
                   } catch (e) {
                     expect(e).to.be.instanceOf(InvalidQueryError);
-                    expect(e.message).to.equal('Invalid query: invalid IN clause error: when using in operator you must provide an array of values');
+                    expect(e.message).to.equal('invalid IN clause error: when using in operator you must provide an array of values');
                   }
                 });
               });
@@ -1742,7 +1742,7 @@ describe('DocumentRepository', function main() {
                   expect.fail('should throw an error');
                 } catch (e) {
                   expect(e).to.be.instanceOf(InvalidQueryError);
-                  expect(e.message).to.equal('Invalid query: invalid IN clause error: in clause must at least 1 value');
+                  expect(e.message).to.equal('invalid IN clause error: in clause must at least 1 value');
                 }
               });
 
@@ -1765,7 +1765,7 @@ describe('DocumentRepository', function main() {
                   expect.fail('should throw an error');
                 } catch (e) {
                   expect(e).to.be.instanceOf(InvalidQueryError);
-                  expect(e.message).to.equal('Invalid query: invalid IN clause error: in clause must at most 100 values');
+                  expect(e.message).to.equal('invalid IN clause error: in clause must at most 100 values');
                 }
               });
 
@@ -1777,7 +1777,7 @@ describe('DocumentRepository', function main() {
                   expect.fail('should throw an error');
                 } catch (e) {
                   expect(e).to.be.instanceOf(InvalidQueryError);
-                  expect(e.message).to.equal('Invalid query: invalid IN clause error: there should be no duplicates values for In query');
+                  expect(e.message).to.equal('invalid IN clause error: there should be no duplicates values for In query');
                 }
               });
 
@@ -1788,7 +1788,7 @@ describe('DocumentRepository', function main() {
                   expect.fail('should throw an error');
                 } catch (e) {
                   expect(e).to.be.instanceOf(InvalidQueryError);
-                  expect(e.message).to.equal('Invalid query: value wrong type error: document field type doesn\'t match document value');
+                  expect(e.message).to.equal('value wrong type error: document field type doesn\'t match document value');
                 }
               });
             });
@@ -1826,7 +1826,7 @@ describe('DocumentRepository', function main() {
                   expect.fail('should throw an error');
                 } catch (e) {
                   expect(e).to.be.instanceOf(InvalidQueryError);
-                  expect(e.message).to.equal('Invalid query: starts with illegal string error: starts with can not start with an empty string');
+                  expect(e.message).to.equal('starts with illegal string error: starts with can not start with an empty string');
                 }
               });
 
@@ -1838,7 +1838,7 @@ describe('DocumentRepository', function main() {
                   expect.fail('should throw an error');
                 } catch (e) {
                   expect(e).to.be.instanceOf(InvalidQueryError);
-                  expect(e.message).to.equal('Invalid query: field requirement unmet: value must be less than 256 bytes long');
+                  expect(e.message).to.equal('field requirement unmet: value must be less than 256 bytes long');
                 }
               });
 
@@ -1854,7 +1854,7 @@ describe('DocumentRepository', function main() {
                     expect.fail('should throw an error');
                   } catch (e) {
                     expect(e).to.be.instanceOf(InvalidQueryError);
-                    expect(e.message).to.equal('Invalid query: value wrong type error: document field type doesn\'t match document value');
+                    expect(e.message).to.equal('value wrong type error: document field type doesn\'t match document value');
                   }
                 });
               });
@@ -1869,7 +1869,7 @@ describe('DocumentRepository', function main() {
                     expect.fail('should throw an error');
                   } catch (e) {
                     expect(e).to.be.instanceOf(InvalidQueryError);
-                    expect(e.message).to.equal('Invalid query: invalid STARTSWITH clause error: starts with must have at least one character');
+                    expect(e.message).to.equal('invalid STARTSWITH clause error: starts with must have at least one character');
                   }
                 });
               });
@@ -2359,7 +2359,7 @@ describe('DocumentRepository', function main() {
             expect.fail('should throw an error');
           } catch (e) {
             expect(e).to.be.instanceOf(InvalidQueryError);
-            expect(e.message).to.equal('Invalid query: query invalid limit error: limit should be a integer from 1 to 100');
+            expect(e.message).to.equal('query invalid limit error: limit should be a integer from 1 to 100');
           }
         });
 
@@ -2374,7 +2374,7 @@ describe('DocumentRepository', function main() {
             expect.fail('should throw an error');
           } catch (e) {
             expect(e).to.be.instanceOf(InvalidQueryError);
-            expect(e.message).to.equal('Invalid query: query invalid limit error: limit should be a integer from 1 to 100');
+            expect(e.message).to.equal('query invalid limit error: limit should be a integer from 1 to 100');
           }
         });
 
@@ -2393,7 +2393,7 @@ describe('DocumentRepository', function main() {
             expect.fail('should throw an error');
           } catch (e) {
             expect(e).to.be.instanceOf(InvalidQueryError);
-            expect(e.message).to.equal('Invalid query: query invalid limit error: limit should be a integer from 1 to 100');
+            expect(e.message).to.equal('query invalid limit error: limit should be a integer from 1 to 100');
           }
         });
 
@@ -2408,7 +2408,7 @@ describe('DocumentRepository', function main() {
             expect.fail('should throw an error');
           } catch (e) {
             expect(e).to.be.instanceOf(InvalidQueryError);
-            expect(e.message).to.equal('Invalid query: query invalid limit error: limit should be a integer from 1 to 100');
+            expect(e.message).to.equal('query invalid limit error: limit should be a integer from 1 to 100');
           }
         });
 
@@ -2426,7 +2426,7 @@ describe('DocumentRepository', function main() {
               expect.fail('should throw an error');
             } catch (e) {
               expect(e).to.be.instanceOf(InvalidQueryError);
-              expect(e.message).to.equal('Invalid query: query invalid limit error: limit should be a integer from 1 to 100');
+              expect(e.message).to.equal('query invalid limit error: limit should be a integer from 1 to 100');
             }
           });
         });
@@ -2502,7 +2502,7 @@ describe('DocumentRepository', function main() {
             expect.fail('should throw InvalidQueryError');
           } catch (e) {
             expect(e).to.be.an.instanceOf(InvalidQueryError);
-            expect(e.message).to.equal('Invalid query: start document not found error: startAt document not found');
+            expect(e.message).to.equal('start document not found error: startAt document not found');
           }
         });
 
@@ -2563,7 +2563,7 @@ describe('DocumentRepository', function main() {
             expect.fail('should throw InvalidQueryError');
           } catch (e) {
             expect(e).to.be.an.instanceOf(InvalidQueryError);
-            expect(e.message).to.equal('Invalid query: start document not found error: startAfter document not found');
+            expect(e.message).to.equal('start document not found error: startAfter document not found');
           }
         });
 
@@ -2577,7 +2577,7 @@ describe('DocumentRepository', function main() {
             expect.fail('should throw an error');
           } catch (e) {
             expect(e).to.be.instanceOf(InvalidQueryError);
-            expect(e.message).to.equal('Invalid query: duplicate start conditions error: only one of startAt or startAfter should be provided');
+            expect(e.message).to.equal('duplicate start conditions error: only one of startAt or startAfter should be provided');
           }
         });
 
@@ -2596,7 +2596,7 @@ describe('DocumentRepository', function main() {
               expect.fail('should throw an error');
             } catch (e) {
               expect(e).to.be.instanceOf(InvalidQueryError);
-              expect(e.message).to.equal('Invalid query: value wrong type error: system value is incorrect type');
+              expect(e.message).to.equal('value wrong type error: system value is incorrect type');
             }
           });
         });
@@ -2726,7 +2726,7 @@ describe('DocumentRepository', function main() {
             expect.fail('should throw an error');
           } catch (e) {
             expect(e).to.be.instanceOf(InvalidQueryError);
-            expect(e.message).to.equal('Invalid query: missing order by for range error: query must have an orderBy field for each range element');
+            expect(e.message).to.equal('missing order by for range error: query must have an orderBy field for each range element');
           }
         });
 
@@ -2765,7 +2765,7 @@ describe('DocumentRepository', function main() {
             expect.fail('should throw an error');
           } catch (e) {
             expect(e).to.be.instanceOf(InvalidQueryError);
-            expect(e.message).to.equal('Invalid query: missing order by for range error: query must have an orderBy field for each range element');
+            expect(e.message).to.equal('missing order by for range error: query must have an orderBy field for each range element');
           }
         });
 
@@ -2781,7 +2781,7 @@ describe('DocumentRepository', function main() {
             expect.fail('should throw an error');
           } catch (e) {
             expect(e).to.be.instanceOf(InvalidQueryError);
-            expect(e.message).to.equal('Invalid query: where clause on non indexed property error: query must be for valid indexes');
+            expect(e.message).to.equal('where clause on non indexed property error: query must be for valid indexes');
           }
         });
 
@@ -2797,7 +2797,7 @@ describe('DocumentRepository', function main() {
             expect.fail('should throw an error');
           } catch (e) {
             expect(e).to.be.instanceOf(InvalidQueryError);
-            expect(e.message).to.equal('Invalid query: where clause on non indexed property error: query must be for valid indexes');
+            expect(e.message).to.equal('where clause on non indexed property error: query must be for valid indexes');
           }
         });
 
@@ -2827,7 +2827,7 @@ describe('DocumentRepository', function main() {
               expect.fail('should throw an error');
             } catch (e) {
               expect(e).to.be.instanceOf(InvalidQueryError);
-              expect(e.message).to.equal('Invalid query: where clause on non indexed property error: query must be for valid indexes');
+              expect(e.message).to.equal('where clause on non indexed property error: query must be for valid indexes');
             }
           });
         });
@@ -2844,7 +2844,7 @@ describe('DocumentRepository', function main() {
             expect.fail('should throw an error');
           } catch (e) {
             expect(e).to.be.instanceOf(InvalidQueryError);
-            expect(e.message).to.equal('Invalid query: missing order by for range error: query must have an orderBy field for each range element');
+            expect(e.message).to.equal('missing order by for range error: query must have an orderBy field for each range element');
           }
         });
 
@@ -2860,7 +2860,7 @@ describe('DocumentRepository', function main() {
             expect.fail('should throw an error');
           } catch (e) {
             expect(e).to.be.instanceOf(InvalidQueryError);
-            expect(e.message).to.equal('Invalid query: missing order by for range error: query must have an orderBy field for each range element');
+            expect(e.message).to.equal('missing order by for range error: query must have an orderBy field for each range element');
           }
         });
 
@@ -2876,7 +2876,7 @@ describe('DocumentRepository', function main() {
             expect.fail('should throw an error');
           } catch (e) {
             expect(e).to.be.instanceOf(InvalidQueryError);
-            expect(e.message).to.equal('Invalid query: missing order by for range error: query must have an orderBy field for each range element');
+            expect(e.message).to.equal('missing order by for range error: query must have an orderBy field for each range element');
           }
         });
 
@@ -2905,7 +2905,7 @@ describe('DocumentRepository', function main() {
             expect.fail('should throw an error');
           } catch (e) {
             expect(e).to.be.instanceOf(InvalidQueryError);
-            expect(e.message).to.equal('Invalid query: where clause on non indexed property error: query must be for valid indexes');
+            expect(e.message).to.equal('where clause on non indexed property error: query must be for valid indexes');
           }
         });
       });

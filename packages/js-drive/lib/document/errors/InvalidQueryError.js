@@ -1,14 +1,7 @@
-class InvalidQueryError extends Error {
-  /**
-   * @param {string} message
-   */
-  constructor(message) {
-    super(`Invalid query: ${message}`);
+const DriveError = require('../../errors/DriveError');
 
-    this.name = this.constructor.name;
+class InvalidQueryError extends DriveError {
 
-    Error.captureStackTrace(this, this.constructor);
-  }
 }
 
 module.exports = InvalidQueryError;
