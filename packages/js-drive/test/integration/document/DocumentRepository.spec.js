@@ -1812,7 +1812,7 @@ describe('DocumentRepository', function main() {
                   expect.fail('should throw an error');
                 } catch (e) {
                   expect(e).to.be.instanceOf(InvalidQueryError);
-                  expect(e.message).to.equal('');
+                  expect(e.message).to.equal('Invalid query: starts with illegal string error: starts with can not start with an empty string');
                 }
               });
 
@@ -2345,7 +2345,7 @@ describe('DocumentRepository', function main() {
             expect.fail('should throw an error');
           } catch (e) {
             expect(e).to.be.instanceOf(InvalidQueryError);
-            expect(e.message).to.equal('');
+            expect(e.message).to.equal('Invalid query: query invalid limit error: limit should be a integer from 1 to 100');
           }
         });
 
@@ -2360,7 +2360,7 @@ describe('DocumentRepository', function main() {
             expect.fail('should throw an error');
           } catch (e) {
             expect(e).to.be.instanceOf(InvalidQueryError);
-            expect(e.message).to.equal('');
+            expect(e.message).to.equal('Invalid query: query invalid limit error: limit should be a integer from 1 to 100');
           }
         });
 
@@ -2379,7 +2379,7 @@ describe('DocumentRepository', function main() {
             expect.fail('should throw an error');
           } catch (e) {
             expect(e).to.be.instanceOf(InvalidQueryError);
-            expect(e.message).to.equal('');
+            expect(e.message).to.equal('Invalid query: query invalid limit error: limit should be a integer from 1 to 100');
           }
         });
 
