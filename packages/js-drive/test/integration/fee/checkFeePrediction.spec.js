@@ -14,6 +14,8 @@ function createDataContractDocuments() {
   const name = new Array(4).fill('a').join('');
 
   const properties = {};
+
+  // we need to fit 16kb size
   const propertiesAmount = dataContractMetaSchema.$defs.documentProperties.maxProperties / 6;
 
   for (let i = 0; i < propertiesAmount; i++) {
