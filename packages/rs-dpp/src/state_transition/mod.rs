@@ -1,3 +1,5 @@
+use crate::data_contract::state_transition::DataContractCreateTransition;
+// TODO unify the import paths ::object::state_transition::*
 use crate::document::DocumentsBatchTransition;
 mod state_transition_types;
 use serde::{Deserialize, Serialize};
@@ -38,9 +40,7 @@ macro_rules! call_method {
 macro_rules! call_static_method {
     ($state_transition:expr, $method:ident ) => {
         match $state_transition {
-            StateTransition::DataContractCreate(_) => {
-                mocks::DataContractCreateTransition::$method()
-            }
+            StateTransition::DataContractCreate(_) => DataContractCreateTransition::$method(),
             StateTransition::DataContractUpdate(_) => {
                 mocks::DataContractUpdateTransition::$method()
             }
@@ -53,7 +53,7 @@ macro_rules! call_static_method {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum StateTransition {
-    DataContractCreate(mocks::DataContractCreateTransition),
+    DataContractCreate(DataContractCreateTransition),
     DataContractUpdate(mocks::DataContractUpdateTransition),
     DocumentsBatch(DocumentsBatchTransition),
     IdentityCreate(mocks::IdentityCreateTransition),
@@ -127,8 +127,8 @@ impl StateTransitionLike for StateTransition {
     }
 }
 
-impl From<mocks::DataContractCreateTransition> for StateTransition {
-    fn from(d: mocks::DataContractCreateTransition) -> Self {
+impl From<DataContractCreateTransition> for StateTransition {
+    fn from(d: DataContractCreateTransition) -> Self {
         Self::DataContractCreate(d)
     }
 }

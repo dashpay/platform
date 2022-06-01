@@ -49,6 +49,10 @@ impl DataContract {
         Self::default()
     }
 
+    pub fn from_raw_object(raw_object: JsonValue) -> Result<DataContract, ProtocolError> {
+        todo!()
+    }
+
     pub fn from_buffer(b: impl AsRef<[u8]>) -> Result<DataContract, ProtocolError> {
         let (protocol_bytes, document_bytes) = b.as_ref().split_at(4);
 
