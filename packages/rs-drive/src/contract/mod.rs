@@ -8,7 +8,7 @@ use crate::common::{
     cbor_inner_bool_value_with_default, cbor_inner_btree_map, cbor_inner_text_value,
     cbor_map_to_btree_map, get_key_from_cbor_map,
 };
-use crate::drive::defaults::PROTOCOL_VERSION;
+use crate::drive::defaults::{DEFAULT_HASH_SIZE, MAX_INDEX_SIZE, PROTOCOL_VERSION};
 use crate::drive::{Drive, RootTree};
 use crate::error::contract::ContractError;
 use crate::error::structure::StructureError;
@@ -361,18 +361,34 @@ impl DocumentType {
         value: &Value,
     ) -> Result<Vec<u8>, Error> {
         match key {
-            "$ownerId" | "$id" => bytes_for_system_value(value)?.ok_or({
-                Error::Contract(ContractError::FieldRequirementUnmet(
-                    "expected system value to be deserialized",
-                ))
-            }),
+            "$ownerId" | "$id" => {
+                let bytes = bytes_for_system_value(value)?.ok_or({
+                    Error::Contract(ContractError::FieldRequirementUnmet(
+                        "expected system value to be deserialized",
+                    ))
+                })?;
+                if bytes.len() != DEFAULT_HASH_SIZE {
+                    Err(Error::Contract(ContractError::FieldRequirementUnmet(
+                        "expected system value to be 32 bytes long",
+                    )))
+                } else {
+                    Ok(bytes)
+                }
+            }
             _ => {
                 let field_type = self.properties.get(key).ok_or({
                     Error::Contract(ContractError::DocumentTypeFieldNotFound(
                         "expected contract to have field",
                     ))
                 })?;
-                field_type.encode_value(value)
+                let bytes = field_type.encode_value(value)?;
+                if bytes.len() > MAX_INDEX_SIZE {
+                    Err(Error::Contract(ContractError::FieldRequirementUnmet(
+                        "value must be less than 256 bytes long",
+                    )))
+                } else {
+                    Ok(bytes)
+                }
             }
         }
     }

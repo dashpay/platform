@@ -284,7 +284,9 @@ impl<'a, const N: usize> PathKeyElementInfo<'a, N> {
     pub fn insert_len(&'a self) -> usize {
         match self {
             //todo v23: this is an incorrect approximation
-            PathKeyElementInfo::PathKeyElement((_, key, element)) => element.node_byte_size(key.len()),
+            PathKeyElementInfo::PathKeyElement((_, key, element)) => {
+                element.node_byte_size(key.len())
+            }
             PathKeyElementInfo::PathKeyElementSize((_, key_size, element_size)) => {
                 *key_size + *element_size
             }
