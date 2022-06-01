@@ -99,6 +99,8 @@ describe('checkFeePrediction', () => {
     }
   });
 
+  // TODO: We need to use valid signatures: all ST validations should pass
+
   describe('Identity', () => {
     it('should check that IdentityCreateTransition predicted fee > real fee', async () => {
       const stateTransition = dpp.identity.createIdentityCreateTransition(identity);

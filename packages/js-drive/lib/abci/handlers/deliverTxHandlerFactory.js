@@ -13,9 +13,12 @@ const AbstractDocumentTransition = require(
   '@dashevo/dpp/lib/document/stateTransition/DocumentsBatchTransition/documentTransition/AbstractDocumentTransition',
 );
 
-const calculateOperationCosts = require('@dashevo/dpp/lib/stateTransition/fee/calculateOperationCosts');
+const calculateOperationFees = require('@dashevo/dpp/lib/stateTransition/fee/calculateOperationFees');
 
 const DPPValidationAbciError = require('../errors/DPPValidationAbciError');
+
+const NegativeBalanceError = require('./errors/NegativeBalanceError');
+const PredictedFeeLowerThanActualError = require('./errors/PredictedFeeLowerThanActualError');
 
 const DOCUMENT_ACTION_DESCRIPTIONS = {
   [AbstractDocumentTransition.ACTIONS.CREATE]: 'created',
@@ -141,18 +144,23 @@ function deliverTxHandlerFactory(
     // in order to store them in credits distribution pool
     const actualStateTransitionFee = stateTransition.calculateFee();
 
+    if (actualStateTransitionFee > predictedStateTransitionFee) {
+      throw new PredictedFeeLowerThanActualError(
+        predictedStateTransitionFee,
+        actualStateTransitionFee,
+        stateTransition,
+      );
+    }
+
     const identity = await transactionalDpp.getStateRepository().fetchIdentity(
       stateTransition.getOwnerId(),
     );
 
-    // TODO: We need to handle situation when predicted fee is lower then actual fee
+    const updatedBalance = identity.reduceBalance(actualStateTransitionFee);
 
-    // TODO: Temporary disabled until we calculate fee for validate state and apply functions
-    // const updatedBalance = identity.reduceBalance(stateTransitionFee);
-
-    // if (updatedBalance <= 0) {
-    //   throw new NegativeBalanceError(identity);
-    // }
+    if (updatedBalance < 0) {
+      throw new NegativeBalanceError(identity);
+    }
 
     await transactionalDpp.getStateRepository().storeIdentity(identity);
 
@@ -236,14 +244,14 @@ function deliverTxHandlerFactory(
     const actualStateTransitionOperations = stateTransition.getExecutionContext().getOperations();
 
     const {
-      storageCost: actualStorageCost,
-      processingCost: actualProcessingCost,
-    } = calculateOperationCosts(actualStateTransitionOperations);
+      storageFee: actualStorageFee,
+      processingFee: actualProcessingFee,
+    } = calculateOperationFees(actualStateTransitionOperations);
 
     const {
-      storageCost: predictedStorageCost,
-      processingCost: predictedProcessingCost,
-    } = calculateOperationCosts(predictedStateTransitionOperations);
+      storageFee: predictedStorageFee,
+      processingFee: predictedProcessingFee,
+    } = calculateOperationFees(predictedStateTransitionOperations);
 
     consensusLogger.trace(
       {
@@ -257,14 +265,14 @@ function deliverTxHandlerFactory(
         },
         fees: {
           predicted: {
-            storage: predictedStorageCost,
-            processing: predictedProcessingCost,
+            storage: predictedStorageFee,
+            processing: predictedProcessingFee,
             final: predictedStateTransitionFee,
             operations: predictedStateTransitionOperations.map((operation) => operation.toJSON()),
           },
           actual: {
-            storage: actualStorageCost,
-            processing: actualProcessingCost,
+            storage: actualStorageFee,
+            processing: actualProcessingFee,
             final: actualStateTransitionFee,
             operations: actualStateTransitionOperations.map((operation) => operation.toJSON()),
           },

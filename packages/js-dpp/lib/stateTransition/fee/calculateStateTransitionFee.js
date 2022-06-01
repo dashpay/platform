@@ -1,9 +1,8 @@
-const calculateOperationCosts = require('./calculateOperationCosts');
-
 const {
-  FEE_MULTIPLIER,
   DEFAULT_USER_TIP,
 } = require('./constants');
+
+const calculateOperationFees = require('./calculateOperationFees');
 
 /**
  * @typedef {calculateStateTransitionFee}
@@ -13,14 +12,14 @@ const {
 function calculateStateTransitionFee(stateTransition) {
   const executionContext = stateTransition.getExecutionContext();
 
-  const { storageCost, processingCost } = calculateOperationCosts(
+  const { storageFee, processingFee } = calculateOperationFees(
     executionContext.getOperations(),
   );
 
   // Is not implemented yet
   const storageRefund = 0;
 
-  return (storageCost + processingCost) * FEE_MULTIPLIER + DEFAULT_USER_TIP - storageRefund;
+  return (storageFee + processingFee) + DEFAULT_USER_TIP - storageRefund;
 }
 
 module.exports = calculateStateTransitionFee;
