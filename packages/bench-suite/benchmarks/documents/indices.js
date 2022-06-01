@@ -5,8 +5,6 @@ const TYPES = require('../../lib/benchmarks/types');
 const createIndices = require('../../lib/util/createIndices');
 const createProperties = require('../../lib/util/createProperties');
 
-let documents;
-
 module.exports = {
   title: '100 Indices',
 
@@ -41,36 +39,41 @@ module.exports = {
   },
 
   /**
-   * Return documents to create
+   * Number of documents to create for each type
    *
-   * this function calling for each document type
+   * We get 35x3 results running against local network
+   * since metrics are gathering from all 3 nodes
    *
-   * @param {string} type
-   * @returns {Object[]}
+   * @type {number}
    */
-  // eslint-disable-next-line no-unused-vars
-  documents: (type) => {
-    // Broadcast the same documents for each document type
-    if (documents) {
-      return documents;
-    }
+  documentsCount: 10,
 
-    // We get 35x3 results running against local network
-    // since metrics are gathering from all 3 nodes
-    documents = new Array(5).fill(null).map(() => {
-      const properties = {};
+  /**
+   * Return document data for specific document type to create
+   *
+   * Functions will be called "documentsCount" times
+   */
+  documentsData: {
+    /**
+     * Calls if specific document type function is not created
+     *
+     * @param {number} i - Call index
+     * @param {string} type - Document type
+     * @returns {Object}
+     */
+    $all() {
+      // Broadcast the same documents for each document type
+      const document = {};
 
       for (let i = 0; i < 100; i++) {
         const name = `property${i}`;
 
-        properties[name] = crypto.randomBytes(20)
+        document[name] = crypto.randomBytes(20)
           .toString('hex');
       }
 
-      return properties;
-    });
-
-    return documents;
+      return document;
+    },
   },
 
   /**
@@ -78,7 +81,7 @@ module.exports = {
    *
    * @type {number}
    */
-  requiredCredits: 100000,
+  requiredCredits: 2000000000,
 
   /**
    * Statistical function

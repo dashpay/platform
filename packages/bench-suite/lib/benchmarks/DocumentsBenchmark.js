@@ -1,24 +1,14 @@
 const { Suite, Test } = require('mocha');
 
-const { Table } = require('console-table-printer');
-
-const mathjs = require('mathjs');
-
-const crypto = require('crypto');
-
 const AbstractBenchmark = require('./AbstractBenchmark');
-const Match = require('../metrics/Match');
+const printMetrics = require('../metrics/drive/printMetrics');
+const createStateTransitionMatch = require('../metrics/drive/createStateTransitionMatch');
 
 class DocumentsBenchmark extends AbstractBenchmark {
   /**
    * @type {Object}
    */
   #metrics = {};
-
-  /**
-   * @type {Object}
-   */
-  #documentCounts = {}
 
   /**
    * @param {Context} context
@@ -63,8 +53,15 @@ class DocumentsBenchmark extends AbstractBenchmark {
     for (const documentType of Object.keys(documentTypes)) {
       const documentTypeSuite = new Suite(documentType, suite.ctx);
 
-      for (const documentProperties of this.config.documents(documentType)) {
+      let documentDataFunction = this.config.documentsData[documentType];
+      if (!documentDataFunction) {
+        documentDataFunction = this.config.documentsData.$all;
+      }
+
+      for (let i = 0; i < this.config.documentsCount; i++) {
         suite.addTest(new Test(`Create document ${documentType}`, async () => {
+          const documentProperties = await documentDataFunction(i, documentType);
+
           const document = await context.dash.platform.documents.create(
             `${this.config.title}.${documentType}`,
             context.identity,
@@ -80,36 +77,14 @@ class DocumentsBenchmark extends AbstractBenchmark {
             create: [document],
           }, context.identity);
 
-          const stHash = crypto
-            .createHash('sha256')
-            .update(stateTransition.toBuffer())
-            .digest()
-            .toString('hex')
-            .toUpperCase();
-
-          const match = new Match({
-            txId: stHash,
-            txType: stateTransition.getType(),
-            abciMethod: 'deliverTx',
-          }, (data) => {
-            if (!this.#metrics[documentType]) {
-              this.#metrics[documentType] = [];
-            }
-
-            this.#metrics[documentType].push({
-              timings: data.timings,
-              fees: data.fees,
-            });
-          });
+          const match = createStateTransitionMatch(
+            stateTransition,
+            documentType,
+            this.#metrics,
+          );
 
           this.matches.push(match);
         }));
-
-        if (!this.#documentCounts[documentType]) {
-          this.#documentCounts[documentType] = 0;
-        }
-
-        this.#documentCounts[documentType] += 1;
       }
 
       suite.addSuite(documentTypeSuite);
@@ -126,7 +101,7 @@ class DocumentsBenchmark extends AbstractBenchmark {
     console.log(`\n\n${this.config.title}\n${'-'.repeat(this.config.title.length)}`);
 
     Object.entries(this.#metrics).forEach(([documentType, metrics]) => {
-      this.#printDocumentTypeMetrics(documentType, metrics);
+      printMetrics(documentType, metrics, this.config);
     });
   }
 
@@ -135,98 +110,6 @@ class DocumentsBenchmark extends AbstractBenchmark {
    */
   getRequiredCredits() {
     return this.config.requiredCredits;
-  }
-
-  /**
-   * @private
-   * @param {string} documentType
-   * @param {{fees: Object, timings: Object}[]} metrics
-   */
-  #printDocumentTypeMetrics(documentType, metrics) {
-    const overall = [];
-    const validateBasic = [];
-    const validateFee = [];
-    const validateSignature = [];
-    const validateState = [];
-    const apply = [];
-
-    metrics.forEach((metric) => {
-      overall.push(metric.timings.overall);
-      validateBasic.push(metric.timings.validateBasic);
-      validateFee.push(metric.timings.validateFee);
-      validateSignature.push(metric.timings.validateSignature);
-      validateState.push(metric.timings.validateState);
-      apply.push(metric.timings.apply);
-    });
-
-    // eslint-disable-next-line no-console
-    console.log(`\n\n${this.#documentCounts[documentType]} "${documentType}" documents published and ${metrics.length} metrics collected:`);
-
-    const timingTable = new Table({
-      columns: [
-        { name: 'overall' },
-        { name: 'validateBasic' },
-        { name: 'validateFee' },
-        { name: 'validateSignature' },
-        { name: 'validateState' },
-        { name: 'apply' },
-      ],
-    });
-
-    if (this.config.avgOnly) {
-      timingTable.addRow({
-        overall: '...',
-        validateBasic: '...',
-        validateFee: '...',
-        validateSignature: '...',
-        validateState: '...',
-        apply: '...',
-      });
-    } else {
-      timingTable.addRows(
-        metrics.map((metric) => metric.timings),
-      );
-    }
-
-    const avgFunction = mathjs[this.config.avgFunction];
-
-    timingTable.addRow({
-      overall: avgFunction(overall).toFixed(3),
-      validateBasic: avgFunction(validateBasic).toFixed(3),
-      validateFee: avgFunction(validateFee).toFixed(3),
-      validateSignature: avgFunction(validateSignature).toFixed(3),
-      validateState: avgFunction(validateState).toFixed(3),
-      apply: avgFunction(apply).toFixed(3),
-    }, { color: 'white_bold', separator: true });
-
-    timingTable.printTable();
-
-    // eslint-disable-next-line no-console
-    console.log(`\n\n"${documentType}" fees:`);
-
-    const feeTable = new Table({
-      columns: [
-        { name: 'storage' },
-        { name: 'processing' },
-        { name: 'final' },
-      ],
-    });
-
-    feeTable.addRow({
-      storage: metrics[0].fees.storage,
-      processing: metrics[0].fees.processing,
-      final: metrics[0].fees.final,
-    });
-
-    feeTable.printTable();
-
-    // eslint-disable-next-line no-console
-    console.log(`\n\n"${documentType}" fee operations:\n`);
-
-    metrics[0].fees.operations.forEach((operation) => {
-      // eslint-disable-next-line no-console
-      console.log(operation);
-    });
   }
 }
 
