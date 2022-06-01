@@ -17,6 +17,7 @@ function createDataContractDocuments() {
   for (let i = 0; i < dataContractMetaSchema.$defs.documentProperties.maxProperties / 20; i++) {
     properties[`${i}${name}`.slice(0, 62)] = {
       type: 'string',
+      maxLength: 255,
     };
   }
 
@@ -336,7 +337,7 @@ describe('checkFeePrediction', () => {
     let dataContract;
 
     beforeEach(async () => {
-      // в 1 индекс все поля(100 штук) уникальные
+      // TODO in 1 index all fields (100) unique
       const dataContractDocuments = createDataContractDocuments();
       dataContract = dpp.dataContract.create(identity.getId(), dataContractDocuments);
       documents = [];
