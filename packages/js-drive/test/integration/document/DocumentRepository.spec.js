@@ -674,8 +674,6 @@ describe('DocumentRepository', function main() {
   let document;
   let documentSchema;
 
-  let dpp;
-
   beforeEach(async () => {
     const now = 86400;
     container = await createTestDIContainer();
@@ -793,7 +791,6 @@ describe('DocumentRepository', function main() {
     const createInitialStateStructure = container.resolve('createInitialStateStructure');
     await createInitialStateStructure();
 
-    dpp = container.resolve('dpp');
     dataContractRepository = container.resolve('dataContractRepository');
 
     await dataContractRepository.store(dataContract);
