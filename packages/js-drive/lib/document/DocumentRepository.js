@@ -132,7 +132,10 @@ class DocumentRepository {
     const result = await this.storage.get(
       documentTreePath,
       document.getId().toBuffer(),
-      options,
+      {
+        useTransaction: Boolean(options.useTransaction),
+        dryRun: Boolean(options.dryRun),
+      },
     );
 
     return new StorageResult(
@@ -160,22 +163,15 @@ class DocumentRepository {
    * @returns {Promise<StorageResult<Document[]>>}
    */
   async find(dataContract, documentType, options = {}) {
-    const documentSchema = dataContract.getDocumentSchema(documentType);
-
     const query = lodashCloneDeep(options);
+    let useTransaction = false;
 
-    const { useTransaction } = query;
-    delete query.useTransaction;
-    delete query.dryRun;
-
-    const result = this.validateQuery(query, documentSchema);
-
-    if (!result.isValid()) {
-      throw new InvalidQueryError(result.getErrors());
-    }
-
-    // Remove undefined options before we pass them to RS Drive
     if (typeof query === 'object' && !Array.isArray(query) && query !== null) {
+      ({ useTransaction } = query);
+      delete query.useTransaction;
+      delete query.dryRun;
+
+      // Remove undefined options before we pass them to RS Drive
       Object.keys(query)
         .forEach((queryOption) => {
           if (query[queryOption] === undefined) {
