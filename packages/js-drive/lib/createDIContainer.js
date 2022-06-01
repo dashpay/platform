@@ -60,11 +60,6 @@ const PublicKeyToIdentityIdStoreRepository = require(
 );
 
 const DataContractStoreRepository = require('./dataContract/DataContractStoreRepository');
-const findConflictingConditions = require('./document/query/findConflictingConditions');
-const findThreesomeOfIndexedProperties = require('./document/query/findThreesomeOfIndexedProperties');
-const sortWhereClausesAccordingToIndex = require('./document/query/sortWhereClausesAccordingToIndex');
-const findIndexedPropertiesSince = require('./document/query/findIndexedPropertiesSince');
-const validateQueryFactory = require('./document/query/validateQueryFactory');
 
 const fetchDocumentsFactory = require('./document/fetchDocumentsFactory');
 const BlockExecutionContext = require('./blockExecution/BlockExecutionContext');
@@ -120,7 +115,6 @@ const BlockExecutionContextStackRepository = require('./blockExecution/BlockExec
 const rotateSignedStoreFactory = require('./storage/rotateSignedStoreFactory');
 const BlockExecutionContextStack = require('./blockExecution/BlockExecutionContextStack');
 const createInitialStateStructureFactory = require('./state/createInitialStateStructureFactory');
-const findAppropriateIndex = require('./document/query/findAppropriateIndex');
 
 const registerSystemDataContractFactory = require('./state/registerSystemDataContractFactory');
 const registerTopLevelDomainFactory = require('./state/registerTopLevelDomainFactory');
@@ -536,26 +530,15 @@ function createDIContainer(options) {
    * Register Document
    */
   container.register({
-    sortWhereClausesAccordingToIndex: asValue(sortWhereClausesAccordingToIndex),
-    findAppropriateIndex: asValue(findAppropriateIndex),
-
     documentRepository: asFunction((
       groveDBStore,
-      validateQuery,
-    ) => new DocumentRepository(groveDBStore, validateQuery)).singleton(),
+    ) => new DocumentRepository(groveDBStore)).singleton(),
 
     signedDocumentRepository: asFunction((
       signedGroveDBStore,
-      validateQuery,
     ) => (new DocumentRepository(
       signedGroveDBStore,
-      validateQuery,
     ))).singleton(),
-
-    findConflictingConditions: asValue(findConflictingConditions),
-    findThreesomeOfIndexedProperties: asValue(findThreesomeOfIndexedProperties),
-    findIndexedPropertiesSince: asValue(findIndexedPropertiesSince),
-    validateQuery: asFunction(validateQueryFactory).singleton(),
 
     fetchDocuments: asFunction(fetchDocumentsFactory).singleton(),
 

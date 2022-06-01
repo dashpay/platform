@@ -21,7 +21,6 @@ const getDocumentsFixture = require('@dashevo/dpp/lib/test/fixtures/getDocuments
 const GrpcErrorCodes = require('@dashevo/grpc-common/lib/server/error/GrpcErrorCodes');
 const documentQueryHandlerFactory = require('../../../../../lib/abci/handlers/query/documentQueryHandlerFactory');
 const InvalidQueryError = require('../../../../../lib/document/errors/InvalidQueryError');
-const ValidationError = require('../../../../../lib/document/query/errors/ValidationError');
 
 const UnavailableAbciError = require('../../../../../lib/abci/errors/UnavailableAbciError');
 const InvalidArgumentAbciError = require('../../../../../lib/abci/errors/InvalidArgumentAbciError');
@@ -131,9 +130,7 @@ describe('documentQueryHandlerFactory', () => {
   });
 
   it('should throw InvalidArgumentAbciError on invalid query', async () => {
-    const error = new ValidationError('Invalid query');
-
-    fetchSignedDocumentsMock.throws(new InvalidQueryError([error]));
+    fetchSignedDocumentsMock.throws(new InvalidQueryError('invalid'));
 
     try {
       await documentQueryHandler(params, data, {});
@@ -142,13 +139,13 @@ describe('documentQueryHandlerFactory', () => {
     } catch (e) {
       expect(e).to.be.an.instanceof(InvalidArgumentAbciError);
       expect(e.getCode()).to.equal(GrpcErrorCodes.INVALID_ARGUMENT);
-      expect(e.getData()).to.deep.equal({ errors: [error] });
+      expect(e.getMessage()).to.equal('Invalid query: invalid');
       expect(fetchSignedDocumentsMock).to.be.calledOnceWith(data.contractId, data.type, options);
     }
   });
 
   it('should not proceed forward if createQueryResponse throws UnavailableAbciError', async () => {
-    createQueryResponseMock.throws(new UnavailableAbciError());
+    createQueryResponseMock.throws(new UnavailableAbciError('message'));
 
     try {
       await documentQueryHandler(params, data, {});
@@ -157,6 +154,7 @@ describe('documentQueryHandlerFactory', () => {
     } catch (e) {
       expect(e).to.be.an.instanceof(UnavailableAbciError);
       expect(e.getCode()).to.equal(GrpcErrorCodes.UNAVAILABLE);
+      expect(e.getMessage()).to.equal('message');
       expect(fetchSignedDocumentsMock).to.not.be.called();
     }
   });
