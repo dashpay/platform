@@ -369,7 +369,7 @@ describe('LoggedStateRepositoryDecorator', () => {
     });
   });
 
-  describe('#storeDocument', () => {
+  describe('#createDocument', () => {
     let document;
 
     beforeEach(() => {
@@ -379,26 +379,26 @@ describe('LoggedStateRepositoryDecorator', () => {
     it('should call logger with proper params', async () => {
       const response = undefined;
 
-      stateRepositoryMock.storeDocument.resolves(response);
+      stateRepositoryMock.createDocument.resolves(response);
 
-      await loggedStateRepositoryDecorator.storeDocument(document);
+      await loggedStateRepositoryDecorator.createDocument(document);
 
       expect(loggerMock.trace).to.be.calledOnceWithExactly({
         stateRepository: {
-          method: 'storeDocument',
+          method: 'createDocument',
           parameters: { document },
           response,
         },
-      }, 'StateRepository#storeDocument');
+      }, 'StateRepository#createDocument');
     });
 
     it('should call logger in case of error', async () => {
       const error = new Error('unknown error');
 
-      stateRepositoryMock.storeDocument.throws(error);
+      stateRepositoryMock.createDocument.throws(error);
 
       try {
-        await loggedStateRepositoryDecorator.storeDocument(document);
+        await loggedStateRepositoryDecorator.createDocument(document);
 
         expect.fail('should throw an error');
       } catch (e) {
@@ -407,11 +407,57 @@ describe('LoggedStateRepositoryDecorator', () => {
 
       expect(loggerMock.trace).to.be.calledOnceWithExactly({
         stateRepository: {
-          method: 'storeDocument',
+          method: 'createDocument',
           parameters: { document },
           response: undefined,
         },
-      }, 'StateRepository#storeDocument');
+      }, 'StateRepository#createDocument');
+    });
+  });
+
+  describe('#updateDocument', () => {
+    let document;
+
+    beforeEach(() => {
+      [document] = getDocumentsFixture();
+    });
+
+    it('should call logger with proper params', async () => {
+      const response = undefined;
+
+      stateRepositoryMock.updateDocument.resolves(response);
+
+      await loggedStateRepositoryDecorator.updateDocument(document);
+
+      expect(loggerMock.trace).to.be.calledOnceWithExactly({
+        stateRepository: {
+          method: 'updateDocument',
+          parameters: { document },
+          response,
+        },
+      }, 'StateRepository#updateDocument');
+    });
+
+    it('should call logger in case of error', async () => {
+      const error = new Error('unknown error');
+
+      stateRepositoryMock.updateDocument.throws(error);
+
+      try {
+        await loggedStateRepositoryDecorator.updateDocument(document);
+
+        expect.fail('should throw an error');
+      } catch (e) {
+        expect(e).equals(error);
+      }
+
+      expect(loggerMock.trace).to.be.calledOnceWithExactly({
+        stateRepository: {
+          method: 'updateDocument',
+          parameters: { document },
+          response: undefined,
+        },
+      }, 'StateRepository#updateDocument');
     });
   });
 

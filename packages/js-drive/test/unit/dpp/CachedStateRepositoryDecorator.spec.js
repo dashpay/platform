@@ -30,7 +30,8 @@ describe('CachedStateRepositoryDecorator', () => {
       fetchTransaction: this.sinon.stub(),
       fetchDataContract: this.sinon.stub(),
       storeIdentity: this.sinon.stub(),
-      storeDocument: this.sinon.stub(),
+      createDocument: this.sinon.stub(),
+      updateDocument: this.sinon.stub(),
       removeDocument: this.sinon.stub(),
       storeIdentityPublicKeyHashes: this.sinon.stub(),
       fetchLatestPlatformBlockHeader: this.sinon.stub(),
@@ -115,13 +116,23 @@ describe('CachedStateRepositoryDecorator', () => {
     });
   });
 
-  describe('#storeDocument', () => {
-    it('should store document in repository', async () => {
+  describe('#createDocument', () => {
+    it('should create document in repository', async () => {
       const [document] = documents;
 
-      await cachedStateRepository.storeDocument(document);
+      await cachedStateRepository.createDocument(document);
 
-      expect(stateRepositoryMock.storeDocument).to.be.calledOnceWith(document);
+      expect(stateRepositoryMock.createDocument).to.be.calledOnceWith(document);
+    });
+  });
+
+  describe('#updateDocument', () => {
+    it('should update document in repository', async () => {
+      const [document] = documents;
+
+      await cachedStateRepository.updateDocument(document);
+
+      expect(stateRepositoryMock.updateDocument).to.be.calledOnceWith(document);
     });
   });
 

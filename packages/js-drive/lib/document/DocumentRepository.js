@@ -27,9 +27,8 @@ class DocumentRepository {
   }
 
   /**
-   * Store document
+   * Create document
    *
-   * @param {DataContract} document
    * @param {Document} document
    * @param {Object} [options]
    * @param {boolean} [options.useTransaction=false]
@@ -37,33 +36,18 @@ class DocumentRepository {
    *
    * @return {Promise<StorageResult<void>>}
    */
-  async store(document, options = {}) {
-    const isExistsResult = await this.isExist(document, options);
-
+  async create(document, options = {}) {
     let processingCost;
     let storageCost;
 
-    let method = 'createDocument';
-
     try {
-      if (isExistsResult.getValue()) {
-        method = 'updateDocument';
-        ([storageCost, processingCost] = await this.storage.getDrive()
-          .updateDocument(
-            document,
-            new Date('2022-03-17T15:08:26.132Z'),
-            Boolean(options.useTransaction),
-            Boolean(options.dryRun),
-          ));
-      } else {
-        ([storageCost, processingCost] = await this.storage.getDrive()
-          .createDocument(
-            document,
-            new Date('2022-03-17T15:08:26.132Z'),
-            Boolean(options.useTransaction),
-            Boolean(options.dryRun),
-          ));
-      }
+      ([storageCost, processingCost] = await this.storage.getDrive()
+        .createDocument(
+          document,
+          new Date('2022-03-17T15:08:26.132Z'),
+          Boolean(options.useTransaction),
+          Boolean(options.dryRun),
+        ));
     } finally {
       if (this.logger) {
         this.logger.info({
@@ -73,15 +57,60 @@ class DocumentRepository {
               document.toBuffer(),
             ).digest('hex'),
           useTransaction: Boolean(options.useTransaction),
+          dryRun: Boolean(options.dryRun),
           appHash: (await this.storage.getRootHash(options)).toString('hex'),
-        }, method);
+        }, 'createDocument');
       }
     }
 
     return new StorageResult(
       undefined,
       [
-        ...isExistsResult.getOperations(),
+        new PreCalculatedOperation(storageCost, processingCost),
+      ],
+    );
+  }
+
+  /**
+   * Update document
+   *
+   * @param {Document} document
+   * @param {Object} [options]
+   * @param {boolean} [options.useTransaction=false]
+   * @param {boolean} [options.dryRun=false]
+   *
+   * @return {Promise<StorageResult<void>>}
+   */
+  async update(document, options = {}) {
+    let processingCost;
+    let storageCost;
+
+    try {
+      ([storageCost, processingCost] = await this.storage.getDrive()
+        .updateDocument(
+          document,
+          new Date('2022-03-17T15:08:26.132Z'),
+          Boolean(options.useTransaction),
+          Boolean(options.dryRun),
+        ));
+    } finally {
+      if (this.logger) {
+        this.logger.info({
+          document: document.toBuffer().toString('hex'),
+          documentHash: createHash('sha256')
+            .update(
+              document.toBuffer(),
+            ).digest('hex'),
+          useTransaction: Boolean(options.useTransaction),
+          dryRun: Boolean(options.dryRun),
+          appHash: (await this.storage.getRootHash(options)).toString('hex'),
+        }, 'updateDocument');
+      }
+    }
+
+    return new StorageResult(
+      undefined,
+      [
         new PreCalculatedOperation(storageCost, processingCost),
       ],
     );

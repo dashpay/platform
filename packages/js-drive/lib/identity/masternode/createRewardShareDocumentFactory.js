@@ -61,7 +61,7 @@ function createRewardShareDocumentFactory(
 
     rewardShareDocument.id = Identifier.from(rewardShareDocumentIdSeed);
 
-    await documentRepository.store(rewardShareDocument, {
+    await documentRepository.create(rewardShareDocument, {
       useTransaction: true,
     });
 

@@ -90,11 +90,12 @@ describe('applyDocumentsBatchTransitionFactory', () => {
       executionContext,
     );
 
-    expect(stateRepositoryMock.storeDocument).to.have.been.calledTwice();
+    expect(stateRepositoryMock.createDocument).to.have.been.calledOnce();
+    expect(stateRepositoryMock.updateDocument).to.have.been.calledOnce();
 
     const callsArgs = [
-      ...stateRepositoryMock.storeDocument.getCall(0).args,
-      ...stateRepositoryMock.storeDocument.getCall(1).args,
+      ...stateRepositoryMock.createDocument.getCall(0).args,
+      ...stateRepositoryMock.updateDocument.getCall(0).args,
     ];
 
     expect(callsArgs).to.have.deep.members([
@@ -162,7 +163,7 @@ describe('applyDocumentsBatchTransitionFactory', () => {
     newDocument.setData(documentTransition.getData());
     newDocument.setUpdatedAt(documentTransition.getUpdatedAt());
 
-    expect(stateRepositoryMock.storeDocument).to.have.been.calledOnceWithExactly(
+    expect(stateRepositoryMock.updateDocument).to.have.been.calledOnceWithExactly(
       newDocument,
       executionContext,
     );

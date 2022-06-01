@@ -112,7 +112,7 @@ describe('DataContractStoreRepository', () => {
       expect(dataContract.toObject()).to.deep.equal(fetchedOneMoreDataContract.toObject());
     });
 
-    it('should store Data Contract with dry run', async () => {
+    it('should not store Data Contract with dry run', async () => {
       const result = await repository.store(
         dataContract,
         { dryRun: true },
@@ -126,15 +126,7 @@ describe('DataContractStoreRepository', () => {
         DataContractStoreRepository.DATA_CONTRACT_KEY,
       );
 
-      const [protocolVersion, rawDataContract] = decodeProtocolEntity(
-        encodedDataContractResult.getValue(),
-      );
-
-      rawDataContract.protocolVersion = protocolVersion;
-
-      const fetchedDataContract = new DataContract(rawDataContract);
-
-      expect(dataContract.toObject()).to.deep.equal(fetchedDataContract.toObject());
+      expect(encodedDataContractResult.getValue()).to.be.null();
     });
   });
 
@@ -204,10 +196,7 @@ describe('DataContractStoreRepository', () => {
       expect(result).to.be.instanceOf(StorageResult);
       expect(result.getOperations().length).to.be.greaterThan(0);
 
-      const storedDataContract = result.getValue();
-
-      expect(storedDataContract).to.be.an.instanceof(DataContract);
-      expect(storedDataContract.toObject()).to.deep.equal(storedDataContract.toObject());
+      expect(result.getValue()).to.be.null();
     });
   });
 

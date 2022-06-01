@@ -1,6 +1,7 @@
 const getDataContractFixture = require('@dashevo/dpp/lib/test/fixtures/getDataContractFixture');
 const getDocumentsFixture = require('@dashevo/dpp/lib/test/fixtures/getDocumentsFixture');
 const Identifier = require('@dashevo/dpp/lib/identifier/Identifier');
+const Document = require('@dashevo/dpp/lib/document/Document');
 const createTestDIContainer = require('../../../lib/test/createTestDIContainer');
 const createDocumentTypeTreePath = require('../../../lib/document/groveDB/createDocumentTreePath');
 const InvalidQueryError = require('../../../lib/document/errors/InvalidQueryError');
@@ -10,7 +11,7 @@ const StorageResult = require('../../../lib/storage/StorageResult');
 async function createDocuments(documentRepository, documents) {
   return Promise.all(
     documents.map(async (o) => {
-      const result = await documentRepository.store(o);
+      const result = await documentRepository.create(o);
 
       expect(result).to.be.instanceOf(StorageResult);
       expect(result.getOperations().length).to.be.greaterThan(0);
@@ -28,7 +29,10 @@ describe('DocumentRepository', function main() {
   let document;
   let documentSchema;
 
+  let dpp;
+
   beforeEach(async () => {
+    const now = 86400;
     container = await createTestDIContainer();
 
     dataContract = getDataContractFixture();
@@ -42,6 +46,7 @@ describe('DocumentRepository', function main() {
       // const arrayItem = { item: i + 1, flag: true };
 
       currentDocument.set('order', i);
+      currentDocument.set('$createdAt', now);
       // currentDocument.set('arrayWithScalar', Array(i + 1)
       //   .fill(1)
       //   .map((item, index) => i + index));
@@ -141,6 +146,7 @@ describe('DocumentRepository', function main() {
     await createInitialStateStructure();
 
     const dataContractRepository = container.resolve('dataContractRepository');
+    dpp = container.resolve('dpp');
 
     await dataContractRepository.store(dataContract);
   });
@@ -151,12 +157,12 @@ describe('DocumentRepository', function main() {
     }
   });
 
-  describe('#store', () => {
+  describe('#create', () => {
     beforeEach(async () => {
       await createDocuments(documentRepository, documents);
     });
 
-    it('should store Document', async () => {
+    it('should create Document', async () => {
       const documentTypeTreePath = createDocumentTypeTreePath(
         document.getDataContract(),
         document.getType(),
@@ -174,14 +180,14 @@ describe('DocumentRepository', function main() {
       expect(document.toBuffer()).to.deep.equal(result.value);
     });
 
-    it('should store Document in transaction', async () => {
+    it('should create Document in transaction', async () => {
       await documentRepository.delete(dataContract, document.getType(), document.getId());
 
       await documentRepository
         .storage
         .startTransaction();
 
-      await documentRepository.store(document, {
+      await documentRepository.create(document, {
         useTransaction: true,
       });
 
@@ -221,10 +227,10 @@ describe('DocumentRepository', function main() {
       expect(document.toBuffer()).to.deep.equal(createdDocument.value);
     });
 
-    it('should not store Document on dry run', async () => {
+    it('should not create Document on dry run', async () => {
       await documentRepository.delete(dataContract, document.getType(), document.getId());
 
-      await documentRepository.store(document, {
+      await documentRepository.create(document, {
         dryRun: true,
       });
 
@@ -247,6 +253,110 @@ describe('DocumentRepository', function main() {
       } catch (e) {
         expect(e.message.startsWith('path key not found: key not found in Merk')).to.be.true();
       }
+    });
+  });
+
+  describe('#update', () => {
+    let replaceDocument;
+
+    beforeEach(async () => {
+      await createDocuments(documentRepository, documents);
+
+      replaceDocument = new Document({
+        ...documents[1].toObject(),
+        lastName: 'NotSoShiny',
+      }, dataContract);
+    });
+
+    it('should update Document', async () => {
+      const updateResult = await documentRepository.update(replaceDocument);
+
+      expect(updateResult).to.be.instanceOf(StorageResult);
+      expect(updateResult.getOperations().length).to.be.greaterThan(0);
+
+      const documentTypeTreePath = createDocumentTypeTreePath(
+        replaceDocument.getDataContract(),
+        replaceDocument.getType(),
+      );
+
+      const documentTreePath = documentTypeTreePath.concat(
+        [Buffer.from([0])],
+      );
+
+      const result = await documentRepository
+        .storage
+        .db
+        .get(documentTreePath, replaceDocument.getId().toBuffer(), false);
+
+      expect(replaceDocument.toBuffer()).to.deep.equal(result.value);
+    });
+
+    it('should store Document in transaction', async () => {
+      await documentRepository
+        .storage
+        .startTransaction();
+
+      const updateResult = await documentRepository.update(replaceDocument, {
+        useTransaction: true,
+      });
+
+      expect(updateResult).to.be.instanceOf(StorageResult);
+      expect(updateResult.getOperations().length).to.be.greaterThan(0);
+
+      const documentTypeTreePath = createDocumentTypeTreePath(
+        replaceDocument.getDataContract(),
+        replaceDocument.getType(),
+      );
+
+      const documentTreePath = documentTypeTreePath.concat(
+        [Buffer.from([0])],
+      );
+
+      const transactionDocument = await documentRepository
+        .storage
+        .db
+        .get(documentTreePath, replaceDocument.getId().toBuffer(), true);
+
+      const notUpdatedDocument = await documentRepository
+        .storage
+        .db
+        .get(documentTreePath, replaceDocument.getId().toBuffer(), false);
+
+      await documentRepository.storage.commitTransaction();
+
+      const createdDocument = await documentRepository
+        .storage
+        .db
+        .get(documentTreePath, replaceDocument.getId().toBuffer(), false);
+
+      expect(replaceDocument.toBuffer()).to.deep.equal(transactionDocument.value);
+      expect(replaceDocument.toBuffer()).to.deep.equal(createdDocument.value);
+      expect(documents[1].toBuffer()).to.deep.equal(notUpdatedDocument.value);
+    });
+
+    it('should not update Document on dry run', async () => {
+      const updateResult = await documentRepository.update(replaceDocument, {
+        dryRun: true,
+      });
+
+      expect(updateResult).to.be.instanceOf(StorageResult);
+      expect(updateResult.getOperations().length).to.be.greaterThan(0);
+
+      const documentTypeTreePath = createDocumentTypeTreePath(
+        replaceDocument.getDataContract(),
+        replaceDocument.getType(),
+      );
+
+      const documentTreePath = documentTypeTreePath.concat(
+        [Buffer.from([0])],
+      );
+
+      const notUpdatedDocument = await documentRepository
+        .storage
+        .db
+        .get(documentTreePath, replaceDocument.getId().toBuffer(), false);
+
+      expect(documents[1].toBuffer()).to.deep.equal(notUpdatedDocument.value);
     });
   });
 
@@ -652,7 +762,7 @@ describe('DocumentRepository', function main() {
             const svDoc = document;
 
             svDoc.id = Identifier.from(Buffer.alloc(32, i + 1));
-            await documentRepository.store(svDoc);
+            await documentRepository.create(svDoc);
           }
 
           const result = await documentRepository.find(dataContract, document.getType());
@@ -820,7 +930,7 @@ describe('DocumentRepository', function main() {
           let i = 0;
           for (const svDoc of documents) {
             svDoc.id = Identifier.from(Buffer.alloc(32, i + 1));
-            await documentRepository.store(svDoc);
+            await documentRepository.create(svDoc);
             i++;
             createdIds.push(svDoc.id);
           }

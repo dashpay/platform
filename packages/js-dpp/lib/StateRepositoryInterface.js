@@ -42,11 +42,22 @@
  */
 
 /**
- * Store document
+ * Create document
  *
  * @async
  * @method
- * @name StateRepository#storeDocument
+ * @name StateRepository#createDocument
+ * @param {Document} document
+ * @param {StateTransitionExecutionContext} [StateTransitionExecutionContext]
+ * @returns {Promise<void>}
+ */
+
+/**
+ * Update document
+ *
+ * @async
+ * @method
+ * @name StateRepository#updateDocument
  * @param {Document} document
  * @param {StateTransitionExecutionContext} [StateTransitionExecutionContext]
  * @returns {Promise<void>}

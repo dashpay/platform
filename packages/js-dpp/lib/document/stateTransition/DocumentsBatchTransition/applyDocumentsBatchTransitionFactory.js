@@ -74,7 +74,7 @@ function applyDocumentsBatchTransitionFactory(
 
             newDocument.setRevision(documentTransition.getRevision());
 
-            return stateRepository.storeDocument(newDocument, executionContext);
+            return stateRepository.createDocument(newDocument, executionContext);
           }
           case AbstractDocumentTransition.ACTIONS.REPLACE: {
             let document;
@@ -111,7 +111,7 @@ function applyDocumentsBatchTransitionFactory(
               document.setUpdatedAt(documentTransition.getUpdatedAt());
             }
 
-            return stateRepository.storeDocument(document, executionContext);
+            return stateRepository.updateDocument(document, executionContext);
           }
           case AbstractDocumentTransition.ACTIONS.DELETE: {
             return stateRepository.removeDocument(

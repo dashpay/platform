@@ -123,7 +123,7 @@ describe('applyIdentityUpdateTransition', () => {
     expect(biggestPossibleIdentity.getRevision()).to.equal(stateTransition.getRevision());
   });
 
-  it('should not disable public key on dry run', async () => {
+  it('should use biggestPossibleIdentity on dry run', async () => {
     const biggestPossibleIdentity = getBiggestPossibleIdentity();
 
     stateTransition.setPublicKeysToAdd(undefined);
@@ -145,12 +145,5 @@ describe('applyIdentityUpdateTransition', () => {
       biggestPossibleIdentity,
       executionContext,
     );
-
-    const [id] = stateTransition.getPublicKeyIdsToDisable();
-
-    expect(biggestPossibleIdentity.getPublicKeyById(id).getDisabledAt())
-      .to.equal(undefined);
-
-    expect(biggestPossibleIdentity.getRevision()).to.equal(stateTransition.getRevision());
   });
 });

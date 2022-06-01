@@ -295,7 +295,7 @@ describe('validateDocumentsBatchTransitionStateFactory', () => {
     expect(Buffer.isBuffer(error.getDocumentId())).to.be.true();
     expect(error.getDocumentId()).to.deep.equal(documentTransitions[0].getId().toBuffer());
 
-    учзусе(ИгааукюшыИгааук(уккщкюпуеВщсгьутеЩцтукШв()))юещюиуюекгу()ж
+    expect(Buffer.isBuffer(error.getDocumentOwnerId())).to.be.true();
     expect(error.getDocumentOwnerId()).to.deep.equal(
       replaceDocument.getOwnerId().toBuffer(),
     );

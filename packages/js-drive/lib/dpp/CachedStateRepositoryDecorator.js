@@ -151,15 +151,27 @@ class CachedStateRepositoryDecorator {
   }
 
   /**
-   * Store document
+   * Create document
    *
    * @param {Document} document
    * @param {StateTransitionExecutionContext} [executionContext]
    *
    * @returns {Promise<void>}
    */
-  async storeDocument(document, executionContext = undefined) {
-    return this.stateRepository.storeDocument(document, executionContext);
+  async createDocument(document, executionContext = undefined) {
+    return this.stateRepository.createDocument(document, executionContext);
+  }
+
+  /**
+   * Update document
+   *
+   * @param {Document} document
+   * @param {StateTransitionExecutionContext} [executionContext]
+   *
+   * @returns {Promise<void>}
+   */
+  async updateDocument(document, executionContext = undefined) {
+    return this.stateRepository.updateDocument(document, executionContext);
   }
 
   /**

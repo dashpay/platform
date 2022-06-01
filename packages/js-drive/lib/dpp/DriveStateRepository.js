@@ -256,15 +256,34 @@ class DriveStateRepository {
   }
 
   /**
-   * Store document
+   * Create document
    *
    * @param {Document} document
    * @param {StateTransitionExecutionContext} [executionContext]
    *
    * @returns {Promise<void>}
    */
-  async storeDocument(document, executionContext = undefined) {
-    const result = await this.documentRepository.store(
+  async createDocument(document, executionContext = undefined) {
+    const result = await this.documentRepository.create(
+      document,
+      this.#createRepositoryOptions(executionContext),
+    );
+
+    if (executionContext) {
+      executionContext.addOperation(...result.getOperations());
+    }
+  }
+
+  /**
+   * Update document
+   *
+   * @param {Document} document
+   * @param {StateTransitionExecutionContext} [executionContext]
+   *
+   * @returns {Promise<void>}
+   */
+  async updateDocument(document, executionContext = undefined) {
+    const result = await this.documentRepository.update(
       document,
       this.#createRepositoryOptions(executionContext),
     );

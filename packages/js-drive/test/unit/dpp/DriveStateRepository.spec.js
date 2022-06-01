@@ -59,7 +59,8 @@ describe('DriveStateRepository', () => {
     fetchDocumentsMock = this.sinon.stub();
 
     documentsRepositoryMock = {
-      store: this.sinon.stub(),
+      create: this.sinon.stub(),
+      update: this.sinon.stub(),
       find: this.sinon.stub(),
       delete: this.sinon.stub(),
     };
@@ -320,17 +321,39 @@ describe('DriveStateRepository', () => {
     });
   });
 
-  describe('#storeDocument', () => {
-    it('should store document in repository', async () => {
-      documentsRepositoryMock.store.resolves(
+  describe('#createDocument', () => {
+    it('should create document in repository', async () => {
+      documentsRepositoryMock.create.resolves(
         new StorageResult(undefined, operations),
       );
 
       const [document] = documents;
 
-      await stateRepository.storeDocument(document, executionContext);
+      await stateRepository.createDocument(document, executionContext);
 
-      expect(documentsRepositoryMock.store).to.be.calledOnceWith(
+      expect(documentsRepositoryMock.create).to.be.calledOnceWith(
+        document,
+        {
+          useTransaction: repositoryOptions.useTransaction,
+          dryRun: false,
+        },
+      );
+
+      expect(executionContext.getOperations()).to.deep.equals(operations);
+    });
+  });
+
+  describe('#updateDocument', () => {
+    it('should store document in repository', async () => {
+      documentsRepositoryMock.update.resolves(
+        new StorageResult(undefined, operations),
+      );
+
+      const [document] = documents;
+
+      await stateRepository.updateDocument(document, executionContext);
+
+      expect(documentsRepositoryMock.update).to.be.calledOnceWith(
         document,
         {
           useTransaction: repositoryOptions.useTransaction,
