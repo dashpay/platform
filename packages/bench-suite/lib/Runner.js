@@ -39,6 +39,7 @@ class Runner {
       reporter: options.verbose ? 'spec' : 'nyan',
       timeout: 650000,
       bail: true,
+      fullTrace: options.verbose,
     });
 
     this.#driveMetricsCollector = new DriveMetricsCollector(options.driveLogPath);
