@@ -15,26 +15,27 @@ function createDataContractDocuments() {
 
   const properties = {};
 
-  // we need to fit 16kb size
+  // we need to fit 16kb size limit
   for (let i = 0; i < dataContractMetaSchema.$defs.documentProperties.maxProperties; i++) {
-    properties[`${i}${name}`.slice(0, 4)] = {
+    properties[`${name.slice(0, 4)}${i}`] = {
       type: 'string',
-      maxLength: 255,
+      maxLength: 62,
     };
   }
 
   const documents = {};
 
-  for (let i = 0; i < dataContractMetaSchema.properties.documents.maxProperties / 50; i++) {
+  for (let i = 0; i < dataContractMetaSchema.properties.documents.maxProperties; i++) {
     const indices = [{
-      properties: Object.keys(properties).map((propertyName) => ({
+      name: 'index1',
+      properties: Object.keys(properties).slice(0, 10).map((propertyName) => ({
         [propertyName]:
       'asc',
       })),
       unique: true,
     }];
 
-    documents[`${i}${name}`.slice(0, 62)] = {
+    documents[`${name}${i}`.slice(0, 62)] = {
       type: 'object',
       properties,
       additionalProperties: false,
@@ -343,6 +344,9 @@ describe('checkFeePrediction', () => {
     beforeEach(async () => {
       const dataContractDocuments = createDataContractDocuments();
       dataContract = dpp.dataContract.create(identity.getId(), dataContractDocuments);
+      const validationResult = await dpp.dataContract.validate(dataContract);
+      expect(validationResult.isValid()).to.be.true();
+
       documents = [];
 
       let i = 0;
@@ -350,7 +354,7 @@ describe('checkFeePrediction', () => {
         const data = {};
 
         for (const propertyName of Object.keys(dataContractDocuments[documentType].properties)) {
-          data[propertyName] = new Array(63).fill('d').join('');
+          data[propertyName] = new Array(62).fill('d').join('');
         }
 
         const document = dpp.document.create(
