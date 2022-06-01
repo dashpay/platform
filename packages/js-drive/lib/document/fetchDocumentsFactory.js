@@ -2,8 +2,7 @@ const IdentifierError = require('@dashevo/dpp/lib/identifier/errors/IdentifierEr
 const Identifier = require('@dashevo/dpp/lib/identifier/Identifier');
 
 const InvalidQueryError = require('./errors/InvalidQueryError');
-const InvalidDocumentTypeError = require('./query/errors/InvalidDocumentTypeError');
-const InvalidContractIdError = require('./query/errors/InvalidContractIdError');
+
 /**
  * @param {DocumentRepository} documentRepository
  * @param {DataContractStoreRepository} dataContractRepository
@@ -31,9 +30,7 @@ function fetchDocumentsFactory(
       contractIdIdentifier = new Identifier(contractId);
     } catch (e) {
       if (e instanceof IdentifierError) {
-        const error = new InvalidContractIdError(contractId);
-
-        throw new InvalidQueryError([error]);
+        throw new InvalidQueryError(`invalid data contract ID: ${e.message}`);
       }
 
       throw e;
@@ -49,9 +46,7 @@ function fetchDocumentsFactory(
       const dataContractResult = await dataContractRepository.fetch(contractIdIdentifier);
 
       if (dataContractResult.isNull()) {
-        const error = new InvalidContractIdError(contractIdIdentifier);
-
-        throw new InvalidQueryError([error]);
+        throw new InvalidQueryError(`data contract ${contractIdIdentifier} not found`);
       }
 
       dataContract = dataContractResult.getValue();
@@ -61,9 +56,7 @@ function fetchDocumentsFactory(
     }
 
     if (!dataContract.isDocumentDefined(type)) {
-      const error = new InvalidDocumentTypeError(type);
-
-      throw new InvalidQueryError([error]);
+      throw new InvalidQueryError(`document type ${type} is not defined in the data contract`);
     }
 
     const result = await documentRepository.find(

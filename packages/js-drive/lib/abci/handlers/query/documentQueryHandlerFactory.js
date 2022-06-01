@@ -85,10 +85,7 @@ function documentQueryHandlerFactory(
       });
     } catch (e) {
       if (e instanceof InvalidQueryError) {
-        throw new InvalidArgumentAbciError(
-          `Invalid query: ${e.getErrors()[0].message}`,
-          { errors: e.getErrors() },
-        );
+        throw new InvalidArgumentAbciError(`Invalid query: ${e.message}`);
       }
 
       throw e;

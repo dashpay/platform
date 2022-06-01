@@ -1,6 +1,6 @@
 {
   "name": "@dashevo/dpp",
-  "version": "0.23.0-dev.1",
+  "version": "0.23.0-dev.2",
   "description": "The JavaScript implementation of the Dash Platform Protocol",
   "scripts": {
     "lint": "eslint .",
@@ -83,7 +83,7 @@
   },
   "dependencies": {
     "@apidevtools/json-schema-ref-parser": "^8.0.0",
-    "@dashevo/dashcore-lib": "github:dashevo/dashcore-lib#abda555010353b6180cba22ece6a846c9b5b8220",
+    "@dashevo/dashcore-lib": "github:dashevo/dashcore-lib#867f7c71f27298cf14738e7387d9436c3dbe03a5",
     "@dashevo/dashpay-contract": "workspace:~",
     "@dashevo/dpns-contract": "workspace:~",
     "@dashevo/feature-flags-contract": "workspace:~",

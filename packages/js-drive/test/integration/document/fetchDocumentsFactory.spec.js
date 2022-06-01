@@ -5,7 +5,6 @@ const generateRandomIdentifier = require('@dashevo/dpp/lib/test/utils/generateRa
 const InvalidQueryError = require('../../../lib/document/errors/InvalidQueryError');
 
 const createTestDIContainer = require('../../../lib/test/createTestDIContainer');
-const NotIndexedPropertiesInWhereConditionsError = require('../../../lib/document/query/errors/NotIndexedPropertiesInWhereConditionsError');
 const StorageResult = require('../../../lib/storage/StorageResult');
 
 describe('fetchDocumentsFactory', () => {
@@ -196,12 +195,7 @@ describe('fetchDocumentsFactory', () => {
       expect.fail('should throw InvalidQueryError');
     } catch (e) {
       expect(e).to.be.instanceOf(InvalidQueryError);
-      expect(e.getErrors()).to.be.an('array');
-      expect(e.getErrors()).to.have.lengthOf(1);
-
-      const [error] = e.getErrors();
-
-      expect(error.getContractId()).to.be.deep.equal(contractId);
+      expect(e.message).to.equal('invalid data contract ID: Identifier expects Buffer');
     }
   });
 
@@ -216,12 +210,7 @@ describe('fetchDocumentsFactory', () => {
       expect.fail('should throw InvalidQueryError');
     } catch (e) {
       expect(e).to.be.instanceOf(InvalidQueryError);
-      expect(e.getErrors()).to.be.an('array');
-      expect(e.getErrors()).to.have.lengthOf(1);
-
-      const [error] = e.getErrors();
-
-      expect(error.getContractId()).to.be.deep.equal(contractId);
+      expect(e.message).to.equal(`data contract ${contractId} not found`);
     }
   });
 
@@ -236,12 +225,7 @@ describe('fetchDocumentsFactory', () => {
       expect.fail('should throw InvalidQueryError');
     } catch (e) {
       expect(e).to.be.instanceOf(InvalidQueryError);
-      expect(e.getErrors()).to.be.an('array');
-      expect(e.getErrors()).to.have.lengthOf(1);
-
-      const [error] = e.getErrors();
-
-      expect(error.getDocumentType()).to.be.equal(documentType);
+      expect(e.message).to.equal('document type Unknown is not defined in the data contract');
     }
   });
 
@@ -256,12 +240,6 @@ describe('fetchDocumentsFactory', () => {
       expect.fail('should throw InvalidQueryError');
     } catch (e) {
       expect(e).to.be.instanceOf(InvalidQueryError);
-      expect(e.getErrors()).to.be.an('array');
-      expect(e.getErrors()).to.have.lengthOf(1);
-
-      const [error] = e.getErrors();
-
-      expect(error).to.be.instanceOf(NotIndexedPropertiesInWhereConditionsError);
     }
   });
 });

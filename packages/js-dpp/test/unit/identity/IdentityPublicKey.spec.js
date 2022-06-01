@@ -252,4 +252,22 @@ describe('IdentityPublicKey', () => {
       });
     });
   });
+
+  describe('#isMaster', () => {
+    it('should return true when public key has MASTER security level', () => {
+      publicKey.securityLevel = IdentityPublicKey.SECURITY_LEVELS.MASTER;
+
+      const result = publicKey.isMaster();
+
+      expect(result).to.be.true();
+    });
+
+    it('should return false when public key doesn\'t have MASTER security level', () => {
+      publicKey.securityLevel = IdentityPublicKey.SECURITY_LEVELS.HIGH;
+
+      const result = publicKey.isMaster();
+
+      expect(result).to.be.false();
+    });
+  });
 });

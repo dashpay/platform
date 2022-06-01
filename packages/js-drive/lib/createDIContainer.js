@@ -60,11 +60,6 @@ const PublicKeyToIdentityIdStoreRepository = require(
 );
 
 const DataContractStoreRepository = require('./dataContract/DataContractStoreRepository');
-const findConflictingConditions = require('./document/query/findConflictingConditions');
-const findThreesomeOfIndexedProperties = require('./document/query/findThreesomeOfIndexedProperties');
-const sortWhereClausesAccordingToIndex = require('./document/query/sortWhereClausesAccordingToIndex');
-const findIndexedPropertiesSince = require('./document/query/findIndexedPropertiesSince');
-const validateQueryFactory = require('./document/query/validateQueryFactory');
 
 const fetchDocumentsFactory = require('./document/fetchDocumentsFactory');
 const BlockExecutionContext = require('./blockExecution/BlockExecutionContext');
@@ -120,7 +115,6 @@ const BlockExecutionContextStackRepository = require('./blockExecution/BlockExec
 const rotateSignedStoreFactory = require('./storage/rotateSignedStoreFactory');
 const BlockExecutionContextStack = require('./blockExecution/BlockExecutionContextStack');
 const createInitialStateStructureFactory = require('./state/createInitialStateStructureFactory');
-const findAppropriateIndex = require('./document/query/findAppropriateIndex');
 
 const registerSystemDataContractFactory = require('./state/registerSystemDataContractFactory');
 const registerTopLevelDomainFactory = require('./state/registerTopLevelDomainFactory');
@@ -157,9 +151,13 @@ const fetchTransactionFactory = require('./core/fetchTransactionFactory');
  * @param {string} options.CORE_ZMQ_CONNECTION_RETRIES
  * @param {string} options.NETWORK
  * @param {string} options.DPNS_MASTER_PUBLIC_KEY
+ * @param {string} options.DPNS_SECOND_PUBLIC_KEY
  * @param {string} options.DASHPAY_MASTER_PUBLIC_KEY
+ * @param {string} options.DASHPAY_SECOND_PUBLIC_KEY
  * @param {string} options.FEATURE_FLAGS_MASTER_PUBLIC_KEY
+ * @param {string} options.FEATURE_FLAGS_SECOND_PUBLIC_KEY
  * @param {string} options.MASTERNODE_REWARD_SHARES_MASTER_PUBLIC_KEY
+ * @param {string} options.MASTERNODE_REWARD_SHARES_SECOND_PUBLIC_KEY
  * @param {string} options.INITIAL_CORE_CHAINLOCKED_HEIGHT
  * @param {string} options.VALIDATOR_SET_LLMQ_TYPE
  * @param {string} options.TENDERDASH_P2P_PORT
@@ -177,17 +175,32 @@ function createDIContainer(options) {
   if (!options.DPNS_MASTER_PUBLIC_KEY) {
     throw new Error('DPNS_MASTER_PUBLIC_KEY must be set');
   }
+  if (!options.DPNS_SECOND_PUBLIC_KEY) {
+    throw new Error('DPNS_SECOND_PUBLIC_KEY must be set');
+  }
 
   if (!options.DASHPAY_MASTER_PUBLIC_KEY) {
     throw new Error('DASHPAY_MASTER_PUBLIC_KEY must be set');
+  }
+
+  if (!options.DASHPAY_SECOND_PUBLIC_KEY) {
+    throw new Error('DASHPAY_SECOND_PUBLIC_KEY must be set');
   }
 
   if (!options.FEATURE_FLAGS_MASTER_PUBLIC_KEY) {
     throw new Error('FEATURE_FLAGS_MASTER_PUBLIC_KEY must be set');
   }
 
+  if (!options.FEATURE_FLAGS_SECOND_PUBLIC_KEY) {
+    throw new Error('FEATURE_FLAGS_SECOND_PUBLIC_KEY must be set');
+  }
+
   if (!options.MASTERNODE_REWARD_SHARES_MASTER_PUBLIC_KEY) {
     throw new Error('MASTERNODE_REWARD_SHARES_MASTER_PUBLIC_KEY must be set');
+  }
+
+  if (!options.MASTERNODE_REWARD_SHARES_SECOND_PUBLIC_KEY) {
+    throw new Error('MASTERNODE_REWARD_SHARES_SECOND_PUBLIC_KEY must be set');
   }
 
   const container = createAwilixContainer({
@@ -252,9 +265,14 @@ function createDIContainer(options) {
     masternodeRewardSharesOwnerId: asValue(
       Identifier.from(masternodeRewardsSystemIds.ownerId),
     ),
-    masternodeRewardSharesOwnerPublicKey: asValue(
+    masternodeRewardSharesOwnerMasterPublicKey: asValue(
       PublicKey.fromString(
         options.MASTERNODE_REWARD_SHARES_MASTER_PUBLIC_KEY,
+      ),
+    ),
+    masternodeRewardSharesOwnerSecondPublicKey: asValue(
+      PublicKey.fromString(
+        options.MASTERNODE_REWARD_SHARES_SECOND_PUBLIC_KEY,
       ),
     ),
     masternodeRewardSharesDocuments: asValue(
@@ -266,25 +284,40 @@ function createDIContainer(options) {
     featureFlagsOwnerId: asValue(
       Identifier.from(featureFlagsSystemIds.ownerId),
     ),
-    featureFlagsOwnerPublicKey: asValue(
+    featureFlagsOwnerMasterPublicKey: asValue(
       PublicKey.fromString(
         options.FEATURE_FLAGS_MASTER_PUBLIC_KEY,
+      ),
+    ),
+    featureFlagsOwnerSecondPublicKey: asValue(
+      PublicKey.fromString(
+        options.FEATURE_FLAGS_SECOND_PUBLIC_KEY,
       ),
     ),
     featureFlagsDocuments: asValue(featureFlagsDocuments),
     dpnsContractId: asValue(Identifier.from(dpnsSystemIds.contractId)),
     dpnsOwnerId: asValue(Identifier.from(dpnsSystemIds.ownerId)),
-    dpnsOwnerPublicKey: asValue(
+    dpnsOwnerMasterPublicKey: asValue(
       PublicKey.fromString(
         options.DPNS_MASTER_PUBLIC_KEY,
+      ),
+    ),
+    dpnsOwnerSecondPublicKey: asValue(
+      PublicKey.fromString(
+        options.DPNS_SECOND_PUBLIC_KEY,
       ),
     ),
     dpnsDocuments: asValue(dpnsDocuments),
     dashpayContractId: asValue(Identifier.from(dashpaySystemIds.contractId)),
     dashpayOwnerId: asValue(Identifier.from(dashpaySystemIds.ownerId)),
-    dashpayOwnerPublicKey: asValue(
+    dashpayOwnerMasterPublicKey: asValue(
       PublicKey.fromString(
         options.DASHPAY_MASTER_PUBLIC_KEY,
+      ),
+    ),
+    dashpayOwnerSecondPublicKey: asValue(
+      PublicKey.fromString(
+        options.DASHPAY_SECOND_PUBLIC_KEY,
       ),
     ),
     dashpayDocuments: asValue(dashpayDocuments),
@@ -497,26 +530,15 @@ function createDIContainer(options) {
    * Register Document
    */
   container.register({
-    sortWhereClausesAccordingToIndex: asValue(sortWhereClausesAccordingToIndex),
-    findAppropriateIndex: asValue(findAppropriateIndex),
-
     documentRepository: asFunction((
       groveDBStore,
-      validateQuery,
-    ) => new DocumentRepository(groveDBStore, validateQuery)).singleton(),
+    ) => new DocumentRepository(groveDBStore)).singleton(),
 
     signedDocumentRepository: asFunction((
       signedGroveDBStore,
-      validateQuery,
     ) => (new DocumentRepository(
       signedGroveDBStore,
-      validateQuery,
     ))).singleton(),
-
-    findConflictingConditions: asValue(findConflictingConditions),
-    findThreesomeOfIndexedProperties: asValue(findThreesomeOfIndexedProperties),
-    findIndexedPropertiesSince: asValue(findIndexedPropertiesSince),
-    validateQuery: asFunction(validateQueryFactory).singleton(),
 
     fetchDocuments: asFunction(fetchDocumentsFactory).singleton(),
 

@@ -49,7 +49,7 @@ describe('waitForTransactionToBeProvableFactory', () => {
     transactionNotFoundError = new Error();
 
     transactionNotFoundError.code = -32603;
-    transactionNotFoundError.data = `tx (${hashString}) not found`;
+    transactionNotFoundError.data = `tx (${hashString}) not found, err: %!w(<nil>)`;
   });
 
   it('should return existing transaction ok result when next block arrived', async () => {

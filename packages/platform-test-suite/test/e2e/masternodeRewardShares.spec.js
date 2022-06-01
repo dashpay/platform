@@ -73,6 +73,8 @@ describe('Masternode Reward Shares', () => {
     let anotherRewardShare;
     let ownerPrivateKey;
     let masternodeIdentity;
+    let derivedPrivateKey;
+    let signaturePublicKeyId;
 
     before(async function before() {
       if (!process.env.MASTERNODE_REWARD_SHARES_OWNER_PRIVATE_KEY
@@ -91,6 +93,69 @@ describe('Masternode Reward Shares', () => {
       expect(masternodeIdentity).to.exist();
 
       await client.platform.identities.topUp(masternodeIdentity.getId(), 50000);
+
+      // Since we cannot create "High" level key for masternode Identities automatically,
+      // (this key is used to sign state transitions, other than "update")
+      // we add this key here
+      const account = await client.platform.client.getWalletAccount();
+
+      const identityIndex = await account.getUnusedIdentityIndex();
+
+      ({ privateKey: derivedPrivateKey } = account
+        .identities
+        .getIdentityHDKeyByIndex(identityIndex, 1));
+
+      const identityPublicKey = derivedPrivateKey.toPublicKey().toBuffer();
+
+      signaturePublicKeyId = masternodeIdentity.getPublicKeyMaxId() + 1;
+
+      const newPublicKey = new IdentityPublicKey(
+        {
+          id: signaturePublicKeyId,
+          type: IdentityPublicKey.TYPES.ECDSA_SECP256K1,
+          purpose: IdentityPublicKey.PURPOSES.AUTHENTICATION,
+          securityLevel: IdentityPublicKey.SECURITY_LEVELS.HIGH,
+          data: identityPublicKey,
+          readOnly: false,
+        },
+      );
+
+      const update = {
+        add: [newPublicKey],
+      };
+
+      const stateTransition = dpp.identity.createIdentityUpdateTransition(
+        masternodeIdentity,
+        update,
+      );
+
+      const signerKey = masternodeIdentity.getPublicKeys()[0];
+
+      const promises = stateTransition.getPublicKeysToAdd().map(async (publicKey) => {
+        // const privateKey = privateKeys[publicKey.getId()];
+
+        stateTransition.setSignaturePublicKeyId(signerKey.getId());
+
+        await stateTransition.signByPrivateKey(derivedPrivateKey, publicKey.getType());
+
+        publicKey.setSignature(stateTransition.getSignature());
+
+        stateTransition.setSignature(undefined);
+        stateTransition.setSignaturePublicKeyId(undefined);
+      });
+
+      await Promise.all(promises);
+
+      stateTransition.setSignaturePublicKeyId(0);
+
+      await stateTransition.signByPrivateKey(
+        ownerPrivateKey,
+        IdentityPublicKey.TYPES.ECDSA_SECP256K1,
+      );
+
+      await client.platform.broadcastStateTransition(
+        stateTransition,
+      );
     });
 
     it('should be able to create reward shares with existing identity', async () => {
@@ -109,10 +174,10 @@ describe('Masternode Reward Shares', () => {
         create: [rewardShare],
       });
 
-      stateTransition.setSignaturePublicKeyId(0);
+      stateTransition.setSignaturePublicKeyId(signaturePublicKeyId);
 
       await stateTransition.signByPrivateKey(
-        ownerPrivateKey,
+        derivedPrivateKey,
         IdentityPublicKey.TYPES.ECDSA_SECP256K1,
       );
 
@@ -137,10 +202,10 @@ describe('Masternode Reward Shares', () => {
         create: [invalidRewardShare],
       });
 
-      stateTransition.setSignaturePublicKeyId(0);
+      stateTransition.setSignaturePublicKeyId(signaturePublicKeyId);
 
       await stateTransition.signByPrivateKey(
-        ownerPrivateKey,
+        derivedPrivateKey,
         IdentityPublicKey.TYPES.ECDSA_SECP256K1,
       );
 
@@ -163,10 +228,10 @@ describe('Masternode Reward Shares', () => {
         replace: [rewardShare],
       });
 
-      stateTransition.setSignaturePublicKeyId(0);
+      stateTransition.setSignaturePublicKeyId(signaturePublicKeyId);
 
       await stateTransition.signByPrivateKey(
-        ownerPrivateKey,
+        derivedPrivateKey,
         IdentityPublicKey.TYPES.ECDSA_SECP256K1,
       );
 
@@ -202,10 +267,10 @@ describe('Masternode Reward Shares', () => {
         replace: [rewardShare],
       });
 
-      stateTransition.setSignaturePublicKeyId(0);
+      stateTransition.setSignaturePublicKeyId(signaturePublicKeyId);
 
       await stateTransition.signByPrivateKey(
-        ownerPrivateKey,
+        derivedPrivateKey,
         IdentityPublicKey.TYPES.ECDSA_SECP256K1,
       );
 
@@ -237,10 +302,10 @@ describe('Masternode Reward Shares', () => {
         create: [anotherRewardShare],
       });
 
-      stateTransition.setSignaturePublicKeyId(0);
+      stateTransition.setSignaturePublicKeyId(signaturePublicKeyId);
 
       await stateTransition.signByPrivateKey(
-        ownerPrivateKey,
+        derivedPrivateKey,
         IdentityPublicKey.TYPES.ECDSA_SECP256K1,
       );
 
@@ -261,10 +326,10 @@ describe('Masternode Reward Shares', () => {
         delete: [rewardShare],
       });
 
-      stateTransition.setSignaturePublicKeyId(0);
+      stateTransition.setSignaturePublicKeyId(signaturePublicKeyId);
 
       await stateTransition.signByPrivateKey(
-        ownerPrivateKey,
+        derivedPrivateKey,
         IdentityPublicKey.TYPES.ECDSA_SECP256K1,
       );
 
@@ -302,13 +367,13 @@ describe('Masternode Reward Shares', () => {
         create: [rewardShare],
       });
 
-      stateTransition.setSignaturePublicKeyId(0);
+      stateTransition.setSignaturePublicKeyId(1);
 
       const account = await client.getWalletAccount();
 
       const { privateKey } = account.identities.getIdentityHDKeyById(
         identity.getId().toString(),
-        0,
+        1,
       );
 
       await stateTransition.signByPrivateKey(

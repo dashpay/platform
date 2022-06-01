@@ -57,6 +57,8 @@ class Account extends EventEmitter {
     if (!_.has(wallet, 'walletId')) throw new Error('Missing walletID to create an account');
     this.walletId = wallet.walletId;
 
+    logger.debug(`Loading up wallet ${this.walletId}`);
+
     this.identities = wallet.identities;
     this.chainSyncMediator = wallet.chainSyncMediator;
 
