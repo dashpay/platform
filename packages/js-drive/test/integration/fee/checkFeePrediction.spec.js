@@ -11,14 +11,12 @@ const getBiggestPossibleIdentity = require('@dashevo/dpp/lib/identity/getBiggest
 const createTestDIContainer = require('../../../lib/test/createTestDIContainer');
 
 function createDataContractDocuments() {
-  const name = new Array(4).fill('a').join('');
+  const name = new Array(62).fill('a').join('');
 
   const properties = {};
 
   // we need to fit 16kb size
-  const propertiesAmount = dataContractMetaSchema.$defs.documentProperties.maxProperties / 6;
-
-  for (let i = 0; i < propertiesAmount; i++) {
+  for (let i = 0; i < dataContractMetaSchema.$defs.documentProperties.maxProperties; i++) {
     properties[`${i}${name}`.slice(0, 4)] = {
       type: 'string',
       maxLength: 255,
@@ -27,7 +25,7 @@ function createDataContractDocuments() {
 
   const documents = {};
 
-  for (let i = 0; i < propertiesAmount; i++) {
+  for (let i = 0; i < dataContractMetaSchema.properties.documents.maxProperties / 50; i++) {
     const indices = [{
       properties: Object.keys(properties).map((propertyName) => ({
         [propertyName]:
