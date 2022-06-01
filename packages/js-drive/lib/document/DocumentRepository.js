@@ -3,24 +3,19 @@ const { createHash } = require('crypto');
 const PreCalculatedOperation = require('@dashevo/dpp/lib/stateTransition/fee/operations/PreCalculatedOperation');
 const createDocumentTypeTreePath = require('./groveDB/createDocumentTreePath');
 const InvalidQueryError = require('./errors/InvalidQueryError');
-const StartDocumentNotFoundError = require('./query/errors/StartDocumentNotFoundError');
-const ValidationError = require('./query/errors/ValidationError');
 const StorageResult = require('../storage/StorageResult');
 
 class DocumentRepository {
   /**
    *
    * @param {GroveDBStore} groveDBStore
-   * @param {validateQuery} validateQuery
    * @param {BaseLogger} [logger]
    */
   constructor(
     groveDBStore,
-    validateQuery,
     logger = undefined,
   ) {
     this.storage = groveDBStore;
-    this.validateQuery = validateQuery;
     this.logger = logger;
   }
 
@@ -125,22 +120,16 @@ class DocumentRepository {
    * @returns {Promise<StorageResult<Document[]>>}
    */
   async find(dataContract, documentType, query = {}, useTransaction = false) {
-    const documentSchema = dataContract.getDocumentSchema(documentType);
-
-    const result = this.validateQuery(query, documentSchema);
-
-    if (!result.isValid()) {
-      throw new InvalidQueryError(result.getErrors());
-    }
-
     // Remove undefined options before we pass them to RS Drive
-    Object.keys(query)
-      .forEach((queryOption) => {
-        if (query[queryOption] === undefined) {
-          // eslint-disable-next-line no-param-reassign
-          delete query[queryOption];
-        }
-      });
+    if (typeof query === 'object' && !Array.isArray(query) && query !== null) {
+      Object.keys(query)
+        .forEach((queryOption) => {
+          if (query[queryOption] === undefined) {
+            // eslint-disable-next-line no-param-reassign
+            delete query[queryOption];
+          }
+        });
+    }
 
     try {
       const [documents, , processingCost] = await this.storage.getDrive()
@@ -158,26 +147,16 @@ class DocumentRepository {
         ],
       );
     } catch (e) {
-      const invalidQueryMessagePrefix = 'query: start document not found error: ';
+      if (e.message.startsWith('query: ')) {
+        throw new InvalidQueryError(e.message.substring(7, e.message.length));
+      }
 
-      if (e.message.startsWith(invalidQueryMessagePrefix)) {
-        let validationError;
+      if (e.message.startsWith('structure: ')) {
+        throw new InvalidQueryError(e.message.substring(11, e.message.length));
+      }
 
-        if (e.message === `${invalidQueryMessagePrefix}startAt document not found`) {
-          validationError = new StartDocumentNotFoundError('startAt');
-        }
-
-        if (e.message === `${invalidQueryMessagePrefix}startAfter document not found`) {
-          validationError = new StartDocumentNotFoundError('startAfter');
-        }
-
-        if (!validationError) {
-          validationError = new ValidationError(
-            e.message.substring(invalidQueryMessagePrefix.length),
-          );
-        }
-
-        throw new InvalidQueryError([validationError]);
+      if (e.message.startsWith('contract: ')) {
+        throw new InvalidQueryError(e.message.substring(10, e.message.length));
       }
 
       throw e;
