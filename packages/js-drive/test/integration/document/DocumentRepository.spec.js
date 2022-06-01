@@ -2721,6 +2721,8 @@ describe('DocumentRepository', function main() {
         });
 
         it('should return invalid result if sorting applied to not range condition', async () => {
+          this.skip('will be implemented later');
+
           try {
             await documentRepository.find(queryDataContract, 'documentString', {
               where: [['a', '==', 'b']],
