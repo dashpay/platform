@@ -78,4 +78,7 @@ pub enum QueryError {
     Validation(&'static str),
     #[error("where condition properties number error: {0}")]
     WhereConditionPropertiesNumber(&'static str),
+
+    #[error("starts with illegal string error: {0}")]
+    StartsWithIllegalString(&'static str),
 }
