@@ -188,6 +188,13 @@ const queryDocumentSchema = {
           { e: 'asc' },
         ],
       },
+      {
+        name: 'three',
+        properties: [
+          { firstName: 'asc' },
+          { lastName: 'asc' },
+        ],
+      },
     ],
   },
   documentA: {
@@ -516,6 +523,13 @@ const validQueries = [
     orderBy: [
       ['firstName', 'asc'],
     ],
+  },
+  {
+    where: [
+      ['firstName', '==', '1'],
+      ['lastName', '==', '2'],
+    ],
+    limit: 1,
   },
 ];
 
@@ -2498,11 +2512,7 @@ describe('DocumentRepository', function main() {
           typesTestCases.object,
           typesTestCases.number,
         ].forEach(({ type, value }) => {
-          it(`should return invalid result if "startAt" is not a buffer, but ${type}`, async function it() {
-            if (type === 'buffer') {
-              this.skip();
-            }
-
+          it(`should return invalid result if "startAt" is not a buffer, but ${type}`, async () => {
             try {
               await documentRepository.find(queryDataContract, 'documentNumber', {
                 startAt: value,
@@ -2720,7 +2730,7 @@ describe('DocumentRepository', function main() {
           }
         });
 
-        it('should return invalid result if sorting applied to not range condition', async () => {
+        it('should return invalid result if sorting applied to not range condition', async function it() {
           this.skip('will be implemented later');
 
           try {
