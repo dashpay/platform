@@ -48,7 +48,7 @@ function registerTopLevelDomainFactory(
     domainDocument.id = dashDomainDocumentId;
     domainDocument.createdAt = genesisDate;
 
-    await documentRepository.store(domainDocument, {
+    await documentRepository.create(domainDocument, {
       useTransaction: true,
     });
   }
