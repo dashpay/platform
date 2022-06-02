@@ -2,7 +2,6 @@ import { Client as _Client } from './Client';
 import { Core as _Core } from './Core';
 import { Platform as _Platform } from './Platform';
 import { default as _DAPIClient } from '@dashevo/dapi-client';
-import { default as _DashPlatformProtocol } from '@dashevo/dpp';
 
 import { StateTransitionBroadcastError } from '../errors/StateTransitionBroadcastError'
 
@@ -37,7 +36,7 @@ export namespace SDK {
     utils: _WalletLibUtils,
   }
 
-  export let PlatformProtocol = _DashPlatformProtocol;
+  export let PlatformProtocol = Platform.DashPlatformProtocol;
 
   export let Essentials = {
     Buffer,
