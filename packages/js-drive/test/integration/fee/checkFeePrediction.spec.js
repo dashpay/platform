@@ -2,10 +2,7 @@ const getInstantAssetLockProofFixture = require('@dashevo/dpp/lib/test/fixtures/
 const IdentityPublicKey = require('@dashevo/dpp/lib/identity/IdentityPublicKey');
 const PrivateKey = require('@dashevo/dashcore-lib/lib/privatekey');
 const identityCreateTransitionSchema = require('@dashevo/dpp/schema/identity/stateTransition/identityCreate.json');
-const identityTopUpTransitionSchema = require('@dashevo/dpp/schema/identity/stateTransition/identityTopUp.json');
 const identityUpdateTransitionSchema = require('@dashevo/dpp/schema/identity/stateTransition/identityUpdate.json');
-const dataContractCreateTransitionSchema = require('@dashevo/dpp/schema/dataContract/stateTransition/dataContractCreate.json');
-const documentsBatchTransitionSchema = require('@dashevo/dpp/schema/document/stateTransition/documentsBatch.json');
 const dataContractMetaSchema = require('@dashevo/dpp/schema/dataContract/dataContractMeta.json');
 const getBiggestPossibleIdentity = require('@dashevo/dpp/lib/identity/getBiggestPossibleIdentity');
 const createTestDIContainer = require('../../../lib/test/createTestDIContainer');
@@ -54,8 +51,11 @@ describe('checkFeePrediction', () => {
   let identity;
   let groveDBStore;
   let initialAppHash;
+  let privateKey;
 
   beforeEach(async function beforeEach() {
+    privateKey = 'af432c476f65211f45f48f1d42c9c0b497e56696aa1736b40544ef1a496af837';
+
     container = await createTestDIContainer();
 
     const blockExecutionContext = container.resolve('blockExecutionContext');
@@ -78,7 +78,7 @@ describe('checkFeePrediction', () => {
       publicKeys.push(new IdentityPublicKey({
         id: i,
         type: IdentityPublicKey.TYPES.ECDSA_SECP256K1,
-        data: new PrivateKey().toPublicKey().toBuffer(),
+        data: new PrivateKey(i === 0 ? privateKey : undefined).toPublicKey().toBuffer(),
         purpose: IdentityPublicKey.PURPOSES.AUTHENTICATION,
         securityLevel: IdentityPublicKey.SECURITY_LEVELS.MASTER,
         readOnly: false,
@@ -104,9 +104,7 @@ describe('checkFeePrediction', () => {
   describe('Identity', () => {
     it('should check that IdentityCreateTransition predicted fee > real fee', async () => {
       const stateTransition = dpp.identity.createIdentityCreateTransition(identity);
-
-      const signature = Buffer.alloc(identityCreateTransitionSchema.properties.signature.maxItems, '1');
-      stateTransition.setSignature(signature);
+      await stateTransition.signByPrivateKey(privateKey, IdentityPublicKey.TYPES.ECDSA_SECP256K1);
 
       const executionContext = stateTransition.getExecutionContext();
 
@@ -154,8 +152,7 @@ describe('checkFeePrediction', () => {
         instantAssetLockProof,
       );
 
-      const signature = Buffer.alloc(identityTopUpTransitionSchema.properties.signature.maxItems, '1');
-      stateTransition.setSignature(signature);
+      await stateTransition.signByPrivateKey(privateKey, IdentityPublicKey.TYPES.ECDSA_SECP256K1);
 
       const executionContext = stateTransition.getExecutionContext();
 
@@ -218,8 +215,8 @@ describe('checkFeePrediction', () => {
         },
       );
 
-      const signature = Buffer.alloc(identityTopUpTransitionSchema.properties.signature.maxItems, '255');
-      stateTransition.setSignature(signature);
+      await stateTransition.signByPrivateKey(privateKey, IdentityPublicKey.TYPES.ECDSA_SECP256K1);
+
       stateTransition.setSignaturePublicKeyId(Number.MAX_VALUE);
       stateTransition.setPublicKeysDisabledAt(new Date(Number.MAX_VALUE));
 
@@ -269,8 +266,7 @@ describe('checkFeePrediction', () => {
       const stateTransition = dpp.dataContract.createDataContractCreateTransition(dataContract);
 
       stateTransition.setSignaturePublicKeyId(Number.MAX_VALUE);
-      const signature = Buffer.alloc(dataContractCreateTransitionSchema.properties.signature.maxItems, '1');
-      stateTransition.setSignature(signature);
+      await stateTransition.signByPrivateKey(privateKey, IdentityPublicKey.TYPES.ECDSA_SECP256K1);
 
       const executionContext = stateTransition.getExecutionContext();
 
@@ -382,8 +378,7 @@ describe('checkFeePrediction', () => {
       });
 
       stateTransition.setSignaturePublicKeyId(Number.MAX_VALUE);
-      const signature = Buffer.alloc(documentsBatchTransitionSchema.properties.signature.maxItems, '1');
-      stateTransition.setSignature(signature);
+      await stateTransition.signByPrivateKey(privateKey, IdentityPublicKey.TYPES.ECDSA_SECP256K1);
 
       const executionContext = stateTransition.getExecutionContext();
       await stateRepository.storeDataContract(dataContract, executionContext);

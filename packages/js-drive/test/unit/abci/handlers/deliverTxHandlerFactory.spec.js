@@ -26,6 +26,8 @@ const LoggerMock = require('../../../../lib/test/mock/LoggerMock');
 const DPPValidationAbciError = require('../../../../lib/abci/errors/DPPValidationAbciError');
 
 const InvalidArgumentAbciError = require('../../../../lib/abci/errors/InvalidArgumentAbciError');
+const PredictedFeeLowerThanActualError = require('../../../../lib/abci/handlers/errors/PredictedFeeLowerThanActualError');
+const NegativeBalanceError = require('../../../../lib/abci/handlers/errors/NegativeBalanceError');
 
 describe('deliverTxHandlerFactory', () => {
   let deliverTxHandler;
@@ -56,7 +58,7 @@ describe('deliverTxHandlerFactory', () => {
     dataContractCreateTransitionFixture = dpp
       .dataContract.createDataContractCreateTransition(dataContractFixture);
 
-    documentRequest = {
+      documentRequest = {
       tx: documentsBatchTransitionFixture.toBuffer(),
     };
 
@@ -208,6 +210,40 @@ describe('deliverTxHandlerFactory', () => {
       expect(e.getCode()).to.equal(GrpcErrorCodes.INVALID_ARGUMENT);
       expect(blockExecutionContextMock.incrementCumulativeFees).to.not.be.called();
       expect(dppMock.stateTransition.validate).to.not.be.called();
+    }
+  });
+
+  it('should throw PredictedFeeLowerThanActualError if actual fee > predicted fee', async function it () {
+    dataContractCreateTransitionFixture.calculateFee = this.sinon.stub().returns(0);
+
+    dataContractCreateTransitionFixture.calculateFee.onCall(1).returns(10);
+
+    unserializeStateTransitionMock.resolves(dataContractCreateTransitionFixture);
+
+    try {
+      await deliverTxHandler(documentRequest);
+
+      expect.fail('should throw InvalidArgumentAbciError error');
+    } catch (e) {
+      expect(e).to.be.instanceOf(PredictedFeeLowerThanActualError);
+      expect(e.getStateTransition().toBuffer())
+        .to.deep.equal(dataContractCreateTransitionFixture.toBuffer());
+    }
+  });
+
+  it('should throw NegativeBalanceError if balance < fee', async function it () {
+    dataContractCreateTransitionFixture.calculateFee = this.sinon.stub().returns(0);
+
+    dataContractCreateTransitionFixture.calculateFee.returns(100);
+
+    unserializeStateTransitionMock.resolves(dataContractCreateTransitionFixture);
+
+    try {
+      await deliverTxHandler(documentRequest);
+
+      expect.fail('should throw InvalidArgumentAbciError error');
+    } catch (e) {
+      expect(e).to.be.instanceOf(NegativeBalanceError);
     }
   });
 });
