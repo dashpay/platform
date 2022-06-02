@@ -58,7 +58,7 @@ describe('deliverTxHandlerFactory', () => {
     dataContractCreateTransitionFixture = dpp
       .dataContract.createDataContractCreateTransition(dataContractFixture);
 
-      documentRequest = {
+    documentRequest = {
       tx: documentsBatchTransitionFixture.toBuffer(),
     };
 
@@ -213,7 +213,7 @@ describe('deliverTxHandlerFactory', () => {
     }
   });
 
-  it('should throw PredictedFeeLowerThanActualError if actual fee > predicted fee', async function it () {
+  it('should throw PredictedFeeLowerThanActualError if actual fee > predicted fee', async function it() {
     dataContractCreateTransitionFixture.calculateFee = this.sinon.stub().returns(0);
 
     dataContractCreateTransitionFixture.calculateFee.onCall(1).returns(10);
@@ -231,7 +231,7 @@ describe('deliverTxHandlerFactory', () => {
     }
   });
 
-  it('should throw NegativeBalanceError if balance < fee', async function it () {
+  it('should throw NegativeBalanceError if balance < fee', async function it() {
     dataContractCreateTransitionFixture.calculateFee = this.sinon.stub().returns(0);
 
     dataContractCreateTransitionFixture.calculateFee.returns(100);
