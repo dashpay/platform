@@ -9,7 +9,7 @@ const createClientWithFundedWallet = require('../../../lib/test/createClientWith
 const parseStoreTreeProof = require('../../../lib/parseStoreTreeProof');
 const hashFunction = require('../../../lib/proofHashFunction');
 
-describe('Platform', () => {
+describe.skip('Platform', () => {
   describe('waitForStateTransitionResult', () => {
     let dpp;
     let client;
