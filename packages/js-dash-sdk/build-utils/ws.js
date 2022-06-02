@@ -1,3 +1,7 @@
+/**
+ * WebSocket shim for webpack browser builds
+ */
+
 var ws;
 
 if (typeof WebSocket !== 'undefined') {

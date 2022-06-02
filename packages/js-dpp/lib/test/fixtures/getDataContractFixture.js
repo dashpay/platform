@@ -10,7 +10,8 @@ const createDPPMock = require('../mocks/createDPPMock');
 /**
  *
  * @param {Buffer} [ownerId]
- * @param {DataContractFactory} [DataContractFactoryClass]
+ * @param {DataContractFactory} [DataContractFactoryClass] - needed for usage in other scopes
+ * aside from dpp tests (platform-test-suite in karma)
  * @return {DataContract}
  */
 module.exports = function getDataContractFixture(

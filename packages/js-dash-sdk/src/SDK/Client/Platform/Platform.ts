@@ -132,8 +132,9 @@ export class Platform {
     ]);
 
     /**
-     * A set of internal functions used for essential Platform interactions
-     * @private
+     * A set of internal functions used for essential Platform interactions.
+     * This exposure is mainly required for usage in browser tests where SDK bundled into a single file
+     * @protected
      */
     protected internal: Internal;
 

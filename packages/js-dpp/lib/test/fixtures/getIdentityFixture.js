@@ -9,8 +9,10 @@ const randomIdentifier = generateRandomIdentifier();
 
 /**
  * @param {Identifier} id
- * @param {Identity} [IdentityClass]
- * @param {IdentityPublicKey} [IdentityPublicKeyClass]
+ * @param {Identity} [IdentityClass]  - needed for usage in other scopes
+ * aside from dpp tests (platform-test-suite in karma)
+ * @param {IdentityPublicKey} [IdentityPublicKeyClass]  - needed for usage in other scopes
+ * aside from dpp tests (platform-test-suite in karma)
  * @return {Identity}
  */
 module.exports = function getIdentityFixture(
