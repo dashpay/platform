@@ -1,5 +1,6 @@
 const EventEmitter = require('events');
-const { SpvChain } = require('@dashevo/dash-spv');
+const { BlockHeader } = require('@dashevo/dashcore-lib');
+const { SpvChain } = require('../../../../../dash-spv/index');
 
 const BlockHeadersReader = require('./BlockHeadersReader');
 
@@ -13,8 +14,8 @@ const BlockHeadersReader = require('./BlockHeadersReader');
  */
 const defaultOptions = {
   network: 'testnet',
-  maxParallelStreams: 5,
-  targetBatchSize: 100000,
+  maxParallelStreams: 10,
+  targetBatchSize: 50000,
   fromBlockHeight: 1,
   maxRetries: 10,
   autoStart: false,
@@ -22,6 +23,8 @@ const defaultOptions = {
 
 const EVENTS = {
   ERROR: 'error',
+  CHAIN_UPDATED: 'CHAIN_UPDATED',
+  HISTORICAL_DATA_OBTAINED: 'HISTORICAL_DATA_OBTAINED',
 };
 
 class BlockHeadersProvider extends EventEmitter {
@@ -61,7 +64,16 @@ class BlockHeadersProvider extends EventEmitter {
     this.spvChain = spvChain;
   }
 
-  async start() {
+  /**
+   * Inits block headers stream
+   *
+   * @param fromBlockHeight
+   * @param toBlockHeight
+   * @returns {Promise<void>}
+   */
+  // 2cbcf83b62913d56f605c0e581a48872839428c92e5eb76cd7ad94bcaf0b0000
+  // 2cbcf83b62913d56f605c0e581a48872839428c92e5eb76cd7ad94bcaf0b0000
+  async start(fromBlockHeight = 1, toBlockHeight) {
     if (!this.coreMethods) {
       throw new Error('Core methods have not been provided. Please use "setCoreMethods"');
     }
@@ -70,7 +82,7 @@ class BlockHeadersProvider extends EventEmitter {
       throw new Error('BlockHeaderProvider has already been started');
     }
 
-    const { chain: { blocksCount: bestBlockHeight } } = await this.coreMethods.getStatus();
+    // const { chain: { blocksCount: bestBlockHeight } } = await this.coreMethods.getStatus();
 
     if (!this.blockHeadersReader) {
       this.blockHeadersReader = new BlockHeadersReader(
@@ -86,17 +98,25 @@ class BlockHeadersProvider extends EventEmitter {
     this.blockHeadersReader.on(BlockHeadersReader.EVENTS.ERROR, (e) => {
       this.emit(EVENTS.ERROR, e);
     });
-
+    const batches = [];
     this.blockHeadersReader.on(BlockHeadersReader.EVENTS.HISTORICAL_DATA_OBTAINED, () => {
-      this.blockHeadersReader.subscribeToNew(bestBlockHeight)
+      this.emit(EVENTS.HISTORICAL_DATA_OBTAINED);
+      this.blockHeadersReader.subscribeToNew(toBlockHeight)
         .catch((e) => {
           this.emit(EVENTS.ERROR, e);
         });
     });
 
-    this.blockHeadersReader.on(BlockHeadersReader.EVENTS.BLOCK_HEADERS, (headers, reject) => {
+    this.blockHeadersReader.on(BlockHeadersReader.EVENTS.BLOCK_HEADERS, (rawHeaders, reject) => {
       try {
-        this.spvChain.addHeaders(headers.map((header) => Buffer.from(header)));
+        const headersBuffers = rawHeaders.map((header) => Buffer.from(header));
+        batches.push(headersBuffers.map((buffer) => buffer.toString('hex')));
+        // const headers = rawHeaders.map((header) => new BlockHeader(Buffer.from(header)));
+        this.spvChain.addHeaders(headersBuffers);
+        const totalOrphans = this.spvChain.orphanChunks
+          .reduce((acc, chunks) => acc + chunks.length, 0);
+        // console.log('Total orphans', totalOrphans);
+        this.emit(EVENTS.CHAIN_UPDATED, this.spvChain.allHeaders, totalOrphans);
       } catch (e) {
         if (e.message === 'Some headers are invalid') {
           reject(e);
@@ -107,8 +127,8 @@ class BlockHeadersProvider extends EventEmitter {
     });
 
     await this.blockHeadersReader.readHistorical(
-      this.options.fromBlockHeight,
-      bestBlockHeight - 1,
+      fromBlockHeight,
+      toBlockHeight,
     );
 
     this.started = true;
