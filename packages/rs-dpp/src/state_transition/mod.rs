@@ -1,4 +1,6 @@
-use crate::data_contract::state_transition::DataContractCreateTransition;
+use crate::data_contract::state_transition::{
+    DataContractCreateTransition, DataContractUpdateTransition,
+};
 // TODO unify the import paths ::object::state_transition::*
 use crate::document::DocumentsBatchTransition;
 mod state_transition_types;
@@ -41,9 +43,7 @@ macro_rules! call_static_method {
     ($state_transition:expr, $method:ident ) => {
         match $state_transition {
             StateTransition::DataContractCreate(_) => DataContractCreateTransition::$method(),
-            StateTransition::DataContractUpdate(_) => {
-                mocks::DataContractUpdateTransition::$method()
-            }
+            StateTransition::DataContractUpdate(_) => DataContractUpdateTransition::$method(),
             StateTransition::DocumentsBatch(_) => DocumentsBatchTransition::$method(),
             StateTransition::IdentityCreate(_) => mocks::IdentityCreateTransition::$method(),
             StateTransition::IdentityTopUp(_) => mocks::IdentityTopUpTransition::$method(),
@@ -54,7 +54,7 @@ macro_rules! call_static_method {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum StateTransition {
     DataContractCreate(DataContractCreateTransition),
-    DataContractUpdate(mocks::DataContractUpdateTransition),
+    DataContractUpdate(DataContractUpdateTransition),
     DocumentsBatch(DocumentsBatchTransition),
     IdentityCreate(mocks::IdentityCreateTransition),
     IdentityTopUp(mocks::IdentityTopUpTransition),
@@ -133,8 +133,8 @@ impl From<DataContractCreateTransition> for StateTransition {
     }
 }
 
-impl From<mocks::DataContractUpdateTransition> for StateTransition {
-    fn from(d: mocks::DataContractUpdateTransition) -> Self {
+impl From<DataContractUpdateTransition> for StateTransition {
+    fn from(d: DataContractUpdateTransition) -> Self {
         Self::DataContractUpdate(d)
     }
 }
