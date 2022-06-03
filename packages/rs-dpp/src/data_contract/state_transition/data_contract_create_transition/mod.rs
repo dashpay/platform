@@ -178,10 +178,7 @@ impl StateTransitionConvert for DataContractCreateTransition {
 
 #[cfg(test)]
 mod test {
-    use crate::{
-        decode_protocol_entity_factory::DecodeProtocolEntity,
-        util::deserializer::get_protocol_version, version,
-    };
+    use crate::{util::deserializer::get_protocol_version, version};
     use serde_json::json;
 
     use crate::tests::fixtures::get_data_contract_fixture;
@@ -300,5 +297,22 @@ mod test {
             version::LATEST_VERSION,
             get_protocol_version(protocol_bytes).expect("version should be valid")
         )
+    }
+
+    #[test]
+    fn should_return_owner_id() {
+        let data = get_test_data();
+        assert_eq!(
+            &data.data_contract.owner_id,
+            data.state_transition.get_owner_id()
+        );
+    }
+
+    #[test]
+    fn is_data_contract_state_transition() {
+        let data = get_test_data();
+        assert!(data.state_transition.is_data_contract_state_transition());
+        assert!(!data.state_transition.is_document_state_transition());
+        assert!(!data.state_transition.is_identity_state_transition());
     }
 }
