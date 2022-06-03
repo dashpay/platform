@@ -7,6 +7,7 @@ use std::convert::TryInto;
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 
+use super::properties::*;
 use crate::{
     data_contract::DataContract,
     identity::KeyID,
@@ -18,13 +19,6 @@ use crate::{
     util::json_value::{JsonValueExt, ReplaceWith},
     ProtocolError,
 };
-
-const PROPERTY_SIGNATURE_PUBLIC_KEY_ID: &str = "signaturePublicKeyId";
-const PROPERTY_DATA_CONTRACT: &str = "dataContract";
-const PROPERTY_SIGNATURE: &str = "signature";
-const PROPERTY_ENTROPY: &str = "entropy";
-const PROPERTY_PROTOCOL_VERSION: &str = "protocolVersion";
-const PROPERTY_TRANSITION_TYPE: &str = "type";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -61,10 +55,10 @@ impl DataContractCreateTransition {
             protocol_version: raw_data_contract_update_transition
                 .get_u64(PROPERTY_PROTOCOL_VERSION)? as u32,
             signature: raw_data_contract_update_transition
-                .get_bytes(PROPERTY_SIGNATURE)
+                .remove_into(PROPERTY_SIGNATURE)
                 .unwrap_or_default(),
             signature_public_key_id: raw_data_contract_update_transition
-                .get_u64(PROPERTY_SIGNATURE)
+                .get_u64(PROPERTY_SIGNATURE_PUBLIC_KEY_ID)
                 .unwrap_or_default(),
             entropy: raw_data_contract_update_transition
                 .get_bytes(PROPERTY_ENTROPY)
@@ -246,10 +240,6 @@ mod test {
             .state_transition
             .to_json()
             .expect("conversion to JSON shouldn't fail");
-        println!(
-            "the result is {}",
-            serde_json::to_string_pretty(&json_object).unwrap()
-        );
 
         assert_eq!(
             version::LATEST_VERSION,
