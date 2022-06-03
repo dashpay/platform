@@ -146,7 +146,6 @@ mod test {
     use crate::{
         assert_error_contains,
         identity::{KeyID, SecurityLevel},
-        mocks,
         state_transition::{
             StateTransition, StateTransitionConvert, StateTransitionLike, StateTransitionType,
         },

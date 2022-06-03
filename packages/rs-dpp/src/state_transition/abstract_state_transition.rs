@@ -173,15 +173,6 @@ pub trait StateTransitionConvert: Serialize {
         json_value
             .replace_identifier_paths(Self::identifiers_property_paths(), ReplaceWith::Base58)?;
 
-        // https://github.com/dashevo/platform/blob/9c8e6a3b6afbc330a6ab551a689de8ccd63f9120/packages/js-dpp/lib/stateTransition/AbstractStateTransition.js#L120
-        // the logic presented in the link suggests that `signature` property is present in JSON only if its not empty. Which
-        // introduces the inconsistency between the object representation and JSON representation
-        if let Some(JsonValue::String(value)) = json_value.get(PROPERTY_SIGNATURE) {
-            if value.is_empty() {
-                let _ = json_value.remove(PROPERTY_SIGNATURE);
-            }
-        }
-
         Ok(json_value)
     }
 
