@@ -1,5 +1,7 @@
-use crate::{mocks, state_repository::StateRepositoryLike};
+use crate::state_repository::StateRepositoryLike;
 use anyhow::Result;
+
+use super::DataContractCreateTransition;
 
 pub struct ApplyDataContractCreateTransition<SR>
 where
@@ -21,10 +23,10 @@ where
 {
     pub async fn apply_data_contract_create_transition(
         &self,
-        state_transition: mocks::StateTransition,
+        state_transition: &DataContractCreateTransition,
     ) -> Result<()> {
         self.state_repository
-            .store_data_contract(state_transition.data_contract)
+            .store_data_contract(state_transition.data_contract.clone())
             .await
     }
 }

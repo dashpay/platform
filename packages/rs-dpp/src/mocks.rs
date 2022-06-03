@@ -47,10 +47,6 @@ pub struct JsonSchemaValidator {}
 
 pub trait JsonSchemaValidatorLike {}
 
-pub struct StateTransition {
-    pub data_contract: DataContract,
-}
-
 pub struct SimplifiedMNList {}
 impl SimplifiedMNList {
     pub fn get_valid_master_nodes(&self) -> Vec<SMLEntry> {
@@ -79,40 +75,6 @@ impl SMLStore {
         unimplemented!()
     }
 }
-
-// #[derive(Debug, Clone, Serialize, Deserialize)]
-// pub struct DataContractUpdateTransition {}
-// impl StateTransitionConvert for DataContractUpdateTransition {
-//     fn signature_property_paths() -> Vec<&'static str> {
-//         unimplemented!()
-//     }
-//     fn identifiers_property_paths() -> Vec<&'static str> {
-//         unimplemented!()
-//     }
-//     fn binary_property_paths() -> Vec<&'static str> {
-//         unimplemented!()
-//     }
-// }
-// impl StateTransitionLike for DataContractUpdateTransition {
-//     fn get_protocol_version(&self) -> u32 {
-//         unimplemented!()
-//     }
-//     /// returns the type of State Transition
-//     fn get_type(&self) -> StateTransitionType {
-//         unimplemented!()
-//     }
-//     /// returns the signature as a byte-array
-//     fn get_signature(&self) -> &Vec<u8> {
-//         unimplemented!()
-//     }
-//     /// set a new signature
-//     fn set_signature(&mut self, _signature: Vec<u8>) {
-//         unimplemented!()
-//     }
-//     fn calculate_fee(&self) -> Result<u64, ProtocolError> {
-//         unimplemented!()
-//     }
-// }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct IdentityCreateTransition {}
