@@ -53,6 +53,7 @@ class BlockHeadersReader extends EventEmitter {
 
     const totalAmount = toBlockHeight - fromBlockHeight + 1;
     if (totalAmount === 0) {
+      // TODO: Why do we silently return without any feedback?
       return;
     }
 
@@ -88,6 +89,8 @@ class BlockHeadersReader extends EventEmitter {
     );
 
     const actualBatchSize = Math.ceil(totalAmount / numStreams);
+    // TODO: test
+    console.log('Num streams', numStreams, actualBatchSize);
     for (let batchIndex = 0; batchIndex < numStreams; batchIndex += 1) {
       const startingHeight = (batchIndex * actualBatchSize) + 1;
       const count = Math.min(actualBatchSize, toBlockHeight - startingHeight + 1);
