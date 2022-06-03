@@ -24,7 +24,7 @@ pub fn get_protocol_version(version_bytes: &[u8]) -> Result<u32, ProtocolError> 
         .into());
     } else {
         let version_set_bytes: [u8; 4] = version_bytes.try_into().unwrap();
-        u32::from_be_bytes(version_set_bytes)
+        u32::from_le_bytes(version_set_bytes)
     })
 }
 

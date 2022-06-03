@@ -14,6 +14,14 @@ use serde_json::Value as JsonValue;
 use std::collections::BTreeMap;
 use std::convert::TryFrom;
 
+const PROPERTY_PROTOCOL_VERSION: &str = "protocolVersion";
+const PROPERTY_ID: &str = "$id";
+const PROPERTY_OWNER_ID: &str = "ownerId";
+const PROPERTY_VERSION: &str = "version";
+const PROPERTY_SCHEMA: &str = "$schema";
+const PROPERTY_DOCUMENTS: &str = "documents";
+const PROPERTY_DEFINITIONS: &str = "$defs";
+
 pub type JsonSchema = JsonValue;
 type DocumentType = String;
 type PropertyPath = String;
@@ -49,8 +57,14 @@ impl DataContract {
         Self::default()
     }
 
-    pub fn from_raw_object(raw_object: JsonValue) -> Result<DataContract, ProtocolError> {
-        todo!()
+    pub fn from_raw_object(mut raw_object: JsonValue) -> Result<DataContract, ProtocolError> {
+        // TODO identifier_default_deserializer: default deserializer should be changed to bytes
+        // Identifiers fields should be replaced with the string format to deserialize Data Contract
+        raw_object.replace_identifier_paths(IDENTIFIER_FIELDS, ReplaceWith::Base58)?;
+        let mut data_contract: DataContract = serde_json::from_value(raw_object)?;
+        data_contract.generate_binary_properties();
+
+        Ok(data_contract)
     }
 
     pub fn from_buffer(b: impl AsRef<[u8]>) -> Result<DataContract, ProtocolError> {
@@ -61,6 +75,7 @@ impl DataContract {
 
         json_value.parse_and_add_protocol_version(protocol_bytes)?;
 
+        // TODO identifier_default_deserializer: default deserializer should be changed to bytes
         // Identifiers fields should be replaced with the string format to deserialize Data Contract
         json_value.replace_identifier_paths(IDENTIFIER_FIELDS, ReplaceWith::Base58)?;
 
