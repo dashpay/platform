@@ -43,6 +43,17 @@ function createDataContractDocuments() {
   return documents;
 }
 
+function expectFeeCalculationsAreValid(dryRunOperations, actualOperations) {
+  expect(dryRunOperations.length).to.be.equal(actualOperations.length);
+
+  dryRunOperations.forEach((dryRunOperation, i) => {
+    expect(dryRunOperation.valueSize || 0).to.be.gte(actualOperations[i].valueSize || 0);
+    expect(dryRunOperation.storageCost || 0).to.be.gte(actualOperations[i].storageCost || 0);
+    expect(dryRunOperation.processingCost || 0)
+      .to.be.gte(actualOperations[i].processingCost || 0);
+  });
+}
+
 describe('checkFeePrediction', () => {
   let dpp;
   let container;
@@ -51,16 +62,17 @@ describe('checkFeePrediction', () => {
   let identity;
   let groveDBStore;
   let initialAppHash;
-  let privateKey;
+  let privateKeys;
+  let assetLockPrivateKey;
 
   beforeEach(async function beforeEach() {
-    privateKey = 'af432c476f65211f45f48f1d42c9c0b497e56696aa1736b40544ef1a496af837';
+    assetLockPrivateKey = new PrivateKey();
 
     container = await createTestDIContainer();
 
     const blockExecutionContext = container.resolve('blockExecutionContext');
     blockExecutionContext.getHeader = this.sinon.stub().returns(
-      { time: { seconds: 1651585250 } },
+      { time: { seconds: new Date().getTime() / 1000 } },
     );
 
     dpp = container.resolve('dpp');
@@ -71,16 +83,23 @@ describe('checkFeePrediction', () => {
     const createInitialStateStructure = container.resolve('createInitialStateStructure');
     await createInitialStateStructure();
 
-    instantAssetLockProof = getInstantAssetLockProofFixture();
+    instantAssetLockProof = getInstantAssetLockProofFixture(assetLockPrivateKey);
 
     const publicKeys = [];
+    privateKeys = [];
+
     for (let i = 0; i < identityCreateTransitionSchema.properties.publicKeys.maxItems; i++) {
+      const privateKey = new PrivateKey();
+
+      privateKeys.push(privateKey);
+
       publicKeys.push(new IdentityPublicKey({
         id: i,
         type: IdentityPublicKey.TYPES.ECDSA_SECP256K1,
-        data: new PrivateKey(i === 0 ? privateKey : undefined).toPublicKey().toBuffer(),
+        data: privateKey.toPublicKey().toBuffer(),
         purpose: IdentityPublicKey.PURPOSES.AUTHENTICATION,
-        securityLevel: IdentityPublicKey.SECURITY_LEVELS.MASTER,
+        securityLevel: i === 0
+          ? IdentityPublicKey.SECURITY_LEVELS.MASTER : IdentityPublicKey.SECURITY_LEVELS.HIGH,
         readOnly: false,
       }));
     }
@@ -99,19 +118,42 @@ describe('checkFeePrediction', () => {
     }
   });
 
-  // TODO: We need to use valid signatures: all ST validations should pass
-
   describe('Identity', () => {
     it('should check that IdentityCreateTransition predicted fee > real fee', async () => {
       const stateTransition = dpp.identity.createIdentityCreateTransition(identity);
-      await stateTransition.signByPrivateKey(privateKey, IdentityPublicKey.TYPES.ECDSA_SECP256K1);
+
+      const publicKeys = stateTransition.getPublicKeys();
+
+      for (let i = 0; i < publicKeys.length; i++) {
+        await stateTransition.signByPrivateKey(
+          privateKeys[i],
+          IdentityPublicKey.TYPES.ECDSA_SECP256K1,
+        );
+        publicKeys[i].setSignature(stateTransition.getSignature());
+        stateTransition.setSignature(undefined);
+      }
+
+      await stateTransition.signByPrivateKey(
+        assetLockPrivateKey,
+        IdentityPublicKey.TYPES.ECDSA_SECP256K1,
+      );
 
       const executionContext = stateTransition.getExecutionContext();
 
       executionContext.enableDryRun();
 
-      await dpp.stateTransition.validateState(stateTransition);
+      // validate state transition
+      const validateBasicResult = await dpp.stateTransition.validateBasic(stateTransition);
+      expect(validateBasicResult.isValid()).to.be.true();
 
+      executionContext.clearDryOperations();
+
+      // calculate predicted fee
+
+      const validateStateResult = await dpp.stateTransition.validateState(stateTransition);
+      expect(validateStateResult.isValid()).to.be.true();
+
+      await dpp.stateTransition.validateSignature(stateTransition);
       await dpp.stateTransition.apply(stateTransition);
 
       const predictedStateTransitionFee = stateTransition.calculateFee();
@@ -123,7 +165,10 @@ describe('checkFeePrediction', () => {
 
       const appHash = await groveDBStore.getRootHash();
 
-      await dpp.stateTransition.validateState(stateTransition);
+      const actualValidateStateResult = await dpp.stateTransition.validateState(stateTransition);
+      expect(actualValidateStateResult.isValid()).to.be.true();
+
+      await dpp.stateTransition.validateSignature(stateTransition);
       await dpp.stateTransition.apply(stateTransition);
       const realStateTransitionFee = stateTransition.calculateFee();
       const actualOperations = executionContext.getOperations();
@@ -131,15 +176,7 @@ describe('checkFeePrediction', () => {
       expect(initialAppHash).to.deep.equal(appHash);
 
       expect(predictedStateTransitionFee).to.be.greaterThan(realStateTransitionFee);
-
-      expect(dryRunOperations.length).to.be.equal(actualOperations.length);
-
-      dryRunOperations.forEach((dryRunOperation, i) => {
-        expect(dryRunOperation.valueSize || 0).to.be.gte(actualOperations[i].valueSize || 0);
-        expect(dryRunOperation.storageCost || 0).to.be.gte(actualOperations[i].storageCost || 0);
-        expect(dryRunOperation.processingCost || 0)
-          .to.be.gte(actualOperations[i].processingCost || 0);
-      });
+      expectFeeCalculationsAreValid(dryRunOperations, actualOperations);
     });
 
     it('should check that IdentityTopUpTransition predicted fee > real fee', async () => {
@@ -152,14 +189,29 @@ describe('checkFeePrediction', () => {
         instantAssetLockProof,
       );
 
-      await stateTransition.signByPrivateKey(privateKey, IdentityPublicKey.TYPES.ECDSA_SECP256K1);
+      await stateTransition.signByPrivateKey(
+        assetLockPrivateKey,
+        IdentityPublicKey.TYPES.ECDSA_SECP256K1,
+      );
 
       const executionContext = stateTransition.getExecutionContext();
-
       executionContext.enableDryRun();
 
-      await dpp.stateTransition.validateState(stateTransition);
+      // validate state transition
+
+      const validateBasicResult = await dpp.stateTransition.validateBasic(stateTransition);
+
+      expect(validateBasicResult.isValid()).to.be.true();
+
+      executionContext.clearDryOperations();
+
+      // calculate predicted fee
+      const validateStateResult = await dpp.stateTransition.validateState(stateTransition);
+      expect(validateStateResult.isValid()).to.be.true();
+
+      await dpp.stateTransition.validateSignature(stateTransition);
       await dpp.stateTransition.apply(stateTransition);
+
       const predictedStateTransitionFee = stateTransition.calculateFee();
       const dryRunOperations = executionContext.getOperations();
 
@@ -170,21 +222,17 @@ describe('checkFeePrediction', () => {
 
       expect(initialAppHash).to.deep.equal(appHash);
 
-      await dpp.stateTransition.validateState(stateTransition);
+      const actualValidateStateResult = await dpp.stateTransition.validateState(stateTransition);
+      expect(actualValidateStateResult.isValid()).to.be.true();
+
+      await dpp.stateTransition.validateSignature(stateTransition);
       await dpp.stateTransition.apply(stateTransition);
       const realStateTransitionFee = stateTransition.calculateFee();
       const actualOperations = executionContext.getOperations();
 
       expect(predictedStateTransitionFee).to.be.greaterThan(realStateTransitionFee);
 
-      expect(dryRunOperations.length).to.be.equal(actualOperations.length);
-
-      dryRunOperations.forEach((dryRunOperation, i) => {
-        expect(dryRunOperation.valueSize || 0).to.be.gte(actualOperations[i].valueSize || 0);
-        expect(dryRunOperation.storageCost || 0).to.be.gte(actualOperations[i].storageCost || 0);
-        expect(dryRunOperation.processingCost || 0)
-          .to.be.gte(actualOperations[i].processingCost || 0);
-      });
+      expectFeeCalculationsAreValid(dryRunOperations, actualOperations);
     });
 
     it('should check that IdentityUpdateTransition predicted fee > real fee', async () => {
@@ -193,38 +241,81 @@ describe('checkFeePrediction', () => {
       initialAppHash = await groveDBStore.getRootHash();
 
       const newPublicKeys = [];
+      const disablePublicKeys = [];
 
+      const newPrivateKeys = [];
       for (let i = 0; i < identityUpdateTransitionSchema.properties.addPublicKeys.maxItems; i++) {
+        const pk = new PrivateKey();
+        newPrivateKeys.push(pk);
+
         newPublicKeys.push(
           new IdentityPublicKey({
-            id: i,
+            id: i + identity.getPublicKeys().length,
             type: IdentityPublicKey.TYPES.ECDSA_SECP256K1,
-            data: new PrivateKey().toPublicKey().toBuffer(),
+            data: pk.toPublicKey().toBuffer(),
             purpose: IdentityPublicKey.PURPOSES.AUTHENTICATION,
-            securityLevel: IdentityPublicKey.SECURITY_LEVELS.SECURITY_LEVELS,
+            securityLevel: i === 0
+              ? IdentityPublicKey.SECURITY_LEVELS.MASTER : IdentityPublicKey.SECURITY_LEVELS.HIGH,
             readOnly: false,
           }),
         );
+
+        disablePublicKeys.push(identity.getPublicKeyById(i));
       }
 
       const stateTransition = dpp.identity.createIdentityUpdateTransition(
         identity,
         {
           add: newPublicKeys,
-          disable: newPublicKeys,
+          disable: disablePublicKeys,
         },
       );
 
-      await stateTransition.signByPrivateKey(privateKey, IdentityPublicKey.TYPES.ECDSA_SECP256K1);
+      const [signerKey] = identity.getPublicKeys();
 
-      stateTransition.setSignaturePublicKeyId(Number.MAX_VALUE);
-      stateTransition.setPublicKeysDisabledAt(new Date(Number.MAX_VALUE));
+      const starterPromise = Promise.resolve(null);
+
+      await stateTransition.getPublicKeysToAdd().reduce(
+        (previousPromise, publicKey) => previousPromise.then(async () => {
+          const privateKey = newPrivateKeys[publicKey.getId() - identity.getPublicKeys().length];
+
+          if (!privateKey) {
+            throw new Error(`Private key for key ${publicKey.getId()} not found`);
+          }
+
+          stateTransition.setSignaturePublicKeyId(signerKey.getId());
+
+          await stateTransition.signByPrivateKey(privateKey, publicKey.getType());
+
+          publicKey.setSignature(stateTransition.getSignature());
+
+          stateTransition.setSignature(undefined);
+          stateTransition.setSignaturePublicKeyId(undefined);
+        }),
+        starterPromise,
+      );
+
+      await stateTransition.sign(
+        identity.getPublicKeyById(0),
+        privateKeys[0],
+      );
 
       const executionContext = stateTransition.getExecutionContext();
 
       executionContext.enableDryRun();
 
-      await dpp.stateTransition.validateState(stateTransition);
+      // validate state transition
+
+      const validateBasicResult = await dpp.stateTransition.validateBasic(stateTransition);
+
+      expect(validateBasicResult.isValid()).to.be.true();
+
+      executionContext.clearDryOperations();
+
+      const validateStateResult = await dpp.stateTransition.validateState(stateTransition);
+      expect(validateStateResult.isValid()).to.be.true();
+
+      await dpp.stateTransition.validateSignature(stateTransition);
       await dpp.stateTransition.apply(stateTransition);
       const predictedStateTransitionFee = stateTransition.calculateFee();
       const dryRunOperations = executionContext.getOperations();
@@ -235,21 +326,17 @@ describe('checkFeePrediction', () => {
       const appHash = await groveDBStore.getRootHash();
       expect(initialAppHash).to.deep.equal(appHash);
 
-      await dpp.stateTransition.validateState(stateTransition);
+      const actualValidateStateResult = await dpp.stateTransition.validateState(stateTransition);
+      expect(actualValidateStateResult.isValid()).to.be.true();
+
+      await dpp.stateTransition.validateSignature(stateTransition);
       await dpp.stateTransition.apply(stateTransition);
       const realStateTransitionFee = stateTransition.calculateFee();
       const actualOperations = executionContext.getOperations();
 
       expect(predictedStateTransitionFee).to.be.greaterThan(realStateTransitionFee);
 
-      expect(dryRunOperations.length).to.be.equal(actualOperations.length);
-
-      dryRunOperations.forEach((dryRunOperation, i) => {
-        expect(dryRunOperation.valueSize || 0).to.be.gte(actualOperations[i].valueSize || 0);
-        expect(dryRunOperation.storageCost || 0).to.be.gte(actualOperations[i].storageCost || 0);
-        expect(dryRunOperation.processingCost || 0)
-          .to.be.gte(actualOperations[i].processingCost || 0);
-      });
+      expectFeeCalculationsAreValid(dryRunOperations, actualOperations);
     });
   });
 
@@ -265,14 +352,23 @@ describe('checkFeePrediction', () => {
     it('should check that DataContractCreate predicted fee > real fee', async () => {
       const stateTransition = dpp.dataContract.createDataContractCreateTransition(dataContract);
 
-      stateTransition.setSignaturePublicKeyId(Number.MAX_VALUE);
-      await stateTransition.signByPrivateKey(privateKey, IdentityPublicKey.TYPES.ECDSA_SECP256K1);
+      await stateTransition.sign(
+        identity.getPublicKeyById(1),
+        privateKeys[1],
+      );
+
+      const validateBasicResult = await dpp.stateTransition.validateBasic(stateTransition);
+
+      expect(validateBasicResult.isValid()).to.be.true();
 
       const executionContext = stateTransition.getExecutionContext();
 
       executionContext.enableDryRun();
 
-      await dpp.stateTransition.validateState(stateTransition);
+      const validateStateResult = await dpp.stateTransition.validateState(stateTransition);
+      expect(validateStateResult.isValid()).to.be.true();
+
+      await dpp.stateTransition.validateSignature(stateTransition);
       await dpp.stateTransition.apply(stateTransition);
       const predictedStateTransitionFee = stateTransition.calculateFee();
       const dryRunOperations = executionContext.getOperations();
@@ -283,30 +379,41 @@ describe('checkFeePrediction', () => {
       const appHash = await groveDBStore.getRootHash();
       expect(initialAppHash).to.deep.equal(appHash);
 
-      await dpp.stateTransition.validateState(stateTransition);
+      const actualValidateStateResult = await dpp.stateTransition.validateState(stateTransition);
+      expect(actualValidateStateResult.isValid()).to.be.true();
+
+      await dpp.stateTransition.validateSignature(stateTransition);
       await dpp.stateTransition.apply(stateTransition);
       const realStateTransitionFee = stateTransition.calculateFee();
       const actualOperations = executionContext.getOperations();
 
       expect(predictedStateTransitionFee).to.be.greaterThan(realStateTransitionFee);
 
-      expect(dryRunOperations.length).to.be.equal(actualOperations.length);
-
-      dryRunOperations.forEach((dryRunOperation, i) => {
-        expect(dryRunOperation.valueSize || 0).to.be.gte(actualOperations[i].valueSize || 0);
-        expect(dryRunOperation.storageCost || 0).to.be.gte(actualOperations[i].storageCost || 0);
-        expect(dryRunOperation.processingCost || 0)
-          .to.be.gte(actualOperations[i].processingCost || 0);
-      });
+      expectFeeCalculationsAreValid(dryRunOperations, actualOperations);
     });
 
     it('should check that DataContractUpdate predicted fee > real fee', async () => {
       const stateTransition = dpp.dataContract.createDataContractUpdateTransition(dataContract);
+
+      await stateTransition.sign(
+        identity.getPublicKeyById(1),
+        privateKeys[1],
+      );
+
       const executionContext = stateTransition.getExecutionContext();
 
       executionContext.enableDryRun();
 
-      await dpp.stateTransition.validateState(stateTransition);
+      const validateBasicResult = await dpp.stateTransition.validateBasic(stateTransition);
+
+      expect(validateBasicResult.isValid()).to.be.true();
+
+      executionContext.clearDryOperations();
+
+      const validateStateResult = await dpp.stateTransition.validateState(stateTransition);
+      expect(validateStateResult.isValid()).to.be.true();
+
+      await dpp.stateTransition.validateSignature(stateTransition);
       await dpp.stateTransition.apply(stateTransition);
       const predictedStateTransitionFee = stateTransition.calculateFee();
       const dryRunOperations = executionContext.getOperations();
@@ -317,21 +424,17 @@ describe('checkFeePrediction', () => {
       const appHash = await groveDBStore.getRootHash();
       expect(initialAppHash).to.deep.equal(appHash);
 
-      await dpp.stateTransition.validateState(stateTransition);
+      const actualValidateStateResult = await dpp.stateTransition.validateState(stateTransition);
+      expect(actualValidateStateResult.isValid()).to.be.true();
+
+      await dpp.stateTransition.validateSignature(stateTransition);
       await dpp.stateTransition.apply(stateTransition);
       const realStateTransitionFee = stateTransition.calculateFee();
       const actualOperations = executionContext.getOperations();
 
       expect(predictedStateTransitionFee).to.be.greaterThan(realStateTransitionFee);
 
-      expect(dryRunOperations.length).to.be.equal(actualOperations.length);
-
-      dryRunOperations.forEach((dryRunOperation, i) => {
-        expect(dryRunOperation.valueSize || 0).to.be.gte(actualOperations[i].valueSize || 0);
-        expect(dryRunOperation.storageCost || 0).to.be.gte(actualOperations[i].storageCost || 0);
-        expect(dryRunOperation.processingCost || 0)
-          .to.be.gte(actualOperations[i].processingCost || 0);
-      });
+      expectFeeCalculationsAreValid(dryRunOperations, actualOperations);
     });
   });
 
@@ -377,17 +480,26 @@ describe('checkFeePrediction', () => {
         create: documents,
       });
 
-      stateTransition.setSignaturePublicKeyId(Number.MAX_VALUE);
-      await stateTransition.signByPrivateKey(privateKey, IdentityPublicKey.TYPES.ECDSA_SECP256K1);
+      await stateTransition.sign(
+        identity.getPublicKeyById(1),
+        privateKeys[1],
+      );
 
       const executionContext = stateTransition.getExecutionContext();
       await stateRepository.storeDataContract(dataContract, executionContext);
 
       initialAppHash = await groveDBStore.getRootHash();
 
+      const validateBasicResult = await dpp.stateTransition.validateBasic(stateTransition);
+
+      expect(validateBasicResult.isValid()).to.be.true();
+
       executionContext.enableDryRun();
 
-      await dpp.stateTransition.validateState(stateTransition);
+      const validateStateResult = await dpp.stateTransition.validateState(stateTransition);
+      expect(validateStateResult.isValid()).to.be.true();
+
+      await dpp.stateTransition.validateSignature(stateTransition);
       await dpp.stateTransition.apply(stateTransition);
       const predictedStateTransitionFee = stateTransition.calculateFee();
       const dryRunOperations = executionContext.getOperations();
@@ -399,27 +511,20 @@ describe('checkFeePrediction', () => {
 
       expect(initialAppHash).to.deep.equal(appHash);
 
-      await dpp.stateTransition.validateState(stateTransition);
+      const actualValidateStateResult = await dpp.stateTransition.validateState(stateTransition);
+      expect(actualValidateStateResult.isValid()).to.be.true();
+
+      await dpp.stateTransition.validateSignature(stateTransition);
       await dpp.stateTransition.apply(stateTransition);
       const realStateTransitionFee = stateTransition.calculateFee();
       const actualOperations = executionContext.getOperations();
 
       expect(predictedStateTransitionFee).to.be.greaterThan(realStateTransitionFee);
 
-      expect(dryRunOperations.length).to.be.equal(actualOperations.length);
-
-      dryRunOperations.forEach((dryRunOperation, i) => {
-        expect(dryRunOperation.valueSize || 0).to.be.gte(actualOperations[i].valueSize || 0);
-        expect(dryRunOperation.storageCost || 0).to.be.gte(actualOperations[i].storageCost || 0);
-        expect(dryRunOperation.processingCost || 0)
-          .to.be.gte(actualOperations[i].processingCost || 0);
-      });
+      expectFeeCalculationsAreValid(dryRunOperations, actualOperations);
     });
 
     it('should check that DocumentsBatchTransition update predicted fee > real fee', async () => {
-      // const documentToReplace = documents[0];
-      // documentToReplace.setData({ name: 'newName' });
-
       const createStateTransition = dpp.document.createStateTransition({
         create: documents,
       });
@@ -428,17 +533,30 @@ describe('checkFeePrediction', () => {
         replace: documents,
       });
 
+      await stateTransition.sign(
+        identity.getPublicKeyById(1),
+        privateKeys[1],
+      );
+
       const executionContext = stateTransition.getExecutionContext();
+
       await stateRepository.storeDataContract(dataContract, executionContext);
 
-      await dpp.stateTransition.validateState(createStateTransition);
       await dpp.stateTransition.apply(createStateTransition);
+
+      const validateBasicResult = await dpp.stateTransition.validateBasic(stateTransition);
+
+      expect(validateBasicResult.isValid()).to.be.true();
+
+      executionContext.actualOperations = [];
+      executionContext.enableDryRun();
 
       initialAppHash = await groveDBStore.getRootHash();
 
-      executionContext.enableDryRun();
+      const validateStateResult = await dpp.stateTransition.validateState(stateTransition);
+      expect(validateStateResult.isValid()).to.be.true();
 
-      await dpp.stateTransition.validateState(stateTransition);
+      await dpp.stateTransition.validateSignature(stateTransition);
       await dpp.stateTransition.apply(stateTransition);
       const predictedStateTransitionFee = stateTransition.calculateFee();
       const dryRunOperations = executionContext.getOperations();
@@ -450,21 +568,18 @@ describe('checkFeePrediction', () => {
 
       expect(initialAppHash).to.deep.equal(appHash);
 
-      await dpp.stateTransition.validateState(stateTransition);
+      const actualValidateStateResult = await dpp.stateTransition.validateState(stateTransition);
+      expect(actualValidateStateResult.isValid()).to.be.true();
+
+      await dpp.stateTransition.validateSignature(stateTransition);
       await dpp.stateTransition.apply(stateTransition);
       const realStateTransitionFee = stateTransition.calculateFee();
       const actualOperations = executionContext.getOperations();
 
       expect(predictedStateTransitionFee).to.be.greaterThan(realStateTransitionFee);
 
-      expect(dryRunOperations.length).to.be.equal(actualOperations.length);
-
-      dryRunOperations.forEach((dryRunOperation, i) => {
-        expect(dryRunOperation.valueSize || 0).to.be.gte(actualOperations[i].valueSize || 0);
-        expect(dryRunOperation.storageCost || 0).to.be.gte(actualOperations[i].storageCost || 0);
-        expect(dryRunOperation.processingCost || 0)
-          .to.be.gte(actualOperations[i].processingCost || 0);
-      });
+      console.log(dryRunOperations, actualOperations);
+      expectFeeCalculationsAreValid(dryRunOperations, actualOperations);
     });
 
     it('should check that DocumentsBatchTransition delete predicted fee > real fee', async () => {
@@ -476,17 +591,29 @@ describe('checkFeePrediction', () => {
         delete: documents,
       });
 
+      await stateTransition.sign(
+        identity.getPublicKeyById(1),
+        privateKeys[1],
+      );
+
       const executionContext = stateTransition.getExecutionContext();
       await stateRepository.storeDataContract(dataContract, executionContext);
 
-      await dpp.stateTransition.validateState(createStateTransition);
       await dpp.stateTransition.apply(createStateTransition);
 
       initialAppHash = await groveDBStore.getRootHash();
 
+      const validateBasicResult = await dpp.stateTransition.validateBasic(stateTransition);
+
+      expect(validateBasicResult.isValid()).to.be.true();
+
+      executionContext.actualOperations = [];
       executionContext.enableDryRun();
 
-      await dpp.stateTransition.validateState(stateTransition);
+      const validateStateResult = await dpp.stateTransition.validateState(stateTransition);
+      expect(validateStateResult.isValid()).to.be.true();
+
+      await dpp.stateTransition.validateSignature(stateTransition);
       await dpp.stateTransition.apply(stateTransition);
       const predictedStateTransitionFee = stateTransition.calculateFee();
       const dryRunOperations = executionContext.getOperations();
@@ -498,21 +625,17 @@ describe('checkFeePrediction', () => {
 
       expect(initialAppHash).to.deep.equal(appHash);
 
-      await dpp.stateTransition.validateState(stateTransition);
+      const actualValidateStateResult = await dpp.stateTransition.validateState(stateTransition);
+      expect(actualValidateStateResult.isValid()).to.be.true();
+
+      await dpp.stateTransition.validateSignature(stateTransition);
       await dpp.stateTransition.apply(stateTransition);
       const realStateTransitionFee = stateTransition.calculateFee();
       const actualOperations = executionContext.getOperations();
 
       expect(predictedStateTransitionFee).to.be.greaterThan(realStateTransitionFee);
 
-      expect(dryRunOperations.length).to.be.equal(actualOperations.length);
-
-      dryRunOperations.forEach((dryRunOperation, i) => {
-        expect(dryRunOperation.valueSize || 0).to.be.gte(actualOperations[i].valueSize || 0);
-        expect(dryRunOperation.storageCost || 0).to.be.gte(actualOperations[i].storageCost || 0);
-        expect(dryRunOperation.processingCost || 0)
-          .to.be.gte(actualOperations[i].processingCost || 0);
-      });
+      expectFeeCalculationsAreValid(dryRunOperations, actualOperations);
     });
   });
 });

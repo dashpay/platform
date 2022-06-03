@@ -82,6 +82,7 @@ function validateIdentityCreateTransitionBasicFactory(
 
     const assetLockProofValidationResult = await proofValidationFunction(
       rawStateTransition.assetLockProof,
+      executionContext,
     );
 
     result.merge(

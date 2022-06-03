@@ -39,7 +39,7 @@ describe('Platform', () => {
       dpp = new DashPlatformProtocol();
       await dpp.initialize();
 
-      client = await createClientWithFundedWallet();
+      client = await createClientWithFundedWallet(undefined, 200000);
 
       walletAccount = await client.getWalletAccount();
     });
@@ -51,7 +51,7 @@ describe('Platform', () => {
     });
 
     it('should create an identity', async () => {
-      identity = await client.platform.identities.register(50000);
+      identity = await client.platform.identities.register(140000);
 
       expect(identity).to.exist();
     });
@@ -261,7 +261,7 @@ describe('Platform', () => {
           outputIndex,
         } = await createAssetLockTransaction({
           client,
-        }, 3090);
+        }, 5000);
 
         // Broadcast Asset Lock transaction
         await client.getDAPIClient().core.broadcastTransaction(transaction.toBuffer());

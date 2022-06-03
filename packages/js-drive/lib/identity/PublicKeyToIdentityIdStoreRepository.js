@@ -3,6 +3,7 @@ const cbor = require('cbor');
 const Identifier = require('@dashevo/dpp/lib/Identifier');
 
 const ReadOperation = require('@dashevo/dpp/lib/stateTransition/fee/operations/ReadOperation');
+const WriteOperation = require('@dashevo/dpp/lib/stateTransition/fee/operations/WriteOperation');
 
 const StorageResult = require('../storage/StorageResult');
 
@@ -41,14 +42,19 @@ class PublicKeyToIdentityIdStoreRepository {
 
       const data = cbor.encode(identityIds);
 
-      const result = await this.storage.put(
+      await this.storage.put(
         PublicKeyToIdentityIdStoreRepository.TREE_PATH,
         publicKeyHash,
         data,
         options,
       );
 
-      operations = operations.concat(result.getOperations());
+      const additionalData = cbor.encode([identityId.toBuffer()]);
+
+      // use only additional data for write operation
+      operations = operations.concat(
+        [new WriteOperation(publicKeyHash.length, additionalData.length)],
+      );
     }
 
     return new StorageResult(undefined, operations);
