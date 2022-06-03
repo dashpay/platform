@@ -1,5 +1,6 @@
 use crate::{
-    errors::StateError, mocks, state_repository::StateRepositoryLike, validation::ValidationResult,
+    data_contract::state_transition::DataContractCreateTransition, errors::StateError,
+    state_repository::StateRepositoryLike, validation::ValidationResult,
 };
 use anyhow::Result;
 
@@ -25,7 +26,7 @@ where
 {
     pub async fn validate_data_contract_create_transition_state(
         &self,
-        state_transition: mocks::StateTransition,
+        state_transition: &DataContractCreateTransition,
     ) -> ValidationResult {
         let mut result = ValidationResult::default();
 
