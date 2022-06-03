@@ -17,13 +17,30 @@ class BlockHeadersSyncWorker extends Worker {
       ],
       ...options,
     });
+
+    this.lastSyncedBlockHeight = 1;
   }
 
   async onStart() {
-    const startTime = Date.now();
+    const {
+      skipSynchronizationBeforeHeight,
+      skipSynchronization,
+    } = (this.storage.application.syncOptions || {});
 
     const bestBlockHeight = this.storage.getChainStore(this.network.toString())
       .state.blockHeight;
+
+    if (skipSynchronization) {
+      logger.debug('BlockHeadersSyncWorker - Wallet created from a new mnemonic. Sync from the best block height.');
+      this.lastSyncedBlockHeight = bestBlockHeight;
+      return;
+    }
+
+    if (skipSynchronizationBeforeHeight && typeof skipSynchronizationBeforeHeight === 'number') {
+      this.lastSyncedBlockHeight = skipSynchronizationBeforeHeight;
+    }
+
+    const startTime = Date.now();
 
     const { blockHeadersProvider } = this.transport.client;
     const historicalSyncPromise = new Promise((resolve, reject) => {
@@ -58,7 +75,7 @@ class BlockHeadersSyncWorker extends Worker {
 
     console.log('Start worker', bestBlockHeight);
     try {
-      await blockHeadersProvider.start(0, 1000);
+      await blockHeadersProvider.start(this.lastSyncedBlockHeight, bestBlockHeight);
     } catch (e) {
       console.log(e);
     }
