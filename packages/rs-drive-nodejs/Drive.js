@@ -79,6 +79,7 @@ class Drive {
       this.drive,
       dataContract.toBuffer(),
       blockTime,
+      true,
       useTransaction,
     );
   }
@@ -98,6 +99,7 @@ class Drive {
       document.getOwnerId().toBuffer(),
       true,
       blockTime,
+      true,
       useTransaction,
     );
   }
@@ -116,6 +118,7 @@ class Drive {
       document.getType(),
       document.getOwnerId().toBuffer(),
       blockTime,
+      true,
       useTransaction,
     );
   }
@@ -190,6 +193,7 @@ class Drive {
       this.drive,
       identity.id.toBuffer(),
       identity.toBuffer(),
+      true,
       useTransaction,
     );
   }
