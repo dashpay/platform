@@ -3,6 +3,7 @@ use crate::data_contract::{errors::*, DataContract};
 use crate::document::{errors::*, Document};
 use crate::identity::{IdentityPublicKey, Purpose, SecurityLevel};
 use crate::state_transition::StateTransition;
+use crate::{CompatibleProtocolVersionIsNotDefinedError, NonConsensusError};
 use serde_json::Value as JsonValue;
 use thiserror::Error;
 
@@ -93,6 +94,19 @@ pub enum ProtocolError {
 
     #[error("Invalid Document initial revision {}", document.revision)]
     InvalidInitialRevisionError { document: Document },
+
+    // TODO decide if it should be a string
+    #[error("Non-Consensus error: {0}")]
+    NonConsensusError(String),
+
+    #[error(transparent)]
+    CompatibleProtocolVersionIsNotDefinedError(#[from] CompatibleProtocolVersionIsNotDefinedError),
+}
+
+impl From<NonConsensusError> for ProtocolError {
+    fn from(e: NonConsensusError) -> Self {
+        Self::NonConsensusError(e.to_string())
+    }
 }
 
 impl From<&str> for ProtocolError {
