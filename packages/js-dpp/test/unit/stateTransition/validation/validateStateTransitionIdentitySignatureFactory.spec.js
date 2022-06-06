@@ -317,5 +317,23 @@ describe('validateStateTransitionIdentitySignatureFactory', () => {
         expect(error).to.equal(e);
       }
     });
+
+    it('should not verify signature on dry run', async () => {
+      const e = new DPPError('Dpp error');
+
+      stateTransition.verifySignature.throws(e);
+
+      executionContext.enableDryRun();
+
+      const result = await validateStateTransitionIdentitySignature(
+        stateTransition,
+      );
+
+      executionContext.disableDryRun();
+
+      expect(result.isValid()).to.be.true();
+      expect(result.getErrors()).to.be.an('array');
+      expect(result.getErrors()).to.be.empty();
+    });
   });
 });

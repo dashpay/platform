@@ -1122,4 +1122,25 @@ describe('validateDocumentsBatchTransitionBasicFactory', () => {
       rawStateTransition.transitions, dataContract,
     );
   });
+
+  it('should not validate Document transitions on dry run', async () => {
+    stateRepositoryMock.fetchDataContract.resolves(null);
+
+    executionContext.enableDryRun();
+
+    const result = await validateDocumentsBatchTransitionBasic(
+      rawStateTransition,
+      executionContext,
+    );
+
+    executionContext.disableDryRun();
+
+    expect(result).to.be.an.instanceOf(ValidationResult);
+    expect(result.isValid()).to.be.true();
+
+    expect(stateRepositoryMock.fetchDataContract).to.have.been.calledOnceWithExactly(
+      dataContract.getId(),
+      executionContext,
+    );
+  });
 });

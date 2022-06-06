@@ -112,6 +112,7 @@ describe('validateDocumentsBatchTransitionStateFactory', () => {
 
       expect(stateRepositoryMock.fetchDataContract).to.have.been.calledOnceWithExactly(
         dataContract.getId(),
+        new StateTransitionExecutionContext(),
       );
 
       expect(fetchDocumentsMock).to.have.not.been.called();
@@ -135,6 +136,7 @@ describe('validateDocumentsBatchTransitionStateFactory', () => {
 
     expect(stateRepositoryMock.fetchDataContract).to.have.been.calledOnceWithExactly(
       dataContract.getId(),
+      new StateTransitionExecutionContext(),
     );
 
     expect(fetchDocumentsMock.getCall(0).args[0].map((t) => t.toObject())).to.have.deep.members(
@@ -171,6 +173,7 @@ describe('validateDocumentsBatchTransitionStateFactory', () => {
 
     expect(stateRepositoryMock.fetchDataContract).to.have.been.calledOnceWithExactly(
       dataContract.getId(),
+      new StateTransitionExecutionContext(),
     );
 
     expect(fetchDocumentsMock).to.have.been.calledOnceWithExactly(
@@ -208,6 +211,7 @@ describe('validateDocumentsBatchTransitionStateFactory', () => {
 
     expect(stateRepositoryMock.fetchDataContract).to.have.been.calledOnceWithExactly(
       dataContract.getId(),
+      new StateTransitionExecutionContext(),
     );
 
     expect(fetchDocumentsMock).to.have.been.calledOnceWithExactly(
@@ -252,6 +256,7 @@ describe('validateDocumentsBatchTransitionStateFactory', () => {
 
     expect(stateRepositoryMock.fetchDataContract).to.have.been.calledOnceWithExactly(
       dataContract.getId(),
+      new StateTransitionExecutionContext(),
     );
 
     expect(fetchDocumentsMock).to.have.been.calledOnceWithExactly(
@@ -307,6 +312,7 @@ describe('validateDocumentsBatchTransitionStateFactory', () => {
 
     expect(stateRepositoryMock.fetchDataContract).to.have.been.calledOnceWithExactly(
       dataContract.getId(),
+      new StateTransitionExecutionContext(),
     );
 
     expect(fetchDocumentsMock).to.have.been.calledOnceWithExactly(
@@ -343,6 +349,7 @@ describe('validateDocumentsBatchTransitionStateFactory', () => {
 
       expect(stateRepositoryMock.fetchDataContract).to.have.been.calledOnceWithExactly(
         dataContract.getId(),
+        new StateTransitionExecutionContext(),
       );
 
       expect(fetchDocumentsMock).to.have.been.calledOnceWithExactly(
@@ -372,6 +379,7 @@ describe('validateDocumentsBatchTransitionStateFactory', () => {
 
     expect(stateRepositoryMock.fetchDataContract).to.have.been.calledOnceWithExactly(
       dataContract.getId(),
+      new StateTransitionExecutionContext(),
     );
 
     expect(fetchDocumentsMock).to.have.been.calledOnceWithExactly(
@@ -427,6 +435,7 @@ describe('validateDocumentsBatchTransitionStateFactory', () => {
 
     expect(stateRepositoryMock.fetchDataContract).to.have.been.calledOnceWithExactly(
       dataContract.getId(),
+      new StateTransitionExecutionContext(),
     );
 
     expect(fetchDocumentsMock).to.have.been.calledOnceWithExactly(
@@ -779,6 +788,7 @@ describe('validateDocumentsBatchTransitionStateFactory', () => {
 
     expect(stateRepositoryMock.fetchDataContract).to.have.been.calledOnceWithExactly(
       dataContract.getId(),
+      new StateTransitionExecutionContext(),
     );
 
     expect(fetchDocumentsMock).to.have.been.calledOnceWithExactly(

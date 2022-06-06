@@ -29,6 +29,7 @@ const ValidationResult = require('../../../../../../../lib/validation/Validation
 const SomeConsensusError = require('../../../../../../../lib/test/mocks/SomeConsensusError');
 const DataContractImmutablePropertiesUpdateError = require('../../../../../../../lib/errors/consensus/basic/dataContract/DataContractImmutablePropertiesUpdateError');
 const IncompatibleDataContractSchemaError = require('../../../../../../../lib/errors/consensus/basic/dataContract/IncompatibleDataContractSchemaError');
+const StateTransitionExecutionContext = require('../../../../../../../lib/stateTransition/StateTransitionExecutionContext');
 
 describe('validateDataContractUpdateTransitionBasicFactory', () => {
   let validateDataContractMock;
@@ -40,6 +41,7 @@ describe('validateDataContractUpdateTransitionBasicFactory', () => {
   let validateProtocolVersionMock;
   let validateIndicesAreNotChangedMock;
   let stateRepositoryMock;
+  let executionContext;
 
   beforeEach(async function beforeEach() {
     validateDataContractMock = this.sinonSandbox.stub().returns(new ValidationResult());
@@ -70,6 +72,8 @@ describe('validateDataContractUpdateTransitionBasicFactory', () => {
     stateRepositoryMock = createStateRepositoryMock(this.sinonSandbox);
     stateRepositoryMock.fetchDataContract.resolves(dataContract);
 
+    executionContext = new StateTransitionExecutionContext();
+
     // eslint-disable-next-line max-len
     validateDataContractUpdateTransitionBasic = validateDataContractUpdateTransitionBasicFactory(
       jsonSchemaValidator,
@@ -86,7 +90,10 @@ describe('validateDataContractUpdateTransitionBasicFactory', () => {
     it('should be present', async () => {
       delete rawStateTransition.protocolVersion;
 
-      const result = await validateDataContractUpdateTransitionBasic(rawStateTransition);
+      const result = await validateDataContractUpdateTransitionBasic(
+        rawStateTransition,
+        executionContext,
+      );
 
       expectJsonSchemaError(result);
 
@@ -100,7 +107,10 @@ describe('validateDataContractUpdateTransitionBasicFactory', () => {
     it('should be an integer', async () => {
       rawStateTransition.protocolVersion = '1';
 
-      const result = await validateDataContractUpdateTransitionBasic(rawStateTransition);
+      const result = await validateDataContractUpdateTransitionBasic(
+        rawStateTransition,
+        executionContext,
+      );
 
       expectJsonSchemaError(result);
 
@@ -120,7 +130,10 @@ describe('validateDataContractUpdateTransitionBasicFactory', () => {
 
       validateProtocolVersionMock.returns(protocolVersionResult);
 
-      const result = await validateDataContractUpdateTransitionBasic(rawStateTransition);
+      const result = await validateDataContractUpdateTransitionBasic(
+        rawStateTransition,
+        executionContext,
+      );
 
       expectValidationError(result, SomeConsensusError);
 
@@ -138,7 +151,10 @@ describe('validateDataContractUpdateTransitionBasicFactory', () => {
     it('should be present', async () => {
       delete rawStateTransition.type;
 
-      const result = await validateDataContractUpdateTransitionBasic(rawStateTransition);
+      const result = await validateDataContractUpdateTransitionBasic(
+        rawStateTransition,
+        executionContext,
+      );
 
       expectJsonSchemaError(result);
 
@@ -152,7 +168,10 @@ describe('validateDataContractUpdateTransitionBasicFactory', () => {
     it('should be equal to 4', async () => {
       rawStateTransition.type = 666;
 
-      const result = await validateDataContractUpdateTransitionBasic(rawStateTransition);
+      const result = await validateDataContractUpdateTransitionBasic(
+        rawStateTransition,
+        executionContext,
+      );
 
       expectJsonSchemaError(result);
 
@@ -168,7 +187,10 @@ describe('validateDataContractUpdateTransitionBasicFactory', () => {
     it('should be present', async () => {
       delete rawStateTransition.dataContract;
 
-      const result = await validateDataContractUpdateTransitionBasic(rawStateTransition);
+      const result = await validateDataContractUpdateTransitionBasic(
+        rawStateTransition,
+        executionContext,
+      );
 
       expectJsonSchemaError(result);
 
@@ -182,7 +204,10 @@ describe('validateDataContractUpdateTransitionBasicFactory', () => {
     it('should have no existing documents removed', async () => {
       rawStateTransition.dataContract.documents.indexedDocument = undefined;
 
-      const result = await validateDataContractUpdateTransitionBasic(rawStateTransition);
+      const result = await validateDataContractUpdateTransitionBasic(
+        rawStateTransition,
+        executionContext,
+      );
 
       expectValidationError(result);
 
@@ -200,7 +225,10 @@ describe('validateDataContractUpdateTransitionBasicFactory', () => {
         minimum: 0,
       };
 
-      const result = await validateDataContractUpdateTransitionBasic(rawStateTransition);
+      const result = await validateDataContractUpdateTransitionBasic(
+        rawStateTransition,
+        executionContext,
+      );
 
       expect(result.isValid()).to.be.true();
     });
@@ -208,7 +236,10 @@ describe('validateDataContractUpdateTransitionBasicFactory', () => {
     it('should have existing documents schema backward compatible', async () => {
       rawStateTransition.dataContract.documents.indexedDocument.properties.firstName = undefined;
 
-      const result = await validateDataContractUpdateTransitionBasic(rawStateTransition);
+      const result = await validateDataContractUpdateTransitionBasic(
+        rawStateTransition,
+        executionContext,
+      );
 
       expectValidationError(result);
 
@@ -230,7 +261,10 @@ describe('validateDataContractUpdateTransitionBasicFactory', () => {
         required: ['name'],
       };
 
-      const result = await validateDataContractUpdateTransitionBasic(rawStateTransition);
+      const result = await validateDataContractUpdateTransitionBasic(
+        rawStateTransition,
+        executionContext,
+      );
 
       expect(result.isValid()).to.be.true();
     });
@@ -238,7 +272,10 @@ describe('validateDataContractUpdateTransitionBasicFactory', () => {
     it('should not have root immutable properties changed', async () => {
       rawStateTransition.dataContract.$schema = undefined;
 
-      const result = await validateDataContractUpdateTransitionBasic(rawStateTransition);
+      const result = await validateDataContractUpdateTransitionBasic(
+        rawStateTransition,
+        executionContext,
+      );
 
       expectValidationError(result);
 
@@ -257,7 +294,10 @@ describe('validateDataContractUpdateTransitionBasicFactory', () => {
 
       validateDataContractMock.returns(dataContractResult);
 
-      const result = await validateDataContractUpdateTransitionBasic(rawStateTransition);
+      const result = await validateDataContractUpdateTransitionBasic(
+        rawStateTransition,
+        executionContext,
+      );
 
       expectValidationError(result);
 
@@ -273,7 +313,10 @@ describe('validateDataContractUpdateTransitionBasicFactory', () => {
     it('should be present', async () => {
       delete rawStateTransition.signature;
 
-      const result = await validateDataContractUpdateTransitionBasic(rawStateTransition);
+      const result = await validateDataContractUpdateTransitionBasic(
+        rawStateTransition,
+        executionContext,
+      );
 
       expectJsonSchemaError(result);
 
@@ -287,7 +330,10 @@ describe('validateDataContractUpdateTransitionBasicFactory', () => {
     it('should be a byte array', async () => {
       rawStateTransition.signature = new Array(65).fill('string');
 
-      const result = await validateDataContractUpdateTransitionBasic(rawStateTransition);
+      const result = await validateDataContractUpdateTransitionBasic(
+        rawStateTransition,
+        executionContext,
+      );
 
       expectJsonSchemaError(result, 2);
 
@@ -302,7 +348,10 @@ describe('validateDataContractUpdateTransitionBasicFactory', () => {
     it('should be not less than 65 bytes', async () => {
       rawStateTransition.signature = Buffer.alloc(64);
 
-      const result = await validateDataContractUpdateTransitionBasic(rawStateTransition);
+      const result = await validateDataContractUpdateTransitionBasic(
+        rawStateTransition,
+        executionContext,
+      );
 
       expectJsonSchemaError(result);
 
@@ -316,7 +365,10 @@ describe('validateDataContractUpdateTransitionBasicFactory', () => {
     it('should be not longer than 65 bytes', async () => {
       rawStateTransition.signature = Buffer.alloc(66);
 
-      const result = await validateDataContractUpdateTransitionBasic(rawStateTransition);
+      const result = await validateDataContractUpdateTransitionBasic(
+        rawStateTransition,
+        executionContext,
+      );
 
       expectJsonSchemaError(result);
 
@@ -332,7 +384,10 @@ describe('validateDataContractUpdateTransitionBasicFactory', () => {
     it('should be an integer', async () => {
       rawStateTransition.signaturePublicKeyId = 1.4;
 
-      const result = await validateDataContractUpdateTransitionBasic(rawStateTransition);
+      const result = await validateDataContractUpdateTransitionBasic(
+        rawStateTransition,
+        executionContext,
+      );
 
       expectJsonSchemaError(result, 1);
 
@@ -345,7 +400,10 @@ describe('validateDataContractUpdateTransitionBasicFactory', () => {
     it('should not be < 0', async () => {
       rawStateTransition.signaturePublicKeyId = -1;
 
-      const result = await validateDataContractUpdateTransitionBasic(rawStateTransition);
+      const result = await validateDataContractUpdateTransitionBasic(
+        rawStateTransition,
+        executionContext,
+      );
 
       expectJsonSchemaError(result, 1);
 
@@ -357,11 +415,30 @@ describe('validateDataContractUpdateTransitionBasicFactory', () => {
   });
 
   it('should return valid result', async () => {
-    const result = await validateDataContractUpdateTransitionBasic(rawStateTransition);
+    const result = await validateDataContractUpdateTransitionBasic(
+      rawStateTransition,
+      executionContext,
+    );
 
     expect(result).to.be.an.instanceOf(ValidationResult);
     expect(result.isValid()).to.be.true();
 
     expect(validateDataContractMock).to.be.calledOnceWith(rawDataContract);
+  });
+
+  it('should not check Data Contract on dry run', async () => {
+    stateRepositoryMock.fetchDataContract.resolves(null);
+
+    executionContext.enableDryRun();
+
+    const result = await validateDataContractUpdateTransitionBasic(
+      rawStateTransition,
+      executionContext,
+    );
+
+    executionContext.disableDryRun();
+
+    expect(result).to.be.an.instanceOf(ValidationResult);
+    expect(result.isValid()).to.be.true();
   });
 });
