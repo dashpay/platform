@@ -5743,7 +5743,7 @@ __metadata:
     bls-signatures: ^0.2.5
     chalk: ^4.1.0
     dash: "workspace:~"
-    docker-compose: 0.23.3
+    docker-compose: pshenmic/docker-compose
     dockerode: ^3.2.0
     dot: ^1.1.3
     dotenv: ^8.6.0
@@ -6146,10 +6146,12 @@ __metadata:
   languageName: node
   linkType: hard
 
-"docker-compose@npm:0.23.3":
-  version: 0.23.3
-  resolution: "docker-compose@npm:0.23.3"
-  checksum: 3d2bd5e4cb1b73ee5f61cfa8447f1bef9040126b43bd63e1109e2c7d5a3e21df11003a49dbb52e7eb3b3f657cda50b47b604b1c58c48233d8166a206e3f89f18
+docker-compose@pshenmic/docker-compose:
+  version: 0.23.17
+  resolution: "docker-compose@https://github.com/pshenmic/docker-compose.git#commit=150e87f70ca4b15b2dd71c53499270b762b9fbda"
+  dependencies:
+    yaml: ^1.10.2
+  checksum: 7d2ed2ef920d630b775a763951cb63daf7134d33bae80eed2e026683134402fdc550ba6fa22096223559a81d631d5038b6b23ae9ec932ba629a7b8e1301048f8
   languageName: node
   linkType: hard
 
@@ -15409,6 +15411,13 @@ typescript@^3.9.5:
   version: 4.0.0
   resolution: "yallist@npm:4.0.0"
   checksum: 343617202af32df2a15a3be36a5a8c0c8545208f3d3dfbc6bb7c3e3b7e8c6f8e7485432e4f3b88da3031a6e20afa7c711eded32ddfb122896ac5d914e75848d5
+  languageName: node
+  linkType: hard
+
+"yaml@npm:^1.10.2":
+  version: 1.10.2
+  resolution: "yaml@npm:1.10.2"
+  checksum: ce4ada136e8a78a0b08dc10b4b900936912d15de59905b2bf415b4d33c63df1d555d23acb2a41b23cf9fb5da41c256441afca3d6509de7247daa062fd2c5ea5f
   languageName: node
   linkType: hard
 
