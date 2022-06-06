@@ -21,15 +21,15 @@ export default async function register(
         transaction: assetLockTransaction,
         privateKey: assetLockPrivateKey,
         outputIndex: assetLockOutputIndex
-    } = await this.internal.createAssetLockTransaction(fundingAmount);
+    } = await this.identities.utils.createAssetLockTransaction(fundingAmount);
 
     // Broadcast Asset Lock transaction
     await account.broadcastTransaction(assetLockTransaction);
 
-    const assetLockProof = await this.internal
+    const assetLockProof = await this.identities.utils
       .createAssetLockProof(assetLockTransaction, assetLockOutputIndex);
 
-    const { identity, identityCreateTransition, identityIndex } = await this.internal
+    const { identity, identityCreateTransition, identityIndex } = await this.identities.utils
       .createIdentityCreateTransition(assetLockProof, assetLockPrivateKey);
 
     await broadcastStateTransition(this, identityCreateTransition);

@@ -59,7 +59,7 @@ describe('Platform', () => {
         transaction,
         privateKey,
         outputIndex,
-      } = await client.platform.internal.createAssetLockTransaction(1);
+      } = await client.platform.identities.utils.createAssetLockTransaction(1);
 
       const invalidInstantLock = createFakeInstantLock(transaction.hash);
       const assetLockProof = await dpp.identity.createInstantAssetLockProof(
@@ -70,7 +70,7 @@ describe('Platform', () => {
 
       const {
         identityCreateTransition: invalidIdentityCreateTransition,
-      } = await client.platform.internal.createIdentityCreateTransition(
+      } = await client.platform.identities.utils.createIdentityCreateTransition(
         assetLockProof, privateKey,
       );
 
@@ -95,11 +95,11 @@ describe('Platform', () => {
         transaction,
         privateKey,
         outputIndex,
-      } = await client.platform.internal.createAssetLockTransaction(1);
+      } = await client.platform.identities.utils.createAssetLockTransaction(1);
 
       await client.getDAPIClient().core.broadcastTransaction(transaction.toBuffer());
 
-      const assetLockProof = await client.platform.internal
+      const assetLockProof = await client.platform.identities.utils
         .createAssetLockProof(transaction, outputIndex);
 
       // Creating normal transition
@@ -107,7 +107,7 @@ describe('Platform', () => {
         identity: identityOne,
         identityCreateTransition: identityCreateTransitionOne,
         identityIndex: identityOneIndex,
-      } = await client.platform.internal
+      } = await client.platform.identities.utils
         .createIdentityCreateTransition(assetLockProof, privateKey);
 
       await client.platform.broadcastStateTransition(
@@ -129,7 +129,7 @@ describe('Platform', () => {
       // Creating transition that tries to spend the same transaction
       const {
         identityCreateTransition: identityCreateDoubleSpendTransition,
-      } = await client.platform.internal
+      } = await client.platform.identities.utils
         .createIdentityCreateTransition(assetLockProof, privateKey);
 
       let broadcastError;
@@ -212,7 +212,7 @@ describe('Platform', () => {
           transaction,
           privateKey,
           outputIndex,
-        } = await client.platform.internal.createAssetLockTransaction(1);
+        } = await client.platform.identities.utils.createAssetLockTransaction(1);
 
         // Broadcast Asset Lock transaction
         await client.getDAPIClient().core.broadcastTransaction(transaction.toBuffer());
@@ -231,12 +231,12 @@ describe('Platform', () => {
         // Wait for platform chain to sync core height up to transaction height
         const {
           promise: coreHeightPromise,
-        } = await client.platform.internal
+        } = await client.platform.identities.utils
           .waitForCoreChainLockedHeight(transactionHeight);
 
         await coreHeightPromise;
 
-        const identityCreateTransitionData = await client.platform.internal
+        const identityCreateTransitionData = await client.platform.identities.utils
           .createIdentityCreateTransition(assetLockProof, privateKey);
 
         const {
@@ -405,20 +405,20 @@ describe('Platform', () => {
           transaction,
           privateKey,
           outputIndex,
-        } = await client.platform.internal.createAssetLockTransaction(1);
+        } = await client.platform.identities.utils.createAssetLockTransaction(1);
 
         await client.getDAPIClient().core.broadcastTransaction(transaction.toBuffer());
 
-        const assetLockProof = await client.platform.internal.createAssetLockProof(
+        const assetLockProof = await client.platform.identities.utils.createAssetLockProof(
           transaction,
           outputIndex,
         );
 
         // Creating normal transition
-        const identityTopUpTransitionOne = await client.platform.internal
+        const identityTopUpTransitionOne = await client.platform.identities.utils
           .createIdentityTopUpTransition(assetLockProof, privateKey, identity.getId());
         // Creating ST that tries to spend the same output
-        const conflictingTopUpStateTransition = await client.platform.internal
+        const conflictingTopUpStateTransition = await client.platform.identities.utils
           .createIdentityTopUpTransition(assetLockProof, privateKey, identity.getId());
 
         await client.platform.broadcastStateTransition(

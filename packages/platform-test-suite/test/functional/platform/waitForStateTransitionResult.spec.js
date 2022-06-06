@@ -38,17 +38,17 @@ describe.skip('Platform', () => {
         transaction: assetLockTransaction,
         privateKey: assetLockPrivateKey,
         outputIndex: assetLockOutputIndex,
-      } = await client.platform.internal
+      } = await client.platform.identities.utils
         .createAssetLockTransaction(10000);
 
       // Broadcast Asset Lock transaction
       await account.broadcastTransaction(assetLockTransaction);
-      const assetLockProof = await client.platform.internal
+      const assetLockProof = await client.platform.identities.utils
         .createAssetLockProof(assetLockTransaction, assetLockOutputIndex);
 
       const {
         identity, identityCreateTransition,
-      } = await client.platform.internal
+      } = await client.platform.identities.utils
         .createIdentityCreateTransition(assetLockProof, assetLockPrivateKey);
 
       const hash = crypto.createHash('sha256')

@@ -24,15 +24,15 @@ export async function topUp(this: Platform, identityId: Identifier | string, amo
         transaction: assetLockTransaction,
         privateKey: assetLockPrivateKey,
         outputIndex: assetLockOutputIndex
-    } = await this.internal.createAssetLockTransaction(amount);
+    } = await this.identities.utils.createAssetLockTransaction(amount);
 
     // Broadcast Asset Lock transaction
     await account.broadcastTransaction(assetLockTransaction);
     // Create a proof for the asset lock transaction
-    const assetLockProof = await this.internal
+    const assetLockProof = await this.identities.utils
       .createAssetLockProof(assetLockTransaction, assetLockOutputIndex);
 
-    const identityTopUpTransition = await this.internal
+    const identityTopUpTransition = await this.identities.utils
       .createIdentityTopUpTransition(assetLockProof, assetLockPrivateKey, identityId);
 
     // Broadcast ST

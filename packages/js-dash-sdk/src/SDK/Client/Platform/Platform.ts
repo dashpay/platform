@@ -71,14 +71,13 @@ interface Identities {
     get: Function,
     register: Function,
     topUp: Function,
-}
-
-interface Internal {
-  createAssetLockTransaction: Function
-  createAssetLockProof: Function
-  createIdentityCreateTransition: Function
-  createIdentityTopUpTransition: Function
-  waitForCoreChainLockedHeight: Function
+    utils: {
+        createAssetLockTransaction: Function
+        createAssetLockProof: Function
+        createIdentityCreateTransition: Function
+        createIdentityTopUpTransition: Function
+        waitForCoreChainLockedHeight: Function
+    }
 }
 
 interface DataContracts {
@@ -132,13 +131,6 @@ export class Platform {
     ]);
 
     /**
-     * A set of internal functions used for essential Platform interactions.
-     * This exposure is mainly required for usage in browser tests where SDK bundled into a single file
-     * @protected
-     */
-    protected internal: Internal;
-
-    /**
      * Construct some instance of Platform
      *
      * @param {PlatformOpts} options - options for Platform
@@ -165,15 +157,14 @@ export class Platform {
             register: registerIdentity.bind(this),
             get: getIdentity.bind(this),
             topUp: topUpIdentity.bind(this),
+            utils: {
+                createAssetLockProof: createAssetLockProof.bind(this),
+                createAssetLockTransaction: createAssetLockTransaction.bind(this),
+                createIdentityCreateTransition: createIdentityCreateTransition.bind(this),
+                createIdentityTopUpTransition: createIdentityTopUpTransition.bind(this),
+                waitForCoreChainLockedHeight: waitForCoreChainLockedHeight.bind(this),
+            }
         };
-
-        this.internal = {
-          createAssetLockProof: createAssetLockProof.bind(this),
-          createAssetLockTransaction: createAssetLockTransaction.bind(this),
-          createIdentityCreateTransition: createIdentityCreateTransition.bind(this),
-          createIdentityTopUpTransition: createIdentityTopUpTransition.bind(this),
-          waitForCoreChainLockedHeight: waitForCoreChainLockedHeight.bind(this),
-        }
 
         this.client = options.client;
 
