@@ -1,21 +1,24 @@
+const Dash = require('dash');
 const { expect } = require('chai');
-
-const getDataContractFixture = require(
-  '@dashevo/dpp/lib/test/fixtures/getDataContractFixture',
-);
-
-const getIdentityFixture = require(
-  '@dashevo/dpp/lib/test/fixtures/getIdentityFixture',
-);
 
 const { signStateTransition } = require('dash/build/src/SDK/Client/Platform/signStateTransition');
 
-const InvalidDocumentTypeError = require('@dashevo/dpp/lib/errors/consensus/basic/document/InvalidDocumentTypeError');
-const { StateTransitionBroadcastError } = require('dash/build/src/errors/StateTransitionBroadcastError');
-
+const getIdentityFixture = require('../../../lib/test/fixtures/getIdentityFixture');
+const getDataContractFixture = require('../../../lib/test/fixtures/getDataContractFixture');
 const wait = require('../../../lib/wait');
 
 const createClientWithFundedWallet = require('../../../lib/test/createClientWithFundedWallet');
+
+const {
+  Errors: {
+    StateTransitionBroadcastError,
+  },
+  PlatformProtocol: {
+    ConsensusErrors: {
+      InvalidDocumentTypeError,
+    },
+  },
+} = Dash;
 
 describe('Platform', () => {
   describe('Document', function main() {
