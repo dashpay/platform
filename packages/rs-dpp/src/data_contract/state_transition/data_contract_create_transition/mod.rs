@@ -17,7 +17,7 @@ use crate::{
         StateTransitionType,
     },
     util::json_value::{JsonValueExt, ReplaceWith},
-    ProtocolError,
+    Convertible, ProtocolError,
 };
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

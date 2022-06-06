@@ -70,6 +70,7 @@ pub trait JsonValueExt {
 
     fn parse_and_add_protocol_version(
         &mut self,
+        property_name: &str,
         protocol_bytes: &[u8],
     ) -> Result<(), ProtocolError>;
 }
@@ -237,7 +238,14 @@ impl JsonValueExt for JsonValue {
             let mut to_replace = get_value_mut(raw_path, self);
             match to_replace {
                 Some(ref mut v) => {
-                    replace_identifier(v, with)?;
+                    replace_identifier(v, with).map_err(|err| {
+                        anyhow!(
+                            "unable replace the {:?} with {:?}: '{}'",
+                            raw_path,
+                            with,
+                            err
+                        )
+                    })?;
                 }
                 None => {
                     trace!("path '{}' is not found, replacing to {:?} ", raw_path, with)
@@ -277,13 +285,14 @@ impl JsonValueExt for JsonValue {
 
     fn parse_and_add_protocol_version<'a>(
         &mut self,
+        property_name: &str,
         protocol_bytes: &[u8],
     ) -> Result<(), ProtocolError> {
         let protocol_version = deserializer::get_protocol_version(protocol_bytes)?;
         match self {
             JsonValue::Object(ref mut m) => {
                 m.insert(
-                    String::from("$protocolVersion"),
+                    String::from(property_name),
                     JsonValue::Number(Number::from(protocol_version)),
                 );
             }
