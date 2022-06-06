@@ -7606,7 +7606,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["bls-signatures", "npm:0.2.5"],
             ["chalk", "npm:4.1.2"],
             ["dash", "workspace:packages/js-dash-sdk"],
-            ["docker-compose", "npm:0.23.3"],
+            ["docker-compose", "https://github.com/pshenmic/docker-compose.git#commit=150e87f70ca4b15b2dd71c53499270b762b9fbda"],
             ["dockerode", "npm:3.3.1"],
             ["dot", "npm:1.1.3"],
             ["dotenv", "npm:8.6.0"],
@@ -8156,10 +8156,11 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
         }]
       ]],
       ["docker-compose", [
-        ["npm:0.23.3", {
-          "packageLocation": "./.yarn/cache/docker-compose-npm-0.23.3-00a13d5b3c-3d2bd5e4cb.zip/node_modules/docker-compose/",
+        ["https://github.com/pshenmic/docker-compose.git#commit=150e87f70ca4b15b2dd71c53499270b762b9fbda", {
+          "packageLocation": "./.yarn/cache/docker-compose-https-d3501136a6-7d2ed2ef92.zip/node_modules/docker-compose/",
           "packageDependencies": [
-            ["docker-compose", "npm:0.23.3"]
+            ["docker-compose", "https://github.com/pshenmic/docker-compose.git#commit=150e87f70ca4b15b2dd71c53499270b762b9fbda"],
+            ["yaml", "npm:1.10.2"]
           ],
           "linkType": "HARD",
         }]
@@ -19113,6 +19114,15 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           "packageLocation": "./.yarn/cache/yallist-npm-4.0.0-b493d9e907-343617202a.zip/node_modules/yallist/",
           "packageDependencies": [
             ["yallist", "npm:4.0.0"]
+          ],
+          "linkType": "HARD",
+        }]
+      ]],
+      ["yaml", [
+        ["npm:1.10.2", {
+          "packageLocation": "./.yarn/cache/yaml-npm-1.10.2-0e780aebdf-ce4ada136e.zip/node_modules/yaml/",
+          "packageDependencies": [
+            ["yaml", "npm:1.10.2"]
           ],
           "linkType": "HARD",
         }]
