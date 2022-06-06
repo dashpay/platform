@@ -19,7 +19,7 @@ const {
   PlatformProtocol: {
     Identifier,
     IdentityPublicKey,
-    Errors: {
+    ConsensusErrors: {
       InvalidInstantAssetLockProofSignatureError,
       IdentityAssetLockTransactionOutPointAlreadyExistsError,
       BalanceIsNotEnoughError,

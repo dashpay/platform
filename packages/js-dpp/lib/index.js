@@ -24,7 +24,7 @@ DashPlatformProtocol.Identifier = Identifier;
 
 DashPlatformProtocol.version = protocolVersion.latestVersion;
 
-DashPlatformProtocol.Errors = {
+DashPlatformProtocol.ConsensusErrors = {
   BalanceIsNotEnoughError,
   IncompatibleDataContractSchemaError,
   IdentityNotFoundError,

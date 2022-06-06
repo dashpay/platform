@@ -11,7 +11,7 @@ const {
     StateTransitionBroadcastError,
   },
   PlatformProtocol: {
-    Errors: {
+    ConsensusErrors: {
       IdentityNotFoundError,
       InvalidDataContractVersionError,
       IncompatibleDataContractSchemaError,

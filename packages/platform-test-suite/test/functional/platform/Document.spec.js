@@ -14,7 +14,7 @@ const {
     StateTransitionBroadcastError,
   },
   PlatformProtocol: {
-    Errors: {
+    ConsensusErrors: {
       InvalidDocumentTypeError,
     },
   },
