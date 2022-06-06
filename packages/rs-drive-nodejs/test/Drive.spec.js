@@ -51,7 +51,7 @@ describe('Drive', () => {
     it('should create contract if not exists', async () => {
       const result = await drive.applyContract(dataContract, blockTime);
       blockTime.setSeconds(blockTime.getSeconds() + 10);
-      expect(result).to.have.deep.members([12345000, 24690]);
+      expect(result).to.have.deep.members([17995000, 35990]);
     });
 
     it('should update existing contract', async () => {
@@ -69,7 +69,7 @@ describe('Drive', () => {
       blockTime.setSeconds(blockTime.getSeconds() + 10);
       const result = await drive.applyContract(dataContract, blockTime);
 
-      expect(result).to.have.deep.members([11455000, 53010]);
+      expect(result).to.have.deep.members([12320000, 54740]);
     });
   });
 
@@ -86,7 +86,7 @@ describe('Drive', () => {
 
         const result = await drive.createDocument(documentWithoutIndices, blockTime);
 
-        expect(result).to.have.deep.members([1145000, 2290]);
+        expect(result).to.have.deep.members([1990000, 3980]);
       });
     });
 
@@ -96,7 +96,7 @@ describe('Drive', () => {
 
         const result = await drive.createDocument(documentWithIndices, blockTime);
 
-        expect(result).to.have.deep.members([5015000, 25060]);
+        expect(result).to.have.deep.members([12740000, 40510]);
       });
     });
   });
@@ -120,7 +120,7 @@ describe('Drive', () => {
 
         const result = await drive.updateDocument(documentWithoutIndices, blockTime);
 
-        expect(result).to.have.deep.members([1135000, 5060]);
+        expect(result).to.have.deep.members([1980000, 6750]);
       });
     });
 
@@ -136,7 +136,7 @@ describe('Drive', () => {
 
         const result = await drive.updateDocument(documentWithIndices, blockTime);
 
-        expect(result).to.have.deep.members([1785000, 9860]);
+        expect(result).to.have.deep.members([3560000, 13410]);
       });
     });
   });
@@ -241,7 +241,7 @@ describe('Drive', () => {
     it('should create identity if not exists', async () => {
       const result = await drive.insertIdentity(identity);
       blockTime.setSeconds(blockTime.getSeconds() + 10);
-      expect(result).to.have.deep.members([1375000, 2750]);
+      expect(result).to.have.deep.members([2220000, 4440]);
     });
   });
 

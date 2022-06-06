@@ -226,9 +226,9 @@ impl<'a, const N: usize> PathKeyElementInfo<'a, N> {
         key_element: KeyElementInfo<'a>,
     ) -> Result<Self, Error> {
         match path_info {
-            PathIterator(path_interator) => match key_element {
+            PathIterator(path_iterator) => match key_element {
                 KeyElementInfo::KeyElement((key, element)) => {
-                    Ok(PathKeyElement((path_interator, key, element)))
+                    Ok(PathKeyElement((path_iterator, key, element)))
                 }
                 KeyElementInfo::KeyElementSize(_) => Err(Error::Drive(
                     DriveError::CorruptedCodeExecution("path matched with key element size"),
@@ -244,9 +244,9 @@ impl<'a, const N: usize> PathKeyElementInfo<'a, N> {
                     Ok(PathKeyElementSize((path_size, key_len, element_size)))
                 }
             },
-            PathFixedSizeIterator(path_interator) => match key_element {
+            PathFixedSizeIterator(path_iterator) => match key_element {
                 KeyElementInfo::KeyElement((key, element)) => {
-                    Ok(PathFixedSizeKeyElement((path_interator, key, element)))
+                    Ok(PathFixedSizeKeyElement((path_iterator, key, element)))
                 }
                 KeyElementInfo::KeyElementSize(_) => Err(Error::Drive(
                     DriveError::CorruptedCodeExecution("path matched with key element size"),

@@ -4,7 +4,7 @@ use crate::error::Error;
 use ciborium::value::{Integer, Value};
 use grovedb::Query;
 use sqlparser::ast;
-use std::collections::{BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use WhereOperator::{
     Between, BetweenExcludeBounds, BetweenExcludeLeft, BetweenExcludeRight, Equal, GreaterThan,
     GreaterThanOrEquals, In, LessThan, LessThanOrEquals, StartsWith,
@@ -301,9 +301,9 @@ impl<'a> WhereClause {
 
     pub(crate) fn group_clauses(
         where_clauses: &'a [WhereClause],
-    ) -> Result<(HashMap<String, Self>, Option<Self>, Option<Self>), Error> {
+    ) -> Result<(BTreeMap<String, Self>, Option<Self>, Option<Self>), Error> {
         if where_clauses.is_empty() {
-            return Ok((HashMap::new(), None, None));
+            return Ok((BTreeMap::new(), None, None));
         }
         let equal_clauses_array =
             where_clauses
@@ -316,7 +316,7 @@ impl<'a> WhereClause {
                     _ => None,
                 });
         let mut known_fields: BTreeSet<String> = BTreeSet::new();
-        let equal_clauses: HashMap<String, WhereClause> = equal_clauses_array
+        let equal_clauses: BTreeMap<String, WhereClause> = equal_clauses_array
             .into_iter()
             .map(|where_clause| {
                 if known_fields.contains(&where_clause.field) {
@@ -330,7 +330,7 @@ impl<'a> WhereClause {
                     Ok((where_clause.field.clone(), where_clause))
                 }
             })
-            .collect::<Result<HashMap<String, WhereClause>, Error>>()?;
+            .collect::<Result<BTreeMap<String, WhereClause>, Error>>()?;
 
         let in_clauses_array = where_clauses
             .iter()

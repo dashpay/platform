@@ -8,6 +8,7 @@ use crate::common::{
     cbor_inner_bool_value_with_default, cbor_inner_btree_map, cbor_inner_text_value,
     cbor_map_to_btree_map, get_key_from_cbor_map,
 };
+use crate::contract::types::DocumentFieldType;
 use crate::drive::defaults::{DEFAULT_HASH_SIZE, MAX_INDEX_SIZE, PROTOCOL_VERSION};
 use crate::drive::{Drive, RootTree};
 use crate::error::contract::ContractError;
@@ -600,6 +601,22 @@ impl DocumentType {
             }
         }
         Ok(index_properties)
+    }
+
+    pub fn document_field_type_for_property(&self, property: &str) -> Option<DocumentFieldType> {
+        match property {
+            "$id" => Some(DocumentFieldType::ByteArray(
+                Some(DEFAULT_HASH_SIZE),
+                Some(DEFAULT_HASH_SIZE),
+            )),
+            "$ownerId" => Some(DocumentFieldType::ByteArray(
+                Some(DEFAULT_HASH_SIZE),
+                Some(DEFAULT_HASH_SIZE),
+            )),
+            "$createdAt" => Some(DocumentFieldType::Date),
+            "$updatedAt" => Some(DocumentFieldType::Date),
+            &_ => self.properties.get(property).map(|p| p.clone()),
+        }
     }
 
     pub fn random_documents(&self, count: u32, seed: Option<u64>) -> Vec<Document> {

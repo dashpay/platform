@@ -1,3 +1,4 @@
+use crate::drive::defaults::EMPTY_TREE_STORAGE_SIZE;
 use enum_map::{enum_map, Enum, EnumMap};
 use grovedb::{Element, PathQuery};
 
@@ -181,15 +182,11 @@ impl InsertOperation {
     pub fn for_empty_tree(key_size: usize) -> Self {
         InsertOperation {
             key_size: key_size as u16,
-            value_size: 0,
+            value_size: EMPTY_TREE_STORAGE_SIZE as u32,
         }
     }
     pub fn for_key_value(key_size: usize, element: &Element) -> Self {
-        let value_size = match element {
-            Element::Item(item) => item.len(),
-            Element::Reference(path) => path.iter().map(|inner| inner.len()).sum(),
-            Element::Tree(_) => 32,
-        };
+        let value_size = element.node_byte_size(key_size);
         InsertOperation {
             key_size: key_size as u16,
             value_size: value_size as u32,
@@ -197,9 +194,10 @@ impl InsertOperation {
     }
 
     pub fn for_key_value_size(key_size: usize, value_size: usize) -> Self {
+        let node_value_size = Element::calculate_node_byte_size(value_size, key_size);
         InsertOperation {
             key_size: key_size as u16,
-            value_size: value_size as u32,
+            value_size: node_value_size as u32,
         }
     }
 
