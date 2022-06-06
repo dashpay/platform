@@ -1,12 +1,15 @@
-const {
-  Transaction,
-  PrivateKey,
-} = require('@dashevo/dashcore-lib');
-
-const NotFoundError = require('@dashevo/dapi-client/lib/transport/GrpcTransport/errors/NotFoundError');
+const Dash = require('dash');
 
 const wait = require('../../../lib/wait');
 const createClientWithFundedWallet = require('../../../lib/test/createClientWithFundedWallet');
+
+const {
+  Core: { Transaction, PrivateKey }, DAPIClient: {
+    Errors: {
+      NotFoundError,
+    },
+  },
+} = Dash;
 
 describe('Core', () => {
   describe('getTransaction', () => {
