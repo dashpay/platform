@@ -260,6 +260,10 @@ class DockerCompose {
         commandOptions,
       }));
     } catch (e) {
+      if (e.err && e.err.startsWith('no such service:')) {
+        return [];
+      }
+
       throw new DockerComposeError(e);
     }
 
