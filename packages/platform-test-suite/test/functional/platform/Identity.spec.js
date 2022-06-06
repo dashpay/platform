@@ -343,9 +343,11 @@ describe('Platform', () => {
       });
 
       it('should fail to create more documents if there are no more credits', async () => {
+        const lowBalanceIdentity = await client.platform.identities.register(4500);
+
         const document = await client.platform.documents.create(
           'customContracts.niceDocument',
-          identity,
+          lowBalanceIdentity,
           {
             name: 'Some Very Long Long Long Name'.repeat(100),
           },
@@ -356,7 +358,7 @@ describe('Platform', () => {
         try {
           await client.platform.documents.broadcast({
             create: [document],
-          }, identity);
+          }, lowBalanceIdentity);
         } catch (e) {
           broadcastError = e;
         }
