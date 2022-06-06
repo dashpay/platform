@@ -78,6 +78,9 @@ describe('checkFeePrediction', () => {
     dpp = container.resolve('dpp');
 
     stateRepository = container.resolve('stateRepository');
+
+    stateRepository.verifyInstantLock = this.sinon.stub().resolves(true);
+
     groveDBStore = container.resolve('groveDBStore');
 
     const createInitialStateStructure = container.resolve('createInitialStateStructure');
@@ -138,15 +141,13 @@ describe('checkFeePrediction', () => {
         IdentityPublicKey.TYPES.ECDSA_SECP256K1,
       );
 
-      const executionContext = stateTransition.getExecutionContext();
-
-      executionContext.enableDryRun();
-
       // validate state transition
       const validateBasicResult = await dpp.stateTransition.validateBasic(stateTransition);
       expect(validateBasicResult.isValid()).to.be.true();
 
-      executionContext.clearDryOperations();
+      const executionContext = stateTransition.getExecutionContext();
+
+      executionContext.enableDryRun();
 
       // calculate predicted fee
 
@@ -194,16 +195,14 @@ describe('checkFeePrediction', () => {
         IdentityPublicKey.TYPES.ECDSA_SECP256K1,
       );
 
-      const executionContext = stateTransition.getExecutionContext();
-      executionContext.enableDryRun();
-
       // validate state transition
 
       const validateBasicResult = await dpp.stateTransition.validateBasic(stateTransition);
 
       expect(validateBasicResult.isValid()).to.be.true();
 
-      executionContext.clearDryOperations();
+      const executionContext = stateTransition.getExecutionContext();
+      executionContext.enableDryRun();
 
       // calculate predicted fee
       const validateStateResult = await dpp.stateTransition.validateState(stateTransition);
@@ -300,17 +299,15 @@ describe('checkFeePrediction', () => {
         privateKeys[0],
       );
 
-      const executionContext = stateTransition.getExecutionContext();
-
-      executionContext.enableDryRun();
-
       // validate state transition
 
       const validateBasicResult = await dpp.stateTransition.validateBasic(stateTransition);
 
       expect(validateBasicResult.isValid()).to.be.true();
 
-      executionContext.clearDryOperations();
+      const executionContext = stateTransition.getExecutionContext();
+
+      executionContext.enableDryRun();
 
       const validateStateResult = await dpp.stateTransition.validateState(stateTransition);
       expect(validateStateResult.isValid()).to.be.true();
@@ -405,15 +402,13 @@ describe('checkFeePrediction', () => {
         privateKeys[1],
       );
 
-      const executionContext = stateTransition.getExecutionContext();
-
-      executionContext.enableDryRun();
-
       const validateBasicResult = await dpp.stateTransition.validateBasic(stateTransition);
 
       expect(validateBasicResult.isValid()).to.be.true();
 
-      executionContext.clearDryOperations();
+      const executionContext = stateTransition.getExecutionContext();
+
+      executionContext.enableDryRun();
 
       const validateStateResult = await dpp.stateTransition.validateState(stateTransition);
       expect(validateStateResult.isValid()).to.be.true();
