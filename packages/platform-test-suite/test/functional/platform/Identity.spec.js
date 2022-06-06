@@ -1,9 +1,9 @@
 const Dash = require('dash');
-const getDataContractFixture = require('@dashevo/dpp/lib/test/fixtures/getDataContractFixture');
 
 const { createFakeInstantLock } = require('dash/build/src/utils/createFakeIntantLock');
 
 const { hash } = require('@dashevo/dpp/lib/util/hash');
+const getDataContractFixture = require('../../../lib/test/fixtures/getDataContractFixture');
 
 const createClientWithFundedWallet = require('../../../lib/test/createClientWithFundedWallet');
 const wait = require('../../../lib/wait');
@@ -24,7 +24,6 @@ const {
       IdentityAssetLockTransactionOutPointAlreadyExistsError,
       BalanceIsNotEnoughError,
     },
-    DataContractFactory,
   },
 } = Dash;
 
@@ -279,7 +278,7 @@ describe('Platform', () => {
       let dataContractFixture;
 
       before(async () => {
-        dataContractFixture = getDataContractFixture(identity.getId(), DataContractFactory);
+        dataContractFixture = getDataContractFixture(identity.getId());
 
         await client.platform.contracts.publish(dataContractFixture, identity);
 

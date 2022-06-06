@@ -10,14 +10,9 @@ const createDPPMock = require('../mocks/createDPPMock');
 /**
  *
  * @param {Buffer} [ownerId]
- * @param {DataContractFactory} [DataContractFactoryClass] - needed for usage in other scopes
- * aside from dpp tests (platform-test-suite in karma)
  * @return {DataContract}
  */
-module.exports = function getDataContractFixture(
-  ownerId = randomOwnerId,
-  DataContractFactoryClass = DataContractFactory,
-) {
+module.exports = function getDataContractFixture(ownerId = randomOwnerId) {
   const documents = {
     niceDocument: {
       type: 'object',
@@ -239,7 +234,7 @@ module.exports = function getDataContractFixture(
     },
   };
 
-  const factory = new DataContractFactoryClass(createDPPMock(), () => {});
+  const factory = new DataContractFactory(createDPPMock(), () => {});
 
   const dataContract = factory.create(ownerId, documents);
 

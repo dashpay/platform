@@ -1,14 +1,12 @@
 const Dash = require('dash');
 const { expect } = require('chai');
 
-const getDataContractFixture = require(
-  '@dashevo/dpp/lib/test/fixtures/getDataContractFixture',
-);
 const getIdentityFixture = require(
   '@dashevo/dpp/lib/test/fixtures/getIdentityFixture',
 );
 
 const { signStateTransition } = require('dash/build/src/SDK/Client/Platform/signStateTransition');
+const getDataContractFixture = require('../../../lib/test/fixtures/getDataContractFixture');
 const wait = require('../../../lib/wait');
 const generateRandomIdentifier = require('../../../lib/test/utils/generateRandomIdentifier');
 
@@ -44,10 +42,7 @@ describe('Platform', () => {
         await wait(5000);
       }
 
-      dataContractFixture = getDataContractFixture(
-        identity.getId(),
-        Dash.PlatformProtocol.DataContractFactory,
-      );
+      dataContractFixture = getDataContractFixture(identity.getId());
 
       await client.platform.contracts.publish(dataContractFixture, identity);
 
@@ -63,10 +58,7 @@ describe('Platform', () => {
     });
 
     beforeEach(() => {
-      dataContractFixture = getDataContractFixture(
-        identity.getId(),
-        Dash.PlatformProtocol.DataContractFactory,
-      );
+      dataContractFixture = getDataContractFixture(identity.getId());
     });
 
     after(async () => {

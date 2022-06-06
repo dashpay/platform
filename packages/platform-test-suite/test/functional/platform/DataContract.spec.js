@@ -1,14 +1,10 @@
 const Dash = require('dash');
 
-const getDataContractFixture = require(
-  '@dashevo/dpp/lib/test/fixtures/getDataContractFixture',
-);
+const getDataContractFixture = require('../../../lib/test/fixtures/getDataContractFixture');
 
 const wait = require('../../../lib/wait');
 
 const createClientWithFundedWallet = require('../../../lib/test/createClientWithFundedWallet');
-
-const getRandomIdentifier = require('../../../lib/test/utils/generateRandomIdentifier');
 
 const {
   Errors: {
@@ -46,10 +42,7 @@ describe('Platform', () => {
     it('should fail to create new data contract with unknown owner', async () => {
       // if no identity is specified
       // random is generated within the function
-      dataContractFixture = getDataContractFixture(
-        getRandomIdentifier(),
-        Dash.PlatformProtocol.DataContractFactory,
-      );
+      dataContractFixture = getDataContractFixture();
 
       let broadcastError;
 
@@ -64,10 +57,7 @@ describe('Platform', () => {
     });
 
     it('should create new data contract with previously created identity as an owner', async () => {
-      dataContractFixture = getDataContractFixture(
-        identity.getId(),
-        Dash.PlatformProtocol.DataContractFactory,
-      );
+      dataContractFixture = getDataContractFixture(identity.getId());
 
       await client.platform.contracts.publish(dataContractFixture, identity);
     });
