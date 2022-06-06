@@ -3,7 +3,13 @@ const Dash = require('dash');
 const wait = require('../../../lib/wait');
 const createClientWithFundedWallet = require('../../../lib/test/createClientWithFundedWallet');
 
-const { Core: { Transaction, PrivateKey } } = Dash;
+const {
+  Core: { Transaction, PrivateKey }, DAPIClient: {
+    Errors: {
+      NotFoundError,
+    },
+  },
+} = Dash;
 
 describe('Core', () => {
   describe('getTransaction', () => {
@@ -45,7 +51,7 @@ describe('Core', () => {
 
         expect.fail('should throw NotFound');
       } catch (e) {
-        expect(e.constructor.name === 'NotFoundError');
+        expect(e).to.be.an.instanceOf(NotFoundError);
       }
     });
   });
