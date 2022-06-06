@@ -10,7 +10,6 @@ const InvalidDataContractVersionError = require('../../../../../errors/consensus
 const DataContractNotPresentError = require('../../../../../errors/consensus/basic/document/DataContractNotPresentError');
 
 const Identifier = require('../../../../../identifier/Identifier');
-const StateTransitionExecutionContext = require('../../../../../stateTransition/StateTransitionExecutionContext');
 
 /**
  * @param {JsonSchemaValidator} jsonSchemaValidator
@@ -69,18 +68,15 @@ function validateDataContractUpdateTransitionBasicFactory(
 
     const dataContractId = Identifier.from(rawDataContract.$id);
 
-    const tmpExecutionContext = new StateTransitionExecutionContext();
-
     // Data contract should exist
     const existingDataContract = await stateRepository.fetchDataContract(
       dataContractId,
-      tmpExecutionContext,
+      executionContext,
     );
 
-    // put operations into our context
-    tmpExecutionContext.getOperations().forEach((operation) => {
-      executionContext.addOperation(operation);
-    });
+    if (executionContext.isDryRun()) {
+      return result;
+    }
 
     if (!existingDataContract) {
       result.addError(

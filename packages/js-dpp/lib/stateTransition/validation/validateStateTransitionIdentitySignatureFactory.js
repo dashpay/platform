@@ -40,18 +40,16 @@ function validateStateTransitionIdentitySignatureFactory(
 
     const ownerId = stateTransition.getOwnerId();
 
-    // We use temporary ExecutionContext because despite the dryRun, we need to get the identity and
-    // put operations we made into dryRun section()
-    // otherwise we can't count SignatureVerificationOperations
+    // We use temporary execution context without dry run,
+    // because despite the dryRun, we need to get the
+    // identity to proceed with following logic
     const tmpExecutionContext = new StateTransitionExecutionContext();
 
     // Owner must exist
     const identity = await stateRepository.fetchIdentity(ownerId, tmpExecutionContext);
 
-    // put operations into our context
-    tmpExecutionContext.getOperations().forEach((operation) => {
-      executionContext.addOperation(operation);
-    });
+    // Collect operations back from temporary context
+    executionContext.addOperation(...tmpExecutionContext.getOperations());
 
     if (!identity) {
       result.addError(new IdentityNotFoundError(ownerId.toBuffer()));
@@ -84,6 +82,10 @@ function validateStateTransitionIdentitySignatureFactory(
     const operation = new SignatureVerificationOperation(publicKey.getType());
 
     executionContext.addOperation(operation);
+
+    if (executionContext.isDryRun()) {
+      return result;
+    }
 
     try {
       const signatureIsValid = await stateTransition.verifySignature(publicKey);

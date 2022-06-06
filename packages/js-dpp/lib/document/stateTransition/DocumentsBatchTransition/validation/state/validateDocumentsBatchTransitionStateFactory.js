@@ -18,6 +18,7 @@ const DocumentTimestampsMismatchError = require(
 const AbstractDocumentTransition = require('../../documentTransition/AbstractDocumentTransition');
 
 const validateTimeInBlockTimeWindow = require('../../../../../blockTimeWindow/validateTimeInBlockTimeWindow');
+const StateTransitionExecutionContext = require('../../../../../stateTransition/StateTransitionExecutionContext');
 
 /**
  *
@@ -51,8 +52,19 @@ function validateDocumentsBatchTransitionStateFactory(
   ) {
     const result = new ValidationResult();
 
+    // We use temporary execution context without dry run,
+    // because despite the dryRun, we need to get the
+    // data contract to proceed with following logic
+    const tmpExecutionContext = new StateTransitionExecutionContext();
+
     // Data contract must exist
-    const dataContract = await stateRepository.fetchDataContract(dataContractId);
+    const dataContract = await stateRepository.fetchDataContract(
+      dataContractId,
+      tmpExecutionContext,
+    );
+
+    // Collect operations back from temporary context
+    executionContext.addOperation(...tmpExecutionContext.getOperations());
 
     if (!dataContract) {
       throw new DataContractNotPresentError(dataContractId);
