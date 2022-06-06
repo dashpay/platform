@@ -164,7 +164,7 @@ impl StateTransitionConvert for DataContractCreateTransition {
         }
         json_object.insert(
             String::from(PROPERTY_DATA_CONTRACT),
-            self.data_contract.to_object(false)?,
+            self.data_contract.to_object()?,
         )?;
         Ok(json_object)
     }
@@ -190,7 +190,7 @@ mod test {
         let state_transition = DataContractCreateTransition::from_raw_object(json!({
                     PROPERTY_PROTOCOL_VERSION: version::LATEST_VERSION,
                                         PROPERTY_ENTROPY : data_contract.entropy,
-                    PROPERTY_DATA_CONTRACT : data_contract.to_object(false).unwrap(),
+                    PROPERTY_DATA_CONTRACT : data_contract.to_object().unwrap(),
         }))
         .expect("state transition should be created without errors");
 
@@ -225,10 +225,10 @@ mod test {
         assert_eq!(
             data.state_transition
                 .get_data_contract()
-                .to_object(false)
+                .to_object()
                 .expect("conversion to object shouldn't fail"),
             data.data_contract
-                .to_object(false)
+                .to_object()
                 .expect("conversion to object shouldn't fail")
         );
     }
