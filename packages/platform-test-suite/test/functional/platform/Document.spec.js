@@ -29,7 +29,7 @@ describe('Platform', () => {
     before(async () => {
       client = await createClientWithFundedWallet(undefined, 200000);
 
-      identity = await client.platform.identities.register(150000);
+      identity = await client.platform.identities.register(160000);
 
       // Additional wait time to mitigate testnet latency
       if (process.env.NETWORK === 'testnet') {
@@ -324,6 +324,7 @@ describe('Platform', () => {
       }
 
       expect(broadcastError).to.exist();
+      console.log(broadcastError.message);
       expect(/Document \w* updatedAt timestamp .* are out of block time window from .* and .*/.test(broadcastError.message)).to.be.true();
       expect(broadcastError.code).to.be.equal(4008);
     });
