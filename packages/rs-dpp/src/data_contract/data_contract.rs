@@ -305,7 +305,7 @@ mod test {
         let string_contract = get_data_from_file("src/tests/payloads/contract_example.json")?;
         let data_contract: DataContract = serde_json::from_str(&string_contract)?;
 
-        let raw_data_contract = data_contract.to_object(false)?;
+        let raw_data_contract = data_contract.to_object()?;
         for path in IDENTIFIER_FIELDS {
             assert!(raw_data_contract
                 .get(path)
