@@ -36,24 +36,30 @@ export async function update(
   if (identityUpdateTransition.getPublicKeysToAdd()) {
     const signerKey = identity.getPublicKeys()[signerKeyIndex];
 
-    const promises = identityUpdateTransition.getPublicKeysToAdd().map(async (publicKey) => {
-      const privateKey = privateKeys[publicKey.getId()];
+    // must be run sequentially! will not work with Promise.all!
+    // more info at https://jrsinclair.com/articles/2019/how-to-run-async-js-in-parallel-or-sequential/
 
-      if (!privateKey) {
-        throw new Error(`Private key for key ${publicKey.getId()} not found`);
-      }
+    const starterPromise = Promise.resolve(null);
 
-      identityUpdateTransition.setSignaturePublicKeyId(signerKey.getId());
+    await identityUpdateTransition.getPublicKeysToAdd().reduce(
+      (previousPromise, publicKey) => previousPromise.then(async () => {
+        const privateKey = privateKeys[publicKey.getId()];
 
-      await identityUpdateTransition.signByPrivateKey(privateKey, publicKey.getType());
+        if (!privateKey) {
+          throw new Error(`Private key for key ${publicKey.getId()} not found`);
+        }
 
-      publicKey.setSignature(identityUpdateTransition.getSignature());
+        identityUpdateTransition.setSignaturePublicKeyId(signerKey.getId());
 
-      identityUpdateTransition.setSignature(undefined);
-      identityUpdateTransition.setSignaturePublicKeyId(undefined);
-    })
+        await identityUpdateTransition.signByPrivateKey(privateKey, publicKey.getType());
 
-    await Promise.all(promises);
+        publicKey.setSignature(identityUpdateTransition.getSignature());
+
+        identityUpdateTransition.setSignature(undefined);
+        identityUpdateTransition.setSignaturePublicKeyId(undefined);
+      }),
+      starterPromise,
+    );
   }
 
   await signStateTransition(this, identityUpdateTransition, identity, signerKeyIndex);
