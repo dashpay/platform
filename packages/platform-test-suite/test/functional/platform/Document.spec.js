@@ -1,14 +1,11 @@
 const Dash = require('dash');
 const { expect } = require('chai');
 
-const getIdentityFixture = require(
-  '@dashevo/dpp/lib/test/fixtures/getIdentityFixture',
-);
-
 const { signStateTransition } = require('dash/build/src/SDK/Client/Platform/signStateTransition');
+
+const getIdentityFixture = require('../../../lib/test/fixtures/getIdentityFixture');
 const getDataContractFixture = require('../../../lib/test/fixtures/getDataContractFixture');
 const wait = require('../../../lib/wait');
-const generateRandomIdentifier = require('../../../lib/test/utils/generateRandomIdentifier');
 
 const createClientWithFundedWallet = require('../../../lib/test/createClientWithFundedWallet');
 
@@ -109,11 +106,7 @@ describe('Platform', () => {
     });
 
     it('should fail to create a new document with an unknown owner', async () => {
-      const unknownIdentity = getIdentityFixture(
-        generateRandomIdentifier(),
-        Dash.PlatformProtocol.Identity,
-        Dash.PlatformProtocol.IdentityPublicKey,
-      );
+      const unknownIdentity = getIdentityFixture();
 
       document = await client.platform.documents.create(
         'customContracts.niceDocument',

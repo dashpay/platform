@@ -14,11 +14,15 @@ const InvalidDocumentTypeError = require('./errors/consensus/basic/document/Inva
 const IdentityNotFoundError = require('./errors/consensus/signature/IdentityNotFoundError');
 const BalanceIsNotEnoughError = require('./errors/consensus/fee/BalanceIsNotEnoughError');
 
+const protocolVersion = require('./version/protocolVersion');
+
 DashPlatformProtocol.DataContractFactory = DataContractFactory;
 
 DashPlatformProtocol.Identity = Identity;
 DashPlatformProtocol.IdentityPublicKey = IdentityPublicKey;
 DashPlatformProtocol.Identifier = Identifier;
+
+DashPlatformProtocol.version = protocolVersion.latestVersion;
 
 DashPlatformProtocol.Errors = {
   BalanceIsNotEnoughError,

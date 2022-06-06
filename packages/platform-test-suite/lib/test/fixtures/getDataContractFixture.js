@@ -6,6 +6,7 @@ const {
   PlatformProtocol: {
     DataContractFactory,
     Identifier,
+    version,
   },
 } = Dash;
 
@@ -118,7 +119,7 @@ module.exports = function getDataContractFixture(
   };
 
   const dpp = {
-    getProtocolVersion: () => 1,
+    getProtocolVersion: () => version,
   };
 
   const factory = new DataContractFactory(dpp, () => {});

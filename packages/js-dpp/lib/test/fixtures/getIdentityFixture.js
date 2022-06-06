@@ -5,21 +5,12 @@ const protocolVersion = require('../../version/protocolVersion');
 const Identity = require('../../identity/Identity');
 const IdentityPublicKey = require('../../identity/IdentityPublicKey');
 
-const randomIdentifier = generateRandomIdentifier();
+const id = generateRandomIdentifier();
 
 /**
- * @param {Identifier} id
- * @param {Identity} [IdentityClass]  - needed for usage in other scopes
- * aside from dpp tests (platform-test-suite in karma)
- * @param {IdentityPublicKey} [IdentityPublicKeyClass]  - needed for usage in other scopes
- * aside from dpp tests (platform-test-suite in karma)
  * @return {Identity}
  */
-module.exports = function getIdentityFixture(
-  id = randomIdentifier,
-  IdentityClass = Identity,
-  IdentityPublicKeyClass = IdentityPublicKey,
-) {
+module.exports = function getIdentityFixture() {
   const rawIdentity = {
     protocolVersion: protocolVersion.latestVersion,
     id: id.toBuffer(),
@@ -28,22 +19,22 @@ module.exports = function getIdentityFixture(
     publicKeys: [
       {
         id: 0,
-        type: IdentityPublicKeyClass.TYPES.ECDSA_SECP256K1,
+        type: IdentityPublicKey.TYPES.ECDSA_SECP256K1,
         data: Buffer.from('AuryIuMtRrl/VviQuyLD1l4nmxi9ogPzC9LT7tdpo0di', 'base64'),
-        purpose: IdentityPublicKeyClass.PURPOSES.AUTHENTICATION,
-        securityLevel: IdentityPublicKeyClass.SECURITY_LEVELS.MASTER,
+        purpose: IdentityPublicKey.PURPOSES.AUTHENTICATION,
+        securityLevel: IdentityPublicKey.SECURITY_LEVELS.MASTER,
         readOnly: false,
       },
       {
         id: 1,
-        type: IdentityPublicKeyClass.TYPES.ECDSA_SECP256K1,
+        type: IdentityPublicKey.TYPES.ECDSA_SECP256K1,
         data: Buffer.from('A8AK95PYMVX5VQKzOhcVQRCUbc9pyg3RiL7jttEMDU+L', 'base64'),
-        purpose: IdentityPublicKeyClass.PURPOSES.ENCRYPTION,
-        securityLevel: IdentityPublicKeyClass.SECURITY_LEVELS.MEDIUM,
+        purpose: IdentityPublicKey.PURPOSES.ENCRYPTION,
+        securityLevel: IdentityPublicKey.SECURITY_LEVELS.MEDIUM,
         readOnly: false,
       },
     ],
   };
 
-  return new IdentityClass(rawIdentity);
+  return new Identity(rawIdentity);
 };
