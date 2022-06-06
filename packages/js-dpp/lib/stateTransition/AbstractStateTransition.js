@@ -340,7 +340,7 @@ class AbstractStateTransition {
   }
 
   /**
-   * Get state transtion execution context
+   * Get state transition execution context
    *
    * @return {StateTransitionExecutionContext}
    */

@@ -12,15 +12,18 @@ const PublicKeySecurityLevelNotMetError = require('../errors/PublicKeySecurityLe
 const WrongPublicKeyPurposeError = require('../errors/WrongPublicKeyPurposeError');
 const PublicKeyIsDisabledError = require('../errors/PublicKeyIsDisabledError');
 const SignatureVerificationOperation = require('../fee/operations/SignatureVerificationOperation');
+const ValidationResult = require('../../validation/ValidationResult');
+const IdentityNotFoundError = require('../../errors/consensus/signature/IdentityNotFoundError');
+const StateTransitionExecutionContext = require('../StateTransitionExecutionContext');
 
 /**
  * Validate state transition signature
  *
- * @param {validateIdentityExistence} validateIdentityExistence
+ * @param {StateRepository} stateRepository
  * @returns {validateStateTransitionIdentitySignature}
  */
 function validateStateTransitionIdentitySignatureFactory(
-  validateIdentityExistence,
+  stateRepository,
 ) {
   /**
    * @typedef validateStateTransitionIdentitySignature
@@ -31,21 +34,32 @@ function validateStateTransitionIdentitySignatureFactory(
    * @returns {Promise<ValidationResult>}
    */
   async function validateStateTransitionIdentitySignature(stateTransition) {
+    const result = new ValidationResult();
+
     const executionContext = stateTransition.getExecutionContext();
 
-    // Owner must exist
-    const result = await validateIdentityExistence(
-      stateTransition.getOwnerId(),
-      executionContext,
-    );
+    const ownerId = stateTransition.getOwnerId();
 
-    if (!result.isValid()) {
+    // We use temporary ExecutionContext because despite the dryRun, we need to get the identity and
+    // put operations we made into dryRun section()
+    // otherwise we can't count SignatureVerificationOperations
+    const tmpExecutionContext = new StateTransitionExecutionContext();
+
+    // Owner must exist
+    const identity = await stateRepository.fetchIdentity(ownerId, tmpExecutionContext);
+
+    // put operations into our context
+    tmpExecutionContext.getOperations().forEach((operation) => {
+      executionContext.addOperation(operation);
+    });
+
+    if (!identity) {
+      result.addError(new IdentityNotFoundError(ownerId.toBuffer()));
+
       return result;
     }
 
     // Signature must be valid
-    const identity = result.getData();
-
     const publicKey = identity.getPublicKeyById(stateTransition.getSignaturePublicKeyId());
 
     if (!publicKey) {

@@ -393,6 +393,11 @@ describe('checkFeePrediction', () => {
     });
 
     it('should check that DataContractUpdate predicted fee > real fee', async () => {
+      await stateRepository.storeDataContract(dataContract);
+
+      initialAppHash = await groveDBStore.getRootHash();
+
+      dataContract.setVersion(2);
       const stateTransition = dpp.dataContract.createDataContractUpdateTransition(dataContract);
 
       await stateTransition.sign(
@@ -578,7 +583,6 @@ describe('checkFeePrediction', () => {
 
       expect(predictedStateTransitionFee).to.be.greaterThan(realStateTransitionFee);
 
-      console.log(dryRunOperations, actualOperations);
       expectFeeCalculationsAreValid(dryRunOperations, actualOperations);
     });
 
