@@ -1,34 +1,47 @@
+const identityCreateTransitionSchema = require('../../schema/identity/stateTransition/identityCreate.json');
+
 const IdentityPublicKey = require('./IdentityPublicKey');
+
 const Identity = require('./Identity');
+const getInstantAssetLockProofFixture = require('../test/fixtures/getInstantAssetLockProofFixture');
 
 let identity;
 
-function getBiggestPossibleIdentity() {
+/**
+ * @param {InstantAssetLockProof|ChainAssetLockProof} assetLockProof
+ * @return {Identity}
+ */
+function getBiggestPossibleIdentity(assetLockProof = getInstantAssetLockProofFixture()) {
   if (identity) {
     return identity;
   }
 
   const publicKeys = [];
 
-  for (let i = 0; i < 25; i++) {
+  for (let i = 0; i < identityCreateTransitionSchema.properties.publicKeys.maxItems; i++) {
+    const securityLevel = i === 0
+      ? IdentityPublicKey.SECURITY_LEVELS.MASTER
+      : IdentityPublicKey.SECURITY_LEVELS.HIGH;
+
     publicKeys.push({
       id: i,
-      type: 1,
+      type: IdentityPublicKey.TYPES.BLS12_381,
       purpose: IdentityPublicKey.PURPOSES.AUTHENTICATION,
-      securityLevel: IdentityPublicKey.SECURITY_LEVELS.MASTER,
-      readOnly: true,
-      // Copy data buffer
+      securityLevel,
+      readOnly: false,
       data: Buffer.alloc(48).fill(255),
     });
   }
 
   identity = new Identity({
     protocolVersion: 1,
-    id: Buffer.alloc(32).fill(255),
+    id: assetLockProof.createIdentifier().toBuffer(),
     publicKeys,
     balance: Number.MAX_VALUE,
     revision: Number.MAX_VALUE,
   });
+
+  identity.setAssetLockProof(assetLockProof);
 
   return identity;
 }
