@@ -362,8 +362,8 @@ describe('validateDataContractUpdateTransitionBasicFactory', () => {
       expect(error.getParams().limit).to.equal(65);
     });
 
-    it('should be not longer than 65 bytes', async () => {
-      rawStateTransition.signature = Buffer.alloc(66);
+    it('should be not longer than 96 bytes', async () => {
+      rawStateTransition.signature = Buffer.alloc(97);
 
       const result = await validateDataContractUpdateTransitionBasic(
         rawStateTransition,
@@ -376,7 +376,7 @@ describe('validateDataContractUpdateTransitionBasicFactory', () => {
 
       expect(error.getInstancePath()).to.equal('/signature');
       expect(error.getKeyword()).to.equal('maxItems');
-      expect(error.getParams().limit).to.equal(65);
+      expect(error.getParams().limit).to.equal(96);
     });
   });
 

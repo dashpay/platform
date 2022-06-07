@@ -1046,8 +1046,8 @@ describe('validateDocumentsBatchTransitionBasicFactory', () => {
       expect(error.getParams().limit).to.equal(65);
     });
 
-    it('should be not longer than 65 bytes', async () => {
-      rawStateTransition.signature = Buffer.alloc(66);
+    it('should be not longer than 96 bytes', async () => {
+      rawStateTransition.signature = Buffer.alloc(97);
 
       const result = await validateDocumentsBatchTransitionBasic(
         rawStateTransition,
@@ -1060,7 +1060,7 @@ describe('validateDocumentsBatchTransitionBasicFactory', () => {
 
       expect(error.instancePath).to.equal('/signature');
       expect(error.getKeyword()).to.equal('maxItems');
-      expect(error.getParams().limit).to.equal(65);
+      expect(error.getParams().limit).to.equal(96);
     });
   });
 

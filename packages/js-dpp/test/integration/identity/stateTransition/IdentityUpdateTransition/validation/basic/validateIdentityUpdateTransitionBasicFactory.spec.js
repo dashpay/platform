@@ -256,8 +256,8 @@ describe('validateIdentityUpdateTransitionBasicFactory', () => {
       expect(error.getKeyword()).to.equal('minItems');
     });
 
-    it('should be not longer than 65 bytes', async () => {
-      rawStateTransition.signature = Buffer.alloc(66);
+    it('should be not longer than 96 bytes', async () => {
+      rawStateTransition.signature = Buffer.alloc(97);
 
       const result = await validateIdentityUpdateTransitionBasic(rawStateTransition);
 
