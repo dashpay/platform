@@ -35,8 +35,6 @@ class StateTransitionExecutionContext {
 
   /**
    * Clear dry operations
-   *
-   * @return {AbstractOperation[]}
    */
   clearDryOperations() {
     this.dryOperations = [];
