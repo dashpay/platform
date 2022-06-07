@@ -414,7 +414,7 @@ describe('Platform', () => {
           identity.getId(),
         );
         const balanceBeforeTopUp = identityBeforeTopUp.getBalance();
-        const topUpAmount = 100;
+        const topUpAmount = 20000;
         const topUpCredits = topUpAmount * 1000;
 
         await client.platform.identities.topUp(identity.getId(), topUpAmount);
@@ -430,10 +430,8 @@ describe('Platform', () => {
 
         expect(identityAfterTopUp.getBalance()).to.be.greaterThan(balanceBeforeTopUp);
 
-        // TODO: Temporary changed to equal since we are not deducting fees from balance atm
-        // expect(identityAfterTopUp.getBalance()).to.be
-        //   .lessThan(balanceBeforeTopUp + topUpCredits);
-        expect(identityAfterTopUp.getBalance()).to.be.equal(balanceBeforeTopUp + topUpCredits);
+        expect(identityAfterTopUp.getBalance()).to.be
+          .lessThan(balanceBeforeTopUp + topUpCredits);
       });
 
       it('should be able to create more documents after the top-up', async () => {
