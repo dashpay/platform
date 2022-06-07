@@ -102,6 +102,7 @@ const CONSTANTS = {
     UNKNOWN: 'unknown',
   },
   STORAGE: {
+    version: 2,
     autosaveIntervalTime: 10 * 1000,
   },
   TXIN_OUTPOINT_TXID_BYTES: 36,
