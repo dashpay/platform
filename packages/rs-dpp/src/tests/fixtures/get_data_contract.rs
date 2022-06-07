@@ -1,5 +1,6 @@
 use crate::data_contract::DataContractFactory;
 use crate::decode_protocol_entity_factory::DecodeProtocolEntity;
+use crate::identifier;
 use crate::mocks;
 use crate::prelude::*;
 use crate::tests::utils::generate_random_identifier_struct;
@@ -183,7 +184,7 @@ pub fn get_data_contract_fixture(owner_id: Option<Identifier>) -> DataContract {
                 "identifierField": {
                     "type": "array",
                     "byteArray": true,
-                    "contentMediaType": "IDENTIFIER_MEDIA_TYPE",
+                    "contentMediaType": identifier::MEDIA_TYPE,
                     "minItems": 32,
                     "maxItems": 32
                 }
