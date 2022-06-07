@@ -48,7 +48,7 @@ pub fn enrich_data_contract_with_base_schema(
             );
             required.retain(|p| {
                 if let JsonValue::String(v) = p {
-                    return exclude_properties.contains(&v.as_str());
+                    return !exclude_properties.contains(&v.as_str());
                 }
                 true
             });
