@@ -21,7 +21,8 @@
       "type": "array",
       "byteArray": true,
       "minItems": 65,
-      "maxItems": 96
+      "maxItems": 96,
+      "description": "Signature made by AssetLock one time ECDSA key"
     },
     "revision": {
       "type": "integer",
