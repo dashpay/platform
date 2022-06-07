@@ -12,43 +12,32 @@ const rehydrateState = async function rehydrateState() {
   if (this.rehydrate && this.lastRehydrate === null) {
     try {
       if (this.adapter && hasMethod(this.adapter, 'getItem')) {
-        const wallets = await this.adapter.getItem('wallets');
-        if (wallets) {
+        const walletId = this.currentWalletId;
+        const storage = await this.adapter.getItem(`wallet_${walletId}`);
+
+        if (storage) {
           try {
-            Object.keys(wallets).forEach((walletId) => {
-              const walletStore = this.getWalletStore(walletId);
+            const { chains } = storage;
 
-              if (walletStore) {
-                walletStore.importState(wallets[walletId]);
-              }
-            });
-          } catch (e) {
-            logger.error('Error importing wallets storage, resyncing from start', e);
-
-            this.adapter.setItem('wallets', null);
-            this.adapter.setItem('chains', null);
-            this.adapter.setItem('transactions', null);
-            this.adapter.setItem('instantLocks', null);
-          }
-        }
-
-        const chains = await this.adapter.getItem('chains');
-        if (chains) {
-          try {
             Object.keys(chains).forEach((chainNetwork) => {
+              const { chain, wallet } = storage.chains[chainNetwork];
+
               const chainStore = this.getChainStore(chainNetwork);
 
               if (chainStore) {
-                chainStore.importState(chains[chainNetwork]);
+                chainStore.importState(chain);
+              }
+
+              const walletStore = this.getWalletStore(walletId);
+
+              if (walletStore) {
+                walletStore.importState(wallet);
               }
             });
           } catch (e) {
-            logger.error('Error importing chains storage, resyncing from start', e);
+            logger.error('Error importing persistent storage, resyncing from start', e);
 
-            this.adapter.setItem('wallets', null);
-            this.adapter.setItem('chains', null);
-            this.adapter.setItem('transactions', null);
-            this.adapter.setItem('instantLocks', null);
+            this.adapter.setItem(`wallet_${walletId}`, null);
           }
         }
       }

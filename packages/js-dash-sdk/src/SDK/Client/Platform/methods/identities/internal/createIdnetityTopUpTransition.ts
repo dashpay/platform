@@ -4,14 +4,15 @@ import IdentityPublicKey from "@dashevo/dpp/lib/identity/IdentityPublicKey"
 
 /**
  * Creates a funding transaction for the platform identity and returns one-time key to sign the state transition
- * @param {Platform} platform
+ * @param {Platform} this
  * @param {AssetLockProof} assetLockProof - asset lock transaction proof for the identity create transition
  * @param {PrivateKey} assetLockPrivateKey - private key used in asset lock
  * @param {string|Buffer|Identifier} identityId
  * @return {{identity: Identity, identityCreateTransition: IdentityCreateTransition}} - identity, state transition and index of the key used to create it
  * that can be used to sign registration/top-up state transition
  */
-export default async function createIdentityTopUpTransition(platform : Platform, assetLockProof: any, assetLockPrivateKey: PrivateKey, identityId: any): Promise<any> {
+export async function createIdentityTopUpTransition(this : Platform, assetLockProof: any, assetLockPrivateKey: PrivateKey, identityId: any): Promise<any> {
+    const platform = this;
     await platform.initialize();
 
     const { dpp } = platform;
@@ -31,3 +32,5 @@ export default async function createIdentityTopUpTransition(platform : Platform,
 
     return identityTopUpTransition;
 }
+
+export default createIdentityTopUpTransition;

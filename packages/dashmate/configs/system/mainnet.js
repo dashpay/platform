@@ -14,6 +14,9 @@ const mainnetConfig = lodashMerge({}, baseConfig, {
     },
   },
   core: {
+    docker: {
+      image: 'dashpay/dashd:0.17.0.3',
+    },
     p2p: {
       port: 9999,
     },

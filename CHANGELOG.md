@@ -1,3 +1,38 @@
+### [0.22.11](https://github.com/dashevo/platform/compare/v0.22.10...v0.22.11) (2022-05-31)
+
+
+### Bug Fixes
+
+* incorrect image versions and variables for testnet config ([#415](https://github.com/dashevo/platform/issues/415))
+
+### [0.22.10](https://github.com/dashevo/platform/compare/v0.22.9...v0.22.10) (2022-05-26)
+
+
+### Bug Fixes
+
+* CommitmentTxPayload#toBuffer method was using version instead of qfcVersion for serialization ([#410](https://github.com/dashevo/platform/issues/410))
+
+
+### Continuous Integration
+
+* dispatch trigger and parallelization ([#406](https://github.com/dashevo/platform/issues/406))
+
+### [0.22.9](https://github.com/dashevo/platform/compare/v0.22.8...v0.22.9) (2022-05-24)
+
+
+### Bug Fixes
+
+* incorrect parsing of commitment payload ([#408](https://github.com/dashevo/platform/issues/408))
+
+### [0.22.8](https://github.com/dashevo/platform/compare/v0.22.7...v0.22.8) (2022-05-23)
+
+
+### Bug Fixes
+
+* `verifyChainLock` was returning `false` instead of `ResponseQuery` ([#402](https://github.com/dashevo/platform/issues/402))
+* **dashmate:** switch `drive` and `dapi` to stable versions ([#381](https://github.com/dashevo/platform/issues/381))
+* **wallet-lib:** hook tx chain broadcast on mempool response ([#388](https://github.com/dashevo/platform/issues/388))
+
 ### [0.22.7](https://github.com/dashevo/platform/compare/v0.22.6...v0.22.7) (2022-05-02)
 
 

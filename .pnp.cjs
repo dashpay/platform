@@ -2270,7 +2270,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["@dashevo/dapi", "workspace:packages/dapi"],
             ["@dashevo/dapi-client", "workspace:packages/js-dapi-client"],
             ["@dashevo/dapi-grpc", "workspace:packages/dapi-grpc"],
-            ["@dashevo/dashcore-lib", "npm:0.19.35"],
+            ["@dashevo/dashcore-lib", "npm:0.19.38"],
             ["@dashevo/dashd-rpc", "npm:2.3.1"],
             ["@dashevo/dp-services-ctl", "https://github.com/dashevo/js-dp-services-ctl.git#commit=3976076b0018c5b4632ceda4c752fc597f27a640"],
             ["@dashevo/dpp", "workspace:packages/js-dpp"],
@@ -2313,7 +2313,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["@babel/core", "npm:7.16.0"],
             ["@dashevo/dapi-grpc", "workspace:packages/dapi-grpc"],
             ["@dashevo/dash-spv", "https://github.com/dashevo/dash-spv.git#commit=3eeb01ed5d0636c949cf3ca2e495c4fe3d1b74ce"],
-            ["@dashevo/dashcore-lib", "npm:0.19.35"],
+            ["@dashevo/dashcore-lib", "npm:0.19.38"],
             ["@dashevo/dpp", "workspace:packages/js-dpp"],
             ["@dashevo/grpc-common", "workspace:packages/js-grpc-common"],
             ["@grpc/grpc-js", "npm:1.4.4"],
@@ -2436,6 +2436,24 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["unorm", "npm:1.6.0"]
           ],
           "linkType": "HARD",
+        }],
+        ["npm:0.19.38", {
+          "packageLocation": "./.yarn/cache/@dashevo-dashcore-lib-npm-0.19.38-d11cd3f7ec-13998e3b15.zip/node_modules/@dashevo/dashcore-lib/",
+          "packageDependencies": [
+            ["@dashevo/dashcore-lib", "npm:0.19.38"],
+            ["@dashevo/x11-hash-js", "npm:1.0.2"],
+            ["@types/node", "npm:12.20.37"],
+            ["bloom-filter", "npm:0.2.0"],
+            ["bls-signatures", "npm:0.2.5"],
+            ["bn.js", "npm:4.12.0"],
+            ["bs58", "npm:4.0.1"],
+            ["elliptic", "npm:6.5.3"],
+            ["eslint-config-prettier", "virtual:6cae95f09f6b196dc45a87cc20461777b6a9d31181c7109b593a7561e3bc439173af074677327dedc33e6b03a409544fa8c17df61e1d90a82d2e4316210696c2#npm:8.3.0"],
+            ["inherits", "npm:2.0.1"],
+            ["lodash", "npm:4.17.21"],
+            ["unorm", "npm:1.6.0"]
+          ],
+          "linkType": "HARD",
         }]
       ]],
       ["@dashevo/dashd-rpc", [
@@ -2507,7 +2525,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["@apidevtools/json-schema-ref-parser", "npm:8.0.0"],
             ["@babel/core", "npm:7.16.0"],
             ["@babel/preset-env", "virtual:58fb68f2aed20e5e0f2e48520ab903ae9bb3440369bfd5e912034003cf27c5aae368649fc5620dd2acbed578131f3a0975e75b838d77d12335fb0412e24026c6#npm:7.16.4"],
-            ["@dashevo/dashcore-lib", "npm:0.19.35"],
+            ["@dashevo/dashcore-lib", "npm:0.19.38"],
             ["@dashevo/dashpay-contract", "workspace:packages/dashpay-contract"],
             ["@dashevo/dpns-contract", "workspace:packages/dpns-contract"],
             ["@dashevo/feature-flags-contract", "workspace:packages/feature-flags-contract"],
@@ -2575,7 +2593,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["@dashevo/drive", "workspace:packages/js-drive"],
             ["@dashevo/abci", "https://github.com/dashevo/js-abci.git#commit=8806ff71cdac918f79920b1373824653f15698c5"],
             ["@dashevo/dapi-grpc", "workspace:packages/dapi-grpc"],
-            ["@dashevo/dashcore-lib", "npm:0.19.35"],
+            ["@dashevo/dashcore-lib", "npm:0.19.38"],
             ["@dashevo/dashd-rpc", "npm:2.3.1"],
             ["@dashevo/dashpay-contract", "workspace:packages/dashpay-contract"],
             ["@dashevo/dp-services-ctl", "https://github.com/dashevo/js-dp-services-ctl.git#commit=3976076b0018c5b4632ceda4c752fc597f27a640"],
@@ -2723,7 +2741,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           "packageDependencies": [
             ["@dashevo/platform-test-suite", "workspace:packages/platform-test-suite"],
             ["@dashevo/dapi-client", "workspace:packages/js-dapi-client"],
-            ["@dashevo/dashcore-lib", "npm:0.19.35"],
+            ["@dashevo/dashcore-lib", "npm:0.19.38"],
             ["@dashevo/dpns-contract", "workspace:packages/dpns-contract"],
             ["@dashevo/dpp", "workspace:packages/js-dpp"],
             ["@dashevo/feature-flags-contract", "workspace:packages/feature-flags-contract"],
@@ -2831,7 +2849,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           "packageDependencies": [
             ["@dashevo/wallet-lib", "workspace:packages/wallet-lib"],
             ["@dashevo/dapi-client", "workspace:packages/js-dapi-client"],
-            ["@dashevo/dashcore-lib", "npm:0.19.35"],
+            ["@dashevo/dashcore-lib", "npm:0.19.38"],
             ["@dashevo/dpp", "workspace:packages/js-dpp"],
             ["@dashevo/grpc-common", "workspace:packages/js-grpc-common"],
             ["assert", "npm:2.0.0"],
@@ -7491,7 +7509,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           "packageDependencies": [
             ["dash", "workspace:packages/js-dash-sdk"],
             ["@dashevo/dapi-client", "workspace:packages/js-dapi-client"],
-            ["@dashevo/dashcore-lib", "npm:0.19.35"],
+            ["@dashevo/dashcore-lib", "npm:0.19.38"],
             ["@dashevo/dashpay-contract", "workspace:packages/dashpay-contract"],
             ["@dashevo/dpns-contract", "workspace:packages/dpns-contract"],
             ["@dashevo/dpp", "workspace:packages/js-dpp"],
@@ -7524,6 +7542,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["karma-mocha-reporter", "virtual:58fb68f2aed20e5e0f2e48520ab903ae9bb3440369bfd5e912034003cf27c5aae368649fc5620dd2acbed578131f3a0975e75b838d77d12335fb0412e24026c6#npm:2.2.5"],
             ["karma-webpack", "virtual:ad53cff31b1dbd4927a99e71702e3b8b10338636eaff010987c27c9ccea2d52af36900a9e36a4231cbb6e5464248ccc9c1da5d1d24d9b0f4f95660296b1060a6#npm:5.0.0"],
             ["mocha", "npm:9.1.3"],
+            ["net", "npm:1.0.2"],
             ["node-inspect-extracted", "npm:1.0.8"],
             ["nodemon", "npm:2.0.15"],
             ["os-browserify", "npm:0.3.0"],
@@ -7535,6 +7554,8 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["stream-browserify", "npm:3.0.0"],
             ["stream-http", "npm:3.2.0"],
             ["string_decoder", "npm:1.3.0"],
+            ["terser-webpack-plugin", "virtual:ad53cff31b1dbd4927a99e71702e3b8b10338636eaff010987c27c9ccea2d52af36900a9e36a4231cbb6e5464248ccc9c1da5d1d24d9b0f4f95660296b1060a6#npm:5.3.1"],
+            ["tls", "npm:0.0.1"],
             ["ts-loader", "virtual:ad53cff31b1dbd4927a99e71702e3b8b10338636eaff010987c27c9ccea2d52af36900a9e36a4231cbb6e5464248ccc9c1da5d1d24d9b0f4f95660296b1060a6#npm:8.3.0"],
             ["ts-mocha", "virtual:ad53cff31b1dbd4927a99e71702e3b8b10338636eaff010987c27c9ccea2d52af36900a9e36a4231cbb6e5464248ccc9c1da5d1d24d9b0f4f95660296b1060a6#npm:8.0.0"],
             ["ts-mock-imports", "virtual:ad53cff31b1dbd4927a99e71702e3b8b10338636eaff010987c27c9ccea2d52af36900a9e36a4231cbb6e5464248ccc9c1da5d1d24d9b0f4f95660296b1060a6#npm:1.3.8"],
@@ -7572,7 +7593,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           "packageLocation": "./packages/dashmate/",
           "packageDependencies": [
             ["dashmate", "workspace:packages/dashmate"],
-            ["@dashevo/dashcore-lib", "npm:0.19.35"],
+            ["@dashevo/dashcore-lib", "npm:0.19.38"],
             ["@dashevo/dashd-rpc", "npm:2.3.1"],
             ["@dashevo/dashpay-contract", "workspace:packages/dashpay-contract"],
             ["@dashevo/dpns-contract", "workspace:packages/dpns-contract"],
@@ -11491,6 +11512,16 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           "packageLocation": "./.yarn/cache/jest-worker-npm-27.3.1-21ad1addc5-125d46939d.zip/node_modules/jest-worker/",
           "packageDependencies": [
             ["jest-worker", "npm:27.3.1"],
+            ["@types/node", "npm:17.0.21"],
+            ["merge-stream", "npm:2.0.0"],
+            ["supports-color", "npm:8.1.1"]
+          ],
+          "linkType": "HARD",
+        }],
+        ["npm:27.5.1", {
+          "packageLocation": "./.yarn/cache/jest-worker-npm-27.5.1-1c110b5894-98cd68b696.zip/node_modules/jest-worker/",
+          "packageDependencies": [
+            ["jest-worker", "npm:27.5.1"],
             ["@types/node", "npm:17.0.21"],
             ["merge-stream", "npm:2.0.0"],
             ["supports-color", "npm:8.1.1"]
@@ -17114,6 +17145,13 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           ],
           "linkType": "SOFT",
         }],
+        ["npm:5.3.1", {
+          "packageLocation": "./.yarn/cache/terser-webpack-plugin-npm-5.3.1-0c0596f996-1b808fd4f5.zip/node_modules/terser-webpack-plugin/",
+          "packageDependencies": [
+            ["terser-webpack-plugin", "npm:5.3.1"]
+          ],
+          "linkType": "SOFT",
+        }],
         ["virtual:1d78bb01f21914b3c919ffb707b6b169127e3e506be79a82799d0632e5da000051686a18675813b8a2e4b9d97f1d372c927db824a65bfcada7f79e5b0273240f#npm:5.2.5", {
           "packageLocation": "./.yarn/__virtual__/terser-webpack-plugin-virtual-4085db21f3/0/cache/terser-webpack-plugin-npm-5.2.5-240662fc5b-2a9616466b.zip/node_modules/terser-webpack-plugin/",
           "packageDependencies": [
@@ -17221,6 +17259,36 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["terser", "virtual:2931158eec0d8c40bd63d5f8fbbbc2a730452372301ec1f31a1c662bdfc5f6043dd08aa5775c1e3fa28d954b5156d1c9656ffd9426e6d54b0a88945969a3ca27#npm:5.10.0"],
             ["uglify-js", null],
             ["webpack", "virtual:58fb68f2aed20e5e0f2e48520ab903ae9bb3440369bfd5e912034003cf27c5aae368649fc5620dd2acbed578131f3a0975e75b838d77d12335fb0412e24026c6#npm:5.64.1"]
+          ],
+          "packagePeers": [
+            "@swc/core",
+            "@types/esbuild",
+            "@types/swc__core",
+            "@types/uglify-js",
+            "@types/webpack",
+            "esbuild",
+            "uglify-js",
+            "webpack"
+          ],
+          "linkType": "HARD",
+        }],
+        ["virtual:ad53cff31b1dbd4927a99e71702e3b8b10338636eaff010987c27c9ccea2d52af36900a9e36a4231cbb6e5464248ccc9c1da5d1d24d9b0f4f95660296b1060a6#npm:5.3.1", {
+          "packageLocation": "./.yarn/__virtual__/terser-webpack-plugin-virtual-0f7fe2d546/0/cache/terser-webpack-plugin-npm-5.3.1-0c0596f996-1b808fd4f5.zip/node_modules/terser-webpack-plugin/",
+          "packageDependencies": [
+            ["terser-webpack-plugin", "virtual:ad53cff31b1dbd4927a99e71702e3b8b10338636eaff010987c27c9ccea2d52af36900a9e36a4231cbb6e5464248ccc9c1da5d1d24d9b0f4f95660296b1060a6#npm:5.3.1"],
+            ["@swc/core", null],
+            ["@types/esbuild", null],
+            ["@types/swc__core", null],
+            ["@types/uglify-js", null],
+            ["@types/webpack", null],
+            ["esbuild", null],
+            ["jest-worker", "npm:27.5.1"],
+            ["schema-utils", "npm:3.1.1"],
+            ["serialize-javascript", "npm:6.0.0"],
+            ["source-map", "npm:0.6.1"],
+            ["terser", "virtual:2931158eec0d8c40bd63d5f8fbbbc2a730452372301ec1f31a1c662bdfc5f6043dd08aa5775c1e3fa28d954b5156d1c9656ffd9426e6d54b0a88945969a3ca27#npm:5.10.0"],
+            ["uglify-js", null],
+            ["webpack", "virtual:ad53cff31b1dbd4927a99e71702e3b8b10338636eaff010987c27c9ccea2d52af36900a9e36a4231cbb6e5464248ccc9c1da5d1d24d9b0f4f95660296b1060a6#npm:5.64.1"]
           ],
           "packagePeers": [
             "@swc/core",

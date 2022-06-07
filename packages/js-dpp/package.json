@@ -1,6 +1,6 @@
 {
   "name": "@dashevo/dpp",
-  "version": "0.22.7",
+  "version": "0.22.11",
   "description": "The JavaScript implementation of the Dash Platform Protocol",
   "scripts": {
     "lint": "eslint .",
@@ -16,7 +16,7 @@
       "test"
     ]
   },
-  "main": "lib/DashPlatformProtocol.js",
+  "main": "lib/index.js",
   "contributors": [
     {
       "name": "Ivan Shumkov",
@@ -83,7 +83,7 @@
   },
   "dependencies": {
     "@apidevtools/json-schema-ref-parser": "^8.0.0",
-    "@dashevo/dashcore-lib": "~0.19.35",
+    "@dashevo/dashcore-lib": "~0.19.38",
     "@dashevo/dashpay-contract": "workspace:~",
     "@dashevo/dpns-contract": "workspace:~",
     "@dashevo/feature-flags-contract": "workspace:~",
