@@ -68,7 +68,14 @@ async function expectPredictedFeeHigherOrEqualThanActual(dpp, groveDBStore, stat
   // AppHash shouldn't be changed after dry run
   const appHashAfterDryRun = await groveDBStore.getRootHash();
 
-  expect(appHashAfterDryRun).to.be.equal(initialAppHash);
+  expect(appHashAfterDryRun).to.deep.equal(initialAppHash);
+
+  // Compare operations
+
+  const actualOperations = actualExecutionContext.getOperations();
+  const predictedOperations = predictedExecutionContext.getOperations();
+
+  expect(predictedOperations).to.have.lengthOf(actualOperations.length);
 
   // Compare fees
 
@@ -79,13 +86,6 @@ async function expectPredictedFeeHigherOrEqualThanActual(dpp, groveDBStore, stat
   const predictedFees = calculateStateTransitionFee(stateTransition);
 
   expect(predictedFees).to.be.greaterThanOrEqual(actualFees);
-
-  // Compare operations
-
-  const actualOperations = actualExecutionContext.getOperations();
-  const predictedOperations = predictedExecutionContext.getOperations();
-
-  expect(predictedOperations).to.have.lengthOf(actualOperations.length);
 
   predictedOperations.forEach((predictedOperation, i) => {
     expect(predictedOperation.getStorageCost()).to.be.greaterThanOrEqual(
@@ -138,7 +138,9 @@ describe('feesPrediction', () => {
 
       instantAssetLockProof = getInstantAssetLockProofFixture(assetLockPrivateKey);
 
-      identity = getBiggestPossibleIdentity(instantAssetLockProof);
+      identity = getBiggestPossibleIdentity();
+      identity.id = instantAssetLockProof.createIdentifier();
+      identity.setAssetLockProof(instantAssetLockProof);
 
       // Generate real keys
       const { PrivateKey: BlsPrivateKey } = await BlsSignatures.getInstance();
@@ -301,11 +303,11 @@ describe('feesPrediction', () => {
           },
           {
             id: 1,
-            type: IdentityPublicKey.TYPES.BLS12_381,
+            type: IdentityPublicKey.TYPES.ECDSA_SECP256K1,
             purpose: IdentityPublicKey.PURPOSES.AUTHENTICATION,
             securityLevel: IdentityPublicKey.SECURITY_LEVELS.HEIGHT,
             readOnly: false,
-            data: privateKey.getPublicKey().toBuffer(),
+            data: privateKey.toPublicKey().toBuffer(),
           },
         ],
         balance: Number.MAX_VALUE,
@@ -338,9 +340,45 @@ describe('feesPrediction', () => {
       it('should have predicted fee more than actual fee', async () => {
         await stateRepository.storeDataContract(dataContract);
 
+        // store data contract in cache
+        const dataContractCache = container.resolve('dataContractCache');
+        dataContractCache.set(
+          dataContract.getId().toString(),
+          await dpp.dataContract.createFromObject(dataContract.toObject()),
+        );
+
         dataContract.setVersion(2);
 
-        // TODO: Add one more document type
+        const documents = dataContract.getDocuments();
+
+        documents.newDoc = {
+          type: 'object',
+          indices: [
+            {
+              name: 'onwerIdToUser',
+              properties: [
+                { $ownerId: 'asc' },
+                { user: 'asc' },
+              ],
+              unique: true,
+            },
+          ],
+          properties: {
+            user: {
+              type: 'string',
+              maxLength: 63,
+            },
+            publicKey: {
+              type: 'array',
+              byteArray: true,
+              maxItems: 33,
+            },
+          },
+          required: ['user', 'publicKey'],
+          additionalProperties: false,
+        };
+
+        dataContract.setDocuments(documents);
 
         const stateTransition = dpp.dataContract.createDataContractUpdateTransition(dataContract);
 
@@ -378,11 +416,11 @@ describe('feesPrediction', () => {
           },
           {
             id: 1,
-            type: IdentityPublicKey.TYPES.BLS12_381,
+            type: IdentityPublicKey.TYPES.ECDSA_SECP256K1,
             purpose: IdentityPublicKey.PURPOSES.AUTHENTICATION,
             securityLevel: IdentityPublicKey.SECURITY_LEVELS.HEIGHT,
             readOnly: false,
-            data: privateKey.getPublicKey().toBuffer(),
+            data: privateKey.toPublicKey().toBuffer(),
           },
         ],
         balance: Number.MAX_VALUE,
@@ -399,6 +437,13 @@ describe('feesPrediction', () => {
 
       await stateRepository.storeDataContract(dataContract);
 
+      // store data contract in cache
+      const dataContractCache = container.resolve('dataContractCache');
+      dataContractCache.set(
+        dataContract.getId().toString(),
+        await dpp.dataContract.createFromObject(dataContract.toObject()),
+      );
+
       // Create documents
 
       documents = [];
@@ -408,8 +453,7 @@ describe('feesPrediction', () => {
         const data = {};
 
         for (const propertyName of Object.keys(documentTypes[documentType].properties)) {
-          // TODO: Random bytes and to hex to distribute among indices
-          data[propertyName] = new Array(62).fill('d').join('');
+          data[propertyName] = `${crypto.randomBytes(31).toString('hex')}a`;
         }
 
         const document = dpp.document.create(
@@ -451,7 +495,15 @@ describe('feesPrediction', () => {
             await stateRepository.createDocument(document);
           }
 
-          // TODO: Change property values and probably increment revisions
+          for (const document of documents) {
+            const data = document.getData();
+
+            for (const propertyName of Object.keys(data)) {
+              data[propertyName] = `${crypto.randomBytes(31).toString('hex')}b`;
+            }
+
+            document.setData(data);
+          }
 
           const stateTransition = dpp.document.createStateTransition({
             replace: documents,

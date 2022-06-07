@@ -60,6 +60,10 @@ function getWronglyUpdatedNonUniqueIndex(nameIndexMap, documentType, existingSch
       ),
     };
 
+    if (Object.prototype.hasOwnProperty.call(indexDefinition, 'unique')) {
+      newIndexSnapshot.unique = indexDefinition.unique;
+    }
+
     if (!serializer.encode(indexDefinition).equals(
       serializer.encode(newIndexSnapshot),
     )) {

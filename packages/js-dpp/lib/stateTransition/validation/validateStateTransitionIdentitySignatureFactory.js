@@ -15,6 +15,13 @@ const SignatureVerificationOperation = require('../fee/operations/SignatureVerif
 const ValidationResult = require('../../validation/ValidationResult');
 const IdentityNotFoundError = require('../../errors/consensus/signature/IdentityNotFoundError');
 const StateTransitionExecutionContext = require('../StateTransitionExecutionContext');
+const InvalidIdentityPublicKeyTypeError = require('../errors/InvalidIdentityPublicKeyTypeError');
+
+const supportedPublicKeyTypes = [
+  IdentityPublicKey.TYPES.ECDSA_SECP256K1,
+  IdentityPublicKey.TYPES.BLS12_381,
+  IdentityPublicKey.TYPES.ECDSA_HASH160,
+];
 
 /**
  * Validate state transition signature
@@ -68,10 +75,7 @@ function validateStateTransitionIdentitySignatureFactory(
       return result;
     }
 
-    if (
-      publicKey.getType() !== IdentityPublicKey.TYPES.ECDSA_SECP256K1
-      && publicKey.getType() !== IdentityPublicKey.TYPES.ECDSA_HASH160
-    ) {
+    if (!supportedPublicKeyTypes.includes(publicKey.getType())) {
       result.addError(
         new InvalidIdentityPublicKeyTypeConsensusError(publicKey.getType()),
       );
@@ -120,6 +124,10 @@ function validateStateTransitionIdentitySignatureFactory(
       } else if (e instanceof PublicKeyIsDisabledError) {
         result.addError(
           new PublicKeyIsDisabledConsensusError(e.getPublicKey().getId()),
+        );
+      } else if (e instanceof InvalidIdentityPublicKeyTypeError) {
+        result.addError(
+          new InvalidIdentityPublicKeyTypeConsensusError(e.getPublicKeyType()),
         );
       } else if (e instanceof DPPError) {
         result.addError(

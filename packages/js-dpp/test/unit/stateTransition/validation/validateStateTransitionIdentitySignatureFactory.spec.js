@@ -158,7 +158,7 @@ describe('validateStateTransitionIdentitySignatureFactory', () => {
       new StateTransitionExecutionContext(),
     );
     expect(identity.getPublicKeyById).to.be.calledOnceWithExactly(publicKeyId);
-    expect(identityPublicKey.getType).to.be.calledThrice();
+    expect(identityPublicKey.getType).to.be.calledTwice();
     expect(stateTransition.getSignaturePublicKeyId).to.be.calledOnce();
     expect(stateTransition.verifySignature).to.not.be.called();
 

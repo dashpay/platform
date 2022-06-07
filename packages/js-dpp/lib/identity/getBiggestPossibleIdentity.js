@@ -3,15 +3,14 @@ const identityCreateTransitionSchema = require('../../schema/identity/stateTrans
 const IdentityPublicKey = require('./IdentityPublicKey');
 
 const Identity = require('./Identity');
-const getInstantAssetLockProofFixture = require('../test/fixtures/getInstantAssetLockProofFixture');
+const generateRandomIdentifier = require('../test/utils/generateRandomIdentifier');
 
 let identity;
 
 /**
- * @param {InstantAssetLockProof|ChainAssetLockProof} assetLockProof
  * @return {Identity}
  */
-function getBiggestPossibleIdentity(assetLockProof = getInstantAssetLockProofFixture()) {
+function getBiggestPossibleIdentity() {
   if (identity) {
     return identity;
   }
@@ -35,13 +34,11 @@ function getBiggestPossibleIdentity(assetLockProof = getInstantAssetLockProofFix
 
   identity = new Identity({
     protocolVersion: 1,
-    id: assetLockProof.createIdentifier().toBuffer(),
+    id: generateRandomIdentifier().toBuffer(),
     publicKeys,
     balance: Number.MAX_VALUE,
     revision: Number.MAX_VALUE,
   });
-
-  identity.setAssetLockProof(assetLockProof);
 
   return identity;
 }

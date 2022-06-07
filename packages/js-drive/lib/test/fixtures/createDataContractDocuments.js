@@ -2,10 +2,15 @@ const dataContractMetaSchema = require('@dashevo/dpp/schema/dataContract/dataCon
 const createIndices = require('./createIndices');
 const createProperties = require('./createProperties');
 
-function createDataContractDocuments() {
+/**
+ *
+ * @param {number} count
+ * @returns {Object}
+ */
+function createDataContractDocuments(count = 2) {
   const documents = {};
 
-  for (let i = 0; i < dataContractMetaSchema.properties.documents.maxProperties; i++) {
+  for (let i = 0; i < count; i++) {
     documents[`doc${i}`] = {
       type: 'object',
       indices: createIndices(dataContractMetaSchema.$defs.documentProperties.maxProperties, true),
