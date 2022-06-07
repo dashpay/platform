@@ -78,6 +78,8 @@ case ${i} in
     ;;
     -t=*|--timeout=*)
     timeout="${i#*=}"
+    --faucet-storage-dir=*)
+    faucet_storage_dir="${i#*=}"
     ;;
 esac
 done
@@ -185,6 +187,11 @@ fi
 if [ -n "$identity_private_key" ]
 then
   cmd="${cmd} DPNS_TOP_LEVEL_IDENTITY_PRIVATE_KEY=${identity_private_key}"
+fi
+
+if [ -n "$faucet_storage_dir" ]
+then
+  cmd="${cmd} FAUCET_STORAGE_DIR=${faucet_storage_dir}"
 fi
 
 if [ -n "$GITHUB_ACTIONS" ]
