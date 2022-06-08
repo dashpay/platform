@@ -60,6 +60,7 @@ function getWronglyUpdatedNonUniqueIndex(nameIndexMap, documentType, existingSch
       ),
     };
 
+    // In case `unique` is false it still must be in the new index snapshot
     if (Object.prototype.hasOwnProperty.call(indexDefinition, 'unique')) {
       newIndexSnapshot.unique = indexDefinition.unique;
     }

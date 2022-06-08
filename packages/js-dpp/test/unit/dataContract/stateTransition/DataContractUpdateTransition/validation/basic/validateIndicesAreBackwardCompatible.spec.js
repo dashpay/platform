@@ -25,6 +25,13 @@ describe('validateIndicesAreBackwardCompatible', () => {
       ],
     });
 
+    newDataContract.getDocumentSchema('indexedDocument').indices.push({
+      name: 'index42',
+      properties: [
+        { otherName: 'desc' },
+      ],
+    });
+
     oldDocumentsSchema = oldDataContract.getDocuments();
     newDocumentsSchema = newDataContract.getDocuments();
   });

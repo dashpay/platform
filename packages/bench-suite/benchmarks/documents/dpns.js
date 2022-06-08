@@ -18,23 +18,34 @@ module.exports = {
    *
    * @type {Object|Function}
    */
-  documentTypes: dpnsDocumentTypes,
+  documentTypes: {
+    domain: dpnsDocumentTypes.domain,
+  },
 
   /**
-   * Return documents to create
+   * Number of documents to create for each type
    *
-   * this function calling for each document type
+   * We get 35x3 results running against local network
+   * since metrics are gathering from all 3 nodes
    *
-   * @param {string} type
-   * @returns {Object[]}
+   * @type {number}
    */
-  // eslint-disable-next-line no-unused-vars
-  documents: (type) => {
-    if (type !== 'domain') {
-      return [];
-    }
+  documentsCount: 10,
 
-    return new Array(35).fill(null).map(() => {
+  /**
+   * Return document data for specific document type to create
+   *
+   * Functions will be called "documentsCount" times
+   */
+  documentsData: {
+    /**
+     * Calls for document type "domain"
+     *
+     * @param {number} i - Call index
+     * @param {string} type - Document type
+     * @returns {Object}
+     */
+    domain() {
       const label = crypto.randomBytes(10).toString('hex');
 
       return {
@@ -49,7 +60,7 @@ module.exports = {
           allowSubdomains: false,
         },
       };
-    });
+    },
   },
 
   /**
@@ -57,7 +68,7 @@ module.exports = {
    *
    * @type {number}
    */
-  requiredCredits: 100000,
+  requiredCredits: 1000000,
 
   /**
    * Statistical function
