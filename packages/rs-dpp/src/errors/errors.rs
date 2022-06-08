@@ -44,12 +44,6 @@ pub enum ProtocolError {
     #[error("Generic Error: {0}")]
     Generic(String),
 
-    #[error("Invalid Data Contract: {errors:?}")]
-    InvalidDataContractError {
-        errors: Vec<ConsensusError>,
-        raw_data_contract: serde_json::Value,
-    },
-
     // State Transition Errors
     #[error("Invalid signature type")]
     InvalidIdentityPublicKeyTypeError { public_key_type: u32 },
@@ -74,6 +68,7 @@ pub enum ProtocolError {
     InvalidSignaturePublicKeyError { public_key: Vec<u8> },
 
     // Documents
+    //? This error is duplicated by `[crate::errors::consensus::abstract_basic_error::BasicError]`
     #[error("Data Contract doesn't define document wit type '{document_type}'")]
     InvalidDocumentTypeError {
         document_type: String,
@@ -101,6 +96,16 @@ pub enum ProtocolError {
 
     #[error(transparent)]
     CompatibleProtocolVersionIsNotDefinedError(#[from] CompatibleProtocolVersionIsNotDefinedError),
+
+    // Data Contract
+    #[error("Data Contract already exists")]
+    DataContractAlreadyExistsError,
+
+    #[error("Invalid Data Contract: {errors:?}")]
+    InvalidDataContractError {
+        errors: Vec<ConsensusError>,
+        raw_data_contract: JsonValue,
+    },
 }
 
 impl From<NonConsensusError> for ProtocolError {

@@ -1,5 +1,4 @@
-use log::trace;
-use std::{collections::HashMap, sync::Arc};
+use std::sync::Arc;
 
 use crate::{
     consensus::basic::BasicError,
@@ -7,10 +6,10 @@ use crate::{
         enrich_data_contract_with_base_schema::enrich_data_contract_with_base_schema,
         enrich_data_contract_with_base_schema::PREFIX_BYTE_0, DataContract,
     },
-    util::{json_value::JsonValueExt, string_encoding::Encoding},
+    util::json_value::JsonValueExt,
     validation::{JsonSchemaValidator, ValidationResult},
     version::ProtocolVersionValidator,
-    Convertible, ProtocolError,
+    ProtocolError,
 };
 use anyhow::anyhow;
 use lazy_static::lazy_static;
@@ -49,13 +48,6 @@ impl DocumentValidator {
             return Ok(result);
         }
 
-        let enriched_data_contract = enrich_data_contract_with_base_schema(
-            data_contract,
-            &BASE_DOCUMENT_SCHEMA,
-            PREFIX_BYTE_0,
-            &[],
-        )?;
-
         let document_type = maybe_document_type.unwrap().as_str().ok_or_else(|| {
             anyhow!(
                 "the document type '{:?}' cannot be converted into the string",
@@ -63,17 +55,20 @@ impl DocumentValidator {
             )
         })?;
 
-        // let document_schema_ref = enriched_data_contract.get_document_schema_ref(document_type);
+        if !data_contract.is_document_defined(document_type) {
+            result.add_error(BasicError::InvalidDocumentTypeError {
+                document_type: document_type.to_owned(),
+                data_contract_id: data_contract.id.to_owned(),
+            });
+            return Ok(result);
+        }
 
-        // let mut additional_schemas = HashMap::new();
-        // additional_schemas.insert(
-        //     enriched_data_contract.id.to_string(Encoding::Base58),
-        //     enriched_data_contract.to_json()?,
-        // );
-        // let schema_validator_test = JsonSchemaValidator::new(BASE_DOCUMENT_SCHEMA.to_owned())
-        //     .map_err(|e| anyhow!("unable to process TEST the contract: {}", e))?;
-
-        // but we must do that for a specific document!!!
+        let enriched_data_contract = enrich_data_contract_with_base_schema(
+            data_contract,
+            &BASE_DOCUMENT_SCHEMA,
+            PREFIX_BYTE_0,
+            &[],
+        )?;
 
         let document_schema = enriched_data_contract
             .get_document_schema(document_type)?
@@ -99,10 +94,8 @@ mod test {
     use serde_json::json;
 
     use crate::{
-        consensus::{
-            basic::{BasicError, JsonSchemaError},
-            ConsensusError,
-        },
+        codes::ErrorWithCode,
+        consensus::{basic::JsonSchemaError, ConsensusError},
         data_contract::DataContract,
         tests::fixtures::{get_data_contract_fixture, get_documents_fixture},
         util::json_value::JsonValueExt,
@@ -113,17 +106,12 @@ mod test {
     use super::DocumentValidator;
     use jsonschema::{
         error::{TypeKind, ValidationErrorKind},
-        paths::{JSONPointer, PathChunk},
         primitive_type::PrimitiveType,
     };
     use serde_json::Value as JsonValue;
     use std::sync::Arc;
+    use test_case::test_case;
 
-    fn init() {
-        let _ = env_logger::builder()
-            .filter_level(log::LevelFilter::Trace)
-            .try_init();
-    }
     struct TestData {
         data_contract: DataContract,
         raw_document: JsonValue,
@@ -154,18 +142,20 @@ mod test {
             document_validator,
         }
     }
-
-    #[test]
-    fn protocol_version_should_exists() {
+    #[test_case("$protocolVersion")]
+    #[test_case("$revision")]
+    #[test_case("$id")]
+    #[test_case("$dataContractId")]
+    #[test_case("$ownerId")]
+    fn property_should_exist(property_name: &str) {
         let TestData {
             mut raw_document,
             document_validator,
             data_contract,
         } = get_test_data();
-
         raw_document
-            .remove("$protocolVersion")
-            .expect("the '$protocolVersion' should exist and be removed");
+            .remove(property_name)
+            .unwrap_or_else(|_| panic!("the {} should exist and be removed", property_name));
 
         let result = document_validator
             .validate(&raw_document, &data_contract)
@@ -176,8 +166,116 @@ mod test {
             schema_error.kind(),
             ValidationErrorKind::Required {
                 property: JsonValue::String(protocol_version)
-            } if protocol_version == "$protocolVersion"
+            } if protocol_version == property_name
         ));
+    }
+
+    #[test_case("$id")]
+    #[test_case("$dataContractId")]
+    #[test_case("$ownerId")]
+    fn should_be_byte_array(property_name: &str) {
+        let TestData {
+            mut raw_document,
+            document_validator,
+            data_contract,
+        } = get_test_data();
+
+        raw_document
+            .insert(String::from(property_name), json!("string"))
+            .unwrap();
+
+        let result = document_validator
+            .validate(&raw_document, &data_contract)
+            .expect("the validator should return the validation result");
+        let schema_error = get_first_schema_error(&result);
+
+        assert!(matches!(
+            schema_error.kind(),
+            ValidationErrorKind::Type {
+                kind: TypeKind::Single(primitive_type)
+            } if matches!(primitive_type, PrimitiveType::Array)
+        ));
+
+        assert_eq!(
+            format!("/{}", property_name),
+            schema_error.instance_path().to_string()
+        );
+        assert_eq!(
+            format!("/properties/{}/type", property_name),
+            schema_error.schema_path().to_string()
+        );
+    }
+
+    #[test_case("$id")]
+    #[test_case("$dataContractId")]
+    #[test_case("$ownerId")]
+    fn id_should_be_byte_array_at_least_32_bytes_long(property_name: &str) {
+        let TestData {
+            mut raw_document,
+            document_validator,
+            data_contract,
+        } = get_test_data();
+
+        let too_short_id = [0u8; 31];
+        raw_document
+            .insert(String::from(property_name), json!(too_short_id))
+            .unwrap();
+
+        let result = document_validator
+            .validate(&raw_document, &data_contract)
+            .expect("the validator should return the validation result");
+        let schema_error = get_first_schema_error(&result);
+
+        assert!(matches!(
+            schema_error.kind(),
+            ValidationErrorKind::MinItems {limit} if limit == &32));
+
+        assert_eq!(
+            format!("/{}", property_name),
+            schema_error.instance_path().to_string()
+        );
+        assert_eq!(
+            format!("/properties/{}/minItems", property_name),
+            schema_error.schema_path().to_string()
+        );
+    }
+
+    #[test_case("$id")]
+    #[test_case("$dataContractId")]
+    #[test_case("$ownerId")]
+    fn id_should_be_byte_array_no_more_32_bytes_long(property_name: &str) {
+        let TestData {
+            mut raw_document,
+            document_validator,
+            data_contract,
+        } = get_test_data();
+
+        let mut too_long_id = Vec::new();
+        too_long_id.resize(33, 0u8);
+        raw_document
+            .insert(
+                String::from(property_name),
+                serde_json::to_value(too_long_id).unwrap(),
+            )
+            .unwrap();
+
+        let result = document_validator
+            .validate(&raw_document, &data_contract)
+            .expect("the validator should return the validation result");
+        let schema_error = get_first_schema_error(&result);
+
+        assert!(matches!(
+            schema_error.kind(),
+            ValidationErrorKind::MaxItems {limit} if limit == &32));
+
+        assert_eq!(
+            format!("/{}", property_name),
+            schema_error.instance_path().to_string()
+        );
+        assert_eq!(
+            format!("/properties/{}/maxItems", property_name),
+            schema_error.schema_path().to_string()
+        );
     }
 
     #[test]
@@ -211,125 +309,7 @@ mod test {
     }
 
     #[test]
-    fn id_should_exists() {
-        let TestData {
-            mut raw_document,
-            document_validator,
-            data_contract,
-        } = get_test_data();
-
-        raw_document
-            .remove("$id")
-            .expect("the '$id' should exist and be removed");
-
-        let result = document_validator
-            .validate(&raw_document, &data_contract)
-            .expect("the validator should return the validation result");
-        let schema_error = get_first_schema_error(&result);
-
-        assert!(matches!(
-            schema_error.kind(),
-            ValidationErrorKind::Required {
-                property: JsonValue::String(protocol_version)
-            } if protocol_version == "$id"
-        ));
-    }
-
-    #[test]
-    fn id_should_be_byte_array() {
-        let TestData {
-            mut raw_document,
-            document_validator,
-            data_contract,
-        } = get_test_data();
-
-        raw_document
-            .insert(String::from("$id"), json!("string"))
-            .unwrap();
-
-        let result = document_validator
-            .validate(&raw_document, &data_contract)
-            .expect("the validator should return the validation result");
-        let schema_error = get_first_schema_error(&result);
-
-        assert!(matches!(
-            schema_error.kind(),
-            ValidationErrorKind::Type {
-                kind: TypeKind::Single(primitive_type)
-            } if matches!(primitive_type, PrimitiveType::Array)
-        ));
-
-        assert_eq!("/$id", schema_error.instance_path().to_string());
-        assert_eq!(
-            "/properties/$id/type",
-            schema_error.schema_path().to_string()
-        );
-    }
-
-    #[test]
-    fn id_should_be_byte_array_at_least_32_bytes_long() {
-        let TestData {
-            mut raw_document,
-            document_validator,
-            data_contract,
-        } = get_test_data();
-
-        let too_short_id = [0u8; 31];
-        raw_document
-            .insert(String::from("$id"), json!(too_short_id))
-            .unwrap();
-
-        let result = document_validator
-            .validate(&raw_document, &data_contract)
-            .expect("the validator should return the validation result");
-        let schema_error = get_first_schema_error(&result);
-
-        assert!(matches!(
-            schema_error.kind(),
-            ValidationErrorKind::MinItems {limit} if limit == &32));
-
-        assert_eq!("/$id", schema_error.instance_path().to_string());
-        assert_eq!(
-            "/properties/$id/minItems",
-            schema_error.schema_path().to_string()
-        );
-    }
-
-    #[test]
-    fn id_should_be_byte_array_no_more_32_bytes_long() {
-        let TestData {
-            mut raw_document,
-            document_validator,
-            data_contract,
-        } = get_test_data();
-
-        let mut too_long_id = Vec::new();
-        too_long_id.resize(33, 0u8);
-        raw_document
-            .insert(
-                String::from("$id"),
-                serde_json::to_value(too_long_id).unwrap(),
-            )
-            .unwrap();
-
-        let result = document_validator
-            .validate(&raw_document, &data_contract)
-            .expect("the validator should return the validation result");
-        let schema_error = get_first_schema_error(&result);
-
-        assert!(matches!(
-            schema_error.kind(),
-            ValidationErrorKind::MaxItems {limit} if limit == &32));
-
-        assert_eq!("/$id", schema_error.instance_path().to_string());
-        assert_eq!(
-            "/properties/$id/maxItems",
-            schema_error.schema_path().to_string()
-        );
-    }
-
-    #[test]
-    fn type_should_exists() {
+    fn type_should_exist() {
         let TestData {
             mut raw_document,
             document_validator,
@@ -347,6 +327,183 @@ mod test {
         assert!(
             matches!(validation_error,  ConsensusError::BasicError(basic_error) if basic_error.to_string() == "$type is not present")
         );
+    }
+
+    #[test]
+    fn type_should_be_defined_in_data_contact() {
+        let TestData {
+            mut raw_document,
+            document_validator,
+            data_contract,
+        } = get_test_data();
+
+        raw_document
+            .insert("$type".to_string(), json!("undefinedDocument"))
+            .unwrap();
+
+        let result = document_validator
+            .validate(&raw_document, &data_contract)
+            .expect("the validator should return the validation result");
+        let validation_error = result.errors.get(0).expect("the error should exist");
+        assert_eq!(1024, validation_error.get_code());
+    }
+
+    #[test]
+    fn revision_should_be_number() {
+        let TestData {
+            mut raw_document,
+            document_validator,
+            data_contract,
+        } = get_test_data();
+
+        raw_document
+            .insert(String::from("$revision"), json!("string"))
+            .unwrap();
+
+        let result = document_validator
+            .validate(&raw_document, &data_contract)
+            .expect("the validator should return the validation result");
+        let schema_error = get_first_schema_error(&result);
+
+        assert!(matches!(
+            schema_error.kind(),
+            ValidationErrorKind::Type {
+                kind: TypeKind::Single(primitive_type)
+            } if matches!(primitive_type, PrimitiveType::Integer)
+        ));
+        assert_eq!("/$revision", schema_error.instance_path().to_string());
+    }
+
+    #[test]
+    fn revision_should_be_integer() {
+        let TestData {
+            mut raw_document,
+            document_validator,
+            data_contract,
+        } = get_test_data();
+
+        raw_document
+            .insert(String::from("$revision"), json!(1.1))
+            .unwrap();
+
+        let result = document_validator
+            .validate(&raw_document, &data_contract)
+            .expect("the validator should return the validation result");
+        let schema_error = get_first_schema_error(&result);
+
+        assert!(matches!(
+            schema_error.kind(),
+            ValidationErrorKind::Type {
+                kind: TypeKind::Single(primitive_type)
+            } if matches!(primitive_type, PrimitiveType::Integer)
+        ));
+        assert_eq!("/$revision", schema_error.instance_path().to_string());
+        assert_eq!(
+            "/properties/$revision/type",
+            schema_error.schema_path().to_string()
+        );
+    }
+
+    #[test]
+    fn should_return_error_if_document_is_not_valid_against_data_contract() {
+        let TestData {
+            mut raw_document,
+            document_validator,
+            data_contract,
+        } = get_test_data();
+
+        raw_document.insert(String::from("name"), json!(1)).unwrap();
+        let result = document_validator
+            .validate(&raw_document, &data_contract)
+            .expect("the validator should return the validation result");
+        let schema_error = get_first_schema_error(&result);
+
+        assert!(matches!(
+            schema_error.kind(),
+            ValidationErrorKind::Type {
+                kind: TypeKind::Single(primitive_type)
+            } if matches!(primitive_type, PrimitiveType::String)
+        ));
+        assert_eq!(
+            "/properties/name/type",
+            schema_error.schema_path().to_string()
+        );
+    }
+
+    #[test]
+    fn should_return_error_if_document_contains_undefined_properties() {
+        let TestData {
+            mut raw_document,
+            document_validator,
+            data_contract,
+        } = get_test_data();
+
+        raw_document
+            .insert(String::from("undefined"), json!(1))
+            .unwrap();
+
+        let result = document_validator
+            .validate(&raw_document, &data_contract)
+            .expect("the validator should return the validation result");
+        let schema_error = get_first_schema_error(&result);
+
+        assert!(matches!(
+            schema_error.kind(),
+            ValidationErrorKind::AdditionalProperties {
+                unexpected,
+            } if unexpected == &["undefined"]));
+        assert_eq!(
+            "/additionalProperties",
+            schema_error.schema_path().to_string()
+        );
+    }
+
+    #[test]
+    fn should_return_invalid_result_if_byte_array_exceeds_max_items() {
+        let TestData {
+            document_validator,
+            data_contract,
+            ..
+        } = get_test_data();
+
+        let documents = get_documents_fixture(data_contract.clone()).unwrap();
+        let document = documents.get(8).unwrap();
+
+        let data = [0u8; 32];
+        let mut raw_document = document.to_object(false).unwrap();
+        raw_document
+            .insert("byteArrayField".to_string(), json!(data))
+            .unwrap();
+
+        let result = document_validator
+            .validate(&raw_document, &data_contract)
+            .expect("the validator should return the validation result");
+        let schema_error = get_first_schema_error(&result);
+
+        assert!(matches!(
+            schema_error.kind(),
+            ValidationErrorKind::MaxItems {limit} if limit == &16));
+
+        assert_eq!("/byteArrayField", schema_error.instance_path().to_string());
+        assert_eq!(
+            format!("/properties/byteArrayField/maxItems"),
+            schema_error.schema_path().to_string()
+        );
+    }
+
+    #[test]
+    fn should_return_valid_result_if_document_valid() {
+        let TestData {
+            raw_document,
+            document_validator,
+            data_contract,
+        } = get_test_data();
+
+        let result = document_validator
+            .validate(&raw_document, &data_contract)
+            .expect("the validator should return the validation result");
+
+        assert!(result.is_valid())
     }
 
     fn get_first_schema_error(result: &ValidationResult) -> &JsonSchemaError {
