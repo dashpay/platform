@@ -15,14 +15,7 @@ use serde_json::Value as JsonValue;
 use std::collections::BTreeMap;
 use std::convert::TryFrom;
 
-const PROPERTY_PROTOCOL_VERSION: &str = "protocolVersion";
-const PROPERTY_ID: &str = "$id";
-const PROPERTY_OWNER_ID: &str = "ownerId";
-const PROPERTY_VERSION: &str = "version";
-const PROPERTY_SCHEMA: &str = "$schema";
-const PROPERTY_DOCUMENTS: &str = "documents";
-const PROPERTY_DEFINITIONS: &str = "$defs";
-const PROPERTY_ENTROPY: &str = "entropy";
+use super::properties::*;
 
 pub type JsonSchema = JsonValue;
 type DocumentType = String;
