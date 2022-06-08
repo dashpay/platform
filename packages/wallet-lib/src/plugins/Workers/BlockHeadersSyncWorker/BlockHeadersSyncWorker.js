@@ -35,9 +35,14 @@ class BlockHeadersSyncWorker extends Worker {
       this.lastSyncedBlockHeight = bestBlockHeight;
       return;
     }
+    // 388902 - in SPV
+    // 389144 - in task
+    const skipBefore = typeof skipSynchronizationBeforeHeight === 'number'
+      ? skipSynchronizationBeforeHeight
+      : parseInt(skipSynchronizationBeforeHeight, 10);
 
-    if (skipSynchronizationBeforeHeight && typeof skipSynchronizationBeforeHeight === 'number') {
-      this.lastSyncedBlockHeight = skipSynchronizationBeforeHeight;
+    if (skipBefore && !Number.isNaN(skipBefore)) {
+      this.lastSyncedBlockHeight = skipBefore;
     }
 
     const startTime = Date.now();
@@ -60,7 +65,12 @@ class BlockHeadersSyncWorker extends Worker {
           const timePassed = (Date.now() - startTime) / 1000;
           const velocity = Math.round((longestChainLength + totalOrphans) / timePassed);
           const eta = Math.round((735722 / velocity) / 60);
-          console.log('Longest chain length', longestChainLength, totalOrphans, `velocity: ${velocity} blocks/sec,`, `ETA: ${eta} min`);
+          const totalBlocks = bestBlockHeight - this.lastSyncedBlockHeight;
+          const timeLeft = Math.round(
+            ((totalBlocks - longestChainLength - totalOrphans) / velocity) / 60,
+          );
+
+          console.log('Longest chain length', longestChainLength, totalOrphans, `velocity: ${velocity} blocks/sec,`, `ETA: ${timeLeft} min`);
         });
     });
 
@@ -73,7 +83,7 @@ class BlockHeadersSyncWorker extends Worker {
     // 40 streams - velocity: 1115 blocks/sec ETA: 11
     // 80 streams - velocity: 1135 blocks/sec, ETA: 11 min
 
-    console.log('Start worker', bestBlockHeight);
+    console.log('Start worker', this.lastSyncedBlockHeight, bestBlockHeight);
     try {
       await blockHeadersProvider.start(this.lastSyncedBlockHeight, bestBlockHeight);
     } catch (e) {

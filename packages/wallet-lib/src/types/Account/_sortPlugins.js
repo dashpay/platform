@@ -3,6 +3,7 @@ const TransactionSyncStreamWorker = require('../../plugins/Workers/TransactionSy
 const ChainPlugin = require('../../plugins/Plugins/ChainPlugin');
 const IdentitySyncWorker = require('../../plugins/Workers/IdentitySyncWorker');
 const { WALLET_TYPES } = require('../../CONSTANTS');
+const BlockHeadersSyncWorker = require('../../plugins/Workers/BlockHeadersSyncWorker/BlockHeadersSyncWorker');
 
 const initPlugin = (UnsafePlugin) => {
   const isInit = !(typeof UnsafePlugin === 'function');
@@ -28,10 +29,19 @@ const sortUserPlugins = (defaultSortedPlugins, userUnsafePlugins, allowSensitive
     sortedPlugins.push(defaultPluginParams);
 
     // We also need to initialize them so we actually as we gonna need to read some properties.
-    const plugin = initPlugin(defaultPluginParams[0]);
-    initializedSortedPlugins.push(plugin);
+
+    // Init parallel executed plugins
+    if (Array.isArray(defaultPluginParams) && Array.isArray(defaultPluginParams[0])) {
+      const parallelPlugins = defaultPluginParams
+        .map((pluginParams) => initPlugin(pluginParams[0]));
+      initializedSortedPlugins.push(parallelPlugins);
+    } else {
+      const plugin = initPlugin(defaultPluginParams[0]);
+      initializedSortedPlugins.push(plugin);
+    }
   });
 
+  // TODO: fix before and after for parallel plugins
   // Iterate accross all user defined plugins
   each(userUnsafePlugins, (UnsafePlugin) => {
     const plugin = initPlugin(UnsafePlugin);
@@ -128,7 +138,10 @@ const sortPlugins = (account, userUnsafePlugins) => {
   if (account.injectDefaultPlugins) {
     if (!account.offlineMode) {
       plugins.push([ChainPlugin, true, true]);
-      plugins.push([TransactionSyncStreamWorker, true, true]);
+      plugins.push([
+        [TransactionSyncStreamWorker, true, true],
+        [BlockHeadersSyncWorker, true, true],
+      ]);
 
       if (account.walletType === WALLET_TYPES.HDWALLET) {
         plugins.push([IdentitySyncWorker, true, true]);

@@ -37,6 +37,10 @@ class BlockHeadersReader extends EventEmitter {
      * @type {*[]}
      */
     this.historicalStreams = [];
+    // TODO: test - remove
+    this.streamsStats = {
+
+    };
   }
 
   /**
@@ -83,12 +87,14 @@ class BlockHeadersReader extends EventEmitter {
       }
     });
 
+    // TODO: consider reworking with minBatchSize instead of targetBatchSize
     const numStreams = Math.min(
       Math.max(Math.round(totalAmount / this.targetBatchSize), 1),
       this.maxParallelStreams,
     );
 
     const actualBatchSize = Math.ceil(totalAmount / numStreams);
+    this.streamsStats.batchSize = actualBatchSize;
     // TODO: test
     console.log('Num streams', numStreams, actualBatchSize);
     for (let batchIndex = 0; batchIndex < numStreams; batchIndex += 1) {
@@ -96,11 +102,15 @@ class BlockHeadersReader extends EventEmitter {
       const count = Math.min(actualBatchSize, toBlockHeight - startingHeight + 1);
 
       const subscribeWithRetries = this.subscribeToHistoricalBatch(this.maxRetries);
-
+      this.streamsStats[startingHeight] = 0;
       // eslint-disable-next-line no-await-in-loop
       const stream = await subscribeWithRetries(startingHeight, count);
       this.historicalStreams.push(stream);
     }
+
+    setInterval(() => {
+      console.log(this.streamsStats);
+    }, 5000);
   }
 
   stopReadingHistorical() {
@@ -186,10 +196,12 @@ class BlockHeadersReader extends EventEmitter {
            * @param e
            */
           const rejectHeaders = (e) => {
+            console.log('Reject headers', e);
             rejected = true;
             stream.destroy(e);
           };
-
+          this.streamsStats[fromBlockHeight] += headersList.length;
+          // console.log('Stream', fromBlockHeight, 'total provided', totalHeadersProvided);
           this.emit(EVENTS.BLOCK_HEADERS, headersList, rejectHeaders);
 
           if (!rejected) {
@@ -199,6 +211,7 @@ class BlockHeadersReader extends EventEmitter {
       });
 
       stream.on('error', (streamError) => {
+        console.log('Stream error', streamError, currentRetries, maxRetries);
         if (currentRetries < maxRetries) {
           const newFromBlockHeight = fromBlockHeight + headersObtained;
           const newCount = count - headersObtained;
