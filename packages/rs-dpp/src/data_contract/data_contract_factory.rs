@@ -1,5 +1,5 @@
 use anyhow::anyhow;
-use serde_json::{Number, Value as JsonValue};
+use serde_json::{json, Number, Value as JsonValue};
 use std::collections::BTreeMap;
 use std::convert::TryFrom;
 
@@ -10,15 +10,19 @@ use crate::{
     mocks,
     prelude::Identifier,
     util::entropy_generator,
+    Convertible,
 };
 
-use super::DataContract;
+use super::{
+    state_transition::{DataContractCreateTransition, DataContractUpdateTransition},
+    DataContract,
+};
+use data_contract::state_transition::properties as st_prop;
 
 pub struct DataContractFactory {
     protocol_version: u32,
     _validate_data_contract: mocks::ValidateDataContract,
     // TODO remove dependency on decode_protocol_entity
-    decode_protocol_entity: DecodeProtocolEntity,
 }
 
 impl DataContractFactory {
@@ -30,7 +34,6 @@ impl DataContractFactory {
         Self {
             protocol_version,
             _validate_data_contract,
-            decode_protocol_entity,
         }
     }
 
@@ -116,31 +119,27 @@ impl DataContractFactory {
             .await
     }
 
-    // TODO
-    //   /**
-    //    * Create Data Contract Create State Transition
-    //    *
-    //    * @param {DataContract} dataContract
-    //    * @return {DataContractCreateTransition}
-    //    */
-    //   createDataContractCreateTransition(dataContract) {
-    //     return new DataContractCreateTransition({
-    //       protocolVersion: this.dpp.getProtocolVersion(),
-    //       dataContract: dataContract.toObject(),
-    //       entropy: dataContract.getEntropy(),
-    //     });
-    //   }
+    pub fn create_data_contract_create_transition(
+        &self,
+        data_contract: DataContract,
+    ) -> Result<DataContractCreateTransition, ProtocolError> {
+        DataContractCreateTransition::from_raw_object(json!({
+            st_prop::PROPERTY_PROTOCOL_VERSION: self.protocol_version,
+            st_prop::PROPERTY_DATA_CONTRACT: data_contract.to_object()?,
+            st_prop::PROPERTY_ENTROPY: data_contract.entropy,
+        }))
+    }
 
-    //   /**
-    //    * Create Data Contract Update State Transition
-    //    *
-    //    * @param {DataContract} dataContract
-    //    * @return {DataContractUpdateTransition}
-    //    */
-    //   createDataContractUpdateTransition(dataContract) {
-    //     return new DataContractUpdateTransition({
-    //       protocolVersion: this.dpp.getProtocolVersion(),
-    //       dataContract: dataContract.toObject(),
-    //     });
-    //   }
+    pub fn create_data_contract_update_transition(
+        &self,
+        data_contract: DataContract,
+    ) -> Result<DataContractUpdateTransition, ProtocolError> {
+        DataContractUpdateTransition::from_raw_object(json!({
+            st_prop::PROPERTY_PROTOCOL_VERSION: self.protocol_version,
+            st_prop::PROPERTY_DATA_CONTRACT: data_contract.to_object()?,
+        }))
+    }
 }
+
+#[cfg(test)]
+mod test {}
