@@ -272,7 +272,6 @@ impl DocumentFactory {
 mod test {
     use crate::{
         assert_error_contains,
-        document::document_transition::DocumentTransitionObjectLike,
         tests::{
             fixtures::{get_data_contract_fixture, get_documents_fixture},
             utils::generate_random_identifier_struct,

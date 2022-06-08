@@ -1,7 +1,7 @@
 pub mod document_factory;
+pub mod document_validator;
 pub mod errors;
 pub mod generate_document_id;
-pub mod validate_document_factory;
 
 mod state_transition;
 pub use state_transition::documents_batch_transition::document_transition;
