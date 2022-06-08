@@ -24,6 +24,13 @@ describe('validateIndicesAreBackwardCompatible', () => {
       ],
     });
 
+    newDataContract.getDocumentSchema('indexedDocument').indices.push({
+      name: 'index42',
+      properties: [
+        { otherName: 'desc' },
+      ],
+    });
+
     oldDocumentsSchema = oldDataContract.getDocuments();
     newDocumentsSchema = newDataContract.getDocuments();
   });
@@ -105,7 +112,7 @@ describe('validateIndicesAreBackwardCompatible', () => {
     expect(error.getIndexName()).to.equal('index_other');
   });
 
-  it('should return valid result if indicies are not changed', async () => {
+  it('should return valid result if indices are not changed', async () => {
     const result = validateIndicesAreBackwardCompatible(oldDocumentsSchema, newDocumentsSchema);
 
     expect(result.isValid()).to.be.true();
