@@ -64,6 +64,7 @@ impl ErrorWithCode for BasicError {
         match *self {
             // Document
             Self::DataContractContPresent { .. } => 1018,
+            Self::InvalidDocumentTypeError { .. } => 1024,
             Self::MissingDocumentTypeError { .. } => 1028,
             // Data contract
             Self::InvalidDataContractVersionError { .. } => 4013,
