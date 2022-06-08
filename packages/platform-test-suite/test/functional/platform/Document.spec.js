@@ -324,7 +324,6 @@ describe('Platform', () => {
       }
 
       expect(broadcastError).to.exist();
-      console.log(broadcastError.message);
       expect(/Document \w* updatedAt timestamp .* are out of block time window from .* and .*/.test(broadcastError.message)).to.be.true();
       expect(broadcastError.code).to.be.equal(4008);
     });
