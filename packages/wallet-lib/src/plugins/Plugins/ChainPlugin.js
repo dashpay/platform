@@ -78,9 +78,10 @@ class ChainPlugin extends StandardPlugin {
       return false;
     }
 
+    const { chain: { blocksCount: blocks }, network: { fee: { relay } } } = res;
+
     const { network } = this.storage.application;
     const chainStore = this.storage.getChainStore(network);
-    const { chain: { blocksCount: blocks }, network: { fee: { relay } } } = res;
 
     logger.debug('ChainPlugin - Setting up starting blockHeight', blocks);
 

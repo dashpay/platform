@@ -15,6 +15,9 @@ const STATES = {
 class ChainSyncMediator {
   constructor() {
     this._state = STATES.OFFLINE;
+    this.blockHeights = {};
+    this.transactionsBlockHashes = {};
+    this.txChunkHashes = new Set();
   }
 
   /**

@@ -1,5 +1,4 @@
 const EventEmitter = require('events');
-const { BlockHeader } = require('@dashevo/dashcore-lib');
 const { SpvChain } = require('../../../../../dash-spv/index');
 
 const BlockHeadersReader = require('./BlockHeadersReader');
@@ -38,7 +37,8 @@ class BlockHeadersProvider extends EventEmitter {
       ...options,
     };
 
-    this.spvChain = new SpvChain(this.options.network);
+    // TODO: make sure it's okay passing 0 parameter here
+    this.spvChain = new SpvChain(this.options.network, 1);
     this.started = false;
   }
 

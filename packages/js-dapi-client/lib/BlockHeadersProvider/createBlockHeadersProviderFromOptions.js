@@ -33,13 +33,18 @@ function createBlockHeadersProviderFromOptions(options, coreMethods) {
   }
 
   if (options.blockHeadersProviderOptions) {
+    const { network } = options;
+
+    // TODO: get rid of param reassing and pass network directly to BlockHeadersProvider
+    // eslint-disable-next-line
+    options.blockHeadersProviderOptions.network = network;
+
     const blockHeadersProviderOptions = {
       ...BlockHeadersProvider.defaultOptions,
       ...options.blockHeadersProviderOptions,
     };
 
     const {
-      network,
       autoStart,
       maxParallelStreams,
       targetBatchSize,

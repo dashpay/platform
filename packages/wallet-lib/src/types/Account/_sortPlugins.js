@@ -142,6 +142,9 @@ const sortPlugins = (account, userUnsafePlugins) => {
         [TransactionSyncStreamWorker, true, true],
         [BlockHeadersSyncWorker, true, true],
       ]);
+      // TODO: test
+      // plugins.push([BlockHeadersSyncWorker, true, true]);
+      // plugins.push([TransactionSyncStreamWorker, true, true]);
 
       if (account.walletType === WALLET_TYPES.HDWALLET) {
         plugins.push([IdentitySyncWorker, true, true]);

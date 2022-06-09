@@ -58,6 +58,8 @@ class BlockHeadersReader extends EventEmitter {
     const totalAmount = toBlockHeight - fromBlockHeight + 1;
     if (totalAmount === 0) {
       // TODO: Why do we silently return without any feedback?
+      // Aha, probably because if there's nothing to sync historically, then we're done
+      // Silence is not good though
       return;
     }
 
@@ -108,9 +110,10 @@ class BlockHeadersReader extends EventEmitter {
       this.historicalStreams.push(stream);
     }
 
-    setInterval(() => {
-      console.log(this.streamsStats);
-    }, 5000);
+    // TODO: tests historical stream stats
+    // setInterval(() => {
+    //   console.log(this.streamsStats);
+    // }, 5000);
   }
 
   stopReadingHistorical() {

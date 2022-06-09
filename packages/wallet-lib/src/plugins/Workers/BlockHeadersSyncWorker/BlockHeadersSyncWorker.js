@@ -14,6 +14,8 @@ class BlockHeadersSyncWorker extends Worker {
         'network',
         'transport',
         'storage',
+        'importBlockHeader',
+        'chainSyncMediator',
       ],
       ...options,
     });
@@ -27,12 +29,13 @@ class BlockHeadersSyncWorker extends Worker {
       skipSynchronization,
     } = (this.storage.application.syncOptions || {});
 
+    let startFrom = 1;
     const bestBlockHeight = this.storage.getChainStore(this.network.toString())
       .state.blockHeight;
 
     if (skipSynchronization) {
       logger.debug('BlockHeadersSyncWorker - Wallet created from a new mnemonic. Sync from the best block height.');
-      this.lastSyncedBlockHeight = bestBlockHeight;
+      startFrom = bestBlockHeight;
       return;
     }
     // 388902 - in SPV
@@ -42,7 +45,7 @@ class BlockHeadersSyncWorker extends Worker {
       : parseInt(skipSynchronizationBeforeHeight, 10);
 
     if (skipBefore && !Number.isNaN(skipBefore)) {
-      this.lastSyncedBlockHeight = skipBefore;
+      startFrom = skipBefore;
     }
 
     const startTime = Date.now();
@@ -58,8 +61,26 @@ class BlockHeadersSyncWorker extends Worker {
 
       blockHeadersProvider.on(BlockHeadersProvider.EVENTS.HISTORICAL_DATA_OBTAINED, resolve);
 
+      let lastChainLength = 0;
       blockHeadersProvider
         .on(BlockHeadersProvider.EVENTS.CHAIN_UPDATED, (longestChain, totalOrphans) => {
+          for (let i = lastChainLength; i < longestChain.length; i += 1) {
+            const header = longestChain[i];
+            this.chainSyncMediator.blockHeights[header.hash] = startFrom + i;
+            // TODO: pay attention. Transferred from `handleTransactionFromStream`
+            this.importBlockHeader(header);
+          }
+
+          if (lastChainLength < longestChain.length) {
+            const heights = Object.values(this.chainSyncMediator.blockHeights);
+            console.log('Update heights!', heights[0], heights[heights.length - 1], 'total', heights.length);
+          }
+
+          lastChainLength = longestChain.length;
+
+          /**
+           * Logging
+           */
           longestChainLength = longestChain.length;
 
           const timePassed = (Date.now() - startTime) / 1000;
@@ -83,9 +104,9 @@ class BlockHeadersSyncWorker extends Worker {
     // 40 streams - velocity: 1115 blocks/sec ETA: 11
     // 80 streams - velocity: 1135 blocks/sec, ETA: 11 min
 
-    console.log('Start worker', this.lastSyncedBlockHeight, bestBlockHeight);
+    console.log('Start worker', startFrom, bestBlockHeight);
     try {
-      await blockHeadersProvider.start(this.lastSyncedBlockHeight, bestBlockHeight);
+      await blockHeadersProvider.start(startFrom, bestBlockHeight);
     } catch (e) {
       console.log(e);
     }

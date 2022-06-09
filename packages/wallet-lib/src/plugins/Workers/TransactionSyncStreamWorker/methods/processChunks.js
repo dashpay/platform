@@ -4,11 +4,6 @@ const GrpcErrorCodes = require('@dashevo/grpc-common/lib/server/error/GrpcErrorC
 const logger = require('../../../../logger');
 const isBrowser = require('../../../../utils/isBrowser');
 
-function isAnyIntersection(arrayA, arrayB) {
-  const intersection = arrayA.filter((e) => arrayB.indexOf(e) > -1);
-  return intersection.length > 0;
-}
-
 async function processChunks(dataChunk) {
   const self = this;
   const addresses = this.getAddressesToSync();
@@ -26,7 +21,42 @@ async function processChunks(dataChunk) {
   const addressesTransaction = this.constructor
     .filterAddressesTransactions(transactionsFromResponse, addresses, network);
 
+  /* Incoming Merkle block handling */
+  const merkleBlock = this.constructor
+    .getMerkleBlockFromStreamResponse(dataChunk);
+
+  if (merkleBlock) {
+    // Reverse hashes, as they're little endian in the header
+    const txHashesInTheBlock = merkleBlock
+      .hashes.reduce((set, hashHex) => {
+        // const hash = Buffer.from(hashHex, 'hex').reverse().toString('hex');
+        const hash = Buffer.from(hashHex, 'hex');
+        hash.reverse();
+        set.add(hash.toString('hex'));
+        return set;
+      }, new Set());
+
+    this.chainSyncMediator.txChunkHashes.forEach((hash) => {
+      if (!txHashesInTheBlock.has(hash)) {
+        console.log('Alarm! prev chunk hashes are not present in the merkle block');
+      }
+      this.chainSyncMediator.transactionsBlockHashes[hash] = merkleBlock.header.hash;
+    });
+
+    this.chainSyncMediator.txChunkHashes.clear();
+    console.log('[processChunks] Import merkle block for txs!', txHashesInTheBlock);
+  }
+
   if (addressesTransaction.transactions.length) {
+    addressesTransaction.transactions.forEach((tx) => {
+      const { hash } = tx;
+      if (this.chainSyncMediator.txChunkHashes.has(hash)) {
+        console.warn('Duplicated TX from the stream!!!', hash);
+      }
+
+      this.chainSyncMediator.txChunkHashes.add(hash);
+    });
+
     // Normalizing format of transaction for account.importTransactions
     const addressesTransactionsWithoutMetadata = addressesTransaction.transactions
       .map((tx) => [tx]);
@@ -99,22 +129,6 @@ async function processChunks(dataChunk) {
           resolveCancel();
         }));
       }
-    }
-  }
-
-  /* Incoming Merkle block handling */
-  const merkleBlockFromResponse = this.constructor
-    .getMerkleBlockFromStreamResponse(dataChunk);
-
-  if (merkleBlockFromResponse) {
-    // Reverse hashes, as they're little endian in the header
-    const transactionsInHeader = merkleBlockFromResponse.hashes.map((hashHex) => Buffer.from(hashHex, 'hex').reverse().toString('hex'));
-    const transactionsInWallet = [
-      ...self.storage.getChainStore(self.network).state.transactions.keys(),
-    ];
-    const isTruePositive = isAnyIntersection(transactionsInHeader, transactionsInWallet);
-    if (isTruePositive) {
-      self.importBlockHeader(merkleBlockFromResponse.header);
     }
   }
 }

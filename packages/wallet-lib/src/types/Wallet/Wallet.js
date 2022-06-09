@@ -168,8 +168,11 @@ class Wallet extends EventEmitter {
         opts.transport = {};
       }
 
+      // TODO: networkName might be different from this.network.
+      // E.g. devnet networkName equals to testnet. Figure out what are the implications
+
       // eslint-disable-next-line no-param-reassign
-      opts.transport.network = this.network;
+      opts.transport.network = networkName;
 
       this.transport = createTransportFromOptions(opts.transport);
     }
