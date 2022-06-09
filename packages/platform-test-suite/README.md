@@ -51,7 +51,8 @@ Usage: test <seed> [options]
               --dpns-contract-id=tld_contract_id            - dpns contract id
               --feature-flags-identity-id=ff_identity_id    - feature-flags contract id
               --feature-flags-contract-id=ff_contract_id    - feature-flags contract id
-              --faucet-storage-dir=absolute_dir             - specify directory where faucet wallet persistent storage will be stored
+              --faucet-wallet-use-storage=true              - use persistent wallet storage for faucet
+              --faucet-wallet-storage-dir=absolute_dir      - specify directory where faucet wallet persistent storage will be stored
   -t          --timeout                                     - test timeout in milliseconds
   -h          --help                                        - show help
 
@@ -84,9 +85,15 @@ Usage: test <seed> [options]
   -s=a,b,c    --scope=a,b,c                                 - test scope to run
   -k=key      --faucet-key=key                              - faucet private key string
   -n=network  --network=network                             - use regtest, devnet or testnet
+              --skip-sync-before-height=H                   - start sync funding wallet from specific height
               --dpns-tld-identity-private-key=private_key   - top level identity private key
-              --dpns-tld-identity-id=identity_id            - top level identity id
-              --dpns-contract-id=contract_id                - dpns contract id
+              --dpns-tld-identity-id=tld_identity_id        - top level identity id
+              --dpns-contract-id=tld_contract_id            - dpns contract id
+              --feature-flags-identity-id=ff_identity_id    - feature-flags contract id
+              --feature-flags-contract-id=ff_contract_id    - feature-flags contract id
+              --faucet-wallet-use-storage=true              - use persistent wallet storage for faucet
+              --faucet-wallet-storage-dir=absolute_dir      - specify directory where faucet wallet persistent storage will be stored
+  -t          --timeout                                     - test timeout in milliseconds
   -h          --help                                        - show help
 
   Possible scopes:

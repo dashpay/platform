@@ -19,6 +19,8 @@ Usage: test <seed> [options]
               --dpns-contract-id=tld_contract_id            - dpns contract id
               --feature-flags-identity-id=ff_identity_id    - feature-flags contract id
               --feature-flags-contract-id=ff_contract_id    - feature-flags contract id
+              --faucet-wallet-use-storage=true              - use persistent wallet storage for faucet
+              --faucet-wallet-storage-dir=absolute_dir      - specify directory where faucet wallet persistent storage will be stored
   -t          --timeout                                     - test timeout in milliseconds
   -h          --help                                        - show help
 
@@ -78,8 +80,12 @@ case ${i} in
     ;;
     -t=*|--timeout=*)
     timeout="${i#*=}"
-    --faucet-storage-dir=*)
-    faucet_storage_dir="${i#*=}"
+    ;;
+    --faucet-wallet-storage-dir=*)
+    faucet_wallet_storage_dir="${i#*=}"
+    ;;
+    --faucet-wallet-use-storage=*)
+    faucet_wallet_use_storage="${i#*=}"
     ;;
 esac
 done
@@ -189,9 +195,14 @@ then
   cmd="${cmd} DPNS_TOP_LEVEL_IDENTITY_PRIVATE_KEY=${identity_private_key}"
 fi
 
-if [ -n "$faucet_storage_dir" ]
+if [ -n "$faucet_wallet_use_storage" ]
 then
-  cmd="${cmd} FAUCET_STORAGE_DIR=${faucet_storage_dir}"
+  cmd="${cmd} FAUCET_WALLET_USE_STORAGE=${faucet_wallet_use_storage}"
+fi
+
+if [ -n "$faucet_wallet_storage_dir" ]
+then
+  cmd="${cmd} FAUCET_WALLET_STORAGE_DIR=${faucet_wallet_storage_dir}"
 fi
 
 if [ -n "$GITHUB_ACTIONS" ]
