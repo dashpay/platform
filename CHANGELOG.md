@@ -1,3 +1,11 @@
+### [0.22.12](https://github.com/dashevo/platform/compare/v0.22.11...v0.22.12) (2022-06-07)
+
+
+### Bug Fixes
+
+* **sdk:** incomplete bundle for web ([#400](https://github.com/dashevo/platform/issues/400))
+* **wallet-lib:** separate persistent storage by walletId ([#407](https://github.com/dashevo/platform/issues/407))
+
 ### [0.22.11](https://github.com/dashevo/platform/compare/v0.22.10...v0.22.11) (2022-05-31)
 
 

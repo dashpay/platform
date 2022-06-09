@@ -1,6 +1,8 @@
-const { Block } = require('@dashevo/dashcore-lib');
+const Dash = require('dash');
 
 const createClientWithoutWallet = require('../../../lib/test/createClientWithoutWallet');
+
+const { Core: { Block }, Essentials: { Buffer } } = Dash;
 
 describe('Core', () => {
   describe('getBlock', () => {

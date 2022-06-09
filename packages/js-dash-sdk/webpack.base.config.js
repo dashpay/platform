@@ -1,8 +1,10 @@
 const path = require('path');
 const webpack = require('webpack');
+const TerserPlugin = require("terser-webpack-plugin");
 
 const baseConfig = {
   entry: './src/index.ts',
+  devtool: 'eval',
   module: {
     rules: [
       {
@@ -11,6 +13,14 @@ const baseConfig = {
         exclude: /node_modules/,
       },
     ],
+  },
+  optimization: {
+    minimize: true,
+    minimizer: [new TerserPlugin({
+      terserOptions: {
+        keep_classnames: true // fixes empty string in `object.constructor.name`
+      }
+    })],
   },
   resolve: {
     extensions: ['.ts', '.js', '.json'],
@@ -29,6 +39,10 @@ const baseConfig = {
       zlib: require.resolve('browserify-zlib'),
       events: require.resolve('events/'),
       string_decoder: require.resolve('string_decoder/'),
+      tls: require.resolve('tls/'),
+      net: require.resolve('net/'),
+      // Browser build have to use native WebSocket
+      ws: require.resolve('./build-utils/ws'),
     },
   },
   plugins: [
