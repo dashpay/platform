@@ -90,4 +90,22 @@ describe('validateDataContractUpdateTransitionStateFactory', () => {
       executionContext,
     );
   });
+
+  it('should return valid result on dry run', async () => {
+    stateRepositoryMock.fetchDataContract.resolves(undefined);
+
+    executionContext.enableDryRun();
+
+    const result = await validateDataContractUpdateTransitionState(stateTransition);
+
+    executionContext.disableDryRun();
+
+    expect(result).to.be.an.instanceOf(ValidationResult);
+    expect(result.isValid()).to.be.true();
+
+    expect(stateRepositoryMock.fetchDataContract).to.be.calledOnceWithExactly(
+      dataContract.getId(),
+      executionContext,
+    );
+  });
 });

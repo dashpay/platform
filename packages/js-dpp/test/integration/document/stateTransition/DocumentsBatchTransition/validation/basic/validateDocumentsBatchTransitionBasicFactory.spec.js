@@ -1046,8 +1046,8 @@ describe('validateDocumentsBatchTransitionBasicFactory', () => {
       expect(error.getParams().limit).to.equal(65);
     });
 
-    it('should be not longer than 65 bytes', async () => {
-      rawStateTransition.signature = Buffer.alloc(66);
+    it('should be not longer than 96 bytes', async () => {
+      rawStateTransition.signature = Buffer.alloc(97);
 
       const result = await validateDocumentsBatchTransitionBasic(
         rawStateTransition,
@@ -1060,7 +1060,7 @@ describe('validateDocumentsBatchTransitionBasicFactory', () => {
 
       expect(error.instancePath).to.equal('/signature');
       expect(error.getKeyword()).to.equal('maxItems');
-      expect(error.getParams().limit).to.equal(65);
+      expect(error.getParams().limit).to.equal(96);
     });
   });
 
@@ -1120,6 +1120,27 @@ describe('validateDocumentsBatchTransitionBasicFactory', () => {
 
     expect(findDuplicatesByIndicesMock).to.have.been.calledOnceWithExactly(
       rawStateTransition.transitions, dataContract,
+    );
+  });
+
+  it('should not validate Document transitions on dry run', async () => {
+    stateRepositoryMock.fetchDataContract.resolves(null);
+
+    executionContext.enableDryRun();
+
+    const result = await validateDocumentsBatchTransitionBasic(
+      rawStateTransition,
+      executionContext,
+    );
+
+    executionContext.disableDryRun();
+
+    expect(result).to.be.an.instanceOf(ValidationResult);
+    expect(result.isValid()).to.be.true();
+
+    expect(stateRepositoryMock.fetchDataContract).to.have.been.calledOnceWithExactly(
+      dataContract.getId(),
+      executionContext,
     );
   });
 });

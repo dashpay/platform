@@ -6,6 +6,7 @@ const getDocumentTransitionsFixture = require('../../../../lib/test/fixtures/get
 const createRewardShareDataTrigger = require('../../../../lib/dataTrigger/rewardShareDataTriggers/createMasternodeRewardSharesDataTrigger');
 const DataTriggerExecutionResult = require('../../../../lib/dataTrigger/DataTriggerExecutionResult');
 const DataTriggerConditionError = require('../../../../lib/errors/consensus/state/dataContract/dataTrigger/DataTriggerConditionError');
+const StateTransitionExecutionContext = require('../../../../lib/stateTransition/StateTransitionExecutionContext');
 
 describe('createMasternodeRewardSharesDataTrigger', () => {
   let contextMock;
@@ -61,6 +62,8 @@ describe('createMasternodeRewardSharesDataTrigger', () => {
     [documentTransition] = getDocumentTransitionsFixture({
       create: [document],
     });
+
+    executionContext = new StateTransitionExecutionContext();
 
     contextMock = {
       getStateRepository: () => stateRepositoryMock,
@@ -145,6 +148,25 @@ describe('createMasternodeRewardSharesDataTrigger', () => {
     expect(result.isOk()).to.be.true();
 
     expect(stateRepositoryMock.fetchSMLStore).to.be.calledOnce();
+    expect(stateRepositoryMock.fetchIdentity).to.be.calledOnceWithExactly(
+      documentTransition.data.payToId,
+      executionContext,
+    );
+  });
+
+  it('should pass on dry run', async () => {
+    stateRepositoryMock.fetchIdentity.resolves(null);
+
+    executionContext.enableDryRun();
+
+    const result = await createRewardShareDataTrigger(
+      documentTransition, contextMock,
+    );
+    executionContext.disableDryRun();
+
+    expect(result).to.be.an.instanceOf(DataTriggerExecutionResult);
+    expect(result.isOk()).to.be.true();
+    expect(stateRepositoryMock.fetchSMLStore).to.not.be.called();
     expect(stateRepositoryMock.fetchIdentity).to.be.calledOnceWithExactly(
       documentTransition.data.payToId,
       executionContext,

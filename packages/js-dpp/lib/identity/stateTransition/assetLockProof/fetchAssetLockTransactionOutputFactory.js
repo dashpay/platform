@@ -1,4 +1,5 @@
-const { Transaction } = require('@dashevo/dashcore-lib');
+const { Transaction, Script } = require('@dashevo/dashcore-lib');
+const Output = require('@dashevo/dashcore-lib/lib/transaction/output');
 const InstantAssetLockProof = require('./instant/InstantAssetLockProof');
 const ChainAssetLockProof = require('./chain/ChainAssetLockProof');
 const AssetLockTransactionIsNotFoundError = require('../../errors/AssetLockTransactionIsNotFoundError');
@@ -34,6 +35,13 @@ function fetchAssetLockTransactionOutputFactory(
         transactionHash,
         executionContext,
       );
+
+      if (executionContext.isDryRun()) {
+        return new Output({
+          satoshis: 1000,
+          script: new Script(),
+        });
+      }
 
       if (rawTransaction === null) {
         throw new AssetLockTransactionIsNotFoundError(transactionHash);

@@ -1,5 +1,7 @@
 const { createHash } = require('crypto');
 
+const lodashCloneDeep = require('lodash.clonedeep');
+
 const PreCalculatedOperation = require('@dashevo/dpp/lib/stateTransition/fee/operations/PreCalculatedOperation');
 const createDocumentTypeTreePath = require('./groveDB/createDocumentTreePath');
 const InvalidQueryError = require('./errors/InvalidQueryError');
@@ -20,38 +22,27 @@ class DocumentRepository {
   }
 
   /**
-   * Store document
+   * Create document
    *
-   * @param {DataContract} document
    * @param {Document} document
-   * @param {boolean} [useTransaction=false]
+   * @param {Object} [options]
+   * @param {boolean} [options.useTransaction=false]
+   * @param {boolean} [options.dryRun=false]
+   *
    * @return {Promise<StorageResult<void>>}
    */
-  async store(document, useTransaction = false) {
-    const isExistsResult = await this.isExist(document, useTransaction);
-
+  async create(document, options = {}) {
     let processingCost;
     let storageCost;
 
-    let method = 'createDocument';
-
     try {
-      if (isExistsResult.getValue()) {
-        method = 'updateDocument';
-        ([storageCost, processingCost] = await this.storage.getDrive()
-          .updateDocument(
-            document,
-            new Date('2022-03-17T15:08:26.132Z'),
-            useTransaction,
-          ));
-      } else {
-        ([storageCost, processingCost] = await this.storage.getDrive()
-          .createDocument(
-            document,
-            new Date('2022-03-17T15:08:26.132Z'),
-            useTransaction,
-          ));
-      }
+      ([storageCost, processingCost] = await this.storage.getDrive()
+        .createDocument(
+          document,
+          new Date('2022-03-17T15:08:26.132Z'),
+          Boolean(options.useTransaction),
+          Boolean(options.dryRun),
+        ));
     } finally {
       if (this.logger) {
         this.logger.info({
@@ -60,16 +51,61 @@ class DocumentRepository {
             .update(
               document.toBuffer(),
             ).digest('hex'),
-          useTransaction: Boolean(useTransaction),
-          appHash: (await this.storage.getRootHash({ useTransaction })).toString('hex'),
-        }, method);
+          useTransaction: Boolean(options.useTransaction),
+          dryRun: Boolean(options.dryRun),
+          appHash: (await this.storage.getRootHash(options)).toString('hex'),
+        }, 'createDocument');
       }
     }
 
     return new StorageResult(
       undefined,
       [
-        ...isExistsResult.getOperations(),
+        new PreCalculatedOperation(storageCost, processingCost),
+      ],
+    );
+  }
+
+  /**
+   * Update document
+   *
+   * @param {Document} document
+   * @param {Object} [options]
+   * @param {boolean} [options.useTransaction=false]
+   * @param {boolean} [options.dryRun=false]
+   *
+   * @return {Promise<StorageResult<void>>}
+   */
+  async update(document, options = {}) {
+    let processingCost;
+    let storageCost;
+
+    try {
+      ([storageCost, processingCost] = await this.storage.getDrive()
+        .updateDocument(
+          document,
+          new Date('2022-03-17T15:08:26.132Z'),
+          Boolean(options.useTransaction),
+          Boolean(options.dryRun),
+        ));
+    } finally {
+      if (this.logger) {
+        this.logger.info({
+          document: document.toBuffer().toString('hex'),
+          documentHash: createHash('sha256')
+            .update(
+              document.toBuffer(),
+            ).digest('hex'),
+          useTransaction: Boolean(options.useTransaction),
+          dryRun: Boolean(options.dryRun),
+          appHash: (await this.storage.getRootHash(options)).toString('hex'),
+        }, 'updateDocument');
+      }
+    }
+
+    return new StorageResult(
+      undefined,
+      [
         new PreCalculatedOperation(storageCost, processingCost),
       ],
     );
@@ -77,10 +113,13 @@ class DocumentRepository {
 
   /**
    * @param {Document} document
-   * @param {boolean} [useTransaction=false]
+   * @param {Object} [options]
+   * @param {boolean} [options.useTransaction=false]
+   * @param {boolean} [options.dryRun=false]
+   *
    * @return {Promise<StorageResult<boolean>>}
    */
-  async isExist(document, useTransaction = false) {
+  async isExist(document, options = { }) {
     const documentTypeTreePath = createDocumentTypeTreePath(
       document.getDataContract(),
       document.getType(),
@@ -93,7 +132,10 @@ class DocumentRepository {
     const result = await this.storage.get(
       documentTreePath,
       document.getId().toBuffer(),
-      { useTransaction },
+      {
+        useTransaction: Boolean(options.useTransaction),
+        dryRun: Boolean(options.dryRun),
+      },
     );
 
     return new StorageResult(
@@ -107,21 +149,29 @@ class DocumentRepository {
    *
    * @param {DataContract} dataContract
    * @param {string} documentType
-   * @param [query]
-   * @param [query.where]
-   * @param [query.limit]
-   * @param [query.startAt]
-   * @param [query.startAfter]
-   * @param [query.orderBy]
-   * @param {boolean} [useTransaction=false]
+   * @param {Object} [options]
+   * @param {Array} [options.where]
+   * @param {number} [options.limit]
+   * @param {Buffer} [options.startAt]
+   * @param {Buffer} [options.startAfter]
+   * @param {Array} [options.orderBy]
+   * @param {boolean} [options.useTransaction=false]
+   * @param {boolean} [options.dryRun=false]
    *
    * @throws InvalidQueryError
    *
    * @returns {Promise<StorageResult<Document[]>>}
    */
-  async find(dataContract, documentType, query = {}, useTransaction = false) {
-    // Remove undefined options before we pass them to RS Drive
+  async find(dataContract, documentType, options = {}) {
+    const query = lodashCloneDeep(options);
+    let useTransaction = false;
+
     if (typeof query === 'object' && !Array.isArray(query) && query !== null) {
+      ({ useTransaction } = query);
+      delete query.useTransaction;
+      delete query.dryRun;
+
+      // Remove undefined options before we pass them to RS Drive
       Object.keys(query)
         .forEach((queryOption) => {
           if (query[queryOption] === undefined) {
@@ -167,17 +217,20 @@ class DocumentRepository {
    * @param {DataContract} dataContract
    * @param {string} documentType
    * @param {Identifier} id
-   * @param {boolean} useTransaction
+   * @param {Object} [options]
+   * @param {boolean} [options.useTransaction=false]
+   * @param {boolean} [options.dryRun=false]
    * @return {Promise<StorageResult<void>>}
    */
-  async delete(dataContract, documentType, id, useTransaction = false) {
+  async delete(dataContract, documentType, id, options = { }) {
     try {
       const [storageCost, processingCost] = await this.storage.getDrive()
         .deleteDocument(
           dataContract,
           documentType,
           id,
-          useTransaction,
+          Boolean(options.useTransaction),
+          Boolean(options.dryRun),
         );
 
       return new StorageResult(
@@ -192,8 +245,8 @@ class DocumentRepository {
           dataContractId: dataContract.getId().toString(),
           documentType,
           id: id.toString(),
-          useTransaction: Boolean(useTransaction),
-          appHash: (await this.storage.getRootHash({ useTransaction })).toString('hex'),
+          useTransaction: Boolean(options.useTransaction),
+          appHash: (await this.storage.getRootHash(options)).toString('hex'),
         }, 'deleteDocument');
       }
     }

@@ -54,7 +54,7 @@ describe('fetchDocumentsFactory', () => {
   });
 
   it('should fetch Documents for specified contract ID and document type', async () => {
-    await documentRepository.store(document);
+    await documentRepository.create(document);
 
     const result = await fetchDocuments(contractId, documentType);
 
@@ -72,7 +72,7 @@ describe('fetchDocumentsFactory', () => {
   });
 
   it('should fetch Documents for specified contract id, document type and name', async () => {
-    await documentRepository.store(document);
+    await documentRepository.create(document);
 
     const query = { where: [['name', '==', document.get('name')]] };
 
@@ -89,7 +89,7 @@ describe('fetchDocumentsFactory', () => {
   });
 
   it('should return empty array for specified contract ID, document type and name not exist', async () => {
-    await documentRepository.store(document);
+    await documentRepository.create(document);
 
     const query = { where: [['name', '==', 'unknown']] };
 
@@ -106,7 +106,7 @@ describe('fetchDocumentsFactory', () => {
   it('should fetch documents by an equal date', async () => {
     const indexedDocument = getDocumentsFixture(dataContract)[3];
 
-    await documentRepository.store(indexedDocument);
+    await documentRepository.create(indexedDocument);
 
     const query = {
       where: [
@@ -129,7 +129,7 @@ describe('fetchDocumentsFactory', () => {
   it('should fetch documents by a date range', async () => {
     const [, , , indexedDocument] = getDocumentsFixture(dataContract);
 
-    await documentRepository.store(indexedDocument);
+    await documentRepository.create(indexedDocument);
 
     const startDate = new Date();
     startDate.setSeconds(startDate.getSeconds() - 10);
@@ -160,7 +160,7 @@ describe('fetchDocumentsFactory', () => {
   it('should fetch empty array in case date is out of range', async () => {
     const [, , , indexedDocument] = getDocumentsFixture(dataContract);
 
-    await documentRepository.store(indexedDocument);
+    await documentRepository.create(indexedDocument);
 
     const startDate = new Date();
     startDate.setSeconds(startDate.getSeconds() + 10);
@@ -200,7 +200,7 @@ describe('fetchDocumentsFactory', () => {
   });
 
   it('should throw InvalidQueryError if contract ID does not exist', async () => {
-    await documentRepository.store(document);
+    await documentRepository.create(document);
 
     contractId = generateRandomIdentifier();
 
@@ -215,7 +215,7 @@ describe('fetchDocumentsFactory', () => {
   });
 
   it('should throw InvalidQueryError if type does not exist', async () => {
-    await documentRepository.store(document);
+    await documentRepository.create(document);
 
     documentType = 'Unknown';
 
@@ -230,7 +230,7 @@ describe('fetchDocumentsFactory', () => {
   });
 
   it('should throw InvalidQueryError if searching by non indexed fields', async () => {
-    await documentRepository.store(document);
+    await documentRepository.create(document);
 
     const query = { where: [['lastName', '==', 'unknown']] };
 

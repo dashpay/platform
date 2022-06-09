@@ -58,14 +58,18 @@ function commitHandlerFactory(
 
     await creditsDistributionPoolRepository.store(
       creditsDistributionPool,
-      true,
+      {
+        useTransaction: true,
+      },
     );
 
     // Store block execution context
     blockExecutionContextStack.add(blockExecutionContext);
     blockExecutionContextStackRepository.store(
       blockExecutionContextStack,
-      true,
+      {
+        useTransaction: true,
+      },
     );
 
     // Commit the current block db transactions

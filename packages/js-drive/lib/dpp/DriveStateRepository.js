@@ -1,4 +1,7 @@
+const { TYPES } = require('@dashevo/dpp/lib/identity/IdentityPublicKey');
+
 const ReadOperation = require('@dashevo/dpp/lib/stateTransition/fee/operations/ReadOperation');
+const SignatureVerificationOperation = require('@dashevo/dpp/lib/stateTransition/fee/operations/SignatureVerificationOperation');
 
 class DriveStateRepository {
   #options = {};
@@ -57,7 +60,10 @@ class DriveStateRepository {
    * @return {Promise<Identity|null>}
    */
   async fetchIdentity(id, executionContext = undefined) {
-    const result = await this.identityRepository.fetch(id, this.#options.useTransaction || false);
+    const result = await this.identityRepository.fetch(
+      id,
+      this.#createRepositoryOptions(executionContext),
+    );
 
     if (executionContext) {
       executionContext.addOperation(...result.getOperations());
@@ -77,7 +83,7 @@ class DriveStateRepository {
   async storeIdentity(identity, executionContext = undefined) {
     const result = await this.identityRepository.store(
       identity,
-      this.#options.useTransaction || false,
+      this.#createRepositoryOptions(executionContext),
     );
 
     if (executionContext) {
@@ -97,7 +103,9 @@ class DriveStateRepository {
   async storeIdentityPublicKeyHashes(identityId, publicKeyHashes, executionContext = undefined) {
     for (const publicKeyHash of publicKeyHashes) {
       const result = await this.publicKeyToIdentityIdRepository.store(
-        publicKeyHash, identityId, this.#options.useTransaction || false,
+        publicKeyHash,
+        identityId,
+        this.#createRepositoryOptions(executionContext),
       );
 
       if (executionContext) {
@@ -117,7 +125,7 @@ class DriveStateRepository {
   async markAssetLockTransactionOutPointAsUsed(outPointBuffer, executionContext = undefined) {
     const result = await this.spentAssetLockTransactionsRepository.store(
       outPointBuffer,
-      this.#options.useTransaction || false,
+      this.#createRepositoryOptions(executionContext),
     );
 
     if (executionContext) {
@@ -136,7 +144,7 @@ class DriveStateRepository {
   async isAssetLockTransactionOutPointAlreadyUsed(outPointBuffer, executionContext = undefined) {
     const result = await this.spentAssetLockTransactionsRepository.fetch(
       outPointBuffer,
-      this.#options.useTransaction || false,
+      this.#createRepositoryOptions(executionContext),
     );
 
     if (executionContext) {
@@ -160,7 +168,8 @@ class DriveStateRepository {
     const results = await Promise.all(
       publicKeyHashes.map(async (publicKeyHash) => (
         this.publicKeyToIdentityIdRepository.fetch(
-          publicKeyHash, this.#options.useTransaction || false,
+          publicKeyHash,
+          this.#createRepositoryOptions(executionContext),
         )
       )),
     );
@@ -183,10 +192,15 @@ class DriveStateRepository {
    * @returns {Promise<DataContract|null>}
    */
   async fetchDataContract(id, executionContext = undefined) {
-    // Data Contracts should be already committed before use
-    // so we don't need transaction here
-
-    const result = await this.dataContractRepository.fetch(id);
+    const result = await this.dataContractRepository.fetch(
+      id,
+      {
+        dryRun: executionContext ? executionContext.isDryRun() : false,
+        // Transaction is not using since Data Contract
+        // should be always committed to use
+        useTransaction: false,
+      },
+    );
 
     if (executionContext) {
       executionContext.addOperation(...result.getOperations());
@@ -206,7 +220,7 @@ class DriveStateRepository {
   async storeDataContract(dataContract, executionContext = undefined) {
     const result = await this.dataContractRepository.store(
       dataContract,
-      this.#options.useTransaction || false,
+      this.#createRepositoryOptions(executionContext),
     );
 
     if (executionContext) {
@@ -228,8 +242,10 @@ class DriveStateRepository {
     const result = await this.fetchDocumentsFunction(
       contractId,
       type,
-      options,
-      this.#options.useTransaction || false,
+      {
+        ...options,
+        ...this.#createRepositoryOptions(executionContext),
+      },
     );
 
     if (executionContext) {
@@ -240,17 +256,36 @@ class DriveStateRepository {
   }
 
   /**
-   * Store document
+   * Create document
    *
    * @param {Document} document
    * @param {StateTransitionExecutionContext} [executionContext]
    *
    * @returns {Promise<void>}
    */
-  async storeDocument(document, executionContext = undefined) {
-    const result = await this.documentRepository.store(
+  async createDocument(document, executionContext = undefined) {
+    const result = await this.documentRepository.create(
       document,
-      this.#options.useTransaction || false,
+      this.#createRepositoryOptions(executionContext),
+    );
+
+    if (executionContext) {
+      executionContext.addOperation(...result.getOperations());
+    }
+  }
+
+  /**
+   * Update document
+   *
+   * @param {Document} document
+   * @param {StateTransitionExecutionContext} [executionContext]
+   *
+   * @returns {Promise<void>}
+   */
+  async updateDocument(document, executionContext = undefined) {
+    const result = await this.documentRepository.update(
+      document,
+      this.#createRepositoryOptions(executionContext),
     );
 
     if (executionContext) {
@@ -285,7 +320,7 @@ class DriveStateRepository {
       dataContract,
       type,
       id,
-      this.#options.useTransaction || false,
+      this.#createRepositoryOptions(executionContext),
     );
 
     if (executionContext) {
@@ -302,6 +337,17 @@ class DriveStateRepository {
    * @returns {Promise<Object|null>}
    */
   async fetchTransaction(id, executionContext = undefined) {
+    if (executionContext && executionContext.isDryRun()) {
+      executionContext.addOperation(
+        new ReadOperation(512),
+      );
+
+      return {
+        data: Buffer.alloc(0),
+        height: 1,
+      };
+    }
+
     try {
       const { result: transaction } = await this.coreRpcClient.getRawTransaction(id, 1);
 
@@ -352,6 +398,16 @@ class DriveStateRepository {
       return false;
     }
 
+    if (executionContext) {
+      executionContext.addOperation(
+        new SignatureVerificationOperation(TYPES.ECDSA_SECP256K1),
+      );
+
+      if (executionContext.isDryRun()) {
+        return true;
+      }
+    }
+
     const {
       coreChainLockedHeight,
     } = header;
@@ -384,6 +440,18 @@ class DriveStateRepository {
    */
   async fetchSMLStore() {
     return this.simplifiedMasternodeList.getStore();
+  }
+
+  /**
+   * @private
+   * @param {StateTransitionExecutionContext} [executionContext]
+   * @return {{dryRun: boolean, useTransaction: boolean}}
+   */
+  #createRepositoryOptions(executionContext) {
+    return {
+      useTransaction: this.#options.useTransaction || false,
+      dryRun: executionContext ? executionContext.isDryRun() : false,
+    };
   }
 }
 

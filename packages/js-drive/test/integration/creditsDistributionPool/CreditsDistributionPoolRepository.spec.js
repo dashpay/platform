@@ -61,7 +61,9 @@ describe('CreditsDistributionPoolRepository', () => {
     it('should store creditsDistributionPool using transaction', async () => {
       await store.startTransaction();
 
-      const result = await repository.store(creditsDistributionPool, true);
+      const result = await repository.store(creditsDistributionPool, {
+        useTransaction: true,
+      });
 
       expect(result).to.be.instanceOf(StorageResult);
 
@@ -148,7 +150,9 @@ describe('CreditsDistributionPoolRepository', () => {
       );
 
       // Nothing without transaction
-      const emptyResult = await repository.fetch(false);
+      const emptyResult = await repository.fetch({
+        useTransaction: false,
+      });
 
       expect(emptyResult).to.be.instanceOf(StorageResult);
 
@@ -160,7 +164,9 @@ describe('CreditsDistributionPoolRepository', () => {
       expect(emptyPool.getAmount()).to.equals(0);
 
       // Actual amount in transactions
-      const transactionalResult = await repository.fetch(true);
+      const transactionalResult = await repository.fetch({
+        useTransaction: true,
+      });
 
       const transactionalPool = transactionalResult.getValue();
 
@@ -170,7 +176,9 @@ describe('CreditsDistributionPoolRepository', () => {
       await store.commitTransaction();
 
       // Actual amount without transaction
-      const committedResults = await repository.fetch(false);
+      const committedResults = await repository.fetch({
+        useTransaction: false,
+      });
 
       const committedPool = committedResults.getValue();
 

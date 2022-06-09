@@ -3,6 +3,7 @@ const createStateRepositoryMock = require('../../../../../lib/test/mocks/createS
 const getIdentityUpdateTransitionFixture = require('../../../../../lib/test/fixtures/getIdentityUpdateTransitionFixture');
 const getIdentityFixture = require('../../../../../lib/test/fixtures/getIdentityFixture');
 const StateTransitionExecutionContext = require('../../../../../lib/stateTransition/StateTransitionExecutionContext');
+const getBiggestPossibleIdentity = require('../../../../../lib/identity/getBiggestPossibleIdentity');
 
 describe('applyIdentityUpdateTransition', () => {
   let applyIdentityUpdateTransition;
@@ -84,5 +85,65 @@ describe('applyIdentityUpdateTransition', () => {
       .to.equal(stateTransition.getPublicKeysDisabledAt().getTime());
 
     expect(identity.getRevision()).to.equal(stateTransition.getRevision());
+  });
+
+  it('should not add public keys on dry run', async () => {
+    const biggestPossibleIdentity = getBiggestPossibleIdentity();
+
+    stateTransition.setPublicKeysDisabledAt(undefined);
+    stateTransition.setPublicKeyIdsToDisable(undefined);
+
+    stateTransition.getExecutionContext().enableDryRun();
+
+    await applyIdentityUpdateTransition(stateTransition);
+
+    stateTransition.getExecutionContext().disableDryRun();
+
+    expect(identity.getPublicKeys()).to.have.lengthOf(2);
+
+    expect(stateRepositoryMock.fetchIdentity).to.be.calledOnceWithExactly(
+      stateTransition.getIdentityId(),
+      executionContext,
+    );
+
+    expect(stateRepositoryMock.storeIdentity).to.be.calledOnceWithExactly(
+      biggestPossibleIdentity,
+      executionContext,
+    );
+
+    const publicKeyHashes = stateTransition.getPublicKeysToAdd()
+      .map((publicKey) => publicKey.hash());
+
+    expect(stateRepositoryMock.storeIdentityPublicKeyHashes).to.be.calledOnceWithExactly(
+      biggestPossibleIdentity.getId(),
+      publicKeyHashes,
+      executionContext,
+    );
+
+    expect(biggestPossibleIdentity.getRevision()).to.equal(stateTransition.getRevision());
+  });
+
+  it('should use biggestPossibleIdentity on dry run', async () => {
+    const biggestPossibleIdentity = getBiggestPossibleIdentity();
+
+    stateTransition.setPublicKeysToAdd(undefined);
+
+    stateTransition.getExecutionContext().enableDryRun();
+
+    await applyIdentityUpdateTransition(stateTransition);
+
+    stateTransition.getExecutionContext().disableDryRun();
+
+    expect(stateRepositoryMock.fetchIdentity).to.be.calledOnceWithExactly(
+      stateTransition.getIdentityId(),
+      executionContext,
+    );
+
+    expect(stateRepositoryMock.storeIdentityPublicKeyHashes).to.not.be.called();
+
+    expect(stateRepositoryMock.storeIdentity).to.be.calledOnceWithExactly(
+      biggestPossibleIdentity,
+      executionContext,
+    );
   });
 });

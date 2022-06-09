@@ -9,6 +9,7 @@ const { convertSatoshiToCredits } = require('../../../../../lib/identity/credits
 
 const createStateRepositoryMock = require('../../../../../lib/test/mocks/createStateRepositoryMock');
 const StateTransitionExecutionContext = require('../../../../../lib/stateTransition/StateTransitionExecutionContext');
+const getBiggestPossibleIdentity = require('../../../../../lib/identity/getBiggestPossibleIdentity');
 
 describe('applyIdentityTopUpTransitionFactory', () => {
   let stateTransition;
@@ -54,6 +55,41 @@ describe('applyIdentityTopUpTransitionFactory', () => {
 
     expect(stateRepositoryMock.storeIdentity).to.have.been.calledOnceWithExactly(
       identity,
+      executionContext,
+    );
+
+    expect(stateRepositoryMock.markAssetLockTransactionOutPointAsUsed).to.have.been
+      .calledOnceWithExactly(
+        stateTransition.getAssetLockProof().getOutPoint(),
+        executionContext,
+      );
+
+    expect(fetchAssetLockTransactionOutputMock)
+      .to.be.calledOnceWithExactly(
+        stateTransition.getAssetLockProof(),
+        executionContext,
+      );
+  });
+
+  it('should store biggest possible identity on dry run', async () => {
+    const biggestPossibleIdentity = getBiggestPossibleIdentity();
+
+    const balanceBeforeTopUp = biggestPossibleIdentity.getBalance();
+
+    const balanceToTopUp = convertSatoshiToCredits(
+      stateTransition.getAssetLockProof().getOutput().satoshis,
+    );
+
+    executionContext.enableDryRun();
+
+    await applyIdentityTopUpTransition(stateTransition);
+
+    executionContext.disableDryRun();
+
+    expect(biggestPossibleIdentity.getBalance()).to.be.equal(balanceBeforeTopUp + balanceToTopUp);
+
+    expect(stateRepositoryMock.storeIdentity).to.have.been.calledOnceWithExactly(
+      biggestPossibleIdentity,
       executionContext,
     );
 

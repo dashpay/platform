@@ -2,6 +2,9 @@ const cbor = require('cbor');
 
 const Identifier = require('@dashevo/dpp/lib/Identifier');
 
+const ReadOperation = require('@dashevo/dpp/lib/stateTransition/fee/operations/ReadOperation');
+const WriteOperation = require('@dashevo/dpp/lib/stateTransition/fee/operations/WriteOperation');
+
 const StorageResult = require('../storage/StorageResult');
 
 class PublicKeyToIdentityIdStoreRepository {
@@ -18,12 +21,14 @@ class PublicKeyToIdentityIdStoreRepository {
    *
    * @param {Buffer} publicKeyHash
    * @param {Identifier} identityId
-   * @param {boolean} [useTransaction=false]
+   * @param {Object} [options]
+   * @param {boolean} [options.useTransaction=false]
+   * @param {boolean} [options.dryRun=false]
    *
    * @return {Promise<StorageResult<void>>}
    */
-  async store(publicKeyHash, identityId, useTransaction = false) {
-    const existingIdsResult = await this.fetchBuffer(publicKeyHash, useTransaction);
+  async store(publicKeyHash, identityId, options = {}) {
+    const existingIdsResult = await this.fetchBuffer(publicKeyHash, options);
 
     let identityIds = [];
     if (existingIdsResult.getValue()) {
@@ -37,14 +42,19 @@ class PublicKeyToIdentityIdStoreRepository {
 
       const data = cbor.encode(identityIds);
 
-      const result = await this.storage.put(
+      await this.storage.put(
         PublicKeyToIdentityIdStoreRepository.TREE_PATH,
         publicKeyHash,
         data,
-        { useTransaction },
+        options,
       );
 
-      operations = operations.concat(result.getOperations());
+      const additionalData = cbor.encode([identityId.toBuffer()]);
+
+      // use only additional data for write operation
+      operations = operations.concat(
+        [new WriteOperation(publicKeyHash.length, additionalData.length)],
+      );
     }
 
     return new StorageResult(undefined, operations);
@@ -54,20 +64,26 @@ class PublicKeyToIdentityIdStoreRepository {
    * Fetch serialized identity ids by public key hash from database
    *
    * @param {Buffer} publicKeyHash
-   * @param {boolean} [useTransaction=false]
+   * @param {Object} [options]
+   * @param {boolean} [options.useTransaction=false]
+   * @param {boolean} [options.dryRun=false]
    *
    * @return {Promise<StorageResult<Buffer|null>>}
    */
-  async fetchBuffer(publicKeyHash, useTransaction = false) {
+  async fetchBuffer(publicKeyHash, options = {}) {
     const result = await this.storage.get(
       PublicKeyToIdentityIdStoreRepository.TREE_PATH,
       publicKeyHash,
-      { useTransaction },
+      options,
     );
+
+    // There is no way to predict, how many identities could have the same
+    // keys so as the simple solution we won't count value size for this
+    // operation at all
 
     return new StorageResult(
       result.getValue(),
-      result.getOperations(),
+      [new ReadOperation(0)],
     );
   }
 
@@ -75,13 +91,15 @@ class PublicKeyToIdentityIdStoreRepository {
    * Fetch deserialized identity ids by public key hash from database
    *
    * @param {Buffer} publicKeyHash
-   * @param {boolean} [useTransaction=false]
+   * @param {Object} [options]
+   * @param {boolean} [options.useTransaction=false]
+   * @param {boolean} [options.dryRun=false]
    *
    * @return {Promise<StorageResult<Identifier[]>>}
    */
-  async fetch(publicKeyHash, useTransaction = false) {
+  async fetch(publicKeyHash, options = {}) {
     const existingIdsResult = await this.fetchBuffer(
-      publicKeyHash, useTransaction,
+      publicKeyHash, options,
     );
 
     if (existingIdsResult.isNull()) {
@@ -102,7 +120,8 @@ class PublicKeyToIdentityIdStoreRepository {
   /**
    * @param {Object} [options]
    * @param {boolean} [options.useTransaction=false]
-   * @param {boolean} [options.skipIfExists]
+   * @param {boolean} [options.skipIfExists=false]
+   * @param {boolean} [options.dryRun=false]
    *
    * @return {Promise<StorageResult<void>>}
    */

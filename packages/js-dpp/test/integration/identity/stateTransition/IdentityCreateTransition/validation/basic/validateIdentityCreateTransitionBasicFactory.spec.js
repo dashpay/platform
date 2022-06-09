@@ -20,6 +20,7 @@ const InstantAssetLockProof = require('../../../../../../../lib/identity/stateTr
 const ChainAssetLockProof = require('../../../../../../../lib/identity/stateTransition/assetLockProof/chain/ChainAssetLockProof');
 const SomeConsensusError = require('../../../../../../../lib/test/mocks/SomeConsensusError');
 const IdentityPublicKey = require('../../../../../../../lib/identity/IdentityPublicKey');
+const StateTransitionExecutionContext = require('../../../../../../../lib/stateTransition/StateTransitionExecutionContext');
 
 describe('validateIdentityCreateTransitionBasicFactory', () => {
   let validateIdentityCreateTransitionBasic;
@@ -199,10 +200,13 @@ describe('validateIdentityCreateTransitionBasicFactory', () => {
         assetLockError,
       ]);
 
+      const executionContext = new StateTransitionExecutionContext();
+
       proofValidationFunctionsByTypeMock[InstantAssetLockProof.type].resolves(assetLockResult);
 
       const result = await validateIdentityCreateTransitionBasic(
         rawStateTransition,
+        executionContext,
       );
 
       expectValidationError(result);
@@ -214,6 +218,7 @@ describe('validateIdentityCreateTransitionBasicFactory', () => {
       expect(proofValidationFunctionsByTypeMock[InstantAssetLockProof.type])
         .to.be.calledOnceWithExactly(
           rawStateTransition.assetLockProof,
+          executionContext,
         );
     });
   });

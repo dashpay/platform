@@ -280,21 +280,47 @@ class LoggedStateRepositoryDecorator {
   }
 
   /**
-   * Store document
+   * Create document
    *
    * @param {Document} document
    * @param {StateTransitionExecutionContext} [executionContext]
    *
    * @returns {Promise<void>}
    */
-  async storeDocument(document, executionContext = undefined) {
+  async createDocument(document, executionContext = undefined) {
     let response;
 
     try {
-      response = await this.stateRepository.storeDocument(document, executionContext);
+      response = await this.stateRepository.createDocument(document, executionContext);
     } finally {
       this.log(
-        'storeDocument',
+        'createDocument',
+        {
+          document,
+        },
+        response,
+      );
+    }
+
+    return response;
+  }
+
+  /**
+   * Update document
+   *
+   * @param {Document} document
+   * @param {StateTransitionExecutionContext} [executionContext]
+   *
+   * @returns {Promise<void>}
+   */
+  async updateDocument(document, executionContext = undefined) {
+    let response;
+
+    try {
+      response = await this.stateRepository.updateDocument(document, executionContext);
+    } finally {
+      this.log(
+        'updateDocument',
         {
           document,
         },

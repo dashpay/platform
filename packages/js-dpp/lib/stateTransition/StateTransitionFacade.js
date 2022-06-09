@@ -39,7 +39,6 @@ const validateDocumentsUniquenessByIndicesFactory = require('../document/stateTr
 const validatePartialCompoundIndices = require('../document/stateTransition/DocumentsBatchTransition/validation/basic/validatePartialCompoundIndices');
 const getDataTriggersFactory = require('../dataTrigger/getDataTriggersFactory');
 const executeDataTriggersFactory = require('../document/stateTransition/DocumentsBatchTransition/validation/state/executeDataTriggersFactory');
-const validateIdentityExistenceFactory = require('../identity/validation/validateIdentityExistenceFactory');
 const validatePublicKeysFactory = require('../identity/validation/validatePublicKeysFactory');
 const validatePublicKeysState = require('../identity/stateTransition/IdentityUpdateTransition/validation/state/validatePublicKeysState');
 const validateRequiredPurposeAndSecurityLevelFactory = require('../identity/validation/validateRequiredPurposeAndSecurityLevelFactory');
@@ -122,10 +121,8 @@ class StateTransitionFacade {
       getPropertyDefinitionByPath,
     );
 
-    const validateIdentityExistence = validateIdentityExistenceFactory(this.stateRepository);
-
     this.validateStateTransitionIdentitySignature = validateStateTransitionIdentitySignatureFactory(
-      validateIdentityExistence,
+      this.stateRepository,
     );
 
     const fetchAssetLockTransactionOutput = fetchAssetLockTransactionOutputFactory(

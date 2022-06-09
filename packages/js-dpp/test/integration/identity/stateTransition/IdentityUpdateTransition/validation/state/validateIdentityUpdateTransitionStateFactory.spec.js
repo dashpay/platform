@@ -251,4 +251,36 @@ describe('validateIdentityUpdateTransitionStateFactory', () => {
       publicKeys.map((pk) => pk.toObject()),
     );
   });
+
+  it('should return valid result on dry run', async () => {
+    stateTransition.setPublicKeyIdsToDisable([3]);
+    stateTransition.setPublicKeysDisabledAt(new Date());
+
+    const publicKeysError = new SomeConsensusError('test');
+
+    validateRequiredPurposeAndSecurityLevelMock.onCall(0)
+      .returns(new ValidationResult([publicKeysError]));
+
+    stateTransition.getExecutionContext().enableDryRun();
+
+    const result = await validateIdentityUpdateTransitionState(stateTransition);
+
+    stateTransition.getExecutionContext().disableDryRun();
+
+    expect(result.isValid()).to.be.true();
+
+    expect(validatePublicKeysMock).to.not.be.called();
+    expect(validateRequiredPurposeAndSecurityLevelMock).to.not.be.called();
+    expect(stateRepositoryMock.fetchIdentity)
+      .to.be.calledOnceWithExactly(
+        stateTransition.getIdentityId(),
+        executionContext,
+      );
+
+    expect(stateRepositoryMock.fetchLatestPlatformBlockHeader)
+      .to.not.be.called();
+
+    expect(stateRepositoryMock.fetchLatestPlatformBlockHeader)
+      .to.not.be.called();
+  });
 });
