@@ -1889,6 +1889,37 @@ __metadata:
   languageName: unknown
   linkType: soft
 
+"@dashevo/docker-compose@npm:0.24.0":
+  version: 0.24.0
+  resolution: "@dashevo/docker-compose@npm:0.24.0"
+  dependencies:
+    "@commitlint/cli": ^13.1.0
+    "@commitlint/config-conventional": 13.1.0
+    "@types/dockerode": ^2.5.27
+    "@types/jest": ^26.0.22
+    "@types/node": ^12.12.6
+    "@typescript-eslint/eslint-plugin": ^4.21.0
+    "@typescript-eslint/parser": ^4.21.0
+    dockerode: ^3.2.1
+    eslint: ^7.24.0
+    eslint-config-prettier: ^8.1.0
+    eslint-plugin-import: ^2.22.1
+    eslint-plugin-jest: ^24.3.4
+    eslint-plugin-prettier: ^3.3.1
+    eslint-watch: ^7.0.0
+    husky: ^6.0.0
+    jest: ^26.6.3
+    prettier: ^2.2.1
+    standard-version: 9.3.1
+    ts-jest: ^26.5.4
+    ts-node: ^10.8.0
+    typescript: ^4.2.4
+    vuepress: ^2.0.0-beta.7
+    yaml: ^1.10.2
+  checksum: 764b3b220b174c595474166c1cc15b0099e604233829441336d1dc22a210ece7b15e3343462a67eb39d3a9712918b906635b74d017df9fed174046575e492454
+  languageName: node
+  linkType: hard
+
 "@dashevo/dp-services-ctl@github:dashevo/js-dp-services-ctl#v0.19-dev":
   version: 0.19.0-dev.1
   resolution: "@dashevo/dp-services-ctl@https://github.com/dashevo/js-dp-services-ctl.git#commit=3976076b0018c5b4632ceda4c752fc597f27a640"
@@ -7603,6 +7634,7 @@ __metadata:
     "@dashevo/dashcore-lib": ~0.19.38
     "@dashevo/dashd-rpc": ^2.3.1
     "@dashevo/dashpay-contract": "workspace:~"
+    "@dashevo/docker-compose": 0.24.0
     "@dashevo/dpns-contract": "workspace:~"
     "@dashevo/dpp": "workspace:~"
     "@dashevo/feature-flags-contract": "workspace:~"
@@ -7616,7 +7648,6 @@ __metadata:
     bls-signatures: ^0.2.5
     chalk: ^4.1.0
     dash: "workspace:~"
-    docker-compose: pshenmic/docker-compose
     dockerode: ^3.2.0
     dot: ^1.1.3
     dotenv: ^8.6.0
@@ -8102,37 +8133,6 @@ __metadata:
   dependencies:
     dns-packet: ^5.2.4
   checksum: d02b83ecc9b0f1d2fc459f93c6390c768a8805002637d1f74113d623fa7b2478a695ade7761a0a847622781f5e6dd008a9a1469ac75a617bdf1b775f2156943c
-  languageName: node
-  linkType: hard
-
-docker-compose@pshenmic/docker-compose:
-  version: 0.23.17
-  resolution: "docker-compose@https://github.com/pshenmic/docker-compose.git#commit=7097cecbc1f6e48390e5d76f0a075aed09f2a33e"
-  dependencies:
-    "@commitlint/cli": ^13.1.0
-    "@commitlint/config-conventional": 13.1.0
-    "@types/dockerode": ^2.5.27
-    "@types/jest": ^26.0.22
-    "@types/node": ^12.12.6
-    "@typescript-eslint/eslint-plugin": ^4.21.0
-    "@typescript-eslint/parser": ^4.21.0
-    dockerode: ^3.2.1
-    eslint: ^7.24.0
-    eslint-config-prettier: ^8.1.0
-    eslint-plugin-import: ^2.22.1
-    eslint-plugin-jest: ^24.3.4
-    eslint-plugin-prettier: ^3.3.1
-    eslint-watch: ^7.0.0
-    husky: ^6.0.0
-    jest: ^26.6.3
-    prettier: ^2.2.1
-    standard-version: 9.3.1
-    ts-jest: ^26.5.4
-    ts-node: ^10.8.0
-    typescript: ^4.2.4
-    vuepress: ^2.0.0-beta.7
-    yaml: ^1.10.2
-  checksum: e57288949d23e6791811fff62974d814ad459f40216ef172a99b58299b2451b7b2bc5f500d03f3108baac2272f2c07670932982b74e4ab7f4c341948a39315dd
   languageName: node
   linkType: hard
 
