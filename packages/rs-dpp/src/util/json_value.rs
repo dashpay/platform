@@ -281,7 +281,7 @@ impl JsonValueExt for JsonValue {
 
     fn replace_base64_paths<'a>(
         &mut self,
-        paths: impl IntoIterator<Item = &'a str>
+        paths: impl IntoIterator<Item = &'a str>,
     ) -> Result<(), Error> {
         for raw_path in paths {
             let to_replace = get_value_mut(raw_path, self);
