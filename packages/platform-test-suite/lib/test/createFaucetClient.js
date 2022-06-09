@@ -5,7 +5,7 @@ let storageAdapter;
 
 if (typeof window === 'undefined') {
   // eslint-disable-next-line global-require
-  const {NodeForage} = require('nodeforage');
+  const { NodeForage } = require('nodeforage');
   storageAdapter = new NodeForage({
     name: path.join(process.env.FAUCET_WALLET_STORAGE_DIR || process.cwd(),
       `faucet-wallet-${process.env.FAUCET_ADDRESS}.json`),
@@ -15,7 +15,7 @@ if (typeof window === 'undefined') {
   storageAdapter = require('localforage');
 }
 
-const {contractId} = require('@dashevo/dpns-contract/lib/systemIds');
+const { contractId } = require('@dashevo/dpns-contract/lib/systemIds');
 
 const getDAPISeeds = require('./getDAPISeeds');
 
@@ -39,7 +39,7 @@ function createFaucetClient() {
   };
 
   if (process.env.FAUCET_WALLET_USE_STORAGE === 'true') {
-    walletOptions.adapter = storageAdapter
+    walletOptions.adapter = storageAdapter;
   }
 
   if (process.env.SKIP_SYNC_BEFORE_HEIGHT) {
