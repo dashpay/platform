@@ -7,7 +7,7 @@ if (typeof window === 'undefined') {
   // eslint-disable-next-line global-require
   const {NodeForage} = require('nodeforage');
   storageAdapter = new NodeForage({
-    name: path.join(process.env.FAUCET_STORAGE_DIR, `faucet-wallet-${process.env.FAUCET_ADDRESS}`),
+    name: path.join(process.env.FAUCET_WALLET_STORAGE_DIR, `faucet-wallet-${process.env.FAUCET_ADDRESS}`),
   });
 } else {
   // eslint-disable-next-line global-require
