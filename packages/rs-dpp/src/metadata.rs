@@ -1,7 +1,7 @@
 use crate::errors::ProtocolError;
 use serde::{Deserialize, Serialize};
 
-#[derive(Serialize, Deserialize, Debug, Default, Clone)]
+#[derive(Serialize, Deserialize, Debug, Default, Clone, PartialEq, PartialOrd)]
 #[serde(rename_all = "camelCase")]
 pub struct Metadata {
     pub block_height: u64,
