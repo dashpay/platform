@@ -1,10 +1,14 @@
 #![allow(clippy::from_over_into)]
 
 use crate::errors::{InvalidVectorSizeError, ProtocolError};
+use crate::util::json_value::JsonValueExt;
+use crate::util::vec;
+use crate::util::vec::DecodeError::ParseIntError;
 use anyhow::{anyhow, bail};
 use dashcore::PublicKey;
 use lazy_static::lazy_static;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use serde_json::Value as JsonValue;
 use serde_repr::{Deserialize_repr, Serialize_repr};
 use std::{collections::HashMap, convert::TryFrom, hash::Hash};
 
@@ -18,6 +22,8 @@ pub enum KeyType {
     BLS12_381 = 1,
     ECDSA_HASH160 = 2,
 }
+
+pub const BINARY_DATA_FIELDS: [&str; 1] = ["data"];
 
 #[repr(u8)]
 #[derive(Debug, PartialEq, Eq, Clone, Copy, Hash, Serialize_repr, Deserialize_repr)]
@@ -208,38 +214,25 @@ impl IdentityPublicKey {
             return Ok(self.data.clone());
         }
 
-        let public_key = vec_to_array(&self.data);
+        let public_key = vec::vec_to_array::<65>(&self.data)
+            .map_err(|e| ProtocolError::ParsingError(e.to_string()))?;
         let original_key = PublicKey::from_slice(&public_key)
             .map_err(|e| anyhow!("unable to create pub key - {}", e))?;
         Ok(original_key.pubkey_hash().to_vec())
     }
 
-    pub fn data_as_arr_33(&self) -> Result<[u8; 33], InvalidVectorSizeError> {
-        vec_to_array_33(&self.data)
+    pub fn as_ecdsa_array(&self) -> Result<[u8; 33], InvalidVectorSizeError> {
+        vec::vec_to_array::<33>(&self.data)
     }
-}
 
-fn vec_to_array(vec: &[u8]) -> [u8; 65] {
-    let mut v: [u8; 65] = [0; 65];
-    for i in 0..65 {
-        v[i] = *vec.get(i).unwrap();
-    }
-    v
-}
+    pub fn from_raw_object(mut raw_object: JsonValue) -> Result<IdentityPublicKey, ProtocolError> {
+        // TODO identifier_default_deserializer: default deserializer should be changed to bytes
+        // Identifiers fields should be replaced with the string format to deserialize Data Contract
+        raw_object.replace_base64_paths(BINARY_DATA_FIELDS)?;
+        let identity: IdentityPublicKey = serde_json::from_value(raw_object)?;
 
-fn vec_to_array_33(vec: &[u8]) -> Result<[u8; 33], InvalidVectorSizeError> {
-    if vec.len() != 33 {
-        return Err(InvalidVectorSizeError::new(33, vec.len()));
+        Ok(identity)
     }
-    let mut v: [u8; 33] = [0; 33];
-    for i in 0..33 {
-        if let Some(n) = vec.get(i) {
-            v[i] = *n;
-        } else {
-            return Err(InvalidVectorSizeError::new(33, vec.len()));
-        }
-    }
-    Ok(v)
 }
 
 pub fn de_base64_to_vec<'de, D: Deserializer<'de>>(d: D) -> Result<Vec<u8>, D::Error> {
