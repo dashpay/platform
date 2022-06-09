@@ -39,7 +39,7 @@ describe('Platform', () => {
       dpp = new DashPlatformProtocol();
       await dpp.initialize();
 
-      client = await createClientWithFundedWallet();
+      client = await createClientWithFundedWallet(undefined, 200000);
 
       walletAccount = await client.getWalletAccount();
     });
@@ -51,7 +51,7 @@ describe('Platform', () => {
     });
 
     it('should create an identity', async () => {
-      identity = await client.platform.identities.register(100);
+      identity = await client.platform.identities.register(140000);
 
       expect(identity).to.exist();
     });
@@ -99,7 +99,7 @@ describe('Platform', () => {
         transaction,
         privateKey,
         outputIndex,
-      } = await createAssetLockTransaction({ client }, 20);
+      } = await createAssetLockTransaction({ client }, 5000);
 
       await client.getDAPIClient().core.broadcastTransaction(transaction.toBuffer());
 
@@ -261,7 +261,7 @@ describe('Platform', () => {
           outputIndex,
         } = await createAssetLockTransaction({
           client,
-        }, 150);
+        }, 5000);
 
         // Broadcast Asset Lock transaction
         await client.getDAPIClient().core.broadcastTransaction(transaction.toBuffer());
@@ -343,9 +343,11 @@ describe('Platform', () => {
       });
 
       it('should fail to create more documents if there are no more credits', async () => {
+        const lowBalanceIdentity = await client.platform.identities.register(4500);
+
         const document = await client.platform.documents.create(
           'customContracts.niceDocument',
-          identity,
+          lowBalanceIdentity,
           {
             name: 'Some Very Long Long Long Name'.repeat(100),
           },
@@ -356,7 +358,7 @@ describe('Platform', () => {
         try {
           await client.platform.documents.broadcast({
             create: [document],
-          }, identity);
+          }, lowBalanceIdentity);
         } catch (e) {
           broadcastError = e;
         }
@@ -412,7 +414,7 @@ describe('Platform', () => {
           identity.getId(),
         );
         const balanceBeforeTopUp = identityBeforeTopUp.getBalance();
-        const topUpAmount = 100;
+        const topUpAmount = 20000;
         const topUpCredits = topUpAmount * 1000;
 
         await client.platform.identities.topUp(identity.getId(), topUpAmount);
@@ -428,10 +430,8 @@ describe('Platform', () => {
 
         expect(identityAfterTopUp.getBalance()).to.be.greaterThan(balanceBeforeTopUp);
 
-        // TODO: Temporary changed to equal since we are not deducting fees from balance atm
-        // expect(identityAfterTopUp.getBalance()).to.be
-        //   .lessThan(balanceBeforeTopUp + topUpCredits);
-        expect(identityAfterTopUp.getBalance()).to.be.equal(balanceBeforeTopUp + topUpCredits);
+        expect(identityAfterTopUp.getBalance()).to.be
+          .lessThan(balanceBeforeTopUp + topUpCredits);
       });
 
       it('should be able to create more documents after the top-up', async () => {

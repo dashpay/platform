@@ -32,8 +32,8 @@ function createRewardShareDocumentFactory(
           ['$ownerId', '==', masternodeIdentifier.toBuffer()],
           ['payToId', '==', operatorIdentifier.toBuffer()],
         ],
+        useTransaction: true,
       },
-      true,
     );
 
     // Reward share for this operator is already exists
@@ -61,7 +61,9 @@ function createRewardShareDocumentFactory(
 
     rewardShareDocument.id = Identifier.from(rewardShareDocumentIdSeed);
 
-    await documentRepository.store(rewardShareDocument, true);
+    await documentRepository.create(rewardShareDocument, {
+      useTransaction: true,
+    });
 
     return true;
   }

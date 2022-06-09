@@ -18,6 +18,7 @@ const DocumentTimestampsMismatchError = require(
 const AbstractDocumentTransition = require('../../documentTransition/AbstractDocumentTransition');
 
 const validateTimeInBlockTimeWindow = require('../../../../../blockTimeWindow/validateTimeInBlockTimeWindow');
+const StateTransitionExecutionContext = require('../../../../../stateTransition/StateTransitionExecutionContext');
 
 /**
  *
@@ -51,8 +52,19 @@ function validateDocumentsBatchTransitionStateFactory(
   ) {
     const result = new ValidationResult();
 
+    // We use temporary execution context without dry run,
+    // because despite the dryRun, we need to get the
+    // data contract to proceed with following logic
+    const tmpExecutionContext = new StateTransitionExecutionContext();
+
     // Data contract must exist
-    const dataContract = await stateRepository.fetchDataContract(dataContractId, executionContext);
+    const dataContract = await stateRepository.fetchDataContract(
+      dataContractId,
+      tmpExecutionContext,
+    );
+
+    // Collect operations back from temporary context
+    executionContext.addOperation(...tmpExecutionContext.getOperations());
 
     if (!dataContract) {
       throw new DataContractNotPresentError(dataContractId);
@@ -64,151 +76,169 @@ function validateDocumentsBatchTransitionStateFactory(
 
     const fetchedDocuments = await fetchDocuments(documentTransitions, executionContext);
 
-    // Calculate time window for timestamps
-    const {
-      time: {
-        seconds: lastBlockHeaderTimeSeconds,
-      },
-    } = await stateRepository.fetchLatestPlatformBlockHeader();
+    if (!executionContext.isDryRun()) {
+      // Calculate time window for timestamps
+      const {
+        time: {
+          seconds: lastBlockHeaderTimeSeconds,
+        },
+      } = await stateRepository.fetchLatestPlatformBlockHeader();
 
-    // Get last block header time in milliseconds
-    const lastBlockHeaderTime = lastBlockHeaderTimeSeconds * 1000;
+      // Get last block header time in milliseconds
+      const lastBlockHeaderTime = lastBlockHeaderTimeSeconds * 1000;
 
-    // Validate document action, ownerId, revision and timestamps
-    documentTransitions
-      .forEach((documentTransition) => {
-        const fetchedDocument = fetchedDocuments
-          .find((d) => documentTransition.getId().equals(d.getId()));
+      // Validate document action, ownerId, revision and timestamps
+      documentTransitions
+        .forEach((documentTransition) => {
+          const fetchedDocument = fetchedDocuments
+            .find((d) => documentTransition.getId()
+              .equals(d.getId()));
 
-        switch (documentTransition.getAction()) {
-          case AbstractDocumentTransition.ACTIONS.CREATE:
-            // createdAt and updatedAt should be equal
-            if (documentTransition.getCreatedAt() !== undefined
+          switch (documentTransition.getAction()) {
+            case AbstractDocumentTransition.ACTIONS.CREATE:
+              // createdAt and updatedAt should be equal
+              if (documentTransition.getCreatedAt() !== undefined
                 && documentTransition.getUpdatedAt() !== undefined) {
-              const createdAtTime = documentTransition.getCreatedAt().getTime();
-              const updatedAtTime = documentTransition.getUpdatedAt().getTime();
+                const createdAtTime = documentTransition.getCreatedAt()
+                  .getTime();
+                const updatedAtTime = documentTransition.getUpdatedAt()
+                  .getTime();
 
-              if (createdAtTime !== updatedAtTime) {
+                if (createdAtTime !== updatedAtTime) {
+                  result.addError(
+                    new DocumentTimestampsMismatchError(
+                      documentTransition.getId()
+                        .toBuffer(),
+                    ),
+                  );
+                }
+              }
+
+              // Check createdAt is within a block time window
+              if (documentTransition.getCreatedAt() !== undefined) {
+                const createdAtTime = documentTransition.getCreatedAt()
+                  .getTime();
+
+                const validateTimeWindowResult = validateTimeInBlockTimeWindow(
+                  lastBlockHeaderTime,
+                  createdAtTime,
+                );
+                if (!validateTimeWindowResult.isValid()) {
+                  result.addError(
+                    new DocumentTimestampWindowViolationError(
+                      'createdAt',
+                      documentTransition.getId()
+                        .toBuffer(),
+                      documentTransition.getCreatedAt(),
+                      validateTimeWindowResult.getTimeWindowStart(),
+                      validateTimeWindowResult.getTimeWindowEnd(),
+                    ),
+                  );
+                }
+              }
+
+              // Check updatedAt is within a block time window
+              if (documentTransition.getUpdatedAt() !== undefined) {
+                const updatedAtTime = documentTransition.getUpdatedAt()
+                  .getTime();
+                const validateTimeWindowResult = validateTimeInBlockTimeWindow(
+                  lastBlockHeaderTime,
+                  updatedAtTime,
+                );
+
+                if (!validateTimeWindowResult.isValid()) {
+                  result.addError(
+                    new DocumentTimestampWindowViolationError(
+                      'updatedAt',
+                      documentTransition.getId()
+                        .toBuffer(),
+                      documentTransition.getUpdatedAt(),
+                      validateTimeWindowResult.getTimeWindowStart(),
+                      validateTimeWindowResult.getTimeWindowEnd(),
+                    ),
+                  );
+                }
+              }
+
+              if (fetchedDocument) {
                 result.addError(
-                  new DocumentTimestampsMismatchError(
-                    documentTransition.getId().toBuffer(),
+                  new DocumentAlreadyPresentError(documentTransition.getId()
+                    .toBuffer()),
+                );
+              }
+              break;
+            case AbstractDocumentTransition.ACTIONS.REPLACE: {
+              // Check updatedAt is within a block time window
+              if (documentTransition.getUpdatedAt() !== undefined) {
+                const updatedAtTime = documentTransition.getUpdatedAt()
+                  .getTime();
+
+                const validateTimeWindowResult = validateTimeInBlockTimeWindow(
+                  lastBlockHeaderTime,
+                  updatedAtTime,
+                );
+
+                if (!validateTimeWindowResult.isValid()) {
+                  result.addError(
+                    new DocumentTimestampWindowViolationError(
+                      'updatedAt',
+                      documentTransition.getId()
+                        .toBuffer(),
+                      documentTransition.getUpdatedAt(),
+                      validateTimeWindowResult.getTimeWindowStart(),
+                      validateTimeWindowResult.getTimeWindowEnd(),
+                    ),
+                  );
+                }
+              }
+
+              if (
+                fetchedDocument
+                && documentTransition.getRevision() !== fetchedDocument.getRevision() + 1
+              ) {
+                result.addError(
+                  new InvalidDocumentRevisionError(
+                    documentTransition.getId()
+                      .toBuffer(),
+                    fetchedDocument.getRevision(),
                   ),
                 );
               }
             }
-
-            // Check createdAt is within a block time window
-            if (documentTransition.getCreatedAt() !== undefined) {
-              const createdAtTime = documentTransition.getCreatedAt().getTime();
-
-              const validateTimeWindowResult = validateTimeInBlockTimeWindow(
-                lastBlockHeaderTime,
-                createdAtTime,
-              );
-              if (!validateTimeWindowResult.isValid()) {
+            // eslint-disable-next-line no-fallthrough
+            case AbstractDocumentTransition.ACTIONS.DELETE: {
+              if (!fetchedDocument) {
                 result.addError(
-                  new DocumentTimestampWindowViolationError(
-                    'createdAt',
-                    documentTransition.getId().toBuffer(),
-                    documentTransition.getCreatedAt(),
-                    validateTimeWindowResult.getTimeWindowStart(),
-                    validateTimeWindowResult.getTimeWindowEnd(),
+                  new DocumentNotFoundError(documentTransition.getId()
+                    .toBuffer()),
+                );
+
+                break;
+              }
+
+              if (!fetchedDocument.getOwnerId()
+                .equals(ownerId)) {
+                result.addError(
+                  new DocumentOwnerIdMismatchError(
+                    documentTransition.getId()
+                      .toBuffer(),
+                    ownerId.toBuffer(),
+                    fetchedDocument.getOwnerId()
+                      .toBuffer(),
                   ),
                 );
               }
-            }
-
-            // Check updatedAt is within a block time window
-            if (documentTransition.getUpdatedAt() !== undefined) {
-              const updatedAtTime = documentTransition.getUpdatedAt().getTime();
-              const validateTimeWindowResult = validateTimeInBlockTimeWindow(
-                lastBlockHeaderTime,
-                updatedAtTime,
-              );
-
-              if (!validateTimeWindowResult.isValid()) {
-                result.addError(
-                  new DocumentTimestampWindowViolationError(
-                    'updatedAt',
-                    documentTransition.getId().toBuffer(),
-                    documentTransition.getUpdatedAt(),
-                    validateTimeWindowResult.getTimeWindowStart(),
-                    validateTimeWindowResult.getTimeWindowEnd(),
-                  ),
-                );
-              }
-            }
-
-            if (fetchedDocument) {
-              result.addError(
-                new DocumentAlreadyPresentError(documentTransition.getId().toBuffer()),
-              );
-            }
-            break;
-          case AbstractDocumentTransition.ACTIONS.REPLACE: {
-            // Check updatedAt is within a block time window
-            if (documentTransition.getUpdatedAt() !== undefined) {
-              const updatedAtTime = documentTransition.getUpdatedAt().getTime();
-
-              const validateTimeWindowResult = validateTimeInBlockTimeWindow(
-                lastBlockHeaderTime,
-                updatedAtTime,
-              );
-
-              if (!validateTimeWindowResult.isValid()) {
-                result.addError(
-                  new DocumentTimestampWindowViolationError(
-                    'updatedAt',
-                    documentTransition.getId().toBuffer(),
-                    documentTransition.getUpdatedAt(),
-                    validateTimeWindowResult.getTimeWindowStart(),
-                    validateTimeWindowResult.getTimeWindowEnd(),
-                  ),
-                );
-              }
-            }
-
-            if (
-              fetchedDocument
-              && documentTransition.getRevision() !== fetchedDocument.getRevision() + 1
-            ) {
-              result.addError(
-                new InvalidDocumentRevisionError(
-                  documentTransition.getId().toBuffer(),
-                  fetchedDocument.getRevision(),
-                ),
-              );
-            }
-          }
-          // eslint-disable-next-line no-fallthrough
-          case AbstractDocumentTransition.ACTIONS.DELETE: {
-            if (!fetchedDocument) {
-              result.addError(
-                new DocumentNotFoundError(documentTransition.getId().toBuffer()),
-              );
 
               break;
             }
-
-            if (!fetchedDocument.getOwnerId().equals(ownerId)) {
-              result.addError(
-                new DocumentOwnerIdMismatchError(
-                  documentTransition.getId().toBuffer(),
-                  ownerId.toBuffer(),
-                  fetchedDocument.getOwnerId().toBuffer(),
-                ),
-              );
-            }
-
-            break;
+            default:
+              throw new InvalidDocumentActionError(documentTransition);
           }
-          default:
-            throw new InvalidDocumentActionError(documentTransition);
-        }
-      });
+        });
 
-    if (!result.isValid()) {
-      return result;
+      if (!result.isValid()) {
+        return result;
+      }
     }
 
     // Validate unique indices

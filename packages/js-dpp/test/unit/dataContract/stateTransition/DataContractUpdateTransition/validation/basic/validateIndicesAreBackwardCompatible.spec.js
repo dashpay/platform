@@ -19,6 +19,7 @@ describe('validateIndicesAreBackwardCompatible', () => {
 
     newDataContract.getDocumentSchema('indexedDocument').indices.push({
       name: 'index42',
+      unique: false,
       properties: [
         { otherName: 'desc' },
       ],

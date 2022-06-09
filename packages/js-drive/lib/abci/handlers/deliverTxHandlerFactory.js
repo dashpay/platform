@@ -13,9 +13,12 @@ const AbstractDocumentTransition = require(
   '@dashevo/dpp/lib/document/stateTransition/DocumentsBatchTransition/documentTransition/AbstractDocumentTransition',
 );
 
-const calculateOperationCosts = require('@dashevo/dpp/lib/stateTransition/fee/calculateOperationCosts');
+const calculateOperationFees = require('@dashevo/dpp/lib/stateTransition/fee/calculateOperationFees');
 
 const DPPValidationAbciError = require('../errors/DPPValidationAbciError');
+
+const NegativeBalanceError = require('./errors/NegativeBalanceError');
+const PredictedFeeLowerThanActualError = require('./errors/PredictedFeeLowerThanActualError');
 
 const DOCUMENT_ACTION_DESCRIPTIONS = {
   [AbstractDocumentTransition.ACTIONS.CREATE]: 'created',
@@ -100,6 +103,14 @@ function deliverTxHandlerFactory(
       throw e;
     }
 
+    // Keep only actual operations
+    const stateTransitionExecutionContext = stateTransition.getExecutionContext();
+
+    const predictedStateTransitionFee = stateTransition.calculateFee();
+    const predictedStateTransitionOperations = stateTransitionExecutionContext.getOperations();
+
+    stateTransitionExecutionContext.clearDryOperations();
+
     executionTimer.startTimer(TIMERS.DELIVER_TX.VALIDATE_STATE);
 
     const result = await transactionalDpp.stateTransition.validateState(stateTransition);
@@ -131,22 +142,29 @@ function deliverTxHandlerFactory(
 
     // Reduce an identity balance and accumulate fees for all STs in the block
     // in order to store them in credits distribution pool
-    const stateTransitionFee = stateTransition.calculateFee();
+    const actualStateTransitionFee = stateTransition.calculateFee();
+
+    if (actualStateTransitionFee > predictedStateTransitionFee) {
+      throw new PredictedFeeLowerThanActualError(
+        predictedStateTransitionFee,
+        actualStateTransitionFee,
+        stateTransition,
+      );
+    }
 
     const identity = await transactionalDpp.getStateRepository().fetchIdentity(
       stateTransition.getOwnerId(),
     );
 
-    // TODO: Temporary disabled until we calculate fee for validate state and apply functions
-    // const updatedBalance = identity.reduceBalance(stateTransitionFee);
+    const updatedBalance = identity.reduceBalance(actualStateTransitionFee);
 
-    // if (updatedBalance <= 0) {
-    //   throw new NegativeBalanceError(identity);
-    // }
+    if (updatedBalance < 0) {
+      throw new NegativeBalanceError(identity);
+    }
 
     await transactionalDpp.getStateRepository().storeIdentity(identity);
 
-    blockExecutionContext.incrementCumulativeFees(stateTransitionFee);
+    blockExecutionContext.incrementCumulativeFees(actualStateTransitionFee);
 
     // Logging
     switch (stateTransition.getType()) {
@@ -223,12 +241,17 @@ function deliverTxHandlerFactory(
 
     const deliverTxTiming = executionTimer.stopTimer(TIMERS.DELIVER_TX.OVERALL);
 
-    const stateTransitionOperations = stateTransition.getExecutionContext().getOperations();
+    const actualStateTransitionOperations = stateTransition.getExecutionContext().getOperations();
 
     const {
-      storageCost,
-      processingCost,
-    } = calculateOperationCosts(stateTransitionOperations);
+      storageFee: actualStorageFee,
+      processingFee: actualProcessingFee,
+    } = calculateOperationFees(actualStateTransitionOperations);
+
+    const {
+      storageFee: predictedStorageFee,
+      processingFee: predictedProcessingFee,
+    } = calculateOperationFees(predictedStateTransitionOperations);
 
     consensusLogger.trace(
       {
@@ -241,14 +264,22 @@ function deliverTxHandlerFactory(
           apply: executionTimer.getTimer(TIMERS.DELIVER_TX.APPLY, true),
         },
         fees: {
-          storage: storageCost,
-          processing: processingCost,
-          final: stateTransitionFee,
-          operations: stateTransitionOperations.map((operation) => operation.toJSON()),
+          predicted: {
+            storage: predictedStorageFee,
+            processing: predictedProcessingFee,
+            final: predictedStateTransitionFee,
+            operations: predictedStateTransitionOperations.map((operation) => operation.toJSON()),
+          },
+          actual: {
+            storage: actualStorageFee,
+            processing: actualProcessingFee,
+            final: actualStateTransitionFee,
+            operations: actualStateTransitionOperations.map((operation) => operation.toJSON()),
+          },
         },
         txType: stateTransition.getType(),
       },
-      `${stateTransition.constructor.name} execution took ${deliverTxTiming} seconds and cost ${stateTransitionFee} credits`,
+      `${stateTransition.constructor.name} execution took ${deliverTxTiming} seconds and cost ${actualStateTransitionFee} credits`,
     );
 
     return new ResponseDeliverTx();

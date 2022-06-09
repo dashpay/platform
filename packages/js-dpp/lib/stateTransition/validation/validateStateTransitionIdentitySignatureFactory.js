@@ -12,15 +12,25 @@ const PublicKeySecurityLevelNotMetError = require('../errors/PublicKeySecurityLe
 const WrongPublicKeyPurposeError = require('../errors/WrongPublicKeyPurposeError');
 const PublicKeyIsDisabledError = require('../errors/PublicKeyIsDisabledError');
 const SignatureVerificationOperation = require('../fee/operations/SignatureVerificationOperation');
+const ValidationResult = require('../../validation/ValidationResult');
+const IdentityNotFoundError = require('../../errors/consensus/signature/IdentityNotFoundError');
+const StateTransitionExecutionContext = require('../StateTransitionExecutionContext');
+const InvalidIdentityPublicKeyTypeError = require('../errors/InvalidIdentityPublicKeyTypeError');
+
+const supportedPublicKeyTypes = [
+  IdentityPublicKey.TYPES.ECDSA_SECP256K1,
+  IdentityPublicKey.TYPES.BLS12_381,
+  IdentityPublicKey.TYPES.ECDSA_HASH160,
+];
 
 /**
  * Validate state transition signature
  *
- * @param {validateIdentityExistence} validateIdentityExistence
+ * @param {StateRepository} stateRepository
  * @returns {validateStateTransitionIdentitySignature}
  */
 function validateStateTransitionIdentitySignatureFactory(
-  validateIdentityExistence,
+  stateRepository,
 ) {
   /**
    * @typedef validateStateTransitionIdentitySignature
@@ -31,21 +41,30 @@ function validateStateTransitionIdentitySignatureFactory(
    * @returns {Promise<ValidationResult>}
    */
   async function validateStateTransitionIdentitySignature(stateTransition) {
+    const result = new ValidationResult();
+
     const executionContext = stateTransition.getExecutionContext();
 
-    // Owner must exist
-    const result = await validateIdentityExistence(
-      stateTransition.getOwnerId(),
-      executionContext,
-    );
+    const ownerId = stateTransition.getOwnerId();
 
-    if (!result.isValid()) {
+    // We use temporary execution context without dry run,
+    // because despite the dryRun, we need to get the
+    // identity to proceed with following logic
+    const tmpExecutionContext = new StateTransitionExecutionContext();
+
+    // Owner must exist
+    const identity = await stateRepository.fetchIdentity(ownerId, tmpExecutionContext);
+
+    // Collect operations back from temporary context
+    executionContext.addOperation(...tmpExecutionContext.getOperations());
+
+    if (!identity) {
+      result.addError(new IdentityNotFoundError(ownerId.toBuffer()));
+
       return result;
     }
 
     // Signature must be valid
-    const identity = result.getData();
-
     const publicKey = identity.getPublicKeyById(stateTransition.getSignaturePublicKeyId());
 
     if (!publicKey) {
@@ -56,10 +75,7 @@ function validateStateTransitionIdentitySignatureFactory(
       return result;
     }
 
-    if (
-      publicKey.getType() !== IdentityPublicKey.TYPES.ECDSA_SECP256K1
-      && publicKey.getType() !== IdentityPublicKey.TYPES.ECDSA_HASH160
-    ) {
+    if (!supportedPublicKeyTypes.includes(publicKey.getType())) {
       result.addError(
         new InvalidIdentityPublicKeyTypeConsensusError(publicKey.getType()),
       );
@@ -70,6 +86,10 @@ function validateStateTransitionIdentitySignatureFactory(
     const operation = new SignatureVerificationOperation(publicKey.getType());
 
     executionContext.addOperation(operation);
+
+    if (executionContext.isDryRun()) {
+      return result;
+    }
 
     try {
       const signatureIsValid = await stateTransition.verifySignature(publicKey);
@@ -104,6 +124,10 @@ function validateStateTransitionIdentitySignatureFactory(
       } else if (e instanceof PublicKeyIsDisabledError) {
         result.addError(
           new PublicKeyIsDisabledConsensusError(e.getPublicKey().getId()),
+        );
+      } else if (e instanceof InvalidIdentityPublicKeyTypeError) {
+        result.addError(
+          new InvalidIdentityPublicKeyTypeConsensusError(e.getPublicKeyType()),
         );
       } else if (e instanceof DPPError) {
         result.addError(

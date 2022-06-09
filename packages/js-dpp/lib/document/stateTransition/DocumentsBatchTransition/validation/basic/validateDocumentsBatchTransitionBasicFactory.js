@@ -296,6 +296,10 @@ function validateDocumentsBatchTransitionBasicFactory(
           executionContext,
         );
 
+        if (executionContext.isDryRun()) {
+          return perDocumentResult;
+        }
+
         if (!dataContract) {
           perDocumentResult.addError(
             new DataContractNotPresentError(dataContractId.toBuffer()),

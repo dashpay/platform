@@ -59,7 +59,8 @@ describe('DriveStateRepository', () => {
     fetchDocumentsMock = this.sinon.stub();
 
     documentsRepositoryMock = {
-      store: this.sinon.stub(),
+      create: this.sinon.stub(),
+      update: this.sinon.stub(),
       find: this.sinon.stub(),
       delete: this.sinon.stub(),
     };
@@ -121,7 +122,10 @@ describe('DriveStateRepository', () => {
       expect(result).to.equal(identity);
       expect(identityRepositoryMock.fetch).to.be.calledOnceWith(
         id,
-        repositoryOptions.useTransaction,
+        {
+          useTransaction: repositoryOptions.useTransaction,
+          dryRun: false,
+        },
       );
 
       expect(executionContext.getOperations()).to.deep.equals(operations);
@@ -138,7 +142,10 @@ describe('DriveStateRepository', () => {
 
       expect(identityRepositoryMock.store).to.be.calledOnceWith(
         identity,
-        repositoryOptions.useTransaction,
+        {
+          useTransaction: repositoryOptions.useTransaction,
+          dryRun: false,
+        },
       );
 
       expect(executionContext.getOperations()).to.deep.equals(operations);
@@ -164,12 +171,18 @@ describe('DriveStateRepository', () => {
       expect(publicKeyIdentityIdRepositoryMock.store.getCall(0).args).to.have.deep.members([
         identity.getPublicKeyById(0).hash(),
         identity.getId(),
-        repositoryOptions.useTransaction,
+        {
+          useTransaction: repositoryOptions.useTransaction,
+          dryRun: false,
+        },
       ]);
       expect(publicKeyIdentityIdRepositoryMock.store.getCall(1).args).to.have.deep.members([
         identity.getPublicKeyById(1).hash(),
         identity.getId(),
-        repositoryOptions.useTransaction,
+        {
+          useTransaction: repositoryOptions.useTransaction,
+          dryRun: false,
+        },
       ]);
 
       expect(executionContext.getOperations()).to.deep.equals(operations.concat(operations));
@@ -245,7 +258,13 @@ describe('DriveStateRepository', () => {
       const result = await stateRepository.fetchDataContract(id, executionContext);
 
       expect(result).to.equal(dataContract);
-      expect(dataContractRepositoryMock.fetch).to.be.calledOnceWith(id);
+      expect(dataContractRepositoryMock.fetch).to.be.calledOnceWithExactly(
+        id,
+        {
+          dryRun: false,
+          useTransaction: false,
+        },
+      );
 
       expect(executionContext.getOperations()).to.deep.equals(operations);
     });
@@ -261,7 +280,10 @@ describe('DriveStateRepository', () => {
 
       expect(dataContractRepositoryMock.store).to.be.calledOnceWith(
         dataContract,
-        repositoryOptions.useTransaction,
+        {
+          useTransaction: repositoryOptions.useTransaction,
+          dryRun: false,
+        },
       );
 
       expect(executionContext.getOperations()).to.deep.equals(operations);
@@ -288,27 +310,55 @@ describe('DriveStateRepository', () => {
       expect(fetchDocumentsMock).to.be.calledOnceWith(
         id,
         type,
-        options,
-        repositoryOptions.useTransaction,
+        {
+          ...options,
+          useTransaction: repositoryOptions.useTransaction,
+          dryRun: false,
+        },
       );
 
       expect(executionContext.getOperations()).to.deep.equals(operations);
     });
   });
 
-  describe('#storeDocument', () => {
-    it('should store document in repository', async () => {
-      documentsRepositoryMock.store.resolves(
+  describe('#createDocument', () => {
+    it('should create document in repository', async () => {
+      documentsRepositoryMock.create.resolves(
         new StorageResult(undefined, operations),
       );
 
       const [document] = documents;
 
-      await stateRepository.storeDocument(document, executionContext);
+      await stateRepository.createDocument(document, executionContext);
 
-      expect(documentsRepositoryMock.store).to.be.calledOnceWith(
+      expect(documentsRepositoryMock.create).to.be.calledOnceWith(
         document,
-        repositoryOptions.useTransaction,
+        {
+          useTransaction: repositoryOptions.useTransaction,
+          dryRun: false,
+        },
+      );
+
+      expect(executionContext.getOperations()).to.deep.equals(operations);
+    });
+  });
+
+  describe('#updateDocument', () => {
+    it('should store document in repository', async () => {
+      documentsRepositoryMock.update.resolves(
+        new StorageResult(undefined, operations),
+      );
+
+      const [document] = documents;
+
+      await stateRepository.updateDocument(document, executionContext);
+
+      expect(documentsRepositoryMock.update).to.be.calledOnceWith(
+        document,
+        {
+          useTransaction: repositoryOptions.useTransaction,
+          dryRun: false,
+        },
       );
 
       expect(executionContext.getOperations()).to.deep.equals(operations);
@@ -330,7 +380,10 @@ describe('DriveStateRepository', () => {
 
       await stateRepository.removeDocument(contractId, type, id, executionContext);
 
-      expect(dataContractRepositoryMock.fetch).to.be.calledOnceWithExactly(contractId);
+      expect(dataContractRepositoryMock.fetch).to.be.calledOnceWithExactly(contractId, {
+        useTransaction: false,
+        dryRun: false,
+      });
       expect(dataContractCacheMock.set).to.be.calledOnceWithExactly(
         contractId.toString(),
         dataContract,
@@ -340,7 +393,10 @@ describe('DriveStateRepository', () => {
         dataContract,
         type,
         id,
-        repositoryOptions.useTransaction,
+        {
+          useTransaction: repositoryOptions.useTransaction,
+          dryRun: false,
+        },
       );
 
       expect(executionContext.getOperations()).to.deep.equals(operations.concat(operations));
@@ -395,6 +451,21 @@ describe('DriveStateRepository', () => {
         expect(e).to.equal(error);
         expect(coreRpcClientMock.getRawTransaction).to.be.calledOnceWith(id);
       }
+    });
+
+    it('should return mocked transaction on dry run', async () => {
+      executionContext.enableDryRun();
+
+      const result = await stateRepository.fetchTransaction(id, executionContext);
+
+      executionContext.disableDryRun();
+
+      expect(result).to.deep.equal({
+        data: Buffer.alloc(0),
+        height: 1,
+      });
+
+      expect(coreRpcClientMock.getRawTransaction).to.not.be.called(id);
     });
   });
 
@@ -487,6 +558,23 @@ describe('DriveStateRepository', () => {
       const result = await stateRepository.verifyInstantLock(instantLockMock);
 
       expect(result).to.be.false();
+    });
+
+    it('should return true on dry run', async () => {
+      const error = new Error('Some error');
+      error.code = -5;
+
+      coreRpcClientMock.verifyIsLock.throws(error);
+
+      executionContext.enableDryRun();
+
+      const result = await stateRepository.verifyInstantLock(instantLockMock, executionContext);
+
+      executionContext.disableDryRun();
+
+      expect(result).to.be.true();
+      expect(instantLockMock.verify).to.have.not.been.called();
+      expect(coreRpcClientMock.verifyIsLock).to.have.not.been.called();
     });
   });
 

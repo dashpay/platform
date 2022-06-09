@@ -106,6 +106,10 @@ function validateDocumentsUniquenessByIndicesFactory(stateRepository) {
 
     const fetchedDocumentsByIndices = await Promise.all(fetchRawDocumentPromises);
 
+    if (executionContext.isDryRun()) {
+      return result;
+    }
+
     // 3. Create errors if duplicates found
     fetchedDocumentsByIndices
       .filter((docs) => {

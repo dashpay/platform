@@ -51,10 +51,13 @@ function registerSystemDataContractFactory(
       }],
     );
 
-    await identityRepository.store(ownerIdentity, true);
+    await identityRepository.store(ownerIdentity, {
+      useTransaction: true,
+    });
 
-    await publicKeyToIdentityIdRepository.store(masterPublicKey.hash, ownerId, true);
-    await publicKeyToIdentityIdRepository.store(secondPublicKey.hash, ownerId, true);
+    await publicKeyToIdentityIdRepository.store(masterPublicKey.hash, ownerId, {
+      useTransaction: true,
+    });
 
     const dataContract = dpp.dataContract.create(
       ownerIdentity.getId(),
@@ -63,7 +66,9 @@ function registerSystemDataContractFactory(
 
     dataContract.id = contractId;
 
-    await dataContractRepository.store(dataContract, true);
+    await dataContractRepository.store(dataContract, {
+      useTransaction: true,
+    });
 
     // Store data contract in the cache
     dataContractCache.set(dataContract.getId().toString(), dataContract);

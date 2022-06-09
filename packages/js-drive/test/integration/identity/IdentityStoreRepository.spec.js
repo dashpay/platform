@@ -64,7 +64,7 @@ describe('IdentityStoreRepository', () => {
 
       await repository.store(
         identity,
-        true,
+        { useTransaction: true },
       );
 
       const notFoundIdentityResult = await store.get(
@@ -151,11 +151,15 @@ describe('IdentityStoreRepository', () => {
         { useTransaction: true },
       );
 
-      const notFoundIdentityResult = await repository.fetch(identity.getId(), false);
+      const notFoundIdentityResult = await repository.fetch(identity.getId(), {
+        useTransaction: false,
+      });
 
       expect(notFoundIdentityResult.getValue()).to.be.null();
 
-      const transactionalIdentityResult = await repository.fetch(identity.getId(), true);
+      const transactionalIdentityResult = await repository.fetch(identity.getId(), {
+        useTransaction: true,
+      });
 
       const transactionalIdentity = transactionalIdentityResult.getValue();
 

@@ -27,8 +27,8 @@ function handleRemovedMasternodeFactory(
           where: [
             ['$ownerId', '==', masternodeIdentifier],
           ],
+          useTransaction: true,
         },
-        true,
       );
 
       fetchedDocuments = fetchedDocumentsResult.getValue();

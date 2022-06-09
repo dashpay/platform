@@ -65,7 +65,7 @@ describe('DataContractStoreRepository', () => {
 
       const result = await repository.store(
         dataContract,
-        true,
+        { useTransaction: true },
       );
 
       expect(result).to.be.instanceOf(StorageResult);
@@ -111,6 +111,23 @@ describe('DataContractStoreRepository', () => {
 
       expect(dataContract.toObject()).to.deep.equal(fetchedOneMoreDataContract.toObject());
     });
+
+    it('should not store Data Contract with dry run', async () => {
+      const result = await repository.store(
+        dataContract,
+        { dryRun: true },
+      );
+
+      expect(result).to.be.instanceOf(StorageResult);
+      expect(result.getOperations().length).to.be.greaterThan(0);
+
+      const encodedDataContractResult = await store.get(
+        DataContractStoreRepository.TREE_PATH.concat([dataContract.getId().toBuffer()]),
+        DataContractStoreRepository.DATA_CONTRACT_KEY,
+      );
+
+      expect(encodedDataContractResult.getValue()).to.be.null();
+    });
   });
 
   describe('#fetch', () => {
@@ -146,11 +163,15 @@ describe('DataContractStoreRepository', () => {
 
       await store.getDrive().applyContract(dataContract, new Date(), true);
 
-      const notFoundDataContractResult = await repository.fetch(dataContract.getId(), false);
+      const notFoundDataContractResult = await repository.fetch(dataContract.getId(), {
+        useTransaction: false,
+      });
 
       expect(notFoundDataContractResult.getValue()).to.be.null();
 
-      const transactionalDataContractResult = await repository.fetch(dataContract.getId(), true);
+      const transactionalDataContractResult = await repository.fetch(dataContract.getId(), {
+        useTransaction: true,
+      });
 
       const transactionalDataContract = transactionalDataContractResult.getValue();
 
@@ -165,6 +186,17 @@ describe('DataContractStoreRepository', () => {
 
       expect(storedDataContract).to.be.an.instanceof(DataContract);
       expect(storedDataContract.toObject()).to.deep.equal(dataContract.toObject());
+    });
+
+    it('should fetch null on dry run', async () => {
+      await store.getDrive().applyContract(dataContract, new Date(), false);
+
+      const result = await repository.fetch(dataContract.getId(), { dryRun: true });
+
+      expect(result).to.be.instanceOf(StorageResult);
+      expect(result.getOperations().length).to.be.greaterThan(0);
+
+      expect(result.getValue()).to.be.null();
     });
   });
 

@@ -21,9 +21,10 @@ describe('Masternode Reward Shares', () => {
 
     client = await createClientWithFundedWallet(
       process.env.MASTERNODE_REWARD_SHARES_OWNER_PRIVATE_KEY,
+      200000,
     );
 
-    await client.platform.identities.topUp(masternodeRewardSharesOwnerId, 5000);
+    await client.platform.identities.topUp(masternodeRewardSharesOwnerId, 50000);
 
     const masternodeRewardSharesContract = await client.platform.contracts.get(
       masternodeRewardSharesContractId,
@@ -91,7 +92,7 @@ describe('Masternode Reward Shares', () => {
       // Masternode identity should exist
       expect(masternodeIdentity).to.exist();
 
-      await client.platform.identities.topUp(masternodeIdentity.getId(), 7000);
+      await client.platform.identities.topUp(masternodeIdentity.getId(), 50000);
 
       // Since we cannot create "High" level key for masternode Identities automatically,
       // (this key is used to sign state transitions, other than "update")
@@ -158,7 +159,7 @@ describe('Masternode Reward Shares', () => {
     });
 
     it('should be able to create reward shares with existing identity', async () => {
-      anotherIdentity = await client.platform.identities.register(50);
+      anotherIdentity = await client.platform.identities.register(5000);
 
       rewardShare = await client.platform.documents.create(
         'masternodeRewardShares.rewardShare',
@@ -286,7 +287,7 @@ describe('Masternode Reward Shares', () => {
     });
 
     it('should not be able to share more than 100% of rewards', async () => {
-      anotherIdentity = await client.platform.identities.register(50);
+      anotherIdentity = await client.platform.identities.register(5000);
 
       anotherRewardShare = await client.platform.documents.create(
         'masternodeRewardShares.rewardShare',
@@ -349,7 +350,7 @@ describe('Masternode Reward Shares', () => {
     let identity;
 
     before(async () => {
-      identity = await client.platform.identities.register(100);
+      identity = await client.platform.identities.register(20000);
     });
 
     it('should not be able to share rewards', async () => {

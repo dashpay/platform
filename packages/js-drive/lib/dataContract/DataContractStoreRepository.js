@@ -21,15 +21,19 @@ class DataContractStoreRepository {
    * Store Data Contract into database
    *
    * @param {DataContract} dataContract
-   * @param {boolean} [useTransaction=false]
+   * @param {Object} [options]
+   * @param {boolean} [options.useTransaction=false]
+   * @param {boolean} [options.dryRun=false]
+   *
    * @return {Promise<StorageResult<void>>}
    */
-  async store(dataContract, useTransaction = false) {
+  async store(dataContract, options = {}) {
     try {
       const [storageCost, processingCost] = await this.storage.getDrive().applyContract(
         dataContract,
         new Date('2022-03-17T15:08:26.132Z'),
-        useTransaction,
+        Boolean(options.useTransaction),
+        Boolean(options.dryRun), // TODO rs-drive doesn't support this
       );
 
       return new StorageResult(
@@ -49,8 +53,8 @@ class DataContractStoreRepository {
             .update(
               dataContract.toBuffer(),
             ).digest('hex'),
-          useTransaction: Boolean(useTransaction),
-          appHash: (await this.storage.getRootHash({ useTransaction })).toString('hex'),
+          useTransaction: Boolean(options.useTransaction),
+          appHash: (await this.storage.getRootHash(options)).toString('hex'),
         }, 'applyContract');
       }
     }
@@ -60,14 +64,20 @@ class DataContractStoreRepository {
    * Fetch Data Contract by ID from database
    *
    * @param {Identifier} id
-   * @param {boolean} [useTransaction=false]
+   * @param {Object} [options]
+   * @param {boolean} [options.useTransaction=false]
+   * @param {boolean} [options.dryRun=false]
+   *
    * @return {Promise<StorageResult<null|DataContract>>}
    */
-  async fetch(id, useTransaction = false) {
+  async fetch(id, options = {}) {
     const result = await this.storage.get(
       DataContractStoreRepository.TREE_PATH.concat([id.toBuffer()]),
       DataContractStoreRepository.DATA_CONTRACT_KEY,
-      { useTransaction },
+      {
+        ...options,
+        predictedValueSize: 16 * 1024, // Max size of State Transition
+      },
     );
 
     if (result.isNull()) {
@@ -90,6 +100,7 @@ class DataContractStoreRepository {
    * @param {Object} [options]
    * @param {boolean} [options.useTransaction=false]
    * @param {boolean} [options.skipIfExists]
+   * @param {boolean} [options.dryRun=false]
    *
    * @return {Promise<StorageResult<void>>}
    */

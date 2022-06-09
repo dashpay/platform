@@ -16,10 +16,12 @@ class CreditsDistributionPoolRepository {
    * Store Credits Distribution Pool
    *
    * @param {CreditsDistributionPool} creditsDistributionPool
-   * @param {boolean} [useTransaction=false]
+   * @param {Object} [options]
+   * @param {boolean} [options.useTransaction=false]
+   *
    * @return {Promise<StorageResult<void>>}
    */
-  async store(creditsDistributionPool, useTransaction = false) {
+  async store(creditsDistributionPool, options = {}) {
     const encodedCreditsDistributionPool = cbor.encodeCanonical(
       creditsDistributionPool.toJSON(),
     );
@@ -28,7 +30,7 @@ class CreditsDistributionPoolRepository {
       CreditsDistributionPoolRepository.PATH,
       CreditsDistributionPoolRepository.KEY,
       encodedCreditsDistributionPool,
-      { useTransaction },
+      options,
     );
 
     result.setValue(undefined);
@@ -39,14 +41,16 @@ class CreditsDistributionPoolRepository {
   /**
    * Fetch Credits Distribution Pool
    *
-   * @param {boolean} [useTransaction=false]
+   * @param {Object} [options]
+   * @param {boolean} [options.useTransaction=false]
+   *
    * @return {Promise<StorageResult<CreditsDistributionPool>>}
    */
-  async fetch(useTransaction = false) {
+  async fetch(options = {}) {
     const result = await this.storage.get(
       CreditsDistributionPoolRepository.PATH,
       CreditsDistributionPoolRepository.KEY,
-      { useTransaction },
+      options,
     );
 
     if (result.isEmpty()) {

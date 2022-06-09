@@ -92,8 +92,8 @@ function handleUpdatedPubKeyOperatorFactory(
           ['$ownerId', '==', masternodeIdentifier],
           ['payToId', '==', previousOperatorIdentifier],
         ],
+        useTransaction: true,
       },
-      true,
     );
 
     if (!previousDocumentsResult.isEmpty()) {

@@ -12,18 +12,20 @@ class SpentAssetLockTransactionsRepository {
    * Store the outPoint
    *
    * @param {Buffer} outPointBuffer
-   * @param {boolean} [useTransaction=false]
+   * @param {Object} [options]
+   * @param {boolean} [options.useTransaction=false]
+   * @param {boolean} [options.dryRun=false]
    *
    * @return {Promise<StorageResult<void>>}
    */
-  async store(outPointBuffer, useTransaction = false) {
+  async store(outPointBuffer, options = {}) {
     const emptyValue = Buffer.from([0]);
 
     const result = await this.storage.put(
       SpentAssetLockTransactionsRepository.TREE_PATH,
       outPointBuffer,
       emptyValue,
-      { useTransaction },
+      options,
     );
 
     return new StorageResult(
@@ -36,15 +38,17 @@ class SpentAssetLockTransactionsRepository {
    * Fetch the outPoint
    *
    * @param {Buffer} outPointBuffer
-   * @param {boolean} [useTransaction=false]
+   * @param {Object} [options]
+   * @param {boolean} [options.useTransaction=false]
+   * @param {boolean} [options.dryTun=false]
    *
    * @return {Promise<StorageResult<null|Buffer>>}
    */
-  async fetch(outPointBuffer, useTransaction = false) {
+  async fetch(outPointBuffer, options = {}) {
     const result = await this.storage.get(
       SpentAssetLockTransactionsRepository.TREE_PATH,
       outPointBuffer,
-      { useTransaction },
+      options,
     );
 
     return new StorageResult(
@@ -56,7 +60,8 @@ class SpentAssetLockTransactionsRepository {
   /**
    * @param {Object} [options]
    * @param {boolean} [options.useTransaction=false]
-   * @param {boolean} [options.skipIfExists]
+   * @param {boolean} [options.skipIfExists=false]
+   * @param {boolean} [options.dryRun=false]
    *
    * @return {Promise<StorageResult<void>>}
    */

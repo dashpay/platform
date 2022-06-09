@@ -89,7 +89,9 @@ describe('BlockExecutionContextStackRepository', () => {
 
       await repository.store(
         blockExecutionContextStack,
-        true,
+        {
+          useTransaction: true,
+        },
       );
 
       const notFoundDataResult = await store.getAux(
@@ -188,11 +190,15 @@ describe('BlockExecutionContextStackRepository', () => {
         { useTransaction: true },
       );
 
-      let storedStack = await repository.fetch(false);
+      let storedStack = await repository.fetch({
+        useTransaction: false,
+      });
 
       expect(storedStack.getContexts()).to.deep.equal([]);
 
-      storedStack = await repository.fetch(true);
+      storedStack = await repository.fetch({
+        useTransaction: true,
+      });
 
       let blockExecutionContexts = removeConsensusLogger(blockExecutionContextStack);
 
@@ -200,7 +206,9 @@ describe('BlockExecutionContextStackRepository', () => {
 
       await store.commitTransaction();
 
-      storedStack = await repository.fetch(true);
+      storedStack = await repository.fetch({
+        useTransaction: true,
+      });
 
       blockExecutionContexts = removeConsensusLogger(blockExecutionContextStack);
 

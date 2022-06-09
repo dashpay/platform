@@ -355,4 +355,28 @@ describe('createDomainDataTrigger', () => {
 
     expect(result.isOk()).to.be.true();
   });
+
+  it('should return DataTriggerExecutionResult om dry run', async () => {
+    context.getStateTransitionExecutionContext().enableDryRun();
+
+    childDocument = getChildDocumentFixture({ normalizedLabel: childDocument.getData().label });
+    stateRepositoryMock.fetchTransaction
+      .withArgs(
+        childDocument.getData().records.dashUniqueIdentityId,
+      )
+      .resolves({ confirmations: 10 });
+
+    [childDocumentTransition] = getDocumentTransitionFixture({
+      create: [childDocument],
+    });
+
+    const result = await createDomainDataTrigger(
+      childDocumentTransition, context, topLevelIdentity,
+    );
+
+    context.getStateTransitionExecutionContext().disableDryRun();
+
+    expect(result).to.be.an.instanceOf(DataTriggerExecutionResult);
+    expect(result.isOk()).to.be.true();
+  });
 });

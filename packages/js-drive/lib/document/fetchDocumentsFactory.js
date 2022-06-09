@@ -21,10 +21,10 @@ function fetchDocumentsFactory(
    * @param {Buffer|Identifier} contractId
    * @param {string} type
    * @param {Object} [options] options
-   * @param {boolean} [useTransaction=false]
+   * @param {boolean} [options.useTransaction=false]
    * @returns {Promise<Document[]>}
    */
-  async function fetchDocuments(contractId, type, options, useTransaction = false) {
+  async function fetchDocuments(contractId, type, options) {
     let contractIdIdentifier;
     try {
       contractIdIdentifier = new Identifier(contractId);
@@ -63,7 +63,6 @@ function fetchDocumentsFactory(
       dataContract,
       type,
       options,
-      useTransaction,
     );
 
     result.addOperation(...operations);

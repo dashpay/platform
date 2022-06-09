@@ -45,6 +45,10 @@ function validateStateTransitionFeeFactory(
 
           const identity = await stateRepository.fetchIdentity(identityId, executionContext);
 
+          if (executionContext.isDryRun()) {
+            return result;
+          }
+
           balance += identity.getBalance();
         }
 
@@ -58,12 +62,20 @@ function validateStateTransitionFeeFactory(
 
         const identity = await stateRepository.fetchIdentity(identityId, executionContext);
 
+        if (executionContext.isDryRun()) {
+          return result;
+        }
+
         balance = identity.getBalance();
 
         break;
       }
       default:
         throw new InvalidStateTransitionTypeError(stateTransition.getType());
+    }
+
+    if (executionContext.isDryRun()) {
+      return result;
     }
 
     // We could use `stateTransition.calculateFee()` but

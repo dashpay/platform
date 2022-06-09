@@ -161,6 +161,23 @@ describe('validateStateTransitionFeeFactory', () => {
 
       expect(fetchAssetLockTransactionOutputMock).to.not.be.called();
     });
+
+    it('should not increase balance on dry run', async () => {
+      documentsBatchTransition.getExecutionContext().enableDryRun();
+
+      const result = await validateStateTransitionFee(documentsBatchTransition);
+
+      documentsBatchTransition.getExecutionContext().disableDryRun();
+
+      expect(result.isValid()).to.be.true();
+
+      expect(calculateStateTransitionFeeMock).to.be.not.called();
+      expect(stateRepositoryMock.fetchIdentity).to.be.calledOnceWithExactly(
+        getDocumentsFixture.ownerId,
+        documentsBatchTransition.getExecutionContext(),
+      );
+      expect(fetchAssetLockTransactionOutputMock).to.not.be.called();
+    });
   });
 
   describe('IdentityCreateStateTransition', () => {
@@ -214,6 +231,22 @@ describe('validateStateTransitionFeeFactory', () => {
         identityCreateTransition,
       );
 
+      expect(fetchAssetLockTransactionOutputMock).to.be.calledOnceWithExactly(
+        identityCreateTransition.getAssetLockProof(),
+        identityCreateTransition.getExecutionContext(),
+      );
+    });
+
+    it('should not increase balance on dry run', async () => {
+      identityCreateTransition.getExecutionContext().enableDryRun();
+
+      const result = await validateStateTransitionFee(identityCreateTransition);
+
+      identityCreateTransition.getExecutionContext().disableDryRun();
+
+      expect(result.isValid()).to.be.true();
+
+      expect(calculateStateTransitionFeeMock).to.be.not.called();
       expect(fetchAssetLockTransactionOutputMock).to.be.calledOnceWithExactly(
         identityCreateTransition.getAssetLockProof(),
         identityCreateTransition.getExecutionContext(),
@@ -284,6 +317,26 @@ describe('validateStateTransitionFeeFactory', () => {
 
       expect(fetchAssetLockTransactionOutputMock).to.be.calledOnceWithExactly(
         identityTopUpTransition.getAssetLockProof(),
+        identityTopUpTransition.getExecutionContext(),
+      );
+    });
+
+    it('should not increase balance on dry run', async () => {
+      identityTopUpTransition.getExecutionContext().enableDryRun();
+
+      const result = await validateStateTransitionFee(identityTopUpTransition);
+
+      identityTopUpTransition.getExecutionContext().disableDryRun();
+
+      expect(result.isValid()).to.be.true();
+
+      expect(calculateStateTransitionFeeMock).to.be.not.called();
+      expect(fetchAssetLockTransactionOutputMock).to.be.calledOnceWithExactly(
+        identityTopUpTransition.getAssetLockProof(),
+        identityTopUpTransition.getExecutionContext(),
+      );
+      expect(stateRepositoryMock.fetchIdentity).to.be.calledOnceWithExactly(
+        identityTopUpTransition.getIdentityId(),
         identityTopUpTransition.getExecutionContext(),
       );
     });

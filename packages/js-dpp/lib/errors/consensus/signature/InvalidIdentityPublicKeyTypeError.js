@@ -6,7 +6,7 @@ class InvalidIdentityPublicKeyTypeError extends AbstractSignatureError {
    * @param {number} publicKeyType
    */
   constructor(publicKeyType) {
-    super(`Unsupported signature type ${publicKeyType}. Please use type ECDSA (0) or BLS (1) keys to sign the state transition`);
+    super(`Unsupported signature type ${publicKeyType}. Please use type ECDSA (0), BLS (1) or ECDSA HASH160 (2) keys to sign the state transition`);
 
     this.publicKeyType = publicKeyType;
   }
