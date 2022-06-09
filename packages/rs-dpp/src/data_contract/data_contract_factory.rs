@@ -20,18 +20,14 @@ use data_contract::state_transition::properties as st_prop;
 
 pub struct DataContractFactory {
     protocol_version: u32,
-    _validate_data_contract: mocks::ValidateDataContract,
-    // TODO remove dependency on decode_protocol_entity
+    validate_data_contract: mocks::ValidateDataContract,
 }
 
 impl DataContractFactory {
-    pub fn new(
-        protocol_version: u32,
-        _validate_data_contract: mocks::ValidateDataContract,
-    ) -> Self {
+    pub fn new(protocol_version: u32, validate_data_contract: mocks::ValidateDataContract) -> Self {
         Self {
             protocol_version,
-            _validate_data_contract,
+            validate_data_contract,
         }
     }
 
@@ -78,7 +74,7 @@ impl DataContractFactory {
     ) -> Result<DataContract, ProtocolError> {
         if !skip_validation {
             let result = self
-                ._validate_data_contract
+                .validate_data_contract
                 .validate_data_contract(&raw_data_contract)
                 .await;
             if !result.is_valid() {
