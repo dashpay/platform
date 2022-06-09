@@ -1,5 +1,5 @@
 use crate::util::deserializer;
-use anyhow::{anyhow, bail};
+use anyhow::{anyhow, bail, Error};
 use std::{collections::BTreeMap, convert::TryInto};
 
 use log::trace;
@@ -62,6 +62,11 @@ pub trait JsonValueExt {
         &mut self,
         paths: impl IntoIterator<Item = &'a str>,
         with: ReplaceWith,
+    ) -> Result<(), anyhow::Error>;
+
+    fn replace_base64_paths<'a>(
+        &mut self,
+        paths: impl IntoIterator<Item = &'a str>,
     ) -> Result<(), anyhow::Error>;
 
     fn parse_and_add_protocol_version(
@@ -272,6 +277,27 @@ impl JsonValueExt for JsonValue {
             },
             _ => bail!("the Json Value isn't a map: {:?}", self),
         }
+    }
+
+    fn replace_base64_paths<'a>(
+        &mut self,
+        paths: impl IntoIterator<Item = &'a str>
+    ) -> Result<(), Error> {
+        for raw_path in paths {
+            let to_replace = get_value_mut(raw_path, self);
+            match to_replace {
+                Some(v) => {
+                    let base64: String = serde_json::from_value(v.clone())?;
+                    println!("replacing {:?}", raw_path);
+                    *v = JsonValue::from(base64::decode(base64)?);
+                }
+                None => {
+                    println!("Not replacing");
+                    trace!("path '{}' is not found", raw_path)
+                }
+            }
+        }
+        Ok(())
     }
 }
 

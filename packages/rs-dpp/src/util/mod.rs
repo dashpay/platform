@@ -6,3 +6,4 @@ pub mod json_schema;
 pub mod json_value;
 pub mod serializer;
 pub mod string_encoding;
+pub mod vec;

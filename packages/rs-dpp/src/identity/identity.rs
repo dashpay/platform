@@ -1,6 +1,11 @@
+use anyhow::anyhow;
 use serde::{Deserialize, Serialize};
+use serde_json::{Number, Value as JsonValue};
 
 use super::{IdentityPublicKey, KeyID};
+use crate::identity::identity_public_key;
+use crate::util::deserializer;
+use crate::util::json_value::{JsonValueExt, ReplaceWith};
 use crate::{
     errors::ProtocolError,
     identifier::Identifier,
@@ -19,6 +24,8 @@ pub enum AssetLockProof {
     Chain(ChainAssetLockProof),
 }
 
+pub const IDENTIFIER_FIELDS: [&str; 1] = ["$id"];
+
 /// Implement the Identity. Identity is a low-level construct that provides the foundation
 /// for user-facing functionality on the platform
 #[derive(Default, Debug, Serialize, Deserialize, Clone)]
@@ -36,6 +43,7 @@ pub struct Identity {
 }
 
 #[derive(Serialize, Deserialize, Debug)]
+#[serde(rename_all = "camelCase")]
 struct IdentityForBuffer {
     // TODO the struct probably should be made from references
     id: Identifier,
@@ -142,6 +150,50 @@ impl Identity {
         let serde_value = serde_json::to_value(IdentityForBuffer::from(self)).unwrap();
         let encoded = serializer::value_to_cbor(serde_value, Some(self.protocol_version))?;
         Ok(encoded)
+    }
+
+    pub fn from_buffer(b: impl AsRef<[u8]>) -> Result<Identity, ProtocolError> {
+        let (protocol_bytes, identity_bytes) = b.as_ref().split_at(4);
+
+        let mut json_value: JsonValue = ciborium::de::from_reader(identity_bytes)
+            .map_err(|e| ProtocolError::EncodingError(format!("{}", e)))?;
+
+        let protocol_version = deserializer::get_protocol_version(protocol_bytes)?;
+        match json_value {
+            JsonValue::Object(ref mut m) => {
+                m.insert(
+                    // TODO: it should be $protocolVersion, but doesn't seem to work in that case
+                    String::from("protocolVersion"),
+                    JsonValue::Number(Number::from(protocol_version)),
+                );
+            }
+            _ => return Err(anyhow!("The '{:?}' isn't a map", json_value).into()),
+        }
+
+        // TODO identifier_default_deserializer: default deserializer should be changed to bytes
+        // Identifiers fields should be replaced with the string format to deserialize Data Contract
+        json_value.replace_identifier_paths(IDENTIFIER_FIELDS, ReplaceWith::Base58)?;
+
+        let identity: Identity = serde_json::from_value(json_value)?;
+        Ok(identity)
+    }
+
+    pub fn from_raw_object(mut raw_object: JsonValue) -> Result<Identity, ProtocolError> {
+        // TODO identifier_default_deserializer: default deserializer should be changed to bytes
+        // Identifiers fields should be replaced with the string format to deserialize Identity
+        raw_object.replace_identifier_paths(IDENTIFIER_FIELDS, ReplaceWith::Base58)?;
+
+        if let Some(public_keys_value) = raw_object.get_mut("publicKeys") {
+            if let Some(public_keys_array) = public_keys_value.as_array_mut() {
+                for public_key in public_keys_array.iter_mut() {
+                    public_key.replace_base64_paths(identity_public_key::BINARY_DATA_FIELDS)?;
+                }
+            }
+        }
+
+        let identity: Identity = serde_json::from_value(raw_object)?;
+
+        Ok(identity)
     }
 
     pub fn hash(&self) -> Result<Vec<u8>, ProtocolError> {
