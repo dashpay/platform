@@ -1,6 +1,6 @@
 const path = require('path');
 
-const dockerCompose = require('docker-compose');
+const dockerCompose = require('@dashevo/docker-compose');
 
 const hasbin = require('hasbin');
 const semver = require('semver');
