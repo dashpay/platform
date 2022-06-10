@@ -1,0 +1,1 @@
+pub mod validate_data_contract_patterns;

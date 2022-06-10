@@ -14,6 +14,9 @@ impl ErrorWithCode for ConsensusError {
             Self::ProtocolVersionParsingError { .. } => 1000,
             Self::SerializedObjectParsingError { .. } => 1001,
 
+            // DataContract
+            Self::IncompatibleRe2PatternError { .. } => 1009,
+
             Self::JsonSchemaError(_) => 1005,
             Self::UnsupportedProtocolVersionError(_) => 1002,
             Self::IncompatibleProtocolVersionError(_) => 1003,
