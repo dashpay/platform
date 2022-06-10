@@ -1,6 +1,8 @@
 const { hash } = require('@dashevo/dpp/lib/util/hash');
 const Identifier = require('@dashevo/dpp/lib/identifier/Identifier');
 
+const MAX_DOCUMENTS = 16;
+
 /**
  * @param {DashPlatformProtocol} dpp
  * @param {DocumentRepository} documentRepository
@@ -38,6 +40,21 @@ function createRewardShareDocumentFactory(
 
     // Reward share for this operator is already exists
     if (!documentsResult.isEmpty()) {
+      return false;
+    }
+
+    const fetchedDocumentsResult = await documentRepository.find(
+      dataContract,
+      'rewardShare',
+      {
+        where: [
+          ['$ownerId', '==', masternodeIdentifier],
+        ],
+        useTransaction: true,
+      },
+    );
+
+    if (!fetchedDocumentsResult.isEmpty() && fetchedDocumentsResult.getValue().length > MAX_DOCUMENTS) {
       return false;
     }
 
