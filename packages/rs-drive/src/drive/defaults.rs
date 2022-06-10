@@ -10,3 +10,4 @@ pub const DEFAULT_HASH_SIZE: usize = 32;
 pub const DEFAULT_FLOAT_SIZE: usize = 8;
 pub const EMPTY_TREE_STORAGE_SIZE: usize = 33;
 pub const MAX_INDEX_SIZE: usize = 255;
+pub const STORAGE_FLAGS_SIZE: usize = 2;

@@ -146,7 +146,7 @@ impl Index {
     }
 }
 
-#[derive(Clone, Serialize, Deserialize, Debug, PartialEq)]
+#[derive(Clone, Serialize, Deserialize, Debug, PartialEq, Eq)]
 pub struct IndexProperty {
     pub name: String,
     pub ascending: bool,
@@ -615,7 +615,7 @@ impl DocumentType {
             )),
             "$createdAt" => Some(DocumentFieldType::Date),
             "$updatedAt" => Some(DocumentFieldType::Date),
-            &_ => self.properties.get(property).map(|p| p.clone()),
+            &_ => self.properties.get(property).cloned(),
         }
     }
 

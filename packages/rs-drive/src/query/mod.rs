@@ -27,7 +27,7 @@ use sqlparser::ast::Value::Number;
 use sqlparser::ast::{OrderByExpr, Select, Statement};
 use sqlparser::dialect::GenericDialect;
 use sqlparser::parser::Parser;
-use std::collections::{BTreeMap, HashMap};
+use std::collections::BTreeMap;
 use std::ops::BitXor;
 
 #[derive(Clone, Debug, PartialEq, Default)]
@@ -480,7 +480,7 @@ impl<'a> DriveQuery<'a> {
                         "expected a value",
                     )))?;
 
-                if let Element::Item(item) = start_at_document {
+                if let Element::Item(item, _) = start_at_document {
                     let document = Document::from_cbor(item.as_slice(), None, None)?;
                     Ok(Some((document, self.start_at_included)))
                 } else {
@@ -1112,10 +1112,56 @@ impl<'a> DriveQuery<'a> {
 
     pub fn execute_with_proof(
         self,
-        _grove: &GroveDb,
-        _transaction: TransactionArg,
+        drive: &Drive,
+        transaction: TransactionArg,
     ) -> Result<Vec<u8>, Error> {
-        todo!()
+        let mut query_operations: Vec<QueryOperation> = vec![];
+        let path_query =
+            self.construct_path_query_operations(drive, transaction, &mut query_operations)?;
+        drive
+            .grove
+            .get_proved_path_query(&path_query, transaction)
+            .map_err(Error::GroveDB)
+    }
+
+    pub fn execute_with_proof_only_get_elements(
+        self,
+        drive: &Drive,
+        transaction: TransactionArg,
+    ) -> Result<([u8; 32], Vec<Vec<u8>>), Error> {
+        let mut query_operations: Vec<QueryOperation> = vec![];
+        let path_query =
+            self.construct_path_query_operations(drive, transaction, &mut query_operations)?;
+        dbg!(&path_query);
+        let proof = drive
+            .grove
+            .get_proved_path_query(&path_query, transaction)
+            .map_err(Error::GroveDB)?;
+        let (root_hash, key_value_elements) =
+            GroveDb::execute_proof(proof.as_slice(), &path_query).map_err(Error::GroveDB)?;
+        // dbg!(key_value_elements.len());
+        // dbg!(&key_value_elements);
+
+        let values = key_value_elements
+            .into_iter()
+            .map(|(key, value)| {
+                dbg!(&key);
+                let element = Element::deserialize(&value).unwrap();
+                // TODO: remove panics
+                match element {
+                    Element::Item(val, _) => val,
+                    Element::Tree(_, _) => {
+                        // panic!("path query should only point to items: got trees")
+                        vec![]
+                    }
+                    Element::Reference(..) => {
+                        panic!("path query should only point to items: got reference")
+                    }
+                }
+            })
+            .collect::<Vec<Vec<u8>>>();
+
+        Ok((root_hash, values))
     }
 
     pub fn execute_no_proof(
@@ -1153,6 +1199,7 @@ mod tests {
     use crate::common;
     use crate::common::json_document_to_cbor;
     use crate::contract::{Contract, DocumentType};
+    use crate::drive::flags::StorageFlags;
     use crate::drive::Drive;
     use crate::query::DriveQuery;
     use serde_json::json;
@@ -1173,8 +1220,16 @@ mod tests {
         let contract_cbor = json_document_to_cbor(contract_path, Some(1));
         let contract = Contract::from_cbor(&contract_cbor, None)
             .expect("expected to deserialize the contract");
+        let storage_flags = StorageFlags { epoch: 0 };
         drive
-            .apply_contract(&contract, contract_cbor.clone(), 0f64, true, None)
+            .apply_contract(
+                &contract,
+                contract_cbor.clone(),
+                0f64,
+                true,
+                storage_flags,
+                None,
+            )
             .expect("expected to apply contract successfully");
 
         (drive, contract)
@@ -1195,8 +1250,16 @@ mod tests {
         let contract_cbor = json_document_to_cbor(contract_path, Some(1));
         let contract = Contract::from_cbor(&contract_cbor, None)
             .expect("expected to deserialize the contract");
+        let storage_flags = StorageFlags { epoch: 0 };
         drive
-            .apply_contract(&contract, contract_cbor.clone(), 0f64, true, None)
+            .apply_contract(
+                &contract,
+                contract_cbor.clone(),
+                0f64,
+                true,
+                storage_flags,
+                None,
+            )
             .expect("expected to apply contract successfully");
 
         (drive, contract)

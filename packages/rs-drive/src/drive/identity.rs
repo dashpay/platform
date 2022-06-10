@@ -1,3 +1,4 @@
+use crate::drive::flags::StorageFlags;
 use crate::drive::object_size_info::PathKeyElementInfo::PathFixedSizeKeyElement;
 use crate::drive::{Drive, RootTree};
 use crate::error::Error;
@@ -43,9 +44,13 @@ impl Drive {
             Some(identity_id) => Vec::from(identity_id),
         };
 
+        let epoch = self.epoch_info.borrow().current_epoch;
+
+        let storage_flags = StorageFlags { epoch };
+
         self.insert_identity(
             identity_id.as_slice(),
-            Element::Item(identity_bytes),
+            Element::Item(identity_bytes, storage_flags.to_element_flags()),
             apply,
             transaction,
         )
@@ -54,6 +59,7 @@ impl Drive {
 
 #[cfg(test)]
 mod tests {
+    use crate::drive::flags::StorageFlags;
     use crate::drive::Drive;
     use crate::identity::Identity;
     use grovedb::Element;
@@ -75,10 +81,12 @@ mod tests {
         let identity = Identity::from_cbor(identity_bytes.as_slice())
             .expect("expected to deserialize an identity");
 
+        let storage_flags = StorageFlags { epoch: 0 };
+
         drive
             .insert_identity(
                 &identity.id,
-                Element::Item(identity_bytes),
+                Element::Item(identity_bytes, storage_flags.to_element_flags()),
                 true,
                 Some(&db_transaction),
             )

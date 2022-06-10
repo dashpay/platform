@@ -1,4 +1,5 @@
 use crate::contract::Contract;
+use crate::drive::flags::StorageFlags;
 use crate::drive::object_size_info::KeyInfo::{KeyRef, KeySize};
 use crate::drive::object_size_info::KeyValueInfo::KeyRefRequest;
 use crate::drive::object_size_info::PathKeyElementInfo::{
@@ -43,7 +44,7 @@ fn contract_keeping_history_storage_time_reference_path(
 impl Drive {
     fn add_contract_to_storage(
         &self,
-        contract_bytes: Element,
+        contract_element: Element,
         contract: &Contract,
         block_time: f64,
         apply: bool,
@@ -52,9 +53,13 @@ impl Drive {
     ) -> Result<(), Error> {
         let contract_root_path = contract_root_path(&contract.id);
         if contract.keeps_history {
+            let element_flags = contract_element.get_flags().clone();
+            let storage_flags = StorageFlags::from_element_flags(element_flags.clone())?;
+
             self.grove_insert_empty_tree(
                 contract_root_path,
                 KeyRef(&[0]),
+                &storage_flags,
                 transaction,
                 apply,
                 insert_operations,
@@ -66,7 +71,7 @@ impl Drive {
                 PathFixedSizeKeyElement((
                     contract_keeping_history_storage_path,
                     encoded_time.as_slice(),
-                    contract_bytes,
+                    contract_element,
                 )),
                 transaction,
                 apply,
@@ -80,7 +85,7 @@ impl Drive {
                 PathFixedSizeKeyElement((
                     contract_keeping_history_storage_path,
                     &[0],
-                    Element::Reference(contract_storage_path),
+                    Element::Reference(contract_storage_path, element_flags),
                 ))
             } else {
                 PathKeyElementSize((
@@ -94,12 +99,12 @@ impl Drive {
         } else {
             // the contract is just stored at key 0
             let path_key_element_info = if apply {
-                PathFixedSizeKeyElement((contract_root_path, &[0], contract_bytes))
+                PathFixedSizeKeyElement((contract_root_path, &[0], contract_element))
             } else {
                 PathKeyElementSize((
                     defaults::BASE_CONTRACT_ROOT_PATH_SIZE,
                     1,
-                    contract_bytes.byte_size(),
+                    contract_element.byte_size(),
                 ))
             };
             self.grove_insert(path_key_element_info, transaction, apply, insert_operations)?;
@@ -109,23 +114,26 @@ impl Drive {
 
     fn insert_contract(
         &self,
-        contract_bytes: Element,
+        contract_element: Element,
         contract: &Contract,
         block_time: f64,
         apply: bool,
         transaction: TransactionArg,
         insert_operations: &mut Vec<InsertOperation>,
     ) -> Result<(), Error> {
+        let storage_flags = StorageFlags::from_element_flags(contract_element.get_flags().clone())?;
+
         self.grove_insert_empty_tree(
             [Into::<&[u8; 1]>::into(RootTree::ContractDocuments).as_slice()],
             KeyRef(contract.id.as_slice()),
+            &storage_flags,
             transaction,
             apply,
             insert_operations,
         )?;
 
         self.add_contract_to_storage(
-            contract_bytes,
+            contract_element,
             contract,
             block_time,
             apply,
@@ -139,6 +147,7 @@ impl Drive {
         self.grove_insert_empty_tree(
             contract_root_path,
             key_info,
+            &storage_flags,
             transaction,
             apply,
             insert_operations,
@@ -153,6 +162,7 @@ impl Drive {
             self.grove_insert_empty_tree(
                 contract_documents_path,
                 KeyRef(type_key.as_bytes()),
+                &storage_flags,
                 transaction,
                 apply,
                 insert_operations,
@@ -170,6 +180,7 @@ impl Drive {
             self.grove_insert_empty_tree(
                 type_path,
                 key_info,
+                &storage_flags,
                 transaction,
                 apply,
                 insert_operations,
@@ -181,6 +192,7 @@ impl Drive {
                 self.grove_insert_empty_tree(
                     type_path,
                     KeyRef(index.name.as_bytes()),
+                    &storage_flags,
                     transaction,
                     apply,
                     insert_operations,
@@ -193,7 +205,7 @@ impl Drive {
 
     fn update_contract(
         &self,
-        contract_bytes: Element,
+        contract_element: Element,
         contract: &Contract,
         original_contract: &Contract,
         block_time: f64,
@@ -240,15 +252,19 @@ impl Drive {
             ));
         }
 
+        let element_flags = contract_element.get_flags().clone();
+
         // this will override the previous contract if we do not keep history
         self.add_contract_to_storage(
-            contract_bytes,
+            contract_element,
             contract,
             block_time,
             apply,
             transaction,
             insert_operations,
         )?;
+
+        let storage_flags = StorageFlags::from_element_flags(element_flags)?;
 
         let contract_documents_path = contract_documents_path(&contract.id);
         for (type_key, document_type) in &contract.document_types {
@@ -279,6 +295,7 @@ impl Drive {
                     // toDo: we can save a little by only inserting on new indexes
                     self.grove_insert_empty_tree_if_not_exists(
                         PathFixedSizeKeyRef((type_path, index.name.as_bytes())),
+                        &storage_flags,
                         transaction,
                         apply,
                         query_operations,
@@ -290,6 +307,7 @@ impl Drive {
                 self.grove_insert_empty_tree(
                     contract_documents_path,
                     KeyRef(type_key.as_bytes()),
+                    &storage_flags,
                     transaction,
                     apply,
                     insert_operations,
@@ -306,6 +324,7 @@ impl Drive {
                 self.grove_insert_empty_tree(
                     type_path,
                     KeyRef(&[0]),
+                    &storage_flags,
                     transaction,
                     apply,
                     insert_operations,
@@ -317,6 +336,7 @@ impl Drive {
                     self.grove_insert_empty_tree(
                         type_path,
                         KeyRef(index.name.as_bytes()),
+                        &storage_flags,
                         transaction,
                         apply,
                         insert_operations,
@@ -338,7 +358,17 @@ impl Drive {
     ) -> Result<(i64, u64), Error> {
         // first we need to deserialize the contract
         let contract = Contract::from_cbor(&contract_cbor, contract_id)?;
-        self.apply_contract(&contract, contract_cbor, block_time, apply, transaction)
+
+        let epoch = self.epoch_info.borrow().current_epoch;
+
+        self.apply_contract(
+            &contract,
+            contract_cbor,
+            block_time,
+            apply,
+            StorageFlags { epoch },
+            transaction,
+        )
     }
 
     pub fn get_contract(
@@ -348,7 +378,9 @@ impl Drive {
     ) -> Result<Option<Arc<Contract>>, Error> {
         let cached_contracts = self.cached_contracts.borrow();
         match cached_contracts.get(&contract_id) {
-            None => self.fetch_contract(contract_id, transaction),
+            None => self
+                .fetch_contract(contract_id, transaction)
+                .map(|(c, _)| c),
             Some(contract) => {
                 let contract_ref = Arc::clone(&contract);
                 Ok(Some(contract_ref))
@@ -374,15 +406,16 @@ impl Drive {
         &self,
         contract_id: [u8; 32],
         transaction: TransactionArg,
-    ) -> Result<Option<Arc<Contract>>, Error> {
+    ) -> Result<(Option<Arc<Contract>>, StorageFlags), Error> {
         let stored_element = self
             .grove
             .get(contract_root_path(&contract_id), &[0], transaction)?;
-        if let Element::Item(stored_contract_bytes) = stored_element {
+        if let Element::Item(stored_contract_bytes, element_flag) = stored_element {
             let contract = Arc::new(Contract::from_cbor(&stored_contract_bytes, None)?);
             let cached_contracts = self.cached_contracts.borrow();
             cached_contracts.insert(contract_id, Arc::clone(&contract));
-            Ok(Some(Arc::clone(&contract)))
+            let flags = StorageFlags::from_element_flags(element_flag)?;
+            Ok((Some(Arc::clone(&contract)), flags))
         } else {
             Err(Error::Drive(DriveError::CorruptedContractPath(
                 "contract path did not refer to a contract element",
@@ -396,6 +429,7 @@ impl Drive {
         contract_serialization: Vec<u8>,
         block_time: f64,
         apply: bool,
+        storage_flags: StorageFlags,
         transaction: TransactionArg,
     ) -> Result<(i64, u64), Error> {
         let mut query_operations: Vec<QueryOperation> = vec![];
@@ -413,7 +447,7 @@ impl Drive {
         ) {
             already_exists = true;
             match stored_element {
-                Element::Item(stored_contract_bytes) => {
+                Element::Item(stored_contract_bytes, _) => {
                     if contract_serialization != stored_contract_bytes {
                         original_contract_stored_data = stored_contract_bytes;
                     }
@@ -424,7 +458,8 @@ impl Drive {
             }
         };
 
-        let contract_element = Element::Item(contract_serialization);
+        let contract_element =
+            Element::Item(contract_serialization, storage_flags.to_element_flags());
 
         if already_exists {
             if !original_contract_stored_data.is_empty() {
@@ -460,6 +495,7 @@ impl Drive {
 mod tests {
     use crate::common::json_document_to_cbor;
     use crate::contract::Contract;
+    use crate::drive::flags::StorageFlags;
     use crate::drive::object_size_info::{DocumentAndContractInfo, DocumentInfo};
     use crate::drive::Drive;
     use rand::Rng;
@@ -480,7 +516,14 @@ mod tests {
         let contract = Contract::from_cbor(&contract_cbor, None)
             .expect("expected to deserialize the contract");
         drive
-            .apply_contract(&contract, contract_cbor.clone(), 0f64, true, None)
+            .apply_contract(
+                &contract,
+                contract_cbor.clone(),
+                0f64,
+                true,
+                StorageFlags { epoch: 0 },
+                None,
+            )
             .expect("expected to apply contract successfully");
 
         (drive, contract, contract_cbor)
@@ -501,7 +544,14 @@ mod tests {
         let contract = Contract::from_cbor(&contract_cbor, None)
             .expect("expected to deserialize the contract");
         drive
-            .apply_contract(&contract, contract_cbor.clone(), 0f64, true, None)
+            .apply_contract(
+                &contract,
+                contract_cbor.clone(),
+                0f64,
+                true,
+                StorageFlags { epoch: 0 },
+                None,
+            )
             .expect("expected to apply contract successfully");
 
         (drive, contract, contract_cbor)
@@ -543,6 +593,8 @@ mod tests {
 
         assert!(nested_value.is_some());
 
+        let storage_flags = StorageFlags { epoch: 0 };
+
         let random_owner_id = rand::thread_rng().gen::<[u8; 32]>();
         drive
             .add_document_for_contract(
@@ -550,6 +602,7 @@ mod tests {
                     document_info: DocumentInfo::DocumentAndSerialization((
                         &document,
                         document.to_cbor().as_slice(),
+                        &storage_flags,
                     )),
                     contract: &contract,
                     document_type,
@@ -577,6 +630,8 @@ mod tests {
 
         assert!(ref_value.is_some());
 
+        let storage_flags = StorageFlags { epoch: 0 };
+
         let random_owner_id = rand::thread_rng().gen::<[u8; 32]>();
         drive
             .add_document_for_contract(
@@ -584,6 +639,7 @@ mod tests {
                     document_info: DocumentInfo::DocumentAndSerialization((
                         &document,
                         document.to_cbor().as_slice(),
+                        &storage_flags,
                     )),
                     contract: &contract,
                     document_type,

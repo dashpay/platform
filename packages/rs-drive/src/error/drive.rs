@@ -38,4 +38,7 @@ pub enum DriveError {
     CorruptedDocumentAlreadyExists(&'static str),
     #[error("corrupted document not an item error: {0}")]
     CorruptedDocumentNotItem(&'static str),
+
+    #[error("corrupted element flags error: {0}")]
+    CorruptedElementFlags(&'static str),
 }

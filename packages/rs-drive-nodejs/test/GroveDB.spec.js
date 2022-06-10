@@ -1,6 +1,7 @@
 const fs = require('fs');
 
-const { expect } = require('chai');
+const { expect, use } = require('chai');
+use(require('dirty-chai'));
 
 const Drive = require('../Drive');
 
@@ -41,26 +42,35 @@ describe('GroveDB', () => {
     await groveDb.insert(
       rootTreePath,
       otherTreeKey,
-      { type: 'tree', value: Buffer.alloc(32) },
+      { type: 'tree', epoch: 0, value: Buffer.alloc(32) },
     );
 
     await groveDb.insert(
       rootTreePath,
       treeKey,
-      { type: 'tree', value: Buffer.alloc(32) },
+      { type: 'tree', epoch: 0, value: Buffer.alloc(32) },
     );
 
     await groveDb.insert(
       itemTreePath,
       itemKey,
-      { type: 'item', value: itemValue },
+      { type: 'item', epoch: 0, value: itemValue },
     );
 
     await groveDb.insert(
-      itemTreePath,
+      [otherTreeKey],
       itemKey,
-      { type: 'reference', value: [otherTreeKey, itemKey] },
+      { type: 'reference', epoch: 0, value: [...itemTreePath, itemKey] },
     );
+
+    const result = await groveDb.get(
+      [otherTreeKey],
+      itemKey,
+    );
+
+    expect(result).to.exist();
+    expect(result.type).to.equals('item');
+    expect(result.value).to.deep.equals(itemValue);
   });
 
   it('should store and retrieve a value', async () => {
@@ -68,14 +78,14 @@ describe('GroveDB', () => {
     await groveDb.insert(
       rootTreePath,
       treeKey,
-      { type: 'tree', value: Buffer.alloc(32) },
+      { type: 'tree', epoch: 0, value: Buffer.alloc(32) },
     );
 
     // Inserting an item into the subtree
     await groveDb.insert(
       itemTreePath,
       itemKey,
-      { type: 'item', value: itemValue },
+      { type: 'item', epoch: 0, value: itemValue },
     );
 
     const element = await groveDb.get(itemTreePath, itemKey);
@@ -89,14 +99,14 @@ describe('GroveDB', () => {
     await groveDb.insert(
       rootTreePath,
       treeKey,
-      { type: 'tree', value: Buffer.alloc(32) },
+      { type: 'tree', epoch: 0, value: Buffer.alloc(32) },
     );
 
     // Inserting an item into the subtree
     await groveDb.insert(
       itemTreePath,
       itemKey,
-      { type: 'item', value: itemValue },
+      { type: 'item', epoch: 0, value: itemValue },
     );
 
     // Get item
@@ -143,7 +153,7 @@ describe('GroveDB', () => {
       await groveDb.insert(
         rootTreePath,
         treeKey,
-        { type: 'tree', value: Buffer.alloc(32) },
+        { type: 'tree', epoch: 0, value: Buffer.alloc(32) },
       );
 
       await groveDb.startTransaction();
@@ -155,6 +165,7 @@ describe('GroveDB', () => {
           itemKey,
           {
             type: 'item',
+            epoch: 0,
             value: itemValue,
           },
         );
@@ -170,7 +181,7 @@ describe('GroveDB', () => {
       await groveDb.insert(
         rootTreePath,
         treeKey,
-        { type: 'tree', value: Buffer.alloc(32) },
+        { type: 'tree', epoch: 0, value: Buffer.alloc(32) },
       );
 
       await groveDb.startTransaction();
@@ -179,7 +190,7 @@ describe('GroveDB', () => {
       await groveDb.insert(
         itemTreePath,
         itemKey,
-        { type: 'item', value: itemValue },
+        { type: 'item', epoch: 0, value: itemValue },
         true,
       );
 
@@ -207,7 +218,7 @@ describe('GroveDB', () => {
       await groveDb.insert(
         rootTreePath,
         treeKey,
-        { type: 'tree', value: Buffer.alloc(32) },
+        { type: 'tree', epoch: 0, value: Buffer.alloc(32) },
       );
 
       await groveDb.startTransaction();
@@ -216,7 +227,7 @@ describe('GroveDB', () => {
       await groveDb.insert(
         itemTreePath,
         itemKey,
-        { type: 'item', value: itemValue },
+        { type: 'item', epoch: 0, value: itemValue },
         true,
       );
 
@@ -244,7 +255,7 @@ describe('GroveDB', () => {
       await groveDb.insert(
         rootTreePath,
         treeKey,
-        { type: 'tree', value: Buffer.alloc(32) },
+        { type: 'tree', epoch: 0, value: Buffer.alloc(32) },
       );
 
       await groveDb.startTransaction();
@@ -253,7 +264,7 @@ describe('GroveDB', () => {
       await groveDb.insert(
         itemTreePath,
         itemKey,
-        { type: 'item', value: itemValue },
+        { type: 'item', epoch: 0, value: itemValue },
         true,
       );
 
@@ -276,7 +287,7 @@ describe('GroveDB', () => {
       await groveDb.insert(
         rootTreePath,
         treeKey,
-        { type: 'tree', value: Buffer.alloc(32) },
+        { type: 'tree', epoch: 0, value: Buffer.alloc(32) },
       );
 
       await groveDb.startTransaction();
@@ -301,7 +312,7 @@ describe('GroveDB', () => {
       await groveDb.insert(
         rootTreePath,
         treeKey,
-        { type: 'tree', value: Buffer.alloc(32) },
+        { type: 'tree', epoch: 0, value: Buffer.alloc(32) },
       );
 
       await groveDb.startTransaction();
@@ -310,7 +321,7 @@ describe('GroveDB', () => {
       await groveDb.insert(
         itemTreePath,
         itemKey,
-        { type: 'item', value: itemValue },
+        { type: 'item', epoch: 0, value: itemValue },
         true,
       );
 
@@ -338,14 +349,14 @@ describe('GroveDB', () => {
       await groveDb.insert(
         rootTreePath,
         treeKey,
-        { type: 'tree', value: Buffer.alloc(32) },
+        { type: 'tree', epoch: 0, value: Buffer.alloc(32) },
       );
 
       // Inserting an item into the subtree
       await groveDb.insertIfNotExists(
         itemTreePath,
         itemKey,
-        { type: 'item', value: itemValue },
+        { type: 'item', epoch: 0, value: itemValue },
       );
 
       const element = await groveDb.get(itemTreePath, itemKey);
@@ -359,14 +370,14 @@ describe('GroveDB', () => {
       await groveDb.insert(
         rootTreePath,
         treeKey,
-        { type: 'tree', value: Buffer.alloc(32) },
+        { type: 'tree', epoch: 0, value: Buffer.alloc(32) },
       );
 
       // Inserting an item into the subtree
       await groveDb.insert(
         itemTreePath,
         itemKey,
-        { type: 'item', value: itemValue },
+        { type: 'item', epoch: 0, value: itemValue },
       );
 
       const newItemValue = Buffer.from('replaced item value');
@@ -375,7 +386,7 @@ describe('GroveDB', () => {
       await groveDb.insertIfNotExists(
         itemTreePath,
         itemKey,
-        { type: 'item', value: newItemValue },
+        { type: 'item', epoch: 0, value: newItemValue },
       );
 
       const element = await groveDb.get(itemTreePath, itemKey);
@@ -390,7 +401,7 @@ describe('GroveDB', () => {
       await groveDb.insert(
         [],
         Buffer.from('test_tree'),
-        { type: 'tree', value: Buffer.alloc(32) },
+        { type: 'tree', epoch: 0, value: Buffer.alloc(32) },
       );
     });
 
@@ -402,7 +413,7 @@ describe('GroveDB', () => {
         await groveDb.insert(
           path,
           key,
-          { type: 'not_a_tree', value: Buffer.alloc(32) },
+          { type: 'not_a_tree', epoch: 0, value: Buffer.alloc(32) },
         );
 
         expect.fail('Expected to throw en error');
@@ -419,7 +430,7 @@ describe('GroveDB', () => {
         await groveDb.insert(
           path,
           key,
-          { type: 'tree', value: Buffer.alloc(1) },
+          { type: 'tree', epoch: 0, value: Buffer.alloc(1) },
         );
 
         expect.fail('Expected to throw en error');
@@ -470,7 +481,7 @@ describe('GroveDB', () => {
       await groveDb.insert(
         rootTreePath,
         treeKey,
-        { type: 'tree', value: Buffer.alloc(32) },
+        { type: 'tree', epoch: 0, value: Buffer.alloc(32) },
       );
 
       aValue = Buffer.from('a');
@@ -483,19 +494,19 @@ describe('GroveDB', () => {
       await groveDb.insert(
         itemTreePath,
         aKey,
-        { type: 'item', value: aValue },
+        { type: 'item', epoch: 0, value: aValue },
       );
 
       await groveDb.insert(
         itemTreePath,
         bKey,
-        { type: 'item', value: bValue },
+        { type: 'item', epoch: 0, value: bValue },
       );
 
       await groveDb.insert(
         itemTreePath,
         cKey,
-        { type: 'item', value: cValue },
+        { type: 'item', epoch: 0, value: cValue },
       );
     });
 
@@ -878,7 +889,7 @@ describe('GroveDB', () => {
       await groveDb.insert(
         rootTreePath,
         treeKey,
-        { type: 'tree', value: Buffer.alloc(32) },
+        { type: 'tree', epoch: 0, value: Buffer.alloc(32) },
       );
 
       dKey = Buffer.from('dKey');
@@ -894,25 +905,25 @@ describe('GroveDB', () => {
       await groveDb.insert(
         itemTreePath,
         dKey,
-        { type: 'tree', value: Buffer.alloc(32) },
+        { type: 'tree', epoch: 0, value: Buffer.alloc(32) },
       );
 
       await groveDb.insert(
         dPath,
         Buffer.from('daKey'),
-        { type: 'item', value: daValue },
+        { type: 'item', epoch: 0, value: daValue },
       );
 
       await groveDb.insert(
         dPath,
         Buffer.from('dbKey'),
-        { type: 'item', value: dbValue },
+        { type: 'item', epoch: 0, value: dbValue },
       );
 
       await groveDb.insert(
         dPath,
         Buffer.from('dcKey'),
-        { type: 'item', value: dcValue },
+        { type: 'item', epoch: 0, value: dcValue },
       );
 
       const eKey = Buffer.from('eKey');
@@ -921,19 +932,19 @@ describe('GroveDB', () => {
       await groveDb.insert(
         itemTreePath,
         eKey,
-        { type: 'tree', value: Buffer.alloc(32) },
+        { type: 'tree', epoch: 0, value: Buffer.alloc(32) },
       );
 
       await groveDb.insert(
         ePath,
         Buffer.from('eaKey'),
-        { type: 'item', value: eaValue },
+        { type: 'item', epoch: 0, value: eaValue },
       );
 
       await groveDb.insert(
         ePath,
         Buffer.from('ebKey'),
-        { type: 'item', value: ebValue },
+        { type: 'item', epoch: 0, value: ebValue },
       );
     });
 
@@ -980,7 +991,7 @@ describe('GroveDB', () => {
       await groveDb.insert(
         [],
         Buffer.from('test_tree'),
-        { type: 'tree', value: Buffer.alloc(32) },
+        { type: 'tree', epoch: 0, value: Buffer.alloc(32) },
       );
 
       await groveDb.flush();
@@ -1006,14 +1017,14 @@ describe('GroveDB', () => {
       await groveDb.insert(
         rootTreePath,
         treeKey,
-        { type: 'tree', value: Buffer.alloc(32) },
+        { type: 'tree', epoch: 0, value: Buffer.alloc(32) },
       );
 
       // Inserting an item into the subtree
       await groveDb.insert(
         itemTreePath,
         itemKey,
-        { type: 'item', value: itemValue },
+        { type: 'item', epoch: 0, value: itemValue },
       );
 
       await groveDb.startTransaction();
@@ -1022,7 +1033,7 @@ describe('GroveDB', () => {
       await groveDb.insert(
         itemTreePath,
         Buffer.from('transactional_test_key'),
-        { type: 'item', value: itemValue },
+        { type: 'item', epoch: 0, value: itemValue },
         true,
       );
 

@@ -230,9 +230,9 @@ impl DeleteOperation {
     }
     pub fn for_key_value(key_size: usize, element: &Element, multiplier: u64) -> Self {
         let value_size = match element {
-            Element::Item(item) => item.len(),
-            Element::Reference(path) => path.iter().map(|inner| inner.len()).sum(),
-            Element::Tree(_) => 32,
+            Element::Item(item, _) => item.len(),
+            Element::Reference(path, _) => path.iter().map(|inner| inner.len()).sum(),
+            Element::Tree(..) => 32,
         };
         DeleteOperation {
             key_size: key_size as u16,

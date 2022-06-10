@@ -2,6 +2,7 @@ use rand::seq::SliceRandom;
 use rand::{Rng, SeedableRng};
 use rs_drive::common;
 use rs_drive::contract::{Contract, Document};
+use rs_drive::drive::flags::StorageFlags;
 use rs_drive::drive::object_size_info::DocumentAndContractInfo;
 use rs_drive::drive::object_size_info::DocumentInfo::DocumentAndSerialization;
 use rs_drive::drive::Drive;
@@ -123,10 +124,16 @@ pub fn setup(count: u32, seed: u64) -> (Drive, Contract, TempDir) {
                 .document_type_for_name("person")
                 .expect("expected to get document type");
 
+            let storage_flags = StorageFlags { epoch: 0 };
+
             drive
                 .add_document_for_contract(
                     DocumentAndContractInfo {
-                        document_info: DocumentAndSerialization((&document, &document_cbor)),
+                        document_info: DocumentAndSerialization((
+                            &document,
+                            &document_cbor,
+                            &storage_flags,
+                        )),
                         contract: &contract,
                         document_type,
                         owner_id: None,
@@ -159,8 +166,8 @@ fn test_query_historical() {
     assert_eq!(
         root_hash.expect("cannot get root hash").as_slice(),
         vec![
-            137, 193, 34, 204, 185, 74, 170, 109, 71, 9, 110, 13, 159, 52, 138, 229, 181, 203, 88,
-            13, 184, 0, 246, 212, 248, 28, 19, 172, 70, 186, 15, 234
+            61, 186, 193, 171, 235, 220, 81, 55, 187, 86, 227, 222, 69, 202, 9, 12, 251, 109, 248,
+            217, 108, 148, 71, 54, 227, 170, 213, 120, 21, 24, 12, 110
         ]
     );
 
@@ -890,10 +897,12 @@ fn test_query_historical() {
         .document_type_for_name("person")
         .expect("expected to get document type");
 
+    let storage_flags = StorageFlags { epoch: 0 };
+
     drive
         .add_document_for_contract(
             DocumentAndContractInfo {
-                document_info: DocumentAndSerialization((&document, &person_cbor)),
+                document_info: DocumentAndSerialization((&document, &person_cbor, &storage_flags)),
                 contract: &contract,
                 document_type,
                 owner_id: None,
@@ -932,10 +941,12 @@ fn test_query_historical() {
         .document_type_for_name("person")
         .expect("expected to get document type");
 
+    let storage_flags = StorageFlags { epoch: 0 };
+
     drive
         .add_document_for_contract(
             DocumentAndContractInfo {
-                document_info: DocumentAndSerialization((&document, &person_cbor)),
+                document_info: DocumentAndSerialization((&document, &person_cbor, &storage_flags)),
                 contract: &contract,
                 document_type,
                 owner_id: None,
@@ -1375,8 +1386,8 @@ fn test_query_historical() {
     assert_eq!(
         root_hash.expect("cannot get root hash").as_slice(),
         vec![
-            17, 174, 123, 35, 185, 226, 133, 245, 130, 254, 27, 4, 102, 87, 63, 165, 251, 234, 214,
-            168, 120, 175, 145, 223, 214, 254, 175, 24, 54, 121, 66, 236
+            160, 99, 252, 166, 225, 36, 68, 39, 181, 54, 116, 180, 29, 1, 16, 24, 65, 248, 9, 21,
+            44, 228, 28, 146, 9, 45, 27, 233, 145, 87, 73, 220
         ]
     );
 }
