@@ -384,6 +384,21 @@ Then specify the created dotenv file as an option for the `docker-compose` comma
 ```bash
 $ docker-compose --env-file=.env.testnet up -d
 ```
+## Troubleshooting
+
+#### [FAILED] Node is not running
+One of your nodes failed to start or missing, you may retry with --force option
+
+`yarn stop --force`
+
+#### Running services detected. Please ensure all services are stopped for this config before starting
+Running services preventing dashmate to start, you may retry with --force option to forcefully start, even if some of the nodes already up.
+
+`yarn start --force`
+
+#### externalIp option is not set in base config
+This may happen when you switch between multiple major versions, so your config became incompatible. In this case, you have to purge dashmate storage (`rm -rf ~/.dashmate`) and run setup again.
+
 
 ## Contributing
 
