@@ -96,7 +96,7 @@ async function createMasternodeRewardSharesDataTrigger(
     const error = new DataTriggerConditionError(
       context.getDataContract().getId().toBuffer(),
       documentTransition.getId().toBuffer(),
-      `You have reached maximum amount of rewards shares: ${MAX_DOCUMENTS}`,
+      `Reward shares cannot contain more than ${MAX_DOCUMENTS} identities`,
     );
     result.addError(error);
 

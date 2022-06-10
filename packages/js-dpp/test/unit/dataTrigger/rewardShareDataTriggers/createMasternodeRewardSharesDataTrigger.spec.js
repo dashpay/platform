@@ -186,7 +186,7 @@ describe('createMasternodeRewardSharesDataTrigger', () => {
     const [error] = result.getErrors();
 
     expect(error).to.be.an.instanceOf(DataTriggerConditionError);
-    expect(error.message).to.equal('You have reached maximum amount of rewards shares: 16');
+    expect(error.message).to.equal('Reward shares cannot contain more than 16 identities');
 
     expect(stateRepositoryMock.fetchSMLStore).to.be.calledOnce();
     expect(stateRepositoryMock.fetchIdentity).to.be.calledOnceWithExactly(
