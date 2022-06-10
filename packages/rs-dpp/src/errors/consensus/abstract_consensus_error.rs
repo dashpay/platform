@@ -38,6 +38,13 @@ pub enum ConsensusError {
 
     #[error("Can't read protocol version from serialized object: {parsing_error}")]
     ProtocolVersionParsingError { parsing_error: anyhow::Error },
+
+    #[error("Pattern '{pattern}' at '{path}' is not not compatible with Re2:  {message}")]
+    IncompatibleRe2PatternError {
+        pattern: String,
+        path: String,
+        message: String,
+    },
 }
 
 impl ConsensusError {
@@ -53,6 +60,8 @@ impl ConsensusError {
             // Decoding
             ConsensusError::ProtocolVersionParsingError { .. } => 1000,
             ConsensusError::SerializedObjectParsingError { .. } => 1001,
+            // Data Contract
+            ConsensusError::IncompatibleRe2PatternError { .. } => 1009,
 
             ConsensusError::JsonSchemaError(_) => 1005,
             ConsensusError::UnsupportedProtocolVersionError(_) => 1002,
