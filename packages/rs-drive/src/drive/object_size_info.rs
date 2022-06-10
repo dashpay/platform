@@ -1,5 +1,6 @@
 use crate::contract::{Contract, Document, DocumentType};
 use crate::drive::defaults::DEFAULT_HASH_SIZE;
+use crate::drive::flags::StorageFlags;
 use crate::error::contract::ContractError;
 use crate::error::drive::DriveError;
 use crate::error::Error;
@@ -284,12 +285,8 @@ impl<'a, const N: usize> PathKeyElementInfo<'a, N> {
     pub fn insert_len(&'a self) -> usize {
         match self {
             //todo v23: this is an incorrect approximation
-            PathKeyElementInfo::PathKeyElement((_, key, element)) => {
-                element.node_byte_size(key.len())
-            }
-            PathKeyElementInfo::PathKeyElementSize((_, key_size, element_size)) => {
-                *key_size + *element_size
-            }
+            PathKeyElement((_, key, element)) => element.node_byte_size(key.len()),
+            PathKeyElementSize((_, key_size, element_size)) => *key_size + *element_size,
             PathFixedSizeKeyElement((_, key, element)) => element.node_byte_size(key.len()),
         }
     }
@@ -305,7 +302,7 @@ pub struct DocumentAndContractInfo<'a> {
 #[derive(Clone)]
 pub enum DocumentInfo<'a> {
     /// The document and it's serialized form
-    DocumentAndSerialization((&'a Document, &'a [u8])),
+    DocumentAndSerialization((&'a Document, &'a [u8], &'a StorageFlags)),
     /// An element size
     DocumentSize(usize),
 }
@@ -320,11 +317,11 @@ impl<'a> DocumentInfo<'a> {
 
     pub fn id_key_value_info(&self) -> KeyValueInfo {
         match self {
-            DocumentInfo::DocumentAndSerialization((document, _)) => {
-                KeyValueInfo::KeyRefRequest(document.id.as_slice())
+            DocumentInfo::DocumentAndSerialization((document, _, _)) => {
+                KeyRefRequest(document.id.as_slice())
             }
             DocumentInfo::DocumentSize(document_max_size) => {
-                KeyValueInfo::KeyValueMaxSize((32, *document_max_size))
+                KeyValueMaxSize((32, *document_max_size))
             }
         }
     }
@@ -336,7 +333,7 @@ impl<'a> DocumentInfo<'a> {
         owner_id: Option<&[u8]>,
     ) -> Result<Option<KeyInfo>, Error> {
         match self {
-            DocumentInfo::DocumentAndSerialization((document, _)) => {
+            DocumentInfo::DocumentAndSerialization((document, _, _)) => {
                 let raw_value =
                     document.get_raw_for_document_type(key_path, document_type, owner_id)?;
                 match raw_value {
@@ -360,6 +357,13 @@ impl<'a> DocumentInfo<'a> {
                     Ok(Some(KeySize(max_size)))
                 }
             },
+        }
+    }
+
+    pub fn get_storage_flags(&self) -> StorageFlags {
+        match *self {
+            DocumentInfo::DocumentAndSerialization((_, _, storage_flags)) => storage_flags.clone(),
+            DocumentInfo::DocumentSize(_) => StorageFlags::default(),
         }
     }
 }

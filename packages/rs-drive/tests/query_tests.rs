@@ -1,11 +1,14 @@
+use grovedb::GroveDb;
 use rand::seq::SliceRandom;
 use rand::{Rng, SeedableRng};
 use rs_drive::common;
 use rs_drive::common::{cbor_inner_bytes_value, setup_contract};
 use rs_drive::contract::{Contract, Document};
+use rs_drive::drive::flags::StorageFlags;
 use rs_drive::drive::object_size_info::DocumentAndContractInfo;
 use rs_drive::drive::object_size_info::DocumentInfo::DocumentAndSerialization;
 use rs_drive::drive::Drive;
+use rs_drive::error::Error::GroveDB;
 use rs_drive::error::{query::QueryError, Error};
 use rs_drive::query::DriveQuery;
 use serde::{Deserialize, Serialize};
@@ -138,10 +141,16 @@ pub fn setup_family_tests(count: u32, seed: u64) -> (Drive, Contract, TempDir) {
             .document_type_for_name("person")
             .expect("expected to get document type");
 
+        let storage_flags = StorageFlags { epoch: 0 };
+
         drive
             .add_document_for_contract(
                 DocumentAndContractInfo {
-                    document_info: DocumentAndSerialization((&document, &document_cbor)),
+                    document_info: DocumentAndSerialization((
+                        &document,
+                        &document_cbor,
+                        &storage_flags,
+                    )),
                     contract: &contract,
                     document_type,
                     owner_id: None,
@@ -189,10 +198,16 @@ pub fn setup_family_tests_with_nulls(count: u32, seed: u64) -> (Drive, Contract,
             .document_type_for_name("person")
             .expect("expected to get document type");
 
+        let storage_flags = StorageFlags { epoch: 0 };
+
         drive
             .add_document_for_contract(
                 DocumentAndContractInfo {
-                    document_info: DocumentAndSerialization((&document, &document_cbor)),
+                    document_info: DocumentAndSerialization((
+                        &document,
+                        &document_cbor,
+                        &storage_flags,
+                    )),
                     contract: &contract,
                     document_type,
                     owner_id: None,
@@ -293,10 +308,16 @@ pub fn setup_dpns_tests(count: u32, seed: u64) -> (Drive, Contract, TempDir) {
             .document_type_for_name("domain")
             .expect("expected to get document type");
 
+        let storage_flags = StorageFlags { epoch: 0 };
+
         drive
             .add_document_for_contract(
                 DocumentAndContractInfo {
-                    document_info: DocumentAndSerialization((&document, &document_cbor)),
+                    document_info: DocumentAndSerialization((
+                        &document,
+                        &document_cbor,
+                        &storage_flags,
+                    )),
                     contract: &contract,
                     document_type,
                     owner_id: None,
@@ -351,10 +372,16 @@ pub fn setup_dpns_test_with_data(path: &str) -> (Drive, Contract, TempDir) {
                 .document_type_for_name("domain")
                 .expect("expected to get document type");
 
+            let storage_flags = StorageFlags { epoch: 0 };
+
             drive
                 .add_document_for_contract(
                     DocumentAndContractInfo {
-                        document_info: DocumentAndSerialization((&domain, &domain_cbor)),
+                        document_info: DocumentAndSerialization((
+                            &domain,
+                            &domain_cbor,
+                            &storage_flags,
+                        )),
                         contract: &contract,
                         document_type,
                         owner_id: None,
@@ -390,10 +417,16 @@ fn test_query_many() {
             .document_type_for_name("person")
             .expect("expected to get document type");
 
+        let storage_flags = StorageFlags { epoch: 0 };
+
         drive
             .add_document_for_contract(
                 DocumentAndContractInfo {
-                    document_info: DocumentAndSerialization((&document, &document_cbor)),
+                    document_info: DocumentAndSerialization((
+                        &document,
+                        &document_cbor,
+                        &storage_flags,
+                    )),
                     contract: &contract,
                     document_type,
                     owner_id: None,
@@ -424,8 +457,8 @@ fn test_family_basic_queries() {
     assert_eq!(
         root_hash.expect("cannot get root hash").as_slice(),
         vec![
-            183, 13, 106, 124, 50, 188, 192, 92, 107, 14, 43, 145, 51, 136, 215, 20, 246, 175, 188,
-            89, 10, 125, 69, 27, 133, 240, 196, 221, 202, 143, 53, 249,
+            123, 1, 243, 182, 206, 153, 145, 224, 140, 59, 64, 60, 26, 152, 194, 202, 184, 117, 75,
+            43, 210, 43, 22, 255, 27, 72, 107, 178, 235, 96, 40, 248
         ]
     );
 
@@ -463,7 +496,7 @@ fn test_family_basic_queries() {
         .execute_no_proof(&drive, Some(&db_transaction))
         .expect("proof should be executed");
     let names: Vec<String> = results
-        .into_iter()
+        .iter()
         .map(|result| {
             let document = Document::from_cbor(result.as_slice(), None, None)
                 .expect("we should be able to deserialize the cbor");
@@ -480,8 +513,15 @@ fn test_family_basic_queries() {
 
     assert_eq!(names, all_names);
 
-    // A query getting all people who's first name is Chris (which should exist)
+    // dbg!(results.len());
+    // dbg!(&results);
+    let (proof_root_hash, proof_results) = query
+        .execute_with_proof_only_get_elements(&drive, None)
+        .expect("we should be able to a proof");
+    assert_eq!(root_hash, Some(proof_root_hash));
+    assert_eq!(results, proof_results);
 
+    // A query getting all people who's first name is Adey (which should exist)
     let query_value = json!({
         "where": [
             ["firstName", "==", "Adey"]
@@ -498,8 +538,20 @@ fn test_family_basic_queries() {
     let (results, _, _) = drive
         .query_documents_from_contract(&contract, person_document_type, query_cbor.as_slice(), None)
         .expect("query should be executed");
-
     assert_eq!(results.len(), 1);
+
+    // dbg!(results.len());
+    // dbg!(&results);
+    let (proof_root_hash, proof_results) = drive
+        .query_documents_from_contract_as_grove_proof_only_get_elements(
+            &contract,
+            person_document_type,
+            query_cbor.as_slice(),
+            None,
+        )
+        .expect("query should be executed");
+    assert_eq!(root_hash, Some(proof_root_hash));
+    assert_eq!(results, proof_results);
 
     // A query getting all people who's first name is Adey and lastName Randolf
 
@@ -522,6 +574,18 @@ fn test_family_basic_queries() {
         .expect("query should be executed");
 
     assert_eq!(results.len(), 1);
+
+    // dbg!(results.len());
+    // dbg!(&results);
+    let (proof_root_hash, proof_results) = drive
+        .query_documents_from_contract_as_grove_proof_only_get_elements(
+            &contract,
+            person_document_type,
+            query_cbor.as_slice(),
+            None,
+        )
+        .expect("query should be executed");
+    assert_eq!(root_hash, Some(proof_root_hash));
 
     let document = Document::from_cbor(results.first().unwrap().as_slice(), None, None)
         .expect("we should be able to deserialize the cbor");
@@ -659,7 +723,7 @@ fn test_family_basic_queries() {
         .execute_no_proof(&drive, None)
         .expect("proof should be executed");
     let names: Vec<String> = results
-        .into_iter()
+        .iter()
         .map(|result| {
             let document = Document::from_cbor(result.as_slice(), None, None)
                 .expect("we should be able to deserialize the cbor");
@@ -681,6 +745,12 @@ fn test_family_basic_queries() {
         "Celinda".to_string(),
     ];
     assert_eq!(names, expected_names_before_chris);
+
+    let (proof_root_hash, proof_results) = query
+        .execute_with_proof_only_get_elements(&drive, None)
+        .expect("we should be able to a proof");
+    assert_eq!(root_hash, Some(proof_root_hash));
+    assert_eq!(results, proof_results);
 
     // A query getting all people who's first name starts with C
 
@@ -704,7 +774,7 @@ fn test_family_basic_queries() {
         .execute_no_proof(&drive, None)
         .expect("proof should be executed");
     let names: Vec<String> = results
-        .into_iter()
+        .iter()
         .map(|result| {
             let document = Document::from_cbor(result.as_slice(), None, None)
                 .expect("we should be able to deserialize the cbor");
@@ -721,6 +791,12 @@ fn test_family_basic_queries() {
 
     let expected_names_starting_with_c = ["Cammi".to_string(), "Celinda".to_string()];
     assert_eq!(names, expected_names_starting_with_c);
+
+    let (proof_root_hash, proof_results) = query
+        .execute_with_proof_only_get_elements(&drive, None)
+        .expect("we should be able to a proof");
+    assert_eq!(root_hash, Some(proof_root_hash));
+    assert_eq!(results, proof_results);
 
     // A query getting all people who's first name starts with C, but limit to 1 and be descending
 
@@ -744,7 +820,7 @@ fn test_family_basic_queries() {
         .execute_no_proof(&drive, None)
         .expect("proof should be executed");
     let names: Vec<String> = results
-        .into_iter()
+        .iter()
         .map(|result| {
             let document = Document::from_cbor(result.as_slice(), None, None)
                 .expect("we should be able to deserialize the cbor");
@@ -761,6 +837,12 @@ fn test_family_basic_queries() {
 
     let expected_names_starting_with_c_desc_1 = ["Celinda".to_string()];
     assert_eq!(names, expected_names_starting_with_c_desc_1);
+
+    let (proof_root_hash, proof_results) = query
+        .execute_with_proof_only_get_elements(&drive, None)
+        .expect("we should be able to a proof");
+    assert_eq!(root_hash, Some(proof_root_hash));
+    assert_eq!(results, proof_results);
 
     // A query getting all people who's first name is between Chris and Noellyn included
 
@@ -811,6 +893,12 @@ fn test_family_basic_queries() {
     ];
 
     assert_eq!(names, expected_between_names);
+
+    let (proof_root_hash, proof_results) = query
+        .execute_with_proof_only_get_elements(&drive, None)
+        .expect("we should be able to a proof");
+    assert_eq!(root_hash, Some(proof_root_hash));
+    assert_eq!(results, proof_results);
 
     // A query getting back elements having specific names
 
@@ -871,7 +959,7 @@ fn test_family_basic_queries() {
         .execute_no_proof(&drive, None)
         .expect("proof should be executed");
     let names: Vec<String> = results
-        .into_iter()
+        .iter()
         .map(|result| {
             let document = Document::from_cbor(result.as_slice(), None, None)
                 .expect("we should be able to deserialize the cbor");
@@ -895,6 +983,13 @@ fn test_family_basic_queries() {
     ];
 
     assert_eq!(names, expected_reversed_between_names);
+
+    // dbg!(results.len());
+    // let (proof_root_hash, proof_results) = query
+    //     .execute_with_proof_only_get_elements(&drive, None)
+    //     .expect("we should be able to a proof");
+    // assert_eq!(root_hash, Some(proof_root_hash));
+    // assert_eq!(results, proof_results);
 
     // A query getting back elements having specific names and over a certain age
 
@@ -1052,10 +1147,12 @@ fn test_family_basic_queries() {
         .document_type_for_name("person")
         .expect("expected to get document type");
 
+    let storage_flags = StorageFlags { epoch: 0 };
+
     drive
         .add_document_for_contract(
             DocumentAndContractInfo {
-                document_info: DocumentAndSerialization((&document, &person_cbor)),
+                document_info: DocumentAndSerialization((&document, &person_cbor, &storage_flags)),
                 contract: &contract,
                 document_type,
                 owner_id: None,
@@ -1093,10 +1190,12 @@ fn test_family_basic_queries() {
         .document_type_for_name("person")
         .expect("expected to get document type");
 
+    let storage_flags = StorageFlags { epoch: 0 };
+
     drive
         .add_document_for_contract(
             DocumentAndContractInfo {
-                document_info: DocumentAndSerialization((&document, &person_cbor)),
+                document_info: DocumentAndSerialization((&document, &person_cbor, &storage_flags)),
                 contract: &contract,
                 document_type,
                 owner_id: None,
@@ -1452,8 +1551,8 @@ fn test_family_basic_queries() {
     assert_eq!(
         root_hash.expect("cannot get root hash").as_slice(),
         vec![
-            1, 255, 31, 29, 249, 11, 1, 164, 170, 214, 218, 187, 123, 76, 155, 12, 245, 42, 48,
-            133, 234, 76, 150, 1, 240, 167, 114, 123, 29, 141, 236, 4
+            168, 65, 55, 241, 30, 80, 135, 127, 237, 196, 63, 27, 80, 98, 211, 174, 194, 4, 5, 226,
+            90, 172, 61, 207, 110, 133, 224, 35, 201, 167, 3, 121
         ]
     );
 }
@@ -1471,8 +1570,8 @@ fn test_family_starts_at_queries() {
     assert_eq!(
         root_hash.expect("cannot get root hash").as_slice(),
         vec![
-            183, 13, 106, 124, 50, 188, 192, 92, 107, 14, 43, 145, 51, 136, 215, 20, 246, 175, 188,
-            89, 10, 125, 69, 27, 133, 240, 196, 221, 202, 143, 53, 249,
+            123, 1, 243, 182, 206, 153, 145, 224, 140, 59, 64, 60, 26, 152, 194, 202, 184, 117, 75,
+            43, 210, 43, 22, 255, 27, 72, 107, 178, 235, 96, 40, 248
         ]
     );
 
@@ -1823,8 +1922,8 @@ fn test_family_with_nulls_query() {
     assert_eq!(
         root_hash.expect("cannot get root hash").as_slice(),
         vec![
-            226, 217, 152, 159, 147, 36, 1, 134, 149, 155, 127, 55, 141, 248, 250, 147, 238, 8, 19,
-            85, 249, 42, 226, 110, 126, 200, 219, 191, 177, 137, 0, 133
+            106, 19, 219, 178, 226, 142, 21, 91, 78, 168, 66, 193, 44, 14, 17, 208, 149, 147, 92,
+            231, 155, 97, 136, 32, 136, 68, 79, 121, 207, 15, 55, 23
         ]
     );
 
@@ -1926,8 +2025,8 @@ fn test_query_with_cached_contract() {
     assert_eq!(
         root_hash.expect("cannot get root hash").as_slice(),
         vec![
-            183, 13, 106, 124, 50, 188, 192, 92, 107, 14, 43, 145, 51, 136, 215, 20, 246, 175, 188,
-            89, 10, 125, 69, 27, 133, 240, 196, 221, 202, 143, 53, 249,
+            123, 1, 243, 182, 206, 153, 145, 224, 140, 59, 64, 60, 26, 152, 194, 202, 184, 117, 75,
+            43, 210, 43, 22, 255, 27, 72, 107, 178, 235, 96, 40, 248
         ]
     );
 
@@ -1979,8 +2078,8 @@ fn test_dpns_query() {
     assert_eq!(
         root_hash.expect("cannot get root hash").as_slice(),
         vec![
-            58, 90, 155, 139, 174, 166, 19, 172, 88, 90, 215, 4, 139, 152, 143, 6, 113, 1, 24, 23,
-            189, 187, 27, 66, 50, 154, 40, 230, 189, 213, 254, 245
+            218, 128, 56, 56, 209, 94, 168, 11, 78, 56, 234, 204, 159, 5, 54, 64, 127, 166, 149,
+            38, 35, 48, 116, 41, 230, 176, 235, 252, 208, 16, 47, 86
         ]
     );
 
@@ -2400,8 +2499,8 @@ fn test_dpns_query_start_at() {
     assert_eq!(
         root_hash.expect("cannot get root hash").as_slice(),
         vec![
-            58, 90, 155, 139, 174, 166, 19, 172, 88, 90, 215, 4, 139, 152, 143, 6, 113, 1, 24, 23,
-            189, 187, 27, 66, 50, 154, 40, 230, 189, 213, 254, 245
+            218, 128, 56, 56, 209, 94, 168, 11, 78, 56, 234, 204, 159, 5, 54, 64, 127, 166, 149,
+            38, 35, 48, 116, 41, 230, 176, 235, 252, 208, 16, 47, 86
         ]
     );
 
@@ -2479,8 +2578,8 @@ fn test_dpns_query_start_after() {
     assert_eq!(
         root_hash.expect("cannot get root hash").as_slice(),
         vec![
-            58, 90, 155, 139, 174, 166, 19, 172, 88, 90, 215, 4, 139, 152, 143, 6, 113, 1, 24, 23,
-            189, 187, 27, 66, 50, 154, 40, 230, 189, 213, 254, 245
+            218, 128, 56, 56, 209, 94, 168, 11, 78, 56, 234, 204, 159, 5, 54, 64, 127, 166, 149,
+            38, 35, 48, 116, 41, 230, 176, 235, 252, 208, 16, 47, 86
         ]
     );
 
@@ -2558,8 +2657,8 @@ fn test_dpns_query_start_at_desc() {
     assert_eq!(
         root_hash.expect("cannot get root hash").as_slice(),
         vec![
-            58, 90, 155, 139, 174, 166, 19, 172, 88, 90, 215, 4, 139, 152, 143, 6, 113, 1, 24, 23,
-            189, 187, 27, 66, 50, 154, 40, 230, 189, 213, 254, 245
+            218, 128, 56, 56, 209, 94, 168, 11, 78, 56, 234, 204, 159, 5, 54, 64, 127, 166, 149,
+            38, 35, 48, 116, 41, 230, 176, 235, 252, 208, 16, 47, 86
         ]
     );
 
@@ -2637,8 +2736,8 @@ fn test_dpns_query_start_after_desc() {
     assert_eq!(
         root_hash.expect("cannot get root hash").as_slice(),
         vec![
-            58, 90, 155, 139, 174, 166, 19, 172, 88, 90, 215, 4, 139, 152, 143, 6, 113, 1, 24, 23,
-            189, 187, 27, 66, 50, 154, 40, 230, 189, 213, 254, 245
+            218, 128, 56, 56, 209, 94, 168, 11, 78, 56, 234, 204, 159, 5, 54, 64, 127, 166, 149,
+            38, 35, 48, 116, 41, 230, 176, 235, 252, 208, 16, 47, 86
         ]
     );
 
@@ -2737,10 +2836,16 @@ fn test_dpns_query_start_at_with_null_id() {
     let document0 = Document::from_cbor(document_cbor0.as_slice(), None, None)
         .expect("document should be properly deserialized");
 
+    let storage_flags = StorageFlags { epoch: 0 };
+
     drive
         .add_document_for_contract(
             DocumentAndContractInfo {
-                document_info: DocumentAndSerialization((&document0, &document_cbor0)),
+                document_info: DocumentAndSerialization((
+                    &document0,
+                    &document_cbor0,
+                    &storage_flags,
+                )),
                 contract: &contract,
                 document_type,
                 owner_id: None,
@@ -2773,10 +2878,15 @@ fn test_dpns_query_start_at_with_null_id() {
     let document1 = Document::from_cbor(document_cbor1.as_slice(), None, None)
         .expect("document should be properly deserialized");
 
+    let storage_flags = StorageFlags { epoch: 0 };
     drive
         .add_document_for_contract(
             DocumentAndContractInfo {
-                document_info: DocumentAndSerialization((&document1, &document_cbor1)),
+                document_info: DocumentAndSerialization((
+                    &document1,
+                    &document_cbor1,
+                    &storage_flags,
+                )),
                 contract: &contract,
                 document_type,
                 owner_id: None,
@@ -2802,8 +2912,8 @@ fn test_dpns_query_start_at_with_null_id() {
     assert_eq!(
         root_hash.expect("cannot get root hash").as_slice(),
         vec![
-            196, 130, 12, 66, 209, 12, 55, 227, 234, 62, 145, 200, 36, 129, 102, 3, 218, 33, 112,
-            148, 41, 67, 102, 12, 107, 82, 44, 208, 2, 207, 130, 198
+            129, 14, 2, 125, 180, 93, 191, 143, 255, 116, 8, 44, 77, 164, 244, 52, 227, 62, 99,
+            254, 206, 33, 205, 73, 224, 118, 162, 155, 213, 232, 46, 174
         ]
     );
 
@@ -2910,10 +3020,16 @@ fn test_dpns_query_start_after_with_null_id() {
     let document0 = Document::from_cbor(document_cbor0.as_slice(), None, None)
         .expect("document should be properly deserialized");
 
+    let storage_flags = StorageFlags { epoch: 0 };
+
     drive
         .add_document_for_contract(
             DocumentAndContractInfo {
-                document_info: DocumentAndSerialization((&document0, &document_cbor0)),
+                document_info: DocumentAndSerialization((
+                    &document0,
+                    &document_cbor0,
+                    &storage_flags,
+                )),
                 contract: &contract,
                 document_type,
                 owner_id: None,
@@ -2946,10 +3062,16 @@ fn test_dpns_query_start_after_with_null_id() {
     let document1 = Document::from_cbor(document_cbor1.as_slice(), None, None)
         .expect("document should be properly deserialized");
 
+    let storage_flags = StorageFlags { epoch: 0 };
+
     drive
         .add_document_for_contract(
             DocumentAndContractInfo {
-                document_info: DocumentAndSerialization((&document1, &document_cbor1)),
+                document_info: DocumentAndSerialization((
+                    &document1,
+                    &document_cbor1,
+                    &storage_flags,
+                )),
                 contract: &contract,
                 document_type,
                 owner_id: None,
@@ -2975,8 +3097,8 @@ fn test_dpns_query_start_after_with_null_id() {
     assert_eq!(
         root_hash.expect("cannot get root hash").as_slice(),
         vec![
-            196, 130, 12, 66, 209, 12, 55, 227, 234, 62, 145, 200, 36, 129, 102, 3, 218, 33, 112,
-            148, 41, 67, 102, 12, 107, 82, 44, 208, 2, 207, 130, 198
+            129, 14, 2, 125, 180, 93, 191, 143, 255, 116, 8, 44, 77, 164, 244, 52, 227, 62, 99,
+            254, 206, 33, 205, 73, 224, 118, 162, 155, 213, 232, 46, 174
         ]
     );
 
@@ -3085,10 +3207,16 @@ fn test_dpns_query_start_after_with_null_id_desc() {
     let document0 = Document::from_cbor(document_cbor0.as_slice(), None, None)
         .expect("document should be properly deserialized");
 
+    let storage_flags = StorageFlags { epoch: 0 };
+
     drive
         .add_document_for_contract(
             DocumentAndContractInfo {
-                document_info: DocumentAndSerialization((&document0, &document_cbor0)),
+                document_info: DocumentAndSerialization((
+                    &document0,
+                    &document_cbor0,
+                    &storage_flags,
+                )),
                 contract: &contract,
                 document_type,
                 owner_id: None,
@@ -3121,10 +3249,16 @@ fn test_dpns_query_start_after_with_null_id_desc() {
     let document1 = Document::from_cbor(document_cbor1.as_slice(), None, None)
         .expect("document should be properly deserialized");
 
+    let storage_flags = StorageFlags { epoch: 0 };
+
     drive
         .add_document_for_contract(
             DocumentAndContractInfo {
-                document_info: DocumentAndSerialization((&document1, &document_cbor1)),
+                document_info: DocumentAndSerialization((
+                    &document1,
+                    &document_cbor1,
+                    &storage_flags,
+                )),
                 contract: &contract,
                 document_type,
                 owner_id: None,
@@ -3150,8 +3284,8 @@ fn test_dpns_query_start_after_with_null_id_desc() {
     assert_eq!(
         root_hash.expect("cannot get root hash").as_slice(),
         vec![
-            196, 130, 12, 66, 209, 12, 55, 227, 234, 62, 145, 200, 36, 129, 102, 3, 218, 33, 112,
-            148, 41, 67, 102, 12, 107, 82, 44, 208, 2, 207, 130, 198
+            129, 14, 2, 125, 180, 93, 191, 143, 255, 116, 8, 44, 77, 164, 244, 52, 227, 62, 99,
+            254, 206, 33, 205, 73, 224, 118, 162, 155, 213, 232, 46, 174
         ]
     );
 
@@ -3204,6 +3338,7 @@ fn test_dpns_query_start_after_with_null_id_desc() {
         .execute_no_proof(&drive, Some(&db_transaction))
         .expect("proof should be executed");
     let docs: Vec<Vec<u8>> = results
+        .clone()
         .into_iter()
         .map(|result| {
             let document = Document::from_cbor(result.as_slice(), None, None)
@@ -3211,6 +3346,14 @@ fn test_dpns_query_start_after_with_null_id_desc() {
             Vec::from(document.id)
         })
         .collect();
+
+    // TODO: Add test back
+    let (proof_root_hash, proof_results) = query
+        .execute_with_proof_only_get_elements(&drive, None)
+        .expect("we should be able to a proof");
+    dbg!(results.len());
+
+    assert_eq!(results, proof_results);
 
     // The explanation is a little interesting
     // domain1 is smaller than domain0

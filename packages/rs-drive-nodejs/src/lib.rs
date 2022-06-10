@@ -640,6 +640,59 @@ impl DriveWrapper {
         Ok(cx.undefined())
     }
 
+    fn js_create_and_execute_query_as_grove_proof(
+        mut cx: FunctionContext,
+    ) -> JsResult<JsUndefined> {
+        let js_query_cbor = cx.argument::<JsBuffer>(0)?;
+        let js_contract_id = cx.argument::<JsBuffer>(1)?;
+        let js_document_type_name = cx.argument::<JsString>(2)?;
+        let js_using_transaction = cx.argument::<JsBoolean>(3)?;
+        let js_callback = cx.argument::<JsFunction>(4)?.root(&mut cx);
+
+        let drive = cx
+            .this()
+            .downcast_or_throw::<JsBox<DriveWrapper>, _>(&mut cx)?;
+
+        let query_cbor = converter::js_buffer_to_vec_u8(js_query_cbor, &mut cx);
+        let contract_id = converter::js_buffer_to_vec_u8(js_contract_id, &mut cx);
+        let document_type_name = js_document_type_name.value(&mut cx);
+        let using_transaction = js_using_transaction.value(&mut cx);
+
+        drive
+            .send_to_drive_thread(move |drive: &Drive, transaction, channel| {
+                let result = drive.query_documents_as_grove_proof(
+                    &query_cbor,
+                    <[u8; 32]>::try_from(contract_id).unwrap(),
+                    document_type_name.as_str(),
+                    using_transaction.then(|| transaction).flatten(),
+                );
+
+                channel.send(move |mut task_context| {
+                    let callback = js_callback.into_inner(&mut task_context);
+                    let this = task_context.undefined();
+                    let callback_arguments: Vec<Handle<JsValue>> = match result {
+                        Ok(value) => {
+                            let js_array: Handle<JsArray> = task_context.empty_array();
+                            let js_buffer = JsBuffer::external(&mut task_context, value);
+                            js_array.set(&mut task_context, 0, js_buffer)?;
+
+                            vec![task_context.null().upcast(), js_array.upcast()]
+                        }
+
+                        // Convert the error to a JavaScript exception on failure
+                        Err(err) => vec![task_context.error(err.to_string())?.upcast()],
+                    };
+
+                    callback.call(&mut task_context, this, callback_arguments)?;
+
+                    Ok(())
+                });
+            })
+            .or_else(|err| cx.throw_error(err.to_string()))?;
+
+        Ok(cx.undefined())
+    }
+
     fn js_grove_db_start_transaction(mut cx: FunctionContext) -> JsResult<JsUndefined> {
         let js_callback = cx.argument::<JsFunction>(0)?.root(&mut cx);
 
