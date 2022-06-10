@@ -54,7 +54,10 @@ function createRewardShareDocumentFactory(
       },
     );
 
-    if (!fetchedDocumentsResult.isEmpty() && fetchedDocumentsResult.getValue().length > MAX_DOCUMENTS) {
+    if (
+      !fetchedDocumentsResult.isEmpty()
+      && fetchedDocumentsResult.getValue().length > MAX_DOCUMENTS
+    ) {
       return false;
     }
 
