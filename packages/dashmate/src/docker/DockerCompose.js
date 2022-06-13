@@ -413,7 +413,7 @@ class DockerCompose {
   }
 }
 
-DockerCompose.DOCKER_COMPOSE_MIN_VERSION = '1.25.0';
+DockerCompose.DOCKER_COMPOSE_MIN_VERSION = '2.0.0';
 DockerCompose.DOCKER_MIN_VERSION = '20.10.0';
 
 module.exports = DockerCompose;
