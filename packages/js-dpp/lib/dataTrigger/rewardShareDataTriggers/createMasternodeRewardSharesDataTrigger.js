@@ -2,6 +2,7 @@ const DataTriggerConditionError = require('../../errors/consensus/state/dataCont
 const DataTriggerExecutionResult = require('../DataTriggerExecutionResult');
 
 const MAX_PERCENTAGE = 10000;
+const MAX_DOCUMENTS = 16;
 
 /**
  * @param {DocumentCreateTransition} documentTransition
@@ -90,7 +91,17 @@ async function createMasternodeRewardSharesDataTrigger(
     },
     context.getStateTransitionExecutionContext(),
   );
-  // TODO: Not gonna work in case of more than 100 docs
+
+  if (documents.length === MAX_DOCUMENTS) {
+    const error = new DataTriggerConditionError(
+      context.getDataContract().getId().toBuffer(),
+      documentTransition.getId().toBuffer(),
+      `Reward shares cannot contain more than ${MAX_DOCUMENTS} identities`,
+    );
+    result.addError(error);
+
+    return result;
+  }
 
   if (isDryRun) {
     return result;

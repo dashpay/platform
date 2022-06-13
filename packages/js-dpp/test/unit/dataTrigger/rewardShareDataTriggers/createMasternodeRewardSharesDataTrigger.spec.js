@@ -172,4 +172,26 @@ describe('createMasternodeRewardSharesDataTrigger', () => {
       executionContext,
     );
   });
+
+  it('should return an error if there are 16 stored shares', async () => {
+    stateRepositoryMock.fetchDocuments.resolves(new Array(16).fill(0));
+
+    const result = await createRewardShareDataTrigger(
+      documentTransition, contextMock,
+    );
+
+    expect(result).to.be.an.instanceOf(DataTriggerExecutionResult);
+    expect(result.isOk()).to.be.false();
+
+    const [error] = result.getErrors();
+
+    expect(error).to.be.an.instanceOf(DataTriggerConditionError);
+    expect(error.message).to.equal('Reward shares cannot contain more than 16 identities');
+
+    expect(stateRepositoryMock.fetchSMLStore).to.be.calledOnce();
+    expect(stateRepositoryMock.fetchIdentity).to.be.calledOnceWithExactly(
+      documentTransition.data.payToId,
+      executionContext,
+    );
+  });
 });
