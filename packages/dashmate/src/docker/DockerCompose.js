@@ -109,14 +109,10 @@ class DockerCompose {
     await this.throwErrorIfNotInstalled();
 
     try {
-      if (process.env.DOCKER_COMPOSE_V2) {
-        await execAsync(
-          'docker compose up --no-build -d',
-          this.getOptions(envs),
-        );
-      } else {
-        await dockerCompose.upAll(this.getOptions(envs));
-      }
+      await execAsync(
+        'docker compose up --no-build -d',
+        this.getOptions(envs),
+      );
     } catch (e) {
       throw new DockerComposeError(e);
     }
