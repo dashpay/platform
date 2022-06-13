@@ -1,8 +1,9 @@
 use regex::Regex;
 use serde_json::Value as JsonValue;
 
-use crate::{consensus::ConsensusError, ProtocolError};
-pub fn validate_data_contract_patterns(raw_data_contract: &JsonValue) -> Result<(), ProtocolError> {
+use crate::{consensus::ConsensusError, validation::ValidationResult};
+pub fn validate_data_contract_patterns(raw_data_contract: &JsonValue) -> ValidationResult {
+    let mut result = ValidationResult::default();
     let mut values_queue: Vec<(&JsonValue, String)> = vec![(raw_data_contract, String::from(""))];
 
     while let Some((value, path)) = values_queue.pop() {
@@ -16,13 +17,13 @@ pub fn validate_data_contract_patterns(raw_data_contract: &JsonValue) -> Result<
                     if key == "pattern" {
                         let new_path = format!("{}.{}", path, key);
                         if let Some(pattern) = value.as_str() {
-                            Regex::new(pattern).map_err(|e| {
-                                ConsensusError::IncompatibleRe2PatternError {
+                            if let Err(err) = Regex::new(pattern) {
+                                result.add_error(ConsensusError::IncompatibleRe2PatternError {
                                     pattern: String::from(pattern),
                                     path: new_path,
-                                    message: e.to_string(),
-                                }
-                            })?;
+                                    message: err.to_string(),
+                                });
+                            }
                         }
                     }
                 }
@@ -38,7 +39,7 @@ pub fn validate_data_contract_patterns(raw_data_contract: &JsonValue) -> Result<
             _ => {}
         };
     }
-    Ok(())
+    result
 }
 
 #[cfg(test)]
@@ -69,7 +70,7 @@ mod test {
               }
         );
 
-        validate_data_contract_patterns(&schema).expect("no errors should be returned");
+        assert!(validate_data_contract_patterns(&schema).is_valid())
     }
 
     #[test]
@@ -87,13 +88,8 @@ mod test {
             "additionalProperties": false,
 
         });
-        let result =
-            validate_data_contract_patterns(&schema).expect_err("the error should be returned");
-
-        let consensus_error = match result {
-            ProtocolError::AbstractConsensusError(err) => *err,
-            err => panic!("not a consensus error: {}", err),
-        };
+        let result = validate_data_contract_patterns(&schema);
+        let consensus_error = result.errors.get(0).expect("the error should be returned");
 
         assert!(
             matches!(consensus_error, ConsensusError::IncompatibleRe2PatternError {pattern, path, ..}
@@ -107,7 +103,7 @@ mod test {
     #[test]
     fn should_be_valid_complex_for_complex_schema() {
         let schema = get_document_schema();
-        validate_data_contract_patterns(&schema).expect("no errors should be returned");
+        assert!(validate_data_contract_patterns(&schema).is_valid())
     }
 
     #[test]
@@ -116,15 +112,8 @@ mod test {
         schema["properties"]["arrayOfObject"]["items"]["properties"]["simple"]["pattern"] =
             json!("^((?!-|_)[a-zA-Z0-9-_]{0,62}[a-zA-Z0-9])$");
 
-        let result =
-            validate_data_contract_patterns(&schema).expect_err("the error should be returned");
-
-        let consensus_error = match result {
-            ProtocolError::AbstractConsensusError(err) => *err,
-            err => panic!("not a consensus error: {}", err),
-        };
-
-        println!("the error is {}", consensus_error);
+        let result = validate_data_contract_patterns(&schema);
+        let consensus_error = result.errors.get(0).expect("the error should be returned");
 
         assert!(
             matches!(consensus_error, ConsensusError::IncompatibleRe2PatternError {pattern, path, ..}
@@ -141,15 +130,8 @@ mod test {
         schema["properties"]["arrayOfObjects"]["items"][0]["properties"]["simple"]["pattern"] =
             json!("^((?!-|_)[a-zA-Z0-9-_]{0,62}[a-zA-Z0-9])$");
 
-        let result =
-            validate_data_contract_patterns(&schema).expect_err("the error should be returned");
-
-        let consensus_error = match result {
-            ProtocolError::AbstractConsensusError(err) => *err,
-            err => panic!("not a consensus error: {}", err),
-        };
-
-        println!("the error is {}", consensus_error);
+        let result = validate_data_contract_patterns(&schema);
+        let consensus_error = result.errors.get(0).expect("the error should be returned");
 
         assert!(
             matches!(consensus_error, ConsensusError::IncompatibleRe2PatternError {pattern, path, ..}
