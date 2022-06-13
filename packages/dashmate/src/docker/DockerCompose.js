@@ -382,21 +382,15 @@ class DockerCompose {
     }
 
     // Check docker compose
-    if (process.env.DOCKER_COMPOSE_V2) {
-      try {
-        await execAsync('docker compose');
-      } catch (e) {
-        throw new Error('Docker Compose V2 is not installed');
-      }
-    } else {
-      if (!hasbin.sync('docker-compose')) {
-        throw new Error('Docker Compose is not installed');
-      }
+    try {
+      await execAsync('docker compose');
+    } catch (e) {
+      throw new Error('Docker Compose V2 is not available in your system');
+    }
 
-      const { out: version } = await dockerCompose.version();
-      if (semver.lt(version.trim(), DockerCompose.DOCKER_COMPOSE_MIN_VERSION)) {
-        throw new Error(`Update Docker Compose to version ${DockerCompose.DOCKER_COMPOSE_MIN_VERSION} or higher`);
-      }
+    const { out: version } = await dockerCompose.version();
+    if (semver.lt(version.trim(), DockerCompose.DOCKER_COMPOSE_MIN_VERSION)) {
+      throw new Error(`Update Docker Compose to version ${DockerCompose.DOCKER_COMPOSE_MIN_VERSION} or higher`);
     }
   }
 
