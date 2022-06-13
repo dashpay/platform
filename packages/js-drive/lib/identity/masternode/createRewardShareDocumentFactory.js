@@ -32,33 +32,25 @@ function createRewardShareDocumentFactory(
       {
         where: [
           ['$ownerId', '==', masternodeIdentifier.toBuffer()],
-          ['payToId', '==', operatorIdentifier.toBuffer()],
         ],
         useTransaction: true,
       },
     );
 
-    // Reward share for this operator is already exists
+    // Do not create a share if it's exist already
+    // or max shares limit is reached
     if (!documentsResult.isEmpty()) {
-      return false;
-    }
+      if (documentsResult.getValue().length > MAX_DOCUMENTS) {
+        return false;
+      }
 
-    const fetchedDocumentsResult = await documentRepository.find(
-      dataContract,
-      'rewardShare',
-      {
-        where: [
-          ['$ownerId', '==', masternodeIdentifier],
-        ],
-        useTransaction: true,
-      },
-    );
+      const operatorShare = documentsResult.getValue().find((shareDocument) => (
+        shareDocument.get('payToId').equals(operatorIdentifier)
+      ));
 
-    if (
-      !fetchedDocumentsResult.isEmpty()
-      && fetchedDocumentsResult.getValue().length > MAX_DOCUMENTS
-    ) {
-      return false;
+      if (operatorShare) {
+        return false;
+      }
     }
 
     const rewardShareDocument = dpp.document.create(
