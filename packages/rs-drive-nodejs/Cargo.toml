@@ -17,6 +17,6 @@ git = "https://github.com/dashevo/grovedb"
 branch = "develop"
 
 [dependencies.neon]
-version = "0.9"
+version = "0.10.1"
 default-features = false
 features = ["napi-6", "event-queue-api", "try-catch-api"]
