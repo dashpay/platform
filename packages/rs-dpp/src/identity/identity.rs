@@ -12,6 +12,7 @@ use crate::{
     metadata::Metadata,
     util::{hash, serializer},
 };
+use crate::util::vec::encode_hex;
 
 // TODO implement!
 type InstantAssetLockProof = String;
@@ -155,10 +156,17 @@ impl Identity {
     pub fn from_buffer(b: impl AsRef<[u8]>) -> Result<Identity, ProtocolError> {
         let (protocol_bytes, identity_bytes) = b.as_ref().split_at(4);
 
+        println!("{:?}", encode_hex(&identity_bytes));
+        let el_keko: Identity = ciborium::de::from_reader(identity_bytes)
+            .map_err(|e| ProtocolError::EncodingError(format!("{}", e)))?;
+        println!("{:?}", el_keko);
+
+        //serde_cbor::from_reader(identity_bytes);
         let mut json_value: JsonValue = ciborium::de::from_reader(identity_bytes)
             .map_err(|e| ProtocolError::EncodingError(format!("{}", e)))?;
 
         let protocol_version = deserializer::get_protocol_version(protocol_bytes)?;
+
         match json_value {
             JsonValue::Object(ref mut m) => {
                 m.insert(
@@ -175,6 +183,7 @@ impl Identity {
         json_value.replace_identifier_paths(IDENTIFIER_FIELDS, ReplaceWith::Base58)?;
 
         let identity: Identity = serde_json::from_value(json_value)?;
+
         Ok(identity)
     }
 
