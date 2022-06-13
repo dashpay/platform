@@ -12,6 +12,9 @@ pub enum BasicError {
     #[error("Data Contract version must be {expected_version}, go {version}")]
     InvalidDataContractVersionError { expected_version: u32, version: u32 },
 
+    #[error("JSON Schema depth is greater than {0}")]
+    DataContractMaxDepthExceedError(usize),
+
     // Document
     #[error(
         "Data Contract {data_contract_id} doesn't define document with the type {document_type}"

@@ -71,6 +71,7 @@ impl ErrorWithCode for BasicError {
             Self::MissingDocumentTypeError { .. } => 1028,
             // Data contract
             Self::InvalidDataContractVersionError { .. } => 4013,
+            Self::DataContractMaxDepthExceedError { .. } => 1007,
         }
     }
 }
