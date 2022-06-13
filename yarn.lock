@@ -1758,7 +1758,7 @@ __metadata:
     localforage: ^1.10.0
     mocha: ^9.1.2
     net: ^1.0.2
-    nodeforage: ^1.1.1
+    nodeforage: ^1.1.2
     os-browserify: ^0.3.0
     path-browserify: ^1.0.1
     process: ^0.11.10
@@ -10865,16 +10865,16 @@ fsevents@~2.3.2:
   languageName: node
   linkType: hard
 
-"nodeforage@npm:^1.1.1":
-  version: 1.1.1
-  resolution: "nodeforage@npm:1.1.1"
+"nodeforage@npm:^1.1.2":
+  version: 1.1.2
+  resolution: "nodeforage@npm:1.1.2"
   dependencies:
     lodash.find: ^4.6.0
     lodash.ismatch: ^4.4.0
     lodash.merge: ^4.6.1
     proper-lockfile: ^3.2.0
     slocket: ^1.0.5
-  checksum: 0cb4e4aa853cb9cd81ec2c3aabb2a9032b68ec067cef0bc31b7f7b70522a0081983f730fecc9053d6911cb0114edc2d54201c296b5acf9ea85bf96cc016cbb22
+  checksum: a670ece8b5e486514bb859d3723d8998806a071f200315fc7457755617d37515ceba8c13b46d9aa644b3517271b561dc50b57a9325a5537cbb34bccdd418ded5
   languageName: node
   linkType: hard
 
