@@ -1,6 +1,8 @@
 const { hash } = require('@dashevo/dpp/lib/util/hash');
 const Identifier = require('@dashevo/dpp/lib/identifier/Identifier');
 
+const MAX_DOCUMENTS = 16;
+
 /**
  * @param {DashPlatformProtocol} dpp
  * @param {DocumentRepository} documentRepository
@@ -30,15 +32,25 @@ function createRewardShareDocumentFactory(
       {
         where: [
           ['$ownerId', '==', masternodeIdentifier.toBuffer()],
-          ['payToId', '==', operatorIdentifier.toBuffer()],
         ],
         useTransaction: true,
       },
     );
 
-    // Reward share for this operator is already exists
+    // Do not create a share if it's exist already
+    // or max shares limit is reached
     if (!documentsResult.isEmpty()) {
-      return false;
+      if (documentsResult.getValue().length > MAX_DOCUMENTS) {
+        return false;
+      }
+
+      const operatorShare = documentsResult.getValue().find((shareDocument) => (
+        shareDocument.get('payToId').equals(operatorIdentifier)
+      ));
+
+      if (operatorShare) {
+        return false;
+      }
     }
 
     const rewardShareDocument = dpp.document.create(

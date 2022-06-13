@@ -3213,10 +3213,6 @@ describe('DocumentRepository', function main() {
     });
 
     it('should not delete Document on dry run', async () => {
-      console.log(
-        JSON.stringify(document.toObject(), null, 2),
-      );
-
       const result = await documentRepository.delete(
         dataContract,
         document.getType(),

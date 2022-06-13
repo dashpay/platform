@@ -10,34 +10,19 @@ function handleRemovedMasternodeFactory(
    */
   async function handleRemovedMasternode(masternodeIdentifier, dataContract) {
     //  Delete documents belongs to masternode identity (ownerId) from rewards contract
+    // since max amount is 16, we can fetch all of them in one request
+    const fetchedDocumentsResult = await documentRepository.find(
+      dataContract,
+      'rewardShare',
+      {
+        where: [
+          ['$ownerId', '==', masternodeIdentifier],
+        ],
+        useTransaction: true,
+      },
+    );
 
-    let documentsToDelete = [];
-
-    let startAfter;
-    let fetchedDocuments;
-    const limit = 100;
-
-    do {
-      const fetchedDocumentsResult = await documentRepository.find(
-        dataContract,
-        'rewardShare',
-        {
-          limit,
-          startAfter,
-          where: [
-            ['$ownerId', '==', masternodeIdentifier],
-          ],
-          useTransaction: true,
-        },
-      );
-
-      fetchedDocuments = fetchedDocumentsResult.getValue();
-
-      documentsToDelete = documentsToDelete.concat(fetchedDocuments);
-
-      startAfter = fetchedDocuments.length > 0
-        ? fetchedDocuments[fetchedDocuments.length - 1].id : undefined;
-    } while (fetchedDocuments.length === limit);
+    const documentsToDelete = fetchedDocumentsResult.getValue();
 
     for (const document of documentsToDelete) {
       await documentRepository.delete(
