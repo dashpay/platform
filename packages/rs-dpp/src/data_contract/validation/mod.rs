@@ -1,1 +1,2 @@
+pub mod validate_data_contract_max_depth;
 pub mod validate_data_contract_patterns;
