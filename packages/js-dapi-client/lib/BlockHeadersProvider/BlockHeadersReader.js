@@ -1,4 +1,5 @@
 const { EventEmitter } = require('events');
+const { BlockHeader } = require('@dashevo/dashcore-lib');
 
 const EVENTS = {
   BLOCK_HEADERS: 'BLOCK_HEADERS',
@@ -100,8 +101,9 @@ class BlockHeadersReader extends EventEmitter {
     // TODO: test
     console.log('Num streams', numStreams, actualBatchSize);
     for (let batchIndex = 0; batchIndex < numStreams; batchIndex += 1) {
-      const startingHeight = (batchIndex * actualBatchSize) + 1;
+      const startingHeight = (batchIndex * actualBatchSize) + fromBlockHeight;
       const count = Math.min(actualBatchSize, toBlockHeight - startingHeight + 1);
+      console.log('Spawn stream', startingHeight, count);
 
       const subscribeWithRetries = this.subscribeToHistoricalBatch(this.maxRetries);
       this.streamsStats[startingHeight] = 0;
@@ -131,6 +133,8 @@ class BlockHeadersReader extends EventEmitter {
    * @returns {Promise<Stream>}
    */
   async subscribeToNew(fromBlockHeight) {
+    let headersObtained = 0;
+
     const stream = await this.coreMethods.subscribeToBlockHeadersWithChainLocks({
       fromBlockHeight,
     });
@@ -148,7 +152,13 @@ class BlockHeadersReader extends EventEmitter {
           stream.destroy(e);
         };
 
-        this.emit(EVENTS.BLOCK_HEADERS, blockHeaders.getHeadersList(), rejectHeaders);
+        const headers = blockHeaders.getHeadersList()
+          .map((header) => new BlockHeader(Buffer.from(header)));
+
+        const headHeight = fromBlockHeight + headersObtained;
+        headersObtained += headers.length;
+
+        this.emit(EVENTS.BLOCK_HEADERS, headers, headHeight, rejectHeaders);
       }
     });
 
@@ -189,7 +199,8 @@ class BlockHeadersReader extends EventEmitter {
         const blockHeaders = data.getBlockHeaders();
 
         if (blockHeaders) {
-          const headersList = blockHeaders.getHeadersList();
+          const headersList = blockHeaders.getHeadersList()
+            .map((header) => new BlockHeader(Buffer.from(header)));
 
           let rejected = false;
 
@@ -205,7 +216,8 @@ class BlockHeadersReader extends EventEmitter {
           };
           this.streamsStats[fromBlockHeight] += headersList.length;
           // console.log('Stream', fromBlockHeight, 'total provided', totalHeadersProvided);
-          this.emit(EVENTS.BLOCK_HEADERS, headersList, rejectHeaders);
+          const headHeight = fromBlockHeight + headersObtained;
+          this.emit(EVENTS.BLOCK_HEADERS, headersList, headHeight, rejectHeaders);
 
           if (!rejected) {
             headersObtained += headersList.length;

@@ -63,17 +63,23 @@ class BlockHeadersSyncWorker extends Worker {
 
       let lastChainLength = 0;
       blockHeadersProvider
-        .on(BlockHeadersProvider.EVENTS.CHAIN_UPDATED, (longestChain, totalOrphans) => {
+        .on(BlockHeadersProvider.EVENTS.CHAIN_UPDATED, (longestChain, orphanChunks) => {
+          const totalOrphans = orphanChunks
+            .reduce((acc, chunks) => acc + chunks.length, 0);
+
+          // TODO: optimize this duplicated linkage
+          this.chainSyncMediator.blockHeights = blockHeadersProvider.headersHeights;
+
           for (let i = lastChainLength; i < longestChain.length; i += 1) {
             const header = longestChain[i];
-            this.chainSyncMediator.blockHeights[header.hash] = startFrom + i;
+            // this.chainSyncMediator.blockHeights[header.hash] = startFrom + i;
             // TODO: pay attention. Transferred from `handleTransactionFromStream`
             this.importBlockHeader(header);
           }
 
           if (lastChainLength < longestChain.length) {
             const heights = Object.values(this.chainSyncMediator.blockHeights);
-            console.log('Update heights!', heights[0], heights[heights.length - 1], 'total', heights.length);
+            console.log('Update heights!', heights[0], heights[longestChain.length - 1], 'total', longestChain.length);
           }
 
           lastChainLength = longestChain.length;

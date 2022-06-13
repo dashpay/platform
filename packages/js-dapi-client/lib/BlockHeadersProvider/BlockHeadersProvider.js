@@ -1,5 +1,5 @@
 const EventEmitter = require('events');
-const { SpvChain } = require('../../../../../dash-spv/index');
+const { SpvChain } = require('@dashevo/dash-spv');
 
 const BlockHeadersReader = require('./BlockHeadersReader');
 
@@ -40,6 +40,8 @@ class BlockHeadersProvider extends EventEmitter {
     // TODO: make sure it's okay passing 0 parameter here
     this.spvChain = new SpvChain(this.options.network, 1);
     this.started = false;
+    // TODO: write tests for this
+    this.headersHeights = {};
   }
 
   /**
@@ -107,24 +109,29 @@ class BlockHeadersProvider extends EventEmitter {
         });
     });
 
-    this.blockHeadersReader.on(BlockHeadersReader.EVENTS.BLOCK_HEADERS, (rawHeaders, reject) => {
-      try {
-        const headersBuffers = rawHeaders.map((header) => Buffer.from(header));
-        batches.push(headersBuffers.map((buffer) => buffer.toString('hex')));
-        // const headers = rawHeaders.map((header) => new BlockHeader(Buffer.from(header)));
-        this.spvChain.addHeaders(headersBuffers);
-        const totalOrphans = this.spvChain.orphanChunks
-          .reduce((acc, chunks) => acc + chunks.length, 0);
-        // console.log('Total orphans', totalOrphans);
-        this.emit(EVENTS.CHAIN_UPDATED, this.spvChain.allHeaders, totalOrphans);
-      } catch (e) {
-        if (e.message === 'Some headers are invalid') {
-          reject(e);
-        } else {
-          this.emit(EVENTS.ERROR, e);
+    this.blockHeadersReader.on(BlockHeadersReader.EVENTS.BLOCK_HEADERS,
+      (headers, headHeight, reject) => {
+        try {
+        // const headersBuffers = rawHeaders.map((header) => Buffer.from(header));
+          batches.push(headers.map((header) => header.toString('hex')));
+          // const headers = rawHeaders.map((header) => new BlockHeader(Buffer.from(header)));
+          this.spvChain.addHeaders(headers);
+
+          headers.forEach((header, index) => {
+            this.headersHeights[header.hash] = headHeight + index;
+          });
+          console.log('Obtained', headers.length, Object.keys(this.headersHeights).length);
+
+          // console.log('Total orphans', totalOrphans);
+          this.emit(EVENTS.CHAIN_UPDATED, this.spvChain.allHeaders, this.spvChain.orphanChunks);
+        } catch (e) {
+          if (e.message === 'Some headers are invalid') {
+            reject(e);
+          } else {
+            this.emit(EVENTS.ERROR, e);
+          }
         }
-      }
-    });
+      });
 
     await this.blockHeadersReader.readHistorical(
       fromBlockHeight,

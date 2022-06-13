@@ -7,6 +7,7 @@ module.exports = async function subscribeToBlocks() {
   const executor = async () => {
     const chainHash = await this.getBestBlockHash();
     if (!self.state.block || self.state.block.hash !== chainHash) {
+      // Handle chain that is not completely synced, and retry in cas Block Not Found
       self.state.block = await self.getBlockByHash(await self.getBestBlockHash());
       self.announce(EVENTS.BLOCK, self.state.block);
       if (self.state.block && self.state.block.transactions[0].extraPayload.height) {
