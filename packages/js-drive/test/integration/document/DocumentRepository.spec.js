@@ -499,7 +499,7 @@ const validQueries = [
       ['d', 'in', [1, 2]],
     ],
     orderBy: [
-      ['d', 'asc'],
+      ['d', 'desc'],
       ['e', 'asc'],
     ],
   },
