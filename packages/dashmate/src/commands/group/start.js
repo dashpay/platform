@@ -19,6 +19,7 @@ class GroupStartCommand extends GroupBaseCommand {
     args,
     {
       'wait-for-readiness': waitForReadiness,
+      force: isForce,
       verbose: isVerbose,
     },
     dockerCompose,
@@ -49,6 +50,7 @@ class GroupStartCommand extends GroupBaseCommand {
     try {
       await tasks.run({
         waitForReadiness,
+        isForce,
         isVerbose,
       });
     } catch (e) {
@@ -62,6 +64,11 @@ GroupStartCommand.description = 'Start group nodes';
 GroupStartCommand.flags = {
   ...GroupBaseCommand.flags,
   'wait-for-readiness': Flags.boolean({ char: 'w', description: 'wait for nodes to be ready', default: false }),
+  force: Flags.boolean({
+    char: 'f',
+    description: 'force start even if some node is started',
+    default: false,
+  }),
 };
 
 module.exports = GroupStartCommand;
