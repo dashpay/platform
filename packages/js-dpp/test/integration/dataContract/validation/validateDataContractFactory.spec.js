@@ -1478,7 +1478,7 @@ describe('validateDataContractFactory', function main() {
           name: 'index_1',
           properties: [
             { $id: 'asc' },
-            { firstName: 'desc' },
+            { firstName: 'asc' },
           ],
         };
 
