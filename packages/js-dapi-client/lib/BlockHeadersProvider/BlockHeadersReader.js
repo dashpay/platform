@@ -1,5 +1,6 @@
 const { EventEmitter } = require('events');
 const { BlockHeader } = require('@dashevo/dashcore-lib');
+const GrpcErrorCodes = require('@dashevo/grpc-common/lib/server/error/GrpcErrorCodes');
 
 const EVENTS = {
   BLOCK_HEADERS: 'BLOCK_HEADERS',
@@ -38,6 +39,14 @@ class BlockHeadersReader extends EventEmitter {
      * @type {*[]}
      */
     this.historicalStreams = [];
+
+    /**
+     * Holds reference to the continuous sync stream
+     *
+     * @type {Stream}
+     */
+    this.continuousSyncStream = null;
+
     // TODO: test - remove
     this.streamsStats = {
 
@@ -122,8 +131,16 @@ class BlockHeadersReader extends EventEmitter {
     this.removeAllListeners(COMMANDS.HANDLE_STREAM_RETRY);
     this.removeAllListeners(COMMANDS.HANDLE_STREAM_ERROR);
     this.removeAllListeners(COMMANDS.HANDLE_FINISHED_STREAM);
-    this.historicalStreams.forEach((stream) => stream.destroy());
+    this.historicalStreams.forEach((stream) => stream.cancel());
     this.historicalStreams = [];
+  }
+
+  stopContinuousSync() {
+    if (this.continuousSyncStream) {
+      this.continuousSyncStream.cancel();
+      this.continuousSyncStream = null;
+      // throw new Error('Continuous sync has not been started');
+    }
   }
 
   /**
@@ -163,9 +180,14 @@ class BlockHeadersReader extends EventEmitter {
     });
 
     stream.on('error', (e) => {
+      if (e.code === GrpcErrorCodes.CANCELLED) {
+        console.log('Block headers continuous stream canceled on client');
+        return;
+      }
+
       this.emit(EVENTS.ERROR, e);
     });
-
+    this.continuousSyncStream = stream;
     return stream;
   }
 
@@ -226,6 +248,11 @@ class BlockHeadersReader extends EventEmitter {
       });
 
       stream.on('error', (streamError) => {
+        if (streamError.code === GrpcErrorCodes.CANCELLED) {
+          console.log('Block headers historical stream canceled on client');
+          return;
+        }
+
         console.log('Stream error', streamError, currentRetries, maxRetries);
         if (currentRetries < maxRetries) {
           const newFromBlockHeight = fromBlockHeight + headersObtained;

@@ -140,6 +140,21 @@ class BlockHeadersProvider extends EventEmitter {
 
     this.started = true;
   }
+
+  // TODO: write tests
+  async stop() {
+    if (this.started) {
+      this.blockHeadersReader.stopReadingHistorical();
+      this.blockHeadersReader.stopContinuousSync();
+
+      this.blockHeadersReader.removeAllListeners(BlockHeadersReader.EVENTS.ERROR);
+      this.blockHeadersReader.removeAllListeners(BlockHeadersReader.EVENTS.BLOCK_HEADERS);
+      this.blockHeadersReader
+        .removeAllListeners(BlockHeadersReader.EVENTS.HISTORICAL_DATA_OBTAINED);
+
+      this.started = false;
+    }
+  }
 }
 
 BlockHeadersProvider.EVENTS = EVENTS;

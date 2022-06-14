@@ -132,6 +132,10 @@ class BlockHeadersSyncWorker extends Worker {
   }
 
   async onStop() {
+    // TODO: handle cancellation of the plugins chain
+    // in case we are in the phase of plugins preparation
+    const { blockHeadersProvider } = this.transport.client;
+    await blockHeadersProvider.stop();
     console.log('Stop worker');
   }
 }
