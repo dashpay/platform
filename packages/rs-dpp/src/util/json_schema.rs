@@ -10,6 +10,8 @@ pub trait JsonSchemaExt {
     fn is_type_of_array(&self) -> bool;
     /// returns true if json value contains property `byteArray` and it equals true
     fn is_type_of_byte_array(&self) -> bool;
+    /// returns true if json value contains property 'type`, and it equals 'string'
+    fn is_type_of_string(&self) -> bool;
     /// returns the properties of Json Schema object
     fn get_schema_properties(&self) -> Result<&JsonValue, anyhow::Error>;
     /// returns the required fields of Json Schema object
@@ -35,6 +37,15 @@ impl JsonSchemaExt for JsonValue {
             bail!("the 'required' property is not array");
         }
         bail!("the json value is not a map");
+    }
+
+    fn is_type_of_string(&self) -> bool {
+        if let JsonValue::Object(ref map) = self {
+            if let Some(JsonValue::String(schema_type)) = map.get("type") {
+                return schema_type == "string";
+            }
+        }
+        false
     }
 
     fn is_type_of_object(&self) -> bool {
