@@ -9,7 +9,6 @@ Usage: test <seed> [options]
   <seed> can be IP or IP:port
 
   Options:
-              --npm-install=pkg                             - install npm package before running the suite
   -s=a,b,c    --scope=a,b,c                                 - test scope to run
   -k=key      --faucet-key=key                              - faucet private key string
   -n=network  --network=network                             - use regtest, devnet or testnet
@@ -47,9 +46,6 @@ case ${i} in
     -h|--help)
         echo "$cmd_usage"
         exit 0
-    ;;
-    --npm-install=*)
-    npm_package_to_install="${i#*=}"
     ;;
     -s=*|--scope=*)
     scope="${i#*=}"
@@ -102,12 +98,6 @@ if [ -n "$timeout" ] && ! [[ $timeout =~ ^[0-9]+$ ]]
 then
   echo "Timeout must be an integer"
   exit 1
-fi
-
-if [ -n "$npm_package_to_install" ]
-then
-  npm install "$npm_package_to_install"
-  npm dedupe
 fi
 
 if [ -n "$scope" ]
@@ -209,7 +199,7 @@ if [ -n "$GITHUB_ACTIONS" ]
 then
   cmd="${cmd} NODE_ENV=test node_modules/.bin/mocha -b ${scope_dirs}"
 else
-  cmd="${cmd} NODE_ENV=test mocha -b ${scope_dirs}"
+  cmd="${cmd} NODE_ENV=test yarn mocha -b ${scope_dirs}"
 fi
 
 if [ -n "$timeout" ]

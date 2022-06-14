@@ -41,7 +41,6 @@ Usage: test <seed> [options]
   <seed> can be IP or IP:port
 
   Options:
-              --npm-install=pkg                             - install npm package before running the suite
   -s=a,b,c    --scope=a,b,c                                 - test scope to run
   -k=key      --faucet-key=key                              - faucet private key string
   -n=network  --network=network                             - use regtest, devnet or testnet
@@ -81,7 +80,6 @@ Usage: test <seed> [options]
   <seed> can be IP or IP:port
 
   Options:
-              --npm-install=pkg                             - install npm package before running the suite
   -s=a,b,c    --scope=a,b,c                                 - test scope to run
   -k=key      --faucet-key=key                              - faucet private key string
   -n=network  --network=network                             - use regtest, devnet or testnet
