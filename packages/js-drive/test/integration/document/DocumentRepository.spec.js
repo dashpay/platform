@@ -241,7 +241,7 @@ const queryDocumentSchema = {
     },
     indices: [
       {
-        properties: [{ a: 'asc' }, { b: 'desc' }],
+        properties: [{ a: 'asc' }, { b: 'asc' }],
       },
     ],
   },
@@ -365,10 +365,10 @@ const queryDocumentSchema = {
         name: 'index1',
         properties: [
           { a: 'asc' },
-          { b: 'desc' },
-          { c: 'desc' },
-          { d: 'desc' },
-          { e: 'desc' },
+          { b: 'asc' },
+          { c: 'asc' },
+          { d: 'asc' },
+          { e: 'asc' },
         ],
         unique: true,
       },
@@ -779,7 +779,7 @@ describe('DocumentRepository', function main() {
       // },
       {
         name: 'index10',
-        properties: [{ $ownerId: 'desc' }],
+        properties: [{ $ownerId: 'asc' }],
       },
     ]);
 
