@@ -7,7 +7,7 @@
         "name": "enableAtHeight",
         "properties": [
           {
-            "enableAtHeight": "desc"
+            "enableAtHeight": "asc"
           }
         ],
         "unique": true

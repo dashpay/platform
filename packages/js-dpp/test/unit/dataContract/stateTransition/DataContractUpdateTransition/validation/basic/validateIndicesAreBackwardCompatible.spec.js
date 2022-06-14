@@ -21,14 +21,14 @@ describe('validateIndicesAreBackwardCompatible', () => {
       name: 'index42',
       unique: false,
       properties: [
-        { otherName: 'desc' },
+        { otherName: 'asc' },
       ],
     });
 
     newDataContract.getDocumentSchema('indexedDocument').indices.push({
       name: 'index42',
       properties: [
-        { otherName: 'desc' },
+        { otherName: 'asc' },
       ],
     });
 
@@ -37,7 +37,7 @@ describe('validateIndicesAreBackwardCompatible', () => {
   });
 
   it('should return invalid result if some of unique indices have changed', async () => {
-    newDocumentsSchema.indexedDocument.indices[0].properties[0].$ownerId = 'desc';
+    newDocumentsSchema.indexedDocument.indices[0].properties[0].$ownerId = 'asc';
 
     const result = validateIndicesAreBackwardCompatible(oldDocumentsSchema, newDocumentsSchema);
 
@@ -50,7 +50,7 @@ describe('validateIndicesAreBackwardCompatible', () => {
   });
 
   it('should return invalid result if non-unique index update failed due to changed old properties', async () => {
-    newDocumentsSchema.indexedDocument.indices[2].properties[0].$id = 'desc';
+    newDocumentsSchema.indexedDocument.indices[2].properties[0].$id = 'asc';
 
     const result = validateIndicesAreBackwardCompatible(oldDocumentsSchema, newDocumentsSchema);
 
@@ -79,7 +79,7 @@ describe('validateIndicesAreBackwardCompatible', () => {
     newDocumentsSchema.indexedDocument.indices.push({
       name: 'index_other',
       properties: [
-        { firstName: 'desc' },
+        { firstName: 'asc' },
         { $ownerId: 'asc' },
       ],
     });
@@ -98,7 +98,7 @@ describe('validateIndicesAreBackwardCompatible', () => {
     newDocumentsSchema.indexedDocument.indices.push({
       name: 'index_other',
       properties: [
-        { otherName: 'desc' },
+        { otherName: 'asc' },
       ],
       unique: true,
     });

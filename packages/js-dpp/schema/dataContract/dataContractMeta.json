@@ -385,7 +385,7 @@
                         },
                         "additionalProperties": {
                           "type": "string",
-                          "enum": ["asc", "desc"]
+                          "enum": ["asc"]
                         },
                         "minProperties": 1,
                         "maxProperties": 1

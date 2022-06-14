@@ -241,7 +241,7 @@ const queryDocumentSchema = {
     },
     indices: [
       {
-        properties: [{ a: 'asc' }, { b: 'desc' }],
+        properties: [{ a: 'asc' }, { b: 'asc' }],
       },
     ],
   },
@@ -365,10 +365,10 @@ const queryDocumentSchema = {
         name: 'index1',
         properties: [
           { a: 'asc' },
-          { b: 'desc' },
-          { c: 'desc' },
-          { d: 'desc' },
-          { e: 'desc' },
+          { b: 'asc' },
+          { c: 'asc' },
+          { d: 'asc' },
+          { e: 'asc' },
         ],
         unique: true,
       },
@@ -499,7 +499,7 @@ const validQueries = [
       ['d', 'in', [1, 2]],
     ],
     orderBy: [
-      ['d', 'desc'],
+      ['d', 'asc'],
       ['e', 'asc'],
     ],
   },
@@ -512,7 +512,7 @@ const validQueries = [
       ['e', '>', 3],
     ],
     orderBy: [
-      ['d', 'desc'],
+      ['d', 'asc'],
       ['e', 'asc'],
     ],
   },
@@ -552,7 +552,7 @@ const invalidQueries = [
         ['c', 'in', [1, 2]],
       ],
       orderBy: [
-        ['c', 'desc'],
+        ['c', 'asc'],
       ],
     },
     error: 'where clause on non indexed property error: query must be for valid indexes',
@@ -565,7 +565,7 @@ const invalidQueries = [
         ['b', 'in', [1, 2]],
       ],
       orderBy: [
-        ['b', 'desc'],
+        ['b', 'asc'],
       ],
     },
     error: 'duplicate non groupable clause on same field error: in clause has same field as an equality clause',
@@ -600,7 +600,7 @@ const invalidQueries = [
       ],
       orderBy: [
         ['c', 'asc'],
-        ['d', 'desc'],
+        ['d', 'asc'],
       ],
     },
     error: 'multiple range clauses error: all ranges must be on same field',
@@ -779,7 +779,7 @@ describe('DocumentRepository', function main() {
       // },
       {
         name: 'index10',
-        properties: [{ $ownerId: 'desc' }],
+        properties: [{ $ownerId: 'asc' }],
       },
     ]);
 
@@ -2773,7 +2773,7 @@ describe('DocumentRepository', function main() {
               ['order', '>=', 0],
             ],
             orderBy: [
-              ['order', 'desc'],
+              ['order', 'asc'],
             ],
           };
 
@@ -2835,7 +2835,7 @@ describe('DocumentRepository', function main() {
               ['$id', 'in', createdIds],
             ],
             orderBy: [
-              ['$id', 'desc'],
+              ['$id', 'asc'],
             ],
           };
 
@@ -2872,7 +2872,7 @@ describe('DocumentRepository', function main() {
             where: [
               ['a', '>', 1],
             ],
-            orderBy: [['a', 'asc'], ['b', 'desc']],
+            orderBy: [['a', 'asc'], ['b', 'asc']],
           });
 
           expect(result).to.be.an.instanceOf(StorageResult);
@@ -2939,7 +2939,7 @@ describe('DocumentRepository', function main() {
               where: [
                 ['b', '>', 1],
               ],
-              orderBy: [['b', 'desc'], ['e', 'asc']],
+              orderBy: [['b', 'asc'], ['e', 'asc']],
             });
 
             expect.fail('should throw an error');
@@ -2955,7 +2955,7 @@ describe('DocumentRepository', function main() {
               where: [
                 ['b', '>', 1],
               ],
-              orderBy: [['b', 'desc'], ['d', 'asc']],
+              orderBy: [['b', 'asc'], ['d', 'asc']],
             });
 
             expect.fail('should throw an error');
@@ -3034,7 +3034,7 @@ describe('DocumentRepository', function main() {
               where: [
                 ['a', '>', 1],
               ],
-              orderBy: [['a', 'asc', 'desc']],
+              orderBy: [['a', 'asc', 'asc']],
             });
 
             expect.fail('should throw an error');

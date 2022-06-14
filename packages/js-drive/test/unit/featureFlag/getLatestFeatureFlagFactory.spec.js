@@ -37,7 +37,7 @@ describe('getLatestFeatureFlagFactory', () => {
         ['enableAtHeight', '<=', 42],
       ],
       orderBy: [
-        ['enableAtHeight', 'desc'],
+        ['enableAtHeight', 'asc'],
       ],
       limit: 1,
       useTransaction: false,
