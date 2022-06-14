@@ -1,6 +1,6 @@
 use crate::error::fee::FeeError;
 use crate::error::Error;
-use crate::fee::op::{BaseOp, DeleteOperation, InsertOperation, QueryOperation};
+use crate::fee::op::{BaseOp, DeleteOperation, DriveOperation, QueryOperation};
 use enum_map::EnumMap;
 
 pub mod op;
@@ -8,8 +8,7 @@ pub mod op;
 pub fn calculate_fee(
     base_operations: Option<EnumMap<BaseOp, u64>>,
     query_operations: Option<Vec<QueryOperation>>,
-    insert_operations: Option<Vec<InsertOperation>>,
-    delete_operations: Option<Vec<DeleteOperation>>,
+    drive_operations: Option<Vec<DriveOperation>>,
 ) -> Result<(i64, u64), Error> {
     let mut storage_cost = 0i64;
     let mut cpu_cost = 0u64;
@@ -34,29 +33,14 @@ pub fn calculate_fee(
         }
     }
 
-    if let Some(insert_operations) = insert_operations {
-        for insert_operation in insert_operations {
-            match cpu_cost.checked_add(insert_operation.ephemeral_cost()) {
+    if let Some(drive_operations) = drive_operations {
+        for drive_operation in drive_operations {
+            match cpu_cost.checked_add(drive_operation.ephemeral_cost()) {
                 None => return Err(Error::Fee(FeeError::Overflow("overflow error"))),
                 Some(value) => cpu_cost = value,
             }
 
-            match storage_cost.checked_add(insert_operation.storage_cost()) {
-                None => return Err(Error::Fee(FeeError::Overflow("overflow error"))),
-                Some(value) => storage_cost = value,
-            }
-        }
-    }
-
-    if let Some(delete_operations) = delete_operations {
-        for delete_operation in delete_operations {
-            match cpu_cost.checked_add(delete_operation.ephemeral_cost()) {
-                None => return Err(Error::Fee(FeeError::Overflow("overflow error"))),
-                Some(value) => cpu_cost = value,
-            }
-
-            // the storage cost will always be negative on a deletion
-            match storage_cost.checked_add(delete_operation.storage_cost()) {
+            match storage_cost.checked_add(drive_operation.storage_cost()) {
                 None => return Err(Error::Fee(FeeError::Overflow("overflow error"))),
                 Some(value) => storage_cost = value,
             }

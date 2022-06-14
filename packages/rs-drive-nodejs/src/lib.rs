@@ -485,6 +485,7 @@ impl DriveWrapper {
                         &contract_cbor,
                         &document_type_name,
                         None,
+                        true,
                         using_transaction.then(|| transaction).flatten(),
                     );
 
