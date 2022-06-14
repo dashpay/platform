@@ -14,7 +14,7 @@ rs-drive = { path = "../drive" }
 
 [dependencies.grovedb]
 git = "https://github.com/dashevo/grovedb"
-branch = "develop"
+branch = "feat/BatchDeleteUpTreeWhileEmpty"
 
 [dependencies.neon]
 version = "0.10.1"

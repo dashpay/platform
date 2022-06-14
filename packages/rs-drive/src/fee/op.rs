@@ -1,6 +1,9 @@
 use crate::drive::defaults::EMPTY_TREE_STORAGE_SIZE;
+use crate::drive::flags::StorageFlags;
+use crate::fee::op::DriveOperation::{CostCalculationInsertOperation, GroveOperation};
 use enum_map::{enum_map, Enum, EnumMap};
-use grovedb::{Element, PathQuery};
+use grovedb::batch::GroveDbOp;
+use grovedb::{Element, GroveDb, PathQuery};
 
 pub(crate) const STORAGE_CREDIT_PER_BYTE: u64 = 5000;
 pub(crate) const STORAGE_PROCESSING_CREDIT_PER_BYTE: u64 = 10;
@@ -173,36 +176,57 @@ impl QueryOperation {
     }
 }
 
-pub struct InsertOperation {
+#[derive(Debug)]
+pub struct SizeOfInsertOperation {
+    pub path_size: u32,
     pub key_size: u16,
     pub value_size: u32,
 }
 
-impl InsertOperation {
-    pub fn for_empty_tree(key_size: usize) -> Self {
-        InsertOperation {
-            key_size: key_size as u16,
-            value_size: EMPTY_TREE_STORAGE_SIZE as u32,
-        }
-    }
-    pub fn for_key_value(key_size: usize, element: &Element) -> Self {
-        let value_size = element.node_byte_size(key_size);
-        InsertOperation {
-            key_size: key_size as u16,
-            value_size: value_size as u32,
-        }
+#[derive(Debug)]
+pub enum DriveOperation {
+    GroveOperation(GroveDbOp),
+    CostCalculationInsertOperation(SizeOfInsertOperation),
+}
+
+impl DriveOperation {
+    pub fn grovedb_operations(insert_operations: &Vec<DriveOperation>) -> Vec<GroveDbOp> {
+        insert_operations
+            .iter()
+            .filter_map(|op| match op {
+                GroveOperation(grovedb_op) => Some(grovedb_op.clone()),
+                _ => None,
+            })
+            .collect()
     }
 
-    pub fn for_key_value_size(key_size: usize, value_size: usize) -> Self {
-        let node_value_size = Element::calculate_node_byte_size(value_size, key_size);
-        InsertOperation {
-            key_size: key_size as u16,
-            value_size: node_value_size as u32,
-        }
+    pub fn for_empty_tree(path: Vec<Vec<u8>>, key: Vec<u8>, storage_flags: &StorageFlags) -> Self {
+        let tree = Element::empty_tree_with_flags(storage_flags.to_element_flags());
+        DriveOperation::for_path_key_element(path, key, tree)
+    }
+    pub fn for_path_key_element(path: Vec<Vec<u8>>, key: Vec<u8>, element: Element) -> Self {
+        GroveOperation(GroveDbOp::insert(path, key, element))
+    }
+
+    pub fn for_path_key_value_size(path_size: u32, key_size: u16, value_size: u32) -> Self {
+        CostCalculationInsertOperation(SizeOfInsertOperation {
+            path_size,
+            key_size,
+            value_size,
+        })
     }
 
     pub fn data_size(&self) -> u32 {
-        self.value_size + self.key_size as u32
+        match self {
+            GroveOperation(grovedb_op) => grovedb_op.key.len() as u32,
+            CostCalculationInsertOperation(worst_case_insert_operation) => {
+                let node_value_size = Element::calculate_node_byte_size(
+                    worst_case_insert_operation.value_size as usize,
+                    worst_case_insert_operation.key_size as usize,
+                );
+                node_value_size as u32
+            }
+        }
     }
 
     pub fn ephemeral_cost(&self) -> u64 {
