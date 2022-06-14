@@ -62,6 +62,7 @@ class Drive {
 
   /**
    * @param {boolean} [useTransaction=false]
+   *
    * @returns {Promise<[number, number]>}
    */
   async createRootTree(useTransaction = false) {
@@ -72,14 +73,16 @@ class Drive {
    * @param {DataContract} dataContract
    * @param {Date} blockTime
    * @param {boolean} [useTransaction=false]
+   * @param {boolean} [dryRun=false]
+   *
    * @returns {Promise<[number, number]>}
    */
-  async applyContract(dataContract, blockTime, useTransaction = false) {
+  async applyContract(dataContract, blockTime, useTransaction = false, dryRun = false) {
     return driveApplyContractAsync.call(
       this.drive,
       dataContract.toBuffer(),
       blockTime,
-      true,
+      !dryRun,
       useTransaction,
     );
   }
@@ -88,9 +91,11 @@ class Drive {
    * @param {Document} document
    * @param {Date} blockTime
    * @param {boolean} [useTransaction=false]
+   * @param {boolean} [dryRun=false]
+   *
    * @returns {Promise<[number, number]>}
    */
-  async createDocument(document, blockTime, useTransaction = false) {
+  async createDocument(document, blockTime, useTransaction = false, dryRun = false) {
     return driveCreateDocumentAsync.call(
       this.drive,
       document.toBuffer(),
@@ -99,7 +104,7 @@ class Drive {
       document.getOwnerId().toBuffer(),
       true,
       blockTime,
-      true,
+      !dryRun,
       useTransaction,
     );
   }
@@ -108,9 +113,11 @@ class Drive {
    * @param {Document} document
    * @param {Date} blockTime
    * @param {boolean} [useTransaction=false]
+   * @param {boolean} [dryRun=false]
+   *
    * @returns {Promise<[number, number]>}
    */
-  async updateDocument(document, blockTime, useTransaction = false) {
+  async updateDocument(document, blockTime, useTransaction = false, dryRun = false) {
     return driveUpdateDocumentAsync.call(
       this.drive,
       document.toBuffer(),
@@ -118,7 +125,7 @@ class Drive {
       document.getType(),
       document.getOwnerId().toBuffer(),
       blockTime,
-      true,
+      !dryRun,
       useTransaction,
     );
   }
@@ -128,6 +135,7 @@ class Drive {
    * @param {string} documentType
    * @param {Identifier} documentId
    * @param {boolean} [useTransaction=false]
+   *
    * @returns {Promise<[number, number]>}
    */
   async deleteDocument(
@@ -156,6 +164,7 @@ class Drive {
    * @param [query.startAfter]
    * @param [query.orderBy]
    * @param {Boolean} [useTransaction=false]
+   *
    * @returns {Promise<[Document[], number]>}
    */
   async queryDocuments(dataContract, documentType, query = {}, useTransaction = false) {
@@ -184,16 +193,18 @@ class Drive {
   }
 
   /**
-   * @param {DataContract} identity
+   * @param {Identity} identity
    * @param {boolean} [useTransaction=false]
+   * @param {boolean} [dryRun=false]
+   *
    * @returns {Promise<[number, number]>}
    */
-  async insertIdentity(identity, useTransaction = false) {
+  async insertIdentity(identity, useTransaction = false, dryRun = false) {
     return driveInsertIdentityAsync.call(
       this.drive,
       identity.id.toBuffer(),
       identity.toBuffer(),
-      true,
+      !dryRun,
       useTransaction,
     );
   }
@@ -203,27 +214,6 @@ class Drive {
  * @typedef Element
  * @property {string} type - element type. Can be "item", "reference" or "tree"
  * @property {Buffer|Buffer[]} value - element value
- */
-
-/**
- * @typedef PathQuery
- * @property {Buffer[]} path
- * @property {SizedQuery} query
- */
-
-/**
- * @typedef SizedQuery
- * @property {Query} query
- * @property {Number|null} limit
- * @property {Number|null} offset
- */
-
-/**
- * @typedef Query
- * @property {Array} items
- * @property {Buffer|null} subqueryKey
- * @property {Query|null} subquery
- * @property {boolean| null} leftToRight
  */
 
 module.exports = Drive;
