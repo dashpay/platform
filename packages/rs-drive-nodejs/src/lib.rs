@@ -388,7 +388,7 @@ impl DriveWrapper {
         let js_document_type_name = cx.argument::<JsString>(2)?;
         let js_owner_id = cx.argument::<JsBuffer>(3)?;
         let js_block_time = cx.argument::<JsDate>(4)?;
-        let js_apply = cx.argument::<JsBoolean>(6)?;
+        let js_apply = cx.argument::<JsBoolean>(5)?;
         let js_using_transaction = cx.argument::<JsBoolean>(6)?;
         let js_callback = cx.argument::<JsFunction>(7)?.root(&mut cx);
 
@@ -527,7 +527,7 @@ impl DriveWrapper {
     fn js_insert_identity_cbor(mut cx: FunctionContext) -> JsResult<JsUndefined> {
         let js_identity_id = cx.argument::<JsBuffer>(0)?;
         let js_identity_cbor = cx.argument::<JsBuffer>(1)?;
-        let js_apply = cx.argument::<JsBoolean>(3)?;
+        let js_apply = cx.argument::<JsBoolean>(2)?;
         let js_using_transaction = cx.argument::<JsBoolean>(3)?;
         let js_callback = cx.argument::<JsFunction>(4)?.root(&mut cx);
 
@@ -1131,7 +1131,7 @@ impl DriveWrapper {
         Ok(cx.undefined())
     }
 
-    fn js_grove_db_get_path_query(mut cx: FunctionContext) -> JsResult<JsUndefined> {
+    fn js_grove_db_query(mut cx: FunctionContext) -> JsResult<JsUndefined> {
         let js_path_query = cx.argument::<JsObject>(0)?;
         let js_using_transaction = cx.argument::<JsBoolean>(1)?;
         let js_callback = cx.argument::<JsFunction>(2)?.root(&mut cx);
@@ -1180,8 +1180,50 @@ impl DriveWrapper {
         Ok(cx.undefined())
     }
 
-    /// Not implemented
-    fn js_grove_db_proof(mut cx: FunctionContext) -> JsResult<JsUndefined> {
+    fn js_grove_db_prove_query(mut cx: FunctionContext) -> JsResult<JsUndefined> {
+        let js_path_query = cx.argument::<JsObject>(0)?;
+        let js_using_transaction = cx.argument::<JsBoolean>(1)?;
+        let js_callback = cx.argument::<JsFunction>(2)?.root(&mut cx);
+
+        let path_query = converter::js_path_query_to_path_query(js_path_query, &mut cx)?;
+
+        let db = cx
+            .this()
+            .downcast_or_throw::<JsBox<DriveWrapper>, _>(&mut cx)?;
+
+        let using_transaction = js_using_transaction.value(&mut cx);
+
+        db.send_to_drive_thread(move |drive: &Drive, transaction, channel| {
+            let grove_db = &drive.grove;
+
+            let result = grove_db.get_proved_path_query(
+                &path_query,
+                using_transaction.then(|| transaction).flatten(),
+            );
+
+            channel.send(move |mut task_context| {
+                let callback = js_callback.into_inner(&mut task_context);
+                let this = task_context.undefined();
+                let callback_arguments: Vec<Handle<JsValue>> = match result {
+                    Ok(proof) => {
+                        let js_buffer = JsBuffer::external(&mut task_context, proof.clone());
+                        let js_value = js_buffer.as_value(&mut task_context);
+
+                        vec![task_context.null().upcast(), js_value.upcast()]
+                    }
+
+                    // Convert the error to a JavaScript exception on failure
+                    Err(err) => vec![task_context.error(err.to_string())?.upcast()],
+                };
+
+                callback.call(&mut task_context, this, callback_arguments)?;
+
+                Ok(())
+            });
+        })
+        .or_else(|err| cx.throw_error(err.to_string()))?;
+
+        // The result is returned through the callback, not through direct return
         Ok(cx.undefined())
     }
 
@@ -1344,7 +1386,6 @@ fn main(mut cx: ModuleContext) -> NeonResult<()> {
     )?;
     cx.export_function("groveDbGet", DriveWrapper::js_grove_db_get)?;
     cx.export_function("groveDbDelete", DriveWrapper::js_grove_db_delete)?;
-    cx.export_function("groveDbProof", DriveWrapper::js_grove_db_proof)?;
     cx.export_function("groveDbFlush", DriveWrapper::js_grove_db_flush)?;
     cx.export_function(
         "groveDbStartTransaction",
@@ -1369,10 +1410,8 @@ fn main(mut cx: ModuleContext) -> NeonResult<()> {
     cx.export_function("groveDbPutAux", DriveWrapper::js_grove_db_put_aux)?;
     cx.export_function("groveDbDeleteAux", DriveWrapper::js_grove_db_delete_aux)?;
     cx.export_function("groveDbGetAux", DriveWrapper::js_grove_db_get_aux)?;
-    cx.export_function(
-        "groveDbGetPathQuery",
-        DriveWrapper::js_grove_db_get_path_query,
-    )?;
+    cx.export_function("groveDbQuery", DriveWrapper::js_grove_db_query)?;
+    cx.export_function("groveDbProveQuery", DriveWrapper::js_grove_db_prove_query)?;
     cx.export_function("groveDbRootHash", DriveWrapper::js_grove_db_root_hash)?;
 
     Ok(())

@@ -469,7 +469,7 @@ describe('GroveDB', () => {
     });
   });
 
-  describe('#getPathQuery for Item subtrees', () => {
+  describe('#query for Item subtrees', () => {
     let aValue;
     let aKey;
     let bValue;
@@ -526,7 +526,7 @@ describe('GroveDB', () => {
         },
       };
 
-      const result = await groveDb.getPathQuery(query);
+      const result = await groveDb.query(query);
 
       expect(result).to.have.a.lengthOf(2);
 
@@ -556,7 +556,7 @@ describe('GroveDB', () => {
         },
       };
 
-      const result = await groveDb.getPathQuery(query);
+      const result = await groveDb.query(query);
 
       expect(result).to.have.a.lengthOf(2);
 
@@ -588,7 +588,7 @@ describe('GroveDB', () => {
         },
       };
 
-      const result = await groveDb.getPathQuery(query);
+      const result = await groveDb.query(query);
 
       expect(result).to.have.a.lengthOf(2);
 
@@ -619,7 +619,7 @@ describe('GroveDB', () => {
         },
       };
 
-      const result = await groveDb.getPathQuery(query);
+      const result = await groveDb.query(query);
 
       expect(result).to.have.a.lengthOf(2);
 
@@ -649,7 +649,7 @@ describe('GroveDB', () => {
         },
       };
 
-      const result = await groveDb.getPathQuery(query);
+      const result = await groveDb.query(query);
 
       expect(result).to.have.a.lengthOf(2);
 
@@ -678,7 +678,7 @@ describe('GroveDB', () => {
         },
       };
 
-      const result = await groveDb.getPathQuery(query);
+      const result = await groveDb.query(query);
 
       expect(result).to.have.a.lengthOf(2);
 
@@ -708,7 +708,7 @@ describe('GroveDB', () => {
         },
       };
 
-      const result = await groveDb.getPathQuery(query);
+      const result = await groveDb.query(query);
 
       expect(result).to.have.a.lengthOf(2);
 
@@ -738,7 +738,7 @@ describe('GroveDB', () => {
         },
       };
 
-      const result = await groveDb.getPathQuery(query);
+      const result = await groveDb.query(query);
 
       expect(result).to.have.a.lengthOf(2);
 
@@ -767,7 +767,7 @@ describe('GroveDB', () => {
         },
       };
 
-      const result = await groveDb.getPathQuery(query);
+      const result = await groveDb.query(query);
 
       expect(result).to.have.a.lengthOf(2);
 
@@ -798,7 +798,7 @@ describe('GroveDB', () => {
         },
       };
 
-      const result = await groveDb.getPathQuery(query);
+      const result = await groveDb.query(query);
 
       expect(result).to.have.a.lengthOf(2);
 
@@ -828,7 +828,7 @@ describe('GroveDB', () => {
         },
       };
 
-      const result = await groveDb.getPathQuery(query);
+      const result = await groveDb.query(query);
 
       expect(result).to.have.a.lengthOf(2);
 
@@ -858,7 +858,7 @@ describe('GroveDB', () => {
         },
       };
 
-      const result = await groveDb.getPathQuery(query);
+      const result = await groveDb.query(query);
 
       expect(result).to.have.a.lengthOf(2);
 
@@ -873,7 +873,7 @@ describe('GroveDB', () => {
     });
   });
 
-  describe('#getPathQuery for nested subtrees with subquery', () => {
+  describe('#query', () => {
     let dPath;
     let dKey;
     let ePath;
@@ -972,7 +972,7 @@ describe('GroveDB', () => {
         },
       };
 
-      const result = await groveDb.getPathQuery(query);
+      const result = await groveDb.query(query);
 
       expect(result).to.have.a.lengthOf(2);
 
@@ -983,6 +983,114 @@ describe('GroveDB', () => {
       ]);
 
       expect(skipped).to.equals(0);
+    });
+  });
+
+  describe('#proveQuery', () => {
+    let dPath;
+    let dKey;
+    let ePath;
+
+    let daValue;
+    let dbValue;
+    let dcValue;
+    let eaValue;
+    let eaKey;
+    let ebValue;
+
+    beforeEach(async () => {
+      await groveDb.insert(
+        rootTreePath,
+        treeKey,
+        { type: 'tree', epoch: 0, value: Buffer.alloc(32) },
+      );
+
+      dKey = Buffer.from('dKey');
+      daValue = Buffer.from('da');
+      dbValue = Buffer.from('db');
+      dcValue = Buffer.from('dc');
+      eaValue = Buffer.from('ea');
+      eaKey = Buffer.from('eaKey');
+      ebValue = Buffer.from('eb');
+
+      dPath = [...itemTreePath];
+      dPath.push(dKey);
+      await groveDb.insert(
+        itemTreePath,
+        dKey,
+        { type: 'tree', epoch: 0, value: Buffer.alloc(32) },
+      );
+
+      await groveDb.insert(
+        dPath,
+        Buffer.from('daKey'),
+        { type: 'item', epoch: 0, value: daValue },
+      );
+
+      await groveDb.insert(
+        dPath,
+        Buffer.from('dbKey'),
+        { type: 'item', epoch: 0, value: dbValue },
+      );
+
+      await groveDb.insert(
+        dPath,
+        Buffer.from('dcKey'),
+        { type: 'item', epoch: 0, value: dcValue },
+      );
+
+      const eKey = Buffer.from('eKey');
+      ePath = [...itemTreePath];
+      ePath.push(eKey);
+      await groveDb.insert(
+        itemTreePath,
+        eKey,
+        { type: 'tree', epoch: 0, value: Buffer.alloc(32) },
+      );
+
+      await groveDb.insert(
+        ePath,
+        Buffer.from('eaKey'),
+        { type: 'item', epoch: 0, value: eaValue },
+      );
+
+      await groveDb.insert(
+        ePath,
+        Buffer.from('ebKey'),
+        { type: 'item', epoch: 0, value: ebValue },
+      );
+    });
+
+    it('should be able to retrieve data with subquery', async () => {
+      // This should give us only last subtree and apply subquery to it
+      const query = {
+        path: itemTreePath,
+        query: {
+          query: {
+            items: [
+              {
+                type: 'rangeAfter',
+                after: dKey,
+              },
+            ],
+            subquery: {
+              items: [
+                {
+                  type: 'rangeAfter',
+                  after: eaKey,
+                },
+              ],
+            },
+          },
+        },
+      };
+
+      const result = await groveDb.proveQuery(query);
+
+      expect(result).to.exist();
+
+      expect(result).to.be.instanceOf(Buffer);
+      expect(result).to.have.lengthOf(170);
     });
   });
 
