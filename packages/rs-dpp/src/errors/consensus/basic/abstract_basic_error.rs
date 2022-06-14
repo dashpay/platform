@@ -1,4 +1,4 @@
-use crate::prelude::*;
+use crate::{prelude::*, util::json_schema::Index};
 use thiserror::Error;
 
 #[derive(Error, Debug)]
@@ -22,5 +22,74 @@ pub enum BasicError {
     InvalidDocumentTypeError {
         document_type: String,
         data_contract_id: Identifier,
+    },
+
+    #[error("Duplicate index name '{duplicate_index_name}' defined in '{document_type}' document")]
+    DuplicateIndexNameError {
+        document_type: String,
+        duplicate_index_name: String,
+    },
+
+    #[error(transparent)]
+    IndexError(IndexError),
+}
+
+impl From<IndexError> for BasicError {
+    fn from(error: IndexError) -> Self {
+        BasicError::IndexError(error)
+    }
+}
+
+#[derive(Error, Debug)]
+pub enum IndexError {
+    #[error("'{document_type}' document has more than '{index_limit}' unique indexes")]
+    UniqueIndicesLimitReachedError {
+        document_type: String,
+        index_limit: usize,
+    },
+
+    #[error("System property '{property_name}' is already indexed and can't be used in other indices for '{document_type}' document")]
+    SystemPropertyIndexAlreadyPresentError {
+        document_type: String,
+        index_definition: Index,
+        property_name: String,
+    },
+
+    #[error("'{property_name}' property is not defined in the '{document_type}' document")]
+    UndefinedIndexPropertyError {
+        document_type: String,
+        index_definition: Index,
+        property_name: String,
+    },
+
+    #[error("'{property_name}' property ofr '{document_type}' document has an invalid type '{property_type}' and cannot be use as an index")]
+    InvalidIndexPropertyTypError {
+        document_type: String,
+        index_definition: Index,
+        property_name: String,
+        property_type: String,
+    },
+
+    #[error("Indexed property '{property_name}' for '{document_type}' document has an invalid constraint '{constraint_name}', reason: '{reason}'")]
+    InvalidIndexedPropertyConstraintError {
+        document_type: String,
+        index_definition: Index,
+        property_name: String,
+        constraint_name: String,
+        reason: String,
+    },
+
+    #[error(
+        "All or none of unique compound properties must be set for '{document_type}' document"
+    )]
+    InvalidCompoundIndexError {
+        document_type: String,
+        index_definition: Index,
+    },
+
+    #[error("Duplicate index definition for '{document_type} document")]
+    DuplicateIndexError {
+        document_type: String,
+        index_definition: Index,
     },
 }
