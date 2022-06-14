@@ -27,7 +27,7 @@ function getLatestFeatureFlagFactory(
         ['enableAtHeight', '<=', blockHeight.toNumber()],
       ],
       orderBy: [
-        ['enableAtHeight', 'asc'],
+        ['enableAtHeight', 'desc'],
       ],
       limit: 1,
     };
