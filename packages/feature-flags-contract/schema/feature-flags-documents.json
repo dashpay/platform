@@ -1,13 +1,14 @@
 {
   "updateConsensusParams": {
     "description": "Updates Tenderdash consensus params",
+    "$comment": "It's better to use desceding order for `enableAtHeight`, but it's not supported yet."
     "type": "object",
     "indices": [
       {
         "name": "enableAtHeight",
         "properties": [
           {
-            "enableAtHeight": "asc"
+            "enableAtHeight": "asc",
           }
         ],
         "unique": true
