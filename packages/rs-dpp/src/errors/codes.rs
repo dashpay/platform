@@ -1,3 +1,5 @@
+use crate::consensus::basic::IndexError;
+
 use super::{
     abstract_state_error::StateError, consensus::basic::BasicError, consensus::ConsensusError,
     DataTriggerError,
@@ -72,6 +74,22 @@ impl ErrorWithCode for BasicError {
             // Data contract
             Self::InvalidDataContractVersionError { .. } => 4013,
             Self::DataContractMaxDepthExceedError { .. } => 1007,
+            Self::DuplicateIndexNameError { .. } => 1048,
+            Self::IndexError(ref e) => e.get_code(),
+        }
+    }
+}
+
+impl ErrorWithCode for IndexError {
+    fn get_code(&self) -> u32 {
+        match *self {
+            Self::UniqueIndicesLimitReachedError { .. } => 1017,
+            Self::SystemPropertyIndexAlreadyPresentError { .. } => 1015,
+            Self::UndefinedIndexPropertyError { .. } => 1016,
+            Self::InvalidIndexPropertyTypError { .. } => 1013,
+            Self::InvalidIndexedPropertyConstraintError { .. } => 1012,
+            Self::InvalidCompoundIndexError { .. } => 1010,
+            Self::DuplicateIndexError { .. } => 1008,
         }
     }
 }
