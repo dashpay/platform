@@ -512,7 +512,7 @@ const validQueries = [
       ['e', '>', 3],
     ],
     orderBy: [
-      ['d', 'asc'],
+      ['d', 'desc'],
       ['e', 'asc'],
     ],
   },
@@ -552,7 +552,7 @@ const invalidQueries = [
         ['c', 'in', [1, 2]],
       ],
       orderBy: [
-        ['c', 'asc'],
+        ['c', 'desc'],
       ],
     },
     error: 'where clause on non indexed property error: query must be for valid indexes',
@@ -565,7 +565,7 @@ const invalidQueries = [
         ['b', 'in', [1, 2]],
       ],
       orderBy: [
-        ['b', 'asc'],
+        ['b', 'desc'],
       ],
     },
     error: 'duplicate non groupable clause on same field error: in clause has same field as an equality clause',
@@ -600,7 +600,7 @@ const invalidQueries = [
       ],
       orderBy: [
         ['c', 'asc'],
-        ['d', 'asc'],
+        ['d', 'desc'],
       ],
     },
     error: 'multiple range clauses error: all ranges must be on same field',
