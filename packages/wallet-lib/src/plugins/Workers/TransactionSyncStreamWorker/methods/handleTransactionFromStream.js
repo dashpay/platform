@@ -31,7 +31,8 @@ async function handleTransactionFromStream(transaction) {
     // (Or apparently next processChunk stucks until this one gets processed?)
     getTransactionResponse = await this.transport.getTransaction(transactionHash);
   }
-  console.log('[handleTransactionFromStream]', transactionHash, getTransactionResponse.blockHash, getTransactionResponse.height);
+  // console.log('[handleTransactionFromStream]',
+  // transactionHash, getTransactionResponse.blockHash, getTransactionResponse.height);
 
   // if (getTransactionResponse.blockHash && !this.) {
   //   This can happen due to propagation when one node inform us about a transaction,
@@ -43,14 +44,14 @@ async function handleTransactionFromStream(transaction) {
   if (!getTransactionResponse.height) {
     // Retry quickly as we are in the process of historical sync and block header should arrive soon
     if (this.chainSyncMediator.state === ChainSyncMediator.STATES.HISTORICAL_SYNC) {
-      console.log('[handleTransactionFromStream] Quick retry', transactionHash);
+      // console.log('[handleTransactionFromStream] Quick retry', transactionHash);
       return new Promise((resolve) => {
         setTimeout(() => {
           resolve(self.handleTransactionFromStream(transaction));
         }, 1000);
       });
     }
-    console.log(`[handleTransactionFromStream] tx ${transactionHash} wait for block`);
+    // console.log(`[handleTransactionFromStream] tx ${transactionHash} wait for block`);
     // at this point, transaction is not yet mined, therefore we gonna retry on next block to
     // fetch this tx and subsequently its blockhash for blockheader fetching.
     logger.silly(`TransactionSyncStreamWorker - Unconfirmed transaction ${transactionHash}: delayed.`);
@@ -65,7 +66,7 @@ async function handleTransactionFromStream(transaction) {
 
     return new Promise((resolve) => {
       const blockHeightChangeListener = (data) => {
-        console.log('[handleTransactionFromStream] Height changed!', data);
+        // console.log('[handleTransactionFromStream] Height changed!', data);
         resolve(self.handleTransactionFromStream(transaction));
       };
 

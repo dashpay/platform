@@ -55,9 +55,10 @@ class ChainPlugin extends StandardPlugin {
 
         // Update last known block for the wallet only if we are in the state of the incoming sync.
         // (During the historical sync, it is populated from transactions metadata)
+        // TODO: move to BlockHeadersSyncWorker
         if (this.chainSyncMediator.state === ChainSyncMediator.STATES.CONTINUOUS_SYNC) {
-          walletStore.updateLastKnownBlock(blockheight);
-          this.storage.scheduleStateSave();
+          // walletStore.updateLastKnownBlock(blockheight);
+          // this.storage.scheduleStateSave();
         }
 
         logger.debug(`ChainPlugin - setting chain blockheight ${blockheight}`);

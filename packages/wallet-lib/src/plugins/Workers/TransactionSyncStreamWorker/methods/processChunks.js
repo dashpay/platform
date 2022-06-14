@@ -42,11 +42,20 @@ async function processChunks(dataChunk) {
       }
       this.chainSyncMediator.transactionsBlockHashes[hash] = merkleBlock.header.hash;
     });
+    this.chainSyncMediator.lastSyncedMerkleBlockHash = merkleBlock.header.hash;
+    const lastSyncedHeaderHeight = this.chainSyncMediator.updateProgress(this.parentEvents);
+
+    // TODO: attention, might be a temporary construction
+    const walletStore = this.storage.getWalletStore(this.walletId);
+    walletStore.updateLastKnownBlock(lastSyncedHeaderHeight);
+    this.storage.scheduleStateSave();
 
     this.chainSyncMediator.txChunkHashes.clear();
-    console.log('[processChunks] Import merkle block for txs!', txHashesInTheBlock);
+    // console.log('[processChunks] Import merkle block for txs!', txHashesInTheBlock);
   }
 
+  // console.log('Txs from stream',
+  // transactionsFromResponse.length, addressesTransaction.transactions.length);
   if (addressesTransaction.transactions.length) {
     addressesTransaction.transactions.forEach((tx) => {
       const { hash } = tx;
@@ -83,7 +92,8 @@ async function processChunks(dataChunk) {
         const { mostRecentHeight } = await self.importTransactions(transactionsWithMetadata);
 
         if (mostRecentHeight !== -1) {
-          this.setLastSyncedBlockHeight(mostRecentHeight, true);
+          // TODO: remove 'true', it now has to be covered by the ChainSyncMediator
+          this.setLastSyncedBlockHeight(mostRecentHeight);
         }
 
         // Schedule save state after all chain data has been imported

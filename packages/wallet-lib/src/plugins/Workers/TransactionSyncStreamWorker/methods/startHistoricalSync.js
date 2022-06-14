@@ -55,7 +55,8 @@ module.exports = async function startHistoricalSync(network) {
     });
   }
 
-  this.setLastSyncedBlockHeight(bestBlockHeight, true);
+  // TODO: remove "true" and move control over that to ChainSyncMediator
+  this.setLastSyncedBlockHeight(bestBlockHeight);
 
   logger.debug(`TransactionSyncStreamWorker - HistoricalSync - Synchronized ${count} in ${+new Date() - start}ms`);
 };

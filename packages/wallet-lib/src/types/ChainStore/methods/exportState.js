@@ -1,4 +1,4 @@
-function exportState() {
+function exportState(lastKnownBlock) {
   const { state } = this;
   const {
     blockHeaders,
@@ -20,12 +20,19 @@ function exportState() {
     reorgSafeHeight = blockHeight - 6;
   }
 
+  // TODO: temporary construction to control saving progress
+  let saveHeight = reorgSafeHeight;
+
+  if (lastKnownBlock < saveHeight) {
+    saveHeight = lastKnownBlock;
+  }
+
   [...blockHeaders.entries()].forEach(([blockHeaderHash, blockHeader]) => {
     serializedState.blockHeaders[blockHeaderHash] = blockHeader.toString();
   });
 
   [...transactions.entries()].forEach(([transactionHash, { transaction, metadata }]) => {
-    if (metadata && metadata.height && metadata.height <= reorgSafeHeight) {
+    if (metadata && metadata.height && metadata.height <= saveHeight) {
       serializedState.transactions[transactionHash] = transaction.toString();
       serializedState.txMetadata[transactionHash] = metadata;
     }

@@ -103,7 +103,7 @@ class BlockHeadersReader extends EventEmitter {
     for (let batchIndex = 0; batchIndex < numStreams; batchIndex += 1) {
       const startingHeight = (batchIndex * actualBatchSize) + fromBlockHeight;
       const count = Math.min(actualBatchSize, toBlockHeight - startingHeight + 1);
-      console.log('Spawn stream', startingHeight, count);
+      // console.log('Spawn stream', startingHeight, count);
 
       const subscribeWithRetries = this.subscribeToHistoricalBatch(this.maxRetries);
       this.streamsStats[startingHeight] = 0;

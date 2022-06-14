@@ -120,7 +120,7 @@ class BlockHeadersProvider extends EventEmitter {
           headers.forEach((header, index) => {
             this.headersHeights[header.hash] = headHeight + index;
           });
-          console.log('Obtained', headers.length, Object.keys(this.headersHeights).length);
+          // console.log('Obtained', headers.length, Object.keys(this.headersHeights).length);
 
           // console.log('Total orphans', totalOrphans);
           this.emit(EVENTS.CHAIN_UPDATED, this.spvChain.allHeaders, this.spvChain.orphanChunks);

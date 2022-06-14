@@ -16,6 +16,7 @@ class BlockHeadersSyncWorker extends Worker {
         'storage',
         'importBlockHeader',
         'chainSyncMediator',
+        'walletId',
       ],
       ...options,
     });
@@ -40,12 +41,15 @@ class BlockHeadersSyncWorker extends Worker {
     }
     // 388902 - in SPV
     // 389144 - in task
+    const { lastKnownBlock } = this.storage.getWalletStore(this.walletId).state;
     const skipBefore = typeof skipSynchronizationBeforeHeight === 'number'
       ? skipSynchronizationBeforeHeight
       : parseInt(skipSynchronizationBeforeHeight, 10);
 
-    if (skipBefore && !Number.isNaN(skipBefore)) {
+    if (skipBefore > lastKnownBlock.height) {
       startFrom = skipBefore;
+    } else if (lastKnownBlock.height !== -1) {
+      startFrom = lastKnownBlock.height;
     }
 
     const startTime = Date.now();
@@ -69,6 +73,7 @@ class BlockHeadersSyncWorker extends Worker {
 
           // TODO: optimize this duplicated linkage
           this.chainSyncMediator.blockHeights = blockHeadersProvider.headersHeights;
+          this.chainSyncMediator.updateProgress(this.parentEvents);
 
           for (let i = lastChainLength; i < longestChain.length; i += 1) {
             const header = longestChain[i];
@@ -110,7 +115,9 @@ class BlockHeadersSyncWorker extends Worker {
     // 40 streams - velocity: 1115 blocks/sec ETA: 11
     // 80 streams - velocity: 1135 blocks/sec, ETA: 11 min
 
-    console.log('Start worker', startFrom, bestBlockHeight);
+    const totalCount = bestBlockHeight - startFrom + 1;
+    this.chainSyncMediator.totalHeadersCount = totalCount;
+    console.log('Start worker', startFrom, bestBlockHeight, totalCount);
     try {
       await blockHeadersProvider.start(startFrom, bestBlockHeight);
     } catch (e) {

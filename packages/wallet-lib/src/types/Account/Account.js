@@ -114,6 +114,13 @@ class Account extends EventEmitter {
     this.storage.on(EVENTS.BLOCKHEIGHT_CHANGED, (ev) => this.emit(ev.type, ev));
     this.storage.on(EVENTS.BLOCK, (ev) => this.emit(ev.type, ev));
 
+    this.on(EVENTS.SYNC_PROGRESS,
+      (data) => wallet.emit(EVENTS.SYNC_PROGRESS, data));
+    this.on(EVENTS.SYNC_PROGRESS_CONFIRMED,
+      (data) => wallet.emit(EVENTS.SYNC_PROGRESS_CONFIRMED, data));
+    this.on(EVENTS.SYNC_PROGRESS_UNCONFIRMED,
+      (data) => wallet.emit(EVENTS.SYNC_PROGRESS_UNCONFIRMED, data));
+
     if (this.debug) {
       this.emit = (...args) => {
         const { type } = args[1];
