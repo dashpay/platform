@@ -1,6 +1,6 @@
 const path = require('path');
 
-const dockerCompose = require('@dashevo/docker-compose');
+const dockerCompose = require('docker-compose');
 
 const hasbin = require('hasbin');
 const semver = require('semver');
@@ -260,10 +260,6 @@ class DockerCompose {
         commandOptions,
       }));
     } catch (e) {
-      if (e.err && e.err.startsWith('no such service:')) {
-        return [];
-      }
-
       throw new DockerComposeError(e);
     }
 
