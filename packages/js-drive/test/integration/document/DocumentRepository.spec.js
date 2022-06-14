@@ -2872,7 +2872,7 @@ describe('DocumentRepository', function main() {
             where: [
               ['a', '>', 1],
             ],
-            orderBy: [['a', 'asc'], ['b', 'asc']],
+            orderBy: [['a', 'asc'], ['b', 'desc']],
           });
 
           expect(result).to.be.an.instanceOf(StorageResult);
@@ -2939,7 +2939,7 @@ describe('DocumentRepository', function main() {
               where: [
                 ['b', '>', 1],
               ],
-              orderBy: [['b', 'asc'], ['e', 'asc']],
+              orderBy: [['b', 'desc'], ['e', 'asc']],
             });
 
             expect.fail('should throw an error');
@@ -2955,7 +2955,7 @@ describe('DocumentRepository', function main() {
               where: [
                 ['b', '>', 1],
               ],
-              orderBy: [['b', 'asc'], ['d', 'asc']],
+              orderBy: [['b', 'desc'], ['d', 'asc']],
             });
 
             expect.fail('should throw an error');
@@ -3034,7 +3034,7 @@ describe('DocumentRepository', function main() {
               where: [
                 ['a', '>', 1],
               ],
-              orderBy: [['a', 'asc', 'asc']],
+              orderBy: [['a', 'asc', 'desc']],
             });
 
             expect.fail('should throw an error');
