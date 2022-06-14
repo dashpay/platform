@@ -145,6 +145,7 @@ USAGE
   $ dashmate start
 
 OPTIONS
+  -f, --force               force start even if some node is started
   -v, --verbose             use verbose mode for output
   -w, --wait-for-readiness  wait for nodes to be ready
   --config=config           configuration name to use
@@ -164,6 +165,7 @@ USAGE
   $ dashmate stop
 
 OPTIONS
+  -f, --force      force stop even if any is running
   -v, --verbose    use verbose mode for output
   --config=config  configuration name to use
 ```
@@ -282,6 +284,7 @@ USAGE
   $ dashmate group start
 
 OPTIONS
+  -f, --force               force start even if some node is started
   -v, --verbose             use verbose mode for output
   -w, --wait-for-readiness  wait for nodes to be ready
   --group=group             group name to use
@@ -296,6 +299,7 @@ USAGE
   $ dashmate group stop
 
 OPTIONS
+  -f, --force    force stop even if any is running
   -v, --verbose  use verbose mode for output
   --group=group  group name to use
 ```
