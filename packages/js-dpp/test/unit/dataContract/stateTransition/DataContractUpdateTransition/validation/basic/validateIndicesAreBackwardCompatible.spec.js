@@ -37,7 +37,7 @@ describe('validateIndicesAreBackwardCompatible', () => {
   });
 
   it('should return invalid result if some of unique indices have changed', async () => {
-    newDocumentsSchema.indexedDocument.indices[0].properties[0].$ownerId = 'asc';
+    newDocumentsSchema.indexedDocument.indices[0].properties[0].lastName = 'asc';
 
     const result = validateIndicesAreBackwardCompatible(oldDocumentsSchema, newDocumentsSchema);
 

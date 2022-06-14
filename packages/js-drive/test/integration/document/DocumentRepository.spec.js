@@ -2773,7 +2773,7 @@ describe('DocumentRepository', function main() {
               ['order', '>=', 0],
             ],
             orderBy: [
-              ['order', 'asc'],
+              ['order', 'desc'],
             ],
           };
 
@@ -2835,7 +2835,7 @@ describe('DocumentRepository', function main() {
               ['$id', 'in', createdIds],
             ],
             orderBy: [
-              ['$id', 'asc'],
+              ['$id', 'desc'],
             ],
           };
 
