@@ -19,14 +19,16 @@ describe('Drive', () => {
   let identity;
   let blockTime;
   let documents;
+  let initialRootHash;
 
-  beforeEach(() => {
+  beforeEach(async () => {
     drive = new Drive(TEST_DATA_PATH);
 
     dataContract = getDataContractFixture();
     identity = getIdentityFixture();
     blockTime = new Date();
     documents = getDocumentsFixture(dataContract);
+    initialRootHash = await drive.getGroveDB().getRootHash();
   });
 
   afterEach(async () => {
@@ -47,6 +49,8 @@ describe('Drive', () => {
   describe('#applyContract', () => {
     beforeEach(async () => {
       await drive.createRootTree();
+
+      initialRootHash = await drive.getGroveDB().getRootHash();
     });
 
     it('should create contract if not exists', async () => {
@@ -57,6 +61,8 @@ describe('Drive', () => {
       expect(result).to.have.lengthOf(2);
       expect(result[0]).to.be.greaterThan(0);
       expect(result[1]).to.be.greaterThan(0);
+
+      expect(await drive.getGroveDB().getRootHash()).to.not.deep.equals(initialRootHash);
     });
 
     it('should update existing contract', async () => {
@@ -79,6 +85,18 @@ describe('Drive', () => {
       expect(result).to.have.lengthOf(2);
       expect(result[0]).to.be.greaterThan(0);
       expect(result[1]).to.be.greaterThan(0);
+
+      expect(await drive.getGroveDB().getRootHash()).to.not.deep.equals(initialRootHash);
+    });
+
+    it('should not create contract with dry run flag', async () => {
+      const result = await drive.applyContract(dataContract, blockTime, false, true);
+
+      expect(result).to.have.lengthOf(2);
+      expect(result[0]).to.be.greaterThan(0);
+      expect(result[1]).to.be.greaterThan(0);
+
+      expect(await drive.getGroveDB().getRootHash()).to.deep.equals(initialRootHash);
     });
   });
 
@@ -87,6 +105,8 @@ describe('Drive', () => {
       await drive.createRootTree();
 
       await drive.applyContract(dataContract, blockTime);
+
+      initialRootHash = await drive.getGroveDB().getRootHash();
     });
 
     context('without indices', () => {
@@ -98,6 +118,8 @@ describe('Drive', () => {
         expect(result).to.have.lengthOf(2);
         expect(result[0]).to.be.greaterThan(0);
         expect(result[1]).to.be.greaterThan(0);
+
+        expect(await drive.getGroveDB().getRootHash()).to.not.deep.equals(initialRootHash);
       });
     });
 
@@ -110,7 +132,21 @@ describe('Drive', () => {
         expect(result).to.have.lengthOf(2);
         expect(result[0]).to.be.greaterThan(0);
         expect(result[1]).to.be.greaterThan(0);
+
+        expect(await drive.getGroveDB().getRootHash()).to.not.deep.equals(initialRootHash);
       });
+    });
+
+    it('should not create a document with dry run flag', async () => {
+      const documentWithoutIndices = documents[0];
+
+      const result = await drive.createDocument(documentWithoutIndices, blockTime, false, true);
+
+      expect(result).to.have.lengthOf(2);
+      expect(result[0]).to.be.greaterThan(0);
+      expect(result[1]).to.be.greaterThan(0);
+
+      expect(await drive.getGroveDB().getRootHash()).to.deep.equals(initialRootHash);
     });
   });
 
@@ -119,6 +155,8 @@ describe('Drive', () => {
       await drive.createRootTree();
 
       await drive.applyContract(dataContract, blockTime);
+
+      initialRootHash = await drive.getGroveDB().getRootHash();
     });
 
     context('without indices', () => {
@@ -136,6 +174,8 @@ describe('Drive', () => {
         expect(result).to.have.lengthOf(2);
         expect(result[0]).to.be.greaterThan(0);
         expect(result[1]).to.be.greaterThan(0);
+
+        expect(await drive.getGroveDB().getRootHash()).to.not.deep.equals(initialRootHash);
       });
     });
 
@@ -154,7 +194,23 @@ describe('Drive', () => {
         expect(result).to.have.lengthOf(2);
         expect(result[0]).to.be.greaterThan(0);
         expect(result[1]).to.be.greaterThan(0);
+
+        expect(await drive.getGroveDB().getRootHash()).to.not.deep.equals(initialRootHash);
       });
+    });
+
+    it('should not update a document with dry run flag', async () => {
+      const documentWithoutIndices = documents[0];
+
+      documentWithoutIndices.set('name', 'Bob');
+
+      const result = await drive.updateDocument(documentWithoutIndices, blockTime, false, true);
+
+      expect(result).to.have.lengthOf(2);
+      expect(result[0]).to.be.greaterThan(0);
+      expect(result[1]).to.be.greaterThan(0);
+
+      expect(await drive.getGroveDB().getRootHash()).to.deep.equals(initialRootHash);
     });
   });
 
@@ -163,6 +219,8 @@ describe('Drive', () => {
       await drive.createRootTree();
 
       await drive.applyContract(dataContract, blockTime);
+
+      initialRootHash = await drive.getGroveDB().getRootHash();
     });
 
     context('without indices', () => {
@@ -171,6 +229,8 @@ describe('Drive', () => {
         const documentWithoutIndices = documents[3];
 
         await drive.createDocument(documentWithoutIndices, blockTime);
+
+        initialRootHash = await drive.getGroveDB().getRootHash();
 
         const result = await drive.deleteDocument(
           dataContract,
@@ -181,6 +241,8 @@ describe('Drive', () => {
         expect(result).to.have.lengthOf(2);
         expect(result[0]).to.be.greaterThan(0);
         expect(result[1]).to.be.greaterThan(0);
+
+        expect(await drive.getGroveDB().getRootHash()).to.not.deep.equals(initialRootHash);
       });
     });
 
@@ -191,6 +253,8 @@ describe('Drive', () => {
 
         await drive.createDocument(documentWithIndices, blockTime);
 
+        initialRootHash = await drive.getGroveDB().getRootHash();
+
         const result = await drive.deleteDocument(
           dataContract,
           documentWithIndices.getType(),
@@ -200,7 +264,32 @@ describe('Drive', () => {
         expect(result).to.have.lengthOf(2);
         expect(result[0]).to.be.greaterThan(0);
         expect(result[1]).to.be.greaterThan(0);
+
+        expect(await drive.getGroveDB().getRootHash()).to.not.deep.equals(initialRootHash);
       });
+    });
+
+    it('should not delete the document with dry run flag', async () => {
+      // Create a document
+      const documentWithoutIndices = documents[3];
+
+      await drive.createDocument(documentWithoutIndices, blockTime);
+
+      initialRootHash = await drive.getGroveDB().getRootHash();
+
+      const result = await drive.deleteDocument(
+        dataContract,
+        documentWithoutIndices.getType(),
+        documentWithoutIndices.getId(),
+        false,
+        true,
+      );
+
+      expect(result).to.have.lengthOf(2);
+      expect(result[0]).to.be.greaterThan(0);
+      expect(result[1]).to.be.greaterThan(0);
+
+      expect(await drive.getGroveDB().getRootHash()).to.deep.equals(initialRootHash);
     });
   });
 
@@ -258,6 +347,8 @@ describe('Drive', () => {
   describe('#insertIdentity', () => {
     beforeEach(async () => {
       await drive.createRootTree();
+
+      initialRootHash = await drive.getGroveDB().getRootHash();
     });
 
     it('should create identity if not exists', async () => {
@@ -268,6 +359,8 @@ describe('Drive', () => {
       expect(result).to.have.lengthOf(2);
       expect(result[0]).to.be.greaterThan(0);
       expect(result[1]).to.be.greaterThan(0);
+
+      expect(await drive.getGroveDB().getRootHash()).to.not.deep.equals(initialRootHash);
     });
   });
 });

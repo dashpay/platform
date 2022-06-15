@@ -828,13 +828,21 @@ impl Drive {
 
         let storage_flags = StorageFlags { epoch };
 
+        let document_info = if apply {
+            DocumentAndSerialization((document, document_cbor, &storage_flags))
+        } else {
+            let element_size = Element::Item(
+                document_cbor.to_vec(),
+                StorageFlags::to_element_flags(&storage_flags),
+            )
+            .serialized_byte_size();
+
+            DocumentSize(element_size)
+        };
+
         self.update_document_for_contract_operations(
             DocumentAndContractInfo {
-                document_info: DocumentInfo::DocumentAndSerialization((
-                    document,
-                    document_cbor,
-                    &storage_flags,
-                )),
+                document_info,
                 contract,
                 document_type,
                 owner_id,

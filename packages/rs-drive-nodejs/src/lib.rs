@@ -455,8 +455,9 @@ impl DriveWrapper {
         let js_document_id = cx.argument::<JsBuffer>(0)?;
         let js_contract_cbor = cx.argument::<JsBuffer>(1)?;
         let js_document_type_name = cx.argument::<JsString>(2)?;
-        let js_using_transaction = cx.argument::<JsBoolean>(3)?;
-        let js_callback = cx.argument::<JsFunction>(4)?.root(&mut cx);
+        let js_apply = cx.argument::<JsBoolean>(3)?;
+        let js_using_transaction = cx.argument::<JsBoolean>(4)?;
+        let js_callback = cx.argument::<JsFunction>(5)?.root(&mut cx);
 
         let drive = cx
             .this()
@@ -465,6 +466,7 @@ impl DriveWrapper {
         let document_id = converter::js_buffer_to_vec_u8(js_document_id, &mut cx);
         let contract_cbor = converter::js_buffer_to_vec_u8(js_contract_cbor, &mut cx);
         let document_type_name = js_document_type_name.value(&mut cx);
+        let apply = js_apply.value(&mut cx);
         let using_transaction = js_using_transaction.value(&mut cx);
 
         drive
@@ -485,7 +487,7 @@ impl DriveWrapper {
                         &contract_cbor,
                         &document_type_name,
                         None,
-                        true,
+                        apply,
                         using_transaction.then(|| transaction).flatten(),
                     );
 
