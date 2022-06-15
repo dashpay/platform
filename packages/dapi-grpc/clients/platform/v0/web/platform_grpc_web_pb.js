@@ -382,67 +382,6 @@ proto.org.dash.platform.dapi.v0.PlatformPromiseClient.prototype.getIdentitiesByP
 /**
  * @const
  * @type {!grpc.web.MethodDescriptor<
- *   !proto.org.dash.platform.dapi.v0.GetIdentityIdsByPublicKeyHashesRequest,
- *   !proto.org.dash.platform.dapi.v0.GetIdentityIdsByPublicKeyHashesResponse>}
- */
-const methodDescriptor_Platform_getIdentityIdsByPublicKeyHashes = new grpc.web.MethodDescriptor(
-  '/org.dash.platform.dapi.v0.Platform/getIdentityIdsByPublicKeyHashes',
-  grpc.web.MethodType.UNARY,
-  proto.org.dash.platform.dapi.v0.GetIdentityIdsByPublicKeyHashesRequest,
-  proto.org.dash.platform.dapi.v0.GetIdentityIdsByPublicKeyHashesResponse,
-  /**
-   * @param {!proto.org.dash.platform.dapi.v0.GetIdentityIdsByPublicKeyHashesRequest} request
-   * @return {!Uint8Array}
-   */
-  function(request) {
-    return request.serializeBinary();
-  },
-  proto.org.dash.platform.dapi.v0.GetIdentityIdsByPublicKeyHashesResponse.deserializeBinary
-);
-
-
-/**
- * @param {!proto.org.dash.platform.dapi.v0.GetIdentityIdsByPublicKeyHashesRequest} request The
- *     request proto
- * @param {?Object<string, string>} metadata User defined
- *     call metadata
- * @param {function(?grpc.web.RpcError, ?proto.org.dash.platform.dapi.v0.GetIdentityIdsByPublicKeyHashesResponse)}
- *     callback The callback function(error, response)
- * @return {!grpc.web.ClientReadableStream<!proto.org.dash.platform.dapi.v0.GetIdentityIdsByPublicKeyHashesResponse>|undefined}
- *     The XHR Node Readable Stream
- */
-proto.org.dash.platform.dapi.v0.PlatformClient.prototype.getIdentityIdsByPublicKeyHashes =
-    function(request, metadata, callback) {
-  return this.client_.rpcCall(this.hostname_ +
-      '/org.dash.platform.dapi.v0.Platform/getIdentityIdsByPublicKeyHashes',
-      request,
-      metadata || {},
-      methodDescriptor_Platform_getIdentityIdsByPublicKeyHashes,
-      callback);
-};
-
-
-/**
- * @param {!proto.org.dash.platform.dapi.v0.GetIdentityIdsByPublicKeyHashesRequest} request The
- *     request proto
- * @param {?Object<string, string>=} metadata User defined
- *     call metadata
- * @return {!Promise<!proto.org.dash.platform.dapi.v0.GetIdentityIdsByPublicKeyHashesResponse>}
- *     Promise that resolves to the response
- */
-proto.org.dash.platform.dapi.v0.PlatformPromiseClient.prototype.getIdentityIdsByPublicKeyHashes =
-    function(request, metadata) {
-  return this.client_.unaryCall(this.hostname_ +
-      '/org.dash.platform.dapi.v0.Platform/getIdentityIdsByPublicKeyHashes',
-      request,
-      metadata || {},
-      methodDescriptor_Platform_getIdentityIdsByPublicKeyHashes);
-};
-
-
-/**
- * @const
- * @type {!grpc.web.MethodDescriptor<
  *   !proto.org.dash.platform.dapi.v0.WaitForStateTransitionResultRequest,
  *   !proto.org.dash.platform.dapi.v0.WaitForStateTransitionResultResponse>}
  */

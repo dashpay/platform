@@ -53,7 +53,7 @@ describe('applyIdentityTopUpTransitionFactory', () => {
     expect(identity.getBalance()).to.be.equal(balanceBeforeTopUp + balanceToTopUp);
     expect(identity.getBalance()).to.be.greaterThan(balanceBeforeTopUp);
 
-    expect(stateRepositoryMock.storeIdentity).to.have.been.calledOnceWithExactly(
+    expect(stateRepositoryMock.updateIdentity).to.have.been.calledOnceWithExactly(
       identity,
       executionContext,
     );
@@ -88,7 +88,7 @@ describe('applyIdentityTopUpTransitionFactory', () => {
 
     expect(biggestPossibleIdentity.getBalance()).to.be.equal(balanceBeforeTopUp + balanceToTopUp);
 
-    expect(stateRepositoryMock.storeIdentity).to.have.been.calledOnceWithExactly(
+    expect(stateRepositoryMock.updateIdentity).to.have.been.calledOnceWithExactly(
       biggestPossibleIdentity,
       executionContext,
     );

@@ -155,26 +155,6 @@
              responseClass:[GetIdentitiesByPublicKeyHashesResponse class]];
 }
 
-#pragma mark getIdentityIdsByPublicKeyHashes(GetIdentityIdsByPublicKeyHashesRequest) returns (GetIdentityIdsByPublicKeyHashesResponse)
-
-- (void)getIdentityIdsByPublicKeyHashesWithRequest:(GetIdentityIdsByPublicKeyHashesRequest *)request handler:(void(^)(GetIdentityIdsByPublicKeyHashesResponse *_Nullable response, NSError *_Nullable error))handler{
-  [[self RPCTogetIdentityIdsByPublicKeyHashesWithRequest:request handler:handler] start];
-}
-// Returns a not-yet-started RPC object.
-- (GRPCProtoCall *)RPCTogetIdentityIdsByPublicKeyHashesWithRequest:(GetIdentityIdsByPublicKeyHashesRequest *)request handler:(void(^)(GetIdentityIdsByPublicKeyHashesResponse *_Nullable response, NSError *_Nullable error))handler{
-  return [self RPCToMethod:@"getIdentityIdsByPublicKeyHashes"
-            requestsWriter:[GRXWriter writerWithValue:request]
-             responseClass:[GetIdentityIdsByPublicKeyHashesResponse class]
-        responsesWriteable:[GRXWriteable writeableWithSingleHandler:handler]];
-}
-- (GRPCUnaryProtoCall *)getIdentityIdsByPublicKeyHashesWithMessage:(GetIdentityIdsByPublicKeyHashesRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions {
-  return [self RPCToMethod:@"getIdentityIdsByPublicKeyHashes"
-                   message:message
-           responseHandler:handler
-               callOptions:callOptions
-             responseClass:[GetIdentityIdsByPublicKeyHashesResponse class]];
-}
-
 #pragma mark waitForStateTransitionResult(WaitForStateTransitionResultRequest) returns (WaitForStateTransitionResultResponse)
 
 - (void)waitForStateTransitionResultWithRequest:(WaitForStateTransitionResultRequest *)request handler:(void(^)(WaitForStateTransitionResultResponse *_Nullable response, NSError *_Nullable error))handler{

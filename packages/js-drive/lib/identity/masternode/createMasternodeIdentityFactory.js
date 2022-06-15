@@ -67,7 +67,7 @@ function createMasternodeIdentityFactory(
       throw new InvalidMasternodeIdentityError(validationError);
     }
 
-    await transactionalStateRepository.storeIdentity(identity);
+    await transactionalStateRepository.createIdentity(identity);
 
     const publicKeyHashes = identity
       .getPublicKeys()

@@ -74,7 +74,7 @@ function handleUpdatedScriptPayoutFactory(
 
     identity.setPublicKeys(identityPublicKeys);
 
-    await transactionalStateRepository.storeIdentity(identity);
+    await transactionalStateRepository.updateIdentity(identity);
 
     const publicKeyHash = newWithdrawalIdentityPublicKey.hash();
 

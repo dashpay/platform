@@ -1,4 +1,4 @@
-const rimraf = require('rimraf');
+const fs = require('fs');
 const Drive = require('@dashevo/rs-drive');
 const decodeProtocolEntityFactory = require('@dashevo/dpp/lib/decodeProtocolEntityFactory');
 const getIdentityFixture = require('@dashevo/dpp/lib/test/fixtures/getIdentityFixture');
@@ -27,16 +27,17 @@ describe('IdentityStoreRepository', () => {
 
   afterEach(async () => {
     await rsDrive.close();
-    rimraf.sync('./db/grovedb_test');
+
+    fs.rmSync('./db/grovedb_test', { recursive: true, force: true });
   });
 
-  describe('#store', () => {
+  describe('#create', () => {
     beforeEach(async () => {
       await store.createTree([], IdentityStoreRepository.TREE_PATH[0]);
     });
 
-    it('should store identity', async () => {
-      const result = await repository.store(
+    it('should create an identity', async () => {
+      const result = await repository.create(
         identity,
       );
 
@@ -44,8 +45,8 @@ describe('IdentityStoreRepository', () => {
       expect(result.getOperations().length).to.be.greaterThan(0);
 
       const encodedIdentityResult = await store.get(
-        IdentityStoreRepository.TREE_PATH,
-        identity.getId().toBuffer(),
+        IdentityStoreRepository.TREE_PATH.concat([identity.getId().toBuffer()]),
+        IdentityStoreRepository.IDENTITY_KEY,
       );
 
       const [protocolVersion, rawIdentity] = decodeProtocolEntity(
@@ -62,22 +63,22 @@ describe('IdentityStoreRepository', () => {
     it('should store identity using transaction', async () => {
       await store.startTransaction();
 
-      await repository.store(
+      await repository.create(
         identity,
         { useTransaction: true },
       );
 
       const notFoundIdentityResult = await store.get(
-        IdentityStoreRepository.TREE_PATH,
-        identity.getId().toBuffer(),
+        IdentityStoreRepository.TREE_PATH.concat([identity.getId().toBuffer()]),
+        IdentityStoreRepository.IDENTITY_KEY,
         { useTransaction: false },
       );
 
-      expect(notFoundIdentityResult.getValue()).to.be.null();
+      expect(notFoundIdentityResult.isNull()).to.be.true();
 
       const identityTransactionResult = await store.get(
-        IdentityStoreRepository.TREE_PATH,
-        identity.getId().toBuffer(),
+        IdentityStoreRepository.TREE_PATH.concat([identity.getId().toBuffer()]),
+        IdentityStoreRepository.IDENTITY_KEY,
         { useTransaction: true },
       );
 
@@ -94,8 +95,8 @@ describe('IdentityStoreRepository', () => {
       await store.commitTransaction();
 
       const committedIdentityResult = await store.get(
-        IdentityStoreRepository.TREE_PATH,
-        identity.getId().toBuffer(),
+        IdentityStoreRepository.TREE_PATH.concat([identity.getId().toBuffer()]),
+        IdentityStoreRepository.IDENTITY_KEY,
         { useTransaction: true },
       );
 
@@ -106,6 +107,111 @@ describe('IdentityStoreRepository', () => {
       fetchedIdentity = new Identity(rawIdentity);
 
       expect(fetchedIdentity.toObject()).to.deep.equal(identity.toObject());
+    });
+  });
+
+  describe('#update', () => {
+    beforeEach(async () => {
+      await store.createTree([], IdentityStoreRepository.TREE_PATH[0]);
+    });
+
+    it('should update identity', async () => {
+      await repository.create(
+        identity,
+      );
+
+      const [, publicKey] = identity.getPublicKeys();
+
+      publicKey.setReadOnly(true);
+
+      const result = await repository.update(
+        identity,
+      );
+
+      expect(result).to.be.instanceOf(StorageResult);
+      expect(result.getOperations().length).to.be.greaterThan(0);
+
+      const encodedIdentityResult = await store.get(
+        IdentityStoreRepository.TREE_PATH.concat([identity.getId().toBuffer()]),
+        IdentityStoreRepository.IDENTITY_KEY,
+      );
+
+      const [protocolVersion, rawIdentity] = decodeProtocolEntity(
+        encodedIdentityResult.getValue(),
+      );
+
+      rawIdentity.protocolVersion = protocolVersion;
+
+      const fetchedIdentity = new Identity(rawIdentity);
+
+      expect(fetchedIdentity.toObject()).to.deep.equal(identity.toObject());
+    });
+
+    it('should store identity using transaction', async () => {
+      // Create identity
+      await repository.create(
+        identity,
+      );
+
+      await store.startTransaction();
+
+      // Update identity
+      const updatedIdentity = new Identity(identity.toObject());
+
+      const [, publicKey] = updatedIdentity.getPublicKeys();
+
+      publicKey.setReadOnly(true);
+
+      await repository.update(
+        updatedIdentity,
+        { useTransaction: true },
+      );
+
+      const previousIdentityResult = await store.get(
+        IdentityStoreRepository.TREE_PATH.concat([identity.getId().toBuffer()]),
+        IdentityStoreRepository.IDENTITY_KEY,
+        { useTransaction: false },
+      );
+
+      let [protocolVersion, rawIdentity] = decodeProtocolEntity(previousIdentityResult.getValue());
+
+      rawIdentity.protocolVersion = protocolVersion;
+
+      let fetchedIdentity = new Identity(rawIdentity);
+
+      expect(fetchedIdentity.toObject()).to.deep.equal(identity.toObject());
+
+      const identityTransactionResult = await store.get(
+        IdentityStoreRepository.TREE_PATH.concat([identity.getId().toBuffer()]),
+        IdentityStoreRepository.IDENTITY_KEY,
+        { useTransaction: true },
+      );
+
+      [protocolVersion, rawIdentity] = decodeProtocolEntity(
+        identityTransactionResult.getValue(),
+      );
+
+      rawIdentity.protocolVersion = protocolVersion;
+
+      fetchedIdentity = new Identity(rawIdentity);
+
+      expect(fetchedIdentity.toObject()).to.deep.equal(updatedIdentity.toObject());
+
+      await store.commitTransaction();
+
+      const committedIdentityResult = await store.get(
+        IdentityStoreRepository.TREE_PATH.concat([identity.getId().toBuffer()]),
+        IdentityStoreRepository.IDENTITY_KEY,
+        { useTransaction: true },
+      );
+
+      [protocolVersion, rawIdentity] = decodeProtocolEntity(committedIdentityResult.getValue());
+
+      rawIdentity.protocolVersion = protocolVersion;
+
+      fetchedIdentity = new Identity(rawIdentity);
+
+      expect(fetchedIdentity.toObject()).to.deep.equal(updatedIdentity.toObject());
     });
   });
 
@@ -124,9 +230,11 @@ describe('IdentityStoreRepository', () => {
     });
 
     it('should fetch an identity', async () => {
+      await store.createTree(IdentityStoreRepository.TREE_PATH, identity.getId().toBuffer());
+
       await store.put(
-        IdentityStoreRepository.TREE_PATH,
-        identity.getId().toBuffer(),
+        IdentityStoreRepository.TREE_PATH.concat([identity.getId().toBuffer()]),
+        IdentityStoreRepository.IDENTITY_KEY,
         identity.toBuffer(),
       );
 
@@ -144,9 +252,15 @@ describe('IdentityStoreRepository', () => {
     it('should fetch an identity using transaction', async () => {
       await store.startTransaction();
 
-      await store.put(
+      await store.createTree(
         IdentityStoreRepository.TREE_PATH,
         identity.getId().toBuffer(),
+        { useTransaction: true },
+      );
+
+      await store.put(
+        IdentityStoreRepository.TREE_PATH.concat([identity.getId().toBuffer()]),
+        IdentityStoreRepository.IDENTITY_KEY,
         identity.toBuffer(),
         { useTransaction: true },
       );

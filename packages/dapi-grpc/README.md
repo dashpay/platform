@@ -125,7 +125,6 @@ Available methods :
 - getDataContract
 - getDocuments
 - getIdentitiesByPublicKeyHashes
-- getIdentityIdsByPublicKeyHashes
 - waitForStateTransitionResult
 - getConsensusParams
 - setProtocolVersion

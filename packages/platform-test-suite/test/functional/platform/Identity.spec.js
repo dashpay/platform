@@ -239,14 +239,14 @@ describe('Platform', () => {
     });
 
     it('should be able to get newly created identity id by it\'s first public key', async () => {
-      const response = await client.getDAPIClient().platform.getIdentityIdsByPublicKeyHashes(
+      const response = await client.getDAPIClient().platform.getIdentitiesByPublicKeyHashes(
         [identity.getPublicKeyById(0).hash()],
       );
 
-      const [[identityId]] = response.getIdentityIds();
+      const [fetchedIdentity] = response.getIdentities();
 
-      expect(identityId).to.be.not.null();
-      expect(identityId).to.deep.equal(identity.getId());
+      expect(fetchedIdentity).to.be.not.null();
+      expect(fetchedIdentity).to.deep.equal(identity.toBuffer());
     });
 
     describe('chainLock', function describe() {

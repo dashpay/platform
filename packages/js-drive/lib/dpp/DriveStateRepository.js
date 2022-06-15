@@ -3,6 +3,9 @@ const { TYPES } = require('@dashevo/dpp/lib/identity/IdentityPublicKey');
 const ReadOperation = require('@dashevo/dpp/lib/stateTransition/fee/operations/ReadOperation');
 const SignatureVerificationOperation = require('@dashevo/dpp/lib/stateTransition/fee/operations/SignatureVerificationOperation');
 
+/**
+ * @implements StateRepository
+ */
 class DriveStateRepository {
   #options = {};
 
@@ -13,7 +16,7 @@ class DriveStateRepository {
 
   /**
    * @param {IdentityStoreRepository} identityRepository
-   * @param {PublicKeyToIdentityIdStoreRepository} publicKeyToIdentityIdRepository
+   * @param {PublicKeyToIdentitiesStoreRepository} publicKeyToToIdentitiesRepository
    * @param {DataContractStoreRepository} dataContractRepository
    * @param {fetchDocuments} fetchDocuments
    * @param {DocumentRepository} documentRepository
@@ -27,7 +30,7 @@ class DriveStateRepository {
    */
   constructor(
     identityRepository,
-    publicKeyToIdentityIdRepository,
+    publicKeyToToIdentitiesRepository,
     dataContractRepository,
     fetchDocuments,
     documentRepository,
@@ -39,7 +42,7 @@ class DriveStateRepository {
     options = {},
   ) {
     this.identityRepository = identityRepository;
-    this.publicKeyToIdentityIdRepository = publicKeyToIdentityIdRepository;
+    this.publicKeyToIdentitiesRepository = publicKeyToToIdentitiesRepository;
     this.dataContractRepository = dataContractRepository;
     this.fetchDocumentsFunction = fetchDocuments;
     this.documentRepository = documentRepository;
@@ -73,15 +76,34 @@ class DriveStateRepository {
   }
 
   /**
-   * Store identity
+   * Create identity
    *
    * @param {Identity} identity
    * @param {StateTransitionExecutionContext} [executionContext]
    *
    * @returns {Promise<void>}
    */
-  async storeIdentity(identity, executionContext = undefined) {
-    const result = await this.identityRepository.store(
+  async createIdentity(identity, executionContext = undefined) {
+    const result = await this.identityRepository.create(
+      identity,
+      this.#createRepositoryOptions(executionContext),
+    );
+
+    if (executionContext) {
+      executionContext.addOperation(...result.getOperations());
+    }
+  }
+
+  /**
+   * Update identity
+   *
+   * @param {Identity} identity
+   * @param {StateTransitionExecutionContext} [executionContext]
+   *
+   * @returns {Promise<void>}
+   */
+  async updateIdentity(identity, executionContext = undefined) {
+    const result = await this.identityRepository.update(
       identity,
       this.#createRepositoryOptions(executionContext),
     );
@@ -102,7 +124,7 @@ class DriveStateRepository {
    */
   async storeIdentityPublicKeyHashes(identityId, publicKeyHashes, executionContext = undefined) {
     for (const publicKeyHash of publicKeyHashes) {
-      const result = await this.publicKeyToIdentityIdRepository.store(
+      const result = await this.publicKeyToIdentitiesRepository.store(
         publicKeyHash,
         identityId,
         this.#createRepositoryOptions(executionContext),
@@ -167,7 +189,7 @@ class DriveStateRepository {
     // noinspection UnnecessaryLocalVariableJS
     const results = await Promise.all(
       publicKeyHashes.map(async (publicKeyHash) => (
-        this.publicKeyToIdentityIdRepository.fetch(
+        this.publicKeyToIdentitiesRepository.fetch(
           publicKeyHash,
           this.#createRepositoryOptions(executionContext),
         )

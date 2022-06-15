@@ -14,14 +14,14 @@ const createOperatorIdentifier = require('../../../../lib/identity/masternode/cr
 
 /**
  * @param {IdentityStoreRepository} identityRepository
- * @param {PublicKeyToIdentityIdStoreRepository} publicKeyToIdentityIdRepository
+ * @param {PublicKeyToIdentitiesStoreRepository} publicKeyToIdentitiesRepository
  * @param {getWithdrawPubKeyTypeFromPayoutScript} getWithdrawPubKeyTypeFromPayoutScript
  * @param {getPublicKeyFromPayoutScript} getPublicKeyFromPayoutScript
  * @returns {expectOperatorIdentity}
  */
 function expectOperatorIdentityFactory(
   identityRepository,
-  publicKeyToIdentityIdRepository,
+  publicKeyToIdentitiesRepository,
   getWithdrawPubKeyTypeFromPayoutScript,
   getPublicKeyFromPayoutScript,
 ) {
@@ -75,7 +75,7 @@ function expectOperatorIdentityFactory(
       .deep
       .equal(operatorPubKey);
 
-    const firstOperatorIdentityByPublicKeyHashResult = await publicKeyToIdentityIdRepository
+    const firstOperatorIdentityByPublicKeyHashResult = await publicKeyToIdentitiesRepository
       .fetch(firstOperatorMasternodePublicKey.hash());
 
     const firstOperatorIdentityByPublicKeyHash = firstOperatorIdentityByPublicKeyHashResult
@@ -85,7 +85,7 @@ function expectOperatorIdentityFactory(
       .to
       .have
       .lengthOf(1);
-    expect(firstOperatorIdentityByPublicKeyHash[0].toBuffer())
+    expect(firstOperatorIdentityByPublicKeyHash[0].getId())
       .to
       .deep
       .equal(operatorIdentifier);
@@ -103,7 +103,7 @@ function expectOperatorIdentityFactory(
         getPublicKeyFromPayoutScript(payoutScript, publicKeyType),
       );
 
-      const masternodeIdentityByPayoutPublicKeyHashResult = await publicKeyToIdentityIdRepository
+      const masternodeIdentityByPayoutPublicKeyHashResult = await publicKeyToIdentitiesRepository
         .fetch(payoutPublicKey.hash());
 
       const masternodeIdentityByPayoutPublicKeyHash = masternodeIdentityByPayoutPublicKeyHashResult
@@ -125,14 +125,14 @@ function expectOperatorIdentityFactory(
         getPublicKeyFromPayoutScript(payoutScript, publicKeyType),
       );
 
-      const masternodeIdentityByPayoutPublicKeyHashResult = await publicKeyToIdentityIdRepository
+      const masternodeIdentityByPayoutPublicKeyHashResult = await publicKeyToIdentitiesRepository
         .fetch(payoutPublicKey.hash());
 
       const masternodeIdentityByPayoutPublicKeyHash = masternodeIdentityByPayoutPublicKeyHashResult
         .getValue();
 
       expect(masternodeIdentityByPayoutPublicKeyHash).to.have.lengthOf(1);
-      expect(masternodeIdentityByPayoutPublicKeyHash[0].toBuffer())
+      expect(masternodeIdentityByPayoutPublicKeyHash[0].getId())
         .to.deep.equal(operatorIdentifier);
     }
   }
@@ -142,14 +142,14 @@ function expectOperatorIdentityFactory(
 
 /**
  * @param {IdentityStoreRepository} identityRepository
- * @param {PublicKeyToIdentityIdStoreRepository} publicKeyToIdentityIdRepository
+ * @param {PublicKeyToIdentitiesStoreRepository} publicKeyToIdentitiesRepository
  * @param {getWithdrawPubKeyTypeFromPayoutScript} getWithdrawPubKeyTypeFromPayoutScript
  * @param {getPublicKeyFromPayoutScript} getPublicKeyFromPayoutScript
  * @returns {expectMasternodeIdentity}
  */
 function expectMasternodeIdentityFactory(
   identityRepository,
-  publicKeyToIdentityIdRepository,
+  publicKeyToIdentitiesRepository,
   getWithdrawPubKeyTypeFromPayoutScript,
   getPublicKeyFromPayoutScript,
 ) {
@@ -194,13 +194,13 @@ function expectMasternodeIdentityFactory(
       Buffer.from(proRegTx.extraPayload.keyIDOwner, 'hex').reverse(),
     );
 
-    const masternodeIdentityByPublicKeyHashResult = await publicKeyToIdentityIdRepository
+    const masternodeIdentityByPublicKeyHashResult = await publicKeyToIdentitiesRepository
       .fetch(masternodePublicKey.hash());
 
     const masternodeIdentityByPublicKeyHash = masternodeIdentityByPublicKeyHashResult.getValue();
 
     expect(masternodeIdentityByPublicKeyHash).to.have.lengthOf(1);
-    expect(masternodeIdentityByPublicKeyHash[0].toBuffer())
+    expect(masternodeIdentityByPublicKeyHash[0].getId())
       .to.deep.equal(masternodeIdentifier);
 
     let i = 0;
@@ -216,14 +216,14 @@ function expectMasternodeIdentityFactory(
         getPublicKeyFromPayoutScript(payoutScript, publicKeyType),
       );
 
-      const masternodeIdentityByPayoutPublicKeyHashResult = await publicKeyToIdentityIdRepository
+      const masternodeIdentityByPayoutPublicKeyHashResult = await publicKeyToIdentitiesRepository
         .fetch(payoutPublicKey.hash());
 
       const masternodeIdentityByPayoutPublicKeyHash = masternodeIdentityByPayoutPublicKeyHashResult
         .getValue();
 
       expect(masternodeIdentityByPayoutPublicKeyHash).to.have.lengthOf(1);
-      expect(masternodeIdentityByPayoutPublicKeyHash[0].toBuffer())
+      expect(masternodeIdentityByPayoutPublicKeyHash[0].getId())
         .to.deep.equal(masternodeIdentifier);
     }
 
@@ -238,14 +238,14 @@ function expectMasternodeIdentityFactory(
         getPublicKeyFromPayoutScript(payoutScript, publicKeyType),
       );
 
-      const masternodeIdentityByPayoutPublicKeyHashResult = await publicKeyToIdentityIdRepository
+      const masternodeIdentityByPayoutPublicKeyHashResult = await publicKeyToIdentitiesRepository
         .fetch(payoutPublicKey.hash());
 
       const masternodeIdentityByPayoutPublicKeyHash = masternodeIdentityByPayoutPublicKeyHashResult
         .getValue();
 
       expect(masternodeIdentityByPayoutPublicKeyHash).to.have.lengthOf(1);
-      expect(masternodeIdentityByPayoutPublicKeyHash[0].toBuffer())
+      expect(masternodeIdentityByPayoutPublicKeyHash[0].getId())
         .to.deep.equal(masternodeIdentifier);
     }
   }
@@ -287,7 +287,7 @@ describe('synchronizeMasternodeIdentitiesFactory', () => {
   let rewardsDataContract;
   let identityRepository;
   let documentRepository;
-  let publicKeyToIdentityIdRepository;
+  let publicKeyToIdentitiesRepository;
   let coreRpcClientMock;
   let expectOperatorIdentity;
   let expectMasternodeIdentity;
@@ -296,7 +296,7 @@ describe('synchronizeMasternodeIdentitiesFactory', () => {
 
   beforeEach(async function beforeEach() {
     coreHeight = 3;
-    firstSyncAppHash = '401bd11b196fc470275c14d28d2e76f764434c92af4af09ebad040a8fb51ca74';
+    firstSyncAppHash = '27212e0a038993c761fb06a26f253348b241f98ed12f90de2d589ce2b5518044';
 
     container = await createTestDIContainer();
 
@@ -394,20 +394,20 @@ describe('synchronizeMasternodeIdentitiesFactory', () => {
 
     identityRepository = container.resolve('identityRepository');
     documentRepository = container.resolve('documentRepository');
-    publicKeyToIdentityIdRepository = container.resolve('publicKeyToIdentityIdRepository');
+    publicKeyToIdentitiesRepository = container.resolve('publicKeyToIdentitiesRepository');
     const getWithdrawPubKeyTypeFromPayoutScript = container.resolve('getWithdrawPubKeyTypeFromPayoutScript');
     const getPublicKeyFromPayoutScript = container.resolve('getPublicKeyFromPayoutScript');
 
     expectOperatorIdentity = expectOperatorIdentityFactory(
       identityRepository,
-      publicKeyToIdentityIdRepository,
+      publicKeyToIdentitiesRepository,
       getWithdrawPubKeyTypeFromPayoutScript,
       getPublicKeyFromPayoutScript,
     );
 
     expectMasternodeIdentity = expectMasternodeIdentityFactory(
       identityRepository,
-      publicKeyToIdentityIdRepository,
+      publicKeyToIdentitiesRepository,
       getWithdrawPubKeyTypeFromPayoutScript,
       getPublicKeyFromPayoutScript,
     );
@@ -596,7 +596,7 @@ describe('synchronizeMasternodeIdentitiesFactory', () => {
 
     await synchronizeMasternodeIdentities(coreHeight + 1);
 
-    await expectDeterministicAppHash('5e4c517df4e8bdfb2ac742fe1a9d76a61cb231f86f311019bd87a26034951594');
+    await expectDeterministicAppHash('5fb5b6ab63b36a824520621303720102b73e063f6b183d0137fe5d8404f82666');
 
     // New masternode identity should be created
 
@@ -666,7 +666,7 @@ describe('synchronizeMasternodeIdentitiesFactory', () => {
 
     await synchronizeMasternodeIdentities(coreHeight + 1);
 
-    await expectDeterministicAppHash('6d73ee5a56bfdeddfb6479b41011d14e6454f265c5ac7c9a58e813b865d07714');
+    await expectDeterministicAppHash('a7e66f34b679960f1f8f3b59f8288609a352e2f3fb3a369e498d5f65cefca887');
 
     // Masternode identity should stay
 
@@ -719,7 +719,7 @@ describe('synchronizeMasternodeIdentitiesFactory', () => {
 
     await synchronizeMasternodeIdentities(coreHeight + 1);
 
-    await expectDeterministicAppHash('6d73ee5a56bfdeddfb6479b41011d14e6454f265c5ac7c9a58e813b865d07714');
+    await expectDeterministicAppHash('a7e66f34b679960f1f8f3b59f8288609a352e2f3fb3a369e498d5f65cefca887');
 
     const invalidMasternodeIdentifier = Identifier.from(
       Buffer.from(invalidSmlEntry.proRegTxHash, 'hex'),
@@ -762,7 +762,7 @@ describe('synchronizeMasternodeIdentitiesFactory', () => {
 
     await synchronizeMasternodeIdentities(coreHeight + 1);
 
-    await expectDeterministicAppHash('62edcc5cf98ba354382b64995012f4ca391b5e77d519099aed91d0e40c7f660a');
+    await expectDeterministicAppHash('ecf2fce3a1e61bb5919f3bb0301b88fc35ccd3b0f268485ec457bd0d9e994f48');
 
     // Masternode identity should stay
 
@@ -828,7 +828,7 @@ describe('synchronizeMasternodeIdentitiesFactory', () => {
 
     await synchronizeMasternodeIdentities(coreHeight + 1);
 
-    await expectDeterministicAppHash('a750d62ba04e5a0771ca9d84524d8e57e835a3be4422b745d279031b6c4fc108');
+    await expectDeterministicAppHash('7d0248dbad9d0109a9d215158a5196991d6c4650bfd4e043a36bb8517c2068a9');
 
     // Masternode identity should contain new public key
 

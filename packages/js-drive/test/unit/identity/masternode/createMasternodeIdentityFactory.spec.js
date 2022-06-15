@@ -63,7 +63,7 @@ describe('createMasternodeIdentityFactory', () => {
       revision: 0,
     });
 
-    expect(stateRepositoryMock.storeIdentity).to.have.been.calledOnceWithExactly(identity);
+    expect(stateRepositoryMock.createIdentity).to.have.been.calledOnceWithExactly(identity);
     expect(getWithdrawPubKeyTypeFromPayoutScriptMock).to.not.be.called();
     expect(getPublicKeyFromPayoutScriptMock).to.not.be.called();
 
@@ -102,7 +102,7 @@ describe('createMasternodeIdentityFactory', () => {
       revision: 0,
     });
 
-    expect(stateRepositoryMock.storeIdentity).to.have.been.calledOnceWithExactly(identity);
+    expect(stateRepositoryMock.createIdentity).to.have.been.calledOnceWithExactly(identity);
 
     const publicKeyHashes = identity
       .getPublicKeys()
@@ -166,7 +166,7 @@ describe('createMasternodeIdentityFactory', () => {
       revision: 0,
     });
 
-    expect(stateRepositoryMock.storeIdentity).to.have.been.calledOnceWithExactly(identity);
+    expect(stateRepositoryMock.createIdentity).to.have.been.calledOnceWithExactly(identity);
     expect(getWithdrawPubKeyTypeFromPayoutScriptMock).to.be.calledOnce();
     expect(getPublicKeyFromPayoutScriptMock).to.be.calledOnce();
 

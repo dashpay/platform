@@ -20,7 +20,6 @@ const {
     GetDataContractRequest,
     GetDocumentsRequest,
     GetIdentitiesByPublicKeyHashesRequest,
-    GetIdentityIdsByPublicKeyHashesRequest,
     WaitForStateTransitionResultRequest,
     GetConsensusParamsRequest,
     pbjs: {
@@ -34,8 +33,6 @@ const {
       GetDocumentsResponse: PBJSGetDocumentsResponse,
       GetIdentitiesByPublicKeyHashesResponse: PBJSGetIdentitiesByPublicKeyHashesResponse,
       GetIdentitiesByPublicKeyHashesRequest: PBJSGetIdentitiesByPublicKeyHashesRequest,
-      GetIdentityIdsByPublicKeyHashesResponse: PBJSGetIdentityIdsByPublicKeyHashesResponse,
-      GetIdentityIdsByPublicKeyHashesRequest: PBJSGetIdentityIdsByPublicKeyHashesRequest,
       WaitForStateTransitionResultRequest: PBJSWaitForStateTransitionResultRequest,
       WaitForStateTransitionResultResponse: PBJSWaitForStateTransitionResultResponse,
       GetConsensusParamsRequest: PBJSGetConsensusParamsRequest,
@@ -62,9 +59,6 @@ const getDataContractHandlerFactory = require(
 );
 const getIdentitiesByPublicKeyHashesHandlerFactory = require(
   './getIdentitiesByPublicKeyHashesHandlerFactory',
-);
-const getIdentityIdsByPublicKeyHashesHandlerFactory = require(
-  './getIdentityIdsByPublicKeyHashesHandlerFactory',
 );
 const waitForStateTransitionResultHandlerFactory = require(
   './waitForStateTransitionResultHandlerFactory',
@@ -178,22 +172,6 @@ function platformHandlersFactory(
     wrapInErrorHandler(getIdentitiesByPublicKeyHashesHandler),
   );
 
-  // getIdentityIdsByPublicKeyHashes
-  const getIdentityIdsByPublicKeyHashesHandler = getIdentityIdsByPublicKeyHashesHandlerFactory(
-    driveClient,
-  );
-
-  const wrappedGetIdentityIdsByPublicKeyHashes = jsonToProtobufHandlerWrapper(
-    jsonToProtobufFactory(
-      GetIdentityIdsByPublicKeyHashesRequest,
-      PBJSGetIdentityIdsByPublicKeyHashesRequest,
-    ),
-    protobufToJsonFactory(
-      PBJSGetIdentityIdsByPublicKeyHashesResponse,
-    ),
-    wrapInErrorHandler(getIdentityIdsByPublicKeyHashesHandler),
-  );
-
   // waitForStateTransitionResult
   const fetchProofForStateTransition = fetchProofForStateTransitionFactory(driveClient);
 
@@ -249,7 +227,6 @@ function platformHandlersFactory(
     getDocuments: wrappedGetDocuments,
     getDataContract: wrappedGetDataContract,
     getIdentitiesByPublicKeyHashes: wrappedGetIdentitiesByPublicKeyHashes,
-    getIdentityIdsByPublicKeyHashes: wrappedGetIdentityIdsByPublicKeyHashes,
     waitForStateTransitionResult: wrappedWaitForStateTransitionResult,
     getConsensusParams: wrappedGetConsensusParams,
   };

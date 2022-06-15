@@ -39,11 +39,6 @@ class PlatformStub(object):
                 request_serializer=platform__pb2.GetIdentitiesByPublicKeyHashesRequest.SerializeToString,
                 response_deserializer=platform__pb2.GetIdentitiesByPublicKeyHashesResponse.FromString,
                 )
-        self.getIdentityIdsByPublicKeyHashes = channel.unary_unary(
-                '/org.dash.platform.dapi.v0.Platform/getIdentityIdsByPublicKeyHashes',
-                request_serializer=platform__pb2.GetIdentityIdsByPublicKeyHashesRequest.SerializeToString,
-                response_deserializer=platform__pb2.GetIdentityIdsByPublicKeyHashesResponse.FromString,
-                )
         self.waitForStateTransitionResult = channel.unary_unary(
                 '/org.dash.platform.dapi.v0.Platform/waitForStateTransitionResult',
                 request_serializer=platform__pb2.WaitForStateTransitionResultRequest.SerializeToString,
@@ -89,12 +84,6 @@ class PlatformServicer(object):
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
-    def getIdentityIdsByPublicKeyHashes(self, request, context):
-        """Missing associated documentation comment in .proto file."""
-        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
-        context.set_details('Method not implemented!')
-        raise NotImplementedError('Method not implemented!')
-
     def waitForStateTransitionResult(self, request, context):
         """Missing associated documentation comment in .proto file."""
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
@@ -134,11 +123,6 @@ def add_PlatformServicer_to_server(servicer, server):
                     servicer.getIdentitiesByPublicKeyHashes,
                     request_deserializer=platform__pb2.GetIdentitiesByPublicKeyHashesRequest.FromString,
                     response_serializer=platform__pb2.GetIdentitiesByPublicKeyHashesResponse.SerializeToString,
-            ),
-            'getIdentityIdsByPublicKeyHashes': grpc.unary_unary_rpc_method_handler(
-                    servicer.getIdentityIdsByPublicKeyHashes,
-                    request_deserializer=platform__pb2.GetIdentityIdsByPublicKeyHashesRequest.FromString,
-                    response_serializer=platform__pb2.GetIdentityIdsByPublicKeyHashesResponse.SerializeToString,
             ),
             'waitForStateTransitionResult': grpc.unary_unary_rpc_method_handler(
                     servicer.waitForStateTransitionResult,
@@ -242,23 +226,6 @@ class Platform(object):
         return grpc.experimental.unary_unary(request, target, '/org.dash.platform.dapi.v0.Platform/getIdentitiesByPublicKeyHashes',
             platform__pb2.GetIdentitiesByPublicKeyHashesRequest.SerializeToString,
             platform__pb2.GetIdentitiesByPublicKeyHashesResponse.FromString,
-            options, channel_credentials,
-            insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
-
-    @staticmethod
-    def getIdentityIdsByPublicKeyHashes(request,
-            target,
-            options=(),
-            channel_credentials=None,
-            call_credentials=None,
-            insecure=False,
-            compression=None,
-            wait_for_ready=None,
-            timeout=None,
-            metadata=None):
-        return grpc.experimental.unary_unary(request, target, '/org.dash.platform.dapi.v0.Platform/getIdentityIdsByPublicKeyHashes',
-            platform__pb2.GetIdentityIdsByPublicKeyHashesRequest.SerializeToString,
-            platform__pb2.GetIdentityIdsByPublicKeyHashesResponse.FromString,
             options, channel_credentials,
             insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
 

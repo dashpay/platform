@@ -189,7 +189,7 @@ describe('feesPrediction', () => {
 
     describe('IdentityTopUpTransition', () => {
       it('should have predicted fee more than actual fee', async () => {
-        await stateRepository.storeIdentity(identity);
+        await stateRepository.createIdentity(identity);
 
         const stateTransition = dpp.identity.createIdentityTopUpTransition(
           identity.getId(),
@@ -207,7 +207,7 @@ describe('feesPrediction', () => {
 
     describe('IdentityUpdateTransition', () => {
       it('should have predicted fee more than actual fee', async () => {
-        await stateRepository.storeIdentity(identity);
+        await stateRepository.createIdentity(identity);
 
         const newIdentityPublicKeys = [];
         const disableIdentityPublicKeys = [];
@@ -314,7 +314,7 @@ describe('feesPrediction', () => {
         revision: 0,
       });
 
-      await stateRepository.storeIdentity(identity);
+      await stateRepository.createIdentity(identity);
 
       // Generate Data Contract
 
@@ -427,7 +427,7 @@ describe('feesPrediction', () => {
         revision: 0,
       });
 
-      await stateRepository.storeIdentity(identity);
+      await stateRepository.createIdentity(identity);
 
       // Create Data Contract
 

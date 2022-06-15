@@ -3,7 +3,7 @@ const SpentAssetLockTransactionsRepository = require('../identity/SpentAssetLock
 /**
  *
  * @param {IdentityStoreRepository} identityRepository
- * @param {PublicKeyToIdentityIdStoreRepository} publicKeyToIdentityIdRepository
+ * @param {PublicKeyToIdentitiesStoreRepository} publicKeyToIdentitiesRepository
  * @param {SpentAssetLockTransactionsRepository} spentAssetLockTransactionsRepository
  * @param {DataContractStoreRepository} dataContractRepository
  * @param {GroveDBStore} groveDBStore
@@ -11,7 +11,7 @@ const SpentAssetLockTransactionsRepository = require('../identity/SpentAssetLock
  */
 function createInitialStateStructureFactory(
   identityRepository,
-  publicKeyToIdentityIdRepository,
+  publicKeyToIdentitiesRepository,
   spentAssetLockTransactionsRepository,
   dataContractRepository,
   groveDBStore,
@@ -23,7 +23,7 @@ function createInitialStateStructureFactory(
   async function createInitialStateStructure() {
     await identityRepository.createTree({ useTransaction: true });
 
-    await publicKeyToIdentityIdRepository.createTree({ useTransaction: true });
+    await publicKeyToIdentitiesRepository.createTree({ useTransaction: true });
 
     await dataContractRepository.createTree({ useTransaction: true });
 
