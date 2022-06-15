@@ -109,8 +109,6 @@ class IdentitySyncWorker extends Worker {
 
       const identity = new Identity(rawIdentity);
 
-      this.dpp.identity.createFromBuffer(identityBuffer);
-
       logger.silly(`IdentitySyncWorker - got ${identity.getId()} at ${index}`);
 
       // eslint-disable-next-line no-await-in-loop
