@@ -69,7 +69,7 @@ class IdentitySyncWorker extends Worker {
       const publicKey = privateKey.toPublicKey();
 
       // eslint-disable-next-line no-await-in-loop
-      const [identityBuffer] = await this.transport.getIdentitiesByPublicKeyHash(
+      const [identityBuffer] = await this.transport.getIdentitiesByPublicKeyHashes(
         [publicKey.hash],
       );
 

@@ -24,7 +24,7 @@ DAPIClientTransport.prototype.getTransaction = require('./methods/getTransaction
 DAPIClientTransport.prototype.sendTransaction = require('./methods/sendTransaction');
 DAPIClientTransport.prototype.subscribeToBlockHeaders = require('./methods/subscribeToBlockHeaders');
 DAPIClientTransport.prototype.subscribeToBlocks = require('./methods/subscribeToBlocks');
-DAPIClientTransport.prototype.getIdentitiesByPublicKeyHash = require('./methods/getIdentitiesByPublicKeyHashes');
+DAPIClientTransport.prototype.getIdentitiesByPublicKeyHashes = require('./methods/getIdentitiesByPublicKeyHashes');
 DAPIClientTransport.prototype.subscribeToTransactionsWithProofs = require('./methods/subscribeToTransactionsWithProofs');
 
 module.exports = DAPIClientTransport;
