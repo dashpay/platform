@@ -15,17 +15,26 @@ impl Drive {
         apply: bool,
         transaction: TransactionArg,
     ) -> Result<(i64, u64), Error> {
-        let mut insert_operations: Vec<DriveOperation> = vec![];
+        let mut drive_operations: Vec<DriveOperation> = vec![];
+
         self.batch_insert(
             PathFixedSizeKeyElement((
                 [Into::<&[u8; 1]>::into(RootTree::Identities).as_slice()],
                 identity_key,
                 identity_bytes,
             )),
-            &mut insert_operations,
+            &mut drive_operations,
         )?;
-        if apply {}
-        calculate_fee(None, None, Some(insert_operations))
+
+        if apply {
+            self.grove_apply_batch(
+                DriveOperation::grovedb_operations(&drive_operations),
+                false,
+                transaction,
+            )?;
+        }
+
+        calculate_fee(None, None, Some(drive_operations))
     }
 
     pub fn insert_identity_cbor(

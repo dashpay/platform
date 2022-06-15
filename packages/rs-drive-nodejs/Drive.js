@@ -135,6 +135,7 @@ class Drive {
    * @param {string} documentType
    * @param {Identifier} documentId
    * @param {boolean} [useTransaction=false]
+   * @param {boolean} [dryRun=false]
    *
    * @returns {Promise<[number, number]>}
    */
@@ -143,12 +144,14 @@ class Drive {
     documentType,
     documentId,
     useTransaction = false,
+    dryRun = false,
   ) {
     return driveDeleteDocumentAsync.call(
       this.drive,
       documentId.toBuffer(),
       dataContract.toBuffer(),
       documentType,
+      !dryRun,
       useTransaction,
     );
   }
