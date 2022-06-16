@@ -65,8 +65,12 @@ impl DataContractValidator {
 
         trace!("validating by protocol protocol version validator");
         result.merge(
-            self.protocol_version_validator
-                .validate(raw_data_contract.get_u64("protocolVersion")? as u32)?,
+            self.protocol_version_validator.validate(
+                raw_data_contract
+                    .get_u64("protocolVersion")
+                    .map_err(|_| anyhow!("protocolVersion isn't unsigned integer"))?
+                    as u32,
+            )?,
         );
         if !result.is_valid() {
             return Ok(result);
@@ -388,6 +392,7 @@ mod test {
         Convertible,
     };
     use jsonschema::error::{TypeKind, ValidationErrorKind};
+    use serde_json::json;
     use test_case::test_case;
 
     struct TestData {
@@ -418,13 +423,16 @@ mod test {
 
     fn init() {
         let _ = env_logger::builder()
-            .filter_level(log::LevelFilter::Trace)
+            .filter_level(log::LevelFilter::Debug)
             .try_init();
     }
 
     #[test_case("protocolVersion")]
     #[test_case("$schema")]
+    #[test_case("$id")]
+    #[test_case("documents")]
     #[test_case("ownerId")]
+    // #[test_case("$defs")]
     fn property_should_be_present(property: &str) {
         init();
         let TestData {
@@ -440,6 +448,7 @@ mod test {
         let result = data_contract_validator
             .validate(&raw_data_contract)
             .expect("validation result should be returned");
+        trace!("The validation result is: {:#?}", result);
 
         let schema_error = get_first_schema_error(&result);
         assert!(matches!(
@@ -448,6 +457,157 @@ mod test {
                 property: JsonValue::String(protocol_version)
             } if protocol_version == property
         ));
+    }
+
+    #[test]
+    fn protocol_version_should_be_integer() {
+        init();
+        let TestData {
+            mut raw_data_contract,
+            data_contract_validator,
+            ..
+        } = get_test_data();
+
+        raw_data_contract["protocolVersion"] = json!("1");
+
+        let result = data_contract_validator
+            .validate(&raw_data_contract)
+            .expect("validation result should be returned");
+        trace!("The validation result is: {:#?}", result);
+
+        let schema_error = get_first_schema_error(&result);
+        assert_eq!("/protocolVersion", schema_error.instance_path().to_string());
+        assert_eq!(Some("type"), schema_error.keyword(),);
+    }
+
+    #[test]
+    fn protocol_version_should_be_valid() {
+        init();
+        let TestData {
+            mut raw_data_contract,
+            data_contract_validator,
+            ..
+        } = get_test_data();
+
+        raw_data_contract["protocolVersion"] = json!(-1);
+
+        let result = data_contract_validator
+            .validate(&raw_data_contract)
+            .expect_err("protocol error should be returned");
+        trace!("The validation result is: {:#?}", result);
+
+        assert!(matches!(result, ProtocolError::Error(..)))
+    }
+
+    #[test]
+    fn schema_should_be_string() {
+        init();
+        let TestData {
+            mut raw_data_contract,
+            data_contract_validator,
+            ..
+        } = get_test_data();
+
+        raw_data_contract["$schema"] = json!(1);
+
+        let result = data_contract_validator
+            .validate(&raw_data_contract)
+            .expect("validation result should be returned");
+        trace!("The validation result is: {:#?}", result);
+
+        let schema_error = get_first_schema_error(&result);
+        assert_eq!("/$schema", schema_error.instance_path().to_string());
+        assert_eq!(Some("type"), schema_error.keyword(),);
+    }
+
+    #[test]
+    fn owner_id_should_be_byte_array() {
+        init();
+        let TestData {
+            mut raw_data_contract,
+            data_contract_validator,
+            ..
+        } = get_test_data();
+
+        let array = ["string"; 32];
+        raw_data_contract["ownerId"] = json!(array);
+
+        let result = data_contract_validator
+            .validate(&raw_data_contract)
+            .expect("validation result should be returned");
+        trace!("The validation result is: {:#?}", result);
+
+        let schema_error = get_first_schema_error(&result);
+        assert_eq!("/ownerId/0", schema_error.instance_path().to_string());
+        assert_eq!(Some("type"), schema_error.keyword(),);
+    }
+
+    #[test]
+    fn owner_id_should_be_no_less_32_bytes() {
+        init();
+        let TestData {
+            mut raw_data_contract,
+            data_contract_validator,
+            ..
+        } = get_test_data();
+
+        let array = [0u8; 31];
+        raw_data_contract["ownerId"] = json!(array);
+
+        let result = data_contract_validator
+            .validate(&raw_data_contract)
+            .expect("validation result should be returned");
+        trace!("The validation result is: {:#?}", result);
+
+        let schema_error = get_first_schema_error(&result);
+        assert_eq!("/ownerId", schema_error.instance_path().to_string());
+        assert_eq!(Some("minItems"), schema_error.keyword(),);
+    }
+
+    #[test]
+    fn schema_should_be_url() {
+        init();
+        let TestData {
+            mut raw_data_contract,
+            data_contract_validator,
+            ..
+        } = get_test_data();
+
+        raw_data_contract["$schema"] = json!("wrong");
+
+        let result = data_contract_validator
+            .validate(&raw_data_contract)
+            .expect("validation result should be returned");
+        trace!("The validation result is: {:#?}", result);
+
+        let schema_error = get_first_schema_error(&result);
+        assert_eq!("/$schema", schema_error.instance_path().to_string());
+        assert_eq!(Some("const"), schema_error.keyword(),);
+    }
+
+    #[test]
+    fn indices_should_be_array() {
+        init();
+        let TestData {
+            mut raw_data_contract,
+            data_contract_validator,
+            ..
+        } = get_test_data();
+
+        raw_data_contract["documents"]["indexedDocument"]["indices"] =
+            json!("definitely not an array");
+
+        let result = data_contract_validator
+            .validate(&raw_data_contract)
+            .expect("validation result should be returned");
+        trace!("The validation result is: {:#?}", result);
+
+        let schema_error = get_first_schema_error(&result);
+        assert_eq!(
+            "/documents/indexedDocument/indices",
+            schema_error.instance_path().to_string()
+        );
+        assert_eq!(Some("type"), schema_error.keyword(),);
     }
 
     fn get_first_schema_error(result: &ValidationResult) -> &JsonSchemaError {

@@ -45,6 +45,16 @@ lazy_static! {
 
     // Compiled version of data contract meta schema
     static ref DATA_CONTRACT_META_SCHEMA: JSONSchema = JSONSchema::options()
+        .add_keyword(
+                "byteArray",
+                KeywordDefinition::Schema(json!({
+                    "items": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 255,
+                    },
+                })),
+            )
         .with_document(
             "https://json-schema.org/draft/2020-12/meta/applicator".to_string(),
             DRAFT202012_APPLICATOR.clone(),
