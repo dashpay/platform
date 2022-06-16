@@ -19,7 +19,7 @@ class TransportMock extends EventEmitter {
         nonce: 351770,
       });
     this.subscribeToBlocks = sinonSandbox.stub();
-    this.getIdentitiesByPublicKeyHashes = sinonSandbox.stub().returns([null]);
+    this.getIdentitiesByPublicKeyHashes = sinonSandbox.stub().returns([]);
     this.sendTransaction = sinonSandbox.stub();
     this.getTransaction = sinonSandbox.stub();
     this.getBlockHeaderByHash = sinonSandbox.stub();
