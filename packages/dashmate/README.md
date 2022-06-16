@@ -164,7 +164,7 @@ USAGE
   $ dashmate stop
 
 OPTIONS
-  -f, --force      force stop even if any is running
+  -f, --force      force stop nodes (skips running check)
   -v, --verbose    use verbose mode for output
   --config=config  configuration name to use
 ```
@@ -297,7 +297,7 @@ USAGE
   $ dashmate group stop
 
 OPTIONS
-  -f, --force    force stop even if any is running
+  -f, --force    force stop nodes (skips running check)
   -v, --verbose  use verbose mode for output
   --group=group  group name to use
 ```
