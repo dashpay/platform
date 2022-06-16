@@ -87,7 +87,7 @@ export async function createAndAttachTransportMocksToClient(client, sinon) {
     await accountPromise;
 
     // Putting data in transport stubs
-    transportMock.getIdentitiesByPublicKeyHashes.resolves([null]);
+    transportMock.getIdentitiesByPublicKeyHashes.resolves([]);
     makeTxStreamEmitISLocksForTransactions(transportMock, txStreamMock);
     makeGetIdentityRespondWithIdentity(client, dapiClientMock);
 
