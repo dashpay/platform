@@ -16,6 +16,7 @@ use crate::{
 use anyhow::anyhow;
 use itertools::Itertools;
 use lazy_static::lazy_static;
+use log::trace;
 use serde_json::Value as JsonValue;
 use std::{collections::HashMap, sync::Arc};
 
@@ -35,14 +36,6 @@ lazy_static! {
         // TODO  the base_document_schema should be declared in one place
     static ref BASE_DOCUMENT_SCHEMA: JsonValue =
         serde_json::from_str(include_str!("../../schema/document/documentBase.json")).unwrap();
-
-    static ref DATA_CONTRACT_META_VALIDATOR: JsonSchemaValidator = JsonSchemaValidator::new(
-        serde_json::from_str::<JsonValue>(include_str!(
-            "../../schema/data_contract/dataContractMeta.json"
-        ))
-        .unwrap()
-    )
-    .unwrap();
 }
 
 pub struct DataContractValidator {
@@ -62,11 +55,15 @@ impl DataContractValidator {
     ) -> Result<ValidationResult, ProtocolError> {
         let mut result = ValidationResult::default();
 
-        result.merge(DATA_CONTRACT_META_VALIDATOR.validate(raw_data_contract)?);
+        trace!("validating against data contract meta validator");
+        result.merge(JsonSchemaValidator::validate_data_contract_schema(
+            raw_data_contract,
+        )?);
         if !result.is_valid() {
             return Ok(result);
         }
 
+        trace!("validating by protocol protocol version validator");
         result.merge(
             self.protocol_version_validator
                 .validate(raw_data_contract.get_u64("protocolVersion")? as u32)?,
@@ -75,11 +72,13 @@ impl DataContractValidator {
             return Ok(result);
         }
 
+        trace!("validating data contract max depth");
         result.merge(validate_data_contract_max_depth(raw_data_contract));
         if !result.is_valid() {
             return Ok(result);
         }
 
+        trace!("validating data contract patterns");
         result.merge(validate_data_contract_patterns(raw_data_contract));
         if !result.is_valid() {
             return Ok(result);
@@ -93,7 +92,9 @@ impl DataContractValidator {
             &[],
         )?;
 
+        trace!("validating the documents");
         for (document_type, raw_document) in enriched_data_contract.documents.iter() {
+            trace!("validating document {}", document_type);
             let document_schema = enriched_data_contract
                 .get_document_schema(document_type)?
                 .to_owned();
@@ -375,4 +376,86 @@ fn validate_no_system_indices(index_definition: &Index, document_type: &str) -> 
         }
     }
     result
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use crate::{
+        consensus::basic::JsonSchemaError,
+        tests::fixtures::get_data_contract_fixture,
+        version::{ProtocolVersionValidator, COMPATIBILITY_MAP, LATEST_VERSION},
+        Convertible,
+    };
+    use jsonschema::error::{TypeKind, ValidationErrorKind};
+    use test_case::test_case;
+
+    struct TestData {
+        data_contract_validator: DataContractValidator,
+        data_contract: DataContract,
+        raw_data_contract: JsonValue,
+    }
+
+    fn get_test_data() -> TestData {
+        let data_contract = get_data_contract_fixture(None);
+        let raw_data_contract = data_contract.to_object().unwrap();
+
+        let protocol_version_validator = ProtocolVersionValidator::new(
+            LATEST_VERSION,
+            LATEST_VERSION,
+            COMPATIBILITY_MAP.clone(),
+        );
+
+        let data_contract_validator =
+            DataContractValidator::new(Arc::new(protocol_version_validator));
+
+        TestData {
+            data_contract,
+            raw_data_contract,
+            data_contract_validator,
+        }
+    }
+
+    fn init() {
+        let _ = env_logger::builder()
+            .filter_level(log::LevelFilter::Trace)
+            .try_init();
+    }
+
+    #[test_case("protocolVersion")]
+    #[test_case("$schema")]
+    #[test_case("ownerId")]
+    fn property_should_be_present(property: &str) {
+        init();
+        let TestData {
+            mut raw_data_contract,
+            data_contract_validator,
+            ..
+        } = get_test_data();
+
+        raw_data_contract
+            .remove(property)
+            .unwrap_or_else(|_| panic!("the {} should exist and be removed", "protocolVersion"));
+
+        let result = data_contract_validator
+            .validate(&raw_data_contract)
+            .expect("validation result should be returned");
+
+        let schema_error = get_first_schema_error(&result);
+        assert!(matches!(
+            schema_error.kind(),
+            ValidationErrorKind::Required {
+                property: JsonValue::String(protocol_version)
+            } if protocol_version == property
+        ));
+    }
+
+    fn get_first_schema_error(result: &ValidationResult) -> &JsonSchemaError {
+        result
+            .errors
+            .get(0)
+            .expect("the error should be returned in validation result")
+            .json_schema_error()
+            .expect("the error should be json schema error")
+    }
 }
