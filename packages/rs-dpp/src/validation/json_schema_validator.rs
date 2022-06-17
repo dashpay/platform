@@ -159,6 +159,20 @@ impl JsonSchemaValidator {
         }
     }
 
+    /// validates schema through compilation
+    pub fn validate_schema(schema: &Value) -> ValidationResult {
+        let mut validation_result = ValidationResult::new(None);
+
+        let res = JSONSchema::options().compile(schema);
+        match res {
+            Ok(_) => validation_result,
+            Err(validation_error) => {
+                validation_result.add_error(ConsensusError::from(validation_error));
+                validation_result
+            }
+        }
+    }
+
     /// Uses predefined meta-schemas to validate data contract schema
     pub fn validate_data_contract_schema(
         data_contract_schema: &Value,

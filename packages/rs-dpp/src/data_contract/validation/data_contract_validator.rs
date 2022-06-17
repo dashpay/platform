@@ -97,35 +97,35 @@ impl DataContractValidator {
         )?;
 
         trace!("validating the documents");
-        for (document_type, raw_document) in enriched_data_contract.documents.iter() {
-            trace!("validating document {}", document_type);
-            let document_schema = enriched_data_contract
-                .get_document_schema(document_type)?
-                .to_owned();
-
-            let json_schema_validator = JsonSchemaValidator::new(document_schema)
-                .map_err(|e| anyhow!("unable to process the contract: {}", e))?;
-
-            let json_schema_validation_result = json_schema_validator.validate(raw_document)?;
+        for (document_type, document_schema) in enriched_data_contract.documents.iter() {
+            trace!("validating document schema '{}'", document_type);
+            let json_schema_validation_result =
+                JsonSchemaValidator::validate_schema(document_schema);
             result.merge(json_schema_validation_result);
         }
         if !result.is_valid() {
             return Ok(result);
         }
 
+        trace!("indices validation");
         for (document_type, document_schema) in enriched_data_contract
             .documents
             .iter()
             .filter(|(_, value)| value.get("indices").is_some())
         {
+            trace!("validating indices in {}", document_type);
             let mut indices_fingerprints: Vec<String> = vec![];
             let indices = document_schema.get_indices()?;
+
+            trace!("\t validating duplicates");
             let validation_result = validate_index_duplicates(&indices, document_type);
             result.merge(validation_result);
 
+            trace!("\t validating uniqueness");
             let validation_result = validate_max_unique_indices(&indices, document_type);
             result.merge(validation_result);
 
+            trace!("\t validating definitions");
             for index_definition in indices.iter() {
                 let validation_result = validate_no_system_indices(index_definition, document_type);
                 result.merge(validation_result);
@@ -133,6 +133,7 @@ impl DataContractValidator {
                 let user_defined_properties = index_definition
                     .properties
                     .iter()
+                    .flatten()
                     .map(|property| property.0)
                     .filter(|property_name| {
                         ALLOWED_INDEX_SYSTEM_PROPERTIES.contains(&property_name.as_str())
@@ -276,12 +277,14 @@ impl DataContractValidator {
                             let all_are_required = index_definition
                                 .properties
                                 .iter()
+                                .flatten()
                                 .map(|(field, _)| field)
                                 .all(|field| required_fields.contains(&field.as_str()));
 
                             let all_are_not_required = index_definition
                                 .properties
                                 .iter()
+                                .flatten()
                                 .map(|(field, _)| field)
                                 .all(|field| !required_fields.contains(&field.as_str()));
 
@@ -368,7 +371,7 @@ fn validate_max_unique_indices(indices: &[Index], document_type: &str) -> Valida
 fn validate_no_system_indices(index_definition: &Index, document_type: &str) -> ValidationResult {
     let mut result = ValidationResult::default();
 
-    for (property_name, _) in index_definition.properties.iter() {
+    for (property_name, _) in index_definition.properties.iter().flatten() {
         if NOT_ALLOWED_SYSTEM_PROPERTIES.contains(&property_name.as_str()) {
             result.add_error(BasicError::IndexError(
                 IndexError::SystemPropertyIndexAlreadyPresentError {
@@ -423,7 +426,7 @@ mod test {
 
     fn init() {
         let _ = env_logger::builder()
-            .filter_level(log::LevelFilter::Debug)
+            .filter_level(log::LevelFilter::Trace)
             .try_init();
     }
 
@@ -450,12 +453,12 @@ mod test {
             .expect("validation result should be returned");
         trace!("The validation result is: {:#?}", result);
 
-        let schema_error = get_first_schema_error(&result);
+        let schema_error = get_schema_error(&result, 0);
         assert!(matches!(
             schema_error.kind(),
             ValidationErrorKind::Required {
-                property: JsonValue::String(protocol_version)
-            } if protocol_version == property
+                property: JsonValue::String(missing_property)
+            } if missing_property == property
         ));
     }
 
@@ -475,7 +478,7 @@ mod test {
             .expect("validation result should be returned");
         trace!("The validation result is: {:#?}", result);
 
-        let schema_error = get_first_schema_error(&result);
+        let schema_error = get_schema_error(&result, 0);
         assert_eq!("/protocolVersion", schema_error.instance_path().to_string());
         assert_eq!(Some("type"), schema_error.keyword(),);
     }
@@ -515,13 +518,14 @@ mod test {
             .expect("validation result should be returned");
         trace!("The validation result is: {:#?}", result);
 
-        let schema_error = get_first_schema_error(&result);
+        let schema_error = get_schema_error(&result, 0);
         assert_eq!("/$schema", schema_error.instance_path().to_string());
         assert_eq!(Some("type"), schema_error.keyword(),);
     }
 
-    #[test]
-    fn owner_id_should_be_byte_array() {
+    #[test_case("ownerId")]
+    #[test_case("$id")]
+    fn owner_id_should_be_byte_array(property_name: &str) {
         init();
         let TestData {
             mut raw_data_contract,
@@ -530,20 +534,30 @@ mod test {
         } = get_test_data();
 
         let array = ["string"; 32];
-        raw_data_contract["ownerId"] = json!(array);
+        raw_data_contract[property_name] = json!(array);
 
         let result = data_contract_validator
             .validate(&raw_data_contract)
             .expect("validation result should be returned");
         trace!("The validation result is: {:#?}", result);
 
-        let schema_error = get_first_schema_error(&result);
-        assert_eq!("/ownerId/0", schema_error.instance_path().to_string());
+        let schema_error = get_schema_error(&result, 0);
+        let byte_array_schema_error = get_schema_error(&result, 1);
+
+        assert_eq!(
+            format!("/{}/0", property_name),
+            schema_error.instance_path().to_string()
+        );
         assert_eq!(Some("type"), schema_error.keyword(),);
+        assert_eq!(
+            format!("/properties/{}/byteArray/items/type", property_name),
+            byte_array_schema_error.schema_path().to_string()
+        );
     }
 
-    #[test]
-    fn owner_id_should_be_no_less_32_bytes() {
+    #[test_case("ownerId")]
+    #[test_case("$id")]
+    fn owner_id_should_be_no_less_32_bytes(property_name: &str) {
         init();
         let TestData {
             mut raw_data_contract,
@@ -552,16 +566,46 @@ mod test {
         } = get_test_data();
 
         let array = [0u8; 31];
-        raw_data_contract["ownerId"] = json!(array);
+        raw_data_contract[property_name] = json!(array);
 
         let result = data_contract_validator
             .validate(&raw_data_contract)
             .expect("validation result should be returned");
         trace!("The validation result is: {:#?}", result);
 
-        let schema_error = get_first_schema_error(&result);
-        assert_eq!("/ownerId", schema_error.instance_path().to_string());
+        let schema_error = get_schema_error(&result, 0);
+        assert_eq!(
+            format!("/{}", property_name),
+            schema_error.instance_path().to_string()
+        );
         assert_eq!(Some("minItems"), schema_error.keyword(),);
+    }
+
+    #[test_case("ownerId")]
+    #[test_case("$id")]
+    fn owner_id_should_be_no_longer_32_bytes(property_name: &str) {
+        init();
+        let TestData {
+            mut raw_data_contract,
+            data_contract_validator,
+            ..
+        } = get_test_data();
+
+        let mut too_long_id = Vec::new();
+        too_long_id.resize(33, 0u8);
+        raw_data_contract[property_name] = json!(too_long_id);
+
+        let result = data_contract_validator
+            .validate(&raw_data_contract)
+            .expect("validation result should be returned");
+        trace!("The validation result is: {:#?}", result);
+
+        let schema_error = get_schema_error(&result, 0);
+        assert_eq!(
+            format!("/{}", property_name),
+            schema_error.instance_path().to_string()
+        );
+        assert_eq!(Some("maxItems"), schema_error.keyword(),);
     }
 
     #[test]
@@ -580,9 +624,337 @@ mod test {
             .expect("validation result should be returned");
         trace!("The validation result is: {:#?}", result);
 
-        let schema_error = get_first_schema_error(&result);
+        let schema_error = get_schema_error(&result, 0);
         assert_eq!("/$schema", schema_error.instance_path().to_string());
         assert_eq!(Some("const"), schema_error.keyword(),);
+    }
+
+    #[test]
+    fn documents_should_be_object() {
+        init();
+        let TestData {
+            mut raw_data_contract,
+            data_contract_validator,
+            ..
+        } = get_test_data();
+
+        raw_data_contract["documents"] = json!(1);
+
+        let result = data_contract_validator
+            .validate(&raw_data_contract)
+            .expect("validation result should be returned");
+        trace!("The validation result is: {:#?}", result);
+
+        let schema_error = get_schema_error(&result, 0);
+        assert_eq!("/documents", schema_error.instance_path().to_string());
+        assert_eq!(Some("type"), schema_error.keyword(),);
+    }
+
+    #[test]
+    fn documents_should_not_be_empty() {
+        init();
+        let TestData {
+            mut raw_data_contract,
+            data_contract_validator,
+            ..
+        } = get_test_data();
+
+        raw_data_contract["documents"] = json!({});
+
+        let result = data_contract_validator
+            .validate(&raw_data_contract)
+            .expect("validation result should be returned");
+        trace!("The validation result is: {:#?}", result);
+
+        let schema_error = get_schema_error(&result, 0);
+        assert_eq!("/documents", schema_error.instance_path().to_string());
+        assert_eq!(Some("minProperties"), schema_error.keyword(),);
+    }
+
+    #[test]
+    fn documents_should_have_valid_names() {
+        init();
+        let TestData {
+            mut raw_data_contract,
+            data_contract_validator,
+            ..
+        } = get_test_data();
+
+        let nice_document_data_contract = raw_data_contract["documents"]["niceDocument"].clone();
+        raw_data_contract["documents"] = json!({});
+
+        let valid_names = [
+            "validName",
+            "valid_name",
+            "valid-name",
+            "abc",
+            "a123123bc",
+            "ab123c",
+            "ValidName",
+            "validName",
+            "abcdefghigklmnopqrstuvwxyz01234567890abcdefghigklmnopqrstuvwxyz",
+            "abc_gbf_gdb",
+            "abc-gbf-gdb",
+        ];
+
+        for document_name in valid_names {
+            raw_data_contract["documents"][document_name] = nice_document_data_contract.clone()
+        }
+
+        let result = data_contract_validator
+            .validate(&raw_data_contract)
+            .expect("validation result should be returned");
+        assert!(result.is_valid());
+    }
+
+    #[test]
+    fn documents_with_invalid_format_should_return_error() {
+        init();
+        let TestData {
+            mut raw_data_contract,
+            data_contract_validator,
+            ..
+        } = get_test_data();
+
+        let nice_document_data_contract = raw_data_contract["documents"]["niceDocument"].clone();
+        raw_data_contract["documents"] = json!({});
+        let invalid_names = [
+            "-invalidname",
+            "_invalidname",
+            "invalidname-",
+            "invalidname_",
+            "*(*&^",
+            "$test",
+            "123abci",
+            "ab",
+        ];
+        for document_name in invalid_names {
+            raw_data_contract["documents"][document_name] = nice_document_data_contract.clone()
+        }
+
+        let result = data_contract_validator
+            .validate(&raw_data_contract)
+            .expect("validation result should be returned");
+        let schema_error = get_schema_error(&result, 0);
+
+        assert_eq!("/documents", schema_error.instance_path().to_string());
+        assert_eq!(Some("pattern"), schema_error.keyword(),);
+    }
+
+    #[test]
+    fn documents_should_have_no_more_100_properties() {
+        init();
+        let TestData {
+            mut raw_data_contract,
+            data_contract_validator,
+            ..
+        } = get_test_data();
+
+        let nice_document_data_contract = raw_data_contract["documents"]["niceDocument"].clone();
+
+        for i in 1..101 {
+            raw_data_contract["documents"][format!("document_{}", i)] =
+                nice_document_data_contract.clone()
+        }
+
+        let result = data_contract_validator
+            .validate(&raw_data_contract)
+            .expect("validation result should be returned");
+        let schema_error = get_schema_error(&result, 0);
+
+        assert_eq!("/documents", schema_error.instance_path().to_string());
+        assert_eq!(Some("maxProperties"), schema_error.keyword(),);
+    }
+
+    #[test]
+    fn document_schema_properties_should_not_be_empty() {
+        init();
+        let TestData {
+            mut raw_data_contract,
+            data_contract_validator,
+            ..
+        } = get_test_data();
+
+        raw_data_contract["documents"]["niceDocument"]["properties"] = json!({});
+
+        let result = data_contract_validator
+            .validate(&raw_data_contract)
+            .expect("validation result should be returned");
+
+        let schema_error = get_schema_error(&result, 0);
+        assert_eq!(
+            "/documents/niceDocument/properties",
+            schema_error.instance_path().to_string()
+        );
+        assert_eq!(Some("minProperties"), schema_error.keyword(),);
+    }
+
+    #[test]
+    fn document_schema_properties_should_have_type_object() {
+        init();
+        let TestData {
+            mut raw_data_contract,
+            data_contract_validator,
+            ..
+        } = get_test_data();
+
+        raw_data_contract["documents"]["niceDocument"]["type"] = json!("string");
+
+        let result = data_contract_validator
+            .validate(&raw_data_contract)
+            .expect("validation result should be returned");
+
+        let schema_error = get_schema_error(&result, 0);
+        assert_eq!(
+            "/documents/niceDocument/type",
+            schema_error.instance_path().to_string()
+        );
+        assert_eq!(Some("const"), schema_error.keyword(),);
+    }
+
+    #[test]
+    fn document_schema_should_have_properties() {
+        init();
+        let TestData {
+            mut raw_data_contract,
+            data_contract_validator,
+            ..
+        } = get_test_data();
+
+        raw_data_contract["documents"]["niceDocument"]
+            .remove("properties")
+            .expect("the properties should exist and be removed");
+
+        let result = data_contract_validator
+            .validate(&raw_data_contract)
+            .expect("validation result should be returned");
+
+        let schema_error = get_schema_error(&result, 0);
+        assert_eq!(
+            "/documents/niceDocument",
+            schema_error.instance_path().to_string()
+        );
+        assert_eq!(Some("required"), schema_error.keyword(),);
+        assert!(matches!(
+            schema_error.kind(),
+            ValidationErrorKind::Required {
+                property: JsonValue::String(missing_property)
+            } if missing_property == "properties"
+        ));
+    }
+
+    #[test]
+    fn document_schema_should_have_nested_properties() {
+        init();
+        let TestData {
+            mut raw_data_contract,
+            data_contract_validator,
+            ..
+        } = get_test_data();
+
+        raw_data_contract["documents"]["niceDocument"]["properties"]["object"] = json!({
+          "type": "array",
+          "prefixItems": [
+            {
+              "type": "object",
+              "properties": {
+                "something": {
+                  "type": "object",
+                },
+              },
+              "additionalProperties": false,
+            },
+          ],
+          "items": false,
+        });
+
+        let result = data_contract_validator
+            .validate(&raw_data_contract)
+            .expect("validation result should be returned");
+
+        let schema_error = get_schema_error(&result, 0);
+        assert_eq!(
+            "/documents/niceDocument/properties/object/prefixItems/0/properties/something",
+            schema_error.instance_path().to_string()
+        );
+        assert_eq!(Some("required"), schema_error.keyword(),);
+        assert!(matches!(
+            schema_error.kind(),
+            ValidationErrorKind::Required {
+                property: JsonValue::String(missing_property)
+            } if missing_property == "properties"
+        ));
+    }
+
+    #[test]
+    fn documents_should_have_valid_property_names() {
+        init();
+        let TestData {
+            mut raw_data_contract,
+            data_contract_validator,
+            ..
+        } = get_test_data();
+
+        let valid_names = [
+            "validName",
+            "valid_name",
+            "valid-name",
+            "abc",
+            "a123123bc",
+            "ab123c",
+            "ValidName",
+            "validName",
+            "abcdefghigklmnopqrstuvwxyz01234567890abcdefghigklmnopqrstuvwxyz",
+            "abc_gbf_gdb",
+            "abc-gbf-gdb",
+        ];
+
+        for property_name in valid_names {
+            raw_data_contract["documents"]["niceDocument"]["properties"][property_name] =
+                json!({ "type" : "string"})
+        }
+
+        let result = data_contract_validator
+            .validate(&raw_data_contract)
+            .expect("validation result should be returned");
+        assert!(result.is_valid());
+    }
+
+    #[test]
+    fn documents_should_have_valid_nested_property_names() {
+        init();
+        let TestData {
+            mut raw_data_contract,
+            data_contract_validator,
+            ..
+        } = get_test_data();
+
+        raw_data_contract["documents"]["niceDocument"]["properties"]["something"] =
+            json!({"type": "object", "properties": json!({}), "additionalProperties" : false});
+
+        let valid_names = [
+            "validName",
+            "valid_name",
+            "valid-name",
+            "abc",
+            "a123123bc",
+            "ab123c",
+            "ValidName",
+            "validName",
+            "abcdefghigklmnopqrstuvwxyz01234567890abcdefghigklmnopqrstuvwxyz",
+            "abc_gbf_gdb",
+            "abc-gbf-gdb",
+        ];
+
+        for property_name in valid_names {
+            raw_data_contract["documents"]["niceDocument"]["properties"]["something"]
+                ["properties"][property_name] = json!({ "type" : "string"})
+        }
+
+        let result = data_contract_validator
+            .validate(&raw_data_contract)
+            .expect("validation result should be returned");
+        assert!(result.is_valid());
     }
 
     #[test]
@@ -602,7 +974,7 @@ mod test {
             .expect("validation result should be returned");
         trace!("The validation result is: {:#?}", result);
 
-        let schema_error = get_first_schema_error(&result);
+        let schema_error = get_schema_error(&result, 0);
         assert_eq!(
             "/documents/indexedDocument/indices",
             schema_error.instance_path().to_string()
@@ -610,10 +982,47 @@ mod test {
         assert_eq!(Some("type"), schema_error.keyword(),);
     }
 
-    fn get_first_schema_error(result: &ValidationResult) -> &JsonSchemaError {
+    #[test]
+    fn documents_schema_with_invalid_property_names_should_return_error() {
+        init();
+        let TestData {
+            mut raw_data_contract,
+            data_contract_validator,
+            ..
+        } = get_test_data();
+
+        let invalid_names = [
+            "-invalidname",
+            "_invalidname",
+            "invalidname-",
+            "invalidname_",
+            "*(*&^",
+            "$test",
+            "123abci",
+            "ab",
+        ];
+        for property_name in invalid_names {
+            raw_data_contract["documents"]["niceDocument"]["properties"][property_name] = json!({})
+        }
+
+        let result = data_contract_validator
+            .validate(&raw_data_contract)
+            .expect("validation result should be returned");
+        let schema_error = get_schema_error(&result, 0);
+
+        // assert_eq!(3, result.errors.len());
+        assert_eq!(
+            "/documents/niceDocument/properties",
+            schema_error.instance_path().to_string()
+        );
+        assert_eq!(Some("pattern"), schema_error.keyword(),);
+        println!("the reuslt is {:#?}", result);
+    }
+
+    fn get_schema_error(result: &ValidationResult, number: usize) -> &JsonSchemaError {
         result
             .errors
-            .get(0)
+            .get(number)
             .expect("the error should be returned in validation result")
             .json_schema_error()
             .expect("the error should be json schema error")
