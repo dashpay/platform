@@ -38,6 +38,7 @@ class GroveDBStore {
           key,
           {
             type: 'item',
+            epoch: 0,
             value,
           },
           options.useTransaction || false,
@@ -92,6 +93,7 @@ class GroveDBStore {
           key,
           {
             type: 'reference',
+            epoch: 0,
             value: referencePath,
           },
           options.useTransaction || false,
@@ -155,6 +157,7 @@ class GroveDBStore {
           key,
           {
             type: 'tree',
+            epoch: 0,
             value: Buffer.alloc(32),
           },
           options.useTransaction || false,
@@ -248,6 +251,45 @@ class GroveDBStore {
     return new StorageResult(
       value,
       [new ReadOperation(value.length)],
+    );
+  }
+
+  /**
+   * Query keys and values
+   *
+   * @param {PathQuery} query
+   * @param {Object} [options]
+   * @param {boolean} [options.useTransaction=false]
+   * @param {boolean} [options.dryRun=false]
+   * @return {Promise<StorageResult<Buffer|null>>}
+   */
+  async query(query, options = { }) {
+    let items;
+
+    try {
+      if (!options.dryRun) {
+        [items] = await this.db.query(
+          query,
+          options.useTransaction || false,
+        );
+      }
+    } catch (e) {
+      if (
+        e.message.startsWith('path key not found')
+        || e.message.startsWith('path not found')
+      ) {
+        return new StorageResult(
+          null,
+          [new ReadOperation(0)],
+        );
+      }
+
+      throw e;
+    }
+
+    return new StorageResult(
+      items,
+      [new ReadOperation(0)],
     );
   }
 

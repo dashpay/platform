@@ -170,37 +170,6 @@ public final class PlatformGrpc {
     return getGetIdentitiesByPublicKeyHashesMethod;
   }
 
-  private static volatile io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityIdsByPublicKeyHashesRequest,
-      org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityIdsByPublicKeyHashesResponse> getGetIdentityIdsByPublicKeyHashesMethod;
-
-  @io.grpc.stub.annotations.RpcMethod(
-      fullMethodName = SERVICE_NAME + '/' + "getIdentityIdsByPublicKeyHashes",
-      requestType = org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityIdsByPublicKeyHashesRequest.class,
-      responseType = org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityIdsByPublicKeyHashesResponse.class,
-      methodType = io.grpc.MethodDescriptor.MethodType.UNARY)
-  public static io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityIdsByPublicKeyHashesRequest,
-      org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityIdsByPublicKeyHashesResponse> getGetIdentityIdsByPublicKeyHashesMethod() {
-    io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityIdsByPublicKeyHashesRequest, org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityIdsByPublicKeyHashesResponse> getGetIdentityIdsByPublicKeyHashesMethod;
-    if ((getGetIdentityIdsByPublicKeyHashesMethod = PlatformGrpc.getGetIdentityIdsByPublicKeyHashesMethod) == null) {
-      synchronized (PlatformGrpc.class) {
-        if ((getGetIdentityIdsByPublicKeyHashesMethod = PlatformGrpc.getGetIdentityIdsByPublicKeyHashesMethod) == null) {
-          PlatformGrpc.getGetIdentityIdsByPublicKeyHashesMethod = getGetIdentityIdsByPublicKeyHashesMethod =
-              io.grpc.MethodDescriptor.<org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityIdsByPublicKeyHashesRequest, org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityIdsByPublicKeyHashesResponse>newBuilder()
-              .setType(io.grpc.MethodDescriptor.MethodType.UNARY)
-              .setFullMethodName(generateFullMethodName(SERVICE_NAME, "getIdentityIdsByPublicKeyHashes"))
-              .setSampledToLocalTracing(true)
-              .setRequestMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
-                  org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityIdsByPublicKeyHashesRequest.getDefaultInstance()))
-              .setResponseMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
-                  org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityIdsByPublicKeyHashesResponse.getDefaultInstance()))
-              .setSchemaDescriptor(new PlatformMethodDescriptorSupplier("getIdentityIdsByPublicKeyHashes"))
-              .build();
-        }
-      }
-    }
-    return getGetIdentityIdsByPublicKeyHashesMethod;
-  }
-
   private static volatile io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.WaitForStateTransitionResultRequest,
       org.dash.platform.dapi.v0.PlatformOuterClass.WaitForStateTransitionResultResponse> getWaitForStateTransitionResultMethod;
 
@@ -348,13 +317,6 @@ public final class PlatformGrpc {
 
     /**
      */
-    public void getIdentityIdsByPublicKeyHashes(org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityIdsByPublicKeyHashesRequest request,
-        io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityIdsByPublicKeyHashesResponse> responseObserver) {
-      io.grpc.stub.ServerCalls.asyncUnimplementedUnaryCall(getGetIdentityIdsByPublicKeyHashesMethod(), responseObserver);
-    }
-
-    /**
-     */
     public void waitForStateTransitionResult(org.dash.platform.dapi.v0.PlatformOuterClass.WaitForStateTransitionResultRequest request,
         io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.WaitForStateTransitionResultResponse> responseObserver) {
       io.grpc.stub.ServerCalls.asyncUnimplementedUnaryCall(getWaitForStateTransitionResultMethod(), responseObserver);
@@ -404,13 +366,6 @@ public final class PlatformGrpc {
                 org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentitiesByPublicKeyHashesRequest,
                 org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentitiesByPublicKeyHashesResponse>(
                   this, METHODID_GET_IDENTITIES_BY_PUBLIC_KEY_HASHES)))
-          .addMethod(
-            getGetIdentityIdsByPublicKeyHashesMethod(),
-            io.grpc.stub.ServerCalls.asyncUnaryCall(
-              new MethodHandlers<
-                org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityIdsByPublicKeyHashesRequest,
-                org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityIdsByPublicKeyHashesResponse>(
-                  this, METHODID_GET_IDENTITY_IDS_BY_PUBLIC_KEY_HASHES)))
           .addMethod(
             getWaitForStateTransitionResultMethod(),
             io.grpc.stub.ServerCalls.asyncUnaryCall(
@@ -485,14 +440,6 @@ public final class PlatformGrpc {
 
     /**
      */
-    public void getIdentityIdsByPublicKeyHashes(org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityIdsByPublicKeyHashesRequest request,
-        io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityIdsByPublicKeyHashesResponse> responseObserver) {
-      io.grpc.stub.ClientCalls.asyncUnaryCall(
-          getChannel().newCall(getGetIdentityIdsByPublicKeyHashesMethod(), getCallOptions()), request, responseObserver);
-    }
-
-    /**
-     */
     public void waitForStateTransitionResult(org.dash.platform.dapi.v0.PlatformOuterClass.WaitForStateTransitionResultRequest request,
         io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.WaitForStateTransitionResultResponse> responseObserver) {
       io.grpc.stub.ClientCalls.asyncUnaryCall(
@@ -555,13 +502,6 @@ public final class PlatformGrpc {
     public org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentitiesByPublicKeyHashesResponse getIdentitiesByPublicKeyHashes(org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentitiesByPublicKeyHashesRequest request) {
       return io.grpc.stub.ClientCalls.blockingUnaryCall(
           getChannel(), getGetIdentitiesByPublicKeyHashesMethod(), getCallOptions(), request);
-    }
-
-    /**
-     */
-    public org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityIdsByPublicKeyHashesResponse getIdentityIdsByPublicKeyHashes(org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityIdsByPublicKeyHashesRequest request) {
-      return io.grpc.stub.ClientCalls.blockingUnaryCall(
-          getChannel(), getGetIdentityIdsByPublicKeyHashesMethod(), getCallOptions(), request);
     }
 
     /**
@@ -635,14 +575,6 @@ public final class PlatformGrpc {
 
     /**
      */
-    public com.google.common.util.concurrent.ListenableFuture<org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityIdsByPublicKeyHashesResponse> getIdentityIdsByPublicKeyHashes(
-        org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityIdsByPublicKeyHashesRequest request) {
-      return io.grpc.stub.ClientCalls.futureUnaryCall(
-          getChannel().newCall(getGetIdentityIdsByPublicKeyHashesMethod(), getCallOptions()), request);
-    }
-
-    /**
-     */
     public com.google.common.util.concurrent.ListenableFuture<org.dash.platform.dapi.v0.PlatformOuterClass.WaitForStateTransitionResultResponse> waitForStateTransitionResult(
         org.dash.platform.dapi.v0.PlatformOuterClass.WaitForStateTransitionResultRequest request) {
       return io.grpc.stub.ClientCalls.futureUnaryCall(
@@ -663,9 +595,8 @@ public final class PlatformGrpc {
   private static final int METHODID_GET_DATA_CONTRACT = 2;
   private static final int METHODID_GET_DOCUMENTS = 3;
   private static final int METHODID_GET_IDENTITIES_BY_PUBLIC_KEY_HASHES = 4;
-  private static final int METHODID_GET_IDENTITY_IDS_BY_PUBLIC_KEY_HASHES = 5;
-  private static final int METHODID_WAIT_FOR_STATE_TRANSITION_RESULT = 6;
-  private static final int METHODID_GET_CONSENSUS_PARAMS = 7;
+  private static final int METHODID_WAIT_FOR_STATE_TRANSITION_RESULT = 5;
+  private static final int METHODID_GET_CONSENSUS_PARAMS = 6;
 
   private static final class MethodHandlers<Req, Resp> implements
       io.grpc.stub.ServerCalls.UnaryMethod<Req, Resp>,
@@ -703,10 +634,6 @@ public final class PlatformGrpc {
         case METHODID_GET_IDENTITIES_BY_PUBLIC_KEY_HASHES:
           serviceImpl.getIdentitiesByPublicKeyHashes((org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentitiesByPublicKeyHashesRequest) request,
               (io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentitiesByPublicKeyHashesResponse>) responseObserver);
-          break;
-        case METHODID_GET_IDENTITY_IDS_BY_PUBLIC_KEY_HASHES:
-          serviceImpl.getIdentityIdsByPublicKeyHashes((org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityIdsByPublicKeyHashesRequest) request,
-              (io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityIdsByPublicKeyHashesResponse>) responseObserver);
           break;
         case METHODID_WAIT_FOR_STATE_TRANSITION_RESULT:
           serviceImpl.waitForStateTransitionResult((org.dash.platform.dapi.v0.PlatformOuterClass.WaitForStateTransitionResultRequest) request,
@@ -782,7 +709,6 @@ public final class PlatformGrpc {
               .addMethod(getGetDataContractMethod())
               .addMethod(getGetDocumentsMethod())
               .addMethod(getGetIdentitiesByPublicKeyHashesMethod())
-              .addMethod(getGetIdentityIdsByPublicKeyHashesMethod())
               .addMethod(getWaitForStateTransitionResultMethod())
               .addMethod(getGetConsensusParamsMethod())
               .build();

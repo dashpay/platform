@@ -136,7 +136,7 @@ describe('deliverTxHandlerFactory', () => {
 
     identity.reduceBalance(stateTransitionFee);
 
-    expect(stateRepositoryMock.storeIdentity).to.be.calledOnceWith(identity);
+    expect(stateRepositoryMock.updateIdentity).to.be.calledOnceWith(identity);
 
     expect(blockExecutionContextMock.incrementCumulativeFees).to.be.calledOnceWith(
       stateTransitionFee,

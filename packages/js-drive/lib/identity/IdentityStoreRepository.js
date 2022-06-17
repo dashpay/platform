@@ -26,13 +26,45 @@ class IdentityStoreRepository {
    * @param {boolean} [options.dryRun=false]
    * @return {Promise<StorageResult<void>>}
    */
-  async store(identity, options = {}) {
+  async create(identity, options = {}) {
+    const key = identity.getId().toBuffer();
+    const value = identity.toBuffer();
+
+    const treeResult = await this.storage.createTree(
+      IdentityStoreRepository.TREE_PATH,
+      key,
+      options,
+    );
+
+    const identityResult = await this.storage.put(
+      IdentityStoreRepository.TREE_PATH.concat([key]),
+      IdentityStoreRepository.IDENTITY_KEY,
+      value,
+      options,
+    );
+
+    return new StorageResult(
+      undefined,
+      treeResult.getOperations().concat(identityResult.getOperations()),
+    );
+  }
+
+  /**
+   * Store identity into database
+   *
+   * @param {Identity} identity
+   * @param {Object} [options]
+   * @param {boolean} [options.useTransaction=false]
+   * @param {boolean} [options.dryRun=false]
+   * @return {Promise<StorageResult<void>>}
+   */
+  async update(identity, options = {}) {
     const key = identity.getId().toBuffer();
     const value = identity.toBuffer();
 
     const result = await this.storage.put(
-      IdentityStoreRepository.TREE_PATH,
-      key,
+      IdentityStoreRepository.TREE_PATH.concat([key]),
+      IdentityStoreRepository.IDENTITY_KEY,
       value,
       options,
     );
@@ -53,8 +85,8 @@ class IdentityStoreRepository {
    */
   async fetch(id, options = { }) {
     const encodedIdentityResult = await this.storage.get(
-      IdentityStoreRepository.TREE_PATH,
-      id.toBuffer(),
+      IdentityStoreRepository.TREE_PATH.concat([id.toBuffer()]),
+      IdentityStoreRepository.IDENTITY_KEY,
       {
         ...options,
         predictedValueSize: MAX_IDENTITY_SIZE,
@@ -95,5 +127,7 @@ class IdentityStoreRepository {
 }
 
 IdentityStoreRepository.TREE_PATH = [Buffer.from([0])];
+
+IdentityStoreRepository.IDENTITY_KEY = Buffer.from([0]);
 
 module.exports = IdentityStoreRepository;

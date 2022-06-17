@@ -83,26 +83,26 @@ describe('LoggedStateRepositoryDecorator', () => {
     it('should call logger with proper params', async () => {
       const response = undefined;
 
-      stateRepositoryMock.storeIdentity.resolves(response);
+      stateRepositoryMock.createIdentity.resolves(response);
 
-      await loggedStateRepositoryDecorator.storeIdentity(identity);
+      await loggedStateRepositoryDecorator.createIdentity(identity);
 
       expect(loggerMock.trace).to.be.calledOnceWithExactly({
         stateRepository: {
-          method: 'storeIdentity',
+          method: 'createIdentity',
           parameters: { identity },
           response,
         },
-      }, 'StateRepository#storeIdentity');
+      }, 'StateRepository#createIdentity');
     });
 
     it('should call logger in case of error', async () => {
       const error = new Error('unknown error');
 
-      stateRepositoryMock.storeIdentity.throws(error);
+      stateRepositoryMock.createIdentity.throws(error);
 
       try {
-        await loggedStateRepositoryDecorator.storeIdentity(identity);
+        await loggedStateRepositoryDecorator.createIdentity(identity);
 
         expect.fail('should throw an error');
       } catch (e) {
@@ -111,11 +111,57 @@ describe('LoggedStateRepositoryDecorator', () => {
 
       expect(loggerMock.trace).to.be.calledOnceWithExactly({
         stateRepository: {
-          method: 'storeIdentity',
+          method: 'createIdentity',
           parameters: { identity },
           response: undefined,
         },
-      }, 'StateRepository#storeIdentity');
+      }, 'StateRepository#createIdentity');
+    });
+  });
+
+  describe('#updateIdentity', () => {
+    let identity;
+
+    beforeEach(() => {
+      identity = getIdentityFixture();
+    });
+
+    it('should call logger with proper params', async () => {
+      const response = undefined;
+
+      stateRepositoryMock.updateIdentity.resolves(response);
+
+      await loggedStateRepositoryDecorator.updateIdentity(identity);
+
+      expect(loggerMock.trace).to.be.calledOnceWithExactly({
+        stateRepository: {
+          method: 'updateIdentity',
+          parameters: { identity },
+          response,
+        },
+      }, 'StateRepository#updateIdentity');
+    });
+
+    it('should call logger in case of error', async () => {
+      const error = new Error('unknown error');
+
+      stateRepositoryMock.updateIdentity.throws(error);
+
+      try {
+        await loggedStateRepositoryDecorator.updateIdentity(identity);
+
+        expect.fail('should throw an error');
+      } catch (e) {
+        expect(e).equals(error);
+      }
+
+      expect(loggerMock.trace).to.be.calledOnceWithExactly({
+        stateRepository: {
+          method: 'updateIdentity',
+          parameters: { identity },
+          response: undefined,
+        },
+      }, 'StateRepository#updateIdentity');
     });
   });
 

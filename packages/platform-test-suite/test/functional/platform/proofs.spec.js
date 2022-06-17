@@ -8,7 +8,6 @@ const {
 } = require('@dashevo/dpns-contract/lib/systemIds');
 
 const generateRandomIdentifier = require('@dashevo/dpp/lib/test/utils/generateRandomIdentifier');
-const cbor = require('@dashevo/dpp/lib/util/serializer');
 const hashFunction = require('../../../lib/proofHashFunction');
 const testProofStructure = require('../../../lib/test/testProofStructure');
 const parseStoreTreeProof = require('../../../lib/parseStoreTreeProof');
@@ -350,60 +349,6 @@ describe.skip('Platform', () => {
             const nonIncludedIdentityId = nonInclusionVerificationResult[0];
             expect(nonIncludedIdentityId).to.be.null();
           });
-
-          it('should be able to verify identityIds with getIdentityIdsByPublicKeyHashes', async () => {
-            const publicKeyHashes = [
-              identity6PublicKeyHash,
-              nonIncludedIdentityPubKeyHash,
-              identity8PublicKeyHash,
-            ];
-
-            /* Requesting identities by public key hashes and verifying the structure */
-
-            const identityProof = await dashClient.getDAPIClient().platform
-              .getIdentityIdsByPublicKeyHashes(
-                publicKeyHashes, { prove: true },
-              );
-
-            const fullProof = identityProof.proof;
-
-            testProofStructure(expect, fullProof);
-
-            const publicKeyHashesProofBuffer = fullProof.storeTreeProofs
-              .getPublicKeyHashesToIdentityIdsProof();
-
-            /* Extracting root */
-
-            const {
-              rootHash: publicKeyHashesToIdentityIdsLeafRoot,
-            } = executeProof(publicKeyHashesProofBuffer);
-
-            /* Verifying proof */
-
-            // Note that you first has to parse values from the
-            // proof and find identity ids you were looking for
-            const verificationResult = verifyProof(
-              publicKeyHashesProofBuffer,
-              publicKeyHashes,
-              publicKeyHashesToIdentityIdsLeafRoot,
-            );
-
-            expect(verificationResult.length).to.be.equal(3);
-
-            const firstIdentityId = verificationResult[0];
-            const secondIdentityId = verificationResult[1];
-            const thirdIdentityId = verificationResult[2];
-
-            expect(firstIdentityId).to.be.an.instanceof(Uint8Array);
-            // In the verifyProof call, non existing key is passed as a second element
-            // and verifyProof returns values sorted in the same way as they were
-            // passed to the function
-            expect(secondIdentityId).to.be.null();
-            expect(thirdIdentityId).to.be.an.instanceof(Uint8Array);
-
-            expect(firstIdentityId).to.be.deep.equal(cbor.encode([identityAtKey6.getId()]));
-            expect(thirdIdentityId).to.be.deep.equal(cbor.encode([identityAtKey8.getId()]));
-          });
         });
       });
     });
@@ -433,15 +378,11 @@ describe.skip('Platform', () => {
 
         const [
           identityResponse,
-          keysResponse,
           contractsResponse,
           documentsResponse,
           identitiesByPublicKeyHashesResponse,
         ] = await Promise.all([
           dapiClient.platform.getIdentity(identityId, { prove: true }),
-          dapiClient.platform.getIdentityIdsByPublicKeyHashes(
-            [identity.getPublicKeyById(0).getData()], { prove: true },
-          ),
           dapiClient.platform.getDataContract(contractId, { prove: true }),
           dapiClient.platform.getDocuments(contractId, 'preorder', {
             where: [['$id', '==', identityId]],
@@ -461,9 +402,6 @@ describe.skip('Platform', () => {
         const documentsProof = MerkleProof.fromBuffer(
           documentsResponse.proof.rootTreeProof, blake3,
         );
-        const keysProof = MerkleProof.fromBuffer(
-          keysResponse.proof.rootTreeProof, blake3,
-        );
         const identitiesByPublicKeyHashesProof = MerkleProof.fromBuffer(
           identitiesByPublicKeyHashesResponse.proof.rootTreeProof, blake3,
         );
@@ -471,9 +409,7 @@ describe.skip('Platform', () => {
         const { rootHash: identityLeaf } = executeProof(
           identityResponse.proof.storeTreeProofs.getIdentitiesProof(),
         );
-        const { rootHash: publicKeysLeaf } = executeProof(
-          keysResponse.proof.storeTreeProofs.getPublicKeyHashesToIdentityIdsProof(),
-        );
+
         const { rootHash: contractsLeaf } = executeProof(
           contractsResponse.proof.storeTreeProofs.getDataContractsProof(),
         );
@@ -484,7 +420,6 @@ describe.skip('Platform', () => {
         const reconstructedLeaves = [
           identityProof.getProofHashes()[0],
           identityLeaf,
-          publicKeysLeaf,
           contractsLeaf,
           documentsLeaf,
           documentsProof.getProofHashes()[0],
@@ -495,20 +430,12 @@ describe.skip('Platform', () => {
         const reconstructedAppHash = Buffer.from(reconstructedTree.getRoot()).toString('hex');
 
         const identityProofRoot = Buffer.from(identityProof.calculateRoot([1], [identityLeaf], 6)).toString('hex');
-        const keysProofRoot = Buffer.from(keysProof.calculateRoot([2], [publicKeysLeaf], 6)).toString('hex');
         const contractsProofRoot = Buffer.from(contractsProof.calculateRoot([3], [contractsLeaf], 6)).toString('hex');
         const documentsProofRoot = Buffer.from(documentsProof.calculateRoot([4], [documentsLeaf], 6)).toString('hex');
-        const identitiesIdsProofRoot = Buffer.from(identitiesByPublicKeyHashesProof.calculateRoot([1, 2], [identityLeaf, publicKeysLeaf], 6)).toString('hex');
 
         expect(identityProof.getHexProofHashes()).to.be.deep.equal([
           treeLayers[0][0],
           treeLayers[1][1],
-          treeLayers[1][2],
-        ]);
-
-        expect(keysProof.getHexProofHashes()).to.be.deep.equal([
-          treeLayers[0][3],
-          treeLayers[1][0],
           treeLayers[1][2],
         ]);
 
@@ -530,10 +457,8 @@ describe.skip('Platform', () => {
         ]);
 
         expect(identityProofRoot).to.be.equal(reconstructedAppHash);
-        expect(keysProofRoot).to.be.equal(reconstructedAppHash);
         expect(contractsProofRoot).to.be.equal(reconstructedAppHash);
         expect(documentsProofRoot).to.be.equal(reconstructedAppHash);
-        expect(identitiesIdsProofRoot).to.be.equal(reconstructedAppHash);
       });
     });
   });

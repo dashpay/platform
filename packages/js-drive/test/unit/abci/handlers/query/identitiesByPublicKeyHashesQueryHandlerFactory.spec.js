@@ -6,8 +6,6 @@ const {
   },
 } = require('@dashevo/abci/types');
 
-const cbor = require('cbor');
-
 const {
   v0: {
     GetIdentitiesByPublicKeyHashesResponse,
@@ -28,12 +26,10 @@ const StorageResult = require('../../../../../lib/storage/StorageResult');
 
 describe('identitiesByPublicKeyHashesQueryHandlerFactory', () => {
   let identitiesByPublicKeyHashesQueryHandler;
-  let signedPublicKeyToIdentityIdRepositoryMock;
-  let signedIdentityRepositoryMock;
+  let signedPublicKeyToIdentitiesRepositoryMock;
   let publicKeyHashes;
   let identities;
   let maxIdentitiesPerRequest;
-  let previousRootTreeMock;
   let createQueryResponseMock;
   let responseMock;
   let blockExecutionContextStackMock;
@@ -41,17 +37,8 @@ describe('identitiesByPublicKeyHashesQueryHandlerFactory', () => {
   let data;
 
   beforeEach(function beforeEach() {
-    signedPublicKeyToIdentityIdRepositoryMock = {
-      fetchBuffer: this.sinon.stub(),
-    };
-
-    signedIdentityRepositoryMock = {
-      fetch: this.sinon.stub(),
-    };
-
-    previousRootTreeMock = {
-      getFullProofForOneLeaf: this.sinon.stub(),
-      getProof: this.sinon.stub(),
+    signedPublicKeyToIdentitiesRepositoryMock = {
+      fetchManyBuffers: this.sinon.stub(),
     };
 
     maxIdentitiesPerRequest = 5;
@@ -68,8 +55,7 @@ describe('identitiesByPublicKeyHashesQueryHandlerFactory', () => {
     blockExecutionContextStackMock.getLast.returns(true);
 
     identitiesByPublicKeyHashesQueryHandler = identitiesByPublicKeyHashesQueryHandlerFactory(
-      signedPublicKeyToIdentityIdRepositoryMock,
-      signedIdentityRepositoryMock,
+      signedPublicKeyToIdentitiesRepositoryMock,
       maxIdentitiesPerRequest,
       createQueryResponseMock,
       blockExecutionContextStackMock,
@@ -86,26 +72,10 @@ describe('identitiesByPublicKeyHashesQueryHandlerFactory', () => {
       getIdentityFixture(),
     ];
 
-    signedPublicKeyToIdentityIdRepositoryMock
-      .fetchBuffer.resolves(new StorageResult(null));
-
-    signedPublicKeyToIdentityIdRepositoryMock
-      .fetchBuffer
-      .withArgs(publicKeyHashes[0])
-      .resolves(new StorageResult(cbor.encode([identities[0].getId()])));
-
-    signedPublicKeyToIdentityIdRepositoryMock
-      .fetchBuffer
-      .withArgs(publicKeyHashes[1])
-      .resolves(new StorageResult(cbor.encode([identities[1].getId()])));
-
-    signedIdentityRepositoryMock.fetch
-      .withArgs(identities[0].getId())
-      .resolves(new StorageResult(identities[0]));
-
-    signedIdentityRepositoryMock.fetch
-      .withArgs(identities[1].getId())
-      .resolves(new StorageResult(identities[1]));
+    signedPublicKeyToIdentitiesRepositoryMock
+      .fetchManyBuffers.resolves(
+        new StorageResult([identities[0].toBuffer(), identities[1].toBuffer()]),
+      );
 
     params = {};
     data = { publicKeyHashes };
@@ -115,11 +85,7 @@ describe('identitiesByPublicKeyHashesQueryHandlerFactory', () => {
     blockExecutionContextStackMock.getLast.returns(null);
 
     responseMock = new GetIdentitiesByPublicKeyHashesResponse();
-    responseMock.setIdentitiesList([
-      cbor.encode([]),
-      cbor.encode([]),
-      cbor.encode([]),
-    ]);
+    responseMock.setIdentitiesList([]);
     responseMock.setMetadata(new ResponseMetadata());
 
     const result = await identitiesByPublicKeyHashesQueryHandler(params, data, {});
@@ -129,16 +95,14 @@ describe('identitiesByPublicKeyHashesQueryHandlerFactory', () => {
 
     expect(result.value).to.deep.equal(responseMock.serializeBinary());
 
-    expect(signedPublicKeyToIdentityIdRepositoryMock.fetchBuffer).to.have.not.been.called();
-    expect(previousRootTreeMock.getFullProofForOneLeaf).to.have.not.been.called();
+    expect(signedPublicKeyToIdentitiesRepositoryMock.fetchManyBuffers).to.have.not.been.called();
   });
 
   it('should throw an error if maximum requested items exceeded', async () => {
     maxIdentitiesPerRequest = 1;
 
     identitiesByPublicKeyHashesQueryHandler = identitiesByPublicKeyHashesQueryHandlerFactory(
-      signedPublicKeyToIdentityIdRepositoryMock,
-      signedIdentityRepositoryMock,
+      signedPublicKeyToIdentitiesRepositoryMock,
       maxIdentitiesPerRequest,
       createQueryResponseMock,
       blockExecutionContextStackMock,
@@ -156,36 +120,14 @@ describe('identitiesByPublicKeyHashesQueryHandlerFactory', () => {
     }
   });
 
-  it('should return identity id map', async () => {
+  it('should return identities', async () => {
+    params = publicKeyHashes;
+
     const result = await identitiesByPublicKeyHashesQueryHandler(params, data, {});
 
-    expect(signedPublicKeyToIdentityIdRepositoryMock.fetchBuffer.callCount).to.equal(
-      publicKeyHashes.length,
+    expect(signedPublicKeyToIdentitiesRepositoryMock.fetchManyBuffers).to.be.calledOnceWithExactly(
+      publicKeyHashes,
     );
-
-    expect(signedPublicKeyToIdentityIdRepositoryMock.fetchBuffer.getCall(0).args).to.deep.equal([
-      publicKeyHashes[0],
-    ]);
-
-    expect(signedPublicKeyToIdentityIdRepositoryMock.fetchBuffer.getCall(1).args).to.deep.equal([
-      publicKeyHashes[1],
-    ]);
-
-    expect(signedPublicKeyToIdentityIdRepositoryMock.fetchBuffer.getCall(2).args).to.deep.equal([
-      publicKeyHashes[2],
-    ]);
-
-    expect(signedIdentityRepositoryMock.fetch.callCount).to.equal(
-      identities.length,
-    );
-
-    expect(signedIdentityRepositoryMock.fetch.getCall(0).args).to.deep.equal([
-      identities[0].getId(),
-    ]);
-
-    expect(signedIdentityRepositoryMock.fetch.getCall(1).args).to.deep.equal([
-      identities[1].getId(),
-    ]);
 
     expect(result).to.be.an.instanceof(ResponseQuery);
     expect(result.code).to.equal(0);

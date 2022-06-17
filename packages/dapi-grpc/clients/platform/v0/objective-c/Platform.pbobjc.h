@@ -304,47 +304,6 @@ GPB_FINAL @interface GetIdentitiesByPublicKeyHashesResponse : GPBMessage
 
 @end
 
-#pragma mark - GetIdentityIdsByPublicKeyHashesRequest
-
-typedef GPB_ENUM(GetIdentityIdsByPublicKeyHashesRequest_FieldNumber) {
-  GetIdentityIdsByPublicKeyHashesRequest_FieldNumber_PublicKeyHashesArray = 1,
-  GetIdentityIdsByPublicKeyHashesRequest_FieldNumber_Prove = 2,
-};
-
-GPB_FINAL @interface GetIdentityIdsByPublicKeyHashesRequest : GPBMessage
-
-@property(nonatomic, readwrite, strong, null_resettable) NSMutableArray<NSData*> *publicKeyHashesArray;
-/** The number of items in @c publicKeyHashesArray without causing the array to be created. */
-@property(nonatomic, readonly) NSUInteger publicKeyHashesArray_Count;
-
-@property(nonatomic, readwrite) BOOL prove;
-
-@end
-
-#pragma mark - GetIdentityIdsByPublicKeyHashesResponse
-
-typedef GPB_ENUM(GetIdentityIdsByPublicKeyHashesResponse_FieldNumber) {
-  GetIdentityIdsByPublicKeyHashesResponse_FieldNumber_IdentityIdsArray = 1,
-  GetIdentityIdsByPublicKeyHashesResponse_FieldNumber_Proof = 2,
-  GetIdentityIdsByPublicKeyHashesResponse_FieldNumber_Metadata = 3,
-};
-
-GPB_FINAL @interface GetIdentityIdsByPublicKeyHashesResponse : GPBMessage
-
-@property(nonatomic, readwrite, strong, null_resettable) NSMutableArray<NSData*> *identityIdsArray;
-/** The number of items in @c identityIdsArray without causing the array to be created. */
-@property(nonatomic, readonly) NSUInteger identityIdsArray_Count;
-
-@property(nonatomic, readwrite, strong, null_resettable) Proof *proof;
-/** Test to see if @c proof has been set. */
-@property(nonatomic, readwrite) BOOL hasProof;
-
-@property(nonatomic, readwrite, strong, null_resettable) ResponseMetadata *metadata;
-/** Test to see if @c metadata has been set. */
-@property(nonatomic, readwrite) BOOL hasMetadata;
-
-@end
-
 #pragma mark - WaitForStateTransitionResultRequest
 
 typedef GPB_ENUM(WaitForStateTransitionResultRequest_FieldNumber) {

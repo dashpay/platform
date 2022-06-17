@@ -1,9 +1,6 @@
 /**
+ * @interface StateRepository
  * @classdesc StateRepository interface definition
- *
- * @async
- * @name StateRepository
- * @class
  */
 
 /**
@@ -103,7 +100,18 @@
  *
  * @async
  * @method
- * @name StateRepository#storeIdentity
+ * @name StateRepository#createIdentity
+ * @param {Identity} identity
+ * @param {StateTransitionExecutionContext} [StateTransitionExecutionContext]
+ * @returns {Promise<void>}
+ */
+
+/**
+ * Store identity
+ *
+ * @async
+ * @method
+ * @name StateRepository#updateIdentity
  * @param {Identity} identity
  * @param {StateTransitionExecutionContext} [StateTransitionExecutionContext]
  * @returns {Promise<void>}

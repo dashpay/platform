@@ -48,7 +48,8 @@ describe('DriveStateRepository', () => {
 
     identityRepositoryMock = {
       fetch: this.sinon.stub(),
-      store: this.sinon.stub(),
+      create: this.sinon.stub(),
+      update: this.sinon.stub(),
     };
 
     publicKeyIdentityIdRepositoryMock = {
@@ -132,15 +133,35 @@ describe('DriveStateRepository', () => {
     });
   });
 
-  describe('#storeIdentity', () => {
-    it('should store identity to repository', async () => {
-      identityRepositoryMock.store.resolves(
+  describe('#createIdentity', () => {
+    it('should create identity', async () => {
+      identityRepositoryMock.create.resolves(
         new StorageResult(undefined, operations),
       );
 
-      await stateRepository.storeIdentity(identity, executionContext);
+      await stateRepository.createIdentity(identity, executionContext);
 
-      expect(identityRepositoryMock.store).to.be.calledOnceWith(
+      expect(identityRepositoryMock.create).to.be.calledOnceWith(
+        identity,
+        {
+          useTransaction: repositoryOptions.useTransaction,
+          dryRun: false,
+        },
+      );
+
+      expect(executionContext.getOperations()).to.deep.equals(operations);
+    });
+  });
+
+  describe('#updateIdentity', () => {
+    it('should update identity', async () => {
+      identityRepositoryMock.update.resolves(
+        new StorageResult(undefined, operations),
+      );
+
+      await stateRepository.updateIdentity(identity, executionContext);
+
+      expect(identityRepositoryMock.update).to.be.calledOnceWith(
         identity,
         {
           useTransaction: repositoryOptions.useTransaction,

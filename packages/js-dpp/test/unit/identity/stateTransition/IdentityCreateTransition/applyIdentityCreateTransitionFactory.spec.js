@@ -60,7 +60,7 @@ describe('applyIdentityCreateTransitionFactory', () => {
       revision: 0,
     });
 
-    expect(stateRepositoryMock.storeIdentity).to.have.been.calledOnceWithExactly(
+    expect(stateRepositoryMock.createIdentity).to.have.been.calledOnceWithExactly(
       identity,
       executionContext,
     );

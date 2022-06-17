@@ -45,7 +45,7 @@ describe('applyIdentityUpdateTransition', () => {
       executionContext,
     );
 
-    expect(stateRepositoryMock.storeIdentity).to.be.calledOnceWithExactly(
+    expect(stateRepositoryMock.updateIdentity).to.be.calledOnceWithExactly(
       identity,
       executionContext,
     );
@@ -74,7 +74,7 @@ describe('applyIdentityUpdateTransition', () => {
 
     expect(stateRepositoryMock.storeIdentityPublicKeyHashes).to.not.be.called();
 
-    expect(stateRepositoryMock.storeIdentity).to.be.calledOnceWithExactly(
+    expect(stateRepositoryMock.updateIdentity).to.be.calledOnceWithExactly(
       identity,
       executionContext,
     );
@@ -106,7 +106,7 @@ describe('applyIdentityUpdateTransition', () => {
       executionContext,
     );
 
-    expect(stateRepositoryMock.storeIdentity).to.be.calledOnceWithExactly(
+    expect(stateRepositoryMock.updateIdentity).to.be.calledOnceWithExactly(
       biggestPossibleIdentity,
       executionContext,
     );
@@ -141,7 +141,7 @@ describe('applyIdentityUpdateTransition', () => {
 
     expect(stateRepositoryMock.storeIdentityPublicKeyHashes).to.not.be.called();
 
-    expect(stateRepositoryMock.storeIdentity).to.be.calledOnceWithExactly(
+    expect(stateRepositoryMock.updateIdentity).to.be.calledOnceWithExactly(
       biggestPossibleIdentity,
       executionContext,
     );
