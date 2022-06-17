@@ -59,7 +59,7 @@ describe('handleUpdatedScriptPayoutFactory', () => {
       identity.publicKeys[0].getData(),
     );
 
-    expect(stateRepositoryMock.storeIdentity).to.not.be.called();
+    expect(stateRepositoryMock.updateIdentity).to.not.be.called();
     expect(stateRepositoryMock.storeIdentityPublicKeyHashes).to.not.be.called();
   });
 
@@ -87,7 +87,7 @@ describe('handleUpdatedScriptPayoutFactory', () => {
     identityPublicKeys.push(newWithdrawalIdentityPublicKey);
     identityToStore.setPublicKeys(identityPublicKeys);
 
-    expect(stateRepositoryMock.storeIdentity).to.be.calledOnceWithExactly(identityToStore);
+    expect(stateRepositoryMock.updateIdentity).to.be.calledOnceWithExactly(identityToStore);
     expect(stateRepositoryMock.storeIdentityPublicKeyHashes).to.be.calledOnceWithExactly(
       identity.getId(),
       [newPubKeyData],
@@ -116,7 +116,7 @@ describe('handleUpdatedScriptPayoutFactory', () => {
     identityPublicKeys.push(newWithdrawalIdentityPublicKey);
     identityToStore.setPublicKeys(identityPublicKeys);
 
-    expect(stateRepositoryMock.storeIdentity).to.be.calledOnceWithExactly(identityToStore);
+    expect(stateRepositoryMock.updateIdentity).to.be.calledOnceWithExactly(identityToStore);
     expect(stateRepositoryMock.storeIdentityPublicKeyHashes).to.be.calledOnceWithExactly(
       identity.getId(),
       [newPubKeyData],

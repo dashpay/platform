@@ -40,7 +40,7 @@ function applyIdentityCreateTransitionFactory(
       revision: 0,
     });
 
-    await stateRepository.storeIdentity(identity, executionContext);
+    await stateRepository.createIdentity(identity, executionContext);
 
     const publicKeyHashes = identity
       .getPublicKeys()

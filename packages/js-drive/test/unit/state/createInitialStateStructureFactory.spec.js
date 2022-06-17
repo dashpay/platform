@@ -4,7 +4,7 @@ const SpentAssetLockTransactionsRepository = require('../../../lib/identity/Spen
 describe('createInitialStateStructureFactory', () => {
   let createInitialStateStructure;
   let identityRepositoryMock;
-  let publicKeyToIdentityIdRepositoryMock;
+  let publicKeyToIdentitiesRepositoryMock;
   let groveDBStoreMock;
   let dataContractRepositoryMock;
   let spentAssetLockTransactionsRepositoryMock;
@@ -14,7 +14,7 @@ describe('createInitialStateStructureFactory', () => {
       createTree: this.sinon.stub(),
     };
 
-    publicKeyToIdentityIdRepositoryMock = {
+    publicKeyToIdentitiesRepositoryMock = {
       createTree: this.sinon.stub(),
     };
 
@@ -32,7 +32,7 @@ describe('createInitialStateStructureFactory', () => {
 
     createInitialStateStructure = createInitialStateStructureFactory(
       identityRepositoryMock,
-      publicKeyToIdentityIdRepositoryMock,
+      publicKeyToIdentitiesRepositoryMock,
       spentAssetLockTransactionsRepositoryMock,
       dataContractRepositoryMock,
       groveDBStoreMock,
@@ -44,7 +44,7 @@ describe('createInitialStateStructureFactory', () => {
 
     expect(identityRepositoryMock.createTree)
       .to.be.calledOnceWithExactly({ useTransaction: true });
-    expect(publicKeyToIdentityIdRepositoryMock.createTree)
+    expect(publicKeyToIdentitiesRepositoryMock.createTree)
       .to.be.calledOnceWithExactly({ useTransaction: true });
     expect(dataContractRepositoryMock.createTree)
       .to.be.calledOnceWithExactly({ useTransaction: true });

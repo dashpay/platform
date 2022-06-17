@@ -172,8 +172,8 @@ describe('Platform', () => {
       }
 
       expect(broadcastError).to.exist();
-      expect(/Document \w* has duplicate unique properties \$ownerId, firstName with other documents/.test(broadcastError.message)).to.be.true();
       expect(broadcastError.code).to.be.equal(4009);
+      expect(broadcastError.message).to.match(/Document \w* has duplicate unique properties \$ownerId, firstName with other documents/);
     });
 
     it('should be able to create new document', async () => {
@@ -324,8 +324,8 @@ describe('Platform', () => {
       }
 
       expect(broadcastError).to.exist();
-      expect(/Document \w* updatedAt timestamp .* are out of block time window from .* and .*/.test(broadcastError.message)).to.be.true();
       expect(broadcastError.code).to.be.equal(4008);
+      expect(broadcastError.message).to.match(/Document \w* updatedAt timestamp .* are out of block time window from .* and .*/);
     });
 
     it('should be able to delete a document', async () => {
@@ -368,7 +368,7 @@ describe('Platform', () => {
       }
 
       expect(broadcastError).to.exist();
-      expect(/Document \w* createdAt timestamp .* are out of block time window from .* and .*/.test(broadcastError.message)).to.be.true();
+      expect(broadcastError.message).to.match(/Document \w* createdAt timestamp .* are out of block time window from .* and .*/);
       expect(broadcastError.code).to.be.equal(4008);
     });
   });

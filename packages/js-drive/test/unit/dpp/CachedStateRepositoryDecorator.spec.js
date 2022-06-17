@@ -1,6 +1,7 @@
 const getDocumentsFixture = require('@dashevo/dpp/lib/test/fixtures/getDocumentsFixture');
 const getIdentityFixture = require('@dashevo/dpp/lib/test/fixtures/getIdentityFixture');
 const getDataContractFixture = require('@dashevo/dpp/lib/test/fixtures/getDataContractFixture');
+const createStateRepositoryMock = require('@dashevo/dpp/lib/test/mocks/createStateRepositoryMock');
 
 const CachedStateRepositoryDecorator = require('../../../lib/dpp/CachedStateRepositoryDecorator');
 
@@ -24,19 +25,7 @@ describe('CachedStateRepositoryDecorator', () => {
       get: this.sinon.stub(),
     };
 
-    stateRepositoryMock = {
-      fetchIdentity: this.sinon.stub(),
-      fetchDocuments: this.sinon.stub(),
-      fetchTransaction: this.sinon.stub(),
-      fetchDataContract: this.sinon.stub(),
-      storeIdentity: this.sinon.stub(),
-      createDocument: this.sinon.stub(),
-      updateDocument: this.sinon.stub(),
-      removeDocument: this.sinon.stub(),
-      storeIdentityPublicKeyHashes: this.sinon.stub(),
-      fetchLatestPlatformBlockHeader: this.sinon.stub(),
-      fetchIdentityIdsByPublicKeyHashes: this.sinon.stub(),
-    };
+    stateRepositoryMock = createStateRepositoryMock(this.sinon);
 
     cachedStateRepository = new CachedStateRepositoryDecorator(
       stateRepositoryMock,
@@ -55,11 +44,19 @@ describe('CachedStateRepositoryDecorator', () => {
     });
   });
 
-  describe('#storeIdentity', () => {
+  describe('#createIdentity', () => {
     it('should store identity to repository', async () => {
-      await cachedStateRepository.storeIdentity(identity);
+      await cachedStateRepository.createIdentity(identity);
 
-      expect(stateRepositoryMock.storeIdentity).to.be.calledOnceWith(identity);
+      expect(stateRepositoryMock.createIdentity).to.be.calledOnceWith(identity);
+    });
+  });
+
+  describe('#updateIdentity', () => {
+    it('should store identity to repository', async () => {
+      await cachedStateRepository.updateIdentity(identity);
+
+      expect(stateRepositoryMock.updateIdentity).to.be.calledOnceWith(identity);
     });
   });
 

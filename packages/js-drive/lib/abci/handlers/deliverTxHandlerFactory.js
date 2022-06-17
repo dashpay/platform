@@ -162,7 +162,7 @@ function deliverTxHandlerFactory(
       throw new NegativeBalanceError(identity);
     }
 
-    await transactionalDpp.getStateRepository().storeIdentity(identity);
+    await transactionalDpp.getStateRepository().updateIdentity(identity);
 
     blockExecutionContext.incrementCumulativeFees(actualStateTransitionFee);
 

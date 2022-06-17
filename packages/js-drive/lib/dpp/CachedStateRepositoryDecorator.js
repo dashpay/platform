@@ -1,3 +1,6 @@
+/**
+ * @implements StateRepository
+ */
 class CachedStateRepositoryDecorator {
   /**
    * @param {DriveStateRepository} stateRepository
@@ -24,15 +27,27 @@ class CachedStateRepositoryDecorator {
   }
 
   /**
-   * Store identity
+   * Create identity
    *
    * @param {Identity} identity
    * @param {StateTransitionExecutionContext} [executionContext]
    *
    * @returns {Promise<void>}
    */
-  async storeIdentity(identity, executionContext = undefined) {
-    return this.stateRepository.storeIdentity(identity, executionContext);
+  async createIdentity(identity, executionContext = undefined) {
+    return this.stateRepository.createIdentity(identity, executionContext);
+  }
+
+  /**
+   * Update identity
+   *
+   * @param {Identity} identity
+   * @param {StateTransitionExecutionContext} [executionContext]
+   *
+   * @returns {Promise<void>}
+   */
+  async updateIdentity(identity, executionContext = undefined) {
+    return this.stateRepository.updateIdentity(identity, executionContext);
   }
 
   /**

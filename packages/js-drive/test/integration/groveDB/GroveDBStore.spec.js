@@ -121,7 +121,7 @@ describe('GroveDBStore', () => {
       await rsDrive.getGroveDB().insert(
         testTreePath,
         key,
-        { type: 'item', value },
+        { type: 'item', epoch: 0, value },
         false,
       );
 
@@ -152,7 +152,7 @@ describe('GroveDBStore', () => {
       await rsDrive.getGroveDB().insert(
         testTreePath,
         key,
-        { type: 'item', value },
+        { type: 'item', epoch: 0, value },
         false,
       );
 
@@ -203,9 +203,14 @@ describe('GroveDBStore', () => {
     });
 
     it('should not put an item by reference on dry run', async () => {
-      await store.put(otherTreePath, key, value, { dryRun: true });
+      await store.put(otherTreePath, key, value);
 
-      const result = await store.putReference(testTreePath, key, [otherTreePath[0], key]);
+      const result = await store.putReference(
+        testTreePath,
+        key,
+        [otherTreePath[0], key],
+        { dryRun: true },
+      );
 
       expect(result).to.be.instanceOf(StorageResult);
       expect(result.getOperations().length).to.be.greaterThan(0);
@@ -213,6 +218,34 @@ describe('GroveDBStore', () => {
       const getResult = await store.get(testTreePath, key);
 
       expect(getResult.getValue()).to.be.null();
+    });
+  });
+
+  describe('#query', () => {
+    it('should return results', async () => {
+      await store.put(testTreePath, key, value);
+
+      const result = await store.query({
+        path: testTreePath,
+        query: {
+          query: {
+            items: [
+              {
+                type: 'rangeFull',
+              },
+            ],
+          },
+        },
+      });
+
+      expect(result).to.have.instanceOf(StorageResult);
+      expect(result.getOperations().length).to.be.greaterThan(0);
+
+      expect(result.getValue()).to.have.lengthOf(1);
+
+      const [item] = result.getValue();
+
+      expect(item).to.deep.equal(value);
     });
   });
 
@@ -431,7 +464,7 @@ describe('GroveDBStore', () => {
     it('should return a root hash for store with value', async () => {
       await store.put(testTreePath, key, value);
 
-      const valueHash = Buffer.from('2c83b6d9650234c474d492be0043d08ff1f588742c23e172be37e459cba9fd10', 'hex');
+      const valueHash = Buffer.from('4761772ecb332ab96912b384fe8934c85d447e04d151932d385516a88e3dd098', 'hex');
 
       const result = await store.getRootHash();
 

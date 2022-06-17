@@ -55,8 +55,8 @@ const LatestCoreChainLock = require('./core/LatestCoreChainLock');
 const GroveDBStore = require('./storage/GroveDBStore');
 const IdentityStoreRepository = require('./identity/IdentityStoreRepository');
 
-const PublicKeyToIdentityIdStoreRepository = require(
-  './identity/PublicKeyToIdentityIdStoreRepository',
+const PublicKeyToIdentitiesStoreRepository = require(
+  './identity/PublicKeyToIdentitiesStoreRepository',
 );
 
 const DataContractStoreRepository = require('./dataContract/DataContractStoreRepository');
@@ -78,7 +78,6 @@ const documentQueryHandlerFactory = require('./abci/handlers/query/documentQuery
 const identitiesByPublicKeyHashesQueryHandlerFactory = require('./abci/handlers/query/identitiesByPublicKeyHashesQueryHandlerFactory');
 
 const getProofsQueryHandlerFactory = require('./abci/handlers/query/getProofsQueryHandlerFactory');
-const identityIdsByPublicKeyHashesQueryHandlerFactory = require('./abci/handlers/query/identityIdsByPublicKeyHashesQueryHandlerFactory');
 
 const verifyChainLockQueryHandlerFactory = require('./abci/handlers/query/verifyChainLockQueryHandlerFactory');
 
@@ -462,12 +461,12 @@ function createDIContainer(options) {
       decodeProtocolEntity,
     ) => (new IdentityStoreRepository(signedGroveDBStore, decodeProtocolEntity))).singleton(),
 
-    publicKeyToIdentityIdRepository: asClass(PublicKeyToIdentityIdStoreRepository).singleton(),
+    publicKeyToIdentitiesRepository: asClass(PublicKeyToIdentitiesStoreRepository).singleton(),
 
-    signedPublicKeyToIdentityIdRepository: asFunction((
+    signedPublicKeyToIdentitiesRepository: asFunction((
       signedGroveDBStore,
     ) => (
-      new PublicKeyToIdentityIdStoreRepository(signedGroveDBStore)
+      new PublicKeyToIdentitiesStoreRepository(signedGroveDBStore)
     )).singleton(),
 
     synchronizeMasternodeIdentities: asFunction(synchronizeMasternodeIdentitiesFactory).singleton(),
@@ -586,7 +585,7 @@ function createDIContainer(options) {
 
     stateRepository: asFunction((
       identityRepository,
-      publicKeyToIdentityIdRepository,
+      publicKeyToIdentitiesRepository,
       dataContractRepository,
       fetchDocuments,
       documentRepository,
@@ -598,7 +597,7 @@ function createDIContainer(options) {
     ) => {
       const stateRepository = new DriveStateRepository(
         identityRepository,
-        publicKeyToIdentityIdRepository,
+        publicKeyToIdentitiesRepository,
         dataContractRepository,
         fetchDocuments,
         documentRepository,
@@ -617,7 +616,7 @@ function createDIContainer(options) {
 
     transactionalStateRepository: asFunction((
       identityRepository,
-      publicKeyToIdentityIdRepository,
+      publicKeyToIdentitiesRepository,
       dataContractRepository,
       fetchDocuments,
       documentRepository,
@@ -630,7 +629,7 @@ function createDIContainer(options) {
     ) => {
       const stateRepository = new DriveStateRepository(
         identityRepository,
-        publicKeyToIdentityIdRepository,
+        publicKeyToIdentitiesRepository,
         dataContractRepository,
         fetchDocuments,
         documentRepository,
@@ -741,8 +740,6 @@ function createDIContainer(options) {
     getProofsQueryHandler: asFunction(getProofsQueryHandlerFactory).singleton(),
     identitiesByPublicKeyHashesQueryHandler:
       asFunction(identitiesByPublicKeyHashesQueryHandlerFactory).singleton(),
-    identityIdsByPublicKeyHashesQueryHandler:
-      asFunction(identityIdsByPublicKeyHashesQueryHandlerFactory).singleton(),
     verifyChainLockQueryHandler: asFunction(verifyChainLockQueryHandlerFactory).singleton(),
 
     queryHandlerRouter: asFunction((
@@ -750,7 +747,6 @@ function createDIContainer(options) {
       dataContractQueryHandler,
       documentQueryHandler,
       identitiesByPublicKeyHashesQueryHandler,
-      identityIdsByPublicKeyHashesQueryHandler,
       verifyChainLockQueryHandler,
       getProofsQueryHandler,
     ) => {
@@ -763,7 +759,6 @@ function createDIContainer(options) {
       router.on('GET', '/dataContracts/documents', documentQueryHandler);
       router.on('GET', '/proofs', getProofsQueryHandler);
       router.on('GET', '/identities/by-public-key-hash', identitiesByPublicKeyHashesQueryHandler);
-      router.on('GET', '/identities/by-public-key-hash/id', identityIdsByPublicKeyHashesQueryHandler);
       router.on('GET', '/verify-chainlock', verifyChainLockQueryHandler, { rawData: true });
 
       return router;
