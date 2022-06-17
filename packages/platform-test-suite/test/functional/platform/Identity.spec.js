@@ -99,7 +99,7 @@ describe('Platform', () => {
         transaction,
         privateKey,
         outputIndex,
-      } = await createAssetLockTransaction({ client }, 5000);
+      } = await createAssetLockTransaction({ client }, 7000);
 
       await client.getDAPIClient().core.broadcastTransaction(transaction.toBuffer());
 
@@ -213,32 +213,7 @@ describe('Platform', () => {
       expect(fetchedIdentity.getBalance()).to.be.greaterThan(0);
     });
 
-    it('should be able to get newly created identity by it\'s first public key', async () => {
-      const response = await client.getDAPIClient().platform
-        .getIdentitiesByPublicKeyHashes(
-          [identity.getPublicKeyById(0).hash()],
-        );
-
-      const [[serializedIdentity]] = response.getIdentities();
-
-      expect(serializedIdentity).to.be.not.null();
-
-      const receivedIdentity = dpp.identity.createFromBuffer(
-        serializedIdentity,
-        { skipValidation: true },
-      );
-
-      const receivedIdentityWithoutBalance = receivedIdentity.toObject();
-      delete receivedIdentityWithoutBalance.balance;
-
-      const localIdentityWithoutBalance = identity.toObject();
-      delete localIdentityWithoutBalance.balance;
-
-      expect(receivedIdentityWithoutBalance).to.deep.equal(localIdentityWithoutBalance);
-      expect(receivedIdentity.getBalance()).to.be.greaterThan(0);
-    });
-
-    it('should be able to get newly created identity id by it\'s first public key', async () => {
+    it('should be able to get newly created identity by it\'s public key', async () => {
       const response = await client.getDAPIClient().platform.getIdentitiesByPublicKeyHashes(
         [identity.getPublicKeyById(0).hash()],
       );
@@ -261,7 +236,7 @@ describe('Platform', () => {
           outputIndex,
         } = await createAssetLockTransaction({
           client,
-        }, 5000);
+        }, 7000);
 
         // Broadcast Asset Lock transaction
         await client.getDAPIClient().core.broadcastTransaction(transaction.toBuffer());
@@ -343,7 +318,7 @@ describe('Platform', () => {
       });
 
       it('should fail to create more documents if there are no more credits', async () => {
-        const lowBalanceIdentity = await client.platform.identities.register(4500);
+        const lowBalanceIdentity = await client.platform.identities.register(7000);
 
         const document = await client.platform.documents.create(
           'customContracts.niceDocument',
