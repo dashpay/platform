@@ -96,7 +96,7 @@ impl JsonSchemaExt for JsonValue {
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Index {
     pub name: String,
-    pub properties: BTreeMap<String, OrderBy>,
+    pub properties: Vec<BTreeMap<String, OrderBy>>,
     #[serde(default)]
     pub unique: bool,
 }
@@ -128,18 +128,18 @@ mod test {
             "indices" : [
                 {
                     "name" : "first_index",
-                    "properties" : {
-                        "field_one" : "asc",
-                        "field_two" : "desc"
-                    },
+                    "properties" :[
+                        {"field_one" : "asc"},
+                        {"field_two" : "desc"},
+                    ],
                     "unique" : true
 
                 },
                 {
                     "name" : "second_index",
-                    "properties" : {
-                        "field_two" : "desc",
-                    }
+                    "properties" : [
+                        {"field_two" : "desc"},
+                    ],
                 }
              ]
         });
@@ -150,8 +150,8 @@ mod test {
         assert_eq!(indices.len(), 2);
         assert_eq!(indices[0].name, "first_index");
         assert_eq!(indices[0].properties.len(), 2);
-        assert_eq!(indices[0].properties["field_one"], OrderBy::Asc);
-        assert_eq!(indices[0].properties["field_two"], OrderBy::Desc);
+        assert_eq!(indices[0].properties[0]["field_one"], OrderBy::Asc);
+        assert_eq!(indices[0].properties[1]["field_two"], OrderBy::Desc);
         assert!(indices[0].unique);
 
         assert_eq!(indices[1].name, "second_index");

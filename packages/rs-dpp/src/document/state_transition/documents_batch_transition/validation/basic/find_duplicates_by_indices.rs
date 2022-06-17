@@ -83,7 +83,7 @@ fn is_duplicate_by_indices(
         let mut original_hash = String::new();
         let mut hash_to_check = String::new();
 
-        for (property_name, _) in index.properties.iter() {
+        for (property_name, _) in index.properties.iter().flatten() {
             original_hash.push_str(&format!(
                 ":{}",
                 get_data_property(original_transition, property_name)
@@ -153,10 +153,10 @@ mod test {
                             "indices": [
                               {
                                 "name": "ownerIdLastName",
-                                "properties": {
-                                  "$ownerId": "asc",
-                                  "lastName": "asc",
-                                },
+                                "properties": [
+                                  {"$ownerId": "asc"},
+                                  {"lastName": "asc"},
+                                ],
                                 "unique": true,
                               },
                             ],
