@@ -1,3 +1,11 @@
+### [0.22.13](https://github.com/dashevo/platform/compare/v0.22.12...v0.22.13) (2022-06-17)
+
+
+### Features
+
+* **dashmate:** upgrade docker compose to v2 ([#422](https://github.com/dashevo/platform/issues/422))
+* support DIP24 devnet LLMQ type ([#438](https://github.com/dashevo/platform/issues/438))
+
 ### [0.22.12](https://github.com/dashevo/platform/compare/v0.22.11...v0.22.12) (2022-06-07)
 
 
