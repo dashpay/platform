@@ -251,6 +251,48 @@ class DocumentRepository {
       }
     }
   }
+
+  /**
+   * @param {DataContract} dataContract
+   * @param {string} documentType
+   * @param {Object} options
+   * @param {boolean} [options.useTransaction=false]
+   * @return {Promise<StorageResult>}
+   */
+  async prove(dataContract, documentType, options = {}) {
+    const query = lodashCloneDeep(options);
+    let useTransaction = false;
+
+    if (typeof query === 'object' && !Array.isArray(query) && query !== null) {
+      ({ useTransaction } = query);
+      delete query.useTransaction;
+      delete query.dryRun;
+
+      // Remove undefined options before we pass them to RS Drive
+      Object.keys(query)
+        .forEach((queryOption) => {
+          if (query[queryOption] === undefined) {
+            // eslint-disable-next-line no-param-reassign
+            delete query[queryOption];
+          }
+        });
+
+      const prove = await this.storage.getDrive()
+        .proveQueryDocuments(
+          dataContract,
+          documentType,
+          query,
+          useTransaction,
+        );
+
+      return new StorageResult(
+        prove,
+        [
+          new PreCalculatedOperation(0, 0),
+        ],
+      );
+    }
+  }
 }
 
 module.exports = DocumentRepository;

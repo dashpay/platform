@@ -15,7 +15,6 @@ const {
 
 const InvalidArgumentAbciError = require('../../errors/InvalidArgumentAbciError');
 const InvalidQueryError = require('../../../document/errors/InvalidQueryError');
-const UnimplementedAbciError = require('../../errors/UnimplementedAbciError');
 
 /**
  *
@@ -70,7 +69,9 @@ function documentQueryHandlerFactory(
     const response = createQueryResponse(GetDocumentsResponse, request.prove);
 
     if (request.prove) {
-      throw new UnimplementedAbciError('Proofs are not implemented yet');
+      const proof = await signedDataContractRepository.prove(contractIdIdentifier);
+
+      response.getProof().setMerkleProof(proof);
     }
 
     let documentsResult;

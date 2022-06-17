@@ -16,7 +16,6 @@ const Identifier = require('@dashevo/dpp/lib/identifier/Identifier');
 const IdentifierError = require('@dashevo/dpp/lib/identifier/errors/IdentifierError');
 
 const NotFoundAbciError = require('../../errors/NotFoundAbciError');
-const UnimplementedAbciError = require('../../errors/UnimplementedAbciError');
 const InvalidArgumentAbciError = require('../../errors/InvalidArgumentAbciError');
 
 /**
@@ -58,17 +57,19 @@ function dataContractQueryHandlerFactory(
 
     const response = createQueryResponse(GetDataContractResponse, request.prove);
 
-    if (request.prove) {
-      throw new UnimplementedAbciError('Proofs are not implemented yet');
-    }
-
     const dataContract = await signedDataContractRepository.fetch(contractIdIdentifier);
 
-    if (dataContract.isNull()) {
+    if (!dataContract.isNull()) {
+      response.setDataContract(dataContract.getValue().toBuffer());
+    } else if (!request.prove) {
       throw new NotFoundAbciError('Data Contract not found');
     }
 
-    response.setDataContract(dataContract.getValue().toBuffer());
+    if (request.prove) {
+      const proof = await signedDataContractRepository.prove(contractIdIdentifier);
+
+      response.getProof().setMerkleProof(proof);
+    }
 
     return new ResponseQuery({
       value: response.serializeBinary(),

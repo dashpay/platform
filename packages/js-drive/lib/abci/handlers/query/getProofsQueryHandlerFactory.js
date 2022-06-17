@@ -69,6 +69,8 @@ function getProofsQueryHandlerFactory(
     };
 
     if (documentIds && documentIds.length) {
+
+
       response.documentsProof = {
         signatureLlmqHash,
         signature,

@@ -111,6 +111,29 @@ class DataContractStoreRepository {
       options,
     );
   }
+
+  /**
+ * Prove Data Contract by ID from database
+ *
+ * @param {Identifier} id
+ * @param {Object} [options]
+ * @param {boolean} [options.useTransaction=false]
+ * @return {Promise<StorageResult<Buffer|null>>}
+ * */
+  async prove(id, options) {
+    return this.storage.prove({
+      path: DataContractStoreRepository.TREE_PATH.concat([id.toBuffer()]),
+      query: {
+        query: {
+          items: [
+            {
+              type: 'rangeFull',
+            },
+          ],
+        },
+      },
+    }, options);
+  }
 }
 
 DataContractStoreRepository.TREE_PATH = [Buffer.from([1])];

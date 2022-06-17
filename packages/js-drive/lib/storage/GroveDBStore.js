@@ -294,6 +294,42 @@ class GroveDBStore {
   }
 
   /**
+   * Prove query
+   *
+   * @param {PathQuery} query
+   * @param {Object} [options]
+   * @param {boolean} [options.useTransaction=false]
+   * @return {Promise<StorageResult<Buffer|null>>}
+   * */
+  async prove(query, options = {}) {
+    let proof;
+
+    try {
+      proof = await this.db.proveQuery(
+        query,
+        options.useTransaction || false,
+      );
+    } catch (e) {
+      if (
+        e.message.startsWith('path key not found')
+        || e.message.startsWith('path not found')
+      ) {
+        return new StorageResult(
+          null,
+          [new ReadOperation(0)],
+        );
+      }
+
+      throw e;
+    }
+
+    return new StorageResult(
+      proof,
+      [new ReadOperation(0)],
+    );
+  }
+
+  /**
    * Delete value by key
    *
    * @param {Buffer[]} path

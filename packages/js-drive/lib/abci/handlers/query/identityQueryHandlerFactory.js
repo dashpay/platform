@@ -66,11 +66,17 @@ function identityQueryHandlerFactory(
 
     const identityResult = await signedIdentityRepository.fetch(identifier);
 
-    if (identityResult.isNull()) {
+    if (!identityResult.isNull()) {
+      response.setIdentity(identityResult.getValue().toBuffer());
+    } else if (!request.prove) {
       throw new NotFoundAbciError('Identity not found');
     }
 
-    response.setIdentity(identityResult.getValue().toBuffer());
+    if (request.prove) {
+      const proof = await signedIdentityRepository.prove(identifier);
+
+      response.getProof().setMerkleProof(proof);
+    }
 
     return new ResponseQuery({
       value: response.serializeBinary(),

@@ -124,6 +124,30 @@ class IdentityStoreRepository {
       options,
     );
   }
+
+  /**
+   * Prove identity by id
+   *
+   * @param {Identifier} id
+   * @param {Object} [options]
+   * @param {boolean} [options.useTransaction=false]
+   *
+   * @return {Promise<StorageResult<Buffer|null>>}
+   * */
+  async prove(id, options) {
+    return this.storage.prove({
+      path: IdentityStoreRepository.TREE_PATH.concat([id.toBuffer()]),
+      query: {
+        query: {
+          items: [
+            {
+              type: 'rangeFull',
+            },
+          ],
+        },
+      },
+    }, options);
+  }
 }
 
 IdentityStoreRepository.TREE_PATH = [Buffer.from([0])];

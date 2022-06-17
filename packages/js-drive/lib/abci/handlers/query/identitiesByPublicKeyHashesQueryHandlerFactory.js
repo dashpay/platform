@@ -59,10 +59,6 @@ function identitiesByPublicKeyHashesQueryHandlerFactory(
       });
     }
 
-    if (request.prove) {
-      throw new UnimplementedAbciError('Proofs are not implemented yet');
-    }
-
     const response = createQueryResponse(GetIdentitiesByPublicKeyHashesResponse, request.prove);
 
     const result = await signedPublicKeyToIdentitiesRepository.fetchManyBuffers(
@@ -70,6 +66,12 @@ function identitiesByPublicKeyHashesQueryHandlerFactory(
     );
 
     response.setIdentitiesList(result.getValue());
+
+    if (request.prove) {
+      const proof = await signedPublicKeyToIdentitiesRepository.proveMany(publicKeyHashes);
+
+      response.getProof().setMerkleProof(proof);
+    }
 
     return new ResponseQuery({
       value: response.serializeBinary(),

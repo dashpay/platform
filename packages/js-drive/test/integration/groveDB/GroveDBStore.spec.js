@@ -249,6 +249,30 @@ describe('GroveDBStore', () => {
     });
   });
 
+  describe('#prove', () => {
+    it('should return proof', async () => {
+      await store.put(testTreePath, key, value);
+
+      const result = await store.prove({
+        path: testTreePath,
+        query: {
+          query: {
+            items: [
+              {
+                type: 'rangeFull',
+              },
+            ],
+          },
+        },
+      });
+
+      expect(result).to.have.instanceOf(StorageResult);
+      expect(result.getOperations().length).to.be.greaterThan(0);
+
+      expect(result.getValue()).to.be.an.instanceOf(Buffer);
+    });
+  });
+
   describe('#delete', () => {
     it('should delete value', async () => {
       await store.put(testTreePath, key, value);
