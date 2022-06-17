@@ -134,6 +134,37 @@ class DataContractStoreRepository {
       },
     }, options);
   }
+
+  /**
+ * Prove Data Contract by IDs from database
+ *
+ * @param {Identifier[]} ids
+ * @param {Object} [options]
+ * @param {boolean} [options.useTransaction=false]
+ * @return {Promise<StorageResult<Buffer|null>>}
+ * */
+  async proveMany(ids, options) {
+    const items = ids.map((id) => ({
+      type: 'key',
+      key: id,
+    }));
+
+    return this.storage.prove({
+      path: DataContractStoreRepository.TREE_PATH,
+      query: {
+        query: {
+          items,
+          subquery: {
+            items: [
+              {
+                type: 'rangeFull',
+              },
+            ],
+          },
+        },
+      },
+    }, options);
+  }
 }
 
 DataContractStoreRepository.TREE_PATH = [Buffer.from([1])];

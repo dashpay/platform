@@ -20,7 +20,6 @@ const identityQueryHandlerFactory = require('../../../../../lib/abci/handlers/qu
 const BlockExecutionContextMock = require('../../../../../lib/test/mock/BlockExecutionContextMock');
 const NotFoundAbciError = require('../../../../../lib/abci/errors/NotFoundAbciError');
 const BlockExecutionContextStackMock = require('../../../../../lib/test/mock/BlockExecutionContextStackMock');
-const UnimplementedAbciError = require('../../../../../lib/abci/errors/UnimplementedAbciError');
 const StorageResult = require('../../../../../lib/storage/StorageResult');
 
 describe('identityQueryHandlerFactory', () => {
@@ -37,6 +36,7 @@ describe('identityQueryHandlerFactory', () => {
   beforeEach(function beforeEach() {
     signedIdentityRepositoryMock = {
       fetch: this.sinon.stub(),
+      prove: this.sinon.stub(),
     };
 
     createQueryResponseMock = this.sinon.stub();
@@ -114,13 +114,21 @@ describe('identityQueryHandlerFactory', () => {
     //   storeTreeProof: Buffer.from('03046b657931060076616c75653103046b657932060076616c75653210',
     //     'hex'),
     // };
+    const proof = Buffer.alloc(20, 1);
 
-    try {
-      await identityQueryHandler(params, data, { prove: true });
+    signedIdentityRepositoryMock.fetch.resolves(
+      new StorageResult(null),
+    );
+    signedIdentityRepositoryMock.prove.resolves(
+      new StorageResult(proof),
+    );
 
-      expect.fail('should throw UnimplementedAbciError');
-    } catch (e) {
-      expect(e).to.be.an.instanceof(UnimplementedAbciError);
-    }
+    const result = await identityQueryHandler(params, data, { prove: true });
+
+    expect(signedIdentityRepositoryMock.fetch).to.be.calledOnceWith(data.id);
+    expect(signedIdentityRepositoryMock.prove).to.be.calledOnceWith(data.id);
+    expect(result).to.be.an.instanceof(ResponseQuery);
+    expect(result.code).to.equal(0);
+    expect(result.value).to.deep.equal(responseMock.serializeBinary());
   });
 });

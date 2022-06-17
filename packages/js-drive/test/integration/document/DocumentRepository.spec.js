@@ -1177,7 +1177,7 @@ describe('DocumentRepository', function main() {
 
       describe('invalid queries', () => {
         invalidQueries.forEach(({ query, error }) => {
-          it(`should return throw InvalidQueryError for query "${JSON.stringify(query)}"`, async () => {
+          it(`should throw InvalidQueryError for query "${JSON.stringify(query)}"`, async () => {
             try {
               await documentRepository.find(queryDataContract, 'testDocument', query);
 
@@ -3237,6 +3237,46 @@ describe('DocumentRepository', function main() {
 
       expect(removedDocuments).to.not.have.lengthOf(0);
       expect(removedDocuments[0].toBuffer()).to.deep.equal(document.toBuffer());
+    });
+  });
+
+  describe('#prove', () => {
+    // TODO do we need to check prove result with every single find test request?
+
+    beforeEach(async () => {
+      await createDocuments(documentRepository, documents);
+    });
+
+    it('should return proof for all existing documents', async () => {
+      const result = await documentRepository.prove(dataContract, document.getType());
+
+      expect(result).to.be.instanceOf(StorageResult);
+      expect(result.getOperations().length).to.be.greaterThan(0);
+
+      const proof = result.getValue();
+
+      expect(proof).to.be.an.instanceOf(Buffer);
+      expect(proof.length).to.be.greaterThan(0);
+    });
+
+    it.skip('should return proof for all existing documents in transaction', async () => {
+      await documentRepository
+        .storage
+        .startTransaction();
+
+      const result = await documentRepository
+        .prove(dataContract, document.getType(), {
+          useTransaction: true,
+        });
+
+      await documentRepository
+        .storage
+        .stopTransaction();
+
+      const proof = result.getValue();
+
+      expect(proof).to.be.an.instanceOf(Buffer);
+      expect(proof.length).to.be.greaterThan(0);
     });
   });
 });

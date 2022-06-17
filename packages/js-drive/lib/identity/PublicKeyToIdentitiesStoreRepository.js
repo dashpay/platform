@@ -170,7 +170,7 @@ class PublicKeyToIdentitiesStoreRepository {
  * @param {Object} [options]
  * @param {boolean} [options.useTransaction=false]
  *
- * @return {Promise<StorageResult<Buffer[]>>}
+ * @return {Promise<StorageResult<Buffer>>}
  */
   async proveMany(publicKeyHashes, options = {}) {
     const items = publicKeyHashes.map((publicKeyHash) => ({

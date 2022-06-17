@@ -15,13 +15,13 @@ const {
 
 const getDataContractFixture = require('@dashevo/dpp/lib/test/fixtures/getDataContractFixture');
 
+const Identifier = require('@dashevo/dpp/lib/identifier/Identifier');
 const dataContractQueryHandlerFactory = require('../../../../../lib/abci/handlers/query/dataContractQueryHandlerFactory');
 
 const NotFoundAbciError = require('../../../../../lib/abci/errors/NotFoundAbciError');
 const StoreRepositoryMock = require('../../../../../lib/test/mock/StoreRepositoryMock');
 const BlockExecutionContextStackMock = require('../../../../../lib/test/mock/BlockExecutionContextStackMock');
 const InvalidArgumentAbciError = require('../../../../../lib/abci/errors/InvalidArgumentAbciError');
-const UnimplementedAbciError = require('../../../../../lib/abci/errors/UnimplementedAbciError');
 const StorageResult = require('../../../../../lib/storage/StorageResult');
 
 describe('dataContractQueryHandlerFactory', () => {
@@ -117,19 +117,31 @@ describe('dataContractQueryHandlerFactory', () => {
     }
   });
 
-  it('should throw UnimplementedAbciError is proof was requested', async () => {
+  it('should return proof if it was requested', async () => {
     // const proof = {
     // rootTreeProof: Buffer.from('0100000001f0faf5f55674905a68eba1be2f946e667c1cb5010101', 'hex'),
     // storeTreeProof: Buffer.from('03046b657931060076616c75653103046b657932060076616c75653210',
     // 'hex'),
     // };
 
-    try {
-      await dataContractQueryHandler(params, data, { prove: true });
+    const proof = Buffer.alloc(20, 255);
 
-      expect.fail('should throw InvalidArgumentAbciError');
-    } catch (e) {
-      expect(e).to.be.an.instanceOf(UnimplementedAbciError);
-    }
+    signedDataContractRepositoryMock.fetch.resolves(
+      new StorageResult(dataContract),
+    );
+
+    signedDataContractRepositoryMock.prove.resolves(
+      new StorageResult(proof),
+    );
+
+    const result = await dataContractQueryHandler(params, data, { prove: true });
+
+    expect(signedDataContractRepositoryMock.prove).to.be.calledOnceWithExactly(
+      new Identifier(data.id),
+    );
+
+    expect(result).to.be.an.instanceof(ResponseQuery);
+    expect(result.code).to.equal(0);
+    expect(result.value).to.deep.equal(responseMock.serializeBinary());
   });
 });

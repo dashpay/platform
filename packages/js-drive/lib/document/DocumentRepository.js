@@ -276,7 +276,9 @@ class DocumentRepository {
             delete query[queryOption];
           }
         });
+    }
 
+    try {
       const prove = await this.storage.getDrive()
         .proveQueryDocuments(
           dataContract,
@@ -291,6 +293,20 @@ class DocumentRepository {
           new PreCalculatedOperation(0, 0),
         ],
       );
+    } catch (e) {
+      if (e.message.startsWith('query: ')) {
+        throw new InvalidQueryError(e.message.substring(7, e.message.length));
+      }
+
+      if (e.message.startsWith('structure: ')) {
+        throw new InvalidQueryError(e.message.substring(11, e.message.length));
+      }
+
+      if (e.message.startsWith('contract: ')) {
+        throw new InvalidQueryError(e.message.substring(10, e.message.length));
+      }
+
+      throw e;
     }
   }
 }

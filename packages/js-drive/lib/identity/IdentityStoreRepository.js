@@ -148,6 +148,38 @@ class IdentityStoreRepository {
       },
     }, options);
   }
+
+  /**
+   * Prove identity by ids
+   *
+   * @param {Identifier[]} ids
+   * @param {Object} [options]
+   * @param {boolean} [options.useTransaction=false]
+   *
+   * @return {Promise<StorageResult<Buffer|null>>}
+   * */
+  async proveMany(ids, options) {
+    const items = ids.map((id) => ({
+      type: 'key',
+      key: id,
+    }));
+
+    return this.storage.prove({
+      path: IdentityStoreRepository.TREE_PATH,
+      query: {
+        query: {
+          items,
+          subquery: {
+            items: [
+              {
+                type: 'rangeFull',
+              },
+            ],
+          },
+        },
+      },
+    }, options);
+  }
 }
 
 IdentityStoreRepository.TREE_PATH = [Buffer.from([0])];

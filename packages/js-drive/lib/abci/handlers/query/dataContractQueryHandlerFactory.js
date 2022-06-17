@@ -68,7 +68,7 @@ function dataContractQueryHandlerFactory(
     if (request.prove) {
       const proof = await signedDataContractRepository.prove(contractIdIdentifier);
 
-      response.getProof().setMerkleProof(proof);
+      response.getProof().setMerkleProof(proof.getValue());
     }
 
     return new ResponseQuery({

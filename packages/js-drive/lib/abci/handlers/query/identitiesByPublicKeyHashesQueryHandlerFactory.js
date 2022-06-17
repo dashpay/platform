@@ -14,7 +14,6 @@ const {
 } = require('@dashevo/dapi-grpc');
 
 const InvalidArgumentAbciError = require('../../errors/InvalidArgumentAbciError');
-const UnimplementedAbciError = require('../../errors/UnimplementedAbciError');
 
 /**
  *
@@ -70,7 +69,7 @@ function identitiesByPublicKeyHashesQueryHandlerFactory(
     if (request.prove) {
       const proof = await signedPublicKeyToIdentitiesRepository.proveMany(publicKeyHashes);
 
-      response.getProof().setMerkleProof(proof);
+      response.getProof().setMerkleProof(proof.getValue());
     }
 
     return new ResponseQuery({

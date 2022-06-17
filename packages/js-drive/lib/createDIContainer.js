@@ -62,6 +62,8 @@ const PublicKeyToIdentitiesStoreRepository = require(
 const DataContractStoreRepository = require('./dataContract/DataContractStoreRepository');
 
 const fetchDocumentsFactory = require('./document/fetchDocumentsFactory');
+const proveDocumentsFactory = require('./document/proveDocumentsFactory');
+const fetchDataContractFactory = require('./document/fetchDataContractFactory');
 const BlockExecutionContext = require('./blockExecution/BlockExecutionContext');
 
 const CreditsDistributionPoolRepository = require('./creditsDistributionPool/CreditsDistributionPoolRepository');
@@ -540,16 +542,30 @@ function createDIContainer(options) {
     ))).singleton(),
 
     fetchDocuments: asFunction(fetchDocumentsFactory).singleton(),
+    fetchDataContract: asFunction(fetchDataContractFactory).singleton(),
+    proveDocuments: asFunction(proveDocumentsFactory).singleton(),
 
     fetchSignedDocuments: asFunction((
       signedDocumentRepository,
-      signedDataContractRepository,
-      signedDataContractCache,
     ) => (
       fetchDocumentsFactory(
         signedDocumentRepository,
+      )
+    )).singleton(),
+    fetchSignedDataContract: asFunction((
+      signedDataContractRepository,
+      signedDataContractCache,
+    ) => (
+      fetchDataContractFactory(
         signedDataContractRepository,
         signedDataContractCache,
+      )
+    )).singleton(),
+    proveSignedDocuments: asFunction((
+      signedDocumentRepository,
+    ) => (
+      proveDocumentsFactory(
+        signedDocumentRepository,
       )
     )).singleton(),
   });

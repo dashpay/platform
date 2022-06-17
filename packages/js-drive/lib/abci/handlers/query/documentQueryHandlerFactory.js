@@ -19,12 +19,16 @@ const InvalidQueryError = require('../../../document/errors/InvalidQueryError');
 /**
  *
  * @param {fetchDocuments} fetchSignedDocuments
+ * @param {fetchDataContract} fetchSignedDataContract
+ * @param {proveDocuments} proveSignedDocuments
  * @param {createQueryResponse} createQueryResponse
  * @param {BlockExecutionContextStack} blockExecutionContextStack
  * @return {documentQueryHandler}
  */
 function documentQueryHandlerFactory(
   fetchSignedDocuments,
+  fetchSignedDataContract,
+  proveSignedDocuments,
   createQueryResponse,
   blockExecutionContextStack,
 ) {
@@ -68,22 +72,25 @@ function documentQueryHandlerFactory(
 
     const response = createQueryResponse(GetDocumentsResponse, request.prove);
 
-    if (request.prove) {
-      const proof = await signedDataContractRepository.prove(contractIdIdentifier);
-
-      response.getProof().setMerkleProof(proof);
-    }
-
     let documentsResult;
+    let dataContractResult;
+    let proof;
+    const options = {
+      where,
+      orderBy,
+      limit,
+      startAfter: startAfter ? Buffer.from(startAfter) : startAfter,
+      startAt: startAt ? Buffer.from(startAt) : startAt,
+    };
 
     try {
-      documentsResult = await fetchSignedDocuments(contractId, type, {
-        where,
-        orderBy,
-        limit,
-        startAfter: startAfter ? Buffer.from(startAfter) : startAfter,
-        startAt: startAt ? Buffer.from(startAt) : startAt,
-      });
+      dataContractResult = await fetchSignedDataContract(contractId, type);
+
+      documentsResult = await fetchSignedDocuments(dataContractResult, type, options);
+
+      if (request.prove) {
+        proof = await proveSignedDocuments(dataContractResult, type, options);
+      }
     } catch (e) {
       if (e instanceof InvalidQueryError) {
         throw new InvalidArgumentAbciError(`Invalid query: ${e.message}`);
@@ -97,6 +104,10 @@ function documentQueryHandlerFactory(
     response.setDocumentsList(
       documents.map((document) => document.toBuffer()),
     );
+
+    if (request.prove) {
+      response.getProof().setMerkleProof(proof.getValue());
+    }
 
     return new ResponseQuery({
       value: response.serializeBinary(),
