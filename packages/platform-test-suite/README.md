@@ -38,7 +38,7 @@ Run test suite
 
 Usage: test <seed> [options]
 
-  <seed> can be IP or IP:port
+  <seed> can be IP or IP:port (or pass via DAPI_SEED env)
 
   Options:
   -s=a,b,c    --scope=a,b,c                                 - test scope to run
@@ -77,7 +77,7 @@ Run test suite
 
 Usage: test <seed> [options]
 
-  <seed> can be IP or IP:port
+  <seed> can be IP or IP:port (or pass via DAPI_SEED env)
 
   Options:
   -s=a,b,c    --scope=a,b,c                                 - test scope to run

@@ -6,7 +6,7 @@ cmd_usage="Run test suite
 
 Usage: test <seed> [options]
 
-  <seed> can be IP or IP:port
+  <seed> can be IP or IP:port (or pass via DAPI_SEED env)
 
   Options:
   -s=a,b,c    --scope=a,b,c                                 - test scope to run
@@ -33,7 +33,8 @@ Usage: test <seed> [options]
   functional:core
   functional:platform"
 
-DAPI_SEED="${@: -1}"
+FIRST_ARG="$1"
+DAPI_SEED="${DAPI_SEED:=FIRST_ARG}"
 network="testnet"
 
 DIR="$( cd -P "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
