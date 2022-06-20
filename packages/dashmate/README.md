@@ -389,16 +389,16 @@ $ docker-compose --env-file=.env.testnet up -d
 #### [FAILED] Node is not running
 One of your nodes failed to start or missing, you may retry with --force option
 
-`yarn stop --force`
+`dashmate stop --force`
 
 #### Running services detected. Please ensure all services are stopped for this config before starting
-Running services preventing dashmate to start, you may retry with --force option to forcefully start, even if some of the nodes already up.
-
-`yarn start --force`
+Running services preventing dashmate to start, that might be left after unsuccessful close. Try to stop them forcibly with --force option.
 
 #### externalIp option is not set in base config
 This may happen when you switch between multiple major versions, so your config became incompatible. In this case, you have to purge dashmate storage (`rm -rf ~/.dashmate`) and run setup again.
 
+#### TypeError Plugin: dashmate: Cannot read properties of undefined (reading 'dash')
+This could happen if you have other .yarnrc and node_modules in your upper directories. Check your home directory for .yarnrc and node_modules, wipe them all and try again
 
 ## Contributing
 
