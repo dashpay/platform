@@ -1364,6 +1364,15 @@ __metadata:
   languageName: node
   linkType: hard
 
+"@babel/runtime@npm:^7.18.3":
+  version: 7.18.3
+  resolution: "@babel/runtime@npm:7.18.3"
+  dependencies:
+    regenerator-runtime: ^0.13.4
+  checksum: db8526226aa02cfa35a5a7ac1a34b5f303c62a1f000c7db48cb06c6290e616483e5036ab3c4e7a84d0f3be6d4e2148d5fe5cec9564bf955f505c3e764b83d7f1
+  languageName: node
+  linkType: hard
+
 "@babel/runtime@npm:^7.8.4":
   version: 7.16.3
   resolution: "@babel/runtime@npm:7.16.3"
@@ -1669,16 +1678,38 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@dashevo/abci@github:dashevo/js-abci#v0.22-dev":
-  version: 0.20.0
-  resolution: "@dashevo/abci@https://github.com/dashevo/js-abci.git#commit=8806ff71cdac918f79920b1373824653f15698c5"
+"@dashevo/abci@npm:~0.23.0-dev.1":
+  version: 0.23.0-dev.1
+  resolution: "@dashevo/abci@npm:0.23.0-dev.1"
   dependencies:
+    "@dashevo/protobufjs": 6.10.5
     bl: ^1.2.3
-    protobufjs: "github:jawid-h/protobuf.js#fix/buffer-conversion"
     protocol-buffers-encodings: ^1.1.0
-  checksum: 1c8ba91935e9fb99d4e6ad234b299e4956f1486bb00ede8c06ecb5b38341b2042d7fa1a001a58441d7c98d42c14345b63108c607050f0dddc0fb19a64a46cb9f
+  checksum: 6a7cf16ed9b460c027a4122980d37783e12ab34886b34a3b4a77d001824ebe15e87e5f2267898820e0b9e5d8caeb236f10460e9c771fce6117b6b14b6f7e9e4a
   languageName: node
   linkType: hard
+
+"@dashevo/bench-suite@workspace:packages/bench-suite":
+  version: 0.0.0-use.local
+  resolution: "@dashevo/bench-suite@workspace:packages/bench-suite"
+  dependencies:
+    "@dashevo/dashcore-lib": "github:dashevo/dashcore-lib#867f7c71f27298cf14738e7387d9436c3dbe03a5"
+    "@dashevo/dpns-contract": "workspace:~"
+    "@dashevo/dpp": "workspace:~"
+    "@dashevo/wallet-lib": "workspace:~"
+    babel-eslint: ^10.1.0
+    console-table-printer: ^2.11.0
+    dash: "workspace:~"
+    dotenv-safe: ^8.2.0
+    eslint: ^7.32.0
+    eslint-config-airbnb-base: ^14.2.1
+    eslint-plugin-import: ^2.24.2
+    lodash.clone: ~4.5.0
+    lodash.matches: ^4.6.0
+    mathjs: ^10.4.3
+    mocha: ^9.1.2
+  languageName: unknown
+  linkType: soft
 
 "@dashevo/dapi-client@workspace:packages/js-dapi-client, @dashevo/dapi-client@workspace:~":
   version: 0.0.0-use.local
@@ -1687,7 +1718,7 @@ __metadata:
     "@babel/core": ^7.15.5
     "@dashevo/dapi-grpc": "workspace:~"
     "@dashevo/dash-spv": "github:dashevo/dash-spv"
-    "@dashevo/dashcore-lib": ~0.19.38
+    "@dashevo/dashcore-lib": "github:dashevo/dashcore-lib#867f7c71f27298cf14738e7387d9436c3dbe03a5"
     "@dashevo/dpp": "workspace:~"
     "@dashevo/grpc-common": "workspace:~"
     "@grpc/grpc-js": ^1.3.7
@@ -1761,8 +1792,8 @@ __metadata:
   dependencies:
     "@dashevo/dapi-client": "workspace:~"
     "@dashevo/dapi-grpc": "workspace:~"
-    "@dashevo/dashcore-lib": ~0.19.38
-    "@dashevo/dashd-rpc": ^2.3.1
+    "@dashevo/dashcore-lib": "github:dashevo/dashcore-lib#867f7c71f27298cf14738e7387d9436c3dbe03a5"
+    "@dashevo/dashd-rpc": ^2.3.2
     "@dashevo/dp-services-ctl": "github:dashevo/js-dp-services-ctl#v0.19-dev"
     "@dashevo/dpp": "workspace:~"
     "@dashevo/grpc-common": "workspace:~"
@@ -1781,6 +1812,7 @@ __metadata:
     eslint-plugin-import: ^2.24.2
     jayson: ^3.3.4
     lodash: ^4.17.19
+    lru-cache: ^5.1.1
     mocha: ^9.1.2
     mocha-sinon: ^2.1.2
     nyc: ^15.1.0
@@ -1825,6 +1857,25 @@ __metadata:
   languageName: node
   linkType: hard
 
+"@dashevo/dashcore-lib@github:dashevo/dashcore-lib#867f7c71f27298cf14738e7387d9436c3dbe03a5":
+  version: 0.19.38
+  resolution: "@dashevo/dashcore-lib@https://github.com/dashevo/dashcore-lib.git#commit=867f7c71f27298cf14738e7387d9436c3dbe03a5"
+  dependencies:
+    "@dashevo/x11-hash-js": ^1.0.2
+    "@types/node": ^12.12.47
+    bloom-filter: ^0.2.0
+    bls-signatures: ^0.2.5
+    bn.js: =4.11.8
+    bs58: =4.0.1
+    elliptic: 6.5.3
+    eslint-config-prettier: ^8.3.0
+    inherits: =2.0.1
+    lodash: ^4.17.20
+    unorm: ^1.6.0
+  checksum: 94767ddd7ec5fdb78abd0aa319ccdd6d7c425efe5d583779206eb7e7965c23f7bdb6ae4db45647fff5aa8cbc560a48a7ba4cb88cd406279eb2f30a08afdf5cdc
+  languageName: node
+  linkType: hard
+
 "@dashevo/dashcore-lib@npm:^0.19.29":
   version: 0.19.35
   resolution: "@dashevo/dashcore-lib@npm:0.19.35"
@@ -1844,9 +1895,9 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@dashevo/dashcore-lib@npm:~0.19.38":
-  version: 0.19.38
-  resolution: "@dashevo/dashcore-lib@npm:0.19.38"
+"@dashevo/dashcore-lib@npm:~0.19.39":
+  version: 0.19.39
+  resolution: "@dashevo/dashcore-lib@npm:0.19.39"
   dependencies:
     "@dashevo/x11-hash-js": ^1.0.2
     "@types/node": ^12.12.47
@@ -1859,17 +1910,34 @@ __metadata:
     inherits: =2.0.1
     lodash: ^4.17.20
     unorm: ^1.6.0
-  checksum: 13998e3b15b61897ce4044f7e4ca45ac32acdc46fc0357dad5f6852d282089a2cc6f679f94f199866059f9eea03930d0c39e0cc83e6f452efa6cd35567623986
+  checksum: e441cf46a95bc777d9b5d966d05cbf423bea1d8a6721493f94973f7d500c870fc2f55f20cc5feecfb6784bf8617b4342e4cade784ece3cad2263510dfc7a440d
   languageName: node
   linkType: hard
 
-"@dashevo/dashd-rpc@npm:^2.3.0, @dashevo/dashd-rpc@npm:^2.3.1":
+"@dashevo/dashd-rpc@npm:^2.3.0":
   version: 2.3.1
   resolution: "@dashevo/dashd-rpc@npm:2.3.1"
   dependencies:
     async: ^3.2.0
     bluebird: ^3.7.2
   checksum: 8a5bda30a4cd48152acdb44d81dcdd671004644ea6bb733a5a1d387cdab58901e3b2571131791234ba0e1a7c0e5a66a5081e0a4883d53162400047c9d66a807c
+  languageName: node
+  linkType: hard
+
+"@dashevo/dashd-rpc@npm:^2.3.2":
+  version: 2.3.2
+  resolution: "@dashevo/dashd-rpc@npm:2.3.2"
+  dependencies:
+    async: ^3.2.0
+    bluebird: ^3.7.2
+  checksum: 56ff41d695b4ce44922228ee74cdeea83de212d0b75ba6b6f400ad363a12f004528b18d1377b231ffb020f79a7fa6c9f1a911f9ae1eb4f79b5ad16dade4672ee
+  languageName: node
+  linkType: hard
+
+"@dashevo/dashpay-contract@npm:~0.22.13":
+  version: 0.22.13
+  resolution: "@dashevo/dashpay-contract@npm:0.22.13"
+  checksum: f5ba73733fc3be52b9759fdc0db63858d5389a4d1c075250f4291426e327c35f3229573269b2e0673fe056a87712cb58c0f595c3b2ac5bec6638c30876c81ff3
   languageName: node
   linkType: hard
 
@@ -1933,6 +2001,13 @@ __metadata:
   languageName: node
   linkType: hard
 
+"@dashevo/dpns-contract@npm:~0.22.13":
+  version: 0.22.13
+  resolution: "@dashevo/dpns-contract@npm:0.22.13"
+  checksum: 9d16c56352b3bf38de5a7284ece78c3606be0de4715c18332f0bbb69593ecab745d5c48b8ad34993d5a2848769746f4246ef365017aabdc780c99bfd3113e135
+  languageName: node
+  linkType: hard
+
 "@dashevo/dpns-contract@workspace:packages/dpns-contract, @dashevo/dpns-contract@workspace:~":
   version: 0.0.0-use.local
   resolution: "@dashevo/dpns-contract@workspace:packages/dpns-contract"
@@ -1949,14 +2024,43 @@ __metadata:
   languageName: unknown
   linkType: soft
 
-"@dashevo/dpp@workspace:packages/js-dpp, @dashevo/dpp@workspace:~, @dashevo/dpp@~0.22.0-dev.7":
+"@dashevo/dpp@npm:~0.22.0-dev.7":
+  version: 0.22.13
+  resolution: "@dashevo/dpp@npm:0.22.13"
+  dependencies:
+    "@apidevtools/json-schema-ref-parser": ^8.0.0
+    "@dashevo/dashcore-lib": ~0.19.39
+    "@dashevo/dashpay-contract": ~0.22.13
+    "@dashevo/dpns-contract": ~0.22.13
+    "@dashevo/feature-flags-contract": ~0.22.13
+    "@dashevo/masternode-reward-shares-contract": ~0.22.13
+    "@dashevo/wasm-re2": ~1.0.2
+    ajv: ^8.6.0
+    ajv-formats: ^2.1.1
+    bignumber.js: ^9.0.1
+    bls-signatures: ^0.2.5
+    bs58: ^4.0.1
+    cbor: ^8.0.0
+    fast-json-patch: ^3.1.0
+    json-schema-diff-validator: ^0.4.1
+    json-schema-traverse: ^1.0.0
+    lodash.clonedeep: ^4.5.0
+    lodash.clonedeepwith: ^4.5.0
+    lodash.get: ^4.4.2
+    lodash.set: ^4.3.2
+    long: ^5.2.0
+  checksum: e927e7284b8b2428f5622ec46cebc9c5be0081cd40455fa246a173732d25157c503e6fa1e77fd482624e17ab74c875ba74a576e812a0259018d20e2b1a788b42
+  languageName: node
+  linkType: hard
+
+"@dashevo/dpp@workspace:packages/js-dpp, @dashevo/dpp@workspace:~":
   version: 0.0.0-use.local
   resolution: "@dashevo/dpp@workspace:packages/js-dpp"
   dependencies:
     "@apidevtools/json-schema-ref-parser": ^8.0.0
     "@babel/core": ^7.15.5
     "@babel/preset-env": ^7.15.4
-    "@dashevo/dashcore-lib": ~0.19.38
+    "@dashevo/dashcore-lib": "github:dashevo/dashcore-lib#867f7c71f27298cf14738e7387d9436c3dbe03a5"
     "@dashevo/dashpay-contract": "workspace:~"
     "@dashevo/dpns-contract": "workspace:~"
     "@dashevo/feature-flags-contract": "workspace:~"
@@ -2020,10 +2124,10 @@ __metadata:
   version: 0.0.0-use.local
   resolution: "@dashevo/drive@workspace:packages/js-drive"
   dependencies:
-    "@dashevo/abci": "github:dashevo/js-abci#v0.22-dev"
+    "@dashevo/abci": ~0.23.0-dev.1
     "@dashevo/dapi-grpc": "workspace:~"
-    "@dashevo/dashcore-lib": ~0.19.38
-    "@dashevo/dashd-rpc": ^2.3.1
+    "@dashevo/dashcore-lib": "github:dashevo/dashcore-lib#867f7c71f27298cf14738e7387d9436c3dbe03a5"
+    "@dashevo/dashd-rpc": ^2.3.2
     "@dashevo/dashpay-contract": "workspace:~"
     "@dashevo/dp-services-ctl": "github:dashevo/js-dp-services-ctl#v0.19-dev"
     "@dashevo/dpns-contract": "workspace:~"
@@ -2031,7 +2135,7 @@ __metadata:
     "@dashevo/feature-flags-contract": "workspace:~"
     "@dashevo/grpc-common": "workspace:~"
     "@dashevo/masternode-reward-shares-contract": "workspace:~"
-    "@dashevo/rs-drive": ~0.22.0-dev.19
+    "@dashevo/rs-drive": 0.23.0-dev.5.pr.114.2
     "@types/pino": ^6.3.0
     ajv: ^8.6.0
     ajv-keywords: ^5.0.0
@@ -2075,6 +2179,13 @@ __metadata:
   languageName: unknown
   linkType: soft
 
+"@dashevo/feature-flags-contract@npm:~0.22.13":
+  version: 0.22.13
+  resolution: "@dashevo/feature-flags-contract@npm:0.22.13"
+  checksum: aaf2e24b2de0bddb0fe350781f87a553f71d59b5a23e00b8966a855d8c8fd1f53b563c72980261f2884ca6c16f61c2b9a5a70211c9072b647c12df4dfabc2dd6
+  languageName: node
+  linkType: hard
+
 "@dashevo/feature-flags-contract@workspace:packages/feature-flags-contract, @dashevo/feature-flags-contract@workspace:~":
   version: 0.0.0-use.local
   resolution: "@dashevo/feature-flags-contract@workspace:packages/feature-flags-contract"
@@ -2116,6 +2227,13 @@ __metadata:
   languageName: unknown
   linkType: soft
 
+"@dashevo/masternode-reward-shares-contract@npm:~0.22.13":
+  version: 0.22.13
+  resolution: "@dashevo/masternode-reward-shares-contract@npm:0.22.13"
+  checksum: abd1ec5611559622b9187e68878c6eef8633aac26f2501d541c2eeb360bdec2279df0de4c9d0cc5cc00be4589b40effbb33fa958cc191277e1ace4366d08fb78
+  languageName: node
+  linkType: hard
+
 "@dashevo/masternode-reward-shares-contract@workspace:packages/masternode-reward-shares-contract, @dashevo/masternode-reward-shares-contract@workspace:~":
   version: 0.0.0-use.local
   resolution: "@dashevo/masternode-reward-shares-contract@workspace:packages/masternode-reward-shares-contract"
@@ -2146,7 +2264,7 @@ __metadata:
   resolution: "@dashevo/platform-test-suite@workspace:packages/platform-test-suite"
   dependencies:
     "@dashevo/dapi-client": "workspace:~"
-    "@dashevo/dashcore-lib": ~0.19.38
+    "@dashevo/dashcore-lib": "github:dashevo/dashcore-lib#867f7c71f27298cf14738e7387d9436c3dbe03a5"
     "@dashevo/dpns-contract": "workspace:~"
     "@dashevo/dpp": "workspace:~"
     "@dashevo/feature-flags-contract": "workspace:~"
@@ -2240,16 +2358,16 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@dashevo/rs-drive@npm:~0.22.0-dev.19":
-  version: 0.22.0-dev.19
-  resolution: "@dashevo/rs-drive@npm:0.22.0-dev.19"
+"@dashevo/rs-drive@npm:0.23.0-dev.5.pr.114.2":
+  version: 0.23.0-dev.5.pr.114.2
+  resolution: "@dashevo/rs-drive@npm:0.23.0-dev.5.pr.114.2"
   dependencies:
     "@dashevo/dpp": ~0.22.0-dev.7
     cargo-cp-artifact: ^0.1.6
     cbor: ^8.1.0
     neon-load-or-build: ^2.2.2
     neon-tag-prebuild: "github:shumkov/neon-tag-prebuild#patch-1"
-  checksum: cdc9c6733735efa000f4abeee7905835382d500c5876bf38e255edc46a5f309cd527d5614caa1921c726833b45b5742bdb2e0e9b8ef066b3d6b9b14d72b6290d
+  checksum: e1e173c116264793b447135c1274d25cf708b2e2153c6fbb99716666e4a153a5f7d57cc25e4c7e358ad64a22079dc2b959b274b236b1a147299fa6f7b1334e5d
   languageName: node
   linkType: hard
 
@@ -2258,7 +2376,7 @@ __metadata:
   resolution: "@dashevo/wallet-lib@workspace:packages/wallet-lib"
   dependencies:
     "@dashevo/dapi-client": "workspace:~"
-    "@dashevo/dashcore-lib": ~0.19.38
+    "@dashevo/dashcore-lib": "github:dashevo/dashcore-lib#867f7c71f27298cf14738e7387d9436c3dbe03a5"
     "@dashevo/dpp": "workspace:~"
     "@dashevo/grpc-common": "workspace:~"
     assert: ^2.0.0
@@ -6925,6 +7043,13 @@ __metadata:
   languageName: node
   linkType: hard
 
+"complex.js@npm:^2.1.1":
+  version: 2.1.1
+  resolution: "complex.js@npm:2.1.1"
+  checksum: a0802cc3f0eb7703088edfc3fe209ae7be5ce93c0e710a0f288be2e29ee31b3530a8c0d3330d7c2a668410dfe4293a4038554d66c7f1f1165997941bdc1092aa
+  languageName: node
+  linkType: hard
+
 "component-emitter@npm:^1.2.1, component-emitter@npm:~1.3.0":
   version: 1.3.0
   resolution: "component-emitter@npm:1.3.0"
@@ -7032,6 +7157,15 @@ __metadata:
   version: 1.1.0
   resolution: "console-control-strings@npm:1.1.0"
   checksum: 8755d76787f94e6cf79ce4666f0c5519906d7f5b02d4b884cf41e11dcd759ed69c57da0670afd9236d229a46e0f9cf519db0cd829c6dca820bb5a5c3def584ed
+  languageName: node
+  linkType: hard
+
+"console-table-printer@npm:^2.11.0":
+  version: 2.11.0
+  resolution: "console-table-printer@npm:2.11.0"
+  dependencies:
+    simple-wcswidth: ^1.0.1
+  checksum: 125797e3b936eb08182cc704eb8d6aaa6ab82c6fb1f739afad3dd06847b8a89227fe80f84ed105accfa6f4487ff12821f931727624bfda67d8a8ebdc1314f168
   languageName: node
   linkType: hard
 
@@ -7559,7 +7693,7 @@ __metadata:
   resolution: "dash@workspace:packages/js-dash-sdk"
   dependencies:
     "@dashevo/dapi-client": "workspace:~"
-    "@dashevo/dashcore-lib": ~0.19.38
+    "@dashevo/dashcore-lib": "github:dashevo/dashcore-lib#867f7c71f27298cf14738e7387d9436c3dbe03a5"
     "@dashevo/dashpay-contract": "workspace:~"
     "@dashevo/dpns-contract": "workspace:~"
     "@dashevo/dpp": "workspace:~"
@@ -7592,7 +7726,6 @@ __metadata:
     karma-mocha-reporter: ^2.2.5
     karma-webpack: ^5.0.0
     mocha: ^9.1.2
-    net: ^1.0.2
     node-inspect-extracted: ^1.0.8
     nodemon: ^2.0.4
     os-browserify: ^0.3.0
@@ -7604,8 +7737,6 @@ __metadata:
     stream-browserify: ^3.0.0
     stream-http: ^3.2.0
     string_decoder: ^1.3.0
-    terser-webpack-plugin: ^5.3.1
-    tls: ^0.0.1
     ts-loader: ^8.0.2
     ts-mocha: ^8.0.0
     ts-mock-imports: ^1.3.0
@@ -7631,8 +7762,8 @@ __metadata:
   version: 0.0.0-use.local
   resolution: "dashmate@workspace:packages/dashmate"
   dependencies:
-    "@dashevo/dashcore-lib": ~0.19.38
-    "@dashevo/dashd-rpc": ^2.3.1
+    "@dashevo/dashcore-lib": "github:dashevo/dashcore-lib#867f7c71f27298cf14738e7387d9436c3dbe03a5"
+    "@dashevo/dashd-rpc": ^2.3.2
     "@dashevo/dashpay-contract": "workspace:~"
     "@dashevo/docker-compose": ^0.24.0
     "@dashevo/dpns-contract": "workspace:~"
@@ -7812,7 +7943,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"decimal.js@npm:^10.2.1":
+"decimal.js@npm:^10.2.1, decimal.js@npm:^10.3.1":
   version: 10.3.1
   resolution: "decimal.js@npm:10.3.1"
   checksum: 0351ac9f05fe050f23227aa6a4573bee2d58fa7378fcf28d969a8c789525032effb488a90320fd3fe86a66e17b4bc507d811b15eada5b7f0e7ec5d2af4c24a59
@@ -8814,6 +8945,13 @@ __metadata:
   version: 1.0.3
   resolution: "escape-html@npm:1.0.3"
   checksum: 6213ca9ae00d0ab8bccb6d8d4e0a98e76237b2410302cf7df70aaa6591d509a2a37ce8998008cbecae8fc8ffaadf3fb0229535e6a145f3ce0b211d060decbb24
+  languageName: node
+  linkType: hard
+
+"escape-latex@npm:^1.2.0":
+  version: 1.2.0
+  resolution: "escape-latex@npm:1.2.0"
+  checksum: 73a787319f0965ecb8244bb38bf3a3cba872f0b9a5d3da8821140e9f39fe977045dc953a62b1a2bed4d12bfccbe75a7d8ec786412bf00739eaa2f627d0a8e0d6
   languageName: node
   linkType: hard
 
@@ -11801,6 +11939,13 @@ __metadata:
   languageName: node
   linkType: hard
 
+"javascript-natural-sort@npm:^0.7.1":
+  version: 0.7.1
+  resolution: "javascript-natural-sort@npm:0.7.1"
+  checksum: 161e2c512cc7884bc055a582c6645d9032cab88497a76123d73cb23bfb03d97a04cf7772ecdb8bd3366fc07192c2f996366f479f725c23ef073fffe03d6a586a
+  languageName: node
+  linkType: hard
+
 "jayson@npm:^2.1.0":
   version: 2.1.2
   resolution: "jayson@npm:2.1.2"
@@ -12341,17 +12486,6 @@ __metadata:
     merge-stream: ^2.0.0
     supports-color: ^8.0.0
   checksum: 125d46939d894ef8cf1ffbbf6c63cee10f28218698db3949704d5f613a353f56502da50d3425ec722927c7948c5742d0306f63ad5064a432574b8b217b9ceeba
-  languageName: node
-  linkType: hard
-
-"jest-worker@npm:^27.4.5":
-  version: 27.5.1
-  resolution: "jest-worker@npm:27.5.1"
-  dependencies:
-    "@types/node": "*"
-    merge-stream: ^2.0.0
-    supports-color: ^8.0.0
-  checksum: 98cd68b696781caed61c983a3ee30bf880b5bd021c01d98f47b143d4362b85d0737f8523761e2713d45e18b4f9a2b98af1eaee77afade4111bb65c77d6f7c980
   languageName: node
   linkType: hard
 
@@ -13159,6 +13293,13 @@ __metadata:
   languageName: node
   linkType: hard
 
+"lodash.clone@npm:~4.5.0":
+  version: 4.5.0
+  resolution: "lodash.clone@npm:4.5.0"
+  checksum: 5839f22acf3a43c026ac4325f7bcd378f34967415cd0b9fd7efa9bbbf38dc665900d36e040944c5afab94a51ff8a24f6cfc3781fe439705cbad5c722e9506b16
+  languageName: node
+  linkType: hard
+
 "lodash.clonedeep@npm:^4.5.0":
   version: 4.5.0
   resolution: "lodash.clonedeep@npm:4.5.0"
@@ -13226,6 +13367,13 @@ __metadata:
   version: 4.1.1
   resolution: "lodash.kebabcase@npm:4.1.1"
   checksum: 5a6c59161914e1bae23438a298c7433e83d935e0f59853fa862e691164696bc07f6dfa4c313d499fbf41ba8d53314e9850416502376705a357d24ee6ca33af78
+  languageName: node
+  linkType: hard
+
+"lodash.matches@npm:^4.6.0":
+  version: 4.6.0
+  resolution: "lodash.matches@npm:4.6.0"
+  checksum: 002617abb63d3735d8600e5e74d499a02edbef090c33acf1198f46b3ec924752729bbac2eb4f26ec00b0ce3b382fd03fdf25d19cfff08ec735180fcb36cd3fe4
   languageName: node
   linkType: hard
 
@@ -13552,6 +13700,25 @@ __metadata:
   bin:
     markdown-it: bin/markdown-it.js
   checksum: faf5891d389dc433bcf21d3fbff2009beb044b42b117c92f4848899780ca1a2282a209e3ff4672db4afed726a7248304ec473e6e242a7d6498af7113d31974e7
+  languageName: node
+  linkType: hard
+
+"mathjs@npm:^10.4.3":
+  version: 10.6.1
+  resolution: "mathjs@npm:10.6.1"
+  dependencies:
+    "@babel/runtime": ^7.18.3
+    complex.js: ^2.1.1
+    decimal.js: ^10.3.1
+    escape-latex: ^1.2.0
+    fraction.js: ^4.2.0
+    javascript-natural-sort: ^0.7.1
+    seedrandom: ^3.0.5
+    tiny-emitter: ^2.1.0
+    typed-function: ^2.1.0
+  bin:
+    mathjs: bin/cli.js
+  checksum: 049d7e4e93f9e19c57321e7d5e8c3b695d3915b23c3aa2e77f29a099a1561bdf2d18c2229947b75b23c7b8395333bb89936ef051066204cd9af07be2e6db758f
   languageName: node
   linkType: hard
 
@@ -15774,27 +15941,6 @@ __metadata:
   languageName: node
   linkType: hard
 
-"protobufjs@github:jawid-h/protobuf.js#fix/buffer-conversion":
-  version: 6.10.2
-  resolution: "protobufjs@https://github.com/jawid-h/protobuf.js.git#commit=d13d5d5688052e366aa2e9169f50dfca376b32cf"
-  dependencies:
-    "@protobufjs/aspromise": ^1.1.2
-    "@protobufjs/base64": ^1.1.2
-    "@protobufjs/codegen": ^2.0.4
-    "@protobufjs/eventemitter": ^1.1.0
-    "@protobufjs/fetch": ^1.1.0
-    "@protobufjs/float": ^1.0.2
-    "@protobufjs/inquire": ^1.1.0
-    "@protobufjs/path": ^1.1.2
-    "@protobufjs/pool": ^1.1.0
-    "@protobufjs/utf8": ^1.1.0
-    "@types/long": ^4.0.1
-    "@types/node": ">=13.7.0"
-    long: ^4.0.0
-  checksum: cd8c6fa49f03c4516ce17addaba2fde6b5c500b59d02c260e64b25179ec38c1e149ca6a8a96d90216ea02a41a6dba3f6fe6ce35e5edd143de76157d9b8b30903
-  languageName: node
-  linkType: hard
-
 "protobufjs@npm:^6.10.0, protobufjs@npm:^6.8.6":
   version: 6.11.2
   resolution: "protobufjs@npm:6.11.2"
@@ -16816,6 +16962,13 @@ __metadata:
   languageName: node
   linkType: hard
 
+"seedrandom@npm:^3.0.5":
+  version: 3.0.5
+  resolution: "seedrandom@npm:3.0.5"
+  checksum: 728b56bc3bc1b9ddeabd381e449b51cb31bdc0aa86e27fcd0190cea8c44613d5bcb2f6bb63ed79f78180cbe791c20b8ec31a9627f7b7fc7f476fd2bdb7e2da9f
+  languageName: node
+  linkType: hard
+
 "semver-diff@npm:^3.1.1":
   version: 3.1.1
   resolution: "semver-diff@npm:3.1.1"
@@ -17069,6 +17222,13 @@ __metadata:
   dependencies:
     is-arrayish: ^0.3.1
   checksum: a7f3f2ab5c76c4472d5c578df892e857323e452d9f392e1b5cf74b74db66e6294a1e1b8b390b519fa1b96b5b613f2a37db6cffef52c3f1f8f3c5ea64eb2d54c0
+  languageName: node
+  linkType: hard
+
+"simple-wcswidth@npm:^1.0.1":
+  version: 1.0.1
+  resolution: "simple-wcswidth@npm:1.0.1"
+  checksum: dc5bf4cb131d9c386825d1355add2b1ecc408b37dc2c2334edd7a1a4c9f527e6b594dedcdbf6d949bce2740c3a332e39af1183072a2d068e40d9e9146067a37f
   languageName: node
   linkType: hard
 
@@ -18119,28 +18279,6 @@ __metadata:
   languageName: node
   linkType: hard
 
-"terser-webpack-plugin@npm:^5.3.1":
-  version: 5.3.1
-  resolution: "terser-webpack-plugin@npm:5.3.1"
-  dependencies:
-    jest-worker: ^27.4.5
-    schema-utils: ^3.1.1
-    serialize-javascript: ^6.0.0
-    source-map: ^0.6.1
-    terser: ^5.7.2
-  peerDependencies:
-    webpack: ^5.1.0
-  peerDependenciesMeta:
-    "@swc/core":
-      optional: true
-    esbuild:
-      optional: true
-    uglify-js:
-      optional: true
-  checksum: 1b808fd4f58ce0b532baacc50b9a850fc69ce0077a0e9e5076d4156c52fab3d40b02d5d9148a3eba64630cf7f40057de54f6a5a87fac1849b1f11d6bfdb42072
-  languageName: node
-  linkType: hard
-
 "terser@npm:^5.7.2":
   version: 5.10.0
   resolution: "terser@npm:5.10.0"
@@ -18247,6 +18385,13 @@ __metadata:
   dependencies:
     process: ~0.11.0
   checksum: b7437e228684d8e6e193580d363ffdcd752396c0d1013503f50e412aa86e920248a8627450ad40557443e07ef6b9b602ffc940b3ba06db23774a7ab507e1911d
+  languageName: node
+  linkType: hard
+
+"tiny-emitter@npm:^2.1.0":
+  version: 2.1.0
+  resolution: "tiny-emitter@npm:2.1.0"
+  checksum: fbcfb5145751a0e3b109507a828eb6d6d4501352ab7bb33eccef46e22e9d9ad3953158870a6966a59e57ab7c3f9cfac7cab8521db4de6a5e757012f4677df2dd
   languageName: node
   linkType: hard
 
@@ -18769,6 +18914,13 @@ __metadata:
     media-typer: 0.3.0
     mime-types: ~2.1.24
   checksum: 2c8e47675d55f8b4e404bcf529abdf5036c537a04c2b20177bcf78c9e3c1da69da3942b1346e6edb09e823228c0ee656ef0e033765ec39a70d496ef601a0c657
+  languageName: node
+  linkType: hard
+
+"typed-function@npm:^2.1.0":
+  version: 2.1.0
+  resolution: "typed-function@npm:2.1.0"
+  checksum: 168c2c8f765fbecc842521a5fb62a5800958f9fcb0ce78d69c38a5e96c81fe133f853256ec8ee245ee2fc42b4c9342b5ba754c732189550c64c12e758892dc43
   languageName: node
   linkType: hard
 
