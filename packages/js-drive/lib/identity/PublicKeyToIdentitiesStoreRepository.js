@@ -178,7 +178,7 @@ class PublicKeyToIdentitiesStoreRepository {
       key: publicKeyHash,
     }));
 
-    return this.storage.prove({
+    return this.storage.proveQuery({
       path: PublicKeyToIdentitiesStoreRepository.TREE_PATH,
       query: {
         query: {

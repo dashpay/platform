@@ -317,13 +317,16 @@ describe('IdentityStoreRepository', () => {
       await store.createTree([], IdentityStoreRepository.TREE_PATH[0]);
     });
 
-    it('should return null if identity not found', async () => {
+    it('should return prove if identity does not exist', async () => {
       const result = await repository.prove(identity.getId());
 
       expect(result).to.be.instanceOf(StorageResult);
       expect(result.getOperations().length).to.be.greaterThan(0);
 
-      expect(result.getValue()).to.be.null();
+      const proof = result.getValue();
+
+      expect(proof).to.be.an.instanceof(Buffer);
+      expect(proof.length).to.be.greaterThan(0);
     });
 
     it('should return proof', async () => {
@@ -412,13 +415,25 @@ describe('IdentityStoreRepository', () => {
       await store.createTree([], IdentityStoreRepository.TREE_PATH[0]);
     });
 
-    it('should return null if identity not found', async () => {
+    it('should return proof if identity does not exist', async () => {
+      // Create only first identity
+      await store.createTree(IdentityStoreRepository.TREE_PATH, identity.getId().toBuffer());
+
+      await store.put(
+        IdentityStoreRepository.TREE_PATH.concat([identity.getId().toBuffer()]),
+        IdentityStoreRepository.IDENTITY_KEY,
+        identity.toBuffer(),
+      );
+
       const result = await repository.proveMany([identity.getId(), identity2.getId()]);
 
       expect(result).to.be.instanceOf(StorageResult);
       expect(result.getOperations().length).to.be.greaterThan(0);
 
-      expect(result.getValue()).to.be.null();
+      const proof = result.getValue();
+
+      expect(proof).to.be.an.instanceof(Buffer);
+      expect(proof.length).to.be.greaterThan(0);
     });
 
     it('should return proof', async () => {

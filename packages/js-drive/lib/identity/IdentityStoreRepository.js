@@ -135,18 +135,7 @@ class IdentityStoreRepository {
    * @return {Promise<StorageResult<Buffer|null>>}
    * */
   async prove(id, options) {
-    return this.storage.prove({
-      path: IdentityStoreRepository.TREE_PATH.concat([id.toBuffer()]),
-      query: {
-        query: {
-          items: [
-            {
-              type: 'rangeFull',
-            },
-          ],
-        },
-      },
-    }, options);
+    return this.proveMany([id], options);
   }
 
   /**
@@ -156,26 +145,20 @@ class IdentityStoreRepository {
    * @param {Object} [options]
    * @param {boolean} [options.useTransaction=false]
    *
-   * @return {Promise<StorageResult<Buffer|null>>}
+   * @return {Promise<StorageResult<Buffer>>}
    * */
   async proveMany(ids, options) {
     const items = ids.map((id) => ({
       type: 'key',
-      key: id,
+      key: id.toBuffer(),
     }));
 
-    return this.storage.prove({
+    return this.storage.proveQuery({
       path: IdentityStoreRepository.TREE_PATH,
       query: {
         query: {
           items,
-          subquery: {
-            items: [
-              {
-                type: 'rangeFull',
-              },
-            ],
-          },
+          subqueryKey: IdentityStoreRepository.IDENTITY_KEY,
         },
       },
     }, options);

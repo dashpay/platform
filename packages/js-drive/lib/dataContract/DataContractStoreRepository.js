@@ -121,18 +121,7 @@ class DataContractStoreRepository {
  * @return {Promise<StorageResult<Buffer|null>>}
  * */
   async prove(id, options) {
-    return this.storage.prove({
-      path: DataContractStoreRepository.TREE_PATH.concat([id.toBuffer()]),
-      query: {
-        query: {
-          items: [
-            {
-              type: 'rangeFull',
-            },
-          ],
-        },
-      },
-    }, options);
+    return this.proveMany([id], options);
   }
 
   /**
@@ -146,21 +135,15 @@ class DataContractStoreRepository {
   async proveMany(ids, options) {
     const items = ids.map((id) => ({
       type: 'key',
-      key: id,
+      key: id.toBuffer(),
     }));
 
-    return this.storage.prove({
+    return this.storage.proveQuery({
       path: DataContractStoreRepository.TREE_PATH,
       query: {
         query: {
           items,
-          subquery: {
-            items: [
-              {
-                type: 'rangeFull',
-              },
-            ],
-          },
+          subqueryKey: DataContractStoreRepository.DATA_CONTRACT_KEY,
         },
       },
     }, options);

@@ -249,7 +249,7 @@ describe('GroveDBStore', () => {
     });
   });
 
-  describe('#prove', () => {
+  describe('#proveQuery', () => {
     it('should return proof', async () => {
       await store.put(testTreePath, key, value);
 
@@ -270,6 +270,7 @@ describe('GroveDBStore', () => {
       expect(result.getOperations().length).to.be.greaterThan(0);
 
       expect(result.getValue()).to.be.an.instanceOf(Buffer);
+      expect(result.getValue().length).to.be.greaterThan(0);
     });
   });
 
