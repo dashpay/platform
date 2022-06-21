@@ -55,6 +55,7 @@ lazy_static! {
                     },
                 })),
             )
+        .should_validate_formats(true)
         .with_document(
             "https://json-schema.org/draft/2020-12/meta/applicator".to_string(),
             DRAFT202012_APPLICATOR.clone(),

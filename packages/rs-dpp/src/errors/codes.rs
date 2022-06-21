@@ -86,7 +86,7 @@ impl ErrorWithCode for IndexError {
             Self::UniqueIndicesLimitReachedError { .. } => 1017,
             Self::SystemPropertyIndexAlreadyPresentError { .. } => 1015,
             Self::UndefinedIndexPropertyError { .. } => 1016,
-            Self::InvalidIndexPropertyTypError { .. } => 1013,
+            Self::InvalidIndexPropertyTypeError { .. } => 1013,
             Self::InvalidIndexedPropertyConstraintError { .. } => 1012,
             Self::InvalidCompoundIndexError { .. } => 1010,
             Self::DuplicateIndexError { .. } => 1008,

@@ -136,7 +136,7 @@ impl DataContractValidator {
                     .flatten()
                     .map(|property| property.0)
                     .filter(|property_name| {
-                        ALLOWED_INDEX_SYSTEM_PROPERTIES.contains(&property_name.as_str())
+                        !ALLOWED_INDEX_SYSTEM_PROPERTIES.contains(&property_name.as_str())
                     });
 
                 let property_definition_entities: HashMap<&String, Option<&JsonValue>> =
@@ -175,6 +175,7 @@ impl DataContractValidator {
                     // Validate arrays contain scalar values or have the same types
                     // https://github.com/dashevo/platform/blob/ab6391f4b47a970c733e7b81115b44329fbdf993/packages/js-dpp/lib/dataContract/validation/validateDataContractFactory.js#L210
                     if property_definition.is_type_of_array() && !is_byte_array {
+                        invalid_property_type = "array".to_string();
                         // const isInvalidPrefixItems = prefixItems
                         //   && (
                         // prefixItems.some((prefixItem) =>
@@ -191,7 +192,7 @@ impl DataContractValidator {
 
                     if !invalid_property_type.is_empty() {
                         result.add_error(BasicError::IndexError(
-                            IndexError::InvalidIndexPropertyTypError {
+                            IndexError::InvalidIndexPropertyTypeError {
                                 document_type: document_type.clone(),
                                 index_definition: index_definition.clone(),
                                 property_name: property_name.clone(),
@@ -268,49 +269,45 @@ impl DataContractValidator {
                                 ))
                             }
                         }
-
-                        // Make sure that compound unique indices contain all fields
-                        if index_definition.properties.len() > 1 {
-                            let required_fields = document_schema
-                                .get_schema_required_fields()
-                                .unwrap_or_default();
-                            let all_are_required = index_definition
-                                .properties
-                                .iter()
-                                .flatten()
-                                .map(|(field, _)| field)
-                                .all(|field| required_fields.contains(&field.as_str()));
-
-                            let all_are_not_required = index_definition
-                                .properties
-                                .iter()
-                                .flatten()
-                                .map(|(field, _)| field)
-                                .all(|field| !required_fields.contains(&field.as_str()));
-
-                            if !all_are_required && !all_are_not_required {
-                                result.add_error(BasicError::IndexError(
-                                    IndexError::InvalidCompoundIndexError {
-                                        document_type: document_type.clone(),
-                                        index_definition: index_definition.clone(),
-                                    },
-                                ));
-                            }
-
-                            // Ensure index definition uniqueness
-                            let indices_fingerprint =
-                                serde_json::to_string(&index_definition.properties)?;
-                            if indices_fingerprints.contains(&indices_fingerprint) {
-                                result.add_error(BasicError::IndexError(
-                                    IndexError::DuplicateIndexError {
-                                        document_type: document_type.clone(),
-                                        index_definition: index_definition.clone(),
-                                    },
-                                ));
-                            }
-                            indices_fingerprints.push(indices_fingerprint)
-                        }
                     }
+                }
+                // Make sure that compound unique indices contain all fields
+                if index_definition.properties.len() > 1 {
+                    let required_fields = document_schema
+                        .get_schema_required_fields()
+                        .unwrap_or_default();
+                    let all_are_required = index_definition
+                        .properties
+                        .iter()
+                        .flatten()
+                        .map(|(field, _)| field)
+                        .all(|field| required_fields.contains(&field.as_str()));
+
+                    let all_are_not_required = index_definition
+                        .properties
+                        .iter()
+                        .flatten()
+                        .map(|(field, _)| field)
+                        .all(|field| !required_fields.contains(&field.as_str()));
+
+                    if !all_are_required && !all_are_not_required {
+                        result.add_error(BasicError::IndexError(
+                            IndexError::InvalidCompoundIndexError {
+                                document_type: document_type.clone(),
+                                index_definition: index_definition.clone(),
+                            },
+                        ));
+                    }
+
+                    // Ensure index definition uniqueness
+                    let indices_fingerprint = serde_json::to_string(&index_definition.properties)?;
+                    if indices_fingerprints.contains(&indices_fingerprint) {
+                        result.add_error(BasicError::IndexError(IndexError::DuplicateIndexError {
+                            document_type: document_type.clone(),
+                            index_definition: index_definition.clone(),
+                        }));
+                    }
+                    indices_fingerprints.push(indices_fingerprint)
                 }
             }
         }
@@ -387,14 +384,21 @@ fn validate_no_system_indices(index_definition: &Index, document_type: &str) -> 
 
 #[cfg(test)]
 mod test {
+    use core::panic;
+
     use super::*;
     use crate::{
-        consensus::basic::JsonSchemaError,
+        codes::ErrorWithCode,
+        consensus::{basic::JsonSchemaError, ConsensusError},
         tests::fixtures::get_data_contract_fixture,
         version::{ProtocolVersionValidator, COMPATIBILITY_MAP, LATEST_VERSION},
         Convertible,
     };
-    use jsonschema::error::{TypeKind, ValidationErrorKind};
+    use dashcore::secp256k1::rand::seq::index;
+    use jsonschema::{
+        error::{TypeKind, ValidationErrorKind},
+        output::BasicOutput,
+    };
     use serde_json::json;
     use test_case::test_case;
 
@@ -426,8 +430,48 @@ mod test {
 
     fn init() {
         let _ = env_logger::builder()
-            .filter_level(log::LevelFilter::Trace)
+            .filter_level(log::LevelFilter::Debug)
             .try_init();
+    }
+
+    fn get_schema_error(result: &ValidationResult, number: usize) -> &JsonSchemaError {
+        result
+            .errors
+            .get(number)
+            .expect("the error should be returned in validation result")
+            .json_schema_error()
+            .expect("the error should be json schema error")
+    }
+
+    fn get_basic_error(consensus_error: &ConsensusError) -> &BasicError {
+        match consensus_error {
+            ConsensusError::BasicError(basic_error) => &**basic_error,
+            _ => panic!("error '{:?}' isn't a basic error", consensus_error),
+        }
+    }
+
+    fn get_index_error(consensus_error: &ConsensusError) -> &IndexError {
+        match consensus_error {
+            ConsensusError::BasicError(basic_error) => match &**basic_error {
+                BasicError::IndexError(index_error) => index_error,
+                _ => panic!("error '{:?}' isn't a index error", consensus_error),
+            },
+            _ => panic!("error '{:?}' isn't a basic error", consensus_error),
+        }
+    }
+
+    fn print_json_schema_errors(result: &ValidationResult) {
+        for (i, e) in result.errors.iter().enumerate() {
+            let schema_error = e.json_schema_error().unwrap();
+            println!(
+                "error_{}:  {:>30} -({:>20?}-{:>20?}) -  {}",
+                i,
+                schema_error.schema_path(),
+                schema_error.keyword(),
+                schema_error.kind(),
+                schema_error.instance_path()
+            )
+        }
     }
 
     #[test_case("protocolVersion")]
@@ -451,7 +495,6 @@ mod test {
         let result = data_contract_validator
             .validate(&raw_data_contract)
             .expect("validation result should be returned");
-        trace!("The validation result is: {:#?}", result);
 
         let schema_error = get_schema_error(&result, 0);
         assert!(matches!(
@@ -476,7 +519,6 @@ mod test {
         let result = data_contract_validator
             .validate(&raw_data_contract)
             .expect("validation result should be returned");
-        trace!("The validation result is: {:#?}", result);
 
         let schema_error = get_schema_error(&result, 0);
         assert_eq!("/protocolVersion", schema_error.instance_path().to_string());
@@ -516,7 +558,6 @@ mod test {
         let result = data_contract_validator
             .validate(&raw_data_contract)
             .expect("validation result should be returned");
-        trace!("The validation result is: {:#?}", result);
 
         let schema_error = get_schema_error(&result, 0);
         assert_eq!("/$schema", schema_error.instance_path().to_string());
@@ -539,7 +580,6 @@ mod test {
         let result = data_contract_validator
             .validate(&raw_data_contract)
             .expect("validation result should be returned");
-        trace!("The validation result is: {:#?}", result);
 
         let schema_error = get_schema_error(&result, 0);
         let byte_array_schema_error = get_schema_error(&result, 1);
@@ -571,7 +611,6 @@ mod test {
         let result = data_contract_validator
             .validate(&raw_data_contract)
             .expect("validation result should be returned");
-        trace!("The validation result is: {:#?}", result);
 
         let schema_error = get_schema_error(&result, 0);
         assert_eq!(
@@ -598,7 +637,6 @@ mod test {
         let result = data_contract_validator
             .validate(&raw_data_contract)
             .expect("validation result should be returned");
-        trace!("The validation result is: {:#?}", result);
 
         let schema_error = get_schema_error(&result, 0);
         assert_eq!(
@@ -954,32 +992,8 @@ mod test {
         let result = data_contract_validator
             .validate(&raw_data_contract)
             .expect("validation result should be returned");
+
         assert!(result.is_valid());
-    }
-
-    #[test]
-    fn indices_should_be_array() {
-        init();
-        let TestData {
-            mut raw_data_contract,
-            data_contract_validator,
-            ..
-        } = get_test_data();
-
-        raw_data_contract["documents"]["indexedDocument"]["indices"] =
-            json!("definitely not an array");
-
-        let result = data_contract_validator
-            .validate(&raw_data_contract)
-            .expect("validation result should be returned");
-        trace!("The validation result is: {:#?}", result);
-
-        let schema_error = get_schema_error(&result, 0);
-        assert_eq!(
-            "/documents/indexedDocument/indices",
-            schema_error.instance_path().to_string()
-        );
-        assert_eq!(Some("type"), schema_error.keyword(),);
     }
 
     #[test]
@@ -1010,21 +1024,1654 @@ mod test {
             .expect("validation result should be returned");
         let schema_error = get_schema_error(&result, 0);
 
-        // assert_eq!(3, result.errors.len());
         assert_eq!(
             "/documents/niceDocument/properties",
             schema_error.instance_path().to_string()
         );
         assert_eq!(Some("pattern"), schema_error.keyword(),);
-        println!("the reuslt is {:#?}", result);
     }
 
-    fn get_schema_error(result: &ValidationResult, number: usize) -> &JsonSchemaError {
-        result
+    #[test]
+    fn should_return_invalid_result_if_nested_property_has_invalid_format() {
+        init();
+        let TestData {
+            mut raw_data_contract,
+            data_contract_validator,
+            ..
+        } = get_test_data();
+
+        let invalid_names = [
+            "-invalidname",
+            "_invalidname",
+            "invalidname-",
+            "invalidname_",
+            "*(*&^",
+            "$test",
+            "123abci",
+            "ab",
+        ];
+
+        raw_data_contract["documents"]["niceDocument"]["properties"]["something"] = json!({
+            "properties" :   json!({}),
+            "additionalProperties" :  false,
+
+        });
+
+        for property_name in invalid_names {
+            raw_data_contract["documents"]["niceDocument"]["properties"]["something"]
+                ["properties"][property_name] = json!({});
+
+            let result = data_contract_validator
+                .validate(&raw_data_contract)
+                .expect("validation result should be returned");
+            let schema_error = get_schema_error(&result, 0);
+
+            assert_eq!(4, result.errors.len());
+            assert_eq!(
+                "/documents/niceDocument/properties/something/properties",
+                schema_error.instance_path().to_string()
+            );
+            assert_eq!(Some("pattern"), schema_error.keyword());
+
+            raw_data_contract["documents"]["niceDocument"]["properties"]["something"]["properties"]
+                .remove(property_name)
+                .expect("the property should exist and be removed");
+        }
+    }
+
+    #[test]
+    fn documents_should_have_additional_properties_defined() {
+        init();
+        let TestData {
+            mut raw_data_contract,
+            data_contract_validator,
+            ..
+        } = get_test_data();
+
+        raw_data_contract["documents"]["niceDocument"]
+            .remove("additionalProperties")
+            .expect("property should exist and be removed");
+
+        let result = data_contract_validator
+            .validate(&raw_data_contract)
+            .expect("validation result should be returned");
+        trace!("The validation result is: {:#?}", result);
+
+        let schema_error = get_schema_error(&result, 0);
+        assert_eq!(
+            "/documents/niceDocument",
+            schema_error.instance_path().to_string()
+        );
+        assert_eq!(Some("required"), schema_error.keyword());
+        assert!(matches!(
+            schema_error.kind(),
+            ValidationErrorKind::Required {
+                property: JsonValue::String(missing_property)
+            } if missing_property == "additionalProperties"
+        ));
+    }
+
+    #[test]
+    fn documents_should_have_additional_properties_defined_to_false() {
+        init();
+        let TestData {
+            mut raw_data_contract,
+            data_contract_validator,
+            ..
+        } = get_test_data();
+
+        raw_data_contract["documents"]["niceDocument"]["additionalProperties"] = json!(true);
+
+        let result = data_contract_validator
+            .validate(&raw_data_contract)
+            .expect("validation result should be returned");
+        trace!("The validation result is: {:#?}", result);
+
+        let schema_error = get_schema_error(&result, 0);
+        assert_eq!(
+            "/documents/niceDocument/additionalProperties",
+            schema_error.instance_path().to_string()
+        );
+        assert_eq!(Some("const"), schema_error.keyword());
+    }
+
+    #[test]
+    fn documents_with_additional_properties_should_be_invalid() {
+        init();
+        let TestData {
+            mut raw_data_contract,
+            data_contract_validator,
+            ..
+        } = get_test_data();
+
+        raw_data_contract["additionalProperty"] = json!({});
+
+        let result = data_contract_validator
+            .validate(&raw_data_contract)
+            .expect("validation result should be returned");
+
+        let schema_error = get_schema_error(&result, 0);
+        assert_eq!("", schema_error.instance_path().to_string());
+        assert_eq!(Some("additionalProperties"), schema_error.keyword());
+    }
+
+    #[test]
+    fn documents_should_have_no_more_than_100_properties() {
+        init();
+        let TestData {
+            mut raw_data_contract,
+            data_contract_validator,
+            ..
+        } = get_test_data();
+
+        raw_data_contract["documents"]["niceDocument"]["properties"] = json!({});
+
+        for i in 0..101 {
+            raw_data_contract["documents"]["niceDocument"]["properties"][format!("p_{}", i)] = json!({
+                "properties": {
+                    "something" :  {
+                        "type" : "string"
+                    }
+                },
+                "additionalProperties": false,
+            })
+        }
+
+        let result = data_contract_validator
+            .validate(&raw_data_contract)
+            .expect("validation result should be returned");
+        let schema_error = get_schema_error(&result, 0);
+
+        assert_eq!(
+            "/documents/niceDocument/properties",
+            schema_error.instance_path().to_string()
+        );
+        assert_eq!(Some("maxProperties"), schema_error.keyword());
+    }
+
+    #[test]
+    fn documents_should_have_sub_schema_in_items_for_arrays() {
+        init();
+        let TestData {
+            mut raw_data_contract,
+            data_contract_validator,
+            ..
+        } = get_test_data();
+
+        raw_data_contract["documents"]["new"] = json!( {
+          "properties": {
+            "something": {
+              "type": "array",
+              "items": [
+                {
+                  "type": "string",
+                },
+                {
+                  "type": "number",
+                },
+              ],
+            },
+          },
+          "additionalProperties": false,
+        });
+
+        let result = data_contract_validator
+            .validate(&raw_data_contract)
+            .expect("validation result should be returned");
+        let schema_error = get_schema_error(&result, 0);
+
+        assert_eq!(
+            "/documents/new/properties/something/items",
+            schema_error.instance_path().to_string()
+        );
+        assert_eq!(Some("type"), schema_error.keyword());
+    }
+
+    #[test]
+    fn should_have_items_if_prefix_items_is_used_for_arrays() {
+        init();
+        let TestData {
+            mut raw_data_contract,
+            data_contract_validator,
+            ..
+        } = get_test_data();
+
+        raw_data_contract["documents"]["new"] = json!({
+            "type": "object",
+            "properties": {
+              "something": {
+                "type": "array",
+                "prefixItems": [
+                  {
+                    "type": "string",
+                  },
+                  {
+                    "type": "number",
+                  },
+                ],
+                "minItems": 2,
+              },
+            },
+            "additionalProperties": false,
+        });
+
+        let result = data_contract_validator
+            .validate(&raw_data_contract)
+            .expect("validation result should be returned");
+        let schema_error = get_schema_error(&result, 0);
+
+        assert_eq!(
+            "/documents/new/properties/something",
+            schema_error.instance_path().to_string()
+        );
+        assert_eq!(Some("required"), schema_error.keyword());
+        assert!(matches!(
+            schema_error.kind(),
+            ValidationErrorKind::Required {
+                property: JsonValue::String(missing_property)
+            } if missing_property == "items"
+        ));
+    }
+
+    #[test]
+    fn should_not_have_items_disabled_if_prefix_items_is_used_for_arrays() {
+        init();
+        let TestData {
+            mut raw_data_contract,
+            data_contract_validator,
+            ..
+        } = get_test_data();
+
+        raw_data_contract["documents"]["new"] = json!({
+            "properties": {
+                "something": {
+                  "type": "array",
+                  "prefixItems": [
+                    {
+                      "type": "string",
+                    },
+                    {
+                      "type": "number",
+                    },
+                  ],
+                  "items": true,
+                },
+              },
+              "additionalProperties": false,
+        });
+
+        let result = data_contract_validator
+            .validate(&raw_data_contract)
+            .expect("validation result should be returned");
+        let schema_error = get_schema_error(&result, 0);
+
+        assert_eq!(
+            "/documents/new/properties/something/items",
+            schema_error.instance_path().to_string()
+        );
+        assert_eq!(Some("const"), schema_error.keyword());
+    }
+
+    #[test]
+    #[ignore = "unevaluatedProperties are part of draft2019"]
+    // evaluate the reasons: is this because 'default' isn't a keyword or 'unevaluatedProperties' property isn't defined
+    fn should_return_invalid_result_if_default_keyword_is_used() {
+        init();
+        let TestData {
+            mut raw_data_contract,
+            data_contract_validator,
+            ..
+        } = get_test_data();
+
+        raw_data_contract["documents"]["indexedDocument"]["properties"]["firstName"]["default"] =
+            json!("1");
+
+        let result = data_contract_validator
+            .validate(&raw_data_contract)
+            .expect("validation result should be returned");
+        let schema_error = get_schema_error(&result, 0);
+
+        print_json_schema_errors(&result);
+
+        assert_eq!(
+            "/documents/new/properties/something/items",
+            schema_error.instance_path().to_string()
+        );
+        assert_eq!(Some("const"), schema_error.keyword());
+    }
+
+    #[test]
+    fn documents_should_be_invalid_if_remote_ref_is_used() {
+        init();
+        let TestData {
+            mut raw_data_contract,
+            data_contract_validator,
+            ..
+        } = get_test_data();
+
+        raw_data_contract["documents"]["indexedDocument"] =
+            json!({"$ref" : "http://remote.com/schema#"});
+
+        let result = data_contract_validator
+            .validate(&raw_data_contract)
+            .expect("validation result should be returned");
+        let schema_error = get_schema_error(&result, 0);
+
+        assert_eq!(
+            "/documents/indexedDocument/$ref",
+            schema_error.instance_path().to_string()
+        );
+        assert_eq!(Some("pattern"), schema_error.keyword());
+    }
+
+    #[test]
+    #[ignore = "uses unevaluatedProperties for validation - part of draft2019"]
+    fn documents_should_not_have_property_names() {
+        init();
+        let TestData {
+            mut raw_data_contract,
+            data_contract_validator,
+            ..
+        } = get_test_data();
+
+        raw_data_contract["documents"]["indexedDocument"] = json!({
+            "type": "object",
+            "properties": {
+              "something": {
+                "type": "string",
+              },
+            },
+            "propertyNames": {
+              "pattern": "abc",
+            },
+            "additionalProperties": false,
+        });
+
+        let result = data_contract_validator
+            .validate(&raw_data_contract)
+            .expect("validation result should be returned");
+        let schema_error = get_schema_error(&result, 0);
+
+        print_json_schema_errors(&result);
+        assert_eq!(
+            "/documents/indexedDocument",
+            schema_error.instance_path().to_string()
+        );
+        assert_eq!(Some("unevaluatedProperties"), schema_error.keyword());
+    }
+
+    #[test]
+    fn documents_should_have_max_items_if_unique_items_is_used() {
+        init();
+        let TestData {
+            mut raw_data_contract,
+            data_contract_validator,
+            ..
+        } = get_test_data();
+
+        raw_data_contract["documents"]["indexedDocument"] = json!({
+            "type": "object",
+            "properties": {
+              "something": {
+                "type": "array",
+                "uniqueItems": true,
+              },
+            },
+            "additionalProperties": false,
+        });
+
+        let result = data_contract_validator
+            .validate(&raw_data_contract)
+            .expect("validation result should be returned");
+        let schema_error = get_schema_error(&result, 0);
+
+        assert_eq!(
+            "/documents/indexedDocument/properties/something",
+            schema_error.instance_path().to_string()
+        );
+        assert_eq!(Some("required"), schema_error.keyword());
+        assert!(matches!(
+            schema_error.kind(),
+            ValidationErrorKind::Required {
+                property: JsonValue::String(missing_property)
+            } if missing_property == "maxItems"
+        ));
+    }
+
+    #[test]
+    fn documents_should_have_max_items_not_bigger_than_100000_if_unique_items_is_used() {
+        init();
+        let TestData {
+            mut raw_data_contract,
+            data_contract_validator,
+            ..
+        } = get_test_data();
+
+        raw_data_contract["documents"]["indexedDocument"] = json!(
+            {
+                "type": "object",
+                "properties": {
+                  "something": {
+                    "type": "array",
+                    "uniqueItems": true,
+                    "maxItems": 200000,
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "property": {
+                          "type": "string",
+                        },
+                      },
+                      "additionalProperties": false,
+                    },
+                  },
+                },
+                "additionalProperties": false,
+            }
+        );
+
+        let result = data_contract_validator
+            .validate(&raw_data_contract)
+            .expect("validation result should be returned");
+        let schema_error = get_schema_error(&result, 0);
+
+        assert_eq!(
+            "/documents/indexedDocument/properties/something/maxItems",
+            schema_error.instance_path().to_string()
+        );
+        assert_eq!(Some("maximum"), schema_error.keyword());
+    }
+
+    #[test]
+    #[ignore = "format validation seems not working"]
+    fn documents_is_not_valid_and_invalid_result_should_be_returned() {
+        init();
+
+        let TestData {
+            mut raw_data_contract,
+            data_contract_validator,
+            ..
+        } = get_test_data();
+
+        raw_data_contract["documents"]["indexedDocument"] = json!({
+            "type": "object",
+            "properties": {
+              "something": {
+                "type": "string",
+                "format": "lalala",
+                "maxLength": 100,
+              },
+            },
+            "additionalProperties": false,
+        });
+
+        let result = data_contract_validator
+            .validate(&raw_data_contract)
+            .expect("validation result should be returned");
+
+        assert!(!result.is_valid());
+        let error = result.errors().get(0).expect("the error should be present");
+
+        assert_eq!(1004, error.code());
+        assert!(error
+            .to_string()
+            .starts_with("unknown format \"lalala\" ignored in schema"))
+    }
+
+    #[test]
+    fn documents_should_have_max_length_if_pattern_is_used() {
+        init();
+
+        let TestData {
+            mut raw_data_contract,
+            data_contract_validator,
+            ..
+        } = get_test_data();
+
+        raw_data_contract["documents"]["indexedDocument"] = json!({
+            "type": "object",
+            "properties": {
+              "something": {
+                "type": "string",
+                "pattern": "a",
+              },
+            },
+            "additionalProperties": false,
+        });
+
+        let result = data_contract_validator
+            .validate(&raw_data_contract)
+            .expect("validation result should be returned");
+
+        let schema_error = get_schema_error(&result, 0);
+
+        assert_eq!(
+            "/documents/indexedDocument/properties/something",
+            schema_error.instance_path().to_string()
+        );
+        assert_eq!(Some("required"), schema_error.keyword());
+        assert!(matches!(
+            schema_error.kind(),
+            ValidationErrorKind::Required {
+                property: JsonValue::String(missing_property)
+            } if missing_property == "maxLength"
+        ));
+    }
+
+    #[test]
+    fn documents_should_have_max_length_no_bigger_than_50000_if_pattern_is_used() {
+        init();
+
+        let TestData {
+            mut raw_data_contract,
+            data_contract_validator,
+            ..
+        } = get_test_data();
+
+        raw_data_contract["documents"]["indexedDocument"] = json!({
+            "type": "object",
+            "properties": {
+              "something": {
+                "type": "string",
+                "format": "url",
+                "maxLength": 60000,
+              },
+            },
+            "additionalProperties": false,
+        });
+
+        let result = data_contract_validator
+            .validate(&raw_data_contract)
+            .expect("validation result should be returned");
+
+        let schema_error = get_schema_error(&result, 0);
+
+        assert_eq!(
+            "/documents/indexedDocument/properties/something/maxLength",
+            schema_error.instance_path().to_string()
+        );
+        assert_eq!(Some("maximum"), schema_error.keyword());
+    }
+
+    #[test]
+    fn documents_should_not_have_incompatible_patterns() {
+        init();
+
+        let TestData {
+            mut raw_data_contract,
+            data_contract_validator,
+            ..
+        } = get_test_data();
+
+        raw_data_contract["documents"]["indexedDocument"] = json!({
+            "type": "object",
+            "properties": {
+              "something": {
+                "type": "string",
+                "maxLength": 100,
+                "pattern": "^((?!-|_)[a-zA-Z0-9-_]{0,62}[a-zA-Z0-9])$",
+              },
+            },
+            "additionalProperties": false,
+        });
+
+        let result = data_contract_validator
+            .validate(&raw_data_contract)
+            .expect("validation result should be returned");
+
+        let pattern_error = result
             .errors
-            .get(number)
-            .expect("the error should be returned in validation result")
-            .json_schema_error()
-            .expect("the error should be json schema error")
+            .get(0)
+            .expect("the error in result should exist");
+
+        assert_eq!(1009, pattern_error.get_code());
+        assert!(
+            matches!(pattern_error, ConsensusError::IncompatibleRe2PatternError { path, pattern, .. }
+            if  {
+                path == "/documents/indexedDocument/properties/something" &&
+                pattern == "^((?!-|_)[a-zA-Z0-9-_]{0,62}[a-zA-Z0-9])$"
+            })
+        );
+    }
+
+    #[test]
+    fn byte_array_should_be_boolean() {
+        init();
+
+        let TestData {
+            mut raw_data_contract,
+            data_contract_validator,
+            ..
+        } = get_test_data();
+
+        raw_data_contract["documents"]["withByteArrays"]["properties"]["byteArrayField"]
+            ["byteArray"] = json!(1);
+
+        let result = data_contract_validator
+            .validate(&raw_data_contract)
+            .expect("validation result should be returned");
+        let schema_error = get_schema_error(&result, 0);
+
+        assert_eq!(
+            "/documents/withByteArrays/properties/byteArrayField/byteArray",
+            schema_error.instance_path().to_string()
+        );
+        assert_eq!(Some("type"), schema_error.keyword());
+    }
+
+    #[test]
+    fn byte_array_should_equal_to_true() {
+        init();
+
+        let TestData {
+            mut raw_data_contract,
+            data_contract_validator,
+            ..
+        } = get_test_data();
+
+        raw_data_contract["documents"]["withByteArrays"]["properties"]["byteArrayField"]
+            ["byteArray"] = json!(false);
+
+        let result = data_contract_validator
+            .validate(&raw_data_contract)
+            .expect("validation result should be returned");
+        let schema_error = get_schema_error(&result, 0);
+
+        assert_eq!(
+            "/documents/withByteArrays/properties/byteArrayField/byteArray",
+            schema_error.instance_path().to_string()
+        );
+        assert_eq!(Some("const"), schema_error.keyword());
+    }
+
+    #[test]
+    fn byte_array_should_be_used_with_type_array() {
+        init();
+
+        let TestData {
+            mut raw_data_contract,
+            data_contract_validator,
+            ..
+        } = get_test_data();
+
+        raw_data_contract["documents"]["withByteArrays"]["properties"]["byteArrayField"]["type"] =
+            json!("string");
+
+        let result = data_contract_validator
+            .validate(&raw_data_contract)
+            .expect("validation result should be returned");
+        let schema_error = get_schema_error(&result, 0);
+
+        assert_eq!(
+            "/documents/withByteArrays/properties/byteArrayField/type",
+            schema_error.instance_path().to_string()
+        );
+        assert_eq!(Some("const"), schema_error.keyword());
+    }
+
+    #[test]
+    #[ignore = "not supported as ajv uses macro to validate it"]
+    // https://github.com/dashevo/platform/blob/a80e487b035b96c8ad3dc4a9ac09331270b3ad81/packages/js-dpp/lib/ajv/keywords/byteArray/byteArray.js#L7
+    fn byte_array_should_not_be_used_with_items() {
+        init();
+
+        let TestData {
+            mut raw_data_contract,
+            data_contract_validator,
+            ..
+        } = get_test_data();
+
+        raw_data_contract["documents"]["withByteArrays"]["properties"]["byteArrayField"]["items"] =
+            json!({ "type" : "string"});
+
+        let result = data_contract_validator
+            .validate(&raw_data_contract)
+            .expect("validation result should be returned");
+        let validation_error = result.errors.get(0).expect("validation error should exist");
+
+        assert_eq!(1004, validation_error.code());
+    }
+
+    #[test]
+    fn content_media_type_identifier_should_be_used_with_byte_array_only() {
+        init();
+
+        let TestData {
+            mut raw_data_contract,
+            data_contract_validator,
+            ..
+        } = get_test_data();
+
+        raw_data_contract["documents"]["withByteArrays"]["properties"]["identifierField"]
+            .remove("byteArray")
+            .expect("byteArray should exist and be removed");
+
+        let result = data_contract_validator
+            .validate(&raw_data_contract)
+            .expect("validation result should be returned");
+        let schema_error = get_schema_error(&result, 0);
+
+        assert_eq!(
+            "/documents/withByteArrays/properties/identifierField",
+            schema_error.instance_path().to_string()
+        );
+        assert_eq!(Some("required"), schema_error.keyword());
+    }
+
+    #[test]
+    fn content_media_type_identifier_should_be_used_with_byte_array_not_shorter_than_32_bytes() {
+        init();
+
+        let TestData {
+            mut raw_data_contract,
+            data_contract_validator,
+            ..
+        } = get_test_data();
+
+        raw_data_contract["documents"]["withByteArrays"]["properties"]["identifierField"]
+            ["minItems"] = json!(31);
+
+        let result = data_contract_validator
+            .validate(&raw_data_contract)
+            .expect("validation result should be returned");
+        let schema_error = get_schema_error(&result, 0);
+
+        assert_eq!(
+            "/documents/withByteArrays/properties/identifierField/minItems",
+            schema_error.instance_path().to_string()
+        );
+        assert_eq!(Some("const"), schema_error.keyword());
+    }
+
+    #[test]
+    fn content_media_type_identifier_should_be_used_with_byte_array_not_longer_than_32_bytes() {
+        init();
+
+        let TestData {
+            mut raw_data_contract,
+            data_contract_validator,
+            ..
+        } = get_test_data();
+
+        raw_data_contract["documents"]["withByteArrays"]["properties"]["identifierField"]
+            ["maxItems"] = json!(31);
+
+        let result = data_contract_validator
+            .validate(&raw_data_contract)
+            .expect("validation result should be returned");
+        let schema_error = get_schema_error(&result, 0);
+
+        assert_eq!(
+            "/documents/withByteArrays/properties/identifierField/maxItems",
+            schema_error.instance_path().to_string()
+        );
+        assert_eq!(Some("const"), schema_error.keyword());
+    }
+
+    #[test]
+    fn indices_should_be_array() {
+        init();
+        let TestData {
+            mut raw_data_contract,
+            data_contract_validator,
+            ..
+        } = get_test_data();
+
+        raw_data_contract["documents"]["indexedDocument"]["indices"] =
+            json!("definitely not an array");
+
+        let result = data_contract_validator
+            .validate(&raw_data_contract)
+            .expect("validation result should be returned");
+
+        let schema_error = get_schema_error(&result, 0);
+        assert_eq!(
+            "/documents/indexedDocument/indices",
+            schema_error.instance_path().to_string()
+        );
+        assert_eq!(Some("type"), schema_error.keyword(),);
+    }
+
+    #[test]
+    fn indices_should_at_least_one_item() {
+        init();
+        let TestData {
+            mut raw_data_contract,
+            data_contract_validator,
+            ..
+        } = get_test_data();
+
+        raw_data_contract["documents"]["indexedDocument"]["indices"] = json!([]);
+
+        let result = data_contract_validator
+            .validate(&raw_data_contract)
+            .expect("validation result should be returned");
+        let schema_error = get_schema_error(&result, 0);
+
+        assert_eq!(
+            "/documents/indexedDocument/indices",
+            schema_error.instance_path().to_string()
+        );
+        assert_eq!(Some("minItems"), schema_error.keyword(),);
+    }
+
+    #[test]
+    fn indices_should_return_invalid_result_if_there_are_duplicated_indices() {
+        init();
+        let TestData {
+            mut raw_data_contract,
+            data_contract_validator,
+            ..
+        } = get_test_data();
+
+        let mut index_definition =
+            raw_data_contract["documents"]["indexedDocument"]["indices"][0].clone();
+        index_definition["name"] = json!("otherIndexName");
+
+        if let Some(JsonValue::Array(ref mut arr)) =
+            raw_data_contract["documents"]["indexedDocument"].get_mut("indices")
+        {
+            arr.push(index_definition)
+        } else {
+            panic!("indices is not array")
+        }
+
+        let result = data_contract_validator
+            .validate(&raw_data_contract)
+            .expect("validation result should be returned");
+        let validation_error = result
+            .errors
+            .get(0)
+            .expect("the validation error should be returned");
+        let index_error = get_index_error(validation_error);
+
+        assert_eq!(1008, index_error.get_code());
+        assert!(
+            matches!(index_error, IndexError::DuplicateIndexError { document_type, .. } if document_type == "indexedDocument")
+        );
+    }
+
+    #[test]
+    fn indices_should_return_invalid_result_if_there_are_duplicated_index_names() {
+        init();
+        let TestData {
+            mut raw_data_contract,
+            data_contract_validator,
+            ..
+        } = get_test_data();
+
+        let index_definition =
+            raw_data_contract["documents"]["indexedDocument"]["indices"][0].clone();
+
+        if let Some(JsonValue::Array(ref mut arr)) =
+            raw_data_contract["documents"]["indexedDocument"].get_mut("indices")
+        {
+            arr.push(index_definition)
+        } else {
+            panic!("indices is not array")
+        }
+
+        let result = data_contract_validator
+            .validate(&raw_data_contract)
+            .expect("validation result should be returned");
+        let validation_error = result
+            .errors
+            .get(0)
+            .expect("the validation error should be returned");
+        let basic_error = get_basic_error(validation_error);
+
+        assert_eq!(1048, basic_error.get_code());
+        assert!(
+            matches!(basic_error, BasicError::DuplicateIndexNameError { document_type, duplicate_index_name }
+            if  {
+                document_type == "indexedDocument" &&
+                duplicate_index_name == "index1"
+            })
+        );
+    }
+
+    #[test]
+    fn index_should_be_an_object() {
+        init();
+        let TestData {
+            mut raw_data_contract,
+            data_contract_validator,
+            ..
+        } = get_test_data();
+
+        raw_data_contract["documents"]["indexedDocument"]["indices"] = json!(["something else"]);
+        let result = data_contract_validator
+            .validate(&raw_data_contract)
+            .expect("validation result should be returned");
+
+        let schema_error = get_schema_error(&result, 0);
+
+        assert_eq!(
+            "/documents/indexedDocument/indices/0",
+            schema_error.instance_path().to_string()
+        );
+        assert_eq!(Some("type"), schema_error.keyword(),);
+    }
+
+    #[test]
+    fn index_should_have_properties_definition() {
+        init();
+        let TestData {
+            mut raw_data_contract,
+            data_contract_validator,
+            ..
+        } = get_test_data();
+
+        raw_data_contract["documents"]["indexedDocument"]["indices"] = json!([{}]);
+        let result = data_contract_validator
+            .validate(&raw_data_contract)
+            .expect("validation result should be returned");
+
+        let schema_error = get_schema_error(&result, 0);
+
+        assert_eq!(
+            "/documents/indexedDocument/indices/0",
+            schema_error.instance_path().to_string()
+        );
+        assert_eq!(Some("required"), schema_error.keyword(),);
+        assert!(matches!(
+            schema_error.kind(),
+            ValidationErrorKind::Required {
+                property: JsonValue::String(missing_property)
+            } if missing_property == "properties"
+        ));
+    }
+
+    #[test]
+    fn index_properties_definition_should_be_array() {
+        init();
+        let TestData {
+            mut raw_data_contract,
+            data_contract_validator,
+            ..
+        } = get_test_data();
+
+        raw_data_contract["documents"]["indexedDocument"]["indices"][0]["properties"] =
+            json!("something else");
+
+        let result = data_contract_validator
+            .validate(&raw_data_contract)
+            .expect("validation result should be returned");
+        let schema_error = get_schema_error(&result, 0);
+
+        assert_eq!(
+            "/documents/indexedDocument/indices/0/properties",
+            schema_error.instance_path().to_string()
+        );
+        assert_eq!(Some("type"), schema_error.keyword(),);
+    }
+
+    #[test]
+    fn index_properties_definition_should_have_at_least_one_property_defined() {
+        init();
+        let TestData {
+            mut raw_data_contract,
+            data_contract_validator,
+            ..
+        } = get_test_data();
+
+        raw_data_contract["documents"]["indexedDocument"]["indices"][0]["properties"] = json!([]);
+
+        let result = data_contract_validator
+            .validate(&raw_data_contract)
+            .expect("validation result should be returned");
+        let schema_error = get_schema_error(&result, 0);
+
+        assert_eq!(
+            "/documents/indexedDocument/indices/0/properties",
+            schema_error.instance_path().to_string()
+        );
+        assert_eq!(Some("minItems"), schema_error.keyword(),);
+    }
+
+    #[test]
+    fn index_properties_definition_should_have_no_more_than_10_property_def() {
+        init();
+        let TestData {
+            mut raw_data_contract,
+            data_contract_validator,
+            ..
+        } = get_test_data();
+
+        for i in 0..10 {
+            if let Some(JsonValue::Array(ref mut properties)) = raw_data_contract["documents"]
+                ["indexedDocument"]["indices"][0]
+                .get_mut("properties")
+            {
+                let field_name = format!("field{}", i);
+                properties.push(json!({
+                    field_name : "asc"
+                }))
+            }
+        }
+
+        let result = data_contract_validator
+            .validate(&raw_data_contract)
+            .expect("validation result should be returned");
+        let schema_error = get_schema_error(&result, 0);
+
+        assert_eq!(
+            "/documents/indexedDocument/indices/0/properties",
+            schema_error.instance_path().to_string()
+        );
+        assert_eq!(Some("maxItems"), schema_error.keyword(),);
+    }
+
+    #[test]
+    fn index_property_definition_should_be_an_object() {
+        init();
+        let TestData {
+            mut raw_data_contract,
+            data_contract_validator,
+            ..
+        } = get_test_data();
+
+        raw_data_contract["documents"]["indexedDocument"]["indices"][0]["properties"][0] =
+            json!("something else");
+
+        let result = data_contract_validator
+            .validate(&raw_data_contract)
+            .expect("validation result should be returned");
+        let schema_error = get_schema_error(&result, 0);
+
+        assert_eq!(
+            "/documents/indexedDocument/indices/0/properties/0",
+            schema_error.instance_path().to_string()
+        );
+        assert_eq!(Some("type"), schema_error.keyword(),);
+    }
+
+    #[test]
+    fn index_properties_should_have_at_least_one_property() {
+        init();
+        let TestData {
+            mut raw_data_contract,
+            data_contract_validator,
+            ..
+        } = get_test_data();
+
+        raw_data_contract["documents"]["indexedDocument"]["indices"][0]["properties"] = json!([]);
+
+        let result = data_contract_validator
+            .validate(&raw_data_contract)
+            .expect("validation result should be returned");
+        let schema_error = get_schema_error(&result, 0);
+
+        assert_eq!(
+            "/documents/indexedDocument/indices/0/properties",
+            schema_error.instance_path().to_string()
+        );
+        assert_eq!(Some("minItems"), schema_error.keyword(),);
+    }
+
+    #[test]
+    #[ignore = "maxProperties introduced in draft20202"]
+    fn index_property_should_have_no_more_than_one_property() {
+        init();
+        let TestData {
+            mut raw_data_contract,
+            data_contract_validator,
+            ..
+        } = get_test_data();
+
+        let property =
+            &mut raw_data_contract["documents"]["indexedDocument"]["indices"][0]["properties"][0];
+        property["anotherField"] = json!("something");
+
+        let result = data_contract_validator
+            .validate(&raw_data_contract)
+            .expect("validation result should be returned");
+        let schema_error = get_schema_error(&result, 0);
+
+        assert_eq!(
+            "/documents/indexedDocument/indices/0/properties/0",
+            schema_error.instance_path().to_string()
+        );
+        assert_eq!(Some("maxProperties"), schema_error.keyword(),);
+    }
+
+    #[test]
+    fn index_properties_should_have_value_asc_desc() {
+        init();
+        let TestData {
+            mut raw_data_contract,
+            data_contract_validator,
+            ..
+        } = get_test_data();
+
+        raw_data_contract["documents"]["indexedDocument"]["indices"][0]["properties"][0]
+            ["$ownerId"] = json!("wrong");
+
+        let result = data_contract_validator
+            .validate(&raw_data_contract)
+            .expect("validation result should be returned");
+        let schema_error = get_schema_error(&result, 0);
+
+        assert_eq!(
+            "/documents/indexedDocument/indices/0/properties/0/$ownerId",
+            schema_error.instance_path().to_string()
+        );
+        assert_eq!(Some("enum"), schema_error.keyword(),);
+    }
+
+    #[test]
+    fn index_properties_should_have_unique_flag_to_be_of_boolean_type() {
+        init();
+        let TestData {
+            mut raw_data_contract,
+            data_contract_validator,
+            ..
+        } = get_test_data();
+
+        raw_data_contract["documents"]["indexedDocument"]["indices"][0]["unique"] = json!(12);
+
+        let result = data_contract_validator
+            .validate(&raw_data_contract)
+            .expect("validation result should be returned");
+        let schema_error = get_schema_error(&result, 0);
+
+        assert_eq!(
+            "/documents/indexedDocument/indices/0/unique",
+            schema_error.instance_path().to_string()
+        );
+        assert_eq!(Some("type"), schema_error.keyword(),);
+    }
+
+    #[test]
+    fn indices_should_have_no_more_than_10_indices() {
+        init();
+        let TestData {
+            mut raw_data_contract,
+            data_contract_validator,
+            ..
+        } = get_test_data();
+
+        for i in 0..10 {
+            let property_name = format!("field{}", i);
+            raw_data_contract["documents"]["indexedDocument"]["properties"]
+                .insert(property_name.clone(), json!({ "type" : "string"}))
+                .expect("properties should be present");
+
+            if let Some(JsonValue::Array(ref mut indices)) =
+                raw_data_contract["documents"]["indexedDocument"].get_mut("indices")
+            {
+                indices.push(json!({
+                   "name" : format!("{}_index", property_name),
+                   "properties" : [ { property_name : "asc"}]
+                }))
+            }
+        }
+
+        let result = data_contract_validator
+            .validate(&raw_data_contract)
+            .expect("validation result should be returned");
+        let schema_error = get_schema_error(&result, 0);
+
+        assert_eq!(
+            "/documents/indexedDocument/indices",
+            schema_error.instance_path().to_string()
+        );
+        assert_eq!(Some("maxItems"), schema_error.keyword(),);
+    }
+
+    #[test]
+    fn indices_should_have_no_more_than_3_unique_indices() {
+        init();
+        let TestData {
+            mut raw_data_contract,
+            data_contract_validator,
+            ..
+        } = get_test_data();
+
+        for i in 0..4 {
+            let property_name = format!("field{}", i);
+            raw_data_contract["documents"]["indexedDocument"]["properties"]
+                .insert(
+                    property_name.clone(),
+                    json!({ "type" : "string", "maxLength" : 63 }),
+                )
+                .expect("properties should be present");
+
+            if let Some(JsonValue::Array(ref mut indices)) =
+                raw_data_contract["documents"]["indexedDocument"].get_mut("indices")
+            {
+                indices.push(json!({
+                   "name" : format!("index_{}", i),
+                   "properties" : [ { property_name : "asc"}],
+                   "unique" : true
+                }))
+            }
+        }
+
+        let result = data_contract_validator
+            .validate(&raw_data_contract)
+            .expect("validation result should be returned");
+        let error = result.errors.get(0).expect("the error should be present");
+        let index_error = get_index_error(error);
+
+        assert_eq!(1017, index_error.get_code());
+        assert!(
+            matches!(index_error, IndexError::UniqueIndicesLimitReachedError { document_type, index_limit }
+            if  {
+                document_type == "indexedDocument" &&
+                index_limit == &3
+            })
+        );
+    }
+
+    #[test]
+    fn index_property_should_not_be_named_id() {
+        init();
+        let TestData {
+            mut raw_data_contract,
+            data_contract_validator,
+            ..
+        } = get_test_data();
+
+        let index_definition = json!({
+            "name" : "index_1",
+            "properties" : [
+                { "$id"  : "asc"},
+                { "firstName"  : "desc"},
+            ]
+        });
+
+        if let Some(JsonValue::Array(ref mut indices)) =
+            raw_data_contract["documents"]["indexedDocument"].get_mut("indices")
+        {
+            indices.push(index_definition)
+        }
+
+        let result = data_contract_validator
+            .validate(&raw_data_contract)
+            .expect("validation result should be returned");
+        let error = result.errors.get(0).expect("the error should be present");
+        let index_error = get_index_error(error);
+
+        assert_eq!(1015, index_error.get_code());
+        assert!(
+            matches!(index_error, IndexError::SystemPropertyIndexAlreadyPresentError { document_type, property_name, .. }
+            if  {
+                document_type == "indexedDocument" &&
+                property_name == "$id"
+            })
+        );
+    }
+
+    #[test]
+    fn index_should_not_have_undefined_property() {
+        init();
+        let TestData {
+            mut raw_data_contract,
+            data_contract_validator,
+            ..
+        } = get_test_data();
+
+        if let Some(JsonValue::Array(ref mut index_properties)) =
+            raw_data_contract["documents"]["indexedDocument"]["indices"][0].get_mut("properties")
+        {
+            index_properties.push(json!({ "missingProperty"  : "asc"}))
+        } else {
+            panic!("the index properties are not array")
+        }
+
+        let result = data_contract_validator
+            .validate(&raw_data_contract)
+            .expect("validation result should be returned");
+        let error = result.errors.get(0).expect("the error should be present");
+        let index_error = get_index_error(error);
+
+        assert_eq!(1016, index_error.get_code());
+        assert!(
+            matches!(index_error, IndexError::UndefinedIndexPropertyError { document_type, property_name, .. }
+            if  {
+                document_type == "indexedDocument" &&
+                property_name == "missingProperty"
+            })
+        );
+    }
+
+    #[test]
+    fn index_property_should_not_be_object() {
+        init();
+        let TestData {
+            mut raw_data_contract,
+            data_contract_validator,
+            ..
+        } = get_test_data();
+
+        let object_property = json!({
+            "type" : "object",
+            "properties" :  {
+                "something" : {
+                    "type" : "string"
+                }
+            },
+            "additionalProperties" : false
+        });
+
+        raw_data_contract["documents"]["indexedDocument"]["properties"]["objectProperty"] =
+            object_property;
+        if let Some(JsonValue::Array(ref mut required)) =
+            raw_data_contract["documents"]["indexedDocument"].get_mut("required")
+        {
+            required.push(json!("objectProperty"))
+        }
+        if let Some(JsonValue::Array(ref mut properties)) =
+            raw_data_contract["documents"]["indexedDocument"]["indices"][0].get_mut("properties")
+        {
+            properties.push(json!({"objectProperty" : "asc" }))
+        }
+
+        let result = data_contract_validator
+            .validate(&raw_data_contract)
+            .expect("validation result should be returned");
+        let error = result.errors.get(0).expect("the error should be present");
+        let index_error = get_index_error(error);
+
+        assert_eq!(1013, index_error.get_code());
+        assert!(
+            matches!(index_error, IndexError::InvalidIndexPropertyTypeError { document_type, property_name, property_type, ..}
+            if  {
+                document_type == "indexedDocument" &&
+                property_name == "objectProperty" &&
+                property_type == "object"
+            })
+        );
+    }
+
+    #[test]
+    fn index_property_should_not_point_to_array() {
+        init();
+        let TestData {
+            mut raw_data_contract,
+            data_contract_validator,
+            ..
+        } = get_test_data();
+
+        raw_data_contract["documents"]["indexedArray"] = json!({
+            "type": "object",
+            "indices": [
+              {
+                "name": "index1",
+                "properties": [
+                  { "mentions": "asc" },
+                ],
+              },
+            ],
+            "properties": {
+              "mentions": {
+                "type": "array",
+                "prefixItems": [
+                  {
+                    "type": "string",
+                    "maxLength": 100,
+                  },
+                ],
+                "minItems": 1,
+                "maxItems": 5,
+                "items": false,
+              },
+            },
+            "additionalProperties": false,
+        });
+
+        let result = data_contract_validator
+            .validate(&raw_data_contract)
+            .expect("validation result should be returned");
+        let error = result.errors.get(0).expect("the error should be present");
+        let index_error = get_index_error(error);
+
+        assert_eq!(1013, index_error.get_code());
+        assert!(
+            matches!(index_error, IndexError::InvalidIndexPropertyTypeError { document_type, property_name, property_type, ..}
+            if  {
+                document_type == "indexedArray" &&
+                property_name == "mentions" &&
+                property_type == "array"
+            })
+        );
+    }
+
+    // https://github.com/dashevo/platform/blob/ab6391f4b47a970c733e7b81115b44329fbdf993/packages/js-dpp/test/integration/dataContract/validation/validateDataContractFactory.spec.js#L1603
+    // it('should return invalid result if index property is array of objects', async () => {
+    //   const indexedDocumentDefinition = rawDataContract.documents.indexedDocument;
+    //
+    //   indexedDocumentDefinition.properties.arrayProperty = {
+    //     type: 'array',
+    //     items: {
+    //       type: 'object',
+    //       properties: {
+    //         something: {
+    //           type: 'string',
+    //         },
+    //       },
+    //       additionalProperties: false,
+    //     },
+    //   };
+    //
+    //   indexedDocumentDefinition.required.push('arrayProperty');
+    //
+    //   const indexDefinition = indexedDocumentDefinition.indices[0];
+    //
+    //   indexDefinition.properties.push({
+    //     arrayProperty: 'asc',
+    //   });
+    //
+    //   const result = await validateDataContract(rawDataContract);
+    //
+    //   expectValidationError(result, InvalidIndexPropertyTypeError);
+    //
+    //   const [error] = result.getErrors();
+    //
+    //   expect(error.getCode()).to.equal(1013);
+    //   expect(error.getPropertyName()).to.equal('arrayProperty');
+    //   expect(error.getPropertyType()).to.equal('array');
+    //   expect(error.getDocumentType()).to.deep.equal('indexedDocument');
+    //   expect(error.getIndexDefinition()).to.deep.equal(indexDefinition);
+    // });
+
+    // it('should return invalid result if index property is an array of different types',
+    // async () => {
+    //   const indexedDocumentDefinition = rawDataContract.documents.indexedArray;
+    //
+    //   const indexDefinition = indexedDocumentDefinition.indices[0];
+    //
+    //   rawDataContract.documents.indexedArray.properties.mentions.prefixItems = [
+    //     {
+    //       type: 'string',
+    //     },
+    //     {
+    //       type: 'number',
+    //     },
+    //   ];
+    //
+    //   rawDataContract.documents.indexedArray.properties.mentions.minItems = 2;
+    //
+    //   const result = await validateDataContract(rawDataContract);
+    //   expectValidationError(result, InvalidIndexPropertyTypeError);
+    //
+    //   const error = result.getFirstError();
+    //
+    //   expect(error.getCode()).to.equal(1013);
+    //   expect(error.getPropertyName()).to.equal('mentions');
+    //   expect(error.getPropertyType()).to.equal('array');
+    //   expect(error.getDocumentType()).to.deep.equal('indexedArray');
+    //   expect(error.getIndexDefinition()).to.deep.equal(indexDefinition);
+    // });
+    //
+    // it('should return invalid result if index property contained prefixItems array of arrays',
+    // async () => {
+    //   const indexedDocumentDefinition = rawDataContract.documents.indexedArray;
+    //
+    //   const indexDefinition = indexedDocumentDefinition.indices[0];
+    //
+    //   rawDataContract.documents.indexedArray.properties.mentions.prefixItems = [
+    //     {
+    //       type: 'array',
+    //       items: {
+    //         type: 'string',
+    //       },
+    //     },
+    //   ];
+    //
+    //   const result = await validateDataContract(rawDataContract);
+    //   expectValidationError(result, InvalidIndexPropertyTypeError);
+    //
+    //   const error = result.getFirstError();
+    //
+    //   expect(error.getCode()).to.equal(1013);
+    //   expect(error.getPropertyName()).to.equal('mentions');
+    //   expect(error.getPropertyType()).to.equal('array');
+    //   expect(error.getDocumentType()).to.deep.equal('indexedArray');
+    //   expect(error.getIndexDefinition()).to.deep.equal(indexDefinition);
+    // });
+
+    // it('should return invalid result if index property contained prefixItems array of objects',
+    // async () => {
+    //   const indexedDocumentDefinition = rawDataContract.documents.indexedArray;
+    //
+    //   const indexDefinition = indexedDocumentDefinition.indices[0];
+    //
+    //   rawDataContract.documents.indexedArray.properties.mentions.prefixItems = [
+    //     {
+    //       type: 'object',
+    //       properties: {
+    //         something: {
+    //           type: 'string',
+    //         },
+    //       },
+    //       additionalProperties: false,
+    //     },
+    //   ];
+    //
+    //   const result = await validateDataContract(rawDataContract);
+    //   expectValidationError(result, InvalidIndexPropertyTypeError);
+    //
+    //   const error = result.getFirstError();
+    //
+    //   expect(error.getCode()).to.equal(1013);
+    //   expect(error.getPropertyName()).to.equal('mentions');
+    //   expect(error.getPropertyType()).to.equal('array');
+    //   expect(error.getDocumentType()).to.deep.equal('indexedArray');
+    //   expect(error.getIndexDefinition()).to.deep.equal(indexDefinition);
+    // });
+    //
+    // it('should return invalid result if index property is array of arrays', async () => {
+    //   const indexedDocumentDefinition = rawDataContract.documents.indexedDocument;
+    //
+    //   indexedDocumentDefinition.properties.arrayProperty = {
+    //     type: 'array',
+    //     items: {
+    //       type: 'array',
+    //       items: {
+    //         type: 'string',
+    //       },
+    //     },
+    //   };
+    //
+    //   indexedDocumentDefinition.required.push('arrayProperty');
+    //
+    //   const indexDefinition = indexedDocumentDefinition.indices[0];
+    //
+    //   indexDefinition.properties.push({
+    //     arrayProperty: 'asc',
+    //   });
+    //
+    //   const result = await validateDataContract(rawDataContract);
+    //
+    //   expectValidationError(result, InvalidIndexPropertyTypeError);
+    //
+    //   const [error] = result.getErrors();
+    //
+    //   expect(error.getCode()).to.equal(1013);
+    //   expect(error.getPropertyName()).to.equal('arrayProperty');
+    //   expect(error.getPropertyType()).to.equal('array');
+    //   expect(error.getDocumentType()).to.deep.equal('indexedDocument');
+    //   expect(error.getIndexDefinition()).to.deep.equal(indexDefinition);
+    // });
+
+    #[test]
+    fn should_return_invalid_result_if_index_property_is_array_with_different_item_definitions() {
+        init();
+        let TestData {
+            mut raw_data_contract,
+            data_contract_validator,
+            ..
+        } = get_test_data();
+
+        let indexed_document_definition = &mut raw_data_contract["documents"]["indexedDocument"];
+        indexed_document_definition["properties"]["arrayProperty"] = json!({
+            "type": "array",
+            "prefixItems": [
+              {
+                "type": "string",
+              },
+              {
+                "type": "number",
+              },
+            ],
+            "minItems": 2,
+            "items": false,
+        });
+        indexed_document_definition["required"]
+            .push(json!("arrayProperty"))
+            .expect("array should exist");
+        let index_definition = &mut indexed_document_definition["indices"][0];
+        index_definition["properties"]
+            .push(json!({ "arrayProperty" : "asc"}))
+            .expect("properties of index should exist");
+
+        let result = data_contract_validator
+            .validate(&raw_data_contract)
+            .expect("validation result should be returned");
+        let error = result.errors.get(0).expect("the error should be present");
+        let index_error = get_index_error(error);
+
+        assert_eq!(1013, index_error.get_code());
+        assert!(
+            matches!(index_error, IndexError::InvalidIndexPropertyTypeError { document_type, property_name, property_type, ..}
+            if  {
+                document_type == "indexedDocument" &&
+                property_name == "arrayProperty" &&
+                property_type == "array"
+            })
+        );
+    }
+
+    #[test]
+    fn should_return_invalid_result_if_unique_compound_index_contains_both_required_and_optional_properties(
+    ) {
+        init();
+        let TestData {
+            mut raw_data_contract,
+            data_contract_validator,
+            ..
+        } = get_test_data();
+
+        if let Some(JsonValue::Array(arr)) =
+            raw_data_contract["documents"]["optionalUniqueIndexedDocument"].get_mut("required")
+        {
+            arr.pop();
+        }
+
+        let result = data_contract_validator
+            .validate(&raw_data_contract)
+            .expect("validation result should be returned");
+        let error = result.errors.get(0).expect("the error should be present");
+        let index_error = get_index_error(error);
+
+        assert_eq!(1010, index_error.get_code());
+        assert!(
+            matches!(index_error, IndexError::InvalidCompoundIndexError { document_type, ..}
+            if  {
+                document_type == "optionalUniqueIndexedDocument"
+            })
+        );
     }
 }
