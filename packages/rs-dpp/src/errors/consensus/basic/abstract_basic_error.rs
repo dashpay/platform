@@ -63,7 +63,7 @@ pub enum IndexError {
     },
 
     #[error("'{property_name}' property ofr '{document_type}' document has an invalid type '{property_type}' and cannot be use as an index")]
-    InvalidIndexPropertyTypError {
+    InvalidIndexPropertyTypeError {
         document_type: String,
         index_definition: Index,
         property_name: String,
