@@ -20,7 +20,6 @@ describe('Platform', () => {
     let contractId;
 
     before(async () => {
-      console.log('zalupa 1');
       await hashFunction.init();
       blake3 = hashFunction.hashFunction;
 
@@ -43,12 +42,12 @@ describe('Platform', () => {
               contractId, { prove: true },
             );
 
-          const dataContractResponse = await dashClient.getDAPIClient().platform.getDataContract(
-            contractId,
-          );
+          // const dataContractResponse = await dashClient.getDAPIClient().platform.getDataContract(
+          //   contractId,
+          // );
 
-          const dataContract = await dashClient.platform.dpp
-            .dataContract.createFromBuffer(dataContractResponse.getDataContract());
+          // const dataContract = await dashClient.platform.dpp
+          //   .dataContract.createFromBuffer(dataContractResponse.getDataContract());
 
           const fullProof = dataContractResponseWithProof.getProof();
 
@@ -96,7 +95,7 @@ describe('Platform', () => {
 
           const fullProof = dataContractWithProof.proof;
 
-          testProofStructure(expect, fullProof, false);
+          testProofStructure(expect, fullProof);
 
           // const dataContractsProofBuffer = fullProof.storeTreeProofs.getDataContractsProof();
           //
@@ -126,12 +125,9 @@ describe('Platform', () => {
           let identity8PublicKeyHash;
 
           before(async () => {
-            console.log('pupa1');
             identityAtKey5 = await dashClient.platform.identities.register(10000);
-            console.log('pupa2');
 
             identityAtKey6 = await dashClient.platform.identities.register(10000);
-            console.log('pupa3');
 
             identityAtKey8 = await dashClient.platform.identities.register(10000);
 
@@ -290,10 +286,12 @@ describe('Platform', () => {
             // // were requested. This happens due to the proof structure: sorting values in the
             // // proof would result in a different root hash.
             // expect(foundIdentityIds.findIndex(
-            //   (identityId) => identityId.toString('hex') === identityAtKey6.getId().toString('hex'),
+            //   (identityId) => identityId.toString('hex') ===
+            //   identityAtKey6.getId().toString('hex'),
             // )).to.be.greaterThan(-1);
             // expect(foundIdentityIds.findIndex(
-            //   (identityId) => identityId.toString('hex') === identityAtKey8.getId().toString('hex'),
+            //   (identityId) => identityId.toString('hex') ===
+            //   identityAtKey8.getId().toString('hex'),
             // )).to.be.greaterThan(-1);
             //
             // expect(notFoundPublicKeyHashes[0]).to.be.deep.equal(nonIncludedIdentityPubKeyHash);

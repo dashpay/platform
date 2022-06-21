@@ -7,6 +7,7 @@ const {
 } = require('@dashevo/abci/types');
 
 const cbor = require('cbor');
+const Identifier = require('@dashevo/dpp/lib/identifier/Identifier');
 
 /**
  *
@@ -21,16 +22,18 @@ function getProofsQueryHandlerFactory(
   blockExecutionContextStack,
   signedIdentityRepository,
   signedDataContractRepository,
+  // eslint-disable-next-line no-unused-vars
   fetchSignedDataContract,
+  // eslint-disable-next-line no-unused-vars
   proveSignedDocuments,
 ) {
   /**
    * @typedef getProofsQueryHandler
    * @param params
    * @param callArguments
-   * @param {Identifier[]} callArguments.identityIds
-   * @param {Identifier[]} callArguments.dataContractIds
-   * @param {{dataContractId: Identifier, documentId: Identifier, type: string}[]} documents
+   * @param {Buffer[]} callArguments.identityIds
+   * @param {Buffer[]} callArguments.dataContractIds
+   * @param {{dataContractId: Buffer, documentId: Identifier, type: string}[]} documents
    * @return {Promise<ResponseQuery>}
    */
   async function getProofsQueryHandler(params, {
@@ -85,22 +88,26 @@ function getProofsQueryHandlerFactory(
     }
 
     if (identityIds && identityIds.length) {
-      const identitiesProof = await signedIdentityRepository.proveMany(identityIds);
+      const identitiesProof = await signedIdentityRepository.proveMany(
+        identityIds.map((identityId) => Identifier.from(identityId)),
+      );
 
       response.identitiesProof = {
         signatureLlmqHash,
         signature,
-        merkleProof: identitiesProof,
+        merkleProof: identitiesProof.getValue(),
       };
     }
 
     if (dataContractIds && dataContractIds.length) {
-      const dataContractsProof = await signedDataContractRepository.proveMany(dataContractIds);
+      const dataContractsProof = await signedDataContractRepository.proveMany(
+        dataContractIds.map((dataContractId) => Identifier.from(dataContractId)),
+      );
 
       response.dataContractsProof = {
         signatureLlmqHash,
         signature,
-        merkleProof: dataContractsProof,
+        merkleProof: dataContractsProof.getValue(),
       };
     }
 
