@@ -175,16 +175,16 @@ class DriveClient {
   /**
    *  Fetch proofs by ids
    *
-   * @param {Buffer[]} [documentIds]
+   * @param {{dataContractId: Identifier, documentId: Identifier, type: string}[]} [documents]
    * @param {Buffer[]} [identityIds]
    * @param {Buffer[]} [dataContractIds]
    * @return {Promise<{data: Buffer}>}
    */
-  async fetchProofs({ documentIds, identityIds, dataContractIds }) {
+  async fetchProofs({ documents, identityIds, dataContractIds }) {
     return this.requestCbor(
       '/proofs',
       {
-        documentIds,
+        documents,
         identityIds,
         dataContractIds,
       },

@@ -11,24 +11,32 @@ const cbor = require('cbor');
 /**
  *
  * @param {BlockExecutionContextStack} blockExecutionContextStack
+ * @param {IdentityStoreRepository} signedIdentityRepository
+ * @param {DataContractStoreRepository} signedDataContractRepository
+ * @param {fetchDataContract} fetchSignedDataContract
+ * @param {proveDocuments} proveSignedDocuments
  * @return {getProofsQueryHandler}
  */
 function getProofsQueryHandlerFactory(
   blockExecutionContextStack,
+  signedIdentityRepository,
+  signedDataContractRepository,
+  fetchSignedDataContract,
+  proveSignedDocuments,
 ) {
   /**
    * @typedef getProofsQueryHandler
    * @param params
    * @param callArguments
    * @param {Identifier[]} callArguments.identityIds
-   * @param {Identifier[]} callArguments.documentIds
    * @param {Identifier[]} callArguments.dataContractIds
+   * @param {{dataContractId: Identifier, documentId: Identifier, type: string}[]} documents
    * @return {Promise<ResponseQuery>}
    */
   async function getProofsQueryHandler(params, {
     identityIds,
-    documentIds,
     dataContractIds,
+    documents,
   }) {
     // There is no signed state (current committed block height less than 3)
     if (!blockExecutionContextStack.getLast()) {
@@ -68,9 +76,7 @@ function getProofsQueryHandlerFactory(
       },
     };
 
-    if (documentIds && documentIds.length) {
-
-
+    if (documents && documents.length) {
       response.documentsProof = {
         signatureLlmqHash,
         signature,
@@ -79,18 +85,22 @@ function getProofsQueryHandlerFactory(
     }
 
     if (identityIds && identityIds.length) {
+      const identitiesProof = await signedIdentityRepository.proveMany(identityIds);
+
       response.identitiesProof = {
         signatureLlmqHash,
         signature,
-        merkleProof: Buffer.from([1]),
+        merkleProof: identitiesProof,
       };
     }
 
     if (dataContractIds && dataContractIds.length) {
+      const dataContractsProof = await signedDataContractRepository.proveMany(dataContractIds);
+
       response.dataContractsProof = {
         signatureLlmqHash,
         signature,
-        merkleProof: Buffer.from([1]),
+        merkleProof: dataContractsProof,
       };
     }
 
