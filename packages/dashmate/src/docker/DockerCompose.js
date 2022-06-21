@@ -111,6 +111,7 @@ class DockerCompose {
     try {
       await dockerCompose.upAll({
         ...this.getOptions(envs),
+        commandOptions: ['--no-build', '-d'],
       });
     } catch (e) {
       throw new DockerComposeError(e);
