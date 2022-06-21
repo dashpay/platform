@@ -11,16 +11,15 @@ pub fn validate_data_contract_patterns(raw_data_contract: &JsonValue) -> Validat
             JsonValue::Object(current_map) => {
                 for (key, value) in current_map.iter() {
                     if value.is_object() || value.is_array() {
-                        let new_path = format!("{}.{}", path, key);
+                        let new_path = format!("{}/{}", path, key);
                         values_queue.push((value, new_path))
                     }
                     if key == "pattern" {
-                        let new_path = format!("{}.{}", path, key);
                         if let Some(pattern) = value.as_str() {
                             if let Err(err) = Regex::new(pattern) {
                                 result.add_error(ConsensusError::IncompatibleRe2PatternError {
                                     pattern: String::from(pattern),
-                                    path: new_path,
+                                    path: path.to_string(),
                                     message: err.to_string(),
                                 });
                             }
@@ -31,7 +30,7 @@ pub fn validate_data_contract_patterns(raw_data_contract: &JsonValue) -> Validat
             JsonValue::Array(arr) => {
                 for (i, value) in arr.iter().enumerate() {
                     if value.is_object() {
-                        let new_path = format!("{}.[{}]", path, i);
+                        let new_path = format!("{}/[{}]", path, i);
                         values_queue.push((value, new_path))
                     }
                 }
@@ -93,7 +92,7 @@ mod test {
 
         assert!(
             matches!(consensus_error, ConsensusError::IncompatibleRe2PatternError {pattern, path, ..}
-             if  path == ".properties.bar.pattern" &&
+             if  path == "/properties/bar" &&
                  pattern == "^((?!-|_)[a-zA-Z0-9-_]{0,62}[a-zA-Z0-9])$" &&
                  consensus_error.code() == 1009
             )
@@ -117,7 +116,7 @@ mod test {
 
         assert!(
             matches!(consensus_error, ConsensusError::IncompatibleRe2PatternError {pattern, path, ..}
-             if  path == ".properties.arrayOfObject.items.properties.simple.pattern" &&
+             if  path == "/properties/arrayOfObject/items/properties/simple" &&
                  pattern == "^((?!-|_)[a-zA-Z0-9-_]{0,62}[a-zA-Z0-9])$" &&
                  consensus_error.code() == 1009
             )
@@ -135,7 +134,7 @@ mod test {
 
         assert!(
             matches!(consensus_error, ConsensusError::IncompatibleRe2PatternError {pattern, path, ..}
-             if  path == ".properties.arrayOfObjects.items.[0].properties.simple.pattern" &&
+             if  path == "/properties/arrayOfObjects/items/[0]/properties/simple" &&
                  pattern == "^((?!-|_)[a-zA-Z0-9-_]{0,62}[a-zA-Z0-9])$" &&
                  consensus_error.code() == 1009
             )
