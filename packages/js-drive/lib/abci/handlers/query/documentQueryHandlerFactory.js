@@ -86,10 +86,18 @@ function documentQueryHandlerFactory(
     try {
       dataContractResult = await fetchSignedDataContract(contractId, type);
 
-      documentsResult = await fetchSignedDocuments(dataContractResult, type, options);
-
       if (request.prove) {
         proof = await proveSignedDocuments(dataContractResult, type, options);
+
+        response.getProof().setMerkleProof(proof.getValue());
+      } else {
+        documentsResult = await fetchSignedDocuments(dataContractResult, type, options);
+
+        const documents = documentsResult.getValue();
+
+        response.setDocumentsList(
+          documents.map((document) => document.toBuffer()),
+        );
       }
     } catch (e) {
       if (e instanceof InvalidQueryError) {
@@ -97,16 +105,6 @@ function documentQueryHandlerFactory(
       }
 
       throw e;
-    }
-
-    const documents = documentsResult.getValue();
-
-    response.setDocumentsList(
-      documents.map((document) => document.toBuffer()),
-    );
-
-    if (request.prove) {
-      response.getProof().setMerkleProof(proof.getValue());
     }
 
     return new ResponseQuery({

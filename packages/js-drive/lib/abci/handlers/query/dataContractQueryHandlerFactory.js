@@ -57,18 +57,17 @@ function dataContractQueryHandlerFactory(
 
     const response = createQueryResponse(GetDataContractResponse, request.prove);
 
-    const dataContract = await signedDataContractRepository.fetch(contractIdIdentifier);
-
-    if (!dataContract.isNull()) {
-      response.setDataContract(dataContract.getValue().toBuffer());
-    } else if (!request.prove) {
-      throw new NotFoundAbciError('Data Contract not found');
-    }
-
     if (request.prove) {
       const proof = await signedDataContractRepository.prove(contractIdIdentifier);
 
       response.getProof().setMerkleProof(proof.getValue());
+    } else {
+      const dataContract = await signedDataContractRepository.fetch(contractIdIdentifier);
+      if (dataContract.isNull()) {
+        throw new NotFoundAbciError('Data Contract not found');
+      }
+
+      response.setDataContract(dataContract.getValue().toBuffer());
     }
 
     return new ResponseQuery({

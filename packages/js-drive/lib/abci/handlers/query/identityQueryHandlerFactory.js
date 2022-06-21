@@ -59,18 +59,18 @@ function identityQueryHandlerFactory(
 
     const response = createQueryResponse(GetIdentityResponse, request.prove);
 
-    const identityResult = await signedIdentityRepository.fetch(identifier);
-
-    if (!identityResult.isNull()) {
-      response.setIdentity(identityResult.getValue().toBuffer());
-    } else if (!request.prove) {
-      throw new NotFoundAbciError('Identity not found');
-    }
-
     if (request.prove) {
       const proof = await signedIdentityRepository.prove(identifier);
 
       response.getProof().setMerkleProof(proof.getValue());
+    } else {
+      const identityResult = await signedIdentityRepository.fetch(identifier);
+
+      if (identityResult.isNull()) {
+        throw new NotFoundAbciError('Identity not found');
+      }
+
+      response.setIdentity(identityResult.getValue().toBuffer());
     }
 
     return new ResponseQuery({

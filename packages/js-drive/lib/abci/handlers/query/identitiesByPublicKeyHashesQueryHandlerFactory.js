@@ -60,16 +60,16 @@ function identitiesByPublicKeyHashesQueryHandlerFactory(
 
     const response = createQueryResponse(GetIdentitiesByPublicKeyHashesResponse, request.prove);
 
-    const result = await signedPublicKeyToIdentitiesRepository.fetchManyBuffers(
-      publicKeyHashes,
-    );
-
-    response.setIdentitiesList(result.getValue());
-
     if (request.prove) {
       const proof = await signedPublicKeyToIdentitiesRepository.proveMany(publicKeyHashes);
 
       response.getProof().setMerkleProof(proof.getValue());
+    } else {
+      const identitiesListResult = await signedPublicKeyToIdentitiesRepository.fetchManyBuffers(
+        publicKeyHashes,
+      );
+
+      response.setIdentitiesList(identitiesListResult.getValue());
     }
 
     return new ResponseQuery({
