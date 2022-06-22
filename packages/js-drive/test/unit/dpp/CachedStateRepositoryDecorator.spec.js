@@ -4,6 +4,7 @@ const getDataContractFixture = require('@dashevo/dpp/lib/test/fixtures/getDataCo
 const createStateRepositoryMock = require('@dashevo/dpp/lib/test/mocks/createStateRepositoryMock');
 
 const CachedStateRepositoryDecorator = require('../../../lib/dpp/CachedStateRepositoryDecorator');
+const DataContractCacheItem = require('../../../lib/dataContract/DataContractCacheItem');
 
 describe('CachedStateRepositoryDecorator', () => {
   let stateRepositoryMock;
@@ -135,12 +136,11 @@ describe('CachedStateRepositoryDecorator', () => {
 
   describe('#removeDocument', () => {
     it('should delete document from repository', async () => {
-      const contractId = 'contractId';
       const type = 'documentType';
 
-      await cachedStateRepository.removeDocument(contractId, type, id);
+      await cachedStateRepository.removeDocument(dataContract, type, id);
 
-      expect(stateRepositoryMock.removeDocument).to.be.calledOnceWith(contractId, type, id);
+      expect(stateRepositoryMock.removeDocument).to.be.calledOnceWith(dataContract, type, id);
     });
   });
 
@@ -157,7 +157,9 @@ describe('CachedStateRepositoryDecorator', () => {
 
   describe('#fetchDataContract', () => {
     it('should fetch data contract from cache', async () => {
-      dataContractCacheMock.get.returns(dataContract);
+      const cacheItem = new DataContractCacheItem(dataContract, []);
+
+      dataContractCacheMock.get.returns(cacheItem);
 
       const result = await cachedStateRepository.fetchDataContract(id);
 
@@ -172,9 +174,11 @@ describe('CachedStateRepositoryDecorator', () => {
 
       const result = await cachedStateRepository.fetchDataContract(id);
 
+      const cacheItem = new DataContractCacheItem(dataContract, []);
+
       expect(result).to.equal(dataContract);
       expect(dataContractCacheMock.get).to.be.calledOnceWith(id);
-      expect(dataContractCacheMock.set).to.be.calledOnceWith(id, dataContract);
+      expect(dataContractCacheMock.set).to.be.calledOnceWith(id, cacheItem);
       expect(stateRepositoryMock.fetchDataContract).to.be.calledOnceWith(id);
     });
 

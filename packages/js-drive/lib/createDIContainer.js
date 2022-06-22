@@ -623,7 +623,6 @@ function createDIContainer(options) {
         coreRpcClient,
         blockExecutionContext,
         simplifiedMasternodeList,
-        dataContractCache,
       );
 
       return new CachedStateRepositoryDecorator(
@@ -657,7 +656,6 @@ function createDIContainer(options) {
         coreRpcClient,
         blockExecutionContext,
         simplifiedMasternodeList,
-        dataContractCache,
         {
           useTransaction: true,
         },

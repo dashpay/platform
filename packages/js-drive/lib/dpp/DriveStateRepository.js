@@ -10,11 +10,6 @@ class DriveStateRepository {
   #options = {};
 
   /**
-   * @type {LRUCache}
-   */
-  #dataContractCache;
-
-  /**
    * @param {IdentityStoreRepository} identityRepository
    * @param {PublicKeyToIdentitiesStoreRepository} publicKeyToToIdentitiesRepository
    * @param {DataContractStoreRepository} dataContractRepository
@@ -25,7 +20,6 @@ class DriveStateRepository {
    * @param {RpcClient} coreRpcClient
    * @param {BlockExecutionContext} blockExecutionContext
    * @param {SimplifiedMasternodeList} simplifiedMasternodeList
-   * @param {LRUCache} dataContractCache
    * @param {Object} [options]
    * @param {Object} [options.useTransaction=false]
    */
@@ -40,7 +34,6 @@ class DriveStateRepository {
     coreRpcClient,
     blockExecutionContext,
     simplifiedMasternodeList,
-    dataContractCache,
     options = {},
   ) {
     this.identityRepository = identityRepository;
@@ -53,7 +46,6 @@ class DriveStateRepository {
     this.coreRpcClient = coreRpcClient;
     this.blockExecutionContext = blockExecutionContext;
     this.simplifiedMasternodeList = simplifiedMasternodeList;
-    this.#dataContractCache = dataContractCache;
     this.#options = options;
   }
 
@@ -323,26 +315,14 @@ class DriveStateRepository {
   /**
    * Remove document
    *
-   * @param {Identifier} contractId
+   * @param {DataContract} dataContract
    * @param {string} type
    * @param {Identifier} id
    * @param {StateTransitionExecutionContext} [executionContext]
    *
    * @returns {Promise<void>}
    */
-  async removeDocument(contractId, type, id, executionContext = undefined) {
-    const contractIdString = contractId.toString();
-
-    // TODO: This is not very clean approach since we have already cached decorator
-    //  to enable caching for the whole state repository
-    let dataContract = this.#dataContractCache.get(contractIdString);
-
-    if (!dataContract) {
-      dataContract = await this.fetchDataContract(contractId, executionContext);
-
-      this.#dataContractCache.set(contractIdString, dataContract);
-    }
-
+  async removeDocument(dataContract, type, id, executionContext = undefined) {
     const result = await this.documentRepository.delete(
       dataContract,
       type,
