@@ -21,7 +21,6 @@ const identitiesByPublicKeyHashesQueryHandlerFactory = require(
 );
 const InvalidArgumentAbciError = require('../../../../../lib/abci/errors/InvalidArgumentAbciError');
 const BlockExecutionContextStackMock = require('../../../../../lib/test/mock/BlockExecutionContextStackMock');
-const UnimplementedAbciError = require('../../../../../lib/abci/errors/UnimplementedAbciError');
 const StorageResult = require('../../../../../lib/storage/StorageResult');
 
 describe('identitiesByPublicKeyHashesQueryHandlerFactory', () => {
