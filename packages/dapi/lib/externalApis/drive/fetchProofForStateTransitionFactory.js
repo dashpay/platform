@@ -17,8 +17,8 @@ function fetchProofForStateTransitionFactory(driveClient) {
       ({ documentsProof: proof, metadata } = await driveClient.fetchProofs(
         {
           documents: stateTransition.getTransitions().map((documentTransition) => ({
-            dataContractId: documentTransition.getDataContract().getId().toBuffer(),
-            documentType: documentTransition.getType().toBuffer(),
+            dataContractId: documentTransition.getDataContractId().toBuffer(),
+            documentType: documentTransition.getType(),
             documentId: documentTransition.getId().toBuffer(),
           })),
         },
