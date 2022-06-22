@@ -52,7 +52,7 @@ function fetchDataContractFactory(
     } else {
       dataContractResult = new StorageResult(
         dataContract,
-        [new ReadOperation(dataContract.length)],
+        [new ReadOperation(dataContract.toBuffer().length)],
       );
     }
 

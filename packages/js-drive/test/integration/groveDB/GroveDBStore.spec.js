@@ -253,7 +253,7 @@ describe('GroveDBStore', () => {
     it('should return proof', async () => {
       await store.put(testTreePath, key, value);
 
-      const result = await store.prove({
+      const result = await store.proveQuery({
         path: testTreePath,
         query: {
           query: {

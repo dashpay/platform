@@ -1,7 +1,7 @@
 /**
  * @param {Identifier} featureFlagsContractId
  * @param {fetchDocuments} fetchDocuments
- * @param {fetchDocuments} fetchDataContract
+ * @param {fetchDataContract} fetchDataContract
  *
  * @return {getFeatureFlagForHeight}
  */

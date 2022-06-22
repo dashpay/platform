@@ -107,7 +107,7 @@ describe('identityQueryHandlerFactory', () => {
     }
   });
 
-  it('should throw UnimplementedAbciError if proof requested', async () => {
+  it('should return proof if it was requested', async () => {
     // const proof = {
     //   rootTreeProof: Buffer.from('0100000001f0faf5f55674905a68eba1be2f946e667c1cb5010101',
     //     'hex'),
@@ -125,7 +125,7 @@ describe('identityQueryHandlerFactory', () => {
 
     const result = await identityQueryHandler(params, data, { prove: true });
 
-    expect(signedIdentityRepositoryMock.fetch).to.be.calledOnceWith(data.id);
+    expect(signedIdentityRepositoryMock.fetch).to.not.be.called();
     expect(signedIdentityRepositoryMock.prove).to.be.calledOnceWith(data.id);
     expect(result).to.be.an.instanceof(ResponseQuery);
     expect(result.code).to.equal(0);

@@ -16,6 +16,7 @@ const getDocumentsFixture = require('@dashevo/dpp/lib/test/fixtures/getDocuments
 const getProofsQueryHandlerFactory = require('../../../../../lib/abci/handlers/query/getProofsQueryHandlerFactory');
 const BlockExecutionContextMock = require('../../../../../lib/test/mock/BlockExecutionContextMock');
 const BlockExecutionContextStackMock = require('../../../../../lib/test/mock/BlockExecutionContextStackMock');
+const StorageResult = require('../../../../../lib/storage/StorageResult');
 
 describe('getProofsQueryHandlerFactory', () => {
   let getProofsQueryHandler;
@@ -28,6 +29,10 @@ describe('getProofsQueryHandlerFactory', () => {
   let blockExecutionContextStackMock;
   let signedBlockExecutionContextMock;
   let blockExecutionContextMock;
+  let signedIdentityRepositoryMock;
+  let signedDataContractRepositoryMock;
+  let fetchSignedDataContractMock;
+  let proveSignedDocumentsMock;
 
   beforeEach(function beforeEach() {
     dataContract = getDataContractFixture();
@@ -51,8 +56,22 @@ describe('getProofsQueryHandlerFactory', () => {
     blockExecutionContextStackMock.getLast.returns(signedBlockExecutionContextMock);
     blockExecutionContextStackMock.getFirst.returns(blockExecutionContextMock);
 
+    signedIdentityRepositoryMock = {
+      proveMany: this.sinon.stub().resolves(new StorageResult(Buffer.from([1]))),
+    };
+    signedDataContractRepositoryMock = {
+      proveMany: this.sinon.stub().resolves(new StorageResult(Buffer.from([1]))),
+    };
+
+    fetchSignedDataContractMock = this.sinon.stub();
+    proveSignedDocumentsMock = this.sinon.stub();
+
     getProofsQueryHandler = getProofsQueryHandlerFactory(
       blockExecutionContextStackMock,
+      signedIdentityRepositoryMock,
+      signedDataContractRepositoryMock,
+      fetchSignedDataContractMock,
+      proveSignedDocumentsMock,
     );
 
     dataContractData = {
@@ -61,9 +80,11 @@ describe('getProofsQueryHandlerFactory', () => {
     identityData = {
       id: identity.getId(),
     };
-    documentsData = {
-      ids: documents.map((doc) => doc.getId()),
-    };
+    documentsData = documents.map((doc) => ({
+      documentId: doc.getId(),
+      dataContractId: doc.getDataContractId(),
+      type: doc.getType(),
+    }));
   });
 
   it('should return empty response if there is no signed state', async () => {
@@ -103,7 +124,7 @@ describe('getProofsQueryHandlerFactory', () => {
     const result = await getProofsQueryHandler({}, {
       dataContractIds: [dataContractData.id],
       identityIds: [identityData.id],
-      documentIds: documentsData.ids,
+      documents: documentsData,
     });
 
     const expectedResult = new ResponseQuery({
