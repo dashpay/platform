@@ -1,9 +1,9 @@
 const IdentifierError = require('@dashevo/dpp/lib/identifier/errors/IdentifierError');
 const Identifier = require('@dashevo/dpp/lib/identifier/Identifier');
 
-const ReadOperation = require('@dashevo/dpp/lib/stateTransition/fee/operations/ReadOperation');
 const InvalidQueryError = require('./errors/InvalidQueryError');
 const StorageResult = require('../storage/StorageResult');
+const DataContractCacheItem = require('../dataContract/DataContractCacheItem');
 
 /**
  * @param {DataContractStoreRepository} dataContractRepository
@@ -36,10 +36,21 @@ function fetchDataContractFactory(
 
     const contractIdString = contractIdIdentifier.toString();
 
-    let dataContract = dataContractCache.get(contractIdString);
+    /**
+     * @type {DataContractCacheItem}
+     */
+    let cacheItem = dataContractCache.get(contractIdString);
+
+    let operations = [];
+    let dataContract;
     let dataContractResult;
 
-    if (!dataContract) {
+    if (cacheItem) {
+      dataContractResult = new StorageResult(
+        cacheItem.getDataContract(),
+        cacheItem.getOperations(),
+      );
+    } else {
       dataContractResult = await dataContractRepository.fetch(contractIdIdentifier);
 
       if (dataContractResult.isNull()) {
@@ -47,13 +58,11 @@ function fetchDataContractFactory(
       }
 
       dataContract = dataContractResult.getValue();
+      operations = dataContractResult.getOperations();
 
-      dataContractCache.set(contractIdString, dataContract);
-    } else {
-      dataContractResult = new StorageResult(
-        dataContract,
-        [new ReadOperation(dataContract.toBuffer().length)],
-      );
+      cacheItem = new DataContractCacheItem(dataContract, operations);
+
+      dataContractCache.set(contractIdString, cacheItem);
     }
 
     if (!dataContract.isDocumentDefined(type)) {
