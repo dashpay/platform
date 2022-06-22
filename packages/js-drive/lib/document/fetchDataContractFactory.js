@@ -46,8 +46,10 @@ function fetchDataContractFactory(
     let dataContractResult;
 
     if (cacheItem) {
+      dataContract = cacheItem.getDataContract();
+
       dataContractResult = new StorageResult(
-        cacheItem.getDataContract(),
+        dataContract,
         cacheItem.getOperations(),
       );
     } else {
