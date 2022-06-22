@@ -5,6 +5,8 @@ const {
     },
   },
 } = require('@dashevo/abci/types');
+const ReadOperation = require('@dashevo/dpp/lib/stateTransition/fee/operations/ReadOperation');
+const DataContractCacheItem = require('../../dataContract/DataContractCacheItem');
 
 /**
  * @param {CreditsDistributionPool} creditsDistributionPool
@@ -76,12 +78,14 @@ function commitHandlerFactory(
     await groveDBStore.commitTransaction();
 
     // Update data contract cache with new version of
-    // commited data contract
+    // committed data contract
     for (const dataContract of blockExecutionContext.getDataContracts()) {
-      const idString = dataContract.getId().toString();
+      const operations = [new ReadOperation(dataContract.toBuffer().length)];
 
-      if (dataContractCache.has(idString)) {
-        dataContractCache.set(idString, dataContract);
+      const cacheItem = new DataContractCacheItem(dataContract, operations);
+
+      if (dataContractCache.has(cacheItem.getKey())) {
+        dataContractCache.set(cacheItem.getKey(), cacheItem);
       }
     }
 
