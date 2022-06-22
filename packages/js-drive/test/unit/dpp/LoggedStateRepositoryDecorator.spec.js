@@ -508,12 +508,12 @@ describe('LoggedStateRepositoryDecorator', () => {
   });
 
   describe('#removeDocument', () => {
-    let contractId;
+    let dataContract;
     let type;
     let id;
 
     beforeEach(() => {
-      contractId = generateRandomIdentifier();
+      dataContract = getDataContractFixture();
       type = 'type';
       id = generateRandomIdentifier();
     });
@@ -523,12 +523,12 @@ describe('LoggedStateRepositoryDecorator', () => {
 
       stateRepositoryMock.removeDocument.resolves(response);
 
-      await loggedStateRepositoryDecorator.removeDocument(contractId, type, id);
+      await loggedStateRepositoryDecorator.removeDocument(dataContract, type, id);
 
       expect(loggerMock.trace).to.be.calledOnceWithExactly({
         stateRepository: {
           method: 'removeDocument',
-          parameters: { contractId, type, id },
+          parameters: { dataContract, type, id },
           response,
         },
       }, 'StateRepository#removeDocument');
@@ -540,7 +540,7 @@ describe('LoggedStateRepositoryDecorator', () => {
       stateRepositoryMock.removeDocument.throws(error);
 
       try {
-        await loggedStateRepositoryDecorator.removeDocument(contractId, type, id);
+        await loggedStateRepositoryDecorator.removeDocument(dataContract, type, id);
 
         expect.fail('should throw an error');
       } catch (e) {
@@ -550,7 +550,7 @@ describe('LoggedStateRepositoryDecorator', () => {
       expect(loggerMock.trace).to.be.calledOnceWithExactly({
         stateRepository: {
           method: 'removeDocument',
-          parameters: { contractId, type, id },
+          parameters: { dataContract, type, id },
           response: undefined,
         },
       }, 'StateRepository#removeDocument');

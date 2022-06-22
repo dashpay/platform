@@ -2,6 +2,7 @@ const IdentifierError = require('@dashevo/dpp/lib/identifier/errors/IdentifierEr
 const Identifier = require('@dashevo/dpp/lib/identifier/Identifier');
 
 const InvalidQueryError = require('./errors/InvalidQueryError');
+const DataContractCacheItem = require('../dataContract/DataContractCacheItem');
 
 /**
  * @param {DocumentRepository} documentRepository
@@ -38,11 +39,18 @@ function fetchDocumentsFactory(
 
     const contractIdString = contractIdIdentifier.toString();
 
-    let dataContract = dataContractCache.get(contractIdString);
+    /**
+     * @type {DataContractCacheItem}
+     */
+    let cacheItem = dataContractCache.get(contractIdString);
 
     let operations = [];
+    let dataContract;
 
-    if (!dataContract) {
+    if (cacheItem) {
+      dataContract = cacheItem.getDataContract();
+      operations = cacheItem.getOperations();
+    } else {
       const dataContractResult = await dataContractRepository.fetch(contractIdIdentifier);
 
       if (dataContractResult.isNull()) {
@@ -52,7 +60,9 @@ function fetchDocumentsFactory(
       dataContract = dataContractResult.getValue();
       operations = dataContractResult.getOperations();
 
-      dataContractCache.set(contractIdString, dataContract);
+      cacheItem = new DataContractCacheItem(dataContract, operations);
+
+      dataContractCache.set(contractIdString, cacheItem);
     }
 
     if (!dataContract.isDocumentDefined(type)) {

@@ -363,23 +363,28 @@ class LoggedStateRepositoryDecorator {
   /**
    * Remove document
    *
-   * @param {Identifier} contractId
+   * @param {DataContract} dataContract
    * @param {string} type
    * @param {Identifier} id
    * @param {StateTransitionExecutionContext} [executionContext]
    *
    * @returns {Promise<void>}
    */
-  async removeDocument(contractId, type, id, executionContext = undefined) {
+  async removeDocument(dataContract, type, id, executionContext = undefined) {
     let response;
 
     try {
-      response = await this.stateRepository.removeDocument(contractId, type, id, executionContext);
+      response = await this.stateRepository.removeDocument(
+        dataContract,
+        type,
+        id,
+        executionContext,
+      );
     } finally {
       this.log(
         'removeDocument',
         {
-          contractId,
+          dataContract,
           type,
           id,
         },

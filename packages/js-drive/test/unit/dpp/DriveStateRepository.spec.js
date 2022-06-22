@@ -25,7 +25,6 @@ describe('DriveStateRepository', () => {
   let blockExecutionContextMock;
   let simplifiedMasternodeListMock;
   let instantLockMock;
-  let dataContractCacheMock;
   let repositoryOptions;
   let executionContext;
   let operations;
@@ -80,11 +79,6 @@ describe('DriveStateRepository', () => {
       getStore: this.sinon.stub(),
     };
 
-    dataContractCacheMock = {
-      set: this.sinon.stub(),
-      get: this.sinon.stub(),
-    };
-
     repositoryOptions = { useTransaction: true };
 
     stateRepository = new DriveStateRepository(
@@ -97,7 +91,6 @@ describe('DriveStateRepository', () => {
       coreRpcClientMock,
       blockExecutionContextMock,
       simplifiedMasternodeListMock,
-      dataContractCacheMock,
       repositoryOptions,
     );
 
@@ -388,27 +381,13 @@ describe('DriveStateRepository', () => {
 
   describe('#removeDocument', () => {
     it('should delete document from repository', async () => {
-      dataContractCacheMock.get.returns(null);
-      dataContractRepositoryMock.fetch.resolves(
-        new StorageResult(dataContract, operations),
-      );
       documentsRepositoryMock.delete.resolves(
         new StorageResult(undefined, operations),
       );
 
-      const contractId = generateRandomIdentifier();
       const type = 'documentType';
 
-      await stateRepository.removeDocument(contractId, type, id, executionContext);
-
-      expect(dataContractRepositoryMock.fetch).to.be.calledOnceWithExactly(contractId, {
-        useTransaction: false,
-        dryRun: false,
-      });
-      expect(dataContractCacheMock.set).to.be.calledOnceWithExactly(
-        contractId.toString(),
-        dataContract,
-      );
+      await stateRepository.removeDocument(dataContract, type, id, executionContext);
 
       expect(documentsRepositoryMock.delete).to.be.calledOnceWith(
         dataContract,
@@ -420,7 +399,7 @@ describe('DriveStateRepository', () => {
         },
       );
 
-      expect(executionContext.getOperations()).to.deep.equals(operations.concat(operations));
+      expect(executionContext.getOperations()).to.deep.equals(operations);
     });
   });
 

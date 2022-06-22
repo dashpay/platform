@@ -340,13 +340,6 @@ describe('feesPrediction', () => {
       it('should have predicted fee more than actual fee', async () => {
         await stateRepository.storeDataContract(dataContract);
 
-        // store data contract in cache
-        const dataContractCache = container.resolve('dataContractCache');
-        dataContractCache.set(
-          dataContract.getId().toString(),
-          await dpp.dataContract.createFromObject(dataContract.toObject()),
-        );
-
         dataContract.setVersion(2);
 
         const documents = dataContract.getDocuments();
@@ -436,13 +429,6 @@ describe('feesPrediction', () => {
       dataContract = dpp.dataContract.create(identity.getId(), documentTypes);
 
       await stateRepository.storeDataContract(dataContract);
-
-      // store data contract in cache
-      const dataContractCache = container.resolve('dataContractCache');
-      dataContractCache.set(
-        dataContract.getId().toString(),
-        await dpp.dataContract.createFromObject(dataContract.toObject()),
-      );
 
       // Create documents
 
