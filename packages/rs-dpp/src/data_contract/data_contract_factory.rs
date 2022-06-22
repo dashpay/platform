@@ -153,7 +153,7 @@ mod test {
     fn get_test_data() -> TestData {
         let data_contract = get_data_contract_fixture(None);
         let raw_data_contract = data_contract.to_object().unwrap();
-        let factory = DataContractFactory::new(0, mocks::ValidateDataContract {});
+        let factory = DataContractFactory::new(1, mocks::ValidateDataContract {});
         TestData {
             data_contract,
             raw_data_contract,
@@ -248,7 +248,7 @@ mod test {
             .create_data_contract_create_transition(data_contract.clone())
             .expect("Data Contract Transition should be created");
 
-        assert_eq!(0, result.get_protocol_version());
+        assert_eq!(1, result.get_protocol_version());
         assert_eq!(&data_contract.entropy, result.get_entropy());
         assert_eq!(raw_data_contract, result.data_contract.to_object().unwrap());
     }

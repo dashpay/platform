@@ -394,11 +394,7 @@ mod test {
         version::{ProtocolVersionValidator, COMPATIBILITY_MAP, LATEST_VERSION},
         Convertible,
     };
-    use dashcore::secp256k1::rand::seq::index;
-    use jsonschema::{
-        error::{TypeKind, ValidationErrorKind},
-        output::BasicOutput,
-    };
+    use jsonschema::error::ValidationErrorKind;
     use serde_json::json;
     use test_case::test_case;
 
