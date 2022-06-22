@@ -1,5 +1,3 @@
-use log::trace;
-
 use anyhow::bail;
 use serde_json::Value as JsonValue;
 
@@ -9,9 +7,6 @@ use crate::{
 
 const MAX_DEPTH: usize = 500;
 
-// TODO: Unlike the JS version, this validator doesn't resolve the schema local references.
-// TODO: The JS version don't resolve external defs by design. Is this validator necessary if
-// TODO: the limit can be escaped by introducing external definitions?
 pub fn validate_data_contract_max_depth(raw_data_contract: &JsonValue) -> ValidationResult {
     let mut result = ValidationResult::default();
     let schema_depth = match calc_max_depth(raw_data_contract) {
