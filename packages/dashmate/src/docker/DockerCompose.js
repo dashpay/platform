@@ -6,7 +6,6 @@ const hasbin = require('hasbin');
 const semver = require('semver');
 
 const { exec } = require('child_process');
-const { promisify } = require('util');
 
 const DockerComposeError = require('./errors/DockerComposeError');
 const ServiceAlreadyRunningError = require('./errors/ServiceAlreadyRunningError');
@@ -14,8 +13,6 @@ const ServiceIsNotRunningError = require('./errors/ServiceIsNotRunningError');
 const ContainerIsNotPresentError = require('./errors/ContainerIsNotPresentError');
 
 const { HOME_DIR_PATH } = require('../constants');
-
-const execAsync = promisify(exec);
 
 class DockerCompose {
   /**
@@ -377,16 +374,22 @@ class DockerCompose {
       throw new Error(`Update Docker to version ${DockerCompose.DOCKER_MIN_VERSION} or higher`);
     }
 
+    let version
+
     // Check docker compose
     try {
-      await execAsync('docker compose');
-    } catch (e) {
-      throw new Error('Docker Compose V2 is not available in your system');
-    }
+      ({out: version} = await dockerCompose.version());
 
-    const { out: version } = await dockerCompose.version();
-    if (semver.lt(version.trim(), DockerCompose.DOCKER_COMPOSE_MIN_VERSION)) {
-      throw new Error(`Update Docker Compose to version ${DockerCompose.DOCKER_COMPOSE_MIN_VERSION} or higher`);
+      if (semver.lt(version.trim(), DockerCompose.DOCKER_COMPOSE_MIN_VERSION)) {
+        throw new Error(`Update Docker Compose to version ${DockerCompose.DOCKER_COMPOSE_MIN_VERSION} or higher`);
+      }
+    } catch (e) {
+      if (!version) {
+        // if no version is set, means we could not obtain version
+        throw new Error('Docker Compose V2 is not available in your system');
+      }
+
+      throw e
     }
   }
 
