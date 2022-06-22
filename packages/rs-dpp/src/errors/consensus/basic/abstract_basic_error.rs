@@ -30,6 +30,9 @@ pub enum BasicError {
         duplicate_index_name: String,
     },
 
+    #[error("Invalid JSON Schema $ref: {ref_error}")]
+    InvalidJsonSchemaRefError { ref_error: String },
+
     #[error(transparent)]
     IndexError(IndexError),
 }

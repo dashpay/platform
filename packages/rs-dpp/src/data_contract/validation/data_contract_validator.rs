@@ -2903,6 +2903,8 @@ mod test {
         let result = data_contract_validator
             .validate(&raw_data_contract)
             .expect("validation result should be returned");
+
+        println!("the result is {:#?}", result);
         let validation_error = result
             .errors
             .get(0)
