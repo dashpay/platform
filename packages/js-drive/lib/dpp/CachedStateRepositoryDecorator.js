@@ -1,3 +1,7 @@
+const StateTransitionExecutionContext = require('@dashevo/dpp/lib/stateTransition/StateTransitionExecutionContext');
+
+const DataContractCacheItem = require('../dataContract/DataContractCacheItem');
+
 /**
  * @implements StateRepository
  */
@@ -124,16 +128,31 @@ class CachedStateRepositoryDecorator {
   async fetchDataContract(id, executionContext = undefined) {
     const idString = id.toString();
 
-    let dataContract = this.contractCache.get(idString);
+    let cacheItem = this.contractCache.get(idString);
 
-    if (dataContract !== undefined) {
-      return dataContract;
+    if (cacheItem) {
+      if (executionContext) {
+        executionContext.addOperation(...cacheItem.getOperations());
+      }
+
+      return cacheItem.getDataContract();
     }
 
-    dataContract = await this.stateRepository.fetchDataContract(id, executionContext);
+    const isolatedExecutionContext = new StateTransitionExecutionContext();
+
+    const dataContract = await this.stateRepository.fetchDataContract(id, isolatedExecutionContext);
+
+    if (executionContext) {
+      executionContext.addOperation(...isolatedExecutionContext.getOperations());
+    }
 
     if (dataContract !== null) {
-      this.contractCache.set(idString, dataContract);
+      cacheItem = new DataContractCacheItem(
+        dataContract,
+        isolatedExecutionContext.getOperations(),
+      );
+
+      this.contractCache.set(idString, cacheItem);
     }
 
     return dataContract;
@@ -192,15 +211,15 @@ class CachedStateRepositoryDecorator {
   /**
    * Remove document
    *
-   * @param {Identifier} contractId
+   * @param {DataContract} dataContract
    * @param {string} type
    * @param {Identifier} id
    * @param {StateTransitionExecutionContext} [executionContext]
    *
    * @returns {Promise<void>}
    */
-  async removeDocument(contractId, type, id, executionContext = undefined) {
-    return this.stateRepository.removeDocument(contractId, type, id, executionContext);
+  async removeDocument(dataContract, type, id, executionContext = undefined) {
+    return this.stateRepository.removeDocument(dataContract, type, id, executionContext);
   }
 
   /**
