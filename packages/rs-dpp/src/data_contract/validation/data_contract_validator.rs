@@ -2889,7 +2889,6 @@ mod test {
     }
 
     #[test]
-    #[ignore = "TODO - no eroror returned"]
     fn should_return_invalid_result_with_circular_ref_pointer() {
         init();
         let TestData {
@@ -2903,14 +2902,19 @@ mod test {
         let result = data_contract_validator
             .validate(&raw_data_contract)
             .expect("validation result should be returned");
-
-        println!("the result is {:#?}", result);
         let validation_error = result
             .errors
             .get(0)
             .expect("the validation error should exist");
+        let basic_error = get_basic_error(validation_error);
 
         assert_eq!(1014, validation_error.get_code());
+        assert!(
+            matches!(basic_error, BasicError::InvalidJsonSchemaRefError { ref_error}
+            if  {
+                ref_error == "the ref '#/$defs/object' contains cycles"
+            })
+        );
     }
 
     #[test]
