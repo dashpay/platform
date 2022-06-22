@@ -1,3 +1,5 @@
+use std::collections::BTreeSet;
+
 use anyhow::bail;
 use serde_json::Value as JsonValue;
 
@@ -26,6 +28,7 @@ pub fn validate_data_contract_max_depth(raw_data_contract: &JsonValue) -> Valida
 fn calc_max_depth(json_value: &JsonValue) -> Result<usize, BasicError> {
     let mut values_depth_queue: Vec<(&JsonValue, usize)> = vec![(json_value, 0)];
     let mut max_depth: usize = 0;
+    let mut visited: BTreeSet<*const JsonValue> = BTreeSet::new();
 
     while let Some((value, depth)) = values_depth_queue.pop() {
         match value {
@@ -43,6 +46,14 @@ fn calc_max_depth(json_value: &JsonValue) -> Result<usize, BasicError> {
                                     ref_error: format!("invalid ref '{}': {}", uri, e),
                                 }
                             })?;
+
+                            if visited.contains(&(resolved as *const JsonValue)) {
+                                return Err(BasicError::InvalidJsonSchemaRefError {
+                                    ref_error: format!("the ref '{}' contains cycles", uri),
+                                });
+                            }
+
+                            visited.insert(resolved as *const JsonValue);
                             values_depth_queue.push((resolved, new_depth));
                             continue;
                         }
@@ -64,7 +75,7 @@ fn calc_max_depth(json_value: &JsonValue) -> Result<usize, BasicError> {
                     }
                 }
             }
-            _ => {}
+            _ => visited.clear(),
         }
     }
 
@@ -76,7 +87,7 @@ fn resolve_uri<'a>(json: &'a JsonValue, uri: &str) -> Result<&'a JsonValue, anyh
         bail!("only local references are allowed")
     }
 
-    let string_path = uri.strip_prefix("#/").unwrap().replace("/", ".");
+    let string_path = uri.strip_prefix("#/").unwrap().replace('/', ".");
     json.get_value(&string_path)
 }
 
@@ -84,6 +95,40 @@ fn resolve_uri<'a>(json: &'a JsonValue, uri: &str) -> Result<&'a JsonValue, anyh
 mod test {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn should_return_error_when_cycle_is_spotted() {
+        let schema = json!(
+             {
+                "$defs" : {
+                    "object": {
+                        "$ref":   "#/$defs/objectTwo"
+                    },
+                    "objectTwo": {
+                        "$ref":  "#/$defs/object"
+                    }
+                },
+                "type": "object",
+                "properties": {
+                  "foo": { "type": "integer" },
+                  "bar": {
+                    "type": "string",
+                    "pattern": "([a-z]+)+$",
+                  },
+                  "fooWithRef": {
+                    "$ref" : "#/$defs/object"
+                  },
+                },
+                "required": ["foo"],
+                "additionalProperties": false,
+              }
+        );
+        let result = calc_max_depth(&schema);
+        assert!(matches!(
+            result,
+            Err(BasicError::InvalidJsonSchemaRefError { ref_error }) if ref_error == "the ref '#/$defs/object' contains cycles"
+        ));
+    }
 
     #[test]
     fn should_calculate_valid_depth_with_included_ref() {
