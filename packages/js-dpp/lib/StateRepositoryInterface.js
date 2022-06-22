@@ -66,7 +66,7 @@
  * @async
  * @method
  * @name StateRepository#removeDocument
- * @param {Identifier} contractId
+ * @param {DataContract} dataContract
  * @param {string} type
  * @param {Identifier} id
  * @param {StateTransitionExecutionContext} [StateTransitionExecutionContext]

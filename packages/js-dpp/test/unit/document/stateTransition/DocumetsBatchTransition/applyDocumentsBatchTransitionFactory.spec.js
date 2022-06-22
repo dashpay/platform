@@ -106,7 +106,7 @@ describe('applyDocumentsBatchTransitionFactory', () => {
     ]);
 
     expect(stateRepositoryMock.removeDocument).to.have.been.calledOnceWithExactly(
-      documentTransitions[2].getDataContractId(),
+      documentTransitions[2].getDataContract(),
       documentTransitions[2].getType(),
       documentTransitions[2].getId(),
       executionContext,

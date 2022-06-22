@@ -115,7 +115,7 @@ function applyDocumentsBatchTransitionFactory(
           }
           case AbstractDocumentTransition.ACTIONS.DELETE: {
             return stateRepository.removeDocument(
-              documentTransition.getDataContractId(),
+              documentTransition.getDataContract(),
               documentTransition.getType(),
               documentTransition.getId(),
               executionContext,

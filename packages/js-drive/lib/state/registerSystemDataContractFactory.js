@@ -1,4 +1,6 @@
 const IdentityPublicKey = require('@dashevo/dpp/lib/identity/IdentityPublicKey');
+const ReadOperation = require('@dashevo/dpp/lib/stateTransition/fee/operations/ReadOperation');
+const DataContractCacheItem = require('../dataContract/DataContractCacheItem');
 
 /**
  * @param {DashPlatformProtocol} dpp
@@ -71,7 +73,11 @@ function registerSystemDataContractFactory(
     });
 
     // Store data contract in the cache
-    dataContractCache.set(dataContract.getId().toString(), dataContract);
+    const cacheItem = new DataContractCacheItem(dataContract, [
+      new ReadOperation(dataContract.toBuffer().length),
+    ]);
+
+    dataContractCache.set(cacheItem.getKey(), cacheItem);
 
     return dataContract;
   }
