@@ -243,31 +243,31 @@ impl DataContractValidator {
                                     document_type: document_type.clone(),
                                     index_definition: index_definition.clone(),
                                     property_name: property_name.clone(),
-                                    constraint_name: String::from("maxLength"),
+                                    constraint_name: String::from("maxItems"),
                                     reason: format!("should be less or equal {}", max_limit),
                                 },
                             ));
                         }
+                    }
 
-                        if property_definition.is_type_of_string() {
-                            let max_length = property_definition.get_u64("maxLength").ok();
+                    if property_definition.is_type_of_string() {
+                        let max_length = property_definition.get_u64("maxLength").ok();
 
-                            if max_length.is_none()
-                                || max_length.unwrap() > MAX_INDEXED_STRING_PROPERTY_LENGTH as u64
-                            {
-                                result.add_error(BasicError::IndexError(
-                                    IndexError::InvalidIndexedPropertyConstraintError {
-                                        document_type: document_type.clone(),
-                                        index_definition: index_definition.clone(),
-                                        property_name: property_name.clone(),
-                                        constraint_name: String::from("maxLength"),
-                                        reason: format!(
-                                            "should be less or equal {}",
-                                            MAX_INDEXED_STRING_PROPERTY_LENGTH
-                                        ),
-                                    },
-                                ))
-                            }
+                        if max_length.is_none()
+                            || max_length.unwrap() > MAX_INDEXED_STRING_PROPERTY_LENGTH as u64
+                        {
+                            result.add_error(BasicError::IndexError(
+                                IndexError::InvalidIndexedPropertyConstraintError {
+                                    document_type: document_type.clone(),
+                                    index_definition: index_definition.clone(),
+                                    property_name: property_name.clone(),
+                                    constraint_name: String::from("maxLength"),
+                                    reason: format!(
+                                        "should be less or equal than {}",
+                                        MAX_INDEXED_STRING_PROPERTY_LENGTH
+                                    ),
+                                },
+                            ))
                         }
                     }
                 }
@@ -2438,7 +2438,9 @@ mod test {
         );
     }
 
+    // This section is originally commented out
     // https://github.com/dashevo/platform/blob/ab6391f4b47a970c733e7b81115b44329fbdf993/packages/js-dpp/test/integration/dataContract/validation/validateDataContractFactory.spec.js#L1603
+    //
     // it('should return invalid result if index property is array of objects', async () => {
     //   const indexedDocumentDefinition = rawDataContract.documents.indexedDocument;
     //
@@ -2673,5 +2675,423 @@ mod test {
                 document_type == "optionalUniqueIndexedDocument"
             })
         );
+    }
+
+    #[test]
+    fn signature_level_requirement_should_be_number() {
+        init();
+        let TestData {
+            mut raw_data_contract,
+            data_contract_validator,
+            ..
+        } = get_test_data();
+
+        raw_data_contract["documents"]["indexedDocument"]["signatureSecurityLevelRequirement"] =
+            json!("definitely not a number");
+
+        let result = data_contract_validator
+            .validate(&raw_data_contract)
+            .expect("validation result should be returned");
+        let schema_error = get_schema_error(&result, 0);
+
+        assert_eq!(
+            "/documents/indexedDocument/signatureSecurityLevelRequirement",
+            schema_error.instance_path().to_string()
+        );
+        assert_eq!(Some("type"), schema_error.keyword(),);
+    }
+
+    #[test]
+    fn signature_level_requirement_should_be_one_of_available_values() {
+        init();
+        let TestData {
+            mut raw_data_contract,
+            data_contract_validator,
+            ..
+        } = get_test_data();
+
+        raw_data_contract["documents"]["indexedDocument"]["signatureSecurityLevelRequirement"] =
+            json!(199);
+
+        let result = data_contract_validator
+            .validate(&raw_data_contract)
+            .expect("validation result should be returned");
+        let schema_error = get_schema_error(&result, 0);
+
+        assert_eq!(
+            "/documents/indexedDocument/signatureSecurityLevelRequirement",
+            schema_error.instance_path().to_string()
+        );
+        assert_eq!(Some("enum"), schema_error.keyword(),);
+    }
+
+    #[test]
+    fn dependent_schemas_should_be_object() {
+        init();
+        let TestData {
+            mut raw_data_contract,
+            data_contract_validator,
+            ..
+        } = get_test_data();
+
+        raw_data_contract["documents"]["indexedDocument"] = json!({
+            "type": "object",
+            "properties": {
+              "abc": {
+                "type": "string",
+              },
+            },
+            "additionalProperties": false,
+            "dependentSchemas": "string",
+        });
+
+        let result = data_contract_validator
+            .validate(&raw_data_contract)
+            .expect("validation result should be returned");
+        let schema_error = get_schema_error(&result, 0);
+
+        assert_eq!(
+            "/documents/indexedDocument/dependentSchemas",
+            schema_error.instance_path().to_string()
+        );
+        assert_eq!(Some("type"), schema_error.keyword(),);
+    }
+
+    #[test]
+    fn dependent_required_should_be_object() {
+        init();
+        let TestData {
+            mut raw_data_contract,
+            data_contract_validator,
+            ..
+        } = get_test_data();
+
+        raw_data_contract["documents"]["indexedDocument"] = json!({
+            "type": "object",
+            "properties": {
+              "abc": {
+                "type": "string",
+              },
+            },
+            "additionalProperties": false,
+            "dependentRequired": "string",
+        });
+
+        let result = data_contract_validator
+            .validate(&raw_data_contract)
+            .expect("validation result should be returned");
+        let schema_error = get_schema_error(&result, 0);
+
+        assert_eq!(
+            "/documents/indexedDocument/dependentRequired",
+            schema_error.instance_path().to_string()
+        );
+        assert_eq!(Some("type"), schema_error.keyword(),);
+    }
+
+    #[test]
+    fn dependent_required_should_have_array_value() {
+        init();
+        let TestData {
+            mut raw_data_contract,
+            data_contract_validator,
+            ..
+        } = get_test_data();
+
+        raw_data_contract["documents"]["indexedDocument"] = json!({
+            "type": "object",
+            "properties": {
+              "abc": {
+                "type": "string",
+              },
+            },
+            "additionalProperties": false,
+            "dependentRequired":  {
+                "zxy": {
+                    "type": "number",
+              }}
+        });
+
+        let result = data_contract_validator
+            .validate(&raw_data_contract)
+            .expect("validation result should be returned");
+        let schema_error = get_schema_error(&result, 0);
+
+        assert_eq!(
+            "/documents/indexedDocument/dependentRequired/zxy",
+            schema_error.instance_path().to_string()
+        );
+        assert_eq!(Some("type"), schema_error.keyword(),);
+    }
+
+    #[test]
+    fn dependent_required_should_have_array_of_strings() {
+        init();
+        let TestData {
+            mut raw_data_contract,
+            data_contract_validator,
+            ..
+        } = get_test_data();
+
+        raw_data_contract["documents"]["indexedDocument"] = json!({
+            "type": "object",
+            "properties": {
+              "abc": {
+                "type": "string",
+              },
+            },
+            "additionalProperties": false,
+            "dependentRequired":  {
+                "zxy":  [ 1, "2" ]
+              }
+        });
+
+        let result = data_contract_validator
+            .validate(&raw_data_contract)
+            .expect("validation result should be returned");
+        let schema_error = get_schema_error(&result, 0);
+
+        assert_eq!(
+            "/documents/indexedDocument/dependentRequired/zxy/0",
+            schema_error.instance_path().to_string()
+        );
+        assert_eq!(Some("type"), schema_error.keyword(),);
+    }
+
+    #[test]
+    fn dependent_required_should_have_array_of_unique_strings() {
+        init();
+        let TestData {
+            mut raw_data_contract,
+            data_contract_validator,
+            ..
+        } = get_test_data();
+
+        raw_data_contract["documents"]["indexedDocument"] = json!({
+            "type": "object",
+            "properties": {
+              "abc": {
+                "type": "string",
+              },
+            },
+            "additionalProperties": false,
+            "dependentRequired":  {
+                "zxy":  [ "1", "2", "2" ]
+              }
+        });
+
+        let result = data_contract_validator
+            .validate(&raw_data_contract)
+            .expect("validation result should be returned");
+        let schema_error = get_schema_error(&result, 0);
+
+        assert_eq!(
+            "/documents/indexedDocument/dependentRequired/zxy",
+            schema_error.instance_path().to_string()
+        );
+        assert_eq!(Some("uniqueItems"), schema_error.keyword(),);
+    }
+
+    #[test]
+    #[ignore = "TODO - no eroror returned"]
+    fn should_return_invalid_result_with_circular_ref_pointer() {
+        init();
+        let TestData {
+            mut raw_data_contract,
+            data_contract_validator,
+            ..
+        } = get_test_data();
+
+        raw_data_contract["$defs"]["object"] = json!({ "$ref" : "#/$defs/object"});
+
+        let result = data_contract_validator
+            .validate(&raw_data_contract)
+            .expect("validation result should be returned");
+        let validation_error = result
+            .errors
+            .get(0)
+            .expect("the validation error should exist");
+
+        assert_eq!(1014, validation_error.get_code());
+    }
+
+    #[test]
+    fn should_return_invalid_result_if_indexed_string_property_missing_max_length_constraint() {
+        init();
+        let TestData {
+            mut raw_data_contract,
+            data_contract_validator,
+            ..
+        } = get_test_data();
+
+        raw_data_contract["documents"]["indexedDocument"]["properties"]["firstName"]
+            .remove("maxLength")
+            .expect("the property should exist and be removed");
+
+        let result = data_contract_validator
+            .validate(&raw_data_contract)
+            .expect("validation result should be returned");
+
+        let validation_error = result
+            .errors
+            .get(0)
+            .expect("the validation error should exist");
+        let index_error = get_index_error(validation_error);
+
+        assert_eq!(1012, index_error.get_code());
+        assert!(
+            matches!(index_error, IndexError::InvalidIndexedPropertyConstraintError { property_name, constraint_name, reason, ..}
+            if  {
+                property_name == "firstName" &&
+                constraint_name == "maxLength" &&
+                reason == "should be less or equal than 63"
+            })
+        );
+    }
+
+    // This section is originally commented out
+    // https://github.com/dashevo/platform/blob/ab6391f4b47a970c733e7b81115b44329fbdf993/packages/js-dpp/test/integration/dataContract/validation/validateDataContractFactory.spec.js#L2015
+    //
+    // it('should return invalid result if indexed array property missing maxItems constraint',
+    // async () => {
+    //   delete rawDataContract.documents.indexedArray.properties.mentions.maxItems;
+    //
+    //   const result = await validateDataContract(rawDataContract);
+    //
+    //   expectValidationError(result, InvalidIndexedPropertyConstraintError);
+    //
+    //   const [error] = result.getErrors();
+    //
+    //   expect(error.getCode()).to.equal(1012);
+    //   expect(error.getPropertyName()).to.equal('mentions');
+    //   expect(error.getConstraintName()).to.equal('maxItems');
+    //   expect(error.getReason()).to.equal('should be less or equal 63');
+    // });
+    //
+    // it('should return invalid result if indexed array property have to big maxItems', async () => {
+    //   rawDataContract.documents.indexedArray.properties.mentions.maxItems = 2048;
+    //
+    //   const result = await validateDataContract(rawDataContract);
+    //
+    //   expectValidationError(result, InvalidIndexedPropertyConstraintError);
+    //
+    //   const [error] = result.getErrors();
+    //
+    //   expect(error.getCode()).to.equal(1012);
+    //   expect(error.getPropertyName()).to.equal('mentions');
+    //   expect(error.getConstraintName()).to.equal('maxItems');
+    //   expect(error.getReason()).to.equal('should be less or equal 63');
+    // });
+    //
+    // it('should return invalid result if indexed array property
+    // have string item without maxItems constraint', async () => {
+    //   delete rawDataContract.documents.indexedArray.properties.mentions.maxItems;
+    //
+    //   const result = await validateDataContract(rawDataContract);
+    //
+    //   expectValidationError(result, InvalidIndexedPropertyConstraintError);
+    //
+    //   const [error] = result.getErrors();
+    //
+    //   expect(error.getCode()).to.equal(1012);
+    //   expect(error.getPropertyName()).to.equal('mentions');
+    //   expect(error.getConstraintName()).to.equal('maxItems');
+    //   expect(error.getReason()).to.equal('should be less or equal 63');
+    // });
+    //
+    // it('should return invalid result if indexed array property have
+    // string item with maxItems bigger than 1024', async () => {
+    //   rawDataContract.documents.indexedArray.properties.mentions.maxItems = 2048;
+    //
+    //   const result = await validateDataContract(rawDataContract);
+    //
+    //   expectValidationError(result, InvalidIndexedPropertyConstraintError);
+    //
+    //   const [error] = result.getErrors();
+    //
+    //   expect(error.getCode()).to.equal(1012);
+    //   expect(error.getPropertyName()).to.equal('mentions');
+    //   expect(error.getConstraintName()).to.equal('maxItems');
+    //   expect(error.getReason()).to.equal('should be less or equal 63');
+    // });
+
+    #[test]
+    fn should_return_invalid_result_if_indexed_byte_array_property_missing_max_items_constraint() {
+        init();
+        let TestData {
+            mut raw_data_contract,
+            data_contract_validator,
+            ..
+        } = get_test_data();
+
+        raw_data_contract["documents"]["withByteArrays"]["properties"]["byteArrayField"]
+            .remove("maxItems")
+            .expect("the property should exist and be removed");
+
+        let result = data_contract_validator
+            .validate(&raw_data_contract)
+            .expect("validation result should be returned");
+        let validation_error = result
+            .errors
+            .get(0)
+            .expect("the validation error should exist");
+        let index_error = get_index_error(validation_error);
+
+        assert_eq!(1012, index_error.get_code());
+        assert!(
+            matches!(index_error, IndexError::InvalidIndexedPropertyConstraintError { property_name, constraint_name, reason, ..}
+            if  {
+                property_name == "byteArrayField" &&
+                constraint_name == "maxItems" &&
+                reason == "should be less or equal 255"
+            })
+        );
+    }
+
+    #[test]
+    fn should_return_invalid_result_if_indexed_byte_array_property_have_to_big_max_items() {
+        init();
+        let TestData {
+            mut raw_data_contract,
+            data_contract_validator,
+            ..
+        } = get_test_data();
+
+        raw_data_contract["documents"]["withByteArrays"]["properties"]["byteArrayField"]
+            ["maxItems"] = json!(8192);
+
+        let result = data_contract_validator
+            .validate(&raw_data_contract)
+            .expect("validation result should be returned");
+        let validation_error = result
+            .errors
+            .get(0)
+            .expect("the validation error should exist");
+        let index_error = get_index_error(validation_error);
+
+        assert_eq!(1012, index_error.get_code());
+        assert!(
+            matches!(index_error, IndexError::InvalidIndexedPropertyConstraintError { property_name, constraint_name, reason, ..}
+            if  {
+                property_name == "byteArrayField" &&
+                constraint_name == "maxItems" &&
+                reason == "should be less or equal 255"
+            })
+        );
+    }
+
+    #[test]
+    fn should_return_valid_result_if_data_contract_is_valid() {
+        init();
+        let TestData {
+            raw_data_contract,
+            data_contract_validator,
+            ..
+        } = get_test_data();
+
+        let result = data_contract_validator
+            .validate(&raw_data_contract)
+            .expect("validation result should be returned");
+        assert!(result.is_valid());
     }
 }
