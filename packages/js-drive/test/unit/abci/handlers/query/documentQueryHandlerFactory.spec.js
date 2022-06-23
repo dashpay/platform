@@ -19,7 +19,6 @@ const generateRandomIdentifier = require('@dashevo/dpp/lib/test/utils/generateRa
 const getDocumentsFixture = require('@dashevo/dpp/lib/test/fixtures/getDocumentsFixture');
 
 const GrpcErrorCodes = require('@dashevo/grpc-common/lib/server/error/GrpcErrorCodes');
-const ReadOperation = require('@dashevo/dpp/lib/stateTransition/fee/operations/ReadOperation');
 const documentQueryHandlerFactory = require('../../../../../lib/abci/handlers/query/documentQueryHandlerFactory');
 const InvalidQueryError = require('../../../../../lib/document/errors/InvalidQueryError');
 
@@ -46,11 +45,6 @@ describe('documentQueryHandlerFactory', () => {
     fetchSignedDocumentsMock = this.sinon.stub();
     proveSignedDocumentsMock = this.sinon.stub();
     createQueryResponseMock = this.sinon.stub();
-
-    dataContractResult = new StorageResult(
-      Buffer.alloc(40, 1),
-      [new ReadOperation(40)],
-    );
 
     responseMock = new GetDocumentsResponse();
     responseMock.setProof(new Proof());
