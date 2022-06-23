@@ -251,6 +251,7 @@ describe('DataContractStoreRepository', () => {
       expect(proof.length).to.be.greaterThan(0);
     });
 
+    // TODO enable this test when we support transactions
     it.skip('should return proof using transaction', async () => {
       await store.startTransaction();
 
@@ -329,6 +330,7 @@ describe('DataContractStoreRepository', () => {
       expect(proof.length).to.be.greaterThan(0);
     });
 
+    // TODO enable this test when we support transactions
     it.skip('should return proof using transaction', async () => {
       await store.startTransaction();
 
