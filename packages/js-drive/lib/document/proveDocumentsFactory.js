@@ -1,20 +1,24 @@
 /**
  * @param {DocumentRepository} documentRepository
+ * @param {fetchDataContract} fetchDataContract
  * @returns {fetchDocuments}
  */
 function proveDocumentsFactory(
   documentRepository,
+  fetchDataContract,
 ) {
   /**
    *
    * @typedef {Promise} proveDocuments
-   * @param {StorageResult<DataContract>} dataContractResult
+   * @param {Buffer|Identifier} dataContractId
    * @param {string} type
    * @param {Object} [options] options
    * @param {boolean} [options.useTransaction=false]
    * @returns {Promise<Document[]>}
    */
-  async function proveDocuments(dataContractResult, type, options) {
+  async function proveDocuments(dataContractId, type, options) {
+    const dataContractResult = await fetchDataContract(dataContractId, type);
+
     const dataContract = dataContractResult.getValue();
     const operations = dataContractResult.getOperations();
 

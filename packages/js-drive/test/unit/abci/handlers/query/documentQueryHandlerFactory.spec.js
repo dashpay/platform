@@ -31,7 +31,6 @@ const StorageResult = require('../../../../../lib/storage/StorageResult');
 describe('documentQueryHandlerFactory', () => {
   let documentQueryHandler;
   let fetchSignedDocumentsMock;
-  let fetchSignedDataContractMock;
   let proveSignedDocumentsMock;
   let documents;
   let params;
@@ -46,7 +45,6 @@ describe('documentQueryHandlerFactory', () => {
     documents = getDocumentsFixture();
 
     fetchSignedDocumentsMock = this.sinon.stub();
-    fetchSignedDataContractMock = this.sinon.stub();
     proveSignedDocumentsMock = this.sinon.stub();
     createQueryResponseMock = this.sinon.stub();
 
@@ -65,7 +63,6 @@ describe('documentQueryHandlerFactory', () => {
 
     documentQueryHandler = documentQueryHandlerFactory(
       fetchSignedDocumentsMock,
-      fetchSignedDataContractMock,
       proveSignedDocumentsMock,
       createQueryResponseMock,
       blockExecutionContextStackMock,
@@ -101,7 +98,6 @@ describe('documentQueryHandlerFactory', () => {
 
     expect(createQueryResponseMock).to.have.not.been.called();
     expect(fetchSignedDocumentsMock).to.have.not.been.called();
-    expect(fetchSignedDataContractMock).to.have.not.been.called();
     expect(proveSignedDocumentsMock).to.have.not.been.called();
     expect(result).to.be.an.instanceof(ResponseQuery);
     expect(result.code).to.equal(0);
@@ -114,15 +110,10 @@ describe('documentQueryHandlerFactory', () => {
       new StorageResult(documents),
     );
 
-    fetchSignedDataContractMock.resolves(
-      dataContractResult,
-    );
-
     const result = await documentQueryHandler(params, data, {});
 
     expect(createQueryResponseMock).to.be.calledOnceWith(GetDocumentsResponse, undefined);
-    expect(fetchSignedDataContractMock).to.be.calledOnceWith(data.contractId, data.type);
-    expect(fetchSignedDocumentsMock).to.be.calledOnceWith(dataContractResult, data.type, options);
+    expect(fetchSignedDocumentsMock).to.be.calledOnceWith(data.contractId, data.type, options);
     expect(proveSignedDocumentsMock).to.not.be.called();
     expect(result).to.be.an.instanceof(ResponseQuery);
     expect(result.code).to.equal(0);
@@ -141,9 +132,6 @@ describe('documentQueryHandlerFactory', () => {
     const proof = Buffer.alloc(20, 255);
 
     fetchSignedDocumentsMock.resolves(new StorageResult(documents));
-    fetchSignedDataContractMock.resolves(
-      dataContractResult,
-    );
     proveSignedDocumentsMock.resolves(
       new StorageResult(proof),
     );
@@ -151,9 +139,8 @@ describe('documentQueryHandlerFactory', () => {
     const result = await documentQueryHandler(params, data, { prove: true });
 
     expect(createQueryResponseMock).to.be.calledOnceWith(GetDocumentsResponse, true);
-    expect(fetchSignedDataContractMock).to.be.calledOnceWith(data.contractId, data.type);
     expect(fetchSignedDocumentsMock).to.not.be.called();
-    expect(proveSignedDocumentsMock).to.be.calledOnceWith(dataContractResult, data.type, options);
+    expect(proveSignedDocumentsMock).to.be.calledOnceWith(data.contractId, data.type, options);
 
     expect(result).to.be.an.instanceof(ResponseQuery);
     expect(result.code).to.equal(0);
@@ -162,7 +149,7 @@ describe('documentQueryHandlerFactory', () => {
   });
 
   it('should throw InvalidArgumentAbciError on invalid query', async () => {
-    fetchSignedDataContractMock.throws(new InvalidQueryError('invalid'));
+    fetchSignedDocumentsMock.throws(new InvalidQueryError('invalid'));
 
     try {
       await documentQueryHandler(params, data, {});
@@ -172,7 +159,7 @@ describe('documentQueryHandlerFactory', () => {
       expect(e).to.be.an.instanceof(InvalidArgumentAbciError);
       expect(e.getCode()).to.equal(GrpcErrorCodes.INVALID_ARGUMENT);
       expect(e.getMessage()).to.equal('Invalid query: invalid');
-      expect(fetchSignedDataContractMock).to.be.calledOnceWith(data.contractId, data.type);
+      expect(fetchSignedDocumentsMock).to.be.calledOnceWith(data.contractId, data.type);
     }
   });
 
@@ -191,10 +178,10 @@ describe('documentQueryHandlerFactory', () => {
     }
   });
 
-  it('should throw error if fetchSignedDataContract throws unknown error', async () => {
+  it('should throw error if fetchSignedDocuments throws unknown error', async () => {
     const error = new Error('Some error');
 
-    fetchSignedDataContractMock.throws(error);
+    fetchSignedDocumentsMock.throws(error);
 
     try {
       await documentQueryHandler(params, data, {});
@@ -202,7 +189,7 @@ describe('documentQueryHandlerFactory', () => {
       expect.fail('should throw any error');
     } catch (e) {
       expect(e).to.deep.equal(error);
-      expect(fetchSignedDataContractMock).to.be.calledOnceWith(data.contractId, data.type);
+      expect(fetchSignedDocumentsMock).to.be.calledOnceWith(data.contractId, data.type);
     }
   });
 });

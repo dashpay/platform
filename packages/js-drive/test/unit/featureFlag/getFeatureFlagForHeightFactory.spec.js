@@ -2,7 +2,6 @@ const Long = require('long');
 
 const Identifier = require('@dashevo/dpp/lib/Identifier');
 const getDocumentsFixture = require('@dashevo/dpp/lib/test/fixtures/getDocumentsFixture');
-const getDataContractFixture = require('@dashevo/dpp/lib/test/fixtures/getDataContractFixture');
 
 const getFeatureFlagForHeightFactory = require('../../../lib/featureFlag/getFeatureFlagForHeightFactory');
 const StorageResult = require('../../../lib/storage/StorageResult');
@@ -13,19 +12,12 @@ describe('getFeatureFlagForHeightFactory', () => {
   let getFeatureFlagForHeight;
   let document;
   let featureFlagDataContractBlockHeight;
-  let dataContract;
-  let fetchDataContractMock;
 
   beforeEach(function beforeEach() {
     featureFlagDataContractId = Identifier.from(Buffer.alloc(32, 1));
 
     ([document] = getDocumentsFixture());
 
-    dataContract = getDataContractFixture();
-
-    fetchDataContractMock = this.sinon.stub().resolves(
-      new StorageResult(dataContract),
-    );
     fetchDocumentsMock = this.sinon.stub().resolves(
       new StorageResult([document]),
     );
@@ -35,7 +27,6 @@ describe('getFeatureFlagForHeightFactory', () => {
     getFeatureFlagForHeight = getFeatureFlagForHeightFactory(
       featureFlagDataContractId,
       fetchDocumentsMock,
-      fetchDataContractMock,
     );
   });
 
@@ -48,13 +39,8 @@ describe('getFeatureFlagForHeightFactory', () => {
       ],
     };
 
-    expect(fetchDataContractMock).to.have.been.calledOnceWithExactly(
-      featureFlagDataContractId,
-      'someType',
-    );
-
     expect(fetchDocumentsMock).to.have.been.calledOnceWithExactly(
-      new StorageResult(dataContract),
+      featureFlagDataContractId,
       'someType',
       {
         ...query,

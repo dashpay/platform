@@ -19,7 +19,6 @@ const InvalidQueryError = require('../../../document/errors/InvalidQueryError');
 /**
  *
  * @param {fetchDocuments} fetchSignedDocuments
- * @param {fetchDataContract} fetchSignedDataContract
  * @param {proveDocuments} proveSignedDocuments
  * @param {createQueryResponse} createQueryResponse
  * @param {BlockExecutionContextStack} blockExecutionContextStack
@@ -27,7 +26,6 @@ const InvalidQueryError = require('../../../document/errors/InvalidQueryError');
  */
 function documentQueryHandlerFactory(
   fetchSignedDocuments,
-  fetchSignedDataContract,
   proveSignedDocuments,
   createQueryResponse,
   blockExecutionContextStack,
@@ -73,7 +71,6 @@ function documentQueryHandlerFactory(
     const response = createQueryResponse(GetDocumentsResponse, request.prove);
 
     let documentsResult;
-    let dataContractResult;
     let proof;
     const options = {
       where,
@@ -84,14 +81,12 @@ function documentQueryHandlerFactory(
     };
 
     try {
-      dataContractResult = await fetchSignedDataContract(contractId, type);
-
       if (request.prove) {
-        proof = await proveSignedDocuments(dataContractResult, type, options);
+        proof = await proveSignedDocuments(contractId, type, options);
 
         response.getProof().setMerkleProof(proof.getValue());
       } else {
-        documentsResult = await fetchSignedDocuments(dataContractResult, type, options);
+        documentsResult = await fetchSignedDocuments(contractId, type, options);
 
         const documents = documentsResult.getValue();
 

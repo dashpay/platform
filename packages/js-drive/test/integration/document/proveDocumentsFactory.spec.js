@@ -13,7 +13,6 @@ describe('proveDocumentsFactory', () => {
   let documentRepository;
   let dataContract;
   let container;
-  let dataContractResult;
 
   beforeEach(async () => {
     container = await createTestDIContainer();
@@ -37,13 +36,10 @@ describe('proveDocumentsFactory', () => {
       },
     ];
 
-    const fetchDataContract = container.resolve('fetchDataContract');
     const createInitialStateStructure = container.resolve('createInitialStateStructure');
     await createInitialStateStructure();
 
     await dataContractRepository.store(dataContract);
-
-    dataContractResult = await fetchDataContract(contractId, documentType);
 
     proveDocuments = container.resolve('proveDocuments');
   });
@@ -57,7 +53,7 @@ describe('proveDocumentsFactory', () => {
   it('should return proof for specified contract ID and document type', async () => {
     await documentRepository.create(document);
 
-    const result = await proveDocuments(dataContractResult, documentType);
+    const result = await proveDocuments(contractId, documentType);
 
     expect(result).to.be.instanceOf(StorageResult);
     expect(result.getOperations().length).to.be.greaterThan(0);
@@ -73,7 +69,7 @@ describe('proveDocumentsFactory', () => {
 
     const query = { where: [['name', '==', document.get('name')]] };
 
-    const result = await proveDocuments(dataContractResult, documentType, query);
+    const result = await proveDocuments(contractId, documentType, query);
 
     const proof = result.getValue();
 
@@ -86,7 +82,7 @@ describe('proveDocumentsFactory', () => {
 
     const query = { where: [['name', '==', 'unknown']] };
 
-    const result = await proveDocuments(dataContractResult, documentType, query);
+    const result = await proveDocuments(contractId, documentType, query);
 
     expect(result).to.be.instanceOf(StorageResult);
     expect(result.getOperations().length).to.be.greaterThan(0);
@@ -108,7 +104,7 @@ describe('proveDocumentsFactory', () => {
       ],
     };
 
-    const result = await proveDocuments(dataContractResult, 'indexedDocument', query);
+    const result = await proveDocuments(contractId, 'indexedDocument', query);
 
     expect(result).to.be.instanceOf(StorageResult);
     expect(result.getOperations().length).to.be.greaterThan(0);
@@ -138,7 +134,7 @@ describe('proveDocumentsFactory', () => {
       orderBy: [['$createdAt', 'asc']],
     };
 
-    const result = await proveDocuments(dataContractResult, 'indexedDocument', query);
+    const result = await proveDocuments(contractId, 'indexedDocument', query);
 
     expect(result).to.be.instanceOf(StorageResult);
     expect(result.getOperations().length).to.be.greaterThan(0);
@@ -168,7 +164,7 @@ describe('proveDocumentsFactory', () => {
       orderBy: [['$createdAt', 'asc']],
     };
 
-    const result = await proveDocuments(dataContractResult, 'indexedDocument', query);
+    const result = await proveDocuments(contractId, 'indexedDocument', query);
 
     expect(result).to.be.instanceOf(StorageResult);
     expect(result.getOperations().length).to.be.greaterThan(0);
@@ -185,7 +181,7 @@ describe('proveDocumentsFactory', () => {
     const query = { where: [['lastName', '==', 'unknown']] };
 
     try {
-      await proveDocuments(dataContractResult, documentType, query);
+      await proveDocuments(contractId, documentType, query);
 
       expect.fail('should throw InvalidQueryError');
     } catch (e) {

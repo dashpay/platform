@@ -1,14 +1,12 @@
 /**
  * @param {Identifier} featureFlagsContractId
  * @param {fetchDocuments} fetchDocuments
- * @param {fetchDataContract} fetchDataContract
  *
  * @return {getFeatureFlagForHeight}
  */
 function getFeatureFlagForHeightFactory(
   featureFlagsContractId,
   fetchDocuments,
-  fetchDataContract,
 ) {
   /**
    * @typedef getFeatureFlagForHeight
@@ -30,10 +28,8 @@ function getFeatureFlagForHeightFactory(
       ],
     };
 
-    const dataContractResult = await fetchDataContract(featureFlagsContractId, flagType);
-
     const result = await fetchDocuments(
-      dataContractResult,
+      featureFlagsContractId,
       flagType,
       {
         ...query,
