@@ -1,3 +1,5 @@
+const InvalidQueryError = require('./errors/InvalidQueryError');
+
 /**
  * @param {DocumentRepository} documentRepository
  * @param {fetchDataContract} fetchDataContract
@@ -18,10 +20,14 @@ function fetchDocumentsFactory(
    * @returns {Promise<Document[]>}
    */
   async function fetchDocuments(dataContractId, type, options) {
-    const dataContractResult = await fetchDataContract(dataContractId, type);
+    const dataContractResult = await fetchDataContract(dataContractId);
 
     const dataContract = dataContractResult.getValue();
     const operations = dataContractResult.getOperations();
+
+    if (!dataContract.isDocumentDefined(type)) {
+      throw new InvalidQueryError(`document type ${type} is not defined in the data contract`);
+    }
 
     const result = await documentRepository.find(
       dataContract,

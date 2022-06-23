@@ -15,7 +15,6 @@ describe('fetchDocumentsFactory', () => {
   let documentRepository;
   let dataContract;
   let container;
-  let dataContractResult;
 
   beforeEach(async () => {
     container = await createTestDIContainer();
@@ -192,11 +191,24 @@ describe('fetchDocumentsFactory', () => {
     const query = { where: [['lastName', '==', 'unknown']] };
 
     try {
-      await fetchDocuments(dataContractResult, documentType, query);
+      await fetchDocuments(contractId, documentType, query);
 
       expect.fail('should throw InvalidQueryError');
     } catch (e) {
       expect(e).to.be.instanceOf(InvalidQueryError);
+    }
+  });
+
+  it('should throw InvalidQueryError if type does not exist', async () => {
+    documentType = 'Unknown';
+
+    try {
+      await fetchDocuments(contractId, documentType);
+
+      expect.fail('should throw InvalidQueryError');
+    } catch (e) {
+      expect(e).to.be.instanceOf(InvalidQueryError);
+      expect(e.message).to.equal('document type Unknown is not defined in the data contract');
     }
   });
 });

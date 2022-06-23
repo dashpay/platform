@@ -39,7 +39,6 @@ describe('documentQueryHandlerFactory', () => {
   let createQueryResponseMock;
   let responseMock;
   let blockExecutionContextStackMock;
-  let dataContractResult;
 
   beforeEach(function beforeEach() {
     documents = getDocumentsFixture();

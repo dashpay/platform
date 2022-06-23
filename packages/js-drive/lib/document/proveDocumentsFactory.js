@@ -17,7 +17,7 @@ function proveDocumentsFactory(
    * @returns {Promise<Document[]>}
    */
   async function proveDocuments(dataContractId, type, options) {
-    const dataContractResult = await fetchDataContract(dataContractId, type);
+    const dataContractResult = await fetchDataContract(dataContractId);
 
     const dataContract = dataContractResult.getValue();
     const operations = dataContractResult.getOperations();

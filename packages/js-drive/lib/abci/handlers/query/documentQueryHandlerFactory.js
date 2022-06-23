@@ -70,8 +70,6 @@ function documentQueryHandlerFactory(
 
     const response = createQueryResponse(GetDocumentsResponse, request.prove);
 
-    let documentsResult;
-    let proof;
     const options = {
       where,
       orderBy,
@@ -82,11 +80,11 @@ function documentQueryHandlerFactory(
 
     try {
       if (request.prove) {
-        proof = await proveSignedDocuments(contractId, type, options);
+        const proof = await proveSignedDocuments(contractId, type, options);
 
         response.getProof().setMerkleProof(proof.getValue());
       } else {
-        documentsResult = await fetchSignedDocuments(contractId, type, options);
+        const documentsResult = await fetchSignedDocuments(contractId, type, options);
 
         const documents = documentsResult.getValue();
 

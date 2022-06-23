@@ -19,10 +19,9 @@ function fetchDataContractFactory(
    *
    * @typedef {Promise} fetchDataContract
    * @param {Buffer|Identifier} contractId
-   * @param {string} type
    * @returns {Promise<StorageResult<DataContract>>}
    */
-  async function fetchDataContract(contractId, type) {
+  async function fetchDataContract(contractId) {
     let contractIdIdentifier;
     try {
       contractIdIdentifier = new Identifier(contractId);
@@ -41,15 +40,11 @@ function fetchDataContractFactory(
      */
     let cacheItem = dataContractCache.get(contractIdString);
 
-    let operations = [];
-    let dataContract;
     let dataContractResult;
 
     if (cacheItem) {
-      dataContract = cacheItem.getDataContract();
-
       dataContractResult = new StorageResult(
-        dataContract,
+        cacheItem.getDataContract(),
         cacheItem.getOperations(),
       );
     } else {
@@ -59,16 +54,12 @@ function fetchDataContractFactory(
         throw new InvalidQueryError(`data contract ${contractIdIdentifier} not found`);
       }
 
-      dataContract = dataContractResult.getValue();
-      operations = dataContractResult.getOperations();
-
-      cacheItem = new DataContractCacheItem(dataContract, operations);
+      cacheItem = new DataContractCacheItem(
+        dataContractResult.getValue(),
+        dataContractResult.getOperations(),
+      );
 
       dataContractCache.set(contractIdString, cacheItem);
-    }
-
-    if (!dataContract.isDocumentDefined(type)) {
-      throw new InvalidQueryError(`document type ${type} is not defined in the data contract`);
     }
 
     return dataContractResult;
