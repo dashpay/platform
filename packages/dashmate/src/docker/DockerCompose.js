@@ -379,17 +379,12 @@ class DockerCompose {
     // Check docker compose
     try {
       ({out: version} = await dockerCompose.version());
-
-      if (semver.lt(version.trim(), DockerCompose.DOCKER_COMPOSE_MIN_VERSION)) {
-        throw new Error(`Update Docker Compose to version ${DockerCompose.DOCKER_COMPOSE_MIN_VERSION} or higher`);
-      }
     } catch (e) {
-      if (!version) {
-        // if no version is set, means we could not obtain version
-        throw new Error('Docker Compose V2 is not available in your system');
-      }
+      throw new Error('Docker Compose V2 is not available in your system');
+    }
 
-      throw e
+    if (semver.lt(version.trim(), DockerCompose.DOCKER_COMPOSE_MIN_VERSION)) {
+      throw new Error(`Update Docker Compose to version ${DockerCompose.DOCKER_COMPOSE_MIN_VERSION} or higher`);
     }
   }
 
