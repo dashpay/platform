@@ -1,4 +1,5 @@
 const { getRE2Class } = require('@dashevo/wasm-re2');
+const lodashCloneDeep = require('lodash.clonedeep');
 
 const $RefParser = require('@apidevtools/json-schema-ref-parser');
 
@@ -355,16 +356,23 @@ describe('validateDataContractFactory', function main() {
 
     it('should have valid property names', async () => {
       const validNames = ['validName', 'valid_name', 'valid-name', 'abc', 'ab12c', 'abc123', 'ValidName',
-        'abcdefghigklmnopqrstuvwxyz01234567890abcdefghigklmnopqrstuvwxyz', 'abc_gbf_gdb', 'abc-gbf-gdb'];
+        'abcdefghigklmnopqrstuvwxyz01234567890abcdefghigklmnopqrstuvwxyz', 'abc_gbf_gdb', 'abc-gbf-gdb',
+        '-validname', '_validname', 'validname-', 'validname_', 'a', 'ab', '1', '123', '123_', '-123', '_123'];
 
-      rawDataContract.$defs = {};
       await Promise.all(
         validNames.map(async (name) => {
-          rawDataContract.$defs[name] = {
+          const clonedDataContract = lodashCloneDeep(rawDataContract);
+
+          clonedDataContract.$defs = {};
+          clonedDataContract.$defs[name] = {
             type: 'string',
           };
 
-          const result = await validateDataContract(rawDataContract);
+          clonedDataContract.$defs[name] = {
+            type: 'string',
+          };
+
+          const result = await validateDataContract(clonedDataContract);
 
           expectJsonSchemaError(result, 0);
         }),
@@ -372,16 +380,18 @@ describe('validateDataContractFactory', function main() {
     });
 
     it('should return an invalid result if a property has invalid format', async () => {
-      const invalidNames = ['-invalidname', '_invalidname', 'invalidname-', 'invalidname_', '*(*&^', '$test', '123abci', 'ab'];
+      const invalidNames = ['*(*&^', '$test', '.', '.a'];
 
-      rawDataContract.$defs = {};
       await Promise.all(
         invalidNames.map(async (name) => {
-          rawDataContract.$defs[name] = {
+          const clonedDataContract = lodashCloneDeep(rawDataContract);
+
+          clonedDataContract.$defs = {};
+          clonedDataContract.$defs[name] = {
             type: 'string',
           };
 
-          const result = await validateDataContract(rawDataContract);
+          const result = await validateDataContract(clonedDataContract);
 
           expectJsonSchemaError(result, 2);
 
@@ -441,9 +451,11 @@ describe('validateDataContractFactory', function main() {
 
       await Promise.all(
         validNames.map(async (name) => {
-          rawDataContract.documents[name] = rawDataContract.documents.niceDocument;
+          const clonedDataContract = lodashCloneDeep(rawDataContract);
 
-          const result = await validateDataContract(rawDataContract);
+          clonedDataContract.documents[name] = clonedDataContract.documents.niceDocument;
+
+          const result = await validateDataContract(clonedDataContract);
 
           expectJsonSchemaError(result, 0);
         }),
@@ -451,13 +463,15 @@ describe('validateDataContractFactory', function main() {
     });
 
     it('should return an invalid result if a property (document type) has invalid format', async () => {
-      const invalidNames = ['-invalidname', '_invalidname', 'invalidname-', 'invalidname_', '*(*&^', '$test', '123abc', 'ab'];
+      const invalidNames = ['*(*&^', '$test', '.', '.a'];
 
       await Promise.all(
         invalidNames.map(async (name) => {
-          rawDataContract.documents[name] = rawDataContract.documents.niceDocument;
+          const clonedDataContract = lodashCloneDeep(rawDataContract);
 
-          const result = await validateDataContract(rawDataContract);
+          clonedDataContract.documents[name] = clonedDataContract.documents.niceDocument;
+
+          const result = await validateDataContract(clonedDataContract);
 
           expectJsonSchemaError(result, 2);
 
@@ -563,11 +577,13 @@ describe('validateDataContractFactory', function main() {
 
         await Promise.all(
           validNames.map(async (name) => {
-            rawDataContract.documents.niceDocument.properties[name] = {
+            const clonedDataContract = lodashCloneDeep(rawDataContract);
+
+            clonedDataContract.documents.niceDocument.properties[name] = {
               type: 'string',
             };
 
-            const result = await validateDataContract(rawDataContract);
+            const result = await validateDataContract(clonedDataContract);
 
             expectJsonSchemaError(result, 0);
           }),
@@ -586,11 +602,13 @@ describe('validateDataContractFactory', function main() {
 
         await Promise.all(
           validNames.map(async (name) => {
-            rawDataContract.documents.niceDocument.properties.something.properties[name] = {
+            const clonedDataContract = lodashCloneDeep(rawDataContract);
+
+            clonedDataContract.documents.niceDocument.properties.something.properties[name] = {
               type: 'string',
             };
 
-            const result = await validateDataContract(rawDataContract);
+            const result = await validateDataContract(clonedDataContract);
 
             expectJsonSchemaError(result, 0);
           }),
@@ -598,13 +616,15 @@ describe('validateDataContractFactory', function main() {
       });
 
       it('should return an invalid result if a property has invalid format', async () => {
-        const invalidNames = ['-invalidname', '_invalidname', 'invalidname-', 'invalidname_', '*(*&^', '$test', '123abc', 'ab'];
+        const invalidNames = [ '*(*&^', '$test', '.', '.a'];
 
         await Promise.all(
           invalidNames.map(async (name) => {
-            rawDataContract.documents.niceDocument.properties[name] = {};
+            const clonedDataContract = lodashCloneDeep(rawDataContract);
 
-            const result = await validateDataContract(rawDataContract);
+            clonedDataContract.documents.niceDocument.properties[name] = {};
+
+            const result = await validateDataContract(clonedDataContract);
 
             expectJsonSchemaError(result, 3);
 
@@ -619,7 +639,7 @@ describe('validateDataContractFactory', function main() {
       });
 
       it('should return an invalid result if a nested property has invalid format', async () => {
-        const invalidNames = ['-invalidname', '_invalidname', 'invalidname-', 'invalidname_', '*(*&^', '$test'];
+        const invalidNames = ['*(*&^', '$test', '.', '.a'];
 
         rawDataContract.documents.niceDocument.properties.something = {
           properties: {},
@@ -628,9 +648,11 @@ describe('validateDataContractFactory', function main() {
 
         await Promise.all(
           invalidNames.map(async (name) => {
-            rawDataContract.documents.niceDocument.properties.something.properties[name] = {};
+            const clonedDataContract = lodashCloneDeep(rawDataContract);
 
-            const result = await validateDataContract(rawDataContract);
+            clonedDataContract.documents.niceDocument.properties.something.properties[name] = {};
+
+            const result = await validateDataContract(clonedDataContract);
 
             expectJsonSchemaError(result, 4);
 
