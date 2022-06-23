@@ -100,6 +100,8 @@ impl DataContractValidator {
         for (document_type, document_schema) in enriched_data_contract.documents.iter() {
             trace!("validating document schema '{}'", document_type);
             let json_schema_validation_result =
+            	// TODO this part should validate formats
+                // the point is the compilation wont work!!!
                 JsonSchemaValidator::validate_schema(document_schema);
             result.merge(json_schema_validation_result);
         }
@@ -1479,7 +1481,6 @@ mod test {
     }
 
     #[test]
-    #[ignore = "format validation seems not working"]
     fn documents_is_not_valid_and_invalid_result_should_be_returned() {
         init();
 
@@ -1504,14 +1505,19 @@ mod test {
         let result = data_contract_validator
             .validate(&raw_data_contract)
             .expect("validation result should be returned");
+        let schema_error = get_schema_error(&result, 0);
 
+        // in the case of rust-dpp, the behavior is slightly different. SchemaError is returned
+        // instead of SchemaCompilationError
         assert!(!result.is_valid());
-        let error = result.errors().get(0).expect("the error should be present");
-
-        assert_eq!(1004, error.code());
-        assert!(error
-            .to_string()
-            .starts_with("unknown format \"lalala\" ignored in schema"))
+        assert_eq!(
+            "/properties/something",
+            schema_error.instance_path().to_string()
+        );
+        assert!(matches!(
+            schema_error.kind(),
+            ValidationErrorKind::Format {format}  if format == &"unknown format"
+        ));
     }
 
     #[test]
