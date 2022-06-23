@@ -544,14 +544,6 @@ function createDIContainer(options) {
     fetchDocuments: asFunction(fetchDocumentsFactory).singleton(),
     fetchDataContract: asFunction(fetchDataContractFactory).singleton(),
     proveDocuments: asFunction(proveDocumentsFactory).singleton(),
-
-    fetchSignedDocuments: asFunction((
-      signedDocumentRepository,
-    ) => (
-      fetchDocumentsFactory(
-        signedDocumentRepository,
-      )
-    )).singleton(),
     fetchSignedDataContract: asFunction((
       signedDataContractRepository,
       signedDataContractCache,
@@ -559,6 +551,15 @@ function createDIContainer(options) {
       fetchDataContractFactory(
         signedDataContractRepository,
         signedDataContractCache,
+      )
+    )).singleton(),
+    fetchSignedDocuments: asFunction((
+      signedDocumentRepository,
+      fetchSignedDataContract,
+    ) => (
+      fetchDocumentsFactory(
+        signedDocumentRepository,
+        fetchSignedDataContract,
       )
     )).singleton(),
     proveSignedDocuments: asFunction((
