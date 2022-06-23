@@ -28,7 +28,6 @@ describe('DriveStateRepository', () => {
   let repositoryOptions;
   let executionContext;
   let operations;
-  let fetchDataContractMock;
 
   beforeEach(function beforeEach() {
     identity = getIdentityFixture();
@@ -57,7 +56,6 @@ describe('DriveStateRepository', () => {
       store: this.sinon.stub(),
     };
 
-    fetchDataContractMock = this.sinon.stub();
     fetchDocumentsMock = this.sinon.stub();
 
     documentsRepositoryMock = {
@@ -87,7 +85,6 @@ describe('DriveStateRepository', () => {
       identityRepositoryMock,
       publicKeyIdentityIdRepositoryMock,
       dataContractRepositoryMock,
-      fetchDataContractMock,
       fetchDocumentsMock,
       documentsRepositoryMock,
       spentAssetLockTransactionsRepositoryMock,
@@ -312,8 +309,6 @@ describe('DriveStateRepository', () => {
       const type = 'documentType';
       const options = {};
 
-      fetchDataContractMock.resolves(new StorageResult(dataContract, operations));
-
       fetchDocumentsMock.resolves(
         new StorageResult(documents, operations),
       );
@@ -327,7 +322,7 @@ describe('DriveStateRepository', () => {
 
       expect(result).to.equal(documents);
       expect(fetchDocumentsMock).to.be.calledOnceWith(
-        new StorageResult(dataContract, operations),
+        id,
         type,
         {
           ...options,

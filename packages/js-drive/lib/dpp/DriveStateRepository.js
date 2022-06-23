@@ -13,7 +13,6 @@ class DriveStateRepository {
    * @param {IdentityStoreRepository} identityRepository
    * @param {PublicKeyToIdentitiesStoreRepository} publicKeyToToIdentitiesRepository
    * @param {DataContractStoreRepository} dataContractRepository
-   * @param {fetchDataContract} fetchDataContract
    * @param {fetchDocuments} fetchDocuments
    * @param {DocumentRepository} documentRepository
    * @param {SpentAssetLockTransactionsRepository} spentAssetLockTransactionsRepository
@@ -27,7 +26,6 @@ class DriveStateRepository {
     identityRepository,
     publicKeyToToIdentitiesRepository,
     dataContractRepository,
-    fetchDataContract,
     fetchDocuments,
     documentRepository,
     spentAssetLockTransactionsRepository,
@@ -40,7 +38,6 @@ class DriveStateRepository {
     this.publicKeyToIdentitiesRepository = publicKeyToToIdentitiesRepository;
     this.dataContractRepository = dataContractRepository;
     this.fetchDocumentsFunction = fetchDocuments;
-    this.fetchDataContractFunction = fetchDataContract;
     this.documentRepository = documentRepository;
     this.spentAssetLockTransactionsRepository = spentAssetLockTransactionsRepository;
     this.coreRpcClient = coreRpcClient;
@@ -256,10 +253,8 @@ class DriveStateRepository {
    * @returns {Promise<Document[]>}
    */
   async fetchDocuments(contractId, type, options = {}, executionContext = undefined) {
-    const dataContractResult = await this.fetchDataContractFunction(contractId, type);
-
     const result = await this.fetchDocumentsFunction(
-      dataContractResult,
+      contractId,
       type,
       {
         ...options,
