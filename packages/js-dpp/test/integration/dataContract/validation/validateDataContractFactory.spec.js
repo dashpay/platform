@@ -616,7 +616,7 @@ describe('validateDataContractFactory', function main() {
       });
 
       it('should return an invalid result if a property has invalid format', async () => {
-        const invalidNames = [ '*(*&^', '$test', '.', '.a'];
+        const invalidNames = ['*(*&^', '$test', '.', '.a'];
 
         await Promise.all(
           invalidNames.map(async (name) => {
