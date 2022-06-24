@@ -28,6 +28,7 @@ pub mod mocks;
 
 #[cfg(test)]
 mod tests;
+mod common;
 
 mod prelude {
     pub use crate::data_contract::DataContract;
