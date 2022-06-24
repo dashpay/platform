@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 use std::collections::BTreeMap;
-use std::convert::TryInto;
+use std::convert::{TryFrom, TryInto};
 
 use super::{IdentityPublicKey, KeyID};
 use crate::common::bytes_for_system_value_from_tree_map;
@@ -14,7 +14,7 @@ use crate::{
     metadata::Metadata,
     util::{hash, serializer},
 };
-use ciborium::value::Value as CborValue;
+use ciborium::value::{Integer, Value as CborValue};
 
 // TODO implement!
 type InstantAssetLockProof = String;
@@ -55,7 +55,7 @@ struct IdentityForBuffer {
     revision: i64,
 }
 
-impl std::convert::From<&Identity> for IdentityForBuffer {
+impl From<&Identity> for IdentityForBuffer {
     fn from(i: &Identity) -> Self {
         IdentityForBuffer {
             id: i.id.clone(),
@@ -152,7 +152,31 @@ impl Identity {
     pub fn to_buffer(&self) -> Result<Vec<u8>, ProtocolError> {
         let serde_value = serde_json::to_value(IdentityForBuffer::from(self)).unwrap();
         let encoded = serializer::value_to_cbor(serde_value, Some(self.protocol_version))?;
+
         Ok(encoded)
+    }
+
+    pub fn to_cbor(&self) -> Result<Vec<u8>, ProtocolError> {
+        // Prepend protocol version to the result
+        let mut buf = self.get_protocol_version().to_le_bytes().to_vec();
+
+        let map = CborValue::Map(vec![
+            ("id".into(), self.get_id().to_buffer().to_vec().into()),
+            ("balance".into(), (self.get_balance() as u128).into()),
+            ("revision".into(), (self.get_revision() as u128).into()),
+            (
+                "publicKeys".into(),
+                self.get_public_keys()
+                    .iter()
+                    .map(|pk| pk.into())
+                    .collect::<Vec<CborValue>>()
+                    .into(),
+            ),
+        ]);
+
+        ciborium::ser::into_writer(&map, &mut buf)
+            .map_err(|e| ProtocolError::EncodingError(e.to_string()))?;
+        Ok(buf)
     }
 
     pub fn from_buffer(b: impl AsRef<[u8]>) -> Result<Self, ProtocolError> {
