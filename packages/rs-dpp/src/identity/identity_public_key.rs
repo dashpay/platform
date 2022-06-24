@@ -5,7 +5,7 @@ use crate::util::cbor_value::CborMapExtension;
 use crate::util::json_value::JsonValueExt;
 use crate::util::vec;
 use anyhow::{anyhow, bail};
-use ciborium::value::Value as CborValue;
+use ciborium::value::{Integer, Value as CborValue};
 use dashcore::PublicKey;
 use lazy_static::lazy_static;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
@@ -37,6 +37,12 @@ impl TryFrom<u8> for KeyType {
     }
 }
 
+impl Into<CborValue> for KeyType {
+    fn into(self) -> CborValue {
+        CborValue::from(self as u128)
+    }
+}
+
 pub const BINARY_DATA_FIELDS: [&str; 1] = ["data"];
 
 #[repr(u8)]
@@ -59,6 +65,12 @@ impl TryFrom<u8> for Purpose {
             2 => Ok(Self::DECRYPTION),
             value => bail!("unrecognized security level: {}", value),
         }
+    }
+}
+
+impl Into<CborValue> for Purpose {
+    fn into(self) -> CborValue {
+        CborValue::from(self as u128)
     }
 }
 
@@ -87,6 +99,12 @@ impl TryFrom<usize> for SecurityLevel {
             3 => Ok(Self::MEDIUM),
             value => bail!("unrecognized security level: {}", value),
         }
+    }
+}
+
+impl Into<CborValue> for SecurityLevel {
+    fn into(self) -> CborValue {
+        CborValue::from(self as u128)
     }
 }
 
@@ -281,19 +299,14 @@ impl IdentityPublicKey {
         })?;
 
         let id = key_value_map.as_u16("id", "A key must have an uint16 id")?;
-
         let key_type = key_value_map.as_u8("type", "Identity public key must have a type")?;
-
         let purpose = key_value_map.as_u8("purpose", "Identity public key must have a purpose")?;
-
         let security_level = key_value_map.as_u8(
             "securityLevel",
             "Identity public key must have a securityLevel",
         )?;
-
         let readonly =
             key_value_map.as_bool("readOnly", "Identity public key must have a readOnly")?;
-
         let public_key_bytes =
             key_value_map.as_bytes("data", "Identity public key must have a data")?;
 
@@ -305,6 +318,25 @@ impl IdentityPublicKey {
             data: public_key_bytes,
             read_only: readonly,
         })
+    }
+
+    pub fn to_cbor_value(&self) -> CborValue {
+        CborValue::Map(
+            vec![
+                ("id".into(), self.get_id().into()),
+                ("data".into(), self.get_data().to_vec().into()),
+                ("type".into(), self.get_type().into()),
+                ("purpose".into(), self.get_purpose().into()),
+                ("readOnly".into(), self.get_readonly().into()),
+                ("securityLevel".into(), self.get_security_level().into()),
+            ]
+        )
+    }
+}
+
+impl Into<CborValue> for &IdentityPublicKey {
+    fn into(self) -> CborValue {
+        self.to_cbor_value()
     }
 }
 
