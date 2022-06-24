@@ -35,6 +35,9 @@ pub enum BasicError {
 
     #[error(transparent)]
     IndexError(IndexError),
+
+    #[error("{0}")]
+    JsonSchemaCompilationError(String),
 }
 
 impl From<IndexError> for BasicError {
