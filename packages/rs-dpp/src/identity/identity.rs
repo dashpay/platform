@@ -1,10 +1,10 @@
+use serde::{Deserialize, Serialize};
+use serde_json::Value as JsonValue;
 use std::collections::BTreeMap;
 use std::convert::TryInto;
-use anyhow::anyhow;
-use serde::{Deserialize, Serialize};
-use serde_json::{Number, Value as JsonValue};
 
 use super::{IdentityPublicKey, KeyID};
+use crate::common::bytes_for_system_value_from_tree_map;
 use crate::identity::identity_public_key;
 use crate::util::deserializer;
 use crate::util::json_value::{JsonValueExt, ReplaceWith};
@@ -14,9 +14,7 @@ use crate::{
     metadata::Metadata,
     util::{hash, serializer},
 };
-use crate::util::vec::encode_hex;
 use ciborium::value::Value as CborValue;
-use crate::common::bytes_for_system_value_from_tree_map;
 
 // TODO implement!
 type InstantAssetLockProof = String;
@@ -167,15 +165,16 @@ impl Identity {
         let protocol_version = deserializer::get_protocol_version(protocol_version_bytes)?;
 
         // Deserialize the contract
-        let identity_map: BTreeMap<String, CborValue> = ciborium::de::from_reader(identity_cbor_bytes)
-            .map_err(|e| {
-                ProtocolError::DecodingError(format!("Unable to decode identity CBOR: {}", e.to_string()))
+        let identity_map: BTreeMap<String, CborValue> =
+            ciborium::de::from_reader(identity_cbor_bytes).map_err(|e| {
+                ProtocolError::DecodingError(format!("Unable to decode identity CBOR: {}", e))
             })?;
 
-        // Get the contract id
         let identity_id: [u8; 32] = bytes_for_system_value_from_tree_map(&identity_map, "id")?
-            .ok_or({
-                ProtocolError::DecodingError(String::from("Unable to decode identity CBOR: missing property id"))
+            .ok_or_else(|| {
+                ProtocolError::DecodingError(String::from(
+                    "Unable to decode identity CBOR: missing property id",
+                ))
             })?
             .try_into()
             .map_err(|_| {
@@ -184,40 +183,59 @@ impl Identity {
 
         let revision: i64 = identity_map
             .get("revision")
-            .ok_or({
-                ProtocolError::DecodingError(String::from("Unable to decode identity CBOR: missing property revision"))
+            .ok_or_else(|| {
+                ProtocolError::DecodingError(String::from(
+                    "Unable to decode identity CBOR: missing property revision",
+                ))
             })?
             .as_integer()
-            .ok_or({
-                ProtocolError::DecodingError(String::from("Unable to decode identity CBOR: revision must be an integer"))
+            .ok_or_else(|| {
+                ProtocolError::DecodingError(String::from(
+                    "Unable to decode identity CBOR: revision must be an integer",
+                ))
             })?
             .try_into()
             .map_err(|_| {
-                ProtocolError::DecodingError(String::from("Unable to decode identity CBOR: revision must be an unsigned 64 int"))
+                ProtocolError::DecodingError(String::from(
+                    "Unable to decode identity CBOR: revision must be an unsigned 64 int",
+                ))
             })?;
 
         let balance: i64 = identity_map
             .get("balance")
-            .ok_or(ProtocolError::DecodingError(String::from("Unable to decode identity CBOR: missing property balance")))?
+            .ok_or_else(|| {
+                ProtocolError::DecodingError(String::from(
+                    "Unable to decode identity CBOR: missing property balance",
+                ))
+            })?
             .as_integer()
-            .ok_or({
-                ProtocolError::DecodingError(String::from("Unable to decode identity CBOR: balance must be an integer"))
+            .ok_or_else(|| {
+                ProtocolError::DecodingError(String::from(
+                    "Unable to decode identity CBOR: balance must be an integer",
+                ))
             })?
             .try_into()
             .map_err(|_| {
-                ProtocolError::DecodingError(String::from("Unable to decode identity CBOR: balance must be an unsigned integer"))
+                ProtocolError::DecodingError(String::from(
+                    "Unable to decode identity CBOR: balance must be an unsigned integer",
+                ))
             })?;
 
-        let keys_cbor_value = identity_map.get("publicKeys").ok_or(
-            ProtocolError::DecodingError(String::from("Unable to decode identity CBOR: missing property publicKeys"))
-        )?;
-        let keys_cbor = keys_cbor_value.as_array().ok_or({
-            ProtocolError::DecodingError(String::from("Unable to decode identity CBOR: invalid public keys"))
+        let keys_cbor_value = identity_map.get("publicKeys").ok_or_else(|| {
+            ProtocolError::DecodingError(String::from(
+                "Unable to decode identity CBOR: missing property publicKeys",
+            ))
+        })?;
+        let keys_cbor = keys_cbor_value.as_array().ok_or_else(|| {
+            ProtocolError::DecodingError(String::from(
+                "Unable to decode identity CBOR: invalid public keys",
+            ))
         })?;
 
-        let public_keys: Result<Vec<IdentityPublicKey>, ProtocolError> = keys_cbor.iter().map(|cbor_key| {
-            IdentityPublicKey::from_cbor_value(cbor_key)
-        }).collect();
+        let public_keys: Result<Vec<IdentityPublicKey>, ProtocolError> = keys_cbor
+            .iter()
+            .map(|cbor_key| IdentityPublicKey::from_cbor_value(cbor_key))
+            .collect();
         let public_keys = public_keys?;
 
         Ok(Self {
@@ -227,7 +245,7 @@ impl Identity {
             balance,
             revision,
             asset_lock_proof: None,
-            metadata: None
+            metadata: None,
         })
     }
 

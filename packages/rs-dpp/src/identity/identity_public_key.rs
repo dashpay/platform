@@ -1,18 +1,18 @@
 #![allow(clippy::from_over_into)]
 
 use crate::errors::{InvalidVectorSizeError, ProtocolError};
+use crate::util::cbor_value::CborMapExtension;
 use crate::util::json_value::JsonValueExt;
 use crate::util::vec;
-use crate::util::vec::DecodeError::ParseIntError;
 use anyhow::{anyhow, bail};
+use ciborium::value::Value as CborValue;
 use dashcore::PublicKey;
 use lazy_static::lazy_static;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use serde_json::Value as JsonValue;
 use serde_repr::{Deserialize_repr, Serialize_repr};
+use std::convert::TryInto;
 use std::{collections::HashMap, convert::TryFrom, hash::Hash};
-use ciborium::value::Value as CborValue;
-use crate::common;
 
 pub type KeyID = u64;
 
@@ -274,34 +274,36 @@ impl IdentityPublicKey {
     }
 
     pub fn from_cbor_value(cbor_value: &CborValue) -> Result<Self, ProtocolError> {
-        let key_value_map = cbor_value.as_map()
-            .ok_or(ProtocolError::DecodingError(String::from("Expected identity public key to be a key value map")))?;
+        let key_value_map = cbor_value.as_map().ok_or_else(|| {
+            ProtocolError::DecodingError(String::from(
+                "Expected identity public key to be a key value map",
+            ))
+        })?;
 
-        let id = common::cbor_inner_u16_value(key_value_map, "id")
-            .ok_or(ProtocolError::DecodingError(String::from("A key must have an id")))?;
+        let id = key_value_map.as_u16("id", "A key must have an uint16 id")?;
 
-        let key_type = KeyType::try_from(common::cbor_inner_u8_value(key_value_map, "type")
-            .ok_or(ProtocolError::DecodingError(String::from("Identity public key must have a type")))?)?;
+        let key_type = key_value_map.as_u8("type", "Identity public key must have a type")?;
 
-        let purpose = Purpose::try_from(common::cbor_inner_u8_value(key_value_map, "purpose")
-            .ok_or(ProtocolError::DecodingError(String::from("Identity public key must have a purpose")))?)?;
+        let purpose = key_value_map.as_u8("purpose", "Identity public key must have a purpose")?;
 
-        let security_level = SecurityLevel::try_from(common::cbor_inner_u8_value(key_value_map, "securityLevel")
-            .ok_or(ProtocolError::DecodingError(String::from("Identity public key must have a securityLevel")))?)?;
+        let security_level = key_value_map.as_u8(
+            "securityLevel",
+            "Identity public key must have a securityLevel",
+        )?;
 
-        let readonly = common::cbor_inner_bool_value(key_value_map, "readOnly")
-            .ok_or(ProtocolError::DecodingError(String::from("Identity public key must have a readOnly")))?;
+        let readonly =
+            key_value_map.as_bool("readOnly", "Identity public key must have a readOnly")?;
 
-        let public_key_bytes = common::cbor_inner_bytes_value(key_value_map, "data")
-            .ok_or(ProtocolError::DecodingError(String::from("Identity public key must have a data")))?;
+        let public_key_bytes =
+            key_value_map.as_bytes("data", "Identity public key must have a data")?;
 
         Ok(IdentityPublicKey {
             id: id.into(),
-            purpose,
-            security_level,
-            key_type,
+            purpose: purpose.try_into()?,
+            security_level: security_level.try_into()?,
+            key_type: key_type.try_into()?,
             data: public_key_bytes,
-            read_only: readonly
+            read_only: readonly,
         })
     }
 }

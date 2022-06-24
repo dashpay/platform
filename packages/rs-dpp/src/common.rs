@@ -1,3 +1,4 @@
+use crate::ProtocolError;
 use byteorder::{BigEndian, WriteBytesExt};
 use ciborium::value::Value;
 use std::collections::{BTreeMap, BTreeSet};
@@ -7,7 +8,6 @@ use std::io;
 use std::io::{BufRead, BufReader};
 use std::option::Option::None;
 use std::path::Path;
-use crate::ProtocolError;
 
 pub fn json_document_to_cbor(path: impl AsRef<Path>, protocol_version: Option<u32>) -> Vec<u8> {
     let file = File::open(path).expect("file not found");
@@ -321,28 +321,6 @@ pub(crate) fn cbor_inner_u32_value<'a>(
     let key_value = get_key_from_cbor_map(document_type, key)?;
     if let Value::Integer(integer_value) = key_value {
         return Some(i128::from(*integer_value) as u32);
-    }
-    None
-}
-
-pub(crate) fn cbor_inner_u16_value<'a>(
-    document_type: &'a [(Value, Value)],
-    key: &'a str,
-) -> Option<u16> {
-    let key_value = get_key_from_cbor_map(document_type, key)?;
-    if let Value::Integer(integer_value) = key_value {
-        return Some(i128::from(*integer_value) as u16);
-    }
-    None
-}
-
-pub(crate) fn cbor_inner_u8_value<'a>(
-    document_type: &'a [(Value, Value)],
-    key: &'a str,
-) -> Option<u8> {
-    let key_value = get_key_from_cbor_map(document_type, key)?;
-    if let Value::Integer(integer_value) = key_value {
-        return Some(i128::from(*integer_value) as u8);
     }
     None
 }
