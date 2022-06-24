@@ -381,7 +381,7 @@
                       "items": {
                         "type": "object",
                         "propertyNames": {
-                          "pattern": "^[a-zA-Z0-9-_$]{0,1}[a-zA-Z0-9-_.]{1,63}$"
+                          "maxLength": 256
                         },
                         "additionalProperties": {
                           "type": "string",

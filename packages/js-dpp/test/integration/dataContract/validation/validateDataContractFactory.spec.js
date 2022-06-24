@@ -1433,6 +1433,67 @@ describe('validateDataContractFactory', function main() {
         });
       });
 
+      describe('property names', () => {
+        it('should have valid property names (indices)', async () => {
+          const validNames = ['validName', 'valid_name', 'valid-name', 'abc', 'a123123bc', 'ab123c', 'ValidName', 'validName',
+            'abcdefghigklmnopqrstuvwxyz01234567890abcdefghigklmnopqrstuvwxyz', 'abc_gbf_gdb', 'abc-gbf-gdb'];
+
+          await Promise.all(
+            validNames.map(async (name) => {
+              const clonedDataContract = lodashCloneDeep(rawDataContract);
+
+              clonedDataContract.documents.indexedDocument.properties[name] = { type: 'string', maxLength: 63 };
+              clonedDataContract.documents.indexedDocument.indices[0].properties.push({ [name]: 'asc' });
+              clonedDataContract.documents.indexedDocument.required.push(name);
+
+              const result = await validateDataContract(clonedDataContract);
+
+              expectJsonSchemaError(result, 0);
+            }),
+          );
+        });
+
+        it('should return an invalid result if a property (indices) has invalid format', async () => {
+          const invalidNames = ['a.', '.a'];
+
+          rawDataContract.documents.indexedDocument = {
+            type: 'object',
+            properties: {
+              a: {
+                type: 'object',
+                properties: {
+                  property: {
+                    type: 'string',
+                    maxLength: 63,
+                  },
+                },
+                additionalProperties: false,
+              },
+            },
+            indices: [
+              {
+                name: 'index1',
+                properties: [],
+                unique: true,
+              },
+            ],
+            additionalProperties: false,
+          };
+
+          await Promise.all(
+            invalidNames.map(async (name) => {
+              const clonedDataContract = lodashCloneDeep(rawDataContract);
+
+              clonedDataContract.documents.indexedDocument.indices[0].properties.push({ [name]: 'asc' });
+
+              const result = await validateDataContract(clonedDataContract);
+
+              expectValidationError(result, UndefinedIndexPropertyError, 1);
+            }),
+          );
+        });
+      });
+
       it('should have "unique" flag to be of a boolean type', async () => {
         rawDataContract.documents.indexedDocument.indices[0].unique = 12;
 
