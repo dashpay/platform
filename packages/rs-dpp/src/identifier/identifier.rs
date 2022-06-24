@@ -5,6 +5,7 @@ use crate::errors::ProtocolError;
 use crate::util::string_encoding;
 use crate::util::string_encoding::Encoding;
 use serde_json::Value as JsonValue;
+use ciborium::value::Value as CborValue;
 
 pub const MEDIA_TYPE: &str = "application/x.dash.dpp.identifier";
 
@@ -85,24 +86,50 @@ impl Identifier {
     }
 }
 
-// TODO change default serialization to bytes
+// // TODO change default serialization to bytes
+// impl Serialize for Identifier {
+//     fn serialize<S>(self: &Identifier, serializer: S) -> Result<S::Ok, S::Error>
+//     where
+//         S: Serializer,
+//     {
+//         // by default we use base58 as Identifier type should be encoded in that way
+//         serializer.serialize_str(&self.to_string(Encoding::Base58))
+//     }
+// }
+//
+// impl<'de> Deserialize<'de> for Identifier {
+//     fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Identifier, D::Error> {
+//         let data: String = Deserialize::deserialize(d)?;
+//
+//         // by default we use base58 as Identifier type should be encoded in that way
+//         Identifier::from_string_with_encoding_string(&data, Some("base58"))
+//             .map_err(|e| serde::de::Error::custom(e.to_string()))
+//     }
+// }
+
 impl Serialize for Identifier {
     fn serialize<S>(self: &Identifier, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
+        where
+            S: Serializer,
     {
         // by default we use base58 as Identifier type should be encoded in that way
-        serializer.serialize_str(&self.to_string(Encoding::Base58))
+        serializer.serialize_bytes(&self.to_buffer())
     }
 }
 
+//#[serde(bound = "T: MyTrait")]
 impl<'de> Deserialize<'de> for Identifier {
     fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Identifier, D::Error> {
-        let data: String = Deserialize::deserialize(d)?;
+        println!("id 1");
+        let bytes: CborValue = Deserialize::deserialize(d)?;
 
-        // by default we use base58 as Identifier type should be encoded in that way
-        Identifier::from_string_with_encoding_string(&data, Some("base58"))
-            .map_err(|e| serde::de::Error::custom(e.to_string()))
+        let bytes = bytes.as_bytes().ok_or(serde::de::Error::custom("Expected Identifier to be bytes"))?;
+
+        println!("id 2");
+        let id = Identifier::from_bytes(bytes).map_err(|e| serde::de::Error::custom(e.to_string()));
+        println!("id 3");
+
+        id
     }
 }
 

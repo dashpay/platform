@@ -11,6 +11,8 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use serde_json::Value as JsonValue;
 use serde_repr::{Deserialize_repr, Serialize_repr};
 use std::{collections::HashMap, convert::TryFrom, hash::Hash};
+use ciborium::value::Value as CborValue;
+use crate::common;
 
 pub type KeyID = u64;
 
@@ -21,6 +23,18 @@ pub enum KeyType {
     ECDSA_SECP256K1 = 0,
     BLS12_381 = 1,
     ECDSA_HASH160 = 2,
+}
+
+impl TryFrom<u8> for KeyType {
+    type Error = anyhow::Error;
+    fn try_from(value: u8) -> Result<Self, Self::Error> {
+        match value {
+            0 => Ok(Self::ECDSA_SECP256K1),
+            1 => Ok(Self::BLS12_381),
+            2 => Ok(Self::ECDSA_HASH160),
+            value => bail!("unrecognized security level: {}", value),
+        }
+    }
 }
 
 pub const BINARY_DATA_FIELDS: [&str; 1] = ["data"];
@@ -34,6 +48,18 @@ pub enum Purpose {
     ENCRYPTION = 1,
     /// this key cannot be used for signing documents
     DECRYPTION = 2,
+}
+
+impl TryFrom<u8> for Purpose {
+    type Error = anyhow::Error;
+    fn try_from(value: u8) -> Result<Self, Self::Error> {
+        match value {
+            0 => Ok(Self::AUTHENTICATION),
+            1 => Ok(Self::ENCRYPTION),
+            2 => Ok(Self::DECRYPTION),
+            value => bail!("unrecognized security level: {}", value),
+        }
+    }
 }
 
 impl std::fmt::Display for Purpose {
@@ -54,6 +80,19 @@ pub enum SecurityLevel {
 impl TryFrom<usize> for SecurityLevel {
     type Error = anyhow::Error;
     fn try_from(value: usize) -> Result<Self, Self::Error> {
+        match value {
+            0 => Ok(Self::MASTER),
+            1 => Ok(Self::CRITICAL),
+            2 => Ok(Self::HIGH),
+            3 => Ok(Self::MEDIUM),
+            value => bail!("unrecognized security level: {}", value),
+        }
+    }
+}
+
+impl TryFrom<u8> for SecurityLevel {
+    type Error = anyhow::Error;
+    fn try_from(value: u8) -> Result<Self, Self::Error> {
         match value {
             0 => Ok(Self::MASTER),
             1 => Ok(Self::CRITICAL),
@@ -229,9 +268,41 @@ impl IdentityPublicKey {
         // TODO identifier_default_deserializer: default deserializer should be changed to bytes
         // Identifiers fields should be replaced with the string format to deserialize Data Contract
         raw_object.replace_base64_paths(BINARY_DATA_FIELDS)?;
-        let identity: IdentityPublicKey = serde_json::from_value(raw_object)?;
+        let identity_public_key: IdentityPublicKey = serde_json::from_value(raw_object)?;
 
-        Ok(identity)
+        Ok(identity_public_key)
+    }
+
+    pub fn from_cbor_value(cbor_value: &CborValue) -> Result<Self, ProtocolError> {
+        let key_value_map = cbor_value.as_map()
+            .ok_or(ProtocolError::DecodingError(String::from("Expected identity public key to be a key value map")))?;
+
+        let id = common::cbor_inner_u16_value(key_value_map, "id")
+            .ok_or(ProtocolError::DecodingError(String::from("A key must have an id")))?;
+
+        let key_type = KeyType::try_from(common::cbor_inner_u8_value(key_value_map, "type")
+            .ok_or(ProtocolError::DecodingError(String::from("Identity public key must have a type")))?)?;
+
+        let purpose = Purpose::try_from(common::cbor_inner_u8_value(key_value_map, "purpose")
+            .ok_or(ProtocolError::DecodingError(String::from("Identity public key must have a purpose")))?)?;
+
+        let security_level = SecurityLevel::try_from(common::cbor_inner_u8_value(key_value_map, "securityLevel")
+            .ok_or(ProtocolError::DecodingError(String::from("Identity public key must have a securityLevel")))?)?;
+
+        let readonly = common::cbor_inner_bool_value(key_value_map, "readOnly")
+            .ok_or(ProtocolError::DecodingError(String::from("Identity public key must have a readOnly")))?;
+
+        let public_key_bytes = common::cbor_inner_bytes_value(key_value_map, "data")
+            .ok_or(ProtocolError::DecodingError(String::from("Identity public key must have a data")))?;
+
+        Ok(IdentityPublicKey {
+            id: id.into(),
+            purpose,
+            security_level,
+            key_type,
+            data: public_key_bytes,
+            read_only: readonly
+        })
     }
 }
 
