@@ -34,7 +34,7 @@ Usage: test <seed> [options]
   functional:platform"
 
 FIRST_ARG="$1"
-DAPI_SEED="${DAPI_SEED:=FIRST_ARG}"
+DAPI_SEED="${DAPI_SEED:=$FIRST_ARG}"
 network="testnet"
 
 DIR="$( cd -P "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
@@ -200,7 +200,8 @@ if [ -n "$GITHUB_ACTIONS" ]
 then
   cmd="${cmd} NODE_ENV=test node_modules/.bin/mocha -b ${scope_dirs}"
 else
-  cmd="${cmd} NODE_ENV=test yarn mocha -b ${scope_dirs}"
+  echo $cmd
+  cmd="${cmd} NODE_ENV=test yarn mocha --inspect-brk -b ${scope_dirs}"
 fi
 
 if [ -n "$timeout" ]
