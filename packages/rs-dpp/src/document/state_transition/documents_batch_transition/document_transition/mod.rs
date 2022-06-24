@@ -43,7 +43,7 @@ macro_rules! call_method {
 }
 
 impl DocumentTransitionObjectLike for DocumentTransition {
-    fn from_json_str(json_str: &str, data_contract: DataContract) -> Result<Self, ProtocolError>
+    fn from_json_str(_json_str: &str, _data_contract: DataContract) -> Result<Self, ProtocolError>
     where
         Self: Sized,
     {

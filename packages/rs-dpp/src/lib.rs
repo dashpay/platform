@@ -26,9 +26,9 @@ pub use dash_platform_protocol::DashPlatformProtocol;
 pub use errors::*;
 pub mod mocks;
 
+mod common;
 #[cfg(test)]
 mod tests;
-mod common;
 
 mod prelude {
     pub use crate::data_contract::DataContract;

@@ -1,3 +1,4 @@
+pub mod cbor_value;
 pub mod deserializer;
 pub mod entropy_generator;
 pub mod hash;
