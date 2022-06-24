@@ -232,15 +232,14 @@ impl Identity {
             ))
         })?;
 
-        let public_keys: Result<Vec<IdentityPublicKey>, ProtocolError> = keys_cbor
+        let public_keys = keys_cbor
             .iter()
             .map(|cbor_key| IdentityPublicKey::from_cbor_value(cbor_key))
-            .collect();
-        let public_keys = public_keys?;
+            .collect::<Result<Vec<IdentityPublicKey>, ProtocolError>>()?;
 
         Ok(Self {
             protocol_version,
-            id: Identifier::from_bytes(&identity_id)?,
+            id: identity_id.into(),
             public_keys,
             balance,
             revision,
