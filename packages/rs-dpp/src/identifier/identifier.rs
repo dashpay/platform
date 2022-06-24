@@ -1,5 +1,5 @@
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
-use std::convert::TryInto;
+use std::convert::{TryFrom, TryInto};
 
 use crate::errors::ProtocolError;
 use crate::util::string_encoding;
@@ -83,6 +83,20 @@ impl Identifier {
         let encoding = encoding_string_to_encoding(encoding_string);
 
         self.to_string(encoding)
+    }
+}
+
+impl TryFrom<&[u8]> for Identifier {
+    type Error = ProtocolError;
+
+    fn try_from(bytes: &[u8]) -> Result<Self, Self::Error> {
+        Self::from_bytes(bytes)
+    }
+}
+
+impl From<[u8; 32]> for Identifier {
+    fn from(bytes: [u8; 32]) -> Self {
+        Self::new(bytes)
     }
 }
 
