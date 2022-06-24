@@ -72,6 +72,7 @@ impl ErrorWithCode for BasicError {
             Self::InvalidDocumentTypeError { .. } => 1024,
             Self::MissingDocumentTypeError { .. } => 1028,
             // Data contract
+            Self::JsonSchemaCompilationError { .. } => 1004,
             Self::InvalidDataContractVersionError { .. } => 4013,
             Self::DataContractMaxDepthExceedError { .. } => 1007,
             Self::DuplicateIndexNameError { .. } => 1048,

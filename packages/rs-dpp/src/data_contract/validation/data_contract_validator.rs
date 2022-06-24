@@ -21,8 +21,8 @@ use serde_json::Value as JsonValue;
 use std::{collections::HashMap, sync::Arc};
 
 use super::{
+    multi_validator::{byte_array_parent_validator, pattern_validator, validate},
     validate_data_contract_max_depth::validate_data_contract_max_depth,
-    validate_data_contract_patterns::validate_data_contract_patterns,
 };
 
 pub const MAX_INDEXED_STRING_PROPERTY_LENGTH: usize = 63;
@@ -82,8 +82,11 @@ impl DataContractValidator {
             return Ok(result);
         }
 
-        trace!("validating data contract patterns");
-        result.merge(validate_data_contract_patterns(raw_data_contract));
+        trace!("validating data contract patterns & byteArray parents");
+        result.merge(validate(
+            raw_data_contract,
+            &[pattern_validator, byte_array_parent_validator],
+        ));
         if !result.is_valid() {
             return Ok(result);
         }
@@ -1712,8 +1715,6 @@ mod test {
     }
 
     #[test]
-    #[ignore = "not supported as ajv uses macro to validate it"]
-    // https://github.com/dashevo/platform/blob/a80e487b035b96c8ad3dc4a9ac09331270b3ad81/packages/js-dpp/lib/ajv/keywords/byteArray/byteArray.js#L7
     fn byte_array_should_not_be_used_with_items() {
         init();
 
