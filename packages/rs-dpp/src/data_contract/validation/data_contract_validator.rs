@@ -103,8 +103,6 @@ impl DataContractValidator {
         for (document_type, document_schema) in enriched_data_contract.documents.iter() {
             trace!("validating document schema '{}'", document_type);
             let json_schema_validation_result =
-            	// TODO this part should validate formats
-                // the point is the compilation wont work!!!
                 JsonSchemaValidator::validate_schema(document_schema);
             result.merge(json_schema_validation_result);
         }
@@ -130,7 +128,7 @@ impl DataContractValidator {
             let validation_result = validate_max_unique_indices(&indices, document_type);
             result.merge(validation_result);
 
-            trace!("\t validating definitions");
+            trace!("\t validating indices");
             for index_definition in indices.iter() {
                 let validation_result = validate_no_system_indices(index_definition, document_type);
                 result.merge(validation_result);
