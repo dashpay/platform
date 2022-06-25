@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 use std::collections::BTreeMap;
 use std::convert::{TryFrom, TryInto};
-use crate::util::cbor_value::{CborCanonicalMap, CborCanonicalExtension};
+use crate::util::cbor_value::{CborCanonicalMap};
 
 use super::{IdentityPublicKey, KeyID};
 use crate::common::bytes_for_system_value_from_tree_map;
