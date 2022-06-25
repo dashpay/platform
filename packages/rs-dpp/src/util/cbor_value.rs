@@ -102,6 +102,8 @@ impl CborCanonicalMap {
     ///    in (byte-wise) lexical order sorts earlier.
     pub fn sort_canonical(&mut self) {
         self.inner.sort_by(|a, b| {
+            // We now for sure that the keys are always text, since `insert()`
+            // methods accepts only types that can be converted into a string
             let key_a = a.0.as_text().unwrap().as_bytes();
             let key_b = b.0.as_text().unwrap().as_bytes();
 
