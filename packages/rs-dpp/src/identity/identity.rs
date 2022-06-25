@@ -2,6 +2,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 use std::collections::BTreeMap;
 use std::convert::{TryFrom, TryInto};
+use crate::util::cbor_value::{CborCanonicalMap, CborCanonicalExtension};
 
 use super::{IdentityPublicKey, KeyID};
 use crate::common::bytes_for_system_value_from_tree_map;
@@ -150,32 +151,26 @@ impl Identity {
     }
 
     pub fn to_buffer(&self) -> Result<Vec<u8>, ProtocolError> {
-        let serde_value = serde_json::to_value(IdentityForBuffer::from(self)).unwrap();
-        let encoded = serializer::value_to_cbor(serde_value, Some(self.protocol_version))?;
-
-        Ok(encoded)
+        self.to_cbor()
     }
 
     pub fn to_cbor(&self) -> Result<Vec<u8>, ProtocolError> {
         // Prepend protocol version to the result
         let mut buf = self.get_protocol_version().to_le_bytes().to_vec();
 
-        let map = CborValue::Map(vec![
-            ("id".into(), self.get_id().to_buffer().to_vec().into()),
-            ("balance".into(), (self.get_balance() as u128).into()),
-            ("revision".into(), (self.get_revision() as u128).into()),
-            (
-                "publicKeys".into(),
-                self.get_public_keys()
-                    .iter()
-                    .map(|pk| pk.into())
-                    .collect::<Vec<CborValue>>()
-                    .into(),
-            ),
-        ]);
+        let mut identity_map = CborCanonicalMap::new();
 
-        ciborium::ser::into_writer(&map, &mut buf)
-            .map_err(|e| ProtocolError::EncodingError(e.to_string()))?;
+        identity_map.insert("id", self.get_id().to_buffer().to_vec());
+        identity_map.insert("balance", self.get_balance());
+        identity_map.insert("revision", self.get_revision());
+        identity_map.insert("publicKeys", self.get_public_keys()
+            .iter()
+            .map(|pk| pk.into())
+            .collect::<Vec<CborValue>>());
+
+        let mut identity_cbor = identity_map.to_bytes().map_err(|e| ProtocolError::EncodingError(e.to_string()))?;
+        buf.append(&mut identity_cbor);
+
         Ok(buf)
     }
 
