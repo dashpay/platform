@@ -1,7 +1,7 @@
 #![allow(clippy::from_over_into)]
 
 use crate::errors::{InvalidVectorSizeError, ProtocolError};
-use crate::util::cbor_value::CborMapExtension;
+use crate::util::cbor_value::{CborCanonicalMap, CborMapExtension};
 use crate::util::json_value::JsonValueExt;
 use crate::util::vec;
 use anyhow::{anyhow, bail};
@@ -321,16 +321,16 @@ impl IdentityPublicKey {
     }
 
     pub fn to_cbor_value(&self) -> CborValue {
-        CborValue::Map(
-            vec![
-                ("id".into(), self.get_id().into()),
-                ("data".into(), self.get_data().to_vec().into()),
-                ("type".into(), self.get_type().into()),
-                ("purpose".into(), self.get_purpose().into()),
-                ("readOnly".into(), self.get_readonly().into()),
-                ("securityLevel".into(), self.get_security_level().into()),
-            ]
-        )
+        let mut pk_map = CborCanonicalMap::new();
+
+        pk_map.insert("id", self.get_id());
+        pk_map.insert("data", self.get_data());
+        pk_map.insert("type", self.get_type());
+        pk_map.insert("purpose", self.get_purpose());
+        pk_map.insert("readOnly", self.get_readonly());
+        pk_map.insert("securityLevel", self.get_security_level());
+
+        pk_map.to_cbor_value()
     }
 }
 
