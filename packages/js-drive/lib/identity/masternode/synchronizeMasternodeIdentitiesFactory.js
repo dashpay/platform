@@ -33,12 +33,20 @@ function synchronizeMasternodeIdentitiesFactory(
   /**
    * @typedef synchronizeMasternodeIdentities
    * @param {number} coreHeight
-   * @return Promise<void>
+   * @return {Promise<{
+   *  created: Array<Identity|Document>,
+   *  updated: Array<Identity|Document>,
+   *  removed: Array<Document>,
+   *  fromHeight: number,
+   *  toHeight: number,
+   * }>}
    */
   async function synchronizeMasternodeIdentities(coreHeight) {
     let newMasternodes = [];
 
     let previousMNList = [];
+
+    let updatedMasternodes = [];
 
     const currentMNList = simplifiedMasternodeList.getStore()
       .getSMLbyHeight(coreHeight)
@@ -84,10 +92,12 @@ function synchronizeMasternodeIdentitiesFactory(
         ));
 
         if (previousMnEntry) {
-          await handleUpdatedPubKeyOperator(
-            mnEntry,
-            previousMnEntry,
-            dataContract,
+          updatedMasternodes = updatedMasternodes.concat(
+            await handleUpdatedPubKeyOperator(
+              mnEntry,
+              previousMnEntry,
+              dataContract,
+            ),
           );
         }
 
@@ -138,12 +148,17 @@ function synchronizeMasternodeIdentitiesFactory(
     }
 
     // Create identities and shares for new masternodes
+    let newMasternodeEntries = [];
 
     for (const newMasternodeEntry of newMasternodes) {
-      await handleNewMasternode(newMasternodeEntry, dataContract);
+      newMasternodeEntries = newMasternodeEntries.concat(
+        await handleNewMasternode(newMasternodeEntry, dataContract),
+      );
     }
 
     // Remove masternode reward shares for invalid/removed masternodes
+
+    let removedMasternodes = [];
 
     const disappearedOrInvalidMasterNodes = previousMNList
       .filter((previousMnListEntry) =>
@@ -156,13 +171,25 @@ function synchronizeMasternodeIdentitiesFactory(
         Buffer.from(masternodeEntry.proRegTxHash, 'hex'),
       );
 
-      await handleRemovedMasternode(
-        masternodeIdentifier,
-        dataContract,
+      removedMasternodes = removedMasternodes.concat(
+        await handleRemovedMasternode(
+          masternodeIdentifier,
+          dataContract,
+        ),
       );
     }
 
+    const fromHeight = lastSyncedCoreHeight;
+
     lastSyncedCoreHeight = coreHeight;
+
+    return {
+      fromHeight,
+      toHeight: coreHeight,
+      created: newMasternodeEntries,
+      updated: updatedMasternodes,
+      removed: removedMasternodes,
+    };
   }
 
   return synchronizeMasternodeIdentities;

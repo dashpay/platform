@@ -57,7 +57,9 @@ describe('handleNewMasternodeFactory', () => {
     const payoutAddress = Address.fromString(masternodeEntry.payoutAddress);
     const payoutScript = new Script(payoutAddress);
 
-    await handleNewMasternode(masternodeEntry, dataContract);
+    const result = await handleNewMasternode(masternodeEntry, dataContract);
+
+    console.log(result);
 
     expect(fetchTransactionMock).to.be.calledOnceWithExactly(masternodeEntry.proRegTxHash);
     expect(createMasternodeIdentityMock).to.be.calledOnceWithExactly(

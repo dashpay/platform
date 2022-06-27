@@ -24,8 +24,11 @@ function handleNewMasternodeFactory(
    * @typedef handleNewMasternode
    * @param {SimplifiedMNListEntry} masternodeEntry
    * @param {DataContract} dataContract
+   * @return Promise<Array<Identity|Document>>
    */
   async function handleNewMasternode(masternodeEntry, dataContract) {
+    const result = [];
+
     const { extraPayload: proRegTxPayload } = await fetchTransaction(masternodeEntry.proRegTxHash);
 
     const proRegTxHash = Buffer.from(masternodeEntry.proRegTxHash, 'hex');
@@ -44,11 +47,13 @@ function handleNewMasternodeFactory(
 
     const publicKey = Buffer.from(proRegTxPayload.keyIDOwner, 'hex').reverse();
 
-    await createMasternodeIdentity(
-      masternodeIdentifier,
-      publicKey,
-      IdentityPublicKey.TYPES.ECDSA_HASH160,
-      payoutScript,
+    result.push(
+      await createMasternodeIdentity(
+        masternodeIdentifier,
+        publicKey,
+        IdentityPublicKey.TYPES.ECDSA_HASH160,
+        payoutScript,
+      ),
     );
 
     // we need to crate reward shares only if it's enabled in proRegTx
@@ -64,21 +69,27 @@ function handleNewMasternodeFactory(
 
       const operatorIdentifier = createOperatorIdentifier(masternodeEntry);
 
-      await createMasternodeIdentity(
-        operatorIdentifier,
-        operatorPubKey,
-        IdentityPublicKey.TYPES.BLS12_381,
-        operatorPayoutScript,
+      result.push(
+        await createMasternodeIdentity(
+          operatorIdentifier,
+          operatorPubKey,
+          IdentityPublicKey.TYPES.BLS12_381,
+          operatorPayoutScript,
+        ),
       );
 
       // Create a document in rewards data contract with percentage
-      await createRewardShareDocument(
-        dataContract,
-        masternodeIdentifier,
-        operatorIdentifier,
-        proRegTxPayload.operatorReward,
+      result.push(
+        await createRewardShareDocument(
+          dataContract,
+          masternodeIdentifier,
+          operatorIdentifier,
+          proRegTxPayload.operatorReward,
+        ),
       );
     }
+
+    return result;
   }
 
   return handleNewMasternode;
