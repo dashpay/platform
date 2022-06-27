@@ -18,7 +18,7 @@ function createRewardShareDocumentFactory(
    * @param {Identifier} masternodeIdentifier
    * @param {Identifier} operatorIdentifier
    * @param {number} percentage
-   * @returns {Promise<boolean>}
+   * @returns {Promise<Document|null>}
    */
   async function createRewardShareDocument(
     dataContract,
@@ -41,7 +41,7 @@ function createRewardShareDocumentFactory(
     // or max shares limit is reached
     if (!documentsResult.isEmpty()) {
       if (documentsResult.getValue().length > MAX_DOCUMENTS) {
-        return false;
+        return null;
       }
 
       const operatorShare = documentsResult.getValue().find((shareDocument) => (
@@ -49,7 +49,7 @@ function createRewardShareDocumentFactory(
       ));
 
       if (operatorShare) {
-        return false;
+        return null;
       }
     }
 
@@ -77,7 +77,7 @@ function createRewardShareDocumentFactory(
       useTransaction: true,
     });
 
-    return true;
+    return rewardShareDocument;
   }
 
   return createRewardShareDocument;

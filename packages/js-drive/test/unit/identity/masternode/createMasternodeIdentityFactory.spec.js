@@ -45,7 +45,7 @@ describe('createMasternodeIdentityFactory', () => {
     const pubKeyData = Buffer.from([0]);
     const pubKeyType = IdentityPublicKey.TYPES.ECDSA_HASH160;
 
-    await createMasternodeIdentity(identityId, pubKeyData, pubKeyType);
+    const result = await createMasternodeIdentity(identityId, pubKeyData, pubKeyType);
 
     const identity = new Identity({
       protocolVersion: dppMock.getProtocolVersion(),
@@ -62,6 +62,8 @@ describe('createMasternodeIdentityFactory', () => {
       balance: 0,
       revision: 0,
     });
+
+    expect(result).to.deep.equal(identity);
 
     expect(stateRepositoryMock.createIdentity).to.have.been.calledOnceWithExactly(identity);
     expect(getWithdrawPubKeyTypeFromPayoutScriptMock).to.not.be.called();
@@ -84,7 +86,7 @@ describe('createMasternodeIdentityFactory', () => {
     const pubKeyData = Buffer.from([0]);
     const pubKeyType = IdentityPublicKey.TYPES.ECDSA_HASH160;
 
-    await createMasternodeIdentity(identityId, pubKeyData, pubKeyType);
+    const result = await createMasternodeIdentity(identityId, pubKeyData, pubKeyType);
 
     const identity = new Identity({
       protocolVersion: dppMock.getProtocolVersion(),
@@ -101,6 +103,8 @@ describe('createMasternodeIdentityFactory', () => {
       balance: 0,
       revision: 0,
     });
+
+    expect(result).to.deep.equal(identity);
 
     expect(stateRepositoryMock.createIdentity).to.have.been.calledOnceWithExactly(identity);
 
@@ -142,7 +146,7 @@ describe('createMasternodeIdentityFactory', () => {
     const pubKeyType = IdentityPublicKey.TYPES.ECDSA_HASH160;
     const payoutScript = new Script(Address.fromString('7UkJidhNjEPJCQnCTXeaJKbJmL4JuyV66w'));
 
-    await createMasternodeIdentity(identityId, pubKeyData, pubKeyType, payoutScript);
+    const result = await createMasternodeIdentity(identityId, pubKeyData, pubKeyType, payoutScript);
 
     const identity = new Identity({
       protocolVersion: dppMock.getProtocolVersion(),
@@ -165,6 +169,8 @@ describe('createMasternodeIdentityFactory', () => {
       balance: 0,
       revision: 0,
     });
+
+    expect(result).to.deep.equal(identity);
 
     expect(stateRepositoryMock.createIdentity).to.have.been.calledOnceWithExactly(identity);
     expect(getWithdrawPubKeyTypeFromPayoutScriptMock).to.be.calledOnce();
