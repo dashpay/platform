@@ -126,7 +126,26 @@ function beginBlockHandlerFactory(
     );
 
     if (isSimplifiedMasternodeListUpdated) {
-      await synchronizeMasternodeIdentities(coreChainLockedHeight);
+      const synchronizeMasternodeIdentitiesResult = await synchronizeMasternodeIdentities(
+        coreChainLockedHeight,
+      );
+
+      const {
+        createdEntities, updatedEntities, removedEntities, fromHeight, toHeight,
+      } = synchronizeMasternodeIdentitiesResult;
+
+      consensusLogger.info(
+        `Masternode identities are synced for heights from ${fromHeight} to ${toHeight}: ${createdEntities.length} created, ${updatedEntities.length} updated, ${removedEntities.length} removed`,
+      );
+
+      consensusLogger.trace(
+        {
+          createdEntities: createdEntities.map((item) => item.toJSON()),
+          updatedEntities: updatedEntities.map((item) => item.toJSON()),
+          removedEntities: removedEntities.map((item) => item.toJSON()),
+        },
+        'Synchronized masternode identities',
+      );
     }
 
     consensusLogger.info(`Block begin #${height}`);

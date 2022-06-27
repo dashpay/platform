@@ -21,7 +21,7 @@ function createMasternodeIdentityFactory(
    * @param {Buffer} pubKeyData
    * @param {number} pubKeyType
    * @param {Script} [payoutScript]
-   * @return {Promise<void>}
+   * @return {Promise<Identity>}
    */
   async function createMasternodeIdentity(
     identifier,
@@ -77,6 +77,8 @@ function createMasternodeIdentityFactory(
       identity.getId(),
       publicKeyHashes,
     );
+
+    return identity;
   }
 
   return createMasternodeIdentity;

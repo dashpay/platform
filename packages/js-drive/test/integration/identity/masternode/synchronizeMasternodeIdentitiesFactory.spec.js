@@ -424,7 +424,13 @@ describe('synchronizeMasternodeIdentitiesFactory', () => {
   });
 
   it('should create identities for all masternodes on the first sync', async () => {
-    await synchronizeMasternodeIdentities(coreHeight);
+    const result = await synchronizeMasternodeIdentities(coreHeight);
+
+    expect(result.fromHeight).to.be.equal(0);
+    expect(result.toHeight).to.be.equal(3);
+    expect(result.createdEntities).to.have.lengthOf(4);
+    expect(result.updatedEntities).to.have.lengthOf(0);
+    expect(result.removedEntities).to.have.lengthOf(0);
 
     await expectDeterministicAppHash(firstSyncAppHash);
 
@@ -541,7 +547,13 @@ describe('synchronizeMasternodeIdentitiesFactory', () => {
 
     // Second call
 
-    await synchronizeMasternodeIdentities(coreHeight + 42);
+    const result = await synchronizeMasternodeIdentities(coreHeight + 42);
+
+    expect(result.fromHeight).to.be.equal(3);
+    expect(result.toHeight).to.be.equal(45);
+    expect(result.createdEntities).to.have.lengthOf(4);
+    expect(result.updatedEntities).to.have.lengthOf(0);
+    expect(result.removedEntities).to.have.lengthOf(0);
 
     // Nothing happened
 
@@ -591,7 +603,13 @@ describe('synchronizeMasternodeIdentitiesFactory', () => {
 
     // Second call
 
-    await synchronizeMasternodeIdentities(coreHeight + 1);
+    const result = await synchronizeMasternodeIdentities(coreHeight + 1);
+
+    expect(result.fromHeight).to.be.equal(3);
+    expect(result.toHeight).to.be.equal(4);
+    expect(result.createdEntities).to.have.lengthOf(3);
+    expect(result.updatedEntities).to.have.lengthOf(0);
+    expect(result.removedEntities).to.have.lengthOf(0);
 
     await expectDeterministicAppHash('9785da4ccade9e014da4138cd0b81d06fbfb058bd27d378ac710fdd0f3dd0812');
 
@@ -659,7 +677,13 @@ describe('synchronizeMasternodeIdentitiesFactory', () => {
 
     // Second call
 
-    await synchronizeMasternodeIdentities(coreHeight + 1);
+    const result = await synchronizeMasternodeIdentities(coreHeight + 1);
+
+    expect(result.fromHeight).to.be.equal(3);
+    expect(result.toHeight).to.be.equal(4);
+    expect(result.createdEntities).to.have.lengthOf(0);
+    expect(result.updatedEntities).to.have.lengthOf(0);
+    expect(result.removedEntities).to.have.lengthOf(1);
 
     await expectDeterministicAppHash('20969f374525ed989a9eac95deaa21f6222395e6369c5e9e8f8ae8740a0fb22d');
 
@@ -711,7 +735,13 @@ describe('synchronizeMasternodeIdentitiesFactory', () => {
 
     // Second call
 
-    await synchronizeMasternodeIdentities(coreHeight + 1);
+    const result = await synchronizeMasternodeIdentities(coreHeight + 1);
+
+    expect(result.fromHeight).to.be.equal(3);
+    expect(result.toHeight).to.be.equal(4);
+    expect(result.createdEntities).to.have.lengthOf(0);
+    expect(result.updatedEntities).to.have.lengthOf(0);
+    expect(result.removedEntities).to.have.lengthOf(1);
 
     await expectDeterministicAppHash('20969f374525ed989a9eac95deaa21f6222395e6369c5e9e8f8ae8740a0fb22d');
 
@@ -754,7 +784,13 @@ describe('synchronizeMasternodeIdentitiesFactory', () => {
 
     // Second call
 
-    await synchronizeMasternodeIdentities(coreHeight + 1);
+    const result = await synchronizeMasternodeIdentities(coreHeight + 1);
+
+    expect(result.fromHeight).to.be.equal(3);
+    expect(result.toHeight).to.be.equal(4);
+    expect(result.createdEntities).to.have.lengthOf(0);
+    expect(result.updatedEntities).to.have.lengthOf(3);
+    expect(result.removedEntities).to.have.lengthOf(0);
 
     await expectDeterministicAppHash('eefb5ee17a1bac487b466ab5176091740762f69c566640d5ede7cb56b7fcca49');
 
