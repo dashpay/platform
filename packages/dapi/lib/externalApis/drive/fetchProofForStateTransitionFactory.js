@@ -18,8 +18,8 @@ function fetchProofForStateTransitionFactory(driveClient) {
         {
           documents: stateTransition.getTransitions().map((documentTransition) => ({
             dataContractId: documentTransition.getDataContractId().toBuffer(),
-            documentType: documentTransition.getType(),
             documentId: documentTransition.getId().toBuffer(),
+            type: documentTransition.getType(),
           })),
         },
       ));
