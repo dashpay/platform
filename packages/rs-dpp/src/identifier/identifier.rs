@@ -29,7 +29,7 @@ fn encoding_string_to_encoding(encoding_string: Option<&str>) -> Encoding {
 }
 
 impl Identifier {
-    fn new(buffer: [u8; 32]) -> Identifier {
+    pub fn new(buffer: [u8; 32]) -> Identifier {
         Identifier { buffer }
     }
 
