@@ -144,7 +144,7 @@ function beginBlockHandlerFactory(
           updatedEntities: updatedEntities.map((item) => item.toJSON()),
           removedEntities: removedEntities.map((item) => item.toJSON()),
         },
-        'Synchronize Masternode Identities',
+        'Synchronized masternode identities',
       );
     }
 
