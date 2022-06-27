@@ -6,7 +6,6 @@ use crate::{
     data_contract::{self, generate_data_contract_id},
     decode_protocol_entity_factory::DecodeProtocolEntity,
     errors::{consensus::ConsensusError, ProtocolError},
-    mocks,
     prelude::Identifier,
     util::entropy_generator,
     Convertible,
@@ -141,7 +140,6 @@ mod test {
     use super::DataContractFactory;
     use crate::{
         data_contract::{validation::data_contract_validator::DataContractValidator, DataContract},
-        mocks,
         state_transition::StateTransitionLike,
         tests::fixtures::get_data_contract_fixture,
         version::{ProtocolVersionValidator, COMPATIBILITY_MAP, LATEST_VERSION},

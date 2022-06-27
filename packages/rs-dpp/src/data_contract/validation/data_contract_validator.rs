@@ -21,7 +21,9 @@ use serde_json::Value as JsonValue;
 use std::{collections::HashMap, sync::Arc};
 
 use super::{
-    multi_validator::{self, byte_array_parent_validator, pattern_validator},
+    multi_validator::{
+        self, byte_array_has_no_items_as_parent_validator, pattern_is_valid_regex_validator,
+    },
     validate_data_contract_max_depth::validate_data_contract_max_depth,
 };
 
@@ -84,7 +86,10 @@ impl DataContractValidator {
         trace!("validating data contract patterns & byteArray parents");
         result.merge(multi_validator::validate(
             raw_data_contract,
-            &[pattern_validator, byte_array_parent_validator],
+            &[
+                pattern_is_valid_regex_validator,
+                byte_array_has_no_items_as_parent_validator,
+            ],
         ));
         if !result.is_valid() {
             return Ok(result);
