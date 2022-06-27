@@ -40,7 +40,7 @@ pub fn validate(raw_data_contract: &JsonValue, validators: &[SubValidator]) -> V
     result
 }
 
-pub fn pattern_validator(
+pub fn pattern_is_valid_regex_validator(
     path: &str,
     key: &str,
     _parent: &JsonValue,
@@ -60,7 +60,7 @@ pub fn pattern_validator(
     }
 }
 
-pub fn byte_array_parent_validator(
+pub fn byte_array_has_no_items_as_parent_validator(
     path: &str,
     key: &str,
     parent: &JsonValue,
@@ -107,7 +107,7 @@ mod test {
                 "additionalProperties": false,
               }
         );
-        let mut result = validate(&schema, &[byte_array_parent_validator]);
+        let mut result = validate(&schema, &[byte_array_has_no_items_as_parent_validator]);
         assert_eq!(2, result.errors().len());
         let first_error = get_basic_error(result.errors.pop().unwrap());
         let second_error = get_basic_error(result.errors.pop().unwrap());
@@ -139,7 +139,7 @@ mod test {
               }
         );
 
-        assert!(validate(&schema, &[pattern_validator]).is_valid())
+        assert!(validate(&schema, &[pattern_is_valid_regex_validator]).is_valid())
     }
 
     #[test]
@@ -157,7 +157,7 @@ mod test {
             "additionalProperties": false,
 
         });
-        let result = validate(&schema, &[pattern_validator]);
+        let result = validate(&schema, &[pattern_is_valid_regex_validator]);
         let consensus_error = result.errors.get(0).expect("the error should be returned");
 
         assert!(
@@ -172,7 +172,7 @@ mod test {
     #[test]
     fn should_be_valid_complex_for_complex_schema() {
         let schema = get_document_schema();
-        assert!(validate(&schema, &[pattern_validator]).is_valid())
+        assert!(validate(&schema, &[pattern_is_valid_regex_validator]).is_valid())
     }
 
     #[test]
@@ -181,7 +181,7 @@ mod test {
         schema["properties"]["arrayOfObject"]["items"]["properties"]["simple"]["pattern"] =
             json!("^((?!-|_)[a-zA-Z0-9-_]{0,62}[a-zA-Z0-9])$");
 
-        let result = validate(&schema, &[pattern_validator]);
+        let result = validate(&schema, &[pattern_is_valid_regex_validator]);
         let consensus_error = result.errors.get(0).expect("the error should be returned");
 
         assert!(
@@ -199,7 +199,7 @@ mod test {
         schema["properties"]["arrayOfObjects"]["items"][0]["properties"]["simple"]["pattern"] =
             json!("^((?!-|_)[a-zA-Z0-9-_]{0,62}[a-zA-Z0-9])$");
 
-        let result = validate(&schema, &[pattern_validator]);
+        let result = validate(&schema, &[pattern_is_valid_regex_validator]);
         let consensus_error = result.errors.get(0).expect("the error should be returned");
 
         assert!(
