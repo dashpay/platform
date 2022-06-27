@@ -131,18 +131,18 @@ function beginBlockHandlerFactory(
       );
 
       const {
-        created, updated, removed, fromHeight, toHeight,
+        createdEntities, updatedEntities, removedEntities, fromHeight, toHeight,
       } = synchronizeMasternodeIdentitiesResult;
 
       consensusLogger.info(
-        `For SML from height ${fromHeight} to ${toHeight} ${coreChainLockedHeight}, ${created.length} masternode entries created, ${updated.length} updated, ${removed.length} removed`,
+        `Masternode identities are synced for heights from ${fromHeight} to ${toHeight}: ${createdEntities.length} created, ${updatedEntities.length} updated, ${removedEntities.length} removed`,
       );
 
       consensusLogger.trace(
         {
-          created: created.map((item) => item.toJSON()),
-          updated: updated.map((item) => item.toJSON()),
-          removed: removed.map((item) => item.toJSON()),
+          createdEntities: createdEntities.map((item) => item.toJSON()),
+          updatedEntities: updatedEntities.map((item) => item.toJSON()),
+          removedEntities: removedEntities.map((item) => item.toJSON()),
         },
         'Synchronize Masternode Identities',
       );

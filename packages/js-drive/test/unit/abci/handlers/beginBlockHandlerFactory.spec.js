@@ -52,7 +52,13 @@ describe('beginBlockHandlerFactory', () => {
 
     updateSimplifiedMasternodeListMock = this.sinon.stub().resolves(false);
     waitForChainLockedHeightMock = this.sinon.stub();
-    synchronizeMasternodeIdentitiesMock = this.sinon.stub();
+    synchronizeMasternodeIdentitiesMock = this.sinon.stub().resolves({
+      createdEntities: [],
+      updatedEntities: [],
+      removedEntities: [],
+      fromHeight: 1,
+      toHeight: 42,
+    });
 
     groveDBStoreMock = new GroveDBStoreMock(this.sinon);
     blockExecutionContextStackMock = new BlockExecutionContextStackMock(this.sinon);

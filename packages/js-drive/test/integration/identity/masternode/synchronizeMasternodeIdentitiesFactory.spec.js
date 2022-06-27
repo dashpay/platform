@@ -5,7 +5,6 @@ const {
 const SimplifiedMNListEntry = require('@dashevo/dashcore-lib/lib/deterministicmnlist/SimplifiedMNListEntry');
 const { hash } = require('@dashevo/dpp/lib/util/hash');
 const Identifier = require('@dashevo/dpp/lib/identifier/Identifier');
-// const Document = require('@dashevo/dpp/lib/document/Document');
 const IdentityPublicKey = require('@dashevo/dpp/lib/identity/IdentityPublicKey');
 
 const Address = require('@dashevo/dashcore-lib/lib/address');
@@ -429,9 +428,9 @@ describe('synchronizeMasternodeIdentitiesFactory', () => {
 
     expect(result.fromHeight).to.be.equal(0);
     expect(result.toHeight).to.be.equal(3);
-    expect(result.created).to.have.lengthOf(4);
-    expect(result.updated).to.have.lengthOf(0);
-    expect(result.removed).to.have.lengthOf(0);
+    expect(result.createdEntities).to.have.lengthOf(4);
+    expect(result.updatedEntities).to.have.lengthOf(0);
+    expect(result.removedEntities).to.have.lengthOf(0);
 
     await expectDeterministicAppHash(firstSyncAppHash);
 
@@ -552,9 +551,9 @@ describe('synchronizeMasternodeIdentitiesFactory', () => {
 
     expect(result.fromHeight).to.be.equal(3);
     expect(result.toHeight).to.be.equal(45);
-    expect(result.created).to.have.lengthOf(4);
-    expect(result.updated).to.have.lengthOf(0);
-    expect(result.removed).to.have.lengthOf(0);
+    expect(result.createdEntities).to.have.lengthOf(4);
+    expect(result.updatedEntities).to.have.lengthOf(0);
+    expect(result.removedEntities).to.have.lengthOf(0);
 
     // Nothing happened
 
@@ -608,9 +607,9 @@ describe('synchronizeMasternodeIdentitiesFactory', () => {
 
     expect(result.fromHeight).to.be.equal(3);
     expect(result.toHeight).to.be.equal(4);
-    expect(result.created).to.have.lengthOf(3);
-    expect(result.updated).to.have.lengthOf(0);
-    expect(result.removed).to.have.lengthOf(0);
+    expect(result.createdEntities).to.have.lengthOf(3);
+    expect(result.updatedEntities).to.have.lengthOf(0);
+    expect(result.removedEntities).to.have.lengthOf(0);
 
     await expectDeterministicAppHash('9785da4ccade9e014da4138cd0b81d06fbfb058bd27d378ac710fdd0f3dd0812');
 
@@ -682,9 +681,9 @@ describe('synchronizeMasternodeIdentitiesFactory', () => {
 
     expect(result.fromHeight).to.be.equal(3);
     expect(result.toHeight).to.be.equal(4);
-    expect(result.created).to.have.lengthOf(0);
-    expect(result.updated).to.have.lengthOf(0);
-    expect(result.removed).to.have.lengthOf(1);
+    expect(result.createdEntities).to.have.lengthOf(0);
+    expect(result.updatedEntities).to.have.lengthOf(0);
+    expect(result.removedEntities).to.have.lengthOf(1);
 
     await expectDeterministicAppHash('20969f374525ed989a9eac95deaa21f6222395e6369c5e9e8f8ae8740a0fb22d');
 
@@ -740,9 +739,9 @@ describe('synchronizeMasternodeIdentitiesFactory', () => {
 
     expect(result.fromHeight).to.be.equal(3);
     expect(result.toHeight).to.be.equal(4);
-    expect(result.created).to.have.lengthOf(0);
-    expect(result.updated).to.have.lengthOf(0);
-    expect(result.removed).to.have.lengthOf(1);
+    expect(result.createdEntities).to.have.lengthOf(0);
+    expect(result.updatedEntities).to.have.lengthOf(0);
+    expect(result.removedEntities).to.have.lengthOf(1);
 
     await expectDeterministicAppHash('20969f374525ed989a9eac95deaa21f6222395e6369c5e9e8f8ae8740a0fb22d');
 
@@ -789,9 +788,9 @@ describe('synchronizeMasternodeIdentitiesFactory', () => {
 
     expect(result.fromHeight).to.be.equal(3);
     expect(result.toHeight).to.be.equal(4);
-    expect(result.created).to.have.lengthOf(0);
-    expect(result.updated).to.have.lengthOf(3);
-    expect(result.removed).to.have.lengthOf(0);
+    expect(result.createdEntities).to.have.lengthOf(0);
+    expect(result.updatedEntities).to.have.lengthOf(3);
+    expect(result.removedEntities).to.have.lengthOf(0);
 
     await expectDeterministicAppHash('eefb5ee17a1bac487b466ab5176091740762f69c566640d5ede7cb56b7fcca49');
 

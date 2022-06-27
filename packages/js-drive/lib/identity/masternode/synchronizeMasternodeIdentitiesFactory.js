@@ -46,7 +46,7 @@ function synchronizeMasternodeIdentitiesFactory(
 
     let previousMNList = [];
 
-    let updatedMasternodes = [];
+    let updatedEntities = [];
 
     const currentMNList = simplifiedMasternodeList.getStore()
       .getSMLbyHeight(coreHeight)
@@ -92,7 +92,7 @@ function synchronizeMasternodeIdentitiesFactory(
         ));
 
         if (previousMnEntry) {
-          updatedMasternodes = updatedMasternodes.concat(
+          updatedEntities = updatedEntities.concat(
             await handleUpdatedPubKeyOperator(
               mnEntry,
               previousMnEntry,
@@ -148,17 +148,17 @@ function synchronizeMasternodeIdentitiesFactory(
     }
 
     // Create identities and shares for new masternodes
-    let newMasternodeEntries = [];
+    let createdEntities = [];
 
     for (const newMasternodeEntry of newMasternodes) {
-      newMasternodeEntries = newMasternodeEntries.concat(
+      createdEntities = createdEntities.concat(
         await handleNewMasternode(newMasternodeEntry, dataContract),
       );
     }
 
     // Remove masternode reward shares for invalid/removed masternodes
 
-    let removedMasternodes = [];
+    let removedEntities = [];
 
     const disappearedOrInvalidMasterNodes = previousMNList
       .filter((previousMnListEntry) =>
@@ -171,7 +171,7 @@ function synchronizeMasternodeIdentitiesFactory(
         Buffer.from(masternodeEntry.proRegTxHash, 'hex'),
       );
 
-      removedMasternodes = removedMasternodes.concat(
+      removedEntities = removedEntities.concat(
         await handleRemovedMasternode(
           masternodeIdentifier,
           dataContract,
@@ -186,9 +186,9 @@ function synchronizeMasternodeIdentitiesFactory(
     return {
       fromHeight,
       toHeight: coreHeight,
-      created: newMasternodeEntries,
-      updated: updatedMasternodes,
-      removed: removedMasternodes,
+      createdEntities,
+      updatedEntities,
+      removedEntities,
     };
   }
 
