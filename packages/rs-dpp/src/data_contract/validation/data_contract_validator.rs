@@ -21,7 +21,7 @@ use serde_json::Value as JsonValue;
 use std::{collections::HashMap, sync::Arc};
 
 use super::{
-    multi_validator::{byte_array_parent_validator, pattern_validator, validate},
+    multi_validator::{self, byte_array_parent_validator, pattern_validator},
     validate_data_contract_max_depth::validate_data_contract_max_depth,
 };
 
@@ -83,7 +83,7 @@ impl DataContractValidator {
         }
 
         trace!("validating data contract patterns & byteArray parents");
-        result.merge(validate(
+        result.merge(multi_validator::validate(
             raw_data_contract,
             &[pattern_validator, byte_array_parent_validator],
         ));
@@ -117,7 +117,6 @@ impl DataContractValidator {
             .filter(|(_, value)| value.get("indices").is_some())
         {
             trace!("validating indices in {}", document_type);
-            let mut indices_fingerprints: Vec<String> = vec![];
             let indices = document_schema.get_indices()?;
 
             trace!("\t validating duplicates");
@@ -129,194 +128,231 @@ impl DataContractValidator {
             result.merge(validation_result);
 
             trace!("\t validating indices");
-            for index_definition in indices.iter() {
-                let validation_result = validate_no_system_indices(index_definition, document_type);
-                result.merge(validation_result);
-
-                let user_defined_properties = index_definition
-                    .properties
-                    .iter()
-                    .flatten()
-                    .map(|property| property.0)
-                    .filter(|property_name| {
-                        !ALLOWED_INDEX_SYSTEM_PROPERTIES.contains(&property_name.as_str())
-                    });
-
-                let property_definition_entities: HashMap<&String, Option<&JsonValue>> =
-                    user_defined_properties
-                        .map(|property_name| {
-                            (
-                                property_name,
-                                get_property_definition_by_path(document_schema, property_name)
-                                    .ok(),
-                            )
-                        })
-                        .collect();
-
-                let validation_result = validate_not_defined_properties(
-                    &property_definition_entities,
-                    index_definition,
-                    document_type,
-                );
-                if !validation_result.is_valid() {
-                    result.merge(validation_result);
-                    // Skip further validation if there are undefined properties
-                    return Ok(result);
-                }
-
-                // Validation of property defs
-                for (property_name, maybe_property_definition) in property_definition_entities {
-                    // we are allowed to use unwrap as we return if some of the properties definitions is None
-                    let property_definition = maybe_property_definition.unwrap();
-                    let is_byte_array = property_definition.is_type_of_byte_array();
-                    let mut invalid_property_type: String = "".to_string();
-
-                    if property_definition.is_type_of_object() {
-                        invalid_property_type = "object".to_string()
-                    }
-
-                    // Validate arrays contain scalar values or have the same types
-                    // https://github.com/dashevo/platform/blob/ab6391f4b47a970c733e7b81115b44329fbdf993/packages/js-dpp/lib/dataContract/validation/validateDataContractFactory.js#L210
-                    if property_definition.is_type_of_array() && !is_byte_array {
-                        invalid_property_type = "array".to_string();
-                        // const isInvalidPrefixItems = prefixItems
-                        //   && (
-                        // prefixItems.some((prefixItem) =>
-                        // prefixItem.type === 'object' || prefixItem.type === 'array')
-                        //     || !prefixItems.every((prefixItem) => prefixItem.type === prefixItems[0].type)
-                        //   );
-                        //
-                        // const isInvalidItemTypes = items.type === 'object' || items.type === 'array';
-                        //
-                        // if (isInvalidPrefixItems || isInvalidItemTypes) {
-                        //   invalidPropertyType = 'array';
-                        // }
-                    }
-
-                    if !invalid_property_type.is_empty() {
-                        result.add_error(BasicError::IndexError(
-                            IndexError::InvalidIndexPropertyTypeError {
-                                document_type: document_type.clone(),
-                                index_definition: index_definition.clone(),
-                                property_name: property_name.clone(),
-                                property_type: invalid_property_type.clone(),
-                            },
-                        ));
-                    }
-
-                    // https://github.com/dashevo/platform/blob/ab6391f4b47a970c733e7b81115b44329fbdf993/packages/js-dpp/lib/dataContract/validation/validateDataContractFactory.js#L236
-                    // Validate sting length inside arrays
-                    // if (!invalidPropertyType && propertyType === 'array' && !isByteArray) {
-                    //   const isInvalidPrefixItems = prefixItems && prefixItems.some((prefixItem) => (
-                    //     prefixItem.type === 'string'
-                    //     && (
-                    // !prefixItem.maxLength || prefixItem.maxLength > MAX_INDEXED_STRING_PROPERTY_LENGTH
-                    //     )
-                    //   ));
-                    //
-                    //   const isInvalidItemTypes = items.type === 'string' && (
-                    //     !items.maxLength || items.maxLength > MAX_INDEXED_STRING_PROPERTY_LENGTH
-                    //   );
-                    //
-                    //   if (isInvalidPrefixItems || isInvalidItemTypes) {
-                    //     result.addError(
-                    //       new InvalidIndexedPropertyConstraintError(
-                    //         documentType,
-                    //         indexDefinition,
-                    //         propertyName,
-                    //         'maxLength',
-                    //         `should be less or equal ${MAX_INDEXED_STRING_PROPERTY_LENGTH}`,
-                    //       ),
-                    //     );
-                    //   }
-                    // }
-                    //
-
-                    if invalid_property_type.is_empty() && property_definition.is_type_of_array() {
-                        let max_items = property_definition.get_u64("maxItems").ok();
-                        let max_limit = if is_byte_array {
-                            MAX_INDEXED_BYTE_ARRAY_PROPERTY_LENGTH
-                        } else {
-                            MAX_INDEXED_ARRAY_ITEMS
-                        };
-
-                        if max_items.is_none() || max_items.unwrap() > max_limit as u64 {
-                            result.add_error(BasicError::IndexError(
-                                IndexError::InvalidIndexedPropertyConstraintError {
-                                    document_type: document_type.clone(),
-                                    index_definition: index_definition.clone(),
-                                    property_name: property_name.clone(),
-                                    constraint_name: String::from("maxItems"),
-                                    reason: format!("should be less or equal {}", max_limit),
-                                },
-                            ));
-                        }
-                    }
-
-                    if property_definition.is_type_of_string() {
-                        let max_length = property_definition.get_u64("maxLength").ok();
-
-                        if max_length.is_none()
-                            || max_length.unwrap() > MAX_INDEXED_STRING_PROPERTY_LENGTH as u64
-                        {
-                            result.add_error(BasicError::IndexError(
-                                IndexError::InvalidIndexedPropertyConstraintError {
-                                    document_type: document_type.clone(),
-                                    index_definition: index_definition.clone(),
-                                    property_name: property_name.clone(),
-                                    constraint_name: String::from("maxLength"),
-                                    reason: format!(
-                                        "should be less or equal than {}",
-                                        MAX_INDEXED_STRING_PROPERTY_LENGTH
-                                    ),
-                                },
-                            ))
-                        }
-                    }
-                }
-                // Make sure that compound unique indices contain all fields
-                if index_definition.properties.len() > 1 {
-                    let required_fields = document_schema
-                        .get_schema_required_fields()
-                        .unwrap_or_default();
-                    let all_are_required = index_definition
-                        .properties
-                        .iter()
-                        .flatten()
-                        .map(|(field, _)| field)
-                        .all(|field| required_fields.contains(&field.as_str()));
-
-                    let all_are_not_required = index_definition
-                        .properties
-                        .iter()
-                        .flatten()
-                        .map(|(field, _)| field)
-                        .all(|field| !required_fields.contains(&field.as_str()));
-
-                    if !all_are_required && !all_are_not_required {
-                        result.add_error(BasicError::IndexError(
-                            IndexError::InvalidCompoundIndexError {
-                                document_type: document_type.clone(),
-                                index_definition: index_definition.clone(),
-                            },
-                        ));
-                    }
-
-                    // Ensure index definition uniqueness
-                    let indices_fingerprint = serde_json::to_string(&index_definition.properties)?;
-                    if indices_fingerprints.contains(&indices_fingerprint) {
-                        result.add_error(BasicError::IndexError(IndexError::DuplicateIndexError {
-                            document_type: document_type.clone(),
-                            index_definition: index_definition.clone(),
-                        }));
-                    }
-                    indices_fingerprints.push(indices_fingerprint)
-                }
+            let (validation_result, should_stop_further_validation) =
+                validate_index_definitions(&indices, document_type, document_schema);
+            result.merge(validation_result);
+            if should_stop_further_validation {
+                return Ok(result);
             }
         }
 
         Ok(result)
     }
+}
+
+/// checks the correctness of indices and returns the validation result. The bool flags should be on,
+/// when further validation should be stopped
+fn validate_index_definitions(
+    indices: &[Index],
+    document_type: &str,
+    document_schema: &JsonValue,
+) -> (ValidationResult, bool) {
+    let mut result = ValidationResult::default();
+    let mut indices_fingerprints: Vec<String> = vec![];
+
+    for index_definition in indices.iter() {
+        let validation_result = validate_no_system_indices(index_definition, document_type);
+        result.merge(validation_result);
+
+        let user_defined_properties = index_definition
+            .properties
+            .iter()
+            .flatten()
+            .map(|property| property.0)
+            .filter(|property_name| {
+                !ALLOWED_INDEX_SYSTEM_PROPERTIES.contains(&property_name.as_str())
+            });
+
+        let property_definition_entities: HashMap<&String, Option<&JsonValue>> =
+            user_defined_properties
+                .map(|property_name| {
+                    (
+                        property_name,
+                        get_property_definition_by_path(document_schema, property_name).ok(),
+                    )
+                })
+                .collect();
+
+        let validation_result = validate_not_defined_properties(
+            &property_definition_entities,
+            index_definition,
+            document_type,
+        );
+
+        if !validation_result.is_valid() {
+            result.merge(validation_result);
+            // Skip further validation if there are undefined properties
+            return (result, true);
+        }
+
+        // Validation of property defs
+        for (property_name, maybe_property_definition) in property_definition_entities {
+            result.merge(validate_property_definition(
+                property_name,
+                maybe_property_definition,
+                document_type,
+                index_definition,
+            ));
+        }
+
+        // Make sure that compound unique indices contain all fields
+        if index_definition.properties.len() > 1 {
+            let required_fields = document_schema
+                .get_schema_required_fields()
+                .unwrap_or_default();
+            let all_are_required = index_definition
+                .properties
+                .iter()
+                .flatten()
+                .map(|(field, _)| field)
+                .all(|field| required_fields.contains(&field.as_str()));
+
+            let all_are_not_required = index_definition
+                .properties
+                .iter()
+                .flatten()
+                .map(|(field, _)| field)
+                .all(|field| !required_fields.contains(&field.as_str()));
+
+            if !all_are_required && !all_are_not_required {
+                result.add_error(BasicError::IndexError(
+                    IndexError::InvalidCompoundIndexError {
+                        document_type: document_type.to_owned(),
+                        index_definition: index_definition.clone(),
+                    },
+                ));
+            }
+
+            // Ensure index definition uniqueness
+            let indices_fingerprint = serde_json::to_string(&index_definition.properties)
+                .expect("fingerprint creation shouldn't fail");
+            if indices_fingerprints.contains(&indices_fingerprint) {
+                result.add_error(BasicError::IndexError(IndexError::DuplicateIndexError {
+                    document_type: document_type.to_owned(),
+                    index_definition: index_definition.clone(),
+                }));
+            }
+            indices_fingerprints.push(indices_fingerprint)
+        }
+    }
+    (result, false)
+}
+
+fn validate_property_definition(
+    property_name: &str,
+    maybe_property_definition: Option<&JsonValue>,
+    document_type: &str,
+    index_definition: &Index,
+) -> ValidationResult {
+    let mut result = ValidationResult::default();
+
+    // we are allowed to use unwrap as we return if some of the properties definitions is None
+    let property_definition = maybe_property_definition.unwrap();
+    let is_byte_array = property_definition.is_type_of_byte_array();
+    let mut invalid_property_type: String = "".to_string();
+
+    if property_definition.is_type_of_object() {
+        invalid_property_type = "object".to_string()
+    }
+
+    // Validate arrays contain scalar values or have the same types
+    // https://github.com/dashevo/platform/blob/ab6391f4b47a970c733e7b81115b44329fbdf993/packages/js-dpp/lib/dataContract/validation/validateDataContractFactory.js#L210
+    if property_definition.is_type_of_array() && !is_byte_array {
+        invalid_property_type = "array".to_string();
+        // const isInvalidPrefixItems = prefixItems
+        //   && (
+        // prefixItems.some((prefixItem) =>
+        // prefixItem.type === 'object' || prefixItem.type === 'array')
+        //     || !prefixItems.every((prefixItem) => prefixItem.type === prefixItems[0].type)
+        //   );
+        //
+        // const isInvalidItemTypes = items.type === 'object' || items.type === 'array';
+        //
+        // if (isInvalidPrefixItems || isInvalidItemTypes) {
+        //   invalidPropertyType = 'array';
+        // }
+    }
+
+    if !invalid_property_type.is_empty() {
+        result.add_error(BasicError::IndexError(
+            IndexError::InvalidIndexPropertyTypeError {
+                document_type: document_type.to_owned(),
+                index_definition: index_definition.clone(),
+                property_name: property_name.to_owned(),
+                property_type: invalid_property_type.clone(),
+            },
+        ));
+    }
+
+    // https://github.com/dashevo/platform/blob/ab6391f4b47a970c733e7b81115b44329fbdf993/packages/js-dpp/lib/dataContract/validation/validateDataContractFactory.js#L236
+    // Validate sting length inside arrays
+    // if (!invalidPropertyType && propertyType === 'array' && !isByteArray) {
+    //   const isInvalidPrefixItems = prefixItems && prefixItems.some((prefixItem) => (
+    //     prefixItem.type === 'string'
+    //     && (
+    // !prefixItem.maxLength || prefixItem.maxLength > MAX_INDEXED_STRING_PROPERTY_LENGTH
+    //     )
+    //   ));
+    //
+    //   const isInvalidItemTypes = items.type === 'string' && (
+    //     !items.maxLength || items.maxLength > MAX_INDEXED_STRING_PROPERTY_LENGTH
+    //   );
+    //
+    //   if (isInvalidPrefixItems || isInvalidItemTypes) {
+    //     result.addError(
+    //       new InvalidIndexedPropertyConstraintError(
+    //         documentType,
+    //         indexDefinition,
+    //         propertyName,
+    //         'maxLength',
+    //         `should be less or equal ${MAX_INDEXED_STRING_PROPERTY_LENGTH}`,
+    //       ),
+    //     );
+    //   }
+    // }
+    //
+
+    if invalid_property_type.is_empty() && property_definition.is_type_of_array() {
+        let max_items = property_definition.get_u64("maxItems").ok();
+        let max_limit = if is_byte_array {
+            MAX_INDEXED_BYTE_ARRAY_PROPERTY_LENGTH
+        } else {
+            MAX_INDEXED_ARRAY_ITEMS
+        };
+
+        if max_items.is_none() || max_items.unwrap() > max_limit as u64 {
+            result.add_error(BasicError::IndexError(
+                IndexError::InvalidIndexedPropertyConstraintError {
+                    document_type: document_type.to_owned(),
+                    index_definition: index_definition.clone(),
+                    property_name: property_name.to_owned(),
+                    constraint_name: String::from("maxItems"),
+                    reason: format!("should be less or equal {}", max_limit),
+                },
+            ));
+        }
+    }
+
+    if property_definition.is_type_of_string() {
+        let max_length = property_definition.get_u64("maxLength").ok();
+
+        if max_length.is_none() || max_length.unwrap() > MAX_INDEXED_STRING_PROPERTY_LENGTH as u64 {
+            result.add_error(BasicError::IndexError(
+                IndexError::InvalidIndexedPropertyConstraintError {
+                    document_type: document_type.to_owned(),
+                    index_definition: index_definition.clone(),
+                    property_name: property_name.to_owned(),
+                    constraint_name: String::from("maxLength"),
+                    reason: format!(
+                        "should be less or equal than {}",
+                        MAX_INDEXED_STRING_PROPERTY_LENGTH
+                    ),
+                },
+            ))
+        }
+    }
+
+    result
 }
 
 /// checks if properties defined in indices are existing in the contract
@@ -2111,7 +2147,6 @@ mod test {
     }
 
     #[test]
-    #[ignore = "maxProperties introduced in draft20202"]
     fn index_property_should_have_no_more_than_one_property() {
         init();
         let TestData {
@@ -2127,7 +2162,7 @@ mod test {
         let result = data_contract_validator
             .validate(&raw_data_contract)
             .expect("validation result should be returned");
-        let schema_error = get_schema_error(&result, 0);
+        let schema_error = get_schema_error(&result, 1);
 
         assert_eq!(
             "/documents/indexedDocument/indices/0/properties/0",
