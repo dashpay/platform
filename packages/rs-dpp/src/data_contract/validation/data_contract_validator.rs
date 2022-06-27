@@ -33,7 +33,6 @@ pub const MAX_INDEXED_BYTE_ARRAY_PROPERTY_LENGTH: usize = 255;
 pub const MAX_INDEXED_ARRAY_ITEMS: usize = 1024;
 
 lazy_static! {
-        // TODO  the base_document_schema should be declared in one place
     static ref BASE_DOCUMENT_SCHEMA: JsonValue =
         serde_json::from_str(include_str!("../../schema/document/documentBase.json")).unwrap();
 }
