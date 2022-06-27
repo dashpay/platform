@@ -29,17 +29,20 @@ function handleUpdatedPubKeyOperatorFactory(
    * @param {SimplifiedMNListEntry} masternodeEntry
    * @param {SimplifiedMNListEntry} previousMasternodeEntry
    * @param {DataContract} dataContract
+   * @return Promise<Array<Identity|Document>>
    */
   async function handleUpdatedPubKeyOperator(
     masternodeEntry,
     previousMasternodeEntry,
     dataContract,
   ) {
+    const result = [];
+
     const { extraPayload: proRegTxPayload } = await fetchTransaction(masternodeEntry.proRegTxHash);
 
     // we need to crate reward shares only if it's enabled in proRegTx
     if (proRegTxPayload.operatorReward === 0) {
-      return;
+      return result;
     }
 
     const proRegTxHash = Buffer.from(masternodeEntry.proRegTxHash, 'hex');
@@ -57,11 +60,13 @@ function handleUpdatedPubKeyOperatorFactory(
 
     //  Create an identity for operator if there is no identity exist with the same ID
     if (operatorIdentity === null) {
-      await createMasternodeIdentity(
-        operatorIdentifier,
-        operatorPublicKey,
-        IdentityPublicKey.TYPES.BLS12_381,
-        operatorPayoutPubKey,
+      result.push(
+        await createMasternodeIdentity(
+          operatorIdentifier,
+          operatorPublicKey,
+          IdentityPublicKey.TYPES.BLS12_381,
+          operatorPayoutPubKey,
+        ),
       );
     }
 
@@ -72,11 +77,13 @@ function handleUpdatedPubKeyOperatorFactory(
       proRegTxHash,
     );
 
-    await createRewardShareDocument(
-      dataContract,
-      masternodeIdentifier,
-      operatorIdentifier,
-      proRegTxPayload.operatorReward,
+    result.push(
+      await createRewardShareDocument(
+        dataContract,
+        masternodeIdentifier,
+        operatorIdentifier,
+        proRegTxPayload.operatorReward,
+      ),
     );
 
     // Delete document from reward shares data contract with ID corresponding to the
@@ -105,7 +112,11 @@ function handleUpdatedPubKeyOperatorFactory(
         previousDocument.getId(),
         true,
       );
+
+      result.push(previousDocument);
     }
+
+    return result;
   }
 
   return handleUpdatedPubKeyOperator;
