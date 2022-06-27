@@ -1,10 +1,13 @@
-use crate::data_contract::DataContractFactory;
-use crate::decode_protocol_entity_factory::DecodeProtocolEntity;
-use crate::identifier;
-use crate::mocks;
 use crate::prelude::*;
-use crate::tests::utils::generate_random_identifier_struct;
+use crate::{
+    data_contract::validation::data_contract_validator::DataContractValidator,
+    data_contract::DataContractFactory,
+    identifier,
+    tests::utils::generate_random_identifier_struct,
+    version::{ProtocolVersionValidator, COMPATIBILITY_MAP, LATEST_VERSION},
+};
 use serde_json::json;
+use std::sync::Arc;
 
 pub fn get_data_contract_fixture(owner_id: Option<Identifier>) -> DataContract {
     let documents = json!(
@@ -260,7 +263,10 @@ pub fn get_data_contract_fixture(owner_id: Option<Identifier>) -> DataContract {
         }
     });
 
-    let factory = DataContractFactory::new(1, mocks::ValidateDataContract::default());
+    let protocol_version_validator =
+        ProtocolVersionValidator::new(LATEST_VERSION, LATEST_VERSION, COMPATIBILITY_MAP.clone());
+    let data_contract_validator = DataContractValidator::new(Arc::new(protocol_version_validator));
+    let factory = DataContractFactory::new(1, data_contract_validator);
 
     let owner_id = owner_id.unwrap_or_else(generate_random_identifier_struct);
     let mut data_contract = factory

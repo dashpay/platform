@@ -6,10 +6,10 @@ use crate::{
     validation::ValidationResult,
 };
 
-type AtomicValidator =
+type SubValidator =
     fn(path: &str, key: &str, parent: &JsonValue, value: &JsonValue, result: &mut ValidationResult);
 
-pub fn validate(raw_data_contract: &JsonValue, validators: &[AtomicValidator]) -> ValidationResult {
+pub fn validate(raw_data_contract: &JsonValue, validators: &[SubValidator]) -> ValidationResult {
     let mut result = ValidationResult::default();
     let mut values_queue: Vec<(&JsonValue, String)> = vec![(raw_data_contract, String::from(""))];
 
