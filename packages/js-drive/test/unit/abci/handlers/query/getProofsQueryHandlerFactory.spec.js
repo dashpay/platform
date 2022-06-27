@@ -31,8 +31,7 @@ describe('getProofsQueryHandlerFactory', () => {
   let blockExecutionContextMock;
   let signedIdentityRepositoryMock;
   let signedDataContractRepositoryMock;
-  let fetchSignedDataContractMock;
-  let proveSignedDocumentsMock;
+  let signedDocumentRepository;
 
   beforeEach(function beforeEach() {
     dataContract = getDataContractFixture();
@@ -63,15 +62,17 @@ describe('getProofsQueryHandlerFactory', () => {
       proveMany: this.sinon.stub().resolves(new StorageResult(Buffer.from([1]))),
     };
 
-    fetchSignedDataContractMock = this.sinon.stub();
-    proveSignedDocumentsMock = this.sinon.stub();
+    signedDocumentRepository = {
+      proveManyDocumentsFromDifferentContracts: this.sinon.stub().resolves(
+        new StorageResult(Buffer.from([1])),
+      ),
+    };
 
     getProofsQueryHandler = getProofsQueryHandlerFactory(
       blockExecutionContextStackMock,
       signedIdentityRepositoryMock,
       signedDataContractRepositoryMock,
-      fetchSignedDataContractMock,
-      proveSignedDocumentsMock,
+      signedDocumentRepository,
     );
 
     dataContractData = {

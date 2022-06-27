@@ -14,18 +14,14 @@ const Identifier = require('@dashevo/dpp/lib/identifier/Identifier');
  * @param {BlockExecutionContextStack} blockExecutionContextStack
  * @param {IdentityStoreRepository} signedIdentityRepository
  * @param {DataContractStoreRepository} signedDataContractRepository
- * @param {fetchDataContract} fetchSignedDataContract
- * @param {proveDocuments} proveSignedDocuments
+ * @param {DocumentRepository} signedDocumentRepository
  * @return {getProofsQueryHandler}
  */
 function getProofsQueryHandlerFactory(
   blockExecutionContextStack,
   signedIdentityRepository,
   signedDataContractRepository,
-  // eslint-disable-next-line no-unused-vars
-  fetchSignedDataContract,
-  // eslint-disable-next-line no-unused-vars
-  proveSignedDocuments,
+  signedDocumentRepository,
 ) {
   /**
    * @typedef getProofsQueryHandler
@@ -33,7 +29,7 @@ function getProofsQueryHandlerFactory(
    * @param callArguments
    * @param {Buffer[]} callArguments.identityIds
    * @param {Buffer[]} callArguments.dataContractIds
-   * @param {{dataContractId: Buffer, documentId: Identifier, type: string}[]} documents
+   * @param {{dataContractId: Buffer, documentId: Buffer, type: string}[]} documents
    * @return {Promise<ResponseQuery>}
    */
   async function getProofsQueryHandler(params, {
@@ -80,10 +76,13 @@ function getProofsQueryHandlerFactory(
     };
 
     if (documents && documents.length) {
+      const documentsProof = await signedDocumentRepository
+        .proveManyDocumentsFromDifferentContracts(documents);
+
       response.documentsProof = {
         signatureLlmqHash,
         signature,
-        merkleProof: Buffer.from([1]),
+        merkleProof: documentsProof.getValue(),
       };
     }
 
