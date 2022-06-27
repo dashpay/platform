@@ -6,6 +6,7 @@ const PreCalculatedOperation = require('@dashevo/dpp/lib/stateTransition/fee/ope
 const createDocumentTypeTreePath = require('./groveDB/createDocumentTreePath');
 const InvalidQueryError = require('./errors/InvalidQueryError');
 const StorageResult = require('../storage/StorageResult');
+const DataContractStoreRepository = require('../dataContract/DataContractStoreRepository');
 
 class DocumentRepository {
   /**
@@ -308,6 +309,39 @@ class DocumentRepository {
 
       throw e;
     }
+  }
+
+  /**
+   * Prove documents from different contracts
+   *
+   * @param {{ dataContractId: Buffer, documentId: Buffer, type: string }[]} documents
+   * @return {Promise<StorageResult<Buffer|null>>}
+   */
+  async proveManyDocumentsFromDifferentContracts(documents) {
+    const queries = documents.map(({ dataContractId, documentId, type }) => {
+      const dataContractsDocumentsPath = [
+        dataContractId,
+        Buffer.from([1]),
+        Buffer.from(type),
+        Buffer.from([0]),
+      ];
+
+      return {
+        path: DataContractStoreRepository.TREE_PATH.concat(dataContractsDocumentsPath),
+        query: {
+          query: {
+            items: [
+              {
+                type: 'key',
+                key: documentId,
+              },
+            ],
+          },
+        },
+      };
+    });
+
+    return this.storage.proveQueryMany(queries);
   }
 }
 

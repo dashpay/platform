@@ -299,11 +299,31 @@ class GroveDBStore {
    * @param {PathQuery} query
    * @param {Object} [options]
    * @param {boolean} [options.useTransaction=false]
-   * @return {Promise<StorageResult<Buffer|null>>}
+   * @return {Promise<StorageResult<Buffer>>}
    * */
   async proveQuery(query, options = {}) {
     const proof = await this.db.proveQuery(
       query,
+      options.useTransaction || false,
+    );
+
+    return new StorageResult(
+      proof,
+      [new ReadOperation(0)],
+    );
+  }
+
+  /**
+   * Prove many queries
+   *
+   * @param {PathQuery[]} queries
+   * @param {Object} [options]
+   * @param {boolean} [options.useTransaction=false]
+   * @return {Promise<StorageResult<Buffer>>}
+   * */
+  async proveQueryMany(queries, options = {}) {
+    const proof = await this.db.proveQueryMany(
+      queries,
       options.useTransaction || false,
     );
 
