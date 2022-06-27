@@ -465,7 +465,7 @@ mod test {
 
     fn init() {
         let _ = env_logger::builder()
-            .filter_level(log::LevelFilter::Debug)
+            .filter_level(log::LevelFilter::Trace)
             .try_init();
     }
 
@@ -514,7 +514,6 @@ mod test {
     #[test_case("$id")]
     #[test_case("documents")]
     #[test_case("ownerId")]
-    // #[test_case("$defs")]
     fn property_should_be_present(property: &str) {
         init();
         let TestData {
@@ -577,6 +576,153 @@ mod test {
         trace!("The validation result is: {:#?}", result);
 
         assert!(matches!(result, ProtocolError::Error(..)))
+    }
+
+    #[test]
+    fn defs_should_be_object() {
+        init();
+        let TestData {
+            mut raw_data_contract,
+            data_contract_validator,
+            ..
+        } = get_test_data();
+        raw_data_contract["$defs"] = json!(1);
+
+        let result = data_contract_validator
+            .validate(&raw_data_contract)
+            .expect("validation result should be returned");
+        trace!("The validation result is: {:#?}", result);
+
+        let schema_error = get_schema_error(&result, 0);
+        assert_eq!("/$defs", schema_error.instance_path().to_string());
+        assert_eq!(Some("type"), schema_error.keyword(),);
+    }
+
+    #[test]
+    fn defs_should_not_be_empty() {
+        init();
+        let TestData {
+            mut raw_data_contract,
+            data_contract_validator,
+            ..
+        } = get_test_data();
+        raw_data_contract["$defs"] = json!({});
+
+        let result = data_contract_validator
+            .validate(&raw_data_contract)
+            .expect("validation result should be returned");
+        trace!("The validation result is: {:#?}", result);
+
+        let schema_error = get_schema_error(&result, 0);
+        assert_eq!("/$defs", schema_error.instance_path().to_string());
+        assert_eq!(Some("minProperties"), schema_error.keyword(),);
+    }
+
+    #[test]
+    fn defs_should_have_no_non_alphanumeric_properties() {
+        init();
+        let TestData {
+            mut raw_data_contract,
+            data_contract_validator,
+            ..
+        } = get_test_data();
+        raw_data_contract["$defs"] = json!({ "$subSchema" : {}});
+
+        let result = data_contract_validator
+            .validate(&raw_data_contract)
+            .expect("validation result should be returned");
+        trace!("The validation result is: {:#?}", result);
+
+        let schema_error = get_schema_error(&result, 0);
+        assert_eq!("/$defs", schema_error.instance_path().to_string());
+        assert_eq!(Some("pattern"), schema_error.keyword(),);
+    }
+
+    #[test]
+    fn defs_should_have_valid_property_names() {
+        init();
+        let TestData {
+            mut raw_data_contract,
+            data_contract_validator,
+            ..
+        } = get_test_data();
+
+        let valid_names = [
+            "validName",
+            "valid_name",
+            "valid-name",
+            "abc",
+            "a123123bc",
+            "ab123c",
+            "ValidName",
+            "validName",
+            "abcdefghigklmnopqrstuvwxyz01234567890abcdefghigklmnopqrstuvwxyz",
+            "abc_gbf_gdb",
+            "abc-gbf-gdb",
+        ];
+
+        for property_name in valid_names {
+            raw_data_contract["$defs"][property_name] = json!({"type" : "string"})
+        }
+
+        let result = data_contract_validator
+            .validate(&raw_data_contract)
+            .expect("validation result should be returned");
+        assert!(result.is_valid());
+    }
+
+    #[test]
+    fn defs_with_invalid_property_names_should_return_error() {
+        init();
+        let TestData {
+            mut raw_data_contract,
+            data_contract_validator,
+            ..
+        } = get_test_data();
+
+        let invalid_names = [
+            "-invalidname",
+            "_invalidname",
+            "invalidname-",
+            "invalidname_",
+            "*(*&^",
+            "$test",
+            "123abci",
+            "ab",
+        ];
+        for property_name in invalid_names {
+            raw_data_contract["$defs"][property_name] = json!({"type" : "string"})
+        }
+
+        let result = data_contract_validator
+            .validate(&raw_data_contract)
+            .expect("validation result should be returned");
+        let schema_error = get_schema_error(&result, 0);
+
+        assert_eq!("/$defs", schema_error.instance_path().to_string());
+        assert_eq!(Some("pattern"), schema_error.keyword(),);
+    }
+
+    #[test]
+    fn defs_should_have_no_more_100_properties() {
+        init();
+        let TestData {
+            mut raw_data_contract,
+            data_contract_validator,
+            ..
+        } = get_test_data();
+
+        for i in 1..101 {
+            raw_data_contract["$defs"][format!("def_{}", i)] = json!({"type" : "string"})
+        }
+
+        let result = data_contract_validator
+            .validate(&raw_data_contract)
+            .expect("validation result should be returned");
+        let schema_error = get_schema_error(&result, 0);
+
+        assert_eq!("/$defs", schema_error.instance_path().to_string());
+        assert_eq!(Some("maxProperties"), schema_error.keyword(),);
     }
 
     #[test]
