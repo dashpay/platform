@@ -1,6 +1,6 @@
-# dash-spv
+# dash-spv (DEPRECATED)
 
-Repository containing various SPV functions used by Dash Platform
+Moved to the https://github.com/dashevo/platform
 
 ## License
 
