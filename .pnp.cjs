@@ -2504,6 +2504,16 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           "linkType": "SOFT",
         }]
       ]],
+      ["@dashevo/docker-compose", [
+        ["npm:0.24.1", {
+          "packageLocation": "./.yarn/cache/@dashevo-docker-compose-npm-0.24.1-e4dc7f3c5e-7792e09b5d.zip/node_modules/@dashevo/docker-compose/",
+          "packageDependencies": [
+            ["@dashevo/docker-compose", "npm:0.24.1"],
+            ["yaml", "npm:1.10.2"]
+          ],
+          "linkType": "HARD",
+        }]
+      ]],
       ["@dashevo/dp-services-ctl", [
         ["https://github.com/dashevo/js-dp-services-ctl.git#commit=3976076b0018c5b4632ceda4c752fc597f27a640", {
           "packageLocation": "./.yarn/cache/@dashevo-dp-services-ctl-https-a393167701-0325823966.zip/node_modules/@dashevo/dp-services-ctl/",
@@ -7680,6 +7690,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["@dashevo/dashcore-lib", "npm:0.19.39"],
             ["@dashevo/dashd-rpc", "npm:2.3.2"],
             ["@dashevo/dashpay-contract", "workspace:packages/dashpay-contract"],
+            ["@dashevo/docker-compose", "npm:0.24.1"],
             ["@dashevo/dpns-contract", "workspace:packages/dpns-contract"],
             ["@dashevo/dpp", "workspace:packages/js-dpp"],
             ["@dashevo/feature-flags-contract", "workspace:packages/feature-flags-contract"],
@@ -7693,7 +7704,6 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["bls-signatures", "npm:0.2.5"],
             ["chalk", "npm:4.1.2"],
             ["dash", "workspace:packages/js-dash-sdk"],
-            ["docker-compose", "npm:0.23.3"],
             ["dockerode", "npm:3.3.1"],
             ["dot", "npm:1.1.3"],
             ["dotenv", "npm:8.6.0"],
@@ -8247,15 +8257,6 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           "packageDependencies": [
             ["dns-socket", "npm:4.2.2"],
             ["dns-packet", "npm:5.3.0"]
-          ],
-          "linkType": "HARD",
-        }]
-      ]],
-      ["docker-compose", [
-        ["npm:0.23.3", {
-          "packageLocation": "./.yarn/cache/docker-compose-npm-0.23.3-00a13d5b3c-3d2bd5e4cb.zip/node_modules/docker-compose/",
-          "packageDependencies": [
-            ["docker-compose", "npm:0.23.3"]
           ],
           "linkType": "HARD",
         }]
@@ -19288,6 +19289,15 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           "packageLocation": "./.yarn/cache/yallist-npm-4.0.0-b493d9e907-343617202a.zip/node_modules/yallist/",
           "packageDependencies": [
             ["yallist", "npm:4.0.0"]
+          ],
+          "linkType": "HARD",
+        }]
+      ]],
+      ["yaml", [
+        ["npm:1.10.2", {
+          "packageLocation": "./.yarn/cache/yaml-npm-1.10.2-0e780aebdf-ce4ada136e.zip/node_modules/yaml/",
+          "packageDependencies": [
+            ["yaml", "npm:1.10.2"]
           ],
           "linkType": "HARD",
         }]
