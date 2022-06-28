@@ -100,7 +100,7 @@ impl Document {
         let mut json_value: JsonValue = ciborium::de::from_reader(document_bytes)
             .map_err(|e| ProtocolError::EncodingError(format!("{}", e)))?;
 
-        json_value.parse_and_add_protocol_version(protocol_bytes)?;
+        json_value.parse_and_add_protocol_version("$protocolVersion", protocol_bytes)?;
         // TODO identifiers and binary data for dynamic values
         json_value.replace_identifier_paths(IDENTIFIER_FIELDS, ReplaceWith::Base58)?;
 
