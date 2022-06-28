@@ -167,6 +167,7 @@ USAGE
   $ dashmate stop
 
 OPTIONS
+  -f, --force      force stop nodes (skips running check)
   -v, --verbose    use verbose mode for output
   --config=config  configuration name to use
 ```
@@ -220,13 +221,17 @@ The `reset` command removes all data corresponding to the specified config and a
 
 ```
 USAGE
-  $ dashmate reset
+  $ dashmate reset [--config <value>] [-v] [-h] [-f] [-p]
 
-OPTIONS
-  -v, --verbose        use verbose mode for output
-  --config=config      configuration name to use
+FLAGS
+  -f, --force          skip running services check
   -h, --hard           reset config as well as data
   -p, --platform-only  reset platform data only
+  -v, --verbose        use verbose mode for output
+  --config=<value>     configuration name to use
+
+DESCRIPTION
+  Reset node data
 ```
 
 With the hard reset mode enabled, the corresponding config will be reset as well. To proceed, running the node [setup](#setup-node) is required.
@@ -299,6 +304,7 @@ USAGE
   $ dashmate group stop
 
 OPTIONS
+  -f, --force    force stop nodes (skips running check)
   -v, --verbose  use verbose mode for output
   --group=group  group name to use
 ```
@@ -335,13 +341,17 @@ The `group:reset` command removes all data corresponding to the specified group 
 
 ```
 USAGE
-  $ dashmate group reset
+  $ dashmate group reset [--group <value>] [-v] [--hard] [-f] [-p]
 
-OPTIONS
-  -h, --hard           reset config as well as data
+FLAGS
+  -f, --force          reset even running node
   -p, --platform-only  reset platform data only
   -v, --verbose        use verbose mode for output
-  --group=group        group name to use
+  --group=<value>      group name to use
+  --hard               reset config as well as data
+
+DESCRIPTION
+  Reset group nodes
 ```
 
 With the hard reset mode enabled, corresponding configs will be reset as well. To proceed, running the node [setup](#setup-node) is required.
