@@ -71,7 +71,7 @@ Usage: test <seed> [options]
 Just run pre-built image using the same arguments as [running locally](#running-locally):
 
 ```sh
-$ docker run --network=host dashpay/platform-test-suite
+$ docker run --network=host --env ./.env dashpay/platform-test-suite
 
 Run test suite
 
