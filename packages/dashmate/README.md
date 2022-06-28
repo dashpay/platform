@@ -395,7 +395,7 @@ One of your nodes failed to start or missing, you may retry with --force option
 Running services preventing dashmate to start, that might be left after unsuccessful close. Try to stop them forcibly with --force option.
 
 #### externalIp option is not set in base config
-This may happen when you switch between multiple major versions, so your config became incompatible. In this case, you have to purge dashmate storage (`rm -rf ~/.dashmate`) and run setup again.
+This may happen when you switch between multiple major versions, so your config became incompatible. In this case, do a manual reset and run setup again.
 
 #### TypeError Plugin: dashmate: Cannot read properties of undefined (reading 'dash')
 This could happen if you have other .yarnrc and node_modules in your upper directories. Check your home directory for .yarnrc and node_modules, wipe them all and try again
