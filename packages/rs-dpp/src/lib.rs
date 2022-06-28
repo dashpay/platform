@@ -4,6 +4,7 @@ mod contracts;
 pub mod data_contract;
 extern crate core;
 
+mod convertible;
 pub mod data_trigger;
 pub mod decode_protocol_entity_factory;
 pub mod document;
@@ -22,6 +23,7 @@ pub mod validation;
 
 mod dash_platform_protocol;
 
+pub use convertible::Convertible;
 pub use dash_platform_protocol::DashPlatformProtocol;
 pub use errors::*;
 pub mod mocks;
@@ -30,6 +32,7 @@ pub mod mocks;
 mod tests;
 
 mod prelude {
+    pub use super::convertible::Convertible;
     pub use crate::data_contract::DataContract;
     pub use crate::data_trigger::DataTrigger;
     pub use crate::document::document_transition::DocumentTransition;
