@@ -24,7 +24,7 @@ class GroupResetCommand extends GroupBaseCommand {
     {
       verbose: isVerbose,
       hard: isHardReset,
-      force: isForceReset,
+      force: isForce,
       'platform-only': isPlatformOnlyReset,
     },
     isSystemConfig,
@@ -114,7 +114,7 @@ class GroupResetCommand extends GroupBaseCommand {
     try {
       await tasks.run({
         isHardReset,
-        isForceReset,
+        isForce,
         isPlatformOnlyReset,
         isVerbose,
       });
