@@ -1,10 +1,24 @@
-pub mod conditions;
-mod defaults;
-pub mod ordering;
-mod test_index;
+use std::collections::BTreeMap;
+use std::ops::BitXor;
+
+use ciborium::value::Value;
+pub use grovedb::{
+    Element, Error as GroveError, GroveDb, PathQuery, Query, QueryItem, SizedQuery, TransactionArg,
+};
+use indexmap::IndexMap;
+use sqlparser::ast;
+use sqlparser::ast::TableFactor::Table;
+use sqlparser::ast::Value::Number;
+use sqlparser::ast::{OrderByExpr, Select, Statement};
+use sqlparser::dialect::GenericDialect;
+use sqlparser::parser::Parser;
+
+use conditions::WhereOperator::{Equal, In};
+pub use conditions::{WhereClause, WhereOperator};
+pub use ordering::OrderClause;
 
 use crate::common::bytes_for_system_value;
-use crate::contract::{Contract, Document, DocumentType, Index, IndexProperty};
+use crate::contract::{document::Document, Contract, DocumentType, Index, IndexProperty};
 use crate::drive::object_size_info::KeyValueInfo;
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
@@ -13,23 +27,12 @@ use crate::error::structure::StructureError;
 use crate::error::Error;
 use crate::error::Error::GroveDB;
 use crate::fee::calculate_fee;
-use crate::fee::op::QueryOperation;
-use ciborium::value::Value;
-use conditions::WhereOperator::{Equal, In};
-pub use conditions::{WhereClause, WhereOperator};
-pub use grovedb::{
-    Element, Error as GroveError, GroveDb, PathQuery, Query, QueryItem, SizedQuery, TransactionArg,
-};
-use indexmap::IndexMap;
-pub use ordering::OrderClause;
-use sqlparser::ast;
-use sqlparser::ast::TableFactor::Table;
-use sqlparser::ast::Value::Number;
-use sqlparser::ast::{OrderByExpr, Select, Statement};
-use sqlparser::dialect::GenericDialect;
-use sqlparser::parser::Parser;
-use std::collections::BTreeMap;
-use std::ops::BitXor;
+use crate::fee::op::DriveOperation;
+
+pub mod conditions;
+mod defaults;
+pub mod ordering;
+mod test_index;
 
 #[derive(Clone, Debug, PartialEq, Default)]
 pub struct InternalClauses {
@@ -423,7 +426,7 @@ impl<'a> DriveQuery<'a> {
         &self,
         drive: &Drive,
         transaction: TransactionArg,
-        query_operations: &mut Vec<QueryOperation>,
+        drive_operations: &mut Vec<DriveOperation>,
     ) -> Result<PathQuery, Error> {
         // First we should get the overall document_type_path
         let document_type_path = self
@@ -462,7 +465,7 @@ impl<'a> DriveQuery<'a> {
                         start_at_document_path,
                         KeyValueInfo::KeyRefRequest(&start_at_document_key),
                         transaction,
-                        query_operations,
+                        drive_operations,
                     )
                     .map_err(|e| match e {
                         Error::GroveDB(GroveError::PathKeyNotFound(_))
@@ -1115,31 +1118,52 @@ impl<'a> DriveQuery<'a> {
         self,
         drive: &Drive,
         transaction: TransactionArg,
+    ) -> Result<(Vec<u8>, u64), Error> {
+        let mut drive_operations = vec![];
+        let items = self.execute_with_proof_internal(drive, transaction, &mut drive_operations)?;
+        let (_, cost) = calculate_fee(None, Some(drive_operations))?;
+        Ok((items, cost))
+    }
+
+    pub(crate) fn execute_with_proof_internal(
+        self,
+        drive: &Drive,
+        transaction: TransactionArg,
+        drive_operations: &mut Vec<DriveOperation>,
     ) -> Result<Vec<u8>, Error> {
-        let mut query_operations: Vec<QueryOperation> = vec![];
         let path_query =
-            self.construct_path_query_operations(drive, transaction, &mut query_operations)?;
-        drive
-            .grove
-            .get_proved_path_query(&path_query, transaction)
-            .map_err(Error::GroveDB)
+            self.construct_path_query_operations(drive, transaction, drive_operations)?;
+        drive.grove_get_proved_path_query(&path_query, transaction, drive_operations)
     }
 
     pub fn execute_with_proof_only_get_elements(
         self,
         drive: &Drive,
         transaction: TransactionArg,
-    ) -> Result<([u8; 32], Vec<Vec<u8>>), Error> {
-        let mut query_operations: Vec<QueryOperation> = vec![];
-        let path_query =
-            self.construct_path_query_operations(drive, transaction, &mut query_operations)?;
+    ) -> Result<([u8; 32], Vec<Vec<u8>>, u64), Error> {
+        let mut drive_operations = vec![];
+        let (root_hash, items) = self.execute_with_proof_only_get_elements_internal(
+            drive,
+            transaction,
+            &mut drive_operations,
+        )?;
+        let (_, cost) = calculate_fee(None, Some(drive_operations))?;
+        Ok((root_hash, items, cost))
+    }
 
-        let proof = drive
-            .grove
-            .get_proved_path_query(&path_query, transaction)
-            .map_err(Error::GroveDB)?;
+    pub(crate) fn execute_with_proof_only_get_elements_internal(
+        self,
+        drive: &Drive,
+        transaction: TransactionArg,
+        drive_operations: &mut Vec<DriveOperation>,
+    ) -> Result<([u8; 32], Vec<Vec<u8>>), Error> {
+        let path_query =
+            self.construct_path_query_operations(drive, transaction, drive_operations)?;
+
+        let proof =
+            drive.grove_get_proved_path_query(&path_query, transaction, drive_operations)?;
         let (root_hash, mut key_value_elements) =
-            GroveDb::execute_proof(proof.as_slice(), &path_query).map_err(Error::GroveDB)?;
+            GroveDb::verify_query(proof.as_slice(), &path_query).map_err(Error::GroveDB)?;
 
         let mut values = vec![];
         for (_, value) in key_value_elements.iter_mut() {
@@ -1162,24 +1186,29 @@ impl<'a> DriveQuery<'a> {
         drive: &Drive,
         transaction: TransactionArg,
     ) -> Result<(Vec<Vec<u8>>, u16, u64), Error> {
-        let mut query_operations: Vec<QueryOperation> = vec![];
+        let mut drive_operations = vec![];
+        let (items, skipped) =
+            self.execute_no_proof_internal(drive, transaction, &mut drive_operations)?;
+        let (_, cost) = calculate_fee(None, Some(drive_operations))?;
+        Ok((items, skipped, cost))
+    }
+
+    pub(crate) fn execute_no_proof_internal(
+        &self,
+        drive: &Drive,
+        transaction: TransactionArg,
+        drive_operations: &mut Vec<DriveOperation>,
+    ) -> Result<(Vec<Vec<u8>>, u16), Error> {
         let path_query =
-            self.construct_path_query_operations(drive, transaction, &mut query_operations)?;
-        let query_result = drive.grove.get_path_query(&path_query, transaction);
+            self.construct_path_query_operations(drive, transaction, drive_operations)?;
+        let query_result = drive.grove_get_path_query(&path_query, transaction, drive_operations);
         match query_result {
-            Err(GroveError::PathKeyNotFound(_)) | Err(GroveError::PathNotFound(_)) => {
-                let path_query_operations = QueryOperation::for_empty_path_query(&path_query);
-                query_operations.push(path_query_operations);
-                let (_, processing_fee) = calculate_fee(None, Some(query_operations), None)?;
-                Ok((Vec::new(), 0, processing_fee))
-            }
+            Err(GroveDB(GroveError::PathKeyNotFound(_)))
+            | Err(GroveDB(GroveError::PathNotFound(_))) => Ok((Vec::new(), 0)),
             _ => {
                 let (data, skipped) = query_result?;
                 {
-                    let path_query_operations = QueryOperation::for_path_query(&path_query, &data);
-                    query_operations.push(path_query_operations);
-                    let (_, processing_fee) = calculate_fee(None, Some(query_operations), None)?;
-                    Ok((data, skipped, processing_fee))
+                    Ok((data, skipped))
                 }
             }
         }
@@ -1188,15 +1217,16 @@ impl<'a> DriveQuery<'a> {
 
 #[cfg(test)]
 mod tests {
+    use serde_json::json;
+    use tempfile::TempDir;
+
     use crate::common;
     use crate::common::json_document_to_cbor;
     use crate::contract::{Contract, DocumentType};
     use crate::drive::flags::StorageFlags;
     use crate::drive::Drive;
     use crate::query::DriveQuery;
-    use serde_json::json;
     use serde_json::Value::Null;
-    use tempfile::TempDir;
 
     fn setup_family_contract() -> (Drive, Contract) {
         let tmp_dir = TempDir::new().unwrap();

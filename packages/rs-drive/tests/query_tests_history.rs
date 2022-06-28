@@ -1,18 +1,20 @@
+use std::collections::{BTreeMap, HashMap};
+use std::option::Option::None;
+
 use rand::seq::SliceRandom;
 use rand::{Rng, SeedableRng};
+use serde::{Deserialize, Serialize};
+use serde_json::json;
+use tempfile::TempDir;
+
 use rs_drive::common;
-use rs_drive::contract::{Contract, Document};
+use rs_drive::contract::{document::Document, Contract};
 use rs_drive::drive::flags::StorageFlags;
 use rs_drive::drive::object_size_info::DocumentAndContractInfo;
 use rs_drive::drive::object_size_info::DocumentInfo::DocumentAndSerialization;
 use rs_drive::drive::Drive;
 use rs_drive::error::{query::QueryError, Error};
 use rs_drive::query::DriveQuery;
-use serde::{Deserialize, Serialize};
-use serde_json::json;
-use std::collections::{BTreeMap, HashMap};
-use std::option::Option::None;
-use tempfile::TempDir;
 
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -162,6 +164,7 @@ fn test_query_historical() {
     let root_hash = drive
         .grove
         .root_hash(Some(&db_transaction))
+        .unwrap()
         .expect("there is always a root hash");
     assert_eq!(
         root_hash.expect("cannot get root hash").as_slice(),
@@ -1382,6 +1385,7 @@ fn test_query_historical() {
     let root_hash = drive
         .grove
         .root_hash(Some(&db_transaction))
+        .unwrap()
         .expect("there is always a root hash");
     assert_eq!(
         root_hash.expect("cannot get root hash").as_slice(),

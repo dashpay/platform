@@ -9,6 +9,7 @@ private = true
 [dependencies]
 serde = { version = "1.0.132", features = ["derive"] }
 ciborium = "0.2.0"
+integer-encoding = "3.0.3"
 bs58 = "0.4.0"
 base64 = "0.13.0"
 rand = "0.8.4"
@@ -27,8 +28,19 @@ nohash-hasher = "0.2.0"
 
 [dependencies.grovedb]
 git = "https://github.com/dashevo/grovedb"
-branch = "feat/BatchDeleteUpTreeWhileEmpty"
+branch = "develop"
 
 [dependencies.storage]
 git = "https://github.com/dashevo/grovedb"
-branch = "feat/BatchDeleteUpTreeWhileEmpty"
+branch = "develop"
+
+[dependencies.costs]
+git = "https://github.com/dashevo/grovedb"
+branch = "develop"
+
+[dev-dependencies]
+criterion = "0.3.5"
+
+[[bench]]
+name = "benchmarks"
+harness = false

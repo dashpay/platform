@@ -1,16 +1,18 @@
-use crate::contract::Contract;
-use crate::drive::Drive;
-use crate::error::structure::StructureError;
-use crate::error::Error;
-use byteorder::{BigEndian, WriteBytesExt};
-use ciborium::value::Value;
-use grovedb::TransactionArg;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fs::File;
 use std::io;
 use std::io::{BufRead, BufReader};
 use std::option::Option::None;
 use std::path::Path;
+
+use byteorder::{BigEndian, WriteBytesExt};
+use ciborium::value::Value;
+use grovedb::TransactionArg;
+
+use crate::contract::Contract;
+use crate::drive::Drive;
+use crate::error::structure::StructureError;
+use crate::error::Error;
 
 pub fn setup_contract(
     drive: &Drive,
@@ -92,6 +94,19 @@ pub fn cbor_map_to_btree_map(cbor_map: &[(Value, Value)]) -> BTreeMap<String, &V
         .collect::<BTreeMap<String, &Value>>()
 }
 
+pub fn cbor_owned_map_to_btree_map(cbor_map: Vec<(Value, Value)>) -> BTreeMap<String, Value> {
+    cbor_map
+        .into_iter()
+        .filter_map(|(key, value)| {
+            if let Value::Text(key) = key {
+                Some((key, value))
+            } else {
+                None
+            }
+        })
+        .collect::<BTreeMap<String, Value>>()
+}
+
 pub fn cbor_inner_array_value<'a>(
     document_type: &'a [(Value, Value)],
     key: &'a str,
@@ -101,6 +116,29 @@ pub fn cbor_inner_array_value<'a>(
         return Some(key_value);
     }
     None
+}
+
+pub fn cbor_inner_array_of_strings<'a>(
+    document_type: &'a [(Value, Value)],
+    key: &'a str,
+) -> Option<BTreeSet<String>> {
+    let key_value = get_key_from_cbor_map(document_type, key)?;
+    if let Value::Array(key_value) = key_value {
+        Some(
+            key_value
+                .iter()
+                .filter_map(|v| {
+                    if let Value::Text(text) = v {
+                        Some(text.clone())
+                    } else {
+                        None
+                    }
+                })
+                .collect(),
+        )
+    } else {
+        None
+    }
 }
 
 pub fn cbor_inner_map_value<'a>(

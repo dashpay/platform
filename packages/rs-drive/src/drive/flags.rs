@@ -1,7 +1,8 @@
-use crate::error::drive::DriveError;
-use crate::error::Error;
 use byteorder::{BigEndian, ReadBytesExt};
 use grovedb::ElementFlags;
+
+use crate::error::drive::DriveError;
+use crate::error::Error;
 
 // Struct Definitions
 #[derive(Clone, Debug, Default, PartialEq)]

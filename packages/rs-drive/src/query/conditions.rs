@@ -1,14 +1,17 @@
-use crate::contract::{Document, DocumentType};
-use crate::error::query::QueryError;
-use crate::error::Error;
+use std::collections::{BTreeMap, BTreeSet};
+
 use ciborium::value::{Integer, Value};
 use grovedb::Query;
 use sqlparser::ast;
-use std::collections::{BTreeMap, BTreeSet, HashMap};
+
 use WhereOperator::{
     Between, BetweenExcludeBounds, BetweenExcludeLeft, BetweenExcludeRight, Equal, GreaterThan,
     GreaterThanOrEquals, In, LessThan, LessThanOrEquals, StartsWith,
 };
+
+use crate::contract::{document::Document, DocumentType};
+use crate::error::query::QueryError;
+use crate::error::Error;
 
 fn sql_value_to_cbor(sql_value: ast::Value) -> Option<Value> {
     match sql_value {
@@ -997,11 +1000,12 @@ impl<'a> WhereClause {
 
 #[cfg(test)]
 mod tests {
+    use ciborium::value::Value;
+
     use crate::query::conditions::WhereClause;
     use crate::query::conditions::WhereOperator::{
         Equal, GreaterThan, GreaterThanOrEquals, In, LessThan, LessThanOrEquals,
     };
-    use ciborium::value::Value;
 
     #[test]
     fn test_allowed_sup_query_pairs() {

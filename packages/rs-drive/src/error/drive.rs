@@ -4,6 +4,12 @@ pub enum DriveError {
     #[error("corrupted code execution error: {0}")]
     CorruptedCodeExecution(&'static str),
 
+    #[error("unsupported error: {0}")]
+    Unsupported(&'static str),
+
+    #[error("unsupported private error: {0}")]
+    UnsupportedPrivate(&'static str),
+
     #[error("grovedb insertion error: {0}")]
     GroveDBInsertion(&'static str),
 
@@ -41,4 +47,7 @@ pub enum DriveError {
 
     #[error("corrupted element flags error: {0}")]
     CorruptedElementFlags(&'static str),
+
+    #[error("corrupted serialization error: {0}")]
+    CorruptedSerialization(&'static str),
 }

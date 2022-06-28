@@ -1,26 +1,32 @@
-mod defaults;
-pub mod types;
+use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::fmt;
 
-use crate::common::{
-    bool_for_system_value_from_tree_map, btree_map_inner_bool_value, btree_map_inner_btree_map,
-    btree_map_inner_map_value, btree_map_inner_size_value, btree_map_inner_text_value,
-    bytes_for_system_value, bytes_for_system_value_from_tree_map, cbor_inner_array_value,
-    cbor_inner_bool_value_with_default, cbor_inner_btree_map, cbor_inner_text_value,
-    cbor_map_to_btree_map, get_key_from_cbor_map,
-};
-use crate::contract::types::DocumentFieldType;
-use crate::drive::defaults::{DEFAULT_HASH_SIZE, MAX_INDEX_SIZE, PROTOCOL_VERSION};
-use crate::drive::{Drive, RootTree};
-use crate::error::contract::ContractError;
-use crate::error::structure::StructureError;
-use crate::error::Error;
-use byteorder::{BigEndian, WriteBytesExt};
 use ciborium::value::{Value as CborValue, Value};
 use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
 use serde::{Deserialize, Serialize};
-use std::collections::{BTreeMap, HashMap};
-use std::fmt;
+
+use document::Document;
+
+use crate::common::{
+    bool_for_system_value_from_tree_map, btree_map_inner_bool_value, btree_map_inner_btree_map,
+    btree_map_inner_map_value, btree_map_inner_size_value, btree_map_inner_text_value,
+    bytes_for_system_value, bytes_for_system_value_from_tree_map, cbor_inner_array_of_strings,
+    cbor_inner_array_value, cbor_inner_bool_value_with_default, cbor_inner_btree_map,
+    cbor_inner_text_value, cbor_map_to_btree_map,
+};
+use crate::contract::types::{DocumentField, DocumentFieldType};
+use crate::drive::config::DriveEncoding;
+use crate::drive::defaults::{DEFAULT_HASH_SIZE, MAX_INDEX_SIZE};
+use crate::drive::{Drive, RootTree};
+use crate::error::contract::ContractError;
+use crate::error::drive::DriveError;
+use crate::error::structure::StructureError;
+use crate::error::Error;
+
+mod defaults;
+pub mod document;
+pub mod types;
 
 // contract
 // - id
@@ -47,19 +53,10 @@ pub struct Contract {
 pub struct DocumentType {
     pub name: String,
     pub indices: Vec<Index>,
-    pub properties: BTreeMap<String, types::DocumentFieldType>,
+    pub properties: BTreeMap<String, DocumentField>,
+    pub required_fields: BTreeSet<String>,
     pub documents_keep_history: bool,
     pub documents_mutable: bool,
-}
-
-#[derive(Serialize, Deserialize, Debug, PartialEq)]
-pub struct Document {
-    #[serde(rename = "$id")]
-    pub id: [u8; 32],
-    #[serde(flatten)]
-    pub properties: BTreeMap<String, CborValue>,
-    #[serde(rename = "$ownerId")]
-    pub owner_id: [u8; 32],
 }
 
 #[derive(Clone, Serialize, Deserialize, Debug, PartialEq)]
@@ -154,6 +151,19 @@ pub struct IndexProperty {
 
 // Struct Implementations
 impl Contract {
+    pub fn deserialize(
+        serialized_contract: &[u8],
+        contract_id: Option<[u8; 32]>,
+        encoding: DriveEncoding,
+    ) -> Result<Self, Error> {
+        match encoding {
+            DriveEncoding::DriveCbor => Contract::from_cbor(serialized_contract, contract_id),
+            DriveEncoding::DriveProtobuf => {
+                todo!()
+            }
+        }
+    }
+
     pub fn from_cbor(contract_cbor: &[u8], contract_id: Option<[u8; 32]>) -> Result<Self, Error> {
         let (version, read_contract_cbor) = contract_cbor.split_at(4);
         if !Drive::check_protocol_version_bytes(version) {
@@ -382,7 +392,7 @@ impl DocumentType {
                         "expected contract to have field",
                     ))
                 })?;
-                let bytes = field_type.encode_value(value)?;
+                let bytes = field_type.document_type.encode_value_for_tree_keys(value)?;
                 if bytes.len() > MAX_INDEX_SIZE {
                     Err(Error::Contract(ContractError::FieldRequirementUnmet(
                         "value must be less than 256 bytes long",
@@ -401,7 +411,7 @@ impl DocumentType {
         default_keeps_history: bool,
         default_mutability: bool,
     ) -> Result<Self, Error> {
-        let mut document_properties: BTreeMap<String, types::DocumentFieldType> = BTreeMap::new();
+        let mut document_properties: BTreeMap<String, DocumentField> = BTreeMap::new();
 
         // Do documents of this type keep history? (Overrides contract value)
         let documents_keep_history: bool = cbor_inner_bool_value_with_default(
@@ -446,8 +456,12 @@ impl DocumentType {
                 ))
             })?;
 
+        let mut required_fields =
+            cbor_inner_array_of_strings(document_type_value_map, "required").unwrap_or_default();
+
         fn insert_values(
-            document_properties: &mut BTreeMap<String, types::DocumentFieldType>,
+            document_properties: &mut BTreeMap<String, DocumentField>,
+            known_required: &mut BTreeSet<String>,
             prefix: Option<&str>,
             property_key: String,
             property_value: &Value,
@@ -502,7 +516,9 @@ impl DocumentType {
 
             let (type_value, inner_properties) = result?;
 
-            let field_type: types::DocumentFieldType;
+            let required = known_required.contains(&type_value.to_string());
+
+            let field_type: DocumentFieldType;
 
             match type_value {
                 "array" => {
@@ -523,10 +539,21 @@ impl DocumentType {
                                 ));
                             }
                         }
-                        None => types::DocumentFieldType::Array,
+                        None => {
+                            return Err(Error::Drive(DriveError::Unsupported(
+                                "arrays not yet supported",
+                            )));
+                            //DocumentFieldType::Array()
+                        }
                     };
 
-                    document_properties.insert(prefixed_property_key, field_type);
+                    document_properties.insert(
+                        prefixed_property_key,
+                        DocumentField {
+                            document_type: field_type,
+                            required,
+                        },
+                    );
                 }
                 "object" => {
                     let properties = btree_map_inner_btree_map(&inner_properties, "properties")
@@ -538,6 +565,7 @@ impl DocumentType {
                     for (object_property_key, object_property_value) in properties.into_iter() {
                         insert_values(
                             document_properties,
+                            known_required,
                             Some(&prefixed_property_key),
                             object_property_key,
                             object_property_value,
@@ -550,13 +578,25 @@ impl DocumentType {
                         btree_map_inner_size_value(&inner_properties, "minLength"),
                         btree_map_inner_size_value(&inner_properties, "maxLength"),
                     );
-                    document_properties.insert(prefixed_property_key, field_type);
+                    document_properties.insert(
+                        prefixed_property_key,
+                        DocumentField {
+                            document_type: field_type,
+                            required,
+                        },
+                    );
                 }
                 _ => {
                     field_type = types::string_to_field_type(type_value).ok_or({
                         Error::Contract(ContractError::ValueWrongType("invalid type"))
                     })?;
-                    document_properties.insert(prefixed_property_key, field_type);
+                    document_properties.insert(
+                        prefixed_property_key,
+                        DocumentField {
+                            document_type: field_type,
+                            required,
+                        },
+                    );
                 }
             }
             Ok(())
@@ -566,6 +606,7 @@ impl DocumentType {
         for (property_key, property_value) in property_values {
             insert_values(
                 &mut document_properties,
+                &mut required_fields,
                 None,
                 property_key,
                 property_value,
@@ -574,13 +615,31 @@ impl DocumentType {
         }
 
         // Add system properties
-        document_properties.insert(String::from("$createdAt"), types::DocumentFieldType::Date);
-        document_properties.insert(String::from("$updatedAt"), types::DocumentFieldType::Date);
+        if required_fields.contains("$createdAt") {
+            document_properties.insert(
+                String::from("$createdAt"),
+                DocumentField {
+                    document_type: DocumentFieldType::Date,
+                    required: true,
+                },
+            );
+        }
+
+        if required_fields.contains("$updatedAt") {
+            document_properties.insert(
+                String::from("$updatedAt"),
+                DocumentField {
+                    document_type: DocumentFieldType::Date,
+                    required: true,
+                },
+            );
+        }
 
         Ok(DocumentType {
             name: String::from(name),
             indices,
             properties: document_properties,
+            required_fields,
             documents_keep_history,
             documents_mutable,
         })
@@ -589,7 +648,9 @@ impl DocumentType {
     pub fn max_size(&self) -> usize {
         self.properties
             .iter()
-            .filter_map(|(_, document_field_type)| document_field_type.max_byte_size())
+            .filter_map(|(_, document_field_type)| {
+                document_field_type.document_type.max_byte_size()
+            })
             .sum()
     }
 
@@ -601,6 +662,10 @@ impl DocumentType {
             }
         }
         Ok(index_properties)
+    }
+
+    pub fn document_field_for_property(&self, property: &str) -> Option<DocumentField> {
+        self.properties.get(property).cloned()
     }
 
     pub fn document_field_type_for_property(&self, property: &str) -> Option<DocumentFieldType> {
@@ -615,14 +680,16 @@ impl DocumentType {
             )),
             "$createdAt" => Some(DocumentFieldType::Date),
             "$updatedAt" => Some(DocumentFieldType::Date),
-            &_ => self.properties.get(property).cloned(),
+            &_ => self
+                .document_field_for_property(property)
+                .map(|document_field| document_field.document_type),
         }
     }
 
     pub fn random_documents(&self, count: u32, seed: Option<u64>) -> Vec<Document> {
         let mut rng = match seed {
-            None => rand::rngs::StdRng::from_entropy(),
-            Some(seed_value) => rand::rngs::StdRng::seed_from_u64(seed_value),
+            None => StdRng::from_entropy(),
+            Some(seed_value) => StdRng::seed_from_u64(seed_value),
         };
         let mut vec: Vec<Document> = vec![];
         for _i in 0..count {
@@ -631,10 +698,14 @@ impl DocumentType {
         vec
     }
 
+    pub fn document_from_bytes(&self, bytes: &[u8]) -> Result<Document, Error> {
+        Document::from_bytes(bytes, self)
+    }
+
     pub fn random_document(&self, seed: Option<u64>) -> Document {
         let mut rng = match seed {
-            None => rand::rngs::StdRng::from_entropy(),
-            Some(seed_value) => rand::rngs::StdRng::seed_from_u64(seed_value),
+            None => StdRng::from_entropy(),
+            Some(seed_value) => StdRng::seed_from_u64(seed_value),
         };
         self.random_document_with_rng(&mut rng)
     }
@@ -645,7 +716,9 @@ impl DocumentType {
         let properties = self
             .properties
             .iter()
-            .map(|(key, document_field_type)| (key.clone(), document_field_type.random_value(rng)))
+            .map(|(key, document_field)| {
+                (key.clone(), document_field.document_type.random_value(rng))
+            })
             .collect();
 
         Document {
@@ -681,8 +754,11 @@ impl DocumentType {
         let properties = self
             .properties
             .iter()
-            .map(|(key, document_field_type)| {
-                (key.clone(), document_field_type.random_filled_value(rng))
+            .map(|(key, document_field)| {
+                (
+                    key.clone(),
+                    document_field.document_type.random_filled_value(rng),
+                )
             })
             .collect();
 
@@ -691,215 +767,6 @@ impl DocumentType {
             properties,
             owner_id,
         }
-    }
-}
-
-impl Document {
-    pub fn from_cbor(
-        document_cbor: &[u8],
-        document_id: Option<&[u8]>,
-        owner_id: Option<&[u8]>,
-    ) -> Result<Self, Error> {
-        let (version, read_document_cbor) = document_cbor.split_at(4);
-        if !Drive::check_protocol_version_bytes(version) {
-            return Err(Error::Structure(StructureError::InvalidProtocolVersion(
-                "invalid protocol version",
-            )));
-        }
-        // first we need to deserialize the document and contract indices
-        // we would need dedicated deserialization functions based on the document type
-        let mut document: BTreeMap<String, CborValue> =
-            ciborium::de::from_reader(read_document_cbor).map_err(|_| {
-                Error::Structure(StructureError::InvalidCBOR("unable to decode contract"))
-            })?;
-
-        let owner_id: [u8; 32] = match owner_id {
-            None => {
-                let owner_id: Vec<u8> =
-                    bytes_for_system_value_from_tree_map(&document, "$ownerId")?.ok_or({
-                        Error::Contract(ContractError::DocumentOwnerIdMissing(
-                            "unable to get document $ownerId",
-                        ))
-                    })?;
-                document.remove("$ownerId");
-                if owner_id.len() != 32 {
-                    return Err(Error::Contract(ContractError::FieldRequirementUnmet(
-                        "invalid owner id",
-                    )));
-                }
-                owner_id.as_slice().try_into()
-            }
-            Some(owner_id) => {
-                // we need to start by verifying that the owner_id is a 256 bit number (32 bytes)
-                if owner_id.len() != 32 {
-                    return Err(Error::Contract(ContractError::FieldRequirementUnmet(
-                        "invalid owner id",
-                    )));
-                }
-                owner_id.try_into()
-            }
-        }
-        .expect("conversion to 32bytes shouldn't fail");
-
-        let id: [u8; 32] = match document_id {
-            None => {
-                let document_id: Vec<u8> = bytes_for_system_value_from_tree_map(&document, "$id")?
-                    .ok_or({
-                        Error::Contract(ContractError::DocumentIdMissing(
-                            "unable to get document $id",
-                        ))
-                    })?;
-                document.remove("$id");
-                if document_id.len() != 32 {
-                    return Err(Error::Contract(ContractError::FieldRequirementUnmet(
-                        "invalid document id",
-                    )));
-                }
-                document_id.as_slice().try_into()
-            }
-            Some(document_id) => {
-                // we need to start by verifying that the document_id is a 256 bit number (32 bytes)
-                if document_id.len() != 32 {
-                    return Err(Error::Contract(ContractError::FieldRequirementUnmet(
-                        "invalid document id",
-                    )));
-                }
-                document_id.try_into()
-            }
-        }
-        .expect("document_id must be 32 bytes");
-
-        // dev-note: properties is everything other than the id and owner id
-        Ok(Document {
-            properties: document,
-            owner_id,
-            id,
-        })
-    }
-
-    pub fn from_cbor_with_id(
-        document_cbor: &[u8],
-        document_id: &[u8],
-        owner_id: &[u8],
-    ) -> Result<Self, Error> {
-        // we need to start by verifying that the owner_id is a 256 bit number (32 bytes)
-        if owner_id.len() != 32 {
-            return Err(Error::Contract(ContractError::FieldRequirementUnmet(
-                "invalid owner id",
-            )));
-        }
-
-        if document_id.len() != 32 {
-            return Err(Error::Contract(ContractError::FieldRequirementUnmet(
-                "invalid document id",
-            )));
-        }
-
-        let (version, read_document_cbor) = document_cbor.split_at(4);
-        if !Drive::check_protocol_version_bytes(version) {
-            return Err(Error::Structure(StructureError::InvalidProtocolVersion(
-                "invalid protocol version",
-            )));
-        }
-
-        // first we need to deserialize the document and contract indices
-        // we would need dedicated deserialization functions based on the document type
-        let properties: BTreeMap<String, CborValue> = ciborium::de::from_reader(read_document_cbor)
-            .map_err(|_| {
-                Error::Structure(StructureError::InvalidCBOR("unable to decode contract"))
-            })?;
-
-        // dev-note: properties is everything other than the id and owner id
-        Ok(Document {
-            properties,
-            owner_id: owner_id
-                .try_into()
-                .expect("try_into shouldn't fail, document_id must be 32 bytes"),
-            id: document_id
-                .try_into()
-                .expect("try_into shouldn't fail, document_id must be 32 bytes"),
-        })
-    }
-
-    pub fn to_cbor(&self) -> Vec<u8> {
-        let mut buffer: Vec<u8> = Vec::new();
-        buffer
-            .write_u32::<BigEndian>(PROTOCOL_VERSION)
-            .expect("writing protocol version caused error");
-        ciborium::ser::into_writer(&self, &mut buffer).expect("unable to serialize into cbor");
-        buffer
-    }
-
-    pub fn get_raw_for_document_type<'a>(
-        &'a self,
-        key_path: &str,
-        document_type: &DocumentType,
-        owner_id: Option<&[u8]>,
-    ) -> Result<Option<Vec<u8>>, Error> {
-        if key_path == "$ownerId" && owner_id.is_some() {
-            Ok(Some(Vec::from(owner_id.unwrap())))
-        } else {
-            match key_path {
-                "$id" => return Ok(Some(Vec::from(self.id))),
-                "$ownerId" => return Ok(Some(Vec::from(self.owner_id))),
-                _ => {}
-            }
-            let key_paths: Vec<&str> = key_path.split('.').collect::<Vec<&str>>();
-            let (key, rest_key_paths) = key_paths.split_first().ok_or({
-                Error::Contract(ContractError::MissingRequiredKey(
-                    "key must not be null when getting from document",
-                ))
-            })?;
-
-            fn get_value_at_path<'a>(
-                value: &'a Value,
-                key_paths: &'a [&str],
-            ) -> Result<Option<&'a Value>, Error> {
-                if key_paths.is_empty() {
-                    Ok(Some(value))
-                } else {
-                    let (key, rest_key_paths) = key_paths.split_first().ok_or({
-                        Error::Contract(ContractError::MissingRequiredKey(
-                            "key must not be null when getting from document",
-                        ))
-                    })?;
-                    let map_values = value.as_map().ok_or({
-                        Error::Contract(ContractError::ValueWrongType(
-                            "inner key must refer to a value map",
-                        ))
-                    })?;
-                    match get_key_from_cbor_map(map_values, key) {
-                        None => Ok(None),
-                        Some(value) => get_value_at_path(value, rest_key_paths),
-                    }
-                }
-            }
-
-            match self.properties.get(*key) {
-                None => Ok(None),
-                Some(value) => match get_value_at_path(value, rest_key_paths)? {
-                    None => Ok(None),
-                    Some(path_value) => Ok(Some(
-                        document_type.serialize_value_for_key(key_path, path_value)?,
-                    )),
-                },
-            }
-        }
-    }
-
-    pub fn get_raw_for_contract<'a>(
-        &'a self,
-        key: &str,
-        document_type_name: &str,
-        contract: &Contract,
-        owner_id: Option<&[u8]>,
-    ) -> Result<Option<Vec<u8>>, Error> {
-        let document_type = contract.document_types.get(document_type_name).ok_or({
-            Error::Contract(ContractError::DocumentTypeNotFound(
-                "document type should exist for name",
-            ))
-        })?;
-        self.get_raw_for_document_type(key, document_type, owner_id)
     }
 }
 
@@ -1039,10 +906,11 @@ fn contract_document_types(contract: &HashMap<String, CborValue>) -> Option<&Vec
 
 #[cfg(test)]
 mod tests {
+    use std::collections::HashMap;
+
     use crate::common::json_document_to_cbor;
     use crate::contract::{Contract, Document};
     use crate::drive::Drive;
-    use std::collections::HashMap;
 
     #[test]
     fn test_cbor_deserialization() {
