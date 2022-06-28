@@ -91,10 +91,6 @@ function beginBlockHandlerFactory(
     // previous context properly reset.
     const contextHeader = blockExecutionContext.getHeader();
     if (contextHeader && contextHeader.height.equals(height)) {
-      if (await groveDBStore.isTransactionStarted()) {
-        await groveDBStore.abortTransaction();
-      }
-
       // Remove failed block context from the stack
       const latestContext = blockExecutionContextStack.getLatest();
       const latestContextHeader = latestContext.getHeader();
@@ -115,6 +111,10 @@ function beginBlockHandlerFactory(
     // Set protocol version to DPP
     dpp.setProtocolVersion(version.app.toNumber());
     transactionalDpp.setProtocolVersion(version.app.toNumber());
+
+    if (await groveDBStore.isTransactionStarted()) {
+      await groveDBStore.abortTransaction();
+    }
 
     // Start db transaction for the block
     await groveDBStore.startTransaction();
