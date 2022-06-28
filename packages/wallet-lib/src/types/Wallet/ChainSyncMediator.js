@@ -19,14 +19,36 @@ class ChainSyncMediator {
     this.blockHeights = {};
     this.transactionsBlockHashes = {};
     this.txChunkHashes = new Set();
+
     /**
-     * The last hash synced by transactions and proofs stream
-     * @type {string}
+     * Pending block hashes to be verified
+     * @type {*[]}
      */
-    this.lastSyncedMerkleBlockHash = '';
+    this.blockHashesToVerify = [];
+
     this.lastSyncedHeaderHeight = 1;
     this.lastHeadersCount = 1;
     this.totalHeadersCount = -1;
+    this.progressUpdatePromise = null;
+  }
+
+  scheduleProgressUpdate(eventBus) {
+    if (!this.progressUpdatePromise) {
+      this.progressUpdatePromise = new Promise((resolve) => {
+        setTimeout(() => {
+          const lastSyncedBlockHeight = this.updateProgress(eventBus);
+          this.progressUpdatePromise = null;
+          resolve(lastSyncedBlockHeight);
+        }, 1000);
+      });
+
+      // this.progressUpdateTimeout = setTimeout(() => {
+      //   this.updateProgress(eventBus);
+      //   this.progressUpdateTimeout = null;
+      // }, 1000);
+    }
+
+    return this.progressUpdatePromise;
   }
 
   /**
@@ -37,19 +59,26 @@ class ChainSyncMediator {
   updateProgress(eventBus) {
     const totalSyncedHeaders = Object.keys(this.blockHeights).length;
 
-    if (totalSyncedHeaders < this.lastHeadersCount) {
-      // TODO: test - remove
-      throw new Error('You are calculated block count not right');
+    // if (totalSyncedHeaders === this.lastHeadersCount) {
+    //   return this.lastSyncedHeaderHeight;
+    // }
+
+    let confirmedSyncedHeaders = this.lastSyncedHeaderHeight;
+
+    for (let i = this.blockHashesToVerify.length - 1; i >= 0; i -= 1) {
+      const hash = this.blockHashesToVerify[i];
+      const height = this.blockHeights[hash];
+      if (typeof height === 'number') {
+        confirmedSyncedHeaders = height;
+        this.blockHashesToVerify.splice(0, i + 1);
+        break;
+      }
     }
 
-    if (totalSyncedHeaders === this.lastHeadersCount) {
-      return this.lastSyncedHeaderHeight;
-    }
-
-    const confirmedSyncedHeaders = this.blockHeights[this.lastSyncedMerkleBlockHash] || 0;
     let unconfirmedSyncedHeaders = totalSyncedHeaders - confirmedSyncedHeaders - 1;
     unconfirmedSyncedHeaders = unconfirmedSyncedHeaders > 0 ? unconfirmedSyncedHeaders : 0;
-    if (confirmedSyncedHeaders) {
+
+    if (confirmedSyncedHeaders > this.lastSyncedHeaderHeight) {
       this.lastSyncedHeaderHeight = confirmedSyncedHeaders;
     }
 
@@ -63,14 +92,11 @@ class ChainSyncMediator {
       (totalSyncedHeaders / this.totalHeadersCount) * 10000,
     ) / 10000;
 
-    // console.log('[ChainSyncMediator]',
-    // this.lastSyncedMerkleBlockHash, Object.keys(this.blockHeights).length);
-    // if (lastSyncedBlockHeight > 0) {
-    console.log('Last known merkle block', this.lastSyncedMerkleBlockHash, this.lastSyncedHeaderHeight);
-    // }
-    // console.log(`Progress. Confirmed: ${confirmedProgress},
-    // unconfirmed: ${unconfirmedProgress}, total: ${totalProgress},
-    // ${confirmedProgress + unconfirmedProgress}`);
+    console.log(
+      'Verified height', this.lastSyncedHeaderHeight,
+      'last known block', this.blockHashesToVerify[this.blockHashesToVerify.length - 1],
+    );
+
     eventBus.emit(EVENTS.SYNC_PROGRESS, totalProgress);
     eventBus.emit(EVENTS.SYNC_PROGRESS_CONFIRMED, confirmedProgress);
     eventBus.emit(EVENTS.SYNC_PROGRESS_UNCONFIRMED, unconfirmedProgress);

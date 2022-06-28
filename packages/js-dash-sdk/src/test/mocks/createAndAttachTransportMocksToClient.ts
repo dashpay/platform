@@ -35,6 +35,7 @@ function makeTxStreamEmitISLocksForTransactions(transportMock, txStreamMock) {
     txStreamMock.emit(
       TxStreamMock.EVENTS.data,
       new TxStreamDataResponseMock(
+        // TODO: create a ticket about missing TS typings in dashcore lib
         { rawTransactions: [transaction.toBuffer()] }
       )
     );

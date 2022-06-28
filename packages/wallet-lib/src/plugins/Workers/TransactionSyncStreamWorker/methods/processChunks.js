@@ -42,13 +42,17 @@ async function processChunks(dataChunk) {
       }
       this.chainSyncMediator.transactionsBlockHashes[hash] = merkleBlock.header.hash;
     });
-    this.chainSyncMediator.lastSyncedMerkleBlockHash = merkleBlock.header.hash;
-    const lastSyncedHeaderHeight = this.chainSyncMediator.updateProgress(this.parentEvents);
-
-    // TODO: attention, might be a temporary construction
-    const walletStore = this.storage.getWalletStore(this.walletId);
-    walletStore.updateLastKnownBlock(lastSyncedHeaderHeight);
-    this.storage.scheduleStateSave();
+    this.chainSyncMediator.blockHashesToVerify.push(merkleBlock.header.hash);
+    // TODO: spaghetti, fix
+    this.chainSyncMediator
+      .scheduleProgressUpdate(this.parentEvents);
+    // .then((lastSyncedHeaderHeight) => {
+    //   // TODO: attention, might be a temporary construction
+    //   console.log('Save to storage', lastSyncedHeaderHeight);
+    //   const walletStore = this.storage.getWalletStore(this.walletId);
+    //   walletStore.updateLastKnownBlock(lastSyncedHeaderHeight);
+    //   this.storage.scheduleStateSave();
+    // });
 
     this.chainSyncMediator.txChunkHashes.clear();
     // console.log('[processChunks] Import merkle block for txs!', txHashesInTheBlock);

@@ -1,4 +1,5 @@
-const { PrivateKey, Networks } = require('@dashevo/dashcore-lib');
+const { PrivateKey, Networks, configure: configurDashcore } = require('@dashevo/dashcore-lib');
+const X11 = require('@dashevo/wasm-x11-hash');
 
 const EventEmitter = require('events');
 const _ = require('lodash');
@@ -32,6 +33,11 @@ const generateNewWalletId = require('./methods/generateNewWalletId');
 const createTransportFromOptions = require('../../transport/createTransportFromOptions');
 const ChainSyncMediator = require('./ChainSyncMediator');
 
+// TODO: notes - remove
+// Temp optimisation tweaks
+// - Disable consensus checks in dash-spv
+// - Disable a continuous sync because wallet does not disconnect properly
+
 /**
  * Instantiate a basic Wallet object,
  * A wallet is able to spawn up all preliminary steps toward the creation of a Account with
@@ -61,6 +67,15 @@ class Wallet extends EventEmitter {
       fromAddress,
       fromHDPublicKey,
       generateNewWalletId,
+    });
+
+    // TODO: move to another place?
+    X11().then((x11hash) => {
+      configurDashcore({
+        x11hash,
+      });
+    }).catch((e) => {
+      this.emit('error', e);
     });
 
     this.passphrase = _.has(opts, 'passphrase') ? opts.passphrase : defaultOptions.passphrase;

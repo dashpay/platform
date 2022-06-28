@@ -61,7 +61,7 @@ class BlockHeadersSyncWorker extends Worker {
         reject(e);
       });
 
-      let longestChainLength = 0;
+      const longestChainLength = 0;
 
       blockHeadersProvider.on(BlockHeadersProvider.EVENTS.HISTORICAL_DATA_OBTAINED, resolve);
 
@@ -73,7 +73,7 @@ class BlockHeadersSyncWorker extends Worker {
 
           // TODO: optimize this duplicated linkage
           this.chainSyncMediator.blockHeights = blockHeadersProvider.headersHeights;
-          this.chainSyncMediator.updateProgress(this.parentEvents);
+          this.chainSyncMediator.scheduleProgressUpdate(this.parentEvents);
 
           for (let i = lastChainLength; i < longestChain.length; i += 1) {
             const header = longestChain[i];
@@ -82,27 +82,22 @@ class BlockHeadersSyncWorker extends Worker {
             this.importBlockHeader(header);
           }
 
-          if (lastChainLength < longestChain.length) {
-            const heights = Object.values(this.chainSyncMediator.blockHeights);
-            console.log('Update heights!', heights[0], heights[longestChain.length - 1], 'total', longestChain.length);
-          }
-
           lastChainLength = longestChain.length;
 
           /**
            * Logging
            */
-          longestChainLength = longestChain.length;
-
-          const timePassed = (Date.now() - startTime) / 1000;
-          const velocity = Math.round((longestChainLength + totalOrphans) / timePassed);
-          const eta = Math.round((735722 / velocity) / 60);
-          const totalBlocks = bestBlockHeight - this.lastSyncedBlockHeight;
-          const timeLeft = Math.round(
-            ((totalBlocks - longestChainLength - totalOrphans) / velocity) / 60,
-          );
-
-          console.log('Longest chain length', longestChainLength, totalOrphans, `velocity: ${velocity} blocks/sec,`, `ETA: ${timeLeft} min`);
+          // longestChainLength = longestChain.length;
+          //
+          // const timePassed = (Date.now() - startTime) / 1000;
+          // const velocity = Math.round((longestChainLength + totalOrphans) / timePassed);
+          // const eta = Math.round((735722 / velocity) / 60);
+          // const totalBlocks = bestBlockHeight - this.lastSyncedBlockHeight;
+          // const timeLeft = Math.round(
+          //   ((totalBlocks - longestChainLength - totalOrphans) / velocity) / 60,
+          // );
+          //
+          // console.log('Longest chain length', longestChainLength, totalOrphans, `velocity: ${velocity} blocks/sec,`, `ETA: ${timeLeft} min`);
         });
     });
 

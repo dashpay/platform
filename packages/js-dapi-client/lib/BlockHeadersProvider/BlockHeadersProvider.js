@@ -37,7 +37,7 @@ class BlockHeadersProvider extends EventEmitter {
       ...options,
     };
 
-    // TODO: make sure it's okay passing 0 parameter here
+    // TODO: make sure it's okay passing 1 parameter here
     this.spvChain = new SpvChain(this.options.network, 1);
     this.started = false;
     // TODO: write tests for this
@@ -103,27 +103,38 @@ class BlockHeadersProvider extends EventEmitter {
     const batches = [];
     this.blockHeadersReader.on(BlockHeadersReader.EVENTS.HISTORICAL_DATA_OBTAINED, () => {
       this.emit(EVENTS.HISTORICAL_DATA_OBTAINED);
-      this.blockHeadersReader.subscribeToNew(toBlockHeight)
-        .catch((e) => {
-          this.emit(EVENTS.ERROR, e);
-        });
+      // TODO: restore, stream crashes after a while
+      // this.blockHeadersReader.subscribeToNew(toBlockHeight)
+      //   .catch((e) => {
+      //     this.emit(EVENTS.ERROR, e);
+      //   });
     });
 
+    const queuePromise = Promise.resolve();
+    const queueSize = 0;
+    // TODO: apparently provider have to be reworked to add headers asynchronously
     this.blockHeadersReader.on(BlockHeadersReader.EVENTS.BLOCK_HEADERS,
       (headers, headHeight, reject) => {
         try {
         // const headersBuffers = rawHeaders.map((header) => Buffer.from(header));
-          batches.push(headers.map((header) => header.toString('hex')));
+        //   batches.push(headers.map((header) => header.toString('hex')));
           // const headers = rawHeaders.map((header) => new BlockHeader(Buffer.from(header)));
-          this.spvChain.addHeaders(headers);
+          queuePromise.then(() => new Promise((resolve) => {
+            setImmediate(() => {
+              this.spvChain.addHeaders(headers);
 
-          headers.forEach((header, index) => {
-            this.headersHeights[header.hash] = headHeight + index;
-          });
+              headers.forEach((header, index) => {
+                this.headersHeights[header.hash] = headHeight + index;
+              });
+
+              this.emit(EVENTS.CHAIN_UPDATED, this.spvChain.allHeaders, this.spvChain.orphanChunks);
+              resolve();
+            });
+          }));
+
           // console.log('Obtained', headers.length, Object.keys(this.headersHeights).length);
 
           // console.log('Total orphans', totalOrphans);
-          this.emit(EVENTS.CHAIN_UPDATED, this.spvChain.allHeaders, this.spvChain.orphanChunks);
         } catch (e) {
           if (e.message === 'Some headers are invalid') {
             reject(e);
