@@ -4,6 +4,7 @@
 .nyc_output
 
 logs
+db
 scripts
 node_modules
 

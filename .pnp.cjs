@@ -2761,7 +2761,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["localforage", "npm:1.10.0"],
             ["mocha", "npm:9.1.3"],
             ["net", "npm:1.0.2"],
-            ["nodeforage", "npm:1.1.1"],
+            ["nodeforage", "npm:1.1.2"],
             ["os-browserify", "npm:0.3.0"],
             ["path-browserify", "npm:1.0.1"],
             ["process", "npm:0.11.10"],
@@ -13577,10 +13577,10 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
         }]
       ]],
       ["nodeforage", [
-        ["npm:1.1.1", {
-          "packageLocation": "./.yarn/cache/nodeforage-npm-1.1.1-88cd0e2f0f-0cb4e4aa85.zip/node_modules/nodeforage/",
+        ["npm:1.1.2", {
+          "packageLocation": "./.yarn/cache/nodeforage-npm-1.1.2-38c6ac6257-a670ece8b5.zip/node_modules/nodeforage/",
           "packageDependencies": [
-            ["nodeforage", "npm:1.1.1"],
+            ["nodeforage", "npm:1.1.2"],
             ["lodash.find", "npm:4.6.0"],
             ["lodash.ismatch", "npm:4.4.0"],
             ["lodash.merge", "npm:4.6.2"],
