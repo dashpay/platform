@@ -1,24 +1,24 @@
-use grovedb::GroveDb;
-use rand::seq::SliceRandom;
-use rand::{Rng, SeedableRng};
-use rs_drive::common;
-use rs_drive::common::{cbor_inner_bytes_value, setup_contract};
-use rs_drive::contract::{Contract, Document};
-use rs_drive::drive::flags::StorageFlags;
-use rs_drive::drive::object_size_info::DocumentAndContractInfo;
-use rs_drive::drive::object_size_info::DocumentInfo::DocumentAndSerialization;
-use rs_drive::drive::Drive;
-use rs_drive::error::Error::GroveDB;
-use rs_drive::error::{query::QueryError, Error};
-use rs_drive::query::DriveQuery;
-use serde::{Deserialize, Serialize};
-use serde_json::json;
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::{self, BufRead};
 use std::option::Option::None;
 use std::sync::Arc;
+
+use rand::seq::SliceRandom;
+use rand::{Rng, SeedableRng};
+use serde::{Deserialize, Serialize};
+use serde_json::json;
 use tempfile::TempDir;
+
+use rs_drive::common;
+use rs_drive::common::{cbor_inner_bytes_value, setup_contract};
+use rs_drive::contract::{document::Document, Contract};
+use rs_drive::drive::flags::StorageFlags;
+use rs_drive::drive::object_size_info::DocumentAndContractInfo;
+use rs_drive::drive::object_size_info::DocumentInfo::DocumentAndSerialization;
+use rs_drive::drive::Drive;
+use rs_drive::error::{query::QueryError, Error};
+use rs_drive::query::DriveQuery;
 
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -453,13 +453,24 @@ fn test_family_basic_queries() {
     let root_hash = drive
         .grove
         .root_hash(Some(&db_transaction))
+        .unwrap()
         .expect("there is always a root hash");
-    assert_eq!(
-        root_hash.expect("cannot get root hash").as_slice(),
+
+    let expected_app_hash = if drive.config.batching_enabled {
+        vec![
+            85, 9, 92, 105, 53, 163, 28, 4, 191, 62, 84, 39, 246, 168, 131, 121, 232, 76, 26, 212,
+            205, 226, 12, 175, 24, 0, 223, 230, 193, 62, 167, 127,
+        ]
+    } else {
         vec![
             123, 1, 243, 182, 206, 153, 145, 224, 140, 59, 64, 60, 26, 152, 194, 202, 184, 117, 75,
-            43, 210, 43, 22, 255, 27, 72, 107, 178, 235, 96, 40, 248
+            43, 210, 43, 22, 255, 27, 72, 107, 178, 235, 96, 40, 248,
         ]
+    };
+
+    assert_eq!(
+        root_hash.expect("cannot get root hash").as_slice(),
+        expected_app_hash
     );
 
     let all_names = [
@@ -513,7 +524,7 @@ fn test_family_basic_queries() {
 
     assert_eq!(names, all_names);
 
-    let (proof_root_hash, proof_results) = query
+    let (proof_root_hash, proof_results, _) = query
         .execute_with_proof_only_get_elements(&drive, None)
         .expect("we should be able to a proof");
     assert_eq!(root_hash, Some(proof_root_hash));
@@ -538,7 +549,7 @@ fn test_family_basic_queries() {
         .expect("query should be executed");
     assert_eq!(results.len(), 1);
 
-    let (proof_root_hash, proof_results) = drive
+    let (proof_root_hash, proof_results, _) = drive
         .query_documents_from_contract_as_grove_proof_only_get_elements(
             &contract,
             person_document_type,
@@ -571,7 +582,7 @@ fn test_family_basic_queries() {
 
     assert_eq!(results.len(), 1);
 
-    let (proof_root_hash, proof_results) = drive
+    let (proof_root_hash, proof_results, _) = drive
         .query_documents_from_contract_as_grove_proof_only_get_elements(
             &contract,
             person_document_type,
@@ -619,7 +630,7 @@ fn test_family_basic_queries() {
 
     assert_eq!(results.len(), 1);
 
-    let (proof_root_hash, proof_results) = drive
+    let (proof_root_hash, proof_results, _) = drive
         .query_documents_from_contract_as_grove_proof_only_get_elements(
             &contract,
             person_document_type,
@@ -654,7 +665,7 @@ fn test_family_basic_queries() {
 
     assert_eq!(results.len(), 1);
 
-    let (proof_root_hash, proof_results) = drive
+    let (proof_root_hash, proof_results, _) = drive
         .query_documents_from_contract_as_grove_proof_only_get_elements(
             &contract,
             person_document_type,
@@ -697,7 +708,7 @@ fn test_family_basic_queries() {
 
     assert_eq!(results.len(), 0);
 
-    let (proof_root_hash, proof_results) = drive
+    let (proof_root_hash, proof_results, _) = drive
         .query_documents_from_contract_as_grove_proof_only_get_elements(
             &contract,
             person_document_type,
@@ -729,7 +740,7 @@ fn test_family_basic_queries() {
 
     assert_eq!(results.len(), 1);
 
-    let (proof_root_hash, proof_results) = drive
+    let (proof_root_hash, proof_results, _) = drive
         .query_documents_from_contract_as_grove_proof_only_get_elements(
             &contract,
             person_document_type,
@@ -785,7 +796,7 @@ fn test_family_basic_queries() {
     ];
     assert_eq!(names, expected_names_before_chris);
 
-    let (proof_root_hash, proof_results) = query
+    let (proof_root_hash, proof_results, _) = query
         .execute_with_proof_only_get_elements(&drive, None)
         .expect("we should be able to a proof");
     assert_eq!(root_hash, Some(proof_root_hash));
@@ -831,7 +842,7 @@ fn test_family_basic_queries() {
     let expected_names_starting_with_c = ["Cammi".to_string(), "Celinda".to_string()];
     assert_eq!(names, expected_names_starting_with_c);
 
-    let (proof_root_hash, proof_results) = query
+    let (proof_root_hash, proof_results, _) = query
         .execute_with_proof_only_get_elements(&drive, None)
         .expect("we should be able to a proof");
     assert_eq!(root_hash, Some(proof_root_hash));
@@ -877,7 +888,7 @@ fn test_family_basic_queries() {
     let expected_names_starting_with_c_desc_1 = ["Celinda".to_string()];
     assert_eq!(names, expected_names_starting_with_c_desc_1);
 
-    let (proof_root_hash, proof_results) = query
+    let (proof_root_hash, proof_results, _) = query
         .execute_with_proof_only_get_elements(&drive, None)
         .expect("we should be able to a proof");
     assert_eq!(root_hash, Some(proof_root_hash));
@@ -933,7 +944,7 @@ fn test_family_basic_queries() {
 
     assert_eq!(names, expected_between_names);
 
-    let (proof_root_hash, proof_results) = query
+    let (proof_root_hash, proof_results, _) = query
         .execute_with_proof_only_get_elements(&drive, None)
         .expect("we should be able to a proof");
     assert_eq!(root_hash, Some(proof_root_hash));
@@ -978,7 +989,7 @@ fn test_family_basic_queries() {
 
     assert_eq!(names, expected_between_names);
 
-    let (proof_root_hash, proof_results) = query
+    let (proof_root_hash, proof_results, _) = query
         .execute_with_proof_only_get_elements(&drive, None)
         .expect("we should be able to a proof");
     assert_eq!(root_hash, Some(proof_root_hash));
@@ -1029,7 +1040,7 @@ fn test_family_basic_queries() {
 
     assert_eq!(names, expected_reversed_between_names);
 
-    let (proof_root_hash, proof_results) = query
+    let (proof_root_hash, proof_results, _) = query
         .execute_with_proof_only_get_elements(&drive, None)
         .expect("we should be able to a proof");
     assert_eq!(root_hash, Some(proof_root_hash));
@@ -1083,7 +1094,7 @@ fn test_family_basic_queries() {
 
     assert_eq!(names, expected_names_45_over);
 
-    let (proof_root_hash, proof_results) = query
+    let (proof_root_hash, proof_results, _) = query
         .execute_with_proof_only_get_elements(&drive, None)
         .expect("we should be able to a proof");
     assert_eq!(root_hash, Some(proof_root_hash));
@@ -1138,7 +1149,7 @@ fn test_family_basic_queries() {
 
     assert_eq!(names, expected_names_over_48);
 
-    let (proof_root_hash, proof_results) = query
+    let (proof_root_hash, proof_results, _) = query
         .execute_with_proof_only_get_elements(&drive, None)
         .expect("we should be able to a proof");
     assert_eq!(root_hash, Some(proof_root_hash));
@@ -1617,6 +1628,7 @@ fn test_family_basic_queries() {
     let root_hash = drive
         .grove
         .root_hash(Some(&db_transaction))
+        .unwrap()
         .expect("there is always a root hash");
     assert_eq!(
         root_hash.expect("cannot get root hash").as_slice(),
@@ -1636,13 +1648,24 @@ fn test_family_starts_at_queries() {
     let root_hash = drive
         .grove
         .root_hash(Some(&db_transaction))
+        .unwrap()
         .expect("there is always a root hash");
-    assert_eq!(
-        root_hash.expect("cannot get root hash").as_slice(),
+
+    let expected_app_hash = if drive.config.batching_enabled {
+        vec![
+            85, 9, 92, 105, 53, 163, 28, 4, 191, 62, 84, 39, 246, 168, 131, 121, 232, 76, 26, 212,
+            205, 226, 12, 175, 24, 0, 223, 230, 193, 62, 167, 127,
+        ]
+    } else {
         vec![
             123, 1, 243, 182, 206, 153, 145, 224, 140, 59, 64, 60, 26, 152, 194, 202, 184, 117, 75,
-            43, 210, 43, 22, 255, 27, 72, 107, 178, 235, 96, 40, 248
+            43, 210, 43, 22, 255, 27, 72, 107, 178, 235, 96, 40, 248,
         ]
+    };
+
+    assert_eq!(
+        root_hash.expect("cannot get root hash").as_slice(),
+        expected_app_hash
     );
 
     // let all_names = [
@@ -1706,7 +1729,7 @@ fn test_family_starts_at_queries() {
 
     assert_eq!(reduced_names_after, expected_reduced_names);
 
-    let (proof_root_hash, proof_results) = query
+    let (proof_root_hash, proof_results, _) = query
         .execute_with_proof_only_get_elements(&drive, None)
         .expect("we should be able to a proof");
     assert_eq!(root_hash, Some(proof_root_hash));
@@ -1756,7 +1779,7 @@ fn test_family_starts_at_queries() {
 
     assert_eq!(reduced_names_after, expected_reduced_names);
 
-    let (proof_root_hash, proof_results) = query
+    let (proof_root_hash, proof_results, _) = query
         .execute_with_proof_only_get_elements(&drive, None)
         .expect("we should be able to a proof");
     assert_eq!(root_hash, Some(proof_root_hash));
@@ -1808,7 +1831,7 @@ fn test_family_starts_at_queries() {
 
     assert_eq!(reduced_names_after, expected_reduced_names);
 
-    let (proof_root_hash, proof_results) = query
+    let (proof_root_hash, proof_results, _) = query
         .execute_with_proof_only_get_elements(&drive, None)
         .expect("we should be able to a proof");
     assert_eq!(root_hash, Some(proof_root_hash));
@@ -1859,7 +1882,7 @@ fn test_family_starts_at_queries() {
 
     assert_eq!(reduced_names_after, expected_reduced_names);
 
-    let (proof_root_hash, proof_results) = query
+    let (proof_root_hash, proof_results, _) = query
         .execute_with_proof_only_get_elements(&drive, None)
         .expect("we should be able to a proof");
     assert_eq!(root_hash, Some(proof_root_hash));
@@ -2012,13 +2035,24 @@ fn test_family_with_nulls_query() {
     let root_hash = drive
         .grove
         .root_hash(Some(&db_transaction))
+        .unwrap()
         .expect("there is always a root hash");
-    assert_eq!(
-        root_hash.expect("cannot get root hash").as_slice(),
+
+    let expected_app_hash = if drive.config.batching_enabled {
+        vec![
+            41, 116, 181, 13, 110, 120, 71, 226, 3, 7, 1, 18, 216, 138, 55, 195, 252, 52, 86, 114,
+            209, 50, 100, 11, 36, 231, 94, 199, 212, 163, 186, 113,
+        ]
+    } else {
         vec![
             106, 19, 219, 178, 226, 142, 21, 91, 78, 168, 66, 193, 44, 14, 17, 208, 149, 147, 92,
-            231, 155, 97, 136, 32, 136, 68, 79, 121, 207, 15, 55, 23
+            231, 155, 97, 136, 32, 136, 68, 79, 121, 207, 15, 55, 23,
         ]
+    };
+
+    assert_eq!(
+        root_hash.expect("cannot get root hash").as_slice(),
+        expected_app_hash
     );
 
     let all_names = [
@@ -2077,7 +2111,7 @@ fn test_family_with_nulls_query() {
 
     assert_eq!(names, all_names);
 
-    let (proof_root_hash, proof_results) = query
+    let (proof_root_hash, proof_results, _) = query
         .execute_with_proof_only_get_elements(&drive, None)
         .expect("we should be able to a proof");
     assert_eq!(root_hash, Some(proof_root_hash));
@@ -2122,13 +2156,24 @@ fn test_query_with_cached_contract() {
     let root_hash = drive
         .grove
         .root_hash(Some(&db_transaction))
+        .unwrap()
         .expect("there is always a root hash");
-    assert_eq!(
-        root_hash.expect("cannot get root hash").as_slice(),
+
+    let expected_app_hash = if drive.config.batching_enabled {
+        vec![
+            85, 9, 92, 105, 53, 163, 28, 4, 191, 62, 84, 39, 246, 168, 131, 121, 232, 76, 26, 212,
+            205, 226, 12, 175, 24, 0, 223, 230, 193, 62, 167, 127,
+        ]
+    } else {
         vec![
             123, 1, 243, 182, 206, 153, 145, 224, 140, 59, 64, 60, 26, 152, 194, 202, 184, 117, 75,
-            43, 210, 43, 22, 255, 27, 72, 107, 178, 235, 96, 40, 248
+            43, 210, 43, 22, 255, 27, 72, 107, 178, 235, 96, 40, 248,
         ]
+    };
+
+    assert_eq!(
+        root_hash.expect("cannot get root hash").as_slice(),
+        expected_app_hash
     );
 
     // A query getting all elements by firstName
@@ -2165,7 +2210,7 @@ fn test_query_with_cached_contract() {
         .expect("contract should have a person document type");
     let query = DriveQuery::from_cbor(where_cbor.as_slice(), &contract, &person_document_type)
         .expect("query should be built");
-    let (proof_root_hash, proof_results) = query
+    let (proof_root_hash, proof_results, _) = query
         .execute_with_proof_only_get_elements(&drive, None)
         .expect("we should be able to a proof");
     assert_eq!(root_hash, Some(proof_root_hash));
@@ -2187,13 +2232,24 @@ fn test_dpns_query() {
     let root_hash = drive
         .grove
         .root_hash(Some(&db_transaction))
+        .unwrap()
         .expect("there is always a root hash");
-    assert_eq!(
-        root_hash.expect("cannot get root hash").as_slice(),
+
+    let expected_app_hash = if drive.config.batching_enabled {
+        vec![
+            149, 67, 230, 197, 191, 5, 71, 144, 181, 128, 16, 52, 46, 98, 92, 128, 145, 90, 74,
+            110, 227, 192, 137, 127, 102, 240, 171, 251, 144, 149, 39, 203,
+        ]
+    } else {
         vec![
             218, 128, 56, 56, 209, 94, 168, 11, 78, 56, 234, 204, 159, 5, 54, 64, 127, 166, 149,
-            38, 35, 48, 116, 41, 230, 176, 235, 252, 208, 16, 47, 86
+            38, 35, 48, 116, 41, 230, 176, 235, 252, 208, 16, 47, 86,
         ]
+    };
+
+    assert_eq!(
+        root_hash.expect("cannot get root hash").as_slice(),
+        expected_app_hash
     );
 
     let all_names = [
@@ -2248,7 +2304,7 @@ fn test_dpns_query() {
 
     assert_eq!(names, all_names);
 
-    let (proof_root_hash, proof_results) = query
+    let (proof_root_hash, proof_results, _) = query
         .execute_with_proof_only_get_elements(&drive, None)
         .expect("we should be able to a proof");
     assert_eq!(root_hash, Some(proof_root_hash));
@@ -2300,7 +2356,7 @@ fn test_dpns_query() {
 
     assert_eq!(names, a_names);
 
-    let (proof_root_hash, proof_results) = query
+    let (proof_root_hash, proof_results, _) = query
         .execute_with_proof_only_get_elements(&drive, None)
         .expect("we should be able to a proof");
     assert_eq!(root_hash, Some(proof_root_hash));
@@ -2370,7 +2426,7 @@ fn test_dpns_query() {
 
     assert_eq!(names, a_names);
 
-    let (proof_root_hash, proof_results) = query
+    let (proof_root_hash, proof_results, _) = query
         .execute_with_proof_only_get_elements(&drive, None)
         .expect("we should be able to a proof");
     assert_eq!(root_hash, Some(proof_root_hash));
@@ -2423,7 +2479,7 @@ fn test_dpns_query() {
 
     assert_eq!(names, a_names);
 
-    let (proof_root_hash, proof_results) = query
+    let (proof_root_hash, proof_results, _) = query
         .execute_with_proof_only_get_elements(&drive, None)
         .expect("we should be able to a proof");
     assert_eq!(root_hash, Some(proof_root_hash));
@@ -2496,7 +2552,7 @@ fn test_dpns_query() {
 
     assert_eq!(names, a_names);
 
-    let (proof_root_hash, proof_results) = query
+    let (proof_root_hash, proof_results, _) = query
         .execute_with_proof_only_get_elements(&drive, None)
         .expect("we should be able to a proof");
     assert_eq!(root_hash, Some(proof_root_hash));
@@ -2543,7 +2599,7 @@ fn test_dpns_query() {
 
     assert_eq!(names, a_names);
 
-    let (proof_root_hash, proof_results) = query
+    let (proof_root_hash, proof_results, _) = query
         .execute_with_proof_only_get_elements(&drive, None)
         .expect("we should be able to a proof");
     assert_eq!(root_hash, Some(proof_root_hash));
@@ -2569,7 +2625,7 @@ fn test_dpns_query() {
 
     assert_eq!(results.len(), 10);
 
-    let (proof_root_hash, proof_results) = query
+    let (proof_root_hash, proof_results, _) = query
         .execute_with_proof_only_get_elements(&drive, None)
         .expect("we should be able to a proof");
     assert_eq!(root_hash, Some(proof_root_hash));
@@ -2606,7 +2662,7 @@ fn test_dpns_insertion_no_aliases() {
 
     assert_eq!(result.0.len(), 15);
 
-    let (proof_root_hash, proof_results) = drive
+    let (proof_root_hash, proof_results, _) = drive
         .query_documents_from_contract_as_grove_proof_only_get_elements(
             &contract,
             domain_document_type,
@@ -2615,7 +2671,11 @@ fn test_dpns_insertion_no_aliases() {
         )
         .expect("query should be executed");
     assert_eq!(
-        drive.grove.root_hash(None).expect("should get root hash"),
+        drive
+            .grove
+            .root_hash(None)
+            .unwrap()
+            .expect("should get root hash"),
         Some(proof_root_hash)
     );
     assert_eq!(result.0, proof_results);
@@ -2651,7 +2711,7 @@ fn test_dpns_insertion_with_aliases() {
 
     assert_eq!(result.0.len(), 24);
 
-    let (proof_root_hash, proof_results) = drive
+    let (proof_root_hash, proof_results, _) = drive
         .query_documents_from_contract_as_grove_proof_only_get_elements(
             &contract,
             domain_document_type,
@@ -2660,7 +2720,11 @@ fn test_dpns_insertion_with_aliases() {
         )
         .expect("query should be executed");
     assert_eq!(
-        drive.grove.root_hash(None).expect("should get root hash"),
+        drive
+            .grove
+            .root_hash(None)
+            .unwrap()
+            .expect("should get root hash"),
         Some(proof_root_hash)
     );
     assert_eq!(result.0, proof_results);
@@ -2676,13 +2740,24 @@ fn test_dpns_query_start_at() {
     let root_hash = drive
         .grove
         .root_hash(Some(&db_transaction))
+        .unwrap()
         .expect("there is always a root hash");
-    assert_eq!(
-        root_hash.expect("cannot get root hash").as_slice(),
+
+    let expected_app_hash = if drive.config.batching_enabled {
+        vec![
+            149, 67, 230, 197, 191, 5, 71, 144, 181, 128, 16, 52, 46, 98, 92, 128, 145, 90, 74,
+            110, 227, 192, 137, 127, 102, 240, 171, 251, 144, 149, 39, 203,
+        ]
+    } else {
         vec![
             218, 128, 56, 56, 209, 94, 168, 11, 78, 56, 234, 204, 159, 5, 54, 64, 127, 166, 149,
-            38, 35, 48, 116, 41, 230, 176, 235, 252, 208, 16, 47, 86
+            38, 35, 48, 116, 41, 230, 176, 235, 252, 208, 16, 47, 86,
         ]
+    };
+
+    assert_eq!(
+        root_hash.expect("cannot get root hash").as_slice(),
+        expected_app_hash,
     );
 
     // let all_names = [
@@ -2744,7 +2819,7 @@ fn test_dpns_query_start_at() {
 
     assert_eq!(names, a_names);
 
-    let (proof_root_hash, proof_results) = query
+    let (proof_root_hash, proof_results, _) = query
         .execute_with_proof_only_get_elements(&drive, None)
         .expect("we should be able to a proof");
     assert_eq!(root_hash, Some(proof_root_hash));
@@ -2761,13 +2836,24 @@ fn test_dpns_query_start_after() {
     let root_hash = drive
         .grove
         .root_hash(Some(&db_transaction))
+        .unwrap()
         .expect("there is always a root hash");
-    assert_eq!(
-        root_hash.expect("cannot get root hash").as_slice(),
+
+    let expected_app_hash = if drive.config.batching_enabled {
+        vec![
+            149, 67, 230, 197, 191, 5, 71, 144, 181, 128, 16, 52, 46, 98, 92, 128, 145, 90, 74,
+            110, 227, 192, 137, 127, 102, 240, 171, 251, 144, 149, 39, 203,
+        ]
+    } else {
         vec![
             218, 128, 56, 56, 209, 94, 168, 11, 78, 56, 234, 204, 159, 5, 54, 64, 127, 166, 149,
-            38, 35, 48, 116, 41, 230, 176, 235, 252, 208, 16, 47, 86
+            38, 35, 48, 116, 41, 230, 176, 235, 252, 208, 16, 47, 86,
         ]
+    };
+
+    assert_eq!(
+        root_hash.expect("cannot get root hash").as_slice(),
+        expected_app_hash
     );
 
     // let all_names = [
@@ -2829,7 +2915,7 @@ fn test_dpns_query_start_after() {
 
     assert_eq!(names, a_names);
 
-    let (proof_root_hash, proof_results) = query
+    let (proof_root_hash, proof_results, _) = query
         .execute_with_proof_only_get_elements(&drive, None)
         .expect("we should be able to a proof");
     assert_eq!(root_hash, Some(proof_root_hash));
@@ -2846,13 +2932,24 @@ fn test_dpns_query_start_at_desc() {
     let root_hash = drive
         .grove
         .root_hash(Some(&db_transaction))
+        .unwrap()
         .expect("there is always a root hash");
-    assert_eq!(
-        root_hash.expect("cannot get root hash").as_slice(),
+
+    let expected_app_hash = if drive.config.batching_enabled {
+        vec![
+            149, 67, 230, 197, 191, 5, 71, 144, 181, 128, 16, 52, 46, 98, 92, 128, 145, 90, 74,
+            110, 227, 192, 137, 127, 102, 240, 171, 251, 144, 149, 39, 203,
+        ]
+    } else {
         vec![
             218, 128, 56, 56, 209, 94, 168, 11, 78, 56, 234, 204, 159, 5, 54, 64, 127, 166, 149,
-            38, 35, 48, 116, 41, 230, 176, 235, 252, 208, 16, 47, 86
+            38, 35, 48, 116, 41, 230, 176, 235, 252, 208, 16, 47, 86,
         ]
+    };
+
+    assert_eq!(
+        root_hash.expect("cannot get root hash").as_slice(),
+        expected_app_hash
     );
 
     // let all_names = [
@@ -2914,7 +3011,7 @@ fn test_dpns_query_start_at_desc() {
 
     assert_eq!(names, a_names);
 
-    let (proof_root_hash, proof_results) = query
+    let (proof_root_hash, proof_results, _) = query
         .execute_with_proof_only_get_elements(&drive, None)
         .expect("we should be able to a proof");
     assert_eq!(root_hash, Some(proof_root_hash));
@@ -2931,13 +3028,24 @@ fn test_dpns_query_start_after_desc() {
     let root_hash = drive
         .grove
         .root_hash(Some(&db_transaction))
+        .unwrap()
         .expect("there is always a root hash");
-    assert_eq!(
-        root_hash.expect("cannot get root hash").as_slice(),
+
+    let expected_app_hash = if drive.config.batching_enabled {
+        vec![
+            149, 67, 230, 197, 191, 5, 71, 144, 181, 128, 16, 52, 46, 98, 92, 128, 145, 90, 74,
+            110, 227, 192, 137, 127, 102, 240, 171, 251, 144, 149, 39, 203,
+        ]
+    } else {
         vec![
             218, 128, 56, 56, 209, 94, 168, 11, 78, 56, 234, 204, 159, 5, 54, 64, 127, 166, 149,
-            38, 35, 48, 116, 41, 230, 176, 235, 252, 208, 16, 47, 86
+            38, 35, 48, 116, 41, 230, 176, 235, 252, 208, 16, 47, 86,
         ]
+    };
+
+    assert_eq!(
+        root_hash.expect("cannot get root hash").as_slice(),
+        expected_app_hash
     );
 
     // let all_names = [
@@ -2999,7 +3107,7 @@ fn test_dpns_query_start_after_desc() {
 
     assert_eq!(names, a_names);
 
-    let (proof_root_hash, proof_results) = query
+    let (proof_root_hash, proof_results, _) = query
         .execute_with_proof_only_get_elements(&drive, None)
         .expect("we should be able to a proof");
     assert_eq!(root_hash, Some(proof_root_hash));
@@ -3113,13 +3221,24 @@ fn test_dpns_query_start_at_with_null_id() {
     let root_hash = drive
         .grove
         .root_hash(Some(&db_transaction))
+        .unwrap()
         .expect("there is always a root hash");
-    assert_eq!(
-        root_hash.expect("cannot get root hash").as_slice(),
+
+    let expected_app_hash = if drive.config.batching_enabled {
+        vec![
+            125, 196, 210, 13, 33, 174, 128, 205, 131, 6, 8, 101, 145, 27, 136, 16, 180, 99, 96,
+            137, 23, 80, 148, 125, 172, 67, 79, 207, 239, 123, 127, 208,
+        ]
+    } else {
         vec![
             129, 14, 2, 125, 180, 93, 191, 143, 255, 116, 8, 44, 77, 164, 244, 52, 227, 62, 99,
-            254, 206, 33, 205, 73, 224, 118, 162, 155, 213, 232, 46, 174
+            254, 206, 33, 205, 73, 224, 118, 162, 155, 213, 232, 46, 174,
         ]
+    };
+
+    assert_eq!(
+        root_hash.expect("cannot get root hash").as_slice(),
+        expected_app_hash
     );
 
     // let all_names = [
@@ -3189,7 +3308,7 @@ fn test_dpns_query_start_at_with_null_id() {
 
     assert_eq!(names, a_names);
 
-    let (proof_root_hash, proof_results) = query
+    let (proof_root_hash, proof_results, _) = query
         .execute_with_proof_only_get_elements(&drive, None)
         .expect("we should be able to a proof");
     assert_eq!(root_hash, Some(proof_root_hash));
@@ -3304,13 +3423,24 @@ fn test_dpns_query_start_after_with_null_id() {
     let root_hash = drive
         .grove
         .root_hash(Some(&db_transaction))
+        .unwrap()
         .expect("there is always a root hash");
-    assert_eq!(
-        root_hash.expect("cannot get root hash").as_slice(),
+
+    let expected_app_hash = if drive.config.batching_enabled {
+        vec![
+            125, 196, 210, 13, 33, 174, 128, 205, 131, 6, 8, 101, 145, 27, 136, 16, 180, 99, 96,
+            137, 23, 80, 148, 125, 172, 67, 79, 207, 239, 123, 127, 208,
+        ]
+    } else {
         vec![
             129, 14, 2, 125, 180, 93, 191, 143, 255, 116, 8, 44, 77, 164, 244, 52, 227, 62, 99,
-            254, 206, 33, 205, 73, 224, 118, 162, 155, 213, 232, 46, 174
+            254, 206, 33, 205, 73, 224, 118, 162, 155, 213, 232, 46, 174,
         ]
+    };
+
+    assert_eq!(
+        root_hash.expect("cannot get root hash").as_slice(),
+        expected_app_hash
     );
 
     // let all_names = [
@@ -3382,7 +3512,7 @@ fn test_dpns_query_start_after_with_null_id() {
 
     assert_eq!(names, a_names);
 
-    let (proof_root_hash, proof_results) = query
+    let (proof_root_hash, proof_results, _) = query
         .execute_with_proof_only_get_elements(&drive, None)
         .expect("we should be able to a proof");
     assert_eq!(root_hash, Some(proof_root_hash));
@@ -3497,13 +3627,24 @@ fn test_dpns_query_start_after_with_null_id_desc() {
     let root_hash = drive
         .grove
         .root_hash(Some(&db_transaction))
+        .unwrap()
         .expect("there is always a root hash");
-    assert_eq!(
-        root_hash.expect("cannot get root hash").as_slice(),
+
+    let expected_app_hash = if drive.config.batching_enabled {
+        vec![
+            125, 196, 210, 13, 33, 174, 128, 205, 131, 6, 8, 101, 145, 27, 136, 16, 180, 99, 96,
+            137, 23, 80, 148, 125, 172, 67, 79, 207, 239, 123, 127, 208,
+        ]
+    } else {
         vec![
             129, 14, 2, 125, 180, 93, 191, 143, 255, 116, 8, 44, 77, 164, 244, 52, 227, 62, 99,
-            254, 206, 33, 205, 73, 224, 118, 162, 155, 213, 232, 46, 174
+            254, 206, 33, 205, 73, 224, 118, 162, 155, 213, 232, 46, 174,
         ]
+    };
+
+    assert_eq!(
+        root_hash.expect("cannot get root hash").as_slice(),
+        expected_app_hash,
     );
 
     // let all_names = [
@@ -3564,7 +3705,7 @@ fn test_dpns_query_start_after_with_null_id_desc() {
         })
         .collect();
 
-    let (proof_root_hash, proof_results) = query
+    let (proof_root_hash, proof_results, _) = query
         .execute_with_proof_only_get_elements(&drive, None)
         .expect("we should be able to a proof");
     assert_eq!(root_hash, Some(proof_root_hash));
@@ -3618,7 +3759,7 @@ fn test_dpns_query_start_after_with_null_id_desc() {
     let expected_docs = [domain1_id, domain0_id];
 
     assert_eq!(docs, expected_docs);
-    let (proof_root_hash, proof_results) = query
+    let (proof_root_hash, proof_results, _) = query
         .execute_with_proof_only_get_elements(&drive, None)
         .expect("we should be able to a proof");
     assert_eq!(root_hash, Some(proof_root_hash));
@@ -3674,7 +3815,7 @@ fn test_dpns_query_start_after_with_null_id_desc() {
 
     assert_eq!(names, a_names);
 
-    let (proof_root_hash, proof_results) = query
+    let (proof_root_hash, proof_results, _) = query
         .execute_with_proof_only_get_elements(&drive, None)
         .expect("we should be able to a proof");
     assert_eq!(root_hash, Some(proof_root_hash));

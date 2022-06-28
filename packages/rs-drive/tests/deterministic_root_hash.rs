@@ -1,7 +1,9 @@
-use grovedb::{Element, Transaction};
-use rs_drive::drive::{Drive, RootTree};
 use std::option::Option::None;
+
+use grovedb::{Element, Transaction};
 use tempfile::TempDir;
+
+use rs_drive::drive::{Drive, RootTree};
 
 fn test_root_hash(drive: &Drive, db_transaction: &Transaction) {
     // [1644293142180] INFO (35 on bf3bb2a2796a): createTree
@@ -23,11 +25,13 @@ fn test_root_hash(drive: &Drive, db_transaction: &Transaction) {
             Element::empty_tree(),
             Some(db_transaction),
         )
+        .unwrap()
         .expect("should insert tree");
 
     let app_hash = drive
         .grove
         .root_hash(Some(db_transaction))
+        .unwrap()
         .ok()
         .flatten()
         .expect("should return app hash");
@@ -56,11 +60,13 @@ fn test_root_hash(drive: &Drive, db_transaction: &Transaction) {
             Element::empty_tree(),
             Some(db_transaction),
         )
+        .unwrap()
         .expect("should insert tree");
 
     let app_hash = drive
         .grove
         .root_hash(Some(db_transaction))
+        .unwrap()
         .ok()
         .flatten()
         .expect("should return app hash");
@@ -89,11 +95,13 @@ fn test_root_hash(drive: &Drive, db_transaction: &Transaction) {
             Element::empty_tree(),
             Some(db_transaction),
         )
+        .unwrap()
         .expect("should insert tree");
 
     let app_hash = drive
         .grove
         .root_hash(Some(db_transaction))
+        .unwrap()
         .ok()
         .flatten()
         .expect("should return app hash");
@@ -122,11 +130,13 @@ fn test_root_hash(drive: &Drive, db_transaction: &Transaction) {
             Element::empty_tree(),
             Some(db_transaction),
         )
+        .unwrap()
         .expect("should insert tree");
 
     let app_hash = drive
         .grove
         .root_hash(Some(db_transaction))
+        .unwrap()
         .ok()
         .flatten()
         .expect("should return app hash");
@@ -157,11 +167,13 @@ fn test_root_hash(drive: &Drive, db_transaction: &Transaction) {
             Element::empty_tree(),
             Some(db_transaction),
         )
+        .unwrap()
         .expect("should insert tree");
 
     let app_hash = drive
         .grove
         .root_hash(Some(db_transaction))
+        .unwrap()
         .ok()
         .flatten()
         .expect("should return app hash");
@@ -189,11 +201,12 @@ fn test_root_hash(drive: &Drive, db_transaction: &Transaction) {
         hex::decode("f00100b0c1e3762b8bc1421e113c76b2a635c5930b9abf2b336583be5987a715").unwrap().as_slice(),
         Element::new_item(hex::decode("01000000a46269645820f00100b0c1e3762b8bc1421e113c76b2a635c5930b9abf2b336583be5987a7156762616c616e636500687265766973696f6e006a7075626c69634b65797381a662696400646461746158210328f474ce2d61d6fdb45c1fb437ddbf167924e6af3303c167f64d8c8857e39ca564747970650067707572706f73650068726561644f6e6c79f76d73656375726974794c6576656c00").unwrap()),
         Some(db_transaction),
-    ).expect("should insert");
+    ).unwrap().expect("should insert");
 
     let app_hash = drive
         .grove
         .root_hash(Some(db_transaction))
+        .unwrap()
         .ok()
         .flatten()
         .expect("should return app hash");
@@ -231,11 +244,13 @@ fn test_root_hash(drive: &Drive, db_transaction: &Transaction) {
             ),
             Some(db_transaction),
         )
+        .unwrap()
         .expect("should insert");
 
     let app_hash = drive
         .grove
         .root_hash(Some(db_transaction))
+        .unwrap()
         .ok()
         .flatten()
         .expect("should return app hash");
@@ -260,14 +275,18 @@ fn test_root_hash(drive: &Drive, db_transaction: &Transaction) {
     let app_hash = drive
         .grove
         .root_hash(Some(db_transaction))
+        .unwrap()
         .ok()
         .flatten()
         .expect("should return app hash");
 
-    assert_eq!(
-        hex::encode(app_hash),
+    let expected_app_hash = if drive.config.batching_enabled {
+        "72b7e8783f763c647e23a6aba6d58b40457c7cbd6486d761aa6f23c1354b7add"
+    } else {
         "180efc3caf02fd8e367e7a7a779c97177c19bf1e02e2c424c83bc2b21da41f92"
-    );
+    };
+
+    assert_eq!(hex::encode(app_hash), expected_app_hash);
 }
 
 #[test]

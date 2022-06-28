@@ -4,6 +4,7 @@ use fee::FeeError;
 use identity::IdentityError;
 use query::QueryError;
 use structure::StructureError;
+
 pub mod contract;
 pub mod drive;
 pub mod fee;

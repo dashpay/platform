@@ -1,3 +1,8 @@
+use std::sync::Arc;
+
+use costs::CostContext;
+use grovedb::{Element, TransactionArg};
+
 use crate::contract::Contract;
 use crate::drive::flags::StorageFlags;
 use crate::drive::object_size_info::KeyInfo::{KeyRef, KeySize};
@@ -10,9 +15,8 @@ use crate::drive::{contract_documents_path, defaults, Drive, RootTree};
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fee::calculate_fee;
-use crate::fee::op::{DriveOperation, QueryOperation};
-use grovedb::{Element, TransactionArg};
-use std::sync::Arc;
+use crate::fee::op::DriveOperation;
+use crate::fee::op::DriveOperation::ContractFetch;
 
 fn contract_root_path(contract_id: &[u8]) -> [&[u8]; 2] {
     [
@@ -114,15 +118,16 @@ impl Drive {
         block_time: f64,
         apply: bool,
         transaction: TransactionArg,
-        insert_operations: &mut Vec<DriveOperation>,
+        drive_operations: &mut Vec<DriveOperation>,
     ) -> Result<(), Error> {
+        let mut batch_operations: Vec<DriveOperation> = vec![];
         let storage_flags = StorageFlags::from_element_flags(contract_element.get_flags().clone())?;
 
         self.batch_insert_empty_tree(
             [Into::<&[u8; 1]>::into(RootTree::ContractDocuments).as_slice()],
             KeyRef(contract.id.as_slice()),
             &storage_flags,
-            insert_operations,
+            &mut batch_operations,
         )?;
 
         self.add_contract_to_storage(
@@ -130,7 +135,7 @@ impl Drive {
             contract,
             block_time,
             apply,
-            insert_operations,
+            &mut batch_operations,
         )?;
 
         // the documents
@@ -140,7 +145,7 @@ impl Drive {
             contract_root_path,
             key_info,
             &storage_flags,
-            insert_operations,
+            &mut batch_operations,
         )?;
 
         // next we should store each document type
@@ -153,7 +158,7 @@ impl Drive {
                 contract_documents_path,
                 KeyRef(type_key.as_bytes()),
                 &storage_flags,
-                insert_operations,
+                &mut batch_operations,
             )?;
 
             let type_path = [
@@ -165,7 +170,12 @@ impl Drive {
 
             // primary key tree
             let key_info = if apply { KeyRef(&[0]) } else { KeySize(1) };
-            self.batch_insert_empty_tree(type_path, key_info, &storage_flags, insert_operations)?;
+            self.batch_insert_empty_tree(
+                type_path,
+                key_info,
+                &storage_flags,
+                &mut batch_operations,
+            )?;
 
             // for each type we should insert the indices that are top level
             for index in document_type.top_level_indices()? {
@@ -174,18 +184,11 @@ impl Drive {
                     type_path,
                     KeyRef(index.name.as_bytes()),
                     &storage_flags,
-                    insert_operations,
+                    &mut batch_operations,
                 )?;
             }
         }
-        if apply {
-            self.grove_apply_batch(
-                DriveOperation::grovedb_operations(insert_operations),
-                true,
-                transaction,
-            )?;
-        }
-        Ok(())
+        self.apply_batch(apply, transaction, batch_operations, drive_operations)
     }
 
     fn update_contract(
@@ -196,9 +199,9 @@ impl Drive {
         block_time: f64,
         apply: bool,
         transaction: TransactionArg,
-        query_operations: &mut Vec<QueryOperation>,
-        insert_operations: &mut Vec<DriveOperation>,
+        drive_operations: &mut Vec<DriveOperation>,
     ) -> Result<(), Error> {
+        let mut batch_operations: Vec<DriveOperation> = vec![];
         if original_contract.readonly {
             return Err(Error::Drive(DriveError::UpdatingReadOnlyImmutableContract(
                 "contract is readonly",
@@ -245,7 +248,7 @@ impl Drive {
             contract,
             block_time,
             apply,
-            insert_operations,
+            &mut batch_operations,
         )?;
 
         let storage_flags = StorageFlags::from_element_flags(element_flags)?;
@@ -280,9 +283,9 @@ impl Drive {
                     self.batch_insert_empty_tree_if_not_exists(
                         PathFixedSizeKeyRef((type_path, index.name.as_bytes())),
                         &storage_flags,
+                        apply,
                         transaction,
-                        query_operations,
-                        insert_operations,
+                        &mut batch_operations,
                     )?;
                 }
             } else {
@@ -291,7 +294,7 @@ impl Drive {
                     contract_documents_path,
                     KeyRef(type_key.as_bytes()),
                     &storage_flags,
-                    insert_operations,
+                    &mut batch_operations,
                 )?;
 
                 let type_path = [
@@ -306,7 +309,7 @@ impl Drive {
                     type_path,
                     KeyRef(&[0]),
                     &storage_flags,
-                    insert_operations,
+                    &mut batch_operations,
                 )?;
 
                 // for each type we should insert the indices that are top level
@@ -316,21 +319,13 @@ impl Drive {
                         type_path,
                         KeyRef(index.name.as_bytes()),
                         &storage_flags,
-                        insert_operations,
+                        &mut batch_operations,
                     )?;
                 }
             }
         }
 
-        if apply {
-            self.grove_apply_batch(
-                DriveOperation::grovedb_operations(insert_operations),
-                true,
-                transaction,
-            )?;
-        }
-
-        Ok(())
+        self.apply_batch(apply, transaction, batch_operations, drive_operations)
     }
 
     pub fn apply_contract_cbor(
@@ -360,7 +355,10 @@ impl Drive {
         &self,
         contract_id: [u8; 32],
         transaction: TransactionArg,
+        drive_operations: &mut Vec<DriveOperation>,
     ) -> Result<Option<Arc<Contract>>, Error> {
+        // We always charge for a contract fetch in order to remove non determinism issues
+        drive_operations.push(ContractFetch);
         let cached_contracts = self.cached_contracts.borrow();
         match cached_contracts.get(&contract_id) {
             None => self
@@ -392,9 +390,10 @@ impl Drive {
         contract_id: [u8; 32],
         transaction: TransactionArg,
     ) -> Result<(Option<Arc<Contract>>, StorageFlags), Error> {
-        let stored_element = self
-            .grove
-            .get(contract_root_path(&contract_id), &[0], transaction)?;
+        let CostContext { value, cost } =
+            self.grove
+                .get(contract_root_path(&contract_id), &[0], transaction);
+        let stored_element = value.map_err(Error::GroveDB)?;
         if let Element::Item(stored_contract_bytes, element_flag) = stored_element {
             let contract = Arc::new(Contract::from_cbor(&stored_contract_bytes, None)?);
             let cached_contracts = self.cached_contracts.borrow();
@@ -417,8 +416,7 @@ impl Drive {
         storage_flags: StorageFlags,
         transaction: TransactionArg,
     ) -> Result<(i64, u64), Error> {
-        let mut query_operations: Vec<QueryOperation> = vec![];
-        let mut insert_operations: Vec<DriveOperation> = vec![];
+        let mut drive_operations: Vec<DriveOperation> = vec![];
 
         // overlying structure
         let mut already_exists = false;
@@ -428,7 +426,7 @@ impl Drive {
             contract_root_path(&contract.id),
             KeyRefRequest(&[0]),
             transaction,
-            &mut query_operations,
+            &mut drive_operations,
         ) {
             already_exists = true;
             match stored_element {
@@ -457,8 +455,7 @@ impl Drive {
                     block_time,
                     apply,
                     transaction,
-                    &mut query_operations,
-                    &mut insert_operations,
+                    &mut drive_operations,
                 )?;
             }
         } else {
@@ -468,23 +465,24 @@ impl Drive {
                 block_time,
                 apply,
                 transaction,
-                &mut insert_operations,
+                &mut drive_operations,
             )?;
         }
-        let fees = calculate_fee(None, Some(query_operations), Some(insert_operations))?;
+        let fees = calculate_fee(None, Some(drive_operations))?;
         Ok(fees)
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use rand::Rng;
+    use tempfile::TempDir;
+
     use crate::common::json_document_to_cbor;
     use crate::contract::Contract;
     use crate::drive::flags::StorageFlags;
     use crate::drive::object_size_info::{DocumentAndContractInfo, DocumentInfo};
     use crate::drive::Drive;
-    use rand::Rng;
-    use tempfile::TempDir;
 
     fn setup_deep_nested_contract() -> (Drive, Contract, Vec<u8>) {
         // Todo: make TempDir based on _prefix
