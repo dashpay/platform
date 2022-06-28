@@ -1505,6 +1505,15 @@ __metadata:
   languageName: unknown
   linkType: soft
 
+"@dashevo/docker-compose@npm:^0.24.1":
+  version: 0.24.1
+  resolution: "@dashevo/docker-compose@npm:0.24.1"
+  dependencies:
+    yaml: ^1.10.2
+  checksum: 7792e09b5d2d216eb883d0fe2d54e422a4cf277e17af99dd108078ca41aab9b66eccf9eddb2716e752b6cfe183a6c45d2292b42cce881c658afdcb6cd0d5ca3a
+  languageName: node
+  linkType: hard
+
 "@dashevo/dp-services-ctl@github:dashevo/js-dp-services-ctl#v0.19-dev":
   version: 0.19.0-dev.1
   resolution: "@dashevo/dp-services-ctl@https://github.com/dashevo/js-dp-services-ctl.git#commit=3976076b0018c5b4632ceda4c752fc597f27a640"
@@ -5807,6 +5816,7 @@ __metadata:
     "@dashevo/dashcore-lib": ~0.19.39
     "@dashevo/dashd-rpc": ^2.3.2
     "@dashevo/dashpay-contract": "workspace:~"
+    "@dashevo/docker-compose": ^0.24.1
     "@dashevo/dpns-contract": "workspace:~"
     "@dashevo/dpp": "workspace:~"
     "@dashevo/feature-flags-contract": "workspace:~"
@@ -5820,7 +5830,6 @@ __metadata:
     bls-signatures: ^0.2.5
     chalk: ^4.1.0
     dash: "workspace:~"
-    docker-compose: 0.23.3
     dockerode: ^3.2.0
     dot: ^1.1.3
     dotenv: ^8.6.0
@@ -6227,13 +6236,6 @@ __metadata:
   dependencies:
     dns-packet: ^5.2.4
   checksum: d02b83ecc9b0f1d2fc459f93c6390c768a8805002637d1f74113d623fa7b2478a695ade7761a0a847622781f5e6dd008a9a1469ac75a617bdf1b775f2156943c
-  languageName: node
-  linkType: hard
-
-"docker-compose@npm:0.23.3":
-  version: 0.23.3
-  resolution: "docker-compose@npm:0.23.3"
-  checksum: 3d2bd5e4cb1b73ee5f61cfa8447f1bef9040126b43bd63e1109e2c7d5a3e21df11003a49dbb52e7eb3b3f657cda50b47b604b1c58c48233d8166a206e3f89f18
   languageName: node
   linkType: hard
 
@@ -15554,6 +15556,13 @@ typescript@^3.9.5:
   version: 4.0.0
   resolution: "yallist@npm:4.0.0"
   checksum: 343617202af32df2a15a3be36a5a8c0c8545208f3d3dfbc6bb7c3e3b7e8c6f8e7485432e4f3b88da3031a6e20afa7c711eded32ddfb122896ac5d914e75848d5
+  languageName: node
+  linkType: hard
+
+"yaml@npm:^1.10.2":
+  version: 1.10.2
+  resolution: "yaml@npm:1.10.2"
+  checksum: ce4ada136e8a78a0b08dc10b4b900936912d15de59905b2bf415b4d33c63df1d555d23acb2a41b23cf9fb5da41c256441afca3d6509de7247daa062fd2c5ea5f
   languageName: node
   linkType: hard
 
