@@ -6,6 +6,11 @@ use ciborium::value::Value as CborValue;
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 
+use super::errors::*;
+use crate::data_contract::get_binary_properties_from_schema::get_binary_properties;
+use crate::util::json_value::{JsonValueExt, ReplaceWith};
+use crate::util::string_encoding::Encoding;
+use crate::Convertible;
 use crate::{
     errors::ProtocolError,
     identifier::Identifier,
@@ -21,13 +26,52 @@ use crate::util::string_encoding::Encoding;
 
 use super::errors::*;
 
+const PROPERTY_PROTOCOL_VERSION: &str = "protocolVersion";
+const PROPERTY_ID: &str = "$id";
+const PROPERTY_OWNER_ID: &str = "ownerId";
+const PROPERTY_VERSION: &str = "version";
+const PROPERTY_SCHEMA: &str = "$schema";
+const PROPERTY_DOCUMENTS: &str = "documents";
+const PROPERTY_DEFINITIONS: &str = "$defs";
+const PROPERTY_ENTROPY: &str = "entropy";
+
 pub type JsonSchema = JsonValue;
 type DocumentType = String;
 type PropertyPath = String;
 
 pub const SCHEMA: &str = "https://schema.dash.org/dpp-0-4-0/meta/data-contract";
 
-pub const IDENTIFIER_FIELDS: [&str; 2] = ["$id", "ownerId"];
+pub const IDENTIFIER_FIELDS: [&str; 2] = [PROPERTY_ID, PROPERTY_OWNER_ID];
+
+impl Convertible for DataContract {
+    fn to_object(&self) -> Result<JsonValue, ProtocolError> {
+        let mut json_object = serde_json::to_value(&self)?;
+        if !json_object.is_object() {
+            return Err(anyhow!("the Data Contract isn't a JSON Value Object").into());
+        }
+
+        json_object.replace_identifier_paths(IDENTIFIER_FIELDS, ReplaceWith::Bytes)?;
+        Ok(json_object)
+    }
+
+    /// Returns Data Contract as a JSON Value
+    fn to_json(&self) -> Result<JsonValue, ProtocolError> {
+        Ok(serde_json::to_value(&self)?)
+    }
+
+    /// Returns Data Contract as a Buffer
+    fn to_buffer(&self) -> Result<Vec<u8>, ProtocolError> {
+        let protocol_version = self.protocol_version;
+        // what means skip_identifiers_conversion
+        let mut json_object = self.to_object()?;
+
+        if let JsonValue::Object(ref mut o) = json_object {
+            o.remove("protocolVersion");
+        };
+
+        serializer::value_to_cbor(json_object, Some(protocol_version))
+    }
+}
 
 #[derive(Serialize, Deserialize, Debug, Clone, Default)]
 #[serde(rename_all = "camelCase")]
@@ -60,14 +104,25 @@ impl DataContract {
         Self::default()
     }
 
+    pub fn from_raw_object(mut raw_object: JsonValue) -> Result<DataContract, ProtocolError> {
+        // TODO identifier_default_deserializer: default deserializer should be changed to bytes
+        // Identifiers fields should be replaced with the string format to deserialize Data Contract
+        raw_object.replace_identifier_paths(IDENTIFIER_FIELDS, ReplaceWith::Base58)?;
+        let mut data_contract: DataContract = serde_json::from_value(raw_object)?;
+        data_contract.generate_binary_properties();
+
+        Ok(data_contract)
+    }
+
     pub fn from_buffer(b: impl AsRef<[u8]>) -> Result<DataContract, ProtocolError> {
         let (protocol_bytes, document_bytes) = b.as_ref().split_at(4);
 
         let mut json_value: JsonValue = ciborium::de::from_reader(document_bytes)
             .map_err(|e| ProtocolError::EncodingError(format!("{}", e)))?;
 
-        json_value.parse_and_add_protocol_version(protocol_bytes)?;
+        json_value.parse_and_add_protocol_version("protocolVersion", protocol_bytes)?;
 
+        // TODO identifier_default_deserializer: default deserializer should be changed to bytes
         // Identifiers fields should be replaced with the string format to deserialize Data Contract
         json_value.replace_identifier_paths(IDENTIFIER_FIELDS, ReplaceWith::Base58)?;
 
@@ -419,6 +474,11 @@ impl TryFrom<&str> for DataContract {
 
 #[cfg(test)]
 mod test {
+    use super::*;
+    use crate::{
+        assert_error_contains,
+        tests::{fixtures::get_data_contract_fixture, utils::*},
+    };
     use anyhow::Result;
 
     use crate::{assert_error_contains, tests::utils::*};
@@ -432,7 +492,32 @@ mod test {
     }
 
     #[test]
-    fn test_deserialize_contract_from_string() -> Result<()> {
+    fn conversion_to_buffer_from_buffer() {
+        init();
+        let data_contract = get_data_contract_fixture(None);
+        let data_contract_bytes = data_contract
+            .to_buffer()
+            .expect("data contract should be converted into the bytes");
+        let data_contract_restored = DataContract::from_buffer(&data_contract_bytes)
+            .expect("data contract should be created from bytes");
+
+        assert_eq!(
+            data_contract.protocol_version,
+            data_contract_restored.protocol_version
+        );
+        assert_eq!(data_contract.schema, data_contract_restored.schema);
+        assert_eq!(data_contract.version, data_contract_restored.version);
+        assert_eq!(data_contract.id, data_contract_restored.id);
+        assert_eq!(data_contract.owner_id, data_contract_restored.owner_id);
+        assert_eq!(
+            data_contract.binary_properties,
+            data_contract_restored.binary_properties
+        );
+        assert_eq!(data_contract.documents, data_contract_restored.documents);
+    }
+
+    #[test]
+    fn conversion_from_json() -> Result<()> {
         init();
 
         let string_contract = get_data_from_file("src/tests/payloads/contract_example.json")?;
@@ -458,7 +543,7 @@ mod test {
     }
 
     #[test]
-    fn test_serialize_contract_json() -> Result<()> {
+    fn conversion_to_json() -> Result<()> {
         init();
 
         let mut string_contract = get_data_from_file("src/tests/payloads/contract_example.json")?;
@@ -472,11 +557,11 @@ mod test {
     }
 
     #[test]
-    fn test_serialize_to_object() -> Result<()> {
+    fn conversion_to_object() -> Result<()> {
         let string_contract = get_data_from_file("src/tests/payloads/contract_example.json")?;
         let data_contract: DataContract = serde_json::from_str(&string_contract)?;
 
-        let raw_data_contract = data_contract.to_object(false)?;
+        let raw_data_contract = data_contract.to_object()?;
         for path in IDENTIFIER_FIELDS {
             assert!(raw_data_contract
                 .get(path)
@@ -487,7 +572,7 @@ mod test {
     }
 
     #[test]
-    fn test_deserialize_contract_from_raw() -> Result<()> {
+    fn conversion_from_object() -> Result<()> {
         init();
 
         let string_contract = get_data_from_file("src/tests/payloads/contract_example.json")?;
@@ -521,7 +606,7 @@ mod test {
     }
 
     #[test]
-    fn deserialize_contract_from_invalid_raw_object() -> Result<()> {
+    fn conversion_from_invalid_object() -> Result<()> {
         init();
 
         let string_contract = get_data_from_file("src/tests/payloads/contract_example.json")?;
