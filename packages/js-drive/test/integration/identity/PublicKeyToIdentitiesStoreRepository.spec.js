@@ -268,4 +268,99 @@ describe('PublicKeyToIdentitiesStoreRepository', () => {
       });
     });
   });
+
+  describe('#prove', () => {
+    let publicKeyHash2;
+
+    beforeEach(async () => {
+      await store.createTree([], PublicKeyToIdentitiesStoreRepository.TREE_PATH[0]);
+      await identityRepository.createTree();
+
+      publicKeyHash2 = Buffer.alloc(20).fill(2);
+    });
+
+    it('should fetch proof if public key to identities map not found', async () => {
+      const result = await publicKeyRepository.proveMany([publicKeyHash, publicKeyHash2]);
+
+      expect(result).to.be.instanceOf(StorageResult);
+
+      expect(result.getValue()).to.be.an.instanceOf(Buffer);
+      expect(result.getValue().length).to.be.greaterThan(0);
+    });
+
+    it('should return proof', async () => {
+      await identityRepository.create(identity);
+
+      await publicKeyRepository.store(
+        publicKeyHash,
+        identity.getId(),
+      );
+
+      await publicKeyRepository.store(
+        publicKeyHash2,
+        identity.getId(),
+      );
+
+      const result = await publicKeyRepository.proveMany([publicKeyHash, publicKeyHash2]);
+
+      expect(result).to.be.instanceOf(StorageResult);
+
+      expect(result.getOperations().length).to.be.greaterThan(0);
+
+      expect(result.getValue()).to.be.an.instanceOf(Buffer);
+      expect(result.getValue().length).to.be.greaterThan(0);
+    });
+
+    // TODO: Enable when transactions will be supported for queries with proofs
+    it.skip('should return proof map using transaction', async () => {
+      await store.startTransaction();
+
+      await identityRepository.create(identity, { useTransaction: true });
+
+      await publicKeyRepository.store(
+        publicKeyHash,
+        identity.getId(),
+        { useTransaction: true },
+      );
+
+      await publicKeyRepository.store(
+        publicKeyHash2,
+        identity.getId(),
+        { useTransaction: true },
+      );
+
+      // Should return proof of non-existence
+      let result = await publicKeyRepository.proveMany([publicKeyHash, publicKeyHash2]);
+
+      expect(result).to.be.instanceOf(StorageResult);
+
+      expect(result.getValue()).to.be.an.instanceOf(Buffer);
+      expect(result.getValue().length).to.be.greaterThan(0);
+
+      // Should return proof of existence
+      result = await publicKeyRepository.proveMany(
+        [publicKeyHash, publicKeyHash2],
+        { useTransaction: true },
+      );
+
+      expect(result).to.be.instanceOf(StorageResult);
+
+      expect(result.getOperations().length).to.be.greaterThan(0);
+
+      expect(result.getValue()).to.be.an.instanceOf(Buffer);
+      expect(result.getValue().length).to.be.greaterThan(0);
+
+      await store.commitTransaction();
+
+      // Should return proof of existence
+      result = await publicKeyRepository.proveMany([publicKeyHash, publicKeyHash2]);
+
+      expect(result).to.be.instanceOf(StorageResult);
+
+      expect(result.getOperations().length).to.be.greaterThan(0);
+
+      expect(result.getValue()).to.be.an.instanceOf(Buffer);
+      expect(result.getValue().length).to.be.greaterThan(0);
+    });
+  });
 });

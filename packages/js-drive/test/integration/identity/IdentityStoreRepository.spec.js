@@ -3,6 +3,8 @@ const Drive = require('@dashevo/rs-drive');
 const decodeProtocolEntityFactory = require('@dashevo/dpp/lib/decodeProtocolEntityFactory');
 const getIdentityFixture = require('@dashevo/dpp/lib/test/fixtures/getIdentityFixture');
 const Identity = require('@dashevo/dpp/lib/identity/Identity');
+const generateRandomIdentifier = require('@dashevo/dpp/lib/test/utils/generateRandomIdentifier');
+const IdentityPublicKey = require('@dashevo/dpp/lib/identity/IdentityPublicKey');
 const GroveDBStore = require('../../../lib/storage/GroveDBStore');
 const IdentityStoreRepository = require('../../../lib/identity/IdentityStoreRepository');
 const logger = require('../../../lib/util/noopLogger');
@@ -307,6 +309,197 @@ describe('IdentityStoreRepository', () => {
         type: 'tree',
         value: Buffer.alloc(32),
       });
+    });
+  });
+
+  describe('#prove', () => {
+    beforeEach(async () => {
+      await store.createTree([], IdentityStoreRepository.TREE_PATH[0]);
+    });
+
+    it('should return prove if identity does not exist', async () => {
+      const result = await repository.prove(identity.getId());
+
+      expect(result).to.be.instanceOf(StorageResult);
+      expect(result.getOperations().length).to.be.greaterThan(0);
+
+      const proof = result.getValue();
+
+      expect(proof).to.be.an.instanceof(Buffer);
+      expect(proof.length).to.be.greaterThan(0);
+    });
+
+    it('should return proof', async () => {
+      await store.createTree(IdentityStoreRepository.TREE_PATH, identity.getId().toBuffer());
+
+      await store.put(
+        IdentityStoreRepository.TREE_PATH.concat([identity.getId().toBuffer()]),
+        IdentityStoreRepository.IDENTITY_KEY,
+        identity.toBuffer(),
+      );
+
+      const result = await repository.prove(identity.getId());
+
+      expect(result).to.be.instanceOf(StorageResult);
+      expect(result.getOperations().length).to.be.greaterThan(0);
+
+      const proof = result.getValue();
+
+      expect(proof).to.be.an.instanceof(Buffer);
+      expect(proof.length).to.be.greaterThan(0);
+    });
+
+    // TODO enable this test when we support transactions
+    it.skip('should return proof using transaction', async () => {
+      await store.startTransaction();
+
+      await store.createTree(
+        IdentityStoreRepository.TREE_PATH,
+        identity.getId().toBuffer(),
+        { useTransaction: true },
+      );
+
+      await store.put(
+        IdentityStoreRepository.TREE_PATH.concat([identity.getId().toBuffer()]),
+        IdentityStoreRepository.IDENTITY_KEY,
+        identity.toBuffer(),
+        { useTransaction: true },
+      );
+
+      const notFoundProof = await repository.prove(identity.getId(), {
+        useTransaction: false,
+      });
+
+      expect(notFoundProof.getValue()).to.be.null();
+
+      const transactionalIdentityResult = await repository.prove(identity.getId(), {
+        useTransaction: true,
+      });
+
+      const transactionalProof = transactionalIdentityResult.getValue();
+
+      expect(transactionalProof).to.be.an.instanceof(Buffer);
+      expect(transactionalProof.length).to.be.greaterThan(0);
+
+      await store.commitTransaction();
+
+      const storedIdentityResult = await repository.prove(identity.getId());
+
+      const storedProof = storedIdentityResult.getValue();
+
+      expect(storedProof).to.be.an.instanceof(Buffer);
+      expect(storedProof.length).to.be.greaterThan(0);
+    });
+  });
+
+  describe('#proveMany', () => {
+    let identity2;
+
+    beforeEach(async () => {
+      identity2 = new Identity({
+        protocolVersion: 1,
+        id: generateRandomIdentifier().toBuffer(),
+        publicKeys: [
+          {
+            id: 0,
+            type: IdentityPublicKey.TYPES.ECDSA_SECP256K1,
+            purpose: IdentityPublicKey.PURPOSES.AUTHENTICATION,
+            securityLevel: IdentityPublicKey.SECURITY_LEVELS.MASTER,
+            readOnly: false,
+            data: Buffer.alloc(48).fill(255),
+          },
+        ],
+        balance: 10,
+        revision: 0,
+      });
+
+      await store.createTree([], IdentityStoreRepository.TREE_PATH[0]);
+    });
+
+    it('should return proof if identity does not exist', async () => {
+      // Create only first identity
+      await store.createTree(IdentityStoreRepository.TREE_PATH, identity.getId().toBuffer());
+
+      await store.put(
+        IdentityStoreRepository.TREE_PATH.concat([identity.getId().toBuffer()]),
+        IdentityStoreRepository.IDENTITY_KEY,
+        identity.toBuffer(),
+      );
+
+      const result = await repository.proveMany([identity.getId(), identity2.getId()]);
+
+      expect(result).to.be.instanceOf(StorageResult);
+      expect(result.getOperations().length).to.be.greaterThan(0);
+
+      const proof = result.getValue();
+
+      expect(proof).to.be.an.instanceof(Buffer);
+      expect(proof.length).to.be.greaterThan(0);
+    });
+
+    it('should return proof', async () => {
+      await store.createTree(IdentityStoreRepository.TREE_PATH, identity.getId().toBuffer());
+
+      await store.put(
+        IdentityStoreRepository.TREE_PATH.concat([identity.getId().toBuffer()]),
+        IdentityStoreRepository.IDENTITY_KEY,
+        identity.toBuffer(),
+      );
+
+      const result = await repository.proveMany([identity.getId(), identity2.getId()]);
+
+      expect(result).to.be.instanceOf(StorageResult);
+      expect(result.getOperations().length).to.be.greaterThan(0);
+
+      const proof = result.getValue();
+
+      expect(proof).to.be.an.instanceof(Buffer);
+      expect(proof.length).to.be.greaterThan(0);
+    });
+
+    // TODO enable this test when we support transactions
+    it.skip('should return proof using transaction', async () => {
+      await store.startTransaction();
+
+      await store.createTree(
+        IdentityStoreRepository.TREE_PATH,
+        identity.getId().toBuffer(),
+        { useTransaction: true },
+      );
+
+      await store.put(
+        IdentityStoreRepository.TREE_PATH.concat([identity.getId().toBuffer()]),
+        IdentityStoreRepository.IDENTITY_KEY,
+        identity.toBuffer(),
+        { useTransaction: true },
+      );
+
+      const notFoundProof = await repository.proveMany([identity.getId(), identity2.getId()], {
+        useTransaction: false,
+      });
+
+      expect(notFoundProof.getValue()).to.be.null();
+
+      const transactionalIdentityResult = await repository.proveMany(
+        [identity.getId(), identity2.getId()],
+        { useTransaction: true },
+      );
+
+      const transactionalProof = transactionalIdentityResult.getValue();
+
+      expect(transactionalProof).to.be.an.instanceof(Buffer);
+      expect(transactionalProof.length).to.be.greaterThan(0);
+
+      await store.commitTransaction();
+
+      const storedIdentityResult = await repository.proveMany(
+        [identity.getId(), identity2.getId()],
+      );
+
+      const storedProof = storedIdentityResult.getValue();
+
+      expect(storedProof).to.be.an.instanceof(Buffer);
+      expect(storedProof.length).to.be.greaterThan(0);
     });
   });
 });

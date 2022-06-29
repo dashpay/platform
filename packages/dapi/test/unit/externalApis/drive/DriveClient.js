@@ -222,7 +222,7 @@ describe('DriveClient', () => {
     it('should call \'fetchProofs\' RPC with the given parameters', async () => {
       const drive = new DriveClient({ host: '127.0.0.1', port: 3000 });
 
-      const documentIds = undefined;
+      const documents = undefined;
       const identityIds = [Buffer.from('id')];
       const dataContractIds = [Buffer.from('anotherId')];
 
@@ -236,12 +236,12 @@ describe('DriveClient', () => {
           },
         });
 
-      const result = await drive.fetchProofs({ documentIds, identityIds, dataContractIds });
+      const result = await drive.fetchProofs({ documents, identityIds, dataContractIds });
 
       expect(drive.client.request).to.have.been.calledOnceWithExactly('abci_query', {
         path: '/proofs',
         data: cbor.encode({
-          documentIds,
+          documents,
           identityIds,
           dataContractIds,
         }).toString('hex'),

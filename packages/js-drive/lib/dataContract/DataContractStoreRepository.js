@@ -111,6 +111,43 @@ class DataContractStoreRepository {
       options,
     );
   }
+
+  /**
+ * Prove Data Contract by ID from database
+ *
+ * @param {Identifier} id
+ * @param {Object} [options]
+ * @param {boolean} [options.useTransaction=false]
+ * @return {Promise<StorageResult<Buffer|null>>}
+ * */
+  async prove(id, options) {
+    return this.proveMany([id], options);
+  }
+
+  /**
+ * Prove Data Contract by IDs from database
+ *
+ * @param {Identifier[]} ids
+ * @param {Object} [options]
+ * @param {boolean} [options.useTransaction=false]
+ * @return {Promise<StorageResult<Buffer|null>>}
+ * */
+  async proveMany(ids, options) {
+    const items = ids.map((id) => ({
+      type: 'key',
+      key: id.toBuffer(),
+    }));
+
+    return this.storage.proveQuery({
+      path: DataContractStoreRepository.TREE_PATH,
+      query: {
+        query: {
+          items,
+          subqueryKey: DataContractStoreRepository.DATA_CONTRACT_KEY,
+        },
+      },
+    }, options);
+  }
 }
 
 DataContractStoreRepository.TREE_PATH = [Buffer.from([1])];

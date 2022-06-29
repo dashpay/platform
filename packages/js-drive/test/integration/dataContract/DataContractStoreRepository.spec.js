@@ -3,6 +3,7 @@ const Drive = require('@dashevo/rs-drive');
 const decodeProtocolEntityFactory = require('@dashevo/dpp/lib/decodeProtocolEntityFactory');
 const getDataContractFixture = require('@dashevo/dpp/lib/test/fixtures/getDataContractFixture');
 const DataContract = require('@dashevo/dpp/lib/dataContract/DataContract');
+const generateRandomIdentifier = require('@dashevo/dpp/lib/test/utils/generateRandomIdentifier');
 const GroveDBStore = require('../../../lib/storage/GroveDBStore');
 const DataContractStoreRepository = require('../../../lib/dataContract/DataContractStoreRepository');
 const noopLogger = require('../../../lib/util/noopLogger');
@@ -216,6 +217,152 @@ describe('DataContractStoreRepository', () => {
         type: 'tree',
         value: Buffer.alloc(32),
       });
+    });
+  });
+
+  describe('#prove', () => {
+    beforeEach(async () => {
+      await store.createTree([], DataContractStoreRepository.TREE_PATH[0]);
+    });
+
+    it('should should return proof if Data Contract not found', async () => {
+      const result = await repository.prove(dataContract.getId());
+
+      expect(result).to.be.instanceOf(StorageResult);
+      expect(result.getOperations().length).to.be.greaterThan(0);
+
+      const proof = result.getValue();
+
+      expect(proof).to.be.an.instanceof(Buffer);
+      expect(proof.length).to.be.greaterThan(0);
+    });
+
+    it('should return proof', async () => {
+      await store.getDrive().applyContract(dataContract, new Date(), false);
+
+      const result = await repository.prove(dataContract.getId());
+
+      expect(result).to.be.instanceOf(StorageResult);
+      expect(result.getOperations().length).to.be.greaterThan(0);
+
+      const proof = result.getValue();
+
+      expect(proof).to.be.an.instanceof(Buffer);
+      expect(proof.length).to.be.greaterThan(0);
+    });
+
+    // TODO enable this test when we support transactions
+    it.skip('should return proof using transaction', async () => {
+      await store.startTransaction();
+
+      await store.getDrive().applyContract(dataContract, new Date(), true);
+
+      const notFoundDataContractResult = await repository.prove(dataContract.getId(), {
+        useTransaction: false,
+      });
+
+      expect(notFoundDataContractResult.getValue()).to.be.null();
+
+      const transactionalDataContractResult = await repository.prove(dataContract.getId(), {
+        useTransaction: true,
+      });
+
+      const transactionalDataContract = transactionalDataContractResult.getValue();
+
+      expect(transactionalDataContract).to.be.an.instanceof(Buffer);
+
+      await store.commitTransaction();
+
+      const storedDataContractResult = await repository.prove(dataContract.getId());
+
+      const storedDataContract = storedDataContractResult.getValue();
+
+      expect(storedDataContract).to.be.an.instanceof(Buffer);
+    });
+  });
+
+  describe('#proveMany', () => {
+    let dataContract2;
+
+    beforeEach(async () => {
+      dataContract2 = new DataContract({
+        $id: generateRandomIdentifier().toBuffer(),
+        ownerId: generateRandomIdentifier().toBuffer(),
+        contractId: generateRandomIdentifier().toBuffer(),
+        documents: {
+          niceDocument: {
+            properties: {
+              nice: {
+                type: 'boolean',
+              },
+            },
+          },
+        },
+      });
+
+      await store.createTree([], DataContractStoreRepository.TREE_PATH[0]);
+    });
+
+    it('should should return proof if Data Contract not found', async () => {
+      const result = await repository.proveMany([dataContract.getId(), dataContract2.getId()]);
+
+      expect(result).to.be.instanceOf(StorageResult);
+      expect(result.getOperations().length).to.be.greaterThan(0);
+
+      const proof = result.getValue();
+
+      expect(proof).to.be.an.instanceof(Buffer);
+      expect(proof.length).to.be.greaterThan(0);
+    });
+
+    it('should return proof', async () => {
+      await store.getDrive().applyContract(dataContract, new Date(), false);
+      await store.getDrive().applyContract(dataContract2, new Date(), false);
+
+      const result = await repository.proveMany([dataContract.getId(), dataContract2.getId()]);
+
+      expect(result).to.be.instanceOf(StorageResult);
+      expect(result.getOperations().length).to.be.greaterThan(0);
+
+      const proof = result.getValue();
+
+      expect(proof).to.be.an.instanceof(Buffer);
+      expect(proof.length).to.be.greaterThan(0);
+    });
+
+    // TODO enable this test when we support transactions
+    it.skip('should return proof using transaction', async () => {
+      await store.startTransaction();
+
+      await store.getDrive().applyContract(dataContract, new Date(), true);
+      await store.getDrive().applyContract(dataContract2, new Date(), true);
+
+      const notFoundDataContractResult = await repository.prove(
+        [dataContract.getId(), dataContract2.getId()], {
+          useTransaction: false,
+        },
+      );
+
+      expect(notFoundDataContractResult.getValue()).to.be.null();
+
+      const transactionalDataContractResult = await repository.proveMany(
+        [dataContract.getId(), dataContract2.getId()],
+        { useTransaction: true },
+      );
+
+      const transactionalDataContract = transactionalDataContractResult.getValue();
+
+      expect(transactionalDataContract).to.be.an.instanceof(Buffer);
+
+      await store.commitTransaction();
+
+      const storedDataContractResult = await repository.proveMany(
+        [dataContract.getId(), dataContract2.getId()],
+      );
+
+      const storedDataContract = storedDataContractResult.getValue();
+
+      expect(storedDataContract).to.be.an.instanceof(Buffer);
     });
   });
 });

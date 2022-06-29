@@ -16,7 +16,11 @@ function fetchProofForStateTransitionFactory(driveClient) {
     if (stateTransition.isDocumentStateTransition()) {
       ({ documentsProof: proof, metadata } = await driveClient.fetchProofs(
         {
-          documentIds: modifiedIds.map((identifier) => identifier.toBuffer()),
+          documents: stateTransition.getTransitions().map((documentTransition) => ({
+            dataContractId: documentTransition.getDataContractId().toBuffer(),
+            documentId: documentTransition.getId().toBuffer(),
+            type: documentTransition.getType(),
+          })),
         },
       ));
     } else if (stateTransition.isIdentityStateTransition()) {
