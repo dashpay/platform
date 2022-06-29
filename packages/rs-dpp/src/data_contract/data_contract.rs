@@ -6,11 +6,6 @@ use ciborium::value::Value as CborValue;
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 
-use super::errors::*;
-use crate::data_contract::get_binary_properties_from_schema::get_binary_properties;
-use crate::util::json_value::{JsonValueExt, ReplaceWith};
-use crate::util::string_encoding::Encoding;
-use crate::Convertible;
 use crate::{
     errors::ProtocolError,
     identifier::Identifier,
@@ -18,6 +13,7 @@ use crate::{
     util::{hash::hash, serializer},
 };
 use crate::common::bytes_for_system_value_from_tree_map;
+use crate::Convertible;
 use crate::data_contract::get_binary_properties_from_schema::get_binary_properties;
 use crate::util::cbor_value::{cbor_value_to_json_value, CborCanonicalMap};
 use crate::util::deserializer;
@@ -63,7 +59,7 @@ impl Convertible for DataContract {
     fn to_buffer(&self) -> Result<Vec<u8>, ProtocolError> {
         let protocol_version = self.protocol_version;
         // what means skip_identifiers_conversion
-        let mut json_object = self.to_object()?;
+        let mut json_object = self.to_object(true)?;
 
         if let JsonValue::Object(ref mut o) = json_object {
             o.remove("protocolVersion");
@@ -142,7 +138,9 @@ impl DataContract {
 
         let contract_id: [u8; 32] =
             bytes_for_system_value_from_tree_map(&data_contract_map, "$id")?
-                .ok_or_else(|| {ProtocolError::DecodingError(String::from("unable to get contract id")) })?
+                .ok_or_else(|| {
+                    ProtocolError::DecodingError(String::from("unable to get contract id"))
+                })?
                 .try_into()
                 .map_err(|_| {
                     ProtocolError::DecodingError(String::from("contract_id must be 32 bytes"))
@@ -160,24 +158,28 @@ impl DataContract {
 
         let schema = data_contract_map
             .get("$schema")
-            .ok_or_else(|| {ProtocolError::DecodingError(String::from(
-                "unable to get contract owner id",
-            ))})?
+            .ok_or_else(|| {
+                ProtocolError::DecodingError(String::from("unable to get contract owner id"))
+            })?
             .as_text()
-            .ok_or_else(|| {ProtocolError::DecodingError(String::from(
-                "Decoding contract: expect $schema to be a string",
-            ))})?;
+            .ok_or_else(|| {
+                ProtocolError::DecodingError(String::from(
+                    "Decoding contract: expect $schema to be a string",
+                ))
+            })?;
 
         let version = i128::from(
             data_contract_map
                 .get("$schema")
-                .ok_or_else(|| {ProtocolError::DecodingError(String::from(
-                    "unable to get contract owner id",
-                ))})?
+                .ok_or_else(|| {
+                    ProtocolError::DecodingError(String::from("unable to get contract owner id"))
+                })?
                 .as_integer()
-                .ok_or_else(|| {ProtocolError::DecodingError(String::from(
-                    "Decoding contract: expect $schema to be a string",
-                ))})?,
+                .ok_or_else(|| {
+                    ProtocolError::DecodingError(String::from(
+                        "Decoding contract: expect $schema to be a string",
+                    ))
+                })?,
         ) as u32;
 
         // Defs
@@ -190,11 +192,11 @@ impl DataContract {
                     Some(cbor_map) => {
                         let mut res = BTreeMap::<String, JsonValue>::new();
                         for (key, value) in cbor_map {
-                            let key_string =
-                                key.as_text()
-                                    .ok_or_else(|| {ProtocolError::DecodingError(String::from(
-                                        "Expect $defs keys to be strings",
-                                    ))})?;
+                            let key_string = key.as_text().ok_or_else(|| {
+                                ProtocolError::DecodingError(String::from(
+                                    "Expect $defs keys to be strings",
+                                ))
+                            })?;
                             let json_value = cbor_value_to_json_value(value)?;
                             res.insert(String::from(key_string), json_value);
                         }
@@ -207,18 +209,20 @@ impl DataContract {
         // Documents
         let documents_cbor_value = data_contract_map
             .get("documents")
-            .ok_or_else(|| {ProtocolError::DecodingError(String::from("unable to get documents"))} )?;
+            .ok_or_else(|| ProtocolError::DecodingError(String::from("unable to get documents")))?;
         let contract_documents_cbor_map = documents_cbor_value
             .as_map()
-            .ok_or_else(||{ ProtocolError::DecodingError(String::from("documents must be a map")) })?;
+            .ok_or_else(|| ProtocolError::DecodingError(String::from("documents must be a map")))?;
         let documents_vec = contract_documents_cbor_map
             .iter()
             .map(|(key, value)| {
                 Ok((
                     key.as_text()
-                        .ok_or_else(|| {ProtocolError::DecodingError(String::from(
-                            "expect document type to be a string",
-                        ))})?
+                        .ok_or_else(|| {
+                            ProtocolError::DecodingError(String::from(
+                                "expect document type to be a string",
+                            ))
+                        })?
                         .to_string(),
                     cbor_value_to_json_value(value)?,
                 ))
@@ -474,14 +478,12 @@ impl TryFrom<&str> for DataContract {
 
 #[cfg(test)]
 mod test {
-    use super::*;
+    use anyhow::Result;
+
     use crate::{
         assert_error_contains,
         tests::{fixtures::get_data_contract_fixture, utils::*},
     };
-    use anyhow::Result;
-
-    use crate::{assert_error_contains, tests::utils::*};
 
     use super::*;
 
@@ -561,7 +563,7 @@ mod test {
         let string_contract = get_data_from_file("src/tests/payloads/contract_example.json")?;
         let data_contract: DataContract = serde_json::from_str(&string_contract)?;
 
-        let raw_data_contract = data_contract.to_object()?;
+        let raw_data_contract = data_contract.to_object(false)?;
         for path in IDENTIFIER_FIELDS {
             assert!(raw_data_contract
                 .get(path)
