@@ -1,18 +1,20 @@
 #![allow(clippy::from_over_into)]
 
-use crate::errors::{InvalidVectorSizeError, ProtocolError};
-use crate::util::cbor_value::{CborCanonicalMap, CborMapExtension};
-use crate::util::json_value::JsonValueExt;
-use crate::util::vec;
+use std::{collections::HashMap, convert::TryFrom, hash::Hash};
+use std::convert::TryInto;
+
 use anyhow::{anyhow, bail};
-use ciborium::value::{Integer, Value as CborValue};
+use ciborium::value::Value as CborValue;
 use dashcore::PublicKey;
 use lazy_static::lazy_static;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use serde_json::Value as JsonValue;
 use serde_repr::{Deserialize_repr, Serialize_repr};
-use std::convert::TryInto;
-use std::{collections::HashMap, convert::TryFrom, hash::Hash};
+
+use crate::errors::{InvalidVectorSizeError, ProtocolError};
+use crate::util::cbor_value::{CborCanonicalMap, CborMapExtension};
+use crate::util::json_value::JsonValueExt;
+use crate::util::vec;
 
 pub type KeyID = u64;
 

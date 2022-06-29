@@ -1,4 +1,3 @@
-use crate::util::vec::{decode_hex, hex_to_array};
 use serde::{Deserialize, Serialize};
 
 // {
@@ -54,7 +53,6 @@ pub fn get_buffer() -> Vec<u8> {
 
 mod to_buffer {
     use crate::prelude::Identity;
-    use crate::tests::fixtures::{identity_fixture_json, identity_fixture_json_base};
     use crate::tests::identity::identity_spec::identity_cbor_hex;
     use crate::util::vec::encode_hex;
 
@@ -74,16 +72,13 @@ pub struct DummyStruct {
 }
 
 mod from_buffer {
-    use std::collections::BTreeMap;
     use std::convert::TryFrom;
+
     use crate::identifier::Identifier;
-    use crate::prelude::Identity;
-    use crate::tests::fixtures::identity_fixture_json_base;
-    use crate::tests::identity::identity_spec::{get_buffer, identity_cbor_hex, DummyStruct};
-    use crate::util::string_encoding::Encoding;
-    use crate::util::vec::{decode_hex, encode_hex};
-    use ciborium::value::Value;
     use crate::identity::{KeyType, Purpose, SecurityLevel};
+    use crate::prelude::Identity;
+    use crate::tests::identity::identity_spec::{get_buffer, identity_cbor_hex};
+    use crate::util::string_encoding::Encoding;
 
     #[test]
     pub fn should_parse_identity() {

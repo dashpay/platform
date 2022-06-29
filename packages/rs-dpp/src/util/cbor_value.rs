@@ -1,11 +1,11 @@
-use crate::document::document_transition::JsonValue;
-use crate::ProtocolError;
-use ciborium::value::{Value as CborValue, Value};
-use serde_json::{Map, Value as Json};
 use std::cmp::Ordering;
 use std::collections::BTreeMap;
 use std::convert::TryInto;
-use std::io::Write;
+
+use ciborium::value::Value as CborValue;
+use serde_json::{Map, Value as JsonValue};
+
+use crate::ProtocolError;
 
 pub fn get_key_from_cbor_map<'a>(
     cbor_map: &'a [(CborValue, CborValue)],
@@ -92,6 +92,30 @@ impl CborMapExtension for &Vec<(CborValue, CborValue)> {
     }
 }
 
+fn recursively_sort_canonical_cbor_map(cbor_map: &mut [(CborValue, CborValue)]) {
+    for (_, value) in cbor_map.iter_mut() {
+        if let CborValue::Map(map) = value {
+            recursively_sort_canonical_cbor_map(map)
+        }
+    }
+
+    cbor_map.sort_by(|a, b| {
+        // We now for sure that the keys are always text, since `insert()`
+        // methods accepts only types that can be converted into a string
+        let key_a = a.0.as_text().unwrap().as_bytes();
+        let key_b = b.0.as_text().unwrap().as_bytes();
+
+        let len_comparison = key_a.len().cmp(&key_b.len());
+
+        match len_comparison {
+            Ordering::Less => Ordering::Less,
+            Ordering::Equal => key_a.cmp(key_b),
+            Ordering::Greater => Ordering::Greater,
+        }
+    });
+}
+
+#[derive(Default, Clone, Debug)]
 pub struct CborCanonicalMap {
     inner: Vec<(CborValue, CborValue)>,
 }
@@ -120,20 +144,7 @@ impl CborCanonicalMap {
     ///
     /// https://datatracker.ietf.org/doc/html/rfc7049#section-3.9
     pub fn sort_canonical(&mut self) {
-        self.inner.sort_by(|a, b| {
-            // We now for sure that the keys are always text, since `insert()`
-            // methods accepts only types that can be converted into a string
-            let key_a = a.0.as_text().unwrap().as_bytes();
-            let key_b = b.0.as_text().unwrap().as_bytes();
-
-            let len_comparison = key_a.len().cmp(&key_b.len());
-
-            match len_comparison {
-                Ordering::Less => Ordering::Less,
-                Ordering::Equal => key_a.cmp(key_b),
-                Ordering::Greater => Ordering::Greater,
-            }
-        });
+        recursively_sort_canonical_cbor_map(&mut self.inner)
     }
 
     pub fn to_bytes(mut self) -> Result<Vec<u8>, ciborium::ser::Error<std::io::Error>> {
@@ -161,12 +172,18 @@ impl From<Vec<(CborValue, CborValue)>> for CborCanonicalMap {
     }
 }
 
-// pub fn json_value_to_cbor_value(&json: JsonValue) -> CborValue {
+impl From<&Vec<(CborValue, CborValue)>> for CborCanonicalMap {
+    fn from(vec: &Vec<(CborValue, CborValue)>) -> Self {
+        Self::from_vector(vec.clone())
+    }
+}
+
+// pub fn json_value_to_cbor_value(&json: JsonValueValue) -> CborValue {
 //
 // }
 
-// impl From<&BTreeMap<String, JsonValue>> for CborCanonicalMap {
-//     fn from(map: &BTreeMap<String, JsonValue>) -> Self {
+// impl From<&BTreeMap<String, JsonValueValue>> for CborCanonicalMap {
+//     fn from(map: &BTreeMap<String, JsonValueValue>) -> Self {
 //         let vec = map.iter().map(|(key, value)| {
 //             (key.into(), value.into())
 //         }).collect::<Vec<(CborValue, CborValue)>>();
@@ -191,18 +208,18 @@ where
 
 pub fn cbor_value_to_json_value(cbor: &CborValue) -> Result<serde_json::Value, ProtocolError> {
     match cbor {
-        CborValue::Integer(num) => Ok(Json::from(i128::from(*num) as i64)),
-        CborValue::Bytes(bytes) => Ok(Json::Array(
-            bytes.iter().map(|byte| Json::from(*byte)).collect(),
+        CborValue::Integer(num) => Ok(JsonValue::from(i128::from(*num) as i64)),
+        CborValue::Bytes(bytes) => Ok(JsonValue::Array(
+            bytes.iter().map(|byte| JsonValue::from(*byte)).collect(),
         )),
-        CborValue::Float(float) => Ok(Json::from(*float as f64)),
-        CborValue::Text(text) => Ok(Json::from(text.clone())),
-        CborValue::Bool(boolean) => Ok(Json::from(*boolean)),
-        CborValue::Null => Ok(Json::Null),
-        CborValue::Array(arr) => Ok(Json::Array(
+        CborValue::Float(float) => Ok(JsonValue::from(*float as f64)),
+        CborValue::Text(text) => Ok(JsonValue::from(text.clone())),
+        CborValue::Bool(boolean) => Ok(JsonValue::from(*boolean)),
+        CborValue::Null => Ok(JsonValue::Null),
+        CborValue::Array(arr) => Ok(JsonValue::Array(
             arr.iter()
-                .map(|cbor_val| Ok(cbor_value_to_json_value(cbor_val)?))
-                .collect::<Result<Vec<Json>, ProtocolError>>()?,
+                .map(cbor_value_to_json_value)
+                .collect::<Result<Vec<JsonValue>, ProtocolError>>()?,
         )),
         CborValue::Map(map) => cbor_map_to_json_map(map),
         _ => Err(ProtocolError::DecodingError(String::from(
@@ -219,14 +236,14 @@ pub fn cbor_map_to_json_map(
         .map(|(key, value)| {
             Ok((
                 key.as_text()
-                    .ok_or(ProtocolError::DecodingError(String::from(
-                        "Expect key to be a string",
-                    )))?
+                    .ok_or_else(|| {
+                        ProtocolError::DecodingError(String::from("Expect key to be a string"))
+                    })?
                     .to_string(),
                 cbor_value_to_json_value(value)?,
             ))
         })
-        .collect::<Result<Vec<(String, Json)>, ProtocolError>>()?;
+        .collect::<Result<Vec<(String, JsonValue)>, ProtocolError>>()?;
 
     let mut json_map = Map::new();
 

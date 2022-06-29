@@ -1,23 +1,25 @@
-use super::errors::*;
-use crate::common::{bytes_for_system_value_from_tree_map, cbor_map_to_btree_map};
-use crate::data_contract::get_binary_properties_from_schema::get_binary_properties;
-use crate::util::cbor_value::{cbor_value_to_json_value, CborCanonicalMap};
-use crate::util::cbor_value::CborMapExtension;
-use crate::util::deserializer;
-use crate::util::json_value::{JsonValueExt, ReplaceWith};
-use crate::util::string_encoding::Encoding;
+use std::collections::BTreeMap;
+use std::convert::{TryFrom, TryInto};
+
+use anyhow::anyhow;
+use ciborium::value::Value as CborValue;
+use serde::{Deserialize, Serialize};
+use serde_json::Value as JsonValue;
+
 use crate::{
     errors::ProtocolError,
     identifier::Identifier,
     metadata::Metadata,
     util::{hash::hash, serializer},
 };
-use anyhow::anyhow;
-use ciborium::value::Value as CborValue;
-use serde::{Deserialize, Serialize};
-use serde_json::Value as JsonValue;
-use std::collections::BTreeMap;
-use std::convert::{TryFrom, TryInto};
+use crate::common::bytes_for_system_value_from_tree_map;
+use crate::data_contract::get_binary_properties_from_schema::get_binary_properties;
+use crate::util::cbor_value::{cbor_value_to_json_value, CborCanonicalMap};
+use crate::util::deserializer;
+use crate::util::json_value::{JsonValueExt, ReplaceWith};
+use crate::util::string_encoding::Encoding;
+
+use super::errors::*;
 
 pub type JsonSchema = JsonValue;
 type DocumentType = String;
@@ -47,6 +49,10 @@ pub struct DataContract {
     pub entropy: [u8; 32],
     #[serde(skip)]
     pub binary_properties: BTreeMap<DocumentType, BTreeMap<PropertyPath, JsonValue>>,
+    #[serde(skip)]
+    pub documents_cbor_internal: CborCanonicalMap,
+    #[serde(skip)]
+    pub defs_cbor_internal: CborCanonicalMap,
 }
 
 impl DataContract {
@@ -81,7 +87,7 @@ impl DataContract {
 
         let contract_id: [u8; 32] =
             bytes_for_system_value_from_tree_map(&data_contract_map, "$id")?
-                .ok_or({ ProtocolError::DecodingError(String::from("unable to get contract id")) })?
+                .ok_or_else(|| {ProtocolError::DecodingError(String::from("unable to get contract id")) })?
                 .try_into()
                 .map_err(|_| {
                     ProtocolError::DecodingError(String::from("contract_id must be 32 bytes"))
@@ -89,7 +95,7 @@ impl DataContract {
 
         let owner_id: [u8; 32] =
             bytes_for_system_value_from_tree_map(&data_contract_map, "ownerId")?
-                .ok_or({
+                .ok_or_else(|| {
                     ProtocolError::DecodingError(String::from("unable to get contract owner id"))
                 })?
                 .try_into()
@@ -99,39 +105,46 @@ impl DataContract {
 
         let schema = data_contract_map
             .get("$schema")
-            .ok_or(ProtocolError::DecodingError(String::from(
+            .ok_or_else(|| {ProtocolError::DecodingError(String::from(
                 "unable to get contract owner id",
-            )))?
+            ))})?
             .as_text()
-            .ok_or(ProtocolError::DecodingError(String::from(
+            .ok_or_else(|| {ProtocolError::DecodingError(String::from(
                 "Decoding contract: expect $schema to be a string",
-            )))?;
+            ))})?;
 
-        let version = i128::from(data_contract_map
-            .get("$schema")
-            .ok_or(ProtocolError::DecodingError(String::from(
-                "unable to get contract owner id",
-            )))?
-            .as_integer()
-            .ok_or(ProtocolError::DecodingError(String::from(
-                "Decoding contract: expect $schema to be a string",
-            )))?) as u32;
+        let version = i128::from(
+            data_contract_map
+                .get("$schema")
+                .ok_or_else(|| {ProtocolError::DecodingError(String::from(
+                    "unable to get contract owner id",
+                ))})?
+                .as_integer()
+                .ok_or_else(|| {ProtocolError::DecodingError(String::from(
+                    "Decoding contract: expect $schema to be a string",
+                ))})?,
+        ) as u32;
 
-        let definitions = match data_contract_map.get("$defs") {
-            None => BTreeMap::new(),
+        // Defs
+        let (defs, defs_cbor) = match data_contract_map.get("$defs") {
+            None => (BTreeMap::new(), CborCanonicalMap::new()),
             Some(definition_value) => {
                 let definition_map = definition_value.as_map();
                 match definition_map {
-                    None => BTreeMap::new(),
+                    None => (BTreeMap::new(), CborCanonicalMap::new()),
                     Some(cbor_map) => {
                         let mut res = BTreeMap::<String, JsonValue>::new();
                         for (key, value) in cbor_map {
-                            let key_string = key.as_text().ok_or(ProtocolError::DecodingError(String::from("Expect $defs keys to be strings")))?;
+                            let key_string =
+                                key.as_text()
+                                    .ok_or_else(|| {ProtocolError::DecodingError(String::from(
+                                        "Expect $defs keys to be strings",
+                                    ))})?;
                             let json_value = cbor_value_to_json_value(value)?;
                             res.insert(String::from(key_string), json_value);
                         }
-                        res
-                    },
+                        (res, cbor_map.into())
+                    }
                 }
             }
         };
@@ -139,16 +152,20 @@ impl DataContract {
         // Documents
         let documents_cbor_value = data_contract_map
             .get("documents")
-            .ok_or({ ProtocolError::DecodingError(String::from("unable to get documents")) })?;
+            .ok_or_else(|| {ProtocolError::DecodingError(String::from("unable to get documents"))} )?;
         let contract_documents_cbor_map = documents_cbor_value
             .as_map()
-            .ok_or({ ProtocolError::DecodingError(String::from("documents must be a map")) })?;
-        let mut documents_vec = contract_documents_cbor_map
+            .ok_or_else(||{ ProtocolError::DecodingError(String::from("documents must be a map")) })?;
+        let documents_vec = contract_documents_cbor_map
             .iter()
             .map(|(key, value)| {
                 Ok((
-                    key.as_text().ok_or(ProtocolError::DecodingError(String::from("expect document type to be a string")))?.to_string(),
-                    cbor_value_to_json_value(value)?
+                    key.as_text()
+                        .ok_or_else(|| {ProtocolError::DecodingError(String::from(
+                            "expect document type to be a string",
+                        ))})?
+                        .to_string(),
+                    cbor_value_to_json_value(value)?,
                 ))
             })
             .collect::<Result<Vec<(String, JsonValue)>, ProtocolError>>()?;
@@ -196,10 +213,12 @@ impl DataContract {
             version,
             owner_id: Identifier::new(owner_id),
             documents,
-            defs: definitions,
+            defs,
             metadata: None,
             entropy: [0; 32],
             binary_properties: Default::default(),
+            documents_cbor_internal: contract_documents_cbor_map.into(),
+            defs_cbor_internal: defs_cbor,
         })
     }
 
@@ -259,6 +278,7 @@ impl DataContract {
         contract_cbor_map.insert("version", self.version());
         contract_cbor_map.insert("ownerId", self.owner_id().to_buffer().to_vec());
         //contract_cbor_map.insert("documents", self.owner_id());
+        //contract_cbor_map.insert("$defs", self.defs());
 
         contract_cbor_map
             .to_bytes()
@@ -399,9 +419,11 @@ impl TryFrom<&str> for DataContract {
 
 #[cfg(test)]
 mod test {
-    use super::*;
-    use crate::{assert_error_contains, tests::utils::*};
     use anyhow::Result;
+
+    use crate::{assert_error_contains, tests::utils::*};
+
+    use super::*;
 
     fn init() {
         let _ = env_logger::builder()

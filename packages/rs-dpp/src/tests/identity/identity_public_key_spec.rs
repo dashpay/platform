@@ -1,8 +1,8 @@
 mod from_raw_object {
+    use serde_json::json;
+
     use crate::identity::{KeyType, Purpose, SecurityLevel};
     use crate::prelude::IdentityPublicKey;
-    use dashcore::PublicKey;
-    use serde_json::json;
 
     #[test]
     pub fn should_parse_raw_key() {

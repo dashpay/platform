@@ -1,18 +1,19 @@
+use chrono::Utc;
+use serde_json::{json, Value as JsonValue};
+
 use crate::{
     data_contract::DataContract,
     mocks,
     prelude::Identifier,
-    util::entropy_generator,
-    util::{json_schema::JsonSchemaExt, json_value::JsonValueExt},
     ProtocolError,
+    util::{json_schema::JsonSchemaExt, json_value::JsonValueExt},
+    util::entropy_generator,
 };
-use chrono::Utc;
-use serde_json::{json, Value as JsonValue};
 
 use super::{
+    Document,
     document_transition::{self, Action},
-    generate_document_id::generate_document_id,
-    Document, DocumentsBatchTransition,
+    DocumentsBatchTransition, generate_document_id::generate_document_id,
 };
 
 const PROPERTY_PROTOCOL_VERSION: &str = "protocolVersion";
@@ -271,7 +272,6 @@ impl DocumentFactory {
 mod test {
     use crate::{
         assert_error_contains,
-        document::document_transition::DocumentTransitionObjectLike,
         tests::{
             fixtures::{get_data_contract_fixture, get_documents_fixture},
             utils::generate_random_identifier_struct,
