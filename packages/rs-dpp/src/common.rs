@@ -8,6 +8,7 @@ use std::io;
 use std::io::{BufRead, BufReader};
 use std::option::Option::None;
 use std::path::Path;
+use crate::util::cbor_value::get_key_from_cbor_map;
 
 pub fn json_document_to_cbor(path: impl AsRef<Path>, protocol_version: Option<u32>) -> Vec<u8> {
     let file = File::open(path).expect("file not found");
@@ -35,22 +36,6 @@ pub fn text_file_strings(path: impl AsRef<Path>) -> Vec<String> {
     let file = File::open(path).expect("file not found");
     let reader = io::BufReader::new(file).lines();
     reader.into_iter().map(|a| a.unwrap()).collect()
-}
-
-pub fn get_key_from_cbor_map<'a>(
-    cbor_map: &'a [(Value, Value)],
-    key: &'a str,
-) -> Option<&'a Value> {
-    for (cbor_key, cbor_value) in cbor_map.iter() {
-        if !cbor_key.is_text() {
-            continue;
-        }
-
-        if cbor_key.as_text().expect("confirmed as text") == key {
-            return Some(cbor_value);
-        }
-    }
-    None
 }
 
 pub fn cbor_map_to_btree_map(cbor_map: &[(Value, Value)]) -> BTreeMap<String, &Value> {

@@ -8,7 +8,7 @@ use serde_json::Value as JsonValue;
 use crate::{errors::ProtocolError, identifier::Identifier, metadata::Metadata, util::hash};
 use crate::common::bytes_for_system_value_from_tree_map;
 use crate::identity::identity_public_key;
-use crate::util::cbor_value::CborCanonicalMap;
+use crate::util::cbor_value::{CborBTreeMapHelper, CborCanonicalMap};
 use crate::util::deserializer;
 use crate::util::json_value::{JsonValueExt, ReplaceWith};
 
@@ -191,56 +191,10 @@ impl Identity {
                 ProtocolError::DecodingError(format!("Unable to decode identity CBOR: {}", e))
             })?;
 
-        let identity_id: [u8; 32] = bytes_for_system_value_from_tree_map(&identity_map, "id")?
-            .ok_or_else(|| {
-                ProtocolError::DecodingError(String::from(
-                    "Unable to decode identity CBOR: missing property id",
-                ))
-            })?
-            .try_into()
-            .map_err(|_| {
-                ProtocolError::DecodingError(String::from("Identity id must be 32 bytes"))
-            })?;
+        let identity_id= identity_map.get_identifier("id")?;
 
-        let revision: i64 = identity_map
-            .get("revision")
-            .ok_or_else(|| {
-                ProtocolError::DecodingError(String::from(
-                    "Unable to decode identity CBOR: missing property revision",
-                ))
-            })?
-            .as_integer()
-            .ok_or_else(|| {
-                ProtocolError::DecodingError(String::from(
-                    "Unable to decode identity CBOR: revision must be an integer",
-                ))
-            })?
-            .try_into()
-            .map_err(|_| {
-                ProtocolError::DecodingError(String::from(
-                    "Unable to decode identity CBOR: revision must be an unsigned 64 int",
-                ))
-            })?;
-
-        let balance: i64 = identity_map
-            .get("balance")
-            .ok_or_else(|| {
-                ProtocolError::DecodingError(String::from(
-                    "Unable to decode identity CBOR: missing property balance",
-                ))
-            })?
-            .as_integer()
-            .ok_or_else(|| {
-                ProtocolError::DecodingError(String::from(
-                    "Unable to decode identity CBOR: balance must be an integer",
-                ))
-            })?
-            .try_into()
-            .map_err(|_| {
-                ProtocolError::DecodingError(String::from(
-                    "Unable to decode identity CBOR: balance must be an unsigned integer",
-                ))
-            })?;
+        let revision = identity_map.get_i64("revision")?;
+        let balance: i64 = identity_map.get_i64("balance")?;
 
         let keys_cbor_value = identity_map.get("publicKeys").ok_or_else(|| {
             ProtocolError::DecodingError(String::from(

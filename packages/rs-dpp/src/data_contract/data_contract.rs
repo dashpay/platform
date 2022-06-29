@@ -15,7 +15,7 @@ use crate::{
 use crate::common::bytes_for_system_value_from_tree_map;
 use crate::Convertible;
 use crate::data_contract::get_binary_properties_from_schema::get_binary_properties;
-use crate::util::cbor_value::{cbor_value_to_json_value, CborCanonicalMap};
+use crate::util::cbor_value::{cbor_value_to_json_value, CborBTreeMapHelper, CborCanonicalMap};
 use crate::util::deserializer;
 use crate::util::json_value::{JsonValueExt, ReplaceWith};
 use crate::util::string_encoding::Encoding;
@@ -111,20 +111,7 @@ impl DataContract {
     }
 
     pub fn from_buffer(b: impl AsRef<[u8]>) -> Result<DataContract, ProtocolError> {
-        let (protocol_bytes, document_bytes) = b.as_ref().split_at(4);
-
-        let mut json_value: JsonValue = ciborium::de::from_reader(document_bytes)
-            .map_err(|e| ProtocolError::EncodingError(format!("{}", e)))?;
-
-        json_value.parse_and_add_protocol_version("protocolVersion", protocol_bytes)?;
-
-        // TODO identifier_default_deserializer: default deserializer should be changed to bytes
-        // Identifiers fields should be replaced with the string format to deserialize Data Contract
-        json_value.replace_identifier_paths(IDENTIFIER_FIELDS, ReplaceWith::Base58)?;
-
-        let mut data_contract: DataContract = serde_json::from_value(json_value)?;
-        data_contract.generate_binary_properties();
-        Ok(data_contract)
+        Self::from_cbor(b)
     }
 
     pub fn from_cbor(cbor_bytes: impl AsRef<[u8]>) -> Result<Self, ProtocolError> {
@@ -136,51 +123,10 @@ impl DataContract {
                 ProtocolError::DecodingError(String::from("unable to decode contract"))
             })?;
 
-        let contract_id: [u8; 32] =
-            bytes_for_system_value_from_tree_map(&data_contract_map, "$id")?
-                .ok_or_else(|| {
-                    ProtocolError::DecodingError(String::from("unable to get contract id"))
-                })?
-                .try_into()
-                .map_err(|_| {
-                    ProtocolError::DecodingError(String::from("contract_id must be 32 bytes"))
-                })?;
-
-        let owner_id: [u8; 32] =
-            bytes_for_system_value_from_tree_map(&data_contract_map, "ownerId")?
-                .ok_or_else(|| {
-                    ProtocolError::DecodingError(String::from("unable to get contract owner id"))
-                })?
-                .try_into()
-                .map_err(|_| {
-                    ProtocolError::DecodingError(String::from("ownerId must be 32 bytes"))
-                })?;
-
-        let schema = data_contract_map
-            .get("$schema")
-            .ok_or_else(|| {
-                ProtocolError::DecodingError(String::from("unable to get contract owner id"))
-            })?
-            .as_text()
-            .ok_or_else(|| {
-                ProtocolError::DecodingError(String::from(
-                    "Decoding contract: expect $schema to be a string",
-                ))
-            })?;
-
-        let version = i128::from(
-            data_contract_map
-                .get("$schema")
-                .ok_or_else(|| {
-                    ProtocolError::DecodingError(String::from("unable to get contract owner id"))
-                })?
-                .as_integer()
-                .ok_or_else(|| {
-                    ProtocolError::DecodingError(String::from(
-                        "Decoding contract: expect $schema to be a string",
-                    ))
-                })?,
-        ) as u32;
+        let contract_id: [u8; 32] = data_contract_map.get_identifier(PROPERTY_ID)?;
+        let owner_id: [u8; 32] = data_contract_map.get_identifier(PROPERTY_OWNER_ID)?;
+        let schema = data_contract_map.get_string(PROPERTY_SCHEMA)?;
+        let version = data_contract_map.get_u32(PROPERTY_VERSION)?;
 
         // Defs
         let (defs, defs_cbor) = match data_contract_map.get("$defs") {
@@ -234,36 +180,6 @@ impl DataContract {
         for (key, value) in documents_vec {
             documents.insert(key, value);
         }
-
-        // let mut contract_documents: BTreeMap<String, DocumentType> = BTreeMap::new();
-        //
-        // // Build the document type hashmap
-        // for (type_key_value, document_type_value) in contract_documents_cbor_map {
-        //     if !type_key_value.is_text() {
-        //         return Err(ProtocolError::EncodingError(String::from(
-        //             "document type name is not a string as expected",
-        //         )));
-        //     }
-        //
-        //     // Make sure the document_type_value is a map
-        //     if !document_type_value.is_map() {
-        //         return Err(ProtocolError::EncodingError(String::from(
-        //             "document type data is not a map as expected",
-        //         )));
-        //     }
-        //
-        //     let document_type = DocumentType::from_cbor_value(
-        //         type_key_value.as_text().expect("confirmed as text"),
-        //         document_type_value.as_map().expect("confirmed as map"),
-        //         &definition_references,
-        //         documents_keep_history_contract_default,
-        //         documents_mutable_contract_default,
-        //     )?;
-        //     contract_documents.insert(
-        //         String::from(type_key_value.as_text().expect("confirmed as text")),
-        //         document_type,
-        //     );
-        // }
 
         Ok(Self {
             protocol_version,
@@ -638,12 +554,11 @@ mod test {
 
         let data_contract = DataContract::from_buffer(&data_contract_cbor).unwrap();
 
+        assert_eq!(data_contract.version(), 1);
+        assert_eq!(data_contract.protocol_version(), 1);
         assert_eq!(
-            data_contract.id(),
-            &Identifier::new([
-                195, 171, 133, 147, 50, 165, 14, 164, 10, 2, 128, 8, 137, 107, 124, 111, 169, 72,
-                123, 92, 205, 178, 244, 141, 135, 239, 122, 157, 156, 130, 43, 174
-            ])
+            data_contract.schema(),
+            "https://schema.dash.org/dpp-0-4-0/meta/data-contract"
         );
         assert_eq!(
             data_contract.owner_id(),
@@ -652,18 +567,13 @@ mod test {
                 132, 107, 58, 183, 159, 166, 34, 220, 70, 170, 108, 121, 35
             ])
         );
-        assert_eq!(data_contract.version(), 1);
         assert_eq!(
-            data_contract.schema(),
-            "https://schema.dash.org/dpp-0-4-0/meta/data-contract"
+            data_contract.id(),
+            &Identifier::new([
+                195, 171, 133, 147, 50, 165, 14, 164, 10, 2, 128, 8, 137, 107, 124, 111, 169, 72,
+                123, 92, 205, 178, 244, 141, 135, 239, 122, 157, 156, 130, 43, 174
+            ])
         );
-        //assert_eq!(data_contract.documents())
-        // assert_eq!(data_contract.entropy(), [
-        //     58, 14, 223, 103, 195, 135, 118, 133,
-        //     248, 34, 203,  30, 182, 138, 186, 119,
-        //     26, 79, 182,  90,  79, 129, 103, 143,
-        //     22, 21, 122,  55, 128,  73, 195,  59
-        // ])
     }
 
     #[test]
