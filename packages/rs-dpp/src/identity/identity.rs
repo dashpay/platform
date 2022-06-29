@@ -5,12 +5,7 @@ use ciborium::value::Value as CborValue;
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 
-use crate::{
-    errors::ProtocolError,
-    identifier::Identifier,
-    metadata::Metadata,
-    util::hash,
-};
+use crate::{errors::ProtocolError, identifier::Identifier, metadata::Metadata, util::hash};
 use crate::common::bytes_for_system_value_from_tree_map;
 use crate::identity::identity_public_key;
 use crate::util::cbor_value::CborCanonicalMap;
@@ -165,12 +160,17 @@ impl Identity {
         identity_map.insert("id", self.get_id().to_buffer().to_vec());
         identity_map.insert("balance", self.get_balance());
         identity_map.insert("revision", self.get_revision());
-        identity_map.insert("publicKeys", self.get_public_keys()
-            .iter()
-            .map(|pk| pk.into())
-            .collect::<Vec<CborValue>>());
+        identity_map.insert(
+            "publicKeys",
+            self.get_public_keys()
+                .iter()
+                .map(|pk| pk.into())
+                .collect::<Vec<CborValue>>(),
+        );
 
-        let mut identity_cbor = identity_map.to_bytes().map_err(|e| ProtocolError::EncodingError(e.to_string()))?;
+        let mut identity_cbor = identity_map
+            .to_bytes()
+            .map_err(|e| ProtocolError::EncodingError(e.to_string()))?;
         buf.append(&mut identity_cbor);
 
         Ok(buf)

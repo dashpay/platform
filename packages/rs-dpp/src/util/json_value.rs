@@ -1,19 +1,19 @@
-use crate::util::deserializer;
-use anyhow::{anyhow, bail};
-use serde::de::DeserializeOwned;
-use anyhow::{anyhow, bail, Error};
 use std::{collections::BTreeMap, convert::TryInto};
 
+use anyhow::{anyhow, bail, Error};
 use log::trace;
+use serde::de::DeserializeOwned;
 use serde_json::{Number, Value as JsonValue};
+
+use crate::{
+    errors::ProtocolError,
+    identifier::{self, Identifier},
+};
+use crate::util::deserializer;
 
 use super::{
     json_path::{JsonPath, JsonPathLiteral, JsonPathStep},
     string_encoding::Encoding,
-};
-use crate::{
-    errors::ProtocolError,
-    identifier::{self, Identifier},
 };
 
 const PROPERTY_CONTENT_MEDIA_TYPE: &str = "contentMediaType";

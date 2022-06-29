@@ -104,12 +104,13 @@ mod from_buffer {
 
         let identity = Identity::from_buffer(&identity_cbor).unwrap();
         assert_eq!(identity.get_protocol_version(), 1);
-        assert_eq!(identity.get_id().to_buffer(), [
-            136,  29,  45,  41, 192, 117, 244,  93,
-            108, 167,  36, 206,  22, 227,  39, 247,
-            228, 166,  68,  27,  19,  27, 119, 192,
-            10, 232, 143,   8,  36, 226,  31, 148
-        ]);
+        assert_eq!(
+            identity.get_id().to_buffer(),
+            [
+                136, 29, 45, 41, 192, 117, 244, 93, 108, 167, 36, 206, 22, 227, 39, 247, 228, 166,
+                68, 27, 19, 27, 119, 192, 10, 232, 143, 8, 36, 226, 31, 148
+            ]
+        );
         assert_eq!(identity.get_balance(), 0);
         assert_eq!(identity.get_revision(), 0);
 
@@ -122,26 +123,26 @@ mod from_buffer {
         assert_eq!(pk_1.key_type, KeyType::try_from(0u8).unwrap());
         assert_eq!(pk_1.purpose, Purpose::try_from(0u8).unwrap());
         assert_eq!(pk_1.security_level, SecurityLevel::try_from(0u8).unwrap());
-        assert_eq!(pk_1.data, vec![
-            2, 234, 242,  34, 227,  45,  70, 185,
-            127,  86, 248, 144, 187,  34, 195, 214,
-            94,  39, 155,  24, 189, 162,   3, 243,
-            11, 210, 211, 238, 215, 105, 163,  71,
-            98
-        ]);
+        assert_eq!(
+            pk_1.data,
+            vec![
+                2, 234, 242, 34, 227, 45, 70, 185, 127, 86, 248, 144, 187, 34, 195, 214, 94, 39,
+                155, 24, 189, 162, 3, 243, 11, 210, 211, 238, 215, 105, 163, 71, 98
+            ]
+        );
         assert_eq!(pk_1.read_only, false);
 
         assert_eq!(pk_2.id, 1);
         assert_eq!(pk_2.key_type, KeyType::try_from(0u8).unwrap());
         assert_eq!(pk_2.purpose, Purpose::try_from(1u8).unwrap());
         assert_eq!(pk_2.security_level, SecurityLevel::try_from(3u8).unwrap());
-        assert_eq!(pk_2.data, vec![
-            3, 192,  10, 247, 147, 216, 49,  85,
-            249,  85,   2, 179,  58,  23, 21,  65,
-            16, 148, 109, 207, 105, 202, 13, 209,
-            136, 190, 227, 182, 209,  12, 13,  79,
-            139
-        ]);
+        assert_eq!(
+            pk_2.data,
+            vec![
+                3, 192, 10, 247, 147, 216, 49, 85, 249, 85, 2, 179, 58, 23, 21, 65, 16, 148, 109,
+                207, 105, 202, 13, 209, 136, 190, 227, 182, 209, 12, 13, 79, 139
+            ]
+        );
         assert_eq!(pk_2.read_only, false);
 
         println!("{:?}", identity);
