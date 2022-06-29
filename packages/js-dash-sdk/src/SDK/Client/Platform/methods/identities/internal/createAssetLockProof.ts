@@ -7,13 +7,14 @@ const { InstantLockTimeoutError, TxMetadataTimeoutError } = require('@dashevo/wa
 
 /**
  * Creates a funding transaction for the platform identity and returns one-time key to sign the state transition
- * @param {Platform} platform
+ * @param {Platform} this
  * @param {Transaction} assetLockTransaction
  * @param {number} outputIndex - index of the funding output in the asset lock transaction
  * @return {AssetLockProof} - asset lock proof to be used in the state transition
  * that can be used to sign registration/top-up state transition
  */
-export default async function createAssetLockProof(platform : Platform, assetLockTransaction: Transaction, outputIndex: number): Promise<any> {
+export async function createAssetLockProof(this : Platform, assetLockTransaction: Transaction, outputIndex: number): Promise<any> {
+    const platform = this;
     await platform.initialize();
 
     const account = await platform.client.getWalletAccount();
@@ -119,3 +120,5 @@ export default async function createAssetLockProof(platform : Platform, assetLoc
       })
     ]);
 }
+
+export default createAssetLockProof;

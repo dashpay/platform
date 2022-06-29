@@ -2,10 +2,11 @@ import { Platform } from "../../../Platform";
 
 import { ownerId as dpnsOwnerId } from "@dashevo/dpns-contract/lib/systemIds";
 
-export default async function waitForCoreChainLockedHeight(
-  platform : Platform,
+export async function waitForCoreChainLockedHeight(
+  this : Platform,
   expectedCoreHeight : number,
 ): Promise<{ promise: Promise<any>, cancel: Function }> {
+  const platform = this;
   await platform.initialize();
 
   const interval = 5000;
@@ -64,6 +65,6 @@ export default async function waitForCoreChainLockedHeight(
   }
 }
 
-
+export default waitForCoreChainLockedHeight;
 
 

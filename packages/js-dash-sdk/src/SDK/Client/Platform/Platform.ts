@@ -4,6 +4,8 @@ import DashPlatformProtocol from "@dashevo/dpp";
 import Client from "../Client";
 import { IStateTransitionResult } from './IStateTransitionResult';
 
+import createAssetLockTransaction from "./createAssetLockTransaction";
+
 import broadcastDocument from "./methods/documents/broadcast";
 import createDocument from "./methods/documents/create";
 import getDocument from "./methods/documents/get";
@@ -17,6 +19,10 @@ import getIdentity from "./methods/identities/get";
 import registerIdentity from "./methods/identities/register";
 import topUpIdentity from "./methods/identities/topUp";
 import updateIdentity from "./methods/identities/update";
+import createIdentityCreateTransition from "./methods/identities/internal/createIdentityCreateTransition";
+import createIdentityTopUpTransition from "./methods/identities/internal/createIdnetityTopUpTransition";
+import createAssetLockProof from "./methods/identities/internal/createAssetLockProof";
+import waitForCoreChainLockedHeight from "./methods/identities/internal/waitForCoreChainLockedHeight";
 
 import registerName from "./methods/names/register";
 import resolveName from "./methods/names/resolve";
@@ -67,6 +73,13 @@ interface Identities {
     register: Function,
     topUp: Function,
     update: Function,
+    utils: {
+      createAssetLockTransaction: Function
+      createAssetLockProof: Function
+      createIdentityCreateTransition: Function
+      createIdentityTopUpTransition: Function
+      waitForCoreChainLockedHeight: Function
+    }
 }
 
 interface DataContracts {
@@ -147,6 +160,13 @@ export class Platform {
             get: getIdentity.bind(this),
             topUp: topUpIdentity.bind(this),
             update: updateIdentity.bind(this),
+            utils: {
+                createAssetLockProof: createAssetLockProof.bind(this),
+                createAssetLockTransaction: createAssetLockTransaction.bind(this),
+                createIdentityCreateTransition: createIdentityCreateTransition.bind(this),
+                createIdentityTopUpTransition: createIdentityTopUpTransition.bind(this),
+                waitForCoreChainLockedHeight: waitForCoreChainLockedHeight.bind(this),
+            }
         };
 
         this.client = options.client;
@@ -175,3 +195,4 @@ export class Platform {
         await this.dpp.initialize();
     }
 }
+

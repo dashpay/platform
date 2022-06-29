@@ -1,16 +1,23 @@
-const getDataContractFixture = require(
-  '@dashevo/dpp/lib/test/fixtures/getDataContractFixture',
-);
+const Dash = require('dash');
 
-const IdentityNotFoundError = require('@dashevo/dpp/lib/errors/consensus/signature/IdentityNotFoundError');
-const { StateTransitionBroadcastError } = require('dash/build/src/errors/StateTransitionBroadcastError');
-
-const InvalidDataContractVersionError = require('@dashevo/dpp/lib/errors/consensus/basic/dataContract/InvalidDataContractVersionError');
-const IncompatibleDataContractSchemaError = require('@dashevo/dpp/lib/errors/consensus/basic/dataContract/IncompatibleDataContractSchemaError');
+const getDataContractFixture = require('../../../lib/test/fixtures/getDataContractFixture');
 
 const wait = require('../../../lib/wait');
 
 const createClientWithFundedWallet = require('../../../lib/test/createClientWithFundedWallet');
+
+const {
+  Errors: {
+    StateTransitionBroadcastError,
+  },
+  PlatformProtocol: {
+    ConsensusErrors: {
+      IdentityNotFoundError,
+      InvalidDataContractVersionError,
+      IncompatibleDataContractSchemaError,
+    },
+  },
+} = Dash;
 
 describe('Platform', () => {
   describe('Data Contract', function main() {

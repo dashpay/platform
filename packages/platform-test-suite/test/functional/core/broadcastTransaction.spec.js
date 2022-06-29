@@ -1,8 +1,8 @@
-const {
-  PrivateKey,
-} = require('@dashevo/dashcore-lib');
+const Dash = require('dash');
 
 const createClientWithFundedWallet = require('../../../lib/test/createClientWithFundedWallet');
+
+const { Core: { PrivateKey } } = Dash;
 
 describe('Core', () => {
   describe('broadcastTransaction', () => {
