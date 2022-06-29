@@ -16,7 +16,6 @@ const Identifier = require('@dashevo/dpp/lib/identifier/Identifier');
 const IdentifierError = require('@dashevo/dpp/lib/identifier/errors/IdentifierError');
 
 const NotFoundAbciError = require('../../errors/NotFoundAbciError');
-const UnimplementedAbciError = require('../../errors/UnimplementedAbciError');
 const InvalidArgumentAbciError = require('../../errors/InvalidArgumentAbciError');
 
 /**
@@ -58,19 +57,21 @@ function identityQueryHandlerFactory(
       throw e;
     }
 
-    if (request.prove) {
-      throw new UnimplementedAbciError('Proofs are not implemented yet');
-    }
-
     const response = createQueryResponse(GetIdentityResponse, request.prove);
 
-    const identityResult = await signedIdentityRepository.fetch(identifier);
+    if (request.prove) {
+      const proof = await signedIdentityRepository.prove(identifier);
 
-    if (identityResult.isNull()) {
-      throw new NotFoundAbciError('Identity not found');
+      response.getProof().setMerkleProof(proof.getValue());
+    } else {
+      const identityResult = await signedIdentityRepository.fetch(identifier);
+
+      if (identityResult.isNull()) {
+        throw new NotFoundAbciError('Identity not found');
+      }
+
+      response.setIdentity(identityResult.getValue().toBuffer());
     }
-
-    response.setIdentity(identityResult.getValue().toBuffer());
 
     return new ResponseQuery({
       value: response.serializeBinary(),

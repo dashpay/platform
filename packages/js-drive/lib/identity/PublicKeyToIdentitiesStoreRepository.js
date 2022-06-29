@@ -162,6 +162,38 @@ class PublicKeyToIdentitiesStoreRepository {
       options,
     );
   }
+
+  /**
+ * Prove identities by multiple public key hashes
+ *
+ * @param {Buffer[]} publicKeyHashes
+ * @param {Object} [options]
+ * @param {boolean} [options.useTransaction=false]
+ *
+ * @return {Promise<StorageResult<Buffer>>}
+ */
+  async proveMany(publicKeyHashes, options = {}) {
+    const items = publicKeyHashes.map((publicKeyHash) => ({
+      type: 'key',
+      key: publicKeyHash,
+    }));
+
+    return this.storage.proveQuery({
+      path: PublicKeyToIdentitiesStoreRepository.TREE_PATH,
+      query: {
+        query: {
+          items,
+          subquery: {
+            items: [
+              {
+                type: 'rangeFull',
+              },
+            ],
+          },
+        },
+      },
+    }, options);
+  }
 }
 
 PublicKeyToIdentitiesStoreRepository.TREE_PATH = [Buffer.from([2])];

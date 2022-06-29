@@ -15,17 +15,18 @@ const {
 
 const InvalidArgumentAbciError = require('../../errors/InvalidArgumentAbciError');
 const InvalidQueryError = require('../../../document/errors/InvalidQueryError');
-const UnimplementedAbciError = require('../../errors/UnimplementedAbciError');
 
 /**
  *
  * @param {fetchDocuments} fetchSignedDocuments
+ * @param {proveDocuments} proveSignedDocuments
  * @param {createQueryResponse} createQueryResponse
  * @param {BlockExecutionContextStack} blockExecutionContextStack
  * @return {documentQueryHandler}
  */
 function documentQueryHandlerFactory(
   fetchSignedDocuments,
+  proveSignedDocuments,
   createQueryResponse,
   blockExecutionContextStack,
 ) {
@@ -69,20 +70,28 @@ function documentQueryHandlerFactory(
 
     const response = createQueryResponse(GetDocumentsResponse, request.prove);
 
-    if (request.prove) {
-      throw new UnimplementedAbciError('Proofs are not implemented yet');
-    }
-
-    let documentsResult;
+    const options = {
+      where,
+      orderBy,
+      limit,
+      startAfter: startAfter ? Buffer.from(startAfter) : startAfter,
+      startAt: startAt ? Buffer.from(startAt) : startAt,
+    };
 
     try {
-      documentsResult = await fetchSignedDocuments(contractId, type, {
-        where,
-        orderBy,
-        limit,
-        startAfter: startAfter ? Buffer.from(startAfter) : startAfter,
-        startAt: startAt ? Buffer.from(startAt) : startAt,
-      });
+      if (request.prove) {
+        const proof = await proveSignedDocuments(contractId, type, options);
+
+        response.getProof().setMerkleProof(proof.getValue());
+      } else {
+        const documentsResult = await fetchSignedDocuments(contractId, type, options);
+
+        const documents = documentsResult.getValue();
+
+        response.setDocumentsList(
+          documents.map((document) => document.toBuffer()),
+        );
+      }
     } catch (e) {
       if (e instanceof InvalidQueryError) {
         throw new InvalidArgumentAbciError(`Invalid query: ${e.message}`);
@@ -90,12 +99,6 @@ function documentQueryHandlerFactory(
 
       throw e;
     }
-
-    const documents = documentsResult.getValue();
-
-    response.setDocumentsList(
-      documents.map((document) => document.toBuffer()),
-    );
 
     return new ResponseQuery({
       value: response.serializeBinary(),

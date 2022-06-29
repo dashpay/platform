@@ -1,6 +1,5 @@
 const getDataContractFixture = require('@dashevo/dpp/lib/test/fixtures/getDataContractFixture');
 const getDocumentsFixture = require('@dashevo/dpp/lib/test/fixtures/getDocumentsFixture');
-const generateRandomIdentifier = require('@dashevo/dpp/lib/test/utils/generateRandomIdentifier');
 
 const InvalidQueryError = require('../../../lib/document/errors/InvalidQueryError');
 
@@ -186,49 +185,6 @@ describe('fetchDocumentsFactory', () => {
     expect(foundDocuments).to.have.length(0);
   });
 
-  it('should throw InvalidQueryError if contract ID is not valid', async () => {
-    contractId = 'something';
-
-    try {
-      await fetchDocuments(contractId, documentType);
-
-      expect.fail('should throw InvalidQueryError');
-    } catch (e) {
-      expect(e).to.be.instanceOf(InvalidQueryError);
-      expect(e.message).to.equal('invalid data contract ID: Identifier expects Buffer');
-    }
-  });
-
-  it('should throw InvalidQueryError if contract ID does not exist', async () => {
-    await documentRepository.create(document);
-
-    contractId = generateRandomIdentifier();
-
-    try {
-      await fetchDocuments(contractId, documentType);
-
-      expect.fail('should throw InvalidQueryError');
-    } catch (e) {
-      expect(e).to.be.instanceOf(InvalidQueryError);
-      expect(e.message).to.equal(`data contract ${contractId} not found`);
-    }
-  });
-
-  it('should throw InvalidQueryError if type does not exist', async () => {
-    await documentRepository.create(document);
-
-    documentType = 'Unknown';
-
-    try {
-      await fetchDocuments(contractId, documentType);
-
-      expect.fail('should throw InvalidQueryError');
-    } catch (e) {
-      expect(e).to.be.instanceOf(InvalidQueryError);
-      expect(e.message).to.equal('document type Unknown is not defined in the data contract');
-    }
-  });
-
   it('should throw InvalidQueryError if searching by non indexed fields', async () => {
     await documentRepository.create(document);
 
@@ -240,6 +196,19 @@ describe('fetchDocumentsFactory', () => {
       expect.fail('should throw InvalidQueryError');
     } catch (e) {
       expect(e).to.be.instanceOf(InvalidQueryError);
+    }
+  });
+
+  it('should throw InvalidQueryError if type does not exist', async () => {
+    documentType = 'Unknown';
+
+    try {
+      await fetchDocuments(contractId, documentType);
+
+      expect.fail('should throw InvalidQueryError');
+    } catch (e) {
+      expect(e).to.be.instanceOf(InvalidQueryError);
+      expect(e.message).to.equal('document type Unknown is not defined in the data contract');
     }
   });
 });

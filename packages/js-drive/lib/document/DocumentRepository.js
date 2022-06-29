@@ -6,6 +6,7 @@ const PreCalculatedOperation = require('@dashevo/dpp/lib/stateTransition/fee/ope
 const createDocumentTypeTreePath = require('./groveDB/createDocumentTreePath');
 const InvalidQueryError = require('./errors/InvalidQueryError');
 const StorageResult = require('../storage/StorageResult');
+const DataContractStoreRepository = require('../dataContract/DataContractStoreRepository');
 
 class DocumentRepository {
   /**
@@ -250,6 +251,97 @@ class DocumentRepository {
         }, 'deleteDocument');
       }
     }
+  }
+
+  /**
+   * @param {DataContract} dataContract
+   * @param {string} documentType
+   * @param {Object} options
+   * @param {boolean} [options.useTransaction=false]
+   * @return {Promise<StorageResult>}
+   */
+  async prove(dataContract, documentType, options = {}) {
+    const query = lodashCloneDeep(options);
+    let useTransaction = false;
+
+    if (typeof query === 'object' && !Array.isArray(query) && query !== null) {
+      ({ useTransaction } = query);
+      delete query.useTransaction;
+      delete query.dryRun;
+
+      // Remove undefined options before we pass them to RS Drive
+      Object.keys(query)
+        .forEach((queryOption) => {
+          if (query[queryOption] === undefined) {
+            // eslint-disable-next-line no-param-reassign
+            delete query[queryOption];
+          }
+        });
+    }
+
+    try {
+      const prove = await this.storage.getDrive()
+        .proveQueryDocuments(
+          dataContract,
+          documentType,
+          query,
+          useTransaction,
+        );
+
+      return new StorageResult(
+        prove,
+        [
+          new PreCalculatedOperation(0, 0),
+        ],
+      );
+    } catch (e) {
+      if (e.message.startsWith('query: ')) {
+        throw new InvalidQueryError(e.message.substring(7, e.message.length));
+      }
+
+      if (e.message.startsWith('structure: ')) {
+        throw new InvalidQueryError(e.message.substring(11, e.message.length));
+      }
+
+      if (e.message.startsWith('contract: ')) {
+        throw new InvalidQueryError(e.message.substring(10, e.message.length));
+      }
+
+      throw e;
+    }
+  }
+
+  /**
+   * Prove documents from different contracts
+   *
+   * @param {{ dataContractId: Buffer, documentId: Buffer, type: string }[]} documents
+   * @return {Promise<StorageResult<Buffer|null>>}
+   */
+  async proveManyDocumentsFromDifferentContracts(documents) {
+    const queries = documents.map(({ dataContractId, documentId, type }) => {
+      const dataContractsDocumentsPath = [
+        dataContractId,
+        Buffer.from([1]),
+        Buffer.from(type),
+        Buffer.from([0]),
+      ];
+
+      return {
+        path: DataContractStoreRepository.TREE_PATH.concat(dataContractsDocumentsPath),
+        query: {
+          query: {
+            items: [
+              {
+                type: 'key',
+                key: documentId,
+              },
+            ],
+          },
+        },
+      };
+    });
+
+    return this.storage.proveQueryMany(queries);
   }
 }
 

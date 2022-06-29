@@ -18,8 +18,7 @@ describe('getFeatureFlagForHeightFactory', () => {
 
     ([document] = getDocumentsFixture());
 
-    fetchDocumentsMock = this.sinon.stub();
-    fetchDocumentsMock.resolves(
+    fetchDocumentsMock = this.sinon.stub().resolves(
       new StorageResult([document]),
     );
 

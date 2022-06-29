@@ -14,7 +14,6 @@ const {
 } = require('@dashevo/dapi-grpc');
 
 const InvalidArgumentAbciError = require('../../errors/InvalidArgumentAbciError');
-const UnimplementedAbciError = require('../../errors/UnimplementedAbciError');
 
 /**
  *
@@ -59,17 +58,19 @@ function identitiesByPublicKeyHashesQueryHandlerFactory(
       });
     }
 
-    if (request.prove) {
-      throw new UnimplementedAbciError('Proofs are not implemented yet');
-    }
-
     const response = createQueryResponse(GetIdentitiesByPublicKeyHashesResponse, request.prove);
 
-    const result = await signedPublicKeyToIdentitiesRepository.fetchManyBuffers(
-      publicKeyHashes,
-    );
+    if (request.prove) {
+      const proof = await signedPublicKeyToIdentitiesRepository.proveMany(publicKeyHashes);
 
-    response.setIdentitiesList(result.getValue());
+      response.getProof().setMerkleProof(proof.getValue());
+    } else {
+      const identitiesListResult = await signedPublicKeyToIdentitiesRepository.fetchManyBuffers(
+        publicKeyHashes,
+      );
+
+      response.setIdentitiesList(identitiesListResult.getValue());
+    }
 
     return new ResponseQuery({
       value: response.serializeBinary(),

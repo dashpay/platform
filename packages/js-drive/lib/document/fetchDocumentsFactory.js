@@ -1,69 +1,29 @@
-const IdentifierError = require('@dashevo/dpp/lib/identifier/errors/IdentifierError');
-const Identifier = require('@dashevo/dpp/lib/identifier/Identifier');
-
 const InvalidQueryError = require('./errors/InvalidQueryError');
-const DataContractCacheItem = require('../dataContract/DataContractCacheItem');
 
 /**
  * @param {DocumentRepository} documentRepository
- * @param {DataContractStoreRepository} dataContractRepository
- * @param {LRUCache} dataContractCache
+ * @param {fetchDataContract} fetchDataContract
  * @returns {fetchDocuments}
  */
 function fetchDocumentsFactory(
   documentRepository,
-  dataContractRepository,
-  dataContractCache,
+  fetchDataContract,
 ) {
   /**
    * Fetch original Documents by Contract ID and type
    *
    * @typedef {Promise} fetchDocuments
-   * @param {Buffer|Identifier} contractId
+   * @param {Buffer|Identifier} dataContractId
    * @param {string} type
    * @param {Object} [options] options
    * @param {boolean} [options.useTransaction=false]
    * @returns {Promise<Document[]>}
    */
-  async function fetchDocuments(contractId, type, options) {
-    let contractIdIdentifier;
-    try {
-      contractIdIdentifier = new Identifier(contractId);
-    } catch (e) {
-      if (e instanceof IdentifierError) {
-        throw new InvalidQueryError(`invalid data contract ID: ${e.message}`);
-      }
+  async function fetchDocuments(dataContractId, type, options) {
+    const dataContractResult = await fetchDataContract(dataContractId);
 
-      throw e;
-    }
-
-    const contractIdString = contractIdIdentifier.toString();
-
-    /**
-     * @type {DataContractCacheItem}
-     */
-    let cacheItem = dataContractCache.get(contractIdString);
-
-    let operations = [];
-    let dataContract;
-
-    if (cacheItem) {
-      dataContract = cacheItem.getDataContract();
-      operations = cacheItem.getOperations();
-    } else {
-      const dataContractResult = await dataContractRepository.fetch(contractIdIdentifier);
-
-      if (dataContractResult.isNull()) {
-        throw new InvalidQueryError(`data contract ${contractIdIdentifier} not found`);
-      }
-
-      dataContract = dataContractResult.getValue();
-      operations = dataContractResult.getOperations();
-
-      cacheItem = new DataContractCacheItem(dataContract, operations);
-
-      dataContractCache.set(contractIdString, cacheItem);
-    }
+    const dataContract = dataContractResult.getValue();
+    const operations = dataContractResult.getOperations();
 
     if (!dataContract.isDocumentDefined(type)) {
       throw new InvalidQueryError(`document type ${type} is not defined in the data contract`);

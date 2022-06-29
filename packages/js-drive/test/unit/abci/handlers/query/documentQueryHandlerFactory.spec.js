@@ -25,12 +25,12 @@ const InvalidQueryError = require('../../../../../lib/document/errors/InvalidQue
 const UnavailableAbciError = require('../../../../../lib/abci/errors/UnavailableAbciError');
 const InvalidArgumentAbciError = require('../../../../../lib/abci/errors/InvalidArgumentAbciError');
 const BlockExecutionContextStackMock = require('../../../../../lib/test/mock/BlockExecutionContextStackMock');
-const UnimplementedAbciError = require('../../../../../lib/abci/errors/UnimplementedAbciError');
 const StorageResult = require('../../../../../lib/storage/StorageResult');
 
 describe('documentQueryHandlerFactory', () => {
   let documentQueryHandler;
   let fetchSignedDocumentsMock;
+  let proveSignedDocumentsMock;
   let documents;
   let params;
   let data;
@@ -43,6 +43,7 @@ describe('documentQueryHandlerFactory', () => {
     documents = getDocumentsFixture();
 
     fetchSignedDocumentsMock = this.sinon.stub();
+    proveSignedDocumentsMock = this.sinon.stub();
     createQueryResponseMock = this.sinon.stub();
 
     responseMock = new GetDocumentsResponse();
@@ -55,6 +56,7 @@ describe('documentQueryHandlerFactory', () => {
 
     documentQueryHandler = documentQueryHandlerFactory(
       fetchSignedDocumentsMock,
+      proveSignedDocumentsMock,
       createQueryResponseMock,
       blockExecutionContextStackMock,
     );
@@ -89,6 +91,7 @@ describe('documentQueryHandlerFactory', () => {
 
     expect(createQueryResponseMock).to.have.not.been.called();
     expect(fetchSignedDocumentsMock).to.have.not.been.called();
+    expect(proveSignedDocumentsMock).to.have.not.been.called();
     expect(result).to.be.an.instanceof(ResponseQuery);
     expect(result.code).to.equal(0);
 
@@ -104,13 +107,14 @@ describe('documentQueryHandlerFactory', () => {
 
     expect(createQueryResponseMock).to.be.calledOnceWith(GetDocumentsResponse, undefined);
     expect(fetchSignedDocumentsMock).to.be.calledOnceWith(data.contractId, data.type, options);
+    expect(proveSignedDocumentsMock).to.not.be.called();
     expect(result).to.be.an.instanceof(ResponseQuery);
     expect(result.code).to.equal(0);
 
     expect(result.value).to.deep.equal(responseMock.serializeBinary());
   });
 
-  it('should throw UnimplementedAbciError if proof was requested', async () => {
+  it('should return proof if it was requested', async () => {
     // const proof = {
     //   rootTreeProof: Buffer.from('0100000001f0faf5f55674905a68eba1be2f946e667c1cb5010101',
     //   'hex'),
@@ -118,15 +122,23 @@ describe('documentQueryHandlerFactory', () => {
     //   'hex'),
     // };
 
-    fetchSignedDocumentsMock.resolves(documents);
+    const proof = Buffer.alloc(20, 255);
 
-    try {
-      await documentQueryHandler(params, data, { prove: true });
+    fetchSignedDocumentsMock.resolves(new StorageResult(documents));
+    proveSignedDocumentsMock.resolves(
+      new StorageResult(proof),
+    );
 
-      expect.fail('should throw UnimplementedAbciError');
-    } catch (e) {
-      expect(e).to.be.an.instanceof(UnimplementedAbciError);
-    }
+    const result = await documentQueryHandler(params, data, { prove: true });
+
+    expect(createQueryResponseMock).to.be.calledOnceWith(GetDocumentsResponse, true);
+    expect(fetchSignedDocumentsMock).to.not.be.called();
+    expect(proveSignedDocumentsMock).to.be.calledOnceWith(data.contractId, data.type, options);
+
+    expect(result).to.be.an.instanceof(ResponseQuery);
+    expect(result.code).to.equal(0);
+
+    expect(result.value).to.deep.equal(responseMock.serializeBinary());
   });
 
   it('should throw InvalidArgumentAbciError on invalid query', async () => {
@@ -140,7 +152,7 @@ describe('documentQueryHandlerFactory', () => {
       expect(e).to.be.an.instanceof(InvalidArgumentAbciError);
       expect(e.getCode()).to.equal(GrpcErrorCodes.INVALID_ARGUMENT);
       expect(e.getMessage()).to.equal('Invalid query: invalid');
-      expect(fetchSignedDocumentsMock).to.be.calledOnceWith(data.contractId, data.type, options);
+      expect(fetchSignedDocumentsMock).to.be.calledOnceWith(data.contractId, data.type);
     }
   });
 
@@ -159,7 +171,7 @@ describe('documentQueryHandlerFactory', () => {
     }
   });
 
-  it('should throw error if fetchDocuments throws unknown error', async () => {
+  it('should throw error if fetchSignedDocuments throws unknown error', async () => {
     const error = new Error('Some error');
 
     fetchSignedDocumentsMock.throws(error);
@@ -170,7 +182,7 @@ describe('documentQueryHandlerFactory', () => {
       expect.fail('should throw any error');
     } catch (e) {
       expect(e).to.deep.equal(error);
-      expect(fetchSignedDocumentsMock).to.be.calledOnceWith(data.contractId, data.type, options);
+      expect(fetchSignedDocumentsMock).to.be.calledOnceWith(data.contractId, data.type);
     }
   });
 });

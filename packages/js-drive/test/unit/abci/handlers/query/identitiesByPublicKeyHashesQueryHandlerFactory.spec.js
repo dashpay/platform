@@ -21,7 +21,6 @@ const identitiesByPublicKeyHashesQueryHandlerFactory = require(
 );
 const InvalidArgumentAbciError = require('../../../../../lib/abci/errors/InvalidArgumentAbciError');
 const BlockExecutionContextStackMock = require('../../../../../lib/test/mock/BlockExecutionContextStackMock');
-const UnimplementedAbciError = require('../../../../../lib/abci/errors/UnimplementedAbciError');
 const StorageResult = require('../../../../../lib/storage/StorageResult');
 
 describe('identitiesByPublicKeyHashesQueryHandlerFactory', () => {
@@ -39,6 +38,7 @@ describe('identitiesByPublicKeyHashesQueryHandlerFactory', () => {
   beforeEach(function beforeEach() {
     signedPublicKeyToIdentitiesRepositoryMock = {
       fetchManyBuffers: this.sinon.stub(),
+      proveMany: this.sinon.stub(),
     };
 
     maxIdentitiesPerRequest = 5;
@@ -134,7 +134,7 @@ describe('identitiesByPublicKeyHashesQueryHandlerFactory', () => {
     expect(result.value).to.deep.equal(responseMock.serializeBinary());
   });
 
-  it('should throw UnimplementedAbciError of proof requested', async () => {
+  it('should return proof if it was requested', async () => {
     // const proof = {
     //   rootTreeProof: Buffer.from('0100000001f0faf5f55674905a68eba1be2f946e667c1cb5010101',
     //   'hex'),
@@ -142,12 +142,20 @@ describe('identitiesByPublicKeyHashesQueryHandlerFactory', () => {
     //   'hex'),
     // };
 
-    try {
-      await identitiesByPublicKeyHashesQueryHandler(params, data, { prove: true });
+    const proof = Buffer.alloc(20, 1);
 
-      expect.fail('should throw UnimplementedAbciError');
-    } catch (e) {
-      expect(e).to.be.an.instanceof(UnimplementedAbciError);
-    }
+    signedPublicKeyToIdentitiesRepositoryMock.proveMany.resolves(
+      new StorageResult(proof),
+    );
+
+    const result = await identitiesByPublicKeyHashesQueryHandler(params, data, { prove: true });
+
+    expect(result).to.be.an.instanceof(ResponseQuery);
+    expect(result.code).to.equal(0);
+    expect(result.value).to.deep.equal(responseMock.serializeBinary());
+
+    expect(signedPublicKeyToIdentitiesRepositoryMock.proveMany).to.be.calledOnceWithExactly(
+      data.publicKeyHashes,
+    );
   });
 });
