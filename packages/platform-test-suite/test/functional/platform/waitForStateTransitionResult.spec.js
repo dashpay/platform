@@ -1,9 +1,5 @@
-const DashPlatformProtocol = require('@dashevo/dpp');
+const Dash = require('dash');
 const crypto = require('crypto');
-
-const { default: createAssetLockProof } = require('dash/build/src/SDK/Client/Platform/methods/identities/internal/createAssetLockProof');
-const { default: createIdentityCreateTransition } = require('dash/build/src/SDK/Client/Platform/methods/identities/internal/createIdentityCreateTransition');
-const { default: createAssetLockTransaction } = require('dash/build/src/SDK/Client/Platform/createAssetLockTransaction');
 
 const { MerkleProof } = require('js-merkle');
 const { executeProof } = require('@dashevo/merk');
@@ -20,7 +16,7 @@ describe.skip('Platform', () => {
     let blake3;
 
     before(async () => {
-      dpp = new DashPlatformProtocol();
+      dpp = new Dash.PlatformProtocol();
       await dpp.initialize();
 
       await hashFunction.init();
@@ -42,19 +38,18 @@ describe.skip('Platform', () => {
         transaction: assetLockTransaction,
         privateKey: assetLockPrivateKey,
         outputIndex: assetLockOutputIndex,
-      } = await createAssetLockTransaction({ client }, 10000);
+      } = await client.platform.identities.utils
+        .createAssetLockTransaction(10000);
 
       // Broadcast Asset Lock transaction
       await account.broadcastTransaction(assetLockTransaction);
-      const assetLockProof = await createAssetLockProof(
-        client.platform, assetLockTransaction, assetLockOutputIndex,
-      );
+      const assetLockProof = await client.platform.identities.utils
+        .createAssetLockProof(assetLockTransaction, assetLockOutputIndex);
 
       const {
         identity, identityCreateTransition,
-      } = await createIdentityCreateTransition(
-        client.platform, assetLockProof, assetLockPrivateKey,
-      );
+      } = await client.platform.identities.utils
+        .createIdentityCreateTransition(assetLockProof, assetLockPrivateKey);
 
       const hash = crypto.createHash('sha256')
         .update(identityCreateTransition.toBuffer())

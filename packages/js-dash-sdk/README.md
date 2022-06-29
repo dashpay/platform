@@ -41,7 +41,7 @@ For browser usage, you can also directly rely on unpkg :
 ## Usage
 
 ```js
-const Dash = require("dash");
+const Dash = require("dash"); // or import Dash from "dash"
 
 const client = new Dash.Client({
   network: "testnet",
@@ -73,6 +73,33 @@ client.getWalletAccount().then(async (account) => {
   }
 });
 ```
+
+### Primitives and essentials
+Dash SDK bundled into a standalone package, 
+so that the end user never have to worry about mananaging polyfills or related dependencies 
+
+```javascript
+const Dash = require('dash')
+
+const {
+  Essentials: {
+    Buffer  // Node.JS Buffer polyfill.
+  },
+  Core: { // @dashevo/dashcore-lib essentials
+    Transaction, 
+    PrivateKey,
+    BlockHeader,
+  },
+  PlatformProtocol: { // @dashevo/dpp essentials
+    Identity,
+    Identifier,
+  },
+  WalletLib: { // @dashevo/wallet-lib essentials
+    EVENTS
+  },
+  DAPIClient, // @dashevo/dapi-client
+} = Dash;
+``` 
 
 ## Dependencies 
 

@@ -1,3 +1,5 @@
+const { Essentials: { Buffer } } = require('dash');
+
 const createClientWithoutWallet = require('../../../lib/test/createClientWithoutWallet');
 
 describe('Core', () => {

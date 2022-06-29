@@ -1,32 +1,33 @@
 const crypto = require('crypto');
 
-const DashPlatformProtocol = require('@dashevo/dpp');
-const getDataContractFixture = require('@dashevo/dpp/lib/test/fixtures/getDataContractFixture');
+const Dash = require('dash');
 
 const { createFakeInstantLock } = require('dash/build/src/utils/createFakeIntantLock');
-const { default: createAssetLockProof } = require('dash/build/src/SDK/Client/Platform/methods/identities/internal/createAssetLockProof');
-const { default: createIdentityCreateTransition } = require('dash/build/src/SDK/Client/Platform/methods/identities/internal/createIdentityCreateTransition');
-const { default: createIdentityTopUpTransition } = require('dash/build/src/SDK/Client/Platform/methods/identities/internal/createIdnetityTopUpTransition');
-const { default: createAssetLockTransaction } = require('dash/build/src/SDK/Client/Platform/createAssetLockTransaction');
-const { default: waitForCoreChainLockedHeight } = require('dash/build/src/SDK/Client/Platform/methods/identities/internal/waitForCoreChainLockedHeight');
 
-const { StateTransitionBroadcastError } = require('dash/build/src/errors/StateTransitionBroadcastError');
-const InvalidInstantAssetLockProofSignatureError = require('@dashevo/dpp/lib/errors/consensus/basic/identity/InvalidInstantAssetLockProofSignatureError');
-const IdentityAssetLockTransactionOutPointAlreadyExistsError = require('@dashevo/dpp/lib/errors/consensus/basic/identity/IdentityAssetLockTransactionOutPointAlreadyExistsError');
-const BalanceIsNotEnoughError = require('@dashevo/dpp/lib/errors/consensus/fee/BalanceIsNotEnoughError');
-
-const InvalidIdentityKeySignatureError = require('@dashevo/dpp/lib/errors/consensus/basic/identity/InvalidIdentityKeySignatureError');
-
-const DAPIClient = require('@dashevo/dapi-client/lib/DAPIClient');
 const { hash } = require('@dashevo/dpp/lib/util/hash');
-const Identifier = require('@dashevo/dpp/lib/identifier/Identifier');
-const Transaction = require('@dashevo/dashcore-lib/lib/transaction');
-
-const IdentityPublicKey = require('@dashevo/dpp/lib/identity/IdentityPublicKey');
+const getDataContractFixture = require('../../../lib/test/fixtures/getDataContractFixture');
 const Identity = require('@dashevo/dpp/lib/identity/Identity');
 const createClientWithFundedWallet = require('../../../lib/test/createClientWithFundedWallet');
 const wait = require('../../../lib/wait');
 const getDAPISeeds = require('../../../lib/test/getDAPISeeds');
+
+const {
+  Core: {
+    Transaction,
+  },
+  Errors: {
+    StateTransitionBroadcastError,
+  },
+  PlatformProtocol: {
+    Identifier,
+    IdentityPublicKey,
+    ConsensusErrors: {
+      InvalidInstantAssetLockProofSignatureError,
+      IdentityAssetLockTransactionOutPointAlreadyExistsError,
+      BalanceIsNotEnoughError,
+    },
+  },
+} = Dash;
 
 describe('Platform', () => {
   describe('Identity', () => {
@@ -36,7 +37,7 @@ describe('Platform', () => {
     let walletAccount;
 
     before(async () => {
-      dpp = new DashPlatformProtocol();
+      dpp = new Dash.PlatformProtocol();
       await dpp.initialize();
 
       client = await createClientWithFundedWallet(undefined, 200000);
@@ -61,9 +62,7 @@ describe('Platform', () => {
         transaction,
         privateKey,
         outputIndex,
-      } = await createAssetLockTransaction({
-        client,
-      }, 1);
+      } = await client.platform.identities.utils.createAssetLockTransaction(1);
 
       const invalidInstantLock = createFakeInstantLock(transaction.hash);
       const assetLockProof = await dpp.identity.createInstantAssetLockProof(
@@ -74,8 +73,8 @@ describe('Platform', () => {
 
       const {
         identityCreateTransition: invalidIdentityCreateTransition,
-      } = await createIdentityCreateTransition(
-        client.platform, assetLockProof, privateKey,
+      } = await client.platform.identities.utils.createIdentityCreateTransition(
+        assetLockProof, privateKey,
       );
 
       let broadcastError;
@@ -99,20 +98,20 @@ describe('Platform', () => {
         transaction,
         privateKey,
         outputIndex,
-      } = await createAssetLockTransaction({ client }, 7000);
+      } = await client.platform.identities.utils.createAssetLockTransaction(7000);
 
       await client.getDAPIClient().core.broadcastTransaction(transaction.toBuffer());
 
-      const assetLockProof = await createAssetLockProof(client.platform, transaction, outputIndex);
+      const assetLockProof = await client.platform.identities.utils
+        .createAssetLockProof(transaction, outputIndex);
 
       // Creating normal transition
       const {
         identity: identityOne,
         identityCreateTransition: identityCreateTransitionOne,
         identityIndex: identityOneIndex,
-      } = await createIdentityCreateTransition(
-        client.platform, assetLockProof, privateKey,
-      );
+      } = await client.platform.identities.utils
+        .createIdentityCreateTransition(assetLockProof, privateKey);
 
       await client.platform.broadcastStateTransition(
         identityCreateTransitionOne,
@@ -133,9 +132,8 @@ describe('Platform', () => {
       // Creating transition that tries to spend the same transaction
       const {
         identityCreateTransition: identityCreateDoubleSpendTransition,
-      } = await createIdentityCreateTransition(
-        client.platform, assetLockProof, privateKey,
-      );
+      } = await client.platform.identities.utils
+        .createIdentityCreateTransition(assetLockProof, privateKey);
 
       let broadcastError;
 
@@ -234,9 +232,7 @@ describe('Platform', () => {
           transaction,
           privateKey,
           outputIndex,
-        } = await createAssetLockTransaction({
-          client,
-        }, 7000);
+        } = await client.platform.identities.utils.createAssetLockTransaction(7000);
 
         // Broadcast Asset Lock transaction
         await client.getDAPIClient().core.broadcastTransaction(transaction.toBuffer());
@@ -255,13 +251,13 @@ describe('Platform', () => {
         // Wait for platform chain to sync core height up to transaction height
         const {
           promise: coreHeightPromise,
-        } = await waitForCoreChainLockedHeight(client.platform, transactionHeight);
+        } = await client.platform.identities.utils
+          .waitForCoreChainLockedHeight(transactionHeight);
 
         await coreHeightPromise;
 
-        const identityCreateTransitionData = await createIdentityCreateTransition(
-          client.platform, assetLockProof, privateKey,
-        );
+        const identityCreateTransitionData = await client.platform.identities.utils
+          .createIdentityCreateTransition(assetLockProof, privateKey);
 
         const {
           identityCreateTransition,
@@ -349,7 +345,7 @@ describe('Platform', () => {
           transaction,
           privateKey,
           outputIndex,
-        } = await createAssetLockTransaction({
+        } = await client.platform.identity.createAssetLockTransaction({
           client,
         }, 15);
 
@@ -433,24 +429,21 @@ describe('Platform', () => {
           transaction,
           privateKey,
           outputIndex,
-        } = await createAssetLockTransaction({ client }, 1);
+        } = await client.platform.identities.utils.createAssetLockTransaction(1);
 
         await client.getDAPIClient().core.broadcastTransaction(transaction.toBuffer());
 
-        const assetLockProof = await createAssetLockProof(
-          client.platform,
+        const assetLockProof = await client.platform.identities.utils.createAssetLockProof(
           transaction,
           outputIndex,
         );
 
         // Creating normal transition
-        const identityTopUpTransitionOne = await createIdentityTopUpTransition(
-          client.platform, assetLockProof, privateKey, identity.getId(),
-        );
+        const identityTopUpTransitionOne = await client.platform.identities.utils
+          .createIdentityTopUpTransition(assetLockProof, privateKey, identity.getId());
         // Creating ST that tries to spend the same output
-        const conflictingTopUpStateTransition = await createIdentityTopUpTransition(
-          client.platform, assetLockProof, privateKey, identity.getId(),
-        );
+        const conflictingTopUpStateTransition = await client.platform.identities.utils
+          .createIdentityTopUpTransition(assetLockProof, privateKey, identity.getId());
 
         await client.platform.broadcastStateTransition(
           identityTopUpTransitionOne,
@@ -561,7 +554,7 @@ describe('Platform', () => {
       const network = process.env.NETWORK;
 
       beforeEach(() => {
-        dapiClient = new DAPIClient({
+        dapiClient = new Dash.DAPIClient({
           network,
           seeds: getDAPISeeds(),
         });

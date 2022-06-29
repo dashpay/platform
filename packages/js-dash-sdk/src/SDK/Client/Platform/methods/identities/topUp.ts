@@ -1,10 +1,6 @@
-// @ts-ignore
 import Identifier from "@dashevo/dpp/lib/Identifier";
 import {Platform} from "../../Platform";
 
-import createAssetLockTransaction from "../../createAssetLockTransaction";
-import createAssetLockProof from "./internal/createAssetLockProof";
-import createIdentityTopUpTransition from "./internal/createIdnetityTopUpTransition";
 import broadcastStateTransition from "../../broadcastStateTransition";
 
 /**
@@ -28,15 +24,16 @@ export async function topUp(this: Platform, identityId: Identifier | string, amo
         transaction: assetLockTransaction,
         privateKey: assetLockPrivateKey,
         outputIndex: assetLockOutputIndex
-    } = await createAssetLockTransaction(this, amount);
+    } = await this.identities.utils.createAssetLockTransaction(amount);
 
     // Broadcast Asset Lock transaction
     await account.broadcastTransaction(assetLockTransaction);
     // Create a proof for the asset lock transaction
-    const assetLockProof = await createAssetLockProof(this, assetLockTransaction, assetLockOutputIndex);
+    const assetLockProof = await this.identities.utils
+      .createAssetLockProof(assetLockTransaction, assetLockOutputIndex);
 
-    // @ts-ignore
-    const identityTopUpTransition = await createIdentityTopUpTransition(this, assetLockProof, assetLockPrivateKey, identityId);
+    const identityTopUpTransition = await this.identities.utils
+      .createIdentityTopUpTransition(assetLockProof, assetLockPrivateKey, identityId);
 
     // Broadcast ST
     await broadcastStateTransition(this, identityTopUpTransition);
