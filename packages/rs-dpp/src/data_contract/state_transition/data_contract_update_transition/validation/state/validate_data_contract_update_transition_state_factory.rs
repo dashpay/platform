@@ -1,6 +1,8 @@
 use crate::{
-    data_contract::DataContract, errors::consensus::basic::BasicError, mocks,
-    state_repository::StateRepositoryLike, validation::ValidationResult,
+    data_contract::{state_transition::DataContractUpdateTransition, DataContract},
+    errors::consensus::basic::BasicError,
+    state_repository::StateRepositoryLike,
+    validation::ValidationResult,
 };
 use anyhow::Result;
 
@@ -21,7 +23,7 @@ where
 
     pub async fn validate_data_contract_update_transition_state(
         &self,
-        state_transition: mocks::StateTransition,
+        state_transition: &DataContractUpdateTransition,
     ) -> ValidationResult {
         let mut result = ValidationResult::default();
 
@@ -36,7 +38,7 @@ where
             // general error we want to add the same result
             Ok(None) | Err(_) => {
                 let err = BasicError::DataContractContPresent {
-                    data_contract_id: state_transition.data_contract.id,
+                    data_contract_id: state_transition.data_contract.id.clone(),
                 };
                 result.add_error(err);
                 return result;

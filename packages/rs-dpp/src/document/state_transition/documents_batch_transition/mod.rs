@@ -21,14 +21,14 @@ pub mod document_transition;
 pub mod validation;
 use serde_json::Value as JsonValue;
 
-pub const PROPERTY_DATA_CONTRACT_ID: &str = "$dataContractId";
-pub const PROPERTY_TRANSITIONS: &str = "transitions";
-pub const PROPERTY_OWNER_ID: &str = "ownerId";
-pub const PROPERTY_SIGNATURE_PUBLIC_KEY_ID: &str = "signaturePublicKeyId";
-pub const PROPERTY_SIGNATURE: &str = "signature";
-pub const PROPERTY_PROTOCOL_VERSION: &str = "protocolVersion";
-pub const PROPERTY_SECURITY_LEVEL_REQUIREMENT: &str = "signatureSecurityLevelRequirement";
-pub const DEFAULT_SECURITY_LEVEL: SecurityLevel = SecurityLevel::HIGH;
+const PROPERTY_DATA_CONTRACT_ID: &str = "$dataContractId";
+const PROPERTY_TRANSITIONS: &str = "transitions";
+const PROPERTY_OWNER_ID: &str = "ownerId";
+const PROPERTY_SIGNATURE_PUBLIC_KEY_ID: &str = "signaturePublicKeyId";
+const PROPERTY_SIGNATURE: &str = "signature";
+const PROPERTY_PROTOCOL_VERSION: &str = "protocolVersion";
+const PROPERTY_SECURITY_LEVEL_REQUIREMENT: &str = "signatureSecurityLevelRequirement";
+const DEFAULT_SECURITY_LEVEL: SecurityLevel = SecurityLevel::HIGH;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
