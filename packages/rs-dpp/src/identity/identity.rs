@@ -1,21 +1,23 @@
+use std::collections::BTreeMap;
+use std::convert::TryInto;
+
+use ciborium::value::Value as CborValue;
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
-use std::collections::BTreeMap;
-use std::convert::{TryFrom, TryInto};
-use crate::util::cbor_value::{CborCanonicalMap};
 
-use super::{IdentityPublicKey, KeyID};
-use crate::common::bytes_for_system_value_from_tree_map;
-use crate::identity::identity_public_key;
-use crate::util::deserializer;
-use crate::util::json_value::{JsonValueExt, ReplaceWith};
 use crate::{
     errors::ProtocolError,
     identifier::Identifier,
     metadata::Metadata,
-    util::{hash, serializer},
+    util::hash,
 };
-use ciborium::value::{Integer, Value as CborValue};
+use crate::common::bytes_for_system_value_from_tree_map;
+use crate::identity::identity_public_key;
+use crate::util::cbor_value::CborCanonicalMap;
+use crate::util::deserializer;
+use crate::util::json_value::{JsonValueExt, ReplaceWith};
+
+use super::{IdentityPublicKey, KeyID};
 
 // TODO implement!
 type InstantAssetLockProof = String;
@@ -253,7 +255,7 @@ impl Identity {
 
         let public_keys = keys_cbor
             .iter()
-            .map(|cbor_key| IdentityPublicKey::from_cbor_value(cbor_key))
+            .map(IdentityPublicKey::from_cbor_value)
             .collect::<Result<Vec<IdentityPublicKey>, ProtocolError>>()?;
 
         Ok(Self {
