@@ -231,10 +231,20 @@ impl CborCanonicalMap {
         Ok(bytes)
     }
 
-    pub fn to_cbor_value(mut self) -> CborValue {
+    pub fn to_value_unsorted(&self) -> CborValue {
+        CborValue::Map(self.inner.clone())
+    }
+
+    pub fn to_value_sorted(mut self) -> CborValue {
         self.sort_canonical();
 
         CborValue::Map(self.inner)
+    }
+
+    pub fn to_value_clone(&mut self) -> CborValue {
+        self.sort_canonical();
+
+        CborValue::Map(self.inner.clone())
     }
 }
 

@@ -216,52 +216,42 @@ impl DataContract {
 
     /// Returns Data Contract as a Buffer
     pub fn to_buffer(&self) -> Result<Vec<u8>, ProtocolError> {
-        let protocol_version = self.protocol_version;
-        let mut json_object = self.to_object(true)?;
-
-        if let JsonValue::Object(ref mut o) = json_object {
-            o.remove("protocolVersion");
-        };
-
-        serializer::value_to_cbor(json_object, Some(protocol_version))
+        self.to_cbor()
     }
 
     pub fn to_cbor(&self) -> Result<Vec<u8>, ProtocolError> {
+        let mut buf = self.protocol_version().to_le_bytes().to_vec();
+
         let mut contract_cbor_map = CborCanonicalMap::new();
 
-        // pub protocol_version: u32,
-        // #[serde(rename = "$id")]
-        // pub id: Identifier,
-        // #[serde(rename = "$schema")]
-        // pub schema: String,
-        // pub version: u32,
-        // pub owner_id: Identifier,
-        // #[serde(rename = "documents")]
-        // pub documents: BTreeMap<DocumentType, JsonSchema>,
-        // #[serde(rename = "$defs", default)]
-        // pub defs: BTreeMap<DocumentType, JsonSchema>,
-        // #[serde(skip)]
-        // pub metadata: Option<Metadata>,
-        // #[serde(skip)]
-        // pub entropy: [u8; 32],
-        // #[serde(skip)]
-        // pub binary_properties: BTreeMap<DocumentType, BTreeMap<PropertyPath, JsonValue>>,
+        contract_cbor_map.insert(PROPERTY_ID, self.id().to_buffer().to_vec());
+        contract_cbor_map.insert(PROPERTY_SCHEMA, self.schema());
+        contract_cbor_map.insert(PROPERTY_VERSION, self.version());
+        contract_cbor_map.insert(PROPERTY_OWNER_ID, self.owner_id().to_buffer().to_vec());
+        contract_cbor_map.insert(PROPERTY_DOCUMENTS, self.documents_cbor().to_value_unsorted());
 
-        contract_cbor_map.insert("protocolVersion", self.protocol_version());
-        contract_cbor_map.insert("$id", self.id().to_buffer().to_vec());
-        contract_cbor_map.insert("$schema", self.schema());
-        contract_cbor_map.insert("version", self.version());
-        contract_cbor_map.insert("ownerId", self.owner_id().to_buffer().to_vec());
-        //contract_cbor_map.insert("documents", self.owner_id());
-        //contract_cbor_map.insert("$defs", self.defs());
+        if !self.defs.is_empty() {
+            contract_cbor_map.insert(PROPERTY_DEFINITIONS, self.defs_cbor().to_value_unsorted());
+        }
 
-        contract_cbor_map
+        let mut contract_buf = contract_cbor_map
             .to_bytes()
-            .map_err(|e| ProtocolError::EncodingError(e.to_string()))
+            .map_err(|e| ProtocolError::EncodingError(e.to_string()))?;
+
+        buf.append(&mut contract_buf);
+        Ok(buf)
     }
 
     pub fn documents(&self) -> &BTreeMap<DocumentType, JsonSchema> {
         &self.documents
+    }
+
+    pub fn documents_cbor(&self) -> &CborCanonicalMap {
+        &self.documents_cbor_internal
+    }
+
+    pub fn defs_cbor(&self) -> &CborCanonicalMap {
+        &self.defs_cbor_internal
     }
 
     pub fn entropy(&self) -> [u8; 32] {
@@ -577,5 +567,13 @@ mod test {
     }
 
     #[test]
-    fn serialize_deterministically() {}
+    fn serialize_deterministically_serialize_to_cbor() {
+        let data_contract_cbor = get_data_contract_cbor_bytes();
+
+        let data_contract = DataContract::from_buffer(&data_contract_cbor).unwrap();
+
+        let serialized = data_contract.to_buffer().unwrap();
+
+        assert_eq!(data_contract_cbor, serialized);
+    }
 }

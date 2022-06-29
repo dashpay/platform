@@ -332,7 +332,7 @@ impl IdentityPublicKey {
         pk_map.insert("readOnly", self.get_readonly());
         pk_map.insert("securityLevel", self.get_security_level());
 
-        pk_map.to_cbor_value()
+        pk_map.to_value_sorted()
     }
 }
 
