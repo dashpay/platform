@@ -192,7 +192,6 @@ impl Identity {
             })?;
 
         let identity_id= identity_map.get_identifier("id")?;
-
         let revision = identity_map.get_i64("revision")?;
         let balance: i64 = identity_map.get_i64("balance")?;
 
