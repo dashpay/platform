@@ -5,12 +5,12 @@ use crate::{
     data_contract::DataContract,
     identity::KeyID,
     prelude::Identifier,
-    ProtocolError,
     state_transition::{
         StateTransitionConvert, StateTransitionIdentitySigned, StateTransitionLike,
         StateTransitionType,
     },
     util::json_value::{JsonValueExt, ReplaceWith},
+    ProtocolError,
 };
 
 use super::properties::*;
@@ -161,8 +161,8 @@ impl StateTransitionConvert for DataContractUpdateTransition {
 mod test {
     use serde_json::json;
 
-    use crate::{util::deserializer::get_protocol_version, version};
     use crate::tests::fixtures::get_data_contract_fixture;
+    use crate::{util::deserializer::get_protocol_version, version};
 
     use super::*;
 

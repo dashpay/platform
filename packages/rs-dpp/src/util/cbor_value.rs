@@ -1,12 +1,16 @@
 use std::cmp::Ordering;
 use std::collections::BTreeMap;
-use std::convert::TryInto;
-use std::fmt::format;
+use std::convert::{TryFrom, TryInto};
 
+use anyhow::anyhow;
 use ciborium::value::Value as CborValue;
-use serde_json::{Map, Value as JsonValue};
-use crate::common::bytes_for_system_value_from_tree_map;
 
+use serde_json::{Map, Value as JsonValue};
+
+use crate::common::bytes_for_system_value_from_tree_map;
+use crate::identifier::Identifier;
+use crate::util::json_value::ReplaceWith;
+use crate::util::string_encoding::Encoding;
 use crate::ProtocolError;
 
 pub fn get_key_from_cbor_map<'a>(
@@ -45,52 +49,46 @@ impl CborBTreeMapHelper for BTreeMap<String, CborValue> {
     }
 
     fn get_string(&self, key: &str) -> Result<String, ProtocolError> {
-        Ok(self.get(key)
+        Ok(self
+            .get(key)
             .ok_or_else(|| {
                 ProtocolError::DecodingError(String::from(format!("unable to get {key}")))
             })?
             .as_text()
             .ok_or_else(|| {
-                ProtocolError::DecodingError(String::from(
-                    format!("expect {key} to be a string"),
-                ))
-            })?.to_string())
+                ProtocolError::DecodingError(String::from(format!("expect {key} to be a string")))
+            })?
+            .to_string())
     }
 
     fn get_u32(&self, key: &str) -> Result<u32, ProtocolError> {
         Ok(i128::from(
-            self
-                .get(key)
+            self.get(key)
                 .ok_or_else(|| {
                     ProtocolError::DecodingError(String::from(format!("unable to get {key}")))
                 })?
                 .as_integer()
                 .ok_or_else(|| {
-                    ProtocolError::DecodingError(String::from(
-                        format!("expect {key} to be an integer"),
-                    ))
+                    ProtocolError::DecodingError(String::from(format!(
+                        "expect {key} to be an integer"
+                    )))
                 })?,
         ) as u32)
     }
 
     fn get_i64(&self, key: &str) -> Result<i64, ProtocolError> {
-        Ok(self.get(key)
+        Ok(self
+            .get(key)
             .ok_or_else(|| {
-                ProtocolError::DecodingError(String::from(
-                    format!("unable to get property {key}"),
-                ))
+                ProtocolError::DecodingError(String::from(format!("unable to get property {key}")))
             })?
             .as_integer()
             .ok_or_else(|| {
-                ProtocolError::DecodingError(String::from(
-                    format!("{key} must be an integer"),
-                ))
+                ProtocolError::DecodingError(String::from(format!("{key} must be an integer")))
             })?
             .try_into()
             .map_err(|_| {
-                ProtocolError::DecodingError(String::from(
-                    format!("{key} must be a 64 int"),
-                ))
+                ProtocolError::DecodingError(String::from(format!("{key} must be a 64 int")))
             })?)
     }
 }
@@ -187,6 +185,35 @@ fn recursively_sort_canonical_cbor_map(cbor_map: &mut [(CborValue, CborValue)]) 
     });
 }
 
+pub fn replace_binary(to_replace: &mut CborValue, with: ReplaceWith) -> Result<(), anyhow::Error> {
+    let mut cbor_value = CborValue::Null;
+    std::mem::swap(to_replace, &mut cbor_value);
+    match with {
+        ReplaceWith::Base58 => {
+            let data_bytes = cbor_value
+                .as_bytes()
+                .ok_or_else(|| anyhow!("expect value to be bytes"))?;
+            *to_replace = CborValue::Text(bs58::encode(data_bytes).into_string());
+        }
+        ReplaceWith::Base64 => {
+            let data_bytes = cbor_value
+                .as_bytes()
+                .ok_or_else(|| anyhow!("expect value to be bytes"))?;
+            *to_replace = CborValue::Text(base64::encode(data_bytes));
+        }
+        ReplaceWith::Bytes => {
+            let data_string = String::from(
+                cbor_value
+                    .as_text()
+                    .ok_or_else(|| anyhow!("expect value to be string"))?,
+            );
+            let identifier = Identifier::from_string(&data_string, Encoding::Base58)?.to_buffer();
+            *to_replace = CborValue::Bytes(identifier.to_vec());
+        }
+    }
+    Ok(())
+}
+
 #[derive(Default, Clone, Debug)]
 pub struct CborCanonicalMap {
     inner: Vec<(CborValue, CborValue)>,
@@ -206,6 +233,101 @@ impl CborCanonicalMap {
     pub fn insert(&mut self, key: impl Into<String>, value: impl Into<CborValue>) {
         self.inner.push((CborValue::Text(key.into()), value.into()));
     }
+
+    pub fn remove(&mut self, key_to_remove: impl Into<CborValue>) {
+        let key_to_compare: CborValue = key_to_remove.into();
+        if let Some(index) = self
+            .inner
+            .iter()
+            .position(|(key, _)| key == &key_to_compare)
+        {
+            self.inner.remove(index);
+        }
+    }
+
+    pub fn get_mut(&mut self, key: &CborValue) -> Option<&mut CborValue> {
+        if let Some(index) = self.inner.iter().position(|(el_key, _)| el_key == key) {
+            Some(&mut self.inner.get_mut(index)?.1)
+        } else {
+            None
+        }
+    }
+
+    pub fn replace_values<I, C>(&mut self, keys: I, with: ReplaceWith)
+    where
+        I: IntoIterator<Item = C>,
+        C: Into<CborValue>,
+    {
+        for key in keys.into_iter() {
+            self.replace_value(key, with);
+        }
+    }
+
+    pub fn replace_value(&mut self, key: impl Into<CborValue>, with: ReplaceWith) -> Option<()> {
+        let k = key.into();
+        let cbor_value = self.get_mut(&k)?;
+
+        let replace_with = match with {
+            ReplaceWith::Base58 => {
+                let data_bytes = cbor_value.as_bytes()?;
+                CborValue::Text(bs58::encode(data_bytes).into_string())
+            }
+            ReplaceWith::Base64 => {
+                let data_bytes = cbor_value.as_bytes()?;
+                CborValue::Text(base64::encode(data_bytes))
+            }
+            ReplaceWith::Bytes => {
+                let data_string = String::from(cbor_value.as_text()?);
+                let identifier = Identifier::from_string(&data_string, Encoding::Base58)
+                    .ok()?
+                    .to_buffer();
+                CborValue::Bytes(identifier.to_vec())
+            }
+        };
+
+        self.set(&k, replace_with);
+
+        Some(())
+    }
+
+    pub fn set(&mut self, key: &CborValue, replace_with: CborValue) -> Option<()> {
+        if let Some(index) = self.inner.iter().position(|(el_key, _)| el_key == key) {
+            if let Some(key_value) = self.inner.get_mut(index) {
+                key_value.1 = replace_with;
+                Some(())
+            } else {
+                None
+            }
+        } else {
+            None
+        }
+    }
+
+    // pub fn replace_values<'a>(
+    //     &mut self,
+    //     paths: impl IntoIterator<Item = &'a str>,
+    //     with: ReplaceWith,
+    // ) -> Result<(), anyhow::Error> {
+    //     for raw_path in paths {
+    //         let mut to_replace = get_value_mut(raw_path, self);
+    //         match to_replace {
+    //             Some(ref mut v) => {
+    //                 replace_identifier(v, with).map_err(|err| {
+    //                     anyhow!(
+    //                         "unable replace the {:?} with {:?}: '{}'",
+    //                         raw_path,
+    //                         with,
+    //                         err
+    //                     )
+    //                 })?;
+    //             }
+    //             None => {
+    //                 trace!("path '{}' is not found, replacing to {:?} ", raw_path, with)
+    //             }
+    //         }
+    //     }
+    //     Ok(())
+    // }
 
     /// From the CBOR RFC on how to sort the keys:
     /// *  If two keys have different lengths, the shorter one sorts
@@ -245,6 +367,20 @@ impl CborCanonicalMap {
         self.sort_canonical();
 
         CborValue::Map(self.inner.clone())
+    }
+}
+
+impl TryFrom<CborValue> for CborCanonicalMap {
+    type Error = ProtocolError;
+
+    fn try_from(value: CborValue) -> Result<Self, Self::Error> {
+        if let CborValue::Map(map) = value {
+            Ok(Self::from_vector(map))
+        } else {
+            Err(ProtocolError::ParsingError(
+                "Expected map to be a map".into(),
+            ))
+        }
     }
 }
 

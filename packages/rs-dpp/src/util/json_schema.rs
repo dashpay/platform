@@ -1,7 +1,8 @@
+use std::collections::BTreeMap;
+
 use anyhow::{anyhow, bail};
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
-use std::collections::BTreeMap;
 
 pub trait JsonSchemaExt {
     /// returns true if json value contains property 'type`, and it equals 'object'
@@ -100,8 +101,9 @@ pub enum OrderBy {
 
 #[cfg(test)]
 mod test {
-    use super::*;
     use serde_json::json;
+
+    use super::*;
 
     #[test]
     fn test_extract_indices() {

@@ -1,14 +1,11 @@
-use anyhow::anyhow;
 use std::collections::HashMap;
 use std::convert::TryInto;
 
-use crate::data_contract::DataContract;
-use crate::prelude::{DocumentTransition, Identifier};
-use crate::util::json_value::{JsonValueExt, ReplaceWith};
-use crate::ProtocolError;
+use anyhow::anyhow;
 use serde::{Deserialize, Serialize};
-// TODO simplify imports
-use crate::document::document_transition::DocumentTransitionObjectLike;
+use serde_json::Value as JsonValue;
+
+use crate::data_contract::DataContract;
 use crate::{
     identity::{KeyID, SecurityLevel},
     state_transition::{
@@ -16,10 +13,14 @@ use crate::{
         StateTransitionType,
     },
 };
+// TODO simplify imports
+use crate::document::document_transition::DocumentTransitionObjectLike;
+use crate::prelude::{DocumentTransition, Identifier};
+use crate::util::json_value::{JsonValueExt, ReplaceWith};
+use crate::ProtocolError;
 
 pub mod document_transition;
 pub mod validation;
-use serde_json::Value as JsonValue;
 
 const PROPERTY_DATA_CONTRACT_ID: &str = "$dataContractId";
 const PROPERTY_TRANSITIONS: &str = "transitions";
@@ -237,12 +238,13 @@ pub fn get_security_level_requirement(v: &JsonValue, default: SecurityLevel) -> 
 mod test {
     use serde_json::json;
 
-    use super::{document_transition::Action, *};
     use crate::{
         document::document_factory::DocumentFactory,
         mocks,
         tests::fixtures::{get_data_contract_fixture, get_documents_fixture},
     };
+
+    use super::{document_transition::Action, *};
 
     #[test]
     fn should_return_highest_sec_level_for_all_transitions() {

@@ -1,6 +1,3 @@
-use crate::ProtocolError;
-use byteorder::{BigEndian, WriteBytesExt};
-use ciborium::value::Value;
 use std::collections::{BTreeMap, BTreeSet};
 use std::convert::TryInto;
 use std::fs::File;
@@ -8,7 +5,12 @@ use std::io;
 use std::io::{BufRead, BufReader};
 use std::option::Option::None;
 use std::path::Path;
+
+use byteorder::{BigEndian, WriteBytesExt};
+use ciborium::value::Value;
+
 use crate::util::cbor_value::get_key_from_cbor_map;
+use crate::ProtocolError;
 
 pub fn json_document_to_cbor(path: impl AsRef<Path>, protocol_version: Option<u32>) -> Vec<u8> {
     let file = File::open(path).expect("file not found");

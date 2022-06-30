@@ -5,11 +5,11 @@ use log::trace;
 use serde::de::DeserializeOwned;
 use serde_json::{Number, Value as JsonValue};
 
+use crate::util::deserializer;
 use crate::{
     errors::ProtocolError,
     identifier::{self, Identifier},
 };
-use crate::util::deserializer;
 
 use super::{
     json_path::{JsonPath, JsonPathLiteral, JsonPathStep},

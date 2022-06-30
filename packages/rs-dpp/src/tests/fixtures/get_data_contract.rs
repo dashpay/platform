@@ -1,9 +1,10 @@
+use serde_json::json;
+
 use crate::data_contract::DataContractFactory;
 use crate::decode_protocol_entity_factory::DecodeProtocolEntity;
 use crate::mocks;
 use crate::prelude::*;
 use crate::tests::utils::generate_random_identifier_struct;
-use serde_json::json;
 
 pub fn get_data_contract_fixture(owner_id: Option<Identifier>) -> DataContract {
     let documents = json!(

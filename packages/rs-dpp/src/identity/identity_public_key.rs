@@ -1,7 +1,7 @@
 #![allow(clippy::from_over_into)]
 
-use std::{collections::HashMap, convert::TryFrom, hash::Hash};
 use std::convert::TryInto;
+use std::{collections::HashMap, convert::TryFrom, hash::Hash};
 
 use anyhow::{anyhow, bail};
 use ciborium::value::Value as CborValue;

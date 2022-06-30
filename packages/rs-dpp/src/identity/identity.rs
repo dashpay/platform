@@ -1,16 +1,14 @@
 use std::collections::BTreeMap;
-use std::convert::TryInto;
 
 use ciborium::value::Value as CborValue;
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 
-use crate::{errors::ProtocolError, identifier::Identifier, metadata::Metadata, util::hash};
-use crate::common::bytes_for_system_value_from_tree_map;
 use crate::identity::identity_public_key;
 use crate::util::cbor_value::{CborBTreeMapHelper, CborCanonicalMap};
 use crate::util::deserializer;
 use crate::util::json_value::{JsonValueExt, ReplaceWith};
+use crate::{errors::ProtocolError, identifier::Identifier, metadata::Metadata, util::hash};
 
 use super::{IdentityPublicKey, KeyID};
 
@@ -191,7 +189,7 @@ impl Identity {
                 ProtocolError::DecodingError(format!("Unable to decode identity CBOR: {}", e))
             })?;
 
-        let identity_id= identity_map.get_identifier("id")?;
+        let identity_id = identity_map.get_identifier("id")?;
         let revision = identity_map.get_i64("revision")?;
         let balance: i64 = identity_map.get_i64("balance")?;
 

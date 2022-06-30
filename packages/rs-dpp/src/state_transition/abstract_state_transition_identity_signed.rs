@@ -145,6 +145,7 @@ mod test {
     use serde::{Deserialize, Serialize};
     use serde_json::json;
 
+    use crate::document::DocumentsBatchTransition;
     use crate::{
         assert_error_contains,
         identity::{KeyID, SecurityLevel},
@@ -153,10 +154,9 @@ mod test {
         },
         util::hash::ripemd160_sha256,
     };
-    use crate::document::DocumentsBatchTransition;
 
-    use super::*;
     use super::StateTransitionIdentitySigned;
+    use super::*;
 
     #[derive(Debug, Clone, Serialize, Deserialize)]
     #[serde(rename_all = "camelCase")]

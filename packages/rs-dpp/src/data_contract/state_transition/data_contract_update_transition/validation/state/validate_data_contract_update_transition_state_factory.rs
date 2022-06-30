@@ -1,10 +1,11 @@
+use anyhow::Result;
+
 use crate::{
     data_contract::{state_transition::DataContractUpdateTransition, DataContract},
     errors::consensus::basic::BasicError,
     state_repository::StateRepositoryLike,
     validation::ValidationResult,
 };
-use anyhow::Result;
 
 pub struct DataContractUpdateTransitionStateValidator<SR>
 where

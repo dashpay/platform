@@ -1,7 +1,9 @@
-pub mod document_factory;
-pub mod errors;
-pub mod generate_document_id;
-mod state_transition;
+use std::convert::TryInto;
+
+use ciborium::value::Value as CborValue;
+use serde::{Deserialize, Serialize};
+use serde_json::Value as JsonValue;
+
 pub use state_transition::documents_batch_transition::document_transition;
 pub use state_transition::documents_batch_transition::validation;
 pub use state_transition::documents_batch_transition::DocumentsBatchTransition;
@@ -10,11 +12,15 @@ use crate::data_contract::DataContract;
 use crate::errors::ProtocolError;
 use crate::identifier::Identifier;
 use crate::metadata::Metadata;
+use crate::util::cbor_value::CborCanonicalMap;
 use crate::util::hash::hash;
 use crate::util::json_value::{JsonValueExt, ReplaceWith};
-use crate::util::serializer;
-use serde::{Deserialize, Serialize};
-use serde_json::Value as JsonValue;
+use crate::util::{cbor_value, serializer};
+
+pub mod document_factory;
+pub mod errors;
+pub mod generate_document_id;
+mod state_transition;
 
 const IDENTIFIER_FIELDS: [&str; 3] = ["$id", "$dataContractId", "$ownerId"];
 
@@ -108,6 +114,23 @@ impl Document {
         Ok(document)
     }
 
+    pub fn from_cbor(cbor_bytes: impl AsRef<[u8]>) -> Result<Document, ProtocolError> {
+        let (protocol_version_bytes, document_cbor_bytes) = cbor_bytes.as_ref().split_at(4);
+
+        let cbor_value: CborValue = ciborium::de::from_reader(document_cbor_bytes)
+            .map_err(|e| ProtocolError::EncodingError(format!("{}", e)))?;
+
+        let mut json_value = cbor_value::cbor_value_to_json_value(&cbor_value)?;
+
+        json_value.parse_and_add_protocol_version("$protocolVersion", protocol_version_bytes)?;
+        // TODO identifiers and binary data for dynamic values
+        json_value.replace_identifier_paths(IDENTIFIER_FIELDS, ReplaceWith::Base58)?;
+
+        let document: Document = serde_json::from_value(json_value)?;
+
+        Ok(document)
+    }
+
     pub fn to_object(&self, skip_identifiers_conversion: bool) -> Result<JsonValue, ProtocolError> {
         let mut json_object = serde_json::to_value(&self)?;
         if !skip_identifiers_conversion {
@@ -115,6 +138,32 @@ impl Document {
             json_object.replace_identifier_paths(IDENTIFIER_FIELDS, ReplaceWith::Bytes)?;
         }
         Ok(json_object)
+    }
+
+    pub fn to_cbor(&self) -> Result<Vec<u8>, ProtocolError> {
+        let mut result_buf = self.protocol_version.to_le_bytes().to_vec();
+
+        let map = CborValue::serialized(&self)
+            .map_err(|e| ProtocolError::EncodingError(e.to_string()))?;
+
+        let mut canonical_map: CborCanonicalMap = map.try_into()?;
+
+        canonical_map.remove("$protocolVersion");
+
+        if let None = self.updated_at {
+            canonical_map.remove("$updatedAt");
+        }
+
+        canonical_map.replace_values(IDENTIFIER_FIELDS, ReplaceWith::Bytes);
+
+        println!("{canonical_map:?}");
+        let mut document_buffer = canonical_map
+            .to_bytes()
+            .map_err(|e| ProtocolError::EncodingError(e.to_string()))?;
+
+        result_buf.append(&mut document_buffer);
+
+        Ok(result_buf)
     }
 
     pub fn to_buffer(&self) -> Result<Vec<u8>, ProtocolError> {
@@ -147,12 +196,13 @@ impl Document {
 
 #[cfg(test)]
 mod test {
+    use anyhow::Result;
+    use serde_json::Value;
+
     use crate::tests::utils::*;
     use crate::util::string_encoding::Encoding;
 
     use super::*;
-    use anyhow::Result;
-    use serde_json::Value;
 
     fn init() {
         let _ = env_logger::builder()
@@ -250,6 +300,59 @@ mod test {
         let document_json = get_data_from_file("src/tests/payloads/document_dpns.json")?;
         serde_json::from_str::<Document>(&document_json)?;
         Ok(())
+    }
+
+    #[test]
+    fn deserialize_js_cpp_cbor() -> Result<()> {
+        let document_cbor = document_cbor_bytes();
+
+        let document = Document::from_cbor(&document_cbor)?;
+
+        assert_eq!(document.protocol_version, 1);
+        assert_eq!(
+            document.id.to_buffer().to_vec(),
+            vec![
+                113, 93, 61, 101, 117, 96, 36, 162, 222, 10, 177, 178, 187, 30, 131, 181, 239, 41,
+                123, 240, 198, 250, 97, 106, 173, 92, 136, 126, 79, 16, 222, 249
+            ]
+        );
+        assert_eq!(&document.document_type, "niceDocument");
+        assert_eq!(
+            document.data_contract_id.to_buffer().to_vec(),
+            vec![
+                122, 188, 95, 154, 180, 188, 208, 97, 46, 214, 202, 206, 194, 4, 221, 109, 116, 17,
+                165, 97, 39, 212, 36, 138, 241, 234, 218, 203, 147, 82, 93, 162
+            ]
+        );
+        assert_eq!(
+            document.owner_id.to_buffer().to_vec(),
+            vec![
+                182, 191, 55, 77, 48, 47, 190, 43, 81, 27, 67, 226, 61, 3, 63, 150, 94, 46, 51,
+                160, 36, 199, 65, 157, 176, 117, 51, 212, 186, 125, 112, 142
+            ]
+        );
+        assert_eq!(document.revision, 1);
+        assert_eq!(document.created_at.unwrap(), 1656583332347);
+        assert_eq!(document.data.get("name").unwrap(), "Cutie");
+
+        Ok(())
+    }
+
+    #[test]
+    fn to_buffer_serialize_to_the_same_format_as_js_dpp() -> Result<()> {
+        let document_cbor = document_cbor_bytes();
+
+        let document = Document::from_cbor(&document_cbor)?;
+
+        let buffer = document.to_cbor()?;
+
+        assert_eq!(document_cbor, buffer);
+
+        Ok(())
+    }
+
+    fn document_cbor_bytes() -> Vec<u8> {
+        hex::decode("01000000a7632469645820715d3d65756024a2de0ab1b2bb1e83b5ef297bf0c6fa616aad5c887e4f10def9646e616d656543757469656524747970656c6e696365446f63756d656e7468246f776e657249645820b6bf374d302fbe2b511b43e23d033f965e2e33a024c7419db07533d4ba7d708e69247265766973696f6e016a246372656174656441741b00000181b40fa1fb6f2464617461436f6e7472616374496458207abc5f9ab4bcd0612ed6cacec204dd6d7411a56127d4248af1eadacb93525da2").unwrap()
     }
 
     fn new_example_document() -> Document {
