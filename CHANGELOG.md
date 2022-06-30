@@ -1,3 +1,246 @@
+## [0.23.0-dev.3](https://github.com/dashevo/platform/compare/v0.22.13...v0.23.0-dev.3) (2022-06-30)
+
+
+### ⚠ BREAKING CHANGES
+
+* **dpp:** allow 1 char document type and 1 char property name (#445)
+* simplified public key to identity structure (#437)
+* **dpp:** allow only `asc` order for indices (#435)
+* validate fee calculating worst case operations (#392)
+* **dpp:** data contract index update validation (#427)
+* **drive:** use RS Drive query validation logic (#398)
+
+### Features
+
+* **bench:** state transition benchmark ([#418](https://github.com/dashevo/platform/issues/418))
+* **dashmate:** add --force flag to stop command ([#434](https://github.com/dashevo/platform/issues/434))
+* **dashmate:** upgrade docker compose to v2 ([#441](https://github.com/dashevo/platform/issues/441))
+* **dpp:** allow 1 char document type and 1 char property name ([#445](https://github.com/dashevo/platform/issues/445))
+* integrate dash-spv into monorepo
+* limit the number of shares for masternode by 16 ([#432](https://github.com/dashevo/platform/issues/432))
+* move dash-spv in packages after import
+* re-enable proof responses ([#440](https://github.com/dashevo/platform/issues/440))
+* validate fee calculating worst case operations ([#392](https://github.com/dashevo/platform/issues/392))
+
+
+### Bug Fixes
+
+* docker images incorrectly tagged with v ([#413](https://github.com/dashevo/platform/issues/413))
+* **dpp:** data contract index update validation ([#427](https://github.com/dashevo/platform/issues/427))
+* **drive:** change transaction is started check ([#451](https://github.com/dashevo/platform/issues/451))
+* non-deterministic fees due to data contract cache ([#444](https://github.com/dashevo/platform/issues/444))
+* **sdk:** identity update method can't sign publicKeys in some cases ([#421](https://github.com/dashevo/platform/issues/421))
+* **wallet-lib:** separate persistent storage by walletId ([#407](https://github.com/dashevo/platform/issues/407))
+
+
+### Documentation
+
+* add input description
+
+
+### Code Refactoring
+
+* **drive:** use RS Drive query validation logic ([#398](https://github.com/dashevo/platform/issues/398))
+
+
+### Tests
+
+* **dpp:** fix invalid findIndexDuplicates test in DPP ([#448](https://github.com/dashevo/platform/issues/448))
+
+
+### Miscellaneous Chores
+
+* disable SML payout addresses ([#443](https://github.com/dashevo/platform/issues/443))
+* **dpp:** allow only `asc` order for indices ([#435](https://github.com/dashevo/platform/issues/435))
+* **drive:** log synchronize masternode identities ([#449](https://github.com/dashevo/platform/issues/449))
+* fix master to v0.23 merge issues
+* simplified public key to identity structure ([#437](https://github.com/dashevo/platform/issues/437))
+* switch dashcore-lib to `payout-address` branch ([#412](https://github.com/dashevo/platform/issues/412))
+* **test-suite:** move wallet storage persistence in the outer folder ([#416](https://github.com/dashevo/platform/issues/416))
+* update readme
+
+## [0.23.0-dev.2](https://github.com/dashevo/platform/compare/v0.22.7...v0.23.0-dev.2) (2022-05-20)
+
+
+### ⚠ BREAKING CHANGES
+
+* Identity master key can be used only to update identity (#384)
+* SDK's identity update method now requires correspond private keys. Identity public keys in state transitions must be signed
+
+### Features
+
+* adds balance and metadata information from registered identity ([#337](https://github.com/dashevo/platform/issues/337))
+* bench suite ([#335](https://github.com/dashevo/platform/issues/335))
+* **bench-suite:** add fees to documents benchmark ([#379](https://github.com/dashevo/platform/issues/379))
+* **bench-suite:** function benchmark and other improvements ([#344](https://github.com/dashevo/platform/issues/344))
+* calculate state transition fees using operations ([#376](https://github.com/dashevo/platform/issues/376))
+* create withdrawal keys for masternode identities ([#320](https://github.com/dashevo/platform/issues/320))
+* **dpp:** BIP13_SCRIPT_HASH identity public key type ([#353](https://github.com/dashevo/platform/issues/353))
+* **dpp:** calculate signature verification costs for fees ([#387](https://github.com/dashevo/platform/issues/387))
+* **dpp:** fee operations and execution context ([#369](https://github.com/dashevo/platform/issues/369))
+* **drive:** collect fee operation to execution context ([#370](https://github.com/dashevo/platform/issues/370))
+* Identity master key can be used only to update identity ([#384](https://github.com/dashevo/platform/issues/384))
+* identity public key proofs ([#349](https://github.com/dashevo/platform/issues/349))
+* integrate with Tenderdash v0.8-dev ([#314](https://github.com/dashevo/platform/issues/314))
+* provide transaction history item as a date object ([#336](https://github.com/dashevo/platform/issues/336))
+
+
+### Bug Fixes
+
+* change allowed security level for withdrawal purpose to critical ([#352](https://github.com/dashevo/platform/issues/352))
+* **dapi-grpc:** outdated autogenerated code ([#331](https://github.com/dashevo/platform/issues/331))
+* **wallet-lib:** optimize storage version check ([#348](https://github.com/dashevo/platform/issues/348))
+* **wallet-lib:** persistent storage regression ([#302](https://github.com/dashevo/platform/issues/302))
+
+
+### Documentation
+
+* update badges in individual package readmes ([#361](https://github.com/dashevo/platform/issues/361))
+
+
+### Continuous Integration
+
+* add `latest-dev` docker tag ([#382](https://github.com/dashevo/platform/issues/382))
+
+
+### Miscellaneous Chores
+
+* **dashmate:** use 0.23-dev images
+* **release:** update changelog and bump version to 0.23.0-dev.2 ([#399](https://github.com/dashevo/platform/issues/399))
+
+## [0.23.0-dev.1](https://github.com/dashevo/platform/compare/v0.22.1...v0.23.0-dev.1) (2022-04-08)
+
+
+### ⚠ BREAKING CHANGES
+
+* do not hash proRegTx for masternode identifier (#318)
+* **wallet-lib:** storage layer refactoring (#232)
+
+### Features
+
+* **dpp:** add `withdraw` purpose for `IdentityPublicKey` ([#317](https://github.com/dashevo/platform/issues/317))
+* update identity ([#292](https://github.com/dashevo/platform/issues/292))
+* **wallet-lib:** rework storage for multiple key chains ([#231](https://github.com/dashevo/platform/issues/231))
+* **wallet-lib:** satoshisBalanceImpact in transaction history ([#319](https://github.com/dashevo/platform/issues/319))
+* **wallet-lib:** storage layer refactoring ([#232](https://github.com/dashevo/platform/issues/232))
+
+
+### Bug Fixes
+
+* **dapi:** fix parsing chainlocks received via ZMQ ([#296](https://github.com/dashevo/platform/issues/296))
+* **dashmate:** config/core/miner must have required property 'interval' ([#311](https://github.com/dashevo/platform/issues/311))
+* do not hash proRegTx for masternode identifier ([#318](https://github.com/dashevo/platform/issues/318))
+
+
+### Performance Improvements
+
+* **dapi:** cache block headers and chainlocks ([#235](https://github.com/dashevo/platform/issues/235))
+* **dapi:** remove unnecessary Core RPC calls for core streams ([#194](https://github.com/dashevo/platform/issues/194))
+
+
+### Documentation
+
+* issue and pull request templates (dashevo/dash-spv[#26](https://github.com/dashevo/platform/issues/26))
+
+
+### Continuous Integration
+
+* enable multiarch builds ([#316](https://github.com/dashevo/platform/issues/316))
+
+
+### Tests
+
+* fixes wallet.spec.js
+
+
+### Miscellaneous Chores
+
+* **ci:** CI with GitHub Actions (dashevo/dash-spv[#28](https://github.com/dashevo/platform/issues/28))
+* **drive:** add more block execution timers ([#329](https://github.com/dashevo/platform/issues/329))
+* merge master into v023
+* **release:** update changelog and bump version to 0.23.0-dev.1 ([#334](https://github.com/dashevo/platform/issues/334))
+* update dashcore to v0.19.29 (dashevo/dash-spv[#29](https://github.com/dashevo/platform/issues/29))
+* Update Travis config (dashevo/dash-spv[#25](https://github.com/dashevo/platform/issues/25))
+
+### [0.22.13](https://github.com/dashevo/platform/compare/v0.22.12...v0.22.13) (2022-06-17)
+
+
+### Features
+
+* **dashmate:** upgrade docker compose to v2 ([#422](https://github.com/dashevo/platform/issues/422))
+* support DIP24 devnet LLMQ type ([#438](https://github.com/dashevo/platform/issues/438))
+
+
+### Miscellaneous Chores
+
+* **release:** update changelog and bump version to 0.22.13 ([#439](https://github.com/dashevo/platform/issues/439))
+
+### [0.22.12](https://github.com/dashevo/platform/compare/v0.22.11...v0.22.12) (2022-06-07)
+
+
+### Bug Fixes
+
+* **sdk:** incomplete bundle for web ([#400](https://github.com/dashevo/platform/issues/400))
+* **wallet-lib:** separate persistent storage by walletId ([#407](https://github.com/dashevo/platform/issues/407))
+
+
+### Miscellaneous Chores
+
+* **release:** update changelog and version to 0.22.12 ([#426](https://github.com/dashevo/platform/issues/426))
+
+### [0.22.11](https://github.com/dashevo/platform/compare/v0.22.10...v0.22.11) (2022-05-31)
+
+
+### Bug Fixes
+
+* incorrect image versions and variables for testnet config ([#415](https://github.com/dashevo/platform/issues/415))
+
+
+### Miscellaneous Chores
+
+* **release:** update changelog and version to 0.22.11 ([#417](https://github.com/dashevo/platform/issues/417))
+
+### [0.22.10](https://github.com/dashevo/platform/compare/v0.22.9...v0.22.10) (2022-05-26)
+
+
+### Bug Fixes
+
+* CommitmentTxPayload#toBuffer method was using version instead of qfcVersion for serialization ([#410](https://github.com/dashevo/platform/issues/410))
+
+
+### Continuous Integration
+
+* dispatch trigger and parallelization ([#406](https://github.com/dashevo/platform/issues/406))
+
+
+### Miscellaneous Chores
+
+* **release:** update changelog and version to 0.22.10 ([#411](https://github.com/dashevo/platform/issues/411))
+
+### [0.22.9](https://github.com/dashevo/platform/compare/v0.22.8...v0.22.9) (2022-05-24)
+
+
+### Bug Fixes
+
+* incorrect parsing of commitment payload ([#408](https://github.com/dashevo/platform/issues/408))
+
+
+### Miscellaneous Chores
+
+* **release:** update changelog and version to 0.22.9 ([#409](https://github.com/dashevo/platform/issues/409))
+
+### [0.22.8](https://github.com/dashevo/platform/compare/v0.23.0-dev.2...v0.22.8) (2022-05-23)
+
+
+### Bug Fixes
+
+* `verifyChainLock` was returning `false` instead of `ResponseQuery` ([#402](https://github.com/dashevo/platform/issues/402))
+
+
+### Miscellaneous Chores
+
+* **release:** update changelog and version to 0.22.8 ([#404](https://github.com/dashevo/platform/issues/404))
+
 ### [0.22.13](https://github.com/dashevo/platform/compare/v0.22.12...v0.22.13) (2022-06-17)
 
 
