@@ -1,8 +1,6 @@
 # dash-spv
 
-Temporary repo until spv functions moved into dashcore-lib
-
-No new features should be added to this repo.
+Set of SPV function used by js-dapi-client package
 
 ## License
 

@@ -64,7 +64,8 @@
     "packages/js-drive",
     "packages/dashmate",
     "packages/platform-test-suite",
-    "packages/masternode-reward-shares-contract"
+    "packages/masternode-reward-shares-contract",
+    "packages/dash-spv"
   ],
   "resolutions": {
     "elliptic": "6.5.3",
