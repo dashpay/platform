@@ -41,4 +41,5 @@ mod prelude {
     pub use crate::identifier::Identifier;
     pub use crate::identity::Identity;
     pub use crate::identity::IdentityPublicKey;
+    pub use crate::validation::ValidationResult;
 }
