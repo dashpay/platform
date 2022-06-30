@@ -1,17 +1,17 @@
-const crypto = require('crypto');
-
 const Dash = require('dash');
 
 const { createFakeInstantLock } = require('dash/build/src/utils/createFakeIntantLock');
 
 const { hash } = require('@dashevo/dpp/lib/util/hash');
 const getDataContractFixture = require('../../../lib/test/fixtures/getDataContractFixture');
-const Identity = require('@dashevo/dpp/lib/identity/Identity');
 const createClientWithFundedWallet = require('../../../lib/test/createClientWithFundedWallet');
 const wait = require('../../../lib/wait');
 const getDAPISeeds = require('../../../lib/test/getDAPISeeds');
 
 const {
+  Essentials: {
+    Buffer,
+  },
   Core: {
     Transaction,
   },
@@ -19,12 +19,14 @@ const {
     StateTransitionBroadcastError,
   },
   PlatformProtocol: {
+    Identity,
     Identifier,
     IdentityPublicKey,
     ConsensusErrors: {
       InvalidInstantAssetLockProofSignatureError,
       IdentityAssetLockTransactionOutPointAlreadyExistsError,
       BalanceIsNotEnoughError,
+      InvalidIdentityKeySignatureError,
     },
   },
 } = Dash;
@@ -156,23 +158,26 @@ describe('Platform', () => {
         transaction,
         privateKey,
         outputIndex,
-      } = await createAssetLockTransaction({ client }, 15);
+      } = await client.platform.identities.utils.createAssetLockTransaction(15);
 
       await client.getDAPIClient().core.broadcastTransaction(transaction.toBuffer());
 
-      const assetLockProof = await createAssetLockProof(client.platform, transaction, outputIndex);
+      const assetLockProof = await client.platform.identities.utils.createAssetLockProof(
+        transaction,
+        outputIndex,
+      );
 
       // Creating normal transition
       const {
         identityCreateTransition,
-      } = await createIdentityCreateTransition(
-        client.platform, assetLockProof, privateKey,
+      } = await client.platform.identities.utils.createIdentityCreateTransition(
+        assetLockProof, privateKey,
       );
 
       // Remove signature
 
       const [masterKey] = identityCreateTransition.getPublicKeys();
-      masterKey.setSignature(crypto.randomBytes(65));
+      masterKey.setSignature(Buffer.alloc(65));
 
       // Broadcast
 
@@ -345,9 +350,7 @@ describe('Platform', () => {
           transaction,
           privateKey,
           outputIndex,
-        } = await client.platform.identity.createAssetLockTransaction({
-          client,
-        }, 15);
+        } = await client.platform.identity.utils.createAssetLockTransaction(15);
 
         const instantLock = createFakeInstantLock(transaction.hash);
         const assetLockProof = await dpp.identity.createInstantAssetLockProof(instantLock);
