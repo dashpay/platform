@@ -6,13 +6,7 @@ const Identifier = require('./identifier/Identifier');
 
 const DataContractFactory = require('./dataContract/DataContractFactory');
 
-const InvalidDataContractVersionError = require('./errors/consensus/basic/dataContract/InvalidDataContractVersionError');
-const IncompatibleDataContractSchemaError = require('./errors/consensus/basic/dataContract/IncompatibleDataContractSchemaError');
-const InvalidInstantAssetLockProofSignatureError = require('./errors/consensus/basic/identity/InvalidInstantAssetLockProofSignatureError');
-const IdentityAssetLockTransactionOutPointAlreadyExistsError = require('./errors/consensus/basic/identity/IdentityAssetLockTransactionOutPointAlreadyExistsError');
-const InvalidDocumentTypeError = require('./errors/consensus/basic/document/InvalidDocumentTypeError');
-const IdentityNotFoundError = require('./errors/consensus/signature/IdentityNotFoundError');
-const BalanceIsNotEnoughError = require('./errors/consensus/fee/BalanceIsNotEnoughError');
+const consensusErrorCodes = require('./errors/consensus/codes');
 
 const protocolVersion = require('./version/protocolVersion');
 
@@ -24,14 +18,12 @@ DashPlatformProtocol.Identifier = Identifier;
 
 DashPlatformProtocol.version = protocolVersion.latestVersion;
 
-DashPlatformProtocol.ConsensusErrors = {
-  BalanceIsNotEnoughError,
-  IncompatibleDataContractSchemaError,
-  IdentityNotFoundError,
-  InvalidDataContractVersionError,
-  InvalidDocumentTypeError,
-  InvalidInstantAssetLockProofSignatureError,
-  IdentityAssetLockTransactionOutPointAlreadyExistsError,
-};
+DashPlatformProtocol.ConsensusErrors = Object.values(consensusErrorCodes)
+  .reduce((obj, ConsensusErrorClass) => {
+    // eslint-disable-next-line no-param-reassign
+    obj[ConsensusErrorClass.name] = ConsensusErrorClass;
+
+    return obj;
+  }, {});
 
 module.exports = DashPlatformProtocol;
