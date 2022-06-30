@@ -16,6 +16,7 @@ scopes:
   - test-suite
   - wallet-lib
   - release
+  - dash-spv
 
 types:
   - feat
