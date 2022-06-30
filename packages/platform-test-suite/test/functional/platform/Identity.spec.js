@@ -157,7 +157,7 @@ describe('Platform', () => {
         transaction,
         privateKey,
         outputIndex,
-      } = await client.platform.identities.utils.createAssetLockTransaction({ client }, 7000);
+      } = await client.platform.identities.utils.createAssetLockTransaction({ client }, 15);
 
       await client.getDAPIClient().core.broadcastTransaction(transaction.toBuffer());
 
@@ -170,7 +170,7 @@ describe('Platform', () => {
       // Creating normal transition
       const {
         identityCreateTransition,
-      } = await client.platform.identities.utils.createAssetLockTransaction(
+      } = await client.platform.identities.utils.createIdentityCreateTransition(
         client.platform, assetLockProof, privateKey,
       );
 
