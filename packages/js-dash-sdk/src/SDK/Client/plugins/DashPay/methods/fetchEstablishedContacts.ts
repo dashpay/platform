@@ -9,6 +9,7 @@ import {DerivableKeyChain} from "@dashevo/wallet-lib";
  */
 export async function fetchEstablishedContacts(this: any, fromTimestamp = 0) {
   const establishedContacts: Contact[] = [];
+
   const receivedContactRequests = await this.fetchReceivedContactRequests(fromTimestamp);
   const receivedContactRequestsSenderIds = receivedContactRequests.map((sentContactRequest) => sentContactRequest.ownerId.toString());
 

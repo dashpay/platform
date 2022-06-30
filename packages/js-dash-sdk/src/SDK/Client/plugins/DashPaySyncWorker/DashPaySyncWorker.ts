@@ -41,6 +41,11 @@ export class DashPaySyncWorker extends plugins.Worker {
 
   }
 
+  /**
+   * On each execution call, will perform a fetch of newly established contacts and construct
+   * the keychain to be added to the transaction sync stream worker ensuring the monitoring of newly
+   * received transaction
+   */
   async execute() {
     if (this.platform && this.platform.identities) {
       const dashPay = await this.getPlugin('DashPay');

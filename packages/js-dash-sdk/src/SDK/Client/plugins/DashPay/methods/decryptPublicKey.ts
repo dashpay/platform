@@ -1,11 +1,7 @@
 import CryptoJS from "crypto-js"
 
 /**
- *  encryptedXpub: ByteArray,
- contactPublicKey: ECKey,
- signingAlgorithm: IdentityPublicKey.TYPES,
- keyIndex: Int,
- keyParameter: KeyParameter?
+ * Allow to decrypt an encrypted public key buffer with a shared secret
  * @param publicKeyBuffer
  * @param encryptedSharedSecret
  */

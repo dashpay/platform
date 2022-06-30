@@ -1,5 +1,6 @@
 import CryptoJS from "crypto-js"
 /**
+ * Allow to encrypt a public key with a provided shared secret
  * @param publicKeyBuffer - public key in buffer format
  * @param encryptedSharedSecret - shared secret in hexadecimal format
  * @returns {null}

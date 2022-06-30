@@ -1,5 +1,6 @@
 /**
- *
+ * Fetch all sent contact request from a specific timestamp
+ * @param fromTimestamp
  */
 export async function fetchSentContactRequests(this: any, fromTimestamp = 0){
   const walletStore = this.storage.getWalletStore(this.walletId)

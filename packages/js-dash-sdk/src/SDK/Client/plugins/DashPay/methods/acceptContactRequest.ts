@@ -1,5 +1,6 @@
 /**
- *
+ * For provided contact request, perform an acceptance operation (by sending an opposite contact request)
+ * @param contactRequest contact request document
  */
 export async function acceptContactRequest(this: any, contactRequest){
   if(!contactRequest){

@@ -1,7 +1,7 @@
 import CryptoJS from "crypto-js"
 
 /**
- *
+ *  Allow to encrypt an account label with a provided shared secret
  * @param sharedSecret
  * @param accountLabel
  * @param cipherIv

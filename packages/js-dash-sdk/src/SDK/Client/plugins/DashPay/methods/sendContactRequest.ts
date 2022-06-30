@@ -1,6 +1,6 @@
 
 /**
- *
+ * Allow to prepare and send a contact request to a specified contact name
  * @param contactName
  * @param accountLabel
  */
