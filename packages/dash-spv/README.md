@@ -1,6 +1,6 @@
-# dash-spv (DEPRECATED)
+# dash-spv
 
-Moved to the https://github.com/dashevo/platform
+Set of SPV function used by js-dapi-client package
 
 ## License
 

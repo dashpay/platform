@@ -31,6 +31,10 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
         "reference": "workspace:packages/dapi-grpc"
       },
       {
+        "name": "@dashevo/dash-spv",
+        "reference": "workspace:packages/dash-spv"
+      },
+      {
         "name": "dashmate",
         "reference": "workspace:packages/dashmate"
       },
@@ -85,6 +89,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
       ["@dashevo/dapi", ["workspace:packages/dapi"]],
       ["@dashevo/dapi-client", ["workspace:packages/js-dapi-client"]],
       ["@dashevo/dapi-grpc", ["workspace:packages/dapi-grpc"]],
+      ["@dashevo/dash-spv", ["workspace:packages/dash-spv"]],
       ["@dashevo/dashpay-contract", ["workspace:packages/dashpay-contract"]],
       ["@dashevo/dpns-contract", ["workspace:packages/dpns-contract"]],
       ["@dashevo/dpp", ["workspace:packages/js-dpp"]],
@@ -2312,7 +2317,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["@dashevo/dapi-client", "workspace:packages/js-dapi-client"],
             ["@babel/core", "npm:7.16.0"],
             ["@dashevo/dapi-grpc", "workspace:packages/dapi-grpc"],
-            ["@dashevo/dash-spv", "https://github.com/dashevo/dash-spv.git#commit=3eeb01ed5d0636c949cf3ca2e495c4fe3d1b74ce"],
+            ["@dashevo/dash-spv", "workspace:packages/dash-spv"],
             ["@dashevo/dashcore-lib", "npm:0.19.39"],
             ["@dashevo/dpp", "workspace:packages/js-dpp"],
             ["@dashevo/grpc-common", "workspace:packages/js-grpc-common"],
@@ -2394,17 +2399,22 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
         }]
       ]],
       ["@dashevo/dash-spv", [
-        ["https://github.com/dashevo/dash-spv.git#commit=3eeb01ed5d0636c949cf3ca2e495c4fe3d1b74ce", {
-          "packageLocation": "./.yarn/cache/@dashevo-dash-spv-https-d3c2470b1e-3f11f82e43.zip/node_modules/@dashevo/dash-spv/",
+        ["workspace:packages/dash-spv", {
+          "packageLocation": "./packages/dash-spv/",
           "packageDependencies": [
-            ["@dashevo/dash-spv", "https://github.com/dashevo/dash-spv.git#commit=3eeb01ed5d0636c949cf3ca2e495c4fe3d1b74ce"],
+            ["@dashevo/dash-spv", "workspace:packages/dash-spv"],
             ["@dashevo/dark-gravity-wave", "npm:1.1.1"],
             ["@dashevo/dash-util", "npm:2.0.3"],
             ["@dashevo/dashcore-lib", "npm:0.19.39"],
+            ["eslint", "npm:7.32.0"],
+            ["eslint-config-airbnb-base", "virtual:595d7482cc8ddf98ee6aef33fc48b46393554ab5f17f851ef62e6e39315e53666c3e66226b978689aa0bc7f1e83a03081511a21db1c381362fe67614887077f9#npm:14.2.1"],
+            ["eslint-plugin-import", "virtual:595d7482cc8ddf98ee6aef33fc48b46393554ab5f17f851ef62e6e39315e53666c3e66226b978689aa0bc7f1e83a03081511a21db1c381362fe67614887077f9#npm:2.25.3"],
             ["levelup", "npm:4.4.0"],
-            ["memdown", "npm:3.0.0"]
+            ["memdown", "npm:5.1.0"],
+            ["mocha", "npm:9.1.3"],
+            ["should", "npm:13.2.3"]
           ],
-          "linkType": "HARD",
+          "linkType": "SOFT",
         }]
       ]],
       ["@dashevo/dash-util", [
@@ -4640,14 +4650,6 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
         }]
       ]],
       ["abstract-leveldown", [
-        ["npm:5.0.0", {
-          "packageLocation": "./.yarn/cache/abstract-leveldown-npm-5.0.0-33db6ac172-d55d03cc7f.zip/node_modules/abstract-leveldown/",
-          "packageDependencies": [
-            ["abstract-leveldown", "npm:5.0.0"],
-            ["xtend", "npm:4.0.2"]
-          ],
-          "linkType": "HARD",
-        }],
         ["npm:6.2.3", {
           "packageLocation": "./.yarn/cache/abstract-leveldown-npm-6.2.3-73e4ffefa5-00202b2eb7.zip/node_modules/abstract-leveldown/",
           "packageDependencies": [
@@ -12772,19 +12774,6 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
         }]
       ]],
       ["memdown", [
-        ["npm:3.0.0", {
-          "packageLocation": "./.yarn/cache/memdown-npm-3.0.0-2bae7b9b8f-4446fdf719.zip/node_modules/memdown/",
-          "packageDependencies": [
-            ["memdown", "npm:3.0.0"],
-            ["abstract-leveldown", "npm:5.0.0"],
-            ["functional-red-black-tree", "npm:1.0.1"],
-            ["immediate", "npm:3.2.3"],
-            ["inherits", "npm:2.0.4"],
-            ["ltgt", "npm:2.2.1"],
-            ["safe-buffer", "npm:5.1.2"]
-          ],
-          "linkType": "HARD",
-        }],
         ["npm:5.1.0", {
           "packageLocation": "./.yarn/cache/memdown-npm-5.1.0-e769608fe2-23e4414034.zip/node_modules/memdown/",
           "packageDependencies": [
@@ -16083,6 +16072,70 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           "packageLocation": "./.yarn/cache/shellwords-ts-npm-3.0.0-f21ef3e36f-32faa081b1.zip/node_modules/shellwords-ts/",
           "packageDependencies": [
             ["shellwords-ts", "npm:3.0.0"]
+          ],
+          "linkType": "HARD",
+        }]
+      ]],
+      ["should", [
+        ["npm:13.2.3", {
+          "packageLocation": "./.yarn/cache/should-npm-13.2.3-fbb7954a33-74bcc0eb85.zip/node_modules/should/",
+          "packageDependencies": [
+            ["should", "npm:13.2.3"],
+            ["should-equal", "npm:2.0.0"],
+            ["should-format", "npm:3.0.3"],
+            ["should-type", "npm:1.4.0"],
+            ["should-type-adaptors", "npm:1.1.0"],
+            ["should-util", "npm:1.0.1"]
+          ],
+          "linkType": "HARD",
+        }]
+      ]],
+      ["should-equal", [
+        ["npm:2.0.0", {
+          "packageLocation": "./.yarn/cache/should-equal-npm-2.0.0-ae8768ed44-3f3580a223.zip/node_modules/should-equal/",
+          "packageDependencies": [
+            ["should-equal", "npm:2.0.0"],
+            ["should-type", "npm:1.4.0"]
+          ],
+          "linkType": "HARD",
+        }]
+      ]],
+      ["should-format", [
+        ["npm:3.0.3", {
+          "packageLocation": "./.yarn/cache/should-format-npm-3.0.3-74f60dd776-5304e89b4d.zip/node_modules/should-format/",
+          "packageDependencies": [
+            ["should-format", "npm:3.0.3"],
+            ["should-type", "npm:1.4.0"],
+            ["should-type-adaptors", "npm:1.1.0"]
+          ],
+          "linkType": "HARD",
+        }]
+      ]],
+      ["should-type", [
+        ["npm:1.4.0", {
+          "packageLocation": "./.yarn/cache/should-type-npm-1.4.0-6590b6ee32-88d9324c6c.zip/node_modules/should-type/",
+          "packageDependencies": [
+            ["should-type", "npm:1.4.0"]
+          ],
+          "linkType": "HARD",
+        }]
+      ]],
+      ["should-type-adaptors", [
+        ["npm:1.1.0", {
+          "packageLocation": "./.yarn/cache/should-type-adaptors-npm-1.1.0-730d8324e4-94dd1d225c.zip/node_modules/should-type-adaptors/",
+          "packageDependencies": [
+            ["should-type-adaptors", "npm:1.1.0"],
+            ["should-type", "npm:1.4.0"],
+            ["should-util", "npm:1.0.1"]
+          ],
+          "linkType": "HARD",
+        }]
+      ]],
+      ["should-util", [
+        ["npm:1.0.1", {
+          "packageLocation": "./.yarn/cache/should-util-npm-1.0.1-f3701a5e03-c3be15e0fd.zip/node_modules/should-util/",
+          "packageDependencies": [
+            ["should-util", "npm:1.0.1"]
           ],
           "linkType": "HARD",
         }]

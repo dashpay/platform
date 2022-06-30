@@ -19,6 +19,7 @@ on:
       - packages/feature-flags-contract/**
       - packages/masternode-reward-shares-contract/**
       - packages/dpns-contract/**
+      - packages/dash-spv/**
 
 jobs:
   js-dash-sdk-tests:
