@@ -6,7 +6,6 @@ const { createFakeInstantLock } = require('dash/build/src/utils/createFakeIntant
 
 const { hash } = require('@dashevo/dpp/lib/util/hash');
 const getDataContractFixture = require('../../../lib/test/fixtures/getDataContractFixture');
-const Identity = require('@dashevo/dpp/lib/identity/Identity');
 const createClientWithFundedWallet = require('../../../lib/test/createClientWithFundedWallet');
 const wait = require('../../../lib/wait');
 const getDAPISeeds = require('../../../lib/test/getDAPISeeds');
@@ -19,12 +18,14 @@ const {
     StateTransitionBroadcastError,
   },
   PlatformProtocol: {
+    Identity,
     Identifier,
     IdentityPublicKey,
     ConsensusErrors: {
       InvalidInstantAssetLockProofSignatureError,
       IdentityAssetLockTransactionOutPointAlreadyExistsError,
       BalanceIsNotEnoughError,
+      InvalidIdentityKeySignatureError,
     },
   },
 } = Dash;
@@ -156,16 +157,20 @@ describe('Platform', () => {
         transaction,
         privateKey,
         outputIndex,
-      } = await createAssetLockTransaction({ client }, 15);
+      } = await client.platform.identities.utils.createAssetLockTransaction({ client }, 15);
 
       await client.getDAPIClient().core.broadcastTransaction(transaction.toBuffer());
 
-      const assetLockProof = await createAssetLockProof(client.platform, transaction, outputIndex);
+      const assetLockProof = await client.platform.identities.utils.createAssetLockProof(
+        client.platform,
+        transaction,
+        outputIndex,
+      );
 
       // Creating normal transition
       const {
         identityCreateTransition,
-      } = await createIdentityCreateTransition(
+      } = await client.platform.identities.utils.createAssetLockTransaction(
         client.platform, assetLockProof, privateKey,
       );
 
