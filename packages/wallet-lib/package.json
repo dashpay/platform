@@ -51,6 +51,7 @@
     "lodash": "^4.17.19",
     "pbkdf2": "^3.1.1",
     "setimmediate": "^1.0.5",
+    "wasm-x11-hash": "~0.0.2",
     "winston": "^3.2.1"
   },
   "devDependencies": {

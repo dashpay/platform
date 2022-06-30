@@ -1407,18 +1407,18 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@dashevo/dash-spv@github:dashevo/dash-spv":
-  version: 1.1.6
-  resolution: "@dashevo/dash-spv@https://github.com/dashevo/dash-spv.git#commit=3eeb01ed5d0636c949cf3ca2e495c4fe3d1b74ce"
+"@dashevo/dash-spv@portal:../dash-spv::locator=%40dashevo%2Fplatform%40workspace%3A.":
+  version: 0.0.0-use.local
+  resolution: "@dashevo/dash-spv@portal:../dash-spv::locator=%40dashevo%2Fplatform%40workspace%3A."
   dependencies:
     "@dashevo/dark-gravity-wave": ^1.1.1
     "@dashevo/dash-util": ^2.0.3
-    "@dashevo/dashcore-lib": ^0.19.29
     levelup: ^4.0.1
     memdown: ^3.0.0
-  checksum: 3f11f82e43c91862c712606a824c8916774bd3c61dec552ac8dbdc76fdc27e5a5118d0e0773a459ec25ff66351fda34cfe5d58d22fcc96e31b41dac9d2da87c3
+  peerDependencies:
+    "@dashevo/dashcore-lib": ^0.19.39
   languageName: node
-  linkType: hard
+  linkType: soft
 
 "@dashevo/dash-util@npm:^2.0.3":
   version: 2.0.3
@@ -1430,9 +1430,9 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@dashevo/dashcore-lib@npm:^0.19.29":
-  version: 0.19.35
-  resolution: "@dashevo/dashcore-lib@npm:0.19.35"
+"@dashevo/dashcore-lib@npm:~0.19.40":
+  version: 0.19.40
+  resolution: "@dashevo/dashcore-lib@npm:0.19.40"
   dependencies:
     "@dashevo/x11-hash-js": ^1.0.2
     "@types/node": ^12.12.47
@@ -1445,26 +1445,7 @@ __metadata:
     inherits: =2.0.1
     lodash: ^4.17.20
     unorm: ^1.6.0
-  checksum: 66cf453c471d7630ac2ec2b588737a19422fa2616e502273fc9a502d3b517baf13e3d9dfb1680d80f214364d2d2ce9060a03824a99bacf8c1f0bbe7047dff5ca
-  languageName: node
-  linkType: hard
-
-"@dashevo/dashcore-lib@npm:~0.19.38":
-  version: 0.19.38
-  resolution: "@dashevo/dashcore-lib@npm:0.19.38"
-  dependencies:
-    "@dashevo/x11-hash-js": ^1.0.2
-    "@types/node": ^12.12.47
-    bloom-filter: ^0.2.0
-    bls-signatures: ^0.2.5
-    bn.js: =4.11.8
-    bs58: =4.0.1
-    elliptic: 6.5.3
-    eslint-config-prettier: ^8.3.0
-    inherits: =2.0.1
-    lodash: ^4.17.20
-    unorm: ^1.6.0
-  checksum: 13998e3b15b61897ce4044f7e4ca45ac32acdc46fc0357dad5f6852d282089a2cc6f679f94f199866059f9eea03930d0c39e0cc83e6f452efa6cd35567623986
+  checksum: ebcfb63bdf4689c319df2094566e9203e77af089e2fdf59a018a2ab6503af83b458bb0e74e008c58d4ef073ac166961d58e6e46f523ffc8336de111d9940d389
   languageName: node
   linkType: hard
 
@@ -1872,6 +1853,7 @@ __metadata:
     string_decoder: ^1.3.0
     url: ^0.11.0
     util: ^0.12.4
+    wasm-x11-hash: ~0.0.2
     webpack: ^5.59.1
     webpack-cli: ^4.9.1
     winston: ^3.2.1
@@ -15010,6 +14992,13 @@ typescript@^3.9.5:
   version: 1.0.0
   resolution: "walk-up-path@npm:1.0.0"
   checksum: b8019ac4fb9ba1576839ec66d2217f62ab773c1cc4c704bfd1c79b1359fef5366f1382d3ab230a66a14c3adb1bf0fe102d1fdaa3437881e69154dfd1432abd32
+  languageName: node
+  linkType: hard
+
+"wasm-x11-hash@npm:~0.0.2":
+  version: 0.0.2
+  resolution: "wasm-x11-hash@npm:0.0.2"
+  checksum: 67005c5d048a62f8987c0b47d3e526e7a3cc506e479fb401a7280cb00c9b247537cb21049c575bc7a713dc1a188d5ee7d35310dd1369093dc2b34c1093ff3636
   languageName: node
   linkType: hard
 
