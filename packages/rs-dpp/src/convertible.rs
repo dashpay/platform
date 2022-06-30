@@ -1,5 +1,6 @@
-use crate::ProtocolError;
 use serde_json::Value as JsonValue;
+
+use crate::ProtocolError;
 
 pub trait Convertible {
     /// Returns the [`serde_json::Value`] instance that preserves the `Vec<u8>` representation

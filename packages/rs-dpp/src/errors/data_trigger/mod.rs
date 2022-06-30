@@ -1,5 +1,6 @@
-use crate::{document::document_transition::DocumentTransition, prelude::Identifier};
 use thiserror::Error;
+
+use crate::{document::document_transition::DocumentTransition, prelude::Identifier};
 
 #[derive(Error, Debug)]
 pub enum DataTriggerError {

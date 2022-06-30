@@ -1,7 +1,8 @@
-use anyhow::anyhow;
-use serde_json::{Number, Value as JsonValue};
 use std::collections::BTreeMap;
 use std::convert::TryFrom;
+
+use anyhow::anyhow;
+use serde_json::{Number, Value as JsonValue};
 
 use crate::{
     data_contract::{self, generate_data_contract_id},

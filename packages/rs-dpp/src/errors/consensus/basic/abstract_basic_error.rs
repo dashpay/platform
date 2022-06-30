@@ -1,5 +1,6 @@
-use crate::prelude::*;
 use thiserror::Error;
+
+use crate::prelude::*;
 
 #[derive(Error, Debug)]
 pub enum BasicError {

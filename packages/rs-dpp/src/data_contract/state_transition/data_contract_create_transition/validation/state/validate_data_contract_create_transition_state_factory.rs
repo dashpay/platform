@@ -1,8 +1,9 @@
+use anyhow::Result;
+
 use crate::{
     data_contract::state_transition::DataContractCreateTransition, errors::StateError,
     state_repository::StateRepositoryLike, validation::ValidationResult,
 };
-use anyhow::Result;
 
 pub struct DataContractCreateTransitionStateValidator<SR>
 where

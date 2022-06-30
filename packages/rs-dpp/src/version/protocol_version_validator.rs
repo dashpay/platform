@@ -1,11 +1,12 @@
+use std::cmp;
+use std::collections::HashMap;
+
 use crate::errors::consensus::basic::{
     IncompatibleProtocolVersionError, UnsupportedProtocolVersionError,
 };
 use crate::errors::CompatibleProtocolVersionIsNotDefinedError;
 use crate::validation::ValidationResult;
 use crate::version::{COMPATIBILITY_MAP, LATEST_VERSION};
-use std::cmp;
-use std::collections::HashMap;
 
 #[derive(Clone)]
 pub struct ProtocolVersionValidator {

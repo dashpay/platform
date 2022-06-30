@@ -1,7 +1,8 @@
-pub const PRICE_PER_BYTE: u64 = 1;
 use crate::prelude::ProtocolError;
 
 use super::StateTransitionLike;
+
+pub const PRICE_PER_BYTE: u64 = 1;
 
 /**
  * Get State Transition fee size

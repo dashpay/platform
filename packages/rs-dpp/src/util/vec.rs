@@ -1,5 +1,6 @@
-use crate::InvalidVectorSizeError;
 use std::num::ParseIntError;
+
+use crate::InvalidVectorSizeError;
 
 fn byte_to_hex(byte: &u8) -> String {
     format!("{:02x}", byte)

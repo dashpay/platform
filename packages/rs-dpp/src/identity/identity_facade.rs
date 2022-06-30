@@ -1,8 +1,9 @@
+use std::sync::Arc;
+
 use crate::identity::validation::{IdentityValidator, PublicKeysValidator};
 use crate::validation::ValidationResult;
 use crate::version::ProtocolVersionValidator;
 use crate::{DashPlatformProtocolInitError, NonConsensusError};
-use std::sync::Arc;
 
 pub struct IdentityFacade {
     identity_validator: IdentityValidator<PublicKeysValidator>,

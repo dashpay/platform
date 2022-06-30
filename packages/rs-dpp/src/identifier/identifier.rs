@@ -1,11 +1,11 @@
-use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::convert::{TryFrom, TryInto};
+
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use serde_json::Value as JsonValue;
 
 use crate::errors::ProtocolError;
 use crate::util::string_encoding;
 use crate::util::string_encoding::Encoding;
-use ciborium::value::Value as CborValue;
-use serde_json::Value as JsonValue;
 
 pub const MEDIA_TYPE: &str = "application/x.dash.dpp.identifier";
 
@@ -100,54 +100,54 @@ impl From<[u8; 32]> for Identifier {
     }
 }
 
-// // TODO change default serialization to bytes
-// impl Serialize for Identifier {
-//     fn serialize<S>(self: &Identifier, serializer: S) -> Result<S::Ok, S::Error>
-//     where
-//         S: Serializer,
-//     {
-//         // by default we use base58 as Identifier type should be encoded in that way
-//         serializer.serialize_str(&self.to_string(Encoding::Base58))
-//     }
-// }
-//
-// impl<'de> Deserialize<'de> for Identifier {
-//     fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Identifier, D::Error> {
-//         let data: String = Deserialize::deserialize(d)?;
-//
-//         // by default we use base58 as Identifier type should be encoded in that way
-//         Identifier::from_string_with_encoding_string(&data, Some("base58"))
-//             .map_err(|e| serde::de::Error::custom(e.to_string()))
-//     }
-// }
-
+// TODO change default serialization to bytes
 impl Serialize for Identifier {
     fn serialize<S>(self: &Identifier, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
     {
         // by default we use base58 as Identifier type should be encoded in that way
-        serializer.serialize_bytes(&self.to_buffer())
+        serializer.serialize_str(&self.to_string(Encoding::Base58))
     }
 }
 
-//#[serde(bound = "T: MyTrait")]
 impl<'de> Deserialize<'de> for Identifier {
     fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Identifier, D::Error> {
-        println!("id 1");
-        let bytes: CborValue = Deserialize::deserialize(d)?;
+        let data: String = Deserialize::deserialize(d)?;
 
-        let bytes = bytes
-            .as_bytes()
-            .ok_or_else(|| serde::de::Error::custom("Expected Identifier to be bytes"))?;
-
-        println!("id 2");
-        let id = Identifier::from_bytes(bytes).map_err(|e| serde::de::Error::custom(e.to_string()));
-        println!("id 3");
-
-        id
+        // by default we use base58 as Identifier type should be encoded in that way
+        Identifier::from_string_with_encoding_string(&data, Some("base58"))
+            .map_err(|e| serde::de::Error::custom(e.to_string()))
     }
 }
+
+// impl Serialize for Identifier {
+//     fn serialize<S>(self: &Identifier, serializer: S) -> Result<S::Ok, S::Error>
+//     where
+//         S: Serializer,
+//     {
+//         // by default we use base58 as Identifier type should be encoded in that way
+//         serializer.serialize_bytes(&self.to_buffer())
+//     }
+// }
+//
+// //#[serde(bound = "T: MyTrait")]
+// impl<'de> Deserialize<'de> for Identifier {
+//     fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Identifier, D::Error> {
+//         println!("id 1");
+//         let bytes: CborValue = Deserialize::deserialize(d)?;
+//
+//         let bytes = bytes
+//             .as_bytes()
+//             .ok_or_else(|| serde::de::Error::custom("Expected Identifier to be bytes"))?;
+//
+//         println!("id 2");
+//         let id = Identifier::from_bytes(bytes).map_err(|e| serde::de::Error::custom(e.to_string()));
+//         println!("id 3");
+//
+//         id
+//     }
+// }
 
 impl std::fmt::Display for Identifier {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {

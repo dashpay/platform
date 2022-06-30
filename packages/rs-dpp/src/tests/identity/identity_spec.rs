@@ -81,24 +81,6 @@ mod from_buffer {
     use crate::util::string_encoding::Encoding;
 
     #[test]
-    pub fn should_parse_identity() {
-        let identity = Identity::from_buffer(get_buffer()).unwrap();
-        println!("{:?}", identity);
-
-        assert_eq!(
-            identity.id,
-            Identifier::from_string(
-                "3bufpwQjL5qsvuP4fmCKgXJrKG852DDMYfi9J6XKqPAT",
-                Encoding::Base58
-            )
-            .unwrap()
-        );
-        assert_eq!(identity.balance, 10);
-        assert_eq!(identity.revision, 0);
-        assert_eq!(identity.public_keys.len(), 2);
-    }
-
-    #[test]
     pub fn should_parse_hex_from_js_dpp() {
         let identity_cbor = hex::decode(identity_cbor_hex()).unwrap();
 

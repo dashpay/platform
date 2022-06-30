@@ -1,2 +1,3 @@
-mod utils;
 pub use utils::*;
+
+mod utils;

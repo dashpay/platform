@@ -1,23 +1,22 @@
+use serde::{Deserialize, Serialize};
+
+pub use abstract_state_transition::{StateTransitionConvert, StateTransitionLike};
+pub use abstract_state_transition_identity_signed::StateTransitionIdentitySigned;
+pub use state_transition_types::*;
+
 use crate::data_contract::state_transition::{
     DataContractCreateTransition, DataContractUpdateTransition,
 };
 // TODO unify the import paths ::object::state_transition::*
 use crate::document::DocumentsBatchTransition;
-mod state_transition_types;
-use serde::{Deserialize, Serialize};
-pub use state_transition_types::*;
-
-mod abstract_state_transition;
-pub use abstract_state_transition::{StateTransitionConvert, StateTransitionLike};
-
-mod abstract_state_transition_identity_signed;
-pub use abstract_state_transition_identity_signed::StateTransitionIdentitySigned;
-
-mod calculate_state_transition_fee;
-
-mod example;
 use crate::mocks;
 
+mod abstract_state_transition;
+mod abstract_state_transition_identity_signed;
+mod calculate_state_transition_fee;
+mod state_transition_types;
+
+mod example;
 macro_rules! call_method {
     ($state_transition:expr, $method:ident, $args:tt ) => {
         match $state_transition {

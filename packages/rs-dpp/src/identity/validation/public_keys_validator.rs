@@ -1,3 +1,9 @@
+use std::collections::HashMap;
+
+use bls_signatures::{PublicKey as BlsPublicKey, Serialize};
+use dashcore::PublicKey;
+use serde_json::Value;
+
 use crate::errors::consensus::basic::identity::{
     DuplicatedIdentityPublicKeyError, DuplicatedIdentityPublicKeyIdError,
     InvalidIdentityPublicKeyDataError, InvalidIdentityPublicKeySecurityLevelError,
@@ -5,10 +11,6 @@ use crate::errors::consensus::basic::identity::{
 use crate::identity::{IdentityPublicKey, KeyType, ALLOWED_SECURITY_LEVELS};
 use crate::validation::{JsonSchemaValidator, ValidationResult};
 use crate::{DashPlatformProtocolInitError, NonConsensusError, PublicKeyValidationError};
-use bls_signatures::{PublicKey as BlsPublicKey, Serialize};
-use dashcore::PublicKey;
-use serde_json::Value;
-use std::collections::HashMap;
 
 pub trait TPublicKeysValidator {
     fn validate_keys(

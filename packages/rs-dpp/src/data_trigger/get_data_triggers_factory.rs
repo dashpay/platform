@@ -1,5 +1,6 @@
-use futures::FutureExt;
 use std::vec;
+
+use futures::FutureExt;
 
 use crate::{
     contracts::{

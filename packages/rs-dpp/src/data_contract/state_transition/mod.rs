@@ -1,8 +1,8 @@
-mod data_contract_update_transition;
+pub use data_contract_create_transition::*;
 pub use data_contract_update_transition::*;
 
 mod data_contract_create_transition;
-pub use data_contract_create_transition::*;
+mod data_contract_update_transition;
 
 pub(self) mod properties {
     pub const PROPERTY_SIGNATURE_PUBLIC_KEY_ID: &str = "signaturePublicKeyId";
