@@ -1,5 +1,3 @@
-const crypto = require('crypto');
-
 const Dash = require('dash');
 
 const { createFakeInstantLock } = require('dash/build/src/utils/createFakeIntantLock');
@@ -11,6 +9,9 @@ const wait = require('../../../lib/wait');
 const getDAPISeeds = require('../../../lib/test/getDAPISeeds');
 
 const {
+  Essentials: {
+    Buffer,
+  },
   Core: {
     Transaction,
   },
@@ -176,7 +177,7 @@ describe('Platform', () => {
       // Remove signature
 
       const [masterKey] = identityCreateTransition.getPublicKeys();
-      masterKey.setSignature(crypto.randomBytes(65));
+      masterKey.setSignature(Buffer.alloc(65));
 
       // Broadcast
 
