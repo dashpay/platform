@@ -38,7 +38,7 @@ class BlockHeadersProvider extends EventEmitter {
     };
 
     // TODO: make sure it's okay passing 1 parameter here
-    this.spvChain = new SpvChain(this.options.network, 1);
+    this.spvChain = new SpvChain(this.options.network, 1000);
     this.started = false;
     // TODO: write tests for this
     this.headersHeights = {};
@@ -73,8 +73,6 @@ class BlockHeadersProvider extends EventEmitter {
    * @param toBlockHeight
    * @returns {Promise<void>}
    */
-  // 2cbcf83b62913d56f605c0e581a48872839428c92e5eb76cd7ad94bcaf0b0000
-  // 2cbcf83b62913d56f605c0e581a48872839428c92e5eb76cd7ad94bcaf0b0000
   async start(fromBlockHeight = 1, toBlockHeight) {
     if (!this.coreMethods) {
       throw new Error('Core methods have not been provided. Please use "setCoreMethods"');
@@ -83,8 +81,6 @@ class BlockHeadersProvider extends EventEmitter {
     if (this.started) {
       throw new Error('BlockHeaderProvider has already been started');
     }
-
-    // const { chain: { blocksCount: bestBlockHeight } } = await this.coreMethods.getStatus();
 
     if (!this.blockHeadersReader) {
       this.blockHeadersReader = new BlockHeadersReader(
@@ -100,7 +96,7 @@ class BlockHeadersProvider extends EventEmitter {
     this.blockHeadersReader.on(BlockHeadersReader.EVENTS.ERROR, (e) => {
       this.emit(EVENTS.ERROR, e);
     });
-    const batches = [];
+
     this.blockHeadersReader.on(BlockHeadersReader.EVENTS.HISTORICAL_DATA_OBTAINED, () => {
       this.emit(EVENTS.HISTORICAL_DATA_OBTAINED);
       // TODO: restore, stream crashes after a while
@@ -110,31 +106,22 @@ class BlockHeadersProvider extends EventEmitter {
       //   });
     });
 
-    const queuePromise = Promise.resolve();
-    const queueSize = 0;
     // TODO: apparently provider have to be reworked to add headers asynchronously
     this.blockHeadersReader.on(BlockHeadersReader.EVENTS.BLOCK_HEADERS,
       (headers, headHeight, reject) => {
         try {
-        // const headersBuffers = rawHeaders.map((header) => Buffer.from(header));
-        //   batches.push(headers.map((header) => header.toString('hex')));
-          // const headers = rawHeaders.map((header) => new BlockHeader(Buffer.from(header)));
-          queuePromise.then(() => new Promise((resolve) => {
-            setImmediate(() => {
-              this.spvChain.addHeaders(headers);
+          this.spvChain.addHeaders(headers);
 
-              headers.forEach((header, index) => {
-                this.headersHeights[header.hash] = headHeight + index;
-              });
+          headers.forEach((header, index) => {
+            this.headersHeights[header.hash] = headHeight + index;
+          });
 
-              this.emit(EVENTS.CHAIN_UPDATED, this.spvChain.allHeaders, this.spvChain.orphanChunks);
-              resolve();
-            });
-          }));
-
-          // console.log('Obtained', headers.length, Object.keys(this.headersHeights).length);
-
-          // console.log('Total orphans', totalOrphans);
+          this.emit(
+            EVENTS.CHAIN_UPDATED,
+            this.spvChain.getLongestChain(),
+            this.spvChain.prunedHeaders,
+            this.spvChain.orphanChunks,
+          );
         } catch (e) {
           if (e.message === 'Some headers are invalid') {
             reject(e);

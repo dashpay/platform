@@ -1,5 +1,5 @@
 const { PrivateKey, Networks, configure: configurDashcore } = require('@dashevo/dashcore-lib');
-const X11 = require('@dashevo/wasm-x11-hash');
+const X11 = require('wasm-x11-hash');
 
 const EventEmitter = require('events');
 const _ = require('lodash');

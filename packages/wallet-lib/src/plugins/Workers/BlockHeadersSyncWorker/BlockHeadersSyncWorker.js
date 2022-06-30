@@ -2,6 +2,8 @@ const BlockHeadersProvider = require('@dashevo/dapi-client/lib/BlockHeadersProvi
 const Worker = require('../../Worker');
 const logger = require('../../../logger');
 
+const PROGRESS_UPDATE_INTERVAL = 1000;
+
 class BlockHeadersSyncWorker extends Worker {
   constructor(options) {
     super({
@@ -22,99 +24,58 @@ class BlockHeadersSyncWorker extends Worker {
     });
 
     this.lastSyncedBlockHeight = 1;
+    this.progressUpdateTimeout = null;
   }
 
   async onStart() {
+    const chainStore = this.storage.getChainStore(this.network.toString());
+    const bestBlockHeight = chainStore.state.blockHeight;
+
     const {
       skipSynchronizationBeforeHeight,
       skipSynchronization,
     } = (this.storage.application.syncOptions || {});
 
-    let startFrom = 1;
-    const bestBlockHeight = this.storage.getChainStore(this.network.toString())
-      .state.blockHeight;
-
     if (skipSynchronization) {
+      this.lastSyncedBlockHeight = bestBlockHeight;
       logger.debug('BlockHeadersSyncWorker - Wallet created from a new mnemonic. Sync from the best block height.');
-      startFrom = bestBlockHeight;
       return;
     }
-    // 388902 - in SPV
-    // 389144 - in task
+
     const { lastKnownBlock } = this.storage.getWalletStore(this.walletId).state;
     const skipBefore = typeof skipSynchronizationBeforeHeight === 'number'
       ? skipSynchronizationBeforeHeight
       : parseInt(skipSynchronizationBeforeHeight, 10);
 
     if (skipBefore > lastKnownBlock.height) {
-      startFrom = skipBefore;
+      this.lastSyncedBlockHeight = skipBefore;
     } else if (lastKnownBlock.height !== -1) {
-      startFrom = lastKnownBlock.height;
+      this.lastSyncedBlockHeight = lastKnownBlock.height;
     }
-
-    const startTime = Date.now();
 
     const { blockHeadersProvider } = this.transport.client;
     const historicalSyncPromise = new Promise((resolve, reject) => {
       blockHeadersProvider.on('error', (e) => {
+        // TODO: test this error
         logger.error('BlockHeadersProvider error:', e);
         reject(e);
       });
 
-      const longestChainLength = 0;
+      const chainUpdateHandler = () => {
+        this.scheduleProgressUpdate();
+      };
 
-      blockHeadersProvider.on(BlockHeadersProvider.EVENTS.HISTORICAL_DATA_OBTAINED, resolve);
+      blockHeadersProvider.once(BlockHeadersProvider.EVENTS.HISTORICAL_DATA_OBTAINED, () => {
+        blockHeadersProvider
+          .removeListener(BlockHeadersProvider.EVENTS.CHAIN_UPDATED, chainUpdateHandler);
+        resolve();
+      });
 
-      let lastChainLength = 0;
-      blockHeadersProvider
-        .on(BlockHeadersProvider.EVENTS.CHAIN_UPDATED, (longestChain, orphanChunks) => {
-          const totalOrphans = orphanChunks
-            .reduce((acc, chunks) => acc + chunks.length, 0);
-
-          // TODO: optimize this duplicated linkage
-          this.chainSyncMediator.blockHeights = blockHeadersProvider.headersHeights;
-          this.chainSyncMediator.scheduleProgressUpdate(this.parentEvents);
-
-          for (let i = lastChainLength; i < longestChain.length; i += 1) {
-            const header = longestChain[i];
-            // this.chainSyncMediator.blockHeights[header.hash] = startFrom + i;
-            // TODO: pay attention. Transferred from `handleTransactionFromStream`
-            this.importBlockHeader(header);
-          }
-
-          lastChainLength = longestChain.length;
-
-          /**
-           * Logging
-           */
-          // longestChainLength = longestChain.length;
-          //
-          // const timePassed = (Date.now() - startTime) / 1000;
-          // const velocity = Math.round((longestChainLength + totalOrphans) / timePassed);
-          // const eta = Math.round((735722 / velocity) / 60);
-          // const totalBlocks = bestBlockHeight - this.lastSyncedBlockHeight;
-          // const timeLeft = Math.round(
-          //   ((totalBlocks - longestChainLength - totalOrphans) / velocity) / 60,
-          // );
-          //
-          // console.log('Longest chain length', longestChainLength, totalOrphans, `velocity: ${velocity} blocks/sec,`, `ETA: ${timeLeft} min`);
-        });
+      blockHeadersProvider.on(BlockHeadersProvider.EVENTS.CHAIN_UPDATED, chainUpdateHandler);
     });
 
-    // Some numbers
-    // 1 stream - velocity: 710 blocks/sec, ETA: 17 min
-    // 2 streams - velocity: 1054 blocks/sec, ETA: 12 min
-    // 5 steams - velocity: 1165 blocks/sec, ETA: 11 min
-    // 10 streams - velocity: 1193 blocks/sec, ETA: 10 min
-    // 20 streams - velocity: 1130 blocks/sec ETA: 11
-    // 40 streams - velocity: 1115 blocks/sec ETA: 11
-    // 80 streams - velocity: 1135 blocks/sec, ETA: 11 min
-
-    const totalCount = bestBlockHeight - startFrom + 1;
-    this.chainSyncMediator.totalHeadersCount = totalCount;
-    console.log('Start worker', startFrom, bestBlockHeight, totalCount);
     try {
-      await blockHeadersProvider.start(startFrom, bestBlockHeight);
+      await blockHeadersProvider.start(this.lastSyncedBlockHeight, bestBlockHeight);
     } catch (e) {
       console.log(e);
     }
@@ -132,6 +93,31 @@ class BlockHeadersSyncWorker extends Worker {
     const { blockHeadersProvider } = this.transport.client;
     await blockHeadersProvider.stop();
     console.log('Stop worker');
+  }
+
+  scheduleProgressUpdate() {
+    if (!this.progressUpdateTimeout) {
+      this.progressUpdateTimeout = setTimeout(() => {
+        const chainStore = this.storage.getChainStore(this.network.toString());
+        const totalHistoricalHeaders = chainStore.state.blockHeight + 1; // Including genesis block
+
+        const { blockHeadersProvider } = this.transport.client;
+        const longestChain = blockHeadersProvider.spvChain.getLongestChain();
+        const { prunedHeaders, orphanChunks } = blockHeadersProvider.spvChain;
+
+        const synchronizedHistoricalHeaders = longestChain.length
+          + prunedHeaders.length
+          + orphanChunks.reduce((sum, chunk) => sum + chunk.length, 0);
+
+        let progress = (this.lastSyncedBlockHeight + synchronizedHistoricalHeaders)
+          / (chainStore.state.blockHeight + 1);
+        progress = Math.round(progress * 1000) / 1000;
+
+        console.log(synchronizedHistoricalHeaders, totalHistoricalHeaders, progress);
+
+        this.progressUpdateTimeout = null;
+      }, PROGRESS_UPDATE_INTERVAL);
+    }
   }
 }
 

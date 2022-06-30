@@ -30,7 +30,9 @@ const saveState = async function saveState() {
         return acc;
       }, {});
 
-      Object.keys(serializedWallets).forEach((walletId) => {
+      const walletIds = Object.keys(serializedWallets);
+      for (let i = 0; i < walletIds.length; i += 1) {
+        const walletId = walletIds[i];
         const storage = { version: CONSTANTS.STORAGE.version, chains: {} };
         const wallet = serializedWallets[walletId];
 
@@ -40,9 +42,13 @@ const saveState = async function saveState() {
           storage.chains[chainNetwork] = { chain, wallet };
         });
 
-        this.adapter.setItem(`wallet_${walletId}`, storage);
-      });
-
+        // eslint-disable-next-line
+        await this.adapter.setItem(`wallet_${walletId}`, storage);
+      }
+      // Object.keys(serializedWallets).forEach((walletId) => {
+      //
+      // });
+      // console.log('Saved for', (Date.now() - now) / 1000);
       this.lastSave = +new Date();
       this.emit(SAVE_STATE_SUCCESS, { type: SAVE_STATE_SUCCESS, payload: this.lastSave });
       return true;

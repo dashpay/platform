@@ -8,7 +8,7 @@ const castStorageItemsTypes = (originalItem, schema) => {
     const result = {};
 
     if (schemaKey !== '*' && originalItem[schemaKey] === undefined) {
-      throw new Error(`No item found for schema key "${schemaKey}" in item ${JSON.stringify(originalItem)}`);
+      throw new Error(`No item found for schema key "${schemaKey}" in item ${JSON.stringify(Object.keys(originalItem))}`);
     }
 
     if (schemaValue.constructor.name !== 'Object') {
