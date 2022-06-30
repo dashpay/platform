@@ -157,12 +157,11 @@ describe('Platform', () => {
         transaction,
         privateKey,
         outputIndex,
-      } = await client.platform.identities.utils.createAssetLockTransaction({ client }, 15);
+      } = await client.platform.identities.utils.createAssetLockTransaction(15);
 
       await client.getDAPIClient().core.broadcastTransaction(transaction.toBuffer());
 
       const assetLockProof = await client.platform.identities.utils.createAssetLockProof(
-        client.platform,
         transaction,
         outputIndex,
       );
@@ -171,7 +170,7 @@ describe('Platform', () => {
       const {
         identityCreateTransition,
       } = await client.platform.identities.utils.createIdentityCreateTransition(
-        client.platform, assetLockProof, privateKey,
+        assetLockProof, privateKey,
       );
 
       // Remove signature
@@ -350,9 +349,7 @@ describe('Platform', () => {
           transaction,
           privateKey,
           outputIndex,
-        } = await client.platform.identity.createAssetLockTransaction({
-          client,
-        }, 15);
+        } = await client.platform.identity.utils.createAssetLockTransaction(15);
 
         const instantLock = createFakeInstantLock(transaction.hash);
         const assetLockProof = await dpp.identity.createInstantAssetLockProof(instantLock);

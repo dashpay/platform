@@ -1,12 +1,11 @@
 const Dash = require('dash');
 const { MerkleProof, MerkleTree } = require('js-merkle');
-const { executeProof/*, verifyProof */} = require('@dashevo/merk');
+const { executeProof/* , verifyProof */ } = require('@dashevo/merk');
 const {
   contractId: dpnsContractId,
   ownerId: dpnsOwnerId,
 } = require('@dashevo/dpns-contract/lib/systemIds');
 
-const cbor = require('@dashevo/dpp/lib/util/serializer');
 const generateRandomIdentifier = require('../../../lib/test/utils/generateRandomIdentifier');
 const hashFunction = require('../../../lib/proofHashFunction');
 const testProofStructure = require('../../../lib/test/testProofStructure');
