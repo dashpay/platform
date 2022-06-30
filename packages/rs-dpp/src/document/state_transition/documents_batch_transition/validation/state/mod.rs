@@ -1,1 +1,2 @@
 pub mod fetch_documents_factory;
+pub mod validate_documents_uniqueness_by_indices;
