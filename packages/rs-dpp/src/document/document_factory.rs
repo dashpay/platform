@@ -15,6 +15,7 @@ use super::{
     Document, DocumentsBatchTransition,
 };
 
+const PROPERTY_DOCUMENT_PROTOCOL_VERSION: &str = "$protocolVersion";
 const PROPERTY_PROTOCOL_VERSION: &str = "protocolVersion";
 const PROPERTY_ENTROPY: &str = "$entropy";
 const PROPERTY_ACTION: &str = "$action";
@@ -93,7 +94,7 @@ impl DocumentFactory {
         );
 
         let mut raw_document = json!({
-            PROPERTY_PROTOCOL_VERSION: self.protocol_version,
+            PROPERTY_DOCUMENT_PROTOCOL_VERSION: self.protocol_version,
             PROPERTY_ID: document_id.to_buffer(),
             PROPERTY_DOCUMENT_TYPE: document_type,
             PROPERTY_DATA_CONTRACT_ID: data_contract.id.to_buffer(),
@@ -127,8 +128,8 @@ impl DocumentFactory {
             });
         }
 
-        raw_document.insert(PROPERTY_ENTROPY.to_string(), json!(Some(document_entropy)))?;
-        let document = Document::from_raw_document(raw_document, data_contract)?;
+        let mut document = Document::from_raw_document(raw_document, data_contract)?;
+        document.entropy = document_entropy;
 
         Ok(document)
     }
@@ -271,7 +272,6 @@ impl DocumentFactory {
 mod test {
     use crate::{
         assert_error_contains,
-        document::document_transition::DocumentTransitionObjectLike,
         tests::{
             fixtures::{get_data_contract_fixture, get_documents_fixture},
             utils::generate_random_identifier_struct,
