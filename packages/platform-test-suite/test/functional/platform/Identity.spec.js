@@ -157,7 +157,7 @@ describe('Platform', () => {
         transaction,
         privateKey,
         outputIndex,
-      } = await client.platform.identities.utils.createAssetLockTransaction({ client }, 15);
+      } = await client.platform.identities.utils.createAssetLockTransaction({ client }, 7000);
 
       await client.getDAPIClient().core.broadcastTransaction(transaction.toBuffer());
 
