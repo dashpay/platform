@@ -18,6 +18,12 @@ DashPlatformProtocol.Identifier = Identifier;
 
 DashPlatformProtocol.version = protocolVersion.latestVersion;
 
-DashPlatformProtocol.ConsensusErrors = Object.values(consensusErrorCodes);
+DashPlatformProtocol.ConsensusErrors = Object.values(consensusErrorCodes)
+  .reduce((obj, ConsensusErrorClass) => {
+    // eslint-disable-next-line no-param-reassign
+    obj[ConsensusErrorClass.name] = ConsensusErrorClass;
+
+    return obj;
+  }, {});
 
 module.exports = DashPlatformProtocol;
