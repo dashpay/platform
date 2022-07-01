@@ -66,6 +66,10 @@ abci = "socket"
 # so the app can decide if we should keep the connection or not
 filter-peers = false
 
+
+#######################################################
+###       Priv Validator Configuration              ###
+#######################################################
 [priv-validator]
 
 # Path to the JSON file containing the private key to use as a validator in the consensus protocol
@@ -76,6 +80,7 @@ state-file = "data/priv_validator_state.json"
 
 # TCP or UNIX socket address for Tendermint to listen on for
 # connections from an external PrivValidator process
+# when the listenAddr is prefixed with grpc instead of tcp it will use the gRPC Client
 laddr = ""
 
 # Local Dash Core Host to connect to
@@ -142,9 +147,29 @@ max-open-connections = 900
 max-subscription-clients = 100
 
 # Maximum number of unique queries a given client can /subscribe to
-# If you're using GRPC (or Local RPC client) and /broadcast_tx_commit, set to
-# the estimated # maximum number of broadcast_tx_commit calls per block.
+# If you're using a Local RPC client and /broadcast_tx_commit, set this
+# to the estimated maximum number of broadcast_tx_commit calls per block.
 max-subscriptions-per-client = 5
+
+# The time window size for the event log. All events up to this long before
+# the latest (up to EventLogMaxItems) will be available for subscribers to
+# fetch via the /events method.  If 0 (the default) the event log and the
+# /events RPC method are disabled.
+event-log-window-size = "0s"
+
+# The maxiumum number of events that may be retained by the event log.  If
+# this value is 0, no upper limit is set. Otherwise, items in excess of
+# this number will be discarded from the event log.
+#
+# Warning: This setting is a safety valve. Setting it too low may cause
+# subscribers to miss events.  Try to choose a value higher than the
+# maximum worst-case expected event load within the chosen window size in
+# ordinary operation.
+#
+# For example, if the window size is 10 minutes and the node typically
+# averages 1000 events per ten minutes, but with occasional known spikes of
+# up to 2000, choose a value > 2000.
+event-log-max-items = 0
 
 # How long to wait for a tx to be committed during /broadcast_tx_commit.
 # WARNING: Using a value larger than 10s will result in increasing the
@@ -159,17 +184,17 @@ max-body-bytes = 1000000
 max-header-bytes = 1048576
 
 # The path to a file containing certificate that is used to create the HTTPS server.
-# Migth be either absolute path or path related to tendermint's config directory.
+# Might be either absolute path or path related to Tendermint's config directory.
 # If the certificate is signed by a certificate authority,
 # the certFile should be the concatenation of the server's certificate, any intermediates,
 # and the CA's certificate.
-# NOTE: both tls_cert_file and tls_key_file must be present for Tendermint to create HTTPS server.
+# NOTE: both tls-cert-file and tls-key-file must be present for Tendermint to create HTTPS server.
 # Otherwise, HTTP server is run.
 tls-cert-file = ""
 
 # The path to a file containing matching private key that is used to create the HTTPS server.
-# Migth be either absolute path or path related to tendermint's config directory.
-# NOTE: both tls_cert_file and tls_key_file must be present for Tendermint to create HTTPS server.
+# Might be either absolute path or path related to Tendermint's config directory.
+# NOTE: both tls-cert-file and tls-key-file must be present for Tendermint to create HTTPS server.
 # Otherwise, HTTP server is run.
 tls-key-file = ""
 
@@ -180,6 +205,9 @@ pprof-laddr = ""
 ###           P2P Configuration Options             ###
 #######################################################
 [p2p]
+
+# Select the p2p internal queue
+queue-type = "priority"
 
 # Address to listen for incoming connections
 laddr = "tcp://0.0.0.0:{{=it.platform.drive.tenderdash.p2p.port}}"
@@ -336,31 +364,12 @@ wal-file = "data/cs.wal/wal"
 
 # How many blocks are inspected in order to determine if we need to create an additional proof block.
 create-proof-block-range = 1
-# How long we wait for a proposal block before prevoting nil
-timeout-propose = "3s"
-# How much timeout_propose increases with each round
-timeout-propose-delta = "500ms"
-# How long we wait after receiving +2/3 prevotes for “anything” (ie. not a single block or nil)
-timeout-prevote = "1s"
-# How much the timeout-prevote increases with each round
-timeout-prevote-delta = "500ms"
-# How long we wait after receiving +2/3 precommits for “anything” (ie. not a single block or nil)
-timeout-precommit = "1s"
-# How much the timeout_precommit increases with each round
-timeout-precommit-delta = "500ms"
-# How long we wait after committing a block, before starting on the new
-# height (this gives us a chance to receive some more precommits, even
-# though we already have +2/3).
-timeout-commit = "1s"
 
 # How many blocks to look back to check existence of the node's consensus votes before joining consensus
 # When non-zero, the node will panic upon restart
-# if the same consensus key was used to sign {double_sign_check_height} last blocks.
+# if the same consensus key was used to sign {double-sign-check-height} last blocks.
 # So, validators should stop the state machine, wait for some blocks, and then restart the state machine to avoid panic.
 double-sign-check-height = 0
-
-# Make progress as soon as we have all the precommits (as if TimeoutCommit = 0)
-skip-timeout-commit = false
 
 # EmptyBlocks mode and possible interval between empty blocks
 create-empty-blocks = {{? it.platform.drive.tenderdash.consensus.createEmptyBlocks }}true{{??}}false{{?}}
@@ -381,15 +390,17 @@ peer-query-maj23-sleep-duration = "2s"
 #######################################################
 [tx-index]
 
-# What indexer to use for transactions
+# The backend database list to back the indexer.
+# If list contains "null" or "", meaning no indexer service will be used.
 #
 # The application will set which txs to index. In some cases a node operator will be able
 # to decide which txs to index based on configuration set in the application.
 #
 # Options:
-#   1) "null"
-#   2) "kv" (default) - the simplest possible indexer, backed by key-value storage (defaults to levelDB; see DBBackend).
-# 		- When "kv" is chosen "tx.height" and "tx.hash" will always be indexed.
+#   1) "null" (default) - no indexer services.
+#   2) "kv" - a simple indexer backed by key-value storage (see DBBackend)
+#   3) "psql" - the indexer services backed by PostgreSQL.
+# When "kv" or "psql" is chosen "tx.height" and "tx.hash" will always be indexed.
 indexer = "kv"
 
 #######################################################
