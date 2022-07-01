@@ -1,6 +1,7 @@
 const BlockHeadersProvider = require('@dashevo/dapi-client/lib/BlockHeadersProvider/BlockHeadersProvider');
 const Worker = require('../../Worker');
 const logger = require('../../../logger');
+const EVENTS = require('../../../EVENTS');
 
 const PROGRESS_UPDATE_INTERVAL = 1000;
 
@@ -93,7 +94,20 @@ class BlockHeadersSyncWorker extends Worker {
       if (newHeaders.length > 1) {
         newChainHeight += newHeaders.length - 1;
       }
-      console.log('Height updated', newChainHeight);
+
+      const chainStore = this.storage.getChainStore(this.network.toString());
+      const walletStore = this.storage.getWalletStore(this.walletId);
+
+      if (newChainHeight > chainStore.state.blockHeight) {
+        // TODO: do we really need it having in mind that wallet holds lastKnownBlock?
+        chainStore.state.blockHeight = newChainHeight;
+        walletStore.updateLastKnownBlock(newChainHeight);
+        this.parentEvents.emit(EVENTS.BLOCKHEIGHT_CHANGED, newChainHeight);
+        logger.debug(`BlockHeadersSyncWorker - setting chain height ${newChainHeight}`);
+
+        // TODO: implement with pruning in mind
+        // this.storage.scheduleStateSave();
+      }
     };
 
     const { blockHeadersProvider } = this.transport.client;

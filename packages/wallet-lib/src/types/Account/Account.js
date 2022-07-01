@@ -111,7 +111,6 @@ class Account extends EventEmitter {
       this.emit(`${ev.type}:${ev.payload.hash}`, ev.payload.metadata);
     });
     this.storage.on(EVENTS.BLOCKHEADER, (ev) => this.emit(ev.type, ev));
-    this.storage.on(EVENTS.BLOCKHEIGHT_CHANGED, (ev) => this.emit(ev.type, ev));
     this.storage.on(EVENTS.BLOCK, (ev) => this.emit(ev.type, ev));
 
     this.on(EVENTS.SYNC_PROGRESS,
