@@ -21,6 +21,7 @@ COPY package.json yarn.lock .yarnrc.yml .pnp.* ./
 
 # Copy only necessary packages from monorepo
 COPY packages/dapi-grpc packages/dapi-grpc
+COPY packages/dash-spv packages/dash-spv
 COPY packages/dpns-contract packages/dpns-contract
 COPY packages/dashpay-contract packages/dashpay-contract
 COPY packages/feature-flags-contract packages/feature-flags-contract
