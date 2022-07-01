@@ -68,6 +68,9 @@ class GrpcTransport {
     }
 
     try {
+      if (method === 'subscribeToBlockHeadersWithChainLocks') {
+        console.log(address);
+      }
       const result = await client[method](requestMessage, {}, requestOptions);
 
       this.lastUsedAddress = address;

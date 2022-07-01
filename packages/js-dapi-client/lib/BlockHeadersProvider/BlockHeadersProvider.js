@@ -1,5 +1,6 @@
 const EventEmitter = require('events');
 const { SpvChain } = require('@dashevo/dash-spv');
+const { Block } = require('@dashevo/dashcore-lib');
 
 const BlockHeadersReader = require('./BlockHeadersReader');
 
@@ -26,6 +27,12 @@ const EVENTS = {
   HISTORICAL_DATA_OBTAINED: 'HISTORICAL_DATA_OBTAINED',
 };
 
+const STATES = {
+  IDLE: 'IDLE',
+  HISTORICAL_SYNC: 'HISTORICAL_SYNC',
+  CONTINUOUS_SYNC: 'CONTINUOUS_SYNC',
+};
+
 class BlockHeadersProvider extends EventEmitter {
   /**
    * @param {BlockHeadersProviderOptions} options
@@ -38,10 +45,15 @@ class BlockHeadersProvider extends EventEmitter {
     };
 
     // TODO: make sure it's okay passing 1 parameter here
-    this.spvChain = new SpvChain(this.options.network, 1000);
-    this.started = false;
-    // TODO: write tests for this
+    this.spvChain = new SpvChain(this.options.network, 5000);
+
+    this.state = STATES.IDLE;
+
+    // TODO: move to dash-spv
     this.headersHeights = {};
+
+    this.handleError = this.handleError.bind(this);
+    this.handleHeaders = this.handleHeaders.bind(this);
   }
 
   /**
@@ -67,21 +79,9 @@ class BlockHeadersProvider extends EventEmitter {
   }
 
   /**
-   * Inits block headers stream
-   *
-   * @param fromBlockHeight
-   * @param toBlockHeight
-   * @returns {Promise<void>}
+   * @private
    */
-  async start(fromBlockHeight = 1, toBlockHeight) {
-    if (!this.coreMethods) {
-      throw new Error('Core methods have not been provided. Please use "setCoreMethods"');
-    }
-
-    if (this.started) {
-      throw new Error('BlockHeaderProvider has already been started');
-    }
-
+  ensureReader() {
     if (!this.blockHeadersReader) {
       this.blockHeadersReader = new BlockHeadersReader(
         {
@@ -91,66 +91,104 @@ class BlockHeadersProvider extends EventEmitter {
           maxRetries: this.options.maxRetries,
         },
       );
+
+      this.blockHeadersReader.on(BlockHeadersReader.EVENTS.BLOCK_HEADERS, this.handleHeaders);
+      this.blockHeadersReader.on(BlockHeadersReader.EVENTS.ERROR, this.handleError);
+    }
+  }
+
+  /**
+   * @param height
+   * @returns {Promise<void>}
+   */
+  async ensureChainRoot(height) {
+    if (!this.spvChain.hashesByHeight[height]) {
+      // TODO: implement getHeaderByHeight
+      const rawBlock = await this.coreMethods.getBlockByHeight(height);
+      const block = new Block(rawBlock);
+      this.spvChain.makeNewChain(block.header, height);
+    }
+  }
+
+  /**
+   * Reads historical block headers
+   *
+   * @param fromBlockHeight
+   * @param toBlockHeight
+   * @returns {Promise<void>}
+   */
+  async readHistorical(fromBlockHeight = 1, toBlockHeight) {
+    if (!this.coreMethods) {
+      throw new Error('Core methods have not been provided. Please use "setCoreMethods"');
     }
 
-    this.blockHeadersReader.on(BlockHeadersReader.EVENTS.ERROR, (e) => {
-      this.emit(EVENTS.ERROR, e);
-    });
+    if (this.state !== STATES.IDLE) {
+      throw new Error(`BlockHeaderProvider can not read historical data while being in ${this.state} state.`);
+    }
 
-    this.blockHeadersReader.on(BlockHeadersReader.EVENTS.HISTORICAL_DATA_OBTAINED, () => {
+    this.ensureReader();
+
+    await this.ensureChainRoot(fromBlockHeight - 1);
+
+    this.blockHeadersReader.once(BlockHeadersReader.EVENTS.HISTORICAL_DATA_OBTAINED, () => {
       this.emit(EVENTS.HISTORICAL_DATA_OBTAINED);
-      // TODO: restore, stream crashes after a while
-      // this.blockHeadersReader.subscribeToNew(toBlockHeight)
-      //   .catch((e) => {
-      //     this.emit(EVENTS.ERROR, e);
-      //   });
+      this.state = STATES.IDLE;
     });
-
-    // TODO: apparently provider have to be reworked to add headers asynchronously
-    this.blockHeadersReader.on(BlockHeadersReader.EVENTS.BLOCK_HEADERS,
-      (headers, headHeight, reject) => {
-        try {
-          this.spvChain.addHeaders(headers);
-
-          headers.forEach((header, index) => {
-            this.headersHeights[header.hash] = headHeight + index;
-          });
-
-          this.emit(
-            EVENTS.CHAIN_UPDATED,
-            this.spvChain.getLongestChain(),
-            this.spvChain.prunedHeaders,
-            this.spvChain.orphanChunks,
-          );
-        } catch (e) {
-          if (e.message === 'Some headers are invalid') {
-            reject(e);
-          } else {
-            this.emit(EVENTS.ERROR, e);
-          }
-        }
-      });
 
     await this.blockHeadersReader.readHistorical(
       fromBlockHeight,
       toBlockHeight,
     );
 
-    this.started = true;
+    this.state = STATES.HISTORICAL_SYNC;
+  }
+
+  async startContinuousSync(fromBlockHeight) {
+    await this.ensureChainRoot(fromBlockHeight);
+    await this.blockHeadersReader.subscribeToNew(fromBlockHeight);
+    this.state = STATES.CONTINUOUS_SYNC;
   }
 
   // TODO: write tests
   async stop() {
-    if (this.started) {
-      this.blockHeadersReader.stopReadingHistorical();
-      this.blockHeadersReader.stopContinuousSync();
+    if (this.state === STATES.IDLE) {
+      return;
+    }
 
-      this.blockHeadersReader.removeAllListeners(BlockHeadersReader.EVENTS.ERROR);
-      this.blockHeadersReader.removeAllListeners(BlockHeadersReader.EVENTS.BLOCK_HEADERS);
+    if (this.state === STATES.HISTORICAL_SYNC) {
+      this.blockHeadersReader.stopReadingHistorical();
       this.blockHeadersReader
         .removeAllListeners(BlockHeadersReader.EVENTS.HISTORICAL_DATA_OBTAINED);
+    } else if (this.state === STATES.CONTINUOUS_SYNC) {
+      this.blockHeadersReader.stopContinuousSync();
+    }
 
-      this.started = false;
+    this.blockHeadersReader.removeListener(BlockHeadersReader.EVENTS.ERROR, this.handleError);
+    this.blockHeadersReader
+      .removeListener(BlockHeadersReader.EVENTS.BLOCK_HEADERS, this.handleHeaders);
+
+    this.state = STATES.IDLE;
+  }
+
+  handleError(e) {
+    this.emit(EVENTS.ERROR, e);
+  }
+
+  handleHeaders(headers, headHeight, reject) {
+    try {
+      this.spvChain.addHeaders(headers);
+
+      headers.forEach((header, index) => {
+        this.headersHeights[header.hash] = headHeight + index;
+      });
+
+      this.emit(EVENTS.CHAIN_UPDATED, headers, headHeight);
+    } catch (e) {
+      if (e.message === 'Some headers are invalid') {
+        reject(e);
+      } else {
+        this.emit(EVENTS.ERROR, e);
+      }
     }
   }
 }

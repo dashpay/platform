@@ -139,10 +139,10 @@ const sortPlugins = (account, userUnsafePlugins) => {
     if (!account.offlineMode) {
       plugins.push([ChainPlugin, true, true]);
       plugins.push([BlockHeadersSyncWorker, true, true]);
-      plugins.push([TransactionSyncStreamWorker, true, true]);
-      if (account.walletType === WALLET_TYPES.HDWALLET) {
-        plugins.push([IdentitySyncWorker, true, true]);
-      }
+      // plugins.push([TransactionSyncStreamWorker, true, true]);
+      // if (account.walletType === WALLET_TYPES.HDWALLET) {
+      //   plugins.push([IdentitySyncWorker, true, true]);
+      // }
     }
   }
   return sortUserPlugins(plugins, userUnsafePlugins, account.allowSensitiveOperations);
