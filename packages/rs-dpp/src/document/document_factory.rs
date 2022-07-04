@@ -274,7 +274,9 @@ mod test {
     use crate::{
         assert_error_contains,
         tests::{
-            fixtures::{get_data_contract_fixture, get_document_validator, get_documents_fixture},
+            fixtures::{
+                get_data_contract_fixture, get_document_validator_fixture, get_documents_fixture,
+            },
             utils::generate_random_identifier_struct,
         },
         util::string_encoding::Encoding,
@@ -289,7 +291,7 @@ mod test {
 
         let factory = DocumentFactory::new(
             1,
-            get_document_validator(),
+            get_document_validator_fixture(),
             mocks::FetchAndValidateDataContract {},
         );
         let name = "Cutie";
@@ -331,7 +333,7 @@ mod test {
     fn create_state_transition_no_documents() {
         let factory = DocumentFactory::new(
             1,
-            get_document_validator(),
+            get_document_validator_fixture(),
             mocks::FetchAndValidateDataContract {},
         );
 
@@ -346,7 +348,7 @@ mod test {
 
         let factory = DocumentFactory::new(
             1,
-            get_document_validator(),
+            get_document_validator_fixture(),
             mocks::FetchAndValidateDataContract {},
         );
         documents[0].owner_id = generate_random_identifier_struct();
@@ -363,7 +365,7 @@ mod test {
 
         let factory = DocumentFactory::new(
             1,
-            get_document_validator(),
+            get_document_validator_fixture(),
             mocks::FetchAndValidateDataContract {},
         );
         let result = factory.create_state_transition(vec![(Action::Create, documents)]);
@@ -376,7 +378,7 @@ mod test {
         let documents = get_documents_fixture(data_contract).unwrap();
         let factory = DocumentFactory::new(
             1,
-            get_document_validator(),
+            get_document_validator_fixture(),
             mocks::FetchAndValidateDataContract {},
         );
 

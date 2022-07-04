@@ -242,7 +242,7 @@ mod test {
         document::document_factory::DocumentFactory,
         mocks,
         tests::fixtures::{
-            get_data_contract_fixture, get_document_validator, get_documents_fixture,
+            get_data_contract_fixture, get_document_validator_fixture, get_documents_fixture,
         },
     };
 
@@ -278,7 +278,7 @@ mod test {
 
         let document_factory = DocumentFactory::new(
             1,
-            get_document_validator(),
+            get_document_validator_fixture(),
             mocks::FetchAndValidateDataContract {},
         );
 
