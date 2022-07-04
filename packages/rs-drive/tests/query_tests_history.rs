@@ -1,4 +1,6 @@
 use std::collections::{BTreeMap, HashMap};
+use std::fmt::{Debug, Display, Formatter};
+use std::ops::Range;
 use std::option::Option::None;
 
 use rand::seq::SliceRandom;
@@ -30,9 +32,23 @@ struct Person {
     age: u8,
 }
 
+impl Debug for Person {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Person")
+            .field("id", &String::from_utf8_lossy(&self.id))
+            .field("owner_id", &String::from_utf8_lossy(&self.owner_id))
+            .field("first_name", &self.first_name)
+            .field("middle_name", &self.middle_name)
+            .field("last_name", &self.last_name)
+            .field("age", &self.age)
+            .field("message", &self.message)
+            .finish()
+    }
+}
+
 impl Person {
     fn random_people_for_block_times(
-        count: u32,
+        count: usize,
         seed: u64,
         block_times: Vec<u64>,
     ) -> BTreeMap<u64, Vec<Self>> {
@@ -94,9 +110,13 @@ impl Person {
     }
 }
 
-pub fn setup(count: u32, seed: u64) -> (Drive, Contract, TempDir) {
+pub fn setup(
+    count: usize,
+    restrict_to_inserts: Option<Vec<usize>>,
+    seed: u64,
+) -> (Drive, Contract, TempDir) {
     let tmp_dir = TempDir::new().unwrap();
-    let drive: Drive = Drive::open(&tmp_dir).expect("expected to open Drive successfully");
+    let drive: Drive = Drive::open(&tmp_dir, None).expect("expected to open Drive successfully");
 
     let db_transaction = drive.grove.start_transaction();
 
@@ -115,8 +135,16 @@ pub fn setup(count: u32, seed: u64) -> (Drive, Contract, TempDir) {
     let block_times: Vec<u64> = vec![0, 15, 100, 1000];
 
     let people_at_block_times = Person::random_people_for_block_times(count, seed, block_times);
+
+    dbg!(&people_at_block_times);
+
     for (block_time, people) in people_at_block_times {
-        for person in people {
+        for (i, person) in people.iter().enumerate() {
+            if let Some(range_insert) = &restrict_to_inserts {
+                if !range_insert.contains(&i) {
+                    continue;
+                }
+            }
             let value = serde_json::to_value(&person).expect("serialized person");
             let document_cbor =
                 common::value_to_cbor(value, Some(rs_drive::drive::defaults::PROTOCOL_VERSION));
@@ -127,6 +155,10 @@ pub fn setup(count: u32, seed: u64) -> (Drive, Contract, TempDir) {
                 .expect("expected to get document type");
 
             let storage_flags = StorageFlags { epoch: 0 };
+
+            // if block_time == 100 && i == 9 {
+            //     dbg!("block time {} {} {:#?}",block_time, i, person);
+            // }
 
             drive
                 .add_document_for_contract(
@@ -145,7 +177,7 @@ pub fn setup(count: u32, seed: u64) -> (Drive, Contract, TempDir) {
                     true,
                     Some(&db_transaction),
                 )
-                .expect("document should be inserted");
+                .expect("expected to add document");
         }
     }
     drive
@@ -156,8 +188,14 @@ pub fn setup(count: u32, seed: u64) -> (Drive, Contract, TempDir) {
 }
 
 #[test]
+fn test_setup() {
+    let range_inserts = vec![0, 2];
+    setup(10, Some(range_inserts), 73509);
+}
+
+#[test]
 fn test_query_historical() {
-    let (drive, contract, _tmp_dir) = setup(10, 73509);
+    let (drive, contract, _tmp_dir) = setup(10, None, 73509);
 
     let db_transaction = drive.grove.start_transaction();
 
@@ -167,10 +205,10 @@ fn test_query_historical() {
         .unwrap()
         .expect("there is always a root hash");
     assert_eq!(
-        root_hash.expect("cannot get root hash").as_slice(),
+        root_hash.as_slice(),
         vec![
-            61, 186, 193, 171, 235, 220, 81, 55, 187, 86, 227, 222, 69, 202, 9, 12, 251, 109, 248,
-            217, 108, 148, 71, 54, 227, 170, 213, 120, 21, 24, 12, 110
+            96, 19, 126, 79, 99, 45, 127, 237, 104, 129, 232, 207, 227, 95, 206, 158, 115, 195,
+            253, 53, 232, 50, 145, 86, 114, 181, 76, 119, 70, 83, 142, 231
         ]
     );
 
@@ -1388,10 +1426,10 @@ fn test_query_historical() {
         .unwrap()
         .expect("there is always a root hash");
     assert_eq!(
-        root_hash.expect("cannot get root hash").as_slice(),
+        root_hash.as_slice(),
         vec![
-            160, 99, 252, 166, 225, 36, 68, 39, 181, 54, 116, 180, 29, 1, 16, 24, 65, 248, 9, 21,
-            44, 228, 28, 146, 9, 45, 27, 233, 145, 87, 73, 220
+            187, 224, 48, 127, 216, 53, 129, 245, 160, 89, 93, 104, 16, 142, 71, 230, 192, 100,
+            156, 40, 153, 43, 145, 33, 238, 142, 192, 182, 52, 112, 26, 107
         ]
     );
 }

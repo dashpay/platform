@@ -1,4 +1,5 @@
 use grovedb::Element;
+use std::collections::HashSet;
 use std::ops::AddAssign;
 
 use KeyInfo::{Key, KeyRef, KeySize};
@@ -140,6 +141,7 @@ impl<'a> KeyInfo<'a> {
     }
 }
 
+#[derive(Clone)]
 pub enum PathKeyInfo<'a, const N: usize> {
     /// An into iter Path with a Key
     PathFixedSizeKey(([&'a [u8]; N], Vec<u8>)),
@@ -198,6 +200,58 @@ impl<'a, const N: usize> PathKeyInfo<'a, N> {
                 key.is_empty() && (*path_iterator).into_iter().all(|a| a.is_empty())
             }
             PathKeySize((path_size, key_size)) => (*path_size + *key_size) == 0,
+        }
+    }
+
+    pub fn is_contained_in_cache(&'a self, qualified_paths: &HashSet<Vec<Vec<u8>>>) -> bool {
+        match self {
+            PathKey((path, key)) => {
+                let mut qualified_path = path.clone();
+                qualified_path.push(key.clone());
+                qualified_paths.contains(&qualified_path)
+            }
+            PathKeyRef((path, key)) => {
+                let mut qualified_path = path.clone();
+                qualified_path.push(key.to_vec());
+                qualified_paths.contains(&qualified_path)
+            }
+            PathFixedSizeKey((path, key)) => {
+                let mut qualified_path = path.map(|a| a.to_vec()).to_vec();
+                qualified_path.push(key.clone());
+                qualified_paths.contains(&qualified_path)
+            }
+            PathFixedSizeKeyRef((path, key)) => {
+                let mut qualified_path = path.map(|a| a.to_vec()).to_vec();
+                qualified_path.push(key.to_vec());
+                qualified_paths.contains(&qualified_path)
+            }
+            PathKeySize(_) => false,
+        }
+    }
+
+    pub fn add_to_cache(&'a self, qualified_paths: &mut HashSet<Vec<Vec<u8>>>) -> bool {
+        match self {
+            PathKey((path, key)) => {
+                let mut qualified_path = path.clone();
+                qualified_path.push(key.clone());
+                qualified_paths.insert(qualified_path)
+            }
+            PathKeyRef((path, key)) => {
+                let mut qualified_path = path.clone();
+                qualified_path.push(key.to_vec());
+                qualified_paths.insert(qualified_path)
+            }
+            PathFixedSizeKey((path, key)) => {
+                let mut qualified_path = path.map(|a| a.to_vec()).to_vec();
+                qualified_path.push(key.clone());
+                qualified_paths.insert(qualified_path)
+            }
+            PathFixedSizeKeyRef((path, key)) => {
+                let mut qualified_path = path.map(|a| a.to_vec()).to_vec();
+                qualified_path.push(key.to_vec());
+                qualified_paths.insert(qualified_path)
+            }
+            PathKeySize(_) => true,
         }
     }
 }

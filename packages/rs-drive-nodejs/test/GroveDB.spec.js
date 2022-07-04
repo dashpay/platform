@@ -1061,7 +1061,7 @@ describe('GroveDB', () => {
       );
     });
 
-    it('should be able to retrieve data with subquery', async () => {
+    it('should be able to retrieve provable data with subquery', async () => {
       // This should give us only last subtree and apply subquery to it
       const query = {
         path: itemTreePath,
@@ -1090,7 +1090,7 @@ describe('GroveDB', () => {
       expect(result).to.exist();
 
       expect(result).to.be.instanceOf(Buffer);
-      expect(result).to.have.lengthOf(170);
+      expect(result).to.have.lengthOf(218);
     });
   });
 

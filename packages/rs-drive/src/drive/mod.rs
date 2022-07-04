@@ -78,11 +78,11 @@ fn contract_documents_path(contract_id: &[u8]) -> [&[u8]; 3] {
 }
 
 impl Drive {
-    pub fn open<P: AsRef<Path>>(path: P) -> Result<Self, Error> {
+    pub fn open<P: AsRef<Path>>(path: P, config: Option<DriveConfig>) -> Result<Self, Error> {
         match GroveDb::open(path) {
             Ok(grove) => Ok(Drive {
                 grove,
-                config: DriveConfig::default(),
+                config: config.unwrap_or_default(),
                 cached_contracts: RefCell::new(Cache::new(200)),
                 epoch_info: RefCell::new(EpochInfo { current_epoch: 0 }),
             }),
@@ -163,7 +163,6 @@ impl Drive {
         drive_operations: &mut Vec<DriveOperation>,
     ) -> Result<(), Error> {
         if apply {
-            // println!("batch {:#?}", batch_operations);
             self.grove_apply_batch(
                 DriveOperation::grovedb_operations(&batch_operations),
                 false,
@@ -212,6 +211,7 @@ impl Drive {
 #[cfg(test)]
 mod tests {
     use std::collections::HashMap;
+    use std::option::Option::None;
 
     use tempfile::TempDir;
 
@@ -221,7 +221,7 @@ mod tests {
     #[test]
     fn store_document_1() {
         let tmp_dir = TempDir::new().unwrap();
-        let _drive = Drive::open(tmp_dir);
+        let _drive = Drive::open(tmp_dir, None);
     }
 
     #[test]
@@ -233,6 +233,6 @@ mod tests {
             ciborium::de::from_reader(read_serialized_document).expect("cannot deserialize cbor");
         assert!(document.get("a").is_some());
         let tmp_dir = TempDir::new().unwrap();
-        let _drive = Drive::open(tmp_dir);
+        let _drive = Drive::open(tmp_dir, None);
     }
 }
