@@ -2,10 +2,9 @@ use std::collections::BTreeMap;
 
 use super::meta_validators;
 use crate::consensus::ConsensusError;
-use crate::data_contract::JsonSchema;
 use crate::util::json_value::JsonValueExt;
 use crate::validation::ValidationResult;
-use crate::{DashPlatformProtocolInitError, NonConsensusError, ProtocolError, SerdeParsingError};
+use crate::{DashPlatformProtocolInitError, NonConsensusError, SerdeParsingError};
 use jsonschema::{JSONSchema, KeywordDefinition};
 use serde_json::{json, Value};
 
@@ -32,7 +31,7 @@ impl JsonSchemaValidator {
         mut schema_json: Value,
         definitions: &BTreeMap<String, Value>,
     ) -> Result<Self, DashPlatformProtocolInitError> {
-        schema_json.insert(String::from("$defs"), json!(definitions));
+        let _ = schema_json.insert(String::from("$defs"), json!(definitions));
 
         let mut json_schema_validator = Self {
             raw_schema_json: schema_json,
@@ -115,46 +114,3 @@ impl JsonSchemaValidator {
         )
     }
 }
-
-// #[cfg(test)]
-// mod test {
-//     use crate::tests::fixtures::{get_data_contract_fixture, get_documents_fixture};
-//     use serde_json::json;
-
-//     use super::JsonSchemaValidator;
-
-//     #[test]
-//     fn should_create_validator_with_defs() {
-//         let data_contract = get_data_contract_fixture(None);
-//         let pretty_document_schema = data_contract
-//             .get_document_schema("prettyDocument")
-//             .expect("the schema should exist");
-
-//         JsonSchemaValidator::new_with_definitions(
-//             pretty_document_schema.clone(),
-//             data_contract.get_defs(),
-//         )
-//         .expect("compilation should be successful");
-//     }
-
-//     #[test]
-//     fn should_validate_document_with_reference_to_defs() {
-//         let data_contract = get_data_contract_fixture(None);
-//         let pretty_document_schema = data_contract
-//             .get_document_schema("prettyDocument")
-//             .expect("the schema should exist");
-
-//         let validator = JsonSchemaValidator::new_with_definitions(
-//             pretty_document_schema.clone(),
-//             data_contract.get_defs(),
-//         )
-//         .expect("compilation should be successful");
-
-//         let document_factory = get_documents_fixture(data_contract)
-//         let validation_result = validator
-//             .validate(&document)
-//             .expect("the validation result should be returned");
-//         println!("the validation result is {:#?}", validation_result);
-//         assert!(validation_result.is_valid());
-//     }
-// }

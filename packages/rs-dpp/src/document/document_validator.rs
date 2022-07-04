@@ -76,7 +76,6 @@ impl DocumentValidator {
         let json_schema_validator =
             JsonSchemaValidator::new_with_definitions(document_schema, &data_contract.defs)
                 .map_err(|e| anyhow!("unable to process the contract: {}", e))?;
-
         let json_schema_validation_result = json_schema_validator.validate(raw_document)?;
         result.merge(json_schema_validation_result);
         if !result.is_valid() {
