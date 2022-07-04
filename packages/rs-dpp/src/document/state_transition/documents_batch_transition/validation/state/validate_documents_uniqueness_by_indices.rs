@@ -39,15 +39,14 @@ where
     for transition in document_transitions.iter() {
         let document_schema =
             data_contract.get_document_schema(&transition.base().document_type)?;
-
         let document_indices = document_schema.get_indices()?;
         if document_indices.is_empty() {
             continue;
         }
 
+        // 2. Fetch Document by indexed properties
         let document_index_queries =
             generate_document_index_queries(&document_indices, transition, owner_id);
-
         let queries = document_index_queries
             .filter(|query| !query.where_query.is_empty())
             .map(|query| {
@@ -60,10 +59,10 @@ where
                     (query.index_definition, query.document_transition),
                 )
             });
-
         let (futures, futures_meta) = unzip_iter_and_collect(queries);
         let results = join_all(futures).await;
 
+        // 3. Create errors if duplicates found
         let result = validate_uniqueness(futures_meta, results)?;
         validation_result.merge(result);
     }
