@@ -69,12 +69,13 @@ impl DocumentValidator {
             PREFIX_BYTE_0,
             &[],
         )?;
-
         let document_schema = enriched_data_contract
             .get_document_schema(document_type)?
             .to_owned();
-        let json_schema_validator = JsonSchemaValidator::new(document_schema)
-            .map_err(|e| anyhow!("unable to process the contract: {}", e))?;
+
+        let json_schema_validator =
+            JsonSchemaValidator::new_with_definitions(document_schema, &data_contract.defs)
+                .map_err(|e| anyhow!("unable to process the contract: {}", e))?;
 
         let json_schema_validation_result = json_schema_validator.validate(raw_document)?;
         result.merge(json_schema_validation_result);

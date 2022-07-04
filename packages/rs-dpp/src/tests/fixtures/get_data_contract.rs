@@ -269,6 +269,7 @@ pub fn get_data_contract_fixture(owner_id: Option<Identifier>) -> DataContract {
     let factory = DataContractFactory::new(1, data_contract_validator);
 
     let owner_id = owner_id.unwrap_or_else(generate_random_identifier_struct);
+
     let mut data_contract = factory
         .create(owner_id, documents)
         .expect("data in fixture should be correct");

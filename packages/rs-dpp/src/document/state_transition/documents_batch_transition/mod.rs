@@ -241,7 +241,9 @@ mod test {
     use crate::{
         document::document_factory::DocumentFactory,
         mocks,
-        tests::fixtures::{get_data_contract_fixture, get_documents_fixture},
+        tests::fixtures::{
+            get_data_contract_fixture, get_document_validator, get_documents_fixture,
+        },
     };
 
     #[test]
@@ -276,7 +278,7 @@ mod test {
 
         let document_factory = DocumentFactory::new(
             1,
-            mocks::DocumentValidator {},
+            get_document_validator(),
             mocks::FetchAndValidateDataContract {},
         );
 
