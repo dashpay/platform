@@ -535,7 +535,7 @@ impl Drive {
                     transaction,
                     drive_operations,
                 )?;
-                if has_raw == false {
+                if !has_raw {
                     drive_operations.push(DriveOperation::for_empty_tree(
                         path,
                         key.to_vec(),
@@ -565,7 +565,7 @@ impl Drive {
                     transaction,
                     drive_operations,
                 )?;
-                if has_raw == false {
+                if !has_raw {
                     drive_operations.push(DriveOperation::for_empty_tree(
                         path,
                         key.to_vec(),
@@ -582,7 +582,7 @@ impl Drive {
                     transaction,
                     drive_operations,
                 )?;
-                if has_raw == false {
+                if !has_raw {
                     let path_items: Vec<Vec<u8>> = path.into_iter().map(Vec::from).collect();
                     drive_operations.push(DriveOperation::for_empty_tree(
                         path_items,
@@ -595,7 +595,7 @@ impl Drive {
             PathFixedSizeKeyRef((path, key)) => {
                 let has_raw =
                     self.grove_has_raw(path.clone(), key, apply, transaction, drive_operations)?;
-                if has_raw == false {
+                if !has_raw {
                     let path_items: Vec<Vec<u8>> = path.into_iter().map(Vec::from).collect();
                     drive_operations.push(DriveOperation::for_empty_tree(
                         path_items,
@@ -659,7 +659,7 @@ impl Drive {
                     transaction,
                     drive_operations,
                 )?;
-                if has_raw == false {
+                if !has_raw {
                     drive_operations.push(DriveOperation::for_path_key_element(
                         path,
                         key.to_vec(),
@@ -671,7 +671,7 @@ impl Drive {
             PathFixedSizeKeyElement((path, key, element)) => {
                 let has_raw =
                     self.grove_has_raw(path, key, apply, transaction, drive_operations)?;
-                if has_raw == false {
+                if !has_raw {
                     let path_items: Vec<Vec<u8>> = path.into_iter().map(Vec::from).collect();
                     drive_operations.push(DriveOperation::for_path_key_element(
                         path_items,
@@ -767,10 +767,19 @@ impl Drive {
         drive_operations: &mut Vec<DriveOperation>,
     ) -> Result<(), Error> {
         if self.config.batching_enabled {
+            //println!("batch {:#?}", ops);
+            let consistency_results = GroveDbOp::verify_consistency_of_operations(&ops);
+            if !consistency_results.is_empty() {
+                //println!("results {:#?}", consistency_results);
+                return Err(Error::Drive(DriveError::GroveDBInsertion(
+                    "insertion order error",
+                )));
+            }
+
             let cost_context = self.grove.apply_batch(
                 ops,
                 Some(BatchApplyOptions {
-                    validate_tree_insertion_does_not_override: validate,
+                    validate_insertion_does_not_override: validate,
                 }),
                 transaction,
             );
@@ -817,7 +826,7 @@ impl Drive {
         let cost_context = self.grove.worst_case_operations_for_batch(
             ops,
             Some(BatchApplyOptions {
-                validate_tree_insertion_does_not_override: validate,
+                validate_insertion_does_not_override: validate,
             }),
         );
         push_drive_operation_result(cost_context, drive_operations)

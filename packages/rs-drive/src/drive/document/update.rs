@@ -1,3 +1,6 @@
+use std::collections::HashSet;
+use std::option::Option::None;
+
 use grovedb::{Element, TransactionArg};
 
 use crate::contract::document::Document;
@@ -228,6 +231,7 @@ impl Drive {
                     )))
                 }?;
 
+            let mut batch_insertion_cache: HashSet<Vec<Vec<u8>>> = HashSet::new();
             // fourth we need to store a reference to the document for each index
             for index in &document_type.indices {
                 // at this point the contract path is to the contract documents
@@ -266,16 +270,24 @@ impl Drive {
 
                 if change_occurred_on_index {
                     // here we are inserting an empty tree that will have a subtree of all other index properties
-                    self.batch_insert_empty_tree_if_not_exists(
-                        PathKeyInfo::PathKeyRef::<0>((
-                            index_path.clone(),
-                            document_top_field.as_slice(),
-                        )),
-                        storage_flags,
-                        apply,
-                        transaction,
-                        &mut batch_operations,
-                    )?;
+                    let mut qualified_path = index_path.clone();
+                    qualified_path.push(document_top_field.clone());
+
+                    if !batch_insertion_cache.contains(&qualified_path) {
+                        let inserted = self.batch_insert_empty_tree_if_not_exists(
+                            PathKeyInfo::PathKeyRef::<0>((
+                                index_path.clone(),
+                                document_top_field.as_slice(),
+                            )),
+                            storage_flags,
+                            apply,
+                            transaction,
+                            &mut batch_operations,
+                        )?;
+                        if inserted {
+                            batch_insertion_cache.insert(qualified_path);
+                        }
+                    }
                 }
 
                 let mut all_fields_null = document_top_field.is_empty();
@@ -314,16 +326,25 @@ impl Drive {
 
                     if change_occurred_on_index {
                         // here we are inserting an empty tree that will have a subtree of all other index properties
-                        self.batch_insert_empty_tree_if_not_exists(
-                            PathKeyInfo::PathKeyRef::<0>((
-                                index_path.clone(),
-                                index_property.name.as_bytes(),
-                            )),
-                            storage_flags,
-                            apply,
-                            transaction,
-                            &mut batch_operations,
-                        )?;
+
+                        let mut qualified_path = index_path.clone();
+                        qualified_path.push(index_property.name.as_bytes().to_vec());
+
+                        if !batch_insertion_cache.contains(&qualified_path) {
+                            let inserted = self.batch_insert_empty_tree_if_not_exists(
+                                PathKeyInfo::PathKeyRef::<0>((
+                                    index_path.clone(),
+                                    index_property.name.as_bytes(),
+                                )),
+                                storage_flags,
+                                apply,
+                                transaction,
+                                &mut batch_operations,
+                            )?;
+                            if inserted {
+                                batch_insertion_cache.insert(qualified_path);
+                            }
+                        }
                     }
 
                     index_path.push(Vec::from(index_property.name.as_bytes()));
@@ -334,16 +355,25 @@ impl Drive {
 
                     if change_occurred_on_index {
                         // here we are inserting an empty tree that will have a subtree of all other index properties
-                        self.batch_insert_empty_tree_if_not_exists(
-                            PathKeyInfo::PathKeyRef::<0>((
-                                index_path.clone(),
-                                document_index_field.as_slice(),
-                            )),
-                            storage_flags,
-                            apply,
-                            transaction,
-                            &mut batch_operations,
-                        )?;
+
+                        let mut qualified_path = index_path.clone();
+                        qualified_path.push(document_index_field.clone());
+
+                        if !batch_insertion_cache.contains(&qualified_path) {
+                            let inserted = self.batch_insert_empty_tree_if_not_exists(
+                                PathKeyInfo::PathKeyRef::<0>((
+                                    index_path.clone(),
+                                    document_index_field.as_slice(),
+                                )),
+                                storage_flags,
+                                apply,
+                                transaction,
+                                &mut batch_operations,
+                            )?;
+                            if inserted {
+                                batch_insertion_cache.insert(qualified_path);
+                            }
+                        }
                     }
 
                     all_fields_null &= document_index_field.is_empty();
@@ -410,6 +440,7 @@ impl Drive {
                             &mut batch_operations,
                         )?;
                     } else {
+                        // in one update you can't insert an element twice, so need to check the cache
                         // here we should return an error if the element already exists
                         let inserted = self.batch_insert_if_not_exists(
                             PathKeyElement::<0>((index_path, &[0], document_reference.clone())),
@@ -432,14 +463,18 @@ impl Drive {
 
 #[cfg(test)]
 mod tests {
+    use base64::Config;
+    use std::collections::BTreeMap;
     use std::option::Option::None;
 
     use rand::Rng;
+    use serde::{Deserialize, Serialize};
     use serde_json::json;
     use tempfile::TempDir;
 
     use crate::common::{json_document_to_cbor, setup_contract, value_to_cbor};
     use crate::contract::{document::Document, Contract};
+    use crate::drive::config::DriveConfig;
     use crate::drive::flags::StorageFlags;
     use crate::drive::object_size_info::DocumentAndContractInfo;
     use crate::drive::object_size_info::DocumentInfo::DocumentAndSerialization;
@@ -449,7 +484,7 @@ mod tests {
     #[test]
     fn test_create_and_update_document_same_transaction() {
         let tmp_dir = TempDir::new().unwrap();
-        let drive: Drive = Drive::open(tmp_dir).expect("expected to open Drive successfully");
+        let drive: Drive = Drive::open(tmp_dir, None).expect("expected to open Drive successfully");
 
         let db_transaction = drive.grove.start_transaction();
 
@@ -506,7 +541,7 @@ mod tests {
     #[test]
     fn test_create_and_update_document_no_transactions() {
         let tmp_dir = TempDir::new().unwrap();
-        let drive: Drive = Drive::open(tmp_dir).expect("expected to open Drive successfully");
+        let drive: Drive = Drive::open(tmp_dir, None).expect("expected to open Drive successfully");
 
         drive
             .create_root_tree(None)
@@ -587,7 +622,7 @@ mod tests {
     #[test]
     fn test_create_and_update_document_in_different_transactions() {
         let tmp_dir = TempDir::new().unwrap();
-        let drive: Drive = Drive::open(tmp_dir).expect("expected to open Drive successfully");
+        let drive: Drive = Drive::open(tmp_dir, None).expect("expected to open Drive successfully");
 
         let db_transaction = drive.grove.start_transaction();
 
@@ -694,7 +729,7 @@ mod tests {
     #[test]
     fn test_create_and_update_document_in_different_transactions_with_delete_rollback() {
         let tmp_dir = TempDir::new().unwrap();
-        let drive: Drive = Drive::open(tmp_dir).expect("expected to open Drive successfully");
+        let drive: Drive = Drive::open(tmp_dir, None).expect("expected to open Drive successfully");
 
         let db_transaction = drive.grove.start_transaction();
 
@@ -818,7 +853,7 @@ mod tests {
     #[test]
     fn test_create_update_and_delete_document() {
         let tmp_dir = TempDir::new().unwrap();
-        let drive: Drive = Drive::open(tmp_dir).expect("expected to open Drive successfully");
+        let drive: Drive = Drive::open(tmp_dir, None).expect("expected to open Drive successfully");
 
         drive
             .create_root_tree(None)
@@ -943,7 +978,7 @@ mod tests {
     #[test]
     fn test_modify_dashpay_contact_request() {
         let tmp_dir = TempDir::new().unwrap();
-        let drive: Drive = Drive::open(tmp_dir).expect("expected to open Drive successfully");
+        let drive: Drive = Drive::open(tmp_dir, None).expect("expected to open Drive successfully");
 
         let db_transaction = drive.grove.start_transaction();
 
@@ -1006,7 +1041,7 @@ mod tests {
     #[test]
     fn test_update_dashpay_profile_with_history() {
         let tmp_dir = TempDir::new().unwrap();
-        let drive: Drive = Drive::open(tmp_dir).expect("expected to open Drive successfully");
+        let drive: Drive = Drive::open(tmp_dir, None).expect("expected to open Drive successfully");
 
         let db_transaction = drive.grove.start_transaction();
 
@@ -1056,5 +1091,225 @@ mod tests {
                 Some(&db_transaction),
             )
             .expect("expected to update a document with history successfully");
+    }
+
+    #[derive(Serialize, Deserialize)]
+    #[serde(rename_all = "camelCase")]
+    struct Person {
+        #[serde(rename = "$id")]
+        id: Vec<u8>,
+        #[serde(rename = "$ownerId")]
+        owner_id: Vec<u8>,
+        first_name: String,
+        middle_name: String,
+        last_name: String,
+        message: Option<String>,
+        age: u8,
+    }
+
+    #[test]
+    fn test_update_complex_person_with_history_no_transaction() {
+        let tmp_dir = TempDir::new().unwrap();
+        let drive: Drive =
+            Drive::open(&tmp_dir, None).expect("expected to open Drive successfully");
+
+        drive
+            .create_root_tree(None)
+            .expect("expected to create root tree successfully");
+
+        // setup code
+        let contract = setup_contract(
+            &drive,
+            "tests/supporting_files/contract/family/family-contract-with-history-only-message-index.json",
+            None,
+            None,
+        );
+
+        let person_0_original = Person {
+            id: [0u8; 32].to_vec(),
+            owner_id: [0u8; 32].to_vec(),
+            first_name: "Samuel".to_string(),
+            middle_name: "Abraham".to_string(),
+            last_name: "Westrich".to_string(),
+            message: Some("My apples are safe".to_string()),
+            age: 33,
+        };
+
+        let person_0_updated = Person {
+            id: [0u8; 32].to_vec(),
+            owner_id: [0u8; 32].to_vec(),
+            first_name: "Samuel".to_string(),
+            middle_name: "Abraham".to_string(),
+            last_name: "Westrich".to_string(),
+            message: Some("Lemons are now my thing".to_string()),
+            age: 35,
+        };
+
+        let person_1_original = Person {
+            id: [1u8; 32].to_vec(),
+            owner_id: [1u8; 32].to_vec(),
+            first_name: "Wisdom".to_string(),
+            middle_name: "Madabuchukwu".to_string(),
+            last_name: "Ogwu".to_string(),
+            message: Some("Cantaloupe is the best fruit".to_string()),
+            age: 20,
+        };
+
+        let person_1_updated = Person {
+            id: [1u8; 32].to_vec(),
+            owner_id: [1u8; 32].to_vec(),
+            first_name: "Wisdom".to_string(),
+            middle_name: "Madabuchukwu".to_string(),
+            last_name: "Ogwu".to_string(),
+            message: Some("My apples are safe".to_string()),
+            age: 22,
+        };
+
+        let mut people_at_block_times: BTreeMap<u64, Vec<Person>> = BTreeMap::new();
+        people_at_block_times.insert(0, vec![person_0_original, person_1_original]);
+        people_at_block_times.insert(100, vec![person_0_updated, person_1_updated]);
+
+        for (block_time, people) in people_at_block_times {
+            for (i, person) in people.iter().enumerate() {
+                let value = serde_json::to_value(&person).expect("serialized person");
+                let document_cbor = value_to_cbor(value, Some(defaults::PROTOCOL_VERSION));
+                let document = Document::from_cbor(document_cbor.as_slice(), None, None)
+                    .expect("document should be properly deserialized");
+                let document_type = contract
+                    .document_type_for_name("person")
+                    .expect("expected to get document type");
+
+                let storage_flags = StorageFlags { epoch: 0 };
+
+                // if block_time == 100 && i == 9 {
+                //     dbg!("block time {} {} {:#?}",block_time, i, person);
+                // }
+
+                drive
+                    .add_document_for_contract(
+                        DocumentAndContractInfo {
+                            document_info: DocumentAndSerialization((
+                                &document,
+                                &document_cbor,
+                                &storage_flags,
+                            )),
+                            contract: &contract,
+                            document_type,
+                            owner_id: None,
+                        },
+                        true,
+                        block_time as f64,
+                        true,
+                        None,
+                    )
+                    .expect("expected to add document");
+            }
+        }
+    }
+
+    #[test]
+    fn test_update_complex_person_with_history() {
+        let tmp_dir = TempDir::new().unwrap();
+        let drive: Drive =
+            Drive::open(&tmp_dir, None).expect("expected to open Drive successfully");
+
+        let db_transaction = drive.grove.start_transaction();
+
+        drive
+            .create_root_tree(Some(&db_transaction))
+            .expect("expected to create root tree successfully");
+
+        // setup code
+        let contract = setup_contract(
+            &drive,
+            "tests/supporting_files/contract/family/family-contract-with-history-only-message-index.json",
+            None,
+            Some(&db_transaction),
+        );
+
+        let person_0_original = Person {
+            id: [0u8; 32].to_vec(),
+            owner_id: [0u8; 32].to_vec(),
+            first_name: "Samuel".to_string(),
+            middle_name: "Abraham".to_string(),
+            last_name: "Westrich".to_string(),
+            message: Some("My apples are safe".to_string()),
+            age: 33,
+        };
+
+        let person_0_updated = Person {
+            id: [0u8; 32].to_vec(),
+            owner_id: [0u8; 32].to_vec(),
+            first_name: "Samuel".to_string(),
+            middle_name: "Abraham".to_string(),
+            last_name: "Westrich".to_string(),
+            message: Some("Lemons are now my thing".to_string()),
+            age: 35,
+        };
+
+        let person_1_original = Person {
+            id: [1u8; 32].to_vec(),
+            owner_id: [1u8; 32].to_vec(),
+            first_name: "Wisdom".to_string(),
+            middle_name: "Madabuchukwu".to_string(),
+            last_name: "Ogwu".to_string(),
+            message: Some("Cantaloupe is the best fruit".to_string()),
+            age: 20,
+        };
+
+        let person_1_updated = Person {
+            id: [1u8; 32].to_vec(),
+            owner_id: [1u8; 32].to_vec(),
+            first_name: "Wisdom".to_string(),
+            middle_name: "Madabuchukwu".to_string(),
+            last_name: "Ogwu".to_string(),
+            message: Some("My apples are safe".to_string()),
+            age: 22,
+        };
+
+        let mut people_at_block_times: BTreeMap<u64, Vec<Person>> = BTreeMap::new();
+        people_at_block_times.insert(0, vec![person_0_original, person_1_original]);
+        people_at_block_times.insert(100, vec![person_0_updated, person_1_updated]);
+
+        for (block_time, people) in people_at_block_times {
+            for (i, person) in people.iter().enumerate() {
+                let value = serde_json::to_value(&person).expect("serialized person");
+                let document_cbor = value_to_cbor(value, Some(defaults::PROTOCOL_VERSION));
+                let document = Document::from_cbor(document_cbor.as_slice(), None, None)
+                    .expect("document should be properly deserialized");
+                let document_type = contract
+                    .document_type_for_name("person")
+                    .expect("expected to get document type");
+
+                let storage_flags = StorageFlags { epoch: 0 };
+
+                // if block_time == 100 && i == 9 {
+                //     dbg!("block time {} {} {:#?}",block_time, i, person);
+                // }
+
+                drive
+                    .add_document_for_contract(
+                        DocumentAndContractInfo {
+                            document_info: DocumentAndSerialization((
+                                &document,
+                                &document_cbor,
+                                &storage_flags,
+                            )),
+                            contract: &contract,
+                            document_type,
+                            owner_id: None,
+                        },
+                        true,
+                        block_time as f64,
+                        true,
+                        Some(&db_transaction),
+                    )
+                    .expect("expected to add document");
+            }
+        }
+        drive
+            .grove
+            .commit_transaction(db_transaction)
+            .expect("transaction should be committed");
     }
 }

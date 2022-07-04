@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::sync::Arc;
 
 use costs::CostContext;
@@ -177,15 +178,20 @@ impl Drive {
                 &mut batch_operations,
             )?;
 
+            let mut index_cache: HashSet<&[u8]> = HashSet::new();
             // for each type we should insert the indices that are top level
             for index in document_type.top_level_indices()? {
                 // toDo: change this to be a reference by index
-                self.batch_insert_empty_tree(
-                    type_path,
-                    KeyRef(index.name.as_bytes()),
-                    &storage_flags,
-                    &mut batch_operations,
-                )?;
+                let index_bytes = index.name.as_bytes();
+                if !index_cache.contains(index_bytes) {
+                    self.batch_insert_empty_tree(
+                        type_path,
+                        KeyRef(index_bytes),
+                        &storage_flags,
+                        &mut batch_operations,
+                    )?;
+                    index_cache.insert(index_bytes);
+                }
             }
         }
         self.apply_batch(apply, transaction, batch_operations, drive_operations)
@@ -277,16 +283,21 @@ impl Drive {
                     type_key.as_bytes(),
                 ];
 
+                let mut index_cache: HashSet<&[u8]> = HashSet::new();
                 // for each type we should insert the indices that are top level
                 for index in document_type.top_level_indices()? {
                     // toDo: we can save a little by only inserting on new indexes
-                    self.batch_insert_empty_tree_if_not_exists(
-                        PathFixedSizeKeyRef((type_path, index.name.as_bytes())),
-                        &storage_flags,
-                        apply,
-                        transaction,
-                        &mut batch_operations,
-                    )?;
+                    let index_bytes = index.name.as_bytes();
+                    if !index_cache.contains(index_bytes) {
+                        self.batch_insert_empty_tree_if_not_exists(
+                            PathFixedSizeKeyRef((type_path, index.name.as_bytes())),
+                            &storage_flags,
+                            apply,
+                            transaction,
+                            &mut batch_operations,
+                        )?;
+                        index_cache.insert(index_bytes);
+                    }
                 }
             } else {
                 // We can just insert this directly because the original document type already exists
@@ -312,15 +323,20 @@ impl Drive {
                     &mut batch_operations,
                 )?;
 
+                let mut index_cache: HashSet<&[u8]> = HashSet::new();
                 // for each type we should insert the indices that are top level
                 for index in document_type.top_level_indices()? {
                     // toDo: change this to be a reference by index
-                    self.batch_insert_empty_tree(
-                        type_path,
-                        KeyRef(index.name.as_bytes()),
-                        &storage_flags,
-                        &mut batch_operations,
-                    )?;
+                    let index_bytes = index.name.as_bytes();
+                    if !index_cache.contains(index_bytes) {
+                        self.batch_insert_empty_tree(
+                            type_path,
+                            KeyRef(index.name.as_bytes()),
+                            &storage_flags,
+                            &mut batch_operations,
+                        )?;
+                        index_cache.insert(index_bytes);
+                    }
                 }
             }
         }
@@ -476,6 +492,7 @@ impl Drive {
 #[cfg(test)]
 mod tests {
     use rand::Rng;
+    use std::option::Option::None;
     use tempfile::TempDir;
 
     use crate::common::json_document_to_cbor;
@@ -487,7 +504,7 @@ mod tests {
     fn setup_deep_nested_contract() -> (Drive, Contract, Vec<u8>) {
         // Todo: make TempDir based on _prefix
         let tmp_dir = TempDir::new().unwrap();
-        let drive: Drive = Drive::open(tmp_dir).expect("expected to open Drive successfully");
+        let drive: Drive = Drive::open(tmp_dir, None).expect("expected to open Drive successfully");
 
         drive
             .create_root_tree(None)
@@ -514,7 +531,7 @@ mod tests {
 
     fn setup_reference_contract() -> (Drive, Contract, Vec<u8>) {
         let tmp_dir = TempDir::new().unwrap();
-        let drive: Drive = Drive::open(tmp_dir).expect("expected to open Drive successfully");
+        let drive: Drive = Drive::open(tmp_dir, None).expect("expected to open Drive successfully");
 
         drive
             .create_root_tree(None)
@@ -543,7 +560,7 @@ mod tests {
     #[test]
     fn test_create_and_update_contract() {
         let tmp_dir = TempDir::new().unwrap();
-        let drive: Drive = Drive::open(tmp_dir).expect("expected to open Drive successfully");
+        let drive: Drive = Drive::open(tmp_dir, None).expect("expected to open Drive successfully");
 
         drive
             .create_root_tree(None)

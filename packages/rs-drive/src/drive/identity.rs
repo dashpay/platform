@@ -65,6 +65,7 @@ impl Drive {
 #[cfg(test)]
 mod tests {
     use grovedb::Element;
+    use std::option::Option::None;
     use tempfile::TempDir;
 
     use crate::drive::flags::StorageFlags;
@@ -74,7 +75,7 @@ mod tests {
     #[test]
     fn test_insert_identity() {
         let tmp_dir = TempDir::new().unwrap();
-        let drive: Drive = Drive::open(tmp_dir).expect("expected to open Drive successfully");
+        let drive: Drive = Drive::open(tmp_dir, None).expect("expected to open Drive successfully");
 
         let db_transaction = drive.grove.start_transaction();
 
