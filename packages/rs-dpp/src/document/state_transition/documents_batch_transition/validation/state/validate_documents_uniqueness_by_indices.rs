@@ -201,11 +201,43 @@ fn unzip_iter_and_collect<A, B>(iter: impl Iterator<Item = (A, B)>) -> (Vec<A>, 
 
 #[cfg(test)]
 mod tests {
-    use crate::tests::fixtures::{get_data_contract_fixture, get_documents_fixture};
+    use super::validate_documents_uniqueness_by_indices;
+    use std::collections::HashMap;
 
-    #[test]
-    fn should_return_valid_result_if_documents_have_no_unique_indices() {
-        let data_contract = get_data_contract_fixture(None);
-        let documents = get_documents_fixture(data_contract);
+    use crate::{
+        document::{document_transition::Action, Document},
+        state_repository::MockStateRepositoryLike,
+        tests::{
+            fixtures::{
+                get_data_contract_fixture, get_document_transitions_fixture, get_documents_fixture,
+            },
+            utils::generate_random_identifier_struct,
+        },
+    };
+
+    #[tokio::test]
+    async fn should_return_valid_result_if_documents_have_no_unique_indices() {
+        let owner_id = generate_random_identifier_struct();
+        let data_contract = get_data_contract_fixture(Some(owner_id.clone()));
+        let documents = get_documents_fixture(data_contract.clone()).unwrap();
+        let mut state_repository_mock = MockStateRepositoryLike::default();
+        state_repository_mock
+            .expect_fetch_documents::<Document>()
+            .returning(|_, _, _| Ok(vec![]));
+
+        let mut documents_for_transition = HashMap::new();
+        documents_for_transition.insert(Action::Create, vec![documents[0].clone()]);
+
+        let document_transitions = get_document_transitions_fixture(documents_for_transition);
+
+        let validation_result = validate_documents_uniqueness_by_indices(
+            state_repository_mock,
+            &owner_id,
+            &document_transitions,
+            &data_contract,
+        )
+        .await
+        .expect("validation result should be returned");
+        assert!(validation_result.is_valid())
     }
 }
