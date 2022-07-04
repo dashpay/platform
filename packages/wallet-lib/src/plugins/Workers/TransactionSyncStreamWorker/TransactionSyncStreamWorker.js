@@ -11,6 +11,8 @@ const isBrowser = require('../../../utils/isBrowser');
 const logger = require('../../../logger');
 const ChainSyncMediator = require('../../../types/Wallet/ChainSyncMediator');
 
+const PROGRESS_UPDATE_INTERVAL = 1000;
+
 class TransactionSyncStreamWorker extends Worker {
   constructor(options) {
     super({
@@ -44,6 +46,10 @@ class TransactionSyncStreamWorker extends Worker {
     this.pendingRequest = {};
     this.delayedRequests = {};
     this.lastSyncedBlockHeight = -1;
+    this.progressUpdateTimeout = null;
+
+    this.scheduleProgressUpdate = this.scheduleProgressUpdate.bind(this);
+    this.updateProgress = this.updateProgress.bind(this);
   }
 
   /**
@@ -265,6 +271,27 @@ class TransactionSyncStreamWorker extends Worker {
     const { blockHash } = this.storage.application;
 
     return blockHash;
+  }
+
+  updateProgress() {
+    if (this.progressUpdateTimeout) {
+      clearTimeout(this.progressUpdateTimeout);
+      this.progressUpdateTimeout = null;
+    }
+
+    const chainStore = this.storage.getChainStore(this.network.toString());
+
+    // TODO: test
+    let progress = this.lastSyncedBlockHeight / chainStore.state.blockHeight;
+    progress = Math.round(progress * 1000) / 1000;
+
+    console.log('TX, sync', this.lastSyncedBlockHeight, chainStore.state.blockHeight, progress);
+  }
+
+  scheduleProgressUpdate() {
+    if (!this.progressUpdateTimeout) {
+      this.progressUpdateTimeout = setTimeout(this.updateProgress, PROGRESS_UPDATE_INTERVAL);
+    }
   }
 }
 

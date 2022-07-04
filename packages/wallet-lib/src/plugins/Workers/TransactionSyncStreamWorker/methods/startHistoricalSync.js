@@ -16,7 +16,9 @@ const GRPC_RETRY_ERRORS = [
  * @return {Promise<void>}
  */
 module.exports = async function startHistoricalSync(network) {
-  const bestBlockHeight = await this.getBestBlockHeightFromTransport();
+  const chainStore = this.storage.getChainStore(this.network.toString());
+  const bestBlockHeight = chainStore.state.blockHeight;
+
   const lastSyncedBlockHeight = await this.getLastSyncedBlockHeight();
   const fromBlockHeight = lastSyncedBlockHeight > 0 ? lastSyncedBlockHeight : 1;
   const count = bestBlockHeight - fromBlockHeight || 1;

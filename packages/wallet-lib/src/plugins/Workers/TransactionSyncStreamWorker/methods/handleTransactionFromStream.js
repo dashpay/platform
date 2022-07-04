@@ -2,6 +2,7 @@ const logger = require('../../../../logger');
 const EVENTS = require('../../../../EVENTS');
 const ChainSyncMediator = require('../../../../types/Wallet/ChainSyncMediator');
 
+// TODO - remove
 async function handleTransactionFromStream(transaction) {
   const self = this;
   // As we require height information, we fetch transaction using client.

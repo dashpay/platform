@@ -104,7 +104,7 @@ class BlockHeadersSyncWorker extends Worker {
         walletStore.updateLastKnownBlock(newChainHeight);
         this.parentEvents.emit(EVENTS.BLOCKHEIGHT_CHANGED, newChainHeight);
         logger.debug(`BlockHeadersSyncWorker - setting chain height ${newChainHeight}`);
-
+        console.log('Heights', newHeaders.length, newChainHeight);
         // TODO: implement with pruning in mind
         // this.storage.scheduleStateSave();
       }

@@ -6,7 +6,7 @@ const logger = require('../../../logger');
  * @param transactionsWithMayBeMetadata
  * @returns {Promise<{ addressesGenerated: number,  mostRecentHeight: number}>}
  */
-module.exports = async function importTransactions(transactionsWithMayBeMetadata) {
+module.exports = function importTransactions(transactionsWithMayBeMetadata) {
   const {
     storage,
     network,
