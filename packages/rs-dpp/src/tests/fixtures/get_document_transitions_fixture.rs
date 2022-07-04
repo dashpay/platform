@@ -12,7 +12,7 @@ use crate::{
 use super::{get_data_contract_fixture, get_document_validator_fixture, get_documents_fixture};
 use crate::version::LATEST_VERSION;
 
-fn get_document_transitions_fixture(
+pub fn get_document_transitions_fixture(
     mut documents: HashMap<Action, Vec<Document>>,
 ) -> Vec<DocumentTransition> {
     let document_factory = DocumentFactory::new(
