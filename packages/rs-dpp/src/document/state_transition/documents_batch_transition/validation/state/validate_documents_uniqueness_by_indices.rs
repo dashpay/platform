@@ -198,3 +198,14 @@ fn unzip_iter_and_collect<A, B>(iter: impl Iterator<Item = (A, B)>) -> (Vec<A>, 
     }
     (list_a, list_b)
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::tests::fixtures::{get_data_contract_fixture, get_documents_fixture};
+
+    #[test]
+    fn should_return_valid_result_if_documents_have_no_unique_indices() {
+        let data_contract = get_data_contract_fixture(None);
+        let documents = get_documents_fixture(data_contract);
+    }
+}

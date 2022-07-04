@@ -5,13 +5,13 @@ use crate::{
     tests::utils::generate_random_identifier_struct as gen_owner_id,
 };
 
-use super::{get_document_validator, get_dpp};
+use super::{get_document_validator_fixture, get_dpp};
 
 pub fn get_documents_fixture(data_contract: DataContract) -> Result<Vec<Document>, ProtocolError> {
     let dpp_mock = get_dpp();
     let factory = DocumentFactory::new(
         dpp_mock.protocol_version,
-        get_document_validator(),
+        get_document_validator_fixture(),
         mocks::FetchAndValidateDataContract {},
     );
     let owner_id = gen_owner_id();
