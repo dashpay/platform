@@ -81,12 +81,12 @@ const SpvChain = class {
   checkPruneBlocks() {
     const longestChain = this.getLongestChain();
 
-    while (longestChain.length > this.confirmsBeforeFinal) {
-      const pruneBlock = longestChain.splice(0, 1)[0];
-      // Children discarded as stale branches
-      delete pruneBlock.orphan;
-      this.store.put(pruneBlock);
-    }
+    const prunedHeaders = longestChain
+      .splice(0, longestChain.length - this.confirmsBeforeFinal);
+
+    prunedHeaders.forEach((block) => {
+      this.store.put(block);
+    });
   }
 
   /** @private */
