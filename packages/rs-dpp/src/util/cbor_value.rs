@@ -38,13 +38,13 @@ pub trait CborBTreeMapHelper {
 
 impl CborBTreeMapHelper for BTreeMap<String, CborValue> {
     fn get_identifier(&self, key: &str) -> Result<[u8; 32], ProtocolError> {
-        bytes_for_system_value_from_tree_map(&self, key)?
+        bytes_for_system_value_from_tree_map(self, key)?
             .ok_or_else(|| {
-                ProtocolError::DecodingError(String::from(format!("unable to get {key}")))
+                ProtocolError::DecodingError(format!("unable to get {key}"))
             })?
             .try_into()
             .map_err(|_| {
-                ProtocolError::DecodingError(String::from(format!("{key} must be 32 bytes")))
+                ProtocolError::DecodingError(format!("{key} must be 32 bytes"))
             })
     }
 
@@ -52,11 +52,11 @@ impl CborBTreeMapHelper for BTreeMap<String, CborValue> {
         Ok(self
             .get(key)
             .ok_or_else(|| {
-                ProtocolError::DecodingError(String::from(format!("unable to get {key}")))
+                ProtocolError::DecodingError(format!("unable to get {key}"))
             })?
             .as_text()
             .ok_or_else(|| {
-                ProtocolError::DecodingError(String::from(format!("expect {key} to be a string")))
+                ProtocolError::DecodingError(format!("expect {key} to be a string"))
             })?
             .to_string())
     }
@@ -65,31 +65,31 @@ impl CborBTreeMapHelper for BTreeMap<String, CborValue> {
         Ok(i128::from(
             self.get(key)
                 .ok_or_else(|| {
-                    ProtocolError::DecodingError(String::from(format!("unable to get {key}")))
+                    ProtocolError::DecodingError(format!("unable to get {key}"))
                 })?
                 .as_integer()
                 .ok_or_else(|| {
-                    ProtocolError::DecodingError(String::from(format!(
+                    ProtocolError::DecodingError(format!(
                         "expect {key} to be an integer"
-                    )))
+                    ))
                 })?,
         ) as u32)
     }
 
     fn get_i64(&self, key: &str) -> Result<i64, ProtocolError> {
-        Ok(self
+        self
             .get(key)
             .ok_or_else(|| {
-                ProtocolError::DecodingError(String::from(format!("unable to get property {key}")))
+                ProtocolError::DecodingError(format!("unable to get property {key}"))
             })?
             .as_integer()
             .ok_or_else(|| {
-                ProtocolError::DecodingError(String::from(format!("{key} must be an integer")))
+                ProtocolError::DecodingError(format!("{key} must be an integer"))
             })?
             .try_into()
             .map_err(|_| {
-                ProtocolError::DecodingError(String::from(format!("{key} must be a 64 int")))
-            })?)
+                ProtocolError::DecodingError(format!("{key} must be a 64 int"))
+            })
     }
 }
 

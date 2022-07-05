@@ -150,13 +150,12 @@ impl Document {
 
         canonical_map.remove("$protocolVersion");
 
-        if let None = self.updated_at {
+        if self.updated_at.is_none() {
             canonical_map.remove("$updatedAt");
         }
 
         canonical_map.replace_values(IDENTIFIER_FIELDS, ReplaceWith::Bytes);
 
-        println!("{canonical_map:?}");
         let mut document_buffer = canonical_map
             .to_bytes()
             .map_err(|e| ProtocolError::EncodingError(e.to_string()))?;
