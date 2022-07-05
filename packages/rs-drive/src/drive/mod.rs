@@ -93,6 +93,8 @@ impl Drive {
     pub fn commit_transaction(&self, transaction: Transaction) -> Result<(), Error> {
         self.grove
             .commit_transaction(transaction)
+            .unwrap() // TODO: discuss what to do with transaction cost as costs are
+            // returned in advance on transaction operations not on commit
             .map_err(Error::GroveDB)
     }
 

@@ -234,7 +234,7 @@ impl OperationCostConvert for SizesOfInsertOperation {
             seek_count: 0,
             storage_written_bytes: 0,
             storage_loaded_bytes: 0,
-            loaded_bytes: 0,
+            storage_freed_bytes: 0,
             hash_byte_calls: 0,
             hash_node_calls: 0,
         }
@@ -247,7 +247,7 @@ impl OperationCostConvert for SizesOfQueryOperation {
             seek_count: 0,
             storage_written_bytes: 0,
             storage_loaded_bytes: 0,
-            loaded_bytes: 0,
+            storage_freed_bytes: 0,
             hash_byte_calls: 0,
             hash_node_calls: 0,
         }
@@ -260,7 +260,7 @@ impl OperationCostConvert for SizesOfDeleteOperation {
             seek_count: 0,
             storage_written_bytes: 0,
             storage_loaded_bytes: 0,
-            loaded_bytes: 0,
+            storage_freed_bytes: 0,
             hash_byte_calls: 0,
             hash_node_calls: 0,
         }
@@ -306,7 +306,7 @@ impl DriveOperation {
                 seek_count: 0,
                 storage_written_bytes: 0,
                 storage_loaded_bytes: 0,
-                loaded_bytes: 0,
+                storage_freed_bytes: 0,
                 hash_byte_calls: 0,
                 hash_node_calls: 0,
             }),
@@ -385,7 +385,7 @@ impl DriveCost for OperationCost {
             seek_count,
             storage_written_bytes,
             storage_loaded_bytes,
-            loaded_bytes,
+            storage_freed_bytes,
             hash_byte_calls,
             hash_node_calls,
         } = *self;
@@ -398,7 +398,7 @@ impl DriveCost for OperationCost {
         let storage_loaded_bytes_cost = (storage_loaded_bytes as u64)
             .checked_mul(STORAGE_LOAD_CREDIT_PER_BYTE)
             .ok_or_else(|| get_overflow_error("storage loaded cost overflow"))?;
-        let loaded_bytes_cost = (loaded_bytes as u64)
+        let storage_loaded_bytes_cost = (storage_loaded_bytes as u64)
             .checked_mul(NON_STORAGE_LOAD_CREDIT_PER_BYTE)
             .ok_or_else(|| get_overflow_error("loaded bytes cost overflow"))?;
         let hash_byte_cost = (hash_byte_calls as u64)
@@ -411,7 +411,7 @@ impl DriveCost for OperationCost {
             .checked_add(storage_written_bytes_ephemeral_cost)
             .map(|c| c.checked_add(storage_loaded_bytes_cost))
             .flatten()
-            .map(|c| c.checked_add(loaded_bytes_cost))
+            .map(|c| c.checked_add(storage_loaded_bytes_cost))
             .flatten()
             .map(|c| c.checked_add(hash_byte_cost))
             .flatten()

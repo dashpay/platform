@@ -166,6 +166,7 @@ pub fn setup_family_tests(count: u32, seed: u64) -> (Drive, Contract, TempDir) {
     drive
         .grove
         .commit_transaction(db_transaction)
+        .unwrap()
         .expect("transaction should be committed");
     (drive, contract, tmp_dir)
 }
@@ -223,6 +224,7 @@ pub fn setup_family_tests_with_nulls(count: u32, seed: u64) -> (Drive, Contract,
     drive
         .grove
         .commit_transaction(db_transaction)
+        .unwrap()
         .expect("transaction should be committed");
     (drive, contract, tmp_dir)
 }
@@ -343,6 +345,7 @@ pub fn setup_dpns_tests(count: u32, seed: u64) -> (Drive, Contract, TempDir) {
     drive
         .grove
         .commit_transaction(db_transaction)
+        .unwrap()
         .expect("transaction should be committed");
     (drive, contract, tmp_dir)
 }
@@ -408,6 +411,7 @@ pub fn setup_dpns_test_with_data(path: &str) -> (Drive, Contract, TempDir) {
     drive
         .grove
         .commit_transaction(db_transaction)
+        .unwrap()
         .expect("transaction should be committed");
     (drive, contract, tmp_dir)
 }
@@ -452,6 +456,7 @@ fn test_query_many() {
     drive
         .grove
         .commit_transaction(db_transaction)
+        .unwrap()
         .expect("transaction should be committed");
 }
 
@@ -2125,6 +2130,7 @@ fn test_family_with_nulls_query() {
     drive
         .grove
         .commit_transaction(db_transaction)
+        .unwrap()
         .expect("unable to commit transaction");
 }
 
@@ -3135,6 +3141,7 @@ fn test_dpns_query_start_at_with_null_id() {
     drive
         .grove
         .commit_transaction(db_transaction)
+        .unwrap()
         .expect("transaction should be committed");
 
     let db_transaction = drive.grove.start_transaction();
@@ -3327,6 +3334,7 @@ fn test_dpns_query_start_after_with_null_id() {
     drive
         .grove
         .commit_transaction(db_transaction)
+        .unwrap()
         .expect("transaction should be committed");
 
     let db_transaction = drive.grove.start_transaction();
@@ -3521,6 +3529,7 @@ fn test_dpns_query_start_after_with_null_id_desc() {
     drive
         .grove
         .commit_transaction(db_transaction)
+        .unwrap()
         .expect("transaction should be committed");
 
     let db_transaction = drive.grove.start_transaction();

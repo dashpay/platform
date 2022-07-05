@@ -102,6 +102,7 @@ mod tests {
         drive
             .grove
             .commit_transaction(db_transaction)
+            .unwrap()
             .expect("expected to be able to commit a transaction");
     }
 }
