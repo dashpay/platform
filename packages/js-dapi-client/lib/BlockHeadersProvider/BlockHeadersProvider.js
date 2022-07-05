@@ -144,6 +144,7 @@ class BlockHeadersProvider extends EventEmitter {
   }
 
   async startContinuousSync(fromBlockHeight) {
+    this.ensureReader();
     await this.ensureChainRoot(fromBlockHeight);
     await this.blockHeadersReader.subscribeToNew(fromBlockHeight);
     this.state = STATES.CONTINUOUS_SYNC;

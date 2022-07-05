@@ -6,6 +6,7 @@ const {
 } = require('@dashevo/dapi-grpc');
 
 const DAPIClientError = require('../../errors/DAPIClientError');
+const DAPIStream = require('../../transport/DAPIStream');
 
 /**
  * @param {GrpcTransport} grpcTransport
@@ -55,7 +56,7 @@ function subscribeToBlockHeadersWithChainLocksFactory(grpcTransport) {
     );
   }
 
-  return subscribeToBlockHeadersWithChainLocks;
+  return new DAPIStream(subscribeToBlockHeadersWithChainLocks).connect;
 }
 
 /**

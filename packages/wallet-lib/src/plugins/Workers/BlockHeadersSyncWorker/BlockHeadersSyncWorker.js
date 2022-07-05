@@ -90,6 +90,7 @@ class BlockHeadersSyncWorker extends Worker {
     };
 
     const chainUpdateHandler = (newHeaders, headHeight) => {
+      // TODO: fix growing height after stream reconnects
       let newChainHeight = headHeight;
       if (newHeaders.length > 1) {
         newChainHeight += newHeaders.length - 1;
