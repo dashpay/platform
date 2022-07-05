@@ -89,15 +89,14 @@ class BlockHeadersSyncWorker extends Worker {
       this.parentEvents.emit('error', e);
     };
 
-    const chainUpdateHandler = (newHeaders, headHeight) => {
-      // TODO: fix growing height after stream reconnects
-      let newChainHeight = headHeight;
+    const chainUpdateHandler = (newHeaders, batchHeadHeight) => {
+      const chainStore = this.storage.getChainStore(this.network.toString());
+      const walletStore = this.storage.getWalletStore(this.walletId);
+
+      let newChainHeight = batchHeadHeight;
       if (newHeaders.length > 1) {
         newChainHeight += newHeaders.length - 1;
       }
-
-      const chainStore = this.storage.getChainStore(this.network.toString());
-      const walletStore = this.storage.getWalletStore(this.walletId);
 
       if (newChainHeight > chainStore.state.blockHeight) {
         // TODO: do we really need it having in mind that wallet holds lastKnownBlock?
@@ -105,7 +104,15 @@ class BlockHeadersSyncWorker extends Worker {
         walletStore.updateLastKnownBlock(newChainHeight);
         this.parentEvents.emit(EVENTS.BLOCKHEIGHT_CHANGED, newChainHeight);
         logger.debug(`BlockHeadersSyncWorker - setting chain height ${newChainHeight}`);
-        console.log('Heights', newHeaders.length, newChainHeight);
+
+        const { blockHeadersProvider: { spvChain } } = this.transport.client;
+        const { prunedHeaders } = spvChain;
+        const longestChain = spvChain.getLongestChain();
+        const totalChainLength = prunedHeaders.length + longestChain.length;
+
+        // TODO: fix total chain length is equal to the new chain height, which is not correct.
+        // It should be +1 because of a genesis block
+        console.log(`[BlockHeadersSyncWorker] Chain height update. New height: ${newChainHeight}. Headers added: ${newHeaders.length}. Chain length: ${totalChainLength}`);
         // TODO: implement with pruning in mind
         // this.storage.scheduleStateSave();
       }
@@ -148,8 +155,9 @@ class BlockHeadersSyncWorker extends Worker {
       / totalHistoricalHeaders;
     progress = Math.round(progress * 1000) / 1000;
 
-    console.log(this.syncCheckpoint + synchronizedHistoricalHeaders - 1,
-      totalHistoricalHeaders, progress);
+    const fetchedHeaders = this.syncCheckpoint + synchronizedHistoricalHeaders - 1;
+
+    console.log(`[BlockHeadersSyncWorker] Historical fetch: ${fetchedHeaders}/${totalHistoricalHeaders}. Progress: ${progress}`);
   }
 
   scheduleProgressUpdate() {

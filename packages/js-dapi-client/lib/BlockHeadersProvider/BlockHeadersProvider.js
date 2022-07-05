@@ -44,8 +44,8 @@ class BlockHeadersProvider extends EventEmitter {
       ...options,
     };
 
-    // TODO: make sure it's okay passing 1 parameter here
-    this.spvChain = new SpvChain(this.options.network, 5000);
+    // TODO: make sure chain properly maintains it's integrity if confirms is more than chain length
+    this.spvChain = new SpvChain(this.options.network, 100);
 
     this.state = STATES.IDLE;
 

@@ -12,7 +12,7 @@ const SpvChain = class {
     this.confirmsBeforeFinal = confirms;
     this.init(chainType, startBlock);
     this.prunedHeaders = [];
-
+    this.startBlockHeight = startBlockHeight;
     // TODO: test
     this.hashesByHeight = {
       [startBlockHeight]: this.root.hash,

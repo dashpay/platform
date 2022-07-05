@@ -17,7 +17,7 @@ function subscribeToBlockHeadersWithChainLocksFactory(grpcTransport) {
    * @typedef {subscribeToBlockHeadersWithChainLocks}
    * @param {DAPIClientOptions & subscribeToBlockHeadersWithChainLocksOptions} [options]
    * @returns {
-   *    EventEmitter|!grpc.web.ClientReadableStream<!BlockHeadersWithChainLocksResponse>
+   *    Promise<EventEmitter|DAPIStream<!BlockHeadersWithChainLocksResponse>>
    * }
    */
   async function subscribeToBlockHeadersWithChainLocks(options = { }) {
@@ -56,7 +56,7 @@ function subscribeToBlockHeadersWithChainLocksFactory(grpcTransport) {
     );
   }
 
-  return new DAPIStream(subscribeToBlockHeadersWithChainLocks).connect;
+  return DAPIStream.create(subscribeToBlockHeadersWithChainLocks);
 }
 
 /**

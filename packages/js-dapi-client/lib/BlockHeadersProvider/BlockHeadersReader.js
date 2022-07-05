@@ -150,16 +150,39 @@ class BlockHeadersReader extends EventEmitter {
    * @returns {Promise<Stream>}
    */
   async subscribeToNew(fromBlockHeight) {
-    let headersObtained = 0;
+    let chainHeight = -1;
+    // Used for reconnects. The first batch after the reconnect has to be ignored
+    let ignoreCount = 0;
 
     const stream = await this.coreMethods.subscribeToBlockHeadersWithChainLocks({
       fromBlockHeight,
     });
 
     stream.on('data', (data) => {
-      const blockHeaders = data.getBlockHeaders();
+      const blockHeadersResponse = data.getBlockHeaders();
 
-      if (blockHeaders) {
+      if (blockHeadersResponse) {
+        const rawHeaders = blockHeadersResponse.getHeadersList();
+        // Ignore already fetched headers after the reconnect
+        if (ignoreCount) {
+          rawHeaders.splice(0, ignoreCount);
+          ignoreCount = 0;
+
+          if (!rawHeaders.length) {
+            return;
+          }
+        }
+
+        const headers = rawHeaders.map((header) => new BlockHeader(Buffer.from(header)));
+
+        if (chainHeight === -1) {
+          chainHeight = fromBlockHeight + headers.length - 1;
+        } else {
+          chainHeight += headers.length;
+        }
+
+        const batchHeadHeight = chainHeight - headers.length + 1;
+
         /**
          * Kills stream in case of deliberate rejection from the outside
          *
@@ -168,15 +191,22 @@ class BlockHeadersReader extends EventEmitter {
         const rejectHeaders = (e) => {
           stream.destroy(e);
         };
-
-        const headers = blockHeaders.getHeadersList()
-          .map((header) => new BlockHeader(Buffer.from(header)));
-
-        const headHeight = fromBlockHeight + headersObtained;
-        headersObtained += headers.length;
-
-        this.emit(EVENTS.BLOCK_HEADERS, headers, headHeight, rejectHeaders);
+        this.emit(EVENTS.BLOCK_HEADERS, headers, batchHeadHeight, rejectHeaders);
       }
+    });
+
+    stream.on('beforeReconnect', (updateArguments) => {
+      // Sync from chainHeight - 1 because not all nodes might be synchronized yet
+      let newFromBlockHeight = chainHeight - 1;
+      if (newFromBlockHeight < fromBlockHeight) {
+        newFromBlockHeight = fromBlockHeight;
+      }
+
+      updateArguments({
+        fromBlockHeight: newFromBlockHeight,
+      });
+
+      ignoreCount = chainHeight - newFromBlockHeight;
     });
 
     stream.on('error', (e) => {
@@ -236,9 +266,8 @@ class BlockHeadersReader extends EventEmitter {
             stream.destroy(e);
           };
           this.streamsStats[fromBlockHeight] += headersList.length;
-          // console.log('Stream', fromBlockHeight, 'total provided', totalHeadersProvided);
-          const headHeight = fromBlockHeight + headersObtained;
-          this.emit(EVENTS.BLOCK_HEADERS, headersList, headHeight, rejectHeaders);
+          const batchHeadHeight = fromBlockHeight + headersObtained;
+          this.emit(EVENTS.BLOCK_HEADERS, headersList, batchHeadHeight, rejectHeaders);
 
           if (!rejected) {
             headersObtained += headersList.length;

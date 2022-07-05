@@ -2,7 +2,7 @@ const EventEmitter = require('events');
 const GrpcErrorCodes = require('@dashevo/grpc-common/lib/server/error/GrpcErrorCodes');
 
 const defaultOptions = {
-  reconnectTimeoutDelay: 55000,
+  reconnectTimeoutDelay: 5000,
 };
 
 const EVENTS = {
@@ -17,6 +17,14 @@ const EVENTS = {
  * Stream that provides auto-reconnect functionality
  */
 class DAPIStream extends EventEmitter {
+  static create(fn) {
+    return async (...args) => {
+      const dapiStream = new DAPIStream(fn, args);
+      await dapiStream.connect(...args);
+      return dapiStream;
+    };
+  }
+
   constructor(streamFunction, options = {}) {
     super();
     this.stream = null;
@@ -39,6 +47,7 @@ class DAPIStream extends EventEmitter {
     this.cancel = this.cancel.bind(this);
     this.destroy = this.destroy.bind(this);
     this.errorHandler = this.errorHandler.bind(this);
+    this.endHandler = this.endHandler.bind(this);
     this.addListeners = this.addListeners.bind(this);
     this.removeListeners = this.removeListeners.bind(this);
   }
@@ -54,8 +63,6 @@ class DAPIStream extends EventEmitter {
       this.reconnectTimeout = null;
       this.stream.cancel();
     }, this.options.reconnectTimeoutDelay);
-
-    return this;
   }
 
   /**
@@ -64,7 +71,17 @@ class DAPIStream extends EventEmitter {
   addListeners() {
     this.stream.on(EVENTS.DATA, (data) => this.emit(EVENTS.DATA, data));
     this.stream.on(EVENTS.ERROR, this.errorHandler);
-    this.stream.on(EVENTS.END, () => this.emit(EVENTS.END));
+    this.stream.on(EVENTS.END, this.endHandler);
+  }
+
+  /**
+   * @private
+   */
+  endHandler() {
+    this.removeListeners();
+    this.stopReconnectTimeout();
+    this.stream = null;
+    this.emit(EVENTS.END);
   }
 
   /**
@@ -86,7 +103,7 @@ class DAPIStream extends EventEmitter {
         this.connect(...newArgs)
           .catch((connectError) => this.emit(EVENTS.ERROR, connectError));
       } else {
-        this.emit(EVENTS.END);
+        this.endHandler();
       }
     } else {
       this.emit(EVENTS.ERROR, e);
