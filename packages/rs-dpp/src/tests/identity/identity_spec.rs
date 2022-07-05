@@ -61,7 +61,6 @@ mod to_buffer {
         let identity = Identity::from_buffer(hex::decode(identity_cbor_hex()).unwrap()).unwrap();
         let identity_buffer = identity.to_cbor().unwrap();
 
-        println!("{:?}", encode_hex(&identity_buffer));
         assert_eq!(encode_hex(&identity_buffer), identity_cbor_hex());
     }
 }
@@ -126,7 +125,5 @@ mod from_buffer {
             ]
         );
         assert_eq!(pk_2.read_only, false);
-
-        println!("{:?}", identity);
     }
 }

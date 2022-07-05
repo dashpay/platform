@@ -331,11 +331,9 @@ impl JsonValueExt for JsonValue {
             match to_replace {
                 Some(v) => {
                     let base64: String = serde_json::from_value(v.clone())?;
-                    println!("replacing {:?}", raw_path);
                     *v = JsonValue::from(base64::decode(base64)?);
                 }
                 None => {
-                    println!("Not replacing");
                     trace!("path '{}' is not found", raw_path)
                 }
             }

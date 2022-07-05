@@ -38,6 +38,19 @@ pub const SCHEMA: &str = "https://schema.dash.org/dpp-0-4-0/meta/data-contract";
 
 pub const IDENTIFIER_FIELDS: [&str; 2] = [PROPERTY_ID, PROPERTY_OWNER_ID];
 
+pub trait Serializable: Serialize + Deserialize<'static> {
+    fn to_buffer(&self) -> Result<Vec<u8>, ProtocolError> {
+        let mut buf = vec![];
+        ciborium::ser::into_writer(&self, &mut buf)
+            .map_err(|e| ProtocolError::EncodingError(e.to_string()))?;
+        Ok(buf)
+    }
+
+    fn from_buffer(buffer: &[u8]) -> Result<Self, ProtocolError> {
+        ciborium::de::from_reader(buffer).map_err(|e| ProtocolError::DecodingError(e.to_string()))
+    }
+}
+
 impl Convertible for DataContract {
     fn to_object(&self) -> Result<JsonValue, ProtocolError> {
         let mut json_object = serde_json::to_value(&self)?;
@@ -88,10 +101,6 @@ pub struct DataContract {
     pub entropy: [u8; 32],
     #[serde(skip)]
     pub binary_properties: BTreeMap<DocumentType, BTreeMap<PropertyPath, JsonValue>>,
-    #[serde(skip)]
-    pub documents_cbor_internal: CborCanonicalMap,
-    #[serde(skip)]
-    pub defs_cbor_internal: CborCanonicalMap,
 }
 
 impl DataContract {
@@ -128,12 +137,12 @@ impl DataContract {
         let version = data_contract_map.get_u32(PROPERTY_VERSION)?;
 
         // Defs
-        let (defs, defs_cbor) = match data_contract_map.get("$defs") {
-            None => (BTreeMap::new(), CborCanonicalMap::new()),
+        let defs = match data_contract_map.get("$defs") {
+            None => BTreeMap::new(),
             Some(definition_value) => {
                 let definition_map = definition_value.as_map();
                 match definition_map {
-                    None => (BTreeMap::new(), CborCanonicalMap::new()),
+                    None => BTreeMap::new(),
                     Some(cbor_map) => {
                         let mut res = BTreeMap::<String, JsonValue>::new();
                         for (key, value) in cbor_map {
@@ -145,7 +154,7 @@ impl DataContract {
                             let json_value = cbor_value_to_json_value(value)?;
                             res.insert(String::from(key_string), json_value);
                         }
-                        (res, cbor_map.into())
+                        res
                     }
                 }
             }
@@ -158,6 +167,7 @@ impl DataContract {
         let contract_documents_cbor_map = documents_cbor_value
             .as_map()
             .ok_or_else(|| ProtocolError::DecodingError(String::from("documents must be a map")))?;
+
         let documents_vec = contract_documents_cbor_map
             .iter()
             .map(|(key, value)| {
@@ -180,10 +190,10 @@ impl DataContract {
             documents.insert(key, value);
         }
 
-        Ok(Self {
+        let mut data_contract = Self {
             protocol_version,
             id: Identifier::new(contract_id),
-            schema: schema.to_string(),
+            schema,
             version,
             owner_id: Identifier::new(owner_id),
             documents,
@@ -191,9 +201,11 @@ impl DataContract {
             metadata: None,
             entropy: [0; 32],
             binary_properties: Default::default(),
-            documents_cbor_internal: contract_documents_cbor_map.into(),
-            defs_cbor_internal: defs_cbor,
-        })
+        };
+
+        data_contract.generate_binary_properties();
+
+        Ok(data_contract)
     }
 
     pub fn to_object(&self, skip_identifiers_conversion: bool) -> Result<JsonValue, ProtocolError> {
@@ -227,13 +239,18 @@ impl DataContract {
         contract_cbor_map.insert(PROPERTY_SCHEMA, self.schema());
         contract_cbor_map.insert(PROPERTY_VERSION, self.version());
         contract_cbor_map.insert(PROPERTY_OWNER_ID, self.owner_id().to_buffer().to_vec());
-        contract_cbor_map.insert(
-            PROPERTY_DOCUMENTS,
-            self.documents_cbor().to_value_unsorted(),
-        );
+
+        let docs = CborValue::serialized(&self.documents)
+            .map_err(|e| ProtocolError::EncodingError(e.to_string()))?;
+
+        contract_cbor_map.insert(PROPERTY_DOCUMENTS, docs);
 
         if !self.defs.is_empty() {
-            contract_cbor_map.insert(PROPERTY_DEFINITIONS, self.defs_cbor().to_value_unsorted());
+            contract_cbor_map.insert(
+                PROPERTY_DEFINITIONS,
+                CborValue::serialized(&self.defs)
+                    .map_err(|e| ProtocolError::EncodingError(e.to_string()))?,
+            );
         }
 
         let mut contract_buf = contract_cbor_map
@@ -246,14 +263,6 @@ impl DataContract {
 
     pub fn documents(&self) -> &BTreeMap<DocumentType, JsonSchema> {
         &self.documents
-    }
-
-    pub fn documents_cbor(&self) -> &CborCanonicalMap {
-        &self.documents_cbor_internal
-    }
-
-    pub fn defs_cbor(&self) -> &CborCanonicalMap {
-        &self.defs_cbor_internal
     }
 
     pub fn entropy(&self) -> [u8; 32] {
@@ -405,6 +414,7 @@ mod test {
     fn conversion_to_buffer_from_buffer() {
         init();
         let data_contract = get_data_contract_fixture(None);
+
         let data_contract_bytes = data_contract
             .to_buffer()
             .expect("data contract should be converted into the bytes");

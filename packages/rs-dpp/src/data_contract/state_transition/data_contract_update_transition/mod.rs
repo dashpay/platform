@@ -176,7 +176,7 @@ mod test {
 
         let state_transition = DataContractUpdateTransition::from_raw_object(json!({
                     PROPERTY_PROTOCOL_VERSION: version::LATEST_VERSION,
-                    PROPERTY_DATA_CONTRACT : data_contract.to_object(true).unwrap(),
+                    PROPERTY_DATA_CONTRACT : data_contract.to_object(false).unwrap(),
         }))
         .expect("state transition should be created without errors");
 
