@@ -18,6 +18,7 @@ on:
       - packages/feature-flags-contract/**
       - packages/dpns-contract/**
       - packages/masternode-reward-shares-contract/**
+      - packages/dash-spv/**
 
 jobs:
   dapi-tests:

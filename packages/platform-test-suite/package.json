@@ -1,7 +1,7 @@
 {
   "name": "@dashevo/platform-test-suite",
   "private": true,
-  "version": "0.22.12",
+  "version": "0.22.13",
   "description": "Dash Network end-to-end tests",
   "scripts": {
     "test": "mocha -b './test/**/*.spec.js'",
@@ -21,7 +21,7 @@
   "homepage": "https://github.com/dashevo/platform-test-suite#readme",
   "dependencies": {
     "@dashevo/dapi-client": "workspace:~",
-    "@dashevo/dashcore-lib": "~0.19.38",
+    "@dashevo/dashcore-lib": "~0.19.39",
     "@dashevo/dpns-contract": "workspace:~",
     "@dashevo/dpp": "workspace:~",
     "@dashevo/feature-flags-contract": "workspace:~",
@@ -56,7 +56,7 @@
     "localforage": "^1.10.0",
     "mocha": "^9.1.2",
     "net": "^1.0.2",
-    "nodeforage": "^1.1.1",
+    "nodeforage": "^1.1.2",
     "os-browserify": "^0.3.0",
     "path-browserify": "^1.0.1",
     "process": "^0.11.10",

@@ -20,7 +20,7 @@ function stopNodeTaskFactory(
     return new Listr([
       {
         title: 'Check node is running',
-        skip: (ctx) => ctx.isForceReset,
+        skip: (ctx) => ctx.isForce,
         task: async () => {
           if (!await dockerCompose.isServiceRunning(config.toEnvs())) {
             throw new Error('Node is not running');
@@ -30,6 +30,7 @@ function stopNodeTaskFactory(
       {
         title: 'Save core node time',
         enabled: () => config.get('group') === 'local',
+        skip: (ctx) => ctx.isForce,
         task: async () => {
           const rpcClient = createRpcClient({
             port: config.get('core.rpc.port'),
