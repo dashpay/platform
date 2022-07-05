@@ -148,13 +148,18 @@ const SpvChain = class {
 
   /** @private */
   orphanChunksReconnect() {
+    // TODO: consider optimizing with map of { [chunkHeadHash]: chunkIndex }
+    // to get rid of sorting and make the whole function of O(n) complexity
     this.orphanChunks.sort((a, b) => a[0].timestamp - b[0].timestamp);
-    this.orphanChunks.slice().forEach((chunk, index) => {
+
+    for (let i = 0; i < this.orphanChunks.length; i += 1) {
+      const chunk = this.orphanChunks[i];
       if (this.getTipHash() === utils.getCorrectedHash(chunk[0].prevHash)) {
         this.appendHeadersToLongestChain(chunk);
-        this.orphanChunks.splice(index, 1);
+        this.orphanChunks.splice(i, 1);
+        i -= 1;
       }
-    });
+    }
   }
 
   /** @private */
