@@ -30,7 +30,6 @@ mod dash_platform_protocol;
 
 pub mod mocks;
 
-mod common;
 #[cfg(test)]
 mod tests;
 

@@ -7,11 +7,49 @@ use ciborium::value::Value as CborValue;
 
 use serde_json::{Map, Value as JsonValue};
 
-use crate::common::bytes_for_system_value_from_tree_map;
 use crate::identifier::Identifier;
 use crate::util::json_value::ReplaceWith;
 use crate::util::string_encoding::Encoding;
 use crate::ProtocolError;
+
+pub fn value_to_bytes(value: &CborValue) -> Result<Option<Vec<u8>>, ProtocolError> {
+    match value {
+        CborValue::Bytes(bytes) => Ok(Some(bytes.clone())),
+        CborValue::Text(text) => match bs58::decode(text).into_vec() {
+            Ok(data) => Ok(Some(data)),
+            Err(_) => Ok(None),
+        },
+        CborValue::Array(array) => array
+            .iter()
+            .map(|byte| match byte {
+                CborValue::Integer(int) => {
+                    let value_as_u8: u8 = (*int).try_into().map_err(|_| {
+                        ProtocolError::DecodingError(String::from("expected u8 value"))
+                    })?;
+                    Ok(Some(value_as_u8))
+                }
+                _ => Err(ProtocolError::DecodingError(String::from(
+                    "not an array of integers",
+                ))),
+            })
+            .collect::<Result<Option<Vec<u8>>, ProtocolError>>(),
+        _ => Err(ProtocolError::DecodingError(String::from(
+            "system value is incorrect type",
+        ))),
+    }
+}
+
+pub fn map_values_to_bytes(
+    document: &BTreeMap<String, CborValue>,
+    key: &str,
+) -> Result<Option<Vec<u8>>, ProtocolError> {
+    let value = document.get(key);
+    if let Some(value) = value {
+        value_to_bytes(value)
+    } else {
+        Ok(None)
+    }
+}
 
 pub fn get_key_from_cbor_map<'a>(
     cbor_map: &'a [(CborValue, CborValue)],
@@ -38,58 +76,39 @@ pub trait CborBTreeMapHelper {
 
 impl CborBTreeMapHelper for BTreeMap<String, CborValue> {
     fn get_identifier(&self, key: &str) -> Result<[u8; 32], ProtocolError> {
-        bytes_for_system_value_from_tree_map(self, key)?
-            .ok_or_else(|| {
-                ProtocolError::DecodingError(format!("unable to get {key}"))
-            })?
+        map_values_to_bytes(self, key)?
+            .ok_or_else(|| ProtocolError::DecodingError(format!("unable to get {key}")))?
             .try_into()
-            .map_err(|_| {
-                ProtocolError::DecodingError(format!("{key} must be 32 bytes"))
-            })
+            .map_err(|_| ProtocolError::DecodingError(format!("{key} must be 32 bytes")))
     }
 
     fn get_string(&self, key: &str) -> Result<String, ProtocolError> {
         Ok(self
             .get(key)
-            .ok_or_else(|| {
-                ProtocolError::DecodingError(format!("unable to get {key}"))
-            })?
+            .ok_or_else(|| ProtocolError::DecodingError(format!("unable to get {key}")))?
             .as_text()
-            .ok_or_else(|| {
-                ProtocolError::DecodingError(format!("expect {key} to be a string"))
-            })?
+            .ok_or_else(|| ProtocolError::DecodingError(format!("expect {key} to be a string")))?
             .to_string())
     }
 
     fn get_u32(&self, key: &str) -> Result<u32, ProtocolError> {
         Ok(i128::from(
             self.get(key)
-                .ok_or_else(|| {
-                    ProtocolError::DecodingError(format!("unable to get {key}"))
-                })?
+                .ok_or_else(|| ProtocolError::DecodingError(format!("unable to get {key}")))?
                 .as_integer()
                 .ok_or_else(|| {
-                    ProtocolError::DecodingError(format!(
-                        "expect {key} to be an integer"
-                    ))
+                    ProtocolError::DecodingError(format!("expect {key} to be an integer"))
                 })?,
         ) as u32)
     }
 
     fn get_i64(&self, key: &str) -> Result<i64, ProtocolError> {
-        self
-            .get(key)
-            .ok_or_else(|| {
-                ProtocolError::DecodingError(format!("unable to get property {key}"))
-            })?
+        self.get(key)
+            .ok_or_else(|| ProtocolError::DecodingError(format!("unable to get property {key}")))?
             .as_integer()
-            .ok_or_else(|| {
-                ProtocolError::DecodingError(format!("{key} must be an integer"))
-            })?
+            .ok_or_else(|| ProtocolError::DecodingError(format!("{key} must be an integer")))?
             .try_into()
-            .map_err(|_| {
-                ProtocolError::DecodingError(format!("{key} must be a 64 int"))
-            })
+            .map_err(|_| ProtocolError::DecodingError(format!("{key} must be a 64 int")))
     }
 }
 
