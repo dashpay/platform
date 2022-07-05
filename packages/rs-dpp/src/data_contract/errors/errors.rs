@@ -3,6 +3,8 @@ use thiserror::Error;
 use crate::data_contract::DataContract;
 use crate::errors::consensus::ConsensusError;
 
+// TODO - to delete
+
 #[derive(Error, Debug)]
 pub enum DataContractError {
     #[error("Data Contract already exists")]

@@ -39,9 +39,9 @@ pub struct Document {
     pub data_contract_id: Identifier,
     #[serde(rename = "$ownerId")]
     pub owner_id: Identifier,
-    #[serde(rename = "$createdAt")]
+    #[serde(rename = "$createdAt", skip_serializing_if = "Option::is_none")]
     pub created_at: Option<i64>,
-    #[serde(rename = "$updatedAt")]
+    #[serde(rename = "$updatedAt", skip_serializing_if = "Option::is_none")]
     pub updated_at: Option<i64>,
     // the serde_json::Value preserves the order (see .toml file)
     #[serde(flatten)]

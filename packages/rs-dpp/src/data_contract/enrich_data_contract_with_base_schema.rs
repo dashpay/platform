@@ -8,9 +8,14 @@ use super::DataContract;
 const PROPERTY_PROPERTIES: &str = "properties";
 const PROPERTY_REQUIRED: &str = "required";
 
+pub const PREFIX_BYTE_0: u8 = 0;
+pub const PREFIX_BYTE_1: u8 = 1;
+pub const PREFIX_BYTE_2: u8 = 2;
+pub const PREFIX_BYTE_3: u8 = 3;
+
 pub fn enrich_data_contract_with_base_schema(
     data_contract: &DataContract,
-    base_schema: JsonValue,
+    base_schema: &JsonValue,
     schema_id_byte_prefix: u8,
     exclude_properties: &[&str],
 ) -> Result<DataContract, ProtocolError> {
@@ -44,7 +49,7 @@ pub fn enrich_data_contract_with_base_schema(
             );
             required.retain(|p| {
                 if let JsonValue::String(v) = p {
-                    return exclude_properties.contains(&v.as_str());
+                    return !exclude_properties.contains(&v.as_str());
                 }
                 true
             });
