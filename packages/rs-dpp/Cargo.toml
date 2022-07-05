@@ -34,4 +34,5 @@ serde_cbor = "0.11.2"
 
 [dev-dependencies]
 mockall= { version ="0.11"}
+test-case = { version ="2.0"}
 tokio = { version ="1.17",  features=["full"]}
