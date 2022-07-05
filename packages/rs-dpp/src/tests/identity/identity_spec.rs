@@ -73,11 +73,9 @@ pub struct DummyStruct {
 mod from_buffer {
     use std::convert::TryFrom;
 
-    use crate::identifier::Identifier;
     use crate::identity::{KeyType, Purpose, SecurityLevel};
     use crate::prelude::Identity;
-    use crate::tests::identity::identity_spec::{get_buffer, identity_cbor_hex};
-    use crate::util::string_encoding::Encoding;
+    use crate::tests::identity::identity_spec::identity_cbor_hex;
 
     #[test]
     pub fn should_parse_hex_from_js_dpp() {

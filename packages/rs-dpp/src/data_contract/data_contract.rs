@@ -38,19 +38,6 @@ pub const SCHEMA: &str = "https://schema.dash.org/dpp-0-4-0/meta/data-contract";
 
 pub const IDENTIFIER_FIELDS: [&str; 2] = [PROPERTY_ID, PROPERTY_OWNER_ID];
 
-pub trait Serializable: Serialize + Deserialize<'static> {
-    fn to_buffer(&self) -> Result<Vec<u8>, ProtocolError> {
-        let mut buf = vec![];
-        ciborium::ser::into_writer(&self, &mut buf)
-            .map_err(|e| ProtocolError::EncodingError(e.to_string()))?;
-        Ok(buf)
-    }
-
-    fn from_buffer(buffer: &[u8]) -> Result<Self, ProtocolError> {
-        ciborium::de::from_reader(buffer).map_err(|e| ProtocolError::DecodingError(e.to_string()))
-    }
-}
-
 impl Convertible for DataContract {
     fn to_object(&self) -> Result<JsonValue, ProtocolError> {
         let mut json_object = serde_json::to_value(&self)?;
