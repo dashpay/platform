@@ -13,7 +13,7 @@ use super::{get_data_contract_fixture, get_document_validator_fixture, get_docum
 use crate::version::LATEST_VERSION;
 
 pub fn get_document_transitions_fixture(
-    mut documents: HashMap<Action, Vec<Document>>,
+    documents: impl IntoIterator<Item = (Action, Vec<Document>)>,
 ) -> Vec<DocumentTransition> {
     let document_factory = DocumentFactory::new(
         LATEST_VERSION,
@@ -21,11 +21,16 @@ pub fn get_document_transitions_fixture(
         mocks::FetchAndValidateDataContract {},
     );
 
-    let create_documents = documents
+    let mut documents_collected: HashMap<Action, Vec<Document>> = documents.into_iter().collect();
+    let create_documents = documents_collected
         .remove(&Action::Create)
         .unwrap_or_else(|| get_documents_fixture(get_data_contract_fixture(None)).unwrap());
-    let replace_documents = documents.remove(&Action::Replace).unwrap_or_default();
-    let delete_documents = documents.remove(&Action::Delete).unwrap_or_default();
+    let replace_documents = documents_collected
+        .remove(&Action::Replace)
+        .unwrap_or_default();
+    let delete_documents = documents_collected
+        .remove(&Action::Delete)
+        .unwrap_or_default();
 
     document_factory
         .create_state_transition([
