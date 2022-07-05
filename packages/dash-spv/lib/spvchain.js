@@ -1,7 +1,7 @@
 const BlockStore = require('./blockstore');
 const config = require('../config/config');
 const Consensus = require('./consensus');
-const utils = require('../lib/utils');
+const utils = require('./utils');
 
 const SpvChain = class {
   constructor(chainType, confirms = 100, startBlock) {
@@ -130,9 +130,9 @@ const SpvChain = class {
 
   /** @private */
   isDuplicate(compareHash) {
-    return this.getAllBranches().map(branch => branch.map(node => node.hash))
-      .concat(this.orphanBlocks.map(orphan => orphan.hash))
-      .filter(hash => hash === compareHash).length > 0;
+    return this.getAllBranches().map((branch) => branch.map((node) => node.hash))
+      .concat(this.orphanBlocks.map((orphan) => orphan.hash))
+      .filter((hash) => hash === compareHash).length > 0;
   }
 
   /** @private */
@@ -254,7 +254,7 @@ const SpvChain = class {
           return blockInDB;
         }
 
-        return this.getLongestChain().filter(h => h.hash === hash)[0];
+        return this.getLongestChain().filter((h) => h.hash === hash)[0];
       });
   }
 
@@ -288,15 +288,28 @@ const SpvChain = class {
    * @return {boolean}
    */
   addHeaders(headers) {
-    if (headers.length === 1) {
-      if (!this.addHeader(headers[0])) {
-        throw new Error('Some headers are invalid');
-      } else {
-        return true;
-      }
+    // TODO: fix. `addHeader` function uses partially implemented
+    // reorg functionality and throws an error
+    // if (headers.length === 1) {
+    //   if (!this.addHeader(headers[0])) {
+    //     throw new Error('Some headers are invalid');
+    //   } else {
+    //     return true;
+    //   }
+    // }
+    const normalizedHeaders = headers.map((h) => utils.normalizeHeader(h));
+    const tip = this.getTipHeader();
+    // Handle 1 block intersection of batches
+    if (tip.hash === normalizedHeaders[0].hash) {
+      normalizedHeaders.splice(0, 1);
     }
-    const normalizedHeaders = headers.map(h => utils.normalizeHeader(h));
-    const isOrphan = !SpvChain.isParentChild(normalizedHeaders[0], this.getTipHeader());
+
+    if (normalizedHeaders.length === 0) {
+      // The batch already in the chain, do nothing
+      return true;
+    }
+
+    const isOrphan = !SpvChain.isParentChild(normalizedHeaders[0], tip);
 
     const allValid = normalizedHeaders.reduce(
       (acc, header, index, array) => {
