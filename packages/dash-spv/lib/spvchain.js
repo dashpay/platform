@@ -1,10 +1,10 @@
-const BlockStore = require('./blockstore');
 const config = require('../config/config');
 const Consensus = require('./consensus');
 const utils = require('./utils');
 
 const SpvChain = class {
-  constructor(chainType, confirms = 100, startBlock) {
+  // TODO: add startBlockHeight as well
+  constructor(chainType, confirms = 100, startBlock = null, startBlockHeight = 0) {
     this.root = null;
     this.allBranches = [];
     this.orphanBlocks = [];
@@ -12,6 +12,14 @@ const SpvChain = class {
     this.confirmsBeforeFinal = confirms;
     this.init(chainType, startBlock);
     this.prunedHeaders = [];
+
+    // TODO: test
+    this.hashesByHeight = {
+      [startBlockHeight]: this.root.hash,
+    };
+    this.heightByHash = {
+      [this.root.hash]: startBlockHeight,
+    };
   }
 
   init(chainType, startBlock) {
@@ -117,7 +125,18 @@ const SpvChain = class {
 
   /** @private */
   appendHeadersToLongestChain(headers) {
-    const newLongestChain = this.getLongestChain().concat(headers);
+    const longestChain = this.getLongestChain();
+    const lastHeight = this.startBlockHeight
+      + longestChain.length + this.prunedHeaders.length;
+
+    headers.forEach((header, i) => {
+      const height = lastHeight + i;
+      this.hashesByHeight[height] = header.hash;
+      this.heightByHash[header.hash] = height;
+    });
+
+    const newLongestChain = longestChain.concat(headers);
+
     this.allBranches = [];
     this.allBranches.push(newLongestChain);
   }
