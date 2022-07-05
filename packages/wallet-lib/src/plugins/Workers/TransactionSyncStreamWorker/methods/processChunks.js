@@ -3,6 +3,7 @@ const GrpcError = require('@dashevo/grpc-common/lib/server/error/GrpcError');
 const GrpcErrorCodes = require('@dashevo/grpc-common/lib/server/error/GrpcErrorCodes');
 const logger = require('../../../../logger');
 const isBrowser = require('../../../../utils/isBrowser');
+const EVENTS = require('../../../../EVENTS');
 
 function processInstantLocks(instantLocks) {
   instantLocks.forEach((isLock) => {
@@ -10,14 +11,59 @@ function processInstantLocks(instantLocks) {
   });
 }
 
-let transactionsToVerify = [];
-function processTransactions(transactions) {
-  const { network } = this;
+const transactionsToVerify = {};
+async function processTransactions(transactions) {
+  const { network, syncIncomingTransactions } = this;
   const addresses = this.getAddressesToSync();
 
   const { transactions: walletTransactions } = this.constructor
     .filterAddressesTransactions(transactions, addresses, network);
-  transactionsToVerify = walletTransactions;
+  if (walletTransactions.length) {
+    walletTransactions.forEach((tx) => {
+      if (transactionsToVerify[tx.hash]) {
+        console.warn(`!!! [processChunks] Duplicate tx: ${tx.hash}`);
+      }
+      transactionsToVerify[tx.hash] = tx;
+    });
+
+    if (syncIncomingTransactions && walletTransactions.length) {
+      // Immediately import unconfirmed transactions
+
+      // TODO: handle stream reconnect if addresses were generated
+      this.importTransactions(walletTransactions.map((tx) => [tx]));
+
+      // TODO: test and make sure it works
+      await new Promise((resolve) => {
+        const heightChangeListener = () => {
+          Promise
+            .all(walletTransactions.map((tx) => this.transport.getTransaction(tx.hash)))
+            .then((result) => {
+              const hasMetadata = result.every(({ blockHash }) => blockHash);
+              if (hasMetadata) {
+                const transactionsWithMetadata = result.map((item) => {
+                  const {
+                    transaction, blockHash, height, instantLocked, chainLocked,
+                  } = item;
+                  const metadata = {
+                    blockHash,
+                    height,
+                    instantLocked,
+                    chainLocked,
+                  };
+                  return [transaction, metadata];
+                });
+
+                this.importTransactions(transactionsWithMetadata);
+                this.parentEvents.removeListener(EVENTS.BLOCKHEIGHT_CHANGED, heightChangeListener);
+                resolve();
+              }
+            });
+        };
+
+        this.parentEvents.on(EVENTS.BLOCKHEIGHT_CHANGED, heightChangeListener);
+      });
+    }
+  }
 }
 
 async function processMerkleBlock(merkleBlock) {
@@ -45,16 +91,16 @@ async function processMerkleBlock(merkleBlock) {
   };
 
   const transactionsWithMetadata = [];
-  transactionsToVerify.forEach((tx) => {
-    if (!txHashesInTheBlock.has(tx.hash)) {
-      throw new Error(`Transaction ${tx.hash} was not found in merkle block ${headerHash}`);
+  Object.keys(transactionsToVerify).forEach((hash) => {
+    const tx = transactionsToVerify[hash];
+    if (!txHashesInTheBlock.has(hash)) {
+      throw new Error(`Transaction ${hash} was not found in merkle block ${headerHash}`);
     }
     transactionsWithMetadata.push([tx, metadata]);
+    delete transactionsToVerify[hash];
   });
 
   // TODO: verify merkle block
-
-  transactionsToVerify.splice(0);
 
   let addressesGenerated = 0;
   if (transactionsWithMetadata.length) {
@@ -115,7 +161,7 @@ async function processChunks(dataChunk) {
   if (instantLocks.length) {
     processInstantLocks.bind(this)(instantLocks);
   } if (transactions.length) {
-    processTransactions.bind(this)(transactions);
+    await processTransactions.bind(this)(transactions);
   } else if (merkleBlock) {
     await processMerkleBlock.bind(this)(merkleBlock);
   } else {

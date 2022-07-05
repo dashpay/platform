@@ -4,7 +4,7 @@ const logger = require('../../../logger');
  * Import transactions and always keep a number of unused addresses up to gap
  *
  * @param transactionsWithMayBeMetadata
- * @returns {Promise<{ addressesGenerated: number,  mostRecentHeight: number}>}
+ * @returns { addressesGenerated: number,  mostRecentHeight: number}
  */
 module.exports = function importTransactions(transactionsWithMayBeMetadata) {
   const {
