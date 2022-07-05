@@ -35,10 +35,9 @@ function isValidBlockHeader(newHeader, previousHeaders, network = 'mainnet') {
   //       utils.getDgwBlock(newHeader), previousHeaders.map(h => utils.getDgwBlock(h)), network,
   //     );
   // }
-  // return newHeader.validProofOfWork()
-  //   && newHeader.validTimestamp()
-  //   && hasGreaterThanMedianTimestamp(newHeader, previousHeaders);
-  return true;
+  return newHeader.validProofOfWork()
+    && newHeader.validTimestamp()
+    && hasGreaterThanMedianTimestamp(newHeader, previousHeaders);
 }
 
 /**
