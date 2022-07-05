@@ -85,6 +85,21 @@ const SpvChain = class {
     this.setAllBranches();
   }
 
+  /**
+   * @param {BlockHeader} header
+   * @param {number} height
+   */
+  makeNewChain(header, height) {
+    this.allBranches = [[header]];
+    this.startBlockHeight = height;
+    this.hashesByHeight = {
+      [height]: header.hash,
+    };
+    this.heightByHash = {
+      [header.hash]: height,
+    };
+  }
+
   /** @private */
   checkPruneBlocks() {
     const longestChain = this.getLongestChain();
