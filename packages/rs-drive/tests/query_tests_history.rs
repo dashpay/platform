@@ -183,6 +183,7 @@ pub fn setup(
     drive
         .grove
         .commit_transaction(db_transaction)
+        .unwrap()
         .expect("transaction should be committed");
     (drive, contract, tmp_dir)
 }

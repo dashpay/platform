@@ -679,6 +679,7 @@ mod tests {
         drive
             .grove
             .commit_transaction(db_transaction)
+            .unwrap()
             .expect("should commit transaction");
 
         let sql_string = "select * from profile";
@@ -723,6 +724,7 @@ mod tests {
         drive
             .grove
             .commit_transaction(db_transaction)
+            .unwrap()
             .expect("should commit transaction");
     }
 
@@ -786,6 +788,7 @@ mod tests {
         drive
             .grove
             .commit_transaction(db_transaction)
+            .unwrap()
             .expect("should commit transaction");
 
         let sql_string = "select * from profile";
@@ -1310,6 +1313,7 @@ mod tests {
         drive
             .grove
             .commit_transaction(db_transaction)
+            .unwrap()
             .expect("transaction should be committed");
     }
 }

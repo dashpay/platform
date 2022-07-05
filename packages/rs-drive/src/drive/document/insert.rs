@@ -983,6 +983,7 @@ mod tests {
         drive
             .grove
             .commit_transaction(db_transaction)
+            .unwrap()
             .expect("unable to commit transaction");
     }
 
@@ -1130,6 +1131,7 @@ mod tests {
         drive
             .grove
             .commit_transaction(db_transaction)
+            .unwrap()
             .expect("should commit transaction");
 
         let db_transaction = drive.grove.start_transaction();

@@ -368,6 +368,7 @@ mod tests {
         drive
             .grove
             .commit_transaction(db_transaction)
+            .unwrap()
             .expect("unable to commit transaction");
 
         let sql_string =
@@ -405,6 +406,7 @@ mod tests {
         drive
             .grove
             .commit_transaction(db_transaction)
+            .unwrap()
             .expect("unable to commit transaction");
 
         let db_transaction = drive.grove.start_transaction();
@@ -509,6 +511,7 @@ mod tests {
         drive
             .grove
             .commit_transaction(db_transaction)
+            .unwrap()
             .expect("unable to commit transaction");
 
         let sql_string =
@@ -541,6 +544,7 @@ mod tests {
         drive
             .grove
             .commit_transaction(db_transaction)
+            .unwrap()
             .expect("unable to commit transaction");
 
         let sql_string =
@@ -573,6 +577,7 @@ mod tests {
         drive
             .grove
             .commit_transaction(db_transaction)
+            .unwrap()
             .expect("unable to commit transaction");
 
         let sql_string =
@@ -679,6 +684,7 @@ mod tests {
         drive
             .grove
             .commit_transaction(db_transaction)
+            .unwrap()
             .expect("unable to commit transaction");
 
         let sql_string =
@@ -711,6 +717,7 @@ mod tests {
         drive
             .grove
             .commit_transaction(db_transaction)
+            .unwrap()
             .expect("unable to commit transaction");
 
         // Let's try adding the document back after it was deleted
@@ -745,6 +752,7 @@ mod tests {
         drive
             .grove
             .commit_transaction(db_transaction)
+            .unwrap()
             .expect("unable to commit transaction");
 
         // Let's try removing all documents now
@@ -780,6 +788,7 @@ mod tests {
         drive
             .grove
             .commit_transaction(db_transaction)
+            .unwrap()
             .expect("unable to commit transaction");
 
         let sql_string =
@@ -960,6 +969,7 @@ mod tests {
         drive
             .grove
             .commit_transaction(db_transaction)
+            .unwrap()
             .expect("unable to commit transaction");
 
         let (results, _, _) = drive
