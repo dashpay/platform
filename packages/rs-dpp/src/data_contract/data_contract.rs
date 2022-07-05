@@ -143,11 +143,6 @@ impl DataContract {
         Ok(document)
     }
 
-    /// returns the iterator of pairs ('#/$defs/[definition_name]', definition)
-    pub fn get_defs(&self) -> impl Iterator<Item = (&String, &JsonValue)> {
-        self.defs.iter()
-    }
-
     pub fn get_document_schema_ref(&self, doc_type: &str) -> Result<String, ProtocolError> {
         if !self.is_document_defined(doc_type) {
             return Err(DataContractError::InvalidDocumentTypeError {
