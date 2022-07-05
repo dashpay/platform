@@ -337,7 +337,7 @@ describe('SPV-DASH (addHeaders) add mainnet headers out of order', () => {
 });
 
 let genesisHash = null;
-describe('Blockstore', () => {
+describe.skip('Blockstore', () => {
   before(() => {
     chain = new Blockchain('testnet', 10);
     genesisHash = chain.getTipHash();

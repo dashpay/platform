@@ -11,7 +11,7 @@ const SpvChain = class {
     this.orphanChunks = [];
     this.confirmsBeforeFinal = confirms;
     this.init(chainType, startBlock);
-    this.store = new BlockStore();
+    this.prunedHeaders = [];
   }
 
   init(chainType, startBlock) {
@@ -81,12 +81,11 @@ const SpvChain = class {
   checkPruneBlocks() {
     const longestChain = this.getLongestChain();
 
-    const prunedHeaders = longestChain
-      .splice(0, longestChain.length - this.confirmsBeforeFinal);
-
-    prunedHeaders.forEach((block) => {
-      this.store.put(block);
-    });
+    longestChain
+      .splice(0, longestChain.length - this.confirmsBeforeFinal)
+      .forEach((header) => {
+        this.prunedHeaders.push(header);
+      });
   }
 
   /** @private */
@@ -253,14 +252,8 @@ const SpvChain = class {
    * @return {Object} header
    */
   getHeader(hash) {
-    return this.store.get(hash)
-      .then((blockInDB) => {
-        if (blockInDB) {
-          return blockInDB;
-        }
-
-        return this.getLongestChain().filter((h) => h.hash === hash)[0];
-      });
+    // TODO: perform lookup in pruned headers?
+    return this.getLongestChain().filter((h) => h.hash === hash)[0];
   }
 
   /**
