@@ -66,7 +66,6 @@ const proveDocumentsFactory = require('./document/proveDocumentsFactory');
 const fetchDataContractFactory = require('./document/fetchDataContractFactory');
 const BlockExecutionContext = require('./blockExecution/BlockExecutionContext');
 
-const CreditsDistributionPoolRepository = require('./creditsDistributionPool/CreditsDistributionPoolRepository');
 const unserializeStateTransitionFactory = require(
   './abci/handlers/stateTransition/unserializeStateTransitionFactory',
 );
@@ -103,7 +102,6 @@ const SimplifiedMasternodeList = require('./core/SimplifiedMasternodeList');
 const decodeChainLock = require('./core/decodeChainLock');
 const SpentAssetLockTransactionsRepository = require('./identity/SpentAssetLockTransactionsRepository');
 const enrichErrorWithConsensusErrorFactory = require('./abci/errors/enrichErrorWithConsensusLoggerFactory');
-const CreditsDistributionPool = require('./creditsDistributionPool/CreditsDistributionPool');
 const closeAbciServerFactory = require('./abci/closeAbciServerFactory');
 const getLatestFeatureFlagFactory = require('./featureFlag/getLatestFeatureFlagFactory');
 const getFeatureFlagForHeightFactory = require('./featureFlag/getFeatureFlagForHeightFactory');
@@ -571,20 +569,6 @@ function createDIContainer(options) {
         signedDocumentRepository,
       )
     )).singleton(),
-  });
-
-  /**
-   * Register credits distribution pool
-   */
-  container.register({
-    creditsDistributionPoolRepository: asClass(CreditsDistributionPoolRepository)
-      .singleton(),
-
-    signedCreditsDistributionPoolRepository: asFunction((
-      signedGroveDBStore,
-    ) => (new CreditsDistributionPoolRepository(signedGroveDBStore))).singleton(),
-
-    creditsDistributionPool: asValue(new CreditsDistributionPool()),
   });
 
   /**

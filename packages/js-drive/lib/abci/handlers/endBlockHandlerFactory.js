@@ -12,6 +12,8 @@ const {
 
 const featureFlagTypes = require('@dashevo/feature-flags-contract/lib/featureFlagTypes');
 
+const { FEE_MULTIPLIER } = require('@dashevo/dpp/lib/stateTransition/fee/constants');
+
 /**
  * Begin block ABCI handler
  *
@@ -21,6 +23,7 @@ const featureFlagTypes = require('@dashevo/feature-flags-contract/lib/featureFla
  * @param {createValidatorSetUpdate} createValidatorSetUpdate
  * @param {BaseLogger} logger
  * @param {getFeatureFlagForHeight} getFeatureFlagForHeight
+ * @param {RSAbci} rsAbci
  *
  * @return {endBlockHandler}
  */
@@ -31,6 +34,7 @@ function endBlockHandlerFactory(
   createValidatorSetUpdate,
   logger,
   getFeatureFlagForHeight,
+  rsAbci,
 ) {
   /**
    * @typedef endBlockHandler
@@ -53,6 +57,62 @@ function endBlockHandlerFactory(
     const header = blockExecutionContext.getHeader();
     const lastCommitInfo = blockExecutionContext.getLastCommitInfo();
     const coreChainLock = latestCoreChainLock.getChainLock();
+
+    // Call RS ABCI
+    const processingFees = blockExecutionContext.getCumulativeProcessingFee();
+    const storageFees = blockExecutionContext.getCumulativeStorageFee();
+
+    const rsResponse = await rsAbci.blockEnd({
+      fees: {
+        processingFees,
+        storageFees,
+        feeMultiplier: FEE_MULTIPLIER,
+      },
+    }, true);
+
+    const { currentEpochIndex, isEpochChange } = rsResponse.epochInfo;
+
+    if (isEpochChange) {
+      const latestContext = blockExecutionContextStack.getLatest();
+
+      if (latestContext) {
+        const latestHeader = latestContext.getHeader();
+        rsRequest.previousBlockTime = latestHeader.time.seconds + latestHeader.time.nanos;
+      }
+
+      consensusLogger.debug({
+        currentEpochIndex,
+        blockTime,
+        previousBlocktime
+      }, `Fee epoch #${currentEpochIndex} started on block time ${blockTime}`);
+    }
+
+    consensusLogger.debug({
+      currentEpochIndex,
+      masternodesPaidCount: rsResponse.masternodesPaidCount,
+      feeMultiplier: FEE_MULTIPLIER,
+      processingFees,
+      storageFees,
+    }, `${processingFees} processing fees add to epoch #${currentEpochIndex}. ${storageFees} storage fees add to distribution pool`);
+
+    if (rsResponse.masternodesPaidCount) {
+      consensusLogger.debug({
+        currentEpochIndex,
+        masternodesPaidCount: rsResponse.masternodesPaidCount,
+      }, `${masternodesPaidCount} masternodes paid for epoch #${currentEpochIndex}`);
+    }
+
+    masternodesPaidCount
+
+  * @property {EpochInfo} epochInfo
+    * @property {number}
+    */
+
+    /**
+     * @typedef EpochInfo
+     * @property {number} currentEpochIndex
+     * @property {boolean} isEpochChange
+     */
 
     // Rotate validators
 
