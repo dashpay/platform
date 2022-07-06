@@ -118,8 +118,11 @@ describe('feesPrediction', () => {
     stateRepository = container.resolve('stateRepository');
     groveDBStore = container.resolve('groveDBStore');
 
-    const createInitialStateStructure = container.resolve('createInitialStateStructure');
-    await createInitialStateStructure();
+    /**
+     * @type {Drive}
+     */
+    const rsDrive = container.resolve('rsDrive');
+    await rsDrive.createInitialStateStructure();
   });
 
   afterEach(async () => {

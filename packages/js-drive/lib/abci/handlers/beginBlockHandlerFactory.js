@@ -23,6 +23,7 @@ const NetworkProtocolVersionIsNotSetError = require('./errors/NetworkProtocolVer
  * @param {synchronizeMasternodeIdentities} synchronizeMasternodeIdentities
  * @param {BaseLogger} logger
  * @param {ExecutionTimer} executionTimer
+ * @param {RSAbci} rsAbci
  *
  * @return {beginBlockHandler}
  */
@@ -38,6 +39,7 @@ function beginBlockHandlerFactory(
   synchronizeMasternodeIdentities,
   logger,
   executionTimer,
+  rsAbci,
 ) {
   /**
    * @typedef beginBlockHandler
@@ -118,6 +120,28 @@ function beginBlockHandlerFactory(
 
     // Start db transaction for the block
     await groveDBStore.startTransaction();
+
+    // Call RS ABCI
+
+    /**
+     * @type {BlockBeginRequest}
+     */
+    const rsRequest = {
+      blockHeight: header.height.toNumber(),
+      blockTime: header.time.seconds + header.time.nanos,
+      proposerProTxHash: Array.from(header.proposerProTxHash),
+    };
+
+    const latestContext = blockExecutionContextStack.getLatest();
+
+    if (latestContext) {
+      const latestHeader = latestContext.getHeader();
+      rsRequest.previousBlockTime = latestHeader.time.seconds + latestHeader.time.nanos;
+    }
+
+    await rsAbci.blockBegin(rsRequest, true);
+
+    // Update SML
 
     const isSimplifiedMasternodeListUpdated = await updateSimplifiedMasternodeList(
       coreChainLockedHeight, {

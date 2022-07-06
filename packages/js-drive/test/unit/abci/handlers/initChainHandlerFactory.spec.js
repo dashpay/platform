@@ -23,9 +23,9 @@ describe('initChainHandlerFactory', () => {
   let validatorSetUpdate;
   let synchronizeMasternodeIdentitiesMock;
   let registerSystemDataContractsMock;
-  let createInitialStateStructureMock;
   let groveDBStoreMock;
   let appHashFixture;
+  let rsAbciMock;
 
   beforeEach(function beforeEach() {
     initialCoreChainLockedHeight = 1;
@@ -50,7 +50,9 @@ describe('initChainHandlerFactory', () => {
     loggerMock = new LoggerMock(this.sinon);
 
     registerSystemDataContractsMock = this.sinon.stub();
-    createInitialStateStructureMock = this.sinon.stub();
+    rsAbciMock = {
+      initChain: this.sinon.stub(),
+    };
 
     groveDBStoreMock = new GroveDBStoreMock(this.sinon);
     groveDBStoreMock.getRootHash.resolves(appHashFixture);
@@ -62,9 +64,9 @@ describe('initChainHandlerFactory', () => {
       createValidatorSetUpdateMock,
       synchronizeMasternodeIdentitiesMock,
       loggerMock,
-      createInitialStateStructureMock,
       registerSystemDataContractsMock,
       groveDBStoreMock,
+      rsAbciMock,
     );
   });
 
@@ -97,7 +99,7 @@ describe('initChainHandlerFactory', () => {
 
     expect(groveDBStoreMock.startTransaction).to.be.calledOnce();
 
-    expect(createInitialStateStructureMock).to.be.calledOnce();
+    expect(rsAbciMock.initChain).to.be.calledOnceWithExactly({}, true);
 
     expect(registerSystemDataContractsMock).to.be.calledOnceWithExactly(loggerMock, request.time);
 

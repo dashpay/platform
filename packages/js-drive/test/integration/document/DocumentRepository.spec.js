@@ -325,6 +325,7 @@ const queryDocumentSchema = {
         properties: [{ $updatedAt: 'asc' }],
       },
     ],
+    required: ['$updatedAt'],
   },
   documentI: {
     type: 'object',
@@ -339,6 +340,7 @@ const queryDocumentSchema = {
         properties: [{ $createdAt: 'asc' }],
       },
     ],
+    required: ['$createdAt'],
   },
   documentJ: {
     type: 'object',
@@ -788,8 +790,11 @@ describe('DocumentRepository', function main() {
 
     documentRepository = container.resolve('documentRepository');
 
-    const createInitialStateStructure = container.resolve('createInitialStateStructure');
-    await createInitialStateStructure();
+    /**
+     * @type {Drive}
+     */
+    const rsDrive = container.resolve('rsDrive');
+    await rsDrive.createInitialStateStructure();
 
     dataContractRepository = container.resolve('dataContractRepository');
 
@@ -3259,7 +3264,7 @@ describe('DocumentRepository', function main() {
       expect(proof.length).to.be.greaterThan(0);
     });
 
-    // TODO enable this test when we support transactions
+    // TODO enable this test when we support transactions for pro
     it.skip('should return proof for all existing documents in transaction', async () => {
       await documentRepository
         .storage

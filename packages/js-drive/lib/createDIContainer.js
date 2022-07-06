@@ -115,7 +115,6 @@ const createQueryResponseFactory = require('./abci/handlers/query/response/creat
 const BlockExecutionContextStackRepository = require('./blockExecution/BlockExecutionContextStackRepository');
 const rotateSignedStoreFactory = require('./storage/rotateSignedStoreFactory');
 const BlockExecutionContextStack = require('./blockExecution/BlockExecutionContextStack');
-const createInitialStateStructureFactory = require('./state/createInitialStateStructureFactory');
 
 const registerSystemDataContractFactory = require('./state/registerSystemDataContractFactory');
 const registerTopLevelDomainFactory = require('./state/registerTopLevelDomainFactory');
@@ -443,7 +442,10 @@ function createDIContainer(options) {
           fs.rmSync(options.GROVEDB_LATEST_FILE, { recursive: true });
         }
       }).singleton(),
+
     groveDB: asFunction((rsDrive) => rsDrive.getGroveDB()).singleton(),
+
+    rsAbci: asFunction((rsDrive) => rsDrive.getAbci()).singleton(),
 
     groveDBStore: asFunction((rsDrive) => new GroveDBStore(rsDrive)).singleton(),
 
@@ -731,7 +733,6 @@ function createDIContainer(options) {
    * State
    */
   container.register({
-    createInitialStateStructure: asFunction(createInitialStateStructureFactory).singleton(),
     registerSystemDataContract: asFunction(registerSystemDataContractFactory).singleton(),
     registerSystemDataContracts: asFunction(registerSystemDataContractsFactory).singleton(),
     registerTopLevelDomain: asFunction(registerTopLevelDomainFactory).singleton(),
