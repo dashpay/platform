@@ -3264,7 +3264,7 @@ describe('DocumentRepository', function main() {
       expect(proof.length).to.be.greaterThan(0);
     });
 
-    // TODO enable this test when we support transactions for pro
+    // TODO enable this test when we support transactions for proofs
     it.skip('should return proof for all existing documents in transaction', async () => {
       await documentRepository
         .storage
