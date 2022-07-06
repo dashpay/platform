@@ -77,6 +77,7 @@ impl ErrorWithCode for BasicError {
             Self::DataContractMaxDepthExceedError { .. } => 1007,
             Self::DuplicateIndexNameError { .. } => 1048,
             Self::InvalidJsonSchemaRefError { .. } => 1014,
+            Self::InconsistentCompoundIndexDataError { .. } => 1021,
             Self::IndexError(ref e) => e.get_code(),
         }
     }

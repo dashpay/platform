@@ -184,7 +184,7 @@ fn get_property<'a>(path: &str, transition: &'a DocumentTransition) -> Option<&'
                 None
             }
         }
-        DocumentTransition::Delete(t) => None,
+        DocumentTransition::Delete(_) => None,
     }
 }
 
