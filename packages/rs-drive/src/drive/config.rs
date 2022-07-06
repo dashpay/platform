@@ -1,6 +1,7 @@
 use DriveEncoding::DriveProtobuf;
 
-pub const DEFAULT_GROVE_BATCHING_ENABLED: bool = false;
+pub const DEFAULT_GROVE_BATCHING_ENABLED: bool = true;
+pub const DEFAULT_GROVE_HAS_RAW_ENABLED: bool = true;
 
 pub enum DriveEncoding {
     DriveCbor,
@@ -9,6 +10,7 @@ pub enum DriveEncoding {
 
 pub struct DriveConfig {
     pub batching_enabled: bool,
+    pub has_raw_enabled: bool,
     pub encoding: DriveEncoding,
 }
 
@@ -16,6 +18,7 @@ impl Default for DriveConfig {
     fn default() -> Self {
         DriveConfig {
             batching_enabled: DEFAULT_GROVE_BATCHING_ENABLED,
+            has_raw_enabled: DEFAULT_GROVE_HAS_RAW_ENABLED,
             encoding: DriveProtobuf,
         }
     }

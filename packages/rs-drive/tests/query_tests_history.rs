@@ -1,6 +1,5 @@
 use std::collections::{BTreeMap, HashMap};
-use std::fmt::{Debug, Display, Formatter};
-use std::ops::Range;
+use std::fmt::{Debug, Formatter};
 use std::option::Option::None;
 
 use rand::seq::SliceRandom;
@@ -11,6 +10,7 @@ use tempfile::TempDir;
 
 use rs_drive::common;
 use rs_drive::contract::{document::Document, Contract};
+use rs_drive::drive::config::DriveConfig;
 use rs_drive::drive::flags::StorageFlags;
 use rs_drive::drive::object_size_info::DocumentAndContractInfo;
 use rs_drive::drive::object_size_info::DocumentInfo::DocumentAndSerialization;
@@ -113,10 +113,17 @@ impl Person {
 pub fn setup(
     count: usize,
     restrict_to_inserts: Option<Vec<usize>>,
+    batching: bool,
     seed: u64,
 ) -> (Drive, Contract, TempDir) {
     let tmp_dir = TempDir::new().unwrap();
-    let drive: Drive = Drive::open(&tmp_dir, None).expect("expected to open Drive successfully");
+    let drive_config = if batching {
+        Some(DriveConfig::default_with_batches())
+    } else {
+        Some(DriveConfig::default_without_batches())
+    };
+    let drive: Drive =
+        Drive::open(&tmp_dir, drive_config).expect("expected to open Drive successfully");
 
     let db_transaction = drive.grove.start_transaction();
 
@@ -191,12 +198,12 @@ pub fn setup(
 #[test]
 fn test_setup() {
     let range_inserts = vec![0, 2];
-    setup(10, Some(range_inserts), 73509);
+    setup(10, Some(range_inserts), true, 73509);
 }
 
 #[test]
 fn test_query_historical() {
-    let (drive, contract, _tmp_dir) = setup(10, None, 73509);
+    let (drive, contract, _tmp_dir) = setup(10, None, true, 73509);
 
     let db_transaction = drive.grove.start_transaction();
 
@@ -208,8 +215,8 @@ fn test_query_historical() {
     assert_eq!(
         root_hash.as_slice(),
         vec![
-            96, 19, 126, 79, 99, 45, 127, 237, 104, 129, 232, 207, 227, 95, 206, 158, 115, 195,
-            253, 53, 232, 50, 145, 86, 114, 181, 76, 119, 70, 83, 142, 231
+            177, 211, 204, 211, 169, 28, 235, 135, 192, 9, 153, 66, 58, 244, 126, 185, 247, 63,
+            224, 247, 166, 94, 178, 232, 247, 228, 50, 66, 132, 179, 225, 177
         ]
     );
 
@@ -1429,8 +1436,8 @@ fn test_query_historical() {
     assert_eq!(
         root_hash.as_slice(),
         vec![
-            187, 224, 48, 127, 216, 53, 129, 245, 160, 89, 93, 104, 16, 142, 71, 230, 192, 100,
-            156, 40, 153, 43, 145, 33, 238, 142, 192, 182, 52, 112, 26, 107
+            253, 230, 214, 51, 247, 235, 33, 188, 192, 110, 182, 77, 221, 137, 89, 213, 97, 129,
+            201, 32, 1, 38, 236, 211, 228, 247, 168, 232, 171, 13, 161, 60
         ]
     );
 }

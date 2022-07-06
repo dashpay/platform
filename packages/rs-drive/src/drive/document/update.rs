@@ -463,8 +463,7 @@ impl Drive {
 
 #[cfg(test)]
 mod tests {
-    use base64::Config;
-    use std::collections::BTreeMap;
+    use grovedb::TransactionArg;
     use std::option::Option::None;
 
     use rand::Rng;
@@ -474,7 +473,7 @@ mod tests {
 
     use crate::common::{json_document_to_cbor, setup_contract, value_to_cbor};
     use crate::contract::{document::Document, Contract};
-    use crate::drive::config::DriveConfig;
+    use crate::drive::config::{DriveConfig, DriveEncoding};
     use crate::drive::flags::StorageFlags;
     use crate::drive::object_size_info::DocumentAndContractInfo;
     use crate::drive::object_size_info::DocumentInfo::DocumentAndSerialization;
@@ -1110,14 +1109,66 @@ mod tests {
         age: u8,
     }
 
-    #[test]
-    fn test_update_complex_person_with_history_no_transaction() {
-        let tmp_dir = TempDir::new().unwrap();
-        let drive: Drive =
-            Drive::open(&tmp_dir, None).expect("expected to open Drive successfully");
+    fn apply_person(
+        drive: &Drive,
+        contract: &Contract,
+        block_time: u64,
+        person: &Person,
+        transaction: TransactionArg,
+    ) {
+        let value = serde_json::to_value(person).expect("serialized person");
+        let document_cbor = value_to_cbor(value, Some(defaults::PROTOCOL_VERSION));
+        let document = Document::from_cbor(document_cbor.as_slice(), None, None)
+            .expect("document should be properly deserialized");
+        let document_type = contract
+            .document_type_for_name("person")
+            .expect("expected to get document type");
+
+        let storage_flags = StorageFlags { epoch: 0 };
 
         drive
-            .create_root_tree(None)
+            .add_document_for_contract(
+                DocumentAndContractInfo {
+                    document_info: DocumentAndSerialization((
+                        &document,
+                        &document_cbor,
+                        &storage_flags,
+                    )),
+                    contract: &contract,
+                    document_type,
+                    owner_id: None,
+                },
+                true,
+                block_time as f64,
+                true,
+                transaction,
+            )
+            .expect("expected to add document");
+    }
+
+    fn test_update_complex_person_with_history(
+        using_transaction: bool,
+        using_batches: bool,
+        using_has_raw: bool,
+    ) {
+        let config = DriveConfig {
+            batching_enabled: using_batches,
+            has_raw_enabled: using_has_raw,
+            encoding: DriveEncoding::DriveCbor,
+        };
+        let tmp_dir = TempDir::new().unwrap();
+
+        let drive: Drive =
+            Drive::open(&tmp_dir, Some(config)).expect("expected to open Drive successfully");
+
+        let transaction = if using_transaction {
+            Some(drive.grove.start_transaction())
+        } else {
+            None
+        };
+
+        drive
+            .create_root_tree(transaction.as_ref())
             .expect("expected to create root tree successfully");
 
         // setup code
@@ -1125,7 +1176,7 @@ mod tests {
             &drive,
             "tests/supporting_files/contract/family/family-contract-with-history-only-message-index.json",
             None,
-            None,
+            transaction.as_ref(),
         );
 
         let person_0_original = Person {
@@ -1168,152 +1219,73 @@ mod tests {
             age: 22,
         };
 
-        let mut people_at_block_times: BTreeMap<u64, Vec<Person>> = BTreeMap::new();
-        people_at_block_times.insert(0, vec![person_0_original, person_1_original]);
-        people_at_block_times.insert(100, vec![person_0_updated, person_1_updated]);
-
-        for (block_time, people) in people_at_block_times {
-            for (i, person) in people.iter().enumerate() {
-                let value = serde_json::to_value(&person).expect("serialized person");
-                let document_cbor = value_to_cbor(value, Some(defaults::PROTOCOL_VERSION));
-                let document = Document::from_cbor(document_cbor.as_slice(), None, None)
-                    .expect("document should be properly deserialized");
-                let document_type = contract
-                    .document_type_for_name("person")
-                    .expect("expected to get document type");
-
-                let storage_flags = StorageFlags { epoch: 0 };
-
-                // if block_time == 100 && i == 9 {
-                //     dbg!("block time {} {} {:#?}",block_time, i, person);
-                // }
-
-                drive
-                    .add_document_for_contract(
-                        DocumentAndContractInfo {
-                            document_info: DocumentAndSerialization((
-                                &document,
-                                &document_cbor,
-                                &storage_flags,
-                            )),
-                            contract: &contract,
-                            document_type,
-                            owner_id: None,
-                        },
-                        true,
-                        block_time as f64,
-                        true,
-                        None,
-                    )
-                    .expect("expected to add document");
-            }
-        }
+        apply_person(
+            &drive,
+            &contract,
+            0,
+            &person_0_original,
+            transaction.as_ref(),
+        );
+        apply_person(
+            &drive,
+            &contract,
+            0,
+            &person_1_original,
+            transaction.as_ref(),
+        );
+        apply_person(
+            &drive,
+            &contract,
+            100,
+            &person_0_updated,
+            transaction.as_ref(),
+        );
+        apply_person(
+            &drive,
+            &contract,
+            100,
+            &person_1_updated,
+            transaction.as_ref(),
+        );
     }
 
     #[test]
-    fn test_update_complex_person_with_history() {
-        let tmp_dir = TempDir::new().unwrap();
-        let drive: Drive =
-            Drive::open(&tmp_dir, None).expect("expected to open Drive successfully");
+    fn test_update_complex_person_with_history_no_transaction_using_batches_and_has_raw() {
+        test_update_complex_person_with_history(false, true, true)
+    }
 
-        let db_transaction = drive.grove.start_transaction();
+    #[test]
+    fn test_update_complex_person_with_history_no_transaction_using_batches_and_get_raw() {
+        test_update_complex_person_with_history(false, true, false)
+    }
 
-        drive
-            .create_root_tree(Some(&db_transaction))
-            .expect("expected to create root tree successfully");
+    #[test]
+    fn test_update_complex_person_with_history_with_transaction_using_batches_and_has_raw() {
+        test_update_complex_person_with_history(true, true, true)
+    }
 
-        // setup code
-        let contract = setup_contract(
-            &drive,
-            "tests/supporting_files/contract/family/family-contract-with-history-only-message-index.json",
-            None,
-            Some(&db_transaction),
-        );
+    #[test]
+    fn test_update_complex_person_with_history_with_transaction_using_batches_and_get_raw() {
+        test_update_complex_person_with_history(true, true, false)
+    }
 
-        let person_0_original = Person {
-            id: [0u8; 32].to_vec(),
-            owner_id: [0u8; 32].to_vec(),
-            first_name: "Samuel".to_string(),
-            middle_name: "Abraham".to_string(),
-            last_name: "Westrich".to_string(),
-            message: Some("My apples are safe".to_string()),
-            age: 33,
-        };
+    #[test]
+    fn test_update_complex_person_with_history_no_transaction_no_batches_and_has_raw() {
+        test_update_complex_person_with_history(false, false, true)
+    }
 
-        let person_0_updated = Person {
-            id: [0u8; 32].to_vec(),
-            owner_id: [0u8; 32].to_vec(),
-            first_name: "Samuel".to_string(),
-            middle_name: "Abraham".to_string(),
-            last_name: "Westrich".to_string(),
-            message: Some("Lemons are now my thing".to_string()),
-            age: 35,
-        };
+    #[test]
+    fn test_update_complex_person_with_history_no_transaction_no_batches_and_get_raw() {
+        test_update_complex_person_with_history(false, false, false)
+    }
 
-        let person_1_original = Person {
-            id: [1u8; 32].to_vec(),
-            owner_id: [1u8; 32].to_vec(),
-            first_name: "Wisdom".to_string(),
-            middle_name: "Madabuchukwu".to_string(),
-            last_name: "Ogwu".to_string(),
-            message: Some("Cantaloupe is the best fruit".to_string()),
-            age: 20,
-        };
+    #[test]
+    fn test_update_complex_person_with_history_with_transaction_no_batches_and_has_raw() {
+        test_update_complex_person_with_history(true, false, true)
+    }
 
-        let person_1_updated = Person {
-            id: [1u8; 32].to_vec(),
-            owner_id: [1u8; 32].to_vec(),
-            first_name: "Wisdom".to_string(),
-            middle_name: "Madabuchukwu".to_string(),
-            last_name: "Ogwu".to_string(),
-            message: Some("My apples are safe".to_string()),
-            age: 22,
-        };
-
-        let mut people_at_block_times: BTreeMap<u64, Vec<Person>> = BTreeMap::new();
-        people_at_block_times.insert(0, vec![person_0_original, person_1_original]);
-        people_at_block_times.insert(100, vec![person_0_updated, person_1_updated]);
-
-        for (block_time, people) in people_at_block_times {
-            for (i, person) in people.iter().enumerate() {
-                let value = serde_json::to_value(&person).expect("serialized person");
-                let document_cbor = value_to_cbor(value, Some(defaults::PROTOCOL_VERSION));
-                let document = Document::from_cbor(document_cbor.as_slice(), None, None)
-                    .expect("document should be properly deserialized");
-                let document_type = contract
-                    .document_type_for_name("person")
-                    .expect("expected to get document type");
-
-                let storage_flags = StorageFlags { epoch: 0 };
-
-                // if block_time == 100 && i == 9 {
-                //     dbg!("block time {} {} {:#?}",block_time, i, person);
-                // }
-
-                drive
-                    .add_document_for_contract(
-                        DocumentAndContractInfo {
-                            document_info: DocumentAndSerialization((
-                                &document,
-                                &document_cbor,
-                                &storage_flags,
-                            )),
-                            contract: &contract,
-                            document_type,
-                            owner_id: None,
-                        },
-                        true,
-                        block_time as f64,
-                        true,
-                        Some(&db_transaction),
-                    )
-                    .expect("expected to add document");
-            }
-        }
-        drive
-            .grove
-            .commit_transaction(db_transaction)
-            .unwrap()
-            .expect("transaction should be committed");
+    #[test]
+    fn test_update_complex_person_with_history_with_transaction_no_batches_and_get_raw() {
+        test_update_complex_person_with_history(true, false, false)
     }
 }
