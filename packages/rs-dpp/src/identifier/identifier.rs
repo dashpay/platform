@@ -1,10 +1,11 @@
+use std::convert::{TryFrom, TryInto};
+
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
-use std::convert::TryInto;
+use serde_json::Value as JsonValue;
 
 use crate::errors::ProtocolError;
 use crate::util::string_encoding;
 use crate::util::string_encoding::Encoding;
-use serde_json::Value as JsonValue;
 
 pub const MEDIA_TYPE: &str = "application/x.dash.dpp.identifier";
 
@@ -28,7 +29,7 @@ fn encoding_string_to_encoding(encoding_string: Option<&str>) -> Encoding {
 }
 
 impl Identifier {
-    fn new(buffer: [u8; 32]) -> Identifier {
+    pub fn new(buffer: [u8; 32]) -> Identifier {
         Identifier { buffer }
     }
 
@@ -85,6 +86,20 @@ impl Identifier {
     }
 }
 
+impl TryFrom<&[u8]> for Identifier {
+    type Error = ProtocolError;
+
+    fn try_from(bytes: &[u8]) -> Result<Self, Self::Error> {
+        Self::from_bytes(bytes)
+    }
+}
+
+impl From<[u8; 32]> for Identifier {
+    fn from(bytes: [u8; 32]) -> Self {
+        Self::new(bytes)
+    }
+}
+
 // TODO change default serialization to bytes
 impl Serialize for Identifier {
     fn serialize<S>(self: &Identifier, serializer: S) -> Result<S::Ok, S::Error>
@@ -105,6 +120,34 @@ impl<'de> Deserialize<'de> for Identifier {
             .map_err(|e| serde::de::Error::custom(e.to_string()))
     }
 }
+
+// impl Serialize for Identifier {
+//     fn serialize<S>(self: &Identifier, serializer: S) -> Result<S::Ok, S::Error>
+//     where
+//         S: Serializer,
+//     {
+//         // by default we use base58 as Identifier type should be encoded in that way
+//         serializer.serialize_bytes(&self.to_buffer())
+//     }
+// }
+//
+// //#[serde(bound = "T: MyTrait")]
+// impl<'de> Deserialize<'de> for Identifier {
+//     fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Identifier, D::Error> {
+//         println!("id 1");
+//         let bytes: CborValue = Deserialize::deserialize(d)?;
+//
+//         let bytes = bytes
+//             .as_bytes()
+//             .ok_or_else(|| serde::de::Error::custom("Expected Identifier to be bytes"))?;
+//
+//         println!("id 2");
+//         let id = Identifier::from_bytes(bytes).map_err(|e| serde::de::Error::custom(e.to_string()));
+//         println!("id 3");
+//
+//         id
+//     }
+// }
 
 impl std::fmt::Display for Identifier {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {

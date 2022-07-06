@@ -1,13 +1,9 @@
-pub mod apply_data_contract_create_transition_factory;
-pub mod validation;
-use anyhow::anyhow;
-
 use std::convert::TryInto;
 
+use anyhow::anyhow;
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 
-use super::properties::*;
 use crate::{
     data_contract::DataContract,
     identity::KeyID,
@@ -17,8 +13,13 @@ use crate::{
         StateTransitionType,
     },
     util::json_value::{JsonValueExt, ReplaceWith},
-    Convertible, ProtocolError,
+    ProtocolError,
 };
+
+use super::properties::*;
+
+pub mod apply_data_contract_create_transition_factory;
+pub mod validation;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -164,7 +165,7 @@ impl StateTransitionConvert for DataContractCreateTransition {
         }
         json_object.insert(
             String::from(PROPERTY_DATA_CONTRACT),
-            self.data_contract.to_object()?,
+            self.data_contract.to_object(false)?,
         )?;
         Ok(json_object)
     }
@@ -172,10 +173,10 @@ impl StateTransitionConvert for DataContractCreateTransition {
 
 #[cfg(test)]
 mod test {
-    use crate::{util::deserializer::get_protocol_version, version};
     use serde_json::json;
 
     use crate::tests::fixtures::get_data_contract_fixture;
+    use crate::{util::deserializer::get_protocol_version, version};
 
     use super::*;
 
@@ -190,7 +191,7 @@ mod test {
         let state_transition = DataContractCreateTransition::from_raw_object(json!({
                     PROPERTY_PROTOCOL_VERSION: version::LATEST_VERSION,
                                         PROPERTY_ENTROPY : data_contract.entropy,
-                    PROPERTY_DATA_CONTRACT : data_contract.to_object().unwrap(),
+                    PROPERTY_DATA_CONTRACT : data_contract.to_object(false).unwrap(),
         }))
         .expect("state transition should be created without errors");
 
@@ -225,10 +226,10 @@ mod test {
         assert_eq!(
             data.state_transition
                 .get_data_contract()
-                .to_object()
+                .to_object(false)
                 .expect("conversion to object shouldn't fail"),
             data.data_contract
-                .to_object()
+                .to_object(false)
                 .expect("conversion to object shouldn't fail")
         );
     }

@@ -1,10 +1,11 @@
-use crate::util::{json_schema::JsonSchemaExt, json_value::JsonValueExt};
+use std::include_str;
+
 use anyhow::anyhow;
 use lazy_static::lazy_static;
 use serde_json::Value as JsonValue;
-use std::include_str;
 
 use crate::errors::ProtocolError;
+use crate::util::{json_schema::JsonSchemaExt, json_value::JsonValueExt};
 
 lazy_static! {
     static ref BASE_DOCUMENT_SCHEMA: JsonValue =
@@ -72,10 +73,11 @@ pub fn get_property_definition_by_path<'a>(
 
 #[cfg(test)]
 mod test {
+    use serde_json::json;
+
     use crate::assert_error_contains;
 
     use super::*;
-    use serde_json::json;
 
     #[test]
     fn test_get_system_properties() {

@@ -1,9 +1,11 @@
+use std::sync::Arc;
+
+use serde_json::Value;
+
 use crate::assert_consensus_errors;
 use crate::errors::consensus::ConsensusError;
 use crate::identity::validation::{IdentityValidator, PublicKeysValidator};
 use crate::version::ProtocolVersionValidator;
-use serde_json::Value;
-use std::sync::Arc;
 
 fn setup_test() -> (Value, IdentityValidator<PublicKeysValidator>) {
     let protocol_version_validator = ProtocolVersionValidator::default();
@@ -19,11 +21,12 @@ fn setup_test() -> (Value, IdentityValidator<PublicKeysValidator>) {
 }
 
 pub mod protocol_version {
+    use jsonschema::error::ValidationErrorKind;
+
     use crate::assert_consensus_errors;
     use crate::consensus::ConsensusError;
     use crate::tests::identity::validation::identity_validator_spec::setup_test;
     use crate::tests::utils::{serde_remove, serde_set};
-    use jsonschema::error::ValidationErrorKind;
 
     #[test]
     pub fn should_be_present() {
@@ -76,12 +79,13 @@ pub mod protocol_version {
 }
 
 pub mod id {
+    use jsonschema::error::ValidationErrorKind;
+    use serde_json::Value;
+
     use crate::assert_consensus_errors;
     use crate::consensus::ConsensusError;
     use crate::tests::identity::validation::identity_validator_spec::setup_test;
     use crate::tests::utils::{serde_remove, serde_set};
-    use jsonschema::error::ValidationErrorKind;
-    use serde_json::Value;
 
     #[test]
     pub fn should_be_present() {
@@ -148,11 +152,12 @@ pub mod id {
 }
 
 pub mod balance {
+    use jsonschema::error::ValidationErrorKind;
+
     use crate::assert_consensus_errors;
     use crate::errors::consensus::ConsensusError;
     use crate::tests::identity::validation::identity_validator_spec::setup_test;
     use crate::tests::utils::{serde_remove, serde_set};
-    use jsonschema::error::ValidationErrorKind;
 
     #[test]
     pub fn should_be_present() {
@@ -210,12 +215,13 @@ pub mod balance {
 }
 
 pub mod public_keys {
+    use jsonschema::error::ValidationErrorKind;
+    use serde_json::Value;
+
     use crate::assert_consensus_errors;
     use crate::errors::consensus::ConsensusError;
     use crate::tests::identity::validation::identity_validator_spec::setup_test;
     use crate::tests::utils::{serde_remove, serde_set};
-    use jsonschema::error::ValidationErrorKind;
-    use serde_json::Value;
 
     #[test]
     pub fn should_be_present() {
@@ -324,11 +330,12 @@ pub mod public_keys {
 }
 
 pub mod revision {
+    use jsonschema::error::ValidationErrorKind;
+
     use crate::assert_consensus_errors;
     use crate::errors::consensus::ConsensusError;
     use crate::tests::identity::validation::identity_validator_spec::setup_test;
     use crate::tests::utils::{serde_remove, serde_set};
-    use jsonschema::error::ValidationErrorKind;
 
     // revision tests
     #[test]

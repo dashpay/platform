@@ -1,5 +1,7 @@
-use crate::errors::ProtocolError;
 use byteorder::{LittleEndian, WriteBytesExt};
+
+use crate::errors::ProtocolError;
+
 // ciborium::value
 
 pub const MAX_ENCODED_KBYTE_LENGTH: usize = 16;

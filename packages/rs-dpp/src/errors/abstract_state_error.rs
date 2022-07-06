@@ -1,5 +1,6 @@
-use crate::prelude::Identifier;
 use thiserror::Error;
+
+use crate::prelude::Identifier;
 
 use super::DataTriggerError;
 

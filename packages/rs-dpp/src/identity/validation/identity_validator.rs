@@ -1,9 +1,11 @@
+use std::sync::Arc;
+
+use serde_json::{Map, Value};
+
 use crate::identity::validation::TPublicKeysValidator;
 use crate::validation::{JsonSchemaValidator, ValidationResult};
 use crate::version::ProtocolVersionValidator;
 use crate::{DashPlatformProtocolInitError, NonConsensusError, SerdeParsingError};
-use serde_json::{Map, Value};
-use std::sync::Arc;
 
 pub struct IdentityValidator<TPublicKeyValidator> {
     protocol_version_validator: Arc<ProtocolVersionValidator>,
