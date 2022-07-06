@@ -20,6 +20,7 @@ const {
   groveDbQuery,
   groveDbProveQuery,
   groveDbRootHash,
+  groveDbProveQueryMany,
 } = require('neon-load-or-build')({
   dir: pathJoin(__dirname, '..'),
 });
@@ -41,6 +42,7 @@ const groveDbDeleteAuxAsync = appendStack(promisify(groveDbDeleteAux));
 const groveDbGetAuxAsync = appendStack(promisify(groveDbGetAux));
 const groveDbQueryAsync = appendStack(promisify(groveDbQuery));
 const groveDbProveQueryAsync = appendStack(promisify(groveDbProveQuery));
+const groveDbProveQueryManyAsync = appendStack(promisify(groveDbProveQueryMany));
 const groveDbRootHashAsync = appendStack(promisify(groveDbRootHash));
 
 // Wrapper class for the boxed `GroveDB` for idiomatic JavaScript usage
@@ -208,6 +210,17 @@ class GroveDB {
    */
   async proveQuery(query, useTransaction = false) {
     return groveDbProveQueryAsync.call(this.db, query, useTransaction);
+  }
+
+  /**
+   * Get proof using query.
+   *
+   * @param {PathQuery[]} queries
+   * @param {boolean} [useTransaction=false]
+   * @return {Promise<Buffer>}
+   */
+  async proveQueryMany(queries, useTransaction = false) {
+    return groveDbProveQueryManyAsync.call(this.db, queries, useTransaction);
   }
 
   /**
