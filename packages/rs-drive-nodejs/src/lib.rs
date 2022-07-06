@@ -587,7 +587,7 @@ impl DriveWrapper {
         Ok(cx.undefined())
     }
 
-    fn js_create_and_execute_query(mut cx: FunctionContext) -> JsResult<JsUndefined> {
+    fn js_query_documents(mut cx: FunctionContext) -> JsResult<JsUndefined> {
         let js_query_cbor = cx.argument::<JsBuffer>(0)?;
         let js_contract_id = cx.argument::<JsBuffer>(1)?;
         let js_document_type_name = cx.argument::<JsString>(2)?;
@@ -643,9 +643,7 @@ impl DriveWrapper {
         Ok(cx.undefined())
     }
 
-    fn js_create_and_execute_query_as_grove_proof(
-        mut cx: FunctionContext,
-    ) -> JsResult<JsUndefined> {
+    fn js_prove_documents_query(mut cx: FunctionContext) -> JsResult<JsUndefined> {
         let js_query_cbor = cx.argument::<JsBuffer>(0)?;
         let js_contract_id = cx.argument::<JsBuffer>(1)?;
         let js_document_type_name = cx.argument::<JsString>(2)?;
@@ -1458,10 +1456,13 @@ fn main(mut cx: ModuleContext) -> NeonResult<()> {
         DriveWrapper::js_delete_document_for_contract_cbor,
     )?;
     cx.export_function("driveInsertIdentity", DriveWrapper::js_insert_identity_cbor)?;
+    cx.export_function("driveQueryDocuments", DriveWrapper::js_query_documents)?;
+
     cx.export_function(
-        "driveQueryDocuments",
-        DriveWrapper::js_create_and_execute_query,
+        "driveProveDocumentsQuery",
+        DriveWrapper::js_prove_documents_query,
     )?;
+
     cx.export_function("groveDbInsert", DriveWrapper::js_grove_db_insert)?;
     cx.export_function(
         "groveDbInsertIfNotExists",
