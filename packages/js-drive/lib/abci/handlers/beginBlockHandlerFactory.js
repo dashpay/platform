@@ -8,6 +8,7 @@ const {
 
 const NotSupportedNetworkProtocolVersionError = require('./errors/NotSupportedNetworkProtocolVersionError');
 const NetworkProtocolVersionIsNotSetError = require('./errors/NetworkProtocolVersionIsNotSetError');
+const timeToMillis = require('../../util/timeToMillis');
 
 /**
  * Begin Block ABCI Handler
@@ -128,7 +129,7 @@ function beginBlockHandlerFactory(
      */
     const rsRequest = {
       blockHeight: header.height.toNumber(),
-      blockTime: header.time.seconds + header.time.nanos,
+      blockTime: timeToMillis(header.time.seconds, header.time.nanos),
       proposerProTxHash: Array.from(header.proposerProTxHash),
     };
 
@@ -136,7 +137,9 @@ function beginBlockHandlerFactory(
 
     if (latestContext) {
       const latestHeader = latestContext.getHeader();
-      rsRequest.previousBlockTime = latestHeader.time.seconds + latestHeader.time.nanos;
+      rsRequest.previousBlockTime = timeToMillis(
+        latestHeader.time.seconds, latestHeader.time.nanos,
+      );
     }
 
     await rsAbci.blockBegin(rsRequest, true);

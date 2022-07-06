@@ -13,11 +13,13 @@ const {
 const featureFlagTypes = require('@dashevo/feature-flags-contract/lib/featureFlagTypes');
 
 const { FEE_MULTIPLIER } = require('@dashevo/dpp/lib/stateTransition/fee/constants');
+const timeToMillis = require('../../util/timeToMillis');
 
 /**
  * Begin block ABCI handler
  *
  * @param {BlockExecutionContext} blockExecutionContext
+ * @param {BlockExecutionContextStack} blockExecutionContextStack
  * @param {LatestCoreChainLock} latestCoreChainLock
  * @param {ValidatorSet} validatorSet
  * @param {createValidatorSetUpdate} createValidatorSetUpdate
@@ -29,6 +31,7 @@ const { FEE_MULTIPLIER } = require('@dashevo/dpp/lib/stateTransition/fee/constan
  */
 function endBlockHandlerFactory(
   blockExecutionContext,
+  blockExecutionContextStack,
   latestCoreChainLock,
   validatorSet,
   createValidatorSetUpdate,
@@ -75,16 +78,21 @@ function endBlockHandlerFactory(
     if (isEpochChange) {
       const latestContext = blockExecutionContextStack.getLatest();
 
-      if (latestContext) {
-        const latestHeader = latestContext.getHeader();
-        rsRequest.previousBlockTime = latestHeader.time.seconds + latestHeader.time.nanos;
-      }
+      const blockTime = timeToMillis(header.time.seconds, header.time.nanos);
 
-      consensusLogger.debug({
+      const debugData = {
         currentEpochIndex,
         blockTime,
-        previousBlocktime
-      }, `Fee epoch #${currentEpochIndex} started on block time ${blockTime}`);
+      };
+
+      if (latestContext) {
+        const latestHeader = latestContext.getHeader();
+        debugData.previousBlockTime = timeToMillis(
+          latestHeader.time.seconds, latestHeader.time.nanos,
+        );
+      }
+
+      consensusLogger.debug(debugData, `Fee epoch #${currentEpochIndex} started on block time ${blockTime}`);
     }
 
     consensusLogger.debug({
@@ -99,20 +107,9 @@ function endBlockHandlerFactory(
       consensusLogger.debug({
         currentEpochIndex,
         masternodesPaidCount: rsResponse.masternodesPaidCount,
-      }, `${masternodesPaidCount} masternodes paid for epoch #${currentEpochIndex}`);
+        paidEpochIndex: rsResponse.paidEpochIndex,
+      }, `${rsResponse.masternodesPaidCount} masternodes paid for epoch #${rsResponse.paidEpochIndex}`);
     }
-
-    masternodesPaidCount
-
-  * @property {EpochInfo} epochInfo
-    * @property {number}
-    */
-
-    /**
-     * @typedef EpochInfo
-     * @property {number} currentEpochIndex
-     * @property {boolean} isEpochChange
-     */
 
     // Rotate validators
 
