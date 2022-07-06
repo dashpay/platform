@@ -228,7 +228,10 @@ impl Identity {
         if let Some(public_keys_value) = raw_object.get_mut("publicKeys") {
             if let Some(public_keys_array) = public_keys_value.as_array_mut() {
                 for public_key in public_keys_array.iter_mut() {
-                    public_key.replace_base64_paths(identity_public_key::BINARY_DATA_FIELDS)?;
+                    public_key.replace_binary_paths(
+                        identity_public_key::BINARY_DATA_FIELDS,
+                        ReplaceWith::Bytes,
+                    )?;
                 }
             }
         }

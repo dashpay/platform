@@ -13,7 +13,7 @@ use serde_repr::{Deserialize_repr, Serialize_repr};
 
 use crate::errors::{InvalidVectorSizeError, ProtocolError};
 use crate::util::cbor_value::{CborCanonicalMap, CborMapExtension};
-use crate::util::json_value::JsonValueExt;
+use crate::util::json_value::{JsonValueExt, ReplaceWith};
 use crate::util::vec;
 
 pub type KeyID = u64;
@@ -287,7 +287,7 @@ impl IdentityPublicKey {
     pub fn from_raw_object(mut raw_object: JsonValue) -> Result<IdentityPublicKey, ProtocolError> {
         // TODO identifier_default_deserializer: default deserializer should be changed to bytes
         // Identifiers fields should be replaced with the string format to deserialize Data Contract
-        raw_object.replace_base64_paths(BINARY_DATA_FIELDS)?;
+        raw_object.replace_binary_paths(BINARY_DATA_FIELDS, ReplaceWith::Bytes)?;
         let identity_public_key: IdentityPublicKey = serde_json::from_value(raw_object)?;
 
         Ok(identity_public_key)
