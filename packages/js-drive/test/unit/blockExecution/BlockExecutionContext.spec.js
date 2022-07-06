@@ -82,29 +82,57 @@ describe('BlockExecutionContext', () => {
     });
   });
 
-  describe('#getCumulativeFees', () => {
+  describe('#getCumulativeProcessingFee', () => {
     it('should get cumulative fees', async () => {
-      let result = blockExecutionContext.getCumulativeFees();
+      let result = blockExecutionContext.getCumulativeProcessingFee();
 
       expect(result).to.equal(0);
 
-      blockExecutionContext.cumulativeFees = cumulativeFees;
+      blockExecutionContext.cumulativeProcessingFee = cumulativeFees;
 
-      result = blockExecutionContext.getCumulativeFees();
+      result = blockExecutionContext.getCumulativeProcessingFee();
 
       expect(result).to.equal(cumulativeFees);
     });
   });
 
-  describe('#incrementCumulativeFees', () => {
-    it('should increment cumulative fees', async () => {
-      let result = blockExecutionContext.getCumulativeFees();
+  describe('#getCumulativeStorageFee', () => {
+    it('should get cumulative fees', async () => {
+      let result = blockExecutionContext.getCumulativeStorageFee();
 
       expect(result).to.equal(0);
 
-      blockExecutionContext.incrementCumulativeFees(15);
+      blockExecutionContext.cumulativeStorageFee = cumulativeFees;
 
-      result = blockExecutionContext.getCumulativeFees();
+      result = blockExecutionContext.getCumulativeStorageFee();
+
+      expect(result).to.equal(cumulativeFees);
+    });
+  });
+
+  describe('#incrementCumulativeProcessingFee', () => {
+    it('should increment cumulative fees', async () => {
+      let result = blockExecutionContext.getCumulativeProcessingFee();
+
+      expect(result).to.equal(0);
+
+      blockExecutionContext.incrementCumulativeProcessingFee(15);
+
+      result = blockExecutionContext.getCumulativeProcessingFee();
+
+      expect(result).to.equal(15);
+    });
+  });
+
+  describe('#incrementCumulativeStorageFee', () => {
+    it('should increment cumulative fees', async () => {
+      let result = blockExecutionContext.getCumulativeStorageFee();
+
+      expect(result).to.equal(0);
+
+      blockExecutionContext.incrementCumulativeStorageFee(15);
+
+      result = blockExecutionContext.getCumulativeStorageFee();
 
       expect(result).to.equal(15);
     });

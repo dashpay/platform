@@ -45,7 +45,7 @@ describe('commitHandlerFactory', () => {
     blockExecutionContextMock = new BlockExecutionContextMock(this.sinon);
 
     blockExecutionContextMock.getDataContracts.returns([dataContract]);
-    blockExecutionContextMock.getCumulativeFees.returns(accumulativeFees);
+    blockExecutionContextMock.getCumulativeProcessingFee.returns(accumulativeFees);
 
     header = {
       height: Long.fromInt(1),

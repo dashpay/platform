@@ -24,7 +24,8 @@ class BlockExecutionContextMock {
     this.addDataContract = sinon.stub();
     this.hasDataContract = sinon.stub();
     this.getDataContracts = sinon.stub();
-    this.getCumulativeFees = sinon.stub();
+    this.getCumulativeProcessingFee = sinon.stub();
+    this.getCumulativeStorageFee = sinon.stub();
     this.incrementCumulativeFees = sinon.stub();
     this.reset = sinon.stub();
     this.setHeader = sinon.stub();
