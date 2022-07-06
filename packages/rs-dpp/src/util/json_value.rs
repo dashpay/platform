@@ -1,6 +1,6 @@
 use std::{collections::BTreeMap, convert::TryInto};
 
-use anyhow::{anyhow, bail, Error};
+use anyhow::{anyhow, bail};
 use log::trace;
 use serde::de::DeserializeOwned;
 use serde_json::{Number, Value as JsonValue};
@@ -67,11 +67,6 @@ pub trait JsonValueExt {
         &mut self,
         paths: impl IntoIterator<Item = &'a str>,
         with: ReplaceWith,
-    ) -> Result<(), anyhow::Error>;
-
-    fn replace_base64_paths<'a>(
-        &mut self,
-        paths: impl IntoIterator<Item = &'a str>,
     ) -> Result<(), anyhow::Error>;
 
     fn parse_and_add_protocol_version(
@@ -321,25 +316,6 @@ impl JsonValueExt for JsonValue {
             _ => bail!("the Json Value isn't a map: {:?}", self),
         }
     }
-
-    fn replace_base64_paths<'a>(
-        &mut self,
-        paths: impl IntoIterator<Item = &'a str>,
-    ) -> Result<(), Error> {
-        for raw_path in paths {
-            let to_replace = get_value_mut(raw_path, self);
-            match to_replace {
-                Some(v) => {
-                    let base64: String = serde_json::from_value(v.clone())?;
-                    *v = JsonValue::from(base64::decode(base64)?);
-                }
-                None => {
-                    trace!("path '{}' is not found", raw_path)
-                }
-            }
-        }
-        Ok(())
-    }
 }
 
 /// replaces the Identifiers specified in binary_properties with Bytes or Base58
@@ -397,9 +373,8 @@ pub fn replace_binary(to_replace: &mut JsonValue, with: ReplaceWith) -> Result<(
             *to_replace = JsonValue::String(base64::encode(data_bytes));
         }
         ReplaceWith::Bytes => {
-            let data_string: String = serde_json::from_value(json_value)?;
-            let identifier = Identifier::from_string(&data_string, Encoding::Base58)?.to_vec();
-            *to_replace = JsonValue::Array(identifier);
+            let base64: String = serde_json::from_value(json_value)?;
+            *to_replace = JsonValue::from(base64::decode(base64)?);
         }
     }
     Ok(())
