@@ -1094,6 +1094,130 @@ describe('GroveDB', () => {
     });
   });
 
+  describe('#proveQueryMany', () => {
+    let dPath;
+    let dKey;
+    let ePath;
+
+    let daValue;
+    let dbValue;
+    let dcValue;
+    let eaValue;
+    let eaKey;
+    let ebValue;
+
+    beforeEach(async () => {
+      await groveDb.insert(
+        rootTreePath,
+        treeKey,
+        { type: 'tree', epoch: 0, value: Buffer.alloc(32) },
+      );
+
+      dKey = Buffer.from('dKey');
+      daValue = Buffer.from('da');
+      dbValue = Buffer.from('db');
+      dcValue = Buffer.from('dc');
+      eaValue = Buffer.from('ea');
+      eaKey = Buffer.from('eaKey');
+      ebValue = Buffer.from('eb');
+
+      dPath = [...itemTreePath];
+      dPath.push(dKey);
+      await groveDb.insert(
+        itemTreePath,
+        dKey,
+        { type: 'tree', epoch: 0, value: Buffer.alloc(32) },
+      );
+
+      await groveDb.insert(
+        dPath,
+        Buffer.from('daKey'),
+        { type: 'item', epoch: 0, value: daValue },
+      );
+
+      await groveDb.insert(
+        dPath,
+        Buffer.from('dbKey'),
+        { type: 'item', epoch: 0, value: dbValue },
+      );
+
+      await groveDb.insert(
+        dPath,
+        Buffer.from('dcKey'),
+        { type: 'item', epoch: 0, value: dcValue },
+      );
+
+      const eKey = Buffer.from('eKey');
+      ePath = [...itemTreePath];
+      ePath.push(eKey);
+      await groveDb.insert(
+        itemTreePath,
+        eKey,
+        { type: 'tree', epoch: 0, value: Buffer.alloc(32) },
+      );
+
+      await groveDb.insert(
+        ePath,
+        Buffer.from('eaKey'),
+        { type: 'item', epoch: 0, value: eaValue },
+      );
+
+      await groveDb.insert(
+        ePath,
+        Buffer.from('ebKey'),
+        { type: 'item', epoch: 0, value: ebValue },
+      );
+    });
+
+    it('should be able to prove query', async () => {
+      const query1 = {
+        path: itemTreePath,
+        query: {
+          query: {
+            items: [
+              {
+                type: 'key',
+                key: dKey,
+              },
+            ],
+            subquery: {
+              items: [
+                {
+                  type: 'rangeAfter',
+                  after: eaKey,
+                },
+              ],
+            },
+          },
+        },
+      };
+
+      const eKey = Buffer.from('eKey');
+      ePath = [...itemTreePath];
+      ePath.push(eKey);
+
+      const query2 = {
+        path: ePath,
+        query: {
+          query: {
+            items: [
+              {
+                type: 'rangeFull',
+              },
+            ],
+          },
+        },
+      };
+
+      const result = await groveDb.proveQueryMany([query1, query2]);
+
+      expect(result).to.exist();
+
+      expect(result).to.be.instanceOf(Buffer);
+      expect(result).to.have.lengthOf(341);
+    });
+  });
+
   describe('#flush', () => {
     it('should flush data on disc', async () => {
       await groveDb.insert(
