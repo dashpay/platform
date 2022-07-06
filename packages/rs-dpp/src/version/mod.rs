@@ -1,5 +1,8 @@
-use lazy_static::lazy_static;
 use std::collections::HashMap;
+
+use lazy_static::lazy_static;
+
+pub use protocol_version_validator::ProtocolVersionValidator;
 
 mod protocol_version_validator;
 
@@ -12,5 +15,3 @@ lazy_static! {
         m
     };
 }
-
-pub use protocol_version_validator::ProtocolVersionValidator;

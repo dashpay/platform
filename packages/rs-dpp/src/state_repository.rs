@@ -1,13 +1,11 @@
+use anyhow::Result as AnyResult;
 use async_trait::async_trait;
+#[cfg(test)]
+use mockall::{automock, predicate::*};
 use serde_json::Value as JsonValue;
 
 use crate::mocks;
 use crate::prelude::*;
-
-use anyhow::Result as AnyResult;
-
-#[cfg(test)]
-use mockall::{automock, predicate::*};
 
 #[cfg_attr(test, automock)]
 #[async_trait]
