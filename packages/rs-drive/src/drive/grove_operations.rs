@@ -470,7 +470,13 @@ impl Drive {
         <P as IntoIterator>::IntoIter: ExactSizeIterator + DoubleEndedIterator + Clone,
     {
         let CostContext { value, cost } = if apply {
-            self.grove.has_raw(path, key, transaction)
+            if self.config.has_raw_enabled {
+                self.grove.has_raw(path, key, transaction)
+            } else {
+                self.grove
+                    .get_raw(path, key, transaction)
+                    .map(|r| r.map(|e| true))
+            }
         } else {
             self.grove.worst_case_for_has_raw(path, key)
         };
