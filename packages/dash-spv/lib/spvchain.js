@@ -20,6 +20,11 @@ const SpvChain = class {
     this.heightByHash = {
       [this.root.hash]: startBlockHeight,
     };
+    /**
+     * Index set to check for duplicates
+     * @type {Set<any>}
+     */
+    this.orphansHashes = new Set();
   }
 
   init(chainType, startBlock) {
@@ -162,10 +167,8 @@ const SpvChain = class {
   }
 
   /** @private */
-  isDuplicate(compareHash) {
-    return this.getAllBranches().map((branch) => branch.map((node) => node.hash))
-      .concat(this.orphanBlocks.map((orphan) => orphan.hash))
-      .filter((hash) => hash === compareHash).length > 0;
+  isDuplicate(hash) {
+    return this.heightByHash[hash] || this.orphansHashes.has(hash);
   }
 
   /** @private */
@@ -189,6 +192,9 @@ const SpvChain = class {
       const chunk = this.orphanChunks[i];
       if (this.getTipHash() === utils.getCorrectedHash(chunk[0].prevHash)) {
         this.appendHeadersToLongestChain(chunk);
+        chunk.forEach((header) => {
+          this.orphansHashes.delete(header.hash);
+        });
         this.orphanChunks.splice(i, 1);
         i -= 1;
       }
@@ -369,6 +375,9 @@ const SpvChain = class {
       throw new Error('Some headers are invalid');
     }
     if (isOrphan) {
+      normalizedHeaders.forEach((header) => {
+        this.orphansHashes.add(header.hash);
+      });
       this.orphanChunks.push(normalizedHeaders);
     } else {
       this.appendHeadersToLongestChain(normalizedHeaders);
