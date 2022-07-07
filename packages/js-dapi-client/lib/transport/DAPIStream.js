@@ -2,8 +2,7 @@ const EventEmitter = require('events');
 const GrpcErrorCodes = require('@dashevo/grpc-common/lib/server/error/GrpcErrorCodes');
 
 const defaultOptions = {
-  // TODO: increase to 55 sec after testing is done
-  reconnectTimeoutDelay: 5000,
+  reconnectTimeoutDelay: 50000,
 };
 
 const EVENTS = {
@@ -18,9 +17,9 @@ const EVENTS = {
  * Stream that provides auto-reconnect functionality
  */
 class DAPIStream extends EventEmitter {
-  static create(fn) {
+  static create(fn, options) {
     return async (...args) => {
-      const dapiStream = new DAPIStream(fn, args);
+      const dapiStream = new DAPIStream(fn, options);
       await dapiStream.connect(...args);
       return dapiStream;
     };

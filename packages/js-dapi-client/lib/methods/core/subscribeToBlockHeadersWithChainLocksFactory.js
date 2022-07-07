@@ -6,7 +6,6 @@ const {
 } = require('@dashevo/dapi-grpc');
 
 const DAPIClientError = require('../../errors/DAPIClientError');
-const DAPIStream = require('../../transport/DAPIStream');
 
 /**
  * @param {GrpcTransport} grpcTransport
@@ -17,7 +16,7 @@ function subscribeToBlockHeadersWithChainLocksFactory(grpcTransport) {
    * @typedef {subscribeToBlockHeadersWithChainLocks}
    * @param {DAPIClientOptions & subscribeToBlockHeadersWithChainLocksOptions} [options]
    * @returns {
-   *    Promise<EventEmitter|DAPIStream<!BlockHeadersWithChainLocksResponse>>
+   *    EventEmitter|!grpc.web.ClientReadableStream<!BlockHeadersWithChainLocksResponse>
    * }
    */
   async function subscribeToBlockHeadersWithChainLocks(options = { }) {
@@ -56,7 +55,7 @@ function subscribeToBlockHeadersWithChainLocksFactory(grpcTransport) {
     );
   }
 
-  return DAPIStream.create(subscribeToBlockHeadersWithChainLocks);
+  return subscribeToBlockHeadersWithChainLocks;
 }
 
 /**

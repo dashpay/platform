@@ -1,6 +1,7 @@
 const { EventEmitter } = require('events');
 const { BlockHeader } = require('@dashevo/dashcore-lib');
 const GrpcErrorCodes = require('@dashevo/grpc-common/lib/server/error/GrpcErrorCodes');
+const DAPIStream = require('../transport/DAPIStream');
 
 const EVENTS = {
   BLOCK_HEADERS: 'BLOCK_HEADERS',
@@ -154,9 +155,13 @@ class BlockHeadersReader extends EventEmitter {
   async subscribeToNew(fromBlockHeight) {
     let lastKnownChainHeight = fromBlockHeight - 1;
 
-    const stream = await this.coreMethods.subscribeToBlockHeadersWithChainLocks({
-      fromBlockHeight,
-    });
+    const stream = await DAPIStream
+      .create(
+        this.coreMethods.subscribeToBlockHeadersWithChainLocks,
+        { reconnectTimeoutDelay: 5000 }, // TODO: remove after testing is done
+      )({
+        fromBlockHeight,
+      });
 
     stream.on('data', (data) => {
       const blockHeadersResponse = data.getBlockHeaders();
