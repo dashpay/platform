@@ -9,7 +9,7 @@
 function timeToMillis(seconds, nanoseconds) {
   const overallNanos = nanoseconds + seconds * (10 ** 9);
 
-  return overallNanos / (10 ** 6);
+  return Math.floor(overallNanos / (10 ** 6));
 }
 
 module.exports = timeToMillis;
