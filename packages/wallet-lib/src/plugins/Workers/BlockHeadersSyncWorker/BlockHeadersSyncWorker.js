@@ -117,7 +117,7 @@ class BlockHeadersSyncWorker extends Worker {
         chainStore.state.blockHeight = newChainHeight;
         walletStore.updateLastKnownBlock(newChainHeight);
         this.parentEvents.emit(EVENTS.BLOCKHEIGHT_CHANGED, newChainHeight);
-        this.parentEvents.emit(EVENTS.BLOCK, block);
+        this.parentEvents.emit(EVENTS.BLOCK, block, newChainHeight);
         logger.debug(`BlockHeadersSyncWorker - setting chain height ${newChainHeight}`);
 
         const { blockHeadersProvider: { spvChain } } = this.transport.client;
