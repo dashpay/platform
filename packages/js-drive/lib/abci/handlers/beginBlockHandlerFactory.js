@@ -130,7 +130,7 @@ function beginBlockHandlerFactory(
     const rsRequest = {
       blockHeight: header.height.toNumber(),
       blockTime: timeToMillis(header.time.seconds, header.time.nanos),
-      proposerProTxHash: Array.from(header.proposerProTxHash),
+      proposerProTxHash: header.proposerProTxHash,
     };
 
     const latestContext = blockExecutionContextStack.getLatest();

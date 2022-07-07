@@ -97,7 +97,6 @@ function endBlockHandlerFactory(
 
     consensusLogger.debug({
       currentEpochIndex,
-      masternodesPaidCount: rsResponse.masternodesPaidCount,
       feeMultiplier: FEE_MULTIPLIER,
       processingFees,
       storageFees,
@@ -108,7 +107,7 @@ function endBlockHandlerFactory(
         currentEpochIndex,
         masternodesPaidCount: rsResponse.masternodesPaidCount,
         paidEpochIndex: rsResponse.paidEpochIndex,
-      }, `${rsResponse.masternodesPaidCount} masternodes paid for epoch #${rsResponse.paidEpochIndex}`);
+      }, `${rsResponse.masternodesPaidCount} masternodes were paid for epoch #${rsResponse.paidEpochIndex}`);
     }
 
     // Rotate validators

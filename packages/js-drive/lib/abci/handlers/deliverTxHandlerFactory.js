@@ -165,8 +165,6 @@ function deliverTxHandlerFactory(
 
     // await transactionalDpp.getStateRepository().updateIdentity(identity);
 
-    blockExecutionContext.incrementCumulativeProcessingFee(actualStateTransitionFee);
-
     // Logging
     switch (stateTransition.getType()) {
       case stateTransitionTypes.DATA_CONTRACT_UPDATE:
@@ -248,6 +246,9 @@ function deliverTxHandlerFactory(
       storageFee: actualStorageFee,
       processingFee: actualProcessingFee,
     } = calculateOperationFees(actualStateTransitionOperations);
+
+    blockExecutionContext.incrementCumulativeProcessingFee(actualProcessingFee);
+    blockExecutionContext.incrementCumulativeStorageFee(actualStorageFee);
 
     const {
       storageFee: predictedStorageFee,

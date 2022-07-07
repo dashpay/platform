@@ -2,6 +2,7 @@ const SimplifiedMNListEntry = require('@dashevo/dashcore-lib/lib/deterministicmn
 const getIdentityFixture = require('../../../../lib/test/fixtures/getIdentityFixture');
 const createStateRepositoryMock = require('../../../../lib/test/mocks/createStateRepositoryMock');
 const getMasternodeRewardShareDocumentsFixture = require('../../../../lib/test/fixtures/getMasternodeRewardShareDocumentsFixture');
+const getMasternodeRewardSharesContractFixture = require('../../../../lib/test/fixtures/getMasternodeRewardSharesContractFixture');
 const getDocumentTransitionsFixture = require('../../../../lib/test/fixtures/getDocumentTransitionsFixture');
 const createRewardShareDataTrigger = require('../../../../lib/dataTrigger/rewardShareDataTriggers/createMasternodeRewardSharesDataTrigger');
 const DataTriggerExecutionResult = require('../../../../lib/dataTrigger/DataTriggerExecutionResult');
@@ -45,7 +46,9 @@ describe('createMasternodeRewardSharesDataTrigger', () => {
       ]),
     };
 
-    documentsFixture = getMasternodeRewardShareDocumentsFixture();
+    const dataContract = getMasternodeRewardSharesContractFixture();
+
+    documentsFixture = getMasternodeRewardShareDocumentsFixture(undefined, undefined, dataContract);
 
     smlStoreMock = {
       getSMLbyHeight: this.sinonSandbox.stub().returns(smlMock),
@@ -57,7 +60,7 @@ describe('createMasternodeRewardSharesDataTrigger', () => {
     stateRepositoryMock.fetchIdentity.resolves(getIdentityFixture());
     stateRepositoryMock.fetchDocuments.resolves([]);
 
-    const [document] = getMasternodeRewardShareDocumentsFixture();
+    const [document] = getMasternodeRewardShareDocumentsFixture(undefined, undefined, dataContract);
 
     [documentTransition] = getDocumentTransitionsFixture({
       create: [document],
@@ -68,7 +71,7 @@ describe('createMasternodeRewardSharesDataTrigger', () => {
     contextMock = {
       getStateRepository: () => stateRepositoryMock,
       getOwnerId: this.sinonSandbox.stub(),
-      getDataContract: () => getMasternodeRewardShareDocumentsFixture.dataContract,
+      getDataContract: () => dataContract,
       getStateTransitionExecutionContext: () => executionContext,
     };
     contextMock.getOwnerId.returns(topLevelIdentityId);
