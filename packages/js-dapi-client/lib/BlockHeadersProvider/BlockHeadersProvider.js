@@ -177,13 +177,15 @@ class BlockHeadersProvider extends EventEmitter {
 
   handleHeaders(headers, headHeight, reject) {
     try {
-      this.spvChain.addHeaders(headers);
+      const headersAdded = this.spvChain.addHeaders(headers);
 
-      headers.forEach((header, index) => {
-        this.headersHeights[header.hash] = headHeight + index;
-      });
+      if (headersAdded.length) {
+        headersAdded.forEach((header, index) => {
+          this.headersHeights[header.hash] = headHeight + index;
+        });
 
-      this.emit(EVENTS.CHAIN_UPDATED, headers, headHeight);
+        this.emit(EVENTS.CHAIN_UPDATED, headersAdded, headHeight);
+      }
     } catch (e) {
       if (e.message === 'Some headers are invalid') {
         reject(e);

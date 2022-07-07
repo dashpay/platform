@@ -317,7 +317,7 @@ const SpvChain = class {
    * added to an orphan array for possible later reconnection
    *
    * @param {Object[]|string[]|buffer[]} headers
-   * @return {boolean}
+   * @return {BlockHeader[]}
    */
   addHeaders(headers) {
     // TODO: fix. `addHeader` function uses partially implemented
@@ -338,7 +338,7 @@ const SpvChain = class {
 
     if (normalizedHeaders.length === 0) {
       // The batch already in the chain, do nothing
-      return true;
+      return [];
     }
 
     const isOrphan = !SpvChain.isParentChild(normalizedHeaders[0], tip);
@@ -377,7 +377,7 @@ const SpvChain = class {
       this.orphanChunksReconnect();
     }
     this.checkPruneBlocks();
-    return true;
+    return normalizedHeaders;
   }
 };
 

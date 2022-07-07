@@ -143,6 +143,8 @@ class BlockHeadersReader extends EventEmitter {
     }
   }
 
+  // TODO: write tests
+  // - it should correctly maintain lastKnownChainHeight after reconnects
   /**
    * Subscribes to continuously arriving block headers
    *
@@ -150,9 +152,7 @@ class BlockHeadersReader extends EventEmitter {
    * @returns {Promise<Stream>}
    */
   async subscribeToNew(fromBlockHeight) {
-    let chainHeight = -1;
-    // Used for reconnects. The first batch after the reconnect has to be ignored
-    let ignoreCount = 0;
+    let lastKnownChainHeight = fromBlockHeight - 1;
 
     const stream = await this.coreMethods.subscribeToBlockHeadersWithChainLocks({
       fromBlockHeight,
@@ -163,25 +163,12 @@ class BlockHeadersReader extends EventEmitter {
 
       if (blockHeadersResponse) {
         const rawHeaders = blockHeadersResponse.getHeadersList();
-        // Ignore already fetched headers after the reconnect
-        if (ignoreCount) {
-          rawHeaders.splice(0, ignoreCount);
-          ignoreCount = 0;
-
-          if (!rawHeaders.length) {
-            return;
-          }
-        }
 
         const headers = rawHeaders.map((header) => new BlockHeader(Buffer.from(header)));
+        // console.log('[BlockHeadersReader] Continuous sync, new:', headers.map((header) => header.hash));
 
-        if (chainHeight === -1) {
-          chainHeight = fromBlockHeight + headers.length - 1;
-        } else {
-          chainHeight += headers.length;
-        }
-
-        const batchHeadHeight = chainHeight - headers.length + 1;
+        lastKnownChainHeight += headers.length;
+        const batchHeadHeight = lastKnownChainHeight - headers.length + 1;
 
         /**
          * Kills stream in case of deliberate rejection from the outside
@@ -196,17 +183,11 @@ class BlockHeadersReader extends EventEmitter {
     });
 
     stream.on('beforeReconnect', (updateArguments) => {
-      // Sync from chainHeight - 1 because not all nodes might be synchronized yet
-      let newFromBlockHeight = chainHeight - 1;
-      if (newFromBlockHeight < fromBlockHeight) {
-        newFromBlockHeight = fromBlockHeight;
-      }
-
       updateArguments({
-        fromBlockHeight: newFromBlockHeight,
+        fromBlockHeight: lastKnownChainHeight,
       });
 
-      ignoreCount = chainHeight - newFromBlockHeight;
+      lastKnownChainHeight -= 1;
     });
 
     stream.on('error', (e) => {
