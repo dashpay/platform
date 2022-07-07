@@ -1,4 +1,5 @@
 const BlockHeadersProvider = require('@dashevo/dapi-client/lib/BlockHeadersProvider/BlockHeadersProvider');
+const { Block } = require('@dashevo/dashcore-lib');
 const Worker = require('../../Worker');
 const logger = require('../../../logger');
 const EVENTS = require('../../../EVENTS');
@@ -89,32 +90,49 @@ class BlockHeadersSyncWorker extends Worker {
       this.parentEvents.emit('error', e);
     };
 
-    const chainUpdateHandler = (newHeaders, batchHeadHeight) => {
-      const chainStore = this.storage.getChainStore(this.network.toString());
-      const walletStore = this.storage.getWalletStore(this.walletId);
+    // TODO: write tests
+    const chainUpdateHandler = async (newHeaders, batchHeadHeight) => {
+      try {
+        const chainStore = this.storage.getChainStore(this.network.toString());
+        const walletStore = this.storage.getWalletStore(this.walletId);
 
-      let newChainHeight = batchHeadHeight;
-      if (newHeaders.length > 1) {
-        newChainHeight += newHeaders.length - 1;
-      }
+        let newChainHeight = batchHeadHeight;
+        if (newHeaders.length > 1) {
+          newChainHeight += newHeaders.length - 1;
+        }
 
-      if (newChainHeight > chainStore.state.blockHeight) {
+        const { blockHeight } = chainStore.state;
+        // Ignore height overlap in case of the stream reconnected
+        if (newChainHeight === blockHeight) {
+          return;
+        } if (newChainHeight < blockHeight) {
+          this.parentEvents.emit(new Error(`New chain height ${newChainHeight} is less than latest height ${blockHeight}`));
+          return;
+        }
+
+        const rawBlock = await this.transport.getBlockByHeight(newChainHeight);
+        const block = new Block(rawBlock);
+
         // TODO: do we really need it having in mind that wallet holds lastKnownBlock?
         chainStore.state.blockHeight = newChainHeight;
         walletStore.updateLastKnownBlock(newChainHeight);
         this.parentEvents.emit(EVENTS.BLOCKHEIGHT_CHANGED, newChainHeight);
+        this.parentEvents.emit(EVENTS.BLOCK, block);
         logger.debug(`BlockHeadersSyncWorker - setting chain height ${newChainHeight}`);
 
         const { blockHeadersProvider: { spvChain } } = this.transport.client;
-        const { prunedHeaders } = spvChain;
+        const { prunedHeaders, orphanChunks } = spvChain;
         const longestChain = spvChain.getLongestChain();
-        const totalChainLength = prunedHeaders.length + longestChain.length;
+        const totalOrphans = orphanChunks.reduce((sum, chunk) => sum + chunk.length, 0);
+        const totalChainLength = prunedHeaders.length + longestChain.length + totalOrphans;
 
-        // TODO: fix total chain length is equal to the new chain height, which is not correct.
-        // It should be +1 because of a genesis block
-        console.log(`[BlockHeadersSyncWorker] Chain height update. New height: ${newChainHeight}. Headers added: ${newHeaders.length}. Chain length: ${totalChainLength}`);
+        console.log(`[BlockHeadersSyncWorker] Chain height update: ${newChainHeight}, Headers added: ${newHeaders.length}, Total length: ${totalChainLength}`);
+        console.log(`[--------------------->] Longest: ${longestChain.length}, Pruned: ${prunedHeaders.length}. Orphans: ${totalOrphans}`);
         // TODO: implement with pruning in mind
         // this.storage.scheduleStateSave();
+      } catch (e) {
+        console.log(e);
+        this.parentEvents.emit('error', e);
       }
     };
 
@@ -130,7 +148,6 @@ class BlockHeadersSyncWorker extends Worker {
     // in case we are in the phase of plugins preparation
     const { blockHeadersProvider } = this.transport.client;
     await blockHeadersProvider.stop();
-    console.log('Stop worker');
   }
 
   updateProgress() {
@@ -146,9 +163,10 @@ class BlockHeadersSyncWorker extends Worker {
     const longestChain = blockHeadersProvider.spvChain.getLongestChain();
     const { prunedHeaders, orphanChunks } = blockHeadersProvider.spvChain;
 
+    const totalOrphans = orphanChunks.reduce((sum, chunk) => sum + chunk.length, 0);
     const synchronizedHistoricalHeaders = longestChain.length
       + prunedHeaders.length
-      + orphanChunks.reduce((sum, chunk) => sum + chunk.length, 0);
+      + totalOrphans;
 
     // TODO: test
     let progress = (this.syncCheckpoint + synchronizedHistoricalHeaders - 1)
@@ -158,6 +176,10 @@ class BlockHeadersSyncWorker extends Worker {
     const fetchedHeaders = this.syncCheckpoint + synchronizedHistoricalHeaders - 1;
 
     console.log(`[BlockHeadersSyncWorker] Historical fetch: ${fetchedHeaders}/${totalHistoricalHeaders}. Progress: ${progress}`);
+    console.log(`[--------------------->] Longest: ${longestChain.length}, Pruned: ${prunedHeaders.length}. Orphans: ${totalOrphans}`);
+    if (progress === 1) {
+      console.log(`[--------------------->] last header: ${longestChain[longestChain.length - 1].hash}`);
+    }
   }
 
   scheduleProgressUpdate() {
