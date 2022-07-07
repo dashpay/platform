@@ -2,6 +2,7 @@ const EventEmitter = require('events');
 const GrpcErrorCodes = require('@dashevo/grpc-common/lib/server/error/GrpcErrorCodes');
 
 const defaultOptions = {
+  // TODO: increase to 55 sec after testing is done
   reconnectTimeoutDelay: 5000,
 };
 
@@ -12,7 +13,7 @@ const EVENTS = {
   BEFORE_RECONNECT: 'beforeReconnect',
 };
 
-// TODO: test
+// TODO: write tests
 /**
  * Stream that provides auto-reconnect functionality
  */
