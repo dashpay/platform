@@ -11,7 +11,7 @@ function processInstantLocks(instantLocks) {
   });
 }
 
-async function processTransactions(transactions) {
+function processTransactions(transactions) {
   const { network, syncIncomingTransactions } = this;
   const addresses = this.getAddressesToSync();
 
@@ -26,41 +26,11 @@ async function processTransactions(transactions) {
     });
 
     if (syncIncomingTransactions && walletTransactions.length) {
-      // Immediately import unconfirmed transactions
+      // Immediately import unconfirmed transactions to proceed with the broadcasting and etc
+      // I guess they should be first confirmed by the instant locks)
 
-      // TODO: handle stream reconnect if addresses were generated
+      // TODO: reconnect to the stream if new addresses were generated
       this.importTransactions(walletTransactions.map((tx) => [tx]));
-
-      // TODO: test and make sure it works
-      await new Promise((resolve) => {
-        const heightChangeListener = () => {
-          Promise
-            .all(walletTransactions.map((tx) => this.transport.getTransaction(tx.hash)))
-            .then((result) => {
-              const hasMetadata = result.every(({ blockHash }) => blockHash);
-              if (hasMetadata) {
-                const transactionsWithMetadata = result.map((item) => {
-                  const {
-                    transaction, blockHash, height, instantLocked, chainLocked,
-                  } = item;
-                  const metadata = {
-                    blockHash,
-                    height,
-                    instantLocked,
-                    chainLocked,
-                  };
-                  return [transaction, metadata];
-                });
-
-                this.importTransactions(transactionsWithMetadata);
-                this.parentEvents.removeListener(EVENTS.BLOCKHEIGHT_CHANGED, heightChangeListener);
-                resolve();
-              }
-            });
-        };
-
-        this.parentEvents.on(EVENTS.BLOCKHEIGHT_CHANGED, heightChangeListener);
-      });
     }
   }
 }
@@ -160,7 +130,7 @@ async function processChunks(dataChunk) {
   if (instantLocks.length) {
     processInstantLocks.bind(this)(instantLocks);
   } if (transactions.length) {
-    await processTransactions.bind(this)(transactions);
+    processTransactions.bind(this)(transactions);
   } else if (merkleBlock) {
     await processMerkleBlock.bind(this)(merkleBlock);
   } else {

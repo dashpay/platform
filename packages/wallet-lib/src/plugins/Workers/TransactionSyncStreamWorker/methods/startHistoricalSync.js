@@ -49,6 +49,7 @@ module.exports = async function startHistoricalSync(network) {
       return;
     }
 
+    // TODO: finish this function only when all this.transactionsToVerify were processed
     this.stream = null;
     this.emit('error', e, {
       type: 'plugin',

@@ -10,6 +10,7 @@ const isBrowser = require('../../../utils/isBrowser');
 
 const logger = require('../../../logger');
 const ChainSyncMediator = require('../../../types/Wallet/ChainSyncMediator');
+const EVENTS = require('../../../EVENTS');
 
 const PROGRESS_UPDATE_INTERVAL = 1000;
 
@@ -57,6 +58,7 @@ class TransactionSyncStreamWorker extends Worker {
 
     this.scheduleProgressUpdate = this.scheduleProgressUpdate.bind(this);
     this.updateProgress = this.updateProgress.bind(this);
+    this.handleNewBlock = this.handleNewBlock.bind(this);
   }
 
   /**
@@ -198,6 +200,29 @@ class TransactionSyncStreamWorker extends Worker {
       logger.error('Error syncing incoming transactions', e);
       this.emit('error', e);
     });
+
+    this.parentEvents.on(EVENTS.BLOCK, this.handleNewBlock);
+  }
+
+  handleNewBlock(block, height) {
+    const metadata = {
+      height,
+      blockHash: block.hash,
+      instantLocked: false, // TBD,
+      chainLocked: false, // TBD
+    };
+
+    const transactionsWithMetadata = [];
+    block.transactions.forEach((tx) => {
+      if (this.transactionsToVerify[tx.hash]) {
+        transactionsWithMetadata.push([tx, metadata]);
+        delete transactionsWithMetadata[tx.hash];
+      }
+    });
+
+    // console.log(`[Wallet: ${this.walletId}] confirmed transactions ${transactionsWithMetadata.map(([tx]) => tx.hash)}`);
+    // TODO: handle newly generated addresses and reconnect to the stream?
+    this.importTransactions(transactionsWithMetadata);
   }
 
   /**
@@ -248,6 +273,8 @@ class TransactionSyncStreamWorker extends Worker {
       }
     }
 
+    this.parentEvents.removeListener(EVENTS.BLOCK, this.handleNewBlock);
+
     // Wrapping `cancel` in `setImmediate` due to bug with double-free
     // explained here (https://github.com/grpc/grpc-node/issues/1652)
     // and here (https://github.com/nodejs/node/issues/38964)
@@ -291,8 +318,6 @@ class TransactionSyncStreamWorker extends Worker {
     // TODO: test
     let progress = this.lastSyncedBlockHeight / chainStore.state.blockHeight;
     progress = Math.round(progress * 1000) / 1000;
-
-    console.log('TX, sync', this.lastSyncedBlockHeight, chainStore.state.blockHeight, progress);
   }
 
   scheduleProgressUpdate() {
