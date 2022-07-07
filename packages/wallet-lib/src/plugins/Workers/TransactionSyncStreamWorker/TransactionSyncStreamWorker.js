@@ -40,6 +40,7 @@ class TransactionSyncStreamWorker extends Worker {
       ...options,
     });
 
+    // TODO: cleanup
     this.syncIncomingTransactions = false;
     this.stream = null;
     this.incomingSyncPromise = null;
@@ -47,6 +48,12 @@ class TransactionSyncStreamWorker extends Worker {
     this.delayedRequests = {};
     this.lastSyncedBlockHeight = -1;
     this.progressUpdateTimeout = null;
+
+    /**
+     * Pool of transactions pending to be verified
+     * @type {{}}
+     */
+    this.transactionsToVerify = {};
 
     this.scheduleProgressUpdate = this.scheduleProgressUpdate.bind(this);
     this.updateProgress = this.updateProgress.bind(this);

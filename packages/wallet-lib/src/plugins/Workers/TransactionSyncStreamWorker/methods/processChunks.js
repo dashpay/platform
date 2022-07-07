@@ -11,7 +11,6 @@ function processInstantLocks(instantLocks) {
   });
 }
 
-const transactionsToVerify = {};
 async function processTransactions(transactions) {
   const { network, syncIncomingTransactions } = this;
   const addresses = this.getAddressesToSync();
@@ -20,10 +19,10 @@ async function processTransactions(transactions) {
     .filterAddressesTransactions(transactions, addresses, network);
   if (walletTransactions.length) {
     walletTransactions.forEach((tx) => {
-      if (transactionsToVerify[tx.hash]) {
+      if (this.transactionsToVerify[tx.hash]) {
         console.warn(`!!! [processChunks] Duplicate tx: ${tx.hash}`);
       }
-      transactionsToVerify[tx.hash] = tx;
+      this.transactionsToVerify[tx.hash] = tx;
     });
 
     if (syncIncomingTransactions && walletTransactions.length) {
@@ -91,13 +90,13 @@ async function processMerkleBlock(merkleBlock) {
   };
 
   const transactionsWithMetadata = [];
-  Object.keys(transactionsToVerify).forEach((hash) => {
-    const tx = transactionsToVerify[hash];
+  Object.keys(this.transactionsToVerify).forEach((hash) => {
+    const tx = this.transactionsToVerify[hash];
     if (!txHashesInTheBlock.has(hash)) {
       throw new Error(`Transaction ${hash} was not found in merkle block ${headerHash}`);
     }
     transactionsWithMetadata.push([tx, metadata]);
-    delete transactionsToVerify[hash];
+    delete this.transactionsToVerify[hash];
   });
 
   // TODO: verify merkle block
