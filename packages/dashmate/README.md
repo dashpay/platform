@@ -32,7 +32,7 @@ Distribution package for Dash Masternode installation
 
 * [Docker](https://docs.docker.com/engine/installation/) (v18.06.0+)
 * [Docker Compose](https://docs.docker.com/compose/install/) (v1.25.0+)
-* [Node.js](https://nodejs.org/en/download/) (v16.0+, NPM v8.0+)
+* [Node.js](https://nodejs.org/en/download/) (v16, NPM v8.0+)
 
 For Linux installations you may optionally wish to follow the [post-installation steps](https://docs.docker.com/engine/install/linux-postinstall/) to manage Docker as a non-root user, otherwise you will have to run CLI and Docker commands with `sudo`.
 
@@ -47,6 +47,7 @@ $ npm install -g dashmate
 
 ## Update
 
+The `update` command is used to quickly get the latest patches for docker image. It is required to restart the node after the update is complete.
 ```bash
 $ dashmate stop
 $ npm update -g dashmate
@@ -259,7 +260,7 @@ The [setup](#setup-node) command set corresponding group as default. To output t
 
 ```
 USAGE
-  $ dashmate group default [GROUP]
+  $ dashmate group:default [GROUP]
 
 ARGUMENTS
   GROUP  group name
@@ -274,7 +275,7 @@ The `group:list` command outputs a list of group configs.
 
 ```
 USAGE
-  $ dashmate group list
+  $ dashmate group:list
 
 OPTIONS
   -v, --verbose  use verbose mode for output
@@ -287,7 +288,7 @@ The `group:start` command is used to start a group of nodes belonging to the def
 
 ```
 USAGE
-  $ dashmate group start
+  $ dashmate group:start
 
 OPTIONS
   -v, --verbose             use verbose mode for output
@@ -301,7 +302,7 @@ The `group:stop` command is used to stop group nodes belonging to the default gr
 
 ```
 USAGE
-  $ dashmate group stop
+  $ dashmate group:stop
 
 OPTIONS
   -f, --force    force stop nodes (skips running check)
@@ -315,7 +316,7 @@ The `group:restart` command is used to restart group nodes belonging to the defa
 
 ```
 USAGE
-  $ dashmate group restart
+  $ dashmate group:restart
 
 OPTIONS
   -v, --verbose  use verbose mode for output
@@ -328,7 +329,7 @@ The `group:status` command outputs group status information.
 
 ```
 USAGE
-  $ dashmate group status
+  $ dashmate group:status
 
 OPTIONS
   -v, --verbose  use verbose mode for output
@@ -341,7 +342,7 @@ The `group:reset` command removes all data corresponding to the specified group 
 
 ```
 USAGE
-  $ dashmate group reset [--group <value>] [-v] [--hard] [-f] [-p]
+  $ dashmate group:reset [--group <value>] [-v] [--hard] [-f] [-p]
 
 FLAGS
   -f, --force          reset even running node
