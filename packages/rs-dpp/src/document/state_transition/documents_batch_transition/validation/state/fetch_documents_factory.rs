@@ -2,16 +2,13 @@ use futures::future::join_all;
 use serde_json::json;
 
 use crate::{
-    document::{document_transition::DocumentTransition, document_validator, Document},
+    document::{document_transition::DocumentTransition, Document},
     get_from_transition,
     state_repository::StateRepositoryLike,
     util::string_encoding::Encoding,
 };
 
-use std::{
-    borrow::Borrow,
-    collections::hash_map::{Entry, HashMap},
-};
+use std::collections::hash_map::{Entry, HashMap};
 
 pub struct DocumentsFetcher<SR>
 where

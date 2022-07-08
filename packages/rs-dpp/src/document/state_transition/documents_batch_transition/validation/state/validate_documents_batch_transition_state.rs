@@ -1,5 +1,5 @@
 use super::{
-    execute_data_triggers, fetch_documents_factory::fetch_documents,
+    execute_data_triggers::execute_data_triggers, fetch_documents_factory::fetch_documents,
     validate_documents_uniqueness_by_indices::validate_documents_uniqueness_by_indices,
 };
 use crate::{
