@@ -1,5 +1,3 @@
-use std::borrow::Borrow;
-
 use crate::{
     document::{
         document_transition::{Action, DocumentTransition, DocumentTransitionExt},
@@ -17,7 +15,7 @@ use crate::{
 };
 use futures::future::join_all;
 use itertools::Itertools;
-use serde_json::{json, map::IntoIter, Value as JsonValue};
+use serde_json::{json, Value as JsonValue};
 
 struct QueryDefinition<'a> {
     document_type: &'a str,
