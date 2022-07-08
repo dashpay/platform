@@ -25,6 +25,17 @@ pub enum DocumentTransition {
     Delete(DocumentDeleteTransition),
 }
 
+impl AsRef<Self> for DocumentTransition {
+    fn as_ref(&self) -> &Self {
+        self
+    }
+}
+
+pub trait DocumentTransitionExt {
+    fn get_created_at(&self) -> Option<i64>;
+    fn get_updated_at(&self) -> Option<i64>;
+}
+
 macro_rules! call_method {
     ($state_transition:expr, $method:ident, $args:tt ) => {
         match $state_transition {
@@ -109,6 +120,24 @@ impl DocumentTransition {
             Some(t)
         } else {
             None
+        }
+    }
+}
+
+impl DocumentTransitionExt for DocumentTransition {
+    fn get_updated_at(&self) -> Option<i64> {
+        match self {
+            DocumentTransition::Create(t) => t.updated_at,
+            DocumentTransition::Replace(t) => t.updated_at,
+            DocumentTransition::Delete(_) => None,
+        }
+    }
+
+    fn get_created_at(&self) -> Option<i64> {
+        match self {
+            DocumentTransition::Create(t) => t.created_at,
+            DocumentTransition::Replace(t) => None,
+            DocumentTransition::Delete(_) => None,
         }
     }
 }

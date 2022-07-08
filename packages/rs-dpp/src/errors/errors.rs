@@ -2,6 +2,7 @@ use crate::consensus::ConsensusError;
 use crate::data_contract::{errors::*, DataContract};
 use crate::document::{errors::*, Document};
 use crate::identity::{IdentityPublicKey, Purpose, SecurityLevel};
+use crate::prelude::Identifier;
 use crate::state_transition::StateTransition;
 use crate::{CompatibleProtocolVersionIsNotDefinedError, NonConsensusError};
 use serde_json::Value as JsonValue;
@@ -106,6 +107,9 @@ pub enum ProtocolError {
         errors: Vec<ConsensusError>,
         raw_data_contract: JsonValue,
     },
+
+    #[error("Data Contract is not present")]
+    DataContractNotPresentError { data_contract_id: Identifier },
 }
 
 impl From<NonConsensusError> for ProtocolError {

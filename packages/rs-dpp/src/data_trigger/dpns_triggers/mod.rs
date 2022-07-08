@@ -22,9 +22,9 @@ const PROPERTY_RECORDS: &str = "records";
 const PROPERTY_DASH_UNIQUE_IDENTITY_ID: &str = "dashUniqueIdentityId";
 const PROPERTY_DASH_ALIAS_IDENTITY_ID: &str = "dashAliasIdentityId";
 
-pub async fn create_domain_data_trigger<SR>(
+pub async fn create_domain_data_trigger<'a, SR>(
     document_transition: &DocumentTransition,
-    context: &DataTriggerExecutionContext<SR>,
+    context: &DataTriggerExecutionContext<'a, SR>,
     top_level_identity: Option<&Identifier>,
 ) -> Result<DataTriggerExecutionResult, anyhow::Error>
 where
@@ -114,7 +114,7 @@ where
         }
     }
 
-    if normalized_parent_domain_name.is_empty() && &context.owner_id != top_level_identity {
+    if normalized_parent_domain_name.is_empty() && context.owner_id != top_level_identity {
         let err = new_error(
             context,
             dt_create,
@@ -168,7 +168,7 @@ where
             .get_value(PROPERTY_ALLOW_SUBDOMAINS)?
             .as_bool()
             .unwrap())
-            && context.owner_id != parent_domain.owner_id
+            && context.owner_id != &parent_domain.owner_id
         {
             let err = new_error(
                 context,

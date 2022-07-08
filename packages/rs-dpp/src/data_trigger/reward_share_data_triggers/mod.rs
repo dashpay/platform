@@ -16,9 +16,9 @@ const MAX_PERCENTAGE: u64 = 10000;
 const PROPERTY_PAY_TO_ID: &str = "payToId";
 const PROPERTY_PERCENTAGE: &str = "percentage";
 
-pub async fn create_masternode_reward_shares_data_trigger<SR>(
+pub async fn create_masternode_reward_shares_data_trigger<'a, SR>(
     document_transition: &DocumentTransition,
-    context: &DataTriggerExecutionContext<SR>,
+    context: &DataTriggerExecutionContext<'a, SR>,
     _top_level_identity: Option<&Identifier>,
 ) -> Result<DataTriggerExecutionResult, anyhow::Error>
 where

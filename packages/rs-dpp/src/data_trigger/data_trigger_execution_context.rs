@@ -3,23 +3,26 @@ use crate::{
     state_repository::StateRepositoryLike,
 };
 
-// TODO consider using the reference to the StateRepository instance
 #[derive(Clone, Debug)]
-pub struct DataTriggerExecutionContext<SR>
+pub struct DataTriggerExecutionContext<'a, SR>
 where
     SR: StateRepositoryLike,
 {
-    pub state_repository: SR,
-    pub owner_id: Identifier,
-    pub data_contract: DataContract,
+    pub state_repository: &'a SR,
+    pub owner_id: &'a Identifier,
+    pub data_contract: &'a DataContract,
 }
 
-impl<SR> DataTriggerExecutionContext<SR>
+impl<'a, SR> DataTriggerExecutionContext<'a, SR>
 where
     SR: StateRepositoryLike,
 {
     /// Creates a new instance of DataTriggerExecutionContext
-    pub fn new(state_repository: SR, owner_id: Identifier, data_contract: DataContract) -> Self {
+    pub fn new(
+        state_repository: &'a SR,
+        owner_id: &'a Identifier,
+        data_contract: &'a DataContract,
+    ) -> Self {
         DataTriggerExecutionContext {
             state_repository,
             owner_id,

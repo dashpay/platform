@@ -1,4 +1,3 @@
-use futures::future::LocalBoxFuture;
 mod data_trigger_execution_context;
 
 pub mod dashpay_data_triggers;
@@ -26,7 +25,7 @@ use self::feature_flags_data_triggers::create_feature_flag_data_trigger;
 use self::reward_share_data_triggers::create_masternode_reward_shares_data_trigger;
 
 #[derive(Debug, Clone, Copy)]
-pub enum DataTriggerCode {
+pub enum DataTriggerKind {
     CreateDataContractRequest,
     DataTriggerCreateDomain,
     DataTriggerRewardShare,
@@ -37,13 +36,12 @@ pub enum DataTriggerCode {
 pub struct DataTrigger {
     pub data_contract_id: Identifier,
     pub document_type: String,
-    pub data_trigger_code: DataTriggerCode,
+    pub data_trigger_kind: DataTriggerKind,
     pub transition_action: Action,
     pub top_level_identity: Option<Identifier>,
 }
 
 impl DataTrigger {
-    /// Check this trigger is matching for specified data
     pub fn is_matching_trigger_for_data(
         &self,
         data_contract_id: &Identifier,
@@ -55,17 +53,20 @@ impl DataTrigger {
             && self.transition_action == transition_action
     }
 
-    pub async fn execute<SR>(
+    pub async fn execute<'a, SR>(
         &self,
         document_transition: &DocumentTransition,
-        context: &DataTriggerExecutionContext<SR>,
+        context: &DataTriggerExecutionContext<'a, SR>,
     ) -> DataTriggerExecutionResult
     where
         SR: StateRepositoryLike,
     {
         let mut result = DataTriggerExecutionResult::default();
-        let execution_result = trigger_executor(
-            self.data_trigger_code,
+        // TODO remove the clone
+        let data_contract_id = context.data_contract.id.to_owned();
+
+        let execution_result = execute_trigger(
+            self.data_trigger_kind,
             document_transition,
             context,
             self.top_level_identity.as_ref(),
@@ -74,7 +75,7 @@ impl DataTrigger {
 
         if let Err(err) = execution_result {
             let consensus_error = DataTriggerError::DataTriggerExecutionError {
-                data_contract_id: context.data_contract.id.clone(),
+                data_contract_id,
                 document_transition_id: get_from_transition!(document_transition, id).clone(),
                 message: err.to_string(),
                 execution_error: err,
@@ -89,8 +90,8 @@ impl DataTrigger {
     }
 }
 
-pub fn new_error<SR>(
-    context: &DataTriggerExecutionContext<SR>,
+pub fn new_error<'a, SR>(
+    context: &DataTriggerExecutionContext<'a, SR>,
     dt_create: &DocumentCreateTransition,
     msg: String,
 ) -> DataTriggerError
@@ -106,30 +107,29 @@ where
     }
 }
 
-pub async fn trigger_executor<SR>(
-    trigger_code: DataTriggerCode,
+pub async fn execute_trigger<'a, SR>(
+    trigger_kind: DataTriggerKind,
     document_transition: &DocumentTransition,
-    context: &DataTriggerExecutionContext<SR>,
+    context: &DataTriggerExecutionContext<'a, SR>,
     identifier: Option<&Identifier>,
 ) -> Result<DataTriggerExecutionResult, anyhow::Error>
 where
     SR: StateRepositoryLike,
 {
-    match trigger_code {
-        DataTriggerCode::CreateDataContractRequest => {
+    match trigger_kind {
+        DataTriggerKind::CreateDataContractRequest => {
             create_contract_request_data_trigger(document_transition, context, identifier).await
         }
-        DataTriggerCode::DataTriggerCreateDomain => {
+        DataTriggerKind::DataTriggerCreateDomain => {
             create_domain_data_trigger(document_transition, context, identifier).await
         }
-
-        DataTriggerCode::CrateFeatureFlag => {
+        DataTriggerKind::CrateFeatureFlag => {
             create_feature_flag_data_trigger(document_transition, context, identifier).await
         }
-        DataTriggerCode::DataTriggerReject => {
+        DataTriggerKind::DataTriggerReject => {
             reject_data_trigger(document_transition, context, identifier).await
         }
-        DataTriggerCode::DataTriggerRewardShare => {
+        DataTriggerKind::DataTriggerRewardShare => {
             create_masternode_reward_shares_data_trigger(document_transition, context, identifier)
                 .await
         }
