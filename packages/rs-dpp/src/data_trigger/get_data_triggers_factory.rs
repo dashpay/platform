@@ -11,7 +11,7 @@ use crate::{
     util::string_encoding::Encoding,
 };
 
-use super::{DataTrigger, DataTriggerCode};
+use super::{DataTrigger, DataTriggerKind};
 
 /// returns Date Triggers filtered out by dataContractId, documentType, transactionAction
 pub fn get_data_triggers<'a, SR>(
@@ -59,91 +59,91 @@ pub fn get_data_triggers_factory() -> Result<Vec<DataTrigger>, ProtocolError> {
             data_contract_id: dpns_data_contract_id.clone(),
             document_type: "domain".to_string(),
             transition_action: Action::Create,
-            data_trigger_code: DataTriggerCode::DataTriggerCreateDomain,
+            data_trigger_kind: DataTriggerKind::DataTriggerCreateDomain,
             top_level_identity: Some(dpns_owner_id),
         },
         DataTrigger {
             data_contract_id: dpns_data_contract_id.clone(),
             document_type: "domain".to_string(),
             transition_action: Action::Replace,
-            data_trigger_code: DataTriggerCode::DataTriggerReject,
+            data_trigger_kind: DataTriggerKind::DataTriggerReject,
             top_level_identity: None,
         },
         DataTrigger {
             data_contract_id: dpns_data_contract_id.clone(),
             document_type: "domain".to_string(),
             transition_action: Action::Delete,
-            data_trigger_code: DataTriggerCode::DataTriggerReject,
+            data_trigger_kind: DataTriggerKind::DataTriggerReject,
             top_level_identity: None,
         },
         DataTrigger {
             data_contract_id: dpns_data_contract_id.clone(),
             document_type: "preorder".to_string(),
             transition_action: Action::Delete,
-            data_trigger_code: DataTriggerCode::DataTriggerReject,
+            data_trigger_kind: DataTriggerKind::DataTriggerReject,
             top_level_identity: None,
         },
         DataTrigger {
             data_contract_id: dpns_data_contract_id,
             document_type: "preorder".to_string(),
             transition_action: Action::Delete,
-            data_trigger_code: DataTriggerCode::DataTriggerReject,
+            data_trigger_kind: DataTriggerKind::DataTriggerReject,
             top_level_identity: None,
         },
         DataTrigger {
             data_contract_id: dashpay_data_contract_id.clone(),
             document_type: "contactRequest".to_string(),
             transition_action: Action::Create,
-            data_trigger_code: DataTriggerCode::CreateDataContractRequest,
+            data_trigger_kind: DataTriggerKind::CreateDataContractRequest,
             top_level_identity: None,
         },
         DataTrigger {
             data_contract_id: dashpay_data_contract_id.clone(),
             document_type: "contactRequest".to_string(),
             transition_action: Action::Replace,
-            data_trigger_code: DataTriggerCode::DataTriggerReject,
+            data_trigger_kind: DataTriggerKind::DataTriggerReject,
             top_level_identity: None,
         },
         DataTrigger {
             data_contract_id: dashpay_data_contract_id,
             document_type: "contactRequest".to_string(),
             transition_action: Action::Replace,
-            data_trigger_code: DataTriggerCode::DataTriggerReject,
+            data_trigger_kind: DataTriggerKind::DataTriggerReject,
             top_level_identity: None,
         },
         DataTrigger {
             data_contract_id: feature_flags_data_contract_id.clone(),
             document_type: feature_flags_contract::types::UPDATE_CONSENSUS_PARAMS.to_string(),
             transition_action: Action::Create,
-            data_trigger_code: DataTriggerCode::CrateFeatureFlag,
+            data_trigger_kind: DataTriggerKind::CrateFeatureFlag,
             top_level_identity: Some(feature_flags_owner_id),
         },
         DataTrigger {
             data_contract_id: feature_flags_data_contract_id.clone(),
             document_type: feature_flags_contract::types::UPDATE_CONSENSUS_PARAMS.to_string(),
             transition_action: Action::Replace,
-            data_trigger_code: DataTriggerCode::DataTriggerReject,
+            data_trigger_kind: DataTriggerKind::DataTriggerReject,
             top_level_identity: None,
         },
         DataTrigger {
             data_contract_id: feature_flags_data_contract_id,
             document_type: feature_flags_contract::types::UPDATE_CONSENSUS_PARAMS.to_string(),
             transition_action: Action::Delete,
-            data_trigger_code: DataTriggerCode::DataTriggerReject,
+            data_trigger_kind: DataTriggerKind::DataTriggerReject,
             top_level_identity: None,
         },
         DataTrigger {
             data_contract_id: master_node_reward_shares_contract_id.clone(),
             document_type: feature_flags_contract::types::UPDATE_CONSENSUS_PARAMS.to_string(),
             transition_action: Action::Create,
-            data_trigger_code: DataTriggerCode::CreateDataContractRequest,
+            data_trigger_kind: DataTriggerKind::CreateDataContractRequest,
             top_level_identity: None,
         },
         DataTrigger {
             data_contract_id: master_node_reward_shares_contract_id,
             document_type: feature_flags_contract::types::UPDATE_CONSENSUS_PARAMS.to_string(),
             transition_action: Action::Replace,
-            data_trigger_code: DataTriggerCode::CreateDataContractRequest,
+            data_trigger_kind: DataTriggerKind::CreateDataContractRequest,
             top_level_identity: None,
         },
     ];

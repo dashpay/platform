@@ -1,6 +1,8 @@
+use std::borrow::Borrow;
+
 use crate::{
     document::{
-        document_transition::{Action, DocumentTransition},
+        document_transition::{Action, DocumentTransition, DocumentTransitionExt},
         Document,
     },
     prelude::{DataContract, Identifier},
@@ -15,7 +17,7 @@ use crate::{
 };
 use futures::future::join_all;
 use itertools::Itertools;
-use serde_json::{json, Value as JsonValue};
+use serde_json::{json, map::IntoIter, Value as JsonValue};
 
 struct QueryDefinition<'a> {
     document_type: &'a str,
@@ -24,10 +26,10 @@ struct QueryDefinition<'a> {
     document_transition: &'a DocumentTransition,
 }
 
-async fn validate_documents_uniqueness_by_indices<SR>(
-    state_repository: SR,
+pub async fn validate_documents_uniqueness_by_indices<SR>(
+    state_repository: &SR,
     owner_id: &Identifier,
-    document_transitions: &[DocumentTransition],
+    document_transitions: impl IntoIterator<Item = impl AsRef<DocumentTransition>>,
     data_contract: &DataContract,
 ) -> Result<ValidationResult, ProtocolError>
 where
@@ -36,7 +38,8 @@ where
     let mut validation_result = ValidationResult::default();
 
     // 1. Prepare fetchDocuments queries from indexed properties
-    for transition in document_transitions.iter() {
+    for t in document_transitions {
+        let transition = t.as_ref();
         let document_schema =
             data_contract.get_document_schema(&transition.base().document_type)?;
         let document_indices = document_schema.get_indices()?;
@@ -144,7 +147,7 @@ fn build_query_for_index_definition(
             }
             "$updatedAt" => {
                 if transition.base().action == Action::Create {
-                    if let Some(updated_at) = get_updated_at(transition).map(|v| json!(v)) {
+                    if let Some(updated_at) = transition.get_created_at().map(|v| json!(v)) {
                         query.push(json!([property_name, "==", updated_at]))
                     }
                 }
@@ -158,14 +161,6 @@ fn build_query_for_index_definition(
         }
     }
     query
-}
-
-fn get_updated_at(transition: &DocumentTransition) -> Option<i64> {
-    match transition {
-        DocumentTransition::Create(t) => t.updated_at,
-        DocumentTransition::Replace(t) => t.updated_at,
-        DocumentTransition::Delete(_) => None,
-    }
 }
 
 fn get_property<'a>(path: &str, transition: &'a DocumentTransition) -> Option<&'a JsonValue> {
@@ -265,7 +260,7 @@ mod tests {
         let document_transitions =
             get_document_transitions_fixture([(Action::Create, vec![documents[0].clone()])]);
         let validation_result = validate_documents_uniqueness_by_indices(
-            state_repository_mock,
+            &state_repository_mock,
             &owner_id,
             &document_transitions,
             &data_contract,
@@ -321,7 +316,7 @@ mod tests {
             .returning(move |_, _, _| Ok(vec![expect_document.clone()]));
 
         let validation_result = validate_documents_uniqueness_by_indices(
-            state_repository_mock,
+            &state_repository_mock,
             &owner_id,
             &document_transitions,
             &data_contract,
@@ -410,7 +405,7 @@ mod tests {
             .returning(move |_, _, _| Ok(vec![expect_document.clone()]));
 
         let validation_result = validate_documents_uniqueness_by_indices(
-            state_repository_mock,
+            &state_repository_mock,
             &owner_id,
             &document_transitions,
             &data_contract,
@@ -479,7 +474,7 @@ mod tests {
             .returning(move |_, _, _| Ok(vec![expect_document.clone()]));
 
         let validation_result = validate_documents_uniqueness_by_indices(
-            state_repository_mock,
+            &state_repository_mock,
             &owner_id,
             &document_transitions,
             &data_contract,
@@ -519,7 +514,7 @@ mod tests {
             .returning(move |_, _, _| Ok(vec![expect_document.clone()]));
 
         let validation_result = validate_documents_uniqueness_by_indices(
-            state_repository_mock,
+            &state_repository_mock,
             &owner_id,
             &document_transitions,
             &data_contract,

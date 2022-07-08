@@ -11,7 +11,7 @@ use super::{DocumentBaseTransition, DocumentTransitionObjectLike};
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 
-pub const INITIAL_REVISION: i64 = 1;
+pub const INITIAL_REVISION: u32 = 1;
 pub const BINARY_FIELDS: [&str; 1] = ["$entropy"];
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]

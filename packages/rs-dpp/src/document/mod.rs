@@ -30,7 +30,7 @@ pub struct Document {
     #[serde(rename = "$type")]
     pub document_type: String,
     #[serde(rename = "$revision")]
-    pub revision: i64,
+    pub revision: u32,
     #[serde(rename = "$dataContractId")]
     pub data_contract_id: Identifier,
     #[serde(rename = "$ownerId")]

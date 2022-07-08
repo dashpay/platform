@@ -11,9 +11,9 @@ use anyhow::{anyhow, bail, Context};
 const PROPERTY_BLOCK_HEIGHT: &str = "height";
 const PROPERTY_ENABLE_AT_HEIGHT: &str = "enableAtHeight";
 
-pub async fn create_feature_flag_data_trigger<SR>(
+pub async fn create_feature_flag_data_trigger<'a, SR>(
     document_transition: &DocumentTransition,
-    context: &DataTriggerExecutionContext<SR>,
+    context: &DataTriggerExecutionContext<'a, SR>,
     top_level_identity: Option<&Identifier>,
 ) -> Result<DataTriggerExecutionResult, anyhow::Error>
 where
@@ -54,7 +54,7 @@ where
         return Ok(result);
     }
 
-    if &context.owner_id != top_level_identity {
+    if context.owner_id != top_level_identity {
         let err = new_error(
             context,
             dt_create,
