@@ -1313,7 +1313,7 @@ __metadata:
   dependencies:
     "@babel/core": ^7.15.5
     "@dashevo/dapi-grpc": "workspace:~"
-    "@dashevo/dash-spv": "github:dashevo/dash-spv"
+    "@dashevo/dash-spv": "workspace:~"
     "@dashevo/dashcore-lib": ~0.19.39
     "@dashevo/dpp": "workspace:~"
     "@dashevo/grpc-common": "workspace:~"
@@ -1430,18 +1430,22 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@dashevo/dash-spv@github:dashevo/dash-spv":
-  version: 1.1.6
-  resolution: "@dashevo/dash-spv@https://github.com/dashevo/dash-spv.git#commit=3eeb01ed5d0636c949cf3ca2e495c4fe3d1b74ce"
+"@dashevo/dash-spv@workspace:packages/dash-spv, @dashevo/dash-spv@workspace:~":
+  version: 0.0.0-use.local
+  resolution: "@dashevo/dash-spv@workspace:packages/dash-spv"
   dependencies:
     "@dashevo/dark-gravity-wave": ^1.1.1
     "@dashevo/dash-util": ^2.0.3
-    "@dashevo/dashcore-lib": ^0.19.29
-    levelup: ^4.0.1
-    memdown: ^3.0.0
-  checksum: 3f11f82e43c91862c712606a824c8916774bd3c61dec552ac8dbdc76fdc27e5a5118d0e0773a459ec25ff66351fda34cfe5d58d22fcc96e31b41dac9d2da87c3
-  languageName: node
-  linkType: hard
+    "@dashevo/dashcore-lib": ~0.19.39
+    eslint: ^7.32.0
+    eslint-config-airbnb-base: ^14.2.1
+    eslint-plugin-import: ^2.24.2
+    levelup: ^4.4.0
+    memdown: ^5.1.0
+    mocha: ^9.1.2
+    should: ^13.2.3
+  languageName: unknown
+  linkType: soft
 
 "@dashevo/dash-util@npm:^2.0.3":
   version: 2.0.3
@@ -1453,7 +1457,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@dashevo/dashcore-lib@npm:^0.19.29, @dashevo/dashcore-lib@npm:~0.19.30, @dashevo/dashcore-lib@npm:~0.19.39":
+"@dashevo/dashcore-lib@npm:~0.19.30, @dashevo/dashcore-lib@npm:~0.19.39":
   version: 0.19.39
   resolution: "@dashevo/dashcore-lib@npm:0.19.39"
   dependencies:
@@ -1828,7 +1832,7 @@ __metadata:
     localforage: ^1.10.0
     mocha: ^9.1.2
     net: ^1.0.2
-    nodeforage: ^1.1.1
+    nodeforage: ^1.1.2
     os-browserify: ^0.3.0
     path-browserify: ^1.0.1
     process: ^0.11.10
@@ -2097,6 +2101,30 @@ __metadata:
     "@types/yargs": ^16.0.0
     chalk: ^4.0.0
   checksum: 322603c24354a5333b5b7a670464422a46e0244a5a96a35552a7018eb4ac2e84c3b7657336b0ea6aa114963f9b6d0da8b8f6f963cb044fea9e7bc04d464b0ab1
+  languageName: node
+  linkType: hard
+
+"@jridgewell/resolve-uri@npm:^3.0.3":
+  version: 3.0.8
+  resolution: "@jridgewell/resolve-uri@npm:3.0.8"
+  checksum: 28d739f49b4a52a95843b15669dcb2daaab48f0eaef8f457b9aacd0bdebeb60468d0684f73244f613b786e9d871c25abdbe6f55991bba36814cdadc399dbb3a8
+  languageName: node
+  linkType: hard
+
+"@jridgewell/sourcemap-codec@npm:^1.4.10":
+  version: 1.4.14
+  resolution: "@jridgewell/sourcemap-codec@npm:1.4.14"
+  checksum: 61100637b6d173d3ba786a5dff019e1a74b1f394f323c1fee337ff390239f053b87266c7a948777f4b1ee68c01a8ad0ab61e5ff4abb5a012a0b091bec391ab97
+  languageName: node
+  linkType: hard
+
+"@jridgewell/trace-mapping@npm:^0.3.7":
+  version: 0.3.14
+  resolution: "@jridgewell/trace-mapping@npm:0.3.14"
+  dependencies:
+    "@jridgewell/resolve-uri": ^3.0.3
+    "@jridgewell/sourcemap-codec": ^1.4.10
+  checksum: b9537b9630ffb631aef9651a085fe361881cde1772cd482c257fe3c78c8fd5388d681f504a9c9fe1081b1c05e8f75edf55ee10fdb58d92bbaa8dbf6a7bd6b18c
   languageName: node
   linkType: hard
 
@@ -3301,15 +3329,6 @@ __metadata:
   version: 1.1.1
   resolution: "abbrev@npm:1.1.1"
   checksum: a4a97ec07d7ea112c517036882b2ac22f3109b7b19077dc656316d07d308438aac28e4d9746dc4d84bf6b1e75b4a7b0a5f3cb30592419f128ca9a8cee3bcfa17
-  languageName: node
-  linkType: hard
-
-"abstract-leveldown@npm:~5.0.0":
-  version: 5.0.0
-  resolution: "abstract-leveldown@npm:5.0.0"
-  dependencies:
-    xtend: ~4.0.0
-  checksum: d55d03cc7fad011d5fea30d26504b1a76123ec8edd3623d21f80ce0561c610b7ed1e00eb037c14746ec2b7ad8638586024f11d4a1476beee2c470c8cf27e3586
   languageName: node
   linkType: hard
 
@@ -5777,6 +5796,7 @@ __metadata:
     karma-mocha-reporter: ^2.2.5
     karma-webpack: ^5.0.0
     mocha: ^9.1.2
+    net: ^1.0.2
     node-inspect-extracted: ^1.0.8
     nodemon: ^2.0.4
     os-browserify: ^0.3.0
@@ -5788,6 +5808,8 @@ __metadata:
     stream-browserify: ^3.0.0
     stream-http: ^3.2.0
     string_decoder: ^1.3.0
+    terser-webpack-plugin: ^5.3.1
+    tls: ^0.0.1
     ts-loader: ^8.0.2
     ts-mocha: ^8.0.0
     ts-mock-imports: ^1.3.0
@@ -9218,14 +9240,14 @@ fsevents@~2.3.2:
   languageName: node
   linkType: hard
 
-"jest-worker@npm:^27.0.6":
-  version: 27.3.1
-  resolution: "jest-worker@npm:27.3.1"
+"jest-worker@npm:^27.4.5":
+  version: 27.5.1
+  resolution: "jest-worker@npm:27.5.1"
   dependencies:
     "@types/node": "*"
     merge-stream: ^2.0.0
     supports-color: ^8.0.0
-  checksum: 125d46939d894ef8cf1ffbbf6c63cee10f28218698db3949704d5f613a353f56502da50d3425ec722927c7948c5742d0306f63ad5064a432574b8b217b9ceeba
+  checksum: 98cd68b696781caed61c983a3ee30bf880b5bd021c01d98f47b143d4362b85d0737f8523761e2713d45e18b4f9a2b98af1eaee77afade4111bb65c77d6f7c980
   languageName: node
   linkType: hard
 
@@ -9722,7 +9744,7 @@ fsevents@~2.3.2:
   languageName: node
   linkType: hard
 
-"levelup@npm:^4.0.1, levelup@npm:^4.4.0":
+"levelup@npm:^4.4.0":
   version: 4.4.0
   resolution: "levelup@npm:4.4.0"
   dependencies:
@@ -10291,20 +10313,6 @@ fsevents@~2.3.2:
     vinyl: ^2.0.1
     vinyl-file: ^3.0.0
   checksum: e44fb4acf8391a847b9e9494115b27300eda77aa7c6caea533786f43d385253515b0c0ff4f00906744b2bd31010df923cc448bb6efb9593f41df5d40b0e69046
-  languageName: node
-  linkType: hard
-
-"memdown@npm:^3.0.0":
-  version: 3.0.0
-  resolution: "memdown@npm:3.0.0"
-  dependencies:
-    abstract-leveldown: ~5.0.0
-    functional-red-black-tree: ~1.0.1
-    immediate: ~3.2.3
-    inherits: ~2.0.1
-    ltgt: ~2.2.0
-    safe-buffer: ~5.1.1
-  checksum: 4446fdf7198dcdbae764324200526f41738c9f2a32decb59b5a4dbb1bdfc72e2fc046e9bbe016469ab8a0a52e5d5c8b36bf3829e90dd4674a5f4c961e059d4de
   languageName: node
   linkType: hard
 
@@ -11005,16 +11013,16 @@ fsevents@~2.3.2:
   languageName: node
   linkType: hard
 
-"nodeforage@npm:^1.1.1":
-  version: 1.1.1
-  resolution: "nodeforage@npm:1.1.1"
+"nodeforage@npm:^1.1.2":
+  version: 1.1.2
+  resolution: "nodeforage@npm:1.1.2"
   dependencies:
     lodash.find: ^4.6.0
     lodash.ismatch: ^4.4.0
     lodash.merge: ^4.6.1
     proper-lockfile: ^3.2.0
     slocket: ^1.0.5
-  checksum: 0cb4e4aa853cb9cd81ec2c3aabb2a9032b68ec067cef0bc31b7f7b70522a0081983f730fecc9053d6911cb0114edc2d54201c296b5acf9ea85bf96cc016cbb22
+  checksum: a670ece8b5e486514bb859d3723d8998806a071f200315fc7457755617d37515ceba8c13b46d9aa644b3517271b561dc50b57a9325a5537cbb34bccdd418ded5
   languageName: node
   linkType: hard
 
@@ -13258,6 +13266,62 @@ fsevents@~2.3.2:
   languageName: node
   linkType: hard
 
+"should-equal@npm:^2.0.0":
+  version: 2.0.0
+  resolution: "should-equal@npm:2.0.0"
+  dependencies:
+    should-type: ^1.4.0
+  checksum: 3f3580a223bf76f9309a4d957d2dcbd6059bda816f2e6656e822b7518218ef653c25e9271b2f5765ca6f5a72a217105ad343a8ceea831d15aff44dd691cc1dcd
+  languageName: node
+  linkType: hard
+
+"should-format@npm:^3.0.3":
+  version: 3.0.3
+  resolution: "should-format@npm:3.0.3"
+  dependencies:
+    should-type: ^1.3.0
+    should-type-adaptors: ^1.0.1
+  checksum: 5304e89b4d4c42078c7f66232d13cca1d6a1c00c173f500f64160f57d4ecd7522a25106b313fe8f8694547e8a1ce4d975f1f09a3d1618f1dc054db48c0683d87
+  languageName: node
+  linkType: hard
+
+"should-type-adaptors@npm:^1.0.1":
+  version: 1.1.0
+  resolution: "should-type-adaptors@npm:1.1.0"
+  dependencies:
+    should-type: ^1.3.0
+    should-util: ^1.0.0
+  checksum: 94dd1d225c8f2590278f46689258a1df684ca1f26262459c4e2d64a09d06935ec1410a24fe7b5f98b9429093e48afef2ed1b370634e0444b930547df4943f70d
+  languageName: node
+  linkType: hard
+
+"should-type@npm:^1.3.0, should-type@npm:^1.4.0":
+  version: 1.4.0
+  resolution: "should-type@npm:1.4.0"
+  checksum: 88d9324c6c0c2f94e71d2f8b11c84e44de81f16eeb6fafcba47f4af430c65e46bad18eb472827526cad22b4fe693aba8b022739d1c453672faf28860df223491
+  languageName: node
+  linkType: hard
+
+"should-util@npm:^1.0.0":
+  version: 1.0.1
+  resolution: "should-util@npm:1.0.1"
+  checksum: c3be15e0fdc851f8338676b3f8b590d330bbea94ec41c1343cc9983dea295915073f69a215795454b6adda6579ec8927c7c0ab178b83f9f11a0247ccdba53381
+  languageName: node
+  linkType: hard
+
+"should@npm:^13.2.3":
+  version: 13.2.3
+  resolution: "should@npm:13.2.3"
+  dependencies:
+    should-equal: ^2.0.0
+    should-format: ^3.0.3
+    should-type: ^1.4.0
+    should-type-adaptors: ^1.0.1
+    should-util: ^1.0.0
+  checksum: 74bcc0eb85e0a63a88e501ff9ca3b53dbc6d1ee47823c029a18a4b14b3ef4e2561733e161033df720599d2153283470e9647fdcb1bbc78903960ffb0363239c4
+  languageName: node
+  linkType: hard
+
 "side-channel@npm:^1.0.4":
   version: 1.0.4
   resolution: "side-channel@npm:1.0.4"
@@ -14164,14 +14228,14 @@ fsevents@~2.3.2:
   languageName: node
   linkType: hard
 
-"terser-webpack-plugin@npm:^5.1.3":
-  version: 5.2.5
-  resolution: "terser-webpack-plugin@npm:5.2.5"
+"terser-webpack-plugin@npm:^5.1.3, terser-webpack-plugin@npm:^5.3.1":
+  version: 5.3.3
+  resolution: "terser-webpack-plugin@npm:5.3.3"
   dependencies:
-    jest-worker: ^27.0.6
+    "@jridgewell/trace-mapping": ^0.3.7
+    jest-worker: ^27.4.5
     schema-utils: ^3.1.1
     serialize-javascript: ^6.0.0
-    source-map: ^0.6.1
     terser: ^5.7.2
   peerDependencies:
     webpack: ^5.1.0
@@ -14182,7 +14246,7 @@ fsevents@~2.3.2:
       optional: true
     uglify-js:
       optional: true
-  checksum: 2a9616466becf2e968bfc0f585678581b5c83a9dd96723c49329b11a8ccc1aaa41701877fbad2b0ce570364fde58c558fb6e7e053171512624e644b99b2f83af
+  checksum: 4b8d508d8a0f6e604addb286975f1fa670f8c3964a67abc03a7cfcfd4cdeca4b07dda6655e1c4425427fb62e4d2b0ca59d84f1b2cd83262ff73616d5d3ccdeb5
   languageName: node
   linkType: hard
 

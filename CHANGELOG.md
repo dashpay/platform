@@ -1,3 +1,84 @@
+## [0.23.0-dev.3](https://github.com/dashevo/platform/compare/v0.22.13...v0.23.0-dev.3) (2022-06-30)
+
+
+### ⚠ BREAKING CHANGES
+
+* Previous invalid data contracts in blockchain might be valid now (#445)
+* `getIdentityIdsByPublicKeyHash` endpoint is removed. `getIdentitiesByPublicKeyHash` now responds with an array of identities, instead of an array of cbored arrays of identities. (#437)
+* All indices must have 'asc' order (#435)
+* Some state transitions in the chain could change validation result due to changes in fee logic. Previously invalid state transition in chain could become valid since BLS signing is fixed (#392)
+* Previously invalidated `DataContractUpdateTransitions` with `unique` equals `false` will become valid (#427)
+* Document query logic can behave differently in some cases (#398)
+
+### Features
+
+* **bench:** state transition benchmark ([#418](https://github.com/dashevo/platform/issues/418))
+* **dashmate:** add --force flag to stop command ([#434](https://github.com/dashevo/platform/issues/434))
+* **dashmate:** upgrade docker compose to v2 ([#441](https://github.com/dashevo/platform/issues/441))
+* **dpp:** allow 1 char document type and 1 char property name ([#445](https://github.com/dashevo/platform/issues/445))
+* integrate dash-spv into monorepo
+* limit the number of shares for masternode by 16 ([#432](https://github.com/dashevo/platform/issues/432))
+* move dash-spv in packages after import
+* re-enable proof responses ([#440](https://github.com/dashevo/platform/issues/440))
+* validate fee calculating worst case operations ([#392](https://github.com/dashevo/platform/issues/392))
+
+
+### Bug Fixes
+
+* **ci:** docker images incorrectly tagged with v ([#413](https://github.com/dashevo/platform/issues/413))
+* **dpp:** data contract index update validation ([#427](https://github.com/dashevo/platform/issues/427))
+* **drive:** change transaction is started check ([#451](https://github.com/dashevo/platform/issues/451))
+* non-deterministic fees due to data contract cache ([#444](https://github.com/dashevo/platform/issues/444))
+* **sdk:** identity update method can't sign publicKeys in some cases ([#421](https://github.com/dashevo/platform/issues/421))
+* **wallet-lib:** separate persistent storage by walletId ([#407](https://github.com/dashevo/platform/issues/407))
+
+
+### Documentation
+
+* add input description
+
+
+### Code Refactoring
+
+* **drive:** use RS Drive query validation logic ([#398](https://github.com/dashevo/platform/issues/398))
+* simplified public key to identity structure ([#437](https://github.com/dashevo/platform/issues/437))
+
+
+### Tests
+
+* **dpp:** fix invalid findIndexDuplicates test in DPP ([#448](https://github.com/dashevo/platform/issues/448))
+
+
+### Miscellaneous Chores
+
+* **dpp:** allow only `asc` order for indices ([#435](https://github.com/dashevo/platform/issues/435))
+* **drive:** log synchronize masternode identities ([#449](https://github.com/dashevo/platform/issues/449))
+* **test-suite:** move wallet storage persistence in the outer folder ([#416](https://github.com/dashevo/platform/issues/416))
+* update readme
+
+
+### [0.22.13](https://github.com/dashevo/platform/compare/v0.22.12...v0.22.13) (2022-06-17)
+
+
+### Features
+
+* support DIP24 devnet LLMQ type ([#438](https://github.com/dashevo/platform/issues/438))
+
+### [0.22.12](https://github.com/dashevo/platform/compare/v0.22.11...v0.22.12) (2022-06-07)
+
+
+### Bug Fixes
+
+* **sdk:** incomplete bundle for web ([#400](https://github.com/dashevo/platform/issues/400))
+* **wallet-lib:** separate persistent storage by walletId ([#407](https://github.com/dashevo/platform/issues/407))
+
+### [0.22.11](https://github.com/dashevo/platform/compare/v0.22.10...v0.22.11) (2022-05-31)
+
+
+### Bug Fixes
+
+* incorrect image versions and variables for testnet config ([#415](https://github.com/dashevo/platform/issues/415))
+
 ### [0.22.10](https://github.com/dashevo/platform/compare/v0.22.9...v0.22.10) (2022-05-26)
 
 

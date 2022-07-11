@@ -1,14 +1,18 @@
 const EventEmitter = require('events');
-const DAPIClient = require('@dashevo/dapi-client');
-const {
-  Block,
-  BlockHeader,
-  ChainLock,
-} = require('@dashevo/dashcore-lib');
+const Dash = require('dash');
 
 const GrpcErrorCodes = require('@dashevo/grpc-common/lib/server/error/GrpcErrorCodes');
 const getDAPISeeds = require('../../../lib/test/getDAPISeeds');
 const createClientWithFundedWallet = require('../../../lib/test/createClientWithFundedWallet');
+
+const {
+  Core: {
+    Block,
+    BlockHeader,
+    ChainLock,
+  },
+  DAPIClient,
+} = Dash;
 
 const wait = (ms) => new Promise((resolve) => {
   setTimeout(resolve, ms);

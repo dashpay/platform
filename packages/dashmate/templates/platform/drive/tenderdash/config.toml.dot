@@ -218,11 +218,10 @@ laddr = "tcp://0.0.0.0:{{=it.platform.drive.tenderdash.p2p.port}}"
 # to figure out the address.
 external-address = "{{? it.externalIp}}{{=it.externalIp}}:{{=it.platform.drive.tenderdash.p2p.port}}{{?}}"
 
-# Comma separated list of seed nodes to connect to
-seeds = "{{~it.platform.drive.tenderdash.p2p.seeds :seed:index}}{{? index }},{{?}}{{=seed.id}}@{{=seed.host}}:{{=seed.port}}{{~}}"
-
 # Comma separated list of nodes to keep persistent connections to
 persistent-peers = "{{~it.platform.drive.tenderdash.p2p.persistentPeers :peer:index}}{{? index }},{{?}}{{=peer.id}}@{{=peer.host}}:{{=peer.port}}{{~}}"
+
+bootstrap-peers = "{{~it.platform.drive.tenderdash.p2p.seeds :seed:index}}{{? index }},{{?}}{{=seed.id}}@{{=seed.host}}:{{=seed.port}}{{~}}"
 
 # UPNP port forwarding
 upnp = false
