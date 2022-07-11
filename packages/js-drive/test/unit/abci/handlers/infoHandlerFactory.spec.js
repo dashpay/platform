@@ -17,7 +17,6 @@ const BlockExecutionContextMock = require('../../../../lib/test/mock/BlockExecut
 const GroveDBStoreMock = require('../../../../lib/test/mock/GroveDBStoreMock');
 const BlockExecutionContextStackMock = require('../../../../lib/test/mock/BlockExecutionContextStackMock');
 const BlockExecutionContextStackRepositoryMock = require('../../../../lib/test/mock/BlockExecutionContextStackRepositoryMock');
-const StorageResult = require('../../../../lib/storage/StorageResult');
 
 describe('infoHandlerFactory', () => {
   let protocolVersion;

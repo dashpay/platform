@@ -8,6 +8,7 @@ const getMasternodeRewardShareDocumentsFixture = require('@dashevo/dpp/lib/test/
 const getIdentityFixture = require('@dashevo/dpp/lib/test/fixtures/getIdentityFixture');
 
 const Identifier = require('@dashevo/dpp/lib/identifier/Identifier');
+const generateRandomIdentifier = require('@dashevo/dpp/lib/test/utils/generateRandomIdentifier');
 const createTestDIContainer = require('../../../lib/test/createTestDIContainer');
 
 describe('Fee Pools', () => {
@@ -44,8 +45,10 @@ describe('Fee Pools', () => {
     const mnCount = 1;
 
     for (let i = 0; i < mnCount; i++) {
-      const mnIdentity = getIdentityFixture();
-      const payToIdentity = getIdentityFixture();
+      const mnIdentity = getIdentityFixture(generateRandomIdentifier());
+
+      const payToIdentity = getIdentityFixture(generateRandomIdentifier());
+
       const [payToDocument] = getMasternodeRewardShareDocumentsFixture(
         mnIdentity.getId(),
         payToIdentity.getId(),
@@ -78,6 +81,7 @@ describe('Fee Pools', () => {
 
     const genesisTime = moment();
 
+    let previousBlockTime;
     for (let day = 1; day <= 21; day++) {
       const blockHeight = day;
       const blockTime = genesisTime.clone()
@@ -90,11 +94,11 @@ describe('Fee Pools', () => {
         proposerProTxHash: mnIdentity.getId(),
       };
 
-      if (day > 1) {
-        blockBeginRequest.previousBlockTime = genesisTime.clone()
-          .add(day - 2, 'days')
-          .valueOf();
+      if (previousBlockTime) {
+        blockBeginRequest.previousBlockTime = previousBlockTime;
       }
+
+      previousBlockTime = blockTime;
 
       await rsDrive.getAbci().blockBegin(blockBeginRequest);
 
@@ -109,10 +113,13 @@ describe('Fee Pools', () => {
       await rsDrive.getAbci().blockEnd(blockEndRequest);
     }
 
-    const fetchedMnIdentity = await identityRepository.fetch(mnIdentity.getId());
-    const fetchedShareIdentity = await identityRepository.fetch(payToIdentity.getId());
+    const fetchedMnIdentityResult = await identityRepository.fetch(mnIdentity.getId());
+    const fetchedShareIdentityResult = await identityRepository.fetch(payToIdentity.getId());
 
-    expect(fetchedMnIdentity.getBalance()).to.equal(0); // TODO: insert actual number
-    expect(fetchedShareIdentity.getBalance()).to.equal(0); // TODO: insert actual number
+    const fetchedMnIdentity = fetchedMnIdentityResult.getValue();
+    const fetchedShareIdentity = fetchedShareIdentityResult.getValue();
+
+    expect(fetchedMnIdentity.getBalance()).to.equal(180962);
+    expect(fetchedShareIdentity.getBalance()).to.equal(9533);
   });
 });

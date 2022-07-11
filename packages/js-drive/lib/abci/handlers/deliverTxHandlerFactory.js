@@ -17,9 +17,6 @@ const calculateOperationFees = require('@dashevo/dpp/lib/stateTransition/fee/cal
 
 const DPPValidationAbciError = require('../errors/DPPValidationAbciError');
 
-const NegativeBalanceError = require('./errors/NegativeBalanceError');
-const PredictedFeeLowerThanActualError = require('./errors/PredictedFeeLowerThanActualError');
-
 const DOCUMENT_ACTION_DESCRIPTIONS = {
   [AbstractDocumentTransition.ACTIONS.CREATE]: 'created',
   [AbstractDocumentTransition.ACTIONS.REPLACE]: 'replaced',
