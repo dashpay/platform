@@ -73,7 +73,7 @@ function endBlockHandlerFactory(
       },
     }, true);
 
-    const { currentEpochIndex, isEpochChange } = rsResponse.epochInfo;
+    const { currentEpochIndex, isEpochChange } = rsResponse;
 
     if (isEpochChange) {
       const latestContext = blockExecutionContextStack.getLatest();

@@ -96,10 +96,8 @@ describe('endBlockHandlerFactory', () => {
     };
 
     blockEndMock.resolves({
-      epochInfo: {
-        currentEpochIndex: 42,
-        isEpochChange: true,
-      },
+      currentEpochIndex: 42,
+      isEpochChange: true,
     });
 
     endBlockHandler = endBlockHandlerFactory(
