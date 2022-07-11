@@ -79,13 +79,11 @@ function handleNewMasternodeFactory(
       );
 
       // Create a document in rewards data contract with percentage
-      result.push(
-        await createRewardShareDocument(
-          dataContract,
-          masternodeIdentifier,
-          operatorIdentifier,
-          proRegTxPayload.operatorReward,
-        ),
+      await createRewardShareDocument(
+        dataContract,
+        masternodeIdentifier,
+        operatorIdentifier,
+        proRegTxPayload.operatorReward,
       );
     }
 

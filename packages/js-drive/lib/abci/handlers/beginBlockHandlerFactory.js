@@ -148,8 +148,8 @@ function beginBlockHandlerFactory(
 
     const isSimplifiedMasternodeListUpdated = await updateSimplifiedMasternodeList(
       coreChainLockedHeight, {
-        logger: consensusLogger,
-      },
+      logger: consensusLogger,
+    },
     );
 
     if (isSimplifiedMasternodeListUpdated) {
@@ -165,12 +165,11 @@ function beginBlockHandlerFactory(
         `Masternode identities are synced for heights from ${fromHeight} to ${toHeight}: ${createdEntities.length} created, ${updatedEntities.length} updated, ${removedEntities.length} removed`,
       );
 
-      // TODO: figure out why some of the identities is null
       consensusLogger.trace(
         {
-          createdEntities: createdEntities.filter((i) => i !== null).map((item) => item.toJSON()),
-          updatedEntities: updatedEntities.filter((i) => i !== null).map((item) => item.toJSON()),
-          removedEntities: removedEntities.filter((i) => i !== null).map((item) => item.toJSON()),
+          createdEntities: createdEntities.map((item) => item.toJSON()),
+          updatedEntities: updatedEntities.map((item) => item.toJSON()),
+          removedEntities: removedEntities.map((item) => item.toJSON()),
         },
         'Synchronized masternode identities',
       );
