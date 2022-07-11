@@ -431,7 +431,7 @@ describe('synchronizeMasternodeIdentitiesFactory', () => {
 
     expect(result.fromHeight).to.be.equal(0);
     expect(result.toHeight).to.be.equal(3);
-    expect(result.createdEntities).to.have.lengthOf(3);
+    expect(result.createdEntities).to.have.lengthOf(4);
     expect(result.updatedEntities).to.have.lengthOf(0);
     expect(result.removedEntities).to.have.lengthOf(0);
 
@@ -610,7 +610,7 @@ describe('synchronizeMasternodeIdentitiesFactory', () => {
 
     expect(result.fromHeight).to.be.equal(3);
     expect(result.toHeight).to.be.equal(4);
-    expect(result.createdEntities).to.have.lengthOf(2);
+    expect(result.createdEntities).to.have.lengthOf(3);
     expect(result.updatedEntities).to.have.lengthOf(0);
     expect(result.removedEntities).to.have.lengthOf(0);
 

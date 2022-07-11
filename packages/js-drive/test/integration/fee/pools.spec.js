@@ -73,7 +73,7 @@ describe('Fee Pools', () => {
     }
   });
 
-  it('should process two blocks and update identity balance', async () => {
+  it('should process twenty blocks and update identity balance', async () => {
     const {
       mnIdentity,
       payToIdentity,
