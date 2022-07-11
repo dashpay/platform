@@ -47,7 +47,7 @@ $ npm install -g dashmate
 
 ## Update
 
-The `update` command is used to quickly get the latest patches for dashmate components. It is required to restart the node after the update is complete.
+The `update` command is used to quickly get the latest patches for dashmate components. It is necessary to restart the node after the update is complete.
 ```bash
 $ dashmate stop
 $ npm update -g dashmate
