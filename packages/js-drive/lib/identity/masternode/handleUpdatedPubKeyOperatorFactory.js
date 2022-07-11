@@ -77,14 +77,16 @@ function handleUpdatedPubKeyOperatorFactory(
       proRegTxHash,
     );
 
-    result.push(
-      await createRewardShareDocument(
-        dataContract,
-        masternodeIdentifier,
-        operatorIdentifier,
-        proRegTxPayload.operatorReward,
-      ),
+    const rewardShareDocument = await createRewardShareDocument(
+      dataContract,
+      masternodeIdentifier,
+      operatorIdentifier,
+      proRegTxPayload.operatorReward,
     );
+
+    if (rewardShareDocument) {
+      result.push(rewardShareDocument);
+    }
 
     // Delete document from reward shares data contract with ID corresponding to the
     // masternode identity (ownerId) and previous operator identity (payToId)
