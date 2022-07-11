@@ -25,4 +25,4 @@ client.wallet.getAccount().then(payToRecipient);
 
 ```
 
-See more on create [transaction options here](https://dashevo.github.io/wallet-lib/#/usage/account?id=create-transaction).
+See more on create [transaction options here](https://dashevo.github.io/platform/Wallet-library/account/createTransaction/).
