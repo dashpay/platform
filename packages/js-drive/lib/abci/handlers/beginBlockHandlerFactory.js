@@ -147,9 +147,10 @@ function beginBlockHandlerFactory(
     // Update SML
 
     const isSimplifiedMasternodeListUpdated = await updateSimplifiedMasternodeList(
-      coreChainLockedHeight, {
-      logger: consensusLogger,
-    },
+      coreChainLockedHeight,
+      {
+        logger: consensusLogger,
+      },
     );
 
     if (isSimplifiedMasternodeListUpdated) {
