@@ -1,3 +1,6 @@
+use serde::{Deserialize, Serialize};
+use serde_json::Value as JsonValue;
+
 use crate::{
     data_contract::DataContract,
     document::document_transition::Action,
@@ -8,8 +11,6 @@ use crate::{
 };
 
 use super::{DocumentBaseTransition, DocumentTransitionObjectLike};
-use serde::{Deserialize, Serialize};
-use serde_json::Value as JsonValue;
 
 pub const INITIAL_REVISION: u32 = 1;
 pub const BINARY_FIELDS: [&str; 1] = ["$entropy"];
@@ -112,6 +113,7 @@ mod test {
     use std::convert::TryInto;
 
     use super::*;
+
     fn init() {
         let _ = env_logger::builder()
             .filter_level(log::LevelFilter::Debug)

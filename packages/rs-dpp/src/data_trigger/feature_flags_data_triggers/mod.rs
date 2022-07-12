@@ -1,12 +1,13 @@
+use anyhow::{anyhow, bail, Context};
+use serde_json::Value as JsonValue;
+
 use crate::{
     data_trigger::new_error, document::document_transition::DocumentTransition,
     get_from_transition, prelude::Identifier, state_repository::StateRepositoryLike,
     util::json_value::JsonValueExt,
 };
-use serde_json::Value as JsonValue;
 
 use super::{DataTriggerExecutionContext, DataTriggerExecutionResult};
-use anyhow::{anyhow, bail, Context};
 
 const PROPERTY_BLOCK_HEIGHT: &str = "height";
 const PROPERTY_ENABLE_AT_HEIGHT: &str = "enableAtHeight";

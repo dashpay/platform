@@ -1,8 +1,9 @@
+use anyhow::anyhow;
+use serde_json::Value as JsonValue;
+
 use crate::{errors::ProtocolError, util::json_schema::JsonSchemaExt};
 
 use super::DataContract;
-use anyhow::anyhow;
-use serde_json::Value as JsonValue;
 
 const PROPERTY_PROPERTIES: &str = "properties";
 const PROPERTY_REQUIRED: &str = "required";

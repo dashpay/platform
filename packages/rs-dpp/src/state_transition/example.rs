@@ -1,6 +1,8 @@
-use super::{StateTransition, StateTransitionConvert, StateTransitionLike, StateTransitionType};
-use crate::prelude::ProtocolError;
 use serde::{Deserialize, Serialize};
+
+use crate::prelude::ProtocolError;
+
+use super::{StateTransition, StateTransitionConvert, StateTransitionLike, StateTransitionType};
 
 const PROPERTY_SIGNATURE: &str = "signature";
 const PROPERTY_PROTOCOL_VERSION: &str = "protocolVersion";

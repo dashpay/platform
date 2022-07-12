@@ -1,15 +1,16 @@
+use std::convert::TryFrom;
+
+use anyhow::bail;
+use serde::{Deserialize, Serialize};
+pub use serde_json::Value as JsonValue;
+use serde_repr::*;
+
 use crate::{
     data_contract::DataContract,
     errors::ProtocolError,
     identifier::Identifier,
     util::json_value::{JsonValueExt, ReplaceWith},
 };
-use anyhow::bail;
-use serde::{Deserialize, Serialize};
-use serde_repr::*;
-use std::convert::TryFrom;
-
-pub use serde_json::Value as JsonValue;
 
 const IDENTIFIER_FIELDS: [&str; 2] = ["$id", "$dataContractId"];
 

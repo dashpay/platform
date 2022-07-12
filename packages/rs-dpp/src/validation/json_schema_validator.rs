@@ -1,12 +1,13 @@
 use std::collections::BTreeMap;
 
 use super::meta_validators;
+use jsonschema::{JSONSchema, KeywordDefinition};
+use serde_json::{json, Value};
+
 use crate::consensus::ConsensusError;
 use crate::util::json_value::JsonValueExt;
 use crate::validation::ValidationResult;
 use crate::{DashPlatformProtocolInitError, NonConsensusError, SerdeParsingError};
-use jsonschema::{JSONSchema, KeywordDefinition};
-use serde_json::{json, Value};
 
 pub struct JsonSchemaValidator {
     raw_schema_json: Value,

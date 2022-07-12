@@ -39,8 +39,10 @@ impl DocumentTransitionObjectLike for DocumentDeleteTransition {
 
 #[cfg(test)]
 mod test {
-    use super::*;
     use crate::document::document_transition::Action;
+
+    use super::*;
+
     fn init() {
         let _ = env_logger::builder()
             .filter_level(log::LevelFilter::Debug)

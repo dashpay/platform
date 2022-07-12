@@ -1,3 +1,6 @@
+use anyhow::{anyhow, bail};
+use serde_json::json;
+
 use crate::{
     data_trigger::new_error,
     document::{document_transition::DocumentTransition, Document},
@@ -9,8 +12,6 @@ use crate::{
 };
 
 use super::{DataTriggerExecutionContext, DataTriggerExecutionResult};
-use anyhow::{anyhow, bail};
-use serde_json::json;
 
 const MAX_PERCENTAGE: u64 = 10000;
 const PROPERTY_PAY_TO_ID: &str = "payToId";
