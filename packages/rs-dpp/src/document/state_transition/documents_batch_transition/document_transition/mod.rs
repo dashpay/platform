@@ -134,7 +134,7 @@ impl DocumentTransitionExt for DocumentTransition {
     fn get_created_at(&self) -> Option<i64> {
         match self {
             DocumentTransition::Create(t) => t.created_at,
-            DocumentTransition::Replace(t) => None,
+            DocumentTransition::Replace(_) => None,
             DocumentTransition::Delete(_) => None,
         }
     }

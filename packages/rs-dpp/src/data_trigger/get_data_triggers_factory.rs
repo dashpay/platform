@@ -1,7 +1,3 @@
-use std::vec;
-
-use futures::FutureExt;
-
 use crate::{
     contracts::{
         dashpay_contract, dpns_contract, feature_flags_contract, masternode_reward_shares_contract,
@@ -12,6 +8,7 @@ use crate::{
     state_repository::StateRepositoryLike,
     util::string_encoding::Encoding,
 };
+use std::vec;
 
 use super::{DataTrigger, DataTriggerKind};
 

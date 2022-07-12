@@ -1,6 +1,5 @@
-use std::collections::{hash_map::Entry, HashMap};
-
 use serde_json::Value;
+use std::collections::{hash_map::Entry, HashMap};
 
 use crate::{
     document::document_transition::DocumentTransition,
