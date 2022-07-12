@@ -1,0 +1,37 @@
+{
+  "$id":"94zNLp7A1ZcYG3Egqf2YmQk4DQr9P8D543GwXyCJRz4",
+  "documents":{
+    "person":{
+      "indices":[
+        {
+          "properties":[
+            {
+              "birthday":"asc"
+            }
+          ]
+        }
+      ],
+      "properties":{
+        "age":{
+          "type":"integer"
+        },
+        "birthday":{
+          "type":"number"
+        },
+        "firstName":{
+          "type":"string",
+          "maxLength":50
+        },
+        "middleName":{
+          "type":"string",
+          "maxLength":50
+        },
+        "lastName":{
+          "type":"string",
+          "maxLength":50
+        }
+      },
+      "additionalProperties":false
+    }
+  }
+}

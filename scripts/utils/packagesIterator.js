@@ -1,22 +1,18 @@
-const fs = require('fs');
 const path = require('path');
+const { workspaces } = require('../../package.json');
 
 /**
  *
  * @param {string} packagesDir
  * @return {Generator<{filename: string, json: Object}, void, *>}
  */
-module.exports = function *packagesIterator (packagesDir) {
-  const items = fs.readdirSync(packagesDir);
+module.exports = function *packagesIterator() {
+  const rootDir = path.join(__dirname, '..', '..');
 
-  for (const item of items) {
-    const fullPath = path.join(packagesDir, item);
+  for (const item of workspaces) {
+    const packageFile = path.join(rootDir , item, 'package.json');
 
-    if (fs.lstatSync(fullPath).isDirectory()) {
-      const packageFile = path.join(fullPath, 'package.json');
-
-      yield { filename: packageFile, json: require(packageFile) };
-    }
+    yield { filename: packageFile, json: require(packageFile) };
   }
 };
 

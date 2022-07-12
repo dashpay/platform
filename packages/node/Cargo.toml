@@ -1,0 +1,26 @@
+[package]
+name = "node"
+version = "0.23.0-dev.5"
+description = "GroveDB node.js bindings"
+edition = "2021"
+license = "MIT"
+private = true
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+rs-drive = { path = "../drive" }
+
+[dependencies.grovedb]
+git = "https://github.com/dashevo/grovedb"
+branch = "develop"
+
+[dependencies.dpp]
+git = "https://github.com/dashevo/rust-dpp"
+rev = "ee4daa16a7aaa8d46f075f830af9e63b10f54628"
+
+[dependencies.neon]
+version = "0.10.1"
+default-features = false
+features = ["napi-6", "event-queue-api", "try-catch-api"]

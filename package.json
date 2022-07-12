@@ -67,7 +67,8 @@
     "packages/dashmate",
     "packages/platform-test-suite",
     "packages/masternode-reward-shares-contract",
-    "packages/dash-spv"
+    "packages/dash-spv",
+    "packages/node"
   ],
   "resolutions": {
     "elliptic": "6.5.3",

@@ -1,0 +1,53 @@
+[package]
+name = "rs-drive"
+description = "Dash drive built on top of GroveDB"
+version = "0.23.0-dev.5"
+edition = "2021"
+license = "MIT"
+private = true
+
+[dependencies]
+serde = { version = "1.0.132", features = ["derive"] }
+ciborium = "0.2.0"
+integer-encoding = "3.0.3"
+bs58 = "0.4.0"
+base64 = "0.13.0"
+rand = "0.8.4"
+byteorder = "1.4.3"
+indexmap = "1.8.0"
+hex = "0.4.3"
+array_tool = "1.0.3"
+rand_distr = "0.4.3"
+tempfile = "3"
+serde_json = { version="1.0", features=["preserve_order"] }
+sqlparser = "0.13.0"
+enum-map = "2.0.3"
+thiserror = "1.0.30"
+moka = "0.8.1"
+nohash-hasher = "0.2.0"
+chrono = "0.4.0"
+rust_decimal = "1.2.5"
+rust_decimal_macros = "1.25"
+
+[dependencies.grovedb]
+git = "https://github.com/dashevo/grovedb"
+branch = "develop"
+
+[dependencies.storage]
+git = "https://github.com/dashevo/grovedb"
+branch = "develop"
+
+[dependencies.costs]
+git = "https://github.com/dashevo/grovedb"
+branch = "develop"
+
+[dependencies.dpp]
+git = "https://github.com/dashevo/rust-dpp"
+rev = "ee4daa16a7aaa8d46f075f830af9e63b10f54628"
+
+[dev-dependencies]
+criterion = "0.3.5"
+
+[[bench]]
+name = "benchmarks"
+harness = false

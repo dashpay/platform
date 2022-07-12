@@ -1,0 +1,11 @@
+{
+  "$createdAt": 1596199112248,
+  "$dataContractId": "Dp8ibxeTSN15tjL1PQuG3j8NkGJmzvt5eqoKoF6FhDAx",
+  "$id": "DAkJLBmoVwZsmFtEkDuFcGPgJeBkaY2Q2h75X9a7K4RQ",
+  "$type": "contactRequest",
+  "encryptedPublicKey": "yrX9yH9dpQwm51r9oAWoOkfLEeYzNgZZIdqg09FDh8aN0SynWg4tTDgVYlAix6ea6ao4VSiQL4Sm7+AeaxYyzjfP9zFisLReU64tu0u6vTI8HWXRybEy6uWcV1IpPHtJ",
+  "recipientKeyIndex": 0,
+  "senderKeyIndex": 0,
+  "toUserId": "SysX9ol1uoyAaEbFzImAcPP2JCO+ydh/Lb6ES0wU8Tc=",
+  "accountReference": 0
+}
