@@ -1,5 +1,6 @@
-use anyhow::{anyhow, bail};
 use std::convert::TryFrom;
+
+use anyhow::{anyhow, bail};
 
 use crate::errors::ProtocolError;
 

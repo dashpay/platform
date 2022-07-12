@@ -2,6 +2,7 @@ use super::{
     abstract_state_error::StateError, consensus::basic::BasicError, consensus::ConsensusError,
     DataTriggerError,
 };
+
 pub trait ErrorWithCode {
     // Returns the Error Code
     fn get_code(&self) -> u32;

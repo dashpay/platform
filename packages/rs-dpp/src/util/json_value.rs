@@ -1,18 +1,19 @@
-use crate::util::deserializer;
-use anyhow::{anyhow, bail};
-use serde::de::DeserializeOwned;
 use std::{collections::BTreeMap, convert::TryInto};
 
+use anyhow::{anyhow, bail};
 use log::trace;
+use serde::de::DeserializeOwned;
 use serde_json::{Number, Value as JsonValue};
+
+use crate::util::deserializer;
+use crate::{
+    errors::ProtocolError,
+    identifier::{self, Identifier},
+};
 
 use super::{
     json_path::{JsonPath, JsonPathLiteral, JsonPathStep},
     string_encoding::Encoding,
-};
-use crate::{
-    errors::ProtocolError,
-    identifier::{self, Identifier},
 };
 
 const PROPERTY_CONTENT_MEDIA_TYPE: &str = "contentMediaType";
@@ -372,9 +373,8 @@ pub fn replace_binary(to_replace: &mut JsonValue, with: ReplaceWith) -> Result<(
             *to_replace = JsonValue::String(base64::encode(data_bytes));
         }
         ReplaceWith::Bytes => {
-            let data_string: String = serde_json::from_value(json_value)?;
-            let identifier = Identifier::from_string(&data_string, Encoding::Base58)?.to_vec();
-            *to_replace = JsonValue::Array(identifier);
+            let base64: String = serde_json::from_value(json_value)?;
+            *to_replace = JsonValue::from(base64::decode(base64)?);
         }
     }
     Ok(())
