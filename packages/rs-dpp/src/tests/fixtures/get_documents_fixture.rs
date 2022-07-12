@@ -2,15 +2,14 @@ use serde_json::json;
 
 use crate::{
     document::document_factory::DocumentFactory, mocks, prelude::*,
-    tests::utils::generate_random_identifier_struct as gen_owner_id,
+    tests::utils::generate_random_identifier_struct as gen_owner_id, version::LATEST_VERSION,
 };
 
 use super::{get_document_validator_fixture, get_dpp};
 
 pub fn get_documents_fixture(data_contract: DataContract) -> Result<Vec<Document>, ProtocolError> {
-    let dpp_mock = get_dpp();
     let factory = DocumentFactory::new(
-        dpp_mock.protocol_version,
+        LATEST_VERSION,
         get_document_validator_fixture(),
         mocks::FetchAndValidateDataContract {},
     );
