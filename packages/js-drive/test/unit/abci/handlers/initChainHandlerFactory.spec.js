@@ -45,7 +45,13 @@ describe('initChainHandlerFactory', () => {
     validatorSetUpdate = new ValidatorSetUpdate();
 
     createValidatorSetUpdateMock = this.sinon.stub().returns(validatorSetUpdate);
-    synchronizeMasternodeIdentitiesMock = this.sinon.stub();
+    synchronizeMasternodeIdentitiesMock = this.sinon.stub().resolves({
+      createdEntities: [],
+      updatedEntities: [],
+      removedEntities: [],
+      fromHeight: 1,
+      toHeight: 42,
+    });
 
     loggerMock = new LoggerMock(this.sinon);
 
