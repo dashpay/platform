@@ -112,7 +112,7 @@ function handleUpdatedPubKeyOperatorFactory(
         dataContract,
         'rewardShare',
         previousDocument.getId(),
-        true,
+        { useTransaction: true },
       );
 
       result.push(previousDocument);
