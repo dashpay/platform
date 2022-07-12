@@ -261,11 +261,7 @@ pub fn get_data_contract_fixture(owner_id: Option<Identifier>) -> DataContract {
         }
     });
 
-    let factory = DataContractFactory::new(
-        0,
-        mocks::ValidateDataContract::default(),
-        DecodeProtocolEntity::default(),
-    );
+    let factory = DataContractFactory::new(0, mocks::ValidateDataContract::default());
 
     let owner_id = owner_id.unwrap_or_else(generate_random_identifier_struct);
     let mut data_contract = factory
