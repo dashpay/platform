@@ -1,12 +1,20 @@
 #![allow(clippy::from_over_into)]
 
-use crate::errors::{InvalidVectorSizeError, ProtocolError};
+use std::convert::TryInto;
+use std::{collections::HashMap, convert::TryFrom, hash::Hash};
+
 use anyhow::{anyhow, bail};
+use ciborium::value::Value as CborValue;
 use dashcore::PublicKey;
 use lazy_static::lazy_static;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use serde_json::Value as JsonValue;
 use serde_repr::{Deserialize_repr, Serialize_repr};
-use std::{collections::HashMap, convert::TryFrom, hash::Hash};
+
+use crate::errors::{InvalidVectorSizeError, ProtocolError};
+use crate::util::cbor_value::{CborCanonicalMap, CborMapExtension};
+use crate::util::json_value::{JsonValueExt, ReplaceWith};
+use crate::util::vec;
 
 pub type KeyID = u64;
 
@@ -19,6 +27,26 @@ pub enum KeyType {
     ECDSA_HASH160 = 2,
 }
 
+impl TryFrom<u8> for KeyType {
+    type Error = anyhow::Error;
+    fn try_from(value: u8) -> Result<Self, Self::Error> {
+        match value {
+            0 => Ok(Self::ECDSA_SECP256K1),
+            1 => Ok(Self::BLS12_381),
+            2 => Ok(Self::ECDSA_HASH160),
+            value => bail!("unrecognized security level: {}", value),
+        }
+    }
+}
+
+impl Into<CborValue> for KeyType {
+    fn into(self) -> CborValue {
+        CborValue::from(self as u128)
+    }
+}
+
+pub const BINARY_DATA_FIELDS: [&str; 1] = ["data"];
+
 #[repr(u8)]
 #[derive(Debug, PartialEq, Eq, Clone, Copy, Hash, Serialize_repr, Deserialize_repr)]
 pub enum Purpose {
@@ -28,6 +56,24 @@ pub enum Purpose {
     ENCRYPTION = 1,
     /// this key cannot be used for signing documents
     DECRYPTION = 2,
+}
+
+impl TryFrom<u8> for Purpose {
+    type Error = anyhow::Error;
+    fn try_from(value: u8) -> Result<Self, Self::Error> {
+        match value {
+            0 => Ok(Self::AUTHENTICATION),
+            1 => Ok(Self::ENCRYPTION),
+            2 => Ok(Self::DECRYPTION),
+            value => bail!("unrecognized security level: {}", value),
+        }
+    }
+}
+
+impl Into<CborValue> for Purpose {
+    fn into(self) -> CborValue {
+        CborValue::from(self as u128)
+    }
 }
 
 impl std::fmt::Display for Purpose {
@@ -48,6 +94,25 @@ pub enum SecurityLevel {
 impl TryFrom<usize> for SecurityLevel {
     type Error = anyhow::Error;
     fn try_from(value: usize) -> Result<Self, Self::Error> {
+        match value {
+            0 => Ok(Self::MASTER),
+            1 => Ok(Self::CRITICAL),
+            2 => Ok(Self::HIGH),
+            3 => Ok(Self::MEDIUM),
+            value => bail!("unrecognized security level: {}", value),
+        }
+    }
+}
+
+impl Into<CborValue> for SecurityLevel {
+    fn into(self) -> CborValue {
+        CborValue::from(self as u128)
+    }
+}
+
+impl TryFrom<u8> for SecurityLevel {
+    type Error = anyhow::Error;
+    fn try_from(value: u8) -> Result<Self, Self::Error> {
         match value {
             0 => Ok(Self::MASTER),
             1 => Ok(Self::CRITICAL),
@@ -208,38 +273,73 @@ impl IdentityPublicKey {
             return Ok(self.data.clone());
         }
 
-        let public_key = vec_to_array(&self.data);
+        let public_key = vec::vec_to_array::<65>(&self.data)
+            .map_err(|e| ProtocolError::ParsingError(e.to_string()))?;
         let original_key = PublicKey::from_slice(&public_key)
             .map_err(|e| anyhow!("unable to create pub key - {}", e))?;
         Ok(original_key.pubkey_hash().to_vec())
     }
 
-    pub fn data_as_arr_33(&self) -> Result<[u8; 33], InvalidVectorSizeError> {
-        vec_to_array_33(&self.data)
+    pub fn as_ecdsa_array(&self) -> Result<[u8; 33], InvalidVectorSizeError> {
+        vec::vec_to_array::<33>(&self.data)
+    }
+
+    pub fn from_raw_object(mut raw_object: JsonValue) -> Result<IdentityPublicKey, ProtocolError> {
+        // TODO identifier_default_deserializer: default deserializer should be changed to bytes
+        // Identifiers fields should be replaced with the string format to deserialize Data Contract
+        raw_object.replace_binary_paths(BINARY_DATA_FIELDS, ReplaceWith::Bytes)?;
+        let identity_public_key: IdentityPublicKey = serde_json::from_value(raw_object)?;
+
+        Ok(identity_public_key)
+    }
+
+    pub fn from_cbor_value(cbor_value: &CborValue) -> Result<Self, ProtocolError> {
+        let key_value_map = cbor_value.as_map().ok_or_else(|| {
+            ProtocolError::DecodingError(String::from(
+                "Expected identity public key to be a key value map",
+            ))
+        })?;
+
+        let id = key_value_map.as_u16("id", "A key must have an uint16 id")?;
+        let key_type = key_value_map.as_u8("type", "Identity public key must have a type")?;
+        let purpose = key_value_map.as_u8("purpose", "Identity public key must have a purpose")?;
+        let security_level = key_value_map.as_u8(
+            "securityLevel",
+            "Identity public key must have a securityLevel",
+        )?;
+        let readonly =
+            key_value_map.as_bool("readOnly", "Identity public key must have a readOnly")?;
+        let public_key_bytes =
+            key_value_map.as_bytes("data", "Identity public key must have a data")?;
+
+        Ok(IdentityPublicKey {
+            id: id.into(),
+            purpose: purpose.try_into()?,
+            security_level: security_level.try_into()?,
+            key_type: key_type.try_into()?,
+            data: public_key_bytes,
+            read_only: readonly,
+        })
+    }
+
+    pub fn to_cbor_value(&self) -> CborValue {
+        let mut pk_map = CborCanonicalMap::new();
+
+        pk_map.insert("id", self.get_id());
+        pk_map.insert("data", self.get_data());
+        pk_map.insert("type", self.get_type());
+        pk_map.insert("purpose", self.get_purpose());
+        pk_map.insert("readOnly", self.get_readonly());
+        pk_map.insert("securityLevel", self.get_security_level());
+
+        pk_map.to_value_sorted()
     }
 }
 
-fn vec_to_array(vec: &[u8]) -> [u8; 65] {
-    let mut v: [u8; 65] = [0; 65];
-    for i in 0..65 {
-        v[i] = *vec.get(i).unwrap();
+impl Into<CborValue> for &IdentityPublicKey {
+    fn into(self) -> CborValue {
+        self.to_cbor_value()
     }
-    v
-}
-
-fn vec_to_array_33(vec: &[u8]) -> Result<[u8; 33], InvalidVectorSizeError> {
-    if vec.len() != 33 {
-        return Err(InvalidVectorSizeError::new(33, vec.len()));
-    }
-    let mut v: [u8; 33] = [0; 33];
-    for i in 0..33 {
-        if let Some(n) = vec.get(i) {
-            v[i] = *n;
-        } else {
-            return Err(InvalidVectorSizeError::new(33, vec.len()));
-        }
-    }
-    Ok(v)
 }
 
 pub fn de_base64_to_vec<'de, D: Deserializer<'de>>(d: D) -> Result<Vec<u8>, D::Error> {

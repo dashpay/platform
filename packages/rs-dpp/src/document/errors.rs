@@ -1,7 +1,9 @@
+use thiserror::Error;
+
+use crate::errors::consensus::ConsensusError;
+
 use super::document_transition::DocumentTransition;
 use super::Document;
-use crate::errors::consensus::ConsensusError;
-use thiserror::Error;
 
 #[derive(Error, Debug)]
 pub enum DocumentError {

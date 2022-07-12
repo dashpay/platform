@@ -1,7 +1,8 @@
+use std::num::ParseIntError;
+
 use anyhow::Result;
 use getrandom::getrandom;
 use serde_json::Value;
-use std::num::ParseIntError;
 
 use crate::prelude::Identifier;
 

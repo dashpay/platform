@@ -1,8 +1,13 @@
 #![allow(dead_code)]
 
+extern crate core;
+
+pub use convertible::Convertible;
+pub use dash_platform_protocol::DashPlatformProtocol;
+pub use errors::*;
+
 mod contracts;
 pub mod data_contract;
-extern crate core;
 
 mod convertible;
 pub mod data_trigger;
@@ -23,16 +28,12 @@ pub mod validation;
 
 mod dash_platform_protocol;
 
-pub use convertible::Convertible;
-pub use dash_platform_protocol::DashPlatformProtocol;
-pub use errors::*;
 pub mod mocks;
 
 #[cfg(test)]
 mod tests;
 
 mod prelude {
-    pub use super::convertible::Convertible;
     pub use crate::data_contract::DataContract;
     pub use crate::data_trigger::DataTrigger;
     pub use crate::document::document_transition::DocumentTransition;
@@ -41,4 +42,6 @@ mod prelude {
     pub use crate::identifier::Identifier;
     pub use crate::identity::Identity;
     pub use crate::identity::IdentityPublicKey;
+
+    pub use super::convertible::Convertible;
 }

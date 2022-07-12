@@ -95,9 +95,11 @@ fn get_schema_property_type(m: &serde_json::Map<String, JsonValue>) -> Option<&s
 
 #[cfg(test)]
 mod test {
-    use super::get_binary_properties;
-    use serde_json::{json, Value as JsonValue};
     use std::collections::BTreeMap;
+
+    use serde_json::{json, Value as JsonValue};
+
+    use super::get_binary_properties;
 
     #[test]
     fn test_get_binary_properties() {

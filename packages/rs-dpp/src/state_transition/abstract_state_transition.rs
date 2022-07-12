@@ -1,7 +1,14 @@
+use std::convert::TryInto;
+use std::fmt::Debug;
+
 use anyhow::anyhow;
+use bls_signatures::{
+    verify_messages, PrivateKey as BLSPrivateKey, PublicKey as BLSPublicKey,
+    Serialize as BLSSerialize,
+};
 use dashcore::signer;
 use serde::Serialize;
-use std::fmt::Debug;
+use serde_json::Value as JsonValue;
 
 use crate::{
     identity::KeyType,
@@ -12,14 +19,8 @@ use crate::{
         serializer,
     },
 };
-use serde_json::Value as JsonValue;
-use std::convert::TryInto;
 
 use super::{StateTransition, StateTransitionType};
-use bls_signatures::{
-    verify_messages, PrivateKey as BLSPrivateKey, PublicKey as BLSPublicKey,
-    Serialize as BLSSerialize,
-};
 
 const PROPERTY_SIGNATURE: &str = "signature";
 const PROPERTY_PROTOCOL_VERSION: &str = "protocolVersion";
