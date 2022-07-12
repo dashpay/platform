@@ -1,5 +1,6 @@
-use crate::identity::{Purpose, SecurityLevel};
 use thiserror::Error;
+
+use crate::identity::{Purpose, SecurityLevel};
 
 #[derive(Error, Debug, Clone)]
 #[error("Invalid identity public key {public_key_id:?} security level: purpose {purpose:?} allows only for {allowed_security_levels:?} security levels, but got {security_level:?}")]

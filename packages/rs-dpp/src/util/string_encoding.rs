@@ -1,6 +1,7 @@
-use crate::errors::ProtocolError;
 use base64;
 use bs58;
+
+use crate::errors::ProtocolError;
 
 pub enum Encoding {
     Base58,

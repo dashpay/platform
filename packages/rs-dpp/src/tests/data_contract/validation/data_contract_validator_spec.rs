@@ -25,7 +25,7 @@ fn setup_test() -> TestData {
     init();
 
     let data_contract = get_data_contract_fixture(None);
-    let raw_data_contract = data_contract.to_object().unwrap();
+    let raw_data_contract = data_contract.to_object(false).unwrap();
 
     let protocol_version_validator =
         ProtocolVersionValidator::new(LATEST_VERSION, LATEST_VERSION, COMPATIBILITY_MAP.clone());

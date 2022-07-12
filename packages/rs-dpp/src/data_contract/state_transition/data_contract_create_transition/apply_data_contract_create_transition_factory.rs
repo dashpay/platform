@@ -1,5 +1,6 @@
-use crate::state_repository::StateRepositoryLike;
 use anyhow::Result;
+
+use crate::state_repository::StateRepositoryLike;
 
 use super::DataContractCreateTransition;
 
