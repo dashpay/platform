@@ -12,6 +12,6 @@ Parameters:
 | **identity**                     | Identity  | yes            | A valid [registered identity](../platform/identities/register.md)                                                                                                                           |
 
 
-**Example**: `await client.platform.identities.register('alice', { dashUniqueIdentityId: identity.getId() }, identity)`
+**Example**: `await client.platform.names.register('alice', { dashUniqueIdentityId: identity.getId() }, identity)`
 
 Returns: the created domain document
