@@ -1,11 +1,12 @@
+use serde_json::Value as JsonValue;
+use thiserror::Error;
+
 use crate::consensus::ConsensusError;
 use crate::data_contract::{errors::*, DataContract};
 use crate::document::{errors::*, Document};
 use crate::identity::{IdentityPublicKey, Purpose, SecurityLevel};
 use crate::state_transition::StateTransition;
 use crate::{CompatibleProtocolVersionIsNotDefinedError, NonConsensusError};
-use serde_json::Value as JsonValue;
-use thiserror::Error;
 
 #[derive(Error, Debug)]
 pub enum ProtocolError {

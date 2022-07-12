@@ -1,7 +1,8 @@
+use thiserror::Error;
+
 use crate::{
     CompatibleProtocolVersionIsNotDefinedError, InvalidVectorSizeError, SerdeParsingError,
 };
-use thiserror::Error;
 
 #[derive(Debug, Error)]
 pub enum NonConsensusError {

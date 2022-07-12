@@ -1,5 +1,6 @@
-use crate::util::hash::hash;
 use std::io::Write;
+
+use crate::util::hash::hash;
 
 /// Generate data contract id based on owner id and entropy
 pub fn generate_data_contract_id(owner_id: impl AsRef<[u8]>, entropy: impl AsRef<[u8]>) -> Vec<u8> {

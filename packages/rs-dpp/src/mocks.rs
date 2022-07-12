@@ -1,12 +1,12 @@
 //! This module contains data structures that are left to be implemented
 
-use crate::state_transition::{StateTransitionLike, StateTransitionType};
-use crate::{prelude::*, state_transition::StateTransitionConvert};
-
-use crate::validation::ValidationResult;
 use anyhow::Result as AnyResult;
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
+
+use crate::state_transition::{StateTransitionLike, StateTransitionType};
+use crate::validation::ValidationResult;
+use crate::{prelude::*, state_transition::StateTransitionConvert};
 
 #[derive(Debug, Clone)]
 pub struct DashPlatformProtocol<SR> {

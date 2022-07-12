@@ -1,7 +1,8 @@
+use std::borrow::Cow;
+
 use jsonschema::{JSONSchema, ValidationError};
 use serde_json::json;
 use serde_json::Value as JsonValue;
-use std::borrow::Cow;
 
 pub(crate) fn error(instance: ValidationError) -> Vec<ValidationError> {
     vec![instance]
