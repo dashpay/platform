@@ -1,10 +1,12 @@
 use anyhow::anyhow;
+use log::trace;
 use std::collections::HashMap;
 use std::convert::TryInto;
 
 use crate::data_contract::DataContract;
 use crate::prelude::{DocumentTransition, Identifier};
 use crate::util::json_value::{JsonValueExt, ReplaceWith};
+use crate::version::LATEST_VERSION;
 use crate::ProtocolError;
 use serde::{Deserialize, Serialize};
 // TODO simplify imports
@@ -58,13 +60,18 @@ impl std::default::Default for DocumentsBatchTransition {
 }
 
 impl DocumentsBatchTransition {
+    // TODO (rs-dpp-feature): do not use [`JsonValue`] with constructors
+
     /// creates the instance of [`DocumentsBatchTransition`] from raw object
     pub fn from_raw_object(
         mut raw_object: JsonValue,
         data_contracts: Vec<DataContract>,
     ) -> Result<Self, ProtocolError> {
         let mut batch_transitions = DocumentsBatchTransition {
-            protocol_version: raw_object.get_u64(PROPERTY_PROTOCOL_VERSION)? as u32,
+            protocol_version: raw_object
+                .get_u64(PROPERTY_PROTOCOL_VERSION)
+                // js-dpp allows `protocolVersion` to be undefined
+                .unwrap_or(LATEST_VERSION as u64) as u32,
             signature: raw_object.get_bytes(PROPERTY_SIGNATURE).unwrap_or_default(),
             signature_public_key_id: raw_object
                 .get_u64(PROPERTY_SIGNATURE_PUBLIC_KEY_ID)
