@@ -6,7 +6,6 @@ use crate::{
     data_contract::{self, generate_data_contract_id},
     decode_protocol_entity_factory::DecodeProtocolEntity,
     errors::{consensus::ConsensusError, ProtocolError},
-    mocks,
     prelude::Identifier,
     util::entropy_generator,
     Convertible,
@@ -14,17 +13,18 @@ use crate::{
 
 use super::{
     state_transition::{DataContractCreateTransition, DataContractUpdateTransition},
+    validation::data_contract_validator::DataContractValidator,
     DataContract,
 };
 use data_contract::state_transition::properties as st_prop;
 
 pub struct DataContractFactory {
     protocol_version: u32,
-    validate_data_contract: mocks::ValidateDataContract,
+    validate_data_contract: DataContractValidator,
 }
 
 impl DataContractFactory {
-    pub fn new(protocol_version: u32, validate_data_contract: mocks::ValidateDataContract) -> Self {
+    pub fn new(protocol_version: u32, validate_data_contract: DataContractValidator) -> Self {
         Self {
             protocol_version,
             validate_data_contract,
@@ -73,10 +73,8 @@ impl DataContractFactory {
         skip_validation: bool,
     ) -> Result<DataContract, ProtocolError> {
         if !skip_validation {
-            let result = self
-                .validate_data_contract
-                .validate_data_contract(&raw_data_contract)
-                .await;
+            let result = self.validate_data_contract.validate(&raw_data_contract)?;
+
             if !result.is_valid() {
                 return Err(ProtocolError::InvalidDataContractError {
                     errors: result.errors,
@@ -137,10 +135,15 @@ impl DataContractFactory {
 
 #[cfg(test)]
 mod test {
+    use std::sync::Arc;
+
     use super::DataContractFactory;
     use crate::{
-        data_contract::DataContract, mocks, state_transition::StateTransitionLike,
-        tests::fixtures::get_data_contract_fixture, Convertible,
+        data_contract::{validation::data_contract_validator::DataContractValidator, DataContract},
+        state_transition::StateTransitionLike,
+        tests::fixtures::get_data_contract_fixture,
+        version::{ProtocolVersionValidator, COMPATIBILITY_MAP, LATEST_VERSION},
+        Convertible,
     };
     use serde_json::Value as JsonValue;
 
@@ -153,7 +156,15 @@ mod test {
     fn get_test_data() -> TestData {
         let data_contract = get_data_contract_fixture(None);
         let raw_data_contract = data_contract.to_object(false).unwrap();
-        let factory = DataContractFactory::new(0, mocks::ValidateDataContract {});
+        let protocol_version_validator = ProtocolVersionValidator::new(
+            LATEST_VERSION,
+            LATEST_VERSION,
+            COMPATIBILITY_MAP.clone(),
+        );
+        let data_contract_validator =
+            DataContractValidator::new(Arc::new(protocol_version_validator));
+
+        let factory = DataContractFactory::new(1, data_contract_validator);
         TestData {
             data_contract,
             raw_data_contract,
@@ -249,7 +260,7 @@ mod test {
             .create_data_contract_create_transition(data_contract.clone())
             .expect("Data Contract Transition should be created");
 
-        assert_eq!(0, result.get_protocol_version());
+        assert_eq!(1, result.get_protocol_version());
         assert_eq!(&data_contract.entropy, result.get_entropy());
         assert_eq!(
             raw_data_contract,

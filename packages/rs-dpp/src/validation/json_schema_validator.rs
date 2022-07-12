@@ -1,3 +1,4 @@
+use super::meta_validators;
 use jsonschema::{JSONSchema, KeywordDefinition};
 use serde_json::{json, Value};
 
@@ -56,6 +57,53 @@ impl JsonSchemaValidator {
             .validate(object);
 
         let mut validation_result = ValidationResult::new(None);
+
+        match res {
+            Ok(_) => Ok(validation_result),
+            Err(validation_errors) => {
+                let errors: Vec<ConsensusError> =
+                    validation_errors.map(ConsensusError::from).collect();
+                validation_result.add_errors(errors);
+                Ok(validation_result)
+            }
+        }
+    }
+
+    /// validates schema through compilation
+    pub fn validate_schema(schema: &Value) -> ValidationResult {
+        let mut validation_result = ValidationResult::new(None);
+
+        // enable the format validation
+        // let res = meta_validators::DRAFT_202012_META_SCHEMA.validate(schema);
+        // match res {
+        //     Ok(_) => {}
+        //     Err(validation_errors) => {
+        //         let errors: Vec<ConsensusError> =
+        //             validation_errors.map(ConsensusError::from).collect();
+        //         validation_result.add_errors(errors);
+        //         return validation_result;
+        //     }
+        // }
+
+        let res = JSONSchema::options()
+            .should_ignore_unknown_formats(false)
+            .should_validate_formats(true)
+            .compile(schema);
+        match res {
+            Ok(_) => validation_result,
+            Err(validation_error) => {
+                validation_result.add_error(ConsensusError::from(validation_error));
+                validation_result
+            }
+        }
+    }
+
+    /// Uses predefined meta-schemas to validate data contract schema
+    pub fn validate_data_contract_schema(
+        data_contract_schema: &Value,
+    ) -> Result<ValidationResult, NonConsensusError> {
+        let mut validation_result = ValidationResult::new(None);
+        let res = meta_validators::DATA_CONTRACT_META_SCHEMA.validate(data_contract_schema);
 
         match res {
             Ok(_) => Ok(validation_result),
