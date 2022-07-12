@@ -93,7 +93,6 @@ fn is_duplicate_by_indices(
                 get_data_property(transition_to_check, property_name)
             ));
         }
-        println!("{} vs {}", original_hash, hash_to_check);
         if original_hash == hash_to_check {
             return true;
         }
