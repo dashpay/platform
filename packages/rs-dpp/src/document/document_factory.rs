@@ -7,6 +7,7 @@ use crate::{
     ProtocolError,
 };
 use chrono::Utc;
+use itertools::Itertools;
 use serde_json::{json, Value as JsonValue};
 
 use super::{
@@ -139,31 +140,29 @@ impl DocumentFactory {
         &self,
         documents_iter: impl IntoIterator<Item = (Action, Vec<Document>)>,
     ) -> Result<DocumentsBatchTransition, ProtocolError> {
-        let documents: Vec<(Action, Vec<Document>)> = documents_iter.into_iter().collect();
-
         let mut raw_documents_transitions: Vec<JsonValue> = vec![];
         let mut data_contracts: Vec<DataContract> = vec![];
+        let documents: Vec<(Action, Vec<Document>)> = documents_iter.into_iter().collect();
+        let flattened_documents = documents.iter().flat_map(|(_, v)| v);
 
-        let mut expect_owner_id: Option<Identifier> = None;
-        let mut different_owner_cnt = 0;
-
-        for (_, documents) in documents.iter() {
-            if expect_owner_id.is_none() && !documents.is_empty() {
-                expect_owner_id = Some(documents[0].owner_id.clone())
-            }
-
-            different_owner_cnt += documents
-                .iter()
-                .filter(|d| Some(&d.owner_id) != expect_owner_id.as_ref())
-                .count();
+        if Self::is_empty(flattened_documents.clone()) {
+            return Err(ProtocolError::NoDocumentsSuppliedError);
         }
 
-        if different_owner_cnt > 0 {
+        let is_the_same =
+            Self::is_ownership_the_same(flattened_documents.clone().map(|d| &d.owner_id));
+        if !is_the_same {
             return Err(ProtocolError::MismatchOwnerIdsError {
                 documents: documents.into_iter().flat_map(|(_, v)| v).collect(),
             });
         }
 
+        let owner_id = flattened_documents
+            .clone()
+            .next()
+            .unwrap()
+            .owner_id
+            .to_owned();
         for (action, documents) in documents {
             data_contracts.extend(documents.iter().map(|d| d.data_contract.clone()));
 
@@ -182,7 +181,7 @@ impl DocumentFactory {
 
         let raw_batch_transition = json!({
             PROPERTY_PROTOCOL_VERSION: self.protocol_version,
-            PROPERTY_OWNER_ID : expect_owner_id.unwrap().buffer,
+            PROPERTY_OWNER_ID : owner_id.to_buffer(),
             PROPERTY_TRANSITIONS: raw_documents_transitions,
         });
 
@@ -267,6 +266,14 @@ impl DocumentFactory {
     // TODO implement rest methods
     //   async createFromObject(rawDocument, options = {}) {
     //   async createFromBuffer(buffer, options = {}) {
+
+    fn is_empty<T>(data: impl IntoIterator<Item = T>) -> bool {
+        data.into_iter().next().is_none()
+    }
+
+    fn is_ownership_the_same<'a>(docs: impl IntoIterator<Item = &'a Identifier>) -> bool {
+        docs.into_iter().all_equal()
+    }
 }
 
 #[cfg(test)]
