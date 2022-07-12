@@ -1,4 +1,3 @@
-use log::trace;
 use std::collections::HashMap;
 use std::convert::TryInto;
 
