@@ -4,7 +4,7 @@ pub use data_contract_update_transition::*;
 mod data_contract_create_transition;
 mod data_contract_update_transition;
 
-pub(self) mod properties {
+pub(crate) mod properties {
     pub const PROPERTY_SIGNATURE_PUBLIC_KEY_ID: &str = "signaturePublicKeyId";
     pub const PROPERTY_DATA_CONTRACT: &str = "dataContract";
     pub const PROPERTY_SIGNATURE: &str = "signature";

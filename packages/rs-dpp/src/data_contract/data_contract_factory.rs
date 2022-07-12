@@ -1,8 +1,6 @@
-use std::collections::BTreeMap;
-use std::convert::TryFrom;
-
 use anyhow::anyhow;
-use serde_json::{Number, Value as JsonValue};
+use serde_json::{json, Number, Value as JsonValue};
+use std::collections::BTreeMap;
 
 use crate::{
     data_contract::{self, generate_data_contract_id},
@@ -11,27 +9,25 @@ use crate::{
     mocks,
     prelude::Identifier,
     util::entropy_generator,
+    Convertible,
 };
 
-use super::DataContract;
+use super::{
+    state_transition::{DataContractCreateTransition, DataContractUpdateTransition},
+    DataContract,
+};
+use data_contract::state_transition::properties as st_prop;
 
 pub struct DataContractFactory {
     protocol_version: u32,
-    _validate_data_contract: mocks::ValidateDataContract,
-    // TODO remove dependency on decode_protocol_entity
-    decode_protocol_entity: DecodeProtocolEntity,
+    validate_data_contract: mocks::ValidateDataContract,
 }
 
 impl DataContractFactory {
-    pub fn new(
-        protocol_version: u32,
-        _validate_data_contract: mocks::ValidateDataContract,
-        decode_protocol_entity: DecodeProtocolEntity,
-    ) -> Self {
+    pub fn new(protocol_version: u32, validate_data_contract: mocks::ValidateDataContract) -> Self {
         Self {
             protocol_version,
-            _validate_data_contract,
-            decode_protocol_entity,
+            validate_data_contract,
         }
     }
 
@@ -78,7 +74,7 @@ impl DataContractFactory {
     ) -> Result<DataContract, ProtocolError> {
         if !skip_validation {
             let result = self
-                ._validate_data_contract
+                .validate_data_contract
                 .validate_data_contract(&raw_data_contract)
                 .await;
             if !result.is_valid() {
@@ -88,7 +84,7 @@ impl DataContractFactory {
                 });
             }
         }
-        DataContract::try_from(raw_data_contract)
+        DataContract::from_raw_object(raw_data_contract)
     }
 
     /// Create Data Contract from buffer
@@ -117,31 +113,147 @@ impl DataContractFactory {
             .await
     }
 
-    // TODO
-    //   /**
-    //    * Create Data Contract Create State Transition
-    //    *
-    //    * @param {DataContract} dataContract
-    //    * @return {DataContractCreateTransition}
-    //    */
-    //   createDataContractCreateTransition(dataContract) {
-    //     return new DataContractCreateTransition({
-    //       protocolVersion: this.dpp.getProtocolVersion(),
-    //       dataContract: dataContract.toObject(),
-    //       entropy: dataContract.getEntropy(),
-    //     });
-    //   }
+    pub fn create_data_contract_create_transition(
+        &self,
+        data_contract: DataContract,
+    ) -> Result<DataContractCreateTransition, ProtocolError> {
+        DataContractCreateTransition::from_raw_object(json!({
+            st_prop::PROPERTY_PROTOCOL_VERSION: self.protocol_version,
+            st_prop::PROPERTY_DATA_CONTRACT: data_contract.to_object(false)?,
+            st_prop::PROPERTY_ENTROPY: data_contract.entropy,
+        }))
+    }
 
-    //   /**
-    //    * Create Data Contract Update State Transition
-    //    *
-    //    * @param {DataContract} dataContract
-    //    * @return {DataContractUpdateTransition}
-    //    */
-    //   createDataContractUpdateTransition(dataContract) {
-    //     return new DataContractUpdateTransition({
-    //       protocolVersion: this.dpp.getProtocolVersion(),
-    //       dataContract: dataContract.toObject(),
-    //     });
-    //   }
+    pub fn create_data_contract_update_transition(
+        &self,
+        data_contract: DataContract,
+    ) -> Result<DataContractUpdateTransition, ProtocolError> {
+        DataContractUpdateTransition::from_raw_object(json!({
+            st_prop::PROPERTY_PROTOCOL_VERSION: self.protocol_version,
+            st_prop::PROPERTY_DATA_CONTRACT: data_contract.to_object(false)?,
+        }))
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::DataContractFactory;
+    use crate::{
+        data_contract::DataContract, mocks, state_transition::StateTransitionLike,
+        tests::fixtures::get_data_contract_fixture, Convertible,
+    };
+    use serde_json::Value as JsonValue;
+
+    pub struct TestData {
+        data_contract: DataContract,
+        raw_data_contract: JsonValue,
+        factory: DataContractFactory,
+    }
+
+    fn get_test_data() -> TestData {
+        let data_contract = get_data_contract_fixture(None);
+        let raw_data_contract = data_contract.to_object(false).unwrap();
+        let factory = DataContractFactory::new(0, mocks::ValidateDataContract {});
+        TestData {
+            data_contract,
+            raw_data_contract,
+            factory,
+        }
+    }
+
+    #[test]
+    fn should_create_data_contract_with_specified_name_and_docs_definition() {
+        let TestData {
+            data_contract,
+            raw_data_contract,
+            factory,
+        } = get_test_data();
+        let raw_documents = raw_data_contract
+            .get("documents")
+            .expect("documents property should exist")
+            .clone();
+
+        let result = factory
+            .create(data_contract.owner_id.clone(), raw_documents)
+            .expect("Data Contract should be created");
+
+        assert_eq!(data_contract.protocol_version, result.protocol_version);
+        // id is generated based on entropy which is different every time the `create` call is used
+        assert_eq!(data_contract.id.buffer.len(), result.id.buffer.len());
+        assert_ne!(data_contract.id, result.id);
+        assert_eq!(data_contract.schema, result.schema);
+        assert_eq!(data_contract.owner_id, result.owner_id);
+        assert_eq!(data_contract.documents, result.documents);
+        assert_eq!(data_contract.metadata, result.metadata);
+        assert_eq!(data_contract.binary_properties, result.binary_properties);
+    }
+
+    #[tokio::test]
+    async fn should_crate_data_contract_from_object() {
+        let TestData {
+            data_contract,
+            raw_data_contract,
+            factory,
+        } = get_test_data();
+
+        let result = factory
+            .create_from_object(raw_data_contract, true)
+            .await
+            .expect("Data Contract should be created");
+
+        assert_eq!(data_contract.protocol_version, result.protocol_version);
+        assert_eq!(data_contract.id, result.id);
+        assert_eq!(data_contract.schema, result.schema);
+        assert_eq!(data_contract.owner_id, result.owner_id);
+        assert_eq!(data_contract.documents, result.documents);
+        assert_eq!(data_contract.metadata, result.metadata);
+        assert_eq!(data_contract.binary_properties, result.binary_properties);
+        assert_eq!(data_contract.defs, result.defs);
+    }
+
+    #[tokio::test]
+    #[ignore = "test should be fixed and method - create_from_buffer should be fixed"]
+    async fn should_crete_data_contract_from_buffer() {
+        let TestData {
+            data_contract,
+            factory,
+            ..
+        } = get_test_data();
+        let serialized_data_contract = data_contract
+            .to_buffer()
+            .expect("should be serialized to buffer");
+        let result = factory
+            .create_from_buffer(serialized_data_contract, false)
+            .await
+            .expect("Data Contract should be created from the buffer");
+
+        assert_eq!(data_contract.protocol_version, result.protocol_version);
+        assert_eq!(data_contract.id, result.id);
+        assert_eq!(data_contract.schema, result.schema);
+        assert_eq!(data_contract.owner_id, result.owner_id);
+        assert_eq!(data_contract.documents, result.documents);
+        assert_eq!(data_contract.metadata, result.metadata);
+        assert_eq!(data_contract.binary_properties, result.binary_properties);
+        assert_eq!(data_contract.defs, result.defs);
+    }
+
+    #[test]
+    fn should_create_data_contract_create_transition_from_data_contract() {
+        let TestData {
+            data_contract,
+            factory,
+            raw_data_contract,
+        } = get_test_data();
+
+        let result = factory
+            .create_data_contract_create_transition(data_contract.clone())
+            .expect("Data Contract Transition should be created");
+
+        assert_eq!(0, result.get_protocol_version());
+        assert_eq!(&data_contract.entropy, result.get_entropy());
+        assert_eq!(
+            raw_data_contract,
+            result.data_contract.to_object(false).unwrap()
+        );
+    }
 }
