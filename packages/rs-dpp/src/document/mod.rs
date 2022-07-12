@@ -18,6 +18,7 @@ use crate::util::json_value::{JsonValueExt, ReplaceWith};
 use crate::util::{cbor_value, serializer};
 
 pub mod document_factory;
+pub mod document_validator;
 pub mod errors;
 pub mod generate_document_id;
 mod state_transition;
