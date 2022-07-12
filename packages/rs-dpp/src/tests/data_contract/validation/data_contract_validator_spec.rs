@@ -41,7 +41,7 @@ fn setup_test() -> TestData {
 
 fn init() {
     let _ = env_logger::builder()
-        .filter_level(log::LevelFilter::Trace)
+        .filter_level(log::LevelFilter::Debug)
         .try_init();
 }
 
