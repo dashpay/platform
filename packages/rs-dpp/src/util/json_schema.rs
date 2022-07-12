@@ -11,6 +11,8 @@ pub trait JsonSchemaExt {
     fn is_type_of_array(&self) -> bool;
     /// returns true if json value contains property `byteArray` and it equals true
     fn is_type_of_byte_array(&self) -> bool;
+    /// returns true if json value contains property 'type`, and it equals 'string'
+    fn is_type_of_string(&self) -> bool;
     /// returns the properties of Json Schema object
     fn get_schema_properties(&self) -> Result<&JsonValue, anyhow::Error>;
     /// returns the required fields of Json Schema object
@@ -36,6 +38,15 @@ impl JsonSchemaExt for JsonValue {
             bail!("the 'required' property is not array");
         }
         bail!("the json value is not a map");
+    }
+
+    fn is_type_of_string(&self) -> bool {
+        if let JsonValue::Object(ref map) = self {
+            if let Some(JsonValue::String(schema_type)) = map.get("type") {
+                return schema_type == "string";
+            }
+        }
+        false
     }
 
     fn is_type_of_object(&self) -> bool {
@@ -86,7 +97,7 @@ impl JsonSchemaExt for JsonValue {
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Index {
     pub name: String,
-    pub properties: BTreeMap<String, OrderBy>,
+    pub properties: Vec<BTreeMap<String, OrderBy>>,
     #[serde(default)]
     pub unique: bool,
 }
@@ -119,18 +130,18 @@ mod test {
             "indices" : [
                 {
                     "name" : "first_index",
-                    "properties" : {
-                        "field_one" : "asc",
-                        "field_two" : "desc"
-                    },
+                    "properties" :[
+                        {"field_one" : "asc"},
+                        {"field_two" : "desc"},
+                    ],
                     "unique" : true
 
                 },
                 {
                     "name" : "second_index",
-                    "properties" : {
-                        "field_two" : "desc",
-                    }
+                    "properties" : [
+                        {"field_two" : "desc"},
+                    ],
                 }
              ]
         });
@@ -141,8 +152,8 @@ mod test {
         assert_eq!(indices.len(), 2);
         assert_eq!(indices[0].name, "first_index");
         assert_eq!(indices[0].properties.len(), 2);
-        assert_eq!(indices[0].properties["field_one"], OrderBy::Asc);
-        assert_eq!(indices[0].properties["field_two"], OrderBy::Desc);
+        assert_eq!(indices[0].properties[0]["field_one"], OrderBy::Asc);
+        assert_eq!(indices[0].properties[1]["field_two"], OrderBy::Desc);
         assert!(indices[0].unique);
 
         assert_eq!(indices[1].name, "second_index");

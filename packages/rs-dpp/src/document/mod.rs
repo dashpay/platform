@@ -18,6 +18,7 @@ use crate::util::json_value::{JsonValueExt, ReplaceWith};
 use crate::util::{cbor_value, serializer};
 
 pub mod document_factory;
+pub mod document_validator;
 pub mod errors;
 pub mod generate_document_id;
 mod state_transition;
@@ -205,7 +206,7 @@ mod test {
 
     fn init() {
         let _ = env_logger::builder()
-            .filter_level(log::LevelFilter::Trace)
+            .filter_level(log::LevelFilter::Debug)
             .try_init();
     }
 
