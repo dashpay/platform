@@ -13,19 +13,6 @@
     - [Use another BIP44 account](/examples/use-different-account.md)
     - [Sign and verify messages](/examples/sign-and-verify-messages.md)
 
-- Tutorial
-    - [Register an identity](https://dashplatform.readme.io/docs/tutorial-register-an-identity)
-    - [Register a Name for an Identity](https://dashplatform.readme.io/docs/tutorial-register-a-name-for-an-identity)
-
-- Snippets
-    - [Create and fund wallet](https://github.com/dashevo/DashJS/tree/master/examples/node/create-and-fund-wallet.js)
-    - [Register identity](https://github.com/dashevo/DashJS/tree/master/examples/node/register-identity.js)
-    - [Register name](https://github.com/dashevo/DashJS/tree/master/examples/node/register-name.js)
-    - [Retrieve Contract](https://github.com/dashevo/DashJS/tree/master/examples/node/retrieve-contract.js)
-    - [Retrieve Documents](https://github.com/dashevo/DashJS/tree/master/examples/node/retrieve-documents.js)
-    - [Retrieve Identity](https://github.com/dashevo/DashJS/tree/master/examples/node/retrieve-identity.js)
-    - [Retrieve Name](https://github.com/dashevo/DashJS/tree/master/examples/node/retrieve-name.js)
-
 - Usage
     - [DAPI](usage/dapi.md)
     - [Platform](platform/about-platform.md)
