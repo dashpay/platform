@@ -1,6 +1,7 @@
+use std::collections::HashMap;
+
 use crate::errors::consensus::ConsensusError;
 use crate::version::ProtocolVersionValidator;
-use std::collections::HashMap;
 
 pub fn setup_test() -> (u32, u32, HashMap<u32, u32>) {
     let current_protocol_version = 1;

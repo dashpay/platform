@@ -1,14 +1,4 @@
 use futures::future::LocalBoxFuture;
-mod data_trigger_execution_context;
-
-pub mod dashpay_data_triggers;
-pub mod dpns_triggers;
-pub mod feature_flags_data_triggers;
-pub mod get_data_triggers_factory;
-pub mod reward_share_data_triggers;
-
-mod data_trigger_execution_result;
-mod reject_data_trigger;
 
 pub use data_trigger_execution_context::*;
 pub use data_trigger_execution_result::*;
@@ -19,6 +9,17 @@ use crate::{
     errors::DataTriggerError, get_from_transition, prelude::Identifier,
     state_repository::StateRepositoryLike,
 };
+
+mod data_trigger_execution_context;
+
+pub mod dashpay_data_triggers;
+pub mod dpns_triggers;
+pub mod feature_flags_data_triggers;
+pub mod get_data_triggers_factory;
+pub mod reward_share_data_triggers;
+
+mod data_trigger_execution_result;
+mod reject_data_trigger;
 
 pub type BoxedTrigger<'a, SR> = Box<Trigger<'a, SR>>;
 pub type Trigger<'a, SR> =

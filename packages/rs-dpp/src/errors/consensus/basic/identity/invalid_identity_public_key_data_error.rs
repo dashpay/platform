@@ -1,5 +1,6 @@
-use crate::PublicKeyValidationError;
 use thiserror::Error;
+
+use crate::PublicKeyValidationError;
 
 #[derive(Error, Debug, Clone)]
 #[error("Invalid identity public key {public_key_id:?} data: {message:?}")]

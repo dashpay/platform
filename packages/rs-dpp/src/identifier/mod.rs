@@ -1,3 +1,3 @@
-mod identifier;
-
 pub use identifier::*;
+
+mod identifier;
