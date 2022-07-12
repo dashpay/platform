@@ -1,7 +1,7 @@
 ### About Wallet-lib 
 
-When Dash.Client is initiated with a `mnemonic` property, a wallet instance is automatically created accessible via `client.wallet` as well as an `client.account` instance. 
+When Dash.Client is initiated with a `mnemonic` property, a wallet instance becomes accessible via `client.wallet` property 
 
-In order to ensure the sync-up with the network has happened, you will need to wait for the method `client.isReady()` to resolve. 
+To initialize wallet account and synchronize with the network, use `client.wallet.getAccount()`  
 
-You will find else where the [complete documentation of Wallet-lib](https://github.com/dashevo/platform/tree/master/packages/wallet-lib), as we only cover the most basic pieces in this documentation.
+Find out more about the Wallet in its [complete documentation](https://dashevo.github.io/platform/Wallet-library/)

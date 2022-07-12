@@ -1,7 +1,9 @@
 ## Getting an account
 
-A Wallet is actually a holders of multiple Account that hold the keys needed to make a payment.  
-So the first thing will be on accessing your account : 
+Wallet initialized with `mnemonic` holds multiple Accounts according to BIP44. 
+Account holding the keys needed to make a payment.
+
+Wallet's `getAccount` method used to access account
 
 ```js
 const client = new Dash.Client({
@@ -9,13 +11,15 @@ const client = new Dash.Client({
     mnemonic: "maximum blast eight orchard waste wood gospel siren parent deer athlete impact",
   },
 });
-client.isReady().then(()=>{
-  const {account} = client;
-  // Do something with account
-});
+
+const account = await client.wallet.getAccount()
+// Do something with account
 ```
 
 As optional parameter, an integer representing the account `index` can be passed as parameter. By default, index account on call is 0.
+```
+client.wallet.getAccount({ index: 1 })
+```
 
-You will also see that we wait for isReady to resolve before making any operation. This allow us to access an account instance that will have synced-up with network and that our UTXOS set are ready to be used for payment/signing.  
+Awaiting for `getAccount()` promise is needed to have wallet synced-up with network and making sure that UTXOS set is ready to be used for payment/signing.  
 
