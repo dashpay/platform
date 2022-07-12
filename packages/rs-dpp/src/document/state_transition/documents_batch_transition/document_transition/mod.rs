@@ -87,7 +87,7 @@ impl DocumentTransitionObjectLike for DocumentTransition {
     }
 
     fn to_object(&self) -> Result<JsonValue, ProtocolError> {
-        call_method!(self, to_json)
+        call_method!(self, to_object)
     }
 }
 
