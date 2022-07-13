@@ -1,7 +1,7 @@
 const BlockStore = require('./blockstore');
 const config = require('../config/config');
 const Consensus = require('./consensus');
-const utils = require('../lib/utils');
+const utils = require('./utils');
 
 const SpvChain = class {
   constructor(chainType, confirms = 100, startBlock) {
@@ -130,9 +130,9 @@ const SpvChain = class {
 
   /** @private */
   isDuplicate(compareHash) {
-    return this.getAllBranches().map(branch => branch.map(node => node.hash))
-      .concat(this.orphanBlocks.map(orphan => orphan.hash))
-      .filter(hash => hash === compareHash).length > 0;
+    return this.getAllBranches().map((branch) => branch.map((node) => node.hash))
+      .concat(this.orphanBlocks.map((orphan) => orphan.hash))
+      .filter((hash) => hash === compareHash).length > 0;
   }
 
   /** @private */
@@ -254,7 +254,7 @@ const SpvChain = class {
           return blockInDB;
         }
 
-        return this.getLongestChain().filter(h => h.hash === hash)[0];
+        return this.getLongestChain().filter((h) => h.hash === hash)[0];
       });
   }
 
@@ -295,7 +295,7 @@ const SpvChain = class {
         return true;
       }
     }
-    const normalizedHeaders = headers.map(h => utils.normalizeHeader(h));
+    const normalizedHeaders = headers.map((h) => utils.normalizeHeader(h));
     const isOrphan = !SpvChain.isParentChild(normalizedHeaders[0], this.getTipHeader());
 
     const allValid = normalizedHeaders.reduce(

@@ -6,7 +6,7 @@ const MIN_TIMESTAMP_HEADERS = 11;
 const MIN_DGW_HEADERS = 24;
 
 function getMedianTimestamp(headers) {
-  const timestamps = headers.map(h => h.time);
+  const timestamps = headers.map((h) => h.time);
   const median = (arr) => {
     const mid = Math.floor(arr.length / 2);
     const nums = [...arr].sort((a, b) => a - b);
@@ -22,7 +22,7 @@ function hasGreaterThanMedianTimestamp(newHeader, previousHeaders) {
   const headerNormalised = utils.normalizeHeader(newHeader);
   const normalizedLatestHeaders = previousHeaders.slice(
     Math.max(previousHeaders.length - MIN_TIMESTAMP_HEADERS, 0),
-  ).map(h => utils.normalizeHeader(h));
+  ).map((h) => utils.normalizeHeader(h));
   return getMedianTimestamp(normalizedLatestHeaders) < headerNormalised.time;
 }
 
@@ -32,7 +32,7 @@ function isValidBlockHeader(newHeader, previousHeaders, network = 'mainnet') {
       && newHeader.validTimestamp()
       && hasGreaterThanMedianTimestamp(newHeader, previousHeaders)
       && hasValidTarget(
-        utils.getDgwBlock(newHeader), previousHeaders.map(h => utils.getDgwBlock(h)), network,
+        utils.getDgwBlock(newHeader), previousHeaders.map((h) => utils.getDgwBlock(h)), network,
       );
   }
   return newHeader.validProofOfWork()
