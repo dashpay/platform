@@ -99,24 +99,7 @@ impl DataTrigger {
     }
 }
 
-pub fn new_error<'a, SR>(
-    context: &DataTriggerExecutionContext<'a, SR>,
-    dt_create: &DocumentCreateTransition,
-    msg: String,
-) -> DataTriggerError
-where
-    SR: StateRepositoryLike,
-{
-    DataTriggerError::DataTriggerConditionError {
-        data_contract_id: context.data_contract.id.clone(),
-        document_transition_id: dt_create.base.id.clone(),
-        message: msg,
-        owner_id: Some(context.owner_id.clone()),
-        document_transition: Some(DocumentTransition::Create(dt_create.clone())),
-    }
-}
-
-pub async fn execute_trigger<'a, SR>(
+async fn execute_trigger<'a, SR>(
     trigger_kind: DataTriggerKind,
     document_transition: &DocumentTransition,
     context: &DataTriggerExecutionContext<'a, SR>,
@@ -142,5 +125,22 @@ where
             create_masternode_reward_shares_data_trigger(document_transition, context, identifier)
                 .await
         }
+    }
+}
+
+fn create_error<'a, SR>(
+    context: &DataTriggerExecutionContext<'a, SR>,
+    dt_create: &DocumentCreateTransition,
+    msg: String,
+) -> DataTriggerError
+where
+    SR: StateRepositoryLike,
+{
+    DataTriggerError::DataTriggerConditionError {
+        data_contract_id: context.data_contract.id.clone(),
+        document_transition_id: dt_create.base.id.clone(),
+        message: msg,
+        owner_id: Some(context.owner_id.clone()),
+        document_transition: Some(DocumentTransition::Create(dt_create.clone())),
     }
 }
