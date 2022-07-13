@@ -53,5 +53,4 @@ class BlockStore {
   }
 }
 
-
 module.exports = BlockStore;

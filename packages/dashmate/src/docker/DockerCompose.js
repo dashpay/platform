@@ -374,11 +374,11 @@ class DockerCompose {
       throw new Error(`Update Docker to version ${DockerCompose.DOCKER_MIN_VERSION} or higher`);
     }
 
-    let version
+    let version;
 
     // Check docker compose
     try {
-      ({out: version} = await dockerCompose.version());
+      ({ out: version } = await dockerCompose.version());
     } catch (e) {
       throw new Error('Docker Compose V2 is not available in your system');
     }
