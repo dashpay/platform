@@ -16,6 +16,16 @@ mod document_replace_transition;
 
 pub const PROPERTY_ACTION: &str = "$action";
 
+pub trait DocumentTransitionExt {
+    /// returns the creation timestamp (in milliseconds) if it exists for given type of document transition
+    fn get_created_at(&self) -> Option<i64>;
+    /// returns the update timestamp  (in milliseconds) if it exists for given type of document transition
+    fn get_updated_at(&self) -> Option<i64>;
+    /// returns the value of dynamic property. The dynamic property is a property that is not specified in protocol
+    /// the `path` supports dot-syntax: i.e: property.internal_property
+    fn get_dynamic_property(&self, path: &str) -> Option<&JsonValue>;
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum DocumentTransition {
     Create(DocumentCreateTransition),
@@ -27,11 +37,6 @@ impl AsRef<Self> for DocumentTransition {
     fn as_ref(&self) -> &Self {
         self
     }
-}
-
-pub trait DocumentTransitionExt {
-    fn get_created_at(&self) -> Option<i64>;
-    fn get_updated_at(&self) -> Option<i64>;
 }
 
 macro_rules! call_method {
@@ -135,6 +140,26 @@ impl DocumentTransitionExt for DocumentTransition {
         match self {
             DocumentTransition::Create(t) => t.created_at,
             DocumentTransition::Replace(_) => None,
+            DocumentTransition::Delete(_) => None,
+        }
+    }
+
+    fn get_dynamic_property(&self, path: &str) -> Option<&JsonValue> {
+        match self {
+            DocumentTransition::Create(t) => {
+                if let Some(ref data) = t.data {
+                    data.get_value(path).ok()
+                } else {
+                    None
+                }
+            }
+            DocumentTransition::Replace(t) => {
+                if let Some(ref data) = t.data {
+                    data.get_value(path).ok()
+                } else {
+                    None
+                }
+            }
             DocumentTransition::Delete(_) => None,
         }
     }

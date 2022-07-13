@@ -2,7 +2,7 @@ use anyhow::{anyhow, bail, Context};
 use serde_json::Value as JsonValue;
 
 use crate::{
-    data_trigger::new_error, document::document_transition::DocumentTransition,
+    data_trigger::create_error, document::document_transition::DocumentTransition,
     get_from_transition, prelude::Identifier, state_repository::StateRepositoryLike,
     util::json_value::JsonValueExt,
 };
@@ -46,7 +46,7 @@ where
     let enable_at_height = data.get_i64(PROPERTY_ENABLE_AT_HEIGHT)?;
 
     if enable_at_height < block_height {
-        let err = new_error(
+        let err = create_error(
             context,
             dt_create,
             "This identity can't activate selected feature flag".to_string(),
@@ -56,7 +56,7 @@ where
     }
 
     if context.owner_id != top_level_identity {
-        let err = new_error(
+        let err = create_error(
             context,
             dt_create,
             "This Identity can't activate selected feature flag".to_string(),

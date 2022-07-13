@@ -21,7 +21,7 @@ pub fn get_data_triggers<'a, SR>(
 where
     SR: StateRepositoryLike,
 {
-    let data_triggers = get_data_triggers_factory()?;
+    let data_triggers = data_triggers()?;
     Ok(data_triggers
         .into_iter()
         .filter(|dt| {
@@ -30,7 +30,7 @@ where
         .collect())
 }
 
-pub fn get_data_triggers_factory() -> Result<Vec<DataTrigger>, ProtocolError> {
+fn data_triggers() -> Result<Vec<DataTrigger>, ProtocolError> {
     let dpns_data_contract_id =
         Identifier::from_string(&dpns_contract::system_ids().contract_id, Encoding::Base58)?;
     let dpns_owner_id =

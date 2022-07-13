@@ -7,7 +7,6 @@ use crate::{
     state_repository::StateRepositoryLike,
     util::{
         json_schema::{Index, JsonSchemaExt},
-        json_value::JsonValueExt,
         string_encoding::Encoding,
     },
     validation::ValidationResult,
@@ -90,32 +89,6 @@ fn generate_document_index_queries<'a>(
         })
 }
 
-fn validate_uniqueness<'a>(
-    futures_meta: Vec<(&'a Index, &'a DocumentTransition)>,
-    results: Vec<Result<Vec<Document>, anyhow::Error>>,
-) -> Result<ValidationResult, ProtocolError> {
-    let mut validation_result = ValidationResult::default();
-    for (i, result) in results.into_iter().enumerate() {
-        let documents = result?;
-        let only_origin_document =
-            documents.len() == 1 && documents[0].id == futures_meta[i].1.base().id;
-        if documents.is_empty() || only_origin_document {
-            continue;
-        }
-
-        validation_result.add_error(StateError::DuplicateUniqueIndexError {
-            document_id: futures_meta[i].1.base().id.clone(),
-            duplicating_properties: futures_meta[i]
-                .0
-                .properties
-                .iter()
-                .map(|map| map.keys().next().unwrap().clone())
-                .collect_vec(),
-        })
-    }
-    Ok(validation_result)
-}
-
 fn build_query_for_index_definition(
     index_definition: &Index,
     transition: &DocumentTransition,
@@ -152,7 +125,7 @@ fn build_query_for_index_definition(
             }
 
             _ => {
-                if let Some(value) = get_property(property_name, transition) {
+                if let Some(value) = transition.get_dynamic_property(property_name) {
                     query.push(json!([property_name, "==", value]))
                 }
             }
@@ -161,24 +134,30 @@ fn build_query_for_index_definition(
     query
 }
 
-fn get_property<'a>(path: &str, transition: &'a DocumentTransition) -> Option<&'a JsonValue> {
-    match transition {
-        DocumentTransition::Create(t) => {
-            if let Some(ref data) = t.data {
-                data.get_value(path).ok()
-            } else {
-                None
-            }
+fn validate_uniqueness<'a>(
+    futures_meta: Vec<(&'a Index, &'a DocumentTransition)>,
+    results: Vec<Result<Vec<Document>, anyhow::Error>>,
+) -> Result<ValidationResult, ProtocolError> {
+    let mut validation_result = ValidationResult::default();
+    for (i, result) in results.into_iter().enumerate() {
+        let documents = result?;
+        let only_origin_document =
+            documents.len() == 1 && documents[0].id == futures_meta[i].1.base().id;
+        if documents.is_empty() || only_origin_document {
+            continue;
         }
-        DocumentTransition::Replace(t) => {
-            if let Some(ref data) = t.data {
-                data.get_value(path).ok()
-            } else {
-                None
-            }
-        }
-        DocumentTransition::Delete(_) => None,
+
+        validation_result.add_error(StateError::DuplicateUniqueIndexError {
+            document_id: futures_meta[i].1.base().id.clone(),
+            duplicating_properties: futures_meta[i]
+                .0
+                .properties
+                .iter()
+                .map(|map| map.keys().next().unwrap().clone())
+                .collect_vec(),
+        })
     }
+    Ok(validation_result)
 }
 
 fn unzip_iter_and_collect<A, B>(iter: impl Iterator<Item = (A, B)>) -> (Vec<A>, Vec<B>) {

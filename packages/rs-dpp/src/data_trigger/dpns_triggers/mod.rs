@@ -10,7 +10,7 @@ use crate::{
     state_repository::StateRepositoryLike, util::json_value::JsonValueExt,
 };
 
-use super::{new_error, DataTriggerExecutionContext, DataTriggerExecutionResult};
+use super::{create_error, DataTriggerExecutionContext, DataTriggerExecutionResult};
 
 const MAX_PRINTABLE_DOMAIN_NAME_LENGTH: usize = 253;
 const PROPERTY_LABEL: &str = "label";
@@ -65,7 +65,7 @@ where
     let full_domain_name = normalized_label;
 
     if full_domain_name.len() > MAX_PRINTABLE_DOMAIN_NAME_LENGTH {
-        let err = new_error(
+        let err = create_error(
             context,
             dt_create,
             format!(
@@ -78,7 +78,7 @@ where
     }
 
     if normalized_label != label.to_lowercase() {
-        let err = new_error(
+        let err = create_error(
             context,
             dt_create,
             "Normalized label doesn't match label".to_string(),
@@ -88,7 +88,7 @@ where
 
     if let Some(JsonValue::String(ref id)) = records.get(PROPERTY_DASH_UNIQUE_IDENTITY_ID) {
         if id != &owner_id {
-            let err = new_error(
+            let err = create_error(
                 context,
                 dt_create,
                 format!(
@@ -102,7 +102,7 @@ where
 
     if let Some(JsonValue::String(ref id)) = records.get(PROPERTY_DASH_ALIAS_IDENTITY_ID) {
         if id != &owner_id {
-            let err = new_error(
+            let err = create_error(
                 context,
                 dt_create,
                 format!(
@@ -115,7 +115,7 @@ where
     }
 
     if normalized_parent_domain_name.is_empty() && context.owner_id != top_level_identity {
-        let err = new_error(
+        let err = create_error(
             context,
             dt_create,
             "Can't create top level domain for this identity".to_string(),
@@ -144,7 +144,7 @@ where
             .await?;
 
         if documents.is_empty() {
-            let err = new_error(
+            let err = create_error(
                 context,
                 dt_create,
                 "Parent domain is not present".to_string(),
@@ -154,7 +154,7 @@ where
         let parent_domain = &documents[0];
 
         if rule_allow_subdomains {
-            let err = new_error(
+            let err = create_error(
                 context,
                 dt_create,
                 "Allowing subdomains registration is forbidden for non top level domains"
@@ -170,7 +170,7 @@ where
             .unwrap())
             && context.owner_id != &parent_domain.owner_id
         {
-            let err = new_error(
+            let err = create_error(
                 context,
                 dt_create,
                 "The subdomain can be created only by the parent domain owner".to_string(),
@@ -198,7 +198,7 @@ where
         .await?;
 
     if preorder_documents.is_empty() {
-        let err = new_error(
+        let err = create_error(
             context,
             dt_create,
             "preorderDocument was not found".to_string(),

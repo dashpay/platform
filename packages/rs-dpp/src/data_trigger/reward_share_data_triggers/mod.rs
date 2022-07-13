@@ -2,7 +2,7 @@ use anyhow::{anyhow, bail};
 use serde_json::json;
 
 use crate::{
-    data_trigger::new_error,
+    data_trigger::create_error,
     document::{document_transition::DocumentTransition, Document},
     get_from_transition,
     mocks::SMLStore,
@@ -56,7 +56,7 @@ where
     });
 
     if !owner_id_in_sml {
-        let err = new_error(
+        let err = create_error(
             context,
             dt_create,
             "Only masternode identities can share rewards".to_string(),
@@ -72,7 +72,7 @@ where
         .await?;
 
     if maybe_identifier.is_none() {
-        let err = new_error(
+        let err = create_error(
             context,
             dt_create,
             format!("Identifier '{}' doesn't exists", pay_to_id),
@@ -97,7 +97,7 @@ where
     }
 
     if total_percent > MAX_PERCENTAGE {
-        let err = new_error(
+        let err = create_error(
             context,
             dt_create,
             format!("Percentage can not be more than {}", MAX_PERCENTAGE),
