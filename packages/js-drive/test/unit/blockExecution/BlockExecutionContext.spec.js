@@ -1,13 +1,15 @@
 const {
   tendermint: {
     abci: {
-      LastCommitInfo,
+      CommitInfo,
     },
-    types: {
-      Header,
+    version: {
+      Consensus,
     },
   },
 } = require('@dashevo/abci/types');
+
+const Long = require('long');
 
 const getDataContractFixture = require('@dashevo/dpp/lib/test/fixtures/getDataContractFixture');
 const BlockExecutionContext = require('../../../lib/blockExecution/BlockExecutionContext');
@@ -17,12 +19,15 @@ describe('BlockExecutionContext', () => {
   let blockExecutionContext;
   let dataContract;
   let lastCommitInfo;
-  let header;
   let logger;
   let cumulativeFees;
   let plainObject;
   let validTxs;
   let invalidTxs;
+  let height;
+  let coreChainLockedHeight;
+  let version;
+  let time;
 
   beforeEach(() => {
     blockExecutionContext = new BlockExecutionContext();
@@ -31,14 +36,17 @@ describe('BlockExecutionContext', () => {
 
     plainObject = getBlockExecutionContextObjectFixture(dataContract);
 
-    lastCommitInfo = LastCommitInfo.fromObject(plainObject.lastCommitInfo);
-
-    header = Header.fromObject(plainObject.header);
+    lastCommitInfo = CommitInfo.fromObject(plainObject.lastCommitInfo);
 
     logger = plainObject.consensusLogger;
     cumulativeFees = plainObject.cumulativeFees;
     validTxs = plainObject.validTxs;
     invalidTxs = plainObject.invalidTxs;
+    height = Long.fromNumber(plainObject.height);
+    coreChainLockedHeight = plainObject.coreChainLockedHeight;
+    version = Consensus.fromObject(plainObject.version);
+    time = plainObject.time;
+    time.seconds = Long.fromNumber(time.seconds);
   });
 
   describe('#addDataContract', () => {
@@ -120,25 +128,82 @@ describe('BlockExecutionContext', () => {
 
       expect(blockExecutionContext.getDataContracts()).to.have.lengthOf(0);
 
-      expect(blockExecutionContext.getHeader()).to.be.null();
+      expect(blockExecutionContext.getHeight()).to.be.null();
+      expect(blockExecutionContext.getCoreChainLockedHeight()).to.be.null();
+      expect(blockExecutionContext.getVersion()).to.be.null();
+      expect(blockExecutionContext.getTime()).to.be.null();
     });
   });
 
-  describe('#setHeader', () => {
-    it('should set header', async () => {
-      const result = blockExecutionContext.setHeader(header);
+  describe('#setCoreChainLockedHeight', () => {
+    it('should set coreChainLockedHeight', async () => {
+      const result = blockExecutionContext.setCoreChainLockedHeight(coreChainLockedHeight);
 
       expect(result).to.equal(blockExecutionContext);
 
-      expect(blockExecutionContext.header).to.deep.equal(header);
+      expect(blockExecutionContext.coreChainLockedHeight).to.deep.equal(coreChainLockedHeight);
     });
   });
 
-  describe('#getHeader', () => {
-    it('should get header', async () => {
-      blockExecutionContext.header = header;
+  describe('#getCoreChainLockedHeight', () => {
+    it('should get coreChainLockedHeight', async () => {
+      blockExecutionContext.coreChainLockedHeight = coreChainLockedHeight;
 
-      expect(blockExecutionContext.getHeader()).to.deep.equal(header);
+      expect(blockExecutionContext.getCoreChainLockedHeight()).to.deep.equal(coreChainLockedHeight);
+    });
+  });
+
+  describe('#setHeight', () => {
+    it('should set height', async () => {
+      const result = blockExecutionContext.setHeight(height);
+
+      expect(result).to.equal(blockExecutionContext);
+
+      expect(blockExecutionContext.height).to.deep.equal(height);
+    });
+  });
+
+  describe('#getHeight', () => {
+    it('should get height', async () => {
+      blockExecutionContext.height = height;
+
+      expect(blockExecutionContext.getHeight()).to.deep.equal(height);
+    });
+  });
+
+  describe('#setVersion', () => {
+    it('should set version', async () => {
+      const result = blockExecutionContext.setVersion(version);
+
+      expect(result).to.equal(blockExecutionContext);
+
+      expect(blockExecutionContext.version).to.deep.equal(version);
+    });
+  });
+
+  describe('#getVersion', () => {
+    it('should get version', async () => {
+      blockExecutionContext.version = version;
+
+      expect(blockExecutionContext.getVersion()).to.deep.equal(version);
+    });
+  });
+
+  describe('#setTime', () => {
+    it('should set time', async () => {
+      const result = blockExecutionContext.setTime(time);
+
+      expect(result).to.equal(blockExecutionContext);
+
+      expect(blockExecutionContext.time).to.deep.equal(time);
+    });
+  });
+
+  describe('#getTime', () => {
+    it('should get time', async () => {
+      blockExecutionContext.time = time;
+
+      expect(blockExecutionContext.getTime()).to.deep.equal(time);
     });
   });
 
@@ -167,7 +232,10 @@ describe('BlockExecutionContext', () => {
       anotherBlockExecutionContext.dataContracts = [dataContract];
       anotherBlockExecutionContext.lastCommitInfo = lastCommitInfo;
       anotherBlockExecutionContext.cumulativeFees = cumulativeFees;
-      anotherBlockExecutionContext.header = header;
+      anotherBlockExecutionContext.height = height;
+      anotherBlockExecutionContext.time = time;
+      anotherBlockExecutionContext.version = version;
+      anotherBlockExecutionContext.coreChainLockedHeight = coreChainLockedHeight;
       anotherBlockExecutionContext.validTxs = validTxs;
       anotherBlockExecutionContext.invalidTxs = invalidTxs;
       anotherBlockExecutionContext.consensusLogger = logger;
@@ -183,8 +251,17 @@ describe('BlockExecutionContext', () => {
       expect(blockExecutionContext.cumulativeFees).to.equal(
         anotherBlockExecutionContext.cumulativeFees,
       );
-      expect(blockExecutionContext.header).to.equal(
-        anotherBlockExecutionContext.header,
+      expect(blockExecutionContext.height).to.equal(
+        anotherBlockExecutionContext.height,
+      );
+      expect(blockExecutionContext.time).to.equal(
+        anotherBlockExecutionContext.time,
+      );
+      expect(blockExecutionContext.version).to.equal(
+        anotherBlockExecutionContext.version,
+      );
+      expect(blockExecutionContext.coreChainLockedHeight).to.equal(
+        anotherBlockExecutionContext.coreChainLockedHeight,
       );
       expect(blockExecutionContext.validTxs).to.equal(
         anotherBlockExecutionContext.validTxs,
@@ -203,7 +280,10 @@ describe('BlockExecutionContext', () => {
       blockExecutionContext.dataContracts = [dataContract];
       blockExecutionContext.lastCommitInfo = lastCommitInfo;
       blockExecutionContext.cumulativeFees = cumulativeFees;
-      blockExecutionContext.header = header;
+      blockExecutionContext.height = height;
+      blockExecutionContext.coreChainLockedHeight = coreChainLockedHeight;
+      blockExecutionContext.time = time;
+      blockExecutionContext.version = version;
       blockExecutionContext.validTxs = validTxs;
       blockExecutionContext.invalidTxs = invalidTxs;
       blockExecutionContext.consensusLogger = logger;
@@ -215,7 +295,11 @@ describe('BlockExecutionContext', () => {
       blockExecutionContext.dataContracts = [dataContract];
       blockExecutionContext.lastCommitInfo = lastCommitInfo;
       blockExecutionContext.cumulativeFees = cumulativeFees;
-      blockExecutionContext.header = header;
+      blockExecutionContext.height = height;
+      blockExecutionContext.coreChainLockedHeight = coreChainLockedHeight;
+      blockExecutionContext.time = time;
+      blockExecutionContext.time.seconds = time.seconds;
+      blockExecutionContext.version = version;
       blockExecutionContext.validTxs = validTxs;
       blockExecutionContext.invalidTxs = invalidTxs;
       blockExecutionContext.consensusLogger = logger;
@@ -241,7 +325,10 @@ describe('BlockExecutionContext', () => {
       );
       expect(blockExecutionContext.lastCommitInfo).to.deep.equal(lastCommitInfo);
       expect(blockExecutionContext.cumulativeFees).to.equal(cumulativeFees);
-      expect(blockExecutionContext.header).to.deep.equal(header);
+      expect(blockExecutionContext.height).to.deep.equal(height);
+      expect(blockExecutionContext.version).to.deep.equal(version);
+      expect(blockExecutionContext.time).to.deep.equal(time);
+      expect(blockExecutionContext.coreChainLockedHeight).to.deep.equal(coreChainLockedHeight);
       expect(blockExecutionContext.validTxs).to.equal(validTxs);
       expect(blockExecutionContext.invalidTxs).to.equal(invalidTxs);
       expect(blockExecutionContext.consensusLogger).to.equal(logger);

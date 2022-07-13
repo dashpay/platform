@@ -21,10 +21,8 @@ function createQueryResponseFactory(
     const blockExecutionContext = blockExecutionContextStack.getFirst();
     const signedBlockExecutionContext = blockExecutionContextStack.getLast();
 
-    const {
-      height: signedBlockHeight,
-      coreChainLockedHeight: signedCoreChainLockedHeight,
-    } = signedBlockExecutionContext.getHeader();
+    const signedBlockHeight = signedBlockExecutionContext.getHeight();
+    const signedCoreChainLockedHeight = signedBlockExecutionContext.getCoreChainLockedHeight();
 
     const response = new ResponseClass();
 

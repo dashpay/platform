@@ -1,8 +1,5 @@
 const {
   tendermint: {
-    abci: {
-      ResponseEndBlock,
-    },
     types: {
       CoreChainLock,
       ConsensusParams,
@@ -13,7 +10,7 @@ const {
 const featureFlagTypes = require('@dashevo/feature-flags-contract/lib/featureFlagTypes');
 
 /**
- * Begin block ABCI handler
+ * Begin block ABCI
  *
  * @param {BlockExecutionContext} blockExecutionContext
  * @param {LatestCoreChainLock} latestCoreChainLock
@@ -22,9 +19,9 @@ const featureFlagTypes = require('@dashevo/feature-flags-contract/lib/featureFla
  * @param {BaseLogger} logger
  * @param {getFeatureFlagForHeight} getFeatureFlagForHeight
  *
- * @return {endBlockHandler}
+ * @return {endBlock}
  */
-function endBlockHandlerFactory(
+function endBlockFactory(
   blockExecutionContext,
   latestCoreChainLock,
   validatorSet,
@@ -33,14 +30,15 @@ function endBlockHandlerFactory(
   getFeatureFlagForHeight,
 ) {
   /**
-   * @typedef endBlockHandler
+   * @typedef endBlock
    *
-   * @param {abci.RequestEndBlock} request
-   * @return {Promise<abci.ResponseEndBlock>}
+   * @return {Promise<{
+   *   consensusParamUpdates: ConsensusParams,
+   *   validatorSetUpdate: ValidatorSetUpdate,
+   *   nextCoreChainLockUpdate: CoreChainLock,
+   * }>}
    */
-  async function endBlockHandler(request) {
-    const { height } = request;
-
+  async function endBlock(height) {
     const consensusLogger = logger.child({
       height: height.toString(),
       abciMethod: 'endBlock',
@@ -50,7 +48,8 @@ function endBlockHandlerFactory(
 
     blockExecutionContext.setConsensusLogger(consensusLogger);
 
-    const header = blockExecutionContext.getHeader();
+    const contextVersion = blockExecutionContext.getVersion();
+    const contextCoreChainLockedHeight = blockExecutionContext.getCoreChainLockedHeight();
     const lastCommitInfo = blockExecutionContext.getLastCommitInfo();
     const coreChainLock = latestCoreChainLock.getChainLock();
 
@@ -74,7 +73,7 @@ function endBlockHandlerFactory(
     // Update Core Chain Locks
 
     let nextCoreChainLockUpdate;
-    if (coreChainLock && coreChainLock.height > header.coreChainLockedHeight) {
+    if (coreChainLock && coreChainLock.height > contextCoreChainLockedHeight) {
       nextCoreChainLockUpdate = new CoreChainLock({
         coreBlockHeight: coreChainLock.height,
         coreBlockHash: coreChainLock.blockHash,
@@ -101,7 +100,7 @@ function endBlockHandlerFactory(
     if (updateConsensusParamsFeatureFlag) {
       // Use previous version if we aren't going to update it
       let version = {
-        appVersion: header.version.app,
+        appVersion: contextVersion.app,
       };
 
       if (updateConsensusParamsFeatureFlag.get('version')) {
@@ -133,14 +132,14 @@ function endBlockHandlerFactory(
       `Block end #${height} (valid txs = ${validTxCount}, invalid txs = ${invalidTxCount})`,
     );
 
-    return new ResponseEndBlock({
+    return {
       consensusParamUpdates,
       validatorSetUpdate,
       nextCoreChainLockUpdate,
-    });
+    };
   }
 
-  return endBlockHandler;
+  return endBlock;
 }
 
-module.exports = endBlockHandlerFactory;
+module.exports = endBlockFactory;

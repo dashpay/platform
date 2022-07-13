@@ -1274,14 +1274,14 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@dashevo/abci@npm:~0.23.0-dev.1":
+"@dashevo/abci@github:dashevo/js-abci#58176e01a35b97855cb1894016b160019eb0e63e":
   version: 0.23.0-dev.1
-  resolution: "@dashevo/abci@npm:0.23.0-dev.1"
+  resolution: "@dashevo/abci@https://github.com/dashevo/js-abci.git#commit=58176e01a35b97855cb1894016b160019eb0e63e"
   dependencies:
     "@dashevo/protobufjs": 6.10.5
     bl: ^1.2.3
     protocol-buffers-encodings: ^1.1.0
-  checksum: 6a7cf16ed9b460c027a4122980d37783e12ab34886b34a3b4a77d001824ebe15e87e5f2267898820e0b9e5d8caeb236f10460e9c771fce6117b6b14b6f7e9e4a
+  checksum: 7b78bf4babcb89e49df07c9f7e83fc84de5618d639ba081e47ad07ad21a8eef0426aec8e7438303cbf86ff095fb4225d0d89a997cd0a6eb69605615c53c3fad0
   languageName: node
   linkType: hard
 
@@ -1654,7 +1654,7 @@ __metadata:
   version: 0.0.0-use.local
   resolution: "@dashevo/drive@workspace:packages/js-drive"
   dependencies:
-    "@dashevo/abci": ~0.23.0-dev.1
+    "@dashevo/abci": "github:dashevo/js-abci#58176e01a35b97855cb1894016b160019eb0e63e"
     "@dashevo/dapi-grpc": "workspace:~"
     "@dashevo/dashcore-lib": ~0.19.39
     "@dashevo/dashd-rpc": ^2.3.2

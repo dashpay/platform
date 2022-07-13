@@ -141,12 +141,30 @@
  */
 
 /**
- * Fetch latest platform block header
+ * Fetch the latest platform block time
  *
  * @async
  * @method
- * @name StateRepository#fetchLatestPlatformBlockHeader
- * @returns {Promise<abci.IHeader>}
+ * @name StateRepository#fetchLatestPlatformBlockTime
+ * @returns {Promise<protobuf.Timestamp>}
+ */
+
+/**
+ * Fetch the latest platform block height
+ *
+ * @async
+ * @method
+ * @name StateRepository#fetchLatestPlatformBlockHeight
+ * @returns {Promise<Long>}
+ */
+
+/**
+ * Fetch the latest platform core chainlocked height
+ *
+ * @async
+ * @method
+ * @name StateRepository#fetchLatestPlatformCoreChainLockedHeight
+ * @returns {Promise<number>}
  */
 
 /**

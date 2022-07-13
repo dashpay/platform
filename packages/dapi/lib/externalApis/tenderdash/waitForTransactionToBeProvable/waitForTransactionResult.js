@@ -17,10 +17,10 @@ function waitForTransactionResult(blockchainListener, hashString) {
   let handler;
 
   const promise = new Promise((resolve) => {
-    handler = ({ data: { value: { TxResult: txResult } } }) => {
-      blockchainListener.off(topic, handler);
+    handler = (data) => {
+      const { data: { value: { result: deliverResult, tx, height } } } = data;
 
-      const { result: deliverResult, tx, height } = txResult;
+      blockchainListener.off(topic, handler);
 
       const txBuffer = Buffer.from(tx, 'base64');
 

@@ -1,12 +1,5 @@
-const {
-  tendermint: {
-    abci: {
-      ResponseCommit,
-    },
-  },
-} = require('@dashevo/abci/types');
 const ReadOperation = require('@dashevo/dpp/lib/stateTransition/fee/operations/ReadOperation');
-const DataContractCacheItem = require('../../dataContract/DataContractCacheItem');
+const DataContractCacheItem = require('../../../dataContract/DataContractCacheItem');
 
 /**
  * @param {CreditsDistributionPool} creditsDistributionPool
@@ -20,9 +13,9 @@ const DataContractCacheItem = require('../../dataContract/DataContractCacheItem'
  * @param {GroveDBStore} groveDBStore
  * @param {ExecutionTimer} executionTimer
  *
- * @return {commitHandler}
+ * @return {commit}
  */
-function commitHandlerFactory(
+function commitFactory(
   creditsDistributionPool,
   creditsDistributionPoolRepository,
   blockExecutionContext,
@@ -35,14 +28,14 @@ function commitHandlerFactory(
   executionTimer,
 ) {
   /**
-   * Commit ABCI Handler
+   * Commit ABCI
    *
-   * @typedef commitHandler
+   * @typedef commit
    *
-   * @return {Promise<abci.ResponseCommit>}
+   * @return {Promise<{ appHash: Buffer }>}
    */
-  async function commitHandler() {
-    const { height: blockHeight } = blockExecutionContext.getHeader();
+  async function commit() {
+    const blockHeight = blockExecutionContext.getHeight();
 
     const consensusLogger = logger.child({
       height: blockHeight.toString(),
@@ -112,12 +105,12 @@ function commitHandlerFactory(
       `Block #${blockHeight} execution took ${blockExecutionTimings} seconds`,
     );
 
-    return new ResponseCommit({
-      data: appHash,
-    });
+    return {
+      appHash,
+    };
   }
 
-  return commitHandler;
+  return commit;
 }
 
-module.exports = commitHandlerFactory;
+module.exports = commitFactory;
