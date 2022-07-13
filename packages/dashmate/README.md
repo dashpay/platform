@@ -32,7 +32,7 @@ Distribution package for Dash Masternode installation
 
 * [Docker](https://docs.docker.com/engine/installation/) (v18.06.0+)
 * [Docker Compose](https://docs.docker.com/compose/install/) (v1.25.0+)
-* [Node.js](https://nodejs.org/en/download/) (v16.0+, NPM v8.0+)
+* [Node.js](https://nodejs.org/en/download/) (v16, NPM v8.0+)
 
 For Linux installations you may optionally wish to follow the [post-installation steps](https://docs.docker.com/engine/install/linux-postinstall/) to manage Docker as a non-root user, otherwise you will have to run CLI and Docker commands with `sudo`.
 
@@ -47,6 +47,7 @@ $ npm install -g dashmate
 
 ## Update
 
+The `update` command is used to quickly get the latest patches for dashmate components. It is necessary to restart the node after the update is complete.
 ```bash
 $ dashmate stop
 $ npm update -g dashmate
@@ -130,13 +131,13 @@ DESCRIPTION
   Display configuration options for default config
 
 COMMANDS
-  config:create   Create config
-  config:default  Manage default config
-  config:envs     Export config to envs
-  config:get      Get config option
-  config:list     List available configs
-  config:remove   Remove config
-  config:set      Set config option
+  config create   Create config
+  config default  Manage default config
+  config envs     Export config to envs
+  config get      Get config option
+  config list     List available configs
+  config remove   Remove config
+  config set      Set config option
 ```
 
 ### Start node
@@ -203,11 +204,11 @@ OPTIONS
   --config=config  configuration name to use
 
 COMMANDS
-  status:core        Show core status details
-  status:host        Show host status details
-  status:masternode  Show masternode status details
-  status:platform    Show platform status details
-  status:services    Show service status details
+  status core        Show core status details
+  status host        Show host status details
+  status masternode  Show masternode status details
+  status platform    Show platform status details
+  status services    Show service status details
 ```
 
 To show the host status:
@@ -270,7 +271,7 @@ OPTIONS
 
 #### List group configs
 
-The `group:list` command outputs a list of group configs.
+The `group list` command outputs a list of group configs.
 
 ```
 USAGE
@@ -283,7 +284,7 @@ OPTIONS
 
 #### Start group nodes
 
-The `group:start` command is used to start a group of nodes belonging to the default group or a specified group.
+The `group start` command is used to start a group of nodes belonging to the default group or a specified group.
 
 ```
 USAGE
@@ -297,7 +298,7 @@ OPTIONS
 
 #### Stop group nodes
 
-The `group:stop` command is used to stop group nodes belonging to the default group or a specified group.
+The `group stop` command is used to stop group nodes belonging to the default group or a specified group.
 
 ```
 USAGE
@@ -311,7 +312,7 @@ OPTIONS
 
 #### Restart group nodes
 
-The `group:restart` command is used to restart group nodes belonging to the default group or a specified group.
+The `group restart` command is used to restart group nodes belonging to the default group or a specified group.
 
 ```
 USAGE
@@ -324,7 +325,7 @@ OPTIONS
 
 #### Show group status
 
-The `group:status` command outputs group status information.
+The `group status` command outputs group status information.
 
 ```
 USAGE
@@ -337,7 +338,7 @@ OPTIONS
 
 #### Reset group nodes
 
-The `group:reset` command removes all data corresponding to the specified group and allows you to start group nodes from scratch.
+The `group reset` command removes all data corresponding to the specified group and allows you to start group nodes from scratch.
 
 ```
 USAGE
