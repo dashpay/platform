@@ -14,13 +14,16 @@ RUN apk update && \
                        cmake \
                        zeromq-dev \
                        ca-certificates \
-                      gcc
+                       gcc \
+                       clang \
+                       libc-dev \
+                       binutils
 
 # Install Rust
 ENV RUSTUP_HOME=/usr/local/rustup \
     CARGO_HOME=/usr/local/cargo \
     PATH=/usr/local/cargo/bin:$PATH \
-    RUST_VERSION=1.62.0
+    RUST_VERSION=nightly
 
 RUN set -eux; \
     apkArch="$(apk --print-arch)"; \
@@ -39,8 +42,6 @@ RUN set -eux; \
     rustup --version; \
     cargo --version; \
     rustc --version;
-
-RUN rustup target add x86_64-unknown-linux-musl
 
 # Enable corepack https://github.com/nodejs/corepack
 RUN corepack enable
@@ -68,7 +69,10 @@ COPY packages/dpns-contract packages/dpns-contract
 COPY packages/dashpay-contract packages/dashpay-contract
 
 # Build RS Drive Node.JS binding
-RUN --mount=type=cache,target=/target yarn workspace @dashevo/rs-drive build:release
+RUN --mount=type=cache,target=target \
+    --mount=type=cache,target=$CARGO_HOME/git \
+    --mount=type=cache,target=$CARGO_HOME/registry \
+    yarn workspace @dashevo/rs-drive build:release
 
 # Install Drive-specific dependencies using previous
 # node_modules directory to reuse built binaries
@@ -94,6 +98,9 @@ RUN yarn set version 3.1.0
 WORKDIR /platform
 
 COPY --from=builder /platform /platform
+
+# Remove Rust sources
+RUN rm -rf packages/drive packages/node/src
 
 RUN cp /platform/packages/js-drive/.env.example /platform/packages/js-drive/.env
 
