@@ -9,7 +9,6 @@ const DataContractCacheItem = require('../../../dataContract/DataContractCacheIt
  * @param {BlockExecutionContextStackRepository} blockExecutionContextStackRepository
  * @param {rotateSignedStore} rotateSignedStore
  * @param {LRUCache} dataContractCache
- * @param {GroveDBStore} groveDBStore
  *
  * @return {commit}
  */

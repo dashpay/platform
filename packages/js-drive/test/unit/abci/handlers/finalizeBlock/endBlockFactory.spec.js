@@ -1,10 +1,10 @@
 const {
   tendermint: {
     abci: {
-      ResponseEndBlock,
       ValidatorSetUpdate,
     },
     types: {
+      ConsensusParams,
       CoreChainLock,
     },
   },
@@ -12,15 +12,14 @@ const {
 
 const Long = require('long');
 
-const endBlockHandlerFactory = require('../../../../lib/abci/handlers/endBlockHandlerFactory');
+const endBlockFactory = require('../../../../../lib/abci/handlers/finalizeBlock/endBlockFactory');
 
-const BlockExecutionContextMock = require('../../../../lib/test/mock/BlockExecutionContextMock');
-const LoggerMock = require('../../../../lib/test/mock/LoggerMock');
+const BlockExecutionContextMock = require('../../../../../lib/test/mock/BlockExecutionContextMock');
+const LoggerMock = require('../../../../../lib/test/mock/LoggerMock');
 
-describe('endBlockHandlerFactory', () => {
-  let endBlockHandler;
-  let requestMock;
-  let headerMock;
+describe('endBlockFactory', () => {
+  let endBlock;
+  let height;
   let lastCommitInfoMock;
   let blockExecutionContextMock;
   let dpnsContractBlockHeight;
@@ -30,13 +29,14 @@ describe('endBlockHandlerFactory', () => {
   let chainLockMock;
   let validatorSetMock;
   let getFeatureFlagForHeightMock;
+  let coreChainLockedHeight;
+  let version;
 
   beforeEach(function beforeEach() {
-    headerMock = {
-      coreChainLockedHeight: 2,
-      version: {
-        app: Long.fromInt(1),
-      },
+    coreChainLockedHeight = 2;
+
+    version = {
+      app: Long.fromInt(1),
     };
 
     lastCommitInfoMock = {
@@ -46,7 +46,8 @@ describe('endBlockHandlerFactory', () => {
     blockExecutionContextMock = new BlockExecutionContextMock(this.sinon);
 
     blockExecutionContextMock.hasDataContract.returns(true);
-    blockExecutionContextMock.getHeader.returns(headerMock);
+    blockExecutionContextMock.getCoreChainLockedHeight.returns(coreChainLockedHeight);
+    blockExecutionContextMock.getVersion.returns(version);
     blockExecutionContextMock.getLastCommitInfo.returns(lastCommitInfoMock);
 
     chainLockMock = {
@@ -72,34 +73,33 @@ describe('endBlockHandlerFactory', () => {
 
     getFeatureFlagForHeightMock = this.sinon.stub().resolves(null);
 
-    endBlockHandler = endBlockHandlerFactory(
+    endBlock = endBlockFactory(
       blockExecutionContextMock,
       latestCoreChainLockMock,
       validatorSetMock,
       createValidatorSetUpdateMock,
-      loggerMock,
       getFeatureFlagForHeightMock,
     );
 
-    requestMock = {
-      height: Long.fromInt(dpnsContractBlockHeight),
-    };
+    height = Long.fromInt(dpnsContractBlockHeight);
   });
 
   it('should finalize a block', async () => {
-    endBlockHandler = endBlockHandlerFactory(
+    endBlock = endBlockFactory(
       blockExecutionContextMock,
       latestCoreChainLockMock,
       validatorSetMock,
       createValidatorSetUpdateMock,
-      loggerMock,
       getFeatureFlagForHeightMock,
     );
 
-    const response = await endBlockHandler(requestMock);
+    const response = await endBlock(height, loggerMock);
 
-    expect(response).to.be.an.instanceOf(ResponseEndBlock);
-    expect(response.toJSON()).to.be.empty();
+    expect(response).to.deep.equal({
+      consensusParamUpdates: undefined,
+      validatorSetUpdate: undefined,
+      nextCoreChainLockUpdate: undefined,
+    });
 
     expect(blockExecutionContextMock.hasDataContract).to.not.have.been.called();
   });
@@ -107,7 +107,7 @@ describe('endBlockHandlerFactory', () => {
   it('should return nextCoreChainLockUpdate if latestCoreChainLock above header height', async () => {
     chainLockMock.height = 3;
 
-    const response = await endBlockHandler(requestMock);
+    const response = await endBlock(height, loggerMock);
 
     expect(latestCoreChainLockMock.getChainLock).to.have.been.calledOnceWithExactly();
 
@@ -118,13 +118,11 @@ describe('endBlockHandlerFactory', () => {
     });
 
     expect(response.nextCoreChainLockUpdate).to.deep.equal(expectedCoreChainLock);
-    expect(response.validatorSetUpdate).to.be.null();
+    expect(response.validatorSetUpdate).to.be.undefined();
   });
 
   it('should rotate validator set and return ValidatorSetUpdate if height is divisible by ROTATION_BLOCK_INTERVAL', async () => {
-    requestMock = {
-      height: Long.fromInt(15),
-    };
+    height = Long.fromInt(15);
 
     validatorSetMock.rotate.resolves(true);
 
@@ -137,12 +135,10 @@ describe('endBlockHandlerFactory', () => {
 
     createValidatorSetUpdateMock.returns(validatorSetUpdate);
 
-    const response = await endBlockHandler(requestMock);
-
-    expect(response).to.be.an.instanceOf(ResponseEndBlock);
+    const response = await endBlock(height, loggerMock);
 
     expect(validatorSetMock.rotate).to.be.calledOnceWithExactly(
-      requestMock.height,
+      height,
       chainLockMock.height,
       Buffer.from(lastCommitInfoMock.stateSignature),
     );
@@ -171,24 +167,25 @@ describe('endBlockHandlerFactory', () => {
       get: getLatestFeatureFlagGetMock,
     });
 
-    const response = await endBlockHandler(requestMock);
+    const response = await endBlock(height, loggerMock);
 
-    expect(response).to.be.an.instanceOf(ResponseEndBlock);
-
-    expect(response.toJSON()).to.deep.equal({
-      consensusParamUpdates: {
+    expect(response).to.deep.equal({
+      consensusParamUpdates: new ConsensusParams({
         block: {
-          maxBytes: '1',
-          maxGas: '2',
+          maxBytes: 1,
+          maxGas: 2,
         },
         evidence: {
-          maxAgeNumBlocks: '1',
-          maxBytes: '2',
+          maxAgeDuration: null,
+          maxAgeNumBlocks: 1,
+          maxBytes: 2,
         },
         version: {
-          appVersion: '1',
+          appVersion: 1,
         },
-      },
+      }),
+      nextCoreChainLockUpdate: undefined,
+      validatorSetUpdate: undefined,
     });
 
     expect(getFeatureFlagForHeightMock).to.be.calledOnce();

@@ -1,11 +1,3 @@
-const {
-  tendermint: {
-    abci: {
-      ResponseDeliverTx,
-    },
-  },
-} = require('@dashevo/abci/types');
-
 const DashPlatformProtocol = require('@dashevo/dpp');
 
 const ValidationResult = require('@dashevo/dpp/lib/validation/ValidationResult');
@@ -18,21 +10,21 @@ const getDataContractFixture = require('@dashevo/dpp/lib/test/fixtures/getDataCo
 const getDocumentFixture = require('@dashevo/dpp/lib/test/fixtures/getDocumentsFixture');
 const GrpcErrorCodes = require('@dashevo/grpc-common/lib/server/error/GrpcErrorCodes');
 const SomeConsensusError = require('@dashevo/dpp/lib/test/mocks/SomeConsensusError');
-const BlockExecutionContextMock = require('../../../../lib/test/mock/BlockExecutionContextMock');
+const BlockExecutionContextMock = require('../../../../../lib/test/mock/BlockExecutionContextMock');
 
-const deliverTxHandlerFactory = require('../../../../lib/abci/handlers/deliverTxHandlerFactory');
+const deliverTxFactory = require('../../../../../lib/abci/handlers/finalizeBlock/deliverTxFactory');
 
-const LoggerMock = require('../../../../lib/test/mock/LoggerMock');
-const DPPValidationAbciError = require('../../../../lib/abci/errors/DPPValidationAbciError');
+const LoggerMock = require('../../../../../lib/test/mock/LoggerMock');
+const DPPValidationAbciError = require('../../../../../lib/abci/errors/DPPValidationAbciError');
 
-const InvalidArgumentAbciError = require('../../../../lib/abci/errors/InvalidArgumentAbciError');
-const PredictedFeeLowerThanActualError = require('../../../../lib/abci/handlers/errors/PredictedFeeLowerThanActualError');
-const NegativeBalanceError = require('../../../../lib/abci/handlers/errors/NegativeBalanceError');
+const InvalidArgumentAbciError = require('../../../../../lib/abci/errors/InvalidArgumentAbciError');
+const PredictedFeeLowerThanActualError = require('../../../../../lib/abci/handlers/errors/PredictedFeeLowerThanActualError');
+const NegativeBalanceError = require('../../../../../lib/abci/handlers/errors/NegativeBalanceError');
 
-describe('deliverTxHandlerFactory', () => {
+describe('deliverTxFactory', () => {
   let deliverTxHandler;
-  let dataContractRequest;
-  let documentRequest;
+  let documentTx;
+  let dataContractTx;
   let identity;
   let dppMock;
   let stateRepositoryMock;
@@ -43,10 +35,13 @@ describe('deliverTxHandlerFactory', () => {
   let blockExecutionContextMock;
   let validationResult;
   let executionTimerMock;
+  let loggerMock;
 
   beforeEach(async function beforeEach() {
     const dataContractFixture = getDataContractFixture();
     const documentFixture = getDocumentFixture();
+
+    loggerMock = new LoggerMock(this.sinon);
 
     dpp = new DashPlatformProtocol();
     await dpp.initialize();
@@ -58,13 +53,9 @@ describe('deliverTxHandlerFactory', () => {
     dataContractCreateTransitionFixture = dpp
       .dataContract.createDataContractCreateTransition(dataContractFixture);
 
-    documentRequest = {
-      tx: documentsBatchTransitionFixture.toBuffer(),
-    };
+    documentTx = documentsBatchTransitionFixture.toBuffer();
 
-    dataContractRequest = {
-      tx: dataContractCreateTransitionFixture.toBuffer(),
-    };
+    dataContractTx = dataContractCreateTransitionFixture.toBuffer();
 
     dppMock = createDPPMock(this.sinon);
 
@@ -86,11 +77,7 @@ describe('deliverTxHandlerFactory', () => {
     unserializeStateTransitionMock = this.sinon.stub();
 
     blockExecutionContextMock = new BlockExecutionContextMock(this.sinon);
-    blockExecutionContextMock.getHeader.returns({
-      height: 42,
-    });
-
-    const loggerMock = new LoggerMock(this.sinon);
+    blockExecutionContextMock.getHeight.returns(42);
 
     executionTimerMock = {
       clearTimer: this.sinon.stub(),
@@ -100,11 +87,10 @@ describe('deliverTxHandlerFactory', () => {
       isStarted: this.sinon.stub(),
     };
 
-    deliverTxHandler = deliverTxHandlerFactory(
+    deliverTxHandler = deliverTxFactory(
       unserializeStateTransitionMock,
       dppMock,
       blockExecutionContextMock,
-      loggerMock,
       executionTimerMock,
     );
   });
@@ -112,10 +98,9 @@ describe('deliverTxHandlerFactory', () => {
   it('should apply a DocumentsBatchTransition and return ResponseDeliverTx', async () => {
     unserializeStateTransitionMock.resolves(documentsBatchTransitionFixture);
 
-    const response = await deliverTxHandler(documentRequest);
+    const response = await deliverTxHandler(documentTx, loggerMock);
 
-    expect(response).to.be.an.instanceOf(ResponseDeliverTx);
-    expect(response.code).to.equal(0);
+    expect(response).to.deep.equal({ code: 0 });
 
     expect(unserializeStateTransitionMock).to.be.calledOnceWith(
       documentsBatchTransitionFixture.toBuffer(),
@@ -146,10 +131,9 @@ describe('deliverTxHandlerFactory', () => {
   it('should apply a DataContractCreateTransition, add it to block execution state and return ResponseDeliverTx', async () => {
     unserializeStateTransitionMock.resolves(dataContractCreateTransitionFixture);
 
-    const response = await deliverTxHandler(dataContractRequest);
+    const response = await deliverTxHandler(dataContractTx, loggerMock);
 
-    expect(response).to.be.an.instanceOf(ResponseDeliverTx);
-    expect(response.code).to.equal(0);
+    expect(response).to.deep.equal({ code: 0 });
 
     expect(unserializeStateTransitionMock).to.be.calledOnceWith(
       dataContractCreateTransitionFixture.toBuffer(),
@@ -181,7 +165,7 @@ describe('deliverTxHandlerFactory', () => {
     validationResult.addError(error);
 
     try {
-      await deliverTxHandler(documentRequest);
+      await deliverTxHandler(documentTx, loggerMock);
 
       expect.fail('should throw InvalidArgumentAbciError error');
     } catch (e) {
@@ -201,7 +185,7 @@ describe('deliverTxHandlerFactory', () => {
     unserializeStateTransitionMock.throws(error);
 
     try {
-      await deliverTxHandler(documentRequest);
+      await deliverTxHandler(documentTx, loggerMock);
 
       expect.fail('should throw InvalidArgumentAbciError error');
     } catch (e) {
@@ -221,7 +205,7 @@ describe('deliverTxHandlerFactory', () => {
     unserializeStateTransitionMock.resolves(dataContractCreateTransitionFixture);
 
     try {
-      await deliverTxHandler(documentRequest);
+      await deliverTxHandler(documentTx, loggerMock);
 
       expect.fail('should throw InvalidArgumentAbciError error');
     } catch (e) {
@@ -239,7 +223,7 @@ describe('deliverTxHandlerFactory', () => {
     unserializeStateTransitionMock.resolves(dataContractCreateTransitionFixture);
 
     try {
-      await deliverTxHandler(documentRequest);
+      await deliverTxHandler(documentTx, loggerMock);
 
       expect.fail('should throw InvalidArgumentAbciError error');
     } catch (e) {
