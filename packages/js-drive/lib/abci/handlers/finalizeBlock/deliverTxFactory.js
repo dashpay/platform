@@ -29,7 +29,6 @@ const TIMERS = require('../timers');
  * @param {unserializeStateTransition} transactionalUnserializeStateTransition
  * @param {DashPlatformProtocol} transactionalDpp
  * @param {BlockExecutionContext} blockExecutionContext
- * @param {BaseLogger} logger
  * @param {ExecutionTimer} executionTimer
  *
  * @return {deliverTx}
@@ -38,7 +37,6 @@ function deliverTxFactory(
   transactionalUnserializeStateTransition,
   transactionalDpp,
   blockExecutionContext,
-  logger,
   executionTimer,
 ) {
   /**
@@ -47,9 +45,10 @@ function deliverTxFactory(
    * @typedef deliverTx
    *
    * @param {Buffer} stateTransitionByteArray
+   * @param {BaseLogger} logger
    * @return {Promise<{ code: number }>}
    */
-  async function deliverTx(stateTransitionByteArray) {
+  async function deliverTx(stateTransitionByteArray, logger) {
     const blockHeight = blockExecutionContext.getHeight();
 
     // Start execution timer
@@ -73,7 +72,7 @@ function deliverTxFactory(
     const consensusLogger = logger.child({
       height: blockHeight.toString(),
       txId: stHash,
-      abciMethod: 'deliverTx',
+      abciMethod: 'finalizeBlock#deliverTx',
     });
 
     blockExecutionContext.setConsensusLogger(consensusLogger);
