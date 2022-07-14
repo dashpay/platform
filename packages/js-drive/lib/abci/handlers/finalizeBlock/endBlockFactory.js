@@ -16,7 +16,6 @@ const featureFlagTypes = require('@dashevo/feature-flags-contract/lib/featureFla
  * @param {LatestCoreChainLock} latestCoreChainLock
  * @param {ValidatorSet} validatorSet
  * @param {createValidatorSetUpdate} createValidatorSetUpdate
- * @param {BaseLogger} logger
  * @param {getFeatureFlagForHeight} getFeatureFlagForHeight
  *
  * @return {endBlock}
@@ -26,22 +25,23 @@ function endBlockFactory(
   latestCoreChainLock,
   validatorSet,
   createValidatorSetUpdate,
-  logger,
   getFeatureFlagForHeight,
 ) {
   /**
    * @typedef endBlock
    *
+   * @param {number} height
+   * @param {BaseLogger} logger
    * @return {Promise<{
    *   consensusParamUpdates: ConsensusParams,
    *   validatorSetUpdate: ValidatorSetUpdate,
    *   nextCoreChainLockUpdate: CoreChainLock,
    * }>}
    */
-  async function endBlock(height) {
+  async function endBlock(height, logger) {
     const consensusLogger = logger.child({
       height: height.toString(),
-      abciMethod: 'endBlock',
+      abciMethod: 'finalizeBlock#endBlock',
     });
 
     consensusLogger.debug('EndBlock ABCI method requested');

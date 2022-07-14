@@ -803,7 +803,10 @@ function createDIContainer(options) {
       wrapInErrorHandler,
       enrichErrorWithConsensusError,
       deliverTxHandler,
-    ) => wrapInErrorHandler(enrichErrorWithConsensusError(deliverTxHandler))).singleton(),
+    ) => wrapInErrorHandler(
+      enrichErrorWithConsensusError(deliverTxHandler),
+      { respondWithInternalError: true },
+    )).singleton(),
     endBlockHandler: asFunction(endBlockFactory).singleton(),
     endBlock: asFunction((
       enrichErrorWithConsensusError,

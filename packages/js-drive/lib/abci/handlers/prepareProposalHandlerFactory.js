@@ -29,14 +29,20 @@ function prepareProposalHandlerFactory() {
   }) {
     let totalSizeBytes = 0;
 
-    const txRecords = txs.filter((tx) => {
+    const txRecords = [];
+
+    for (const tx of txs) {
       totalSizeBytes += tx.length;
 
-      return totalSizeBytes < maxTxBytes;
-    }).map((tx) => ({
-      tx,
-      action: txAction.UNMODIFIED,
-    }));
+      if (totalSizeBytes > maxTxBytes) {
+        break;
+      }
+
+      txRecords.push({
+        tx,
+        action: txAction.UNMODIFIED,
+      });
+    }
 
     return new ResponsePrepareProposal({
       txRecords,

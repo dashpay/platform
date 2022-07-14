@@ -57,20 +57,31 @@ function finalizeBlockHandlerFactory(
     consensusLogger.debug('FinalizeBlock ABCI method requested');
     consensusLogger.trace({ abciRequest: request });
 
-    blockExecutionContext.setConsensusLogger(consensusLogger);
-
-    await beginBlock({
-      lastCommitInfo, height, coreChainLockedHeight, version, time,
-    });
+    await beginBlock(
+      {
+        lastCommitInfo, height, coreChainLockedHeight, version, time,
+      },
+      consensusLogger,
+    );
 
     const txResults = [];
 
     for (const tx of txs) {
-      txResults.push(await deliverTx(tx));
+      txResults.push(await deliverTx(tx, consensusLogger));
     }
 
-    const endBlockResult = await endBlock(height);
-    const commitResult = await commit();
+    const endBlockResult = await endBlock(height, consensusLogger);
+    const commitResult = await commit(consensusLogger);
+
+    const blockExecutionTimings = executionTimer.stopTimer('blockExecution');
+    const blockHeight = blockExecutionContext.getHeight();
+
+    consensusLogger.trace(
+      {
+        timings: blockExecutionTimings,
+      },
+      `Block #${blockHeight} execution took ${blockExecutionTimings} seconds`,
+    );
 
     return new ResponseFinalizeBlock({
       txResults,

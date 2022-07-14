@@ -603,30 +603,30 @@ describe('LoggedStateRepositoryDecorator', () => {
     });
   });
 
-  describe('#fetchLatestPlatformBlockHeader', () => {
+  describe('#fetchLatestPlatformBlockHeight', () => {
     it('should call logger with proper params', async () => {
       const response = { };
 
-      stateRepositoryMock.fetchLatestPlatformBlockHeader.resolves(response);
+      stateRepositoryMock.fetchLatestPlatformBlockHeight.resolves(response);
 
-      await loggedStateRepositoryDecorator.fetchLatestPlatformBlockHeader();
+      await loggedStateRepositoryDecorator.fetchLatestPlatformBlockHeight();
 
       expect(loggerMock.trace).to.be.calledOnceWithExactly({
         stateRepository: {
-          method: 'fetchLatestPlatformBlockHeader',
+          method: 'fetchLatestPlatformBlockHeight',
           parameters: { },
           response,
         },
-      }, 'StateRepository#fetchLatestPlatformBlockHeader');
+      }, 'StateRepository#fetchLatestPlatformBlockHeight');
     });
 
     it('should call logger in case of error', async () => {
       const error = new Error('unknown error');
 
-      stateRepositoryMock.fetchLatestPlatformBlockHeader.throws(error);
+      stateRepositoryMock.fetchLatestPlatformBlockHeight.throws(error);
 
       try {
-        await loggedStateRepositoryDecorator.fetchLatestPlatformBlockHeader();
+        await loggedStateRepositoryDecorator.fetchLatestPlatformBlockHeight();
 
         expect.fail('should throw an error');
       } catch (e) {
@@ -635,11 +635,91 @@ describe('LoggedStateRepositoryDecorator', () => {
 
       expect(loggerMock.trace).to.be.calledOnceWithExactly({
         stateRepository: {
-          method: 'fetchLatestPlatformBlockHeader',
+          method: 'fetchLatestPlatformBlockHeight',
           parameters: { },
           response: undefined,
         },
-      }, 'StateRepository#fetchLatestPlatformBlockHeader');
+      }, 'StateRepository#fetchLatestPlatformBlockHeight');
+    });
+  });
+
+  describe('#fetchLatestPlatformBlockTime', () => {
+    it('should call logger with proper params', async () => {
+      const response = { };
+
+      stateRepositoryMock.fetchLatestPlatformBlockTime.resolves(response);
+
+      await loggedStateRepositoryDecorator.fetchLatestPlatformBlockTime();
+
+      expect(loggerMock.trace).to.be.calledOnceWithExactly({
+        stateRepository: {
+          method: 'fetchLatestPlatformBlockTime',
+          parameters: { },
+          response,
+        },
+      }, 'StateRepository#fetchLatestPlatformBlockTime');
+    });
+
+    it('should call logger in case of error', async () => {
+      const error = new Error('unknown error');
+
+      stateRepositoryMock.fetchLatestPlatformBlockTime.throws(error);
+
+      try {
+        await loggedStateRepositoryDecorator.fetchLatestPlatformBlockTime();
+
+        expect.fail('should throw an error');
+      } catch (e) {
+        expect(e).equals(error);
+      }
+
+      expect(loggerMock.trace).to.be.calledOnceWithExactly({
+        stateRepository: {
+          method: 'fetchLatestPlatformBlockTime',
+          parameters: { },
+          response: undefined,
+        },
+      }, 'StateRepository#fetchLatestPlatformBlockTime');
+    });
+  });
+
+  describe('#fetchLatestPlatformCoreChainLockedHeight', () => {
+    it('should call logger with proper params', async () => {
+      const response = { };
+
+      stateRepositoryMock.fetchLatestPlatformCoreChainLockedHeight.resolves(response);
+
+      await loggedStateRepositoryDecorator.fetchLatestPlatformCoreChainLockedHeight();
+
+      expect(loggerMock.trace).to.be.calledOnceWithExactly({
+        stateRepository: {
+          method: 'fetchLatestPlatformCoreChainLockedHeight',
+          parameters: { },
+          response,
+        },
+      }, 'StateRepository#fetchLatestPlatformCoreChainLockedHeight');
+    });
+
+    it('should call logger in case of error', async () => {
+      const error = new Error('unknown error');
+
+      stateRepositoryMock.fetchLatestPlatformCoreChainLockedHeight.throws(error);
+
+      try {
+        await loggedStateRepositoryDecorator.fetchLatestPlatformCoreChainLockedHeight();
+
+        expect.fail('should throw an error');
+      } catch (e) {
+        expect(e).equals(error);
+      }
+
+      expect(loggerMock.trace).to.be.calledOnceWithExactly({
+        stateRepository: {
+          method: 'fetchLatestPlatformCoreChainLockedHeight',
+          parameters: { },
+          response: undefined,
+        },
+      }, 'StateRepository#fetchLatestPlatformCoreChainLockedHeight');
     });
   });
 });

@@ -8,10 +8,8 @@ const DataContractCacheItem = require('../../../dataContract/DataContractCacheIt
  * @param {BlockExecutionContextStack} blockExecutionContextStack
  * @param {BlockExecutionContextStackRepository} blockExecutionContextStackRepository
  * @param {rotateSignedStore} rotateSignedStore
- * @param {BaseLogger} logger
  * @param {LRUCache} dataContractCache
  * @param {GroveDBStore} groveDBStore
- * @param {ExecutionTimer} executionTimer
  *
  * @return {commit}
  */
@@ -22,24 +20,23 @@ function commitFactory(
   blockExecutionContextStack,
   blockExecutionContextStackRepository,
   rotateSignedStore,
-  logger,
   dataContractCache,
   groveDBStore,
-  executionTimer,
 ) {
   /**
    * Commit ABCI
    *
    * @typedef commit
    *
+   * @param {BaseLogger} logger
    * @return {Promise<{ appHash: Buffer }>}
    */
-  async function commit() {
+  async function commit(logger) {
     const blockHeight = blockExecutionContext.getHeight();
 
     const consensusLogger = logger.child({
       height: blockHeight.toString(),
-      abciMethod: 'commit',
+      abciMethod: 'finalizeBlock#commit',
     });
 
     blockExecutionContext.setConsensusLogger(consensusLogger);
@@ -94,15 +91,6 @@ function commitFactory(
         appHash: appHash.toString('hex').toUpperCase(),
       },
       `Block commit #${blockHeight} with appHash ${appHash.toString('hex').toUpperCase()}`,
-    );
-
-    const blockExecutionTimings = executionTimer.stopTimer('blockExecution');
-
-    consensusLogger.trace(
-      {
-        timings: blockExecutionTimings,
-      },
-      `Block #${blockHeight} execution took ${blockExecutionTimings} seconds`,
     );
 
     return {

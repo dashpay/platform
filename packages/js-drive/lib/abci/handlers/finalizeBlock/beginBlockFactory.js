@@ -35,13 +35,19 @@ function beginBlockFactory(
    * @param {number} [request.coreChainLockedHeight]
    * @param {IConsensus} [request.version]
    * @param {ITimestamp} [request.time]
+   * @param {BaseLogger} logger
    *
    * @return {Promise<void>}
    */
-  async function beginBlock({
-    lastCommitInfo, height, coreChainLockedHeight, version, time,
-  }) {
-    const consensusLogger = blockExecutionContext.getConsensusLogger();
+  async function beginBlock(request, logger) {
+    const {
+      lastCommitInfo, height, coreChainLockedHeight, version, time,
+    } = request;
+
+    const consensusLogger = logger.child({
+      height: height.toString(),
+      abciMethod: 'finalizeBlock#beginBlock',
+    });
 
     // Validate protocol version
 
