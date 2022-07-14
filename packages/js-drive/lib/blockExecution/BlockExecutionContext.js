@@ -9,6 +9,11 @@ const {
       Consensus,
     },
   },
+  google: {
+    protobuf: {
+      Timestamp,
+    },
+  },
 } = require('@dashevo/abci/types');
 
 const Long = require('long');
@@ -293,6 +298,7 @@ class BlockExecutionContext {
 
     if (this.time) {
       this.time.seconds = Long.fromNumber(this.time.seconds);
+      this.time = new Timestamp(this.time);
     }
 
     this.height = Long.fromNumber(object.height);

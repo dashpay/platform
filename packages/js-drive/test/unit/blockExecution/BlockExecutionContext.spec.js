@@ -47,6 +47,9 @@ describe('BlockExecutionContext', () => {
     version = Consensus.fromObject(plainObject.version);
     time = plainObject.time;
     time.seconds = Long.fromNumber(time.seconds);
+
+    plainObject.time = plainObject.time.toJSON();
+    plainObject.time.seconds = Number(plainObject.time.seconds);
   });
 
   describe('#addDataContract', () => {
