@@ -1,11 +1,3 @@
-const {
-  tendermint: {
-    abci: {
-      ResponseCommit,
-    },
-  },
-} = require('@dashevo/abci/types');
-
 const Long = require('long');
 
 const getDataContractFixture = require('@dashevo/dpp/lib/test/fixtures/getDataContractFixture');
@@ -99,7 +91,7 @@ describe('commitFactory', () => {
   it('should commit db transactions, create document dbs and return ResponseCommit', async () => {
     const response = await commit(loggerMock);
 
-    expect(response.appHash).to.deep.equal(appHash);
+    expect(response).to.deep.equal({ appHash });
 
     expect(blockExecutionContextMock.getHeight).to.be.calledOnce();
 
