@@ -17,11 +17,11 @@ function enrichErrorWithConsensusLoggerFactory(blockExecutionContext) {
    */
   function enrichErrorWithConsensusLogger(method) {
     /**
-     * @param {*} request
+     * @param {*[]} args
      */
-    async function methodHandler(request) {
+    async function methodHandler(...args) {
       try {
-        return await method(request);
+        return await method(...args);
       } catch (e) {
         const { consensusLogger } = blockExecutionContext;
 
