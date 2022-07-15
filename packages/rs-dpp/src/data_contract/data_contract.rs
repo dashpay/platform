@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::convert::TryFrom;
 
 use anyhow::anyhow;
@@ -19,12 +19,13 @@ use crate::{
     util::{hash::hash, serializer},
 };
 
+use super::contract::Contract;
 use super::errors::*;
 
 use super::properties::*;
 
 pub type JsonSchema = JsonValue;
-type DocumentType = String;
+type DocumentName = String;
 type PropertyPath = String;
 
 pub const SCHEMA: &str = "https://schema.dash.org/dpp-0-4-0/meta/data-contract";
@@ -61,7 +62,7 @@ impl Convertible for DataContract {
     }
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, Default)]
+#[derive(Serialize, Deserialize, Debug, Clone, Default, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct DataContract {
     pub protocol_version: u32,
@@ -72,16 +73,19 @@ pub struct DataContract {
     pub version: u32,
     pub owner_id: Identifier,
     #[serde(rename = "documents")]
-    pub documents: BTreeMap<DocumentType, JsonSchema>,
+    pub documents: BTreeMap<DocumentName, JsonSchema>,
     #[serde(rename = "$defs", default)]
-    pub defs: BTreeMap<DocumentType, JsonSchema>,
+    pub defs: BTreeMap<DocumentName, JsonSchema>,
 
     #[serde(skip)]
     pub metadata: Option<Metadata>,
     #[serde(skip)]
     pub entropy: [u8; 32],
     #[serde(skip)]
-    pub binary_properties: BTreeMap<DocumentType, BTreeMap<PropertyPath, JsonValue>>,
+    pub binary_properties: BTreeMap<DocumentName, BTreeMap<PropertyPath, JsonValue>>,
+
+    #[serde(skip)]
+    pub contract: Contract,
 }
 
 impl DataContract {
@@ -182,6 +186,8 @@ impl DataContract {
             metadata: None,
             entropy: [0; 32],
             binary_properties: Default::default(),
+            // TODO
+            contract: Default::default(),
         };
 
         data_contract.generate_binary_properties();
@@ -242,7 +248,7 @@ impl DataContract {
         Ok(buf)
     }
 
-    pub fn documents(&self) -> &BTreeMap<DocumentType, JsonSchema> {
+    pub fn documents(&self) -> &BTreeMap<DocumentName, JsonSchema> {
         &self.documents
     }
 
