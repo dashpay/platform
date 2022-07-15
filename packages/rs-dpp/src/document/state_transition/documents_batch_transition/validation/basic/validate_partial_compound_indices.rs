@@ -12,8 +12,8 @@ use crate::{
 };
 use serde_json::Value as JsonValue;
 
-pub fn validate_partial_compound_indices(
-    raw_document_transitions: impl IntoIterator<Item = impl Borrow<JsonValue>>,
+pub fn validate_partial_compound_indices<'a>(
+    raw_document_transitions: impl IntoIterator<Item = &'a JsonValue>,
     data_contract: &DataContract,
 ) -> Result<ValidationResult, ProtocolError> {
     let mut result = ValidationResult::default();
