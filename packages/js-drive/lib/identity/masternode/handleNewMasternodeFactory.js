@@ -3,6 +3,7 @@ const IdentityPublicKey = require('@dashevo/dpp/lib/identity/IdentityPublicKey')
 const Address = require('@dashevo/dashcore-lib/lib/address');
 const Script = require('@dashevo/dashcore-lib/lib/script');
 const createOperatorIdentifier = require('./createOperatorIdentifier');
+const createVotingIdentifier = require('./createVotingIdentifier');
 
 /**
  *
@@ -90,6 +91,23 @@ function handleNewMasternodeFactory(
         result.push(rewardShareDocument);
       }
     }
+
+    const votingIdentifier = createVotingIdentifier(masternodeEntry);
+    const votingAddress = Address.fromString(masternodeEntry.votingAddress);
+    const votingPubKey = Buffer.from(
+      votingAddress.hashBuffer,
+      'hex',
+    );
+    const votingScript = new Script(votingAddress);
+
+    result.push(
+      await createMasternodeIdentity(
+        votingIdentifier,
+        votingPubKey,
+        IdentityPublicKey.TYPES.BLS12_381,
+        votingScript,
+      ),
+    );
 
     return result;
   }

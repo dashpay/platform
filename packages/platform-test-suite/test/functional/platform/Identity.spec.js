@@ -607,6 +607,8 @@ describe('Platform', () => {
 
             expect(fetchedIdentity).to.be.not.null();
           }
+
+          // TODO add voting identity
         }
       });
     });

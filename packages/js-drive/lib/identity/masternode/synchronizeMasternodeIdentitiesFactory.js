@@ -1,8 +1,9 @@
 const Identifier = require('@dashevo/dpp/lib/identifier/Identifier');
 const SimplifiedMNList = require('@dashevo/dashcore-lib/lib/deterministicmnlist/SimplifiedMNList');
-// const Address = require('@dashevo/dashcore-lib/lib/address');
-// const Script = require('@dashevo/dashcore-lib/lib/script');
+const Address = require('@dashevo/dashcore-lib/lib/address');
+const Script = require('@dashevo/dashcore-lib/lib/script');
 // const createOperatorIdentifier = require('./createOperatorIdentifier');
+const createVotingIdentifier = require('./createVotingIdentifier');
 
 /**
  *
@@ -13,6 +14,7 @@ const SimplifiedMNList = require('@dashevo/dashcore-lib/lib/deterministicmnlist/
  * @param {handleUpdatedPubKeyOperator} handleUpdatedPubKeyOperator
  * @param {handleRemovedMasternode} handleRemovedMasternode
  * @param {handleUpdatedScriptPayout} handleUpdatedScriptPayout
+ * @param {handleUpdatedVotingAddress} handleUpdatedVotingAddress
  * @param {number} smlMaxListsLimit
  * @param {RpcClient} coreRpcClient
  * @return {synchronizeMasternodeIdentities}
@@ -25,6 +27,7 @@ function synchronizeMasternodeIdentitiesFactory(
   handleUpdatedPubKeyOperator,
   handleRemovedMasternode,
   handleUpdatedScriptPayout,
+  handleUpdatedVotingAddress,
   smlMaxListsLimit,
   coreRpcClient,
 ) {
@@ -99,6 +102,12 @@ function synchronizeMasternodeIdentitiesFactory(
               dataContract,
             ),
           );
+
+          updatedEntities = updatedEntities.concat(
+            await handleUpdatedVotingAddress(
+              mnEntry,
+            ),
+          );
         }
 
         // if (mnEntry.payoutAddress) {
@@ -144,6 +153,31 @@ function synchronizeMasternodeIdentitiesFactory(
         //     );
         //   }
         // }
+
+        // TODO comment me!
+        if (mnEntry.votingAddress) {
+          const mnEntryWithChangedVotingAddress = previousMNList
+            .find((previousMnListEntry) => (
+              previousMnListEntry.proRegTxHash === mnEntry.proRegTxHash
+              && previousMnListEntry.votingAddress !== mnEntry.votingAddress
+            ));
+
+          if (mnEntryWithChangedVotingAddress) {
+            const newVotingAddress = Address.fromString(mnEntry.votingAddress);
+
+            const { votingAddress } = mnEntryWithChangedVotingAddress;
+
+            const previousVotingScript = votingAddress
+              ? new Script(Address.fromString(votingAddress))
+              : undefined;
+
+            await handleUpdatedScriptPayout(
+              createVotingIdentifier(mnEntry),
+              new Script(newVotingAddress),
+              previousVotingScript,
+            );
+          }
+        }
       }
     }
 
