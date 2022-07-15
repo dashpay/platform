@@ -12,7 +12,7 @@ use crate::{
     },
     util::json_value::JsonValueExt,
 };
-use serde_json::json;
+use serde_json::{json, Value as JsonValue};
 
 struct TestData {
     data_contract: DataContract,
@@ -43,14 +43,15 @@ fn should_return_invalid_result_if_compound_index_contains_not_all_fields() {
         .expect("lastName property should exist and be removed");
 
     let documents_for_transition = vec![document];
-    let raw_document_transitions =
+    let raw_document_transitions: Vec<JsonValue> =
         get_document_transitions_fixture([(Action::Create, documents_for_transition)])
             .into_iter()
             .map(|dt| {
                 dt.to_object()
                     .expect("the transition should be converted to object")
-            });
-    let result = validate_partial_compound_indices(raw_document_transitions, &data_contract)
+            })
+            .collect();
+    let result = validate_partial_compound_indices(raw_document_transitions.iter(), &data_contract)
         .expect("should return validation result");
 
     let basic_error = get_basic_error(&result, 0);
@@ -75,14 +76,15 @@ fn should_return_valid_result_if_compound_index_contains_nof_fields() {
     document.data = json!({});
 
     let documents_for_transition = vec![document];
-    let raw_document_transitions =
+    let raw_document_transitions: Vec<JsonValue> =
         get_document_transitions_fixture([(Action::Create, documents_for_transition)])
             .into_iter()
             .map(|dt| {
                 dt.to_object()
                     .expect("the transition should be converted to object")
-            });
-    let result = validate_partial_compound_indices(raw_document_transitions, &data_contract)
+            })
+            .collect();
+    let result = validate_partial_compound_indices(raw_document_transitions.iter(), &data_contract)
         .expect("should return validation result");
     assert!(result.is_valid());
 }
@@ -95,14 +97,15 @@ fn should_return_valid_result_if_compound_index_contains_all_fields() {
     } = setup_test();
     let document = documents.remove(8);
     let documents_for_transition = vec![document];
-    let raw_document_transitions =
+    let raw_document_transitions: Vec<JsonValue> =
         get_document_transitions_fixture([(Action::Create, documents_for_transition)])
             .into_iter()
             .map(|dt| {
                 dt.to_object()
                     .expect("the transition should be converted to object")
-            });
-    let result = validate_partial_compound_indices(raw_document_transitions, &data_contract)
+            })
+            .collect();
+    let result = validate_partial_compound_indices(raw_document_transitions.iter(), &data_contract)
         .expect("should return validation result");
     assert!(result.is_valid());
 }
