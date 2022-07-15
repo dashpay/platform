@@ -85,7 +85,12 @@ function initializeTenderdashNodeFactory(dockerCompose, docker, dockerPull) {
     }
 
     let stringifiedJSON = writableStream.toString();
-    stringifiedJSON = stringifiedJSON.split('mode=validator').slice(-1).pop().replace(/\r\n/g, '');
+
+    const indexOfOpeningBracket = stringifiedJSON.indexOf('[');
+
+    stringifiedJSON = stringifiedJSON
+      .slice(indexOfOpeningBracket)
+      .replace(/\r\n/g, '');
 
     return JSON.parse(stringifiedJSON);
   }
