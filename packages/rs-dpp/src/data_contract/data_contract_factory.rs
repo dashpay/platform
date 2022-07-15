@@ -8,7 +8,6 @@ use crate::{
     errors::{consensus::ConsensusError, ProtocolError},
     prelude::Identifier,
     util::entropy_generator,
-    Convertible,
 };
 
 use super::{

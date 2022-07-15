@@ -2,8 +2,15 @@ pub use data_contract::*;
 pub use data_contract_factory::*;
 pub use generate_data_contract::*;
 
+pub mod array_field;
+pub mod common;
+pub mod contract;
 mod data_contract;
+pub mod document_field;
+pub mod document_type;
+pub mod drive_api;
 pub mod errors;
+pub mod index;
 
 mod data_contract_factory;
 pub mod enrich_data_contract_with_base_schema;
