@@ -18,8 +18,6 @@ function handleUpdatedVotingAddressFactory(
   /**
    * @typedef handleUpdatedVotingAddress
    * @param {SimplifiedMNListEntry} masternodeEntry
-   * @param {SimplifiedMNListEntry} previousMasternodeEntry
-   * @param {DataContract} dataContract
    * @return Promise<Array<Identity|Document>>
    */
   async function handleUpdatedVotingAddress(
@@ -39,14 +37,12 @@ function handleUpdatedVotingAddressFactory(
         votingAddress.hashBuffer,
         'hex',
       );
-      const votingScript = new Script(votingAddress);
 
       result.push(
         await createMasternodeIdentity(
           votingIdentifier,
           votingPublicKey,
           IdentityPublicKey.TYPES.BLS12_381,
-          votingScript,
         ),
       );
     }

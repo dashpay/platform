@@ -92,19 +92,19 @@ function handleNewMasternodeFactory(
       }
     }
 
-    const votingIdentifier = createVotingIdentifier(masternodeEntry);
     const votingPubKey = Buffer.from(proRegTxPayload.keyIDVoting, 'hex').reverse();
-    const votingAddress = Address.fromString(masternodeEntry.votingAddress);
-    const votingScript = new Script(votingAddress);
 
-    result.push(
-      await createMasternodeIdentity(
-        votingIdentifier,
-        votingPubKey,
-        IdentityPublicKey.TYPES.BLS12_381,
-        votingScript,
-      ),
-    );
+    if (votingPubKey.compare(publicKey) !== 0) {
+      const votingIdentifier = createVotingIdentifier(masternodeEntry);
+
+      result.push(
+        await createMasternodeIdentity(
+          votingIdentifier,
+          votingPubKey,
+          IdentityPublicKey.TYPES.BLS12_381,
+        ),
+      );
+    }
 
     return result;
   }
