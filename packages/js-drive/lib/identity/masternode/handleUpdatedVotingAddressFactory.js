@@ -42,7 +42,7 @@ function handleUpdatedVotingAddressFactory(
         await createMasternodeIdentity(
           votingIdentifier,
           votingPublicKey,
-          IdentityPublicKey.TYPES.BLS12_381,
+          IdentityPublicKey.TYPES.ECDSA_HASH160,
         ),
       );
     }

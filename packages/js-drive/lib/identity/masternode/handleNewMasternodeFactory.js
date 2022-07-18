@@ -101,7 +101,7 @@ function handleNewMasternodeFactory(
         await createMasternodeIdentity(
           votingIdentifier,
           votingPubKey,
-          IdentityPublicKey.TYPES.BLS12_381,
+          IdentityPublicKey.TYPES.ECDSA_HASH160,
         ),
       );
     }
