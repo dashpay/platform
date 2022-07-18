@@ -93,11 +93,8 @@ function handleNewMasternodeFactory(
     }
 
     const votingIdentifier = createVotingIdentifier(masternodeEntry);
+    const votingPubKey = Buffer.from(proRegTxPayload.keyIDVoting, 'hex').reverse();
     const votingAddress = Address.fromString(masternodeEntry.votingAddress);
-    const votingPubKey = Buffer.from(
-      votingAddress.hashBuffer,
-      'hex',
-    );
     const votingScript = new Script(votingAddress);
 
     result.push(
