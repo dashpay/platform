@@ -1,17 +1,14 @@
 const IdentityPublicKey = require('@dashevo/dpp/lib/identity/IdentityPublicKey');
 const Address = require('@dashevo/dashcore-lib/lib/address');
-const Script = require('@dashevo/dashcore-lib/lib/script');
 const createVotingIdentifier = require('./createVotingIdentifier');
 
 /**
  *
- * @param {DashPlatformProtocol} transactionalDpp
  * @param {DriveStateRepository|CachedStateRepositoryDecorator} transactionalStateRepository
  * @param {createMasternodeIdentity} createMasternodeIdentity
  * @return {handleUpdatedVotingAddress}
  */
 function handleUpdatedVotingAddressFactory(
-  transactionalDpp,
   transactionalStateRepository,
   createMasternodeIdentity,
 ) {
