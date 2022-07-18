@@ -1,3 +1,13 @@
+mod data_trigger_execution_context;
+
+pub mod dashpay_data_triggers;
+pub mod dpns_triggers;
+pub mod feature_flags_data_triggers;
+pub mod get_data_triggers_factory;
+pub mod reward_share_data_triggers;
+
+mod data_trigger_execution_result;
+mod reject_data_trigger;
 use futures::future::LocalBoxFuture;
 
 pub use data_trigger_execution_context::*;
@@ -10,16 +20,10 @@ use crate::{
     state_repository::StateRepositoryLike,
 };
 
-mod data_trigger_execution_context;
-
-pub mod dashpay_data_triggers;
-pub mod dpns_triggers;
-pub mod feature_flags_data_triggers;
-pub mod get_data_triggers_factory;
-pub mod reward_share_data_triggers;
-
-mod data_trigger_execution_result;
-mod reject_data_trigger;
+use self::dashpay_data_triggers::create_contract_request_data_trigger;
+use self::dpns_triggers::create_domain_data_trigger;
+use self::feature_flags_data_triggers::create_feature_flag_data_trigger;
+use self::reward_share_data_triggers::create_masternode_reward_shares_data_trigger;
 
 pub type BoxedTrigger<'a, SR> = Box<Trigger<'a, SR>>;
 pub type Trigger<'a, SR> =
@@ -29,22 +33,24 @@ pub type Trigger<'a, SR> =
         Option<&'a Identifier>,
     ) -> LocalBoxFuture<'a, Result<DataTriggerExecutionResult, anyhow::Error>>;
 
-pub struct DataTrigger<'a, SR>
-where
-    SR: StateRepositoryLike,
-{
+#[derive(Debug, Clone, Copy)]
+pub enum DataTriggerKind {
+    CreateDataContractRequest,
+    DataTriggerCreateDomain,
+    DataTriggerRewardShare,
+    DataTriggerReject,
+    CrateFeatureFlag,
+}
+
+pub struct DataTrigger {
     pub data_contract_id: Identifier,
     pub document_type: String,
-    pub trigger: BoxedTrigger<'a, SR>,
+    pub data_trigger_kind: DataTriggerKind,
     pub transition_action: Action,
     pub top_level_identity: Option<Identifier>,
 }
 
-impl<'a, SR> DataTrigger<'a, SR>
-where
-    SR: StateRepositoryLike,
-{
-    /// Check this trigger is matching for specified data
+impl DataTrigger {
     pub fn is_matching_trigger_for_data(
         &self,
         data_contract_id: &Identifier,
@@ -56,16 +62,20 @@ where
             && self.transition_action == transition_action
     }
 
-    pub async fn execute(
-        &'a self,
-        document_transition: &'a DocumentTransition,
-        context: &'a DataTriggerExecutionContext<SR>,
+    pub async fn execute<'a, SR>(
+        &self,
+        document_transition: &DocumentTransition,
+        context: &DataTriggerExecutionContext<'a, SR>,
     ) -> DataTriggerExecutionResult
     where
         SR: StateRepositoryLike,
     {
         let mut result = DataTriggerExecutionResult::default();
-        let execution_result = (self.trigger)(
+        // TODO remove the clone
+        let data_contract_id = context.data_contract.id.to_owned();
+
+        let execution_result = execute_trigger(
+            self.data_trigger_kind,
             document_transition,
             context,
             self.top_level_identity.as_ref(),
@@ -74,7 +84,7 @@ where
 
         if let Err(err) = execution_result {
             let consensus_error = DataTriggerError::DataTriggerExecutionError {
-                data_contract_id: context.data_contract.id.clone(),
+                data_contract_id,
                 document_transition_id: get_from_transition!(document_transition, id).clone(),
                 message: err.to_string(),
                 execution_error: err,
@@ -89,8 +99,37 @@ where
     }
 }
 
-pub fn new_error<SR>(
-    context: &DataTriggerExecutionContext<SR>,
+async fn execute_trigger<'a, SR>(
+    trigger_kind: DataTriggerKind,
+    document_transition: &DocumentTransition,
+    context: &DataTriggerExecutionContext<'a, SR>,
+    identifier: Option<&Identifier>,
+) -> Result<DataTriggerExecutionResult, anyhow::Error>
+where
+    SR: StateRepositoryLike,
+{
+    match trigger_kind {
+        DataTriggerKind::CreateDataContractRequest => {
+            create_contract_request_data_trigger(document_transition, context, identifier).await
+        }
+        DataTriggerKind::DataTriggerCreateDomain => {
+            create_domain_data_trigger(document_transition, context, identifier).await
+        }
+        DataTriggerKind::CrateFeatureFlag => {
+            create_feature_flag_data_trigger(document_transition, context, identifier).await
+        }
+        DataTriggerKind::DataTriggerReject => {
+            reject_data_trigger(document_transition, context, identifier).await
+        }
+        DataTriggerKind::DataTriggerRewardShare => {
+            create_masternode_reward_shares_data_trigger(document_transition, context, identifier)
+                .await
+        }
+    }
+}
+
+fn create_error<'a, SR>(
+    context: &DataTriggerExecutionContext<'a, SR>,
     dt_create: &DocumentCreateTransition,
     msg: String,
 ) -> DataTriggerError

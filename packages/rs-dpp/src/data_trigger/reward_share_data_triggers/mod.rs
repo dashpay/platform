@@ -2,7 +2,7 @@ use anyhow::{anyhow, bail};
 use serde_json::json;
 
 use crate::{
-    data_trigger::new_error,
+    data_trigger::create_error,
     document::{document_transition::DocumentTransition, Document},
     get_from_transition,
     mocks::SMLStore,
@@ -17,9 +17,9 @@ const MAX_PERCENTAGE: u64 = 10000;
 const PROPERTY_PAY_TO_ID: &str = "payToId";
 const PROPERTY_PERCENTAGE: &str = "percentage";
 
-pub async fn create_masternode_reward_shares_data_trigger<SR>(
+pub async fn create_masternode_reward_shares_data_trigger<'a, SR>(
     document_transition: &DocumentTransition,
-    context: &DataTriggerExecutionContext<SR>,
+    context: &DataTriggerExecutionContext<'a, SR>,
     _top_level_identity: Option<&Identifier>,
 ) -> Result<DataTriggerExecutionResult, anyhow::Error>
 where
@@ -56,7 +56,7 @@ where
     });
 
     if !owner_id_in_sml {
-        let err = new_error(
+        let err = create_error(
             context,
             dt_create,
             "Only masternode identities can share rewards".to_string(),
@@ -72,7 +72,7 @@ where
         .await?;
 
     if maybe_identifier.is_none() {
-        let err = new_error(
+        let err = create_error(
             context,
             dt_create,
             format!("Identifier '{}' doesn't exists", pay_to_id),
@@ -97,7 +97,7 @@ where
     }
 
     if total_percent > MAX_PERCENTAGE {
-        let err = new_error(
+        let err = create_error(
             context,
             dt_create,
             format!("Percentage can not be more than {}", MAX_PERCENTAGE),

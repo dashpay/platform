@@ -1,11 +1,16 @@
 use std::collections::HashMap;
 use std::convert::TryInto;
 
+use crate::data_contract::DataContract;
+use crate::prelude::{DocumentTransition, Identifier};
+use crate::util::json_value::{JsonValueExt, ReplaceWith};
+use crate::version::LATEST_VERSION;
+use crate::ProtocolError;
+
 use anyhow::anyhow;
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 
-use crate::data_contract::DataContract;
 use crate::{
     identity::{KeyID, SecurityLevel},
     state_transition::{
@@ -15,9 +20,6 @@ use crate::{
 };
 // TODO simplify imports
 use crate::document::document_transition::DocumentTransitionObjectLike;
-use crate::prelude::{DocumentTransition, Identifier};
-use crate::util::json_value::{JsonValueExt, ReplaceWith};
-use crate::ProtocolError;
 
 pub mod document_transition;
 pub mod validation;
@@ -59,13 +61,18 @@ impl std::default::Default for DocumentsBatchTransition {
 }
 
 impl DocumentsBatchTransition {
+    // TODO (rs-dpp-feature): do not use [`JsonValue`] with constructors
+
     /// creates the instance of [`DocumentsBatchTransition`] from raw object
     pub fn from_raw_object(
         mut raw_object: JsonValue,
         data_contracts: Vec<DataContract>,
     ) -> Result<Self, ProtocolError> {
         let mut batch_transitions = DocumentsBatchTransition {
-            protocol_version: raw_object.get_u64(PROPERTY_PROTOCOL_VERSION)? as u32,
+            protocol_version: raw_object
+                .get_u64(PROPERTY_PROTOCOL_VERSION)
+                // js-dpp allows `protocolVersion` to be undefined
+                .unwrap_or(LATEST_VERSION as u64) as u32,
             signature: raw_object.get_bytes(PROPERTY_SIGNATURE).unwrap_or_default(),
             signature_public_key_id: raw_object
                 .get_u64(PROPERTY_SIGNATURE_PUBLIC_KEY_ID)
@@ -241,7 +248,9 @@ mod test {
     use crate::{
         document::document_factory::DocumentFactory,
         mocks,
-        tests::fixtures::{get_data_contract_fixture, get_documents_fixture},
+        tests::fixtures::{
+            get_data_contract_fixture, get_document_validator_fixture, get_documents_fixture,
+        },
     };
 
     use super::{document_transition::Action, *};
@@ -278,7 +287,7 @@ mod test {
 
         let document_factory = DocumentFactory::new(
             1,
-            mocks::DocumentValidator {},
+            get_document_validator_fixture(),
             mocks::FetchAndValidateDataContract {},
         );
 

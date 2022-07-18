@@ -14,7 +14,7 @@ use crate::{
 
 const IDENTIFIER_FIELDS: [&str; 2] = ["$id", "$dataContractId"];
 
-#[derive(Debug, Serialize_repr, Deserialize_repr, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Serialize_repr, Deserialize_repr, Clone, Copy, PartialEq, Eq, Hash)]
 #[repr(u8)]
 pub enum Action {
     Create = 0,

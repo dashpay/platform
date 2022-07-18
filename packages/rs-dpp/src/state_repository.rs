@@ -12,7 +12,7 @@ use crate::prelude::*;
 pub trait StateRepositoryLike: Send + Sync {
     /// Fetch the Data Contract by ID
     /// By default, the method should return data as bytes (`Vec<u8>`), but the deserialization to [`DataContract`] should be also possible
-    async fn fetch_data_contract<T>(&self, data_contract_id: &Identifier) -> AnyResult<Option<T>>
+    async fn fetch_data_contract<T>(&self, data_contract_id: &Identifier) -> AnyResult<T>
     where
         T: for<'de> serde::de::Deserialize<'de> + 'static;
 

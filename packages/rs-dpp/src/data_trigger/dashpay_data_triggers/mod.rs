@@ -13,9 +13,9 @@ const BLOCKS_SIZE_WINDOW: i64 = 8;
 const PROPERTY_CORE_HEIGHT_CREATED_AT: &str = "coreHeightCreatedAt";
 const PROPERTY_CORE_CHAIN_LOCKED_HEIGHT: &str = "coreChainLockedHeight";
 
-pub async fn create_contract_request_data_trigger<SR>(
+pub async fn create_contract_request_data_trigger<'a, SR>(
     document_transition: &DocumentTransition,
-    context: &DataTriggerExecutionContext<SR>,
+    context: &DataTriggerExecutionContext<'a, SR>,
     _: Option<&Identifier>,
 ) -> Result<DataTriggerExecutionResult, anyhow::Error>
 where

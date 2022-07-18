@@ -1,6 +1,5 @@
-use std::collections::{hash_map::Entry, HashMap};
-
 use serde_json::Value;
+use std::collections::{hash_map::Entry, HashMap};
 
 use crate::{
     document::document_transition::DocumentTransition,
@@ -34,7 +33,6 @@ pub fn find_duplicates_by_indices<'a>(
 
     for dt in document_transitions {
         let dt_type = get_from_transition!(dt, document_type);
-
         match groups.entry(dt_type) {
             Entry::Occupied(mut o) => {
                 o.get_mut().transitions.push(dt);
@@ -71,6 +69,7 @@ pub fn find_duplicates_by_indices<'a>(
             found_group_duplicates.extend(found_duplicates);
         }
     }
+
     found_group_duplicates
 }
 
@@ -93,7 +92,6 @@ fn is_duplicate_by_indices(
                 get_data_property(transition_to_check, property_name)
             ));
         }
-        println!("{} vs {}", original_hash, hash_to_check);
         if original_hash == hash_to_check {
             return true;
         }
