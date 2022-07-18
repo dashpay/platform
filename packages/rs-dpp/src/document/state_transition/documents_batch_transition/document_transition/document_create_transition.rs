@@ -12,7 +12,7 @@ use crate::{
 
 use super::{DocumentBaseTransition, DocumentTransitionObjectLike};
 
-pub const INITIAL_REVISION: i64 = 1;
+pub const INITIAL_REVISION: u32 = 1;
 pub const BINARY_FIELDS: [&str; 1] = ["$entropy"];
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]

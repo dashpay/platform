@@ -5,9 +5,9 @@ use crate::{
 
 use super::{DataTriggerExecutionContext, DataTriggerExecutionResult};
 
-pub async fn reject_data_trigger<SR>(
+pub async fn reject_data_trigger<'a, SR>(
     document_transition: &DocumentTransition,
-    context: &DataTriggerExecutionContext<SR>,
+    context: &DataTriggerExecutionContext<'a, SR>,
     _top_level_identity: Option<&Identifier>,
 ) -> Result<DataTriggerExecutionResult, anyhow::Error>
 where

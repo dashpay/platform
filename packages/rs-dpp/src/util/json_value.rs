@@ -95,7 +95,11 @@ impl JsonValueExt for JsonValue {
                 map.insert(property_name, value);
                 Ok(())
             }
-            None => bail!("the data isn't a map: '{:?}'", self),
+            None => bail!(
+                "getting property '{}' failed: the data isn't a map: '{:?}'",
+                self,
+                property_name
+            ),
         }
     }
 
@@ -145,7 +149,11 @@ impl JsonValueExt for JsonValue {
         if let JsonValue::String(s) = property_value {
             return Ok(s);
         }
-        bail!("{:?} isn't a string", property_value);
+        bail!(
+            "getting property '{}' failed: {:?} isn't a number",
+            property_name,
+            property_value
+        );
     }
 
     fn get_u64(&self, property_name: &str) -> Result<u64, anyhow::Error> {
@@ -162,7 +170,11 @@ impl JsonValueExt for JsonValue {
                 .as_u64()
                 .ok_or_else(|| anyhow!("unable convert {} to u64", s));
         }
-        bail!("{:?} isn't a number", property_value);
+        bail!(
+            "getting property '{}' failed: {:?} isn't a number",
+            property_name,
+            property_value
+        );
     }
 
     fn get_i64(&self, property_name: &str) -> Result<i64, anyhow::Error> {
@@ -179,7 +191,11 @@ impl JsonValueExt for JsonValue {
                 .as_i64()
                 .ok_or_else(|| anyhow!("unable convert {} to i64", s));
         }
-        bail!("{:?} isn't a number", property_value);
+        bail!(
+            "getting property '{}' failed: {:?} isn't a number",
+            property_name,
+            property_value
+        );
     }
 
     fn get_f64(&self, property_name: &str) -> Result<f64, anyhow::Error> {
@@ -196,7 +212,11 @@ impl JsonValueExt for JsonValue {
                 .as_f64()
                 .ok_or_else(|| anyhow!("unable convert {} to f64", s));
         }
-        bail!("{:?} isn't a number", property_value);
+        bail!(
+            "getting property '{}' failed: {:?} isn't a number",
+            property_name,
+            property_value
+        );
     }
 
     // TODO this method has an additional allocation which should be avoided
@@ -209,7 +229,8 @@ impl JsonValueExt for JsonValue {
             )
         })?;
 
-        Ok(serde_json::from_value(property_value.clone())?)
+        serde_json::from_value(property_value.clone())
+            .map_err(|e| anyhow!("getting property '{}' failed: {}", property_name, e))
     }
 
     /// returns the value from the JsonValue based on the path: i.e "root.data[0].id"

@@ -9,9 +9,11 @@ use crate::{
     util::{json_schema::JsonSchemaExt, json_value::JsonValueExt},
     ProtocolError,
 };
+use itertools::Itertools;
 
 use super::{
     document_transition::{self, Action},
+    document_validator::DocumentValidator,
     generate_document_id::generate_document_id,
     Document, DocumentsBatchTransition,
 };
@@ -50,14 +52,14 @@ const DOCUMENT_REPLACE_KEYS_TO_STAY: [&str; 5] = [
 /// Factory for creating documents
 pub struct DocumentFactory {
     protocol_version: u32,
-    document_validator: mocks::DocumentValidator,
+    document_validator: DocumentValidator,
     fetch_and_validate_data_contract: mocks::FetchAndValidateDataContract,
 }
 
 impl DocumentFactory {
     pub fn new(
         protocol_version: u32,
-        validate_document: mocks::DocumentValidator,
+        validate_document: DocumentValidator,
         fetch_and_validate_data_contract: mocks::FetchAndValidateDataContract,
     ) -> Self {
         DocumentFactory {
@@ -120,7 +122,7 @@ impl DocumentFactory {
 
         let validation_result = self
             .document_validator
-            .validate_document(&raw_document, &data_contract);
+            .validate(&raw_document, &data_contract)?;
 
         if !validation_result.is_valid() {
             return Err(ProtocolError::InvalidDocumentError {
@@ -139,31 +141,29 @@ impl DocumentFactory {
         &self,
         documents_iter: impl IntoIterator<Item = (Action, Vec<Document>)>,
     ) -> Result<DocumentsBatchTransition, ProtocolError> {
-        let documents: Vec<(Action, Vec<Document>)> = documents_iter.into_iter().collect();
-
         let mut raw_documents_transitions: Vec<JsonValue> = vec![];
         let mut data_contracts: Vec<DataContract> = vec![];
+        let documents: Vec<(Action, Vec<Document>)> = documents_iter.into_iter().collect();
+        let flattened_documents = documents.iter().flat_map(|(_, v)| v);
 
-        let mut expect_owner_id: Option<Identifier> = None;
-        let mut different_owner_cnt = 0;
-
-        for (_, documents) in documents.iter() {
-            if expect_owner_id.is_none() && !documents.is_empty() {
-                expect_owner_id = Some(documents[0].owner_id.clone())
-            }
-
-            different_owner_cnt += documents
-                .iter()
-                .filter(|d| Some(&d.owner_id) != expect_owner_id.as_ref())
-                .count();
+        if Self::is_empty(flattened_documents.clone()) {
+            return Err(ProtocolError::NoDocumentsSuppliedError);
         }
 
-        if different_owner_cnt > 0 {
+        let is_the_same =
+            Self::is_ownership_the_same(flattened_documents.clone().map(|d| &d.owner_id));
+        if !is_the_same {
             return Err(ProtocolError::MismatchOwnerIdsError {
                 documents: documents.into_iter().flat_map(|(_, v)| v).collect(),
             });
         }
 
+        let owner_id = flattened_documents
+            .clone()
+            .next()
+            .unwrap()
+            .owner_id
+            .to_owned();
         for (action, documents) in documents {
             data_contracts.extend(documents.iter().map(|d| d.data_contract.clone()));
 
@@ -182,7 +182,7 @@ impl DocumentFactory {
 
         let raw_batch_transition = json!({
             PROPERTY_PROTOCOL_VERSION: self.protocol_version,
-            PROPERTY_OWNER_ID : expect_owner_id.unwrap().buffer,
+            PROPERTY_OWNER_ID : owner_id.to_buffer(),
             PROPERTY_TRANSITIONS: raw_documents_transitions,
         });
 
@@ -267,6 +267,14 @@ impl DocumentFactory {
     // TODO implement rest methods
     //   async createFromObject(rawDocument, options = {}) {
     //   async createFromBuffer(buffer, options = {}) {
+
+    fn is_empty<T>(data: impl IntoIterator<Item = T>) -> bool {
+        data.into_iter().next().is_none()
+    }
+
+    fn is_ownership_the_same<'a>(docs: impl IntoIterator<Item = &'a Identifier>) -> bool {
+        docs.into_iter().all_equal()
+    }
 }
 
 #[cfg(test)]
@@ -274,7 +282,9 @@ mod test {
     use crate::{
         assert_error_contains,
         tests::{
-            fixtures::{get_data_contract_fixture, get_documents_fixture},
+            fixtures::{
+                get_data_contract_fixture, get_document_validator_fixture, get_documents_fixture,
+            },
             utils::generate_random_identifier_struct,
         },
         util::string_encoding::Encoding,
@@ -285,11 +295,11 @@ mod test {
     #[test]
     fn document_with_type_and_data() {
         let mut data_contract = get_data_contract_fixture(None);
-        let document_type = "indexedDocument";
+        let document_type = "niceDocument";
 
         let factory = DocumentFactory::new(
             1,
-            mocks::DocumentValidator {},
+            get_document_validator_fixture(),
             mocks::FetchAndValidateDataContract {},
         );
         let name = "Cutie";
@@ -325,15 +335,13 @@ mod test {
         assert_eq!(document_transition::INITIAL_REVISION, document.revision);
         assert!(!document.id.to_string(Encoding::Base58).is_empty());
         assert!(document.created_at.is_some());
-        assert!(document.updated_at.is_some());
-        assert_eq!(document.created_at, document.updated_at);
     }
 
     #[test]
     fn create_state_transition_no_documents() {
         let factory = DocumentFactory::new(
             1,
-            mocks::DocumentValidator {},
+            get_document_validator_fixture(),
             mocks::FetchAndValidateDataContract {},
         );
 
@@ -348,7 +356,7 @@ mod test {
 
         let factory = DocumentFactory::new(
             1,
-            mocks::DocumentValidator {},
+            get_document_validator_fixture(),
             mocks::FetchAndValidateDataContract {},
         );
         documents[0].owner_id = generate_random_identifier_struct();
@@ -365,7 +373,7 @@ mod test {
 
         let factory = DocumentFactory::new(
             1,
-            mocks::DocumentValidator {},
+            get_document_validator_fixture(),
             mocks::FetchAndValidateDataContract {},
         );
         let result = factory.create_state_transition(vec![(Action::Create, documents)]);
@@ -378,7 +386,7 @@ mod test {
         let documents = get_documents_fixture(data_contract).unwrap();
         let factory = DocumentFactory::new(
             1,
-            mocks::DocumentValidator {},
+            get_document_validator_fixture(),
             mocks::FetchAndValidateDataContract {},
         );
 

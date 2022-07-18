@@ -75,6 +75,7 @@ pub struct DataContract {
     pub documents: BTreeMap<DocumentType, JsonSchema>,
     #[serde(rename = "$defs", default)]
     pub defs: BTreeMap<DocumentType, JsonSchema>,
+
     #[serde(skip)]
     pub metadata: Option<Metadata>,
     #[serde(skip)]
@@ -291,14 +292,15 @@ impl DataContract {
     }
 
     pub fn get_document_schema(&self, doc_type: &str) -> Result<&JsonSchema, ProtocolError> {
-        let d =
+        let document =
             self.documents
                 .get(doc_type)
                 .ok_or(DataContractError::InvalidDocumentTypeError {
                     doc_type: doc_type.to_owned(),
                     data_contract: self.clone(),
                 })?;
-        Ok(d)
+
+        Ok(document)
     }
 
     pub fn get_document_schema_ref(&self, doc_type: &str) -> Result<String, ProtocolError> {

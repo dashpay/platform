@@ -2,10 +2,8 @@
 
 use anyhow::Result as AnyResult;
 use serde::{Deserialize, Serialize};
-use serde_json::Value as JsonValue;
 
 use crate::state_transition::{StateTransitionLike, StateTransitionType};
-use crate::validation::ValidationResult;
 use crate::{prelude::*, state_transition::StateTransitionConvert};
 
 #[derive(Debug, Clone)]
@@ -134,17 +132,6 @@ impl StateTransitionLike for IdentityTopUpTransition {
     }
     fn calculate_fee(&self) -> Result<u64, ProtocolError> {
         unimplemented!()
-    }
-}
-
-pub struct DocumentValidator {}
-impl DocumentValidator {
-    pub fn validate_document(
-        &self,
-        _raw_document: &JsonValue,
-        _data_contract: &DataContract,
-    ) -> ValidationResult {
-        ValidationResult::default()
     }
 }
 

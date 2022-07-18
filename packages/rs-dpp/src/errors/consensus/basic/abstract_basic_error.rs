@@ -38,6 +38,15 @@ pub enum BasicError {
 
     #[error("{0}")]
     JsonSchemaCompilationError(String),
+
+    #[error(
+        "Unique compound index properties {:?} are partially set for {document_type}",
+        index_properties
+    )]
+    InconsistentCompoundIndexDataError {
+        index_properties: Vec<String>,
+        document_type: String,
+    },
 }
 
 impl From<IndexError> for BasicError {
