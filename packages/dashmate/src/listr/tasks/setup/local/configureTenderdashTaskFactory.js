@@ -1,4 +1,5 @@
 const { Listr } = require('listr2');
+const protocolVersion = require('@dashevo/dpp/lib/version/protocolVersion');
 
 /**
  * @param {tenderdashInitTask} tenderdashInitTask
@@ -63,7 +64,10 @@ function configureTenderdashTaskFactory(
                   config.get('platform.drive.abci.validatorSet.llmqType'),
                 );
 
-                config.set('platform.drive.tenderdash.genesis.consensus_params.version.app_version', '1');
+                config.set(
+                  'platform.drive.tenderdash.genesis.consensus_params.version.app_version',
+                  protocolVersion.latestVersion.toString(),
+                );
 
                 const configFiles = renderServiceTemplates(config);
                 writeServiceConfigs(config.getName(), configFiles);

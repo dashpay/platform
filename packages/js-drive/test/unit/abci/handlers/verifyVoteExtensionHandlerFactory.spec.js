@@ -14,7 +14,7 @@ describe('verifyVoteExtensionHandlerFactory', () => {
     verifyVoteExtensionHandler = verifyVoteExtensionHandlerFactory();
   });
 
-  it('should return ResponseProcessProposal', async () => {
+  it('should return ResponseVerifyVoteExtension', async () => {
     const result = await verifyVoteExtensionHandler();
 
     expect(result).to.be.an.instanceOf(ResponseVerifyVoteExtension);

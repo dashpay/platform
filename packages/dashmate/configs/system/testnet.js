@@ -73,7 +73,7 @@ module.exports = lodashMerge({}, baseConfig, {
               ],
             },
             version: {
-              app_version: '0',
+              app_version: '1',
             },
             synchrony: {
               precision: '505000000',
