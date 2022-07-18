@@ -46,12 +46,12 @@ function handleNewMasternodeFactory(
       proRegTxHash,
     );
 
-    const publicKey = Buffer.from(proRegTxPayload.keyIDOwner, 'hex').reverse();
+    const publicKeyOwner = Buffer.from(proRegTxPayload.keyIDOwner, 'hex').reverse();
 
     result.push(
       await createMasternodeIdentity(
         masternodeIdentifier,
-        publicKey,
+        publicKeyOwner,
         IdentityPublicKey.TYPES.ECDSA_HASH160,
         payoutScript,
       ),
@@ -92,15 +92,15 @@ function handleNewMasternodeFactory(
       }
     }
 
-    const votingPubKey = Buffer.from(proRegTxPayload.keyIDVoting, 'hex').reverse();
+    const votingPubKeyHash = Buffer.from(proRegTxPayload.keyIDVoting, 'hex').reverse();
 
-    if (votingPubKey.compare(publicKey) !== 0) {
+    if (!votingPubKeyHash.equals(publicKeyOwner)) {
       const votingIdentifier = createVotingIdentifier(masternodeEntry);
 
       result.push(
         await createMasternodeIdentity(
           votingIdentifier,
-          votingPubKey,
+          votingPubKeyHash,
           IdentityPublicKey.TYPES.ECDSA_HASH160,
         ),
       );
