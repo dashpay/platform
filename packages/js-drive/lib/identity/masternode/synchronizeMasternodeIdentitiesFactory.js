@@ -101,7 +101,14 @@ function synchronizeMasternodeIdentitiesFactory(
               dataContract,
             ),
           );
+        }
 
+        const previousVotingMnEntry = previousMNList.find((previousMnListEntry) => (
+          previousMnListEntry.proRegTxHash === mnEntry.proRegTxHash
+          && previousMnListEntry.votingAddress !== mnEntry.votingAddress
+        ));
+
+        if (previousVotingMnEntry) {
           updatedEntities = updatedEntities.concat(
             await handleUpdatedVotingAddress(
               mnEntry,
