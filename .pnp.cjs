@@ -2262,10 +2262,10 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
         }]
       ]],
       ["@dashevo/abci", [
-        ["https://github.com/dashevo/js-abci.git#commit=be2a8f2172d5e0a3445a1cc1f3d1c636ff4e7776", {
-          "packageLocation": "./.yarn/cache/@dashevo-abci-https-e32e8e61c5-d9f4a6731b.zip/node_modules/@dashevo/abci/",
+        ["npm:0.24.0-dev.1", {
+          "packageLocation": "./.yarn/cache/@dashevo-abci-npm-0.24.0-dev.1-10e782bbd8-7365398a18.zip/node_modules/@dashevo/abci/",
           "packageDependencies": [
-            ["@dashevo/abci", "https://github.com/dashevo/js-abci.git#commit=be2a8f2172d5e0a3445a1cc1f3d1c636ff4e7776"],
+            ["@dashevo/abci", "npm:0.24.0-dev.1"],
             ["@dashevo/protobufjs", "npm:6.10.5"],
             ["bl", "npm:1.2.3"],
             ["protocol-buffers-encodings", "npm:1.1.1"]
@@ -2665,7 +2665,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           "packageLocation": "./packages/js-drive/",
           "packageDependencies": [
             ["@dashevo/drive", "workspace:packages/js-drive"],
-            ["@dashevo/abci", "https://github.com/dashevo/js-abci.git#commit=be2a8f2172d5e0a3445a1cc1f3d1c636ff4e7776"],
+            ["@dashevo/abci", "npm:0.24.0-dev.1"],
             ["@dashevo/dapi-grpc", "workspace:packages/dapi-grpc"],
             ["@dashevo/dashcore-lib", "npm:0.19.39"],
             ["@dashevo/dashd-rpc", "npm:2.3.2"],
