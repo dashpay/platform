@@ -1016,4 +1016,33 @@ describe('synchronizeMasternodeIdentitiesFactory', () => {
 
     expect(document.get('payToId')).to.deep.equal(newOperatorIdentifier);
   });
+
+  it('should not create voting Identity', async () => {
+    transaction1 = {
+      extraPayload: {
+        operatorReward: 100,
+        keyIDOwner: Buffer.alloc(20).fill('a').toString('hex'),
+        keyIDVoting: Buffer.alloc(20).fill('a').toString('hex'),
+      },
+    };
+
+    fetchTransactionMock.withArgs('954112bb018895896cfa3c3d00761a045fc16b22f2170c1fbb029a2936c68f16').resolves(transaction1);
+
+    // Initial sync
+
+    await synchronizeMasternodeIdentities(coreHeight);
+
+    await expectDeterministicAppHash('3673310432ee546ca580c05fdcad8a59dba952e497003b0cf3065acd555567f9');
+
+    const votingIdentifier = createVotingIdentifier(smlFixture[0]);
+
+    const votingIdentityResult = await identityRepository.fetch(votingIdentifier);
+
+    const votingIdentity = votingIdentityResult.getValue();
+
+    expect(votingIdentity)
+      .to
+      .not
+      .exist();
+  });
 });

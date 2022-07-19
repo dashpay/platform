@@ -6,16 +6,13 @@ const Address = require('@dashevo/dashcore-lib/lib/address');
  * @param {SimplifiedMNListEntry} smlEntry
  */
 function createVotingIdentifier(smlEntry) {
-  const votingPubKey = Buffer.from(
-    Address.fromString(smlEntry.votingAddress).hashBuffer,
-    'hex',
-  );
+  const votingPubKeyHash = Address.fromString(smlEntry.votingAddress).hashBuffer;
 
   return Identifier.from(
     hash(
       Buffer.concat([
         Buffer.from(smlEntry.proRegTxHash, 'hex'),
-        votingPubKey,
+        votingPubKeyHash,
       ]),
     ),
   );
