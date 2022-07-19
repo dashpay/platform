@@ -10,32 +10,6 @@ use crate::{
     util::string_encoding::Encoding,
 };
 
-pub struct DocumentsFetcher<SR>
-where
-    SR: StateRepositoryLike,
-{
-    state_repository: SR,
-}
-
-pub fn fetch_documents_factory<SR>(state_repository: SR) -> DocumentsFetcher<SR>
-where
-    SR: StateRepositoryLike,
-{
-    DocumentsFetcher { state_repository }
-}
-
-impl<SR> DocumentsFetcher<SR>
-where
-    SR: StateRepositoryLike,
-{
-    pub async fn fetch_documents(
-        &self,
-        document_transitions: &[DocumentTransition],
-    ) -> Result<Vec<Document>, anyhow::Error> {
-        fetch_documents(&self.state_repository, document_transitions).await
-    }
-}
-
 pub async fn fetch_documents(
     state_repository: &impl StateRepositoryLike,
     document_transitions: impl IntoIterator<Item = impl AsRef<DocumentTransition>>,
