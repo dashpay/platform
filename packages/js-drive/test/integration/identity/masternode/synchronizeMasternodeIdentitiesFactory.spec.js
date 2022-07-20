@@ -1023,7 +1023,7 @@ describe('synchronizeMasternodeIdentitiesFactory', () => {
     expect(document.get('payToId')).to.deep.equal(newOperatorIdentifier);
   });
 
-  it('should not create voting Identity', async () => {
+  it('should not create voting Identity if owner and voting keys are the same', async () => {
     transaction1 = {
       extraPayload: {
         operatorReward: 100,
