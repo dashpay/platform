@@ -6,11 +6,13 @@ const createVotingIdentifier = require('./createVotingIdentifier');
  *
  * @param {DriveStateRepository|CachedStateRepositoryDecorator} transactionalStateRepository
  * @param {createMasternodeIdentity} createMasternodeIdentity
+ * @param {fetchTransaction} fetchTransaction
  * @return {handleUpdatedVotingAddress}
  */
 function handleUpdatedVotingAddressFactory(
   transactionalStateRepository,
   createMasternodeIdentity,
+  fetchTransaction,
 ) {
   /**
    * @typedef handleUpdatedVotingAddress
@@ -22,6 +24,17 @@ function handleUpdatedVotingAddressFactory(
   ) {
     const result = [];
 
+    const { extraPayload: proRegTxPayload } = await fetchTransaction(masternodeEntry.proRegTxHash);
+
+    const ownerPublicKeyHash = Buffer.from(proRegTxPayload.keyIDOwner, 'hex').reverse();
+    const votingPubKeyHash = Buffer.from(proRegTxPayload.keyIDVoting, 'hex').reverse();
+
+    // don't need to create a separate Identity in case we don't have
+    // public key used for proposal voting (keyIDVoting === keyIDOwner)
+    if (ownerPublicKeyHash.equals(votingPubKeyHash)) {
+      return result;
+    }
+
     // Create a voting identity if there is no identity exist with the same ID
     const votingIdentifier = createVotingIdentifier(masternodeEntry);
 
@@ -30,15 +43,12 @@ function handleUpdatedVotingAddressFactory(
     //  Create an identity for operator if there is no identity exist with the same ID
     if (votingIdentity === null) {
       const votingAddress = Address.fromString(masternodeEntry.votingAddress);
-      const votingPublicKey = Buffer.from(
-        votingAddress.hashBuffer,
-        'hex',
-      );
+      const votingPublicKeyHash = votingAddress.hashBuffer;
 
       result.push(
         await createMasternodeIdentity(
           votingIdentifier,
-          votingPublicKey,
+          votingPublicKeyHash,
           IdentityPublicKey.TYPES.ECDSA_HASH160,
         ),
       );

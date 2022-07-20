@@ -935,7 +935,7 @@ describe('synchronizeMasternodeIdentitiesFactory', () => {
     expect(document.get('payToId')).to.deep.equal(newOperatorIdentifier);
   });
 
-  it.skip('should handle changed payout and operator payout addresses', async () => {
+  it.skip('should handle changed payout, voting and operator payout addresses', async () => {
     // Sync initial list
 
     await synchronizeMasternodeIdentities(coreHeight);
@@ -988,6 +988,12 @@ describe('synchronizeMasternodeIdentitiesFactory', () => {
       changedSmlEntry,
       undefined,
       Address.fromString(changedSmlEntry.operatorPayoutAddress),
+    );
+
+    // new voting Identity should exist
+    await expectVotingIdentity(
+      changedSmlEntry,
+      transaction1,
     );
 
     // Only new masternode reward shares should exist

@@ -46,12 +46,12 @@ function handleNewMasternodeFactory(
       proRegTxHash,
     );
 
-    const publicKeyOwner = Buffer.from(proRegTxPayload.keyIDOwner, 'hex').reverse();
+    const ownerPublicKeyHash = Buffer.from(proRegTxPayload.keyIDOwner, 'hex').reverse();
 
     result.push(
       await createMasternodeIdentity(
         masternodeIdentifier,
-        publicKeyOwner,
+        ownerPublicKeyHash,
         IdentityPublicKey.TYPES.ECDSA_HASH160,
         payoutScript,
       ),
@@ -94,7 +94,9 @@ function handleNewMasternodeFactory(
 
     const votingPubKeyHash = Buffer.from(proRegTxPayload.keyIDVoting, 'hex').reverse();
 
-    if (!votingPubKeyHash.equals(publicKeyOwner)) {
+    // don't need to create a separate Identity in case we don't have
+    // voting public key (keyIDVoting === keyIDOwner)
+    if (!votingPubKeyHash.equals(ownerPublicKeyHash)) {
       const votingIdentifier = createVotingIdentifier(masternodeEntry);
 
       result.push(

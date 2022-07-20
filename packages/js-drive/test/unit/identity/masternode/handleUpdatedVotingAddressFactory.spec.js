@@ -10,6 +10,8 @@ describe('handleUpdatedVotingAddressFactory', () => {
   let stateRepositoryMock;
   let smlEntry;
   let identity;
+  let fetchTransactionMock;
+  let transactionFixture;
 
   beforeEach(function beforeEach() {
     smlEntry = {
@@ -21,6 +23,15 @@ describe('handleUpdatedVotingAddressFactory', () => {
       isValid: false,
     };
 
+    transactionFixture = {
+      extraPayload: {
+        operatorReward: 0,
+        keyIDOwner: Buffer.alloc(20).fill('a').toString('hex'),
+        keyIDVoting: Buffer.alloc(20).fill('b').toString('hex'),
+      },
+    };
+
+    fetchTransactionMock = this.sinon.stub().resolves(transactionFixture);
     identity = getIdentityFixture();
 
     stateRepositoryMock = createStateRepositoryMock(this.sinon);
@@ -31,6 +42,7 @@ describe('handleUpdatedVotingAddressFactory', () => {
     handleUpdatedVotingAddress = handleUpdatedVotingAddressFactory(
       stateRepositoryMock,
       createMasternodeIdentityMock,
+      fetchTransactionMock,
     );
   });
 
@@ -46,6 +58,7 @@ describe('handleUpdatedVotingAddressFactory', () => {
       Buffer.from('8fd1a9502c58ab103792693e951bf39f10ee46a9', 'hex'),
       IdentityPublicKey.TYPES.ECDSA_HASH160,
     );
+    expect(fetchTransactionMock).to.be.calledWithExactly(smlEntry.proRegTxHash);
   });
 
   it('should not update identity if identity already exists', async () => {
@@ -55,5 +68,18 @@ describe('handleUpdatedVotingAddressFactory', () => {
 
     expect(result).to.have.lengthOf(0);
     expect(createMasternodeIdentityMock).to.not.be.called();
+    expect(fetchTransactionMock).to.be.calledWithExactly(smlEntry.proRegTxHash);
+  });
+
+  it('should not update identity if owner and voting keys are the same', async () => {
+    transactionFixture.extraPayload.keyIDVoting = transactionFixture.extraPayload.keyIDOwner;
+
+    fetchTransactionMock.resolves(transactionFixture);
+
+    const result = await handleUpdatedVotingAddress(smlEntry);
+
+    expect(result).to.have.lengthOf(0);
+    expect(createMasternodeIdentityMock).to.not.be.called();
+    expect(fetchTransactionMock).to.be.calledWithExactly(smlEntry.proRegTxHash);
   });
 });
