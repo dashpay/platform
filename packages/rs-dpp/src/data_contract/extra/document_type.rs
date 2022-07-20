@@ -1,5 +1,5 @@
 use super::common::*;
-use super::errors::contract::ContractError;
+use super::errors::ContractError;
 use super::{
     document_field::{DocumentField, DocumentFieldType},
     index::{Index, IndexProperty},

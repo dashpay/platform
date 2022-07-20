@@ -12,7 +12,7 @@ use std::convert::{TryFrom, TryInto};
 
 use super::array_field::ArrayFieldType;
 use super::common::*;
-use super::errors::contract::ContractError;
+use super::errors::ContractError;
 
 #[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
 pub struct DocumentField {

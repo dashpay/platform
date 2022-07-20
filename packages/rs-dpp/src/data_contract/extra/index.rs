@@ -1,4 +1,4 @@
-use super::errors::contract::ContractError;
+use super::errors::ContractError;
 use ciborium::value::{Value as CborValue, Value};
 use serde::{Deserialize, Serialize};
 
@@ -104,7 +104,7 @@ impl Index {
         for (key_value, value_value) in index_type_value_map {
             let key = key_value
                 .as_text()
-                .ok_or({ ContractError::KeyWrongType("key should be of type text") })?;
+                .ok_or(ContractError::KeyWrongType("key should be of type text"))?;
 
             if key == "unique" {
                 if value_value.is_bool() {
@@ -145,11 +145,13 @@ impl IndexProperty {
         let key = property
             .0 // key
             .as_text()
-            .ok_or({ ContractError::KeyWrongType("key should be of type string") })?;
+            .ok_or(ContractError::KeyWrongType("key should be of type string"))?;
         let value = property
             .1 // value
             .as_text()
-            .ok_or({ ContractError::ValueWrongType("value should be of type string") })?;
+            .ok_or(ContractError::ValueWrongType(
+                "value should be of type string",
+            ))?;
 
         let ascending = value == "asc";
 
