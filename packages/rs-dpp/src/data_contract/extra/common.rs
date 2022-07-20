@@ -1,11 +1,10 @@
-use super::errors::common::StructureError;
+use super::errors::StructureError;
 use byteorder::{BigEndian, WriteBytesExt};
 use ciborium::value::Value;
 use std::collections::{BTreeMap, BTreeSet};
-use std::convert::{TryFrom, TryInto};
+use std::convert::TryInto;
 use std::fs::File;
-use std::io;
-use std::io::{BufRead, BufReader};
+use std::io::BufReader;
 use std::path::Path;
 
 pub fn cbor_map_to_btree_map(cbor_map: &[(Value, Value)]) -> BTreeMap<String, &Value> {
@@ -349,4 +348,39 @@ pub fn value_to_cbor(value: serde_json::Value, protocol_version: Option<u32>) ->
     }
     ciborium::ser::into_writer(&value, &mut buffer).expect("unable to serialize into cbor");
     buffer
+}
+
+// TODO we probably have this function in dpp
+fn check_protocol_version_bytes(version_bytes: &[u8]) -> bool {
+    if version_bytes.len() != 4 {
+        false
+    } else {
+        let version_set_bytes: [u8; 4] = version_bytes
+            .try_into()
+            .expect("slice with incorrect length");
+        let version = u32::from_be_bytes(version_set_bytes);
+        // todo despite the const this will be use as dynamic content
+        check_protocol_version(version)
+    }
+}
+
+const fn check_protocol_version(_version: u32) -> bool {
+    // Temporary disabled due protocol version is dynamic and goes from consensus params
+    true
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use std::collections::HashMap;
+
+    #[test]
+    fn test_cbor_deserialization() {
+        let document_cbor = json_document_to_cbor("src/tests/payloads/simple.json", Some(1));
+        let (version, read_document_cbor) = document_cbor.split_at(4);
+        assert!(check_protocol_version_bytes(version));
+        let document: HashMap<String, ciborium::value::Value> =
+            ciborium::de::from_reader(read_document_cbor).expect("cannot deserialize cbor");
+        assert!(document.get("a").is_some());
+    }
 }

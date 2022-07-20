@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 use std::convert::TryFrom;
 
 use anyhow::anyhow;
@@ -19,9 +19,10 @@ use crate::{
     util::{hash::hash, serializer},
 };
 
-use super::contract::Contract;
 use super::errors::*;
+use super::extra::{get_definitions, get_document_types, get_mutability, Mutability};
 
+use super::extra::DocumentType;
 use super::properties::*;
 
 pub type JsonSchema = JsonValue;
@@ -85,7 +86,9 @@ pub struct DataContract {
     pub binary_properties: BTreeMap<DocumentName, BTreeMap<PropertyPath, JsonValue>>,
 
     #[serde(skip)]
-    pub contract: Contract,
+    pub(crate) mutability: Mutability,
+    #[serde(skip)]
+    pub(crate) document_types: BTreeMap<DocumentName, DocumentType>,
 }
 
 impl DataContract {
@@ -175,6 +178,17 @@ impl DataContract {
             documents.insert(key, value);
         }
 
+        let mutability = get_mutability(&data_contract_map)
+            .map_err(|e| ProtocolError::ParsingError(e.to_string()))?;
+        let definition_references = get_definitions(&data_contract_map);
+        let document_types = get_document_types(
+            &data_contract_map,
+            definition_references,
+            mutability.documents_keep_history_contract_default,
+            mutability.documents_mutable_contract_default,
+        )
+        .map_err(|e| ProtocolError::ParsingError(e.to_string()))?;
+
         let mut data_contract = Self {
             protocol_version,
             id: Identifier::new(contract_id),
@@ -187,7 +201,8 @@ impl DataContract {
             entropy: [0; 32],
             binary_properties: Default::default(),
             // TODO
-            contract: Default::default(),
+            document_types,
+            mutability,
         };
 
         data_contract.generate_binary_properties();
@@ -383,12 +398,11 @@ impl TryFrom<&str> for DataContract {
 
 #[cfg(test)]
 mod test {
-    use anyhow::Result;
-
     use crate::{
         assert_error_contains,
         tests::{fixtures::get_data_contract_fixture, utils::*},
     };
+    use anyhow::Result;
 
     use super::*;
 

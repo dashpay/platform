@@ -1,6 +1,6 @@
-use super::errors::contract::ContractError;
-use ciborium::value::{Integer, Value};
-use integer_encoding::{VarInt, VarIntReader};
+use super::errors::ContractError;
+use ciborium::value::Value;
+use integer_encoding::VarInt;
 use serde::{Deserialize, Serialize};
 use std::convert::TryInto;
 
@@ -16,7 +16,7 @@ pub enum ArrayFieldType {
 
 impl ArrayFieldType {
     pub fn encode_value_with_size(&self, value: Value) -> Result<Vec<u8>, ContractError> {
-        return match self {
+        match self {
             ArrayFieldType::String(_, _) => {
                 if let Value::Text(value) = value {
                     let vec = value.into_bytes();
@@ -106,7 +106,7 @@ impl ArrayFieldType {
                     Ok(vec![0]) // 2 is false
                 }
             }
-        };
+        }
     }
 
     pub fn encode_value_ref_with_size(&self, value: &Value) -> Result<Vec<u8>, ContractError> {
