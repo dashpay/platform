@@ -33,23 +33,23 @@ use std::collections::BTreeMap;
 pub fn get_mutability(contract: &BTreeMap<String, CborValue>) -> Result<Mutability, ContractError> {
     let keeps_history: bool = common::bool_for_system_value_from_tree_map(
         contract,
-        "keepsHistory",
+        mutability::property::KEEPS_HISTORY,
         DEFAULT_CONTRACT_KEEPS_HISTORY,
     )?;
     let readonly: bool = common::bool_for_system_value_from_tree_map(
         contract,
-        "readOnly",
+        mutability::property::READONLY,
         !DEFAULT_CONTRACT_MUTABILITY,
     )?;
     let documents_keep_history_contract_default: bool =
         common::bool_for_system_value_from_tree_map(
             contract,
-            "documentsKeepHistoryContractDefault",
+            mutability::property::DOCUMENTS_KEEP_HISTORY_CONTRACT_DEFAULT,
             DEFAULT_CONTRACT_DOCUMENTS_KEEPS_HISTORY,
         )?;
     let documents_mutable_contract_default: bool = common::bool_for_system_value_from_tree_map(
         contract,
-        "documentsMutableContractDefault",
+        mutability::property::DOCUMENTS_MUTABLE_CONTRACT_DEFAULT,
         DEFAULT_CONTRACT_DOCUMENT_MUTABILITY,
     )?;
 

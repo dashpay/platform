@@ -200,7 +200,6 @@ impl DataContract {
             metadata: None,
             entropy: [0; 32],
             binary_properties: Default::default(),
-            // TODO
             document_types,
             mutability,
         };
@@ -235,6 +234,16 @@ impl DataContract {
     pub fn to_cbor(&self) -> Result<Vec<u8>, ProtocolError> {
         let mut buf = self.protocol_version().to_le_bytes().to_vec();
 
+        let contract_cbor_map = self.to_cbor_canonical_map()?;
+        let mut contract_buf = contract_cbor_map
+            .to_bytes()
+            .map_err(|e| ProtocolError::EncodingError(e.to_string()))?;
+
+        buf.append(&mut contract_buf);
+        Ok(buf)
+    }
+
+    pub(crate) fn to_cbor_canonical_map(&self) -> Result<CborCanonicalMap, ProtocolError> {
         let mut contract_cbor_map = CborCanonicalMap::new();
 
         contract_cbor_map.insert(PROPERTY_ID, self.id().to_buffer().to_vec());
@@ -255,12 +264,7 @@ impl DataContract {
             );
         }
 
-        let mut contract_buf = contract_cbor_map
-            .to_bytes()
-            .map_err(|e| ProtocolError::EncodingError(e.to_string()))?;
-
-        buf.append(&mut contract_buf);
-        Ok(buf)
+        Ok(contract_cbor_map)
     }
 
     pub fn documents(&self) -> &BTreeMap<DocumentName, JsonSchema> {
