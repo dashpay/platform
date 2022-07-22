@@ -1,7 +1,9 @@
 use super::document_type::DocumentType;
 use super::errors::ContractError;
+use super::mutability;
 use super::root_tree::RootTree;
 use crate::data_contract::DataContract;
+use crate::ProtocolError;
 use std::collections::BTreeMap;
 
 pub enum DriveEncoding {
@@ -9,10 +11,8 @@ pub enum DriveEncoding {
     DriveProtobuf,
 }
 
-// AntiCorruption layer - the goal is to maintain the compatibility with rs-drive, despite changing
-// the implementation details
+/// The traits provides method specific for RS-Drive
 pub trait DriveContractExt {
-    // setters/getters
     fn id(&self) -> &[u8; 32];
 
     fn document_types(&self) -> &BTreeMap<String, DocumentType>;
@@ -45,6 +45,8 @@ pub trait DriveContractExt {
     ) -> Result<Self, ContractError>
     where
         Self: Sized;
+
+    fn to_cbor(&self) -> Result<Vec<u8>, ContractError>;
 
     fn document_type_for_name(
         &self,
@@ -130,12 +132,37 @@ impl DriveContractExt for DataContract {
         Self: Sized,
     {
         let mut data_contract = DataContract::from_cbor(contract_cbor)?;
-
         if let Some(id) = contract_id {
             data_contract.id.buffer = id
         }
 
         Ok(data_contract)
+    }
+
+    /// `to_cbor` overloads the original method from [`DataContract`] and adds the properties
+    /// from [`super::Mutability`].
+    fn to_cbor(&self) -> Result<Vec<u8>, ContractError> {
+        let mut buf = self.protocol_version().to_le_bytes().to_vec();
+
+        let mut contract_cbor_map = self.to_cbor_canonical_map()?;
+
+        contract_cbor_map.insert(mutability::property::READONLY, self.readonly());
+        contract_cbor_map.insert(mutability::property::KEEPS_HISTORY, self.keeps_history());
+        contract_cbor_map.insert(
+            mutability::property::DOCUMENTS_KEEP_HISTORY_CONTRACT_DEFAULT,
+            self.documents_keep_history_contract_default(),
+        );
+        contract_cbor_map.insert(
+            mutability::property::DOCUMENTS_MUTABLE_CONTRACT_DEFAULT,
+            self.documents_mutable_contract_default(),
+        );
+
+        let mut contract_buf = contract_cbor_map
+            .to_bytes()
+            .map_err(|e| ProtocolError::EncodingError(e.to_string()))?;
+
+        buf.append(&mut contract_buf);
+        Ok(buf)
     }
 
     fn document_type_for_name(
@@ -199,10 +226,11 @@ impl DriveContractExt for DataContract {
 
 #[cfg(test)]
 mod test {
+    use mutability::Mutability;
+
     use super::*;
     use crate::{
         data_contract::extra::common::json_document_to_cbor, data_contract::DataContract,
-        prelude::Identifier, tests::fixtures::get_data_contract_fixture,
         util::json_schema::JsonSchemaExt,
     };
 
@@ -295,6 +323,7 @@ mod test {
             },
         ]
     }
+
     #[test]
     fn deserialize_from_cbor_with_contract_inner() {
         let cbor_bytes = std::fs::read("src/tests/payloads/contract/contract.bin").unwrap();
@@ -302,20 +331,14 @@ mod test {
         let expect_owner_id_base58 = "6C7w6XJxXWbb12iJj2aLcQU3T9wn8CZ8pimiWXGfWb55";
         let expect_id = bs58::decode(expect_id_base58).into_vec().unwrap();
         let expect_owner_id = bs58::decode(expect_owner_id_base58).into_vec().unwrap();
-        let data_contract_ref =
-            get_data_contract_fixture(Some(Identifier::from_bytes(&expect_owner_id).unwrap()));
 
         let data_contract =
             DataContract::from_cbor(&cbor_bytes).expect("contract should be deserialized");
-        // let data_contract = <DataContract as DriveContractExt>::from_cbor(&cbor_bytes, None)
-        //     .expect("contract should be deserialized");
 
-        println!("{:#?}", data_contract);
-
+        assert_eq!(1, data_contract.protocol_version());
         assert_eq!(expect_id, data_contract.id().as_bytes());
         assert_eq!(expect_owner_id, data_contract.owner_id().as_bytes());
 
-        println!("{:#?}", data_contract_ref.documents().len());
         assert_eq!(7, data_contract.documents().len());
         assert_eq!(7, data_contract.document_types().len());
         assert_eq!(1, data_contract.version());
@@ -355,7 +378,7 @@ mod test {
     }
 
     #[test]
-    fn test_import_contract() {
+    fn should_drive_api_methods_contain_contract_data() {
         let dashpay_cbor =
             json_document_to_cbor("src/tests/payloads/contract/dashpay-contract.json", Some(1));
         let contract = DataContract::from_cbor(&dashpay_cbor).unwrap();
@@ -412,5 +435,37 @@ mod test {
         );
 
         assert!(contact_info_indices[0].properties[0].ascending);
+    }
+
+    #[test]
+    fn mutability_properties_should_be_stored_and_restored_during_serialization() {
+        let dashpay_cbor =
+            json_document_to_cbor("src/tests/payloads/contract/dashpay-contract.json", Some(1));
+        let mut contract = DataContract::from_cbor(&dashpay_cbor).unwrap();
+
+        assert!(!contract.readonly());
+        assert!(!contract.keeps_history());
+        assert!(contract.documents_mutable_contract_default());
+        assert!(!contract.documents_keep_history_contract_default());
+
+        contract.set_readonly(true);
+        contract.set_keeps_history(true);
+        contract.set_documents_mutable_contract_default(false);
+        contract.set_documents_keep_history_contract_default(true);
+
+        let contract_cbor =
+            DriveContractExt::to_cbor(&contract).expect("serialization shouldn't fail");
+        let deserialized_contract =
+            DataContract::from_cbor(&contract_cbor).expect("deserialization shouldn't fail");
+
+        assert!(matches!(
+            deserialized_contract.mutability,
+            Mutability {
+                readonly: true,
+                keeps_history: true,
+                documents_mutable_contract_default: false,
+                documents_keep_history_contract_default: true,
+            }
+        ));
     }
 }
