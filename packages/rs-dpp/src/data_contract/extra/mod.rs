@@ -15,7 +15,10 @@ use mutability::{
 };
 pub use {
     array_field::ArrayFieldType,
-    document_field::{DocumentField, DocumentFieldType},
+    document_field::{
+        encode_float, encode_signed_integer, encode_unsigned_integer, DocumentField,
+        DocumentFieldType,
+    },
     document_type::DocumentType,
     drive_api::{DriveContractExt, DriveEncoding},
     errors::{ContractError, StructureError},

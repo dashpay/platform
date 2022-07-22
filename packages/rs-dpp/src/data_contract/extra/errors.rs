@@ -1,5 +1,3 @@
-use crate::ProtocolError;
-
 #[derive(Debug, thiserror::Error)]
 pub enum ContractError {
     #[error("missing required key: {0}")]
