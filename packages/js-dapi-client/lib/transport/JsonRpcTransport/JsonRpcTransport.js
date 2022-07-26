@@ -80,7 +80,7 @@ class JsonRpcTransport {
     } catch (error) {
       this.lastUsedAddress = address;
 
-      console.log('DAPIERROR', error, error.code);
+      console.log('DAPIERROR', error, `code=${error.code}!`, method, JSON.stringify(params));
 
       if (error.code === undefined) {
         throw error;
