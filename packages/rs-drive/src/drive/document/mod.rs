@@ -82,6 +82,7 @@ pub(crate) mod tests {
     use tempfile::TempDir;
 
     use crate::common::json_document_to_cbor;
+    use crate::drive::flags::StorageFlags;
     use crate::drive::Drive;
 
     pub fn setup_dashpay(_prefix: &str, mutable_contact_requests: bool) -> (Drive, Vec<u8>) {
@@ -90,7 +91,7 @@ pub(crate) mod tests {
         let drive: Drive = Drive::open(tmp_dir, None).expect("expected to open Drive successfully");
 
         drive
-            .create_root_tree(None)
+            .create_initial_state_structure(None)
             .expect("expected to create root tree successfully");
 
         let dashpay_path = if mutable_contact_requests {
@@ -102,7 +103,14 @@ pub(crate) mod tests {
         // let's construct the grovedb structure for the dashpay data contract
         let dashpay_cbor = json_document_to_cbor(dashpay_path, Some(1));
         drive
-            .apply_contract_cbor(dashpay_cbor.clone(), None, 0f64, true, None)
+            .apply_contract_cbor(
+                dashpay_cbor.clone(),
+                None,
+                0f64,
+                true,
+                StorageFlags::default(),
+                None,
+            )
             .expect("expected to apply contract successfully");
 
         (drive, dashpay_cbor)

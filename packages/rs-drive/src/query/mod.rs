@@ -873,7 +873,7 @@ impl<'a> DriveQuery<'a> {
                         Ok(Some(inner_query))
                     }
                     Some(query) => {
-                        if let Some((document, document_type, indexed_property, included)) =
+                        if let Some((document, document_type, _indexed_property, included)) =
                             starts_at_document
                         {
                             let start_at_key = document
@@ -1241,7 +1241,7 @@ mod tests {
         let drive: Drive = Drive::open(tmp_dir, None).expect("expected to open Drive successfully");
 
         drive
-            .create_root_tree(None)
+            .create_initial_state_structure(None)
             .expect("expected to create root tree successfully");
 
         let contract_path = "tests/supporting_files/contract/family/family-contract.json";
@@ -1270,7 +1270,7 @@ mod tests {
         let drive: Drive = Drive::open(tmp_dir, None).expect("expected to open Drive successfully");
 
         drive
-            .create_root_tree(None)
+            .create_initial_state_structure(None)
             .expect("expected to create root tree successfully");
 
         let contract_path =

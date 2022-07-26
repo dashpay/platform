@@ -9,8 +9,11 @@ use serde_json::json;
 use tempfile::TempDir;
 
 use rs_drive::common;
+use rs_drive::common::helpers::setup::setup_drive;
 use rs_drive::contract::{document::Document, Contract};
+use rs_drive::drive::batch::GroveDbOpBatch;
 use rs_drive::drive::config::DriveConfig;
+use rs_drive::drive::contract::add_init_contracts_structure_operations;
 use rs_drive::drive::flags::StorageFlags;
 use rs_drive::drive::object_size_info::DocumentAndContractInfo;
 use rs_drive::drive::object_size_info::DocumentInfo::DocumentAndSerialization;
@@ -115,23 +118,27 @@ impl Person {
 pub fn setup(
     count: usize,
     restrict_to_inserts: Option<Vec<usize>>,
-    batching: bool,
+    with_batching: bool,
     seed: u64,
-) -> (Drive, Contract, TempDir) {
-    let tmp_dir = TempDir::new().unwrap();
-    let drive_config = if batching {
-        Some(DriveConfig::default_with_batches())
+) -> (Drive, Contract) {
+    let drive_config = if with_batching {
+        DriveConfig::default_with_batches()
     } else {
-        Some(DriveConfig::default_without_batches())
+        DriveConfig::default_without_batches()
     };
-    let drive: Drive =
-        Drive::open(&tmp_dir, drive_config).expect("expected to open Drive successfully");
+
+    let drive = setup_drive(Some(drive_config));
 
     let db_transaction = drive.grove.start_transaction();
 
+    // Create contracts tree
+    let mut batch = GroveDbOpBatch::new();
+
+    add_init_contracts_structure_operations(&mut batch);
+
     drive
-        .create_root_tree(Some(&db_transaction))
-        .expect("expected to create root tree successfully");
+        .grove_apply_batch(batch, false, Some(&db_transaction))
+        .expect("expected to create contracts tree successfully");
 
     // setup code
     let contract = common::setup_contract(
@@ -144,8 +151,6 @@ pub fn setup(
     let block_times: Vec<u64> = vec![0, 15, 100, 1000];
 
     let people_at_block_times = Person::random_people_for_block_times(count, seed, block_times);
-
-    dbg!(&people_at_block_times);
 
     for (block_time, people) in people_at_block_times {
         for (i, person) in people.iter().enumerate() {
@@ -194,7 +199,8 @@ pub fn setup(
         .commit_transaction(db_transaction)
         .unwrap()
         .expect("transaction should be committed");
-    (drive, contract, tmp_dir)
+
+    (drive, contract)
 }
 
 #[test]
@@ -205,7 +211,7 @@ fn test_setup() {
 
 #[test]
 fn test_query_historical() {
-    let (drive, contract, _tmp_dir) = setup(10, None, true, 73509);
+    let (drive, contract) = setup(10, None, true, 73509);
 
     let db_transaction = drive.grove.start_transaction();
 
@@ -217,8 +223,8 @@ fn test_query_historical() {
     assert_eq!(
         root_hash.as_slice(),
         vec![
-            114, 3, 28, 2, 167, 97, 85, 28, 169, 84, 88, 129, 232, 172, 36, 115, 166, 222, 219, 3,
-            74, 38, 16, 101, 83, 41, 200, 241, 80, 218, 90, 175
+            230, 236, 88, 150, 111, 150, 60, 149, 247, 147, 196, 208, 248, 49, 68, 225, 141, 201,
+            251, 163, 138, 143, 223, 178, 244, 176, 103, 71, 146, 151, 51, 206
         ]
     );
 
@@ -1348,6 +1354,7 @@ fn test_query_historical() {
             None,
             0f64,
             true,
+            StorageFlags::default(),
             Some(&db_transaction),
         )
         .expect("expected to apply contract successfully");
@@ -1438,8 +1445,8 @@ fn test_query_historical() {
     assert_eq!(
         root_hash.as_slice(),
         vec![
-            80, 186, 219, 144, 43, 39, 60, 117, 251, 106, 134, 165, 201, 142, 201, 58, 152, 74,
-            247, 243, 13, 217, 47, 110, 129, 89, 137, 34, 110, 248, 180, 8
+            241, 184, 162, 238, 216, 246, 105, 87, 175, 234, 213, 27, 204, 105, 136, 216, 252, 202,
+            124, 135, 225, 215, 78, 235, 18, 4, 87, 142, 108, 143, 29, 53
         ]
     );
 }

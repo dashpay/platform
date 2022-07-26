@@ -16,7 +16,6 @@ pub fn calculate_fee(
     if let Some(base_operations) = base_operations {
         for (base_op, count) in base_operations.iter() {
             match base_op.cost().checked_mul(*count) {
-                // Todo: This should be made into an overflow error
                 None => return Err(Error::Fee(FeeError::Overflow("overflow error"))),
                 Some(cost) => match processing_cost.checked_add(cost) {
                     None => return Err(Error::Fee(FeeError::Overflow("overflow error"))),

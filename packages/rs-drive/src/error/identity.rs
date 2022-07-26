@@ -11,4 +11,7 @@ pub enum IdentityError {
 
     #[error("invalid identity structure: {0}")]
     InvalidIdentityStructure(&'static str),
+
+    #[error("identity serialization error: {0}")]
+    IdentitySerialization(&'static str),
 }

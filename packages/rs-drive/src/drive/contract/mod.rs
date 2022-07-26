@@ -1,4 +1,6 @@
+use std::cell::RefMut;
 use std::collections::HashSet;
+use std::ops::Deref;
 use std::sync::Arc;
 
 use costs::CostContext;
@@ -7,6 +9,7 @@ use dpp::data_contract::extra::DriveContractExt;
 use grovedb::{Element, TransactionArg};
 
 use crate::contract::Contract;
+use crate::drive::batch::GroveDbOpBatch;
 use crate::drive::flags::StorageFlags;
 use crate::drive::object_size_info::KeyInfo::{KeyRef, KeySize};
 use crate::drive::object_size_info::KeyValueInfo::KeyRefRequest;
@@ -14,7 +17,7 @@ use crate::drive::object_size_info::PathKeyElementInfo::{
     PathFixedSizeKeyElement, PathKeyElementSize,
 };
 use crate::drive::object_size_info::PathKeyInfo::PathFixedSizeKeyRef;
-use crate::drive::{contract_documents_path, defaults, Drive, RootTree};
+use crate::drive::{contract_documents_path, defaults, Drive, DriveCache, RootTree};
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fee::calculate_fee;
@@ -48,6 +51,10 @@ fn contract_keeping_history_storage_time_reference_path(
     ]
 }
 
+pub fn add_init_contracts_structure_operations(batch: &mut GroveDbOpBatch) {
+    batch.add_insert_empty_tree(vec![], vec![RootTree::ContractDocuments as u8]);
+}
+
 impl Drive {
     fn add_contract_to_storage(
         &self,
@@ -65,7 +72,7 @@ impl Drive {
             self.batch_insert_empty_tree(
                 contract_root_path,
                 KeyRef(&[0]),
-                &storage_flags,
+                Some(&storage_flags),
                 insert_operations,
             )?;
             let encoded_time = encode_float(block_time)?;
@@ -131,7 +138,7 @@ impl Drive {
         self.batch_insert_empty_tree(
             [Into::<&[u8; 1]>::into(RootTree::ContractDocuments).as_slice()],
             KeyRef(contract.id.as_bytes()),
-            &storage_flags,
+            Some(&storage_flags),
             &mut batch_operations,
         )?;
 
@@ -149,7 +156,7 @@ impl Drive {
         self.batch_insert_empty_tree(
             contract_root_path,
             key_info,
-            &storage_flags,
+            Some(&storage_flags),
             &mut batch_operations,
         )?;
 
@@ -162,7 +169,7 @@ impl Drive {
             self.batch_insert_empty_tree(
                 contract_documents_path,
                 KeyRef(type_key.as_bytes()),
-                &storage_flags,
+                Some(&storage_flags),
                 &mut batch_operations,
             )?;
 
@@ -178,7 +185,7 @@ impl Drive {
             self.batch_insert_empty_tree(
                 type_path,
                 key_info,
-                &storage_flags,
+                Some(&storage_flags),
                 &mut batch_operations,
             )?;
 
@@ -191,14 +198,14 @@ impl Drive {
                     self.batch_insert_empty_tree(
                         type_path,
                         KeyRef(index_bytes),
-                        &storage_flags,
+                        Some(&storage_flags),
                         &mut batch_operations,
                     )?;
                     index_cache.insert(index_bytes);
                 }
             }
         }
-        self.apply_batch(apply, transaction, batch_operations, drive_operations)
+        self.apply_batch_drive_operations(apply, transaction, batch_operations, drive_operations)
     }
 
     fn update_contract(
@@ -308,7 +315,7 @@ impl Drive {
                 self.batch_insert_empty_tree(
                     contract_documents_path,
                     KeyRef(type_key.as_bytes()),
-                    &storage_flags,
+                    Some(&storage_flags),
                     &mut batch_operations,
                 )?;
 
@@ -323,7 +330,7 @@ impl Drive {
                 self.batch_insert_empty_tree(
                     type_path,
                     KeyRef(&[0]),
-                    &storage_flags,
+                    Some(&storage_flags),
                     &mut batch_operations,
                 )?;
 
@@ -336,7 +343,7 @@ impl Drive {
                         self.batch_insert_empty_tree(
                             type_path,
                             KeyRef(index.name.as_bytes()),
-                            &storage_flags,
+                            Some(&storage_flags),
                             &mut batch_operations,
                         )?;
                         index_cache.insert(index_bytes);
@@ -345,7 +352,7 @@ impl Drive {
             }
         }
 
-        self.apply_batch(apply, transaction, batch_operations, drive_operations)
+        self.apply_batch_drive_operations(apply, transaction, batch_operations, drive_operations)
     }
 
     pub fn apply_contract_cbor(
@@ -354,19 +361,18 @@ impl Drive {
         contract_id: Option<[u8; 32]>,
         block_time: f64,
         apply: bool,
+        storage_flags: StorageFlags,
         transaction: TransactionArg,
     ) -> Result<(i64, u64), Error> {
         // first we need to deserialize the contract
         let contract = <Contract as DriveContractExt>::from_cbor(&contract_cbor, contract_id)?;
-
-        let epoch = self.epoch_info.borrow().current_epoch;
 
         self.apply_contract(
             &contract,
             contract_cbor,
             block_time,
             apply,
-            StorageFlags { epoch },
+            storage_flags,
             transaction,
         )
     }
@@ -379,10 +385,10 @@ impl Drive {
     ) -> Result<Option<Arc<Contract>>, Error> {
         // We always charge for a contract fetch in order to remove non determinism issues
         drive_operations.push(ContractFetch);
-        let cached_contracts = self.cached_contracts.borrow();
-        match cached_contracts.get(&contract_id) {
+        let cache = self.cache.borrow_mut();
+        match cache.cached_contracts.get(&contract_id) {
             None => self
-                .fetch_contract(contract_id, transaction)
+                .fetch_contract(contract_id, transaction, cache)
                 .map(|(c, _)| c),
             Some(contract) => {
                 let contract_ref = Arc::clone(&contract);
@@ -395,8 +401,7 @@ impl Drive {
         &self,
         contract_id: [u8; 32],
     ) -> Result<Option<Arc<Contract>>, Error> {
-        let cached_contracts = self.cached_contracts.borrow();
-        match cached_contracts.get(&contract_id) {
+        match self.cache.borrow().cached_contracts.get(&contract_id) {
             None => Ok(None),
             Some(contract) => {
                 let contract_ref = Arc::clone(&contract);
@@ -409,8 +414,9 @@ impl Drive {
         &self,
         contract_id: [u8; 32],
         transaction: TransactionArg,
+        drive_cache: RefMut<DriveCache>,
     ) -> Result<(Option<Arc<Contract>>, StorageFlags), Error> {
-        let CostContext { value, cost } =
+        let CostContext { value, cost: _ } =
             self.grove
                 .get(contract_root_path(&contract_id), &[0], transaction);
         let stored_element = value.map_err(Error::GroveDB)?;
@@ -419,8 +425,10 @@ impl Drive {
                 &stored_contract_bytes,
                 None,
             )?);
-            let cached_contracts = self.cached_contracts.borrow();
-            cached_contracts.insert(contract_id, Arc::clone(&contract));
+            drive_cache
+                .deref()
+                .cached_contracts
+                .insert(contract_id, Arc::clone(&contract));
             let flags = StorageFlags::from_element_flags(element_flag)?;
             Ok((Some(Arc::clone(&contract)), flags))
         } else {
@@ -519,7 +527,7 @@ mod tests {
         let drive: Drive = Drive::open(tmp_dir, None).expect("expected to open Drive successfully");
 
         drive
-            .create_root_tree(None)
+            .create_initial_state_structure(None)
             .expect("expected to create root tree successfully");
 
         let contract_path = "tests/supporting_files/contract/deepNested/deep-nested50.json";
@@ -546,7 +554,7 @@ mod tests {
         let drive: Drive = Drive::open(tmp_dir, None).expect("expected to open Drive successfully");
 
         drive
-            .create_root_tree(None)
+            .create_initial_state_structure(None)
             .expect("expected to create root tree successfully");
 
         let contract_path = "tests/supporting_files/contract/references/references.json";
@@ -575,19 +583,33 @@ mod tests {
         let drive: Drive = Drive::open(tmp_dir, None).expect("expected to open Drive successfully");
 
         drive
-            .create_root_tree(None)
+            .create_initial_state_structure(None)
             .expect("expected to create root tree successfully");
 
         let initial_contract_cbor = hex::decode("01000000a66324696458209c2b800c5ea525d032a9fda4dda22a896f1e763af5f0e15ae7f93882b7439d77652464656673a1686c6173744e616d65a1647479706566737472696e676724736368656d61783468747470733a2f2f736368656d612e646173682e6f72672f6470702d302d342d302f6d6574612f646174612d636f6e7472616374676f776e657249645820636d3188dfffe62efb10e20347ec6c41b3e49fa31cb757ef4bad6cd8f1c7f4b66776657273696f6e0169646f63756d656e7473a76b756e697175654461746573a56474797065666f626a65637467696e646963657382a3646e616d6566696e6465783166756e69717565f56a70726f7065727469657382a16a2463726561746564417463617363a16a2475706461746564417463617363a2646e616d6566696e646578326a70726f7065727469657381a16a2475706461746564417463617363687265717569726564836966697273744e616d656a246372656174656441746a247570646174656441746a70726f70657274696573a2686c6173744e616d65a1647479706566737472696e676966697273744e616d65a1647479706566737472696e67746164646974696f6e616c50726f70657274696573f46c6e696365446f63756d656e74a46474797065666f626a656374687265717569726564816a246372656174656441746a70726f70657274696573a1646e616d65a1647479706566737472696e67746164646974696f6e616c50726f70657274696573f46e6e6f54696d65446f63756d656e74a36474797065666f626a6563746a70726f70657274696573a1646e616d65a1647479706566737472696e67746164646974696f6e616c50726f70657274696573f46e707265747479446f63756d656e74a46474797065666f626a65637468726571756972656482686c6173744e616d656a247570646174656441746a70726f70657274696573a1686c6173744e616d65a1642472656670232f24646566732f6c6173744e616d65746164646974696f6e616c50726f70657274696573f46e7769746842797465417272617973a56474797065666f626a65637467696e646963657381a2646e616d6566696e646578316a70726f7065727469657381a16e6279746541727261794669656c6463617363687265717569726564816e6279746541727261794669656c646a70726f70657274696573a26e6279746541727261794669656c64a36474797065656172726179686d61784974656d731069627974654172726179f56f6964656e7469666965724669656c64a56474797065656172726179686d61784974656d731820686d696e4974656d73182069627974654172726179f570636f6e74656e744d656469615479706578216170706c69636174696f6e2f782e646173682e6470702e6964656e746966696572746164646974696f6e616c50726f70657274696573f46f696e6465786564446f63756d656e74a56474797065666f626a65637467696e646963657386a3646e616d6566696e6465783166756e69717565f56a70726f7065727469657382a168246f776e6572496463617363a16966697273744e616d656464657363a3646e616d6566696e6465783266756e69717565f56a70726f7065727469657382a168246f776e6572496463617363a1686c6173744e616d656464657363a2646e616d6566696e646578336a70726f7065727469657381a1686c6173744e616d6563617363a2646e616d6566696e646578346a70726f7065727469657382a16a2463726561746564417463617363a16a2475706461746564417463617363a2646e616d6566696e646578356a70726f7065727469657381a16a2475706461746564417463617363a2646e616d6566696e646578366a70726f7065727469657381a16a2463726561746564417463617363687265717569726564846966697273744e616d656a246372656174656441746a24757064617465644174686c6173744e616d656a70726f70657274696573a2686c6173744e616d65a2647479706566737472696e67696d61784c656e6774681901006966697273744e616d65a2647479706566737472696e67696d61784c656e677468190100746164646974696f6e616c50726f70657274696573f4781d6f7074696f6e616c556e69717565496e6465786564446f63756d656e74a56474797065666f626a65637467696e646963657383a3646e616d6566696e6465783166756e69717565f56a70726f7065727469657381a16966697273744e616d656464657363a3646e616d6566696e6465783266756e69717565f56a70726f7065727469657383a168246f776e6572496463617363a16966697273744e616d6563617363a1686c6173744e616d6563617363a3646e616d6566696e6465783366756e69717565f56a70726f7065727469657382a167636f756e74727963617363a1646369747963617363687265717569726564826966697273744e616d65686c6173744e616d656a70726f70657274696573a46463697479a2647479706566737472696e67696d61784c656e67746819010067636f756e747279a2647479706566737472696e67696d61784c656e677468190100686c6173744e616d65a2647479706566737472696e67696d61784c656e6774681901006966697273744e616d65a2647479706566737472696e67696d61784c656e677468190100746164646974696f6e616c50726f70657274696573f4").unwrap();
 
         drive
-            .apply_contract_cbor(initial_contract_cbor, None, 0f64, true, None)
+            .apply_contract_cbor(
+                initial_contract_cbor,
+                None,
+                0f64,
+                true,
+                StorageFlags::default(),
+                None,
+            )
             .expect("expected to apply contract successfully");
 
         let updated_contract_cbor = hex::decode("01000000a66324696458209c2b800c5ea525d032a9fda4dda22a896f1e763af5f0e15ae7f93882b7439d77652464656673a1686c6173744e616d65a1647479706566737472696e676724736368656d61783468747470733a2f2f736368656d612e646173682e6f72672f6470702d302d342d302f6d6574612f646174612d636f6e7472616374676f776e657249645820636d3188dfffe62efb10e20347ec6c41b3e49fa31cb757ef4bad6cd8f1c7f4b66776657273696f6e0269646f63756d656e7473a86b756e697175654461746573a56474797065666f626a65637467696e646963657382a3646e616d6566696e6465783166756e69717565f56a70726f7065727469657382a16a2463726561746564417463617363a16a2475706461746564417463617363a2646e616d6566696e646578326a70726f7065727469657381a16a2475706461746564417463617363687265717569726564836966697273744e616d656a246372656174656441746a247570646174656441746a70726f70657274696573a2686c6173744e616d65a1647479706566737472696e676966697273744e616d65a1647479706566737472696e67746164646974696f6e616c50726f70657274696573f46c6e696365446f63756d656e74a46474797065666f626a656374687265717569726564816a246372656174656441746a70726f70657274696573a1646e616d65a1647479706566737472696e67746164646974696f6e616c50726f70657274696573f46e6e6f54696d65446f63756d656e74a36474797065666f626a6563746a70726f70657274696573a1646e616d65a1647479706566737472696e67746164646974696f6e616c50726f70657274696573f46e707265747479446f63756d656e74a46474797065666f626a65637468726571756972656482686c6173744e616d656a247570646174656441746a70726f70657274696573a1686c6173744e616d65a1642472656670232f24646566732f6c6173744e616d65746164646974696f6e616c50726f70657274696573f46e7769746842797465417272617973a56474797065666f626a65637467696e646963657381a2646e616d6566696e646578316a70726f7065727469657381a16e6279746541727261794669656c6463617363687265717569726564816e6279746541727261794669656c646a70726f70657274696573a26e6279746541727261794669656c64a36474797065656172726179686d61784974656d731069627974654172726179f56f6964656e7469666965724669656c64a56474797065656172726179686d61784974656d731820686d696e4974656d73182069627974654172726179f570636f6e74656e744d656469615479706578216170706c69636174696f6e2f782e646173682e6470702e6964656e746966696572746164646974696f6e616c50726f70657274696573f46f696e6465786564446f63756d656e74a56474797065666f626a65637467696e646963657386a3646e616d6566696e6465783166756e69717565f56a70726f7065727469657382a168246f776e6572496463617363a16966697273744e616d656464657363a3646e616d6566696e6465783266756e69717565f56a70726f7065727469657382a168246f776e6572496463617363a1686c6173744e616d656464657363a2646e616d6566696e646578336a70726f7065727469657381a1686c6173744e616d6563617363a2646e616d6566696e646578346a70726f7065727469657382a16a2463726561746564417463617363a16a2475706461746564417463617363a2646e616d6566696e646578356a70726f7065727469657381a16a2475706461746564417463617363a2646e616d6566696e646578366a70726f7065727469657381a16a2463726561746564417463617363687265717569726564846966697273744e616d656a246372656174656441746a24757064617465644174686c6173744e616d656a70726f70657274696573a2686c6173744e616d65a2647479706566737472696e67696d61784c656e6774681901006966697273744e616d65a2647479706566737472696e67696d61784c656e677468190100746164646974696f6e616c50726f70657274696573f4716d79417765736f6d65446f63756d656e74a56474797065666f626a65637467696e646963657382a3646e616d656966697273744e616d6566756e69717565f56a70726f7065727469657381a16966697273744e616d6563617363a3646e616d657166697273744e616d654c6173744e616d6566756e69717565f56a70726f7065727469657382a16966697273744e616d6563617363a1686c6173744e616d6563617363687265717569726564846966697273744e616d656a246372656174656441746a24757064617465644174686c6173744e616d656a70726f70657274696573a2686c6173744e616d65a2647479706566737472696e67696d61784c656e6774681901006966697273744e616d65a2647479706566737472696e67696d61784c656e677468190100746164646974696f6e616c50726f70657274696573f4781d6f7074696f6e616c556e69717565496e6465786564446f63756d656e74a56474797065666f626a65637467696e646963657383a3646e616d6566696e6465783166756e69717565f56a70726f7065727469657381a16966697273744e616d656464657363a3646e616d6566696e6465783266756e69717565f56a70726f7065727469657383a168246f776e6572496463617363a16966697273744e616d6563617363a1686c6173744e616d6563617363a3646e616d6566696e6465783366756e69717565f56a70726f7065727469657382a167636f756e74727963617363a1646369747963617363687265717569726564826966697273744e616d65686c6173744e616d656a70726f70657274696573a46463697479a2647479706566737472696e67696d61784c656e67746819010067636f756e747279a2647479706566737472696e67696d61784c656e677468190100686c6173744e616d65a2647479706566737472696e67696d61784c656e6774681901006966697273744e616d65a2647479706566737472696e67696d61784c656e677468190100746164646974696f6e616c50726f70657274696573f4").unwrap();
 
         drive
-            .apply_contract_cbor(updated_contract_cbor, None, 0f64, true, None)
+            .apply_contract_cbor(
+                updated_contract_cbor,
+                None,
+                0f64,
+                true,
+                StorageFlags::default(),
+                None,
+            )
             .expect("should update initial contract");
     }
 
