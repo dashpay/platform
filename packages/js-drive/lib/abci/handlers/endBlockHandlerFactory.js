@@ -12,7 +12,6 @@ const {
 
 const featureFlagTypes = require('@dashevo/feature-flags-contract/lib/featureFlagTypes');
 
-const { FEE_MULTIPLIER } = require('@dashevo/dpp/lib/stateTransition/fee/constants');
 const timeToMillis = require('../../util/timeToMillis');
 
 /**
@@ -69,7 +68,6 @@ function endBlockHandlerFactory(
       fees: {
         processingFees,
         storageFees,
-        feeMultiplier: FEE_MULTIPLIER,
       },
     }, true);
 
@@ -87,7 +85,7 @@ function endBlockHandlerFactory(
 
       if (latestContext) {
         const latestHeader = latestContext.getHeader();
-        debugData.previousBlockTime = timeToMillis(
+        debugData.previousBlockTimeMs = timeToMillis(
           latestHeader.time.seconds, latestHeader.time.nanos,
         );
       }
@@ -97,17 +95,16 @@ function endBlockHandlerFactory(
 
     consensusLogger.debug({
       currentEpochIndex,
-      feeMultiplier: FEE_MULTIPLIER,
       processingFees,
       storageFees,
     }, `${processingFees} processing fees add to epoch #${currentEpochIndex}. ${storageFees} storage fees add to distribution pool`);
 
-    if (rsResponse.masternodesPaidCount) {
+    if (rsResponse.proposersPaidCount) {
       consensusLogger.debug({
         currentEpochIndex,
-        masternodesPaidCount: rsResponse.masternodesPaidCount,
+        proposersPaidCount: rsResponse.proposersPaidCount,
         paidEpochIndex: rsResponse.paidEpochIndex,
-      }, `${rsResponse.masternodesPaidCount} masternodes were paid for epoch #${rsResponse.paidEpochIndex}`);
+      }, `${rsResponse.proposersPaidCount} masternodes were paid for epoch #${rsResponse.paidEpochIndex}`);
     }
 
     // Rotate validators

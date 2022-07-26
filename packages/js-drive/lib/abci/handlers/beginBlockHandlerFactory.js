@@ -129,7 +129,7 @@ function beginBlockHandlerFactory(
      */
     const rsRequest = {
       blockHeight: header.height.toNumber(),
-      blockTime: timeToMillis(header.time.seconds, header.time.nanos),
+      blockTimeMs: timeToMillis(header.time.seconds, header.time.nanos),
       proposerProTxHash: header.proposerProTxHash,
     };
 
@@ -137,7 +137,7 @@ function beginBlockHandlerFactory(
 
     if (latestContext) {
       const latestHeader = latestContext.getHeader();
-      rsRequest.previousBlockTime = timeToMillis(
+      rsRequest.previousBlockTimeMs = timeToMillis(
         latestHeader.time.seconds, latestHeader.time.nanos,
       );
     }
