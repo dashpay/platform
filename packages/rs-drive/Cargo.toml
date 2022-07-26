@@ -19,12 +19,13 @@ hex = "0.4.3"
 array_tool = "1.0.3"
 rand_distr = "0.4.3"
 tempfile = "3"
-serde_json = "1.0.73"
+serde_json = { version="1.0", features=["preserve_order"] }
 sqlparser = "0.13.0"
 enum-map = "2.0.3"
 thiserror = "1.0.30"
 moka = "0.8.1"
 nohash-hasher = "0.2.0"
+chrono = "0.4.0"
 
 
 [dependencies.dpp]

@@ -1,3 +1,4 @@
+use crate::drive::batch::GroveDbOpBatch;
 use costs::OperationCost;
 use enum_map::Enum;
 use grovedb::{batch::GroveDbOp, Element, PathQuery};
@@ -80,7 +81,7 @@ pub enum FunctionOp {
 }
 
 impl FunctionOp {
-    pub fn cost(&self, word_count: u32) {}
+    pub fn cost(&self, _word_count: u32) {}
 }
 
 #[derive(Debug)]
@@ -313,20 +314,30 @@ impl DriveOperation {
         }
     }
 
-    pub fn grovedb_operations(insert_operations: &Vec<DriveOperation>) -> Vec<GroveDbOp> {
-        insert_operations
+    pub fn grovedb_operations_batch(insert_operations: &Vec<DriveOperation>) -> GroveDbOpBatch {
+        let operations = insert_operations
             .iter()
             .filter_map(|op| match op {
                 GroveOperation(grovedb_op) => Some(grovedb_op.clone()),
                 _ => None,
             })
-            .collect()
+            .collect();
+        GroveDbOpBatch::from_operations(operations)
     }
 
-    pub fn for_empty_tree(path: Vec<Vec<u8>>, key: Vec<u8>, storage_flags: &StorageFlags) -> Self {
-        let tree = Element::empty_tree_with_flags(storage_flags.to_element_flags());
+    pub fn for_empty_tree(
+        path: Vec<Vec<u8>>,
+        key: Vec<u8>,
+        storage_flags: Option<&StorageFlags>,
+    ) -> Self {
+        let tree = match storage_flags {
+            Some(storage_flags) => Element::empty_tree_with_flags(storage_flags.to_element_flags()),
+            None => Element::empty_tree(),
+        };
+
         DriveOperation::for_path_key_element(path, key, tree)
     }
+
     pub fn for_path_key_element(path: Vec<Vec<u8>>, key: Vec<u8>, element: Element) -> Self {
         GroveOperation(GroveDbOp::insert(path, key, element))
     }
@@ -385,7 +396,7 @@ impl DriveCost for OperationCost {
             seek_count,
             storage_written_bytes,
             storage_loaded_bytes,
-            storage_freed_bytes,
+            storage_freed_bytes: _,
             hash_byte_calls,
             hash_node_calls,
         } = *self;
@@ -395,7 +406,7 @@ impl DriveCost for OperationCost {
         let storage_written_bytes_ephemeral_cost = (storage_written_bytes as u64)
             .checked_mul(STORAGE_PROCESSING_CREDIT_PER_BYTE)
             .ok_or_else(|| get_overflow_error("storage written bytes cost overflow"))?;
-        let storage_loaded_bytes_cost = (storage_loaded_bytes as u64)
+        let _storage_loaded_bytes_cost = (storage_loaded_bytes as u64)
             .checked_mul(STORAGE_LOAD_CREDIT_PER_BYTE)
             .ok_or_else(|| get_overflow_error("storage loaded cost overflow"))?;
         let storage_loaded_bytes_cost = (storage_loaded_bytes as u64)

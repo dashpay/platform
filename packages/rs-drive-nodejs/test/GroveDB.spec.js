@@ -1171,7 +1171,7 @@ describe('GroveDB', () => {
 
     it('should be able to prove query', async () => {
       const query1 = {
-        path: itemTreePath,
+        path: ePath,
         query: {
           query: {
             items: [
@@ -1180,29 +1180,18 @@ describe('GroveDB', () => {
                 key: dKey,
               },
             ],
-            subquery: {
-              items: [
-                {
-                  type: 'rangeAfter',
-                  after: eaKey,
-                },
-              ],
-            },
           },
         },
       };
 
-      const eKey = Buffer.from('eKey');
-      ePath = [...itemTreePath];
-      ePath.push(eKey);
-
       const query2 = {
-        path: ePath,
+        path: dPath,
         query: {
           query: {
             items: [
               {
-                type: 'rangeFull',
+                type: 'key',
+                key: eaKey,
               },
             ],
           },
@@ -1214,7 +1203,7 @@ describe('GroveDB', () => {
       expect(result).to.exist();
 
       expect(result).to.be.instanceOf(Buffer);
-      expect(result).to.have.lengthOf(341);
+      expect(result).to.have.lengthOf(357);
     });
   });
 

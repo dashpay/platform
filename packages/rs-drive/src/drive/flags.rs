@@ -15,10 +15,10 @@ impl StorageFlags {
         let mut epoch_bytes =
             data.get(0..2)
                 .ok_or(Error::Drive(DriveError::CorruptedElementFlags(
-                    "unable to get epoch",
+                    "unable to get epochs",
                 )))?;
         let epoch = epoch_bytes.read_u16::<BigEndian>().map_err(|_| {
-            Error::Drive(DriveError::CorruptedElementFlags("unable to parse epoch"))
+            Error::Drive(DriveError::CorruptedElementFlags("unable to parse epochs"))
         })?;
         Ok(StorageFlags { epoch })
     }

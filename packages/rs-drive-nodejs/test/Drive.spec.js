@@ -37,9 +37,9 @@ describe('Drive', () => {
     fs.rmSync(TEST_DATA_PATH, { recursive: true });
   });
 
-  describe('#createRootTree', () => {
+  describe('#createInitialStateStructure', () => {
     it('should create initial tree structure', async () => {
-      const result = await drive.createRootTree();
+      const result = await drive.createInitialStateStructure();
 
       // eslint-disable-next-line no-unused-expressions
       expect(result).to.be.undefined;
@@ -48,7 +48,7 @@ describe('Drive', () => {
 
   describe('#applyContract', () => {
     beforeEach(async () => {
-      await drive.createRootTree();
+      await drive.createInitialStateStructure();
 
       initialRootHash = await drive.getGroveDB().getRootHash();
     });
@@ -102,7 +102,7 @@ describe('Drive', () => {
 
   describe('#createDocument', () => {
     beforeEach(async () => {
-      await drive.createRootTree();
+      await drive.createInitialStateStructure();
 
       await drive.applyContract(dataContract, blockTime);
 
@@ -152,7 +152,7 @@ describe('Drive', () => {
 
   describe('#updateDocument', () => {
     beforeEach(async () => {
-      await drive.createRootTree();
+      await drive.createInitialStateStructure();
 
       await drive.applyContract(dataContract, blockTime);
 
@@ -216,7 +216,7 @@ describe('Drive', () => {
 
   describe('#deleteDocument', () => {
     beforeEach(async () => {
-      await drive.createRootTree();
+      await drive.createInitialStateStructure();
 
       await drive.applyContract(dataContract, blockTime);
 
@@ -295,7 +295,7 @@ describe('Drive', () => {
 
   describe('#queryDocuments', () => {
     beforeEach(async () => {
-      await drive.createRootTree();
+      await drive.createInitialStateStructure();
 
       await drive.applyContract(dataContract, blockTime);
     });
@@ -349,7 +349,7 @@ describe('Drive', () => {
 
   describe('#proveDocumentsQuery', () => {
     beforeEach(async () => {
-      await drive.createRootTree();
+      await drive.createInitialStateStructure();
 
       await drive.applyContract(dataContract, blockTime);
     });
@@ -377,7 +377,7 @@ describe('Drive', () => {
 
   describe('#insertIdentity', () => {
     beforeEach(async () => {
-      await drive.createRootTree();
+      await drive.createInitialStateStructure();
 
       initialRootHash = await drive.getGroveDB().getRootHash();
     });
@@ -392,6 +392,82 @@ describe('Drive', () => {
       expect(result[1]).to.be.greaterThan(0);
 
       expect(await drive.getGroveDB().getRootHash()).to.not.deep.equals(initialRootHash);
+    });
+  });
+
+  describe('ABCI', () => {
+    describe('InitChain', () => {
+      it('should successfully init chain', async () => {
+        const request = {};
+
+        const response = await drive.getAbci().initChain(request);
+
+        expect(response).to.be.empty('object');
+      });
+    });
+
+    describe('BlockBegin', () => {
+      beforeEach(async () => {
+        await drive.getAbci().initChain({});
+      });
+
+      it('should process a block without previous block time', async () => {
+        const request = {
+          blockHeight: 1,
+          blockTimeMs: (new Date()).getTime(),
+          proposerProTxHash: Buffer.alloc(32, 1),
+        };
+
+        const response = await drive.getAbci().blockBegin(request);
+
+        expect(response).to.be.empty('object');
+      });
+
+      it('should process a block with previous block time', async () => {
+        const blockTimeMs = (new Date()).getTime();
+
+        await drive.getAbci().blockBegin({
+          blockHeight: 1,
+          blockTimeMs,
+          proposerProTxHash: Buffer.alloc(32, 1),
+        });
+
+        const response = await drive.getAbci().blockBegin({
+          blockHeight: 2,
+          blockTimeMs: blockTimeMs + 100,
+          proposerProTxHash: Buffer.alloc(32, 1),
+          previousBlockTimeMs: blockTimeMs,
+        });
+
+        expect(response).to.be.empty('object');
+      });
+    });
+
+    describe('BlockEnd', () => {
+      beforeEach(async () => {
+        await drive.getAbci().initChain({});
+        await drive.getAbci().blockBegin({
+          blockHeight: 1,
+          blockTimeMs: (new Date()).getTime(),
+          proposerProTxHash: Buffer.alloc(32, 1),
+        });
+      });
+
+      it('should process a block', async () => {
+        const request = {
+          fees: {
+            storageFees: 100,
+            processingFees: 100,
+          },
+        };
+
+        const response = await drive.getAbci().blockEnd(request);
+
+        expect(response).to.have.property('currentEpochIndex');
+        expect(response).to.have.property('isEpochChange');
+        expect(response).to.have.property('proposersPaidCount');
+        expect(response).to.have.property('paidEpochIndex');
+      });
     });
   });
 });

@@ -1,5 +1,6 @@
 use grovedb::{Element, TransactionArg};
 use std::collections::HashSet;
+
 use std::option::Option::None;
 
 use crate::contract::document::Document;
@@ -243,15 +244,12 @@ impl Drive {
         override_document: bool,
         block_time: f64,
         apply: bool,
+        storage_flags: StorageFlags,
         transaction: TransactionArg,
     ) -> Result<(i64, u64), Error> {
         let contract = <Contract as DriveContractExt>::from_cbor(serialized_contract, None)?;
 
         let document = Document::from_cbor(serialized_document, None, owner_id)?;
-
-        let epoch = self.epoch_info.borrow().current_epoch;
-
-        let storage_flags = StorageFlags { epoch };
 
         let document_info =
             DocumentAndSerialization((&document, serialized_document, &storage_flags));
@@ -281,13 +279,10 @@ impl Drive {
         override_document: bool,
         block_time: f64,
         apply: bool,
+        storage_flags: StorageFlags,
         transaction: TransactionArg,
     ) -> Result<(i64, u64), Error> {
         let document = Document::from_cbor(serialized_document, None, owner_id)?;
-
-        let epoch = self.epoch_info.borrow().current_epoch;
-
-        let storage_flags = StorageFlags { epoch };
 
         let document_info =
             DocumentAndSerialization((&document, serialized_document, &storage_flags));
@@ -610,7 +605,7 @@ impl Drive {
                 }
             }
         }
-        self.apply_batch(apply, transaction, batch_operations, drive_operations)
+        self.apply_batch_drive_operations(apply, transaction, batch_operations, drive_operations)
     }
 }
 
@@ -650,6 +645,7 @@ mod tests {
                 false,
                 0f64,
                 true,
+                StorageFlags::default(),
                 None,
             )
             .expect("expected to insert a document successfully");
@@ -663,6 +659,7 @@ mod tests {
                 false,
                 0f64,
                 true,
+                StorageFlags::default(),
                 None,
             )
             .expect_err("expected not to be able to insert same document twice");
@@ -676,6 +673,7 @@ mod tests {
                 true,
                 0f64,
                 true,
+                StorageFlags::default(),
                 None,
             )
             .expect("expected to override a document successfully");
@@ -689,7 +687,7 @@ mod tests {
         let db_transaction = drive.grove.start_transaction();
 
         drive
-            .create_root_tree(Some(&db_transaction))
+            .create_initial_state_structure(Some(&db_transaction))
             .expect("expected to create root tree successfully");
 
         let contract = setup_contract(
@@ -714,6 +712,7 @@ mod tests {
                 false,
                 0f64,
                 true,
+                StorageFlags::default(),
                 Some(&db_transaction),
             )
             .expect("expected to insert a document successfully");
@@ -727,6 +726,7 @@ mod tests {
                 false,
                 0f64,
                 true,
+                StorageFlags::default(),
                 Some(&db_transaction),
             )
             .expect_err("expected not to be able to insert same document twice");
@@ -740,6 +740,7 @@ mod tests {
                 true,
                 0f64,
                 true,
+                StorageFlags::default(),
                 Some(&db_transaction),
             )
             .expect("expected to override a document successfully");
@@ -754,7 +755,7 @@ mod tests {
         let db_transaction = drive.grove.start_transaction();
 
         drive
-            .create_root_tree(Some(&db_transaction))
+            .create_initial_state_structure(Some(&db_transaction))
             .expect("expected to create root tree successfully");
 
         let contract = setup_contract(
@@ -780,6 +781,7 @@ mod tests {
                 false,
                 0f64,
                 true,
+                StorageFlags::default(),
                 Some(&db_transaction),
             )
             .expect("expected to insert a document successfully");
@@ -797,7 +799,7 @@ mod tests {
         let db_transaction = drive.grove.start_transaction();
 
         drive
-            .create_root_tree(Some(&db_transaction))
+            .create_initial_state_structure(Some(&db_transaction))
             .expect("expected to create root tree successfully");
 
         let contract = setup_contract(
@@ -822,6 +824,7 @@ mod tests {
                 false,
                 0f64,
                 false,
+                StorageFlags::default(),
                 Some(&db_transaction),
             )
             .expect("expected to get back fee for document insertion successfully");
@@ -835,6 +838,7 @@ mod tests {
                 false,
                 0f64,
                 true,
+                StorageFlags::default(),
                 Some(&db_transaction),
             )
             .expect("expected to insert a document successfully");
@@ -852,7 +856,7 @@ mod tests {
         let db_transaction = drive.grove.start_transaction();
 
         drive
-            .create_root_tree(Some(&db_transaction))
+            .create_initial_state_structure(Some(&db_transaction))
             .expect("expected to create root tree successfully");
 
         let contract = setup_contract(
@@ -939,7 +943,7 @@ mod tests {
         let db_transaction = drive.grove.start_transaction();
 
         drive
-            .create_root_tree(Some(&db_transaction))
+            .create_initial_state_structure(Some(&db_transaction))
             .expect("expected to create root tree successfully");
 
         let contract = setup_contract(
@@ -1022,6 +1026,7 @@ mod tests {
                 false,
                 0f64,
                 true,
+                StorageFlags::default(),
                 None,
             )
             .expect("expected to insert a document successfully");
@@ -1034,6 +1039,7 @@ mod tests {
                 false,
                 0f64,
                 true,
+                StorageFlags::default(),
                 None,
             )
             .expect("expected to insert a document successfully");
@@ -1046,6 +1052,7 @@ mod tests {
                 false,
                 0f64,
                 true,
+                StorageFlags::default(),
                 None,
             )
             .expect("expected to insert a document successfully");
@@ -1075,6 +1082,7 @@ mod tests {
                 false,
                 0f64,
                 true,
+                StorageFlags::default(),
                 None,
             )
             .expect("expected to insert a document successfully");
@@ -1087,6 +1095,7 @@ mod tests {
                 false,
                 0f64,
                 true,
+                StorageFlags::default(),
                 None,
             )
             .expect_err(
@@ -1102,7 +1111,7 @@ mod tests {
         let db_transaction = drive.grove.start_transaction();
 
         drive
-            .create_root_tree(Some(&db_transaction))
+            .create_initial_state_structure(Some(&db_transaction))
             .expect("expected to create root tree successfully");
 
         let contract_cbor = hex::decode("01000000a5632469645820e668c659af66aee1e72c186dde7b5b7e0a1d712a09c40d5721f622bf53c531556724736368656d61783468747470733a2f2f736368656d612e646173682e6f72672f6470702d302d342d302f6d6574612f646174612d636f6e7472616374676f776e6572496458203012c19b98ec0033addb36cd64b7f510670f2a351a4304b5f6994144286efdac6776657273696f6e0169646f63756d656e7473a266646f6d61696ea66474797065666f626a65637467696e646963657383a3646e616d6572706172656e744e616d65416e644c6162656c66756e69717565f56a70726f7065727469657382a1781a6e6f726d616c697a6564506172656e74446f6d61696e4e616d6563617363a16f6e6f726d616c697a65644c6162656c63617363a3646e616d656e646173684964656e74697479496466756e69717565f56a70726f7065727469657381a1781c7265636f7264732e64617368556e697175654964656e74697479496463617363a2646e616d656964617368416c6961736a70726f7065727469657381a1781b7265636f7264732e64617368416c6961734964656e746974794964636173636824636f6d6d656e74790137496e206f7264657220746f207265676973746572206120646f6d61696e20796f75206e65656420746f206372656174652061207072656f726465722e20546865207072656f726465722073746570206973206e656564656420746f2070726576656e74206d616e2d696e2d7468652d6d6964646c652061747461636b732e206e6f726d616c697a65644c6162656c202b20272e27202b206e6f726d616c697a6564506172656e74446f6d61696e206d757374206e6f74206265206c6f6e676572207468616e20323533206368617273206c656e67746820617320646566696e65642062792052464320313033352e20446f6d61696e20646f63756d656e74732061726520696d6d757461626c653a206d6f64696669636174696f6e20616e642064656c6574696f6e20617265207265737472696374656468726571756972656486656c6162656c6f6e6f726d616c697a65644c6162656c781a6e6f726d616c697a6564506172656e74446f6d61696e4e616d656c7072656f7264657253616c74677265636f7264736e737562646f6d61696e52756c65736a70726f70657274696573a6656c6162656ca5647479706566737472696e67677061747465726e782a5e5b612d7a412d5a302d395d5b612d7a412d5a302d392d5d7b302c36317d5b612d7a412d5a302d395d24696d61784c656e677468183f696d696e4c656e677468036b6465736372697074696f6e7819446f6d61696e206c6162656c2e20652e672e2027426f62272e677265636f726473a66474797065666f626a6563746824636f6d6d656e747890436f6e73747261696e742077697468206d617820616e64206d696e2070726f7065727469657320656e737572652074686174206f6e6c79206f6e65206964656e74697479207265636f72642069732075736564202d206569746865722061206064617368556e697175654964656e74697479496460206f722061206064617368416c6961734964656e746974794964606a70726f70657274696573a27364617368416c6961734964656e746974794964a764747970656561727261796824636f6d6d656e7478234d75737420626520657175616c20746f2074686520646f63756d656e74206f776e6572686d61784974656d731820686d696e4974656d73182069627974654172726179f56b6465736372697074696f6e783d4964656e7469747920494420746f206265207573656420746f2063726561746520616c696173206e616d657320666f7220746865204964656e7469747970636f6e74656e744d656469615479706578216170706c69636174696f6e2f782e646173682e6470702e6964656e7469666965727464617368556e697175654964656e746974794964a764747970656561727261796824636f6d6d656e7478234d75737420626520657175616c20746f2074686520646f63756d656e74206f776e6572686d61784974656d731820686d696e4974656d73182069627974654172726179f56b6465736372697074696f6e783e4964656e7469747920494420746f206265207573656420746f2063726561746520746865207072696d617279206e616d6520746865204964656e7469747970636f6e74656e744d656469615479706578216170706c69636174696f6e2f782e646173682e6470702e6964656e7469666965726d6d617850726f70657274696573016d6d696e50726f7065727469657301746164646974696f6e616c50726f70657274696573f46c7072656f7264657253616c74a56474797065656172726179686d61784974656d731820686d696e4974656d73182069627974654172726179f56b6465736372697074696f6e782253616c74207573656420696e20746865207072656f7264657220646f63756d656e746e737562646f6d61696e52756c6573a56474797065666f626a656374687265717569726564816f616c6c6f77537562646f6d61696e736a70726f70657274696573a16f616c6c6f77537562646f6d61696e73a3647479706567626f6f6c65616e6824636f6d6d656e74784f4f6e6c792074686520646f6d61696e206f776e657220697320616c6c6f77656420746f2063726561746520737562646f6d61696e7320666f72206e6f6e20746f702d6c6576656c20646f6d61696e736b6465736372697074696f6e785b54686973206f7074696f6e20646566696e65732077686f2063616e2063726561746520737562646f6d61696e733a2074727565202d20616e796f6e653b2066616c7365202d206f6e6c792074686520646f6d61696e206f776e65726b6465736372697074696f6e7842537562646f6d61696e2072756c657320616c6c6f7720646f6d61696e206f776e65727320746f20646566696e652072756c657320666f7220737562646f6d61696e73746164646974696f6e616c50726f70657274696573f46f6e6f726d616c697a65644c6162656ca5647479706566737472696e67677061747465726e78215e5b612d7a302d395d5b612d7a302d392d5d7b302c36317d5b612d7a302d395d246824636f6d6d656e7478694d75737420626520657175616c20746f20746865206c6162656c20696e206c6f776572636173652e20546869732070726f70657274792077696c6c20626520646570726563617465642064756520746f206361736520696e73656e73697469766520696e6469636573696d61784c656e677468183f6b6465736372697074696f6e7850446f6d61696e206c6162656c20696e206c6f7765726361736520666f7220636173652d696e73656e73697469766520756e697175656e6573732076616c69646174696f6e2e20652e672e2027626f6227781a6e6f726d616c697a6564506172656e74446f6d61696e4e616d65a6647479706566737472696e67677061747465726e78285e247c5e5b5b612d7a302d395d5b612d7a302d392d5c2e5d7b302c3138387d5b612d7a302d395d246824636f6d6d656e74788c4d7573742065697468657220626520657175616c20746f20616e206578697374696e6720646f6d61696e206f7220656d70747920746f20637265617465206120746f70206c6576656c20646f6d61696e2e204f6e6c7920746865206461746120636f6e7472616374206f776e65722063616e2063726561746520746f70206c6576656c20646f6d61696e732e696d61784c656e67746818be696d696e4c656e677468006b6465736372697074696f6e785e412066756c6c20706172656e7420646f6d61696e206e616d6520696e206c6f7765726361736520666f7220636173652d696e73656e73697469766520756e697175656e6573732076616c69646174696f6e2e20652e672e20276461736827746164646974696f6e616c50726f70657274696573f4687072656f72646572a66474797065666f626a65637467696e646963657381a3646e616d656a73616c7465644861736866756e69717565f56a70726f7065727469657381a17073616c746564446f6d61696e48617368636173636824636f6d6d656e74784a5072656f7264657220646f63756d656e74732061726520696d6d757461626c653a206d6f64696669636174696f6e20616e642064656c6574696f6e206172652072657374726963746564687265717569726564817073616c746564446f6d61696e486173686a70726f70657274696573a17073616c746564446f6d61696e48617368a56474797065656172726179686d61784974656d731820686d696e4974656d73182069627974654172726179f56b6465736372697074696f6e7859446f75626c65207368612d323536206f662074686520636f6e636174656e6174696f6e206f66206120333220627974652072616e646f6d2073616c7420616e642061206e6f726d616c697a656420646f6d61696e206e616d65746164646974696f6e616c50726f70657274696573f4").unwrap();
@@ -1113,6 +1122,7 @@ mod tests {
                 None,
                 0f64,
                 true,
+                StorageFlags::default(),
                 Some(&db_transaction),
             )
             .expect("expected to apply contract successfully");
@@ -1130,6 +1140,7 @@ mod tests {
                 true,
                 0f64,
                 true,
+                StorageFlags::default(),
                 Some(&db_transaction),
             )
             .expect("should create dash tld");
@@ -1155,6 +1166,7 @@ mod tests {
                 true,
                 0f64,
                 true,
+                StorageFlags::default(),
                 Some(&db_transaction),
             )
             .expect("should add random tld");

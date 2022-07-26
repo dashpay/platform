@@ -1,3 +1,4 @@
+use document::DocumentError;
 use dpp::data_contract::extra::ContractError;
 use drive::DriveError;
 use fee::FeeError;
@@ -5,6 +6,7 @@ use identity::IdentityError;
 use query::QueryError;
 use structure::StructureError;
 
+pub mod document;
 pub mod drive;
 pub mod fee;
 pub mod identity;
@@ -27,4 +29,6 @@ pub enum Error {
     Structure(#[from] StructureError),
     #[error("fee: {0}")]
     Fee(#[from] FeeError),
+    #[error("document: {0}")]
+    Document(#[from] DocumentError),
 }

@@ -200,7 +200,7 @@ impl Drive {
                 )?;
             }
         }
-        self.apply_batch(apply, transaction, batch_operations, drive_operations)
+        self.apply_batch_drive_operations(apply, transaction, batch_operations, drive_operations)
     }
 }
 
@@ -230,7 +230,7 @@ mod tests {
         let drive: Drive = Drive::open(tmp_dir, None).expect("expected to open Drive successfully");
 
         drive
-            .create_root_tree(None)
+            .create_initial_state_structure(None)
             .expect("expected to create root tree successfully");
 
         let contract = setup_contract(
@@ -321,7 +321,7 @@ mod tests {
         let db_transaction = drive.grove.start_transaction();
 
         drive
-            .create_root_tree(Some(&db_transaction))
+            .create_initial_state_structure(Some(&db_transaction))
             .expect("expected to create root tree successfully");
 
         let contract = setup_contract(
@@ -428,7 +428,7 @@ mod tests {
         let db_transaction = drive.grove.start_transaction();
 
         drive
-            .create_root_tree(Some(&db_transaction))
+            .create_initial_state_structure(Some(&db_transaction))
             .expect("expected to create root tree successfully");
 
         let contract = setup_contract(
@@ -601,7 +601,7 @@ mod tests {
         let db_transaction = drive.grove.start_transaction();
 
         drive
-            .create_root_tree(Some(&db_transaction))
+            .create_initial_state_structure(Some(&db_transaction))
             .expect("expected to create root tree successfully");
 
         let contract = setup_contract(
@@ -823,6 +823,7 @@ mod tests {
                 false,
                 0f64,
                 true,
+                StorageFlags::default(),
                 None,
             )
             .expect("expected to insert a document successfully");
@@ -851,7 +852,7 @@ mod tests {
         let db_transaction = drive.grove.start_transaction();
 
         drive
-            .create_root_tree(Some(&db_transaction))
+            .create_initial_state_structure(Some(&db_transaction))
             .expect("expected to create root tree successfully");
 
         let contract = setup_contract(
@@ -876,6 +877,7 @@ mod tests {
                 false,
                 0f64,
                 true,
+                StorageFlags::default(),
                 Some(&db_transaction),
             )
             .expect("expected to insert a document successfully");
@@ -904,7 +906,7 @@ mod tests {
         let db_transaction = drive.grove.start_transaction();
 
         drive
-            .create_root_tree(Some(&db_transaction))
+            .create_initial_state_structure(Some(&db_transaction))
             .expect("expected to create root tree successfully");
 
         let contract = setup_contract_from_hex(

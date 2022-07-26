@@ -9,7 +9,7 @@ const decodeProtocolEntityFactory = require('@dashevo/dpp/lib/decodeProtocolEnti
 const {
   driveOpen,
   driveClose,
-  driveCreateRootTree,
+  driveCreateInitialStateStructure,
   driveApplyContract,
   driveCreateDocument,
   driveUpdateDocument,
@@ -17,6 +17,9 @@ const {
   driveQueryDocuments,
   driveProveDocumentsQuery,
   driveInsertIdentity,
+  abciInitChain,
+  abciBlockBegin,
+  abciBlockEnd,
 } = require('neon-load-or-build')({
   dir: pathJoin(__dirname, '..'),
 });
@@ -29,7 +32,9 @@ const decodeProtocolEntity = decodeProtocolEntityFactory();
 
 // Convert the Drive methods from using callbacks to returning promises
 const driveCloseAsync = appendStack(promisify(driveClose));
-const driveCreateRootTreeAsync = appendStack(promisify(driveCreateRootTree));
+const driveCreateInitialStateStructureAsync = appendStack(
+  promisify(driveCreateInitialStateStructure),
+);
 const driveApplyContractAsync = appendStack(promisify(driveApplyContract));
 const driveCreateDocumentAsync = appendStack(promisify(driveCreateDocument));
 const driveUpdateDocumentAsync = appendStack(promisify(driveUpdateDocument));
@@ -37,6 +42,9 @@ const driveDeleteDocumentAsync = appendStack(promisify(driveDeleteDocument));
 const driveQueryDocumentsAsync = appendStack(promisify(driveQueryDocuments));
 const driveProveDocumentsQueryAsync = appendStack(promisify(driveProveDocumentsQuery));
 const driveInsertIdentityAsync = appendStack(promisify(driveInsertIdentity));
+const abciInitChainAsync = appendStack(promisify(abciInitChain));
+const abciBlockBeginAsync = appendStack(promisify(abciBlockBegin));
+const abciBlockEndAsync = appendStack(promisify(abciBlockEnd));
 
 // Wrapper class for the boxed `Drive` for idiomatic JavaScript usage
 class Drive {
@@ -67,8 +75,8 @@ class Drive {
    *
    * @returns {Promise<[number, number]>}
    */
-  async createRootTree(useTransaction = false) {
-    return driveCreateRootTreeAsync.call(this.drive, useTransaction);
+  async createInitialStateStructure(useTransaction = false) {
+    return driveCreateInitialStateStructureAsync.call(this.drive, useTransaction);
   }
 
   /**
@@ -234,18 +242,127 @@ class Drive {
   async insertIdentity(identity, useTransaction = false, dryRun = false) {
     return driveInsertIdentityAsync.call(
       this.drive,
-      identity.id.toBuffer(),
       identity.toBuffer(),
       !dryRun,
       useTransaction,
     );
   }
+
+  /**
+   * Get the ABCI interface
+   * @returns {RSAbci}
+   */
+  getAbci() {
+    const { drive } = this;
+
+    /**
+     * @typedef RSAbci
+     */
+    return {
+      /**
+       * ABCI init chain
+       *
+       * @param {InitChainRequest} request
+       * @param {boolean} [useTransaction=false]
+       *
+       * @returns {Promise<InitChainResponse>}
+       */
+      async initChain(request, useTransaction = false) {
+        const requestBytes = cbor.encode(request);
+
+        const responseBytes = await abciInitChainAsync.call(
+          drive,
+          requestBytes,
+          useTransaction,
+        );
+
+        return cbor.decode(responseBytes);
+      },
+
+      /**
+       * ABCI init chain
+       *
+       * @param {BlockBeginRequest} request
+       * @param {boolean} [useTransaction=false]
+       *
+       * @returns {Promise<BlockBeginResponse>}
+       */
+      async blockBegin(request, useTransaction = false) {
+        const requestBytes = cbor.encode({
+          ...request,
+          // cborium doesn't eat Buffers
+          proposerProTxHash: Array.from(request.proposerProTxHash),
+        });
+
+        const responseBytes = await abciBlockBeginAsync.call(
+          drive,
+          requestBytes,
+          useTransaction,
+        );
+
+        return cbor.decode(responseBytes);
+      },
+
+      /**
+       * ABCI init chain
+       *
+       * @param {BlockEndRequest} request
+       * @param {boolean} [useTransaction=false]
+       *
+       * @returns {Promise<BlockEndResponse>}
+       */
+      async blockEnd(request, useTransaction = false) {
+        const requestBytes = cbor.encode(request);
+
+        const responseBytes = await abciBlockEndAsync.call(
+          drive,
+          requestBytes,
+          useTransaction,
+        );
+
+        return cbor.decode(responseBytes);
+      },
+    };
+  }
 }
 
 /**
- * @typedef Element
- * @property {string} type - element type. Can be "item", "reference" or "tree"
- * @property {Buffer|Buffer[]} value - element value
+ * @typedef InitChainRequest
+ */
+
+/**
+ * @typedef InitChainResponse
+ */
+
+/**
+ * @typedef BlockBeginRequest
+ * @property {number} blockHeight
+ * @property {number} blockTimeMs - timestamp in milliseconds
+ * @property {number} [previousBlockTimeMs] - timestamp in milliseconds
+ * @property {Buffer} proposerProTxHash
+ */
+
+/**
+ * @typedef BlockBeginResponse
+ */
+
+/**
+ * @typedef BlockEndRequest
+ * @property {Fees} fees
+ */
+
+/**
+ * @typedef Fees
+ * @property {number} processingFees
+ * @property {number} storageFees
+ */
+
+/**
+ * @typedef BlockEndResponse
+ * @property {number} currentEpochIndex
+ * @property {boolean} isEpochChange
+ * @property {number} [proposersPaidCount]
+ * @property {number} [paidEpochIndex]
  */
 
 module.exports = Drive;
