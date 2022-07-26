@@ -80,9 +80,13 @@ class JsonRpcTransport {
     } catch (error) {
       this.lastUsedAddress = address;
 
+      console.log('DAPIERROR', error, error.code);
+
       if (error.code === undefined) {
         throw error;
       }
+
+      console.log('markAsBanned');
 
       address.markAsBanned();
 
