@@ -2,6 +2,8 @@ use std::collections::HashSet;
 use std::sync::Arc;
 
 use costs::CostContext;
+use dpp::data_contract::extra::encode_float;
+use dpp::data_contract::extra::DriveContractExt;
 use grovedb::{Element, TransactionArg};
 
 use crate::contract::Contract;
@@ -55,8 +57,8 @@ impl Drive {
         apply: bool,
         insert_operations: &mut Vec<DriveOperation>,
     ) -> Result<(), Error> {
-        let contract_root_path = contract_root_path(&contract.id);
-        if contract.keeps_history {
+        let contract_root_path = contract_root_path(contract.id.as_bytes());
+        if contract.keeps_history() {
             let element_flags = contract_element.get_flags().clone();
             let storage_flags = StorageFlags::from_element_flags(element_flags.clone())?;
 
@@ -66,9 +68,9 @@ impl Drive {
                 &storage_flags,
                 insert_operations,
             )?;
-            let encoded_time = crate::contract::types::encode_float(block_time)?;
+            let encoded_time = encode_float(block_time)?;
             let contract_keeping_history_storage_path =
-                contract_keeping_history_storage_path(&contract.id);
+                contract_keeping_history_storage_path(contract.id.as_bytes());
             self.batch_insert(
                 PathFixedSizeKeyElement((
                     contract_keeping_history_storage_path,
@@ -79,8 +81,10 @@ impl Drive {
             )?;
 
             // we should also insert a reference at 0 to the current value
-            let contract_storage_path =
-                contract_keeping_history_storage_time_reference_path(&contract.id, encoded_time);
+            let contract_storage_path = contract_keeping_history_storage_time_reference_path(
+                contract.id.as_bytes(),
+                encoded_time,
+            );
             let path_key_element_info = if apply {
                 PathFixedSizeKeyElement((
                     contract_keeping_history_storage_path,
@@ -126,7 +130,7 @@ impl Drive {
 
         self.batch_insert_empty_tree(
             [Into::<&[u8; 1]>::into(RootTree::ContractDocuments).as_slice()],
-            KeyRef(contract.id.as_slice()),
+            KeyRef(contract.id.as_bytes()),
             &storage_flags,
             &mut batch_operations,
         )?;
@@ -140,7 +144,7 @@ impl Drive {
         )?;
 
         // the documents
-        let contract_root_path = contract_root_path(&contract.id);
+        let contract_root_path = contract_root_path(contract.id.as_bytes());
         let key_info = if apply { KeyRef(&[1]) } else { KeySize(1) };
         self.batch_insert_empty_tree(
             contract_root_path,
@@ -152,9 +156,9 @@ impl Drive {
         // next we should store each document type
         // right now we are referring them by name
         // toDo: change this to be a reference by index
-        let contract_documents_path = contract_documents_path(&contract.id);
+        let contract_documents_path = contract_documents_path(contract.id.as_bytes());
 
-        for (type_key, document_type) in &contract.document_types {
+        for (type_key, document_type) in contract.document_types() {
             self.batch_insert_empty_tree(
                 contract_documents_path,
                 KeyRef(type_key.as_bytes()),
@@ -208,26 +212,26 @@ impl Drive {
         drive_operations: &mut Vec<DriveOperation>,
     ) -> Result<(), Error> {
         let mut batch_operations: Vec<DriveOperation> = vec![];
-        if original_contract.readonly {
+        if original_contract.readonly() {
             return Err(Error::Drive(DriveError::UpdatingReadOnlyImmutableContract(
                 "contract is readonly",
             )));
         }
 
-        if contract.readonly {
+        if contract.readonly() {
             return Err(Error::Drive(DriveError::ChangingContractToReadOnly(
                 "contract can not be changed to readonly",
             )));
         }
 
-        if contract.keeps_history ^ original_contract.keeps_history {
+        if contract.keeps_history() ^ original_contract.keeps_history() {
             return Err(Error::Drive(DriveError::ChangingContractKeepsHistory(
                 "contract can not change whether it keeps history",
             )));
         }
 
-        if contract.documents_keep_history_contract_default
-            ^ original_contract.documents_keep_history_contract_default
+        if contract.documents_keep_history_contract_default()
+            ^ original_contract.documents_keep_history_contract_default()
         {
             return Err(Error::Drive(
                 DriveError::ChangingContractDocumentsKeepsHistoryDefault(
@@ -236,8 +240,8 @@ impl Drive {
             ));
         }
 
-        if contract.documents_mutable_contract_default
-            ^ original_contract.documents_mutable_contract_default
+        if contract.documents_mutable_contract_default()
+            ^ original_contract.documents_mutable_contract_default()
         {
             return Err(Error::Drive(
                 DriveError::ChangingContractDocumentsMutabilityDefault(
@@ -259,9 +263,9 @@ impl Drive {
 
         let storage_flags = StorageFlags::from_element_flags(element_flags)?;
 
-        let contract_documents_path = contract_documents_path(&contract.id);
-        for (type_key, document_type) in &contract.document_types {
-            let original_document_type = &original_contract.document_types.get(type_key);
+        let contract_documents_path = contract_documents_path(contract.id.as_bytes());
+        for (type_key, document_type) in contract.document_types() {
+            let original_document_type = &original_contract.document_types().get(type_key);
             if let Some(original_document_type) = original_document_type {
                 if original_document_type.documents_mutable ^ document_type.documents_mutable {
                     return Err(Error::Drive(DriveError::ChangingDocumentTypeMutability(
@@ -353,7 +357,7 @@ impl Drive {
         transaction: TransactionArg,
     ) -> Result<(i64, u64), Error> {
         // first we need to deserialize the contract
-        let contract = Contract::from_cbor(&contract_cbor, contract_id)?;
+        let contract = <Contract as DriveContractExt>::from_cbor(&contract_cbor, contract_id)?;
 
         let epoch = self.epoch_info.borrow().current_epoch;
 
@@ -411,7 +415,10 @@ impl Drive {
                 .get(contract_root_path(&contract_id), &[0], transaction);
         let stored_element = value.map_err(Error::GroveDB)?;
         if let Element::Item(stored_contract_bytes, element_flag) = stored_element {
-            let contract = Arc::new(Contract::from_cbor(&stored_contract_bytes, None)?);
+            let contract = Arc::new(<Contract as DriveContractExt>::from_cbor(
+                &stored_contract_bytes,
+                None,
+            )?);
             let cached_contracts = self.cached_contracts.borrow();
             cached_contracts.insert(contract_id, Arc::clone(&contract));
             let flags = StorageFlags::from_element_flags(element_flag)?;
@@ -439,7 +446,7 @@ impl Drive {
         let mut original_contract_stored_data = vec![];
 
         if let Ok(Some(stored_element)) = self.grove_get(
-            contract_root_path(&contract.id),
+            contract_root_path(contract.id.as_bytes()),
             KeyRefRequest(&[0]),
             transaction,
             &mut drive_operations,
@@ -462,7 +469,10 @@ impl Drive {
 
         if already_exists {
             if !original_contract_stored_data.is_empty() {
-                let original_contract = Contract::from_cbor(&original_contract_stored_data, None)?;
+                let original_contract = <Contract as DriveContractExt>::from_cbor(
+                    &original_contract_stored_data,
+                    None,
+                )?;
                 // if the contract is not mutable update_contract will return an error
                 self.update_contract(
                     contract_element,
@@ -491,10 +501,12 @@ impl Drive {
 
 #[cfg(test)]
 mod tests {
+    use crate::contract::CreateRandomDocument;
     use rand::Rng;
     use std::option::Option::None;
     use tempfile::TempDir;
 
+    use super::*;
     use crate::common::json_document_to_cbor;
     use crate::contract::Contract;
     use crate::drive::flags::StorageFlags;
@@ -513,7 +525,7 @@ mod tests {
         let contract_path = "tests/supporting_files/contract/deepNested/deep-nested50.json";
         // let's construct the grovedb structure for the dashpay data contract
         let contract_cbor = json_document_to_cbor(contract_path, Some(1));
-        let contract = Contract::from_cbor(&contract_cbor, None)
+        let contract = <Contract as DriveContractExt>::from_cbor(&contract_cbor, None)
             .expect("expected to deserialize the contract");
         drive
             .apply_contract(
@@ -541,7 +553,7 @@ mod tests {
 
         // let's construct the grovedb structure for the dashpay data contract
         let contract_cbor = json_document_to_cbor(contract_path, Some(1));
-        let contract = Contract::from_cbor(&contract_cbor, None)
+        let contract = <Contract as DriveContractExt>::from_cbor(&contract_cbor, None)
             .expect("expected to deserialize the contract");
         drive
             .apply_contract(

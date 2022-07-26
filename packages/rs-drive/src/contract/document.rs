@@ -3,13 +3,15 @@ use std::io::{BufReader, Read};
 
 use byteorder::{BigEndian, WriteBytesExt};
 use ciborium::value::Value;
+use dpp::data_contract::extra::DriveContractExt;
 use serde::{Deserialize, Serialize};
 
 use crate::common::{bytes_for_system_value_from_tree_map, get_key_from_cbor_map};
-use crate::contract::{Contract, DocumentType};
+use crate::contract::Contract;
 use crate::drive::defaults::PROTOCOL_VERSION;
 use crate::drive::Drive;
-use crate::error::contract::ContractError;
+use dpp::data_contract::extra::{ContractError, DocumentType};
+
 use crate::error::drive::DriveError;
 use crate::error::structure::StructureError;
 use crate::error::Error;
@@ -124,7 +126,7 @@ impl Document {
                     Err(e) => Some(Err(e)),
                 }
             })
-            .collect::<Result<BTreeMap<String, Value>, Error>>()?;
+            .collect::<Result<BTreeMap<String, Value>, ContractError>>()?;
         let id = <[u8; 32]>::try_from(id).unwrap();
         let owner_id = <[u8; 32]>::try_from(owner_id).unwrap();
         Ok(Document {
@@ -333,7 +335,7 @@ impl Document {
         contract: &Contract,
         owner_id: Option<&[u8]>,
     ) -> Result<Option<Vec<u8>>, Error> {
-        let document_type = contract.document_types.get(document_type_name).ok_or({
+        let document_type = contract.document_types().get(document_type_name).ok_or({
             Error::Contract(ContractError::DocumentTypeNotFound(
                 "document type should exist for name",
             ))
@@ -344,8 +346,10 @@ impl Document {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
     use crate::common::json_document_to_cbor;
-    use crate::contract::Contract;
+    use crate::contract::CreateRandomDocument;
+    use dpp::data_contract::extra::DriveContractExt;
 
     #[test]
     fn test_drive_serialization() {
@@ -353,7 +357,7 @@ mod tests {
             "tests/supporting_files/contract/dashpay/dashpay-contract.json",
             Some(1),
         );
-        let contract = Contract::from_cbor(&dashpay_cbor, None).unwrap();
+        let contract = <Contract as DriveContractExt>::from_cbor(&dashpay_cbor, None).unwrap();
 
         let document_type = contract
             .document_type_for_name("contactRequest")
@@ -373,7 +377,7 @@ mod tests {
         assert!(serialized_document.len() < document_cbor.len());
         for _i in 0..10000 {
             let document = document_type.random_document(Some(3333));
-            let serialized_document = document
+            let _serialized_document = document
                 .serialize_consume(document_type)
                 .expect("expected to serialize");
         }

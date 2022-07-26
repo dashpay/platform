@@ -12,9 +12,10 @@ use crate::contract::document::Document;
 use crate::contract::{Contract, DocumentType};
 use crate::drive::defaults::DEFAULT_HASH_SIZE;
 use crate::drive::flags::StorageFlags;
-use crate::error::contract::ContractError;
 use crate::error::drive::DriveError;
 use crate::error::Error;
+
+use dpp::data_contract::extra::ContractError;
 
 #[derive(Clone)]
 pub enum PathInfo<'a, const N: usize> {

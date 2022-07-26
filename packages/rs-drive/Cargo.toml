@@ -26,6 +26,11 @@ thiserror = "1.0.30"
 moka = "0.8.1"
 nohash-hasher = "0.2.0"
 
+
+[dependencies.dpp]
+git = "https://github.com/dashevo/rust-dpp"
+branch = "dev"
+
 [dependencies.grovedb]
 git = "https://github.com/dashevo/grovedb"
 branch = "develop"

@@ -1,11 +1,10 @@
-use contract::ContractError;
+use dpp::data_contract::extra::ContractError;
 use drive::DriveError;
 use fee::FeeError;
 use identity::IdentityError;
 use query::QueryError;
 use structure::StructureError;
 
-pub mod contract;
 pub mod drive;
 pub mod fee;
 pub mod identity;

@@ -1,5 +1,8 @@
 {
   "$id": "GmpYy6DYrvqqrHfbAUibWBeVKjAz8Xte5t5ZZ5Cyw6Br",
+  "ownerId": "AcYUCSvAmUwryNsQqkqqD1o3BnFuzepGtR3Mhh2swLk6",
+  "$schema": "http://json-schema.org/draft-07/schema",
+  "version": 1,
   "documents": {
     "nest": {
       "type": "object",
