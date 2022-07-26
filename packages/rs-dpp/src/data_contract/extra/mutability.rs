@@ -14,8 +14,7 @@ pub mod property {
 
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", default)]
-// TODO change the name to something more meaningful
-pub struct Mutability {
+pub struct ContractConfig {
     /// Is the contract mutable
     pub readonly: bool,
     /// Does the contract keep history when the contract itself changes
@@ -26,9 +25,9 @@ pub struct Mutability {
     pub documents_mutable_contract_default: bool,
 }
 
-impl std::default::Default for Mutability {
+impl std::default::Default for ContractConfig {
     fn default() -> Self {
-        Mutability {
+        ContractConfig {
             readonly: !DEFAULT_CONTRACT_MUTABILITY,
             keeps_history: DEFAULT_CONTRACT_KEEPS_HISTORY,
             documents_keep_history_contract_default: DEFAULT_CONTRACT_DOCUMENTS_KEEPS_HISTORY,

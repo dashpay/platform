@@ -79,32 +79,32 @@ impl DriveContractExt for DataContract {
     }
 
     fn keeps_history(&self) -> bool {
-        self.mutability.keeps_history
+        self.config.keeps_history
     }
 
     fn set_keeps_history(&mut self, value: bool) {
-        self.mutability.keeps_history = value
+        self.config.keeps_history = value
     }
 
     fn readonly(&self) -> bool {
-        self.mutability.readonly
+        self.config.readonly
     }
     fn set_readonly(&mut self, is_read_only: bool) {
-        self.mutability.readonly = is_read_only;
+        self.config.readonly = is_read_only;
     }
 
     fn documents_keep_history_contract_default(&self) -> bool {
-        self.mutability.documents_keep_history_contract_default
+        self.config.documents_keep_history_contract_default
     }
     fn set_documents_keep_history_contract_default(&mut self, value: bool) {
-        self.mutability.documents_keep_history_contract_default = value;
+        self.config.documents_keep_history_contract_default = value;
     }
 
     fn documents_mutable_contract_default(&self) -> bool {
-        self.mutability.documents_mutable_contract_default
+        self.config.documents_mutable_contract_default
     }
     fn set_documents_mutable_contract_default(&mut self, value: bool) {
-        self.mutability.documents_mutable_contract_default = value
+        self.config.documents_mutable_contract_default = value
     }
 
     fn deserialize(
@@ -226,7 +226,7 @@ impl DriveContractExt for DataContract {
 
 #[cfg(test)]
 mod test {
-    use mutability::Mutability;
+    use mutability::ContractConfig;
 
     use super::*;
     use crate::{
@@ -459,8 +459,8 @@ mod test {
             DataContract::from_cbor(&contract_cbor).expect("deserialization shouldn't fail");
 
         assert!(matches!(
-            deserialized_contract.mutability,
-            Mutability {
+            deserialized_contract.config,
+            ContractConfig {
                 readonly: true,
                 keeps_history: true,
                 documents_mutable_contract_default: false,

@@ -20,7 +20,7 @@ use crate::{
 };
 
 use super::errors::*;
-use super::extra::{get_definitions, get_document_types, get_mutability, Mutability};
+use super::extra::{get_definitions, get_document_types, get_mutability, ContractConfig};
 
 use super::extra::DocumentType;
 use super::properties::*;
@@ -73,8 +73,10 @@ pub struct DataContract {
     pub schema: String,
     pub version: u32,
     pub owner_id: Identifier,
+
     #[serde(rename = "documents")]
     pub documents: BTreeMap<DocumentName, JsonSchema>,
+
     #[serde(rename = "$defs", default)]
     pub defs: BTreeMap<DocumentName, JsonSchema>,
 
@@ -86,7 +88,8 @@ pub struct DataContract {
     pub binary_properties: BTreeMap<DocumentName, BTreeMap<PropertyPath, JsonValue>>,
 
     #[serde(skip)]
-    pub(crate) mutability: Mutability,
+    pub(crate) config: ContractConfig,
+
     #[serde(skip)]
     pub(crate) document_types: BTreeMap<DocumentName, DocumentType>,
 }
@@ -201,7 +204,7 @@ impl DataContract {
             entropy: [0; 32],
             binary_properties: Default::default(),
             document_types,
-            mutability,
+            config: mutability,
         };
 
         data_contract.generate_binary_properties();

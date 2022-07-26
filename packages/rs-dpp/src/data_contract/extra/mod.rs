@@ -23,14 +23,16 @@ pub use {
     drive_api::{DriveContractExt, DriveEncoding},
     errors::{ContractError, StructureError},
     index::{Index, IndexProperty},
-    mutability::Mutability,
+    mutability::ContractConfig,
     root_tree::RootTree,
 };
 
 use ciborium::value::Value as CborValue;
 use std::collections::BTreeMap;
 
-pub fn get_mutability(contract: &BTreeMap<String, CborValue>) -> Result<Mutability, ContractError> {
+pub fn get_mutability(
+    contract: &BTreeMap<String, CborValue>,
+) -> Result<ContractConfig, ContractError> {
     let keeps_history: bool = common::bool_for_system_value_from_tree_map(
         contract,
         mutability::property::KEEPS_HISTORY,
@@ -53,7 +55,7 @@ pub fn get_mutability(contract: &BTreeMap<String, CborValue>) -> Result<Mutabili
         DEFAULT_CONTRACT_DOCUMENT_MUTABILITY,
     )?;
 
-    Ok(Mutability {
+    Ok(ContractConfig {
         keeps_history,
         readonly,
         documents_keep_history_contract_default,
