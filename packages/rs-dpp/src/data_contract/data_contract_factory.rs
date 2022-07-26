@@ -8,7 +8,6 @@ use crate::{
     errors::{consensus::ConsensusError, ProtocolError},
     prelude::Identifier,
     util::entropy_generator,
-    Convertible,
 };
 
 use super::{
@@ -143,7 +142,6 @@ mod test {
         state_transition::StateTransitionLike,
         tests::fixtures::get_data_contract_fixture,
         version::{ProtocolVersionValidator, COMPATIBILITY_MAP, LATEST_VERSION},
-        Convertible,
     };
     use serde_json::Value as JsonValue;
 

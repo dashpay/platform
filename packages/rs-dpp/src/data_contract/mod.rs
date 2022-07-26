@@ -4,6 +4,7 @@ pub use generate_data_contract::*;
 
 mod data_contract;
 pub mod errors;
+pub mod extra;
 
 mod data_contract_factory;
 pub mod enrich_data_contract_with_base_schema;

@@ -20,11 +20,13 @@ use crate::{
 };
 
 use super::errors::*;
+use super::extra::{get_definitions, get_document_types, get_mutability, ContractConfig};
 
+use super::extra::DocumentType;
 use super::properties::*;
 
 pub type JsonSchema = JsonValue;
-type DocumentType = String;
+type DocumentName = String;
 type PropertyPath = String;
 
 pub const SCHEMA: &str = "https://schema.dash.org/dpp-0-4-0/meta/data-contract";
@@ -61,7 +63,7 @@ impl Convertible for DataContract {
     }
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, Default)]
+#[derive(Serialize, Deserialize, Debug, Clone, Default, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct DataContract {
     pub protocol_version: u32,
@@ -71,17 +73,25 @@ pub struct DataContract {
     pub schema: String,
     pub version: u32,
     pub owner_id: Identifier,
+
     #[serde(rename = "documents")]
-    pub documents: BTreeMap<DocumentType, JsonSchema>,
+    pub documents: BTreeMap<DocumentName, JsonSchema>,
+
     #[serde(rename = "$defs", default)]
-    pub defs: BTreeMap<DocumentType, JsonSchema>,
+    pub defs: BTreeMap<DocumentName, JsonSchema>,
 
     #[serde(skip)]
     pub metadata: Option<Metadata>,
     #[serde(skip)]
     pub entropy: [u8; 32],
     #[serde(skip)]
-    pub binary_properties: BTreeMap<DocumentType, BTreeMap<PropertyPath, JsonValue>>,
+    pub binary_properties: BTreeMap<DocumentName, BTreeMap<PropertyPath, JsonValue>>,
+
+    #[serde(skip)]
+    pub(crate) config: ContractConfig,
+
+    #[serde(skip)]
+    pub(crate) document_types: BTreeMap<DocumentName, DocumentType>,
 }
 
 impl DataContract {
@@ -171,6 +181,17 @@ impl DataContract {
             documents.insert(key, value);
         }
 
+        let mutability = get_mutability(&data_contract_map)
+            .map_err(|e| ProtocolError::ParsingError(e.to_string()))?;
+        let definition_references = get_definitions(&data_contract_map);
+        let document_types = get_document_types(
+            &data_contract_map,
+            definition_references,
+            mutability.documents_keep_history_contract_default,
+            mutability.documents_mutable_contract_default,
+        )
+        .map_err(|e| ProtocolError::ParsingError(e.to_string()))?;
+
         let mut data_contract = Self {
             protocol_version,
             id: Identifier::new(contract_id),
@@ -182,6 +203,8 @@ impl DataContract {
             metadata: None,
             entropy: [0; 32],
             binary_properties: Default::default(),
+            document_types,
+            config: mutability,
         };
 
         data_contract.generate_binary_properties();
@@ -214,6 +237,16 @@ impl DataContract {
     pub fn to_cbor(&self) -> Result<Vec<u8>, ProtocolError> {
         let mut buf = self.protocol_version().to_le_bytes().to_vec();
 
+        let contract_cbor_map = self.to_cbor_canonical_map()?;
+        let mut contract_buf = contract_cbor_map
+            .to_bytes()
+            .map_err(|e| ProtocolError::EncodingError(e.to_string()))?;
+
+        buf.append(&mut contract_buf);
+        Ok(buf)
+    }
+
+    pub(crate) fn to_cbor_canonical_map(&self) -> Result<CborCanonicalMap, ProtocolError> {
         let mut contract_cbor_map = CborCanonicalMap::new();
 
         contract_cbor_map.insert(PROPERTY_ID, self.id().to_buffer().to_vec());
@@ -234,15 +267,10 @@ impl DataContract {
             );
         }
 
-        let mut contract_buf = contract_cbor_map
-            .to_bytes()
-            .map_err(|e| ProtocolError::EncodingError(e.to_string()))?;
-
-        buf.append(&mut contract_buf);
-        Ok(buf)
+        Ok(contract_cbor_map)
     }
 
-    pub fn documents(&self) -> &BTreeMap<DocumentType, JsonSchema> {
+    pub fn documents(&self) -> &BTreeMap<DocumentName, JsonSchema> {
         &self.documents
     }
 
@@ -377,12 +405,11 @@ impl TryFrom<&str> for DataContract {
 
 #[cfg(test)]
 mod test {
-    use anyhow::Result;
-
     use crate::{
         assert_error_contains,
         tests::{fixtures::get_data_contract_fixture, utils::*},
     };
+    use anyhow::Result;
 
     use super::*;
 
