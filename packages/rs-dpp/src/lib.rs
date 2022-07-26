@@ -33,7 +33,7 @@ pub mod mocks;
 #[cfg(test)]
 mod tests;
 
-mod prelude {
+pub mod prelude {
     pub use crate::data_contract::DataContract;
     pub use crate::data_trigger::DataTrigger;
     pub use crate::document::document_transition::DocumentTransition;

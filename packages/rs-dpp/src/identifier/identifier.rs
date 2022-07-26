@@ -33,6 +33,10 @@ impl Identifier {
         Identifier { buffer }
     }
 
+    pub fn as_bytes(&self) -> &[u8; 32] {
+        &self.buffer
+    }
+
     pub fn from_string(
         encoded_value: &str,
         encoding: Encoding,
