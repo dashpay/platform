@@ -1,4 +1,5 @@
-// TODO drive dependency
+//? Should the [`RootTree`] and related methods be part of DPP?
+
 #[repr(u8)]
 pub enum RootTree {
     // Input data errors
@@ -8,21 +9,18 @@ pub enum RootTree {
     Misc = 3,
 }
 
-// TODO drive dependency
 impl From<RootTree> for u8 {
     fn from(root_tree: RootTree) -> Self {
         root_tree as u8
     }
 }
 
-// TODO drive dependency
 impl From<RootTree> for [u8; 1] {
     fn from(root_tree: RootTree) -> Self {
         [root_tree as u8]
     }
 }
 
-// TODO drive dependency
 impl From<RootTree> for &'static [u8; 1] {
     fn from(root_tree: RootTree) -> Self {
         match root_tree {
