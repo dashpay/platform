@@ -16,6 +16,8 @@ use rs_drive::drive::object_size_info::DocumentAndContractInfo;
 use rs_drive::drive::object_size_info::DocumentInfo::DocumentAndSerialization;
 use rs_drive::drive::{Drive, RootTree};
 
+use dpp::data_contract::extra::DriveContractExt;
+
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct Records {

@@ -1,154 +1,157 @@
 {
-  "$id":"94zNLp7A1ZcYG3Egqf2YmQk4DQr9P8D543GwXyCJRz4",
-  "documents":{
-    "person":{
+  "$id": "94zNLp7A1ZcYG3Egqf2YmQk4DQr9P8D543GwXyCJRz4",
+  "ownerId": "AcYUCSvAmUwryNsQqkqqD1o3BnFuzepGtR3Mhh2swLk6",
+  "$schema": "http://json-schema.org/draft-07/schema",
+  "version": 1,
+  "documents": {
+    "person": {
       "documentsKeepHistory": true,
-      "indices":[
+      "indices": [
         {
-          "properties":[
+          "properties": [
             {
-              "$ownerId":"asc"
+              "$ownerId": "asc"
             }
           ]
         },
         {
-          "properties":[
+          "properties": [
             {
-              "middleName":"asc"
+              "middleName": "asc"
             }
           ]
         },
         {
-          "properties":[
+          "properties": [
             {
-              "firstName":"asc"
+              "firstName": "asc"
             }
           ]
         },
         {
-          "properties":[
+          "properties": [
             {
-              "firstName":"asc"
+              "firstName": "asc"
             },
             {
-              "age":"asc"
+              "age": "asc"
             }
           ]
         },
         {
-          "properties":[
+          "properties": [
             {
-              "firstName":"asc"
+              "firstName": "asc"
             },
             {
-              "age":"asc"
+              "age": "asc"
             },
             {
-              "message":"asc"
+              "message": "asc"
             }
           ]
         },
         {
-          "properties":[
+          "properties": [
             {
-              "message":"asc"
+              "message": "asc"
             }
           ]
         },
         {
-          "properties":[
+          "properties": [
             {
-              "message":"asc"
+              "message": "asc"
             },
             {
-              "age":"asc"
+              "age": "asc"
             }
           ]
         },
         {
-          "properties":[
+          "properties": [
             {
-              "age":"asc"
+              "age": "asc"
             },
             {
-              "message":"asc"
+              "message": "asc"
             }
           ]
         },
         {
-          "properties":[
+          "properties": [
             {
-              "firstName":"asc"
+              "firstName": "asc"
             },
             {
-              "lastName":"asc"
+              "lastName": "asc"
             }
           ]
         },
         {
-          "properties":[
+          "properties": [
             {
-              "firstName":"asc"
+              "firstName": "asc"
             },
             {
-              "middleName":"asc"
+              "middleName": "asc"
             },
             {
-              "lastName":"asc"
+              "lastName": "asc"
             }
           ]
         },
         {
-          "properties":[
+          "properties": [
             {
-              "age":"asc"
+              "age": "asc"
             },
             {
-              "firstName":"asc"
+              "firstName": "asc"
             },
             {
-              "middleName":"asc"
+              "middleName": "asc"
             },
             {
-              "lastName":"asc"
+              "lastName": "asc"
             }
           ]
         },
         {
-          "properties":[
+          "properties": [
             {
-              "age":"asc"
+              "age": "asc"
             }
           ]
         }
       ],
-      "properties":{
-        "age":{
-          "type":"integer"
+      "properties": {
+        "age": {
+          "type": "integer"
         },
-        "firstName":{
-          "type":"string",
-          "maxLength":50
+        "firstName": {
+          "type": "string",
+          "maxLength": 50
         },
-        "middleName":{
-          "type":"string",
-          "maxLength":50
+        "middleName": {
+          "type": "string",
+          "maxLength": 50
         },
-        "lastName":{
-          "type":"string",
-          "maxLength":50
+        "lastName": {
+          "type": "string",
+          "maxLength": 50
         },
-        "message":{
-          "type":"string",
-          "maxLength":128
+        "message": {
+          "type": "string",
+          "maxLength": 128
         }
       },
-      "required":[
+      "required": [
         "firstName",
         "lastName",
         "age"
       ],
-      "additionalProperties":false
+      "additionalProperties": false
     }
   }
 }

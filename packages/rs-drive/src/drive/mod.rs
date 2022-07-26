@@ -24,6 +24,8 @@ pub mod identity;
 pub mod object_size_info;
 pub mod query;
 
+use dpp::data_contract::extra::DriveContractExt;
+
 pub struct EpochInfo {
     current_epoch: u16,
 }

@@ -1,6 +1,14 @@
 {
   "$id": "9Lo6Fq1idp7YG3Egqf2YmQk4DQr9P8D543GwXyCJRyG",
-  "$defs": {"regex":{"type":"string","maxLength":63}},
+  "ownerId": "AcYUCSvAmUwryNsQqkqqD1o3BnFuzepGtR3Mhh2swLk6",
+  "$schema": "http://json-schema.org/draft-07/schema",
+  "version": 1,
+  "$defs": {
+    "regex": {
+      "type": "string",
+      "maxLength": 63
+    }
+  },
   "documents": {
     "note": {
       "type": "object",
