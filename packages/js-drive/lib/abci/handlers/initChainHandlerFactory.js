@@ -40,17 +40,17 @@ function initChainHandlerFactory(
   async function initChainHandler(request) {
     const { time } = request;
 
-    const contextLogger = logger.child({
+    const consensusLogger = logger.child({
       height: request.initialHeight.toString(),
       abciMethod: 'initChain',
     });
 
-    contextLogger.debug('InitChain ABCI method requested');
-    contextLogger.trace({ abciRequest: request });
+    consensusLogger.debug('InitChain ABCI method requested');
+    consensusLogger.trace({ abciRequest: request });
 
     await updateSimplifiedMasternodeList(
       initialCoreChainLockedHeight, {
-        logger: contextLogger,
+        logger: consensusLogger,
       },
     );
 
@@ -62,9 +62,28 @@ function initChainHandlerFactory(
 
     await rsAbci.initChain({ }, true);
 
-    await registerSystemDataContracts(contextLogger, time);
+    await registerSystemDataContracts(consensusLogger, time);
 
-    await synchronizeMasternodeIdentities(initialCoreChainLockedHeight);
+    const synchronizeMasternodeIdentitiesResult = await synchronizeMasternodeIdentities(
+      initialCoreChainLockedHeight,
+    );
+
+    const {
+      createdEntities, updatedEntities, removedEntities, fromHeight, toHeight,
+    } = synchronizeMasternodeIdentitiesResult;
+
+    consensusLogger.info(
+      `Masternode identities are synced for heights from ${fromHeight} to ${toHeight}: ${createdEntities.length} created, ${updatedEntities.length} updated, ${removedEntities.length} removed`,
+    );
+
+    consensusLogger.trace(
+      {
+        createdEntities: createdEntities.map((item) => item.toJSON()),
+        updatedEntities: updatedEntities.map((item) => item.toJSON()),
+        removedEntities: removedEntities.map((item) => item.toJSON()),
+      },
+      'Synchronized masternode identities',
+    );
 
     await groveDBStore.commitTransaction();
 
@@ -78,9 +97,9 @@ function initChainHandlerFactory(
 
     const validatorSetUpdate = createValidatorSetUpdate(validatorSet);
 
-    contextLogger.trace(validatorSetUpdate, `Validator set initialized with ${quorumHash} quorum`);
+    consensusLogger.trace(validatorSetUpdate, `Validator set initialized with ${quorumHash} quorum`);
 
-    contextLogger.info(
+    consensusLogger.info(
       {
         chainId: request.chainId,
         appHash: appHash.toString('hex').toUpperCase(),
