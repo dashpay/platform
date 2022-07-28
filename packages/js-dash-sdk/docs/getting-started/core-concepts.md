@@ -8,7 +8,7 @@ At the core of Dash is the Payment Chain. In order to be able to transact on it,
 
 In order to access your UTXO, you will have to provide a valid mnemonic that will unlock the Wallet and automatically fetch the associated UTXOs.
 
-When an SDK instance is created, you can access your wallet via the `client.wallet` variable. (Check [wallet-lib](https://dashevo.github.io/platform/Wallet-library/) docs for more details)
+When an SDK instance is created, you can access your wallet via the `client.wallet` variable. (Check [wallet-lib documentation](https://dashevo.github.io/platform/Wallet-library/) for more details)
 
 ## Account
 
