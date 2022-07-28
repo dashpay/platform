@@ -99,12 +99,16 @@ services:
     restart: unless-stopped
     ports:
       - ${PLATFORM_DAPI_ENVOY_HTTP_PORT:?err}:10000 # JSON RPC and gRPC Web
+      - ${PLATFORM_DAPI_ENVOY_HTTPS_PORT:?err}:10443 # JSON RPCs and gRPCs Web
       - ${PLATFORM_DAPI_ENVOY_GRPC_PORT:?err}:50051 # gRPC Native
+      - ${PLATFORM_DAPI_ENVOY_GRPCS_PORT:?err}:50443 # gRPCs Native
     depends_on:
       - dapi_api
       - dapi_tx_filter_stream
     volumes:
       - ${DASHMATE_HOME_DIR:?err}/${CONFIG_NAME:?err}/platform/dapi/envoy/envoy.yaml:/etc/envoy/envoy.yaml
+      - ${DASHMATE_HOME_DIR:?err}/ssl/bundle.crt:/etc/ssl/bundle.crt
+      - ${DASHMATE_HOME_DIR:?err}/private.key:/etc/ssl/private.key
 
 volumes:
   drive_abci_data:
