@@ -21,5 +21,5 @@ As optional parameter, an integer representing the account `index` can be passed
 client.wallet.getAccount({ index: 1 })
 ```
 
-Awaiting for `getAccount()` promise is needed to have wallet synced-up with network and making sure that UTXOS set is ready to be used for payment/signing.  
+Awaiting for the `getAccount()` promise is necessary to ensure the wallet is synced-up with the network and make sure that the UTXO set is ready to be used for payment/signing.
 
