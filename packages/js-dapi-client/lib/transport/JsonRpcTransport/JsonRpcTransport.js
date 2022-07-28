@@ -82,7 +82,7 @@ class JsonRpcTransport {
 
       console.log('DAPIERROR', error, `code=${error.code}!`, method, JSON.stringify(params));
 
-      if (error.code === undefined || error.code === 'ECONNABORTED') {
+      if (error.code === undefined) {
         throw error;
       }
 
