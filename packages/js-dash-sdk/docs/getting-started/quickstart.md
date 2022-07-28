@@ -26,7 +26,7 @@ client.wallet.getAccount().then(async (account) => {
 ```
 
 Quick note:
-If no `mnemonic` provided or `mnemonic: null` passed inside the `wallet` option, Dash Wallet will generate a new one 
+If no `mnemonic` is provided or `mnemonic: null` is passed inside the `wallet` option, a new mnemonic will be generated.
 
 
 ## Make a payment
@@ -43,4 +43,4 @@ client.wallet.getAccount().then(async (account) => {
 
 ## Interact with Dash Platform
 
-See Dash Platform [Tutorial section](https://dashplatform.readme.io/docs/tutorials-introduction)
+See the [Tutorial section](https://dashplatform.readme.io/docs/tutorials-introduction) of the Dash Platform documentation for examples.

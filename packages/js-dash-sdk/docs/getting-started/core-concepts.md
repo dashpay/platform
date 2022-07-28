@@ -20,7 +20,7 @@ You can access your account with `client.getWalletAccount()`. See [how to use a 
 
 ## App Schema and Contracts
 
-The Dash Platform Chain, provides developers with the ability to create applications. 
+The Dash Platform Chain provides developers with the ability to create applications. 
 Each application requires a set of rules and conditions described as a portable document in the form of a JSON Schema.
 
 When registered, those applications schemas are called contracts and contains a contractId (namespace : `client.platform.contracts`).  

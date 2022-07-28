@@ -1,5 +1,7 @@
 # Dashcore Lib primitives
-All Dashcore lib primitives exposed via the `Core` namespace
+
+All Dashcore lib primitives are exposed via the `Core` namespace.
+
 ```js
 const Dash = require('dash');
 const {
@@ -14,7 +16,7 @@ const {
 
 ## Transaction 
 
-The Transaction primitive allows to create and manipulate transactions. It also allows to sign transactions with a private key.  
+The Transaction primitive allows creating and manipulating transactions. It also allows signing transactions with a private key.  
 Supports fee control and input/output access (which allows passing a specific script).
 
 ```js
@@ -39,7 +41,7 @@ Access the [Address documentation on dashevo/dashcore-lib](https://github.com/da
 
 Given a binary representation of the block as input, the Block class allows you to have a deserialized representation of a Block or its header. It also allows validating the transactions in the block against the header merkle root.
 
-Transactions of the block can also be explored by iterating over elements in array (`block.transactions`).  
+The block's transactions can also be explored by iterating over elements in array (`block.transactions`).  
 
 `const { Block } = Dash.Core;`
 
@@ -87,7 +89,7 @@ Access the [PrivateKey documentation on dashevo/dashcore-lib](https://github.com
 ## Mnemonic
 
 Implementation of [BIP39 Mnemonic code for generative deterministic keys](https://github.com/bitcoin/bips/blob/master/bip-0039.mediawiki).  
-Generates random mnemonic with chosen language, validates a mnemonic or returns associated HDPrivateKey.  
+Generates a random mnemonic with the chosen language, validates a mnemonic or returns the associated HDPrivateKey.  
 
 `const { Mnemonic } = Dash.Core;`
 
@@ -95,7 +97,7 @@ Access the [Mnemonic documentation on dashevo/dashcore-lib](https://github.com/d
 
 ## Network
 
-A representation of the internal parameters relative to used network. By default, all primitives works with 'livenet'.
+A representation of the internal parameters relative to the selected network. By default, all primitives works with 'livenet'.
 
 `const { Network } = Dash.Core;`
 
