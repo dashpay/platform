@@ -1,4 +1,10 @@
-const { createContainer: createAwilixContainer, InjectionMode, asFunction, asValue, asClass } = require('awilix');
+const {
+  createContainer: createAwilixContainer,
+  InjectionMode,
+  asFunction,
+  asValue,
+  asClass,
+} = require('awilix');
 
 const Docker = require('dockerode');
 
