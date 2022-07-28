@@ -16,7 +16,7 @@ Since the introduction of deterministic wallets ([BIP44](https://github.com/bitc
 
 It is the instance you will use most of the time for receiving or broadcasting payments.
 
-You can access your account with `client.getWalletAccount()`. See [how to use a different account](../examples/use-different-account.md) if you need to get an account at the specific index.
+You can access your account with `client.getWalletAccount()`. See [how to use a different account](../examples/use-different-account.md) if you need to get an account at a specific index.
 
 ## App Schema and Contracts
 
