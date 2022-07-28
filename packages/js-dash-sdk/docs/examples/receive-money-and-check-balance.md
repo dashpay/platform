@@ -66,7 +66,7 @@ async function showBalance() {
 
 ## Listen for event on received transaction 
 
-When a new unconfirmed transaction is received, you can receive an event, and validate the address or perform action if needed.   
+When a new unconfirmed transaction is received, you can receive an event, and then validate the address or perform an action if needed.   
 
 ```js
 // FETCHED/UNCONFIRMED_TRANSACTION event is currently disabled
