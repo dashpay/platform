@@ -3,7 +3,7 @@
 When Wallet is initialized with `mnemonic`, it holds multiple Accounts according to BIP44. 
 Each Account holds the keys needed to make a payments from it.
 
-Wallet's `getAccount` method used to access account
+Wallet's `getAccount` method used to access an account:
 
 ```js
 const client = new Dash.Client({
