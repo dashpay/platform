@@ -18,6 +18,13 @@ const systemConfigs = require('../configs/system');
 const renderServiceTemplatesFactory = require('./templates/renderServiceTemplatesFactory');
 const writeServiceConfigsFactory = require('./templates/writeServiceConfigsFactory');
 
+const createCertificate = require('./ssl/zerossl/createCertificate');
+const saveChallenge = require('./ssl/zerossl/saveChallenge');
+const verifyTempServer = require('./ssl/zerossl/verifyTempServer');
+const verifyDomain = require('./ssl/zerossl/verifyDomain');
+const downloadCertificate = require('./ssl/zerossl/downloadCertificate');
+const generateCsr = require('./ssl/zerossl/generateCsr');
+
 const DockerCompose = require('./docker/DockerCompose');
 const StartedContainers = require('./docker/StartedContainers');
 const stopAllContainersFactory = require('./docker/stopAllContainersFactory');
@@ -67,6 +74,9 @@ const buildServicesTaskFactory = require('./listr/tasks/buildServicesTaskFactory
 
 const generateHDPrivateKeys = require('./util/generateHDPrivateKeys');
 
+const checkCertificateTaskFactory = require('./ssl/checkCertificateTaskFactory');
+const createZerosslCertificateTaskFactory = require('./ssl/zerossl/createZerosslCertificateTaskFactory');
+
 async function createDIContainer() {
   const container = createAwilixContainer({
     injectionMode: InjectionMode.CLASSIC,
@@ -96,21 +106,31 @@ async function createDIContainer() {
    * Templates
    */
   container.register({
-    renderServiceTemplates: asFunction(renderServiceTemplatesFactory).singleton(),
+    renderServiceTemplates: asFunction(
+      renderServiceTemplatesFactory
+    ).singleton(),
     writeServiceConfigs: asFunction(writeServiceConfigsFactory).singleton(),
+  });
+
+  /**
+   * SSL
+   */
+  container.register({
+    createCertificate: asValue(createCertificate),
+    saveChallenge: asValue(saveChallenge),
+    verifyTempServer: asValue(verifyTempServer),
+    verifyDomain: asValue(verifyDomain),
+    downloadCertificate: asValue(downloadCertificate),
+    generateCsr: asValue(generateCsr),
   });
 
   /**
    * Docker
    */
   container.register({
-    docker: asFunction(() => (
-      new Docker()
-    )).singleton(),
+    docker: asFunction(() => new Docker()).singleton(),
     dockerCompose: asClass(DockerCompose).singleton(),
-    startedContainers: asFunction(() => (
-      new StartedContainers()
-    )).singleton(),
+    startedContainers: asFunction(() => new StartedContainers()).singleton(),
     stopAllContainers: asFunction(stopAllContainersFactory).singleton(),
     dockerPull: asFunction(dockerPullFactory).singleton(),
     resolveDockerHostIp: asFunction(resolveDockerHostIpFactory).singleton(),
@@ -151,7 +171,9 @@ async function createDIContainer() {
    */
   container.register({
     createTenderdashRpcClient: asValue(createTenderdashRpcClient),
-    initializeTenderdashNode: asFunction(initializeTenderdashNodeFactory).singleton(),
+    initializeTenderdashNode: asFunction(
+      initializeTenderdashNodeFactory
+    ).singleton(),
   });
 
   /**
@@ -161,19 +183,31 @@ async function createDIContainer() {
     buildServicesTask: asFunction(buildServicesTaskFactory).singleton(),
     startGroupNodesTask: asFunction(startGroupNodesTaskFactory).singleton(),
     generateToAddressTask: asFunction(generateToAddressTaskFactory).singleton(),
-    registerMasternodeTask: asFunction(registerMasternodeTaskFactory).singleton(),
+    registerMasternodeTask: asFunction(
+      registerMasternodeTaskFactory
+    ).singleton(),
     featureFlagTask: asFunction(featureFlagTaskFactory).singleton(),
     tenderdashInitTask: asFunction(tenderdashInitTaskFactory).singleton(),
+    checkCertificateTask: asFunction(checkCertificateTaskFactory),
+    createZerosslCertificateTask: asFunction(
+      createZerosslCertificateTaskFactory
+    ),
     startNodeTask: asFunction(startNodeTaskFactory).singleton(),
     stopNodeTask: asFunction(stopNodeTaskFactory).singleton(),
     restartNodeTask: asFunction(restartNodeTaskFactory).singleton(),
     resetNodeTask: asFunction(resetNodeTaskFactory).singleton(),
     setupLocalPresetTask: asFunction(setupLocalPresetTaskFactory).singleton(),
-    setupRegularPresetTask: asFunction(setupRegularPresetTaskFactory).singleton(),
+    setupRegularPresetTask: asFunction(
+      setupRegularPresetTaskFactory
+    ).singleton(),
     configureCoreTask: asFunction(configureCoreTaskFactory).singleton(),
-    configureTenderdashTask: asFunction(configureTenderdashTaskFactory).singleton(),
+    configureTenderdashTask: asFunction(
+      configureTenderdashTaskFactory
+    ).singleton(),
     outputStatusOverview: asFunction(outputStatusOverviewFactory),
-    waitForNodeToBeReadyTask: asFunction(waitForNodeToBeReadyTaskFactory).singleton(),
+    waitForNodeToBeReadyTask: asFunction(
+      waitForNodeToBeReadyTaskFactory
+    ).singleton(),
     enableCoreQuorumsTask: asFunction(enableCoreQuorumsTaskFactory).singleton(),
   });
 
