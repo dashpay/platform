@@ -1,6 +1,6 @@
 ## Using a different account 
 
-Client initialized with the mnemonic supports multiple accounts as defined in [BIP44](https://github.com/bitcoin/bips/blob/master/bip-0044.mediawiki).
+Clients initialized with a mnemonic support multiple accounts as defined in [BIP44](https://github.com/bitcoin/bips/blob/master/bip-0044.mediawiki).
 
 By default `client.wallet.getAccount()` returns account at index `0`.
 
