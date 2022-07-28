@@ -44,29 +44,92 @@ this repository may be used on the following networks:
 - [x] [**Testnet**](https://dashplatform.readme.io/docs/reference-glossary#testnet)
 - [ ] [Mainnet](https://dashplatform.readme.io/docs/reference-glossary#mainnet)
 
+## Install & Build
+
+**Important**: Building the dev environment requires 2GB+ RAM - whatever the OS needs, plus 1.5GB for itself.
+
+1. Clone and enter the repo
+   ```bash
+   git clone https://github.com/dashevo/platform ./platform/
+   pushd ./platform/
+   ```
+2. Install prerequisites:
+  - gcc toolchain
+    ```bash
+    sudo apt install -y build-essential
+    ```
+  - [node.js](https://nodejs.org/) v16.10.0+
+    ```bash
+    curl https://webinstall.dev/node@16 | bash
+    ```
+  - [docker](https://docs.docker.com/get-docker/) v20.10+
+    ```bash
+    sudo apt update
+    
+    sudo sh -eux <<EOF
+    apt-get install -y uidmap
+    EOF
+    
+    curl -fsSL https://get.docker.com -o get-docker.sh
+    bash get-docker.sh
+    
+    dockerd-rootless-setuptool.sh install
+    ```
+    **Important**: follow the on-screen instructions about `DOCKER_HOST`!
+3. Enable [corepack](https://nodejs.org/dist/latest/docs/api/corepack.html) to install yarn
+   ```bash
+   # installs yarn, bundled with node v16+
+   corepack enable
+   ```
+4. Install dependencies and configure and build all packages
+   ```bash
+   yarn setup
+   ```
+   
+## Run & Test
+
+**Important**: Running a dev environment requires a **non-trivial amount of system resources**. \
+(you may wish to stop the local node when not in use)
+
+1. Start the local dev environment built from the sources
+   ```bash
+   yarn start
+   ```
+2. Rebuild and restart after changes
+   ```bash
+   yarn build
+   yarn restart
+   ```
+3. Stop the local node
+   ```bash
+   yarn stop
+   ```
+
+Notes:
+
+- To run the whole test suite):
+  ```bash
+  # running tests requires a running node 
+  #yarn start
+  
+  # run all tests
+  yarn test
+  ```
+- To run tests for a specific package:
+  ```bash
+  # yarn workspace <package_name> test
+  # Example: run tests for the JS DAPI client
+  yarn workspace @dashevo/dapi-client test
+  ```
+  See [./packages/README.md](./packages/README.md) for the list of available packages.
+- To completely reset all local data and builds:
+  ```bash
+  yarn reset
+  ```
+
 ## FAQ
 
-### How to build and set up a node from the code in this repo?
-
-- Clone the repo
-- Install prerequisites:
-  - [node.js](https://nodejs.org/) v16.10.0+
-  - [docker](https://docs.docker.com/get-docker/) v20.10+
-- Run `corepack enable` to enable [corepack](https://nodejs.org/dist/latest/docs/api/corepack.html) and install yarn
-- Run `yarn setup` to install dependencies and configure and build all packages
-- Run `yarn start` to start the local dev environment built from the sources
-- Run `yarn test` to run the whole test suite (note that running tests requires a running node, 
- so be sure to call `yarn start` first). Alternatively, you can run tests for a specific 
- package by running `yarn workspace <package_name> test`, for example running 
- `yarn workspace @dashevo/dapi-client test` will run tests for the JS DAPI client. To see 
- all available packages, please see the [packages readme](./packages/README.md)
-- `yarn stop` will stop the local dev environment. Running a dev environment requires a non-trivial amount of system resources,
- so it is best to stop the local node when not in use
-- Run `yarn build` to rebuild the project after changes. If you have a local node
- running, you may need to restart it by running `yarn restart`
-- To completely reset all local data and builds, run `yarn reset`
-
-### Looking for support?
+### Where can I find support?
 
 For questions and support, please join our [Devs
 Discord](https://chat.dashdevs.org/)
