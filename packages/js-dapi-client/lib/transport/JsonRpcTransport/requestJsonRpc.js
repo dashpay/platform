@@ -1,4 +1,5 @@
-const axios = require('axios');
+// const axios = require('axios');
+const fetch = require('node-fetch');
 
 const JsonRpcError = require('./errors/JsonRpcError');
 const WrongHttpCodeError = require('./errors/WrongHttpCodeError');
@@ -43,18 +44,30 @@ async function requestJsonRpc(host, port, method, params, options = {}) {
     url = `${url}/?${params.idq}`;
   }
 
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), options.timeout);
+
   try {
-    response = await axios.post(
+    const data = await fetch(
       url,
-      payload,
-      { timeout: options.timeout },
+      { method: 'POST', body: payload, signal: controller.signal },
     );
+
+    response = await data.json();
+
+    // response = await axios.post(
+    //   url,
+    //   payload,
+    //   { timeout: options.timeout },
+    // );
   } catch (error) {
     if (error.response && error.response.status >= 500) {
       throw new WrongHttpCodeError(requestInfo, error.response.status, error.response.statusText);
     }
 
     throw error;
+  } finally {
+    clearTimeout(timeoutId);
   }
 
   if (response.status !== 200) {
