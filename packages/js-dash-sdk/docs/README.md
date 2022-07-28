@@ -33,7 +33,8 @@ npm install dash
 - [Use another BIP44 account](examples/use-different-account.md)
 
 ### Dash Platform Tutorials
-See https://dashplatform.readme.io/docs/tutorials-introduction
+
+See the [Tutorial section](https://dashplatform.readme.io/docs/tutorials-introduction) of the Dash Platform documentation for examples.
 
 ## Licence
 
