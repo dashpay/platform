@@ -47,7 +47,7 @@ This above code will generate a new unique (never used) address.
 _Dash Wallet returns the balance in duffs (1 Dash is equal to 100.000.000 duffs)_
 
 `getTotalBalance()` function takes into account `confirmed` and `unconfirmed` transactions (not included in a block).
-It is advised to check confirmed balance before making a payment:
+It is recommended to check the confirmed balance before making a payment:
 
 ```js
 async function showBalance() {
