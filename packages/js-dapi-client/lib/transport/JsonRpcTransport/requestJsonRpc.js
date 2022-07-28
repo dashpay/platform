@@ -15,7 +15,7 @@ const WrongHttpCodeError = require('./errors/WrongHttpCodeError');
 async function requestJsonRpc(host, port, method, params, options = {}) {
   const protocol = port === 443 ? 'https' : 'http';
 
-  const url = `${protocol}://${host}${port && port !== 443 ? `:${port}` : ''}`;
+  let url = `${protocol}://${host}${port && port !== 443 ? `:${port}` : ''}`;
 
   const payload = {
     jsonrpc: '2.0',
@@ -38,6 +38,10 @@ async function requestJsonRpc(host, port, method, params, options = {}) {
   };
 
   let response;
+
+  if (params.idq) {
+    url = `${url}/?${params.idq}`;
+  }
 
   try {
     response = await axios.post(

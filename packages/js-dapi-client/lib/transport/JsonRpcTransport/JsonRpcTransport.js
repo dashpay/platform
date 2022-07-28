@@ -63,6 +63,9 @@ class JsonRpcTransport {
       requestOptions.timeout = options.timeout;
     }
 
+    // eslint-disable-next-line no-param-reassign
+    params.idq = Math.random().toString().replace('0.', '');
+
     try {
       const result = await this.requestJsonRpc(
         address.getHost(),
