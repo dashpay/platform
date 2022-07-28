@@ -12,7 +12,7 @@ When an SDK instance is created, you can access your wallet via the `client.wall
 
 ## Account
 
-Since the introduction of deterministic wallets ([BIP44](https://github.com/bitcoin/bips/blob/master/bip-0044.mediawiki)), Wallet is represented by multiple accounts.
+Since the introduction of deterministic wallets ([BIP44](https://github.com/bitcoin/bips/blob/master/bip-0044.mediawiki)), a wallet is represented by multiple accounts.
 
 It is the instance you will use most of the time for receiving or broadcasting payments.
 
