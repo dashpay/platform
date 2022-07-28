@@ -1,10 +1,4 @@
-const {
-  createContainer: createAwilixContainer,
-  InjectionMode,
-  asFunction,
-  asValue,
-  asClass,
-} = require('awilix');
+const { createContainer: createAwilixContainer, InjectionMode, asFunction, asValue, asClass } = require('awilix');
 
 const Docker = require('dockerode');
 
@@ -106,9 +100,7 @@ async function createDIContainer() {
    * Templates
    */
   container.register({
-    renderServiceTemplates: asFunction(
-      renderServiceTemplatesFactory
-    ).singleton(),
+    renderServiceTemplates: asFunction(renderServiceTemplatesFactory).singleton(),
     writeServiceConfigs: asFunction(writeServiceConfigsFactory).singleton(),
   });
 
@@ -171,9 +163,7 @@ async function createDIContainer() {
    */
   container.register({
     createTenderdashRpcClient: asValue(createTenderdashRpcClient),
-    initializeTenderdashNode: asFunction(
-      initializeTenderdashNodeFactory
-    ).singleton(),
+    initializeTenderdashNode: asFunction(initializeTenderdashNodeFactory).singleton(),
   });
 
   /**
@@ -183,31 +173,21 @@ async function createDIContainer() {
     buildServicesTask: asFunction(buildServicesTaskFactory).singleton(),
     startGroupNodesTask: asFunction(startGroupNodesTaskFactory).singleton(),
     generateToAddressTask: asFunction(generateToAddressTaskFactory).singleton(),
-    registerMasternodeTask: asFunction(
-      registerMasternodeTaskFactory
-    ).singleton(),
+    registerMasternodeTask: asFunction(registerMasternodeTaskFactory).singleton(),
     featureFlagTask: asFunction(featureFlagTaskFactory).singleton(),
     tenderdashInitTask: asFunction(tenderdashInitTaskFactory).singleton(),
     checkCertificateTask: asFunction(checkCertificateTaskFactory),
-    createZerosslCertificateTask: asFunction(
-      createZerosslCertificateTaskFactory
-    ),
+    createZerosslCertificateTask: asFunction(createZerosslCertificateTaskFactory),
     startNodeTask: asFunction(startNodeTaskFactory).singleton(),
     stopNodeTask: asFunction(stopNodeTaskFactory).singleton(),
     restartNodeTask: asFunction(restartNodeTaskFactory).singleton(),
     resetNodeTask: asFunction(resetNodeTaskFactory).singleton(),
     setupLocalPresetTask: asFunction(setupLocalPresetTaskFactory).singleton(),
-    setupRegularPresetTask: asFunction(
-      setupRegularPresetTaskFactory
-    ).singleton(),
+    setupRegularPresetTask: asFunction(setupRegularPresetTaskFactory).singleton(),
     configureCoreTask: asFunction(configureCoreTaskFactory).singleton(),
-    configureTenderdashTask: asFunction(
-      configureTenderdashTaskFactory
-    ).singleton(),
+    configureTenderdashTask: asFunction(configureTenderdashTaskFactory).singleton(),
     outputStatusOverview: asFunction(outputStatusOverviewFactory),
-    waitForNodeToBeReadyTask: asFunction(
-      waitForNodeToBeReadyTaskFactory
-    ).singleton(),
+    waitForNodeToBeReadyTask: asFunction(waitForNodeToBeReadyTaskFactory).singleton(),
     enableCoreQuorumsTask: asFunction(enableCoreQuorumsTaskFactory).singleton(),
   });
 
