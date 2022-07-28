@@ -1,7 +1,7 @@
 ## Getting an account
 
-Wallet initialized with `mnemonic` holds multiple Accounts according to BIP44. 
-Account holding the keys needed to make a payment.
+When Wallet is initialized with `mnemonic`, it holds multiple Accounts according to BIP44. 
+Each Account holds the keys needed to make a payments from it.
 
 Wallet's `getAccount` method used to access account
 
