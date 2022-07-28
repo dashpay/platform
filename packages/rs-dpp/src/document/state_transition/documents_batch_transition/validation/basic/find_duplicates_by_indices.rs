@@ -26,7 +26,7 @@ macro_rules! get_from_transition {
 /// Finds duplicates of indices in Document Transitions.
 pub fn find_duplicates_by_indices<'a>(
     document_raw_transitions: impl IntoIterator<Item = &'a JsonValue>,
-    data_contract: &'a DataContract,
+    data_contract: &DataContract,
 ) -> Result<Vec<&'a JsonValue>, ProtocolError> {
     #[derive(Debug)]
     struct Group<'a> {
