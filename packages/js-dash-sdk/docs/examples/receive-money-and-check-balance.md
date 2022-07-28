@@ -30,7 +30,7 @@ Dash wallet supports two different types of addresses:
 - `external` addresses used for receiving funds from other addresses
 - `internal` addresses used for change outputs of outgoing transactions  
 - 
-For your privacy, you might want to generate a new address at each payment:
+For your privacy, you might want to generate a new address for each payment:
 
 ```js
 async function generateUnusedAddress() {
