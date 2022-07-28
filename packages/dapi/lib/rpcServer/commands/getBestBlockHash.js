@@ -9,11 +9,11 @@ const getBestBlockHashFactory = (coreAPI) => {
    * @typedef getBestBlockHash
    * @return {Promise<string>} - latest block hash
    */
-  async function getBestBlockHash() {
+  async function getBestBlockHash(args) {
     const start = new Date().getTime();
 
     try {
-      console.log('getBestBlockHash1');
+      console.log('getBestBlockHash1', JSON.stringify(args));
 
       const res = await coreAPI.getBestBlockHash();
 
