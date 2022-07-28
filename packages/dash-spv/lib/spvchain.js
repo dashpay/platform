@@ -297,6 +297,23 @@ const SpvChain = class {
   }
 
   /**
+   * Gets specified amount of headers in the confirmed chain
+   * @param n
+   * @return Object[]
+   */
+  getLastHeaders(n) {
+    const longestChain = this.getLongestChain();
+    let headers = longestChain.slice(-n);
+
+    if (headers.length < n) {
+      const remaining = n - headers.length;
+      headers = [...this.prunedHeaders.slice(-remaining), ...headers];
+    }
+
+    return headers;
+  }
+
+  /**
    * adds a valid header to the tip of the longest spv chain.
    * If it cannot be connected to the tip it gets temporarily
    * added to an orphan array for possible later reconnection
@@ -353,9 +370,12 @@ const SpvChain = class {
       (acc, header, index, array) => {
         const previousHeaders = normalizedHeaders.slice(0, index);
         if (index !== 0) {
-          if (!SpvChain.isParentChild(header, array[index - 1])
-            || !this.isValid(header, previousHeaders)) {
-            throw new Error('Some headers are invalid');
+          if (!SpvChain.isParentChild(header, array[index - 1])) {
+            throw new Error(`SPV: Header ${header.hash} is not a child of ${array[index - 1].hash}`);
+          }
+
+          if (!this.isValid(header, previousHeaders)) {
+            throw new Error(`SPV: Header ${header.hash} is invalid`);
           }
           return acc && true;
         }

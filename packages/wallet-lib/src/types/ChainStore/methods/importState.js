@@ -7,11 +7,13 @@ function importState(rawState) {
     blockHeaders,
     transactions,
     txMetadata,
+    headersMetadata,
+    lastSyncedHeaderHeight,
   } = state;
 
-  Object.values(blockHeaders).forEach((blockHeader) => {
-    this.importBlockHeader(blockHeader);
-  });
+  this.state.blockHeaders = blockHeaders;
+  this.state.headersMetadata = headersMetadata;
+  this.state.lastSyncedHeaderHeight = lastSyncedHeaderHeight;
 
   Object.keys(transactions).forEach((hash) => {
     const tx = transactions[hash];

@@ -5,13 +5,17 @@ function exportState(lastKnownBlock) {
     transactions,
     blockHeight,
     fees,
+    headersMetadata,
+    lastSyncedHeaderHeight,
   } = state;
 
   const serializedState = {
-    blockHeaders: {},
+    blockHeaders: [],
     transactions: {},
     txMetadata: {},
     fees: {},
+    headersMetadata,
+    lastSyncedHeaderHeight,
   };
 
   let reorgSafeHeight = Infinity;
@@ -20,6 +24,14 @@ function exportState(lastKnownBlock) {
     reorgSafeHeight = blockHeight - 6;
   }
 
+  // TODO: control reorg safe height for headers
+
+  // Object.assign(serializedState, {
+  //   lastSyncedHeaderHeight: lastSyncedHeaderHeight > reorgSafeHeight
+  //     ? reorgSafeHeight
+  //     : lastSyncedHeaderHeight,
+  // });
+
   // TODO: temporary construction to control saving progress
   let saveHeight = reorgSafeHeight;
 
@@ -27,9 +39,7 @@ function exportState(lastKnownBlock) {
     saveHeight = lastKnownBlock;
   }
 
-  [...blockHeaders.entries()].forEach(([blockHeaderHash, blockHeader]) => {
-    serializedState.blockHeaders[blockHeaderHash] = blockHeader.toString();
-  });
+  serializedState.blockHeaders = blockHeaders.map((header) => header.toString());
 
   [...transactions.entries()].forEach(([transactionHash, { transaction, metadata }]) => {
     if (metadata && metadata.height && metadata.height <= saveHeight) {

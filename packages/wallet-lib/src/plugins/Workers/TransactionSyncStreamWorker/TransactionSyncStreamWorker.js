@@ -318,6 +318,7 @@ class TransactionSyncStreamWorker extends Worker {
     // TODO: test
     let progress = this.lastSyncedBlockHeight / chainStore.state.blockHeight;
     progress = Math.round(progress * 1000) / 1000;
+    console.log(`[TransactionSyncStreamWorker] Progress ${progress}, ${this.lastSyncedBlockHeight}/${chainStore.state.blockHeight}`);
   }
 
   scheduleProgressUpdate() {

@@ -40,6 +40,10 @@ class Storage extends EventEmitter {
   scheduleStateSave() {
     this.lastModified = Date.now();
   }
+
+  getDefaultChainStore() {
+    return this.getChainStore(this.currentNetwork);
+  }
 }
 
 Storage.prototype.configure = require('./methods/configure');
