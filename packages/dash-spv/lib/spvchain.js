@@ -259,12 +259,18 @@ const SpvChain = class {
   /* eslint-enable no-param-reassign */
 
   /**
-   * gets the longest chain
-   *
-   * @return {Object[]}
+   * Returns the longest chain of headers
+   * @param options
+   * @returns {*}
    */
-  getLongestChain() {
-    return this.allBranches.sort((b1, b2) => b1 < b2)[0];
+  getLongestChain(options = { withPruned: false }) {
+    let longestChain = this.allBranches.sort((b1, b2) => b1 < b2)[0];
+
+    if (options.withPruned) {
+      longestChain = this.prunedHeaders.concat(longestChain);
+    }
+
+    return longestChain;
   }
 
   /**

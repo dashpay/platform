@@ -65,6 +65,10 @@ class ChainStore extends EventEmitter {
   // TODO: write tests
   updateHeadersMetadata(headers, tipHeight) {
     headers.forEach((header, index) => {
+      if (this.state.headersMetadata[header.hash]) {
+        throw new Error(`Header ${header.hash} already exists`);
+      }
+
       Object.assign(this.state.headersMetadata, {
         [header.hash]: {
           height: tipHeight - headers.length + index + 1,
@@ -72,6 +76,7 @@ class ChainStore extends EventEmitter {
         },
       });
     });
+    // console.log('Headers metadata', Object.keys(this.state.headersMetadata).length);
   }
 
   updateLastSyncedHeaderHeight(height) {

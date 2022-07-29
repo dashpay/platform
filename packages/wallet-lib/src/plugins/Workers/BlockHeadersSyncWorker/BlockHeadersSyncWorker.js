@@ -68,27 +68,38 @@ class BlockHeadersSyncWorker extends Worker {
       const chainUpdateHandler = () => {
         const { spvChain } = blockHeadersProvider;
 
-        const longestChain = spvChain.getLongestChain();
-        const { prunedHeaders, startBlockHeight } = spvChain;
+        const longestChain = spvChain.getLongestChain({ withPruned: true });
+        const { startBlockHeight } = spvChain;
         ({ lastSyncedHeaderHeight } = chainStore.state);
 
         // TODO: abstract this in spv chain?
-        const totalHeadersCount = startBlockHeight + prunedHeaders.length + longestChain.length;
+        const totalHeadersCount = startBlockHeight + longestChain.length;
         const syncedHeadersCount = lastSyncedHeaderHeight + 1;
+        console.log(`Chain update: ${syncedHeadersCount}/${totalHeadersCount}`);
         if (syncedHeadersCount < totalHeadersCount) {
           // Update headers in the store
-          const lastHeaders = spvChain.getLastHeaders(MAX_HEADERS_TO_KEEP);
-          chainStore.state.blockHeaders = lastHeaders;
-
-          // Update headers metadata;
-          const newHeaders = lastHeaders.slice(-(totalHeadersCount - syncedHeadersCount));
+          chainStore.state.blockHeaders = longestChain.slice(-MAX_HEADERS_TO_KEEP);
 
           const newLastSyncedHeaderHeight = totalHeadersCount - 1;
+
+          // Update headers metadata;
+          const newHeaders = longestChain.slice(-(totalHeadersCount - syncedHeadersCount));
+
           chainStore.updateHeadersMetadata(newHeaders, newLastSyncedHeaderHeight);
           chainStore.updateLastSyncedHeaderHeight(newLastSyncedHeaderHeight);
+
+          const metadata = Object.keys(chainStore.state.headersMetadata);
+          if (chainStore.state.lastSyncedHeaderHeight + 1
+            !== metadata.length) {
+            console.log('Update', syncedHeadersCount, totalHeadersCount);
+            console.log('Metadata', metadata.length);
+            console.log('height', chainStore.state.lastSyncedHeaderHeight);
+            throw new Error('Dong');
+          }
+
+          this.storage.scheduleStateSave();
         }
 
-        this.storage.scheduleStateSave();
         this.scheduleProgressUpdate();
       };
 
