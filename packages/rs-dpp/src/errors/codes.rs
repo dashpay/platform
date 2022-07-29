@@ -71,7 +71,7 @@ impl ErrorWithCode for BasicError {
             // Document
             Self::DataContractNotPresent { .. } => 1018,
             Self::InvalidDocumentTypeError { .. } => 1024,
-            Self::MissingDocumentTypeError { .. } => 1028,
+            Self::MissingDocumentTypeError { .. } => 1027,
             Self::MissingDocumentTransitionActionError { .. } => 1026,
             Self::InvalidDocumentTransitionIdError { .. } => 1023,
             Self::InvalidDocumentTransitionActionError { .. } => 1022,

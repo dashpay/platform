@@ -191,6 +191,9 @@ impl StateTransitionConvert for DocumentsBatchTransition {
 
     fn to_object(&self, skip_signature: bool) -> Result<JsonValue, ProtocolError> {
         let mut json_object: JsonValue = serde_json::to_value(self)?;
+        json_object
+            .replace_identifier_paths(Self::identifiers_property_paths(), ReplaceWith::Bytes)?;
+
         if skip_signature {
             if let JsonValue::Object(ref mut o) = json_object {
                 for path in Self::signature_property_paths() {
