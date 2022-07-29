@@ -5,7 +5,20 @@ use crate::{
     tests::utils::generate_random_identifier_struct as gen_owner_id, version::LATEST_VERSION,
 };
 
-use super::{get_document_validator_fixture, get_dpp};
+use super::get_document_validator_fixture;
+
+pub fn get_documents_fixture_with_owner_id_from_contract(
+    data_contract: DataContract,
+) -> Result<Vec<Document>, ProtocolError> {
+    let factory = DocumentFactory::new(
+        LATEST_VERSION,
+        get_document_validator_fixture(),
+        mocks::FetchAndValidateDataContract {},
+    );
+    let owner_id = data_contract.owner_id().clone();
+
+    get_documents(factory, data_contract, owner_id)
+}
 
 pub fn get_documents_fixture(data_contract: DataContract) -> Result<Vec<Document>, ProtocolError> {
     let factory = DocumentFactory::new(
@@ -15,6 +28,14 @@ pub fn get_documents_fixture(data_contract: DataContract) -> Result<Vec<Document
     );
     let owner_id = gen_owner_id();
 
+    get_documents(factory, data_contract, owner_id)
+}
+
+fn get_documents(
+    factory: DocumentFactory,
+    data_contract: DataContract,
+    owner_id: Identifier,
+) -> Result<Vec<Document>, ProtocolError> {
     let documents = vec![
         factory.create(
             data_contract.clone(),
