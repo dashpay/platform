@@ -1,5 +1,5 @@
-// const axios = require('axios');
-const fetch = require('node-fetch').default;
+const axios = require('axios');
+// const fetch = require('node-fetch').default;
 
 const JsonRpcError = require('./errors/JsonRpcError');
 const WrongHttpCodeError = require('./errors/WrongHttpCodeError');
@@ -44,38 +44,38 @@ async function requestJsonRpc(host, port, method, params, options = {}) {
     url = `${url}/?${params.idq}`;
   }
 
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), options.timeout);
-  const headers = { 'Content-type': 'application/json', 'Accept': 'application/json' };
+  // const controller = new AbortController();
+  // const timeoutId = setTimeout(() => controller.abort(), options.timeout);
+  // const headers = { 'Content-type': 'application/json', 'Accept': 'application/json' };
   try {
-    response = await fetch(
-      url,
-      {
-        method: 'POST', body: JSON.stringify(payload), signal: controller.signal, headers,
-      },
-    );
-
-    response = {
-      data: await response.json(),
-      status: response.status,
-      statusMessage: response.statusMessage,
-    };
+    // response = await fetch(
+    //   url,
+    //   {
+    //     method: 'POST', body: JSON.stringify(payload), signal: controller.signal, headers,
+    //   },
+    // );
+    //
+    // response = {
+    //   data: await response.json(),
+    //   status: response.status,
+    //   statusMessage: response.statusMessage,
+    // };
 
     // console.log(response);
 
-    // response = await axios.post(
-    //   url,
-    //   payload,
-    //   { timeout: options.timeout },
-    // );
+    response = await axios.post(
+      url,
+      payload,
+      { timeout: options.timeout },
+    );
   } catch (error) {
     if (error.response && error.response.status >= 500) {
       throw new WrongHttpCodeError(requestInfo, error.response.status, error.response.statusText);
     }
 
     throw error;
-  } finally {
-    clearTimeout(timeoutId);
+  // } finally {
+  //   clearTimeout(timeoutId);
   }
 
   if (response.status !== 200) {
