@@ -1,4 +1,5 @@
 const { use } = require('chai');
+const { expect } = require('chai');
 const path = require('path');
 const dotenvSafe = require('dotenv-safe');
 const sinon = require('sinon');
@@ -13,13 +14,17 @@ dotenvSafe.config({
 });
 
 beforeEach(function beforeEach() {
-  if (!this.sinonSandbox) {
-    this.sinonSandbox = sinon.createSandbox();
+  if (!this.sinon) {
+    this.sinon = sinon.createSandbox();
+    // Legacy
+    this.sinonSanbox = this.sinon;
   } else {
-    this.sinonSandbox.restore();
+    this.sinon.restore();
   }
 });
 
 afterEach(function afterEach() {
-  this.sinonSandbox.restore();
+  this.sinon.restore();
 });
+
+global.expect = expect;

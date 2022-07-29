@@ -32,9 +32,16 @@ class BlockHeadersSyncWorker extends Worker {
     this.updateProgress = this.updateProgress.bind(this);
   }
 
-  async onStart() {
+  /**
+   * Determines starting point considering options
+   * and last save checkpoint
+   * @returns {number|number}
+   */
+  getStartBlockHeight() {
     const chainStore = this.storage.getDefaultChainStore();
     const bestBlockHeight = chainStore.state.blockHeight;
+
+    let height;
 
     const {
       skipSynchronizationBeforeHeight,
@@ -42,25 +49,34 @@ class BlockHeadersSyncWorker extends Worker {
     } = (this.storage.application.syncOptions || {});
 
     if (skipSynchronization) {
-      this.syncCheckpoint = bestBlockHeight;
       logger.debug('[BlockHeadersSyncWorker] Wallet created from a new mnemonic. Sync from the best block height.');
-      return;
+      return bestBlockHeight;
     }
 
-    let { lastSyncedHeaderHeight } = chainStore.state;
+    const lastSyncedHeaderHeight = typeof chainStore.state.lastSyncedHeaderHeight === 'number'
+      ? chainStore.state.lastSyncedHeaderHeight : -1;
+
     const skipBefore = typeof skipSynchronizationBeforeHeight === 'number'
-      ? skipSynchronizationBeforeHeight
-      : parseInt(skipSynchronizationBeforeHeight, 10);
+      ? skipSynchronizationBeforeHeight : -1;
 
     if (skipBefore > lastSyncedHeaderHeight) {
       logger.debug(`[BlockHeadersSyncWorker] UNSAFE option skipSynchronizationBeforeHeight is set to ${skipBefore}`);
-      this.syncCheckpoint = skipBefore;
-    } else if (lastSyncedHeaderHeight !== -1) {
+      height = skipBefore;
+    } else if (lastSyncedHeaderHeight > -1) {
       logger.debug(`[BlockHeadersSyncWorker] Last synced header height is ${lastSyncedHeaderHeight}`);
-      this.syncCheckpoint = lastSyncedHeaderHeight;
+      height = lastSyncedHeaderHeight;
+    } else {
+      height = 1;
     }
 
-    logger.debug(`[BlockHeadersSyncWorker] Sync from ${this.syncCheckpoint}`);
+    return height;
+  }
+
+  async onStart() {
+    const chainStore = this.storage.getDefaultChainStore();
+
+    const bestBlockHeight = chainStore.state.blockHeight;
+    this.syncCheckpoint = this.getStartBlockHeight();
 
     const { blockHeadersProvider } = this.transport.client;
     const historicalSyncPromise = new Promise((resolve, reject) => {
@@ -70,7 +86,7 @@ class BlockHeadersSyncWorker extends Worker {
 
         const longestChain = spvChain.getLongestChain({ withPruned: true });
         const { startBlockHeight } = spvChain;
-        ({ lastSyncedHeaderHeight } = chainStore.state);
+        const { lastSyncedHeaderHeight } = chainStore.state;
 
         // TODO: abstract this in spv chain?
         const totalHeadersCount = startBlockHeight + longestChain.length;
@@ -87,15 +103,6 @@ class BlockHeadersSyncWorker extends Worker {
 
           chainStore.updateHeadersMetadata(newHeaders, newLastSyncedHeaderHeight);
           chainStore.updateLastSyncedHeaderHeight(newLastSyncedHeaderHeight);
-
-          const metadata = Object.keys(chainStore.state.headersMetadata);
-          if (chainStore.state.lastSyncedHeaderHeight + 1
-            !== metadata.length) {
-            console.log('Update', syncedHeadersCount, totalHeadersCount);
-            console.log('Metadata', metadata.length);
-            console.log('height', chainStore.state.lastSyncedHeaderHeight);
-            throw new Error('Dong');
-          }
 
           this.storage.scheduleStateSave();
         }
