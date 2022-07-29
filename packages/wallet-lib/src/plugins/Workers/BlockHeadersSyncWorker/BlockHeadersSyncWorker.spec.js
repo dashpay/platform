@@ -1,7 +1,13 @@
+const DAPIClient = require('@dashevo/dapi-client');
+const { expect } = require('chai');
+
+const { BlockHeadersProvider } = DAPIClient;
+
 const BlockHeadersSyncWorker = require("./BlockHeadersSyncWorker");
 
 describe("BlockHeadersSyncWorker", function suite() {
   let blockHeadersSyncWorker;
+  let chainHeight = 1000;
 
   const createBlockHeadersSyncWorker = (sinon) => {
     const blockHeadersSyncWorker = new BlockHeadersSyncWorker({
@@ -15,6 +21,11 @@ describe("BlockHeadersSyncWorker", function suite() {
           on: sinon.stub(),
           once: sinon.stub(),
           readHistorical: sinon.stub(),
+          spvChain: {
+            getLongestChain: sinon.stub().returns([]),
+            orphanChunks: [],
+            prunedHeaders: []
+          }
         }
       },
     }
@@ -25,7 +36,7 @@ describe("BlockHeadersSyncWorker", function suite() {
         if (!this.defaultChainStore) {
           this.defaultChainStore = {
             state: {
-              blockHeight: 0,
+              blockHeight: chainHeight,
             }
           }
         }
@@ -49,10 +60,11 @@ describe("BlockHeadersSyncWorker", function suite() {
       expect(startBlockHeight).to.equal(1);
     })
 
-    it('should return best block in case `skipSynchronization` option is present', () => {
+    it('should return bestBlockHeight - N in case `skipSynchronization` option is present', () => {
       /**
        * Mock options
        */
+      blockHeadersSyncWorker.maxHeadersToKeep = 2000;
       const { storage } = blockHeadersSyncWorker;
       storage.getDefaultChainStore().state.blockHeight = 1000;
 
@@ -60,8 +72,12 @@ describe("BlockHeadersSyncWorker", function suite() {
         skipSynchronization: true,
       }
 
-      const startBlockHeight = blockHeadersSyncWorker.getStartBlockHeight();
+      let startBlockHeight = blockHeadersSyncWorker.getStartBlockHeight();
 
+      expect(startBlockHeight).to.equal(1);
+
+      storage.getDefaultChainStore().state.blockHeight = 3000;
+      startBlockHeight = blockHeadersSyncWorker.getStartBlockHeight();
       expect(startBlockHeight).to.equal(1000);
     })
 
@@ -107,6 +123,52 @@ describe("BlockHeadersSyncWorker", function suite() {
       const startBlockHeight = blockHeadersSyncWorker.getStartBlockHeight();
 
       expect(startBlockHeight).to.equal(1300);
+    });
+  });
+
+  describe('#onStart', function () {
+    beforeEach(function () {
+      blockHeadersSyncWorker = createBlockHeadersSyncWorker(this.sinon);
+    });
+
+    it('should kickstart reading of historical headers',  (done) => {
+      blockHeadersSyncWorker.onStart().catch(done);
+
+      const { blockHeadersProvider } = blockHeadersSyncWorker.transport.client;
+
+      expect(blockHeadersProvider.on).to
+        .have.been.calledWith(BlockHeadersProvider.EVENTS.CHAIN_UPDATED);
+      expect(blockHeadersProvider.on).to
+        .have.been.calledWith(BlockHeadersProvider.EVENTS.ERROR);
+      expect(blockHeadersProvider.once).to
+        .have.been.calledWith(BlockHeadersProvider.EVENTS.HISTORICAL_DATA_OBTAINED);
+      expect(blockHeadersProvider.readHistorical).to.have.been.calledOnceWith(1, chainHeight)
+
+      done();
+    });
+
+    it('should prepare for continuous sync after historical data is obtained', async function() {
+      blockHeadersSyncWorker.updateProgress = this.sinon.spy();
+      blockHeadersSyncWorker.createHistoricalSyncCompleteListener = () => Promise.resolve();
+      await blockHeadersSyncWorker.onStart()
+      expect(blockHeadersSyncWorker.syncCheckpoint).to.equal(chainHeight);
+      expect(blockHeadersSyncWorker.updateProgress).to.have.been.calledOnce;
+    });
+
+    it('should throw error if best block height is less than 1', async () => {
+      const { storage } = blockHeadersSyncWorker;
+      storage.getDefaultChainStore().state.blockHeight = -1;
+
+      await expect(blockHeadersSyncWorker.onStart())
+        .to.be.rejectedWith('Invalid best block height -1');
+    });
+
+    it('should throw error if start block height is greater than best block height', async () => {
+      const { storage } = blockHeadersSyncWorker;
+      storage.getDefaultChainStore().state.lastSyncedHeaderHeight = 2000;
+
+      await expect(blockHeadersSyncWorker.onStart())
+        .to.be.rejectedWith('Start block height 2000 is greater than best block height 1000');
     });
   });
 });
