@@ -75,55 +75,11 @@ class BlockHeadersSyncWorker extends Worker {
       this.parentEvents.emit('error', e);
     };
 
-    // TODO: write tests
-    const chainUpdateHandler = async (newHeaders, batchHeadHeight) => {
-      try {
-        const chainStore = this.storage.getChainStore(this.network.toString());
-        const walletStore = this.storage.getWalletStore(this.walletId);
-
-        let newChainHeight = batchHeadHeight;
-        if (newHeaders.length > 1) {
-          newChainHeight += newHeaders.length - 1;
-        }
-
-        const { blockHeight } = chainStore.state;
-        // Ignore height overlap in case of the stream reconnected
-        if (newChainHeight === blockHeight) {
-          return;
-        } if (newChainHeight < blockHeight) {
-          this.parentEvents.emit(new Error(`New chain height ${newChainHeight} is less than latest height ${blockHeight}`));
-          return;
-        }
-
-        const rawBlock = await this.transport.getBlockByHeight(newChainHeight);
-        const block = new Block(rawBlock);
-
-        // TODO: do we really need it having in mind that wallet holds lastKnownBlock?
-        chainStore.state.blockHeight = newChainHeight;
-        walletStore.updateLastKnownBlock(newChainHeight);
-        chainStore.updateLastSyncedHeaderHeight(newChainHeight);
-        this.parentEvents.emit(EVENTS.BLOCKHEIGHT_CHANGED, newChainHeight);
-        this.parentEvents.emit(EVENTS.BLOCK, block, newChainHeight);
-        logger.debug(`BlockHeadersSyncWorker - setting chain height ${newChainHeight}`);
-
-        const { blockHeadersProvider: { spvChain } } = this.transport.client;
-        const { prunedHeaders, orphanChunks } = spvChain;
-        const longestChain = spvChain.getLongestChain();
-        const totalOrphans = orphanChunks.reduce((sum, chunk) => sum + chunk.length, 0);
-        const totalChainLength = prunedHeaders.length + longestChain.length + totalOrphans;
-
-        console.log(`[BlockHeadersSyncWorker] Chain height update: ${newChainHeight}, Headers added: ${newHeaders.length}, Total length: ${totalChainLength}`);
-        console.log(`[--------------------->] Longest: ${longestChain.length}, Pruned: ${prunedHeaders.length}. Orphans: ${totalOrphans}`);
-        // TODO: implement with pruning in mind
-        // this.storage.scheduleStateSave();
-      } catch (e) {
-        console.log(e);
-        this.parentEvents.emit('error', e);
-      }
-    };
-
     const { blockHeadersProvider } = this.transport.client;
-    blockHeadersProvider.on(BlockHeadersProvider.EVENTS.CHAIN_UPDATED, chainUpdateHandler);
+    blockHeadersProvider.on(
+      BlockHeadersProvider.EVENTS.CHAIN_UPDATED,
+      this.continuousChainUpdateHandler,
+    );
     blockHeadersProvider.on(BlockHeadersProvider.EVENTS.ERROR, errorHandler);
 
     await blockHeadersProvider.startContinuousSync(this.syncCheckpoint);
@@ -228,6 +184,52 @@ class BlockHeadersSyncWorker extends Worker {
     }
 
     this.scheduleProgressUpdate();
+  }
+
+  async continuousChainUpdateHandler(newHeaders, batchHeadHeight) {
+    try {
+      const chainStore = this.storage.getChainStore(this.network.toString());
+      const walletStore = this.storage.getWalletStore(this.walletId);
+
+      let newChainHeight = batchHeadHeight;
+      if (newHeaders.length > 1) {
+        newChainHeight += newHeaders.length - 1;
+      }
+
+      const { blockHeight } = chainStore.state;
+      // Ignore height overlap in case of the stream reconnected
+      if (newChainHeight === blockHeight) {
+        return;
+      } if (newChainHeight < blockHeight) {
+        this.parentEvents.emit(new Error(`New chain height ${newChainHeight} is less than latest height ${blockHeight}`));
+        return;
+      }
+
+      const rawBlock = await this.transport.getBlockByHeight(newChainHeight);
+      const block = new Block(rawBlock);
+
+      // TODO: do we really need it having in mind that wallet holds lastKnownBlock?
+      chainStore.state.blockHeight = newChainHeight;
+      walletStore.updateLastKnownBlock(newChainHeight);
+      chainStore.updateLastSyncedHeaderHeight(newChainHeight);
+      this.parentEvents.emit(EVENTS.BLOCKHEIGHT_CHANGED, newChainHeight);
+      this.parentEvents.emit(EVENTS.BLOCK, block, newChainHeight);
+      logger.debug(`BlockHeadersSyncWorker - setting chain height ${newChainHeight}`);
+
+      const { blockHeadersProvider: { spvChain } } = this.transport.client;
+      const { prunedHeaders, orphanChunks } = spvChain;
+      const longestChain = spvChain.getLongestChain();
+      const totalOrphans = orphanChunks.reduce((sum, chunk) => sum + chunk.length, 0);
+      const totalChainLength = prunedHeaders.length + longestChain.length + totalOrphans;
+
+      console.log(`[BlockHeadersSyncWorker] Chain height update: ${newChainHeight}, Headers added: ${newHeaders.length}, Total length: ${totalChainLength}`);
+      console.log(`[--------------------->] Longest: ${longestChain.length}, Pruned: ${prunedHeaders.length}. Orphans: ${totalOrphans}`);
+      // TODO: implement with pruning in mind
+      // this.storage.scheduleStateSave();
+    } catch (e) {
+      console.log(e);
+      this.parentEvents.emit('error', e);
+    }
   }
 
   updateProgress() {

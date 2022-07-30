@@ -19,6 +19,7 @@ describe('BlockHeadersSyncWorker', () => {
 
     const blockHeadersProvider = new EventEmitter();
     blockHeadersProvider.readHistorical = sinon.stub();
+    blockHeadersProvider.startContinuousSync = sinon.stub();
     blockHeadersProvider.spvChain = {
       getLongestChain: sinon.stub().returns([]),
       orphanChunks: [],
@@ -181,6 +182,26 @@ describe('BlockHeadersSyncWorker', () => {
 
       await expect(blockHeadersSyncWorker.onStart())
         .to.be.rejectedWith('Start block height 2000 is greater than best block height 1000');
+    });
+  });
+
+  describe('#execute', () => {
+    beforeEach(function beforeEach() {
+      blockHeadersSyncWorker = createBlockHeadersSyncWorker(this.sinon);
+    });
+
+    it('should kickstart continuous sync', async () => {
+      const { blockHeadersProvider } = blockHeadersSyncWorker.transport.client;
+
+      await blockHeadersSyncWorker.execute();
+
+      expect(blockHeadersProvider.on).to
+        .have.been.calledWith(BlockHeadersProvider.EVENTS.CHAIN_UPDATED);
+      expect(blockHeadersProvider.on).to
+        .have.been.calledWith(BlockHeadersProvider.EVENTS.ERROR);
+
+      expect(blockHeadersProvider.startContinuousSync).to
+        .have.been.calledWith(blockHeadersSyncWorker.syncCheckpoint);
     });
   });
 });
