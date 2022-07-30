@@ -1,56 +1,59 @@
+/* eslint-disable no-unused-expressions */
+
+const EventEmitter = require('events');
 const DAPIClient = require('@dashevo/dapi-client');
 const { expect } = require('chai');
 
 const { BlockHeadersProvider } = DAPIClient;
 
-const BlockHeadersSyncWorker = require("./BlockHeadersSyncWorker");
+const BlockHeadersSyncWorker = require('./BlockHeadersSyncWorker');
 
-describe("BlockHeadersSyncWorker", function suite() {
+describe('BlockHeadersSyncWorker', () => {
   let blockHeadersSyncWorker;
-  let chainHeight = 1000;
+  const chainHeight = 1000;
 
   const createBlockHeadersSyncWorker = (sinon) => {
-    const blockHeadersSyncWorker = new BlockHeadersSyncWorker({
-      executeOnStart: false
+    const worker = new BlockHeadersSyncWorker({
+      executeOnStart: false,
     });
 
-    blockHeadersSyncWorker.network = "testnet";
-    blockHeadersSyncWorker.transport = {
-      client: {
-        blockHeadersProvider: {
-          on: sinon.stub(),
-          once: sinon.stub(),
-          readHistorical: sinon.stub(),
-          spvChain: {
-            getLongestChain: sinon.stub().returns([]),
-            orphanChunks: [],
-            prunedHeaders: []
-          }
-        }
-      },
-    }
+    const blockHeadersProvider = new EventEmitter();
+    blockHeadersProvider.readHistorical = sinon.stub();
+    blockHeadersProvider.spvChain = {
+      getLongestChain: sinon.stub().returns([]),
+      orphanChunks: [],
+      prunedHeaders: [],
+    };
+    sinon.spy(blockHeadersProvider, 'on');
+    sinon.spy(blockHeadersProvider, 'once');
+    sinon.spy(blockHeadersProvider, 'removeListener');
 
-    blockHeadersSyncWorker.storage = {
+    worker.network = 'testnet';
+    worker.transport = {
+      client: {
+        blockHeadersProvider,
+      },
+    };
+
+    worker.storage = {
       application: {},
-      getDefaultChainStore: function () {
+      getDefaultChainStore() {
         if (!this.defaultChainStore) {
           this.defaultChainStore = {
             state: {
               blockHeight: chainHeight,
-            }
-          }
+            },
+          };
         }
         return this.defaultChainStore;
-      }
-    }
+      },
+    };
 
-    return blockHeadersSyncWorker;
-  }
+    return worker;
+  };
 
-
-
-  describe('#getStartBlockHeight', function () {
-    beforeEach(function () {
+  describe('#getStartBlockHeight', () => {
+    beforeEach(function beforeEach() {
       blockHeadersSyncWorker = createBlockHeadersSyncWorker(this.sinon);
     });
 
@@ -58,7 +61,7 @@ describe("BlockHeadersSyncWorker", function suite() {
       const startBlockHeight = blockHeadersSyncWorker.getStartBlockHeight();
 
       expect(startBlockHeight).to.equal(1);
-    })
+    });
 
     it('should return bestBlockHeight - N in case `skipSynchronization` option is present', () => {
       /**
@@ -70,7 +73,7 @@ describe("BlockHeadersSyncWorker", function suite() {
 
       storage.application.syncOptions = {
         skipSynchronization: true,
-      }
+      };
 
       let startBlockHeight = blockHeadersSyncWorker.getStartBlockHeight();
 
@@ -79,7 +82,7 @@ describe("BlockHeadersSyncWorker", function suite() {
       storage.getDefaultChainStore().state.blockHeight = 3000;
       startBlockHeight = blockHeadersSyncWorker.getStartBlockHeight();
       expect(startBlockHeight).to.equal(1000);
-    })
+    });
 
     it('should return last synced header height if present', () => {
       const { storage } = blockHeadersSyncWorker;
@@ -88,13 +91,13 @@ describe("BlockHeadersSyncWorker", function suite() {
       const startBlockHeight = blockHeadersSyncWorker.getStartBlockHeight();
 
       expect(startBlockHeight).to.equal(1200);
-    })
+    });
 
     it('should return `skipSynchronizationBeforeHeight` value', () => {
       const { storage } = blockHeadersSyncWorker;
       storage.application.syncOptions = {
         skipSynchronizationBeforeHeight: 1300,
-      }
+      };
 
       const startBlockHeight = blockHeadersSyncWorker.getStartBlockHeight();
 
@@ -106,7 +109,7 @@ describe("BlockHeadersSyncWorker", function suite() {
       storage.getDefaultChainStore().state.lastSyncedHeaderHeight = 1300;
       storage.application.syncOptions = {
         skipSynchronizationBeforeHeight: 1200,
-      }
+      };
 
       const startBlockHeight = blockHeadersSyncWorker.getStartBlockHeight();
 
@@ -118,7 +121,7 @@ describe("BlockHeadersSyncWorker", function suite() {
       storage.getDefaultChainStore().state.lastSyncedHeaderHeight = 1200;
       storage.application.syncOptions = {
         skipSynchronizationBeforeHeight: 1300,
-      }
+      };
 
       const startBlockHeight = blockHeadersSyncWorker.getStartBlockHeight();
 
@@ -126,12 +129,12 @@ describe("BlockHeadersSyncWorker", function suite() {
     });
   });
 
-  describe('#onStart', function () {
-    beforeEach(function () {
+  describe('#onStart', () => {
+    beforeEach(function beforeEach() {
       blockHeadersSyncWorker = createBlockHeadersSyncWorker(this.sinon);
     });
 
-    it('should kickstart reading of historical headers',  (done) => {
+    it('should kickstart reading of historical headers', (done) => {
       blockHeadersSyncWorker.onStart().catch(done);
 
       const { blockHeadersProvider } = blockHeadersSyncWorker.transport.client;
@@ -142,15 +145,24 @@ describe("BlockHeadersSyncWorker", function suite() {
         .have.been.calledWith(BlockHeadersProvider.EVENTS.ERROR);
       expect(blockHeadersProvider.once).to
         .have.been.calledWith(BlockHeadersProvider.EVENTS.HISTORICAL_DATA_OBTAINED);
-      expect(blockHeadersProvider.readHistorical).to.have.been.calledOnceWith(1, chainHeight)
+      expect(blockHeadersProvider.readHistorical).to.have.been.calledOnceWith(1, chainHeight);
 
       done();
     });
 
-    it('should prepare for continuous sync after historical data is obtained', async function() {
+    it('should prepare for continuous sync after historical data is obtained', async function test() {
+      const { blockHeadersProvider } = blockHeadersSyncWorker.transport.client;
+
       blockHeadersSyncWorker.updateProgress = this.sinon.spy();
-      blockHeadersSyncWorker.createHistoricalSyncCompleteListener = () => Promise.resolve();
-      await blockHeadersSyncWorker.onStart()
+
+      const startPromise = blockHeadersSyncWorker.onStart();
+      blockHeadersProvider.emit(BlockHeadersProvider.EVENTS.HISTORICAL_DATA_OBTAINED);
+      await startPromise;
+
+      expect(blockHeadersProvider.removeListener)
+        .to.have.been.calledWith(BlockHeadersProvider.EVENTS.CHAIN_UPDATED);
+      expect(blockHeadersProvider.removeListener)
+        .to.have.been.calledWith(BlockHeadersProvider.EVENTS.ERROR);
       expect(blockHeadersSyncWorker.syncCheckpoint).to.equal(chainHeight);
       expect(blockHeadersSyncWorker.updateProgress).to.have.been.calledOnce;
     });
