@@ -1,5 +1,8 @@
 use serde_json::{Value, Value as JsonValue};
-use std::collections::{hash_map::Entry, HashMap};
+use std::{
+    collections::{hash_map::Entry, HashMap},
+    fmt::Write,
+};
 
 use crate::{
     document::document_transition::DocumentTransition,
@@ -85,30 +88,20 @@ fn is_duplicate_by_indices(
     type_indices: &[Index],
 ) -> bool {
     for index in type_indices {
-        let mut original_hash = String::new();
-        let mut hash_to_check = String::new();
-
         for (property_name, _) in index.properties.iter().flatten() {
-            original_hash.push_str(&format!(
-                ":{}",
-                original_transition
-                    .get(property_name)
-                    .unwrap_or(&JsonValue::Null)
-                    .to_string()
-            ));
-            hash_to_check.push_str(&format!(
-                ":{}",
-                transition_to_check
-                    .get(property_name)
-                    .unwrap_or(&JsonValue::Null)
-                    .to_string()
-            ));
-        }
-        if original_hash == hash_to_check {
-            return true;
+            let original = original_transition
+                .get(property_name)
+                .unwrap_or(&JsonValue::Null);
+            let to_check = transition_to_check
+                .get(property_name)
+                .unwrap_or(&JsonValue::Null);
+
+            if original != to_check {
+                return false;
+            }
         }
     }
-    false
+    true
 }
 
 fn get_unique_indices(document_type: &str, data_contract: &DataContract) -> Vec<Index> {
@@ -148,13 +141,7 @@ fn get_data_property(document_transition: &DocumentTransition, property_name: &s
 mod test {
     use serde_json::json;
 
-    use crate::{
-        document::document_transition::{
-            DocumentCreateTransition, DocumentTransition, DocumentTransitionObjectLike,
-        },
-        prelude::*,
-        util::string_encoding::Encoding,
-    };
+    use crate::{prelude::*, util::string_encoding::Encoding};
 
     use super::find_duplicates_by_indices;
 
