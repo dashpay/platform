@@ -2,7 +2,7 @@ use crate::{
     data_contract::{DataContract},
     document::{
         document_transition::{Action, DocumentTransitionObjectLike},
-        state_transition::documents_batch_transition::validation::basic::validate_documents_batch_transition_basic_factory::validate_documents_batch_transition_basic,
+        state_transition::documents_batch_transition::validation::basic::validate_documents_batch_transition_basic::validate_documents_batch_transition_basic,
         DocumentsBatchTransition,
     },
     state_repository::{MockStateRepositoryLike},
@@ -25,8 +25,6 @@ use anyhow::anyhow;
 use jsonschema::error::ValidationErrorKind;
 use serde_json::{json, Value as JsonValue};
 use test_case::test_case;
-
-// use crevalidate_documents_batch_transition_basic;
 
 struct TestData {
     data_contract: DataContract,
