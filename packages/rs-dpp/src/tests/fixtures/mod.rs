@@ -16,6 +16,12 @@ pub use get_protocol_version_validator_fixture::*;
 mod get_document_validator_fixture;
 pub use get_document_validator_fixture::*;
 
+mod get_masternode_reward_shares_documents_fixture;
+pub use get_masternode_reward_shares_documents_fixture::*;
+
+mod get_masternode_reward_shares_contract_fixture;
+pub use get_masternode_reward_shares_contract_fixture::*;
+
 mod get_data_contract;
 mod get_documents_fixture;
 mod get_dpp;
