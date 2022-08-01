@@ -327,5 +327,21 @@ describe('BlockHeadersSyncWorker', () => {
       blockHeadersProvider.emit(BlockHeadersProvider.EVENTS.HISTORICAL_DATA_OBTAINED);
       await startPromise;
     });
+
+    it('should continue continuous sync from checkpoint after the restart', async () => {
+      const { blockHeadersProvider } = blockHeadersSyncWorker.transport.client;
+
+      blockHeadersSyncWorker.syncCheckpoint = 1000;
+      await blockHeadersSyncWorker.execute();
+      await blockHeadersSyncWorker.onStop();
+
+      // TODO: derive it from other api triggers
+      blockHeadersSyncWorker.syncCheckpoint = 1200;
+      blockHeadersSyncWorker.storage.getDefaultChainStore().state.blockHeight = 1200;
+
+      await blockHeadersSyncWorker.execute();
+      expect(blockHeadersProvider.startContinuousSync.secondCall)
+        .to.have.been.calledWith(1200);
+    });
   });
 });
