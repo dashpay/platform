@@ -224,6 +224,7 @@ describe('BlockHeadersSyncWorker', () => {
     it('should kickstart continuous sync', async () => {
       const { blockHeadersProvider } = blockHeadersSyncWorker.transport.client;
 
+      blockHeadersSyncWorker.syncCheckpoint = 1000;
       await blockHeadersSyncWorker.execute();
 
       expect(blockHeadersSyncWorker.state).to
@@ -243,6 +244,10 @@ describe('BlockHeadersSyncWorker', () => {
         .have.been.calledWith(blockHeadersSyncWorker.syncCheckpoint);
     });
 
+    it('should throw error if syncCheckpoint is different than chain height', async () => {
+      await expect(blockHeadersSyncWorker.execute())
+        .to.be.rejectedWith('Sync checkpoint is not equal to best block height: -1 !== 1000. Please read historical data first');
+    });
     // TODO: should throw an error if sync checkpoint is not match to best block height
   });
 
@@ -281,6 +286,7 @@ describe('BlockHeadersSyncWorker', () => {
     });
 
     it('should stop continuous sync', async () => {
+      blockHeadersSyncWorker.syncCheckpoint = 1000;
       await blockHeadersSyncWorker.execute();
       await blockHeadersSyncWorker.onStop();
       //
