@@ -8,6 +8,8 @@ const { BlockHeadersProvider } = DAPIClient;
 
 const BlockHeadersSyncWorker = require('./BlockHeadersSyncWorker');
 
+const { waitOneTick } = require('../../../test/utils');
+
 describe('BlockHeadersSyncWorker', () => {
   let blockHeadersSyncWorker;
   const chainHeight = 1000;
@@ -20,6 +22,9 @@ describe('BlockHeadersSyncWorker', () => {
     const blockHeadersProvider = new EventEmitter();
     blockHeadersProvider.readHistorical = sinon.stub();
     blockHeadersProvider.startContinuousSync = sinon.stub();
+    blockHeadersProvider.stop = () => {
+      blockHeadersProvider.emit(BlockHeadersProvider.EVENTS.STOPPED);
+    };
     blockHeadersProvider.spvChain = {
       getLongestChain: sinon.stub().returns([]),
       orphanChunks: [],
@@ -135,20 +140,38 @@ describe('BlockHeadersSyncWorker', () => {
       blockHeadersSyncWorker = createBlockHeadersSyncWorker(this.sinon);
     });
 
-    it('should kickstart reading of historical headers', (done) => {
-      blockHeadersSyncWorker.onStart().catch(done);
+    it('should kickstart reading of historical headers', async () => {
+      const startPromise = blockHeadersSyncWorker.onStart();
+      await waitOneTick();
 
       const { blockHeadersProvider } = blockHeadersSyncWorker.transport.client;
 
+      expect(blockHeadersSyncWorker.state).to
+        .equal(BlockHeadersSyncWorker.STATES.HISTORICAL_SYNC);
       expect(blockHeadersProvider.on).to
-        .have.been.calledWith(BlockHeadersProvider.EVENTS.CHAIN_UPDATED);
+        .have.been.calledWith(
+          BlockHeadersProvider.EVENTS.CHAIN_UPDATED,
+          blockHeadersSyncWorker.historicalChainUpdateHandler,
+        );
       expect(blockHeadersProvider.on).to
-        .have.been.calledWith(BlockHeadersProvider.EVENTS.ERROR);
+        .have.been.calledWith(
+          BlockHeadersProvider.EVENTS.ERROR,
+          blockHeadersSyncWorker.blockHeadersProviderErrorHandler,
+        );
       expect(blockHeadersProvider.once).to
-        .have.been.calledWith(BlockHeadersProvider.EVENTS.HISTORICAL_DATA_OBTAINED);
+        .have.been.calledWith(
+          BlockHeadersProvider.EVENTS.HISTORICAL_DATA_OBTAINED,
+          blockHeadersSyncWorker.historicalDataObtainedHandler,
+        );
+      expect(blockHeadersProvider.once).to
+        .have.been.calledWith(
+          BlockHeadersProvider.EVENTS.STOPPED,
+          blockHeadersSyncWorker.blockHeadersProviderStopHandler,
+        );
       expect(blockHeadersProvider.readHistorical).to.have.been.calledOnceWith(1, chainHeight);
 
-      done();
+      blockHeadersProvider.emit(BlockHeadersProvider.EVENTS.HISTORICAL_DATA_OBTAINED);
+      await startPromise;
     });
 
     it('should prepare for continuous sync after historical data is obtained', async function test() {
@@ -160,10 +183,18 @@ describe('BlockHeadersSyncWorker', () => {
       blockHeadersProvider.emit(BlockHeadersProvider.EVENTS.HISTORICAL_DATA_OBTAINED);
       await startPromise;
 
+      expect(blockHeadersSyncWorker.state).to
+        .equal(BlockHeadersSyncWorker.STATES.IDLE);
       expect(blockHeadersProvider.removeListener)
-        .to.have.been.calledWith(BlockHeadersProvider.EVENTS.CHAIN_UPDATED);
+        .to.have.been.calledWith(
+          BlockHeadersProvider.EVENTS.CHAIN_UPDATED,
+          blockHeadersSyncWorker.historicalChainUpdateHandler,
+        );
       expect(blockHeadersProvider.removeListener)
-        .to.have.been.calledWith(BlockHeadersProvider.EVENTS.ERROR);
+        .to.have.been.calledWith(
+          BlockHeadersProvider.EVENTS.ERROR,
+          blockHeadersSyncWorker.blockHeadersProviderErrorHandler,
+        );
       expect(blockHeadersSyncWorker.syncCheckpoint).to.equal(chainHeight);
       expect(blockHeadersSyncWorker.updateProgress).to.have.been.calledOnce;
     });
@@ -195,13 +226,100 @@ describe('BlockHeadersSyncWorker', () => {
 
       await blockHeadersSyncWorker.execute();
 
-      expect(blockHeadersProvider.on).to
-        .have.been.calledWith(BlockHeadersProvider.EVENTS.CHAIN_UPDATED);
-      expect(blockHeadersProvider.on).to
-        .have.been.calledWith(BlockHeadersProvider.EVENTS.ERROR);
+      expect(blockHeadersSyncWorker.state).to
+        .equal(BlockHeadersSyncWorker.STATES.CONTINUOUS_SYNC);
 
+      expect(blockHeadersProvider.on).to
+        .have.been.calledWith(
+          BlockHeadersProvider.EVENTS.CHAIN_UPDATED,
+          blockHeadersSyncWorker.continuousChainUpdateHandler,
+        );
+      expect(blockHeadersProvider.on).to
+        .have.been.calledWith(
+          BlockHeadersProvider.EVENTS.ERROR,
+          blockHeadersSyncWorker.blockHeadersProviderErrorHandler,
+        );
       expect(blockHeadersProvider.startContinuousSync).to
         .have.been.calledWith(blockHeadersSyncWorker.syncCheckpoint);
+    });
+
+    // TODO: should throw an error if sync checkpoint is not match to best block height
+  });
+
+  describe('#onStop', () => {
+    beforeEach(function beforeEach() {
+      blockHeadersSyncWorker = createBlockHeadersSyncWorker(this.sinon);
+    });
+
+    it('should stop historical sync', async () => {
+      const promise = blockHeadersSyncWorker.onStart();
+      await waitOneTick();
+
+      await blockHeadersSyncWorker.onStop();
+      await promise;
+
+      const { blockHeadersProvider } = blockHeadersSyncWorker.transport.client;
+
+      expect(blockHeadersProvider.removeListener).to
+        .have.been.calledWith(
+          BlockHeadersProvider.EVENTS.CHAIN_UPDATED,
+          blockHeadersSyncWorker.historicalChainUpdateHandler,
+        );
+      expect(blockHeadersProvider.removeListener).to
+        .have.been.calledWith(
+          BlockHeadersProvider.EVENTS.ERROR,
+          blockHeadersSyncWorker.blockHeadersProviderErrorHandler,
+        );
+      expect(blockHeadersProvider.removeListener).to
+        .have.been.calledWith(
+          BlockHeadersProvider.EVENTS.HISTORICAL_DATA_OBTAINED,
+          blockHeadersSyncWorker.historicalDataObtainedHandler,
+        );
+
+      expect(blockHeadersSyncWorker.state).to.equal(BlockHeadersSyncWorker.STATES.IDLE);
+      // TODO: make sure that syncCheckpoint is set to latest known header, not best block height
+    });
+
+    it('should stop continuous sync', async () => {
+      await blockHeadersSyncWorker.execute();
+      await blockHeadersSyncWorker.onStop();
+      //
+      const { blockHeadersProvider } = blockHeadersSyncWorker.transport.client;
+
+      expect(blockHeadersProvider.removeListener).to
+        .have.been.calledWith(
+          BlockHeadersProvider.EVENTS.CHAIN_UPDATED,
+          blockHeadersSyncWorker.continuousChainUpdateHandler,
+        );
+      expect(blockHeadersProvider.removeListener).to
+        .have.been.calledWith(
+          BlockHeadersProvider.EVENTS.ERROR,
+          blockHeadersSyncWorker.blockHeadersProviderErrorHandler,
+        );
+
+      expect(blockHeadersSyncWorker.state).to.equal(BlockHeadersSyncWorker.STATES.IDLE);
+    });
+
+    it('should continue historical sync from checkpoint after the restart', async () => {
+      let startPromise = blockHeadersSyncWorker.onStart();
+      await waitOneTick();
+      await blockHeadersSyncWorker.onStop();
+      await startPromise;
+
+      // TODO: make sure that syncCheckpoint is set to latest
+      //  confirmed header, not best block height
+      blockHeadersSyncWorker.syncCheckpoint = 980;
+
+      startPromise = blockHeadersSyncWorker.onStart();
+
+      const { blockHeadersProvider } = blockHeadersSyncWorker.transport.client;
+
+      expect(blockHeadersProvider.readHistorical).to.have.been.calledTwice;
+      expect(blockHeadersProvider.readHistorical.secondCall)
+        .to.have.been.calledWith(980, 1000);
+
+      blockHeadersProvider.emit(BlockHeadersProvider.EVENTS.HISTORICAL_DATA_OBTAINED);
+      await startPromise;
     });
   });
 });

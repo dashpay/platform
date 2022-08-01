@@ -25,6 +25,7 @@ const EVENTS = {
   ERROR: 'error',
   CHAIN_UPDATED: 'CHAIN_UPDATED',
   HISTORICAL_DATA_OBTAINED: 'HISTORICAL_DATA_OBTAINED',
+  STOPPED: 'STOPPED',
 };
 
 const STATES = {
@@ -169,6 +170,8 @@ class BlockHeadersProvider extends EventEmitter {
       .removeListener(BlockHeadersReader.EVENTS.BLOCK_HEADERS, this.handleHeaders);
 
     this.state = STATES.IDLE;
+
+    this.emit(EVENTS.STOPPED);
   }
 
   handleError(e) {

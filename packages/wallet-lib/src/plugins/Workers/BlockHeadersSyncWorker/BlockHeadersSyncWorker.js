@@ -9,6 +9,12 @@ const PROGRESS_UPDATE_INTERVAL = 1000;
 const MIN_HEADERS_TO_KEEP = 100;
 const MAX_HEADERS_TO_KEEP = 5000;
 
+const STATES = {
+  IDLE: 'STATE_IDLE',
+  HISTORICAL_SYNC: 'STATE_HISTORICAL_SYNC',
+  CONTINUOUS_SYNC: 'STATE_CONTINUOUS_SYNC',
+};
+
 class BlockHeadersSyncWorker extends Worker {
   constructor(options) {
     super({
@@ -38,12 +44,25 @@ class BlockHeadersSyncWorker extends Worker {
 
     this.syncCheckpoint = -1;
     this.progressUpdateTimeout = null;
+    this.state = STATES.IDLE;
+
+    this.blockHeadersProviderErrorHandler = null;
+    this.historicalDataObtainedHandler = null;
+    this.blockHeadersProviderStopHandler = null;
+
     this.updateProgress = this.updateProgress.bind(this);
   }
 
   async onStart() {
+    if (this.state !== STATES.IDLE) {
+      throw new Error(`Worker is already running: ${this.state}. Please call .onStop() first.`);
+    }
+
     const chainStore = this.storage.getDefaultChainStore();
-    const startFrom = this.getStartBlockHeight();
+    let startFrom = this.getStartBlockHeight();
+    if (startFrom < this.syncCheckpoint) {
+      startFrom = this.syncCheckpoint;
+    }
 
     const bestBlockHeight = typeof chainStore.state.blockHeight === 'number'
       ? chainStore.state.blockHeight : -1;
@@ -57,32 +76,114 @@ class BlockHeadersSyncWorker extends Worker {
     const { blockHeadersProvider } = this.transport.client;
     blockHeadersProvider.on(
       BlockHeadersProvider.EVENTS.CHAIN_UPDATED,
-      this.historicalChainUpdateListener,
+      this.historicalChainUpdateHandler,
     );
 
-    const historicalSyncPromise = this.createHistoricalSyncCompleteListener();
+    let stopped = false;
+    const historicalSyncPromise = new Promise((resolve, reject) => {
+      this.blockHeadersProviderErrorHandler = (e) => reject(e);
+
+      this.blockHeadersProviderStopHandler = () => {
+        blockHeadersProvider.removeListener(
+          BlockHeadersProvider.EVENTS.CHAIN_UPDATED,
+          this.historicalChainUpdateHandler,
+        );
+        blockHeadersProvider.removeListener(
+          BlockHeadersProvider.EVENTS.ERROR,
+          this.blockHeadersProviderErrorHandler,
+        );
+        blockHeadersProvider.removeListener(
+          BlockHeadersProvider.EVENTS.HISTORICAL_DATA_OBTAINED,
+          this.historicalDataObtainedHandler,
+        );
+
+        stopped = true;
+        resolve();
+      };
+
+      this.historicalDataObtainedHandler = () => {
+        blockHeadersProvider.removeListener(
+          BlockHeadersProvider.EVENTS.CHAIN_UPDATED,
+          this.historicalChainUpdateHandler,
+        );
+        blockHeadersProvider.removeListener(
+          BlockHeadersProvider.EVENTS.ERROR,
+          this.blockHeadersProviderErrorHandler,
+        );
+        blockHeadersProvider.removeListener(
+          BlockHeadersProvider.EVENTS.STOPPED,
+          this.blockHeadersProviderStopHandler,
+        );
+
+        resolve();
+      };
+
+      blockHeadersProvider.on(
+        BlockHeadersProvider.EVENTS.ERROR,
+        this.blockHeadersProviderErrorHandler,
+      );
+      blockHeadersProvider.once(
+        BlockHeadersProvider.EVENTS.HISTORICAL_DATA_OBTAINED,
+        this.historicalDataObtainedHandler,
+      );
+      blockHeadersProvider.once(
+        BlockHeadersProvider.EVENTS.STOPPED,
+        this.blockHeadersProviderStopHandler,
+      );
+    });
 
     await blockHeadersProvider.readHistorical(startFrom, bestBlockHeight);
+    this.state = STATES.HISTORICAL_SYNC;
 
     await historicalSyncPromise;
 
     this.updateProgress();
-    this.syncCheckpoint = bestBlockHeight;
+    if (!stopped) {
+      this.syncCheckpoint = bestBlockHeight;
+    }
+    this.state = STATES.IDLE;
   }
 
   async execute() {
-    const errorHandler = (e) => {
-      this.parentEvents.emit('error', e);
-    };
+    if (this.state !== STATES.IDLE) {
+      throw new Error(`Worker is already running: ${this.state}. Please call .onStop() first.`);
+    }
 
     const { blockHeadersProvider } = this.transport.client;
     blockHeadersProvider.on(
       BlockHeadersProvider.EVENTS.CHAIN_UPDATED,
       this.continuousChainUpdateHandler,
     );
-    blockHeadersProvider.on(BlockHeadersProvider.EVENTS.ERROR, errorHandler);
+
+    this.blockHeadersProviderErrorHandler = (e) => {
+      this.parentEvents.emit('error', e);
+    };
+    blockHeadersProvider.on(
+      BlockHeadersProvider.EVENTS.ERROR,
+      this.blockHeadersProviderErrorHandler,
+    );
+
+    this.blockHeadersProviderStopHandler = () => {
+      blockHeadersProvider.removeListener(
+        BlockHeadersProvider.EVENTS.CHAIN_UPDATED,
+        this.continuousChainUpdateHandler,
+      );
+
+      blockHeadersProvider.removeListener(
+        BlockHeadersProvider.EVENTS.ERROR,
+        this.blockHeadersProviderErrorHandler,
+      );
+
+      this.state = STATES.IDLE;
+    };
+
+    blockHeadersProvider.once(
+      BlockHeadersProvider.EVENTS.STOPPED,
+      this.blockHeadersProviderStopHandler,
+    );
 
     await blockHeadersProvider.startContinuousSync(this.syncCheckpoint);
+    this.state = STATES.CONTINUOUS_SYNC;
   }
 
   async onStop() {
@@ -133,29 +234,10 @@ class BlockHeadersSyncWorker extends Worker {
     return height;
   }
 
-  createHistoricalSyncCompleteListener() {
-    const { blockHeadersProvider } = this.transport.client;
-    return new Promise((resolve, reject) => {
-      const errorHandler = (e) => reject(e);
-
-      blockHeadersProvider.on(BlockHeadersProvider.EVENTS.ERROR, errorHandler);
-
-      blockHeadersProvider.once(BlockHeadersProvider.EVENTS.HISTORICAL_DATA_OBTAINED, () => {
-        blockHeadersProvider.removeListener(BlockHeadersProvider.EVENTS.ERROR, errorHandler);
-        blockHeadersProvider
-          .removeListener(
-            BlockHeadersProvider.EVENTS.CHAIN_UPDATED,
-            this.historicalChainUpdateListener,
-          );
-        resolve();
-      });
-    });
-  }
-
   /**
    * Listens for chain updates during the synchronization of historical headers
    */
-  historicalChainUpdateListener() {
+  historicalChainUpdateHandler() {
     const chainStore = this.storage.getDefaultChainStore();
     const { blockHeadersProvider } = this.transport.client;
     const { spvChain } = blockHeadersProvider;
@@ -272,5 +354,6 @@ class BlockHeadersSyncWorker extends Worker {
 }
 
 BlockHeadersSyncWorker.MAX_HEADERS_TO_KEEP = MAX_HEADERS_TO_KEEP;
+BlockHeadersSyncWorker.STATES = STATES;
 
 module.exports = BlockHeadersSyncWorker;
