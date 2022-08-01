@@ -14,7 +14,7 @@ use crate::{
     document::{document_transition::Action, generate_document_id::generate_document_id},
     prelude::Identifier,
     state_repository::StateRepositoryLike,
-    util::json_value::{self, JsonValueExt},
+    util::json_value::JsonValueExt,
     validation::{JsonSchemaValidator, ValidationResult},
     version::ProtocolVersionValidator,
     ProtocolError,
@@ -80,9 +80,9 @@ pub async fn validate_documents_batch_transition_basic(
 
     let raw_document_transitions = raw_state_transition
         .get("transitions")
-        .ok_or(anyhow!("transitions property doesn't exist"))?
+        .ok_or_else(|| anyhow!("transitions property doesn't exist"))?
         .as_array()
-        .ok_or(anyhow!("transitions property isn't an array"))?;
+        .ok_or_else(|| anyhow!("transitions property isn't an array"))?;
     let mut document_transitions_by_contracts: HashMap<Identifier, Vec<&JsonValue>> =
         HashMap::new();
 
@@ -188,7 +188,6 @@ fn get_enriched_contracts_by_action(
 }
 
 fn validate_raw_transitions<'a>(
-    // json_schema_validator : JsonSchemaValidator,
     data_contract: &DataContract,
     raw_document_transitions: impl IntoIterator<Item = &'a JsonValue>,
     enriched_contracts_by_action: &HashMap<Action, DataContract>,
@@ -237,12 +236,13 @@ fn validate_raw_transitions<'a>(
         match action {
             Action::Create | Action::Replace => {
                 let enriched_data_contract = &enriched_contracts_by_action[&action];
-                // let schema = enriched_data_contract.to_json()?;
+                let document_schema = enriched_data_contract.get_document_schema(document_type)?;
 
-                let document_schema =
-                    enriched_data_contract.get_full_schema_with_defs_for_document(document_type)?;
-                let schema_validator = JsonSchemaValidator::new(document_schema)
-                    .map_err(|e| anyhow!("unable to compile enriched schema: {}", e))?;
+                let schema_validator = JsonSchemaValidator::new_with_definitions(
+                    document_schema.clone(),
+                    enriched_data_contract.definitions(),
+                )
+                .map_err(|e| anyhow!("unable to compile enriched schema: {}", e))?;
 
                 let schema_result = schema_validator.validate(raw_document_transition)?;
                 if !schema_result.is_valid() {
@@ -279,9 +279,10 @@ fn validate_raw_transitions<'a>(
         }
     }
 
-    let dtr = raw_document_transitions.into_iter();
+    let raw_document_transitions_iter = raw_document_transitions.into_iter();
 
-    let duplicate_transitions = find_duplicates_by_indices(dtr.clone(), data_contract)?;
+    let duplicate_transitions =
+        find_duplicates_by_indices(raw_document_transitions_iter.clone(), data_contract)?;
     if !duplicate_transitions.is_empty() {
         let references: Vec<(String, Vec<u8>)> = duplicate_transitions
             .iter()
@@ -295,7 +296,8 @@ fn validate_raw_transitions<'a>(
     }
 
     let validation_result = validate_partial_compound_indices(
-        dtr.clone()
+        raw_document_transitions_iter
+            .clone()
             .filter(|t| action_is_not_delete(t.get_string("$action").unwrap_or_default())),
         data_contract,
     )?;
@@ -311,6 +313,3 @@ fn action_is_not_delete(action: &str) -> bool {
         Ok(Action::Create) | Ok(Action::Replace) => true,
     }
 }
-
-#[cfg(test)]
-mod test {}

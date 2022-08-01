@@ -298,6 +298,10 @@ impl DataContract {
         self.version
     }
 
+    pub fn definitions(&self) -> &BTreeMap<String, JsonValue> {
+        &self.defs
+    }
+
     // Returns hash from Data Contract
     pub fn hash(&self) -> Result<Vec<u8>, ProtocolError> {
         Ok(hash(self.to_buffer()?))
@@ -327,27 +331,6 @@ impl DataContract {
                     doc_type: doc_type.to_owned(),
                     data_contract: self.clone(),
                 })?;
-        Ok(document)
-    }
-
-    /// full schema also contains the definitions for the
-    // TODO hyper un-optimal, please fix me
-    pub fn get_full_schema_with_defs_for_document(
-        &self,
-        doc_type: &str,
-    ) -> Result<JsonSchema, ProtocolError> {
-        let mut document = self
-            .documents
-            .get(doc_type)
-            .ok_or(DataContractError::InvalidDocumentTypeError {
-                doc_type: doc_type.to_owned(),
-                data_contract: self.clone(),
-            })?
-            .clone();
-
-        let defs = serde_json::to_value(&self.defs)?;
-        document.insert(String::from("$defs"), defs)?;
-
         Ok(document)
     }
 
