@@ -37,13 +37,19 @@ pub struct JsonSchemaValidator {}
 
 pub trait JsonSchemaValidatorLike {}
 
-pub struct SimplifiedMNList {}
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SimplifiedMNList {
+    pub masternodes: Vec<SMLEntry>,
+}
+
 impl SimplifiedMNList {
-    pub fn get_valid_master_nodes(&self) -> Vec<SMLEntry> {
-        unimplemented!()
+    pub fn get_valid_master_nodes(&self) -> &Vec<SMLEntry> {
+        &self.masternodes
     }
 }
 
+#[derive(Serialize, Deserialize, Debug, Clone)]
+#[serde(rename_all = "camelCase")]
 pub struct SMLEntry {
     pub pro_reg_tx_hash: String,
     pub confirmed_hash: String,
@@ -53,16 +59,19 @@ pub struct SMLEntry {
     pub is_valid: bool,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
-pub struct SMLStore {}
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct SMLStore {
+    pub sml_list_by_height: SimplifiedMNList,
+    pub sml_list_current: SimplifiedMNList,
+}
 
 impl SMLStore {
-    pub fn get_sml_by_height(&self) -> AnyResult<SimplifiedMNList> {
-        unimplemented!()
+    pub fn get_sml_by_height(&self) -> AnyResult<&SimplifiedMNList> {
+        Ok(&self.sml_list_by_height)
     }
 
-    pub fn get_current_sml(&self) -> AnyResult<SimplifiedMNList> {
-        unimplemented!()
+    pub fn get_current_sml(&self) -> AnyResult<&SimplifiedMNList> {
+        Ok(&self.sml_list_current)
     }
 }
 

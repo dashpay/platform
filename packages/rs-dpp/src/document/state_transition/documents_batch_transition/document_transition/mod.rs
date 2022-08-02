@@ -24,6 +24,10 @@ pub trait DocumentTransitionExt {
     /// returns the value of dynamic property. The dynamic property is a property that is not specified in protocol
     /// the `path` supports dot-syntax: i.e: property.internal_property
     fn get_dynamic_property(&self, path: &str) -> Option<&JsonValue>;
+
+    #[cfg(test)]
+    /// Inserts the dynamic property into the document
+    fn insert_dynamic_property(&mut self, property_name: String, value: JsonValue);
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -161,6 +165,23 @@ impl DocumentTransitionExt for DocumentTransition {
                 }
             }
             DocumentTransition::Delete(_) => None,
+        }
+    }
+
+    #[cfg(test)]
+    fn insert_dynamic_property(&mut self, property_name: String, value: JsonValue) {
+        match self {
+            DocumentTransition::Create(ref mut t) => {
+                if let Some(ref mut data) = t.data {
+                    let _ = data.insert(property_name, value);
+                }
+            }
+            DocumentTransition::Replace(ref mut t) => {
+                if let Some(ref mut data) = t.data {
+                    let _ = data.insert(property_name, value);
+                }
+            }
+            DocumentTransition::Delete(_) => {}
         }
     }
 }
