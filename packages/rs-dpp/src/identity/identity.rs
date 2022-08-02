@@ -33,7 +33,7 @@ pub struct Identity {
     pub protocol_version: u32,
     pub id: Identifier,
     pub public_keys: Vec<IdentityPublicKey>,
-    pub balance: i64,
+    pub balance: u64,
     pub revision: i64,
     #[serde(skip)]
     pub asset_lock_proof: Option<AssetLockProof>,
@@ -47,7 +47,7 @@ struct IdentityForBuffer {
     // TODO the struct probably should be made from references
     id: Identifier,
     public_keys: Vec<IdentityPublicKey>,
-    balance: i64,
+    balance: u64,
     revision: i64,
 }
 
@@ -90,25 +90,25 @@ impl Identity {
     }
 
     /// Returns balance
-    pub fn get_balance(&self) -> i64 {
+    pub fn get_balance(&self) -> u64 {
         self.balance
     }
 
     /// Set Identity balance
-    pub fn set_balance(mut self, balance: i64) -> Self {
+    pub fn set_balance(mut self, balance: u64) -> Self {
         self.balance = balance;
         self
     }
 
     /// Increase Identity balance
     pub fn increase_balance(mut self, amount: u64) -> Self {
-        self.balance += amount as i64;
+        self.balance += amount;
         self
     }
 
     /// Reduce the Identity balance
     pub fn reduce_balance(mut self, amount: u64) -> Self {
-        self.balance -= amount as i64;
+        self.balance -= amount;
         self
     }
 
@@ -191,7 +191,7 @@ impl Identity {
 
         let identity_id = identity_map.get_identifier("id")?;
         let revision = identity_map.get_i64("revision")?;
-        let balance: i64 = identity_map.get_i64("balance")?;
+        let balance: u64 = identity_map.get_u64("balance")?;
 
         let keys_cbor_value = identity_map.get("publicKeys").ok_or_else(|| {
             ProtocolError::DecodingError(String::from(
