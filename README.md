@@ -83,6 +83,8 @@ this repository may be used on the following networks:
    ```
 4. Install dependencies and configure and build all packages
    ```bash
+   yarn install
+   yarn build
    yarn setup
    ```
    
