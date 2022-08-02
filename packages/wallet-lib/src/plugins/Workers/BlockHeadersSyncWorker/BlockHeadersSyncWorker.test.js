@@ -31,16 +31,17 @@ describe('BlockHeadersSyncWorker', () => {
       blockHeadersProvider.emit(BlockHeadersProvider.EVENTS.STOPPED);
     };
     blockHeadersProvider.spvChain = {
+      startBlockHeight: 0,
       getLongestChain() {
         if (!this.longestChain) {
-          this.longestChain = spvChainHeaders;
+          this.longestChain = [...spvChainHeaders];
         }
 
         return this.longestChain;
       },
       addHeaders(headers) {
         if (!this.longestChain) {
-          this.longestChain = spvChainHeaders;
+          this.longestChain = [...spvChainHeaders];
         }
 
         this.longestChain = [...this.longestChain, ...headers];
@@ -71,6 +72,7 @@ describe('BlockHeadersSyncWorker', () => {
     worker.parentEvents = new EventEmitter();
     sinon.spy(worker.parentEvents, 'emit');
     sinon.spy(worker.transport, 'getBlockByHeight');
+    sinon.spy(worker, 'scheduleProgressUpdate');
 
     worker.storage = {
       application: {},
@@ -92,10 +94,12 @@ describe('BlockHeadersSyncWorker', () => {
           this.defaultChainStore = {
             state: {
               blockHeight: chainHeight,
+              lastSyncedHeaderHeight: -1,
             },
             updateLastSyncedHeaderHeight: sinon.spy(),
             updateChainHeight: sinon.spy(),
             setBlockHeaders: sinon.spy(),
+            updateHeadersMetadata: sinon.spy(),
           };
         }
         return this.defaultChainStore;
@@ -295,7 +299,6 @@ describe('BlockHeadersSyncWorker', () => {
       await expect(blockHeadersSyncWorker.execute())
         .to.be.rejectedWith('Sync checkpoint is not equal to best block height: -1 !== 1000. Please read historical data first');
     });
-    // TODO: should throw an error if sync checkpoint is not match to best block height
   });
 
   describe('#onStop', () => {
@@ -471,12 +474,13 @@ describe('BlockHeadersSyncWorker', () => {
         .to.have.not.been.called;
     });
 
-    it('should emit error in case headers array is empty', () => {
+    it('should emit error in case headers array is empty', async () => {
       const chainStore = blockHeadersSyncWorker.storage.getDefaultChainStore();
       const walletStore = blockHeadersSyncWorker.storage.getDefaultWalletStore();
 
       const batchHeadHeight = 1010;
-      blockHeadersSyncWorker.continuousChainUpdateHandler(
+      blockHeadersSyncWorker.parentEvents.on('error', () => {});
+      await blockHeadersSyncWorker.continuousChainUpdateHandler(
         [],
         batchHeadHeight,
       );
@@ -494,12 +498,13 @@ describe('BlockHeadersSyncWorker', () => {
         .to.have.not.been.called;
     });
 
-    it('should emit error in case new height is less than current height', () => {
+    it('should emit error in case new height is less than current height', async () => {
       const chainStore = blockHeadersSyncWorker.storage.getDefaultChainStore();
       const walletStore = blockHeadersSyncWorker.storage.getDefaultWalletStore();
 
       const batchHeadHeight = 900;
-      blockHeadersSyncWorker.continuousChainUpdateHandler(
+      blockHeadersSyncWorker.parentEvents.on('error', () => {});
+      await blockHeadersSyncWorker.continuousChainUpdateHandler(
         ['0x10000001'],
         batchHeadHeight,
       );
@@ -532,5 +537,79 @@ describe('BlockHeadersSyncWorker', () => {
       expect(blockHeadersSyncWorker.parentEvents.emit)
         .to.have.been.calledWith(EVENTS.BLOCK, block, batchHeadHeight);
     });
+  });
+
+  describe('#historicalChainUpdateHandler', () => {
+    beforeEach(function beforeEach() {
+      blockHeadersSyncWorker = createBlockHeadersSyncWorker(this.sinon);
+    });
+
+    it('should update block headers', () => {
+      const headers = ['0x10000006', '0x10000007', '0x10000008'];
+      const { blockHeadersProvider: { spvChain } } = blockHeadersSyncWorker.transport.client;
+      const chainStore = blockHeadersSyncWorker.storage.getDefaultChainStore();
+      chainStore.state.lastSyncedHeaderHeight = 3;
+
+      spvChain.addHeaders(headers);
+      blockHeadersSyncWorker.historicalChainUpdateHandler();
+
+      const longestChain = spvChain.getLongestChain();
+      const newHeight = longestChain.length - 1;
+
+      expect(chainStore.setBlockHeaders)
+        .to.have.been.calledWith(longestChain.slice(-3));
+      expect(chainStore.updateLastSyncedHeaderHeight).to.have.been.calledWith(newHeight);
+
+      const newHeaders = longestChain.slice(-4);
+      expect(chainStore.updateHeadersMetadata)
+        .to.have.been.calledWith(newHeaders, newHeight);
+
+      expect(blockHeadersSyncWorker.syncCheckpoint)
+        .to.equal(newHeight);
+
+      expect(blockHeadersSyncWorker.storage.scheduleStateSave)
+        .to.have.been.called;
+      expect(blockHeadersSyncWorker.scheduleProgressUpdate)
+        .to.have.been.called;
+    });
+
+    it('should do nothing in case amount of total headers hasn\'t changed', () => {
+      const chainStore = blockHeadersSyncWorker.storage.getDefaultChainStore();
+      chainStore.state.lastSyncedHeaderHeight = 4;
+
+      blockHeadersSyncWorker.historicalChainUpdateHandler();
+
+      expect(chainStore.setBlockHeaders).to.have.not.been.called;
+      expect(chainStore.updateLastSyncedHeaderHeight).to.have.not.been.called;
+      expect(chainStore.updateHeadersMetadata).to.have.not.been.called;
+      expect(blockHeadersSyncWorker.storage.scheduleStateSave)
+        .to.have.not.been.called;
+      expect(blockHeadersSyncWorker.scheduleProgressUpdate)
+        .to.have.been.called;
+    });
+
+    it('should emit error in case syncedHeadersCount is bigger than total headers count', function () {
+      const chainStore = blockHeadersSyncWorker.storage.getDefaultChainStore();
+      chainStore.state.lastSyncedHeaderHeight = 5;
+
+      const errorCallback = this.sinon.spy();
+      blockHeadersSyncWorker.parentEvents.on('error', errorCallback);
+
+      blockHeadersSyncWorker.historicalChainUpdateHandler();
+
+      const { firstCall } = errorCallback;
+      expect(firstCall.args[0].message)
+        .to.equal('Synced headers count 6 is greater than total headers count 5.');
+
+      expect(chainStore.setBlockHeaders).to.have.not.been.called;
+      expect(chainStore.updateLastSyncedHeaderHeight).to.have.not.been.called;
+      expect(chainStore.updateHeadersMetadata).to.have.not.been.called;
+      expect(blockHeadersSyncWorker.storage.scheduleStateSave)
+        .to.have.not.been.called;
+      expect(blockHeadersSyncWorker.scheduleProgressUpdate)
+        .to.have.not.been.called;
+    });
+
+    // TODO handle all parentEvents.emit
   });
 });
