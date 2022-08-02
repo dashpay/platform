@@ -299,6 +299,19 @@ describe('BlockHeadersSyncWorker', () => {
       await expect(blockHeadersSyncWorker.execute())
         .to.be.rejectedWith('Sync checkpoint is not equal to best block height: -1 !== 1000. Please read historical data first');
     });
+
+    it('should forward an error from blockHeadersProvider', async function () {
+      blockHeadersSyncWorker.syncCheckpoint = chainHeight;
+      await blockHeadersSyncWorker.execute();
+
+      const errorCallback = this.sinon.spy();
+      blockHeadersSyncWorker.parentEvents.on('error', errorCallback);
+      const { blockHeadersProvider } = blockHeadersSyncWorker.transport.client;
+      const error = new Error('Test error');
+      blockHeadersProvider.emit('error', error);
+
+      expect(errorCallback).to.have.been.calledOnceWith(error);
+    });
   });
 
   describe('#onStop', () => {
@@ -310,10 +323,12 @@ describe('BlockHeadersSyncWorker', () => {
       const promise = blockHeadersSyncWorker.onStart();
       await waitOneTick();
 
+      const { blockHeadersProvider } = blockHeadersSyncWorker.transport.client;
+
+      blockHeadersSyncWorker.syncCheckpoint = 4;
+
       await blockHeadersSyncWorker.onStop();
       await promise;
-
-      const { blockHeadersProvider } = blockHeadersSyncWorker.transport.client;
 
       expect(blockHeadersProvider.removeListener).to
         .have.been.calledWith(
@@ -332,14 +347,14 @@ describe('BlockHeadersSyncWorker', () => {
         );
 
       expect(blockHeadersSyncWorker.state).to.equal(BlockHeadersSyncWorker.STATES.IDLE);
-      // TODO: make sure that syncCheckpoint is set to latest known header, not best block height
+      expect(blockHeadersSyncWorker.syncCheckpoint).to.equal(4);
     });
 
     it('should stop continuous sync', async () => {
       blockHeadersSyncWorker.syncCheckpoint = 1000;
       await blockHeadersSyncWorker.execute();
       await blockHeadersSyncWorker.onStop();
-      //
+
       const { blockHeadersProvider } = blockHeadersSyncWorker.transport.client;
 
       expect(blockHeadersProvider.removeListener).to
@@ -358,17 +373,16 @@ describe('BlockHeadersSyncWorker', () => {
 
     it('should continue historical sync from checkpoint after the restart', async () => {
       let startPromise = blockHeadersSyncWorker.onStart();
+
+      const { blockHeadersProvider } = blockHeadersSyncWorker.transport.client;
+
       await waitOneTick();
       await blockHeadersSyncWorker.onStop();
       await startPromise;
 
-      // TODO: make sure that syncCheckpoint is set to latest
-      //  confirmed header, not best block height
       blockHeadersSyncWorker.syncCheckpoint = 980;
 
       startPromise = blockHeadersSyncWorker.onStart();
-
-      const { blockHeadersProvider } = blockHeadersSyncWorker.transport.client;
 
       expect(blockHeadersProvider.readHistorical).to.have.been.calledTwice;
       expect(blockHeadersProvider.readHistorical.secondCall)
@@ -383,10 +397,9 @@ describe('BlockHeadersSyncWorker', () => {
 
       blockHeadersSyncWorker.syncCheckpoint = 1000;
       await blockHeadersSyncWorker.execute();
+      blockHeadersSyncWorker.syncCheckpoint = 1200;
       await blockHeadersSyncWorker.onStop();
 
-      // TODO: derive it from other api triggers
-      blockHeadersSyncWorker.syncCheckpoint = 1200;
       blockHeadersSyncWorker.storage.getDefaultChainStore().state.blockHeight = 1200;
 
       await blockHeadersSyncWorker.execute();
@@ -537,6 +550,21 @@ describe('BlockHeadersSyncWorker', () => {
       expect(blockHeadersSyncWorker.parentEvents.emit)
         .to.have.been.calledWith(EVENTS.BLOCK, block, batchHeadHeight);
     });
+
+    it('should emit error in case something goes wrong', async function () {
+      const error = new Error('Block not found');
+      blockHeadersSyncWorker.transport.getBlockByHeight = () => {
+        throw error;
+      };
+
+      const errorHandler = this.sinon.spy();
+      blockHeadersSyncWorker.parentEvents.on('error', errorHandler);
+      await blockHeadersSyncWorker.continuousChainUpdateHandler(
+        ['0x10000001'],
+        1020,
+      );
+      expect(errorHandler).to.have.been.calledWith(error);
+    });
   });
 
   describe('#historicalChainUpdateHandler', () => {
@@ -609,7 +637,5 @@ describe('BlockHeadersSyncWorker', () => {
       expect(blockHeadersSyncWorker.scheduleProgressUpdate)
         .to.have.not.been.called;
     });
-
-    // TODO handle all parentEvents.emit
   });
 });

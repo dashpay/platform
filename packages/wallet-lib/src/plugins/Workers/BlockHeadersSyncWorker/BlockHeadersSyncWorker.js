@@ -51,6 +51,7 @@ class BlockHeadersSyncWorker extends Worker {
     this.blockHeadersProviderStopHandler = null;
 
     this.updateProgress = this.updateProgress.bind(this);
+    this.historicalChainUpdateHandler = this.historicalChainUpdateHandler.bind(this);
   }
 
   async onStart() {
@@ -166,7 +167,9 @@ class BlockHeadersSyncWorker extends Worker {
 
     this.blockHeadersProviderErrorHandler = (e) => {
       this.parentEvents.emit('error', e);
+      logger.debug('[BlockHeadersSyncWorker] Error handling continuous chain update', e);
     };
+
     blockHeadersProvider.on(
       BlockHeadersProvider.EVENTS.ERROR,
       this.blockHeadersProviderErrorHandler,
@@ -271,8 +274,6 @@ class BlockHeadersSyncWorker extends Worker {
       chainStore.setBlockHeaders(longestChain.slice(-this.maxHeadersToKeep));
 
       const newLastSyncedHeaderHeight = totalHeadersCount - 1;
-
-      // Update headers metadata;
       const newHeaders = longestChain.slice(-(totalHeadersCount - syncedHeadersCount));
 
       chainStore.updateHeadersMetadata(newHeaders, newLastSyncedHeaderHeight);
@@ -291,10 +292,9 @@ class BlockHeadersSyncWorker extends Worker {
       const walletStore = this.storage.getDefaultWalletStore();
 
       if (!newHeaders || !newHeaders.length) {
-        this.parentEvents.emit(
-          'error',
-          new Error(`No new headers received for batch at height ${batchHeadHeight}`),
-        );
+        const error = new Error(`No new headers received for batch at height ${batchHeadHeight}`);
+        this.parentEvents.emit('error', error);
+        logger.debug('[BlockHeadersSyncWorker] Error handling continuous chain update:', error);
         return;
       }
 
@@ -306,11 +306,8 @@ class BlockHeadersSyncWorker extends Worker {
         return;
       } if (newChainHeight < blockHeight) {
         const error = new Error(`New chain height ${newChainHeight} is less than latest height ${blockHeight}`);
-        this.parentEvents.emit(
-          'error',
-          error,
-        );
-        logger.debug('[BlockHeadersSyncWorker] Error handling continuous chain update', error.message);
+        this.parentEvents.emit('error', error);
+        logger.debug('[BlockHeadersSyncWorker] Error handling continuous chain update:', error);
         return;
       }
 
