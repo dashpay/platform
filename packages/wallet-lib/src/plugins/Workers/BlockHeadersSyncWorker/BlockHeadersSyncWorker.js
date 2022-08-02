@@ -6,7 +6,7 @@ const EVENTS = require('../../../EVENTS');
 
 const PROGRESS_UPDATE_INTERVAL = 1000;
 
-const MIN_HEADERS_TO_KEEP = 100;
+const MIN_HEADERS_TO_KEEP = 2;
 const MAX_HEADERS_TO_KEEP = 5000;
 
 const STATES = {
@@ -219,7 +219,7 @@ class BlockHeadersSyncWorker extends Worker {
     } = (this.storage.application.syncOptions || {});
 
     if (skipSynchronization) {
-      logger.debug(`[BlockHeadersSyncWorker] Wallet created from a new mnemonic. Sync only last ${MAX_HEADERS_TO_KEEP} blocks.`);
+      logger.debug(`[BlockHeadersSyncWorker] Wallet created from a new mnemonic. Sync only last ${this.maxHeadersToKeep} blocks.`);
       const syncFrom = bestBlockHeight - this.maxHeadersToKeep;
       return syncFrom < 1 ? 1 : syncFrom;
     }
@@ -261,7 +261,7 @@ class BlockHeadersSyncWorker extends Worker {
     console.log(`Chain update: ${syncedHeadersCount}/${totalHeadersCount}`);
     if (syncedHeadersCount < totalHeadersCount) {
       // Update headers in the store
-      chainStore.state.blockHeaders = longestChain.slice(-MAX_HEADERS_TO_KEEP);
+      chainStore.state.blockHeaders = longestChain.slice(-this.maxHeadersToKeep);
 
       const newLastSyncedHeaderHeight = totalHeadersCount - 1;
 
@@ -279,46 +279,57 @@ class BlockHeadersSyncWorker extends Worker {
 
   async continuousChainUpdateHandler(newHeaders, batchHeadHeight) {
     try {
-      const chainStore = this.storage.getChainStore(this.network.toString());
-      const walletStore = this.storage.getWalletStore(this.walletId);
+      const chainStore = this.storage.getDefaultChainStore();
+      const walletStore = this.storage.getDefaultWalletStore();
 
-      let newChainHeight = batchHeadHeight;
-      if (newHeaders.length > 1) {
-        newChainHeight += newHeaders.length - 1;
+      if (!newHeaders || !newHeaders.length) {
+        this.parentEvents.emit(
+          'error',
+          new Error(`No new headers received for batch at height ${batchHeadHeight}`),
+        );
+        return;
       }
+
+      const newChainHeight = batchHeadHeight + newHeaders.length - 1;
 
       const { blockHeight } = chainStore.state;
       // Ignore height overlap in case of the stream reconnected
       if (newChainHeight === blockHeight) {
         return;
       } if (newChainHeight < blockHeight) {
-        this.parentEvents.emit(new Error(`New chain height ${newChainHeight} is less than latest height ${blockHeight}`));
+        const error = new Error(`New chain height ${newChainHeight} is less than latest height ${blockHeight}`);
+        this.parentEvents.emit(
+          'error',
+          error,
+        );
+        logger.debug(error);
         return;
       }
 
       const rawBlock = await this.transport.getBlockByHeight(newChainHeight);
       const block = new Block(rawBlock);
 
+      const { blockHeadersProvider: { spvChain } } = this.transport.client;
+      const longestChain = spvChain.getLongestChain({ withPruned: true });
+
       // TODO: do we really need it having in mind that wallet holds lastKnownBlock?
-      chainStore.state.blockHeight = newChainHeight;
-      walletStore.updateLastKnownBlock(newChainHeight);
+      chainStore.updateChainHeight(newChainHeight);
       chainStore.updateLastSyncedHeaderHeight(newChainHeight);
+      chainStore.setBlockHeaders(longestChain.slice(-this.maxHeadersToKeep));
+      walletStore.updateLastKnownBlock(newChainHeight);
+
       this.parentEvents.emit(EVENTS.BLOCKHEIGHT_CHANGED, newChainHeight);
       this.parentEvents.emit(EVENTS.BLOCK, block, newChainHeight);
-      logger.debug(`BlockHeadersSyncWorker - setting chain height ${newChainHeight}`);
 
-      const { blockHeadersProvider: { spvChain } } = this.transport.client;
-      const { prunedHeaders, orphanChunks } = spvChain;
-      const longestChain = spvChain.getLongestChain();
+      const { orphanChunks } = spvChain;
       const totalOrphans = orphanChunks.reduce((sum, chunk) => sum + chunk.length, 0);
-      const totalChainLength = prunedHeaders.length + longestChain.length + totalOrphans;
+      const totalChainLength = longestChain.length + totalOrphans;
+      logger.debug(`[BlockHeadersSyncWorker] Chain height update: ${newChainHeight}, Headers added: ${newHeaders.length}, Total length: ${totalChainLength}`);
+      logger.debug(`[--------------------->] Longest: ${longestChain.length}, Orphans: ${totalOrphans}`);
 
-      console.log(`[BlockHeadersSyncWorker] Chain height update: ${newChainHeight}, Headers added: ${newHeaders.length}, Total length: ${totalChainLength}`);
-      console.log(`[--------------------->] Longest: ${longestChain.length}, Pruned: ${prunedHeaders.length}. Orphans: ${totalOrphans}`);
-      // TODO: implement with pruning in mind
-      // this.storage.scheduleStateSave();
+      this.storage.scheduleStateSave();
     } catch (e) {
-      console.log(e);
+      logger.debug(e);
       this.parentEvents.emit('error', e);
     }
   }

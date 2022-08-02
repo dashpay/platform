@@ -2,6 +2,7 @@
 
 const EventEmitter = require('events');
 const DAPIClient = require('@dashevo/dapi-client');
+const { Block } = require('@dashevo/dashcore-lib');
 const { expect } = require('chai');
 
 const { BlockHeadersProvider } = DAPIClient;
@@ -10,23 +11,40 @@ const BlockHeadersSyncWorker = require('./BlockHeadersSyncWorker');
 
 const { waitOneTick } = require('../../../test/utils');
 
+const EVENTS = require('../../../EVENTS');
+
 describe('BlockHeadersSyncWorker', () => {
   let blockHeadersSyncWorker;
   const chainHeight = 1000;
+  const spvChainHeaders = ['0x00000001', '0x00000002', '0x00000003', '0x00000004', '0x00000005'];
 
   const createBlockHeadersSyncWorker = (sinon) => {
     const worker = new BlockHeadersSyncWorker({
       executeOnStart: false,
+      maxHeadersToKeep: 3,
     });
 
     const blockHeadersProvider = new EventEmitter();
-    blockHeadersProvider.readHistorical = sinon.stub();
-    blockHeadersProvider.startContinuousSync = sinon.stub();
+    blockHeadersProvider.readHistorical = sinon.spy();
+    blockHeadersProvider.startContinuousSync = sinon.spy();
     blockHeadersProvider.stop = () => {
       blockHeadersProvider.emit(BlockHeadersProvider.EVENTS.STOPPED);
     };
     blockHeadersProvider.spvChain = {
-      getLongestChain: sinon.stub().returns([]),
+      getLongestChain() {
+        if (!this.longestChain) {
+          this.longestChain = spvChainHeaders;
+        }
+
+        return this.longestChain;
+      },
+      addHeaders(headers) {
+        if (!this.longestChain) {
+          this.longestChain = spvChainHeaders;
+        }
+
+        this.longestChain = [...this.longestChain, ...headers];
+      },
       orphanChunks: [],
       prunedHeaders: [],
     };
@@ -39,16 +57,45 @@ describe('BlockHeadersSyncWorker', () => {
       client: {
         blockHeadersProvider,
       },
+      getBlockByHeight() {
+        return Block.fromObject({
+          header: {
+            prevHash: Buffer.alloc(32),
+            time: 99999999,
+            merkleRoot: Buffer.alloc(32),
+          },
+          transactions: [],
+        });
+      },
     };
+    worker.parentEvents = new EventEmitter();
+    sinon.spy(worker.parentEvents, 'emit');
+    sinon.spy(worker.transport, 'getBlockByHeight');
 
     worker.storage = {
       application: {},
+      scheduleStateSave: sinon.spy(),
+      getDefaultWalletStore() {
+        if (!this.defaultWalletStore) {
+          this.defaultWalletStore = {
+            state: {
+              lastKnownBlock: null,
+            },
+            updateLastKnownBlock: sinon.spy(),
+          };
+        }
+
+        return this.defaultWalletStore;
+      },
       getDefaultChainStore() {
         if (!this.defaultChainStore) {
           this.defaultChainStore = {
             state: {
               blockHeight: chainHeight,
             },
+            updateLastSyncedHeaderHeight: sinon.spy(),
+            updateChainHeight: sinon.spy(),
+            setBlockHeaders: sinon.spy(),
           };
         }
         return this.defaultChainStore;
@@ -342,6 +389,148 @@ describe('BlockHeadersSyncWorker', () => {
       await blockHeadersSyncWorker.execute();
       expect(blockHeadersProvider.startContinuousSync.secondCall)
         .to.have.been.calledWith(1200);
+    });
+  });
+
+  describe('#continuousChainUpdateHandler', () => {
+    beforeEach(function beforeEach() {
+      blockHeadersSyncWorker = createBlockHeadersSyncWorker(this.sinon);
+    });
+
+    it('should update chain height with a single header', async () => {
+      const chainStore = blockHeadersSyncWorker.storage.getDefaultChainStore();
+      const walletStore = blockHeadersSyncWorker.storage.getDefaultWalletStore();
+      const { blockHeadersProvider: { spvChain } } = blockHeadersSyncWorker.transport.client;
+
+      const headers = ['0x10000006'];
+      const longestChain = spvChain.getLongestChain();
+      longestChain.push(headers[0]);
+      const batchHeadHeight = 1010;
+      await blockHeadersSyncWorker.continuousChainUpdateHandler(
+        headers,
+        1010,
+      );
+
+      expect(chainStore.updateChainHeight)
+        .to.have.been.calledWith(batchHeadHeight);
+      expect(walletStore.updateLastKnownBlock)
+        .to.have.been.calledWith(batchHeadHeight);
+      expect(chainStore.updateLastSyncedHeaderHeight)
+        .to.have.been.calledWith(batchHeadHeight);
+
+      expect(chainStore.setBlockHeaders)
+        .to.have.been.calledWith(longestChain.slice(-3));
+      expect(blockHeadersSyncWorker.storage.scheduleStateSave)
+        .to.have.been.called;
+    });
+
+    it('should update chain height with an array of headers', async () => {
+      const chainStore = blockHeadersSyncWorker.storage.getDefaultChainStore();
+      const walletStore = blockHeadersSyncWorker.storage.getDefaultWalletStore();
+
+      const batchHeadHeight = 1010;
+      const headers = ['0x10000006', '0x10000007', '0x10000008'];
+      const {
+        blockHeadersProvider: {
+          spvChain,
+        },
+      } = blockHeadersSyncWorker.transport.client;
+      spvChain.addHeaders(headers);
+
+      await blockHeadersSyncWorker.continuousChainUpdateHandler(
+        headers,
+        1010,
+      );
+
+      const newHeight = batchHeadHeight + headers.length - 1;
+      expect(chainStore.updateChainHeight)
+        .to.have.been.calledWith(newHeight);
+      expect(walletStore.updateLastKnownBlock)
+        .to.have.been.calledWith(newHeight);
+      expect(chainStore.updateLastSyncedHeaderHeight)
+        .to.have.been.calledWith(newHeight);
+      expect(chainStore.setBlockHeaders)
+        .to.have.been.calledWith(spvChain.getLongestChain().slice(-3));
+      expect(blockHeadersSyncWorker.storage.scheduleStateSave)
+        .to.have.been.called;
+    });
+
+    it('should do nothing if height hasn\'t changed', async () => {
+      const chainStore = blockHeadersSyncWorker.storage.getDefaultChainStore();
+      const walletStore = blockHeadersSyncWorker.storage.getDefaultWalletStore();
+      await blockHeadersSyncWorker.continuousChainUpdateHandler(
+        ['0x10000001', '0x10000002'],
+        999,
+      );
+
+      expect(chainStore.updateChainHeight).to.have.not.been.called;
+      expect(walletStore.updateLastKnownBlock).to.have.not.been.called;
+      expect(chainStore.updateLastSyncedHeaderHeight).to.have.not.been.called;
+      expect(chainStore.setBlockHeaders).to.have.not.been.called;
+      expect(blockHeadersSyncWorker.storage.scheduleStateSave)
+        .to.have.not.been.called;
+    });
+
+    it('should emit error in case headers array is empty', () => {
+      const chainStore = blockHeadersSyncWorker.storage.getDefaultChainStore();
+      const walletStore = blockHeadersSyncWorker.storage.getDefaultWalletStore();
+
+      const batchHeadHeight = 1010;
+      blockHeadersSyncWorker.continuousChainUpdateHandler(
+        [],
+        batchHeadHeight,
+      );
+
+      const { args } = blockHeadersSyncWorker.parentEvents.emit.firstCall;
+      expect(args[0]).to.equal('error');
+      expect(args[1].message)
+        .to.equal(`No new headers received for batch at height ${batchHeadHeight}`);
+
+      expect(chainStore.updateChainHeight).to.have.not.been.called;
+      expect(walletStore.updateLastKnownBlock).to.have.not.been.called;
+      expect(chainStore.updateLastSyncedHeaderHeight).to.have.not.been.called;
+      expect(chainStore.setBlockHeaders).to.have.not.been.called;
+      expect(blockHeadersSyncWorker.storage.scheduleStateSave)
+        .to.have.not.been.called;
+    });
+
+    it('should emit error in case new height is less than current height', () => {
+      const chainStore = blockHeadersSyncWorker.storage.getDefaultChainStore();
+      const walletStore = blockHeadersSyncWorker.storage.getDefaultWalletStore();
+
+      const batchHeadHeight = 900;
+      blockHeadersSyncWorker.continuousChainUpdateHandler(
+        ['0x10000001'],
+        batchHeadHeight,
+      );
+
+      const { args } = blockHeadersSyncWorker.parentEvents.emit.firstCall;
+      expect(args[0]).to.equal('error');
+      expect(args[1].message)
+        .to.equal('New chain height 900 is less than latest height 1000');
+
+      expect(chainStore.updateChainHeight).to.have.not.been.called;
+      expect(walletStore.updateLastKnownBlock).to.have.not.been.called;
+      expect(chainStore.updateLastSyncedHeaderHeight).to.have.not.been.called;
+      expect(chainStore.setBlockHeaders).to.have.not.been.called;
+      expect(blockHeadersSyncWorker.storage.scheduleStateSave)
+        .to.have.not.been.called;
+    });
+
+    it('should emit BLOCK and BLOCKHEIGHT_CHANGED events', async () => {
+      const batchHeadHeight = 1020;
+      await blockHeadersSyncWorker.continuousChainUpdateHandler(
+        ['0x10000001'],
+        batchHeadHeight,
+      );
+
+      const { returnValue: block } = blockHeadersSyncWorker.transport
+        .getBlockByHeight.firstCall;
+
+      expect(blockHeadersSyncWorker.parentEvents.emit)
+        .to.have.been.calledWith(EVENTS.BLOCKHEIGHT_CHANGED, batchHeadHeight);
+      expect(blockHeadersSyncWorker.parentEvents.emit)
+        .to.have.been.calledWith(EVENTS.BLOCK, block, batchHeadHeight);
     });
   });
 });

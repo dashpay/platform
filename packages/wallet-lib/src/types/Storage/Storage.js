@@ -44,6 +44,10 @@ class Storage extends EventEmitter {
   getDefaultChainStore() {
     return this.getChainStore(this.currentNetwork);
   }
+
+  getDefaultWalletStore() {
+    return this.getWalletStore(this.currentWalletId);
+  }
 }
 
 Storage.prototype.configure = require('./methods/configure');
