@@ -206,13 +206,13 @@ pub fn cbor_inner_size_value(document_type: &[(Value, Value)], key: &str) -> Opt
     }
 }
 
-pub fn btree_map_inner_size_value(
+pub fn btree_map_inner_u16_value(
     document_type: &BTreeMap<String, &Value>,
     key: &str,
-) -> Option<usize> {
+) -> Option<u16> {
     let key_value = document_type.get(key)?;
     if let Value::Integer(integer) = key_value {
-        let value_as_usize: Result<usize, StructureError> = (*integer)
+        let value_as_usize: Result<u16, StructureError> = (*integer)
             .try_into()
             .map_err(|_| StructureError::ValueWrongType("expected u8 value"));
         match value_as_usize {
