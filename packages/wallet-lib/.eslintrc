@@ -4,5 +4,12 @@
     "node": true,
     "mocha": true
   },
-  "ignorePatterns": ["**/*.spec.js"]
+  "ignorePatterns": [
+    "**/*.spec.js",
+    "fixtures",
+    "dist",
+    "tests/*",
+    "!tests/integration",
+    "!tests/integration/plugins/Workers/BlockHeadersSyncWorker.test.js"
+  ]
 }

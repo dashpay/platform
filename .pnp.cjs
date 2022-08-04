@@ -2841,6 +2841,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           "packageDependencies": [
             ["@dashevo/wallet-lib", "workspace:packages/wallet-lib"],
             ["@dashevo/dapi-client", "workspace:packages/js-dapi-client"],
+            ["@dashevo/dash-spv", "workspace:packages/dash-spv"],
             ["@dashevo/dashcore-lib", "npm:0.19.40"],
             ["@dashevo/dpp", "workspace:packages/js-dpp"],
             ["@dashevo/grpc-common", "workspace:packages/js-grpc-common"],

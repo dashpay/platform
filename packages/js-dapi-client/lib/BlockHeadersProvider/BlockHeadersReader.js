@@ -109,7 +109,7 @@ class BlockHeadersReader extends EventEmitter {
     const actualBatchSize = Math.ceil(totalAmount / numStreams);
     this.streamsStats.batchSize = actualBatchSize;
     // TODO: test
-    console.log('Num streams', numStreams, actualBatchSize);
+    // console.log('Num streams', numStreams, actualBatchSize);
     for (let batchIndex = 0; batchIndex < numStreams; batchIndex += 1) {
       const startingHeight = (batchIndex * actualBatchSize) + fromBlockHeight;
       const count = Math.min(actualBatchSize, toBlockHeight - startingHeight + 1);

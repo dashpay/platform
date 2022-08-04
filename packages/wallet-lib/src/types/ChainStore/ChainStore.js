@@ -62,9 +62,9 @@ class ChainStore extends EventEmitter {
     return this.state.transactions;
   }
 
-  setBlockHeaders(headers) {
-    this.state.blockHeaders = headers;
-  }
+  // setBlockHeight(newHeight) {
+  //   if ()
+  // }
 
   // TODO: write tests
   updateHeadersMetadata(headers, tipHeight) {
@@ -89,6 +89,18 @@ class ChainStore extends EventEmitter {
     }
 
     this.state.lastSyncedHeaderHeight = height;
+  }
+
+  set chainHeight(height) {
+    if (height < this.state.blockHeight) {
+      throw new Error(`Chain height value ${height} is lower than current value ${this.state.blockHeight}`);
+    }
+
+    this.state.blockHeight = height;
+  }
+
+  get chainHeight() {
+    return this.state.chainHeight;
   }
 
   updateChainHeight(height) {
