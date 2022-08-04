@@ -62,9 +62,9 @@ class ChainStore extends EventEmitter {
     return this.state.transactions;
   }
 
-  // setBlockHeight(newHeight) {
-  //   if ()
-  // }
+  setBlockHeaders(headers) {
+    this.state.blockHeaders = headers;
+  }
 
   // TODO: write tests
   updateHeadersMetadata(headers, tipHeight) {

@@ -86,7 +86,7 @@ const SpvChain = class {
         }
         break;
     }
-    this.root.children = [];
+    // this.root.children = [];
     this.setAllBranches();
   }
 
@@ -124,7 +124,7 @@ const SpvChain = class {
       if (node.hash === utils.getCorrectedHash(newHeader.prevHash)) {
         return node;
       }
-      node.children.forEach((c) => { stack.push(c); });
+      // node.children.forEach((c) => { stack.push(c); });
     }
     return null;
   }
@@ -134,13 +134,13 @@ const SpvChain = class {
     this.allBranches = [];
     branch.push(node);
 
-    node.children.forEach((c) => {
-      this.setAllBranches(c, Array.from(branch));
-    });
+    // node.children.forEach((c) => {
+    //   this.setAllBranches(c, Array.from(branch));
+    // });
 
-    if (node.children.length === 0) {
-      this.allBranches.push(branch);
-    }
+    // if (node.children.length === 0) {
+    this.allBranches.push(branch);
+    // }
   }
 
   /** @private */
@@ -173,13 +173,13 @@ const SpvChain = class {
 
   /** @private */
   orphanReconnect() {
-    for (let i = 0; i < this.orphanBlocks.length; i += 1) {
-      const connectionTip = this.findConnection(this.orphanBlocks[i]);
-      if (connectionTip) {
-        connectionTip.children.push(this.orphanBlocks[i]);
-        this.orphanBlocks.splice(i, 1);
-      }
-    }
+    // for (let i = 0; i < this.orphanBlocks.length; i += 1) {
+    // const connectionTip = this.findConnection(this.orphanBlocks[i]);
+    // if (connectionTip) {
+    //   connectionTip.children.push(this.orphanBlocks[i]);
+    //   this.orphanBlocks.splice(i, 1);
+    // }
+    // }
   }
 
   /** @private */
@@ -215,7 +215,7 @@ const SpvChain = class {
   processValidHeader(header) {
     const connection = this.findConnection(header);
     if (connection) {
-      connection.children.push(header);
+      // connection.children.push(header);
       this.orphanReconnect();
     } else {
       this.orphanBlocks.push(header);
@@ -247,13 +247,13 @@ const SpvChain = class {
     if (utils.getCorrectedHash(header.prevHash) !== previousHeader.hash) {
       return false;
     }
-    if (!header.children) {
-      header.children = [];
-    }
-    if (!previousHeader.children) {
-      previousHeader.children = [];
-    }
-    previousHeader.children.push(header);
+    // if (!header.children) {
+    //   header.children = [];
+    // }
+    // if (!previousHeader.children) {
+    //   previousHeader.children = [];
+    // }
+    // previousHeader.children.push(header);
     return true;
   }
   /* eslint-enable no-param-reassign */
@@ -331,7 +331,7 @@ const SpvChain = class {
     const headerNormalised = utils.normalizeHeader(header);
 
     if (this.isValid(headerNormalised, this.getLongestChain())) {
-      headerNormalised.children = [];
+      // headerNormalised.children = [];
       this.processValidHeader(headerNormalised);
       this.setAllBranches();
       this.checkPruneBlocks();

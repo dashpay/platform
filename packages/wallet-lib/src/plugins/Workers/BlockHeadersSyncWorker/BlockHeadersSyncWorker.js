@@ -16,7 +16,7 @@ const STATES = {
 };
 
 class BlockHeadersSyncWorker extends Worker {
-  constructor(options) {
+  constructor(options = {}) {
     super({
       name: 'BlockHeadersSyncWorker',
       executeOnStart: true,

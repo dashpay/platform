@@ -21,11 +21,13 @@ class BlockHeadersStreamMock extends EventEmitter {
     this.removeAllListeners();
   }
 
-  // sendTransactions(transactions) {
-  // this.emit(TxStreamMock.EVENTS.data, new TxStreamDataResponseMock({
-  //   rawTransactions: transactions.map((tx) => tx.toBuffer()),
-  // }));
-  // }
+  sendHeaders(headers) {
+    this.emit(BlockHeadersStreamMock.EVENTS.data, {
+      getBlockHeaders: () => ({
+        getHeadersList: () => headers.map((header) => header.toBuffer()),
+      }),
+    });
+  }
 
   finish() {
     this.emit(BlockHeadersStreamMock.EVENTS.end);

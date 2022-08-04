@@ -14,7 +14,7 @@ const mockBlockHeadersProvider = (sinon, historicalStreams, continuousStream) =>
   let currentStream = 0;
   blockHeadersProvider.setCoreMethods({
     getBlock: sinon.stub(),
-    subscribeToBlockHeadersWithChainLocks: ({ from, count }) => {
+    subscribeToBlockHeadersWithChainLocks: ({ count }) => {
       if (count > 0) {
         const stream = historicalStreams[currentStream];
         currentStream += 1;
