@@ -3,7 +3,7 @@
 
 ### ⚠ BREAKING CHANGES
 
-* **drive:** fees distribution (#458)
+* Blockchain data and state structure are changed and incompatible with previous versions
 
 ### Features
 
