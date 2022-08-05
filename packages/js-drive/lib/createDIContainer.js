@@ -123,6 +123,7 @@ const synchronizeMasternodeIdentitiesFactory = require('./identity/masternode/sy
 const createMasternodeIdentityFactory = require('./identity/masternode/createMasternodeIdentityFactory');
 const handleNewMasternodeFactory = require('./identity/masternode/handleNewMasternodeFactory');
 const handleUpdatedPubKeyOperatorFactory = require('./identity/masternode/handleUpdatedPubKeyOperatorFactory');
+const handleUpdatedVotingAddressFactory = require('./identity/masternode/handleUpdatedVotingAddressFactory');
 const registerSystemDataContractsFactory = require('./abci/handlers/state/registerSystemDataContractsFactory');
 const createRewardShareDocumentFactory = require('./identity/masternode/createRewardShareDocumentFactory');
 const handleRemovedMasternodeFactory = require('./identity/masternode/handleRemovedMasternodeFactory');
@@ -480,6 +481,8 @@ function createDIContainer(options) {
     handleNewMasternode: asFunction(handleNewMasternodeFactory).singleton(),
 
     handleUpdatedPubKeyOperator: asFunction(handleUpdatedPubKeyOperatorFactory).singleton(),
+
+    handleUpdatedVotingAddress: asFunction(handleUpdatedVotingAddressFactory).singleton(),
 
     handleRemovedMasternode: asFunction(handleRemovedMasternodeFactory).singleton(),
 
