@@ -296,7 +296,7 @@ describe('synchronizeMasternodeIdentitiesFactory', () => {
 
   beforeEach(async function beforeEach() {
     coreHeight = 3;
-    firstSyncAppHash = 'd1738f792c89f881246189f3038617dc19e9acdcb31e527fbab8f9033fcd46bb';
+    firstSyncAppHash = '5f1a4135bb406eacb57cc8af9eee9a1dfa815be7c221029b191436102289a82c';
 
     container = await createTestDIContainer();
 
@@ -614,7 +614,7 @@ describe('synchronizeMasternodeIdentitiesFactory', () => {
     expect(result.updatedEntities).to.have.lengthOf(0);
     expect(result.removedEntities).to.have.lengthOf(0);
 
-    await expectDeterministicAppHash('153b6cfd80914d26cf05319a441f23e951e9524261df8a28436658f7a9c43930');
+    await expectDeterministicAppHash('27a0b71e8480c6d2b2f8345b854b91801c94ee4c69ba893e703366f176535f0d');
 
     // New masternode identity should be created
 
@@ -688,7 +688,7 @@ describe('synchronizeMasternodeIdentitiesFactory', () => {
     expect(result.updatedEntities).to.have.lengthOf(0);
     expect(result.removedEntities).to.have.lengthOf(1);
 
-    await expectDeterministicAppHash('efbaeb30c26c3d82cd95890227ac76c9b20af434c5ef9043a924e8eaa86da256');
+    await expectDeterministicAppHash('0b773f2e9435d5ad53c66d059e3f07b36c0925c47dd091ca76bef096f8a190da');
 
     // Masternode identity should stay
 
@@ -746,7 +746,7 @@ describe('synchronizeMasternodeIdentitiesFactory', () => {
     expect(result.updatedEntities).to.have.lengthOf(0);
     expect(result.removedEntities).to.have.lengthOf(1);
 
-    await expectDeterministicAppHash('efbaeb30c26c3d82cd95890227ac76c9b20af434c5ef9043a924e8eaa86da256');
+    await expectDeterministicAppHash('0b773f2e9435d5ad53c66d059e3f07b36c0925c47dd091ca76bef096f8a190da');
 
     const invalidMasternodeIdentifier = Identifier.from(
       Buffer.from(invalidSmlEntry.proRegTxHash, 'hex'),
@@ -795,7 +795,7 @@ describe('synchronizeMasternodeIdentitiesFactory', () => {
     expect(result.updatedEntities).to.have.lengthOf(3);
     expect(result.removedEntities).to.have.lengthOf(0);
 
-    await expectDeterministicAppHash('9366fdf06d9fe78ac8dd7fe01854a8da088ce978ff147caa76c9e92d010225f2');
+    await expectDeterministicAppHash('b74ced8562632f600bdd1f7db2ebd9eee38ef448f78431103bb0309fe789ed00');
 
     // Masternode identity should stay
 

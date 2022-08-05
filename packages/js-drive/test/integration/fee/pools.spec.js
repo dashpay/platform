@@ -81,24 +81,24 @@ describe('Fee Pools', () => {
 
     const genesisTime = moment();
 
-    let previousBlockTime;
+    let previousBlockTimeMs;
     for (let day = 1; day <= 21; day++) {
       const blockHeight = day;
-      const blockTime = genesisTime.clone()
+      const blockTimeMs = genesisTime.clone()
         .add(day - 1, 'days')
         .valueOf();
 
       const blockBeginRequest = {
         blockHeight,
-        blockTime,
+        blockTimeMs,
         proposerProTxHash: mnIdentity.getId(),
       };
 
-      if (previousBlockTime) {
-        blockBeginRequest.previousBlockTime = previousBlockTime;
+      if (previousBlockTimeMs) {
+        blockBeginRequest.previousBlockTimeMs = previousBlockTimeMs;
       }
 
-      previousBlockTime = blockTime;
+      previousBlockTimeMs = blockTimeMs;
 
       await rsDrive.getAbci().blockBegin(blockBeginRequest);
 
@@ -106,7 +106,6 @@ describe('Fee Pools', () => {
         fees: {
           processingFees: 10000,
           storageFees: 10000,
-          feeMultiplier: 1,
         },
       };
 
@@ -119,7 +118,7 @@ describe('Fee Pools', () => {
     const fetchedMnIdentity = fetchedMnIdentityResult.getValue();
     const fetchedShareIdentity = fetchedShareIdentityResult.getValue();
 
-    expect(fetchedMnIdentity.getBalance()).to.equal(180962);
-    expect(fetchedShareIdentity.getBalance()).to.equal(9533);
+    expect(fetchedMnIdentity.getBalance()).to.equal(180510);
+    expect(fetchedShareIdentity.getBalance()).to.equal(9510);
   });
 });
