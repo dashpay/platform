@@ -3,11 +3,11 @@
 
 Parameters: 
 
-| parameters        | type    | required            | Description                                                         |  
-|-------------------|---------|------------------	|---------------------------------------------------------------------|
+| parameters        | type    | required            | Description                                                        |  
+|-------------------|---------|------------------	|--------------------------------------------------------------------|
 | **dotLocator**    | string  | yes                 | Field of a specific application, under the form `appName.fieldName` |
-| **identity**      | Identity| yes                 | A valid [registered identity](../platform/identities/register.md)   |
-| **docOpts**       | Object  | yes                 | A valid data that match the data contract structure                 |
+| **identity**      | Identity| yes                 | A valid [registered identity](../identities/register.md)   |
+| **docOpts**       | Object  | yes                 | A valid data that match the data contract structure                |
 
 **Example**: 
 ```js
@@ -21,6 +21,6 @@ const helloWorldDocument = await client.platform.documents.create(
      { message: 'Hello World'},
   );
 ```
-**Note**: When your document is created, it will only exist locally, use the [broadcast](../platform/documents/broadcast.md) method to register it.  
+**Note**: When your document is created, it will only exist locally, use the [broadcast](../documents/broadcast.md) method to register it.  
 
 Returns: Document
