@@ -1,16 +1,8 @@
-const {
-  tendermint: {
-    abci: {
-      ResponseBeginBlock,
-    },
-  },
-} = require('@dashevo/abci/types');
-
-const NotSupportedNetworkProtocolVersionError = require('./errors/NotSupportedNetworkProtocolVersionError');
-const NetworkProtocolVersionIsNotSetError = require('./errors/NetworkProtocolVersionIsNotSetError');
+const NotSupportedNetworkProtocolVersionError = require('../errors/NotSupportedNetworkProtocolVersionError');
+const NetworkProtocolVersionIsNotSetError = require('../errors/NetworkProtocolVersionIsNotSetError');
 
 /**
- * Begin Block ABCI Handler
+ * Begin Block ABCI
  *
  * @param {GroveDBStore} groveDBStore
  * @param {BlockExecutionContext} blockExecutionContext
@@ -21,12 +13,10 @@ const NetworkProtocolVersionIsNotSetError = require('./errors/NetworkProtocolVer
  * @param {updateSimplifiedMasternodeList} updateSimplifiedMasternodeList
  * @param {waitForChainLockedHeight} waitForChainLockedHeight
  * @param {synchronizeMasternodeIdentities} synchronizeMasternodeIdentities
- * @param {BaseLogger} logger
- * @param {ExecutionTimer} executionTimer
  *
- * @return {beginBlockHandler}
+ * @return {beginBlock}
  */
-function beginBlockHandlerFactory(
+function beginBlockFactory(
   groveDBStore,
   blockExecutionContext,
   blockExecutionContextStack,
@@ -36,36 +26,28 @@ function beginBlockHandlerFactory(
   updateSimplifiedMasternodeList,
   waitForChainLockedHeight,
   synchronizeMasternodeIdentities,
-  logger,
-  executionTimer,
 ) {
   /**
-   * @typedef beginBlockHandler
+   * @typedef beginBlock
+   * @param {Object} request
+   * @param {ILastCommitInfo} [request.lastCommitInfo]
+   * @param {Long} [request.height]
+   * @param {number} [request.coreChainLockedHeight]
+   * @param {IConsensus} [request.version]
+   * @param {ITimestamp} [request.time]
+   * @param {BaseLogger} logger
    *
-   * @param {abci.RequestBeginBlock} request
-   * @return {Promise<abci.ResponseBeginBlock>}
+   * @return {Promise<void>}
    */
-  async function beginBlockHandler(request) {
-    const { header, lastCommitInfo } = request;
-
+  async function beginBlock(request, logger) {
     const {
-      coreChainLockedHeight,
-      height,
-      version,
-    } = header;
-
-    // Start block execution timer
-    executionTimer.clearTimer('blockExecution');
-
-    executionTimer.startTimer('blockExecution');
+      lastCommitInfo, height, coreChainLockedHeight, version, time,
+    } = request;
 
     const consensusLogger = logger.child({
       height: height.toString(),
-      abciMethod: 'beginBlock',
+      abciMethod: 'finalizeBlock#beginBlock',
     });
-
-    consensusLogger.debug('BeginBlock ABCI method requested');
-    consensusLogger.trace({ abciRequest: request });
 
     // Validate protocol version
 
@@ -89,23 +71,25 @@ function beginBlockHandlerFactory(
     // in case previous block execution failed in process
     // and not committed. We need to make sure
     // previous context properly reset.
-    const contextHeader = blockExecutionContext.getHeader();
-    if (contextHeader && contextHeader.height.equals(height)) {
+    const contextHeight = blockExecutionContext.getHeight();
+    if (contextHeight && contextHeight.equals(height)) {
       // Remove failed block context from the stack
       const latestContext = blockExecutionContextStack.getLatest();
-      const latestContextHeader = latestContext.getHeader();
+      const latestContextHeight = latestContext.getHeight();
 
-      if (latestContextHeader.height.equals(height)) {
+      if (latestContextHeight.equals(height)) {
         blockExecutionContextStack.removeLatest();
       }
     }
 
     blockExecutionContext.reset();
 
+    // Set block execution context params
     blockExecutionContext.setConsensusLogger(consensusLogger);
-
-    blockExecutionContext.setHeader(header);
-
+    blockExecutionContext.setHeight(height);
+    blockExecutionContext.setVersion(version);
+    blockExecutionContext.setTime(time);
+    blockExecutionContext.setCoreChainLockedHeight(coreChainLockedHeight);
     blockExecutionContext.setLastCommitInfo(lastCommitInfo);
 
     // Set protocol version to DPP
@@ -149,11 +133,9 @@ function beginBlockHandlerFactory(
     }
 
     consensusLogger.info(`Block begin #${height}`);
-
-    return new ResponseBeginBlock();
   }
 
-  return beginBlockHandler;
+  return beginBlock;
 }
 
-module.exports = beginBlockHandlerFactory;
+module.exports = beginBlockFactory;

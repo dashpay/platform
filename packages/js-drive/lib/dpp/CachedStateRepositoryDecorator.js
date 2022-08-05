@@ -235,12 +235,30 @@ class CachedStateRepositoryDecorator {
   }
 
   /**
-   * Fetch the latest platform block header
+   * Fetch the latest platform block height
    *
-   * @return {Promise<IHeader>}
+   * @return {Promise<Long>}
    */
-  async fetchLatestPlatformBlockHeader() {
-    return this.stateRepository.fetchLatestPlatformBlockHeader();
+  async fetchLatestPlatformBlockHeight() {
+    return this.stateRepository.fetchLatestPlatformBlockHeight();
+  }
+
+  /**
+   * Fetch the latest platform block time
+   *
+   * @return {Promise<protobuf.Timestamp>}
+   */
+  async fetchLatestPlatformBlockTime() {
+    return this.stateRepository.fetchLatestPlatformBlockTime();
+  }
+
+  /**
+   * Fetch the latest platform core chainlocked height
+   *
+   * @return {Promise<number>}
+   */
+  async fetchLatestPlatformCoreChainLockedHeight() {
+    return this.stateRepository.fetchLatestPlatformCoreChainLockedHeight();
   }
 
   /**

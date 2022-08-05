@@ -1,11 +1,3 @@
-const {
-  tendermint: {
-    abci: {
-      ResponseDeliverTx,
-    },
-  },
-} = require('@dashevo/abci/types');
-
 const crypto = require('crypto');
 
 const stateTransitionTypes = require('@dashevo/dpp/lib/stateTransition/stateTransitionTypes');
@@ -15,10 +7,10 @@ const AbstractDocumentTransition = require(
 
 const calculateOperationFees = require('@dashevo/dpp/lib/stateTransition/fee/calculateOperationFees');
 
-const DPPValidationAbciError = require('../errors/DPPValidationAbciError');
+const DPPValidationAbciError = require('../../errors/DPPValidationAbciError');
 
-const NegativeBalanceError = require('./errors/NegativeBalanceError');
-const PredictedFeeLowerThanActualError = require('./errors/PredictedFeeLowerThanActualError');
+const NegativeBalanceError = require('../errors/NegativeBalanceError');
+const PredictedFeeLowerThanActualError = require('../errors/PredictedFeeLowerThanActualError');
 
 const DOCUMENT_ACTION_DESCRIPTIONS = {
   [AbstractDocumentTransition.ACTIONS.CREATE]: 'created',
@@ -31,34 +23,33 @@ const DATA_CONTRACT_ACTION_DESCRIPTIONS = {
   [stateTransitionTypes.DATA_CONTRACT_UPDATE]: 'updated',
 };
 
-const TIMERS = require('./timers');
+const TIMERS = require('../timers');
 
 /**
  * @param {unserializeStateTransition} transactionalUnserializeStateTransition
  * @param {DashPlatformProtocol} transactionalDpp
  * @param {BlockExecutionContext} blockExecutionContext
- * @param {BaseLogger} logger
  * @param {ExecutionTimer} executionTimer
  *
- * @return {deliverTxHandler}
+ * @return {deliverTx}
  */
-function deliverTxHandlerFactory(
+function deliverTxFactory(
   transactionalUnserializeStateTransition,
   transactionalDpp,
   blockExecutionContext,
-  logger,
   executionTimer,
 ) {
   /**
-   * DeliverTx ABCI Handler
+   * DeliverTx ABCI
    *
-   * @typedef deliverTxHandler
+   * @typedef deliverTx
    *
-   * @param {abci.RequestDeliverTx} request
-   * @return {Promise<abci.ResponseDeliverTx>}
+   * @param {Buffer} stateTransitionByteArray
+   * @param {BaseLogger} logger
+   * @return {Promise<{ code: number }>}
    */
-  async function deliverTxHandler({ tx: stateTransitionByteArray }) {
-    const { height: blockHeight } = blockExecutionContext.getHeader();
+  async function deliverTx(stateTransitionByteArray, logger) {
+    const blockHeight = blockExecutionContext.getHeight();
 
     // Start execution timer
 
@@ -81,7 +72,7 @@ function deliverTxHandlerFactory(
     const consensusLogger = logger.child({
       height: blockHeight.toString(),
       txId: stHash,
-      abciMethod: 'deliverTx',
+      abciMethod: 'finalizeBlock#deliverTx',
     });
 
     blockExecutionContext.setConsensusLogger(consensusLogger);
@@ -282,10 +273,12 @@ function deliverTxHandlerFactory(
       `${stateTransition.constructor.name} execution took ${deliverTxTiming} seconds and cost ${actualStateTransitionFee} credits`,
     );
 
-    return new ResponseDeliverTx();
+    return {
+      code: 0,
+    };
   }
 
-  return deliverTxHandler;
+  return deliverTx;
 }
 
-module.exports = deliverTxHandlerFactory;
+module.exports = deliverTxFactory;

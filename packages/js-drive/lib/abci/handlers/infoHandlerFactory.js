@@ -78,10 +78,8 @@ function infoHandlerFactory(
     let lastCoreChainLockedHeight = 0;
 
     if (latestContext) {
-      const lastHeader = blockExecutionContext.getHeader();
-
-      lastHeight = lastHeader.height;
-      lastCoreChainLockedHeight = lastHeader.coreChainLockedHeight;
+      lastHeight = blockExecutionContext.getHeight();
+      lastCoreChainLockedHeight = blockExecutionContext.getCoreChainLockedHeight();
     }
 
     contextLogger = contextLogger.child({

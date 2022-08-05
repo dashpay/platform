@@ -29,7 +29,8 @@ describe('createQueryResponseFactory', () => {
       coreChainLockedHeight: 1,
     };
 
-    signedBlockExecutionContext.getHeader.returns(metadata);
+    signedBlockExecutionContext.getHeight.returns(metadata.height);
+    signedBlockExecutionContext.getCoreChainLockedHeight.returns(metadata.coreChainLockedHeight);
 
     lastCommitInfo = {
       quorumHash: Buffer.alloc(12).fill(1),
