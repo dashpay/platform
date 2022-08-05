@@ -1,3 +1,19 @@
+## [0.23.0-dev.5](https://github.com/dashevo/platform/compare/v0.23.0-dev.4...v0.23.0-dev.5) (2022-08-05)
+
+
+### ⚠ BREAKING CHANGES
+
+* **drive:** fees distribution (#458)
+
+### Features
+
+* **drive:** fees distribution ([#458](https://github.com/dashevo/platform/issues/458))
+
+
+### Miscellaneous Chores
+
+* various linter fixes across packages ([#465](https://github.com/dashevo/platform/issues/465))
+
 ## [0.23.0-dev.4](https://github.com/dashevo/platform/compare/v0.23.0-dev.3...v0.23.0-dev.4) (2022-07-12)
 
 
