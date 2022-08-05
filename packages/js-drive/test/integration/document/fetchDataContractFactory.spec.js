@@ -22,8 +22,11 @@ describe('fetchDataContractFactory', () => {
 
     contractId = dataContract.getId();
 
-    const createInitialStateStructure = container.resolve('createInitialStateStructure');
-    await createInitialStateStructure();
+    /**
+     * @type {Drive}
+     */
+    const rsDrive = container.resolve('rsDrive');
+    await rsDrive.createInitialStateStructure();
 
     await dataContractRepository.store(dataContract);
 

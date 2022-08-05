@@ -21,10 +21,6 @@ describe('SpentAssetLockTransactionsRepository', () => {
     repository = new SpentAssetLockTransactionsRepository(store);
 
     await store.createTree([], SpentAssetLockTransactionsRepository.TREE_PATH[0]);
-    await store.createTree(
-      [SpentAssetLockTransactionsRepository.TREE_PATH[0]],
-      SpentAssetLockTransactionsRepository.TREE_PATH[1],
-    );
   });
 
   afterEach(async () => {

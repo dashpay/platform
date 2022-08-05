@@ -18,8 +18,6 @@ const { version: driveVersion } = require('../../../package.json');
  * @param {updateSimplifiedMasternodeList} updateSimplifiedMasternodeList
  * @param {BaseLogger} logger
  * @param {GroveDBStore} groveDBStore
- * @param {CreditsDistributionPoolRepository} creditsDistributionPoolRepository
- * @param {CreditsDistributionPool} creditsDistributionPool
  * @param {BlockExecutionContextStackRepository} blockExecutionContextStackRepository
  * @return {infoHandler}
  */
@@ -31,8 +29,6 @@ function infoHandlerFactory(
   updateSimplifiedMasternodeList,
   logger,
   groveDBStore,
-  creditsDistributionPoolRepository,
-  creditsDistributionPool,
 ) {
   /**
    * Info ABCI handler
@@ -60,16 +56,6 @@ function infoHandlerFactory(
 
     if (latestContext) {
       blockExecutionContext.populate(blockExecutionContextStack.getLatest());
-    }
-
-    // Initialize Credits Distribution Pool
-
-    if (latestContext) {
-      const fetchedCreditsDistributionPoolResult = await creditsDistributionPoolRepository.fetch();
-
-      const fetchedCreditsDistributionPool = fetchedCreditsDistributionPoolResult.getValue();
-
-      creditsDistributionPool.populate(fetchedCreditsDistributionPool.toJSON());
     }
 
     // Initialize current heights

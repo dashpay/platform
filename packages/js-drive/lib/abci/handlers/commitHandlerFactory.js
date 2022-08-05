@@ -9,8 +9,6 @@ const ReadOperation = require('@dashevo/dpp/lib/stateTransition/fee/operations/R
 const DataContractCacheItem = require('../../dataContract/DataContractCacheItem');
 
 /**
- * @param {CreditsDistributionPool} creditsDistributionPool
- * @param {CreditsDistributionPoolRepository} creditsDistributionPoolRepository
  * @param {BlockExecutionContext} blockExecutionContext
  * @param {BlockExecutionContextStack} blockExecutionContextStack
  * @param {BlockExecutionContextStackRepository} blockExecutionContextStackRepository
@@ -23,8 +21,6 @@ const DataContractCacheItem = require('../../dataContract/DataContractCacheItem'
  * @return {commitHandler}
  */
 function commitHandlerFactory(
-  creditsDistributionPool,
-  creditsDistributionPoolRepository,
   blockExecutionContext,
   blockExecutionContextStack,
   blockExecutionContextStackRepository,
@@ -52,18 +48,6 @@ function commitHandlerFactory(
     blockExecutionContext.setConsensusLogger(consensusLogger);
 
     consensusLogger.debug('Commit ABCI method requested');
-
-    // Store ST fees from the block to distribution pool
-    creditsDistributionPool.incrementAmount(
-      blockExecutionContext.getCumulativeFees(),
-    );
-
-    await creditsDistributionPoolRepository.store(
-      creditsDistributionPool,
-      {
-        useTransaction: true,
-      },
-    );
 
     // Store block execution context
     blockExecutionContextStack.add(blockExecutionContext);

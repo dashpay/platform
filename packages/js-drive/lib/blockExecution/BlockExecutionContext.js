@@ -16,7 +16,8 @@ const Long = require('long');
 class BlockExecutionContext {
   constructor() {
     this.dataContracts = [];
-    this.cumulativeFees = 0;
+    this.cumulativeProcessingFee = 0;
+    this.cumulativeStorageFee = 0;
     this.header = null;
     this.lastCommitInfo = null;
     this.validTxs = 0;
@@ -58,8 +59,15 @@ class BlockExecutionContext {
   /**
    * @return {number}
    */
-  getCumulativeFees() {
-    return this.cumulativeFees;
+  getCumulativeStorageFee() {
+    return this.cumulativeStorageFee;
+  }
+
+  /**
+   * @return {number}
+   */
+  getCumulativeProcessingFee() {
+    return this.cumulativeProcessingFee;
   }
 
   /**
@@ -67,8 +75,19 @@ class BlockExecutionContext {
    *
    * @param {number} fee
    */
-  incrementCumulativeFees(fee) {
-    this.cumulativeFees += fee;
+  incrementCumulativeStorageFee(fee) {
+    this.cumulativeStorageFee += fee;
+
+    return this;
+  }
+
+  /**
+   * Increment cumulative fees
+   *
+   * @param {number} fee
+   */
+  incrementCumulativeProcessingFee(fee) {
+    this.cumulativeProcessingFee += fee;
 
     return this;
   }

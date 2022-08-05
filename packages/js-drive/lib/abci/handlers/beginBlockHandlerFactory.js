@@ -8,6 +8,7 @@ const {
 
 const NotSupportedNetworkProtocolVersionError = require('./errors/NotSupportedNetworkProtocolVersionError');
 const NetworkProtocolVersionIsNotSetError = require('./errors/NetworkProtocolVersionIsNotSetError');
+const timeToMillis = require('../../util/timeToMillis');
 
 /**
  * Begin Block ABCI Handler
@@ -23,6 +24,7 @@ const NetworkProtocolVersionIsNotSetError = require('./errors/NetworkProtocolVer
  * @param {synchronizeMasternodeIdentities} synchronizeMasternodeIdentities
  * @param {BaseLogger} logger
  * @param {ExecutionTimer} executionTimer
+ * @param {RSAbci} rsAbci
  *
  * @return {beginBlockHandler}
  */
@@ -38,6 +40,7 @@ function beginBlockHandlerFactory(
   synchronizeMasternodeIdentities,
   logger,
   executionTimer,
+  rsAbci,
 ) {
   /**
    * @typedef beginBlockHandler
@@ -119,8 +122,33 @@ function beginBlockHandlerFactory(
     // Start db transaction for the block
     await groveDBStore.startTransaction();
 
+    // Call RS ABCI
+
+    /**
+     * @type {BlockBeginRequest}
+     */
+    const rsRequest = {
+      blockHeight: header.height.toNumber(),
+      blockTimeMs: timeToMillis(header.time.seconds, header.time.nanos),
+      proposerProTxHash: header.proposerProTxHash,
+    };
+
+    const latestContext = blockExecutionContextStack.getLatest();
+
+    if (latestContext) {
+      const latestHeader = latestContext.getHeader();
+      rsRequest.previousBlockTimeMs = timeToMillis(
+        latestHeader.time.seconds, latestHeader.time.nanos,
+      );
+    }
+
+    await rsAbci.blockBegin(rsRequest, true);
+
+    // Update SML
+
     const isSimplifiedMasternodeListUpdated = await updateSimplifiedMasternodeList(
-      coreChainLockedHeight, {
+      coreChainLockedHeight,
+      {
         logger: consensusLogger,
       },
     );

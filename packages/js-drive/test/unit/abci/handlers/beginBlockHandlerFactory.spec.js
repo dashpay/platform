@@ -35,6 +35,7 @@ describe('beginBlockHandlerFactory', () => {
   let groveDBStoreMock;
   let blockExecutionContextStackMock;
   let executionTimerMock;
+  let rsAbciMock;
 
   beforeEach(function beforeEach() {
     protocolVersion = Long.fromInt(1);
@@ -63,14 +64,20 @@ describe('beginBlockHandlerFactory', () => {
     groveDBStoreMock = new GroveDBStoreMock(this.sinon);
     blockExecutionContextStackMock = new BlockExecutionContextStackMock(this.sinon);
 
+    const getHeaderMock = this.sinon.stub();
+
     blockExecutionContextStackMock.getLatest.returns({
-      getHeader: this.sinon.stub(),
+      getHeader: getHeaderMock,
     });
 
     executionTimerMock = {
       clearTimer: this.sinon.stub(),
       startTimer: this.sinon.stub(),
       stopTimer: this.sinon.stub(),
+    };
+
+    rsAbciMock = {
+      blockBegin: this.sinon.stub(),
     };
 
     beginBlockHandler = beginBlockHandlerFactory(
@@ -85,10 +92,10 @@ describe('beginBlockHandlerFactory', () => {
       synchronizeMasternodeIdentitiesMock,
       loggerMock,
       executionTimerMock,
+      rsAbciMock,
     );
 
-    blockHeight = 2;
-    blockHeight = 1;
+    blockHeight = new Long(1);
 
     header = {
       version: {
@@ -99,7 +106,10 @@ describe('beginBlockHandlerFactory', () => {
         seconds: Math.ceil(new Date().getTime() / 1000),
       },
       coreChainLockedHeight,
+      proposerProTxHash: Buffer.alloc(32, 1),
     };
+
+    getHeaderMock.returns(header);
 
     lastCommitInfo = {};
 
@@ -192,6 +202,9 @@ describe('beginBlockHandlerFactory', () => {
         {
           height: {
             equals: this.sinon.stub().returns(true),
+          },
+          time: {
+            seconds: Math.ceil(new Date().getTime() / 1000),
           },
         },
       ),
