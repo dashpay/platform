@@ -28,9 +28,7 @@ describe('createContactRequestDataTrigger', () => {
     });
 
     stateRepositoryMock = createStateRepositoryMock(this.sinonSandbox);
-    stateRepositoryMock.fetchLatestPlatformBlockHeader.resolves({
-      coreChainLockedHeight: 42,
-    });
+    stateRepositoryMock.fetchLatestPlatformCoreChainLockedHeight.resolves(42);
 
     context = new DataTriggerExecutionContext(
       stateRepositoryMock,
@@ -54,7 +52,7 @@ describe('createContactRequestDataTrigger', () => {
     );
 
     expect(result).to.be.an.instanceOf(DataTriggerExecutionResult);
-    expect(stateRepositoryMock.fetchLatestPlatformBlockHeader).to.be.calledOnce();
+    expect(stateRepositoryMock.fetchLatestPlatformCoreChainLockedHeight).to.be.calledOnce();
     expect(result.isOk()).to.be.true();
   });
 
@@ -64,7 +62,7 @@ describe('createContactRequestDataTrigger', () => {
     );
 
     expect(result).to.be.an.instanceOf(DataTriggerExecutionResult);
-    expect(stateRepositoryMock.fetchLatestPlatformBlockHeader).to.be.not.called();
+    expect(stateRepositoryMock.fetchLatestPlatformCoreChainLockedHeight).to.be.not.called();
     expect(result.isOk()).to.be.true();
   });
 
@@ -103,7 +101,7 @@ describe('createContactRequestDataTrigger', () => {
     context.getStateTransitionExecutionContext().disableDryRun();
 
     expect(result).to.be.an.instanceOf(DataTriggerExecutionResult);
-    expect(stateRepositoryMock.fetchLatestPlatformBlockHeader).to.be.not.called();
+    expect(stateRepositoryMock.fetchLatestPlatformCoreChainLockedHeight).to.be.not.called();
     expect(result.isOk()).to.be.true();
   });
 });

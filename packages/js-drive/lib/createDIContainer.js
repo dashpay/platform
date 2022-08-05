@@ -86,13 +86,19 @@ const verifyChainLockQueryHandlerFactory = require('./abci/handlers/query/verify
 const wrapInErrorHandlerFactory = require('./abci/errors/wrapInErrorHandlerFactory');
 const errorHandlerFactory = require('./errorHandlerFactory');
 const checkTxHandlerFactory = require('./abci/handlers/checkTxHandlerFactory');
-const commitHandlerFactory = require('./abci/handlers/commitHandlerFactory');
-const deliverTxHandlerFactory = require('./abci/handlers/deliverTxHandlerFactory');
 const initChainHandlerFactory = require('./abci/handlers/initChainHandlerFactory');
 const infoHandlerFactory = require('./abci/handlers/infoHandlerFactory');
-const beginBlockHandlerFactory = require('./abci/handlers/beginBlockHandlerFactory');
+const extendVoteHandlerFactory = require('./abci/handlers/extendVoteHandlerFactory');
+const finalizeBlockHandlerFactory = require('./abci/handlers/finalizeBlockHandlerFactory');
+const prepareProposalHandlerFactory = require('./abci/handlers/prepareProposalHandlerFactory');
+const processProposalHandlerFactory = require('./abci/handlers/processProposalHandlerFactory');
+const verifyVoteExtensionHandlerFactory = require('./abci/handlers/verifyVoteExtensionHandlerFactory');
 
-const endBlockHandlerFactory = require('./abci/handlers/endBlockHandlerFactory');
+const beginBlockFactory = require('./abci/handlers/finalizeBlock/beginBlockFactory');
+const commitFactory = require('./abci/handlers/finalizeBlock/commitFactory');
+const deliverTxFactory = require('./abci/handlers/finalizeBlock/deliverTxFactory');
+const endBlockFactory = require('./abci/handlers/finalizeBlock/endBlockFactory');
+
 const queryHandlerFactory = require('./abci/handlers/queryHandlerFactory');
 const waitForCoreSyncFactory = require('./core/waitForCoreSyncFactory');
 const waitForCoreChainLockSyncFactory = require('./core/waitForCoreChainLockSyncFactory');
@@ -784,12 +790,38 @@ function createDIContainer(options) {
 
     infoHandler: asFunction(infoHandlerFactory).singleton(),
     checkTxHandler: asFunction(checkTxHandlerFactory).singleton(),
-    beginBlockHandler: asFunction(beginBlockHandlerFactory).singleton(),
-    deliverTxHandler: asFunction(deliverTxHandlerFactory).singleton(),
+
+    beginBlockHandler: asFunction(beginBlockFactory).singleton(),
+    beginBlock: asFunction((
+      enrichErrorWithConsensusError,
+      beginBlockHandler,
+    ) => enrichErrorWithConsensusError(beginBlockHandler)).singleton(),
+    commitHandler: asFunction(commitFactory).singleton(),
+    commit: asFunction((
+      enrichErrorWithConsensusError,
+      commitHandler,
+    ) => enrichErrorWithConsensusError(commitHandler)).singleton(),
+    deliverTxHandler: asFunction(deliverTxFactory).singleton(),
+    deliverTx: asFunction((
+      wrapInErrorHandler,
+      enrichErrorWithConsensusError,
+      deliverTxHandler,
+    ) => wrapInErrorHandler(
+      enrichErrorWithConsensusError(deliverTxHandler),
+      { respondWithInternalError: true },
+    )).singleton(),
+    endBlockHandler: asFunction(endBlockFactory).singleton(),
+    endBlock: asFunction((
+      enrichErrorWithConsensusError,
+      endBlockHandler,
+    ) => enrichErrorWithConsensusError(endBlockHandler)).singleton(),
     initChainHandler: asFunction(initChainHandlerFactory).singleton(),
-    endBlockHandler: asFunction(endBlockHandlerFactory).singleton(),
-    commitHandler: asFunction(commitHandlerFactory).singleton(),
     queryHandler: asFunction(queryHandlerFactory).singleton(),
+    extendVoteHandler: asFunction(extendVoteHandlerFactory).singleton(),
+    finalizeBlockHandler: asFunction(finalizeBlockHandlerFactory).singleton(),
+    prepareProposalHandler: asFunction(prepareProposalHandlerFactory).singleton(),
+    processProposalHandler: asFunction(processProposalHandlerFactory).singleton(),
+    verifyVoteExtensionHandler: asFunction(verifyVoteExtensionHandlerFactory).singleton(),
 
     wrapInErrorHandler: asFunction(wrapInErrorHandlerFactory).singleton(),
     enrichErrorWithConsensusError: asFunction(enrichErrorWithConsensusErrorFactory).singleton(),
@@ -798,23 +830,25 @@ function createDIContainer(options) {
     abciHandlers: asFunction((
       infoHandler,
       checkTxHandler,
-      beginBlockHandler,
-      deliverTxHandler,
       initChainHandler,
-      endBlockHandler,
-      commitHandler,
       wrapInErrorHandler,
       enrichErrorWithConsensusError,
       queryHandler,
+      extendVoteHandler,
+      finalizeBlockHandler,
+      prepareProposalHandler,
+      processProposalHandler,
+      verifyVoteExtensionHandler,
     ) => ({
       info: infoHandler,
       checkTx: wrapInErrorHandler(checkTxHandler, { respondWithInternalError: true }),
-      beginBlock: enrichErrorWithConsensusError(beginBlockHandler),
-      deliverTx: wrapInErrorHandler(enrichErrorWithConsensusError(deliverTxHandler)),
       initChain: initChainHandler,
-      endBlock: enrichErrorWithConsensusError(endBlockHandler),
-      commit: enrichErrorWithConsensusError(commitHandler),
       query: wrapInErrorHandler(queryHandler, { respondWithInternalError: true }),
+      extendVote: enrichErrorWithConsensusError(extendVoteHandler),
+      finalizeBlock: enrichErrorWithConsensusError(finalizeBlockHandler),
+      prepareProposal: enrichErrorWithConsensusError(prepareProposalHandler),
+      processProposal: enrichErrorWithConsensusError(processProposalHandler),
+      verifyVoteExtension: enrichErrorWithConsensusError(verifyVoteExtensionHandler),
     })).singleton(),
 
     closeAbciServer: asFunction(closeAbciServerFactory).singleton(),

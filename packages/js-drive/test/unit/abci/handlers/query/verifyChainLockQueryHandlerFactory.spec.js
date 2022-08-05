@@ -54,10 +54,8 @@ describe('verifyChainLockQueryHandlerFactory', () => {
     getLatestFeatureFlagMock.resolves(null);
 
     blockExecutionContextMock = new BlockExecutionContextMock(this.sinon);
-    blockExecutionContextMock.getHeader.returns({
-      height: 42,
-      coreChainLockedHeight: 43,
-    });
+    blockExecutionContextMock.getHeight.returns(42);
+    blockExecutionContextMock.getCoreChainLockedHeight.returns(43);
 
     coreRpcClientMock = {
       verifyChainLock: this.sinon.stub(),

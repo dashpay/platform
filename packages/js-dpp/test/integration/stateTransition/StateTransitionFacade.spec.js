@@ -71,10 +71,8 @@ describe('StateTransitionFacade', () => {
 
     stateRepositoryMock = createStateRepositoryMock(this.sinonSandbox);
     stateRepositoryMock.fetchIdentity.resolves(identity);
-    stateRepositoryMock.fetchLatestPlatformBlockHeader.resolves({
-      time: {
-        seconds: timeInSeconds,
-      },
+    stateRepositoryMock.fetchLatestPlatformBlockTime.resolves({
+      seconds: timeInSeconds,
     });
 
     dpp = new DashPlatformProtocol({
