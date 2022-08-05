@@ -1665,7 +1665,7 @@ __metadata:
     "@dashevo/feature-flags-contract": "workspace:~"
     "@dashevo/grpc-common": "workspace:~"
     "@dashevo/masternode-reward-shares-contract": "workspace:~"
-    "@dashevo/rs-drive": 0.23.0-dev.5.pr.114.5
+    "@dashevo/rs-drive": 0.23.0-dev.7
     "@types/pino": ^6.3.0
     ajv: ^8.6.0
     ajv-keywords: ^5.0.0
@@ -1695,6 +1695,7 @@ __metadata:
     lru-cache: ^5.1.1
     memdown: ^5.1.0
     mocha: ^9.1.2
+    moment: ^2.29.4
     node-graceful: ^3.0.1
     nyc: ^15.1.0
     pino: ^6.4.0
@@ -1888,16 +1889,16 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@dashevo/rs-drive@npm:0.23.0-dev.5.pr.114.5":
-  version: 0.23.0-dev.5.pr.114.5
-  resolution: "@dashevo/rs-drive@npm:0.23.0-dev.5.pr.114.5"
+"@dashevo/rs-drive@npm:0.23.0-dev.7":
+  version: 0.23.0-dev.7
+  resolution: "@dashevo/rs-drive@npm:0.23.0-dev.7"
   dependencies:
     "@dashevo/dpp": ~0.22.0-dev.7
     cargo-cp-artifact: ^0.1.6
     cbor: ^8.1.0
     neon-load-or-build: ^2.2.2
     neon-tag-prebuild: "github:shumkov/neon-tag-prebuild#patch-1"
-  checksum: 000ba38e338ff743f4ff459810a2397c226dc56267786e95401ed6c3f28d00e79090afe8132ea92603d76774d3aba295f4d3fc96c2bc2a25ec9180e3246767e6
+  checksum: 386ca34fdde97a89a49dfac4032e88233354368079e90e19a861dee78da6939a96d5dbcb7fb56f4a5966b5c5012374cefec799f9432c8a9cbdafc6ddb31a47aa
   languageName: node
   linkType: hard
 
@@ -10706,6 +10707,13 @@ fsevents@~2.3.2:
   bin:
     module-deps: bin/cmd.js
   checksum: cccead8f81b77ec621c29c4407978ce50de6f15c7152b54e81b65ff043d4254fd40071e53a3989a36066ff0d3ce9ae9e65f81aed79b3b5397024dbc8be5d68c7
+  languageName: node
+  linkType: hard
+
+"moment@npm:^2.29.4":
+  version: 2.29.4
+  resolution: "moment@npm:2.29.4"
+  checksum: 0ec3f9c2bcba38dc2451b1daed5daded747f17610b92427bebe1d08d48d8b7bdd8d9197500b072d14e326dd0ccf3e326b9e3d07c5895d3d49e39b6803b76e80e
   languageName: node
   linkType: hard
 

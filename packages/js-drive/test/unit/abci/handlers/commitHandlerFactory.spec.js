@@ -24,8 +24,6 @@ const BlockExecutionContextStackRepositoryMock = require('../../../../lib/test/m
 describe('commitHandlerFactory', () => {
   let commitHandler;
   let appHash;
-  let creditsDistributionPoolMock;
-  let creditsDistributionPoolRepositoryMock;
   let blockExecutionContextMock;
   let dataContract;
   let accumulativeFees;
@@ -42,21 +40,12 @@ describe('commitHandlerFactory', () => {
   beforeEach(function beforeEach() {
     appHash = Buffer.alloc(0);
 
-    creditsDistributionPoolMock = {
-      incrementAmount: this.sinon.stub(),
-      setAmount: this.sinon.stub(),
-    };
-
     dataContract = getDataContractFixture();
-
-    creditsDistributionPoolRepositoryMock = {
-      store: this.sinon.stub(),
-    };
 
     blockExecutionContextMock = new BlockExecutionContextMock(this.sinon);
 
     blockExecutionContextMock.getDataContracts.returns([dataContract]);
-    blockExecutionContextMock.getCumulativeFees.returns(accumulativeFees);
+    blockExecutionContextMock.getCumulativeProcessingFee.returns(accumulativeFees);
 
     header = {
       height: Long.fromInt(1),
@@ -92,8 +81,6 @@ describe('commitHandlerFactory', () => {
     };
 
     commitHandler = commitHandlerFactory(
-      creditsDistributionPoolMock,
-      creditsDistributionPoolRepositoryMock,
       blockExecutionContextMock,
       blockExecutionContextStackMock,
       blockExecutionContextStackRepositoryMock,
@@ -112,17 +99,6 @@ describe('commitHandlerFactory', () => {
     expect(response.data).to.deep.equal(appHash);
 
     expect(blockExecutionContextMock.getHeader).to.be.calledOnce();
-
-    expect(creditsDistributionPoolMock.incrementAmount).to.be.calledOnceWith(
-      accumulativeFees,
-    );
-
-    expect(creditsDistributionPoolRepositoryMock.store).to.be.calledOnceWith(
-      creditsDistributionPoolMock,
-      {
-        useTransaction: true,
-      },
-    );
 
     expect(blockExecutionContextStackMock.add).to.be.calledOnceWith(
       blockExecutionContextMock,

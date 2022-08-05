@@ -280,8 +280,8 @@ class DocumentRepository {
     }
 
     try {
-      const prove = await this.storage.getDrive()
-        .proveQueryDocuments(
+      const [prove, processingCost] = await this.storage.getDrive()
+        .proveDocumentsQuery(
           dataContract,
           documentType,
           query,
@@ -291,7 +291,7 @@ class DocumentRepository {
       return new StorageResult(
         prove,
         [
-          new PreCalculatedOperation(0, 0),
+          new PreCalculatedOperation(0, processingCost),
         ],
       );
     } catch (e) {
