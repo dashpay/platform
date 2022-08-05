@@ -300,7 +300,7 @@ describe('Platform', () => {
     });
 
     // TODO: enable once fee calculation is done
-    xdescribe('Credits', () => {
+    describe.skip('Credits', () => {
       let dataContractFixture;
 
       before(async () => {
