@@ -7,7 +7,7 @@
 
 Dash library for JavaScript/TypeScript ecosystem (Wallet, DAPI, Primitives, BLS, ...)
 
-Dash library allows you to connect to DAPI and receive or broadcast payments on the Dash Network, manage identities, register data contracts, retrieve or submit documents on the Dash Platform, all within a single library.
+Dash library provides access via [DAPI](https://dashplatform.readme.io/docs/explanation-dapi) to use both the Dash Core network and Dash Platform on [supported networks](https://github.com/dashevo/platform/#supported-networks). The Dash Core network can be used to broadcast and receive payments. Dash Platform can be used to manage identities, register data contracts for applications, and submit or retrieve application data via documents.
 
 ## Install
 
@@ -33,7 +33,8 @@ npm install dash
 - [Use another BIP44 account](examples/use-different-account.md)
 
 ### Dash Platform Tutorials
-See https://dashplatform.readme.io/docs/tutorials-introduction
+
+See the [Tutorial section](https://dashplatform.readme.io/docs/tutorials-introduction) of the Dash Platform documentation for examples.
 
 ## Licence
 

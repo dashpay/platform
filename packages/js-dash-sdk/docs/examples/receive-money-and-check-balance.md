@@ -30,7 +30,7 @@ Dash wallet supports two different types of addresses:
 - `external` addresses used for receiving funds from other addresses
 - `internal` addresses used for change outputs of outgoing transactions  
 - 
-For your privacy, you might want to generate a new address at each payment:
+For your privacy, you might want to generate a new address for each payment:
 
 ```js
 async function generateUnusedAddress() {
@@ -44,10 +44,10 @@ This above code will generate a new unique (never used) address.
 
 ## Displaying your balance
 
-_Dash Wallet returns balance in duffs (1 Dash is equal to 100.000.000 duffs)_
+_Dash Wallet returns the balance in duffs (1 Dash is equal to 100.000.000 duffs)_
 
 `getTotalBalance()` function takes into account `confirmed` and `unconfirmed` transactions (not included in a block).
-It is advised to check confirmed balance before making a payment:
+It is recommended to check the confirmed balance before making a payment:
 
 ```js
 async function showBalance() {
@@ -66,7 +66,7 @@ async function showBalance() {
 
 ## Listen for event on received transaction 
 
-When a new unconfirmed transaction is received, you can receive an event, and validate the address or perform action if needed.   
+When a new unconfirmed transaction is received, you can receive an event, and then validate the address or perform an action if needed.   
 
 ```js
 // FETCHED/UNCONFIRMED_TRANSACTION event is currently disabled

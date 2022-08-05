@@ -31,6 +31,6 @@ Parameters:
   const validationResult = client.platform.dpp.dataContract.validate(contract);
 ```
 
-**Note**: When your contract is created, it will only exist locally, use the [publish](/contracts/publish.md) method to register it.  
+**Note**: When your contract is created, it will only exist locally. Use the [publish](/platform/contracts/publish.md) method to register it.  
 
 Returns: Contract.

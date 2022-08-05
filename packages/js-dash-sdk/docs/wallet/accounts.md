@@ -1,9 +1,9 @@
 ## Getting an account
 
-Wallet initialized with `mnemonic` holds multiple Accounts according to BIP44. 
-Account holding the keys needed to make a payment.
+When Wallet is initialized with `mnemonic`, it holds multiple Accounts according to BIP44. 
+Each Account holds the keys needed to make a payments from it.
 
-Wallet's `getAccount` method used to access account
+Wallet's `getAccount` method used to access an account:
 
 ```js
 const client = new Dash.Client({
@@ -21,5 +21,5 @@ As optional parameter, an integer representing the account `index` can be passed
 client.wallet.getAccount({ index: 1 })
 ```
 
-Awaiting for `getAccount()` promise is needed to have wallet synced-up with network and making sure that UTXOS set is ready to be used for payment/signing.  
+Awaiting for the `getAccount()` promise is necessary to ensure the wallet is synced-up with the network and make sure that the UTXO set is ready to be used for payment/signing.
 

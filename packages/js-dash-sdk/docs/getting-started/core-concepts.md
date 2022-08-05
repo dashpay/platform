@@ -8,19 +8,19 @@ At the core of Dash is the Payment Chain. In order to be able to transact on it,
 
 In order to access your UTXO, you will have to provide a valid mnemonic that will unlock the Wallet and automatically fetch the associated UTXOs.
 
-When an SDK instance is created, you can access your wallet via the `client.wallet` variable. (Check [wallet-lib](https://dashevo.github.io/platform/Wallet-library/) docs for more details)
+When an SDK instance is created, you can access your wallet via the `client.wallet` variable. (Check [wallet-lib documentation](https://dashevo.github.io/platform/Wallet-library/) for more details)
 
 ## Account
 
-Since the introduction of deterministic wallets ([BIP44](https://github.com/bitcoin/bips/blob/master/bip-0044.mediawiki)), Wallet is represented by multiple accounts.
+Since the introduction of deterministic wallets ([BIP44](https://github.com/bitcoin/bips/blob/master/bip-0044.mediawiki)), a wallet is represented by multiple accounts.
 
 It is the instance you will use most of the time for receiving or broadcasting payments.
 
-You can access your account with `client.getWalletAccount()`. See [how to use a different account](../examples/use-different-account.md) if you need to get an account at the specific index.
+You can access your account with `client.getWalletAccount()`. See [how to use a different account](../examples/use-different-account.md) if you need to get an account at a specific index.
 
 ## App Schema and Contracts
 
-The Dash Platform Chain, provides developers with the ability to create applications. 
+The Dash Platform Chain provides developers with the ability to create applications. 
 Each application requires a set of rules and conditions described as a portable document in the form of a JSON Schema.
 
 When registered, those applications schemas are called contracts and contains a contractId (namespace : `client.platform.contracts`).  
