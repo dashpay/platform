@@ -30,19 +30,19 @@ chrono = "0.4.0"
 
 [dependencies.dpp]
 git = "https://github.com/dashevo/rust-dpp"
-branch = "dev"
+rev = "bf81f6839c95bea8bfd409f32b79b3a01f5c8c63"
 
 [dependencies.grovedb]
 git = "https://github.com/dashevo/grovedb"
-branch = "develop"
+branch = "allow-to-merge-equal-paths"
 
 [dependencies.storage]
 git = "https://github.com/dashevo/grovedb"
-branch = "develop"
+branch = "allow-to-merge-equal-paths"
 
 [dependencies.costs]
 git = "https://github.com/dashevo/grovedb"
-branch = "develop"
+branch = "allow-to-merge-equal-paths"
 
 [dev-dependencies]
 criterion = "0.3.5"
