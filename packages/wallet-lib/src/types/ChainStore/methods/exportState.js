@@ -6,7 +6,7 @@ function exportState(lastKnownBlock) {
     blockHeight,
     fees,
     headersMetadata,
-    lastSyncedHeaderHeight,
+    lastSyncedHeaderHeight, // TODO: ensure it's saved with safeHeight in mind
   } = state;
 
   const serializedState = {

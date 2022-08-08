@@ -5,6 +5,7 @@ const CONSTANTS = require('../../CONSTANTS');
 const defaultOpts = {
   rehydrate: true,
   autosave: true,
+  purgeOnError: true,
   autosaveIntervalTime: CONSTANTS.STORAGE.autosaveIntervalTime,
   network: 'testnet',
 };
@@ -27,6 +28,7 @@ class Storage extends EventEmitter {
 
     this.rehydrate = has(opts, 'rehydrate') ? opts.rehydrate : defaultOpts.rehydrate;
     this.autosave = has(opts, 'autosave') ? opts.autosave : defaultOpts.autosave;
+    this.purgeOnError = has(opts, 'purgeOnError') ? opts.purgeOnError : defaultOpts.purgeOnError;
     this.autosaveIntervalTime = has(opts, 'autosaveIntervalTime')
       ? opts.autosaveIntervalTime
       : defaultOpts.autosaveIntervalTime;

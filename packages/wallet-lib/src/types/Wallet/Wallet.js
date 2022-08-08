@@ -127,10 +127,17 @@ class Wallet extends EventEmitter {
     // Notice : Most of the time, wallet id is deterministic
     this.generateNewWalletId();
 
-    this.storage = new Storage({
-      rehydrate: true,
-      autosave: true,
-    });
+    const storageOpts = {};
+    if (opts.storage) {
+      if (typeof opts.storage.purgeOnError === 'boolean') {
+        storageOpts.purgeOnError = opts.storage.purgeOnError;
+      }
+
+      if (typeof opts.storage.autoSave === 'boolean') {
+        storageOpts.autosave = opts.storage.autoSave;
+      }
+    }
+    this.storage = new Storage(storageOpts);
 
     this.storage.application.network = this.network;
     this.storage.configure({

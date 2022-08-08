@@ -7,6 +7,8 @@ const CONSTANTS = require('../../../CONSTANTS');
  */
 const saveState = async function saveState() {
   if (this.autosave && this.adapter && this.adapter.setItem) {
+    this.lastSave = +new Date();
+    // TODO: add debug logging
     const self = this;
     try {
       const currentChainHeight = this.getChainStore(this.currentNetwork).state.blockHeight;
@@ -49,7 +51,6 @@ const saveState = async function saveState() {
       //
       // });
       // console.log('Saved for', (Date.now() - now) / 1000);
-      this.lastSave = +new Date();
       this.emit(SAVE_STATE_SUCCESS, { type: SAVE_STATE_SUCCESS, payload: this.lastSave });
       return true;
     } catch (err) {
