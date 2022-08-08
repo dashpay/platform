@@ -52,6 +52,7 @@ class BlockHeadersSyncWorker extends Worker {
 
     this.updateProgress = this.updateProgress.bind(this);
     this.historicalChainUpdateHandler = this.historicalChainUpdateHandler.bind(this);
+    this.continuousChainUpdateHandler = this.continuousChainUpdateHandler.bind(this);
   }
 
   async onStart() {
@@ -166,7 +167,7 @@ class BlockHeadersSyncWorker extends Worker {
     );
 
     this.blockHeadersProviderErrorHandler = (e) => {
-      this.parentEvents.emit('error', e);
+      this.emitError(e);
       logger.debug('[BlockHeadersSyncWorker] Error handling continuous chain update', e);
     };
 
@@ -250,40 +251,45 @@ class BlockHeadersSyncWorker extends Worker {
    * Listens for chain updates during the synchronization of historical headers
    */
   historicalChainUpdateHandler() {
-    const chainStore = this.storage.getDefaultChainStore();
-    const { blockHeadersProvider } = this.transport.client;
-    const { spvChain } = blockHeadersProvider;
+    try {
+      const chainStore = this.storage.getDefaultChainStore();
+      const { blockHeadersProvider } = this.transport.client;
+      const { spvChain } = blockHeadersProvider;
 
-    const longestChain = spvChain.getLongestChain({ withPruned: true });
-    const { startBlockHeight } = spvChain;
-    const { lastSyncedHeaderHeight } = chainStore.state;
+      const longestChain = spvChain.getLongestChain({ withPruned: true });
+      const { startBlockHeight } = spvChain;
+      const { lastSyncedHeaderHeight } = chainStore.state;
 
-    // TODO: abstract this in spv chain?
-    const totalHeadersCount = startBlockHeight + longestChain.length;
-    const syncedHeadersCount = lastSyncedHeaderHeight + 1;
+      // TODO: abstract this in spv chain?
+      const totalHeadersCount = startBlockHeight + longestChain.length;
+      const syncedHeadersCount = lastSyncedHeaderHeight + 1;
 
-    if (syncedHeadersCount > totalHeadersCount) {
-      const error = new Error(`Synced headers count ${syncedHeadersCount} is greater than total headers count ${totalHeadersCount}.`);
-      this.parentEvents.emit('error', error);
-      logger.debug('[BlockHeadersSyncWorker] Error handling historical chain update:', error);
-      return;
+      if (syncedHeadersCount > totalHeadersCount) {
+        const error = new Error(`Synced headers count ${syncedHeadersCount} is greater than total headers count ${totalHeadersCount}.`);
+        this.emitError(error);
+        logger.debug('[BlockHeadersSyncWorker] Error handling historical chain update:', error);
+        return;
+      }
+
+      if (syncedHeadersCount < totalHeadersCount) {
+        // Update headers in the store
+        chainStore.setBlockHeaders(longestChain.slice(-this.maxHeadersToKeep));
+
+        const newLastSyncedHeaderHeight = totalHeadersCount - 1;
+        const newHeaders = longestChain.slice(-(totalHeadersCount - syncedHeadersCount));
+
+        chainStore.updateHeadersMetadata(newHeaders, newLastSyncedHeaderHeight);
+        chainStore.updateLastSyncedHeaderHeight(newLastSyncedHeaderHeight);
+        this.syncCheckpoint = newLastSyncedHeaderHeight;
+
+        this.storage.scheduleStateSave();
+      }
+
+      this.scheduleProgressUpdate();
+    } catch (e) {
+      this.emitError(e);
+      logger.debug('[BlockHeadersSyncWorker] Error handling historical chain update:', e);
     }
-
-    if (syncedHeadersCount < totalHeadersCount) {
-      // Update headers in the store
-      chainStore.setBlockHeaders(longestChain.slice(-this.maxHeadersToKeep));
-
-      const newLastSyncedHeaderHeight = totalHeadersCount - 1;
-      const newHeaders = longestChain.slice(-(totalHeadersCount - syncedHeadersCount));
-
-      chainStore.updateHeadersMetadata(newHeaders, newLastSyncedHeaderHeight);
-      chainStore.updateLastSyncedHeaderHeight(newLastSyncedHeaderHeight);
-      this.syncCheckpoint = newLastSyncedHeaderHeight;
-
-      this.storage.scheduleStateSave();
-    }
-
-    this.scheduleProgressUpdate();
   }
 
   async continuousChainUpdateHandler(newHeaders, batchHeadHeight) {
@@ -291,9 +297,17 @@ class BlockHeadersSyncWorker extends Worker {
       const chainStore = this.storage.getDefaultChainStore();
       const walletStore = this.storage.getDefaultWalletStore();
 
+      // TODO: add test
+      if (typeof batchHeadHeight !== 'number' || Number.isNaN(batchHeadHeight)) {
+        const error = new Error(`Invalid batch head height ${batchHeadHeight}`);
+        this.emitError(error);
+        logger.debug('[BlockHeadersSyncWorker] Error handling continuous chain update:', error);
+        return;
+      }
+
       if (!newHeaders || !newHeaders.length) {
         const error = new Error(`No new headers received for batch at height ${batchHeadHeight}`);
-        this.parentEvents.emit('error', error);
+        this.emitError(error);
         logger.debug('[BlockHeadersSyncWorker] Error handling continuous chain update:', error);
         return;
       }
@@ -303,10 +317,11 @@ class BlockHeadersSyncWorker extends Worker {
       const { blockHeight } = chainStore.state;
       // Ignore height overlap in case of the stream reconnected
       if (newChainHeight === blockHeight) {
+        logger.debug(`[BlockHeadersSyncWorker] New chain height ${newChainHeight} is equal to current one: ${blockHeight}`);
         return;
       } if (newChainHeight < blockHeight) {
         const error = new Error(`New chain height ${newChainHeight} is less than latest height ${blockHeight}`);
-        this.parentEvents.emit('error', error);
+        this.emitError(error);
         logger.debug('[BlockHeadersSyncWorker] Error handling continuous chain update:', error);
         return;
       }
@@ -321,6 +336,7 @@ class BlockHeadersSyncWorker extends Worker {
       chainStore.updateChainHeight(newChainHeight);
       chainStore.updateLastSyncedHeaderHeight(newChainHeight);
       chainStore.setBlockHeaders(longestChain.slice(-this.maxHeadersToKeep));
+      chainStore.updateHeadersMetadata(newHeaders, newChainHeight);
       walletStore.updateLastKnownBlock(newChainHeight);
 
       this.parentEvents.emit(EVENTS.BLOCKHEIGHT_CHANGED, newChainHeight);
@@ -334,7 +350,7 @@ class BlockHeadersSyncWorker extends Worker {
 
       this.storage.scheduleStateSave();
     } catch (e) {
-      this.parentEvents.emit('error', e);
+      this.emitError(e);
       logger.debug('[BlockHeadersSyncWorker] Error handling continuous chain update', e);
     }
   }
@@ -375,6 +391,16 @@ class BlockHeadersSyncWorker extends Worker {
     if (!this.progressUpdateTimeout) {
       this.progressUpdateTimeout = setTimeout(this.updateProgress, PROGRESS_UPDATE_INTERVAL);
     }
+  }
+
+  // TODO: write unit tests
+  emitError(e) {
+    if (this.parentEvents.listenerCount('error') === 0) {
+      logger.debug('[BlockHeadersSyncWorker] Unhandled parentEvents \'error\' event:', e);
+      return;
+    }
+
+    this.parentEvents.emit('error', e);
   }
 }
 

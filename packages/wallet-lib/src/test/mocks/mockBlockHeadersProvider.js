@@ -17,7 +17,12 @@ const mockBlockHeadersProvider = (sinon, historicalStreams, continuousStream) =>
     subscribeToBlockHeadersWithChainLocks: ({ count }) => {
       if (count > 0) {
         const stream = historicalStreams[currentStream];
-        currentStream += 1;
+
+        if (currentStream === historicalStreams.length - 1) {
+          currentStream = 0;
+        } else {
+          currentStream += 1;
+        }
         return stream;
       }
       return continuousStream;

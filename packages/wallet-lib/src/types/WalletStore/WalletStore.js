@@ -7,7 +7,11 @@ const SCHEMA = {
 class WalletStore {
   constructor(walletId) {
     this.walletId = walletId;
+    this.reset();
+  }
 
+  reset() {
+    // TODO: update TypeScript definitions
     this.state = {
       mnemonic: null,
       paths: new Map(),

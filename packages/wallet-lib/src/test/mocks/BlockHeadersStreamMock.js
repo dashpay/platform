@@ -12,13 +12,21 @@ class BlockHeadersStreamMock extends EventEmitter {
 
   cancel() {
     const err = new Error();
-    err.code = 2;
+    err.code = 1;
     this.emit(BlockHeadersStreamMock.EVENTS.error, err);
   }
 
   end() {
     this.emit('end');
     this.removeAllListeners();
+  }
+
+  destroy(e) {
+    this.emit('end');
+    this.removeAllListeners();
+    if (e) {
+      this.emit(BlockHeadersStreamMock.EVENTS.error, e);
+    }
   }
 
   sendHeaders(headers) {

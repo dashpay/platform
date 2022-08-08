@@ -263,7 +263,6 @@ class BlockHeadersReader extends EventEmitter {
 
       stream.on('error', (streamError) => {
         if (streamError.code === GrpcErrorCodes.CANCELLED) {
-          console.log('Block headers historical stream canceled on client');
           return;
         }
 

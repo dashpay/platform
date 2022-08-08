@@ -22,7 +22,7 @@ class Storage extends EventEmitter {
     this.wallets = new Map();
     this.chains = new Map();
     this.application = {
-      blockHeight: 0,
+      blockHeight: 0, // TODO: consider removing this
     };
 
     this.rehydrate = has(opts, 'rehydrate') ? opts.rehydrate : defaultOpts.rehydrate;
@@ -35,6 +35,11 @@ class Storage extends EventEmitter {
     this.lastSave = null;
     this.lastModified = null;
     this.configured = false;
+  }
+
+  reset() {
+    this.wallets.forEach((wallet) => wallet.reset());
+    this.chains.forEach((chain) => chain.reset());
   }
 
   scheduleStateSave() {

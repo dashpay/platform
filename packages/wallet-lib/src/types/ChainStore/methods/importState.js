@@ -12,7 +12,7 @@ function importState(rawState) {
   } = state;
 
   this.state.blockHeaders = blockHeaders;
-  this.state.headersMetadata = headersMetadata;
+  this.state.headersMetadata = new Map(Object.entries(headersMetadata));
   this.state.lastSyncedHeaderHeight = lastSyncedHeaderHeight;
 
   Object.keys(transactions).forEach((hash) => {

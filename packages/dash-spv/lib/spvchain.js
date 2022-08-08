@@ -168,7 +168,7 @@ const SpvChain = class {
 
   /** @private */
   isDuplicate(hash) {
-    return this.heightByHash[hash] || this.orphansHashes.has(hash);
+    return !!this.heightByHash[hash] || this.orphansHashes.has(hash);
   }
 
   /** @private */
@@ -230,8 +230,9 @@ const SpvChain = class {
    * @return {boolean}
    */
   isValid(header, previousHeaders) {
-    return !!(Consensus.isValidBlockHeader(header, previousHeaders, this.network)
-      && !this.isDuplicate(header.hash));
+    const validBlockHeader = Consensus.isValidBlockHeader(header, previousHeaders, this.network);
+    const duplicate = this.isDuplicate(header.hash);
+    return !!validBlockHeader && !duplicate;
   }
 
   /* eslint-disable no-param-reassign */

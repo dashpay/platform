@@ -15,6 +15,7 @@ const createAndAttachTransportMocksToWallet = require("../../../src/test/mocks/c
 const {waitOneTick} = require("../../../src/test/utils");
 
 describe('Wallet', () => {
+  // TODO: write test that ensures that storage getting wiped after removing skipSynchronizationBeofreHeight flag
   describe('Storage', () => {
     let wallet;
     let txStreamMock;

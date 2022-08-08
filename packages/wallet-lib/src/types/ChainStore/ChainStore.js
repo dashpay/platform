@@ -41,7 +41,13 @@ class ChainStore extends EventEmitter {
   constructor(networkIdentifier = 'testnet') {
     super();
     this.network = networkIdentifier;
+    this.headersToKeep = CONSTANTS.STORAGE.headersToKeep;
 
+    this.reset();
+  }
+
+  reset() {
+    // TODO: fix typescript definition
     this.state = {
       fees: {
         minRelay: -1,
@@ -49,13 +55,11 @@ class ChainStore extends EventEmitter {
       lastSyncedHeaderHeight: -1, // TODO: make sure it's -1, it is important for further math
       blockHeight: 0,
       blockHeaders: [],
-      headersMetadata: {},
+      headersMetadata: new Map(),
       transactions: new Map(),
       instantLocks: new Map(),
       addresses: new Map(),
     };
-
-    this.headersToKeep = CONSTANTS.STORAGE.headersToKeep;
   }
 
   getTransactions() {
@@ -69,18 +73,15 @@ class ChainStore extends EventEmitter {
   // TODO: write tests
   updateHeadersMetadata(headers, tipHeight) {
     headers.forEach((header, index) => {
-      if (this.state.headersMetadata[header.hash]) {
+      if (this.state.headersMetadata.get(header.hash)) {
         throw new Error(`Header ${header.hash} already exists`);
       }
 
-      Object.assign(this.state.headersMetadata, {
-        [header.hash]: {
-          height: tipHeight - headers.length + index + 1,
-          time: header.time,
-        },
+      this.state.headersMetadata.set(header.hash, {
+        height: tipHeight - headers.length + index + 1,
+        time: header.time,
       });
     });
-    // console.log('Headers metadata', Object.keys(this.state.headersMetadata).length);
   }
 
   updateLastSyncedHeaderHeight(height) {
@@ -100,7 +101,7 @@ class ChainStore extends EventEmitter {
   }
 
   get chainHeight() {
-    return this.state.chainHeight;
+    return this.state.blockHeight;
   }
 
   updateChainHeight(height) {

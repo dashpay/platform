@@ -169,6 +169,8 @@ class BlockHeadersProvider extends EventEmitter {
     this.blockHeadersReader
       .removeListener(BlockHeadersReader.EVENTS.BLOCK_HEADERS, this.handleHeaders);
 
+    this.blockHeadersReader = null;
+
     this.state = STATES.IDLE;
 
     this.emit(EVENTS.STOPPED);
@@ -187,9 +189,12 @@ class BlockHeadersProvider extends EventEmitter {
           this.headersHeights[header.hash] = headHeight + index;
         });
 
-        this.emit(EVENTS.CHAIN_UPDATED, headersAdded, headHeight);
+        // Calculate amount of removed headers in order to properly adjust head height
+        const difference = headers.length - headersAdded.length;
+        this.emit(EVENTS.CHAIN_UPDATED, headersAdded, headHeight + difference);
       }
     } catch (e) {
+      // TODO: implement instanceof SPVError
       if (e.message === 'Some headers are invalid') {
         reject(e);
       } else {

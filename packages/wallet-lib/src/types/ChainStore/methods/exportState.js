@@ -14,7 +14,7 @@ function exportState(lastKnownBlock) {
     transactions: {},
     txMetadata: {},
     fees: {},
-    headersMetadata,
+    headersMetadata: Object.fromEntries(headersMetadata),
     lastSyncedHeaderHeight,
   };
 
