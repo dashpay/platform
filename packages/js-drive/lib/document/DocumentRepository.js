@@ -3,7 +3,6 @@ const { createHash } = require('crypto');
 const lodashCloneDeep = require('lodash.clonedeep');
 
 const PreCalculatedOperation = require('@dashevo/dpp/lib/stateTransition/fee/operations/PreCalculatedOperation');
-const createDocumentTypeTreePath = require('./groveDB/createDocumentTreePath');
 const InvalidQueryError = require('./errors/InvalidQueryError');
 const StorageResult = require('../storage/StorageResult');
 const DataContractStoreRepository = require('../dataContract/DataContractStoreRepository');
@@ -109,39 +108,6 @@ class DocumentRepository {
       [
         new PreCalculatedOperation(storageCost, processingCost),
       ],
-    );
-  }
-
-  /**
-   * @param {Document} document
-   * @param {Object} [options]
-   * @param {boolean} [options.useTransaction=false]
-   * @param {boolean} [options.dryRun=false]
-   *
-   * @return {Promise<StorageResult<boolean>>}
-   */
-  async isExist(document, options = { }) {
-    const documentTypeTreePath = createDocumentTypeTreePath(
-      document.getDataContract(),
-      document.getType(),
-    );
-
-    const documentTreePath = documentTypeTreePath.concat(
-      [Buffer.from([0])],
-    );
-
-    const result = await this.storage.get(
-      documentTreePath,
-      document.getId().toBuffer(),
-      {
-        useTransaction: Boolean(options.useTransaction),
-        dryRun: Boolean(options.dryRun),
-      },
-    );
-
-    return new StorageResult(
-      Boolean(result.getValue()),
-      result.getOperations(),
     );
   }
 
