@@ -3,7 +3,6 @@ const GrpcError = require('@dashevo/grpc-common/lib/server/error/GrpcError');
 const GrpcErrorCodes = require('@dashevo/grpc-common/lib/server/error/GrpcErrorCodes');
 const logger = require('../../../../logger');
 const isBrowser = require('../../../../utils/isBrowser');
-const EVENTS = require('../../../../EVENTS');
 
 function processInstantLocks(instantLocks) {
   instantLocks.forEach((isLock) => {
@@ -36,7 +35,7 @@ function processTransactions(transactions) {
 }
 
 async function processMerkleBlock(merkleBlock) {
-  const walletStore = this.storage.getWalletStore(this.walletId);
+  const chainStore = this.storage.getDefaultChainStore();
 
   // Reverse hashes, as they're little endian in the header
   const txHashesInTheBlock = merkleBlock
@@ -47,14 +46,24 @@ async function processMerkleBlock(merkleBlock) {
       return set;
     }, new Set());
 
-  const { blockHeadersProvider } = this.transport.client;
-
   const headerHash = merkleBlock.header.hash;
-  const headerHeight = blockHeadersProvider.spvChain.heightByHash[headerHash];
+  const headerMetadata = chainStore.state.headersMetadata.get(headerHash);
+
+  if (!headerMetadata) {
+    throw new Error('Header metadata not found during the merkle block processing');
+  }
+
+  const headerHeight = headerMetadata.height;
+  const headerTime = headerMetadata.time;
+
+  if (!headerTime || !headerHeight) {
+    throw new Error(`Invalid header metadata: Time: ${headerTime}, Height: ${headerHeight}`);
+  }
 
   const metadata = {
     blockHash: headerHash,
     height: headerHeight,
+    time: headerTime,
     instantLocked: false, // TBD
     chainLocked: false, // TBD
   };
@@ -76,8 +85,7 @@ async function processMerkleBlock(merkleBlock) {
     ({ addressesGenerated } = this.importTransactions(transactionsWithMetadata));
   }
 
-  this.lastSyncedBlockHeight = headerHeight;
-  walletStore.updateLastKnownBlock(headerHeight);
+  this.setLastSyncedBlockHeight(headerHeight, true);
   this.scheduleProgressUpdate();
 
   // TODO: test restart

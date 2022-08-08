@@ -140,6 +140,10 @@ class BlockHeadersSyncWorker extends Worker {
     await historicalSyncPromise;
 
     this.updateProgress();
+
+    // TODO: cover with unit test
+    await this.storage.saveState();
+
     if (!stopped) {
       this.syncCheckpoint = bestBlockHeight;
     }
@@ -326,6 +330,8 @@ class BlockHeadersSyncWorker extends Worker {
         return;
       }
 
+      // TODO: cover case where there are more than one block has been mined,
+      // and perform this logic for every of them
       const rawBlock = await this.transport.getBlockByHeight(newChainHeight);
       const block = new Block(rawBlock);
 
@@ -379,10 +385,11 @@ class BlockHeadersSyncWorker extends Worker {
     logger.debug('[BlockHeadersSyncWorker] Historical fetch progress.');
     logger.debug(`[--------------------->] Confirmed: ${confirmedSyncedCount}/${totalCount}, ${confirmedProgress}%`);
     logger.debug(`[--------------------->] Total: ${totalSyncedCount}/${totalCount}, ${totalProgress}%`);
-    if (confirmedProgress === 1) {
+    if (confirmedProgress === 100) {
       logger.debug(`[--------------------->] Last header: ${longestChain[longestChain.length - 1].hash}`);
     }
 
+    // TODO: add confirmedSynced, totalSynced and total count to the progress event
     this.parentEvents.emit(EVENTS.HEADERS_SYNC_PROGRESS, {
       confirmed: confirmedProgress,
       total: totalProgress,

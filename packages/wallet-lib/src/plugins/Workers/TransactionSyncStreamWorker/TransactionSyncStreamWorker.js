@@ -181,6 +181,8 @@ class TransactionSyncStreamWorker extends Worker {
     // We first need to sync up initial historical transactions
     await this.startHistoricalSync(this.network);
     await this.storage.saveState();
+    // TODO: Purge headers metadata from storage
+    // TODO: for some reason headers still continue arriving after everything is completed
   }
 
   /**
@@ -212,6 +214,8 @@ class TransactionSyncStreamWorker extends Worker {
       chainLocked: false, // TBD
     };
 
+    // TODO: also search for transactions to verify
+    // inside the existing headers metadata
     const transactionsWithMetadata = [];
     block.transactions.forEach((tx) => {
       if (this.transactionsToVerify[tx.hash]) {
@@ -315,10 +319,17 @@ class TransactionSyncStreamWorker extends Worker {
 
     const chainStore = this.storage.getChainStore(this.network.toString());
 
-    // TODO: test
-    let progress = this.lastSyncedBlockHeight / chainStore.state.blockHeight;
-    progress = Math.round(progress * 1000) / 1000;
-    console.log(`[TransactionSyncStreamWorker] Progress ${progress}, ${this.lastSyncedBlockHeight}/${chainStore.state.blockHeight}`);
+    const totalItems = chainStore.state.blockHeight;
+    const syncedItems = this.lastSyncedBlockHeight;
+    let progress = syncedItems / totalItems;
+    progress = Math.round(progress * 1000) / 10;
+    logger.debug(`[TransactionSynsStreamWorker] Historical fetch progress: ${this.lastSyncedBlockHeight}/${chainStore.chainHeight}, ${progress}%`);
+    // TODO: add tests
+    this.parentEvents.emit(EVENTS.TRANSACTIONS_SYNC_PROGRESS, {
+      progress,
+      totalItems,
+      syncedItems,
+    });
   }
 
   scheduleProgressUpdate() {
