@@ -3,7 +3,6 @@ const { createHash } = require('crypto');
 const lodashCloneDeep = require('lodash.clonedeep');
 
 const PreCalculatedOperation = require('@dashevo/dpp/lib/stateTransition/fee/operations/PreCalculatedOperation');
-const createDocumentTypeTreePath = require('./groveDB/createDocumentTreePath');
 const InvalidQueryError = require('./errors/InvalidQueryError');
 const StorageResult = require('../storage/StorageResult');
 const DataContractStoreRepository = require('../dataContract/DataContractStoreRepository');
