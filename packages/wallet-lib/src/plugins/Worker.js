@@ -8,6 +8,7 @@ const _defaultOpts = {
   executeOnStart: false,
   firstExecutionRequired: false,
   workerMaxPass: null,
+  executeAfterStart: false,
 };
 
 class Worker extends StandardPlugin {
@@ -67,7 +68,8 @@ class Worker extends StandardPlugin {
       this.parentEvents.emit(eventTypeStarted, { type: eventTypeStarted, payload: payloadResult });
       this.state.started = true;
 
-      if (this.executeOnStart) await this.execWorker();
+      // TODO: refactor this to be more elegant
+      if (this.executeOnStart && this.executeAfterStart) await this.execWorker();
     } catch (e) {
       this.emit('error', e, {
         type: 'plugin',

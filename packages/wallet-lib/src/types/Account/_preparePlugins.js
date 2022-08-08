@@ -1,35 +1,40 @@
+const Worker = require('../../plugins/Worker');
+
 const sortPlugins = require('./_sortPlugins');
-const logger = require('../../logger');
 
 const preparePlugins = function preparePlugins(account, userUnsafePlugins) {
-  const self = this;
-  function reducer(accumulatorPromise, [plugin, allowSensitiveOperation, awaitOnInjection]) {
-    return accumulatorPromise
-      .then(async () => {
-        try {
-          await account.injectPlugin(
-            plugin,
-            allowSensitiveOperation,
-            awaitOnInjection,
-          );
-        } catch (e) {
-          logger.error('Error injecting plugin', e);
-          self.emit('error', e, {
-            type: 'plugin',
-            pluginType: 'plugin',
-            pluginName: plugin.name,
-          });
-        }
-      });
-  }
-
   return new Promise((resolve, reject) => {
     try {
       const sortedPlugins = sortPlugins(account, userUnsafePlugins);
-      // It is important that all plugin got successfully injected in a sequential maneer
-      sortedPlugins.reduce(reducer, Promise.resolve()).then(() => resolve(sortedPlugins));
+      const injectedPlugins = [];
+      const injectPlugins = async () => {
+        // Inject plugins
+        for (let i = 0; i < sortedPlugins.length; i += 1) {
+          const [PluginClass, allowSensitiveOperation, awaitOnInjection] = sortedPlugins[i];
+          // eslint-disable-next-line no-await-in-loop
+          const plugin = await account.injectPlugin(
+            PluginClass,
+            allowSensitiveOperation,
+            awaitOnInjection,
+          );
+          injectedPlugins.push(plugin);
+        }
+      };
 
-      resolve(sortedPlugins);
+      const executePlugins = async () => {
+        // Execute plugins
+        for (let i = 0; i < injectedPlugins.length; i += 1) {
+          const plugin = injectedPlugins[i];
+          if (plugin instanceof Worker) {
+            // eslint-disable-next-line no-await-in-loop
+            await plugin.execWorker();
+          }
+        }
+      };
+
+      injectPlugins().then(executePlugins)
+        .then(() => resolve(sortPlugins))
+        .catch(reject);
     } catch (e) {
       reject(e);
     }
