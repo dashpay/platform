@@ -197,7 +197,7 @@ describe('BlockHeadersSyncWorker', () => {
 
       const { blockHeadersProvider } = blockHeadersSyncWorker.transport.client;
 
-      expect(blockHeadersSyncWorker.state).to
+      expect(blockHeadersSyncWorker.syncState).to
         .equal(BlockHeadersSyncWorker.STATES.HISTORICAL_SYNC);
       expect(blockHeadersProvider.on).to
         .have.been.calledWith(
@@ -234,7 +234,7 @@ describe('BlockHeadersSyncWorker', () => {
       blockHeadersProvider.emit(BlockHeadersProvider.EVENTS.HISTORICAL_DATA_OBTAINED);
       await startPromise;
 
-      expect(blockHeadersSyncWorker.state).to
+      expect(blockHeadersSyncWorker.syncState).to
         .equal(BlockHeadersSyncWorker.STATES.IDLE);
       expect(blockHeadersProvider.removeListener)
         .to.have.been.calledWith(
@@ -278,7 +278,7 @@ describe('BlockHeadersSyncWorker', () => {
       blockHeadersSyncWorker.syncCheckpoint = 1000;
       await blockHeadersSyncWorker.execute();
 
-      expect(blockHeadersSyncWorker.state).to
+      expect(blockHeadersSyncWorker.syncState).to
         .equal(BlockHeadersSyncWorker.STATES.CONTINUOUS_SYNC);
 
       expect(blockHeadersProvider.on).to
@@ -346,7 +346,7 @@ describe('BlockHeadersSyncWorker', () => {
           blockHeadersSyncWorker.historicalDataObtainedHandler,
         );
 
-      expect(blockHeadersSyncWorker.state).to.equal(BlockHeadersSyncWorker.STATES.IDLE);
+      expect(blockHeadersSyncWorker.syncState).to.equal(BlockHeadersSyncWorker.STATES.IDLE);
       expect(blockHeadersSyncWorker.syncCheckpoint).to.equal(4);
     });
 
@@ -368,7 +368,7 @@ describe('BlockHeadersSyncWorker', () => {
           blockHeadersSyncWorker.blockHeadersProviderErrorHandler,
         );
 
-      expect(blockHeadersSyncWorker.state).to.equal(BlockHeadersSyncWorker.STATES.IDLE);
+      expect(blockHeadersSyncWorker.syncState).to.equal(BlockHeadersSyncWorker.STATES.IDLE);
     });
 
     it('should continue historical sync from checkpoint after the restart', async () => {
@@ -637,5 +637,24 @@ describe('BlockHeadersSyncWorker', () => {
       expect(blockHeadersSyncWorker.scheduleProgressUpdate)
         .to.have.not.been.called;
     });
+  });
+
+  describe('#updateProgress', () => {
+    beforeEach(function beforeEach() {
+      blockHeadersSyncWorker = createBlockHeadersSyncWorker(this.sinon);
+    });
+
+    it('should emit progress event when chain started from genesis', () => {
+      // const { blockHeadersProvider: { spvChain } } = block
+      blockHeadersSyncWorker.updateProgress();
+
+      const { firstCall } = blockHeadersSyncWorker.parentEvents.emit;
+      expect(firstCall).to.have.been.calledWith(EVENTS.HEADERS_SYNC_PROGRESS, {
+        total: 0.5,
+        confirmed: 0.5,
+      });
+    });
+
+    // TODO: cover cases with the orphan chunks?
   });
 });

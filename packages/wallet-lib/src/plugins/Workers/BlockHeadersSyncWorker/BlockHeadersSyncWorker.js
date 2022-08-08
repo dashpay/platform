@@ -44,7 +44,7 @@ class BlockHeadersSyncWorker extends Worker {
 
     this.syncCheckpoint = -1;
     this.progressUpdateTimeout = null;
-    this.state = STATES.IDLE;
+    this.syncState = STATES.IDLE;
 
     this.blockHeadersProviderErrorHandler = null;
     this.historicalDataObtainedHandler = null;
@@ -56,8 +56,8 @@ class BlockHeadersSyncWorker extends Worker {
   }
 
   async onStart() {
-    if (this.state !== STATES.IDLE) {
-      throw new Error(`Worker is already running: ${this.state}. Please call .onStop() first.`);
+    if (this.syncState !== STATES.IDLE) {
+      throw new Error(`Worker is already running: ${this.syncState}. Please call .onStop() first.`);
     }
 
     const chainStore = this.storage.getDefaultChainStore();
@@ -135,7 +135,7 @@ class BlockHeadersSyncWorker extends Worker {
     });
 
     await blockHeadersProvider.readHistorical(startFrom, bestBlockHeight);
-    this.state = STATES.HISTORICAL_SYNC;
+    this.syncState = STATES.HISTORICAL_SYNC;
 
     await historicalSyncPromise;
 
@@ -143,12 +143,12 @@ class BlockHeadersSyncWorker extends Worker {
     if (!stopped) {
       this.syncCheckpoint = bestBlockHeight;
     }
-    this.state = STATES.IDLE;
+    this.syncState = STATES.IDLE;
   }
 
   async execute() {
-    if (this.state !== STATES.IDLE) {
-      throw new Error(`Worker is already running: ${this.state}. Please call .onStop() first.`);
+    if (this.syncState !== STATES.IDLE) {
+      throw new Error(`Worker is already running: ${this.syncState}. Please call .onStop() first.`);
     }
 
     const chainStore = this.storage.getDefaultChainStore();
@@ -187,7 +187,7 @@ class BlockHeadersSyncWorker extends Worker {
         this.blockHeadersProviderErrorHandler,
       );
 
-      this.state = STATES.IDLE;
+      this.syncState = STATES.IDLE;
     };
 
     blockHeadersProvider.once(
@@ -196,7 +196,7 @@ class BlockHeadersSyncWorker extends Worker {
     );
 
     await blockHeadersProvider.startContinuousSync(this.syncCheckpoint);
-    this.state = STATES.CONTINUOUS_SYNC;
+    this.syncState = STATES.CONTINUOUS_SYNC;
   }
 
   async onStop() {
@@ -362,29 +362,31 @@ class BlockHeadersSyncWorker extends Worker {
     }
 
     const chainStore = this.storage.getDefaultChainStore();
-    const totalHistoricalHeaders = chainStore.state.blockHeight + 1; // Including root block
-
     const { blockHeadersProvider } = this.transport.client;
-    const longestChain = blockHeadersProvider.spvChain.getLongestChain();
-    const { prunedHeaders, orphanChunks, startBlockHeight } = blockHeadersProvider.spvChain;
-
+    const longestChain = blockHeadersProvider.spvChain.getLongestChain({ withPruned: true });
+    const { orphanChunks, startBlockHeight } = blockHeadersProvider.spvChain;
     const totalOrphans = orphanChunks.reduce((sum, chunk) => sum + chunk.length, 0);
-    const synchronizedHistoricalHeaders = longestChain.length
-      + prunedHeaders.length
-      + totalOrphans;
 
-    // TODO: test
-    let progress = (this.syncCheckpoint + synchronizedHistoricalHeaders - 1)
-      / totalHistoricalHeaders;
-    progress = Math.round(progress * 1000) / 1000;
+    const totalCount = chainStore.state.blockHeight + 1; // Including root block
 
-    const fetchedHeaders = this.syncCheckpoint + synchronizedHistoricalHeaders - 1;
+    // TODO: provide this data from SPVChain
+    const confirmedSyncedCount = startBlockHeight + longestChain.length;
+    const totalSyncedCount = confirmedSyncedCount + totalOrphans;
 
-    logger.debug(`[BlockHeadersSyncWorker] Historical fetch: ${fetchedHeaders}/${totalHistoricalHeaders}. Progress: ${progress}`);
-    logger.debug(`[--------------------->] Longest: ${longestChain.length}, Pruned: ${startBlockHeight + prunedHeaders.length}. Orphans: ${totalOrphans}`);
-    if (progress === 1) {
-      logger.debug(`[--------------------->] last header: ${longestChain[longestChain.length - 1].hash}`);
+    const confirmedProgress = Math.round((confirmedSyncedCount / totalCount) * 1000) / 10;
+    const totalProgress = Math.round((totalSyncedCount / totalCount) * 1000) / 10;
+
+    logger.debug('[BlockHeadersSyncWorker] Historical fetch progress.');
+    logger.debug(`[--------------------->] Confirmed: ${confirmedSyncedCount}/${totalCount}, ${confirmedProgress}%`);
+    logger.debug(`[--------------------->] Total: ${totalSyncedCount}/${totalCount}, ${totalProgress}%`);
+    if (confirmedProgress === 1) {
+      logger.debug(`[--------------------->] Last header: ${longestChain[longestChain.length - 1].hash}`);
     }
+
+    this.parentEvents.emit(EVENTS.HEADERS_SYNC_PROGRESS, {
+      confirmed: confirmedProgress,
+      total: totalProgress,
+    });
   }
 
   scheduleProgressUpdate() {

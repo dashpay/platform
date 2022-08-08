@@ -92,7 +92,7 @@ describe('BlockHeadersSyncWorker', () => {
 
         // Stop worker
         await blockHeadersSyncWorker.onStop();
-        expect(blockHeadersSyncWorker.state)
+        expect(blockHeadersSyncWorker.syncState)
           .to.equal(BlockHeadersSyncWorker.STATES.IDLE);
 
         await onStartPromise;
@@ -191,7 +191,7 @@ describe('BlockHeadersSyncWorker', () => {
         });
 
         await blockHeadersSyncWorker.onStop();
-        expect(blockHeadersSyncWorker.state).to.equal(BlockHeadersSyncWorker.STATES.IDLE);
+        expect(blockHeadersSyncWorker.syncState).to.equal(BlockHeadersSyncWorker.STATES.IDLE);
       });
 
       it('[third launch] should sync up to the new chain height', async () => {
@@ -284,7 +284,7 @@ describe('BlockHeadersSyncWorker', () => {
           });
 
         await blockHeadersSyncWorker.onStop();
-        expect(blockHeadersSyncWorker.state).to.equal(BlockHeadersSyncWorker.STATES.IDLE);
+        expect(blockHeadersSyncWorker.syncState).to.equal(BlockHeadersSyncWorker.STATES.IDLE);
       });
     });
   });
