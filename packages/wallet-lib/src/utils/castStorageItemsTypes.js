@@ -27,7 +27,7 @@ const createCastFunction = (schemaValue) => {
  * @param schema
  * @returns {{}|*}
  */
-const castStorageItemsTypes = (originalItem, schema) => {
+const castStorageItemsTypes = (originalItem, schema, path = '') => {
   if (!schema) {
     throw new Error('Schema is undefined');
   }
@@ -48,10 +48,7 @@ const castStorageItemsTypes = (originalItem, schema) => {
     const result = {};
 
     if (schemaKey !== '*' && originalItem[schemaKey] === undefined) {
-      const output = typeof originalItem === 'object'
-        ? JSON.stringify(Object.keys(originalItem)) : originalItem;
-
-      throw new Error(`No item found for schema key "${schemaKey}" in item "${output}"`);
+      throw new Error(`No item found for schema key "${schemaKey}" in path "${path}"`);
     }
 
     const schemaType = schemaValue.constructor.name;
@@ -69,10 +66,10 @@ const castStorageItemsTypes = (originalItem, schema) => {
       Object
         .entries(originalItem)
         .forEach(([key, value]) => {
-          result[key] = castStorageItemsTypes(value, schemaValue);
+          result[key] = castStorageItemsTypes(value, schemaValue, `${path}.${key}`);
         }, {});
     } else {
-      result[schemaKey] = castStorageItemsTypes(originalItem[schemaKey], schemaValue);
+      result[schemaKey] = castStorageItemsTypes(originalItem[schemaKey], schemaValue, `${path}.${schemaKey}`);
     }
 
     return { ...acc, ...result };
