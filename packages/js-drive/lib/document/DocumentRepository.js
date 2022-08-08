@@ -113,39 +113,6 @@ class DocumentRepository {
   }
 
   /**
-   * @param {Document} document
-   * @param {Object} [options]
-   * @param {boolean} [options.useTransaction=false]
-   * @param {boolean} [options.dryRun=false]
-   *
-   * @return {Promise<StorageResult<boolean>>}
-   */
-  async isExist(document, options = { }) {
-    const documentTypeTreePath = createDocumentTypeTreePath(
-      document.getDataContract(),
-      document.getType(),
-    );
-
-    const documentTreePath = documentTypeTreePath.concat(
-      [Buffer.from([0])],
-    );
-
-    const result = await this.storage.get(
-      documentTreePath,
-      document.getId().toBuffer(),
-      {
-        useTransaction: Boolean(options.useTransaction),
-        dryRun: Boolean(options.dryRun),
-      },
-    );
-
-    return new StorageResult(
-      Boolean(result.getValue()),
-      result.getOperations(),
-    );
-  }
-
-  /**
    * Find documents with query
    *
    * @param {DataContract} dataContract
