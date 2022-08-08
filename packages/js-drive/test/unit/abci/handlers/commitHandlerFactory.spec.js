@@ -26,7 +26,6 @@ describe('commitHandlerFactory', () => {
   let appHash;
   let blockExecutionContextMock;
   let dataContract;
-  let accumulativeFees;
   let rootTreeMock;
   let dppMock;
   let header;
@@ -45,7 +44,6 @@ describe('commitHandlerFactory', () => {
     blockExecutionContextMock = new BlockExecutionContextMock(this.sinon);
 
     blockExecutionContextMock.getDataContracts.returns([dataContract]);
-    blockExecutionContextMock.getCumulativeProcessingFee.returns(accumulativeFees);
 
     header = {
       height: Long.fromInt(1),
