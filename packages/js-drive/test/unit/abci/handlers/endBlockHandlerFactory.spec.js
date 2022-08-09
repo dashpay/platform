@@ -60,10 +60,6 @@ describe('endBlockHandlerFactory', () => {
 
     const getHeaderMock = this.sinon.stub();
 
-    blockExecutionContextStackMock.getLatest.returns({
-      getHeader: getHeaderMock,
-    });
-
     getHeaderMock.returns(headerMock);
 
     chainLockMock = {

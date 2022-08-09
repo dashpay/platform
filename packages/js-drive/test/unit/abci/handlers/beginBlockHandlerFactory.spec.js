@@ -66,10 +66,6 @@ describe('beginBlockHandlerFactory', () => {
 
     const getHeaderMock = this.sinon.stub();
 
-    blockExecutionContextStackMock.getLatest.returns({
-      getHeader: getHeaderMock,
-    });
-
     executionTimerMock = {
       clearTimer: this.sinon.stub(),
       startTimer: this.sinon.stub(),
