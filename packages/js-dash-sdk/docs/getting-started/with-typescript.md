@@ -5,14 +5,17 @@ Create an index.ts file
 ```js
 import Dash from 'dash';
 const clientOpts = {
-  network: 'testnet',
   wallet: {
     mnemonic: null, // Will generate a new address, you should keep it.
   },
 };
 const client = new Dash.Client(clientOpts);
 
-client.isReady().then(()=> console.log('isReady'));
+const initializeAccount = async () => {
+  const account = await client.wallet.getAccount();
+  const balance = account.getTotalBalance();
+  console.log(`Account balance: ${balance}`)
+}
 ```
 
 Have a following `tsconfig.json` file
