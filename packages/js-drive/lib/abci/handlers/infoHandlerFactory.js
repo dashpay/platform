@@ -52,10 +52,12 @@ function infoHandlerFactory(
 
     blockExecutionContextStack.setContexts(persistedBlockExecutionContextStack.getContexts());
 
-    const latestContext = blockExecutionContextStack.getLatest();
+    const previousContext = blockExecutionContextStack.getFirst();
 
-    if (latestContext) {
-      blockExecutionContext.populate(blockExecutionContextStack.getLatest());
+    // Populate current execution context with previous context
+    // until block begin called with a new block.
+    if (previousContext) {
+      blockExecutionContext.populate(previousContext);
     }
 
     // Initialize current heights
@@ -63,7 +65,7 @@ function infoHandlerFactory(
     let lastHeight = Long.fromNumber(0);
     let lastCoreChainLockedHeight = 0;
 
-    if (latestContext) {
+    if (previousContext) {
       const lastHeader = blockExecutionContext.getHeader();
 
       lastHeight = lastHeader.height;
@@ -76,7 +78,7 @@ function infoHandlerFactory(
 
     // Update SML store to latest saved core chain lock to make sure
     // that verify chain lock handler has updated SML Store to verify signatures
-    if (latestContext) {
+    if (previousContext) {
       await updateSimplifiedMasternodeList(lastCoreChainLockedHeight, {
         logger: contextLogger,
       });

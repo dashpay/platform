@@ -64,17 +64,23 @@ function endBlockHandlerFactory(
     const processingFees = blockExecutionContext.getCumulativeProcessingFee();
     const storageFees = blockExecutionContext.getCumulativeStorageFee();
 
-    const rsResponse = await rsAbci.blockEnd({
+    const rsRequest = {
       fees: {
         processingFees,
         storageFees,
       },
-    }, true);
+    };
+
+    logger.debug(rsRequest, 'Request RS Drive\'s BlockEnd method');
+
+    const rsResponse = await rsAbci.blockEnd(rsRequest, true);
+
+    logger.debug(rsResponse, 'RS Drive\'s BlockEnd method response');
 
     const { currentEpochIndex, isEpochChange } = rsResponse;
 
     if (isEpochChange) {
-      const latestContext = blockExecutionContextStack.getLatest();
+      const previousContext = blockExecutionContextStack.getFirst();
 
       const blockTime = timeToMillis(header.time.seconds, header.time.nanos);
 
@@ -83,21 +89,25 @@ function endBlockHandlerFactory(
         blockTime,
       };
 
-      if (latestContext) {
-        const latestHeader = latestContext.getHeader();
+      if (previousContext) {
+        const latestHeader = previousContext.getHeader();
         debugData.previousBlockTimeMs = timeToMillis(
           latestHeader.time.seconds, latestHeader.time.nanos,
         );
       }
 
-      consensusLogger.debug(debugData, `Fee epoch #${currentEpochIndex} started on block time ${blockTime}`);
+      const blockTimeFormatted = new Date(blockTime).toUTCString();
+
+      consensusLogger.debug(debugData, `Fee epoch #${currentEpochIndex} started on block #${height} at ${blockTimeFormatted}`);
     }
 
-    consensusLogger.debug({
-      currentEpochIndex,
-      processingFees,
-      storageFees,
-    }, `${processingFees} processing fees add to epoch #${currentEpochIndex}. ${storageFees} storage fees add to distribution pool`);
+    if (processingFees > 0 || storageFees > 0) {
+      consensusLogger.debug({
+        currentEpochIndex,
+        processingFees,
+        storageFees,
+      }, `${processingFees} processing fees added to epoch #${currentEpochIndex}. ${storageFees} storage fees added to distribution pool`);
+    }
 
     if (rsResponse.proposersPaidCount) {
       consensusLogger.debug({

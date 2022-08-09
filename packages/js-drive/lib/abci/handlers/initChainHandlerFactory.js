@@ -60,6 +60,8 @@ function initChainHandlerFactory(
 
     // Call RS ABCI
 
+    logger.debug('Request RS Drive\'s InitChain method');
+
     await rsAbci.initChain({ }, true);
 
     await registerSystemDataContracts(consensusLogger, time);

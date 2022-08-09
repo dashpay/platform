@@ -128,7 +128,6 @@ describe('beginBlockHandlerFactory', () => {
     expect(waitForChainLockedHeightMock).to.be.calledOnceWithExactly(coreChainLockedHeight);
 
     // Reset block execution context
-    expect(blockExecutionContextMock.getHeader).to.be.calledOnceWithExactly();
     expect(blockExecutionContextMock.reset).to.be.calledOnceWithExactly();
     expect(blockExecutionContextMock.setHeader).to.be.calledOnceWithExactly(header);
     expect(blockExecutionContextMock.setLastCommitInfo).to.be.calledOnceWithExactly(lastCommitInfo);
@@ -197,11 +196,12 @@ describe('beginBlockHandlerFactory', () => {
       },
     });
 
-    blockExecutionContextStackMock.getLatest.returns({
+    blockExecutionContextStackMock.getFirst.returns({
       getHeader: this.sinon.stub().returns(
         {
           height: {
             equals: this.sinon.stub().returns(true),
+            toNumber: this.sinon.stub().returns(1000),
           },
           time: {
             seconds: Math.ceil(new Date().getTime() / 1000),
@@ -217,7 +217,7 @@ describe('beginBlockHandlerFactory', () => {
     expect(response).to.be.an.instanceOf(ResponseBeginBlock);
 
     expect(groveDBStoreMock.abortTransaction).to.be.calledOnceWithExactly();
-    expect(blockExecutionContextStackMock.removeLatest).to.be.calledOnceWithExactly();
+    expect(blockExecutionContextStackMock.removeFirst).to.be.calledOnceWithExactly();
 
     expect(blockExecutionContextMock.reset).to.be.calledOnceWithExactly();
     expect(blockExecutionContextMock.setHeader).to.be.calledOnceWithExactly(header);

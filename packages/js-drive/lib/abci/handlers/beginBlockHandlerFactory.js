@@ -92,15 +92,10 @@ function beginBlockHandlerFactory(
     // in case previous block execution failed in process
     // and not committed. We need to make sure
     // previous context properly reset.
-    const contextHeader = blockExecutionContext.getHeader();
-    if (contextHeader && contextHeader.height.equals(height)) {
+    const previousContext = blockExecutionContextStack.getFirst();
+    if (previousContext && previousContext.getHeader().height.equals(height)) {
       // Remove failed block context from the stack
-      const latestContext = blockExecutionContextStack.getLatest();
-      const latestContextHeader = latestContext.getHeader();
-
-      if (latestContextHeader.height.equals(height)) {
-        blockExecutionContextStack.removeLatest();
-      }
+      blockExecutionContextStack.removeFirst();
     }
 
     blockExecutionContext.reset();
@@ -133,14 +128,15 @@ function beginBlockHandlerFactory(
       proposerProTxHash: header.proposerProTxHash,
     };
 
-    const latestContext = blockExecutionContextStack.getLatest();
+    if (previousContext) {
+      const previousHeader = previousContext.getHeader();
 
-    if (latestContext) {
-      const latestHeader = latestContext.getHeader();
       rsRequest.previousBlockTimeMs = timeToMillis(
-        latestHeader.time.seconds, latestHeader.time.nanos,
+        previousHeader.time.seconds, previousHeader.time.nanos,
       );
     }
+
+    logger.debug(rsRequest, 'Request RS Drive\'s BlockBegin method');
 
     await rsAbci.blockBegin(rsRequest, true);
 
@@ -166,14 +162,16 @@ function beginBlockHandlerFactory(
         `Masternode identities are synced for heights from ${fromHeight} to ${toHeight}: ${createdEntities.length} created, ${updatedEntities.length} updated, ${removedEntities.length} removed`,
       );
 
-      consensusLogger.trace(
-        {
-          createdEntities: createdEntities.map((item) => item.toJSON()),
-          updatedEntities: updatedEntities.map((item) => item.toJSON()),
-          removedEntities: removedEntities.map((item) => item.toJSON()),
-        },
-        'Synchronized masternode identities',
-      );
+      if (createdEntities.length > 0 || updatedEntities.length > 0 || removedEntities.length > 0) {
+        consensusLogger.trace(
+          {
+            createdEntities: createdEntities.map((item) => item.toJSON()),
+            updatedEntities: updatedEntities.map((item) => item.toJSON()),
+            removedEntities: removedEntities.map((item) => item.toJSON()),
+          },
+          'Synchronized masternode identities',
+        );
+      }
     }
 
     consensusLogger.info(`Block begin #${height}`);
