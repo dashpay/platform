@@ -78,7 +78,7 @@ describe('infoHandlerFactory', () => {
     });
 
     expect(blockExecutionContextStackRepositoryMock.fetch).to.be.calledOnce();
-    expect(blockExecutionContextStackMock.getLatest).to.be.calledOnce();
+    expect(blockExecutionContextStackMock.getFirst).to.be.calledOnce();
     expect(blockExecutionContextMock.populate).to.not.be.called();
     expect(blockExecutionContextMock.getHeader).to.not.be.called();
     expect(updateSimplifiedMasternodeListMock).to.not.be.called();
@@ -86,7 +86,7 @@ describe('infoHandlerFactory', () => {
   });
 
   it('should populate context, initialize Credits Distribution Pool and update SML on subsequent runs', async () => {
-    blockExecutionContextStackMock.getLatest.returns(blockExecutionContextMock);
+    blockExecutionContextStackMock.getFirst.returns(blockExecutionContextMock);
 
     lastBlockHeight = Long.fromInt(1);
     lastCoreChainLockedHeight = 2;
