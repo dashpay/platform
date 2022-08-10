@@ -96,23 +96,21 @@ describe('commitHandlerFactory', () => {
     expect(response).to.be.an.instanceOf(ResponseCommit);
     expect(response.data).to.deep.equal(appHash);
 
-    expect(blockExecutionContextMock.getHeader).to.be.calledOnce();
+    expect(blockExecutionContextMock.getHeader).to.be.calledOnceWithExactly();
 
-    expect(blockExecutionContextStackMock.add).to.be.calledOnceWith(
-      blockExecutionContextMock,
-    );
+    expect(blockExecutionContextStackMock.add).to.be.calledOnce();
 
-    expect(blockExecutionContextStackRepositoryMock.store).to.be.calledOnceWith(
+    expect(blockExecutionContextStackRepositoryMock.store).to.be.calledOnceWithExactly(
       blockExecutionContextStackMock,
       {
         useTransaction: true,
       },
     );
 
-    expect(groveDBStoreMock.commitTransaction).to.be.calledOnce();
+    expect(groveDBStoreMock.commitTransaction).to.be.calledOnceWithExactly();
 
-    expect(blockExecutionContextMock.getDataContracts).to.be.calledOnce();
+    expect(blockExecutionContextMock.getDataContracts).to.be.calledOnceWithExactly();
 
-    expect(groveDBStoreMock.getRootHash).to.be.calledOnce();
+    expect(groveDBStoreMock.getRootHash).to.be.calledOnceWithExactly();
   });
 });

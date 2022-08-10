@@ -3,8 +3,7 @@
  * @method getContexts
  * @method getFirst
  * @method getLast
- * @method getLatest
- * @method removeLatest
+ * @method removeFirst
  * @method add
  * @method getSize
  */
@@ -17,8 +16,7 @@ class BlockExecutionContextStackMock {
     this.getContexts = sinon.stub();
     this.getFirst = sinon.stub();
     this.getLast = sinon.stub();
-    this.getLatest = sinon.stub();
-    this.removeLatest = sinon.stub();
+    this.removeFirst = sinon.stub();
     this.add = sinon.stub();
     this.getSize = sinon.stub();
   }

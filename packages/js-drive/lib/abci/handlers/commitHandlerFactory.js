@@ -7,6 +7,7 @@ const {
 } = require('@dashevo/abci/types');
 const ReadOperation = require('@dashevo/dpp/lib/stateTransition/fee/operations/ReadOperation');
 const DataContractCacheItem = require('../../dataContract/DataContractCacheItem');
+const BlockExecutionContext = require('../../blockExecution/BlockExecutionContext');
 
 /**
  * @param {BlockExecutionContext} blockExecutionContext
@@ -50,7 +51,11 @@ function commitHandlerFactory(
     consensusLogger.debug('Commit ABCI method requested');
 
     // Store block execution context
-    blockExecutionContextStack.add(blockExecutionContext);
+    const clonedBlockExecutionContext = new BlockExecutionContext();
+    clonedBlockExecutionContext.populate(blockExecutionContext);
+
+    blockExecutionContextStack.add(clonedBlockExecutionContext);
+
     blockExecutionContextStackRepository.store(
       blockExecutionContextStack,
       {
