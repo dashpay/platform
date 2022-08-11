@@ -78,11 +78,17 @@ class JsonRpcTransport {
 
       return result;
     } catch (error) {
+      // eslint-disable-next-line no-console
+      console.log('error', error);
+
       this.lastUsedAddress = address;
 
       if (error.code === undefined) {
         throw error;
       }
+
+      // eslint-disable-next-line no-console
+      console.log('markAsBanned');
 
       address.markAsBanned();
 
