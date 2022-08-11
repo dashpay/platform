@@ -1,10 +1,10 @@
 use anyhow::Result as AnyResult;
 use async_trait::async_trait;
+use dashcore::InstantLock;
 #[cfg(test)]
 use mockall::{automock, predicate::*};
 use serde_json::Value as JsonValue;
 
-use crate::mocks;
 use crate::prelude::*;
 
 #[cfg_attr(test, automock)]
@@ -76,7 +76,7 @@ pub trait StateRepositoryLike: Send + Sync {
         T: for<'de> serde::de::Deserialize<'de> + 'static;
 
     /// Verify Instant Lock
-    async fn verify_instant_lock(&self, instant_lock: &mocks::InstantLock) -> AnyResult<bool>;
+    async fn verify_instant_lock(&self, instant_lock: &InstantLock) -> AnyResult<bool>;
 
     /// Check if AssetLock Transaction outPoint exists in spent list
     async fn is_asset_lock_transaction_out_point_already_used(
@@ -95,4 +95,10 @@ pub trait StateRepositoryLike: Send + Sync {
     async fn fetch_sml_store<T>(&self) -> AnyResult<T>
     where
         T: for<'de> serde::de::Deserialize<'de> + 'static;
+
+    /// Create an identity
+    async fn create_identity(&self, identity: &Identity) -> AnyResult<()>;
+
+    /// Update an identity
+    async fn update_identity(&self, identity: &Identity) -> AnyResult<()>;
 }

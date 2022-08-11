@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 
 use crate::identity::identity_public_key;
+use crate::identity::state_transition::asset_lock_proof::AssetLockProof;
 use crate::util::cbor_value::{CborBTreeMapHelper, CborCanonicalMap};
 use crate::util::deserializer;
 use crate::util::json_value::{JsonValueExt, ReplaceWith};
@@ -12,18 +13,8 @@ use crate::{errors::ProtocolError, identifier::Identifier, metadata::Metadata, u
 
 use super::{IdentityPublicKey, KeyID};
 
-// TODO implement!
-type InstantAssetLockProof = String;
-// TODO implement!
-type ChainAssetLockProof = String;
-
-#[derive(Clone, PartialEq, Eq, Debug, Serialize, Deserialize)]
-pub enum AssetLockProof {
-    Instant(InstantAssetLockProof),
-    Chain(ChainAssetLockProof),
-}
-
-pub const IDENTIFIER_FIELDS: [&str; 1] = ["$id"];
+pub const IDENTIFIER_FIELDS_JSON: [&str; 1] = ["$id"];
+pub const IDENTIFIER_FIELDS_RAW_OBJECT: [&str; 1] = ["id"];
 
 /// Implement the Identity. Identity is a low-level construct that provides the foundation
 /// for user-facing functionality on the platform
@@ -220,12 +211,8 @@ impl Identity {
         })
     }
 
-    pub fn from_raw_object(mut raw_object: JsonValue) -> Result<Identity, ProtocolError> {
-        // TODO identifier_default_deserializer: default deserializer should be changed to bytes
-        // Identifiers fields should be replaced with the string format to deserialize Identity
-        raw_object.replace_identifier_paths(IDENTIFIER_FIELDS, ReplaceWith::Base58)?;
-
-        if let Some(public_keys_value) = raw_object.get_mut("publicKeys") {
+    pub fn from_json(mut json_object: JsonValue) -> Result<Identity, ProtocolError> {
+        if let Some(public_keys_value) = json_object.get_mut("publicKeys") {
             if let Some(public_keys_array) = public_keys_value.as_array_mut() {
                 for public_key in public_keys_array.iter_mut() {
                     public_key.replace_binary_paths(
@@ -236,6 +223,16 @@ impl Identity {
             }
         }
 
+        let identity: Identity = serde_json::from_value(json_object)?;
+
+        Ok(identity)
+    }
+
+    pub fn from_raw_object(mut raw_object: JsonValue) -> Result<Identity, ProtocolError> {
+        // // TODO identifier_default_deserializer: default deserializer should be changed to bytes
+        // // Identifiers fields should be replaced with the string format to deserialize Identity
+        raw_object.replace_identifier_paths(IDENTIFIER_FIELDS_RAW_OBJECT, ReplaceWith::Base58)?;
+
         let identity: Identity = serde_json::from_value(raw_object)?;
 
         Ok(identity)
@@ -245,6 +242,3 @@ impl Identity {
         Ok(hash::hash(&self.to_buffer()?))
     }
 }
-
-#[test]
-fn test_to_buffer() {}

@@ -9,7 +9,7 @@ use crate::{
 
 const MAX_DEPTH: usize = 500;
 
-pub fn validate_data_contract_max_depth(raw_data_contract: &JsonValue) -> ValidationResult {
+pub fn validate_data_contract_max_depth(raw_data_contract: &JsonValue) -> ValidationResult<()> {
     let mut result = ValidationResult::default();
     let schema_depth = match calc_max_depth(raw_data_contract) {
         Ok(depth) => depth,
@@ -93,8 +93,9 @@ fn resolve_uri<'a>(json: &'a JsonValue, uri: &str) -> Result<&'a JsonValue, anyh
 
 #[cfg(test)]
 mod test {
-    use super::*;
     use serde_json::json;
+
+    use super::*;
 
     #[test]
     fn should_return_error_when_cycle_is_spotted() {

@@ -5,7 +5,7 @@ use crate::{
     tests::utils::generate_random_identifier_struct as gen_owner_id, version::LATEST_VERSION,
 };
 
-use super::{get_document_validator_fixture, get_dpp};
+use super::get_document_validator_fixture;
 
 pub fn get_documents_fixture(data_contract: DataContract) -> Result<Vec<Document>, ProtocolError> {
     let factory = DocumentFactory::new(

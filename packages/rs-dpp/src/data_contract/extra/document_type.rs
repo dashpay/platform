@@ -1,13 +1,14 @@
+use std::collections::{BTreeMap, BTreeSet};
+
+use ciborium::value::Value;
+use serde::{Deserialize, Serialize};
+
 use super::common::*;
 use super::errors::ContractError;
 use super::{
     document_field::{DocumentField, DocumentFieldType},
     index::{Index, IndexProperty},
 };
-use ciborium::value::Value;
-use dashcore::util::amount::CheckedSum;
-use serde::{Deserialize, Serialize};
-use std::collections::{BTreeMap, BTreeSet};
 
 pub const PROTOCOL_VERSION: u32 = 1;
 pub const CONTRACT_DOCUMENTS_PATH_HEIGHT: u16 = 4;
@@ -268,7 +269,7 @@ impl DocumentType {
                 }
                 _ => {
                     field_type = string_to_field_type(type_value)
-                        .ok_or(ContractError::ValueWrongType("invalid type"))?;
+                        .ok_or_else(|| ContractError::ValueWrongType("invalid type"))?;
                     document_properties.insert(
                         prefixed_property_key,
                         DocumentField {

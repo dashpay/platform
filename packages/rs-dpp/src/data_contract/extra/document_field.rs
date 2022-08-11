@@ -1,14 +1,14 @@
-use ciborium::value::{Integer, Value};
-use rand::distributions::{Alphanumeric, Standard};
+use std::collections::BTreeMap;
+use std::convert::{TryFrom, TryInto};
 use std::io::{BufReader, Read};
 
 use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
+use ciborium::value::{Integer, Value};
 use integer_encoding::{VarInt, VarIntReader};
+use rand::distributions::{Alphanumeric, Standard};
 use rand::rngs::StdRng;
 use rand::Rng;
 use serde::{Deserialize, Serialize};
-use std::collections::{BTreeMap, BTreeSet};
-use std::convert::{TryFrom, TryInto};
 
 use super::array_field::ArrayFieldType;
 use super::common::*;
@@ -249,7 +249,7 @@ impl DocumentFieldType {
                 }
             }
             DocumentFieldType::Date | DocumentFieldType::Number => {
-                if required == false {
+                if !required {
                     let marker = buf.read_u8().map_err(|_| {
                         ContractError::CorruptedSerialization(
                             "error reading from serialized document",
@@ -265,7 +265,7 @@ impl DocumentFieldType {
                 Ok(Some(Value::Float(date)))
             }
             DocumentFieldType::Integer => {
-                if required == false {
+                if !required {
                     let marker = buf.read_u8().map_err(|_| {
                         ContractError::CorruptedSerialization(
                             "error reading from serialized document",
@@ -318,7 +318,7 @@ impl DocumentFieldType {
                     Ok(Some(Value::Map(values)))
                 }
             }
-            DocumentFieldType::Array(array_field_type) => {
+            DocumentFieldType::Array(_array_field_type) => {
                 Err(ContractError::Unsupported(
                     "serialization of arrays not yet supported",
                 ))
