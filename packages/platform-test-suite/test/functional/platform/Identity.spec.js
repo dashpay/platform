@@ -607,6 +607,26 @@ describe('Platform', () => {
 
             expect(fetchedIdentity).to.be.not.null();
           }
+
+          const publicKeyOwner = Buffer.from(transaction.extraPayload.keyIDOwner, 'hex').reverse();
+          const votingPubKeyHash = Buffer.from(transaction.extraPayload.keyIDVoting, 'hex').reverse();
+
+          if (!votingPubKeyHash.equals(publicKeyOwner)) {
+            const votingIdentityId = Identifier.from(
+              hash(
+                Buffer.concat([
+                  Buffer.from(masternodeEntry.proRegTxHash, 'hex'),
+                  votingPubKeyHash,
+                ]),
+              ),
+            );
+
+            fetchedIdentity = await client.platform.identities.get(
+              votingIdentityId,
+            );
+
+            expect(fetchedIdentity).to.be.not.null();
+          }
         }
       });
     });

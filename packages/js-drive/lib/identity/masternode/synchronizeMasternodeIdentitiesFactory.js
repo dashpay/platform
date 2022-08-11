@@ -13,6 +13,7 @@ const SimplifiedMNList = require('@dashevo/dashcore-lib/lib/deterministicmnlist/
  * @param {handleUpdatedPubKeyOperator} handleUpdatedPubKeyOperator
  * @param {handleRemovedMasternode} handleRemovedMasternode
  * @param {handleUpdatedScriptPayout} handleUpdatedScriptPayout
+ * @param {handleUpdatedVotingAddress} handleUpdatedVotingAddress
  * @param {number} smlMaxListsLimit
  * @param {RpcClient} coreRpcClient
  * @return {synchronizeMasternodeIdentities}
@@ -25,6 +26,7 @@ function synchronizeMasternodeIdentitiesFactory(
   handleUpdatedPubKeyOperator,
   handleRemovedMasternode,
   handleUpdatedScriptPayout,
+  handleUpdatedVotingAddress,
   smlMaxListsLimit,
   coreRpcClient,
 ) {
@@ -97,6 +99,19 @@ function synchronizeMasternodeIdentitiesFactory(
               mnEntry,
               previousMnEntry,
               dataContract,
+            ),
+          );
+        }
+
+        const previousVotingMnEntry = previousMNList.find((previousMnListEntry) => (
+          previousMnListEntry.proRegTxHash === mnEntry.proRegTxHash
+          && previousMnListEntry.votingAddress !== mnEntry.votingAddress
+        ));
+
+        if (previousVotingMnEntry) {
+          updatedEntities = updatedEntities.concat(
+            await handleUpdatedVotingAddress(
+              mnEntry,
             ),
           );
         }
