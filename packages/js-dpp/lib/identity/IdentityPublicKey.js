@@ -189,6 +189,13 @@ class IdentityPublicKey {
   }
 
   /**
+   * Is public key disabled
+   */
+  isDisabled() {
+    return this.getDisabledAt() !== undefined;
+  }
+
+  /**
    * Set signature
    *
    * @param {Buffer} signature
