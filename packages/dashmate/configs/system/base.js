@@ -80,6 +80,9 @@ module.exports = {
         grpc: {
           port: 3010,
         },
+        admin: {
+          port: 6020,
+        },
         rateLimiter: {
           maxTokens: 300,
           tokensPerFill: 150,

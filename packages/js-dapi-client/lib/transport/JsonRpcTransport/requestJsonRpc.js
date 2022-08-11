@@ -85,6 +85,7 @@ async function requestJsonRpc(host, port, method, params, options = {}) {
   const { data } = response;
 
   if (data.error) {
+    console.log(data.error);
     throw new JsonRpcError(requestInfo, data.error);
   }
 

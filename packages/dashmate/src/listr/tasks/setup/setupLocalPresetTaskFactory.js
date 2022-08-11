@@ -180,6 +180,7 @@ function setupLocalPresetTaskFactory(
 
                   config.set('platform.dapi.envoy.http.port', 3000 + (i * 100));
                   config.set('platform.dapi.envoy.grpc.port', 3010 + (i * 100));
+                  config.set('platform.dapi.envoy.admin.port', 6020 + (i * 100));
                   config.set('platform.drive.tenderdash.p2p.port', 26656 + (i * 100));
                   config.set('platform.drive.tenderdash.rpc.port', 26657 + (i * 100));
 

@@ -262,6 +262,16 @@ module.exports = {
                   required: ['port'],
                   additionalProperties: false,
                 },
+                admin: {
+                  type: 'object',
+                  properties: {
+                    port: {
+                      $ref: '#/definitions/port',
+                    },
+                  },
+                  required: ['port'],
+                  additionalProperties: false,
+                },
                 rateLimiter: {
                   type: 'object',
                   properties: {
@@ -285,7 +295,7 @@ module.exports = {
                   additionalProperties: false,
                 },
               },
-              required: ['docker', 'http', 'grpc', 'rateLimiter'],
+              required: ['docker', 'http', 'grpc', 'rateLimiter', 'admin'],
               additionalProperties: false,
             },
             api: {
