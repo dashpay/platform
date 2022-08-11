@@ -5,11 +5,11 @@ use crate::consensus::ConsensusError;
 use crate::identity::validation::PublicKeysValidator;
 use crate::identity::validation::TPublicKeysValidator;
 use crate::identity::{KeyType, Purpose, SecurityLevel};
-use crate::tests::utils::{decode_hex, serde_set_ref};
+use crate::tests::utils::serde_set_ref;
 
 fn setup_test() -> (Vec<Value>, PublicKeysValidator) {
     (
-        crate::tests::fixtures::identity_fixture_json()
+        crate::tests::fixtures::identity_fixture_raw_object()
             .as_object()
             .unwrap()
             .get("publicKeys")
@@ -29,12 +29,13 @@ pub mod id {
     use crate::errors::consensus::ConsensusError;
     use crate::identity::validation::TPublicKeysValidator;
     use crate::tests::identity::validation::public_keys_validator_spec::setup_test;
-    use crate::tests::utils::{serde_remove_ref, serde_set_ref};
+    use crate::tests::utils::serde_set_ref;
+    use crate::tests::utils::SerdeTestExtension;
 
     #[test]
     pub fn should_be_present() {
         let (mut raw_public_keys, validator) = setup_test();
-        serde_remove_ref(raw_public_keys.get_mut(1).unwrap(), "id");
+        raw_public_keys.get_mut(1).unwrap().remove_key("id");
 
         let result = validator.validate_keys(&raw_public_keys).unwrap();
         let errors = assert_consensus_errors!(&result, ConsensusError::JsonSchemaError, 1);
@@ -428,7 +429,7 @@ pub fn should_pass_valid_ecdsa_hash160_public_key() {
         "purpose": 0,
         "securityLevel": 0,
         "readOnly": true,
-        "data": decode_hex("6086389d3fa4773aa950b8de18c5bd6d8f2b73bc").unwrap(),
+        "data": hex::decode("6086389d3fa4773aa950b8de18c5bd6d8f2b73bc").unwrap(),
     }]);
     let raw_public_keys = raw_public_keys_json.as_array().unwrap();
 
@@ -446,7 +447,7 @@ pub fn should_return_invalid_result_if_bls12_381_public_key_is_invalid() {
         "purpose": 0,
         "securityLevel": 0,
         "readOnly": true,
-        "data": decode_hex("11fac99ca2c8f39c286717c213e190aba4b7af76db320ec43f479b7d9a2012313a0ae59ca576edf801444bc694686694").unwrap(),
+        "data": hex::decode("11fac99ca2c8f39c286717c213e190aba4b7af76db320ec43f479b7d9a2012313a0ae59ca576edf801444bc694686694").unwrap(),
     }]);
     let raw_public_keys = raw_public_keys_json.as_array().unwrap();
 

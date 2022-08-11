@@ -125,34 +125,6 @@ impl<'de> Deserialize<'de> for Identifier {
     }
 }
 
-// impl Serialize for Identifier {
-//     fn serialize<S>(self: &Identifier, serializer: S) -> Result<S::Ok, S::Error>
-//     where
-//         S: Serializer,
-//     {
-//         // by default we use base58 as Identifier type should be encoded in that way
-//         serializer.serialize_bytes(&self.to_buffer())
-//     }
-// }
-//
-// //#[serde(bound = "T: MyTrait")]
-// impl<'de> Deserialize<'de> for Identifier {
-//     fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Identifier, D::Error> {
-//         println!("id 1");
-//         let bytes: CborValue = Deserialize::deserialize(d)?;
-//
-//         let bytes = bytes
-//             .as_bytes()
-//             .ok_or_else(|| serde::de::Error::custom("Expected Identifier to be bytes"))?;
-//
-//         println!("id 2");
-//         let id = Identifier::from_bytes(bytes).map_err(|e| serde::de::Error::custom(e.to_string()));
-//         println!("id 3");
-//
-//         id
-//     }
-// }
-
 impl std::fmt::Display for Identifier {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.to_string(Encoding::Base58))

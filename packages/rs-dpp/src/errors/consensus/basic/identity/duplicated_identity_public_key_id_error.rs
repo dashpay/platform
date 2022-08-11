@@ -1,6 +1,6 @@
 use thiserror::Error;
 
-#[derive(Error, Debug, Clone)]
+#[derive(Error, Debug, Clone, PartialEq, Eq)]
 #[error("Duplicated public key ids ${duplicated_ids:?} found")]
 pub struct DuplicatedIdentityPublicKeyIdError {
     duplicated_ids: Vec<u64>,

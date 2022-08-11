@@ -1,5 +1,6 @@
-use crate::document::document_validator::DocumentValidator;
 use std::sync::Arc;
+
+use crate::document::document_validator::DocumentValidator;
 
 use super::get_protocol_version_validator_fixture;
 

@@ -9,7 +9,8 @@ use crate::data_contract::state_transition::{
 };
 // TODO unify the import paths ::object::state_transition::*
 use crate::document::DocumentsBatchTransition;
-use crate::mocks;
+use crate::identity::state_transition::identity_create_transition::IdentityCreateTransition;
+use crate::identity::state_transition::identity_topup_transition::IdentityTopUpTransition;
 
 mod abstract_state_transition;
 mod abstract_state_transition_identity_signed;
@@ -44,8 +45,8 @@ macro_rules! call_static_method {
             StateTransition::DataContractCreate(_) => DataContractCreateTransition::$method(),
             StateTransition::DataContractUpdate(_) => DataContractUpdateTransition::$method(),
             StateTransition::DocumentsBatch(_) => DocumentsBatchTransition::$method(),
-            StateTransition::IdentityCreate(_) => mocks::IdentityCreateTransition::$method(),
-            StateTransition::IdentityTopUp(_) => mocks::IdentityTopUpTransition::$method(),
+            StateTransition::IdentityCreate(_) => IdentityCreateTransition::$method(),
+            StateTransition::IdentityTopUp(_) => IdentityTopUpTransition::$method(),
         }
     };
 }
@@ -55,8 +56,8 @@ pub enum StateTransition {
     DataContractCreate(DataContractCreateTransition),
     DataContractUpdate(DataContractUpdateTransition),
     DocumentsBatch(DocumentsBatchTransition),
-    IdentityCreate(mocks::IdentityCreateTransition),
-    IdentityTopUp(mocks::IdentityTopUpTransition),
+    IdentityCreate(IdentityCreateTransition),
+    IdentityTopUp(IdentityTopUpTransition),
 }
 
 impl StateTransition {
@@ -143,21 +144,3 @@ impl From<DocumentsBatchTransition> for StateTransition {
         Self::DocumentsBatch(d)
     }
 }
-
-impl From<mocks::IdentityCreateTransition> for StateTransition {
-    fn from(d: mocks::IdentityCreateTransition) -> Self {
-        Self::IdentityCreate(d)
-    }
-}
-
-impl From<mocks::IdentityTopUpTransition> for StateTransition {
-    fn from(d: mocks::IdentityTopUpTransition) -> Self {
-        Self::IdentityTopUp(d)
-    }
-}
-
-// impl From<mocks::IdentityTopUpTransition> for StateTransition {
-//     fn from(d: mocks::IdentityTopUpTransition) -> Self {
-//         Self::IdentityTopUp(d)
-//     }
-// }

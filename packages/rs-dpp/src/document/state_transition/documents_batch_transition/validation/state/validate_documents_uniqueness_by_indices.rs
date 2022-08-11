@@ -1,3 +1,7 @@
+use futures::future::join_all;
+use itertools::Itertools;
+use serde_json::{json, Value as JsonValue};
+
 use crate::{
     document::{
         document_transition::{Action, DocumentTransition, DocumentTransitionExt},
@@ -12,9 +16,6 @@ use crate::{
     validation::ValidationResult,
     ProtocolError, StateError,
 };
-use futures::future::join_all;
-use itertools::Itertools;
-use serde_json::{json, Value as JsonValue};
 
 struct QueryDefinition<'a> {
     document_type: &'a str,
@@ -28,7 +29,7 @@ pub async fn validate_documents_uniqueness_by_indices<SR>(
     owner_id: &Identifier,
     document_transitions: impl IntoIterator<Item = impl AsRef<DocumentTransition>>,
     data_contract: &DataContract,
-) -> Result<ValidationResult, ProtocolError>
+) -> Result<ValidationResult<()>, ProtocolError>
 where
     SR: StateRepositoryLike,
 {
@@ -137,7 +138,7 @@ fn build_query_for_index_definition(
 fn validate_uniqueness<'a>(
     futures_meta: Vec<(&'a Index, &'a DocumentTransition)>,
     results: Vec<Result<Vec<Document>, anyhow::Error>>,
-) -> Result<ValidationResult, ProtocolError> {
+) -> Result<ValidationResult<()>, ProtocolError> {
     let mut validation_result = ValidationResult::default();
     for (i, result) in results.into_iter().enumerate() {
         let documents = result?;

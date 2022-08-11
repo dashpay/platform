@@ -1,3 +1,7 @@
+use std::sync::Arc;
+
+use serde_json::json;
+
 use crate::prelude::*;
 use crate::{
     data_contract::validation::data_contract_validator::DataContractValidator,
@@ -6,8 +10,6 @@ use crate::{
     tests::utils::generate_random_identifier_struct,
     version::{ProtocolVersionValidator, COMPATIBILITY_MAP, LATEST_VERSION},
 };
-use serde_json::json;
-use std::sync::Arc;
 
 pub fn get_data_contract_fixture(owner_id: Option<Identifier>) -> DataContract {
     let documents = json!(

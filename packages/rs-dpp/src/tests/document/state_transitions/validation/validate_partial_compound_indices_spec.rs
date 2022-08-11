@@ -1,18 +1,19 @@
+use serde_json::{json, Value as JsonValue};
+
 use crate::{
-		validation::ValidationResult,
     consensus::{basic::BasicError, ConsensusError},
     data_contract::DataContract,
     document::{
-					state_transition::documents_batch_transition::validation::basic::validate_partial_compound_indices::*,
-        document_transition::{Action, DocumentTransitionObjectLike},
         Document,
+        document_transition::{Action, DocumentTransitionObjectLike},
+        state_transition::documents_batch_transition::validation::basic::validate_partial_compound_indices::*,
     },
     tests::fixtures::{
         get_data_contract_fixture, get_document_transitions_fixture, get_documents_fixture,
     },
     util::json_value::JsonValueExt,
+    validation::ValidationResult,
 };
-use serde_json::{json, Value as JsonValue};
 
 struct TestData {
     data_contract: DataContract,
@@ -110,7 +111,7 @@ fn should_return_valid_result_if_compound_index_contains_all_fields() {
     assert!(result.is_valid());
 }
 
-fn get_basic_error(result: &ValidationResult, error_number: usize) -> &BasicError {
+fn get_basic_error(result: &ValidationResult<()>, error_number: usize) -> &BasicError {
     match result
         .errors
         .get(error_number)

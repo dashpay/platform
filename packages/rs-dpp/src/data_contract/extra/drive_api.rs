@@ -1,10 +1,12 @@
+use std::collections::BTreeMap;
+
+use crate::data_contract::DataContract;
+use crate::ProtocolError;
+
 use super::document_type::DocumentType;
 use super::errors::ContractError;
 use super::mutability;
 use super::root_tree::RootTree;
-use crate::data_contract::DataContract;
-use crate::ProtocolError;
-use std::collections::BTreeMap;
 
 pub enum DriveEncoding {
     DriveCbor,
@@ -228,11 +230,12 @@ impl DriveContractExt for DataContract {
 mod test {
     use mutability::ContractConfig;
 
-    use super::*;
     use crate::{
         data_contract::extra::common::json_document_to_cbor, data_contract::DataContract,
         util::json_schema::JsonSchemaExt,
     };
+
+    use super::*;
 
     type IndexName = &'static str;
     type IsIndexUnique = bool;
