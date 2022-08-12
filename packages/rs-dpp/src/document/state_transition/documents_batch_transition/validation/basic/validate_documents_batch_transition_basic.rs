@@ -48,14 +48,14 @@ lazy_static! {
 }
 
 pub trait Validator {
-    fn validate(&self, data: JsonValue) -> Result<ValidationResult, ProtocolError>;
+    fn validate(&self, data: JsonValue) -> Result<ValidationResult<()>, ProtocolError>;
 }
 
 pub async fn validate_documents_batch_transition_basic(
     protocol_version_validator: &ProtocolVersionValidator,
     raw_state_transition: &JsonValue,
     state_repository: &impl StateRepositoryLike,
-) -> Result<ValidationResult, ProtocolError> {
+) -> Result<ValidationResult<()>, ProtocolError> {
     let mut result = ValidationResult::default();
     let validator =
         JsonSchemaValidator::new(DOCUMENTS_BATCH_TRANSITIONS_SCHEMA.clone()).map_err(|e| {
@@ -144,7 +144,7 @@ fn validate_document_transitions<'a>(
     data_contract: &DataContract,
     owner_id: &Identifier,
     raw_document_transitions: impl IntoIterator<Item = &'a JsonValue>,
-) -> Result<ValidationResult, ProtocolError> {
+) -> Result<ValidationResult<()>, ProtocolError> {
     let mut result = ValidationResult::default();
     let enriched_contracts_by_action = get_enriched_contracts_by_action(data_contract)?;
 
@@ -192,7 +192,7 @@ fn validate_raw_transitions<'a>(
     raw_document_transitions: impl IntoIterator<Item = &'a JsonValue>,
     enriched_contracts_by_action: &HashMap<Action, DataContract>,
     owner_id: &Identifier,
-) -> Result<ValidationResult, ProtocolError> {
+) -> Result<ValidationResult<()>, ProtocolError> {
     let mut result = ValidationResult::default();
     let raw_document_transitions: Vec<&JsonValue> = raw_document_transitions.into_iter().collect();
 
