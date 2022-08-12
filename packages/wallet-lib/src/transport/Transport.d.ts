@@ -30,8 +30,4 @@ export declare interface Transport {
     sendTransaction(serializedTransaction): Promise<string>
 
     subscribeToAddressesTransactions()
-
-    subscribeToBlockHeaders()
-
-    subscribeToBlocks()
 }

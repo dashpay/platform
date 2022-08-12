@@ -77,6 +77,7 @@ describe('BlockHeadersSyncWorker', () => {
     worker.storage = {
       application: {},
       scheduleStateSave: sinon.spy(),
+      saveState: () => {},
       getDefaultWalletStore() {
         if (!this.defaultWalletStore) {
           this.defaultWalletStore = {
@@ -650,8 +651,11 @@ describe('BlockHeadersSyncWorker', () => {
 
       const { firstCall } = blockHeadersSyncWorker.parentEvents.emit;
       expect(firstCall).to.have.been.calledWith(EVENTS.HEADERS_SYNC_PROGRESS, {
-        total: 0.5,
-        confirmed: 0.5,
+        confirmedProgress: 0.5,
+        totalProgress: 0.5,
+        confirmedSyncedCount: 5,
+        totalSyncedCount: 5,
+        totalCount: 1001,
       });
     });
 

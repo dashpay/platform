@@ -10,6 +10,8 @@
     "dist",
     "tests/*",
     "!tests/integration",
-    "!tests/integration/plugins/Workers/BlockHeadersSyncWorker.test.js"
+    "!tests/integration/plugins/Workers/BlockHeadersSyncWorker.spec.js",
+    "!src/plugins",
+    "!src/plugins/Workers/BlockHeadersSyncWorker/BlockHeadersSyncWorker.spec.js"
   ]
 }

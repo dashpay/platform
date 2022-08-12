@@ -3,6 +3,7 @@ const {WALLET_TYPES} = require('../../CONSTANTS');
 const sortPlugins = require('./_sortPlugins');
 
 const TransactionSyncStreamWorker = require('../../plugins/Workers/TransactionSyncStreamWorker/TransactionSyncStreamWorker');
+const BlockHeadersSyncWorker = require('../../plugins/Workers/BlockHeadersSyncWorker/BlockHeadersSyncWorker');
 const ChainPlugin = require('../../plugins/Plugins/ChainPlugin');
 const IdentitySyncWorker = require('../../plugins/Workers/IdentitySyncWorker');
 
@@ -193,6 +194,7 @@ describe('Account - _sortPlugins', () => {
 
       expect(sortedPluginsOnlineWithDefault).to.deep.equal([
         [ChainPlugin, true, true],
+        [BlockHeadersSyncWorker, true, true],
         [TransactionSyncStreamWorker, true, true],
         [IdentitySyncWorker, true, true],
       ])
@@ -212,6 +214,7 @@ describe('Account - _sortPlugins', () => {
       const sortedPlugins = sortPlugins(accountOnlineWithDefaultPlugins, userDefinedWithoutPluginDependenciesPlugins);
       expect(sortedPlugins).to.deep.equal([
         [ChainPlugin, true, true],
+        [BlockHeadersSyncWorker, true,true],
         [TransactionSyncStreamWorker, true,true],
         [IdentitySyncWorker, true,true],
         [dummyWorker, false, false],
@@ -222,6 +225,7 @@ describe('Account - _sortPlugins', () => {
       const sortedPlugins =  sortPlugins(accountOnlineWithDefaultPlugins, userDefinedWithSinglePluginDependenciesPlugins1);
       expect(sortedPlugins).to.deep.equal([
         [ChainPlugin, true, true],
+        [BlockHeadersSyncWorker, true, true],
         [TransactionSyncStreamWorker, true, true],
         [IdentitySyncWorker, true, true],
         [withSinglePluginDependenciesWorker, false, false],
@@ -232,6 +236,7 @@ describe('Account - _sortPlugins', () => {
       const sortedPlugins =  sortPlugins(accountOnlineWithDefaultPlugins, userDefinedWithSingleInjectBeforePluginDependenciesPlugins1);
       expect(sortedPlugins).to.deep.equal([
         [ChainPlugin, true, true],
+        [BlockHeadersSyncWorker, true, true],
         [TransactionSyncStreamWorker, true, true],
         [withSingleInjectBeforePluginDependenciesWorker, false, false],
         [IdentitySyncWorker, true, true],
@@ -243,6 +248,7 @@ describe('Account - _sortPlugins', () => {
       const sortedPlugins =  sortPlugins(accountOnlineWithDefaultPlugins, userDefinedWithSinglePluginDependenciesPlugins2);
       expect(sortedPlugins).to.deep.equal([
         [ChainPlugin, true, true],
+        [BlockHeadersSyncWorker, true, true],
         [withSinglePluginDependenciesWorker2, false, false],
         [TransactionSyncStreamWorker, true, true],
         [IdentitySyncWorker, true, true],
@@ -254,6 +260,7 @@ describe('Account - _sortPlugins', () => {
       const sortedPlugins = sortPlugins(accountOnlineWithDefaultPlugins, userDefinedWithSinglePluginAndSingleInjectBeforeDependenciesWorker);
       expect(sortedPlugins).to.deep.equal([
         [ChainPlugin, true, true],
+        [BlockHeadersSyncWorker, true, true],
         [withSinglePluginAndSingleInjectBeforeDependenciesWorker, false, false],
         [TransactionSyncStreamWorker, true, true],
         [IdentitySyncWorker, true, true],
@@ -265,6 +272,7 @@ describe('Account - _sortPlugins', () => {
       const sortedPlugins = sortPlugins(accountOnlineWithDefaultPlugins, userDefinedWithMultiplePluginDependenciesPlugins);
       expect(sortedPlugins).to.deep.equal([
         [ChainPlugin, true, true],
+        [BlockHeadersSyncWorker, true, true],
         [withSinglePluginDependenciesWorker2, false, false],
         [TransactionSyncStreamWorker, true, true],
         [IdentitySyncWorker, true, true],
@@ -282,6 +290,7 @@ describe('Account - _sortPlugins', () => {
 
       expect(sortedPlugins).to.deep.equal([
         [ChainPlugin, true, true],
+        [BlockHeadersSyncWorker, true, true],
         [pluginWithMultiplePluginDependencies, false, false],
         [TransactionSyncStreamWorker, true, true],
         [IdentitySyncWorker, true, true],
