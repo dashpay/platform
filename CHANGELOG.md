@@ -3,7 +3,7 @@
 
 ### ⚠ BREAKING CHANGES
 
-* **drive:** cumulative fees are not reset between blocks (#474)
+* Correct cumulative fees invalidate previous blockchain data (#474)
 
 ### Bug Fixes
 
