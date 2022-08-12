@@ -41,7 +41,7 @@ impl ProtocolVersionValidator {
     pub fn validate(
         &self,
         protocol_version: u32,
-    ) -> Result<ValidationResult, CompatibleProtocolVersionIsNotDefinedError> {
+    ) -> Result<ValidationResult<()>, CompatibleProtocolVersionIsNotDefinedError> {
         let mut result = ValidationResult::new(None);
 
         // Parsed protocol version must be equal or lower than latest protocol version

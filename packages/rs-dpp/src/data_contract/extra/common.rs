@@ -1,11 +1,13 @@
-use super::errors::StructureError;
-use byteorder::{BigEndian, WriteBytesExt};
-use ciborium::value::Value;
 use std::collections::{BTreeMap, BTreeSet};
 use std::convert::TryInto;
 use std::fs::File;
 use std::io::BufReader;
 use std::path::Path;
+
+use byteorder::{BigEndian, WriteBytesExt};
+use ciborium::value::Value;
+
+use super::errors::StructureError;
 
 pub fn cbor_map_to_btree_map(cbor_map: &[(Value, Value)]) -> BTreeMap<String, &Value> {
     cbor_map
@@ -206,13 +208,13 @@ pub fn cbor_inner_size_value(document_type: &[(Value, Value)], key: &str) -> Opt
     }
 }
 
-pub fn btree_map_inner_size_value(
+pub fn btree_map_inner_u16_value(
     document_type: &BTreeMap<String, &Value>,
     key: &str,
-) -> Option<usize> {
+) -> Option<u16> {
     let key_value = document_type.get(key)?;
     if let Value::Integer(integer) = key_value {
-        let value_as_usize: Result<usize, StructureError> = (*integer)
+        let value_as_usize: Result<u16, StructureError> = (*integer)
             .try_into()
             .map_err(|_| StructureError::ValueWrongType("expected u8 value"));
         match value_as_usize {
@@ -371,8 +373,9 @@ const fn check_protocol_version(_version: u32) -> bool {
 
 #[cfg(test)]
 mod test {
-    use super::*;
     use std::collections::HashMap;
+
+    use super::*;
 
     #[test]
     fn test_cbor_deserialization() {

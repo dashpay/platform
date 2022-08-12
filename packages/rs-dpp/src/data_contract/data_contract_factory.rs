@@ -1,6 +1,9 @@
+use std::collections::BTreeMap;
+
 use anyhow::anyhow;
 use serde_json::{json, Number, Value as JsonValue};
-use std::collections::BTreeMap;
+
+use data_contract::state_transition::properties as st_prop;
 
 use crate::{
     data_contract::{self, generate_data_contract_id},
@@ -15,7 +18,6 @@ use super::{
     validation::data_contract_validator::DataContractValidator,
     DataContract,
 };
-use data_contract::state_transition::properties as st_prop;
 
 pub struct DataContractFactory {
     protocol_version: u32,
@@ -136,14 +138,16 @@ impl DataContractFactory {
 mod test {
     use std::sync::Arc;
 
-    use super::DataContractFactory;
+    use serde_json::Value as JsonValue;
+
     use crate::{
         data_contract::{validation::data_contract_validator::DataContractValidator, DataContract},
         state_transition::StateTransitionLike,
         tests::fixtures::get_data_contract_fixture,
         version::{ProtocolVersionValidator, COMPATIBILITY_MAP, LATEST_VERSION},
     };
-    use serde_json::Value as JsonValue;
+
+    use super::DataContractFactory;
 
     pub struct TestData {
         data_contract: DataContract,

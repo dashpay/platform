@@ -1,16 +1,11 @@
 use std::collections::HashMap;
 use std::convert::TryInto;
 
-use crate::data_contract::DataContract;
-use crate::prelude::{DocumentTransition, Identifier};
-use crate::util::json_value::{JsonValueExt, ReplaceWith};
-use crate::version::LATEST_VERSION;
-use crate::ProtocolError;
-
 use anyhow::anyhow;
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 
+use crate::data_contract::DataContract;
 use crate::{
     identity::{KeyID, SecurityLevel},
     state_transition::{
@@ -20,6 +15,10 @@ use crate::{
 };
 // TODO simplify imports
 use crate::document::document_transition::DocumentTransitionObjectLike;
+use crate::prelude::{DocumentTransition, Identifier};
+use crate::util::json_value::{JsonValueExt, ReplaceWith};
+use crate::version::LATEST_VERSION;
+use crate::ProtocolError;
 
 pub mod document_transition;
 pub mod validation;

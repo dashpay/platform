@@ -5,12 +5,13 @@ use crate::{
     consensus::ConsensusError,
     data_contract::DataContract,
     document::{
-				state_transition::documents_batch_transition::validation::state::validate_documents_uniqueness_by_indices::*,
-        document_transition::{Action, DocumentTransition},
         Document,
+        document_transition::{Action, DocumentTransition},
+        state_transition::documents_batch_transition::validation::state::validate_documents_uniqueness_by_indices::*,
     },
     prelude::Identifier,
     state_repository::MockStateRepositoryLike,
+    StateError,
     tests::{
         fixtures::{
             get_data_contract_fixture, get_document_transitions_fixture, get_documents_fixture,
@@ -19,7 +20,6 @@ use crate::{
     },
     util::string_encoding::Encoding,
     validation::ValidationResult,
-    StateError,
 };
 
 struct TestData {
@@ -323,7 +323,7 @@ async fn should_return_valid_result_if_document_being_created_and_has_created_at
     assert!(validation_result.is_valid());
 }
 
-fn get_state_error(result: &ValidationResult, error_number: usize) -> &StateError {
+fn get_state_error(result: &ValidationResult<()>, error_number: usize) -> &StateError {
     match result
         .errors
         .get(error_number)

@@ -1,8 +1,7 @@
 use std::sync::Arc;
 
-use serde_json::{Map, Value};
-
 use crate::identity::validation::TPublicKeysValidator;
+use crate::util::protocol_data::{get_protocol_version, get_raw_public_keys};
 use crate::validation::{JsonSchemaValidator, ValidationResult};
 use crate::version::ProtocolVersionValidator;
 use crate::{DashPlatformProtocolInitError, NonConsensusError, SerdeParsingError};
@@ -33,7 +32,7 @@ impl<T: TPublicKeysValidator> IdentityValidator<T> {
     pub fn validate_identity(
         &self,
         identity_json: &serde_json::Value,
-    ) -> Result<ValidationResult, NonConsensusError> {
+    ) -> Result<ValidationResult<()>, NonConsensusError> {
         let mut validation_result = self.json_schema_validator.validate(identity_json)?;
 
         if !validation_result.is_valid() {
@@ -58,21 +57,21 @@ impl<T: TPublicKeysValidator> IdentityValidator<T> {
     }
 }
 
-fn get_protocol_version(identity_map: &Map<String, Value>) -> Result<u32, SerdeParsingError> {
-    Ok(identity_map
-        .get("protocolVersion")
-        .ok_or_else(|| SerdeParsingError::new("Expected identity to have protocolVersion"))?
-        .as_u64()
-        .ok_or_else(|| SerdeParsingError::new("Expected protocolVersion to be a uint"))?
-        as u32)
-}
-
-fn get_raw_public_keys(
-    identity_map: &Map<String, Value>,
-) -> Result<&Vec<Value>, SerdeParsingError> {
-    identity_map
-        .get("publicKeys")
-        .ok_or_else(|| SerdeParsingError::new("Expected identity.publicKeys to exist"))?
-        .as_array()
-        .ok_or_else(|| SerdeParsingError::new("Expected identity.publicKeys to be an array"))
-}
+// fn get_protocol_version(identity_map: &Map<String, Value>) -> Result<u32, SerdeParsingError> {
+//     Ok(identity_map
+//         .get("protocolVersion")
+//         .ok_or_else(|| SerdeParsingError::new("Expected identity to have protocolVersion"))?
+//         .as_u64()
+//         .ok_or_else(|| SerdeParsingError::new("Expected protocolVersion to be a uint"))?
+//         as u32)
+// }
+//
+// fn get_raw_public_keys(
+//     identity_map: &Map<String, Value>,
+// ) -> Result<&Vec<Value>, SerdeParsingError> {
+//     identity_map
+//         .get("publicKeys")
+//         .ok_or_else(|| SerdeParsingError::new("Expected identity.publicKeys to exist"))?
+//         .as_array()
+//         .ok_or_else(|| SerdeParsingError::new("Expected identity.publicKeys to be an array"))
+// }

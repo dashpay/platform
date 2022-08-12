@@ -1,7 +1,7 @@
-use super::{
-    execute_data_triggers::execute_data_triggers, fetch_documents::fetch_documents,
-    validate_documents_uniqueness_by_indices::validate_documents_uniqueness_by_indices,
-};
+use futures::future::join_all;
+use itertools::Itertools;
+use serde::{Deserialize, Serialize};
+
 use crate::{
     consensus::ConsensusError,
     data_contract::DataContract,
@@ -15,9 +15,11 @@ use crate::{
     validation::ValidationResult,
     ProtocolError, StateError,
 };
-use futures::future::join_all;
-use itertools::Itertools;
-use serde::{Deserialize, Serialize};
+
+use super::{
+    execute_data_triggers::execute_data_triggers, fetch_documents::fetch_documents,
+    validate_documents_uniqueness_by_indices::validate_documents_uniqueness_by_indices,
+};
 
 const BLOCK_TIME_WINDOW_MINUTES: usize = 5;
 const BLOCK_TIME_WINDOW_MS: usize = BLOCK_TIME_WINDOW_MINUTES * BLOCK_TIME_WINDOW_MINUTES * 1000;
@@ -38,7 +40,7 @@ pub struct HeaderTime {
 pub async fn validate_document_batch_transition_state(
     state_repository: &impl StateRepositoryLike,
     state_transition: &DocumentsBatchTransition,
-) -> Result<ValidationResult, ProtocolError> {
+) -> Result<ValidationResult<()>, ProtocolError> {
     let mut result = ValidationResult::default();
     let owner_id = state_transition.get_owner_id();
 
@@ -68,7 +70,7 @@ pub async fn validate_document_transitions(
     data_contract_id: &Identifier,
     owner_id: &Identifier,
     document_transitions: impl IntoIterator<Item = impl AsRef<DocumentTransition>>,
-) -> Result<ValidationResult, ProtocolError> {
+) -> Result<ValidationResult<()>, ProtocolError> {
     let mut result = ValidationResult::default();
     let transitions: Vec<_> = document_transitions.into_iter().collect();
 
@@ -150,7 +152,7 @@ fn validate_transition(
     time_window_start: usize,
     time_window_end: usize,
     owner_id: &Identifier,
-) -> ValidationResult {
+) -> ValidationResult<()> {
     let mut result = ValidationResult::default();
     match transition.base().action {
         Action::Create => {
@@ -204,7 +206,7 @@ fn check_ownership(
     document_transition: &DocumentTransition,
     fetched_documents: &[Document],
     owner_id: &Identifier,
-) -> ValidationResult {
+) -> ValidationResult<()> {
     let mut result = ValidationResult::default();
     let fetched_document = match fetched_documents
         .iter()
@@ -228,7 +230,7 @@ fn check_ownership(
 fn check_revision(
     document_transition: &DocumentTransition,
     fetched_documents: &[Document],
-) -> ValidationResult {
+) -> ValidationResult<()> {
     let mut result = ValidationResult::default();
     let fetched_document = match fetched_documents
         .iter()
@@ -256,7 +258,7 @@ fn check_revision(
 fn check_if_document_is_already_present(
     document_transition: &DocumentTransition,
     fetched_documents: &[Document],
-) -> ValidationResult {
+) -> ValidationResult<()> {
     let mut result = ValidationResult::default();
     let maybe_fetched_document = fetched_documents
         .iter()
@@ -275,7 +277,7 @@ fn check_if_document_is_already_present(
 fn check_if_document_can_be_found(
     document_transition: &DocumentTransition,
     fetched_documents: &[Document],
-) -> ValidationResult {
+) -> ValidationResult<()> {
     let mut result = ValidationResult::default();
     let maybe_fetched_document = fetched_documents
         .iter()
@@ -291,7 +293,7 @@ fn check_if_document_can_be_found(
     result
 }
 
-fn check_if_timestamps_are_equal(document_transition: &DocumentTransition) -> ValidationResult {
+fn check_if_timestamps_are_equal(document_transition: &DocumentTransition) -> ValidationResult<()> {
     let mut result = ValidationResult::default();
     let created_at = document_transition.get_created_at();
     let updated_at = document_transition.get_updated_at();
@@ -311,7 +313,7 @@ fn check_created_inside_time_window(
     document_transition: &DocumentTransition,
     start_window_ms: usize,
     end_window_ms: usize,
-) -> ValidationResult {
+) -> ValidationResult<()> {
     let mut result = ValidationResult::default();
     let created_at = match document_transition.get_created_at() {
         Some(t) => t,
@@ -336,7 +338,7 @@ fn check_updated_inside_time_window(
     document_transition: &DocumentTransition,
     start_window_ms: usize,
     end_window_ms: usize,
-) -> ValidationResult {
+) -> ValidationResult<()> {
     let mut result = ValidationResult::default();
     let updated_at = match document_transition.get_updated_at() {
         Some(t) => t,

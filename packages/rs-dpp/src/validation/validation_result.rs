@@ -1,17 +1,17 @@
 use crate::errors::consensus::ConsensusError;
 
 #[derive(Default, Debug)]
-pub struct ValidationResult {
+pub struct ValidationResult<TData: Clone> {
     pub errors: Vec<ConsensusError>,
     // TODO: data can be anything, figure out what to do with it
-    // data: Option<ConsensusError>
+    data: Option<TData>,
 }
 
-impl ValidationResult {
+impl<TData: Clone> ValidationResult<TData> {
     pub fn new(errors: Option<Vec<ConsensusError>>) -> Self {
         Self {
             errors: errors.unwrap_or_default(),
-            // data: None
+            data: None,
         }
     }
 
@@ -26,7 +26,7 @@ impl ValidationResult {
         self.errors.append(&mut errors)
     }
 
-    pub fn merge(&mut self, mut other: ValidationResult) {
+    pub fn merge<TOtherData: Clone>(&mut self, mut other: ValidationResult<TOtherData>) {
         self.errors.append(other.errors_mut());
     }
 
@@ -44,5 +44,13 @@ impl ValidationResult {
 
     pub fn first_error(&self) -> Option<&ConsensusError> {
         self.errors.first()
+    }
+
+    pub fn set_data(&mut self, data: TData) {
+        self.data = Some(data);
+    }
+
+    pub fn data(&self) -> Option<&TData> {
+        self.data.as_ref()
     }
 }
