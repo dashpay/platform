@@ -5,7 +5,7 @@ class DockerComposeError extends AbstractError {
    * @param {{err: string, out: string, exitCode: number}} dockerComposeExecutionResult
    */
   constructor(dockerComposeExecutionResult) {
-    super(`Docker Compose error: ${dockerComposeExecutionResult.err || dockerComposeExecutionResult.message}`);
+    super(`Docker Compose error: ${dockerComposeExecutionResult.err || dockerComposeExecutionResult.message || dockerComposeExecutionResult}`);
 
     this.dockerComposeExecutionResult = dockerComposeExecutionResult;
   }

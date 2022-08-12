@@ -87,16 +87,16 @@ class JsonRpcTransport {
         throw error;
       }
 
-      // eslint-disable-next-line no-console
-      console.log('markAsBanned');
-
-      address.markAsBanned();
-
       const responseError = this.createJsonTransportError(error, address);
 
       if (!(responseError instanceof RetriableResponseError)) {
         throw responseError;
       }
+
+      // eslint-disable-next-line no-console
+      console.log('markAsBanned');
+
+      address.markAsBanned();
 
       if (options.retries === 0) {
         throw new MaxRetriesReachedError(responseError);

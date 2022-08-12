@@ -72,7 +72,7 @@ module.exports = {
     dapi: {
       envoy: {
         docker: {
-          image: 'envoyproxy/envoy:v1.23-latest',
+          image: 'envoyproxy/envoy:v1.22-latest',
         },
         http: {
           port: 3000,
