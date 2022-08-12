@@ -1,17 +1,22 @@
 use std::time::Duration;
 
+use anyhow::anyhow;
+use chrono::Utc;
+use serde_json::{json, Value as JsonValue};
+
 use crate::{
-		prelude::ProtocolError,
     codes::ErrorWithCode,
     consensus::ConsensusError,
     data_contract::DataContract,
     document::{
-				state_transition::documents_batch_transition::validation::state::validate_documents_batch_transition_state::*,
+        Document,
         document_transition::{Action, DocumentTransition, DocumentTransitionObjectLike},
-        Document, DocumentsBatchTransition,
+        DocumentsBatchTransition, state_transition::documents_batch_transition::validation::state::validate_documents_batch_transition_state::*,
     },
     prelude::Identifier,
+    prelude::ProtocolError,
     state_repository::MockStateRepositoryLike,
+    StateError,
     tests::{
         fixtures::{
             get_data_contract_fixture, get_document_transitions_fixture, get_documents_fixture,
@@ -19,11 +24,7 @@ use crate::{
         utils::generate_random_identifier_struct,
     },
     validation::ValidationResult,
-    StateError,
 };
-use anyhow::anyhow;
-use chrono::Utc;
-use serde_json::{json, Value as JsonValue};
 
 struct TestData {
     owner_id: Identifier,
@@ -87,7 +88,7 @@ fn setup_test() -> TestData {
     }
 }
 
-fn get_state_error(result: &ValidationResult, error_number: usize) -> &StateError {
+fn get_state_error(result: &ValidationResult<()>, error_number: usize) -> &StateError {
     match result
         .errors
         .get(error_number)
@@ -105,15 +106,15 @@ fn set_updated_at(dt: &mut DocumentTransition, ts: Option<i64>) {
     match dt {
         DocumentTransition::Create(ref mut t) => t.updated_at = ts,
         DocumentTransition::Replace(ref mut t) => t.updated_at = ts,
-        DocumentTransition::Delete(ref mut t) => {}
+        DocumentTransition::Delete(ref mut _t) => {}
     }
 }
 
 fn set_created_at(dt: &mut DocumentTransition, ts: Option<i64>) {
     match dt {
         DocumentTransition::Create(ref mut t) => t.created_at = ts,
-        DocumentTransition::Replace(ref mut t) => {}
-        DocumentTransition::Delete(ref mut t) => {}
+        DocumentTransition::Replace(ref mut _t) => {}
+        DocumentTransition::Delete(ref mut _t) => {}
     }
 }
 #[tokio::test]

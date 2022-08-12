@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 
+use crate::version::LATEST_VERSION;
 use crate::{
     document::{
         document_factory::DocumentFactory,
@@ -10,7 +11,6 @@ use crate::{
 };
 
 use super::{get_data_contract_fixture, get_document_validator_fixture, get_documents_fixture};
-use crate::version::LATEST_VERSION;
 
 pub fn get_document_transitions_fixture(
     documents: impl IntoIterator<Item = (Action, Vec<Document>)>,
