@@ -6,7 +6,7 @@ use crate::{
     validation::ValidationResult,
 };
 
-pub fn get_schema_error(result: &ValidationResult, number: usize) -> &JsonSchemaError {
+pub fn get_schema_error(result: &ValidationResult<()>, number: usize) -> &JsonSchemaError {
     result
         .errors
         .get(number)
@@ -32,7 +32,10 @@ pub fn get_index_error(consensus_error: &ConsensusError) -> &IndexError {
     }
 }
 
-pub fn get_basic_error_from_result(result: &ValidationResult, error_number: usize) -> &BasicError {
+pub fn get_basic_error_from_result(
+    result: &ValidationResult<()>,
+    error_number: usize,
+) -> &BasicError {
     match result
         .errors
         .get(error_number)
