@@ -1,11 +1,17 @@
-use std::collections::{hash_map::Entry, HashMap};
-
-use serde_json::Value;
+use serde_json::{Value, Value as JsonValue};
+use std::{
+    collections::{hash_map::Entry, HashMap},
+    fmt::Write,
+};
 
 use crate::{
     document::document_transition::DocumentTransition,
     prelude::DataContract,
-    util::json_schema::{Index, JsonSchemaExt},
+    util::{
+        json_schema::{Index, JsonSchemaExt},
+        json_value::JsonValueExt,
+    },
+    ProtocolError,
 };
 
 #[macro_export]
@@ -22,32 +28,32 @@ macro_rules! get_from_transition {
 
 /// Finds duplicates of indices in Document Transitions.
 pub fn find_duplicates_by_indices<'a>(
-    document_transitions: &'a [DocumentTransition],
-    data_contract: &'a DataContract,
-) -> Vec<&'a DocumentTransition> {
+    document_raw_transitions: impl IntoIterator<Item = &'a JsonValue>,
+    data_contract: &DataContract,
+) -> Result<Vec<&'a JsonValue>, ProtocolError> {
     #[derive(Debug)]
     struct Group<'a> {
-        transitions: Vec<&'a DocumentTransition>,
+        transitions: Vec<&'a JsonValue>,
         indices: Vec<Index>,
     }
     let mut groups: HashMap<&'a str, Group> = HashMap::new();
 
-    for dt in document_transitions {
-        let dt_type = get_from_transition!(dt, document_type);
-        match groups.entry(dt_type) {
+    for dt in document_raw_transitions.into_iter() {
+        let document_type = dt.get_string("$type")?;
+        match groups.entry(document_type) {
             Entry::Occupied(mut o) => {
                 o.get_mut().transitions.push(dt);
             }
             Entry::Vacant(v) => {
                 v.insert(Group {
                     transitions: vec![dt],
-                    indices: get_unique_indices(dt_type, data_contract),
+                    indices: get_unique_indices(document_type, data_contract),
                 });
             }
         };
     }
 
-    let mut found_group_duplicates: Vec<&'a DocumentTransition> = vec![];
+    let mut found_group_duplicates: Vec<&'a JsonValue> = vec![];
     for (_, group) in groups
         .iter()
         // Filter out groups without unique indices
@@ -56,12 +62,14 @@ pub fn find_duplicates_by_indices<'a>(
         .filter(|(_, group)| group.transitions.len() > 1)
     {
         for transition in group.transitions.as_slice() {
-            let mut found_duplicates: Vec<&'a DocumentTransition> = vec![];
+            let transition_id = transition.get_bytes("$id")?;
+
+            let mut found_duplicates: Vec<&'a JsonValue> = vec![];
             for transition_to_check in group
                 .transitions
                 .iter()
                 // Exclude current transition from search
-                .filter(|t| get_from_transition!(t, id) != get_from_transition!(transition, id))
+                .filter(|t| t.get_bytes("$id").unwrap() != transition_id)
             {
                 if is_duplicate_by_indices(transition, transition_to_check, &group.indices) {
                     found_duplicates.push(transition_to_check)
@@ -71,33 +79,29 @@ pub fn find_duplicates_by_indices<'a>(
         }
     }
 
-    found_group_duplicates
+    Ok(found_group_duplicates)
 }
 
 fn is_duplicate_by_indices(
-    original_transition: &DocumentTransition,
-    transition_to_check: &DocumentTransition,
+    original_transition: &JsonValue,
+    transition_to_check: &JsonValue,
     type_indices: &[Index],
 ) -> bool {
     for index in type_indices {
-        let mut original_hash = String::new();
-        let mut hash_to_check = String::new();
-
         for (property_name, _) in index.properties.iter().flatten() {
-            original_hash.push_str(&format!(
-                ":{}",
-                get_data_property(original_transition, property_name)
-            ));
-            hash_to_check.push_str(&format!(
-                ":{}",
-                get_data_property(transition_to_check, property_name)
-            ));
-        }
-        if original_hash == hash_to_check {
-            return true;
+            let original = original_transition
+                .get(property_name)
+                .unwrap_or(&JsonValue::Null);
+            let to_check = transition_to_check
+                .get(property_name)
+                .unwrap_or(&JsonValue::Null);
+
+            if original != to_check {
+                return false;
+            }
         }
     }
-    false
+    true
 }
 
 fn get_unique_indices(document_type: &str, data_contract: &DataContract) -> Vec<Index> {
@@ -137,12 +141,7 @@ fn get_data_property(document_transition: &DocumentTransition, property_name: &s
 mod test {
     use serde_json::json;
 
-    use crate::{
-        document::document_transition::{
-            DocumentCreateTransition, DocumentTransition, DocumentTransitionObjectLike,
-        },
-        prelude::*,
-    };
+    use crate::{prelude::*, util::string_encoding::Encoding};
 
     use super::find_duplicates_by_indices;
 
@@ -176,45 +175,45 @@ mod test {
         data_contract.set_document_schema("indexedDocument".to_string(), document_def.clone());
         data_contract.set_document_schema("singleDocument".to_string(), document_def);
 
-        let doc_create_transition = DocumentCreateTransition::from_json_str(
-            &json!(
-                {
-                    "$id": "AoqSTh5Bg6Fo26NaCRVoPP1FiDQ1ycihLkjQ75MYJziV",
-                    "$type": "indexedDocument",
-                    "$action": 0,
-                    "$dataContractId": "F719NPkos8a2VqxSPv4co4F8owh9qBbYEMJ1gzyLANtg",
-                    "name": "Leon",
-                    "lastName": "Birkin",
-                    "$entropy": "hxlmtQ34oR/lkql7AUQ13P5kS8OaX2BheksnPBIpxLc=",
-                  }
-            )
-            .to_string(),
-            data_contract.clone(),
+        let id_1 = Identifier::from_string(
+            "AoqSTh5Bg6Fo26NaCRVoPP1FiDQ1ycihLkjQ75MYJziV",
+            Encoding::Base58,
         )
         .unwrap();
-        let document_create_transition_2 = DocumentCreateTransition::from_json_str(
-            &json!(
-                {
-                    "$id": "3GDfArJJdHMviaRd5ta4F2EB7LN9RgbMKLAfjAxZEaUG",
-                    "$type": "indexedDocument",
-                    "$action": 0,
-                    "$dataContractId": "F719NPkos8a2VqxSPv4co4F8owh9qBbYEMJ1gzyLANtg",
-                    "name": "William",
-                    "lastName": "Birkin",
-                    "$entropy": "hxlmtQ34oR/lkql7AUQ13P5kS8OaX2BheksnPBIpxLc=",
-                  }
-            )
-            .to_string(),
-            data_contract.clone(),
+        let document_raw_transition_1 = json!(
+            {
+                "$id": id_1.as_bytes(),
+                "$type": "indexedDocument",
+                "$action": 0,
+                "$dataContractId": "F719NPkos8a2VqxSPv4co4F8owh9qBbYEMJ1gzyLANtg",
+                "name": "Leon",
+                "lastName": "Birkin",
+                "$entropy": "hxlmtQ34oR/lkql7AUQ13P5kS8OaX2BheksnPBIpxLc=",
+              }
+        );
+
+        let id_2 = Identifier::from_string(
+            "3GDfArJJdHMviaRd5ta4F2EB7LN9RgbMKLAfjAxZEaUG",
+            Encoding::Base58,
         )
         .unwrap();
+        let document_create_transition_2 = json!(
+            {
+                "$id": id_2.as_bytes(),
+                "$type": "indexedDocument",
+                "$action": 0,
+                "$dataContractId": "F719NPkos8a2VqxSPv4co4F8owh9qBbYEMJ1gzyLANtg",
+                "name": "William",
+                "lastName": "Birkin",
+                "$entropy": "hxlmtQ34oR/lkql7AUQ13P5kS8OaX2BheksnPBIpxLc=",
+              }
+        );
 
-        let transitions: Vec<DocumentTransition> = vec![
-            DocumentTransition::Create(doc_create_transition),
-            DocumentTransition::Create(document_create_transition_2),
-        ];
-
-        let duplicates = find_duplicates_by_indices(&transitions, &data_contract);
+        let duplicates = find_duplicates_by_indices(
+            [&document_raw_transition_1, &document_create_transition_2],
+            &data_contract,
+        )
+        .expect("the error shouldn't be returned");
         assert!(duplicates.len() == 2);
     }
 }

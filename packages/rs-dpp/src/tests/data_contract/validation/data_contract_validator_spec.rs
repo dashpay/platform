@@ -235,6 +235,17 @@ mod defs {
             "abcdefghigklmnopqrstuvwxyz01234567890abcdefghigklmnopqrstuvwxyz",
             "abc_gbf_gdb",
             "abc-gbf-gdb",
+            "-validname",
+            "_validname",
+            "validname-",
+            "validname_",
+            "a",
+            "ab",
+            "1",
+            "123",
+            "123_",
+            "-123",
+            "_123",
         ];
 
         for property_name in valid_names {
@@ -751,16 +762,7 @@ mod documents {
             ..
         } = setup_test();
 
-        let invalid_names = [
-            "-invalidname",
-            "_invalidname",
-            "invalidname-",
-            "invalidname_",
-            "*(*&^",
-            "$test",
-            "123abci",
-            "ab",
-        ];
+        let invalid_names = ["*(*&^", "$test", ".", ".a"];
         for property_name in invalid_names {
             raw_data_contract["documents"]["niceDocument"]["properties"][property_name] = json!({})
         }
@@ -785,16 +787,7 @@ mod documents {
             ..
         } = setup_test();
 
-        let invalid_names = [
-            "-invalidname",
-            "_invalidname",
-            "invalidname-",
-            "invalidname_",
-            "*(*&^",
-            "$test",
-            "123abci",
-            "ab",
-        ];
+        let invalid_names = ["*(*&^", "$test", ".", ".a"];
 
         raw_data_contract["documents"]["niceDocument"]["properties"]["something"] = json!({
             "properties" :   json!({}),
@@ -1530,6 +1523,10 @@ mod identifier {
 }
 
 mod indices {
+    use std::os::raw;
+
+    use crate::tests::utils::get_basic_error_from_result;
+
     use super::*;
 
     #[test]
@@ -2376,6 +2373,100 @@ mod indices {
                 document_type == "optionalUniqueIndexedDocument"
             })
         );
+    }
+
+    #[test]
+    fn should_have_valid_property_names() {
+        let TestData {
+            raw_data_contract,
+            data_contract_validator,
+            ..
+        } = setup_test();
+        let valid_names = [
+            "validName",
+            "valid_name",
+            "valid-name",
+            "abc",
+            "a123123bc",
+            "ab123c",
+            "ValidName",
+            "validName",
+            "abcdefghigklmnopqrstuvwxyz01234567890abcdefghigklmnopqrstuvwxyz",
+            "abc_gbf_gdb",
+            "abc-gbf-gdb",
+        ];
+
+        for property_name in valid_names {
+            let mut cloned_data_contract = raw_data_contract.clone();
+            cloned_data_contract["documents"]["indexedDocument"]["properties"][property_name] =
+                json!({"type" : "string", "maxLength" : 63});
+
+            cloned_data_contract["documents"]["indexedDocument"]["indices"][0]["properties"]
+                .push(json!({ property_name : "asc"}))
+                .unwrap();
+
+            cloned_data_contract["documents"]["indexedDocument"]["required"]
+                .push(JsonValue::String(property_name.to_string()))
+                .unwrap();
+
+            let result = data_contract_validator
+                .validate(&cloned_data_contract)
+                .expect("validation result");
+            assert!(result.is_valid());
+        }
+    }
+
+    #[test]
+    fn should_return_invalid_result_if_property_has_invalid_format() {
+        let TestData {
+            mut raw_data_contract,
+            data_contract_validator,
+            ..
+        } = setup_test();
+        let invalid_names = ["a.", ".a"];
+
+        raw_data_contract["documents"]["indexedDocument"] = json!({
+            "type": "object",
+            "properties": {
+              "a": {
+                "type": "object",
+                "properties": {
+                  "property": {
+                    "type": "string",
+                    "maxLength": 63,
+                  },
+                },
+                "additionalProperties": false,
+              },
+            },
+            "indices": [
+              {
+                "name": "index1",
+                "properties": [],
+                "unique": true,
+              },
+            ],
+            "additionalProperties": false,
+        });
+
+        for invalid_name in invalid_names {
+            let mut cloned_data_contract = raw_data_contract.clone();
+            cloned_data_contract["documents"]["indexedDocument"]["indices"][0]["properties"]
+                .push(json!({ invalid_name : "asc"}))
+                .unwrap();
+            let result = data_contract_validator
+                .validate(&cloned_data_contract)
+                .expect("should return validation result");
+
+            let index_error = get_index_error(&result.errors()[0]);
+            assert_eq!(1016, index_error.get_code());
+            assert!(
+                matches!(index_error, IndexError::UndefinedIndexPropertyError { property_name, ..}
+                if  {
+                    property_name == invalid_name
+                })
+            );
+        }
     }
 }
 
