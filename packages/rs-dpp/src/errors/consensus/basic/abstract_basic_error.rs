@@ -1,5 +1,6 @@
-use crate::{prelude::*, util::json_schema::Index};
 use thiserror::Error;
+
+use crate::{prelude::*, util::json_schema::Index};
 
 #[derive(Error, Debug)]
 pub enum BasicError {

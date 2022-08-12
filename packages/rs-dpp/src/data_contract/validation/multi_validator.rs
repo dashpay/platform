@@ -6,10 +6,18 @@ use crate::{
     validation::ValidationResult,
 };
 
-type SubValidator =
-    fn(path: &str, key: &str, parent: &JsonValue, value: &JsonValue, result: &mut ValidationResult);
+type SubValidator = fn(
+    path: &str,
+    key: &str,
+    parent: &JsonValue,
+    value: &JsonValue,
+    result: &mut ValidationResult<()>,
+);
 
-pub fn validate(raw_data_contract: &JsonValue, validators: &[SubValidator]) -> ValidationResult {
+pub fn validate(
+    raw_data_contract: &JsonValue,
+    validators: &[SubValidator],
+) -> ValidationResult<()> {
     let mut result = ValidationResult::default();
     let mut values_queue: Vec<(&JsonValue, String)> = vec![(raw_data_contract, String::from(""))];
 
@@ -45,7 +53,7 @@ pub fn pattern_is_valid_regex_validator(
     key: &str,
     _parent: &JsonValue,
     value: &JsonValue,
-    result: &mut ValidationResult,
+    result: &mut ValidationResult<()>,
 ) {
     if key == "pattern" {
         if let Some(pattern) = value.as_str() {
@@ -65,7 +73,7 @@ pub fn byte_array_has_no_items_as_parent_validator(
     key: &str,
     parent: &JsonValue,
     value: &JsonValue,
-    result: &mut ValidationResult,
+    result: &mut ValidationResult<()>,
 ) {
     if key == "byteArray"
         && value.is_boolean()
@@ -80,8 +88,9 @@ pub fn byte_array_has_no_items_as_parent_validator(
 
 #[cfg(test)]
 mod test {
-    use super::*;
     use serde_json::json;
+
+    use super::*;
 
     fn init() {
         let _ = env_logger::builder()

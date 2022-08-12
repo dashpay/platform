@@ -6,11 +6,11 @@ use crate::identity::IdentityFacade;
 use crate::version::{ProtocolVersionValidator, COMPATIBILITY_MAP, LATEST_VERSION};
 
 pub struct DashPlatformProtocol<SR> {
-    // Version of protocol
+    /// Version of protocol
     pub protocol_version: u32,
-    // Public facing facades to interact with the library
+    /// Public facing facades to interact with the library
     pub identities: IdentityFacade,
-    // State Repository provides the access to the stateful validation
+    /// State Repository provides the access to the stateful validation
     pub state_repository: SR,
 }
 

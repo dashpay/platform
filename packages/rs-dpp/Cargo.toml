@@ -13,7 +13,7 @@ anyhow = { version = "1.0"}
 thiserror = { version = "1.0"}
 lazy_static = { version ="1.4"}
 serde = { version="1.0", features=["derive"]}
-dashcore = { git="https://github.com/dashevo/rust-dashcore", features=["no-std", "secp-recovery", "rand", "signer"], default-features = false }
+dashcore = { git="https://github.com/dashevo/rust-dashcore", features=["no-std", "secp-recovery", "rand", "signer"], default-features = false, rev="2717ca826650454d469391dacfeeca458d289943" }
 serde_json = { version="1.0", features=["preserve_order"]}
 ciborium = { version="0.2"}
 byteorder = { version="1.4"}
@@ -34,6 +34,7 @@ serde_cbor = "0.11.2"
 # lib not verified for web-assembly
 rand = { version="0.8"}
 integer-encoding = { version="3.0.4"}
+serde-big-array = "0.4.1"
 
 
 [dev-dependencies]

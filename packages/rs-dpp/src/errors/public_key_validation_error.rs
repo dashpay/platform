@@ -1,6 +1,6 @@
 use thiserror::Error;
 
-#[derive(Error, Debug, Clone)]
+#[derive(Error, Debug, Clone, PartialEq, Eq)]
 #[error("Public key validation error: {message:?}")]
 pub struct PublicKeyValidationError {
     message: String,

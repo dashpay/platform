@@ -7,7 +7,7 @@ use crate::document::{errors::*, Document};
 use crate::identity::{IdentityPublicKey, Purpose, SecurityLevel};
 use crate::prelude::Identifier;
 use crate::state_transition::StateTransition;
-use crate::{CompatibleProtocolVersionIsNotDefinedError, NonConsensusError};
+use crate::{CompatibleProtocolVersionIsNotDefinedError, NonConsensusError, SerdeParsingError};
 
 #[derive(Error, Debug)]
 pub enum ProtocolError {
@@ -140,5 +140,11 @@ impl From<ConsensusError> for ProtocolError {
 impl From<DataContractError> for ProtocolError {
     fn from(e: DataContractError) -> Self {
         ProtocolError::DataContractError(e)
+    }
+}
+
+impl From<SerdeParsingError> for ProtocolError {
+    fn from(e: SerdeParsingError) -> Self {
+        ProtocolError::ParsingError(e.to_string())
     }
 }

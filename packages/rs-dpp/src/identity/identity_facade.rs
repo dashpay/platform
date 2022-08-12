@@ -25,7 +25,7 @@ impl IdentityFacade {
     pub fn validate(
         &self,
         identity_json: &serde_json::Value,
-    ) -> Result<ValidationResult, NonConsensusError> {
+    ) -> Result<ValidationResult<()>, NonConsensusError> {
         self.identity_validator.validate_identity(identity_json)
     }
 }

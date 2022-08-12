@@ -16,10 +16,8 @@ struct ExampleStateTransition {
     pub transition_type: StateTransitionType,
 }
 
-// implementation of Into is necessary for the example. In normal situation the
-// the From trait should be implemented where the [`StateTransition`] is defined
-impl Into<StateTransition> for ExampleStateTransition {
-    fn into(self) -> StateTransition {
+impl From<ExampleStateTransition> for StateTransition {
+    fn from(_: ExampleStateTransition) -> Self {
         unimplemented!()
     }
 }

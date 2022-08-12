@@ -1,8 +1,10 @@
-use super::errors::ContractError;
+use std::convert::TryInto;
+
 use ciborium::value::Value;
 use integer_encoding::VarInt;
 use serde::{Deserialize, Serialize};
-use std::convert::TryInto;
+
+use super::errors::ContractError;
 
 #[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
 pub enum ArrayFieldType {

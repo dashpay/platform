@@ -20,9 +20,8 @@ use crate::{
 };
 
 use super::errors::*;
-use super::extra::{get_definitions, get_document_types, get_mutability, ContractConfig};
-
 use super::extra::DocumentType;
+use super::extra::{get_definitions, get_document_types, get_mutability, ContractConfig};
 use super::properties::*;
 
 pub type JsonSchema = JsonValue;
@@ -408,11 +407,12 @@ impl TryFrom<&str> for DataContract {
 
 #[cfg(test)]
 mod test {
+    use anyhow::Result;
+
     use crate::{
         assert_error_contains,
         tests::{fixtures::get_data_contract_fixture, utils::*},
     };
-    use anyhow::Result;
 
     use super::*;
 

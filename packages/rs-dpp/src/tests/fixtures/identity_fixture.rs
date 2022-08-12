@@ -5,7 +5,7 @@ use crate::util::string_encoding::{decode, Encoding};
 //3bufpwQjL5qsvuP4fmCKgXJrKG852DDMYfi9J6XKqPAT
 //[198, 23, 40, 120, 58, 93, 0, 165, 27, 49, 4, 117, 107, 204,  67, 46, 164, 216, 230, 135, 201, 92, 31, 155, 62, 131, 211, 177, 139, 175, 163, 237]
 
-pub fn identity_fixture_json() -> serde_json::Value {
+pub fn identity_fixture_raw_object() -> serde_json::Value {
     json!({
         "protocolVersion": 1,
         "id": [198, 23, 40, 120, 58, 93, 0, 165, 27, 49, 4, 117, 107, 204,  67, 46, 164, 216, 230, 135, 201, 92, 31, 155, 62, 131, 211, 177, 139, 175, 163, 237],
@@ -32,7 +32,7 @@ pub fn identity_fixture_json() -> serde_json::Value {
     })
 }
 
-pub fn identity_fixture_json_base() -> serde_json::Value {
+pub fn identity_fixture_json() -> serde_json::Value {
     json!({
         "protocolVersion": 1,
         "id": "3bufpwQjL5qsvuP4fmCKgXJrKG852DDMYfi9J6XKqPAT",

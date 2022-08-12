@@ -1,6 +1,5 @@
 use std::collections::BTreeMap;
 
-use super::meta_validators;
 use jsonschema::{JSONSchema, KeywordDefinition};
 use serde_json::{json, Value};
 
@@ -8,6 +7,8 @@ use crate::consensus::ConsensusError;
 use crate::util::json_value::JsonValueExt;
 use crate::validation::ValidationResult;
 use crate::{DashPlatformProtocolInitError, NonConsensusError, SerdeParsingError};
+
+use super::meta_validators;
 
 pub struct JsonSchemaValidator {
     raw_schema_json: Value,
@@ -47,7 +48,7 @@ impl JsonSchemaValidator {
         Ok(json_schema_validator)
     }
 
-    pub fn validate(&self, object: &Value) -> Result<ValidationResult, NonConsensusError> {
+    pub fn validate(&self, object: &Value) -> Result<ValidationResult<()>, NonConsensusError> {
         // TODO: create better error messages
         let res = self
             .schema
@@ -69,7 +70,7 @@ impl JsonSchemaValidator {
     }
 
     /// validates schema through compilation
-    pub fn validate_schema(schema: &Value) -> ValidationResult {
+    pub fn validate_schema(schema: &Value) -> ValidationResult<()> {
         let mut validation_result = ValidationResult::new(None);
 
         let res = JSONSchema::options()
@@ -88,7 +89,7 @@ impl JsonSchemaValidator {
     /// Uses predefined meta-schemas to validate data contract schema
     pub fn validate_data_contract_schema(
         data_contract_schema: &Value,
-    ) -> Result<ValidationResult, NonConsensusError> {
+    ) -> Result<ValidationResult<()>, NonConsensusError> {
         let mut validation_result = ValidationResult::new(None);
         let res = meta_validators::DATA_CONTRACT_META_SCHEMA.validate(data_contract_schema);
 

@@ -1,5 +1,7 @@
 use std::borrow::Borrow;
 
+use serde_json::Value as JsonValue;
+
 use crate::{
     consensus::basic::BasicError,
     data_contract::DataContract,
@@ -10,12 +12,11 @@ use crate::{
     validation::ValidationResult,
     ProtocolError,
 };
-use serde_json::Value as JsonValue;
 
 pub fn validate_partial_compound_indices<'a>(
     raw_document_transitions: impl IntoIterator<Item = &'a JsonValue>,
     data_contract: &DataContract,
-) -> Result<ValidationResult, ProtocolError> {
+) -> Result<ValidationResult<()>, ProtocolError> {
     let mut result = ValidationResult::default();
 
     for transition in raw_document_transitions {
@@ -37,7 +38,7 @@ pub fn validate_indices(
     indices: &[Index],
     document_type: &str,
     raw_transition: &JsonValue,
-) -> ValidationResult {
+) -> ValidationResult<()> {
     let mut validation_result = ValidationResult::default();
 
     for index in indices
@@ -89,8 +90,9 @@ fn are_all_properties_defined_or_undefined(
 
 #[cfg(test)]
 mod test {
-    use super::are_all_properties_defined_or_undefined;
     use serde_json::json;
+
+    use super::are_all_properties_defined_or_undefined;
 
     #[test]
     fn should_return_true_if_all_properties_are_defined() {

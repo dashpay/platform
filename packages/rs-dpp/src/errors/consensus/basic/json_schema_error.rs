@@ -16,6 +16,19 @@ pub struct JsonSchemaError {
     // this.propertyName = propertyName;
 }
 
+#[cfg(test)]
+impl Clone for JsonSchemaError {
+    fn clone(&self) -> Self {
+        Self {
+            message: self.message.clone(),
+            // TODO: figure out what to do with this
+            kind: ValidationErrorKind::FalseSchema,
+            instance_path: self.instance_path.clone(),
+            schema_path: self.schema_path.clone(),
+        }
+    }
+}
+
 impl<'a> From<ValidationError<'a>> for JsonSchemaError {
     fn from(validation_error: ValidationError<'a>) -> Self {
         Self {

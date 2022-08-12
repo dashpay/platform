@@ -4,7 +4,7 @@ use std::convert::{TryFrom, TryInto};
 
 use anyhow::anyhow;
 use ciborium::value::Value as CborValue;
-
+use serde::Serialize;
 use serde_json::{Map, Value as JsonValue};
 
 use crate::identifier::Identifier;
@@ -72,6 +72,7 @@ pub trait CborBTreeMapHelper {
     fn get_string(&self, key: &str) -> Result<String, ProtocolError>;
     fn get_u32(&self, key: &str) -> Result<u32, ProtocolError>;
     fn get_i64(&self, key: &str) -> Result<i64, ProtocolError>;
+    fn get_u64(&self, key: &str) -> Result<u64, ProtocolError>;
 }
 
 impl CborBTreeMapHelper for BTreeMap<String, CborValue> {
@@ -109,6 +110,15 @@ impl CborBTreeMapHelper for BTreeMap<String, CborValue> {
             .ok_or_else(|| ProtocolError::DecodingError(format!("{key} must be an integer")))?
             .try_into()
             .map_err(|_| ProtocolError::DecodingError(format!("{key} must be a 64 int")))
+    }
+
+    fn get_u64(&self, key: &str) -> Result<u64, ProtocolError> {
+        self.get(key)
+            .ok_or_else(|| ProtocolError::DecodingError(format!("unable to get property {key}")))?
+            .as_integer()
+            .ok_or_else(|| ProtocolError::DecodingError(format!("{key} must be an integer")))?
+            .try_into()
+            .map_err(|_| ProtocolError::DecodingError(format!("{key} must be a 64 uint")))
     }
 }
 
@@ -241,6 +251,15 @@ pub struct CborCanonicalMap {
 impl CborCanonicalMap {
     pub fn new() -> Self {
         Self { inner: vec![] }
+    }
+
+    pub fn from_serializable<T>(value: &T) -> Result<Self, ProtocolError>
+    where
+        T: Serialize,
+    {
+        let cbor = ciborium::value::Value::serialized(&value)
+            .map_err(|e| ProtocolError::EncodingError(e.to_string()))?;
+        CborCanonicalMap::try_from(cbor).map_err(|e| ProtocolError::EncodingError(e.to_string()))
     }
 
     pub fn from_vector(vec: Vec<(CborValue, CborValue)>) -> Self {
