@@ -1,6 +1,6 @@
 use thiserror::Error;
 
-#[derive(Debug, Error)]
+#[derive(Debug, Error, Clone, Eq, PartialEq)]
 #[error("Failed to covert vector to array of size {expected_size:?}")]
 pub struct InvalidVectorSizeError {
     expected_size: usize,

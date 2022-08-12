@@ -1,4 +1,5 @@
 use chrono::Utc;
+use itertools::Itertools;
 use serde_json::{json, Value as JsonValue};
 
 use crate::{
@@ -9,7 +10,6 @@ use crate::{
     util::{json_schema::JsonSchemaExt, json_value::JsonValueExt},
     ProtocolError,
 };
-use itertools::Itertools;
 
 use super::{
     document_transition::{self, Action},

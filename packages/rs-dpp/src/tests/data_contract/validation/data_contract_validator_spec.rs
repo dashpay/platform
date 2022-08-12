@@ -1,3 +1,10 @@
+use std::sync::Arc;
+
+use jsonschema::error::ValidationErrorKind;
+use log::trace;
+use serde_json::{json, Value as JsonValue};
+use test_case::test_case;
+
 use crate::{
     codes::ErrorWithCode,
     consensus::{basic::JsonSchemaError, ConsensusError},
@@ -7,13 +14,7 @@ use crate::{
     tests::fixtures::get_data_contract_fixture,
     util::json_value::JsonValueExt,
     version::{ProtocolVersionValidator, COMPATIBILITY_MAP, LATEST_VERSION},
-    Convertible,
 };
-use jsonschema::error::ValidationErrorKind;
-use log::trace;
-use serde_json::{json, Value as JsonValue};
-use std::sync::Arc;
-use test_case::test_case;
 
 struct TestData {
     data_contract_validator: DataContractValidator,
@@ -45,7 +46,7 @@ fn init() {
         .try_init();
 }
 
-fn get_schema_error(result: &ValidationResult, number: usize) -> &JsonSchemaError {
+fn get_schema_error(result: &ValidationResult<()>, number: usize) -> &JsonSchemaError {
     result
         .errors
         .get(number)
@@ -71,7 +72,7 @@ fn get_index_error(consensus_error: &ConsensusError) -> &IndexError {
     }
 }
 
-fn print_json_schema_errors(result: &ValidationResult) {
+fn print_json_schema_errors(result: &ValidationResult<()>) {
     for (i, e) in result.errors.iter().enumerate() {
         let schema_error = e.json_schema_error().unwrap();
         println!(
@@ -175,6 +176,7 @@ fn defs_should_be_object() {
 
 mod defs {
     use super::*;
+
     #[test]
     fn defs_should_not_be_empty() {
         let TestData {
@@ -300,6 +302,7 @@ mod defs {
 
 mod schema {
     use super::*;
+
     #[test]
     fn schema_should_be_string() {
         let TestData {
@@ -421,6 +424,7 @@ fn owner_id_should_be_no_longer_32_bytes(property_name: &str) {
 
 mod documents {
     use super::*;
+
     #[test]
     fn documents_should_be_object() {
         let TestData {
@@ -1361,6 +1365,7 @@ mod documents {
 
 mod byte_array {
     use super::*;
+
     #[test]
     fn byte_array_should_be_boolean() {
         let TestData {
@@ -1452,6 +1457,7 @@ mod byte_array {
 
 mod identifier {
     use super::*;
+
     #[test]
     fn content_media_type_identifier_should_be_used_with_byte_array_only() {
         let TestData {
@@ -1525,6 +1531,7 @@ mod identifier {
 
 mod indices {
     use super::*;
+
     #[test]
     fn indices_should_be_array() {
         let TestData {
@@ -2374,6 +2381,7 @@ mod indices {
 
 mod signature_level {
     use super::*;
+
     #[test]
     fn signature_level_requirement_should_be_number() {
         let TestData {
@@ -2650,6 +2658,7 @@ fn should_return_invalid_result_if_indexed_string_property_missing_max_length_co
 
 mod indexed_array {
     use super::*;
+
     // This section is originally commented out
     // https://github.com/dashevo/platform/blob/ab6391f4b47a970c733e7b81115b44329fbdf993/packages/js-dpp/test/integration/dataContract/validation/validateDataContractFactory.spec.js#L2015
     //

@@ -1,14 +1,14 @@
-use ciborium::value::{Integer, Value};
-use rand::distributions::{Alphanumeric, Standard};
+use std::collections::BTreeMap;
+use std::convert::{TryFrom, TryInto};
 use std::io::{BufReader, Read};
 
 use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
+use ciborium::value::{Integer, Value};
 use integer_encoding::{VarInt, VarIntReader};
+use rand::distributions::{Alphanumeric, Standard};
 use rand::rngs::StdRng;
 use rand::Rng;
 use serde::{Deserialize, Serialize};
-use std::collections::{BTreeMap, BTreeSet};
-use std::convert::{TryFrom, TryInto};
 
 use super::array_field::ArrayFieldType;
 use super::common::*;
@@ -24,8 +24,8 @@ pub struct DocumentField {
 pub enum DocumentFieldType {
     Integer,
     Number,
-    String(Option<usize>, Option<usize>),
-    ByteArray(Option<usize>, Option<usize>),
+    String(Option<u16>, Option<u16>),
+    ByteArray(Option<u16>, Option<u16>),
     Boolean,
     Date,
     Object(BTreeMap<String, DocumentField>),
@@ -34,7 +34,7 @@ pub enum DocumentFieldType {
 }
 
 impl DocumentFieldType {
-    pub fn min_size(&self) -> Option<usize> {
+    pub fn min_size(&self) -> Option<u16> {
         match self {
             DocumentFieldType::Integer => Some(8),
             DocumentFieldType::Number => Some(8),
@@ -57,7 +57,7 @@ impl DocumentFieldType {
         }
     }
 
-    pub fn min_byte_size(&self) -> Option<usize> {
+    pub fn min_byte_size(&self) -> Option<u16> {
         match self {
             DocumentFieldType::Integer => Some(8),
             DocumentFieldType::Number => Some(8),
@@ -80,16 +80,16 @@ impl DocumentFieldType {
         }
     }
 
-    pub fn max_byte_size(&self) -> Option<usize> {
+    pub fn max_byte_size(&self) -> Option<u16> {
         match self {
             DocumentFieldType::Integer => Some(8),
             DocumentFieldType::Number => Some(8),
             DocumentFieldType::String(_, max_length) => match max_length {
-                None => Some(16384),
+                None => Some(u16::MAX),
                 Some(size) => Some(*size * 4),
             },
             DocumentFieldType::ByteArray(_, max_size) => match max_size {
-                None => Some(65536),
+                None => Some(u16::MAX),
                 Some(size) => Some(*size),
             },
             DocumentFieldType::Boolean => Some(1),
@@ -103,16 +103,16 @@ impl DocumentFieldType {
         }
     }
 
-    pub fn max_size(&self) -> Option<usize> {
+    pub fn max_size(&self) -> Option<u16> {
         match self {
             DocumentFieldType::Integer => Some(8),
             DocumentFieldType::Number => Some(8),
             DocumentFieldType::String(_, max_length) => match max_length {
-                None => Some(16384),
+                None => Some(16383),
                 Some(size) => Some(*size),
             },
             DocumentFieldType::ByteArray(_, max_size) => match max_size {
-                None => Some(65536),
+                None => Some(u16::MAX),
                 Some(size) => Some(*size),
             },
             DocumentFieldType::Boolean => Some(1),
@@ -126,7 +126,7 @@ impl DocumentFieldType {
         }
     }
 
-    pub fn random_size(&self, rng: &mut StdRng) -> usize {
+    pub fn random_size(&self, rng: &mut StdRng) -> u16 {
         let min_size = self.min_size().unwrap();
         let max_size = self.max_size().unwrap();
         rng.gen_range(min_size..=max_size)
@@ -142,14 +142,14 @@ impl DocumentFieldType {
                 let size = self.random_size(rng);
                 Value::Text(
                     rng.sample_iter(Alphanumeric)
-                        .take(size)
+                        .take(size as usize)
                         .map(char::from)
                         .collect(),
                 )
             }
             DocumentFieldType::ByteArray(_, _) => {
                 let size = self.random_size(rng);
-                Value::Bytes(rng.sample_iter(Standard).take(size).collect())
+                Value::Bytes(rng.sample_iter(Standard).take(size as usize).collect())
             }
             DocumentFieldType::Boolean => Value::Bool(rng.gen::<bool>()),
             DocumentFieldType::Date => {
@@ -183,14 +183,14 @@ impl DocumentFieldType {
                 let size = self.max_size().unwrap();
                 Value::Text(
                     rng.sample_iter(Alphanumeric)
-                        .take(size)
+                        .take(size as usize)
                         .map(char::from)
                         .collect(),
                 )
             }
             DocumentFieldType::ByteArray(_, _) => {
                 let size = self.max_size().unwrap();
-                Value::Bytes(rng.sample_iter(Standard).take(size).collect())
+                Value::Bytes(rng.sample_iter(Standard).take(size as usize).collect())
             }
             DocumentFieldType::Boolean => Value::Bool(rng.gen::<bool>()),
             DocumentFieldType::Date => {
@@ -249,7 +249,7 @@ impl DocumentFieldType {
                 }
             }
             DocumentFieldType::Date | DocumentFieldType::Number => {
-                if required == false {
+                if !required {
                     let marker = buf.read_u8().map_err(|_| {
                         ContractError::CorruptedSerialization(
                             "error reading from serialized document",
@@ -265,7 +265,7 @@ impl DocumentFieldType {
                 Ok(Some(Value::Float(date)))
             }
             DocumentFieldType::Integer => {
-                if required == false {
+                if !required {
                     let marker = buf.read_u8().map_err(|_| {
                         ContractError::CorruptedSerialization(
                             "error reading from serialized document",
@@ -318,7 +318,7 @@ impl DocumentFieldType {
                     Ok(Some(Value::Map(values)))
                 }
             }
-            DocumentFieldType::Array(array_field_type) => {
+            DocumentFieldType::Array(_array_field_type) => {
                 Err(ContractError::Unsupported(
                     "serialization of arrays not yet supported",
                 ))
@@ -775,12 +775,12 @@ impl DocumentFieldType {
         return match self {
             DocumentFieldType::String(min, max) => {
                 if let Some(min) = min {
-                    if str.len() < *min {
+                    if str.len() < *min as usize {
                         return Err(ContractError::FieldRequirementUnmet("string is too small"));
                     }
                 }
                 if let Some(max) = max {
-                    if str.len() > *max {
+                    if str.len() > *max as usize {
                         return Err(ContractError::FieldRequirementUnmet("string is too big"));
                     }
                 }
@@ -796,14 +796,14 @@ impl DocumentFieldType {
                 .map_err(|_| ContractError::ValueWrongType("value is not a float")),
             DocumentFieldType::ByteArray(min, max) => {
                 if let Some(min) = min {
-                    if str.len() / 2 < *min {
+                    if str.len() / 2 < *min as usize {
                         return Err(ContractError::FieldRequirementUnmet(
                             "byte array is too small",
                         ));
                     }
                 }
                 if let Some(max) = max {
-                    if str.len() / 2 > *max {
+                    if str.len() / 2 > *max as usize {
                         return Err(ContractError::FieldRequirementUnmet(
                             "byte array  is too big",
                         ));

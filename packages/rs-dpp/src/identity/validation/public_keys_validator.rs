@@ -16,7 +16,7 @@ pub trait TPublicKeysValidator {
     fn validate_keys(
         &self,
         raw_public_keys: &[Value],
-    ) -> Result<ValidationResult, NonConsensusError>;
+    ) -> Result<ValidationResult<()>, NonConsensusError>;
 }
 
 pub struct PublicKeysValidator {
@@ -27,7 +27,7 @@ impl TPublicKeysValidator for PublicKeysValidator {
     fn validate_keys(
         &self,
         raw_public_keys: &[Value],
-    ) -> Result<ValidationResult, NonConsensusError> {
+    ) -> Result<ValidationResult<()>, NonConsensusError> {
         let mut result = ValidationResult::new(None);
 
         // TODO: convert buffers to arrays?
@@ -136,7 +136,7 @@ impl PublicKeysValidator {
     pub fn validate_public_key_structure(
         &self,
         public_key: &Value,
-    ) -> Result<ValidationResult, NonConsensusError> {
+    ) -> Result<ValidationResult<()>, NonConsensusError> {
         self.public_key_schema_validator.validate(public_key)
     }
 }

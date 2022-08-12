@@ -1,10 +1,10 @@
-pub const RATIO: i64 = 1000;
+pub const RATIO: u64 = 1000;
 
-pub fn convert_satoshi_to_credits(amount: i64) -> i64 {
+pub fn convert_satoshi_to_credits(amount: u64) -> u64 {
     amount * RATIO
 }
 
-pub fn convert_credits_to_satoshi(amount: i64) -> i64 {
+pub fn convert_credits_to_satoshi(amount: u64) -> u64 {
     amount / RATIO
 }
 

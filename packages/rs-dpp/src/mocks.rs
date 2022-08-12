@@ -3,9 +3,6 @@
 use anyhow::Result as AnyResult;
 use serde::{Deserialize, Serialize};
 
-use crate::state_transition::{StateTransitionLike, StateTransitionType};
-use crate::{prelude::*, state_transition::StateTransitionConvert};
-
 #[derive(Debug, Clone)]
 pub struct DashPlatformProtocol<SR> {
     pub state_repository: SR,
@@ -72,75 +69,6 @@ impl SMLStore {
 
     pub fn get_current_sml(&self) -> AnyResult<&SimplifiedMNList> {
         Ok(&self.sml_list_current)
-    }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct IdentityCreateTransition {}
-impl StateTransitionConvert for IdentityCreateTransition {
-    fn signature_property_paths() -> Vec<&'static str> {
-        unimplemented!()
-    }
-    fn identifiers_property_paths() -> Vec<&'static str> {
-        unimplemented!()
-    }
-    fn binary_property_paths() -> Vec<&'static str> {
-        unimplemented!()
-    }
-}
-impl StateTransitionLike for IdentityCreateTransition {
-    fn get_protocol_version(&self) -> u32 {
-        unimplemented!()
-    }
-    /// returns the type of State Transition
-    fn get_type(&self) -> StateTransitionType {
-        unimplemented!()
-    }
-    /// returns the signature as a byte-array
-    fn get_signature(&self) -> &Vec<u8> {
-        unimplemented!()
-    }
-    /// set a new signature
-    fn set_signature(&mut self, _signature: Vec<u8>) {
-        unimplemented!()
-    }
-    fn calculate_fee(&self) -> Result<u64, ProtocolError> {
-        unimplemented!()
-    }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct IdentityTopUpTransition {}
-impl StateTransitionConvert for IdentityTopUpTransition {
-    fn signature_property_paths() -> Vec<&'static str> {
-        unimplemented!()
-    }
-    fn identifiers_property_paths() -> Vec<&'static str> {
-        unimplemented!()
-    }
-    fn binary_property_paths() -> Vec<&'static str> {
-        unimplemented!()
-    }
-}
-
-impl StateTransitionLike for IdentityTopUpTransition {
-    fn get_protocol_version(&self) -> u32 {
-        unimplemented!()
-    }
-    /// returns the type of State Transition
-    fn get_type(&self) -> StateTransitionType {
-        unimplemented!()
-    }
-    /// returns the signature as a byte-array
-    fn get_signature(&self) -> &Vec<u8> {
-        unimplemented!()
-    }
-    /// set a new signature
-    fn set_signature(&mut self, _signature: Vec<u8>) {
-        unimplemented!()
-    }
-    fn calculate_fee(&self) -> Result<u64, ProtocolError> {
-        unimplemented!()
     }
 }
 

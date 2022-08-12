@@ -1,13 +1,6 @@
-pub mod common;
+use std::collections::BTreeMap;
 
-mod array_field;
-mod document_field;
-mod document_type;
-mod drive_api;
-mod errors;
-mod index;
-mod mutability;
-mod root_tree;
+use ciborium::value::Value as CborValue;
 
 use mutability::{
     DEFAULT_CONTRACT_DOCUMENTS_KEEPS_HISTORY, DEFAULT_CONTRACT_DOCUMENT_MUTABILITY,
@@ -27,8 +20,16 @@ pub use {
     root_tree::RootTree,
 };
 
-use ciborium::value::Value as CborValue;
-use std::collections::BTreeMap;
+pub mod common;
+
+mod array_field;
+mod document_field;
+mod document_type;
+mod drive_api;
+mod errors;
+mod index;
+mod mutability;
+mod root_tree;
 
 pub fn get_mutability(
     contract: &BTreeMap<String, CborValue>,

@@ -15,6 +15,7 @@ use crate::errors::{InvalidVectorSizeError, ProtocolError};
 use crate::util::cbor_value::{CborCanonicalMap, CborMapExtension};
 use crate::util::json_value::{JsonValueExt, ReplaceWith};
 use crate::util::vec;
+use crate::SerdeParsingError;
 
 pub type KeyID = u64;
 
@@ -83,7 +84,9 @@ impl std::fmt::Display for Purpose {
 }
 
 #[repr(u8)]
-#[derive(Debug, PartialEq, Eq, Clone, Copy, Serialize_repr, Deserialize_repr, PartialOrd, Ord)]
+#[derive(
+    Debug, PartialEq, Eq, Clone, Copy, Hash, Serialize_repr, Deserialize_repr, PartialOrd, Ord,
+)]
 pub enum SecurityLevel {
     MASTER = 0,
     CRITICAL = 1,
@@ -164,10 +167,6 @@ pub struct IdentityPublicKey {
     pub security_level: SecurityLevel,
     #[serde(rename = "type")]
     pub key_type: KeyType,
-    // #[serde(
-    //     serialize_with = "se_vec_to_base64",
-    //     deserialize_with = "de_base64_to_vec"
-    // )]
     pub data: Vec<u8>,
     pub read_only: bool,
 }
@@ -291,6 +290,22 @@ impl IdentityPublicKey {
         let identity_public_key: IdentityPublicKey = serde_json::from_value(raw_object)?;
 
         Ok(identity_public_key)
+    }
+
+    /// Return raw data, with all binary fields represented as arrays
+    pub fn to_raw_json_object(&self) -> Result<JsonValue, SerdeParsingError> {
+        let value = serde_json::to_value(&self)?;
+
+        Ok(value)
+    }
+
+    /// Return json with all binary data converted to base64
+    pub fn to_json(&self) -> Result<JsonValue, SerdeParsingError> {
+        let mut value = self.to_raw_json_object()?;
+
+        value.replace_binary_paths(BINARY_DATA_FIELDS, ReplaceWith::Base64)?;
+
+        Ok(value)
     }
 
     pub fn from_cbor_value(cbor_value: &CborValue) -> Result<Self, ProtocolError> {
