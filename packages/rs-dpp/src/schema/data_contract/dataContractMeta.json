@@ -6,7 +6,7 @@
     "documentProperties": {
       "type": "object",
       "patternProperties": {
-        "^[a-zA-Z][a-zA-Z0-9-_]{1,62}[a-zA-Z0-9]$": {
+        "^[a-zA-Z0-9-_]{1,64}$": {
           "type": "object",
           "allOf": [
             {
@@ -17,7 +17,7 @@
         }
       },
       "propertyNames": {
-        "pattern": "^[a-zA-Z][a-zA-Z0-9-_]{1,62}[a-zA-Z0-9]$"
+        "pattern": "^[a-zA-Z0-9-_]{1,64}$"
       },
       "minProperties": 1,
       "maxProperties": 100
@@ -163,7 +163,9 @@
                 "type": "array"
               }
             },
-            "required": ["items"]
+            "required": [
+              "items"
+            ]
           }
         },
         "contentMediaType": {
@@ -186,7 +188,11 @@
                 "const": 32
               }
             },
-            "required": ["byteArray", "minItems", "maxItems"]
+            "required": [
+              "byteArray",
+              "minItems",
+              "maxItems"
+            ]
           }
         },
         "uniqueItems": {
@@ -203,12 +209,18 @@
                     "anyOf": [
                       {
                         "type": "string",
-                        "enum": ["object", "array"]
+                        "enum": [
+                          "object",
+                          "array"
+                        ]
                       },
                       {
                         "type": "array",
                         "contains": {
-                          "enum": ["object", "array"]
+                          "enum": [
+                            "object",
+                            "array"
+                          ]
                         }
                       }
                     ]
@@ -224,7 +236,9 @@
                 "maximum": 100000
               }
             },
-            "required": ["maxItems"]
+            "required": [
+              "maxItems"
+            ]
           }
         },
         "pattern": {
@@ -249,7 +263,9 @@
               "maximum": 50000
             }
           },
-          "required": ["maxLength"]
+          "required": [
+            "maxLength"
+          ]
         },
         "prefixItems": {
           "$comment": "array must not contain undefined item sub schemas",
@@ -259,7 +275,9 @@
               "const": false
             }
           },
-          "required": ["items"]
+          "required": [
+            "items"
+          ]
         }
       },
       "allOf": [
@@ -271,19 +289,25 @@
                 "const": "array"
               }
             },
-            "required": ["type"],
+            "required": [
+              "type"
+            ],
             "not": {
               "properties": {
                 "byteArray": true
               },
-              "required": ["byteArray"]
+              "required": [
+                "byteArray"
+              ]
             }
           },
           "then": {
             "properties": {
               "items": true
             },
-            "required": ["items"]
+            "required": [
+              "items"
+            ]
           }
         },
         {
@@ -293,7 +317,9 @@
               "properties": {
                 "prefixItems": true
               },
-              "required": ["prefixItems"]
+              "required": [
+                "prefixItems"
+              ]
             }
           },
           "then": {
@@ -316,7 +342,9 @@
               "properties": {
                 "$ref": true
               },
-              "required": ["$ref"]
+              "required": [
+                "$ref"
+              ]
             }
           },
           "then": {
@@ -328,7 +356,10 @@
                 "$ref": "#/$defs/documentSchema/properties/additionalProperties"
               }
             },
-            "required": ["properties", "additionalProperties"]
+            "required": [
+              "properties",
+              "additionalProperties"
+            ]
           }
         }
       ]
@@ -343,7 +374,7 @@
       "type": "string",
       "const": "https://schema.dash.org/dpp-0-4-0/meta/data-contract"
     },
-    "$id":{
+    "$id": {
       "type": "array",
       "byteArray": true,
       "minItems": 32,
@@ -354,7 +385,7 @@
       "type": "integer",
       "minimum": 1
     },
-    "ownerId":{
+    "ownerId": {
       "type": "array",
       "byteArray": true,
       "minItems": 32,
@@ -364,7 +395,7 @@
     "documents": {
       "type": "object",
       "propertyNames": {
-        "pattern": "^[a-zA-Z][a-zA-Z0-9-_]{1,62}[a-zA-Z0-9]$"
+        "pattern": "^[a-zA-Z0-9-_]{1,64}$"
       },
       "additionalProperties": {
         "type": "object",
@@ -386,11 +417,14 @@
                       "items": {
                         "type": "object",
                         "propertyNames": {
-                          "pattern": "^[a-zA-Z$][a-zA-Z0-9-_.]{1,62}[a-zA-Z0-9]$"
+                          "maxLength": 256
                         },
                         "additionalProperties": {
                           "type": "string",
-                          "enum": ["asc", "desc"]
+                          "enum": [
+                            "asc",
+                            "desc"
+                          ]
                         },
                         "minProperties": 1,
                         "maxProperties": 1
@@ -402,7 +436,10 @@
                       "type": "boolean"
                     }
                   },
-                  "required": ["properties", "name"],
+                  "required": [
+                    "properties",
+                    "name"
+                  ],
                   "additionalProperties": false
                 },
                 "minItems": 1,

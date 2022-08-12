@@ -29,6 +29,7 @@ impl JsonSchemaValidator {
         Ok(json_schema_validator)
     }
 
+    /// creates a new json schema validator from the json schema and allows to add the definitions
     pub fn new_with_definitions(
         mut schema_json: Value,
         definitions: &BTreeMap<String, Value>,

@@ -5,10 +5,7 @@ use crate::{prelude::*, util::json_schema::Index};
 #[derive(Error, Debug)]
 pub enum BasicError {
     #[error("Data Contract {data_contract_id} is not present")]
-    DataContractContPresent { data_contract_id: Identifier },
-
-    #[error("$type is not present")]
-    MissingDocumentTypeError,
+    DataContractNotPresent { data_contract_id: Identifier },
 
     #[error("Data Contract version must be {expected_version}, go {version}")]
     InvalidDataContractVersionError { expected_version: u32, version: u32 },
@@ -47,6 +44,37 @@ pub enum BasicError {
     InconsistentCompoundIndexDataError {
         index_properties: Vec<String>,
         document_type: String,
+    },
+
+    #[error("$type is not present")]
+    MissingDocumentTypeError,
+
+    #[error("$action is not present")]
+    MissingDocumentTransitionActionError,
+
+    #[error("Document transition action {} is not supported", action)]
+    InvalidDocumentTransitionActionError { action: String },
+
+    #[error(
+        "Invalid document transition id {}, expected {}",
+        invalid_id,
+        expected_id
+    )]
+    InvalidDocumentTransitionIdError {
+        expected_id: Identifier,
+        invalid_id: Identifier,
+    },
+
+    #[error("Document transitions with duplicate IDs {:?}", references)]
+    DuplicateDocumentTransitionsWithIdsError { references: Vec<(String, Vec<u8>)> },
+
+    #[error("$dataContractId is not present")]
+    MissingDataContractIdError,
+
+    #[error("Invalid {}: {}", identifier_name, error)]
+    InvalidIdentifierError {
+        identifier_name: String,
+        error: String,
     },
 }
 

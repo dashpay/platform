@@ -38,7 +38,7 @@ where
             // assumed the conservativeness for the validation. TBD: in the case of
             // general error we want to add the same result
             Ok(None) | Err(_) => {
-                let err = BasicError::DataContractContPresent {
+                let err = BasicError::DataContractNotPresent {
                     data_contract_id: state_transition.data_contract.id.clone(),
                 };
                 result.add_error(err);
