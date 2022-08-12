@@ -92,10 +92,9 @@ describe('BlockHeadersSyncWorker', () => {
 
         // Stop worker
         await blockHeadersSyncWorker.onStop();
+        await onStartPromise;
         expect(blockHeadersSyncWorker.syncState)
           .to.equal(BlockHeadersSyncWorker.STATES.IDLE);
-
-        await onStartPromise;
       });
 
       it('[second launch] should pick first batch from storage and process last batch', async () => {
@@ -291,17 +290,9 @@ describe('BlockHeadersSyncWorker', () => {
 
   describe('Without storage adapter', () => {
     describe('With 1 block headers stream', () => {
-      it('should process first batch of historical headers');
-      it('should process last batch of historical headers');
-      it('should do continuous sync');
-      it('should sync from the beginning after the restart');
-    });
-  });
-
-  describe.skip('#onStart', () => {
-    describe('Historical sync with 1 stream', () => {
       let onStartPromise;
       let blockHeadersStream;
+
       before(async function before() {
         blockHeadersSyncWorker = await createWorker(this.sinon);
         ([blockHeadersStream] = historicalStreams);
@@ -310,7 +301,7 @@ describe('BlockHeadersSyncWorker', () => {
         chainStore.chainHeight = defaultChainHeight;
       });
 
-      it('should process first batch', async () => {
+      it('should process first batch of historical headers', async () => {
         const chainStore = blockHeadersSyncWorker.storage.getDefaultChainStore();
 
         // Wait for the stream to start
@@ -333,13 +324,12 @@ describe('BlockHeadersSyncWorker', () => {
         // Ensure headers metadata
         const expectedMetaData = headersToSend
           .reduce((acc, header, i) => {
-            Object.assign(acc, { [header.hash]: { height: i, time: header.time } });
+            acc.set(header.hash, { height: i, time: header.time });
             return acc;
-          }, {});
+          }, new Map());
         expect(chainStore.state.headersMetadata).to.deep.equal(expectedMetaData);
       });
-
-      it('should process last batch', async () => {
+      it('should process last batch of historical headers', async () => {
         const chainStore = blockHeadersSyncWorker.storage.getDefaultChainStore();
 
         const prevSyncedHeaderHeight = chainStore.state.lastSyncedHeaderHeight;
@@ -360,13 +350,58 @@ describe('BlockHeadersSyncWorker', () => {
         // Ensure headers metadata
         const expectedMetaData = headersChain
           .reduce((acc, header, i) => {
-            Object.assign(acc, { [header.hash]: { height: i, time: header.time } });
+            acc.set(header.hash, { height: i, time: header.time });
             return acc;
-          }, {});
+          }, new Map());
+
         expect(chainStore.state.headersMetadata).to.deep.equal(expectedMetaData);
 
         blockHeadersStream.end();
         await onStartPromise;
+      });
+      it('should do continuous sync', async () => {
+        const { storage } = blockHeadersSyncWorker;
+        const chainStore = storage.getDefaultChainStore();
+        const walletStore = storage.getDefaultWalletStore();
+
+        const prevSyncedHeaderHeight = chainStore.state.lastSyncedHeaderHeight;
+        await blockHeadersSyncWorker.execute();
+
+        // New headers contains tail of the historical chain,
+        // because we are syncing from the chain height
+        const tail = headersChain[headersChain.length - 1];
+        const newHeader = mockHeadersChain('testnet', 2, tail)[1];
+        headersChain.push(newHeader);
+        const newHeaders = [tail, newHeader];
+        continuousStream.sendHeaders(newHeaders);
+
+        await waitOneTick();
+
+        //
+        // Ensure headers added
+        const expectedHeaders = headersChain.slice(-headersToKeep);
+        expect(chainStore.state.blockHeaders.map((header) => header.toString()))
+          .to.deep.equal(expectedHeaders.map((header) => header.toString()));
+
+        const newChainHeight = prevSyncedHeaderHeight + 1;
+
+        // Ensure chain height update
+        expect(chainStore.state.lastSyncedHeaderHeight)
+          .to.equal(newChainHeight);
+        expect(chainStore.state.blockHeight)
+          .to.equal(newChainHeight);
+        expect(walletStore.state.lastKnownBlock)
+          .to.deep.equal({
+            height: newChainHeight,
+          });
+        expect(chainStore.state.headersMetadata.get(newHeader.hash))
+          .to.deep.equal({
+            height: newChainHeight,
+            time: newHeader.time,
+          });
+
+        await blockHeadersSyncWorker.onStop();
+        expect(blockHeadersSyncWorker.syncState).to.equal(BlockHeadersSyncWorker.STATES.IDLE);
       });
     });
   });

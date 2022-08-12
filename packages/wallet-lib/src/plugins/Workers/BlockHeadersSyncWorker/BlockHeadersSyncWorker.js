@@ -389,7 +389,6 @@ class BlockHeadersSyncWorker extends Worker {
       logger.debug(`[--------------------->] Last header: ${longestChain[longestChain.length - 1].hash}`);
     }
 
-    // TODO: add confirmedSynced, totalSynced and total count to the progress event
     this.parentEvents.emit(EVENTS.HEADERS_SYNC_PROGRESS, {
       confirmedProgress,
       totalProgress,
