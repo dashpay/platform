@@ -86,9 +86,17 @@ impl ErrorWithCode for BasicError {
     fn get_code(&self) -> u32 {
         match *self {
             // Document
-            Self::DataContractContPresent { .. } => 1018,
+            Self::DataContractNotPresent { .. } => 1018,
             Self::InvalidDocumentTypeError { .. } => 1024,
-            Self::MissingDocumentTypeError { .. } => 1028,
+            Self::MissingDocumentTypeError { .. } => 1027,
+            Self::MissingDocumentTransitionActionError { .. } => 1026,
+            Self::InvalidDocumentTransitionIdError { .. } => 1023,
+            Self::InvalidDocumentTransitionActionError { .. } => 1022,
+
+            Self::DuplicateDocumentTransitionsWithIdsError { .. } => 1019,
+            Self::MissingDataContractIdError => 1025,
+            Self::InvalidIdentifierError { .. } => 1006,
+
             // Data contract
             Self::JsonSchemaCompilationError { .. } => 1004,
             Self::InvalidDataContractVersionError { .. } => 4013,
@@ -96,6 +104,7 @@ impl ErrorWithCode for BasicError {
             Self::DuplicateIndexNameError { .. } => 1048,
             Self::InvalidJsonSchemaRefError { .. } => 1014,
             Self::InconsistentCompoundIndexDataError { .. } => 1021,
+
             Self::IndexError(ref e) => e.get_code(),
         }
     }
