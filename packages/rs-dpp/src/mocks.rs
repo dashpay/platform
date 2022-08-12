@@ -29,11 +29,6 @@ pub type IHeader = String;
 
 pub type InstantLock = String;
 
-#[derive(Debug, Clone)]
-pub struct JsonSchemaValidator {}
-
-pub trait JsonSchemaValidatorLike {}
-
 pub struct SimplifiedMNList {}
 impl SimplifiedMNList {
     pub fn get_valid_master_nodes(&self) -> Vec<SMLEntry> {

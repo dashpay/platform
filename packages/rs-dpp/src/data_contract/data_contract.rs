@@ -297,6 +297,10 @@ impl DataContract {
         self.version
     }
 
+    pub fn definitions(&self) -> &BTreeMap<String, JsonValue> {
+        &self.defs
+    }
+
     // Returns hash from Data Contract
     pub fn hash(&self) -> Result<Vec<u8>, ProtocolError> {
         Ok(hash(self.to_buffer()?))
@@ -326,7 +330,6 @@ impl DataContract {
                     doc_type: doc_type.to_owned(),
                     data_contract: self.clone(),
                 })?;
-
         Ok(document)
     }
 
