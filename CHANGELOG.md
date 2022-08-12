@@ -1,3 +1,16 @@
+## [0.23.0-dev.6](https://github.com/dashevo/platform/compare/v0.23.0-dev.5...v0.23.0-dev.6) (2022-08-12)
+
+
+### ⚠ BREAKING CHANGES
+
+* Correct cumulative fees invalidate previous blockchain data (#474)
+
+### Bug Fixes
+
+* **dpp:** repeated disabling of already disabled identity key ([#477](https://github.com/dashevo/platform/issues/477))
+* **drive:** cumulative fees are not reset between blocks ([#474](https://github.com/dashevo/platform/issues/474))
+* **drive:** invalid previous block time ([#475](https://github.com/dashevo/platform/issues/475))
+
 ## [0.23.0-dev.5](https://github.com/dashevo/platform/compare/v0.23.0-dev.4...v0.23.0-dev.5) (2022-08-05)
 
 
