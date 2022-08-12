@@ -13,6 +13,7 @@ const SCHEMA = {
     },
   },
   lastSyncedHeaderHeight: 'number',
+  chainHeight: 'number',
   blockHeaders: [
     (hex) => new BlockHeader(Buffer.from(hex, 'hex')),
   ],

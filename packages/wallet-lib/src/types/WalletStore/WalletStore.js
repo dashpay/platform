@@ -17,7 +17,7 @@ class WalletStore {
       paths: new Map(),
       identities: new Map(),
       lastKnownBlock: {
-        height: -1,
+        height: 0,
       },
     };
   }

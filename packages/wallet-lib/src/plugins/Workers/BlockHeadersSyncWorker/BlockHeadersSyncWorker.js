@@ -391,8 +391,11 @@ class BlockHeadersSyncWorker extends Worker {
 
     // TODO: add confirmedSynced, totalSynced and total count to the progress event
     this.parentEvents.emit(EVENTS.HEADERS_SYNC_PROGRESS, {
-      confirmed: confirmedProgress,
-      total: totalProgress,
+      confirmedProgress,
+      totalProgress,
+      confirmedSyncedCount,
+      totalSyncedCount,
+      totalCount,
     });
   }
 

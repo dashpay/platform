@@ -155,9 +155,9 @@ class TransactionSyncStreamWorker extends Worker {
       skipSynchronization,
     } = (this.storage.application.syncOptions || {});
 
+    const bestBlockHeight = this.storage.getChainStore(this.network.toString()).state.blockHeight;
     if (skipSynchronization) {
       logger.debug('TransactionSyncStreamWorker - Wallet created from a new mnemonic. Sync from the best block height.');
-      const bestBlockHeight = this.storage.getChainStore(this.network.toString()).state.blockHeight;
       // TODO: probably this check has to go to a completely different place (ChainPlugin?)
       this.setLastSyncedBlockHeight(bestBlockHeight);
       return;
@@ -180,6 +180,8 @@ class TransactionSyncStreamWorker extends Worker {
     this.chainSyncMediator.state = ChainSyncMediator.STATES.HISTORICAL_SYNC;
     // We first need to sync up initial historical transactions
     await this.startHistoricalSync(this.network);
+    this.setLastSyncedBlockHeight(bestBlockHeight, true);
+    this.updateProgress();
     await this.storage.saveState();
     // TODO: Purge headers metadata from storage
     // TODO: for some reason headers still continue arriving after everything is completed
@@ -319,16 +321,18 @@ class TransactionSyncStreamWorker extends Worker {
 
     const chainStore = this.storage.getChainStore(this.network.toString());
 
-    const totalItems = chainStore.state.blockHeight;
-    const syncedItems = this.lastSyncedBlockHeight;
-    let progress = syncedItems / totalItems;
+    const totalBlocksCount = chainStore.state.blockHeight + 1;
+    const syncedBlocksCount = this.lastSyncedBlockHeight + 1;
+    const transactionsCount = chainStore.state.transactions.size;
+    let progress = syncedBlocksCount / totalBlocksCount;
     progress = Math.round(progress * 1000) / 10;
     logger.debug(`[TransactionSynsStreamWorker] Historical fetch progress: ${this.lastSyncedBlockHeight}/${chainStore.chainHeight}, ${progress}%`);
     // TODO: add tests
     this.parentEvents.emit(EVENTS.TRANSACTIONS_SYNC_PROGRESS, {
       progress,
-      totalItems,
-      syncedItems,
+      syncedBlocksCount,
+      totalBlocksCount,
+      transactionsCount,
     });
   }
 

@@ -16,6 +16,7 @@ function exportState(lastKnownBlock) {
     fees: {},
     headersMetadata: Object.fromEntries(headersMetadata),
     lastSyncedHeaderHeight,
+    chainHeight: blockHeight,
   };
 
   let reorgSafeHeight = Infinity;
