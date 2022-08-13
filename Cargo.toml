@@ -1,5 +1,7 @@
 [workspace]
 members = [
     "drive",
+    "dpp",
+    "js-binding",
     "node",
 ]

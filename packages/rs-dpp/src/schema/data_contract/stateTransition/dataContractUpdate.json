@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "protocolVersion": {
+      "type": "integer",
+      "$comment": "Maximum is the latest protocol version"
+    },
+    "type": {
+      "type": "integer",
+      "const": 4
+    },
+    "dataContract": {
+      "type": "object"
+    },
+    "signaturePublicKeyId": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "signature": {
+      "type": "array",
+      "byteArray": true,
+      "minItems": 65,
+      "maxItems": 65
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "protocolVersion",
+    "type",
+    "dataContract",
+    "signaturePublicKeyId",
+    "signature"
+  ]
+}

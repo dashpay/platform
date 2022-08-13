@@ -1,0 +1,63 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "protocolVersion": {
+      "type": "integer",
+      "$comment": "Maximum is the latest protocol version"
+    },
+    "type": {
+      "type": "integer",
+      "const": 6
+    },
+    "identityId": {
+      "type": "array",
+      "byteArray": true,
+      "minItems": 32,
+      "maxItems": 32,
+      "contentMediaType": "application/x.dash.dpp.identifier"
+    },
+    "amount": {
+      "type": "integer",
+      "minimum": 1000
+    },
+    "coreFee": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "pooling": {
+      "type": "integer",
+      "enum": [
+        0
+      ]
+    },
+    "output": {
+      "type": "array",
+      "byteArray": true,
+      "minItems": 10,
+      "maxItems": 10017
+    },
+    "signature": {
+      "type": "array",
+      "byteArray": true,
+      "minItems": 65,
+      "maxItems": 65
+    },
+    "signaturePublicKeyId": {
+      "type": "integer",
+      "minimum": 0
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "protocolVersion",
+    "type",
+    "identityId",
+    "amount",
+    "coreFee",
+    "pooling",
+    "output",
+    "signature",
+    "signaturePublicKeyId"
+  ]
+}
