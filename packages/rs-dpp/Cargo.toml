@@ -1,0 +1,43 @@
+[package]
+name = "dpp"
+version = "0.1.0"
+edition = "2018"
+authors = ["Anton Suprunchuk <anton.suprunchuk@gmail.com>"]
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+bs58 = "0.4.0"
+base64 = "0.13.0"
+anyhow = { version = "1.0"}
+thiserror = { version = "1.0"}
+lazy_static = { version ="1.4"}
+serde = { version="1.0", features=["derive"]}
+dashcore = { git="https://github.com/dashevo/rust-dashcore", features=["no-std", "secp-recovery", "rand", "signer"], default-features = false, rev="2717ca826650454d469391dacfeeca458d289943" }
+serde_json = { version="1.0", features=["preserve_order"]}
+ciborium = { version="0.2"}
+byteorder = { version="1.4"}
+sha2  = { version="0.10"}
+jsonschema = { git="https://github.com/qrayven/jsonschema-rs", branch="feat-unknown-format-cutsom-keywords", default-features=false, features=["draft202012"] }
+env_logger = { version="0.9"}
+log = { version="0.4"}
+getrandom= { version="0.2", features=["js"]}
+serde_repr = { version = "0.1.7" }
+bls-signatures = { version = "0.11.3" }
+async-trait = { version = "0.1"}
+hex = { version = "0.4"}
+futures = { version ="0.3"}
+chrono = { version="0.4", default-features=false, features=["wasmbind", "clock"]}
+itertools = { version ="0.10"}
+regex = { version="1.5"}
+serde_cbor = "0.11.2"
+# lib not verified for web-assembly
+rand = { version="0.8"}
+integer-encoding = { version="3.0.4"}
+serde-big-array = "0.4.1"
+
+
+[dev-dependencies]
+mockall= { version ="0.11"}
+test-case = { version ="2.0"}
+tokio = { version ="1.17",  features=["full"]}

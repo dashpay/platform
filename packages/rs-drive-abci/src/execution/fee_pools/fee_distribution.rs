@@ -307,8 +307,7 @@ impl Platform {
         // existence in the data contract triggers in DPP
         let (mut identity, storage_flags) = self.drive.fetch_identity(id, transaction)?;
 
-        // TODO balance should be a u64
-        identity.balance += reward as i64;
+        identity.balance = identity.balance.checked_add(reward).ok_or(Error::Execution(ExecutionError::Overflow("pay reward overflow")))?;
 
         self.drive
             .add_insert_identity_operations(identity, storage_flags, batch)
@@ -1216,7 +1215,7 @@ mod tests {
 
             let payout_credits = masternode_reward * shares_percentage;
 
-            let payout_credits: i64 = payout_credits.try_into().expect("should convert to i64");
+            let payout_credits: u64 = payout_credits.try_into().expect("should convert to i64");
 
             for paid_mn_identity in paid_mn_identities {
                 assert_eq!(paid_mn_identity.balance, payout_credits);
@@ -1232,7 +1231,7 @@ mod tests {
                     .expect("expected to refresh identities");
 
             for identity in refetched_share_identities {
-                assert_eq!(identity.balance, payout_credits as i64);
+                assert_eq!(identity.balance, payout_credits);
             }
         }
     }
