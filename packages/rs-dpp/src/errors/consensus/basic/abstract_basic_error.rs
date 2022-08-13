@@ -77,6 +77,24 @@ pub enum BasicError {
         error: String,
     },
 
+    #[error("Document with type {document_type} has updated unique index named '{index_name}'. Change of unique indices is not allowed")]
+    DataContractUniqueIndicesChangedError {
+        document_type: String,
+        index_name: String,
+    },
+
+    #[error("Document with type {document_type} has badly constructed index '{index_name}'. Existing properties in the indices should be defined in the beginning of it. ")]
+    DataContractInvalidIndexDefinitionUpdateError {
+        document_type: String,
+        index_name: String,
+    },
+
+    #[error("Document with type {document_type} has a new unique index named '{index_name}'. Adding unique indices during Data Contract update is not allowed.")]
+    DataContractHaveNewUniqueIndexError {
+        document_type: String,
+        index_name: String,
+    },
+
     #[error("Identity {identity_id} not found")]
     IdentityNotFoundError { identity_id: Identifier },
 }

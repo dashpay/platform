@@ -47,7 +47,7 @@ pub async fn validate_document_batch_transition_state(
     let transitions_by_data_contract_id = state_transition
         .get_transitions()
         .iter()
-        .group_by(|t| &t.base().data_contract_id);
+        .into_group_map_by(|t| &t.base().data_contract_id);
 
     let mut futures = vec![];
     for (data_contract_id, transitions) in transitions_by_data_contract_id.into_iter() {

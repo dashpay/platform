@@ -106,6 +106,10 @@ impl ErrorWithCode for BasicError {
             Self::InvalidJsonSchemaRefError { .. } => 1014,
             Self::InconsistentCompoundIndexDataError { .. } => 1021,
 
+            Self::DataContractUniqueIndicesChangedError { .. } => 4016,
+            // TODO  -  they don't have error codes in  https://github.com/dashevo/platform/blob/25ab6d8a38880eaff6ac119126b2ee5991b2a5aa/packages/js-dpp/lib/errors/consensus/codes.js
+            Self::DataContractHaveNewUniqueIndexError { .. } => 0,
+            Self::DataContractInvalidIndexDefinitionUpdateError { .. } => 0,
             Self::IndexError(ref e) => e.get_code(),
             Self::IdentityNotFoundError { .. } => 2000,
         }
