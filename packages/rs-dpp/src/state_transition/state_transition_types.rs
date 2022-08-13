@@ -8,6 +8,8 @@ pub enum StateTransitionType {
     IdentityCreate = 2,
     IdentityTopUp = 3,
     DataContractUpdate = 4,
+    IdentityUpdate = 5,
+    IdentityCreditWithdrawal = 6,
 }
 
 impl std::default::Default for StateTransitionType {

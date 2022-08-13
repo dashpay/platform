@@ -10,6 +10,7 @@ use crate::data_contract::state_transition::{
 // TODO unify the import paths ::object::state_transition::*
 use crate::document::DocumentsBatchTransition;
 use crate::identity::state_transition::identity_create_transition::IdentityCreateTransition;
+use crate::identity::state_transition::identity_credit_withdrawal_transition::IdentityCreditWithdrawalTransition;
 use crate::identity::state_transition::identity_topup_transition::IdentityTopUpTransition;
 
 mod abstract_state_transition;
@@ -26,6 +27,7 @@ macro_rules! call_method {
             StateTransition::DocumentsBatch(st) => st.$method($args),
             StateTransition::IdentityCreate(st) => st.$method($args),
             StateTransition::IdentityTopUp(st) => st.$method($args),
+            StateTransition::IdentityCreditWithdrawal(st) => st.$method($args),
         }
     };
     ($state_transition:expr, $method:ident ) => {
@@ -35,6 +37,7 @@ macro_rules! call_method {
             StateTransition::DocumentsBatch(st) => st.$method(),
             StateTransition::IdentityCreate(st) => st.$method(),
             StateTransition::IdentityTopUp(st) => st.$method(),
+            StateTransition::IdentityCreditWithdrawal(st) => st.$method(),
         }
     };
 }
@@ -47,6 +50,9 @@ macro_rules! call_static_method {
             StateTransition::DocumentsBatch(_) => DocumentsBatchTransition::$method(),
             StateTransition::IdentityCreate(_) => IdentityCreateTransition::$method(),
             StateTransition::IdentityTopUp(_) => IdentityTopUpTransition::$method(),
+            StateTransition::IdentityCreditWithdrawal(_) => {
+                IdentityCreditWithdrawalTransition::$method()
+            }
         }
     };
 }
@@ -58,6 +64,7 @@ pub enum StateTransition {
     DocumentsBatch(DocumentsBatchTransition),
     IdentityCreate(IdentityCreateTransition),
     IdentityTopUp(IdentityTopUpTransition),
+    IdentityCreditWithdrawal(IdentityCreditWithdrawalTransition),
 }
 
 impl StateTransition {
@@ -142,5 +149,11 @@ impl From<DataContractUpdateTransition> for StateTransition {
 impl From<DocumentsBatchTransition> for StateTransition {
     fn from(d: DocumentsBatchTransition) -> Self {
         Self::DocumentsBatch(d)
+    }
+}
+
+impl From<IdentityCreditWithdrawalTransition> for StateTransition {
+    fn from(d: IdentityCreditWithdrawalTransition) -> Self {
+        Self::IdentityCreditWithdrawal(d)
     }
 }

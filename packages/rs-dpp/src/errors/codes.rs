@@ -41,6 +41,7 @@ impl ErrorWithCode for ConsensusError {
             Self::InvalidInstantAssetLockProofSignatureError(_) => 1042,
             Self::MissingMasterPublicKeyError(_) => 1046,
             Self::InvalidIdentityPublicKeySecurityLevelError(_) => 1047,
+            Self::IdentityInsufficientBalanceError(_) => 4023,
 
             Self::StateError(e) => e.get_code(),
             Self::BasicError(e) => e.get_code(),
@@ -106,6 +107,7 @@ impl ErrorWithCode for BasicError {
             Self::InconsistentCompoundIndexDataError { .. } => 1021,
 
             Self::IndexError(ref e) => e.get_code(),
+            Self::IdentityNotFoundError { .. } => 2000,
         }
     }
 }

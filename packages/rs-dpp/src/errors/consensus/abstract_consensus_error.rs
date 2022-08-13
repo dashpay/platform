@@ -22,6 +22,8 @@ use crate::errors::consensus::basic::{
 };
 use crate::errors::StateError;
 
+use super::basic::identity::IdentityInsufficientBalanceError;
+
 #[derive(Error, Debug)]
 //#[cfg_attr(test, derive(Clone))]
 pub enum ConsensusError {
@@ -89,6 +91,9 @@ pub enum ConsensusError {
         message: String,
     },
 
+    #[error("{0}")]
+    IdentityInsufficientBalanceError(IdentityInsufficientBalanceError),
+
     #[error(transparent)]
     IdentityAlreadyExistsError(IdentityAlreadyExistsError),
 
@@ -134,6 +139,7 @@ impl ConsensusError {
             ConsensusError::InvalidInstantAssetLockProofSignatureError(_) => 1042,
             ConsensusError::MissingMasterPublicKeyError(_) => 1046,
             ConsensusError::InvalidIdentityPublicKeySecurityLevelError(_) => 1047,
+            ConsensusError::IdentityInsufficientBalanceError(_) => 4023,
 
             ConsensusError::StateError(e) => e.get_code(),
             ConsensusError::BasicError(e) => e.get_code(),
@@ -271,5 +277,11 @@ impl From<IdentityAssetLockProofLockedTransactionMismatchError> for ConsensusErr
 impl From<IdentityAlreadyExistsError> for ConsensusError {
     fn from(err: IdentityAlreadyExistsError) -> Self {
         Self::IdentityAlreadyExistsError(err)
+    }
+}
+
+impl From<IdentityInsufficientBalanceError> for ConsensusError {
+    fn from(err: IdentityInsufficientBalanceError) -> Self {
+        Self::IdentityInsufficientBalanceError(err)
     }
 }
