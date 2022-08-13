@@ -97,11 +97,7 @@ fn build_query_for_index_definition(
 ) -> Vec<JsonValue> {
     let mut query = vec![];
     for index_property in index_definition.properties.iter() {
-        let index_entry = index_property.iter().next();
-        if index_entry.is_none() {
-            continue;
-        }
-        let property_name = index_entry.unwrap().0;
+        let property_name = &index_property.name;
 
         match property_name.as_str() {
             "$ownerId" => {
@@ -154,7 +150,7 @@ fn validate_uniqueness<'a>(
                 .0
                 .properties
                 .iter()
-                .map(|map| map.keys().next().unwrap().clone())
+                .map(|property| property.name.to_owned())
                 .collect_vec(),
         })
     }

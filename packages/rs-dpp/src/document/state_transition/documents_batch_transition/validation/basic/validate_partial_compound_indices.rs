@@ -45,10 +45,7 @@ pub fn validate_indices(
         .iter()
         .filter(|i| i.unique && i.properties.len() > 1)
     {
-        let properties = index
-            .properties
-            .iter()
-            .map(|property| property.keys().next().unwrap());
+        let properties = index.properties.iter().map(|property| &property.name);
 
         if !are_all_properties_defined_or_undefined(properties.clone(), raw_transition) {
             validation_result.add_error(BasicError::InconsistentCompoundIndexDataError {

@@ -4,6 +4,20 @@ use anyhow::{anyhow, bail};
 
 use crate::errors::ProtocolError;
 
+/// JsonPath represents a deserialized [JsonPathLiteral]. The JsonPath is made
+/// of [JsonPathStep]. [JsonPath] can be created from string
+/// ## Example
+///  ```
+/// use dpp::util::json_path::{JsonPath, JsonPathLiteral};
+/// use std::convert::TryFrom;
+///
+/// let json_path = JsonPath::try_from(JsonPathLiteral("contract.data.collection[0]")).unwrap();
+/// assert_eq!(4, json_path.len());
+/// ```
+pub type JsonPath = Vec<JsonPathStep>;
+
+/// Single step in [`JsonPath`]. The step can be a `String` - to access data in objects
+/// or `usize` - to access data in collections
 // TODO To reduce memory allocation, the String should be replaced with the &str
 #[derive(Debug, Clone)]
 pub enum JsonPathStep {
@@ -11,7 +25,9 @@ pub enum JsonPathStep {
     Index(usize),
 }
 
-pub struct JsonPathLiteral<'a>(&'a str);
+/// JsonPathLiteral represents the path in JSON structure.
+pub struct JsonPathLiteral<'a>(pub &'a str);
+
 impl<'a> std::ops::Deref for JsonPathLiteral<'a> {
     type Target = &'a str;
 
@@ -25,8 +41,6 @@ impl<'a> From<&'a str> for JsonPathLiteral<'a> {
         JsonPathLiteral(s)
     }
 }
-
-pub type JsonPath = Vec<JsonPathStep>;
 
 impl<'a> TryFrom<JsonPathLiteral<'a>> for JsonPath {
     type Error = ProtocolError;

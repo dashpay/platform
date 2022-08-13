@@ -88,12 +88,12 @@ fn is_duplicate_by_indices(
     type_indices: &[Index],
 ) -> bool {
     for index in type_indices {
-        for (property_name, _) in index.properties.iter().flatten() {
+        for property in index.properties.iter() {
             let original = original_transition
-                .get(property_name)
+                .get(&property.name)
                 .unwrap_or(&JsonValue::Null);
             let to_check = transition_to_check
-                .get(property_name)
+                .get(&property.name)
                 .unwrap_or(&JsonValue::Null);
 
             if original != to_check {

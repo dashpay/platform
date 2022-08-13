@@ -25,6 +25,7 @@ use super::extra::{get_definitions, get_document_types, get_mutability, Contract
 use super::properties::*;
 
 pub type JsonSchema = JsonValue;
+type DefinitionName = String;
 type DocumentName = String;
 type PropertyPath = String;
 
@@ -77,7 +78,7 @@ pub struct DataContract {
     pub documents: BTreeMap<DocumentName, JsonSchema>,
 
     #[serde(rename = "$defs", default)]
-    pub defs: BTreeMap<DocumentName, JsonSchema>,
+    pub defs: BTreeMap<DefinitionName, JsonSchema>,
 
     #[serde(skip)]
     pub metadata: Option<Metadata>,

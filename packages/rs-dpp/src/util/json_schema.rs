@@ -1,8 +1,9 @@
-use std::collections::BTreeMap;
-
 use anyhow::{anyhow, bail};
-use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
+use std::convert::TryFrom;
+
+pub use super::index::Index;
+use super::index::IndexWithRawProperties;
 
 pub trait JsonSchemaExt {
     /// returns true if json value contains property 'type`, and it equals 'object'
@@ -87,34 +88,25 @@ impl JsonSchemaExt for JsonValue {
 
     fn get_indices(&self) -> Result<Vec<Index>, anyhow::Error> {
         match self.get("indices") {
-            Some(raw_indices) => Ok(serde_json::from_value(raw_indices.to_owned())?),
+            Some(raw_indices) => {
+                let indices_with_raw_properties: Vec<IndexWithRawProperties> =
+                    serde_json::from_value(raw_indices.to_owned())?;
+
+                indices_with_raw_properties
+                    .into_iter()
+                    .map(Index::try_from)
+                    .collect::<Result<Vec<Index>, anyhow::Error>>()
+            }
+
             None => Ok(vec![]),
         }
     }
 }
 
-// Indices documentation:  https://dashplatform.readme.io/docs/reference-data-contracts#document-indices
-#[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct Index {
-    pub name: String,
-    pub properties: Vec<BTreeMap<String, OrderBy>>,
-    #[serde(default)]
-    pub unique: bool,
-}
-
-#[derive(Serialize, Deserialize, Debug, PartialEq, PartialOrd, Clone)]
-pub enum OrderBy {
-    #[serde(rename = "asc")]
-    Asc,
-    #[serde(rename = "desc")]
-    Desc,
-}
-
 #[cfg(test)]
 mod test {
-    use serde_json::json;
-
     use super::*;
+    use serde_json::json;
 
     #[test]
     fn test_extract_indices() {
@@ -147,13 +139,17 @@ mod test {
         });
 
         let indices_result = input.get_indices();
-
         let indices = indices_result.unwrap();
+
         assert_eq!(indices.len(), 2);
         assert_eq!(indices[0].name, "first_index");
         assert_eq!(indices[0].properties.len(), 2);
-        assert_eq!(indices[0].properties[0]["field_one"], OrderBy::Asc);
-        assert_eq!(indices[0].properties[1]["field_two"], OrderBy::Desc);
+
+        assert_eq!(indices[0].properties[0].name, "field_one");
+        assert_eq!(indices[0].properties[1].name, "field_two");
+
+        assert!(indices[0].properties[0].ascending);
+        assert!(!indices[0].properties[1].ascending);
         assert!(indices[0].unique);
 
         assert_eq!(indices[1].name, "second_index");

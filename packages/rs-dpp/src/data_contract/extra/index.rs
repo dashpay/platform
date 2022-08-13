@@ -1,7 +1,9 @@
-use ciborium::value::Value as CborValue;
-use serde::{Deserialize, Serialize};
+use std::{collections::BTreeMap, convert::TryFrom};
 
 use super::errors::ContractError;
+use anyhow::bail;
+use ciborium::value::Value as CborValue;
+use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Serialize, Deserialize, Debug, PartialEq)]
 pub struct Index {
@@ -9,10 +11,39 @@ pub struct Index {
     pub unique: bool,
 }
 
-#[derive(Clone, Serialize, Deserialize, Debug, PartialEq, Eq)]
+#[derive(Clone, Serialize, Deserialize, Debug, PartialEq, Eq, Hash)]
 pub struct IndexProperty {
     pub name: String,
     pub ascending: bool,
+}
+
+impl TryFrom<BTreeMap<String, String>> for IndexProperty {
+    type Error = anyhow::Error;
+
+    fn try_from(value: BTreeMap<String, String>) -> Result<Self, Self::Error> {
+        if value.is_empty() {
+            bail!("property in the index definition cannot be empty")
+        }
+        if value.len() > 1 {
+            bail!(
+                "property in the index cannot contain more than one item: {:#?}",
+                value
+            )
+        }
+
+        // the unwrap is safe because of the checks above
+        let raw_property = value.into_iter().next().unwrap();
+        let ascending = match raw_property.1.as_str() {
+            "asc" => true,
+            "desc" => false,
+            sort_order => bail!("invalid sorting order: '{}'", sort_order),
+        };
+
+        Ok(Self {
+            name: raw_property.0,
+            ascending,
+        })
+    }
 }
 
 impl Index {
