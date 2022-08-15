@@ -27,7 +27,7 @@ bls-signatures = { version = "0.11.3" }
 async-trait = { version = "0.1"}
 hex = { version = "0.4"}
 futures = { version ="0.3"}
-chrono = { version="0.4", default-features=false, features=["wasmbind", "clock"]}
+chrono = { version="0.4.20", default-features=false, features=["wasmbind", "clock"]}
 itertools = { version ="0.10"}
 regex = { version="1.5"}
 serde_cbor = "0.11.2"
