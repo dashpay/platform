@@ -25,12 +25,8 @@ enum-map = "2.0.3"
 thiserror = "1.0.30"
 moka = "0.8.1"
 nohash-hasher = "0.2.0"
-chrono = "0.4.0"
-
-
-[dependencies.dpp]
-git = "https://github.com/dashevo/rust-dpp"
-rev = "bf81f6839c95bea8bfd409f32b79b3a01f5c8c63"
+chrono = "0.4.20"
+dpp = { path = "../dpp" }
 
 [dependencies.grovedb]
 git = "https://github.com/dashevo/grovedb"

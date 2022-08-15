@@ -418,7 +418,7 @@ impl<'a> DocumentInfo<'a> {
                         Error::Drive(DriveError::CorruptedCodeExecution(
                             "document type must have a max size",
                         ))
-                    })?;
+                    })? as usize;
                     Ok(Some(KeySize(max_size)))
                 }
             },
