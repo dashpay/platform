@@ -13,6 +13,7 @@ function importTransaction(transaction, metadata = {}) {
     metadata: {
       blockHash: metadata.blockHash || null,
       height: metadata.height || null,
+      time: metadata.time || null,
       isInstantLocked: metadata.isInstantLocked || false,
       isChainLocked: metadata.isChainLocked || false,
     },

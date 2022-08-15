@@ -45,7 +45,10 @@ function exportState(lastKnownBlock) {
   [...transactions.entries()].forEach(([transactionHash, { transaction, metadata }]) => {
     if (metadata && metadata.height && metadata.height <= saveHeight) {
       serializedState.transactions[transactionHash] = transaction.toString();
-      serializedState.txMetadata[transactionHash] = metadata;
+      serializedState.txMetadata[transactionHash] = {
+        ...metadata,
+        time: metadata.time.getTime(),
+      };
     }
   });
 

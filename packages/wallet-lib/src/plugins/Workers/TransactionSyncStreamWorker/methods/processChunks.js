@@ -63,7 +63,7 @@ async function processMerkleBlock(merkleBlock) {
   const metadata = {
     blockHash: headerHash,
     height: headerHeight,
-    time: headerTime,
+    time: new Date(headerTime * 1e3),
     instantLocked: false, // TBD
     chainLocked: false, // TBD
   };

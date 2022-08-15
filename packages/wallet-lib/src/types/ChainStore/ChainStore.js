@@ -24,6 +24,7 @@ const SCHEMA = {
     '*': {
       blockHash: 'string',
       height: 'number',
+      time: 'number',
       isChainLocked: 'boolean',
       isInstantLocked: 'boolean',
     },
