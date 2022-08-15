@@ -225,7 +225,6 @@ class TransactionSyncStreamWorker extends Worker {
       }
     });
 
-    // console.log(`[Wallet: ${this.walletId}] confirmed transactions ${transactionsWithMetadata.map(([tx]) => tx.hash)}`);
     // TODO: handle newly generated addresses and reconnect to the stream?
     this.importTransactions(transactionsWithMetadata);
   }
@@ -347,7 +346,6 @@ TransactionSyncStreamWorker.prototype.getBestBlockHeightFromTransport = require(
 TransactionSyncStreamWorker.prototype.setLastSyncedBlockHeight = require('./methods/setLastSyncedBlockHeight');
 TransactionSyncStreamWorker.prototype.getLastSyncedBlockHeight = require('./methods/getLastSyncedBlockHeight');
 TransactionSyncStreamWorker.prototype.startHistoricalSync = require('./methods/startHistoricalSync');
-TransactionSyncStreamWorker.prototype.handleTransactionFromStream = require('./methods/handleTransactionFromStream');
 TransactionSyncStreamWorker.prototype.processChunks = require('./methods/processChunks');
 TransactionSyncStreamWorker.prototype.startIncomingSync = require('./methods/startIncomingSync');
 TransactionSyncStreamWorker.prototype.syncUpToTheGapLimit = require('./methods/syncUpToTheGapLimit');
