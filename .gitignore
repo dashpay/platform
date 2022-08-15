@@ -31,3 +31,6 @@ node_modules
 !.yarn/versions
 
 faucet-wallet-*
+
+# Rust build artifacts
+target
