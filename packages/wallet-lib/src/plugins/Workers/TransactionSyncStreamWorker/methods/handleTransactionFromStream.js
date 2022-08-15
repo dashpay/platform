@@ -99,7 +99,7 @@ async function handleTransactionFromStream(transaction) {
     //   .transport
     //   .getBlockHeaderByHash(getTransactionResponse.blockHash);
     // eslint-disable-next-line no-await-in-loop
-    // await this.importBlockHeader(getBlockHeaderResponse);
+
     delete this.pendingRequest[getTransactionResponse.blockHash.toString('hex')];
   };
 

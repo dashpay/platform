@@ -8,12 +8,15 @@ function importTransaction(transaction, metadata = {}) {
     throw new Error('Will not import an array of transaction');
   }
   const normalizedTransaction = is.string(transaction) ? new Transaction(transaction) : transaction;
+  const time = typeof metadata.time === 'number' && !Number.isNaN(metadata.time)
+    ? new Date(metadata.time) : null;
+
   this.state.transactions.set(normalizedTransaction.hash, {
     transaction: normalizedTransaction,
     metadata: {
       blockHash: metadata.blockHash || null,
       height: metadata.height || null,
-      time: metadata.time || null,
+      time,
       isInstantLocked: metadata.isInstantLocked || false,
       isChainLocked: metadata.isChainLocked || false,
     },

@@ -404,7 +404,6 @@ Account.prototype.getWorker = require('./methods/getWorker');
 Account.prototype.hasPlugins = require('./methods/hasPlugins');
 Account.prototype.injectPlugin = require('./methods/injectPlugin');
 Account.prototype.importTransactions = require('./methods/importTransactions');
-Account.prototype.importBlockHeader = require('./methods/importBlockHeader');
 Account.prototype.createPathsForTransactions = require('./methods/createPathsForTransactions');
 Account.prototype.generateNewPaths = require('./methods/generateNewPaths');
 Account.prototype.addPathsToStore = require('./methods/addPathsToStore');

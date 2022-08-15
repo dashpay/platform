@@ -12,6 +12,7 @@ const mockChainStorage = {
        time: 99999999
      }
   },
+  "chainHeight": 1000,
   "lastSyncedHeaderHeight": 1,
   "blockHeaders": [
     "000000206ff6709b4816a98a7601bc9626a597191fe4f788228a037de3bd839e811f4913c49de57ac9553f0cd2529c94eaa9781273f315a792c4148eb7e3756c9cd7e1ce40285562ffff7f2000000000"
@@ -25,7 +26,8 @@ const mockChainStorage = {
       "blockHash": "0eca27f921836079a85f41b134679cd557fab1f66b2e60013b873eb56e7b3f2d",
       "height": 5409,
       "isInstantLocked": true,
-      "isChainLocked": true
+      "isChainLocked": true,
+      "time": 1539095200000,
     }
   },
   "fees": {
@@ -71,7 +73,7 @@ describe('Utils - castStorageItemsTypes', function suite() {
     mockChainStorageWithUnknownKeys.txMetadata.unknownKey = true
 
     expect(() => castItemTypes(mockChainStorageWithUnknownKeys, ChainStore.prototype.SCHEMA))
-      .to.throw('No item found for schema key "blockHash" in item "true"')
+      .to.throw('No item found for schema key "blockHash" in path ".txMetadata.unknownKey"')
   });
 
   it('should throw if invalid uniform object with primitives passed', function () {
@@ -92,6 +94,6 @@ describe('Utils - castStorageItemsTypes', function suite() {
     mockWalletChainStorageWithMissingKeys.txMetadata = undefined
 
     expect(() => castItemTypes(mockWalletChainStorageWithMissingKeys, ChainStore.prototype.SCHEMA))
-      .to.throw(Error, 'No item found for schema key "txMetadata" in item');
+      .to.throw(Error, 'No item found for schema key "txMetadata" in path ""');
   });
 });

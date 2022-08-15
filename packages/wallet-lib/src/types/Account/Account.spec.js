@@ -37,9 +37,6 @@ describe('Account - class', function suite() {
       getStore: () => {},
       saveState: () => {},
       createAccount: () => {},
-      importBlockHeader: (blockheader)=>{
-        mockStorage.emit(EVENTS.BLOCKHEADER, {type: EVENTS.BLOCKHEADER, payload:blockheader});
-      }
     };
     mocks.wallet = (new (function Wallet() {
       this.walletId = '1234567891';

@@ -27,7 +27,6 @@ class BlockHeadersSyncWorker extends Worker {
         'network',
         'transport',
         'storage',
-        'importBlockHeader',
         'chainSyncMediator',
         'walletId',
       ],

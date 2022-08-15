@@ -19,10 +19,7 @@ function importState(rawState) {
 
   Object.keys(transactions).forEach((hash) => {
     const tx = transactions[hash];
-    const metadata = {
-      ...txMetadata[hash],
-      time: new Date(txMetadata[hash].time),
-    };
+    const metadata = txMetadata[hash];
     this.importTransaction(tx, metadata);
   });
 }

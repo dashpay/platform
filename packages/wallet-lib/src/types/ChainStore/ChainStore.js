@@ -130,7 +130,6 @@ ChainStore.prototype.getInstantLock = require('./methods/getInstantLock');
 ChainStore.prototype.getTransaction = require('./methods/getTransaction');
 
 ChainStore.prototype.importAddress = require('./methods/importAddress');
-ChainStore.prototype.importBlockHeader = require('./methods/importBlockHeader');
 ChainStore.prototype.importInstantLock = require('./methods/importInstantLock');
 ChainStore.prototype.importTransaction = require('./methods/importTransaction');
 
