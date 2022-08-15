@@ -10,7 +10,21 @@ const getBestBlockHashFactory = (coreAPI) => {
    * @return {Promise<string>} - latest block hash
    */
   async function getBestBlockHash() {
-    return coreAPI.getBestBlockHash();
+    const start = new Date().getTime();
+
+    try {
+      console.log('getBestBlockHash1');
+
+      const res = await coreAPI.getBestBlockHash();
+
+      console.log('getBestBlockHash1.5', res, new Date().getTime() - start);
+
+      return res;
+    } catch (e) {
+      console.log('getBestBlockHash2', e, new Date().getTime() - start);
+
+      throw e;
+    }
   }
 
   return getBestBlockHash;
