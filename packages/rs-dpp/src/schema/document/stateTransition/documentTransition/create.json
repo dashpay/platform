@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "$entropy": {
+      "type": "array",
+      "byteArray": true,
+      "minItems": 32,
+      "maxItems": 32
+    },
+    "$createdAt": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "$updatedAt": {
+      "type": "integer",
+      "minimum": 0
+    }
+  },
+  "required": [
+    "$entropy"
+  ],
+  "additionalProperties": false
+}
