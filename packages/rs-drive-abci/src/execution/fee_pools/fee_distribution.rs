@@ -307,7 +307,12 @@ impl Platform {
         // existence in the data contract triggers in DPP
         let (mut identity, storage_flags) = self.drive.fetch_identity(id, transaction)?;
 
-        identity.balance = identity.balance.checked_add(reward).ok_or(Error::Execution(ExecutionError::Overflow("pay reward overflow")))?;
+        identity.balance = identity
+            .balance
+            .checked_add(reward)
+            .ok_or(Error::Execution(ExecutionError::Overflow(
+                "pay reward overflow",
+            )))?;
 
         self.drive
             .add_insert_identity_operations(identity, storage_flags, batch)
