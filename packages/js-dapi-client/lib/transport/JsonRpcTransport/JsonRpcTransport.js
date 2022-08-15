@@ -84,13 +84,13 @@ class JsonRpcTransport {
         throw error;
       }
 
-      address.markAsBanned();
-
       const responseError = this.createJsonTransportError(error, address);
 
       if (!(responseError instanceof RetriableResponseError)) {
         throw responseError;
       }
+
+      address.markAsBanned();
 
       if (options.retries === 0) {
         throw new MaxRetriesReachedError(responseError);
