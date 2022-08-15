@@ -43,6 +43,7 @@ jobs:
           toolchain: stable
           default: true
           components: clippy
+          override: true,
 
       - uses: actions-rs/clippy-check@v1
         with:
