@@ -1,3 +1,5 @@
+const util = require('util');
+
 const AbstractError = require('../../errors/AbstractError');
 
 class DockerComposeError extends AbstractError {
@@ -5,7 +7,12 @@ class DockerComposeError extends AbstractError {
    * @param {{err: string, out: string, exitCode: number}} dockerComposeExecutionResult
    */
   constructor(dockerComposeExecutionResult) {
-    super(`Docker Compose error: ${dockerComposeExecutionResult.err || dockerComposeExecutionResult.message || dockerComposeExecutionResult}`);
+    // TODO: Should be consistent
+    const message = dockerComposeExecutionResult.err
+      || dockerComposeExecutionResult.message
+      || util.inspect(dockerComposeExecutionResult);
+
+    super(`Docker Compose error: ${message}`);
 
     this.dockerComposeExecutionResult = dockerComposeExecutionResult;
   }

@@ -32,7 +32,7 @@ export default async function register(
     const { identity, identityCreateTransition, identityIndex } = await this.identities.utils
       .createIdentityCreateTransition(assetLockProof, assetLockPrivateKey);
 
-    await broadcastStateTransition(this, identityCreateTransition);
+    await broadcastStateTransition(this, identityCreateTransition, { ackFactor: 3 });
 
     // If state transition was broadcast without any errors, import identity to the account
    account.storage

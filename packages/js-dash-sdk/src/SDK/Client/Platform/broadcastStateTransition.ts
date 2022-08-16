@@ -14,14 +14,20 @@ const GrpcError = require('@dashevo/grpc-common/lib/server/error/GrpcError');
  * @param {Platform} platform
  * @param {Object} [options]
  * @param {boolean} [options.skipValidation=false]
+ * @param {boolean} [options.ackFactor=1]
  *
  * @param stateTransition
  */
 export default async function broadcastStateTransition(
   platform: Platform,
   stateTransition: any,
-  options: { skipValidation?: boolean; } = {},
+  options: { skipValidation?: boolean; ackFactor?: number } = {},
 ): Promise<IStateTransitionResult|void> {
+    const optionsWithDefaults = {
+      ackFactor: 1,
+      ...options
+    };
+
     const { client, dpp } = platform;
 
     if (!options.skipValidation) {
@@ -68,9 +74,18 @@ export default async function broadcastStateTransition(
     }
 
     // Waiting for result to return
-    const stateTransitionResult: IStateTransitionResult = await client.getDAPIClient().platform.waitForStateTransitionResult(hash, { prove: true });
+    const promises: Array<Promise<IStateTransitionResult>> = [];
+    for (let i = 0; i < optionsWithDefaults.ackFactor; i++) {
+      const promise = client.getDAPIClient().platform.waitForStateTransitionResult(hash, { prove: true })
 
-    let { error } = stateTransitionResult;
+      promises.push(promise);
+    }
+
+    const stateTransitionResults: Array<IStateTransitionResult> = await Promise.all(promises);
+
+    const firstStateTransitionResult = stateTransitionResults[0];
+
+    let { error } = firstStateTransitionResult;
 
     if (error) {
         // Create DAPI response error from gRPC error passed as gRPC response
@@ -91,5 +106,5 @@ export default async function broadcastStateTransition(
         );
     }
 
-    return stateTransitionResult;
+    return firstStateTransitionResult;
 }
