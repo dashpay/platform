@@ -18,26 +18,14 @@ const sleepOneTick = () => new Promise((resolve) => {
 describe('BlockHeadersReader - unit', () => {
   let options;
 
-  let coreApiMock;
   let blockHeadersReader;
-  let streams;
+  let historicalStreams;
+  let continuousSyncStream;
 
   beforeEach(function () {
-    coreApiMock = {
-      subscribeToBlockHeadersWithChainLocks: () => {},
-    };
-
-    // this.sinon.stub(DAPIStream, 'create')
-    //   .callsFake(() => async () => {
-    //     const dapiStream = new EventEmitter();
-    //     this.sinon.spy(dapiStream, 'on');
-    //     return dapiStream;
-    //   });
-
-    streams = [];
+    historicalStreams = [];
 
     options = {
-      coreMethods: coreApiMock,
       maxRetries: 1,
       maxParallelStreams: 6,
       targetBatchSize: 10,
@@ -51,7 +39,17 @@ describe('BlockHeadersReader - unit', () => {
         this.sinon.spy(stream, 'on');
         this.sinon.spy(stream, 'destroy');
         this.sinon.spy(stream, 'removeListener');
-        streams.push(stream);
+        historicalStreams.push(stream);
+        return stream;
+      });
+
+    this.sinon.stub(options, 'createContinuousSyncStream')
+      .callsFake(async () => {
+        const stream = new BlockHeadersWithChainLocksStreamMock();
+        this.sinon.spy(stream, 'on');
+        this.sinon.spy(stream, 'destroy');
+        this.sinon.spy(stream, 'removeListener');
+        continuousSyncStream = stream;
         return stream;
       });
 
@@ -76,7 +74,7 @@ describe('BlockHeadersReader - unit', () => {
 
       expect(blockHeadersReader.createHistoricalSyncStream).to.have.been.calledOnce;
 
-      const stream = streams[0];
+      const stream = historicalStreams[0];
       expect(stream.on).to.have.been.calledWith('data');
       expect(stream.on).to.have.been.calledWith('error');
       expect(stream.on).to.have.been.calledWith('end');
@@ -85,7 +83,7 @@ describe('BlockHeadersReader - unit', () => {
     it('[data] process headers batch', async () => {
       await subscribeToHistoricalBatch(1, headers.length);
 
-      const stream = streams[0];
+      const stream = historicalStreams[0];
       stream.sendHeaders(headers);
 
       const { firstCall } = blockHeadersReader.emit;
@@ -101,7 +99,7 @@ describe('BlockHeadersReader - unit', () => {
       const startFrom = 2;
 
       await subscribeToHistoricalBatch(startFrom, headers.length);
-      const stream = streams[0];
+      const stream = historicalStreams[0];
 
       // Send first batch
       const firstBatch = headers.slice(0, headers.length / 2);
@@ -134,7 +132,7 @@ describe('BlockHeadersReader - unit', () => {
         });
       });
 
-      const stream = streams[0];
+      const stream = historicalStreams[0];
       stream.sendHeaders(headers);
 
       await rejectionPromise;
@@ -145,7 +143,7 @@ describe('BlockHeadersReader - unit', () => {
     it('[error] should handle stream cancellation', async () => {
       await subscribeToHistoricalBatch(1, headers.length);
 
-      const stream = streams[0];
+      const stream = historicalStreams[0];
       stream.emit('error', {
         code: GrpcErrorCodes.CANCELLED,
       });
@@ -169,7 +167,7 @@ describe('BlockHeadersReader - unit', () => {
       const startFrom = 1;
 
       await subscribeToHistoricalBatch(startFrom, headers.length);
-      const originalStream = streams[0];
+      const originalStream = historicalStreams[0];
 
       const firstBatch = headers.slice(0, headers.length / 3);
       originalStream.sendHeaders(firstBatch);
@@ -192,7 +190,7 @@ describe('BlockHeadersReader - unit', () => {
       });
 
       // Get new stream that has been created after error
-      const newStream = streams[streams.length - 1];
+      const newStream = historicalStreams[historicalStreams.length - 1];
       // Ensure that HANDLE_STREAM_RETRY command has been emitted
       expect(secondCall.args).to.deep.equal([
         BlockHeadersReader.COMMANDS.HANDLE_STREAM_RETRY,
@@ -217,7 +215,7 @@ describe('BlockHeadersReader - unit', () => {
     it('[error] should emit error in case of resubscribe failure', async () => {
       await subscribeToHistoricalBatch(1, headers.length);
 
-      const stream = streams[0];
+      const stream = historicalStreams[0];
 
       const resubscribeError = new Error('Error subscribing to block headers');
 
@@ -241,7 +239,7 @@ describe('BlockHeadersReader - unit', () => {
     it('[error] should emit error in case retry attempts were exhausted', async () => {
       await subscribeToHistoricalBatch(1, headers.length);
 
-      const stream = streams[0];
+      const stream = historicalStreams[0];
 
       const firstError = new Error('firstError');
       stream.emit('error', firstError);
@@ -253,7 +251,7 @@ describe('BlockHeadersReader - unit', () => {
 
       const { firstCall, secondCall } = blockHeadersReader.emit;
 
-      const newStream = streams[streams.length - 1];
+      const newStream = historicalStreams[historicalStreams.length - 1];
       expect(firstCall.args)
         .to.deep.equal([
           BlockHeadersReader.COMMANDS.HANDLE_STREAM_RETRY,
@@ -271,7 +269,7 @@ describe('BlockHeadersReader - unit', () => {
 
     it('[end] should handle end event', async () => {
       await subscribeToHistoricalBatch(1, headers.length);
-      const stream = streams[0];
+      const stream = historicalStreams[0];
 
       stream.emit('end');
 
@@ -288,10 +286,10 @@ describe('BlockHeadersReader - unit', () => {
       stream = await blockHeadersReader.subscribeToNew(1);
     });
     //
-    // it('should subscribe to a stream', () => {
-    //   expect(blockHeadersReader.coreMethods.subscribeToBlockHeadersWithChainLocks)
-    //     .to.be.calledOnce();
-    // });
+    it('should subscribe to a stream', () => {
+      // expect(blockHeadersReader.coreMethods.subscribeToBlockHeadersWithChainLocks)
+      //   .to.be.calledOnce();
+    });
     //
     // it('should hook on stream events', () => {
     //   expect(stream.on).to.be.calledWith('data');

@@ -41,7 +41,7 @@ class BlockHeadersReader extends EventEmitter {
     /**
      * Holds references to the historical streams
      *
-     * @type {*[]}
+     * @type {DAPIStream[]}
      */
     this.historicalStreams = [];
 
@@ -143,13 +143,7 @@ class BlockHeadersReader extends EventEmitter {
   async subscribeToNew(fromBlockHeight) {
     let lastKnownChainHeight = fromBlockHeight - 1;
 
-    const stream = await DAPIStream
-      .create(
-        this.coreMethods.subscribeToBlockHeadersWithChainLocks,
-        { reconnectTimeoutDelay: 5000 }, // TODO: remove after testing is done
-      )({
-        fromBlockHeight,
-      });
+    const stream = await this.createContinuousSyncStream(fromBlockHeight);
 
     stream.on('data', (data) => {
       const blockHeadersResponse = data.getBlockHeaders();

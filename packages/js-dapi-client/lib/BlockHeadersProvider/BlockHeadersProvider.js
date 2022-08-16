@@ -3,6 +3,7 @@ const { SpvChain } = require('@dashevo/dash-spv');
 const { Block } = require('@dashevo/dashcore-lib');
 
 const BlockHeadersReader = require('./BlockHeadersReader');
+const DAPIStream = require('../transport/DAPIStream');
 
 /**
  * @typedef {BlockHeadersProviderOptions} BlockHeadersProviderOptions
@@ -92,6 +93,14 @@ class BlockHeadersProvider extends EventEmitter {
           maxRetries: this.options.maxRetries,
         },
       );
+
+      // const stream = await DAPIStream
+      //   .create(
+      //     this.coreMethods.subscribeToBlockHeadersWithChainLocks,
+      //     { reconnectTimeoutDelay: 5000 }, // TODO: remove after testing is done
+      //   )({
+      //     fromBlockHeight,
+      //   });
 
       this.blockHeadersReader.on(BlockHeadersReader.EVENTS.BLOCK_HEADERS, this.handleHeaders);
       this.blockHeadersReader.on(BlockHeadersReader.EVENTS.ERROR, this.handleError);
