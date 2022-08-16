@@ -35,7 +35,17 @@ describe('BlockHeadersReader - unit', () => {
     //   });
 
     streams = [];
-    this.sinon.stub(coreApiMock, 'subscribeToBlockHeadersWithChainLocks')
+
+    options = {
+      coreMethods: coreApiMock,
+      maxRetries: 1,
+      maxParallelStreams: 6,
+      targetBatchSize: 10,
+      createHistoricalSyncStream: () => {},
+      createContinuousSyncStream: () => {},
+    };
+
+    this.sinon.stub(options, 'createHistoricalSyncStream')
       .callsFake(async () => {
         const stream = new BlockHeadersWithChainLocksStreamMock();
         this.sinon.spy(stream, 'on');
@@ -44,13 +54,6 @@ describe('BlockHeadersReader - unit', () => {
         streams.push(stream);
         return stream;
       });
-
-    options = {
-      coreMethods: coreApiMock,
-      maxRetries: 1,
-      maxParallelStreams: 6,
-      targetBatchSize: 10,
-    };
 
     blockHeadersReader = new BlockHeadersReader(options);
     this.sinon.spy(blockHeadersReader, 'emit');
@@ -71,8 +74,7 @@ describe('BlockHeadersReader - unit', () => {
     it('[data] should subscribe to block headers stream and hook on events', async () => {
       await subscribeToHistoricalBatch(1, headers.length);
 
-      expect(blockHeadersReader.coreMethods.subscribeToBlockHeadersWithChainLocks)
-        .to.be.calledOnce();
+      expect(blockHeadersReader.createHistoricalSyncStream).to.have.been.calledOnce;
 
       const stream = streams[0];
       expect(stream.on).to.have.been.calledWith('data');
@@ -155,7 +157,7 @@ describe('BlockHeadersReader - unit', () => {
       );
 
       // Make sure we are not resubscribing to stream
-      expect(coreApiMock.subscribeToBlockHeadersWithChainLocks)
+      expect(blockHeadersReader.createHistoricalSyncStream)
         .to.have.been.calledOnce();
 
       // Make sure we are not emitting command to handle stream error
@@ -169,7 +171,7 @@ describe('BlockHeadersReader - unit', () => {
       await subscribeToHistoricalBatch(startFrom, headers.length);
       const originalStream = streams[0];
 
-      const firstBatch = headers.slice(0, headers.length / 2);
+      const firstBatch = headers.slice(0, headers.length / 3);
       originalStream.sendHeaders(firstBatch);
 
       // Emit error
@@ -177,7 +179,7 @@ describe('BlockHeadersReader - unit', () => {
 
       await sleepOneTick();
 
-      const secondBatch = headers.slice(headers.length / 2);
+      const secondBatch = headers.slice(headers.length / 3);
       originalStream.sendHeaders(secondBatch);
 
       const { firstCall, secondCall, thirdCall } = blockHeadersReader.emit;
@@ -199,11 +201,10 @@ describe('BlockHeadersReader - unit', () => {
       ]);
 
       // Ensure that retry logic fetches only headers that weren't processed yet
-      expect(coreApiMock.subscribeToBlockHeadersWithChainLocks.secondCall.args)
-        .to.deep.equal([{
-          fromBlockHeight: startFrom + firstBatch.length,
-          count: startFrom + firstBatch.length,
-        }]);
+      const fromBlock = startFrom + firstBatch.length;
+      const count = headers.length - firstBatch.length;
+      expect(blockHeadersReader.createHistoricalSyncStream.secondCall.args)
+        .to.deep.equal([fromBlock, count]);
 
       // Ensure that second batch was emitted
       expect(thirdCall.args[0]).to.equal(BlockHeadersReader.EVENTS.BLOCK_HEADERS);
@@ -221,7 +222,7 @@ describe('BlockHeadersReader - unit', () => {
       const resubscribeError = new Error('Error subscribing to block headers');
 
       // Prepare subscribe function to throw an error on second call
-      coreApiMock.subscribeToBlockHeadersWithChainLocks.throws(resubscribeError);
+      blockHeadersReader.createHistoricalSyncStream.throws(resubscribeError);
 
       // Emit stream error to trigger retry attempt
       stream.emit('error', new Error('Invalid block headers'));
@@ -281,21 +282,21 @@ describe('BlockHeadersReader - unit', () => {
     });
   });
 
-  describe.skip('#subscribeToNew', () => {
+  describe('#subscribeToNew', () => {
     let stream;
     beforeEach(async () => {
       stream = await blockHeadersReader.subscribeToNew(1);
     });
-
-    it('should subscribe to a stream', () => {
-      expect(blockHeadersReader.coreMethods.subscribeToBlockHeadersWithChainLocks)
-        .to.be.calledOnce();
-    });
-
-    it('should hook on stream events', () => {
-      expect(stream.on).to.be.calledWith('data');
-      expect(stream.on).to.be.calledWith('error');
-    });
+    //
+    // it('should subscribe to a stream', () => {
+    //   expect(blockHeadersReader.coreMethods.subscribeToBlockHeadersWithChainLocks)
+    //     .to.be.calledOnce();
+    // });
+    //
+    // it('should hook on stream events', () => {
+    //   expect(stream.on).to.be.calledWith('data');
+    //   expect(stream.on).to.be.calledWith('error');
+    // });
   });
 
   describe.skip('#readHistorical', () => {

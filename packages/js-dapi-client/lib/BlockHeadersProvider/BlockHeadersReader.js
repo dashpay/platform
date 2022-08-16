@@ -19,6 +19,8 @@ const COMMANDS = {
 /**
  * @typedef BlockHeadersReaderOptions
  * @property {CoreMethodsFacade} [coreMethods]
+ * @property {Function} [createHistoricalSyncStream]
+ * @property {Function} [createContinuousSyncStream]
  * @property {number} [maxParallelStreams]
  * @property {number} [targetBatchSize]
  * @property {number} [maxRetries]
@@ -30,7 +32,8 @@ class BlockHeadersReader extends EventEmitter {
    */
   constructor(options = {}) {
     super();
-    this.coreMethods = options.coreMethods;
+    this.createHistoricalSyncStream = options.createHistoricalSyncStream;
+    this.createContinuousSyncStream = options.createContinuousSyncStream;
     this.maxParallelStreams = options.maxParallelStreams;
     this.targetBatchSize = options.targetBatchSize;
     this.maxRetries = options.maxRetries;
@@ -211,10 +214,7 @@ class BlockHeadersReader extends EventEmitter {
     const subscribeWithRetries = async (fromBlockHeight, count) => {
       let headersObtained = 0;
 
-      const stream = await this.coreMethods.subscribeToBlockHeadersWithChainLocks({
-        fromBlockHeight,
-        count,
-      });
+      const stream = await this.createHistoricalSyncStream(fromBlockHeight, count);
 
       const dataHandler = (data) => {
         const blockHeaders = data.getBlockHeaders();
