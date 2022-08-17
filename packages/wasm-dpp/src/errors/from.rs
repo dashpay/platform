@@ -11,6 +11,6 @@ pub fn from_dpp_err(pe: ProtocolError) -> JsValue {
 
         ProtocolError::Document(e) => from_document_to_js_error(*e),
 
-        _ => unimplemented!(),
+        _ => JsValue::from_str(pe.to_string().as_str()),
     }
 }

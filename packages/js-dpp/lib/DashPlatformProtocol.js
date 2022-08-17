@@ -1,4 +1,5 @@
 const { getRE2Class } = require('@dashevo/wasm-re2');
+const WasmDpp = require('@dashevo/wasm-dpp');
 const BlsSignatures = require('./bls/bls');
 const createAjv = require('./ajv/createAjv');
 
@@ -11,6 +12,7 @@ const DocumentFacade = require('./document/DocumentFacade');
 const StateTransitionFacade = require('./stateTransition/StateTransitionFacade');
 
 const IdentityFacade = require('./identity/IdentityFacade');
+
 
 /**
  * @class DashPlatformProtocol
@@ -32,6 +34,8 @@ class DashPlatformProtocol {
     this.stateRepository = undefined;
     this.jsonSchemaValidator = undefined;
     this.initialized = undefined;
+
+    this.Identifier = undefined;
   }
 
   /**
@@ -78,6 +82,8 @@ class DashPlatformProtocol {
 
       return true;
     });
+
+    // WasmDpp;
 
     return this.initialized;
   }

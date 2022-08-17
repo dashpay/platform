@@ -3,6 +3,7 @@ use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;
 
 use dpp::identifier;
+use crate::errors::from_dpp_err;
 
 #[derive(Serialize, Deserialize, PartialEq, Eq)]
 enum IdentifierSource {
@@ -32,13 +33,13 @@ impl std::convert::From<identifier::Identifier> for IdentifierWrapper {
 #[wasm_bindgen(js_class = Identifier)]
 impl IdentifierWrapper {
     #[wasm_bindgen(constructor)]
-    pub fn new(buffer: Vec<u8>) -> IdentifierWrapper {
+    pub fn new(buffer: Vec<u8>) -> Result<IdentifierWrapper, JsValue> {
         // TODO: remove unwrap
-        let identifier = identifier::Identifier::from_bytes(&buffer).unwrap();
+        let identifier = identifier::Identifier::from_bytes(&buffer).map_err(|e| from_dpp_err(e))?;
 
-        IdentifierWrapper {
+        Ok(IdentifierWrapper {
             wrapped: identifier,
-        }
+        })
     }
 
     pub fn from(value: JsValue, encoding: Option<String>) -> Result<IdentifierWrapper, JsValue> {
@@ -47,7 +48,7 @@ impl IdentifierWrapper {
             Ok(IdentifierWrapper::from_string(string, encoding))
         } else if value.has_type::<js_sys::Uint8Array>() {
             let vec = value.dyn_into::<js_sys::Uint8Array>()?.to_vec();
-            Ok(IdentifierWrapper::new(vec))
+            IdentifierWrapper::new(vec)
         } else {
             Err(JsValue::from(
                 "Identifier.from received an unexpected value",

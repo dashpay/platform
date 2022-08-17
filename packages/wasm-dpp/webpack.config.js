@@ -1,31 +1,38 @@
 const path = require('path');
-const HtmlWebpackPlugin = require('html-webpack-plugin');
 const webpack = require('webpack');
-const WasmPackPlugin = require("@wasm-tool/wasm-pack-plugin");
 
 module.exports = {
-    entry: './index.js',
+    entry: './mod.js',
     output: {
         path: path.resolve(__dirname, 'dist'),
         filename: 'index.js',
+        library: {
+            type: 'umd'
+        },
+        publicPath: '',
+        // This is needed to prevent ReferenceError: self is not defined,
+        // as webpack names global object "self" for some reason
+        globalObject: 'this'
     },
     plugins: [
-        new HtmlWebpackPlugin(),
-        new WasmPackPlugin({
-            crateDirectory: path.resolve(__dirname, ".")
-        }),
-        // Have this example work in Edge which doesn't ship `TextEncoder` or
-        // `TextDecoder` at this time.
-        new webpack.ProvidePlugin({
-            TextDecoder: ['text-encoding', 'TextDecoder'],
-            TextEncoder: ['text-encoding', 'TextEncoder']
-        })
+        // // Have this example work in Edge which doesn't ship `TextEncoder` or
+        // // `TextDecoder` at this time.
+        // new webpack.ProvidePlugin({
+        //     TextDecoder: ['text-encoding', 'TextDecoder'],
+        //     TextEncoder: ['text-encoding', 'TextEncoder']
+        // })
     ],
     mode: 'development',
-    experiments: {
-        asyncWebAssembly: true
-    },
+    // experiments: {
+    //     asyncWebAssembly: true
+    // },
     resolve: {
         extensions: ['.wasm']
+    },
+    module: {
+        rules: [{
+            test: /\.wasm$/,
+            type: "asset/inline",
+        }],
     }
 };
