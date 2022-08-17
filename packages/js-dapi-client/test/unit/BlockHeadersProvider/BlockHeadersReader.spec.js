@@ -35,20 +35,14 @@ describe('BlockHeadersReader - unit', () => {
 
     this.sinon.stub(options, 'createHistoricalSyncStream')
       .callsFake(async () => {
-        const stream = new BlockHeadersWithChainLocksStreamMock();
-        this.sinon.spy(stream, 'on');
-        this.sinon.spy(stream, 'destroy');
-        this.sinon.spy(stream, 'removeListener');
+        const stream = new BlockHeadersWithChainLocksStreamMock(this.sinon);
         historicalStreams.push(stream);
         return stream;
       });
 
     this.sinon.stub(options, 'createContinuousSyncStream')
       .callsFake(async () => {
-        const stream = new BlockHeadersWithChainLocksStreamMock();
-        this.sinon.spy(stream, 'on');
-        this.sinon.spy(stream, 'destroy');
-        this.sinon.spy(stream, 'removeListener');
+        const stream = new BlockHeadersWithChainLocksStreamMock(this.sinon);
         continuousSyncStream = stream;
         return stream;
       });
@@ -69,10 +63,11 @@ describe('BlockHeadersReader - unit', () => {
       );
     });
 
-    it('[data] should subscribe to block headers stream and hook on events', async () => {
+    it('should subscribe to block headers stream and hook on events', async () => {
       await subscribeToHistoricalBatch(1, headers.length);
 
-      expect(blockHeadersReader.createHistoricalSyncStream).to.have.been.calledOnce;
+      expect(blockHeadersReader.createHistoricalSyncStream)
+        .to.have.been.calledWith(1, headers.length);
 
       const stream = historicalStreams[0];
       expect(stream.on).to.have.been.calledWith('data');
@@ -121,7 +116,7 @@ describe('BlockHeadersReader - unit', () => {
       });
     });
 
-    it('[error] should destroy stream in case headers batch was rejected', async () => {
+    it('[data] should destroy stream in case headers batch was rejected', async () => {
       await subscribeToHistoricalBatch(1, headers.length);
 
       const rejectWith = new Error('Invalid headers');
@@ -281,20 +276,184 @@ describe('BlockHeadersReader - unit', () => {
   });
 
   describe('#subscribeToNew', () => {
-    let stream;
+    const startFrom = 100;
+    let headers;
     beforeEach(async () => {
-      stream = await blockHeadersReader.subscribeToNew(1);
+      headers = getHeadersFixture();
     });
-    //
-    it('should subscribe to a stream', () => {
-      // expect(blockHeadersReader.coreMethods.subscribeToBlockHeadersWithChainLocks)
-      //   .to.be.calledOnce();
+
+    it('should subscribe to block headers stream and hook on events', async () => {
+      await blockHeadersReader.subscribeToNew(startFrom);
+
+      expect(blockHeadersReader.createContinuousSyncStream)
+        .to.have.been.calledWith(startFrom);
+
+      expect(continuousSyncStream.on).to.have.been.calledWith('data');
+      expect(continuousSyncStream.on).to.have.been.calledWith('error');
+      expect(continuousSyncStream.on).to.have.been.calledWith('end');
+      expect(continuousSyncStream.on).to.have.been.calledWith('beforeReconnect');
     });
-    //
-    // it('should hook on stream events', () => {
-    //   expect(stream.on).to.be.calledWith('data');
-    //   expect(stream.on).to.be.calledWith('error');
-    // });
+
+    it('should validate fromBlockHeight', async () => {
+      await expect(blockHeadersReader.subscribeToNew(-1))
+        .to.be.rejectedWith('Invalid fromBlockHeight: -1');
+    });
+
+    it('should not allow subscribe twice', async () => {
+      await blockHeadersReader.subscribeToNew(startFrom);
+
+      await expect(blockHeadersReader.subscribeToNew(-1))
+        .to.be.rejectedWith('Continuous sync has already been started');
+    });
+
+    it('[data] should process headers batch', async () => {
+      await blockHeadersReader.subscribeToNew(startFrom);
+
+      const headersToSend = headers.slice(0, 2);
+      continuousSyncStream.sendHeaders(headersToSend);
+
+      expect(blockHeadersReader.emit).to.have.been.calledOnce();
+      expect(blockHeadersReader.emit).to.have.been.calledWith(
+        BlockHeadersReader.EVENTS.BLOCK_HEADERS,
+        {
+          headers: headersToSend,
+          headHeight: startFrom,
+        },
+      );
+    });
+
+    it('[data] should provide correct head height for every emitted batch', async () => {
+      await blockHeadersReader.subscribeToNew(startFrom);
+
+      const firstBatch = headers.slice(0, 2);
+      continuousSyncStream.sendHeaders(firstBatch);
+
+      const newHeader = headers.slice(2, 3);
+      continuousSyncStream.sendHeaders(newHeader);
+
+      const { firstCall, secondCall } = blockHeadersReader.emit;
+      expect(blockHeadersReader.emit).to.have.been.calledTwice();
+
+      expect(firstCall.args[0]).to.equal(BlockHeadersReader.EVENTS.BLOCK_HEADERS);
+      expect(firstCall.args[1]).to.deep.equal(
+        {
+          headers: firstBatch,
+          headHeight: startFrom,
+        },
+      );
+
+      expect(secondCall.args[0]).to.equal(BlockHeadersReader.EVENTS.BLOCK_HEADERS);
+      expect(secondCall.args[1]).to.deep.equal(
+        {
+          headers: newHeader,
+          headHeight: startFrom + 2,
+        },
+      );
+    });
+
+    it('[data] should destroy stream in case headers batch was rejected', async () => {
+      await blockHeadersReader.subscribeToNew(startFrom);
+
+      const rejectWith = new Error('Stream error');
+      blockHeadersReader.on(BlockHeadersReader.EVENTS.BLOCK_HEADERS, (_, rejectHeaders) => {
+        rejectHeaders(rejectWith);
+      });
+
+      const errorPromise = new Promise((resolve) => {
+        blockHeadersReader.on('error', resolve);
+      });
+
+      continuousSyncStream.sendHeaders(headers);
+
+      const emittedError = await errorPromise;
+
+      expect(emittedError).to.equal(rejectWith);
+    });
+
+    it('[beforeReconnect] should maintain correct lastKnownChainHeight before reconnect happens', async () => {
+      await blockHeadersReader.subscribeToNew(startFrom);
+
+      // Emit first batch
+      const firstBatch = headers.slice(0, 2);
+      continuousSyncStream.sendHeaders(firstBatch);
+
+      // Trigger stream reconnect
+      const beforeReconnectPromise = new Promise((resolve) => {
+        continuousSyncStream.emit('beforeReconnect', (updatedArgs) => {
+          resolve(updatedArgs);
+        });
+      });
+
+      const reconnectArgs = await beforeReconnectPromise;
+
+      // Emit header after reconnect
+      const newHeaders = headers.slice(1, 3);
+      continuousSyncStream.sendHeaders(newHeaders);
+
+      // Ensure reconnect args adjusted correctly
+      expect(reconnectArgs.fromBlockHeight).to.equal(startFrom + 1);
+
+      const { firstCall, secondCall } = blockHeadersReader.emit;
+      expect(blockHeadersReader.emit).to.have.been.calledTwice();
+
+      // Ensure correct headers were emitted in first event
+      let emittedHeaders = firstCall.args[1].headers.map((header) => header.toObject());
+      let expectedHeaders = firstBatch.map((header) => header.toObject());
+      expect(firstCall.args[0]).to.equal(BlockHeadersReader.EVENTS.BLOCK_HEADERS);
+      expect(emittedHeaders).to.deep.equal(expectedHeaders);
+      expect(firstCall.args[1].headHeight).to.equal(startFrom);
+
+      // Ensure correct headers were emitted in second event
+      emittedHeaders = secondCall.args[1].headers.map((header) => header.toObject());
+      expectedHeaders = newHeaders.map((header) => header.toObject());
+      expect(secondCall.args[0]).to.equal(BlockHeadersReader.EVENTS.BLOCK_HEADERS);
+      expect(emittedHeaders).to.deep.equal(expectedHeaders);
+      expect(secondCall.args[1].headHeight).to.equal(startFrom + 1);
+    });
+
+    it('[error] should handle stream cancellation', async () => {
+      await blockHeadersReader.subscribeToNew(startFrom);
+
+      continuousSyncStream.emit('error', {
+        code: 1,
+      });
+
+      expect(blockHeadersReader.continuousSyncStream).to.equal(null);
+      expect(blockHeadersReader.emit).to.have.not.been.called();
+    });
+
+    it('[error] should handle stream error', async () => {
+      await blockHeadersReader.subscribeToNew(startFrom);
+
+      const errorPromise = new Promise((resolve) => {
+        blockHeadersReader.on('error', resolve);
+      });
+
+      const error = new Error('Stream error');
+      continuousSyncStream.emit('error', error);
+
+      expect(blockHeadersReader.continuousSyncStream).to.equal(null);
+      const emittedError = await errorPromise;
+      expect(emittedError).to.equal(error);
+    });
+
+    it('[end] should handle end event', async () => {
+      await blockHeadersReader.subscribeToNew(startFrom);
+      continuousSyncStream.emit('end');
+      expect(blockHeadersReader.continuousSyncStream).to.equal(null);
+    });
+  });
+
+  describe('#unsubscribeFromNew', () => {
+    it('should unsubscribe from new headers', async () => {
+      await blockHeadersReader.subscribeToNew(1);
+      blockHeadersReader.unsubscribeFromNew();
+      expect(blockHeadersReader.continuousSyncStream).to.equal(null);
+      expect(continuousSyncStream.removeAllListeners).to.have.been.calledWith('data');
+      expect(continuousSyncStream.removeAllListeners).to.have.been.calledWith('end');
+      expect(continuousSyncStream.removeAllListeners).to.have.been.calledWith('error');
+      expect(continuousSyncStream.removeAllListeners).to.have.been.calledWith('beforeReconnect');
+    });
   });
 
   describe.skip('#readHistorical', () => {

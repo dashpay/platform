@@ -1,6 +1,16 @@
 const EventEmitter = require('events');
 
 class BlockHeadersWithChainLocksStreamMock extends EventEmitter {
+  constructor(sinon) {
+    super();
+
+    sinon.spy(this, 'on');
+    sinon.spy(this, 'removeListener');
+    sinon.spy(this, 'emit');
+    sinon.spy(this, 'destroy');
+    sinon.spy(this, 'removeAllListeners');
+  }
+
   destroy(e) {
     this.emit('error', e);
   }

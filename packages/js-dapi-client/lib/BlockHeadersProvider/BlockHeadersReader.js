@@ -124,16 +124,6 @@ class BlockHeadersReader extends EventEmitter {
     this.historicalStreams = [];
   }
 
-  stopContinuousSync() {
-    if (this.continuousSyncStream) {
-      this.continuousSyncStream.cancel();
-      this.continuousSyncStream = null;
-      // throw new Error('Continuous sync has not been started');
-    }
-  }
-
-  // TODO: write tests
-  // - it should correctly maintain lastKnownChainHeight after reconnects
   /**
    * Subscribes to continuously arriving block headers
    *
@@ -141,6 +131,14 @@ class BlockHeadersReader extends EventEmitter {
    * @returns {Promise<DAPIStream>}
    */
   async subscribeToNew(fromBlockHeight) {
+    if (this.continuousSyncStream) {
+      throw new Error('Continuous sync has already been started');
+    }
+
+    if (fromBlockHeight < 1) {
+      throw new Error(`Invalid fromBlockHeight: ${fromBlockHeight}`);
+    }
+
     let lastKnownChainHeight = fromBlockHeight - 1;
 
     const stream = await this.createContinuousSyncStream(fromBlockHeight);
@@ -164,7 +162,10 @@ class BlockHeadersReader extends EventEmitter {
         const rejectHeaders = (e) => {
           stream.destroy(e);
         };
-        this.emit(EVENTS.BLOCK_HEADERS, headers, batchHeadHeight, rejectHeaders);
+        this.emit(EVENTS.BLOCK_HEADERS, {
+          headers,
+          headHeight: batchHeadHeight,
+        }, rejectHeaders);
       }
     });
 
@@ -177,14 +178,32 @@ class BlockHeadersReader extends EventEmitter {
     });
 
     stream.on('error', (e) => {
+      this.continuousSyncStream = null;
       if (e.code === GrpcErrorCodes.CANCELLED) {
         return;
       }
 
       this.emit(EVENTS.ERROR, e);
     });
+
+    stream.on('end', () => {
+      this.continuousSyncStream = null;
+    });
+
     this.continuousSyncStream = stream;
     return stream;
+  }
+
+  unsubscribeFromNew() {
+    if (this.continuousSyncStream) {
+      this.continuousSyncStream.removeAllListeners('data');
+      this.continuousSyncStream.removeAllListeners('error');
+      this.continuousSyncStream.removeAllListeners('beforeReconnect');
+      this.continuousSyncStream.removeAllListeners('end');
+      this.continuousSyncStream.cancel();
+      this.continuousSyncStream = null;
+      // throw new Error('Continuous sync has not been started');
+    }
   }
 
   /**
