@@ -1,7 +1,7 @@
 import crypto from "crypto";
-import {Platform} from "./Platform";
-import {StateTransitionBroadcastError} from "../../../errors/StateTransitionBroadcastError";
-import {IStateTransitionResult} from "./IStateTransitionResult";
+import { Platform } from "./Platform";
+import { StateTransitionBroadcastError } from "../../../errors/StateTransitionBroadcastError";
+import { IStateTransitionResult } from "./IStateTransitionResult";
 
 const ResponseError = require('@dashevo/dapi-client/lib/transport/errors/response/ResponseError');
 const InvalidRequestDPPError = require('@dashevo/dapi-client/lib/transport/errors/response/InvalidRequestDPPError');
@@ -14,40 +14,34 @@ const GrpcError = require('@dashevo/grpc-common/lib/server/error/GrpcError');
  * @param {Platform} platform
  * @param {Object} [options]
  * @param {boolean} [options.skipValidation=false]
- * @param {boolean} [options.ackFactor=1]
  *
  * @param stateTransition
  */
 export default async function broadcastStateTransition(
-    platform: Platform,
-    stateTransition: any,
-    options: { skipValidation?: boolean; ackFactor?: number } = {},
-): Promise<IStateTransitionResult | void> {
-    const optionsWithDefaults = {
-        ackFactor: 1,
-        ...options
-    };
-
-    const {client, dpp} = platform;
+  platform: Platform,
+  stateTransition: any,
+  options: { skipValidation?: boolean; } = {},
+): Promise<IStateTransitionResult|void> {
+    const { client, dpp } = platform;
 
     if (!options.skipValidation) {
-        const result = await dpp.stateTransition.validateBasic(stateTransition);
+      const result = await dpp.stateTransition.validateBasic(stateTransition);
 
-        if (!result.isValid()) {
-            const consensusError = result.getFirstError();
+      if (!result.isValid()) {
+        const consensusError = result.getFirstError();
 
-            throw new StateTransitionBroadcastError(
-                consensusError.getCode(),
-                consensusError.message,
-                consensusError,
-            );
-        }
+        throw new StateTransitionBroadcastError(
+          consensusError.getCode(),
+          consensusError.message,
+          consensusError,
+        );
+      }
     }
 
     // Subscribing to future result
     const hash = crypto.createHash('sha256')
-        .update(stateTransition.toBuffer())
-        .digest();
+      .update(stateTransition.toBuffer())
+      .digest();
 
     const serializedStateTransition = stateTransition.toBuffer();
 
@@ -74,18 +68,9 @@ export default async function broadcastStateTransition(
     }
 
     // Waiting for result to return
-    const promises: Array<Promise<IStateTransitionResult>> = [];
-    for (let i = 0; i < optionsWithDefaults.ackFactor; i++) {
-        const promise = client.getDAPIClient().platform.waitForStateTransitionResult(hash, {prove: true})
+    const stateTransitionResult: IStateTransitionResult = await client.getDAPIClient().platform.waitForStateTransitionResult(hash, { prove: true });
 
-        promises.push(promise);
-    }
-
-    const stateTransitionResults: Array<IStateTransitionResult> = await Promise.all(promises);
-
-    const firstStateTransitionResult = stateTransitionResults[0];
-
-    let {error} = firstStateTransitionResult;
+    let { error } = stateTransitionResult;
 
     if (error) {
         // Create DAPI response error from gRPC error passed as gRPC response
@@ -106,5 +91,5 @@ export default async function broadcastStateTransition(
         );
     }
 
-    return firstStateTransitionResult;
+    return stateTransitionResult;
 }
