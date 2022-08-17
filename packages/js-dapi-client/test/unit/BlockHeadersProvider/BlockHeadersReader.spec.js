@@ -1,10 +1,8 @@
-// const EventEmitter = require('events');
+const EventEmitter = require('events');
 const { expect } = require('chai');
-// const { BlockHeader } = require('@dashevo/dashcore-lib');
 const GrpcErrorCodes = require('@dashevo/grpc-common/lib/server/error/GrpcErrorCodes');
 const BlockHeadersReader = require('../../../lib/BlockHeadersProvider/BlockHeadersReader');
 const getHeadersFixture = require('../../../lib/test/fixtures/getHeadersFixture');
-// const DAPIStream = require('../../../lib/transport/DAPIStream');
 const BlockHeadersWithChainLocksStreamMock = require('../../../lib/test/mocks/BlockHeadersWithChainLocksStreamMock');
 
 const sleepOneTick = () => new Promise((resolve) => {
@@ -49,6 +47,11 @@ describe('BlockHeadersReader - unit', () => {
 
     blockHeadersReader = new BlockHeadersReader(options);
     this.sinon.spy(blockHeadersReader, 'emit');
+    this.sinon.spy(blockHeadersReader, 'on');
+    this.sinon.spy(blockHeadersReader, 'stopReadingHistorical');
+    this.sinon.spy(blockHeadersReader, 'removeStreamListeners');
+    this.sinon.spy(blockHeadersReader, 'removeCommandListeners');
+    this.sinon.spy(blockHeadersReader, 'removeAllListeners');
   });
 
   describe('#subscribeToHistoricalBatch', () => {
@@ -226,7 +229,6 @@ describe('BlockHeadersReader - unit', () => {
 
       expect(blockHeadersReader.emit).to.have.been.calledWith(
         BlockHeadersReader.COMMANDS.HANDLE_STREAM_ERROR,
-        stream,
         resubscribeError,
       );
     });
@@ -257,7 +259,6 @@ describe('BlockHeadersReader - unit', () => {
       expect(secondCall.args)
         .to.deep.equal([
           BlockHeadersReader.COMMANDS.HANDLE_STREAM_ERROR,
-          stream,
           secondError,
         ]);
     });
@@ -456,13 +457,34 @@ describe('BlockHeadersReader - unit', () => {
     });
   });
 
-  describe.skip('#readHistorical', () => {
+  describe('#readHistorical', () => {
     beforeEach(function () {
       this.sinon.spy(blockHeadersReader, 'subscribeToHistoricalBatch');
     });
 
+    it('should start historical sync and subscribe to events and commands', async () => {
+      await blockHeadersReader.readHistorical(1, options.targetBatchSize);
+
+      expect(blockHeadersReader.on)
+        .to.have.been.calledWith(BlockHeadersReader.COMMANDS.HANDLE_STREAM_RETRY);
+      expect(blockHeadersReader.on)
+        .to.have.been.calledWith(BlockHeadersReader.COMMANDS.HANDLE_STREAM_CANCELLATION);
+      expect(blockHeadersReader.on)
+        .to.have.been.calledWith(BlockHeadersReader.COMMANDS.HANDLE_STREAM_ERROR);
+      expect(blockHeadersReader.on)
+        .to.have.been.calledWith(BlockHeadersReader.COMMANDS.HANDLE_STREAM_END);
+
+      expect(blockHeadersReader.historicalStreams.length).to.equal(1);
+
+      expect(blockHeadersReader.createHistoricalSyncStream).to.have.been.calledOnceWith(
+        1,
+        options.targetBatchSize,
+      );
+    });
+
     it('should create only one stream in case the amount of blocks is too small', async () => {
-      await blockHeadersReader.readHistorical(1, Math.ceil(options.targetBatchSize * 1.4));
+      const amount = Math.ceil(options.targetBatchSize * 1.4);
+      await blockHeadersReader.readHistorical(1, amount);
       expect(blockHeadersReader.subscribeToHistoricalBatch).to.be.calledOnce();
     });
 
@@ -476,17 +498,14 @@ describe('BlockHeadersReader - unit', () => {
 
       await blockHeadersReader.readHistorical(fromBlock, toBlock);
 
-      const subscribeFunction = coreApiMock.subscribeToBlockHeadersWithChainLocks;
-      expect(subscribeFunction).to.be.calledThrice();
-      expect(subscribeFunction.getCall(0).args[0])
-        .to.deep.equal({ fromBlockHeight: fromBlock, count: itemsPerBatch });
-      expect(subscribeFunction.getCall(1).args[0])
-        .to.deep.equal({ fromBlockHeight: fromBlock + itemsPerBatch, count: itemsPerBatch });
-      expect(subscribeFunction.getCall(2).args[0])
-        .to.deep.equal({
-          fromBlockHeight: fromBlock + 2 * itemsPerBatch,
-          count: totalAmount - itemsPerBatch * 2,
-        });
+      const { createHistoricalSyncStream } = blockHeadersReader;
+      expect(createHistoricalSyncStream).to.be.calledThrice();
+      expect(createHistoricalSyncStream.getCall(0).args)
+        .to.deep.equal([fromBlock, itemsPerBatch]);
+      expect(createHistoricalSyncStream.getCall(1).args)
+        .to.deep.equal([fromBlock + itemsPerBatch, itemsPerBatch]);
+      expect(createHistoricalSyncStream.getCall(2).args)
+        .to.deep.equal([fromBlock + 2 * itemsPerBatch, totalAmount - itemsPerBatch * 2]);
     });
 
     it('should limit amount of streams in case batch size is too small compared to total amount', async () => {
@@ -496,22 +515,31 @@ describe('BlockHeadersReader - unit', () => {
     });
 
     it('should throw an error in case the total amount of headers is less than 1', async () => {
-      const from = 2;
-      const to = 2;
-      try {
-        await blockHeadersReader.readHistorical(from, to);
-      } catch (e) {
-        expect(e.message).to.equal(`Invalid total amount of headers to read: ${to - from}`);
-      }
+      await expect(blockHeadersReader.readHistorical(2, 1))
+        .to.be.rejectedWith('Invalid total amount of headers to read: 0');
+    });
+
+    it('should throw an error if fromBlockHeight is less than 1', async () => {
+      await expect(blockHeadersReader.readHistorical(0, 3))
+        .to.be.rejectedWith('Invalid fromBlockHeight value: 0');
+    });
+
+    it('should not allow multiple executions', async () => {
+      await blockHeadersReader.readHistorical(1, 3);
+      await expect(blockHeadersReader.readHistorical(1, 3))
+        .to.be.rejectedWith('Historical streams are already running. Please stop them first.');
     });
 
     it('should replace stream in historicalStreams in case of retry attempt', async () => {
       await blockHeadersReader.readHistorical(1, options.targetBatchSize * 5);
 
+      let oldSteam;
       let streamToReplaceWith;
-      blockHeadersReader.on(BlockHeadersReader.COMMANDS.HANDLE_STREAM_RETRY, (_, newStream) => {
-        streamToReplaceWith = newStream;
-      });
+      blockHeadersReader
+        .on(BlockHeadersReader.COMMANDS.HANDLE_STREAM_RETRY, (stream, newStream) => {
+          streamToReplaceWith = newStream;
+          oldSteam = stream;
+        });
 
       const streamToBreak = blockHeadersReader.historicalStreams[0];
       streamToBreak.emit('error', new Error('retry'));
@@ -519,6 +547,7 @@ describe('BlockHeadersReader - unit', () => {
       await sleepOneTick();
 
       expect(blockHeadersReader.historicalStreams[0]).to.equal(streamToReplaceWith);
+      expect(blockHeadersReader.removeStreamListeners).to.have.been.calledWith(oldSteam);
     });
 
     it('should remove stream from historicalStreams array in case of end', async () => {
@@ -530,20 +559,40 @@ describe('BlockHeadersReader - unit', () => {
 
       expect(blockHeadersReader.historicalStreams.length).to.equal(streamsAmount - 1);
       expect(blockHeadersReader.historicalStreams.includes(streamToFinish)).to.be.false();
+      expect(blockHeadersReader.removeStreamListeners).to.have.been.calledWith(streamToFinish);
     });
 
-    it('should remove stream from historicalStreams array in case of error', async () => {
+    it('should dispatch HISTORICAL_DATA_OBTAINED in case all streams have ended', async () => {
+      await blockHeadersReader.readHistorical(1, options.targetBatchSize * 2);
+
+      [...blockHeadersReader.historicalStreams].forEach((stream) => stream.emit('end'));
+      expect(blockHeadersReader.emit)
+        .to.have.been.calledWith(BlockHeadersReader.EVENTS.HISTORICAL_DATA_OBTAINED);
+      expect(blockHeadersReader.removeCommandListeners).to.have.been.called();
+    });
+
+    it('should remove stream from historicalStreams array in case of cancellation', async () => {
       await blockHeadersReader.readHistorical(1, options.targetBatchSize * 2);
       const streamsAmount = blockHeadersReader.historicalStreams.length;
 
-      let streamToRemove;
-      blockHeadersReader.on(BlockHeadersReader.COMMANDS.HANDLE_STREAM_ERROR, (_, stream) => {
-        streamToRemove = stream;
+      const streamToFinish = blockHeadersReader.historicalStreams[0];
+      streamToFinish.emit('error', {
+        code: 1,
       });
 
-      let emittedError;
-      blockHeadersReader.on(BlockHeadersReader.EVENTS.ERROR, (e) => {
-        emittedError = e;
+      expect(blockHeadersReader.historicalStreams.length).to.equal(streamsAmount - 1);
+      expect(blockHeadersReader.historicalStreams.includes(streamToFinish)).to.be.false();
+      expect(blockHeadersReader.removeStreamListeners).to.have.been.calledWith(streamToFinish);
+
+      blockHeadersReader.historicalStreams[0].emit('end');
+      expect(blockHeadersReader.removeCommandListeners).to.have.been.called();
+    });
+
+    it('should stop reading historical data in case of one of the streams throws an error', async () => {
+      await blockHeadersReader.readHistorical(1, options.targetBatchSize * 2);
+
+      const errorPromise = new Promise((resolve) => {
+        blockHeadersReader.on(BlockHeadersReader.EVENTS.ERROR, resolve);
       });
 
       let lastError;
@@ -556,10 +605,45 @@ describe('BlockHeadersReader - unit', () => {
         await sleepOneTick();
       }
 
-      expect(emittedError).to.deep.equal(lastError);
-      expect(streamToRemove).to.exist();
-      expect(blockHeadersReader.historicalStreams.length).to.equal(streamsAmount - 1);
-      expect(blockHeadersReader.historicalStreams.includes(streamToRemove)).to.be.false();
+      const emittedError = await errorPromise;
+      expect(emittedError).to.equal(lastError);
+      expect(blockHeadersReader.stopReadingHistorical).to.have.been.calledOnce();
+    });
+  });
+
+  describe('#stopReadingHistorical', async () => {
+    it('should stop reading historical data and unsubscribe from all events', async () => {
+      await blockHeadersReader.readHistorical(1, options.targetBatchSize * 2);
+      blockHeadersReader.stopReadingHistorical();
+      expect(blockHeadersReader.removeCommandListeners).to.have.been.called();
+      historicalStreams.forEach((stream) => {
+        expect(blockHeadersReader.removeStreamListeners).to.have.been.calledWith(stream);
+        expect(stream.cancel).to.have.been.called();
+      });
+      expect(blockHeadersReader.historicalStreams).to.have.length(0);
+    });
+  });
+
+  describe('Event listeners', () => {
+    it('#removeCommandListeners', () => {
+      blockHeadersReader.removeCommandListeners();
+      expect(blockHeadersReader.removeAllListeners)
+        .to.have.been.calledWith(BlockHeadersReader.COMMANDS.HANDLE_STREAM_END);
+      expect(blockHeadersReader.removeAllListeners)
+        .to.have.been.calledWith(BlockHeadersReader.COMMANDS.HANDLE_STREAM_CANCELLATION);
+      expect(blockHeadersReader.removeAllListeners)
+        .to.have.been.calledWith(BlockHeadersReader.COMMANDS.HANDLE_STREAM_RETRY);
+      expect(blockHeadersReader.removeAllListeners)
+        .to.have.been.calledWith(BlockHeadersReader.COMMANDS.HANDLE_STREAM_ERROR);
+    });
+
+    it('#removeStreamListeners', function () {
+      const stream = new EventEmitter();
+      this.sinon.spy(stream, 'removeAllListeners');
+      blockHeadersReader.removeStreamListeners(stream);
+      expect(stream.removeAllListeners).to.have.been.calledWith('data');
+      expect(stream.removeAllListeners).to.have.been.calledWith('error');
+      expect(stream.removeAllListeners).to.have.been.calledWith('end');
     });
   });
 });

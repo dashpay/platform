@@ -9,6 +9,7 @@ class BlockHeadersWithChainLocksStreamMock extends EventEmitter {
     sinon.spy(this, 'emit');
     sinon.spy(this, 'destroy');
     sinon.spy(this, 'removeAllListeners');
+    sinon.spy(this, 'cancel');
   }
 
   destroy(e) {

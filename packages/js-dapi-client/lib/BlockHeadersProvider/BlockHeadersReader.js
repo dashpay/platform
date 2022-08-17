@@ -1,7 +1,6 @@
 const { EventEmitter } = require('events');
 const { BlockHeader } = require('@dashevo/dashcore-lib');
 const GrpcErrorCodes = require('@dashevo/grpc-common/lib/server/error/GrpcErrorCodes');
-const DAPIStream = require('../transport/DAPIStream');
 
 const EVENTS = {
   BLOCK_HEADERS: 'BLOCK_HEADERS',
@@ -41,14 +40,14 @@ class BlockHeadersReader extends EventEmitter {
     /**
      * Holds references to the historical streams
      *
-     * @type {DAPIStream[]}
+     * @type {Stream[]}
      */
     this.historicalStreams = [];
 
     /**
      * Holds reference to the continuous sync stream
      *
-     * @type {DAPIStream}
+     * @type {Stream}
      */
     this.continuousSyncStream = null;
   }
@@ -65,6 +64,10 @@ class BlockHeadersReader extends EventEmitter {
       throw new Error('Historical streams are already running. Please stop them first.');
     }
 
+    if (fromBlockHeight <= 0) {
+      throw new Error(`Invalid fromBlockHeight value: ${fromBlockHeight}`);
+    }
+
     const totalAmount = toBlockHeight - fromBlockHeight + 1;
     if (totalAmount <= 0) {
       throw new Error(`Invalid total amount of headers to read: ${totalAmount}`);
@@ -73,31 +76,36 @@ class BlockHeadersReader extends EventEmitter {
     // Resubscribe to the stream in case of error, and replace the stream in the array
     this.on(COMMANDS.HANDLE_STREAM_RETRY, (oldStream, newStream) => {
       const index = this.historicalStreams.indexOf(oldStream);
+      this.removeStreamListeners(oldStream);
       this.historicalStreams[index] = newStream;
     });
 
     this.on(COMMANDS.HANDLE_STREAM_CANCELLATION, (stream) => {
       const index = this.historicalStreams.indexOf(stream);
+      this.removeStreamListeners(stream);
       this.historicalStreams.splice(index, 1);
+
+      if (this.historicalStreams.length === 0) {
+        this.removeCommandListeners();
+      }
     });
 
-    // Remove stream from the array in case of error
-    this.on(COMMANDS.HANDLE_STREAM_ERROR, (stream, e) => {
-      const index = this.historicalStreams.indexOf(stream);
-      this.historicalStreams.splice(index, 1);
+    this.on(COMMANDS.HANDLE_STREAM_ERROR, (e) => {
+      this.stopReadingHistorical();
       this.emit(EVENTS.ERROR, e);
     });
 
     // Remove finished stream from the array and emit HISTORICAL_DATA_OBTAINED event
     this.on(COMMANDS.HANDLE_STREAM_END, (stream) => {
+      this.removeStreamListeners(stream);
       const index = this.historicalStreams.indexOf(stream);
       this.historicalStreams.splice(index, 1);
       if (this.historicalStreams.length === 0) {
         this.emit(EVENTS.HISTORICAL_DATA_OBTAINED);
+        this.removeCommandListeners();
       }
     });
 
-    // TODO: consider reworking with minBatchSize instead of targetBatchSize
     const numStreams = Math.min(
       Math.max(Math.round(totalAmount / this.targetBatchSize), 1),
       this.maxParallelStreams,
@@ -117,11 +125,22 @@ class BlockHeadersReader extends EventEmitter {
   }
 
   stopReadingHistorical() {
+    this.removeCommandListeners();
+    this.historicalStreams.forEach((stream) => {
+      this.removeStreamListeners(stream);
+      stream.cancel();
+    });
+    this.historicalStreams = [];
+  }
+
+  /**
+   * @private
+   */
+  removeCommandListeners() {
     this.removeAllListeners(COMMANDS.HANDLE_STREAM_RETRY);
     this.removeAllListeners(COMMANDS.HANDLE_STREAM_ERROR);
     this.removeAllListeners(COMMANDS.HANDLE_STREAM_END);
-    this.historicalStreams.forEach((stream) => stream.cancel());
-    this.historicalStreams = [];
+    this.removeAllListeners(COMMANDS.HANDLE_STREAM_CANCELLATION);
   }
 
   /**
@@ -202,7 +221,6 @@ class BlockHeadersReader extends EventEmitter {
       this.continuousSyncStream.removeAllListeners('end');
       this.continuousSyncStream.cancel();
       this.continuousSyncStream = null;
-      // throw new Error('Continuous sync has not been started');
     }
   }
 
@@ -275,10 +293,10 @@ class BlockHeadersReader extends EventEmitter {
               currentRetries += 1;
               this.emit(COMMANDS.HANDLE_STREAM_RETRY, stream, newStream);
             }).catch((e) => {
-              this.emit(COMMANDS.HANDLE_STREAM_ERROR, stream, e);
+              this.emit(COMMANDS.HANDLE_STREAM_ERROR, e);
             });
         } else {
-          this.emit(COMMANDS.HANDLE_STREAM_ERROR, stream, streamError);
+          this.emit(COMMANDS.HANDLE_STREAM_ERROR, streamError);
         }
       };
 
@@ -294,6 +312,16 @@ class BlockHeadersReader extends EventEmitter {
     };
 
     return subscribeWithRetries;
+  }
+
+  /**
+   * @private
+   * @param stream
+   */
+  removeStreamListeners(stream) {
+    stream.removeAllListeners('data');
+    stream.removeAllListeners('error');
+    stream.removeAllListeners('end');
   }
 }
 
