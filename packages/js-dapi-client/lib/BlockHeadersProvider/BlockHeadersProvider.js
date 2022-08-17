@@ -1,5 +1,5 @@
 const EventEmitter = require('events');
-const { SpvChain } = require('@dashevo/dash-spv');
+const { SpvChain, SPVError } = require('@dashevo/dash-spv');
 const { Block } = require('@dashevo/dashcore-lib');
 
 const BlockHeadersReader = require('./BlockHeadersReader');
@@ -20,6 +20,7 @@ const defaultOptions = {
   fromBlockHeight: 1,
   maxRetries: 10,
   autoStart: false,
+  spvChain: null,
 };
 
 const EVENTS = {
@@ -47,12 +48,9 @@ class BlockHeadersProvider extends EventEmitter {
     };
 
     // TODO: make sure chain properly maintains it's integrity if confirms is more than chain length
-    this.spvChain = new SpvChain(this.options.network, 100);
+    this.spvChain = this.options.spvChain || new SpvChain(this.options.network, 100);
 
     this.state = STATES.IDLE;
-
-    // TODO: move to dash-spv
-    this.headersHeights = {};
 
     this.handleError = this.handleError.bind(this);
     this.handleHeaders = this.handleHeaders.bind(this);
@@ -189,25 +187,26 @@ class BlockHeadersProvider extends EventEmitter {
     this.emit(EVENTS.ERROR, e);
   }
 
+  /**
+   * @private
+   * @param headers
+   * @param headHeight
+   * @param reject
+   */
   handleHeaders(headers, headHeight, reject) {
     try {
       const headersAdded = this.spvChain.addHeaders(headers);
 
       if (headersAdded.length) {
-        headersAdded.forEach((header, index) => {
-          this.headersHeights[header.hash] = headHeight + index;
-        });
-
         // Calculate amount of removed headers in order to properly adjust head height
         const difference = headers.length - headersAdded.length;
         this.emit(EVENTS.CHAIN_UPDATED, headersAdded, headHeight + difference);
       }
     } catch (e) {
-      // TODO: implement instanceof SPVError
-      if (e.message === 'Some headers are invalid') {
+      if (e instanceof SPVError) {
         reject(e);
       } else {
-        this.emit(EVENTS.ERROR, e);
+        this.handleError(e);
       }
     }
   }

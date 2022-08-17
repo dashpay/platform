@@ -1,6 +1,7 @@
 const config = require('../config/config');
 const Consensus = require('./consensus');
 const utils = require('./utils');
+const SPVError = require('./errors/SPVError');
 
 const SpvChain = class {
   // TODO: add startBlockHeight as well
@@ -82,7 +83,7 @@ const SpvChain = class {
           this.root = startBlock;
           this.network = 'mainnet';
         } else {
-          throw new Error('Unhandled chaintype or startBlock not provided');
+          throw new SPVError('Unhandled chaintype or startBlock not provided');
         }
         break;
     }
@@ -378,28 +379,28 @@ const SpvChain = class {
         const previousHeaders = normalizedHeaders.slice(0, index);
         if (index !== 0) {
           if (!SpvChain.isParentChild(header, array[index - 1])) {
-            throw new Error(`SPV: Header ${header.hash} is not a child of ${array[index - 1].hash}`);
+            throw new SPVError(`SPV: Header ${header.hash} is not a child of ${array[index - 1].hash}`);
           }
 
           if (!this.isValid(header, previousHeaders)) {
-            throw new Error(`SPV: Header ${header.hash} is invalid`);
+            throw new SPVError(`SPV: Header ${header.hash} is invalid`);
           }
           return acc && true;
         }
         if (isOrphan) {
           if (!this.isValid(header, previousHeaders)) {
-            throw new Error('Some headers are invalid');
+            throw new SPVError('Some headers are invalid');
           }
           return acc && true;
         }
         if (!this.isValid(header, this.getLongestChain())) {
-          throw new Error('Some headers are invalid');
+          throw new SPVError('Some headers are invalid');
         }
         return acc && true;
       }, true,
     );
     if (!allValid) {
-      throw new Error('Some headers are invalid');
+      throw new SPVError('Some headers are invalid');
     }
     if (isOrphan) {
       normalizedHeaders.forEach((header) => {
