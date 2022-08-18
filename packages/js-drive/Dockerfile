@@ -38,10 +38,7 @@ RUN yarn config set enableInlineBuilds true
 
 # Install Drive-specific dependencies using previous
 # node_modules directory to reuse built binaries
-RUN --mount=type=cache,target=/tmp/unplugged \
-    cp -R /tmp/unplugged /platform/.yarn/ && \
-    yarn workspaces focus --production @dashevo/drive && \
-    cp -R /platform/.yarn/unplugged /tmp/
+RUN yarn workspaces focus --production @dashevo/drive
 
 FROM node:16-alpine
 
