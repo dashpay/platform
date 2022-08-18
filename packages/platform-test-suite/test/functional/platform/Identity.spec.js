@@ -102,12 +102,14 @@ describe('Platform', () => {
         outputIndex,
       } = await client.platform.identities.utils.createAssetLockTransaction(7000);
 
-      await client.getDAPIClient().core.broadcastTransaction(transaction.toBuffer());
+      const account = await client.getWalletAccount();
 
+      await account.broadcastTransaction(transaction);
+
+      // Creating normal transition
       const assetLockProof = await client.platform.identities.utils
         .createAssetLockProof(transaction, outputIndex);
 
-      // Creating normal transition
       const {
         identity: identityOne,
         identityCreateTransition: identityCreateTransitionOne,
@@ -160,14 +162,16 @@ describe('Platform', () => {
         outputIndex,
       } = await client.platform.identities.utils.createAssetLockTransaction(15);
 
-      await client.getDAPIClient().core.broadcastTransaction(transaction.toBuffer());
+      const account = await client.getWalletAccount();
 
+      await account.broadcastTransaction(transaction);
+
+      // Creating normal transition
       const assetLockProof = await client.platform.identities.utils.createAssetLockProof(
         transaction,
         outputIndex,
       );
 
-      // Creating normal transition
       const {
         identityCreateTransition,
       } = await client.platform.identities.utils.createIdentityCreateTransition(
@@ -233,14 +237,16 @@ describe('Platform', () => {
       this.timeout(850000);
 
       it('should create identity using chainLock', async () => {
+        // Broadcast Asset Lock transaction
         const {
           transaction,
           privateKey,
           outputIndex,
         } = await client.platform.identities.utils.createAssetLockTransaction(7000);
 
-        // Broadcast Asset Lock transaction
-        await client.getDAPIClient().core.broadcastTransaction(transaction.toBuffer());
+        const account = await client.getWalletAccount();
+
+        await account.broadcastTransaction(transaction);
 
         // Wait for transaction to be mined and chain locked
         const { promise: metadataPromise } = walletAccount.waitForTxMetadata(transaction.id);
@@ -435,14 +441,16 @@ describe('Platform', () => {
           outputIndex,
         } = await client.platform.identities.utils.createAssetLockTransaction(1);
 
-        await client.getDAPIClient().core.broadcastTransaction(transaction.toBuffer());
+        const account = await client.getWalletAccount();
 
+        await account.broadcastTransaction(transaction);
+
+        // Creating normal transition
         const assetLockProof = await client.platform.identities.utils.createAssetLockProof(
           transaction,
           outputIndex,
         );
 
-        // Creating normal transition
         const identityTopUpTransitionOne = await client.platform.identities.utils
           .createIdentityTopUpTransition(assetLockProof, privateKey, identity.getId());
         // Creating ST that tries to spend the same output
