@@ -203,9 +203,10 @@ const SpvChain = class {
   }
 
   /** @private */
-  getOrphans() {
-    return this.orphanBlocks;
-  }
+  // TODO: remove
+  // getOrphans() {
+  //   return this.orphanBlocks;
+  // }
 
   /** @private */
   getOrphanChunks() {
@@ -329,18 +330,18 @@ const SpvChain = class {
    * @param {Object[]|string[]|buffer[]} header
    * @return {boolean}
    */
-  addHeader(header) {
-    const headerNormalised = utils.normalizeHeader(header);
-
-    if (this.isValid(headerNormalised, this.getLongestChain())) {
-      // headerNormalised.children = [];
-      this.processValidHeader(headerNormalised);
-      this.setAllBranches();
-      this.checkPruneBlocks();
-      return true;
-    }
-    return false;
-  }
+  // addHeader(header) {
+  //   const headerNormalised = utils.normalizeHeader(header);
+  //
+  //   if (this.isValid(headerNormalised, this.getLongestChain())) {
+  //     // headerNormalised.children = [];
+  //     this.processValidHeader(headerNormalised);
+  //     this.setAllBranches();
+  //     this.checkPruneBlocks();
+  //     return true;
+  //   }
+  //   return false;
+  // }
 
   reset(fromBlockHeight) {
     this.allBranches = [];

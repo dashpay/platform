@@ -1,4 +1,6 @@
 const { MerkleBlock, Transaction } = require('@dashevo/dashcore-lib');
+const should = require('should');
+
 const Blockchain = require('../lib/spvchain');
 const utils = require('../lib/utils');
 const merkleProofs = require('../lib/merkleproofs');
@@ -12,8 +14,6 @@ const merkleData = require('./data/merkleproofs');
 let chain = null;
 let merkleBlock = null;
 let merkleBlock2 = null;
-
-require('should');
 
 describe('SPV-DASH (forks & re-orgs) deserialized headers', () => {
   before(() => {
@@ -34,39 +34,39 @@ describe('SPV-DASH (forks & re-orgs) deserialized headers', () => {
   });
 
   it('should still contain a branch of 1 when first header is added', () => {
-    chain.addHeader(headers[0]);
+    chain.addHeaders([headers[0]]);
     chain.getAllBranches().length.should.equal(1);
     chain.getLongestChain().length.should.equal(2);
   });
 
   it('should discard adding of duplicate block', () => {
-    chain.addHeader(headers[0]);
-    chain.getOrphans().length.should.equal(0);
+    chain.addHeaders([headers[0]]);
+    chain.getOrphanChunks().length.should.equal(0);
     chain.getLongestChain().length.should.equal(2);
   });
 
   it('should create 1 orphan', () => {
-    chain.addHeader(headers[2]);
-    chain.getOrphans().length.should.equal(1);
+    chain.addHeaders([headers[2]]);
+    chain.getOrphanChunks().length.should.equal(1);
     chain.getLongestChain().length.should.equal(2);
   });
 
   it('should connect the orphan by adding its parent', () => {
-    chain.addHeader(headers[1]);
-    chain.getOrphans().length.should.equal(0);
+    chain.addHeaders([headers[1]]);
+    chain.getOrphanChunks().length.should.equal(0);
     chain.getAllBranches().length.should.equal(1);
     chain.getLongestChain().length.should.equal(4);
   });
 
   it('should add remaining test headers', () => {
     chain.addHeaders(headers.slice(3, 24));
-    chain.getOrphans().length.should.equal(0);
+    chain.getOrphanChunks().length.should.equal(0);
     chain.getAllBranches().length.should.equal(1);
     chain.getLongestChain().length.should.equal(25);
   });
 
   it('not add an invalid header', () => {
-    chain.addHeader(headers[25]);
+    should(() => chain.addHeaders([headers[25]])).throw();
     chain.getLongestChain().length.should.equal(25);
   });
 
@@ -100,26 +100,26 @@ describe('SPV-DASH (forks & re-orgs) serialized raw headers for mainnet', () => 
   });
 
   it('should still contain a branch of 1 when first header is added', () => {
-    chain.addHeader(mainnet[1]);
+    chain.addHeaders([mainnet[1]]);
     chain.getAllBranches().length.should.equal(1);
     chain.getLongestChain().length.should.equal(2);
   });
 
   it('should discard addding of duplicate block', () => {
-    chain.addHeader(mainnet[1]);
-    chain.getOrphans().length.should.equal(0);
+    chain.addHeaders([mainnet[1]]);
+    chain.getOrphanChunks().length.should.equal(0);
     chain.getLongestChain().length.should.equal(2);
   });
 
   it('should create 1 orphan', () => {
-    chain.addHeader(mainnet[3]);
-    chain.getOrphans().length.should.equal(1);
+    chain.addHeaders([mainnet[3]]);
+    chain.getOrphanChunks().length.should.equal(1);
     chain.getLongestChain().length.should.equal(2);
   });
 
   it('should connect the orphan by adding its parent', () => {
-    chain.addHeader(mainnet[2]);
-    chain.getOrphans().length.should.equal(0);
+    chain.addHeaders([mainnet[2]]);
+    chain.getOrphanChunks().length.should.equal(0);
     chain.getAllBranches().length.should.equal(1);
     chain.getLongestChain().length.should.equal(4);
   });
@@ -132,14 +132,14 @@ describe('SPV-DASH (addHeaders) add many headers for testnet', () => {
 
   it('should add the 1st 250 testnet headers', () => {
     chain.addHeaders(testnet.slice(1, 250));
-    chain.getOrphans().length.should.equal(0);
+    chain.getOrphanChunks().length.should.equal(0);
     chain.getAllBranches().length.should.equal(1);
     chain.getLongestChain().length.should.equal(250);
   });
 
   it('should add the next 250 (250 - 500) testnet headers', () => {
     chain.addHeaders(testnet.slice(250, 500));
-    chain.getOrphans().length.should.equal(0);
+    chain.getOrphanChunks().length.should.equal(0);
     chain.getAllBranches().length.should.equal(1);
     chain.getLongestChain().length.should.equal(500);
   });
@@ -147,14 +147,14 @@ describe('SPV-DASH (addHeaders) add many headers for testnet', () => {
   it('should add the 1st 250 testnet2 headers', () => {
     chain = new Blockchain('testnet', 10000, utils.normalizeHeader(testnet2[0]));
     chain.addHeaders(testnet2.slice(1, 250));
-    chain.getOrphans().length.should.equal(0);
+    chain.getOrphanChunks().length.should.equal(0);
     chain.getAllBranches().length.should.equal(1);
     chain.getLongestChain().length.should.equal(250);
   });
 
   it('should add the next 250 (250 - 500) testnet2 headers', () => {
     chain.addHeaders(testnet2.slice(250, 500));
-    chain.getOrphans().length.should.equal(0);
+    chain.getOrphanChunks().length.should.equal(0);
     chain.getAllBranches().length.should.equal(1);
     chain.getLongestChain().length.should.equal(500);
   });
@@ -162,26 +162,26 @@ describe('SPV-DASH (addHeaders) add many headers for testnet', () => {
   it('should add the 1st 250 testnet3 headers', () => {
     chain = new Blockchain('testnet', 10000, utils.normalizeHeader(testnet3[0]));
     chain.addHeaders(testnet3.slice(1, 250));
-    chain.getOrphans().length.should.equal(0);
+    chain.getOrphanChunks().length.should.equal(0);
     chain.getAllBranches().length.should.equal(1);
     chain.getLongestChain().length.should.equal(250);
   });
 
   it('should add the next 250 (250 - 500) testnet3 headers', () => {
     chain.addHeaders(testnet3.slice(250, 500));
-    chain.getOrphans().length.should.equal(0);
+    chain.getOrphanChunks().length.should.equal(0);
     chain.getAllBranches().length.should.equal(1);
     chain.getLongestChain().length.should.equal(500);
   });
 
   it('should not add an invalid header', () => {
-    chain.addHeader(testnet[499]);
+    chain.addHeaders([testnet[499]]);
     chain.getLongestChain().length.should.equal(500);
   });
 
   it('should orphan and not add invalid but consistent headers', () => {
     chain.addHeaders([badRawHeaders[0], badRawHeaders[1]]);
-    chain.getOrphanChunks().length.should.equal(1);
+    chain.getOrphanChunks().length.should.equal(2);
     chain.getLongestChain().length.should.equal(500);
   });
 
@@ -203,7 +203,7 @@ describe('SPV-DASH (addHeaders) add testnet headers out of order', () => {
 
   it('should add the 1st 100 testnet headers', () => {
     chain.addHeaders(testnet.slice(1, 100));
-    chain.getOrphans().length.should.equal(0);
+    chain.getOrphanChunks().length.should.equal(0);
     chain.getAllBranches().length.should.equal(1);
     chain.getOrphanChunks().length.should.equal(0);
     chain.getLongestChain().length.should.equal(100);
@@ -211,7 +211,6 @@ describe('SPV-DASH (addHeaders) add testnet headers out of order', () => {
 
   it('should orphan testnet headers 200 - 300', () => {
     chain.addHeaders(testnet.slice(200, 300));
-    chain.getOrphans().length.should.equal(0);
     chain.getAllBranches().length.should.equal(1);
     chain.getOrphanChunks().length.should.equal(1);
     chain.getLongestChain().length.should.equal(100);
@@ -219,15 +218,13 @@ describe('SPV-DASH (addHeaders) add testnet headers out of order', () => {
 
   it('should orphan testnet headers 400 - 500', () => {
     chain.addHeaders(testnet.slice(400, 500));
-    chain.getOrphans().length.should.equal(0);
-    chain.getAllBranches().length.should.equal(1);
     chain.getOrphanChunks().length.should.equal(2);
+    chain.getAllBranches().length.should.equal(1);
     chain.getLongestChain().length.should.equal(100);
   });
 
   it('should reconnect orphaned chunks (testnet headers 1 - 100 and 200 - 300)', () => {
     chain.addHeaders(testnet.slice(100, 200));
-    chain.getOrphans().length.should.equal(0);
     chain.getAllBranches().length.should.equal(1);
     chain.getOrphanChunks().length.should.equal(1);
     chain.getLongestChain().length.should.equal(300);
@@ -235,7 +232,7 @@ describe('SPV-DASH (addHeaders) add testnet headers out of order', () => {
 
   it('should reconnect orphaned chunks (testnet headers 1 - 300 and 400 - 500)', () => {
     chain.addHeaders(testnet.slice(300, 400));
-    chain.getOrphans().length.should.equal(0);
+    chain.getOrphanChunks().length.should.equal(0);
     chain.getAllBranches().length.should.equal(1);
     chain.getOrphanChunks().length.should.equal(0);
     chain.getLongestChain().length.should.equal(500);
@@ -249,27 +246,27 @@ describe('SPV-DASH (addHeaders) add many headers for mainnet', () => {
 
   it('should add the 1st 500 mainnet headers', () => {
     chain.addHeaders(mainnet.slice(1, 500));
-    chain.getOrphans().length.should.equal(0);
+    chain.getOrphanChunks().length.should.equal(0);
     chain.getAllBranches().length.should.equal(1);
     chain.getLongestChain().length.should.equal(500);
   });
 
   it('should add the next 500 (500 - 1000) mainnet headers', () => {
     chain.addHeaders(mainnet.slice(500, 1000));
-    chain.getOrphans().length.should.equal(0);
+    chain.getOrphanChunks().length.should.equal(0);
     chain.getAllBranches().length.should.equal(1);
     chain.getLongestChain().length.should.equal(1000);
   });
 
   it('should add the next 500 (1000 - 1500) mainnet headers', () => {
     chain.addHeaders(mainnet.slice(1000, 1500));
-    chain.getOrphans().length.should.equal(0);
+    chain.getOrphanChunks().length.should.equal(0);
     chain.getAllBranches().length.should.equal(1);
     chain.getLongestChain().length.should.equal(1500);
   });
 
   it('should not add an invalid header', () => {
-    chain.addHeader(mainnet[499]);
+    should(() => chain.addHeaders([mainnet[499]])).throw();
     chain.getLongestChain().length.should.equal(1500);
   });
 
@@ -297,7 +294,7 @@ describe('SPV-DASH (addHeaders) add mainnet headers out of order', () => {
 
   it('should add the 1st 100 mainnet headers', () => {
     chain.addHeaders(mainnet.slice(1, 100));
-    chain.getOrphans().length.should.equal(0);
+    chain.getOrphanChunks().length.should.equal(0);
     chain.getAllBranches().length.should.equal(1);
     chain.getOrphanChunks().length.should.equal(0);
     chain.getLongestChain().length.should.equal(100);
@@ -305,7 +302,6 @@ describe('SPV-DASH (addHeaders) add mainnet headers out of order', () => {
 
   it('should orphan mainnet headers 200 - 300', () => {
     chain.addHeaders(mainnet.slice(200, 300));
-    chain.getOrphans().length.should.equal(0);
     chain.getAllBranches().length.should.equal(1);
     chain.getOrphanChunks().length.should.equal(1);
     chain.getLongestChain().length.should.equal(100);
@@ -313,7 +309,6 @@ describe('SPV-DASH (addHeaders) add mainnet headers out of order', () => {
 
   it('should orphan mainnet headers 400 - 500', () => {
     chain.addHeaders(mainnet.slice(400, 500));
-    chain.getOrphans().length.should.equal(0);
     chain.getAllBranches().length.should.equal(1);
     chain.getOrphanChunks().length.should.equal(2);
     chain.getLongestChain().length.should.equal(100);
@@ -321,7 +316,6 @@ describe('SPV-DASH (addHeaders) add mainnet headers out of order', () => {
 
   it('should reconnect orphaned chunks (mainnet headers 1 - 100 and 200 - 300)', () => {
     chain.addHeaders(mainnet.slice(100, 200));
-    chain.getOrphans().length.should.equal(0);
     chain.getAllBranches().length.should.equal(1);
     chain.getOrphanChunks().length.should.equal(1);
     chain.getLongestChain().length.should.equal(300);
@@ -329,7 +323,6 @@ describe('SPV-DASH (addHeaders) add mainnet headers out of order', () => {
 
   it('should reconnect orphaned chunks (mainnet headers 1 - 300 and 400 - 500)', () => {
     chain.addHeaders(mainnet.slice(300, 400));
-    chain.getOrphans().length.should.equal(0);
     chain.getAllBranches().length.should.equal(1);
     chain.getOrphanChunks().length.should.equal(0);
     chain.getLongestChain().length.should.equal(500);
