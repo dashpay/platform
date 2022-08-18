@@ -334,7 +334,7 @@ enable = true
 wal-file = "data/cs.wal/wal"
 
 # How many blocks are inspected in order to determine if we need to create an additional proof block.
-create-proof-block-range = 1
+create-proof-block-range = 0
 # How long we wait for a proposal block before prevoting nil
 timeout-propose = "3s"
 # How much timeout_propose increases with each round
