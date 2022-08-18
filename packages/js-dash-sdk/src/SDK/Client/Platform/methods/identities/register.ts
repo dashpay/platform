@@ -54,6 +54,7 @@ export default async function register(
       await wait(100);
 
       registeredIdentity = await this.identities.get(identity.getId());
+
       attempt++;
     }
 
