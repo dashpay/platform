@@ -18,7 +18,7 @@ describe('BlockHeadersProvider - unit', () => {
       hashesByHeight: {
         0: '0x000000001',
       },
-      flush: this.sinon.spy(),
+      reset: this.sinon.spy(),
     });
 
     const blockHeadersReader = new EventEmitter();
@@ -55,11 +55,6 @@ describe('BlockHeadersProvider - unit', () => {
       expect(blockHeadersReader.readHistorical)
         .to.have.been.calledWith(1, 5);
       expect(blockHeadersProvider.state).to.equal(BlockHeadersProvider.STATES.HISTORICAL_SYNC);
-    });
-
-    it('should flush spv chain in case header for the specified height not found', async () => {
-      await blockHeadersProvider.readHistorical(2, 5);
-      expect(blockHeadersProvider.spvChain.flush).to.have.been.calledOnce();
     });
 
     it('should not allow running historical sync if already running', async () => {
@@ -150,9 +145,10 @@ describe('BlockHeadersProvider - unit', () => {
   });
 
   describe('#ensureChainRoot', () => {
-    it('should flush SPV chain in case header at specified height is missing', async () => {
-      blockHeadersProvider.ensureChainRoot(1);
-      expect(blockHeadersProvider.spvChain.flush).to.have.been.calledOnce();
+    it('should reset SPV chain in case header at specified height is missing', async () => {
+      blockHeadersProvider.ensureChainRoot(2);
+      expect(blockHeadersProvider.spvChain.reset)
+        .to.have.been.calledOnceWith(2);
     });
   });
 

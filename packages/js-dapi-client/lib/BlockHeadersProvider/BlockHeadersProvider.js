@@ -2,6 +2,7 @@ const EventEmitter = require('events');
 const { SpvChain, SPVError } = require('@dashevo/dash-spv');
 
 const BlockHeadersReader = require('./BlockHeadersReader');
+const DAPIStream = require('../transport/DAPIStream');
 // const DAPIStream = require('../transport/DAPIStream');
 
 /**
@@ -71,7 +72,7 @@ class BlockHeadersProvider extends EventEmitter {
 
   /**
    *
-   * @param spvChain
+   * @param {SpvChain} spvChain
    */
   setSpvChain(spvChain) {
     this.spvChain = spvChain;
@@ -82,22 +83,31 @@ class BlockHeadersProvider extends EventEmitter {
    */
   initReader() {
     if (!this.blockHeadersReader) {
+      const createContinuousSyncStream = (fromBlockHeight) => DAPIStream
+        .create(
+          this.coreMethods.subscribeToBlockHeadersWithChainLocks,
+        )({
+          fromBlockHeight,
+        });
+
+      const createHistoricalSyncStream = (fromBlockHeight, count) => {
+        const { subscribeToBlockHeadersWithChainLocks } = this.coreMethods;
+        return subscribeToBlockHeadersWithChainLocks({
+          fromBlockHeight,
+          count,
+        });
+      };
+
       this.blockHeadersReader = new BlockHeadersReader(
         {
           coreMethods: this.coreMethods,
           maxParallelStreams: this.options.maxParallelStreams,
           targetBatchSize: this.options.targetBatchSize,
           maxRetries: this.options.maxRetries,
+          createContinuousSyncStream,
+          createHistoricalSyncStream,
         },
       );
-
-      // const stream = await DAPIStream
-      //   .create(
-      //     this.coreMethods.subscribeToBlockHeadersWithChainLocks,
-      //     { reconnectTimeoutDelay: 5000 }, // TODO: remove after testing is done
-      //   )({
-      //     fromBlockHeight,
-      //   });
     }
 
     this.blockHeadersReader.on(BlockHeadersReader.EVENTS.BLOCK_HEADERS, this.handleHeaders);
@@ -111,9 +121,10 @@ class BlockHeadersProvider extends EventEmitter {
    * @param height
    */
   ensureChainRoot(height) {
+    const prevHeaderHeight = height - 1;
     // Flush spv chain in case header at specified height was not found
-    if (!this.spvChain.hashesByHeight[height]) {
-      this.spvChain.flush();
+    if (!this.spvChain.hashesByHeight[prevHeaderHeight]) {
+      this.spvChain.reset(height);
     }
   }
 
@@ -135,7 +146,7 @@ class BlockHeadersProvider extends EventEmitter {
 
     this.initReader();
 
-    this.ensureChainRoot(fromBlockHeight - 1);
+    this.ensureChainRoot(fromBlockHeight);
 
     this.blockHeadersReader.once(BlockHeadersReader.EVENTS.HISTORICAL_DATA_OBTAINED, () => {
       this.emit(EVENTS.HISTORICAL_DATA_OBTAINED);

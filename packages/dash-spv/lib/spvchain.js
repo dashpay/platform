@@ -342,6 +342,16 @@ const SpvChain = class {
     return false;
   }
 
+  reset(fromBlockHeight) {
+    this.allBranches = [];
+    this.orphanChunks = [];
+    this.prunedHeaders = [];
+    this.hashesByHeight = {};
+    this.heightByHash = {};
+    this.orphansHashes = new Set();
+    this.startBlockHeight = fromBlockHeight;
+  }
+
   /**
    * adds an array of valid headers to the longest spv chain.
    * If they cannot be connected to last tip they get temporarily

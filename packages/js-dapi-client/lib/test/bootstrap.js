@@ -20,4 +20,16 @@ afterEach(function afterEach() {
   this.sinon.restore();
 });
 
+before(function before() {
+  if (!this.sinon) {
+    this.sinon = sinon.createSandbox();
+  } else {
+    this.sinon.restore();
+  }
+});
+
+after(function after() {
+  this.sinon.restore();
+});
+
 global.expect = expect;
