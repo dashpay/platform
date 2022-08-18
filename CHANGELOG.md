@@ -1,3 +1,27 @@
+## [0.23.0-dev.7](https://github.com/dashevo/platform/compare/v0.23.0-dev.6...v0.23.0-dev.7) (2022-08-18)
+
+
+### Bug Fixes
+
+* DAPI client requests one local single node only ([#479](https://github.com/dashevo/platform/issues/479))
+* **dapi-client:** A.metadata.get is not a function ([#492](https://github.com/dashevo/platform/issues/492))
+* **dapi-clinet:** node can bed marked as banned on retriable error ([#482](https://github.com/dashevo/platform/issues/482))
+* **dashmate:** docker undefined error ([#480](https://github.com/dashevo/platform/issues/480))
+* **dashmate:** gRPC stream timeout ([#481](https://github.com/dashevo/platform/issues/481))
+* infinite block production due to fees distribution ([#484](https://github.com/dashevo/platform/issues/484))
+* **sdk:** cannot read properties of null (reading 'getMetadata') ([#488](https://github.com/dashevo/platform/issues/488))
+* **test-suite:** invalid transaction: Missing inputs ([#494](https://github.com/dashevo/platform/issues/494))
+
+
+### Miscellaneous Chores
+
+* **dashmate:** update Core to 18.0.0-rc.12
+
+
+### Build System
+
+* new node alpine image breaks package builds ([#493](https://github.com/dashevo/platform/issues/493))
+
 ## [0.23.0-dev.6](https://github.com/dashevo/platform/compare/v0.23.0-dev.5...v0.23.0-dev.6) (2022-08-12)
 
 
