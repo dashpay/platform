@@ -1,9 +1,8 @@
 const EventEmitter = require('events');
 const { SpvChain, SPVError } = require('@dashevo/dash-spv');
-const { Block } = require('@dashevo/dashcore-lib');
 
 const BlockHeadersReader = require('./BlockHeadersReader');
-const DAPIStream = require('../transport/DAPIStream');
+// const DAPIStream = require('../transport/DAPIStream');
 
 /**
  * @typedef {BlockHeadersProviderOptions} BlockHeadersProviderOptions
@@ -81,7 +80,7 @@ class BlockHeadersProvider extends EventEmitter {
   /**
    * @private
    */
-  ensureReader() {
+  initReader() {
     if (!this.blockHeadersReader) {
       this.blockHeadersReader = new BlockHeadersReader(
         {
@@ -99,22 +98,22 @@ class BlockHeadersProvider extends EventEmitter {
       //   )({
       //     fromBlockHeight,
       //   });
-
-      this.blockHeadersReader.on(BlockHeadersReader.EVENTS.BLOCK_HEADERS, this.handleHeaders);
-      this.blockHeadersReader.on(BlockHeadersReader.EVENTS.ERROR, this.handleError);
     }
+
+    this.blockHeadersReader.on(BlockHeadersReader.EVENTS.BLOCK_HEADERS, this.handleHeaders);
+    this.blockHeadersReader.on(BlockHeadersReader.EVENTS.ERROR, this.handleError);
   }
 
   /**
+   * Checks whether spv chain has header at specified height and flushes chains if not
+   *
+   * @private
    * @param height
-   * @returns {Promise<void>}
    */
-  async ensureChainRoot(height) {
+  ensureChainRoot(height) {
+    // Flush spv chain in case header at specified height was not found
     if (!this.spvChain.hashesByHeight[height]) {
-      // TODO: implement getHeaderByHeight
-      const rawBlock = await this.coreMethods.getBlockByHeight(height);
-      const block = new Block(rawBlock);
-      this.spvChain.makeNewChain(block.header, height);
+      this.spvChain.flush();
     }
   }
 
@@ -134,9 +133,9 @@ class BlockHeadersProvider extends EventEmitter {
       throw new Error(`BlockHeaderProvider can not read historical data while being in ${this.state} state.`);
     }
 
-    this.ensureReader();
+    this.initReader();
 
-    await this.ensureChainRoot(fromBlockHeight - 1);
+    this.ensureChainRoot(fromBlockHeight - 1);
 
     this.blockHeadersReader.once(BlockHeadersReader.EVENTS.HISTORICAL_DATA_OBTAINED, () => {
       this.emit(EVENTS.HISTORICAL_DATA_OBTAINED);
@@ -152,13 +151,20 @@ class BlockHeadersProvider extends EventEmitter {
   }
 
   async startContinuousSync(fromBlockHeight) {
-    this.ensureReader();
-    await this.ensureChainRoot(fromBlockHeight);
+    if (!this.coreMethods) {
+      throw new Error('Core methods have not been provided. Please use "setCoreMethods"');
+    }
+
+    if (this.state !== STATES.IDLE) {
+      throw new Error(`BlockHeaderProvider can not sync continuous data while being in ${this.state} state.`);
+    }
+
+    this.initReader();
+    this.ensureChainRoot(fromBlockHeight);
     await this.blockHeadersReader.subscribeToNew(fromBlockHeight);
     this.state = STATES.CONTINUOUS_SYNC;
   }
 
-  // TODO: write tests
   async stop() {
     if (this.state === STATES.IDLE) {
       return;
@@ -169,7 +175,7 @@ class BlockHeadersProvider extends EventEmitter {
       this.blockHeadersReader
         .removeAllListeners(BlockHeadersReader.EVENTS.HISTORICAL_DATA_OBTAINED);
     } else if (this.state === STATES.CONTINUOUS_SYNC) {
-      this.blockHeadersReader.stopContinuousSync();
+      this.blockHeadersReader.unsubscribeFromNew();
     }
 
     this.blockHeadersReader.removeListener(BlockHeadersReader.EVENTS.ERROR, this.handleError);
@@ -189,13 +195,14 @@ class BlockHeadersProvider extends EventEmitter {
 
   /**
    * @private
-   * @param headers
-   * @param headHeight
+   * @param headersData
    * @param reject
    */
-  handleHeaders(headers, headHeight, reject) {
+  handleHeaders(headersData, reject) {
+    const { headers, headHeight } = headersData;
+
     try {
-      const headersAdded = this.spvChain.addHeaders(headers);
+      const headersAdded = this.spvChain.addHeaders(headers, headHeight);
 
       if (headersAdded.length) {
         // Calculate amount of removed headers in order to properly adjust head height
@@ -213,6 +220,7 @@ class BlockHeadersProvider extends EventEmitter {
 }
 
 BlockHeadersProvider.EVENTS = EVENTS;
+BlockHeadersProvider.STATES = STATES;
 BlockHeadersProvider.defaultOptions = defaultOptions;
 
 module.exports = BlockHeadersProvider;

@@ -350,7 +350,7 @@ const SpvChain = class {
    * @param {Object[]|string[]|buffer[]} headers
    * @return {BlockHeader[]}
    */
-  addHeaders(headers) {
+  addHeaders(headers, headHeight) {
     // TODO: fix. `addHeader` function uses partially implemented
     // reorg functionality and throws an error
     // if (headers.length === 1) {
