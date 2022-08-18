@@ -212,7 +212,8 @@ describe('subscribeToBlockHeadersWithChainLocksHandlerFactory', () => {
       satoshis: 1000,
     });
 
-    await dapiClient.core.broadcastTransaction(transaction.toBuffer());
+    await account.broadcastTransaction(transaction);
+
     // Wait for stream ending
     while (!streamEnded) {
       if (streamError) {
