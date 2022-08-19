@@ -2406,6 +2406,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["@dashevo/dark-gravity-wave", "npm:1.1.1"],
             ["@dashevo/dash-util", "npm:2.0.3"],
             ["@dashevo/dashcore-lib", "npm:0.19.40"],
+            ["chai", "npm:4.3.6"],
             ["eslint", "npm:7.32.0"],
             ["eslint-config-airbnb-base", "virtual:595d7482cc8ddf98ee6aef33fc48b46393554ab5f17f851ef62e6e39315e53666c3e66226b978689aa0bc7f1e83a03081511a21db1c381362fe67614887077f9#npm:14.2.1"],
             ["eslint-plugin-import", "virtual:595d7482cc8ddf98ee6aef33fc48b46393554ab5f17f851ef62e6e39315e53666c3e66226b978689aa0bc7f1e83a03081511a21db1c381362fe67614887077f9#npm:2.25.3"],
@@ -6355,6 +6356,20 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["check-error", "npm:1.0.2"],
             ["deep-eql", "npm:3.0.1"],
             ["get-func-name", "npm:2.0.0"],
+            ["pathval", "npm:1.1.1"],
+            ["type-detect", "npm:4.0.8"]
+          ],
+          "linkType": "HARD",
+        }],
+        ["npm:4.3.6", {
+          "packageLocation": "./.yarn/cache/chai-npm-4.3.6-dba90e4b0b-acff93fd53.zip/node_modules/chai/",
+          "packageDependencies": [
+            ["chai", "npm:4.3.6"],
+            ["assertion-error", "npm:1.1.0"],
+            ["check-error", "npm:1.0.2"],
+            ["deep-eql", "npm:3.0.1"],
+            ["get-func-name", "npm:2.0.0"],
+            ["loupe", "npm:2.3.4"],
             ["pathval", "npm:1.1.1"],
             ["type-detect", "npm:4.0.8"]
           ],
@@ -12562,6 +12577,16 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           "packageLocation": "./.yarn/cache/long-npm-5.2.0-bbbd23a9e6-37aa4e67b9.zip/node_modules/long/",
           "packageDependencies": [
             ["long", "npm:5.2.0"]
+          ],
+          "linkType": "HARD",
+        }]
+      ]],
+      ["loupe", [
+        ["npm:2.3.4", {
+          "packageLocation": "./.yarn/cache/loupe-npm-2.3.4-2067703c8d-5af91db61a.zip/node_modules/loupe/",
+          "packageDependencies": [
+            ["loupe", "npm:2.3.4"],
+            ["get-func-name", "npm:2.0.0"]
           ],
           "linkType": "HARD",
         }]

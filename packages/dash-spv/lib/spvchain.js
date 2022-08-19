@@ -5,27 +5,34 @@ const SPVError = require('./errors/SPVError');
 
 const SpvChain = class {
   // TODO: add startBlockHeight as well
-  constructor(chainType, confirms = 100, startBlock = null, startBlockHeight = 0) {
-    this.root = null;
-    this.allBranches = [];
-    this.orphanBlocks = [];
-    this.orphanChunks = [];
+  constructor(chainType, confirms = 100, startBlock, startBlockHeight) {
     this.confirmsBeforeFinal = confirms;
+
+    this.reset(startBlockHeight);
     this.init(chainType, startBlock);
-    this.prunedHeaders = [];
-    this.startBlockHeight = startBlockHeight;
+
     // TODO: test
     this.hashesByHeight = {
-      [startBlockHeight]: this.root.hash,
+      [this.startBlockHeight]: this.root.hash,
     };
     this.heightByHash = {
-      [this.root.hash]: startBlockHeight,
+      [this.root.hash]: this.startBlockHeight,
     };
-    /**
-     * Index set to check for duplicates
-     * @type {Set<any>}
-     */
+
+    // TODO: legacy - remove this
+    this.orphanBlocks = [];
+  }
+
+  reset(fromBlockHeight = 0) {
+    this.root = null;
+    this.allBranches = [[]];
+    this.orphanChunks = [];
+    this.prunedHeaders = [];
+
+    this.hashesByHeight = {};
+    this.heightByHash = {};
     this.orphansHashes = new Set();
+    this.startBlockHeight = fromBlockHeight < 0 ? 0 : fromBlockHeight;
   }
 
   init(chainType, startBlock) {
@@ -191,7 +198,10 @@ const SpvChain = class {
 
     for (let i = 0; i < this.orphanChunks.length; i += 1) {
       const chunk = this.orphanChunks[i];
-      if (this.getTipHash() === utils.getCorrectedHash(chunk[0].prevHash)) {
+      const tipHash = this.getTipHash();
+      const chunkPrevHash = utils.getCorrectedHash(chunk[0].prevHash);
+
+      if (tipHash === chunkPrevHash) {
         this.appendHeadersToLongestChain(chunk);
         chunk.forEach((header) => {
           this.orphansHashes.delete(header.hash);
@@ -282,7 +292,8 @@ const SpvChain = class {
    * @return {string} hash
    */
   getTipHash() {
-    return this.getLongestChain().slice(-1)[0].hash;
+    const tip = this.getTipHeader();
+    return tip && tip.hash;
   }
 
   /**
@@ -343,16 +354,6 @@ const SpvChain = class {
   //   return false;
   // }
 
-  reset(fromBlockHeight) {
-    this.allBranches = [];
-    this.orphanChunks = [];
-    this.prunedHeaders = [];
-    this.hashesByHeight = {};
-    this.heightByHash = {};
-    this.orphansHashes = new Set();
-    this.startBlockHeight = fromBlockHeight;
-  }
-
   /**
    * adds an array of valid headers to the longest spv chain.
    * If they cannot be connected to last tip they get temporarily
@@ -362,19 +363,14 @@ const SpvChain = class {
    * @return {BlockHeader[]}
    */
   addHeaders(headers, headHeight) {
-    // TODO: fix. `addHeader` function uses partially implemented
-    // reorg functionality and throws an error
-    // if (headers.length === 1) {
-    //   if (!this.addHeader(headers[0])) {
-    //     throw new Error('Some headers are invalid');
-    //   } else {
-    //     return true;
-    //   }
-    // }
     const normalizedHeaders = headers.map((h) => utils.normalizeHeader(h));
+    if (headHeight === this.startBlockHeight) {
+      this.makeNewChain(normalizedHeaders[0], headHeight);
+    }
+
     const tip = this.getTipHeader();
     // Handle 1 block intersection of batches
-    if (tip.hash === normalizedHeaders[0].hash) {
+    if (tip && tip.hash === normalizedHeaders[0].hash) {
       normalizedHeaders.splice(0, 1);
     }
 
@@ -383,7 +379,7 @@ const SpvChain = class {
       return [];
     }
 
-    const isOrphan = !SpvChain.isParentChild(normalizedHeaders[0], tip);
+    const isOrphan = tip ? !SpvChain.isParentChild(normalizedHeaders[0], tip) : true;
 
     const allValid = normalizedHeaders.reduce(
       (acc, header, index, array) => {
