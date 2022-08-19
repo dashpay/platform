@@ -1,4 +1,5 @@
-const generateRandomIdentifier = require('../../../lib/test/utils/generateRandomIdentifier');
+// const generateRandomIdentifier = require('../../../lib/test/utils/generateRandomIdentifier');
+const generateRandomIdentifierAsync = require('../../../lib/test/utils/generateRandomIdentifierAsync');
 
 const IdentityPublicKey = require('../../../lib/identity/IdentityPublicKey');
 const Metadata = require('../../../lib/Metadata');
@@ -15,10 +16,10 @@ describe('Identity', () => {
   let encodeMock;
   let metadataFixture;
 
-  beforeEach(function beforeEach() {
+  beforeEach(async function beforeEach() {
     rawIdentity = {
       protocolVersion: protocolVersion.latestVersion,
-      id: generateRandomIdentifier(),
+      id: await generateRandomIdentifierAsync(),
       publicKeys: [
         {
           id: 0,

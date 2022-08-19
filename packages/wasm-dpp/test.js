@@ -1,7 +1,9 @@
-let load_dpp = require('./dist');
+const { default: load_dpp } = require('./dist');
 
 async function main() {
-    let Dpp = await load_dpp.default();
+    let Dpp = await load_dpp();
+
+    console.dir(Dpp);
 
     let { Identifier } = Dpp;
 

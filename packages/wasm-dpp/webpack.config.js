@@ -26,13 +26,13 @@ module.exports = {
     // experiments: {
     //     asyncWebAssembly: true
     // },
-    resolve: {
-        extensions: ['.wasm']
-    },
-    module: {
-        rules: [{
-            test: /\.wasm$/,
-            type: "asset/inline",
-        }],
-    }
+    // resolve: {
+    //     extensions: ['.wasm']
+    // },
+    // module: {
+    //     rules: [{
+    //         test: /\.wasm$/,
+    //         type: "asset/inline",
+    //     }],
+    // }
 };
