@@ -179,12 +179,9 @@ function platformHandlersFactory(
     rpcClient,
   );
 
-  const waitForHeight = waitForHeightFactory(blockchainListener);
-
   const waitForTransactionToBeProvable = waitForTransactionToBeProvableFactory(
     waitForTransactionResult,
     getExistingTransactionResult,
-    waitForHeight,
   );
 
   const waitForStateTransitionResultHandler = waitForStateTransitionResultHandlerFactory(

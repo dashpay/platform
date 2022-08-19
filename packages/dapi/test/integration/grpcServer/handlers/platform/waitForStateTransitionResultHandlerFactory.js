@@ -30,7 +30,6 @@ const waitForTransactionToBeProvableFactory = require('../../../../../lib/extern
 const waitForTransactionResult = require('../../../../../lib/externalApis/tenderdash/waitForTransactionToBeProvable/waitForTransactionResult');
 
 const waitForStateTransitionResultHandlerFactory = require('../../../../../lib/grpcServer/handlers/platform/waitForStateTransitionResultHandlerFactory');
-const waitForHeightFactory = require('../../../../../lib/externalApis/tenderdash/waitForHeightFactory');
 
 describe('waitForStateTransitionResultHandlerFactory', () => {
   let call;
@@ -190,10 +189,6 @@ describe('waitForStateTransitionResultHandlerFactory', () => {
 
     fetchProofForStateTransition = fetchProofForStateTransitionFactory(driveClientMock);
 
-    const waitForHeight = waitForHeightFactory(
-      blockchainListener,
-    );
-
     transactionNotFoundError = new Error();
 
     transactionNotFoundError.code = -32603;
@@ -204,7 +199,6 @@ describe('waitForStateTransitionResultHandlerFactory', () => {
     waitForTransactionToBeProvable = waitForTransactionToBeProvableFactory(
       waitForTransactionResult,
       getExistingTransactionResult,
-      waitForHeight,
     );
 
     createGrpcErrorFromDriveResponseMock = this.sinon.stub().returns(

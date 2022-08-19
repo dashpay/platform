@@ -10,7 +10,6 @@ describe('waitForTransactionToBeProvableFactory', () => {
   let waitForTransactionResultResponse;
   let getExistingTransactionResultMock;
   let blockchainListenerMock;
-  let waitForHeightMock;
   let hashString;
   let timeout;
   let height;
@@ -35,12 +34,10 @@ describe('waitForTransactionToBeProvableFactory', () => {
       waitForTransactionResultResponse,
     );
 
-    waitForHeightMock = this.sinon.stub().resolves();
 
     waitForTransactionToBeProvable = waitForTransactionToBeProvableFactory(
       waitForTransactionResultMock,
       getExistingTransactionResultMock,
-      waitForHeightMock,
     );
 
     okResult = new TransactionOkResult({}, height, Buffer.alloc(0));
@@ -56,8 +53,6 @@ describe('waitForTransactionToBeProvableFactory', () => {
     getExistingTransactionResultMock.resolves(okResult);
 
     waitForTransactionResultResponse.promise = new Promise(() => {});
-
-    waitForHeightMock.promise = Promise.resolve();
 
     const actualResult = await waitForTransactionToBeProvable(
       blockchainListenerMock,
@@ -76,14 +71,10 @@ describe('waitForTransactionToBeProvableFactory', () => {
       hashString,
     );
 
-    expect(waitForHeightMock).to.be.calledOnceWithExactly(
-      height + 1,
-    );
-
     expect(waitForTransactionResultResponse.detach).to.be.called();
   });
 
-  it('should return existing transaction error result and do not wait for next block', async () => {
+  it('should return existing transaction error result', async () => {
     getExistingTransactionResultMock.resolves(errorResult);
 
     waitForTransactionResultResponse.promise = new Promise(() => {});
@@ -105,12 +96,10 @@ describe('waitForTransactionToBeProvableFactory', () => {
       hashString,
     );
 
-    expect(waitForHeightMock).to.not.be.called();
-
     expect(waitForTransactionResultResponse.detach).to.be.called();
   });
 
-  it('should return upcoming transaction ok result when next block arrived', async () => {
+  it('should return upcoming transaction ok result', async () => {
     getExistingTransactionResultMock.rejects(transactionNotFoundError);
 
     waitForTransactionResultResponse.promise = Promise.resolve(okResult);
@@ -132,14 +121,10 @@ describe('waitForTransactionToBeProvableFactory', () => {
       hashString,
     );
 
-    expect(waitForHeightMock).to.be.calledOnceWithExactly(
-      height + 1,
-    );
-
     expect(waitForTransactionResultResponse.detach).to.not.be.called();
   });
 
-  it('should return upcoming transaction error result and do not wait for next block', async () => {
+  it('should return upcoming transaction error result', async () => {
     getExistingTransactionResultMock.rejects(transactionNotFoundError);
 
     waitForTransactionResultResponse.promise = Promise.resolve(errorResult);
@@ -160,8 +145,6 @@ describe('waitForTransactionToBeProvableFactory', () => {
       blockchainListenerMock,
       hashString,
     );
-
-    expect(waitForHeightMock).to.not.be.called();
 
     expect(waitForTransactionResultResponse.detach).to.not.be.called();
   });
@@ -194,8 +177,6 @@ describe('waitForTransactionToBeProvableFactory', () => {
         blockchainListenerMock,
         hashString,
       );
-
-      expect(waitForHeightMock).to.not.be.called();
 
       expect(waitForTransactionResultResponse.detach).to.be.calledOnce();
     }
