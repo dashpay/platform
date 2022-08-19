@@ -34,7 +34,6 @@ describe('waitForTransactionToBeProvableFactory', () => {
       waitForTransactionResultResponse,
     );
 
-
     waitForTransactionToBeProvable = waitForTransactionToBeProvableFactory(
       waitForTransactionResultMock,
       getExistingTransactionResultMock,

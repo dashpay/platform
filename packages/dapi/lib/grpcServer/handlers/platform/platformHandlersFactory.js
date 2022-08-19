@@ -70,7 +70,6 @@ const getConsensusParamsHandlerFactory = require(
 const fetchProofForStateTransitionFactory = require('../../../externalApis/drive/fetchProofForStateTransitionFactory');
 const waitForTransactionToBeProvableFactory = require('../../../externalApis/tenderdash/waitForTransactionToBeProvable/waitForTransactionToBeProvableFactory');
 const waitForTransactionResult = require('../../../externalApis/tenderdash/waitForTransactionToBeProvable/waitForTransactionResult');
-const waitForHeightFactory = require('../../../externalApis/tenderdash/waitForHeightFactory');
 const getExistingTransactionResultFactory = require('../../../externalApis/tenderdash/waitForTransactionToBeProvable/getExistingTransactionResult');
 const getConsensusParamsFactory = require('../../../externalApis/tenderdash/getConsensusParamsFactory');
 
