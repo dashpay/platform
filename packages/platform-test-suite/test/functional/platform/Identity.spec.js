@@ -509,6 +509,8 @@ describe('Platform', () => {
           },
         );
 
+        await waitForSTPropagated();
+
         identity = await client.platform.identities.get(
           identity.getId(),
         );
