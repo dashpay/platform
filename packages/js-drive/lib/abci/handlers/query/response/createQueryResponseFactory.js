@@ -19,12 +19,11 @@ function createQueryResponseFactory(
    */
   function createQueryResponse(ResponseClass, prove = false) {
     const blockExecutionContext = blockExecutionContextStack.getFirst();
-    const signedBlockExecutionContext = blockExecutionContextStack.getLast();
 
     const {
       height: signedBlockHeight,
       coreChainLockedHeight: signedCoreChainLockedHeight,
-    } = signedBlockExecutionContext.getHeader();
+    } = blockExecutionContext.getHeader();
 
     const response = new ResponseClass();
 

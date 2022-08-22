@@ -22,13 +22,11 @@ const InvalidArgumentAbciError = require('../../errors/InvalidArgumentAbciError'
  *
  * @param {DataContractStoreRepository} signedDataContractRepository
  * @param {createQueryResponse} createQueryResponse
- * @param {BlockExecutionContextStack} blockExecutionContextStack
  * @return {dataContractQueryHandler}
  */
 function dataContractQueryHandlerFactory(
   signedDataContractRepository,
   createQueryResponse,
-  blockExecutionContextStack,
 ) {
   /**
    * @typedef dataContractQueryHandler
@@ -39,11 +37,6 @@ function dataContractQueryHandlerFactory(
    * @return {Promise<ResponseQuery>}
    */
   async function dataContractQueryHandler(params, { id }, request) {
-    // There is no signed state (current committed block height less than 3)
-    if (!blockExecutionContextStack.getLast()) {
-      throw new NotFoundAbciError('Data Contract not found');
-    }
-
     let contractIdIdentifier;
     try {
       contractIdIdentifier = new Identifier(id);

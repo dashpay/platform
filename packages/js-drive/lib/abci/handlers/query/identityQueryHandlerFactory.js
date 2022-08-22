@@ -22,15 +22,11 @@ const InvalidArgumentAbciError = require('../../errors/InvalidArgumentAbciError'
  *
  * @param {IdentityStoreRepository} signedIdentityRepository
  * @param {createQueryResponse} createQueryResponse
- * @param {BlockExecutionContext} blockExecutionContext
- * @param {BlockExecutionContextStack} blockExecutionContextStack
  * @return {identityQueryHandler}
  */
 function identityQueryHandlerFactory(
   signedIdentityRepository,
   createQueryResponse,
-  blockExecutionContext,
-  blockExecutionContextStack,
 ) {
   /**
    * @typedef identityQueryHandler
@@ -41,11 +37,6 @@ function identityQueryHandlerFactory(
    * @return {Promise<ResponseQuery>}
    */
   async function identityQueryHandler(params, { id }, request) {
-    // There is no signed state (current committed block height less than 3)
-    if (!blockExecutionContextStack.getLast()) {
-      throw new NotFoundAbciError('Identity not found');
-    }
-
     let identifier;
     try {
       identifier = new Identifier(id);
