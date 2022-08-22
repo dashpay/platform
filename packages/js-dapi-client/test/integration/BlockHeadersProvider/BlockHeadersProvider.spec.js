@@ -1,22 +1,10 @@
-const { BlockHeader } = require('@dashevo/dashcore-lib');
 const { expect } = require('chai');
 
 const BlockHeadersProvider = require('../../../lib/BlockHeadersProvider/BlockHeadersProvider');
-const BlockHeadersReader = require('../../../lib/BlockHeadersProvider/BlockHeadersReader');
 const BlockHeadersWithChainLocksStreamMock = require('../../../lib/test/mocks/BlockHeadersWithChainLocksStreamMock');
 const mockHeadersChain = require('../../../lib/test/mocks/mockHeadersChain');
 
-const sleep = (time) => new Promise((resolve) => setTimeout(resolve, time));
-const sleepOneTick = () => new Promise((resolve) => {
-  if (typeof setImmediate === 'undefined') {
-    setTimeout(resolve, 10);
-  } else {
-    setImmediate(resolve);
-  }
-});
-
 describe('BlockHeadersProvider - integration', () => {
-  // let coreApiMock;
   let blockHeadersProvider;
   let historicalStreams = [];
   let continuousStream;
