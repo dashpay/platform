@@ -337,6 +337,8 @@ describe('Masternode Reward Shares', () => {
         stateTransition,
       );
 
+      await waitForSTPropagated();
+
       const [storedDocument] = await client.platform.documents.get(
         'masternodeRewardShares.rewardShare',
         { where: [['$id', '==', rewardShare.getId()]] },
