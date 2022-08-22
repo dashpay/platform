@@ -2,7 +2,6 @@ const EventEmitter = require('events');
 const { expect } = require('chai');
 
 const DAPIStream = require('../../../lib/transport/DAPIStream');
-const wait = require('../../../lib/test/utils/wait');
 
 describe('DAPIStream', () => {
   let dapiStream;
