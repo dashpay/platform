@@ -5,8 +5,8 @@ const { createFakeInstantLock } = require('dash/build/src/utils/createFakeIntant
 const { hash } = require('@dashevo/dpp/lib/util/hash');
 const getDataContractFixture = require('../../../lib/test/fixtures/getDataContractFixture');
 const createClientWithFundedWallet = require('../../../lib/test/createClientWithFundedWallet');
-const wait = require('../../../lib/wait');
 const getDAPISeeds = require('../../../lib/test/getDAPISeeds');
+const waitForSTPropagated = require('../../../lib/waitForSTPropagated');
 
 const {
   Essentials: {
@@ -122,9 +122,7 @@ describe('Platform', () => {
       );
 
       // Additional wait time to mitigate testnet latency
-      if (process.env.NETWORK === 'testnet') {
-        await wait(5000);
-      }
+      await waitForSTPropagated();
 
       walletAccount.storage
         .getWalletStore(walletAccount.walletId)
@@ -281,9 +279,7 @@ describe('Platform', () => {
         );
 
         // Additional wait time to mitigate testnet latency
-        if (process.env.NETWORK === 'testnet') {
-          await wait(5000);
-        }
+        await waitForSTPropagated();
       });
 
       it('should be able to get newly created identity', async () => {
@@ -315,9 +311,7 @@ describe('Platform', () => {
         await client.platform.contracts.publish(dataContractFixture, identity);
 
         // Additional wait time to mitigate testnet latency
-        if (process.env.NETWORK === 'testnet') {
-          await wait(5000);
-        }
+        await waitForSTPropagated();
 
         client.getApps().set('customContracts', {
           contractId: dataContractFixture.getId(),
@@ -401,9 +395,7 @@ describe('Platform', () => {
         await client.platform.identities.topUp(identity.getId(), topUpAmount);
 
         // Additional wait time to mitigate testnet latency
-        if (process.env.NETWORK === 'testnet') {
-          await wait(5000);
-        }
+        await waitForSTPropagated();
 
         const identityAfterTopUp = await client.platform.identities.get(
           identity.getId(),
@@ -429,9 +421,7 @@ describe('Platform', () => {
         }, identity);
 
         // Additional wait time to mitigate testnet latency
-        if (process.env.NETWORK === 'testnet') {
-          await wait(5000);
-        }
+        await waitForSTPropagated();
       });
 
       it('should fail to top up an identity with already used asset lock output', async () => {
@@ -462,9 +452,7 @@ describe('Platform', () => {
         );
 
         // Additional wait time to mitigate testnet latency
-        if (process.env.NETWORK === 'testnet') {
-          await wait(5000);
-        }
+        await waitForSTPropagated();
 
         let broadcastError;
 
