@@ -1,4 +1,6 @@
 const { BlockHeader } = require('@dashevo/dashcore-lib');
+const { expect } = require('chai');
+
 const BlockHeadersProvider = require('../../../lib/BlockHeadersProvider/BlockHeadersProvider');
 const BlockHeadersReader = require('../../../lib/BlockHeadersProvider/BlockHeadersReader');
 const BlockHeadersWithChainLocksStreamMock = require('../../../lib/test/mocks/BlockHeadersWithChainLocksStreamMock');
@@ -18,6 +20,7 @@ describe('BlockHeadersProvider - integration', () => {
   let blockHeadersProvider;
   let historicalStreams = [];
   let continuousStream;
+  let sandbox;
 
   const createBlockHeadersProvider = (sinon, opts = {}) => {
     historicalStreams = [];
@@ -60,8 +63,41 @@ describe('BlockHeadersProvider - integration', () => {
       });
     });
 
-    it('one', async () => {
+    beforeEach(function () {
+      this.sinon.spy(blockHeadersProvider, 'emit');
+    });
+
+    it('it should add batches from the tail', async () => {
       await blockHeadersProvider.readHistorical(startFrom, startFrom + headers.length);
+
+      historicalStreams.forEach((stream, i) => {
+        if (i !== 0) {
+          stream.sendHeaders(
+            headers.slice(i * (headers.length / 5), (i + 1) * (headers.length / 5)),
+          );
+          stream.destroy();
+        }
+      });
+
+      const { spvChain } = blockHeadersProvider;
+
+      // Headers added from the tail should be orphaned
+      expect(spvChain.getOrphanChunks()).to.have.length(4);
+      expect(spvChain.getLongestChain()).to.have.length(0);
+      expect(blockHeadersProvider.emit.callCount).to.equal(4);
+      expect(blockHeadersProvider.emit).to
+        .have.been.calledWith(BlockHeadersProvider.EVENTS.CHAIN_UPDATED);
+    });
+
+    it('should add batch from the head and form longest chain', async () => {
+      historicalStreams[0].sendHeaders(headers.slice(0, headers.length / 5));
+      historicalStreams[0].destroy();
+
+      const { spvChain } = blockHeadersProvider;
+      expect(spvChain.getLongestChain({ withPruned: true }))
+        .to.have.length(headers.length);
+      expect(blockHeadersProvider.emit).to
+        .have.been.calledWith(BlockHeadersProvider.EVENTS.HISTORICAL_DATA_OBTAINED);
     });
   });
 
