@@ -538,6 +538,8 @@ describe('Platform', () => {
           update,
         );
 
+        await waitForSTPropagated();
+
         identity = await client.platform.identities.get(
           identity.getId(),
         );
