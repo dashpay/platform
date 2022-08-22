@@ -9,7 +9,6 @@ const {
 const {
   v0: {
     GetDocumentsResponse,
-    ResponseMetadata,
     Proof,
   },
 } = require('@dashevo/dapi-grpc');
@@ -24,7 +23,6 @@ const InvalidQueryError = require('../../../../../lib/document/errors/InvalidQue
 
 const UnavailableAbciError = require('../../../../../lib/abci/errors/UnavailableAbciError');
 const InvalidArgumentAbciError = require('../../../../../lib/abci/errors/InvalidArgumentAbciError');
-const BlockExecutionContextStackMock = require('../../../../../lib/test/mock/BlockExecutionContextStackMock');
 const StorageResult = require('../../../../../lib/storage/StorageResult');
 
 describe('documentQueryHandlerFactory', () => {
@@ -37,7 +35,6 @@ describe('documentQueryHandlerFactory', () => {
   let options;
   let createQueryResponseMock;
   let responseMock;
-  let blockExecutionContextStackMock;
 
   beforeEach(function beforeEach() {
     documents = getDocumentsFixture();
@@ -51,14 +48,10 @@ describe('documentQueryHandlerFactory', () => {
 
     createQueryResponseMock.returns(responseMock);
 
-    blockExecutionContextStackMock = new BlockExecutionContextStackMock(this.sinon);
-    blockExecutionContextStackMock.getLast.returns(true);
-
     documentQueryHandler = documentQueryHandlerFactory(
       fetchSignedDocumentsMock,
       proveSignedDocumentsMock,
       createQueryResponseMock,
-      blockExecutionContextStackMock,
     );
 
     params = {};
@@ -78,24 +71,6 @@ describe('documentQueryHandlerFactory', () => {
       startAfter: data.startAfter,
       where: data.where,
     };
-  });
-
-  it('should return empty response if there is no signed state', async () => {
-    blockExecutionContextStackMock.getLast.returns(null);
-
-    responseMock = new GetDocumentsResponse();
-
-    responseMock.setMetadata(new ResponseMetadata());
-
-    const result = await documentQueryHandler(params, data, {});
-
-    expect(createQueryResponseMock).to.have.not.been.called();
-    expect(fetchSignedDocumentsMock).to.have.not.been.called();
-    expect(proveSignedDocumentsMock).to.have.not.been.called();
-    expect(result).to.be.an.instanceof(ResponseQuery);
-    expect(result.code).to.equal(0);
-
-    expect(result.value).to.deep.equal(responseMock.serializeBinary());
   });
 
   it('should return serialized documents', async () => {
