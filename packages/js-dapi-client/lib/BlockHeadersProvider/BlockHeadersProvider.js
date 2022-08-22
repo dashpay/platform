@@ -114,6 +114,11 @@ class BlockHeadersProvider extends EventEmitter {
     this.blockHeadersReader.on(BlockHeadersReader.EVENTS.ERROR, this.handleError);
   }
 
+  destroyReader() {
+    this.removeReaderListeners();
+    this.blockHeadersReader = null;
+  }
+
   /**
    * Checks whether spv chain has header at specified height and flushes chains if not
    *
@@ -149,6 +154,8 @@ class BlockHeadersProvider extends EventEmitter {
 
     this.blockHeadersReader.once(BlockHeadersReader.EVENTS.HISTORICAL_DATA_OBTAINED, () => {
       this.emit(EVENTS.HISTORICAL_DATA_OBTAINED);
+      this.removeReaderListeners();
+
       this.state = STATES.IDLE;
     });
 
@@ -182,17 +189,11 @@ class BlockHeadersProvider extends EventEmitter {
 
     if (this.state === STATES.HISTORICAL_SYNC) {
       this.blockHeadersReader.stopReadingHistorical();
-      this.blockHeadersReader
-        .removeAllListeners(BlockHeadersReader.EVENTS.HISTORICAL_DATA_OBTAINED);
     } else if (this.state === STATES.CONTINUOUS_SYNC) {
       this.blockHeadersReader.unsubscribeFromNew();
     }
 
-    this.blockHeadersReader.removeListener(BlockHeadersReader.EVENTS.ERROR, this.handleError);
-    this.blockHeadersReader
-      .removeListener(BlockHeadersReader.EVENTS.BLOCK_HEADERS, this.handleHeaders);
-
-    this.blockHeadersReader = null;
+    this.destroyReader();
 
     this.state = STATES.IDLE;
 
@@ -200,6 +201,7 @@ class BlockHeadersProvider extends EventEmitter {
   }
 
   handleError(e) {
+    this.destroyReader();
     this.emit(EVENTS.ERROR, e);
   }
 
@@ -226,6 +228,14 @@ class BlockHeadersProvider extends EventEmitter {
         this.handleError(e);
       }
     }
+  }
+
+  removeReaderListeners() {
+    this.blockHeadersReader.removeListener(BlockHeadersReader.EVENTS.ERROR, this.handleError);
+    this.blockHeadersReader
+      .removeListener(BlockHeadersReader.EVENTS.BLOCK_HEADERS, this.handleHeaders);
+    this.blockHeadersReader
+      .removeAllListeners(BlockHeadersReader.EVENTS.HISTORICAL_DATA_OBTAINED);
   }
 }
 

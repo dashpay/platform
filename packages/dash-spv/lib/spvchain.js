@@ -98,21 +98,6 @@ const SpvChain = class {
     this.setAllBranches();
   }
 
-  /**
-   * @param {BlockHeader} header
-   * @param {number} height
-   */
-  makeNewChain(header, height) {
-    this.allBranches = [[header]];
-    this.startBlockHeight = height;
-    this.hashesByHeight = {
-      [height]: header.hash,
-    };
-    this.heightByHash = {
-      [header.hash]: height,
-    };
-  }
-
   /** @private */
   checkPruneBlocks() {
     const longestChain = this.getLongestChain();
@@ -364,9 +349,6 @@ const SpvChain = class {
    */
   addHeaders(headers, headHeight) {
     const normalizedHeaders = headers.map((h) => utils.normalizeHeader(h));
-    if (headHeight === this.startBlockHeight) {
-      this.makeNewChain(normalizedHeaders[0], headHeight);
-    }
 
     const tip = this.getTipHeader();
     // Handle 1 block intersection of batches
@@ -379,7 +361,8 @@ const SpvChain = class {
       return [];
     }
 
-    const isOrphan = tip ? !SpvChain.isParentChild(normalizedHeaders[0], tip) : true;
+    const isOrphan = tip ? !SpvChain.isParentChild(normalizedHeaders[0], tip)
+      : headHeight !== this.startBlockHeight;
 
     const allValid = normalizedHeaders.reduce(
       (acc, header, index, array) => {

@@ -20,7 +20,6 @@ describe('BlockHeadersProvider - integration', () => {
   let blockHeadersProvider;
   let historicalStreams = [];
   let continuousStream;
-  let sandbox;
 
   const createBlockHeadersProvider = (sinon, opts = {}) => {
     historicalStreams = [];
@@ -47,179 +46,114 @@ describe('BlockHeadersProvider - integration', () => {
     });
   };
 
-  describe('#readHistorical', () => {
-    // Start from height bigger than the first block
-    // because we need to make sure that spv chain could bootstrap itself
-    // from any header
-    const startFrom = 10;
-    let headers;
+  // Start from height bigger than the first block
+  // because we need to make sure that spv chain could bootstrap itself
+  // from any header
+  const fromBlockHeight = 10;
+  const numHeaders = 500;
+  const newHeadersAmount = 2;
+  const numStreams = 5;
+  const historicalHeadersAmount = numHeaders - newHeadersAmount;
 
-    before(async function () {
-      const numHeaders = 500;
-      headers = mockHeadersChain('testnet', numHeaders);
+  // -1 because fromBlockHeight is inclusive
+  const chainHeight = fromBlockHeight + historicalHeadersAmount - 1;
+  const historicalBatchSize = Math.round(historicalHeadersAmount / numStreams);
 
-      createBlockHeadersProvider(this.sinon, {
-        targetBatchSize: numHeaders / 5,
-      });
-    });
+  let headers;
 
-    beforeEach(function () {
-      this.sinon.spy(blockHeadersProvider, 'emit');
-    });
+  before(async function () {
+    headers = mockHeadersChain('testnet', numHeaders);
 
-    it('it should add batches from the tail', async () => {
-      await blockHeadersProvider.readHistorical(startFrom, startFrom + headers.length);
-
-      historicalStreams.forEach((stream, i) => {
-        if (i !== 0) {
-          stream.sendHeaders(
-            headers.slice(i * (headers.length / 5), (i + 1) * (headers.length / 5)),
-          );
-          stream.destroy();
-        }
-      });
-
-      const { spvChain } = blockHeadersProvider;
-
-      // Headers added from the tail should be orphaned
-      expect(spvChain.getOrphanChunks()).to.have.length(4);
-      expect(spvChain.getLongestChain()).to.have.length(0);
-      expect(blockHeadersProvider.emit.callCount).to.equal(4);
-      expect(blockHeadersProvider.emit).to
-        .have.been.calledWith(BlockHeadersProvider.EVENTS.CHAIN_UPDATED);
-    });
-
-    it('should add batch from the head and form longest chain', async () => {
-      historicalStreams[0].sendHeaders(headers.slice(0, headers.length / 5));
-      historicalStreams[0].destroy();
-
-      const { spvChain } = blockHeadersProvider;
-      expect(spvChain.getLongestChain({ withPruned: true }))
-        .to.have.length(headers.length);
-      expect(blockHeadersProvider.emit).to
-        .have.been.calledWith(BlockHeadersProvider.EVENTS.HISTORICAL_DATA_OBTAINED);
+    createBlockHeadersProvider(this.sinon, {
+      targetBatchSize: historicalBatchSize,
     });
   });
 
-  describe('#startContinuousSync', () => {
-
+  beforeEach(function () {
+    this.sinon.spy(blockHeadersProvider, 'emit');
   });
 
-  it.skip('should obtain all block headers and validate them against the SPV chain', async () => {
-    await blockHeadersProvider.start();
+  it('should read first historical batches from the tail', async () => {
+    await blockHeadersProvider.readHistorical(fromBlockHeight, chainHeight);
 
-    let longestChain = blockHeadersProvider.spvChain.getLongestChain();
+    historicalStreams.forEach((stream, i) => {
+      if (i !== 0) {
+        const from = i * historicalBatchSize;
+        let to = (i + 1) * historicalBatchSize;
+        to = to > historicalHeadersAmount ? historicalHeadersAmount : to;
 
-    while (longestChain.length !== mockedHeaders.length + 1) {
-      // eslint-disable-next-line no-await-in-loop
-      await sleep(100);
-      longestChain = blockHeadersProvider.spvChain.getLongestChain();
-    }
-
-    // slice(1): ignore genesis block
-    expect(longestChain.slice(1).map((header) => header.hash))
-      .to.deep.equal(mockedHeaders.map((header) => header.hash));
-  });
-
-  it.skip('should retry to obtain historical headers in case of SPV failure', async () => {
-    blockHeadersProvider.start();
-
-    await sleepOneTick();
-
-    // Perform MITM attack :)
-    const badHeader = mockedHeaders[0].toObject();
-    delete badHeader.hash;
-    badHeader.prevHash = Buffer.from('00000bafbc94add76cb75e2ec92894837288a481e5c005f6563d91623bf8bc22', 'hex');
-
-    blockHeadersStream.push({
-      getBlockHeaders: () => ({
-        getHeadersList: () => [new BlockHeader(badHeader).toBuffer()],
-      }),
+        stream.sendHeaders(headers.slice(from, to));
+        stream.destroy();
+      }
     });
 
-    // Continue waiting for the recovery
-    let longestChain = blockHeadersProvider.spvChain.getLongestChain();
+    const numBatches = headers.length / historicalBatchSize;
 
-    while (longestChain.length !== mockedHeaders.length + 1) {
-      // eslint-disable-next-line no-await-in-loop
-      await sleep(100);
-      longestChain = blockHeadersProvider.spvChain.getLongestChain();
-    }
+    const { spvChain } = blockHeadersProvider;
 
-    // slice(1): ignore genesis block
-    expect(longestChain.slice(1).map((header) => header.hash))
-      .to.deep.equal(mockedHeaders.map((header) => header.hash));
-  });
+    // Headers added from the tail should be orphaned
+    expect(spvChain.getOrphanChunks()).to.have.length(4);
+    expect(spvChain.getLongestChain()).to.have.length(0);
+    expect(blockHeadersProvider.emit.callCount).to.equal(4);
+    expect(blockHeadersProvider.emit)
+      .to.have.been.calledWith(BlockHeadersProvider.EVENTS.CHAIN_UPDATED);
 
-  it.skip('should throw error in case core methods are missing', async () => {
-    blockHeadersProvider.setCoreMethods(null);
-    try {
-      await blockHeadersProvider.start();
-    } catch (e) {
-      expect(e).to.be.instanceOf(Error);
+    for (let i = 1; i < numBatches; i += 1) {
+      const { args } = blockHeadersProvider.emit.getCall(i - 1);
+      const emittedHeaders = args[1].map((header) => header.toString());
+
+      const from = i * historicalBatchSize;
+      let to = historicalBatchSize * (i + 1);
+      to = to > historicalHeadersAmount ? historicalHeadersAmount : to;
+
+      const expectedHeaders = headers
+        .slice(from, to)
+        .map((header) => header.toString());
+      const batchHeadHeight = fromBlockHeight + i * historicalBatchSize;
+
+      expect(emittedHeaders).to.deep.equal(expectedHeaders);
+      expect(args[2]).to.equal(batchHeadHeight);
     }
   });
 
-  it.skip('should throw error in case BlockHeadersProvider has already been started', async () => {
-    await blockHeadersProvider.start();
+  it('should read batch from the head and form longest chain', async () => {
+    const headersToSend = headers.slice(0, historicalBatchSize);
+    historicalStreams[0].sendHeaders(headersToSend);
+    historicalStreams[0].destroy();
 
-    try {
-      await blockHeadersProvider.start();
-    } catch (e) {
-      expect(e).to.be.instanceOf(Error);
-    }
+    const { spvChain } = blockHeadersProvider;
+    expect(spvChain.getLongestChain({ withPruned: true }))
+      .to.have.length(historicalHeadersAmount);
+    expect(blockHeadersProvider.emit).to
+      .have.been.calledWith(BlockHeadersProvider.EVENTS.HISTORICAL_DATA_OBTAINED);
+
+    const { args } = blockHeadersProvider.emit.getCall(0);
+    const expectedHeaders = headersToSend.map((header) => header.toString());
+    const emittedHeaders = args[1].map((header) => header.toString());
+    const headHeight = args[2];
+
+    expect(emittedHeaders).to.deep.equal(expectedHeaders);
+    expect(headHeight).to.equal(fromBlockHeight);
   });
 
-  it.skip('should emit ERROR event in case BlockHeadersReader emits ERROR', async () => {
-    await blockHeadersProvider.start();
+  it('should start continuous sync and add to existing chain', async () => {
+    await blockHeadersProvider.startContinuousSync(chainHeight);
 
-    let emittedError;
-    blockHeadersProvider.on(BlockHeadersProvider.EVENTS.ERROR, (e) => {
-      emittedError = e;
-    });
+    // +1 because fromBlockHeight is inclusive
+    const headersToSend = headers.slice(-(newHeadersAmount + 1));
+    continuousStream.sendHeaders(headersToSend);
 
-    const errorToThrow = new Error('test');
-    blockHeadersProvider.blockHeadersReader
-      .emit(BlockHeadersProvider.EVENTS.ERROR, errorToThrow);
+    const { spvChain } = blockHeadersProvider;
 
-    expect(emittedError).to.be.equal(errorToThrow);
-  });
+    expect(spvChain.getLongestChain({ withPruned: true }))
+      .to.have.length(headers.length);
+    const { args } = blockHeadersProvider.emit.lastCall;
 
-  it.skip('should emit ERROR event in case SpvChain fails to addHeaders', async function () {
-    const errorToThrow = new Error('test');
-    blockHeadersProvider.spvChain.addHeaders = this.sinon.stub();
-    blockHeadersProvider.spvChain.addHeaders.onFirstCall().throws(errorToThrow);
+    const expectedHeaders = headersToSend.slice(1).map((header) => header.toString());
+    const emittedHeaders = args[1].map((header) => header.toString());
+    const headHeight = args[2];
 
-    await blockHeadersProvider.start();
-
-    let emittedError;
-    blockHeadersProvider.on(BlockHeadersProvider.EVENTS.ERROR, (e) => {
-      emittedError = e;
-    });
-
-    blockHeadersProvider.blockHeadersReader
-      .emit(BlockHeadersReader.EVENTS.BLOCK_HEADERS, []);
-
-    expect(emittedError).to.be.equal(errorToThrow);
-  });
-
-  it.skip('should emit ERROR event in case of a failure subscribing to the new block headers', async function () {
-    await blockHeadersProvider.start();
-
-    const errorToThrow = new Error('test');
-    blockHeadersProvider.blockHeadersReader.subscribeToNew = this.sinon.stub()
-      .rejects(errorToThrow);
-
-    let emittedError;
-    blockHeadersProvider.on(BlockHeadersProvider.EVENTS.ERROR, (e) => {
-      emittedError = e;
-    });
-
-    blockHeadersProvider.blockHeadersReader
-      .emit(BlockHeadersReader.EVENTS.HISTORICAL_DATA_OBTAINED);
-
-    await sleepOneTick();
-
-    expect(emittedError).to.be.equal(errorToThrow);
+    expect(emittedHeaders).to.deep.equal(expectedHeaders);
+    expect(headHeight).to.equal(chainHeight + 1);
   });
 });

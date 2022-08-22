@@ -39,6 +39,8 @@ describe('BlockHeadersProvider - unit', () => {
     headers = getHeadersFixture();
     this.sinon.spy(blockHeadersProvider, 'emit');
     this.sinon.spy(blockHeadersProvider, 'ensureChainRoot');
+    this.sinon.spy(blockHeadersProvider, 'destroyReader');
+    this.sinon.spy(blockHeadersProvider, 'removeReaderListeners');
   });
 
   describe('#readHistorical', () => {
@@ -73,6 +75,7 @@ describe('BlockHeadersProvider - unit', () => {
       blockHeadersReader.emit(BlockHeadersReader.EVENTS.HISTORICAL_DATA_OBTAINED);
       expect(blockHeadersProvider.emit)
         .to.have.been.calledWith(BlockHeadersProvider.EVENTS.HISTORICAL_DATA_OBTAINED);
+      expect(blockHeadersProvider.removeReaderListeners).to.have.been.calledOnce();
       expect(blockHeadersProvider.state).to.equal(BlockHeadersProvider.STATES.IDLE);
     });
   });
@@ -149,6 +152,24 @@ describe('BlockHeadersProvider - unit', () => {
       blockHeadersProvider.ensureChainRoot(2);
       expect(blockHeadersProvider.spvChain.reset)
         .to.have.been.calledOnceWith(2);
+    });
+  });
+
+  describe('#handleError', () => {
+    it('should emit error event and unsubscribe from reader events', async () => {
+      blockHeadersProvider.initReader();
+      const { blockHeadersReader } = blockHeadersProvider;
+
+      let emittedError;
+      blockHeadersProvider.on('error', (e) => {
+        emittedError = e;
+      });
+
+      const error = new Error('test error');
+      blockHeadersReader.emit('error', error);
+
+      expect(emittedError).to.equal(error);
+      expect(blockHeadersProvider.removeReaderListeners).to.have.been.calledOnce();
     });
   });
 

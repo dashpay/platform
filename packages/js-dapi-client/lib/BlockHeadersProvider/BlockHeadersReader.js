@@ -154,7 +154,7 @@ class BlockHeadersReader extends EventEmitter {
       throw new Error('Continuous sync has already been started');
     }
 
-    if (fromBlockHeight < 1) {
+    if (typeof fromBlockHeight !== 'number' || fromBlockHeight < 1) {
       throw new Error(`Invalid fromBlockHeight: ${fromBlockHeight}`);
     }
 

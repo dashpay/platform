@@ -21,7 +21,7 @@ async function _initializeAccount(account, userUnsafePlugins) {
     // TODO: test this behaviour?
     // By mistake I put there lastSyncedHeaderHeight instead of the first header height
     const firstHeaderHeight = lastSyncedHeaderHeight - blockHeaders.length + 1;
-    blockHeadersProvider.spvChain.makeNewChain(blockHeaders[0], firstHeaderHeight);
+    blockHeadersProvider.spvChain.reset(firstHeaderHeight);
     blockHeadersProvider.spvChain.addHeaders(blockHeaders);
   }
 
