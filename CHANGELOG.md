@@ -1,3 +1,12 @@
+## [0.23.0-dev.8](https://github.com/dashevo/platform/compare/v0.23.0-dev.7...v0.23.0-dev.8) (2022-08-22)
+
+
+### Bug Fixes
+
+* **dapi:** getStatus errored if masternode is banned ([#496](https://github.com/dashevo/platform/issues/496))
+* Drive and DAPI expect data available on H+1 block ([#497](https://github.com/dashevo/platform/issues/497))
+* **test-suite:** failing tests due to replication latency ([#500](https://github.com/dashevo/platform/issues/500))
+
 ## [0.23.0-dev.7](https://github.com/dashevo/platform/compare/v0.23.0-dev.6...v0.23.0-dev.7) (2022-08-18)
 
 
