@@ -53,7 +53,11 @@ function getStatusHandlerFactory(coreRPCClient) {
     const masternodeStatus = GetStatusResponse.Masternode.Status[masternodeStatusResponse.state];
 
     masternode.setStatus(masternodeStatus);
-    masternode.setProTxHash(Buffer.from(masternodeStatusResponse.proTxHash, 'hex'));
+
+    if (masternodeStatusResponse.proTxHash) {
+      masternode.setProTxHash(Buffer.from(masternodeStatusResponse.proTxHash, 'hex'));
+    }
+
     masternode.setPosePenalty(masternodeStatusResponse.dmnState.PoSePenalty);
     masternode.setIsSynced(mnSyncStatusResponse.IsSynced);
 
