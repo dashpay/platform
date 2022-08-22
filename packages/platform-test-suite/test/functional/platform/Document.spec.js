@@ -320,6 +320,8 @@ describe('Platform', () => {
         delete: [document],
       }, identity);
 
+      await waitForSTPropagated();
+
       const [storedDocument] = await client.platform.documents.get(
         'customContracts.indexedDocument',
         { where: [['$id', '==', document.getId()]] },
