@@ -10,7 +10,7 @@ const validateNumber = (value, name, min = NaN, max = NaN) => {
     throw new DAPIClientError(`'${name}' can not be less than ${min}`);
   }
 
-  if (!Number.isNaN(max) && value > min) {
+  if (!Number.isNaN(max) && value > max) {
     throw new DAPIClientError(`'${name}' can not be more than ${max}`);
   }
 };
@@ -53,7 +53,7 @@ function createBlockHeadersProviderFromOptions(options, coreMethods) {
     validateNumber(maxParallelStreams, 'maxParallelStreams', 1);
     validateNumber(targetBatchSize, 'targetBatchSize', 1);
     validateNumber(fromBlockHeight, 'fromBlockHeight', 1);
-    validateNumber(maxRetries, 'maxRetries', 0);
+    validateNumber(maxRetries, 'maxRetries', 0, 100);
 
     blockHeadersProvider = new BlockHeadersProvider(
       blockHeadersProviderOptions,
