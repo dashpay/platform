@@ -163,6 +163,7 @@ function deliverTxHandlerFactory(
     // await transactionalDpp.getStateRepository().updateIdentity(identity);
 
     // Logging
+    /* istanbul ignore next */
     switch (stateTransition.getType()) {
       case stateTransitionTypes.DATA_CONTRACT_UPDATE:
       case stateTransitionTypes.DATA_CONTRACT_CREATE: {
