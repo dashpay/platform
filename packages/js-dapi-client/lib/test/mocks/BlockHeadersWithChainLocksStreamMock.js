@@ -13,10 +13,16 @@ class BlockHeadersWithChainLocksStreamMock extends EventEmitter {
   }
 
   destroy(e) {
-    this.emit('error', e);
+    this.emit('end');
+    if (e) {
+      this.emit('error', e);
+    }
   }
 
   cancel() {
+    const err = new Error('CANCELED_ON_CLIENT');
+    err.code = 1;
+    this.emit('error', err);
     this.emit('end');
   }
 

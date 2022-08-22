@@ -7,7 +7,7 @@ const paperWallet = {
   privateKey: '53d0f7df9103127f159f939438254011f6fa11df18a843d3962313e38938f020',
 };
 
-describe.skip('Wallet - sweepWallet', function suite() {
+describe('Wallet - sweepWallet', function suite() {
   this.timeout(60000);
   let emptyWallet;
   let emptyAccount;

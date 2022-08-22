@@ -127,8 +127,8 @@ class BlockHeadersReader extends EventEmitter {
   stopReadingHistorical() {
     this.removeCommandListeners();
     this.historicalStreams.forEach((stream) => {
-      this.removeStreamListeners(stream);
       stream.cancel();
+      this.removeStreamListeners(stream);
     });
     this.historicalStreams = [];
   }
@@ -201,7 +201,6 @@ class BlockHeadersReader extends EventEmitter {
       if (e.code === GrpcErrorCodes.CANCELLED) {
         return;
       }
-
       this.emit(EVENTS.ERROR, e);
     });
 
@@ -215,11 +214,11 @@ class BlockHeadersReader extends EventEmitter {
 
   unsubscribeFromNew() {
     if (this.continuousSyncStream) {
-      this.continuousSyncStream.removeAllListeners('data');
-      this.continuousSyncStream.removeAllListeners('error');
-      this.continuousSyncStream.removeAllListeners('beforeReconnect');
-      this.continuousSyncStream.removeAllListeners('end');
-      this.continuousSyncStream.cancel();
+      // Get a reference before cancellation because it will be nulled
+      const stream = this.continuousSyncStream;
+      stream.cancel();
+      this.removeStreamListeners(stream);
+      stream.removeAllListeners('beforeReconnect');
       this.continuousSyncStream = null;
     }
   }
