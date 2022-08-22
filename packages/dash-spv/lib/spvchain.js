@@ -53,6 +53,7 @@ const SpvChain = class {
         }
         this.root = config.getDevnetGenesis();
         break;
+      case 'local':
       case 'regtest':
         this.network = 'regtest';
         if (startBlock) {

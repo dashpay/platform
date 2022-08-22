@@ -1,4 +1,3 @@
-const networks = require('@dashevo/dashcore-lib/lib/networks');
 const DAPIClientError = require('../errors/DAPIClientError');
 const BlockHeadersProvider = require('./BlockHeadersProvider');
 
@@ -45,20 +44,11 @@ function createBlockHeadersProviderFromOptions(options, coreMethods) {
     };
 
     const {
-      autoStart,
       maxParallelStreams,
       targetBatchSize,
       fromBlockHeight,
       maxRetries,
     } = blockHeadersProviderOptions;
-
-    if (network && !networks.get(network)) {
-      throw new DAPIClientError(`Invalid network '${options.network}'`);
-    }
-
-    if (typeof autoStart !== 'boolean') {
-      throw new DAPIClientError('\'autoStart\' option must have boolean type');
-    }
 
     validateNumber(maxParallelStreams, 'maxParallelStreams', 1);
     validateNumber(targetBatchSize, 'targetBatchSize', 1);

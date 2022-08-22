@@ -46,8 +46,6 @@ describe('#createBlockHeadersProviderFromOptions', () => {
       maxParallelStreams: 0,
       targetBatchSize: 0,
       fromBlockHeight: 0,
-      autoStart: 'true',
-      network: 'keknet',
     };
 
     Object.keys(badOptions).forEach((badOption) => {
@@ -57,6 +55,7 @@ describe('#createBlockHeadersProviderFromOptions', () => {
           [badOption]: badOptions[badOption],
         },
       };
+
       expect(() => createBlockHeadersProviderFromOptions(options, coreMethodsMock)).to.throw();
     });
   });

@@ -65,13 +65,6 @@ class DAPIClient extends EventEmitter {
     this.blockHeadersProvider.on(BlockHeadersProvider.EVENTS.ERROR, (e) => {
       this.emit(EVENTS.ERROR, e);
     });
-
-    // TODO: rm autoStart
-    if (this.options.blockHeadersProviderOptions.autoStart) {
-      this.blockHeadersProvider.start().catch((e) => {
-        this.emit(EVENTS.ERROR, e);
-      });
-    }
   }
 }
 
