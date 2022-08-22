@@ -5,9 +5,9 @@ const { signStateTransition } = require('dash/build/src/SDK/Client/Platform/sign
 
 const getIdentityFixture = require('../../../lib/test/fixtures/getIdentityFixture');
 const getDataContractFixture = require('../../../lib/test/fixtures/getDataContractFixture');
-const wait = require('../../../lib/wait');
 
 const createClientWithFundedWallet = require('../../../lib/test/createClientWithFundedWallet');
+const waitForSTPropagated = require('../../../lib/waitForSTPropagated');
 
 const {
   Errors: {
@@ -35,18 +35,14 @@ describe('Platform', () => {
       identity = await client.platform.identities.register(160000);
 
       // Additional wait time to mitigate testnet latency
-      if (process.env.NETWORK === 'testnet') {
-        await wait(5000);
-      }
+      await waitForSTPropagated();
 
       dataContractFixture = getDataContractFixture(identity.getId());
 
       await client.platform.contracts.publish(dataContractFixture, identity);
 
       // Additional wait time to mitigate testnet latency
-      if (process.env.NETWORK === 'testnet') {
-        await wait(5000);
-      }
+      await waitForSTPropagated();
 
       client.getApps().set('customContracts', {
         contractId: dataContractFixture.getId(),
@@ -151,9 +147,7 @@ describe('Platform', () => {
       }, identity);
 
       // Additional wait time to mitigate testnet latency
-      if (process.env.NETWORK === 'testnet') {
-        await wait(5000);
-      }
+      await waitForSTPropagated();
 
       const secondDocument = await client.platform.documents.create(
         'customContracts.indexedDocument',
@@ -194,9 +188,7 @@ describe('Platform', () => {
       }, identity);
 
       // Additional wait time to mitigate testnet latency
-      if (process.env.NETWORK === 'testnet') {
-        await wait(5000);
-      }
+      await waitForSTPropagated();
     });
 
     it('should fetch created document', async () => {
@@ -234,9 +226,7 @@ describe('Platform', () => {
       }, identity);
 
       // Additional wait time to mitigate testnet latency
-      if (process.env.NETWORK === 'testnet') {
-        await wait(5000);
-      }
+      await waitForSTPropagated();
 
       const [fetchedDocument] = await client.platform.documents.get(
         'customContracts.indexedDocument',
@@ -261,9 +251,7 @@ describe('Platform', () => {
       }, identity);
 
       // Additional wait time to mitigate testnet latency
-      if (process.env.NETWORK === 'testnet') {
-        await wait(5000);
-      }
+      await waitForSTPropagated();
 
       documentsBatchTransition.transitions[0].data.firstName = 'nameToProve';
       documentsBatchTransition.transitions[0].updatedAt = new Date();
@@ -275,9 +263,7 @@ describe('Platform', () => {
       const proof = await client.platform.broadcastStateTransition(signedTransition);
 
       // Additional wait time to mitigate testnet latency
-      if (process.env.NETWORK === 'testnet') {
-        await wait(5000);
-      }
+      await waitForSTPropagated();
 
       expect(proof.rootTreeProof).to.be.an.instanceof(Uint8Array);
       expect(proof.rootTreeProof.length).to.be.greaterThan(0);
@@ -310,9 +296,7 @@ describe('Platform', () => {
       }, identity);
 
       // Additional wait time to mitigate testnet latency
-      if (process.env.NETWORK === 'testnet') {
-        await wait(5000);
-      }
+      await waitForSTPropagated();
 
       documentsBatchTransition.transitions[0].updatedAt = updatedAt;
       documentsBatchTransition.transitions[0].revision += 1;
