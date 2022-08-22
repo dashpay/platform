@@ -12,7 +12,6 @@ const EVENTS = {
   BEFORE_RECONNECT: 'beforeReconnect',
 };
 
-// TODO: write tests
 /**
  * Stream that provides auto-reconnect functionality
  */
@@ -133,7 +132,6 @@ class DAPIStream extends EventEmitter {
 
   cancel() {
     this.stream.cancel();
-    this.stopReconnectTimeout();
   }
 
   destroy(e) {
