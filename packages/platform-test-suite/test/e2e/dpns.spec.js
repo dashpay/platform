@@ -6,8 +6,7 @@ const {
 } = require('@dashevo/dpns-contract/lib/systemIds');
 
 const createClientWithFundedWallet = require('../../lib/test/createClientWithFundedWallet');
-
-const wait = require('../../lib/wait');
+const waitForSTPropagated = require('../../lib/waitForSTPropagated');
 
 const getRandomDomain = () => crypto.randomBytes(10).toString('hex');
 
@@ -80,9 +79,7 @@ describe('DPNS', () => {
       }, identity);
 
       // Additional wait time to mitigate testnet latency
-      if (process.env.NETWORK === 'testnet') {
-        await wait(5000);
-      }
+      await waitForSTPropagated();
 
       expect(createdTLD).to.exist();
       expect(createdTLD.getType()).to.equal('domain');
@@ -156,9 +153,7 @@ describe('DPNS', () => {
       }, identity);
 
       // Additional wait time to mitigate testnet latency
-      if (process.env.NETWORK === 'testnet') {
-        await wait(5000);
-      }
+      await waitForSTPropagated();
 
       expect(registeredDomain.getType()).to.equal('domain');
       expect(registeredDomain.getData().label).to.equal(secondLevelDomain);
@@ -192,13 +187,13 @@ describe('DPNS', () => {
 
       const [document] = documents;
 
-      expect(document.toJSON()).to.deep.equal(registeredDomain.toJSON());
+      expect(document.toObject()).to.deep.equal(registeredDomain.toObject());
     });
 
     it('should be able to resolve domain by it\'s name', async () => {
       const document = await client.platform.names.resolve(`${secondLevelDomain}.${topLevelDomain}`);
 
-      expect(document.toJSON()).to.deep.equal(registeredDomain.toJSON());
+      expect(document.toObject()).to.deep.equal(registeredDomain.toObject());
     });
 
     it('should be able to resolve domain by it\'s record', async () => {
@@ -207,7 +202,7 @@ describe('DPNS', () => {
         registeredDomain.getData().records.dashUniqueIdentityId,
       );
 
-      expect(document.toJSON()).to.deep.equal(registeredDomain.toJSON());
+      expect(document.toObject()).to.deep.equal(registeredDomain.toObject());
     });
 
     it('should not be able to update domain', async () => {
