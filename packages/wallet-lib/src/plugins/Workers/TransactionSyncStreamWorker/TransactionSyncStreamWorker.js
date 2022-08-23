@@ -342,6 +342,7 @@ class TransactionSyncStreamWorker extends Worker {
     }
   }
 
+  // eslint-disable-next-line class-methods-use-this
   removeStreamListeners(stream) {
     stream.removeAllListeners('data');
     stream.removeAllListeners('error');

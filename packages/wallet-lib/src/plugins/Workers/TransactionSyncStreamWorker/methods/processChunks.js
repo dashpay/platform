@@ -5,7 +5,8 @@ const logger = require('../../../../logger');
 const isBrowser = require('../../../../utils/isBrowser');
 
 /**
- * Re-creates current stream, so that new one could be re-created with more addresses in bloom filter
+ * Re-creates current stream,
+ * so that new one could be re-created with more addresses in bloom filter
  * @returns {Promise<void>}
  */
 async function reconnectToStream() {
