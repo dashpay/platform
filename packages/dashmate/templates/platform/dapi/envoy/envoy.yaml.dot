@@ -153,18 +153,18 @@ static_resources:
                     allow_headers: DNT,X-CustomHeader,Keep-Alive,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Content-Transfer-Encoding,Custom-Header-1,X-Accept-Content-Transfer-Encoding,X-Accept-Response-Streaming,X-User-Agent,X-Grpc-Web
                     expose_headers: Content-Transfer-Encoding,Grpc-Message,Grpc-Status,Custom-Header-1
                     max_age: "1728000"
-          {{? it.platform.dapi.envoy.ssl.enabled}}
-          transport_socket:
-            name: envoy.transport_sockets.tls
-            typed_config:
-              "@type": type.googleapis.com/envoy.extensions.transport_sockets.tls.v3.DownstreamTlsContext
-              common_tls_context:
-                tls_certificates:
-                  - certificate_chain:
-                      filename: "/etc/ssl/bundle.crt"
-                    private_key:
-                      filename: "/etc/ssl/private.key"
-          { { ?} }
+        {{? it.platform.dapi.envoy.ssl.enabled}}
+        transport_socket:
+          name: envoy.transport_sockets.tls
+          typed_config:
+            "@type": type.googleapis.com/envoy.extensions.transport_sockets.tls.v3.DownstreamTlsContext
+            common_tls_context:
+              tls_certificates:
+                - certificate_chain:
+                    filename: "/etc/ssl/bundle.crt"
+                  private_key:
+                    filename: "/etc/ssl/private.key"
+        {{?}}
     - name: native_grpc_gateway
       address:
         socket_address:
@@ -293,18 +293,18 @@ static_resources:
                                 value: "Specified service version is not supported"
                           direct_response:
                             status: 204
-              {{? it.platform.dapi.envoy.ssl.enabled}}
-              transport_socket:
-                name: envoy.transport_sockets.tls
-                typed_config:
-                  "@type": type.googleapis.com/envoy.extensions.transport_sockets.tls.v3.DownstreamTlsContext
-                  common_tls_context:
-                    tls_certificates:
-                      - certificate_chain:
-                          filename: "/etc/ssl/bundle.crt"
-                        private_key:
-                          filename: "/etc/ssl/private.key"
-              { { ?} }
+          {{? it.platform.dapi.envoy.ssl.enabled}}
+          transport_socket:
+            name: envoy.transport_sockets.tls
+            typed_config:
+              "@type": type.googleapis.com/envoy.extensions.transport_sockets.tls.v3.DownstreamTlsContext
+              common_tls_context:
+                tls_certificates:
+                  - certificate_chain:
+                      filename: "/etc/ssl/bundle.crt"
+                    private_key:
+                      filename: "/etc/ssl/private.key"
+          {{?}}
   clusters:
   - name: core_and_platform
     connect_timeout: 0.25s
