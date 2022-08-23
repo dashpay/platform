@@ -310,7 +310,7 @@ module.exports = {
                   additionalProperties: false,
                 },
               },
-              required: ['docker', 'http', 'https', 'grpc', 'grpcs', 'rateLimiter'/* , 'ssl' */],
+              required: ['docker', 'http', 'grpc', 'rateLimiter', 'ssl'],
               additionalProperties: false,
             },
             api: {
