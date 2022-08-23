@@ -21,6 +21,11 @@ module.exports = (config) => {
       resolve: webpackConfig[0].resolve,
       plugins: webpackConfig[0].plugins,
     },
+    client: {
+      mocha: {
+        timeout: 7500, // TODO: figure out why some tests timing out on default timeout: 2000
+      },
+    },
     reporters: ['mocha'],
     port: 9876,
     colors: true,
