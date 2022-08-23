@@ -227,6 +227,8 @@ class TransactionSyncStreamWorker extends Worker {
 
     // TODO: handle newly generated addresses and reconnect to the stream?
     this.importTransactions(transactionsWithMetadata);
+
+    this.setLastSyncedBlockHeight(height, true);
   }
 
   /**

@@ -47,7 +47,7 @@ function exportState(lastKnownBlock) {
       serializedState.transactions[transactionHash] = transaction.toString();
       serializedState.txMetadata[transactionHash] = {
         ...metadata,
-        time: metadata.time.getTime(),
+        time: metadata.time ? metadata.time.getTime() : -1,
       };
     }
   });

@@ -54,7 +54,7 @@ describe('Account', function suite() {
             network: 'livenet'
         });
 
-        ({txStreamMock, transportMock} = await createAndAttachTransportMocksToWallet(wallet, this.sinonSandbox));
+        ({txStreamMock, transportMock} = await createAndAttachTransportMocksToWallet(wallet, this.sinon));
 
         account = await wallet.getAccount();
 
