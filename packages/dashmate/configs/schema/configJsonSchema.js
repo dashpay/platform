@@ -284,8 +284,33 @@ module.exports = {
                   required: ['enabled', 'fillInterval', 'tokensPerFill', 'maxTokens'],
                   additionalProperties: false,
                 },
+                ssl: {
+                  type: 'object',
+                  properties: {
+                    enabled: {
+                      type: 'boolean',
+                    },
+                    provider: {
+                      type: 'string',
+                      enum: ['zerossl', 'manual'],
+                    },
+                    zerossl: {
+                      type: ['object', 'null'],
+                      properties: {
+                        apikey: {
+                          type: ['string', 'null'],
+                          minLength: 32,
+                        },
+                      },
+                      required: ['apikey'],
+                      additionalProperties: false,
+                    },
+                  },
+                  required: ['provider', 'zerossl', 'enabled'],
+                  additionalProperties: false,
+                },
               },
-              required: ['docker', 'http', 'grpc', 'rateLimiter'],
+              required: ['docker', 'http', 'https', 'grpc', 'grpcs', 'rateLimiter'/* , 'ssl' */],
               additionalProperties: false,
             },
             api: {

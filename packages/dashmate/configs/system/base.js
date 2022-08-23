@@ -86,6 +86,13 @@ module.exports = {
           fillInterval: '60s',
           enabled: true,
         },
+        ssl: {
+          enabled: false,
+          provider: 'zerossl',
+          zerossl: {
+            apikey: null,
+          },
+        },
       },
       api: {
         docker: {

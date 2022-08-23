@@ -28,6 +28,10 @@ function renderServiceTemplatesFactory() {
           return false;
         }
 
+        if (templatePath.includes('ssl.yaml.dot')) {
+          return false;
+        }
+
         // Don't create blank tenderdash configs
         if (templatePath.includes('templates/platform/drive/tenderdash')) {
           const skipEmpty = {

@@ -67,6 +67,15 @@ const buildServicesTaskFactory = require('./listr/tasks/buildServicesTaskFactory
 
 const generateHDPrivateKeys = require('./util/generateHDPrivateKeys');
 
+const setupVerificationServerTaskFactory = require('./listr/tasks/ssl/setupVerificationServerTaskFactory');
+const setupCertificateTask = require('./listr/tasks/ssl/setupCertificateTask');
+
+const createCertificate = require('./ssl/zerossl/createCertificate');
+const verifyDomain = require('./ssl/zerossl/verifyDomain');
+const downloadCertificate = require('./ssl/zerossl/downloadCertificate');
+const generateCsr = require('./ssl/zerossl/generateCsr');
+const generateKeyPair = require('./ssl/zerossl/generateKeyPair');
+
 async function createDIContainer() {
   const container = createAwilixContainer({
     injectionMode: InjectionMode.CLASSIC,
@@ -98,6 +107,17 @@ async function createDIContainer() {
   container.register({
     renderServiceTemplates: asFunction(renderServiceTemplatesFactory).singleton(),
     writeServiceConfigs: asFunction(writeServiceConfigsFactory).singleton(),
+  });
+
+  /**
+   * SSL
+   */
+  container.register({
+    createCertificate: asValue(createCertificate),
+    generateCsr: asValue(generateCsr),
+    generateKeyPair: asValue(generateKeyPair),
+    verifyDomain: asValue(verifyDomain),
+    downloadCertificate: asValue(downloadCertificate),
   });
 
   /**
@@ -175,6 +195,8 @@ async function createDIContainer() {
     outputStatusOverview: asFunction(outputStatusOverviewFactory),
     waitForNodeToBeReadyTask: asFunction(waitForNodeToBeReadyTaskFactory).singleton(),
     enableCoreQuorumsTask: asFunction(enableCoreQuorumsTaskFactory).singleton(),
+    setupVerificationServerTask: asFunction(setupVerificationServerTaskFactory).singleton(),
+    setupCertificateTask: asValue(setupCertificateTask),
   });
 
   return container;
