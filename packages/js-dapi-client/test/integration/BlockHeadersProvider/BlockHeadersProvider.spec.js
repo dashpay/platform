@@ -143,5 +143,6 @@ describe('BlockHeadersProvider - integration', () => {
 
     expect(emittedHeaders).to.deep.equal(expectedHeaders);
     expect(headHeight).to.equal(chainHeight + 1);
+    await blockHeadersProvider.stop();
   });
 });
