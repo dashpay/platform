@@ -26,6 +26,12 @@ function wait(ms) {
   return new Promise((res) => setTimeout(res, ms));
 }
 
+const mockMerkleBlock = (txHashes) => {
+  const merkleBlock = new MerkleBlock(Buffer.from([0,0,0,32,61,11,102,108,38,155,164,49,91,246,141,178,126,155,13,118,248,83,250,15,206,21,102,65,104,183,243,167,235,167,60,113,140,110,120,87,208,191,240,19,212,100,228,121,192,125,143,44,226,9,95,98,51,25,139,172,175,27,205,201,158,85,37,8,72,52,36,95,255,255,127,32,2,0,0,0,1,0,0,0,1,140,110,120,87,208,191,240,19,212,100,228,121,192,125,143,44,226,9,95,98,51,25,139,172,175,27,205,201,158,85,37,8,1,1]))
+  merkleBlock.hashes =  txHashes.map((hash) => Buffer.from(hash, 'hex').reverse().toString('hex'));
+  return merkleBlock
+}
+
 describe('TransactionSyncStreamWorker', function suite() {
   this.timeout(60000);
   let worker;
@@ -58,10 +64,10 @@ describe('TransactionSyncStreamWorker', function suite() {
       network: 'mainnet'
     });
 
-    ({ txStreamMock, transportMock } = await createAndAttachTransportMocksToWallet(wallet, this.sinonSandbox));
+    ({ txStreamMock, transportMock } = await createAndAttachTransportMocksToWallet(wallet, this.sinon));
 
-    transportMock.getBlockHeaderByHash
-        .returns(BlockHeader.fromString(blockHeaderFixture));
+    // transportMock.getBlockHeaderByHash
+    //     .returns(BlockHeader.fromString(blockHeaderFixture));
 
     account = await wallet.getAccount();
 
@@ -365,15 +371,15 @@ describe('TransactionSyncStreamWorker', function suite() {
 
       try {
         let transaction = new Transaction().to(addressAtIndex19, 10000);
-        account.transport.getTransaction
-            .returns({
-              transaction:transaction,
-              blockHash: Buffer.from('4f46066bd50cc2684484407696b7949e82bd906ea92c040f59a97cba47ed8176', 'hex'),
-              height: 42,
-              confirmations: 10,
-              isInstantLocked: true,
-              isChainLocked: false,
-            });
+        // account.transport.getTransaction
+        //     .returns({
+        //       transaction:transaction,
+        //       blockHash: Buffer.from('4f46066bd50cc2684484407696b7949e82bd906ea92c040f59a97cba47ed8176', 'hex'),
+        //       height: 42,
+        //       confirmations: 10,
+        //       isInstantLocked: true,
+        //       isChainLocked: false,
+        //     });
         transactionsSent.push(transaction);
         txStreamMock.emit(TxStreamMock.EVENTS.data, new TxStreamDataResponseMock({
           rawTransactions: [transaction.toBuffer()]
@@ -556,7 +562,8 @@ describe('TransactionSyncStreamWorker', function suite() {
     });
   });
 
-  it('should propagate instant locks', async () => {
+  it.only('should propagate instant locks', async () => {
+
     const transactions = [
       new Transaction().to(addressAtIndex19, 10000),
       new Transaction().to(account.getAddress(10).address, 10000),
@@ -606,62 +613,31 @@ describe('TransactionSyncStreamWorker', function suite() {
 
     worker.execute();
 
+
     await wait(10);
 
     try {
-      let transaction = transactions[0];
-      account.transport.getTransaction
-          .returns({
-            transaction:transactions[0],
-            blockHash: Buffer.from('4f46066bd50cc2684484407696b7949e82bd906ea92c040f59a97cba47ed8176', 'hex'),
-            height: 42,
-            confirmations: 10,
-            isInstantLocked: true,
-            isChainLocked: false,
-          });
+      const firstTransaction = transactions[0];
+      const firstMerkleBlock = mockMerkleBlock([firstTransaction.hash])
 
-      transactionsSent.push(transaction);
-      txStreamMock.emit(TxStreamMock.EVENTS.data, new TxStreamDataResponseMock({
-        rawTransactions: [transaction.toBuffer()]
-      }));
+      const chainStore = account.storage.getDefaultChainStore();
+      chainStore.state.headersMetadata.set(firstMerkleBlock.header.hash, { height: 42, time: 999999999 })
 
-      txStreamMock.emit(
-        TxStreamMock.EVENTS.data,
-        new TxStreamDataResponseMock(
-            { instantSendLockMessages: [instantLock1.toBuffer()] }
-        )
-      );
+      txStreamMock.sendTransactions([firstTransaction])
+      transactionsSent.push(firstTransaction);
+      txStreamMock.sendISLocks([instantLock1])
+      await wait(10);
+      txStreamMock.sendMerkleBlock(firstMerkleBlock)
 
       await wait(10);
 
-      merkleBlockMock.hashes[0] =  Buffer.from(transaction.hash, 'hex').reverse().toString('hex');
-      txStreamMock.emit(TxStreamMock.EVENTS.data, new TxStreamDataResponseMock({
-        rawMerkleBlock: merkleBlockMock.toBuffer()
-      }));
+      const secondTransaction = transactions[1];
+      const secondMerkleBlock = mockMerkleBlock([secondTransaction.hash])
+      chainStore.state.headersMetadata.set(secondMerkleBlock.header.hash, { height: 43, time: 999999999})
 
-      await wait(10);
-
-      transaction = transactions[1];
-      account.transport.getTransaction
-          .returns({
-            transaction:transactions[1],
-            blockHash: Buffer.from('4f46066bd50cc2684484407696b7949e82bd906ea92c040f59a97cba47ed8176', 'hex'),
-            height: 42,
-            confirmations: 10,
-            isInstantLocked: true,
-            isChainLocked: false,
-          });
-
-      account.transport.getBlockHeaderByHash
-      .returns(new Buffer.from(blockHeaderFixture, 'hex'));
-
-
-      transactionsSent.push(transaction);
-      txStreamMock.emit(TxStreamMock.EVENTS.data, new TxStreamDataResponseMock({
-        rawTransactions: [transaction.toBuffer()]
-      }));
-
-      await wait(10);
+      transactionsSent.push(secondTransaction);
+      txStreamMock.sendTransactions([secondTransaction])
+      txStreamMock.sendMerkleBlock(secondMerkleBlock)
 
       txStreamMock.emit(TxStreamMock.EVENTS.end);
     } catch (e) {
@@ -709,12 +685,7 @@ describe('TransactionSyncStreamWorker', function suite() {
       promise,
       new Promise((resolve => {
         setImmediate(() => {
-          txStreamMock.emit(
-              TxStreamMock.EVENTS.data,
-              new TxStreamDataResponseMock(
-                  { instantSendLockMessages: [instantLock2.toBuffer()] }
-              )
-          );
+          txStreamMock.sendISLocks([instantLock2])
           resolve();
         })
       })),
@@ -742,14 +713,17 @@ describe('TransactionSyncStreamWorker', function suite() {
 
     wallet = new Wallet({
       HDPrivateKey: new HDPrivateKey(testHDKey),
+      plugins: [worker],
       unsafeOptions: {
         skipSynchronizationBeforeHeight: 20,
       },
     });
 
-    await createAndAttachTransportMocksToWallet(wallet, this.sinonSandbox);
+
+    await createAndAttachTransportMocksToWallet(wallet, this.sinon);
 
     account = await wallet.getAccount();
+
 
     account.transport.getBestBlockHeight.resolves(bestBlockHeight);
     account.transport.getTransaction.returns({

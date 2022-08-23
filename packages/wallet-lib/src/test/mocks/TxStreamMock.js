@@ -28,6 +28,23 @@ class TxStreamMock extends EventEmitter {
     }));
   }
 
+  sendISLocks(isLocks) {
+    this.emit(
+      TxStreamMock.EVENTS.data,
+      new TxStreamDataResponseMock(
+        {
+          instantSendLockMessages: isLocks.map((isLock) => isLock.toBuffer()),
+        },
+      ),
+    );
+  }
+
+  sendMerkleBlock(merkleBlock) {
+    this.emit(TxStreamMock.EVENTS.data, new TxStreamDataResponseMock({
+      rawMerkleBlock: merkleBlock.toBuffer(),
+    }));
+  }
+
   finish() {
     this.emit(TxStreamMock.EVENTS.end);
   }

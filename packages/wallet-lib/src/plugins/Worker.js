@@ -69,7 +69,9 @@ class Worker extends StandardPlugin {
       this.state.started = true;
 
       // TODO: refactor this to be more elegant
-      if (this.executeOnStart && this.executeAfterStart) await this.execWorker();
+      if (this.executeOnStart && this.executeAfterStart) {
+        await this.execWorker();
+      }
     } catch (e) {
       this.emit('error', e, {
         type: 'plugin',

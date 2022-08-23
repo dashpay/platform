@@ -25,7 +25,7 @@ const preparePlugins = function preparePlugins(account, userUnsafePlugins) {
         // Execute plugins
         for (let i = 0; i < injectedPlugins.length; i += 1) {
           const plugin = injectedPlugins[i];
-          if (plugin instanceof Worker) {
+          if (plugin.executeOnStart && plugin instanceof Worker) {
             // eslint-disable-next-line no-await-in-loop
             await plugin.execWorker();
           }

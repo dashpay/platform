@@ -34,6 +34,7 @@ module.exports = async function startHistoricalSync(network) {
       await startHistoricalSync.call(this, network);
     }
   } catch (e) {
+    this.removeStreamListeners(this.stream);
     if (GRPC_RETRY_ERRORS.includes(e.code)) {
       if (this.stream === null && e.code === GrpcErrorCodes.CANCELLED) {
         // NOOP on self canceled state (via stop worker)

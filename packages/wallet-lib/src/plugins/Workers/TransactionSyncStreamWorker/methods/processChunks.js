@@ -4,13 +4,55 @@ const GrpcErrorCodes = require('@dashevo/grpc-common/lib/server/error/GrpcErrorC
 const logger = require('../../../../logger');
 const isBrowser = require('../../../../utils/isBrowser');
 
+/**
+ * Re-creates current stream, so that new one could be re-created with more addresses in bloom filter
+ * @returns {Promise<void>}
+ */
+async function reconnectToStream() {
+  logger.silly('TransactionSyncStreamWorker - end stream - new addresses generated');
+
+  if (isBrowser()) {
+    // Under browser environment, grpc-web doesn't call error and end events
+    // so we call it by ourselves
+    await new Promise((resolveCancel) => setImmediate(() => {
+      this.stream.cancel();
+      const error = new GrpcError(GrpcErrorCodes.CANCELLED, 'Cancelled on client');
+
+      // call onError events
+      this.stream.f.forEach((func) => func(error));
+
+      // call onEnd events
+      this.stream.c.forEach((func) => func());
+      this.transactionsToVerify = {};
+      resolveCancel();
+    }));
+  } else {
+    // If there are some new addresses being imported
+    // to the storage, that mean that we hit the gap limit
+    // and we need to update the bloom filter with new addresses,
+    // i.e. we need to open another stream with a bloom filter
+    // that contains new addresses.
+
+    // DO not setting null this.stream allow to know we
+    // need to reset our stream (as we pass along the error)
+    // Wrapping `cancel` in `setImmediate` due to bug with double-free
+    // explained here (https://github.com/grpc/grpc-node/issues/1652)
+    // and here (https://github.com/nodejs/node/issues/38964)
+    await new Promise((resolveCancel) => setImmediate(() => {
+      this.stream.cancel();
+      this.transactionsToVerify = {};
+      resolveCancel();
+    }));
+  }
+}
+
 function processInstantLocks(instantLocks) {
   instantLocks.forEach((isLock) => {
     this.importInstantLock(isLock);
   });
 }
 
-function processTransactions(transactions) {
+async function processTransactions(transactions) {
   const { network, syncIncomingTransactions } = this;
   const addresses = this.getAddressesToSync();
 
@@ -19,7 +61,7 @@ function processTransactions(transactions) {
   if (walletTransactions.length) {
     walletTransactions.forEach((tx) => {
       if (this.transactionsToVerify[tx.hash]) {
-        console.warn(`!!! [processChunks] Duplicate tx: ${tx.hash}`);
+        throw new Error(`Transaction ${tx.hash} already sits in verification queue`);
       }
       this.transactionsToVerify[tx.hash] = tx;
     });
@@ -27,9 +69,15 @@ function processTransactions(transactions) {
     if (syncIncomingTransactions && walletTransactions.length) {
       // Immediately import unconfirmed transactions to proceed with the broadcasting and etc
       // I guess they should be first confirmed by the instant locks)
+      const {
+        addressesGenerated,
+        mostRecentHeight,
+      } = this.importTransactions(walletTransactions.map((tx) => [tx]));
+      this.setLastSyncedBlockHeight(mostRecentHeight, true);
 
-      // TODO: reconnect to the stream if new addresses were generated
-      this.importTransactions(walletTransactions.map((tx) => [tx]));
+      if (addressesGenerated > 0) {
+        await reconnectToStream.call(this);
+      }
     }
   }
 }
@@ -88,42 +136,8 @@ async function processMerkleBlock(merkleBlock) {
   this.setLastSyncedBlockHeight(headerHeight, true);
   this.scheduleProgressUpdate();
 
-  // TODO: test restart
-  // Close current stream, so that new one could be re-created with more addresses in bloom filter
   if (addressesGenerated > 0) {
-    logger.silly('TransactionSyncStreamWorker - end stream - new addresses generated');
-
-    if (isBrowser()) {
-      // Under browser environment, grpc-web doesn't call error and end events
-      // so we call it by ourselves
-      await new Promise((resolveCancel) => setImmediate(() => {
-        this.stream.cancel();
-        const error = new GrpcError(GrpcErrorCodes.CANCELLED, 'Cancelled on client');
-
-        // call onError events
-        this.stream.f.forEach((func) => func(error));
-
-        // call onEnd events
-        this.stream.c.forEach((func) => func());
-        resolveCancel();
-      }));
-    } else {
-      // If there are some new addresses being imported
-      // to the storage, that mean that we hit the gap limit
-      // and we need to update the bloom filter with new addresses,
-      // i.e. we need to open another stream with a bloom filter
-      // that contains new addresses.
-
-      // DO not setting null this.stream allow to know we
-      // need to reset our stream (as we pass along the error)
-      // Wrapping `cancel` in `setImmediate` due to bug with double-free
-      // explained here (https://github.com/grpc/grpc-node/issues/1652)
-      // and here (https://github.com/nodejs/node/issues/38964)
-      await new Promise((resolveCancel) => setImmediate(() => {
-        this.stream.cancel();
-        resolveCancel();
-      }));
-    }
+    await reconnectToStream.call(this);
   }
 }
 
@@ -138,7 +152,7 @@ async function processChunks(dataChunk) {
   if (instantLocks.length) {
     processInstantLocks.bind(this)(instantLocks);
   } if (transactions.length) {
-    processTransactions.bind(this)(transactions);
+    await processTransactions.bind(this)(transactions);
   } else if (merkleBlock) {
     await processMerkleBlock.bind(this)(merkleBlock);
   } else {

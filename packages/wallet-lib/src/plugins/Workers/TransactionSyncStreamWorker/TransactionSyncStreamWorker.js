@@ -339,6 +339,12 @@ class TransactionSyncStreamWorker extends Worker {
       this.progressUpdateTimeout = setTimeout(this.updateProgress, PROGRESS_UPDATE_INTERVAL);
     }
   }
+
+  removeStreamListeners(stream) {
+    stream.removeAllListeners('data');
+    stream.removeAllListeners('error');
+    stream.removeAllListeners('end');
+  }
 }
 
 TransactionSyncStreamWorker.prototype.getAddressesToSync = require('./methods/getAddressesToSync');
