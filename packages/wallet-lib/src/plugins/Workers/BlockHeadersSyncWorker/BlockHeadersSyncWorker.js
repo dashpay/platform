@@ -154,15 +154,6 @@ class BlockHeadersSyncWorker extends Worker {
       throw new Error(`Worker is already running: ${this.syncState}. Please call .onStop() first.`);
     }
 
-    const chainStore = this.storage.getDefaultChainStore();
-
-    const bestBlockHeight = typeof chainStore.state.blockHeight === 'number'
-      ? chainStore.state.blockHeight : -1;
-
-    if (this.syncCheckpoint !== bestBlockHeight) {
-      throw new Error(`Sync checkpoint is not equal to best block height: ${this.syncCheckpoint} !== ${bestBlockHeight}. Please read historical data first.`);
-    }
-
     const { blockHeadersProvider } = this.transport.client;
     blockHeadersProvider.on(
       BlockHeadersProvider.EVENTS.CHAIN_UPDATED,

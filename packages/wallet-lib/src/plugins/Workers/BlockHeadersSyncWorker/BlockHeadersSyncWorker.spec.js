@@ -296,11 +296,6 @@ describe('BlockHeadersSyncWorker', () => {
         .have.been.calledWith(blockHeadersSyncWorker.syncCheckpoint);
     });
 
-    it('should throw error if syncCheckpoint is different than chain height', async () => {
-      await expect(blockHeadersSyncWorker.execute())
-        .to.be.rejectedWith('Sync checkpoint is not equal to best block height: -1 !== 1000. Please read historical data first');
-    });
-
     it('should forward an error from blockHeadersProvider', async function () {
       blockHeadersSyncWorker.syncCheckpoint = chainHeight;
       await blockHeadersSyncWorker.execute();

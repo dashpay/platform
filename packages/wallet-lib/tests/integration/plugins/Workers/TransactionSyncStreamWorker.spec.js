@@ -89,39 +89,37 @@ describe('TransactionSyncStreamWorker', function suite() {
       worker.setLastSyncedBlockHeight(lastSavedBlockHeight);
       const transactionsSent = [];
 
-      account.transport.getBestBlockHeight
-        .returns(bestBlockHeight);
+      const onStartPromise = worker.onStart();
 
-      setTimeout(async () => {
-        try {
-          expect(worker.stream).is.not.null;
+      await wait(10)
+      // setTimeout(async () => {
+      try {
+        expect(worker.stream).is.not.null;
 
-          for (let i = lastSavedBlockHeight; i <= bestBlockHeight; i++) {
-            const transaction = new Transaction().to(address, i);
-            account.transport.getTransaction
-                .returns({
-                  transaction:transaction,
-                  blockHash: Buffer.from('4f46066bd50cc2684484407696b7949e82bd906ea92c040f59a97cba47ed8176', 'hex'),
-                  height: 42,
-                  confirmations: 10,
-                  isInstantLocked: true,
-                  isChainLocked: false,
-                });
-            transactionsSent.push(transaction);
-            txStreamMock.emit(TxStreamMock.EVENTS.data, new TxStreamDataResponseMock({
-              rawTransactions: [transaction.toBuffer()]
-            }));
-            await wait(10);
-          }
-
-          txStreamMock.emit(TxStreamMock.EVENTS.end);
-        } catch (e) {
-          console.error(e);
-          txStreamMock.emit(TxStreamMock.EVENTS.error, e);
+        for (let i = lastSavedBlockHeight; i <= bestBlockHeight; i++) {
+          const transaction = new Transaction().to(address, i);
+          transactionsSent.push(transaction);
+          txStreamMock.sendTransactions([transaction]);
+          await wait(10);
         }
-      }, 10);
 
-      await worker.onStart();
+        const merkleBlock = mockMerkleBlock(transactionsSent.map((tx) => tx.hash));
+        worker.storage.getDefaultChainStore().state.headersMetadata.set(merkleBlock.header.hash, {
+          height: 21,
+          time: 99999999
+        })
+
+        txStreamMock.sendMerkleBlock(merkleBlock);
+        await wait(10);
+
+        txStreamMock.emit(TxStreamMock.EVENTS.end);
+      } catch (e) {
+        console.error(e);
+        txStreamMock.emit(TxStreamMock.EVENTS.error, e);
+      }
+      // }, 10);
+
+      await onStartPromise;
 
       const transactionsInStorage = Array.from(storage.getChainStore('livenet').state.transactions)
           .map(([,t]) => t.transaction.toJSON());
@@ -139,53 +137,37 @@ describe('TransactionSyncStreamWorker', function suite() {
       const bestBlockHeight = 42;
 
       worker.setLastSyncedBlockHeight(lastSavedBlockHeight);
+      worker.storage.getDefaultChainStore().state.blockHeight = bestBlockHeight;
       const transactionsSent = [];
-
-      account.transport.getBestBlockHeight
-        .returns(bestBlockHeight);
 
       setTimeout(async () => {
         try {
           expect(worker.stream).is.not.null;
 
           let transaction = new Transaction().to(addressAtIndex19, 10000);
-          account.transport.getTransaction
-              .returns({
-                transaction:transaction,
-                blockHash: Buffer.from('4f46066bd50cc2684484407696b7949e82bd906ea92c040f59a97cba47ed8176', 'hex'),
-                height: 42,
-                confirmations: 10,
-                isInstantLocked: true,
-                isChainLocked: false,
-              });
           transactionsSent.push(transaction);
-          txStreamMock.emit(TxStreamMock.EVENTS.data, new TxStreamDataResponseMock({
-            rawTransactions: [transaction.toBuffer()]
-          }));
+          txStreamMock.sendTransactions([transaction])
 
           await wait(10);
 
-          merkleBlockMock.hashes[0] =  Buffer.from(transaction.hash, 'hex').reverse().toString('hex');
-          txStreamMock.emit(TxStreamMock.EVENTS.data, new TxStreamDataResponseMock({
-            rawMerkleBlock: merkleBlockMock.toBuffer()
-          }));
+          const merkleBlock = mockMerkleBlock(transactionsSent.map((tx) => tx.hash));
+          worker.storage.getDefaultChainStore().state.headersMetadata.set(merkleBlock.header.hash, {
+            height: 42,
+            time: 99999999999
+          });
+          txStreamMock.sendMerkleBlock(merkleBlock)
 
           await wait(10);
 
           transaction = new Transaction().to(account.getAddress(10).address, 10000);
-          account.transport.getTransaction
-              .returns({
-                transaction:transaction,
-                blockHash: Buffer.from('4f46066bd50cc2684484407696b7949e82bd906ea92c040f59a97cba47ed8176', 'hex'),
-                height: 42,
-                confirmations: 10,
-                isInstantLocked: true,
-                isChainLocked: false,
-              });
           transactionsSent.push(transaction);
-          txStreamMock.emit(TxStreamMock.EVENTS.data, new TxStreamDataResponseMock({
-            rawTransactions: [transaction.toBuffer()]
-          }));
+          txStreamMock.sendTransactions([transaction])
+          const secondMerkleBlock = mockMerkleBlock(transactionsSent.map((tx) => tx.hash));
+          worker.storage.getDefaultChainStore().state.headersMetadata.set(secondMerkleBlock.header.hash, {
+            height: 42,
+            time: 99999999999
+          });
+          txStreamMock.sendMerkleBlock(secondMerkleBlock)
 
           await wait(10);
 
@@ -216,10 +198,10 @@ describe('TransactionSyncStreamWorker', function suite() {
       expect(account.transport.subscribeToTransactionsWithProofs.callCount).to.be.equal(2);
       // 20 external and 20 internal
       expect(account.transport.subscribeToTransactionsWithProofs.firstCall.args[0].length).to.be.equal(40);
-      expect(account.transport.subscribeToTransactionsWithProofs.firstCall.args[1]).to.be.deep.equal({ fromBlockHeight: 40, count: 2});
+      expect(account.transport.subscribeToTransactionsWithProofs.firstCall.args[1]).to.be.deep.equal({ fromBlockHeight: 40, count: 2 });
       // 20 more of external, since the last address is used.
       expect(account.transport.subscribeToTransactionsWithProofs.secondCall.args[0].length).to.be.equal(60);
-      expect(account.transport.subscribeToTransactionsWithProofs.secondCall.args[1]).to.be.deep.equal({ fromBlockHeight: 42, count: 1});
+      expect(account.transport.subscribeToTransactionsWithProofs.secondCall.args[1]).to.be.deep.equal({ fromBlockHeight: 42, count: 1 });
 
       expect(worker.stream).to.be.null;
       expect(transactionsInStorage.length).to.be.equal(2);
@@ -231,10 +213,9 @@ describe('TransactionSyncStreamWorker', function suite() {
       const bestBlockHeight = 42;
 
       worker.setLastSyncedBlockHeight(lastSavedBlockHeight);
+      worker.storage.getDefaultChainStore().state.blockHeight = bestBlockHeight;
       const transactionsSent = [];
 
-      account.transport.getBestBlockHeight
-          .returns(bestBlockHeight);
 
       setTimeout(async () => {
         expect(worker.stream).is.not.null;
@@ -274,10 +255,8 @@ describe('TransactionSyncStreamWorker', function suite() {
       const bestBlockHeight = 42;
 
       worker.setLastSyncedBlockHeight(lastSavedBlockHeight);
+      worker.storage.getDefaultChainStore().state.blockHeight = bestBlockHeight;
       const transactionsSent = [];
-
-      account.transport.getBestBlockHeight
-          .returns(bestBlockHeight);
 
       setTimeout(async () => {
         expect(worker.stream).is.not.null;
@@ -360,10 +339,8 @@ describe('TransactionSyncStreamWorker', function suite() {
       const bestBlockHeight = 42;
 
       worker.setLastSyncedBlockHeight(lastSavedBlockHeight);
+      worker.storage.getDefaultChainStore().state.blockHeight = bestBlockHeight;
       const transactionsSent = [];
-
-      account.transport.getBestBlockHeight
-          .returns(bestBlockHeight);
 
       worker.execute();
 
@@ -371,43 +348,24 @@ describe('TransactionSyncStreamWorker', function suite() {
 
       try {
         let transaction = new Transaction().to(addressAtIndex19, 10000);
-        // account.transport.getTransaction
-        //     .returns({
-        //       transaction:transaction,
-        //       blockHash: Buffer.from('4f46066bd50cc2684484407696b7949e82bd906ea92c040f59a97cba47ed8176', 'hex'),
-        //       height: 42,
-        //       confirmations: 10,
-        //       isInstantLocked: true,
-        //       isChainLocked: false,
-        //     });
         transactionsSent.push(transaction);
-        txStreamMock.emit(TxStreamMock.EVENTS.data, new TxStreamDataResponseMock({
-          rawTransactions: [transaction.toBuffer()]
-        }));
+        txStreamMock.sendTransactions([transaction]);
 
         await wait(10);
 
-        merkleBlockMock.hashes[0] =  Buffer.from(transaction.hash, 'hex').reverse().toString('hex');
-        txStreamMock.emit(TxStreamMock.EVENTS.data, new TxStreamDataResponseMock({
-          rawMerkleBlock: merkleBlockMock.toBuffer()
-        }));
+        const firstMerkleBlock = mockMerkleBlock([transaction.hash])
+        worker.storage.getDefaultChainStore().state.headersMetadata
+          .set(firstMerkleBlock.header.hash, {
+            height: 42,
+            time: 99999999999
+          });
+        txStreamMock.sendMerkleBlock(firstMerkleBlock)
 
         await wait(10);
 
-        transaction = transaction = new Transaction().to(account.getAddress(10).address, 10000);
-        account.transport.getTransaction
-            .returns({
-              transaction:transaction,
-              blockHash: Buffer.from('4f46066bd50cc2684484407696b7949e82bd906ea92c040f59a97cba47ed8176', 'hex'),
-              height: 42,
-              confirmations: 10,
-              isInstantLocked: true,
-              isChainLocked: false,
-            });
+        transaction = new Transaction().to(account.getAddress(10).address, 10000);
         transactionsSent.push(transaction);
-        txStreamMock.emit(TxStreamMock.EVENTS.data, new TxStreamDataResponseMock({
-          rawTransactions: [transaction.toBuffer()]
-        }));
+        txStreamMock.sendTransactions([transaction])
 
         await wait(10);
 
@@ -562,7 +520,7 @@ describe('TransactionSyncStreamWorker', function suite() {
     });
   });
 
-  it.only('should propagate instant locks', async () => {
+  it('should propagate instant locks', async () => {
 
     const transactions = [
       new Transaction().to(addressAtIndex19, 10000),
@@ -679,6 +637,8 @@ describe('TransactionSyncStreamWorker', function suite() {
     expect(transactionsInStorage.length).to.be.equal(2);
     expect(transactionsInStorage).to.have.deep.members(expectedTransactions);
 
+    await worker.execute();
+
     const { promise } = account.waitForInstantLock(transactions[1].hash, 10000);
 
     const [ actualLock ] = await Promise.all([
@@ -714,11 +674,15 @@ describe('TransactionSyncStreamWorker', function suite() {
     wallet = new Wallet({
       HDPrivateKey: new HDPrivateKey(testHDKey),
       plugins: [worker],
+      allowSensitiveOperations: true,
       unsafeOptions: {
         skipSynchronizationBeforeHeight: 20,
       },
     });
 
+    await new Promise((resolve) => {
+      wallet.storage.on('CONFIGURED', resolve);
+    })
 
     await createAndAttachTransportMocksToWallet(wallet, this.sinon);
 

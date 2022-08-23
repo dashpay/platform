@@ -8,8 +8,7 @@ function importTransaction(transaction, metadata = {}) {
     throw new Error('Will not import an array of transaction');
   }
   const normalizedTransaction = is.string(transaction) ? new Transaction(transaction) : transaction;
-  const time = typeof metadata.time === 'number' && !Number.isNaN(metadata.time)
-    ? new Date(metadata.time) : null;
+  const time = metadata.time instanceof Date ? metadata.time : null;
 
   this.state.transactions.set(normalizedTransaction.hash, {
     transaction: normalizedTransaction,
