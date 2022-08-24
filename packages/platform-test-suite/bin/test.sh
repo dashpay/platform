@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-set -ea
+set -eax
 
 if [[ -f ".env" ]]; then
     source ".env"
@@ -209,7 +209,7 @@ then
   cmd="${cmd} NODE_ENV=test node_modules/.bin/mocha -b ${scope_dirs}"
 else
   echo $cmd
-  cmd="${cmd} NODE_ENV=test yarn mocha -b ${scope_dirs}"
+  cmd="${cmd} yarn mocha -b ${scope_dirs}"
 fi
 
 if [ -n "$timeout" ]
