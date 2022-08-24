@@ -6,6 +6,7 @@
 logs
 db
 scripts
+node_modules
 
 packages/*/.nyc_output
 packages/*/.ultra.cache.json
@@ -14,6 +15,7 @@ packages/*/tests
 packages/*/doc
 packages/*/docs
 packages/*/dist
+packages/*/node_modules
 
 !packages/platform-test-suite/test
 
