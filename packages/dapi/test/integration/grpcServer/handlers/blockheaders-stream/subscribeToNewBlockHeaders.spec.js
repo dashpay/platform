@@ -3,8 +3,8 @@ const ZmqClient = require('../../../../../lib/externalApis/dashcore/ZmqClient');
 const dashCoreRpcClient = require('../../../../../lib/externalApis/dashcore/rpc');
 
 const subscribeToNewBlockHeaders = require('../../../../../lib/grpcServer/handlers/blockheaders-stream/subscribeToNewBlockHeaders');
-const ChainDataProvider = require('../../../../../lib/chainDataProvider/ChainDataProvider');
-const blockHeadersCache = require('../../../../../lib/chainDataProvider/BlockHeadersCache');
+// const ChainDataProvider = require('../../../../../lib/chainDataProvider/ChainDataProvider');
+// const BlockHeadersCache = require('../../../../../lib/chainDataProvider/BlockHeadersCache');
 const { NEW_BLOCK_HEADERS_PROPAGATE_INTERVAL } = require('../../../../../lib/grpcServer/handlers/blockheaders-stream/constants');
 const ProcessMediator = require('../../../../../lib/grpcServer/handlers/blockheaders-stream/ProcessMediator');
 const wait = require('../../../../../lib/utils/wait');
@@ -12,6 +12,7 @@ const wait = require('../../../../../lib/utils/wait');
 describe.skip('subscribeToNewBlockHeaders', async () => {
   let mediator;
   let zmqClient;
+  let chainDataProvider;
 
   const blockHeaders = {};
   const chainLocks = {};
@@ -30,7 +31,7 @@ describe.skip('subscribeToNewBlockHeaders', async () => {
     mediator = new ProcessMediator();
 
     dashCoreRpcClient.getBlockHeader.resetHistory();
-    blockHeadersCache.purge();
+    // blockHeadersCache.purge();
 
     zmqClient = new ZmqClient();
     this.sinon.stub(zmqClient.subscriberSocket, 'connect')
@@ -200,7 +201,7 @@ describe.skip('subscribeToNewBlockHeaders', async () => {
   });
 
   it('should use cache when historical data is sent', async () => {
-    const spyCache = this.sinon.spy(blockHeadersCache);
+    // const spyCache = this.sinon.spy(blockHeadersCache);
     const receivedHeaders = {};
 
     mediator.on(ProcessMediator.EVENTS.BLOCK_HEADERS, (headers) => {
@@ -246,7 +247,7 @@ describe.skip('subscribeToNewBlockHeaders', async () => {
     mediator.emit(ProcessMediator.EVENTS.HISTORICAL_DATA_SENT);
 
     expect(dashCoreRpcClient.getBlockHeader.callCount).to.be.equal(0);
-    expect(spyCache.set.callCount).to.be.equal(3);
-    expect(spyCache.get.callCount).to.be.equal(6);
+    // expect(spyCache.set.callCount).to.be.equal(3);
+    // expect(spyCache.get.callCount).to.be.equal(6);
   });
 });
