@@ -2,6 +2,14 @@
 
 set -ea
 
+if [[ -f ".env" ]]; then
+    source ".env"
+fi
+
+if [[ -f "packages/platform-test-suite/.env" ]]; then
+    source "packages/platform-test-suite/.env"
+fi
+
 cmd_usage="Run test suite
 
 Usage: test <seed> [options]
@@ -201,7 +209,7 @@ then
   cmd="${cmd} NODE_ENV=test node_modules/.bin/mocha -b ${scope_dirs}"
 else
   echo $cmd
-  cmd="${cmd} NODE_ENV=test yarn mocha --inspect-brk -b ${scope_dirs}"
+  cmd="${cmd} NODE_ENV=test yarn mocha -b ${scope_dirs}"
 fi
 
 if [ -n "$timeout" ]
