@@ -1,4 +1,4 @@
-FROM node:16.16-alpine as builder
+FROM node:16-alpine as builder
 
 ARG NODE_ENV=production
 ENV NODE_ENV ${NODE_ENV}
@@ -40,7 +40,7 @@ RUN --mount=type=cache,target=/tmp/unplugged \
     yarn workspaces focus --production @dashevo/platform-test-suite && \
     cp -R /platform/.yarn/unplugged /tmp/
 
-FROM node:16.16-alpine
+FROM node:16-alpine
 
 ARG NODE_ENV=production
 ENV NODE_ENV ${NODE_ENV}
@@ -52,7 +52,7 @@ LABEL description="DAPI Node.JS"
 RUN apk add --no-cache bash
 
 # Install latest yarn
-RUN yarn set version 3.1.0
+RUN yarn set version 3.2.2
 
 ENV PATH /platform/node_modules/.bin:$PATH
 
