@@ -13,8 +13,6 @@
 # NYC test runnner
 .nyc_output
 
-node_modules
-
 *.log
 
 # Ultra runner build cache

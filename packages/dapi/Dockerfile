@@ -53,9 +53,6 @@ LABEL description="DAPI Node.JS"
 # Install ZMQ shared library
 RUN apk update && apk add --no-cache zeromq-dev
 
-# Install latest yarn
-RUN yarn set version 3.2.2
-
 WORKDIR /platform
 
 COPY --from=builder /platform /platform
