@@ -36,7 +36,7 @@
     "dashmate": "yarn exec packages/dashmate/bin/dashmate",
     "release": "yarn exec ./scripts/release/release.sh"
   },
-  "packageManager": "yarn@3.1.0",
+  "packageManager": "yarn@3.2.2",
   "ultra": {
     "concurrent": [
       "clean"
