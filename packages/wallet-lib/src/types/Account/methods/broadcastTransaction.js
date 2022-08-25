@@ -133,7 +133,9 @@ async function broadcastTransaction(transaction, options = {
       // to ensure that TX malleability is not a problem
       // https://dashcore.readme.io/v18.0.0/docs/core-guide-transactions-transaction-malleability
       if (payload.transaction.hash === transaction.hash) {
-        logger.debug(`broadcastTransaction - received from mempool TX "${transaction.hash}"`);
+        logger.debug(`broadcastTransaction - received from mempool TX "${transaction.hash}"`, {
+          walletId: this.walletId,
+        });
         clearTimeout(rejectTimeout);
         resolve();
       }
@@ -141,7 +143,9 @@ async function broadcastTransaction(transaction, options = {
     // TODO: change to FETCHED_UNCONFIRMED_TRANSACTION once this event is restored
     this.once(EVENTS.FETCHED_CONFIRMED_TRANSACTION, listener);
     cancelMempoolSubscription = () => {
-      logger.debug(`broadcastTransaction - canceled mempool subscription for TX "${transaction.hash}"`);
+      logger.debug(`broadcastTransaction - canceled mempool subscription for TX "${transaction.hash}"`, {
+        walletId: this.walletId,
+      });
       this.removeListener(EVENTS.FETCHED_CONFIRMED_TRANSACTION, listener);
     };
   });
@@ -152,7 +156,9 @@ async function broadcastTransaction(transaction, options = {
     }, options.mempoolPropagationTimeout);
   });
 
-  logger.debug(`broadcastTransaction - subscribe to mempool for TX "${transaction.hash}"`);
+  logger.debug(`broadcastTransaction - subscribe to mempool for TX "${transaction.hash}"`, {
+    walletId: this.walletId,
+  });
   const mempoolPropagationRace = Promise.race([
     mempoolPropagationPromise, rejectPromise,
   ]);
@@ -161,7 +167,9 @@ async function broadcastTransaction(transaction, options = {
     await Promise.all([
       mempoolPropagationRace,
       _broadcastTransaction.call(this, transaction, options).then((hash) => {
-        logger.debug(`broadcastTransaction - broadcasted TX "${hash}"`);
+        logger.debug(`broadcastTransaction - broadcasted TX "${hash}"`, {
+          walletId: this.walletId,
+        });
       }),
     ]);
   } catch (error) {

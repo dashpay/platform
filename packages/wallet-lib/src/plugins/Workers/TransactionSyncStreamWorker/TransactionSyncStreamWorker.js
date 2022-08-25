@@ -50,6 +50,13 @@ class TransactionSyncStreamWorker extends Worker {
     this.progressUpdateTimeout = null;
 
     /**
+     * Indicates that TX stream has to be re-created
+     * with the new addresses for bloom filter after the chain height has been updated
+     * @type {boolean}
+     */
+    this.reconnectOnNewBlock = false;
+
+    /**
      * Pool of transactions pending to be verified
      * @type {{}}
      */
@@ -201,7 +208,7 @@ class TransactionSyncStreamWorker extends Worker {
     // noinspection ES6MissingAwait
     this.incomingSyncPromise = this.startIncomingSync().catch((e) => {
       logger.error('Error syncing incoming transactions', e);
-      this.emit('error', e);
+      this.parentEvents.emit('error', e);
     });
 
     this.parentEvents.on(EVENTS.BLOCK, this.handleNewBlock);
@@ -225,10 +232,17 @@ class TransactionSyncStreamWorker extends Worker {
       }
     });
 
-    // TODO: handle newly generated addresses and reconnect to the stream?
     this.importTransactions(transactionsWithMetadata);
 
     this.setLastSyncedBlockHeight(height, true);
+
+    if (this.reconnectOnNewBlock) {
+      this.reconnectOnNewBlock = false;
+      this.reconnectToStream()
+        .catch((e) => {
+          this.parentEvents.emit('error', e);
+        });
+    }
   }
 
   /**
@@ -347,6 +361,47 @@ class TransactionSyncStreamWorker extends Worker {
     stream.removeAllListeners('data');
     stream.removeAllListeners('error');
     stream.removeAllListeners('end');
+  }
+
+  /**
+   * Re-creates current stream,
+   * so that new one could be re-created with more addresses in bloom filter
+   * @returns {Promise<void>}
+   */
+  async reconnectToStream() {
+    logger.silly('TransactionSyncStreamWorker - end stream - new addresses generated');
+
+    if (isBrowser()) {
+      // Under browser environment, grpc-web doesn't call error and end events
+      // so we call it by ourselves
+      await new Promise((resolveCancel) => setImmediate(() => {
+        this.stream.cancel();
+        const error = new GrpcError(GrpcErrorCodes.CANCELLED, 'Cancelled on client');
+
+        // call onError events
+        this.stream.f.forEach((func) => func(error));
+
+        // call onEnd events
+        this.stream.c.forEach((func) => func());
+        resolveCancel();
+      }));
+    } else {
+      // If there are some new addresses being imported
+      // to the storage, that mean that we hit the gap limit
+      // and we need to update the bloom filter with new addresses,
+      // i.e. we need to open another stream with a bloom filter
+      // that contains new addresses.
+
+      // DO not setting null this.stream allow to know we
+      // need to reset our stream (as we pass along the error)
+      // Wrapping `cancel` in `setImmediate` due to bug with double-free
+      // explained here (https://github.com/grpc/grpc-node/issues/1652)
+      // and here (https://github.com/nodejs/node/issues/38964)
+      await new Promise((resolveCancel) => setImmediate(() => {
+        this.stream.cancel();
+        resolveCancel();
+      }));
+    }
   }
 }
 

@@ -15,7 +15,7 @@ const TxStreamMock = require('../../../../src/test/mocks/TxStreamMock');
 
 const createAndAttachTransportMocksToWallet = require('../../../../src/test/mocks/createAndAttachTransportMocksToWallet')
 
-const { Wallet } = require('../../../../src');
+const { Wallet, EVENTS } = require('../../../../src');
 const mockMerkleBlock = require("../../../../src/test/mocks/mockMerkleBlock");
 
 chai.use(chaiAsPromised);
@@ -346,13 +346,7 @@ describe('TransactionSyncStreamWorker', function suite() {
 
         await wait(10);
 
-        const firstMerkleBlock = mockMerkleBlock([transaction.hash])
-        worker.storage.getDefaultChainStore().state.headersMetadata
-          .set(firstMerkleBlock.header.hash, {
-            height: 42,
-            time: 99999999999
-          });
-        txStreamMock.sendMerkleBlock(firstMerkleBlock)
+        account.emit(EVENTS.BLOCK, { hash: '1111', transactions: [transaction]}, 42)
 
         await wait(10);
 
@@ -569,16 +563,14 @@ describe('TransactionSyncStreamWorker', function suite() {
 
     try {
       const firstTransaction = transactions[0];
-      const firstMerkleBlock = mockMerkleBlock([firstTransaction.hash])
 
       const chainStore = account.storage.getDefaultChainStore();
-      chainStore.state.headersMetadata.set(firstMerkleBlock.header.hash, { height: 42, time: 999999999 })
 
       txStreamMock.sendTransactions([firstTransaction])
       transactionsSent.push(firstTransaction);
       txStreamMock.sendISLocks([instantLock1])
-      await wait(10);
-      txStreamMock.sendMerkleBlock(firstMerkleBlock)
+
+      account.emit(EVENTS.BLOCK, { hash: '1111', transactions: [firstTransaction]}, 42)
 
       await wait(10);
 

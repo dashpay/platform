@@ -1,51 +1,5 @@
 /* eslint-disable no-param-reassign */
-const GrpcError = require('@dashevo/grpc-common/lib/server/error/GrpcError');
-const GrpcErrorCodes = require('@dashevo/grpc-common/lib/server/error/GrpcErrorCodes');
 const logger = require('../../../../logger');
-const isBrowser = require('../../../../utils/isBrowser');
-
-/**
- * Re-creates current stream,
- * so that new one could be re-created with more addresses in bloom filter
- * @returns {Promise<void>}
- */
-async function reconnectToStream() {
-  logger.silly('TransactionSyncStreamWorker - end stream - new addresses generated');
-
-  if (isBrowser()) {
-    // Under browser environment, grpc-web doesn't call error and end events
-    // so we call it by ourselves
-    await new Promise((resolveCancel) => setImmediate(() => {
-      this.stream.cancel();
-      const error = new GrpcError(GrpcErrorCodes.CANCELLED, 'Cancelled on client');
-
-      // call onError events
-      this.stream.f.forEach((func) => func(error));
-
-      // call onEnd events
-      this.stream.c.forEach((func) => func());
-      this.transactionsToVerify = {};
-      resolveCancel();
-    }));
-  } else {
-    // If there are some new addresses being imported
-    // to the storage, that mean that we hit the gap limit
-    // and we need to update the bloom filter with new addresses,
-    // i.e. we need to open another stream with a bloom filter
-    // that contains new addresses.
-
-    // DO not setting null this.stream allow to know we
-    // need to reset our stream (as we pass along the error)
-    // Wrapping `cancel` in `setImmediate` due to bug with double-free
-    // explained here (https://github.com/grpc/grpc-node/issues/1652)
-    // and here (https://github.com/nodejs/node/issues/38964)
-    await new Promise((resolveCancel) => setImmediate(() => {
-      this.stream.cancel();
-      this.transactionsToVerify = {};
-      resolveCancel();
-    }));
-  }
-}
 
 function processInstantLocks(instantLocks) {
   instantLocks.forEach((isLock) => {
@@ -69,7 +23,7 @@ async function processTransactions(transactions) {
 
     if (syncIncomingTransactions && walletTransactions.length) {
       // Immediately import unconfirmed transactions to proceed with the broadcasting and etc
-      // I guess they should be first confirmed by the instant locks)
+      // TODO: I guess they should be first confirmed by the instant locks
       const {
         addressesGenerated,
         mostRecentHeight,
@@ -77,7 +31,7 @@ async function processTransactions(transactions) {
       this.setLastSyncedBlockHeight(mostRecentHeight, true);
 
       if (addressesGenerated > 0) {
-        await reconnectToStream.call(this);
+        this.reconnectOnNewBlock = true;
       }
     }
   }
@@ -99,7 +53,7 @@ async function processMerkleBlock(merkleBlock) {
   const headerMetadata = chainStore.state.headersMetadata.get(headerHash);
 
   if (!headerMetadata) {
-    throw new Error('Header metadata not found during the merkle block processing');
+    throw new Error('Header metadata was not found during the merkle block processing');
   }
 
   const headerHeight = headerMetadata.height;
@@ -138,7 +92,7 @@ async function processMerkleBlock(merkleBlock) {
   this.scheduleProgressUpdate();
 
   if (addressesGenerated > 0) {
-    await reconnectToStream.call(this);
+    await this.reconnectToStream();
   }
 }
 
@@ -152,7 +106,7 @@ async function processChunks(dataChunk) {
 
   if (instantLocks.length) {
     processInstantLocks.bind(this)(instantLocks);
-  } if (transactions.length) {
+  } else if (transactions.length) {
     await processTransactions.bind(this)(transactions);
   } else if (merkleBlock) {
     await processMerkleBlock.bind(this)(merkleBlock);

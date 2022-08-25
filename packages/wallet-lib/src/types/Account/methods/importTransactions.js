@@ -29,15 +29,13 @@ module.exports = function importTransactions(transactionsWithMayBeMetadata) {
     const normalizedTransaction = chainStore.importTransaction(transaction, metadata);
     // Affected addresses might not be from our master keychain (account)
 
-    if (metadata) {
-      const affectedAddressesData = chainStore.considerTransaction(normalizedTransaction.hash);
-      const affectedAddresses = Object.keys(affectedAddressesData);
+    const affectedAddressesData = chainStore.considerTransaction(normalizedTransaction.hash);
+    const affectedAddresses = Object.keys(affectedAddressesData);
 
-      logger.silly(`Account.importTransactions - Import ${transaction.hash} to chainStore. ${affectedAddresses.length} addresses affected.`);
-      const newPaths = this.generateNewPaths(affectedAddresses);
-      addressesGenerated += newPaths.length;
-      this.addPathsToStore(newPaths);
-    }
+    logger.silly(`Account.importTransactions - Import ${transaction.hash} to chainStore. ${affectedAddresses.length} addresses affected.`);
+    const newPaths = this.generateNewPaths(affectedAddresses);
+    addressesGenerated += newPaths.length;
+    this.addPathsToStore(newPaths);
   });
 
   logger.silly(`Account.importTransactions(len: ${transactionsWithMayBeMetadata.length})`);
