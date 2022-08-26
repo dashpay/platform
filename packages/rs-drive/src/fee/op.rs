@@ -208,7 +208,7 @@ impl SizesOfDeleteOperation {
     pub fn for_key_value(path_size: u32, key_size: u16, element: &Element, multiplier: u8) -> Self {
         let value_size = match element {
             Element::Item(item, _) => item.len(),
-            Element::Reference(path, _) => path.iter().map(|inner| inner.len()).sum(),
+            Element::Reference(path, _, _) => path.encoding_length(),
             Element::Tree(..) => 32,
         } as u32;
         SizesOfDeleteOperation::for_key_value_size(path_size, key_size, value_size, multiplier)

@@ -60,7 +60,14 @@ describe('GroveDB', () => {
     await groveDb.insert(
       [otherTreeKey],
       itemKey,
-      { type: 'reference', epoch: 0, value: [...itemTreePath, itemKey] },
+      {
+        type: 'reference',
+        epoch: 0,
+        value: {
+          type: 'absolutePathReference',
+          path: [...itemTreePath, itemKey],
+        },
+      },
     );
 
     const result = await groveDb.get(

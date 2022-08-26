@@ -1,6 +1,8 @@
 use neon::prelude::*;
 use neon::types::buffer::TypedArray;
+use num::FromPrimitive;
 use rs_drive::drive::flags::StorageFlags;
+use rs_drive::grovedb::reference_path::ReferencePathType;
 use rs_drive::grovedb::{Element, PathQuery, Query, SizedQuery};
 use std::borrow::Borrow;
 
@@ -38,8 +40,8 @@ pub fn js_object_to_element<'a, C: Context<'a>>(
             ))
         }
         "reference" => {
-            let js_array: Handle<JsArray> = js_object.get(cx, "value")?;
-            let reference = js_array_of_buffers_to_vec(js_array, cx)?;
+            let js_object: Handle<JsObject> = js_object.get(cx, "value")?;
+            let reference = js_object_to_reference(js_object, cx)?;
 
             Ok(Element::new_reference_with_flags(
                 reference,
@@ -64,6 +66,68 @@ pub fn js_object_to_element<'a, C: Context<'a>>(
     }
 }
 
+fn js_object_to_reference<'a, C: Context<'a>>(
+    js_object: Handle<JsObject>,
+    cx: &mut C,
+) -> NeonResult<ReferencePathType> {
+    let js_reference_type: Handle<JsString> = js_object.get(cx, "type")?;
+    let reference_type: String = js_reference_type.value(cx);
+
+    match reference_type.as_str() {
+        "absolutePathReference" => {
+            let js_path: Handle<JsArray> = js_object.get(cx, "path")?;
+            let path = js_array_of_buffers_to_vec(js_path, cx)?;
+
+            Ok(ReferencePathType::AbsolutePathReference(path))
+        }
+        "upstreamRootHeightReference" => {
+            let js_path: Handle<JsArray> = js_object.get(cx, "path")?;
+            let path = js_array_of_buffers_to_vec(js_path, cx)?;
+
+            let js_relativity_index: Handle<JsNumber> = js_object.get(cx, "relativityIndex")?;
+            let relativity_index_f64: f64 = js_relativity_index.value(cx);
+            let relativity_index_option: Option<u8> = FromPrimitive::from_f64(relativity_index_f64);
+            let relativity_index: u8 = relativity_index_option
+                .ok_or(())
+                .or_else(|_| cx.throw_error("cannot convert relativity_index from f64 to u8"))?;
+
+            Ok(ReferencePathType::UpstreamRootHeightReference(
+                relativity_index,
+                path,
+            ))
+        }
+        "upstreamFromElementHeightReference" => {
+            let js_path: Handle<JsArray> = js_object.get(cx, "path")?;
+            let path = js_array_of_buffers_to_vec(js_path, cx)?;
+
+            let js_relativity_index: Handle<JsNumber> = js_object.get(cx, "relativityIndex")?;
+            let relativity_index_f64: f64 = js_relativity_index.value(cx);
+            let relativity_index_option: Option<u8> = FromPrimitive::from_f64(relativity_index_f64);
+            let relativity_index: u8 = relativity_index_option
+                .ok_or(())
+                .or_else(|_| cx.throw_error("cannot convert relativity_index from f64 to u8"))?;
+
+            Ok(ReferencePathType::UpstreamFromElementHeightReference(
+                relativity_index,
+                path,
+            ))
+        }
+        "cousinReference" => {
+            let js_key: Handle<JsBuffer> = js_object.get(cx, "key")?;
+            let key = js_buffer_to_vec_u8(js_key, cx);
+
+            Ok(ReferencePathType::CousinReference(key))
+        }
+        "siblingReference" => {
+            let js_key: Handle<JsBuffer> = js_object.get(cx, "key")?;
+            let key = js_buffer_to_vec_u8(js_key, cx);
+
+            Ok(ReferencePathType::SiblingReference(key))
+        }
+        _ => cx.throw_error(format!("Unexpected reference type {}", reference_type)),
+    }
+}
+
 pub fn element_to_js_object<'a, C: Context<'a>>(
     element: Element,
     cx: &mut C,
@@ -77,7 +141,7 @@ pub fn element_to_js_object<'a, C: Context<'a>>(
             let js_buffer = JsBuffer::external(cx, item);
             js_buffer.upcast()
         }
-        Element::Reference(reference, _) => nested_vecs_to_js(reference, cx)?,
+        Element::Reference(reference, _, _) => reference_to_dictionary(reference, cx)?,
         Element::Tree(tree, _) => {
             let js_buffer = JsBuffer::external(cx, tree);
             js_buffer.upcast()
@@ -101,6 +165,57 @@ pub fn nested_vecs_to_js<'a, C: Context<'a>>(
     }
 
     Ok(js_array.upcast())
+}
+
+pub fn reference_to_dictionary<'a, C: Context<'a>>(
+    reference: ReferencePathType,
+    cx: &mut C,
+) -> NeonResult<Handle<'a, JsValue>> {
+    let js_object: Handle<JsObject> = cx.empty_object();
+
+    match reference {
+        ReferencePathType::AbsolutePathReference(path) => {
+            let js_type_name = cx.string("absolutePathReference");
+            let js_path = nested_vecs_to_js(path, cx)?;
+
+            js_object.set(cx, "type", js_type_name)?;
+            js_object.set(cx, "path", js_path)?;
+        }
+        ReferencePathType::UpstreamRootHeightReference(relativity_index, path) => {
+            let js_type_name = cx.string("upstreamRootHeightReference");
+            let js_relativity_index = cx.number(relativity_index);
+            let js_path = nested_vecs_to_js(path, cx)?;
+
+            js_object.set(cx, "type", js_type_name)?;
+            js_object.set(cx, "relativityIndex", js_relativity_index)?;
+            js_object.set(cx, "path", js_path)?;
+        }
+        ReferencePathType::UpstreamFromElementHeightReference(relativity_index, path) => {
+            let js_type_name = cx.string("upstreamFromElementHeightReference");
+            let js_relativity_index = cx.number(relativity_index);
+            let js_path = nested_vecs_to_js(path, cx)?;
+
+            js_object.set(cx, "type", js_type_name)?;
+            js_object.set(cx, "relativityIndex", js_relativity_index)?;
+            js_object.set(cx, "path", js_path)?;
+        }
+        ReferencePathType::CousinReference(key) => {
+            let js_type_name = cx.string("cousinReference");
+            let js_key = JsBuffer::external(cx, key);
+
+            js_object.set(cx, "type", js_type_name)?;
+            js_object.set(cx, "key", js_key)?;
+        }
+        ReferencePathType::SiblingReference(key) => {
+            let js_type_name = cx.string("siblingReference");
+            let js_key = JsBuffer::external(cx, key);
+
+            js_object.set(cx, "type", js_type_name)?;
+            js_object.set(cx, "key", js_key)?;
+        }
+    }
+
+    Ok(js_object.upcast())
 }
 
 pub fn js_buffer_to_vec_u8<'a, C: Context<'a>>(js_buffer: Handle<JsBuffer>, cx: &mut C) -> Vec<u8> {
