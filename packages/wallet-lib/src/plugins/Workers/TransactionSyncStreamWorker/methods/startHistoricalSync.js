@@ -21,7 +21,7 @@ module.exports = async function startHistoricalSync(network) {
 
   const lastSyncedBlockHeight = await this.getLastSyncedBlockHeight();
   const fromBlockHeight = lastSyncedBlockHeight > 0 ? lastSyncedBlockHeight : 1;
-  const count = bestBlockHeight - fromBlockHeight + 1 || 1;
+  const count = bestBlockHeight - fromBlockHeight || 1;
   const start = +new Date();
 
   try {
