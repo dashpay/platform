@@ -152,6 +152,8 @@ class BlockHeadersProvider extends EventEmitter {
 
     this.blockHeadersReader.once(BlockHeadersReader.EVENTS.HISTORICAL_DATA_OBTAINED, () => {
       this.emit(EVENTS.HISTORICAL_DATA_OBTAINED);
+      // TODO: implement spvChain.validate() to ensure that chain is complete
+      // and all metadata is present
       this.removeReaderListeners();
 
       this.state = STATES.IDLE;

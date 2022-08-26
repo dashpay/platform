@@ -303,6 +303,9 @@ class BlockHeadersReader extends EventEmitter {
         this.emit(COMMANDS.HANDLE_STREAM_END, stream);
       };
 
+      // TODO: consider reworking with "pasued" mode to
+      // control the data flow manually because SPV verification is
+      // resource intense and backpressure could be a problem
       stream.on('data', dataHandler);
       stream.on('error', errorHandler);
       stream.on('end', endHandler);
