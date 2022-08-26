@@ -12,6 +12,7 @@ crate-type = ["cdylib"]
 [dependencies]
 rs-drive = { path = "../drive" }
 dash-abci = { path = "../dash-abci" }
+num = "0.4.0"
 
 [dependencies.neon]
 version = "0.10.1"

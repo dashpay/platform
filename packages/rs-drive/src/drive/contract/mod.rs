@@ -6,6 +6,7 @@ use std::sync::Arc;
 use costs::CostContext;
 use dpp::data_contract::extra::encode_float;
 use dpp::data_contract::extra::DriveContractExt;
+use grovedb::reference_path::ReferencePathType::SiblingReference;
 use grovedb::{Element, TransactionArg};
 
 use crate::contract::Contract;
@@ -87,16 +88,11 @@ impl Drive {
                 insert_operations,
             )?;
 
-            // we should also insert a reference at 0 to the current value
-            let contract_storage_path = contract_keeping_history_storage_time_reference_path(
-                contract.id.as_bytes(),
-                encoded_time,
-            );
             let path_key_element_info = if apply {
                 PathFixedSizeKeyElement((
                     contract_keeping_history_storage_path,
                     &[0],
-                    Element::Reference(contract_storage_path, element_flags),
+                    Element::Reference(SiblingReference(encoded_time), Some(1), element_flags),
                 ))
             } else {
                 PathKeyElementSize((

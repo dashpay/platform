@@ -1,4 +1,9 @@
+use crate::contract::document::Document;
+use crate::drive::flags::StorageFlags;
 use crate::drive::{defaults, RootTree};
+use dpp::data_contract::extra::DocumentType;
+use grovedb::reference_path::ReferencePathType::UpstreamRootHeightReference;
+use grovedb::Element;
 
 mod delete;
 mod insert;
@@ -51,28 +56,44 @@ fn contract_documents_keeping_history_primary_key_path_for_document_id_size(
         + document_type_name_len
 }
 
-fn contract_documents_keeping_history_storage_time_reference_path(
-    contract_id: &[u8],
-    document_type_name: &str,
-    document_id: &[u8],
-    encoded_time: Vec<u8>,
-) -> Vec<Vec<u8>> {
-    vec![
-        Into::<&[u8; 1]>::into(RootTree::ContractDocuments).to_vec(), // 1 byte
-        contract_id.to_vec(),                                         // 32 bytes
-        vec![1],                                                      // 1
-        document_type_name.as_bytes().to_vec(),
-        vec![0],              // 1
-        document_id.to_vec(), // 32 bytes
-        encoded_time,         // 8 bytes
-    ]
-}
-
 fn contract_documents_keeping_history_storage_time_reference_path_size(
     document_type_name_len: usize,
 ) -> usize {
     defaults::BASE_CONTRACT_DOCUMENTS_KEEPING_HISTORY_STORAGE_TIME_REFERENCE_PATH
         + document_type_name_len
+}
+
+fn make_document_reference(
+    document: &Document,
+    document_type: &DocumentType,
+    storage_flags: &StorageFlags,
+) -> Element {
+    // we need to construct the reference from the split height of the contract document
+    // type which is at 4
+    // 0 represents document storage
+    // Then we add document id
+    // Then we add 0 if the document type keys history
+    let mut reference_path = vec![vec![0], Vec::from(document.id)];
+    let mut max_reference_hops = 1;
+    if document_type.documents_keep_history {
+        reference_path.push(vec![0]);
+        max_reference_hops += 1;
+    }
+    // 2 because the contract could allow for history
+    // 4 because
+    // - ContractDocumentsTree
+    // - Contract ID
+    // - 1 Documents in Contract
+    // - DocumentType
+    // We add 2 or 3
+    // - 0 Storage
+    // - Document id
+    // -(Optional) 0 (means latest) in the case of documents_keep_history
+    Element::Reference(
+        UpstreamRootHeightReference(4, reference_path),
+        Some(max_reference_hops),
+        storage_flags.to_element_flags(),
+    )
 }
 
 #[cfg(test)]
