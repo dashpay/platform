@@ -1,0 +1,14 @@
+{
+  "compilerOptions": {
+    "outDir": "./dist/",
+    "noImplicitAny": true,
+    "module": "es6",
+    "target": "es5",
+    "allowJs": true,
+    "moduleResolution": "node",
+    "declaration": true
+  },
+  "files": [
+    "index.ts", "wasm/wasm_dpp.js"
+  ]
+}

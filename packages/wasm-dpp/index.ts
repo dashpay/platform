@@ -1,4 +1,4 @@
-import init, * as dpp_module from './wasm';
+import init, * as dpp_module from './wasm/wasm_dpp';
 // @ts-ignore
 import wasmBase from './wasm/wasm_dpp_bg.js';
 
