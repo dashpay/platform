@@ -29,6 +29,7 @@ async function requestJsonRpc(protocol, host, port, method, params, options = {}
   }
 
   const requestInfo = {
+    protocol,
     host,
     port,
     method,

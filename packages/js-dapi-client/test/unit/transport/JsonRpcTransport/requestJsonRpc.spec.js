@@ -4,12 +4,14 @@ const JsonRpcError = require('../../../../lib/transport/JsonRpcTransport/errors/
 const WrongHttpCodeError = require('../../../../lib/transport/JsonRpcTransport/errors/WrongHttpCodeError');
 
 describe('requestJsonRpc', () => {
+  let protocol;
   let host;
   let port;
   let timeout;
   let params;
 
   beforeEach(function beforeEach() {
+    protocol = 'http';
     host = 'localhost';
     port = 80;
     params = { data: 'test' };
@@ -17,7 +19,7 @@ describe('requestJsonRpc', () => {
 
     const options = { timeout };
 
-    const url = `http://${host}:${port}`;
+    const url = `${protocol}://${host}:${port}`;
     const payload = {
       jsonrpc: '2.0',
       params,
@@ -36,7 +38,7 @@ describe('requestJsonRpc', () => {
 
     axiosStub
       .withArgs(
-        `https://${host}`,
+        `https://${host}:${port}`,
         { ...payload, method: 'httpsRequest' },
         options,
       )
@@ -73,6 +75,7 @@ describe('requestJsonRpc', () => {
 
   it('should make rpc request and return result', async () => {
     const result = await requestJsonRpc(
+      protocol,
       host,
       port,
       'shouldPass',
@@ -84,9 +87,10 @@ describe('requestJsonRpc', () => {
   });
 
   it('should make https rpc request and return result', async () => {
-    port = 443;
+    protocol = 'https';
 
     const result = await requestJsonRpc(
+      protocol,
       host,
       port,
       'httpsRequest',
@@ -103,6 +107,7 @@ describe('requestJsonRpc', () => {
 
     try {
       await requestJsonRpc(
+        protocol,
         host,
         port,
         method,
@@ -116,6 +121,7 @@ describe('requestJsonRpc', () => {
       expect(e.message).to.equal('DAPI JSON RPC wrong http code: Status message');
       expect(e.getCode()).to.equal(400);
       expect(e.getRequestInfo()).to.deep.equal({
+        protocol,
         host,
         port,
         method,
@@ -128,6 +134,7 @@ describe('requestJsonRpc', () => {
   it('should throw error if there is an error object in the response body', async () => {
     try {
       await requestJsonRpc(
+        protocol,
         host,
         port,
         'invalidData',
@@ -146,6 +153,7 @@ describe('requestJsonRpc', () => {
 
     try {
       await requestJsonRpc(
+        protocol,
         host,
         port,
         method,
@@ -157,6 +165,7 @@ describe('requestJsonRpc', () => {
       expect(e).to.be.an.instanceof(JsonRpcError);
       expect(e.message).to.equal('Invalid data for error.data');
       expect(e.getRequestInfo()).to.deep.equal({
+        protocol,
         host,
         port,
         method,
