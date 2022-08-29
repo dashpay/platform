@@ -13,20 +13,26 @@ function camelToSnakeCase(str) {
 /**
  * @param {Object} envs
  * @param {*} value
- * @param {string} [key='']
+ * @param {string} [keyPrefix='']
  */
-function buildEnvs(envs, value, key = '') {
+function buildEnvs(envs, value, keyPrefix = '') {
   if (typeof value === 'object' && value !== null) {
-    if (key.length > 0) {
+    if (keyPrefix.length > 0) {
       // eslint-disable-next-line no-param-reassign
-      key += '_';
+      keyPrefix += '_';
     }
 
     for (const [k, v] of Object.entries(value)) {
+      let key = k;
+
+      if (k === '*') {
+        key = '_';
+      }
+
       buildEnvs(
         envs,
         v,
-        `${key}${camelToSnakeCase(k).toUpperCase()}`,
+        `${keyPrefix}${camelToSnakeCase(key).toUpperCase()}`,
       );
     }
   } else {
@@ -36,7 +42,7 @@ function buildEnvs(envs, value, key = '') {
     }
 
     // eslint-disable-next-line no-param-reassign
-    envs[key] = value.toString();
+    envs[keyPrefix] = value.toString();
   }
 }
 
