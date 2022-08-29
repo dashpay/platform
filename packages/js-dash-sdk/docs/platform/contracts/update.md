@@ -8,7 +8,4 @@ Parameters:
 | **contract**              | Contract  | yes            | A valid [created contract](/platform/contracts/create.md)                     |
 | **identity**              | Identity  | yes            | A valid [registered `application` identity](/platform/identities/register.md) |
 
-**Example**:
-You may check [following document](/examples/updating-a-contract.md) for an example on how to update a contract.
-
-Returns : DataContractUpdateTransition.
+Returns: DataContractUpdateTransition.

@@ -3,10 +3,10 @@
 
 Parameters: 
 
-| parameters               | type              | required           | Description                                                       |  
-|--------------------------|-------------------|------------------	| -----------------------------------------------------------------	|
+| parameters               | type              | required           | Description                                                                                                            |  
+|--------------------------|-------------------|------------------	|------------------------------------------------------------------------------------------------------------------------|
 | **contractDefinitions**  | JSONDataContract  | yes                | The defined [JSON Application Schema](https://dashplatform.readme.io/docs/explanation-platform-protocol-data-contract) |
-| **identity**             | Identity          | yes                | A valid [registered `application` identity](../identities/register.md) |
+| **identity**             | Identity          | yes                | A valid [registered `application` identity](../identities/register.md)                                        |
 
 **Example**:
 
@@ -31,6 +31,6 @@ Parameters:
   const validationResult = client.platform.dpp.dataContract.validate(contract);
 ```
 
-**Note**: When your contract is created, it will only exist locally, use the [broadcast](../contracts/broadcast.md) method to register it.  
+**Note**: When your contract is created, it will only exist locally. Use the [publish](/contracts/publish.md) method to register it.  
 
-Returns : Contract.
+Returns: Contract.
