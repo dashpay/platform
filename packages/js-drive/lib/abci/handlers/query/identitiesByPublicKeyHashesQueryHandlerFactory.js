@@ -9,7 +9,6 @@ const {
 const {
   v0: {
     GetIdentitiesByPublicKeyHashesResponse,
-    ResponseMetadata,
   },
 } = require('@dashevo/dapi-grpc');
 
@@ -20,14 +19,12 @@ const InvalidArgumentAbciError = require('../../errors/InvalidArgumentAbciError'
  * @param {PublicKeyToIdentitiesStoreRepository} signedPublicKeyToIdentitiesRepository
  * @param {number} maxIdentitiesPerRequest
  * @param {createQueryResponse} createQueryResponse
- * @param {BlockExecutionContextStack} blockExecutionContextStack
  * @return {identitiesByPublicKeyHashesQueryHandler}
  */
 function identitiesByPublicKeyHashesQueryHandlerFactory(
   signedPublicKeyToIdentitiesRepository,
   maxIdentitiesPerRequest,
   createQueryResponse,
-  blockExecutionContextStack,
 ) {
   /**
    * @typedef identitiesByPublicKeyHashesQueryHandler
@@ -44,18 +41,6 @@ function identitiesByPublicKeyHashesQueryHandlerFactory(
           maxIdentitiesPerRequest,
         },
       );
-    }
-
-    // There is no signed state (current committed block height less than 3)
-    if (!blockExecutionContextStack.getLast()) {
-      const response = new GetIdentitiesByPublicKeyHashesResponse();
-
-      response.setIdentitiesList([]);
-      response.setMetadata(new ResponseMetadata());
-
-      return new ResponseQuery({
-        value: response.serializeBinary(),
-      });
     }
 
     const response = createQueryResponse(GetIdentitiesByPublicKeyHashesResponse, request.prove);

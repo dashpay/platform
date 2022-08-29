@@ -14,9 +14,9 @@ Parameters:
 ```js 
 const identityId = '';// Your identity identifier
 const identity = await client.platform.identities.get(identityId);
-await platform.identities.topUp(identity, 10000);
+await client.platform.identities.topUp(identity.getId(), 10000);
 
 console.log(`New identity balance: ${identity.balance}`)
 ```
 
-Returns : Boolean.
+Returns: Boolean.

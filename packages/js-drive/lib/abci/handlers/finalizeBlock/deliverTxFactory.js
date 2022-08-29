@@ -9,9 +9,6 @@ const calculateOperationFees = require('@dashevo/dpp/lib/stateTransition/fee/cal
 
 const DPPValidationAbciError = require('../../errors/DPPValidationAbciError');
 
-const NegativeBalanceError = require('../errors/NegativeBalanceError');
-const PredictedFeeLowerThanActualError = require('../errors/PredictedFeeLowerThanActualError');
-
 const DOCUMENT_ACTION_DESCRIPTIONS = {
   [AbstractDocumentTransition.ACTIONS.CREATE]: 'created',
   [AbstractDocumentTransition.ACTIONS.REPLACE]: 'replaced',
@@ -40,8 +37,6 @@ function deliverTxFactory(
   executionTimer,
 ) {
   /**
-   * DeliverTx ABCI
-   *
    * @typedef deliverTx
    *
    * @param {Buffer} stateTransitionByteArray
@@ -135,29 +130,29 @@ function deliverTxFactory(
     // in order to store them in credits distribution pool
     const actualStateTransitionFee = stateTransition.calculateFee();
 
-    if (actualStateTransitionFee > predictedStateTransitionFee) {
-      throw new PredictedFeeLowerThanActualError(
-        predictedStateTransitionFee,
-        actualStateTransitionFee,
-        stateTransition,
-      );
-    }
+    // TODO: enable once fee calculation is done
+    // if (actualStateTransitionFee > predictedStateTransitionFee) {
+    //   throw new PredictedFeeLowerThanActualError(
+    //     predictedStateTransitionFee,
+    //     actualStateTransitionFee,
+    //     stateTransition,
+    //   );
+    // }
 
-    const identity = await transactionalDpp.getStateRepository().fetchIdentity(
-      stateTransition.getOwnerId(),
-    );
+    // const identity = await transactionalDpp.getStateRepository().fetchIdentity(
+    //   stateTransition.getOwnerId(),
+    // );
 
-    const updatedBalance = identity.reduceBalance(actualStateTransitionFee);
+    // const updatedBalance = identity.reduceBalance(actualStateTransitionFee);
 
-    if (updatedBalance < 0) {
-      throw new NegativeBalanceError(identity);
-    }
+    // if (updatedBalance < 0) {
+    //   throw new NegativeBalanceError(identity);
+    // }
 
-    await transactionalDpp.getStateRepository().updateIdentity(identity);
-
-    blockExecutionContext.incrementCumulativeFees(actualStateTransitionFee);
+    // await transactionalDpp.getStateRepository().updateIdentity(identity);
 
     // Logging
+    /* istanbul ignore next */
     switch (stateTransition.getType()) {
       case stateTransitionTypes.DATA_CONTRACT_UPDATE:
       case stateTransitionTypes.DATA_CONTRACT_CREATE: {
@@ -238,6 +233,9 @@ function deliverTxFactory(
       storageFee: actualStorageFee,
       processingFee: actualProcessingFee,
     } = calculateOperationFees(actualStateTransitionOperations);
+
+    blockExecutionContext.incrementCumulativeProcessingFee(actualProcessingFee);
+    blockExecutionContext.incrementCumulativeStorageFee(actualStorageFee);
 
     const {
       storageFee: predictedStorageFee,

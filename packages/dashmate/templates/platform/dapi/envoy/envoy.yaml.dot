@@ -1,14 +1,17 @@
 static_resources:
   listeners:
-    - name: web_grpc_gateweb
+    - name: grpc_web_and_json_rpc
       address:
-        socket_address: { address: 0.0.0.0, port_value: 10000 }
+        socket_address:
+          address: 0.0.0.0
+          port_value: 10000
       filter_chains:
       - filters:
         - name: envoy.http_connection_manager
           typed_config:
             "@type": type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager
             stat_prefix: ingress_http
+            codec_type: auto
             access_log:
               - name: envoy.access_loggers.file
                 typed_config:
@@ -39,89 +42,74 @@ static_resources:
                       header:
                         key: x-local-rate-limit
                         value: 'true'
-              - name: envoy.filters.http.cors
               - name: envoy.filters.http.grpc_web
+                typed_config:
+                  "@type": type.googleapis.com/envoy.extensions.filters.http.grpc_web.v3.GrpcWeb
+              - name: envoy.filters.http.cors
+                typed_config:
+                  "@type": type.googleapis.com/envoy.extensions.filters.http.cors.v3.Cors
               - name: envoy.filters.http.router
+                typed_config:
+                  "@type": type.googleapis.com/envoy.extensions.filters.http.router.v3.Router
             route_config:
               name: local_route
               virtual_hosts:
                 - name: dapi_services
                   domains: ["*"]
                   routes:
-                    # tx subscription endpoint configuration
+                    # tx subscription streaming endpoint configuration
                     - match:
                         prefix: "/org.dash.platform.dapi.v0.Core/subscribeToTransactionsWithProofs"
-                        headers:
-                          - name: ":method"
-                            safe_regex_match:
-                              google_re2: {}
-                              regex: "GET|POST|OPTIONS"
                       route:
                         cluster: tx_filter_stream
                         timeout: 0s
-                    # block headers subscription endpoint configuration
+                        max_stream_duration:
+                          grpc_timeout_header_max: 0s
+                    # block headers subscription streaming endpoint
                     - match:
                         prefix: "/org.dash.platform.dapi.v0.Core/subscribeToBlockHeadersWithChainLocks"
-                        headers:
-                          - name: ":method"
-                            safe_regex_match:
-                              google_re2: {}
-                              regex: "GET|POST|OPTIONS"
                       route:
                         cluster: tx_filter_stream
                         timeout: 0s
-                    # core endpoint configutration
+                        max_stream_duration:
+                          grpc_timeout_header_max: 0s
+                    # core unary endpoints
                     - match:
                         prefix: "/org.dash.platform.dapi.v0.Core"
-                        headers:
-                          - name: ":method"
-                            safe_regex_match:
-                              google_re2: {}
-                              regex: "GET|POST|OPTIONS"
                       route:
                         cluster: core_and_platform
-                    # platform endpoint configutration
+                    # platform unary endpoints
                     - match:
                         prefix: "/org.dash.platform.dapi.v0.Platform"
-                        headers:
-                          - name: ":method"
-                            safe_regex_match:
-                              google_re2: {}
-                              regex: "GET|POST|OPTIONS"
                       route:
                         cluster: core_and_platform
-                    # health-check endpoint configuration
+                    # health-check endpoints
                     - match:
                         prefix: "/grpc.health.v1.Health"
-                        headers:
-                          - name: ":method"
-                            safe_regex_match:
-                              google_re2: {}
-                              regex: "GET|POST|OPTIONS"
                       route:
                         cluster: tx_filter_stream
-                    # configuration of the static responses of unsupported api versions
-                    # core static response
+                          # configuration of the static responses of unsupported api versions
+                          # core static response
                     - match:
                         safe_regex:
-                          google_re2: {}
+                          google_re2: { }
                           regex: "\/org\\.dash\\.platform\\.dapi\\.v[1-9]+\\.Core"
-                      response_headers_to_add:
-                        - header:
-                            key: "Content-Type"
-                            value: "application/grpc-web+proto"
-                        - header:
-                            key: "grpc-status"
-                            value: "12"
-                        - header:
-                            key: "grpc-message"
-                            value: "Specified service version is not supported"
-                      direct_response:
-                        status: 204
-                    # platform static respose
+                        response_headers_to_add:
+                          - header:
+                              key: "Content-Type"
+                              value: "application/grpc-web+proto"
+                          - header:
+                              key: "grpc-status"
+                              value: "12"
+                          - header:
+                              key: "grpc-message"
+                              value: "Specified service version is not supported"
+                        direct_response:
+                          status: 204
+                    # platform static response
                     - match:
                         safe_regex:
-                          google_re2: {}
+                          google_re2: { }
                           regex: "\/org\\.dash\\.platform\\.dapi\\.v[1-9]+\\.Platform"
                       response_headers_to_add:
                         - header:
@@ -135,37 +123,19 @@ static_resources:
                             value: "Specified service version is not supported"
                       direct_response:
                         status: 204
-                    # root endpoint configuration
+                    # JSON RPC endpoints
                     - match:
-                        prefix: "/"
-                        headers:
-                          - name: ":method"
-                            safe_regex_match:
-                              google_re2: {}
-                              regex: "GET|POST|OPTIONS"
+                        path: "/"
                       route:
-                        cluster: dapi_api_srv
-                  # cors configuration
+                        cluster: json_rpc
                   cors:
                     allow_origin_string_match:
                       - prefix: "*"
-                    allow_methods: GET,POST,OPTIONS
-                    allow_headers: DNT,X-CustomHeader,Keep-Alive,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Content-Transfer-Encoding,Custom-Header-1,X-Accept-Content-Transfer-Encoding,X-Accept-Response-Streaming,X-User-Agent,X-Grpc-Web
-                    expose_headers: Content-Transfer-Encoding,Grpc-Message,Grpc-Status,Custom-Header-1
+                    allow_methods: GET, PUT, DELETE, POST, OPTIONS
+                    allow_headers: keep-alive,user-agent,cache-control,content-type,content-transfer-encoding,custom-header-1,x-accept-content-transfer-encoding,x-accept-response-streaming,x-user-agent,x-grpc-web,grpc-timeout
                     max_age: "1728000"
-        {{? it.platform.dapi.envoy.ssl.enabled}}
-        transport_socket:
-          name: envoy.transport_sockets.tls
-          typed_config:
-            "@type": type.googleapis.com/envoy.extensions.transport_sockets.tls.v3.DownstreamTlsContext
-            common_tls_context:
-              tls_certificates:
-                - certificate_chain:
-                    filename: "/etc/ssl/bundle.crt"
-                  private_key:
-                    filename: "/etc/ssl/private.key"
-        {{?}}
-    - name: native_grpc_gateway
+                    expose_headers: custom-header-1,grpc-status,grpc-message
+    - name: native_grpc
       address:
         socket_address:
           address: 0.0.0.0
@@ -216,18 +186,9 @@ static_resources:
                           header:
                             key: x-local-rate-limit
                             value: 'true'
-                  - name: envoy.filters.http.lua
-                    typed_config:
-                      "@type": type.googleapis.com/envoy.extensions.filters.http.lua.v3.Lua
-                      inline_code: |
-                        function envoy_on_request(request_handle)
-                          local max_bytes = 128 * 1024
-                          local body_size = request_handle:body():length()
-                          if body_size > max_bytes then
-                            request_handle:respond({[":status"] = "413"})
-                          end
-                        end
                   - name: envoy.filters.http.router
+                    typed_config:
+                      "@type": type.googleapis.com/envoy.extensions.filters.http.router.v3.Router
                 route_config:
                   name: local_route
                   virtual_hosts:
@@ -240,12 +201,16 @@ static_resources:
                           route:
                             cluster: tx_filter_stream
                             timeout: 0s
+                            max_stream_duration:
+                              grpc_timeout_header_max: 0s
                         # block headers subscription endpoint configuration
                         - match:
                             prefix: "/org.dash.platform.dapi.v0.Core/subscribeToBlockHeadersWithChainLocks"
                           route:
                             cluster: tx_filter_stream
                             timeout: 0s
+                            max_stream_duration:
+                              grpc_timeout_header_max: 0s
                         - match:
                             prefix: "/org.dash.platform.dapi.v0.Core"
                           route:
@@ -276,7 +241,7 @@ static_resources:
                                 value: "Specified service version is not supported"
                           direct_response:
                             status: 204
-                        # platform static respose
+                        # platform static response
                         - match:
                             safe_regex:
                               google_re2: {}
@@ -306,51 +271,63 @@ static_resources:
                       filename: "/etc/ssl/private.key"
           {{?}}
   clusters:
-  - name: core_and_platform
-    connect_timeout: 0.25s
-    type: logical_dns
-    http2_protocol_options: {}
-    lb_policy: round_robin
-    load_assignment:
-      cluster_name: core_and_platform
-      endpoints:
-      - lb_endpoints:
-        - endpoint:
-            address:
-              socket_address:
-                address: dapi_api
-                port_value: 3005
-  - name: tx_filter_stream
-    connect_timeout: 0.25s
-    type: logical_dns
-    http2_protocol_options: {}
-    lb_policy: round_robin
-    load_assignment:
-      cluster_name: core_and_platform
-      endpoints:
-      - lb_endpoints:
-        - endpoint:
-            address:
-              socket_address:
-                address: dapi_tx_filter_stream
-                port_value: 3006
-  - name: dapi_api_srv
-    connect_timeout: 30s
-    type: logical_dns
-    dns_lookup_family: V4_ONLY
-    lb_policy: round_robin
-    load_assignment:
-      cluster_name: core_and_platform
-      endpoints:
-      - lb_endpoints:
-        - endpoint:
-            address:
-              socket_address:
-                address: dapi_api
-                port_value: 3004
+    - name: core_and_platform
+      connect_timeout: 0.5s
+      type: logical_dns
+      lb_policy: round_robin
+      typed_extension_protocol_options:
+        envoy.extensions.upstreams.http.v3.HttpProtocolOptions:
+          "@type": type.googleapis.com/envoy.extensions.upstreams.http.v3.HttpProtocolOptions
+          explicit_http_config:
+            http2_protocol_options:
+              connection_keepalive:
+                interval: 30s
+                timeout: 5s
+      load_assignment:
+        cluster_name: core_and_platform
+        endpoints:
+          - lb_endpoints:
+              - endpoint:
+                  address:
+                    socket_address:
+                      address: dapi_api
+                      port_value: 3005
+    - name: tx_filter_stream
+      connect_timeout: 0.5s
+      type: logical_dns
+      lb_policy: round_robin
+      typed_extension_protocol_options:
+        envoy.extensions.upstreams.http.v3.HttpProtocolOptions:
+          "@type": type.googleapis.com/envoy.extensions.upstreams.http.v3.HttpProtocolOptions
+          explicit_http_config:
+            http2_protocol_options:
+              connection_keepalive:
+                interval: 30s
+                timeout: 5s
+      load_assignment:
+        cluster_name: tx_filter_stream
+        endpoints:
+          - lb_endpoints:
+              - endpoint:
+                  address:
+                    socket_address:
+                      address: dapi_tx_filter_stream
+                      port_value: 3006
+    - name: json_rpc
+      connect_timeout: 0.5s
+      type: logical_dns
+      lb_policy: round_robin
+      load_assignment:
+        cluster_name: json_rpc
+        endpoints:
+          - lb_endpoints:
+              - endpoint:
+                  address:
+                    socket_address:
+                      address: dapi_api
+                      port_value: 3004
 
 admin:
-  access_log_path: "/dev/null"
   address:
     socket_address:
       address: 0.0.0.0

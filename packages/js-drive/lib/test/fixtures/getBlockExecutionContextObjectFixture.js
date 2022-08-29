@@ -26,7 +26,8 @@ const getDataContractFixture = require('@dashevo/dpp/lib/test/fixtures/getDataCo
  *   version: number,
  *   time: number,
  *   validTxs: number,
- *   cumulativeFees: number,
+ *   cumulativeStorageFee: number,
+ *   cumulativeProcessingFee: number,
  *   consensusLogger: Logger,
  * }}
  */
@@ -42,33 +43,23 @@ function getBlockExecutionContextObjectFixture(dataContract = getDataContractFix
     nanos: 0,
   });
 
-  const height = 10;
-
-  const coreChainLockedHeight = 10;
-
   const version = {
     app: '1',
     block: '2',
   };
 
-  const cumulativeFees = 10;
-
-  const logger = pino();
-
-  const validTxs = 2;
-  const invalidTxs = 1;
-
   return {
     dataContracts: [dataContract.toObject()],
     lastCommitInfo: CommitInfo.toObject(lastCommitInfo),
-    cumulativeFees,
+    cumulativeProcessingFee: 1000,
+    cumulativeStorageFee: 2000,
     time,
-    height,
-    coreChainLockedHeight,
+    height: 10,
+    coreChainLockedHeight: 10,
     version,
-    validTxs,
-    invalidTxs,
-    consensusLogger: logger,
+    validTxs: 2,
+    invalidTxs: 1,
+    consensusLogger: pino(),
   };
 }
 

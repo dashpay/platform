@@ -1,3 +1,92 @@
+### [0.22.14](https://github.com/dashevo/platform/compare/v0.22.13...v0.22.14) (2022-08-29)
+
+
+### Features
+
+* **dashmate:** add --force flag to stop command ([#434](https://github.com/dashevo/platform/issues/434))
+* integrate dash-spv into monorepo
+
+
+### Documentation
+
+* **dashmate:** update dashmate documentation ([#459](https://github.com/dashevo/platform/issues/459))
+* **sdk:** update outdated documentation ([#463](https://github.com/dashevo/platform/issues/463))
+
+
+### Miscellaneous Chores
+
+* bump dash core to v18.0.1 and sentinel to 1.7.1 ([#511](https://github.com/dashevo/platform/issues/511))
+* **test-suite:** move wallet storage persistence in the outer folder ([#416](https://github.com/dashevo/platform/issues/416))
+
+
+### Build System
+
+* `yarn install` fails with Node.JS 16.17.0 ([#507](https://github.com/dashevo/platform/issues/507))
+* new node alpine image breaks package builds ([#493](https://github.com/dashevo/platform/issues/493))
+* **test-suite:** fix docker image build
+
+## [0.23.0-dev.8](https://github.com/dashevo/platform/compare/v0.23.0-dev.7...v0.23.0-dev.8) (2022-08-22)
+
+
+### Bug Fixes
+
+* **dapi:** getStatus errored if masternode is banned ([#496](https://github.com/dashevo/platform/issues/496))
+* Drive and DAPI expect data available on H+1 block ([#497](https://github.com/dashevo/platform/issues/497))
+* **test-suite:** failing tests due to replication latency ([#500](https://github.com/dashevo/platform/issues/500))
+
+## [0.23.0-dev.7](https://github.com/dashevo/platform/compare/v0.23.0-dev.6...v0.23.0-dev.7) (2022-08-18)
+
+
+### Bug Fixes
+
+* DAPI client requests one local single node only ([#479](https://github.com/dashevo/platform/issues/479))
+* **dapi-client:** A.metadata.get is not a function ([#492](https://github.com/dashevo/platform/issues/492))
+* **dapi-clinet:** node can bed marked as banned on retriable error ([#482](https://github.com/dashevo/platform/issues/482))
+* **dashmate:** docker undefined error ([#480](https://github.com/dashevo/platform/issues/480))
+* **dashmate:** gRPC stream timeout ([#481](https://github.com/dashevo/platform/issues/481))
+* infinite block production due to fees distribution ([#484](https://github.com/dashevo/platform/issues/484))
+* **sdk:** cannot read properties of null (reading 'getMetadata') ([#488](https://github.com/dashevo/platform/issues/488))
+* **test-suite:** invalid transaction: Missing inputs ([#494](https://github.com/dashevo/platform/issues/494))
+
+
+### Miscellaneous Chores
+
+* **dashmate:** update Core to 18.0.0-rc.12
+
+
+### Build System
+
+* new node alpine image breaks package builds ([#493](https://github.com/dashevo/platform/issues/493))
+
+## [0.23.0-dev.6](https://github.com/dashevo/platform/compare/v0.23.0-dev.5...v0.23.0-dev.6) (2022-08-12)
+
+
+### ⚠ BREAKING CHANGES
+
+* Correct cumulative fees invalidate previous blockchain data (#474)
+
+### Bug Fixes
+
+* **dpp:** repeated disabling of already disabled identity key ([#477](https://github.com/dashevo/platform/issues/477))
+* **drive:** cumulative fees are not reset between blocks ([#474](https://github.com/dashevo/platform/issues/474))
+* **drive:** invalid previous block time ([#475](https://github.com/dashevo/platform/issues/475))
+
+## [0.23.0-dev.5](https://github.com/dashevo/platform/compare/v0.23.0-dev.4...v0.23.0-dev.5) (2022-08-05)
+
+
+### ⚠ BREAKING CHANGES
+
+* Blockchain data and state structure are changed and incompatible with previous versions
+
+### Features
+
+* **drive:** fees distribution ([#458](https://github.com/dashevo/platform/issues/458))
+
+
+### Miscellaneous Chores
+
+* various linter fixes across packages ([#465](https://github.com/dashevo/platform/issues/465))
+
 ## [0.23.0-dev.4](https://github.com/dashevo/platform/compare/v0.23.0-dev.3...v0.23.0-dev.4) (2022-07-12)
 
 
@@ -10,6 +99,7 @@
 ### Build System
 
 * **test-suite:** fix docker image build
+
 
 ## [0.23.0-dev.3](https://github.com/dashevo/platform/compare/v0.22.13...v0.23.0-dev.3) (2022-06-30)
 

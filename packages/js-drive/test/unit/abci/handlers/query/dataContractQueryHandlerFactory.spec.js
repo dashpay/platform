@@ -20,7 +20,6 @@ const dataContractQueryHandlerFactory = require('../../../../../lib/abci/handler
 
 const NotFoundAbciError = require('../../../../../lib/abci/errors/NotFoundAbciError');
 const StoreRepositoryMock = require('../../../../../lib/test/mock/StoreRepositoryMock');
-const BlockExecutionContextStackMock = require('../../../../../lib/test/mock/BlockExecutionContextStackMock');
 const InvalidArgumentAbciError = require('../../../../../lib/abci/errors/InvalidArgumentAbciError');
 const StorageResult = require('../../../../../lib/storage/StorageResult');
 
@@ -31,7 +30,6 @@ describe('dataContractQueryHandlerFactory', () => {
   let data;
   let createQueryResponseMock;
   let responseMock;
-  let blockExecutionContextStackMock;
   let signedDataContractRepositoryMock;
 
   beforeEach(function beforeEach() {
@@ -44,37 +42,17 @@ describe('dataContractQueryHandlerFactory', () => {
 
     createQueryResponseMock.returns(responseMock);
 
-    blockExecutionContextStackMock = new BlockExecutionContextStackMock(this.sinon);
-    blockExecutionContextStackMock.getLast.returns(true);
-
     signedDataContractRepositoryMock = new StoreRepositoryMock(this.sinon);
 
     dataContractQueryHandler = dataContractQueryHandlerFactory(
       signedDataContractRepositoryMock,
       createQueryResponseMock,
-      blockExecutionContextStackMock,
     );
-
-    blockExecutionContextStackMock.getLast.returns(true);
 
     params = { };
     data = {
       id: dataContract.getId(),
     };
-  });
-
-  it('should throw NotFoundAbciError if there is no signed state', async () => {
-    blockExecutionContextStackMock.getLast.returns(null);
-
-    try {
-      await dataContractQueryHandler(params, data, {});
-
-      expect.fail('should throw NotFoundAbciError');
-    } catch (e) {
-      expect(e).to.be.an.instanceOf(NotFoundAbciError);
-      expect(blockExecutionContextStackMock.getLast).to.be.calledOnce();
-      expect(signedDataContractRepositoryMock.fetch).to.be.not.called();
-    }
   });
 
   it('should throw NotFoundAbciError if Data Contract not found', async () => {
@@ -88,7 +66,6 @@ describe('dataContractQueryHandlerFactory', () => {
       expect.fail('should throw NotFoundAbciError');
     } catch (e) {
       expect(e).to.be.an.instanceOf(NotFoundAbciError);
-      expect(blockExecutionContextStackMock.getLast).to.be.calledOnce();
       expect(signedDataContractRepositoryMock.fetch).to.be.calledOnce();
     }
   });

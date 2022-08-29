@@ -69,7 +69,7 @@ services:
       - DASHCORE_P2P_NETWORK=devnet
       - NETWORK=devnet
       - TENDERMINT_RPC_HOST=drive_tenderdash
-      - TENDERMINT_RPC_PORT=26657
+      - TENDERMINT_RPC_PORT=${PLATFORM_DRIVE_TENDERDASH_RPC_PORT:?err}
       - NODE_ENV=${ENVIRONMENT:?err}
     command: yarn workspace @dashevo/dapi api
 

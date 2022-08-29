@@ -57,16 +57,24 @@ describe('finalizeBlockHandlerFactory', () => {
       nextCoreChainLockUpdate: undefined,
       validatorSetUpdate: undefined,
     };
+
     const txs = new Array(3).fill(Buffer.alloc(5, 0));
+
     const decidedLastCommit = {};
+
     const height = new Long(42);
+
     const time = {
       seconds: Math.ceil(new Date().getTime() / 1000),
     };
+
     const coreChainLockedHeight = 10;
+
     const version = {
       app: Long.fromInt(1),
     };
+
+    const proposerProTxHash = Uint8Array.from([1, 2, 3, 4]);
 
     requestMock = {
       txs,
@@ -75,6 +83,7 @@ describe('finalizeBlockHandlerFactory', () => {
       time,
       coreChainLockedHeight,
       version,
+      proposerProTxHash,
     };
 
     beginBlockMock = this.sinon.stub();
@@ -119,6 +128,7 @@ describe('finalizeBlockHandlerFactory', () => {
         coreChainLockedHeight: requestMock.coreChainLockedHeight,
         version: requestMock.version,
         time: requestMock.time,
+        proposerProTxHash: Buffer.from(requestMock.proposerProTxHash),
       },
       loggerMock,
     );

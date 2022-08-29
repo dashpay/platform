@@ -51,11 +51,6 @@ LABEL description="DAPI Node.JS"
 # Install required deps
 RUN apk add --no-cache bash
 
-# Install latest yarn
-RUN yarn set version 3.1.0
-
-ENV PATH /platform/node_modules/.bin:$PATH
-
 WORKDIR /platform
 
 COPY --from=builder /platform /platform

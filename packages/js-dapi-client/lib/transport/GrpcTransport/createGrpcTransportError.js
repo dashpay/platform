@@ -47,36 +47,34 @@ function createGrpcTransportError(grpcError, dapiAddress) {
   // Extract error code and data
   let data = {};
   let { code } = grpcError;
+
   const message = grpcError.details || grpcError.message;
 
   if (grpcError.metadata) {
-    let encodedData;
-
+    // In cases of gRPC-Web client we get plain map instead of Metadata instance
+    let metadataMap = grpcError.metadata;
     if (grpcError.metadata instanceof Metadata) {
-      const cboredMetaData = grpcError.metadata.get('drive-error-data-bin');
-      if (cboredMetaData && cboredMetaData.length > 0) {
-        [encodedData] = cboredMetaData;
-      }
-
-      // since gRPC doesn't allow to use custom error codes
-      // DAPI pass them as a part of metadata
-      const metaCode = grpcError.metadata.get('code');
-      if (metaCode && metaCode.length > 0) {
-        [code] = metaCode;
-      }
-    } else {
-      if (grpcError.metadata['drive-error-data-bin']) {
-        encodedData = Buffer.from(grpcError.metadata['drive-error-data-bin'], 'base64');
-      }
-
-      const metaCode = grpcError.metadata.code;
-      if (metaCode !== undefined) {
-        code = Number(metaCode);
-      }
+      metadataMap = grpcError.metadata.getMap();
     }
 
-    if (encodedData) {
+    // Error data
+    const driveErrorData = metadataMap['drive-error-data-bin'];
+    if (driveErrorData) {
+      const encodedData = Buffer.from(driveErrorData, 'base64');
       data = cbor.decode(encodedData);
+    }
+
+    // Error code
+    const driveErrorCode = metadataMap.code;
+    if (driveErrorCode) {
+      code = Number(driveErrorCode);
+    }
+
+    // Error stack
+    const driveErrorStack = metadataMap['stack-bin'];
+    if (driveErrorStack) {
+      const encodedStack = Buffer.from(driveErrorStack, 'base64');
+      data.stack = cbor.decode(encodedStack);
     }
   }
 

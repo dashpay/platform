@@ -27,6 +27,8 @@ describe('beginBlockFactory', () => {
   let blockExecutionContextStackMock;
   let version;
   let time;
+  let rsAbciMock;
+  let proposerProTxHash;
 
   beforeEach(function beforeEach() {
     protocolVersion = Long.fromInt(1);
@@ -55,9 +57,9 @@ describe('beginBlockFactory', () => {
     groveDBStoreMock = new GroveDBStoreMock(this.sinon);
     blockExecutionContextStackMock = new BlockExecutionContextStackMock(this.sinon);
 
-    blockExecutionContextStackMock.getLatest.returns({
-      getHeader: this.sinon.stub(),
-    });
+    rsAbciMock = {
+      blockBegin: this.sinon.stub(),
+    };
 
     beginBlock = beginBlockFactory(
       groveDBStoreMock,
@@ -69,12 +71,13 @@ describe('beginBlockFactory', () => {
       updateSimplifiedMasternodeListMock,
       waitForChainLockedHeightMock,
       synchronizeMasternodeIdentitiesMock,
+      rsAbciMock,
     );
 
-    blockHeight = 2;
-    blockHeight = 1;
+    blockHeight = new Long(1);
 
     lastCommitInfo = {};
+
     version = {
       app: protocolVersion,
     };
@@ -83,12 +86,15 @@ describe('beginBlockFactory', () => {
       seconds: Math.ceil(new Date().getTime() / 1000),
     };
 
+    proposerProTxHash = Buffer.alloc(32, 1);
+
     request = {
       height: blockHeight,
       lastCommitInfo,
       coreChainLockedHeight,
       version,
       time,
+      proposerProTxHash,
     };
   });
 
@@ -99,7 +105,6 @@ describe('beginBlockFactory', () => {
     expect(waitForChainLockedHeightMock).to.be.calledOnceWithExactly(coreChainLockedHeight);
 
     // Reset block execution context
-    expect(blockExecutionContextMock.getHeight).to.be.calledOnceWithExactly();
     expect(blockExecutionContextMock.reset).to.be.calledOnceWithExactly();
     expect(blockExecutionContextMock.setConsensusLogger).to.be.calledOnceWithExactly(loggerMock);
     expect(blockExecutionContextMock.setHeight).to.be.calledOnceWithExactly(blockHeight);
@@ -170,12 +175,16 @@ describe('beginBlockFactory', () => {
       equals: this.sinon.stub().returns(true),
     });
 
-    blockExecutionContextStackMock.getLatest.returns({
+    blockExecutionContextStackMock.getFirst.returns({
       getHeight: this.sinon.stub().returns(
         {
           equals: this.sinon.stub().returns(true),
         },
       ),
+      getTime: this.sinon.stub().returns({
+        seconds: Math.ceil(new Date().getTime() / 1000),
+        nanos: 0,
+      }),
     });
 
     groveDBStoreMock.isTransactionStarted.resolves(true);
@@ -183,7 +192,7 @@ describe('beginBlockFactory', () => {
     await beginBlock(request, loggerMock);
 
     expect(groveDBStoreMock.abortTransaction).to.be.calledOnceWithExactly();
-    expect(blockExecutionContextStackMock.removeLatest).to.be.calledOnceWithExactly();
+    expect(blockExecutionContextStackMock.removeFirst).to.be.calledOnceWithExactly();
 
     expect(blockExecutionContextMock.reset).to.be.calledOnceWithExactly();
     expect(blockExecutionContextMock.setConsensusLogger).to.be.calledOnceWithExactly(loggerMock);

@@ -1,8 +1,10 @@
 const NotSupportedNetworkProtocolVersionError = require('../errors/NotSupportedNetworkProtocolVersionError');
 const NetworkProtocolVersionIsNotSetError = require('../errors/NetworkProtocolVersionIsNotSetError');
 
+const timeToMillis = require('../../../util/timeToMillis');
+
 /**
- * Begin Block ABCI
+ * Begin Block
  *
  * @param {GroveDBStore} groveDBStore
  * @param {BlockExecutionContext} blockExecutionContext
@@ -13,6 +15,7 @@ const NetworkProtocolVersionIsNotSetError = require('../errors/NetworkProtocolVe
  * @param {updateSimplifiedMasternodeList} updateSimplifiedMasternodeList
  * @param {waitForChainLockedHeight} waitForChainLockedHeight
  * @param {synchronizeMasternodeIdentities} synchronizeMasternodeIdentities
+ * @param {RSAbci} rsAbci
  *
  * @return {beginBlock}
  */
@@ -26,6 +29,7 @@ function beginBlockFactory(
   updateSimplifiedMasternodeList,
   waitForChainLockedHeight,
   synchronizeMasternodeIdentities,
+  rsAbci,
 ) {
   /**
    * @typedef beginBlock
@@ -35,13 +39,19 @@ function beginBlockFactory(
    * @param {number} [request.coreChainLockedHeight]
    * @param {IConsensus} [request.version]
    * @param {ITimestamp} [request.time]
+   * @param {Buffer} [request.proposerProTxHash]
    * @param {BaseLogger} logger
    *
    * @return {Promise<void>}
    */
   async function beginBlock(request, logger) {
     const {
-      lastCommitInfo, height, coreChainLockedHeight, version, time,
+      lastCommitInfo,
+      height,
+      coreChainLockedHeight,
+      version,
+      time,
+      proposerProTxHash,
     } = request;
 
     const consensusLogger = logger.child({
@@ -71,15 +81,14 @@ function beginBlockFactory(
     // in case previous block execution failed in process
     // and not committed. We need to make sure
     // previous context properly reset.
-    const contextHeight = blockExecutionContext.getHeight();
-    if (contextHeight && contextHeight.equals(height)) {
+    const previousContext = blockExecutionContextStack.getFirst();
+    if (
+      previousContext
+      && previousContext.getHeight()
+      && previousContext.getHeight().equals(height)
+    ) {
       // Remove failed block context from the stack
-      const latestContext = blockExecutionContextStack.getLatest();
-      const latestContextHeight = latestContext.getHeight();
-
-      if (latestContextHeight.equals(height)) {
-        blockExecutionContextStack.removeLatest();
-      }
+      blockExecutionContextStack.removeFirst();
     }
 
     blockExecutionContext.reset();
@@ -103,8 +112,34 @@ function beginBlockFactory(
     // Start db transaction for the block
     await groveDBStore.startTransaction();
 
+    // Call RS ABCI
+
+    /**
+     * @type {BlockBeginRequest}
+     */
+    const rsRequest = {
+      blockHeight: height.toNumber(),
+      blockTimeMs: timeToMillis(time.seconds, time.nanos),
+      proposerProTxHash,
+    };
+
+    if (previousContext) {
+      const previousTime = previousContext.getTime();
+
+      rsRequest.previousBlockTimeMs = timeToMillis(
+        previousTime.seconds, previousTime.nanos,
+      );
+    }
+
+    logger.debug(rsRequest, 'Request RS Drive\'s BlockBegin method');
+
+    await rsAbci.blockBegin(rsRequest, true);
+
+    // Update SML
+
     const isSimplifiedMasternodeListUpdated = await updateSimplifiedMasternodeList(
-      coreChainLockedHeight, {
+      coreChainLockedHeight,
+      {
         logger: consensusLogger,
       },
     );
@@ -122,14 +157,16 @@ function beginBlockFactory(
         `Masternode identities are synced for heights from ${fromHeight} to ${toHeight}: ${createdEntities.length} created, ${updatedEntities.length} updated, ${removedEntities.length} removed`,
       );
 
-      consensusLogger.trace(
-        {
-          createdEntities: createdEntities.map((item) => item.toJSON()),
-          updatedEntities: updatedEntities.map((item) => item.toJSON()),
-          removedEntities: removedEntities.map((item) => item.toJSON()),
-        },
-        'Synchronized masternode identities',
-      );
+      if (createdEntities.length > 0 || updatedEntities.length > 0 || removedEntities.length > 0) {
+        consensusLogger.trace(
+          {
+            createdEntities: createdEntities.map((item) => item.toJSON()),
+            updatedEntities: updatedEntities.map((item) => item.toJSON()),
+            removedEntities: removedEntities.map((item) => item.toJSON()),
+          },
+          'Synchronized masternode identities',
+        );
+      }
     }
 
     consensusLogger.info(`Block begin #${height}`);

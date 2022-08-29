@@ -16,11 +16,8 @@ const BlockExecutionContextStackRepositoryMock = require('../../../../../lib/tes
 describe('commitFactory', () => {
   let commit;
   let appHash;
-  let creditsDistributionPoolMock;
-  let creditsDistributionPoolRepositoryMock;
   let blockExecutionContextMock;
   let dataContract;
-  let accumulativeFees;
   let rootTreeMock;
   let dppMock;
   let height;
@@ -34,21 +31,11 @@ describe('commitFactory', () => {
   beforeEach(function beforeEach() {
     appHash = Buffer.alloc(0);
 
-    creditsDistributionPoolMock = {
-      incrementAmount: this.sinon.stub(),
-      setAmount: this.sinon.stub(),
-    };
-
     dataContract = getDataContractFixture();
-
-    creditsDistributionPoolRepositoryMock = {
-      store: this.sinon.stub(),
-    };
 
     blockExecutionContextMock = new BlockExecutionContextMock(this.sinon);
 
     blockExecutionContextMock.getDataContracts.returns([dataContract]);
-    blockExecutionContextMock.getCumulativeFees.returns(accumulativeFees);
 
     height = Long.fromInt(1);
 
@@ -77,8 +64,6 @@ describe('commitFactory', () => {
     groveDBStoreMock.getRootHash.resolves(appHash);
 
     commit = commitFactory(
-      creditsDistributionPoolMock,
-      creditsDistributionPoolRepositoryMock,
       blockExecutionContextMock,
       blockExecutionContextStackMock,
       blockExecutionContextStackRepositoryMock,
@@ -93,34 +78,21 @@ describe('commitFactory', () => {
 
     expect(response).to.deep.equal({ appHash });
 
-    expect(blockExecutionContextMock.getHeight).to.be.calledOnce();
+    expect(blockExecutionContextMock.getHeight).to.be.calledOnceWithExactly();
 
-    expect(creditsDistributionPoolMock.incrementAmount).to.be.calledOnceWith(
-      accumulativeFees,
-    );
+    expect(blockExecutionContextStackMock.add).to.be.calledOnce();
 
-    expect(creditsDistributionPoolRepositoryMock.store).to.be.calledOnceWith(
-      creditsDistributionPoolMock,
-      {
-        useTransaction: true,
-      },
-    );
-
-    expect(blockExecutionContextStackMock.add).to.be.calledOnceWith(
-      blockExecutionContextMock,
-    );
-
-    expect(blockExecutionContextStackRepositoryMock.store).to.be.calledOnceWith(
+    expect(blockExecutionContextStackRepositoryMock.store).to.be.calledOnceWithExactly(
       blockExecutionContextStackMock,
       {
         useTransaction: true,
       },
     );
 
-    expect(groveDBStoreMock.commitTransaction).to.be.calledOnce();
+    expect(groveDBStoreMock.commitTransaction).to.be.calledOnceWithExactly();
 
-    expect(blockExecutionContextMock.getDataContracts).to.be.calledOnce();
+    expect(blockExecutionContextMock.getDataContracts).to.be.calledOnceWithExactly();
 
-    expect(groveDBStoreMock.getRootHash).to.be.calledOnce();
+    expect(groveDBStoreMock.getRootHash).to.be.calledOnceWithExactly();
   });
 });

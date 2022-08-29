@@ -3,11 +3,11 @@ const createDPPMock = require('../mocks/createDPPMock');
 const generateRandomIdentifier = require('../utils/generateRandomIdentifier');
 const getMasternodeRewardSharesContractFixture = require('./getMasternodeRewardSharesContractFixture');
 
-const ownerId = generateRandomIdentifier();
-const payToId = generateRandomIdentifier();
-const dataContract = getMasternodeRewardSharesContractFixture();
-
-function getMasternodeRewardShareDocumentsFixture() {
+function getMasternodeRewardShareDocumentsFixture(
+  ownerId = generateRandomIdentifier(),
+  payToId = generateRandomIdentifier(),
+  dataContract = getMasternodeRewardSharesContractFixture(),
+) {
   const factory = new DocumentFactory(
     createDPPMock(),
     () => ({
@@ -25,5 +25,3 @@ function getMasternodeRewardShareDocumentsFixture() {
 }
 
 module.exports = getMasternodeRewardShareDocumentsFixture;
-
-module.exports.dataContract = dataContract;
