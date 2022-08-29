@@ -1,18 +1,19 @@
-**Usage**: `client.platform.names.resolve(name.domain)`    
-**Description**: This method will allow you to resolve a DPNS record from its identity ID. 
+**Usage**: `client.platform.names.resolveByRecord(record, value)`    
+**Description**: This method will allow you to resolve a DPNS record by identity ID. 
 
 Parameters: 
 
-| parameters                | type      | required       | Description                                                                   |  
-|---------------------------|-----------|----------------| ----------------------------------------------------------------------------- |
-| **name**                  | String    | yes            | An alphanumeric (2-63) value used for human-identification (can contains `-`) |
+| parameters | type      | required       | Description                                                          |  
+|------------|-----------|----------------|----------------------------------------------------------------------|
+| **record** | String    | yes            | Type of the record (`dashUniqueIdentityId` or `dashAliasIdentityId`) |
+| **value**  | String    | yes            | Identifier value for the record                                      |
 
 **Example**: 
 
-This example will describe how to resolve names by the identity id, but other records field will works too.  
+This example will describe how to resolve names by the dash unique identity id.  
 ```js
 const identityId = '3ge4yjGinQDhxh2aVpyLTQaoka45BkijkoybfAkDepoN';
-const document = await client.platform.names.resolveByRecord('dashIdentity',identityId);
+const document = await client.platform.names.resolveByRecord('dashUniqueIdentityId', identityId);
 ```
 
-Returns : array of Document.
+Returns: array of Document.

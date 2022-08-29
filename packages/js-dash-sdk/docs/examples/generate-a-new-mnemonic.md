@@ -25,7 +25,7 @@ console.log({mnemonic});
 const Dash = require("dash");
 const {Mnemonic} = Dash.Core;
 
-const mnemnonic = new Mnemonic.toString()
+const mnemnonic = new Mnemonic().toString()
 ```
 
 ### Language selection 
