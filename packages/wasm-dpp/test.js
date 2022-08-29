@@ -13,6 +13,10 @@ async function main() {
     let id = new Identifier(buf);
 
     console.log(id.toString());
+    console.log(id.type);
+
+    const buf2 = Buffer.from(id);
+    console.log('buf2:', buf2);
 
     try {
         let id2 = new Identifier(Uint8Array.from([0,0]));

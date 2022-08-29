@@ -2996,9 +2996,12 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           "packageLocation": "./packages/wasm-dpp/",
           "packageDependencies": [
             ["@dashevo/wasm-dpp", "workspace:packages/wasm-dpp"],
+            ["@types/node", "npm:18.7.13"],
+            ["buffer", "npm:6.0.3"],
             ["text-encoding", "npm:0.7.0"],
             ["ts-loader", "virtual:e2d057e7cc143d3cb9bec864f4a2d862441b5a09f81f8e6c46e7a098cbc89e4d07017cc6e2e2142d5704bb55da853cbec2d025ebc0b30e8696c31380c00f2c7d#npm:9.3.1"],
             ["typescript", "patch:typescript@npm%3A4.7.4#~builtin<compat/typescript>::version=4.7.4&hash=ddd1e8"],
+            ["util", "npm:0.12.4"],
             ["webpack", "virtual:e2d057e7cc143d3cb9bec864f4a2d862441b5a09f81f8e6c46e7a098cbc89e4d07017cc6e2e2142d5704bb55da853cbec2d025ebc0b30e8696c31380c00f2c7d#npm:5.74.0"],
             ["webpack-cli", "virtual:e2d057e7cc143d3cb9bec864f4a2d862441b5a09f81f8e6c46e7a098cbc89e4d07017cc6e2e2142d5704bb55da853cbec2d025ebc0b30e8696c31380c00f2c7d#npm:4.10.0"],
             ["webpack-dev-server", "virtual:e2d057e7cc143d3cb9bec864f4a2d862441b5a09f81f8e6c46e7a098cbc89e4d07017cc6e2e2142d5704bb55da853cbec2d025ebc0b30e8696c31380c00f2c7d#npm:3.11.3"]
@@ -4213,6 +4216,13 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           "packageLocation": "./.yarn/cache/@types-node-npm-17.0.21-7d68eb6a13-89dcd2fe82.zip/node_modules/@types/node/",
           "packageDependencies": [
             ["@types/node", "npm:17.0.21"]
+          ],
+          "linkType": "HARD",
+        }],
+        ["npm:18.7.13", {
+          "packageLocation": "./.yarn/cache/@types-node-npm-18.7.13-148c07645a-45431e7e89.zip/node_modules/@types/node/",
+          "packageDependencies": [
+            ["@types/node", "npm:18.7.13"]
           ],
           "linkType": "HARD",
         }]

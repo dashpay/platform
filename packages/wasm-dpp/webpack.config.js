@@ -13,27 +13,7 @@ module.exports = {
         // as webpack names global object "self" for some reason
         globalObject: 'this'
     },
-    plugins: [
-        // // Have this example work in Edge which doesn't ship `TextEncoder` or
-        // // `TextDecoder` at this time.
-        // new webpack.ProvidePlugin({
-        //     TextDecoder: ['text-encoding', 'TextDecoder'],
-        //     TextEncoder: ['text-encoding', 'TextEncoder']
-        // })
-    ],
     mode: 'development',
-    // experiments: {
-    //     asyncWebAssembly: true
-    // },
-    // resolve: {
-    //     extensions: ['.wasm']
-    // },
-    // module: {
-    //     rules: [{
-    //         test: /\.wasm$/,
-    //         type: "asset/inline",
-    //     }],
-    // }
     module: {
         rules: [
             {
@@ -45,5 +25,7 @@ module.exports = {
     },
     resolve: {
         extensions: ['.tsx', '.ts', '.js'],
+        //fallback: { "util": false }
     },
+    //target: 'node'
 };

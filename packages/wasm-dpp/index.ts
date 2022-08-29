@@ -1,6 +1,7 @@
 import init, * as dpp_module from './wasm/wasm_dpp';
 // @ts-ignore
 import wasmBase from './wasm/wasm_dpp_bg.js';
+import patchIdentifier from "./lib/patchIdentifier";
 
 let isInitialized = false;
 
@@ -16,12 +17,14 @@ export default async function loadDpp() {
       let wasmUrl = URL.createObjectURL(blob);
       await init(wasmUrl);
       isInitialized = true;
-      return dpp_module;
     }  else {
       dpp_module.initSync(bytes);
       isInitialized = true;
-      return dpp_module;
     }
+
+    patchIdentifier(dpp_module);
+
+    return dpp_module;
   }
 };
 

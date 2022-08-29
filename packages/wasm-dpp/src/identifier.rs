@@ -93,4 +93,12 @@ impl IdentifierWrapper {
 
     #[wasm_bindgen(js_name = encodeCBOR)]
     pub fn encode_cbor(&self) {}
+
+    pub fn len(&self) -> usize {
+      self.wrapped.buffer.len()
+    }
+
+    pub fn inner(&self) -> Vec<u8> {
+        self.wrapped.buffer.to_vec()
+    }
 }

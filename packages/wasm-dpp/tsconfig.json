@@ -6,9 +6,13 @@
     "target": "es5",
     "allowJs": true,
     "moduleResolution": "node",
-    "declaration": true
+    "declaration": true,
+    "lib": [
+      "es2015",
+      "dom"
+    ]
   },
-  "files": [
-    "index.ts", "wasm/wasm_dpp.js"
-  ]
+  "include": [
+    "index.ts", "wasm/wasm_dpp.js, lib/*"
+  ],
 }

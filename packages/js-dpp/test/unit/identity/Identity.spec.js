@@ -53,7 +53,7 @@ describe('Identity', () => {
     it('should set variables from raw model', () => {
       const instance = new Identity(rawIdentity);
 
-      expect(instance.id).to.deep.equal(rawIdentity.id);
+      expect(instance.id.toBuffer()).to.deep.equal(rawIdentity.id.toBuffer());
       expect(instance.type).to.equal(rawIdentity.type);
       expect(instance.publicKeys).to.deep.equal(
         rawIdentity.publicKeys.map((rawPublicKey) => new IdentityPublicKey(rawPublicKey)),
@@ -63,7 +63,7 @@ describe('Identity', () => {
 
   describe('#getId', () => {
     it('should return set id', () => {
-      expect(identity.getId()).to.deep.equal(rawIdentity.id);
+      expect(identity.getId().toBuffer()).to.deep.equal(rawIdentity.id.toBuffer());
     });
   });
 
