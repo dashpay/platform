@@ -1,3 +1,30 @@
+### [0.22.14](https://github.com/dashevo/platform/compare/v0.22.13...v0.22.14) (2022-08-29)
+
+
+### Features
+
+* **dashmate:** add --force flag to stop command ([#434](https://github.com/dashevo/platform/issues/434))
+* integrate dash-spv into monorepo
+
+
+### Documentation
+
+* **dashmate:** update dashmate documentation ([#459](https://github.com/dashevo/platform/issues/459))
+* **sdk:** update outdated documentation ([#463](https://github.com/dashevo/platform/issues/463))
+
+
+### Miscellaneous Chores
+
+* bump dash core to v18.0.1 and sentinel to 1.7.1 ([#511](https://github.com/dashevo/platform/issues/511))
+* **test-suite:** move wallet storage persistence in the outer folder ([#416](https://github.com/dashevo/platform/issues/416))
+
+
+### Build System
+
+* `yarn install` fails with Node.JS 16.17.0 ([#507](https://github.com/dashevo/platform/issues/507))
+* new node alpine image breaks package builds ([#493](https://github.com/dashevo/platform/issues/493))
+* **test-suite:** fix docker image build
+
 ### [0.22.13](https://github.com/dashevo/platform/compare/v0.22.12...v0.22.13) (2022-06-17)
 
 
