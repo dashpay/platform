@@ -84,7 +84,6 @@ class SpentAssetLockTransactionsRepository {
 
 SpentAssetLockTransactionsRepository.TREE_PATH = [
   Buffer.from([3]),
-  Buffer.from([0]),
 ];
 
 module.exports = SpentAssetLockTransactionsRepository;

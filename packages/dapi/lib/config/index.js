@@ -56,7 +56,7 @@ Object
 const config = { ...DEFAULT_CONFIG, ...envConfig };
 
 module.exports = {
-  livenet: Boolean(config[OPTIONS.LIVENET]),
+  livenet: config[OPTIONS.LIVENET] === 'true',
   rpcServer: {
     port: parseInt(config[OPTIONS.API_JSON_RPC_PORT], 10),
   },

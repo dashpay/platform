@@ -5,6 +5,7 @@ const InvalidIdentityPublicKeyIdError = require('../../../../../errors/consensus
 const Identity = require('../../../../Identity');
 const IdentityPublicKeyDisabledAtWindowViolationError = require('../../../../../errors/consensus/state/identity/IdentityPublicKeyDisabledAtWindowViolationError');
 const validateTimeInBlockTimeWindow = require('../../../../../blockTimeWindow/validateTimeInBlockTimeWindow');
+const IdentityPublicKeyIsDisabledError = require('../../../../../errors/consensus/state/identity/IdentityPublicKeyIsDisabledError');
 
 /**
  * @param {StateRepository} stateRepository
@@ -51,13 +52,27 @@ function validateIdentityUpdateTransitionStateFactory(
 
     if (publicKeyIdsToDisable) {
       publicKeyIdsToDisable.forEach((id) => {
-        if (!identity.getPublicKeyById(id)) {
+        const publicKeyToDisable = identity.getPublicKeyById(id);
+
+        if (!publicKeyToDisable) {
           result.addError(
             new InvalidIdentityPublicKeyIdError(id),
           );
-        } else if (identity.getPublicKeyById(id).isReadOnly()) {
+
+          return;
+        }
+
+        if (publicKeyToDisable.isReadOnly()) {
           result.addError(
             new IdentityPublicKeyIsReadOnlyError(id),
+          );
+
+          return;
+        }
+
+        if (publicKeyToDisable.isDisabled()) {
+          result.addError(
+            new IdentityPublicKeyIsDisabledError(id),
           );
         }
       });

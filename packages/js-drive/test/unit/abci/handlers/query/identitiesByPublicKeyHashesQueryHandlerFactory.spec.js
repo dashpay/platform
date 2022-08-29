@@ -10,7 +10,6 @@ const {
   v0: {
     GetIdentitiesByPublicKeyHashesResponse,
     Proof,
-    ResponseMetadata,
   },
 } = require('@dashevo/dapi-grpc');
 
@@ -20,7 +19,6 @@ const identitiesByPublicKeyHashesQueryHandlerFactory = require(
   '../../../../../lib/abci/handlers/query/identitiesByPublicKeyHashesQueryHandlerFactory',
 );
 const InvalidArgumentAbciError = require('../../../../../lib/abci/errors/InvalidArgumentAbciError');
-const BlockExecutionContextStackMock = require('../../../../../lib/test/mock/BlockExecutionContextStackMock');
 const StorageResult = require('../../../../../lib/storage/StorageResult');
 
 describe('identitiesByPublicKeyHashesQueryHandlerFactory', () => {
@@ -31,7 +29,6 @@ describe('identitiesByPublicKeyHashesQueryHandlerFactory', () => {
   let maxIdentitiesPerRequest;
   let createQueryResponseMock;
   let responseMock;
-  let blockExecutionContextStackMock;
   let params;
   let data;
 
@@ -50,15 +47,10 @@ describe('identitiesByPublicKeyHashesQueryHandlerFactory', () => {
 
     createQueryResponseMock.returns(responseMock);
 
-    blockExecutionContextStackMock = new BlockExecutionContextStackMock(this.sinon);
-
-    blockExecutionContextStackMock.getLast.returns(true);
-
     identitiesByPublicKeyHashesQueryHandler = identitiesByPublicKeyHashesQueryHandlerFactory(
       signedPublicKeyToIdentitiesRepositoryMock,
       maxIdentitiesPerRequest,
       createQueryResponseMock,
-      blockExecutionContextStackMock,
     );
 
     publicKeyHashes = [
@@ -81,23 +73,6 @@ describe('identitiesByPublicKeyHashesQueryHandlerFactory', () => {
     data = { publicKeyHashes };
   });
 
-  it('should return empty response if there is no signed state', async () => {
-    blockExecutionContextStackMock.getLast.returns(null);
-
-    responseMock = new GetIdentitiesByPublicKeyHashesResponse();
-    responseMock.setIdentitiesList([]);
-    responseMock.setMetadata(new ResponseMetadata());
-
-    const result = await identitiesByPublicKeyHashesQueryHandler(params, data, {});
-
-    expect(result).to.be.an.instanceof(ResponseQuery);
-    expect(result.code).to.equal(0);
-
-    expect(result.value).to.deep.equal(responseMock.serializeBinary());
-
-    expect(signedPublicKeyToIdentitiesRepositoryMock.fetchManyBuffers).to.have.not.been.called();
-  });
-
   it('should throw an error if maximum requested items exceeded', async () => {
     maxIdentitiesPerRequest = 1;
 
@@ -105,7 +80,6 @@ describe('identitiesByPublicKeyHashesQueryHandlerFactory', () => {
       signedPublicKeyToIdentitiesRepositoryMock,
       maxIdentitiesPerRequest,
       createQueryResponseMock,
-      blockExecutionContextStackMock,
     );
 
     try {

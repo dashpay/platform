@@ -285,20 +285,8 @@ describe('DataContractStoreRepository', () => {
     let dataContract2;
 
     beforeEach(async () => {
-      dataContract2 = new DataContract({
-        $id: generateRandomIdentifier().toBuffer(),
-        ownerId: generateRandomIdentifier().toBuffer(),
-        contractId: generateRandomIdentifier().toBuffer(),
-        documents: {
-          niceDocument: {
-            properties: {
-              nice: {
-                type: 'boolean',
-              },
-            },
-          },
-        },
-      });
+      dataContract2 = new DataContract(dataContract.toObject());
+      dataContract2.id = generateRandomIdentifier();
 
       await store.createTree([], DataContractStoreRepository.TREE_PATH[0]);
     });

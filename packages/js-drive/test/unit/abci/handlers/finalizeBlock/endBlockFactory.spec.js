@@ -16,6 +16,7 @@ const endBlockFactory = require('../../../../../lib/abci/handlers/finalizeBlock/
 
 const BlockExecutionContextMock = require('../../../../../lib/test/mock/BlockExecutionContextMock');
 const LoggerMock = require('../../../../../lib/test/mock/LoggerMock');
+const BlockExecutionContextStackMock = require('../../../../../lib/test/mock/BlockExecutionContextStackMock');
 
 describe('endBlockFactory', () => {
   let endBlock;
@@ -29,8 +30,12 @@ describe('endBlockFactory', () => {
   let chainLockMock;
   let validatorSetMock;
   let getFeatureFlagForHeightMock;
+  let blockExecutionContextStackMock;
+  let rsAbciMock;
+  let blockEndMock;
   let coreChainLockedHeight;
   let version;
+  let time;
 
   beforeEach(function beforeEach() {
     coreChainLockedHeight = 2;
@@ -43,12 +48,20 @@ describe('endBlockFactory', () => {
       stateSignature: Uint8Array.from('003657bb44d74c371d14485117de43313ca5c2848f3622d691c2b1bf3576a64bdc2538efab24854eb82ae7db38482dbd15a1cb3bc98e55173817c9d05c86e47a5d67614a501414aae6dd1565e59422d1d77c41ae9b38de34ecf1e9f778b2a97b'),
     };
 
+    time = {
+      seconds: Math.ceil(new Date().getTime() / 1000),
+      nanos: 0,
+    };
+
     blockExecutionContextMock = new BlockExecutionContextMock(this.sinon);
 
     blockExecutionContextMock.hasDataContract.returns(true);
     blockExecutionContextMock.getCoreChainLockedHeight.returns(coreChainLockedHeight);
     blockExecutionContextMock.getVersion.returns(version);
     blockExecutionContextMock.getLastCommitInfo.returns(lastCommitInfoMock);
+    blockExecutionContextMock.getTime.returns(time);
+
+    blockExecutionContextStackMock = new BlockExecutionContextStackMock(this.sinon);
 
     chainLockMock = {
       height: 1,
@@ -73,26 +86,31 @@ describe('endBlockFactory', () => {
 
     getFeatureFlagForHeightMock = this.sinon.stub().resolves(null);
 
+    blockEndMock = this.sinon.stub();
+
+    rsAbciMock = {
+      blockEnd: blockEndMock,
+    };
+
+    blockEndMock.resolves({
+      currentEpochIndex: 42,
+      isEpochChange: true,
+    });
+
     endBlock = endBlockFactory(
       blockExecutionContextMock,
+      blockExecutionContextStackMock,
       latestCoreChainLockMock,
       validatorSetMock,
       createValidatorSetUpdateMock,
       getFeatureFlagForHeightMock,
+      rsAbciMock,
     );
 
     height = Long.fromInt(dpnsContractBlockHeight);
   });
 
   it('should finalize a block', async () => {
-    endBlock = endBlockFactory(
-      blockExecutionContextMock,
-      latestCoreChainLockMock,
-      validatorSetMock,
-      createValidatorSetUpdateMock,
-      getFeatureFlagForHeightMock,
-    );
-
     const response = await endBlock(height, loggerMock);
 
     expect(response).to.deep.equal({

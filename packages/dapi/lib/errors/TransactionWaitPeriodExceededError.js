@@ -1,14 +1,10 @@
 class TransactionWaitPeriodExceededError extends Error {
   /**
    * @param {string} transactionHash
-   * @param originalStack
    */
-  constructor(transactionHash, originalStack) {
+  constructor(transactionHash) {
     const message = `Transaction waiting period for ${transactionHash} exceeded`;
     super(message);
-    if (originalStack) {
-      this.stack = originalStack;
-    }
 
     this.transactionHash = transactionHash;
   }

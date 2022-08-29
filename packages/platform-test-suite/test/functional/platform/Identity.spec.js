@@ -5,8 +5,8 @@ const { createFakeInstantLock } = require('dash/build/src/utils/createFakeIntant
 const { hash } = require('@dashevo/dpp/lib/util/hash');
 const getDataContractFixture = require('../../../lib/test/fixtures/getDataContractFixture');
 const createClientWithFundedWallet = require('../../../lib/test/createClientWithFundedWallet');
-const wait = require('../../../lib/wait');
 const getDAPISeeds = require('../../../lib/test/getDAPISeeds');
+const waitForSTPropagated = require('../../../lib/waitForSTPropagated');
 
 const {
   Essentials: {
@@ -102,12 +102,14 @@ describe('Platform', () => {
         outputIndex,
       } = await client.platform.identities.utils.createAssetLockTransaction(7000);
 
-      await client.getDAPIClient().core.broadcastTransaction(transaction.toBuffer());
+      const account = await client.getWalletAccount();
 
+      await account.broadcastTransaction(transaction);
+
+      // Creating normal transition
       const assetLockProof = await client.platform.identities.utils
         .createAssetLockProof(transaction, outputIndex);
 
-      // Creating normal transition
       const {
         identity: identityOne,
         identityCreateTransition: identityCreateTransitionOne,
@@ -120,9 +122,7 @@ describe('Platform', () => {
       );
 
       // Additional wait time to mitigate testnet latency
-      if (process.env.NETWORK === 'testnet') {
-        await wait(5000);
-      }
+      await waitForSTPropagated();
 
       walletAccount.storage
         .getWalletStore(walletAccount.walletId)
@@ -160,14 +160,16 @@ describe('Platform', () => {
         outputIndex,
       } = await client.platform.identities.utils.createAssetLockTransaction(15);
 
-      await client.getDAPIClient().core.broadcastTransaction(transaction.toBuffer());
+      const account = await client.getWalletAccount();
 
+      await account.broadcastTransaction(transaction);
+
+      // Creating normal transition
       const assetLockProof = await client.platform.identities.utils.createAssetLockProof(
         transaction,
         outputIndex,
       );
 
-      // Creating normal transition
       const {
         identityCreateTransition,
       } = await client.platform.identities.utils.createIdentityCreateTransition(
@@ -233,14 +235,16 @@ describe('Platform', () => {
       this.timeout(850000);
 
       it('should create identity using chainLock', async () => {
+        // Broadcast Asset Lock transaction
         const {
           transaction,
           privateKey,
           outputIndex,
         } = await client.platform.identities.utils.createAssetLockTransaction(7000);
 
-        // Broadcast Asset Lock transaction
-        await client.getDAPIClient().core.broadcastTransaction(transaction.toBuffer());
+        const account = await client.getWalletAccount();
+
+        await account.broadcastTransaction(transaction);
 
         // Wait for transaction to be mined and chain locked
         const { promise: metadataPromise } = walletAccount.waitForTxMetadata(transaction.id);
@@ -275,9 +279,7 @@ describe('Platform', () => {
         );
 
         // Additional wait time to mitigate testnet latency
-        if (process.env.NETWORK === 'testnet') {
-          await wait(5000);
-        }
+        await waitForSTPropagated();
       });
 
       it('should be able to get newly created identity', async () => {
@@ -299,7 +301,8 @@ describe('Platform', () => {
       });
     });
 
-    describe('Credits', () => {
+    // TODO: enable once fee calculation is done
+    describe.skip('Credits', () => {
       let dataContractFixture;
 
       before(async () => {
@@ -308,9 +311,7 @@ describe('Platform', () => {
         await client.platform.contracts.publish(dataContractFixture, identity);
 
         // Additional wait time to mitigate testnet latency
-        if (process.env.NETWORK === 'testnet') {
-          await wait(5000);
-        }
+        await waitForSTPropagated();
 
         client.getApps().set('customContracts', {
           contractId: dataContractFixture.getId(),
@@ -394,9 +395,7 @@ describe('Platform', () => {
         await client.platform.identities.topUp(identity.getId(), topUpAmount);
 
         // Additional wait time to mitigate testnet latency
-        if (process.env.NETWORK === 'testnet') {
-          await wait(5000);
-        }
+        await waitForSTPropagated();
 
         const identityAfterTopUp = await client.platform.identities.get(
           identity.getId(),
@@ -422,9 +421,7 @@ describe('Platform', () => {
         }, identity);
 
         // Additional wait time to mitigate testnet latency
-        if (process.env.NETWORK === 'testnet') {
-          await wait(5000);
-        }
+        await waitForSTPropagated();
       });
 
       it('should fail to top up an identity with already used asset lock output', async () => {
@@ -434,14 +431,16 @@ describe('Platform', () => {
           outputIndex,
         } = await client.platform.identities.utils.createAssetLockTransaction(1);
 
-        await client.getDAPIClient().core.broadcastTransaction(transaction.toBuffer());
+        const account = await client.getWalletAccount();
 
+        await account.broadcastTransaction(transaction);
+
+        // Creating normal transition
         const assetLockProof = await client.platform.identities.utils.createAssetLockProof(
           transaction,
           outputIndex,
         );
 
-        // Creating normal transition
         const identityTopUpTransitionOne = await client.platform.identities.utils
           .createIdentityTopUpTransition(assetLockProof, privateKey, identity.getId());
         // Creating ST that tries to spend the same output
@@ -453,9 +452,7 @@ describe('Platform', () => {
         );
 
         // Additional wait time to mitigate testnet latency
-        if (process.env.NETWORK === 'testnet') {
-          await wait(5000);
-        }
+        await waitForSTPropagated();
 
         let broadcastError;
 
@@ -512,6 +509,8 @@ describe('Platform', () => {
           },
         );
 
+        await waitForSTPropagated();
+
         identity = await client.platform.identities.get(
           identity.getId(),
         );
@@ -538,6 +537,8 @@ describe('Platform', () => {
           identity,
           update,
         );
+
+        await waitForSTPropagated();
 
         identity = await client.platform.identities.get(
           identity.getId(),
