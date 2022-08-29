@@ -5,24 +5,18 @@
 
 * **dashmate:** add --force flag to stop command ([#434](https://github.com/dashevo/platform/issues/434))
 * integrate dash-spv into monorepo
-* move dash-spv in packages after import
 
 
 ### Documentation
 
 * **dashmate:** update dashmate documentation ([#459](https://github.com/dashevo/platform/issues/459))
-* issue and pull request templates (dashevo/dash-spv[#26](https://github.com/dashevo/platform/issues/26))
 * **sdk:** update outdated documentation ([#463](https://github.com/dashevo/platform/issues/463))
 
 
 ### Miscellaneous Chores
 
 * bump dash core to v18.0.1 and sentinel to 1.7.1 ([#511](https://github.com/dashevo/platform/issues/511))
-* **ci:** CI with GitHub Actions (dashevo/dash-spv[#28](https://github.com/dashevo/platform/issues/28))
 * **test-suite:** move wallet storage persistence in the outer folder ([#416](https://github.com/dashevo/platform/issues/416))
-* update dashcore to v0.19.29 (dashevo/dash-spv[#29](https://github.com/dashevo/platform/issues/29))
-* update readme
-* Update Travis config (dashevo/dash-spv[#25](https://github.com/dashevo/platform/issues/25))
 
 
 ### Build System
