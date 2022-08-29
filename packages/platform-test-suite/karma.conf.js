@@ -67,7 +67,7 @@ module.exports = (config) => {
     port: 9876,
     colors: true,
     logLevel: config.LOG_INFO,
-    browsers: ['ChromeHeadless'],
+    browsers: ['chromeWithoutSecurity'],
     singleRun: true,
     concurrency: Infinity,
     plugins: [
@@ -78,5 +78,12 @@ module.exports = (config) => {
       karmaSourcemapLoader,
       karmaWebpack,
     ],
+    customLaunchers: {
+      chromeWithoutSecurity: {
+        base: 'ChromeHeadless',
+        flags: ['--ignore-certificate-errors'],
+        displayName: 'Chrome w/o security',
+      },
+    },
   });
 };

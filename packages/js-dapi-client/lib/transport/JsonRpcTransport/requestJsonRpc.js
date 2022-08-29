@@ -5,6 +5,7 @@ const WrongHttpCodeError = require('./errors/WrongHttpCodeError');
 
 /**
  * @typedef {requestJsonRpc}
+ * @param {string} protocol
  * @param {string} host
  * @param {number} port
  * @param {string} method
@@ -12,9 +13,7 @@ const WrongHttpCodeError = require('./errors/WrongHttpCodeError');
  * @param {object} [options]
  * @returns {Promise<*>}
  */
-async function requestJsonRpc(host, port, method, params, options = {}) {
-  const protocol = port === 443 ? 'https' : 'http';
-
+async function requestJsonRpc(protocol, host, port, method, params, options = {}) {
   const url = `${protocol}://${host}${port && port !== 443 ? `:${port}` : ''}`;
 
   const payload = {

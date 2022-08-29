@@ -10,13 +10,14 @@ class DAPIAddress {
     }
 
     if (typeof address === 'string') {
-      const [host, httpPort, grpcPort] = address.split(':');
+      const [host, httpPort, grpcPort, noSsl] = address.split(':');
 
       // eslint-disable-next-line no-param-reassign
       address = {
         host,
         httpPort: httpPort ? parseInt(httpPort, 10) : DAPIAddress.DEFAULT_HTTP_PORT,
         grpcPort: grpcPort ? parseInt(grpcPort, 10) : DAPIAddress.DEFAULT_GRPC_PORT,
+        protocol: noSsl === 'no-ssl' ? 'http' : 'https',
       };
     }
 
@@ -24,6 +25,7 @@ class DAPIAddress {
       throw new DAPIAddressHostMissingError();
     }
 
+    this.protocol = address.protocol || 'https';
     this.host = address.host;
     this.httpPort = address.httpPort || DAPIAddress.DEFAULT_HTTP_PORT;
     this.grpcPort = address.grpcPort || DAPIAddress.DEFAULT_GRPC_PORT;
@@ -31,6 +33,15 @@ class DAPIAddress {
 
     this.banCount = 0;
     this.banStartTime = undefined;
+  }
+
+  /**
+   * Get protocol
+   *
+   * @returns {string}
+   */
+  getProtocol() {
+    return this.protocol;
   }
 
   /**
@@ -157,6 +168,7 @@ class DAPIAddress {
    */
   toJSON() {
     return {
+      protocol: this.getProtocol(),
       host: this.getHost(),
       httpPort: this.getHttpPort(),
       grpcPort: this.getGrpcPort(),
@@ -165,7 +177,7 @@ class DAPIAddress {
   }
 
   toString() {
-    return `${this.getHost()}:${this.getHttpPort()}:${this.getGrpcPort()}`;
+    return `${this.getProtocol()}://${this.getHost()}:${this.getHttpPort()}:${this.getGrpcPort()}`;
   }
 }
 
