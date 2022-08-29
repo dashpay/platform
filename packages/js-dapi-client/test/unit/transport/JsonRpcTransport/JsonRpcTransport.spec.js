@@ -86,6 +86,7 @@ describe('JsonRpcTransport', () => {
       expect(createDAPIAddressProviderFromOptionsMock).to.be.calledOnceWithExactly(options);
       expect(jsonRpcTransport.lastUsedAddress).to.deep.equal(dapiAddress);
       expect(requestJsonRpcMock).to.be.calledOnceWithExactly(
+        dapiAddress.getProtocol(),
         dapiAddress.getHost(),
         dapiAddress.getHttpPort(),
         method,
@@ -111,6 +112,7 @@ describe('JsonRpcTransport', () => {
         expect(createDAPIAddressProviderFromOptionsMock).to.be.calledOnceWithExactly({});
         expect(jsonRpcTransport.lastUsedAddress).to.deep.equal(dapiAddress);
         expect(requestJsonRpcMock).to.be.calledOnceWithExactly(
+          dapiAddress.getProtocol(),
           dapiAddress.getHost(),
           dapiAddress.getHttpPort(),
           method,
@@ -164,6 +166,7 @@ describe('JsonRpcTransport', () => {
         expect(createDAPIAddressProviderFromOptionsMock).to.be.calledOnceWithExactly({});
         expect(jsonRpcTransport.lastUsedAddress).to.deep.equal(dapiAddress);
         expect(requestJsonRpcMock).to.be.calledOnceWithExactly(
+          dapiAddress.getProtocol(),
           dapiAddress.getHost(),
           dapiAddress.getHttpPort(),
           method,
@@ -204,6 +207,7 @@ describe('JsonRpcTransport', () => {
         expect(createDAPIAddressProviderFromOptionsMock).to.be.calledOnceWithExactly({});
         expect(jsonRpcTransport.lastUsedAddress).to.deep.equal(dapiAddress);
         expect(requestJsonRpcMock).to.be.calledOnceWithExactly(
+          dapiAddress.getProtocol(),
           dapiAddress.getHost(),
           dapiAddress.getHttpPort(),
           method,
@@ -246,6 +250,7 @@ describe('JsonRpcTransport', () => {
         expect(createDAPIAddressProviderFromOptionsMock).to.be.calledOnceWithExactly(options);
         expect(jsonRpcTransport.lastUsedAddress).to.deep.equal(dapiAddress);
         expect(requestJsonRpcMock).to.be.calledOnceWithExactly(
+          dapiAddress.getProtocol(),
           dapiAddress.getHost(),
           dapiAddress.getHttpPort(),
           method,
