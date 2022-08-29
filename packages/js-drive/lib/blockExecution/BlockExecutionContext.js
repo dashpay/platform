@@ -20,16 +20,7 @@ const Long = require('long');
 
 class BlockExecutionContext {
   constructor() {
-    this.dataContracts = [];
-    this.cumulativeFees = 0;
-    this.coreChainLockedHeight = null;
-    this.height = null;
-    this.version = null;
-    this.time = null;
-    this.lastCommitInfo = null;
-    this.validTxs = 0;
-    this.invalidTxs = 0;
-    this.consensusLogger = null;
+    this.reset();
   }
 
   /**
@@ -66,8 +57,15 @@ class BlockExecutionContext {
   /**
    * @return {number}
    */
-  getCumulativeFees() {
-    return this.cumulativeFees;
+  getCumulativeStorageFee() {
+    return this.cumulativeStorageFee;
+  }
+
+  /**
+   * @return {number}
+   */
+  getCumulativeProcessingFee() {
+    return this.cumulativeProcessingFee;
   }
 
   /**
@@ -75,8 +73,19 @@ class BlockExecutionContext {
    *
    * @param {number} fee
    */
-  incrementCumulativeFees(fee) {
-    this.cumulativeFees += fee;
+  incrementCumulativeStorageFee(fee) {
+    this.cumulativeStorageFee += fee;
+
+    return this;
+  }
+
+  /**
+   * Increment cumulative fees
+   *
+   * @param {number} fee
+   */
+  incrementCumulativeProcessingFee(fee) {
+    this.cumulativeProcessingFee += fee;
 
     return this;
   }
@@ -150,7 +159,7 @@ class BlockExecutionContext {
 
   /**
    *
-   * @return {IConsensus}
+   * @return {ITimestamp}
    */
   getTime() {
     return this.time;
@@ -243,7 +252,8 @@ class BlockExecutionContext {
    */
   reset() {
     this.dataContracts = [];
-    this.cumulativeFees = 0;
+    this.cumulativeProcessingFee = 0;
+    this.cumulativeStorageFee = 0;
     this.coreChainLockedHeight = null;
     this.height = null;
     this.version = null;
@@ -271,7 +281,8 @@ class BlockExecutionContext {
   populate(blockExecutionContext) {
     this.dataContracts = blockExecutionContext.dataContracts;
     this.lastCommitInfo = blockExecutionContext.lastCommitInfo;
-    this.cumulativeFees = blockExecutionContext.cumulativeFees;
+    this.cumulativeProcessingFee = blockExecutionContext.cumulativeProcessingFee;
+    this.cumulativeStorageFee = blockExecutionContext.cumulativeStorageFee;
     this.time = blockExecutionContext.time;
     this.height = blockExecutionContext.height;
     this.coreChainLockedHeight = blockExecutionContext.coreChainLockedHeight;
@@ -284,21 +295,22 @@ class BlockExecutionContext {
   /**
    * Populate the current instance with data
    *
-   * @param object
+   * @param {Object} object
    */
   fromObject(object) {
     this.dataContracts = object.dataContracts
       .map((rawDataContract) => new DataContract(rawDataContract));
     this.lastCommitInfo = CommitInfo.fromObject(object.lastCommitInfo);
-    this.cumulativeFees = object.cumulativeFees;
+    this.cumulativeProcessingFee = object.cumulativeProcessingFee;
+    this.cumulativeStorageFee = object.cumulativeStorageFee;
     this.validTxs = object.validTxs;
     this.invalidTxs = object.invalidTxs;
     this.consensusLogger = object.consensusLogger;
-    this.time = object.time;
 
-    if (this.time) {
-      this.time.seconds = Long.fromNumber(this.time.seconds);
-      this.time = new Timestamp(this.time);
+    if (object.time) {
+      this.time = new Timestamp({
+        seconds: Long.fromNumber(object.time.seconds),
+      });
     }
 
     this.height = Long.fromNumber(object.height);
@@ -312,9 +324,14 @@ class BlockExecutionContext {
    * @return {{
    *  dataContracts: Object[],
    *  invalidTxs: number,
-   *  header: null,
+   *  height: number,
+   *  version: Object,
+   *  time: Object,
    *  validTxs: number,
-   *  cumulativeFees: number
+   *  cumulativeProcessingFee: number,
+   *  cumulativeStorageFee: number,
+   *  coreChainLockedHeight: number,
+   *  lastCommitInfo: number,
    * }}
    */
   toObject(options = {}) {
@@ -327,7 +344,8 @@ class BlockExecutionContext {
 
     const object = {
       dataContracts: this.dataContracts.map((dataContract) => dataContract.toObject()),
-      cumulativeFees: this.cumulativeFees,
+      cumulativeProcessingFee: this.cumulativeProcessingFee,
+      cumulativeStorageFee: this.cumulativeStorageFee,
       time,
       height: this.height ? this.height.toNumber() : null,
       version: this.version ? this.version.toJSON() : null,

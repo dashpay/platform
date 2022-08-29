@@ -82,6 +82,7 @@ const InvalidSignaturePublicKeySecurityLevelError = require('./signature/Invalid
 const PublicKeyIsDisabledError = require('./signature/PublicKeyIsDisabledError');
 const PublicKeySecurityLevelNotMetError = require('./signature/PublicKeySecurityLevelNotMetError');
 const WrongPublicKeyPurposeError = require('./signature/WrongPublicKeyPurposeError');
+const IdentityPublicKeyIsDisabledError = require('./state/identity/IdentityPublicKeyIsDisabledError');
 
 const codes = {
   /**
@@ -203,6 +204,7 @@ const codes = {
   4020: StateMaxIdentityPublicKeyLimitReachedError,
   4021: DuplicatedIdentityPublicKeyStateError,
   4022: DuplicatedIdentityPublicKeyIdStateError,
+  4023: IdentityPublicKeyIsDisabledError,
 };
 
 module.exports = codes;

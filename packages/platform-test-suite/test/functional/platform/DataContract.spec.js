@@ -2,9 +2,8 @@ const Dash = require('dash');
 
 const getDataContractFixture = require('../../../lib/test/fixtures/getDataContractFixture');
 
-const wait = require('../../../lib/wait');
-
 const createClientWithFundedWallet = require('../../../lib/test/createClientWithFundedWallet');
+const waitForSTPropagated = require('../../../lib/waitForSTPropagated');
 
 const {
   Errors: {
@@ -64,23 +63,19 @@ describe('Platform', () => {
 
     it('should be able to get newly created data contract', async () => {
       // Additional wait time to mitigate testnet latency
-      if (process.env.NETWORK === 'testnet') {
-        await wait(5000);
-      }
+      await waitForSTPropagated();
 
       const fetchedDataContract = await client.platform.contracts.get(
         dataContractFixture.getId(),
       );
 
       expect(fetchedDataContract).to.be.not.null();
-      expect(dataContractFixture.toJSON()).to.deep.equal(fetchedDataContract.toJSON());
+      expect(dataContractFixture.toObject()).to.deep.equal(fetchedDataContract.toObject());
     });
 
     it('should not be able to update an existing data contract if version is incorrect', async () => {
       // Additional wait time to mitigate testnet latency
-      if (process.env.NETWORK === 'testnet') {
-        await wait(5000);
-      }
+      await waitForSTPropagated();
 
       const fetchedDataContract = await client.platform.contracts.get(
         dataContractFixture.getId(),
@@ -102,9 +97,7 @@ describe('Platform', () => {
 
     it('should not be able to update an existing data contract if schema is not backward compatible', async () => {
       // Additional wait time to mitigate testnet latency
-      if (process.env.NETWORK === 'testnet') {
-        await wait(5000);
-      }
+      await waitForSTPropagated();
 
       const fetchedDataContract = await client.platform.contracts.get(
         dataContractFixture.getId(),
@@ -127,9 +120,7 @@ describe('Platform', () => {
 
     it('should be able to update an existing data contract', async () => {
       // Additional wait time to mitigate testnet latency
-      if (process.env.NETWORK === 'testnet') {
-        await wait(5000);
-      }
+      await waitForSTPropagated();
 
       const fetchedDataContract = await client.platform.contracts.get(
         dataContractFixture.getId(),
@@ -173,9 +164,7 @@ describe('Platform', () => {
       await client.platform.contracts.update(fetchedDataContract, identity);
 
       // Additional wait time to mitigate testnet latency
-      if (process.env.NETWORK === 'testnet') {
-        await wait(5000);
-      }
+      await waitForSTPropagated();
 
       client.getApps().set('customContract', {
         contractId: fetchedDataContract.getId(),
@@ -196,9 +185,7 @@ describe('Platform', () => {
       }, identity);
 
       // Additional wait time to mitigate testnet latency
-      if (process.env.NETWORK === 'testnet') {
-        await wait(5000);
-      }
+      await waitForSTPropagated();
 
       const [fetchedDocument] = await client.platform.documents.get(
         `customContract.${newDocumentType}`,

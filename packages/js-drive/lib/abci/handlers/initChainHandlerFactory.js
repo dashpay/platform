@@ -15,10 +15,9 @@ const {
  * @param {createValidatorSetUpdate} createValidatorSetUpdate
  * @param {synchronizeMasternodeIdentities} synchronizeMasternodeIdentities
  * @param {BaseLogger} logger
- * @param {createInitialStateStructure} createInitialStateStructure
  * @param {registerSystemDataContracts} registerSystemDataContracts
  * @param {GroveDBStore} groveDBStore
- *
+ * @param {RSAbci} rsAbci
  * @return {initChainHandler}
  */
 function initChainHandlerFactory(
@@ -28,9 +27,9 @@ function initChainHandlerFactory(
   createValidatorSetUpdate,
   synchronizeMasternodeIdentities,
   logger,
-  createInitialStateStructure,
   registerSystemDataContracts,
   groveDBStore,
+  rsAbci,
 ) {
   /**
    * @typedef initChainHandler
@@ -59,7 +58,11 @@ function initChainHandlerFactory(
 
     await groveDBStore.startTransaction();
 
-    await createInitialStateStructure();
+    // Call RS ABCI
+
+    logger.debug('Request RS Drive\'s InitChain method');
+
+    await rsAbci.initChain({ }, true);
 
     await registerSystemDataContracts(consensusLogger, time);
 

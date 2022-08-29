@@ -66,7 +66,6 @@ const proveDocumentsFactory = require('./document/proveDocumentsFactory');
 const fetchDataContractFactory = require('./document/fetchDataContractFactory');
 const BlockExecutionContext = require('./blockExecution/BlockExecutionContext');
 
-const CreditsDistributionPoolRepository = require('./creditsDistributionPool/CreditsDistributionPoolRepository');
 const unserializeStateTransitionFactory = require(
   './abci/handlers/stateTransition/unserializeStateTransitionFactory',
 );
@@ -109,7 +108,6 @@ const SimplifiedMasternodeList = require('./core/SimplifiedMasternodeList');
 const decodeChainLock = require('./core/decodeChainLock');
 const SpentAssetLockTransactionsRepository = require('./identity/SpentAssetLockTransactionsRepository');
 const enrichErrorWithConsensusErrorFactory = require('./abci/errors/enrichErrorWithConsensusLoggerFactory');
-const CreditsDistributionPool = require('./creditsDistributionPool/CreditsDistributionPool');
 const closeAbciServerFactory = require('./abci/closeAbciServerFactory');
 const getLatestFeatureFlagFactory = require('./featureFlag/getLatestFeatureFlagFactory');
 const getFeatureFlagForHeightFactory = require('./featureFlag/getFeatureFlagForHeightFactory');
@@ -121,7 +119,6 @@ const createQueryResponseFactory = require('./abci/handlers/query/response/creat
 const BlockExecutionContextStackRepository = require('./blockExecution/BlockExecutionContextStackRepository');
 const rotateSignedStoreFactory = require('./storage/rotateSignedStoreFactory');
 const BlockExecutionContextStack = require('./blockExecution/BlockExecutionContextStack');
-const createInitialStateStructureFactory = require('./state/createInitialStateStructureFactory');
 
 const registerSystemDataContractFactory = require('./state/registerSystemDataContractFactory');
 const registerTopLevelDomainFactory = require('./state/registerTopLevelDomainFactory');
@@ -450,7 +447,10 @@ function createDIContainer(options) {
           fs.rmSync(options.GROVEDB_LATEST_FILE, { recursive: true });
         }
       }).singleton(),
+
     groveDB: asFunction((rsDrive) => rsDrive.getGroveDB()).singleton(),
+
+    rsAbci: asFunction((rsDrive) => rsDrive.getAbci()).singleton(),
 
     groveDBStore: asFunction((rsDrive) => new GroveDBStore(rsDrive)).singleton(),
 
@@ -578,20 +578,6 @@ function createDIContainer(options) {
         signedDocumentRepository,
       )
     )).singleton(),
-  });
-
-  /**
-   * Register credits distribution pool
-   */
-  container.register({
-    creditsDistributionPoolRepository: asClass(CreditsDistributionPoolRepository)
-      .singleton(),
-
-    signedCreditsDistributionPoolRepository: asFunction((
-      signedGroveDBStore,
-    ) => (new CreditsDistributionPoolRepository(signedGroveDBStore))).singleton(),
-
-    creditsDistributionPool: asValue(new CreditsDistributionPool()),
   });
 
   /**
@@ -740,7 +726,6 @@ function createDIContainer(options) {
    * State
    */
   container.register({
-    createInitialStateStructure: asFunction(createInitialStateStructureFactory).singleton(),
     registerSystemDataContract: asFunction(registerSystemDataContractFactory).singleton(),
     registerSystemDataContracts: asFunction(registerSystemDataContractsFactory).singleton(),
     registerTopLevelDomain: asFunction(registerTopLevelDomainFactory).singleton(),

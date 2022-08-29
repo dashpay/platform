@@ -37,26 +37,10 @@ function getProofsQueryHandlerFactory(
     dataContractIds,
     documents,
   }) {
-    // There is no signed state (current committed block height less than 3)
-    if (!blockExecutionContextStack.getLast()) {
-      return new ResponseQuery({
-        value: await cbor.encodeAsync({
-          documentsProof: null,
-          identitiesProof: null,
-          dataContractsProof: null,
-          metadata: {
-            height: 0,
-            coreChainLockedHeight: 0,
-          },
-        }),
-      });
-    }
-
     const blockExecutionContext = blockExecutionContextStack.getFirst();
-    const signedBlockExecutionContext = blockExecutionContextStack.getLast();
 
-    const signedBlockHeight = signedBlockExecutionContext.getHeight();
-    const signedCoreChainLockedHeight = signedBlockExecutionContext.getCoreChainLockedHeight();
+    const signedBlockHeight = blockExecutionContext.getHeight();
+    const signedCoreChainLockedHeight = blockExecutionContext.getCoreChainLockedHeight();
 
     const {
       quorumHash: signatureLlmqHash,

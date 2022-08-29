@@ -38,11 +38,10 @@ describe('getProofsQueryHandlerFactory', () => {
     identity = getIdentityFixture();
     documents = getDocumentsFixture();
 
-    signedBlockExecutionContextMock = new BlockExecutionContextMock(this.sinon);
-    signedBlockExecutionContextMock.getHeight.returns(new Long(42));
-    signedBlockExecutionContextMock.getCoreChainLockedHeight.returns(41);
-
     blockExecutionContextMock = new BlockExecutionContextMock(this.sinon);
+
+    blockExecutionContextMock.getHeight.returns(new Long(42));
+    blockExecutionContextMock.getCoreChainLockedHeight.returns(41);
 
     blockExecutionContextMock.getLastCommitInfo.returns({
       quorumHash: Buffer.alloc(32, 1),
@@ -84,29 +83,6 @@ describe('getProofsQueryHandlerFactory', () => {
       dataContractId: doc.getDataContractId(),
       type: doc.getType(),
     }));
-  });
-
-  it('should return empty response if there is no signed state', async () => {
-    blockExecutionContextStackMock.getLast.returns(null);
-
-    const result = await getProofsQueryHandler({}, {}, {});
-
-    expect(result).to.be.an.instanceof(ResponseQuery);
-    expect(result.code).to.equal(0);
-
-    const emptyValue = cbor.encode(
-      {
-        documentsProof: null,
-        identitiesProof: null,
-        dataContractsProof: null,
-        metadata: {
-          height: 0,
-          coreChainLockedHeight: 0,
-        },
-      },
-    );
-
-    expect(result.value).to.deep.equal(emptyValue);
   });
 
   it('should return proof for passed data contract ids', async () => {

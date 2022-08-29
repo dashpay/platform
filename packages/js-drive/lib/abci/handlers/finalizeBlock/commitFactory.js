@@ -1,20 +1,18 @@
 const ReadOperation = require('@dashevo/dpp/lib/stateTransition/fee/operations/ReadOperation');
 const DataContractCacheItem = require('../../../dataContract/DataContractCacheItem');
+const BlockExecutionContext = require('../../../blockExecution/BlockExecutionContext');
 
 /**
- * @param {CreditsDistributionPool} creditsDistributionPool
- * @param {CreditsDistributionPoolRepository} creditsDistributionPoolRepository
  * @param {BlockExecutionContext} blockExecutionContext
  * @param {BlockExecutionContextStack} blockExecutionContextStack
  * @param {BlockExecutionContextStackRepository} blockExecutionContextStackRepository
  * @param {rotateSignedStore} rotateSignedStore
+ * @param {GroveDBStore} groveDBStore
  * @param {LRUCache} dataContractCache
  *
  * @return {commit}
  */
 function commitFactory(
-  creditsDistributionPool,
-  creditsDistributionPoolRepository,
   blockExecutionContext,
   blockExecutionContextStack,
   blockExecutionContextStackRepository,
@@ -23,8 +21,6 @@ function commitFactory(
   groveDBStore,
 ) {
   /**
-   * Commit ABCI
-   *
    * @typedef commit
    *
    * @param {BaseLogger} logger
@@ -42,20 +38,12 @@ function commitFactory(
 
     consensusLogger.debug('Commit ABCI method requested');
 
-    // Store ST fees from the block to distribution pool
-    creditsDistributionPool.incrementAmount(
-      blockExecutionContext.getCumulativeFees(),
-    );
-
-    await creditsDistributionPoolRepository.store(
-      creditsDistributionPool,
-      {
-        useTransaction: true,
-      },
-    );
-
     // Store block execution context
-    blockExecutionContextStack.add(blockExecutionContext);
+    const clonedBlockExecutionContext = new BlockExecutionContext();
+    clonedBlockExecutionContext.populate(blockExecutionContext);
+
+    blockExecutionContextStack.add(clonedBlockExecutionContext);
+
     blockExecutionContextStackRepository.store(
       blockExecutionContextStack,
       {

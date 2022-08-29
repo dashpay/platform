@@ -54,9 +54,6 @@ LABEL description="Drive Node.JS"
 # Install ZMQ shared library
 RUN apk update && apk add --no-cache zeromq-dev
 
-# Install latest yarn
-RUN yarn set version 3.1.0
-
 WORKDIR /platform
 
 COPY --from=builder /platform /platform

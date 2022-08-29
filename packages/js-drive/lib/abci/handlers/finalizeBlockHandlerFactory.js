@@ -47,6 +47,7 @@ function finalizeBlockHandlerFactory(
       time,
       coreChainLockedHeight,
       version,
+      proposerProTxHash,
     } = request;
 
     const consensusLogger = logger.child({
@@ -59,7 +60,12 @@ function finalizeBlockHandlerFactory(
 
     await beginBlock(
       {
-        lastCommitInfo, height, coreChainLockedHeight, version, time,
+        lastCommitInfo,
+        height,
+        coreChainLockedHeight,
+        version,
+        time,
+        proposerProTxHash: Buffer.from(proposerProTxHash),
       },
       consensusLogger,
     );

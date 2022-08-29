@@ -46,7 +46,7 @@ describe('Platform', () => {
         const evidence = oldConsensusParams.getEvidence();
 
         updateConsensusParamsFeatureFlag = {
-          enableAtHeight: lastBlockHeight + 2,
+          enableAtHeight: lastBlockHeight + 3,
           block: {
             maxBytes: +block.maxBytes + 1,
           },
@@ -62,7 +62,7 @@ describe('Platform', () => {
         };
 
         revertConsensusParamsFeatureFlag = {
-          enableAtHeight: lastBlockHeight + 4,
+          enableAtHeight: lastBlockHeight + 5,
           block: {
             maxBytes: +block.maxBytes,
           },

@@ -11,6 +11,7 @@ const IdentityPublicKeyDisabledAtWindowViolationError = require('../../../../../
 const InvalidIdentityPublicKeyIdError = require('../../../../../../../lib/errors/consensus/state/identity/InvalidIdentityPublicKeyIdError');
 const SomeConsensusError = require('../../../../../../../lib/test/mocks/SomeConsensusError');
 const StateTransitionExecutionContext = require('../../../../../../../lib/stateTransition/StateTransitionExecutionContext');
+const IdentityPublicKeyIsDisabledError = require('../../../../../../../lib/errors/consensus/state/identity/IdentityPublicKeyIsDisabledError');
 
 describe('validateIdentityUpdateTransitionStateFactory', () => {
   let validateIdentityUpdateTransitionState;
@@ -84,6 +85,18 @@ describe('validateIdentityUpdateTransitionStateFactory', () => {
     const result = await validateIdentityUpdateTransitionState(stateTransition);
 
     expectValidationError(result, IdentityPublicKeyIsReadOnlyError);
+
+    const [error] = result.getErrors();
+    expect(error.getPublicKeyIndex()).to.equal(0);
+  });
+
+  it('should return IdentityPublicKeyIsDisabledError if disabling public key is already disabled', async () => {
+    identity.getPublicKeyById(0).setDisabledAt(new Date().getTime());
+    stateTransition.setPublicKeyIdsToDisable([0]);
+
+    const result = await validateIdentityUpdateTransitionState(stateTransition);
+
+    expectValidationError(result, IdentityPublicKeyIsDisabledError);
 
     const [error] = result.getErrors();
     expect(error.getPublicKeyIndex()).to.equal(0);
