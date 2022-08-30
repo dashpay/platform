@@ -25,7 +25,6 @@ describe('DAPIStream', () => {
     dapiStream = new DAPIStream(streamFunction);
 
     this.sinon.spy(dapiStream, 'addListeners');
-    this.sinon.spy(dapiStream, 'removeListeners');
     this.sinon.spy(dapiStream, 'connect');
     this.sinon.spy(dapiStream, 'endHandler');
     this.sinon.spy(dapiStream, 'emit');
@@ -40,7 +39,6 @@ describe('DAPIStream', () => {
   describe('#connect', () => {
     it('should connect and create timeout', async () => {
       await dapiStream.connect();
-      expect(dapiStream.removeListeners).to.have.been.calledOnce();
       expect(dapiStream.addListeners).to.have.been.calledOnce();
       expect(dapiStream.reconnectTimeout).to.exist();
     });
@@ -150,7 +148,12 @@ describe('DAPIStream', () => {
     });
   });
 
-  describe('#removeListeners', () => {
-
+  describe('#endHandler', () => {
+    it('should handle end event', async () => {
+      dapiStream.endHandler();
+      expect(dapiStream.stopReconnectTimeout).to.have.been.called();
+      expect(dapiStream.emit).to.have.been.calledWith(DAPIStream.EVENTS.END);
+      expect(dapiStream.stream).to.equal(null);
+    });
   });
 });

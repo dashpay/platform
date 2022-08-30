@@ -48,12 +48,9 @@ class DAPIStream extends EventEmitter {
     this.errorHandler = this.errorHandler.bind(this);
     this.endHandler = this.endHandler.bind(this);
     this.addListeners = this.addListeners.bind(this);
-    this.removeListeners = this.removeListeners.bind(this);
   }
 
   async connect(...args) {
-    this.removeListeners();
-
     this.args = args;
     this.stream = await this.streamFunction(...this.args);
     this.addListeners();
@@ -77,7 +74,6 @@ class DAPIStream extends EventEmitter {
    * @private
    */
   endHandler() {
-    this.removeListeners();
     this.stopReconnectTimeout();
     this.stream = null;
     this.emit(EVENTS.END);
@@ -89,7 +85,6 @@ class DAPIStream extends EventEmitter {
    */
   errorHandler(e) {
     if (e.code === GrpcErrorCodes.CANCELLED) {
-      this.removeListeners();
       if (this.reconnectingAfterTimeout) {
         this.reconnectingAfterTimeout = false;
 
@@ -106,17 +101,6 @@ class DAPIStream extends EventEmitter {
       }
     } else {
       this.emit(EVENTS.ERROR, e);
-    }
-  }
-
-  /**
-   * @private
-   */
-  removeListeners() {
-    if (this.stream) {
-      this.stream.removeAllListeners(EVENTS.DATA);
-      this.stream.removeAllListeners(EVENTS.ERROR);
-      this.stream.removeAllListeners(EVENTS.END);
     }
   }
 
