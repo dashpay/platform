@@ -1,4 +1,3 @@
-const EventEmitter = require('events');
 const { expect } = require('chai');
 const GrpcErrorCodes = require('@dashevo/grpc-common/lib/server/error/GrpcErrorCodes');
 const BlockHeadersReader = require('../../../lib/BlockHeadersProvider/BlockHeadersReader');
@@ -483,8 +482,6 @@ describe('BlockHeadersReader - unit', () => {
 
     it('should replace stream in historicalStreams in case of retry attempt', async () => {
       await blockHeadersReader.readHistorical(1, options.targetBatchSize * 5);
-
-      let oldSteam;
 
       const streamToBreak = blockHeadersReader.historicalStreams[3];
       streamToBreak.emit('error', new Error('retry'));
