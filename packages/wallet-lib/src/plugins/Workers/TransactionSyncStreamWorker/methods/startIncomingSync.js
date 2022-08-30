@@ -31,9 +31,6 @@ module.exports = async function startIncomingSync() {
       await startIncomingSync.call(this);
     }
   } catch (e) {
-    if (this.stream) {
-      this.removeStreamListeners(this.stream);
-    }
     this.stream = null;
 
     if (GRPC_RETRY_ERRORS.includes(e.code)) {

@@ -190,7 +190,7 @@ class TransactionSyncStreamWorker extends Worker {
     this.updateProgress();
     await this.storage.saveState();
     // TODO: Purge headers metadata from storage
-    // TODO: for some reason headers still continue arriving after everything is completed
+    // TODO: for some reason data continue arriving after everything is completed
   }
 
   /**
@@ -354,13 +354,6 @@ class TransactionSyncStreamWorker extends Worker {
     if (!this.progressUpdateTimeout) {
       this.progressUpdateTimeout = setTimeout(this.updateProgress, PROGRESS_UPDATE_INTERVAL);
     }
-  }
-
-  // eslint-disable-next-line class-methods-use-this
-  removeStreamListeners(stream) {
-    stream.removeAllListeners('data');
-    stream.removeAllListeners('error');
-    stream.removeAllListeners('end');
   }
 
   /**

@@ -5,7 +5,6 @@ const sleep = require('../../../../utils/sleep');
 function onStreamEnd(workerInstance, resolve) {
   const endStream = () => {
     logger.silly('TransactionSyncStreamWorker - end stream on request');
-    workerInstance.removeStreamListeners(workerInstance.stream);
     workerInstance.stream = null;
     resolve(workerInstance.hasReachedGapLimit);
   };
