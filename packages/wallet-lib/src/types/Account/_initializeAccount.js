@@ -16,7 +16,7 @@ async function _initializeAccount(account, userUnsafePlugins) {
   // Add block headers into the SPV chain if there are any;
   const chainStore = self.storage.getDefaultChainStore();
   const { blockHeaders, lastSyncedHeaderHeight } = chainStore.state;
-  if (!this.offlineMode && blockHeaders.length > 0) {
+  if (!self.offlineMode && blockHeaders.length > 0) {
     const { blockHeadersProvider } = self.transport.client;
     // TODO: test this behaviour?
     // By mistake I put there lastSyncedHeaderHeight instead of the first header height
