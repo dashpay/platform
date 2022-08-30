@@ -7,15 +7,29 @@ use(chaiAsPromised);
 use(sinonChai);
 
 beforeEach(function beforeEach() {
-  if (!this.sinonSandbox) {
-    this.sinonSandbox = sinon.createSandbox();
+  if (!this.sinon) {
+    this.sinon = sinon.createSandbox();
+    // Legacy
+    this.sinonSanbox = this.sinon;
   } else {
-    this.sinonSandbox.restore();
+    this.sinon.restore();
+  }
+});
+
+before(function before() {
+  if (!this.sinon) {
+    this.sinon = sinon.createSandbox();
+  } else {
+    this.sinon.restore();
   }
 });
 
 afterEach(function afterEach() {
-  this.sinonSandbox.restore();
+  this.sinon.restore();
+});
+
+after(function before() {
+  this.sinon.restore();
 });
 
 global.expect = expect;
