@@ -248,6 +248,6 @@ class BlockHeadersProvider extends EventEmitter {
 
 BlockHeadersProvider.EVENTS = EVENTS;
 BlockHeadersProvider.STATES = STATES;
-BlockHeadersProvider.defaultOptions = defaultOptions;
+BlockHeadersProvider.defaultOptions = { ...defaultOptions };
 
 module.exports = BlockHeadersProvider;
