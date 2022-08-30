@@ -1,5 +1,5 @@
 # syntax = docker/dockerfile:1.3
-FROM node:16.16-alpine as builder
+FROM node:16-alpine as builder
 
 ARG NODE_ENV=production
 ENV NODE_ENV ${NODE_ENV}
@@ -43,7 +43,7 @@ RUN --mount=type=cache,target=/tmp/unplugged \
     yarn workspaces focus --production @dashevo/drive && \
     cp -R /platform/.yarn/unplugged /tmp/
 
-FROM node:16.16-alpine
+FROM node:16-alpine
 
 ARG NODE_ENV=production
 ENV NODE_ENV ${NODE_ENV}
@@ -53,9 +53,6 @@ LABEL description="Drive Node.JS"
 
 # Install ZMQ shared library
 RUN apk update && apk add --no-cache zeromq-dev
-
-# Install latest yarn
-RUN yarn set version 3.1.0
 
 WORKDIR /platform
 
