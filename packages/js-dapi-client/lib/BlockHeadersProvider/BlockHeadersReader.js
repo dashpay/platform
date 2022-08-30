@@ -8,13 +8,6 @@ const EVENTS = {
   ERROR: 'error',
 };
 
-const COMMANDS = {
-  HANDLE_STREAM_END: 'HANDLE_STREAM_END',
-  HANDLE_STREAM_RETRY: 'HANDLE_STREAM_RETRY',
-  HANDLE_STREAM_ERROR: 'HANDLE_STREAM_ERROR',
-  HANDLE_STREAM_CANCELLATION: 'HANDLE_STREAM_CANCELLATION',
-};
-
 /**
  * @typedef BlockHeadersReaderOptions
  * @property {CoreMethodsFacade} [coreMethods]
@@ -73,39 +66,6 @@ class BlockHeadersReader extends EventEmitter {
       throw new Error(`Invalid total amount of headers to read: ${totalAmount}`);
     }
 
-    // Resubscribe to the stream in case of error, and replace the stream in the array
-    this.on(COMMANDS.HANDLE_STREAM_RETRY, (oldStream, newStream) => {
-      const index = this.historicalStreams.indexOf(oldStream);
-      this.removeStreamListeners(oldStream);
-      this.historicalStreams[index] = newStream;
-    });
-
-    this.on(COMMANDS.HANDLE_STREAM_CANCELLATION, (stream) => {
-      const index = this.historicalStreams.indexOf(stream);
-      this.removeStreamListeners(stream);
-      this.historicalStreams.splice(index, 1);
-
-      if (this.historicalStreams.length === 0) {
-        this.removeCommandListeners();
-      }
-    });
-
-    this.on(COMMANDS.HANDLE_STREAM_ERROR, (e) => {
-      this.stopReadingHistorical();
-      this.emit(EVENTS.ERROR, e);
-    });
-
-    // Remove finished stream from the array and emit HISTORICAL_DATA_OBTAINED event
-    this.on(COMMANDS.HANDLE_STREAM_END, (stream) => {
-      this.removeStreamListeners(stream);
-      const index = this.historicalStreams.indexOf(stream);
-      this.historicalStreams.splice(index, 1);
-      if (this.historicalStreams.length === 0) {
-        this.emit(EVENTS.HISTORICAL_DATA_OBTAINED);
-        this.removeCommandListeners();
-      }
-    });
-
     const numStreams = Math.min(
       Math.max(Math.round(totalAmount / this.targetBatchSize), 1),
       this.maxParallelStreams,
@@ -125,22 +85,12 @@ class BlockHeadersReader extends EventEmitter {
   }
 
   stopReadingHistorical() {
-    this.removeCommandListeners();
-    this.historicalStreams.forEach((stream) => {
+    while (this.historicalStreams.length) {
+      const stream = this.historicalStreams[0];
       stream.cancel();
-      this.removeStreamListeners(stream);
-    });
-    this.historicalStreams = [];
-  }
+    }
 
-  /**
-   * @private
-   */
-  removeCommandListeners() {
-    this.removeAllListeners(COMMANDS.HANDLE_STREAM_RETRY);
-    this.removeAllListeners(COMMANDS.HANDLE_STREAM_ERROR);
-    this.removeAllListeners(COMMANDS.HANDLE_STREAM_END);
-    this.removeAllListeners(COMMANDS.HANDLE_STREAM_CANCELLATION);
+    this.historicalStreams = [];
   }
 
   /**
@@ -214,11 +164,7 @@ class BlockHeadersReader extends EventEmitter {
 
   unsubscribeFromNew() {
     if (this.continuousSyncStream) {
-      // Get a reference before cancellation because it will be nulled
-      const stream = this.continuousSyncStream;
-      stream.cancel();
-      this.removeStreamListeners(stream);
-      stream.removeAllListeners('beforeReconnect');
+      this.continuousSyncStream.cancel();
       this.continuousSyncStream = null;
     }
   }
@@ -279,7 +225,8 @@ class BlockHeadersReader extends EventEmitter {
 
       const errorHandler = (streamError) => {
         if (streamError.code === GrpcErrorCodes.CANCELLED) {
-          this.emit(COMMANDS.HANDLE_STREAM_CANCELLATION, stream);
+          const index = this.historicalStreams.indexOf(stream);
+          this.historicalStreams.splice(index, 1);
           return;
         }
 
@@ -289,18 +236,25 @@ class BlockHeadersReader extends EventEmitter {
 
           subscribeWithRetries(newFromBlockHeight, newCount)
             .then((newStream) => {
+              const index = this.historicalStreams.indexOf(stream);
+              this.historicalStreams[index] = newStream;
               currentRetries += 1;
-              this.emit(COMMANDS.HANDLE_STREAM_RETRY, stream, newStream);
             }).catch((e) => {
-              this.emit(COMMANDS.HANDLE_STREAM_ERROR, e);
+              this.stopReadingHistorical();
+              this.emit(EVENTS.ERROR, e);
             });
         } else {
-          this.emit(COMMANDS.HANDLE_STREAM_ERROR, streamError);
+          this.stopReadingHistorical();
+          this.emit(EVENTS.ERROR, streamError);
         }
       };
 
       const endHandler = () => {
-        this.emit(COMMANDS.HANDLE_STREAM_END, stream);
+        const index = this.historicalStreams.indexOf(stream);
+        this.historicalStreams.splice(index, 1);
+        if (this.historicalStreams.length === 0) {
+          this.emit(EVENTS.HISTORICAL_DATA_OBTAINED);
+        }
       };
 
       // TODO: consider reworking with "pasued" mode to
@@ -315,19 +269,8 @@ class BlockHeadersReader extends EventEmitter {
 
     return subscribeWithRetries;
   }
-
-  /**
-   * @private
-   * @param stream
-   */
-  removeStreamListeners(stream) {
-    stream.removeAllListeners('data');
-    stream.removeAllListeners('error');
-    stream.removeAllListeners('end');
-  }
 }
 
 BlockHeadersReader.EVENTS = EVENTS;
-BlockHeadersReader.COMMANDS = COMMANDS;
 
 module.exports = BlockHeadersReader;
