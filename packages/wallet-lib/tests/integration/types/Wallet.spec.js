@@ -145,11 +145,11 @@ describe('Wallet', () => {
         recipient: new PrivateKey().toAddress(),
         satoshis: 1000
       });
-      const broadcastPromise = account.broadcastTransaction(sendTx)
+      await account.broadcastTransaction(sendTx)
+
       wallet.storage.getDefaultChainStore().state.blockHeight = 43;
       account.emit(EVENTS.BLOCK, { hash: '1111', transactions: [sendTx]}, 43)
 
-      await broadcastPromise;
       await waitOneTick();
 
       /**
@@ -234,12 +234,10 @@ describe('Wallet', () => {
         recipient: new PrivateKey().toAddress(),
         satoshis: 1000
       });
-      const broadcastPromise = account.broadcastTransaction(sendTx)
+      await account.broadcastTransaction(sendTx)
 
       wallet.storage.getDefaultChainStore().state.blockHeight = 52;
       account.emit(EVENTS.BLOCK, { hash: '1111', transactions: [sendTx]}, 52);
-
-      await broadcastPromise;
 
       /** Wait for sendTx metadata arrives to the storage */
       await waitOneTick();

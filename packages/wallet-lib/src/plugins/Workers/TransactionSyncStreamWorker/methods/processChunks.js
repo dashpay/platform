@@ -15,9 +15,9 @@ async function processTransactions(transactions) {
     .filterAddressesTransactions(transactions, addresses, network);
   if (walletTransactions.length) {
     walletTransactions.forEach((tx) => {
-      if (this.transactionsToVerify[tx.hash]) {
-        throw new Error(`Transaction ${tx.hash} already sits in verification queue`);
-      }
+      // if (this.transactionsToVerify[tx.hash]) {
+      //   throw new Error(`Transaction ${tx.hash} already sits in verification queue`);
+      // }
       this.transactionsToVerify[tx.hash] = tx;
     });
 
