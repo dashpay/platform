@@ -29,7 +29,6 @@ describe('BlockHeadersProvider - unit', () => {
 
     this.sinon.spy(blockHeadersReader, 'on');
     this.sinon.spy(blockHeadersReader, 'once');
-    this.sinon.spy(blockHeadersReader, 'removeAllListeners');
     this.sinon.spy(blockHeadersReader, 'removeListener');
 
     blockHeadersProvider.setBlockHeadersReader(blockHeadersReader);
@@ -121,7 +120,7 @@ describe('BlockHeadersProvider - unit', () => {
         .to.have.been.calledWith(BlockHeadersReader.EVENTS.ERROR);
       expect(blockHeadersReader.removeListener)
         .to.have.been.calledWith(BlockHeadersReader.EVENTS.BLOCK_HEADERS);
-      expect(blockHeadersReader.removeAllListeners)
+      expect(blockHeadersReader.removeListener)
         .to.have.been.calledWith(BlockHeadersReader.EVENTS.HISTORICAL_DATA_OBTAINED);
       expect(blockHeadersProvider.state).to.equal(BlockHeadersProvider.STATES.IDLE);
       expect(blockHeadersProvider.emit)

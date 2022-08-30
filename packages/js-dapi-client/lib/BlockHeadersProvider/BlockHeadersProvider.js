@@ -52,6 +52,7 @@ class BlockHeadersProvider extends EventEmitter {
 
     this.handleError = this.handleError.bind(this);
     this.handleHeaders = this.handleHeaders.bind(this);
+    this.handleHistoricalDataObtained = this.handleHistoricalDataObtained.bind(this);
   }
 
   /**
@@ -150,14 +151,8 @@ class BlockHeadersProvider extends EventEmitter {
 
     this.ensureChainRoot(fromBlockHeight);
 
-    this.blockHeadersReader.once(BlockHeadersReader.EVENTS.HISTORICAL_DATA_OBTAINED, () => {
-      this.emit(EVENTS.HISTORICAL_DATA_OBTAINED);
-      // TODO: implement spvChain.validate() to ensure that chain is complete
-      // and all metadata is present
-      this.removeReaderListeners();
-
-      this.state = STATES.IDLE;
-    });
+    this.blockHeadersReader
+      .once(BlockHeadersReader.EVENTS.HISTORICAL_DATA_OBTAINED, this.handleHistoricalDataObtained);
 
     await this.blockHeadersReader.readHistorical(
       fromBlockHeight,
@@ -230,12 +225,24 @@ class BlockHeadersProvider extends EventEmitter {
     }
   }
 
+  handleHistoricalDataObtained() {
+    this.emit(EVENTS.HISTORICAL_DATA_OBTAINED);
+    // TODO: implement spvChain.validate() to ensure that chain is complete
+    // and all metadata is present
+    this.removeReaderListeners();
+
+    this.state = STATES.IDLE;
+  }
+
   removeReaderListeners() {
     this.blockHeadersReader.removeListener(BlockHeadersReader.EVENTS.ERROR, this.handleError);
     this.blockHeadersReader
       .removeListener(BlockHeadersReader.EVENTS.BLOCK_HEADERS, this.handleHeaders);
     this.blockHeadersReader
-      .removeAllListeners(BlockHeadersReader.EVENTS.HISTORICAL_DATA_OBTAINED);
+      .removeListener(
+        BlockHeadersReader.EVENTS.HISTORICAL_DATA_OBTAINED,
+        this.handleHistoricalDataObtained,
+      );
   }
 }
 
