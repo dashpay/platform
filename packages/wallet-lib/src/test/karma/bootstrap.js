@@ -2,6 +2,7 @@ const { expect, use } = require('chai');
 const sinon = require('sinon');
 const chaiAsPromised = require('chai-as-promised');
 const sinonChai = require('sinon-chai');
+require('setimmediate');
 
 use(chaiAsPromised);
 use(sinonChai);

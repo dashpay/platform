@@ -1,4 +1,5 @@
-const { BlockHeader } = require('@dashevo/dashcore-lib');
+const X11 = require('wasm-x11-hash');
+const { BlockHeader, configure } = require('@dashevo/dashcore-lib');
 const { genesis } = require('@dashevo/dash-spv');
 
 const getRoot = (network) => {
@@ -18,7 +19,13 @@ const getRoot = (network) => {
 
 const BLOCK_TIME = 2.5 * 60;
 
-const mockHeadersChain = (network, length, root) => {
+const mockHeadersChain = async (network, length, root) => {
+  const x11 = await X11();
+  // Configure Dashcore lib to operate with wasm x11
+  configure({
+    x11hash: x11,
+  });
+
   const rootHeader = root || getRoot(network);
 
   const chain = [rootHeader];
