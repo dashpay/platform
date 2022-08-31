@@ -1,3 +1,5 @@
+const DAPIClient = require('@dashevo/dapi-client');
+
 const TxStreamMock = require('./TxStreamMock');
 const TransportMock = require('./TransportMock');
 
@@ -11,8 +13,11 @@ module.exports = async function createAndAttachTransportMocksToWallet(wallet, si
   const accountSyncPromise = wallet.getAccount();
   // Breaking the event loop to start wallet syncing
   await new Promise((resolve) => setTimeout(resolve, 0));
-  await wallet.transport.client.blockHeadersProvider.stop();
-  await new Promise((resolve) => setTimeout(resolve, 50));
+
+  // Simulate headers sync finish
+  const { blockHeadersProvider } = wallet.transport.client;
+  blockHeadersProvider.emit(DAPIClient.BlockHeadersProvider.EVENTS.HISTORICAL_DATA_OBTAINED);
+  await new Promise((resolve) => setTimeout(resolve, 0));
 
   // Emitting tx stream end to make wallet sync finish
   txStreamMock.emit(TxStreamMock.EVENTS.end);
