@@ -59,6 +59,11 @@ async function processMerkleBlock(merkleBlock) {
   const headerHeight = headerMetadata.height;
   const headerTime = headerMetadata.time;
 
+  logger.debug(
+    `[TransactionSyncStreamWorker] processing merkle block ${headerHash} at height ${headerHeight}`,
+    { walletId: this.walletId },
+  );
+
   if (!headerTime || !headerHeight) {
     throw new Error(`Invalid header metadata: Time: ${headerTime}, Height: ${headerHeight}`);
   }

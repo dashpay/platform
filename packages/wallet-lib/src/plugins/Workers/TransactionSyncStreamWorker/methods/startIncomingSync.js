@@ -34,7 +34,7 @@ module.exports = async function startIncomingSync() {
     this.stream = null;
 
     if (GRPC_RETRY_ERRORS.includes(e.code)) {
-      logger.debug(`TransactionSyncStreamWorker - IncomingSync - Restarted from height: ${lastSyncedBlockHeight}`);
+      logger.debug(`TransactionSyncStreamWorker - IncomingSync - Restarting from height: ${lastSyncedBlockHeight}`);
 
       if (this.syncIncomingTransactions) {
         await startIncomingSync.call(this);

@@ -334,14 +334,15 @@ class BlockHeadersSyncWorker extends Worker {
       chainStore.updateHeadersMetadata(newHeaders, newChainHeight);
       walletStore.updateLastKnownBlock(newChainHeight);
 
-      this.parentEvents.emit(EVENTS.BLOCKHEIGHT_CHANGED, newChainHeight);
-      this.parentEvents.emit(EVENTS.BLOCK, block, newChainHeight);
-
       const { orphanChunks } = spvChain;
       const totalOrphans = orphanChunks.reduce((sum, chunk) => sum + chunk.length, 0);
       const totalChainLength = longestChain.length + totalOrphans;
       logger.debug(`[BlockHeadersSyncWorker] Chain height update: ${newChainHeight}, Headers added: ${newHeaders.length}, Total length: ${totalChainLength}`);
       logger.debug(`[--------------------->] Longest: ${longestChain.length}, Orphans: ${totalOrphans}`);
+      logger.debug(`[--------------------->] New block hash: ${block.hash}`);
+
+      this.parentEvents.emit(EVENTS.BLOCKHEIGHT_CHANGED, newChainHeight);
+      this.parentEvents.emit(EVENTS.BLOCK, block, newChainHeight);
 
       this.storage.scheduleStateSave();
     } catch (e) {
