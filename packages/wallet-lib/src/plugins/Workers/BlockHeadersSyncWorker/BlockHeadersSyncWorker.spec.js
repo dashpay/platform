@@ -543,8 +543,11 @@ describe('BlockHeadersSyncWorker', () => {
 
       expect(blockHeadersSyncWorker.parentEvents.emit)
         .to.have.been.calledWith(EVENTS.BLOCKHEIGHT_CHANGED, batchHeadHeight);
-      expect(blockHeadersSyncWorker.parentEvents.emit)
-        .to.have.been.calledWith(EVENTS.BLOCK, block, batchHeadHeight);
+
+      const { secondCall } = blockHeadersSyncWorker.parentEvents.emit;
+      expect(secondCall.args[0]).to.equal(EVENTS.BLOCK);
+      expect(secondCall.args[1].toString()).to.equal(block.toString());
+      expect(secondCall.args[2]).to.equal(batchHeadHeight);
     });
 
     it('should emit error in case something goes wrong', async function () {

@@ -38,6 +38,19 @@ async function processTransactions(transactions) {
 }
 
 async function processMerkleBlock(merkleBlock) {
+  // Ignore Merkle Block processing during the incoming sync
+  // because transactions are verified by actual blocks (handleNewBlock)
+  //
+  // Overall, merkleblocks for freshly mined transactions aren't arriving at all during
+  // the continuous TX sync. (Perhaps due to a bug in dapi?)
+  // However, the stream returns them for blocks N where
+  // subscribeToTransactionsWithProofs({ fromBlockHeight: N, count: 0 })
+  //
+  // This condition ignores such merkle blocks
+  if (this.syncIncomingTransactions) {
+    return;
+  }
+
   const chainStore = this.storage.getDefaultChainStore();
 
   // Reverse hashes, as they're little endian in the header
