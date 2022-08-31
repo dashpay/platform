@@ -228,11 +228,14 @@ class TransactionSyncStreamWorker extends Worker {
     block.transactions.forEach((tx) => {
       if (this.transactionsToVerify[tx.hash]) {
         transactionsWithMetadata.push([tx, metadata]);
-        delete transactionsWithMetadata[tx.hash];
+        delete this.transactionsToVerify[tx.hash];
       }
     });
 
-    this.importTransactions(transactionsWithMetadata);
+    if (transactionsWithMetadata.length) {
+      logger.debug(`[TransactionSyncStreamWorker] - Handle new block - verified transactions: ${transactionsWithMetadata.map(([tx]) => tx.hash).join(',')}`);
+      this.importTransactions(transactionsWithMetadata);
+    }
 
     this.setLastSyncedBlockHeight(height, true);
 
@@ -362,7 +365,7 @@ class TransactionSyncStreamWorker extends Worker {
    * @returns {Promise<void>}
    */
   async reconnectToStream() {
-    logger.silly('TransactionSyncStreamWorker - end stream - new addresses generated');
+    logger.debug('TransactionSyncStreamWorker - end stream - new addresses generated');
 
     if (isBrowser()) {
       // Under browser environment, grpc-web doesn't call error and end events
