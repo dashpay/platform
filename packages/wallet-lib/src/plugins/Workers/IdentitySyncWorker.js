@@ -26,6 +26,13 @@ class IdentitySyncWorker extends Worker {
   }
 
   async execute() {
+    // TODO: re-evaluate this expression after v0.23 merged into master
+    // This delay resolves problem with failing subscribeToTransactionsWithProofs
+    // call which results in "TX Metadata waiting period timeout" error
+    // current assumption is that root cause is envoy timeouts which supposed
+    // to be fixed in v0.23 to some extent
+    await new Promise((resolve) => setTimeout(resolve, 500));
+
     const walletStore = this.storage.getWalletStore(this.walletId);
     const indexedIds = await walletStore.getIndexedIdentityIds();
 
