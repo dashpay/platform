@@ -1,9 +1,10 @@
 ### [0.22.15](https://github.com/dashevo/platform/compare/v0.22.14...v0.22.15) (2022-08-31)
 
 
-### Bug Fixes
+### Features
 
-* **dashmate:** update v18 for the mainnet nodes
+* **dashmate:** update v18 for the mainnet nodes ([#514](https://github.com/dashevo/platform/issues/514))
+
 
 ### [0.22.14](https://github.com/dashevo/platform/compare/v0.22.13...v0.22.14) (2022-08-29)
 
