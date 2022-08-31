@@ -17,26 +17,30 @@ function camelToSnakeCase(str) {
  */
 function buildEnvs(envs, value, key = '') {
   if (typeof value === 'object' && value !== null) {
-    if (key.length > 0) {
-      // eslint-disable-next-line no-param-reassign
-      key += '_';
+    let keyPrefix = '';
+
+    if (key !== '') {
+      keyPrefix = `${key}_`;
     }
 
     for (const [k, v] of Object.entries(value)) {
       buildEnvs(
         envs,
         v,
-        `${key}${camelToSnakeCase(k).toUpperCase()}`,
+        `${keyPrefix}${camelToSnakeCase(k).toUpperCase()}`,
       );
     }
   } else {
+    let envValue = value;
     if (value === null || value === undefined) {
-      // eslint-disable-next-line no-param-reassign
-      value = '';
+      envValue = '';
     }
 
+    // Sanitize key
+    const envKey = key.replace(/\W/g, '_');
+
     // eslint-disable-next-line no-param-reassign
-    envs[key] = value.toString();
+    envs[envKey] = envValue.toString();
   }
 }
 
