@@ -3,7 +3,7 @@ const merkleProofs = require('./merkleproofs');
 const utils = require('./utils');
 
 const MIN_TIMESTAMP_HEADERS = 11;
-const MIN_DGW_HEADERS = 24;
+// const MIN_DGW_HEADERS = 24;
 
 function getMedianTimestamp(headers) {
   const timestamps = headers.map((h) => h.time);
@@ -27,6 +27,7 @@ function hasGreaterThanMedianTimestamp(newHeader, previousHeaders) {
 }
 
 function isValidBlockHeader(newHeader, previousHeaders, network = 'mainnet') {
+  // TODO: implement consensus checks properly for all networks
   return true;
   // if (previousHeaders.length > MIN_DGW_HEADERS) {
   //   return newHeader.validProofOfWork()

@@ -4,17 +4,16 @@ const utils = require('./utils');
 const SPVError = require('./errors/SPVError');
 
 const SpvChain = class {
-  // TODO: add startBlockHeight as well
   constructor(chainType, confirms = 100, startBlock, startBlockHeight) {
     this.confirmsBeforeFinal = confirms;
 
     this.reset(startBlockHeight);
     this.init(chainType, startBlock);
 
-    // TODO: test
     this.hashesByHeight = {
       [this.startBlockHeight]: this.root.hash,
     };
+
     this.heightByHash = {
       [this.root.hash]: this.startBlockHeight,
     };

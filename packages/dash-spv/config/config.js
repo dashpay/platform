@@ -41,7 +41,7 @@ module.exports = {
       previousblockhash: '0000000000000000000000000000000000000000000000000000000000000000',
       merkleroot: 'e0028eb9648db56b1ac77cf090b99048a8007e2bb64b68f092c03c7f56a662c7',
       time: 1417713337,
-      bits: '0x207fffff',
+      bits: '207fffff',
       nonce: 1096447,
     });
   },
