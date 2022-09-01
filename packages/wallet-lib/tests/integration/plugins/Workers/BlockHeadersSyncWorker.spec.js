@@ -64,6 +64,7 @@ describe('BlockHeadersSyncWorker', () => {
   };
 
   describe('With storage adapter', () => {
+    // TODO: rework with the multiple streams support
     describe('With 1 block headers stream', () => {
       let blockHeadersStream;
       before(async function before() {

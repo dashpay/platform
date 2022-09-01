@@ -59,9 +59,6 @@ describe('TransactionSyncStreamWorker', function suite() {
 
     ({ txStreamMock, transportMock } = await createAndAttachTransportMocksToWallet(wallet, this.sinon));
 
-    // transportMock.getBlockHeaderByHash
-    //     .returns(BlockHeader.fromString(blockHeaderFixture));
-
     account = await wallet.getAccount();
 
     storage = account.storage;
@@ -110,7 +107,6 @@ describe('TransactionSyncStreamWorker', function suite() {
         console.error(e);
         txStreamMock.emit(TxStreamMock.EVENTS.error, e);
       }
-      // }, 10);
 
       await onStartPromise;
 

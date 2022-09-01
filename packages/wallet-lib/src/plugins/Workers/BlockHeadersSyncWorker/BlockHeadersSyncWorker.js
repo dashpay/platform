@@ -193,8 +193,6 @@ class BlockHeadersSyncWorker extends Worker {
   }
 
   async onStop() {
-    // TODO: handle cancellation of the plugins chain
-    // in case we are in the phase of plugins preparation
     const { blockHeadersProvider } = this.transport.client;
     await blockHeadersProvider.stop();
   }
@@ -290,7 +288,6 @@ class BlockHeadersSyncWorker extends Worker {
       const chainStore = this.storage.getDefaultChainStore();
       const walletStore = this.storage.getDefaultWalletStore();
 
-      // TODO: add test
       if (typeof batchHeadHeight !== 'number' || Number.isNaN(batchHeadHeight)) {
         const error = new Error(`Invalid batch head height ${batchHeadHeight}`);
         this.emitError(error);
@@ -319,19 +316,18 @@ class BlockHeadersSyncWorker extends Worker {
         return;
       }
 
-      // TODO: cover case where there are more than one block has been mined,
-      // and perform this logic for every of them
       const rawBlock = await this.transport.getBlockByHeight(newChainHeight);
       const block = new Block(rawBlock);
 
       const { blockHeadersProvider: { spvChain } } = this.transport.client;
       const longestChain = spvChain.getLongestChain({ withPruned: true });
 
-      // TODO: do we really need it having in mind that wallet holds lastKnownBlock?
       chainStore.updateChainHeight(newChainHeight);
       chainStore.updateLastSyncedHeaderHeight(newChainHeight);
       chainStore.setBlockHeaders(longestChain.slice(-this.maxHeadersToKeep));
       chainStore.updateHeadersMetadata(newHeaders, newChainHeight);
+
+      // TODO: consider removing walletStore's lastKnownBlock as obsolete
       walletStore.updateLastKnownBlock(newChainHeight);
 
       const { orphanChunks } = spvChain;
@@ -365,7 +361,7 @@ class BlockHeadersSyncWorker extends Worker {
 
     const totalCount = chainStore.state.blockHeight + 1; // Including root block
 
-    // TODO: provide this data from SPVChain
+    // TODO: hide these calculations in the SPVChain
     const confirmedSyncedCount = startBlockHeight + longestChain.length;
     const totalSyncedCount = confirmedSyncedCount + totalOrphans;
 
