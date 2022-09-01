@@ -3,7 +3,6 @@ const { SpvChain, SPVError } = require('@dashevo/dash-spv');
 
 const BlockHeadersReader = require('./BlockHeadersReader');
 const DAPIStream = require('../transport/DAPIStream');
-// const DAPIStream = require('../transport/DAPIStream');
 
 /**
  * @typedef {BlockHeadersProviderOptions} BlockHeadersProviderOptions
@@ -45,7 +44,6 @@ class BlockHeadersProvider extends EventEmitter {
       ...options,
     };
 
-    // TODO: make sure chain properly maintains it's integrity if confirms is more than chain length
     this.spvChain = this.options.spvChain || new SpvChain(this.options.network, 100);
 
     this.state = STATES.IDLE;
@@ -213,6 +211,7 @@ class BlockHeadersProvider extends EventEmitter {
 
       if (headersAdded.length) {
         // Calculate amount of removed headers in order to properly adjust head height
+        // TODO: move this logic to SpvChain?
         const difference = headers.length - headersAdded.length;
         this.emit(EVENTS.CHAIN_UPDATED, headersAdded, headHeight + difference);
       }
@@ -227,8 +226,8 @@ class BlockHeadersProvider extends EventEmitter {
 
   handleHistoricalDataObtained() {
     this.emit(EVENTS.HISTORICAL_DATA_OBTAINED);
-    // TODO: implement spvChain.validate() to ensure that chain is complete
-    // and all metadata is present
+    // TODO: implement spvChain.validate() to ensure that chain is complete,
+    // all metadata is present, and no orphan chunks left dangling
     this.removeReaderListeners();
 
     this.state = STATES.IDLE;
