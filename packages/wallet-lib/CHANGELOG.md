@@ -416,6 +416,7 @@
     - Transporter arg can take devnetName when type is DAPI (connects to palinka instead of evonet). (#102)
     - subscribeToAddressesTransaction() (#102)
     - subscribeToBlocks() (#102)
+    - subscribeToBlockHeaders() - temporary for BloomFilters (#102)
   - Workers:
     - Workers support onStart() method. (#102)
   - Plugins:

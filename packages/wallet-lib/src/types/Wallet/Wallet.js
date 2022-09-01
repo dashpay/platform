@@ -31,7 +31,6 @@ const fromHDPrivateKey = require('./methods/fromHDPrivateKey');
 const generateNewWalletId = require('./methods/generateNewWalletId');
 
 const createTransportFromOptions = require('../../transport/createTransportFromOptions');
-const ChainSyncMediator = require('./ChainSyncMediator');
 
 // TODO: notes - remove
 // Temp optimisation tweaks
@@ -206,8 +205,6 @@ class Wallet extends EventEmitter {
     const Identities = require('../Identities/Identities');
     this.identities = new Identities(this);
     this.savedBackup = false; // TODO: When true, we delete mnemonic from internals
-
-    this.chainSyncMediator = new ChainSyncMediator();
   }
 }
 

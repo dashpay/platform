@@ -9,7 +9,6 @@ const Worker = require('../../Worker');
 const isBrowser = require('../../../utils/isBrowser');
 
 const logger = require('../../../logger');
-const ChainSyncMediator = require('../../../types/Wallet/ChainSyncMediator');
 const EVENTS = require('../../../EVENTS');
 
 const PROGRESS_UPDATE_INTERVAL = 1000;
@@ -35,7 +34,6 @@ class TransactionSyncStreamWorker extends Worker {
         'index',
         'BIP44PATH',
         'walletType',
-        'chainSyncMediator',
       ],
       ...options,
     });
@@ -183,7 +181,6 @@ class TransactionSyncStreamWorker extends Worker {
       this.setLastSyncedBlockHeight(lastKnownBlock.height);
     }
 
-    this.chainSyncMediator.state = ChainSyncMediator.STATES.HISTORICAL_SYNC;
     // We first need to sync up initial historical transactions
     await this.startHistoricalSync(this.network);
     this.setLastSyncedBlockHeight(bestBlockHeight, true);
@@ -204,7 +201,6 @@ class TransactionSyncStreamWorker extends Worker {
     // We shouldn't block workers execution process with transaction syncing
     // it should proceed in background
 
-    this.chainSyncMediator.state = ChainSyncMediator.STATES.CONTINUOUS_SYNC;
     // noinspection ES6MissingAwait
     this.incomingSyncPromise = this.startIncomingSync().catch((e) => {
       logger.error('Error syncing incoming transactions', e);

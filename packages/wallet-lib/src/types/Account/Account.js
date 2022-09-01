@@ -60,7 +60,6 @@ class Account extends EventEmitter {
     logger.debug(`Loading up wallet ${this.walletId}`);
 
     this.identities = wallet.identities;
-    this.chainSyncMediator = wallet.chainSyncMediator;
 
     this.state = {
       isInitialized: false,

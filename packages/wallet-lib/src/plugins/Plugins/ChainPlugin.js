@@ -1,7 +1,6 @@
 const logger = require('../../logger');
 const { StandardPlugin } = require('..');
 const { dashToDuffs } = require('../../utils');
-const ChainSyncMediator = require('../../types/Wallet/ChainSyncMediator');
 
 const defaultOpts = {
   firstExecutionRequired: true,
@@ -20,7 +19,6 @@ class ChainPlugin extends StandardPlugin {
         'transport',
         'fetchStatus',
         'walletId',
-        'chainSyncMediator',
       ],
     };
     super(Object.assign(params, opts));
@@ -55,7 +53,6 @@ class ChainPlugin extends StandardPlugin {
   }
 
   async onStart() {
-    this.chainSyncMediator.state = ChainSyncMediator.STATES.CHAIN_STATUS_SYNC;
     await this.execStatusFetch();
   }
 }
