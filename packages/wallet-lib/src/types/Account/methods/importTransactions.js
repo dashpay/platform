@@ -4,7 +4,7 @@ const logger = require('../../../logger');
  * Import transactions and always keep a number of unused addresses up to gap
  *
  * @param transactionsWithMayBeMetadata
- * @returns { addressesGenerated: number,  mostRecentHeight: number}
+ * @returns {{ addressesGenerated: number, mostRecentHeight: number }}
  */
 module.exports = function importTransactions(transactionsWithMayBeMetadata) {
   const {
@@ -28,11 +28,10 @@ module.exports = function importTransactions(transactionsWithMayBeMetadata) {
 
     const normalizedTransaction = chainStore.importTransaction(transaction, metadata);
     // Affected addresses might not be from our master keychain (account)
-
     const affectedAddressesData = chainStore.considerTransaction(normalizedTransaction.hash);
     const affectedAddresses = Object.keys(affectedAddressesData);
-
     logger.silly(`Account.importTransactions - Import ${transaction.hash} to chainStore. ${affectedAddresses.length} addresses affected.`);
+
     const newPaths = this.generateNewPaths(affectedAddresses);
     addressesGenerated += newPaths.length;
     this.addPathsToStore(newPaths);

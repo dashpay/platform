@@ -15,6 +15,10 @@ async function processTransactions(transactions) {
     .filterAddressesTransactions(transactions, addresses, network);
   if (walletTransactions.length) {
     walletTransactions.forEach((tx) => {
+      // TODO: fine tune this behaviour for the cases where
+      // after TX stream reconnected, we are obtaining the same transactions that
+      // already in this.transactionsToVerify
+
       // if (this.transactionsToVerify[tx.hash]) {
       //   throw new Error(`Transaction ${tx.hash} already sits in verification queue`);
       // }
@@ -23,7 +27,10 @@ async function processTransactions(transactions) {
 
     if (syncIncomingTransactions && walletTransactions.length) {
       // Immediately import unconfirmed transactions to proceed with the broadcasting and etc
-      // TODO: I guess they should be first confirmed by the instant locks
+
+      // TODO: I guess they should be first confirmed by the instant locks, but this functionality
+      // was not implemented properly up to this date
+
       const {
         addressesGenerated,
         mostRecentHeight,
@@ -53,7 +60,6 @@ async function processMerkleBlock(merkleBlock) {
 
   const chainStore = this.storage.getDefaultChainStore();
 
-  // Reverse hashes, as they're little endian in the header
   const txHashesInTheBlock = merkleBlock
     .hashes.reduce((set, hashHex) => {
       const hash = Buffer.from(hashHex, 'hex');
@@ -99,7 +105,7 @@ async function processMerkleBlock(merkleBlock) {
     delete this.transactionsToVerify[hash];
   });
 
-  // TODO: verify merkle block
+  // TODO: verify transactions agaoinst the merkle block
 
   let addressesGenerated = 0;
   if (transactionsWithMetadata.length) {

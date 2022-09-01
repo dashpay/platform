@@ -19,9 +19,7 @@ module.exports = async function startIncomingSync() {
     const options = { count, network };
     options.fromBlockHeight = lastSyncedBlockHeight > 0 ? lastSyncedBlockHeight : 1;
 
-    // console.log('[startIncomingSync] - started', options);
     await this.syncUpToTheGapLimit(options);
-    // console.log('[startIncomingSync] - finished', options);
     // The method above resolves only in two cases: the limit is reached or the server is closed.
     // In both cases, the stream needs to be restarted, unless syncIncomingTransactions is
     // set to false, which is signalling the worker not to restart stream.

@@ -69,6 +69,8 @@ class Worker extends StandardPlugin {
       this.state.started = true;
 
       // TODO: refactor this to be more elegant
+      // This change is needed to refine plugin execution sequence
+      // with the least amount of refactoring
       if (this.executeOnStart && this.executeAfterStart) {
         await this.execWorker();
       }

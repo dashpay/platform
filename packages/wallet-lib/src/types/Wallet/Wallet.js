@@ -1,4 +1,4 @@
-const { PrivateKey, Networks, configure: configurDashcore } = require('@dashevo/dashcore-lib');
+const { PrivateKey, Networks, configure: configureDashcore } = require('@dashevo/dashcore-lib');
 const X11 = require('wasm-x11-hash');
 
 const EventEmitter = require('events');
@@ -32,11 +32,6 @@ const generateNewWalletId = require('./methods/generateNewWalletId');
 
 const createTransportFromOptions = require('../../transport/createTransportFromOptions');
 
-// TODO: notes - remove
-// Temp optimisation tweaks
-// - Disable consensus checks in dash-spv
-// - Disable a continuous sync because wallet does not disconnect properly
-
 /**
  * Instantiate a basic Wallet object,
  * A wallet is able to spawn up all preliminary steps toward the creation of a Account with
@@ -68,9 +63,10 @@ class Wallet extends EventEmitter {
       generateNewWalletId,
     });
 
-    // TODO: move to another place?
+    // TODO: move to BlockHeadersProvider
+    // because we need X11 to be used by DAPI Client without the wallet's command
     X11().then((x11hash) => {
-      configurDashcore({
+      configureDashcore({
         x11hash,
       });
     }).catch((e) => {
@@ -159,6 +155,10 @@ class Wallet extends EventEmitter {
           + ' created from the new mnemonic');
       }
     } else if (this.unsafeOptions.skipSynchronizationBeforeHeight) {
+      // TODO: ensure a proper chain re-sync workflow for the case where:
+      // - User has storage adapter enabled
+      // - User sets skipSynchronizationBeforeHeight to some value and uses wallet
+      // - User then removes this option and uses wallet again.
       this.storage.application.syncOptions = {
         skipSynchronizationBeforeHeight: this.unsafeOptions.skipSynchronizationBeforeHeight,
       };
@@ -189,8 +189,12 @@ class Wallet extends EventEmitter {
         opts.transport = {};
       }
 
-      // TODO: networkName might be different from this.network.
-      // E.g. devnet networkName equals to testnet. Figure out what are the implications
+      // TODO: figure out implications of setting networkName as a transport network
+      // instead of setting a Dashcore Network instance
+      // The reason behind that is that dash-spv needs to be able to distinguish between
+      // regtest/devnet/testnet in order to use a proper genesis header
+      // but all three of them are aliases to "testnet" in dashcore-lib
+      // which could lead to improper genesis header selection
 
       // eslint-disable-next-line no-param-reassign
       opts.transport.network = networkName;

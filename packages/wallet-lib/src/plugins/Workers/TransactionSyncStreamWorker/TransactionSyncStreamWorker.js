@@ -38,12 +38,9 @@ class TransactionSyncStreamWorker extends Worker {
       ...options,
     });
 
-    // TODO: cleanup
     this.syncIncomingTransactions = false;
     this.stream = null;
     this.incomingSyncPromise = null;
-    this.pendingRequest = {};
-    this.delayedRequests = {};
     this.lastSyncedBlockHeight = -1;
     this.progressUpdateTimeout = null;
 
@@ -162,8 +159,7 @@ class TransactionSyncStreamWorker extends Worker {
     const bestBlockHeight = this.storage.getChainStore(this.network.toString()).state.blockHeight;
     if (skipSynchronization) {
       logger.debug('TransactionSyncStreamWorker - Wallet created from a new mnemonic. Sync from the best block height.');
-      // TODO: probably this check has to go to a completely different place (ChainPlugin?)
-      this.setLastSyncedBlockHeight(bestBlockHeight);
+      this.setLastSyncedBlockHeight(bestBlockHeight, true);
       return;
     }
 
@@ -173,10 +169,7 @@ class TransactionSyncStreamWorker extends Worker {
       : parseInt(skipSynchronizationBeforeHeight, 10);
 
     if (skipSyncBefore > lastKnownBlock.height) {
-      this.setLastSyncedBlockHeight(
-        // TODO: shouldn't be skipSyncBefore instead?
-        skipSynchronizationBeforeHeight,
-      );
+      this.setLastSyncedBlockHeight(skipSyncBefore);
     } else if (lastKnownBlock.height !== -1) {
       this.setLastSyncedBlockHeight(lastKnownBlock.height);
     }
@@ -186,8 +179,8 @@ class TransactionSyncStreamWorker extends Worker {
     this.setLastSyncedBlockHeight(bestBlockHeight, true);
     this.updateProgress();
     await this.storage.saveState();
-    // TODO: Purge headers metadata from storage
-    // TODO: for some reason data continue arriving after everything is completed
+
+    // TODO: Purge headers metadata from storage once all transactions found it
   }
 
   /**
@@ -218,8 +211,6 @@ class TransactionSyncStreamWorker extends Worker {
       chainLocked: false, // TBD
     };
 
-    // TODO: also search for transactions to verify
-    // inside the existing headers metadata
     const transactionsWithMetadata = [];
     block.transactions.forEach((tx) => {
       if (this.transactionsToVerify[tx.hash]) {
@@ -235,6 +226,7 @@ class TransactionSyncStreamWorker extends Worker {
 
     this.setLastSyncedBlockHeight(height, true);
 
+    // We need to reconnect to the stream if we have new addresses generated
     if (this.reconnectOnNewBlock) {
       this.reconnectOnNewBlock = false;
       this.reconnectToStream()
@@ -340,7 +332,7 @@ class TransactionSyncStreamWorker extends Worker {
     let progress = syncedBlocksCount / totalBlocksCount;
     progress = Math.round(progress * 1000) / 10;
     logger.debug(`[TransactionSynsStreamWorker] Historical fetch progress: ${this.lastSyncedBlockHeight}/${chainStore.chainHeight}, ${progress}%`);
-    // TODO: add tests
+
     this.parentEvents.emit(EVENTS.TRANSACTIONS_SYNC_PROGRESS, {
       progress,
       syncedBlocksCount,
@@ -356,7 +348,7 @@ class TransactionSyncStreamWorker extends Worker {
   }
 
   /**
-   * Re-creates current stream,
+   * Closes current stream,
    * so that new one could be re-created with more addresses in bloom filter
    * @returns {Promise<void>}
    */

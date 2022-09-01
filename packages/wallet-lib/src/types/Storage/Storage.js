@@ -23,7 +23,8 @@ class Storage extends EventEmitter {
     this.wallets = new Map();
     this.chains = new Map();
     this.application = {
-      blockHeight: 0, // TODO: consider removing this
+      // TODO: check whether we need this entry there, as we also have chainHeight in chainStore
+      blockHeight: 0,
     };
 
     this.rehydrate = has(opts, 'rehydrate') ? opts.rehydrate : defaultOpts.rehydrate;

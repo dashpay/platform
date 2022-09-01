@@ -1,4 +1,7 @@
+// TODO: [WIP] - this is a work in progress
 function exportState(lastKnownBlock) {
+  // TODO: get rid of lastKnownBlock in favor of lastSyncedHeaderHeight
+
   const { state } = this;
   const {
     blockHeaders,
