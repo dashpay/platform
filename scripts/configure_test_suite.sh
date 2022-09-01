@@ -27,6 +27,8 @@ MINT_FILE_PATH=${PATH_TO_PROJECT_ROOT}/logs/mint.log
 yarn dashmate wallet mint --verbose --config=local_seed 100 | tee "${MINT_FILE_PATH}"
 FAUCET_ADDRESS=$(grep -m 1 "Address:" "${MINT_FILE_PATH}" | awk '{printf $3}')
 FAUCET_PRIVATE_KEY=$(grep -m 1 "Private key:" "${MINT_FILE_PATH}" | awk '{printf $4}')
+
+## TODO: return back to "true" once tested
 FAUCET_WALLET_USE_STORAGE=false
 
 # check variables are not empty
