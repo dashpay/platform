@@ -143,7 +143,7 @@ describe('Wallet-lib - functional', function suite() {
           seeds,
         },
         // TODO: return back to wallet.network once uncertainty
-        //  with aliasing of devnet/regtest/testnet to testnet
+        // with aliasing of devnet/regtest/testnet to testnet
         network: process.env.NETWORK,
       });
       const restoredAccount = await restoredWallet.getAccount();
