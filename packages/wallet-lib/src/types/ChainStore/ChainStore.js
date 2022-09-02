@@ -49,7 +49,6 @@ class ChainStore extends EventEmitter {
   }
 
   reset() {
-    // TODO: fix typescript definition
     this.state = {
       fees: {
         minRelay: -1,
