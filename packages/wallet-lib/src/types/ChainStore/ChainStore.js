@@ -54,7 +54,7 @@ class ChainStore extends EventEmitter {
       fees: {
         minRelay: -1,
       },
-      lastSyncedHeaderHeight: -1, // TODO: make sure it's -1, it is important for further math
+      lastSyncedHeaderHeight: -1,
       blockHeight: 0,
       blockHeaders: [],
       headersMetadata: new Map(),
