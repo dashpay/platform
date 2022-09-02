@@ -3,7 +3,6 @@ const {
 } = require('@dashevo/dashcore-lib');
 const GrpcError = require('@dashevo/grpc-common/lib/server/error/GrpcError');
 const GrpcErrorCodes = require('@dashevo/grpc-common/lib/server/error/GrpcErrorCodes');
-const sleep = require('../../../utils/sleep');
 
 const Worker = require('../../Worker');
 const isBrowser = require('../../../utils/isBrowser');
@@ -237,13 +236,10 @@ class TransactionSyncStreamWorker extends Worker {
   }
 
   /**
-   * @param {Object} [options]
-   * @param {Boolean} [options.force=false]
-   * @param {Boolean} [options.reason]
    *
    * @returns {Promise<boolean>}
    */
-  async onStop(options = {}) {
+  async onStop() {
     this.syncIncomingTransactions = false;
 
     if (isBrowser()) {
