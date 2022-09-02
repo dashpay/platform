@@ -21,7 +21,7 @@
     "test:drive": "ultra -r --filter \"packages/@(js-drive|platform-test-suite)\" test",
     "test:grpc-common": "ultra -r --filter \"packages/@(js-grpc-common|dapi-grpc|dapi|js-dapi-client|js-dash-sdk|js-drive|wallet-lib|platform-test-suite)\" test",
     "test:browsers": "ultra -r --filter '@dashevo/platform-test-suite' test:browsers",
-    "test:suite": "debug yarn workspace @dashevo/platform-test-suite test",
+    "test:suite": "yarn workspace @dashevo/platform-test-suite test",
     "test:suite:browsers": "yarn workspace @dashevo/platform-test-suite test:browsers",
     "test:wallet-lib": "ultra -r --filter \"packages/@(wallet-lib|js-dash-sdk|platform-test-suite)\" test",
     "build": "ultra --recursive $* --build",
