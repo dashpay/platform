@@ -244,21 +244,6 @@ class TransactionSyncStreamWorker extends Worker {
    * @returns {Promise<boolean>}
    */
   async onStop(options = {}) {
-    // in case of disconnect we don't need to wait until the wallet complete the sync process
-    if (options.force) {
-      this.pendingRequest = {};
-    }
-
-    // Sync, will require transaction and their blockHeader to be fetched before resolving.
-    // As await onStop() is a way to wait for execution before continuing,
-    // this ensure onStop will properly let the plugin to warn about all
-    // completion of pending request.
-    if (Object.keys(this.pendingRequest).length !== 0) {
-      await sleep(200);
-
-      return this.onStop();
-    }
-
     this.syncIncomingTransactions = false;
 
     if (isBrowser()) {
