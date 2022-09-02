@@ -48,6 +48,26 @@ const wallet = new Wallet();
 // We can dump our initialization parameters
 const mnemonic = wallet.exportWallet();
 
+// Hook on headers and TX sync progress events
+wallet.on(EVENTS.HEADERS_SYNC_PROGRESS, (progressInfo) => {
+  const {
+    confirmedProgress,
+    totalProgress,
+    confirmedSyncedCount,
+    totalSyncedCount,
+    totalCount
+  } = progressInfo;
+})
+
+wallet.on(EVENTS.TRANSACTIONS_SYNC_PROGRESS, (progressInfo) => {
+  const {
+    progress,
+    syncedBlocksCount,
+    totalBlocksCount,
+    transactionsCount
+  } = progressInfo;
+})
+
 wallet.getAccount().then((account) => {
   // At this point, account has fetch all UTXOs if they exists
   const balance = account.getTotalBalance();
