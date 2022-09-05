@@ -23,35 +23,6 @@
 ### [0.22.15](https://github.com/dashevo/platform/compare/v0.22.14...v0.22.15) (2022-08-31)
 
 
-### Bug Fixes
-
-* **dashmate:** update v18 for the mainnet nodes ([#514](https://github.com/dashevo/platform/issues/514))
-
-
-### [0.22.14](https://github.com/dashevo/platform/compare/v0.23.0-dev.8...v0.22.14) (2022-08-29)
-
-
-### Documentation
-
-* **dashmate:** update dashmate documentation ([#459](https://github.com/dashevo/platform/issues/459))
-* **sdk:** update outdated documentation ([#463](https://github.com/dashevo/platform/issues/463))
-
-
-### Build System
-
-* `yarn install` fails with Node.JS 16.17.0 ([#507](https://github.com/dashevo/platform/issues/507))
-* new node alpine image breaks package builds ([#493](https://github.com/dashevo/platform/issues/493))
-* **test-suite:** fix docker image build
-
-
-### Miscellaneous Chores
-
-* bump dash core to v18.0.1 and sentinel to 1.7.1 ([#511](https://github.com/dashevo/platform/issues/511))
-* **release:** update changelog and bump version to 0.22.14 ([#512](https://github.com/dashevo/platform/issues/512))
-
-### [0.22.15](https://github.com/dashevo/platform/compare/v0.22.14...v0.22.15) (2022-08-31)
-
-
 ### Features
 
 * **dashmate:** update v18 for the mainnet nodes ([#514](https://github.com/dashevo/platform/issues/514))
