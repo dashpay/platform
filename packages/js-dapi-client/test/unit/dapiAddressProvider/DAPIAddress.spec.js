@@ -194,6 +194,17 @@ describe('DAPIAddress', () => {
     });
   });
 
+  describe('#getProtocol', () => {
+    it('should get protocol', () => {
+      const dapiAddress = new DAPIAddress(host);
+
+      dapiAddress.protocol = 'http';
+
+      const protocol = dapiAddress.getProtocol();
+      expect(protocol).to.equal('http');
+    });
+  });
+
   describe('#getBanCount', () => {
     it('should get ban count', () => {
       const dapiAddress = new DAPIAddress(host);
@@ -242,6 +253,26 @@ describe('DAPIAddress', () => {
 
       const isBanned = dapiAddress.isBanned();
       expect(isBanned).to.be.false();
+    });
+  });
+
+  describe('#isSelfSigned', () => {
+    it('should return true if address uses self signed certificate', () => {
+      const dapiAddress = new DAPIAddress(host);
+
+      dapiAddress.selfSigned = true;
+
+      const isSelfSigned = dapiAddress.isSelfSigned();
+      expect(isSelfSigned).to.be.true();
+    });
+
+    it('should return true if address doesn\'t use self signed certificate', () => {
+      const dapiAddress = new DAPIAddress(host);
+
+      dapiAddress.selfSigned = false;
+
+      const isSelfSigned = dapiAddress.isSelfSigned();
+      expect(isSelfSigned).to.be.false();
     });
   });
 
