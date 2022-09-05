@@ -58,3 +58,5 @@ COPY --from=builder /platform /platform
 RUN cp /platform/packages/platform-test-suite/.env.example /platform/packages/platform-test-suite/.env
 
 EXPOSE 2500 2501 2510
+
+ENTRYPOINT ["/platform/packages/platform-test-suite/bin/test.sh"]
