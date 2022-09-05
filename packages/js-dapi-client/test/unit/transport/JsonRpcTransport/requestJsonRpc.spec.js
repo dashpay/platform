@@ -1,5 +1,4 @@
 const axios = require('axios');
-const https = require('https');
 const requestJsonRpc = require('../../../../lib/transport/JsonRpcTransport/requestJsonRpc');
 const JsonRpcError = require('../../../../lib/transport/JsonRpcTransport/errors/JsonRpcError');
 const WrongHttpCodeError = require('../../../../lib/transport/JsonRpcTransport/errors/WrongHttpCodeError');
