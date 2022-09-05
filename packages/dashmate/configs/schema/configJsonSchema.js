@@ -290,6 +290,9 @@ module.exports = {
                     enabled: {
                       type: 'boolean',
                     },
+                    selfSigned: {
+                      type: 'boolean',
+                    },
                     provider: {
                       type: 'string',
                       enum: ['zerossl', 'manual'],
@@ -306,7 +309,7 @@ module.exports = {
                       additionalProperties: false,
                     },
                   },
-                  required: ['provider', 'zerossl', 'enabled'],
+                  required: ['provider', 'zerossl', 'enabled', 'selfSigned'],
                   additionalProperties: false,
                 },
               },

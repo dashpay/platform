@@ -23,7 +23,7 @@ function setupVerificationServerTaskFactory(docker, startedContainers) {
         task: async (ctx) => {
           // Set up template
           const templatePath = path.join(__dirname, '..', '..', '..', '..', 'templates', 'platform', 'dapi', 'envoy', 'ssl.yaml.dot');
-          const templateString = fs.readFileSync(templatePath, 'utf-8');
+          const templateString = fs.readFileSync(templatePath, 'utf8');
           const template = dots.template(templateString);
 
           const validationResponse = ctx.response.validation.other_methods[config.get('externalIp')];

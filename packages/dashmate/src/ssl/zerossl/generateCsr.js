@@ -18,8 +18,8 @@ async function generateCsr(
   csr.publicKey = forge.pki.publicKeyFromPem(keyPair.publicKey);
 
   csr.setSubject([
-    { value: externalIp, type: 'commonName' },
-    // { name: 'organizationName', value: 'Dash' },
+    { name: 'commonName', value: externalIp },
+    // { name: 'organizationName', value: 'DashCoreGroup' },
   ]);
 
   csr.sign(forge.pki.privateKeyFromPem(keyPair.privateKey));

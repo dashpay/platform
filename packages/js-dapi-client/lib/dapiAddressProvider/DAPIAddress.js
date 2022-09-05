@@ -10,14 +10,15 @@ class DAPIAddress {
     }
 
     if (typeof address === 'string') {
-      const [host, httpPort, grpcPort, noSsl] = address.split(':');
+      const [host, httpPort, grpcPort, ssl] = address.split(':');
 
       // eslint-disable-next-line no-param-reassign
       address = {
         host,
         httpPort: httpPort ? parseInt(httpPort, 10) : DAPIAddress.DEFAULT_HTTP_PORT,
         grpcPort: grpcPort ? parseInt(grpcPort, 10) : DAPIAddress.DEFAULT_GRPC_PORT,
-        protocol: noSsl === 'no-ssl' ? 'http' : 'https',
+        protocol: ssl === 'no-ssl' ? 'http' : 'https',
+        selfSigned: ssl === 'self-signed',
       };
     }
 
@@ -30,6 +31,7 @@ class DAPIAddress {
     this.httpPort = address.httpPort || DAPIAddress.DEFAULT_HTTP_PORT;
     this.grpcPort = address.grpcPort || DAPIAddress.DEFAULT_GRPC_PORT;
     this.proRegTxHash = address.proRegTxHash;
+    this.selfSigned = address.selfSigned || false;
 
     this.banCount = 0;
     this.banStartTime = undefined;
@@ -162,6 +164,13 @@ class DAPIAddress {
   }
 
   /**
+   * @returns {boolean}
+   */
+  isSelfSigned() {
+    return this.selfSigned;
+  }
+
+  /**
    * Return DAPIAddress as plain object
    *
    * @returns {RawDAPIAddress}
@@ -173,6 +182,7 @@ class DAPIAddress {
       httpPort: this.getHttpPort(),
       grpcPort: this.getGrpcPort(),
       proRegTxHash: this.getProRegTxHash(),
+      selfSigned: this.isSelfSigned(),
     };
   }
 
@@ -186,10 +196,12 @@ DAPIAddress.DEFAULT_GRPC_PORT = 3010;
 
 /**
  * @typedef {object} RawDAPIAddress
+ * @property {string} protocol
  * @property {string} host
  * @property {number} [httpPort=3000]
  * @property {number} [grpcPort=3010]
  * @property {string} [proRegTxHash]
+ * @property {bool} [selfSigned]
  */
 
 module.exports = DAPIAddress;

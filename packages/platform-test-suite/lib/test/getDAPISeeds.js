@@ -2,13 +2,14 @@ function getDAPISeeds() {
   return process.env.DAPI_SEED
     .split(',')
     .map((seed) => {
-      const [host, httpPort, grpcPort, noSsl] = seed.split(':');
+      const [host, httpPort, grpcPort, ssl] = seed.split(':');
 
       return {
         host,
         httpPort,
         grpcPort,
-        protocol: noSsl === 'no-ssl' ? 'http' : 'https',
+        protocol: ssl === 'no-ssl' ? 'http' : 'https',
+        selfSigned: ssl === 'self-signed',
       };
     });
 }

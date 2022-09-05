@@ -11,6 +11,7 @@ const {
  * @param {ConfigFile} configFile
  * @param {configureCoreTask} configureCoreTask
  * @param {configureTenderdashTask} configureTenderdashTask
+ * @param {configureSelfSignedCertificatesTask} configureSelfSignedCertificatesTask
  * @param {resolveDockerHostIp} resolveDockerHostIp
  * @param {configFileRepository} configFileRepository
  * @param {generateHDPrivateKeys} generateHDPrivateKeys
@@ -18,6 +19,7 @@ const {
 function setupLocalPresetTaskFactory(
   configFile,
   configureCoreTask,
+  configureSelfSignedCertificatesTask,
   configureTenderdashTask,
   resolveDockerHostIp,
   configFileRepository,
@@ -252,6 +254,10 @@ function setupLocalPresetTaskFactory(
       {
         title: 'Configure Tenderdash nodes',
         task: (ctx) => configureTenderdashTask(ctx.configGroup),
+      },
+      {
+        title: 'Configure SSL certificates',
+        task: (ctx) => configureSelfSignedCertificatesTask(ctx.configGroup),
       },
     ]);
   }

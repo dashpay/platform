@@ -88,6 +88,7 @@ module.exports = {
         },
         ssl: {
           enabled: false,
+          selfSigned: false,
           provider: 'zerossl',
           zerossl: {
             apikey: null,

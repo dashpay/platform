@@ -11,7 +11,7 @@ const { HOME_DIR_PATH } = require('../../../constants');
 async function setupCertificateTask(config) {
   return new Listr([
     {
-      title: 'Setup verification server',
+      title: 'Setup certificates',
       task: async (ctx) => {
         const configDir = path.join(HOME_DIR_PATH, 'ssl', config.getName());
 
@@ -21,7 +21,7 @@ async function setupCertificateTask(config) {
         const keyFile = path.join(configDir, 'private.key');
 
         fs.writeFileSync(crtFile, ctx.certificate, 'utf8');
-        fs.writeFileSync(keyFile, ctx.csr, 'utf8');
+        fs.writeFileSync(keyFile, ctx.keyPair.privateKey, 'utf8');
 
         config.set('platform.dapi.envoy.ssl.enabled', true);
       },

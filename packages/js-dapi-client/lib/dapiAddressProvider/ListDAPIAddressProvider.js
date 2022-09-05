@@ -37,6 +37,7 @@ class ListDAPIAddressProvider {
       const randomNodeIndex = Math.floor(Math.random() * liveAddresses.length);
 
       liveAddress.host = '127.0.0.1';
+      liveAddress.selfSigned = true;
       liveAddress.httpPort = 3000 + randomNodeIndex * 100;
       liveAddress.grpcPort = 3010 + randomNodeIndex * 100;
     }

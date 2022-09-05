@@ -5,8 +5,6 @@ const fs = require('fs');
 const path = require('path');
 const MuteOneLineError = require('../../oclif/errors/MuteOneLineError');
 
-const listCertificates = require('../../ssl/zerossl/listCertificates');
-const downloadCertificate = require('../../ssl/zerossl/downloadCertificate');
 const ConfigBaseCommand = require('../../oclif/command/ConfigBaseCommand');
 const { HOME_DIR_PATH } = require('../../constants');
 
@@ -18,6 +16,8 @@ class RenewCommand extends ConfigBaseCommand {
    * @param {setupVerificationServerTask} setupVerificationServerTask
    * @param {createCertificate} createCertificate
    * @param {verifyDomain} verifyDomain
+   * @param {downloadCertificate} downloadCertificate
+   * @param {listCertificates} listCertificates
    * @param {setupCertificateTask} setupCertificateTask
    * @return {Promise<void>}
    */
@@ -30,6 +30,8 @@ class RenewCommand extends ConfigBaseCommand {
     setupVerificationServerTask,
     createCertificate,
     verifyDomain,
+    downloadCertificate,
+    listCertificates,
     setupCertificateTask,
   ) {
     const tasks = new Listr([
@@ -57,7 +59,7 @@ class RenewCommand extends ConfigBaseCommand {
         task: async (ctx) => {
           const crtFile = path.join(HOME_DIR_PATH, 'ssl', config.getName(), 'bundle.crt');
 
-          ctx.csr = fs.readFileSync(crtFile, 'utf-8');
+          ctx.csr = fs.readFileSync(crtFile, 'utf8');
 
           ctx.response = await createCertificate(ctx.csr, config);
         },
