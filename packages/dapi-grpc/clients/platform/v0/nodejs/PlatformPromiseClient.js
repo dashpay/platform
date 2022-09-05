@@ -65,8 +65,16 @@ class PlatformPromiseClient {
    * @param {?Object} credentials
    * @param {?Object} options
    */
-  constructor(hostname, credentials = grpc.credentials.createInsecure(), options = {}) {
+  constructor(hostname, credentials, options = {}) {
+    if (credentials !== undefined) {
+      throw new Error('"credentials" option is not supported yet');
+    }
+
     const strippedHostname = stripHostname(hostname);
+    const protocol = stripProtocol(hostname);
+
+    // eslint-disable-next-line no-param-reassign
+    credentials = protocol === 'https' ? grpc.credentials.createSsl() : grpc.credentials.createInsecure();
 
     this.client = new PlatformNodeJSClient(strippedHostname, credentials, options);
 
