@@ -35,7 +35,6 @@ Usage: test <seed> [options]
 
 FIRST_ARG="$1"
 DAPI_SEED="${DAPI_SEED:=$FIRST_ARG}"
-network="$NETWORK"
 
 DIR="$( cd -P "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
 
