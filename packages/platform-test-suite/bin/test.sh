@@ -2,14 +2,6 @@
 
 set -ea
 
-if [[ -f ".env" ]]; then
-    source ".env"
-fi
-
-if [[ -f "packages/platform-test-suite/.env" ]]; then
-    source "packages/platform-test-suite/.env"
-fi
-
 cmd_usage="Run test suite
 
 Usage: test <seed> [options]
@@ -43,7 +35,7 @@ Usage: test <seed> [options]
 
 FIRST_ARG="$1"
 DAPI_SEED="${DAPI_SEED:=$FIRST_ARG}"
-network="testnet"
+network="$NETWORK"
 
 DIR="$( cd -P "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
 
