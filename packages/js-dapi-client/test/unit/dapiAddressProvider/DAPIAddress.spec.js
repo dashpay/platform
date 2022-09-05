@@ -82,6 +82,7 @@ describe('DAPIAddress', () => {
         httpPort,
         proRegTxHash,
         protocol: 'https',
+        selfSigned: false,
       });
     });
 
@@ -254,6 +255,7 @@ describe('DAPIAddress', () => {
         grpcPort: dapiAddress.getGrpcPort(),
         proRegTxHash: dapiAddress.getProRegTxHash(),
         protocol: 'https',
+        selfSigned: false,
       });
     });
   });

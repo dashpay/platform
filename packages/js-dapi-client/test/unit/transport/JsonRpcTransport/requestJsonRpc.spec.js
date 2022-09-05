@@ -9,6 +9,7 @@ describe('requestJsonRpc', () => {
   let port;
   let timeout;
   let params;
+  let selfSigned;
 
   beforeEach(function beforeEach() {
     protocol = 'http';
@@ -16,6 +17,7 @@ describe('requestJsonRpc', () => {
     port = 80;
     params = { data: 'test' };
     timeout = 1000;
+    selfSigned = false;
 
     const options = { timeout };
 
@@ -78,6 +80,7 @@ describe('requestJsonRpc', () => {
       protocol,
       host,
       port,
+      selfSigned,
       'shouldPass',
       params,
       { timeout },
@@ -93,6 +96,7 @@ describe('requestJsonRpc', () => {
       protocol,
       host,
       port,
+      selfSigned,
       'httpsRequest',
       params,
       { timeout },
@@ -110,6 +114,7 @@ describe('requestJsonRpc', () => {
         protocol,
         host,
         port,
+        selfSigned,
         method,
         params,
         options,
@@ -124,6 +129,7 @@ describe('requestJsonRpc', () => {
         protocol,
         host,
         port,
+        selfSigned,
         method,
         params,
         options,
@@ -137,6 +143,7 @@ describe('requestJsonRpc', () => {
         protocol,
         host,
         port,
+        selfSigned,
         'invalidData',
         params,
         { timeout },
@@ -156,6 +163,7 @@ describe('requestJsonRpc', () => {
         protocol,
         host,
         port,
+        selfSigned,
         method,
         params,
       );
@@ -168,6 +176,7 @@ describe('requestJsonRpc', () => {
         protocol,
         host,
         port,
+        selfSigned,
         method,
         params,
         options: {},
