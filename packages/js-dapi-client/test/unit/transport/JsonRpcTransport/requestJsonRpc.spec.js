@@ -1,4 +1,5 @@
 const axios = require('axios');
+const https = require('https');
 const requestJsonRpc = require('../../../../lib/transport/JsonRpcTransport/requestJsonRpc');
 const JsonRpcError = require('../../../../lib/transport/JsonRpcTransport/errors/JsonRpcError');
 const WrongHttpCodeError = require('../../../../lib/transport/JsonRpcTransport/errors/WrongHttpCodeError');
@@ -10,6 +11,7 @@ describe('requestJsonRpc', () => {
   let timeout;
   let params;
   let selfSigned;
+  let axiosStub;
 
   beforeEach(function beforeEach() {
     protocol = 'http';
@@ -28,7 +30,7 @@ describe('requestJsonRpc', () => {
       id: 1,
     };
 
-    const axiosStub = this.sinon.stub(axios, 'post');
+    axiosStub = this.sinon.stub(axios, 'post');
 
     axiosStub
       .withArgs(
@@ -91,6 +93,26 @@ describe('requestJsonRpc', () => {
 
   it('should make https rpc request and return result', async () => {
     protocol = 'https';
+
+    const result = await requestJsonRpc(
+      protocol,
+      host,
+      port,
+      selfSigned,
+      'httpsRequest',
+      params,
+      { timeout },
+    );
+
+    expect(result).to.equal('passed');
+  });
+
+  it('should make https rpc request with self-signed certificate and return result', async () => {
+    protocol = 'https';
+    selfSigned = true;
+
+    axiosStub
+      .resolves({ status: 200, data: { result: 'passed', error: null } });
 
     const result = await requestJsonRpc(
       protocol,

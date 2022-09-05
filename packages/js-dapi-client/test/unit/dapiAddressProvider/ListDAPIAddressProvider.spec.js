@@ -99,6 +99,23 @@ describe('ListDAPIAddressProvider', () => {
 
       expect(address).to.be.undefined();
     });
+
+    it('should return modified address for localhost node', async () => {
+      options = {
+        network: 'local',
+      };
+
+      listDAPIAddressProvider = new ListDAPIAddressProvider(
+        addresses,
+        options,
+      );
+
+      const liveAddress = await listDAPIAddressProvider.getLiveAddress();
+
+      expect(liveAddress.host).to.equal('127.0.0.1');
+      expect(liveAddress.protocol).to.equal('https');
+      expect(liveAddress.selfSigned).to.be.true();
+    });
   });
 
   describe('#hasLiveAddresses', () => {
