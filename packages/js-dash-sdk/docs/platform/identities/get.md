@@ -9,4 +9,4 @@ Parameters:
 
 **Example**: `await client.platform.identities.get('3GegupTgRfdN9JMS8R6QXF3B2VbZtiw63eyudh1oMJAk')`
 
-Returns : Identity (or `null` if it does not exist).
+Returns: Identity (or `null` if it does not exist).

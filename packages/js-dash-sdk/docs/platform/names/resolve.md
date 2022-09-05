@@ -1,4 +1,4 @@
-**Usage**: `client.platform.names.resolve(name.domain)`    
+**Usage**: `client.platform.names.resolve('<name>.dash')`    
 **Description**: This method will allow you to resolve a DPNS record from its humanized name. 
 
 Parameters: 

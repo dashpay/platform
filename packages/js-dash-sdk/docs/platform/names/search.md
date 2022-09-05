@@ -19,4 +19,4 @@ const parentDomain = 'dash';
 const document = await client.platform.names.search(labelPrefix, parentDomain);
 ```
 
-Returns : Documents matching the label prefix on the parent domain.
+Returns: Documents matching the label prefix on the parent domain.
