@@ -2,8 +2,8 @@
 
 NETWORK_STRING=$1
 
-DASH_NETWORK_CONFIGS_PATH=$(realpath "$PATH_TO_ROOT/dash-network-configs")
-DASH_NETWORK_CONFIGS_CUSTOM_PATH="$2"
+# use path from the argument ($2), otherwise default to the ../dash-network-configs
+$DASH_NETWORK_CONFIGS_PATH="${2:-"$(realpath "$PATH_TO_ROOT/dash-network-configs")"}"
 
 if [[ -z "$NETWORK_STRING" ]]; then
     echo "Network name must be specified"
@@ -11,20 +11,10 @@ if [[ -z "$NETWORK_STRING" ]]; then
 fi
 
 # if dash network configs does not exists or custom path was not passed
-if [ ! -d "$DASH_NETWORK_CONFIGS_PATH" ] && [ -z "$DASH_NETWORK_CONFIGS_CUSTOM_PATH" ]; then
+if [ ! -d "$DASH_NETWORK_CONFIGS_PATH" ]; then
     echo "dash-network-configs does not exists in $DASH_NETWORK_CONFIGS_PATH"
     echo "Either place it in $DASH_NETWORK_CONFIGS_PATH or specify path via second script argument"
     exit 1
-fi
-
-# override path in case custom configs path passed
-if [ ! -z "$DASH_NETWORK_CONFIGS_CUSTOM_PATH" ]; then
-  if [ ! -d "$DASH_NETWORK_CONFIGS_CUSTOM_PATH" ]; then
-    echo "Custom dash-network-configs path is not valid or does not exists ($DASH_NETWORK_CONFIGS_CUSTOM_PATH)"
-    exit 1
-  fi
-
-  DASH_NETWORK_CONFIGS_PATH=$DASH_NETWORK_CONFIGS_CUSTOM_PATH
 fi
 
 # if such network name could not be found in configs dir
@@ -60,9 +50,9 @@ FEATURE_FLAGS_OWNER_PRIVATE_KEY=$(yq .feature_flags_hd_private_key "$CONFIG")
 
 MASTERNODE_NAME=$(grep "$DAPI_SEED" "$INVENTORY" | awk '{print $1;}')
 
-#MASTERNODE_REWARD_SHARES_OWNER_PRO_REG_TX_HASH=$(grep "$DAPI_SEED" "$INVENTORY" | awk -F "=" '{print $6;}')
+MASTERNODE_REWARD_SHARES_OWNER_PRO_REG_TX_HASH=$(grep "$DAPI_SEED" "$INVENTORY" | awk -F "=" '{print $6;}')
 MASTERNODE_REWARD_SHARES_OWNER_PRIVATE_KEY=$(yq .mn_reward_shares_hd_private_key "$CONFIG")
-#MASTERNODE_REWARD_SHARES_MN_OWNER_PRIVATE_KEY=$(yq .masternodes."$MASTERNODE_NAME".owner.private_key "$CONFIG")
+MASTERNODE_REWARD_SHARES_MN_OWNER_PRIVATE_KEY=$(yq .masternodes."$MASTERNODE_NAME".owner.private_key "$CONFIG")
 
 if [[ "$NETWORK_STRING" == "devnet"* ]]; then
   NETWORK=devnet
