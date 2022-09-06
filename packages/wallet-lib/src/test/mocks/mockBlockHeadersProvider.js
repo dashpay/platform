@@ -4,11 +4,12 @@ const {
   BlockHeadersProvider,
 } = DAPIClient;
 
-const mockBlockHeadersProvider = (sinon, historicalStreams, continuousStream) => {
+const mockBlockHeadersProvider = (sinon, historicalStreams, continuousStream, headersPerStream) => {
   const numStreams = historicalStreams.length;
 
   const blockHeadersProvider = new BlockHeadersProvider({
     maxParallelStreams: numStreams,
+    targetBatchSize: headersPerStream,
   });
 
   let currentStream = 0;
