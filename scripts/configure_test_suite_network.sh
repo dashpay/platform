@@ -2,8 +2,15 @@
 
 NETWORK_STRING=$1
 
+PATH_TO_SCRIPT=$(realpath $0)
+PATH_TO_SCRIPTS_DIRECTORY=$(dirname $PATH_TO_SCRIPT)
+PATH_TO_PROJECT_ROOT=$(dirname $PATH_TO_SCRIPTS_DIRECTORY)
+PATH_TO_PACKAGES="${PATH_TO_PROJECT_ROOT}/packages"
+# 1 level above monorepo root
+PATH_TO_ROOT=$(dirname $PATH_TO_PROJECT_ROOT)
+
 # use path from the argument ($2), otherwise default to the ../dash-network-configs
-$DASH_NETWORK_CONFIGS_PATH="${2:-"$(realpath "$PATH_TO_ROOT/dash-network-configs")"}"
+DASH_NETWORK_CONFIGS_PATH="${2:-"$(realpath "$PATH_TO_ROOT/dash-network-configs")"}"
 
 if [[ -z "$NETWORK_STRING" ]]; then
     echo "Network name must be specified"
@@ -24,13 +31,6 @@ if [ ! -f "$DASH_NETWORK_CONFIGS_PATH/$NETWORK_STRING.yml" ]; then
 fi
 
 set -ex
-
-PATH_TO_SCRIPT=$(realpath $0)
-PATH_TO_SCRIPTS_DIRECTORY=$(dirname $PATH_TO_SCRIPT)
-PATH_TO_PROJECT_ROOT=$(dirname $PATH_TO_SCRIPTS_DIRECTORY)
-PATH_TO_PACKAGES="${PATH_TO_PROJECT_ROOT}/packages"
-# 1 level above monorepo root
-PATH_TO_ROOT=$(dirname $PATH_TO_PROJECT_ROOT)
 
 TEST_SUITE_PATH="${PATH_TO_PACKAGES}/platform-test-suite"
 PATH_TO_CONFIGS=$(realpath $DASH_NETWORK_CONFIGS_PATH)
