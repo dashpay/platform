@@ -347,7 +347,7 @@ const SpvChain = class {
    * @param {Object[]|string[]|buffer[]} headers
    * @return {BlockHeader[]}
    */
-  addHeaders(headers, headHeight) {
+  addHeaders(headers, headHeight = 0) {
     const normalizedHeaders = headers.map((h) => utils.normalizeHeader(h));
 
     const tip = this.getTipHeader();
