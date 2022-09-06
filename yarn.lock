@@ -1292,7 +1292,7 @@ __metadata:
     "@babel/core": ^7.15.5
     "@dashevo/dapi-grpc": "workspace:~"
     "@dashevo/dash-spv": "workspace:~"
-    "@dashevo/dashcore-lib": ~0.19.39
+    "@dashevo/dashcore-lib": ~0.19.40
     "@dashevo/dpp": "workspace:~"
     "@dashevo/grpc-common": "workspace:~"
     "@grpc/grpc-js": ^1.3.7
@@ -1366,7 +1366,7 @@ __metadata:
   dependencies:
     "@dashevo/dapi-client": "workspace:~"
     "@dashevo/dapi-grpc": "workspace:~"
-    "@dashevo/dashcore-lib": ~0.19.39
+    "@dashevo/dashcore-lib": ~0.19.40
     "@dashevo/dashd-rpc": ^2.3.1
     "@dashevo/dp-services-ctl": "github:dashevo/js-dp-services-ctl#v0.19-dev"
     "@dashevo/dpp": "workspace:~"
@@ -1413,7 +1413,7 @@ __metadata:
   dependencies:
     "@dashevo/dark-gravity-wave": ^1.1.1
     "@dashevo/dash-util": ^2.0.3
-    "@dashevo/dashcore-lib": ~0.19.39
+    "@dashevo/dashcore-lib": ~0.19.40
     eslint: ^7.32.0
     eslint-config-airbnb-base: ^14.2.1
     eslint-plugin-import: ^2.24.2
@@ -1434,22 +1434,23 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@dashevo/dashcore-lib@npm:~0.19.39":
-  version: 0.19.39
-  resolution: "@dashevo/dashcore-lib@npm:0.19.39"
+"@dashevo/dashcore-lib@npm:~0.19.40":
+  version: 0.19.41
+  resolution: "@dashevo/dashcore-lib@npm:0.19.41"
   dependencies:
     "@dashevo/x11-hash-js": ^1.0.2
     "@types/node": ^12.12.47
     bloom-filter: ^0.2.0
     bls-signatures: ^0.2.5
-    bn.js: =4.11.8
+    bn.js: ^4.12.0
     bs58: =4.0.1
-    elliptic: 6.5.3
+    elliptic: ^6.5.4
     eslint-config-prettier: ^8.3.0
     inherits: =2.0.1
     lodash: ^4.17.20
+    ripemd160: ^2.0.2
     unorm: ^1.6.0
-  checksum: e441cf46a95bc777d9b5d966d05cbf423bea1d8a6721493f94973f7d500c870fc2f55f20cc5feecfb6784bf8617b4342e4cade784ece3cad2263510dfc7a440d
+  checksum: 4bc913c7ed4ee0c800fd6b481c722422d8345798493a50e833f62b880c963e3aec9941e95ec161c16bbafef7157d31277ac22386b9a4c6cf5cf69ce1322e1c14
   languageName: node
   linkType: hard
 
@@ -1515,7 +1516,7 @@ __metadata:
     "@apidevtools/json-schema-ref-parser": ^8.0.0
     "@babel/core": ^7.15.5
     "@babel/preset-env": ^7.15.4
-    "@dashevo/dashcore-lib": ~0.19.39
+    "@dashevo/dashcore-lib": ~0.19.40
     "@dashevo/dashpay-contract": "workspace:~"
     "@dashevo/dpns-contract": "workspace:~"
     "@dashevo/feature-flags-contract": "workspace:~"
@@ -1581,7 +1582,7 @@ __metadata:
   dependencies:
     "@dashevo/abci": "github:dashevo/js-abci#v0.22-dev"
     "@dashevo/dapi-grpc": "workspace:~"
-    "@dashevo/dashcore-lib": ~0.19.39
+    "@dashevo/dashcore-lib": ~0.19.40
     "@dashevo/dashd-rpc": ^2.3.1
     "@dashevo/dashpay-contract": "workspace:~"
     "@dashevo/dp-services-ctl": "github:dashevo/js-dp-services-ctl#v0.19-dev"
@@ -1705,7 +1706,7 @@ __metadata:
   resolution: "@dashevo/platform-test-suite@workspace:packages/platform-test-suite"
   dependencies:
     "@dashevo/dapi-client": "workspace:~"
-    "@dashevo/dashcore-lib": ~0.19.39
+    "@dashevo/dashcore-lib": ~0.19.40
     "@dashevo/dpns-contract": "workspace:~"
     "@dashevo/dpp": "workspace:~"
     "@dashevo/feature-flags-contract": "workspace:~"
@@ -1817,7 +1818,7 @@ __metadata:
   resolution: "@dashevo/wallet-lib@workspace:packages/wallet-lib"
   dependencies:
     "@dashevo/dapi-client": "workspace:~"
-    "@dashevo/dashcore-lib": ~0.19.39
+    "@dashevo/dashcore-lib": ~0.19.40
     "@dashevo/dpp": "workspace:~"
     "@dashevo/grpc-common": "workspace:~"
     assert: ^2.0.0
@@ -5634,7 +5635,7 @@ __metadata:
   resolution: "dash@workspace:packages/js-dash-sdk"
   dependencies:
     "@dashevo/dapi-client": "workspace:~"
-    "@dashevo/dashcore-lib": ~0.19.39
+    "@dashevo/dashcore-lib": ~0.19.40
     "@dashevo/dashpay-contract": "workspace:~"
     "@dashevo/dpns-contract": "workspace:~"
     "@dashevo/dpp": "workspace:~"
@@ -5706,7 +5707,7 @@ __metadata:
   version: 0.0.0-use.local
   resolution: "dashmate@workspace:packages/dashmate"
   dependencies:
-    "@dashevo/dashcore-lib": ~0.19.39
+    "@dashevo/dashcore-lib": ~0.19.40
     "@dashevo/dashd-rpc": ^2.3.1
     "@dashevo/dashpay-contract": "workspace:~"
     "@dashevo/dpns-contract": "workspace:~"
@@ -12781,7 +12782,7 @@ fsevents@~2.3.2:
   languageName: node
   linkType: hard
 
-"ripemd160@npm:^2.0.0, ripemd160@npm:^2.0.1":
+"ripemd160@npm:^2.0.0, ripemd160@npm:^2.0.1, ripemd160@npm:^2.0.2":
   version: 2.0.2
   resolution: "ripemd160@npm:2.0.2"
   dependencies:
