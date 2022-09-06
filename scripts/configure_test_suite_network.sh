@@ -17,16 +17,10 @@ if [[ -z "$NETWORK_STRING" ]]; then
     exit 1
 fi
 
-# if dash network configs does not exists or custom path was not passed
-if [ ! -d "$DASH_NETWORK_CONFIGS_PATH" ]; then
-    echo "dash-network-configs does not exists in $DASH_NETWORK_CONFIGS_PATH"
-    echo "Either place it in $DASH_NETWORK_CONFIGS_PATH or specify path via second script argument"
-    exit 1
-fi
-
 # if such network name could not be found in configs dir
 if [ ! -f "$DASH_NETWORK_CONFIGS_PATH/$NETWORK_STRING.yml" ]; then
     echo "Dash network config '$NETWORK_STRING' was not found in the folder ($DASH_NETWORK_CONFIGS_PATH)"
+    echo "Either place it in $DASH_NETWORK_CONFIGS_PATH or specify path via second script argument"
     exit 1
 fi
 
