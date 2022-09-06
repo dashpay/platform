@@ -1,5 +1,10 @@
 #!/usr/bin/env bash
 
+if ! [ -x "$(command -v jq)" ] || ! [ -x "$(command -v yq)" ]; then
+  echo "Error: 'yq' or 'jq' not found in the system. Please, install it via your system package manager or compile manually (https://github.com/mikefarah/yq/#install)"
+  exit 1
+fi
+
 NETWORK_STRING=$1
 
 PATH_TO_SCRIPT=$(realpath $0)
@@ -63,9 +68,9 @@ if [ -z "$FAUCET_ADDRESS" ] || \
     [ -z "$DPNS_OWNER_PRIVATE_KEY" ] || \
     [ -z "$FEATURE_FLAGS_OWNER_PRIVATE_KEY" ] || \
     [ -z "$DASHPAY_OWNER_PRIVATE_KEY" ] || \
-#    [ -z "$MASTERNODE_REWARD_SHARES_OWNER_PRO_REG_TX_HASH" ] || \
+    [ -z "$MASTERNODE_REWARD_SHARES_OWNER_PRO_REG_TX_HASH" ] || \
     [ -z "$MASTERNODE_REWARD_SHARES_OWNER_PRIVATE_KEY" ] || \
-#    [ -z "$MASTERNODE_REWARD_SHARES_MN_OWNER_PRIVATE_KEY" ] || \
+    [ -z "$MASTERNODE_REWARD_SHARES_MN_OWNER_PRIVATE_KEY" ] || \
     [ -z "$NETWORK" ] || \
     [ -z "$SKIP_SYNC_BEFORE_HEIGHT" ]
 then
