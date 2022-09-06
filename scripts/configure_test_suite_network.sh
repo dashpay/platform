@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 
 if ! [ -x "$(command -v jq)" ]; then
-  echo "Error: 'jq' not found in the system. Please, install it via your system package manager or compile manually (https://github.com/stedolan/jq)"
+  echo "Error: 'jq' not found in the system. Please follow installation guide https://stedolan.github.io/jq/download/"
   exit 1
 fi
 
 if ! [ -x "$(command -v yq)" ]; then
-  echo "Error: 'yq' not found in the system. Please, install it via your system package manager or compile manually (https://github.com/mikefarah/yq/#install)"
+  echo "Error: 'yq' not found in the system. Please follow installation guide https://github.com/mikefarah/yq/#install"
   exit 1
 fi
 
