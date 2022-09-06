@@ -195,13 +195,8 @@ then
   cmd="${cmd} FAUCET_WALLET_STORAGE_DIR=${faucet_wallet_storage_dir}"
 fi
 
-if [ -n "$GITHUB_ACTIONS" ]
-then
-  cmd="${cmd} NODE_ENV=test node_modules/.bin/mocha -b ${scope_dirs}"
-else
-  echo $cmd
-  cmd="${cmd} NODE_ENV=test yarn mocha -b ${scope_dirs}"
-fi
+echo $cmd
+cmd="${cmd} NODE_ENV=test yarn mocha -b ${scope_dirs}"
 
 if [ -n "$timeout" ]
 then
