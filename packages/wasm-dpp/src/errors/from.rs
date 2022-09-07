@@ -11,6 +11,10 @@ pub fn from_dpp_err(pe: ProtocolError) -> JsValue {
 
         ProtocolError::Document(e) => from_document_to_js_error(*e),
 
-        _ => JsValue::from_str(pe.to_string().as_str()),
+        ProtocolError::ParsingJsonError(err) => {
+            format!("Parsing error at line {}, column {}: {}", err.line(), err.column(), err.to_string()).into()
+        }
+
+        _ => JsValue::from_str(&*format!("Kek: {}", pe.to_string().as_str())),
     }
 }

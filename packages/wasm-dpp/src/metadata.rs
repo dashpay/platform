@@ -22,8 +22,17 @@ impl std::convert::Into<Metadata> for MetadataWasm {
 //? probably it should be a separate trait with blanket implementation
 #[wasm_bindgen(js_class=Metadata)]
 impl MetadataWasm {
+    #[wasm_bindgen(constructor)]
+    pub fn new(block_height: JsValue, core_chain_locked_height: JsValue) -> Self {
+        // TODO: return an error instead of unwraps
+        let block_height = block_height.as_f64().unwrap() as u64;
+        let core_chain_locked_height= core_chain_locked_height.as_f64().unwrap() as u64;
+        let inner = Metadata { block_height, core_chain_locked_height };
+        inner.into()
+    }
+
     #[wasm_bindgen(js_name=default)]
-    pub fn new() -> Self {
+    pub fn default() -> Self {
         MetadataWasm(Metadata::default())
     }
 

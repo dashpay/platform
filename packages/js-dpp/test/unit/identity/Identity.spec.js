@@ -1,11 +1,12 @@
 // const generateRandomIdentifier = require('../../../lib/test/utils/generateRandomIdentifier');
+const { default: loadWasmDpp } = require('@dashevo/wasm-dpp');
 const generateRandomIdentifierAsync = require('../../../lib/test/utils/generateRandomIdentifierAsync');
 
 const IdentityPublicKey = require('../../../lib/identity/IdentityPublicKey');
-const Metadata = require('../../../lib/Metadata');
+// const Metadata = require('../../../lib/Metadata');
 const protocolVersion = require('../../../lib/version/protocolVersion');
 
-const Identity = require('../../../lib/identity/Identity');
+// const Identity = require('../../../lib/identity/Identity');
 const serializer = require('../../../lib/util/serializer');
 const hash = require('../../../lib/util/hash');
 
@@ -15,16 +16,24 @@ describe('Identity', () => {
   let hashMock;
   let encodeMock;
   let metadataFixture;
+  let Identity;
+  let Metadata;
+
+  before(async () => {
+    ({ Identity, Metadata } = await loadWasmDpp());
+  });
 
   beforeEach(async function beforeEach() {
+    let id = await generateRandomIdentifierAsync();
+
     rawIdentity = {
       protocolVersion: protocolVersion.latestVersion,
-      id: await generateRandomIdentifierAsync(),
+      id: id,
       publicKeys: [
         {
           id: 0,
           type: IdentityPublicKey.TYPES.ECDSA_SECP256K1,
-          data: Buffer.alloc(36).fill('a'),
+          data: Array.from(Buffer.alloc(36).fill('a')),
           purpose: IdentityPublicKey.PURPOSES.AUTHENTICATION,
           securityLevel: IdentityPublicKey.SECURITY_LEVELS.MASTER,
           readOnly: false,
@@ -38,7 +47,7 @@ describe('Identity', () => {
 
     metadataFixture = new Metadata(42, 0);
 
-    identity.setMetadata(metadataFixture);
+    identity = identity.setMetadata(metadataFixture);
 
     encodeMock = this.sinonSandbox.stub(serializer, 'encode');
     hashMock = this.sinonSandbox.stub(hash, 'hash');
@@ -53,9 +62,12 @@ describe('Identity', () => {
     it('should set variables from raw model', () => {
       const instance = new Identity(rawIdentity);
 
-      expect(instance.id.toBuffer()).to.deep.equal(rawIdentity.id.toBuffer());
-      expect(instance.type).to.equal(rawIdentity.type);
-      expect(instance.publicKeys).to.deep.equal(
+      console.log(instance.id);
+
+      console.log(instance.toJSON());
+
+      expect(instance.getId().toBuffer()).to.deep.equal(rawIdentity.id.toBuffer());
+      expect(instance.getPublicKeys()).to.deep.equal(
         rawIdentity.publicKeys.map((rawPublicKey) => new IdentityPublicKey(rawPublicKey)),
       );
     });
@@ -63,6 +75,9 @@ describe('Identity', () => {
 
   describe('#getId', () => {
     it('should return set id', () => {
+      identity = new Identity(rawIdentity);
+      console.log(1);
+      // console.log(identity);
       expect(identity.getId().toBuffer()).to.deep.equal(rawIdentity.id.toBuffer());
     });
   });

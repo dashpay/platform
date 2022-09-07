@@ -1,9 +1,12 @@
+use std::any::{Any};
 use wasm_bindgen::prelude::*;
 
 use dpp::identity::state_transition::asset_lock_proof::AssetLockProof;
 use dpp::identity::IdentityPublicKey;
 use dpp::identity::{Identity, KeyID};
 use dpp::metadata::Metadata;
+use dpp::ProtocolError;
+use crate::errors::from_dpp_err;
 
 use crate::identifier::IdentifierWrapper;
 use crate::IdentityPublicKeyWasm;
@@ -22,6 +25,14 @@ impl std::convert::From<AssetLockProof> for AssetLockProofWasm {
 
 #[wasm_bindgen(js_class=Identity)]
 impl IdentityWasm {
+    #[wasm_bindgen(constructor)]
+    pub fn new(raw_identity: JsValue) -> Result<IdentityWasm, JsValue> {
+        // TODO: remove unwrap
+        let json_identity = raw_identity.into_serde::<serde_json::Value>().unwrap();
+        let identity = Identity::from_raw_identity(json_identity).map_err(from_dpp_err)?;
+        Ok(IdentityWasm(identity))
+    }
+
     #[wasm_bindgen(js_name=getProtocolVersion)]
     pub fn get_protocol_version(&self) -> u32 {
         self.0.get_protocol_version()
@@ -52,7 +63,8 @@ impl IdentityWasm {
     }
 
     #[wasm_bindgen(js_name=getPublicKeyById)]
-    pub fn get_public_key_by_id(&self, key_id: KeyID) -> Option<IdentityPublicKeyWasm> {
+    pub fn get_public_key_by_id(&self, key_id: u32) -> Option<IdentityPublicKeyWasm> {
+        let key_id = key_id as KeyID;
         self.0
             .get_public_key_by_id(key_id)
             .map(IdentityPublicKey::to_owned)
@@ -122,12 +134,6 @@ impl IdentityWasm {
     pub fn set_metadata(mut self, metadata: MetadataWasm) -> Self {
         self.0 = self.0.set_metadata(metadata.into());
         self
-    }
-
-    //? probably it should be a separate trait with blanket implementation
-    #[wasm_bindgen(js_name=new)]
-    pub fn new() -> Self {
-        IdentityWasm(Identity::default())
     }
 
     #[wasm_bindgen(js_name=from)]
