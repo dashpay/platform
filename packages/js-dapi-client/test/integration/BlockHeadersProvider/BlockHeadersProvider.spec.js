@@ -50,7 +50,7 @@ describe('BlockHeadersProvider - integration', () => {
   let headers;
 
   before(async function () {
-    headers = mockHeadersChain('testnet', numHeaders);
+    headers = await mockHeadersChain('testnet', numHeaders);
 
     createBlockHeadersProvider(this.sinon, {
       targetBatchSize: historicalBatchSize,

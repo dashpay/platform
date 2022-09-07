@@ -23,7 +23,7 @@ module.exports = (config) => {
     },
     client: {
       mocha: {
-        timeout: 7500, // TODO: figure out why some tests timing out on default timeout: 2000
+        timeout: 5000,
       },
     },
     reporters: ['mocha'],

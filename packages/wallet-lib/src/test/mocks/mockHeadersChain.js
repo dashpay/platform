@@ -19,12 +19,16 @@ const getRoot = (network) => {
 
 const BLOCK_TIME = 2.5 * 60;
 
+let x11;
+
 const mockHeadersChain = async (network, length, root) => {
-  const x11 = await X11();
-  // Configure Dashcore lib to operate with wasm x11
-  configure({
-    x11hash: x11,
-  });
+  if (!x11) {
+    x11 = await X11();
+    // Configure Dashcore lib to operate with wasm x11
+    configure({
+      x11hash: x11,
+    });
+  }
 
   const rootHeader = root || getRoot(network);
 
