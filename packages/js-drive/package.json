@@ -1,7 +1,7 @@
 {
   "name": "@dashevo/drive",
   "private": true,
-  "version": "0.22.14",
+  "version": "0.22.15",
   "description": "Replicated state machine for Dash Platform",
   "engines": {
     "node": ">=12"
@@ -67,7 +67,7 @@
   "dependencies": {
     "@dashevo/abci": "github:dashevo/js-abci#v0.22-dev",
     "@dashevo/dapi-grpc": "workspace:~",
-    "@dashevo/dashcore-lib": "~0.19.39",
+    "@dashevo/dashcore-lib": "~0.19.41",
     "@dashevo/dashd-rpc": "^2.3.1",
     "@dashevo/dashpay-contract": "workspace:~",
     "@dashevo/dpns-contract": "workspace:~",

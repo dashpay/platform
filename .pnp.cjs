@@ -2404,7 +2404,6 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["@dashevo/dark-gravity-wave", "npm:1.1.1"],\
             ["@dashevo/dash-util", "npm:2.0.3"],\
             ["@dashevo/dashcore-lib", "npm:0.19.41"],\
-            ["chai", "npm:4.3.4"],\
             ["eslint", "npm:7.32.0"],\
             ["eslint-config-airbnb-base", "virtual:595d7482cc8ddf98ee6aef33fc48b46393554ab5f17f851ef62e6e39315e53666c3e66226b978689aa0bc7f1e83a03081511a21db1c381362fe67614887077f9#npm:14.2.1"],\
             ["eslint-plugin-import", "virtual:595d7482cc8ddf98ee6aef33fc48b46393554ab5f17f851ef62e6e39315e53666c3e66226b978689aa0bc7f1e83a03081511a21db1c381362fe67614887077f9#npm:2.25.3"],\
@@ -2841,7 +2840,6 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           "packageDependencies": [\
             ["@dashevo/wallet-lib", "workspace:packages/wallet-lib"],\
             ["@dashevo/dapi-client", "workspace:packages/js-dapi-client"],\
-            ["@dashevo/dash-spv", "workspace:packages/dash-spv"],\
             ["@dashevo/dashcore-lib", "npm:0.19.41"],\
             ["@dashevo/dpp", "workspace:packages/js-dpp"],\
             ["@dashevo/grpc-common", "workspace:packages/js-grpc-common"],\
@@ -2882,7 +2880,6 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["string_decoder", "npm:1.3.0"],\
             ["url", "npm:0.11.0"],\
             ["util", "npm:0.12.4"],\
-            ["wasm-x11-hash", "npm:0.0.2"],\
             ["webpack", "virtual:45f214395bc38640da4dc5e940482d5df0572c5384e0262802601d1973e71077ec8bbd76b77eafa4c0550b706b664abd84d63fd67a5897139f0b2675530fc84f#npm:5.64.1"],\
             ["webpack-cli", "virtual:45f214395bc38640da4dc5e940482d5df0572c5384e0262802601d1973e71077ec8bbd76b77eafa4c0550b706b664abd84d63fd67a5897139f0b2675530fc84f#npm:4.9.1"],\
             ["winston", "npm:3.3.3"]\
@@ -18377,15 +18374,6 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           "packageLocation": "./.yarn/cache/walk-up-path-npm-1.0.0-54fda77042-b8019ac4fb.zip/node_modules/walk-up-path/",\
           "packageDependencies": [\
             ["walk-up-path", "npm:1.0.0"]\
-          ],\
-          "linkType": "HARD"\
-        }]\
-      ]],\
-      ["wasm-x11-hash", [\
-        ["npm:0.0.2", {\
-          "packageLocation": "./.yarn/cache/wasm-x11-hash-npm-0.0.2-e64121836c-67005c5d04.zip/node_modules/wasm-x11-hash/",\
-          "packageDependencies": [\
-            ["wasm-x11-hash", "npm:0.0.2"]\
           ],\
           "linkType": "HARD"\
         }]\
