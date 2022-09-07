@@ -2273,7 +2273,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["@dashevo/dapi", "workspace:packages/dapi"],\
             ["@dashevo/dapi-client", "workspace:packages/js-dapi-client"],\
             ["@dashevo/dapi-grpc", "workspace:packages/dapi-grpc"],\
-            ["@dashevo/dashcore-lib", "npm:0.19.40"],\
+            ["@dashevo/dashcore-lib", "npm:0.19.41"],\
             ["@dashevo/dashd-rpc", "npm:2.3.1"],\
             ["@dashevo/dp-services-ctl", "https://github.com/dashevo/js-dp-services-ctl.git#commit=3976076b0018c5b4632ceda4c752fc597f27a640"],\
             ["@dashevo/dpp", "workspace:packages/js-dpp"],\
@@ -2316,7 +2316,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["@babel/core", "npm:7.16.0"],\
             ["@dashevo/dapi-grpc", "workspace:packages/dapi-grpc"],\
             ["@dashevo/dash-spv", "workspace:packages/dash-spv"],\
-            ["@dashevo/dashcore-lib", "npm:0.19.40"],\
+            ["@dashevo/dashcore-lib", "npm:0.19.41"],\
             ["@dashevo/dpp", "workspace:packages/js-dpp"],\
             ["@dashevo/grpc-common", "workspace:packages/js-grpc-common"],\
             ["@grpc/grpc-js", "npm:1.4.4"],\
@@ -2403,7 +2403,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["@dashevo/dash-spv", "workspace:packages/dash-spv"],\
             ["@dashevo/dark-gravity-wave", "npm:1.1.1"],\
             ["@dashevo/dash-util", "npm:2.0.3"],\
-            ["@dashevo/dashcore-lib", "npm:0.19.40"],\
+            ["@dashevo/dashcore-lib", "npm:0.19.41"],\
             ["chai", "npm:4.3.4"],\
             ["eslint", "npm:7.32.0"],\
             ["eslint-config-airbnb-base", "virtual:595d7482cc8ddf98ee6aef33fc48b46393554ab5f17f851ef62e6e39315e53666c3e66226b978689aa0bc7f1e83a03081511a21db1c381362fe67614887077f9#npm:14.2.1"],\
@@ -2428,10 +2428,10 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
         }]\
       ]],\
       ["@dashevo/dashcore-lib", [\
-        ["npm:0.19.40", {\
-          "packageLocation": "./.yarn/cache/@dashevo-dashcore-lib-npm-0.19.40-8c5d609c67-ebcfb63bdf.zip/node_modules/@dashevo/dashcore-lib/",\
+        ["npm:0.19.41", {\
+          "packageLocation": "./.yarn/cache/@dashevo-dashcore-lib-npm-0.19.41-627817059a-4bc913c7ed.zip/node_modules/@dashevo/dashcore-lib/",\
           "packageDependencies": [\
-            ["@dashevo/dashcore-lib", "npm:0.19.40"],\
+            ["@dashevo/dashcore-lib", "npm:0.19.41"],\
             ["@dashevo/x11-hash-js", "npm:1.0.2"],\
             ["@types/node", "npm:12.20.37"],\
             ["bloom-filter", "npm:0.2.0"],\
@@ -2439,9 +2439,10 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["bn.js", "npm:4.12.0"],\
             ["bs58", "npm:4.0.1"],\
             ["elliptic", "npm:6.5.3"],\
-            ["eslint-config-prettier", "virtual:8c5d609c6718ca71cd90688b2c12b6eff1e72622086ce32173fa89a9ec191ef42ff491bea1c97be94bec874806dbfa2b126e695646b4af25310b4de27cea4dc1#npm:8.3.0"],\
+            ["eslint-config-prettier", "virtual:627817059a04417ce0d2c3dbbd1777d300ef4f1cc829538ceba81bb9cc42af8c20463a6728461712170e0653ef974eaffedab5e14f92a755678425ac68ff4b53#npm:8.3.0"],\
             ["inherits", "npm:2.0.1"],\
             ["lodash", "npm:4.17.21"],\
+            ["ripemd160", "npm:2.0.2"],\
             ["unorm", "npm:1.6.0"]\
           ],\
           "linkType": "HARD"\
@@ -2516,7 +2517,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["@apidevtools/json-schema-ref-parser", "npm:8.0.0"],\
             ["@babel/core", "npm:7.16.0"],\
             ["@babel/preset-env", "virtual:58fb68f2aed20e5e0f2e48520ab903ae9bb3440369bfd5e912034003cf27c5aae368649fc5620dd2acbed578131f3a0975e75b838d77d12335fb0412e24026c6#npm:7.16.4"],\
-            ["@dashevo/dashcore-lib", "npm:0.19.40"],\
+            ["@dashevo/dashcore-lib", "npm:0.19.41"],\
             ["@dashevo/dashpay-contract", "workspace:packages/dashpay-contract"],\
             ["@dashevo/dpns-contract", "workspace:packages/dpns-contract"],\
             ["@dashevo/feature-flags-contract", "workspace:packages/feature-flags-contract"],\
@@ -2584,7 +2585,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["@dashevo/drive", "workspace:packages/js-drive"],\
             ["@dashevo/abci", "https://github.com/dashevo/js-abci.git#commit=8806ff71cdac918f79920b1373824653f15698c5"],\
             ["@dashevo/dapi-grpc", "workspace:packages/dapi-grpc"],\
-            ["@dashevo/dashcore-lib", "npm:0.19.40"],\
+            ["@dashevo/dashcore-lib", "npm:0.19.41"],\
             ["@dashevo/dashd-rpc", "npm:2.3.1"],\
             ["@dashevo/dashpay-contract", "workspace:packages/dashpay-contract"],\
             ["@dashevo/dp-services-ctl", "https://github.com/dashevo/js-dp-services-ctl.git#commit=3976076b0018c5b4632ceda4c752fc597f27a640"],\
@@ -2732,7 +2733,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           "packageDependencies": [\
             ["@dashevo/platform-test-suite", "workspace:packages/platform-test-suite"],\
             ["@dashevo/dapi-client", "workspace:packages/js-dapi-client"],\
-            ["@dashevo/dashcore-lib", "npm:0.19.40"],\
+            ["@dashevo/dashcore-lib", "npm:0.19.41"],\
             ["@dashevo/dpns-contract", "workspace:packages/dpns-contract"],\
             ["@dashevo/dpp", "workspace:packages/js-dpp"],\
             ["@dashevo/feature-flags-contract", "workspace:packages/feature-flags-contract"],\
@@ -2841,7 +2842,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["@dashevo/wallet-lib", "workspace:packages/wallet-lib"],\
             ["@dashevo/dapi-client", "workspace:packages/js-dapi-client"],\
             ["@dashevo/dash-spv", "workspace:packages/dash-spv"],\
-            ["@dashevo/dashcore-lib", "npm:0.19.40"],\
+            ["@dashevo/dashcore-lib", "npm:0.19.41"],\
             ["@dashevo/dpp", "workspace:packages/js-dpp"],\
             ["@dashevo/grpc-common", "workspace:packages/js-grpc-common"],\
             ["assert", "npm:2.0.0"],\
@@ -7494,7 +7495,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           "packageDependencies": [\
             ["dash", "workspace:packages/js-dash-sdk"],\
             ["@dashevo/dapi-client", "workspace:packages/js-dapi-client"],\
-            ["@dashevo/dashcore-lib", "npm:0.19.40"],\
+            ["@dashevo/dashcore-lib", "npm:0.19.41"],\
             ["@dashevo/dashpay-contract", "workspace:packages/dashpay-contract"],\
             ["@dashevo/dpns-contract", "workspace:packages/dpns-contract"],\
             ["@dashevo/dpp", "workspace:packages/js-dpp"],\
@@ -7578,7 +7579,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           "packageLocation": "./packages/dashmate/",\
           "packageDependencies": [\
             ["dashmate", "workspace:packages/dashmate"],\
-            ["@dashevo/dashcore-lib", "npm:0.19.40"],\
+            ["@dashevo/dashcore-lib", "npm:0.19.41"],\
             ["@dashevo/dashd-rpc", "npm:2.3.1"],\
             ["@dashevo/dashpay-contract", "workspace:packages/dashpay-contract"],\
             ["@dashevo/dpns-contract", "workspace:packages/dpns-contract"],\
@@ -8762,10 +8763,10 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           ],\
           "linkType": "SOFT"\
         }],\
-        ["virtual:8c5d609c6718ca71cd90688b2c12b6eff1e72622086ce32173fa89a9ec191ef42ff491bea1c97be94bec874806dbfa2b126e695646b4af25310b4de27cea4dc1#npm:8.3.0", {\
-          "packageLocation": "./.yarn/__virtual__/eslint-config-prettier-virtual-49e6d4ffda/0/cache/eslint-config-prettier-npm-8.3.0-f540cd1f53-df4cea3032.zip/node_modules/eslint-config-prettier/",\
+        ["virtual:627817059a04417ce0d2c3dbbd1777d300ef4f1cc829538ceba81bb9cc42af8c20463a6728461712170e0653ef974eaffedab5e14f92a755678425ac68ff4b53#npm:8.3.0", {\
+          "packageLocation": "./.yarn/__virtual__/eslint-config-prettier-virtual-4f8d5ecf6d/0/cache/eslint-config-prettier-npm-8.3.0-f540cd1f53-df4cea3032.zip/node_modules/eslint-config-prettier/",\
           "packageDependencies": [\
-            ["eslint-config-prettier", "virtual:8c5d609c6718ca71cd90688b2c12b6eff1e72622086ce32173fa89a9ec191ef42ff491bea1c97be94bec874806dbfa2b126e695646b4af25310b4de27cea4dc1#npm:8.3.0"],\
+            ["eslint-config-prettier", "virtual:627817059a04417ce0d2c3dbbd1777d300ef4f1cc829538ceba81bb9cc42af8c20463a6728461712170e0653ef974eaffedab5e14f92a755678425ac68ff4b53#npm:8.3.0"],\
             ["@types/eslint", null],\
             ["eslint", null]\
           ],\

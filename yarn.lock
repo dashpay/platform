@@ -1435,22 +1435,23 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@dashevo/dashcore-lib@npm:~0.19.40":
-  version: 0.19.40
-  resolution: "@dashevo/dashcore-lib@npm:0.19.40"
+"@dashevo/dashcore-lib@npm:~0.19.39":
+  version: 0.19.41
+  resolution: "@dashevo/dashcore-lib@npm:0.19.41"
   dependencies:
     "@dashevo/x11-hash-js": ^1.0.2
     "@types/node": ^12.12.47
     bloom-filter: ^0.2.0
     bls-signatures: ^0.2.5
-    bn.js: =4.11.8
+    bn.js: ^4.12.0
     bs58: =4.0.1
-    elliptic: 6.5.3
+    elliptic: ^6.5.4
     eslint-config-prettier: ^8.3.0
     inherits: =2.0.1
     lodash: ^4.17.20
+    ripemd160: ^2.0.2
     unorm: ^1.6.0
-  checksum: ebcfb63bdf4689c319df2094566e9203e77af089e2fdf59a018a2ab6503af83b458bb0e74e008c58d4ef073ac166961d58e6e46f523ffc8336de111d9940d389
+  checksum: 4bc913c7ed4ee0c800fd6b481c722422d8345798493a50e833f62b880c963e3aec9941e95ec161c16bbafef7157d31277ac22386b9a4c6cf5cf69ce1322e1c14
   languageName: node
   linkType: hard
 
@@ -12784,7 +12785,7 @@ fsevents@~2.3.2:
   languageName: node
   linkType: hard
 
-"ripemd160@npm:^2.0.0, ripemd160@npm:^2.0.1":
+"ripemd160@npm:^2.0.0, ripemd160@npm:^2.0.1, ripemd160@npm:^2.0.2":
   version: 2.0.2
   resolution: "ripemd160@npm:2.0.2"
   dependencies:
