@@ -189,12 +189,9 @@ class Wallet extends EventEmitter {
         opts.transport = {};
       }
 
-      // TODO: figure out implications of setting networkName as a transport network
-      // instead of setting a Dashcore Network instance
-      // The reason behind that is that dash-spv needs to be able to distinguish between
-      // regtest/devnet/testnet in order to use a proper genesis header
-      // but all three of them are aliases to "testnet" in dashcore-lib
-      // which could lead to improper genesis header selection
+      // Assign networkName to the transport instead of this.network,
+      // because it needs to distinguish between testnet and regtest/devnet,
+      // and Dashcore.Network aliases regtest/devnet to testnet
 
       // eslint-disable-next-line no-param-reassign
       opts.transport.network = networkName;
