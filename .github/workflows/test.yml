@@ -53,7 +53,7 @@ jobs:
 
       - name: Build package and dependencies
         run: yarn build --filter "+${{ inputs.package }}"
-        if: ${{ !inputs.start-local-network }}
+        if: ${{ !inputs.start-local-network && !inputs.ignore-build }}
 
       - name: Build all packages
         run: yarn build
