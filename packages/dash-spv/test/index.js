@@ -17,7 +17,7 @@ let merkleBlock2 = null;
 
 describe('SPV-DASH (forks & re-orgs) deserialized headers', () => {
   before(() => {
-    chain = new Blockchain('devnet');
+    chain = new Blockchain('testnet');
   });
 
   it('should get 26 testnet headers', () => {
@@ -65,7 +65,8 @@ describe('SPV-DASH (forks & re-orgs) deserialized headers', () => {
     chain.getLongestChain().length.should.equal(25);
   });
 
-  it('not add an invalid header', () => {
+  // TODO: restore when conesnsus rules are enabled
+  it.skip('not add an invalid header', () => {
     should(() => chain.addHeaders([headers[25]])).throw();
     chain.getLongestChain().length.should.equal(25);
   });
@@ -75,7 +76,7 @@ describe('SPV-DASH (forks & re-orgs) deserialized headers', () => {
       chain.addHeaders([headers[25], headers[10]]);
       done(new Error('SPV chain failed to throw an error on invalid block'));
     } catch (e) {
-      e.message.should.equal('Some headers are invalid');
+      e.message.should.equal('SPV: Header 00000ce430de949c85a145b02e33ebbaed3772dc8f3d668f66edc6852c24d002 is not a child of e59b97d3d11b4d4563b557e32c62afbdb6e947e9cbb4915c94073f08f7936d5f');
       done();
     }
   });
