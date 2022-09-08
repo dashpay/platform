@@ -213,4 +213,4 @@ const headers = [
   },
 ];
 
-module.exports = headers.map(h => utils.normalizeHeader(h));
+module.exports = headers.map((h) => utils.normalizeHeader(h));

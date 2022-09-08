@@ -165,15 +165,15 @@ const SpvChain = class {
   }
 
   /** @private */
-  orphanReconnect() {
-    // for (let i = 0; i < this.orphanBlocks.length; i += 1) {
-    // const connectionTip = this.findConnection(this.orphanBlocks[i]);
-    // if (connectionTip) {
-    //   connectionTip.children.push(this.orphanBlocks[i]);
-    //   this.orphanBlocks.splice(i, 1);
-    // }
-    // }
-  }
+  // orphanReconnect() {
+  // for (let i = 0; i < this.orphanBlocks.length; i += 1) {
+  // const connectionTip = this.findConnection(this.orphanBlocks[i]);
+  // if (connectionTip) {
+  //   connectionTip.children.push(this.orphanBlocks[i]);
+  //   this.orphanBlocks.splice(i, 1);
+  // }
+  // }
+  // }
 
   /** @private */
   orphanChunksReconnect() {
@@ -209,15 +209,15 @@ const SpvChain = class {
   }
 
   /** @private */
-  processValidHeader(header) {
-    const connection = this.findConnection(header);
-    if (connection) {
-      // connection.children.push(header);
-      this.orphanReconnect();
-    } else {
-      this.orphanBlocks.push(header);
-    }
-  }
+  // processValidHeader(header) {
+  //   const connection = this.findConnection(header);
+  //   if (connection) {
+  //     // connection.children.push(header);
+  //     this.orphanReconnect();
+  //   } else {
+  //     this.orphanBlocks.push(header);
+  //   }
+  // }
 
   /** @private
    * validates a dashcore.BlockHeader object
