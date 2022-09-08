@@ -59,6 +59,7 @@ class TransactionSyncStreamWorker extends Worker {
     this.scheduleProgressUpdate = this.scheduleProgressUpdate.bind(this);
     this.updateProgress = this.updateProgress.bind(this);
     this.handleNewBlock = this.handleNewBlock.bind(this);
+    this.reconnectToStream = this.reconnectToStream.bind(this);
   }
 
   /**
@@ -334,6 +335,10 @@ class TransactionSyncStreamWorker extends Worker {
    * @returns {Promise<void>}
    */
   async reconnectToStream() {
+    if (!this.stream) {
+      return;
+    }
+
     logger.debug('TransactionSyncStreamWorker - end stream - new addresses generated');
 
     if (isBrowser()) {
