@@ -1,3 +1,16 @@
+### [0.22.16](https://github.com/dashevo/platform/compare/v0.22.15...v0.22.16) (2022-09-08)
+
+
+### Features
+
+* create test suite's `.env` from deployment tool config ([#518](https://github.com/dashevo/platform/issues/518))
+
+
+### Bug Fixes
+
+* security vulnerability in elliptic library ([#501](https://github.com/dashevo/platform/issues/501))
+* test suite image and environment problems in ci ([#505](https://github.com/dashevo/platform/issues/505))
+
 ### [0.22.15](https://github.com/dashevo/platform/compare/v0.22.14...v0.22.15) (2022-08-31)
 
 
