@@ -12,6 +12,11 @@ on:
         type: boolean
         default: false
         required: false
+      ignore-build:
+        description: Ignores build command execution
+        type: boolean
+        default: false
+        required: false
 jobs:
   test:
     name: Test package
