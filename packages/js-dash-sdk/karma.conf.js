@@ -43,7 +43,7 @@ module.exports = (config) => {
     colors: true,
     logLevel: config.LOG_INFO,
     autoWatch: false,
-    browsers: ['ChromeHeadless', 'FirefoxHeadless'],
+    browsers: ['chromeWithoutSecurity', 'FirefoxHeadless'],
     singleRun: false,
     concurrency: Infinity,
     browserNoActivityTimeout: 7 * 60 * 1000, // 30000 default
@@ -61,6 +61,14 @@ module.exports = (config) => {
       FirefoxHeadless: {
         base: 'Firefox',
         flags: ['-headless'],
+        prefs: {
+          'network.websocket.allowInsecureFromHTTPS': true
+        }
+      },
+      chromeWithoutSecurity: {
+        base: 'ChromeHeadless',
+        flags: ['--allow-insecure-localhost'],
+        displayName: 'Chrome w/o security',
       },
     },
   });
