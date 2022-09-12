@@ -8,10 +8,10 @@ const { HOME_DIR_PATH } = require('../../../constants');
  * @param {Config} config
  * @return {Promise<Listr>}
  */
-async function setupCertificateTask(config) {
+async function saveCertificateTask(config) {
   return new Listr([
     {
-      title: 'Setup certificates',
+      title: 'Save certificates',
       task: async (ctx) => {
         const configDir = path.join(HOME_DIR_PATH, 'ssl', config.getName());
 
@@ -28,4 +28,4 @@ async function setupCertificateTask(config) {
     }]);
 }
 
-module.exports = setupCertificateTask;
+module.exports = saveCertificateTask;

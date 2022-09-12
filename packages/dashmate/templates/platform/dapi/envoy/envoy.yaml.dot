@@ -271,7 +271,7 @@ static_resources:
                         direct_response:
                           status: 204
           {{? it.platform.dapi.envoy.ssl.enabled}}
-          {{?? !it.platform.dapi.envoy.ssl.selfSigned}}
+          {{?? it.platform.dapi.envoy.ssl.provider !== 'selfSigned'}}
           transport_socket:
             name: envoy.transport_sockets.tls
             typed_config:

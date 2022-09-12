@@ -13,12 +13,12 @@ class RenewCommand extends ConfigBaseCommand {
    * @param {Object} args
    * @param {Object} flags
    * @param {Config} config
-   * @param {setupVerificationServerTask} setupVerificationServerTask
    * @param {createCertificate} createCertificate
    * @param {verifyDomain} verifyDomain
    * @param {downloadCertificate} downloadCertificate
    * @param {listCertificates} listCertificates
-   * @param {setupCertificateTask} setupCertificateTask
+   * @param {saveCertificateTask} saveCertificateTask
+   * @param {VerificationServer} verificationServer
    * @return {Promise<void>}
    */
   async runWithDependencies(
@@ -27,18 +27,18 @@ class RenewCommand extends ConfigBaseCommand {
       verbose: isVerbose,
     },
     config,
-    setupVerificationServerTask,
     createCertificate,
     verifyDomain,
     downloadCertificate,
     listCertificates,
-    setupCertificateTask,
+    saveCertificateTask,
+    verificationServer,
   ) {
     const tasks = new Listr([
       {
         title: `Search ZeroSSL cert for ip ${config.get('externalIp')}`,
         task: async (ctx, task) => {
-          const response = await listCertificates(config.get('platform.dapi.envoy.ssl.zerossl.apikey'));
+          const response = await listCertificates(config.get('platform.dapi.envoy.ssl.providerConfigs.zerossl.apiKey'));
 
           const certificate = response.results.find((result) => result.common_name === config.get('externalIp'));
 
@@ -66,28 +66,37 @@ class RenewCommand extends ConfigBaseCommand {
       },
       {
         title: 'Set up verification server',
-        task: async () => setupVerificationServerTask(config),
+        task: async (ctx) => {
+          const validationResponse = ctx.response.validation.other_methods[config.get('externalIp')];
+          const route = validationResponse.file_validation_url_http.replace(`http://${config.get('externalIp')}`, '');
+          const body = validationResponse.file_validation_content.join('\\n');
+
+          await verificationServer.setup(config, route, body);
+        },
+      },
+      {
+        title: 'Start verification server',
+        task: async () => verificationServer.start(),
       },
       {
         title: 'Verify IP',
-        task: async (ctx) => verifyDomain(ctx.response.id, config.get('platform.dapi.envoy.ssl.zerossl.apikey')),
+        task: async (ctx) => verifyDomain(ctx.response.id, config.get('platform.dapi.envoy.ssl.providerConfigs.zerossl.apiKey')),
       },
       {
         title: 'Download certificate',
         task: async (ctx) => {
-          ctx.certificate = await downloadCertificate(ctx.response.id, config.get('platform.dapi.envoy.ssl.zerossl.apikey'));
+          ctx.certificate = await downloadCertificate(ctx.response.id, config.get('platform.dapi.envoy.ssl.providerConfigs.zerossl.apiKey'));
         },
       },
       {
-        title: 'Set up certificate',
-        task: async () => setupCertificateTask(config),
+        title: 'Save certificate',
+        task: async () => saveCertificateTask(config),
       },
       {
-        title: 'Stop temp server',
-        task: async (ctx) => {
-          await ctx.envoy.stop();
-
-          fs.rmSync(ctx.envoyConfig, { force: true });
+        title: 'Stop verification server',
+        task: async () => {
+          await verificationServer.stop();
+          await verificationServer.destroy();
         },
       },
     ],

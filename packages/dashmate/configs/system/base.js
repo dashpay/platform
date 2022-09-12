@@ -88,10 +88,11 @@ module.exports = {
         },
         ssl: {
           enabled: false,
-          selfSigned: false,
           provider: 'zerossl',
-          zerossl: {
-            apikey: null,
+          providerConfigs: {
+            zerossl: {
+              apiKey: null,
+            },
           },
         },
       },
@@ -125,7 +126,7 @@ module.exports = {
       },
       tenderdash: {
         docker: {
-          image: 'dashpay/tenderdash:0.8.0-dev.6',
+          image: 'dashpay/tenderdash:0.9.0-dev.1',
         },
         p2p: {
           port: 26656,

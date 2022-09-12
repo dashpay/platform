@@ -8,6 +8,7 @@ const BlsSignatures = require('bls-signatures');
 const { PrivateKey } = require('@dashevo/dashcore-lib');
 
 const {
+  SSL_PROVIDERS,
   NODE_TYPES,
   NODE_TYPE_MASTERNODE,
   PRESET_MAINNET,
@@ -21,7 +22,7 @@ const {
  * @param {renderServiceTemplates} renderServiceTemplates
  * @param {writeServiceConfigs} writeServiceConfigs
  * @param {obtainZeroSSLCertificateTask} obtainZeroSSLCertificateTask
- * @param {setupCertificateTask} setupCertificateTask
+ * @param {saveCertificateTask} saveCertificateTask
  * @param {listCertificates} listCertificates
  */
 function setupRegularPresetTaskFactory(
@@ -32,7 +33,7 @@ function setupRegularPresetTaskFactory(
   renderServiceTemplates,
   writeServiceConfigs,
   obtainZeroSSLCertificateTask,
-  setupCertificateTask,
+  saveCertificateTask,
   listCertificates,
 ) {
   /**
@@ -162,18 +163,17 @@ function setupRegularPresetTaskFactory(
       {
         title: 'Set SSL certificate',
         task: async (ctx, task) => {
-          ctx.obtainCertificate = await task.prompt({
-            type: 'Toggle',
-            message: 'Would you like to obtain ZeroSSL certificate?',
-            enabled: 'yes',
-            disabled: 'use my own',
-            initial: 'yes',
+          ctx.certificateProvider = await task.prompt({
+            type: 'select',
+            message: 'Select SSL certificate provider',
+            choices: SSL_PROVIDERS,
+            initial: SSL_PROVIDERS[0],
           });
         },
       },
       {
         title: 'Obtain ZeroSSL certificate',
-        enabled: (ctx) => ctx.obtainCertificate,
+        enabled: (ctx) => ctx.certificateProvider === 'zerossl',
         task: async (ctx, task) => {
           const apiKey = await task.prompt({
             type: 'input',
@@ -191,14 +191,14 @@ function setupRegularPresetTaskFactory(
             },
           });
 
-          ctx.config.set('platform.dapi.envoy.ssl.zerossl.apikey', apiKey);
+          ctx.config.set('platform.dapi.envoy.ssl.providerConfigs.zerossl.apiKey', apiKey);
 
           return obtainZeroSSLCertificateTask(ctx.config);
         },
       },
       {
         title: 'Set SSL certificate',
-        enabled: (ctx) => !ctx.obtainCertificate,
+        enabled: (ctx) => ctx.certificateProvider === 'manual',
         task: async (ctx, task) => {
           const bundleFilePath = await task.prompt({
             type: 'input',
@@ -229,7 +229,7 @@ function setupRegularPresetTaskFactory(
             privateKey: fs.readFileSync(privateKeyFilePath, 'utf8'),
           };
 
-          return setupCertificateTask(ctx.config);
+          return saveCertificateTask(ctx.config);
         },
       },
     ]);

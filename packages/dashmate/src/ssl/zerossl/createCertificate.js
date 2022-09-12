@@ -4,7 +4,7 @@ const qs = require('qs');
 /**
  * Create a ZeroSSL Certificate
  *
- * @typedef {createCertificate}
+ * @typedef {createZerosslCertificate}
  * @param {string} csr
  * @param {string} externalIp
  * @param {string} apiKey

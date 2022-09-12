@@ -19,7 +19,6 @@ async function generateCsr(
 
   csr.setSubject([
     { name: 'commonName', value: externalIp },
-    // { name: 'organizationName', value: 'DashCoreGroup' },
   ]);
 
   csr.sign(forge.pki.privateKeyFromPem(keyPair.privateKey));

@@ -141,7 +141,7 @@ class GrpcTransport {
       && process.versions.node != null) {
       port = address.getGrpcPort();
 
-      if (address.isSelfSigned()) {
+      if (address.isSelfSignedCertificateAllowed()) {
         protocol = 'http';
       }
     }

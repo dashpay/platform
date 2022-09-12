@@ -290,26 +290,28 @@ module.exports = {
                     enabled: {
                       type: 'boolean',
                     },
-                    selfSigned: {
-                      type: 'boolean',
-                    },
                     provider: {
                       type: 'string',
-                      enum: ['zerossl', 'manual'],
+                      enum: ['zerossl', 'selfSigned', 'manual'],
                     },
-                    zerossl: {
-                      type: ['object', 'null'],
+                    providerConfigs: {
+                      type: 'object',
                       properties: {
-                        apikey: {
-                          type: ['string', 'null'],
-                          minLength: 32,
+                        zerossl: {
+                          type: ['object'],
+                          properties: {
+                            apiKey: {
+                              type: ['string', 'null'],
+                              minLength: 32,
+                            },
+                          },
+                          required: ['apiKey'],
+                          additionalProperties: false,
                         },
                       },
-                      required: ['apikey'],
-                      additionalProperties: false,
                     },
                   },
-                  required: ['provider', 'zerossl', 'enabled', 'selfSigned'],
+                  required: ['provider', 'providerConfigs', 'enabled'],
                   additionalProperties: false,
                 },
               },

@@ -81,7 +81,7 @@ module.exports = (config) => {
     customLaunchers: {
       chromeWithoutSecurity: {
         base: 'ChromeHeadless',
-        flags: ['--ignore-certificate-errors'],
+        flags: ['--allow-insecure-localhost'],
         displayName: 'Chrome w/o security',
       },
     },

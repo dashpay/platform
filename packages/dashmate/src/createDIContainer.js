@@ -60,7 +60,7 @@ const restartNodeTaskFactory = require('./listr/tasks/restartNodeTaskFactory');
 const resetNodeTaskFactory = require('./listr/tasks/resetNodeTaskFactory');
 const configureCoreTaskFactory = require('./listr/tasks/setup/local/configureCoreTaskFactory');
 const configureTenderdashTaskFactory = require('./listr/tasks/setup/local/configureTenderdashTaskFactory');
-const configureSelfSignedCertificatesTaskFactory = require('./listr/tasks/setup/local/configureSelfSignedCertificatesTaskFactory');
+const obtainSelfSignedCertificateTaskFactory = require('./listr/tasks/ssl/selfSigned/obtainSelfSignedCertificateTaskFactory');
 const waitForNodeToBeReadyTaskFactory = require('./listr/tasks/platform/waitForNodeToBeReadyTaskFactory');
 const enableCoreQuorumsTaskFactory = require('./listr/tasks/setup/local/enableCoreQuorumsTaskFactory');
 const startGroupNodesTaskFactory = require('./listr/tasks/startGroupNodesTaskFactory');
@@ -68,17 +68,17 @@ const buildServicesTaskFactory = require('./listr/tasks/buildServicesTaskFactory
 
 const generateHDPrivateKeys = require('./util/generateHDPrivateKeys');
 
-const obtainZeroSSLCertificateTaskFactory = require('./listr/tasks/ssl/obtainZeroSSLCertificateTaskFactory');
-const setupVerificationServerTaskFactory = require('./listr/tasks/ssl/setupVerificationServerTaskFactory');
-const setupCertificateTask = require('./listr/tasks/ssl/setupCertificateTask');
+const obtainZeroSSLCertificateTaskFactory = require('./listr/tasks/ssl/zerossl/obtainZeroSSLCertificateTaskFactory');
+const VerificationServer = require('./listr/tasks/ssl/VerificationServer');
+const saveCertificateTask = require('./listr/tasks/ssl/saveCertificateTask');
 
-const createCertificate = require('./ssl/zerossl/createCertificate');
+const createZeroSSLCertificate = require('./ssl/zerossl/createCertificate');
 const verifyDomain = require('./ssl/zerossl/verifyDomain');
 const downloadCertificate = require('./ssl/zerossl/downloadCertificate');
 const listCertificates = require('./ssl/zerossl/listCertificates');
 const generateCsr = require('./ssl/zerossl/generateCsr');
 const generateKeyPair = require('./ssl/generateKeyPair');
-const createSelfSignedCertificate = require('./ssl/createSelfSignedCertificate');
+const createSelfSignedCertificate = require('./ssl/selfSigned/createCertificate');
 
 async function createDIContainer() {
   const container = createAwilixContainer({
@@ -117,13 +117,14 @@ async function createDIContainer() {
    * SSL
    */
   container.register({
-    createCertificate: asValue(createCertificate),
+    createZeroSSLCertificate: asValue(createZeroSSLCertificate),
     generateCsr: asValue(generateCsr),
     generateKeyPair: asValue(generateKeyPair),
     verifyDomain: asValue(verifyDomain),
     downloadCertificate: asValue(downloadCertificate),
     listCertificates: asValue(listCertificates),
     createSelfSignedCertificate: asValue(createSelfSignedCertificate),
+    verificationServer: asClass(VerificationServer).singleton(),
   });
 
   /**
@@ -201,10 +202,9 @@ async function createDIContainer() {
     outputStatusOverview: asFunction(outputStatusOverviewFactory),
     waitForNodeToBeReadyTask: asFunction(waitForNodeToBeReadyTaskFactory).singleton(),
     enableCoreQuorumsTask: asFunction(enableCoreQuorumsTaskFactory).singleton(),
-    setupVerificationServerTask: asFunction(setupVerificationServerTaskFactory).singleton(),
     obtainZeroSSLCertificateTask: asFunction(obtainZeroSSLCertificateTaskFactory).singleton(),
-    configureSelfSignedCertificatesTask: asFunction(configureSelfSignedCertificatesTaskFactory).singleton(),
-    setupCertificateTask: asValue(setupCertificateTask),
+    obtainSelfSignedCertificateTask: asFunction(obtainSelfSignedCertificateTaskFactory).singleton(),
+    saveCertificateTask: asValue(saveCertificateTask),
   });
 
   return container;

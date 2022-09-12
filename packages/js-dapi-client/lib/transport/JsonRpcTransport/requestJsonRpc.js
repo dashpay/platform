@@ -43,7 +43,12 @@ async function requestJsonRpc(protocol, host, port, selfSigned, method, params, 
   let response;
 
   const config = { timeout: options.timeout };
-  if (protocol === 'https' && selfSigned) {
+  // For NodeJS Client
+  if (typeof process !== 'undefined'
+    && process.versions != null
+    && process.versions.node != null
+    && protocol === 'https'
+    && selfSigned) {
     config.httpsAgent = new https.Agent({
       rejectUnauthorized: false,
     });

@@ -4,21 +4,21 @@ const { Listr } = require('listr2');
  * @param {generateKeyPair} generateKeyPair
  * @param {generateCsr} generateCsr
  * @param {createSelfSignedCertificate} createSelfSignedCertificate
- * @param {setupCertificateTask} setupCertificateTask
- * @return {configureSelfSignedCertificatesTask}
+ * @param {saveCertificateTask} saveCertificateTask
+ * @return {obtainSelfSignedCertificateTask}
  */
-function configureSelfSignedCertificatesTaskFactory(
+function obtainSelfSignedCertificateTaskFactory(
   generateKeyPair,
   generateCsr,
   createSelfSignedCertificate,
-  setupCertificateTask,
+  saveCertificateTask,
 ) {
   /**
-   * @typedef {configureSelfSignedCertificatesTask}
+   * @typedef {obtainSelfSignedCertificateTask}
    * @param {Config[]} configGroup
    * @return {Listr}
    */
-  function configureSelfSignedCertificatesTask(configGroup) {
+  function obtainSelfSignedCertificateTask(configGroup) {
     return new Listr([
       {
         task: async (ctx) => {
@@ -31,9 +31,9 @@ function configureSelfSignedCertificatesTaskFactory(
               ctx.csr = await generateCsr(ctx.keyPair, config.get('externalIp', true));
               ctx.certificate = await createSelfSignedCertificate(ctx.keyPair, ctx.csr);
 
-              config.set('platform.dapi.envoy.ssl.selfSigned', true);
+              config.set('platform.dapi.envoy.ssl.provider', 'selfSigned');
 
-              return setupCertificateTask(config);
+              return saveCertificateTask(config);
             },
           }));
 
@@ -43,7 +43,7 @@ function configureSelfSignedCertificatesTaskFactory(
     ]);
   }
 
-  return configureSelfSignedCertificatesTask;
+  return obtainSelfSignedCertificateTask;
 }
 
-module.exports = configureSelfSignedCertificatesTaskFactory;
+module.exports = obtainSelfSignedCertificateTaskFactory;

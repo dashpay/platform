@@ -18,7 +18,7 @@ class DAPIAddress {
         httpPort: httpPort ? parseInt(httpPort, 10) : DAPIAddress.DEFAULT_HTTP_PORT,
         grpcPort: grpcPort ? parseInt(grpcPort, 10) : DAPIAddress.DEFAULT_GRPC_PORT,
         protocol: ssl === 'no-ssl' ? 'http' : 'https',
-        selfSigned: ssl === 'self-signed',
+        allowSelfSignedCertificate: ssl === 'self-signed',
       };
     }
 
@@ -31,7 +31,7 @@ class DAPIAddress {
     this.httpPort = address.httpPort || DAPIAddress.DEFAULT_HTTP_PORT;
     this.grpcPort = address.grpcPort || DAPIAddress.DEFAULT_GRPC_PORT;
     this.proRegTxHash = address.proRegTxHash;
-    this.selfSigned = address.selfSigned || false;
+    this.allowSelfSignedCertificate = address.allowSelfSignedCertificate || false;
 
     this.banCount = 0;
     this.banStartTime = undefined;
@@ -166,8 +166,8 @@ class DAPIAddress {
   /**
    * @returns {boolean}
    */
-  isSelfSigned() {
-    return this.selfSigned;
+  isSelfSignedCertificateAllowed() {
+    return this.allowSelfSignedCertificate;
   }
 
   /**
@@ -182,7 +182,7 @@ class DAPIAddress {
       httpPort: this.getHttpPort(),
       grpcPort: this.getGrpcPort(),
       proRegTxHash: this.getProRegTxHash(),
-      selfSigned: this.isSelfSigned(),
+      allowSelfSignedCertificate: this.isSelfSignedCertificateAllowed(),
     };
   }
 

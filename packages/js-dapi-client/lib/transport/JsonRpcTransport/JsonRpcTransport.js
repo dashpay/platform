@@ -68,7 +68,7 @@ class JsonRpcTransport {
         address.getProtocol(),
         address.getHost(),
         address.getHttpPort(),
-        address.isSelfSigned(),
+        address.isSelfSignedCertificateAllowed(),
         method,
         params,
         requestOptions,

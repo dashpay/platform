@@ -114,7 +114,7 @@ describe('ListDAPIAddressProvider', () => {
 
       expect(liveAddress.host).to.equal('127.0.0.1');
       expect(liveAddress.protocol).to.equal('https');
-      expect(liveAddress.selfSigned).to.be.true();
+      expect(liveAddress.allowSelfSignedCertificate).to.be.true();
     });
   });
 

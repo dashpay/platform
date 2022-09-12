@@ -82,7 +82,7 @@ describe('DAPIAddress', () => {
         httpPort,
         proRegTxHash,
         protocol: 'https',
-        selfSigned: false,
+        allowSelfSignedCertificate: false,
       });
     });
 
@@ -260,18 +260,18 @@ describe('DAPIAddress', () => {
     it('should return true if address uses self signed certificate', () => {
       const dapiAddress = new DAPIAddress(host);
 
-      dapiAddress.selfSigned = true;
+      dapiAddress.allowSelfSignedCertificate = true;
 
-      const isSelfSigned = dapiAddress.isSelfSigned();
+      const isSelfSigned = dapiAddress.isSelfSignedCertificateAllowed();
       expect(isSelfSigned).to.be.true();
     });
 
     it('should return true if address doesn\'t use self signed certificate', () => {
       const dapiAddress = new DAPIAddress(host);
 
-      dapiAddress.selfSigned = false;
+      dapiAddress.allowSelfSignedCertificate = false;
 
-      const isSelfSigned = dapiAddress.isSelfSigned();
+      const isSelfSigned = dapiAddress.isSelfSignedCertificateAllowed();
       expect(isSelfSigned).to.be.false();
     });
   });
@@ -286,7 +286,7 @@ describe('DAPIAddress', () => {
         grpcPort: dapiAddress.getGrpcPort(),
         proRegTxHash: dapiAddress.getProRegTxHash(),
         protocol: 'https',
-        selfSigned: false,
+        allowSelfSignedCertificate: false,
       });
     });
   });
