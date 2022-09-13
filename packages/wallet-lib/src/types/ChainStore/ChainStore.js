@@ -71,7 +71,6 @@ class ChainStore extends EventEmitter {
     this.state.blockHeaders = headers;
   }
 
-  // TODO: write tests
   updateHeadersMetadata(headers, tipHeight) {
     headers.forEach((header, index) => {
       if (this.state.headersMetadata.get(header.hash)) {

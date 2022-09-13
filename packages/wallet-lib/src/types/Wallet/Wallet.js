@@ -63,7 +63,7 @@ class Wallet extends EventEmitter {
       generateNewWalletId,
     });
 
-    // TODO: move to BlockHeadersProvider
+    // TODO(spv): move to BlockHeadersProvider
     // because we need X11 to be used by DAPI Client without the wallet's command
     X11().then((x11hash) => {
       configureDashcore({
@@ -155,7 +155,7 @@ class Wallet extends EventEmitter {
           + ' created from the new mnemonic');
       }
     } else if (this.unsafeOptions.skipSynchronizationBeforeHeight) {
-      // TODO: ensure a proper chain re-sync workflow for the case where:
+      // TODO(spv): ensure a proper chain re-sync workflow for the case where:
       // - User has storage adapter enabled
       // - User sets skipSynchronizationBeforeHeight to some value and uses wallet
       // - User then removes this option and uses wallet again.

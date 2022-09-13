@@ -211,7 +211,7 @@ class BlockHeadersProvider extends EventEmitter {
 
       if (headersAdded.length) {
         // Calculate amount of removed headers in order to properly adjust head height
-        // TODO: move this logic to SpvChain?
+        // TODO(spv): move this logic to SpvChain?
         const difference = headers.length - headersAdded.length;
         this.emit(EVENTS.CHAIN_UPDATED, headersAdded, headHeight + difference);
       }
@@ -226,7 +226,7 @@ class BlockHeadersProvider extends EventEmitter {
 
   handleHistoricalDataObtained() {
     this.emit(EVENTS.HISTORICAL_DATA_OBTAINED);
-    // TODO: implement spvChain.validate() to ensure that chain is complete,
+    // TODO(spv): implement spvChain.validate() to ensure that chain is complete,
     // all metadata is present, and no orphan chunks left dangling
     this.removeReaderListeners();
 

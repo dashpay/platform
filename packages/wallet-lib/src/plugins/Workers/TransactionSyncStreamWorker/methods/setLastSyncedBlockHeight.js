@@ -12,7 +12,7 @@ module.exports = function setLastSyncedBlockHeight(blockHeight, updateWalletStat
 
   this.lastSyncedBlockHeight = blockHeight;
 
-  // TODO: consider getting rid of a side effect of storage update to make this a pure function
+  // TODO(spv): consider getting rid of a side effect of storage update to make this a pure function
   if (updateWalletState) {
     const walletStore = this.storage.getWalletStore(this.walletId);
     walletStore.updateLastKnownBlock(blockHeight);

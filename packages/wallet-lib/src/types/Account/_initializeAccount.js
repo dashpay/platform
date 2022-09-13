@@ -18,7 +18,7 @@ async function _initializeAccount(account, userUnsafePlugins) {
   const { blockHeaders, lastSyncedHeaderHeight } = chainStore.state;
   if (!self.offlineMode && blockHeaders.length > 0) {
     const { blockHeadersProvider } = self.transport.client;
-    // TODO: implement blockHeadersProvider.initializeWith(headers, headHeight)
+    // TODO(spv): implement blockHeadersProvider.initializeWith(headers, headHeight)
     const firstHeaderHeight = lastSyncedHeaderHeight - blockHeaders.length + 1;
     blockHeadersProvider.spvChain.reset(firstHeaderHeight);
     blockHeadersProvider.spvChain.addHeaders(blockHeaders);

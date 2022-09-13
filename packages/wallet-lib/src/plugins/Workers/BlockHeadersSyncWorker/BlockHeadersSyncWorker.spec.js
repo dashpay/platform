@@ -657,6 +657,6 @@ describe('BlockHeadersSyncWorker', () => {
       });
     });
 
-    // TODO: cover cases with the orphan chunks?
+    // TODO(spv): cover cases with the orphan chunks?
   });
 });

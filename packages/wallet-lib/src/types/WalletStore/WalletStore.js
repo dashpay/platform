@@ -11,7 +11,7 @@ class WalletStore {
   }
 
   reset() {
-    // TODO: update TypeScript definitions
+    // TODO(spv): update TypeScript definitions
     this.state = {
       mnemonic: null,
       paths: new Map(),

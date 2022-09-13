@@ -180,7 +180,7 @@ class TransactionSyncStreamWorker extends Worker {
     this.updateProgress();
     await this.storage.saveState();
 
-    // TODO: Purge headers metadata from storage once all transactions found it
+    // TODO(spv): Purge headers metadata from storage once all transactions found it
   }
 
   /**

@@ -1,6 +1,6 @@
-// TODO: [WIP] - this is a work in progress
+// TODO(spv): [WIP] - this is a work in progress
 function exportState(lastKnownBlock) {
-  // TODO: get rid of lastKnownBlock in favor of lastSyncedHeaderHeight
+  // TODO(spv): get rid of lastKnownBlock in favor of lastSyncedHeaderHeight
 
   const { state } = this;
   const {
@@ -9,7 +9,7 @@ function exportState(lastKnownBlock) {
     blockHeight,
     fees,
     headersMetadata,
-    lastSyncedHeaderHeight, // TODO: ensure it's saved with safeHeight in mind
+    lastSyncedHeaderHeight, // TODO(spv): ensure it's saved with safeHeight in mind
   } = state;
 
   const serializedState = {
@@ -28,7 +28,7 @@ function exportState(lastKnownBlock) {
     reorgSafeHeight = blockHeight - 6;
   }
 
-  // TODO: control reorg safe height for headers
+  // TODO(spv): control reorg safe height for headers
 
   // Object.assign(serializedState, {
   //   lastSyncedHeaderHeight: lastSyncedHeaderHeight > reorgSafeHeight
@@ -36,7 +36,7 @@ function exportState(lastKnownBlock) {
   //     : lastSyncedHeaderHeight,
   // });
 
-  // TODO: temporary construction to control saving progress
+  // TODO(spv): temporary construction to control saving progress
   let saveHeight = reorgSafeHeight;
 
   if (lastKnownBlock < saveHeight) {

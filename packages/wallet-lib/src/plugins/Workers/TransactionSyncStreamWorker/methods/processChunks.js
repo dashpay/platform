@@ -15,7 +15,7 @@ async function processTransactions(transactions) {
     .filterAddressesTransactions(transactions, addresses, network);
   if (walletTransactions.length) {
     walletTransactions.forEach((tx) => {
-      // TODO: fine tune this behaviour for the cases where
+      // TODO(spv): fine tune this behaviour for the cases where
       // after TX stream reconnected, we are obtaining the same transactions that
       // already in this.transactionsToVerify
 
@@ -28,7 +28,7 @@ async function processTransactions(transactions) {
     if (syncIncomingTransactions && walletTransactions.length) {
       // Immediately import unconfirmed transactions to proceed with the broadcasting and etc
 
-      // TODO: I guess they should be first confirmed by the instant locks, but this functionality
+      // TODO(spv): I guess they should be first confirmed by the instant locks, but this functionality
       // was not implemented properly up to this date
 
       const {
@@ -105,7 +105,7 @@ async function processMerkleBlock(merkleBlock) {
     delete this.transactionsToVerify[hash];
   });
 
-  // TODO: verify transactions agaoinst the merkle block
+  // TODO(spv): verify transactions agaoinst the merkle block
 
   let addressesGenerated = 0;
   if (transactionsWithMetadata.length) {

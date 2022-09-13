@@ -15,7 +15,7 @@ const {waitOneTick} = require("../../../src/test/utils");
 const mockMerkleBlock = require("../../../src/test/mocks/mockMerkleBlock");
 
 describe('Wallet', () => {
-  // TODO: write test that ensures that storage getting wiped after removing skipSynchronizationBeofreHeight flag
+  // TODO(spv): write test that ensures that storage getting wiped after removing skipSynchronizationBeofreHeight flag
   describe('Storage', () => {
     let wallet;
     let txStreamMock;

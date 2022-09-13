@@ -139,7 +139,7 @@ class BlockHeadersSyncWorker extends Worker {
 
     this.updateProgress();
 
-    // TODO: cover with unit test
+    // TODO(spv): cover with unit test
     await this.storage.saveState();
 
     if (!stopped) {
@@ -251,7 +251,7 @@ class BlockHeadersSyncWorker extends Worker {
       const { startBlockHeight } = spvChain;
       const { lastSyncedHeaderHeight } = chainStore.state;
 
-      // TODO: abstract this in spv chain?
+      // TODO(spv): abstract this in spv chain?
       const totalHeadersCount = startBlockHeight + longestChain.length;
       const syncedHeadersCount = lastSyncedHeaderHeight + 1;
 
@@ -327,7 +327,7 @@ class BlockHeadersSyncWorker extends Worker {
       chainStore.setBlockHeaders(longestChain.slice(-this.maxHeadersToKeep));
       chainStore.updateHeadersMetadata(newHeaders, newChainHeight);
 
-      // TODO: consider removing walletStore's lastKnownBlock as obsolete
+      // TODO(spv): consider removing walletStore's lastKnownBlock as obsolete
       walletStore.updateLastKnownBlock(newChainHeight);
 
       const { orphanChunks } = spvChain;
@@ -361,7 +361,7 @@ class BlockHeadersSyncWorker extends Worker {
 
     const totalCount = chainStore.state.blockHeight + 1; // Including root block
 
-    // TODO: hide these calculations in the SPVChain
+    // TODO(spv): hide these calculations in the SPVChain
     const confirmedSyncedCount = startBlockHeight + longestChain.length;
     const totalSyncedCount = confirmedSyncedCount + totalOrphans;
 
@@ -390,7 +390,7 @@ class BlockHeadersSyncWorker extends Worker {
     }
   }
 
-  // TODO: write unit tests
+  // TODO(spv): write unit tests
   emitError(e) {
     if (this.parentEvents.listenerCount('error') === 0) {
       logger.debug('[BlockHeadersSyncWorker] Unhandled parentEvents \'error\' event:', e);
