@@ -35,7 +35,6 @@ Usage: test <seed> [options]
 
 FIRST_ARG="$1"
 DAPI_SEED="${DAPI_SEED:=$FIRST_ARG}"
-network="testnet"
 
 DIR="$( cd -P "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
 
@@ -201,7 +200,7 @@ then
   cmd="${cmd} NODE_ENV=test node_modules/.bin/mocha -b ${scope_dirs}"
 else
   echo $cmd
-  cmd="${cmd} NODE_ENV=test yarn mocha --inspect-brk -b ${scope_dirs}"
+  cmd="${cmd} NODE_ENV=test yarn mocha -b ${scope_dirs}"
 fi
 
 if [ -n "$timeout" ]
