@@ -8,12 +8,22 @@ class BlockHeadersStreamMock extends EventEmitter {
     this.f = [];
     // onEnd minified events list
     this.c = [];
+    this.errored = false;
+  }
+
+  emit(event, data) {
+    if (event === 'error') {
+      this.errored = true;
+    }
+    super.emit(event, data);
   }
 
   cancel() {
-    const err = new Error();
-    err.code = 1;
-    this.emit(BlockHeadersStreamMock.EVENTS.error, err);
+    if (!this.errored) {
+      const err = new Error();
+      err.code = 1;
+      this.emit(BlockHeadersStreamMock.EVENTS.error, err);
+    }
   }
 
   end() {

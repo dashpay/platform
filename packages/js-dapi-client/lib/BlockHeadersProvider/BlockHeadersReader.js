@@ -86,11 +86,9 @@ class BlockHeadersReader extends EventEmitter {
 
   stopReadingHistorical() {
     while (this.historicalStreams.length) {
-      const stream = this.historicalStreams[0];
+      const stream = this.historicalStreams.shift();
       stream.cancel();
     }
-
-    this.historicalStreams = [];
   }
 
   /**
@@ -226,7 +224,9 @@ class BlockHeadersReader extends EventEmitter {
       const errorHandler = (streamError) => {
         if (streamError.code === GrpcErrorCodes.CANCELLED) {
           const index = this.historicalStreams.indexOf(stream);
-          this.historicalStreams.splice(index, 1);
+          if (index >= 0) {
+            this.historicalStreams.splice(index, 1);
+          }
           return;
         }
 

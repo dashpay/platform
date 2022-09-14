@@ -10,6 +10,8 @@ class BlockHeadersWithChainLocksStreamMock extends EventEmitter {
     sinon.spy(this, 'destroy');
     sinon.spy(this, 'removeAllListeners');
     sinon.spy(this, 'cancel');
+
+    this.errored = false;
   }
 
   destroy(e) {
@@ -20,9 +22,18 @@ class BlockHeadersWithChainLocksStreamMock extends EventEmitter {
   }
 
   cancel() {
-    const err = new Error('CANCELED_ON_CLIENT');
-    err.code = 1;
-    this.emit('error', err);
+    if (!this.errored) {
+      const err = new Error('CANCELED_ON_CLIENT');
+      err.code = 1;
+      this.emit('error', err);
+    }
+  }
+
+  emit(event, data) {
+    if (event === 'error') {
+      this.errored = true;
+    }
+    super.emit(event, data);
   }
 
   /**
