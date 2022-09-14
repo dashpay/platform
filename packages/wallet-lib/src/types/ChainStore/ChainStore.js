@@ -84,6 +84,10 @@ class ChainStore extends EventEmitter {
     });
   }
 
+  clearHeadersMetadata() {
+    this.state.headersMetadata.clear();
+  }
+
   updateLastSyncedHeaderHeight(height) {
     if (height < this.state.lastSyncedHeaderHeight) {
       throw new Error('Cannot update lastSyncedHeaderHeight to a lower value');

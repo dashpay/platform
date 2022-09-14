@@ -2,10 +2,17 @@ export declare interface feeState {
   minRelay: number
 }
 
+export declare interface HeaderMetadata {
+  height: number,
+  time: number
+}
+
 export declare interface ChainStoreState {
   fees: feeState;
   blockHeight: number;
-  blockHeaders: Map<string, any>
+  lastSyncedHeaderHeight: number,
+  blockHeaders: any[],
+  headersMetadata: Map<string, HeaderMetadata>,
   transactions: Map<string, any>
   instantLocks: Map<string, any>
   addresses: Map<string, any>

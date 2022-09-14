@@ -148,6 +148,7 @@ class TransactionSyncStreamWorker extends Worker {
   }
 
   async onStart() {
+    const chainStore = this.storage.getDefaultChainStore();
     // Using sync options here to avoid
     // situation when plugin is injected directly
     // instead of usual injection process
@@ -156,10 +157,11 @@ class TransactionSyncStreamWorker extends Worker {
       skipSynchronization,
     } = (this.storage.application.syncOptions || {});
 
-    const bestBlockHeight = this.storage.getChainStore(this.network.toString()).state.blockHeight;
+    const bestBlockHeight = chainStore.state.blockHeight;
     if (skipSynchronization) {
       logger.debug('TransactionSyncStreamWorker - Wallet created from a new mnemonic. Sync from the best block height.');
       this.setLastSyncedBlockHeight(bestBlockHeight, true);
+      chainStore.clearHeadersMetadata();
       return;
     }
 
@@ -177,10 +179,11 @@ class TransactionSyncStreamWorker extends Worker {
     // We first need to sync up initial historical transactions
     await this.startHistoricalSync(this.network);
     this.setLastSyncedBlockHeight(bestBlockHeight, true);
+
+    chainStore.clearHeadersMetadata();
+
     this.updateProgress();
     await this.storage.saveState();
-
-    // TODO(spv): Purge headers metadata from storage once all transactions found it
   }
 
   /**
@@ -227,7 +230,7 @@ class TransactionSyncStreamWorker extends Worker {
     this.setLastSyncedBlockHeight(height, true);
 
     // We need to reconnect to the stream if we have new addresses generated
-    if (this.reconnectOnNewBlock) {
+    if (this.reconnectOnNewBlock && this.stream) {
       this.reconnectOnNewBlock = false;
       this.reconnectToStream()
         .catch((e) => {
@@ -335,10 +338,6 @@ class TransactionSyncStreamWorker extends Worker {
    * @returns {Promise<void>}
    */
   async reconnectToStream() {
-    if (!this.stream) {
-      return;
-    }
-
     logger.debug('TransactionSyncStreamWorker - end stream - new addresses generated');
 
     if (isBrowser()) {
