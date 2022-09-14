@@ -72,6 +72,7 @@ describe('Account', function suite() {
     describe('getUTXO', () => {
         it('should work if storage adapter behaves like a local forage', async () => {
             await createTransactionInAccount(account);
+            account.storage.getDefaultChainStore().updateChainHeight(120);
 
             // Saving state to restore it later
             await account.storage.saveState();

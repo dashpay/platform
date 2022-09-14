@@ -13,6 +13,7 @@ const SCHEMA = {
     },
   },
   lastSyncedHeaderHeight: 'number',
+  lastSyncedBlockHeight: 'number',
   chainHeight: 'number',
   blockHeaders: [
     (hex) => new BlockHeader(Buffer.from(hex, 'hex')),
@@ -53,7 +54,10 @@ class ChainStore extends EventEmitter {
       fees: {
         minRelay: -1,
       },
+      // Height of the last synced header
       lastSyncedHeaderHeight: -1,
+      // Height of the last synced merkle block
+      lastSyncedBlockHeight: -1,
       blockHeight: 0,
       blockHeaders: [],
       headersMetadata: new Map(),
@@ -90,12 +94,21 @@ class ChainStore extends EventEmitter {
 
   updateLastSyncedHeaderHeight(height) {
     if (height < this.state.lastSyncedHeaderHeight) {
-      throw new Error('Cannot update lastSyncedHeaderHeight to a lower value');
+      throw new Error(`Cannot update lastSyncedHeaderHeight to a lower value ${height} < ${this.state.lastSyncedHeaderHeight}`);
     }
 
     this.state.lastSyncedHeaderHeight = height;
   }
 
+  updateLastSyncedBlockHeight(height) {
+    if (height < this.state.lastSyncedBlockHeight) {
+      throw new Error(`Cannot update lastSyncedBlockHeight to a lower value ${height} < ${this.state.lastSyncedBlockHeight}`);
+    }
+
+    this.state.lastSyncedBlockHeight = height;
+  }
+
+  // TODO(spv): rm?
   set chainHeight(height) {
     if (height < this.state.blockHeight) {
       throw new Error(`Chain height value ${height} is lower than current value ${this.state.blockHeight}`);

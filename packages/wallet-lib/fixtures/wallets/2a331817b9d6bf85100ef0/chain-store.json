@@ -1,7 +1,8 @@
 {
   "headersMetadata": {},
-  "lastSyncedHeaderHeight": 0,
-  "chainHeight": 0,
+  "lastSyncedHeaderHeight": 560186,
+  "lastSyncedBlockHeight": 560186,
+  "chainHeight": 560186,
   "blockHeaders": [
     "00000020dc238f49a4671c66a42eb8312996f69801c4867b50658bf1588e4c402e00000088249fb4facf62de5b7706fb41d25cf7ae6404e387b25bce43d5ca69c621a5a05c2acc6108ca011e20420000",
     "0000002016d86d54b0fb10d74d56687f14f1ff451d1e8e1fd9078afee6c3847eec000000a4c3c2e1b7b03b06ab32eb36b59bbe1ef9bba5b6ba6c18cab1ec64f38b49b7aad2402061bcfb011e7c3a0000",

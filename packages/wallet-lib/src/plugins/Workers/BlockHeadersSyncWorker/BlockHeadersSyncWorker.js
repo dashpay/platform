@@ -286,7 +286,6 @@ class BlockHeadersSyncWorker extends Worker {
   async continuousChainUpdateHandler(newHeaders, batchHeadHeight) {
     try {
       const chainStore = this.storage.getDefaultChainStore();
-      const walletStore = this.storage.getDefaultWalletStore();
 
       if (typeof batchHeadHeight !== 'number' || Number.isNaN(batchHeadHeight)) {
         const error = new Error(`Invalid batch head height ${batchHeadHeight}`);
@@ -324,11 +323,9 @@ class BlockHeadersSyncWorker extends Worker {
 
       chainStore.updateChainHeight(newChainHeight);
       chainStore.updateLastSyncedHeaderHeight(newChainHeight);
+      chainStore.updateLastSyncedBlockHeight(newChainHeight);
       chainStore.setBlockHeaders(longestChain.slice(-this.maxHeadersToKeep));
       chainStore.updateHeadersMetadata(newHeaders, newChainHeight);
-
-      // TODO(spv): consider removing walletStore's lastKnownBlock as obsolete
-      walletStore.updateLastKnownBlock(newChainHeight);
 
       const { orphanChunks } = spvChain;
       const totalOrphans = orphanChunks.reduce((sum, chunk) => sum + chunk.length, 0);

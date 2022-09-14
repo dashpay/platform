@@ -1,4 +1,4 @@
-const { Transaction, BlockHeader } = require('@dashevo/dashcore-lib');
+const { Transaction } = require('@dashevo/dashcore-lib');
 const { expect } = require('chai');
 const ChainStore = require('./ChainStore');
 const fixtures1 = require('../../../fixtures/wallets/2a331817b9d6bf85100ef0/chain-store.json');
@@ -12,6 +12,8 @@ describe('ChainStore - class', () => {
     expect(new ChainStore()).to.deep.equal(testnetChainStore);
     expect(testnetChainStore.state).to.exist;
     expect(testnetChainStore.state.blockHeight).to.equal(0);
+    expect(testnetChainStore.state.lastSyncedBlockHeight).to.equal(-1);
+    expect(testnetChainStore.state.lastSyncedHeaderHeight).to.equal(-1);
     expect(testnetChainStore.state.fees).to.deep.equal({ minRelay: -1 });
     expect(testnetChainStore.state.blockHeaders).to.deep.equal([]);
     expect(testnetChainStore.state.transactions).to.deep.equal(new Map());
@@ -19,12 +21,15 @@ describe('ChainStore - class', () => {
     expect(testnetChainStore.state.addresses).to.deep.equal(new Map());
   });
   it('should be able to import transactions with metadata', () => {
-    const { transactions, txMetadata } = fixtures1;
+    const { transactions, txMetadata, lastSyncedBlockHeight, lastSyncedHeaderHeight, chainHeight } = fixtures1;
 
     const tx1 = new Transaction(
       transactions.d48f415f08fb795d43b216cf56e9ef10e059d4009cfc8fc90edfc0d3850813af,
     );
     const meta1 = txMetadata.d48f415f08fb795d43b216cf56e9ef10e059d4009cfc8fc90edfc0d3850813af;
+    testnetChainStore.updateLastSyncedBlockHeight(lastSyncedBlockHeight);
+    testnetChainStore.updateLastSyncedHeaderHeight(lastSyncedHeaderHeight);
+    testnetChainStore.updateChainHeight(lastSyncedHeaderHeight);
     testnetChainStore.importTransaction(tx1, meta1);
     testnetChainStore.considerTransaction(tx1.hash);
 

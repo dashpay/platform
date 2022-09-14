@@ -165,15 +165,15 @@ class TransactionSyncStreamWorker extends Worker {
       return;
     }
 
-    const { lastKnownBlock } = this.storage.getWalletStore(this.walletId).state;
+    const { lastSyncedBlockHeight } = this.storage.getDefaultChainStore().state;
     const skipSyncBefore = typeof skipSynchronizationBeforeHeight === 'number'
       ? skipSynchronizationBeforeHeight
       : parseInt(skipSynchronizationBeforeHeight, 10);
 
-    if (skipSyncBefore > lastKnownBlock.height) {
+    if (skipSyncBefore > lastSyncedBlockHeight) {
       this.setLastSyncedBlockHeight(skipSyncBefore);
-    } else if (lastKnownBlock.height !== -1) {
-      this.setLastSyncedBlockHeight(lastKnownBlock.height);
+    } else if (lastSyncedBlockHeight !== -1) {
+      this.setLastSyncedBlockHeight(lastSyncedBlockHeight);
     }
 
     // We first need to sync up initial historical transactions

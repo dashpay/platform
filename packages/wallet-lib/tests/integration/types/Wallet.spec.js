@@ -88,12 +88,11 @@ describe('Wallet', () => {
 
       /** Ensure that storage has no items for transactions without the metadata */
       let storage = storageAdapterMock.getItem(`wallet_${wallet.walletId}`)
-      let chainStoreState = storage.chains[wallet.network].chain;
-      let walletStoreState = storage.chains[wallet.network].wallet;
+      let chainStoreState = storage.chains[wallet.network];
       expect(chainStoreState.transactions).to.be.empty;
       expect(chainStoreState.txMetadata).to.be.empty;
       // -6 to ensure reorg safe saving procedure
-      expect(walletStoreState.lastKnownBlock.height).to.equal(0)
+      expect(chainStoreState.lastSyncedBlockHeight).to.equal(-1)
 
       const merkleBlock = mockMerkleBlock([fundingTx.hash]);
       const merkleBlockHeight = 10;
@@ -110,14 +109,13 @@ describe('Wallet', () => {
 
       /**
        * Ensure that chain items for fundingTx have been propagated
-       * alongside with the lastKnownBlock
+       * alongside with the lastSyncedBlockHeight
        */
-      storage = storageAdapterMock.getItem(`wallet_${wallet.walletId}`)
-      chainStoreState = storage.chains[wallet.network].chain;
-      walletStoreState = storage.chains[wallet.network].wallet;
+      storage = storageAdapterMock.getItem(`wallet_${wallet.walletId}`);
+      chainStoreState = storage.chains[wallet.network];
       expect(chainStoreState.transactions[fundingTx.hash]).to.exist
       expect(chainStoreState.txMetadata[fundingTx.hash]).to.exist
-      expect(walletStoreState.lastKnownBlock.height).to.equal(10)
+      expect(chainStoreState.lastSyncedBlockHeight).to.equal(10)
 
       /** End historical sync */
       txStreamMock.finish();
@@ -129,8 +127,8 @@ describe('Wallet', () => {
        */
       await wallet.storage.saveState();
       storage = storageAdapterMock.getItem(`wallet_${wallet.walletId}`)
-      walletStoreState = storage.chains[wallet.network].wallet;
-      expect(walletStoreState.lastKnownBlock.height).to.equal(36)
+      chainStoreState = storage.chains[wallet.network];
+      expect(chainStoreState.lastSyncedBlockHeight).to.equal(36)
 
       /** Start continuous sync */
       await txStreamWorker.execute()
@@ -158,10 +156,10 @@ describe('Wallet', () => {
        * */
       await wallet.storage.saveState();
       storage = storageAdapterMock.getItem(`wallet_${wallet.walletId}`)
-      walletStoreState = storage.chains[wallet.network].wallet;
+      chainStoreState = storage.chains[wallet.network];
       expect(Object.keys(chainStoreState.transactions)).to.have.lengthOf(1)
       expect(Object.keys(chainStoreState.txMetadata)).to.have.lengthOf(1)
-      expect(walletStoreState.lastKnownBlock.height).to.equal(37)
+      expect(chainStoreState.lastSyncedBlockHeight).to.equal(37)
 
       /**
        * Emit one more BLOCKHEIGHT_CHANGE event to ensure that previously considered
@@ -173,8 +171,7 @@ describe('Wallet', () => {
 
       await wallet.storage.saveState();
       storage = storageAdapterMock.getItem(`wallet_${wallet.walletId}`)
-      chainStoreState = storage.chains[wallet.network].chain;
-      walletStoreState = storage.chains[wallet.network].wallet;
+      chainStoreState = storage.chains[wallet.network];
 
       /**
        * Ensure that storage have been updated with the latest
@@ -182,7 +179,7 @@ describe('Wallet', () => {
        */
       expect(Object.keys(chainStoreState.transactions)).to.have.lengthOf(2)
       expect(Object.keys(chainStoreState.txMetadata)).to.have.lengthOf(2)
-      expect(walletStoreState.lastKnownBlock.height).to.equal(44)
+      expect(chainStoreState.lastSyncedBlockHeight).to.equal(44)
 
       /** Update chain height */
       bestBlockHeight = 52;
@@ -201,7 +198,7 @@ describe('Wallet', () => {
 
       /** Ensure that storage contains transaction and relevant chain data */
       expect(chainStore.state.transactions.size).to.equal(2);
-      expect(walletStore.state.lastKnownBlock.height).to.equal(44)
+      expect(chainStore.state.lastSyncedBlockHeight).to.equal(44)
 
       /** Start transactions sync plugin */
       txStreamWorker.onStart();
@@ -218,8 +215,8 @@ describe('Wallet', () => {
       /** Ensure that reorg-safe block set as last known block */
       await wallet.storage.saveState();
       let storage = storageAdapterMock.getItem(`wallet_${wallet.walletId}`)
-      let walletStoreState = storage.chains[wallet.network].wallet
-      expect(walletStoreState.lastKnownBlock.height).to.equal(46)
+      let chainStoreState = storage.chains[wallet.network];
+      expect(chainStoreState.lastSyncedBlockHeight).to.equal(46)
 
       /** Start continuous sync */
       await txStreamWorker.execute()
@@ -247,12 +244,11 @@ describe('Wallet', () => {
        */
       await wallet.storage.saveState();
       storage = storageAdapterMock.getItem(`wallet_${wallet.walletId}`)
-      let chainStoreState = storage.chains[wallet.network].chain
-      walletStoreState = storage.chains[wallet.network].wallet
+      chainStoreState = storage.chains[wallet.network]
 
       expect(Object.keys(chainStoreState.transactions)).to.have.lengthOf(2)
       expect(Object.keys(chainStoreState.txMetadata)).to.have.lengthOf(2)
-      expect(walletStoreState.lastKnownBlock.height).to.equal(46)
+      expect(chainStoreState.lastSyncedBlockHeight).to.equal(46)
 
 
       /**
@@ -265,8 +261,7 @@ describe('Wallet', () => {
 
       await wallet.storage.saveState();
       storage = storageAdapterMock.getItem(`wallet_${wallet.walletId}`)
-      chainStoreState = storage.chains[wallet.network].chain
-      walletStoreState = storage.chains[wallet.network].wallet
+      chainStoreState = storage.chains[wallet.network]
 
       /**
        * Ensure that storage have been updated with the latest
@@ -274,7 +269,7 @@ describe('Wallet', () => {
        */
       expect(Object.keys(chainStoreState.transactions)).to.have.lengthOf(3)
       expect(Object.keys(chainStoreState.txMetadata)).to.have.lengthOf(3)
-      expect(walletStoreState.lastKnownBlock.height).to.equal(53)
+      expect(chainStoreState.lastSyncedBlockHeight).to.equal(53)
     })
   })
 })

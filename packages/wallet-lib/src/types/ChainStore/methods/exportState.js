@@ -1,52 +1,44 @@
-// TODO(spv): [WIP] - this is a work in progress
-function exportState(lastKnownBlock) {
-  // TODO(spv): get rid of lastKnownBlock in favor of lastSyncedHeaderHeight
+const { STORAGE } = require('../../../CONSTANTS');
 
+function exportState() {
   const { state } = this;
   const {
     blockHeaders,
     transactions,
-    blockHeight,
+    blockHeight: chainHeight,
     fees,
     headersMetadata,
-    lastSyncedHeaderHeight, // TODO(spv): ensure it's saved with safeHeight in mind
+    lastSyncedHeaderHeight,
+    lastSyncedBlockHeight,
   } = state;
 
   const serializedState = {
+    chainHeight,
     blockHeaders: [],
     transactions: {},
     txMetadata: {},
     fees: {},
-    headersMetadata: Object.fromEntries(headersMetadata),
-    lastSyncedHeaderHeight,
-    chainHeight: blockHeight,
   };
 
-  let reorgSafeHeight = Infinity;
+  const reorgSafeHeight = chainHeight - STORAGE.REORG_SAFE_BLOCKS_COUNT;
+  const lastSyncedHeaderHeightToExport = Math.min(reorgSafeHeight, lastSyncedHeaderHeight);
+  const lastSyncedBlockHeightToExport = Math.min(reorgSafeHeight, lastSyncedBlockHeight);
 
-  if (blockHeight) {
-    reorgSafeHeight = blockHeight - 6;
-  }
+  const headersMetadataToExport = Object.fromEntries(
+    [...headersMetadata.entries()]
+      .filter(([, { height }]) => height <= lastSyncedHeaderHeightToExport),
+  );
 
-  // TODO(spv): control reorg safe height for headers
-
-  // Object.assign(serializedState, {
-  //   lastSyncedHeaderHeight: lastSyncedHeaderHeight > reorgSafeHeight
-  //     ? reorgSafeHeight
-  //     : lastSyncedHeaderHeight,
-  // });
-
-  // TODO(spv): temporary construction to control saving progress
-  let saveHeight = reorgSafeHeight;
-
-  if (lastKnownBlock < saveHeight) {
-    saveHeight = lastKnownBlock;
-  }
+  Object.assign(serializedState, {
+    lastSyncedHeaderHeight: lastSyncedHeaderHeightToExport,
+    lastSyncedBlockHeight: lastSyncedBlockHeightToExport,
+    headersMetadata: headersMetadataToExport,
+  });
 
   serializedState.blockHeaders = blockHeaders.map((header) => header.toString());
 
   [...transactions.entries()].forEach(([transactionHash, { transaction, metadata }]) => {
-    if (metadata && metadata.height && metadata.height <= saveHeight) {
+    if (metadata && metadata.height && metadata.height <= lastSyncedBlockHeightToExport) {
       serializedState.transactions[transactionHash] = transaction.toString();
       serializedState.txMetadata[transactionHash] = {
         ...metadata,

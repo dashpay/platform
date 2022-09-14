@@ -27,7 +27,6 @@ module.exports = (opts = {}) => {
     mockedAccount.storage.createChainStore('testnet');
 
     const walletStore = mockedAccount.storage.getWalletStore(walletId);
-    walletStore.importState(walletStoreMock);
     walletStore.createPathState(mockedAccount.accountPath);
 
     mockedAccount.storage.getChainStore('testnet').importState(chainStoreMock);

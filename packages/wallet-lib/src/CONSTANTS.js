@@ -101,8 +101,9 @@ const CONSTANTS = {
     UNKNOWN: 'unknown',
   },
   STORAGE: {
-    version: 2,
+    version: 3,
     autosaveIntervalTime: 10 * 1000,
+    REORG_SAFE_BLOCKS_COUNT: 6,
   },
   TXIN_OUTPOINT_TXID_BYTES: 36,
   TXIN_OUTPOINT_INDEX_BYTES: 4,

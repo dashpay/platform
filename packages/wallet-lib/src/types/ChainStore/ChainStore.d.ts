@@ -11,6 +11,7 @@ export declare interface ChainStoreState {
   fees: feeState;
   blockHeight: number;
   lastSyncedHeaderHeight: number,
+  lastSyncedBlockHeight: number,
   blockHeaders: any[],
   headersMetadata: Map<string, HeaderMetadata>,
   transactions: Map<string, any>

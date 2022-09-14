@@ -78,18 +78,6 @@ describe('BlockHeadersSyncWorker', () => {
       application: {},
       scheduleStateSave: sinon.spy(),
       saveState: () => {},
-      getDefaultWalletStore() {
-        if (!this.defaultWalletStore) {
-          this.defaultWalletStore = {
-            state: {
-              lastKnownBlock: null,
-            },
-            updateLastKnownBlock: sinon.spy(),
-          };
-        }
-
-        return this.defaultWalletStore;
-      },
       getDefaultChainStore() {
         if (!this.defaultChainStore) {
           this.defaultChainStore = {
@@ -98,6 +86,7 @@ describe('BlockHeadersSyncWorker', () => {
               lastSyncedHeaderHeight: -1,
             },
             updateLastSyncedHeaderHeight: sinon.spy(),
+            updateLastSyncedBlockHeight: sinon.spy(),
             updateChainHeight: sinon.spy(),
             setBlockHeaders: sinon.spy(),
             updateHeadersMetadata: sinon.spy(),
@@ -411,7 +400,6 @@ describe('BlockHeadersSyncWorker', () => {
 
     it('should update chain height with a single header', async () => {
       const chainStore = blockHeadersSyncWorker.storage.getDefaultChainStore();
-      const walletStore = blockHeadersSyncWorker.storage.getDefaultWalletStore();
       const { blockHeadersProvider: { spvChain } } = blockHeadersSyncWorker.transport.client;
 
       const headers = ['0x10000006'];
@@ -425,7 +413,7 @@ describe('BlockHeadersSyncWorker', () => {
 
       expect(chainStore.updateChainHeight)
         .to.have.been.calledWith(batchHeadHeight);
-      expect(walletStore.updateLastKnownBlock)
+      expect(chainStore.updateLastSyncedBlockHeight)
         .to.have.been.calledWith(batchHeadHeight);
       expect(chainStore.updateLastSyncedHeaderHeight)
         .to.have.been.calledWith(batchHeadHeight);
@@ -438,7 +426,6 @@ describe('BlockHeadersSyncWorker', () => {
 
     it('should update chain height with an array of headers', async () => {
       const chainStore = blockHeadersSyncWorker.storage.getDefaultChainStore();
-      const walletStore = blockHeadersSyncWorker.storage.getDefaultWalletStore();
 
       const batchHeadHeight = 1010;
       const headers = ['0x10000006', '0x10000007', '0x10000008'];
@@ -457,7 +444,7 @@ describe('BlockHeadersSyncWorker', () => {
       const newHeight = batchHeadHeight + headers.length - 1;
       expect(chainStore.updateChainHeight)
         .to.have.been.calledWith(newHeight);
-      expect(walletStore.updateLastKnownBlock)
+      expect(chainStore.updateLastSyncedBlockHeight)
         .to.have.been.calledWith(newHeight);
       expect(chainStore.updateLastSyncedHeaderHeight)
         .to.have.been.calledWith(newHeight);
@@ -469,14 +456,13 @@ describe('BlockHeadersSyncWorker', () => {
 
     it('should do nothing if height hasn\'t changed', async () => {
       const chainStore = blockHeadersSyncWorker.storage.getDefaultChainStore();
-      const walletStore = blockHeadersSyncWorker.storage.getDefaultWalletStore();
       await blockHeadersSyncWorker.continuousChainUpdateHandler(
         ['0x10000001', '0x10000002'],
         999,
       );
 
       expect(chainStore.updateChainHeight).to.have.not.been.called;
-      expect(walletStore.updateLastKnownBlock).to.have.not.been.called;
+      expect(chainStore.updateLastSyncedBlockHeight).to.have.not.been.called;
       expect(chainStore.updateLastSyncedHeaderHeight).to.have.not.been.called;
       expect(chainStore.setBlockHeaders).to.have.not.been.called;
       expect(blockHeadersSyncWorker.storage.scheduleStateSave)
@@ -485,7 +471,6 @@ describe('BlockHeadersSyncWorker', () => {
 
     it('should emit error in case headers array is empty', async () => {
       const chainStore = blockHeadersSyncWorker.storage.getDefaultChainStore();
-      const walletStore = blockHeadersSyncWorker.storage.getDefaultWalletStore();
 
       const batchHeadHeight = 1010;
       blockHeadersSyncWorker.parentEvents.on('error', () => {});
@@ -500,7 +485,7 @@ describe('BlockHeadersSyncWorker', () => {
         .to.equal(`No new headers received for batch at height ${batchHeadHeight}`);
 
       expect(chainStore.updateChainHeight).to.have.not.been.called;
-      expect(walletStore.updateLastKnownBlock).to.have.not.been.called;
+      expect(chainStore.updateLastSyncedBlockHeight).to.have.not.been.called;
       expect(chainStore.updateLastSyncedHeaderHeight).to.have.not.been.called;
       expect(chainStore.setBlockHeaders).to.have.not.been.called;
       expect(blockHeadersSyncWorker.storage.scheduleStateSave)
@@ -509,7 +494,6 @@ describe('BlockHeadersSyncWorker', () => {
 
     it('should emit error in case new height is less than current height', async () => {
       const chainStore = blockHeadersSyncWorker.storage.getDefaultChainStore();
-      const walletStore = blockHeadersSyncWorker.storage.getDefaultWalletStore();
 
       const batchHeadHeight = 900;
       blockHeadersSyncWorker.parentEvents.on('error', () => {});
@@ -524,7 +508,7 @@ describe('BlockHeadersSyncWorker', () => {
         .to.equal('New chain height 900 is less than latest height 1000');
 
       expect(chainStore.updateChainHeight).to.have.not.been.called;
-      expect(walletStore.updateLastKnownBlock).to.have.not.been.called;
+      expect(chainStore.updateLastSyncedBlockHeight).to.have.not.been.called;
       expect(chainStore.updateLastSyncedHeaderHeight).to.have.not.been.called;
       expect(chainStore.setBlockHeaders).to.have.not.been.called;
       expect(blockHeadersSyncWorker.storage.scheduleStateSave)

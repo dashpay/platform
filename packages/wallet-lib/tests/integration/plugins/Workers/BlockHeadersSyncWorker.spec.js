@@ -2,6 +2,7 @@ const { expect } = require('chai');
 const EventEmitter = require('events');
 const { Block } = require('@dashevo/dashcore-lib');
 const EVENTS = require('../../../../src/EVENTS');
+const CONSTANTS = require('../../../../src/CONSTANTS');
 const BlockHeadersSyncWorker = require('../../../../src/plugins/Workers/BlockHeadersSyncWorker/BlockHeadersSyncWorker');
 const mockBlockHeadersProvider = require('../../../../src/test/mocks/mockBlockHeadersProvider');
 const mockStorage = require('../../../../src/test/mocks/mockStorage');
@@ -152,7 +153,6 @@ describe('BlockHeadersSyncWorker', () => {
     it('should do continuous sync', async () => {
       const { storage } = blockHeadersSyncWorker;
       const chainStore = storage.getDefaultChainStore();
-      const walletStore = storage.getDefaultWalletStore();
 
       const prevSyncedHeaderHeight = chainStore.state.lastSyncedHeaderHeight;
       await blockHeadersSyncWorker.execute();
@@ -180,10 +180,8 @@ describe('BlockHeadersSyncWorker', () => {
         .to.equal(newChainHeight);
       expect(chainStore.state.blockHeight)
         .to.equal(newChainHeight);
-      expect(walletStore.state.lastKnownBlock)
-        .to.deep.equal({
-          height: newChainHeight,
-        });
+      expect(chainStore.state.lastSyncedBlockHeight)
+        .to.equal(newChainHeight);
       expect(chainStore.state.headersMetadata.get(newHeader.hash))
         .to.deep.equal({
           height: newChainHeight,
@@ -294,7 +292,6 @@ describe('BlockHeadersSyncWorker', () => {
     it('[second launch] should do continuous sync and stop', async () => {
       const { storage } = blockHeadersSyncWorker;
       const chainStore = storage.getDefaultChainStore();
-      const walletStore = storage.getDefaultWalletStore();
 
       const prevSyncedHeaderHeight = chainStore.state.lastSyncedHeaderHeight;
       await blockHeadersSyncWorker.execute();
@@ -322,10 +319,8 @@ describe('BlockHeadersSyncWorker', () => {
         .to.equal(newChainHeight);
       expect(chainStore.state.blockHeight)
         .to.equal(newChainHeight);
-      expect(walletStore.state.lastKnownBlock)
-        .to.deep.equal({
-          height: newChainHeight,
-        });
+      expect(chainStore.state.lastSyncedBlockHeight)
+        .to.equal(newChainHeight);
       expect(chainStore.state.headersMetadata.get(newHeader.hash))
         .to.deep.equal({
           height: newChainHeight,
@@ -350,7 +345,8 @@ describe('BlockHeadersSyncWorker', () => {
       storage.lastRehydrate = null;
       await storage.rehydrateState();
 
-      const prevSyncedHeaderHeight = chainStore.state.lastSyncedHeaderHeight;
+      const prevSyncedHeaderHeight = chainStore.state.lastSyncedHeaderHeight
+        + CONSTANTS.STORAGE.REORG_SAFE_BLOCKS_COUNT;
 
       // Simulate chain update
       const headersToAdd = 50;
@@ -391,7 +387,6 @@ describe('BlockHeadersSyncWorker', () => {
     it('[third launch] should do continuous sync and stop', async () => {
       const { storage } = blockHeadersSyncWorker;
       const chainStore = storage.getDefaultChainStore();
-      const walletStore = storage.getDefaultWalletStore();
 
       const prevSyncedHeaderHeight = chainStore.state.lastSyncedHeaderHeight;
       await blockHeadersSyncWorker.execute();
@@ -419,10 +414,8 @@ describe('BlockHeadersSyncWorker', () => {
         .to.equal(newChainHeight);
       expect(chainStore.state.blockHeight)
         .to.equal(newChainHeight);
-      expect(walletStore.state.lastKnownBlock)
-        .to.deep.equal({
-          height: newChainHeight,
-        });
+      expect(chainStore.state.lastSyncedBlockHeight)
+        .to.equal(newChainHeight);
       expect(chainStore.state.headersMetadata.get(newHeader.hash))
         .to.deep.equal({
           height: newChainHeight,

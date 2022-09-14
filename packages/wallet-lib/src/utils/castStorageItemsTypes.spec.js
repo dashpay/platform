@@ -14,6 +14,7 @@ const mockChainStorage = {
   },
   "chainHeight": 1000,
   "lastSyncedHeaderHeight": 1,
+  "lastSyncedBlockHeight": 1,
   "blockHeaders": [
     "000000206ff6709b4816a98a7601bc9626a597191fe4f788228a037de3bd839e811f4913c49de57ac9553f0cd2529c94eaa9781273f315a792c4148eb7e3756c9cd7e1ce40285562ffff7f2000000000"
   ],
@@ -35,12 +36,6 @@ const mockChainStorage = {
   }
 }
 
-const mockWalletStorage = {
-  "lastKnownBlock": {
-    "height": 11703
-  }
-}
-
 describe('Utils - castStorageItemsTypes', function suite() {
   it('should proceed with valid schema', function () {
     const chainStore = castItemTypes(mockChainStorage, ChainStore.prototype.SCHEMA)
@@ -50,10 +45,8 @@ describe('Utils - castStorageItemsTypes', function suite() {
     expect(chainStore.txMetadata.fakeTxHash.isInstantLocked).to.be.true
     expect(chainStore.txMetadata.fakeTxHash.isChainLocked).to.be.true
     expect(typeof chainStore.txMetadata.fakeTxHash.height).to.be.equal('number')
-
-    const walletStore = castItemTypes(mockWalletStorage, WalletStore.prototype.SCHEMA)
-
-    expect(walletStore.lastKnownBlock.height).to.be.equal(11703)
+    expect(typeof chainStore.lastSyncedHeaderHeight).to.be.equal('number')
+    expect(typeof chainStore.lastSyncedBlockHeight).to.be.equal('number')
   });
 
   it('should throw if no schema passed', function () {
@@ -62,9 +55,9 @@ describe('Utils - castStorageItemsTypes', function suite() {
   });
 
   it('should throw if invalid primitive value passed', function () {
-    const mockWalletStorageWithWrongType = _.cloneDeep(mockWalletStorage)
-    mockWalletStorageWithWrongType.lastKnownBlock.height = '11703'
-    expect(() => castItemTypes(mockWalletStorageWithWrongType, WalletStore.prototype.SCHEMA))
+    const mockChainStorageWithWrongType = _.cloneDeep(mockChainStorage)
+    mockChainStorageWithWrongType.lastSyncedBlockHeight = '11703'
+    expect(() => castItemTypes(mockChainStorageWithWrongType, ChainStore.prototype.SCHEMA))
       .to.throw(Error, 'Value "11703" is not of type "number"');
   });
 

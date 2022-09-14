@@ -11,42 +11,20 @@ const saveState = async function saveState() {
 
     const self = this;
     try {
-      const currentChainHeight = this.getChainStore(this.currentNetwork).state.blockHeight;
-
-      const serializedWallets = [...self.wallets].reduce((acc, [walletId, walletStore]) => {
-        let walletStoreState;
-        if (walletId === this.currentWalletId) {
-          // For current wallet we need to take into account the current chain height
-          walletStoreState = walletStore.exportState(currentChainHeight);
-        } else {
-          // Others stay unaffected
-          walletStoreState = walletStore.exportState();
-        }
-
-        acc[walletId] = walletStoreState;
-        return acc;
-      }, {});
-
       const serializedChains = [...self.chains].reduce((acc, [chainId, chainStore]) => {
         acc[chainId] = chainStore.exportState();
         return acc;
       }, {});
 
-      const walletIds = Object.keys(serializedWallets);
-      for (let i = 0; i < walletIds.length; i += 1) {
-        const walletId = walletIds[i];
-        const storage = { version: CONSTANTS.STORAGE.version, chains: {} };
-        const wallet = serializedWallets[walletId];
+      const walletId = this.currentWalletId;
+      const storage = { version: CONSTANTS.STORAGE.version, chains: {} };
 
-        Object.keys(serializedChains).forEach((chainNetwork) => {
-          const chain = serializedChains[chainNetwork];
+      Object.keys(serializedChains).forEach((chainNetwork) => {
+        storage.chains[chainNetwork] = serializedChains[chainNetwork];
+      });
 
-          storage.chains[chainNetwork] = { chain, wallet };
-        });
-
-        // eslint-disable-next-line
-        await this.adapter.setItem(`wallet_${walletId}`, storage);
-      }
+      // eslint-disable-next-line
+      await this.adapter.setItem(`wallet_${walletId}`, storage);
 
       this.emit(SAVE_STATE_SUCCESS, { type: SAVE_STATE_SUCCESS, payload: this.lastSave });
       return true;
