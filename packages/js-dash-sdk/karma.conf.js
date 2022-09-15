@@ -8,7 +8,6 @@ const karmaMocha = require('karma-mocha');
 const karmaMochaReporter = require('karma-mocha-reporter');
 const karmaChai = require('karma-chai');
 const karmaChromeLauncher = require('karma-chrome-launcher');
-const karmaFirefoxLauncher = require('karma-firefox-launcher');
 const karmaWebpack = require('karma-webpack');
 
 if (dotenvResult.error) {
@@ -43,7 +42,7 @@ module.exports = (config) => {
     colors: true,
     logLevel: config.LOG_INFO,
     autoWatch: false,
-    browsers: ['chromeWithoutSecurity', 'FirefoxHeadless'],
+    browsers: [ 'chromeWithoutSecurity'],
     singleRun: false,
     concurrency: Infinity,
     browserNoActivityTimeout: 7 * 60 * 1000, // 30000 default
@@ -54,17 +53,9 @@ module.exports = (config) => {
       karmaMochaReporter,
       karmaChai,
       karmaChromeLauncher,
-      karmaFirefoxLauncher,
       karmaWebpack,
     ],
     customLaunchers: {
-      FirefoxHeadless: {
-        base: 'Firefox',
-        flags: ['-headless'],
-        prefs: {
-          'network.websocket.allowInsecureFromHTTPS': true
-        }
-      },
       chromeWithoutSecurity: {
         base: 'ChromeHeadless',
         flags: ['--allow-insecure-localhost'],
