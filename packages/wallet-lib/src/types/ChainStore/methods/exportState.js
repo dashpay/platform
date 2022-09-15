@@ -35,7 +35,9 @@ function exportState() {
     headersMetadata: headersMetadataToExport,
   });
 
-  serializedState.blockHeaders = blockHeaders.map((header) => header.toString());
+  serializedState.blockHeaders = blockHeaders
+    .slice(0, blockHeaders.length - STORAGE.REORG_SAFE_BLOCKS_COUNT)
+    .map((header) => header.toString());
 
   [...transactions.entries()].forEach(([transactionHash, { transaction, metadata }]) => {
     if (metadata && metadata.height && metadata.height <= lastSyncedBlockHeightToExport) {
