@@ -173,7 +173,7 @@ class TransactionSyncStreamWorker extends Worker {
     if (skipSyncBefore > lastSyncedBlockHeight) {
       this.setLastSyncedBlockHeight(skipSyncBefore);
     } else if (lastSyncedBlockHeight !== -1) {
-      this.setLastSyncedBlockHeight(lastSyncedBlockHeight);
+      this.setLastSyncedBlockHeight(lastSyncedBlockHeight + 1);
     }
 
     // We first need to sync up initial historical transactions
