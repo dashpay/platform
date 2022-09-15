@@ -81,6 +81,8 @@ describe('BlockHeadersSyncWorker', () => {
 
       // Wait for the stream to start
       onStartPromise = blockHeadersSyncWorker.onStart();
+      // Wait two ticks to init wasm x11
+      await waitOneTick();
       await waitOneTick();
 
       // Send 1/3 of every batch
