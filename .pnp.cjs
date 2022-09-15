@@ -2496,6 +2496,15 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
         }]\
       ]],\
       ["@dashevo/dashd-rpc", [\
+        ["https://github.com/dashevo/dashd-rpc.git#commit=d7b50ce20960fa776699f582536c53bf3b94b167", {\
+          "packageLocation": "./.yarn/cache/@dashevo-dashd-rpc-https-f7d1f60558-06b74f5a5b.zip/node_modules/@dashevo/dashd-rpc/",\
+          "packageDependencies": [\
+            ["@dashevo/dashd-rpc", "https://github.com/dashevo/dashd-rpc.git#commit=d7b50ce20960fa776699f582536c53bf3b94b167"],\
+            ["async", "npm:3.2.2"],\
+            ["bluebird", "npm:3.7.2"]\
+          ],\
+          "linkType": "HARD"\
+        }],\
         ["npm:2.3.2", {\
           "packageLocation": "./.yarn/cache/@dashevo-dashd-rpc-npm-2.3.2-119e544222-56ff41d695.zip/node_modules/@dashevo/dashd-rpc/",\
           "packageDependencies": [\
@@ -7740,7 +7749,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           "packageDependencies": [\
             ["dashmate", "workspace:packages/dashmate"],\
             ["@dashevo/dashcore-lib", "npm:0.19.41"],\
-            ["@dashevo/dashd-rpc", "npm:2.3.2"],\
+            ["@dashevo/dashd-rpc", "https://github.com/dashevo/dashd-rpc.git#commit=d7b50ce20960fa776699f582536c53bf3b94b167"],\
             ["@dashevo/dashpay-contract", "workspace:packages/dashpay-contract"],\
             ["@dashevo/docker-compose", "npm:0.24.1"],\
             ["@dashevo/dpns-contract", "workspace:packages/dpns-contract"],\

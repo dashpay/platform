@@ -1496,6 +1496,16 @@ __metadata:
   languageName: node
   linkType: hard
 
+"@dashevo/dashd-rpc@github:dashevo/dashd-rpc#spork":
+  version: 2.4.1
+  resolution: "@dashevo/dashd-rpc@https://github.com/dashevo/dashd-rpc.git#commit=d7b50ce20960fa776699f582536c53bf3b94b167"
+  dependencies:
+    async: ^3.2.0
+    bluebird: ^3.7.2
+  checksum: 06b74f5a5b27e31608ac10fd1112051312ab00d32262d1ff7e45e8d2cd929a631d9d895f2b99a053cd598b17a456d97f2a7a0ec9cbb12fd8448629b779378a31
+  languageName: node
+  linkType: hard
+
 "@dashevo/dashd-rpc@npm:^2.3.0, @dashevo/dashd-rpc@npm:^2.3.2":
   version: 2.3.2
   resolution: "@dashevo/dashd-rpc@npm:2.3.2"
@@ -5857,7 +5867,7 @@ __metadata:
   resolution: "dashmate@workspace:packages/dashmate"
   dependencies:
     "@dashevo/dashcore-lib": ~0.19.41
-    "@dashevo/dashd-rpc": ^2.3.2
+    "@dashevo/dashd-rpc": "github:dashevo/dashd-rpc#spork"
     "@dashevo/dashpay-contract": "workspace:~"
     "@dashevo/docker-compose": ^0.24.1
     "@dashevo/dpns-contract": "workspace:~"
