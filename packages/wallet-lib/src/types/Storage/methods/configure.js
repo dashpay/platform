@@ -19,12 +19,25 @@ module.exports = async function configure(opts = {}) {
   const storage = await this.adapter.getItem(`wallet_${opts.walletId}`);
   const storageVersion = storage && storage.version;
 
-  if (!(this.adapter instanceof InMem) && storageVersion !== CONSTANTS.STORAGE.version) {
-    if (typeof version === 'number') {
-      logger.warn('Storage version mismatch, resyncing from start');
+  if (storage && !(this.adapter instanceof InMem)) {
+    if (storageVersion !== CONSTANTS.STORAGE.version) {
+      if (typeof storageVersion === 'number') {
+        logger.warn('Storage version mismatch, re-syncing from start');
+      }
+
+      await this.adapter.setItem(`wallet_${opts.walletId}`, null);
     }
 
-    await this.adapter.setItem(`wallet_${opts.walletId}`, null);
+    const { skipSynchronizationBeforeHeight } = this.application.syncOptions || {};
+    const skippedSyncBefore = storage.unsafeOptions && storage.unsafeOptions.skipSync;
+
+    if (skippedSyncBefore && !skipSynchronizationBeforeHeight) {
+      logger.warn('\'skipSynchronizationBeforeHeight\' option has been unset since the last use, re-syncing from start');
+      await this.adapter.setItem(`wallet_${opts.walletId}`, null);
+    } else if (!skippedSyncBefore && skipSynchronizationBeforeHeight) {
+      logger.warn(`skipSynchronizationBeforeHeight' option has been set, syncing from ${skipSynchronizationBeforeHeight}`);
+      await this.adapter.setItem(`wallet_${opts.walletId}`, null);
+    }
   }
 
   this.createWalletStore(opts.walletId);

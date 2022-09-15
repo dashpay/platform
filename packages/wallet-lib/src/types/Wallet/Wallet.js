@@ -135,11 +135,6 @@ class Wallet extends EventEmitter {
     this.storage = new Storage(storageOpts);
 
     this.storage.application.network = this.network;
-    this.storage.configure({
-      adapter: opts.adapter,
-      walletId: this.walletId,
-      network: this.network,
-    });
 
     if (createdFromNewMnemonic) {
       // As it is pretty complicated to pass any of wallet options
@@ -155,14 +150,16 @@ class Wallet extends EventEmitter {
           + ' created from the new mnemonic');
       }
     } else if (this.unsafeOptions.skipSynchronizationBeforeHeight) {
-      // TODO(spv): ensure a proper chain re-sync workflow for the case where:
-      // - User has storage adapter enabled
-      // - User sets skipSynchronizationBeforeHeight to some value and uses wallet
-      // - User then removes this option and uses wallet again.
       this.storage.application.syncOptions = {
         skipSynchronizationBeforeHeight: this.unsafeOptions.skipSynchronizationBeforeHeight,
       };
     }
+
+    this.storage.configure({
+      adapter: opts.adapter,
+      walletId: this.walletId,
+      network: this.network,
+    });
 
     const plugins = opts.plugins || defaultOptions.plugins;
     this.plugins = {};

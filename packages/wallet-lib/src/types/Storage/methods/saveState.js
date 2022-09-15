@@ -17,7 +17,16 @@ const saveState = async function saveState() {
       }, {});
 
       const walletId = this.currentWalletId;
-      const storage = { version: CONSTANTS.STORAGE.version, chains: {} };
+      const storage = {
+        version: CONSTANTS.STORAGE.version,
+        chains: {},
+        // Memorize skipSync flag in order to wipe the storage
+        // and re-sync from block 1 in case the option is removed on next launch
+        unsafeOptions: {
+          skipSync: this.application.syncOptions
+            && typeof this.application.syncOptions.skipSynchronizationBeforeHeight === 'number',
+        },
+      };
 
       Object.keys(serializedChains).forEach((chainNetwork) => {
         storage.chains[chainNetwork] = serializedChains[chainNetwork];
