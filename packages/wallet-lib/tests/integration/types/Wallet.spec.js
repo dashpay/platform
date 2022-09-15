@@ -15,7 +15,7 @@ const {waitOneTick} = require("../../../src/test/utils");
 const mockMerkleBlock = require("../../../src/test/mocks/mockMerkleBlock");
 
 describe('Wallet', () => {
-  // TODO(spv): write test that ensures that storage getting wiped after removing skipSynchronizationBeofreHeight flag
+  // TODO: write test that ensures that storage getting wiped after removing skipSynchronizationBeofreHeight flag
   describe('Storage', () => {
     let wallet;
     let txStreamMock;
@@ -206,7 +206,7 @@ describe('Wallet', () => {
 
       /** Ensure that historical synchronization starts from last known block */
       expect(transportMock.subscribeToTransactionsWithProofs.lastCall.args[1])
-        .to.deep.equal({ fromBlockHeight: 44, count: 8 });
+        .to.deep.equal({ fromBlockHeight: 45, count: 7 });
 
       /** End historical sync */
       txStreamMock.finish();
