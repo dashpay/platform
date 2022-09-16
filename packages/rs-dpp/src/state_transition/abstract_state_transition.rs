@@ -75,6 +75,13 @@ pub trait StateTransitionLike:
                 let signature = signer::sign(&data, private_key)?;
                 self.set_signature(signature.to_vec());
             }
+
+            // the default behavior from
+            // https://github.com/dashevo/platform/blob/6b02b26e5cd3a7c877c5fdfe40c4a4385a8dda15/packages/js-dpp/lib/stateTransition/AbstractStateTransition.js#L187
+            // is to return the error for the BIP13_SCRIPT_HASH
+            KeyType::BIP13_SCRIPT_HASH => {
+                return Err(ProtocolError::InvalidIdentityPublicKeyTypeError { public_key_type: 3 })
+            }
         };
         Ok(())
     }

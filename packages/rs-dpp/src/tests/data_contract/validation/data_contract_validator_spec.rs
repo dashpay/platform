@@ -1980,7 +1980,7 @@ mod indices {
             "name" : "index_1",
             "properties" : [
                 { "$id"  : "asc"},
-                { "firstName"  : "desc"},
+                { "firstName"  : "asc"},
             ]
         });
 
@@ -2467,6 +2467,41 @@ mod indices {
                 })
             );
         }
+    }
+
+    // As https://github.com/dashevo/platform/pull/435 suggests, the `desc` ordering is disabled
+    // temporarily until reverse ordering become implemented.
+    #[test]
+    fn index_with_desc_order_is_disallowed() {
+        let TestData {
+            mut raw_data_contract,
+            data_contract_validator,
+            ..
+        } = setup_test();
+
+        let index_definition = json!({
+            "name" : "index_1",
+            "properties" : [
+                { "$id"  : "desc"},
+            ]
+        });
+
+        if let Some(JsonValue::Array(ref mut indices)) =
+            raw_data_contract["documents"]["indexedDocument"].get_mut("indices")
+        {
+            indices.push(index_definition)
+        }
+
+        let result = data_contract_validator
+            .validate(&raw_data_contract)
+            .expect("validation result should be returned");
+
+        let schema_error = get_schema_error(&result, 0);
+        assert_eq!(
+            "/documents/indexedDocument/indices/6/properties/0/$id",
+            schema_error.instance_path().to_string()
+        );
+        assert_eq!(Some("enum"), schema_error.keyword(),);
     }
 }
 

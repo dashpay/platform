@@ -84,6 +84,8 @@ impl TPublicKeysValidator for PublicKeysValidator {
                 },
                 // Do nothing
                 KeyType::ECDSA_HASH160 => None,
+                // Do nothing
+                KeyType::BIP13_SCRIPT_HASH => None,
             };
 
             if let Some(error) = validation_error {

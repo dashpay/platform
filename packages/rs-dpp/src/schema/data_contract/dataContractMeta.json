@@ -422,8 +422,7 @@
                         "additionalProperties": {
                           "type": "string",
                           "enum": [
-                            "asc",
-                            "desc"
+                            "asc"
                           ]
                         },
                         "minProperties": 1,

@@ -106,7 +106,7 @@ pub mod key_type {
 
         let result = validator.validate_keys(&raw_public_keys).unwrap();
         // TODO: in the original code, there was only one error
-        let errors = assert_consensus_errors!(&result, ConsensusError::JsonSchemaError, 3);
+        let errors = assert_consensus_errors!(&result, ConsensusError::JsonSchemaError, 4);
         let error = errors.get(0).unwrap();
 
         assert_eq!(error.instance_path().to_string(), "/data");
@@ -241,6 +241,43 @@ pub mod data {
             let (mut raw_public_keys, validator) = setup_test();
             serde_set_ref(raw_public_keys.get_mut(1).unwrap(), "data", vec![0; 49]);
             serde_set_ref(raw_public_keys.get_mut(1).unwrap(), "type", 1);
+
+            let result = validator.validate_keys(&raw_public_keys).unwrap();
+            let errors = assert_consensus_errors!(&result, ConsensusError::JsonSchemaError, 1);
+            let error = errors.get(0).unwrap();
+
+            assert_eq!(error.instance_path().to_string(), "/data");
+            assert_eq!(error.keyword().unwrap(), "maxItems");
+        }
+    }
+
+    pub mod bip13_hash_script {
+        use crate::assert_consensus_errors;
+        use crate::errors::consensus::ConsensusError;
+        use crate::identity::validation::TPublicKeysValidator;
+        use crate::identity::KeyType;
+        use crate::tests::identity::validation::public_keys_validator_spec::setup_test;
+        use crate::tests::utils::serde_set_ref;
+
+        #[test]
+        pub fn should_be_no_less_than_20_bytes() {
+            let (mut raw_public_keys, validator) = setup_test();
+            serde_set_ref(raw_public_keys.get_mut(1).unwrap(), "data", vec![0; 19]);
+            serde_set_ref(raw_public_keys.get_mut(1).unwrap(), "type", 3);
+
+            let result = validator.validate_keys(&raw_public_keys).unwrap();
+            let errors = assert_consensus_errors!(&result, ConsensusError::JsonSchemaError, 1);
+            let error = errors.get(0).unwrap();
+
+            assert_eq!(error.instance_path().to_string(), "/data");
+            assert_eq!(error.keyword().unwrap(), "minItems");
+        }
+
+        #[test]
+        pub fn should_be_no_longer_than_20_bytes() {
+            let (mut raw_public_keys, validator) = setup_test();
+            serde_set_ref(raw_public_keys.get_mut(1).unwrap(), "data", vec![0; 21]);
+            serde_set_ref(raw_public_keys.get_mut(1).unwrap(), "type", 3);
 
             let result = validator.validate_keys(&raw_public_keys).unwrap();
             let errors = assert_consensus_errors!(&result, ConsensusError::JsonSchemaError, 1);

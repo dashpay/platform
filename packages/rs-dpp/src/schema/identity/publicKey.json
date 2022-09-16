@@ -13,9 +13,10 @@
 				"enum": [
 					0,
 					1,
-					2
+					2,
+					3
 				],
-				"description": "Public key type. 0 - ECDSA Secp256k1, 1 - BLS 12-381, 2 - ECDSA Secp256k1 Hash160",
+				"description": "Public key type. 0 - ECDSA Secp256k1, 1 - BLS 12-381, 2 - ECDSA Secp256k1 Hash160, 3 - BIP 13 Hash160",
 				"$comment": "It can't be changed after adding a key"
 			},
 			"purpose": {
@@ -107,6 +108,27 @@
 							"maxItems": 20,
 							"description": "ECDSA Secp256k1 public key Hash160",
 							"$comment": "It must be a valid key hash of the specified type and unique for the identity. It can’t be changed after adding a key"
+						}
+					}
+				}
+			},
+			{
+				"if": {
+					"properties": {
+						"type": {
+							"const": 3
+						}
+					}
+				},
+				"then": {
+					"properties": {
+						"data": {
+							"type": "array",
+							"byteArray": true,
+							"minItems": 20,
+							"maxItems": 20,
+							"description": "BIP13 script public key",
+							"$comment": "It must be a valid script hash of the specified type and unique for the identity"
 						}
 					}
 				}
