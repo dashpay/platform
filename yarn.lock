@@ -1389,7 +1389,7 @@ __metadata:
     "@dashevo/dapi-client": "workspace:~"
     "@dashevo/dapi-grpc": "workspace:~"
     "@dashevo/dashcore-lib": ~0.19.41
-    "@dashevo/dashd-rpc": ^2.3.2
+    "@dashevo/dashd-rpc": ^2.4.2
     "@dashevo/dp-services-ctl": "github:dashevo/js-dp-services-ctl#v0.19-dev"
     "@dashevo/dpp": "workspace:~"
     "@dashevo/grpc-common": "workspace:~"
@@ -1496,23 +1496,23 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@dashevo/dashd-rpc@github:dashevo/dashd-rpc#spork":
-  version: 2.4.1
-  resolution: "@dashevo/dashd-rpc@https://github.com/dashevo/dashd-rpc.git#commit=d7b50ce20960fa776699f582536c53bf3b94b167"
-  dependencies:
-    async: ^3.2.0
-    bluebird: ^3.7.2
-  checksum: 06b74f5a5b27e31608ac10fd1112051312ab00d32262d1ff7e45e8d2cd929a631d9d895f2b99a053cd598b17a456d97f2a7a0ec9cbb12fd8448629b779378a31
-  languageName: node
-  linkType: hard
-
-"@dashevo/dashd-rpc@npm:^2.3.0, @dashevo/dashd-rpc@npm:^2.3.2":
+"@dashevo/dashd-rpc@npm:^2.3.0":
   version: 2.3.2
   resolution: "@dashevo/dashd-rpc@npm:2.3.2"
   dependencies:
     async: ^3.2.0
     bluebird: ^3.7.2
   checksum: 56ff41d695b4ce44922228ee74cdeea83de212d0b75ba6b6f400ad363a12f004528b18d1377b231ffb020f79a7fa6c9f1a911f9ae1eb4f79b5ad16dade4672ee
+  languageName: node
+  linkType: hard
+
+"@dashevo/dashd-rpc@npm:^2.4.2":
+  version: 2.4.2
+  resolution: "@dashevo/dashd-rpc@npm:2.4.2"
+  dependencies:
+    async: ^3.2.0
+    bluebird: ^3.7.2
+  checksum: fbbb49ed2cdec999319bd1efd13074b4c471cab14a9d054a16d762050935d5b6eefa8af6d29235b78e12d77a740aef8e386cee88ab6bde2807c7d850d979e76c
   languageName: node
   linkType: hard
 
@@ -1687,7 +1687,7 @@ __metadata:
     "@dashevo/abci": ~0.23.0-dev.1
     "@dashevo/dapi-grpc": "workspace:~"
     "@dashevo/dashcore-lib": ~0.19.41
-    "@dashevo/dashd-rpc": ^2.3.2
+    "@dashevo/dashd-rpc": ^2.4.2
     "@dashevo/dashpay-contract": "workspace:~"
     "@dashevo/dp-services-ctl": "github:dashevo/js-dp-services-ctl#v0.19-dev"
     "@dashevo/dpns-contract": "workspace:~"
@@ -5867,7 +5867,7 @@ __metadata:
   resolution: "dashmate@workspace:packages/dashmate"
   dependencies:
     "@dashevo/dashcore-lib": ~0.19.41
-    "@dashevo/dashd-rpc": "github:dashevo/dashd-rpc#spork"
+    "@dashevo/dashd-rpc": ^2.4.2
     "@dashevo/dashpay-contract": "workspace:~"
     "@dashevo/docker-compose": ^0.24.1
     "@dashevo/dpns-contract": "workspace:~"
