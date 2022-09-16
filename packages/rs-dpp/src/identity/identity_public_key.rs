@@ -63,6 +63,7 @@ pub enum Purpose {
     ENCRYPTION = 1,
     /// this key cannot be used for signing documents
     DECRYPTION = 2,
+    WITHDRAW = 3,
 }
 
 impl TryFrom<u8> for Purpose {
@@ -160,6 +161,7 @@ lazy_static! {
         );
         m.insert(Purpose::ENCRYPTION, vec![SecurityLevel::MEDIUM]);
         m.insert(Purpose::DECRYPTION, vec![SecurityLevel::MEDIUM]);
+        m.insert(Purpose::WITHDRAW, vec![SecurityLevel::MEDIUM]);
         m
     };
 }
