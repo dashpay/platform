@@ -139,7 +139,6 @@ class BlockHeadersSyncWorker extends Worker {
 
     this.updateProgress();
 
-    // TODO(spv): cover with unit test
     await this.storage.saveState();
 
     if (!stopped) {

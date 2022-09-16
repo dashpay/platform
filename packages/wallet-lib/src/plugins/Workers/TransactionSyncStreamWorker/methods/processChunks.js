@@ -15,13 +15,6 @@ async function processTransactions(transactions) {
     .filterAddressesTransactions(transactions, addresses, network);
   if (walletTransactions.length) {
     walletTransactions.forEach((tx) => {
-      // TODO(spv): fine tune this behaviour for the cases where
-      // after TX stream reconnected, we are obtaining the same transactions that
-      // already in this.transactionsToVerify
-
-      // if (this.transactionsToVerify[tx.hash]) {
-      //   throw new Error(`Transaction ${tx.hash} already sits in verification queue`);
-      // }
       this.transactionsToVerify[tx.hash] = tx;
     });
 
