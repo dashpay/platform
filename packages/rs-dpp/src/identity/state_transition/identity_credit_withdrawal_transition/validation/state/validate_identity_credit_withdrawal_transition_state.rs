@@ -23,7 +23,7 @@ where
     SR: StateRepositoryLike,
 {
     pub fn new(state_repository: Arc<SR>) -> Self {
-        IdentityCreditWithdrawalTransitionValidator { state_repository }
+        Self { state_repository }
     }
 
     pub async fn validate_identity_credit_withdrawal_transition_state(
