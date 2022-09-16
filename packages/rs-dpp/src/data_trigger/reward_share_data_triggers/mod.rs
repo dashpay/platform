@@ -16,6 +16,7 @@ use super::{DataTriggerExecutionContext, DataTriggerExecutionResult};
 const MAX_PERCENTAGE: u64 = 10000;
 const PROPERTY_PAY_TO_ID: &str = "payToId";
 const PROPERTY_PERCENTAGE: &str = "percentage";
+const MAX_DOCUMENTS: usize = 16;
 
 pub async fn create_masternode_reward_shares_data_trigger<'a, SR>(
     document_transition: &DocumentTransition,
@@ -90,6 +91,19 @@ where
             }),
         )
         .await?;
+
+    if documents.len() >= MAX_DOCUMENTS {
+        let err = create_error(
+            context,
+            dt_create,
+            format!(
+                "Reward shares cannot contain more than {} identities",
+                MAX_DOCUMENTS
+            ),
+        );
+        result.add_error(err.into());
+        return Ok(result);
+    }
 
     let mut total_percent: u64 = percentage;
     for d in documents.iter() {
@@ -359,5 +373,45 @@ mod test {
                 .await
                 .expect("the execution result should be returned");
         assert!(result.is_ok())
+    }
+
+    #[tokio::test]
+    async fn should_return_error_if_there_are_16_stored_shares() {
+        let TestData {
+            document_transition,
+            sml_store,
+            data_contract,
+            top_level_identity,
+            ..
+        } = setup_test();
+
+        let mut state_repository_mock = MockStateRepositoryLike::new();
+        let identity_to_return = top_level_identity.as_bytes().to_vec();
+        state_repository_mock
+            .expect_fetch_sml_store()
+            .returning(move || Ok(sml_store.clone()));
+        state_repository_mock
+            .expect_fetch_identity::<Vec<u8>>()
+            .returning(move |_| Ok(Some(identity_to_return.clone())));
+        let documents_to_return: Vec<Document> = (0..16).map(|_| Document::default()).collect();
+        state_repository_mock
+            .expect_fetch_documents::<Document>()
+            .return_once(move |_, _, _| Ok(documents_to_return));
+
+        let context = DataTriggerExecutionContext {
+            data_contract: &data_contract,
+            owner_id: &top_level_identity,
+            state_repository: &state_repository_mock,
+        };
+
+        let result =
+            create_masternode_reward_shares_data_trigger(&document_transition, &context, None)
+                .await;
+        let error = get_data_trigger_error(&result, 0);
+
+        assert_eq!(
+            "Reward shares cannot contain more than 16 identities",
+            error.to_string()
+        );
     }
 }
