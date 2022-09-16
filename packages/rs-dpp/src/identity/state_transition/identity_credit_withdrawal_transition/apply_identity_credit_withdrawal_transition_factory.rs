@@ -16,7 +16,7 @@ where
     SR: StateRepositoryLike,
 {
     pub fn new(state_repository: SR) -> Self {
-        ApplyIdentityCreditWithdrawalTransition { state_repository }
+        Self { state_repository }
     }
 
     pub async fn apply_identity_credit_withdrawal_transition(

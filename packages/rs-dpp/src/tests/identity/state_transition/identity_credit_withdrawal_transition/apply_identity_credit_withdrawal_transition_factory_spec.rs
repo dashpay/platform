@@ -46,7 +46,7 @@ mod apply_identity_credit_withdrawal_transition_factory {
             .apply_identity_credit_withdrawal_transition(&state_transition)
             .await
         {
-            Ok(_) => {}
+            Ok(_) => assert!(true),
             Err(_) => {
                 assert!(false, "should be able to apply the state transition");
             }
