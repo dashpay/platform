@@ -17,6 +17,7 @@ const {
   },
 } = require('@dashevo/grpc-common');
 
+const { URL } = require('url');
 const {
   org: {
     dash: {
@@ -55,8 +56,6 @@ const {
 } = require('./core_protoc');
 
 const getCoreDefinition = require('../../../../lib/getCoreDefinition');
-const stripHostname = require('../../../../lib/utils/stripHostname');
-const stripProtocol = require('../../../../lib/utils/stripProtocol');
 
 const CoreNodeJSClient = getCoreDefinition(0);
 
@@ -71,8 +70,8 @@ class CorePromiseClient {
       throw new Error('"credentials" option is not supported yet');
     }
 
-    const strippedHostname = stripHostname(hostname);
-    const protocol = stripProtocol(hostname);
+    const url = new URL(hostname);
+    const { protocol, host: strippedHostname } = url;
 
     // eslint-disable-next-line no-param-reassign
     credentials = protocol === 'https' ? grpc.credentials.createSsl() : grpc.credentials.createInsecure();
