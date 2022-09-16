@@ -57,4 +57,27 @@ mod from_raw_object {
             ]
         );
     }
+
+    #[test]
+    pub fn should_return_data_in_case_bip13_script_hash() {
+        let public_key_json = json!({
+            "id": 0,
+            "type": KeyType::BIP13_SCRIPT_HASH,
+            "purpose": Purpose::AUTHENTICATION,
+            "securityLevel": SecurityLevel::MASTER,
+            "data": "AuryIuMtRrl/VviQuyLD1l4nmxi9ogPzC9LT7tdpo0di",
+            "readOnly": false
+        });
+
+        let public_key = IdentityPublicKey::from_raw_object(public_key_json)
+            .expect("the public key should be created");
+        assert_eq!(public_key.get_type(), KeyType::BIP13_SCRIPT_HASH);
+        assert_eq!(
+            public_key.hash().unwrap(),
+            [
+                2, 234, 242, 34, 227, 45, 70, 185, 127, 86, 248, 144, 187, 34, 195, 214, 94, 39,
+                155, 24, 189, 162, 3, 243, 11, 210, 211, 238, 215, 105, 163, 71, 98
+            ]
+        );
+    }
 }

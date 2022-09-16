@@ -24,7 +24,6 @@ fn setup_test() -> TestData {
     let old_data_contract = get_data_contract_fixture(None);
     let mut new_data_contract = old_data_contract.clone();
 
-    // this is the proble
     let mut indexed_document = new_data_contract
         .get_document_schema("indexedDocument")
         .expect("document should exist")

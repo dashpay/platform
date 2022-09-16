@@ -64,6 +64,13 @@ where
                 }
                 self.sign_by_private_key(private_key, identity_public_key.get_type())
             }
+
+            // the default behavior from
+            // https://github.com/dashevo/platform/blob/6b02b26e5cd3a7c877c5fdfe40c4a4385a8dda15/packages/js-dpp/lib/stateTransition/AbstractStateTransitionIdentitySigned.js#L108
+            // is to return the error for the BIP13_SCRIPT_HASH
+            KeyType::BIP13_SCRIPT_HASH => {
+                Err(ProtocolError::InvalidIdentityPublicKeyTypeError { public_key_type: 3 })
+            }
         }
     }
 
@@ -92,6 +99,9 @@ where
             KeyType::ECDSA_SECP256K1 => self.verify_ecdsa_signature_by_public_key(public_key_bytes),
 
             KeyType::BLS12_381 => self.verify_bls_signature_by_public_key(public_key_bytes),
+
+            // per https://github.com/dashevo/platform/pull/353, signing and verification is not supported
+            KeyType::BIP13_SCRIPT_HASH => Ok(()),
         }
     }
 

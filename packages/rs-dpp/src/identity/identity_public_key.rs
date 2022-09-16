@@ -26,6 +26,7 @@ pub enum KeyType {
     ECDSA_SECP256K1 = 0,
     BLS12_381 = 1,
     ECDSA_HASH160 = 2,
+    BIP13_SCRIPT_HASH = 3,
 }
 
 impl std::fmt::Display for KeyType {
@@ -41,6 +42,7 @@ impl TryFrom<u8> for KeyType {
             0 => Ok(Self::ECDSA_SECP256K1),
             1 => Ok(Self::BLS12_381),
             2 => Ok(Self::ECDSA_HASH160),
+            3 => Ok(Self::BIP13_SCRIPT_HASH),
             value => bail!("unrecognized security level: {}", value),
         }
     }
@@ -280,7 +282,8 @@ impl IdentityPublicKey {
         if self.data.is_empty() {
             return Err(ProtocolError::EmptyPublicKeyDataError);
         }
-        if self.key_type == KeyType::ECDSA_HASH160 {
+
+        if self.key_type == KeyType::ECDSA_HASH160 || self.key_type == KeyType::BIP13_SCRIPT_HASH {
             return Ok(self.data.clone());
         }
 

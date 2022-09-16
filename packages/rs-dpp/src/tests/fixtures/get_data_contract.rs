@@ -49,7 +49,7 @@ pub fn get_data_contract_fixture(owner_id: Option<Identifier>) -> DataContract {
                             "$ownerId": "asc"
                         },
                         {
-                            "firstName": "desc"
+                            "firstName": "asc"
                         }
                     ],
                     "unique": true
@@ -61,7 +61,7 @@ pub fn get_data_contract_fixture(owner_id: Option<Identifier>) -> DataContract {
                             "$ownerId": "asc"
                         },
                         {
-                            "lastName": "desc"
+                            "lastName": "asc"
                         }
                     ],
                     "unique": true
@@ -224,7 +224,7 @@ pub fn get_data_contract_fixture(owner_id: Option<Identifier>) -> DataContract {
                     "name": "index1",
                     "properties": [
                         {
-                            "firstName": "desc"
+                            "firstName": "asc"
                         }
                     ],
                     "unique": true
