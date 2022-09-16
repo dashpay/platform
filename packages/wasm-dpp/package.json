@@ -6,7 +6,7 @@
   "types": "dist/index.d.ts",
   "scripts": {
     "build": "wasm-pack build --target bundler && webpack",
-    "build2": "./build.sh && webpack",
+    "build:wasm": "./build.sh",
     "build:mac": "AR=/usr/local/opt/llvm/bin/llvm-ar CC=/usr/local/opt/llvm/bin/clang wasm-pack build --target bundler && AR=/usr/local/opt/llvm/bin/llvm-ar CC=/usr/local/opt/llvm/bin/clang webpack",
     "test": "echo \"Error: no test specified\" && exit 1",
     "webpack": "webpack"

@@ -19,5 +19,6 @@ mod identity_public_key;
 mod metadata;
 pub mod mocks;
 
-mod utils;
+pub(crate) mod js_buffer;
 mod tx;
+mod utils;

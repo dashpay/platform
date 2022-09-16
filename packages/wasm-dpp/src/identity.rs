@@ -1,35 +1,75 @@
-use std::any::{Any};
+use dpp::identifier::Identifier;
 use wasm_bindgen::prelude::*;
 
 use dpp::identity::state_transition::asset_lock_proof::AssetLockProof;
 use dpp::identity::IdentityPublicKey;
 use dpp::identity::{Identity, KeyID};
 use dpp::metadata::Metadata;
-use dpp::ProtocolError;
-use crate::errors::from_dpp_err;
+
+use dpp::util::string_encoding::Encoding;
+
+use serde::{Deserialize, Serialize};
 
 use crate::identifier::IdentifierWrapper;
-use crate::IdentityPublicKeyWasm;
 use crate::MetadataWasm;
+use crate::{IdentityPublicKeyWasm, JsPublicKey};
 
 #[wasm_bindgen(js_name=Identity)]
 pub struct IdentityWasm(Identity);
 
 #[wasm_bindgen(js_name=AssetLockProof)]
 pub struct AssetLockProofWasm(AssetLockProof);
-impl std::convert::From<AssetLockProof> for AssetLockProofWasm {
+impl From<AssetLockProof> for AssetLockProofWasm {
     fn from(v: AssetLockProof) -> Self {
         AssetLockProofWasm(v)
     }
 }
 
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+struct JsIdentity {
+    pub protocol_version: f32,
+    pub id: String,
+    pub public_keys: Vec<JsPublicKey>,
+    pub balance: f64,
+    pub revision: f64,
+    // #[serde(skip)]
+    // pub asset_lock_proof: Option<AssetLockProof>,
+    // #[serde(skip)]
+    // pub metadata: Option<Metadata>,
+}
+
+impl From<JsIdentity> for Identity {
+    fn from(js_identity: JsIdentity) -> Self {
+        Identity {
+            protocol_version: js_identity.protocol_version as u32,
+            id: Identifier::from_string(&js_identity.id, Encoding::Base58).unwrap(),
+            // id: Identifier::from_bytes(&js_identity.id).unwrap(),
+            public_keys: js_identity
+                .public_keys
+                .iter()
+                .map(|js_key| js_key.into())
+                .collect(),
+            balance: js_identity.balance as u64,
+            revision: js_identity.revision as u64,
+            asset_lock_proof: None,
+            metadata: None,
+        }
+    }
+}
+
 #[wasm_bindgen(js_class=Identity)]
 impl IdentityWasm {
+    #[wasm_bindgen(js_name=doStuff)]
+    pub fn do_stuff(raw_identity: JsValue) -> Result<js_sys::JsString, JsValue> {
+        js_sys::JSON::stringify(&raw_identity)
+    }
+
     #[wasm_bindgen(constructor)]
     pub fn new(raw_identity: JsValue) -> Result<IdentityWasm, JsValue> {
-        // TODO: remove unwrap
-        let json_identity = raw_identity.into_serde::<serde_json::Value>().unwrap();
-        let identity = Identity::from_raw_identity(json_identity).map_err(from_dpp_err)?;
+        let identity_json = String::from(js_sys::JSON::stringify(&raw_identity)?);
+        let js_identity: JsIdentity = serde_json::from_str(&identity_json).map_err(|e| e.to_string())?;
+        let identity = Identity::from(js_identity);
         Ok(IdentityWasm(identity))
     }
 
@@ -112,13 +152,13 @@ impl IdentityWasm {
     }
 
     #[wasm_bindgen(js_name=setRevision)]
-    pub fn set_revision(mut self, revision: i64) -> Self {
+    pub fn set_revision(mut self, revision: u64) -> Self {
         self.0 = self.0.set_revision(revision);
         self
     }
 
     #[wasm_bindgen(js_name=getRevision)]
-    pub fn get_revision(&self) -> i64 {
+    pub fn get_revision(&self) -> u64 {
         self.0.get_revision()
     }
 

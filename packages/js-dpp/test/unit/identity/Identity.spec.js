@@ -18,22 +18,21 @@ describe('Identity', () => {
   let metadataFixture;
   let Identity;
   let Metadata;
+  let IdentityPublicKeyWasm;
 
   before(async () => {
-    ({ Identity, Metadata } = await loadWasmDpp());
+    ({ Identity, Metadata, IdentityPublicKey: IdentityPublicKeyWasm } = await loadWasmDpp());
   });
 
   beforeEach(async function beforeEach() {
-    let id = await generateRandomIdentifierAsync();
-
     rawIdentity = {
       protocolVersion: protocolVersion.latestVersion,
-      id: id,
+      id: await generateRandomIdentifierAsync(),
       publicKeys: [
         {
           id: 0,
           type: IdentityPublicKey.TYPES.ECDSA_SECP256K1,
-          data: Array.from(Buffer.alloc(36).fill('a')),
+          data: Buffer.alloc(36).fill('a'),
           purpose: IdentityPublicKey.PURPOSES.AUTHENTICATION,
           securityLevel: IdentityPublicKey.SECURITY_LEVELS.MASTER,
           readOnly: false,
@@ -42,6 +41,24 @@ describe('Identity', () => {
       balance: 0,
       revision: 0,
     };
+
+    console.log(Identity.doStuff(rawIdentity));
+
+    // const iden = JSON.parse(JSON.stringify(rawIdentity));
+    // const pk = iden.publicKeys[0];
+    //
+    // pk.data = Uint8Array.from(pk.data);
+    // console.log(pk);
+    // console.dir(JSON.parse(JSON.stringify(rawIdentity)), { depth: 100 });
+
+    console.log(rawIdentity.publicKeys[0]);
+
+    console.log(JSON.stringify(rawIdentity.publicKeys[0].data));
+    console.log(IdentityPublicKeyWasm.kek(rawIdentity.publicKeys[0]));
+
+    const pk = new IdentityPublicKeyWasm(rawIdentity.publicKeys[0]);
+
+    console.log(2);
 
     identity = new Identity(rawIdentity);
 

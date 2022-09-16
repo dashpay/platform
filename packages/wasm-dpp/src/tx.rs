@@ -13,7 +13,7 @@ impl WasmTx {
             version: 2,
             lock_time: 0,
             input: vec![],
-            output: vec![]
+            output: vec![],
         })
     }
 
@@ -21,4 +21,3 @@ impl WasmTx {
         self.0.version
     }
 }
-

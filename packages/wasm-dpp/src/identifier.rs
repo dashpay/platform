@@ -2,8 +2,8 @@ pub use serde::{Deserialize, Serialize};
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;
 
-use dpp::identifier;
 use crate::errors::from_dpp_err;
+use dpp::identifier;
 
 #[derive(Serialize, Deserialize, PartialEq, Eq)]
 enum IdentifierSource {
@@ -35,7 +35,8 @@ impl IdentifierWrapper {
     #[wasm_bindgen(constructor)]
     pub fn new(buffer: Vec<u8>) -> Result<IdentifierWrapper, JsValue> {
         // TODO: remove unwrap
-        let identifier = identifier::Identifier::from_bytes(&buffer).map_err(|e| from_dpp_err(e))?;
+        let identifier =
+            identifier::Identifier::from_bytes(&buffer).map_err(|e| from_dpp_err(e))?;
 
         Ok(IdentifierWrapper {
             wrapped: identifier,
@@ -95,7 +96,7 @@ impl IdentifierWrapper {
     pub fn encode_cbor(&self) {}
 
     pub fn len(&self) -> usize {
-      self.wrapped.buffer.len()
+        self.wrapped.buffer.len()
     }
 
     pub fn inner(&self) -> Vec<u8> {
