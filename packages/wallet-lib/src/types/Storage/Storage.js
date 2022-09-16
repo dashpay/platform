@@ -22,11 +22,7 @@ class Storage extends EventEmitter {
     this.currentNetwork = '';
     this.wallets = new Map();
     this.chains = new Map();
-    this.application = {
-      // TODO(spv): check whether we need this entry there
-      // , as we also have chainHeight in chainStore
-      blockHeight: 0,
-    };
+    this.application = {};
 
     this.rehydrate = has(opts, 'rehydrate') ? opts.rehydrate : defaultOpts.rehydrate;
     this.autosave = has(opts, 'autosave') ? opts.autosave : defaultOpts.autosave;

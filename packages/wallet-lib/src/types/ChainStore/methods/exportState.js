@@ -5,7 +5,7 @@ function exportState() {
   const {
     blockHeaders,
     transactions,
-    blockHeight: chainHeight,
+    chainHeight,
     fees,
     headersMetadata,
     lastSyncedHeaderHeight,

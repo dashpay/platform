@@ -29,7 +29,7 @@ async function processTransactions(transactions) {
       // Immediately import unconfirmed transactions to proceed with the broadcasting and etc
 
       // TODO(spv): I guess they should be first confirmed by the instant locks,
-      //  but this functionality was not implemented properly up to this date
+      // but this functionality was not implemented properly up to this date
 
       const {
         addressesGenerated,
@@ -105,7 +105,7 @@ async function processMerkleBlock(merkleBlock) {
     delete this.transactionsToVerify[hash];
   });
 
-  // TODO(spv): verify transactions agaoinst the merkle block
+  // TODO(spv): verify transactions against the merkle block
 
   let addressesGenerated = 0;
   if (transactionsWithMetadata.length) {

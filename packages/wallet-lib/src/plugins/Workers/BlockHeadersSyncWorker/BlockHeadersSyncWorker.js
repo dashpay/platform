@@ -64,8 +64,8 @@ class BlockHeadersSyncWorker extends Worker {
       startFrom = this.syncCheckpoint;
     }
 
-    const bestBlockHeight = typeof chainStore.state.blockHeight === 'number'
-      ? chainStore.state.blockHeight : -1;
+    const bestBlockHeight = typeof chainStore.state.chainHeight === 'number'
+      ? chainStore.state.chainHeight : -1;
 
     if (bestBlockHeight < 1) {
       throw new Error(`Invalid best block height ${bestBlockHeight}`);
@@ -204,7 +204,7 @@ class BlockHeadersSyncWorker extends Worker {
    */
   getStartBlockHeight() {
     const chainStore = this.storage.getDefaultChainStore();
-    const bestBlockHeight = chainStore.state.blockHeight;
+    const bestBlockHeight = chainStore.state.chainHeight;
 
     let height;
 
@@ -303,13 +303,13 @@ class BlockHeadersSyncWorker extends Worker {
 
       const newChainHeight = batchHeadHeight + newHeaders.length - 1;
 
-      const { blockHeight } = chainStore.state;
+      const { chainHeight } = chainStore.state;
       // Ignore height overlap in case of the stream reconnected
-      if (newChainHeight === blockHeight) {
-        logger.debug(`[BlockHeadersSyncWorker] New chain height ${newChainHeight} is equal to current one: ${blockHeight}`);
+      if (newChainHeight === chainHeight) {
+        logger.debug(`[BlockHeadersSyncWorker] New chain height ${newChainHeight} is equal to current one: ${chainHeight}`);
         return;
-      } if (newChainHeight < blockHeight) {
-        const error = new Error(`New chain height ${newChainHeight} is less than latest height ${blockHeight}`);
+      } if (newChainHeight < chainHeight) {
+        const error = new Error(`New chain height ${newChainHeight} is less than latest height ${chainHeight}`);
         this.emitError(error);
         logger.debug('[BlockHeadersSyncWorker] Error handling continuous chain update:', error);
         return;
@@ -356,7 +356,7 @@ class BlockHeadersSyncWorker extends Worker {
     const { orphanChunks, startBlockHeight } = blockHeadersProvider.spvChain;
     const totalOrphans = orphanChunks.reduce((sum, chunk) => sum + chunk.length, 0);
 
-    const totalCount = chainStore.state.blockHeight + 1; // Including root block
+    const totalCount = chainStore.state.chainHeight + 1; // Including root block
 
     // TODO(spv): hide these calculations in the SPVChain
     const confirmedSyncedCount = startBlockHeight + longestChain.length;

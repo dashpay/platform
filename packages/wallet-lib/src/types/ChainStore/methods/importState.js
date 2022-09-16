@@ -17,7 +17,7 @@ function importState(rawState) {
   this.state.headersMetadata = new Map(Object.entries(headersMetadata));
   this.state.lastSyncedHeaderHeight = lastSyncedHeaderHeight;
   this.state.lastSyncedBlockHeight = lastSyncedBlockHeight;
-  this.state.blockHeight = chainHeight;
+  this.state.chainHeight = chainHeight;
 
   Object.keys(transactions).forEach((hash) => {
     const tx = transactions[hash];

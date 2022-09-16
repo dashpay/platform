@@ -157,7 +157,7 @@ class TransactionSyncStreamWorker extends Worker {
       skipSynchronization,
     } = (this.storage.application.syncOptions || {});
 
-    const bestBlockHeight = chainStore.state.blockHeight;
+    const bestBlockHeight = chainStore.state.chainHeight;
     if (skipSynchronization) {
       logger.debug('TransactionSyncStreamWorker - Wallet created from a new mnemonic. Sync from the best block height.');
       this.setLastSyncedBlockHeight(bestBlockHeight, true);
@@ -311,12 +311,12 @@ class TransactionSyncStreamWorker extends Worker {
 
     const chainStore = this.storage.getChainStore(this.network.toString());
 
-    const totalBlocksCount = chainStore.state.blockHeight + 1;
+    const totalBlocksCount = chainStore.state.chainHeight + 1;
     const syncedBlocksCount = this.lastSyncedBlockHeight + 1;
     const transactionsCount = chainStore.state.transactions.size;
     let progress = syncedBlocksCount / totalBlocksCount;
     progress = Math.round(progress * 1000) / 10;
-    logger.debug(`[TransactionSynsStreamWorker] Historical fetch progress: ${this.lastSyncedBlockHeight}/${chainStore.chainHeight}, ${progress}%`);
+    logger.debug(`[TransactionSynsStreamWorker] Historical fetch progress: ${this.lastSyncedBlockHeight}/${chainStore.state.chainHeight}, ${progress}%`);
 
     this.parentEvents.emit(EVENTS.TRANSACTIONS_SYNC_PROGRESS, {
       progress,

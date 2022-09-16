@@ -126,7 +126,7 @@ describe('TransactionSyncStreamWorker', function suite() {
       const bestBlockHeight = 42;
 
       worker.setLastSyncedBlockHeight(lastSavedBlockHeight);
-      worker.storage.getDefaultChainStore().state.blockHeight = bestBlockHeight;
+      worker.storage.getDefaultChainStore().state.chainHeight = bestBlockHeight;
       const transactionsSent = [];
 
       setTimeout(async () => {
@@ -202,7 +202,7 @@ describe('TransactionSyncStreamWorker', function suite() {
       const bestBlockHeight = 42;
 
       worker.setLastSyncedBlockHeight(lastSavedBlockHeight);
-      worker.storage.getDefaultChainStore().state.blockHeight = bestBlockHeight;
+      worker.storage.getDefaultChainStore().state.chainHeight = bestBlockHeight;
       const transactionsSent = [];
 
 
@@ -244,7 +244,7 @@ describe('TransactionSyncStreamWorker', function suite() {
       const bestBlockHeight = 42;
 
       worker.setLastSyncedBlockHeight(lastSavedBlockHeight);
-      worker.storage.getDefaultChainStore().state.blockHeight = bestBlockHeight;
+      worker.storage.getDefaultChainStore().state.chainHeight = bestBlockHeight;
       const transactionsSent = [];
 
       setTimeout(async () => {
@@ -328,7 +328,7 @@ describe('TransactionSyncStreamWorker', function suite() {
       const bestBlockHeight = 42;
 
       worker.setLastSyncedBlockHeight(lastSavedBlockHeight);
-      worker.storage.getDefaultChainStore().state.blockHeight = bestBlockHeight;
+      worker.storage.getDefaultChainStore().state.chainHeight = bestBlockHeight;
       const transactionsSent = [];
 
       worker.execute();

@@ -145,7 +145,7 @@ describe('Wallet', () => {
       });
       await account.broadcastTransaction(sendTx)
 
-      wallet.storage.getDefaultChainStore().state.blockHeight = 43;
+      wallet.storage.getDefaultChainStore().state.chainHeight = 43;
       account.emit(EVENTS.BLOCK, { hash: '1111', transactions: [sendTx]}, 43)
 
       await waitOneTick();
@@ -165,7 +165,7 @@ describe('Wallet', () => {
        * Emit one more BLOCKHEIGHT_CHANGE event to ensure that previously considered
        * reorg unsafe items were saved
        */
-      wallet.storage.getDefaultChainStore().state.blockHeight = 50;
+      wallet.storage.getDefaultChainStore().state.chainHeight = 50;
       account.emit(EVENTS.BLOCK, { hash: '1112', transactions: []}, 50)
       await waitOneTick();
 
@@ -233,7 +233,7 @@ describe('Wallet', () => {
       });
       await account.broadcastTransaction(sendTx)
 
-      wallet.storage.getDefaultChainStore().state.blockHeight = 52;
+      wallet.storage.getDefaultChainStore().state.chainHeight = 52;
       account.emit(EVENTS.BLOCK, { hash: '1111', transactions: [sendTx]}, 52);
 
       /** Wait for sendTx metadata arrives to the storage */
@@ -255,7 +255,7 @@ describe('Wallet', () => {
        * Emit one more BLOCKHEIGHT_CHANGE event to ensure that previously considered
        * reorg unsafe items were saved
        */
-      wallet.storage.getDefaultChainStore().state.blockHeight = 59;
+      wallet.storage.getDefaultChainStore().state.chainHeight = 59;
       account.emit(EVENTS.BLOCK, { hash: '1112', transactions: []}, 59);
       await waitOneTick();
 

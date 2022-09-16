@@ -73,7 +73,7 @@ describe('BlockHeadersSyncWorker', () => {
       blockHeadersSyncWorker = await createWorker(this.sinon);
 
       const chainStore = blockHeadersSyncWorker.storage.getDefaultChainStore();
-      chainStore.chainHeight = DEFAULT_CHAIN_HEIGHT;
+      chainStore.updateChainHeight(DEFAULT_CHAIN_HEIGHT);
     });
 
     it('should process first batches of historical headers', async () => {
@@ -180,7 +180,7 @@ describe('BlockHeadersSyncWorker', () => {
       // Ensure chain height update
       expect(chainStore.state.lastSyncedHeaderHeight)
         .to.equal(newChainHeight);
-      expect(chainStore.state.blockHeight)
+      expect(chainStore.state.chainHeight)
         .to.equal(newChainHeight);
       expect(chainStore.state.lastSyncedBlockHeight)
         .to.equal(newChainHeight);
@@ -202,7 +202,7 @@ describe('BlockHeadersSyncWorker', () => {
       blockHeadersSyncWorker = await createWorker(this.sinon, { withAdapter: true });
 
       const chainStore = blockHeadersSyncWorker.storage.getDefaultChainStore();
-      chainStore.chainHeight = DEFAULT_CHAIN_HEIGHT;
+      chainStore.updateChainHeight(DEFAULT_CHAIN_HEIGHT);
     });
 
     it('[first launch] should process first batches of historical headers and save to storage', async () => {
@@ -248,7 +248,7 @@ describe('BlockHeadersSyncWorker', () => {
         .addHeaders(storage.getDefaultChainStore().state.blockHeaders);
 
       // Assign chain height
-      chainStore.chainHeight = DEFAULT_CHAIN_HEIGHT;
+      chainStore.updateChainHeight(DEFAULT_CHAIN_HEIGHT);
       const onStartPromise = blockHeadersSyncWorker.onStart();
       await waitOneTick();
 
@@ -319,7 +319,7 @@ describe('BlockHeadersSyncWorker', () => {
       // Ensure chain height update
       expect(chainStore.state.lastSyncedHeaderHeight)
         .to.equal(newChainHeight);
-      expect(chainStore.state.blockHeight)
+      expect(chainStore.state.chainHeight)
         .to.equal(newChainHeight);
       expect(chainStore.state.lastSyncedBlockHeight)
         .to.equal(newChainHeight);
@@ -356,7 +356,7 @@ describe('BlockHeadersSyncWorker', () => {
       const newHeaders = (await mockHeadersChain('testnet', headersToAdd + 1, tail)).slice(1);
       headersChain = [...headersChain, ...newHeaders];
 
-      chainStore.chainHeight = prevSyncedHeaderHeight + headersToAdd;
+      chainStore.updateChainHeight(prevSyncedHeaderHeight + headersToAdd);
 
       const onStartPromise = blockHeadersSyncWorker.onStart();
       await waitOneTick();
@@ -414,7 +414,7 @@ describe('BlockHeadersSyncWorker', () => {
       // Ensure chain height update
       expect(chainStore.state.lastSyncedHeaderHeight)
         .to.equal(newChainHeight);
-      expect(chainStore.state.blockHeight)
+      expect(chainStore.state.chainHeight)
         .to.equal(newChainHeight);
       expect(chainStore.state.lastSyncedBlockHeight)
         .to.equal(newChainHeight);

@@ -11,7 +11,7 @@ describe('ChainStore - class', () => {
 
     expect(new ChainStore()).to.deep.equal(testnetChainStore);
     expect(testnetChainStore.state).to.exist;
-    expect(testnetChainStore.state.blockHeight).to.equal(0);
+    expect(testnetChainStore.state.chainHeight).to.equal(0);
     expect(testnetChainStore.state.lastSyncedBlockHeight).to.equal(-1);
     expect(testnetChainStore.state.lastSyncedHeaderHeight).to.equal(-1);
     expect(testnetChainStore.state.fees).to.deep.equal({ minRelay: -1 });

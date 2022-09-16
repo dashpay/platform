@@ -58,7 +58,7 @@ class ChainStore extends EventEmitter {
       lastSyncedHeaderHeight: -1,
       // Height of the last synced merkle block
       lastSyncedBlockHeight: -1,
-      blockHeight: 0,
+      chainHeight: 0,
       blockHeaders: [],
       headersMetadata: new Map(),
       transactions: new Map(),
@@ -108,25 +108,12 @@ class ChainStore extends EventEmitter {
     this.state.lastSyncedBlockHeight = height;
   }
 
-  // TODO(spv): rm?
-  set chainHeight(height) {
-    if (height < this.state.blockHeight) {
-      throw new Error(`Chain height value ${height} is lower than current value ${this.state.blockHeight}`);
-    }
-
-    this.state.blockHeight = height;
-  }
-
-  get chainHeight() {
-    return this.state.blockHeight;
-  }
-
   updateChainHeight(height) {
-    if (height < this.state.blockHeight) {
-      throw new Error(`Chain height value ${height} is lower than current value ${this.state.blockHeight}`);
+    if (height < this.state.chainHeight) {
+      throw new Error(`Chain height value ${height} is lower than current value ${this.state.chainHeight}`);
     }
 
-    this.state.blockHeight = height;
+    this.state.chainHeight = height;
   }
 }
 

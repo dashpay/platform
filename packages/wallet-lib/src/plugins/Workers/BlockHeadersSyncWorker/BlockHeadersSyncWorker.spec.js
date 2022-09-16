@@ -82,7 +82,7 @@ describe('BlockHeadersSyncWorker', () => {
         if (!this.defaultChainStore) {
           this.defaultChainStore = {
             state: {
-              blockHeight: chainHeight,
+              chainHeight,
               lastSyncedHeaderHeight: -1,
             },
             updateLastSyncedHeaderHeight: sinon.spy(),
@@ -116,7 +116,7 @@ describe('BlockHeadersSyncWorker', () => {
        */
       blockHeadersSyncWorker.maxHeadersToKeep = 2000;
       const { storage } = blockHeadersSyncWorker;
-      storage.getDefaultChainStore().state.blockHeight = 1000;
+      storage.getDefaultChainStore().state.chainHeight = 1000;
 
       storage.application.syncOptions = {
         skipSynchronization: true,
@@ -126,7 +126,7 @@ describe('BlockHeadersSyncWorker', () => {
 
       expect(startBlockHeight).to.equal(1);
 
-      storage.getDefaultChainStore().state.blockHeight = 3000;
+      storage.getDefaultChainStore().state.chainHeight = 3000;
       startBlockHeight = blockHeadersSyncWorker.getStartBlockHeight();
       expect(startBlockHeight).to.equal(1000);
     });
@@ -242,7 +242,7 @@ describe('BlockHeadersSyncWorker', () => {
 
     it('should throw error if best block height is less than 1', async () => {
       const { storage } = blockHeadersSyncWorker;
-      storage.getDefaultChainStore().state.blockHeight = -1;
+      storage.getDefaultChainStore().state.chainHeight = -1;
 
       await expect(blockHeadersSyncWorker.onStart())
         .to.be.rejectedWith('Invalid best block height -1');
@@ -385,7 +385,7 @@ describe('BlockHeadersSyncWorker', () => {
       blockHeadersSyncWorker.syncCheckpoint = 1200;
       await blockHeadersSyncWorker.onStop();
 
-      blockHeadersSyncWorker.storage.getDefaultChainStore().state.blockHeight = 1200;
+      blockHeadersSyncWorker.storage.getDefaultChainStore().state.chainHeight = 1200;
 
       await blockHeadersSyncWorker.execute();
       expect(blockHeadersProvider.startContinuousSync.secondCall)

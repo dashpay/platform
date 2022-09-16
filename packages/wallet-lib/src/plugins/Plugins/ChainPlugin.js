@@ -40,9 +40,9 @@ class ChainPlugin extends StandardPlugin {
     const chainStore = this.storage.getChainStore(network);
     const { chain: { blocksCount: blocks }, network: { fee: { relay } } } = res;
 
-    logger.debug('ChainPlugin - Setting up starting blockHeight', blocks);
+    logger.debug('ChainPlugin - Setting up starting chainHeight', blocks);
 
-    chainStore.state.blockHeight = blocks;
+    chainStore.updateChainHeight(blocks);
 
     if (relay) {
       chainStore.state.fees.minRelay = dashToDuffs(relay);
