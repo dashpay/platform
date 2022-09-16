@@ -26,6 +26,7 @@ where
         private_key: &[u8],
     ) -> Result<(), ProtocolError> {
         self.verify_public_key_level_and_purpose(identity_public_key)?;
+        self.verify_public_key_is_enabled(identity_public_key)?;
 
         match identity_public_key.get_type() {
             KeyType::ECDSA_SECP256K1 => {
@@ -138,6 +139,18 @@ where
         Ok(())
     }
 
+    fn verify_public_key_is_enabled(
+        &self,
+        public_key: &IdentityPublicKey,
+    ) -> Result<(), ProtocolError> {
+        if public_key.get_disabled_at().is_some() {
+            return Err(ProtocolError::PublicKeyIsDisabledError {
+                public_key: public_key.to_owned(),
+            });
+        }
+        Ok(())
+    }
+
     /// Returns minimal key security level that can be used to sign this ST.
     /// Override this method if the ST requires a different security level.
     fn get_security_level_requirement(&self) -> SecurityLevel {
@@ -166,6 +179,7 @@ pub fn get_public_bls_key(private_key: &[u8]) -> Result<Vec<u8>, ProtocolError> 
 #[cfg(test)]
 mod test {
     use bls_signatures::Serialize as BlsSerialize;
+    use chrono::Utc;
     use serde::{Deserialize, Serialize};
     use serde_json::json;
 
@@ -296,6 +310,7 @@ mod test {
             security_level: SecurityLevel::MASTER,
             data: ec_public_compressed_bytes.try_into().unwrap(),
             read_only: false,
+            disabled_at: None,
         };
 
         Keys {
@@ -524,5 +539,23 @@ mod test {
         let public_key_id = 2;
         st.set_signature_public_key_id(public_key_id);
         assert_eq!(public_key_id, st.get_signature_public_key_id());
+    }
+
+    #[test]
+    fn should_throw_public_key_is_disabled_error_if_public_key_is_disabled() {
+        let mut st = get_mock_state_transition();
+        let keys = get_test_keys();
+        let identity_public_key = keys
+            .identity_public_key
+            .set_disabled_at(Utc::now().timestamp_millis() as u64);
+
+        let result = st
+            .sign(&identity_public_key, &keys.bls_private)
+            .expect_err("the protocol error should be returned");
+
+        assert!(matches!(
+            result,
+            ProtocolError::PublicKeyIsDisabledError { .. }
+        ))
     }
 }

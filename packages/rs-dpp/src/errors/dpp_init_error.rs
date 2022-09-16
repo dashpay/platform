@@ -9,6 +9,8 @@ pub enum DashPlatformProtocolInitError {
     SchemaDeserializationError(serde_json::Error),
     #[error("{0}")]
     ValidationError(ValidationError<'static>),
+    #[error("Loaded Schema is invalid: {0}")]
+    InvalidSchemaError(&'static str),
 }
 
 fn into_owned(err: ValidationError) -> ValidationError<'static> {

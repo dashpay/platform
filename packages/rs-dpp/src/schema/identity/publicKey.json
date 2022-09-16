@@ -46,6 +46,11 @@
 				"type": "boolean",
 				"description": "Read only",
 				"$comment": "Identity public key can't be modified with readOnly set to true. It can’t be changed after adding a key"
+			},
+			"disabledAt": {
+				"type": "integer",
+				"description": "Timestamp indicating that the key was disabled at a specified time",
+				"minimum": 0
 			}
 		},
 		"allOf": [

@@ -5,6 +5,7 @@ use crate::{
         ConsensusError,
     },
     validation::ValidationResult,
+    StateError,
 };
 
 pub fn get_schema_error(result: &ValidationResult<()>, number: usize) -> &JsonSchemaError {
@@ -30,6 +31,23 @@ pub fn get_index_error(consensus_error: &ConsensusError) -> &IndexError {
             _ => panic!("error '{:?}' isn't a index error", consensus_error),
         },
         _ => panic!("error '{:?}' isn't a basic error", consensus_error),
+    }
+}
+
+pub fn get_state_error_from_result(
+    result: &ValidationResult<()>,
+    error_number: usize,
+) -> &StateError {
+    match result
+        .errors
+        .get(error_number)
+        .expect("error should be found")
+    {
+        ConsensusError::StateError(state_error) => state_error,
+        _ => panic!(
+            "error '{:?}' isn't a state error",
+            result.errors[error_number]
+        ),
     }
 }
 

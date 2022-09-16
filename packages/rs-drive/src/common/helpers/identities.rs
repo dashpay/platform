@@ -14,6 +14,7 @@ pub fn create_test_identity(drive: &Drive, id: [u8; 32], transaction: Transactio
         purpose: dpp::identity::Purpose::AUTHENTICATION,
         security_level: dpp::identity::SecurityLevel::MASTER,
         read_only: false,
+        disabled_at: None,
     };
 
     let identity = Identity {

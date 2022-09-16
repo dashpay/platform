@@ -28,6 +28,7 @@ pub mod validation;
 
 mod dash_platform_protocol;
 
+pub mod block_time_window;
 pub mod mocks;
 
 #[cfg(test)]
@@ -45,4 +46,6 @@ pub mod prelude {
     pub use crate::validation::ValidationResult;
 
     pub use super::convertible::Convertible;
+    pub type TimestampMillis = u64;
+    pub type Revision = u64;
 }

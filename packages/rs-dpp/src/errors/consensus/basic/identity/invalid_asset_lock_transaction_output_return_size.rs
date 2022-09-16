@@ -4,11 +4,11 @@ use thiserror::Error;
 #[error(
     "Asset Lock output ${output_index} has invalid public key hash. Must be 20 length bytes hash"
 )]
-pub struct InvalidAssetLockTransactionOutputReturnSize {
+pub struct InvalidAssetLockTransactionOutputReturnSizeError {
     output_index: usize,
 }
 
-impl InvalidAssetLockTransactionOutputReturnSize {
+impl InvalidAssetLockTransactionOutputReturnSizeError {
     pub fn new(output_index: usize) -> Self {
         Self { output_index }
     }

@@ -18,6 +18,9 @@ pub enum NonConsensusError {
     StateRepositoryFetchError(String),
     #[error("{0}")]
     IdentifierCreateError(String),
+
+    #[error("The property is required: '{property_name}'")]
+    RequiredPropertyError { property_name: String },
 }
 
 impl From<SerdeParsingError> for NonConsensusError {

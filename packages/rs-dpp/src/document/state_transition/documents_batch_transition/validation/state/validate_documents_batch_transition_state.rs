@@ -3,6 +3,7 @@ use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 
 use crate::{
+    block_time_window::validate_time_in_block_time_window::validate_time_in_block_time_window,
     consensus::ConsensusError,
     data_contract::DataContract,
     data_trigger::DataTriggerExecutionContext,
@@ -10,7 +11,7 @@ use crate::{
         document_transition::{Action, DocumentTransition, DocumentTransitionExt},
         Document, DocumentsBatchTransition,
     },
-    prelude::Identifier,
+    prelude::{Identifier, TimestampMillis},
     state_repository::StateRepositoryLike,
     state_transition::StateTransitionIdentitySigned,
     validation::ValidationResult,
@@ -21,12 +22,6 @@ use super::{
     execute_data_triggers::execute_data_triggers, fetch_documents::fetch_documents,
     validate_documents_uniqueness_by_indices::validate_documents_uniqueness_by_indices,
 };
-
-const BLOCK_TIME_WINDOW_MINUTES: usize = 5;
-const BLOCK_TIME_WINDOW_MS: usize = BLOCK_TIME_WINDOW_MINUTES * BLOCK_TIME_WINDOW_MINUTES * 1000;
-
-type StartTimeMs = usize;
-type EndTimeMs = usize;
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct BlockHeader {
@@ -86,15 +81,13 @@ pub async fn validate_document_transitions(
     let header: BlockHeader = state_repository
         .fetch_latest_platform_block_header()
         .await?;
-
-    let (time_window_start, time_window_end) = calculate_time_window(header.time.seconds * 1000);
+    let last_header_time_millis = (header.time.seconds * 1000) as u64;
 
     for transition in transitions.iter() {
         let validation_result = validate_transition(
             transition.as_ref(),
             &fetched_documents,
-            time_window_start,
-            time_window_end,
+            last_header_time_millis,
             owner_id,
         );
         result.merge(validation_result);
@@ -122,7 +115,6 @@ pub async fn validate_document_transitions(
         owner_id,
         data_contract: &data_contract,
     };
-
     let data_trigger_execution_results =
         execute_data_triggers(transitions.iter(), &data_trigger_execution_context).await?;
 
@@ -141,17 +133,10 @@ pub async fn validate_document_transitions(
     Ok(result)
 }
 
-fn calculate_time_window(timestamp_ms: usize) -> (StartTimeMs, EndTimeMs) {
-    let start_time_ms = timestamp_ms - BLOCK_TIME_WINDOW_MS;
-    let end_time_ms = timestamp_ms + BLOCK_TIME_WINDOW_MS;
-    (start_time_ms, end_time_ms)
-}
-
 fn validate_transition(
     transition: &DocumentTransition,
     fetched_documents: &[Document],
-    time_window_start: usize,
-    time_window_end: usize,
+    last_header_block_time_millis: u64,
     owner_id: &Identifier,
 ) -> ValidationResult<()> {
     let mut result = ValidationResult::default();
@@ -161,11 +146,11 @@ fn validate_transition(
             result.merge(validation_result);
 
             let validation_result =
-                check_created_inside_time_window(transition, time_window_start, time_window_end);
+                check_created_inside_time_window(transition, last_header_block_time_millis);
             result.merge(validation_result);
 
             let validation_result =
-                check_updated_inside_time_window(transition, time_window_start, time_window_end);
+                check_updated_inside_time_window(transition, last_header_block_time_millis);
             result.merge(validation_result);
 
             let validation_result =
@@ -174,7 +159,7 @@ fn validate_transition(
         }
         Action::Replace => {
             let validation_result =
-                check_updated_inside_time_window(transition, time_window_start, time_window_end);
+                check_updated_inside_time_window(transition, last_header_block_time_millis);
             result.merge(validation_result);
 
             let validation_result = check_revision(transition, fetched_documents);
@@ -312,23 +297,23 @@ fn check_if_timestamps_are_equal(document_transition: &DocumentTransition) -> Va
 
 fn check_created_inside_time_window(
     document_transition: &DocumentTransition,
-    start_window_ms: usize,
-    end_window_ms: usize,
+    last_block_ts_millis: TimestampMillis,
 ) -> ValidationResult<()> {
     let mut result = ValidationResult::default();
     let created_at = match document_transition.get_created_at() {
         Some(t) => t,
         None => return result,
-    };
+    } as u64;
 
-    if created_at < start_window_ms as i64 || created_at > end_window_ms as i64 {
+    let window_validation = validate_time_in_block_time_window(last_block_ts_millis, created_at);
+    if !window_validation.is_valid() {
         result.add_error(ConsensusError::StateError(Box::new(
             StateError::DocumentTimestampWindowViolationError {
                 timestamp_name: String::from("createdAt"),
                 document_id: document_transition.base().id.clone(),
-                timestamp: created_at,
-                time_window_start: start_window_ms as i64,
-                time_window_end: end_window_ms as i64,
+                timestamp: created_at as i64,
+                time_window_start: window_validation.time_window_start as i64,
+                time_window_end: window_validation.time_window_end as i64,
             },
         )));
     }
@@ -337,23 +322,23 @@ fn check_created_inside_time_window(
 
 fn check_updated_inside_time_window(
     document_transition: &DocumentTransition,
-    start_window_ms: usize,
-    end_window_ms: usize,
+    last_block_ts_millis: TimestampMillis,
 ) -> ValidationResult<()> {
     let mut result = ValidationResult::default();
     let updated_at = match document_transition.get_updated_at() {
         Some(t) => t,
         None => return result,
-    };
+    } as u64;
 
-    if updated_at < start_window_ms as i64 || updated_at > end_window_ms as i64 {
+    let window_validation = validate_time_in_block_time_window(last_block_ts_millis, updated_at);
+    if !window_validation.is_valid() {
         result.add_error(ConsensusError::StateError(Box::new(
             StateError::DocumentTimestampWindowViolationError {
                 timestamp_name: String::from("updatedAt"),
                 document_id: document_transition.base().id.clone(),
-                timestamp: updated_at,
-                time_window_start: start_window_ms as i64,
-                time_window_end: end_window_ms as i64,
+                timestamp: updated_at as i64,
+                time_window_start: window_validation.time_window_start as i64,
+                time_window_end: window_validation.time_window_end as i64,
             },
         )));
     }

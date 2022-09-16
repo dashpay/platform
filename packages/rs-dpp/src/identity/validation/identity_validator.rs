@@ -1,3 +1,5 @@
+use lazy_static::lazy_static;
+use serde_json::Value as JsonValue;
 use std::sync::Arc;
 
 use crate::identity::validation::TPublicKeysValidator;
@@ -5,6 +7,12 @@ use crate::util::protocol_data::{get_protocol_version, get_raw_public_keys};
 use crate::validation::{JsonSchemaValidator, ValidationResult};
 use crate::version::ProtocolVersionValidator;
 use crate::{DashPlatformProtocolInitError, NonConsensusError, SerdeParsingError};
+
+lazy_static! {
+    static ref IDENTITY_JSON_SCHEMA: JsonValue =
+        serde_json::from_str(include_str!("./../../schema/identity/identity.json"))
+            .expect("Identity Schema file should exist");
+}
 
 pub struct IdentityValidator<TPublicKeyValidator> {
     protocol_version_validator: Arc<ProtocolVersionValidator>,
@@ -17,8 +25,7 @@ impl<T: TPublicKeysValidator> IdentityValidator<T> {
         protocol_version_validator: Arc<ProtocolVersionValidator>,
         public_keys_validator: Arc<T>,
     ) -> Result<Self, DashPlatformProtocolInitError> {
-        let json_schema_validator =
-            JsonSchemaValidator::new(crate::schema::identity::identity_json()?)?;
+        let json_schema_validator = JsonSchemaValidator::new(IDENTITY_JSON_SCHEMA.clone())?;
 
         let identity_validator = Self {
             protocol_version_validator,

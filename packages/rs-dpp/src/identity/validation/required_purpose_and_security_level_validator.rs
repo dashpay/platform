@@ -15,9 +15,9 @@ struct PurposeKey {
 }
 
 #[derive(Default, Clone, Debug)]
-pub struct PublicKeysInIdentityCreateTransitionValidator {}
+pub struct RequiredPurposeAndSecurityLevelValidator {}
 
-impl TPublicKeysValidator for PublicKeysInIdentityCreateTransitionValidator {
+impl TPublicKeysValidator for RequiredPurposeAndSecurityLevelValidator {
     fn validate_keys(
         &self,
         raw_public_keys: &[Value],
@@ -26,7 +26,10 @@ impl TPublicKeysValidator for PublicKeysInIdentityCreateTransitionValidator {
 
         let mut key_purposes_and_levels_count: HashMap<PurposeKey, usize> = HashMap::new();
 
-        for raw_public_key in raw_public_keys {
+        for raw_public_key in raw_public_keys
+            .iter()
+            .filter(|pk| pk.get("disabledAt").is_none())
+        {
             let public_key: IdentityPublicKey = serde_json::from_value(raw_public_key.clone())?;
             let combo = PurposeKey {
                 purpose: public_key.purpose,
@@ -51,7 +54,7 @@ impl TPublicKeysValidator for PublicKeysInIdentityCreateTransitionValidator {
     }
 }
 
-impl PublicKeysInIdentityCreateTransitionValidator {
+impl RequiredPurposeAndSecurityLevelValidator {
     pub fn new() -> Result<Self, DashPlatformProtocolInitError> {
         Ok(Self::default())
     }
