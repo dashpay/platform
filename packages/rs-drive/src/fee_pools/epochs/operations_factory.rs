@@ -34,8 +34,12 @@ impl Epoch {
             .update_proposer_block_count_operation(proposer_pro_tx_hash, proposed_block_count + 1))
     }
 
-    pub fn add_init_empty_operations(&self, batch: &mut GroveDbOpBatch) {
+    pub fn add_init_empty_without_storage_operations(&self, batch: &mut GroveDbOpBatch) {
         batch.add_insert_empty_tree(pools_vec_path(), self.key.to_vec());
+    }
+
+    pub fn add_init_empty_operations(&self, batch: &mut GroveDbOpBatch) {
+        self.add_init_empty_without_storage_operations(batch);
 
         // init storage fee item to 0
         batch.push(self.update_storage_credits_for_distribution_operation(0));
