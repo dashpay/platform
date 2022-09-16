@@ -208,6 +208,8 @@ describe('BlockHeadersSyncWorker', () => {
     it('[first launch] should process first batches of historical headers and save to storage', async () => {
       // Wait for the stream to start
       const onStartPromise = blockHeadersSyncWorker.onStart();
+      // Wait two ticks to init wasm x11
+      await waitOneTick();
       await waitOneTick();
 
       const { storage } = blockHeadersSyncWorker;

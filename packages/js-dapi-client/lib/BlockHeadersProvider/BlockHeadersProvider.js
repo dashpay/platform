@@ -1,4 +1,6 @@
 const EventEmitter = require('events');
+const { configure: configureDashcore } = require('@dashevo/dashcore-lib');
+const X11 = require('wasm-x11-hash');
 const { SpvChain, SPVError } = require('@dashevo/dash-spv');
 
 const BlockHeadersReader = require('./BlockHeadersReader');
@@ -47,6 +49,7 @@ class BlockHeadersProvider extends EventEmitter {
     this.spvChain = this.options.spvChain || new SpvChain(this.options.network, 100);
 
     this.state = STATES.IDLE;
+    this.wasmX11Ready = false;
 
     this.handleError = this.handleError.bind(this);
     this.handleHeaders = this.handleHeaders.bind(this);
@@ -78,7 +81,15 @@ class BlockHeadersProvider extends EventEmitter {
   /**
    * @private
    */
-  initReader() {
+  async init() {
+    if (!this.wasmX11Ready) {
+      const x11Hash = await X11();
+      configureDashcore({
+        x11hash: x11Hash,
+      });
+      this.wasmX11Ready = true;
+    }
+
     if (!this.blockHeadersReader) {
       const createContinuousSyncStream = (fromBlockHeight) => DAPIStream
         .create(
@@ -145,7 +156,7 @@ class BlockHeadersProvider extends EventEmitter {
       throw new Error(`BlockHeaderProvider can not read historical data while being in ${this.state} state.`);
     }
 
-    this.initReader();
+    await this.init();
 
     this.ensureChainRoot(fromBlockHeight);
 
@@ -169,7 +180,7 @@ class BlockHeadersProvider extends EventEmitter {
       throw new Error(`BlockHeaderProvider can not sync continuous data while being in ${this.state} state.`);
     }
 
-    this.initReader();
+    await this.init();
     this.ensureChainRoot(fromBlockHeight);
     await this.blockHeadersReader.subscribeToNew(fromBlockHeight);
     this.state = STATES.CONTINUOUS_SYNC;

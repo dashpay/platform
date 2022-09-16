@@ -156,7 +156,7 @@ describe('BlockHeadersProvider - unit', () => {
 
   describe('#handleError', () => {
     it('should emit error event and unsubscribe from reader events', async () => {
-      blockHeadersProvider.initReader();
+      await blockHeadersProvider.init();
       const { blockHeadersReader } = blockHeadersProvider;
 
       let emittedError;

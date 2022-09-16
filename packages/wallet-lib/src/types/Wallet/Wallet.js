@@ -1,5 +1,4 @@
-const { PrivateKey, Networks, configure: configureDashcore } = require('@dashevo/dashcore-lib');
-const X11 = require('wasm-x11-hash');
+const { PrivateKey, Networks } = require('@dashevo/dashcore-lib');
 
 const EventEmitter = require('events');
 const _ = require('lodash');
@@ -61,16 +60,6 @@ class Wallet extends EventEmitter {
       fromAddress,
       fromHDPublicKey,
       generateNewWalletId,
-    });
-
-    // TODO(spv): move to BlockHeadersProvider
-    // because we need X11 to be used by DAPI Client without the wallet's command
-    X11().then((x11hash) => {
-      configureDashcore({
-        x11hash,
-      });
-    }).catch((e) => {
-      this.emit('error', e);
     });
 
     this.passphrase = _.has(opts, 'passphrase') ? opts.passphrase : defaultOptions.passphrase;
