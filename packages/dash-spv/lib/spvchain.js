@@ -98,6 +98,42 @@ const SpvChain = class {
     this.setAllBranches();
   }
 
+  validate() {
+    const longestChain = this.getLongestChain();
+    const head = longestChain[longestChain.length - 1];
+    const tail = this.prunedHeaders[0] || longestChain[0];
+
+    const headHeight = this.heightByHash[head.hash];
+    const tailHeight = this.heightByHash[tail.hash];
+
+    if (this.orphanChunks.length) {
+      throw new SPVError('Chain contains orphan chunks');
+    }
+
+    if (typeof headHeight !== 'number') {
+      throw new SPVError(`Head header '${head.hash}' height is invalid ${headHeight}`);
+    }
+
+    if (typeof tailHeight !== 'number') {
+      throw new SPVError(`Tail header '${tail.hash}' height is invalid ${tailHeight}`);
+    }
+
+    if (this.hashesByHeight[headHeight] !== head.hash) {
+      throw new SPVError(`Head header '${head.hash}' height mismatch`);
+    }
+
+    if (this.hashesByHeight[tailHeight] !== tail.hash) {
+      throw new SPVError(`Tail header '${tail.hash}' height mismatch`);
+    }
+
+    const expectedChainLength = headHeight - tailHeight + 1;
+    const actualChainLength = longestChain.length + this.prunedHeaders.length;
+
+    if (expectedChainLength !== actualChainLength) {
+      throw new SPVError(`Chain length mismatch: expected ${expectedChainLength}, actual ${actualChainLength}`);
+    }
+  }
+
   /** @private */
   checkPruneBlocks() {
     const longestChain = this.getLongestChain();

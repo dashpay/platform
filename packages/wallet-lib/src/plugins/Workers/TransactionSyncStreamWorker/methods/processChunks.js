@@ -21,7 +21,7 @@ async function processTransactions(transactions) {
     if (syncIncomingTransactions && walletTransactions.length) {
       // Immediately import unconfirmed transactions to proceed with the broadcasting and etc
 
-      // TODO(spv): I guess they should be first confirmed by the instant locks,
+      // TODO: I guess they should be first confirmed by the instant locks,
       // but this functionality was not implemented properly up to this date
 
       const {
