@@ -164,7 +164,7 @@ lazy_static! {
         );
         m.insert(Purpose::ENCRYPTION, vec![SecurityLevel::MEDIUM]);
         m.insert(Purpose::DECRYPTION, vec![SecurityLevel::MEDIUM]);
-        m.insert(Purpose::WITHDRAW, vec![SecurityLevel::MEDIUM]);
+        m.insert(Purpose::WITHDRAW, vec![SecurityLevel::CRITICAL]);
         m
     };
 }
