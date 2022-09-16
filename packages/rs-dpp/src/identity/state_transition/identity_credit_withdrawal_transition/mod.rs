@@ -88,11 +88,6 @@ impl IdentityCreditWithdrawalTransition {
         Self::from_value(raw_object)
     }
 
-    /// Get owner ID
-    pub fn get_owner_id(&self) -> &Identifier {
-        &self.identity_id
-    }
-
     /// Returns ID of the created contract
     pub fn get_modified_data_ids(&self) -> Vec<&Identifier> {
         vec![&self.identity_id]
@@ -100,6 +95,11 @@ impl IdentityCreditWithdrawalTransition {
 }
 
 impl StateTransitionIdentitySigned for IdentityCreditWithdrawalTransition {
+    /// Get owner ID
+    fn get_owner_id(&self) -> &Identifier {
+        &self.identity_id
+    }
+
     fn get_signature_public_key_id(&self) -> KeyID {
         self.signature_public_key_id
     }

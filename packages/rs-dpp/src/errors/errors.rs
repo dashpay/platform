@@ -17,8 +17,11 @@ pub enum ProtocolError {
     StringDecodeError(String),
     #[error("Public key data is not set")]
     EmptyPublicKeyDataError,
-    #[error("Payload reached a {0}Kb limit")]
-    MaxEncodedBytesReachedError(usize),
+    #[error("Payload reached a {max_size_kbytes}KB limit")]
+    MaxEncodedBytesReachedError {
+        payload: Vec<u8>,
+        max_size_kbytes: usize,
+    },
     #[error("Encoding Error - {0}")]
     EncodingError(String),
     #[error("Decoding Error - {0}")]
@@ -111,6 +114,18 @@ pub enum ProtocolError {
 
     #[error("Data Contract is not present")]
     DataContractNotPresentError { data_contract_id: Identifier },
+
+    #[error("Invalid public key security level {public_key_security_level}. This state transition requires {required_security_level}")]
+    InvalidSignaturePublicKeySecurityLevelError {
+        public_key_security_level: SecurityLevel,
+        required_security_level: SecurityLevel,
+    },
+
+    #[error("State Transition type is not present")]
+    InvalidStateTransitionTypeError,
+
+    #[error("$dataContractId is not present")]
+    MissingDataContractIdError { raw_document_transition: JsonValue },
 }
 
 impl From<NonConsensusError> for ProtocolError {

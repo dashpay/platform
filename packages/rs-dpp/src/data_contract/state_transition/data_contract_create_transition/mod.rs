@@ -85,11 +85,6 @@ impl DataContractCreateTransition {
         &self.entropy
     }
 
-    /// Get owner ID
-    pub fn get_owner_id(&self) -> &Identifier {
-        &self.data_contract.owner_id
-    }
-
     /// Returns ID of the created contract
     pub fn get_modified_data_ids(&self) -> Vec<&Identifier> {
         vec![&self.data_contract.id]
@@ -97,6 +92,11 @@ impl DataContractCreateTransition {
 }
 
 impl StateTransitionIdentitySigned for DataContractCreateTransition {
+    /// Get owner ID
+    fn get_owner_id(&self) -> &Identifier {
+        &self.data_contract.owner_id
+    }
+
     fn get_signature_public_key_id(&self) -> KeyID {
         self.signature_public_key_id
     }

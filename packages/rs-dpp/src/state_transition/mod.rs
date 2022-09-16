@@ -16,7 +16,11 @@ use crate::identity::state_transition::identity_topup_transition::IdentityTopUpT
 mod abstract_state_transition;
 mod abstract_state_transition_identity_signed;
 mod calculate_state_transition_fee;
+mod state_transition_factory;
+pub use state_transition_factory::*;
+
 mod state_transition_types;
+pub mod validation;
 
 mod example;
 macro_rules! call_method {

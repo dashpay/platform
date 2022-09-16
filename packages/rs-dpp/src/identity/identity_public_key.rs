@@ -28,6 +28,12 @@ pub enum KeyType {
     ECDSA_HASH160 = 2,
 }
 
+impl std::fmt::Display for KeyType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:?}", self)
+    }
+}
+
 impl TryFrom<u8> for KeyType {
     type Error = anyhow::Error;
     fn try_from(value: u8) -> Result<Self, Self::Error> {
@@ -76,7 +82,6 @@ impl Into<CborValue> for Purpose {
         CborValue::from(self as u128)
     }
 }
-
 impl std::fmt::Display for Purpose {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{:?}", self)
@@ -261,6 +266,11 @@ impl IdentityPublicKey {
     pub fn set_readonly(mut self, ro: bool) -> Self {
         self.read_only = ro;
         self
+    }
+
+    /// Checks if public key security level is MASTER
+    pub fn is_master(&self) -> bool {
+        self.security_level == SecurityLevel::MASTER
     }
 
     /// Get the original public key hash

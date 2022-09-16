@@ -12,6 +12,7 @@ use crate::{
     },
     prelude::Identifier,
     state_repository::StateRepositoryLike,
+    state_transition::StateTransitionIdentitySigned,
     validation::ValidationResult,
     ProtocolError, StateError,
 };

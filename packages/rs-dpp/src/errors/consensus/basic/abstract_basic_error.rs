@@ -97,6 +97,20 @@ pub enum BasicError {
 
     #[error("Identity {identity_id} not found")]
     IdentityNotFoundError { identity_id: Identifier },
+
+    #[error("State transition type is not present")]
+    MissingStateTransitionTypeError,
+
+    #[error("Invalid State Transition type {transition_type}")]
+    InvalidStateTransitionTypeError { transition_type: u8 },
+
+    #[error(
+        "State transition size {actual_size_kbytes} KB is more than maximum {max_size_kbytes} KB"
+    )]
+    StateTransitionMaxSizeExceededError {
+        actual_size_kbytes: usize,
+        max_size_kbytes: usize,
+    },
 }
 
 impl From<IndexError> for BasicError {
