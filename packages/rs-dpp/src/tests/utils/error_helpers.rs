@@ -1,6 +1,7 @@
 use crate::{
     consensus::{
         basic::{BasicError, IndexError, JsonSchemaError},
+        signature::SignatureError,
         ConsensusError,
     },
     validation::ValidationResult,
@@ -41,7 +42,24 @@ pub fn get_basic_error_from_result(
         .get(error_number)
         .expect("error should be found")
     {
-        ConsensusError::BasicError(basic_error) => &**basic_error,
+        ConsensusError::BasicError(basic_error) => basic_error,
+        _ => panic!(
+            "error '{:?}' isn't a basic error",
+            result.errors[error_number]
+        ),
+    }
+}
+
+pub fn get_signature_error_from_result<K: Clone>(
+    result: &ValidationResult<K>,
+    error_number: usize,
+) -> &SignatureError {
+    match result
+        .errors
+        .get(error_number)
+        .expect("error should be found")
+    {
+        ConsensusError::SignatureError(signature_error) => signature_error,
         _ => panic!(
             "error '{:?}' isn't a basic error",
             result.errors[error_number]

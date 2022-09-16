@@ -23,6 +23,7 @@ use crate::errors::consensus::basic::{
 use crate::errors::StateError;
 
 use super::basic::identity::IdentityInsufficientBalanceError;
+use super::signature::SignatureError;
 
 #[derive(Error, Debug)]
 //#[cfg_attr(test, derive(Clone))]
@@ -97,6 +98,9 @@ pub enum ConsensusError {
     #[error(transparent)]
     IdentityAlreadyExistsError(IdentityAlreadyExistsError),
 
+    #[error(transparent)]
+    SignatureError(SignatureError),
+
     #[cfg(test)]
     #[cfg_attr(test, error("{0}"))]
     TestConsensusError(TestConsensusError),
@@ -143,6 +147,7 @@ impl ConsensusError {
 
             ConsensusError::StateError(e) => e.get_code(),
             ConsensusError::BasicError(e) => e.get_code(),
+            ConsensusError::SignatureError(e) => e.get_code(),
 
             ConsensusError::IdentityAlreadyExistsError(_) => 4011,
 
@@ -283,5 +288,11 @@ impl From<IdentityAlreadyExistsError> for ConsensusError {
 impl From<IdentityInsufficientBalanceError> for ConsensusError {
     fn from(err: IdentityInsufficientBalanceError) -> Self {
         Self::IdentityInsufficientBalanceError(err)
+    }
+}
+
+impl From<SignatureError> for ConsensusError {
+    fn from(err: SignatureError) -> Self {
+        Self::SignatureError(err)
     }
 }

@@ -107,10 +107,6 @@ impl DocumentsBatchTransition {
         Ok(batch_transitions)
     }
 
-    pub fn get_owner_id(&self) -> &Identifier {
-        &self.owner_id
-    }
-
     pub fn get_transitions(&self) -> &Vec<DocumentTransition> {
         &self.transitions
     }
@@ -122,6 +118,10 @@ impl DocumentsBatchTransition {
 }
 
 impl StateTransitionIdentitySigned for DocumentsBatchTransition {
+    fn get_owner_id(&self) -> &Identifier {
+        &self.owner_id
+    }
+
     fn get_security_level_requirement(&self) -> crate::identity::SecurityLevel {
         // Step 1: Get all document types for the ST
         // Step 2: Get document schema for every type

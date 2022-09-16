@@ -1,5 +1,7 @@
 use crate::errors::consensus::ConsensusError;
 
+pub type SimpleValidationResult = ValidationResult<()>;
+
 #[derive(Default, Debug)]
 pub struct ValidationResult<TData: Clone> {
     pub errors: Vec<ConsensusError>,
@@ -52,5 +54,12 @@ impl<TData: Clone> ValidationResult<TData> {
 
     pub fn data(&self) -> Option<&TData> {
         self.data.as_ref()
+    }
+
+    pub fn into_result_without_data(self) -> ValidationResult<()> {
+        ValidationResult {
+            errors: self.errors,
+            data: Some(()),
+        }
     }
 }

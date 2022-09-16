@@ -22,9 +22,10 @@ pub fn value_to_cbor(
         .map_err(|e| ProtocolError::EncodingError(e.to_string()))?;
 
     if (buffer.len() - size_with_protocol) >= MAX_ENCODED_KBYTE_LENGTH * 1024 {
-        return Err(ProtocolError::MaxEncodedBytesReachedError(
-            MAX_ENCODED_KBYTE_LENGTH,
-        ));
+        return Err(ProtocolError::MaxEncodedBytesReachedError {
+            payload: buffer,
+            max_size_kbytes: MAX_ENCODED_KBYTE_LENGTH,
+        });
     }
 
     Ok(buffer)
