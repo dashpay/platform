@@ -132,6 +132,7 @@ class GrpcTransport {
    * @returns {string}
    */
   makeGrpcUrlFromAddress(address) {
+    let protocol = address.getProtocol();
     let port = address.getHttpPort();
 
     // For NodeJS Client
@@ -139,9 +140,11 @@ class GrpcTransport {
       && process.versions != null
       && process.versions.node != null) {
       port = address.getGrpcPort();
-    }
 
-    const protocol = address.getHttpPort() === 443 ? 'https' : 'http';
+      if (address.isSelfSignedCertificateAllowed()) {
+        protocol = 'http';
+      }
+    }
 
     return `${protocol}://${address.getHost()}:${port}`;
   }

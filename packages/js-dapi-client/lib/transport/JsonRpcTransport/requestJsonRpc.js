@@ -1,20 +1,21 @@
 const axios = require('axios');
+const https = require('https');
 
 const JsonRpcError = require('./errors/JsonRpcError');
 const WrongHttpCodeError = require('./errors/WrongHttpCodeError');
 
 /**
  * @typedef {requestJsonRpc}
+ * @param {string} protocol
  * @param {string} host
  * @param {number} port
+ * @param {boolean} selfSigned
  * @param {string} method
  * @param {object} params
  * @param {object} [options]
  * @returns {Promise<*>}
  */
-async function requestJsonRpc(host, port, method, params, options = {}) {
-  const protocol = port === 443 ? 'https' : 'http';
-
+async function requestJsonRpc(protocol, host, port, selfSigned, method, params, options = {}) {
   const url = `${protocol}://${host}${port && port !== 443 ? `:${port}` : ''}`;
 
   const payload = {
@@ -30,8 +31,10 @@ async function requestJsonRpc(host, port, method, params, options = {}) {
   }
 
   const requestInfo = {
+    protocol,
     host,
     port,
+    selfSigned,
     method,
     params,
     options,
@@ -39,11 +42,23 @@ async function requestJsonRpc(host, port, method, params, options = {}) {
 
   let response;
 
+  const config = { timeout: options.timeout };
+  // For NodeJS Client
+  if (typeof process !== 'undefined'
+    && process.versions != null
+    && process.versions.node != null
+    && protocol === 'https'
+    && selfSigned) {
+    config.httpsAgent = new https.Agent({
+      rejectUnauthorized: false,
+    });
+  }
+
   try {
     response = await axios.post(
       url,
       payload,
-      { timeout: options.timeout },
+      config,
     );
   } catch (error) {
     if (error.response && error.response.status >= 500) {

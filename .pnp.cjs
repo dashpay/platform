@@ -7683,7 +7683,6 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["karma", "npm:6.3.9"],\
             ["karma-chai", "virtual:ad53cff31b1dbd4927a99e71702e3b8b10338636eaff010987c27c9ccea2d52af36900a9e36a4231cbb6e5464248ccc9c1da5d1d24d9b0f4f95660296b1060a6#npm:0.1.0"],\
             ["karma-chrome-launcher", "npm:3.1.0"],\
-            ["karma-firefox-launcher", "npm:2.1.2"],\
             ["karma-mocha", "npm:2.0.1"],\
             ["karma-mocha-reporter", "virtual:58fb68f2aed20e5e0f2e48520ab903ae9bb3440369bfd5e912034003cf27c5aae368649fc5620dd2acbed578131f3a0975e75b838d77d12335fb0412e24026c6#npm:2.2.5"],\
             ["karma-webpack", "virtual:ad53cff31b1dbd4927a99e71702e3b8b10338636eaff010987c27c9ccea2d52af36900a9e36a4231cbb6e5464248ccc9c1da5d1d24d9b0f4f95660296b1060a6#npm:5.0.0"],\
@@ -7753,6 +7752,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["ajv", "npm:8.8.1"],\
             ["ajv-formats", "virtual:58fb68f2aed20e5e0f2e48520ab903ae9bb3440369bfd5e912034003cf27c5aae368649fc5620dd2acbed578131f3a0975e75b838d77d12335fb0412e24026c6#npm:2.1.1"],\
             ["awilix", "npm:4.3.4"],\
+            ["axios", "npm:0.21.4"],\
             ["bls-signatures", "npm:0.2.5"],\
             ["chalk", "npm:4.1.2"],\
             ["dash", "workspace:packages/js-dash-sdk"],\
@@ -7775,11 +7775,13 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["lodash.set", "npm:4.3.2"],\
             ["memory-streams", "npm:0.1.3"],\
             ["node-fetch", "virtual:25a5f5382d53dbf298bf7a1191760bc2e0a523a619eeb0e667b99a8649e8ad183f9e2e0b45f6fb831b92f4078b61622aa567cf79565f6aa5af9597e3c84864f6#npm:2.6.7"],\
+            ["node-forge", "npm:1.3.1"],\
             ["node-graceful", "npm:3.1.0"],\
             ["oclif", "npm:2.4.5"],\
             ["pretty-bytes", "npm:5.6.0"],\
             ["pretty-ms", "npm:7.0.1"],\
             ["public-ip", "npm:4.0.4"],\
+            ["qs", "npm:6.11.0"],\
             ["rxjs", "npm:6.6.7"],\
             ["semver", "npm:7.3.5"],\
             ["strip-ansi", "npm:6.0.1"],\
@@ -13745,6 +13747,15 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           "linkType": "HARD"\
         }]\
       ]],\
+      ["node-forge", [\
+        ["npm:1.3.1", {\
+          "packageLocation": "./.yarn/cache/node-forge-npm-1.3.1-f31fd566cc-08fb072d3d.zip/node_modules/node-forge/",\
+          "packageDependencies": [\
+            ["node-forge", "npm:1.3.1"]\
+          ],\
+          "linkType": "HARD"\
+        }]\
+      ]],\
       ["node-graceful", [\
         ["npm:3.1.0", {\
           "packageLocation": "./.yarn/cache/node-graceful-npm-3.1.0-645605305d-159d06ca29.zip/node_modules/node-graceful/",\
@@ -15305,6 +15316,14 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
         }]\
       ]],\
       ["qs", [\
+        ["npm:6.11.0", {\
+          "packageLocation": "./.yarn/cache/qs-npm-6.11.0-caf1bc9dea-6e1f29dd53.zip/node_modules/qs/",\
+          "packageDependencies": [\
+            ["qs", "npm:6.11.0"],\
+            ["side-channel", "npm:1.0.4"]\
+          ],\
+          "linkType": "HARD"\
+        }],\
         ["npm:6.5.2", {\
           "packageLocation": "./.yarn/cache/qs-npm-6.5.2-dbf9d8386b-24af7b9928.zip/node_modules/qs/",\
           "packageDependencies": [\

@@ -86,6 +86,15 @@ module.exports = {
           fillInterval: '60s',
           enabled: true,
         },
+        ssl: {
+          enabled: false,
+          provider: 'zerossl',
+          providerConfigs: {
+            zerossl: {
+              apiKey: null,
+            },
+          },
+        },
       },
       api: {
         docker: {
@@ -117,7 +126,7 @@ module.exports = {
       },
       tenderdash: {
         docker: {
-          image: 'dashpay/tenderdash:0.8.0-dev.6',
+          image: 'dashpay/tenderdash:0.9.0-dev.1',
         },
         p2p: {
           port: 26656,

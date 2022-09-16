@@ -83,6 +83,8 @@ describe('SimplifiedMasternodeListDAPIAddressProvider', () => {
         httpPort: DAPIAddress.DEFAULT_HTTP_PORT,
         grpcPort: DAPIAddress.DEFAULT_GRPC_PORT,
         proRegTxHash: validMasternodeList[0].proRegTxHash,
+        protocol: 'https',
+        allowSelfSignedCertificate: false,
       });
 
       expect(secondAddress).to.be.instanceOf(DAPIAddress);
@@ -92,6 +94,8 @@ describe('SimplifiedMasternodeListDAPIAddressProvider', () => {
         httpPort: DAPIAddress.DEFAULT_HTTP_PORT,
         grpcPort: DAPIAddress.DEFAULT_GRPC_PORT,
         proRegTxHash: validMasternodeList[1].proRegTxHash,
+        protocol: 'https',
+        allowSelfSignedCertificate: false,
       });
 
       expect(thirdAddress).to.be.instanceOf(DAPIAddress);
@@ -101,6 +105,8 @@ describe('SimplifiedMasternodeListDAPIAddressProvider', () => {
         httpPort: DAPIAddress.DEFAULT_HTTP_PORT,
         grpcPort: DAPIAddress.DEFAULT_GRPC_PORT,
         proRegTxHash: validMasternodeList[2].proRegTxHash,
+        protocol: 'https',
+        allowSelfSignedCertificate: false,
       });
 
       expect(smlMock.getValidMasternodesList).to.be.calledOnceWithExactly();
@@ -136,6 +142,8 @@ describe('SimplifiedMasternodeListDAPIAddressProvider', () => {
         httpPort: DAPIAddress.DEFAULT_HTTP_PORT,
         grpcPort: DAPIAddress.DEFAULT_GRPC_PORT,
         proRegTxHash: validMasternodeList[1].proRegTxHash,
+        protocol: 'https',
+        allowSelfSignedCertificate: false,
       });
 
       expect(thirdAddress).to.be.instanceOf(DAPIAddress);
@@ -145,6 +153,8 @@ describe('SimplifiedMasternodeListDAPIAddressProvider', () => {
         httpPort: DAPIAddress.DEFAULT_HTTP_PORT,
         grpcPort: DAPIAddress.DEFAULT_GRPC_PORT,
         proRegTxHash: validMasternodeList[2].proRegTxHash,
+        protocol: 'https',
+        allowSelfSignedCertificate: false,
       });
 
       expect(smlMock.getValidMasternodesList).to.be.calledOnceWithExactly();
