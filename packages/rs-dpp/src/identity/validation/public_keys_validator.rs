@@ -2,6 +2,7 @@ use std::collections::HashMap;
 
 use bls_signatures::{PublicKey as BlsPublicKey, Serialize};
 use dashcore::PublicKey;
+use lazy_static::lazy_static;
 use serde_json::Value;
 
 use crate::errors::consensus::basic::identity::{
@@ -11,6 +12,11 @@ use crate::errors::consensus::basic::identity::{
 use crate::identity::{IdentityPublicKey, KeyType, ALLOWED_SECURITY_LEVELS};
 use crate::validation::{JsonSchemaValidator, ValidationResult};
 use crate::{DashPlatformProtocolInitError, NonConsensusError, PublicKeyValidationError};
+
+lazy_static! {
+    static ref PUBLIC_KEY_SCHEMA: serde_json::Value =
+        serde_json::from_str(include_str!("./../../schema/identity/publicKey.json")).unwrap();
+}
 
 pub trait TPublicKeysValidator {
     fn validate_keys(
@@ -123,8 +129,7 @@ impl TPublicKeysValidator for PublicKeysValidator {
 
 impl PublicKeysValidator {
     pub fn new() -> Result<Self, DashPlatformProtocolInitError> {
-        let public_key_schema_validator =
-            JsonSchemaValidator::new(crate::schema::identity::public_key_json()?)?;
+        let public_key_schema_validator = JsonSchemaValidator::new(PUBLIC_KEY_SCHEMA.clone())?;
 
         let public_keys_validator = Self {
             public_key_schema_validator,
