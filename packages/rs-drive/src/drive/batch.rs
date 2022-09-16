@@ -1,5 +1,5 @@
 use crate::drive::flags::StorageFlags;
-use grovedb::batch::{GroveDbOp, Op};
+use grovedb::batch::{GroveDbOp, GroveDbOpConsistencyResults, Op};
 use grovedb::Element;
 
 // TODO move to GroveDB
@@ -66,5 +66,9 @@ impl GroveDbOpBatch {
             key,
             op: Op::Insert { element },
         })
+    }
+
+    pub fn verify_consistency_of_operations(&self) -> GroveDbOpConsistencyResults {
+        GroveDbOp::verify_consistency_of_operations(&self.operations)
     }
 }

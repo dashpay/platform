@@ -824,6 +824,7 @@ impl Drive {
                 ops.operations,
                 Some(BatchApplyOptions {
                     validate_insertion_does_not_override: validate,
+                    disable_operation_consistency_check: false,
                 }),
                 transaction,
             );
@@ -871,6 +872,7 @@ impl Drive {
             ops.operations,
             Some(BatchApplyOptions {
                 validate_insertion_does_not_override: validate,
+                disable_operation_consistency_check: false,
             }),
         );
         push_drive_operation_result(cost_context, drive_operations)
