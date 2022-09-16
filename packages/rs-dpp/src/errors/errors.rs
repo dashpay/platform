@@ -126,6 +126,9 @@ pub enum ProtocolError {
 
     #[error("$dataContractId is not present")]
     MissingDataContractIdError { raw_document_transition: JsonValue },
+
+    #[error("Public key is disabled")]
+    PublicKeyIsDisabledError { public_key: IdentityPublicKey },
 }
 
 impl From<NonConsensusError> for ProtocolError {

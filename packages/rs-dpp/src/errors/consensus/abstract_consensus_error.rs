@@ -8,7 +8,7 @@ use crate::consensus::basic::identity::{
     IdentityAssetLockTransactionIsNotFoundError,
     IdentityAssetLockTransactionOutPointAlreadyExistsError,
     IdentityAssetLockTransactionOutputNotFoundError, InvalidAssetLockProofCoreChainHeightError,
-    InvalidAssetLockProofTransactionHeightError, InvalidAssetLockTransactionOutputReturnSize,
+    InvalidAssetLockProofTransactionHeightError, InvalidAssetLockTransactionOutputReturnSizeError,
     InvalidIdentityAssetLockTransactionError, InvalidIdentityAssetLockTransactionOutputError,
     InvalidIdentityPublicKeyDataError, InvalidIdentityPublicKeySecurityLevelError,
     InvalidInstantAssetLockProofError, InvalidInstantAssetLockProofSignatureError,
@@ -51,7 +51,7 @@ pub enum ConsensusError {
     #[error("{0}")]
     InvalidIdentityAssetLockTransactionOutputError(InvalidIdentityAssetLockTransactionOutputError),
     #[error("{0}")]
-    InvalidAssetLockTransactionOutputReturnSize(InvalidAssetLockTransactionOutputReturnSize),
+    InvalidAssetLockTransactionOutputReturnSize(InvalidAssetLockTransactionOutputReturnSizeError),
     #[error("{0}")]
     IdentityAssetLockTransactionOutputNotFoundError(
         IdentityAssetLockTransactionOutputNotFoundError,
@@ -243,8 +243,8 @@ impl From<InvalidIdentityAssetLockTransactionOutputError> for ConsensusError {
     }
 }
 
-impl From<InvalidAssetLockTransactionOutputReturnSize> for ConsensusError {
-    fn from(err: InvalidAssetLockTransactionOutputReturnSize) -> Self {
+impl From<InvalidAssetLockTransactionOutputReturnSizeError> for ConsensusError {
+    fn from(err: InvalidAssetLockTransactionOutputReturnSizeError) -> Self {
         Self::InvalidAssetLockTransactionOutputReturnSize(err)
     }
 }

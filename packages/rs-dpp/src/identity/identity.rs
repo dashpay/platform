@@ -6,6 +6,7 @@ use serde_json::Value as JsonValue;
 
 use crate::identity::identity_public_key;
 use crate::identity::state_transition::asset_lock_proof::AssetLockProof;
+use crate::prelude::Revision;
 use crate::util::cbor_value::{CborBTreeMapHelper, CborCanonicalMap};
 use crate::util::deserializer;
 use crate::util::json_value::{JsonValueExt, ReplaceWith};
@@ -25,7 +26,7 @@ pub struct Identity {
     pub id: Identifier,
     pub public_keys: Vec<IdentityPublicKey>,
     pub balance: u64,
-    pub revision: i64,
+    pub revision: Revision,
     #[serde(skip)]
     pub asset_lock_proof: Option<AssetLockProof>,
     #[serde(skip)]
@@ -39,7 +40,7 @@ struct IdentityForBuffer {
     id: Identifier,
     public_keys: Vec<IdentityPublicKey>,
     balance: u64,
-    revision: i64,
+    revision: Revision,
 }
 
 impl From<&Identity> for IdentityForBuffer {
@@ -75,9 +76,24 @@ impl Identity {
         &self.public_keys
     }
 
+    /// Get Identity public keys revision
+    pub fn get_public_keys_mut(&mut self) -> &mut [IdentityPublicKey] {
+        &mut self.public_keys
+    }
+
     // Returns a public key for a given id
     pub fn get_public_key_by_id(&self, key_id: KeyID) -> Option<&IdentityPublicKey> {
         self.public_keys.iter().find(|i| i.id == key_id)
+    }
+
+    // Returns a public key for a given id
+    pub fn get_public_key_by_id_mut(&mut self, key_id: KeyID) -> Option<&mut IdentityPublicKey> {
+        self.public_keys.iter_mut().find(|i| i.id == key_id)
+    }
+
+    /// Add identity public keys
+    pub fn add_public_keys(&mut self, keys: impl IntoIterator<Item = IdentityPublicKey>) {
+        self.public_keys.extend(keys);
     }
 
     /// Returns balance
@@ -115,13 +131,13 @@ impl Identity {
     }
 
     /// Set Identity revision
-    pub fn set_revision(mut self, revision: i64) -> Self {
+    pub fn set_revision(mut self, revision: Revision) -> Self {
         self.revision = revision;
         self
     }
 
     /// Get Identity revision
-    pub fn get_revision(&self) -> i64 {
+    pub fn get_revision(&self) -> Revision {
         self.revision
     }
 
@@ -181,7 +197,7 @@ impl Identity {
             })?;
 
         let identity_id = identity_map.get_identifier("id")?;
-        let revision = identity_map.get_i64("revision")?;
+        let revision = identity_map.get_u64("revision")?;
         let balance: u64 = identity_map.get_u64("balance")?;
 
         let keys_cbor_value = identity_map.get("publicKeys").ok_or_else(|| {

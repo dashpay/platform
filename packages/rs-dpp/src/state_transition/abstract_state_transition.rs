@@ -151,7 +151,6 @@ pub trait StateTransitionLike:
     }
 }
 
-// TODO remove 'unimplemented' when get rid of state transition mocks
 /// The trait contains methods related to conversion of StateTransition into different formats
 pub trait StateTransitionConvert: Serialize {
     // TODO remove this as it is not necessary and can be hardcoded
@@ -162,26 +161,19 @@ pub trait StateTransitionConvert: Serialize {
     /// Returns the [`serde_json::Value`] instance that preserves the `Vec<u8>` representation
     /// for Identifiers and binary data
     fn to_object(&self, skip_signature: bool) -> Result<JsonValue, ProtocolError> {
-        let mut json_value: JsonValue = serde_json::to_value(self)?;
-        if skip_signature {
-            if let JsonValue::Object(ref mut o) = json_value {
-                for path in Self::signature_property_paths() {
-                    o.remove(path);
-                }
-            }
-        }
-        Ok(json_value)
+        state_transition_helpers::to_object(
+            self,
+            Self::signature_property_paths(),
+            Self::identifiers_property_paths(),
+            skip_signature,
+        )
     }
+
     /// Returns the [`serde_json::Value`] instance that encodes:
     ///  - Identifiers  - with base58
     ///  - Binary data  - with base64
     fn to_json(&self) -> Result<JsonValue, ProtocolError> {
-        let mut json_value: JsonValue = serde_json::to_value(self)?;
-        json_value.replace_binary_paths(Self::binary_property_paths(), ReplaceWith::Base64)?;
-        json_value
-            .replace_identifier_paths(Self::identifiers_property_paths(), ReplaceWith::Base58)?;
-
-        Ok(json_value)
+        state_transition_helpers::to_json(self, Self::binary_property_paths())
     }
 
     // Returns the cibor-encoded bytes representation of the object. The data is  prefixed by 4 bytes containing the Protocol Version
@@ -194,5 +186,39 @@ pub trait StateTransitionConvert: Serialize {
     // Returns the hash of cibor-encoded bytes representation of the object
     fn hash(&self, skip_signature: bool) -> Result<Vec<u8>, ProtocolError> {
         Ok(hash::hash(self.to_buffer(skip_signature)?))
+    }
+}
+
+pub mod state_transition_helpers {
+    use super::*;
+
+    pub fn to_json<'a>(
+        serializable: impl Serialize,
+        binary_property_paths: impl IntoIterator<Item = &'a str>,
+    ) -> Result<JsonValue, ProtocolError> {
+        let mut json_value: JsonValue = serde_json::to_value(serializable)?;
+
+        json_value.replace_binary_paths(binary_property_paths, ReplaceWith::Base64)?;
+
+        Ok(json_value)
+    }
+
+    pub fn to_object<'a>(
+        serializable: impl Serialize,
+        signature_property_paths: impl IntoIterator<Item = &'a str>,
+        identifier_property_paths: impl IntoIterator<Item = &'a str>,
+        skip_signature: bool,
+    ) -> Result<JsonValue, ProtocolError> {
+        let mut json_value: JsonValue = serde_json::to_value(serializable)?;
+        json_value.replace_identifier_paths(identifier_property_paths, ReplaceWith::Bytes);
+
+        if skip_signature {
+            if let JsonValue::Object(ref mut o) = json_value {
+                for path in signature_property_paths {
+                    o.remove(path);
+                }
+            }
+        }
+        Ok(json_value)
     }
 }

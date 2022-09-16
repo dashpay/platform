@@ -10,14 +10,19 @@ use crate::errors::consensus::basic::identity::{
     InvalidIdentityPublicKeyDataError, InvalidIdentityPublicKeySecurityLevelError,
 };
 use crate::identity::{IdentityPublicKey, KeyType, ALLOWED_SECURITY_LEVELS};
+use crate::util::json_value::JsonValueExt;
 use crate::validation::{JsonSchemaValidator, ValidationResult};
 use crate::{DashPlatformProtocolInitError, NonConsensusError, PublicKeyValidationError};
+
+#[cfg(test)]
+use mockall::{automock, predicate::*};
 
 lazy_static! {
     static ref PUBLIC_KEY_SCHEMA: serde_json::Value =
         serde_json::from_str(include_str!("./../../schema/identity/publicKey.json")).unwrap();
 }
 
+#[cfg_attr(test, automock)]
 pub trait TPublicKeysValidator {
     fn validate_keys(
         &self,
@@ -129,9 +134,44 @@ impl TPublicKeysValidator for PublicKeysValidator {
     }
 }
 
+pub struct PublicKeysValidatorOptions {
+    pub must_be_enabled: bool,
+}
+
 impl PublicKeysValidator {
     pub fn new() -> Result<Self, DashPlatformProtocolInitError> {
         let public_key_schema_validator = JsonSchemaValidator::new(PUBLIC_KEY_SCHEMA.clone())?;
+
+        let public_keys_validator = Self {
+            public_key_schema_validator,
+        };
+
+        Ok(public_keys_validator)
+    }
+
+    pub fn new_with_options(
+        options: PublicKeysValidatorOptions,
+    ) -> Result<Self, DashPlatformProtocolInitError> {
+        let schema_for_validation = match options.must_be_enabled {
+            true => {
+                let mut schema = PUBLIC_KEY_SCHEMA.clone();
+                schema
+                    .get_mut("properties")
+                    .ok_or(DashPlatformProtocolInitError::InvalidSchemaError(
+                        "'properties' is not found",
+                    ))?
+                    .remove("disabledAt")
+                    .map_err(|_| {
+                        DashPlatformProtocolInitError::InvalidSchemaError(
+                            "'properties.disabledAt' not found",
+                        )
+                    })?;
+                schema
+            }
+            false => PUBLIC_KEY_SCHEMA.clone(),
+        };
+
+        let public_key_schema_validator = JsonSchemaValidator::new(schema_for_validation)?;
 
         let public_keys_validator = Self {
             public_key_schema_validator,
@@ -148,7 +188,7 @@ impl PublicKeysValidator {
     }
 }
 
-fn duplicated_keys(public_keys: &[IdentityPublicKey]) -> Vec<u64> {
+pub(crate) fn duplicated_keys(public_keys: &[IdentityPublicKey]) -> Vec<u64> {
     let mut keys_count = HashMap::<Vec<u8>, usize>::new();
     let mut duplicated_key_ids = vec![];
 
@@ -166,7 +206,7 @@ fn duplicated_keys(public_keys: &[IdentityPublicKey]) -> Vec<u64> {
     duplicated_key_ids
 }
 
-fn duplicated_key_ids(public_keys: &[IdentityPublicKey]) -> Vec<u64> {
+pub(crate) fn duplicated_key_ids(public_keys: &[IdentityPublicKey]) -> Vec<u64> {
     let mut duplicated_ids = Vec::<u64>::new();
     let mut ids_count = HashMap::<u64, usize>::new();
 

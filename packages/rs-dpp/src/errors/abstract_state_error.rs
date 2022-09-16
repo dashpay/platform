@@ -1,6 +1,6 @@
 use thiserror::Error;
 
-use crate::prelude::Identifier;
+use crate::{identity::KeyID, prelude::Identifier};
 
 use super::DataTriggerError;
 
@@ -51,6 +51,38 @@ pub enum StateError {
 
     #[error(transparent)]
     DataTriggerError(Box<DataTriggerError>),
+
+    #[error(
+        "Identity {identity_id} has invalid revision. The current revision is {current_revision}"
+    )]
+    InvalidIdentityRevisionError {
+        identity_id: Identifier,
+        current_revision: u32,
+    },
+
+    #[error("Duplicated public keys {duplicated_public_key_ids:?} found")]
+    DuplicatedIdentityPublicKeyError {
+        duplicated_public_key_ids: Vec<KeyID>,
+    },
+
+    #[error("Duplicated public keys ids {duplicated_ids:?} found")]
+    DuplicatedIdentityPublicKeyIdError { duplicated_ids: Vec<KeyID> },
+
+    #[error("Identity public keys disabled time ({disabled_at}) is out of block time window from {time_window_start} and {time_window_end}" )]
+    IdentityPublicKeyDisabledAtWindowViolationError {
+        disabled_at: u64,
+        time_window_start: u64,
+        time_window_end: u64,
+    },
+
+    #[error("Identity Public Key #{public_key_index} is read only")]
+    IdentityPublicKeyIsReadOnlyError { public_key_index: KeyID },
+
+    #[error("Identity Public Key with Id {id} does not exist")]
+    InvalidIdentityPublicKeyIdError { id: KeyID },
+
+    #[error("Identity cannot contain more than {max_items} public keys")]
+    MaxIdentityPublicKeyLimitReached { max_items: usize },
 }
 
 impl From<DataTriggerError> for StateError {

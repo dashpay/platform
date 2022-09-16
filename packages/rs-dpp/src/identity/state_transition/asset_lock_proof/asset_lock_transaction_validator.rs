@@ -5,8 +5,9 @@ use dashcore::{OutPoint, Transaction};
 
 use crate::consensus::basic::identity::{
     IdentityAssetLockTransactionOutPointAlreadyExistsError,
-    IdentityAssetLockTransactionOutputNotFoundError, InvalidAssetLockTransactionOutputReturnSize,
-    InvalidIdentityAssetLockTransactionError, InvalidIdentityAssetLockTransactionOutputError,
+    IdentityAssetLockTransactionOutputNotFoundError,
+    InvalidAssetLockTransactionOutputReturnSizeError, InvalidIdentityAssetLockTransactionError,
+    InvalidIdentityAssetLockTransactionOutputError,
 };
 use crate::state_repository::StateRepositoryLike;
 use crate::util::vec::vec_to_array;
@@ -72,7 +73,7 @@ where
                     let public_key_hash = &output.script_pubkey.as_bytes()[2..];
                     // 20 bytes is the size of ripemd160, which should be stored after the OP_RETURN
                     if public_key_hash.len() != 20 {
-                        result.add_error(InvalidAssetLockTransactionOutputReturnSize::new(
+                        result.add_error(InvalidAssetLockTransactionOutputReturnSizeError::new(
                             output_index,
                         ));
                         return Ok(result);

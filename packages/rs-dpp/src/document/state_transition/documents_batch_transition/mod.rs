@@ -167,7 +167,7 @@ impl StateTransitionConvert for DocumentsBatchTransition {
     }
 
     fn signature_property_paths() -> Vec<&'static str> {
-        vec![PROPERTY_SIGNATURE, PROPERTY_SIGNATURE_PUBLIC_KEY_ID]
+        vec![PROPERTY_SIGNATURE]
     }
 
     fn to_json(&self) -> Result<JsonValue, ProtocolError> {

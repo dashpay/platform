@@ -69,6 +69,15 @@ impl ErrorWithCode for StateError {
             // Data contract
             Self::DataContractAlreadyPresentError { .. } => 4000,
             Self::DataTriggerError(ref e) => e.get_code(),
+
+            // Identity
+            Self::IdentityPublicKeyDisabledAtWindowViolationError { .. } => 4012,
+            Self::IdentityPublicKeyIsReadOnlyError { .. } => 4017,
+            Self::InvalidIdentityPublicKeyIdError { .. } => 4018,
+            Self::InvalidIdentityRevisionError { .. } => 4019,
+            Self::MaxIdentityPublicKeyLimitReached { .. } => 4020,
+            Self::DuplicatedIdentityPublicKeyError { .. } => 4021,
+            Self::DuplicatedIdentityPublicKeyIdError { .. } => 4022,
         }
     }
 }
