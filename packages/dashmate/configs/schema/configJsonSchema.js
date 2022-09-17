@@ -226,8 +226,12 @@ module.exports = {
           type: 'integer',
           enum: [0, 1],
         },
+        reindex: {
+          type: 'integer',
+          enum: [0, 1],
+        },
       },
-      required: ['docker', 'p2p', 'rpc', 'spork', 'masternode', 'miner', 'devnetName', 'debug'],
+      required: ['docker', 'p2p', 'rpc', 'spork', 'masternode', 'miner', 'devnetName', 'debug', 'reindex'],
       additionalProperties: false,
     },
     platform: {

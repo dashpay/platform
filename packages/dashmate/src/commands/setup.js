@@ -105,6 +105,7 @@ class SetupCommand extends BaseCommand {
         isVerbose,
       });
     } catch (e) {
+      console.error(e)
       throw new MuteOneLineError(e);
     }
   }
