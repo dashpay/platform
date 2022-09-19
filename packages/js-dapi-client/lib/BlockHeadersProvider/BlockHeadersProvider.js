@@ -24,6 +24,8 @@ const defaultOptions = {
 
 const EVENTS = {
   ERROR: 'error',
+  HISTORICAL_SYNC_STARTED: 'HISTORICAL_SYNC_STARTED',
+  CONTINUOUS_SYNC_STARTED: 'CONTINUOUS_SYNC_STARTED',
   CHAIN_UPDATED: 'CHAIN_UPDATED',
   HISTORICAL_DATA_OBTAINED: 'HISTORICAL_DATA_OBTAINED',
   STOPPED: 'STOPPED',
@@ -169,6 +171,7 @@ class BlockHeadersProvider extends EventEmitter {
     );
 
     this.state = STATES.HISTORICAL_SYNC;
+    this.emit(EVENTS.HISTORICAL_SYNC_STARTED);
   }
 
   async startContinuousSync(fromBlockHeight) {
@@ -184,6 +187,7 @@ class BlockHeadersProvider extends EventEmitter {
     this.ensureChainRoot(fromBlockHeight);
     await this.blockHeadersReader.subscribeToNew(fromBlockHeight);
     this.state = STATES.CONTINUOUS_SYNC;
+    this.emit(EVENTS.CONTINUOUS_SYNC_STARTED);
   }
 
   async stop() {

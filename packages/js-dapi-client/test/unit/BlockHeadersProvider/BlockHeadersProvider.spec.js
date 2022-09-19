@@ -57,6 +57,8 @@ describe('BlockHeadersProvider - unit', () => {
       expect(blockHeadersReader.readHistorical)
         .to.have.been.calledWith(1, 5);
       expect(blockHeadersProvider.state).to.equal(BlockHeadersProvider.STATES.HISTORICAL_SYNC);
+      expect(blockHeadersProvider.emit).to.have.been
+        .calledWith(BlockHeadersProvider.EVENTS.HISTORICAL_SYNC_STARTED);
     });
 
     it('should not allow running historical sync if already running', async () => {
@@ -96,6 +98,8 @@ describe('BlockHeadersProvider - unit', () => {
         .to.have.been.calledWith(100);
       expect(blockHeadersProvider.state)
         .to.equal(BlockHeadersProvider.STATES.CONTINUOUS_SYNC);
+      expect(blockHeadersProvider.emit).to.have.been
+        .calledWith(BlockHeadersProvider.EVENTS.CONTINUOUS_SYNC_STARTED);
     });
 
     it('should not allow running historical sync if already running', async () => {

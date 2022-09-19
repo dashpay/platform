@@ -1,6 +1,7 @@
 const { expect } = require('chai');
 const EventEmitter = require('events');
 const { Block } = require('@dashevo/dashcore-lib');
+const DAPIClient = require('@dashevo/dapi-client');
 const EVENTS = require('../../../../src/EVENTS');
 const CONSTANTS = require('../../../../src/CONSTANTS');
 const BlockHeadersSyncWorker = require('../../../../src/plugins/Workers/BlockHeadersSyncWorker/BlockHeadersSyncWorker');
@@ -9,6 +10,8 @@ const mockStorage = require('../../../../src/test/mocks/mockStorage');
 const BlockHeadersStreamMock = require('../../../../src/test/mocks/BlockHeadersStreamMock');
 const { waitOneTick } = require('../../../../src/test/utils');
 const mockHeadersChain = require('../../../../src/test/mocks/mockHeadersChain');
+
+const { BlockHeadersProvider } = DAPIClient;
 
 describe('BlockHeadersSyncWorker', () => {
   let headersChain = [];
@@ -81,9 +84,11 @@ describe('BlockHeadersSyncWorker', () => {
 
       // Wait for the stream to start
       onStartPromise = blockHeadersSyncWorker.onStart();
-      // Wait two ticks to init wasm x11
-      await waitOneTick();
-      await waitOneTick();
+
+      const { blockHeadersProvider } = blockHeadersSyncWorker.transport.client;
+      await new Promise((resolve) => {
+        blockHeadersProvider.on(BlockHeadersProvider.EVENTS.HISTORICAL_SYNC_STARTED, resolve);
+      });
 
       // Send 1/3 of every batch
       const headersPerBatch = Math.ceil(HEADERS_PER_STREAM / 3);
@@ -208,9 +213,11 @@ describe('BlockHeadersSyncWorker', () => {
     it('[first launch] should process first batches of historical headers and save to storage', async () => {
       // Wait for the stream to start
       const onStartPromise = blockHeadersSyncWorker.onStart();
-      // Wait two ticks to init wasm x11
-      await waitOneTick();
-      await waitOneTick();
+
+      const { blockHeadersProvider } = blockHeadersSyncWorker.transport.client;
+      await new Promise((resolve) => {
+        blockHeadersProvider.on(BlockHeadersProvider.EVENTS.HISTORICAL_SYNC_STARTED, resolve);
+      });
 
       const { storage } = blockHeadersSyncWorker;
 
