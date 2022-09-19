@@ -1,14 +1,14 @@
-use std::convert::TryInto;
 use dpp::dashcore::anyhow;
 pub use serde::{Deserialize, Serialize};
+use std::convert::TryInto;
 use wasm_bindgen::prelude::*;
 
+use crate::errors::from_dpp_err;
+use crate::identifier::IdentifierWrapper;
 use crate::js_buffer::JsBuffer;
 use dpp::identity::{IdentityPublicKey, KeyID, KeyType, Purpose, SecurityLevel, TimestampMillis};
 use dpp::ProtocolError;
 use serde_json::Value;
-use crate::errors::from_dpp_err;
-use crate::identifier::IdentifierWrapper;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
@@ -20,7 +20,7 @@ pub(crate) struct JsPublicKey {
     pub key_type: KeyType,
     pub data: JsBuffer,
     pub read_only: bool,
-    pub disabled_at: Option<TimestampMillis>
+    pub disabled_at: Option<TimestampMillis>,
 }
 
 impl From<JsPublicKey> for IdentityPublicKey {
@@ -62,7 +62,8 @@ impl IdentityPublicKeyWasm {
     pub fn new(raw_public_key: JsValue) -> Result<IdentityPublicKeyWasm, JsValue> {
         let streng = String::from(js_sys::JSON::stringify(&raw_public_key)?);
         // let js_public_key: JsPublicKey = serde_wasm_bindgen::from_value(raw_public_key)?;
-        let js_public_key: JsPublicKey = serde_json::from_str(&streng).map_err(|e| e.to_string())?;
+        let js_public_key: JsPublicKey =
+            serde_json::from_str(&streng).map_err(|e| e.to_string())?;
         let pk = IdentityPublicKey::from(js_public_key);
         Ok(pk.into())
     }
@@ -84,7 +85,11 @@ impl IdentityPublicKeyWasm {
 
     #[wasm_bindgen(js_name=setType)]
     pub fn set_type(&mut self, key_type: u8) -> Result<(), JsValue> {
-        self.0.set_type(key_type.try_into().map_err(|e: anyhow::Error| e.to_string())?);
+        self.0.set_type(
+            key_type
+                .try_into()
+                .map_err(|e: anyhow::Error| e.to_string())?,
+        );
         Ok(())
     }
 
@@ -101,7 +106,11 @@ impl IdentityPublicKeyWasm {
 
     #[wasm_bindgen(js_name=setPurpose)]
     pub fn set_purpose(&mut self, purpose: u8) -> Result<(), JsValue> {
-        self.0.set_purpose(purpose.try_into().map_err(|e: anyhow::Error| e.to_string())?);
+        self.0.set_purpose(
+            purpose
+                .try_into()
+                .map_err(|e: anyhow::Error| e.to_string())?,
+        );
         Ok(())
     }
 
@@ -112,7 +121,11 @@ impl IdentityPublicKeyWasm {
 
     #[wasm_bindgen(js_name=setSecurityLevel)]
     pub fn set_security_level(&mut self, purpose: u8) -> Result<(), JsValue> {
-        self.0.set_security_level(purpose.try_into().map_err(|e: anyhow::Error| e.to_string())?);
+        self.0.set_security_level(
+            purpose
+                .try_into()
+                .map_err(|e: anyhow::Error| e.to_string())?,
+        );
         Ok(())
     }
 
@@ -149,6 +162,15 @@ impl IdentityPublicKeyWasm {
     #[wasm_bindgen(js_name=isMaster)]
     pub fn is_master(&self) -> bool {
         self.0.is_master()
+    }
+
+    #[wasm_bindgen(js_name=toJSON)]
+    pub fn to_json(&self) -> Result<JsValue, JsValue> {
+        let val = self.0
+            .to_json()
+            .map_err(|e| from_dpp_err(e.into()))?;
+        let json = val.to_string();
+        js_sys::JSON::parse(&json)
     }
 }
 

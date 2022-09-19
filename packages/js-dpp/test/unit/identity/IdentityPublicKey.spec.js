@@ -1,6 +1,5 @@
-const IdentityPublicKey = require('../../../lib/identity/IdentityPublicKey');
-const EmptyPublicKeyDataError = require('../../../lib/identity/errors/EmptyPublicKeyDataError');
 const { default: loadWasmDpp } = require('@dashevo/wasm-dpp');
+const IdentityPublicKey = require('../../../lib/identity/IdentityPublicKey');
 
 describe('IdentityPublicKey', () => {
   let rawPublicKey;
@@ -202,30 +201,6 @@ describe('IdentityPublicKey', () => {
       const expectedHash = Buffer.from('54c557e07dde5bb6cb791c7a540e0a4796f5e97e', 'hex');
 
       expect(result).to.deep.equal(expectedHash);
-    });
-
-    it('should throw invalid argument error if data was not originally provided', async () => {
-      console.log(Buffer.from('54c557e07dde5bb6cb791c7a540e0a4796f5e97e', 'hex').length);
-      publicKey = new IdentityPublicKeyWasm({
-        id: 0,
-        type: IdentityPublicKey.TYPES.ECDSA_SECP256K1,
-        data: Buffer.from('54c557e07dde5bb6cb791c7a540e0a4796f5e97e', 'hex'),
-        purpose: IdentityPublicKey.PURPOSES.AUTHENTICATION,
-        securityLevel: IdentityPublicKey.SECURITY_LEVELS.MASTER,
-        readOnly: false,
-        disabledAt: 123,
-      });
-
-      try {
-        publicKey.hash();
-
-        expect.fail('Error was not thrown');
-      } catch (e) {
-        expect(e).to.be.an.instanceOf(EmptyPublicKeyDataError);
-        expect(e.message).to.equal(
-          'Public key data is not set',
-        );
-      }
     });
   });
 
