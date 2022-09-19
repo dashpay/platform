@@ -19,6 +19,7 @@ describe('BlockHeadersProvider - unit', () => {
         0: '0x000000001',
       },
       reset: this.sinon.spy(),
+      validate: this.sinon.spy(),
     });
 
     const blockHeadersReader = new EventEmitter();
