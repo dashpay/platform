@@ -4,11 +4,8 @@ use std::convert::TryInto;
 use wasm_bindgen::prelude::*;
 
 use crate::errors::from_dpp_err;
-use crate::identifier::IdentifierWrapper;
 use crate::js_buffer::JsBuffer;
 use dpp::identity::{IdentityPublicKey, KeyID, KeyType, Purpose, SecurityLevel, TimestampMillis};
-use dpp::ProtocolError;
-use serde_json::Value;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
