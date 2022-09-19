@@ -1,6 +1,6 @@
 {
   "name": "dashmate",
-  "version": "0.23.0-dev.6",
+  "version": "0.23.0-dev.9",
   "description": "Distribution package for Dash Masternode installation",
   "main": "src/index.js",
   "scripts": {
@@ -46,7 +46,7 @@
   },
   "homepage": "https://github.com/dashevo/dashmate#readme",
   "dependencies": {
-    "@dashevo/dashcore-lib": "~0.19.39",
+    "@dashevo/dashcore-lib": "~0.19.41",
     "@dashevo/dashd-rpc": "^2.3.2",
     "@dashevo/dashpay-contract": "workspace:~",
     "@dashevo/docker-compose": "^0.24.1",

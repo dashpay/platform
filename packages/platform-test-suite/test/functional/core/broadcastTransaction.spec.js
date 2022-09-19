@@ -24,9 +24,7 @@ describe('Core', () => {
         satoshis: 10000,
       });
 
-      const dapiClient = client.getDAPIClient();
-
-      const transactionId = await dapiClient.core.broadcastTransaction(transaction.toBuffer());
+      const transactionId = await account.broadcastTransaction(transaction);
 
       expect(transactionId).to.be.a('string');
     });

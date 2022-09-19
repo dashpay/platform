@@ -17,9 +17,7 @@ const getIdentityFixture = require('@dashevo/dpp/lib/test/fixtures/getIdentityFi
 
 const GrpcErrorCodes = require('@dashevo/grpc-common/lib/server/error/GrpcErrorCodes');
 const identityQueryHandlerFactory = require('../../../../../lib/abci/handlers/query/identityQueryHandlerFactory');
-const BlockExecutionContextMock = require('../../../../../lib/test/mock/BlockExecutionContextMock');
 const NotFoundAbciError = require('../../../../../lib/abci/errors/NotFoundAbciError');
-const BlockExecutionContextStackMock = require('../../../../../lib/test/mock/BlockExecutionContextStackMock');
 const StorageResult = require('../../../../../lib/storage/StorageResult');
 
 describe('identityQueryHandlerFactory', () => {
@@ -30,8 +28,6 @@ describe('identityQueryHandlerFactory', () => {
   let data;
   let createQueryResponseMock;
   let responseMock;
-  let blockExecutionContextMock;
-  let blockExecutionContextStackMock;
 
   beforeEach(function beforeEach() {
     signedIdentityRepositoryMock = {
@@ -46,15 +42,9 @@ describe('identityQueryHandlerFactory', () => {
 
     createQueryResponseMock.returns(responseMock);
 
-    blockExecutionContextMock = new BlockExecutionContextMock(this.sinon);
-    blockExecutionContextStackMock = new BlockExecutionContextStackMock(this.sinon);
-    blockExecutionContextStackMock.getLast.returns(true);
-
     identityQueryHandler = identityQueryHandlerFactory(
       signedIdentityRepositoryMock,
       createQueryResponseMock,
-      blockExecutionContextMock,
-      blockExecutionContextStackMock,
     );
 
     identity = getIdentityFixture();
@@ -63,18 +53,6 @@ describe('identityQueryHandlerFactory', () => {
     data = {
       id: identity.getId(),
     };
-  });
-
-  it('should throw NotFoundAbciError if there is no signed state', async () => {
-    blockExecutionContextStackMock.getLast.returns(null);
-
-    try {
-      await identityQueryHandler(params, data, {});
-
-      expect.fail('should throw NotFoundAbciError');
-    } catch (e) {
-      expect(e).to.be.an.instanceOf(NotFoundAbciError);
-    }
   });
 
   it('should return serialized identity', async () => {

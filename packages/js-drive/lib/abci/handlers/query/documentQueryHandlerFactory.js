@@ -9,7 +9,6 @@ const {
 const {
   v0: {
     GetDocumentsResponse,
-    ResponseMetadata,
   },
 } = require('@dashevo/dapi-grpc');
 
@@ -21,14 +20,12 @@ const InvalidQueryError = require('../../../document/errors/InvalidQueryError');
  * @param {fetchDocuments} fetchSignedDocuments
  * @param {proveDocuments} proveSignedDocuments
  * @param {createQueryResponse} createQueryResponse
- * @param {BlockExecutionContextStack} blockExecutionContextStack
  * @return {documentQueryHandler}
  */
 function documentQueryHandlerFactory(
   fetchSignedDocuments,
   proveSignedDocuments,
   createQueryResponse,
-  blockExecutionContextStack,
 ) {
   /**
    * @typedef {documentQueryHandler}
@@ -57,17 +54,6 @@ function documentQueryHandlerFactory(
     },
     request,
   ) {
-    // There is no signed state (current committed block height less than 3)
-    if (!blockExecutionContextStack.getLast()) {
-      const response = new GetDocumentsResponse();
-
-      response.setMetadata(new ResponseMetadata());
-
-      return new ResponseQuery({
-        value: response.serializeBinary(),
-      });
-    }
-
     const response = createQueryResponse(GetDocumentsResponse, request.prove);
 
     const options = {

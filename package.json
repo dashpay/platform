@@ -1,6 +1,6 @@
 {
   "name": "@dashevo/platform",
-  "version": "0.23.0-dev.6",
+  "version": "0.23.0-dev.9",
   "private": true,
   "scripts": {
     "setup": "yarn install && yarn run build && yarn run configure",
@@ -36,7 +36,7 @@
     "release": "yarn exec ./scripts/release/release.sh",
     "bench": "yarn workspace @dashevo/bench-suite bench"
   },
-  "packageManager": "yarn@3.1.0",
+  "packageManager": "yarn@3.2.2",
   "ultra": {
     "concurrent": [
       "clean"

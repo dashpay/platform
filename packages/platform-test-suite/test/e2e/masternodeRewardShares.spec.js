@@ -8,7 +8,7 @@ const {
 const generateRandomIdentifier = require('../../lib/test/utils/generateRandomIdentifier');
 
 const createClientWithFundedWallet = require('../../lib/test/createClientWithFundedWallet');
-const wait = require('../../lib/wait');
+const waitForSTPropagated = require('../../lib/waitForSTPropagated');
 
 const { PlatformProtocol: { IdentityPublicKey } } = Dash;
 
@@ -242,9 +242,7 @@ describe('Masternode Reward Shares', () => {
       );
 
       // Additional wait time to mitigate testnet latency
-      if (process.env.NETWORK === 'testnet') {
-        await wait(5000);
-      }
+      await waitForSTPropagated();
 
       const [updatedRewardShare] = await client.platform.documents.get('masternodeRewardShares.rewardShare', {
         where: [['$id', '==', rewardShare.getId()]],
@@ -338,6 +336,8 @@ describe('Masternode Reward Shares', () => {
       await client.platform.broadcastStateTransition(
         stateTransition,
       );
+
+      await waitForSTPropagated();
 
       const [storedDocument] = await client.platform.documents.get(
         'masternodeRewardShares.rewardShare',
