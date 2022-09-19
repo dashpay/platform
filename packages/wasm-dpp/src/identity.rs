@@ -68,7 +68,8 @@ impl IdentityWasm {
     #[wasm_bindgen(constructor)]
     pub fn new(raw_identity: JsValue) -> Result<IdentityWasm, JsValue> {
         let identity_json = String::from(js_sys::JSON::stringify(&raw_identity)?);
-        let js_identity: JsIdentity = serde_json::from_str(&identity_json).map_err(|e| e.to_string())?;
+        let js_identity: JsIdentity =
+            serde_json::from_str(&identity_json).map_err(|e| e.to_string())?;
         let identity = Identity::from(js_identity);
         Ok(IdentityWasm(identity))
     }

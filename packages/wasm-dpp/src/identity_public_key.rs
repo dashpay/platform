@@ -166,9 +166,7 @@ impl IdentityPublicKeyWasm {
 
     #[wasm_bindgen(js_name=toJSON)]
     pub fn to_json(&self) -> Result<JsValue, JsValue> {
-        let val = self.0
-            .to_json()
-            .map_err(|e| from_dpp_err(e.into()))?;
+        let val = self.0.to_json().map_err(|e| from_dpp_err(e.into()))?;
         let json = val.to_string();
         js_sys::JSON::parse(&json)
     }
