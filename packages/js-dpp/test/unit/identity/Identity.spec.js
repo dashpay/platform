@@ -46,7 +46,7 @@ describe('Identity', () => {
 
     metadataFixture = new Metadata(42, 0);
 
-    identity = identity.setMetadata(metadataFixture);
+    identity.setMetadata(metadataFixture);
 
     encodeMock = this.sinonSandbox.stub(serializer, 'encode');
     hashMock = this.sinonSandbox.stub(hash, 'hash');
@@ -86,7 +86,7 @@ describe('Identity', () => {
   describe('#setPublicKeys', () => {
     it('should set public keys', () => {
       identity.setPublicKeys(42);
-      expect(identity.publicKeys).to.equal(42);
+      expect(identity.getPublicKeys()).to.equal(42);
     });
   });
 
@@ -181,7 +181,7 @@ describe('Identity', () => {
   describe('#setBalance', () => {
     it('should set identity balance', () => {
       identity.setBalance(42);
-      expect(identity.balance).to.equal(42);
+      expect(identity.getBalance()).to.equal(42);
     });
   });
 
@@ -190,18 +190,18 @@ describe('Identity', () => {
       const result = identity.increaseBalance(42);
 
       expect(result).to.equal(42);
-      expect(identity.balance).to.equal(42);
+      expect(identity.getBalance()).to.equal(42);
     });
   });
 
   describe('#reduceBalance', () => {
     it('should reduce identity balance', () => {
-      identity.balance = 42;
+      identity.setBalance(42);
 
       const result = identity.reduceBalance(2);
 
       expect(result).to.equal(40);
-      expect(identity.balance).to.equal(40);
+      expect(identity.getBalance()).to.equal(40);
     });
   });
 
@@ -211,7 +211,7 @@ describe('Identity', () => {
 
       identity.setMetadata(otherMetadata);
 
-      expect(identity.metadata).to.deep.equal(otherMetadata);
+      expect(identity.getMetadata()).to.deep.equal(otherMetadata);
     });
   });
 

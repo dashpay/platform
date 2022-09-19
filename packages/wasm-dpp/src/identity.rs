@@ -28,7 +28,7 @@ impl From<AssetLockProof> for AssetLockProofWasm {
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
 struct JsIdentity {
-    pub protocol_version: f32,
+    pub protocol_version: f64,
     pub id: String,
     pub public_keys: Vec<JsPublicKey>,
     pub balance: f64,
@@ -85,13 +85,12 @@ impl IdentityWasm {
     }
 
     #[wasm_bindgen(js_name=setPublicKeys)]
-    pub fn set_public_keys(mut self, pub_keys: Vec<JsValue>) -> Self {
+    pub fn set_public_keys(&mut self, pub_keys: Vec<JsValue>) {
         let keys: Vec<IdentityPublicKey> = pub_keys
             .into_iter()
             .map(|v| JsValue::into_serde(&v).expect("unable to convert pub keys"))
             .collect();
-        self.0 = self.0.set_public_keys(keys);
-        self
+        self.0.set_public_keys(keys);
     }
 
     #[wasm_bindgen(js_name=getPublicKeys)]
@@ -113,35 +112,30 @@ impl IdentityWasm {
     }
 
     #[wasm_bindgen(js_name=getBalance)]
-    pub fn get_balance(&self) -> u64 {
-        self.0.get_balance()
+    pub fn get_balance(&self) -> f64 {
+        self.0.get_balance() as f64
     }
 
     #[wasm_bindgen(js_name=setBalance)]
-    pub fn set_balance(mut self, balance: u64) -> Self {
-        self.0 = self.0.set_balance(balance);
-        self
+    pub fn set_balance(&mut self, balance: f64) {
+        self.0.set_balance(balance as u64);
     }
 
     #[wasm_bindgen(js_name=increaseBalance)]
-    pub fn increase_balance(mut self, amount: u64) -> Self {
-        self.0 = self.0.increase_balance(amount);
-        self
+    pub fn increase_balance(&mut self, amount: f64) {
+        self.0.increase_balance(amount as u64);
     }
 
     #[wasm_bindgen(js_name=reduceBalance)]
-    pub fn reduce_balance(mut self, amount: u64) -> Self {
-        self.0 = self.0.reduce_balance(amount);
-        self
+    pub fn reduce_balance(&mut self, amount: f64) {
+        self.0.reduce_balance(amount as u64);
     }
 
     #[wasm_bindgen(js_name=setAssetLockProof)]
-    pub fn set_asset_lock_proof(mut self, lock: JsValue) -> Self {
-        self.0 = self
+    pub fn set_asset_lock_proof(&mut self, lock: JsValue) {
+        self
             .0
             .set_asset_lock_proof(JsValue::into_serde(&lock).unwrap());
-
-        self
     }
 
     #[wasm_bindgen(js_name=getAssetLockProof)]
@@ -153,14 +147,13 @@ impl IdentityWasm {
     }
 
     #[wasm_bindgen(js_name=setRevision)]
-    pub fn set_revision(mut self, revision: u64) -> Self {
-        self.0 = self.0.set_revision(revision);
-        self
+    pub fn set_revision(&mut self, revision: f64) {
+        self.0.set_revision(revision as u64);
     }
 
     #[wasm_bindgen(js_name=getRevision)]
-    pub fn get_revision(&self) -> u64 {
-        self.0.get_revision()
+    pub fn get_revision(&self) -> f64 {
+        self.0.get_revision() as f64
     }
 
     #[wasm_bindgen(js_name=getMetadata)]
@@ -172,9 +165,8 @@ impl IdentityWasm {
     }
 
     #[wasm_bindgen(js_name=setMetadata)]
-    pub fn set_metadata(mut self, metadata: MetadataWasm) -> Self {
-        self.0 = self.0.set_metadata(metadata.into());
-        self
+    pub fn set_metadata(&mut self, metadata: MetadataWasm) {
+        self.0.set_metadata(metadata.into());
     }
 
     #[wasm_bindgen(js_name=from)]
