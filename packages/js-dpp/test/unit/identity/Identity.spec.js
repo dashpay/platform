@@ -18,10 +18,10 @@ describe('Identity', () => {
   let metadataFixture;
   let Identity;
   let Metadata;
-  let IdentityPublicKeyWasm;
+  // let IdentityPublicKeyWasm;
 
   before(async () => {
-    ({ Identity, Metadata, IdentityPublicKey: IdentityPublicKeyWasm } = await loadWasmDpp());
+    ({ Identity, Metadata /* IdentityPublicKey: IdentityPublicKeyWasm */ } = await loadWasmDpp());
   });
 
   beforeEach(async function beforeEach() {
@@ -41,24 +41,6 @@ describe('Identity', () => {
       balance: 0,
       revision: 0,
     };
-
-    console.log(Identity.doStuff(rawIdentity));
-
-    // const iden = JSON.parse(JSON.stringify(rawIdentity));
-    // const pk = iden.publicKeys[0];
-    //
-    // pk.data = Uint8Array.from(pk.data);
-    // console.log(pk);
-    // console.dir(JSON.parse(JSON.stringify(rawIdentity)), { depth: 100 });
-
-    console.log(rawIdentity.publicKeys[0]);
-
-    console.log(JSON.stringify(rawIdentity.publicKeys[0].data));
-    console.log(IdentityPublicKeyWasm.kek(rawIdentity.publicKeys[0]));
-
-    const pk = new IdentityPublicKeyWasm(rawIdentity.publicKeys[0]);
-
-    console.log(2);
 
     identity = new Identity(rawIdentity);
 
@@ -93,8 +75,6 @@ describe('Identity', () => {
   describe('#getId', () => {
     it('should return set id', () => {
       identity = new Identity(rawIdentity);
-      console.log(1);
-      // console.log(identity);
       expect(identity.getId().toBuffer()).to.deep.equal(rawIdentity.id.toBuffer());
     });
   });
@@ -197,7 +177,7 @@ describe('Identity', () => {
 
   describe('#getBalance', () => {
     it('should return set identity balance', () => {
-      identity.balance = 42;
+      identity.setBalance(42);
       expect(identity.getBalance()).to.equal(42);
     });
   });

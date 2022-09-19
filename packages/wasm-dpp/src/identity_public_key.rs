@@ -153,7 +153,7 @@ impl IdentityPublicKeyWasm {
 
     #[wasm_bindgen(js_name=hash)]
     pub fn hash(&self) -> Result<Vec<u8>, JsValue> {
-        self.0.hash().map_err(|e| from_dpp_err(e))
+        self.0.hash().map_err(from_dpp_err)
     }
 
     #[wasm_bindgen(js_name=isMaster)]

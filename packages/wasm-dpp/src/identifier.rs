@@ -36,7 +36,7 @@ impl IdentifierWrapper {
     pub fn new(buffer: Vec<u8>) -> Result<IdentifierWrapper, JsValue> {
         // TODO: remove unwrap
         let identifier =
-            identifier::Identifier::from_bytes(&buffer).map_err(|e| from_dpp_err(e))?;
+            identifier::Identifier::from_bytes(&buffer).map_err(from_dpp_err)?;
 
         Ok(IdentifierWrapper {
             wrapped: identifier,

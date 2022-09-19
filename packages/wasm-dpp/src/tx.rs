@@ -21,3 +21,9 @@ impl WasmTx {
         self.0.version
     }
 }
+
+impl Default for WasmTx {
+    fn default() -> Self {
+        Self::new()
+    }
+}

@@ -25,9 +25,9 @@ impl From<String> for RustConversionError {
     }
 }
 
-impl Into<JsValue> for RustConversionError {
-    fn into(self) -> JsValue {
-        JsValue::from(self.to_string())
+impl From<RustConversionError> for JsValue {
+    fn from(err: RustConversionError) -> Self {
+        Self::from(err.to_string())
     }
 }
 

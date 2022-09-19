@@ -14,3 +14,9 @@ impl NotDocumentsSuppliedError {
         NotDocumentsSuppliedError {}
     }
 }
+
+impl Default for NotDocumentsSuppliedError {
+    fn default() -> Self {
+        Self::new()
+    }
+}

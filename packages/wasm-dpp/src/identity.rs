@@ -33,10 +33,10 @@ struct JsIdentity {
     pub public_keys: Vec<JsPublicKey>,
     pub balance: f64,
     pub revision: f64,
-    // #[serde(skip)]
-    // pub asset_lock_proof: Option<AssetLockProof>,
-    // #[serde(skip)]
-    // pub metadata: Option<Metadata>,
+    #[serde(skip)]
+    pub asset_lock_proof: Option<AssetLockProof>,
+    #[serde(skip)]
+    pub metadata: Option<Metadata>,
 }
 
 impl From<JsIdentity> for Identity {

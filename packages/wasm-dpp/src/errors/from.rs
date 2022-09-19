@@ -15,7 +15,7 @@ pub fn from_dpp_err(pe: ProtocolError) -> JsValue {
             "Parsing error at line {}, column {}: {}",
             err.line(),
             err.column(),
-            err.to_string()
+            err
         )
         .into(),
 

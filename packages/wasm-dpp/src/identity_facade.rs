@@ -79,3 +79,9 @@ impl From<NonConsensusError> for NonConsensusErrorWasm {
         Self(err)
     }
 }
+
+impl Default for IdentityFacadeWasm {
+    fn default() -> Self {
+        Self::new()
+    }
+}

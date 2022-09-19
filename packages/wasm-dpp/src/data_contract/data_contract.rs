@@ -209,7 +209,7 @@ impl DataContractWasm {
 
     #[wasm_bindgen(js_name=toString)]
     pub fn to_string(&self) -> Result<String, JsValue> {
-        return with_js_error!(serde_json::to_string(&self.0));
+        with_js_error!(serde_json::to_string(&self.0))
     }
 
     #[wasm_bindgen(js_name=toBuffer)]
@@ -238,5 +238,11 @@ impl DataContractWasm {
     #[wasm_bindgen(js_name=from_string)]
     pub fn from_string(v: &str) -> Result<DataContractWasm, JsValue> {
         Ok(DataContract::try_from(v).map_err(from_dpp_err)?.into())
+    }
+}
+
+impl Default for DataContractWasm {
+    fn default() -> Self {
+        Self::new()
     }
 }
