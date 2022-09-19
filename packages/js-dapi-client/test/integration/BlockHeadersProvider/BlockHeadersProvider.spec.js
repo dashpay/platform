@@ -82,12 +82,12 @@ describe('BlockHeadersProvider - integration', () => {
     // Headers added from the tail should be orphaned
     expect(spvChain.getOrphanChunks()).to.have.length(4);
     expect(spvChain.getLongestChain()).to.have.length(0);
-    expect(blockHeadersProvider.emit.callCount).to.equal(4);
+    expect(blockHeadersProvider.emit.callCount).to.equal(5);
     expect(blockHeadersProvider.emit)
       .to.have.been.calledWith(BlockHeadersProvider.EVENTS.CHAIN_UPDATED);
 
     for (let i = 1; i < numBatches; i += 1) {
-      const { args } = blockHeadersProvider.emit.getCall(i - 1);
+      const { args } = blockHeadersProvider.emit.getCall(i);
       const emittedHeaders = args[1].map((header) => header.toString());
 
       const from = i * historicalBatchSize;
