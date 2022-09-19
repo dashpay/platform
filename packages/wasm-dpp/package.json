@@ -16,11 +16,9 @@
   "license": "ISC",
   "devDependencies": {
     "@types/node": "^14.6.0",
-    "text-encoding": "^0.7.0",
     "ts-loader": "^8.0.2",
     "typescript": "^3.9.5",
     "webpack": "^5.59.1",
-    "webpack-cli": "^4.9.1",
-    "webpack-dev-server": "^3.11.3"
+    "webpack-cli": "^4.9.1"
   }
 }
