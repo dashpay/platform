@@ -32,7 +32,7 @@ function updateSimplifiedMasternodeListFactory(
     const diffs = [];
 
     for (let height = fromHeight; height < toHeight; height += 1) {
-      const { result: rawDiff } = await coreRpcClient.protx('diff', height, height + 1);
+      const { result: rawDiff } = await coreRpcClient.protx('diff', height, height + 1, true);
 
       const diff = new SimplifiedMNListDiff(rawDiff, network);
 
@@ -74,12 +74,16 @@ function updateSimplifiedMasternodeListFactory(
 
       const startHeight = coreHeight - smlMaxListsLimit;
 
-      const { result: rawDiff } = await coreRpcClient.protx('diff', latestRequestedHeight, startHeight);
+      const { result: rawDiff } = await coreRpcClient.protx('diff', latestRequestedHeight, startHeight, true);
+
+      console.log(';rawDiff', rawDiff);
 
       const initialSmlDiffs = [
         new SimplifiedMNListDiff(rawDiff, network),
         ...await fetchDiffsPerBlock(startHeight, coreHeight),
       ];
+
+      console.log('initialSmlDiffs', JSON.stringify(initialSmlDiffs));
 
       simplifiedMasternodeList.applyDiffs(initialSmlDiffs);
 
@@ -94,6 +98,8 @@ function updateSimplifiedMasternodeListFactory(
       // Update SML
 
       const smlDiffs = await fetchDiffsPerBlock(latestRequestedHeight, coreHeight);
+
+      console.log('smlDiffs', JSON.stringify(smlDiffs));
 
       simplifiedMasternodeList.applyDiffs(smlDiffs);
 
