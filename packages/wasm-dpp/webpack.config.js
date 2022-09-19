@@ -13,7 +13,7 @@ module.exports = {
         // as webpack names global object "self" for some reason
         globalObject: 'this'
     },
-    mode: 'development',
+    mode: 'production',
     module: {
         rules: [
             {

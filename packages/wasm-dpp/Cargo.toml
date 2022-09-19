@@ -18,3 +18,7 @@ js-sys = "0.3.53"
 thiserror = { version="1.0"}
 # Local dpp
 dpp = { path = "../../../rs-platform/dpp" }
+
+[profile.release]
+lto = true
+opt-level = 's'

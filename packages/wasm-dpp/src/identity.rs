@@ -122,13 +122,13 @@ impl IdentityWasm {
     }
 
     #[wasm_bindgen(js_name=increaseBalance)]
-    pub fn increase_balance(&mut self, amount: f64) {
-        self.0.increase_balance(amount as u64);
+    pub fn increase_balance(&mut self, amount: f64) -> f64 {
+        self.0.increase_balance(amount as u64) as f64
     }
 
     #[wasm_bindgen(js_name=reduceBalance)]
-    pub fn reduce_balance(&mut self, amount: f64) {
-        self.0.reduce_balance(amount as u64);
+    pub fn reduce_balance(&mut self, amount: f64) -> f64 {
+        self.0.reduce_balance(amount as u64) as f64
     }
 
     #[wasm_bindgen(js_name=setAssetLockProof)]
