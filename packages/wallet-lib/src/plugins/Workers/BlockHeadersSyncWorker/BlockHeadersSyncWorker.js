@@ -388,13 +388,7 @@ class BlockHeadersSyncWorker extends Worker {
     }
   }
 
-  // TODO(spv): write unit tests
   emitError(e) {
-    if (this.parentEvents.listenerCount('error') === 0) {
-      logger.debug('[BlockHeadersSyncWorker] Unhandled parentEvents \'error\' event:', e);
-      return;
-    }
-
     this.parentEvents.emit('error', e);
   }
 }
