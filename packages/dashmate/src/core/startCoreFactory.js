@@ -34,13 +34,12 @@ function startCoreFactory(
     const coreCommand = [
       'dashd',
     ];
-    const isMasternode = config.get('core.masternode.enable');
-    const operatorKey = config.get('core.masternode.operator.privateKey');
 
-    if (options.wallet) {
-      coreCommand.push('--disablewallet=0');
-    } else if (isMasternode && Boolean(operatorKey)) {
-      coreCommand.push(`-masternodeblsprivkey=${operatorKey}`);
+    const isMasternode = config.get('core.masternode.enable');
+
+    if (isMasternode) {
+      // Check operatorPrivateKey is set
+      config.get('core.masternode.operator.privateKey', true);
     }
 
     if (options.addressIndex) {
