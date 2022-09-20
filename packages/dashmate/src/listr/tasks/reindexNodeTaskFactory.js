@@ -2,7 +2,7 @@ const {Listr} = require('listr2');
 
 /**
  * @param {DockerCompose} dockerCompose
- * @param {startNodeTask} startNodeTask
+ * @param {startCore} startCore
  * @param {stopNodeTask} stopNodeTask
  * @param {waitForCoreSync} waitForCoreSync
  * @param {createRpcClient} createRpcClient
@@ -12,7 +12,7 @@ const {Listr} = require('listr2');
  */
 function reindexNodeTaskFactory(
   dockerCompose,
-  startNodeTask,
+  startCore,
   stopNodeTask,
   waitForCoreSync,
   createRpcClient,
@@ -49,15 +49,9 @@ function reindexNodeTaskFactory(
         }
       },
       {
-        title: 'Start services',
-        enabled: () => config.get('core.reindex') === 0,
-        task: async () => {
-          const isRunning = await dockerCompose.isServiceRunning(config.toEnvs())
-
-          if (!isRunning) {
-            return startNodeTask(config)
-          }
-        }
+        title: 'Start core',
+        enabled: async () => dockerCompose.isServiceRunning(config.toEnvs(), 'core'),
+        task: async () => startCore(config)
       },
       {
         title: `Wait for the services to be ready`,

@@ -28,7 +28,9 @@ async function waitForCoreSync(rpcClient, progressCallback = () => {}) {
         progressCallback({percent: verificationProgress, headers, blocks});
       }
     } catch (e) {
+      // todo catch loadin block index...
       console.log(e)
+      throw e
     }
   } while (!isSynced || !isBlockchainSynced);
 }
