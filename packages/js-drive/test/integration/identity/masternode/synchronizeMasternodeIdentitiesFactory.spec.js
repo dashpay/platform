@@ -839,7 +839,7 @@ describe('synchronizeMasternodeIdentitiesFactory', () => {
     expect(document.get('payToId')).to.deep.equal(newOperatorIdentifier);
   });
 
-  it.skip('should handle changed payout and operator payout addresses', async () => {
+  it('should handle changed payout and operator payout addresses', async () => {
     // Sync initial list
 
     await synchronizeMasternodeIdentities(coreHeight);
