@@ -63,6 +63,7 @@ function reindexNodeTaskFactory(
             const coreService = await startCore(config)
             const containerInfo = await coreService.dockerContainer.inspect()
 
+            ctx.reindexContainerId = containerInfo.Id
             config.set('core.reindexContainerId', containerInfo.Id)
             configFileRepository.write(configFile)
 
@@ -74,7 +75,8 @@ function reindexNodeTaskFactory(
 
           if (State.Status === "paused" || State.Status === "exited") {
             switch (State.ExitCode) {
-             // case 127:
+              // 127 means out of memory or something, so we would want to spin in it up again
+              case 127:
               case 0:
                 await container.start();
                 break;
@@ -96,7 +98,7 @@ function reindexNodeTaskFactory(
 
           return waitForCoreSync(rpcClient, (verificationProgress) => {
             const {percent, blocks, headers} = verificationProgress
-            task.title = `Reindexing... (${(percent * 100).toFixed(4)}%, ${blocks} / ${headers})`
+            task.title = `Reindexing ${ctx.reindexContainerId}... (${(percent * 100).toFixed(4)}%, ${blocks} / ${headers})`
           })
         },
       },
