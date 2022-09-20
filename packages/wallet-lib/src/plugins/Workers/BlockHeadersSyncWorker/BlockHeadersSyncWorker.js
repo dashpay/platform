@@ -218,11 +218,13 @@ class BlockHeadersSyncWorker extends Worker {
       return syncFrom < 1 ? 1 : syncFrom;
     }
 
-    const lastSyncedHeaderHeight = typeof chainStore.state.lastSyncedHeaderHeight === 'number'
-      ? chainStore.state.lastSyncedHeaderHeight : -1;
+    const { lastSyncedHeaderHeight } = chainStore.state;
 
-    const skipBefore = typeof skipSynchronizationBeforeHeight === 'number'
-      ? skipSynchronizationBeforeHeight : -1;
+    if (typeof lastSyncedHeaderHeight !== 'number') {
+      throw new Error(`Invalid last synced header height ${lastSyncedHeaderHeight}`);
+    }
+
+    const skipBefore = parseInt(skipSynchronizationBeforeHeight, 10);
 
     if (skipBefore > lastSyncedHeaderHeight) {
       logger.debug(`[BlockHeadersSyncWorker] UNSAFE option skipSynchronizationBeforeHeight is set to ${skipBefore}`);

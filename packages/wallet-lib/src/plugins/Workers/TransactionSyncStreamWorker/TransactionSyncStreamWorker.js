@@ -166,9 +166,7 @@ class TransactionSyncStreamWorker extends Worker {
     }
 
     const { lastSyncedBlockHeight } = this.storage.getDefaultChainStore().state;
-    const skipSyncBefore = typeof skipSynchronizationBeforeHeight === 'number'
-      ? skipSynchronizationBeforeHeight
-      : parseInt(skipSynchronizationBeforeHeight, 10);
+    const skipSyncBefore = parseInt(skipSynchronizationBeforeHeight, 10);
 
     if (skipSyncBefore > lastSyncedBlockHeight) {
       this.setLastSyncedBlockHeight(skipSyncBefore);
