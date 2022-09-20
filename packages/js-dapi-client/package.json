@@ -28,7 +28,7 @@
   "dependencies": {
     "@dashevo/dapi-grpc": "workspace:~",
     "@dashevo/dash-spv": "workspace:~",
-    "@dashevo/dashcore-lib": "github:dashevo/dashcore-lib#6be4020ccbf71e169bfc571773420f734eb4f222",
+    "@dashevo/dashcore-lib": "^0.19.43",
     "@dashevo/dpp": "workspace:~",
     "@dashevo/grpc-common": "workspace:~",
     "@grpc/grpc-js": "^1.3.7",
