@@ -68,7 +68,7 @@
   "dependencies": {
     "@dashevo/abci": "~0.23.0-dev.1",
     "@dashevo/dapi-grpc": "workspace:~",
-    "@dashevo/dashcore-lib": "^0.19.43",
+    "@dashevo/dashcore-lib": "~0.19.43",
     "@dashevo/dashd-rpc": "^2.4.2",
     "@dashevo/dashpay-contract": "workspace:~",
     "@dashevo/dpns-contract": "workspace:~",
