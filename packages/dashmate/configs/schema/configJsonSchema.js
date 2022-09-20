@@ -230,6 +230,10 @@ module.exports = {
           type: 'integer',
           enum: [0, 1],
         },
+        reindexContainerId: {
+          type: ['string', 'null'],
+          minLength: 1,
+        },
       },
       required: ['docker', 'p2p', 'rpc', 'spork', 'masternode', 'miner', 'devnetName', 'debug', 'reindex'],
       additionalProperties: false,

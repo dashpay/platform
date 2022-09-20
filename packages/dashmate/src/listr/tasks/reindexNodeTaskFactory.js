@@ -1,6 +1,7 @@
 const {Listr} = require('listr2');
 
 /**
+ * @param {Docker} docker
  * @param {DockerCompose} dockerCompose
  * @param {startCore} startCore
  * @param {stopNodeTask} stopNodeTask
@@ -8,16 +9,21 @@ const {Listr} = require('listr2');
  * @param {createRpcClient} createRpcClient
  * @param {renderServiceTemplates} renderServiceTemplates
  * @param {writeServiceConfigs} writeServiceConfigs
+ * @param {configFileRepository} configFileRepository
+ * @param {configFile} configFile
  * @return {reindexNodeTask}
  */
 function reindexNodeTaskFactory(
+  docker,
   dockerCompose,
   startCore,
   stopNodeTask,
   waitForCoreSync,
   createRpcClient,
   renderServiceTemplates,
-  writeServiceConfigs
+  writeServiceConfigs,
+  configFileRepository,
+  configFile
 ) {
   /**
    * @typedef {reindexNodeTask}
@@ -28,12 +34,11 @@ function reindexNodeTaskFactory(
       {
         title: 'Check services are not running',
         enabled: () => config.get('core.reindex') === 0,
-        task: async (ctx, task) => {
+        task: async () => {
           const isRunning = await dockerCompose.isServiceRunning(config.toEnvs())
 
           if (isRunning) {
-            task.title = 'Stopping services'
-            return stopNodeTask(config)
+            throw new Error('Services is running, stop your nodes first')
           }
         }
       },
@@ -44,14 +49,40 @@ function reindexNodeTaskFactory(
           config.set('core.reindex', 1)
 
           // Write configs
+          configFileRepository.write(configFile)
           const configFiles = renderServiceTemplates(config);
           writeServiceConfigs(config.getName(), configFiles);
         }
       },
       {
         title: 'Start core',
-        enabled: async () => dockerCompose.isServiceRunning(config.toEnvs(), 'core'),
-        task: async () => startCore(config)
+        task: async (ctx) => {
+          const containerId = config.get('core.reindexContainerId', false)
+
+          if (!containerId) {
+            const coreService = await startCore(config)
+            const containerInfo = await coreService.dockerContainer.inspect()
+
+            config.set('core.reindexContainerId', containerInfo.Id)
+            configFileRepository.write(configFile)
+
+            return
+          }
+
+          const container = docker.getContainer(containerId);
+          const {State} = await container.inspect()
+
+          if (State.Status === "paused" || State.Status === "exited") {
+            switch (State.ExitCode) {
+             // case 127:
+              case 0:
+                await container.start();
+                break;
+              default:
+                throw new Error(`Reindex container exited with status ${State.ExitCode}, look docker logs of container ${containerId}`)
+            }
+          }
+        }
       },
       {
         title: `Wait for the services to be ready`,
@@ -72,15 +103,20 @@ function reindexNodeTaskFactory(
       {
         title: 'Stop services',
         task: async () => {
-          await stopNodeTask(config)
+          const containerId = config.get('core.reindexContainerId', false)
+          const container = docker.getContainer(containerId);
+
+          await container.stop()
         },
       },
       {
         title: 'Set reindex back to zero',
-        task: () => {
+        task: async () => {
           config.set('core.reindex', 0)
+          config.set('core.reindexContainerId', null)
 
           // Write configs
+          configFileRepository.write(configFile)
           const configFiles = renderServiceTemplates(config);
           writeServiceConfigs(config.getName(), configFiles);
         }

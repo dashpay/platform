@@ -347,6 +347,7 @@ module.exports = {
     Object.entries(configFile.configs)
       .forEach(([, config]) => {
         config.core.reindex = 0;
+        config.core.reindexContainerId = null;
       });
 
     return configFile;
