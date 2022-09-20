@@ -163,3 +163,40 @@ mod conversions {
         )
     }
 }
+
+mod api {
+    use crate::{
+        identity::{Purpose, SecurityLevel},
+        prelude::IdentityPublicKey,
+        tests::fixtures::identity_fixture,
+    };
+
+    #[test]
+    fn should_get_biggest_public_key_id() {
+        let mut identity = identity_fixture();
+
+        let identity_public_key_1 = IdentityPublicKey {
+            id: 99,
+            key_type: crate::identity::KeyType::ECDSA_SECP256K1,
+            data: vec![97_u8, 36],
+            purpose: Purpose::AUTHENTICATION,
+            security_level: SecurityLevel::MASTER,
+            read_only: false,
+            disabled_at: None,
+            signature: vec![],
+        };
+        let identity_public_key_2 = IdentityPublicKey {
+            id: 50,
+            key_type: crate::identity::KeyType::ECDSA_SECP256K1,
+            data: vec![97_u8, 36],
+            purpose: Purpose::AUTHENTICATION,
+            security_level: SecurityLevel::MASTER,
+            read_only: false,
+            disabled_at: None,
+            signature: vec![],
+        };
+
+        identity.add_public_keys([identity_public_key_1, identity_public_key_2]);
+        assert_eq!(99, identity.get_public_key_max_id());
+    }
+}
