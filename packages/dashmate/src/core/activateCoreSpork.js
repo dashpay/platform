@@ -5,7 +5,7 @@
  * @returns {Promise<void>}
  */
 async function activateCoreSpork(rpcClient, spork) {
-  await rpcClient.spork(spork, 0);
+  await rpcClient.sporkupdate(spork, 0);
 }
 
 module.exports = activateCoreSpork;
