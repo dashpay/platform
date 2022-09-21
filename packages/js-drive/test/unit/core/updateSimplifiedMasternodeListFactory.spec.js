@@ -91,6 +91,7 @@ describe('updateSimplifiedMasternodeListFactory', () => {
         'diff',
         1,
         (coreHeight - smlMaxListsLimit),
+        true,
       ],
     );
 
@@ -100,6 +101,7 @@ describe('updateSimplifiedMasternodeListFactory', () => {
           'diff',
           (coreHeight - smlMaxListsLimit) + (i - 1),
           (coreHeight - smlMaxListsLimit) + (i - 1) + 1,
+          true,
         ],
       );
     }
@@ -136,6 +138,7 @@ describe('updateSimplifiedMasternodeListFactory', () => {
         'diff',
         1,
         (coreHeight - smlMaxListsLimit),
+        true,
       ],
     );
 
@@ -145,6 +148,7 @@ describe('updateSimplifiedMasternodeListFactory', () => {
           'diff',
           (coreHeight - smlMaxListsLimit) + (i - 1),
           (coreHeight - smlMaxListsLimit) + (i - 1) + 1,
+          true,
         ],
       );
     }
