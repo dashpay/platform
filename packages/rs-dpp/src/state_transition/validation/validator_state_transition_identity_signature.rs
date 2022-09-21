@@ -1,7 +1,7 @@
 use anyhow::anyhow;
 
 use crate::{
-    consensus::signature::SignatureError,
+    consensus::{signature::SignatureError, ConsensusError},
     identity::{validation::validate_identity_existence, KeyType},
     state_repository::StateRepositoryLike,
     state_transition::StateTransitionIdentitySigned,
@@ -42,18 +42,55 @@ pub async fn validate_state_transition_identity_signature(
         && public_key.get_type() != KeyType::ECDSA_HASH160
     {
         validation_result.add_error(SignatureError::InvalidIdentityPublicKeyTypeError {
-            key_type: public_key.get_type(),
+            public_key_type: public_key.get_type(),
         });
         return Ok(validation_result);
     }
 
     let signature_is_valid = state_transition.verify_signature(public_key);
-    if signature_is_valid.is_err() {
-        validation_result.add_error(SignatureError::InvalidStateTransitionSignatureError);
+    // so we need to do is match the whole bunch of errors
+
+    if let Err(err) = signature_is_valid {
+        let consensus_error = convert_to_consensus_signature_error(err)?;
+        validation_result.add_error(consensus_error);
         return Ok(validation_result);
     }
 
     Ok(validation_result)
+}
+
+fn convert_to_consensus_signature_error(
+    error: ProtocolError,
+) -> Result<ConsensusError, ProtocolError> {
+    match error {
+        ProtocolError::InvalidSignaturePublicKeySecurityLevelError {
+            public_key_security_level,
+            required_security_level,
+        } => Ok(ConsensusError::SignatureError(
+            SignatureError::InvalidSignaturePublicKeySecurityLevelError {
+                public_key_security_level,
+                required_key_security_level: required_security_level,
+            },
+        )),
+        ProtocolError::PublicKeySecurityLevelNotMetError {
+            public_key_security_level,
+            required_security_level,
+        } => Ok(ConsensusError::SignatureError(
+            SignatureError::PublicKeySecurityLevelNotMetError {
+                public_key_security_level,
+                required_security_level,
+            },
+        )),
+        ProtocolError::PublicKeyIsDisabledError { public_key } => Ok(
+            ConsensusError::SignatureError(SignatureError::PublicKeyIsDisabledError {
+                public_key_id: public_key.get_id(),
+            }),
+        ),
+        ProtocolError::Error(_) => Err(error),
+        _ => Ok(ConsensusError::SignatureError(
+            SignatureError::InvalidStateTransitionSignatureError,
+        )),
+    }
 }
 
 #[cfg(test)]
@@ -61,7 +98,7 @@ mod test {
     use super::*;
     use crate::{
         document::DocumentsBatchTransition,
-        identity::{KeyID, SecurityLevel},
+        identity::{KeyID, Purpose, SecurityLevel},
         prelude::{Identifier, Identity, IdentityPublicKey},
         state_repository::MockStateRepositoryLike,
         state_transition::{
@@ -81,7 +118,8 @@ mod test {
         pub signature_public_key_id: KeyID,
         pub transition_type: StateTransitionType,
         pub owner_id: Identifier,
-        pub is_signature_valid: bool,
+
+        pub return_error: Option<usize>,
     }
 
     impl StateTransitionConvert for ExampleStateTransition {
@@ -127,13 +165,41 @@ mod test {
         }
 
         fn verify_signature(&self, public_key: &IdentityPublicKey) -> Result<(), ProtocolError> {
-            if self.is_signature_valid {
-                Ok(())
-            } else {
-                Err(ProtocolError::PublicKeyMismatchError {
-                    public_key: public_key.clone(),
-                })
+            if let Some(error_num) = self.return_error {
+                match error_num {
+                    0 => {
+                        return Err(ProtocolError::PublicKeyMismatchError {
+                            public_key: public_key.clone(),
+                        })
+                    }
+                    1 => {
+                        return Err(ProtocolError::InvalidSignaturePublicKeySecurityLevelError {
+                            public_key_security_level: SecurityLevel::CRITICAL,
+                            required_security_level: SecurityLevel::MASTER,
+                        })
+                    }
+                    2 => {
+                        return Err(ProtocolError::PublicKeySecurityLevelNotMetError {
+                            public_key_security_level: SecurityLevel::CRITICAL,
+                            required_security_level: SecurityLevel::HIGH,
+                        })
+                    }
+                    3 => {
+                        return Err(ProtocolError::PublicKeyIsDisabledError {
+                            public_key: public_key.clone(),
+                        })
+                    }
+                    4 => {
+                        return Err(ProtocolError::WrongPublicKeyPurposeError {
+                            public_key_purpose: Purpose::WITHDRAW,
+                            key_purpose_requirement: Purpose::DECRYPTION,
+                        })
+                    }
+                    _ => {}
+                }
             }
+
+            Ok(())
         }
 
         fn get_security_level_requirement(&self) -> SecurityLevel {
@@ -156,7 +222,7 @@ mod test {
             signature: Default::default(),
             signature_public_key_id: 1,
             owner_id: generate_random_identifier_struct(),
-            is_signature_valid: true,
+            return_error: None,
         }
     }
 
@@ -247,7 +313,7 @@ mod test {
         state_repository_mock
             .expect_fetch_identity()
             .returning(move |_| Ok(Some(identity.clone())));
-        state_transition.is_signature_valid = false;
+        state_transition.return_error = Some(0);
 
         let result =
             validate_state_transition_identity_signature(&state_repository_mock, &state_transition)
@@ -258,6 +324,89 @@ mod test {
         assert!(matches!(
             signature_error,
             SignatureError::InvalidStateTransitionSignatureError
+        ));
+    }
+
+    // Consensus errors:
+
+    #[tokio::test]
+    async fn should_return_invalid_signature_public_key_security_level_error() {
+        // 'should return InvalidSignaturePublicKeySecurityLevelConsensusError if InvalidSignaturePublicKeySecurityLevelError was thrown'
+        let mut state_repository_mock = MockStateRepositoryLike::new();
+        let raw_identity = identity_fixture_raw_object();
+        let identity = Identity::from_raw_object(raw_identity).unwrap();
+        let owner_id = identity.get_id();
+        let mut state_transition = get_mock_state_transition();
+
+        state_transition.owner_id = owner_id.clone();
+        state_repository_mock
+            .expect_fetch_identity()
+            .returning(move |_| Ok(Some(identity.clone())));
+        state_transition.return_error = Some(1);
+
+        let result =
+            validate_state_transition_identity_signature(&state_repository_mock, &state_transition)
+                .await
+                .expect("the validation result should be returned");
+        let signature_error = get_signature_error_from_result(&result, 0);
+
+        assert!(matches!(
+            signature_error,
+            SignatureError::InvalidSignaturePublicKeySecurityLevelError { .. }
+        ));
+    }
+
+    #[tokio::test]
+    async fn should_return_public_key_security_level_not_met() {
+        // 'should return PubicKeySecurityLevelNotMetConsensusError if PubicKeySecurityLevelNotMetError was thrown'
+        let mut state_repository_mock = MockStateRepositoryLike::new();
+        let raw_identity = identity_fixture_raw_object();
+        let identity = Identity::from_raw_object(raw_identity).unwrap();
+        let owner_id = identity.get_id();
+        let mut state_transition = get_mock_state_transition();
+
+        state_transition.owner_id = owner_id.clone();
+        state_repository_mock
+            .expect_fetch_identity()
+            .returning(move |_| Ok(Some(identity.clone())));
+        state_transition.return_error = Some(2);
+
+        let result =
+            validate_state_transition_identity_signature(&state_repository_mock, &state_transition)
+                .await
+                .expect("the validation result should be returned");
+        let signature_error = get_signature_error_from_result(&result, 0);
+
+        assert!(matches!(
+            signature_error,
+            SignatureError::PublicKeySecurityLevelNotMetError { .. }
+        ));
+    }
+
+    #[tokio::test]
+    async fn should_return_public_key_is_disabled_error() {
+        // 'should return PublicKeyIsDisabledConsensusError if PublicKeyIsDisabledError was thrown'
+        let mut state_repository_mock = MockStateRepositoryLike::new();
+        let raw_identity = identity_fixture_raw_object();
+        let identity = Identity::from_raw_object(raw_identity).unwrap();
+        let owner_id = identity.get_id();
+        let mut state_transition = get_mock_state_transition();
+
+        state_transition.owner_id = owner_id.clone();
+        state_repository_mock
+            .expect_fetch_identity()
+            .returning(move |_| Ok(Some(identity.clone())));
+        state_transition.return_error = Some(3);
+
+        let result =
+            validate_state_transition_identity_signature(&state_repository_mock, &state_transition)
+                .await
+                .expect("the validation result should be returned");
+        let signature_error = get_signature_error_from_result(&result, 0);
+
+        assert!(matches!(
+            signature_error,
+            SignatureError::PublicKeyIsDisabledError { .. }
         ));
     }
 }
