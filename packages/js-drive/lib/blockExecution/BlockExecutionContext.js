@@ -248,6 +248,24 @@ class BlockExecutionContext {
   }
 
   /**
+   * Set withdrawal transactions
+   * 
+   * @param {Buffer[]} withdrawalTransactions 
+   */
+  setWithdrawalTransactions(withdrawalTransactions) {
+    this.withdrawalTransactions = withdrawalTransactions;
+  }
+
+  /**
+   * Get withdrawal transactions
+   *
+   * @return {Buffer[]}
+   */
+  getWithdrawalTransactions() {
+    return this.withdrawalTransactions;
+  }
+
+  /**
    * Reset state
    */
   reset() {
@@ -262,6 +280,7 @@ class BlockExecutionContext {
     this.validTxs = 0;
     this.invalidTxs = 0;
     this.consensusLogger = null;
+    this.withdrawalTransactions = [];
   }
 
   /**
@@ -290,6 +309,7 @@ class BlockExecutionContext {
     this.validTxs = blockExecutionContext.validTxs;
     this.invalidTxs = blockExecutionContext.invalidTxs;
     this.consensusLogger = blockExecutionContext.consensusLogger;
+    this.withdrawalTransactions = blockExecutionContext.withdrawalTransactions;
   }
 
   /**
@@ -316,6 +336,7 @@ class BlockExecutionContext {
     this.height = Long.fromNumber(object.height);
     this.coreChainLockedHeight = object.coreChainLockedHeight;
     this.version = Consensus.fromObject(object.version);
+    this.withdrawalTransactions = object.withdrawalTransactions;
   }
 
   /**
@@ -332,6 +353,7 @@ class BlockExecutionContext {
    *  cumulativeStorageFee: number,
    *  coreChainLockedHeight: number,
    *  lastCommitInfo: number,
+   *  withdrawalTransactions: Buffer[],
    * }}
    */
   toObject(options = {}) {
@@ -353,6 +375,7 @@ class BlockExecutionContext {
       lastCommitInfo: CommitInfo.toObject(this.lastCommitInfo),
       validTxs: this.validTxs,
       invalidTxs: this.invalidTxs,
+      withdrawalTransactions: this.withdrawalTransactions,
     };
 
     if (!options.skipConsensusLogger) {

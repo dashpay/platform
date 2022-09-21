@@ -77,7 +77,7 @@ function finalizeBlockHandlerFactory(
     }
 
     const endBlockResult = await endBlock(height, consensusLogger);
-    const commitResult = await commit(consensusLogger);
+    const commitResult = await commit(lastCommitInfo, consensusLogger);
 
     const blockExecutionTimings = executionTimer.stopTimer('blockExecution');
     const blockHeight = blockExecutionContext.getHeight();

@@ -133,7 +133,9 @@ function beginBlockFactory(
 
     logger.debug(rsRequest, 'Request RS Drive\'s BlockBegin method');
 
-    await rsAbci.blockBegin(rsRequest, true);
+    const { withdrawalTransactions } = await rsAbci.blockBegin(rsRequest, true);
+
+    blockExecutionContext.setWithdrawalTransactions(withdrawalTransactions);
 
     // Update SML
 

@@ -9,6 +9,7 @@ const BlockExecutionContext = require('../../../blockExecution/BlockExecutionCon
  * @param {rotateSignedStore} rotateSignedStore
  * @param {GroveDBStore} groveDBStore
  * @param {LRUCache} dataContractCache
+ * @param {CoreRpcClient} coreRPCClient
  *
  * @return {commit}
  */
@@ -19,14 +20,17 @@ function commitFactory(
   rotateSignedStore,
   dataContractCache,
   groveDBStore,
+  coreRPCClient,
 ) {
   /**
    * @typedef commit
    *
+   * @param {ILastCommitInfo} lastCommitInfo
    * @param {BaseLogger} logger
+   * 
    * @return {Promise<{ appHash: Buffer }>}
    */
-  async function commit(logger) {
+  async function commit(lastCommitInfo, logger) {
     const blockHeight = blockExecutionContext.getHeight();
 
     const consensusLogger = logger.child({
@@ -64,6 +68,15 @@ function commitFactory(
       if (dataContractCache.has(cacheItem.getKey())) {
         dataContractCache.set(cacheItem.getKey(), cacheItem);
       }
+    }
+
+    // Send withdrawal transactions to Core
+    const { vote_extenstions: voteExtentions } = lastCommitInfo;
+
+    for (const { extension, signature } of voteExtentions) {
+      const transactionBytes = Buffer.concat(extension, signature);
+
+      await coreRPCClient.sendRawTransaction(transactionBytes.toString('hex'));
     }
 
     // Rotate signed store
