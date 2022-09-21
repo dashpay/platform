@@ -1,15 +1,15 @@
 const { getRE2Class } = require('@dashevo/wasm-re2');
 const { PrivateKey } = require('@dashevo/dashcore-lib');
 const validateIdentityUpdateTransitionBasicFactory = require(
-  '../../../../../../../lib/identity/stateTransition/IdentityUpdateTransition/validation/basic/validateIdentityUpdateTransitionBasicFactory',
+  '@dashevo/dpp/lib/identity/stateTransition/IdentityUpdateTransition/validation/basic/validateIdentityUpdateTransitionBasicFactory',
 );
-const JsonSchemaValidator = require('../../../../../../../lib/validation/JsonSchemaValidator');
-const createAjv = require('../../../../../../../lib/ajv/createAjv');
-const ValidationResult = require('../../../../../../../lib/validation/ValidationResult');
-const IdentityPublicKey = require('../../../../../../../lib/identity/IdentityPublicKey');
-const getIdentityUpdateTransitionFixture = require('../../../../../../../lib/test/fixtures/getIdentityUpdateTransitionFixture');
-const { expectJsonSchemaError, expectValidationError } = require('../../../../../../../lib/test/expect/expectError');
-const SomeConsensusError = require('../../../../../../../lib/test/mocks/SomeConsensusError');
+const JsonSchemaValidator = require('@dashevo/dpp/lib/validation/JsonSchemaValidator');
+const createAjv = require('@dashevo/dpp/lib/ajv/createAjv');
+const ValidationResult = require('@dashevo/dpp/lib/validation/ValidationResult');
+const IdentityPublicKey = require('@dashevo/dpp/lib/identity/IdentityPublicKey');
+const getIdentityUpdateTransitionFixture = require('@dashevo/dpp/lib/test/fixtures/getIdentityUpdateTransitionFixture');
+const { expectJsonSchemaError, expectValidationError } = require('@dashevo/dpp/lib/test/expect/expectError');
+const SomeConsensusError = require('@dashevo/dpp/lib/test/mocks/SomeConsensusError');
 
 describe('validateIdentityUpdateTransitionBasicFactory', () => {
   let validateIdentityUpdateTransitionBasic;

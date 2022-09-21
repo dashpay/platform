@@ -1,6 +1,6 @@
-const InvalidDataContractIdError = require('../../../../lib/errors/consensus/basic/dataContract/InvalidDataContractIdError');
-const generateRandomIdentifier = require('../../../../lib/test/utils/generateRandomIdentifier');
-const createConsensusError = require('../../../../lib/errors/consensus/createConsensusError');
+const InvalidDataContractIdError = require('@dashevo/dpp/lib/errors/consensus/basic/dataContract/InvalidDataContractIdError');
+const generateRandomIdentifier = require('@dashevo/dpp/lib/test/utils/generateRandomIdentifier');
+const createConsensusError = require('@dashevo/dpp/lib/errors/consensus/createConsensusError');
 
 describe('createConsensusError', () => {
   it('should create an error instance from code and arguments', () => {

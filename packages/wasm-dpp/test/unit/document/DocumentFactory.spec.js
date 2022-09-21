@@ -1,30 +1,30 @@
 const bs58 = require('bs58');
 
-const Document = require('../../../lib/document/Document');
+const Document = require('@dashevo/dpp/lib/document/Document');
 
-const DocumentCreateTransition = require('../../../lib/document/stateTransition/DocumentsBatchTransition/documentTransition/DocumentCreateTransition');
+const DocumentCreateTransition = require('@dashevo/dpp/lib/document/stateTransition/DocumentsBatchTransition/documentTransition/DocumentCreateTransition');
 
-const getDocumentsFixture = require('../../../lib/test/fixtures/getDocumentsFixture');
-const getDataContractFixture = require('../../../lib/test/fixtures/getDataContractFixture');
-const getDocumentTransitionsFixture = require('../../../lib/test/fixtures/getDocumentTransitionsFixture');
+const getDocumentsFixture = require('@dashevo/dpp/lib/test/fixtures/getDocumentsFixture');
+const getDataContractFixture = require('@dashevo/dpp/lib/test/fixtures/getDataContractFixture');
+const getDocumentTransitionsFixture = require('@dashevo/dpp/lib/test/fixtures/getDocumentTransitionsFixture');
 
-const ValidationResult = require('../../../lib/validation/ValidationResult');
+const ValidationResult = require('@dashevo/dpp/lib/validation/ValidationResult');
 
-const Identifier = require('../../../lib/identifier/Identifier');
+const Identifier = require('@dashevo/dpp/lib/identifier/Identifier');
 
-const InvalidDocumentTypeError = require('../../../lib/errors/InvalidDocumentTypeError');
-const InvalidDocumentError = require('../../../lib/document/errors/InvalidDocumentError');
-const InvalidActionNameError = require('../../../lib/document/errors/InvalidActionNameError');
-const NoDocumentsSuppliedError = require('../../../lib/document/errors/NoDocumentsSuppliedError');
-const MismatchOwnerIdsError = require('../../../lib/document/errors/MismatchOwnerIdsError');
-const InvalidInitialRevisionError = require('../../../lib/document/errors/InvalidInitialRevisionError');
-const SerializedObjectParsingError = require('../../../lib/errors/consensus/basic/decode/SerializedObjectParsingError');
+const InvalidDocumentTypeError = require('@dashevo/dpp/lib/errors/InvalidDocumentTypeError');
+const InvalidDocumentError = require('@dashevo/dpp/lib/document/errors/InvalidDocumentError');
+const InvalidActionNameError = require('@dashevo/dpp/lib/document/errors/InvalidActionNameError');
+const NoDocumentsSuppliedError = require('@dashevo/dpp/lib/document/errors/NoDocumentsSuppliedError');
+const MismatchOwnerIdsError = require('@dashevo/dpp/lib/document/errors/MismatchOwnerIdsError');
+const InvalidInitialRevisionError = require('@dashevo/dpp/lib/document/errors/InvalidInitialRevisionError');
+const SerializedObjectParsingError = require('@dashevo/dpp/lib/errors/consensus/basic/decode/SerializedObjectParsingError');
 
-const generateRandomIdentifier = require('../../../lib/test/utils/generateRandomIdentifier');
-const createDPPMock = require('../../../lib/test/mocks/createDPPMock');
-const SomeConsensusError = require('../../../lib/test/mocks/SomeConsensusError');
-const entropyGenerator = require('../../../lib/util/entropyGenerator');
-const DocumentFactory = require('../../../lib/document/DocumentFactory');
+const generateRandomIdentifier = require('@dashevo/dpp/lib/test/utils/generateRandomIdentifier');
+const createDPPMock = require('@dashevo/dpp/lib/test/mocks/createDPPMock');
+const SomeConsensusError = require('@dashevo/dpp/lib/test/mocks/SomeConsensusError');
+const entropyGenerator = require('@dashevo/dpp/lib/util/entropyGenerator');
+const DocumentFactory = require('@dashevo/dpp/lib/document/DocumentFactory');
 
 describe('DocumentFactory', () => {
   let decodeProtocolEntityMock;

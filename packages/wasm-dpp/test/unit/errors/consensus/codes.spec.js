@@ -1,11 +1,11 @@
 const path = require('path');
 const fs = require('fs');
-const codes = require('../../../../lib/errors/consensus/codes');
-const AbstractConsensusError = require('../../../../lib/errors/consensus/AbstractConsensusError');
-const AbstractBasicError = require('../../../../lib/errors/consensus/basic/AbstractBasicError');
-const AbstractSignatureError = require('../../../../lib/errors/consensus/signature/AbstractSignatureError');
-const AbstractFeeError = require('../../../../lib/errors/consensus/fee/AbstractFeeError');
-const AbstractStateError = require('../../../../lib/errors/consensus/state/AbstractStateError');
+const codes = require('@dashevo/dpp/lib/errors/consensus/codes');
+const AbstractConsensusError = require('@dashevo/dpp/lib/errors/consensus/AbstractConsensusError');
+const AbstractBasicError = require('@dashevo/dpp/lib/errors/consensus/basic/AbstractBasicError');
+const AbstractSignatureError = require('@dashevo/dpp/lib/errors/consensus/signature/AbstractSignatureError');
+const AbstractFeeError = require('@dashevo/dpp/lib/errors/consensus/fee/AbstractFeeError');
+const AbstractStateError = require('@dashevo/dpp/lib/errors/consensus/state/AbstractStateError');
 
 const getAllFiles = (dirPath, arrayOfFiles) => {
   const files = fs.readdirSync(dirPath);
@@ -48,7 +48,7 @@ describe('Consensus error codes', () => {
     return;
   }
 
-  const normalizedPath = path.join(__dirname, '../../../../lib/errors/');
+  const normalizedPath = path.join(__dirname, '@dashevo/dpp/lib/errors/');
   const allFiles = getAllFiles(normalizedPath);
 
   allFiles.forEach((fileName) => {

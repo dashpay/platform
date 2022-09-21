@@ -1,25 +1,25 @@
 const { PrivateKey } = require('@dashevo/dashcore-lib');
 
-const DashPlatformProtocol = require('../../../lib/DashPlatformProtocol');
+const DashPlatformProtocol = require('@dashevo/dpp/lib/DashPlatformProtocol');
 
-const DataContractCreateTransition = require('../../../lib/dataContract/stateTransition/DataContractCreateTransition/DataContractCreateTransition');
+const DataContractCreateTransition = require('@dashevo/dpp/lib/dataContract/stateTransition/DataContractCreateTransition/DataContractCreateTransition');
 
-const ValidationResult = require('../../../lib/validation/ValidationResult');
+const ValidationResult = require('@dashevo/dpp/lib/validation/ValidationResult');
 
-const getDataContractFixture = require('../../../lib/test/fixtures/getDataContractFixture');
-const getDocumentsFixture = require('../../../lib/test/fixtures/getDocumentsFixture');
-const getIdentityCreateTransitionFixture = require('../../../lib/test/fixtures/getIdentityCreateTransitionFixture');
+const getDataContractFixture = require('@dashevo/dpp/lib/test/fixtures/getDataContractFixture');
+const getDocumentsFixture = require('@dashevo/dpp/lib/test/fixtures/getDocumentsFixture');
+const getIdentityCreateTransitionFixture = require('@dashevo/dpp/lib/test/fixtures/getIdentityCreateTransitionFixture');
 
-const createStateRepositoryMock = require('../../../lib/test/mocks/createStateRepositoryMock');
+const createStateRepositoryMock = require('@dashevo/dpp/lib/test/mocks/createStateRepositoryMock');
 
-const DataContractFactory = require('../../../lib/dataContract/DataContractFactory');
-const DocumentFactory = require('../../../lib/document/DocumentFactory');
+const DataContractFactory = require('@dashevo/dpp/lib/dataContract/DataContractFactory');
+const DocumentFactory = require('@dashevo/dpp/lib/document/DocumentFactory');
 
-const IdentityPublicKey = require('../../../lib/identity/IdentityPublicKey');
+const IdentityPublicKey = require('@dashevo/dpp/lib/identity/IdentityPublicKey');
 
-const MissingOptionError = require('../../../lib/errors/MissingOptionError');
-const createDPPMock = require('../../../lib/test/mocks/createDPPMock');
-const SomeConsensusError = require('../../../lib/test/mocks/SomeConsensusError');
+const MissingOptionError = require('@dashevo/dpp/lib/errors/MissingOptionError');
+const createDPPMock = require('@dashevo/dpp/lib/test/mocks/createDPPMock');
+const SomeConsensusError = require('@dashevo/dpp/lib/test/mocks/SomeConsensusError');
 
 describe('StateTransitionFacade', () => {
   let dpp;

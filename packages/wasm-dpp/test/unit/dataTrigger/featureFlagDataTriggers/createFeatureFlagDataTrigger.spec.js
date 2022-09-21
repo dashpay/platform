@@ -1,15 +1,15 @@
 const Long = require('long');
 
-const createFeatureFlagDataTrigger = require('../../../../lib/dataTrigger/featureFlagsDataTriggers/createFeatureFlagDataTrigger');
+const createFeatureFlagDataTrigger = require('@dashevo/dpp/lib/dataTrigger/featureFlagsDataTriggers/createFeatureFlagDataTrigger');
 
-const getIdentityFixture = require('../../../../lib/test/fixtures/getIdentityFixture');
-const getFeatureFlagsDocumentsFixture = require('../../../../lib/test/fixtures/getFeatureFlagsDocumentsFixture');
-const getDocumentTransitionsFixture = require('../../../../lib/test/fixtures/getDocumentTransitionsFixture');
-const createStateRepositoryMock = require('../../../../lib/test/mocks/createStateRepositoryMock');
-const DataTriggerExecutionResult = require('../../../../lib/dataTrigger/DataTriggerExecutionResult');
-const DataTriggerConditionError = require('../../../../lib/errors/consensus/state/dataContract/dataTrigger/DataTriggerConditionError');
-const Identifier = require('../../../../lib/identifier/Identifier');
-const StateTransitionExecutionContext = require('../../../../lib/stateTransition/StateTransitionExecutionContext');
+const getIdentityFixture = require('@dashevo/dpp/lib/test/fixtures/getIdentityFixture');
+const getFeatureFlagsDocumentsFixture = require('@dashevo/dpp/lib/test/fixtures/getFeatureFlagsDocumentsFixture');
+const getDocumentTransitionsFixture = require('@dashevo/dpp/lib/test/fixtures/getDocumentTransitionsFixture');
+const createStateRepositoryMock = require('@dashevo/dpp/lib/test/mocks/createStateRepositoryMock');
+const DataTriggerExecutionResult = require('@dashevo/dpp/lib/dataTrigger/DataTriggerExecutionResult');
+const DataTriggerConditionError = require('@dashevo/dpp/lib/errors/consensus/state/dataContract/dataTrigger/DataTriggerConditionError');
+const Identifier = require('@dashevo/dpp/lib/identifier/Identifier');
+const StateTransitionExecutionContext = require('@dashevo/dpp/lib/stateTransition/StateTransitionExecutionContext');
 
 describe('createFeatureFlagDataTrigger', () => {
   let contextMock;

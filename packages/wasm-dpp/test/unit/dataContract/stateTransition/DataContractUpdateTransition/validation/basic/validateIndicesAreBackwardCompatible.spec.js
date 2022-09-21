@@ -1,9 +1,9 @@
-const validateIndicesAreBackwardCompatible = require('../../../../../../../lib/dataContract/stateTransition/DataContractUpdateTransition/validation/basic/validateIndicesAreBackwardCompatible');
-const DataContractHaveNewIndexWithOldPropertiesError = require('../../../../../../../lib/errors/consensus/basic/dataContract/DataContractInvalidIndexDefinitionUpdateError');
-const DataContractHaveNewUniqueIndexError = require('../../../../../../../lib/errors/consensus/basic/dataContract/DataContractHaveNewUniqueIndexError');
-const DataContractIndicesChangedError = require('../../../../../../../lib/errors/consensus/basic/dataContract/DataContractUniqueIndicesChangedError');
-const getDataContractFixture = require('../../../../../../../lib/test/fixtures/getDataContractFixture');
-const DataContractInvalidIndexDefinitionUpdateError = require('../../../../../../../lib/errors/consensus/basic/dataContract/DataContractInvalidIndexDefinitionUpdateError');
+const validateIndicesAreBackwardCompatible = require('@dashevo/dpp/lib/dataContract/stateTransition/DataContractUpdateTransition/validation/basic/validateIndicesAreBackwardCompatible');
+const DataContractHaveNewIndexWithOldPropertiesError = require('@dashevo/dpp/lib/errors/consensus/basic/dataContract/DataContractInvalidIndexDefinitionUpdateError');
+const DataContractHaveNewUniqueIndexError = require('@dashevo/dpp/lib/errors/consensus/basic/dataContract/DataContractHaveNewUniqueIndexError');
+const DataContractIndicesChangedError = require('@dashevo/dpp/lib/errors/consensus/basic/dataContract/DataContractUniqueIndicesChangedError');
+const getDataContractFixture = require('@dashevo/dpp/lib/test/fixtures/getDataContractFixture');
+const DataContractInvalidIndexDefinitionUpdateError = require('@dashevo/dpp/lib/errors/consensus/basic/dataContract/DataContractInvalidIndexDefinitionUpdateError');
 
 describe('validateIndicesAreBackwardCompatible', () => {
   let oldDocumentsSchema;

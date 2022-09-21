@@ -1,11 +1,11 @@
 const { default: Ajv } = require('ajv/dist/2020');
 
-const protocolVersion = require('../../lib/version/protocolVersion');
+const protocolVersion = require('@dashevo/dpp/lib/version/protocolVersion');
 
-const DashPlatformProtocol = require('../../lib/DashPlatformProtocol');
-const JsonSchemaValidator = require('../../lib/validation/JsonSchemaValidator');
+const DashPlatformProtocol = require('@dashevo/dpp/lib/DashPlatformProtocol');
+const JsonSchemaValidator = require('@dashevo/dpp/lib/validation/JsonSchemaValidator');
 
-const createStateRepositoryMock = require('../../lib/test/mocks/createStateRepositoryMock');
+const createStateRepositoryMock = require('@dashevo/dpp/lib/test/mocks/createStateRepositoryMock');
 
 describe('DashPlatformProtocol', () => {
   let dpp;

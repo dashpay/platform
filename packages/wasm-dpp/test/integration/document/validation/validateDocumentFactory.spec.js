@@ -1,26 +1,26 @@
 const { getRE2Class } = require('@dashevo/wasm-re2');
 
-const createAjv = require('../../../../lib/ajv/createAjv');
+const createAjv = require('@dashevo/dpp/lib/ajv/createAjv');
 
-const JsonSchemaValidator = require('../../../../lib/validation/JsonSchemaValidator');
-const ValidationResult = require('../../../../lib/validation/ValidationResult');
+const JsonSchemaValidator = require('@dashevo/dpp/lib/validation/JsonSchemaValidator');
+const ValidationResult = require('@dashevo/dpp/lib/validation/ValidationResult');
 
-const DataContract = require('../../../../lib/dataContract/DataContract');
+const DataContract = require('@dashevo/dpp/lib/dataContract/DataContract');
 
-const validateDocumentFactory = require('../../../../lib/document/validation/validateDocumentFactory');
-const enrichDataContractWithBaseSchema = require('../../../../lib/dataContract/enrichDataContractWithBaseSchema');
+const validateDocumentFactory = require('@dashevo/dpp/lib/document/validation/validateDocumentFactory');
+const enrichDataContractWithBaseSchema = require('@dashevo/dpp/lib/dataContract/enrichDataContractWithBaseSchema');
 
-const getDataContractFixture = require('../../../../lib/test/fixtures/getDataContractFixture');
-const getDocumentsFixture = require('../../../../lib/test/fixtures/getDocumentsFixture');
+const getDataContractFixture = require('@dashevo/dpp/lib/test/fixtures/getDataContractFixture');
+const getDocumentsFixture = require('@dashevo/dpp/lib/test/fixtures/getDocumentsFixture');
 
-const MissingDocumentTypeError = require('../../../../lib/errors/consensus/basic/document/MissingDocumentTypeError');
-const InvalidDocumentTypeError = require('../../../../lib/errors/consensus/basic/document/InvalidDocumentTypeError');
+const MissingDocumentTypeError = require('@dashevo/dpp/lib/errors/consensus/basic/document/MissingDocumentTypeError');
+const InvalidDocumentTypeError = require('@dashevo/dpp/lib/errors/consensus/basic/document/InvalidDocumentTypeError');
 
 const {
   expectValidationError,
   expectJsonSchemaError,
-} = require('../../../../lib/test/expect/expectError');
-const SomeConsensusError = require('../../../../lib/test/mocks/SomeConsensusError');
+} = require('@dashevo/dpp/lib/test/expect/expectError');
+const SomeConsensusError = require('@dashevo/dpp/lib/test/mocks/SomeConsensusError');
 
 describe('validateDocumentFactory', () => {
   let dataContract;

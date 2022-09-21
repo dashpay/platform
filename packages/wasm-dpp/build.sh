@@ -1,20 +1,27 @@
 TARGET=wasm32-unknown-unknown
 PROFILE=release
+OUTPUT_DIR=wasm
+OUTPUT_FILE=$OUTPUT_DIR/wasm_dpp_bg.wasm
 
-# Building WASM
-AR=/usr/local/opt/llvm/bin/llvm-ar CC=/usr/local/opt/llvm/bin/clang cargo build --target=$TARGET --$PROFILE
+BUILD_COMMAND="cargo build --target=$TARGET --$PROFILE"
+BINDGEN_COMMAND="wasm-bindgen --out-dir=$OUTPUT_DIR --target=web --omit-default-module-path ../../target/$TARGET/$PROFILE/wasm_dpp.wasm"
+
+if [[ "$OSTYPE" == "darwin"* ]]; then
+    AR=/usr/local/opt/llvm/bin/llvm-ar CC=/usr/local/opt/llvm/bin/clang $BUILD_COMMAND
+    AR=/usr/local/opt/llvm/bin/llvm-ar CC=/usr/local/opt/llvm/bin/clang $BINDGEN_COMMAND
+else
+    $BUILD_COMMAND
+    $BINDGEN_COMMAND
+fi
+
 # EMCC_CFLAGS="-s ERROR_ON_UNDEFINED_SYMBOLS=0 --no-entry" cargo build --target=wasm32-unknown-emscripten --release
-# Generating bindings
-AR=/usr/local/opt/llvm/bin/llvm-ar CC=/usr/local/opt/llvm/bin/clang wasm-bindgen --out-dir=wasm --target=web --omit-default-module-path ../../target/$TARGET/$PROFILE/wasm_dpp.wasm
 # EMCC_CFLAGS="-s ERROR_ON_UNDEFINED_SYMBOLS=0 --no-entry" wasm-bindgen --out-dir=wasm --target=web --omit-default-module-path ../../target/wasm32-unknown-emscripten/release/wasm_dpp.wasm
 
-echo "Optimizing wasm using Binaryen"
-wasm-opt -Os wasm/wasm_dpp_bg.wasm -o wasm/wasm_dpp_bg_optimized.wasm
+# TODO: DO THIS ONLY ON RELEASE! REQUIRES BINARYEN
+# echo "Optimizing wasm using Binaryen"
+# wasm-opt -Os $OUTPUT_FILE -o $OUTPUT_FILE
 
 # Converting wasm into bease64 so it can be bundled
-WASM_BUILD_BASE_64=$(base64 wasm/wasm_dpp_bg_optimized.wasm)
+echo "Converting wasm binary into base64 module for bundling with Webpack"
+WASM_BUILD_BASE_64=$(base64 $OUTPUT_FILE)
 echo 'module.exports = "'${WASM_BUILD_BASE_64}'"' > wasm/wasm_dpp_bg.js
-
-# The module is in typescript so it's easier to generate typings
-# Building a distributable library with Webpack
-yarn workspace @dashevo/wasm-dpp webpack

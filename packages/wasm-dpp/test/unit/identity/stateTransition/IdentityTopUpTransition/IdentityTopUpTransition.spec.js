@@ -1,12 +1,12 @@
 const stateTransitionTypes = require(
-  '../../../../../lib/stateTransition/stateTransitionTypes',
+  '@dashevo/dpp/lib/stateTransition/stateTransitionTypes',
 );
 
-const Identifier = require('../../../../../lib/identifier/Identifier');
+const Identifier = require('@dashevo/dpp/lib/identifier/Identifier');
 
-const getIdentityTopUpTransitionFixture = require('../../../../../lib/test/fixtures/getIdentityTopUpTransitionFixture');
+const getIdentityTopUpTransitionFixture = require('@dashevo/dpp/lib/test/fixtures/getIdentityTopUpTransitionFixture');
 
-const protocolVersion = require('../../../../../lib/version/protocolVersion');
+const protocolVersion = require('@dashevo/dpp/lib/version/protocolVersion');
 
 describe('IdentityTopUpTransition', () => {
   let rawStateTransition;

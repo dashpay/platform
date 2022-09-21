@@ -1,20 +1,20 @@
-const DataContractFactory = require('../../../lib/dataContract/DataContractFactory');
+const DataContractFactory = require('@dashevo/dpp/lib/dataContract/DataContractFactory');
 
-const generateRandomIdentifier = require('../../../lib/test/utils/generateRandomIdentifier');
+const generateRandomIdentifier = require('@dashevo/dpp/lib/test/utils/generateRandomIdentifier');
 
 const DocumentCreateTransition = require(
-  '../../../lib/document/stateTransition/DocumentsBatchTransition/documentTransition/DocumentCreateTransition',
+  '@dashevo/dpp/lib/document/stateTransition/DocumentsBatchTransition/documentTransition/DocumentCreateTransition',
 );
 
-const Identifier = require('../../../lib/identifier/Identifier');
+const Identifier = require('@dashevo/dpp/lib/identifier/Identifier');
 
-const protocolVersion = require('../../../lib/version/protocolVersion');
-const createDPPMock = require('../../../lib/test/mocks/createDPPMock');
+const protocolVersion = require('@dashevo/dpp/lib/version/protocolVersion');
+const createDPPMock = require('@dashevo/dpp/lib/test/mocks/createDPPMock');
 
-const Document = require('../../../lib/document/Document');
+const Document = require('@dashevo/dpp/lib/document/Document');
 
-const hash = require('../../../lib/util/hash');
-const serializer = require('../../../lib/util/serializer');
+const hash = require('@dashevo/dpp/lib/util/hash');
+const serializer = require('@dashevo/dpp/lib/util/serializer');
 
 describe('Document', () => {
   let hashMock;

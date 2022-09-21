@@ -1,22 +1,22 @@
 const { getRE2Class } = require('@dashevo/wasm-re2');
 
-const createAjv = require('../../../../../../lib/ajv/createAjv');
+const createAjv = require('@dashevo/dpp/lib/ajv/createAjv');
 
-const getChainAssetLockFixture = require('../../../../../../lib/test/fixtures/getChainAssetLockProofFixture');
-const JsonSchemaValidator = require('../../../../../../lib/validation/JsonSchemaValidator');
-const createStateRepositoryMock = require('../../../../../../lib/test/mocks/createStateRepositoryMock');
+const getChainAssetLockFixture = require('@dashevo/dpp/lib/test/fixtures/getChainAssetLockProofFixture');
+const JsonSchemaValidator = require('@dashevo/dpp/lib/validation/JsonSchemaValidator');
+const createStateRepositoryMock = require('@dashevo/dpp/lib/test/mocks/createStateRepositoryMock');
 
 const { expectValidationError, expectJsonSchemaError } = require(
-  '../../../../../../lib/test/expect/expectError',
+  '@dashevo/dpp/lib/test/expect/expectError',
 );
 
-const validateChainAssetLockProofStructureFactory = require('../../../../../../lib/identity/stateTransition/assetLockProof/chain/validateChainAssetLockProofStructureFactory');
-const ValidationResult = require('../../../../../../lib/validation/ValidationResult');
-const IdentityAssetLockTransactionIsNotFoundError = require('../../../../../../lib/errors/consensus/basic/identity/IdentityAssetLockTransactionIsNotFoundError');
-const InvalidAssetLockProofCoreChainHeightError = require('../../../../../../lib/errors/consensus/basic/identity/InvalidAssetLockProofCoreChainHeightError');
-const InvalidAssetLockProofTransactionHeightError = require('../../../../../../lib/errors/consensus/basic/identity/InvalidAssetLockProofTransactionHeightError');
-const SomeConsensusError = require('../../../../../../lib/test/mocks/SomeConsensusError');
-const StateTransitionExecutionContext = require('../../../../../../lib/stateTransition/StateTransitionExecutionContext');
+const validateChainAssetLockProofStructureFactory = require('@dashevo/dpp/lib/identity/stateTransition/assetLockProof/chain/validateChainAssetLockProofStructureFactory');
+const ValidationResult = require('@dashevo/dpp/lib/validation/ValidationResult');
+const IdentityAssetLockTransactionIsNotFoundError = require('@dashevo/dpp/lib/errors/consensus/basic/identity/IdentityAssetLockTransactionIsNotFoundError');
+const InvalidAssetLockProofCoreChainHeightError = require('@dashevo/dpp/lib/errors/consensus/basic/identity/InvalidAssetLockProofCoreChainHeightError');
+const InvalidAssetLockProofTransactionHeightError = require('@dashevo/dpp/lib/errors/consensus/basic/identity/InvalidAssetLockProofTransactionHeightError');
+const SomeConsensusError = require('@dashevo/dpp/lib/test/mocks/SomeConsensusError');
+const StateTransitionExecutionContext = require('@dashevo/dpp/lib/stateTransition/StateTransitionExecutionContext');
 
 describe('validateChainAssetLockProofStructureFactory', () => {
   let rawProof;
