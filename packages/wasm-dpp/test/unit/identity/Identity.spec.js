@@ -1,12 +1,11 @@
-const generateRandomIdentifier = require('../../../lib/test/utils/generateRandomIdentifier');
+const { default: loadWasmDpp } = require('../../../dist');
+const generateRandomIdentifierAsync = require('@dashevo/dpp/lib/test/utils/generateRandomIdentifierAsync');
 
-const IdentityPublicKey = require('../../../lib/identity/IdentityPublicKey');
-const Metadata = require('../../../lib/Metadata');
-const protocolVersion = require('../../../lib/version/protocolVersion');
+const IdentityPublicKey = require('@dashevo/dpp/lib/identity/IdentityPublicKey');
+const protocolVersion = require('@dashevo/dpp/lib/version/protocolVersion');
 
-const Identity = require('../../../lib/identity/Identity');
-const serializer = require('../../../lib/util/serializer');
-const hash = require('../../../lib/util/hash');
+const serializer = require('@dashevo/dpp/lib/util/serializer');
+const hash = require('@dashevo/dpp/lib/util/hash');
 
 describe('Identity', () => {
   let rawIdentity;
@@ -14,11 +13,18 @@ describe('Identity', () => {
   let hashMock;
   let encodeMock;
   let metadataFixture;
+  let Identity;
+  let Metadata;
+  // let IdentityPublicKeyWasm;
 
-  beforeEach(function beforeEach() {
+  before(async () => {
+    ({ Identity, Metadata /* IdentityPublicKey: IdentityPublicKeyWasm */ } = await loadWasmDpp());
+  });
+
+  beforeEach(async function beforeEach() {
     rawIdentity = {
       protocolVersion: protocolVersion.latestVersion,
-      id: generateRandomIdentifier(),
+      id: await generateRandomIdentifierAsync(),
       publicKeys: [
         {
           id: 0,
@@ -52,9 +58,8 @@ describe('Identity', () => {
     it('should set variables from raw model', () => {
       const instance = new Identity(rawIdentity);
 
-      expect(instance.id).to.deep.equal(rawIdentity.id);
-      expect(instance.type).to.equal(rawIdentity.type);
-      expect(instance.publicKeys).to.deep.equal(
+      expect(instance.getId().toBuffer()).to.deep.equal(rawIdentity.id.toBuffer());
+      expect(instance.getPublicKeys()).to.deep.equal(
         rawIdentity.publicKeys.map((rawPublicKey) => new IdentityPublicKey(rawPublicKey)),
       );
     });
@@ -62,7 +67,8 @@ describe('Identity', () => {
 
   describe('#getId', () => {
     it('should return set id', () => {
-      expect(identity.getId()).to.deep.equal(rawIdentity.id);
+      identity = new Identity(rawIdentity);
+      expect(identity.getId().toBuffer()).to.deep.equal(rawIdentity.id.toBuffer());
     });
   });
 
@@ -77,7 +83,7 @@ describe('Identity', () => {
   describe('#setPublicKeys', () => {
     it('should set public keys', () => {
       identity.setPublicKeys(42);
-      expect(identity.publicKeys).to.equal(42);
+      expect(identity.getPublicKeys()).to.equal(42);
     });
   });
 
@@ -164,7 +170,7 @@ describe('Identity', () => {
 
   describe('#getBalance', () => {
     it('should return set identity balance', () => {
-      identity.balance = 42;
+      identity.setBalance(42);
       expect(identity.getBalance()).to.equal(42);
     });
   });
@@ -172,7 +178,7 @@ describe('Identity', () => {
   describe('#setBalance', () => {
     it('should set identity balance', () => {
       identity.setBalance(42);
-      expect(identity.balance).to.equal(42);
+      expect(identity.getBalance()).to.equal(42);
     });
   });
 
@@ -181,18 +187,18 @@ describe('Identity', () => {
       const result = identity.increaseBalance(42);
 
       expect(result).to.equal(42);
-      expect(identity.balance).to.equal(42);
+      expect(identity.getBalance()).to.equal(42);
     });
   });
 
   describe('#reduceBalance', () => {
     it('should reduce identity balance', () => {
-      identity.balance = 42;
+      identity.setBalance(42);
 
       const result = identity.reduceBalance(2);
 
       expect(result).to.equal(40);
-      expect(identity.balance).to.equal(40);
+      expect(identity.getBalance()).to.equal(40);
     });
   });
 
@@ -202,7 +208,7 @@ describe('Identity', () => {
 
       identity.setMetadata(otherMetadata);
 
-      expect(identity.metadata).to.deep.equal(otherMetadata);
+      expect(identity.getMetadata()).to.deep.equal(otherMetadata);
     });
   });
 
