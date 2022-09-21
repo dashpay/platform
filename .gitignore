@@ -3,6 +3,7 @@
 
 # ignore JetBrains IDE project specific files
 .idea
+.fleet
 
 # ignore VSCode project specific files
 .vscode

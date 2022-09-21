@@ -17,13 +17,8 @@ describe('Fee Pools', () => {
   let mnDatas;
   let identityRepository;
 
-  beforeEach(async function beforeEach() {
+  beforeEach(async () => {
     container = await createTestDIContainer();
-
-    const blockExecutionContext = container.resolve('blockExecutionContext');
-    blockExecutionContext.getHeader = this.sinon.stub().returns(
-      { time: { seconds: new Date().getTime() / 1000 } },
-    );
 
     const dataContractRepository = container.resolve('dataContractRepository');
     const documentRepository = container.resolve('documentRepository');

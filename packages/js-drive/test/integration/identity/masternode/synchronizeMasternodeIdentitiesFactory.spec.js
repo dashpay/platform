@@ -355,13 +355,13 @@ describe('synchronizeMasternodeIdentitiesFactory', () => {
 
   beforeEach(async function beforeEach() {
     coreHeight = 3;
-    firstSyncAppHash = '8034a863c2d83030818ecf43647750f61610c47482ce095b03de6d6820cf7303';
+    firstSyncAppHash = '72c81366066228cb7e27399c0ec26587acd1a4f7b9d56100c71e93c84334a378';
 
     container = await createTestDIContainer();
 
     const blockExecutionContext = container.resolve('blockExecutionContext');
-    blockExecutionContext.getHeader = this.sinon.stub().returns(
-      { time: { seconds: 1651585250 } },
+    blockExecutionContext.getTime = this.sinon.stub().returns(
+      { seconds: 1651585250 },
     );
 
     // Mock fetchTransaction
@@ -512,6 +512,8 @@ describe('synchronizeMasternodeIdentitiesFactory', () => {
     await expectMasternodeIdentity(
       smlFixture[0],
       transaction1,
+      undefined,
+      Address.fromString(smlFixture[0].payoutAddress),
     );
 
     // voting identity should be created
@@ -570,6 +572,8 @@ describe('synchronizeMasternodeIdentitiesFactory', () => {
     await expectMasternodeIdentity(
       smlFixture[1],
       transaction2,
+      undefined,
+      Address.fromString(smlFixture[1].payoutAddress),
     );
 
     // Voting identity should be created
@@ -642,7 +646,7 @@ describe('synchronizeMasternodeIdentitiesFactory', () => {
 
     // Core RPC should be called
 
-    expect(coreRpcClientMock.protx).to.have.been.calledOnceWithExactly('diff', 1, 3);
+    expect(coreRpcClientMock.protx).to.have.been.calledOnceWithExactly('diff', 1, 3, true);
   });
 
   it('should create masternode identities if new masternode appeared', async () => {
@@ -693,13 +697,15 @@ describe('synchronizeMasternodeIdentitiesFactory', () => {
     expect(result.updatedEntities).to.have.lengthOf(0);
     expect(result.removedEntities).to.have.lengthOf(0);
 
-    await expectDeterministicAppHash('a63e7b5483519ed5c1c0f330cbcf620112532eb833c0c9dfa158c36e24439844');
+    await expectDeterministicAppHash('330477de6daeeea317d80192137ad0ec8285bd1b4df23e4c33e2b90a47732c02');
 
     // New masternode identity should be created
 
     await expectMasternodeIdentity(
       newSmlFixture[0],
       transaction3,
+      undefined,
+      Address.fromString(newSmlFixture[0].payoutAddress),
     );
 
     // New voting identity should be created
@@ -774,13 +780,15 @@ describe('synchronizeMasternodeIdentitiesFactory', () => {
     expect(result.updatedEntities).to.have.lengthOf(0);
     expect(result.removedEntities).to.have.lengthOf(1);
 
-    await expectDeterministicAppHash('88b653eec9e83890387f7774ca6cd59571b8ff7ab0768d6a17a09e9f894af9da');
+    await expectDeterministicAppHash('d42e2ff125eb38bf88205de703fcbd48003aa150832cfc2b609f9d87356262e3');
 
     // Masternode identity should stay
 
     await expectMasternodeIdentity(
       smlFixture[0],
       transaction1,
+      undefined,
+      Address.fromString(smlFixture[0].payoutAddress),
     );
 
     // Voting identity should stay
@@ -839,7 +847,7 @@ describe('synchronizeMasternodeIdentitiesFactory', () => {
     expect(result.updatedEntities).to.have.lengthOf(0);
     expect(result.removedEntities).to.have.lengthOf(1);
 
-    await expectDeterministicAppHash('88b653eec9e83890387f7774ca6cd59571b8ff7ab0768d6a17a09e9f894af9da');
+    await expectDeterministicAppHash('d42e2ff125eb38bf88205de703fcbd48003aa150832cfc2b609f9d87356262e3');
 
     const invalidMasternodeIdentifier = Identifier.from(
       Buffer.from(invalidSmlEntry.proRegTxHash, 'hex'),
@@ -888,13 +896,15 @@ describe('synchronizeMasternodeIdentitiesFactory', () => {
     expect(result.updatedEntities).to.have.lengthOf(3);
     expect(result.removedEntities).to.have.lengthOf(0);
 
-    await expectDeterministicAppHash('0d7abce0b57f07895fd91e081ae21f78962fc2ba2fc4cca9d526c3794c5282f5');
+    await expectDeterministicAppHash('298c59aa54dbb42be030ea67cf436fa7c6fed9d6ad7757c623de1029b46b3f5f');
 
     // Masternode identity should stay
 
     await expectMasternodeIdentity(
       smlFixture[0],
       transaction1,
+      undefined,
+      Address.fromString(smlFixture[0].payoutAddress),
     );
 
     // Previous voting identity should stay
@@ -939,7 +949,7 @@ describe('synchronizeMasternodeIdentitiesFactory', () => {
     expect(document.get('payToId')).to.deep.equal(newOperatorIdentifier);
   });
 
-  it.skip('should handle changed payout, voting and operator payout addresses', async () => {
+  it('should handle changed payout, voting and operator payout addresses', async () => {
     // Sync initial list
 
     await synchronizeMasternodeIdentities(coreHeight);
@@ -960,7 +970,7 @@ describe('synchronizeMasternodeIdentitiesFactory', () => {
 
     await synchronizeMasternodeIdentities(coreHeight + 1);
 
-    await expectDeterministicAppHash('7d0248dbad9d0109a9d215158a5196991d6c4650bfd4e043a36bb8517c2068a9');
+    await expectDeterministicAppHash('d03cec5352eec31a5da9746392f8faf6d8be184b23498a2701a2da637230f5e8');
 
     // Masternode identity should contain new public key
 
@@ -1042,7 +1052,7 @@ describe('synchronizeMasternodeIdentitiesFactory', () => {
 
     await synchronizeMasternodeIdentities(coreHeight);
 
-    await expectDeterministicAppHash('69d193b4c68ed13d191fa6220640ac558e62a950b55d9b117ffea209824fd300');
+    await expectDeterministicAppHash('442faffa2a1f243f4ad91ad8477f6f36514dedff3842fbda30b2ecfec9ab3820');
 
     const votingIdentifier = createVotingIdentifier(smlFixture[0]);
 
