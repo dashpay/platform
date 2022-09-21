@@ -123,28 +123,20 @@ class DockerCompose {
    * @return {Promise<ChildProcess>}
    */
   // eslint-disable-next-line no-unused-vars
-  async build(envs, serviceName = undefined) {
+  async build(envs, serviceName = undefined, options = []) {
     await this.throwErrorIfNotInstalled();
 
     try {
-      // Temporarily build with buildx bake until docker compose build selects correct builder
-      // https://github.com/docker/compose-cli/issues/1840
-      const childProcess = exec(
-        'docker buildx bake --progress plain --load -f docker-compose.platform.build.yml',
-        this.getOptions(envs),
-      );
-
-      childProcess.isReady = new Promise((resolve, reject) => {
-        childProcess.on('exit', (code) => {
-          if (code === 0) {
-            resolve(childProcess);
-          } else {
-            reject(childProcess);
-          }
+      if (serviceName) {
+        await dockerCompose.buildOne(serviceName, {
+          ...this.getOptions(envs),
+          commandOptions: options,
         });
-      });
-
-      return childProcess;
+      } else {
+        await dockerCompose.buildAll({
+          ...this.getOptions(envs),
+        });
+      }
     } catch (e) {
       throw new DockerComposeError(e);
     }
