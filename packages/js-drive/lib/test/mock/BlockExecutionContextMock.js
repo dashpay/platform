@@ -5,8 +5,12 @@
  * @method getCumulativeFees
  * @method incrementCumulativeFees
  * @method reset
- * @method setHeader
- * @method getHeader
+ * @method setHeight
+ * @method getHeight
+ * @method setTime
+ * @method getTime
+ * @method setVersion
+ * @method getVersion
  * @method setLastCommitInfo
  * @method getLastCommitInfo
  * @method getValidTxCount

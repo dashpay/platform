@@ -1,3 +1,48 @@
+### [0.22.16](https://github.com/dashevo/platform/compare/v0.22.15...v0.22.16) (2022-09-08)
+
+
+### Features
+
+* create test suite's `.env` from deployment tool config ([#518](https://github.com/dashevo/platform/issues/518))
+
+
+### Bug Fixes
+
+* security vulnerability in elliptic library ([#501](https://github.com/dashevo/platform/issues/501))
+* test suite image and environment problems in ci ([#505](https://github.com/dashevo/platform/issues/505))
+
+
+
+## [0.23.0-dev.9](https://github.com/dashevo/platform/compare/v0.22.15...v0.23.0-dev.9) (2022-09-05)
+
+
+### Bug Fixes
+
+* **dashmate:** DockerComposeError undefined ([#513](https://github.com/dashevo/platform/issues/513))
+* security vulnerability in elliptic library ([#501](https://github.com/dashevo/platform/issues/501))
+* test suite image and environment problems in ci ([#505](https://github.com/dashevo/platform/issues/505))
+* **test-suite:** failing assertions due to replication lag ([#502](https://github.com/dashevo/platform/issues/502))
+
+
+### Build System
+
+* `yarn install` fails with Node.JS 16.17.0 ([#507](https://github.com/dashevo/platform/issues/507))
+
+
+### Tests
+
+* **dapi:** fix broken subscribeToNewBlockHeaders test ([#508](https://github.com/dashevo/platform/issues/508))
+* **dapi:** rename test files to mach the naming convention ([#509](https://github.com/dashevo/platform/issues/509))
+
+
+### [0.22.15](https://github.com/dashevo/platform/compare/v0.22.14...v0.22.15) (2022-08-31)
+
+
+### Features
+
+* **dashmate:** update v18 for the mainnet nodes ([#514](https://github.com/dashevo/platform/issues/514))
+
+
 ### [0.22.14](https://github.com/dashevo/platform/compare/v0.22.13...v0.22.14) (2022-08-29)
 
 
