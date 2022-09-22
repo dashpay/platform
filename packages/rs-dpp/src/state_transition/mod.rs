@@ -25,6 +25,8 @@ pub use state_transition_factory::*;
 mod state_transition_types;
 pub mod validation;
 
+pub mod fees;
+
 mod example;
 macro_rules! call_method {
     ($state_transition:expr, $method:ident, $args:tt ) => {
