@@ -151,6 +151,9 @@ jobs:
       - name: Setup wasm-bindgen
         run: cargo install -f wasm-bindgen-cli
 
+      - name: Setup wasm target
+        run: rustup target add wasm32-unknown-unknown
+
       - name: Enable corepack
         run: corepack enable
 
