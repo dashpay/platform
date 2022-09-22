@@ -71,17 +71,17 @@ function reindexNodeTaskFactory(
           }
 
           const container = docker.getContainer(containerId);
+          const containerInfo = await container.inspect()
+          ctx.reindexContainerId = containerInfo.Id
+
           const {State} = await container.inspect()
 
           if (State.Status === "paused" || State.Status === "exited") {
             switch (State.ExitCode) {
-              // 127 means out of memory or something, so we would want to spin in it up again
-              case 127:
+              default:
+                console.warn(`Reindex container exited with status ${State.ExitCode}, look docker logs of container ${containerId}`)
               case 0:
                 await container.start();
-                break;
-              default:
-                throw new Error(`Reindex container exited with status ${State.ExitCode}, look docker logs of container ${containerId}`)
             }
           }
         }
@@ -98,7 +98,7 @@ function reindexNodeTaskFactory(
 
           return waitForCoreSync(rpcClient, (verificationProgress) => {
             const {percent, blocks, headers} = verificationProgress
-            task.title = `Reindexing ${ctx.reindexContainerId}... (${(percent * 100).toFixed(4)}%, ${blocks} / ${headers})`
+            task.title = `Reindexing ${config.getName()}... (${(percent * 100).toFixed(4)}%, ${blocks} / ${headers})`
           })
         },
       },
