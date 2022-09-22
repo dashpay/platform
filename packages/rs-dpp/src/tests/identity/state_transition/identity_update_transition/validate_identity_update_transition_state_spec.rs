@@ -52,7 +52,7 @@ fn setup_test() -> TestData {
     let block_header_to_return = block_header.clone();
     state_repository_mock
         .expect_fetch_identity()
-        .returning(move |_| Ok(Some(identity_to_return.clone())));
+        .returning(move |_, _| Ok(Some(identity_to_return.clone())));
     state_repository_mock
         .expect_fetch_latest_platform_block_header::<BlockHeader>()
         .returning(move || Ok(block_header_to_return.clone()));
@@ -126,7 +126,7 @@ async fn should_return_identity_public_key_is_read_only_error_if_disabling_publi
     let mut state_repository_mock = MockStateRepositoryLike::new();
     state_repository_mock
         .expect_fetch_identity()
-        .returning(move |_| Ok(Some(identity_to_return.clone())));
+        .returning(move |_, _| Ok(Some(identity_to_return.clone())));
 
     let validator = ValidateIdentityUpdateTransitionState::new(
         Arc::new(state_repository_mock),
@@ -299,7 +299,7 @@ async fn should_validate_purpose_and_security_level() {
     let mut state_repository_mock = MockStateRepositoryLike::new();
     state_repository_mock
         .expect_fetch_identity()
-        .returning(move |_| Ok(Some(identity_to_return.clone())));
+        .returning(move |_, _| Ok(Some(identity_to_return.clone())));
     state_repository_mock
         .expect_fetch_latest_platform_block_header::<BlockHeader>()
         .returning(move || Ok(block_header.clone()));

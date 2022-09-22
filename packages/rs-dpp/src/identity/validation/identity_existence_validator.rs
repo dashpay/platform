@@ -2,6 +2,7 @@ use crate::{
     consensus::signature::SignatureError,
     prelude::{Identifier, Identity},
     state_repository::StateRepositoryLike,
+    state_transition::state_transition_execution_context::StateTransitionExecutionContext,
     validation::ValidationResult,
     ProtocolError,
 };
@@ -9,10 +10,13 @@ use crate::{
 pub async fn validate_identity_existence(
     state_repository: &impl StateRepositoryLike,
     identity_id: &Identifier,
+    execution_context: &StateTransitionExecutionContext,
 ) -> Result<ValidationResult<Identity>, ProtocolError> {
     let mut result = ValidationResult::<Identity>::default();
 
-    let maybe_identity: Option<Identity> = state_repository.fetch_identity(identity_id).await?;
+    let maybe_identity: Option<Identity> = state_repository
+        .fetch_identity(identity_id, execution_context)
+        .await?;
     match maybe_identity {
         None => result.add_error(SignatureError::IdentityNotFoundError {
             identity_id: identity_id.to_owned(),
@@ -42,11 +46,15 @@ mod test {
 
         state_repository_mock
             .expect_fetch_identity::<Identity>()
-            .returning(|_| Ok(None));
+            .returning(|_, _| Ok(None));
 
-        let result = validate_identity_existence(&state_repository_mock, identity.get_id())
-            .await
-            .expect("validation result should be returned");
+        let result = validate_identity_existence(
+            &state_repository_mock,
+            identity.get_id(),
+            &Default::default(),
+        )
+        .await
+        .expect("validation result should be returned");
         let signature_error = get_signature_error_from_result(&result, 0);
 
         assert!(
@@ -63,11 +71,15 @@ mod test {
         let identity_to_return = identity.clone();
         state_repository_mock
             .expect_fetch_identity::<Identity>()
-            .returning(move |_| Ok(Some(identity_to_return.clone())));
+            .returning(move |_, _| Ok(Some(identity_to_return.clone())));
 
-        let result = validate_identity_existence(&state_repository_mock, identity.get_id())
-            .await
-            .expect("validation result should be returned");
+        let result = validate_identity_existence(
+            &state_repository_mock,
+            identity.get_id(),
+            &Default::default(),
+        )
+        .await
+        .expect("validation result should be returned");
         assert!(result.is_valid());
     }
 }

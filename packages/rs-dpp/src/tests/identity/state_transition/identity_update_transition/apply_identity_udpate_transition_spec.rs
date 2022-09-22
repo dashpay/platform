@@ -22,7 +22,7 @@ fn setup_test() -> TestData {
     let identity_to_return = identity;
     state_repository_mock
         .expect_fetch_identity()
-        .returning(move |_| Ok(Some(identity_to_return.clone())));
+        .returning(move |_, _| Ok(Some(identity_to_return.clone())));
 
     TestData {
         state_transition,
@@ -41,10 +41,10 @@ async fn should_add_public_key() {
     state_transition.set_public_key_ids_to_disable(vec![]);
     state_repository_mock
         .expect_store_identity_public_key_hashes()
-        .returning(|_, _| Ok(()));
+        .returning(|_, _, _| Ok(()));
     state_repository_mock
         .expect_update_identity()
-        .returning(|_| Ok(()));
+        .returning(|_, _| Ok(()));
 
     let result = apply_identity_update_transition(&state_repository_mock, state_transition).await;
 

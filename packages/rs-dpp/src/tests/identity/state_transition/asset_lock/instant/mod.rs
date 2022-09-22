@@ -47,11 +47,11 @@ mod validate_instant_asset_lock_proof_structure_factory {
             let mut state_repository_mock = MockStateRepositoryLike::new();
             state_repository_mock
                 .expect_verify_instant_lock()
-                .returning(|_asset_lock| Ok(true));
+                .returning(|_asset_lock, _| Ok(true));
 
             state_repository_mock
                 .expect_is_asset_lock_transaction_out_point_already_used()
-                .returning(|_| Ok(false));
+                .returning(|_, _| Ok(false));
             state_repository_mock
         });
 
@@ -89,7 +89,7 @@ mod validate_instant_asset_lock_proof_structure_factory {
 
             let result = test_data
                 .validate_instant_asset_lock_proof_structure
-                .validate(&test_data.raw_proof)
+                .validate(&test_data.raw_proof, &Default::default())
                 .await
                 .unwrap();
 
@@ -113,7 +113,7 @@ mod validate_instant_asset_lock_proof_structure_factory {
 
             let result = test_data
                 .validate_instant_asset_lock_proof_structure
-                .validate(&test_data.raw_proof)
+                .validate(&test_data.raw_proof, &Default::default())
                 .await
                 .unwrap();
 
@@ -136,7 +136,7 @@ mod validate_instant_asset_lock_proof_structure_factory {
 
             let result = test_data
                 .validate_instant_asset_lock_proof_structure
-                .validate(&test_data.raw_proof)
+                .validate(&test_data.raw_proof, &Default::default())
                 .await
                 .unwrap();
 
@@ -162,7 +162,7 @@ mod validate_instant_asset_lock_proof_structure_factory {
 
             let result = test_data
                 .validate_instant_asset_lock_proof_structure
-                .validate(&test_data.raw_proof)
+                .validate(&test_data.raw_proof, &Default::default())
                 .await
                 .unwrap();
 
@@ -182,7 +182,7 @@ mod validate_instant_asset_lock_proof_structure_factory {
 
             let result = test_data
                 .validate_instant_asset_lock_proof_structure
-                .validate(&test_data.raw_proof)
+                .validate(&test_data.raw_proof, &Default::default())
                 .await
                 .unwrap();
 
@@ -202,7 +202,7 @@ mod validate_instant_asset_lock_proof_structure_factory {
 
             let result = test_data
                 .validate_instant_asset_lock_proof_structure
-                .validate(&test_data.raw_proof)
+                .validate(&test_data.raw_proof, &Default::default())
                 .await
                 .unwrap();
 
@@ -222,7 +222,7 @@ mod validate_instant_asset_lock_proof_structure_factory {
 
             let result = test_data
                 .validate_instant_asset_lock_proof_structure
-                .validate(&test_data.raw_proof)
+                .validate(&test_data.raw_proof, &Default::default())
                 .await
                 .unwrap();
 
@@ -246,7 +246,10 @@ mod validate_instant_asset_lock_proof_structure_factory {
 
             let result = test_data
                 .validate_instant_asset_lock_proof_structure
-                .validate(&asset_lock_proof.to_raw_object().unwrap())
+                .validate(
+                    &asset_lock_proof.to_raw_object().unwrap(),
+                    &Default::default(),
+                )
                 .await
                 .unwrap();
 
@@ -271,12 +274,12 @@ mod validate_instant_asset_lock_proof_structure_factory {
             let mut state_repository_mock = MockStateRepositoryLike::new();
             state_repository_mock
                 .expect_verify_instant_lock()
-                .returning(|_asset_lock| Ok(false));
+                .returning(|_asset_lock, _| Ok(false));
             let test_data = setup_test(Some(state_repository_mock));
 
             let result = test_data
                 .validate_instant_asset_lock_proof_structure
-                .validate(&test_data.raw_proof)
+                .validate(&test_data.raw_proof, &Default::default())
                 .await
                 .unwrap();
 
@@ -303,7 +306,7 @@ mod validate_instant_asset_lock_proof_structure_factory {
 
             let result = test_data
                 .validate_instant_asset_lock_proof_structure
-                .validate(&test_data.raw_proof)
+                .validate(&test_data.raw_proof, &Default::default())
                 .await
                 .unwrap();
 
@@ -329,7 +332,7 @@ mod validate_instant_asset_lock_proof_structure_factory {
 
             let result = test_data
                 .validate_instant_asset_lock_proof_structure
-                .validate(&test_data.raw_proof)
+                .validate(&test_data.raw_proof, &Default::default())
                 .await
                 .unwrap();
 
@@ -349,7 +352,7 @@ mod validate_instant_asset_lock_proof_structure_factory {
 
             let result = test_data
                 .validate_instant_asset_lock_proof_structure
-                .validate(&test_data.raw_proof)
+                .validate(&test_data.raw_proof, &Default::default())
                 .await
                 .unwrap();
 
@@ -369,7 +372,7 @@ mod validate_instant_asset_lock_proof_structure_factory {
 
             let result = test_data
                 .validate_instant_asset_lock_proof_structure
-                .validate(&test_data.raw_proof)
+                .validate(&test_data.raw_proof, &Default::default())
                 .await
                 .unwrap();
 
@@ -389,7 +392,7 @@ mod validate_instant_asset_lock_proof_structure_factory {
 
             let result = test_data
                 .validate_instant_asset_lock_proof_structure
-                .validate(&test_data.raw_proof)
+                .validate(&test_data.raw_proof, &Default::default())
                 .await
                 .unwrap();
 
@@ -414,7 +417,7 @@ mod validate_instant_asset_lock_proof_structure_factory {
 
             let result = test_data
                 .validate_instant_asset_lock_proof_structure
-                .validate(&test_data.raw_proof)
+                .validate(&test_data.raw_proof, &Default::default())
                 .await
                 .unwrap();
 
@@ -438,7 +441,7 @@ mod validate_instant_asset_lock_proof_structure_factory {
 
             let result = test_data
                 .validate_instant_asset_lock_proof_structure
-                .validate(&test_data.raw_proof)
+                .validate(&test_data.raw_proof, &Default::default())
                 .await
                 .unwrap();
 
@@ -456,7 +459,7 @@ mod validate_instant_asset_lock_proof_structure_factory {
 
             let result = test_data
                 .validate_instant_asset_lock_proof_structure
-                .validate(&test_data.raw_proof)
+                .validate(&test_data.raw_proof, &Default::default())
                 .await
                 .unwrap();
 
@@ -474,7 +477,7 @@ mod validate_instant_asset_lock_proof_structure_factory {
 
         let result = test_data
             .validate_instant_asset_lock_proof_structure
-            .validate(&test_data.raw_proof)
+            .validate(&test_data.raw_proof, &Default::default())
             .await
             .unwrap();
 

@@ -2,7 +2,8 @@ use anyhow::Result;
 
 use crate::{
     data_contract::state_transition::DataContractCreateTransition, errors::StateError,
-    state_repository::StateRepositoryLike, validation::ValidationResult,
+    state_repository::StateRepositoryLike, state_transition::StateTransitionLike,
+    validation::ValidationResult,
 };
 
 pub struct DataContractCreateTransitionStateValidator<SR>
@@ -34,7 +35,10 @@ where
         // Data contract shouldn't exist
         let maybe_existing_data_contract: Result<Option<Vec<u8>>> = self
             .state_repository
-            .fetch_data_contract(&state_transition.data_contract.id)
+            .fetch_data_contract(
+                &state_transition.data_contract.id,
+                state_transition.get_execution_context(),
+            )
             .await;
 
         match maybe_existing_data_contract {

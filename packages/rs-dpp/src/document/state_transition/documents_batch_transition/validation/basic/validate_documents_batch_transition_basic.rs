@@ -14,6 +14,7 @@ use crate::{
     document::{document_transition::Action, generate_document_id::generate_document_id},
     prelude::Identifier,
     state_repository::StateRepositoryLike,
+    state_transition::state_transition_execution_context::StateTransitionExecutionContext,
     util::json_value::JsonValueExt,
     validation::{JsonSchemaValidator, ValidationResult},
     version::ProtocolVersionValidator,
@@ -55,6 +56,7 @@ pub async fn validate_documents_batch_transition_basic(
     protocol_version_validator: &ProtocolVersionValidator,
     raw_state_transition: &JsonValue,
     state_repository: &impl StateRepositoryLike,
+    execution_context: &StateTransitionExecutionContext,
 ) -> Result<ValidationResult<()>, ProtocolError> {
     let mut result = ValidationResult::default();
     let validator =
@@ -118,7 +120,7 @@ pub async fn validate_documents_batch_transition_basic(
 
     for (data_contract_id, transitions) in document_transitions_by_contracts {
         let data_contract: DataContract = match state_repository
-            .fetch_data_contract(&data_contract_id)
+            .fetch_data_contract(&data_contract_id, execution_context)
             .await
         {
             Err(_) => {

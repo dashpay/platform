@@ -28,7 +28,10 @@ where
     ) -> Result<()> {
         let output = self
             .asset_lock_transaction_output_fetcher
-            .fetch(state_transition.get_asset_lock_proof())
+            .fetch(
+                state_transition.get_asset_lock_proof(),
+                state_transition.get_execution_context(),
+            )
             .await?;
 
         let credits_amount = convert_satoshi_to_credits(output.value);
@@ -51,7 +54,9 @@ where
             metadata: None,
         };
 
-        self.state_repository.create_identity(&identity).await?;
+        self.state_repository
+            .create_identity(&identity, state_transition.get_execution_context())
+            .await?;
 
         let public_key_hashes = identity
             .get_public_keys()
@@ -60,7 +65,11 @@ where
             .collect::<Result<Vec<Vec<u8>>, ProtocolError>>()?;
 
         self.state_repository
-            .store_identity_public_key_hashes(identity.get_id(), public_key_hashes)
+            .store_identity_public_key_hashes(
+                identity.get_id(),
+                public_key_hashes,
+                state_transition.get_execution_context(),
+            )
             .await?;
 
         let out_point = state_transition

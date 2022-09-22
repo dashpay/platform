@@ -67,7 +67,7 @@ fn setup_test() -> TestData {
     let data_contract_to_return = data_contract.clone();
     state_repository_mock
         .expect_fetch_data_contract::<DataContract>()
-        .returning(move |_| Ok(data_contract_to_return.clone()));
+        .returning(move |_, _| Ok(data_contract_to_return.clone()));
     state_repository_mock
         .expect_fetch_latest_platform_block_header::<BlockHeader>()
         .returning(|| {
@@ -128,13 +128,14 @@ async fn should_throw_error_if_data_contract_was_not_found() {
     let mut state_repository_mock = MockStateRepositoryLike::default();
     state_repository_mock
         .expect_fetch_data_contract::<DataContract>()
-        .returning(|_| Err(anyhow!("no document found")));
+        .returning(|_, _| Err(anyhow!("no document found")));
 
     let error = validate_document_transitions(
         &state_repository_mock,
         &data_contract.id,
         &owner_id,
         document_transitions,
+        &Default::default(),
     )
     .await
     .expect_err("protocol error expected");
@@ -177,7 +178,7 @@ async fn should_return_invalid_result_if_document_transition_with_action_delete_
 
     state_repository_mock
         .expect_fetch_documents::<Document>()
-        .returning(move |_, _, _| Ok(vec![]));
+        .returning(move |_, _, _, _| Ok(vec![]));
 
     let validation_result =
         validate_document_batch_transition_state(&state_repository_mock, &state_transition)
@@ -233,7 +234,7 @@ async fn should_return_invalid_result_if_document_transition_with_action_replace
 
     state_repository_mock
         .expect_fetch_documents()
-        .returning(move |_, _, _| Ok(vec![documents[0].clone()]));
+        .returning(move |_, _, _, _| Ok(vec![documents[0].clone()]));
 
     let validation_result =
         validate_document_batch_transition_state(&state_repository_mock, &state_transition)
@@ -298,7 +299,7 @@ async fn should_return_invalid_result_if_document_transition_with_action_replace
 
     state_repository_mock
         .expect_fetch_documents()
-        .returning(move |_, _, _| Ok(vec![fetched_document.clone()]));
+        .returning(move |_, _, _, _| Ok(vec![fetched_document.clone()]));
 
     let validation_result =
         validate_document_batch_transition_state(&state_repository_mock, &state_transition)
@@ -364,7 +365,7 @@ async fn should_return_invalid_result_if_timestamps_mismatch() {
 
     state_repository_mock
         .expect_fetch_documents::<Document>()
-        .returning(move |_, _, _| Ok(vec![]));
+        .returning(move |_, _, _, _| Ok(vec![]));
 
     let validation_result =
         validate_document_batch_transition_state(&state_repository_mock, &state_transition)
@@ -416,7 +417,7 @@ async fn should_return_invalid_result_if_crated_at_has_violated_time_window() {
 
     state_repository_mock
         .expect_fetch_documents::<Document>()
-        .returning(move |_, _, _| Ok(vec![]));
+        .returning(move |_, _, _, _| Ok(vec![]));
 
     let validation_result =
         validate_document_batch_transition_state(&state_repository_mock, &state_transition)
@@ -470,7 +471,7 @@ async fn should_return_invalid_result_if_updated_at_has_violated_time_window() {
 
     state_repository_mock
         .expect_fetch_documents::<Document>()
-        .returning(move |_, _, _| Ok(vec![]));
+        .returning(move |_, _, _, _| Ok(vec![]));
 
     let validation_result =
         validate_document_batch_transition_state(&state_repository_mock, &state_transition)
@@ -515,7 +516,9 @@ async fn should_return_valid_result_if_document_transitions_are_valid() {
 
     state_repository_mock
         .expect_fetch_documents::<Document>()
-        .returning(move |_, _, _| Ok(vec![fetched_document_1.clone(), fetched_document_2.clone()]));
+        .returning(move |_, _, _, _| {
+            Ok(vec![fetched_document_1.clone(), fetched_document_2.clone()])
+        });
     let document_transitions = get_document_transitions_fixture([
         (Action::Create, vec![]),
         (Action::Replace, vec![documents[1].clone()]),

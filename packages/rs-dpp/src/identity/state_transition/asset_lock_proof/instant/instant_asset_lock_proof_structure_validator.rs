@@ -11,6 +11,7 @@ use crate::consensus::basic::identity::{
 };
 use crate::identity::state_transition::asset_lock_proof::AssetLockTransactionValidator;
 use crate::state_repository::StateRepositoryLike;
+use crate::state_transition::state_transition_execution_context::StateTransitionExecutionContext;
 use crate::util::json_value::JsonValueExt;
 use crate::validation::{JsonSchemaValidator, ValidationResult};
 use crate::{DashPlatformProtocolInitError, NonConsensusError, SerdeParsingError};
@@ -54,6 +55,7 @@ where
     pub async fn validate(
         &self,
         raw_asset_lock_proof: &Value,
+        execution_context: &StateTransitionExecutionContext,
     ) -> Result<ValidationResult<PublicKeyHash>, NonConsensusError> {
         let mut result = ValidationResult::default();
 
@@ -93,7 +95,7 @@ where
 
         let is_signature_verified = self
             .state_repository
-            .verify_instant_lock(&instant_lock)
+            .verify_instant_lock(&instant_lock, execution_context)
             .await
             .map_err(|err| NonConsensusError::StateRepositoryFetchError(err.to_string()))?;
 
@@ -118,7 +120,11 @@ where
 
         let validate_asset_lock_transaction_result = self
             .asset_lock_transaction_validator
-            .validate(&tx_json_uint_array, output_index as usize)
+            .validate(
+                &tx_json_uint_array,
+                output_index as usize,
+                execution_context,
+            )
             .await?;
 
         let validation_result_data = if validate_asset_lock_transaction_result.is_valid() {

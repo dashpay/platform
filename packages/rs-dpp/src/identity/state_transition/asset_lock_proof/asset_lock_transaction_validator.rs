@@ -10,6 +10,7 @@ use crate::consensus::basic::identity::{
     InvalidIdentityAssetLockTransactionOutputError,
 };
 use crate::state_repository::StateRepositoryLike;
+use crate::state_transition::state_transition_execution_context::StateTransitionExecutionContext;
 use crate::util::vec::vec_to_array;
 use crate::validation::ValidationResult;
 use crate::NonConsensusError;
@@ -54,6 +55,7 @@ where
         &self,
         raw_tx: &[u8],
         output_index: usize,
+        execution_context: &StateTransitionExecutionContext,
     ) -> Result<ValidationResult<AssetLockTransactionResultData>, NonConsensusError> {
         let mut result = ValidationResult::default();
 
@@ -84,7 +86,10 @@ where
 
                     let is_out_point_used = self
                         .state_repository
-                        .is_asset_lock_transaction_out_point_already_used(&out_point_buf)
+                        .is_asset_lock_transaction_out_point_already_used(
+                            &out_point_buf,
+                            execution_context,
+                        )
                         .await
                         .map_err(|err| {
                             NonConsensusError::StateRepositoryFetchError(err.to_string())

@@ -5,6 +5,7 @@ use serde_json::Value;
 
 use crate::identity::state_transition::asset_lock_proof::AssetLockProofValidator;
 use crate::state_repository::StateRepositoryLike;
+use crate::state_transition::state_transition_execution_context::StateTransitionExecutionContext;
 use crate::util::protocol_data::get_protocol_version;
 use crate::validation::{JsonSchemaValidator, ValidationResult};
 use crate::version::ProtocolVersionValidator;
@@ -45,6 +46,7 @@ impl<SR: StateRepositoryLike> IdentityTopUoTransitionBasicValidator<SR> {
     pub async fn validate(
         &self,
         identity_topup_transition_json: &Value,
+        execution_context: &StateTransitionExecutionContext,
     ) -> Result<ValidationResult<()>, NonConsensusError> {
         let mut result = self
             .json_schema_validator
@@ -78,6 +80,7 @@ impl<SR: StateRepositoryLike> IdentityTopUoTransitionBasicValidator<SR> {
                                 "identity state transition must contain an asset lock proof",
                             ))
                         })?,
+                    execution_context,
                 )
                 .await?,
         );

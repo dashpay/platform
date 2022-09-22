@@ -7,6 +7,7 @@ use dashcore::{OutPoint, Transaction, TxOut};
 use crate::identity::errors::{AssetLockOutputNotFoundError, AssetLockTransactionIsNotFoundError};
 use crate::identity::state_transition::asset_lock_proof::AssetLockProof;
 use crate::state_repository::StateRepositoryLike;
+use crate::state_transition::state_transition_execution_context::StateTransitionExecutionContext;
 use crate::DPPError;
 
 pub struct AssetLockTransactionOutputFetcher<SR: StateRepositoryLike> {
@@ -20,7 +21,11 @@ impl<SR: StateRepositoryLike> AssetLockTransactionOutputFetcher<SR> {
         Self { state_repository }
     }
 
-    pub async fn fetch(&self, asset_lock_proof: &AssetLockProof) -> Result<TxOut, DPPError> {
+    pub async fn fetch(
+        &self,
+        asset_lock_proof: &AssetLockProof,
+        execution_context: &StateTransitionExecutionContext,
+    ) -> Result<TxOut, DPPError> {
         match asset_lock_proof {
             AssetLockProof::Instant(asset_lock_proof) => asset_lock_proof
                 .output()
@@ -35,10 +40,7 @@ impl<SR: StateRepositoryLike> AssetLockTransactionOutputFetcher<SR> {
 
                 if let Some(raw_transaction) = self
                     .state_repository
-                    .fetch_transaction::<Vec<u8>>(
-                        &transaction_hash.to_hex(),
-                        // execution_context,
-                    )
+                    .fetch_transaction::<Vec<u8>>(&transaction_hash.to_hex(), execution_context)
                     .await
                     .map_err(|_| DPPError::InvalidAssetLockTransaction)?
                 {

@@ -62,7 +62,10 @@ mod validate_identity_topup_transition_basic {
             let (mut raw_state_transition, validator) = setup_test(state_repository);
             raw_state_transition.remove_key("protocolVersion");
 
-            let result = validator.validate(&raw_state_transition).await.unwrap();
+            let result = validator
+                .validate(&raw_state_transition, &Default::default())
+                .await
+                .unwrap();
 
             let errors = assert_consensus_errors!(result, ConsensusError::JsonSchemaError, 1);
 
@@ -83,7 +86,10 @@ mod validate_identity_topup_transition_basic {
             let (mut raw_state_transition, validator) = setup_test(MockStateRepositoryLike::new());
             raw_state_transition.set_key_value("protocolVersion", "1");
 
-            let result = validator.validate(&raw_state_transition).await.unwrap();
+            let result = validator
+                .validate(&raw_state_transition, &Default::default())
+                .await
+                .unwrap();
 
             let errors = assert_consensus_errors!(result, ConsensusError::JsonSchemaError, 1);
 
@@ -98,7 +104,9 @@ mod validate_identity_topup_transition_basic {
             let (mut raw_state_transition, validator) = setup_test(MockStateRepositoryLike::new());
             raw_state_transition.set_key_value("protocolVersion", -1);
 
-            let result = validator.validate(&raw_state_transition).await;
+            let result = validator
+                .validate(&raw_state_transition, &Default::default())
+                .await;
 
             match result {
                 Ok(_) => {
@@ -123,7 +131,10 @@ mod validate_identity_topup_transition_basic {
         pub async fn should_be_present() {
             let (mut raw_state_transition, validator) = setup_test(MockStateRepositoryLike::new());
             raw_state_transition.remove_key("type");
-            let result = validator.validate(&raw_state_transition).await.unwrap();
+            let result = validator
+                .validate(&raw_state_transition, &Default::default())
+                .await
+                .unwrap();
 
             let errors = assert_consensus_errors!(result, ConsensusError::JsonSchemaError, 1);
 
@@ -145,7 +156,10 @@ mod validate_identity_topup_transition_basic {
             let (mut raw_state_transition, validator) = setup_test(MockStateRepositoryLike::new());
             raw_state_transition.set_key_value("type", 666);
 
-            let result = validator.validate(&raw_state_transition).await.unwrap();
+            let result = validator
+                .validate(&raw_state_transition, &Default::default())
+                .await
+                .unwrap();
 
             let errors = assert_consensus_errors!(result, ConsensusError::JsonSchemaError, 1);
 
@@ -171,7 +185,10 @@ mod validate_identity_topup_transition_basic {
             let (mut raw_state_transition, validator) = setup_test(MockStateRepositoryLike::new());
             raw_state_transition.remove_key("assetLockProof");
 
-            let result = validator.validate(&raw_state_transition).await.unwrap();
+            let result = validator
+                .validate(&raw_state_transition, &Default::default())
+                .await
+                .unwrap();
 
             let errors = assert_consensus_errors!(result, ConsensusError::JsonSchemaError, 1);
 
@@ -193,7 +210,10 @@ mod validate_identity_topup_transition_basic {
             let (mut raw_state_transition, validator) = setup_test(MockStateRepositoryLike::new());
             raw_state_transition.set_key_value("assetLockProof", 1);
 
-            let result = validator.validate(&raw_state_transition).await.unwrap();
+            let result = validator
+                .validate(&raw_state_transition, &Default::default())
+                .await
+                .unwrap();
 
             let errors = assert_consensus_errors!(result, ConsensusError::JsonSchemaError, 1);
 
@@ -213,7 +233,10 @@ mod validate_identity_topup_transition_basic {
                 .unwrap();
             st_map.insert("transaction".into(), "totally not a valid type".into());
 
-            let result = validator.validate(&raw_state_transition).await.unwrap();
+            let result = validator
+                .validate(&raw_state_transition, &Default::default())
+                .await
+                .unwrap();
 
             let errors = assert_consensus_errors!(result, ConsensusError::JsonSchemaError, 1);
 
@@ -231,7 +254,10 @@ mod validate_identity_topup_transition_basic {
             let (mut raw_state_transition, validator) = setup_test(MockStateRepositoryLike::new());
             raw_state_transition.remove_key("signature");
 
-            let result = validator.validate(&raw_state_transition).await.unwrap();
+            let result = validator
+                .validate(&raw_state_transition, &Default::default())
+                .await
+                .unwrap();
 
             let errors = assert_consensus_errors!(result, ConsensusError::JsonSchemaError, 1);
 
@@ -253,7 +279,10 @@ mod validate_identity_topup_transition_basic {
             let (mut raw_state_transition, validator) = setup_test(MockStateRepositoryLike::new());
             raw_state_transition.set_key_value("signature", vec!["string"; 65]);
 
-            let result = validator.validate(&raw_state_transition).await.unwrap();
+            let result = validator
+                .validate(&raw_state_transition, &Default::default())
+                .await
+                .unwrap();
 
             let errors = assert_consensus_errors!(result, ConsensusError::JsonSchemaError, 65);
 
@@ -268,7 +297,10 @@ mod validate_identity_topup_transition_basic {
             let (mut raw_state_transition, validator) = setup_test(MockStateRepositoryLike::new());
             raw_state_transition.set_key_value("signature", vec![0; 64]);
 
-            let result = validator.validate(&raw_state_transition).await.unwrap();
+            let result = validator
+                .validate(&raw_state_transition, &Default::default())
+                .await
+                .unwrap();
 
             let errors = assert_consensus_errors!(result, ConsensusError::JsonSchemaError, 1);
 
@@ -283,7 +315,10 @@ mod validate_identity_topup_transition_basic {
             let (mut raw_state_transition, validator) = setup_test(MockStateRepositoryLike::new());
             raw_state_transition.set_key_value("signature", vec![0; 66]);
 
-            let result = validator.validate(&raw_state_transition).await.unwrap();
+            let result = validator
+                .validate(&raw_state_transition, &Default::default())
+                .await
+                .unwrap();
 
             let errors = assert_consensus_errors!(result, ConsensusError::JsonSchemaError, 1);
 
@@ -299,13 +334,16 @@ mod validate_identity_topup_transition_basic {
         let mut state_repository = MockStateRepositoryLike::new();
         state_repository
             .expect_verify_instant_lock()
-            .returning(|_asset_lock| Ok(true));
+            .returning(|_asset_lock, _| Ok(true));
         state_repository
             .expect_is_asset_lock_transaction_out_point_already_used()
-            .returning(|_asset_lock| Ok(false));
+            .returning(|_asset_lock, _| Ok(false));
 
         let (raw_state_transition, validator) = setup_test(state_repository);
-        let result = validator.validate(&raw_state_transition).await.unwrap();
+        let result = validator
+            .validate(&raw_state_transition, &Default::default())
+            .await
+            .unwrap();
 
         assert!(result.is_valid());
     }
