@@ -8,6 +8,7 @@ const Script = require('@dashevo/dashcore-lib/lib/script');
 const handleNewMasternodeFactory = require('../../../../lib/identity/masternode/handleNewMasternodeFactory');
 const getSmlFixture = require('../../../../lib/test/fixtures/getSmlFixture');
 const createOperatorIdentifier = require('../../../../lib/identity/masternode/createOperatorIdentifier');
+const createVotingIdentifier = require('../../../../lib/identity/masternode/createVotingIdentifier');
 
 describe('handleNewMasternodeFactory', () => {
   let handleNewMasternode;
@@ -37,6 +38,7 @@ describe('handleNewMasternodeFactory', () => {
       extraPayload: {
         operatorReward: 0,
         keyIDOwner: Buffer.alloc(20).fill('a').toString('hex'),
+        keyIDVoting: Buffer.alloc(20).fill('b').toString('hex'),
       },
     };
 
@@ -60,12 +62,41 @@ describe('handleNewMasternodeFactory', () => {
     await handleNewMasternode(masternodeEntry, dataContract);
 
     expect(fetchTransactionMock).to.be.calledOnceWithExactly(masternodeEntry.proRegTxHash);
+    expect(createMasternodeIdentityMock).to.be.calledTwice();
+    expect(createMasternodeIdentityMock.getCall(0)).to.be.calledWithExactly(
+      Identifier.from('6k8jXHFuno3vqpfrQ36CaxrGi4SupdTJcGNeZLPioxQo'),
+      Buffer.from('6161616161616161616161616161616161616161', 'hex'),
+      IdentityPublicKey.TYPES.ECDSA_HASH160,
+      payoutScript,
+    );
+    expect(createMasternodeIdentityMock.getCall(1)).to.be.calledWithExactly(
+      Identifier.from('G1p14MYdpNRLNWuKgQ9SjJUPxfuaJMTwYjdRWu9sLzvL'),
+      Buffer.from('6262626262626262626262626262626262626262', 'hex'),
+      IdentityPublicKey.TYPES.ECDSA_HASH160,
+    );
+    expect(createRewardShareDocumentMock).to.not.be.called();
+  });
+
+  it('should not create voting identity if keyIDVoting equals keyIDOwner', async () => {
+    masternodeEntry.payoutAddress = 'yRRwW957BJwL6SVVh3s8ASQYa2qXnduyfx';
+
+    const payoutAddress = Address.fromString(masternodeEntry.payoutAddress);
+    const payoutScript = new Script(payoutAddress);
+
+    transactionFixture.extraPayload.keyIDVoting = transactionFixture.extraPayload.keyIDOwner;
+
+    fetchTransactionMock.resolves(transactionFixture);
+
+    await handleNewMasternode(masternodeEntry, dataContract);
+
+    expect(fetchTransactionMock).to.be.calledOnceWithExactly(masternodeEntry.proRegTxHash);
     expect(createMasternodeIdentityMock).to.be.calledOnceWithExactly(
       Identifier.from('6k8jXHFuno3vqpfrQ36CaxrGi4SupdTJcGNeZLPioxQo'),
       Buffer.from('6161616161616161616161616161616161616161', 'hex'),
       IdentityPublicKey.TYPES.ECDSA_HASH160,
       payoutScript,
     );
+
     expect(createRewardShareDocumentMock).to.not.be.called();
   });
 
@@ -78,8 +109,10 @@ describe('handleNewMasternodeFactory', () => {
     const operatorPayoutAddress = Address.fromString(masternodeEntry.operatorPayoutAddress);
     const operatorPayoutScript = new Script(operatorPayoutAddress);
 
+    const votingIdentifier = createVotingIdentifier(masternodeEntry);
+
     expect(fetchTransactionMock).to.be.calledOnceWithExactly(masternodeEntry.proRegTxHash);
-    expect(createMasternodeIdentityMock).to.be.calledTwice();
+    expect(createMasternodeIdentityMock).to.be.calledThrice();
     expect(createMasternodeIdentityMock.getCall(0)).to.be.calledWith(
       Identifier.from('6k8jXHFuno3vqpfrQ36CaxrGi4SupdTJcGNeZLPioxQo'),
       Buffer.from('6161616161616161616161616161616161616161', 'hex'),
@@ -91,6 +124,11 @@ describe('handleNewMasternodeFactory', () => {
       Buffer.from('08b66151b81bd6a08bad2e68810ea07014012d6d804859219958a7fbc293689aa902bd0cd6db7a4699c9e88a4ae8c2c0', 'hex'),
       IdentityPublicKey.TYPES.BLS12_381,
       operatorPayoutScript,
+    );
+    expect(createMasternodeIdentityMock.getCall(2)).to.be.calledWith(
+      votingIdentifier,
+      Buffer.from('6262626262626262626262626262626262626262', 'hex'),
+      IdentityPublicKey.TYPES.ECDSA_HASH160,
     );
 
     expect(createRewardShareDocumentMock).to.be.calledOnceWithExactly(

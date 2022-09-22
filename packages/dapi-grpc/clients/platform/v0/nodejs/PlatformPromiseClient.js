@@ -17,6 +17,7 @@ const {
   },
 } = require('@dashevo/grpc-common');
 
+const { URL } = require('url');
 const {
   org: {
     dash: {
@@ -55,7 +56,6 @@ const {
 } = require('./platform_protoc');
 
 const getPlatformDefinition = require('../../../../lib/getPlatformDefinition');
-const stripHostname = require('../../../../lib/utils/stripHostname');
 
 const PlatformNodeJSClient = getPlatformDefinition(0);
 
@@ -65,8 +65,16 @@ class PlatformPromiseClient {
    * @param {?Object} credentials
    * @param {?Object} options
    */
-  constructor(hostname, credentials = grpc.credentials.createInsecure(), options = {}) {
-    const strippedHostname = stripHostname(hostname);
+  constructor(hostname, credentials, options = {}) {
+    if (credentials !== undefined) {
+      throw new Error('"credentials" option is not supported yet');
+    }
+
+    const url = new URL(hostname);
+    const { protocol, host: strippedHostname } = url;
+
+    // eslint-disable-next-line no-param-reassign
+    credentials = protocol === 'https' ? grpc.credentials.createSsl() : grpc.credentials.createInsecure();
 
     this.client = new PlatformNodeJSClient(strippedHostname, credentials, options);
 

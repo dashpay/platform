@@ -22,7 +22,9 @@ describe('createQueryResponseFactory', () => {
     };
 
     blockExecutionContextMock = new BlockExecutionContextMock(this.sinon);
-    blockExecutionContextMock.getHeader.returns(metadata);
+
+    blockExecutionContextMock.getHeight.returns(metadata.height);
+    blockExecutionContextMock.getCoreChainLockedHeight.returns(metadata.coreChainLockedHeight);
 
     blockExecutionContextStackMock = new BlockExecutionContextStackMock(this.sinon);
 

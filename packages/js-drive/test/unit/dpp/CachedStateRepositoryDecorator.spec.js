@@ -195,21 +195,42 @@ describe('CachedStateRepositoryDecorator', () => {
     });
   });
 
-  describe('#fetchLatestPlatformBlockHeader', () => {
-    it('should fetch latest platform block header from state repository', async () => {
-      const header = {
-        height: 10,
-        time: {
-          seconds: Math.ceil(new Date().getTime() / 1000),
-        },
+  describe('#fetchLatestPlatformBlockHeight', () => {
+    it('should fetch latest platform height from state repository', async () => {
+      stateRepositoryMock.fetchLatestPlatformBlockHeight.resolves(10);
+
+      const result = await cachedStateRepository.fetchLatestPlatformBlockHeight(id);
+
+      expect(result).to.equal(10);
+      expect(stateRepositoryMock.fetchLatestPlatformBlockHeight).to.be.calledOnce();
+    });
+  });
+
+  describe('#fetchLatestPlatformBlockTime', () => {
+    it('should fetch latest platform block time from state repository', async () => {
+      const time = {
+        seconds: Math.ceil(new Date().getTime() / 1000),
       };
 
-      stateRepositoryMock.fetchLatestPlatformBlockHeader.resolves(header);
+      stateRepositoryMock.fetchLatestPlatformBlockTime.resolves(time);
 
-      const result = await cachedStateRepository.fetchLatestPlatformBlockHeader(id);
+      const result = await cachedStateRepository.fetchLatestPlatformBlockTime(id);
 
-      expect(result).to.deep.equal(header);
-      expect(stateRepositoryMock.fetchLatestPlatformBlockHeader).to.be.calledOnce();
+      expect(result).to.deep.equal(time);
+      expect(stateRepositoryMock.fetchLatestPlatformBlockTime).to.be.calledOnce();
+    });
+  });
+
+  describe('#fetchLatestPlatformCoreChainLockedHeight', () => {
+    it('should fetch latest platform core chain locked height from state repository', async () => {
+      const height = 42;
+
+      stateRepositoryMock.fetchLatestPlatformCoreChainLockedHeight.resolves(height);
+
+      const result = await cachedStateRepository.fetchLatestPlatformCoreChainLockedHeight(id);
+
+      expect(result).to.deep.equal(height);
+      expect(stateRepositoryMock.fetchLatestPlatformCoreChainLockedHeight).to.be.calledOnce();
     });
   });
 });

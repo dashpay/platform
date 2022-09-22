@@ -1,49 +1,37 @@
-const {
-  tendermint: {
-    abci: {
-      ResponseCommit,
-    },
-  },
-} = require('@dashevo/abci/types');
 const ReadOperation = require('@dashevo/dpp/lib/stateTransition/fee/operations/ReadOperation');
-const DataContractCacheItem = require('../../dataContract/DataContractCacheItem');
-const BlockExecutionContext = require('../../blockExecution/BlockExecutionContext');
+const DataContractCacheItem = require('../../../dataContract/DataContractCacheItem');
+const BlockExecutionContext = require('../../../blockExecution/BlockExecutionContext');
 
 /**
  * @param {BlockExecutionContext} blockExecutionContext
  * @param {BlockExecutionContextStack} blockExecutionContextStack
  * @param {BlockExecutionContextStackRepository} blockExecutionContextStackRepository
  * @param {rotateSignedStore} rotateSignedStore
- * @param {BaseLogger} logger
- * @param {LRUCache} dataContractCache
  * @param {GroveDBStore} groveDBStore
- * @param {ExecutionTimer} executionTimer
+ * @param {LRUCache} dataContractCache
  *
- * @return {commitHandler}
+ * @return {commit}
  */
-function commitHandlerFactory(
+function commitFactory(
   blockExecutionContext,
   blockExecutionContextStack,
   blockExecutionContextStackRepository,
   rotateSignedStore,
-  logger,
   dataContractCache,
   groveDBStore,
-  executionTimer,
 ) {
   /**
-   * Commit ABCI Handler
+   * @typedef commit
    *
-   * @typedef commitHandler
-   *
-   * @return {Promise<abci.ResponseCommit>}
+   * @param {BaseLogger} logger
+   * @return {Promise<{ appHash: Buffer }>}
    */
-  async function commitHandler() {
-    const { height: blockHeight } = blockExecutionContext.getHeader();
+  async function commit(logger) {
+    const blockHeight = blockExecutionContext.getHeight();
 
     const consensusLogger = logger.child({
       height: blockHeight.toString(),
-      abciMethod: 'commit',
+      abciMethod: 'finalizeBlock#commit',
     });
 
     blockExecutionContext.setConsensusLogger(consensusLogger);
@@ -92,21 +80,12 @@ function commitHandlerFactory(
       `Block commit #${blockHeight} with appHash ${appHash.toString('hex').toUpperCase()}`,
     );
 
-    const blockExecutionTimings = executionTimer.stopTimer('blockExecution');
-
-    consensusLogger.trace(
-      {
-        timings: blockExecutionTimings,
-      },
-      `Block #${blockHeight} execution took ${blockExecutionTimings} seconds`,
-    );
-
-    return new ResponseCommit({
-      data: appHash,
-    });
+    return {
+      appHash,
+    };
   }
 
-  return commitHandler;
+  return commit;
 }
 
-module.exports = commitHandlerFactory;
+module.exports = commitFactory;

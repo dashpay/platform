@@ -39,6 +39,12 @@ const OUTPUT_FORMATS = {
   PLAIN: 'plain',
 };
 
+const sslProviders = {
+  ZEROSSL: 'zerossl',
+  MANUL: 'manual',
+  SELF_SIGNED: 'selfSigned',
+};
+
 module.exports = {
   ...networks,
   ...presets,
@@ -53,4 +59,5 @@ module.exports = {
   HOME_DIR_PATH,
   CONFIG_FILE_PATH,
   OUTPUT_FORMATS,
+  SSL_PROVIDERS: Object.values(sslProviders),
 };

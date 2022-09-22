@@ -105,6 +105,8 @@ services:
       - dapi_tx_filter_stream
     volumes:
       - ${DASHMATE_HOME_DIR:?err}/${CONFIG_NAME:?err}/platform/dapi/envoy/envoy.yaml:/etc/envoy/envoy.yaml
+      - ${DASHMATE_HOME_DIR:?err}/ssl/${CONFIG_NAME:?err}/bundle.crt:/etc/ssl/bundle.crt
+      - ${DASHMATE_HOME_DIR:?err}/ssl/${CONFIG_NAME:?err}/private.key:/etc/ssl/private.key
 
 volumes:
   drive_abci_data:

@@ -22,7 +22,7 @@ describe('handleUpdatedScriptPayoutFactory', () => {
     time = new Date().getTime();
 
     blockExecutionContextMock = new BlockExecutionContextMock(this.sinon);
-    blockExecutionContextMock.getHeader.returns({ time: { seconds: Math.ceil(time / 1000) } });
+    blockExecutionContextMock.getTime.returns({ seconds: Math.ceil(time / 1000) });
 
     stateRepositoryMock = createStateRepositoryMock(this.sinon);
     stateRepositoryMock.fetchIdentity.resolves(

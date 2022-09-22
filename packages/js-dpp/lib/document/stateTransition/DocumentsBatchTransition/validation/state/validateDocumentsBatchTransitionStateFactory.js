@@ -79,10 +79,8 @@ function validateDocumentsBatchTransitionStateFactory(
     if (!executionContext.isDryRun()) {
       // Calculate time window for timestamps
       const {
-        time: {
-          seconds: lastBlockHeaderTimeSeconds,
-        },
-      } = await stateRepository.fetchLatestPlatformBlockHeader();
+        seconds: lastBlockHeaderTimeSeconds,
+      } = await stateRepository.fetchLatestPlatformBlockTime();
 
       // Get last block header time in milliseconds
       const lastBlockHeaderTime = lastBlockHeaderTimeSeconds * 1000;

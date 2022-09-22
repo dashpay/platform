@@ -39,10 +39,8 @@ function getProofsQueryHandlerFactory(
   }) {
     const blockExecutionContext = blockExecutionContextStack.getFirst();
 
-    const {
-      height: signedBlockHeight,
-      coreChainLockedHeight: signedCoreChainLockedHeight,
-    } = blockExecutionContext.getHeader();
+    const signedBlockHeight = blockExecutionContext.getHeight();
+    const signedCoreChainLockedHeight = blockExecutionContext.getCoreChainLockedHeight();
 
     const {
       quorumHash: signatureLlmqHash,

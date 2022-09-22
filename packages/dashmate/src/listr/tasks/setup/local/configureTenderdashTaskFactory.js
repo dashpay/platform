@@ -1,4 +1,5 @@
 const { Listr } = require('listr2');
+const protocolVersion = require('@dashevo/dpp/lib/version/protocolVersion');
 
 /**
  * @param {tenderdashInitTask} tenderdashInitTask
@@ -60,10 +61,13 @@ function configureTenderdashTaskFactory(
 
                 config.set(
                   'platform.drive.tenderdash.genesis.quorum_type',
-                  config.get('platform.drive.abci.validatorSet.llmqType').toString(),
+                  config.get('platform.drive.abci.validatorSet.llmqType'),
                 );
 
-                config.set('platform.drive.tenderdash.genesis.quorum_hash', Buffer.alloc(20).toString('hex'));
+                config.set(
+                  'platform.drive.tenderdash.genesis.consensus_params.version.app_version',
+                  protocolVersion.latestVersion.toString(),
+                );
 
                 const configFiles = renderServiceTemplates(config);
                 writeServiceConfigs(config.getName(), configFiles);
