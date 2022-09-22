@@ -242,6 +242,39 @@ To reset a node:
 $ dashmate reset
 ```
 
+### Reindex dashcore chain data
+
+Sometimes you need to make a process of reindex for your core container, in case you imported new private keys, or your core data corrupted. The command `reindex` put your node in the reindex mode.
+
+It modifies the configuration and run the core container in `reindex=1` mode, wait until it fully resyncs, and brings it back in normal mode.
+
+The process is interactive (shows progress) and can be interrupted any time, but you cannot start your configuration until resync is fully complete.
+
+Command is working both for regular and local configurations
+```
+Reindex core container
+
+USAGE
+  $ dashmate [group] reindex [--config <value>] [-v]
+
+FLAGS
+  -v, --verbose     use verbose mode for output
+  --config=<value>  configuration name to use
+
+DESCRIPTION
+  Reindex core container
+
+  Reindex core container data
+
+```
+
+With the hard reset mode enabled, the corresponding config will be reset as well. To proceed, running the node [setup](#setup-node) is required.
+
+To reset a node:
+```bash
+$ dashmate reset
+```
+
 ### Full node
 
 It is also possible to start a full node instead of a masternode. Modify the config setting as follows:
