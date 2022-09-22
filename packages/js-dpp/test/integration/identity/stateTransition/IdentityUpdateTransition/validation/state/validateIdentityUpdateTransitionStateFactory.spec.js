@@ -36,13 +36,9 @@ describe('validateIdentityUpdateTransitionStateFactory', () => {
 
     blockTime = new Date().getTime() / 1000;
 
-    const abciHeader = {
-      time: {
-        seconds: blockTime,
-      },
-    };
-
-    stateRepositoryMock.fetchLatestPlatformBlockHeader.resolves(abciHeader);
+    stateRepositoryMock.fetchLatestPlatformBlockTime.resolves({
+      seconds: blockTime,
+    });
 
     validateIdentityUpdateTransitionState = validateIdentityUpdateTransitionStateFactory(
       stateRepositoryMock,
@@ -161,7 +157,7 @@ describe('validateIdentityUpdateTransitionStateFactory', () => {
         executionContext,
       );
 
-    expect(stateRepositoryMock.fetchLatestPlatformBlockHeader)
+    expect(stateRepositoryMock.fetchLatestPlatformBlockTime)
       .to.be.calledOnce();
   });
 
@@ -179,7 +175,7 @@ describe('validateIdentityUpdateTransitionStateFactory', () => {
         executionContext,
       );
 
-    expect(stateRepositoryMock.fetchLatestPlatformBlockHeader)
+    expect(stateRepositoryMock.fetchLatestPlatformBlockTime)
       .to.not.be.called();
 
     expect(validatePublicKeysMock).to.be.calledOnceWithExactly(
@@ -203,10 +199,10 @@ describe('validateIdentityUpdateTransitionStateFactory', () => {
         executionContext,
       );
 
-    expect(stateRepositoryMock.fetchLatestPlatformBlockHeader)
+    expect(stateRepositoryMock.fetchLatestPlatformBlockTime)
       .to.be.calledOnce();
 
-    expect(stateRepositoryMock.fetchLatestPlatformBlockHeader)
+    expect(stateRepositoryMock.fetchLatestPlatformBlockTime)
       .to.be.calledOnce();
   });
 
@@ -290,10 +286,7 @@ describe('validateIdentityUpdateTransitionStateFactory', () => {
         executionContext,
       );
 
-    expect(stateRepositoryMock.fetchLatestPlatformBlockHeader)
-      .to.not.be.called();
-
-    expect(stateRepositoryMock.fetchLatestPlatformBlockHeader)
+    expect(stateRepositoryMock.fetchLatestPlatformBlockTime)
       .to.not.be.called();
   });
 });

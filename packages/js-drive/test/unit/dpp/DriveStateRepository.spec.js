@@ -8,6 +8,7 @@ const StateTransitionExecutionContext = require('@dashevo/dpp/lib/stateTransitio
 
 const DriveStateRepository = require('../../../lib/dpp/DriveStateRepository');
 const StorageResult = require('../../../lib/storage/StorageResult');
+const BlockExecutionContextMock = require('../../../lib/test/mock/BlockExecutionContextMock');
 
 describe('DriveStateRepository', () => {
   let stateRepository;
@@ -71,9 +72,7 @@ describe('DriveStateRepository', () => {
       delete: this.sinon.stub(),
     };
 
-    blockExecutionContextMock = {
-      getHeader: this.sinon.stub(),
-    };
+    blockExecutionContextMock = new BlockExecutionContextMock(this.sinon);
 
     simplifiedMasternodeListMock = {
       getStore: this.sinon.stub(),
@@ -469,21 +468,40 @@ describe('DriveStateRepository', () => {
     });
   });
 
-  describe('#fetchLatestPlatformBlockHeader', () => {
-    it('should fetch latest platform block header', async () => {
-      const header = {
-        height: 10,
-        time: {
-          seconds: Math.ceil(new Date().getTime() / 1000),
-        },
+  describe('#fetchLatestPlatformBlockHeight', () => {
+    it('should fetch latest platform block height', async () => {
+      blockExecutionContextMock.getHeight.resolves(10);
+
+      const result = await stateRepository.fetchLatestPlatformBlockHeight();
+
+      expect(result).to.equal(10);
+      expect(blockExecutionContextMock.getHeight).to.be.calledOnce();
+    });
+  });
+
+  describe('#fetchLatestPlatformBlockTime', () => {
+    it('should fetch latest platform block time', async () => {
+      const time = {
+        seconds: 42,
       };
 
-      blockExecutionContextMock.getHeader.resolves(header);
+      blockExecutionContextMock.getTime.resolves(time);
 
-      const result = await stateRepository.fetchLatestPlatformBlockHeader();
+      const result = await stateRepository.fetchLatestPlatformBlockTime();
 
-      expect(result).to.deep.equal(header);
-      expect(blockExecutionContextMock.getHeader).to.be.calledOnce();
+      expect(result).to.deep.equal(time);
+      expect(blockExecutionContextMock.getTime).to.be.calledOnce();
+    });
+  });
+
+  describe('#fetchLatestPlatformCoreChainLockedHeight', () => {
+    it('should fetch latest platform core chainlocked height', async () => {
+      blockExecutionContextMock.getCoreChainLockedHeight.resolves(10);
+
+      const result = await stateRepository.fetchLatestPlatformCoreChainLockedHeight();
+
+      expect(result).to.equal(10);
+      expect(blockExecutionContextMock.getCoreChainLockedHeight).to.be.calledOnce();
     });
   });
 
@@ -491,10 +509,8 @@ describe('DriveStateRepository', () => {
     let smlStore;
 
     beforeEach(() => {
-      blockExecutionContextMock.getHeader.returns({
-        header: 41,
-        coreChainLockedHeight: 42,
-      });
+      blockExecutionContextMock.getHeight.returns(41);
+      blockExecutionContextMock.getCoreChainLockedHeight.returns(42);
 
       smlStore = {};
 
@@ -552,8 +568,8 @@ describe('DriveStateRepository', () => {
       expect(instantLockMock.verify).to.have.not.been.called();
     });
 
-    it('should return false if header is null', async () => {
-      blockExecutionContextMock.getHeader.returns(null);
+    it('should return false if coreChainLockedHeight is null', async () => {
+      blockExecutionContextMock.getCoreChainLockedHeight.returns(null);
 
       const result = await stateRepository.verifyInstantLock(instantLockMock);
 

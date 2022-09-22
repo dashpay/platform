@@ -80,10 +80,8 @@ function applyDocumentsBatchTransitionFactory(
             let document;
             if (executionContext.isDryRun()) {
               const {
-                time: {
-                  seconds: lastBlockHeaderTimeSeconds,
-                },
-              } = await stateRepository.fetchLatestPlatformBlockHeader();
+                seconds: lastBlockHeaderTimeSeconds,
+              } = await stateRepository.fetchLatestPlatformBlockTime();
 
               const lastBlockHeaderTime = lastBlockHeaderTimeSeconds * 1000;
 

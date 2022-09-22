@@ -44,7 +44,7 @@ function handleUpdatedScriptPayoutFactory(
         previousPayoutScript,
         previousPubKeyType,
       );
-      const { time } = blockExecutionContext.getHeader();
+      const time = blockExecutionContext.getTime();
 
       identityPublicKeys = identityPublicKeys.map((pk) => {
         if (pk.getData().equals(previousPubKeyData)) {

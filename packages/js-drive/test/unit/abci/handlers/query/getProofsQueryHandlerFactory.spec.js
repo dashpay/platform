@@ -40,14 +40,12 @@ describe('getProofsQueryHandlerFactory', () => {
 
     blockExecutionContextMock = new BlockExecutionContextMock(this.sinon);
 
+    blockExecutionContextMock.getHeight.returns(new Long(42));
+    blockExecutionContextMock.getCoreChainLockedHeight.returns(41);
+
     blockExecutionContextMock.getLastCommitInfo.returns({
       quorumHash: Buffer.alloc(32, 1),
       stateSignature: Buffer.alloc(32, 1),
-    });
-
-    blockExecutionContextMock.getHeader.returns({
-      height: new Long(42),
-      coreChainLockedHeight: 41,
     });
 
     blockExecutionContextStackMock = new BlockExecutionContextStackMock(this.sinon);

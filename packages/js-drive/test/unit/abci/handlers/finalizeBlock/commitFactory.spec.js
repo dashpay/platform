@@ -1,40 +1,32 @@
-const {
-  tendermint: {
-    abci: {
-      ResponseCommit,
-    },
-  },
-} = require('@dashevo/abci/types');
-
 const Long = require('long');
 
 const getDataContractFixture = require('@dashevo/dpp/lib/test/fixtures/getDataContractFixture');
 const createDPPMock = require('@dashevo/dpp/lib/test/mocks/createDPPMock');
 
-const commitHandlerFactory = require('../../../../lib/abci/handlers/commitHandlerFactory');
+const commitFactory = require('../../../../../lib/abci/handlers/finalizeBlock/commitFactory');
 
-const RootTreeMock = require('../../../../lib/test/mock/RootTreeMock');
+const RootTreeMock = require('../../../../../lib/test/mock/RootTreeMock');
 
-const BlockExecutionContextMock = require('../../../../lib/test/mock/BlockExecutionContextMock');
-const LoggerMock = require('../../../../lib/test/mock/LoggerMock');
-const GroveDBStoreMock = require('../../../../lib/test/mock/GroveDBStoreMock');
-const BlockExecutionContextStackMock = require('../../../../lib/test/mock/BlockExecutionContextStackMock');
-const BlockExecutionContextStackRepositoryMock = require('../../../../lib/test/mock/BlockExecutionContextStackRepositoryMock');
+const BlockExecutionContextMock = require('../../../../../lib/test/mock/BlockExecutionContextMock');
+const LoggerMock = require('../../../../../lib/test/mock/LoggerMock');
+const GroveDBStoreMock = require('../../../../../lib/test/mock/GroveDBStoreMock');
+const BlockExecutionContextStackMock = require('../../../../../lib/test/mock/BlockExecutionContextStackMock');
+const BlockExecutionContextStackRepositoryMock = require('../../../../../lib/test/mock/BlockExecutionContextStackRepositoryMock');
 
-describe('commitHandlerFactory', () => {
-  let commitHandler;
+describe('commitFactory', () => {
+  let commit;
   let appHash;
   let blockExecutionContextMock;
   let dataContract;
   let rootTreeMock;
   let dppMock;
-  let header;
+  let height;
   let dataContractCacheMock;
   let blockExecutionContextStackMock;
   let blockExecutionContextStackRepositoryMock;
   let groveDBStoreMock;
   let rotateSignedStoreMock;
-  let executionTimerMock;
+  let loggerMock;
 
   beforeEach(function beforeEach() {
     appHash = Buffer.alloc(0);
@@ -45,11 +37,9 @@ describe('commitHandlerFactory', () => {
 
     blockExecutionContextMock.getDataContracts.returns([dataContract]);
 
-    header = {
-      height: Long.fromInt(1),
-    };
+    height = Long.fromInt(1);
 
-    blockExecutionContextMock.getHeader.returns(header);
+    blockExecutionContextMock.getHeight.returns(height);
 
     rootTreeMock = new RootTreeMock(this.sinon);
     rootTreeMock.getRootHash.returns(appHash);
@@ -57,7 +47,7 @@ describe('commitHandlerFactory', () => {
     dppMock = createDPPMock(this.sinon);
     dppMock.dataContract.createFromBuffer.resolves(dataContract);
 
-    const loggerMock = new LoggerMock(this.sinon);
+    loggerMock = new LoggerMock(this.sinon);
 
     dataContractCacheMock = {
       set: this.sinon.stub(),
@@ -73,30 +63,22 @@ describe('commitHandlerFactory', () => {
     groveDBStoreMock = new GroveDBStoreMock(this.sinon);
     groveDBStoreMock.getRootHash.resolves(appHash);
 
-    executionTimerMock = {
-      startTimer: this.sinon.stub(),
-      stopTimer: this.sinon.stub(),
-    };
-
-    commitHandler = commitHandlerFactory(
+    commit = commitFactory(
       blockExecutionContextMock,
       blockExecutionContextStackMock,
       blockExecutionContextStackRepositoryMock,
       rotateSignedStoreMock,
-      loggerMock,
       dataContractCacheMock,
       groveDBStoreMock,
-      executionTimerMock,
     );
   });
 
   it('should commit db transactions, create document dbs and return ResponseCommit', async () => {
-    const response = await commitHandler();
+    const response = await commit(loggerMock);
 
-    expect(response).to.be.an.instanceOf(ResponseCommit);
-    expect(response.data).to.deep.equal(appHash);
+    expect(response).to.deep.equal({ appHash });
 
-    expect(blockExecutionContextMock.getHeader).to.be.calledOnceWithExactly();
+    expect(blockExecutionContextMock.getHeight).to.be.calledOnceWithExactly();
 
     expect(blockExecutionContextStackMock.add).to.be.calledOnce();
 

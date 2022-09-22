@@ -72,7 +72,21 @@ module.exports = lodashMerge({}, baseConfig, {
                 'bls12381',
               ],
             },
-            version: {},
+            version: {
+              app_version: '1',
+            },
+            synchrony: {
+              precision: '505000000',
+              message_delay: '12000000000',
+            },
+            timeout: {
+              propose: '3000000000',
+              propose_delta: '500000000',
+              vote: '1000000000',
+              vote_delta: '500000000',
+              commit: '1000000000',
+              bypass_commit_timeout: false,
+            },
           },
           threshold_public_key: null,
           quorum_type: '4',

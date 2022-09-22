@@ -28,9 +28,7 @@ async function createContactRequestDataTrigger(documentTransition, context) {
 
   const stateRepository = context.getStateRepository();
 
-  const latestPlatformBlockHeader = await stateRepository.fetchLatestPlatformBlockHeader();
-
-  const { coreChainLockedHeight } = latestPlatformBlockHeader;
+  const coreChainLockedHeight = await stateRepository.fetchLatestPlatformCoreChainLockedHeight();
 
   const heightWindowStart = coreChainLockedHeight - BLOCKS_WINDOW_SIZE;
   const heightWindowEnd = coreChainLockedHeight + BLOCKS_WINDOW_SIZE;

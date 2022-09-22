@@ -80,21 +80,20 @@ describe('infoHandlerFactory', () => {
     expect(blockExecutionContextStackRepositoryMock.fetch).to.be.calledOnce();
     expect(blockExecutionContextStackMock.getFirst).to.be.calledOnce();
     expect(blockExecutionContextMock.populate).to.not.be.called();
-    expect(blockExecutionContextMock.getHeader).to.not.be.called();
+    expect(blockExecutionContextMock.getHeight).to.not.be.called();
+    expect(blockExecutionContextMock.getCoreChainLockedHeight).to.not.be.called();
     expect(updateSimplifiedMasternodeListMock).to.not.be.called();
     expect(groveDBStoreMock.getRootHash).to.be.calledOnce();
   });
 
-  it('should populate context, initialize Credits Distribution Pool and update SML on subsequent runs', async () => {
+  it('should populate context and update SML on subsequent runs', async () => {
     blockExecutionContextStackMock.getFirst.returns(blockExecutionContextMock);
 
     lastBlockHeight = Long.fromInt(1);
     lastCoreChainLockedHeight = 2;
 
-    blockExecutionContextMock.getHeader.returns({
-      height: lastBlockHeight,
-      coreChainLockedHeight: lastCoreChainLockedHeight,
-    });
+    blockExecutionContextMock.getHeight.returns(lastBlockHeight);
+    blockExecutionContextMock.getCoreChainLockedHeight.returns(lastCoreChainLockedHeight);
 
     const response = await infoHandler();
 
@@ -107,7 +106,8 @@ describe('infoHandlerFactory', () => {
       lastBlockAppHash,
     });
 
-    expect(blockExecutionContextMock.getHeader).to.be.calledOnce();
+    expect(blockExecutionContextMock.getHeight).to.be.calledOnce();
+    expect(blockExecutionContextMock.getCoreChainLockedHeight).to.be.calledOnce();
 
     expect(updateSimplifiedMasternodeListMock).to.be.calledOnceWithExactly(
       lastCoreChainLockedHeight,

@@ -376,12 +376,30 @@ class DriveStateRepository {
   }
 
   /**
-   * Fetch latest platform block header
+   * Fetch the latest platform block height
    *
-   * @return {Promise<IHeader>}
+   * @return {Promise<Long>}
    */
-  async fetchLatestPlatformBlockHeader() {
-    return this.blockExecutionContext.getHeader();
+  async fetchLatestPlatformBlockHeight() {
+    return this.blockExecutionContext.getHeight();
+  }
+
+  /**
+   * Fetch the latest platform block time
+   *
+   * @return {Promise<protobuf.Timestamp>}
+   */
+  async fetchLatestPlatformBlockTime() {
+    return this.blockExecutionContext.getTime();
+  }
+
+  /**
+   * Fetch the latest platform core chainlocked height
+   *
+   * @return {Promise<number>}
+   */
+  async fetchLatestPlatformCoreChainLockedHeight() {
+    return this.blockExecutionContext.getCoreChainLockedHeight();
   }
 
   /**
@@ -394,9 +412,9 @@ class DriveStateRepository {
    */
   // eslint-disable-next-line no-unused-vars
   async verifyInstantLock(instantLock, executionContext = undefined) {
-    const header = this.blockExecutionContext.getHeader();
+    const coreChainLockedHeight = this.blockExecutionContext.getCoreChainLockedHeight();
 
-    if (header === null) {
+    if (coreChainLockedHeight === null) {
       return false;
     }
 
@@ -409,10 +427,6 @@ class DriveStateRepository {
         return true;
       }
     }
-
-    const {
-      coreChainLockedHeight,
-    } = header;
 
     try {
       const { result: isVerified } = await this.coreRpcClient.verifyIsLock(

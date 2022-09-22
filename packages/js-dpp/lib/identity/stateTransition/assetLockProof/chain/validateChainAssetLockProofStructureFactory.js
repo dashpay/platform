@@ -41,9 +41,8 @@ function validateChainAssetLockProofStructureFactory(
       outPoint: outPointBuffer,
     } = rawAssetLockProof;
 
-    const latestPlatformBlockHeader = await stateRepository.fetchLatestPlatformBlockHeader();
-
-    const { coreChainLockedHeight: currentCoreChainLockedHeight } = latestPlatformBlockHeader;
+    const currentCoreChainLockedHeight = await stateRepository
+      .fetchLatestPlatformCoreChainLockedHeight();
 
     if (currentCoreChainLockedHeight < proofCoreChainLockedHeight) {
       result.addError(

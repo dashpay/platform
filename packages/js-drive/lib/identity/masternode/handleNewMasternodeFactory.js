@@ -3,6 +3,7 @@ const IdentityPublicKey = require('@dashevo/dpp/lib/identity/IdentityPublicKey')
 const Address = require('@dashevo/dashcore-lib/lib/address');
 const Script = require('@dashevo/dashcore-lib/lib/script');
 const createOperatorIdentifier = require('./createOperatorIdentifier');
+const createVotingIdentifier = require('./createVotingIdentifier');
 
 /**
  *
@@ -45,12 +46,12 @@ function handleNewMasternodeFactory(
       proRegTxHash,
     );
 
-    const publicKey = Buffer.from(proRegTxPayload.keyIDOwner, 'hex').reverse();
+    const ownerPublicKeyHash = Buffer.from(proRegTxPayload.keyIDOwner, 'hex').reverse();
 
     result.push(
       await createMasternodeIdentity(
         masternodeIdentifier,
-        publicKey,
+        ownerPublicKeyHash,
         IdentityPublicKey.TYPES.ECDSA_HASH160,
         payoutScript,
       ),
@@ -89,6 +90,22 @@ function handleNewMasternodeFactory(
       if (rewardShareDocument) {
         result.push(rewardShareDocument);
       }
+    }
+
+    const votingPubKeyHash = Buffer.from(proRegTxPayload.keyIDVoting, 'hex').reverse();
+
+    // don't need to create a separate Identity in case we don't have
+    // voting public key (keyIDVoting === keyIDOwner)
+    if (!votingPubKeyHash.equals(ownerPublicKeyHash)) {
+      const votingIdentifier = createVotingIdentifier(masternodeEntry);
+
+      result.push(
+        await createMasternodeIdentity(
+          votingIdentifier,
+          votingPubKeyHash,
+          IdentityPublicKey.TYPES.ECDSA_HASH160,
+        ),
+      );
     }
 
     return result;

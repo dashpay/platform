@@ -5,8 +5,12 @@
  * @method getCumulativeFees
  * @method incrementCumulativeFees
  * @method reset
- * @method setHeader
- * @method getHeader
+ * @method setHeight
+ * @method getHeight
+ * @method setTime
+ * @method getTime
+ * @method setVersion
+ * @method getVersion
  * @method setLastCommitInfo
  * @method getLastCommitInfo
  * @method getValidTxCount
@@ -29,8 +33,14 @@ class BlockExecutionContextMock {
     this.incrementCumulativeProcessingFee = sinon.stub();
     this.incrementCumulativeStorageFee = sinon.stub();
     this.reset = sinon.stub();
-    this.setHeader = sinon.stub();
-    this.getHeader = sinon.stub();
+    this.setCoreChainLockedHeight = sinon.stub();
+    this.getCoreChainLockedHeight = sinon.stub();
+    this.setHeight = sinon.stub();
+    this.getHeight = sinon.stub();
+    this.setTime = sinon.stub();
+    this.getTime = sinon.stub();
+    this.setVersion = sinon.stub();
+    this.getVersion = sinon.stub();
     this.setLastCommitInfo = sinon.stub();
     this.getLastCommitInfo = sinon.stub();
     this.getValidTxCount = sinon.stub();

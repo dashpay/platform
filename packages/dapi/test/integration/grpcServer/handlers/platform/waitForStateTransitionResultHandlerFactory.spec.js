@@ -66,11 +66,9 @@ describe('waitForStateTransitionResultHandlerFactory', () => {
         data: {
           type: 'tendermint/event/Tx',
           value: {
-            TxResult: {
-              height: '145',
-              tx: 'pWR0eXBlA2lhc3NldExvY2ujZXByb29momR0eXBlAGtpbnN0YW50TG9ja1ilAR272lhhsS11I/IKpeDUL1LePc0tXC/pGbpntZ8FDSBuAAAAAHvUKCicVybMXMiWz60mTKDN2H7HesE1zhNhy9w+zKjYAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAa291dHB1dEluZGV4AGt0cmFuc2FjdGlvbljfAwAAAAFft1DH/7MLyiiZTQ0v9kxxx5IO+g3OowKiGXGr/gzTXAEAAABrSDBFAiEA9zBXt5ZbkZ0miGrXtJPF9abrNUHafXIGRHXeritMEZECIBO0nrmvNv/jff27bDehIf3kD+WHQACWj5UvryJNQvyAASECG117xwKATG95Jur1SvBo/vAjYHx5AnYYOwsN3zL8Wyf/////AgEAAAAAAAAAFmoU7MiTGZFsxDcto0FsSOKqkcWmk/5OiAAAAAAAABl2qRTk6MFuEOFzT3vBIbU1Hio2UuiDzYisAAAAAGlzaWduYXR1cmVYQSANwCdg67KHh/OiSv9FW8qNFj+8OBvwnm3Ybg2Ju0tGNmkw3jAkdOgHLqAkmHCtiSvqZ7IhGDXhU5YtHCk6PIOIamlkZW50aXR5SWRYIJmUCrEaSl7bW6UkE3rBhlQjTBhJ4v1m0ORUXh434DTDb3Byb3RvY29sVmVyc2lvbgA=',
-              result: {},
-            },
+            height: '145',
+            tx: 'pWR0eXBlA2lhc3NldExvY2ujZXByb29momR0eXBlAGtpbnN0YW50TG9ja1ilAR272lhhsS11I/IKpeDUL1LePc0tXC/pGbpntZ8FDSBuAAAAAHvUKCicVybMXMiWz60mTKDN2H7HesE1zhNhy9w+zKjYAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAa291dHB1dEluZGV4AGt0cmFuc2FjdGlvbljfAwAAAAFft1DH/7MLyiiZTQ0v9kxxx5IO+g3OowKiGXGr/gzTXAEAAABrSDBFAiEA9zBXt5ZbkZ0miGrXtJPF9abrNUHafXIGRHXeritMEZECIBO0nrmvNv/jff27bDehIf3kD+WHQACWj5UvryJNQvyAASECG117xwKATG95Jur1SvBo/vAjYHx5AnYYOwsN3zL8Wyf/////AgEAAAAAAAAAFmoU7MiTGZFsxDcto0FsSOKqkcWmk/5OiAAAAAAAABl2qRTk6MFuEOFzT3vBIbU1Hio2UuiDzYisAAAAAGlzaWduYXR1cmVYQSANwCdg67KHh/OiSv9FW8qNFj+8OBvwnm3Ybg2Ju0tGNmkw3jAkdOgHLqAkmHCtiSvqZ7IhGDXhU5YtHCk6PIOIamlkZW50aXR5SWRYIJmUCrEaSl7bW6UkE3rBhlQjTBhJ4v1m0ORUXh434DTDb3Byb3RvY29sVmVyc2lvbgA=',
+            result: {},
           },
         },
         events: [
@@ -111,13 +109,11 @@ describe('waitForStateTransitionResultHandlerFactory', () => {
         data: {
           type: 'tendermint/event/Tx',
           value: {
-            TxResult: {
-              height: '135',
-              tx: 'pWR0eXBlAmlhc3NldExvY2ujZXByb29momR0eXBlAGtpbnN0YW50TG9ja1ilAR272lhhsS11I/IKpeDUL1LePc0tXC/pGbpntZ8FDSBuAAAAAMfKlZZZ3oAHaxO0bEIYXCSEpwTuR/baTwASqjgFgDAGAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAa291dHB1dEluZGV4AGt0cmFuc2FjdGlvbljfAwAAAAFl5SQeBBDkK7Us9JcOU+Gp1oi4NIl/01A+5GAKeHi2JwEAAABrSDBFAiEAq9XMPgtU9J0imH6YJ/RtbxwJsavuhIpECU5Lw9h0xpoCIEgkU1njDQCe06YqRyeVYc6wK8G7Y/M5X+XicfJKo5P6ASEDK3jwtdIToEQAgTPMXxpjon4geQaNbbRNT/Xz50UgdHH/////AgEAAAAAAAAAFmoU8HHK+aRqNJOWXjNlOO3iWwvV45CDkAAAAAAAABl2qRTFVGzrfaB6ZhmvE8h2unBNgcJIMIisAAAAAGlzaWduYXR1cmVYQR/OHDEQUcSxczLBvMP9Z0HmRaDoCS6tTyFLbWhn7bAfJTlPF9hIbh13260WSCiDceJjWaYB0JuOGsqu2ZB5F0dDanB1YmxpY0tleXOBo2JpZABkZGF0YVghA85GJWE321+kW0HIwl3M6wO9BIHDxY80HlQgc1wRalT5ZHR5cGUAb3Byb3RvY29sVmVyc2lvbgA=',
-              result: {
-                code: 1043,
-                info: cbor.encode(errorInfo).toString('base64'),
-              },
+            height: '135',
+            tx: 'pWR0eXBlAmlhc3NldExvY2ujZXByb29momR0eXBlAGtpbnN0YW50TG9ja1ilAR272lhhsS11I/IKpeDUL1LePc0tXC/pGbpntZ8FDSBuAAAAAMfKlZZZ3oAHaxO0bEIYXCSEpwTuR/baTwASqjgFgDAGAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAa291dHB1dEluZGV4AGt0cmFuc2FjdGlvbljfAwAAAAFl5SQeBBDkK7Us9JcOU+Gp1oi4NIl/01A+5GAKeHi2JwEAAABrSDBFAiEAq9XMPgtU9J0imH6YJ/RtbxwJsavuhIpECU5Lw9h0xpoCIEgkU1njDQCe06YqRyeVYc6wK8G7Y/M5X+XicfJKo5P6ASEDK3jwtdIToEQAgTPMXxpjon4geQaNbbRNT/Xz50UgdHH/////AgEAAAAAAAAAFmoU8HHK+aRqNJOWXjNlOO3iWwvV45CDkAAAAAAAABl2qRTFVGzrfaB6ZhmvE8h2unBNgcJIMIisAAAAAGlzaWduYXR1cmVYQR/OHDEQUcSxczLBvMP9Z0HmRaDoCS6tTyFLbWhn7bAfJTlPF9hIbh13260WSCiDceJjWaYB0JuOGsqu2ZB5F0dDanB1YmxpY0tleXOBo2JpZABkZGF0YVghA85GJWE321+kW0HIwl3M6wO9BIHDxY80HlQgc1wRalT5ZHR5cGUAb3Byb3RvY29sVmVyc2lvbgA=',
+            result: {
+              code: 1043,
+              info: cbor.encode(errorInfo).toString('base64'),
             },
           },
         },
@@ -288,11 +284,11 @@ describe('waitForStateTransitionResultHandlerFactory', () => {
       const errorMessage = error.getMessage();
 
       expect(createGrpcErrorFromDriveResponseMock).to.be.calledOnceWithExactly(
-        wsMessagesFixture.error.data.value.TxResult.result.code,
-        wsMessagesFixture.error.data.value.TxResult.result.info,
+        wsMessagesFixture.error.data.value.result.code,
+        wsMessagesFixture.error.data.value.result.info,
       );
 
-      expect(errorCode).to.equal(wsMessagesFixture.error.data.value.TxResult.result.code);
+      expect(errorCode).to.equal(wsMessagesFixture.error.data.value.result.code);
       expect(errorData).to.deep.equal(cbor.encode(errorInfo.metadata));
       expect(errorMessage).to.equal(errorInfo.message);
 

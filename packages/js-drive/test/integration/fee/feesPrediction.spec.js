@@ -109,8 +109,8 @@ describe('feesPrediction', () => {
     container = await createTestDIContainer();
 
     const blockExecutionContext = container.resolve('blockExecutionContext');
-    blockExecutionContext.getHeader = this.sinon.stub().returns(
-      { time: { seconds: new Date().getTime() / 1000 } },
+    blockExecutionContext.getTime = this.sinon.stub().returns(
+      { seconds: new Date().getTime() / 1000 },
     );
 
     dpp = container.resolve('dpp');

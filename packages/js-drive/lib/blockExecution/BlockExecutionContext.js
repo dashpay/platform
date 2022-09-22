@@ -3,10 +3,15 @@ const DataContract = require('@dashevo/dpp/lib/dataContract/DataContract');
 const {
   tendermint: {
     abci: {
-      LastCommitInfo,
+      CommitInfo,
     },
-    types: {
-      Header,
+    version: {
+      Consensus,
+    },
+  },
+  google: {
+    protobuf: {
+      Timestamp,
     },
   },
 } = require('@dashevo/abci/types');
@@ -86,23 +91,78 @@ class BlockExecutionContext {
   }
 
   /**
-   * Set current block header
-   * @param {IHeader} header
+   *
+   * @param {number} coreChainLockedHeight
    * @return {BlockExecutionContext}
    */
-  setHeader(header) {
-    this.header = header;
+  setCoreChainLockedHeight(coreChainLockedHeight) {
+    this.coreChainLockedHeight = coreChainLockedHeight;
 
     return this;
   }
 
   /**
-   * Get block header
    *
-   * @return {IHeader|null}
+   * @return {number}
    */
-  getHeader() {
-    return this.header;
+  getCoreChainLockedHeight() {
+    return this.coreChainLockedHeight;
+  }
+
+  /**
+   * @param {Long} height
+   * @return {BlockExecutionContext}
+   */
+  setHeight(height) {
+    this.height = height;
+
+    return this;
+  }
+
+  /**
+   *
+   * @return {Long}
+   */
+  getHeight() {
+    return this.height;
+  }
+
+  /**
+   *
+   * @param {IConsensus} version
+   * @return {BlockExecutionContext}
+   */
+  setVersion(version) {
+    this.version = version;
+
+    return this;
+  }
+
+  /**
+   *
+   * @return {IConsensus}
+   */
+  getVersion() {
+    return this.version;
+  }
+
+  /**
+   *
+   * @param {ITimestamp} time
+   * @return {BlockExecutionContext}
+   */
+  setTime(time) {
+    this.time = time;
+
+    return this;
+  }
+
+  /**
+   *
+   * @return {ITimestamp}
+   */
+  getTime() {
+    return this.time;
   }
 
   /**
@@ -194,7 +254,10 @@ class BlockExecutionContext {
     this.dataContracts = [];
     this.cumulativeProcessingFee = 0;
     this.cumulativeStorageFee = 0;
-    this.header = null;
+    this.coreChainLockedHeight = null;
+    this.height = null;
+    this.version = null;
+    this.time = null;
     this.lastCommitInfo = null;
     this.validTxs = 0;
     this.invalidTxs = 0;
@@ -207,7 +270,7 @@ class BlockExecutionContext {
    * @return {boolean}
    */
   isEmpty() {
-    return !this.header;
+    return this.height === null;
   }
 
   /**
@@ -220,7 +283,10 @@ class BlockExecutionContext {
     this.lastCommitInfo = blockExecutionContext.lastCommitInfo;
     this.cumulativeProcessingFee = blockExecutionContext.cumulativeProcessingFee;
     this.cumulativeStorageFee = blockExecutionContext.cumulativeStorageFee;
-    this.header = blockExecutionContext.header;
+    this.time = blockExecutionContext.time;
+    this.height = blockExecutionContext.height;
+    this.coreChainLockedHeight = blockExecutionContext.coreChainLockedHeight;
+    this.version = blockExecutionContext.version;
     this.validTxs = blockExecutionContext.validTxs;
     this.invalidTxs = blockExecutionContext.invalidTxs;
     this.consensusLogger = blockExecutionContext.consensusLogger;
@@ -234,18 +300,22 @@ class BlockExecutionContext {
   fromObject(object) {
     this.dataContracts = object.dataContracts
       .map((rawDataContract) => new DataContract(rawDataContract));
-    this.lastCommitInfo = LastCommitInfo.fromObject(object.lastCommitInfo);
-
+    this.lastCommitInfo = CommitInfo.fromObject(object.lastCommitInfo);
     this.cumulativeProcessingFee = object.cumulativeProcessingFee;
     this.cumulativeStorageFee = object.cumulativeStorageFee;
-
-    this.header = Header.fromObject(object.header);
     this.validTxs = object.validTxs;
     this.invalidTxs = object.invalidTxs;
     this.consensusLogger = object.consensusLogger;
 
-    this.header.time.seconds = Long.fromNumber(this.header.time.seconds);
-    this.header.height = Long.fromNumber(this.header.height);
+    if (object.time) {
+      this.time = new Timestamp({
+        seconds: Long.fromNumber(object.time.seconds),
+      });
+    }
+
+    this.height = Long.fromNumber(object.height);
+    this.coreChainLockedHeight = object.coreChainLockedHeight;
+    this.version = Consensus.fromObject(object.version);
   }
 
   /**
@@ -254,24 +324,33 @@ class BlockExecutionContext {
    * @return {{
    *  dataContracts: Object[],
    *  invalidTxs: number,
-   *  header: null,
+   *  height: number,
+   *  version: Object,
+   *  time: Object,
    *  validTxs: number,
    *  cumulativeProcessingFee: number,
-   *  cumulativeStorageFee: number
+   *  cumulativeStorageFee: number,
+   *  coreChainLockedHeight: number,
+   *  lastCommitInfo: number,
    * }}
    */
   toObject(options = {}) {
-    const header = Header.toObject(this.header);
+    let time = null;
 
-    header.time.seconds = header.time.seconds.toNumber();
-    header.height = header.height.toNumber();
+    if (this.time) {
+      time = this.time.toJSON();
+      time.seconds = Number(time.seconds);
+    }
 
     const object = {
       dataContracts: this.dataContracts.map((dataContract) => dataContract.toObject()),
       cumulativeProcessingFee: this.cumulativeProcessingFee,
       cumulativeStorageFee: this.cumulativeStorageFee,
-      header,
-      lastCommitInfo: LastCommitInfo.toObject(this.lastCommitInfo),
+      time,
+      height: this.height ? this.height.toNumber() : null,
+      version: this.version ? this.version.toJSON() : null,
+      coreChainLockedHeight: this.coreChainLockedHeight,
+      lastCommitInfo: CommitInfo.toObject(this.lastCommitInfo),
       validTxs: this.validTxs,
       invalidTxs: this.invalidTxs,
     };

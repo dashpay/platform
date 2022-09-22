@@ -1,8 +1,5 @@
 const {
   tendermint: {
-    abci: {
-      ResponseEndBlock,
-    },
     types: {
       CoreChainLock,
       ConsensusParams,
@@ -12,51 +9,53 @@ const {
 
 const featureFlagTypes = require('@dashevo/feature-flags-contract/lib/featureFlagTypes');
 
-const timeToMillis = require('../../util/timeToMillis');
+const timeToMillis = require('../../../util/timeToMillis');
 
 /**
- * Begin block ABCI handler
+ * Begin block ABCI
  *
  * @param {BlockExecutionContext} blockExecutionContext
  * @param {BlockExecutionContextStack} blockExecutionContextStack
  * @param {LatestCoreChainLock} latestCoreChainLock
  * @param {ValidatorSet} validatorSet
  * @param {createValidatorSetUpdate} createValidatorSetUpdate
- * @param {BaseLogger} logger
  * @param {getFeatureFlagForHeight} getFeatureFlagForHeight
  * @param {RSAbci} rsAbci
  *
- * @return {endBlockHandler}
+ * @return {endBlock}
  */
-function endBlockHandlerFactory(
+function endBlockFactory(
   blockExecutionContext,
   blockExecutionContextStack,
   latestCoreChainLock,
   validatorSet,
   createValidatorSetUpdate,
-  logger,
   getFeatureFlagForHeight,
   rsAbci,
 ) {
   /**
-   * @typedef endBlockHandler
+   * @typedef endBlock
    *
-   * @param {abci.RequestEndBlock} request
-   * @return {Promise<abci.ResponseEndBlock>}
+   * @param {number} height
+   * @param {BaseLogger} logger
+   * @return {Promise<{
+   *   consensusParamUpdates: ConsensusParams,
+   *   validatorSetUpdate: ValidatorSetUpdate,
+   *   nextCoreChainLockUpdate: CoreChainLock,
+   * }>}
    */
-  async function endBlockHandler(request) {
-    const { height } = request;
-
+  async function endBlock(height, logger) {
     const consensusLogger = logger.child({
       height: height.toString(),
-      abciMethod: 'endBlock',
+      abciMethod: 'finalizeBlock#endBlock',
     });
 
     consensusLogger.debug('EndBlock ABCI method requested');
 
     blockExecutionContext.setConsensusLogger(consensusLogger);
 
-    const header = blockExecutionContext.getHeader();
+    const contextVersion = blockExecutionContext.getVersion();
+    const contextCoreChainLockedHeight = blockExecutionContext.getCoreChainLockedHeight();
     const lastCommitInfo = blockExecutionContext.getLastCommitInfo();
     const coreChainLock = latestCoreChainLock.getChainLock();
 
@@ -80,19 +79,22 @@ function endBlockHandlerFactory(
     const { currentEpochIndex, isEpochChange } = rsResponse;
 
     if (isEpochChange) {
-      const previousContext = blockExecutionContextStack.getFirst();
+      const time = blockExecutionContext.getTime();
 
-      const blockTime = timeToMillis(header.time.seconds, header.time.nanos);
+      const blockTime = timeToMillis(time.seconds, time.nanos);
 
       const debugData = {
         currentEpochIndex,
         blockTime,
       };
 
+      const previousContext = blockExecutionContextStack.getFirst();
+
       if (previousContext) {
-        const latestHeader = previousContext.getHeader();
+        const previousTime = previousContext.getTime();
+
         debugData.previousBlockTimeMs = timeToMillis(
-          latestHeader.time.seconds, latestHeader.time.nanos,
+          previousTime.seconds, previousTime.nanos,
         );
       }
 
@@ -137,7 +139,7 @@ function endBlockHandlerFactory(
     // Update Core Chain Locks
 
     let nextCoreChainLockUpdate;
-    if (coreChainLock && coreChainLock.height > header.coreChainLockedHeight) {
+    if (coreChainLock && coreChainLock.height > contextCoreChainLockedHeight) {
       nextCoreChainLockUpdate = new CoreChainLock({
         coreBlockHeight: coreChainLock.height,
         coreBlockHash: coreChainLock.blockHash,
@@ -164,7 +166,7 @@ function endBlockHandlerFactory(
     if (updateConsensusParamsFeatureFlag) {
       // Use previous version if we aren't going to update it
       let version = {
-        appVersion: header.version.app,
+        appVersion: contextVersion.app,
       };
 
       if (updateConsensusParamsFeatureFlag.get('version')) {
@@ -196,14 +198,14 @@ function endBlockHandlerFactory(
       `Block end #${height} (valid txs = ${validTxCount}, invalid txs = ${invalidTxCount})`,
     );
 
-    return new ResponseEndBlock({
+    return {
       consensusParamUpdates,
       validatorSetUpdate,
       nextCoreChainLockUpdate,
-    });
+    };
   }
 
-  return endBlockHandler;
+  return endBlock;
 }
 
-module.exports = endBlockHandlerFactory;
+module.exports = endBlockFactory;
