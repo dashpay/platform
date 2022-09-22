@@ -16,7 +16,7 @@ wasm-bindgen = { version = "0.2.76", features = ["serde-serialize"] }
 js-sys = "0.3.53"
 thiserror = { version="1.0" }
 # Local dpp
-dpp = { path = "../../../rs-platform/dpp" }
+dpp = { git="https://github.com/dashevo/rs-platform", branch="feat-anton-integration" }
 
 [profile.release]
 lto = true
