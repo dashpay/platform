@@ -102,7 +102,8 @@ mod test {
         prelude::{Identifier, Identity, IdentityPublicKey},
         state_repository::MockStateRepositoryLike,
         state_transition::{
-            StateTransition, StateTransitionConvert, StateTransitionLike, StateTransitionType,
+            state_transition_execution_context::StateTransitionExecutionContext, StateTransition,
+            StateTransitionConvert, StateTransitionLike, StateTransitionType,
         },
         tests::{
             fixtures::identity_fixture_raw_object,
@@ -120,6 +121,8 @@ mod test {
         pub owner_id: Identifier,
 
         pub return_error: Option<usize>,
+        #[serde(skip)]
+        pub execution_context: StateTransitionExecutionContext,
     }
 
     impl StateTransitionConvert for ExampleStateTransition {
@@ -156,6 +159,13 @@ mod test {
         }
         fn set_signature(&mut self, signature: Vec<u8>) {
             self.signature = signature
+        }
+        fn get_execution_context(&self) -> &StateTransitionExecutionContext {
+            &self.execution_context
+        }
+
+        fn set_execution_context(&mut self, execution_context: StateTransitionExecutionContext) {
+            self.execution_context = execution_context
         }
     }
 
@@ -223,6 +233,7 @@ mod test {
             signature_public_key_id: 1,
             owner_id: generate_random_identifier_struct(),
             return_error: None,
+            execution_context: Default::default(),
         }
     }
 

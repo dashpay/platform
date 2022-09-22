@@ -14,6 +14,7 @@ pub use write_operation::*;
 pub const STORAGE_CREDIT_PER_BYTE: i64 = 5000;
 pub const STORAGE_PROCESSING_CREDIT_PER_BYTE: i64 = 5000;
 
+#[derive(Debug, Clone)]
 pub enum Operation {
     Read(ReadOperation),
     Write(WriteOperation),

@@ -8,6 +8,7 @@ use serde_json::Value as JsonValue;
 use crate::identity::state_transition::asset_lock_proof::AssetLockProof;
 use crate::identity::IdentityPublicKey;
 use crate::prelude::Identifier;
+use crate::state_transition::state_transition_execution_context::StateTransitionExecutionContext;
 use crate::state_transition::{
     StateTransition, StateTransitionConvert, StateTransitionLike, StateTransitionType,
 };
@@ -40,6 +41,7 @@ pub struct IdentityCreateTransition {
     pub protocol_version: u32,
     pub transition_type: StateTransitionType,
     pub signature: Vec<u8>,
+    pub execution_context: StateTransitionExecutionContext,
 }
 
 impl Default for IdentityCreateTransition {
@@ -51,6 +53,7 @@ impl Default for IdentityCreateTransition {
             identity_id: Default::default(),
             protocol_version: Default::default(),
             signature: Default::default(),
+            execution_context: Default::default(),
         }
     }
 }
@@ -275,6 +278,13 @@ impl StateTransitionLike for IdentityCreateTransition {
     }
     fn calculate_fee(&self) -> Result<u64, ProtocolError> {
         todo!()
+    }
+    fn get_execution_context(&self) -> &StateTransitionExecutionContext {
+        &self.execution_context
+    }
+
+    fn set_execution_context(&mut self, execution_context: StateTransitionExecutionContext) {
+        self.execution_context = execution_context
     }
 }
 
