@@ -1,5 +1,6 @@
 const {Listr} = require('listr2');
 const {Observable} = require('rxjs')
+const CoreService = require('../../core/CoreService')
 
 /**
  * @param {Docker} docker
@@ -61,8 +62,8 @@ function reindexNodeTaskFactory(
           const containerId = config.get('core.reindexContainerId', false)
 
           if (!containerId) {
-            const coreService = await startCore(config)
-            const containerInfo = await coreService.dockerContainer.inspect()
+            ctx.coreService = await startCore(config)
+            const containerInfo = await ctx.coreService.dockerContainer.inspect()
 
             ctx.reindexContainerId = containerInfo.Id
             config.set('core.reindexContainerId', containerInfo.Id)
@@ -74,6 +75,17 @@ function reindexNodeTaskFactory(
           const container = docker.getContainer(containerId);
           const containerInfo = await container.inspect()
           ctx.reindexContainerId = containerInfo.Id
+          ctx.coreService = new CoreService(
+            config,
+            createRpcClient(
+              {
+                port: config.get('core.rpc.port'),
+                user: config.get('core.rpc.user'),
+                pass: config.get('core.rpc.password'),
+              },
+            ),
+            dockerCompose.docker.getContainer(containerId),
+          );
 
           const {State} = await container.inspect()
 
@@ -99,7 +111,7 @@ function reindexNodeTaskFactory(
           return new Observable(async observer => {
             observer.next('Reindexing dashcore ' + config.getName())
 
-            await waitForCoreSync(rpcClient, (verificationProgress) => {
+            await waitForCoreSync(ctx.coreService, (verificationProgress) => {
               const {percent, blocks, headers} = verificationProgress
 
               observer.next(`Reindexing ${config.getName()}... (${(percent * 100).toFixed(4)}%, ${blocks} / ${headers})`)

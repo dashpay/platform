@@ -13,6 +13,11 @@ services:
     command:
       - dashd
       - -masternodeblsprivkey=${CORE_MASTERNODE_OPERATOR_PRIVATE_KEY}
+    healthcheck:
+      test: dash-cli getblockchaininfo
+      interval: 5s
+      timeout: 5s
+      retries: 10
 
 volumes:
   core_data:
