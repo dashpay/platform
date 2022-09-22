@@ -76,7 +76,7 @@ function waitForCoreChainLockSyncFactory(
     } catch (e) {
       // Unable to find any ChainLock
       if (e.code === -32603) {
-        logger.debug('There is no chain locks currently. Waiting for a first one...');
+        logger.debug('There are no ChainLocks currently. Waiting for the first one...');
 
         // We need to wait for a new ChainLock from ZMQ socket
         await firstChainLockFromZMQPromise;
