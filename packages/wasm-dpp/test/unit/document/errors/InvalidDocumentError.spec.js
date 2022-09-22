@@ -1,5 +1,5 @@
-const InvalidDocumentError = require('../@dashevo/dpp/lib/document/errors/InvalidDocumentError');
-const getDocumentsFixture = require('../@dashevo/dpp/lib/test/fixtures/getDocumentsFixture');
+const InvalidDocumentError = require('@dashevo/dpp/lib/document/errors/InvalidDocumentError');
+const getDocumentsFixture = require('@dashevo/dpp/lib/test/fixtures/getDocumentsFixture');
 
 describe('InvalidDocumentError', () => {
   let rawDocument;

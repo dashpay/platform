@@ -48,7 +48,8 @@ describe('Consensus error codes', () => {
     return;
   }
 
-  const normalizedPath = path.join(__dirname, '@dashevo/dpp/lib/errors/');
+  const normalizedPath = path.join(__dirname, '../../../../../js-dpp/lib/errors/');
+  console.log(normalizedPath);
   const allFiles = getAllFiles(normalizedPath);
 
   allFiles.forEach((fileName) => {
