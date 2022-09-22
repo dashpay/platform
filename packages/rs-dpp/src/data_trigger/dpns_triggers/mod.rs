@@ -140,6 +140,7 @@ where
                         ["normalizedLabel", "==", parent_domain_label]
                     ]
                 }),
+                context.state_transition_execution_context,
             )
             .await?;
 
@@ -194,6 +195,7 @@ where
                 //? should this be a base64 encoded
                 "where" : [["saltedDomainHash", "==", salted_domain_hash]]
             }),
+            context.state_transition_execution_context,
         )
         .await?;
 

@@ -1,6 +1,7 @@
 use super::fees::operations::Operation;
 
 #[derive(Debug, Clone, Default)]
+
 pub struct StateTransitionExecutionContext {
     operations: Vec<Operation>,
 }

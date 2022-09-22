@@ -1,6 +1,8 @@
 use anyhow::{anyhow, Result};
 
-use crate::{prelude::Identity, state_repository::StateRepositoryLike};
+use crate::{
+    prelude::Identity, state_repository::StateRepositoryLike, state_transition::StateTransitionLike,
+};
 
 use super::IdentityCreditWithdrawalTransition;
 
@@ -25,7 +27,10 @@ where
     ) -> Result<()> {
         let maybe_existing_identity: Option<Identity> = self
             .state_repository
-            .fetch_identity(&state_transition.identity_id)
+            .fetch_identity(
+                &state_transition.identity_id,
+                state_transition.get_execution_context(),
+            )
             .await?;
 
         let mut existing_identity =
@@ -34,7 +39,7 @@ where
         existing_identity = existing_identity.reduce_balance(state_transition.amount);
 
         self.state_repository
-            .update_identity(&existing_identity)
+            .update_identity(&existing_identity, state_transition.get_execution_context())
             .await
     }
 }

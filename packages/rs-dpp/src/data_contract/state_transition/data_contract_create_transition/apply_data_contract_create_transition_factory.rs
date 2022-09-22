@@ -1,6 +1,6 @@
 use anyhow::Result;
 
-use crate::state_repository::StateRepositoryLike;
+use crate::{state_repository::StateRepositoryLike, state_transition::StateTransitionLike};
 
 use super::DataContractCreateTransition;
 
@@ -27,7 +27,10 @@ where
         state_transition: &DataContractCreateTransition,
     ) -> Result<()> {
         self.state_repository
-            .store_data_contract(state_transition.data_contract.clone())
+            .store_data_contract(
+                state_transition.data_contract.clone(),
+                state_transition.get_execution_context(),
+            )
             .await
     }
 }

@@ -7,12 +7,14 @@ use crate::{
     document::{document_transition::DocumentTransition, Document},
     get_from_transition,
     state_repository::StateRepositoryLike,
+    state_transition::state_transition_execution_context::StateTransitionExecutionContext,
     util::string_encoding::Encoding,
 };
 
 pub async fn fetch_documents(
     state_repository: &impl StateRepositoryLike,
     document_transitions: impl IntoIterator<Item = impl AsRef<DocumentTransition>>,
+    execution_context: &StateTransitionExecutionContext,
 ) -> Result<Vec<Document>, anyhow::Error> {
     let mut transitions_by_contracts_and_types: HashMap<String, Vec<&DocumentTransition>> =
         HashMap::new();
@@ -48,6 +50,7 @@ pub async fn fetch_documents(
             get_from_transition!(dts[0], data_contract_id),
             get_from_transition!(dts[0], document_type),
             options,
+            execution_context,
         );
         fetch_documents_futures.push(documents);
     }

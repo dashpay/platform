@@ -8,6 +8,7 @@ use crate::{
     identity::validation::{RequiredPurposeAndSecurityLevelValidator, TPublicKeysValidator},
     prelude::Identity,
     state_repository::StateRepositoryLike,
+    state_transition::StateTransitionLike,
     validation::SimpleValidationResult,
     NonConsensusError, SerdeParsingError, StateError,
 };
@@ -39,7 +40,10 @@ where
 
         let maybe_stored_identity: Option<Identity> = self
             .state_repository
-            .fetch_identity(state_transition.get_identity_id())
+            .fetch_identity(
+                state_transition.get_identity_id(),
+                state_transition.get_execution_context(),
+            )
             .await
             .map_err(|e| NonConsensusError::StateRepositoryFetchError(e.to_string()))?;
 
