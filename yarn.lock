@@ -1625,7 +1625,6 @@ __metadata:
     "@dashevo/dpns-contract": "workspace:~"
     "@dashevo/feature-flags-contract": "workspace:~"
     "@dashevo/masternode-reward-shares-contract": "workspace:~"
-    "@dashevo/wasm-dpp": "workspace:~"
     "@dashevo/wasm-re2": ~1.0.2
     acorn: ^8.5.0
     ajv: ^8.6.0
@@ -1984,7 +1983,7 @@ __metadata:
   languageName: unknown
   linkType: soft
 
-"@dashevo/wasm-dpp@workspace:packages/wasm-dpp, @dashevo/wasm-dpp@workspace:~":
+"@dashevo/wasm-dpp@workspace:packages/wasm-dpp":
   version: 0.0.0-use.local
   resolution: "@dashevo/wasm-dpp@workspace:packages/wasm-dpp"
   dependencies:
