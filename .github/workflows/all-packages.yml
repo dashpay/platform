@@ -23,6 +23,7 @@ jobs:
       - name: Setup Rust
         uses: actions-rs/toolchain@v1
         with:
+          toolchain: stable-wasm32-unknown-unknown
           target: wasm32-unknown-unknown
           components: clippy, wasm-bindgen-cli
           override: true
