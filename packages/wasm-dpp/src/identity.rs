@@ -133,8 +133,7 @@ impl IdentityWasm {
 
     #[wasm_bindgen(js_name=setAssetLockProof)]
     pub fn set_asset_lock_proof(&mut self, lock: JsValue) {
-        self
-            .0
+        self.0
             .set_asset_lock_proof(JsValue::into_serde(&lock).unwrap());
     }
 
