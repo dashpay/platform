@@ -20,6 +20,14 @@ jobs:
         with:
           node-version: '16'
 
+      - name: Setup Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          target: wasm32-unknown-unknown
+          components: clippy, wasm-bindgen-cli
+          override: true
+
       - name: Enable corepack
         run: corepack enable
 
