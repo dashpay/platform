@@ -1,4 +1,5 @@
 const {Listr} = require('listr2');
+const {Observable} = require('rxjs')
 
 /**
  * @param {Docker} docker
@@ -87,7 +88,6 @@ function reindexNodeTaskFactory(
         }
       },
       {
-        title: `Wait for the services to be ready`,
         task: async (ctx, task) => {
           const rpcClient = createRpcClient(
             {
@@ -96,9 +96,18 @@ function reindexNodeTaskFactory(
               pass: config.get('core.rpc.password'),
             })
 
-          return waitForCoreSync(rpcClient, (verificationProgress) => {
-            const {percent, blocks, headers} = verificationProgress
-            task.title = `Reindexing ${config.getName()}... (${(percent * 100).toFixed(4)}%, ${blocks} / ${headers})`
+          return new Observable(async observer => {
+            observer.next('Reindexing dashcore ' + config.getName())
+
+            await waitForCoreSync(rpcClient, (verificationProgress) => {
+              const {percent, blocks, headers} = verificationProgress
+
+              observer.next(`Reindexing ${config.getName()}... (${(percent * 100).toFixed(4)}%, ${blocks} / ${headers})`)
+            })
+
+            await new Promise((res)=> setTimeout(res, 2000))
+
+            observer.complete()
           })
         },
       },
