@@ -22,10 +22,13 @@ mod calculate_state_transition_fee;
 mod state_transition_factory;
 pub use state_transition_factory::*;
 
+use self::state_transition_execution_context::StateTransitionExecutionContext;
+
 mod state_transition_types;
 pub mod validation;
 
 pub mod fees;
+pub mod state_transition_execution_context;
 
 mod example;
 macro_rules! call_method {
@@ -144,6 +147,13 @@ impl StateTransitionLike for StateTransition {
 
     fn calculate_fee(&self) -> Result<u64, crate::ProtocolError> {
         call_method!(self, calculate_fee)
+    }
+    fn get_execution_context(&self) -> &StateTransitionExecutionContext {
+        call_method!(self, get_execution_context)
+    }
+
+    fn set_execution_context(&mut self, execution_context: StateTransitionExecutionContext) {
+        call_method!(self, set_execution_context, execution_context)
     }
 }
 
