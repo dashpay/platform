@@ -31,6 +31,7 @@ async function processTransactions(transactions) {
       this.setLastSyncedBlockHeight(mostRecentHeight, true);
 
       if (addressesGenerated > 0) {
+        this.hasReachedGapLimit = true;
         this.reconnectOnNewBlock = true;
       }
     }
@@ -109,6 +110,7 @@ async function processMerkleBlock(merkleBlock) {
   this.scheduleProgressUpdate();
 
   if (addressesGenerated > 0) {
+    this.hasReachedGapLimit = true;
     await this.reconnectToStream();
   }
 }

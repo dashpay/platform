@@ -29,6 +29,10 @@ class Queue extends Emitter {
     return job;
   }
 
+  flush() {
+    this.jobs = [];
+  }
+
   async processNext() {
     const job = this.dequeueJob();
     if (job) {

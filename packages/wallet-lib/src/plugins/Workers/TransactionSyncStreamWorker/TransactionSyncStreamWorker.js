@@ -251,6 +251,7 @@ class TransactionSyncStreamWorker extends Worker {
         return new Promise((resolve) => setImmediate(() => {
           if (this.stream) {
             this.stream.cancel();
+            this.chunksQueue.flush();
 
             const error = new GrpcError(GrpcErrorCodes.CANCELLED, 'Cancelled on client');
             // call onError events
@@ -275,6 +276,7 @@ class TransactionSyncStreamWorker extends Worker {
     return new Promise((resolve) => setImmediate(() => {
       if (this.stream) {
         this.stream.cancel();
+        this.chunksQueue.flush();
         // When calling stream.cancel(), the stream will emit 'error' event
         // with the code 'CANCELLED'.
         // There are two cases when this happens: when the gap limit is filled
@@ -314,7 +316,8 @@ class TransactionSyncStreamWorker extends Worker {
     const transactionsCount = chainStore.state.transactions.size;
     let progress = syncedBlocksCount / totalBlocksCount;
     progress = Math.round(progress * 1000) / 10;
-    logger.debug(`[TransactionSynsStreamWorker] Historical fetch progress: ${this.lastSyncedBlockHeight}/${chainStore.state.chainHeight}, ${progress}%`);
+    logger.debug(`[TransactionSyncStreamWorker] Historical fetch progress: ${this.lastSyncedBlockHeight}/${chainStore.state.chainHeight}, ${progress}%`);
+    logger.debug(`[-------------------------->] TXs: ${transactionsCount}`);
 
     this.parentEvents.emit(EVENTS.TRANSACTIONS_SYNC_PROGRESS, {
       progress,
@@ -343,6 +346,7 @@ class TransactionSyncStreamWorker extends Worker {
       // so we call it by ourselves
       await new Promise((resolveCancel) => setImmediate(() => {
         this.stream.cancel();
+        this.chunksQueue.flush();
         const error = new GrpcError(GrpcErrorCodes.CANCELLED, 'Cancelled on client');
 
         // call onError events
@@ -366,6 +370,7 @@ class TransactionSyncStreamWorker extends Worker {
       // and here (https://github.com/nodejs/node/issues/38964)
       await new Promise((resolveCancel) => setImmediate(() => {
         this.stream.cancel();
+        this.chunksQueue.flush();
         resolveCancel();
       }));
     }
