@@ -1,12 +1,11 @@
-const { default: loadWasmDpp } = require('@dashevo/wasm-dpp');
 const IdentityPublicKey = require('../../../lib/identity/IdentityPublicKey');
+const EmptyPublicKeyDataError = require('../../../lib/identity/errors/EmptyPublicKeyDataError');
 
 describe('IdentityPublicKey', () => {
   let rawPublicKey;
   let publicKey;
-  let IdentityPublicKeyWasm;
 
-  beforeEach(async () => {
+  beforeEach(() => {
     rawPublicKey = {
       id: 0,
       type: IdentityPublicKey.TYPES.ECDSA_SECP256K1,
@@ -16,17 +15,24 @@ describe('IdentityPublicKey', () => {
       readOnly: false,
     };
 
-    ({ IdentityPublicKey: IdentityPublicKeyWasm } = await loadWasmDpp());
-    publicKey = new IdentityPublicKeyWasm(rawPublicKey);
+    publicKey = new IdentityPublicKey(rawPublicKey);
   });
 
   describe('#constructor', () => {
-    it('should set variables from raw model', () => {
-      const instance = new IdentityPublicKeyWasm(rawPublicKey);
+    it('should not set anything if nothing passed', () => {
+      const instance = new IdentityPublicKey();
 
-      expect(instance.getId()).to.equal(rawPublicKey.id);
-      expect(instance.getType()).to.equal(rawPublicKey.type);
-      expect(instance.getData()).to.deep.equal(rawPublicKey.data);
+      expect(instance.id).to.be.undefined();
+      expect(instance.type).to.be.undefined();
+      expect(instance.data).to.be.undefined();
+    });
+
+    it('should set variables from raw model', () => {
+      const instance = new IdentityPublicKey(rawPublicKey);
+
+      expect(instance.id).to.equal(rawPublicKey.id);
+      expect(instance.type).to.equal(rawPublicKey.type);
+      expect(instance.data).to.equal(rawPublicKey.data);
     });
   });
 
@@ -40,29 +46,29 @@ describe('IdentityPublicKey', () => {
     it('should set id', () => {
       publicKey.setId(42);
 
-      expect(publicKey.getId()).to.equal(42);
+      expect(publicKey.id).to.equal(42);
     });
   });
 
   describe('#getType', () => {
     it('should return set type', () => {
-      publicKey.setType(3);
+      publicKey.type = 42;
 
-      expect(publicKey.getType()).to.equal(3);
+      expect(publicKey.getType()).to.equal(42);
     });
   });
 
   describe('#setType', () => {
     it('should set type', () => {
-      publicKey.setType(3);
+      publicKey.setType(42);
 
-      expect(publicKey.getType()).to.equal(3);
+      expect(publicKey.type).to.equal(42);
     });
   });
 
   describe('#getData', () => {
     it('should return set data', () => {
-      expect(publicKey.getData()).to.be.deep.equal(rawPublicKey.data);
+      expect(publicKey.getData()).to.equal(rawPublicKey.data);
     });
   });
 
@@ -72,7 +78,7 @@ describe('IdentityPublicKey', () => {
 
       publicKey.setData(buffer);
 
-      expect(publicKey.getData()).to.be.deep.equal(buffer);
+      expect(publicKey.data).to.equal(buffer);
     });
   });
 
@@ -86,7 +92,7 @@ describe('IdentityPublicKey', () => {
     it('should set data', () => {
       publicKey.setPurpose(IdentityPublicKey.PURPOSES.DECRYPTION);
 
-      expect(publicKey.getPurpose()).to.equal(IdentityPublicKey.PURPOSES.DECRYPTION);
+      expect(publicKey.purpose).to.equal(IdentityPublicKey.PURPOSES.DECRYPTION);
     });
   });
 
@@ -100,7 +106,7 @@ describe('IdentityPublicKey', () => {
     it('should set data', () => {
       publicKey.setSecurityLevel(IdentityPublicKey.SECURITY_LEVELS.MEDIUM);
 
-      expect(publicKey.getSecurityLevel()).to.equal(IdentityPublicKey.SECURITY_LEVELS.MEDIUM);
+      expect(publicKey.securityLevel).to.equal(IdentityPublicKey.SECURITY_LEVELS.MEDIUM);
     });
   });
 
@@ -114,7 +120,7 @@ describe('IdentityPublicKey', () => {
     it('should set readOnly', () => {
       publicKey.setReadOnly(true);
 
-      expect(publicKey.isReadOnly()).to.equal(true);
+      expect(publicKey.readOnly).to.equal(true);
     });
   });
 
@@ -122,13 +128,13 @@ describe('IdentityPublicKey', () => {
     it('should set disabledAt', () => {
       publicKey.setDisabledAt(123);
 
-      expect(publicKey.getDisabledAt()).to.equal(123);
+      expect(publicKey.disabledAt).to.equal(123);
     });
   });
 
   describe('#getDisabledAt', () => {
     it('should return disabledAt', () => {
-      publicKey.setDisabledAt(42);
+      publicKey.disabledAt = 42;
 
       expect(publicKey.getDisabledAt()).to.equal(42);
     });
@@ -150,11 +156,9 @@ describe('IdentityPublicKey', () => {
         data: Buffer.from('AkVuTKyF3YgKLAQlLEtaUL2HTditwGILfWUVqjzYnIgH', 'base64'),
         purpose: IdentityPublicKey.PURPOSES.AUTHENTICATION,
         securityLevel: IdentityPublicKey.SECURITY_LEVELS.MASTER,
-        readOnly: false,
-        disabledAt: 123,
       };
 
-      publicKey = new IdentityPublicKeyWasm(rawPublicKey);
+      publicKey = new IdentityPublicKey(rawPublicKey);
 
       const result = publicKey.hash();
 
@@ -170,11 +174,9 @@ describe('IdentityPublicKey', () => {
         data: Buffer.from('01fac99ca2c8f39c286717c213e190aba4b7af76db320ec43f479b7d9a2012313a0ae59ca576edf801444bc694686694', 'hex'),
         purpose: IdentityPublicKey.PURPOSES.AUTHENTICATION,
         securityLevel: IdentityPublicKey.SECURITY_LEVELS.MASTER,
-        readOnly: false,
-        disabledAt: 123,
       };
 
-      publicKey = new IdentityPublicKeyWasm(rawPublicKey);
+      publicKey = new IdentityPublicKey(rawPublicKey);
 
       const result = publicKey.hash();
 
@@ -190,17 +192,33 @@ describe('IdentityPublicKey', () => {
         data: Buffer.from('54c557e07dde5bb6cb791c7a540e0a4796f5e97e', 'hex'),
         purpose: IdentityPublicKey.PURPOSES.AUTHENTICATION,
         securityLevel: IdentityPublicKey.SECURITY_LEVELS.MASTER,
-        readOnly: false,
-        disabledAt: 123,
       };
 
-      publicKey = new IdentityPublicKeyWasm(rawPublicKey);
+      publicKey = new IdentityPublicKey(rawPublicKey);
 
       const result = publicKey.hash();
 
       const expectedHash = Buffer.from('54c557e07dde5bb6cb791c7a540e0a4796f5e97e', 'hex');
 
       expect(result).to.deep.equal(expectedHash);
+    });
+
+    it('should throw invalid argument error if data was not originally provided', async () => {
+      publicKey = new IdentityPublicKey({
+        id: 0,
+        type: IdentityPublicKey.TYPES.ECDSA_SECP256K1,
+      });
+
+      try {
+        publicKey.hash();
+
+        expect.fail('Error was not thrown');
+      } catch (e) {
+        expect(e).to.be.an.instanceOf(EmptyPublicKeyDataError);
+        expect(e.message).to.equal(
+          'Public key data is not set',
+        );
+      }
     });
   });
 
@@ -237,7 +255,7 @@ describe('IdentityPublicKey', () => {
 
   describe('#isMaster', () => {
     it('should return true when public key has MASTER security level', () => {
-      publicKey.setSecurityLevel(IdentityPublicKey.SECURITY_LEVELS.MASTER);
+      publicKey.securityLevel = IdentityPublicKey.SECURITY_LEVELS.MASTER;
 
       const result = publicKey.isMaster();
 
@@ -245,7 +263,7 @@ describe('IdentityPublicKey', () => {
     });
 
     it('should return false when public key doesn\'t have MASTER security level', () => {
-      publicKey.setSecurityLevel(IdentityPublicKey.SECURITY_LEVELS.HIGH);
+      publicKey.securityLevel = IdentityPublicKey.SECURITY_LEVELS.HIGH;
 
       const result = publicKey.isMaster();
 

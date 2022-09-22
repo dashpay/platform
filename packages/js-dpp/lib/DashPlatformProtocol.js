@@ -1,5 +1,4 @@
 const { getRE2Class } = require('@dashevo/wasm-re2');
-const { default: loadWasmDpp } = require('@dashevo/wasm-dpp');
 const BlsSignatures = require('./bls/bls');
 const createAjv = require('./ajv/createAjv');
 
@@ -33,8 +32,6 @@ class DashPlatformProtocol {
     this.stateRepository = undefined;
     this.jsonSchemaValidator = undefined;
     this.initialized = undefined;
-
-    this.Identifier = undefined;
   }
 
   /**
@@ -81,9 +78,6 @@ class DashPlatformProtocol {
 
       return true;
     });
-
-    const wasmDppModule = await loadWasmDpp();
-    Object.assign(this, wasmDppModule);
 
     return this.initialized;
   }
