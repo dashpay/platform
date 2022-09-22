@@ -5,10 +5,11 @@
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "scripts": {
-    "build": "./build.sh && webpack",
+    "build": "scripts/build.sh && webpack",
     "test": "NODE_ENV=test mocha",
     "webpack": "webpack",
-    "lint": "cargo clippy && cargo fmt --check"
+    "lint": "cargo clippy && cargo fmt --check",
+    "clean": "scripts/clean.sh"
   },
   "author": "",
   "license": "ISC",
