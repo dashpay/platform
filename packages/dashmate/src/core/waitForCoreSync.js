@@ -14,8 +14,9 @@ async function waitForCoreSync(coreService, progressCallback = () => {}) {
   let verificationProgress = 0.0;
 
   do {
+    const info = await coreService.dockerContainer.inspect()
+
     try {
-      const info = await coreService.dockerContainer.inspect()
 
       ({
         result: {IsSynced: isSynced, IsBlockchainSynced: isBlockchainSynced},
