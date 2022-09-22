@@ -74,6 +74,7 @@ if [ -z "$FAUCET_ADDRESS" ] || \
     [ -z "$FEATURE_FLAGS_OWNER_PRIVATE_KEY" ] || \
     [ -z "$DASHPAY_OWNER_PRIVATE_KEY" ] || \
     [ -z "$MASTERNODE_REWARD_SHARES_OWNER_PRIVATE_KEY" ] || \
+    [ -z "$MASTERNODE_REWARD_SHARES_MN_OWNER_PRIVATE_KEY" ] || \
     [ -z "$NETWORK" ] || \
     [ -z "$SKIP_SYNC_BEFORE_HEIGHT" ]
 then
