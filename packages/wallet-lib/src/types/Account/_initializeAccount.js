@@ -21,7 +21,7 @@ async function _initializeAccount(account, userUnsafePlugins) {
     // TODO(spv): implement blockHeadersProvider.initializeWith(headers, headHeight)
     const firstHeaderHeight = lastSyncedHeaderHeight - blockHeaders.length + 1;
     blockHeadersProvider.spvChain.reset(firstHeaderHeight);
-    blockHeadersProvider.spvChain.addHeaders(blockHeaders);
+    blockHeadersProvider.spvChain.addHeaders(blockHeaders, firstHeaderHeight);
   }
 
   // We run faster in offlineMode to speed up the process when less happens.
