@@ -1,11 +1,14 @@
+use serde::{Deserialize, Serialize};
+
 use super::{OperationLike, OperationType};
 
 pub const BASE_PROCESSING_COST: i64 = 20000;
 
-#[derive(Default, Debug, Clone, Copy)]
+#[derive(Default, Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
 pub struct PreCalculatedOperation {
-    storage_cost: i64,
-    processing_cost: i64,
+    pub storage_cost: i64,
+    pub processing_cost: i64,
 }
 
 impl PreCalculatedOperation {
