@@ -16,7 +16,7 @@ function buildServicesTaskFactory(
   function buildServicesTask(config) {
     return new Listr({
       title: 'Build services',
-      task: async (ctx, task) => {
+      task: async () => {
         const envs = config.toEnvs();
         await dockerCompose.build(envs);
       },
