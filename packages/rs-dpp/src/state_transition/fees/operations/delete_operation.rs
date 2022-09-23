@@ -1,11 +1,14 @@
+use serde::{Deserialize, Serialize};
+
 use super::{OperationLike, OperationType, STORAGE_PROCESSING_CREDIT_PER_BYTE};
 
 pub const BASE_PROCESSING_COST: i64 = 20000;
 
-#[derive(Default, Debug, Clone, Copy)]
+#[derive(Default, Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
 pub struct DeleteOperation {
-    key_size: usize,
-    value_size: usize,
+    pub key_size: usize,
+    pub value_size: usize,
 }
 
 impl DeleteOperation {
