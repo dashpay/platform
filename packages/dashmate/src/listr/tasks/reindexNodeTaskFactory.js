@@ -100,7 +100,7 @@ function reindexNodeTaskFactory(
         }
       },
       {
-        task: async (ctx, task) => {
+        task: async (ctx) => {
           return new Observable(async observer => {
             observer.next('Reindexing dashcore ' + config.getName())
 
