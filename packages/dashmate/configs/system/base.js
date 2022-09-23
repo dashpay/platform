@@ -30,6 +30,7 @@ module.exports = {
     network: {
       subnet: '172.24.24.0/24',
     },
+    timeout: 30
   },
   core: {
     docker: {

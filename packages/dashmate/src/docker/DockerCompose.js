@@ -159,12 +159,13 @@ class DockerCompose {
 
   /**
    * Stop all docker compose containers
+   * Timeout defaults to 10, same as Docker
    *
    * @param {Object} envs
    * @param timeout {number} timeout before kill, in seconds
    * @return {Promise<void>}
    */
-  async stop(envs, timeout = 30) {
+  async stop(envs, timeout = 10) {
     await this.throwErrorIfNotInstalled();
 
     try {

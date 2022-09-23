@@ -275,7 +275,7 @@ function registerMasternodeTaskFactory(
       {
         title: 'Stop Core',
         enabled: (ctx) => !ctx.coreServicePassed,
-        task: async (ctx) => ctx.coreService.stop(),
+        task: async (ctx) => ctx.coreService.stop(config.get('docker.timeout')),
       },
     ]);
   }

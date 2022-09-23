@@ -343,4 +343,12 @@ module.exports = {
 
     return configFile;
   },
+  '0.22.3': (configFile) => {
+    Object.entries(configFile.configs)
+      .forEach(([, config]) => {
+        config.docker.timeout = 30;
+      });
+
+    return configFile;
+  },
 };

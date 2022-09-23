@@ -41,14 +41,15 @@ class CoreService {
   /**
    * Stop Core service
    *
+   * @arg {number} timeout
    * @return {Promise<boolean>}
    */
-  async stop() {
+  async stop(timeout) {
     if (!await this.isRunning()) {
       return false;
     }
 
-    await this.dockerContainer.stop();
+    await this.dockerContainer.stop({t: timeout});
     await this.dockerContainer.remove();
 
     return true;
