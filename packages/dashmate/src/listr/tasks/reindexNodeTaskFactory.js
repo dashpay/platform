@@ -101,13 +101,6 @@ function reindexNodeTaskFactory(
       },
       {
         task: async (ctx, task) => {
-          const rpcClient = createRpcClient(
-            {
-              port: config.get('core.rpc.port'),
-              user: config.get('core.rpc.user'),
-              pass: config.get('core.rpc.password'),
-            })
-
           return new Observable(async observer => {
             observer.next('Reindexing dashcore ' + config.getName())
 
