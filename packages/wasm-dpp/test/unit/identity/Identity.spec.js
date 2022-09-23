@@ -1,5 +1,5 @@
 const { default: loadWasmDpp } = require('../../../dist');
-const generateRandomIdentifierAsync = require('@dashevo/dpp/lib/test/utils/generateRandomIdentifierAsync');
+const generateRandomIdentifierAsync = require('../../../lib/test/utils/generateRandomIdentifierAsync');
 
 const IdentityPublicKey = require('@dashevo/dpp/lib/identity/IdentityPublicKey');
 const protocolVersion = require('@dashevo/dpp/lib/version/protocolVersion');
