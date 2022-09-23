@@ -45,7 +45,7 @@ function reindexNodeTaskFactory(
         }
       },
       {
-        title: 'Set core reindex env to 1',
+        title: 'Set core to reindex on next run',
         enabled: () => config.get('core.reindex') === 0,
         task: async () => {
           config.set('core.reindex', 1)
@@ -92,7 +92,7 @@ function reindexNodeTaskFactory(
           if (State.Status === "paused" || State.Status === "exited") {
             switch (State.ExitCode) {
               default:
-                console.warn(`Reindex container exited with status ${State.ExitCode}, look docker logs of container ${containerId}`)
+                console.warn(`Reindex container exited with status ${State.ExitCode}, check docker logs of container ${containerId}`)
               case 0:
                 await container.start();
             }
@@ -133,7 +133,7 @@ function reindexNodeTaskFactory(
         },
       },
       {
-        title: 'Set reindex back to zero',
+        title: 'Set core to disable reindex on next run',
         task: async () => {
           config.set('core.reindex', 0)
           config.set('core.reindexContainerId', null)
