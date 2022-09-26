@@ -35,7 +35,7 @@ describe('updateSimplifiedMasternodeListFactory', function main() {
 
     expect(simplifiedMasternodeList.getStore()).to.equal(undefined);
 
-    const { result: randomAddress } = await dashCore.getApi().getNewxAddress();
+    const { result: randomAddress } = await dashCore.getApi().getNewAddress();
 
     await dashCore.getApi().generateToAddress(1000, randomAddress);
 
