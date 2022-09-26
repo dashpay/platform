@@ -35,7 +35,7 @@ describe('updateSimplifiedMasternodeListFactory', function main() {
 
     expect(simplifiedMasternodeList.getStore()).to.equal(undefined);
 
-    const { result: randomAddress } = await dashCore.getApi().getNewAddress();
+    const { result: randomAddress } = await dashCore.getApi().getNewxAddress();
 
     await dashCore.getApi().generateToAddress(1000, randomAddress);
 
@@ -51,6 +51,14 @@ describe('updateSimplifiedMasternodeListFactory', function main() {
     dashCore = await startDashCore(dashCoreOptions);
 
     container = await createTestDIContainer(dashCore);
+
+    // Create misc tree
+    const groveDBStore = container.resolve('groveDBStore');
+    await groveDBStore.createTree(
+      [],
+      Buffer.from([5]),
+      { useTransaction: true },
+    );
 
     const simplifiedMasternodeList = container.resolve('simplifiedMasternodeList');
     const updateSimplifiedMasternodeList = container.resolve('updateSimplifiedMasternodeList');
