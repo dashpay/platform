@@ -1,4 +1,5 @@
 const path = require('path');
+const { Observable } = require('rxjs');
 
 const dockerCompose = require('@dashevo/docker-compose');
 
@@ -118,23 +119,33 @@ class DockerCompose {
    *
    * @param {Object} envs
    * @param {string} [serviceName]
-   * @return {Promise<ChildProcess>}
+   * @return {Observable<{string}>}
    */
   // eslint-disable-next-line no-unused-vars
   async build(envs, serviceName = undefined, options = []) {
-    await this.throwErrorIfNotInstalled();
-
     try {
-      if (serviceName) {
-        await dockerCompose.buildOne(serviceName, {
-          ...this.getOptions(envs),
-          commandOptions: options,
-        });
-      } else {
-        await dockerCompose.buildAll({
-          ...this.getOptions(envs),
-        });
-      }
+      return new Observable(async (observer) => {
+        await this.throwErrorIfNotInstalled();
+
+        const callback = (e) => {
+          observer.next(e.toString())
+        }
+
+        if (serviceName) {
+          await dockerCompose.buildOne(serviceName, {
+            ...this.getOptions(envs),
+            callback,
+            commandOptions: options,
+          });
+        } else {
+          await dockerCompose.buildAll({
+            ...this.getOptions(envs),
+            callback
+          });
+        }
+
+        observer.complete()
+      });
     } catch (e) {
       throw new DockerComposeError(e);
     }
