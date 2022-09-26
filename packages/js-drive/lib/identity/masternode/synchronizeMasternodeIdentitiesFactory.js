@@ -15,6 +15,7 @@ const createOperatorIdentifier = require('./createOperatorIdentifier');
  * @param {handleUpdatedScriptPayout} handleUpdatedScriptPayout
  * @param {number} smlMaxListsLimit
  * @param {RpcClient} coreRpcClient
+ * @param {LastSyncedCoreHeightRepository} lastSyncedCoreHeightRepository
  * @return {synchronizeMasternodeIdentities}
  */
 function synchronizeMasternodeIdentitiesFactory(
@@ -27,6 +28,7 @@ function synchronizeMasternodeIdentitiesFactory(
   handleUpdatedScriptPayout,
   smlMaxListsLimit,
   coreRpcClient,
+  lastSyncedCoreHeightRepository,
 ) {
   let lastSyncedCoreHeight = 0;
 
@@ -42,6 +44,12 @@ function synchronizeMasternodeIdentitiesFactory(
    * }>}
    */
   async function synchronizeMasternodeIdentities(coreHeight) {
+    if (!lastSyncedCoreHeight) {
+      const lastSyncedHeightResult = await lastSyncedCoreHeightRepository.fetch();
+
+      lastSyncedCoreHeight = lastSyncedHeightResult.getValue() || 0;
+    }
+
     let newMasternodes = [];
 
     let previousMNList = [];
@@ -182,6 +190,8 @@ function synchronizeMasternodeIdentitiesFactory(
     const fromHeight = lastSyncedCoreHeight;
 
     lastSyncedCoreHeight = coreHeight;
+
+    await lastSyncedCoreHeightRepository.store(lastSyncedCoreHeight);
 
     return {
       fromHeight,

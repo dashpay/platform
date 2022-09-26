@@ -131,6 +131,7 @@ const DocumentRepository = require('./document/DocumentRepository');
 const ExecutionTimer = require('./util/ExecutionTimer');
 const noopLoggerInstance = require('./util/noopLogger');
 const fetchTransactionFactory = require('./core/fetchTransactionFactory');
+const LastSyncedCoreHeightRepository = require('./identity/masternode/LastSyncedCoreHeightRepository');
 
 /**
  *
@@ -472,6 +473,8 @@ function createDIContainer(options) {
     )).singleton(),
 
     synchronizeMasternodeIdentities: asFunction(synchronizeMasternodeIdentitiesFactory).singleton(),
+
+    lastSyncedCoreHeightRepository: asClass(LastSyncedCoreHeightRepository).singleton(),
 
     createMasternodeIdentity: asFunction(createMasternodeIdentityFactory).singleton(),
 
