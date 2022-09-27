@@ -53,13 +53,11 @@ const dotenvConfig = dotenvSafe.config({
 
 dotenvExpand(dotenvConfig);
 
-if (process.env.SERVICE_IMAGE_CORE) {
-  DashCoreOptions.setDefaultCustomOptions({
-    container: {
-      image: 'dashpay/dashd:18.1.0-rc.1',
-    },
-  });
-}
+DashCoreOptions.setDefaultCustomOptions({
+  container: {
+    image: 'dashpay/dashd:18.1.0-rc.1',
+  },
+});
 
 beforeEach(function beforeEach() {
   if (!this.sinon) {
