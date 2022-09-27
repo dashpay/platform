@@ -5,11 +5,14 @@ use dpp::identity::state_transition::asset_lock_proof::AssetLockProof;
 use dpp::identity::IdentityPublicKey;
 use dpp::identity::{Identity, KeyID};
 use dpp::metadata::Metadata;
+use dpp::{ProtocolError, SerdeParsingError};
+use dpp::util::json_value::JsonValueExt;
 
 use dpp::util::string_encoding::Encoding;
 
 use serde::{Deserialize, Serialize};
 
+use crate::errors::from_dpp_err;
 use crate::identifier::IdentifierWrapper;
 use crate::MetadataWasm;
 use crate::{IdentityPublicKeyWasm, JsPublicKey};
@@ -175,8 +178,23 @@ impl IdentityWasm {
     }
 
     #[wasm_bindgen(js_name=toJSON)]
-    pub fn to_json(&self) -> JsValue {
-        JsValue::from_serde(&self.0).unwrap()
+    pub fn to_json(&self) -> Result<JsValue, JsValue> {
+        let pks = self
+            .0
+            .public_keys
+            .iter()
+            .map(|pk| pk.to_json())
+            .collect::<Result<Vec<serde_json::Value>, SerdeParsingError>>()
+            .map_err(|e| from_dpp_err(e.into()))?;
+        let mut identity_json = serde_json::to_value(self.0.clone()).map_err(|e| from_dpp_err(e.into()))?;
+
+        let map = identity_json
+            .as_object_mut()
+            .ok_or_else(|| from_dpp_err(ProtocolError::Generic("Expect identity to be a json map".into())))?;
+        map.insert("publicKeys".into(), serde_json::Value::from(pks));
+
+        let identity_json_string = serde_json::to_string(&identity_json).map_err(|e| from_dpp_err(e.into()))?;
+        js_sys::JSON::parse(&identity_json_string)
     }
 
     #[wasm_bindgen(js_name=toObject)]
@@ -192,5 +210,10 @@ impl IdentityWasm {
     #[wasm_bindgen(js_name=toBuffer)]
     pub fn to_buffer(&self) -> Vec<u8> {
         self.0.to_buffer().unwrap()
+    }
+
+    #[wasm_bindgen]
+    pub fn hash(&self) -> Result<Vec<u8>, JsValue> {
+        self.0.hash().map_err(|e| from_dpp_err(e))
     }
 }

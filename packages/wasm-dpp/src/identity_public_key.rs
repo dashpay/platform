@@ -6,6 +6,7 @@ use wasm_bindgen::prelude::*;
 use crate::errors::from_dpp_err;
 use crate::js_buffer::JsBuffer;
 use dpp::identity::{IdentityPublicKey, KeyID, KeyType, Purpose, SecurityLevel, TimestampMillis};
+use dpp::util::string_encoding::Encoding;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
@@ -47,6 +48,33 @@ impl From<&JsPublicKey> for IdentityPublicKey {
         }
     }
 }
+
+// #[derive(Debug, Serialize, Deserialize, Clone)]
+// #[serde(rename_all = "camelCase")]
+// pub(crate) struct JsonPublicKey {
+//     pub id: KeyID,
+//     pub purpose: Purpose,
+//     pub security_level: SecurityLevel,
+//     #[serde(rename = "type")]
+//     pub key_type: KeyType,
+//     pub data: String,
+//     pub read_only: bool,
+//     pub disabled_at: Option<TimestampMillis>,
+// }
+//
+// impl From<IdentityPublicKey> for JsonPublicKey {
+//     fn from(public_key: &IdentityPublicKey) -> Self {
+//         Self {
+//             id: public_key.id,
+//             purpose: public_key.purpose,
+//             security_level: public_key.security_level,
+//             key_type: public_key.key_type,
+//             data: dpp::util::string_encoding::encode(&public_key.data,Encoding::Base64),
+//             read_only: public_key.read_only,
+//             disabled_at: public_key.disabled_at
+//         }
+//     }
+// }
 
 #[wasm_bindgen(js_name=IdentityPublicKey)]
 pub struct IdentityPublicKeyWasm(IdentityPublicKey);
