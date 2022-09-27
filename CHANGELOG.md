@@ -13,7 +13,7 @@
 
 ### Bug Fixes
 
-* **dapi-client:** metadata.get is not a function ([#531](https://github.com/dashevo/platform/issues/531))
+* **dapi-client:** metadata.get is not a function once again ([#531](https://github.com/dashevo/platform/issues/531))
 * **dashmate:** homedir fs.exists check ([#537](https://github.com/dashevo/platform/issues/537))
 * **drive:** masternode identities sync from begging after restart ([#542](https://github.com/dashevo/platform/issues/542))
 
