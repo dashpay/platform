@@ -8,9 +8,13 @@ OUTPUT_FILE_JS="$OUTPUT_DIR/wasm_dpp_bg.js"
 BUILD_COMMAND="cargo build --target=$TARGET --$PROFILE"
 BINDGEN_COMMAND="wasm-bindgen --out-dir=$OUTPUT_DIR --target=web --omit-default-module-path ../../target/$TARGET/$PROFILE/wasm_dpp.wasm"
 
+# On a mac, bundled clang won't work - you need to install LLVM manually through brew,
+# and then set the correct env for the build to work
 if [[ "$OSTYPE" == "darwin"* ]]; then
-    AR=/usr/local/opt/llvm/bin/llvm-ar CC=/usr/local/opt/llvm/bin/clang $BUILD_COMMAND
-    AR=/usr/local/opt/llvm/bin/llvm-ar CC=/usr/local/opt/llvm/bin/clang $BINDGEN_COMMAND
+    AR_PATH=$(which llvm-ar)
+    CLANG_PATH=$(which clang)
+    AR=$AR_PATH CC=$CLANG_PATH $BUILD_COMMAND
+    AR=$AR_PATH CC=$CLANG_PATH $BINDGEN_COMMAND
 else
     $BUILD_COMMAND
     $BINDGEN_COMMAND
