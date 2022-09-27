@@ -7,6 +7,8 @@ use crate::errors::from_dpp_err;
 use crate::js_buffer::JsBuffer;
 use dpp::identity::{IdentityPublicKey, KeyID, KeyType, Purpose, SecurityLevel, TimestampMillis};
 use dpp::util::string_encoding::Encoding;
+use wasm_bindgen::{JsCast, JsObject};
+use wasm_bindgen::describe::WasmDescribe;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
@@ -192,6 +194,13 @@ impl IdentityPublicKeyWasm {
     #[wasm_bindgen(js_name=toJSON)]
     pub fn to_json(&self) -> Result<JsValue, JsValue> {
         let val = self.0.to_json().map_err(|e| from_dpp_err(e.into()))?;
+        let json = val.to_string();
+        js_sys::JSON::parse(&json)
+    }
+
+    #[wasm_bindgen(js_name=toObject)]
+    pub fn to_object(&self) -> Result<JsValue, JsValue> {
+        let val = self.0.to_raw_json_object().map_err(|e| from_dpp_err(e.into()))?;
         let json = val.to_string();
         js_sys::JSON::parse(&json)
     }

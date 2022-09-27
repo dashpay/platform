@@ -8,6 +8,8 @@ use dpp::metadata::Metadata;
 use dpp::{ProtocolError, SerdeParsingError};
 use dpp::util::json_value::JsonValueExt;
 
+use core::iter::FromIterator;
+
 use dpp::util::string_encoding::Encoding;
 
 use serde::{Deserialize, Serialize};
@@ -97,12 +99,17 @@ impl IdentityWasm {
     }
 
     #[wasm_bindgen(js_name=getPublicKeys)]
-    pub fn get_public_keys(&self) -> Vec<JsValue> {
-        self.0
+    pub fn get_public_keys(&self) -> js_sys::Array {
+        let keys: Vec<IdentityPublicKeyWasm> = self.0
             .get_public_keys()
             .iter()
-            .map(|v| JsValue::from_serde(v).expect("unable to convert pub keys"))
-            .collect()
+            .map(IdentityPublicKey::to_owned)
+            .map(|pk| IdentityPublicKeyWasm::from(pk))
+            .collect();
+
+        let vec = keys.into_iter().map(|v| JsValue::from(v)).collect::<Vec<JsValue>>();
+
+        js_sys::Array::from_iter(vec.into_iter())
     }
 
     #[wasm_bindgen(js_name=getPublicKeyById)]
@@ -198,8 +205,25 @@ impl IdentityWasm {
     }
 
     #[wasm_bindgen(js_name=toObject)]
-    pub fn to_object(&self) -> JsValue {
-        JsValue::from_serde(&self.0).unwrap()
+    pub fn to_object(&self) -> Result<JsValue, JsValue> {
+        let pks = self
+            .0
+            .public_keys
+            .iter()
+            .map(|pk| pk.to_raw_json_object())
+            .collect::<Result<Vec<serde_json::Value>, SerdeParsingError>>()
+            .map_err(|e| from_dpp_err(e.into()))?;
+        let mut identity_json = serde_json::to_value(self.0.clone()).map_err(|e| from_dpp_err(e.into()))?;
+
+        let map = identity_json
+            .as_object_mut()
+            .ok_or_else(|| from_dpp_err(ProtocolError::Generic("Expect identity to be a json map".into())))?;
+
+        map.insert("id".into(), serde_json::Value::from(self.0.id.buffer.to_vec()));
+        map.insert("publicKeys".into(), serde_json::Value::from(pks));
+
+        let identity_json_string = serde_json::to_string(&identity_json).map_err(|e| from_dpp_err(e.into()))?;
+        js_sys::JSON::parse(&identity_json_string)
     }
 
     #[wasm_bindgen(js_name=toString)]
