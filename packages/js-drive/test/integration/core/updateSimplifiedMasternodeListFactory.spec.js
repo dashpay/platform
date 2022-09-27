@@ -52,6 +52,14 @@ describe('updateSimplifiedMasternodeListFactory', function main() {
 
     container = await createTestDIContainer(dashCore);
 
+    // Create misc tree
+    const groveDBStore = container.resolve('groveDBStore');
+    await groveDBStore.createTree(
+      [],
+      Buffer.from([5]),
+      { useTransaction: true },
+    );
+
     const simplifiedMasternodeList = container.resolve('simplifiedMasternodeList');
     const updateSimplifiedMasternodeList = container.resolve('updateSimplifiedMasternodeList');
     const synchronizeMasternodeIdentities = container.resolve('synchronizeMasternodeIdentities');
