@@ -1,3 +1,29 @@
+## [0.23.0-dev.10](https://github.com/dashevo/platform/compare/v0.22.16...v0.23.0-dev.10) (2022-09-27)
+
+
+### ⚠ BREAKING CHANGES
+
+* **drive:** masternode identities sync from begging after restart (#542)
+* update Dash Core to 18.1.0-alpha.2 (#526)
+
+### Features
+
+* update Dash Core to 18.1.0-alpha.2 ([#526](https://github.com/dashevo/platform/issues/526))
+
+
+### Bug Fixes
+
+* **dapi-client:** metadata.get is not a function once again ([#531](https://github.com/dashevo/platform/issues/531))
+* **dashmate:** homedir fs.exists check ([#537](https://github.com/dashevo/platform/issues/537))
+* **drive:** masternode identities sync from begging after restart ([#542](https://github.com/dashevo/platform/issues/542))
+
+
+### Miscellaneous Chores
+
+* clean up dependencies ([#534](https://github.com/dashevo/platform/issues/534))
+* **scripts:** remove comment from env key ([#532](https://github.com/dashevo/platform/issues/532))
+
+
 ### [0.22.16](https://github.com/dashevo/platform/compare/v0.22.15...v0.22.16) (2022-09-08)
 
 
