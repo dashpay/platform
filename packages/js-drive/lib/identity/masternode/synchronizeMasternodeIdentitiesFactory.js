@@ -45,7 +45,9 @@ function synchronizeMasternodeIdentitiesFactory(
    */
   async function synchronizeMasternodeIdentities(coreHeight) {
     if (!lastSyncedCoreHeight) {
-      const lastSyncedHeightResult = await lastSyncedCoreHeightRepository.fetch();
+      const lastSyncedHeightResult = await lastSyncedCoreHeightRepository.fetch({
+        useTransaction: true,
+      });
 
       lastSyncedCoreHeight = lastSyncedHeightResult.getValue() || 0;
     }
@@ -191,7 +193,9 @@ function synchronizeMasternodeIdentitiesFactory(
 
     lastSyncedCoreHeight = coreHeight;
 
-    await lastSyncedCoreHeightRepository.store(lastSyncedCoreHeight);
+    await lastSyncedCoreHeightRepository.store(lastSyncedCoreHeight, {
+      useTransaction: true,
+    });
 
     return {
       fromHeight,
