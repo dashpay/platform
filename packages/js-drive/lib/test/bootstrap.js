@@ -7,6 +7,7 @@ const sinonChai = require('sinon-chai');
 const dirtyChai = require('dirty-chai');
 const chaiAsPromised = require('chai-as-promised');
 const chaiString = require('chai-string');
+const DashCoreOptions = require('@dashevo/dp-services-ctl/lib/services/dashCore/DashCoreOptions');
 
 use(sinonChai);
 use(chaiAsPromised);
@@ -49,7 +50,16 @@ if (process.env.MASTERNODE_REWARD_SHARES_SECOND_PUBLIC_KEY === undefined) {
 const dotenvConfig = dotenvSafe.config({
   path: path.resolve(__dirname, '..', '..', '.env'),
 });
+
 dotenvExpand(dotenvConfig);
+
+if (process.env.SERVICE_IMAGE_CORE) {
+  DashCoreOptions.setDefaultCustomOptions({
+    container: {
+      image: 'dashpay/dashd:18.1.0-rc.1',
+    },
+  });
+}
 
 beforeEach(function beforeEach() {
   if (!this.sinon) {
