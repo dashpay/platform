@@ -10,10 +10,6 @@ describe('updateSimplifiedMasternodeListFactory', function main() {
   let dashCore;
   let dashCoreOptions;
 
-  beforeEach(() => {
-    dashCoreOptions = { container: { image: 'dashpay/dashd:18.1.0-alpha.2' } };
-  });
-
   after(async () => {
     if (dashCore) {
       await dashCore.remove();
