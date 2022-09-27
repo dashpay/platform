@@ -213,8 +213,12 @@ class Account extends EventEmitter {
   // It would gives that responsability to createAccount to create
   // (and therefore push to accounts).
   async init(wallet) {
+    if (this.state.isInitialized) {
+      return true;
+    }
     await _addAccountToWallet(this, wallet);
     await _initializeAccount(this, wallet.plugins);
+    return true;
   }
 
   async isInitialized() {

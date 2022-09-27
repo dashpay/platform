@@ -1,5 +1,6 @@
 const { SAVE_STATE_SUCCESS, SAVE_STATE_FAILED } = require('../../../EVENTS');
 const CONSTANTS = require('../../../CONSTANTS');
+const logger = require('../../../logger');
 
 /**
  * Force persistence of the state to the adapter
@@ -36,8 +37,10 @@ const saveState = async function saveState() {
       await this.adapter.setItem(`wallet_${walletId}`, storage);
 
       this.emit(SAVE_STATE_SUCCESS, { type: SAVE_STATE_SUCCESS, payload: this.lastSave });
+      logger.debug(`State saved. Estimated time: ${(Date.now() - this.lastSave) / 1000}s`);
       return true;
     } catch (err) {
+      logger.error(`Storage Save state error: ${err.message}`);
       this.emit(SAVE_STATE_FAILED, { type: SAVE_STATE_FAILED, payload: err });
       throw err;
     }
