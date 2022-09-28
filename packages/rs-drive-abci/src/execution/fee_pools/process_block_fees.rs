@@ -1,3 +1,38 @@
+// MIT LICENSE
+//
+// Copyright (c) 2021 Dash Core Group
+//
+// Permission is hereby granted, free of charge, to any
+// person obtaining a copy of this software and associated
+// documentation files (the "Software"), to deal in the
+// Software without restriction, including without
+// limitation the rights to use, copy, modify, merge,
+// publish, distribute, sublicense, and/or sell copies of
+// the Software, and to permit persons to whom the Software
+// is furnished to do so, subject to the following
+// conditions:
+//
+// The above copyright notice and this permission notice
+// shall be included in all copies or substantial portions
+// of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF
+// ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED
+// TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
+// PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT
+// SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
+// CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
+// OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR
+// IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+// DEALINGS IN THE SOFTWARE.
+//
+
+//! Block Fees Processing.
+//!
+//! This modules defines functions related to processing block fees upon block and
+//! epoch changes.
+//!
+
 use crate::abci::messages::FeesAggregate;
 use crate::block::BlockInfo;
 use crate::error::Error;
@@ -27,14 +62,20 @@ use std::option::Option::None;
 /// the accumulated fees to their corresponding pools, and in the case of deletion of data, remove
 /// storage fees from future Epoch storage pools.
 
+/// Holds info relevant fees and a processed block
 pub struct ProcessedBlockFeesResult {
+    /// Amount of fees in the storage and processing fee distribution pools
     pub fees_in_pools: FeesInPools,
+    /// A struct with the number of proposers to be paid out and the last paid epoch index
     pub payouts: Option<ProposersPayouts>,
 }
 
 impl Platform {
-    /// When processing an epoch change a StorageDistributionLeftoverCredits will be returned, expect if
-    /// we are at Genesis Epoch.
+    /// Adds operations to the GroveDB batch which initialize the current epoch
+    /// as well as the current+1000 epoch, then distributes storage fees accumulated
+    /// during the previous epoch.
+    ///
+    /// `StorageDistributionLeftoverCredits` will be returned, except if we are at Genesis Epoch.
     fn add_process_epoch_change_operations(
         &self,
         block_info: &BlockInfo,
@@ -78,6 +119,10 @@ impl Platform {
         Ok(Some(storage_distribution_leftover_credits))
     }
 
+    /// Adds operations to GroveDB op batch related to processing
+    /// and distributing the block fees from the previous block and applies the batch.
+    ///
+    /// Returns `ProcessedBlockFeesResult`.
     pub fn process_block_fees(
         &self,
         block_info: &BlockInfo,
@@ -169,6 +214,7 @@ mod tests {
             use rs_drive::fee_pools::epochs::Epoch;
             use rs_drive::grovedb::TransactionArg;
 
+            /// Process and validate an epoch change
             pub fn process_and_validate_epoch_change(
                 platform: &Platform,
                 genesis_time_ms: u64,
@@ -362,6 +408,7 @@ mod tests {
             use rs_drive::fee_pools::epochs::Epoch;
             use rs_drive::grovedb::TransactionArg;
 
+            /// Process and validate block fees
             pub fn process_and_validate_block_fees(
                 platform: &Platform,
                 genesis_time_ms: u64,

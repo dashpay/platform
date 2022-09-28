@@ -1,3 +1,37 @@
+// MIT LICENSE
+//
+// Copyright (c) 2021 Dash Core Group
+//
+// Permission is hereby granted, free of charge, to any
+// person obtaining a copy of this software and associated
+// documentation files (the "Software"), to deal in the
+// Software without restriction, including without
+// limitation the rights to use, copy, modify, merge,
+// publish, distribute, sublicense, and/or sell copies of
+// the Software, and to permit persons to whom the Software
+// is furnished to do so, subject to the following
+// conditions:
+//
+// The above copyright notice and this permission notice
+// shall be included in all copies or substantial portions
+// of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF
+// ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED
+// TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
+// PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT
+// SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
+// CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
+// OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR
+// IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+// DEALINGS IN THE SOFTWARE.
+//
+
+//! Documents.
+//!
+//! This module defines the `Document` struct and implements its functions.
+//!
+
 use std::collections::BTreeMap;
 use std::io::{BufReader, Read};
 
@@ -16,21 +50,27 @@ use crate::error::drive::DriveError;
 use crate::error::structure::StructureError;
 use crate::error::Error;
 
+/// Documents contain the data that goes into data contracts.
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub struct Document {
+    /// The unique document ID.
     #[serde(rename = "$id")]
     pub id: [u8; 32],
+
+    /// The document's properties (data).
     #[serde(flatten)]
     pub properties: BTreeMap<String, Value>,
+
+    /// The ID of the document's owner.
     #[serde(rename = "$ownerId")]
     pub owner_id: [u8; 32],
 }
 
 impl Document {
-    // The serialization of a document follows the following pattern
-    // id 32 bytes
-    // owner_id 32 bytes
-    //
+    /// Serializes the document.
+    ///
+    /// The serialization of a document follows the pattern:
+    /// id 32 bytes + owner_id 32 bytes + encoded values byte arrays
     pub fn serialize(&self, document_type: &DocumentType) -> Result<Vec<u8>, Error> {
         let mut buffer: Vec<u8> = self.id.as_slice().to_vec();
         buffer.extend(self.owner_id.as_slice());
@@ -58,6 +98,10 @@ impl Document {
         Ok(buffer)
     }
 
+    /// Serializes and consumes the document.
+    ///
+    /// The serialization of a document follows the pattern:
+    /// id 32 bytes + owner_id 32 bytes + encoded values byte arrays
     pub fn serialize_consume(mut self, document_type: &DocumentType) -> Result<Vec<u8>, Error> {
         let mut buffer: Vec<u8> = Vec::try_from(self.id).unwrap();
         let mut owner_id = Vec::try_from(self.owner_id).unwrap();
@@ -86,6 +130,7 @@ impl Document {
         Ok(buffer)
     }
 
+    /// Reads a serialized document and creates a Document from it.
     pub fn from_bytes(
         serialized_document: &[u8],
         document_type: &DocumentType,
@@ -136,6 +181,8 @@ impl Document {
         })
     }
 
+    /// Reads a CBOR-serialized document and creates a Document from it.
+    /// If Document and Owner IDs are provided, they are used, otherwise they are created.
     pub fn from_cbor(
         document_cbor: &[u8],
         document_id: Option<&[u8]>,
@@ -218,6 +265,7 @@ impl Document {
         })
     }
 
+    /// Reads a CBOR-serialized document and creates a Document from it with the provided IDs.
     pub fn from_cbor_with_id(
         document_cbor: &[u8],
         document_id: &[u8],
@@ -262,6 +310,7 @@ impl Document {
         })
     }
 
+    /// Serializes the Document to CBOR.
     pub fn to_cbor(&self) -> Vec<u8> {
         let mut buffer: Vec<u8> = Vec::new();
         buffer
@@ -271,34 +320,42 @@ impl Document {
         buffer
     }
 
+    /// Return a value given the path to its key for a document type.
     pub fn get_raw_for_document_type<'a>(
         &'a self,
         key_path: &str,
         document_type: &DocumentType,
         owner_id: Option<&[u8]>,
     ) -> Result<Option<Vec<u8>>, Error> {
+        // returns the owner id if the key path is $ownerId and an owner id is given
         if key_path == "$ownerId" && owner_id.is_some() {
             Ok(Some(Vec::from(owner_id.unwrap())))
         } else {
             match key_path {
+                // returns self.id or self.owner_id if key path is $id or $ownerId
                 "$id" => return Ok(Some(Vec::from(self.id))),
                 "$ownerId" => return Ok(Some(Vec::from(self.owner_id))),
                 _ => {}
             }
+            // split the key path
             let key_paths: Vec<&str> = key_path.split('.').collect::<Vec<&str>>();
+            // key is the first key of the key path and rest_key_paths are the rest
             let (key, rest_key_paths) = key_paths.split_first().ok_or({
                 Error::Contract(ContractError::MissingRequiredKey(
                     "key must not be null when getting from document",
                 ))
             })?;
 
+            /// Gets the value at the given path. Returns `value` if `key_paths` is empty.
             fn get_value_at_path<'a>(
                 value: &'a Value,
                 key_paths: &'a [&str],
             ) -> Result<Option<&'a Value>, Error> {
+                // return value if key_paths is empty
                 if key_paths.is_empty() {
                     Ok(Some(value))
                 } else {
+                    // split first again
                     let (key, rest_key_paths) = key_paths.split_first().ok_or({
                         Error::Contract(ContractError::MissingRequiredKey(
                             "key must not be null when getting from document",
@@ -309,6 +366,7 @@ impl Document {
                             "inner key must refer to a value map",
                         ))
                     })?;
+                    // given a map of values and a key, get the corresponding value
                     match get_key_from_cbor_map(map_values, key) {
                         None => Ok(None),
                         Some(value) => get_value_at_path(value, rest_key_paths),
@@ -316,6 +374,7 @@ impl Document {
                 }
             }
 
+            // match the value at the given key
             match self.properties.get(*key) {
                 None => Ok(None),
                 Some(value) => match get_value_at_path(value, rest_key_paths)? {
@@ -328,6 +387,7 @@ impl Document {
         }
     }
 
+    /// Return a value given the path to its key and the document type for a contract.
     pub fn get_raw_for_contract<'a>(
         &'a self,
         key: &str,

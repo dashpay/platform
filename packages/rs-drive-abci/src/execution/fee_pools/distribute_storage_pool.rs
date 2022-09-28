@@ -1,3 +1,38 @@
+// MIT LICENSE
+//
+// Copyright (c) 2021 Dash Core Group
+//
+// Permission is hereby granted, free of charge, to any
+// person obtaining a copy of this software and associated
+// documentation files (the "Software"), to deal in the
+// Software without restriction, including without
+// limitation the rights to use, copy, modify, merge,
+// publish, distribute, sublicense, and/or sell copies of
+// the Software, and to permit persons to whom the Software
+// is furnished to do so, subject to the following
+// conditions:
+//
+// The above copyright notice and this permission notice
+// shall be included in all copies or substantial portions
+// of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF
+// ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED
+// TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
+// PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT
+// SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
+// CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
+// OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR
+// IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+// DEALINGS IN THE SOFTWARE.
+//
+
+//! Fee Distribution to Epoch Pools.
+//!
+//! This module defines and implements in the Platform trait functions to add up and distribute
+//! storage fees from the distribution pool to the epoch pools.
+//!
+
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::execution::fee_pools::constants;
@@ -10,10 +45,12 @@ use rs_drive::{error, grovedb};
 use rust_decimal::prelude::{FromPrimitive, ToPrimitive};
 use rust_decimal::Decimal;
 
+/// Leftover credits after adding up and distributing storage fees.
 pub type StorageDistributionLeftoverCredits = u64;
 
 impl Platform {
-    /// returns the leftovers
+    /// Adds operations to the GroveDB op batch which calculate and distribute storage fees
+    /// from the distribution pool to the epoch pools and returns the leftovers.
     pub fn add_distribute_storage_fee_distribution_pool_to_epochs_operations(
         &self,
         current_epoch_index: u16,
@@ -68,7 +105,7 @@ impl Platform {
                         _ => Err(e),
                     })?;
 
-                // TODO: It's not convenient and confusing when in once case you should push operation to batch
+                // TODO: It's not convenient and confusing when in one case you should push operation to batch
                 //  and sometimes you pass batch inside to add operations. Also, in future a single operation function
                 //  could become a multiple operations function so you need to change many code. Also, you can't use helpers which batch provides
                 batch.push(

@@ -1,3 +1,37 @@
+// MIT LICENSE
+//
+// Copyright (c) 2021 Dash Core Group
+//
+// Permission is hereby granted, free of charge, to any
+// person obtaining a copy of this software and associated
+// documentation files (the "Software"), to deal in the
+// Software without restriction, including without
+// limitation the rights to use, copy, modify, merge,
+// publish, distribute, sublicense, and/or sell copies of
+// the Software, and to permit persons to whom the Software
+// is furnished to do so, subject to the following
+// conditions:
+//
+// The above copyright notice and this permission notice
+// shall be included in all copies or substantial portions
+// of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF
+// ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED
+// TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
+// PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT
+// SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
+// CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
+// OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR
+// IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+// DEALINGS IN THE SOFTWARE.
+//
+
+//! Fee Distribution to Proposers.
+//!
+//! This module defines structs and functions related to distributing fees to proposers.
+//!
+
 use crate::abci::messages::FeesAggregate;
 use crate::error::execution::ExecutionError;
 
@@ -15,25 +49,38 @@ use rs_drive::{error, grovedb};
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 
+/// Struct containing the number of proposers to be paid and the index of the epoch
+/// they're to be paid from.
 pub struct ProposersPayouts {
+    /// Number of proposers to be paid
     pub proposers_paid_count: u16,
+    /// Index of last epoch marked as paid
     pub paid_epoch_index: u16,
 }
 
+/// Struct containing the amount of processing and storage fees in the distribution pools
 pub struct FeesInPools {
+    /// Amount of processing fees in the distribution pools
     pub processing_fees: u64,
+    /// Amount of storage fees in the distribution pools
     pub storage_fees: u64,
 }
 
+/// Struct containing info about an epoch containing fees that have not been paid out yet.
 #[derive(Default)]
 pub struct UnpaidEpoch {
+    /// Index of the current epoch
     pub epoch_index: u16,
+    /// Block height of the first block in the epoch
     pub start_block_height: u64,
+    /// Block height of the last block in the epoch
     pub end_block_height: u64,
+    /// Index of the next unpaid epoch
     pub next_unpaid_epoch_index: u16,
 }
 
 impl UnpaidEpoch {
+    /// Counts and returns the number of blocks in the epoch
     fn block_count(&self) -> Result<u64, error::Error> {
         self.end_block_height
             .checked_sub(self.start_block_height)
@@ -44,6 +91,10 @@ impl UnpaidEpoch {
 }
 
 impl Platform {
+    /// Adds operations to the op batch which distribute fees
+    /// from the oldest unpaid epoch pool to proposers.
+    ///
+    /// Returns `ProposersPayouts` if there are any.
     pub fn add_distribute_fees_from_oldest_unpaid_epoch_pool_to_proposers_operations(
         &self,
         current_epoch_index: u16,
@@ -96,6 +147,7 @@ impl Platform {
         }))
     }
 
+    /// Finds and returns the oldest epoch that hasn't been paid out yet.
     fn find_oldest_epoch_needing_payment(
         &self,
         current_epoch_index: u16,
@@ -168,6 +220,10 @@ impl Platform {
         }))
     }
 
+    /// Adds operations to the op batch which distribute the fees from an unpaid epoch pool
+    /// to the total fees to be paid out to proposers and divides amongst masternode reward shares.
+    ///
+    /// Returns the number of proposers to be paid out.
     fn add_epoch_pool_to_proposers_payout_operations(
         &self,
         unpaid_epoch: &UnpaidEpoch,
@@ -296,6 +352,7 @@ impl Platform {
         Ok(proposers_len)
     }
 
+    /// Adds operations to an op batch which pay a reward to an identity's balance
     fn add_pay_reward_to_identity_operations(
         &self,
         id: &[u8],
@@ -319,6 +376,10 @@ impl Platform {
             .map_err(Error::Drive)
     }
 
+    /// Adds operations to an op batch which update total storage fees
+    /// for the epoch considering fees from a new block.
+    ///
+    /// Returns `FeesInPools`
     pub fn add_distribute_block_fees_into_pools_operations(
         &self,
         current_epoch: &Epoch,

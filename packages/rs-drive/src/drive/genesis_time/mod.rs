@@ -1,3 +1,38 @@
+// MIT LICENSE
+//
+// Copyright (c) 2021 Dash Core Group
+//
+// Permission is hereby granted, free of charge, to any
+// person obtaining a copy of this software and associated
+// documentation files (the "Software"), to deal in the
+// Software without restriction, including without
+// limitation the rights to use, copy, modify, merge,
+// publish, distribute, sublicense, and/or sell copies of
+// the Software, and to permit persons to whom the Software
+// is furnished to do so, subject to the following
+// conditions:
+//
+// The above copyright notice and this permission notice
+// shall be included in all copies or substantial portions
+// of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF
+// ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED
+// TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
+// PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT
+// SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
+// CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
+// OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR
+// IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+// DEALINGS IN THE SOFTWARE.
+//
+
+//! Genesis Time.
+//!
+//! This module defines functions relevant to the chain's genesis time.
+//!
+
+/// Operations module
 pub mod operations;
 
 use crate::drive::genesis_time::operations::update_genesis_time_operation;
@@ -10,6 +45,7 @@ use std::array::TryFromSliceError;
 const KEY_GENESIS_TIME: &[u8; 1] = b"g";
 
 impl Drive {
+    /// Returns the genesis time. Checks cache first, then storage.
     pub fn get_genesis_time(&self, transaction: TransactionArg) -> Result<Option<u64>, Error> {
         // let's first check the cache
         let mut cache = self.cache.borrow_mut();
@@ -26,6 +62,7 @@ impl Drive {
         }
     }
 
+    /// Returns the genesis time from storage.
     fn fetch_genesis_time(&self, transaction: TransactionArg) -> Result<Option<u64>, Error> {
         let element = self
             .grove
@@ -56,6 +93,7 @@ impl Drive {
         }
     }
 
+    /// Initializes the genesis time.
     pub fn init_genesis_time(
         &self,
         genesis_time_ms: u64,

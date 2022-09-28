@@ -1,3 +1,7 @@
+#![cfg_attr(docsrs, feature(doc_cfg))]
+// Coding conventions
+#![forbid(unsafe_code)]
+//#![deny(missing_docs)]
 #![allow(dead_code)]
 
 extern crate core;

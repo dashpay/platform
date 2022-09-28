@@ -1,3 +1,35 @@
+// MIT LICENSE
+//
+// Copyright (c) 2021 Dash Core Group
+//
+// Permission is hereby granted, free of charge, to any
+// person obtaining a copy of this software and associated
+// documentation files (the "Software"), to deal in the
+// Software without restriction, including without
+// limitation the rights to use, copy, modify, merge,
+// publish, distribute, sublicense, and/or sell copies of
+// the Software, and to permit persons to whom the Software
+// is furnished to do so, subject to the following
+// conditions:
+//
+// The above copyright notice and this permission notice
+// shall be included in all copies or substantial portions
+// of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF
+// ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED
+// TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
+// PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT
+// SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
+// CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
+// OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR
+// IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+// DEALINGS IN THE SOFTWARE.
+//
+
+//! Query Tests
+//!
+
 use grovedb::TransactionArg;
 use std::collections::HashMap;
 use std::fs::File;
@@ -118,6 +150,7 @@ impl PersonWithOptionalValues {
     }
 }
 
+/// Inserts the test "family" contract and adds `count` documents containing randomly named people to it.
 pub fn setup_family_tests(count: u32, with_batching: bool, seed: u64) -> (Drive, Contract) {
     let drive_config = if with_batching {
         DriveConfig::default_with_batches()
@@ -188,6 +221,7 @@ pub fn setup_family_tests(count: u32, with_batching: bool, seed: u64) -> (Drive,
     (drive, contract)
 }
 
+/// Same as `setup_family_tests` but with null values in the documents.
 pub fn setup_family_tests_with_nulls(
     count: u32,
     with_batching: bool,
@@ -267,7 +301,8 @@ struct Records {
     dash_unique_identity_id: Vec<u8>,
 }
 
-// In the real dpns label is required, we make it optional here for a test
+/// DPNS domain info
+// In the real dpns, label is required. We make it optional here for a test.
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct Domain {
@@ -284,6 +319,7 @@ struct Domain {
 }
 
 impl Domain {
+    /// Creates `count` random names as domain names for the given parent domain
     fn random_domains_in_parent(
         count: u32,
         seed: u64,
@@ -314,6 +350,7 @@ impl Domain {
     }
 }
 
+/// Adds `count` random domain names to the given contract
 pub fn add_domains_to_contract(
     drive: &Drive,
     contract: &Contract,
@@ -355,6 +392,7 @@ pub fn add_domains_to_contract(
     }
 }
 
+/// Sets up and inserts random domain name data to the DPNS contract to test queries on.
 pub fn setup_dpns_tests_with_batches(count: u32, seed: u64) -> (Drive, Contract) {
     let drive = setup_drive(Some(DriveConfig::default_with_batches()));
 
@@ -387,6 +425,7 @@ pub fn setup_dpns_tests_with_batches(count: u32, seed: u64) -> (Drive, Contract)
     (drive, contract)
 }
 
+/// Sets up the DPNS contract and inserts data from the given path to test queries on.
 pub fn setup_dpns_test_with_data(path: &str) -> (Drive, Contract) {
     let drive = setup_drive(None);
 

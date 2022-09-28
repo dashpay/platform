@@ -1,3 +1,35 @@
+// MIT LICENSE
+//
+// Copyright (c) 2021 Dash Core Group
+//
+// Permission is hereby granted, free of charge, to any
+// person obtaining a copy of this software and associated
+// documentation files (the "Software"), to deal in the
+// Software without restriction, including without
+// limitation the rights to use, copy, modify, merge,
+// publish, distribute, sublicense, and/or sell copies of
+// the Software, and to permit persons to whom the Software
+// is furnished to do so, subject to the following
+// conditions:
+//
+// The above copyright notice and this permission notice
+// shall be included in all copies or substantial portions
+// of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF
+// ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED
+// TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
+// PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT
+// SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
+// CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
+// OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR
+// IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+// DEALINGS IN THE SOFTWARE.
+//
+
+//! Query Conditions
+//!
+
 use std::collections::{BTreeMap, BTreeSet};
 
 use ciborium::value::{Integer, Value};
@@ -13,6 +45,7 @@ use crate::contract::{document::Document, DocumentType};
 use crate::error::query::QueryError;
 use crate::error::Error;
 
+/// Converts SQL values to CBOR.
 fn sql_value_to_cbor(sql_value: ast::Value) -> Option<Value> {
     match sql_value {
         ast::Value::Boolean(bool) => Some(Value::Bool(bool)),
@@ -36,22 +69,35 @@ fn sql_value_to_cbor(sql_value: ast::Value) -> Option<Value> {
     }
 }
 
+/// Where operator arguments
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub enum WhereOperator {
+    /// Equal
     Equal,
+    /// Greater than
     GreaterThan,
+    /// Greater than or equal
     GreaterThanOrEquals,
+    /// Less than
     LessThan,
+    /// Less than or equal
     LessThanOrEquals,
+    /// Between
     Between,
+    /// Between excluding bounds
     BetweenExcludeBounds,
+    /// Between excluding left bound
     BetweenExcludeLeft,
+    /// Between excluding right bound
     BetweenExcludeRight,
+    /// In
     In,
+    /// Starts with
     StartsWith,
 }
 
 impl WhereOperator {
+    /// Matches the where operator argument and returns true if it allows `flip` function
     pub fn allows_flip(&self) -> bool {
         match self {
             Equal => true,
@@ -68,6 +114,7 @@ impl WhereOperator {
         }
     }
 
+    /// Flips the where operator
     pub fn flip(&self) -> Result<WhereOperator, Error> {
         match self {
             Equal => Ok(Equal),
@@ -98,6 +145,7 @@ impl WhereOperator {
 }
 
 impl WhereOperator {
+    /// Returns true if the where operator result is a range
     pub const fn is_range(self) -> bool {
         match self {
             Equal => false,
@@ -108,6 +156,7 @@ impl WhereOperator {
         }
     }
 
+    /// Matches the where operator as a string and returns it as a proper `WhereOperator`
     pub(crate) fn from_string(string: &str) -> Option<Self> {
         match string {
             "=" | "==" => Some(Equal),
@@ -134,6 +183,7 @@ impl WhereOperator {
         }
     }
 
+    /// Matches the where operator as a SQL operator and returns it as a proper `WhereOperator`
     pub(crate) fn from_sql_operator(sql_operator: ast::BinaryOperator) -> Option<Self> {
         match sql_operator {
             ast::BinaryOperator::Eq => Some(WhereOperator::Equal),
@@ -147,18 +197,24 @@ impl WhereOperator {
     }
 }
 
+/// Where clause struct
 #[derive(Clone, Debug, PartialEq)]
 pub struct WhereClause {
+    /// Field
     pub field: String,
+    /// Operator
     pub operator: WhereOperator,
+    /// Value
     pub value: Value,
 }
 
 impl<'a> WhereClause {
+    /// Returns true if the `WhereClause` is an identifier
     pub fn is_identifier(&self) -> bool {
         self.field == "$id"
     }
 
+    /// Returns the where clause `in` values if they are an array of values, else an error
     pub fn in_values(&self) -> Result<&Vec<Value>, Error> {
         let in_values = match &self.value {
             Value::Array(array) => Ok(array),
@@ -189,6 +245,7 @@ impl<'a> WhereClause {
         Ok(in_values)
     }
 
+    /// Returns true if the less than where clause is true
     pub fn less_than(&self, other: &Self, allow_eq: bool) -> Result<bool, Error> {
         match (&self.value, &other.value) {
             (Value::Integer(x), Value::Integer(y)) => {
@@ -225,6 +282,7 @@ impl<'a> WhereClause {
         }
     }
 
+    /// Returns a `WhereClause` given a list of clause components
     pub fn from_components(clause_components: &'a [Value]) -> Result<Self, Error> {
         if clause_components.len() != 3 {
             return Err(Error::Query(QueryError::InvalidWhereClauseComponents(
@@ -302,6 +360,7 @@ impl<'a> WhereClause {
         }
     }
 
+    /// Given a list of where clauses, returns them in groups of equal, range, and in clauses
     pub(crate) fn group_clauses(
         where_clauses: &'a [WhereClause],
     ) -> Result<(BTreeMap<String, Self>, Option<Self>, Option<Self>), Error> {
@@ -531,6 +590,7 @@ impl<'a> WhereClause {
         Ok((left_key, right_key))
     }
 
+    /// Returns a path query given the parameters
     // The start at document fields are:
     // document: The Document that we should start at
     // included: whether we should start at or after this document
@@ -871,6 +931,7 @@ impl<'a> WhereClause {
         Ok(query)
     }
 
+    /// Build where clauses from operations
     pub(crate) fn build_where_clauses_from_operations(
         binary_operation: &ast::Expr,
         where_clauses: &mut Vec<WhereClause>,
