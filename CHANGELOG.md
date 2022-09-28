@@ -1,3 +1,21 @@
+## [0.23.0-dev.11](https://github.com/dashevo/platform/compare/v0.23.0-dev.10...v0.23.0-dev.11) (2022-09-28)
+
+
+### Features
+
+* update Core to 18.1.0-rc.1 ([#544](https://github.com/dashevo/platform/issues/544))
+
+
+### Documentation
+
+* **dashmate:** add troubleshooting section ([#431](https://github.com/dashevo/platform/issues/431))
+
+
+### Miscellaneous Chores
+
+* **drive:** correct typo in debug message ([#535](https://github.com/dashevo/platform/issues/535))
+* **test-suite:** remove unused merk dependency ([#547](https://github.com/dashevo/platform/issues/547))
+
 ## [0.23.0-dev.10](https://github.com/dashevo/platform/compare/v0.22.16...v0.23.0-dev.10) (2022-09-27)
 
 
