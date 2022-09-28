@@ -49,6 +49,8 @@ function startCoreFactory(
     if (options.wallet) {
       config.set('core.masternode.enable', 0)
       config.set('core.masternode.operator.privateKey', null)
+
+      coreCommand.push('--disablewallet=0');
     }
 
     const coreContainer = await dockerCompose.runService(
