@@ -398,7 +398,9 @@ describe('BlockExecutionContext', () => {
       expect(blockExecutionContext.validTxs).to.equal(validTxs);
       expect(blockExecutionContext.invalidTxs).to.equal(invalidTxs);
       expect(blockExecutionContext.consensusLogger).to.equal(logger);
-      expect(blockExecutionContext.withdrawalTransactionsMap).to.deep.equal(plainObject.withdrawalTransactionsMap);
+      expect(blockExecutionContext.withdrawalTransactionsMap).to.deep.equal(
+        plainObject.withdrawalTransactionsMap,
+      );
     });
   });
 });

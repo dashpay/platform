@@ -251,7 +251,7 @@ class BlockExecutionContext {
    * Set withdrawal transactions hash map
    *
    * @param {Object} withdrawalTransactionsMap
-   * 
+   *
    * @returns {BlockExecutionContext}
    */
   setWithdrawalTransactionsMap(withdrawalTransactionsMap) {

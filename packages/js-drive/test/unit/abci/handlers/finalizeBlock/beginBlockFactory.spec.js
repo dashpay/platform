@@ -228,7 +228,9 @@ describe('beginBlockFactory', () => {
 
     await beginBlock(request, loggerMock);
 
-    expect(blockExecutionContextMock.setWithdrawalTransactionsMap).to.have.been.calledOnceWithExactly({
+    expect(
+      blockExecutionContextMock.setWithdrawalTransactionsMap,
+    ).to.have.been.calledOnceWithExactly({
       [hash(txOneBytes).toString('hex')]: txOneBytes,
       [hash(txTwoBytes).toString('hex')]: txTwoBytes,
     });
